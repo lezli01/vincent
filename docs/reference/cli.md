@@ -78,7 +78,7 @@ empty.
 vincent doctor [--json] [--fix [--force]]
 ```
 
-One report answering "why is nothing running?". Ten groups:
+One report answering "why is nothing running?". Eleven groups:
 
 | Group | Rows |
 |---|---|
@@ -89,6 +89,7 @@ One report answering "why is nothing running?". Ten groups:
 | Agents | per adapter: found, path, version, `logged_in`, whether the build is one vincent has been tested against, and whether the adapter can restrict on this OS |
 | GitHub | whether [`github.enabled`](configuration.md#github) is on, whether `gh` is installed and logged in, whether a token variable is set, and whether issues are readable |
 | Container | whether [`container.image`](configuration.md#container) names an image, which image, whether the configured runtime answered, and whether steps run in it or on this host |
+| Skills | per [published skill](#vincent-skills): the version this binary ships, the state of the copy in the global skills store, and the agents it is linked into |
 | Update | whether [`update.check`](configuration.md#update) is on, the latest stable release and when it was last seen, this binary's version, and whether the running daemon is older than it |
 | Storage | disk free under the data dir, worktree count and bytes, orphans |
 | Tasks | counts by state, so "12 blocked" is visible without opening the board, plus any task whose state and step runs contradict each other |
@@ -119,6 +120,11 @@ containerization is off by default, so a machine with no runtime — or a Window
 daemon, which cannot host one — runs every step on the host exactly as it always
 has. The runtime is probed **even when `container.image` is unset**, because
 "would this work if I turned it on" is the question the group exists to answer.
+So do the **Skills** rows: a missing, stale or unreadable skill costs you help
+in your own agent session and stops no vincent run, because the built-in
+`create-workflow` and `update-workflows` workflows carry the skill's text in
+their own prompts. The group ends with `run: vincent skills install` when
+anything is not current.
 
 An adapter row also ends with what vincent knows about the build itself:
 `untested version` and the builds it was judged against, `incompatible version`
@@ -153,8 +159,9 @@ retention window: rows are kept indefinitely, and `--fix` is the only thing that
 touches the file at all.
 
 **Without a daemon** the report is still printed in full — paths, whether the
-config parses, adapter detection, the log tail, disk free and the worktree
-count — and the database and task rows read `unknown — daemon not running`.
+config parses, adapter detection, published-skill state, the log tail, disk free
+and the worktree count — and the database and task rows read
+`unknown — daemon not running`.
 They are not read from a second process: only the daemon opens the database. The
 byte figures, the row counts and the span are unknown together, for that reason
 and no other.
@@ -1124,8 +1131,8 @@ shells out.
 vincent skills ls [--json]
 ```
 
-One row per published skill: the version this binary ships, the state of the
-copy on disk, and the agents it is linked into.
+Aliased as `vincent skills list`. One row per published skill: the version this
+binary ships, the state of the copy on disk, and the agents it is linked into.
 
 | State | Meaning |
 |---|---|

@@ -34,9 +34,20 @@ carried no version marker of any kind.
    (2026-09-10). vincent runs `npx skills add lezli01/vincent --skill <name>
    --agent <slugs> --yes --global`, not the published command verbatim, because
    the published command opens an interactive agent multi-select and there is
-   nothing to pick with from a TUI takeover or a non-TTY CLI. The agent list
-   defaults to the vincent adapters detected on the box, mapped through the slug
-   table in §9.8.
+   nothing to pick with from a TUI takeover or a non-TTY CLI. The agent list is
+   mapped through the slug table in §9.8.
+
+   *Settled in the diff (2026-09-10): the two surfaces answer the picker
+   differently.* The plan said "defaults to the adapters detected on the box"
+   for both; what shipped is the **CLI** defaulting to all three, with `--agent`
+   to narrow, and the **TUI** answering with the adapters the daemon reported.
+   The split is the right one and is why it stands: a person who typed
+   `vincent skills install` has stated an intent that a detection miss should
+   not quietly shrink — an adapter installed after vincent last looked, or one
+   `PATH` does not carry in this shell, would silently drop out of the
+   selection — and the flag is right there. The TUI offer is one keypress on a
+   screen that is already showing which adapters were found, so narrowing it
+   there costs the user nothing and asserts nothing.
 
    Beat: **writing the skill files ourselves from the embedded copy.** The
    issue rejected it partly on "vincent does not write into another tool's

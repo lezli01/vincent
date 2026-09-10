@@ -509,7 +509,9 @@ See the [pull-requests screen](guides/tui.md#pull-requests), the
 `vincent doctor` produces one report covering paths, configuration, daemon
 health, the recent log tail, the database's footprint, row counts and integrity,
 agent availability, login state and whether the installed CLI build is one
-vincent has been tested against, the GitHub integration, whether a newer vincent
+vincent has been tested against, the GitHub integration, whether the
+[workflow-authoring skill](reference/cli.md#vincent-skills) is installed and
+current for your agents, whether a newer vincent
 has been released and whether the running daemon is older than the binary you
 just ran, disk use, worktrees, and task counts. It supports JSON output for bug
 reports and automation, while `--fix` can reclaim orphans and compact the

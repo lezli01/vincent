@@ -3672,8 +3672,12 @@ row says `differs` and prints both versions; it never guesses a direction.
 --agent <slugs> --yes --global`. That is the published command plus three
 flags, and the difference is required: `skills add` with no agent selection
 opens an interactive multi-select, which cannot be driven from a TUI takeover
-or a non-TTY CLI. The agent list defaults to the vincent adapters detected on
-the box, mapped through the table above. `npx` is a runtime dependency of the
+or a non-TTY CLI. The agent list is mapped through the table above, and the two
+surfaces answer the picker differently on purpose: the **CLI** defaults to all
+three adapters, because a person who typed the command means "put it where my
+agents look" and `--agent` is right there to narrow it, while the **TUI**
+answers with the adapters the daemon actually detected, because that offer is
+one keypress on a screen already showing which ones those are. `npx` is a runtime dependency of the
 **install action only**; its absence is a reported outcome naming the
 dependency and printing the command to run once node is available, never a
 crash. The first run downloads the package, so an install is slow and needs
@@ -7989,7 +7993,8 @@ question — is this adapter's window shut *now* — computed per §9.6's `sourc
 split.
 
 **`i` in the daemon view (task 082).** The one key in vincent that leads to a
-write outside its own data dir: it offers to make `vincent statusline` Claude
+write outside its own data dir — *amended 2026-09-10 (task 095): the first of
+two, `S` below being the other* — it offers to make `vincent statusline` Claude
 Code's `statusLine.command`, and the same key takes it back out. The exact JSON
 that will be written is shown first, as a takeover rather than a line competing
 with four other blocks — §16 asks that it be on screen, and a preview nobody
@@ -9089,6 +9094,20 @@ currently true to show (§15 view 6).
   every other subcommand discovers it instead of being written into a file
   (§13.2). Starting a daemon leaves that file untouched, and a test asserts it
   rather than assuming it.
+
+  *Amended 2026-09-10 (task 095): three, and the third is not vincent's own
+  write.* `vincent skills install`, and the daemon view's `S`, run `npx skills
+  add` (§9.8) — the published CLI puts one copy under `~/.agents/skills/` and
+  links it into each agent's directory. Vincent writes none of those files
+  itself, which is the point of shelling out: the install layout, symlink /
+  `--copy` split included, stays that tool's business. The properties above
+  hold anyway — user-initiated by a command or a keypress and never on daemon
+  start, with the **exact argv shown before it runs** — and the one property
+  that cannot is stated rather than claimed: an uninstall is that CLI's, not
+  vincent's, so `S` does not undo the way `i` does. **Detection** adds nothing
+  to this list at all: it reads `SKILL.md` out of a public CLI's documented
+  install locations and writes nothing, which is why it is not the v0 T1.7
+  refusal being reopened (§9.8).
 
 *Added 2026-08-29 (task 057).* **An agent can now create and cancel vincent
 tasks.** §13.4 serves MCP from the daemon and, by default

@@ -27,9 +27,10 @@ list with the user-facing context a commit subject cannot carry.
   date` with both versions named, or `newer than this build` when you have
   downgraded. A copy installed before this release carries no version marker at
   all, so it reads `out of date: installed unversioned` — reinstalling is what
-  makes the row exact. `vincent skills install` runs the install for the agents vincent
-  found on this machine. The TUI's daemon view offers it under `S`, shows the
-  exact `npx` command before running anything, and remembers a "not now".
+  makes the row exact. `vincent skills install` runs the install for all three
+  adapters, and `--agent` narrows it. The TUI's daemon view offers the same
+  thing under `S` — for the adapters it actually found on this machine — shows
+  the exact `npx` command before running anything, and remembers a "not now".
 
   Detection is a filesystem read: it works with no daemon running and with no
   node installed. Only the install needs `npx`, and its absence is a message

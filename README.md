@@ -507,8 +507,9 @@ or another Agent Skills client:
 vincent skills install
 ```
 
-That runs `npx skills add` for you, for the agents vincent found on this
-machine. The equivalent by hand, which prompts for the agent selection:
+That runs `npx skills add` for you, answering its agent picker with all three
+vincent adapters — `--agent claude,codex,cursor` narrows it. The equivalent by
+hand, which prompts for the selection instead:
 
 ```sh
 npx skills add lezli01/vincent --skill vincent-workflows -g
