@@ -75,7 +75,13 @@ type Report struct {
 	// not problems**: neither a newer release nor a stale daemon changes the
 	// exit code, because both leave everything working. A user who declines
 	// to update should not have a diagnostic that exits 1 forever.
-	Update  Update  `json:"update"`
+	Update Update `json:"update"`
+	// Skills is the published-skill row (§9.8, task 095): whether the agent
+	// skills this repository publishes are installed on this machine, and
+	// which agents they are linked into. It sits beside the agents group
+	// rather than in it (decision 4) and, like the three rows above, is a
+	// row and not a problem.
+	Skills  []Skill `json:"skills"`
 	Storage Storage `json:"storage"`
 	Tasks   Tasks   `json:"tasks"`
 	// Problems is the closed set of findings that make `vincent doctor` exit
@@ -404,6 +410,7 @@ func Compose(ctx context.Context, opts Options) *Report {
 	r.GitHub = DetectGitHub(ctx, cfg)
 	r.Container = DetectContainer(ctx, cfg)
 	r.Update = updateRow(cfg, opts.Update, r.Daemon.Version)
+	r.Skills = DetectSkills()
 	r.Storage = inspectStorage(ctx, opts)
 	r.Evaluate()
 	return r

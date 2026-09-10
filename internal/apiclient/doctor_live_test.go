@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -219,5 +220,43 @@ func TestDoctorNeedsAuth(t *testing.T) {
 	}
 	if _, err := unauth.DoctorFix(t.Context(), false); err == nil {
 		t.Fatal("DoctorFix succeeded without a valid token")
+	}
+}
+
+// TestDoctorSkillsRoundTrip is what keeps the DoctorSkill alias honest: the
+// §9.8 group is composed by the daemon, serialized by the real handler and
+// read back by the real client (task 095 decision 9).
+//
+// It asserts the shape and not the state. Whether the skill is installed is a
+// fact about the machine running the test — this developer's has it, CI's
+// does not — and a suite that asserted either would be red on one of them.
+func TestDoctorSkillsRoundTrip(t *testing.T) {
+	c, _ := newDoctorClient(t)
+	rep, err := c.Doctor(t.Context(), true)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	if len(rep.Skills) == 0 {
+		t.Fatal("the skills group did not survive the wire; this build publishes at least one")
+	}
+	for _, s := range rep.Skills {
+		if s.Name == "" || s.State == "" || s.Shipped == "" || s.StorePath == "" {
+			t.Errorf("skill row lost fields on the wire: %+v", s)
+		}
+		switch s.State {
+		case apiclient.SkillAbsent, apiclient.SkillCurrent, apiclient.SkillOlder,
+			apiclient.SkillNewer, apiclient.SkillDiffers, apiclient.SkillUnreadable:
+		default:
+			t.Errorf("%s: state %q is not one this build defines", s.Name, s.State)
+		}
+		if s.Links == nil {
+			t.Errorf("%s: links came back null rather than an empty list", s.Name)
+		}
+	}
+	// Nothing a skill row can say is a problem (decision 5).
+	for _, p := range rep.Problems {
+		if strings.Contains(strings.ToLower(p.Message), "skill") {
+			t.Errorf("a skill produced a problem: %+v", p)
+		}
 	}
 }

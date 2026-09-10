@@ -58,6 +58,13 @@ type (
 		declined bool
 		err      error
 	}
+	// skillsDeclinedMsg carries the published-skill offer's decline flag
+	// (task 095). Only the flag is local: the installation state itself
+	// rides on the doctor report this view already fetches, so the TUI holds
+	// no state the daemon does not have (decision 9).
+	skillsDeclinedMsg struct {
+		declined bool
+	}
 )
 
 // daemonView is §15's view 6. It is the only view that renders while the
@@ -115,6 +122,15 @@ type daemonView struct {
 	statusLineErr      error
 	statusLineOK       bool
 	statusLineDeclined bool
+	// skills is the open §9.8 offer, nil when it is not open. A takeover for
+	// the same reason the status-line flow is: it runs a command that leaves
+	// vincent's own directories, and the exact command belongs on a screen
+	// with nothing else on it.
+	skills *skillsFlow
+	// skillsDeclined is the persisted "not now". The state the offer is
+	// about comes off d.doctor.Skills.
+	skillsDeclined bool
+
 	// settingsPath resolves ~/.claude/settings.json and exePath this binary.
 	// They are fields so a test can point them at a temp file and a fixed
 	// path rather than at the developer's real settings and at the test
@@ -257,6 +273,16 @@ func (d *daemonView) statusLineCmd() tea.Cmd {
 	}
 }
 
+// skillsDeclineCmd re-reads the published-skill offer's decline flag. Like
+// statusLineCmd it is a read and only a read: nothing installs without a
+// keypress on the flow.
+func (d *daemonView) skillsDeclineCmd() tea.Cmd {
+	dataDir := d.dataDir
+	return func() tea.Msg {
+		return skillsDeclinedMsg{declined: readSkillsDecline(dataDir)}
+	}
+}
+
 func (d *daemonView) tickCmd() tea.Cmd {
 	return tea.Tick(logPollInterval, func(time.Time) tea.Msg { return daemonTickMsg{} })
 }
@@ -264,7 +290,8 @@ func (d *daemonView) tickCmd() tea.Cmd {
 // refreshCmd re-reads every source. It is what R does, and what activation
 // does.
 func (d *daemonView) refreshCmd() tea.Cmd {
-	return tea.Batch(d.infoCmd(), d.configCmd(), d.doctorCmd(), d.logCmd(), d.statusLineCmd())
+	return tea.Batch(d.infoCmd(), d.configCmd(), d.doctorCmd(), d.logCmd(),
+		d.statusLineCmd(), d.skillsDeclineCmd())
 }
 
 func (d *daemonView) update(msg tea.Msg) (panel, tea.Cmd) {
@@ -307,6 +334,17 @@ func (d *daemonView) update(msg tea.Msg) (panel, tea.Cmd) {
 	case statusLineStateMsg:
 		d.applyStatusLine(msg)
 		return d, nil
+	case skillsDeclinedMsg:
+		d.skillsDeclined = msg.declined
+		return d, nil
+	case skillsInstalledMsg:
+		if d.skills == nil {
+			return d, nil
+		}
+		d.skills.applyInstalled(msg)
+		// The state the row reports is a fact about the filesystem, and the
+		// install just changed it.
+		return d, d.doctorCmd()
 	case tea.KeyPressMsg:
 		return d.updateKey(msg)
 	}
@@ -406,6 +444,16 @@ func (d *daemonView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 		return d, cmd
 	}
+	if d.skills != nil {
+		cmd, done := d.skills.update(msg, d.dataDir)
+		if done {
+			d.skills = nil
+			// The decline may have just been written, and the offer is drawn
+			// from a reading of it.
+			return d, tea.Batch(cmd, d.skillsDeclineCmd())
+		}
+		return d, cmd
+	}
 	if d.statusLine != nil {
 		if done := d.statusLine.update(msg, d.dataDir); done {
 			d.statusLine = nil
@@ -436,6 +484,13 @@ func (d *daemonView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// whatever the file says: a documented key that silently does nothing
 		// is worse than one that opens a screen explaining why.
 		d.statusLine = newStatusLineFlow(d.statusLinePlan, d.statusLineErr)
+		return d, nil
+	case "S":
+		// Like `i`, the key works whatever the machine says: the line only
+		// advertises itself when there is something to offer, but a
+		// documented key that silently does nothing is worse than one that
+		// opens a screen saying why.
+		d.skills = newSkillsFlow(d.reportedSkills(), d.availableAdapters())
 		return d, nil
 	case "f", "G", "end":
 		d.setFollowing(true)
@@ -497,4 +552,32 @@ func (d *daemonView) syncFollowToViewport() {
 // permanently false before this view could edit anything; leaving it that way
 // would send every single-key global — R, f, g, q — into the text field on the
 // first keystroke.
-func (d *daemonView) capturesInput() bool { return d.form != nil || d.statusLine != nil }
+func (d *daemonView) capturesInput() bool {
+	return d.form != nil || d.statusLine != nil || d.skills != nil
+}
+
+// reportedSkills is the §9.8 group off the doctor report, empty when none has
+// landed yet.
+func (d *daemonView) reportedSkills() []apiclient.DoctorSkill {
+	if d.doctor == nil {
+		return nil
+	}
+	return d.doctor.Skills
+}
+
+// availableAdapters names the adapters the daemon found on this machine, in
+// §9.5 order. It decides the `--agent` selection the install is run with:
+// installing a workflow-authoring skill for an agent that is not on the box
+// would be writing into a directory nothing reads.
+func (d *daemonView) availableAdapters() []string {
+	if !d.infoOK {
+		return nil
+	}
+	out := make([]string, 0, len(d.info.Agents))
+	for _, a := range d.info.Agents {
+		if a.Available {
+			out = append(out, a.Name)
+		}
+	}
+	return out
+}

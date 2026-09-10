@@ -259,25 +259,30 @@ func TestDaemonViewRefreshKeyRereadsTheLog(t *testing.T) {
 	if reads != 1 {
 		t.Fatalf("tail read %d times, want 1", reads)
 	}
-	// The two readings that need no daemon: the log, and Claude Code's
-	// settings file behind the task 082 offer. Everything else on this view
-	// comes from the API and produces nothing without a client.
-	if len(msgs) != 2 {
-		t.Fatalf("R produced %d messages, want the two local reads", len(msgs))
+	// The three readings that need no daemon: the log, Claude Code's settings
+	// file behind the task 082 offer, and the published-skill offer's decline
+	// flag (task 095 — the skill state itself rides on the doctor report, so
+	// it is not one of these). Everything else on this view comes from the API
+	// and produces nothing without a client.
+	if len(msgs) != 3 {
+		t.Fatalf("R produced %d messages, want the three local reads", len(msgs))
 	}
-	var log, statusLine bool
+	var log, statusLine, skills bool
 	for _, msg := range msgs {
 		switch msg.(type) {
 		case daemonLogMsg:
 			log = true
 		case statusLineStateMsg:
 			statusLine = true
+		case skillsDeclinedMsg:
+			skills = true
 		default:
 			t.Fatalf("R produced %T with no daemon to ask", msg)
 		}
 	}
-	if !log || !statusLine {
-		t.Fatalf("R read the log = %v, the settings file = %v; want both", log, statusLine)
+	if !log || !statusLine || !skills {
+		t.Fatalf("R read the log = %v, the settings file = %v, the skills decline = %v; want all three",
+			log, statusLine, skills)
 	}
 }
 

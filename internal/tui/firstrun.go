@@ -33,6 +33,14 @@ type tuiState struct {
 	// offer that comes back every time the daemon view opens is a nag, and
 	// `i` is still there for somebody who changes their mind.
 	StatusLineDeclined bool `json:"status_line_declined,omitempty"`
+	// SkillsDeclined remembers that the offer to install the skills this
+	// repository publishes was turned down (task 095). It sits beside
+	// StatusLineDeclined and works the same way: nothing re-asks while it is
+	// set, and `S` on the daemon view is still there for somebody who
+	// changes their mind. Two flags and not one — declining to have vincent
+	// draw claude's status line says nothing about wanting a workflow-
+	// authoring skill.
+	SkillsDeclined bool `json:"skills_declined,omitempty"`
 }
 
 func statePath(dataDir string) string { return filepath.Join(dataDir, "tui.json") }
