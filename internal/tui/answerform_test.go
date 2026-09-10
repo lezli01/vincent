@@ -66,9 +66,9 @@ func TestSingleSelectReplacesAndMultiSelectToggles(t *testing.T) {
 // TestFreeTextIsAlwaysAccepted: options are suggestions, never an enum.
 func TestFreeTextIsAlwaysAccepted(t *testing.T) {
 	f := newAnswerForm(questionRequest())
-	f.press("e")
+	f.press("t")
 	if !f.capturing() {
-		t.Fatal("e did not open the text field")
+		t.Fatal("t did not open the text field")
 	}
 	for _, r := range "teal" {
 		f.press(string(r))
@@ -230,9 +230,9 @@ func TestFormPopupShowsALongTypedAnswerInFull(t *testing.T) {
 
 	s := openPopupWith(t, questionRequest())
 	form := s.detail.form
-	s.update(keyPress("e"))
+	s.update(keyPress("t"))
 	if !form.capturing() {
-		t.Fatal("e did not open the text field")
+		t.Fatal("t did not open the text field")
 	}
 	form.paste(answer)
 

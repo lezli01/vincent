@@ -742,7 +742,7 @@ func TestNewTaskPrerendersWorkflowFields(t *testing.T) {
 	out := n.render(140, 60)
 	for _, want := range []string{
 		"Ticket (ticket)", "string", "required", "Issue tracker key.",
-		"pattern: ^OPS-[0-9]+$", "Dry run", "choose true/false", "add custom",
+		"pattern: ^OPS-[0-9]+$", "Dry run", "choose true/false",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("field editor is missing %q:\n%s", want, out)

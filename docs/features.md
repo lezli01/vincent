@@ -471,7 +471,7 @@ that the branch behind it now exists.
 
 ## Run a pull request
 
-The other direction: turn a pull request into a task. Press `c` on the
+The other direction: turn a pull request into a task. Press `a` on the
 pull-requests screen, or run
 `vincent task add --project ID --github-pull N`. The new-task form opens
 prefilled with the pull request's title and body, editable like any other draft,

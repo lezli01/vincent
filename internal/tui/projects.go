@@ -303,7 +303,9 @@ func (p *projectsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			return p, p.form.loadCmd()
 		}
 		return p, nil
-	case "d":
+	case "D":
+		// `D` destroys a persisted record after a confirmation, which is what
+		// it means on both archived boards too (task 093).
 		p.askDelete()
 		return p, nil
 	}

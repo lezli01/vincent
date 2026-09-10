@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/taskstate"
 	"github.com/lezli01/vincent/internal/tui/workflowgraph"
 )
 
@@ -280,6 +281,50 @@ func popupTabProbe(open func(*detail)) func(*testing.T) {
 			t.Fatal("ctrl+t closed the popup instead of switching its tab")
 		}
 	}
+}
+
+// freeTextProbe is the shared `t` assertion (task 093): with a list open on a
+// row whose catalog is a suggestion rather than an enum (§9.6), the press puts
+// the picker on its free-text entry. The four contexts differ only in how the
+// list is opened, which is what the caller supplies.
+func freeTextProbe(open func(*testing.T) *picker) func(*testing.T) {
+	return func(t *testing.T) {
+		p := open(t)
+		if p == nil {
+			t.Fatal("no picker was open for t to type into")
+		}
+		if !p.allowFree {
+			t.Fatal("the probe opened a list that takes no free text — it proves nothing about t")
+		}
+		if !p.editing {
+			t.Fatal("t did not open the free-text entry")
+		}
+	}
+}
+
+// fieldsEditorFixture is the new-task form's Fields editor, open on a
+// workflow that declares three fields — the state ctxNewTaskFields names.
+func fieldsEditorFixture(t *testing.T) *newTask {
+	t.Helper()
+	n := formWithDeclaredFields(t)
+	moveTo(n, ntFields)
+	press(n, "enter")
+	if n.fieldsEd == nil {
+		t.Fatal("enter on the Fields row did not open the editor")
+	}
+	return n
+}
+
+// declaredFieldRow is the index of one workflow-declared row, by name.
+func declaredFieldRow(t *testing.T, n *newTask, name string) int {
+	t.Helper()
+	for i, row := range n.fieldsEd.rows {
+		if row.key == name {
+			return i
+		}
+	}
+	t.Fatalf("no %q row in the fields editor", name)
+	return 0
 }
 
 // panelKeyProbes proves one panel-scoped binding each. A probe drives the
@@ -574,12 +619,12 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("D did not ask before deleting")
 			}
 		},
-		"d": func(t *testing.T) {
+		"s": func(t *testing.T) {
 			b := testArchivedBoard()
 			before := b.label()
-			b.updateKey(registryKey(t, "d"))
+			b.updateKey(registryKey(t, "s"))
 			if b.label() == before {
-				t.Fatalf("d did not change the window (still %s)", before)
+				t.Fatalf("s did not change the window (still %s)", before)
 			}
 		},
 		">": func(t *testing.T) {
@@ -624,12 +669,12 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("D did not ask before deleting")
 			}
 		},
-		"d": func(t *testing.T) {
+		"s": func(t *testing.T) {
 			v := archivedChatsFixture()
 			before := v.label()
-			v.updateKey(registryKey(t, "d"))
+			v.updateKey(registryKey(t, "s"))
 			if v.label() == before {
-				t.Fatalf("d did not change the window (still %s)", before)
+				t.Fatalf("s did not change the window (still %s)", before)
 			}
 		},
 		">": func(t *testing.T) {
@@ -651,10 +696,10 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("/ did not open the filter on the archived chats board")
 			}
 		},
-		"r": func(t *testing.T) {
+		"R": func(t *testing.T) {
 			v := archivedChatsFixture()
-			if _, cmd := v.updateKey(registryKey(t, "r")); cmd == nil {
-				t.Fatal("r did not reload the board")
+			if _, cmd := v.updateKey(registryKey(t, "R")); cmd == nil {
+				t.Fatal("R did not reload the board")
 			}
 		},
 	},
@@ -678,11 +723,11 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("n did not open the new-chat form")
 			}
 		},
-		"a": func(t *testing.T) {
+		"A": func(t *testing.T) {
 			v := chatsFixture()
-			v.updateKey(registryKey(t, "a"))
+			v.updateKey(registryKey(t, "A"))
 			if v.confirm == nil {
-				t.Fatal("a did not ask before archiving")
+				t.Fatal("A did not ask before archiving")
 			}
 		},
 		"/": func(t *testing.T) {
@@ -723,17 +768,17 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("s left the listing at %q, want the archived one", v.scope)
 			}
 		},
-		"r": func(t *testing.T) {
+		"R": func(t *testing.T) {
 			v := chatsFixture()
 			v.client = nil
 			// With no client the reload is a nil command; what the probe
 			// asserts is that the key reached the reload path rather than
 			// being swallowed by the filter or the confirmation.
-			if _, cmd := v.updateKey(registryKey(t, "r")); cmd != nil {
+			if _, cmd := v.updateKey(registryKey(t, "R")); cmd != nil {
 				drain(cmd)
 			}
 			if v.filtering || v.confirm != nil {
-				t.Fatal("r was taken by another layer")
+				t.Fatal("R was taken by another layer")
 			}
 		},
 	},
@@ -953,14 +998,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("u did not ask before unlinking")
 			}
 		},
-		"c": func(t *testing.T) {
+		"a": func(t *testing.T) {
 			v := pullRequestsFixture(testPull(11, "unclaimed"))
-			_, cmd := v.updateKey(registryKey(t, "c"))
+			_, cmd := v.updateKey(registryKey(t, "a"))
 			if cmd == nil {
-				t.Fatal("c did not seed the new-task form")
+				t.Fatal("a did not seed the new-task form")
 			}
 			if _, ok := cmd().(newTaskFromPullMsg); !ok {
-				t.Fatalf("c produced %T, want newTaskFromPullMsg", cmd())
+				t.Fatalf("a produced %T, want newTaskFromPullMsg", cmd())
 			}
 		},
 		"s": func(t *testing.T) {
@@ -1203,6 +1248,67 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("ctrl+s neither submitted nor reported why it would not")
 			}
 		},
+		"t": freeTextProbe(func(t *testing.T) *picker {
+			n := loadedForm(t)
+			moveTo(n, ntModel)
+			n.update(registryKey(t, "enter"))
+			if n.pick == nil {
+				t.Fatal("enter did not open the model list")
+			}
+			n.update(registryKey(t, "t"))
+			return n.pick
+		}),
+	},
+
+	ctxNewTaskFields: {
+		"down": func(t *testing.T) {
+			n := fieldsEditorFixture(t)
+			n.update(registryKey(t, "down"))
+			if n.fieldsEd.cursor != 1 {
+				t.Fatalf("down selected row %d, want 1", n.fieldsEd.cursor)
+			}
+		},
+		"enter": func(t *testing.T) {
+			n := fieldsEditorFixture(t)
+			n.update(registryKey(t, "enter"))
+			if n.fieldsEd.editing == 0 {
+				t.Fatal("enter did not open the row under the cursor")
+			}
+		},
+		"left": func(t *testing.T) {
+			n := fieldsEditorFixture(t)
+			n.fieldsEd.cursor = declaredFieldRow(t, n, "dry-run")
+			before := n.fieldsEd.rows[n.fieldsEd.cursor].value
+			n.update(registryKey(t, "left"))
+			if n.fieldsEd.rows[n.fieldsEd.cursor].value == before {
+				t.Fatalf("left did not step the declared boolean (still %q)", before)
+			}
+		},
+		"a": func(t *testing.T) {
+			n := fieldsEditorFixture(t)
+			before := len(n.fieldsEd.rows)
+			n.update(registryKey(t, "a"))
+			if len(n.fieldsEd.rows) != before+1 {
+				t.Fatalf("a left %d rows, want %d", len(n.fieldsEd.rows), before+1)
+			}
+		},
+		"d": func(t *testing.T) {
+			n := fieldsEditorFixture(t)
+			addField(n, "ticket-note", "one")
+			row := len(n.fieldsEd.rows) - 1
+			n.fieldsEd.cursor = row
+			n.update(registryKey(t, "d"))
+			if len(n.fieldsEd.rows) != row {
+				t.Fatalf("d left %d rows, want the custom one gone", len(n.fieldsEd.rows))
+			}
+		},
+		"esc": func(t *testing.T) {
+			n := fieldsEditorFixture(t)
+			n.update(registryKey(t, "esc"))
+			if n.fieldsEd != nil {
+				t.Fatal("esc did not close the fields editor")
+			}
+		},
 	},
 
 	ctxProjects: {
@@ -1222,12 +1328,12 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("enter did not open the selected project for editing")
 			}
 		},
-		"d": func(t *testing.T) {
+		"D": func(t *testing.T) {
 			p := newProjectsView()
 			loadedProjects(p, []apiclient.Project{testProject(1, "api")}, nil)
-			p.updateKey(registryKey(t, "d"))
+			p.updateKey(registryKey(t, "D"))
 			if p.confirm == nil {
-				t.Fatal("d did not ask before removing the project")
+				t.Fatal("D did not ask before removing the project")
 			}
 		},
 		"/": func(t *testing.T) {
@@ -1388,6 +1494,21 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("J did not move the step down")
 			}
 		},
+		"t": freeTextProbe(func(t *testing.T) *picker {
+			w := editorFixtureWith(t, promptDefinition("plan it"))
+			w.editor.path = "steps[0]"
+			w.editor.rebuild()
+			w.editor.cursor = editorRowIndex(t, w, "agent")
+			if _, cmd := w.updateKey(registryKey(t, "enter")); cmd != nil {
+				drain(cmd)
+			}
+			pick, ok := w.editor.overlay.(*wfEditorPicker)
+			if !ok {
+				t.Fatalf("enter on the agent row opened %T, want the value picker", w.editor.overlay)
+			}
+			w.updateKey(registryKey(t, "t"))
+			return pick.picker
+		}),
 		"ctrl+s": func(t *testing.T) {
 			w := editorFixtureWith(t, promptDefinition("one\ntwo"))
 			w.editor.path = "steps[0]"
@@ -1566,11 +1687,11 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("down selected row %d, want 1", v.pullTab.cursor)
 			}
 		},
-		"c": func(t *testing.T) {
+		"enter": func(t *testing.T) {
 			withFakeOpener(t, nil)
 			v := pullTabFixture(t)
-			if cmd := v.updateKey(registryKey(t, "c")); cmd == nil {
-				t.Fatal("c did not open the selected check")
+			if cmd := v.updateKey(registryKey(t, "enter")); cmd == nil {
+				t.Fatal("enter did not open the selected check")
 			}
 		},
 		"o": func(t *testing.T) {
@@ -1578,12 +1699,6 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v := pullTabFixture(t)
 			if cmd := v.updateKey(registryKey(t, "o")); cmd == nil {
 				t.Fatal("o did not open the pull request")
-			}
-		},
-		"r": func(t *testing.T) {
-			v := pullTabFixture(t)
-			if cmd := v.updateKey(registryKey(t, "r")); cmd == nil {
-				t.Fatal("r did not refetch the pull request and its checks")
 			}
 		},
 		"u": func(t *testing.T) {
@@ -1729,6 +1844,16 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("e did not hand the prompt to $EDITOR")
 			}
 		},
+		"t": freeTextProbe(func(t *testing.T) *picker {
+			f := repairFormFixture()
+			f.cursor = rfAgent
+			f.update(registryKey(t, "enter"), nil)
+			if f.picker == nil {
+				t.Fatal("enter did not open the agent list")
+			}
+			f.update(registryKey(t, "t"), nil)
+			return f.picker
+		}),
 		"ctrl+s": func(t *testing.T) {
 			f := repairFormFixture()
 			f.update(registryKey(t, "ctrl+s"), nil)
@@ -1773,6 +1898,16 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("e did not hand the prompt to $EDITOR")
 			}
 		},
+		"t": freeTextProbe(func(t *testing.T) *picker {
+			f := followUpFormFixture()
+			f.cursor = fuAgent
+			f.update(registryKey(t, "enter"), nil)
+			if f.picker == nil {
+				t.Fatal("enter did not open the agent list")
+			}
+			f.update(registryKey(t, "t"), nil)
+			return f.picker
+		}),
 		"ctrl+s": func(t *testing.T) {
 			f := followUpFormFixture()
 			f.update(registryKey(t, "ctrl+s"), nil)
@@ -1799,11 +1934,11 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("space did not pick the highlighted option")
 			}
 		},
-		"e": func(t *testing.T) {
+		"t": func(t *testing.T) {
 			f := newAnswerForm(questionRequest())
-			f.update(registryKey(t, "e"), nil, 1)
+			f.update(registryKey(t, "t"), nil, 1)
 			if !f.editing {
-				t.Fatal("e did not open the free-text field")
+				t.Fatal("t did not open the free-text field")
 			}
 		},
 		"enter": func(t *testing.T) {
@@ -1987,4 +2122,182 @@ func TestLevelKeysNameEveryLevel(t *testing.T) {
 			t.Errorf("no %s row for %q in the registry", ctx, key)
 		}
 	}
+}
+
+// The key vocabulary (§15 Keys, task 093). Task 049 retired 1..6 with the same
+// instinct and left the rest to a comment; a comment is what let the registry
+// grow four keys for "refresh" while the help stayed perfectly accurate about
+// all four. These three tests are the half that does not drift.
+
+// vocabulary is §15's table: one key per shared operation. `strict` says the
+// key may carry no *other* meaning anywhere in the registry — true for the
+// letters, false for `enter`, which means "activate the focused thing" on
+// every surface and always will.
+var vocabulary = []struct {
+	term   vocabularyTerm
+	key    string
+	strict bool
+}{
+	{termRefresh, "R", true},
+	{termArchive, "A", true},
+	{termDelete, "D", true},
+	{termDraftDrop, "d", true},
+	{termAdd, "a", true},
+	{termEditor, "e", true},
+	{termFreeText, "t", true},
+	{termBrowser, "o", true},
+	{termOpenRow, "enter", false},
+	{termScope, "s", true},
+	{termFilter, "/", true},
+	{termLane, "l", true},
+}
+
+// vocabularyExceptions are the rows that hold a vocabulary key for something
+// else, each with the recorded decision that allows it. Clause 2 is what they
+// are exceptions to, and TestVocabularyShadowsOnlyDisjointSurfaces is what
+// proves each one earns it — this map says "we meant to", not "it is safe".
+//
+// Keyed "<scope>/<context>/<key>"; a §6 action row's context is its action.
+var vocabularyExceptions = map[string]string{
+	// Task 025: `R` is repair in the task workspace, where the takeover
+	// screens that re-read a registry never are.
+	"action/repair/R": "§6 repair — task 025 partitioned R deliberately",
+	// The §6 letters `a` and `s` predate the vocabulary and do not move; both
+	// only ever fire where available_actions says so.
+	"action/approve/a": "§6 approve — gated on available_actions",
+	"action/skip/s":    "§6 skip — gated on available_actions",
+	// Task 052 decision 6: link and unlink are the two writes to vincent's own
+	// column, and they live on the one screen that can see a pull request no
+	// task claims. `l` there is not a lane, and the takeover has none.
+	"panel/pull requests/l": "task 052.6 — link, on a screen with no fan-out lanes",
+}
+
+// TestVocabularyIsOneKeyPerOperation: the table itself, before any row is
+// read off it. A term with two keys is the defect the table exists to name.
+func TestVocabularyIsOneKeyPerOperation(t *testing.T) {
+	byKey := map[string]vocabularyTerm{}
+	byTerm := map[vocabularyTerm]string{}
+	for _, v := range vocabulary {
+		if other, ok := byKey[v.key]; ok {
+			t.Errorf("key %q means both %q and %q", v.key, other, v.term)
+		}
+		if other, ok := byTerm[v.term]; ok {
+			t.Errorf("%q is spelled both %q and %q", v.term, other, v.key)
+		}
+		byKey[v.key], byTerm[v.term] = v.term, v.key
+	}
+	// A term nothing carries is a row of the table describing no key at all,
+	// which is how a vocabulary outlives the surface it was written for.
+	carried := map[vocabularyTerm]bool{}
+	for _, b := range bindings {
+		if b.term != "" {
+			carried[b.term] = true
+		}
+	}
+	for _, v := range vocabulary {
+		if !carried[v.term] {
+			t.Errorf("no registry row performs %q — drop the row or the term", v.term)
+		}
+	}
+}
+
+// TestEveryRowSpellsItsOperationTheOneWay holds clauses 1 and 3 together: a
+// row performing a shared operation uses that operation's key, and a strict
+// key carries no second meaning. Both directions matter — the first catches
+// "refresh is `r` here", the second catches "`d` cycles the window here".
+func TestEveryRowSpellsItsOperationTheOneWay(t *testing.T) {
+	keyFor := map[vocabularyTerm]string{}
+	termFor := map[string]vocabularyTerm{}
+	strict := map[string]bool{}
+	for _, v := range vocabulary {
+		keyFor[v.term], termFor[v.key], strict[v.key] = v.key, v.term, v.strict
+	}
+
+	used := map[string]bool{}
+	for _, b := range bindings {
+		if b.key == "" {
+			continue
+		}
+		name := vocabularyRowName(b)
+
+		if b.term != "" {
+			want, known := keyFor[b.term]
+			if !known {
+				t.Errorf("%s: carries %q, which is not in the vocabulary table", name, b.term)
+			} else if b.key != want {
+				t.Errorf("%s: performs %q, which is %q registry-wide", name, b.term, want)
+			}
+			continue
+		}
+		// No term: the row is surface-local, which is only allowed on a key
+		// the vocabulary has not claimed.
+		if term, claimed := termFor[b.key]; claimed && strict[b.key] {
+			if reason, ok := vocabularyExceptions[name]; !ok {
+				t.Errorf("%s: %q means %q registry-wide — rebind it, or record why "+
+					"this surface is disjoint in vocabularyExceptions", name, b.key, term)
+			} else if reason == "" {
+				t.Errorf("%s: allow-listed with no reason", name)
+			} else {
+				used[name] = true
+			}
+		}
+	}
+	for name := range vocabularyExceptions {
+		if !used[name] {
+			t.Errorf("%s: allow-listed, but no such row carries the key any more", name)
+		}
+	}
+}
+
+// TestVocabularyShadowsOnlyDisjointSurfaces holds clause 2, and holds it from
+// the FSM rather than from a hand-written list of "safe" screens. A key that
+// is a §6 action letter and means something else may sit only where no action
+// is ever offered; that the archived boards qualify is a fact about
+// taskstate's transition table, so an FSM change that starts offering an
+// action on an archived row fails here instead of shipping a shadowed key.
+func TestVocabularyShadowsOnlyDisjointSurfaces(t *testing.T) {
+	if got := taskstate.HumanActionsFrom(taskstate.Archived); len(got) != 0 {
+		t.Fatalf("an archived task now offers %v — the archived boards' `s` and `D` "+
+			"shadow a §6 action key, and §15's vocabulary has to be re-decided", got)
+	}
+
+	actionKeys := map[string]string{}
+	for _, b := range bindings {
+		if b.scope == scopeTaskAction && b.key != "" {
+			actionKeys[b.key] = b.action
+		}
+	}
+	for _, b := range bindings {
+		if b.scope != scopePanel || b.key == "" {
+			continue
+		}
+		action, shadows := actionKeys[b.key]
+		if !shadows {
+			continue
+		}
+		// Same operation under both names is the vocabulary working, not a
+		// shadow: `A` archives whether the row is a task or a chat.
+		if b.term == termArchive && action == apiclient.ActionArchive {
+			continue
+		}
+		if isHomeContext(b.context) {
+			t.Errorf("%s: %q is the §6 %s action, and this surface offers actions — "+
+				"a key that means two things depending on the row is what §15 refuses",
+				vocabularyRowName(b), b.key, action)
+		}
+	}
+}
+
+// vocabularyRowName is the key the two maps above are keyed by, and the name
+// the failures print.
+func vocabularyRowName(b binding) string {
+	switch b.scope {
+	case scopeTaskAction:
+		return "action/" + b.action + "/" + b.key
+	case scopePanel:
+		return "panel/" + string(b.context) + "/" + b.key
+	case scopeGlobal:
+		return "global//" + b.key
+	}
+	return "?/" + b.key
 }

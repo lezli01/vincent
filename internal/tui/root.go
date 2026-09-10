@@ -459,6 +459,9 @@ func (m *root) activeContext() bindingContext {
 	case viewTask:
 		return m.views[viewTask].(*taskView).bindingContext()
 	case viewNewTask:
+		if c, ok := m.views[viewNewTask].(contextual); ok {
+			return c.bindingContext()
+		}
 		return ctxNewTask
 	case viewProjects:
 		return ctxProjects

@@ -159,23 +159,23 @@ func TestPullTabRowsCarryActionsProvenance(t *testing.T) {
 	}
 }
 
-// `c` opens the selected check and nothing else; a row with no page of its
-// own says so rather than opening the pull request instead.
+// `enter` opens the selected check and nothing else; a row with no page of
+// its own says so rather than opening the pull request instead.
 func TestPullTabOpensTheSelectedCheck(t *testing.T) {
 	opened := withFakeOpener(t, nil)
 	v := pullTabFixture(t)
 	v.updateKey(registryKey(t, "down"))
-	cmd := v.updateKey(registryKey(t, "c"))
+	cmd := v.updateKey(registryKey(t, "enter"))
 	if cmd == nil {
-		t.Fatal("c opened nothing")
+		t.Fatal("enter opened nothing")
 	}
 	cmd()
 	if len(*opened) != 1 || (*opened)[0] != "https://github.com/octo/api/actions/runs/77/job/10" {
-		t.Fatalf("c opened %v, want the selected check's page", *opened)
+		t.Fatalf("enter opened %v, want the selected check's page", *opened)
 	}
 	v.pullTab.checks.Runs[1].URL = ""
-	if cmd := v.updateKey(registryKey(t, "c")); cmd != nil {
-		t.Fatal("c opened something for a check with no page")
+	if cmd := v.updateKey(registryKey(t, "enter")); cmd != nil {
+		t.Fatal("enter opened something for a check with no page")
 	}
 	if !v.pullTab.noteBad {
 		t.Fatal("c said nothing about a check with no page")

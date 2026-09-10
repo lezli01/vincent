@@ -11,6 +11,44 @@ list with the user-facing context a commit subject cannot carry.
 
 ## [Unreleased]
 
+### Changed
+
+- **One key, one meaning: the TUI's keyboard now follows a vocabulary.** The
+  same operation answered to different keys depending on the screen — refresh
+  was `R` on seven surfaces and `r` on three, archive was `A` on the task board
+  and `a` on the chats board, and `d` removed a project on one screen while
+  quietly cycling the date window on the archive, one key away from the
+  permanent delete. Every shared operation now has exactly one key everywhere,
+  a test fails on the next collision, and `?`, the footer and the palette
+  follow the rebinds with no second edit. **Keys that moved:**
+
+  | Where | Was | Is |
+  |---|---|---|
+  | Chats board — archive | `a` | `A` |
+  | Chats board and archived chats — reload | `r` | `R` |
+  | Both archived boards — date window | `d` | `s` |
+  | Projects — remove the project | `d` | `D` |
+  | Pull requests — create a task from one | `c` | `a` |
+  | Task workspace, Pull Request tab — open the selected check | `c` | `enter` |
+  | Answer form and every picker — type a value the list does not offer | `e` | `t` |
+
+  `d` now only ever removes a row from a draft you have not saved, and `D` only
+  ever destroys something stored — so pressing the wrong one on the archive is
+  harmless in the direction that matters. The §6 task-action letters
+  (`p a x r E R s c A F`) did not move. The new-task form's **Fields** editor
+  also joins the registry, so its `a` and `d` finally appear in `?` and in the
+  footer instead of only in an inline hint.
+
+### Fixed
+
+- **Retry and cancel were unreachable from the task workspace's Pull Request
+  tab.** The tab took `r` for its own refresh and `c` for "open the selected
+  check" before the task's own actions ever saw the press — while the footer,
+  rendered from the same registry, went on offering `r retry` and `c cancel` on
+  that tab. Both keys now reach the daemon: the check moved to `enter`, and the
+  tab has no refresh key at all, because it already re-reads on its own timer
+  while it is open.
+
 ### Added
 
 - **Archived boards, and a permanent delete.** Archiving a task or a chat kept
@@ -20,7 +58,7 @@ list with the user-facing context a commit subject cannot carry.
   back: **Archived tasks** and **Archived chats**, the boards you already know
   in a second mode. Same grouping, same folding, same `/` filter, same
   `space`/`V` selection, listing what is archived instead of what is live,
-  newest-archived first, a hundred rows at a time, inside a date window `d`
+  newest-archived first, a hundred rows at a time, inside a date window `s`
   cycles (7 days / 30 days / all). `enter` opens the row's full workspace, which
   is read-only for free — an archived task offers no actions.
 

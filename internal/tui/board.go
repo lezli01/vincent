@@ -687,7 +687,10 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		case "D":
 			b.askDelete()
 			return b, nil
-		case "d":
+		case "s":
+			// The date window (task 093). `s` cycles what a list is showing
+			// everywhere it appears, and on an archived board that is the
+			// window; skip is a §6 action and an archived task offers none.
 			b.cycleWindow()
 			b.delNote = ""
 			return b, b.loadCmd()
