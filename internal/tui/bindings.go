@@ -210,6 +210,18 @@ type binding struct {
 	// still in flight. Mechanically this is `fold`'s precedent (task 054
 	// decision 5) applied to a nav row and to two workspace keys.
 	github bool
+	// aliased marks a row another row's hint already advertises: `right`
+	// behind ctxTasks' `←/→ fold`, `O` behind its `C/O fold all`, `C` behind
+	// the timeline's and the diff's `O/C fold all`. The footer's `+N` counts
+	// the rows it is not showing, and without this a grouped board would
+	// carry a permanent `+2` with nothing actually hidden (task 094
+	// decision 4). It is declared here rather than parsed out of the hint at
+	// run time: splitting the string on `/` and mapping `↑↓←→` back to key
+	// names is text parsing over a human-written field, and it would break
+	// silently the first time a hint is worded differently. bindings_test.go
+	// asserts the declaration against what the hints actually say, so a new
+	// alias pair fails a test rather than inflating a count.
+	aliased bool
 	// fold marks a row whose key only means something while the board has
 	// groups. With `group_by: []` there are none, so shell.liveBindings drops
 	// these and the footer never names a press that does nothing (task 054
@@ -294,9 +306,9 @@ var bindings = []binding{
 	// cursor rests on a collapsed header, which is how every level stays
 	// addressable. C/O are the diff pane's two letters in the same meaning.
 	{key: "left", label: "collapse the group you are in (← again folds the group around it; the header keeps the count and the ! badge)", scope: scopePanel, context: ctxTasks, hint: "←/→ fold", priority: 8, fold: true},
-	{key: "right", label: "expand the collapsed group under the cursor, one level", scope: scopePanel, context: ctxTasks, priority: 9, fold: true},
+	{key: "right", label: "expand the collapsed group under the cursor, one level", scope: scopePanel, context: ctxTasks, priority: 9, fold: true, aliased: true},
 	{key: "C", label: "collapse every group", scope: scopePanel, context: ctxTasks, hint: "C/O fold all", priority: 10, fold: true},
-	{key: "O", label: "expand every group", scope: scopePanel, context: ctxTasks, priority: 11, fold: true},
+	{key: "O", label: "expand every group", scope: scopePanel, context: ctxTasks, priority: 11, fold: true, aliased: true},
 
 	// Timeline.
 	{key: "tab", label: "move between Steps & Attempts, Task Details, Output and Diff (shift+tab goes back; 1–4 jump directly)", scope: scopePanel, context: ctxTimeline, hint: "tab views", priority: 1},
@@ -311,7 +323,7 @@ var bindings = []binding{
 	{key: "right", label: "open the folded tier the cursor is in", scope: scopePanel, context: ctxTimeline, priority: 5, fold: true},
 	{key: "left", label: "close the tier the cursor is in", scope: scopePanel, context: ctxTimeline, priority: 6, fold: true},
 	{key: "O", label: "open every iteration and round tier of this task", scope: scopePanel, context: ctxTimeline, hint: "O/C fold all", priority: 7, fold: true},
-	{key: "C", label: "close every one — the timeline opens with the latest pass showing", scope: scopePanel, context: ctxTimeline, priority: 8, fold: true},
+	{key: "C", label: "close every one — the timeline opens with the latest pass showing", scope: scopePanel, context: ctxTimeline, priority: 8, fold: true, aliased: true},
 	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTimeline, priority: 9, term: termLane},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTimeline, priority: 10},
 
@@ -354,7 +366,7 @@ var bindings = []binding{
 	{key: "down", label: "move between the files (↑/↓); the pane scrolls to keep the file in view", scope: scopePanel, context: ctxDiff, hint: "↑/↓ files", priority: 2},
 	{key: "enter", label: "expand or collapse the file under the cursor (space and →/← too)", scope: scopePanel, context: ctxDiff, hint: "enter fold", priority: 3},
 	{key: "O", label: "expand every file", scope: scopePanel, context: ctxDiff, hint: "O/C fold all", priority: 4},
-	{key: "C", label: "collapse every file — which is how the tab opens", scope: scopePanel, context: ctxDiff, priority: 5},
+	{key: "C", label: "collapse every file — which is how the tab opens", scope: scopePanel, context: ctxDiff, priority: 5, aliased: true},
 	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxDiff, priority: 6, term: termLane},
 
 	// New task.

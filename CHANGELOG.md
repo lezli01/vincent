@@ -13,6 +13,19 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **The footer fills the width it has, and says what it is hiding.** It used to
+  show the focused surface's first five keys and drop the rest in silence —
+  eleven of the twenty-one surfaces declare more than five, so on the board
+  `L lanes`, `←/→ fold` and `C/O fold all` never appeared — while every column
+  between the keys and the pinned `: commands  ? help  q quit` sat blank. Now
+  the width decides: as many keys as the line holds, still in priority order,
+  and a dim **`+N`** after the action keys counting what is not on the line —
+  the keys that did not fit, the keys with no short form, and whatever a narrow
+  terminal's `…` took. Click the `+N` (or press `:`) and the command palette
+  lists them. It counts the surface you are on, not the whole palette, so it is
+  absent when nothing is left over, and a key that would do nothing right now —
+  the fold keys on an ungrouped board — is neither shown nor counted.
+
 - **Archived boards, and a permanent delete.** Archiving a task or a chat kept
   every row it ever wrote, and nothing in vincent could reach that history or
   discard any of it — retention removes transcript *files* and never a row. Two

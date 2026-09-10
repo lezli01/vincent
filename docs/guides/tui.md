@@ -1643,6 +1643,13 @@ knowing.
 The overlay, the palette and the footer all render from **one registry** in the
 source, so a key that exists is a key that is documented.
 
+The footer shows as many of the focused surface's keys as the terminal is wide
+enough for, in priority order, and then tells you what is left: a dim **`+N`**
+after the action keys counts the keys this surface has that the line is not
+showing — the ones that did not fit, the ones with no short form, and, on a
+narrow terminal, whatever the `…` truncation took. Click it, or press `:`, and
+the palette lists them. No `+N` means the line is showing everything.
+
 Global bindings — active whenever the focused surface is not capturing text:
 
 | Key | Does |

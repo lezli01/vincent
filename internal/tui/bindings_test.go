@@ -2301,3 +2301,75 @@ func vocabularyRowName(b binding) string {
 	}
 	return "?/" + b.key
 }
+
+// hintAdvertises is the test's own reading of a hint's key part: "C/O fold
+// all" names C and O, "↑↓←→ select" names all four arrows. The footer
+// deliberately does not do this at run time (task 094 decision 4) — parsing a
+// human-written field would break silently the first time a hint is worded
+// differently — so the parse lives here, where breaking is the point.
+func hintAdvertises(hint string) []string {
+	arrows := map[rune]string{'↑': "up", '↓': "down", '←': "left", '→': "right"}
+	head, _, _ := strings.Cut(hint, " ")
+	out := make([]string, 0, 4)
+	for _, part := range strings.Split(head, "/") {
+		if part == "" {
+			continue
+		}
+		runes := []rune(part)
+		onlyArrows := true
+		for _, r := range runes {
+			if _, ok := arrows[r]; !ok {
+				onlyArrows = false
+				break
+			}
+		}
+		if !onlyArrows {
+			out = append(out, part)
+			continue
+		}
+		for _, r := range runes {
+			out = append(out, arrows[r])
+		}
+	}
+	return out
+}
+
+// TestAliasRowsAreDeclared holds task 094 decision 4 in both directions: a row
+// a sibling's hint already advertises carries `aliased`, so the footer's `+N`
+// does not report it as hidden, and a row marked `aliased` is really
+// advertised by one, so the count does not quietly drop a key nothing names.
+// A new alias pair therefore fails a test rather than inflating a count.
+func TestAliasRowsAreDeclared(t *testing.T) {
+	byContext := map[bindingContext][]binding{}
+	for _, b := range bindings {
+		if b.scope == scopePanel {
+			byContext[b.context] = append(byContext[b.context], b)
+		}
+	}
+	for ctx, rows := range byContext {
+		advertised := map[string]string{}
+		for _, b := range rows {
+			if b.hint == "" {
+				continue
+			}
+			for _, key := range hintAdvertises(b.hint) {
+				if key != b.key {
+					advertised[key] = b.hint
+				}
+			}
+		}
+		for _, b := range rows {
+			switch {
+			case b.aliased && b.hint != "":
+				t.Errorf("%s: %q is marked aliased and carries its own hint %q — it is on the line in its own right",
+					ctx, b.key, b.hint)
+			case b.aliased && advertised[b.key] == "":
+				t.Errorf("%s: %q is marked aliased but no other row's hint advertises it — the footer's +N will not count a key nothing names",
+					ctx, b.key)
+			case !b.aliased && advertised[b.key] != "":
+				t.Errorf("%s: %q is advertised by %q but is not marked aliased — the footer's +N will count a key that is on the line",
+					ctx, b.key, advertised[b.key])
+			}
+		}
+	}
+}
