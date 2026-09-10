@@ -381,6 +381,14 @@ daemon running.
                   "supports_input": false, "version_verdict": "tested",
                   "tested_versions": "0.142.5, 0.147.0, 0.150.1",
                   "restricted_verdict": "supported" } ],
+  "skills":   [ { "name": "vincent-workflows",
+                  "description": "Create, edit, review, and validate vincent workflow YAML…",
+                  "shipped_version": "1.0.0", "installed_version": "1.0.0",
+                  "state": "current",
+                  "store_path": "/home/you/.agents/skills/vincent-workflows",
+                  "links": [ { "agent": "claude", "adapter": "claude",
+                               "path": "/home/you/.claude/skills/vincent-workflows",
+                               "symlink": true } ] } ],
   "storage":  { "worktrees_dir": "…", "disk_free_bytes": 127310651392,
                 "disk_total_bytes": 494384795648,
                 "worktree_count": 3, "worktree_bytes": 8412736,
@@ -422,6 +430,14 @@ daemon running.
   `/v1/agents` uses instead: it is for a caller that is not in that loop and
   wants the rest of the report cheaply — the TUI's daemon panel, which opens on
   a keypress, is the one in the tree. `vincent doctor` always forces.
+- **`skills[]` is one row per published skill**, never one per agent. The
+  `skills` CLI keeps a single copy in a global store, `~/.agents/skills/`, and
+  links it into each agent's directory, so a per-agent version would be the same
+  string on every row. `state` is one of `absent`, `current`, `older`, `newer`,
+  `differs` (unequal and at least one side is not semver, so no direction is
+  claimed) and `unreadable`. `links[]` is what is on disk and can name agents
+  vincent does not drive. Nothing here ever reaches `problems[]` — see
+  [`vincent skills`](cli.md#vincent-skills).
 - **The database group measures growth** and changes nothing about it.
   `total_bytes` is the file plus its WAL and SHM sidecars, which is the honest
   figure: the store runs in WAL mode, so `size_bytes` alone understates the

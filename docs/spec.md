@@ -3130,7 +3130,12 @@ duplicating it as a verdict would give one fact two names.
 
 None of these verdicts blocks anything except `restricted_verdict`, and none of
 them is a `vincent doctor` problem (§17, task 005 decision 7): an untested build
-is the normal state of a healthy machine. There is still **no pre-flight refusal
+is the normal state of a healthy machine. *Added 2026-09-10 (task 095):*
+the published-skill row of §9.8 is **not** a sixth facet. Task 041 closed this
+vocabulary at five, and a skill is a property of the machine's agent
+configuration rather than of an adapter binary — one store copy serves every
+agent at once, and a machine with no adapter installed can still hold it. It is
+a group beside this one in every report, and the five stay five. There is still **no pre-flight refusal
 on `logged_in: false`** (task 003 decision 4) — this re-states that decision
 rather than reopening it.
 
@@ -3594,6 +3599,117 @@ Two consequences are handled rather than assumed away:
 - A daemon crash leaves it behind, so §12.4 recovery removes a leftover one from
   every live task's worktree. An empty `.cursor` goes with it; a `.cursor` the
   user or the agent put something else in stays.
+
+### 9.8 Published skills (task 095, added 2026-09-10)
+
+This repository publishes agent **skills** — directories under `skills/`, each
+with a `SKILL.md` — so that an agent somebody is talking to *directly*, outside
+a vincent run, knows how to author a vincent workflow. A run inside vincent
+does not need them: the built-in `create-workflow` and `update-workflows`
+workflows splice the same text into their own prompts at build time (§7,
+task 024 decision 7), which is why the gap this section closes only bites where
+it is hardest to notice.
+
+**The published set is a glob, not a list.** `skills.FS` embeds `*/SKILL.md`;
+every surface below enumerates that. A second directory under `skills/` is
+reported by `vincent doctor`, listed by `vincent skills` and offered by the TUI
+with no Go change.
+
+**Versioning.** Each `SKILL.md`'s front matter carries `metadata.version`. It
+sits under `metadata:` — the format's extension point, already holding `author`
+— rather than as a bare top-level `version:`, which is not a key the skills
+format defines and which a strict validator could reject. Content hashing was
+rejected: a hash cannot tell a user's local edit from a stale copy, and cannot
+tell newer from older. A test in `skills/` hashes each published tree and fails
+when the tree changed and the version did not.
+
+**What is on disk.** `skills add … -g` keeps **one** copy in a global store,
+`~/.agents/skills/<name>/`, and links it into each selected agent's directory.
+The link is a symlink by default and a real directory under `--copy`, which is
+what Windows needs, where creating a symlink is privileged. There is no
+per-agent copy and therefore no per-agent version.
+
+| vincent adapter | `skills --agent` slug | global directory |
+|---|---|---|
+| claude | `claude-code` | `~/.claude/skills/` |
+| codex | `codex` | `~/.codex/skills/` |
+| cursor | `cursor` | `~/.cursor/skills/` |
+
+The slug is a **table, not an identity**: claude's is `claude-code`.
+
+**Detection is a filesystem read and never runs `npx`.** The store's
+`SKILL.md` answers the installed version; each `~/.<agent>/skills/<name>` that
+exists answers who it is linked into. That is what makes the report work in
+`vincent doctor`, in the TUI, and on a machine with no node installed at all.
+The agent list is discovered by scanning the home directory rather than from a
+table of paths, so it names agents vincent does not drive — one store serves
+Cline, Copilot, Zed and the rest, and hiding them would be a report that is not
+about the machine.
+
+This is **not** the v0 T1.7 "no state-file parsing" decision being reopened.
+That decision is about inferring another tool's *authentication* from its
+private state. `~/.agents/skills/` and `~/.<agent>/skills/` are a public CLI's
+documented install locations, and the file read out of them is one this
+repository published.
+
+**States a row reports**, one row per skill carrying the agent list — never one
+row per adapter per skill, which the single-store model would make identical on
+all three by construction:
+
+| state | meaning |
+|---|---|
+| `absent` | no copy on this machine |
+| `current` | the installed version is the shipped one |
+| `older` | the installed copy predates this binary's |
+| `newer` | the installed copy is ahead of it — a downgraded binary, never "up to date" |
+| `differs` | the versions are unequal and at least one is not semver, so no direction is claimed and both are printed |
+| `unreadable` | a copy exists and its `SKILL.md` could not be read or parsed |
+
+Comparison uses `golang.org/x/mod/semver`. Where either side does not parse the
+row says `differs` and prints both versions; it never guesses a direction.
+
+**Install shells out**, to `npx skills add lezli01/vincent --skill <name>
+--agent <slugs> --yes --global`. That is the published command plus three
+flags, and the difference is required: `skills add` with no agent selection
+opens an interactive multi-select, which cannot be driven from a TUI takeover
+or a non-TTY CLI. The agent list defaults to the vincent adapters detected on
+the box, mapped through the table above. `npx` is a runtime dependency of the
+**install action only**; its absence is a reported outcome naming the
+dependency and printing the command to run once node is available, never a
+crash. The first run downloads the package, so an install is slow and needs
+network.
+
+Writing the files from the embedded copy instead was rejected: `skills/embed.go`
+embeds only `SKILL.md`, so doing it would mean embedding `references/`,
+`LICENSE.txt` and `agents/openai.yaml` too and reimplementing another tool's
+install layout, symlink/copy split included.
+
+**Surfaces.** `vincent doctor` grows a `SKILLS` group *beside* the agents group
+(§9.5, §17); `vincent skills ls` / `vincent skills install` is the command
+(§12.1); the daemon view offers it under `S` (§15). All three read the same
+detection, composed server-side when a daemon answers and client-side when none
+does — identical results, because vincent's daemon is localhost and runs as the
+invoking user.
+
+**Adapter differences, stated rather than emulated.** The directory table above
+is the `skills` CLI's, and it says where that CLI *writes*. Whether **codex**
+and **cursor** read `~/.codex/skills/` and `~/.cursor/skills/` is not confirmed
+by this repository, and vincent does not claim it: the skill ships
+`agents/openai.yaml` for codex-side packaging, and beyond that vincent reports
+what is on disk and nothing about what each agent does with it. A user who
+finds the skill unused by one of them is looking at that agent's own support,
+not at a vincent fault. This is §9's standing rule applied to skills — a
+capability an adapter lacks is documented and ignored, never emulated.
+
+**vincent will disagree with `npx skills list -g`.** That command's agent
+column is the CLI's remembered selection (`lastSelectedAgents` in
+`~/.agents/.skill-lock.json`), not an on-disk fact; it can name agents that
+hold no link. vincent reports the links. The lock file also carries no version,
+which is why `metadata.version` is needed rather than reusable from it.
+
+**Nothing here moves an exit code.** A missing, stale or unreadable skill is a
+row, on the GitHub (task 035), release-check (task 055) and container (task 061)
+precedent. `vincent doctor` still exits 0 (§17, task 005 decision 7).
 
 ## 10. Worktree management
 
@@ -4092,8 +4208,9 @@ One Go binary, `vincent`:
 | `vincent gc [--dry-run] [--force] [--json]` | Reclaims data-root directories no task claims (§10); a thin API client like the rest |
 | `vincent config get [key] / set <key> <value>` | *Added 2026-08-30 (task 060).* Reads and writes `config.yaml` through `GET`/`PATCH /v1/config` (§12.3) — a thin API client like the rest, never a second editor, so the CLI and the TUI's editor are one operation with one validation. `get` with no key prints every key as `path = value` in the file's own order; with one, that key's value alone. Keys are the dotted paths the file carries. Lists and argv are whitespace-separated inside a single argument (`notify.on "blocked awaiting_gate"`), which is also why an argv element containing a space has to be edited in the file. A `set` is in force when it answers; `listen` is the exception the command says out loud. Exit 0 · 1 the daemon refused it, with the file byte-identical · 2 no daemon answered |
 | `vincent github issues / prs / pr create / status --project <id>` | *Added 2026-08-26 (task 035).* Read-only GitHub views: the project's issues newest first, and whether they can be read at all. Thin API clients like the rest — the daemon makes every GitHub call. Nothing under this command writes to GitHub. *Amended 2026-08-31 (task 069, issue #273):* the last clause stops being true for **one** subcommand. `vincent github pr create --task <id> --title <t> [--body <text>] [--draft]` drives §13.2's create route: it pushes the task's branch and opens its pull request, and it is the one thing under `vincent github` that writes to GitHub — `issues`, `prs` and `status` still write nothing. It exists for the reason every other subcommand does (the TUI holds no action the daemon does not) and because a gate script has to be able to drive that route without driving a terminal. `--body` is optional: a pull request with no description is a legal one. The fallback is **not** an error — a push that succeeded and a create that did not prints the compare URL and exits 0 |
-| `vincent doctor` | One diagnostic report: paths, daemon, log tail, database, agents, storage, task counts (§17). `--json` for scripting and bug reports; `--fix` (`--force`) reclaims orphaned worktrees and compacts the database. Exit 0 healthy · 1 problems found · 2 no daemon answered. *Amended 2026-08-26 (task 035):* it also reports the GitHub integration — the `github.enabled` toggle, `gh`'s presence, version and login state, whether a token variable is set (its **name**, never its value), and whether issues are readable. It is a **row, not a problem**: every "no" it can report leaves task creation without an issue working exactly as before, so none of it changes the exit code. *Amended 2026-08-29 (task 055):* it also reports the release check (§12.3) — whether `update.check` is on, the latest stable release and when it was last seen, this binary's version, and whether the running daemon is older than it. Rows, not problems, for the same reason: a newer release and a daemon still running the previous build both leave everything working |
+| `vincent doctor` | One diagnostic report: paths, daemon, log tail, database, agents, storage, task counts (§17). `--json` for scripting and bug reports; `--fix` (`--force`) reclaims orphaned worktrees and compacts the database. Exit 0 healthy · 1 problems found · 2 no daemon answered. *Amended 2026-08-26 (task 035):* it also reports the GitHub integration — the `github.enabled` toggle, `gh`'s presence, version and login state, whether a token variable is set (its **name**, never its value), and whether issues are readable. It is a **row, not a problem**: every "no" it can report leaves task creation without an issue working exactly as before, so none of it changes the exit code. *Amended 2026-08-29 (task 055):* it also reports the release check (§12.3) — whether `update.check` is on, the latest stable release and when it was last seen, this binary's version, and whether the running daemon is older than it. Rows, not problems, for the same reason: a newer release and a daemon still running the previous build both leave everything working. *Amended 2026-09-10 (task 095):* it also reports the published skills of §9.8 — one row per skill with the version this binary ships, the version installed in the global store and the agents it is linked into. A row and not a problem, on the same precedent: the built-in workflows carry the skill's text in their own prompts, so nothing a skill row can say stops a task from running, and `vincent doctor` still exits 0 |
 | `vincent update [--check] [--dry-run] [--require-signature] [--json]` | *Added 2026-08-29 (task 055).* Asks GitHub for the latest **stable** release and, unless `--check` is given, installs it over this binary. It queries the feed **itself** rather than through the daemon, so it works with no daemon and before the daemon's own check has polled — and so `update.check: false` (§12.3) stays a literal promise. A binary a package manager owns is never modified: the channel is detected from the resolved `os.Executable()` path and its upgrade command is printed. A binary vincent owns is verified before anything runs (§16) and swapped in place; on any failure nothing is replaced. `--check`: exit 0 up to date · 1 the check failed · 2 an update is available. Otherwise: 0 nothing to do or swapped · 1 verification or the swap failed and the binary is untouched · 2 an update exists but this install is package-managed. `--json` carries `swapped`, which separates the two 0s |
+| `vincent skills ls / install [name...]` | *Added 2026-09-10 (task 095).* Lists the agent skills this repository publishes with the version shipped, the version installed in the global skills store and the agents each is linked into, and installs them (§9.8). **It never talks to the daemon**, so it cannot exit 2: detection is a filesystem read that works with no node on the machine, and the install writes into the invoking user's own agent directories — nothing daemon-owned, which is why the write is here and not behind `doctor --fix`. `install` shells out to `npx skills add … --agent <slugs> --yes --global`; with no name it installs everything not already current, `--agent` narrows the selection. Both carry `--json`. Exit 0 fine · 1 an install failed, `npx` missing included |
 | `vincent version` | Build info |
 
 *Added 2026-08-26 (task 035).* `vincent task add --github-issue <n>` creates a
@@ -7884,6 +8001,29 @@ already run vincent, and a decline is remembered in `tui.json`
 this view opens is one somebody answers by not reading it. Once installed, the
 line says so, which is the only place the removal is discoverable.
 
+**`S` in the daemon view (task 095, added 2026-09-10).** The second key that
+leads outside vincent's own directories, and the second built on the shape
+above: a line under the adapters says how many of the skills of §9.8 are not
+installed, `S` opens a takeover listing them with the **exact `npx` command**
+each install runs, `enter` runs it, `n` is remembered in `tui.json`
+(`skills_declined`) and nothing re-asks while it is set. Once everything is
+current the line still says so, which is where `S` stays discoverable — the
+same rule the status-line line follows.
+
+It is `S` and not `i`. Both keys lead to a write outside vincent's directories,
+but they are two different operations on two different targets, and §15's key
+vocabulary lets a key be shared only where it means the same operation. `s` was
+unavailable: it is the vocabulary's "cycle a listing's scope".
+
+Two things differ from the status-line flow, and both come from what is being
+run. The state it reports comes off the `GET /v1/doctor` report this view
+already fetches rather than from a local read, so the TUI still holds no state
+the daemon does not — only the decline flag is local, exactly as the
+status-line flow already splits it. And the write is a subprocess that
+downloads a package rather than a file rewrite, so it runs off the event loop
+with the screen saying what is running: a TUI frozen on a network install is a
+TUI that cannot be quit.
+
 **Grouping (task 009, added 2026-08-16).** The task table nests its rows under
 group headers, `[project, workflow]` by default: a board with more than one
 repository on it is read project by project, and within one project the workflow
@@ -9023,6 +9163,15 @@ global cursor config is untouched.
   and orphan count** (§10). Retention above prunes transcripts and never rows,
   so unbounded growth is a real outcome; `--fix` is what reclaims it, and both
   its writes are the daemon's.
+
+  *Amended 2026-09-10 (task 095).* The report grows a `skills` group (§9.8): the
+  agent skills this repository publishes, with the version shipped, the version
+  installed in the global store and the agents each is linked into. It is a
+  **row, not a problem** — the closed unhealthy set of task 005 decision 7 does
+  not move for it, `vincent doctor` still exits 0 with every skill missing, and
+  the repair lives in `vincent skills install` rather than in `--fix` because it
+  is a client-side write into the user's own agent directories and every `--fix`
+  repair is a daemon-owned one.
 
   *Amended 2026-08-15 (task 005).* Retention is about **archived rows**: the pruner
   walks `archived_at`, so a transcript directory whose row was cascade-deleted with its

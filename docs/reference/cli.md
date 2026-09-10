@@ -17,6 +17,7 @@ localhost API.
 - [`vincent status`](#vincent-status)
 - [`vincent statusline`](#vincent-statusline)
 - [`vincent update`](#vincent-update)
+- [`vincent skills`](#vincent-skills)
 - [`vincent chat`](#vincent-chat)
 - [`vincent workflow`](#vincent-workflow)
 - [`vincent github`](#vincent-github)
@@ -1105,6 +1106,69 @@ vincent update --check --json
   "release_url": "https://github.com/lezli01/vincent/releases/tag/v0.5.0"
 }
 ```
+
+## `vincent skills`
+
+vincent publishes agent skills — `skills/vincent-workflows/` today — so an agent
+you talk to **directly**, outside a vincent run, knows how to author a vincent
+workflow. Runs inside vincent do not need them: the built-in `create-workflow`
+and `update-workflows` workflows carry the same text in their own prompts.
+
+Neither subcommand talks to the daemon, so **neither can exit 2**. Detection is
+a filesystem read and works on a machine with no node installed; only `install`
+shells out.
+
+### `vincent skills ls`
+
+```sh
+vincent skills ls [--json]
+```
+
+One row per published skill: the version this binary ships, the state of the
+copy on disk, and the agents it is linked into.
+
+| State | Meaning |
+|---|---|
+| `not installed` | No copy on this machine |
+| `installed and current` | The installed version is the shipped one |
+| `out of date` | The installed copy predates this binary's; both versions are named |
+| `newer than this build` | The installed copy is ahead — a downgraded binary, not an up-to-date skill |
+| `differs` | The versions are unequal and at least one is not semver, so no direction is claimed |
+| `unreadable` | A copy exists and its `SKILL.md` could not be read |
+
+`skills add … -g` keeps **one** copy in a global store, `~/.agents/skills/`, and
+links it into each agent's directory — so there is one row per skill, not one
+per agent, and one version rather than three.
+
+The agents column is what is on disk. It can name agents vincent does not drive
+(one store serves Cline, Copilot, Zed and the rest), and it can disagree with
+`npx skills list -g`, whose agent column is that CLI's remembered *selection*
+rather than the links it left behind.
+
+### `vincent skills install`
+
+```sh
+vincent skills install [NAME...] [--agent NAME]... [--json]
+```
+
+Installs the named skills, or — with no name — every published skill that is not
+already current. It runs, once per skill:
+
+```sh
+npx skills add lezli01/vincent --skill NAME --agent claude-code,codex,cursor --yes --global
+```
+
+That is the published command with the interactive agent picker answered.
+`--agent` narrows the selection to some of `claude`, `codex`, `cursor`; the
+default is all of them. Note the `skills` CLI's slug for claude is
+`claude-code`.
+
+It needs `npx` on `PATH` and, on a first run, network — the package is
+downloaded before anything happens. Without `npx` it exits **1** with a message
+naming the dependency and printing the line to run once node is installed;
+`vincent skills ls` is unaffected either way.
+
+Exit `0` everything asked for is installed · `1` an install failed.
 
 ## `vincent chat`
 

@@ -13,6 +13,37 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **vincent tells you whether its workflow-authoring skill is installed, and
+  installs it.** vincent publishes an agent skill so that an agent you talk to
+  *directly* — outside a vincent run — knows how to write a vincent workflow,
+  and until now the only way to get it was to find a command in the README and
+  run it by hand. Nothing in the binary had ever looked at whether you had it,
+  and an installed copy went stale invisibly because the skill carried no
+  version at all.
+
+  Now `vincent doctor` carries a **SKILLS** group and `vincent skills ls` lists
+  the same rows: the version this binary ships, the version on disk, and which
+  agents it is linked into — `not installed`, `installed and current`, `out of
+  date` with both versions named, or `newer than this build` when you have
+  downgraded. `vincent skills install` runs the install for the agents vincent
+  found on this machine. The TUI's daemon view offers it under `S`, shows the
+  exact `npx` command before running anything, and remembers a "not now".
+
+  Detection is a filesystem read: it works with no daemon running and with no
+  node installed. Only the install needs `npx`, and its absence is a message
+  naming the dependency and printing the command to run once node is there —
+  never a crash. A missing or stale skill is a **row, not a problem**:
+  `vincent doctor` still exits 0, because the built-in `create-workflow` and
+  `update-workflows` workflows carry the skill's text in their own prompts and
+  are unaffected either way.
+
+  Two honest limits, written down rather than papered over. vincent reports the
+  links that are on disk, which can disagree with `npx skills list -g` — that
+  command's agent column is the CLI's remembered *selection*, not a fact about
+  your filesystem. And whether codex and cursor actually read the directories
+  the `skills` CLI writes to is not something this repository can confirm, so
+  it is documented rather than claimed.
+
 - **The footer fills the width it has, and says what it is hiding.** It used to
   show the focused surface's first five keys and drop the rest in silence —
   eleven of the twenty-one surfaces declare more than five, so on the board

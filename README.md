@@ -504,8 +504,19 @@ Install the portable workflow-authoring skill for Claude Code, Codex, Cursor,
 or another Agent Skills client:
 
 ```sh
+vincent skills install
+```
+
+That runs `npx skills add` for you, for the agents vincent found on this
+machine. The equivalent by hand, which prompts for the agent selection:
+
+```sh
 npx skills add lezli01/vincent --skill vincent-workflows -g
 ```
+
+`vincent skills ls` says what is installed and whether it is current, and
+`vincent doctor` carries the same rows. Neither needs a running daemon, and
+only the install needs node.
 
 It asks about human gates and cost constraints, prefers deterministic commands
 and native control flow, and validates generated workflow YAML.
