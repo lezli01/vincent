@@ -8,6 +8,48 @@ import "github.com/lezli01/vincent/internal/apiclient"
 // presses a key the help promised; one registry turns "is every key
 // discoverable?" into a test.
 
+// The key vocabulary (§15 Keys, task 093). One operation, one key, across
+// every surface — the registry made the help accurate long before it made the
+// keys consistent, and a help that faithfully advertises four keys for
+// "refresh" is describing a defect rather than hiding one.
+//
+//	refresh / re-read              R
+//	archive                        A
+//	delete a persisted record      D
+//	remove a row from a draft      d
+//	add / create                   a
+//	edit in $EDITOR                e
+//	type free text instead of      t
+//	  picking from a list
+//	open in a browser              o
+//	open or expand the row         enter
+//	  under the cursor
+//	cycle a listing's scope        s
+//	filter                         /
+//	fold / unfold                  ←/→, C/O, space
+//	open a fan-out lane            l
+//	page                           </>
+//
+// Three clauses govern it, and `vocabulary` in bindings_test.go is the
+// machine-readable half that keeps them enforced rather than aspirational —
+// a comment is a wish, and this one had been the wish since task 049:
+//
+//  1. A key may be shared only when it means the same operation. Archive is
+//     `A` whether it is a §6 action on a task or the chats board's own key.
+//  2. A key may mean two different things only where the registry can prove
+//     the two surfaces never co-exist. A takeover screen offers no
+//     available_actions, so `a` may add on projects while `a` approves a gate;
+//     the task workspace is not disjoint from the action set, which is what
+//     task 025 discovered when it partitioned `R`.
+//  3. A key already carrying a vocabulary term may not be given a second
+//     meaning on a new surface.
+//
+// The §6 action letters `p a x r E R s c A F` do not move, so they decide the
+// contested cases: `R` won refresh because it already held seven surfaces and
+// repair only ever appears where refresh does not, and `A` won archive because
+// it is the action letter. `D` destroys something persisted and `d` edits an
+// unsaved draft — the inversion is what makes pressing `d` on an archive safe.
+
 // bindingScope classifies who owns a key: global keys work wherever the
 // focused surface is not capturing text, panel bindings belong to one panel
 // or takeover screen, task actions are gated on the daemon's
@@ -30,8 +72,16 @@ const (
 	ctxOutput      bindingContext = "output"
 	ctxDiff        bindingContext = "diff"
 	ctxNewTask     bindingContext = "new task"
-	ctxProjects    bindingContext = "projects"
-	ctxWorkflows   bindingContext = "workflows"
+	// ctxNewTaskFields is the Fields row's own editor (§5.3, task 093). Its
+	// own context for the reason ctxWorkflowEditor has one: nothing the form
+	// underneath offers means the same thing inside it — `e` is the
+	// description's $EDITOR out there and `a`/`d` are rows of a draft map in
+	// here. Registering it is also what put its keys in front of `?` and the
+	// footer at all; they were handled and hinted inline for two releases and
+	// the registry had never heard of them.
+	ctxNewTaskFields bindingContext = "new task fields"
+	ctxProjects      bindingContext = "projects"
+	ctxWorkflows     bindingContext = "workflows"
 	// ctxPullRequests is the pull-requests takeover (§15 view 7, task 052.6).
 	ctxPullRequests bindingContext = "pull requests"
 	// ctxWorkflowEditor is the structured editor sub-layer of the workflows
@@ -106,6 +156,35 @@ const (
 	ctxConfigEdit bindingContext = "config editor"
 )
 
+// vocabularyTerm is the shared operation a row performs — the left column of
+// the table above. A row that performs one carries it, and bindings_test.go
+// then holds the three clauses: one key per term, no second meaning on a term's
+// key, and a term's key may equal a §6 action letter only where the registry
+// can prove no action is ever offered.
+//
+// Not every row has one, and that is the point: `link this pull request`,
+// `fork the entry`, `group the tasks` are surface-local operations that appear
+// once, and a vocabulary that named them would be a list of every key rather
+// than a rule about the shared ones. Fold and page are in §15's table but not
+// here for the opposite reason — each is a *set* of keys by design (←/→, C/O,
+// space; </>), which is not a shape "one key per term" can describe.
+type vocabularyTerm string
+
+const (
+	termRefresh   vocabularyTerm = "refresh / re-read"
+	termArchive   vocabularyTerm = "archive"
+	termDelete    vocabularyTerm = "delete a persisted record"
+	termDraftDrop vocabularyTerm = "remove a row from an open draft"
+	termAdd       vocabularyTerm = "add / create"
+	termEditor    vocabularyTerm = "edit in $EDITOR"
+	termFreeText  vocabularyTerm = "type free text instead of picking"
+	termBrowser   vocabularyTerm = "open in a browser"
+	termOpenRow   vocabularyTerm = "open or expand the row under the cursor"
+	termScope     vocabularyTerm = "cycle a listing's scope"
+	termFilter    vocabularyTerm = "filter"
+	termLane      vocabularyTerm = "open a fan-out lane"
+)
+
 // binding is one registry row.
 type binding struct {
 	// key is the press as tea reports it — the canonical one when a label
@@ -121,6 +200,9 @@ type binding struct {
 	priority int
 	// action is the §6 action a scopeTaskAction row is gated on.
 	action string
+	// term is the §15 vocabulary operation this row performs, for the rows
+	// that perform a shared one. Empty means surface-local.
+	term vocabularyTerm
 	// github marks a row that only means something when at least one
 	// registered project has a usable GitHub integration (§13.2). There is no
 	// stored notion of one, so the root's probe fan-out is the answer and the
@@ -197,13 +279,13 @@ var bindings = []binding{
 	{key: "R", label: "repair with an agent — a one-off run in this task's worktree; the task stays blocked afterwards", scope: scopeTaskAction, action: apiclient.ActionRepair, priority: 5},
 	{key: "s", label: "skip the current step", scope: scopeTaskAction, action: apiclient.ActionSkip, priority: 6},
 	{key: "c", label: "cancel the task (asks first — a running step is killed)", scope: scopeTaskAction, action: apiclient.ActionCancel, priority: 7},
-	{key: "A", label: "archive the task (asks first — the worktree is removed)", scope: scopeTaskAction, action: apiclient.ActionArchive, priority: 8},
+	{key: "A", label: "archive the task (asks first — the worktree is removed)", scope: scopeTaskAction, action: apiclient.ActionArchive, priority: 8, term: termArchive},
 	{key: "F", label: "follow up — run an agent prompt, a shell command or a workflow in this finished task's worktree; it returns to the state it came from", scope: scopeTaskAction, action: apiclient.ActionFollowUp, priority: 9},
 
 	// Task table.
 	{key: "down", label: "move the selection (↑/↓ — the panels follow the cursor)", scope: scopePanel, context: ctxTasks, hint: "↑/↓ select", priority: 3},
-	{key: "enter", label: "open the selected task in its full-screen workspace", scope: scopePanel, context: ctxTasks, hint: "enter open", priority: 1},
-	{key: "/", label: "filter by id, title, project or state", scope: scopePanel, context: ctxTasks, hint: "/ filter", priority: 2},
+	{key: "enter", label: "open the selected task in its full-screen workspace", scope: scopePanel, context: ctxTasks, hint: "enter open", priority: 1, term: termOpenRow},
+	{key: "/", label: "filter by id, title, project or state", scope: scopePanel, context: ctxTasks, hint: "/ filter", priority: 2, term: termFilter},
 	{key: "g", label: "group the tasks: project › workflow → project → workflow → flat (config.yaml sets the one you start on)", scope: scopePanel, context: ctxTasks, hint: "g group", priority: 4},
 	{key: "space", label: "select this task for a bulk action — the action keys then act on every selected task (space again deselects, esc clears)", scope: scopePanel, context: ctxTasks, hint: "space select", priority: 5},
 	{key: "V", label: "select every task the filter is showing, or clear that selection", scope: scopePanel, context: ctxTasks, priority: 6},
@@ -230,7 +312,7 @@ var bindings = []binding{
 	{key: "left", label: "close the tier the cursor is in", scope: scopePanel, context: ctxTimeline, priority: 6, fold: true},
 	{key: "O", label: "open every iteration and round tier of this task", scope: scopePanel, context: ctxTimeline, hint: "O/C fold all", priority: 7, fold: true},
 	{key: "C", label: "close every one — the timeline opens with the latest pass showing", scope: scopePanel, context: ctxTimeline, priority: 8, fold: true},
-	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTimeline, priority: 9},
+	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTimeline, priority: 9, term: termLane},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTimeline, priority: 10},
 
 	// Task details.
@@ -240,13 +322,13 @@ var bindings = []binding{
 	// The pull-request section's two keys (task 052.6, decision 2). Both only
 	// reach a browser: neither writes anything in vincent, which is what
 	// keeps §15's "read-only inspector" true in the sense it was written.
-	{key: "o", label: "open this task's pull request in a browser", scope: scopePanel, context: ctxTaskDetails, hint: "o pull request", priority: 4, github: true},
+	{key: "o", label: "open this task's pull request in a browser", scope: scopePanel, context: ctxTaskDetails, hint: "o pull request", priority: 4, github: true, term: termBrowser},
 	{key: "P", label: "push this task's branch to origin and open its pull request — the title, body and draft flag are editable first", scope: scopePanel, context: ctxTaskDetails, hint: "P open a PR", priority: 5, github: true},
 	// Walking a fan-out (issue #316). `l` and `U` are registered on every tab
 	// that can name a lane, because a reader standing anywhere in a parent's
 	// workspace means the same thing by them; the tabs differ only in which
 	// lane `l` resolves to (taskView.laneJump).
-	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskDetails, priority: 6},
+	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskDetails, priority: 6, term: termLane},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTaskDetails, priority: 7},
 
 	// Output pane.
@@ -256,12 +338,12 @@ var bindings = []binding{
 	{key: "v", label: "show more or less: quiet → compact → normal → verbose (tool lines, then reasoning, then unrecognized lines)", scope: scopePanel, context: ctxOutput, hint: "v detail", priority: 3},
 	{key: rawToggleKey, label: "show the assistant's original Markdown instead of the rendered view", scope: scopePanel, context: ctxOutput, hint: "ctrl+o raw", priority: 6},
 	{key: copyPickKey, label: "copy an assistant message, its plain text, or one of its code blocks", scope: scopePanel, context: ctxOutput, hint: "ctrl+y copy", priority: 7},
-	{key: "e", label: "open this attempt's whole transcript in $EDITOR (the pane holds only the end of it)", scope: scopePanel, context: ctxOutput, hint: "e transcript", priority: 5},
+	{key: "e", label: "open this attempt's whole transcript in $EDITOR (the pane holds only the end of it)", scope: scopePanel, context: ctxOutput, hint: "e transcript", priority: 5, term: termEditor},
 	{key: "down", label: "scroll (↑/↓; scrolling up pauses follow)", scope: scopePanel, context: ctxOutput, hint: "↑/↓ scroll", priority: 4},
 	{key: "right", label: "select which attempt's output to show (←/→ or h/l)", scope: scopePanel, context: ctxOutput},
 	{key: "<", label: "previous fan-out lane in the Output pane", scope: scopePanel, context: ctxOutput, priority: 8},
 	{key: ">", label: "next fan-out lane in the Output pane", scope: scopePanel, context: ctxOutput, priority: 9},
-	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxOutput, priority: 10},
+	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxOutput, priority: 10, term: termLane},
 
 	// Diff tab. Its own context rather than more ctxOutput rows: the diff is a
 	// list of files and the output is a stream of lines, so ↑/↓ mean different
@@ -273,48 +355,72 @@ var bindings = []binding{
 	{key: "enter", label: "expand or collapse the file under the cursor (space and →/← too)", scope: scopePanel, context: ctxDiff, hint: "enter fold", priority: 3},
 	{key: "O", label: "expand every file", scope: scopePanel, context: ctxDiff, hint: "O/C fold all", priority: 4},
 	{key: "C", label: "collapse every file — which is how the tab opens", scope: scopePanel, context: ctxDiff, priority: 5},
-	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxDiff, priority: 6},
+	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxDiff, priority: 6, term: termLane},
 
 	// New task.
 	{key: "enter", label: "open the focused field's editor or picker", scope: scopePanel, context: ctxNewTask, hint: "enter edit field", priority: 2},
-	{key: "e", label: "edit the description in $EDITOR", scope: scopePanel, context: ctxNewTask, hint: "e $EDITOR", priority: 3},
+	{key: "e", label: "edit the description in $EDITOR", scope: scopePanel, context: ctxNewTask, hint: "e $EDITOR", priority: 3, term: termEditor},
 	{key: "+", label: "nudge the priority (+/-; higher runs first)", scope: scopePanel, context: ctxNewTask, hint: "+/- priority", priority: 4},
-	{key: "R", label: "re-probe the adapters (the list is otherwise cache-served)", scope: scopePanel, context: ctxNewTask, hint: "R re-probe", priority: 5},
+	{key: "R", label: "re-probe the adapters (the list is otherwise cache-served)", scope: scopePanel, context: ctxNewTask, hint: "R re-probe", priority: 5, term: termRefresh},
 	{key: "ctrl+s", label: "create the task", scope: scopePanel, context: ctxNewTask, hint: "ctrl+s create", priority: 1},
+	// The free-text row of an open picker (task 093). Registered on each of
+	// the four contexts a picker that offers one can be open in: a model or an
+	// effort newer than the catalog is the case it exists for (§9.6), and the
+	// picker printed the offer without the registry ever naming a key for it.
+	{key: "t", label: "in an open list: type a value it does not offer", scope: scopePanel, context: ctxNewTask, priority: 6, term: termFreeText},
+
+	// The new-task form's Fields editor (§5.3, task 093).
+	{key: "down", label: "move between the fields (↑/↓ or j/k)", scope: scopePanel, context: ctxNewTaskFields, hint: "↑/↓ fields", priority: 1},
+	{key: "enter", label: "edit the row under the cursor, toggle a declared boolean, or open a declared enum's list", scope: scopePanel, context: ctxNewTaskFields, hint: "enter edit", priority: 2},
+	{key: "left", label: "step a declared enum or boolean through its values in place (←/→)", scope: scopePanel, context: ctxNewTaskFields, hint: "←/→ choose", priority: 3},
+	// `a` and `d` are the vocabulary's add and draft-remove: nothing here is
+	// persisted until the task is created, which is why the removal wears the
+	// lower case that `D` was freed from on projects.
+	{key: "a", label: "add a custom field", scope: scopePanel, context: ctxNewTaskFields, hint: "a add", priority: 4, term: termAdd},
+	{key: "d", label: "remove the custom field under the cursor (a workflow-declared one cannot be removed)", scope: scopePanel, context: ctxNewTaskFields, hint: "d remove", priority: 5, term: termDraftDrop},
+	{key: "esc", label: "close the editor and keep the fields", scope: scopePanel, context: ctxNewTaskFields, hint: "esc done", priority: 6},
 
 	// Archived tasks (§15 view 10, task 092). The board's own keys — ↑/↓,
 	// enter, /, g, space, V and the fold keys — work here unchanged and are
 	// listed under ctxTasks; these are the three the mode adds. There is no
 	// §6 action key: an archived task offers no `available_actions`, which is
 	// what makes the workspace `enter` opens read-only for free.
-	{key: "enter", label: "open the archived task's workspace — read-only, because an archived task offers no actions", scope: scopePanel, context: ctxArchived, hint: "enter open", priority: 1},
-	{key: "D", label: "delete permanently (asks first — the row, its step attempts and its transcripts go; optionally its branch, unless the branch has commits)", scope: scopePanel, context: ctxArchived, hint: "D delete", priority: 2},
-	{key: "d", label: "cycle the window: last 7 days → last 30 days → all time", scope: scopePanel, context: ctxArchived, hint: "d window", priority: 3},
+	{key: "enter", label: "open the archived task's workspace — read-only, because an archived task offers no actions", scope: scopePanel, context: ctxArchived, hint: "enter open", priority: 1, term: termOpenRow},
+	{key: "D", label: "delete permanently (asks first — the row, its step attempts and its transcripts go; optionally its branch, unless the branch has commits)", scope: scopePanel, context: ctxArchived, hint: "D delete", priority: 2, term: termDelete},
+	// `s` rather than `d` (task 093): cycling the date window is the same
+	// gesture the chats board and the pull-request list already spell `s`, and
+	// `d` had to stop meaning "change what is listed" on the one screen whose
+	// other letter deletes for good. `s` is skip as a §6 action, and the two
+	// are provably disjoint — Archived is never a `from` state in taskstate's
+	// transition table, so an archived row offers no action at all.
+	{key: "s", label: "cycle the window: last 7 days → last 30 days → all time", scope: scopePanel, context: ctxArchived, hint: "s window", priority: 3, term: termScope},
 	{key: ">", label: "next page of the archive (< goes back)", scope: scopePanel, context: ctxArchived, hint: "</> page", priority: 4},
-	{key: "/", label: "filter by id, title, project or state", scope: scopePanel, context: ctxArchived, priority: 5},
+	{key: "/", label: "filter by id, title, project or state", scope: scopePanel, context: ctxArchived, priority: 5, term: termFilter},
 	{key: "space", label: "select this task for the bulk delete (V selects every row the filter is showing)", scope: scopePanel, context: ctxArchived, priority: 6},
 
 	// Archived chats. The same three keys, on the same reasoning: a chat that
 	// ended is history, and this is the only place it can be discarded.
-	{key: "enter", label: "open the archived chat's workspace — read-only, the conversation as it ended", scope: scopePanel, context: ctxArchivedChats, hint: "enter open", priority: 1},
-	{key: "D", label: "delete permanently (asks first — the row, its turns and its transcripts go; optionally its branch, unless the branch has commits)", scope: scopePanel, context: ctxArchivedChats, hint: "D delete", priority: 2},
-	{key: "d", label: "cycle the window: last 7 days → last 30 days → all time", scope: scopePanel, context: ctxArchivedChats, hint: "d window", priority: 3},
+	{key: "enter", label: "open the archived chat's workspace — read-only, the conversation as it ended", scope: scopePanel, context: ctxArchivedChats, hint: "enter open", priority: 1, term: termOpenRow},
+	{key: "D", label: "delete permanently (asks first — the row, its turns and its transcripts go; optionally its branch, unless the branch has commits)", scope: scopePanel, context: ctxArchivedChats, hint: "D delete", priority: 2, term: termDelete},
+	{key: "s", label: "cycle the window: last 7 days → last 30 days → all time", scope: scopePanel, context: ctxArchivedChats, hint: "s window", priority: 3, term: termScope},
 	{key: ">", label: "next page of the archive (< goes back)", scope: scopePanel, context: ctxArchivedChats, hint: "</> page", priority: 4},
-	{key: "/", label: "filter by title, agent or branch", scope: scopePanel, context: ctxArchivedChats, priority: 5},
-	{key: "r", label: "reload the board", scope: scopePanel, context: ctxArchivedChats, priority: 6},
+	{key: "/", label: "filter by title, agent or branch", scope: scopePanel, context: ctxArchivedChats, priority: 5, term: termFilter},
+	{key: "R", label: "reload the board", scope: scopePanel, context: ctxArchivedChats, priority: 6, term: termRefresh},
 
 	// Chats board.
-	{key: "enter", label: "open the chat's workspace", scope: scopePanel, context: ctxChats, hint: "enter open", priority: 1},
+	{key: "enter", label: "open the chat's workspace", scope: scopePanel, context: ctxChats, hint: "enter open", priority: 1, term: termOpenRow},
 	{key: "n", label: "start a chat in the project you are looking at", scope: scopePanel, context: ctxChats, hint: "n new", priority: 2},
-	{key: "a", label: "archive the chat (asks first — the worktree is removed)", scope: scopePanel, context: ctxChats, hint: "a archive", priority: 3},
-	{key: "/", label: "filter by title, agent or branch", scope: scopePanel, context: ctxChats, hint: "/ filter", priority: 4},
+	// `A` rather than `a` (task 093): archiving is archiving, and the tasks
+	// board next door has spelled it `A` since §6 named the action.
+	{key: "A", label: "archive the chat (asks first — the worktree is removed)", scope: scopePanel, context: ctxChats, hint: "A archive", priority: 3, term: termArchive},
+	{key: "/", label: "filter by title, agent or branch", scope: scopePanel, context: ctxChats, hint: "/ filter", priority: 4, term: termFilter},
 	{key: "left", label: "collapse the project group", scope: scopePanel, context: ctxChats, hint: "← fold", priority: 5},
 	{key: "right", label: "expand the project group", scope: scopePanel, context: ctxChats, hint: "→ unfold", priority: 6},
 	// `s` is the pull-request board's key for the same idea (task 064
 	// decision 9): terminal chats are hidden by default (issue #298), and
 	// this is the way back to them.
-	{key: "s", label: "cycle the listing between live, archived and handed-off, and all", scope: scopePanel, context: ctxChats, hint: "s listing", priority: 7},
-	{key: "r", label: "reload the board", scope: scopePanel, context: ctxChats, hint: "r reload", priority: 8},
+	{key: "s", label: "cycle the listing between live, archived and handed-off, and all", scope: scopePanel, context: ctxChats, hint: "s listing", priority: 7, term: termScope},
+	{key: "R", label: "reload the board", scope: scopePanel, context: ctxChats, hint: "R reload", priority: 8, term: termRefresh},
 
 	// Chat workspace.
 	{key: "enter", label: "send the message", scope: scopePanel, context: ctxChat, hint: "enter send", priority: 1},
@@ -339,37 +445,41 @@ var bindings = []binding{
 	{key: "esc", label: "close an open list, else discard the draft", scope: scopePanel, context: ctxNewChat, hint: "esc cancel", priority: 5},
 
 	// Projects.
-	{key: "a", label: "register a repository", scope: scopePanel, context: ctxProjects, hint: "a add", priority: 1},
+	{key: "a", label: "register a repository", scope: scopePanel, context: ctxProjects, hint: "a add", priority: 1, term: termAdd},
 	{key: "enter", label: "edit the selected project (enter/e)", scope: scopePanel, context: ctxProjects, hint: "enter edit", priority: 2},
-	{key: "d", label: "remove the project (asks first; its task rows go with it)", scope: scopePanel, context: ctxProjects, hint: "d remove", priority: 3},
-	{key: "/", label: "filter by name or path", scope: scopePanel, context: ctxProjects, hint: "/ filter", priority: 4},
+	// `D` rather than `d` (task 093): this destroys a persisted record after a
+	// confirmation, which is what `D` means on both archived boards. `d` is
+	// left meaning "drop a row from an unsaved draft" and nothing else.
+	{key: "D", label: "remove the project (asks first; its task rows go with it)", scope: scopePanel, context: ctxProjects, hint: "D remove", priority: 3, term: termDelete},
+	{key: "/", label: "filter by name or path", scope: scopePanel, context: ctxProjects, hint: "/ filter", priority: 4, term: termFilter},
 	{key: "ctrl+s", label: "in the form: save", scope: scopePanel, context: ctxProjects, hint: "ctrl+s save", priority: 5},
 
 	// Workflows.
 	{key: "enter", label: "show the entry's steps", scope: scopePanel, context: ctxWorkflows, hint: "enter steps", priority: 1},
-	{key: "e", label: "open the workflow file in $EDITOR (the view updates when you save)", scope: scopePanel, context: ctxWorkflows, hint: "e edit", priority: 2},
-	{key: "R", label: "re-read the registry", scope: scopePanel, context: ctxWorkflows, hint: "R reload", priority: 3},
+	{key: "e", label: "open the workflow file in $EDITOR (the view updates when you save)", scope: scopePanel, context: ctxWorkflows, hint: "e edit", priority: 2, term: termEditor},
+	{key: "R", label: "re-read the registry", scope: scopePanel, context: ctxWorkflows, hint: "R reload", priority: 3, term: termRefresh},
 	{key: "g", label: "draw the workflow as a control-flow graph", scope: scopePanel, context: ctxWorkflows, hint: "g graph", priority: 4},
 	// The structured editor (task 065). `e` keeps meaning $EDITOR — it means
 	// that in every other context too, and one key with two meanings
 	// depending on the view is the confusion decision 6 refused.
 	{key: "i", label: "edit the entry in a structured form", scope: scopePanel, context: ctxWorkflows, hint: "i form", priority: 5},
-	{key: "a", label: "create a workflow in a chosen scope", scope: scopePanel, context: ctxWorkflows, hint: "a new", priority: 6},
+	{key: "a", label: "create a workflow in a chosen scope", scope: scopePanel, context: ctxWorkflows, hint: "a new", priority: 6, term: termAdd},
 	{key: "f", label: "fork the entry into another scope, where it shadows the original", scope: scopePanel, context: ctxWorkflows, hint: "f fork", priority: 7},
 
 	// The structured editor sub-layer.
 	{key: "up/down", label: "move between rows", scope: scopePanel, context: ctxWorkflowEditor, hint: "↑↓ rows", priority: 1},
 	{key: "enter", label: "edit the row, cycle its values, or descend into a nested body", scope: scopePanel, context: ctxWorkflowEditor, hint: "enter edit", priority: 2},
-	{key: "R", label: "re-read the file (what a stale-write 409 offers)", scope: scopePanel, context: ctxWorkflowEditor, hint: "R reload", priority: 3},
+	{key: "R", label: "re-read the file (what a stale-write 409 offers)", scope: scopePanel, context: ctxWorkflowEditor, hint: "R reload", priority: 3, term: termRefresh},
 	{key: "esc", label: "leave the nested body, then the editor", scope: scopePanel, context: ctxWorkflowEditor, hint: "esc back", priority: 4},
 	// The structural keys (issue #320). They sit behind the takeover, so they
 	// never reach the workflows list's own `a`/`i`/`f`, and an insert carries
 	// the new entry's required fields: the daemon re-parses the whole file on
 	// every PATCH, so a step the form itself created must be valid on arrival.
-	{key: "a", label: "add a step, lane or declared field after the one under the cursor", scope: scopePanel, context: ctxWorkflowEditor, hint: "a add", priority: 5},
-	{key: "d", label: "remove the item under the cursor (asks first)", scope: scopePanel, context: ctxWorkflowEditor, hint: "d remove", priority: 6},
+	{key: "a", label: "add a step, lane or declared field after the one under the cursor", scope: scopePanel, context: ctxWorkflowEditor, hint: "a add", priority: 5, term: termAdd},
+	{key: "d", label: "remove the item under the cursor (asks first)", scope: scopePanel, context: ctxWorkflowEditor, hint: "d remove", priority: 6, term: termDraftDrop},
 	{key: "K/J", label: "move the item up (K) or down (J); k and j still move the cursor", scope: scopePanel, context: ctxWorkflowEditor, hint: "K/J move", priority: 7},
 	{key: "ctrl+s", label: "in the multi-line pane: save (enter inserts a newline there)", scope: scopePanel, context: ctxWorkflowEditor, hint: "ctrl+s save", priority: 8},
+	{key: "t", label: "in an open list: type a value it does not offer", scope: scopePanel, context: ctxWorkflowEditor, priority: 9, term: termFreeText},
 
 	// The create/fork prompt. noPalette for the reason the step-detail
 	// modal's rows are: a form holds the keyboard on a text field, so `:`
@@ -386,8 +496,8 @@ var bindings = []binding{
 	{key: "down", label: "move the selection (↑/↓/←/→ or hjkl); the view follows it", scope: scopePanel, context: ctxWorkflowGraph, hint: "↑↓←→ select", priority: 1},
 	{key: "shift+down", label: "pan the canvas (shift+↑/↓/←/→); pgup/pgdn page it", scope: scopePanel, context: ctxWorkflowGraph, hint: "⇧ pan", priority: 2},
 	{key: "tab", label: "walk the nodes in source order (shift+tab goes back)", scope: scopePanel, context: ctxWorkflowGraph, hint: "tab next", priority: 3},
-	{key: "e", label: "open the workflow file in $EDITOR (the graph redraws when you save)", scope: scopePanel, context: ctxWorkflowGraph, hint: "e edit", priority: 4},
-	{key: "R", label: "re-fetch this workflow's definition", scope: scopePanel, context: ctxWorkflowGraph, hint: "R reload", priority: 5},
+	{key: "e", label: "open the workflow file in $EDITOR (the graph redraws when you save)", scope: scopePanel, context: ctxWorkflowGraph, hint: "e edit", priority: 4, term: termEditor},
+	{key: "R", label: "re-fetch this workflow's definition", scope: scopePanel, context: ctxWorkflowGraph, hint: "R reload", priority: 5, term: termRefresh},
 	{key: "enter", label: "open the selected node in full — every field it carries, including the prompt or run body", scope: scopePanel, context: ctxWorkflowGraph, hint: "enter detail", priority: 2},
 
 	// The step-detail modal (task 053): these exist only while the popup owns
@@ -396,8 +506,8 @@ var bindings = []binding{
 	// carried into the graph: editing is the path from wherever you are
 	// reading, and R is the layer's only recovery.
 	{key: "down", label: "scroll the detail (↑/↓; pgup/pgdn page it)", scope: scopePanel, context: ctxWorkflowStep, noPalette: true},
-	{key: "e", label: "open the workflow file in $EDITOR (the detail redraws when you save)", scope: scopePanel, context: ctxWorkflowStep, noPalette: true},
-	{key: "R", label: "re-fetch this workflow's definition", scope: scopePanel, context: ctxWorkflowStep, noPalette: true},
+	{key: "e", label: "open the workflow file in $EDITOR (the detail redraws when you save)", scope: scopePanel, context: ctxWorkflowStep, noPalette: true, term: termEditor},
+	{key: "R", label: "re-fetch this workflow's definition", scope: scopePanel, context: ctxWorkflowStep, noPalette: true, term: termRefresh},
 	{key: "esc", label: "close the detail, back to the graph with the same node selected", scope: scopePanel, context: ctxWorkflowStep, noPalette: true},
 
 	// The task workspace's workflow tab (task 051). The graph is this task's
@@ -408,7 +518,7 @@ var bindings = []binding{
 	{key: "5", label: "the workflow this task ran, with what each step did on it", scope: scopePanel, context: ctxTaskWorkflow, hint: "5 workflow", priority: 3},
 	// Here the lane is the one under the graph cursor, which is the only tab
 	// that can point at a lane the failure does not blame.
-	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskWorkflow, priority: 4},
+	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskWorkflow, priority: 4, term: termLane},
 
 	// The task workspace's Step Details tab (issue #323). Unconditional, so
 	// `6` always means it — which is what lets the pull-request tab keep
@@ -423,22 +533,31 @@ var bindings = []binding{
 	// otherwise would be the lie the availability filter exists to prevent.
 	{key: "7", label: "this task's pull request, with a live row per check on its head commit", scope: scopePanel, context: ctxTaskPull, hint: "7 pull request", priority: 1, github: true},
 	{key: "down", label: "select a check (↑/↓ or j/k)", scope: scopePanel, context: ctxTaskPull, hint: "↑/↓ checks", priority: 2, github: true},
-	{key: "c", label: "open the selected check's own page in a browser", scope: scopePanel, context: ctxTaskPull, hint: "c open check", priority: 3, github: true},
-	{key: "o", label: "open the pull request in a browser", scope: scopePanel, context: ctxTaskPull, hint: "o open PR", priority: 4, github: true},
-	{key: "r", label: "re-read the pull request and its checks now (they also refresh on their own while the tab is open)", scope: scopePanel, context: ctxTaskPull, hint: "r refresh", priority: 5, github: true},
+	// `enter` rather than `c` (task 093). The cursor is on a check and `enter`
+	// opens what the cursor is on; `c` intercepted here meant cancel was
+	// unreachable from a tab whose own footer advertised it. There is no
+	// refresh key either, for the same reason and the other half of the same
+	// bug: `R` is repair on every tab of this workspace and does not move, and
+	// the tab already re-reads on its own timer — which is what the row below
+	// used to say in its parenthesis while the key shadowed retry.
+	{key: "enter", label: "open the selected check's own page in a browser", scope: scopePanel, context: ctxTaskPull, hint: "enter open check", priority: 3, github: true, term: termOpenRow},
+	{key: "o", label: "open the pull request in a browser", scope: scopePanel, context: ctxTaskPull, hint: "o open PR", priority: 4, github: true, term: termBrowser},
 	{key: "u", label: "unlink this pull request from the task — the refusal sticks, and the reconciler will not link it again", scope: scopePanel, context: ctxTaskPull, hint: "u unlink", priority: 6, github: true},
 	// Not github-gated: `l` is a jump between two tasks vincent owns, and it
 	// means the same thing on this tab whether or not a lane has a pull
 	// request of its own.
-	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskPull, priority: 7},
+	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskPull, priority: 7, term: termLane},
 
 	// Pull requests (task 052.6). Link and unlink live only here: they are the
 	// two actions that write vincent's own column, and they belong on the one
 	// screen that can see a pull request no task claims — the case they exist
 	// for.
 	{key: "enter", label: "open the workspace of the task that claims this pull request", scope: scopePanel, context: ctxPullRequests, hint: "enter task", priority: 1},
-	{key: "o", label: "open the selected pull request in a browser", scope: scopePanel, context: ctxPullRequests, hint: "o browser", priority: 2},
-	{key: "c", label: "create a task from this pull request — it runs on the pull request's head branch, and the form is editable first", scope: scopePanel, context: ctxPullRequests, hint: "c new task", priority: 3},
+	{key: "o", label: "open the selected pull request in a browser", scope: scopePanel, context: ctxPullRequests, hint: "o browser", priority: 2, term: termBrowser},
+	// `a` rather than `c` (task 093): creating a task from a pull request is
+	// creating, which is what `a` means on projects, workflows and the editor.
+	// It leaves `c` meaning cancel and nothing else, registry-wide.
+	{key: "a", label: "create a task from this pull request — it runs on the pull request's head branch, and the form is editable first", scope: scopePanel, context: ctxPullRequests, hint: "a new task", priority: 3, term: termAdd},
 	{key: "l", label: "link this pull request to a task in the same project", scope: scopePanel, context: ctxPullRequests, hint: "l link", priority: 4},
 	// The takeover's half of task 069. This screen has no task rows — its
 	// question is "what is open across everything I run" — so the offer is a
@@ -446,13 +565,13 @@ var bindings = []binding{
 	// one opens that task's workspace with the form up.
 	{key: "P", label: "open a pull request for a task that has none — pick the task, then push its branch and create it", scope: scopePanel, context: ctxPullRequests, hint: "P open a PR", priority: 5, github: true},
 	{key: "u", label: "unlink it (asks first — the refusal sticks, and the reconciler will not link it again)", scope: scopePanel, context: ctxPullRequests, hint: "u unlink", priority: 5},
-	{key: "s", label: "cycle the listing between open, closed and all", scope: scopePanel, context: ctxPullRequests, hint: "s state", priority: 6},
-	{key: "R", label: "re-list every project", scope: scopePanel, context: ctxPullRequests, hint: "R refresh", priority: 7},
+	{key: "s", label: "cycle the listing between open, closed and all", scope: scopePanel, context: ctxPullRequests, hint: "s state", priority: 6, term: termScope},
+	{key: "R", label: "re-list every project", scope: scopePanel, context: ctxPullRequests, hint: "R refresh", priority: 7, term: termRefresh},
 	{key: "down", label: "move the selection (↑/↓)", scope: scopePanel, context: ctxPullRequests, priority: 8},
-	{key: "/", label: "filter by number, title, branch or project", scope: scopePanel, context: ctxPullRequests, priority: 9},
+	{key: "/", label: "filter by number, title, branch or project", scope: scopePanel, context: ctxPullRequests, priority: 9, term: termFilter},
 
 	// Daemon.
-	{key: "R", label: "re-read the daemon info, the config and the log", scope: scopePanel, context: ctxDaemon, hint: "R refresh", priority: 1},
+	{key: "R", label: "re-read the daemon info, the config and the log", scope: scopePanel, context: ctxDaemon, hint: "R refresh", priority: 1, term: termRefresh},
 	{key: "f", label: "follow the end of the log again (f/G)", scope: scopePanel, context: ctxDaemon, hint: "f follow", priority: 2},
 	{key: "down", label: "scroll the log (↑/↓)", scope: scopePanel, context: ctxDaemon, hint: "↑/↓ scroll", priority: 3},
 	// The config block became editable in task 060. tab is what says whether
@@ -476,7 +595,11 @@ var bindings = []binding{
 	// Answer form: these exist only while the popup owns the keyboard, and
 	// the popup prints them itself — they are here so ? stays complete.
 	{key: "space", label: "pick an option (toggles, for a multi-select question)", scope: scopePanel, context: ctxForm, noPalette: true},
-	{key: "e", label: "type your own answer — options are suggestions, never a list", scope: scopePanel, context: ctxForm, noPalette: true},
+	// `t` rather than `e` (task 093). `e` means $EDITOR everywhere else,
+	// including on the two popups that sit beside this one, so the free-text
+	// meaning is the one that moved: it is the same gesture the four pickers
+	// offer, and it now has the same key on all five.
+	{key: "t", label: "type your own answer — options are suggestions, never a list", scope: scopePanel, context: ctxForm, noPalette: true, term: termFreeText},
 	{key: "enter", label: "submit the answer; the run resumes where it stopped", scope: scopePanel, context: ctxForm, noPalette: true},
 	{key: "ctrl+t", label: "read this task's details without leaving the form — the picks and the typed answer are kept (ctrl+t again, or esc, comes back)", scope: scopePanel, context: ctxForm, noPalette: true},
 	{key: "esc", label: "close the popup without answering (what you picked is kept)", scope: scopePanel, context: ctxForm, noPalette: true},
@@ -484,7 +607,8 @@ var bindings = []binding{
 	// Repair form: as with the answer form, these exist only while the popup
 	// owns the keyboard and it prints them itself.
 	{key: "enter", label: "edit the row under the cursor — the prompt, or the agent/model/effort list", scope: scopePanel, context: ctxRepairForm, noPalette: true},
-	{key: "e", label: "write the repair prompt in $EDITOR", scope: scopePanel, context: ctxRepairForm, noPalette: true},
+	{key: "e", label: "write the repair prompt in $EDITOR", scope: scopePanel, context: ctxRepairForm, noPalette: true, term: termEditor},
+	{key: "t", label: "in the agent/model/effort list: type a value it does not offer", scope: scopePanel, context: ctxRepairForm, noPalette: true, term: termFreeText},
 	{key: "ctrl+s", label: "start the repair agent", scope: scopePanel, context: ctxRepairForm, noPalette: true},
 	{key: "ctrl+t", label: "read this task's details without leaving the form — the draft is kept (ctrl+t again, or esc, comes back)", scope: scopePanel, context: ctxRepairForm, noPalette: true},
 	{key: "esc", label: "close the popup without repairing (the draft is discarded)", scope: scopePanel, context: ctxRepairForm, noPalette: true},
@@ -492,7 +616,8 @@ var bindings = []binding{
 	// Follow-up form: same again — the popup owns the keyboard while it is
 	// open and prints its own key line.
 	{key: "enter", label: "edit the row under the cursor — the run form, what to run, or the agent/model/effort list", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
-	{key: "e", label: "write the prompt or command in $EDITOR", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
+	{key: "e", label: "write the prompt or command in $EDITOR", scope: scopePanel, context: ctxFollowUpForm, noPalette: true, term: termEditor},
+	{key: "t", label: "in the workflow/agent/model/effort list: type a value it does not offer", scope: scopePanel, context: ctxFollowUpForm, noPalette: true, term: termFreeText},
 	{key: "ctrl+s", label: "start the follow-up run", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
 	{key: "ctrl+t", label: "read this task's details without leaving the form — the draft is kept (ctrl+t again, or esc, comes back)", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
 	{key: "esc", label: "close the popup without running anything (the draft is discarded)", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
@@ -501,7 +626,7 @@ var bindings = []binding{
 	// keyboard while it is open and prints its own key line.
 	{key: "enter", label: "edit the row under the cursor — the pull request's title or its body, or toggle the draft row", scope: scopePanel, context: ctxCreatePR, noPalette: true},
 	{key: "space", label: "toggle draft / ready for review, on the draft row", scope: scopePanel, context: ctxCreatePR, noPalette: true},
-	{key: "e", label: "write the body in $EDITOR", scope: scopePanel, context: ctxCreatePR, noPalette: true},
+	{key: "e", label: "write the body in $EDITOR", scope: scopePanel, context: ctxCreatePR, noPalette: true, term: termEditor},
 	{key: "ctrl+s", label: "push the branch to origin and open the pull request", scope: scopePanel, context: ctxCreatePR, noPalette: true},
 	{key: "ctrl+o", label: "open GitHub's own new-pull-request page with this prefill instead", scope: scopePanel, context: ctxCreatePR, noPalette: true},
 	{key: "esc", label: "close the popup without sending anything (the draft is discarded)", scope: scopePanel, context: ctxCreatePR, noPalette: true},

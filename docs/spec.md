@@ -134,6 +134,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 28 | MCP from the daemon | **A second protocol on the existing listener, not a second server.** `/mcp` is registered in §13.2's route table inside the same `recover → log → auth` chain, so row 4 is *added to*, not reversed: same loopback listener, same `Authorization: Bearer {token}` from `{data_dir}/token`, same `daemon.json` discovery. The tool surface **is** the route table — a call replays its arguments as an in-process request against the same handler, so the §13.1 bounds, the validation, the `409` + `details.state` envelopes and `Idempotency-Key` hold by construction — **minus five destructive-admin routes** (`daemon/stop`, `daemon/backup`, `DELETE projects/{id}`, `maintenance/gc`, `doctor/fix`), which is a design line: an agent must not be able to stop, garbage-collect or reconfigure the daemon supervising it. §13.3's SSE routes are replaced by a bounded blocking `task_wait` with a hard ceiling, whose result is complete for a client that drops every progress notification. A step parked in that wait **keeps its §11 slot** and a self-blocking wait is *refused*, not released — releasing it would create a §6 state owning a live agent process and holding no slot, which no state does today. The daemon wires its own agent steps to a **per-step endpoint** (`/mcp/step/{run_id}`, per-run secret), which is identity for the refusal and the provenance column and is explicitly **not** a security boundary (§16). Recursion is bounded by `created_by_task_id` + `mcp.max_depth`/`mcp.max_tasks`, deliberately **not** by `parent_task_id`, which the `awaiting_children` join counts (§9.1, §9.2, §9.3, §9.4, §9.7, §11, §12.3, §12.4, §13.4, §14, §16, §20; task 057, issue #243, added 2026-08-29) |
 | 29 | Free chat | **A first-class entity beside Task, never a task with a `kind` column.** A `chat` is a titled conversation with an agent, scoped to a project, running in its own git worktree and `vincent/{id}-{slug}` branch, with its own four-state lifecycle (§5.5), its own `chats`/`chat_turns` tables (§14) and its own route family (§13.2). It never appears on the task board, in `GET /v1/tasks` or in any §17 aggregate over `step_runs`, whose `task_id` stays `NOT NULL`. Continuity comes from the **agent CLI resuming its own session** — §7.3's fresh-session rule is amended *for chats only* — so turn N sees turns 1..N-1 without vincent replaying any log as prompt context. A turn is bounded by its own cap `max_parallel_chats` (default 3) and is **refused with 409, never queued**: `internal/scheduler` stays the only place `queued → running` happens because a chat turn is never `queued`, and row 28's "no live-but-uncounted agent CLI" reasoning is extended rather than excepted (§11). **No chat route is an MCP tool** — row 28's exclusion list grows by the whole chat family, because an agent must not start unqueued agent processes and `mcp.max_depth`/`mcp.max_tasks` bound tasks by walking `created_by_task_id`, a chain a chat is not in (§13.4). Only adapters that can resume may hold a chat: claude yes (§9.2), **codex and cursor are refused at creation with a typed reason, not emulated** (§9.3, §9.7). *Amended 2026-08-31 (issue #279):* `GET /v1/agents` publishes that answer as `supports_resume` (§9.6) so a client's picker offers only adapters that can hold a chat; the creation-time refusal is unchanged and stays the authority, and an absent field — an older daemon — filters nothing. A stored session the CLI no longer knows fails the turn with `session_lost` and leaves the chat usable; a turn interrupted by a daemon restart is finalized `interrupted` and is **never re-run**, because re-running would re-send the human's message into a session that died with the process (§12.4). Chat worktrees join gc's claim namespace and worktree directories are named by owner, so chat 7 and task 7 cannot collide (§10). §16 is untouched: chats are full-auto by default exactly as tasks are (§5.5, §6, §7.3, §9.1, §9.2, §9.3, §9.7, §10, §11, §12.3, §12.4, §13.2, §13.3, §13.4, §14, §15, §20; task 063, issue #255, added 2026-08-30). *Amended 2026-08-31 (task 067, issue #269, closing 063.2 and 063.3):* chats reach the TUI, as **two views of their own** — a chats board and a chat workspace — never as rows on the task board, so "it never appears on the task board" is unchanged and now literal in the client too. Attention is the chats board's own: an `awaiting_input` chat is pinned and badged there and nowhere else, and `!` and the home board's needs-attention count stay task-only. A chat turn is bounded by §7.2's `agent_timeout` and §7.4's `input_timeout` verbatim, so the slot this row says it holds is no longer held forever (§11, §12.3, §13.2, §13.3, §13.4, §15). *Amended 2026-08-31 (task 070, issue #268):* **codex resumes now**, so "codex and cursor are refused at creation with a typed reason" reads **cursor alone** — codex met the precondition task 063 decision 3 attached to it, a capture against a named build (codex-cli 0.150.1) pinning `codex exec --json resume <thread_id>`, and its `thread.started` id is read into `RunResult.SessionID` (§9.3). Nothing else in this row moves: continuity still comes from the CLI resuming its own session, vincent still replays no log as prompt context, and the refusal is still the authority for the adapters that cannot (§9.7). *Amended 2026-08-31 (task 071, issue #282):* a chat's live output is **normalized in the daemon exactly as a task's is** — §13.3's typed chunks, with the verbatim line kept as `raw` — and the chat workspace renders it with the output pane's own renderer at the session's shared verbosity level. The chat is still its own entity; what it is not is its own rendering vocabulary *Amended 2026-08-31 (task 072, issue #283):* **cursor resumes too**, pinned to a capture against cursor-agent 2026.08.11-e8db854, so "codex and cursor are refused at creation" is retired entirely and **no shipped adapter is refused**. The refusal path is unchanged and unretired — it is the contract for the next adapter — and is now proven against a stub adapter rather than a shipped one, which is what stops it asserting the opposite of the truth the day a capability lands. Two consequences are stated positively rather than worked around: a resumed codex run is always full-auto, because `codex exec resume` has no `--sandbox`, guarded structurally by chats having no requestable permission mode; and cursor cannot report a lost session at all, because it adopts an unknown `--resume` id and answers rather than refusing (§9.3, §9.7). *Amended 2026-09-01 (task 074, issue #288):* a chat has **two** terminal states, not one — an idle chat may `hand_off` its worktree and branch to a task that adopts them verbatim, and `handed_off` is terminal because reusing `archived` would run the archive path, which removes the worktree this transfers. The chat remains a separate entity and this row's "never a task with a `kind` column" is untouched: what is added is a lifecycle transition *between* the two entities, with one authoritative foreign key (`chats.handoff_task_id`) and the reverse direction served by a lookup. It is one transaction — task row, branch claim, link, transition, claim release, both events — with the scheduler notified after the commit, so the scheduler cannot admit a task before it owns a complete workspace and gc never sees the directory claimed twice or not at all. The task becomes the sole owner of that worktree and branch (§10). The new route joins this row's own MCP exclusion list rather than excepting it, which is why it is a chats-family route and not a field on `POST /v1/tasks` (§13.4). §7.3 is untouched: the chat's session is not transferred, and workflow steps still start fresh (§5.5, §10, §12.3, §13.2, §13.3, §13.4, §14, §15) |
 | 30 | Archived boards and permanent delete | *Added 2026-09-09 (task 092, issue #350).* **Archived history is a screen, and a permanent delete is a route.** Two TUI views — archived tasks, archived chats — are the live boards *in a second mode* rather than two new models (§15): the archive needs grouping, folding, `/` and the bulk selection, and a copy would drift on the first change to any of the four. They get palette rows and no keys, because task 049 retired `1..6` to stop adding memorized ones and task 067 gave chats the same treatment. `DELETE /v1/tasks/{id}` and `DELETE /v1/chats/{id}` (§13.2) are the only things in vincent that delete a task or chat row — the §17 pruner removes transcript *files* and never a row, and that sentence in the retention table is amended to say so. Delete is **not a §6 action**: `taskstate` has no opinion on it and it never appears in `available_actions`, which is what makes the workspace an archived row opens read-only for free; its precedent is `DELETE /v1/projects/{id}`, likewise no action, and both routes join that route's §13.4 destructive-admin exclusion. It **refuses rather than cascading**, naming the row that is holding on: a live row (`not_archived`), an archived fan-out parent whose lanes still exist (`has_lanes` — `parent_task_id` has no `ON DELETE` clause, so without the guard it is a driver error), a `handed_off` chat (`handed_off` — the task owns the worktree, §5.5), and an archived task such a chat points at (`handoff_target`). §10's standing rule is untouched and its task 008 exception merely widens to "at archive time **and at permanent delete**": a branch carrying any commit past its base is reported `has_commits` and kept whatever was answered, and the remote leg is not offered at all. Two durable events are added, `task.deleted` and `chat.deleted` (§13.3) — PR D's "there is no separate `task.archived` type" does not reach them, because that type was redundant with `task.state_changed` and a delete has no state to change to — while the historical `events` rows are deliberately kept, their id being the `Last-Event-ID` cursor. No migration: `archived_at` has been a column since `0001_init.sql`, chats measure the same window over `updated_at` by task 074 decision 6, and every cascade this needs already exists. There is no bulk endpoint and there is not going to be one (task 011): every sweep, in the TUI and in `vincent task delete --before`, is one `DELETE` per row (§5.5, §6, §10, §13.2, §13.3, §13.4, §15, §17, §20) |
+| 31 | TUI key vocabulary | *Added 2026-09-10 (task 093, issue #353).* **One operation, one key, and the registry is what says so.** The binding registry made the help *accurate* from T3.11 — `?`, the footer and the palette all render from it — which is exactly what let the *vocabulary* drift unseen: it faithfully advertised four different keys for "refresh". §15 now carries the table (refresh `R`, archive `A`, delete-a-persisted-record `D`, remove-a-draft-row `d`, add `a`, `$EDITOR` `e`, free text `t`, browser `o`, open-the-row `enter`, cycle-a-listing `s`, filter `/`, fold, lane `l`, page) and **three clauses, not the one the issue asked for**: a key may be shared only for the same operation; it may mean two things only where the registry can prove the surfaces never co-exist; and a key already carrying a term takes no second meaning. The second clause is task 025's deliberate partition of `R` promoted from an accident to the rule, which is why "exactly one key registry-wide" was not adopted literally. The §6 action letters `p a x r E R s c A F` **do not move**, so they decide the contested cases: `R` won refresh, `A` won archive, and `D`/`d` split on persisted-versus-draft, which is what makes pressing `d` on an archived board safe. Enforcement is three tests in `internal/tui/bindings_test.go` beside `TestEveryPanelKeyIsHandled`, with an allow-list that must carry a reason and must stay non-empty; the disjointness the archived boards rely on is **derived from `taskstate.HumanActionsFrom`**, not listed, so an FSM change that starts offering an action on an archived row fails the test rather than shipping a shadowed key. It closes a live bug rather than only a style one: the task workspace's Pull Request tab intercepted `r` and `c`, so **retry and cancel were unreachable there** while the footer advertised both. Scope is `internal/tui` and the docs — no CLI, API, MCP, store or workflow change, and no user-configurable keymap, which is a larger question this does not answer (§15) |
 
 ## 4. Architecture
 
@@ -7044,9 +7045,9 @@ stream for the live tail.
    disagree, plus one row per check on the pull request's head commit with its
    state and its own GitHub URL, from `GET /v1/tasks/{id}/github/pull/checks`.
    Those rows are **live, never snapshotted**, for the reason the pull request
-   is a pointer: fetched on tab open, on `task.github_pull_changed`, on the
-   tab's own poll while it is open and on `r`, and never per render. `↑`/`↓`
-   select a check, `c` opens the selected check's own page, `o` opens the pull
+   is a pointer: fetched on tab open, on `task.github_pull_changed` and on the
+   tab's own poll while it is open, and never per render. `↑`/`↓`
+   select a check, `enter` opens the selected check's own page, `o` opens the pull
    request, and `u` unlinks it — which **supersedes task 052 decision 6's
    placement of unlink in view 7 alone**. View 7 keeps its copy: a pull request
    no task claims has no workspace to be reached from, and that is the case
@@ -7339,9 +7340,15 @@ stream for the live tail.
    | `f` | fork a built-in or global entry into another scope, where it shadows the original per §5.2 |
    | `e` | **unchanged** — open the file in `$EDITOR` |
 
-   `e` keeps its one meaning: it means `$EDITOR` in all seven contexts
-   `internal/tui/bindings.go` gives it, and taking it for the structured
-   editor would give one key two meanings depending on the view. The forms
+   `e` keeps its one meaning: it means `$EDITOR` in every context
+   `internal/tui/bindings.go` gives the bare key to, and taking it for the
+   structured editor would give one key two meanings depending on the view.
+   *Amended 2026-09-10 (task 093, issue #353): "all seven contexts" was not
+   true when it was written and is narrowed here rather than repeated. It is
+   `$EDITOR` in the eight contexts that bind `e` itself; the two `enter` rows
+   that name it as an alias — the projects view's inline edit and the daemon
+   view's config editor — are the stated exception, and the third meaning it
+   had, "type your own answer", moved to `t`.* The forms
    are rendered from `GET /v1/workflows/schema` (§8.2 as data), not from a
    second copy of §8.2 in the client — PR L recorded that re-deriving the
    daemon's checks in the TUI is how the two drift. There is **no delete**:
@@ -7477,7 +7484,10 @@ stream for the live tail.
    **Actions.** `o` opens the selected pull request in a browser. `enter` opens
    the workspace of the task that claims it, and is inert on a row no task
    claims — the link key is its own, and a key that means two unrelated things
-   depending on the row is worse than one that sometimes does nothing. A link key
+   depending on the row is worse than one that sometimes does nothing. A create
+   key seeds a new task from the row — `a`, per the key vocabulary below;
+   *amended 2026-09-10 (task 093, issue #353): it was `c`, which is cancel
+   everywhere else in the TUI.* A link key
    opens a task picker **scoped to the row's own project**: `POST
    /v1/tasks/{id}/github/pull` takes a bare number and the daemon resolves the
    repository from the task's project, so offering a task from elsewhere would
@@ -7517,9 +7527,9 @@ stream for the live tail.
    **Actions.** `enter` opens view 9. `n` starts a chat — the create form is a
    layer over this board, taking project, title, agent, model, effort and base
    branch, and rendering `400 agent_cannot_resume` as the typed refusal it is
-   rather than a generic failure. `a` archives, asking first and re-offering
+   rather than a generic failure. `A` archives, asking first and re-offering
    with the force when the worktree is dirty. `/` filters on title, agent or
-   branch; `←`/`→` fold a project group; `r` re-lists. A `chat.*` event
+   branch; `←`/`→` fold a project group; `R` re-lists. A `chat.*` event
    re-renders the board with no keypress, and a `task.*` event does not — the
    separation runs both ways.
 
@@ -7674,9 +7684,14 @@ stream for the live tail.
    Each is the board it mirrors **in a second mode**, not a second model: the
    same grouping, folding, `/` filter and `space`/`V` selection, listing what is
    archived instead of what is live. What the mode adds is the three things only
-   an archive has — `d` cycles a date window (7 days / 30 days / all, resolved
+   an archive has — `s` cycles a date window (7 days / 30 days / all, resolved
    client-side into §13.2's `archived_since`), `<`/`>` turn pages of a hundred
-   rows, and `D` deletes permanently. `D` is a `scopePanel` binding on these two
+   rows, and `D` deletes permanently. *Amended 2026-09-10 (task 093, issue
+   #353): the window was `d`, which is the destructive letter's lower case and
+   sat one key from the permanent delete on the one screen where confusing the
+   two costs the most. `s` already cycles what a list is showing on the chats
+   board and the pull-request list, and a date window is that gesture on a
+   third list.* `D` is a `scopePanel` binding on these two
    contexts and nowhere else, because delete is not a §6 action (§6) and every
    action key is gated on `available_actions`.
 
@@ -7715,8 +7730,10 @@ and 2 have: view 8 is a keyless nav row in the palette, `enter` on a row opens
 view 9, `esc` returns. The chats board keeps `n` for itself — on it, `n` starts
 a chat; everywhere else it still opens the new-task form.
 
-*Amended 2026-08-30 (task 064).* View 7 gains two keys. **`c`** opens the
-new-task form seeded with the selected pull request: the daemon computes the
+*Amended 2026-08-30 (task 064).* View 7 gains two keys. **`a`** opens the
+new-task form seeded with the selected pull request *(amended 2026-09-10, task
+093, issue #353: it was `c`, which is cancel everywhere else — creating is `a`
+per §15's key vocabulary)*: the daemon computes the
 prefill and the form previews it in editable rows, so the TUI still makes no
 GitHub call of its own (task 035 decision 2). The created task runs on the pull
 request's head branch, which is the one row of that form the human cannot
@@ -8542,8 +8559,10 @@ effect can be to hide the only thing a turn produced.
 *Amended 2026-08-31 (task 067).* The chats board and the chat workspace carry
 their own rows in the registry (`internal/tui/bindings.go`), which is what the
 `?` overlay, the footer and the palette are derived from. On the **chats
-board**: `enter` opens the workspace, `n` starts a chat, `a` archives, `/`
-filters, `←`/`→` fold a project group and `r` re-lists. In the **chat
+board**: `enter` opens the workspace, `n` starts a chat, `A` archives, `/`
+filters, `←`/`→` fold a project group and `R` re-lists. *(Amended 2026-09-10,
+task 093: archive was `a` and the re-list was `r`; both moved to the vocabulary
+key below.)* In the **chat
 workspace**: `enter` sends, `ctrl+x` stops the live turn, `ctrl+t` hands the
 worktree and branch to a task *(added 2026-09-01, task 074)*, `esc` returns to
 the board. In the **new-chat form**: `ctrl+s` creates, `tab`/`shift+tab` move
@@ -8642,6 +8661,85 @@ the tabs differ only in which lane `l` resolves to. In the **Output pane**,
 vim-right that steps the attempt selector — that meaning is kept for a task with
 no lane to open. `esc` gains one rung below the popup and above the screen: the
 task this one was opened *from*.
+
+*Amended 2026-09-10 (task 093, issue #353).* **The key vocabulary.** The
+registry made the help *accurate* long before it made the keys *consistent*:
+`?`, the footer and the palette faithfully advertised four different keys for
+"refresh", because the rule above — "one key means one thing everywhere" — was
+stated for `/` and applied per view for everything else. It is now a table, and
+`internal/tui/bindings_test.go` holds it.
+
+| Operation | Key |
+|---|---|
+| refresh / re-read | `R` |
+| archive | `A` |
+| delete a persisted record | `D` |
+| remove a row from an open draft | `d` |
+| add / create | `a` |
+| edit in `$EDITOR` | `e` |
+| type free text instead of picking from a list | `t` |
+| open in a browser | `o` |
+| open or expand the row under the cursor | `enter` |
+| cycle a listing's scope | `s` |
+| filter | `/` |
+| fold / unfold | `←`/`→`, `C`/`O`, `space` |
+| open a fan-out lane | `l` |
+| page | `<`/`>` |
+
+Three clauses, not one — the issue asked for "exactly one key registry-wide",
+which taken literally would reopen task 025's deliberate partition of `R`:
+
+1. A key may be shared **only** when it means the same operation. Archive is
+   `A` whether it is a §6 action on a task or the chats board's own key; that
+   is the vocabulary working, not a collision.
+2. A key may mean two different things **only** where the registry can prove
+   the two surfaces never co-exist. A takeover screen offers no
+   `available_actions`, so `a` may add on projects while `a` approves a gate;
+   the **task workspace is not disjoint** from the action set, so nothing there
+   may reuse an action letter. This is task 025's finding promoted from an
+   accident to the rule.
+3. A key already carrying a vocabulary term may not be given a second meaning
+   on a new surface.
+
+The §6 action letters `p a x r E R s c A F` do not move, so they decided the
+contested cases. `R` won refresh: it already held seven surfaces and repair is
+only ever offered where a registry re-read is not. `A` won archive because it
+is the action letter. `D` destroys something persisted and `d` edits an unsaved
+draft — the inversion is what makes pressing `d` on an archive safe, and it is
+why the projects view's remove is `D` while the workflow editor's and the
+new-task Fields editor's stay `d`. The disjointness clause 2 rests on for the
+archived boards is a fact about §6's own table, not an assertion: `archived` is
+never a `from` state in `taskstate`'s transitions, so an archived row offers no
+action at all, and the test derives that rather than listing it.
+
+What moved: the chats board's `r`→`R` and `a`→`A`; both archived boards'
+`d`→`s`; the projects view's `d`→`D`; the pull-request list's `c`→`a`; the task
+workspace's Pull Request tab `c`→`enter`; and "type your own answer" `e`→`t` in
+the answer form and in all four pickers.
+
+The Pull Request tab **loses its refresh key outright**. `R` is repair on every
+tab of that workspace and does not move, and the tab already re-reads on its own
+timer. That key was also half of a live bug this amendment closes: `r` and `c`
+were intercepted before the tab fell through to the task's own actions, so
+**retry and cancel were unreachable from that tab** while the footer — rendered
+from the same registry — went on advertising both. That is exactly the failure
+"a key that means two unrelated things depending on the row is worse than one
+that sometimes does nothing" was written about.
+
+The new-task form's **Fields editor** is a registered context of its own
+(`ctxNewTaskFields`), for the reason the structured workflow editor is one:
+nothing the form underneath offers means the same thing inside it. Its `a` and
+`d` were handled and hinted inline and the registry had never heard of them, so
+no registry test could see them and `?` did not list them; the inline hint line
+is gone, because the footer now renders from the registry like every other
+surface.
+
+Deliberate exceptions, each with its recorded reason: `n` (§15's one
+two-meaning key, task 067) · `l` falling back to vim-right where a tab has no
+lane (issue #316) and meaning *link* on the pull-request takeover, which has no
+lanes (task 052 decision 6) · `r` as *retry connecting* while disconnected ·
+`d` as the output tab's alias · `i` · `u` · the unregistered vim aliases
+`h j k l f b u G`. Task 049's retirement of `1..6` is untouched.
 
 ### Mouse
 

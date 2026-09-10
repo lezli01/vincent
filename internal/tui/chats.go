@@ -532,7 +532,10 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		case "D":
 			v.askDelete()
 			return v, nil
-		case "d":
+		case "s":
+			// The date window, not the live board's scope cycle: `s` means
+			// "cycle what this list is showing" on both, and on an archived
+			// board the thing to cycle is the window (task 093).
 			v.cycleWindow()
 			return v, v.loadCmd()
 		case ">":
@@ -545,11 +548,12 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 				return v, v.loadCmd()
 			}
 			return v, nil
-		case "a", "n", "s":
-			// Archive, new chat and the scope cycle have no meaning here: the
-			// rows are already terminal, this board makes nothing, and the
-			// scope is what the screen is. Swallowed rather than left to fall
-			// through to the live board's handler below.
+		case "A", "n":
+			// Archive and new chat have no meaning here: the rows are already
+			// terminal and this board makes nothing. Swallowed rather than
+			// left to fall through to the live board's handler below — where
+			// `s` now lands on the window above rather than on the scope
+			// cycle, which is what the screen already is.
 			return v, nil
 		}
 	}
@@ -590,7 +594,7 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 		v.create = newNewChatForm(v.client, v.hintedProject())
 		return v, v.create.init()
-	case "a":
+	case "A":
 		if c, ok := v.current(); ok {
 			// A terminal chat has nothing left to archive and no worktree to
 			// remove, so the prompt would ask a human to confirm removing
@@ -609,7 +613,7 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "s":
 		v.cycleScope()
 		return v, v.loadCmd()
-	case "r":
+	case "R":
 		return v, v.loadCmd()
 	}
 	return v, nil

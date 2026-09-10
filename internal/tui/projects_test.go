@@ -119,7 +119,7 @@ func TestProjectsDeleteRePromptsOnlyWhenForceIsTheRemedy(t *testing.T) {
 	p := newProjectsView()
 	loadedProjects(p, []apiclient.Project{testProject(1, "vincent")}, nil)
 
-	pressView(p, "d")
+	pressView(p, "D")
 	if p.confirm == nil || p.confirm.force {
 		t.Fatalf("confirm = %+v, want an unforced first ask", p.confirm)
 	}

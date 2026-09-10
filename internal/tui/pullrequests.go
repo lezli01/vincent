@@ -444,7 +444,7 @@ func (v *pullRequestsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "s":
 		v.cycleState()
 		return v, v.loadCmd()
-	case "c":
+	case "a":
 		return v, v.createTask()
 	case "l":
 		v.openLinkPicker()

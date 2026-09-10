@@ -331,11 +331,15 @@ ceiling, and an attempt from before vincent recorded any of this, which reads
 there: it appears when the task has a pull request linked and `github.enabled`
 is on. It carries the pull request's facts and one row per check on its head
 commit — name, state, and the check's own page — read live from the daemon on
-open, on a reconciler tick, on its own poll and on `r`. Nothing about a check
-is stored, because a stored check result reads exactly like a current one
-while being wrong. `↑`/`↓` select a row, `c` opens it in a browser, `o` opens
-the pull request and `u` unlinks it from the task; the refusal is sticky, so
-the reconciler will not link it again. Nothing here writes to GitHub.
+open, on a reconciler tick and on its own poll. Nothing about a check is
+stored, because a stored check result reads exactly like a current one while
+being wrong, and there is no refresh key: `R` is repair on every tab of this
+workspace, and the poll is what makes a fourth trigger unnecessary. `↑`/`↓`
+select a row, `enter` opens it in a browser, `o` opens the pull request and `u`
+unlinks it from the task; the refusal is sticky, so the reconciler will not
+link it again. Every §6 action key works here too — the tab you happen to be
+reading is not a statement about what you may do to the task. Nothing here
+writes to GitHub.
 
 **Diff** gives the task's file-grouped git diff the entire view. **Workflow**
 draws the workflow this task ran as a control-flow graph with its run state on
@@ -751,6 +755,7 @@ this task's worktree, on this task's branch.
 | `↑` / `↓` | Move between the prompt and the agent / model / effort rows |
 | `enter` | Open the row under the cursor — the prompt field, or that row's picker |
 | `e` | Write the prompt in `$EDITOR` instead |
+| `t` | In an open agent / model / effort list, type a value it does not offer |
 | `ctrl+s` | Start the repair |
 | `ctrl+t` | Switch between the form and this task's details, without leaving the popup |
 | `esc` | Close without repairing — the draft is discarded |
@@ -785,6 +790,7 @@ the commit a reviewer asked for, drop the stray file the agent left.
 | `↑` / `↓` | Move between the run form, what to run, and the agent / model / effort rows |
 | `enter` | Open the row under the cursor — the run-form list, the text field, or that row's picker |
 | `e` | Write the prompt or command in `$EDITOR` instead |
+| `t` | In an open workflow / agent / model / effort list, type a value it does not offer |
 | `ctrl+s` | Start the follow-up |
 | `ctrl+t` | Switch between the form and this task's details, without leaving the popup |
 | `esc` | Close without running anything — the draft is discarded |
@@ -830,12 +836,12 @@ answer form.
 | Key | Does |
 |---|---|
 | `space` | Pick an option (toggles, for a multi-select question) |
-| `e` | Type your own answer — options are suggestions, never a list |
+| `t` | Type your own answer — options are suggestions, never a list |
 | `enter` | Submit; the run resumes in the same session where it stopped |
 | `ctrl+t` | Switch between the question and this task's details, without leaving the popup |
 | `esc` | Close without answering (what you picked is kept) |
 
-While `e` has a field open, `enter` keeps what you typed and `esc` discards it —
+While `t` has a field open, `enter` keeps what you typed and `esc` discards it —
 the submit is the next `enter`, on the form itself. The field opens under the
 question it answers and wraps as you type, so a long answer stays readable
 before you commit it; the committed answer is shown back on its row, wrapped
@@ -918,7 +924,7 @@ the issue on GitHub afterwards does not change what a later step sees; the
 snapshot is what [`.Issue`](../reference/workflow-schema.md#template-context)
 renders from.
 
-**The same row shows a pull request** when you arrived here with `c` from the
+**The same row shows a pull request** when you arrived here with `a` from the
 [pull-requests screen](#pull-requests) — the number, the title, the head branch,
 and, for a fork, that nothing can be pushed back to it. A pull request is never
 *picked* from inside the form: a task runs on the pull request's head branch, so
@@ -942,7 +948,8 @@ branch name, priority and agent — above the create action](../assets/tui-new-t
 | Key | Does |
 |---|---|
 | `enter` | Open the focused field's editor or picker |
-| `a` / `d` | In Fields, add or delete a custom row (declared rows cannot be deleted) |
+| `t` | In an open list, type a value it does not offer |
+| `a` / `d` | In Fields, add or remove a custom row (declared rows cannot be removed) |
 | `e` | Edit the description in `$EDITOR` |
 | `+` / `-` | Nudge the priority (higher runs first) |
 | `R` | Re-probe the adapters (the list is otherwise cache-served) |
@@ -958,8 +965,10 @@ there where
 says not to wait.
 
 The override pickers are fed by live adapter data, tagged with where each option
-came from, and always accept free text. They are windowed and filterable — you
-type to narrow, which is what makes cursor's ~180-model catalog usable. Each
+came from, and always accept free text: `t` inside an open list types a value
+the catalog does not offer, which is how you name a model that shipped this
+morning. They are windowed and filterable — `/` narrows the list, which is what
+makes cursor's ~180-model catalog usable. Each
 resolved field shows **which level won** (step, task, workflow, adapter), so the
 form tells you what will actually run rather than what you typed.
 
@@ -983,7 +992,7 @@ defaults and current workload on the right](../assets/tui-projects.png)
 |---|---|
 | `a` | Register a repository |
 | `enter` or `e` | Edit the selected project |
-| `d` | Remove it (asks first; its task rows go with it) |
+| `D` | Remove it (asks first; its task rows go with it) |
 | `/` | Filter by name or path |
 | `ctrl+s` | Save, in the form |
 
@@ -1006,7 +1015,7 @@ that links or unlinks a pull request re-renders the screen with no keypress.
 |---|---|
 | `enter` | Open the workspace of the task that claims this pull request |
 | `o` | Open the selected pull request in a browser |
-| `c` | Create a task from this pull request — it runs on the pull request's head branch, and the form is editable first |
+| `a` | Create a task from this pull request — it runs on the pull request's head branch, and the form is editable first |
 | `l` | Link it to a task in the same project |
 | `P` | Open a pull request for a task that has none — pick the task, then push its branch and create it |
 | `u` | Unlink it (asks first) |
@@ -1027,7 +1036,7 @@ with a named reason rather than guessed at in advance.
 removed this link, and the reconciler will not re-apply it on its next tick.
 The confirmation says so.
 
-`c` opens the New task form seeded with the row — the screen makes
+`a` opens the New task form seeded with the row — the screen makes
 no GitHub call of its own and computes no prefill; it hands the form a project
 and a number, and the daemon fills in the rest. It is refused on a row a task
 already claims, saying which task, because two tasks cannot hold one branch, and
@@ -1108,6 +1117,7 @@ Inside the form:
 |---|---|
 | `↑` / `↓` | Move between rows |
 | `enter` | Edit the row, cycle its values, or descend into a nested body |
+| `t` | In an open list, type a value it does not offer |
 | `a` | Add a step, lane or declared field after the one under the cursor |
 | `d` | Remove the step, lane or declared field under the cursor — asks first |
 | `K` / `J` | Move it up or down. Capitals: `k` and `j` still move the cursor |
@@ -1309,11 +1319,11 @@ task-only.
 |---|---|
 | `enter` | Open the chat's workspace |
 | `n` | Start a chat in the project you are looking at |
-| `a` | Archive the chat — asks first, and re-offers with the force when the worktree is dirty |
+| `A` | Archive the chat — asks first, and re-offers with the force when the worktree is dirty |
 | `/` | Filter by title, agent or branch |
 | `←` / `→` | Collapse or expand a project group |
 | `s` | Cycle the listing between live, archived and handed-off, and all |
-| `r` | Reload the board |
+| `R` | Reload the board |
 
 `s` is a peek at history from the live board; the [Archived](#archived) screen
 is where history is paged, windowed and deleted.
@@ -1323,7 +1333,7 @@ archived tasks are off the task board. `s` cycles the listing — live, then the
 terminal ones, then both — and the header names the listing whenever it is not
 the default, so an empty board is never mistaken for no chats. A terminal chat's
 last-activity cell shows *when* the chat ended rather than a duration that keeps
-counting; and `a` on such a row declines with a note instead of asking to remove
+counting; and `A` on such a row declines with a note instead of asking to remove
 a worktree that is already gone, or that a handoff gave to a task.
 
 A `running` row moves. Its state cell carries a turning glyph **beside** the
@@ -1488,7 +1498,7 @@ there is nothing to withhold and no flag saying so.
 | Key | Does |
 |---|---|
 | `D` | Delete permanently — asks first |
-| `d` | Cycle the window: last 7 days → last 30 days → all time |
+| `s` | Cycle the window: last 7 days → last 30 days → all time |
 | `<` / `>` | Turn the page (a hundred rows at a time) |
 | `enter` | Open the row's workspace, read-only |
 | `/` | Filter, exactly as on the live board |

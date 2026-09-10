@@ -300,7 +300,7 @@ func TestNewChatFormSubmitsFreeText(t *testing.T) {
 	f := chatFormWithCatalogs()
 	f.title.SetValue("a chat")
 	openAt(t, f, ncModel)
-	f.update(registryKey(t, "e"), nil) // the free-text row
+	f.update(registryKey(t, "t"), nil) // the free-text row
 	f.pick.input.SetValue("sonnet-shipped-this-morning")
 	f.update(registryKey(t, "enter"), nil)
 	if f.pick != nil {

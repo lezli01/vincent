@@ -704,10 +704,9 @@ func (n *newTask) renderFields() []string {
 	if f.err != "" {
 		out = append(out, styleWarn.Render("    ⚠ "+f.err))
 	}
-	if n.mode != ntFieldPicking {
-		out = append(out, styleDim.Render(
-			"    a add custom · enter edit/toggle/pick · ←/→ steps a choice · d delete custom · esc done"))
-	}
+	// No inline key line: the editor is a registered context since task 093,
+	// so the footer and the ? overlay name its keys from the registry — which
+	// is what a second hand-maintained list was always going to drift from.
 	return out
 }
 

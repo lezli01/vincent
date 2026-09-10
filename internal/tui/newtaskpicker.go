@@ -212,7 +212,10 @@ func (p *picker) update(msg tea.KeyPressMsg) pickerResult {
 	case "/":
 		p.filtering = true
 		p.filter.Focus()
-	case "e":
+	case "t":
+		// Free text, not $EDITOR (task 093). `e` opens $EDITOR on every form a
+		// picker can be raised over, so the two meanings had to be told apart
+		// by key rather than by which layer happened to be open.
 		if p.allowFree {
 			p.startFree()
 		}

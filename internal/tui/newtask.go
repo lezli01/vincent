@@ -303,6 +303,17 @@ func (n *newTask) setClient(c *apiclient.Client) tea.Cmd {
 	return n.loadCmd(false)
 }
 
+// bindingContext names the layer that has the keyboard (task 093). The Fields
+// editor is its own surface for the reason the workflow editor's is: `a` and
+// `d` are rows of a draft map in there and mean nothing out here, and `e` is
+// the description's $EDITOR out here and means nothing in there.
+func (n *newTask) bindingContext() bindingContext {
+	if n.fieldsEd != nil {
+		return ctxNewTaskFields
+	}
+	return ctxNewTask
+}
+
 // capturesInput reports that a text field owns the keyboard, so the global
 // single-key bindings stand down while someone is typing a title.
 func (n *newTask) capturesInput() bool {

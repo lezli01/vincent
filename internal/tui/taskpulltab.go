@@ -27,8 +27,10 @@ import (
 // The check rows are fetched, never stored. A check result that is a minute
 // old reads exactly like a current one while being wrong, which is the same
 // reason a pull request is a pointer and not a snapshot: this refetches on
-// tab open, on the reconciler's task.github_pull_changed, on the poll tick
-// the workspace already subscribes to, and on `r`. Never per render.
+// tab open, on the reconciler's task.github_pull_changed, and on the poll tick
+// the workspace already subscribes to. Never per render, and since task 093
+// never on a key either — `R` is repair everywhere in this workspace, and the
+// clock below is what made a fourth trigger dispensable.
 
 // checksPollInterval is how often the tab refetches while it is open. It is
 // the tab's own clock rather than the daemon's `github.poll_interval`,
@@ -168,19 +170,21 @@ func (t *taskView) updatePullTabKey(msg tea.KeyPressMsg) tea.Cmd {
 	case "down", "j":
 		t.movePullCursor(1)
 		return nil
-	case "r":
-		t.pullTab.note, t.pullTab.noteBad = "", false
-		return tea.Batch(t.pullCmd(), t.checksCmd())
 	case "o":
 		return t.openPullCmd()
-	case "c":
+	case "enter":
 		return t.openCheckCmd()
 	case "u":
 		return t.unlinkPullCmd()
 	}
 	// Task actions stay reachable from here, as they do from Task Details:
 	// the tab a human happens to be reading is not a statement about what
-	// they may do to the task.
+	// they may do to the task. That sentence had been false since the tab
+	// landed — `r` refreshed and `c` opened a check, so retry and cancel were
+	// swallowed here while the footer went on advertising both, which is the
+	// exact failure §15 warns about. The check moved to `enter` and the
+	// refresh key went away entirely (task 093): `R` is repair on every tab
+	// of this workspace, and the tab re-reads on its own timer anyway.
 	return t.detail.update(msg)
 }
 
@@ -193,7 +197,7 @@ func (t *taskView) movePullCursor(delta int) {
 	t.pullTab.cursor = min(max(t.pullTab.cursor+delta, 0), n-1)
 }
 
-// openCheckCmd is `c`: the selected check's own page. A check that reported
+// openCheckCmd is `enter`: the selected check's own page. A check that reported
 // no URL says so rather than opening the pull request instead — a key that
 // silently does something else is worse than one that explains itself.
 func (t *taskView) openCheckCmd() tea.Cmd {

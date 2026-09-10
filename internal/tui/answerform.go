@@ -175,7 +175,7 @@ func (f *answerForm) updateWith(msg tea.KeyPressMsg, submit func(apiclient.Input
 		f.cursor = f.nextSelectable(f.cursor, 1)
 	case " ", "space":
 		f.pick()
-	case "e":
+	case "t":
 		f.startFreeText()
 	case "enter":
 		return f.submitTo(submit), false

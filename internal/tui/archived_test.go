@@ -60,7 +60,7 @@ func TestArchivedBoardDatePresetsTranslateToBounds(t *testing.T) {
 		testNow.AddDate(0, 0, -7),  // and back round to the opening window
 	}
 	for i, w := range want {
-		b.updateKey(registryKey(t, "d"))
+		b.updateKey(registryKey(t, "s"))
 		got := b.listOptions().ArchivedSince
 		if !got.Equal(w) {
 			t.Fatalf("press %d: archived_since %v, want %v (window %q)", i+1, got, w, b.label())
