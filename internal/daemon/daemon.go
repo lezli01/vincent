@@ -443,11 +443,15 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	// nothing new.
 	//
 	// applyMu guards its own carried state (prevWarnings, envNames) now that
-	// two goroutines reach it: the watch loop and an API request.
+	// two goroutines reach it: the watch loop and an API request. The watcher
+	// also holds it across its read of config.yaml, not only the apply: the
+	// patch writes the file before it applies, so a read under applyMu is
+	// never older than the last applied patch. Read outside it, a fire that
+	// caught the bytes a patch was replacing applied them after the patch
+	// had answered 200, and the next GET read the old value (m11 on macOS).
 	var applyMu sync.Mutex
-	applyConfig := func(next config.Config) {
-		applyMu.Lock()
-		defer applyMu.Unlock()
+	// applyLocked is the applier proper; its caller holds applyMu.
+	applyLocked := func(next config.Config) {
 		prev := current.Load()
 		if next.Listen != prev.Listen {
 			logger.Warn("listen change ignored until restart",
@@ -494,6 +498,11 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		// max_parallel_tasks may have changed (§11).
 		sched.Wake()
 	}
+	applyConfig := func(next config.Config) {
+		applyMu.Lock()
+		defer applyMu.Unlock()
+		applyLocked(next)
+	}
 
 	srv := api.New(api.Deps{
 		Token:        token,
@@ -531,7 +540,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	})
 	apiHolder.Store(srv)
 
-	if err := config.Watch(ctx, logger, dirs.Config, applyConfig); err != nil {
+	if err := config.Watch(ctx, logger, dirs.Config, &applyMu, applyLocked); err != nil {
 		logger.Warn("config hot-reload unavailable", "error", err)
 	}
 

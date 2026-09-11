@@ -5082,7 +5082,13 @@ and `PATCH /v1/tasks/{id}` already set. What it guarantees:
   handler — so the `listen` pin and the `branch_template` fallback are the same
   code on both paths, and it is idempotent: the watcher's later fire re-reads
   identical bytes. A `GET` issued the instant a `200` lands reads the new
-  values, with no sleep.
+  values, with no sleep. *Amended 2026-09-11:* the fire is not always later.
+  One whose debounce ran out as a patch arrived read the bytes the patch was
+  replacing and applied them after the patch's own apply, so the `GET` read
+  the old value (the m11 gate, on macOS). The watcher now holds the applier's
+  lock from its read of the file through its apply; the patch writes before
+  it applies, so a read under that lock is never older than the last applied
+  patch.
 - **`listen` is written and does not take effect.** The reload rule above is
   unchanged, so the running daemon keeps the address it bound and `GET
   /v1/config` goes on reporting it. Clients say "takes effect on restart"

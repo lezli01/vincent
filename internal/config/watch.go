@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -21,9 +22,17 @@ const debounce = 100 * time.Millisecond
 // missing file as defaults). The watch is on the directory, not the file, so
 // rename-on-save editors and late file creation are handled.
 //
+// Each reload holds mu from before it reads config.yaml until onReload
+// returns, so onReload runs with mu held and must not take it again. That
+// is what lets a writer which updates the file and then applies it under
+// the same lock (PATCH /v1/config, task 060) report the change as in force:
+// a reload that read the file before the write would otherwise deliver the
+// older bytes after the writer's own apply, and revert it until the next
+// event.
+//
 // Watch returns once the watcher is registered and stops when ctx is
 // canceled. onReload is called from the watcher goroutine.
-func Watch(ctx context.Context, log *slog.Logger, dir string, onReload func(Config)) error {
+func Watch(ctx context.Context, log *slog.Logger, dir string, mu sync.Locker, onReload func(Config)) error {
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("create config watcher: %w", err)
@@ -32,11 +41,11 @@ func Watch(ctx context.Context, log *slog.Logger, dir string, onReload func(Conf
 		_ = w.Close()
 		return fmt.Errorf("watch %s: %w", dir, err)
 	}
-	go watchLoop(ctx, log, w, filepath.Join(dir, FileName), onReload)
+	go watchLoop(ctx, log, w, filepath.Join(dir, FileName), mu, onReload)
 	return nil
 }
 
-func watchLoop(ctx context.Context, log *slog.Logger, w *fsnotify.Watcher, path string, onReload func(Config)) {
+func watchLoop(ctx context.Context, log *slog.Logger, w *fsnotify.Watcher, path string, mu sync.Locker, onReload func(Config)) {
 	defer func() { _ = w.Close() }()
 	var pending *time.Timer
 	var fire <-chan time.Time
@@ -58,13 +67,7 @@ func watchLoop(ctx context.Context, log *slog.Logger, w *fsnotify.Watcher, path 
 			fire = pending.C
 		case <-fire:
 			pending, fire = nil, nil
-			cfg, err := Load(path)
-			if err != nil {
-				log.Warn("config reload rejected; keeping last good config", "error", err)
-				continue
-			}
-			log.Info("config reloaded", "path", path)
-			onReload(cfg)
+			reload(log, path, mu, onReload)
 		case err, ok := <-w.Errors:
 			if !ok {
 				return
@@ -72,4 +75,18 @@ func watchLoop(ctx context.Context, log *slog.Logger, w *fsnotify.Watcher, path 
 			log.Warn("config watcher error", "error", err)
 		}
 	}
+}
+
+// reload is one debounced fire: read config.yaml and deliver it, with mu held
+// across both (see Watch).
+func reload(log *slog.Logger, path string, mu sync.Locker, onReload func(Config)) {
+	mu.Lock()
+	defer mu.Unlock()
+	cfg, err := Load(path)
+	if err != nil {
+		log.Warn("config reload rejected; keeping last good config", "error", err)
+		return
+	}
+	log.Info("config reloaded", "path", path)
+	onReload(cfg)
 }
