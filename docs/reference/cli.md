@@ -397,10 +397,13 @@ vincent task add --project ID (--title TITLE | --github-issue N | --github-pull 
                  [--workflow NAME] [--description TEXT] [--base-branch BRANCH]
                  [--branch NAME] [--priority N] [--agent NAME] [--model M]
                  [--effort E] [--field NAME=VALUE]... [--fields-file PATH]
+                 [--paused] [--restricted] [--max-task-cost-usd USD]
                  [--json]
 ```
 
-Creates a task. It is `queued` immediately — there is no draft state.
+Creates a task. It is `queued` immediately unless you pass `--paused`, which
+holds it in `paused` until [`vincent task resume`](#vincent-task-pause) — there
+is no separate draft state.
 
 | Flag | Notes |
 |---|---|
@@ -415,6 +418,12 @@ Creates a task. It is `queued` immediately — there is no draft state.
 | `--agent` / `--model` / `--effort` | The task-level override. It replaces workflow `defaults`, never an explicit step field |
 | `--github-issue N` | Create the task from GitHub issue `N`. See below |
 | `--github-pull N` | Create the task from GitHub pull request `N`, **running it on that pull request's head branch**. See below |
+| `--paused` | Create the task paused; it starts only when resumed (`vincent task resume`). The scheduler never sees it before then |
+| `--restricted` | Run every agent step restricted, even one whose workflow says full-auto. Refused at creation if a step's agent cannot restrict on this host (cursor on Windows) |
+| `--max-task-cost-usd USD` | This task's own spend cap in USD; the lower of it and config's [`max_task_cost_usd`](configuration.md#max_task_cost_usd) applies, so it can tighten the global cap but not lift it. Inert on codex and cursor, which report no cost |
+
+The last three are sent only when you name them, and are recorded on the task
+(`--json` shows `restricted` and `max_task_cost_usd`).
 
 Declared workflow fields are validated by the daemon, while additional names
 remain valid and are recorded on the same open field map:

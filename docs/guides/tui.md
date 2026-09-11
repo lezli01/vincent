@@ -884,7 +884,13 @@ key.
 Opens for the project you are looking at. A guided form: project → workflow
 (with its description and step list, flagging steps whose agent is unavailable)
 → *(GitHub issue)* → title → description → fields → base branch → priority →
-optional agent/model/effort override.
+start → optional agent/model/effort override.
+
+**The start row** decides whether the task runs as soon as a slot is free — the
+default — or is created **paused**: `enter` toggles between the two. A paused
+task waits on the board, with no worktree and no agent started, until you resume
+it, which is how you put a draft on the board. The Review stage shows which you
+chose.
 
 When the selected workflow declares [`fields:`](../reference/workflow-schema.md#fields),
 the Fields row is pre-rendered in declaration order. It shows labels,
@@ -947,7 +953,7 @@ branch name, priority and agent — above the create action](../assets/tui-new-t
 
 | Key | Does |
 |---|---|
-| `enter` | Open the focused field's editor or picker |
+| `enter` | Open the focused field's editor or picker; on the start row, toggle creating the task paused |
 | `t` | In an open list, type a value it does not offer |
 | `a` / `d` | In Fields, add or remove a custom row (declared rows cannot be removed) |
 | `e` | Edit the description in `$EDITOR` |

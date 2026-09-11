@@ -1115,7 +1115,7 @@ are **not** here — those come from [`GET /v1/agents`](#daemon).
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/v1/tasks?project_id=&state=&archived=&archived_before=&archived_since=&limit=&offset=&parent_id=&include_children=` | List. Fan-out lanes are **excluded** by default — `parent_id` lists one parent's lanes in merge order, `include_children=true` the flat everything |
-| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, priority?, agent?, model?, effort?, github_issue?, github_pull? }` — `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head. Accepts an optional `Idempotency-Key` header |
+| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, priority?, agent?, model?, effort?, github_issue?, github_pull?, paused?, restricted?, max_task_cost_usd? }` — `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head. `paused`, `restricted` and `max_task_cost_usd` are the [create-time limits](#paused-restricted-and-capped-tasks). Accepts an optional `Idempotency-Key` header |
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
 | `DELETE` | `/v1/tasks/{id}` | Permanent delete of an **archived** task. `?delete_branch=true` (or `{ "delete_branch": true }`) → `{ deleted: true, branch? }`. See [Permanent delete](#permanent-delete) |
@@ -1280,7 +1280,10 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/tasks" \
 The body is compared by a digest of the decoded request, so reformatting your
 JSON or reordering its keys between the two sends is not a difference. It is
 taken before the `github_issue` prefill runs, so an issue edited in between does
-not turn a genuine retry into a conflict.
+not turn a genuine retry into a conflict. `paused`, `restricted` and
+`max_task_cost_usd` are part of it — the same key with a different value for any
+of them is `idempotency_key_reused` — and a body that names none of them
+digests exactly as it did before they existed.
 
 Keys live for 24 hours and are then pruned; they are also deleted along with the
 task they name, so a key whose task was destroyed by a forced project delete
@@ -1616,6 +1619,35 @@ also where a workflow's [includes](workflow-schema.md#type-include) are
 resolved into the snapshot, so an include that cycles, names a workflow this
 project cannot see, nests past `include.max_depth`, brings a step id already in
 use, or is restricted to another platform is a `400` here.
+
+### Paused, restricted and capped tasks
+
+Three optional `POST /v1/tasks` fields limit how a new task runs. Each is its
+own choice, and they combine.
+
+| Field | Type | Does |
+|---|---|---|
+| `paused` | bool | Creates the task in `paused` instead of `queued`. The scheduler never sees it until `POST /v1/tasks/{id}/resume`, so no agent can start between creating and holding it |
+| `restricted` | bool | Runs **every** agent step `permission_mode: restricted`, including a step whose own field says `full-auto`. It only tightens: nothing makes a step looser than its workflow wrote it |
+| `max_task_cost_usd` | number ≥ 0 | This task's own spend cap. The task blocks `cost_limit` at the lower of it and `config.yaml`'s [`max_task_cost_usd`](configuration.md#max_task_cost_usd); `0` or absent on either side means no cap from that side, so a task cap can tighten the global one but never lift it |
+
+```sh
+curl -sS -X POST "http://127.0.0.1:$PORT/v1/tasks" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"project_id":1,"title":"Triage the flaky test","paused":true,
+       "restricted":true,"max_task_cost_usd":2.5}'
+```
+
+- A negative `max_task_cost_usd` is `400 validation_failed`. The cap is inert on
+  codex and cursor, which report no cost.
+- `restricted` goes through the same creation check a workflow's own
+  `restricted` step does: if an agent step would run on an adapter that cannot
+  restrict on this host — cursor on Windows — the create is
+  `400 validation_failed` naming the step and the agent, rather than a task that
+  fails later.
+- Both limits are recorded on the task and fixed at creation. Every task
+  representation carries `"restricted"` (bool) and `"max_task_cost_usd"` (the
+  number, or `null` when the task set none).
 
 ## Chats
 
