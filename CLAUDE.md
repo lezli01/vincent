@@ -250,6 +250,7 @@ is a correctness bug, not a style issue:
 | `internal/agent` | `AgentAdapter` interface + option catalog; `agent/claude`, `agent/codex`, `agent/cursor` implement it |
 | `internal/worktree` | Per-task git worktrees, `vincent/{id}-{slug}` branches, dirty detection |
 | `internal/notify` | The outward signal (§12.3, task 046): a broker subscriber that spawns `notify.command` when a task enters a state in `notify.on`, with an enriched JSON envelope on the child's stdin. Bounded queue, four workers, fixed 10 s per child, no replay |
+| `internal/trigger` | The inward signal (task 096): `{config_dir}/triggers/*.yaml` definitions, their validator and the schema descriptor the form renders from, and the 0600 writer that edits them with `workflow.Edit` ops. Replays `POST /v1/tasks` through an `http.Handler` the way `internal/mcp` does, and never imports `internal/api` (decision 30) |
 | `internal/tui` | Bubble Tea client: six views (board, detail, new-task, projects, workflows, daemon) routed by `viewID` |
 
 Adapters differ in what they *can* do, and the differences are documented, never
