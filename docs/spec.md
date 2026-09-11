@@ -874,6 +874,9 @@ here with one effect whose process-killing half is conditional on state, and the
 remedy the clients document is the same keypress, which performs exactly that kill.
 
 Tasks are `queued` immediately upon creation (no draft state in v1).
+*Amended 2026-09-11 (task 096):* or `paused`, when the create asked for it
+(above). There is still no draft state — a task created held is an ordinary
+`paused` row that `resume` admits.
 
 ## 7. Step execution semantics
 
@@ -6916,6 +6919,33 @@ CREATE TABLE chat_turns (
     duration_ms   INTEGER
 );
 
+-- Event-trigger runtime state (task 096, added 2026-09-11; migration 0029).
+-- A trigger's definition is a file under {config_dir}/triggers/, never a row:
+-- both tables key on the trigger id as text, and there is no triggers table.
+CREATE TABLE trigger_cursors (         -- one row per trigger that has polled
+    trigger_id      TEXT PRIMARY KEY,
+    cursor          TEXT,              -- NULL = unseeded: the next poll seeds and fires nothing
+    last_poll_at    TEXT,
+    last_poll_ok    INTEGER NOT NULL DEFAULT 0,
+    last_poll_error TEXT NOT NULL DEFAULT '',
+    last_fire_at    TEXT
+);
+
+CREATE TABLE trigger_deliveries (      -- the ledger: one row per event judged
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    trigger_id  TEXT NOT NULL,
+    event_id    TEXT NOT NULL DEFAULT '',
+    dedupe_key  TEXT NOT NULL DEFAULT '',
+    outcome     TEXT NOT NULL CHECK (outcome IN
+                  ('fired', 'deduped', 'filtered', 'rate_limited', 'refused', 'error')),
+    task_id     INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    detail      TEXT NOT NULL DEFAULT '', -- a `refused` row's §13.1 envelope, an `error` row's text
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX idx_trigger_deliveries_key ON trigger_deliveries(trigger_id, dedupe_key);
+CREATE INDEX idx_trigger_deliveries_created ON trigger_deliveries(trigger_id, created_at);
+CREATE INDEX idx_trigger_deliveries_age ON trigger_deliveries(created_at);
+
 CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 ```
 
@@ -6931,6 +6961,19 @@ and must not be conflated with it — see §13.4 for why.
 workflow as written, under config's cap alone — so the pair composes with
 `config.yaml`'s `max_task_cost_usd` without a NULL case. A task created
 `paused` needs no column: it is an ordinary row whose `state` is `paused`.
+
+*Added 2026-09-11 (task 096, migration 0029).* `trigger_cursors` and
+`trigger_deliveries` hold what the daemon learns while running a trigger; the
+definition stays in its file, and a table mirroring it would be a second source
+of truth. The cursor and its poll status share one row because they share a
+lifetime: both follow the file (task 096 decision 16). The ledger deliberately
+outlives the file, so deleting a trigger and re-creating its id cannot refire an
+event it already delivered, and is pruned at 30 days instead (§17).
+`task_id` is `ON DELETE SET NULL`, not `CASCADE`: a `fired` row is the dedupe
+record for its key, and deleting the task it created must not let the event fire
+again. No running daemon writes either table yet: `internal/trigger`'s firing
+pipeline records deliveries, but nothing wires it into the daemon until the rest
+of 096.2 lands. The schema, its typed CRUD and the prune are in place.
 
 WAL mode, `busy_timeout` set, all writes through the daemon's single connection pool.
 Migrations are embedded in the binary and applied at startup.
@@ -9231,7 +9274,12 @@ global cursor config is untouched.
   task-owned state* — are pruned by the same pass under
   the same key, measured from when the chat was archived. The pruner walked
   archived tasks alone until then, so a chat's transcripts outlived every
-  retention window.
+  retention window. *Amended 2026-09-11 (task 096):* a second row exception —
+  `trigger_deliveries` (§14) rows are pruned after a **fixed 30 days** by the
+  same pass, on the same terms as `idempotency_keys`: no config knob, and
+  independent of `transcript_retention_days`. A month answers "why did my
+  trigger not fire last week?" while bounding a table that grows with every
+  poll's events (task 096 decision 13).
 - **Entry point** (*added 2026-08-15, task 005*): `vincent doctor` and
   `GET /v1/doctor`. Everything above answers "what happened to this task"; the
   question that had no surface at all was "why is nothing running?", which took

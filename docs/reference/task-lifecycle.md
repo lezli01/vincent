@@ -46,7 +46,11 @@ to decide whether it means chats too. It is documented with the [chat routes](ap
            running┘      └─────────┘
 ```
 
-Tasks are `queued` immediately on creation. There is no draft state.
+Tasks are `queued` immediately on creation, unless the create asked for
+[`paused`](api.md#paused-restricted-and-capped-tasks) — `vincent task add
+--paused`, or the new-task form's start row — which puts the task straight into
+`paused`, an edge the diagram leaves off. It waits there, with no worktree and
+no agent started, until you `resume` it. There is no separate draft state.
 
 `done` and `aborted` have one more edge out of them that the diagram leaves off
 to stay readable: `follow_up` re-queues either of them to run more work in the
@@ -63,7 +67,7 @@ task's existing worktree, and returns it to the state it came from. See
 | `awaiting_input` | The running agent asked a question; its process is alive and idle on stdin | **yes** |
 | `awaiting_children` | A `fan_out` step's lanes are running as child tasks; this task owns no process | no |
 | `blocked` | A step failed and retries are exhausted; waiting for a human | no |
-| `paused` | You asked it to hold; takes effect at the next step boundary | no |
+| `paused` | You asked it to hold; takes effect at the next step boundary. Or it was created held, and has not run yet | no |
 | `done` | Every step succeeded. Worktree and branch retained for inspection. `follow_up` runs more work in them; `archive` tears them down | no |
 | `aborted` | You cancelled, or rejected terminally. Worktree and branch retained, and open to `follow_up` on the same terms as `done` | no |
 | `archived` | Terminal. Worktree removed, record kept — until a human discards it with [`vincent task delete`](cli.md#vincent-task-delete), which is not an action on this page's list and is the only thing that removes the row. The branch is kept unless it has no commits past its base, in which case it is deleted ([`delete_empty_branch_on_archive`](configuration.md#delete_empty_branch_on_archive)) | no |
@@ -289,7 +293,7 @@ same thing wherever it originated.
 | `restricted_unsupported` | The adapter cannot restrict on this platform (cursor on Windows). Task creation refuses these, so reaching it means the workflow or the machine changed after the task was queued |
 | `mcp_unsupported` | The adapter or CLI build cannot be given vincent's [MCP server](../guides/mcp.md) for this step. The step fails rather than running an agent that silently has no vincent tools. Set [`mcp.wire_steps: false`](configuration.md#mcp) if the step does not need them |
 | `transcript_limit` | The attempt hit `transcript_max_bytes` |
-| `cost_limit` | The task has spent past [`max_task_cost_usd`](configuration.md#max_task_cost_usd). **Not a step failure:** the finished step run keeps its own state and reason, no retry is consumed, and a retry that was due does not run. Checked after each attempt, so expect to overshoot by up to one. Raise the cap — it is hot-reloaded — and retry; retrying without raising it buys exactly one more attempt. Inert on agents that report no cost |
+| `cost_limit` | The task has spent past its cap: [`max_task_cost_usd`](configuration.md#max_task_cost_usd), or the task's own [`max_task_cost_usd`](api.md#paused-restricted-and-capped-tasks) when it was created with a lower one. **Not a step failure:** the finished step run keeps its own state and reason, no retry is consumed, and a retry that was due does not run. Checked after each attempt, so expect to overshoot by up to one. Raise the cap — config's is hot-reloaded — and retry; retrying without raising it buys exactly one more attempt. A task's own cap is fixed at creation, so when it is the lower one, raising config's does not move the wall. Inert on agents that report no cost |
 | `transcript_io_error` | The attempt's transcript could not be written, encoded or closed — a full disk, a revoked permission, a short write. The step fails rather than reporting a success over a record that is missing the run it describes. Retries as usual (a new attempt writes a new file), then blocks. **Not** what an over-long line produces: those are captured in `partial` pieces |
 | `agent_protocol_error` | Vincent could not read the agent's stream to the end, so the transcript is missing lines the CLI wrote. Not `agent_error` — the CLI may have behaved perfectly; the reader that failed is vincent's |
 | `shell_unavailable` | The requested shell is not installed |
