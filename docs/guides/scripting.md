@@ -421,8 +421,8 @@ Build the body with `jq -n --arg` rather than by pasting variables into a JSON
 string — a quote in a branch or job name is legal in every CI system and
 breaks hand-made JSON. `project_id` is the id `vincent project ls` prints, and
 `fix-and-test` is the example workflow of that name
-(`vincent workflow init --from fix-and-test`); any workflow the project can see
-will do.
+(`vincent workflow init fix-and-test --from fix-and-test`); any workflow the
+project can see will do.
 
 ### GitHub Actions
 
