@@ -50,6 +50,7 @@ needs to react rather than poll.
 - [Validating workflows in CI](#validating-workflows-in-ci)
 - [Talking to the API directly](#talking-to-the-api-directly)
 - [Reacting to events](#reacting-to-events)
+- [Starting tasks from CI](#starting-tasks-from-ci)
 - [A worked example](#a-worked-example)
 - [Things worth knowing](#things-worth-knowing)
 
@@ -384,6 +385,157 @@ run. See [`notify`](../reference/configuration.md#notify) for the full envelope
 and the delivery guarantees, and the
 [security model](../security-model.md) for what it means that the daemon runs
 it as you.
+
+## Starting tasks from CI
+
+The third direction is a build system asking vincent for work — a red build
+becoming a task. `POST /v1/tasks` is the whole integration, and nothing needs
+installing on the CI side beyond `curl` and `jq`.
+
+**The runner has to be on the daemon's machine, running as the daemon's
+user.** The API listens on loopback only, and a caller authenticates with the
+`0600` token in the data directory, so a GitHub-hosted runner or a Jenkins
+controller in a data centre cannot reach it, and nothing here changes that. What
+works is a self-hosted runner, a Jenkins agent or a TeamCity agent on the same
+box — the setup you already have when a workstation doubles as a build agent.
+
+**Derive the `Idempotency-Key` from the build, not from `uuidgen`.** A random
+key protects one `curl` from its own retry; a key derived from the build's
+identity protects the build. Each snippet below keys on the identity its CI
+system guarantees unique per build, so a step that runs twice for the same
+build — curl's own `--retry` after a lost response, or a GitHub Actions
+*Re-run failed jobs* — gets back the task the first run created instead of a
+second task, a second worktree and a second agent. Three rules from
+[Replaying a create](../reference/api.md#replaying-a-create) shape them:
+
+- **Everything in the body must be a function of the key.** The same key with
+  a *different* body is a `409` with `details.reason =
+  "idempotency_key_reused"`, not a replay — so a title carrying a timestamp or
+  an attempt number turns a re-run into a failed step.
+- **A key is printable ASCII and at most 255 bytes.** Every identity used below
+  is.
+- **Keys last 24 hours.** A re-run a week later creates a task, which is
+  usually right: by then it is a new failure.
+
+Build the body with `jq -n --arg` rather than by pasting variables into a JSON
+string — a quote in a branch or job name is legal in every CI system and
+breaks hand-made JSON. `project_id` is the id `vincent project ls` prints, and
+`fix-and-test` is the example workflow of that name
+(`vincent workflow init --from fix-and-test`); any workflow the project can see
+will do.
+
+### GitHub Actions
+
+A job that runs only when an earlier one failed:
+
+```yaml
+# .github/workflows/ci.yml
+jobs:
+  test:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - run: make test
+
+  ask-vincent:
+    needs: test
+    if: failure()
+    runs-on: self-hosted
+    steps:
+      - name: Hand the failure to vincent
+        shell: bash
+        run: |
+          DATA_DIR=${VINCENT_DATA_DIR:-$HOME/.local/share/vincent}   # Linux; see the table
+          PORT=$(jq -r .port "$DATA_DIR/daemon.json")
+          TOKEN=$(cat "$DATA_DIR/token")
+          URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          jq -n --arg title "CI failed: $GITHUB_WORKFLOW on $GITHUB_REF_NAME" --arg url "$URL" \
+            '{project_id: 1, workflow: "fix-and-test", title: $title,
+              description: ("The run at " + $url + " failed. Reproduce the failure and fix it."),
+              fields: {ci_run: $url}}' |
+          curl -fsS --retry 3 -X POST "http://127.0.0.1:$PORT/v1/tasks" \
+            -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+            -H "Idempotency-Key: github-actions:$GITHUB_REPOSITORY:$GITHUB_RUN_ID" \
+            --data-binary @-
+```
+
+`GITHUB_RUN_ID` is the key because it survives *Re-run failed jobs*: the re-run
+is attempt 2 of the same run, so if the tests fail again `ask-vincent` replays
+the task rather than filing the failure twice. That is also why nothing in the
+body reads `GITHUB_RUN_ATTEMPT`. `shell: bash` makes the step the same on a
+Windows runner, under Git Bash.
+
+### Jenkins
+
+A `post { failure { … } }` block in the `Jenkinsfile`:
+
+```groovy
+pipeline {
+  agent { label 'vincent-host' }
+  stages {
+    stage('Test') {
+      steps { sh 'make test' }
+    }
+  }
+  post {
+    failure {
+      sh '''
+        DATA_DIR=${VINCENT_DATA_DIR:-$HOME/.local/share/vincent}
+        PORT=$(jq -r .port "$DATA_DIR/daemon.json")
+        TOKEN=$(cat "$DATA_DIR/token")
+        jq -n --arg title "CI failed: $JOB_NAME" --arg url "$BUILD_URL" \
+          '{project_id: 1, workflow: "fix-and-test", title: $title,
+            description: ("The build at " + $url + " failed. Reproduce the failure and fix it."),
+            fields: {ci_run: $url}}' |
+        curl -fsS --retry 3 -X POST "http://127.0.0.1:$PORT/v1/tasks" \
+          -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+          -H "Idempotency-Key: $BUILD_TAG" \
+          --data-binary @-
+      '''
+    }
+  }
+}
+```
+
+`BUILD_TAG` is `jenkins-${JOB_NAME}-${BUILD_NUMBER}`, with the job name's
+slashes turned into dashes. Jenkins cannot run a build again under the same
+number — *Replay* and *Rebuild* both start a new one — so what the key buys here
+is `--retry`. The script sits inside `'''` so that Groovy leaves every `$` for
+the shell. The one backslash Groovy still reads in there is the one ending a
+line, and dropping it joins the line for the shell exactly as the shell would
+have; any other backslash is a Groovy escape, which is why the `jq` program
+concatenates with `+` rather than interpolating with `\(…)`.
+
+### TeamCity
+
+A Command Line build step at the end of the build configuration, with
+*Execute step* set to *Only if build status is failed* (TeamCity 2023.05 or
+later), and this as its custom script:
+
+```sh
+DATA_DIR=${VINCENT_DATA_DIR:-$HOME/.local/share/vincent}
+PORT=$(jq -r .port "$DATA_DIR/daemon.json")
+TOKEN=$(cat "$DATA_DIR/token")
+URL="%teamcity.serverUrl%/viewLog.html?buildId=%teamcity.build.id%"
+jq -n --arg title "CI failed: $TEAMCITY_BUILDCONF_NAME" --arg url "$URL" \
+  '{project_id: 1, workflow: "fix-and-test", title: $title,
+    description: ("The build at " + $url + " failed. Reproduce the failure and fix it."),
+    fields: {ci_run: $url}}' |
+curl -fsS --retry 3 -X POST "http://127.0.0.1:$PORT/v1/tasks" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: teamcity:%teamcity.build.id%" \
+  --data-binary @-
+```
+
+TeamCity substitutes each `%…%` reference before the shell sees the script, so
+`teamcity.build.id` — unique across the server — is the key; a literal `%` in
+the script would have to be written `%%`. A *Re-run* is a new build with a new
+id, as in Jenkins. It is a step rather than a build feature because TeamCity
+has no build feature that makes an arbitrary HTTP call without a plugin.
+
+These three snippets are not illustrations: the test suite lifts each one out
+of this page and runs it against a real daemon, twice for the same build and
+once for the next, and counts the tasks.
 
 ## A worked example
 

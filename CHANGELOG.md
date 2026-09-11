@@ -156,6 +156,14 @@ list with the user-facing context a commit subject cannot carry.
   erased before anything else is written, so no spinner residue can land in
   front of the answer or an error.
 
+- **Starting tasks from CI, documented.** [Scripting vincent](docs/guides/scripting.md#starting-tasks-from-ci)
+  gains a section with a GitHub Actions job, a Jenkins `post { failure }` block
+  and a TeamCity build step that turn a red build into a task through
+  `POST /v1/tasks`, each keyed on its build's identity so the same build run
+  twice makes one task. No code changed: it works against today's daemon, on
+  a runner that shares the daemon's machine and user. The test suite runs all
+  three snippets off the page against a real daemon.
+
 ### Changed
 
 - **One key, one meaning: the TUI's keyboard now follows a vocabulary.** The
