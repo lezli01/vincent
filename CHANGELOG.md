@@ -9,6 +9,58 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [0.9.0](https://github.com/lezli01/vincent/compare/v0.8.0...v0.9.0) (2026-09-11)
+
+
+### Features
+
+* add the Step Details tab to the task workspace ([2006955](https://github.com/lezli01/vincent/commit/200695581837bb9911c73f54f4a41b532f970218))
+* **api:** create tasks paused, restricted or with their own cost cap ([4ceb0cf](https://github.com/lezli01/vincent/commit/4ceb0cf7c3ae1efb4aa7242baab3ca5e047d6ee0))
+* **api:** expose usage_limit_auto_continue on every client surface ([b4a36eb](https://github.com/lezli01/vincent/commit/b4a36eb49011952aac9cd293c3542fa3c865ef3f))
+* **api:** report retried_descendants on POST /retry ([c5ebf12](https://github.com/lezli01/vincent/commit/c5ebf1260a021af3ed3f045713e195096b30e0d0))
+* archived boards for tasks and chats, with a permanent delete ([74e763d](https://github.com/lezli01/vincent/commit/74e763d669ef84ca0f3485bb7b8d0c372262b92e))
+* **clients:** report the cascade count on a parked parent's retry ([0756882](https://github.com/lezli01/vincent/commit/07568824ad68f45976bfb44b1e42594a4c4c944a))
+* **config:** add usage_limit_auto_continue ([6ab2457](https://github.com/lezli01/vincent/commit/6ab24577e4cc8b78815dcca41625c4b9e75b0fb4))
+* fill the footer's width and count the keys it hides ([ba133e1](https://github.com/lezli01/vincent/commit/ba133e168b5d88c30411d67f2817b053c82cdc6f))
+* one key per operation in the TUI, enforced by the registry ([02782d0](https://github.com/lezli01/vincent/commit/02782d04d9090202668ff0aacf24112b80519f8d))
+* record an attempt's rendered input and resolution on step_runs ([dcba03d](https://github.com/lezli01/vincent/commit/dcba03db6b34dba0c0c6acf5f33f2ee2f26302df))
+* record each attempt's rendered input as the engine renders it ([0e30e09](https://github.com/lezli01/vincent/commit/0e30e095ec0fa858fb4f98808dff1ef982d00127))
+* report whether the published skills are installed, and install them ([16717ce](https://github.com/lezli01/vincent/commit/16717ceccbd8140ec533f8d9d6d0c98aabea4bcc)), closes [#357](https://github.com/lezli01/vincent/issues/357)
+* serve the §11 slot counts from the daemon ([c18d1e7](https://github.com/lezli01/vincent/commit/c18d1e7007140eb081834776f8baa9d66ebbfe8a))
+* **store:** add trigger cursors and delivery ledger ([d6ce088](https://github.com/lezli01/vincent/commit/d6ce0885532367d030e5c4591de86cb9559e84ce))
+* **taskrun:** block on a quota stop when the mode says so ([fdd8e0a](https://github.com/lezli01/vincent/commit/fdd8e0a13d84829129d73d7194906927c49f4319))
+* **taskrun:** cascade retry from a parked fan-out parent ([081981e](https://github.com/lezli01/vincent/commit/081981eda5caed434d4e9bfee7351476d2874659))
+* **taskrun:** prune trigger deliveries after 30 days ([78c40f0](https://github.com/lezli01/vincent/commit/78c40f0140ac85b3ba4e8db4e64ea1adaf74de08))
+* **trigger:** add the command source and firing pipeline ([10c4a41](https://github.com/lezli01/vincent/commit/10c4a41728c7488fe9945931215ac1ab3daa5c76))
+* **trigger:** add the trigger file writer ([57bbca2](https://github.com/lezli01/vincent/commit/57bbca25b8e6de3efed3c213c4c7e40624f0c7d1))
+* **trigger:** add trigger definition, validator and schema ([dfab0b0](https://github.com/lezli01/vincent/commit/dfab0b027e9c9025f519d249efa6051e0399309d))
+* **tui:** annotate the running fan_out row with its lane rollup ([cbaa41f](https://github.com/lezli01/vincent/commit/cbaa41f3c2383189a21bb45e8c3b8fc26bb4f41b)), closes [#322](https://github.com/lezli01/vincent/issues/322)
+* **tui:** show an in-progress indicator while a turn or attempt runs ([0510873](https://github.com/lezli01/vincent/commit/0510873baca47d0ba5a6dbf858724c7bf94ad3cc))
+* **workflows:** add the handle-dependabot workflow ([19c2089](https://github.com/lezli01/vincent/commit/19c20890bd26219b94c99886e56a656e132c6e33))
+* **workflows:** add the handle-dependabot-all sweep workflow ([df0ce22](https://github.com/lezli01/vincent/commit/df0ce220ba960fceaf78143af4cb82673c536146))
+
+
+### Bug Fixes
+
+* **agent:** never read a quota verdict from a run that succeeded ([bab5f3a](https://github.com/lezli01/vincent/commit/bab5f3a4e2678b098cef441386eba8f8ae62baa7))
+* an installed skill with no version marker is older, not unreadable ([dd43d98](https://github.com/lezli01/vincent/commit/dd43d9854aeeb2a3fb037b3c65f251558ca31fd4))
+* **api:** bind the new arity of Runner.Retry ([071eecf](https://github.com/lezli01/vincent/commit/071eecfd7b8cfc4d66fd8318153044f954957c0f))
+* **cli:** watch the daemon child and report why the API never came up ([ead316e](https://github.com/lezli01/vincent/commit/ead316e655375ab592aee01bac0a8dd2dcabccb3))
+* **cli:** watch the daemon child and report why the API never came up ([e6c55d8](https://github.com/lezli01/vincent/commit/e6c55d8936ad997da65af96a89f6548904ac0189)), closes [#340](https://github.com/lezli01/vincent/issues/340)
+* **config:** read config.yaml under the applier's lock ([97b9419](https://github.com/lezli01/vincent/commit/97b9419d8d4d9b6f23e9b5326a051dc0586c702d))
+* count every slot holder in the board header ([e55c6c7](https://github.com/lezli01/vincent/commit/e55c6c7edffb569dcbfde02d30c269ad73240215))
+* count every slot holder in the projects view ([aa1e874](https://github.com/lezli01/vincent/commit/aa1e874241515c9725781c25787363597b7e7c5d))
+* **github:** fold gh's bot login onto GitHub's own spelling ([9cd6a96](https://github.com/lezli01/vincent/commit/9cd6a966f7a62f154bed0c3a9adcc242c47ac386)), closes [#345](https://github.com/lezli01/vincent/issues/345)
+* give a parked fan_out step a running step_runs row ([#322](https://github.com/lezli01/vincent/issues/322)) ([87ea9ab](https://github.com/lezli01/vincent/commit/87ea9ab3dd1e07cb5e23eda5cd5306716e34b3f8))
+* **release:** drop the deprecated cask url.verified stanza ([26aff00](https://github.com/lezli01/vincent/commit/26aff007d65dcca4644de24f28b1e7662dc6e2cf))
+* **taskrun:** bind the new Retry arity in the step-input test ([40ee87a](https://github.com/lezli01/vincent/commit/40ee87aa359908c86e8da76f3106ebf347214e22))
+* **workflow:** scope the conflict resolver's build to what it staged ([00708e4](https://github.com/lezli01/vincent/commit/00708e4c03437e611833b87329a3705ac204fc04))
+* **workflow:** scope the resolver's build to root files and deletions ([add557f](https://github.com/lezli01/vincent/commit/add557f984701b629e8518dfe1e10d16d2f367c4))
+* **workflows:** match dependabot however the leg spells it ([d42e546](https://github.com/lezli01/vincent/commit/d42e546638d1bfffb86e92e11286364828fe81f2)), closes [#345](https://github.com/lezli01/vincent/issues/345)
+* **workflows:** send failure output to the result agents are given ([cd92471](https://github.com/lezli01/vincent/commit/cd9247139905e11a7605ae51edae2a322ba4e0a9))
+* **workflow:** stop asserting a whole-repo build inside a fan-out lane ([249777c](https://github.com/lezli01/vincent/commit/249777c300aa7b5c54ecde7b95ba7836f240e354))
+* **workflow:** wait out a Windows handle when replacing a workflow file ([d67b6ea](https://github.com/lezli01/vincent/commit/d67b6ea12cb12c7608890b3219e0189a4863900f))
+
 ## [Unreleased]
 
 ### Added
