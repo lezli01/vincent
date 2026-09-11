@@ -21,7 +21,7 @@ import (
 	"github.com/lezli01/vincent/internal/workflow"
 )
 
-// ciGuide is the page whose "Starting tasks from CI" section (task 091.1)
+// ciGuide is the page whose "Starting tasks from CI" section (task 096.1)
 // carries the snippets under test, and ciSection is that section's heading.
 const (
 	ciGuide   = "docs/guides/scripting.md"

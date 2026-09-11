@@ -1,6 +1,10 @@
-# 091 — Event triggers: starting vincent work from GitHub, Jira, Trello and CI systems
+# 096 — Event triggers: starting vincent work from GitHub, Jira, Trello and CI systems
 
 *Issue [#356](https://github.com/lezli01/vincent/issues/356). Planned 2026-09-10.*
+
+*Renumbered 2026-09-11 from 091, which [the usage-limit switch](091-usage-limit-auto-continue.md)
+took on `master` first. Commit subjects on this branch written before the move
+say "091"; they mean this document.*
 
 Status: **in progress (1/5)**.
 
@@ -90,7 +94,7 @@ pairing is the point: notify is the daemon's **outward** signal (task
 
 ## Tasks
 
-- [x] **091.1** Push-in, documented. A `guides/` page and `examples/` entries for
+- [x] **096.1** Push-in, documented. A `guides/` page and `examples/` entries for
   Jenkins, TeamCity and GitHub Actions calling `POST /v1/tasks` with an
   `Idempotency-Key`. **Zero code** — this works against today's daemon and proves
   the demand before anything below is built. ✓ 2026-09-11 — landed as
@@ -106,16 +110,16 @@ pairing is the point: notify is the daemon's **outward** signal (task
   *step* (*Only if build status is failed*), not a build feature: TeamCity has
   no build feature that makes an arbitrary HTTP call without a plugin. No spec
   amendment: nothing here changes behaviour.
-- [ ] **091.2** `internal/trigger`: the registry, the `type: command` source, the
+- [ ] **096.2** `internal/trigger`: the registry, the `type: command` source, the
   `create_task` action, `on_fire: propose`, the delivery ledger, and
-  `vincent trigger test`. Depends: 091.1 (for the payload shapes its fixtures
+  `vincent trigger test`. Depends: 096.1 (for the payload shapes its fixtures
   come from).
-- [ ] **091.3** `type: github_issues` and `type: github_prs`, on the existing
-  `github.poll_interval` reconciler tick. Depends: 091.2.
-- [ ] **091.4** Reaction actions — `follow_up`, `retry` and `cancel` against the
-  task whose `branch_name` matches the event's ref. Depends: 091.2.
-- [ ] **091.5** `type: http` ingress (`POST /v1/triggers/{id}/events`) with
-  per-source HMAC verification. Depends: 091.2.
+- [ ] **096.3** `type: github_issues` and `type: github_prs`, on the existing
+  `github.poll_interval` reconciler tick. Depends: 096.2.
+- [ ] **096.4** Reaction actions — `follow_up`, `retry` and `cancel` against the
+  task whose `branch_name` matches the event's ref. Depends: 096.2.
+- [ ] **096.5** `type: http` ingress (`POST /v1/triggers/{id}/events`) with
+  per-source HMAC verification. Depends: 096.2.
 
 Spec amendments and the derived documentation pages land in the same pull
 request as the sub-task that makes each true, per `docs/tasks/README.md`.
@@ -292,7 +296,7 @@ attacker-controlled field the allowlist was meant to guard against. That is
 stated plainly in §16 and in the source's own documentation rather than papered
 over: a control that does not control is worse than an absent one. Appendix B
 example 1 is rewritten accordingly, and the issue's "nearly free" claim for
-091.3 is corrected by this.
+096.3 is corrected by this.
 
 *Beaten, for now:* a real actor from the timeline API — an `internal/github`
 method over `/issues/{n}/timeline` and `gh api`, N+1 calls per poll against the
@@ -421,7 +425,7 @@ makes it worse: there is no delivery receipt on the sending side to go and check
 
 ## Open questions
 
-These block **091.2** and should be settled as decisions in this document before
+These block **096.2** and should be settled as decisions in this document before
 it starts.
 
 *Settled 2026-09-11:* all six — 1 and 6 by decision 7, 2 by decision 8, 3 by
@@ -478,7 +482,7 @@ children (task 046).
 ## Appendix B — example triggers
 
 Seven definitions covering the design surface. None of these run today; they are
-the acceptance corpus 091.2 should be written against, and the shapes 091.1's
+the acceptance corpus 096.2 should be written against, and the shapes 096.1's
 documentation should teach.
 
 ### 1. A GitHub label starts a task — the headline case
@@ -505,7 +509,7 @@ limits:
 ```
 
 *Demonstrates:* the first-party poller on the existing `github.poll_interval`
-tick (091.3), synthesizing `labeled` from the difference between two snapshots
+tick (096.3), synthesizing `labeled` from the difference between two snapshots
 (decision 10); `github_issue:` reusing task 035's prefill so the run gets
 `.Issue` snapshotted and renders offline; and the default `on_fire` — no line
 at all — so the task is created `"paused": true` (decision 9), the board shows
@@ -635,7 +639,7 @@ limits:
   max_per_hour: 4
 ```
 
-*Demonstrates:* 091.4, and the distinction the whole action vocabulary rests on.
+*Demonstrates:* 096.4, and the distinction the whole action vocabulary rests on.
 A CI event is about work that **already exists**: `target: branch` resolves to
 the task whose `branch_name` equals the event's ref — the link task 052's
 reconciler already computes — and a `follow_up` (task 027) continues it rather
@@ -670,7 +674,7 @@ Delivered to `POST /v1/triggers/gha-check-failed/events` — reachable from a
 self-hosted runner on the same machine, or through a tunnel the user runs and
 vincent does not ship.
 
-*Demonstrates:* 091.5; HMAC verification in the source's own dialect with the
+*Demonstrates:* 096.5; HMAC verification in the source's own dialect with the
 secret read from the environment rather than stored (§2); and `retry` as a
 trigger action, which only makes sense against a task the FSM has already put in
 `blocked` — an invalid target returns the same `409` a client would get

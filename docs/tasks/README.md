@@ -109,7 +109,7 @@ the living engineering specification records implementation contracts.
 | [093](093-tui-key-vocabulary.md) | A key vocabulary for the TUI, one operation to one key, enforced by the binding registry | ✅ done (6/6) |
 | [094](094-footer-width-and-hidden-keys.md) | The footer fills its width, and a `+N` says how many keys it is hiding | ✅ done (5/5) |
 | [095](095-published-skill-installation.md) | Report whether vincent's published skills are installed, and install them | ✅ done (10/10) |
-| [091](091-event-triggers.md) | Event triggers: starting vincent work from GitHub, Jira, Trello and CI systems | 🔄 in progress (1/5) |
+| [096](096-event-triggers.md) | Event triggers: starting vincent work from GitHub, Jira, Trello and CI systems | 🔄 in progress (1/5) |
 
 ## How to add and update a task document
 
