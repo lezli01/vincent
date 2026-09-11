@@ -61,7 +61,16 @@ func Evaluate(name, expr string, rc RenderContext) (bool, error) {
 // one whose value a human needs to see. Only a render failure has nothing to
 // report, because nothing was produced.
 func EvaluateRendered(name, expr string, rc RenderContext) (bool, string, error) {
-	out, err := Render(name, expr, rc)
+	return EvaluateWith(name, expr, rc)
+}
+
+// EvaluateWith is EvaluateRendered over a context other than §8.4's. Its one
+// other caller is internal/trigger, whose `if:` sees `.Event` and nothing
+// else (task 096 decisions 3 and 11): the same engine, the same
+// `missingkey=error` and the same true/false strictness, over a different
+// root.
+func EvaluateWith(name, expr string, data any) (bool, string, error) {
+	out, err := RenderWith(name, expr, data)
 	if err != nil {
 		return false, "", err
 	}

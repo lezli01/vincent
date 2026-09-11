@@ -164,6 +164,26 @@ list with the user-facing context a commit subject cannot carry.
   a runner that shares the daemon's machine and user. The test suite runs all
   three snippets off the page against a real daemon.
 
+- **Create a task paused, restricted, or with its own cost cap.**
+  `POST /v1/tasks` takes three new optional fields, and every client gets
+  them:
+  - `paused: true` creates the task in `paused` instead of `queued`, so it
+    waits on the board until you resume it and no agent can start in between.
+  - `restricted: true` runs every agent step of that task restricted, even a
+    step whose workflow says `full-auto`. It only ever tightens. If a step's
+    agent cannot restrict on this machine (cursor on Windows), the create is
+    refused with a `400` rather than producing a task that fails later.
+  - `max_task_cost_usd` is the task's own spend cap. The task blocks
+    `cost_limit` at the lower of it and `config.yaml`'s `max_task_cost_usd`, so
+    it can tighten the global cap but never lift it. Like the global cap, it
+    does nothing on codex and cursor, which report no cost.
+
+  All three count toward `Idempotency-Key` matching, and task responses now
+  carry `restricted` and `max_task_cost_usd`. `vincent task add` gains
+  `--paused`, `--restricted` and `--max-task-cost-usd`, and the TUI's new-task
+  form gains a **start** row in its Git & priority stage: `enter` switches it
+  to create the task paused.
+
 ### Changed
 
 - **One key, one meaning: the TUI's keyboard now follows a vocabulary.** The

@@ -29,28 +29,49 @@ func (w *Workflow) PermissionMode(step Step) string {
 	return firstNonEmptyString(step.PermissionMode, w.Defaults.PermissionMode, PermissionFullAuto)
 }
 
-// StepRequiresRestricted reports whether the step resolves to `restricted`.
+// ClampedPermissionMode is PermissionMode under a task's `restricted` clamp
+// (§9.4, task 096 decision 17): `restricted` when clamp is set, whatever the
+// resolution says, and PermissionMode unchanged otherwise.
+//
+// The clamp is applied *after* resolution rather than being a level in the
+// "step field → task override → callee defaults → caller defaults" chain,
+// because a step's own `full-auto` would otherwise beat it. It is one-way by
+// construction: nothing here can make a step looser than its workflow wrote
+// it. The engine and the API's creation gate both call this, so the gate and
+// the run cannot disagree about what a clamped task executes under.
+func (w *Workflow) ClampedPermissionMode(step Step, clamp bool) string {
+	if clamp {
+		return PermissionRestricted
+	}
+	return w.PermissionMode(step)
+}
+
+// StepRequiresRestricted reports whether the step resolves to `restricted`,
+// with the task's clamp applied.
 //
 // Only agent steps count: `permission_mode` is what an agent CLI is launched
 // with, and a command step's shell has never consulted it.
-func (w *Workflow) StepRequiresRestricted(step Step) bool {
-	return step.Type == StepAgent && w.PermissionMode(step) == PermissionRestricted
+func (w *Workflow) StepRequiresRestricted(step Step, clamp bool) bool {
+	return step.Type == StepAgent && w.ClampedPermissionMode(step, clamp) == PermissionRestricted
 }
 
 // RestrictedMismatch explains why this workflow cannot run under the given
 // task overrides, in one clause the API's 400 embeds. It is empty when every
-// restricted step resolves to an adapter that can restrict here.
+// restricted step resolves to an adapter that can restrict here. clamp is the
+// task's `restricted` flag: a clamped task makes every agent step a
+// restricted one, so a clamped task on an adapter that cannot restrict is
+// refused here, at creation, rather than failing its step (decision 17).
 //
 // incapable answers "this adapter is known not to restrict on this host" — a
 // *positive* no, and one that needs no installed binary, because the answer
 // depends on adapter identity and GOOS rather than on the build (task 041).
-func (w *Workflow) RestrictedMismatch(override agent.Level, incapable func(string) bool) string {
+func (w *Workflow) RestrictedMismatch(override agent.Level, clamp bool, incapable func(string) bool) string {
 	if w == nil || incapable == nil {
 		return ""
 	}
 	defaults := agent.Level{Agent: w.Defaults.Agent, Model: w.Defaults.Model, Effort: w.Defaults.Effort}
 	for _, step := range w.Steps {
-		if !w.StepRequiresRestricted(step) {
+		if !w.StepRequiresRestricted(step, clamp) {
 			continue
 		}
 		sel := agent.Resolve(

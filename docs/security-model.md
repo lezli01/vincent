@@ -56,7 +56,7 @@ What limits the damage, and what does not:
 |---|---|
 | Nothing is pushed, merged or deployed unless a **workflow step does it** | ✅ — put a `manual` gate in front of any such step |
 | Everything is transcripted: every prompt, tool call and command | ✅ — and when it cannot be, the step **fails** rather than passing (see below) |
-| Any step can run `permission_mode: restricted` | ✅ — see below |
+| Any step can run `permission_mode: restricted`, and any task can be created `restricted` | ✅ — see below |
 | The git worktree | ⚠️ collision isolation, **not** security isolation |
 | Running under a service | ❌ changes nothing — it is still you |
 
@@ -158,6 +158,12 @@ reference for both.
 | claude | Allowlist flags with an edit/read/git/test tool set | all |
 | codex | `--sandbox workspace-write` — writes confined to the worktree | all |
 | cursor | `--sandbox enabled` | **macOS and Linux only** |
+
+A task created with
+[`restricted`](reference/api.md#paused-restricted-and-capped-tasks) runs every
+one of its agent steps this way, including a step its workflow writes
+`full-auto`. It only ever tightens, and the refusal below applies to it
+unchanged.
 
 Two properties matter more than the mechanism:
 

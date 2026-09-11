@@ -20,6 +20,7 @@ var ntLabels = [ntRowCount]string{
 	ntBranch:      "base branch",
 	ntBranchName:  "branch",
 	ntPriority:    "priority",
+	ntPaused:      "start",
 	ntAgent:       "agent",
 	ntModel:       "model",
 	ntEffort:      "effort",
@@ -68,7 +69,7 @@ func ntStageForRow(row ntRow) ntStage {
 		// separating the pick from what it fills would put the guess and its
 		// review on different screens (task 035).
 		return ntStageDetails
-	case ntBranch, ntBranchName, ntPriority:
+	case ntBranch, ntBranchName, ntPriority, ntPaused:
 		return ntStageGit
 	case ntAgent, ntModel, ntEffort:
 		return ntStageExecution
@@ -87,7 +88,7 @@ func ntRowsForStage(stage ntStage) []ntRow {
 	case ntStageDetails:
 		return []ntRow{ntIssue, ntTitle, ntDescription, ntFields}
 	case ntStageGit:
-		return []ntRow{ntBranch, ntBranchName, ntPriority}
+		return []ntRow{ntBranch, ntBranchName, ntPriority, ntPaused}
 	case ntStageExecution:
 		return []ntRow{ntAgent, ntModel, ntEffort}
 	case ntStageReview:
@@ -245,6 +246,7 @@ func (n *newTask) renderReview(lines []string) ([]string, int) {
 		n.reviewLine("base branch", n.rowValue(ntBranch)),
 		n.reviewLine("branch", n.rowValue(ntBranchName)),
 		n.reviewLine("priority", n.rowValue(ntPriority)),
+		n.reviewLine("start", n.rowValue(ntPaused)),
 		n.reviewLine("execution", strings.Join([]string{
 			n.rowValue(ntAgent), n.rowValue(ntModel), n.rowValue(ntEffort),
 		}, styleDim.Render(" · "))),
@@ -369,6 +371,11 @@ func (n *newTask) rowValue(row ntRow) string {
 		}
 		return firstNonEmpty(strings.TrimSpace(n.priority.Value()), "0") + "  " +
 			styleDim.Render("higher runs first · +/-")
+	case ntPaused:
+		if n.paused {
+			return "paused  " + styleDim.Render("waits on the board until you resume it · enter to toggle")
+		}
+		return "when a slot is free  " + styleDim.Render("enter to create it paused instead")
 	case ntAgent:
 		return n.agentSummary()
 	case ntModel:
@@ -569,7 +576,7 @@ func (n *newTask) renderPicker() []string {
 	case ntAgent, ntModel, ntEffort:
 		out = append(out, styleDim.Render(
 			"    replaces the workflow's defaults; steps that pin their own keep them (§8.6)"))
-	case ntProject, ntWorkflow, ntTitle, ntDescription, ntFields, ntBranch, ntPriority, ntCreate, ntRowCount:
+	case ntProject, ntWorkflow, ntTitle, ntDescription, ntFields, ntBranch, ntPriority, ntPaused, ntCreate, ntRowCount:
 	}
 	hint := "    enter select · esc cancel"
 	if len(p.options) > pickerWindow {

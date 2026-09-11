@@ -40,6 +40,10 @@ const (
 	ntBranch
 	ntBranchName
 	ntPriority
+	// ntPaused creates the task held (§6, task 096 decision 9): it waits in
+	// `paused` until a human resumes it, which is how a draft is put on the
+	// board without starting an agent.
+	ntPaused
 	ntAgent
 	ntModel
 	ntEffort
@@ -188,6 +192,7 @@ type newTask struct {
 	// cannot be misread as one having been renamed (task 001).
 	branchName textField
 	priority   textField
+	paused     bool
 	agent      string
 	model      string
 	effort     string
@@ -353,7 +358,7 @@ func (n *newTask) paste(text string) tea.Cmd {
 			n.priority, cmd = n.priority.Update(tea.PasteMsg{Content: text})
 		case ntDescription:
 			n.desc, cmd = n.desc.Update(tea.PasteMsg{Content: text})
-		case ntProject, ntWorkflow, ntIssue, ntFields, ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
+		case ntProject, ntWorkflow, ntIssue, ntFields, ntPaused, ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
 			return nil
 		}
 		delete(n.rowErr, n.cursor)
@@ -870,6 +875,9 @@ func (n *newTask) activate() tea.Cmd {
 	case ntFields:
 		n.fieldsEd = newFieldsEditor(n.fields)
 		n.mode = ntFieldsOpen
+	case ntPaused:
+		n.paused = !n.paused
+		n.touched = true
 	case ntCreate:
 		return n.submit()
 	case ntRowCount:
@@ -889,7 +897,7 @@ func (n *newTask) startEditing() {
 		n.priority.Focus()
 	case ntDescription:
 		n.desc.Focus()
-	case ntProject, ntWorkflow, ntIssue, ntFields, ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
+	case ntProject, ntWorkflow, ntIssue, ntFields, ntPaused, ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
 	}
 }
 
@@ -927,7 +935,7 @@ func (n *newTask) updateEditing(msg tea.KeyPressMsg) tea.Cmd {
 		n.priority, cmd = n.priority.Update(msg)
 	case ntDescription:
 		n.desc, cmd = n.desc.Update(msg)
-	case ntProject, ntWorkflow, ntIssue, ntFields, ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
+	case ntProject, ntWorkflow, ntIssue, ntFields, ntPaused, ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
 	}
 	delete(n.rowErr, n.cursor)
 	return cmd
@@ -1077,6 +1085,9 @@ func (n *newTask) submit() tea.Cmd {
 // rather than sent empty, so the daemon's own fallbacks still apply.
 func (n *newTask) request() apiclient.CreateTaskRequest {
 	req := apiclient.CreateTaskRequest{ProjectID: n.projectID, Title: n.titleText()}
+	if n.paused {
+		req.Paused = ptr(true)
+	}
 	if n.workflow != "" {
 		req.Workflow = ptr(n.workflow)
 	}

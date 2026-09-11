@@ -322,7 +322,9 @@ A unit of work delivered by running a workflow against a project.
 | `base_sha` | *Added 2026-08-29 (task 056).* The commit `branch_name` was actually cut from, written beside `worktree_path` when creation fetched `base_branch` from its upstream (§10). NULL means `base_branch` itself still names the fork point — every task predating this and every task created with `fetch_base_branch: false`. It exists because once a task branch starts at a fetched remote tip, `base_branch` names a moving ref that is no longer where the task began, and the two places that read it as the fork point — `GET /v1/tasks/{id}/diff`'s merge-base (§13.2) and archive's empty-branch check (§10) — would otherwise both answer against the stale local commit. *Amended 2026-08-30 (task 064):* on a task created from a pull request it is the **head commit as it stood at admission**, so the diff tab answers "what did this task change" rather than re-rendering the pull request's own diff |
 | `priority` | integer, default 0; higher runs first |
 | `agent_override` / `model_override` / `effort_override` | optional, chosen at creation (§13.2); replace the workflow's `defaults` but never an explicit step field (§8.6) |
-| `state` | §6 |
+| `restricted` | *Added 2026-09-11 (task 096).* A one-way permission clamp, chosen at creation (§13.2) and snapshotted: when set, every agent step runs `restricted`, including one whose own field says `full-auto` (§9.4). False for every task created without it, which runs the workflow as written |
+| `max_task_cost_usd` | *Added 2026-09-11 (task 096).* This task's own spend cap, chosen at creation (§13.2). The engine blocks `cost_limit` at the lower of it and `config.yaml`'s `max_task_cost_usd` (§12.3); 0 means no cap from this side, so it can tighten the global cap and never lift it |
+| `state` | §6. *Amended 2026-09-11 (task 096):* `queued` at creation, or `paused` when the request asked for `paused` — no column of its own, a task created held is an ordinary row in `paused` |
 | `current_step` | index into the snapshot's step list |
 | `pending_input` | normalized InputRequest (§7.4) while state is `awaiting_input`; cleared on answer, timeout, or process exit |
 | `pending_follow_up` | *Added 2026-08-25 (task 027).* The follow-up run a human asked for from `done` or `aborted` (§6): its compiled workflow, the run form and text it came from, the optional agent/model/effort, the **origin state** the task is returned to, the 1-based **round**, and the run's own **step cursor**. NULL when no follow-up is in flight |
@@ -796,6 +798,13 @@ will never use.
 A follow-up is repeatable: a finished task can be followed up any number of
 times before it is archived, and each is a **round** with its own rows (§5.4).
 
+**Amended 2026-09-11 (task 096): `create` may land in `paused` as well as
+`queued`.** `POST /v1/tasks` with `paused: true` (§13.2) inserts the row
+directly in `paused`, so there is no instant at which it is admissible, and
+`resume` admits it like any paused task. It is not a new state: create-then-pause
+was rejected because the scheduler can start the agent between the two calls,
+which is what a held create exists to prevent (task 096 decision 9).
+
 ### States
 
 | State | Meaning | Consumes a concurrency slot? |
@@ -806,7 +815,7 @@ times before it is archived, and each is a **round** with its own rows (§5.4).
 | `awaiting_input` | The running agent emitted a structured input request (§7.4); its live process is idle, waiting for the answer | **yes** |
 | `awaiting_children` | A `fan_out` step's lanes are running as child tasks (§7.6, *added 2026-08-17, task 014*); the parent owns no process. Cancel and retry are the only human actions — approve/reject/skip would be meaningless, which is why this is not a reuse of `awaiting_gate`. *Amended 2026-09-05 (task 090, issue #328): `retry` from here is the cascade to every blocked descendant, and writes nothing to the parent's own row* | no |
 | `blocked` | A step failed and retries are exhausted; waiting for a human decision | no |
-| `paused` | Engineer-requested soft pause (takes effect at the next step boundary) | no |
+| `paused` | Engineer-requested soft pause (takes effect at the next step boundary). *Amended 2026-09-11 (task 096): or created held, with `paused: true` on `POST /v1/tasks`* | no |
 | `done` | All steps succeeded; worktree/branch retained for inspection | no |
 | `aborted` | Engineer aborted, or rejected terminally; worktree/branch retained | no |
 | `archived` | Terminal. Worktree removed; record kept for history. The branch is retained unless it carries no commits past its base, in which case `delete_empty_branch_on_archive` deletes it (§10, *amended 2026-08-16, task 008*) | no |
@@ -865,6 +874,9 @@ here with one effect whose process-killing half is conditional on state, and the
 remedy the clients document is the same keypress, which performs exactly that kill.
 
 Tasks are `queued` immediately upon creation (no draft state in v1).
+*Amended 2026-09-11 (task 096):* or `paused`, when the create asked for it
+(above). There is still no draft state — a task created held is an ordinary
+`paused` row that `resume` admits.
 
 ## 7. Step execution semantics
 
@@ -3060,6 +3072,19 @@ whole tool list and be denied every call — a tool list that is a lie, and an
 agent burning its turns discovering it. Stated here and in §16 because it is
 only defensible written down.
 
+*Amended 2026-09-11 (task 096).* A task may carry a **`restricted` clamp**,
+set by `restricted: true` on `POST /v1/tasks` (§13.2) and snapshotted on the
+task (§5.3): every agent step of that task runs `restricted`, including one
+whose own field says `full-auto`. It is applied **after** resolution
+(`workflow.ClampedPermissionMode`), not as a level in the "step field → task
+override → defaults" chain, because a step field would otherwise beat it — and
+so it is one-way: it can never make a step looser than its workflow wrote it.
+Task 041's creation gate evaluates the clamped mode through the same function
+the engine runs under, so a clamped task whose agent steps resolve to an adapter
+that cannot restrict on this host (cursor on Windows) is refused at creation
+with `400 validation_failed` rather than failing its step. "No daemon-global
+hardcoded policy" above stays true: the clamp is per task (task 096 decision 17).
+
 ### 9.5 Detection
 
 `GET /v1/info` reports, per adapter: found/not-found, path, version,
@@ -4831,6 +4856,15 @@ inert on the adapters that report no cost: codex (§9.3) and cursor (§9.7) leav
 `cost_usd` unset, and the check is guarded by "some attempt reported a cost"
 rather than by arithmetic, so a cap must never be estimated from token counts.
 
+*Amended 2026-09-11 (task 096).* A task may carry **its own cap** beside this
+one: `max_task_cost_usd` on `POST /v1/tasks` (§13.2), stored on the task
+(§5.3). The engine blocks `cost_limit` at the **lower** of the two, where 0 on
+either side means "no cap from this side" — this key's own convention — so a
+task cap can tighten the global cap and never lift it: a task that asks for $50
+under a $10 global stops at $10. The task's value is fixed at creation; this key
+stays hot-reloaded. Inert on codex and cursor for the same reason as above
+(task 096 decision 18).
+
 **`fetch_base_branch` (task 056, added 2026-08-29).** Refreshes a task's base branch
 from its own configured upstream before the worktree is created, and starts the task
 branch at the fetched commit (§10). Default **true**: without it every task builds on
@@ -5048,7 +5082,13 @@ and `PATCH /v1/tasks/{id}` already set. What it guarantees:
   handler — so the `listen` pin and the `branch_template` fallback are the same
   code on both paths, and it is idempotent: the watcher's later fire re-reads
   identical bytes. A `GET` issued the instant a `200` lands reads the new
-  values, with no sleep.
+  values, with no sleep. *Amended 2026-09-11:* the fire is not always later.
+  One whose debounce ran out as a patch arrived read the bytes the patch was
+  replacing and applied them after the patch's own apply, so the `GET` read
+  the old value (the m11 gate, on macOS). The watcher now holds the applier's
+  lock from its read of the file through its apply; the patch writes before
+  it applies, so a read under that lock is never older than the last applied
+  patch.
 - **`listen` is written and does not take effect.** The reload rule above is
   unchanged, so the running daemon keeps the address it bound and `GET
   /v1/config` goes on reporting it. Clients say "takes effect on restart"
@@ -5873,7 +5913,8 @@ GET    /v1/tasks?project_id=&state=&archived=&archived_before=&archived_since=&l
                                         drifts from the rows it counts.
 POST   /v1/tasks                        { project_id, workflow, title, description?, fields?,
                                           base_branch?, branch_name?, priority?, agent?,
-                                          model?, effort?, github_issue?, github_pull? }
+                                          model?, effort?, github_issue?, github_pull?,
+                                          paused?, restricted?, max_task_cost_usd? }
                                         branch_name is used verbatim and wins over every
                                         template (§10, task 001)
                                         → task (state=queued); agent/model/effort form the
@@ -5922,6 +5963,21 @@ POST   /v1/tasks                        { project_id, workflow, title, descripti
                                         a different request → `409` with
                                         `details.reason = "idempotency_key_reused"`; no header
                                         → unchanged. §13.1 has the rules
+                                        *Added 2026-09-11 (task 096):* three optional fields,
+                                        for every client. `paused: true` creates the task in
+                                        `paused` rather than `queued` — invisible to admission
+                                        until `POST /v1/tasks/{id}/resume` (§6). `restricted:
+                                        true` is the one-way clamp (§9.4): every agent step
+                                        runs `restricted`, and task 041's creation gate judges
+                                        the clamped mode, so a clamped task on an adapter that
+                                        cannot restrict here is a **400** `validation_failed`.
+                                        `max_task_cost_usd` (a number ≥ 0; negative is a
+                                        **400**) is the task's own cap, applied at the lower
+                                        of it and config's (§12.3). All three enter the
+                                        idempotency digest, and are omitted from it when
+                                        absent, so a body that names none digests as before.
+                                        Every task representation carries `restricted` and
+                                        `max_task_cost_usd` (null when the task set none)
 GET    /v1/tasks/{id}                   full task incl. step runs summary and pending_input (§7.4).
                                         Every task representation carries `available_actions`
                                         (the §6 human actions valid right now) and
@@ -6590,6 +6646,8 @@ CREATE TABLE tasks (
   agent_override      TEXT,                   -- task-level selection (§8.6); NULL = none
   model_override      TEXT,
   effort_override     TEXT,
+  restricted          INTEGER NOT NULL DEFAULT 0, -- one-way permission clamp (§9.4, task 096, migration 0028); 1 = every agent step runs restricted
+  max_task_cost_usd   REAL NOT NULL DEFAULT 0,    -- this task's own cost cap (§12.3, task 096, migration 0028); 0 = no cap from this side
   state               TEXT NOT NULL,          -- §6
   current_step        INTEGER NOT NULL DEFAULT 0,
   block_reason        TEXT,                   -- set while state='blocked'
@@ -6867,6 +6925,33 @@ CREATE TABLE chat_turns (
     duration_ms   INTEGER
 );
 
+-- Event-trigger runtime state (task 096, added 2026-09-11; migration 0029).
+-- A trigger's definition is a file under {config_dir}/triggers/, never a row:
+-- both tables key on the trigger id as text, and there is no triggers table.
+CREATE TABLE trigger_cursors (         -- one row per trigger that has polled
+    trigger_id      TEXT PRIMARY KEY,
+    cursor          TEXT,              -- NULL = unseeded: the next poll seeds and fires nothing
+    last_poll_at    TEXT,
+    last_poll_ok    INTEGER NOT NULL DEFAULT 0,
+    last_poll_error TEXT NOT NULL DEFAULT '',
+    last_fire_at    TEXT
+);
+
+CREATE TABLE trigger_deliveries (      -- the ledger: one row per event judged
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    trigger_id  TEXT NOT NULL,
+    event_id    TEXT NOT NULL DEFAULT '',
+    dedupe_key  TEXT NOT NULL DEFAULT '',
+    outcome     TEXT NOT NULL CHECK (outcome IN
+                  ('fired', 'deduped', 'filtered', 'rate_limited', 'refused', 'error')),
+    task_id     INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    detail      TEXT NOT NULL DEFAULT '', -- a `refused` row's §13.1 envelope, an `error` row's text
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX idx_trigger_deliveries_key ON trigger_deliveries(trigger_id, dedupe_key);
+CREATE INDEX idx_trigger_deliveries_created ON trigger_deliveries(trigger_id, created_at);
+CREATE INDEX idx_trigger_deliveries_age ON trigger_deliveries(created_at);
+
 CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 ```
 
@@ -6875,6 +6960,26 @@ tasks(id) ON DELETE SET NULL`, with `idx_tasks_created_by`, records the task
 whose agent step created this one over §13.4's MCP server. NULL is every task a
 human, the CLI, the TUI or a `fan_out` step created. It is not `parent_task_id`
 and must not be conflated with it — see §13.4 for why.
+
+*Added 2026-09-11 (task 096, migration 0028).* `tasks.restricted` and
+`tasks.max_task_cost_usd` hold the two create-time limits (§5.3). Both default to
+0, which is the "not set" value in each case — every earlier row runs its
+workflow as written, under config's cap alone — so the pair composes with
+`config.yaml`'s `max_task_cost_usd` without a NULL case. A task created
+`paused` needs no column: it is an ordinary row whose `state` is `paused`.
+
+*Added 2026-09-11 (task 096, migration 0029).* `trigger_cursors` and
+`trigger_deliveries` hold what the daemon learns while running a trigger; the
+definition stays in its file, and a table mirroring it would be a second source
+of truth. The cursor and its poll status share one row because they share a
+lifetime: both follow the file (task 096 decision 16). The ledger deliberately
+outlives the file, so deleting a trigger and re-creating its id cannot refire an
+event it already delivered, and is pruned at 30 days instead (§17).
+`task_id` is `ON DELETE SET NULL`, not `CASCADE`: a `fired` row is the dedupe
+record for its key, and deleting the task it created must not let the event fire
+again. No running daemon writes either table yet: `internal/trigger`'s firing
+pipeline records deliveries, but nothing wires it into the daemon until the rest
+of 096.2 lands. The schema, its typed CRUD and the prune are in place.
 
 WAL mode, `busy_timeout` set, all writes through the daemon's single connection pool.
 Migrations are embedded in the binary and applied at startup.
@@ -7371,7 +7476,7 @@ stream for the live tail.
    flags steps whose agent is unavailable) → *(GitHub issue, conditional)* →
    title → description (inline or
    `$EDITOR`) → fields → base branch (default prefilled) →
-   priority → optional agent/model/effort override (pickers fed by
+   priority → start (now or paused) → optional agent/model/effort override (pickers fed by
    `GET /v1/agents` with provenance-tagged options and free-text entry;
    replaces workflow defaults, never explicit step fields, §8.6) → create.
    **Workflow fields (task 022, added 2026-08-21):** selecting a workflow
@@ -7413,6 +7518,12 @@ stream for the live tail.
    priority, Execution, Review. The stage is derived from the field cursor,
    not independently navigated; Review summarizes the whole request and the
    existing `ctrl+s` shortcut still submits from anywhere.
+   **Start row (task 096, added 2026-09-11):** the Git & priority stage gains
+   a `start` row after priority. `enter` toggles it between "when a slot is
+   free" and `paused`, which sends `paused: true` (§13.2) so the task waits on
+   the board until a human resumes it — a draft without starting an agent.
+   Review lists it beside the rest of the request. `restricted` and
+   `max_task_cost_usd` have no row: the form offers the held create alone.
    **Enum rows (task 058, added 2026-08-30):** the boolean toggle gains a
    sibling. `enter` on a declared `enum` row opens the same windowed,
    type-filterable picker every other catalog uses, listing the declared
@@ -9169,7 +9280,12 @@ global cursor config is untouched.
   task-owned state* — are pruned by the same pass under
   the same key, measured from when the chat was archived. The pruner walked
   archived tasks alone until then, so a chat's transcripts outlived every
-  retention window.
+  retention window. *Amended 2026-09-11 (task 096):* a second row exception —
+  `trigger_deliveries` (§14) rows are pruned after a **fixed 30 days** by the
+  same pass, on the same terms as `idempotency_keys`: no config knob, and
+  independent of `transcript_retention_days`. A month answers "why did my
+  trigger not fire last week?" while bounding a table that grows with every
+  poll's events (task 096 decision 13).
 - **Entry point** (*added 2026-08-15, task 005*): `vincent doctor` and
   `GET /v1/doctor`. Everything above answers "what happened to this task"; the
   question that had no surface at all was "why is nothing running?", which took
@@ -9274,11 +9390,11 @@ else.
 | Agent CLI installed but not authenticated | `logged_in: false` where the adapter can tell (§9.5); the new-task form flags it like an unavailable agent. Where it cannot (`null`), the step runs and fails. *Amended 2026-08-14 (task 003):* where the adapter recognizes the CLI's auth wording, that failure is now named `agent_unauthenticated` instead of surfacing as `nonzero_exit`/`agent_error`. Everything else about the row is unchanged and deliberately so — the step still runs, the attempt still fails, the §7.2 budget still applies, and the task still ends up blocked. There is no pre-flight refusal on `logged_in: false`. *Amended 2026-08-15 (task 005):* the "where it cannot (`null`)" set is now **claude alone** — codex probes `login status`, cursor probes `status` (§9.5). Every other clause of this row stands untouched, task 003 decision 4 included: making the state visible is not the same as blocking on it, and `vincent doctor` is where a user sees it before a task burns its retry budget |
 | Agent stopped by a usage limit | *Added 2026-08-14 (task 003).* Where the adapter recognizes the wording, the attempt is recorded `interrupted` with reason `usage_limit`, consumes **no** retry (§7.2), and the task returns to `queued` with an admission hold (§11) — releasing its slot, so other work keeps running. The hold ends at the reset time the CLI reported, or `usage_limit_recheck_interval` after the stop when it reported none. Recovery is unattended: the scheduler re-admits and the step re-runs. The board says `queued` *with* its reason rather than `blocked` (§15). Where the adapter recognizes nothing — codex and cursor today (§9.1) — the run reads as `nonzero_exit`/`agent_error` exactly as before. *Amended 2026-08-24 (task 026):* the reset the engine acted on is additionally recorded per adapter (§14) and published on change (§13.3), so the fact outlives the hold — `admit_not_before` is cleared by the next transition out of `queued`, and until now the observation went with it. It is retired by the next successful agent step on that adapter, never by a timer. *Amended 2026-09-08:* the wording is only ever read from a run that **failed** (§9.1) — a step that succeeded while writing about quota stops is a success, not a wall. *Amended 2026-09-08 (task 091):* all of the above is what `usage_limit_auto_continue: always` — the default — does. Under `never`, and under `reported_only` when the CLI named no reset, the same stop **blocks** the task instead with `block_reason: usage_limit` (§7.2, §12.3): the attempt is still `interrupted` and still costs no retry, the cursor does not advance, and a human retry re-runs the step |
 | `effort` set on a step whose agent has no effort concept | Ignored by the adapter and documented as ignored (cursor, §9.7); a claude/codex effort value on a cursor step is already an §8.2 *error* — it belongs to another adapter's catalog |
-| `restricted` step on an adapter that cannot restrict on this OS | Step fails to start with `restricted_unsupported` (cursor on Windows, §9.7), under the retry policy → typically blocked. Never downgraded to full-auto, and deliberately *not* `agent_unavailable`: the CLI is installed and healthy, so "not found" would send the user to reinstall what is already there. *Amended 2026-08-28 (task 041):* **task creation refuses these** with a `400` naming the step and the agent (§9.4), and `GET /v1/agents` publishes the `restricted_verdict` the gate uses. Reaching the engine anyway means the task and its daemon parted company — a data directory carried to Windows, or a workflow edited after the task was queued — so the reason above stays exactly as it is, as the backstop. Retries are not gated: enforcement is creation-time, and the backstop is what catches the rest |
+| `restricted` step on an adapter that cannot restrict on this OS | Step fails to start with `restricted_unsupported` (cursor on Windows, §9.7), under the retry policy → typically blocked. Never downgraded to full-auto, and deliberately *not* `agent_unavailable`: the CLI is installed and healthy, so "not found" would send the user to reinstall what is already there. *Amended 2026-08-28 (task 041):* **task creation refuses these** with a `400` naming the step and the agent (§9.4), and `GET /v1/agents` publishes the `restricted_verdict` the gate uses. Reaching the engine anyway means the task and its daemon parted company — a data directory carried to Windows, or a workflow edited after the task was queued — so the reason above stays exactly as it is, as the backstop. Retries are not gated: enforcement is creation-time, and the backstop is what catches the rest. *Amended 2026-09-11 (task 096):* a task created with the `restricted` clamp (§9.4) makes **every** agent step a restricted one, so the same `400` refuses a clamped task whose agent steps resolve to such an adapter — even when its workflow says `full-auto` throughout |
 | Step declaring `on_input: require` on an agent that cannot ask | *Added 2026-08-17 (task 013).* A workflow pinning an adapter with no control channel (codex, cursor) fails §8.2 validation outright. Otherwise creation is refused with a `400` naming the step and the agent, and the TUI's picker will not select that agent; `GET /v1/agents` publishes the `input_verdict` the gate uses. A task that reaches the engine anyway — claude upgraded past the §9.3 ceiling, a data directory moved — fails the attempt with `input_unsupported` under the §7.2 budget, before anything is spawned. Only a positive "cannot" refuses: an absent or unprobed binary is unknown, and unknown never blocks (§9.6) |
 | Workflow restricted to platforms this host is not | *Added 2026-08-16 (task 010).* Creation is refused with a `400` naming the restriction and the host (§8.1.1); the entry stays listed and says why, and the TUI's picker will not select it. A task that *already* holds such a snapshot — the data directory moved to another OS, or the workflow narrowed after the task was queued — blocks at admission with `platform_unsupported`, before a worktree or any step. Not `invalid_snapshot`: the snapshot is valid, just not here |
 | Runaway step output (agent or command) | Past `transcript_max_bytes` (§12.3) the process tree is killed and the attempt fails `transcript_limit`, under the retry policy. The line that trips the cap is written **whole** — a truncated line would turn a size failure into a parse failure for every later reader of the JSONL — and the partial transcript is kept with a closing `vincent.transcript_limit` annotation, because the lines that got there are what explain the runaway |
-| A task spends past `max_task_cost_usd` | *Added 2026-08-26 (task 033).* The task goes `blocked` with `block_reason = cost_limit` and nothing further runs. It is a **block, not a step failure**: the finished `step_run` keeps its own state and its own reason, no retry is consumed (§7.2), and a retry that was already due does not run — retrying spends more money to arrive at the same wall, and that pre-empts `retry_backoff` too. The check happens at every **attempt boundary**, including inside a `loop` body and a `parallel` group, so the attempt that crossed the line ran to completion and the overshoot is at most one attempt: cost arrives on an agent run's terminal result line and nowhere else (§9.1), and there is no mid-run usage signal to poll. The remedy is to raise the cap (hot-reloaded, §12.3) and `retry`; a `retry` **without** raising it makes exactly one attempt of progress and blocks here again, which is idempotent and loses no work. `resume` is not the escape hatch — it is valid only from `paused` (§6). The cap counts one task, so each `fan_out` lane carries its own budget, and it is inert on codex and cursor, which report no cost at all (§9.3, §9.7) |
+| A task spends past `max_task_cost_usd` | *Added 2026-08-26 (task 033).* The task goes `blocked` with `block_reason = cost_limit` and nothing further runs. It is a **block, not a step failure**: the finished `step_run` keeps its own state and its own reason, no retry is consumed (§7.2), and a retry that was already due does not run — retrying spends more money to arrive at the same wall, and that pre-empts `retry_backoff` too. The check happens at every **attempt boundary**, including inside a `loop` body and a `parallel` group, so the attempt that crossed the line ran to completion and the overshoot is at most one attempt: cost arrives on an agent run's terminal result line and nowhere else (§9.1), and there is no mid-run usage signal to poll. The remedy is to raise the cap (hot-reloaded, §12.3) and `retry`; a `retry` **without** raising it makes exactly one attempt of progress and blocks here again, which is idempotent and loses no work. `resume` is not the escape hatch — it is valid only from `paused` (§6). The cap counts one task, so each `fan_out` lane carries its own budget, and it is inert on codex and cursor, which report no cost at all (§9.3, §9.7). *Amended 2026-09-11 (task 096):* the cap is the **lower** of config's and the task's own `max_task_cost_usd` (§5.3, §12.3), and the block is `cost_limit` whichever side set it. A task cap cannot lift the global one. The task's value is fixed at creation — no route changes it — so when it is the lower side, raising config's does not move the wall, and `retry` makes one attempt of progress per press as above |
 | A command emits a single line larger than one output record | *Added 2026-08-24 (#139).* Captured, not failed: the line becomes a run of `vincent.output` records marked `partial`, in order, on one stream, preserving phase, stream identity and live offsets. Minified JSON, a base64 blob and a `git diff` of a generated file all reach a megabyte on one line, so this is an ordinary command; failing it would only retry it into the same wall until the task blocked. It was previously a *silent success* — a line-bound reader stopped dead on the first such line, the rest of the stream went to `io.Discard`, and the attempt was judged from exit 0 alone |
 | A transcript write, encode or close fails | *Added 2026-08-24 (#139).* The failure latches on the transcript and the attempt fails `transcript_io_error` under the §7.2 budget — disk full, a revoked permission, a short write, and ENOSPC surfaced at `Close`, which is where a buffered filesystem reports it. Never swallowed by `allow_failure:` (§7.2): vincent failing to record a step is not an outcome the step produced. Only a *success* is overridden — an attempt that already failed keeps the more useful reason. `transcript_max_bytes` is unaffected and stays the only size-based failure (§12.3) |
 | An adapter cannot read its agent's stream to the end | *Added 2026-08-24 (#139).* The adapter latches its reader's error, drains the pipe so the CLI is not left blocked on it until the step timeout, and reports `agent.FailureStreamError`; the engine fails the attempt `agent_protocol_error` under the §7.2 budget. Deliberately not `agent_error`, which means "the CLI reported a failure" and would send a user to inspect a CLI that did nothing wrong — the reader that failed is vincent's. Deliberately not `input_protocol_error` either: that names a control message vincent could not render, and such a message arrived intact |

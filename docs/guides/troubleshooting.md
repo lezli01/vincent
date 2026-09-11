@@ -705,7 +705,11 @@ What to do:
    a task that spent more than you expected has usually been looping — an agent
    redoing the same work every turn, or a step retrying into the same wall.
 2. If the work is worth it, raise `max_task_cost_usd` in `config.yaml` and press
-   `r` to retry. The file is hot-reloaded, so no restart is needed.
+   `r` to retry. The file is hot-reloaded, so no restart is needed. If the task
+   was created with its own, lower
+   [`max_task_cost_usd`](../reference/api.md#paused-restricted-and-capped-tasks),
+   that is the wall it hit: it is fixed at creation, so raising config's does
+   not move it.
 3. If it is not, cancel the task, or skip the step and let the rest run.
 
 **Retrying without raising the cap makes exactly one more attempt, then blocks

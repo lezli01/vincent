@@ -33,6 +33,15 @@ global concurrency cap and an optional cap for each project. A task waiting at
 a human gate, blocked step, or fan-out join releases its slot instead of
 starving other work.
 
+A task can also be created **held**: it waits `paused` on the board, with no
+worktree and no agent started, until you resume it. Two more
+[create-time limits](reference/api.md#paused-restricted-and-capped-tasks)
+tighten one task without editing its workflow — `restricted` runs every agent
+step in restricted mode, even one written `full-auto`, and the task's own
+`max_task_cost_usd` is a spend cap that can tighten the global one but never
+lift it. `vincent task add` takes all three; the new-task form offers the held
+create.
+
 Each task runs in a dedicated git worktree on its own branch. Parallel tasks do
 not collide with one another, and vincent never changes your active checkout.
 The branch convention is configurable globally, per project, or for one task.

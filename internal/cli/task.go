@@ -46,6 +46,9 @@ func newTaskAddCmd() *cobra.Command {
 		fieldsFile  string
 		githubIssue int
 		githubPull  int
+		paused      bool
+		restricted  bool
+		maxCostUSD  float64
 	)
 	cmd := &cobra.Command{
 		Use:   "add",
@@ -104,6 +107,18 @@ func newTaskAddCmd() *cobra.Command {
 				if cmd.Flags().Changed("github-pull") {
 					n := githubPull
 					req.GitHubPull = &n
+				}
+				// The three create-time limits (task 096 decisions 9, 17,
+				// 18) are sent only when named, so a plain `task add` body
+				// is byte-for-byte what it was before they existed.
+				if cmd.Flags().Changed("paused") {
+					req.Paused = &paused
+				}
+				if cmd.Flags().Changed("restricted") {
+					req.Restricted = &restricted
+				}
+				if cmd.Flags().Changed("max-task-cost-usd") {
+					req.MaxTaskCostUSD = &maxCostUSD
 				}
 				t, err := c.CreateTask(ctx, req)
 				if err != nil {
@@ -175,6 +190,12 @@ func newTaskAddCmd() *cobra.Command {
 	cmd.Flags().IntVar(&githubPull, "github-pull", 0,
 		"Create the task from this GitHub pull request and run it on that pull request's head branch; "+
 			"explicit flags win over what it would fill in, except --branch-name, which the pull request decides")
+	cmd.Flags().BoolVar(&paused, "paused", false,
+		"Create the task paused; it starts only when resumed (`vincent task resume`)")
+	cmd.Flags().BoolVar(&restricted, "restricted", false,
+		"Run every agent step restricted, even one whose workflow says full-auto")
+	cmd.Flags().Float64Var(&maxCostUSD, "max-task-cost-usd", 0,
+		"This task's own spend cap in USD; the lower of it and config's max_task_cost_usd applies")
 	_ = cmd.MarkFlagRequired("project")
 	// Both would prefill the same title and description from different
 	// sources, and there is no defensible order; the daemon refuses it too.

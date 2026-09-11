@@ -642,9 +642,16 @@ entirely on an agent that reports none is never blocked by this, whatever you
 set — vincent will not estimate money from token counts. See
 [Agents](../guides/agents.md).
 
+**A task can carry its own cap as well**, set when it is created
+([`max_task_cost_usd`](api.md#paused-restricted-and-capped-tasks) on
+`POST /v1/tasks`, or `vincent task add --max-task-cost-usd`). The lower of the
+two applies, and `0` on either side means no cap from that side, so a task's
+cap can tighten this one but never lift it.
+
 The remedy when a task blocks is to raise this value and press `retry`; the file
 is hot-reloaded, so no restart is needed. Retrying *without* raising it makes
-one more attempt and blocks again. See
+one more attempt and blocks again. A task's own cap is fixed at creation, so
+when it is the lower of the two, raising this value does not move the wall. See
 [Troubleshooting](../guides/troubleshooting.md).
 
 Must not be negative.

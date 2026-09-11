@@ -914,6 +914,28 @@ func TestNewTaskPriorityNudges(t *testing.T) {
 	}
 }
 
+// TestNewTaskPausedToggle is task 096 decision 9's form half: enter on the
+// start row toggles creating the task held, and only a held draft names
+// `paused` on the wire — an untouched form sends the body it always did.
+func TestNewTaskPausedToggle(t *testing.T) {
+	n := loadedForm(t)
+	if n.request().Paused != nil {
+		t.Fatal("an untouched form sent paused")
+	}
+	moveTo(n, ntPaused)
+	press(n, "enter")
+	if p := n.request().Paused; p == nil || !*p {
+		t.Fatalf("paused = %v after toggling on, want true", p)
+	}
+	if !strings.Contains(n.renderRow(ntPaused), "paused") {
+		t.Errorf("start row = %q, want it to say paused", n.renderRow(ntPaused))
+	}
+	press(n, "enter")
+	if n.request().Paused != nil {
+		t.Error("toggled off, the form still sends paused")
+	}
+}
+
 // fakeExec drives the $EDITOR path without a terminal: it runs the callback
 // with the error the editor would have returned, after mutating the file the
 // way an editor would.

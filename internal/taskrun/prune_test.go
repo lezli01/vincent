@@ -223,6 +223,33 @@ func TestPruneKeysDropsExpiredOnly(t *testing.T) {
 	}
 }
 
+// TestPruneDeliveriesDropsExpiredOnly: the same pass expires trigger ledger
+// rows past their fixed 30 days (task 096 decision 13), whatever
+// TranscriptRetentionDays says.
+func TestPruneDeliveriesDropsExpiredOnly(t *testing.T) {
+	h := newPruneHarness(t, 0)
+	now := time.Now()
+	for _, age := range []time.Duration{31 * 24 * time.Hour, 29 * 24 * time.Hour} {
+		if _, err := h.store.RecordTriggerDelivery(t.Context(), &store.TriggerDelivery{
+			TriggerID: "t", EventID: "e", DedupeKey: age.String(), Outcome: "fired",
+			CreatedAt: now.Add(-age),
+		}); err != nil {
+			t.Fatalf("RecordTriggerDelivery: %v", err)
+		}
+	}
+	n, err := h.pruner.PruneDeliveries(t.Context(), now)
+	if err != nil || n != 1 {
+		t.Fatalf("first pass: removed %d, err %v; want 1, nil", n, err)
+	}
+	rows, err := h.store.ListTriggerDeliveries(t.Context(), "t", 10)
+	if err != nil || len(rows) != 1 || rows[0].DedupeKey != (29*24*time.Hour).String() {
+		t.Fatalf("remaining = %+v, err %v; want only the row inside the window", rows, err)
+	}
+	if n, err := h.pruner.PruneDeliveries(t.Context(), now); err != nil || n != 0 {
+		t.Fatalf("second pass: removed %d, err %v; want 0, nil", n, err)
+	}
+}
+
 // chat creates a chat with a transcript directory, archiving it when asked.
 // It cannot backdate the row — `updated_at` is written by the store — so the
 // tests below age the *cutoff* instead, which is what the now parameter is

@@ -6,7 +6,7 @@
 took on `master` first. Commit subjects on this branch written before the move
 say "091"; they mean this document.*
 
-Status: **in progress (1/5)**.
+Status: **in progress (1/6)**.
 
 **Spec:** would amend §2, §3 (a new decision row), §5, §8.4, §12.3, §13.1, §13.2,
 §13.3, §13.4, §14, §15, §16, §17, §20.
@@ -110,16 +110,30 @@ pairing is the point: notify is the daemon's **outward** signal (task
   *step* (*Only if build status is failed*), not a build feature: TeamCity has
   no build feature that makes an arbitrary HTTP call without a plugin. No spec
   amendment: nothing here changes behaviour.
-- [ ] **096.2** `internal/trigger`: the registry, the `type: command` source, the
+- [~] **096.2** `internal/trigger`: the registry, the `type: command` source, the
   `create_task` action, `on_fire: propose`, the delivery ledger, and
   `vincent trigger test`. Depends: 096.1 (for the payload shapes its fixtures
-  come from).
+  come from). *2026-09-11:* started together with 096.6 on one branch
+  (decision 15). The first piece has landed there: `POST /v1/tasks` grows
+  `paused`, `restricted` and `max_task_cost_usd` for every client (decisions 9,
+  17, 18), with migration 0028, `vincent task add --paused --restricted
+  --max-task-cost-usd` and the new-task form's *start* row. Those three fields
+  are not a workflow feature — no field, step type or semantics reaches a
+  workflow author — so `skills/vincent-workflows/SKILL.md`,
+  `internal/workflow/builtin.go` and `update-workflows`' checklist are
+  deliberately not amended, as 065 recorded for its own.
 - [ ] **096.3** `type: github_issues` and `type: github_prs`, on the existing
   `github.poll_interval` reconciler tick. Depends: 096.2.
 - [ ] **096.4** Reaction actions — `follow_up`, `retry` and `cancel` against the
   task whose `branch_name` matches the event's ref. Depends: 096.2.
 - [ ] **096.5** `type: http` ingress (`POST /v1/triggers/{id}/events`) with
   per-source HMAC verification. Depends: 096.2.
+- [ ] **096.6** The Triggers takeover in the TUI (§15 view 11, issue
+  [#362](https://github.com/lezli01/vincent/issues/362)): list, schema-driven
+  create and edit on task 065's form, enable/disable, delete, the ledger, and
+  both dry runs, over the write routes, served schema and dry-run routes it
+  adds. Takes over *Observability*'s "TUI surface" bullet. Depends: 096.2.
+  Decisions 14–30.
 
 Spec amendments and the derived documentation pages land in the same pull
 request as the sub-task that makes each true, per `docs/tasks/README.md`.
@@ -320,7 +334,9 @@ attacker-controlled text into every step template of the run rather than only
 the ones the trigger's author wrote.
 
 **12 (2026-09-11). A triggered task defaults to `restricted`; `container:` is
-advisory.** A triggered task's agent steps run in `restricted` permission mode
+advisory.** *Corrected 2026-09-11 by decisions 17 and 23:* the Windows cursor
+case is refused at creation, not failed at its step, and "advisory" means
+documentation — there is no trigger-level `container:`. A triggered task's agent steps run in `restricted` permission mode
 unless the trigger says otherwise, and `container:` (§16, task 061) is
 documented as the real control and recommended for every `on_fire: create`
 trigger — never required.
@@ -345,6 +361,121 @@ unchanged.
 
 *Beaten:* a config key for each, which asks every user to choose a number nobody
 has yet needed to change. Closes open questions 4 and 5.
+
+**14 (2026-09-11). The TUI surface is 096.6, a §15 view 11 takeover** (from
+#362). Reached from the command palette like Workflows and Projects. *Beaten:*
+a section of the projects view, which would suggest a project scope decision 8
+ruled out; and a tab of the workflows view, when a trigger has its own status
+and ledger. Recorded here rather than as a new task document, which also avoids
+a number race with #363's sibling skill.
+
+**15 (2026-09-11). 096.2 and 096.6 land in one pull request** (author), in
+dependency order: the `POST /v1/tasks` widenings, `internal/trigger`, config,
+events, routes, CLI and MCP, then the view, then the gate and the docs. The
+repository merges with merge commits, so that order is `master`'s history, and
+a partial branch stays coherent — the widenings are useful on their own.
+
+**16 (2026-09-11). Cursors follow the file, and re-arming seeds to now**
+(author). A trigger is *armed* when its file is present and valid, `enabled:
+true`, and `triggers.enabled` is on; only an armed trigger polls. Its first
+poll after arming — from `enabled` or from `triggers.enabled` — seeds the cursor
+and fires nothing, so events from an off period never fire: decision 6 extended
+to disarming. The cursor is dropped when the file leaves the registry by any
+route (the API's delete, `rm`, `$EDITOR`, #363's built-ins); a present but
+invalid file keeps it; a reload that cannot read the directory is not every
+file gone. Across a restart the cursor persists, so a restart is decision 6's
+capped catch-up, not a re-seed. *Beaten:* cursors keyed by id and outliving the
+file, which would let a re-created trigger fire a backlog nobody armed.
+
+**17 (2026-09-11). The permission override is a one-way `restricted` clamp**
+(author). `restricted: true` on `POST /v1/tasks`, for every client, snapshotted
+on the task, forces every agent step to `restricted` — including one whose own
+field says `full-auto`. It is applied after §8.6/§9.4 resolution
+(`workflow.ClampedPermissionMode`), not as a level in the chain, because a step
+field would otherwise beat it; it can never make a step looser than its
+workflow wrote it. A trigger's `permission:` is `restricted` (default) or
+`workflow`. *Corrects decision 12:* task 041's creation gate evaluates the
+clamped mode through the same function the engine calls, so on a Windows cursor
+installation a clamped task is refused at creation with `400` — the delivery
+lands as `refused` — rather than failing its step. §9.4's "no daemon-global
+hardcoded policy" stays true, because the clamp is per task. *Beaten:* a
+`permission_mode` value on the create route, which would be a looser-or-tighter
+override and a new level in §8.6's chain.
+
+**18 (2026-09-11). The cost cap is per task, with no default** (author).
+`max_task_cost_usd` on `POST /v1/tasks`; the engine blocks `cost_limit` at the
+lower of the task's and config's, 0 on either side meaning "no cap from this
+side", so a task cap can tighten the global and never lift it. A trigger sends
+one only when `limits.max_task_cost_usd` is written. *Narrows the security
+section:* "defaulting tighter than a hand-created one" is dropped, for decision
+13's reason — nobody has needed a number yet. The cap stays inert on codex and
+cursor, which report no cost.
+
+**19 (2026-09-11). Dangerous values are marked in the served schema**
+(author): `enabled: true`, `on_fire: create` and `permission: workflow` each
+carry warning text, and the TUI asks before committing any marked value from
+the form or the toggle key. Values 096.3–096.5 add get a confirmation without
+TUI changes. Disabling never asks. The config editor's TUI-local `dangerous`
+flag (task 060) is unchanged.
+
+**20 (2026-09-11). Trigger files are always written 0600**, new or existing —
+`config.WriteFile`'s rule, not workflows' "an existing file keeps its mode".
+065 decision 8 kept a mode because a repository owns a project workflow;
+decision 8 means no repository owns a trigger, and decision 2 makes the file
+owner-only.
+
+**21 (2026-09-11). Delete is a scoped departure for triggers** (from #362) from
+065's "no destructive action on a registry file": ledger rows kept (so a
+re-created id cannot refire a delivered event), cursor dropped by decision 16,
+version token required. A trigger is global-scope, belongs to the machine's
+user, and is not a file a repository shares. Workflows keep 065's rule, and
+§15 view 5 is not amended.
+
+**22 (2026-09-11). MCP excludes the three write routes** (from #362; task 057
+decision 4, task 065 decision 5). `POST`, `PATCH` and `DELETE /v1/triggers…`
+join `mcp.Excluded`: an agent must not author or arm a trigger that starts
+agents, and enabling is a `PATCH`. The reads, `validate`, `test` and `poll` are
+ordinary tools — a dry run fires nothing, and `poll` runs only a command the
+user already configured, which a full-auto agent could run anyway (§16: MCP is
+not a security boundary).
+
+**23 (2026-09-11). No trigger-level `container:`** (settled from the code).
+Containers resolve from a workflow's `defaults.container` and `config.yaml`
+(task 061), agent steps cannot run in one until task 062, and a trigger-level
+block would need a fourth task-level widening while doing nothing a workflow's
+own `container:` does not. Decision 12's "advisory" therefore means
+documentation: recommend an `action.workflow` whose steps are containerized.
+Appendix B example 2 is amended.
+
+**24 (2026-09-11). Poll health is published on transitions, not per poll.**
+`trigger.poll_changed` fires on the first poll, ok → failing and failing → ok;
+the view's own timer keeps "last poll" times current. *Beaten:* a durable event
+per poll, a row in the events table every `poll_interval` for every trigger.
+
+**25 (2026-09-11). The view's keys** (from #362, task 093's vocabulary): `a`
+create, `i`/`enter` form, `e` `$EDITOR`, `D` delete after asking, `space`
+toggle `enabled` (the answer and create-PR forms' toggle rows), `R` re-read,
+`/` filter, `tab` to the ledger where `enter` opens a delivery's task (the
+daemon view's list/log split). The dry-run, live-poll and banner keys are
+picked at implementation from keys the vocabulary leaves free.
+
+**26 (2026-09-11). `trigger_deliveries` gains a nullable `task_id`**, which
+*Observability*'s column list lacked and the view's `enter` needs.
+
+**27 (2026-09-11). The dry-run sample event is session memory only** — never
+written to `tui.json`, which holds view state; a vendor payload may carry
+sensitive text.
+
+**28 (2026-09-11). Rate-limited events are recorded and dropped, never
+queued.** `limits.max_per_hour` counts `fired` rows in the trailing hour.
+
+**29 (2026-09-11). `vincent trigger test` is a remote command** over
+`POST /v1/triggers/{id}/test`: "would the ledger dedupe it" needs the daemon's
+database, unlike the purely local `vincent workflow render`.
+
+**30 (2026-09-11). `internal/trigger` takes an `http.Handler` and imports
+`internal/workflow`, never `internal/api`** — the `internal/mcp` shape.
+`internal/api` imports it for the registry, schema, writer and dry run.
 
 ## Security: this inverts §16, and it is the substance of the work
 
@@ -376,7 +507,9 @@ amendment is the most important edit this task makes.
   allowlist degrades to the issue's author (decision 10).
 - **Rate limits** per trigger, and a `max_task_cost_usd` (task
   [033](033-task-cost-cap.md)) on triggered tasks defaulting tighter than a
-  hand-created one.
+  hand-created one. *Narrowed 2026-09-11 by decision 18:* the cap is per task
+  with no default — a trigger sends one only when `limits.max_task_cost_usd` is
+  written.
 - **Prompt injection becomes remote.** Issue body → `.Event` → agent prompt →
   full-auto shell. The exposure exists already through `.Issue` (task 035), but
   there a human chose the issue and read it. Container execution (§16, task
@@ -400,7 +533,8 @@ makes it worse: there is no delivery receipt on the sending side to go and check
 - **A `trigger.fired` event** on §13.3's fan-out, published post-commit like
   every other.
 - **A TUI surface** — a triggers view, or a section on the projects view —
-  showing last poll, last fire and the recent ledger.
+  showing last poll, last fire and the recent ledger. *Taken over 2026-09-11 by
+  096.6 (decision 14):* a takeover of its own.
 - **`vincent trigger test --event fixture.json`**, which renders the action that
   *would* be taken and creates nothing. A direct mirror of `vincent workflow
   render` (task [044](044-workflow-render-preview.md)), and it is what gives the
@@ -553,8 +687,6 @@ action:
   fields:
     ticket: '{{ .Event.key }}'
 on_fire: create
-container:
-  image: ghcr.io/lezli01/vincent-dev:latest
 limits:
   max_per_hour: 3
   max_task_cost_usd: 4.00
@@ -579,8 +711,10 @@ printf '{"cursor":"%s"}\n' "$now"
 (`JIRA_API_TOKEN` comes from the daemon's inherited environment, §2), vendor
 field names reaching templates verbatim, and the cursor protocol from appendix A.
 Also `on_fire: create` paired with the two things that should always accompany it:
-a `container:` block (§16, task 061/062) and a tightened `max_task_cost_usd`
-(task 033).
+an `action.workflow` whose steps are containerized (§16, task 061/062) and a
+tightened `max_task_cost_usd` (task 033). *Amended 2026-09-11 by decision 23:*
+the example used to carry a trigger-level `container:` block, which does not
+exist; containment is the workflow's.
 
 ### 3. A Trello card moves list
 

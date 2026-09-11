@@ -36,15 +36,15 @@ steps:
 	if got := wf.PermissionMode(wf.Steps[1]); got != PermissionFullAuto {
 		t.Errorf("PermissionMode(step override) = %q, want %q", got, PermissionFullAuto)
 	}
-	if !wf.StepRequiresRestricted(wf.Steps[0]) {
+	if !wf.StepRequiresRestricted(wf.Steps[0], false) {
 		t.Error("inherited restricted step does not require restriction")
 	}
-	if wf.StepRequiresRestricted(wf.Steps[1]) {
+	if wf.StepRequiresRestricted(wf.Steps[1], false) {
 		t.Error("step with permission_mode: full-auto requires restriction; the step must win over defaults")
 	}
 	// `permission_mode` is what an agent CLI is launched with; a command
 	// step's shell has never consulted it, so it cannot make the gate fire.
-	if wf.StepRequiresRestricted(wf.Steps[2]) {
+	if wf.StepRequiresRestricted(wf.Steps[2], false) {
 		t.Error("command step counts as restricted; only agent steps launch an adapter")
 	}
 	// A step with nothing set anywhere is full-auto (§16).
@@ -138,7 +138,7 @@ steps:
 			if err != nil {
 				t.Fatalf("Parse: %v", err)
 			}
-			got := wf.RestrictedMismatch(tt.override, cannot)
+			got := wf.RestrictedMismatch(tt.override, false, cannot)
 			if got != tt.want {
 				t.Errorf("RestrictedMismatch = %q, want %q", got, tt.want)
 			}
@@ -151,7 +151,7 @@ steps:
 // here from a snapshot that did not parse. Neither may refuse a task.
 func TestRestrictedMismatchNilInputs(t *testing.T) {
 	var wf *Workflow
-	if got := wf.RestrictedMismatch(agent.Level{}, func(string) bool { return true }); got != "" {
+	if got := wf.RestrictedMismatch(agent.Level{}, false, func(string) bool { return true }); got != "" {
 		t.Errorf("nil workflow refused: %q", got)
 	}
 	src := "name: x\nsteps:\n  - id: a\n    type: agent\n    permission_mode: restricted\n    prompt: p\n"
@@ -159,12 +159,12 @@ func TestRestrictedMismatchNilInputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if got := parsed.RestrictedMismatch(agent.Level{Agent: "claude"}, nil); got != "" {
+	if got := parsed.RestrictedMismatch(agent.Level{Agent: "claude"}, false, nil); got != "" {
 		t.Errorf("nil predicate refused: %q", got)
 	}
 	// The clause is one sentence a 400 body embeds verbatim; a newline in it
 	// would break the error envelope's single-line shape.
-	msg := parsed.RestrictedMismatch(agent.Level{Agent: "claude"}, func(string) bool { return true })
+	msg := parsed.RestrictedMismatch(agent.Level{Agent: "claude"}, false, func(string) bool { return true })
 	if msg == "" || strings.Contains(msg, "\n") {
 		t.Errorf("mismatch clause = %q, want one non-empty line", msg)
 	}

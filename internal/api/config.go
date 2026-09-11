@@ -590,7 +590,8 @@ func addIfInt(add func(string, string), path string, v *int) {
 // bytes, decode the candidate, refuse the request without touching the disk if
 // it does not hold, write atomically at 0600, then apply synchronously. A GET
 // issued the instant a 200 lands reads the new values, with no sleep — the
-// fsnotify watcher's later fire re-reads identical bytes and is a no-op.
+// fsnotify watcher reads the file under the applier's lock, so its fire
+// either precedes this apply or re-reads identical bytes and is a no-op.
 //
 // One mutex serializes the read-modify-write (decision 6). A hand-edit racing
 // a patch is last-writer-wins and undetected, which is the posture PATCH

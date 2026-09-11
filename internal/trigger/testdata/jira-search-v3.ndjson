@@ -1,0 +1,4 @@
+{"id":"jira:VIN-12:2026-09-10T08:00:00.000+0000","key":"VIN-12","fields":{"summary":"Add retries to the poller","status":{"name":"Ready for Dev"},"description":"The poller gives up on the first 502."}}
+{"id":"jira:VIN-13:2026-09-10T09:30:00.000+0000","key":"VIN-13","fields":{"summary":"Flaky login test","status":{"name":"In Progress"},"description":"Fails one run in five."}}
+{"key":"VIN-14","fields":{"summary":"no id, refused"}}
+{"cursor":"2026-09-10 09:30"}
