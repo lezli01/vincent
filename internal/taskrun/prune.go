@@ -32,6 +32,13 @@ const PruneInterval = 24 * time.Hour
 // retry window has passed, so there is no operator reason to keep them.
 const IdempotencyRetention = 24 * time.Hour
 
+// TriggerDeliveryRetention is how long a `trigger_deliveries` row is kept
+// (§17, task 096 decision 13): fixed for IdempotencyRetention's reason. A
+// month answers "why did my trigger not fire last week?" and bounds a table
+// that grows with every poll's events; deleting a trigger never deletes its
+// rows, so a re-created id still cannot refire an event delivered inside it.
+const TriggerDeliveryRetention = 30 * 24 * time.Hour
+
 // TranscriptPruner runs the daemon's retention pass (§17): it deletes
 // transcripts of tasks archived longer ago than the configured window, and —
 // since task 040 — idempotency keys past their fixed 24-hour window. It owns
@@ -89,6 +96,20 @@ func (p *TranscriptPruner) once(ctx context.Context) {
 	case keys > 0:
 		p.deps.Logger.Info("pruned idempotency keys", "keys", keys)
 	}
+	// The trigger ledger rides the same pass, for the same reason.
+	switch rows, err := p.PruneDeliveries(ctx, time.Now()); {
+	case err != nil:
+		p.deps.Logger.Error("prune trigger deliveries", "error", err)
+	case rows > 0:
+		p.deps.Logger.Info("pruned trigger deliveries", "rows", rows)
+	}
+}
+
+// PruneDeliveries deletes trigger ledger rows older than
+// TriggerDeliveryRetention, returning how many went. now is a parameter so
+// tests can age rows without sleeping.
+func (p *TranscriptPruner) PruneDeliveries(ctx context.Context, now time.Time) (int64, error) {
+	return p.deps.Store.PruneTriggerDeliveries(ctx, now.Add(-TriggerDeliveryRetention))
 }
 
 // PruneKeys deletes idempotency keys older than IdempotencyRetention,
