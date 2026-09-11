@@ -16,14 +16,18 @@
 //   - the writer (writer.go): a daemon-rendered starter on create, and
 //     workflow.Edit's line-oriented ops on edit, so comments survive; every
 //     write is 0600 (decision 20) and carries a version token;
-//   - the registry and its live reload (registry.go, watch.go);
 //   - the `type: command` source (source.go, appendix A): argv executed
 //     directly, never through a shell, NDJSON on stdout, a fixed timeout and a
 //     whole-process-tree kill through internal/procx, exactly as notify runs
 //     its children;
-//   - the firing pipeline (fire.go) and the poller that drives it
-//     (poller.go), including the cursor rules of decisions 6 and 16 and the
-//     two dry runs.
+//   - the firing pipeline (fire.go): match, `if:`, the ledger dedupe, the
+//     hourly limit, the render and the replay, each ending in one ledger
+//     outcome.
+//
+// The registry and its live reload, the poller that drives the pipeline
+// under the cursor rules of decisions 6 and 16, and the two dry runs arrive
+// with the rest of task 096.2; nothing wires this package into the daemon
+// yet.
 //
 // A trigger introduces no execution semantics of its own (decision 1): the
 // action is a replay of POST /v1/tasks into the daemon's in-process handler,
