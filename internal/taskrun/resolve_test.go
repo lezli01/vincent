@@ -117,7 +117,7 @@ func TestResolvePermissionAndInputPolicy(t *testing.T) {
 	}
 	for _, tc := range cases {
 		wf := &workflow.Workflow{Defaults: tc.defaults}
-		if got := resolvePermission(wf, tc.step); got != tc.wantPerm {
+		if got := resolvePermission(wf, tc.step, false); got != tc.wantPerm {
 			t.Errorf("resolvePermission(%+v, %+v) = %s, want %s", tc.step, tc.defaults, got, tc.wantPerm)
 		}
 		if got := resolveInputPolicy(tc.step, tc.defaults); got != tc.wantIn {

@@ -936,8 +936,12 @@ func (r *Runner) runStepWithRetries(ctx context.Context, env *stepEnv) stepOutco
 // report no cost at all: codex and cursor leave it nil (§9.3, §9.7), so their
 // rollup is "unreported" rather than $0.00 and the cap is inert on them by
 // construction.
+//
+// The cap is the lower of config's and the task's own `max_task_cost_usd`
+// (task 096 decision 18), so the block is still `cost_limit` whichever side
+// set it.
 func (r *Runner) overCostCap(ctx context.Context, env *stepEnv, out stepOutcome) bool {
-	limit := r.deps.Config().MaxTaskCostUSD
+	limit := effectiveCostCap(r.deps.Config().MaxTaskCostUSD, env.task.MaxTaskCostUSD)
 	if limit <= 0 {
 		return false
 	}
@@ -963,6 +967,21 @@ func (r *Runner) overCostCap(ctx context.Context, env *stepEnv, out stepOutcome)
 		"cost_usd", rollup.CostUSD, "max_task_cost_usd", limit,
 		"step", env.step.ID, "attempt_outcome", string(out.state))
 	return true
+}
+
+// effectiveCostCap is the lower of the global and the per-task cap, where 0 or
+// less on either side means "no cap from this side" (§12.3, task 096 decision
+// 18). A task cap can therefore only tighten config's, never lift it: a task
+// that asked for $50 under a $10 global stops at $10.
+func effectiveCostCap(global, task float64) float64 {
+	switch {
+	case global <= 0:
+		return max(task, 0)
+	case task <= 0:
+		return global
+	default:
+		return min(global, task)
+	}
 }
 
 // previousFailure reconstructs `.LastFailure` for the first attempt of an

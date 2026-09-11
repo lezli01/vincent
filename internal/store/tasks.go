@@ -15,6 +15,7 @@ import (
 
 const taskColumns = `id, project_id, title, description, fields_json, workflow_name, workflow_snapshot,
 	base_branch, branch_name, worktree_path, base_sha, priority, agent_override, model_override, effort_override,
+	restricted, max_task_cost_usd,
 	state, current_step, block_reason, pause_requested, retry_cursor_at, pending_override_json,
 	pending_repair_json, pending_follow_up_json, pending_input_json, admit_not_before, queued_reason,
 	parent_task_id, parent_step_index, lane_id, lane_order, settled_children_watermark,
@@ -185,14 +186,16 @@ func insertTaskTx(
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO tasks (project_id, title, description, fields_json, workflow_name, workflow_snapshot,
 			base_branch, branch_name, worktree_path, base_sha, priority, agent_override, model_override, effort_override,
+			restricted, max_task_cost_usd,
 			state, current_step, block_reason, admit_not_before, queued_reason,
 			parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json,
 			github_pull_json, workflow_origin_json, created_by_task_id,
 			created_at, updated_at, started_at, finished_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ProjectID, t.Title, t.Description, fields, t.WorkflowName, t.WorkflowSnapshot,
 		t.BaseBranch, t.BranchName, nullString(t.WorktreePath), nullString(t.BaseSHA), t.Priority,
 		nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
+		t.Restricted, t.MaxTaskCostUSD,
 		string(t.State), t.CurrentStep, nullString(t.BlockReason),
 		// The §11 hold rides along with the row it describes. UpdateTask has
 		// always written these two, so an insert that dropped them made
@@ -973,6 +976,7 @@ func scanTask(r rowScanner) (*Task, error) {
 	if err := r.Scan(&t.ID, &t.ProjectID, &t.Title, &t.Description, &fields, &t.WorkflowName,
 		&t.WorkflowSnapshot, &t.BaseBranch, &t.BranchName, &worktree, &baseSHA, &t.Priority,
 		&agentOv, &modelOv, &effortOv,
+		&t.Restricted, &t.MaxTaskCostUSD,
 		(*string)(&t.State), &t.CurrentStep, &blockReason,
 		&t.PauseRequested, &retryCursor, &pendingOv,
 		&pendingRepair, &pendingFollowUp, &pendingInput, &admitNotBefore, &queuedWhy,

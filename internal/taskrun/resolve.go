@@ -33,9 +33,11 @@ func resolveSelection(
 // onto the adapter vocabulary. The resolution itself lives in
 // workflow.PermissionMode: the API refuses a restricted step on an adapter
 // that cannot restrict here (task 041), and a gate that resolved the field
-// differently from the engine would refuse the wrong tasks.
-func resolvePermission(wf *workflow.Workflow, step workflow.Step) agent.PermissionMode {
-	if wf.PermissionMode(step) == workflow.PermissionRestricted {
+// differently from the engine would refuse the wrong tasks. clamp is the
+// task's `restricted` flag (task 096 decision 17), applied through the same
+// workflow.ClampedPermissionMode the gate calls, for the same reason.
+func resolvePermission(wf *workflow.Workflow, step workflow.Step, clamp bool) agent.PermissionMode {
+	if wf.ClampedPermissionMode(step, clamp) == workflow.PermissionRestricted {
 		return agent.Restricted
 	}
 	return agent.FullAuto

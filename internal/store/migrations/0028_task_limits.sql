@@ -1,0 +1,22 @@
+-- 0028_task_limits: two per-task limits `POST /v1/tasks` can now set, for
+-- every client (§5.3, §9.4, §12.3 — task 096 decisions 17, 18).
+--
+-- They arrive with event triggers (task 096.2), which replay the create route
+-- in-process and add no execution semantics of their own (decisions 1, 9):
+-- where a trigger needs something the route lacks, the route grows it for
+-- every client. The third widening, `paused`, needs no column — a task
+-- created paused is an ordinary row whose `state` is `paused`.
+--
+-- `restricted` is a one-way clamp, snapshotted on the task: 1 forces every
+-- agent step to `permission_mode: restricted`, including a step whose own
+-- field says `full-auto`. It is applied after §8.6/§9.4 resolution rather than
+-- being a level in that chain, because a step field would otherwise beat it.
+-- 0 — every task created before this migration — runs the workflow exactly as
+-- written.
+--
+-- `max_task_cost_usd` is the task's own cap. The engine blocks `cost_limit` at
+-- the lower of it and `config.yaml`'s `max_task_cost_usd` (task 033), where 0
+-- on either side means "no cap from this side" — the config key's own
+-- convention, so the two compose without a NULL case.
+ALTER TABLE tasks ADD COLUMN restricted INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE tasks ADD COLUMN max_task_cost_usd REAL NOT NULL DEFAULT 0;

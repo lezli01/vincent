@@ -96,6 +96,15 @@ type Task struct {
 	AgentOverride  string // task-level selection (spec §8.6); "" = none
 	ModelOverride  string
 	EffortOverride string
+	// Restricted clamps every agent step of this task to
+	// `permission_mode: restricted`, whatever the workflow wrote (§9.4, task
+	// 096 decision 17). One-way: false runs the workflow as written, and
+	// nothing makes a step looser than its workflow.
+	Restricted bool
+	// MaxTaskCostUSD is this task's own spend cap; 0 is none. The engine
+	// applies the lower of it and config.yaml's `max_task_cost_usd` (§12.3,
+	// task 096 decision 18).
+	MaxTaskCostUSD float64
 	State          TaskState
 	CurrentStep    int
 	BlockReason    string // set while State == TaskBlocked

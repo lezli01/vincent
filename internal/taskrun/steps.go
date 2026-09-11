@@ -32,7 +32,7 @@ func (r *Runner) runAgentStep(
 	prompt = workflow.AppendFailureBlock(prompt, rc.Step.Attempt, rc.LastFailure)
 
 	timeout := resolveTimeout(env.step, env.wf.Defaults, r.deps.Config())
-	permission := resolvePermission(env.wf, env.step)
+	permission := resolvePermission(env.wf, env.step, env.task.Restricted)
 	// What this attempt was *given*, recorded before anything is spawned
 	// (issue #323). The bytes are the ones the adapter receives: the §8.4
 	// render plus the daemon's appended `<previous-attempt-failure>` block,

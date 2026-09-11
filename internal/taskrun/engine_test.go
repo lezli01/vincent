@@ -146,6 +146,14 @@ func (h *engineHarness) start(t *testing.T) {
 // createTask inserts a queued task carrying the given workflow snapshot.
 func (h *engineHarness) createTask(t *testing.T, snapshot string) *store.Task {
 	t.Helper()
+	return h.createTaskWith(t, snapshot, nil)
+}
+
+// createTaskWith is createTask with a hook that sets task-level fields the
+// create route snapshots on the row — the `restricted` clamp and the per-task
+// cost cap (task 096) — before the insert.
+func (h *engineHarness) createTaskWith(t *testing.T, snapshot string, mutate func(*store.Task)) *store.Task {
+	t.Helper()
 	task := &store.Task{
 		ProjectID:        h.projectID,
 		Title:            "engine test",
@@ -154,6 +162,9 @@ func (h *engineHarness) createTask(t *testing.T, snapshot string) *store.Task {
 		WorkflowSnapshot: snapshot,
 		BaseBranch:       "main",
 		State:            store.TaskQueued,
+	}
+	if mutate != nil {
+		mutate(task)
 	}
 	// The branch name is assigned through the resolver, inside the insert's own
 	// transaction, exactly as the API does it (task 001). This helper used to

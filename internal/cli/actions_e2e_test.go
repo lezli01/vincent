@@ -71,6 +71,38 @@ func TestHumanActionCommands(t *testing.T) {
 	hog := addActionTask(t, dataDir, cfgDir, "slow", "--workflow", "slow")
 	waitForState(t, dataDir, cfgDir, hog, "running")
 
+	// `task add --paused` and the two limits (task 096 decisions 9, 17, 18):
+	// the flags reach the daemon, the task is born `paused`, and `resume`
+	// is what queues it.
+	t.Run("add paused with limits, then resume", func(t *testing.T) {
+		id := addActionTask(t, dataDir, cfgDir, "held", "--workflow", "blocky",
+			"--paused", "--restricted", "--max-task-cost-usd", "2.5")
+		out, code := runVincent(t, dataDir, cfgDir, "task", "show", id, "--json")
+		if code != 0 {
+			t.Fatalf("task show: code %d, out %q", code, out)
+		}
+		var held struct {
+			State          string   `json:"state"`
+			Restricted     bool     `json:"restricted"`
+			MaxTaskCostUSD *float64 `json:"max_task_cost_usd"`
+		}
+		if err := json.Unmarshal([]byte(out), &held); err != nil {
+			t.Fatalf("task show --json: %v (%q)", err, out)
+		}
+		if held.State != "paused" || !held.Restricted || held.MaxTaskCostUSD == nil || *held.MaxTaskCostUSD != 2.5 {
+			t.Fatalf("created = %+v, want paused, restricted, cap 2.5", held)
+		}
+		if out, code := runVincent(t, dataDir, cfgDir, "task", "resume", id); code != 0 {
+			t.Fatalf("resume: code %d, out %q", code, out)
+		}
+		if got := taskJSON(t, dataDir, cfgDir, id); got.State != "queued" {
+			t.Errorf("state after resume = %q, want queued behind the slot holder", got.State)
+		}
+		if _, code := runVincent(t, dataDir, cfgDir, "task", "cancel", id); code != 0 {
+			t.Fatalf("cancel: code %d", code)
+		}
+	})
+
 	t.Run("pause and resume a queued task", func(t *testing.T) {
 		id := addActionTask(t, dataDir, cfgDir, "pausable", "--workflow", "blocky")
 		out, code := runVincent(t, dataDir, cfgDir, "task", "pause", id)

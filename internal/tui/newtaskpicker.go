@@ -339,7 +339,7 @@ func (n *newTask) openPicker(row ntRow) {
 		n.pick = newPicker(int(row), "model override", n.optionRows(n.effectiveAgentModels()), true, n.model)
 	case ntEffort:
 		n.pick = newPicker(int(row), "effort override", n.optionRows(n.effectiveAgentEfforts()), true, n.effort)
-	case ntTitle, ntDescription, ntFields, ntBranch, ntBranchName, ntPriority, ntCreate, ntRowCount:
+	case ntTitle, ntDescription, ntFields, ntBranch, ntBranchName, ntPriority, ntPaused, ntCreate, ntRowCount:
 		return
 	}
 	n.mode = ntPicking
@@ -503,7 +503,7 @@ func (n *newTask) applyPick(row ntRow, value string) tea.Cmd {
 		n.model = value
 	case ntEffort:
 		n.effort = value
-	case ntTitle, ntDescription, ntFields, ntBranch, ntBranchName, ntPriority, ntCreate, ntRowCount:
+	case ntTitle, ntDescription, ntFields, ntBranch, ntBranchName, ntPriority, ntPaused, ntCreate, ntRowCount:
 		return nil
 	}
 	// Every row that falls through here is a §8.6 input, so what the draft

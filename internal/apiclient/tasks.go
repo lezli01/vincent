@@ -407,10 +407,14 @@ type TaskDetail struct {
 	// task's §8.4 context and its §8.6 level-2 override from exactly these
 	// four, and re-deriving either client-side is what task 048 declined to
 	// do.
-	BaseBranch     string          `json:"base_branch"`
-	AgentOverride  *string         `json:"agent_override"`
-	ModelOverride  *string         `json:"model_override"`
-	EffortOverride *string         `json:"effort_override"`
+	BaseBranch     string  `json:"base_branch"`
+	AgentOverride  *string `json:"agent_override"`
+	ModelOverride  *string `json:"model_override"`
+	EffortOverride *string `json:"effort_override"`
+	// Restricted and MaxTaskCostUSD are the create-time limits (task 096
+	// decisions 17, 18); MaxTaskCostUSD is nil when the task set none.
+	Restricted     bool            `json:"restricted"`
+	MaxTaskCostUSD *float64        `json:"max_task_cost_usd"`
 	WorktreePath   *string         `json:"worktree_path"`
 	PendingInput   json.RawMessage `json:"pending_input,omitempty"`
 	// GitHubIssue is the issue this task was created from (task 035); nil for
@@ -579,6 +583,15 @@ type CreateTaskRequest struct {
 	// link, and names the branch; everything the caller supplies explicitly
 	// still wins, except the branch, which the pull request decides.
 	GitHubPull *int `json:"github_pull,omitempty"`
+	// Paused creates the task directly in `paused`; `resume` admits it (§6,
+	// task 096 decision 9).
+	Paused *bool `json:"paused,omitempty"`
+	// Restricted clamps every agent step of the task to `restricted`, even
+	// one whose own field says `full-auto` (§9.4, task 096 decision 17).
+	Restricted *bool `json:"restricted,omitempty"`
+	// MaxTaskCostUSD is the task's own spend cap; the engine applies the
+	// lower of it and config's `max_task_cost_usd` (task 096 decision 18).
+	MaxTaskCostUSD *float64 `json:"max_task_cost_usd,omitempty"`
 }
 
 // CreateTask creates a task and returns it as the daemon recorded it. The

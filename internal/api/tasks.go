@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -42,9 +43,10 @@ func taskOrigin(entry workflow.Entry, projectPath, globalDir string) *store.Work
 }
 
 // ptrValue dereferences an optional string field, treating nil as empty.
-func ptrValue(p *string) string {
+func ptrValue[T any](p *T) T {
 	if p == nil {
-		return ""
+		var zero T
+		return zero
 	}
 	return *p
 }
@@ -71,8 +73,13 @@ type taskResponse struct {
 	AgentOverride  *string           `json:"agent_override"`
 	ModelOverride  *string           `json:"model_override"`
 	EffortOverride *string           `json:"effort_override"`
-	State          string            `json:"state"`
-	CurrentStep    int               `json:"current_step"`
+	// Restricted and MaxTaskCostUSD are the create-time limits (task 096
+	// decisions 17, 18), served so a client can show why a task runs
+	// restricted or blocked `cost_limit` under a generous global cap.
+	Restricted     bool     `json:"restricted"`
+	MaxTaskCostUSD *float64 `json:"max_task_cost_usd"`
+	State          string   `json:"state"`
+	CurrentStep    int      `json:"current_step"`
 	// StepTotal is the snapshot's step count — the n in k/n. Zero when the
 	// snapshot could not be parsed. It lives here rather than on the list DTO
 	// alone so the detail view can render k/n without re-parsing the snapshot.
@@ -206,6 +213,8 @@ func toTaskResponse(t *store.Task, summary snapshotSummary) taskResponse {
 		AgentOverride:    nilIfEmpty(t.AgentOverride),
 		ModelOverride:    nilIfEmpty(t.ModelOverride),
 		EffortOverride:   nilIfEmpty(t.EffortOverride),
+		Restricted:       t.Restricted,
+		MaxTaskCostUSD:   positiveFloatPtr(t.MaxTaskCostUSD),
 		State:            string(t.State),
 		CurrentStep:      t.CurrentStep,
 		StepTotal:        summary.stepTotal,
@@ -454,6 +463,24 @@ type taskCreateRequest struct {
 	// would fight over the same title and description, and there is no
 	// defensible order.
 	GitHubPull *int `json:"github_pull"`
+	// Paused creates the task directly in `paused` (§6, task 096 decision 9):
+	// invisible to admission until `POST /v1/tasks/{id}/resume`, so the
+	// scheduler cannot start it between two calls. A trigger's `propose` is
+	// this flag; the TUI form and `vincent task create` offer it too.
+	//
+	// The three fields below are `omitempty` for task 040's digest, which is
+	// json.Marshal of this struct: a body that does not name them digests
+	// exactly as it did before they existed, so a key recorded by an older
+	// daemon still replays rather than reading as reused.
+	Paused *bool `json:"paused,omitempty"`
+	// Restricted is the one-way clamp (§9.4, task 096 decision 17): every
+	// agent step runs `restricted`, including one whose own field says
+	// `full-auto`. false and absent both run the workflow as written.
+	Restricted *bool `json:"restricted,omitempty"`
+	// MaxTaskCostUSD is this task's own cap (§12.3, task 096 decision 18).
+	// The engine applies the lower of it and config's; 0 is no cap from this
+	// side.
+	MaxTaskCostUSD *float64 `json:"max_task_cost_usd,omitempty"`
 }
 
 // boundTaskCreate applies §13.1's size bounds to a task-create body. It is
@@ -690,6 +717,20 @@ func (s *Server) prepareTaskCreate(
 		AgentOverride:    agentOverride,
 		State:            store.TaskQueued,
 		GitHubIssue:      issue,
+		Restricted:       ptrValue(req.Restricted),
+	}
+	// Created held (§6, task 096 decision 9): the row is inserted `paused`,
+	// so there is no instant at which it is admissible.
+	if ptrValue(req.Paused) {
+		t.State = store.TaskPaused
+	}
+	if req.MaxTaskCostUSD != nil {
+		if *req.MaxTaskCostUSD < 0 || math.IsNaN(*req.MaxTaskCostUSD) || math.IsInf(*req.MaxTaskCostUSD, 0) {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed,
+				fmt.Sprintf("max_task_cost_usd must be a non-negative number, got %v", *req.MaxTaskCostUSD))
+			return nil, false
+		}
+		t.MaxTaskCostUSD = *req.MaxTaskCostUSD
 	}
 	if pull != nil {
 		// The link is written **at creation**, as `human` (decision 7): the
@@ -960,7 +1001,7 @@ func (s *Server) restrictedMismatch(wf *workflow.Workflow, t *store.Task) string
 	}
 	catalogs := s.deps.Catalog.Catalogs()
 	override := agent.Level{Agent: t.AgentOverride, Model: t.ModelOverride, Effort: t.EffortOverride}
-	return wf.RestrictedMismatch(override, func(name string) bool {
+	return wf.RestrictedMismatch(override, t.Restricted, func(name string) bool {
 		return !catalogs.RestrictedPossible(name)
 	})
 }
@@ -1494,6 +1535,15 @@ func nilIfEmpty(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// positiveFloatPtr renders an unset per-task cap — stored as 0 — as null, the
+// way nilIfEmpty renders an unset override.
+func positiveFloatPtr(f float64) *float64 {
+	if f <= 0 {
+		return nil
+	}
+	return &f
 }
 
 func timePtr(t *time.Time) *string {
