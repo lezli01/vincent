@@ -1449,6 +1449,27 @@ func (l *locator) line(path string) int {
 	return 0
 }
 
+// Locate fills in Line on every error that has a Path and none yet, resolved
+// against src the way Parse resolves its own. It is exported for
+// internal/trigger, whose validator reports in this package's Error shape so
+// a client renders a refused trigger value against its field exactly as it
+// renders a refused workflow value (task 096.2).
+func Locate(src []byte, errs Errors) Errors {
+	loc := newLocator(src)
+	for i := range errs {
+		if errs[i].Line == 0 && errs[i].Path != "" {
+			errs[i].Line = loc.line(errs[i].Path)
+		}
+	}
+	return errs
+}
+
+// DecodeError is a strict-decoding failure in this package's Error shape:
+// goccy's "[line:column]" prefix becomes Line and the rest the message.
+func DecodeError(err error) Error {
+	return Error{Line: lineOfDecodeError(err), Message: cleanDecodeError(err)}
+}
+
 // decodeErrorPos matches the "[line:column]" prefix goccy puts on decode
 // errors, which is how a strict-decoding failure reports its location.
 var decodeErrorPos = regexp.MustCompile(`^\[(\d+):(\d+)\]\s*`)

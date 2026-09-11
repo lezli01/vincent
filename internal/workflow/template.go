@@ -188,6 +188,14 @@ func Render(name, text string, rc RenderContext) (string, error) {
 	return renderAgainst(name, text, rc)
 }
 
+// RenderWith renders text against data with Render's engine and options. It
+// exists for internal/trigger, whose templates see `.Event` rather than the
+// §8.4 context (task 096 decision 11), so one engine — and one
+// `missingkey=error` rule — serves both.
+func RenderWith(name, text string, data any) (string, error) {
+	return renderAgainst(name, text, data)
+}
+
 // renderAgainst is Render's body, over whatever context the caller has. The
 // only other context is LaneContext, which embeds RenderContext and adds
 // `.Item` (§7.6, task 080 decision 1).
