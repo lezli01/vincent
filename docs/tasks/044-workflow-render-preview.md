@@ -147,6 +147,33 @@ cannot ship a workflow whose own templates do not execute. Stated here because
 the standing rule points the other way and this is the reasoned exception, not
 an omission.
 
+**10. A derived fan-out's `lane:` template renders like a declared lane.**
+*(amended 2026-09-14, issue #370)*
+
+Task 080 added `for_each:` plus one `lane:` template after this command
+shipped, on the assumption (its decision 5) that a materialized step is an
+ordinary static `fan_out`. That holds for a snapshot; `render` previews an
+*authored* file, where the template is still live, so it rendered the
+`for_each` items and nothing else. Decisions 2, 5 and 6 now cover the template
+the way they cover a declared lane: its inline steps are walked, indexed within
+the lane and bound in `.Steps`; a template naming a registry workflow is
+reported unresolved; its `if:` is a guard. Its `id`, `needs` and `fields`
+render too, through `workflow.RenderLane` — the function spawn uses — with each
+`.Item` key chain they spell out bound to `<item.KEY>`, so a typo beside a
+well-formed item read still fails. Each step inside it carries the `for_each`
+it expands over (`derived_lane` in `--json`, a `<derived lane>` line in the
+table).
+
+`--project` had the matching hole: mapping a registry callee's definition back
+to the parser's model dropped `lane`, `max_lanes`, `schedule` and a lane's
+`needs`. Declared lanes and the template now share one mapping.
+
+**Beat:** rendering the template once per real item when the supplied context
+makes `for_each` resolve to JSON objects. Offline the list reads a
+`<steps.ID.result>` sentinel and never resolves, so the per-item pass would
+almost never run; left for later. Drawing `needs:` edges stays deferred with
+task 080.
+
 ## Tasks
 
 - [x] **044.1** `internal/workflow/preview.go` — the preview render context,
@@ -197,6 +224,16 @@ an omission.
   user's first task.
 - **The built-ins render** (`internal/workflow/preview_test.go`) — all three go
   through the same pass, holding them to the bar CLAUDE.md sets.
+- **Derived fan-out lanes** *(added 2026-09-14, issue #370)* —
+  `TestPreviewStepsWalksDerivedLane` walks an inline `lane:` template's steps
+  into `.Steps` and reports a named one unresolved;
+  `TestPreviewItemBindsItemReads` binds nested and `$`-rooted `.Item` reads
+  while a `.Task` typo beside them still fails; `TestRenderDerivedFanOutLane`
+  exits 1 on a typo in the template's step `run:` and in its `if:`, and renders
+  a clean one; `TestWorkflowFromDefinitionCarriesDerivedFanOut` holds the
+  definition mapping to `lane`, `max_lanes`, `schedule` and lane `needs`; and
+  `TestRenderProjectResolvesDerivedFanOut` includes a registry workflow with a
+  derived fan-out through the real handlers and renders its lane step.
 
 No new gate script: the acceptance is a CLI verdict on a file, fully decidable
 in Go, and `m2` already covers the daemon-backed paths this command does not

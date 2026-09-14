@@ -206,4 +206,91 @@ func TestBuiltinsRender(t *testing.T) {
 	}
 }
 
+// TestPreviewStepsWalksDerivedLane is issue #370's first half: a derived
+// fan-out (§7.6, task 080) carries its lane as a single `lane:` template
+// beside `for_each:`, and that template's inline steps carry prompts and
+// `run:` bodies that fail at run time exactly like any other step's. The walk
+// must reach them — and bind their ids in `.Steps` — or the dry run shows
+// nothing for the part of the workflow most likely to need one. A named
+// `lane:` template cannot be looked up offline, so it is reported unresolved
+// the way a named declared lane is.
+func TestPreviewStepsWalksDerivedLane(t *testing.T) {
+	wf := &Workflow{
+		Name: "wf",
+		Steps: []Step{
+			{ID: "plan", Type: StepAgent, Prompt: "x"},
+			{
+				ID: "build", Type: StepFanOut, MaxLanes: intp(8), Schedule: ScheduleEager,
+				ForEach: ForEach{"{{ .Steps.plan.Result }}"},
+				Lane: &Lane{
+					ID: "{{ .Item.id }}", Needs: LaneNeeds{"{{ .Item.needs }}"},
+					Steps: []Step{{ID: "implement", Type: StepCommand, Run: "make {{ .Task.Title }}"}},
+				},
+			},
+			{
+				ID: "named", Type: StepFanOut,
+				ForEach: ForEach{"{{ .Steps.plan.Result }}"},
+				Lane:    &Lane{ID: "{{ .Item.id }}", Workflow: "implement-module"},
+			},
+		},
+	}
+
+	var implement, named *PreviewStep
+	steps := PreviewSteps(wf)
+	for i := range steps {
+		switch steps[i].Path {
+		case "steps[1].lane.steps[0]":
+			implement = &steps[i]
+		case "steps[2].lane":
+			named = &steps[i]
+		}
+	}
+	if implement == nil || implement.Step.ID != "implement" {
+		t.Errorf("the derived lane template's inline step was not walked: %+v", steps)
+	} else if implement.Unresolved != "" {
+		t.Errorf("an inline lane template step is present in the file, yet unresolved: %q", implement.Unresolved)
+	}
+	if named == nil || named.Unresolved == "" {
+		t.Errorf("a named lane template was not reported unresolved: %+v", steps)
+	}
+
+	rc := NewPreviewContext(wf, PreviewInput{})
+	if _, ok := rc.Steps["implement"]; !ok {
+		t.Errorf(".Steps has no entry for the derived lane's step: %v", rc.Steps)
+	}
+}
+
+// TestPreviewItemBindsItemReads: a derived lane template's own fields read
+// `.Item`, a JSON object only the run has. Every key chain they spell out —
+// nested, or through `$` — binds to a sentinel, so they render; a typo in
+// `.Task` beside them still fails, because only `.Item` is stood in for.
+func TestPreviewItemBindsItemReads(t *testing.T) {
+	lane := Lane{
+		ID:     "{{ .Item.id }}",
+		If:     `{{ if $.Item.enabled }}true{{ else }}false{{ end }}`,
+		Needs:  LaneNeeds{"{{ .Item.needs }}"},
+		Fields: map[string]string{"owner": "{{ .Item.meta.owner }}"},
+	}
+	item := PreviewItem(lane)
+	rc := NewPreviewContext(&Workflow{Name: "wf"}, PreviewInput{})
+
+	for text, want := range map[string]string{
+		lane.ID:              SentinelItem("id"),
+		lane.If:              "true",
+		lane.Needs[0]:        SentinelItem("needs"),
+		lane.Fields["owner"]: SentinelItem("meta.owner"),
+	} {
+		got, err := RenderLane("lane", text, rc, item)
+		if err != nil {
+			t.Errorf("%s: %v", text, err)
+		} else if got != want {
+			t.Errorf("%s rendered %q, want %q", text, got, want)
+		}
+	}
+
+	if _, err := RenderLane("lane", "{{ .Item.id }} {{ .Task.Titel }}", rc, item); err == nil {
+		t.Error("a .Task typo beside a bound .Item read rendered clean")
+	}
+}
+
 func intp(v int) *int { return &v }

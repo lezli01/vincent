@@ -9,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/config"
+	"github.com/lezli01/vincent/internal/workflow"
 )
 
 // runWorkflowCLI runs one `vincent workflow …` invocation in-process against
@@ -290,6 +292,134 @@ func TestRenderExitCodes(t *testing.T) {
 	invalid := writeWorkflow(t, "name: demo\nsteps:\n  - id: plan\n    type: nonsense\n")
 	if out, code := runWorkflowCLI(t, "render", invalid); code != 1 {
 		t.Fatalf("invalid file exit code = %d, want 1: %s", code, out)
+	}
+}
+
+// derivedFanOut is a derived fan-out (§7.6, task 080) whose lane template
+// carries laneIf as its guard and runBody as its one inline step's `run:`,
+// with every field a derived step may carry — `max_lanes`, `schedule: eager`
+// and a templated `needs:` — so a render that trips over any of them shows.
+func derivedFanOut(laneIf, runBody string) string {
+	return workflowWith(`  - id: plan
+    type: agent
+    prompt: "Plan {{.Task.Title}}"
+  - id: build
+    type: fan_out
+    max_lanes: 8
+    schedule: eager
+    for_each: '{{ .Steps.plan.Result }}'
+    lane:
+      id: '{{ .Item.id }}'
+      needs: '{{ .Item.needs }}'
+      if: '` + laneIf + `'
+      steps:
+        - id: implement
+          type: command
+          run: "` + runBody + `"`)
+}
+
+// TestRenderDerivedFanOutLane is issue #370 on the file path: a derived
+// lane's template is part of the file, so its `run:` body and its `if:` are
+// rendered like any declared lane's — a typo in either is exit 1 naming it,
+// and a clean one prints what the lane's step would run.
+func TestRenderDerivedFanOutLane(t *testing.T) {
+	t.Run("typo in the lane's step", func(t *testing.T) {
+		file := writeWorkflow(t, derivedFanOut("true", "make {{ .Task.Titel }}"))
+		out, code := runWorkflowCLI(t, "render", file)
+		if code != 1 {
+			t.Fatalf("exit code = %d, want 1 for a typo in the derived lane's run body: %s", code, out)
+		}
+		if !strings.Contains(out, "implement") || !strings.Contains(out, "Titel") {
+			t.Errorf("the error does not name the lane step and the reference: %s", out)
+		}
+	})
+
+	t.Run("typo in the lane's guard", func(t *testing.T) {
+		file := writeWorkflow(t, derivedFanOut("{{ .Task.Titel }}", "make {{ .Task.Title }}"))
+		out, code := runWorkflowCLI(t, "render", file)
+		if code != 1 {
+			t.Fatalf("exit code = %d, want 1 for a typo in the derived lane's if: %s", code, out)
+		}
+		if !strings.Contains(out, "Titel") {
+			t.Errorf("the error does not name the reference: %s", out)
+		}
+	})
+
+	t.Run("clean", func(t *testing.T) {
+		file := writeWorkflow(t, derivedFanOut("true", "make {{ .Task.Title }}"))
+		out, code := runWorkflowCLI(t, "render", file, "--json")
+		if code != 0 {
+			t.Fatalf("exit code = %d, want 0: %s", code, out)
+		}
+		var got renderResult
+		if err := json.Unmarshal([]byte(out), &got); err != nil {
+			t.Fatalf("--json is not JSON: %v (%s)", err, out)
+		}
+		var rendered bool
+		for _, s := range got.Steps {
+			if s.ID != "implement" {
+				continue
+			}
+			for _, f := range s.Fields {
+				if f.Field == "run" && strings.Contains(f.Output, "make <task.title>") {
+					rendered = true
+				}
+			}
+		}
+		if !rendered {
+			t.Errorf("the derived lane's run body was never rendered: %+v", got.Steps)
+		}
+	})
+}
+
+// TestWorkflowFromDefinitionCarriesDerivedFanOut is issue #370 on the
+// `--project` path: a registry callee comes back through the §13.2
+// definition DTO, which carries `lane`, `max_lanes`, `schedule` and a lane's
+// `needs`, and the mapping back to the parser's model must not drop them — a
+// derived fan-out without its `lane:` is a fan_out with nothing to render.
+func TestWorkflowFromDefinitionCarriesDerivedFanOut(t *testing.T) {
+	maxLanes := 8
+	body := &apiclient.WorkflowBody{
+		Name: "callee",
+		Steps: []apiclient.WorkflowStepDef{
+			{
+				ID: "build", Type: workflow.StepFanOut, MaxLanes: &maxLanes, Schedule: workflow.ScheduleEager,
+				ForEach: []string{"{{ .Steps.plan.Result }}"},
+				Lane: &apiclient.WorkflowLaneDef{
+					ID: "{{ .Item.id }}", Needs: []string{"{{ .Item.needs }}"},
+					Steps: []apiclient.WorkflowStepDef{{ID: "implement", Type: workflow.StepCommand, Run: "make"}},
+				},
+			},
+			{
+				ID: "declared", Type: workflow.StepFanOut,
+				Lanes: []apiclient.WorkflowLaneDef{
+					{ID: "api", Steps: []apiclient.WorkflowStepDef{{ID: "a", Type: workflow.StepCommand, Run: "x"}}},
+					{ID: "docs", Needs: []string{"api"}, Steps: []apiclient.WorkflowStepDef{{ID: "d", Type: workflow.StepCommand, Run: "x"}}},
+				},
+			},
+		},
+	}
+
+	wf := workflowFromDefinition(body)
+	if len(wf.Steps) != 2 {
+		t.Fatalf("steps = %d, want 2", len(wf.Steps))
+	}
+	derived := wf.Steps[0]
+	if derived.Lane == nil {
+		t.Fatal("the derived fan-out's lane template was dropped")
+	}
+	if derived.Lane.ID != "{{ .Item.id }}" || len(derived.Lane.Steps) != 1 ||
+		strings.Join(derived.Lane.Needs, ",") != "{{ .Item.needs }}" {
+		t.Errorf("lane template = %+v, want its id, needs and inline step carried", *derived.Lane)
+	}
+	if derived.MaxLanes == nil || *derived.MaxLanes != 8 {
+		t.Errorf("max_lanes = %v, want 8", derived.MaxLanes)
+	}
+	if derived.Schedule != workflow.ScheduleEager {
+		t.Errorf("schedule = %q, want %q", derived.Schedule, workflow.ScheduleEager)
+	}
+	if lanes := wf.Steps[1].Lanes; len(lanes) != 2 || strings.Join(lanes[1].Needs, ",") != "api" {
+		t.Errorf("declared lanes = %+v, want docs to need api", lanes)
 	}
 }
 

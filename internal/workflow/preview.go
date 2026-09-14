@@ -3,6 +3,9 @@ package workflow
 import (
 	"fmt"
 	"runtime"
+	"strings"
+	"text/template"
+	"text/template/parse"
 )
 
 // Preview is the §8.4 render context of a *dry run* — `vincent workflow
@@ -51,6 +54,11 @@ func SentinelField(name string) string { return "<field." + name + ">" }
 func SentinelStep(id, field string) string {
 	return "<steps." + id + "." + field + ">"
 }
+
+// SentinelItem is the placeholder one `.Item` key of a derived lane template
+// binds to. path is the key chain as the template spells it: `<item.id>`,
+// `<item.meta.name>`.
+func SentinelItem(path string) string { return "<item." + path + ">" }
 
 // PreviewInput is what a caller knows about the hypothetical task a preview
 // renders for. Every zero-valued field falls back to its sentinel, so the
@@ -191,6 +199,11 @@ type PreviewStep struct {
 	// `include`, or a fan-out lane naming a registry workflow. Empty for
 	// every step whose content is present.
 	Unresolved string
+	// DerivedLane is set on everything inside a derived fan-out's `lane:`
+	// template (§7.6, task 080): the `for_each` templates the lane is rendered
+	// once per item of. Such a step is previewed once, but runs in as many
+	// lanes as the list turns out to have.
+	DerivedLane ForEach
 }
 
 // PreviewSteps flattens wf into every step a dry run renders, in declaration
@@ -243,12 +256,147 @@ func previewWalk(step Step, path string, index int, inLoop bool) []PreviewStep {
 		}
 	}
 
+	// A derived fan-out's single `lane:` template (§7.6, task 080) is still
+	// live in an authored file: it becomes a lane per `for_each` item only at
+	// spawn. It is walked exactly like a declared lane — its inline steps are
+	// a child task's flat snapshot — and marked with the list it expands over.
+	if step.Lane != nil {
+		lanePath := path + ".lane"
+		var lane []PreviewStep
+		if step.Lane.Workflow != "" {
+			lane = append(lane, PreviewStep{
+				Path:       lanePath,
+				Step:       Step{ID: SentinelLane, Type: StepFanOut},
+				Index:      index,
+				Unresolved: fmt.Sprintf("lane template names workflow %q", step.Lane.Workflow),
+			})
+		} else {
+			for k, sub := range step.Lane.Steps {
+				lane = append(lane, previewWalk(sub, fmt.Sprintf("%s.steps[%d]", lanePath, k), k, false)...)
+			}
+		}
+		for i := range lane {
+			// A derived fan-out nested inside this template has already
+			// marked its own lane with its own list.
+			if lane[i].DerivedLane == nil {
+				lane[i].DerivedLane = step.ForEach
+			}
+		}
+		out = append(out, lane...)
+	}
+
 	if step.Merge != nil && step.Merge.Agent != nil {
 		resolver := previewWalk(*step.Merge.Agent, path+".merge.agent", index, inLoop)
 		resolver[0].Conflicts = true
 		out = append(out, resolver...)
 	}
 	return out
+}
+
+// PreviewItem is the `.Item` a derived lane template's own fields — `id`,
+// `if`, `needs` and `fields` — render with in a dry run (§7.6, §8.4). The real
+// item is a JSON object only the run discovers, and `.Item` renders under
+// `missingkey=error`, so binding it empty would fail every legitimate
+// `{{ .Item.id }}`. Instead each `.Item` key chain those fields spell out binds
+// to SentinelItem, the way a required task field binds to `<field.NAME>`: a
+// well-formed item read renders a placeholder, and a typo in `.Task` or
+// `.Steps` beside it still fails exactly where a run would.
+//
+// A nested read binds its parents to objects, so `.Item.meta.name` resolves.
+// A key read through a rebound dot — `{{ with .Item }}{{ .id }}` — is not
+// bound, and is reported: the preview binds only what it can see.
+func PreviewItem(lane Lane) map[string]any {
+	item := map[string]any{}
+	texts := append([]string{lane.ID, lane.If}, lane.Needs...)
+	for _, v := range lane.Fields {
+		texts = append(texts, v)
+	}
+	for _, text := range texts {
+		tmpl, err := template.New("item").Parse(text)
+		if err != nil {
+			// Rendering the same text reports the parse error with its field.
+			continue
+		}
+		for _, t := range tmpl.Templates() {
+			if t.Tree != nil {
+				bindItemRefs(item, t.Root)
+			}
+		}
+	}
+	return item
+}
+
+// bindItemRefs walks one parsed template and binds every `.Item` field chain
+// it finds.
+func bindItemRefs(item map[string]any, node parse.Node) {
+	switch n := node.(type) {
+	case *parse.ListNode:
+		if n == nil {
+			return
+		}
+		for _, child := range n.Nodes {
+			bindItemRefs(item, child)
+		}
+	case *parse.ActionNode:
+		bindItemRefs(item, n.Pipe)
+	case *parse.IfNode:
+		bindItemBranch(item, &n.BranchNode)
+	case *parse.RangeNode:
+		bindItemBranch(item, &n.BranchNode)
+	case *parse.WithNode:
+		bindItemBranch(item, &n.BranchNode)
+	case *parse.TemplateNode:
+		bindItemRefs(item, n.Pipe)
+	case *parse.PipeNode:
+		if n == nil {
+			return
+		}
+		for _, cmd := range n.Cmds {
+			bindItemRefs(item, cmd)
+		}
+	case *parse.CommandNode:
+		for _, arg := range n.Args {
+			bindItemRefs(item, arg)
+		}
+	case *parse.ChainNode:
+		bindItemRefs(item, n.Node)
+	case *parse.FieldNode:
+		bindItemPath(item, n.Ident)
+	case *parse.VariableNode:
+		if len(n.Ident) > 0 && n.Ident[0] == "$" {
+			bindItemPath(item, n.Ident[1:])
+		}
+	}
+}
+
+func bindItemBranch(item map[string]any, n *parse.BranchNode) {
+	bindItemRefs(item, n.Pipe)
+	bindItemRefs(item, n.List)
+	bindItemRefs(item, n.ElseList)
+}
+
+// bindItemPath binds one field chain — `Item id`, `Item meta name` — if it
+// reads `.Item`.
+func bindItemPath(item map[string]any, ident []string) {
+	if len(ident) < 2 || ident[0] != "Item" {
+		return
+	}
+	keys := ident[1:]
+	m := item
+	for i, key := range keys {
+		if i == len(keys)-1 {
+			if _, ok := m[key]; !ok {
+				m[key] = SentinelItem(strings.Join(keys, "."))
+			}
+			return
+		}
+		next, ok := m[key].(map[string]any)
+		if !ok {
+			next = map[string]any{}
+			m[key] = next
+		}
+		m = next
+	}
 }
 
 func orSentinel(value, sentinel string) string {

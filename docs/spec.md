@@ -397,6 +397,8 @@ later reader sees one shape — and after it the step is an ordinary static
 `fan_out`, which is what keeps the graph, the preview, the editor and
 `edit + retry` free of a derived case. The registry is still not re-read: the
 lane's `workflow:` was resolved at creation like any other (§5.3 above).
+*(Amended 2026-09-14, issue #370: "the preview" here is a snapshot's; `vincent
+workflow render` previews an authored file and has a derived case — §7.6.)*
 
 `current_step` is left where the finished run put it — one past the last step —
 for the whole of a follow-up, and a follow-up is walked by the cursor inside
@@ -1444,6 +1446,14 @@ does not finish until every lane is merged.
   budget can rewrite that row, and the picture a reader is shown must not
   change because a lane was retried.
 
+  *Amended 2026-09-14 (issue #370), amending task 080 decision 5.* "The
+  preview" above is true only of a snapshot. `vincent workflow render` previews
+  an **authored** file, where the `lane:` template is still live, so it does
+  carry a derived case: the template is walked like a declared lane, its own
+  `if`, `id`, `needs` and `fields` render with `.Item` bound to placeholders,
+  and its steps are marked with the `for_each` they expand over (§8.4, task 044
+  decision 10).
+
   `fan_out.max_depth` is unchanged: it counts nesting, and a dynamic width does
   not nest. `fan_out.max_tasks` **cannot** be checked at task creation for a
   derived list, so a per-step `max_lanes:` and a run-time tree-size check block
@@ -2419,9 +2429,10 @@ agent will receive. The vocabulary is:
 | `.Task.Title` / `.Description` / `.BranchName` / `.BaseBranch` | `<task.title>`, `<task.description>`, `<branch>`, `<base_branch>` |
 | `.Task.Fields` | one entry per **required** declared field (§8.1.2), bound to its `default:`, else an `enum`'s first declared value, else `<field.NAME>` — a sentinel is never a member of its own enum, so a preview binds a value the workflow could actually receive where one exists *(amended 2026-08-30, task 058)*. Optional declared and undeclared names stay absent, so reading one without `{{ with index … }}` is the error the defensive-read rule above says it is |
 | `.Project.*` | `<project.name>`, `<project.path>`, `<project.default_branch>`, and `.Project.ID` `0`, following `.Task.ID`'s precedent *(added 2026-09-14, task 098)* |
-| `.Steps` | one entry per step id the **file** declares, nested bodies and inline fan-out lanes included — an `include` step and a lane naming a registry workflow contribute none, since neither survives as a step of this task (§7.9, §7.6) — each `{Status: <steps.ID.status>, Result: <steps.ID.result>, ExitCode: 0}`. A forward reference renders clean: restricting the map to steps that would have completed interacts with `parallel` blindness, loop iterations and `allow_failure` in ways that produce false positives, and a false positive exits 1 inside a pre-commit hook |
+| `.Steps` | one entry per step id the **file** declares, nested bodies and inline fan-out lanes included — a derived fan-out's `lane:` template's inline steps too *(amended 2026-09-14, issue #370)* — an `include` step and a lane naming a registry workflow contribute none, since neither survives as a step of this task (§7.9, §7.6) — each `{Status: <steps.ID.status>, Result: <steps.ID.result>, ExitCode: 0}`. A forward reference renders clean: restricting the map to steps that would have completed interacts with `parallel` blindness, loop iterations and `allow_failure` in ways that produce false positives, and a false positive exits 1 inside a pre-commit hook |
 | `.Step.Attempt` | `1`, and the `<previous-attempt-failure>` block above is not appended |
 | `.Loop` | the zero value outside a loop; `{Index: 1, Item: <loop.item>, IsFirst: true}` for a step inside one |
+| `.Item` | only in a derived fan-out's `lane:` template's own `if`, `id`, `needs` and `fields` (§7.6), which render with `RenderLane` exactly as spawn does: an object binding each `.Item` key chain those fields spell out to `<item.KEY>` — `<item.id>`, `<item.meta.owner>` — so a well-formed read renders a placeholder and a typo beside it still fails. A key read through a rebound dot (`{{ with .Item }}{{ .id }}`) is not bound. The template's inline steps render once, marked with the `for_each` they expand over; they see no `.Item`, as at run time *(added 2026-09-14, issue #370)* |
 | `.Issue` | the zero value, so `{{ if .Issue.Number }}` takes the unlinked branch |
 | `.Worktree.Path` / `.LastFailure` | `<worktree>`, `{<last_failure.reason>, <last_failure.output>}` |
 | `.Conflicts` | one element, `<conflicts[0]>`, on an `on_conflict: agent` resolver step; empty everywhere else |
