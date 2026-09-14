@@ -103,6 +103,9 @@ func (s *Server) handleChatHandoff(w http.ResponseWriter, r *http.Request) {
 	t.BranchName = chat.Branch
 	t.BaseBranch = chat.BaseBranch
 	t.BaseSHA = chat.BaseSHA
+	// What the chat started from is what the task started from, so the base
+	// refresh is inherited with the base_sha it produced (§10, task 099).
+	t.BaseRefresh = chat.BaseRefresh
 	t.WorktreePath = chat.WorktreePath
 	updated, err := s.deps.Store.HandoffChat(ctx, chat.ID, &t)
 	var claimed *store.BranchClaimedError

@@ -533,6 +533,12 @@ func advanceRemoteBase(t *testing.T, repo, branch string) {
 // commit, and the reviewer reads every upstream change the fetch brought in as
 // the task's own work. Both halves are asserted — the recorded SHA gives the
 // task's own diff, and clearing it reproduces the fault the column fixes.
+//
+// Since task 099 a clean project checkout is fast-forwarded to the fetched tip,
+// which makes the local base current again and hides the fault. The local base
+// stays stale exactly when that fast-forward is skipped, so the fixture leaves
+// an untracked file in the checkout: that is the case base_sha still has to
+// carry, and the one this test pins.
 func TestTaskDiffUsesTheRecordedBaseSHA(t *testing.T) {
 	h := newActionHarness(t)
 	task := queuedTask(t, h)
@@ -541,6 +547,7 @@ func TestTaskDiffUsesTheRecordedBaseSHA(t *testing.T) {
 		t.Fatalf("GetTask: %v", err)
 	}
 	advanceRemoteBase(t, h.repo, stored.BaseBranch)
+	testrepo.WriteFile(t, h.repo, "human-scratch.txt", "not committed yet\n")
 
 	created, err := h.wt.CreateAndClaim(t.Context(), h.repo, worktree.TaskOwner(task.ID),
 		stored.BranchName, stored.BaseBranch, true, nil)
@@ -549,6 +556,10 @@ func TestTaskDiffUsesTheRecordedBaseSHA(t *testing.T) {
 	}
 	if created.BaseSHA == "" {
 		t.Fatal("fixture is wrong: no base SHA was recorded")
+	}
+	if created.FastForward.Reason != worktree.SkipCheckoutDirty {
+		t.Fatalf("fixture is wrong: fast-forward = %+v, want skipped %q so the local base stays stale",
+			created.FastForward, worktree.SkipCheckoutDirty)
 	}
 	if err := h.store.SetTaskProgress(t.Context(), task.ID, nil, &created.Path, &created.BaseSHA); err != nil {
 		t.Fatalf("record worktree: %v", err)
