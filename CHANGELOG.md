@@ -280,6 +280,13 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **TUI hints no longer name keys that do nothing.** The Pull Request tab's
+  hint line still read `c open check` and `r refresh`, though `c` there is
+  cancel and `r` is retry since open-check moved to `enter` and the refresh key
+  was removed; it now reads `enter open check · o open PR · u unlink`, taken
+  from the key registry. And with `tui.board.group_by: []`, the `ctrl+p`
+  palette no longer lists the board's fold keys, which do nothing on a flat
+  board and were already missing from the footer (issue #372).
 - **A follow-up that names a workflow now honors that workflow's declared
   fields.** `POST /v1/tasks/{id}/follow_up` with `workflow` skipped the field
   checks `POST /v1/tasks` applies, so it queued a run whose required field the

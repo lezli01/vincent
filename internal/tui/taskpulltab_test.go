@@ -133,6 +133,29 @@ func TestPullTabRendersEveryCheck(t *testing.T) {
 	}
 }
 
+// TestPullTabHintNamesOnlyItsOwnKeys (issue #372): the tab's in-pane hint line
+// names what the registry binds on ctxTaskPull and nothing else. Task 093
+// moved open-check to `enter` and dropped the refresh key outright, so `c` is
+// cancel and `r` is retry on this tab — a hint still reading `c open check`
+// and `r refresh` advertises two presses that do something else entirely.
+func TestPullTabHintNamesOnlyItsOwnKeys(t *testing.T) {
+	v := pullTabFixture(t)
+	if run := v.selectedCheck(); run == nil || run.URL == "" {
+		t.Fatal("fixture: the cursor is not on a check with a page to open")
+	}
+	out := ansi.Strip(v.renderPullTab(120, 30))
+	for _, stale := range []string{"r refresh", "c open check"} {
+		if strings.Contains(out, stale) {
+			t.Errorf("the tab still advertises %q, which task 093 removed:\n%s", stale, out)
+		}
+	}
+	for _, b := range bindingsFor(ctxTaskPull) {
+		if b.key == "enter" && !strings.Contains(out, b.hint) {
+			t.Errorf("the tab does not advertise the registry's %q for the selected check:\n%s", b.hint, out)
+		}
+	}
+}
+
 // A running check becomes success or failure without the user re-entering the
 // tab: the rollup is replaced by the next fetch, in place.
 func TestPullTabChecksUpdateInPlace(t *testing.T) {
@@ -178,7 +201,7 @@ func TestPullTabOpensTheSelectedCheck(t *testing.T) {
 		t.Fatal("enter opened something for a check with no page")
 	}
 	if !v.pullTab.noteBad {
-		t.Fatal("c said nothing about a check with no page")
+		t.Fatal("enter said nothing about a check with no page")
 	}
 }
 

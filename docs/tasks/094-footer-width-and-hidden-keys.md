@@ -99,6 +99,9 @@ are absent and are not counted — task 054 decision 5 says the footer never
 names a press that does nothing, and a count of them is naming them.
 `paletteEntries` never had the fold gate and still lists those three rows; that
 mismatch is left alone here and is its own issue, not this one's to widen into.
+*Note 2026-09-14:* that issue is #372, and its fix passes the shell's
+`liveBindings` into `paletteEntries` from `root.openPalette`, so the palette now
+drops the same fold rows the footer does.
 
 **6 (2026-09-10). What does not change.** `bar.capturing()` replaces the left
 side outright and gets no `+N` — the pending `y/n` owns the keyboard, so
