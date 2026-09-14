@@ -156,3 +156,14 @@ Out of scope here, and named so the next reader does not mistake this for full
 parity: the `PATCH` endpoints, `resolve`, `agents`, `task diff` and
 `task transcript`. None of them strands a blocked task, which is what made this
 issue urgent and makes those their own work.
+
+*Amended 2026-09-14 (issue #378):* `task transcript` is struck — it was shipped
+by [047](047-cli-logs-and-transcripts.md) as `vincent task transcript` — and
+"the `PATCH` endpoints" is narrowed to the `PATCH` endpoints other than
+`PATCH /v1/config`, which task 060 gave `vincent config set`. Still API-only:
+`task diff` (tracked in [#389](https://github.com/lezli01/vincent/issues/389),
+2026-09-13), `agents` (tracked in
+[#393](https://github.com/lezli01/vincent/issues/393), 2026-09-13), the project
+`PATCH /v1/projects/{id}` (tracked in
+[#394](https://github.com/lezli01/vincent/issues/394), 2026-09-13), and
+`resolve`.

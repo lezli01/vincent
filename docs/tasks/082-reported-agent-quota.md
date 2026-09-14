@@ -35,6 +35,12 @@ no pull, so vincent is a bystander to delivery.
 **cursor — unchanged.** No surface. Observation-only; §9.7 stays true as
 written, and is restated positively rather than left to look like an oversight.
 
+## Tasks
+
+- [x] **082.1** Report codex's `app-server` quota and Claude Code's status-line
+  quota, merged over the observed window on `GET /v1/agents` — see *What
+  landed*. ✓ 2026-09-02
+
 ## Decisions
 
 1. **One task, both halves.** The codex pull, the claude status-line install and

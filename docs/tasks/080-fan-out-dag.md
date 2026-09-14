@@ -5,6 +5,10 @@
 **Amends:** §5.3 (unchanged, and says why), §7.6, §7.8, §8.4, §12.4, §18
 **Extends:** [014](014-workflow-fan-out.md) decisions 5 and 28 under their own
 terms; **reverses** its decision 21 where, and only where, `needs:` is used
+**Supersedes:** [014](014-workflow-fan-out.md) decision 15's run-time dynamic
+fan-out non-goal and [018](018-control-flow-review.md)'s declined "`for_each`
+over `fan_out` lanes"; **narrows** 018's declined structured `for_each` items
+(recorded 2026-09-14, issue #378)
 **Follow-up:** eager per-lane scheduling is #302, deliberately not here —
 shipped as [081](081-eager-fan-out-scheduling.md)
 
@@ -218,5 +222,7 @@ starting tree depend on timing rather than on the graph.
   width" label the graph should show. *Claimed 2026-09-03 (issue #316) for the
   TUI half:* the graph draws `needs:` edges, stacks the waves, badges `eager`
   and marks a derived list with what it came from. The CLI renderer is still
-  deferred, and `SentinelLane` is still in place for it.
-- A `scripts/m6-gate.sh` scenario driving a derived DAG end to end.
+  deferred (tracked in [#407](https://github.com/lezli01/vincent/issues/407),
+  2026-09-13), and `SentinelLane` is still in place for it.
+- A `scripts/m6-gate.sh` scenario driving a derived DAG end to end (tracked in
+  [#384](https://github.com/lezli01/vincent/issues/384), 2026-09-13).

@@ -44,7 +44,8 @@ troubleshooting page all say it in as many words — rather than worked around.
 
 **Beat:** a per-tree cap. It needs a recursive rollup over `parent_task_id` and
 a rule for which task blocks when the tree total trips, and neither is a
-question this issue asked. Layerable later against the same enforcement point.
+question this issue asked. Layerable later against the same enforcement point
+(tracked in [#409](https://github.com/lezli01/vincent/issues/409), 2026-09-13).
 
 ### 2. The check fires at every attempt boundary, not at top-level step boundaries (2026-08-26)
 

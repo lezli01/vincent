@@ -145,7 +145,7 @@ coordinates and expected no scroll would encode the design decision 1 rejects.
 ## Left open
 
 - **The chats board's wheel** (§15 view 8). Out of scope by the issue's own
-  wording.
+  wording (tracked in [#405](https://github.com/lezli01/vincent/issues/405), 2026-09-13).
 - **No new screenshot.** The wheel is not visible in a still, and nothing under
   `docs/assets/` goes stale: the chat workspace is photographed by no capture —
   `scripts/screenshots.sh` has no chat tape and there is no `tui-chat*.png` — so

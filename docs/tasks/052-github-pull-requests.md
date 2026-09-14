@@ -171,7 +171,9 @@ because that seam is shell-scoped and the nav rows are global.
 and runnable locally from day one. `.github/workflows/ci.yml` enumerates its
 gate steps by hand and an agent session's token has no `workflow` scope, so it
 cannot write that directory by push or API (#120, #122, #125) — the step to add
-is given in the pull request instead. Task-numbered rather than `m10` because
+is given in the pull request instead (tracked in
+[#381](https://github.com/lezli01/vincent/issues/381), 2026-09-13).
+Task-numbered rather than `m10` because
 this is not a §19 milestone, following 017 and 032.
 
 ## Sub-tasks

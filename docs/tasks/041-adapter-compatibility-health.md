@@ -103,7 +103,7 @@ refusal.
    test.** There is still **no pre-flight refusal on `logged_in: false`** (§9.5,
    task 003 decision 4): authentication stays visible, not blocking, and an
    unauthenticated run keeps failing `agent_unauthenticated` under the §7.2
-   budget. And doctor's `Problems` set stays **closed** (task 005 decision 7):
+   budget. And doctor's `Problems` set stays **closed** (task 006 decision 7):
    `untested`, `incompatible`, missing and logged-out adapters are rows in the
    agents group and never change `vincent doctor`'s exit code — an untested
    build is the normal state of a healthy machine, so admitting it to the

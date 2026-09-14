@@ -218,7 +218,7 @@ nothing binding on it.
   `httptest`: the action bar offers repair only when the daemon does, the form
   posts what was typed, and the timeline renders the repair row as its own
   labelled entry rather than an attempt of the blocked step.
-- `VINCENT_GATE_SCENARIO=8 ./scripts/m2-gate.sh` drives the whole path against
+- `VINCENT_GATE_SCENARIO=9 ./scripts/m2-gate.sh` drives the whole path against
   the fake agent: a task whose check fails blocks, a repair whose agent writes
   the file the check wants runs and lands as a separate `__repair` row, the task
   is `blocked` again with the same reason, and a `retry` then reaches `done`.

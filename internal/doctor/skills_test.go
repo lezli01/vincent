@@ -9,7 +9,7 @@ import (
 )
 
 // TestSkillsAreNeverAProblem is decision 5: the closed unhealthy set (task
-// 005 decision 7) stays closed. Every skill missing, stale, ahead of this
+// 006 decision 7) stays closed. Every skill missing, stale, ahead of this
 // build and unreadable at once, and `vincent doctor` still exits 0 — the
 // built-in workflows carry the skill's text in their own prompts, so nothing
 // a row here can say stops a task from running.

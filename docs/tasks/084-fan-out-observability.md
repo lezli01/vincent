@@ -8,7 +8,8 @@
 dropped
 **Claims:** 080's deferred *"drawing `needs:` edges in the TUI workflow graph
 and the CLI renderer"*, for its TUI half only; the CLI renderer stays deferred
-and `workflow.SentinelLane` stays in place for it
+and `workflow.SentinelLane` stays in place for it (tracked in
+[#407](https://github.com/lezli01/vincent/issues/407), 2026-09-13)
 **Keeps, without relitigating:** [014](014-workflow-fan-out.md) decision 13
 (descendants are excluded from the task list) and [051](051-live-workflow-graph-tab.md)
 decision 1 (a lane's state rides on its caption, never on its inline step
@@ -262,12 +263,15 @@ in the child and never appear on this graph.
 
 - **Corpus entry 12 and runtime legs 13–15 of
   [`docs/gates/017-workflow-graph.md`](../gates/017-workflow-graph.md) have not
-  been walked.** The graph's acceptance is a judgement about a picture, as it
+  been walked** (tracked in
+  [#380](https://github.com/lezli01/vincent/issues/380), 2026-09-13). The graph's acceptance is a judgement about a picture, as it
   has been since 017; the automated half is
   `internal/tui/workflowgraph/lanedag_test.go` against `testdata/lanedag.txt`.
 - **No `docs/assets/tui-*.png` was recaptured.** Every existing capture is
   still a true picture — an unexpanded board and a diff with no lanes render as
   they did — and the new states are additive, so nothing on the page is now
-  wrong. A person re-runs `scripts/screenshots.sh` to add them.
+  wrong. A person re-runs `scripts/screenshots.sh` to add them (tracked in
+  [#415](https://github.com/lezli01/vincent/issues/415), 2026-09-13).
 - The **CLI graph renderer** is still deferred from task 080, and
-  `workflow.SentinelLane` is still in place for it.
+  `workflow.SentinelLane` is still in place for it (tracked in
+  [#407](https://github.com/lezli01/vincent/issues/407), 2026-09-13).

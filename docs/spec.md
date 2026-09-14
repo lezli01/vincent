@@ -3270,7 +3270,7 @@ as exactly "the option probe failed and you are reading the curated catalog";
 duplicating it as a verdict would give one fact two names.
 
 None of these verdicts blocks anything except `restricted_verdict`, and none of
-them is a `vincent doctor` problem (§17, task 005 decision 7): an untested build
+them is a `vincent doctor` problem (§17, task 006 decision 7): an untested build
 is the normal state of a healthy machine. *Added 2026-09-10 (task 095):*
 the published-skill row of §9.8 is **not** a sixth facet. Task 041 closed this
 vocabulary at five, and a skill is a property of the machine's agent
@@ -3862,7 +3862,7 @@ which is why `metadata.version` is needed rather than reusable from it.
 
 **Nothing here moves an exit code.** A missing, stale or unreadable skill is a
 row, on the GitHub (task 035), release-check (task 055) and container (task 061)
-precedent. `vincent doctor` still exits 0 (§17, task 005 decision 7).
+precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
 
 ## 10. Worktree management
 
@@ -7096,6 +7096,9 @@ CREATE TABLE tasks (
   parent_step_index   INTEGER,                -- the fan_out step's index in the parent
   lane_id             TEXT,                   -- the lane's id in that step
   lane_order          INTEGER,
+  settled_children_watermark INTEGER,         -- eager fan_out wake position (§7.6, §11, task 081, migration 0024):
+                                              -- settled direct children seen when the parked admission started;
+                                              -- NULL = barrier. Cleared by any transition out of awaiting_children
   github_issue_json   TEXT,                   -- the GitHub issue this task was created from (§5.3, task 035,
                                               -- migration 0014); NULL = no linked issue. A snapshot: written
                                               -- once at creation and never refreshed, which is what lets
@@ -7388,6 +7391,15 @@ whose agent step created this one over §13.4's MCP server. NULL is every task a
 human, the CLI, the TUI or a `fan_out` step created. It is not `parent_task_id`
 and must not be conflated with it — see §13.4 for why.
 
+*Added 2026-09-02 (task 081, migration 0024); recorded here 2026-09-14 (issue
+#378).* `tasks.settled_children_watermark INTEGER` is the wake position of a
+parent parked under a `schedule: eager` `fan_out` step (§7.6, §11): how many of
+its **direct** children had settled when that parked admission started. The
+scheduler re-queues the parent once the live count exceeds it, so the eager
+wake stays a pure SQL question. NULL means barrier. `TransitionTask` clears it
+on any transition out of `awaiting_children`, so a barrier step never inherits
+an earlier eager step's. No index: it is read by id.
+
 *Added 2026-09-11 (task 096, migration 0028).* `tasks.restricted` and
 `tasks.max_task_cost_usd` hold the two create-time limits (§5.3). Both default to
 0, which is the "not set" value in each case — every earlier row runs its
@@ -7549,7 +7561,7 @@ stream for the live tail.
    admitted only when the title still clears a comfortable width, so a board
    narrow enough to lose it renders exactly as it did before the column existed,
    and the width a grouped board frees by dropping PROJECT and WORKFLOW still
-   goes to the title. *Amended 2026-08-29 (task 052): the status is no longer
+   goes to the title. *Amended 2026-08-29 (task 050): the status is no longer
    truncated with an ellipsis — it wraps, along with TITLE, STATE and STEP, per
    the row-height rule below; and "the width goes to the title" is now "the
    width is spent on the row", per the title cap below.* The status of the *newest* row, not the newest message: a
@@ -7559,7 +7571,7 @@ stream for the live tail.
    widening a column for a rare state costs every board the columns that shed
    first) stands unchanged, and this column is why the status did not go there.
 
-   **Column widths (task 052, added 2026-08-29).** `TITLE` is the only flexible
+   **Column widths (task 050, added 2026-08-29).** `TITLE` is the only flexible
    column, and it takes the width the fixed set leaves — but only up to a
    ceiling. Past that ceiling the surplus is spent in a fixed order: `STEP`
    first, up to a maximum wide enough for a step name with a loop rollup beside
@@ -7582,7 +7594,7 @@ stream for the live tail.
    deliberately not among the columns a surplus reaches: the recorded reasoning
    above holds, and the wrap is what makes its overflow readable.
 
-   **Row height (task 052, added 2026-08-29).** A cell too long for its column
+   **Row height (task 050, added 2026-08-29).** A cell too long for its column
    wraps onto further lines of the same row rather than being truncated away.
    Every row on a board is the same height — the tallest row in the list the
    board is currently showing, clamped to three lines — so a board where nothing
@@ -8040,7 +8052,7 @@ stream for the live tail.
    the view gains no destructive action. A file the forms cannot load is what
    `e` is still there for.
 
-   *Amended 2026-09-03 (tasks 085 and 086, issue #320).* **The structured
+   *Amended 2026-09-03 (tasks 086 and 087, issue #320).* **The structured
    editor reads every block of the file and writes every block it reads.** As
    first built it did neither: its value column was a hand-written switch that
    rendered a dozen published fields — `timeout:`, `max_retries:`,
@@ -8661,7 +8673,7 @@ get to bend:
   `WORKFLOW` drop out of the column set (the §15 shedding order is otherwise
   unchanged) and the width goes to the title, which is where a grouped board
   needs it — the titles are indented under their headers.
-  *Amended 2026-08-29 (task 052): the freed width is spent on the row in the
+  *Amended 2026-08-29 (task 050): the freed width is spent on the row in the
   allocation order above — the title first, then `STEP`, then `STATUS`, then
   back to the title. A grouped board is therefore never worse off than a flat
   one at the same width, but above the title's ceiling the two render equal
@@ -9934,7 +9946,7 @@ the whole of the posture, not a set of tips.
   *Amended 2026-09-10 (task 095).* The report grows a `skills` group (§9.8): the
   agent skills this repository publishes, with the version shipped, the version
   installed in the global store and the agents each is linked into. It is a
-  **row, not a problem** — the closed unhealthy set of task 005 decision 7 does
+  **row, not a problem** — the closed unhealthy set of task 006 decision 7 does
   not move for it, `vincent doctor` still exits 0 with every skill missing, and
   the repair lives in `vincent skills install` rather than in `--fix` because it
   is a client-side write into the user's own agent directories and every `--fix`
@@ -10349,14 +10361,15 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
   §7.8's loop cover the shapes that have come up. The trigger is a workflow
   needing two *different* bodies chosen at run time, which no guard-and-skip
   spelling can express without duplicating every step of both.
-- **Dynamic per-item fan-out** — plausibly `for_each:` on a `fan_out` step, one
-  child task and branch per item. Kept apart from §7.8 deliberately (task 016
-  decision 4): §7.6's creation-time cycle, `max_depth` and `max_tasks` checks
-  are possible **only** because the lane list is static in the snapshot, and
-  015 decision 11 already had to weaken them into a conservative
-  over-approximation to allow *conditional* lanes. A width discovered at run
-  time leaves nothing to check at creation. The trigger is an answer to "what
-  replaces the creation-time bound".
+- ~~Dynamic per-item fan-out~~ — **promoted out of future work, 2026-09-01**
+  (§7.6, task 080, issue #301): `for_each:` and a single `lane:` template on a
+  `fan_out` step, each line a JSON object. The named trigger — an answer to
+  "what replaces the creation-time bound" — is task 080 decision 6: for a
+  *derived* lane list only, the bound moves to spawn time, as the step's
+  `max_lanes:`, the run-time `fan_out.max_tasks` check and the `fan_out_limit`
+  block (§18), while a static lane list keeps §7.6's creation-time checks.
+  *Corrected 2026-09-14 (issue #378):* this entry still read as future work
+  after task 080 landed.
 - **A template FuncMap for §8.4** — `hasSuffix`, `contains`, `split`, `trim`,
   `default`. `text/template` builtins are all any template gets today, which
   `for_each:` makes felt: `.Loop.Item` is a string authors immediately want to

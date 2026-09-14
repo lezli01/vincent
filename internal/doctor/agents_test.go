@@ -2,7 +2,7 @@ package doctor
 
 import "testing"
 
-// TestAgentHealthIsNeverAProblem pins task 005 decision 7 against the four
+// TestAgentHealthIsNeverAProblem pins task 006 decision 7 against the four
 // verdicts task 041 added: an adapter can be absent, logged out, running an
 // untested build and running a known-bad one at once, and `vincent doctor`
 // still exits 0.

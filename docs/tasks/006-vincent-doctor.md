@@ -68,7 +68,9 @@ exits 1, which the naive exit-status reading turns into a false accusation
 against a logged-in account.
 
 Claude keeps `logged_in: null`, which also keeps the v0 T1.7 decision
-(`docs/history/v0-tasks.md:145`) intact. §9.5 now records *why* rather than
+(`docs/history/v0-tasks.md:145`) intact (tracked in
+[#398](https://github.com/lezli01/vincent/issues/398), 2026-09-13).
+§9.5 now records *why* rather than
 leaving the claim bare.
 
 **Beat:** a doctor-local probe leaving `Detect` alone — the board and the

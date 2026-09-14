@@ -85,7 +85,7 @@ type Report struct {
 	Storage Storage `json:"storage"`
 	Tasks   Tasks   `json:"tasks"`
 	// Problems is the closed set of findings that make `vincent doctor` exit
-	// 1 (task 005 decision 7). It is computed by Evaluate, on the server as
+	// 1 (task 006 decision 7). It is computed by Evaluate, on the server as
 	// well as locally, so a client never re-derives the verdict.
 	Problems []Problem `json:"problems"`
 }
@@ -112,7 +112,7 @@ type Paths struct {
 	// daemon tightens what it owns on every start, so a row here means either
 	// no daemon has started on this config or something widened it since, and
 	// neither is worth changing the exit code the closed unhealthy set defines
-	// (task 005 decision 7).
+	// (task 006 decision 7).
 	ConfigPermissions []PermissionWarning `json:"config_permissions"`
 }
 
@@ -212,7 +212,7 @@ type Agent struct {
 	// doctor does not run an option probe at all.
 	//
 	// None of them is a Problem. Doctor's unhealthy set stays closed (task
-	// 005 decision 7): an untested build, an incompatible one, an adapter
+	// 006 decision 7): an untested build, an incompatible one, an adapter
 	// that cannot restrict here and one that is missing entirely are all rows
 	// in this group, and none of them changes `vincent doctor`'s exit code.
 	SupportsInput bool `json:"supports_input"`

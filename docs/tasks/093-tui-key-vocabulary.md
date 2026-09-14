@@ -7,14 +7,14 @@ sentence narrowed to name its `enter`-alias exception; view 7's create key
 `c` → `a`; view 10's date window `d` → `s`; the chats board's key list.
 Decision record row 31.
 **Keeps, without relitigating:**
-[011](011-bulk-actions.md), [025](025-repair-with-an-agent.md) and
+[011](011-bulk-task-selection.md), [025](025-ad-hoc-repair-agent.md) and
 [027](027-follow-up-runs.md) — the §6 action letters `p a x r E R s c A F` are
 live on the board and on every tab of the task workspace, and **not one of them
 moves**. That constraint is what decides every contested case below.
-[025](025-repair-with-an-agent.md) in particular: `R` is repair in the task
+[025](025-ad-hoc-repair-agent.md) in particular: `R` is repair in the task
 workspace, "free in the task workspace, where the takeover screens that use it
 for re-probing never are". That partition is not undone; it becomes clause 2.
-[049](049-command-palette.md) — retiring `1..6` without substituting new
+[049](049-full-screen-task-workspace.md) — retiring `1..6` without substituting new
 memorized keys, untouched. [067](067-chats-in-the-tui.md) — `n` is §15's one
 deliberate two-meaning key, untouched.
 
@@ -147,7 +147,9 @@ renders from the registry like every other surface.
 
 No user-configurable keymap in `config.yaml`. It is much larger scope and does
 not answer the question — it moves the choice of a consistent default onto
-every user. Worth its own issue; it is not a substitute for this one.
+every user. Worth its own issue (tracked in
+[#412](https://github.com/lezli01/vincent/issues/412), 2026-09-13); it is not a
+substitute for this one.
 
 No aliasing. Keeping every current key and adding a standard second one doubles
 what `?` has to explain and leaves `d` still cycling the window on the archive,

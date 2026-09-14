@@ -237,11 +237,18 @@ truthiness in a guard (§7.7). These are binding decisions from tasks 015 and
   static once lane lists are in the snapshot". A run-time lane list gives that
   up, and what replaces it is discovering a depth explosion as two hundred
   worktrees six hours later — the exact failure §7.6 exists to refuse in front
-  of the person typing.
+  of the person typing. *Superseded 2026-09-01 by
+  [080](080-fan-out-dag.md):* the creation-time refusal is replaced, for a
+  derived lane list, by the step's `max_lanes:`, a spawn-time
+  `fan_out.max_tasks` check and the `fan_out_limit` block, which stop the step
+  before any worktree is spawned.
 - **Structured `for_each` items** (maps rather than strings). §8.4 is
   string-valued throughout and `LoopContext.Item` says so deliberately. A
   workflow that needs fields per item can put them in a line and split them in
-  the body.
+  the body. *Narrowed 2026-09-01 by [080](080-fan-out-dag.md) decision 1:* a
+  derived `fan_out` lane template's `.Item` is a parsed JSON object, because a
+  DAG node needs an id and its edges. A loop's `.Loop.Item` is still a string,
+  and the reasoning here still holds for loops.
 - **A `switch`/multi-way branch.** A chain of `if:` guards is longer to write
   and needs no new concept; the shorter spelling buys nothing a reader of the
   YAML did not already have.

@@ -130,7 +130,9 @@ stale to re-make: **the chat views have never been captured.**
 `scripts/screenshots.sh` seeds no chat and has no chat tape, so no
 `docs/assets/tui-*.png` shows this panel — the gap task 067 recorded when it
 added the two views is still open, now covering a body that renders through the
-output pane. Closing it is a seeded VHS run on a macOS or Linux workstation
+output pane (tracked in
+[#413](https://github.com/lezli01/vincent/issues/413), 2026-09-13).
+Closing it is a seeded VHS run on a macOS or Linux workstation
 (VHS, ttyd, ffmpeg; CI does not run it) that first grows a chat tape. Until
 then `docs/guides/tui.md` describes the panel in prose and a key table, and
 nothing here is hand-drawn to stand in for a capture.

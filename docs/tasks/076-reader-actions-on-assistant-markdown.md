@@ -26,7 +26,8 @@ client knows.
 
 ### 1. Link actions are not in this task
 
-Copy-link-destination, inspect-destination and open-link move to a follow-up.
+Copy-link-destination, inspect-destination and open-link move to a follow-up
+(tracked in [#403](https://github.com/lezli01/vincent/issues/403), 2026-09-13).
 
 The reason changed while this was in flight and the decision did not. It was
 written against a renderer with no link construct at all, whose parsing
@@ -277,11 +278,13 @@ the whole palette → replay → effect path.
 - **All link actions**, to the follow-up. #290 landed as task 075 while this
   was in flight, so the blocker is no longer the renderer: it is naming a
   reference, which decision 1 leaves to that task. Issue criteria 4 and 5, and
-  the link parts of 3 and 8, are theirs.
+  the link parts of 3 and 8, are theirs (tracked in
+  [#403](https://github.com/lezli01/vincent/issues/403), 2026-09-13).
 - **Semantic identities.** Captured text is the stability mechanism until #291
   has a document model to reference.
 - **`?` in a chat.** Still swallowed by the composer. The palette answers the
-  issue's reachability criterion; moving help is a separate call.
+  issue's reachability criterion; moving help is a separate call (tracked in
+  [#405](https://github.com/lezli01/vincent/issues/405), 2026-09-13).
 - **No new screenshot.** Raw is a display state of an existing panel and the
   picker is a panel no capture shows; the chat views have never been captured at
   all (task 071, "Not done here").

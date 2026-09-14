@@ -12,14 +12,19 @@ runs *and* how every agent is launched is not independently reviewable.
 
 ## 062.1 — agent steps in the container
 
+(tracked in [#396](https://github.com/lezli01/vincent/issues/396) and
+[#397](https://github.com/lezli01/vincent/issues/397), 2026-09-13)
+
 - **A spawn seam in `internal/agent`.** `claude.go`, `codex.go` and `cursor.go`
   build argv exactly as they do now and hand it to a launcher the engine
   chooses. Today there is no shared spawn helper — three `exec.Command` sites
   plus the one in `taskrun/steps.go` — and introducing one is the bulk of this
   task's risk.
 - **061 decision 1's MCP rewrite**: the per-step endpoint's host becomes
-  `host.docker.internal` for a containerized agent step, with
-  `--add-host=host.docker.internal:host-gateway` on the container.
+  `host.docker.internal` for a containerized agent step. *Amended 2026-09-14
+  (issue #378):* only the endpoint rewrite is this task's work — the
+  `--add-host=host.docker.internal:host-gateway` mapping is already on every
+  networked task container, since 061 (`internal/container/docker.go`).
 - **061 decision 1's creation-time refusal, reinstated.** `network: false`
   with `mcp.wire_steps: true` is refused with `400 validation_failed` once an
   agent step can run inside the container. 061 shipped it and issue #366

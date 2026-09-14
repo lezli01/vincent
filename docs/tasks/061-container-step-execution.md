@@ -19,6 +19,9 @@ Landed: `internal/container` (new), the `container:` config block and its
 workflow-level override, migration `0021` adding `step_runs.container_id`, the
 creation gate and `GET /v1/info` reporting, the taskrun create/exec/stop/remove
 paths, container-aware recovery, the two block reasons, a `vincent doctor` row,
+the `mount_agent_config` knob *(on by default at landing; off by default since
+2026-09-14, issue #366, until 062 flips it back — added to this list 2026-09-14,
+issue #378)*,
 and the §2/§8.3/§8.5/§12.3/§12.4/§16/§20 amendments.
 
 ## Decisions

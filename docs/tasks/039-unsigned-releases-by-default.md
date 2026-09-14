@@ -162,7 +162,9 @@ configuration and user documentation that make them true.
   dropped this is the *only* remaining release proof: no signed release is ever
   coming to supersede it. — **owner-only**:
   it needs a real `v*` tag, and the thing being proved is that the release
-  workflow completes end to end and attaches every asset. Re-cut `0.7.0` (its
+  workflow completes end to end and attaches every asset (tracked in
+  [#379](https://github.com/lezli01/vincent/issues/379), 2026-09-13).
+  Re-cut `0.7.0` (its
   curated changelog prose is in `2baafbb`, per `6041bfd`) and confirm the release
   carries the thirteen `v0.6.0` assets plus `vincent_0.7.0_darwin_universal.pkg`,
   that Homebrew, Scoop and WinGet moved, and that `brew install

@@ -86,7 +86,8 @@ than a quieter hierarchy around the capabilities vincent already has.
 - [!] **020.7 — Run repository verification and review the final diff.** — the
   container's PID namespace makes existing `procx` live-process tests report
   their own PID as missing; the failures reproduce without `-race` and lie
-  outside the packages changed here.
+  outside the packages changed here (tracked in
+  [#379](https://github.com/lezli01/vincent/issues/379), 2026-09-13).
   Depends: 020.1–020.6. Done only when formatting, focused TUI tests and the
   repository's required checks have actually run; any unavailable check stays
   explicitly blocked rather than being inferred green.
