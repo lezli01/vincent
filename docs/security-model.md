@@ -499,6 +499,19 @@ below is the whole posture, not a set of tips.
   adds the header can, and such a relay is already something running as you.
   The route is not an MCP tool: an agent that can inject events can start
   agents.
+- **An agent may write a trigger, but only you switch one on.** The
+  `create-trigger` and `update-triggers` built-ins let an agent, in a task you
+  started, write trigger files. They install only through
+  [`vincent trigger apply`](reference/cli.md#vincent-trigger-apply), which
+  refuses any change that arms a trigger compared with the file on disk:
+  `enabled` to `true`, `on_fire` to `create` or `permission` to `workflow`. A
+  new file counts as having none of them. A value already armed may stay, and
+  there is no override flag. `triggers.enabled` is in `config.yaml`, which apply
+  cannot touch. Apply also refuses a file for another project and a file that
+  changed since the proposal read it. A rewrite of a trigger that is already
+  armed is live once written, which is why `update-triggers` waits for your
+  approval before applying. A proposal waits in `{data_dir}`, never in a
+  repository, because a trigger's argv can carry a token.
 
 See [Event triggers](guides/triggers.md) for the files themselves.
 

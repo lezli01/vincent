@@ -15,19 +15,23 @@ import (
 )
 
 // `vincent trigger` (task 096). The triggers themselves are authored in the
-// TUI's triggers view or by hand under {config_dir}/triggers/, and the reads
-// are MCP tools; the one command here is the dry run a script or a pre-commit
-// hook wants (decision 29).
+// TUI's triggers view, by hand under {config_dir}/triggers/, or staged by the
+// create-trigger and update-triggers built-ins, and the reads are MCP tools.
+// Here are the dry run a script wants (decision 29) and the three daemon-free
+// verbs the built-ins install through (task 098 decision 3, trigger_author.go).
 
 func newTriggerCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "trigger",
-		Short: "Dry-run event triggers against the daemon",
+		Short: "Validate, list, install and dry-run event triggers",
 		Long: "Event triggers turn outside events into vincent tasks (task 096).\n\n" +
-			"They are created and edited in the TUI's triggers view or by hand under\n" +
-			"{config_dir}/triggers/. This command group holds the dry run.",
+			"They are created and edited in the TUI's triggers view, by hand under\n" +
+			"{config_dir}/triggers/, or staged by the create-trigger and update-triggers\n" +
+			"built-ins. validate, ls and apply need no daemon; apply installs a staged\n" +
+			"proposal and refuses any change that arms a trigger. test is the dry run,\n" +
+			"and asks the daemon.",
 	}
-	cmd.AddCommand(newTriggerTestCmd())
+	cmd.AddCommand(newTriggerValidateCmd(), newTriggerLsCmd(), newTriggerApplyCmd(), newTriggerTestCmd())
 	return cmd
 }
 

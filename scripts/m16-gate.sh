@@ -25,6 +25,10 @@
 #   9. `type: http` ingress: a valid HMAC fires, a bad or missing one is 401,
 #      no bearer is 401 — neither writes a ledger row — the id may come from
 #      X-GitHub-Delivery, and a repeated delivery is deduped
+#  10. a staged trigger proposal (task 098): `vincent trigger apply` refuses
+#      one that enables its trigger and writes nothing, then installs a
+#      disarmed one, removes the staging directory, and the registry lists
+#      the new trigger disabled
 #
 # Each scenario gets fresh config/data/repo dirs and its own daemon (PR G
 # decision, as m7): scenario 5 flips the global switch, which would disarm
@@ -617,6 +621,37 @@ if run_scenario 9; then
   jq -e '.outcome == "deduped"' "$TMP/body.json" >/dev/null \
     || fail "a redelivery was not deduped: $(cat "$TMP/body.json")"
   [[ "$(task_count)" == "2" ]] || fail "two distinct pushes and a redelivery made $(task_count) tasks"
+fi
+
+# ---------------------------------------------------------------------------
+if run_scenario 10; then
+  echo "== 10. apply installs a staged proposal disarmed, and refuses one that arms"
+  setup s10
+  # No task has to exist: the proposal id only names the staging directory,
+  # which is what a built-in's agent step writes before its apply step runs.
+  STAGE="$DATA_DIR/trigger-proposals/9001"
+  mkdir -p "$STAGE"
+  EVENTS="$TMP/s10/events.ndjson"
+  emit "$EVENTS" '{"id":"e1"}'
+  printf '%s\n' '{"proposed":"absent"}' > "$STAGE/manifest.json"
+
+  # command_trigger writes enabled: true, which is exactly the switch a
+  # proposal may not throw.
+  printf '%s\n' "$(command_trigger proposed "$EVENTS" 1s "$CREATE_ACTION")" > "$STAGE/proposed.yaml"
+  if OUT="$("$VINCENT" trigger apply --proposal 9001 --project "$PROJECT_ID" 2>&1)"; then
+    fail "apply installed a proposal that enables its trigger: $OUT"
+  fi
+  grep -q "proposed.yaml: enabled:" <<<"$OUT" || fail "the refusal does not name the arming key: $OUT"
+  [[ ! -e "$CONFIG_DIR/triggers/proposed.yaml" ]] || fail "a refused apply wrote the trigger"
+  [[ -d "$STAGE" ]] || fail "a refused apply removed its staging directory"
+
+  printf '%s\n' "$(command_trigger proposed "$EVENTS" 1s "$CREATE_ACTION" '{"enabled":false}')" > "$STAGE/proposed.yaml"
+  OUT="$("$VINCENT" trigger apply --proposal 9001 --project "$PROJECT_ID" 2>&1)" \
+    || fail "apply refused a disarmed proposal: $OUT"
+  [[ ! -e "$STAGE" ]] || fail "a successful apply left its staging directory"
+  wait_for "the registry to load the applied trigger" 80 trigger_is proposed '.valid and (.enabled | not) and (.armed | not)'
+  LISTED="$("$VINCENT" trigger ls --project "$PROJECT_ID" | tr -d '\r')"
+  [[ "$LISTED" == *proposed.yaml ]] || fail "trigger ls does not list the applied trigger: $LISTED"
 fi
 
 echo "GATE PASS: m16 (event triggers)"

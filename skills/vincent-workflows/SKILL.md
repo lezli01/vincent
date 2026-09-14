@@ -1,10 +1,10 @@
 ---
 name: vincent-workflows
-description: Create, edit, review, and validate vincent workflow YAML under .vincent/workflows. Use for vincent workflow fields, step selection, templates, checks, human gates, retries, conditions, loops, parallel work, fan-out, includes, or validation errors. Do not use for GitHub Actions or other workflow systems.
+description: Create, edit, review, and validate vincent workflow YAML under .vincent/workflows. Use for vincent workflow fields, step selection, templates, checks, human gates, retries, conditions, loops, parallel work, fan-out, includes, or validation errors. Do not use for vincent event triggers under {config_dir}/triggers (use vincent-triggers), GitHub Actions, or other workflow systems.
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.0.0
+  version: 1.0.1
 ---
 
 # vincent Workflows

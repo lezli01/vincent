@@ -76,12 +76,15 @@ steps:
 
 Files live in `.vincent/workflows/*.yaml` (project scope), or
 `{config_dir}/workflows/*.yaml` (global). Project shadows global by `name`.
-Three built-in workflows are always present: `adhoc`, a single agent step;
+Five built-in workflows are always present: `adhoc`, a single agent step;
 `create-workflow`, a single agent step that writes another workflow file into
-one of the two registries; and
+one of the two registries;
 [`update-workflows`](../guides/workflows.md#12-where-workflow-files-live),
 which rewrites the workflows a project already versions against everything on
-this page and validates each one.
+this page and validates each one; and
+[`create-trigger` and `update-triggers`](../guides/triggers.md#letting-an-agent-write-triggers),
+which write a new event trigger for the task's project and propose improvements
+to its existing ones, and never arm a trigger.
 
 ## Top level
 
@@ -1010,7 +1013,7 @@ starts.
 | Variable | Fields |
 |---|---|
 | `.Task` | `ID`, `Title`, `Description`, `Fields` (map), `BaseBranch`, `BranchName` |
-| `.Project` | `Name`, `Path` (the original repo root), `DefaultBranch` |
+| `.Project` | `ID` (the project's numeric id), `Name`, `Path` (the original repo root), `DefaultBranch` |
 | `.Workflow` | `Name`, `Description` |
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
 | `.Loop` | `Index` (1-based iteration, **0** outside any loop), `Item`, `IsFirst`, `IsLast`. See [`type: loop`](#type-loop) |

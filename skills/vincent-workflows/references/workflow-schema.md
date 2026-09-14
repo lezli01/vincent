@@ -328,7 +328,7 @@ command timeout, independently of the main step timeout.
 | Value | Useful fields |
 |---|---|
 | `.Task` | `ID`, `Title`, `Description`, `Fields`, `BaseBranch`, `BranchName` |
-| `.Project` | `Name`, `Path`, `DefaultBranch` |
+| `.Project` | `ID`, `Name`, `Path`, `DefaultBranch` |
 | `.Workflow` | `Name`, `Description` |
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` |
 | `.Loop` | `Index`, `Item`, `IsFirst`, `IsLast` |

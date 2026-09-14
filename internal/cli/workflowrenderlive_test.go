@@ -81,7 +81,7 @@ steps:
     type: agent
     prompt: |
       {{.Task.Title}} / {{.Task.Description}} / {{.Task.Fields.ticket}}
-      {{.Task.BranchName}} onto {{.Task.BaseBranch}} in {{.Project.Name}}
+      {{.Task.BranchName}} onto {{.Task.BaseBranch}} in {{.Project.Name}} #{{.Project.ID}}
 `
 	if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
 		t.Fatalf("write workflow: %v", err)
@@ -102,7 +102,7 @@ steps:
 	rendered := got.Steps[0].Fields[0].Output
 	for _, want := range []string{
 		"Ship the thing", "the description", "ABC-1",
-		"vincent/7-ship", "onto release", "in live",
+		"vincent/7-ship", "onto release", "in live #" + strconv.FormatInt(project.ID, 10),
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Errorf("rendered prompt is missing %q:\n%s", want, rendered)

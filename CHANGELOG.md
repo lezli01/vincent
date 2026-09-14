@@ -37,6 +37,31 @@ list with the user-facing context a commit subject cannot carry.
   writes and the push route are not MCP tools. New SSE events
   `trigger.fired` and `trigger.poll_changed`.
 
+- **An agent can write your triggers, and cannot switch one on.** Two new
+  built-in workflows and a published skill do for event triggers what
+  `create-workflow`, `update-workflows` and the `vincent-workflows` skill do for
+  workflows. `create-trigger` writes one trigger for the task's project, under
+  the id its required `trigger_id` field names. `update-triggers` reviews a
+  project's existing triggers against what triggers can do now, and shows each
+  proposed change as a before/after diff at an approval step. Both stage their
+  files in `{data_dir}/trigger-proposals/{task id}/` and install them with the
+  new `vincent trigger apply`, which **refuses any change that arms a
+  trigger**: `enabled: true`, `on_fire: create` or `permission: workflow`, on a
+  new file or an existing one. It also refuses a file that does not validate, a
+  file for another project, and a file that changed since the proposal read it,
+  and writes nothing when it refuses. Turning a trigger on stays yours, in the
+  TUI or in your editor. Neither built-in writes a `cancel` trigger, because
+  one only loads with `on_fire: create`.
+
+  Two more commands need no daemon: `vincent trigger validate <file>` checks a
+  trigger file, with the API's verdict plus the check that its id matches its
+  file name, and `vincent trigger ls --project <id>` lists a project's trigger
+  files, with `--json` adding each file's version token and switches. Workflow
+  templates gain `.Project.ID`, the project's numeric id. Poll scripts have a
+  documented home, `{config_dir}/trigger-scripts/`. Deleting a task also
+  deletes its staged proposal. `vincent skills install` installs the new skill,
+  or run `npx skills add lezli01/vincent --skill vincent-triggers -g`.
+
 - **vincent tells you whether its workflow-authoring skill is installed, and
   installs it.** vincent publishes an agent skill so that an agent you talk to
   *directly* — outside a vincent run — knows how to write a vincent workflow,

@@ -482,6 +482,14 @@ ordinary tools — a dry run fires nothing, and `poll` runs only a command the
 user already configured, which a full-auto agent could run anyway (§16: MCP is
 not a security boundary).
 
+*Narrowed 2026-09-14 by task [098](098-trigger-authoring-skill-and-builtins.md)
+decision 2:* "an agent must not author or arm" now reads **a built-in a human
+started may author a disarmed trigger file; arming stays human-only.** Arming is
+any of `enabled: true`, the global `triggers.enabled`, `on_fire: create` and
+`permission: workflow`. The built-ins write through `vincent trigger apply`,
+which refuses every arming change, not through these routes, so the MCP
+exclusion list is unchanged.
+
 **23 (2026-09-11). No trigger-level `container:`** (settled from the code).
 Containers resolve from a workflow's `defaults.container` and `config.yaml`
 (task 061), agent steps cannot run in one until task 062, and a trigger-level
@@ -712,6 +720,12 @@ consequences are stated here rather than left to be discovered:
 - **CLI and MCP.** The CLI gains exactly `vincent trigger test --event
   fixture.json` (decision 29). The reads, `validate` and both dry runs stay MCP
   tools (decision 22).
+  *Narrowed 2026-09-14 by task [098](098-trigger-authoring-skill-and-builtins.md)
+  decision 3:* "exactly" no longer holds. The CLI also gains `vincent trigger
+  validate <file>` and `vincent trigger ls --project <id>`, which need no
+  daemon, and `vincent trigger apply --proposal <task_id> --project <id>`,
+  which installs a staged proposal and refuses any change that arms a trigger.
+  The MCP tools are unchanged.
 
 **32 (2026-09-13). `review_requested` is untrusted, which narrows decision
 31E.** Requesting a reviewer by hand needs the triage role. On that reading the

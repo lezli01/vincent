@@ -126,7 +126,7 @@ schema follows from them:
 |---|---|---|
 | **Project** | `.vincent/workflows/*.yaml` inside the repo | Highest — shadows global |
 | **Global** | `{config_dir}/workflows/*.yaml` | Shadows built-in |
-| **Built-in** | `adhoc`, `create-workflow` and `update-workflows` — always present | Lowest |
+| **Built-in** | `adhoc`, `create-workflow`, `update-workflows`, `create-trigger` and `update-triggers` — always present | Lowest |
 
 `{config_dir}` is `%APPDATA%\vincent` on Windows, `~/Library/Application
 Support/vincent` on macOS and `~/.config/vincent` on Linux; the full table is in
@@ -176,6 +176,12 @@ Details that matter in practice:
   not in the worktree and is not touched; the global registry is out of scope.
   It takes no task fields, never asks you anything (`on_input: deny`), and
   finishes with nothing to do on a project that has no workflows of its own.
+- **`create-trigger` and `update-triggers` do the same for event triggers.**
+  The first writes a new trigger for the task's project, and the second
+  proposes improvements to the project's existing triggers behind an approval
+  step. Both install through `vincent trigger apply`, which refuses any change
+  that would switch a trigger on, so arming one stays yours. See
+  [Letting an agent write triggers](triggers.md#letting-an-agent-write-triggers).
 - Two files in **one scope** declaring the same `name:` is an error, resolved
   deterministically: the first in filename order keeps the name, and the loser
   is listed as invalid rather than silently dropped.
@@ -1001,7 +1007,7 @@ is whether `.Steps.foo` exists — that is a run-time fact.
 | Variable | Fields |
 |---|---|
 | `.Task` | `ID`, `Title`, `Description`, `Fields` (map), `BaseBranch`, `BranchName` |
-| `.Project` | `Name`, `Path` (the original repo root, not the worktree), `DefaultBranch` |
+| `.Project` | `ID` (the project's numeric id), `Name`, `Path` (the original repo root, not the worktree), `DefaultBranch` |
 | `.Workflow` | `Name`, `Description` |
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
 | `.Steps` | completed steps by id → `{Status, Result, ExitCode}` — [§5.3](#53-passing-one-steps-output-to-the-next) |
