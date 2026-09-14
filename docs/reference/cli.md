@@ -248,11 +248,12 @@ its old code until it is restarted, and everything keeps working meanwhile.
 ### `vincent daemon logs`
 
 ```sh
-vincent daemon logs [-n N] [-f]
+vincent daemon logs [-n | --lines N] [-f | --follow]
 ```
 
-Prints the tail of `{data_dir}/logs/daemon.log` — 500 lines by default, the same
-window the TUI's daemon view shows. `-f` keeps printing lines as they are
+Prints the tail of `{data_dir}/logs/daemon.log` — 500 lines by default
+(`-n`/`--lines`), the same window the TUI's daemon view shows. `-f`
+(`--follow`) keeps printing lines as they are
 appended, on a two-second cadence, until Ctrl-C.
 
 It reads the file **from disk and never contacts the daemon**, which is the
@@ -658,7 +659,7 @@ RUN  STEP       STATE      AGENT   REASON        STATUS
 ### `vincent task transcript`
 
 ```sh
-vincent task transcript <id> [--step RUN] [-f] [--json | --raw]
+vincent task transcript <id> [--step RUN] [-f | --follow] [--json | --raw]
 ```
 
 Prints one attempt's transcript — the complete record of what it did, which
@@ -691,7 +692,7 @@ transcript is one interleaved stream and two descriptors would scramble the
 ordering that makes it readable. The command's own diagnostics go to stderr, so
 stdout stays pipeable.
 
-`-f` opens on the tail and then resumes from the record boundary the daemon
+`-f` (`--follow`) opens on the tail and then resumes from the record boundary the daemon
 reports, printing records as the attempt writes them. It ends when that attempt
 stops running — it does not wait for a later retry, which is a different run.
 

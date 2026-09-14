@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/daemon"
@@ -268,6 +269,42 @@ func TestDocsClaimsEveryCommandIsOnTheCLIPage(t *testing.T) {
 		if c.CommandPath() != "vincent" && !strings.Contains(page, c.CommandPath()) {
 			missing = append(missing, c.CommandPath())
 		}
+		for _, sub := range c.Commands() {
+			walk(sub)
+		}
+	}
+	walk(newRootCmd())
+	if len(missing) > 0 {
+		t.Errorf("the CLI reference never mentions %v", missing)
+	}
+}
+
+// TestDocsClaimsEveryFlagIsOnTheCLIPage: the same drift check one level down.
+// A flag the tree grows and the page never spells out is invisible to anyone
+// reading the reference — `--lines` and `--follow` shipped as `-n` and `-f`
+// only, and a reader had no way to learn the long forms existed.
+//
+// Like its neighbour it asks only that the page names the long form somewhere,
+// not where or how: this is a drift check, not a feature check. Hidden flags
+// and cobra's automatic `help` are not documentation's to carry.
+func TestDocsClaimsEveryFlagIsOnTheCLIPage(t *testing.T) {
+	page, ok := docPages(t)["docs/reference/cli.md"]
+	if !ok {
+		t.Fatal("docs/reference/cli.md is missing")
+	}
+	var missing []string
+	var walk func(c *cobra.Command)
+	walk = func(c *cobra.Command) {
+		check := func(f *pflag.Flag) {
+			if f.Hidden || f.Name == "help" {
+				return
+			}
+			if !strings.Contains(page, "--"+f.Name) {
+				missing = append(missing, c.CommandPath()+" --"+f.Name)
+			}
+		}
+		c.LocalNonPersistentFlags().VisitAll(check)
+		c.PersistentFlags().VisitAll(check)
 		for _, sub := range c.Commands() {
 			walk(sub)
 		}
