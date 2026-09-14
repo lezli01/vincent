@@ -1142,7 +1142,10 @@ from `.Task.Fields` and `{{ with index .Task.Fields "x" }}` keeps working the
 way it always did.
 
 The daemon checks required/type/pattern/membership rules at task creation,
-including for CLI and API callers. The selected root workflow owns the contract: fields from
+including for CLI and API callers, and again when a
+[follow-up](../reference/task-lifecycle.md#human-actions) names the workflow — against the
+task's fields with any the follow-up supplies laid over them, for that run only.
+The selected root workflow owns the contract: fields from
 included workflows and named fan-out lane workflows are not automatically
 merged, so a composing workflow re-declares any input it exposes.
 

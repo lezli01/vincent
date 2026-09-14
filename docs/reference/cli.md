@@ -725,8 +725,8 @@ overrides and the workflow's `defaults:`; a value no catalog recognizes is a
 warning on stderr, not a failure.
 
 `--field name=value` sets a field for this run only, laid over the task's own,
-with the spelling `task create` uses; repeat it for more. A `--workflow` that
-declares fields checks them exactly as `task create` does — the task's values
+with the spelling `task add` uses; repeat it for more. A `--workflow` that
+declares fields checks them exactly as `task add` does — the task's values
 included — so a required field the task never carried, with no default, exits 1
 until a `--field` supplies it. The task keeps the fields it was created with.
 
