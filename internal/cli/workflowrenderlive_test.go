@@ -20,6 +20,7 @@ import (
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/workflow"
 )
 
 // TestRenderTaskAgainstRealServer binds `--task` against the **real** API
@@ -122,6 +123,119 @@ steps:
 	}
 	if sel.Effort.Value != "high" || sel.Effort.Source != "task" {
 		t.Errorf("effort = %+v, want high from the task override", sel.Effort)
+	}
+}
+
+// TestRenderProjectResolvesDerivedFanOut is issue #370's `--project` path end
+// to end: a file includes a registry workflow whose fan-out derives its lanes,
+// the callee comes back through the real GET /v1/workflows/definition, and its
+// `lane:` template must survive the trip back to the parser's model — or the
+// lane's step, and the template's own id, never render at all.
+func TestRenderProjectResolvesDerivedFanOut(t *testing.T) {
+	dataDir := t.TempDir()
+	token, err := daemon.EnsureToken(dataDir)
+	if err != nil {
+		t.Fatalf("token: %v", err)
+	}
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	broker := events.New()
+	t.Cleanup(broker.Close)
+	st.SetEventHook(broker.Publish)
+
+	ctx := context.Background()
+	project := &store.Project{Name: "live", Path: t.TempDir(), DefaultBranch: "main"}
+	if err := st.CreateProject(ctx, project); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	globalDir := t.TempDir()
+	callee := `name: derive
+steps:
+  - id: plan
+    type: command
+    run: "plan {{ .Task.Title }}"
+  - id: build
+    type: fan_out
+    max_lanes: 8
+    schedule: eager
+    for_each: '{{ .Steps.plan.Result }}'
+    lane:
+      id: '{{ .Item.id }}'
+      needs: '{{ .Item.needs }}'
+      steps:
+        - id: implement
+          type: command
+          run: "make {{ .Task.Title }}"
+`
+	if err := os.WriteFile(filepath.Join(globalDir, "derive.yaml"), []byte(callee), 0o600); err != nil {
+		t.Fatalf("write callee: %v", err)
+	}
+	reg := workflow.NewRegistry(globalDir, workflow.Options{}, nil)
+	reg.Reload()
+	if e, ok := reg.Lookup(project.ID, "derive"); !ok || len(e.Errors) > 0 {
+		t.Fatalf("callee did not load cleanly: ok=%v %+v", ok, e.Errors)
+	}
+
+	srv := api.New(api.Deps{
+		Token:       token,
+		Config:      config.Default,
+		StartedAt:   time.Now(),
+		ListenAddr:  "127.0.0.1:0",
+		RequestStop: func() {},
+		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Store:       st,
+		Broker:      broker,
+		Workflows:   reg,
+	})
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	publishDaemon(t, dataDir, ts.URL)
+
+	file := filepath.Join(t.TempDir(), "wf.yaml")
+	body := `name: outer
+steps:
+  - id: derived
+    type: include
+    workflow: derive
+`
+	if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+
+	out, code := runWorkflowInDataDir(t, dataDir,
+		"render", file, "--project", strconv.FormatInt(project.ID, 10), "--json")
+	if code != 0 {
+		t.Fatalf("render --project exit code = %d, want 0: %s", code, out)
+	}
+	var got renderResult
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("--json is not JSON: %v (%s)", err, out)
+	}
+
+	outputs := map[string]string{}
+	var derivedLane []string
+	for _, s := range got.Steps {
+		for _, f := range s.Fields {
+			outputs[s.ID+" "+f.Field] = f.Output
+		}
+		if s.ID == "implement" {
+			derivedLane = s.DerivedLane
+		}
+	}
+	if want := "make " + workflow.SentinelTitle; outputs["implement run"] != want {
+		t.Errorf("implement run = %q, want %q — the callee's derived lane step did not render: %+v",
+			outputs["implement run"], want, got.Steps)
+	}
+	if outputs["build lane.id"] != workflow.SentinelItem("id") {
+		t.Errorf("lane.id = %q, want %q: %+v", outputs["build lane.id"], workflow.SentinelItem("id"), got.Steps)
+	}
+	if strings.Join(derivedLane, ",") != "{{ .Steps.plan.Result }}" {
+		t.Errorf("implement's derived_lane = %q, want the for_each it expands over", derivedLane)
 	}
 }
 
