@@ -284,11 +284,23 @@ steps:
       That boundary is what keeps parallel units from destroying each other's
       work at the merge. Two of these do not overlap by design.
 
-      Three things are owned by later steps and by no unit, including yours:
-      `CHANGELOG.md` and the pull request body, which a single integration step
-      writes once for the whole change; `docs/`, `skills/` and
-      `internal/workflow/builtin.go`, which a documentation audit handles after
-      every unit has landed; and `.vincent-issue/`, which is scratch.
+      Two things are never yours: `CHANGELOG.md` and the pull request body,
+      which a single integration step writes once for the whole change, and
+      `.vincent-issue/`, which is scratch. `docs/`, `skills/` and
+      `internal/workflow/builtin.go` are yours only where the expression above
+      matches them — on a documentation issue the planner gives pages to
+      units; otherwise a documentation audit handles them after every unit has
+      landed.
+
+      If this unit edits documentation or a maintainer record, `CLAUDE.md`'s
+      documentation model is the rulebook, and these rules bite hardest: the
+      source decides what a page says, so re-read it as you edit rather than
+      copying the brief's wording; `docs/spec.md` is amended in place with a
+      dated note; a task's status marker changes with its row in
+      `docs/tasks/README.md` in the same edit; screenshots come only from
+      `scripts/screenshots.sh`, never drawn and never hand-edited; and nothing
+      is recorded that did not happen — no gate run record, `✓` date or ticked
+      box without a run behind it.
 
       ## The bar
 

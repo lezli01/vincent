@@ -20,10 +20,11 @@
 #
 # Shape:
 #
-#   fetch  (cheap guard: open, and labeled bug or enhancement)
-#   is-bug (the branch point — a probe whose exit code the guards read)
-#     ├─ diagnose  (bug)         reproduce, ask, write the failing test
-#     └─ digest    (enhancement) understand, ask, write the plan
+#   fetch    (cheap guard: open, and labeled bug, enhancement or documentation)
+#   classify (the branch point — a probe whose exit code the guards read)
+#     ├─ diagnose  (bug)            reproduce, ask, write the failing test
+#     ├─ digest    (enhancement)    understand, ask, write the plan
+#     └─ survey    (documentation)  verify each claim at HEAD, ask, write the scope
 #   triage (stop on reject / needs-info)
 #     └─ confirm-red (bug only)  prove the test fails on the unfixed code
 #   implement (write it, commit it, draft the PR)
@@ -44,16 +45,22 @@
 # workflow **carries on**, which is what a two-path workflow needs.
 #
 # Guards can only read `.Steps`, `.Task.Fields` and `.Host` — never a file. So
-# the label lives in a probe: `is-bug` exits 0 when the issue is labeled `bug`
-# and 1 when it is not, under `allow_failure: true` so that the nonzero exit is
-# data rather than a blocked task. Every guard downstream is one of:
+# the label lives in a probe: `classify` exits 0 for `bug`, 1 for `enhancement`
+# and 2 for `documentation`, under `allow_failure: true` so that a nonzero exit
+# is data rather than a blocked task. Every guard downstream is one of:
 #
-#     {{ eq (index .Steps "is-bug").ExitCode 0 }}   bug
-#     {{ ne (index .Steps "is-bug").ExitCode 0 }}   enhancement
+#     {{ eq (index .Steps "classify").ExitCode 0 }}   bug
+#     {{ eq (index .Steps "classify").ExitCode 1 }}   enhancement
+#     {{ eq (index .Steps "classify").ExitCode 2 }}   documentation
 #
-# A **failed `is-bug` row on the board is the normal enhancement path**, not an
-# error. It is the one wart of doing this honestly; the alternative is asking a
-# human to retype a label GitHub already holds.
+# A **failed `classify` row on the board is the normal enhancement or
+# documentation path**, not an error. It is the one wart of doing this honestly;
+# the alternative is asking a human to retype a label GitHub already holds.
+#
+# The probe was `is-bug`, exiting 0 or 1, while there were two paths. An issue
+# carrying several of the labels takes the strictest path among them — bug,
+# then enhancement, then documentation — and the step's own comment says why
+# documentation comes last.
 #
 # ## What still differs, and why
 #
@@ -74,10 +81,45 @@
 # `confirm-red`, and the gate step puts it in front of the human who approves
 # the PR. Prefer a test.
 #
-# `implement` is one step for both paths, with one `{{if}}` block in its prompt.
-# The shared 80% — commit conventions, the PR template's four claims, the spec
-# amendment rule, the scratch-directory rule, the two PR artifacts — is written
-# once, which is the point of merging.
+# `implement` is one step for all three paths, with one `{{if}}` block in its
+# prompt. The shared 80% — commit conventions, the PR template's four claims,
+# the spec amendment rule, the scratch-directory rule, the two PR artifacts — is
+# written once, which is the point of merging.
+#
+# ## The documentation path
+#
+# A `documentation` issue in this repository is rarely "write a page". It is a
+# list of claims an audit found wrong — a count that drifted, a citation to the
+# wrong task, a screenshot that predates a panel, a gate walk nobody recorded —
+# each with a location that was true at the commit the audit read, and each
+# checkable against the source the claim derives from. Three rules follow, and
+# `survey` and the documentation half of `implement` exist to hold them:
+#
+# - **Every item is re-verified at HEAD before anything is edited.** Line
+#   numbers drift, and other branches fix items. `survey` writes down, per
+#   item, what the source says now and whether the item still stands; an item
+#   that is already true is dropped, not edited again.
+# - **Nothing is recorded that did not happen.** A gate run record, a
+#   `✓ YYYY-MM-DD`, an `[x]`, a "verified" line is evidence, and this workflow
+#   can only produce evidence for what it ran. A manual walk, a judgement "by
+#   eye", a real-install or real-GitHub leg needs a person, so `survey` asks the
+#   author to scope such items out rather than letting `implement` write them
+#   up.
+# - **An issue with items left open is not closed by the PR.** `survey`'s
+#   second line is `closes: yes` or `closes: no`; on `no` the PR body says
+#   `Part of #N` and lists what is left, so merging does not close an issue
+#   that still holds a person's work.
+#
+# There is no `confirm-red` here: a sentence has no failing test to observe.
+# The proof is the docs-claims tests that `implement`'s check runs as part of
+# the suite, and `docs-sync`, which on this path is the second reader rather
+# than the first — it re-checks every claim the diff changed against the source
+# and hunts the copies of each fact the change missed.
+#
+# Screenshots are the one thing that moves. The audit below may never fix one,
+# but on this path a screenshot can *be* the issue (#413–#415), so `implement`
+# may extend and run `scripts/screenshots.sh` when `survey` scoped it. It still
+# never draws a screen or edits a PNG by hand.
 #
 # ## Documentation is a step, not a checkbox
 #
@@ -258,13 +300,13 @@
 #
 # ## Why the brief and the implementation are two steps
 #
-# `diagnose`/`digest` run with `on_input: wait`, so they park the task in
-# `awaiting_input` and ask you through claude's AskUserQuestion tool (§7.4). If
-# implementation shared that step, every retry after a failed check would replay
-# the questioning and ask you the same things again. Splitting costs
-# `implement` the live Q&A session — which is why the brief writes its answers
-# in as resolved decisions, not as a transcript. `defaults.on_input: deny`
-# makes the asymmetry explicit: only the brief step may stop and ask.
+# `diagnose`, `digest` and `survey` run with `on_input: wait`, so they park the
+# task in `awaiting_input` and ask you through claude's AskUserQuestion tool
+# (§7.4). If implementation shared that step, every retry after a failed check
+# would replay the questioning and ask you the same things again. Splitting
+# costs `implement` the live Q&A session — which is why the brief writes its
+# answers in as resolved decisions, not as a transcript. `defaults.on_input:
+# deny` makes the asymmetry explicit: only the brief step may stop and ask.
 #
 # claude-only by construction. `on_input` is ignored by codex and cursor
 # (`supports_input: false`, §9.3/§9.7), so on those adapters the brief step
@@ -333,7 +375,7 @@
 #   that failed, which no `failure_reason` can reach.
 # - **A verdict**, set on a path that is about to exit non-zero — `triage` on a
 #   rejected brief, `wait-checks` on a red context. This workflow has four
-#   `allow_failure` steps whose red row is the *normal* path (`is-bug`,
+#   `allow_failure` steps whose red row is the *normal* path (`classify`,
 #   `docs-scope`, `rebase`, `verify-probe`), and a status is the only thing that
 #   can say so on the board.
 #
@@ -351,7 +393,7 @@
 # (verbatim), the project's template, `branch_template` in config.yaml, then the
 # built-in (task 001, internal/worktree/branch.go).
 name: github-resolve-issue
-description: Read a GitHub bug or enhancement issue, clarify it with the author, deliver the fix or feature, open the PR, then rebase and merge it once you approve.
+description: Read a GitHub bug, enhancement or documentation issue, clarify it with the author, deliver the fix, feature or documentation change, open the PR, then rebase and merge it once you approve.
 
 platforms: [posix]
 
@@ -445,12 +487,12 @@ steps:
 
       # The label is the only thing that decides which path runs, so a missing
       # one fails here rather than silently defaulting to a path. An issue
-      # carrying *both* is treated as a bug by `is-bug` — the stricter path,
-      # which demands a regression test.
-      if ! jq -e '[.labels[].name] | any(. == "bug" or . == "enhancement")' \
+      # carrying more than one is sent down the strictest path it carries by
+      # `classify`: bug, then enhancement, then documentation.
+      if ! jq -e '[.labels[].name] | any(. == "bug" or . == "enhancement" or . == "documentation")' \
         .vincent-issue/issue.json > /dev/null; then
-        say "issue #$id is labeled neither bug nor enhancement"
-        echo "issue #$id is labeled neither 'bug' nor 'enhancement'; refusing to guess at its type" >&2
+        say "issue #$id is labeled neither bug, enhancement nor documentation"
+        echo "issue #$id is labeled neither 'bug', 'enhancement' nor 'documentation'; refusing to guess at its type" >&2
         jq -r '"labels: " + ([.labels[].name] | join(", "))' .vincent-issue/issue.json >&2
         exit 1
       fi
@@ -458,28 +500,36 @@ steps:
       jq -r '"#\(.number) \(.title)\n\(.url)\nreported: \(.createdAt)"' .vincent-issue/issue.json
       say "#$id open, $(jq -r '[.comments[]] | length' .vincent-issue/issue.json) comment(s) to read"
 
-  - id: is-bug
-    name: Classify — is this a bug?
+  - id: classify
+    name: Classify — bug, enhancement or documentation?
     type: command
     shell: sh
     timeout: 1m
-    # The branch point. Exit 0 means bug, nonzero means enhancement, and every
-    # guard below reads `.Steps.is-bug.ExitCode`. `allow_failure` is what turns
-    # a nonzero exit into data instead of a blocked task (§ Conditions).
+    # The branch point. Exit 0 means bug, 1 enhancement, 2 documentation, and
+    # every guard below reads `.Steps.classify.ExitCode`. `allow_failure` is
+    # what turns a nonzero exit into data instead of a blocked task
+    # (§ Conditions).
     #
-    # A `failed` row here is therefore the *normal* enhancement path, not a
-    # problem — the stdout line says which way it went.
+    # A `failed` row here is therefore the *normal* enhancement or
+    # documentation path, not a problem — the stdout line says which way it
+    # went.
+    #
+    # The order of the tests is the precedence. `documentation` is checked
+    # last because next to `bug` or `enhancement` it marks a code change that
+    # also moves the docs — #376 is labeled both — and those paths already
+    # audit the docs in `docs-sync`. The documentation path is for an issue
+    # whose deliverable *is* the documentation.
     allow_failure: true
     # A probe never retries: the answer is a file this workflow already wrote.
     max_retries: 0
-    # The status is the fix for this file's one documented wart: on the
-    # enhancement path this step exits 1 *on purpose*, and the board has shown
-    # a red `is-bug` row with nothing to say it was the intended answer. The
-    # message survives on the finished attempt, so the row now reads
-    # "failed — enhancement path: judged by the new behaviour", which is true
-    # and legible. It is not readable by the `if:` guards below — those read
-    # `.ExitCode`, and free text an agent or a script chose is not something a
-    # workflow branches on (§5.4) — so nothing downstream depends on it.
+    # The status is the fix for this file's one documented wart: off the bug
+    # path this step exits nonzero *on purpose*, and the board has shown a red
+    # row with nothing to say it was the intended answer. The message survives
+    # on the finished attempt, so the row reads "failed — enhancement path:
+    # judged by the new behaviour", which is true and legible. It is not
+    # readable by the `if:` guards below — those read `.ExitCode`, and free
+    # text an agent or a script chose is not something a workflow branches on
+    # (§5.4) — so nothing downstream depends on it.
     run: |
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
 
@@ -488,14 +538,19 @@ steps:
         say "bug path: a regression test must be seen failing first"
         exit 0
       fi
-      echo "path: enhancement — no reproduction to prove; judged by the new behaviour."
-      say "enhancement path: judged by the new behaviour (this exit 1 is normal)"
-      exit 1
+      if jq -e '[.labels[].name] | index("enhancement")' .vincent-issue/issue.json > /dev/null; then
+        echo "path: enhancement — no reproduction to prove; judged by the new behaviour."
+        say "enhancement path: judged by the new behaviour (this exit 1 is normal)"
+        exit 1
+      fi
+      echo "path: documentation — every claim re-verified against the source at HEAD."
+      say "documentation path: claims checked against the source (this exit 2 is normal)"
+      exit 2
 
   - id: diagnose
     name: Reproduce and diagnose
     type: agent
-    if: '{{ eq (index .Steps "is-bug").ExitCode 0 }}'
+    if: '{{ eq (index .Steps "classify").ExitCode 0 }}'
     # The whole reason this step is separate from `implement`: it stops and asks
     # rather than inventing a reproduction it could not achieve.
     on_input: wait
@@ -652,8 +707,8 @@ steps:
   - id: digest
     name: Digest and clarify
     type: agent
-    if: '{{ ne (index .Steps "is-bug").ExitCode 0 }}'
-    # Same role as `diagnose` on the other path: the step that is allowed to
+    if: '{{ eq (index .Steps "classify").ExitCode 1 }}'
+    # Same role as `diagnose` on the bug path: the step that is allowed to
     # stop and ask, rather than guessing at an ambiguous requirement or an
     # undecided design.
     on_input: wait
@@ -745,20 +800,178 @@ steps:
       git diff --cached --quiet
     check_timeout: 1m
 
+  - id: survey
+    name: Verify the documented claims
+    type: agent
+    if: '{{ eq (index .Steps "classify").ExitCode 2 }}'
+    # The documentation path's brief step, in the role `diagnose` and `digest`
+    # play on theirs: the step allowed to stop and ask. What it settles is
+    # different — not a reproduction or a design, but which items of the issue
+    # still stand at HEAD, what the source says each should read, and which of
+    # them only a person can do.
+    on_input: wait
+    input_timeout: 12h
+    timeout: 45m
+    prompt: |
+      You are scoping a GitHub documentation issue against this repository. You
+      are NOT editing anything yet: do not change a single file.
+
+      The issue is in `.vincent-issue/issue.json` — number, title, body, state,
+      labels, creation date and every comment. Read it first, comments
+      included.
+
+      You are on branch {{.Task.BranchName}}, based on {{.Task.BaseBranch}}, in
+      a dedicated worktree at {{.Worktree.Path}}.
+
+      This step is budgeted 45 minutes and can park in `awaiting_input` for
+      half a day, so say what you are doing as you go:
+
+          vincent status "<one short line about what you are doing now>"
+
+      Run it before each numbered step below, and again the moment you stop to
+      ask the author — `vincent status "waiting on your call: 2 items need a
+      person"` is the difference between a row that looks hung and one that
+      explains itself. Under ten words. When something is wrong, make the
+      status say what is wrong: "item 3 already fixed in 5c29c40", not "still
+      working". The last thing you set stays on the finished step, so end on
+      your verdict — "verdict: proceed, 6 of 7 items still stand".
+
+      Do this in order:
+
+      1. Read `CLAUDE.md`, all of it. Its documentation model is the rulebook
+         for this issue. Public documentation is **derived from the source,
+         not from planning records** — the config reference tracks
+         `internal/config`, the CLI page the cobra tree, the API page the route
+         table in `internal/api/server.go`, the TUI key tables
+         `internal/tui/bindings.go`, the block reasons the `Reason*` constants
+         — and the maintainer records (`docs/spec.md`, `docs/tasks/`,
+         `docs/history/`, `docs/gates/`) each carry their own rules there. If
+         the issue touches a task record, read `docs/tasks/README.md` too.
+
+      2. Split the issue into its items. A documentation issue here is usually
+         a list, each bullet one claim that is wrong, with a location. Treat
+         each separately: they do not stand or fall together.
+
+      3. **Verify every item at HEAD**, against the source of truth rather than
+         against the issue. Issues here are often written by an audit at an
+         older commit, so cited line numbers drift — find the text by content.
+         For each item, establish:
+
+         - what the documentation says now, and where (file and line at HEAD);
+         - what the source it derives from says now, and where — the code, the
+           config, the route table, `git log`, `gh run view`, `gh pr view`,
+           whichever actually decides it;
+         - whether the item **still stands**, is **already fixed** (name the
+           commit), or is **itself wrong** — the issue's proposed correction
+           does not match the source either; say what does;
+         - every **other place** the same fact is stated. A stale count in one
+           page is usually stale in three: search `docs/`, `README.md`,
+           `CLAUDE.md`, `CONTRIBUTING.md`, `RELEASING.md` and `_data/` for it.
+
+      4. Sort out what this workflow **cannot do**. An agent in a worktree can
+         edit files, run the suite and the repository's scripts, and read
+         GitHub. It cannot walk a manual gate or judge a screen "by eye" at a
+         real terminal, cannot run a leg that needs a real agent CLI session,
+         a real install through a package channel or a real GitHub write, and
+         cannot produce evidence for something it did not run. Items in those
+         classes are **human-only**.
+
+         Nothing in this workflow may record a human-only item as done. A gate
+         run record, a `✓ YYYY-MM-DD`, an `[x]` or a "verified" line with no run
+         behind it is a false record, and worse than the gap it papers over.
+
+         Screenshots are **not** human-only. Every `docs/assets/tui-*.png` comes
+         from `scripts/screenshots.sh`, which a later step may run and extend
+         with new seeds and tapes. It needs `vhs`, `ttyd` and `ffmpeg` — check
+         with `command -v vhs ttyd ffmpeg`, and do not run the script here. A
+         missing tool is a question for the author, never a reason to draw a
+         screen.
+
+      5. Use the AskUserQuestion tool when — and only when — you genuinely
+         cannot settle an item without the author. The cases that warrant it:
+
+         - **Human-only items.** Ask whether to scope them out of this run and
+           deliver the rest. If every item that still stands is human-only,
+           say so: that is a `reject` for this workflow, and the brief says a
+           person must do it.
+         - **The docs and the code disagree, and the code may be the wrong
+           side.** Correcting a page to match a defect enshrines the defect.
+           Whether the code changes instead is the author's call — and if it
+           does, the issue wants the `bug` label and a run down that path, not
+           this one.
+         - **An item overturns a recorded decision** — a "phase 2 decision", a
+           "T1.5/T1.6 decision", a "PR G decision", a task record's decision,
+           something in `docs/history/v0-tasks.md`. Marking one superseded is a
+           decision too; never make it silently.
+         - **A tool an item needs is missing** from this machine.
+
+         Batch related questions into as few calls as you can, with concrete
+         options where you can offer them. If every item is verified and
+         within reach, ask nothing and move on.
+
+      6. Write `.vincent-issue/brief.md`. Its **first line** must be exactly one
+         of:
+
+             verdict: proceed
+             verdict: reject
+             verdict: needs-info
+
+         and its **second line** exactly one of:
+
+             closes: yes
+             closes: no
+
+         - `proceed` — at least one item still stands and is within reach.
+         - `reject` — nothing is left for this workflow to do: every item is
+           already fixed, wrong, or human-only. You must have asked the author
+           before rejecting an issue with items that still stand.
+         - `needs-info` — you asked, and what came back still does not settle
+           what the correct text is. The issue stays open for a later run.
+         - `closes: yes` only when this run delivers **every** item that still
+           stands. Anything scoped out — human-only, or deferred by the author —
+           makes it `closes: no`, and the pull request will then say
+           `Part of #N` rather than closing the issue. On `reject` or
+           `needs-info`, write `closes: no`.
+
+         Below those two lines, one entry per item: the claim; every place it
+         is stated; the source that decides it and what that source says; the
+         status — `fix`, `already fixed in <sha>`, `issue wrong: <why>`,
+         `human-only`, or `scoped out: <why>`; and for `fix`, the exact
+         correction. Then any code the issue itself asks for — a test that makes
+         a claim checkable, a gate script, a screenshot seed or tape — named as
+         precisely as a plan. Decisions that came out of your questions go in as
+         settled decisions in prose, not as a Q&A transcript. On `reject` or
+         `needs-info`, write why instead, and what would change the answer.
+
+      Do not commit. Do not push. Do not run `gh` for anything that writes. Do
+      not modify any file outside `.vincent-issue/`.
+    # `digest`'s check plus the second line. `closes:` is a machine-readable
+    # line rather than a sentence in the body because `implement` turns it into
+    # `Closes #N` or `Part of #N`, and that choice decides whether merging the
+    # pull request closes an issue that still has a person's work in it.
+    check: >
+      test -s .vincent-issue/brief.md &&
+      head -n 1 .vincent-issue/brief.md | grep -Eq '^verdict: (proceed|reject|needs-info)$' &&
+      sed -n 2p .vincent-issue/brief.md | grep -Eq '^closes: (yes|no)$' &&
+      git diff --quiet &&
+      git diff --cached --quiet
+    check_timeout: 1m
+
   - id: triage
     name: Act on the verdict
     type: command
     shell: sh
     timeout: 1m
     # `reject` and `needs-info` are legitimate outcomes of a brief step, so
-    # `diagnose`/`digest` pass their checks either way. This step is what turns
-    # one into a failed task with a legible reason, instead of a pull request
-    # nobody wanted. The two are kept distinct on purpose: `reject` means never,
-    # `needs-info` means re-run this task once the thread has more in it.
+    # `diagnose`/`digest`/`survey` pass their checks either way. This step is
+    # what turns one into a failed task with a legible reason, instead of a
+    # pull request nobody wanted. The two are kept distinct on purpose:
+    # `reject` means never, `needs-info` means re-run this task once the thread
+    # has more in it.
     #
-    # Path-independent: both briefs are written to the same path with the same
-    # verdict vocabulary, which is most of why merging the two workflows was
-    # worth doing.
+    # Path-independent: all three briefs are written to the same path with the
+    # same verdict vocabulary, which is most of why merging the two workflows
+    # was worth doing, and why the documentation path could join them.
     max_retries: 0
     # The status is what makes the two stopping verdicts tell themselves apart
     # on the board. Both exit 1 and both classify `nonzero_exit`, and the whole
@@ -794,13 +1007,13 @@ steps:
   - id: confirm-red
     name: Confirm the test fails
     type: command
-    if: '{{ eq (index .Steps "is-bug").ExitCode 0 }}'
+    if: '{{ eq (index .Steps "classify").ExitCode 0 }}'
     shell: sh
     timeout: 15m
     # Deterministic by construction — a second identical run is the same run.
     max_retries: 0
-    # The load-bearing step of the bug path, and the one thing the enhancement
-    # path has no equivalent of. It proves the regression test observes the bug,
+    # The load-bearing step of the bug path, and the one thing neither other
+    # path has an equivalent of. It proves the regression test observes the bug,
     # in the one window where that is observable: after the test exists and
     # before the fix does.
     #
@@ -856,11 +1069,12 @@ steps:
     # the §8.4 failure block and the second attempt fixes it. The expensive,
     # non-self-healing checks live in `verify` instead.
     max_retries: 2
-    # One step for both paths. The `{{if}}` covers exactly what differs — the
-    # framing, the fix-specific rules, and the frozen regression test — and
-    # everything below it is the same work either way.
+    # One step for all three paths. The `{{if}}` covers exactly what differs —
+    # the framing, the path-specific rules, the frozen regression test on the
+    # bug path and the `Closes`/`Part of` choice on the documentation path —
+    # and everything below it is the same work whichever path ran.
     prompt: |
-      {{- if eq (index .Steps "is-bug").ExitCode 0 }}
+      {{- if eq (index .Steps "classify").ExitCode 0 }}
       Fix the bug diagnosed in `.vincent-issue/brief.md`. That diagnosis is the
       agreed scope — the author has already answered the open questions and
       those answers are written into it as decisions. Do not re-open them and do
@@ -886,6 +1100,51 @@ steps:
 
       Commit the regression test and the fix, test first if you split them. A
       bug fix is `fix:` unless it truly is not.
+      {{- else if eq (index .Steps "classify").ExitCode 2 }}
+      Make the documentation change scoped in `.vincent-issue/brief.md`. That
+      survey is the agreed scope — every item in it was verified against the
+      source at HEAD, and the author's answers are written into it as
+      decisions. Do not re-open them, do not expand the scope, and leave alone
+      every item the survey marked already fixed, wrong, human-only or scoped
+      out. The original issue is still in `.vincent-issue/issue.json` for
+      reference.
+
+      `CLAUDE.md`'s documentation model is the rulebook; read it first. The
+      rules that bite hardest:
+
+      - **The source decides**, not the issue and not the survey. Re-read the
+        source for each correction as you make it. If it no longer says what
+        the survey recorded, write what it says now and note the difference in
+        the PR body.
+      - **Fix every copy.** The survey lists each place a fact is stated. A
+        count corrected in one page and left in another is two claims that now
+        disagree.
+      - **`docs/spec.md`** is amended in place with a dated note, and a section
+        is never renumbered. In **`docs/tasks/`** a status marker changes with
+        its row in `docs/tasks/README.md` in the same edit, a `[x]` carries its
+        `✓ YYYY-MM-DD`, a task is never deleted, and a superseded decision is
+        marked superseded, dated, pointing at what replaced it.
+        **`docs/history/v0-tasks.md`** is frozen.
+      - **Record only what happened.** A gate run record, a `✓` date, a ticked
+        box or a "verified" line needs a run behind it — one you performed in
+        this session, or one you can cite by URL or commit. A human-only item
+        stays open; you do not write it up.
+      - **Never draw a screen.** Screenshots come only from
+        `scripts/screenshots.sh`. If the survey scoped screenshot work, extend
+        its seeds and tapes, run it, and commit the PNGs it produced — mind the
+        two VHS traps `CLAUDE.md` records. Never edit a PNG by hand, and never
+        hand-edit the generated social cards under `docs/assets/social/`
+        (`scripts/social-cards.py` makes them). `_data/seo_pages.json` and
+        `_data/why_articles.json` change with the pages they describe.
+      - Write `vincent` with a lowercase `v` in prose.
+      - Code the survey scoped — a test that makes a documented claim
+        checkable, a gate script, CI wiring — follows this repository's code
+        conventions like any other change, and a new gate script is committed
+        executable and follows the gate rules in `CLAUDE.md`.
+
+      Commit it: `docs:` for the documentation, `test:` or `ci:` for code the
+      survey scoped. A correction belongs in `CHANGELOG.md` only if a user
+      acting on the old text would have done the wrong thing.
       {{- else }}
       Implement the enhancement described in `.vincent-issue/brief.md`. That
       plan is the agreed scope — the author has already answered the open
@@ -944,9 +1203,14 @@ steps:
         `.github/PULL_REQUEST_TEMPLATE.md`. Under **Related**, write
         `Closes #<the issue number from issue.json>` so merging the PR closes
         the issue.
-        {{- if eq (index .Steps "is-bug").ExitCode 0 }}
+        {{- if eq (index .Steps "classify").ExitCode 0 }}
         Say plainly what the root cause was and how the regression test would
         catch it coming back.
+        {{- else if eq (index .Steps "classify").ExitCode 2 }}
+        **Except** when the second line of `.vincent-issue/brief.md` is
+        `closes: no`: then write `Part of #<the issue number>` instead, and
+        list under it every item this change leaves open and why, so merging
+        does not close an issue that still has work in it.
         {{- end }}
         Tick a checklist box only if you actually did that thing; a checklist
         ticked unconditionally is worth nothing to the reviewer, and leaving a
@@ -965,14 +1229,18 @@ steps:
     #
     # `green.sh` was frozen by `confirm-red` while the bug was still present, so
     # that clause re-runs exactly the command that was observed failing. It is
-    # rendered away entirely on the enhancement path, where `confirm-red` was
+    # rendered away entirely on the other two paths, where `confirm-red` was
     # skipped and no such file exists.
+    #
+    # The documentation path keeps the suite and the linter as its bar, and
+    # not out of habit: the docs-claims tests in `internal/cli` assert what the
+    # published pages say, so a correction that breaks one fails here.
     check: >
       ! git ls-files .vincent-issue | grep -q . &&
       test "$(git rev-list --count {{.Task.BaseBranch}}..HEAD)" -gt 0 &&
       test -s .vincent-issue/pr-title.txt &&
       test -s .vincent-issue/pr.md &&
-      {{if eq (index .Steps "is-bug").ExitCode 0}}sh .vincent-issue/green.sh &&{{end}}
+      {{if eq (index .Steps "classify").ExitCode 0}}sh .vincent-issue/green.sh &&{{end}}
       go run mage.go test &&
       go run mage.go lint
     check_timeout: 15m
@@ -1064,6 +1332,23 @@ steps:
       The plan it was written against is `.vincent-issue/brief.md`, the drafted
       pull request body is `.vincent-issue/pr.md`, and the original issue is
       `.vincent-issue/issue.json`.
+      {{- if eq (index .Steps "classify").ExitCode 2 }}
+
+      **This change is itself a documentation change.** The issue is labeled
+      `documentation`, and `brief.md` is a survey of claims rather than a plan.
+      So you are the second reader, not the first, and the audit has two more
+      jobs:
+
+      - Re-verify every claim the diff adds or changes against the source at
+        HEAD. A correction that is itself wrong is worse than the stale text it
+        replaced, because it now looks audited.
+      - Find the copies of each corrected fact the change missed. Fix the ones
+        inside the paths you may edit; report the rest.
+
+      A gate run record, a `✓` date or a ticked task in the diff with nothing
+      to show it happened is a finding. Report it in `docs.md` and in the PR
+      body; do not quietly delete it.
+      {{- end }}
 
       Read `CLAUDE.md` first. Public documentation there is **derived from the
       source, not from planning records**, and each derivation is a rule you
@@ -1373,7 +1658,7 @@ steps:
       in `.vincent-issue/`. Tests, lint and the cross-platform legs have already
       passed — what is left is the judgement they cannot make.
 
-      {{ if eq (index .Steps "is-bug").ExitCode 0 -}}
+      {{ if eq (index .Steps "classify").ExitCode 0 -}}
       This ran as a **bug fix**:
 
       - Does the diff fix the **cause** named in the brief, or guard the symptom
@@ -1387,6 +1672,17 @@ steps:
       Reproduction check:
 
       {{ (index .Steps "confirm-red").Result }}
+      {{- else if eq (index .Steps "classify").ExitCode 2 -}}
+      This ran as a **documentation change**:
+
+      - Is each correction true? Pick two and check them against the source
+        yourself. `survey` and `docs-sync` both read it, and neither is the
+        last word on a sentence.
+      - Does the diff record anything that did not happen — a gate run record,
+        a `✓` date, a ticked task — with no run behind it?
+      - Were items left out? The second line of `.vincent-issue/brief.md` says
+        `closes: yes` or `closes: no`. On `no` the PR body must say `Part of`,
+        not `Closes`, or merging closes an issue that still has work in it.
       {{- else -}}
       This ran as an **enhancement**: does it actually solve the issue, is it
       the change you want, and did it stay inside the scope the brief agreed?
@@ -1491,7 +1787,8 @@ steps:
       {{.Task.BaseBranch}}, **force-pushes it** — rewriting the branch anyone
       else may have pulled — waits for every required check to pass **on the
       commit it pushed**, and then merges the pull request with a merge commit.
-      Merging closes the issue, because the body says `Closes #…`, and GitHub
+      Merging closes the issue if the body says `Closes #…` — a documentation
+      change that left items open says `Part of #…` instead — and GitHub
       deletes the remote branch.
 
       It will do that up to **three times**. If a required check goes red on

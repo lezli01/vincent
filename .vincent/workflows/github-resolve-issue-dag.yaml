@@ -2,7 +2,7 @@
 #
 # The DAG variant of `github-resolve-issue`. Everything before the
 # implementation and everything after it is the same file, deliberately: the
-# fetch, the two brief paths, the reproduce-first discipline, the documentation
+# fetch, the three brief paths, the reproduce-first discipline, the documentation
 # audit, the cross-platform legs, both human gates and the whole merge tail are
 # copied across unchanged, so the two workflows fail the same way and a fix to
 # one is a legible diff against the other.
@@ -29,7 +29,8 @@
 # Shape (the unchanged parts are named, not re-explained; read the sequential
 # file's header for those):
 #
-#   fetch → is-bug → diagnose | digest → triage → confirm-red      (unchanged)
+#   fetch → classify → diagnose | digest | survey → triage
+#     → confirm-red                                                (unchanged)
 #   seed        commit what the lanes must inherit, and nothing else
 #   plan-dag    cut the brief into units and edges; write units.jsonl
 #   plan-emit   validate-and-print, so the graph is a step's stdout
@@ -59,7 +60,8 @@
 #   test and the fix, test first if you split them", and this is that split
 #   made explicit. It refuses to commit anything that is not a test or
 #   `testdata/`, and refuses `.vincent-issue/` outright. On the enhancement
-#   path `digest` left a clean tree, so it is a no-op that says so.
+#   and documentation paths `digest` and `survey` left a clean tree, so it is
+#   a no-op that says so.
 # - **`plan-dag`'s per-unit `brief` travels as a lane field.** `fields:` is the
 #   one part of a derived lane that may vary per item (§7.6), it is merged over
 #   the parent's fields, and it is not shell — it is rendered straight into the
@@ -203,6 +205,27 @@
 # starts rewriting lanes is a 45-minute session spent undoing the parallelism
 # this file exists for.
 #
+# ## On the documentation path
+#
+# The sequential file's header says what the documentation path is and why. It
+# changes one thing about the plan here: the documentation **is** the change, so
+# units own pages. `plan-dag` is told so on this path only — on the other two,
+# `docs/`, `skills/` and `internal/workflow/builtin.go` stay out of every unit
+# and belong to the audit after the join.
+#
+# Three kinds of file cannot be split across units, because every item touching
+# one would collide in it: `docs/spec.md`; `docs/tasks/`, where a status marker
+# and its row in `docs/tasks/README.md` change in the same edit; and the
+# screenshot set, where `scripts/screenshots.sh` is one file and one run
+# photographs every shot. The planner gives each to a single unit, and the plan
+# gate asks about it.
+#
+# A documentation unit still needs a check that can fail. The planner is told to
+# make it fail while the stale text is there — a negated `grep` over the page —
+# or to run the docs-claims test that already asserts the page. `docs-sync` is
+# still the audit after the join, and on this path it is a second reader of
+# every changed claim rather than the first.
+#
 # ## The session envelope
 #
 # Upper bound on agent sessions vincent may start automatically, before any
@@ -212,6 +235,7 @@
 #
 #     diagnose            2   guarded to the bug path
 #     digest              2   guarded to the enhancement path
+#     survey              2   guarded to the documentation path
 #     plan-dag            2
 #     build lanes        12   6 lanes x (1 + 1) in github-resolve-issue-unit
 #     build merge join    6   one resolver attempt per round; up to 6 rounds
@@ -220,15 +244,15 @@
 #     verify/repair       3   4 loop passes, `if: not .Loop.IsLast`
 #     merge-attempt       5   3 x resolve, plus 2 x repair-checks (same guard)
 #                        --
-#                        37
+#                        39
 #
 # `not .Loop.IsLast` is the one guard counted as statically impossible on its
 # last pass, which is why the two repair agents come in one under their loop's
-# iteration count. Every other guard here — the two brief steps, `docs-sync`,
-# the conflict resolver — is counted in full even though the first pair are
-# mutually exclusive in practice and the third is usually free.
+# iteration count. Every other guard here — the three brief steps, `docs-sync`,
+# the conflict resolver — is counted in full even though the first three are
+# mutually exclusive in practice and the fourth is usually free.
 #
-# The sequential file's same bound is **17**. Twelve of the extra twenty are the
+# The sequential file's same bound is **19**. Twelve of the extra twenty are the
 # lanes, six are their joins, and two are the planner: that is what parallel
 # delivery costs, before counting six worktrees.
 #
@@ -244,7 +268,7 @@
 # ## Inherited constraints
 #
 # Everything the sequential file says about itself still applies here and is not
-# repeated: the issue arrives as the declared `issue` field; the bug path is
+# repeated: the issue arrives as the declared `issue` field; the path is
 # decided by an `allow_failure` probe whose red row is normal; `on_input: wait`
 # makes the brief steps claude-only by construction; `gh`, `jq`, `git` and `go`
 # must be present and `origin` must point at the repo that owns the issue; and
@@ -274,7 +298,7 @@
 # when it runs as a lane.
 
 name: github-resolve-issue-dag
-description: Read a GitHub bug or enhancement issue, clarify it with the author, cut it into a dependency graph of work units delivered in parallel, open the PR, then rebase and merge it once you approve.
+description: Read a GitHub bug, enhancement or documentation issue, clarify it with the author, cut it into a dependency graph of work units delivered in parallel, open the PR, then rebase and merge it once you approve.
 
 platforms: [posix]
 
@@ -375,12 +399,12 @@ steps:
 
       # The label is the only thing that decides which path runs, so a missing
       # one fails here rather than silently defaulting to a path. An issue
-      # carrying *both* is treated as a bug by `is-bug` — the stricter path,
-      # which demands a regression test.
-      if ! jq -e '[.labels[].name] | any(. == "bug" or . == "enhancement")' \
+      # carrying more than one is sent down the strictest path it carries by
+      # `classify`: bug, then enhancement, then documentation.
+      if ! jq -e '[.labels[].name] | any(. == "bug" or . == "enhancement" or . == "documentation")' \
         .vincent-issue/issue.json > /dev/null; then
-        say "issue #$id is labeled neither bug nor enhancement"
-        echo "issue #$id is labeled neither 'bug' nor 'enhancement'; refusing to guess at its type" >&2
+        say "issue #$id is labeled neither bug, enhancement nor documentation"
+        echo "issue #$id is labeled neither 'bug', 'enhancement' nor 'documentation'; refusing to guess at its type" >&2
         jq -r '"labels: " + ([.labels[].name] | join(", "))' .vincent-issue/issue.json >&2
         exit 1
       fi
@@ -388,28 +412,36 @@ steps:
       jq -r '"#\(.number) \(.title)\n\(.url)\nreported: \(.createdAt)"' .vincent-issue/issue.json
       say "#$id open, $(jq -r '[.comments[]] | length' .vincent-issue/issue.json) comment(s) to read"
 
-  - id: is-bug
-    name: Classify — is this a bug?
+  - id: classify
+    name: Classify — bug, enhancement or documentation?
     type: command
     shell: sh
     timeout: 1m
-    # The branch point. Exit 0 means bug, nonzero means enhancement, and every
-    # guard below reads `.Steps.is-bug.ExitCode`. `allow_failure` is what turns
-    # a nonzero exit into data instead of a blocked task (§ Conditions).
+    # The branch point. Exit 0 means bug, 1 enhancement, 2 documentation, and
+    # every guard below reads `.Steps.classify.ExitCode`. `allow_failure` is
+    # what turns a nonzero exit into data instead of a blocked task
+    # (§ Conditions).
     #
-    # A `failed` row here is therefore the *normal* enhancement path, not a
-    # problem — the stdout line says which way it went.
+    # A `failed` row here is therefore the *normal* enhancement or
+    # documentation path, not a problem — the stdout line says which way it
+    # went.
+    #
+    # The order of the tests is the precedence. `documentation` is checked
+    # last because next to `bug` or `enhancement` it marks a code change that
+    # also moves the docs — #376 is labeled both — and those paths already
+    # audit the docs in `docs-sync`. The documentation path is for an issue
+    # whose deliverable *is* the documentation.
     allow_failure: true
     # A probe never retries: the answer is a file this workflow already wrote.
     max_retries: 0
-    # The status is the fix for this file's one documented wart: on the
-    # enhancement path this step exits 1 *on purpose*, and the board has shown
-    # a red `is-bug` row with nothing to say it was the intended answer. The
-    # message survives on the finished attempt, so the row now reads
-    # "failed — enhancement path: judged by the new behaviour", which is true
-    # and legible. It is not readable by the `if:` guards below — those read
-    # `.ExitCode`, and free text an agent or a script chose is not something a
-    # workflow branches on (§5.4) — so nothing downstream depends on it.
+    # The status is the fix for this file's one documented wart: off the bug
+    # path this step exits nonzero *on purpose*, and the board has shown a red
+    # row with nothing to say it was the intended answer. The message survives
+    # on the finished attempt, so the row reads "failed — enhancement path:
+    # judged by the new behaviour", which is true and legible. It is not
+    # readable by the `if:` guards below — those read `.ExitCode`, and free
+    # text an agent or a script chose is not something a workflow branches on
+    # (§5.4) — so nothing downstream depends on it.
     run: |
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
 
@@ -418,14 +450,19 @@ steps:
         say "bug path: a regression test must be seen failing first"
         exit 0
       fi
-      echo "path: enhancement — no reproduction to prove; judged by the new behaviour."
-      say "enhancement path: judged by the new behaviour (this exit 1 is normal)"
-      exit 1
+      if jq -e '[.labels[].name] | index("enhancement")' .vincent-issue/issue.json > /dev/null; then
+        echo "path: enhancement — no reproduction to prove; judged by the new behaviour."
+        say "enhancement path: judged by the new behaviour (this exit 1 is normal)"
+        exit 1
+      fi
+      echo "path: documentation — every claim re-verified against the source at HEAD."
+      say "documentation path: claims checked against the source (this exit 2 is normal)"
+      exit 2
 
   - id: diagnose
     name: Reproduce and diagnose
     type: agent
-    if: '{{ eq (index .Steps "is-bug").ExitCode 0 }}'
+    if: '{{ eq (index .Steps "classify").ExitCode 0 }}'
     # The whole reason this step is separate from `implement`: it stops and asks
     # rather than inventing a reproduction it could not achieve.
     on_input: wait
@@ -582,8 +619,8 @@ steps:
   - id: digest
     name: Digest and clarify
     type: agent
-    if: '{{ ne (index .Steps "is-bug").ExitCode 0 }}'
-    # Same role as `diagnose` on the other path: the step that is allowed to
+    if: '{{ eq (index .Steps "classify").ExitCode 1 }}'
+    # Same role as `diagnose` on the bug path: the step that is allowed to
     # stop and ask, rather than guessing at an ambiguous requirement or an
     # undecided design.
     on_input: wait
@@ -675,20 +712,178 @@ steps:
       git diff --cached --quiet
     check_timeout: 1m
 
+  - id: survey
+    name: Verify the documented claims
+    type: agent
+    if: '{{ eq (index .Steps "classify").ExitCode 2 }}'
+    # The documentation path's brief step, in the role `diagnose` and `digest`
+    # play on theirs: the step allowed to stop and ask. What it settles is
+    # different — not a reproduction or a design, but which items of the issue
+    # still stand at HEAD, what the source says each should read, and which of
+    # them only a person can do.
+    on_input: wait
+    input_timeout: 12h
+    timeout: 45m
+    prompt: |
+      You are scoping a GitHub documentation issue against this repository. You
+      are NOT editing anything yet: do not change a single file.
+
+      The issue is in `.vincent-issue/issue.json` — number, title, body, state,
+      labels, creation date and every comment. Read it first, comments
+      included.
+
+      You are on branch {{.Task.BranchName}}, based on {{.Task.BaseBranch}}, in
+      a dedicated worktree at {{.Worktree.Path}}.
+
+      This step is budgeted 45 minutes and can park in `awaiting_input` for
+      half a day, so say what you are doing as you go:
+
+          vincent status "<one short line about what you are doing now>"
+
+      Run it before each numbered step below, and again the moment you stop to
+      ask the author — `vincent status "waiting on your call: 2 items need a
+      person"` is the difference between a row that looks hung and one that
+      explains itself. Under ten words. When something is wrong, make the
+      status say what is wrong: "item 3 already fixed in 5c29c40", not "still
+      working". The last thing you set stays on the finished step, so end on
+      your verdict — "verdict: proceed, 6 of 7 items still stand".
+
+      Do this in order:
+
+      1. Read `CLAUDE.md`, all of it. Its documentation model is the rulebook
+         for this issue. Public documentation is **derived from the source,
+         not from planning records** — the config reference tracks
+         `internal/config`, the CLI page the cobra tree, the API page the route
+         table in `internal/api/server.go`, the TUI key tables
+         `internal/tui/bindings.go`, the block reasons the `Reason*` constants
+         — and the maintainer records (`docs/spec.md`, `docs/tasks/`,
+         `docs/history/`, `docs/gates/`) each carry their own rules there. If
+         the issue touches a task record, read `docs/tasks/README.md` too.
+
+      2. Split the issue into its items. A documentation issue here is usually
+         a list, each bullet one claim that is wrong, with a location. Treat
+         each separately: they do not stand or fall together.
+
+      3. **Verify every item at HEAD**, against the source of truth rather than
+         against the issue. Issues here are often written by an audit at an
+         older commit, so cited line numbers drift — find the text by content.
+         For each item, establish:
+
+         - what the documentation says now, and where (file and line at HEAD);
+         - what the source it derives from says now, and where — the code, the
+           config, the route table, `git log`, `gh run view`, `gh pr view`,
+           whichever actually decides it;
+         - whether the item **still stands**, is **already fixed** (name the
+           commit), or is **itself wrong** — the issue's proposed correction
+           does not match the source either; say what does;
+         - every **other place** the same fact is stated. A stale count in one
+           page is usually stale in three: search `docs/`, `README.md`,
+           `CLAUDE.md`, `CONTRIBUTING.md`, `RELEASING.md` and `_data/` for it.
+
+      4. Sort out what this workflow **cannot do**. An agent in a worktree can
+         edit files, run the suite and the repository's scripts, and read
+         GitHub. It cannot walk a manual gate or judge a screen "by eye" at a
+         real terminal, cannot run a leg that needs a real agent CLI session,
+         a real install through a package channel or a real GitHub write, and
+         cannot produce evidence for something it did not run. Items in those
+         classes are **human-only**.
+
+         Nothing in this workflow may record a human-only item as done. A gate
+         run record, a `✓ YYYY-MM-DD`, an `[x]` or a "verified" line with no run
+         behind it is a false record, and worse than the gap it papers over.
+
+         Screenshots are **not** human-only. Every `docs/assets/tui-*.png` comes
+         from `scripts/screenshots.sh`, which a later step may run and extend
+         with new seeds and tapes. It needs `vhs`, `ttyd` and `ffmpeg` — check
+         with `command -v vhs ttyd ffmpeg`, and do not run the script here. A
+         missing tool is a question for the author, never a reason to draw a
+         screen.
+
+      5. Use the AskUserQuestion tool when — and only when — you genuinely
+         cannot settle an item without the author. The cases that warrant it:
+
+         - **Human-only items.** Ask whether to scope them out of this run and
+           deliver the rest. If every item that still stands is human-only,
+           say so: that is a `reject` for this workflow, and the brief says a
+           person must do it.
+         - **The docs and the code disagree, and the code may be the wrong
+           side.** Correcting a page to match a defect enshrines the defect.
+           Whether the code changes instead is the author's call — and if it
+           does, the issue wants the `bug` label and a run down that path, not
+           this one.
+         - **An item overturns a recorded decision** — a "phase 2 decision", a
+           "T1.5/T1.6 decision", a "PR G decision", a task record's decision,
+           something in `docs/history/v0-tasks.md`. Marking one superseded is a
+           decision too; never make it silently.
+         - **A tool an item needs is missing** from this machine.
+
+         Batch related questions into as few calls as you can, with concrete
+         options where you can offer them. If every item is verified and
+         within reach, ask nothing and move on.
+
+      6. Write `.vincent-issue/brief.md`. Its **first line** must be exactly one
+         of:
+
+             verdict: proceed
+             verdict: reject
+             verdict: needs-info
+
+         and its **second line** exactly one of:
+
+             closes: yes
+             closes: no
+
+         - `proceed` — at least one item still stands and is within reach.
+         - `reject` — nothing is left for this workflow to do: every item is
+           already fixed, wrong, or human-only. You must have asked the author
+           before rejecting an issue with items that still stand.
+         - `needs-info` — you asked, and what came back still does not settle
+           what the correct text is. The issue stays open for a later run.
+         - `closes: yes` only when this run delivers **every** item that still
+           stands. Anything scoped out — human-only, or deferred by the author —
+           makes it `closes: no`, and the pull request will then say
+           `Part of #N` rather than closing the issue. On `reject` or
+           `needs-info`, write `closes: no`.
+
+         Below those two lines, one entry per item: the claim; every place it
+         is stated; the source that decides it and what that source says; the
+         status — `fix`, `already fixed in <sha>`, `issue wrong: <why>`,
+         `human-only`, or `scoped out: <why>`; and for `fix`, the exact
+         correction. Then any code the issue itself asks for — a test that makes
+         a claim checkable, a gate script, a screenshot seed or tape — named as
+         precisely as a plan. Decisions that came out of your questions go in as
+         settled decisions in prose, not as a Q&A transcript. On `reject` or
+         `needs-info`, write why instead, and what would change the answer.
+
+      Do not commit. Do not push. Do not run `gh` for anything that writes. Do
+      not modify any file outside `.vincent-issue/`.
+    # `digest`'s check plus the second line. `closes:` is a machine-readable
+    # line rather than a sentence in the body because `integrate` turns it into
+    # `Closes #N` or `Part of #N`, and that choice decides whether merging the
+    # pull request closes an issue that still has a person's work in it.
+    check: >
+      test -s .vincent-issue/brief.md &&
+      head -n 1 .vincent-issue/brief.md | grep -Eq '^verdict: (proceed|reject|needs-info)$' &&
+      sed -n 2p .vincent-issue/brief.md | grep -Eq '^closes: (yes|no)$' &&
+      git diff --quiet &&
+      git diff --cached --quiet
+    check_timeout: 1m
+
   - id: triage
     name: Act on the verdict
     type: command
     shell: sh
     timeout: 1m
     # `reject` and `needs-info` are legitimate outcomes of a brief step, so
-    # `diagnose`/`digest` pass their checks either way. This step is what turns
-    # one into a failed task with a legible reason, instead of a pull request
-    # nobody wanted. The two are kept distinct on purpose: `reject` means never,
-    # `needs-info` means re-run this task once the thread has more in it.
+    # `diagnose`/`digest`/`survey` pass their checks either way. This step is
+    # what turns one into a failed task with a legible reason, instead of a
+    # pull request nobody wanted. The two are kept distinct on purpose:
+    # `reject` means never, `needs-info` means re-run this task once the thread
+    # has more in it.
     #
-    # Path-independent: both briefs are written to the same path with the same
-    # verdict vocabulary, which is most of why merging the two workflows was
-    # worth doing.
+    # Path-independent: all three briefs are written to the same path with the
+    # same verdict vocabulary, which is most of why merging the two workflows
+    # was worth doing, and why the documentation path could join them.
     max_retries: 0
     # The status is what makes the two stopping verdicts tell themselves apart
     # on the board. Both exit 1 and both classify `nonzero_exit`, and the whole
@@ -724,13 +919,13 @@ steps:
   - id: confirm-red
     name: Confirm the test fails
     type: command
-    if: '{{ eq (index .Steps "is-bug").ExitCode 0 }}'
+    if: '{{ eq (index .Steps "classify").ExitCode 0 }}'
     shell: sh
     timeout: 15m
     # Deterministic by construction — a second identical run is the same run.
     max_retries: 0
-    # The load-bearing step of the bug path, and the one thing the enhancement
-    # path has no equivalent of. It proves the regression test observes the bug,
+    # The load-bearing step of the bug path, and the one thing neither other
+    # path has an equivalent of. It proves the regression test observes the bug,
     # in the one window where that is observable: after the test exists and
     # before the fix does.
     #
@@ -796,8 +991,9 @@ steps:
     # first if you split them"; this is that split, made explicit because the
     # fan-out needs the first half on the branch before it spawns.
     #
-    # Path-independent, and no `if:`. On the enhancement path `digest`'s check
-    # already asserted a clean tree, so this finds nothing and says so.
+    # Path-independent, and no `if:`. On the enhancement and documentation
+    # paths `digest`'s and `survey`'s checks already asserted a clean tree, so
+    # this finds nothing and says so.
     run: |
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
@@ -876,7 +1072,7 @@ steps:
       settled decisions. The original report is in `.vincent-issue/issue.json`.
       Read both, then read enough of the repository to know where the change
       lands.
-      {{- if eq (index .Steps "is-bug").ExitCode 0 }}
+      {{- if eq (index .Steps "classify").ExitCode 0 }}
 
       This is the bug path. The regression test is already written **and
       already committed** on this branch, and it fails: it was run against the
@@ -947,9 +1143,45 @@ steps:
 
       - `CHANGELOG.md` and the pull request body — a single integration step
         writes those once, for the whole change.
+      {{- if ne (index .Steps "classify").ExitCode 2 }}
       - `docs/`, `skills/` and `internal/workflow/builtin.go` — a dedicated
         documentation audit runs after the join, against the finished change.
+      {{- end }}
       - `.vincent-issue/` — scratch, and never committed by anything.
+      {{- if eq (index .Steps "classify").ExitCode 2 }}
+
+      ## Documentation units
+
+      This is a documentation issue, so the documentation **is** the change
+      and units do own pages. `.vincent-issue/brief.md` is a survey rather than
+      a plan: one entry per item, each already verified against the source,
+      with every place the fact is stated. Cut units from the entries marked
+      `fix` and from any code the survey scoped, and from nothing else — an
+      item marked already fixed, wrong, human-only or scoped out belongs to no
+      unit.
+
+      Three kinds of file are one unit's or no one's, because every item that
+      touches them would otherwise collide in the same file:
+
+      - `docs/spec.md` — every spec amendment goes to one unit.
+      - `docs/tasks/` — a task record's status marker changes with its row in
+        `docs/tasks/README.md` in the same edit, so every task-record change
+        goes to the one unit that owns the index.
+      - The screenshot set — `scripts/screenshots.sh`, its tapes and seeds, and
+        `docs/assets/tui-*.png` are one unit: the script is one file and one
+        run photographs every shot.
+
+      Group the rest by file, not by item: two items that correct the same page
+      are one unit's work. A documentation change is rarely worth more than two
+      or three units.
+
+      A documentation unit's `check` must be able to fail. Make it fail while
+      the stale text is still there — `! grep -n '<the stale phrase>' <page>` —
+      or run the docs-claims test that already asserts the page (they live in
+      `internal/cli`, `go test ./internal/cli -run TestDocsClaims`). Its `brief`
+      restates, for each of its items, the claim, the source that decides it
+      and the exact correction: the lane will not see the survey.
+      {{- end }}
 
       ## What to write
 
@@ -968,7 +1200,7 @@ steps:
       - `check` — one shell command that proves this unit works, run from the
         repository root after its commits. Scope it:
         `go test ./internal/store/...`, not the whole suite.
-        **The whole suite is not available as a check here**{{ if eq (index .Steps "is-bug").ExitCode 0 }} — this branch
+        **The whole suite is not available as a check here**{{ if eq (index .Steps "classify").ExitCode 0 }} — this branch
         carries a committed failing regression test until the unit that fixes
         it lands, so `go run mage.go test` is red by construction{{ end }}. The suite is run
         after the join, by a later step.
@@ -1094,7 +1326,7 @@ steps:
       {{.Worktree.Path}}, and the brief it was cut from is in
       `.vincent-issue/brief.md` next to it.
 
-      Four things are worth thirty seconds each:
+      These are worth thirty seconds each:
 
       - **Is it split at all, and should it be?** One unit is a correct answer
         for a change that is one piece of work. Six units for a two-file fix is
@@ -1112,6 +1344,13 @@ steps:
       - **Does each `brief` stand alone?** A lane sees its own brief, the
         issue, and the code. It does not see `brief.md` and it does not see the
         other units. An interface two units share has to be spelled out in both.
+      {{- if eq (index .Steps "classify").ExitCode 2 }}
+      - **Does one unit own each shared documentation file?** This is a
+        documentation issue. `docs/spec.md`, the task records with their index
+        in `docs/tasks/README.md`, and the screenshot set are each one unit's
+        or no one's — two units editing the index collide at the join. And
+        does every unit's `check` fail while its stale text is still there?
+      {{- end }}
 
       Rejecting stops the task here, before any child task exists. Fix the plan
       by rejecting, then editing and retrying `plan-dag`.
@@ -1283,7 +1522,7 @@ steps:
       coherent change** and to write it up. You are not re-doing any unit's
       work.
 
-      {{- if eq (index .Steps "is-bug").ExitCode 0 }}
+      {{- if eq (index .Steps "classify").ExitCode 0 }}
       This is a bug fix. The regression test was committed before the units
       started and was observed failing against the unfixed code, which is what
       makes it worth anything. `.vincent-issue/green.sh` runs exactly that
@@ -1291,6 +1530,15 @@ steps:
       complete it. **Do not weaken the test to make it pass**; if it turns out
       to assert the wrong thing, say so explicitly in the PR body and explain
       what you changed about it and why.
+      {{- else if eq (index .Steps "classify").ExitCode 2 }}
+      This is a documentation change. Each unit corrected its own items against
+      the source; what none of them could see is the others. The same fact
+      stated by two units must now say the same thing, every task record must
+      agree with its row in `docs/tasks/README.md`, and nothing on the branch
+      may record a run, a walk or a `✓` date that did not happen. `CLAUDE.md`'s
+      documentation model is the bar for all of it. A correction belongs in
+      `CHANGELOG.md` only if a user acting on the old text would have done the
+      wrong thing.
       {{- end }}
 
       The agreed scope is `.vincent-issue/brief.md`, the units it was cut into
@@ -1371,9 +1619,14 @@ steps:
         pull request, not a project plan; that the work was split across
         branches is an implementation detail of how it got written and belongs
         nowhere in the body.
-        {{- if eq (index .Steps "is-bug").ExitCode 0 }}
+        {{- if eq (index .Steps "classify").ExitCode 0 }}
         Say plainly what the root cause was and how the regression test would
         catch it coming back.
+        {{- else if eq (index .Steps "classify").ExitCode 2 }}
+        **Except** when the second line of `.vincent-issue/brief.md` is
+        `closes: no`: then write `Part of #<the issue number>` instead of
+        `Closes`, and list under it every item this change leaves open and why,
+        so merging does not close an issue that still has work in it.
         {{- end }}
         Tick a checklist box only if you actually did that thing; a checklist
         ticked unconditionally is worth nothing to the reviewer, and leaving a
@@ -1401,7 +1654,7 @@ steps:
       test "$(git rev-list --count {{.Task.BaseBranch}}..HEAD)" -gt 0 &&
       test -s .vincent-issue/pr-title.txt &&
       test -s .vincent-issue/pr.md &&
-      {{if eq (index .Steps "is-bug").ExitCode 0}}sh .vincent-issue/green.sh &&{{end}}
+      {{if eq (index .Steps "classify").ExitCode 0}}sh .vincent-issue/green.sh &&{{end}}
       go build ./... &&
       go run mage.go test &&
       go run mage.go lint
@@ -1494,6 +1747,23 @@ steps:
       The plan it was written against is `.vincent-issue/brief.md`, the drafted
       pull request body is `.vincent-issue/pr.md`, and the original issue is
       `.vincent-issue/issue.json`.
+      {{- if eq (index .Steps "classify").ExitCode 2 }}
+
+      **This change is itself a documentation change.** The issue is labeled
+      `documentation`, and `brief.md` is a survey of claims rather than a plan.
+      So you are the second reader, not the first, and the audit has two more
+      jobs:
+
+      - Re-verify every claim the diff adds or changes against the source at
+        HEAD. A correction that is itself wrong is worse than the stale text it
+        replaced, because it now looks audited.
+      - Find the copies of each corrected fact the change missed. Fix the ones
+        inside the paths you may edit; report the rest.
+
+      A gate run record, a `✓` date or a ticked task in the diff with nothing
+      to show it happened is a finding. Report it in `docs.md` and in the PR
+      body; do not quietly delete it.
+      {{- end }}
 
       Read `CLAUDE.md` first. Public documentation there is **derived from the
       source, not from planning records**, and each derivation is a rule you
@@ -1803,7 +2073,7 @@ steps:
       in `.vincent-issue/`. Tests, lint and the cross-platform legs have already
       passed — what is left is the judgement they cannot make.
 
-      {{ if eq (index .Steps "is-bug").ExitCode 0 -}}
+      {{ if eq (index .Steps "classify").ExitCode 0 -}}
       This ran as a **bug fix**:
 
       - Does the diff fix the **cause** named in the brief, or guard the symptom
@@ -1817,6 +2087,17 @@ steps:
       Reproduction check:
 
       {{ (index .Steps "confirm-red").Result }}
+      {{- else if eq (index .Steps "classify").ExitCode 2 -}}
+      This ran as a **documentation change**:
+
+      - Is each correction true? Pick two and check them against the source
+        yourself. `survey` and `docs-sync` both read it, and neither is the
+        last word on a sentence.
+      - Does the diff record anything that did not happen — a gate run record,
+        a `✓` date, a ticked task — with no run behind it?
+      - Were items left out? The second line of `.vincent-issue/brief.md` says
+        `closes: yes` or `closes: no`. On `no` the PR body must say `Part of`,
+        not `Closes`, or merging closes an issue that still has work in it.
       {{- else -}}
       This ran as an **enhancement**: does it actually solve the issue, is it
       the change you want, and did it stay inside the scope the brief agreed?
@@ -1921,7 +2202,8 @@ steps:
       {{.Task.BaseBranch}}, **force-pushes it** — rewriting the branch anyone
       else may have pulled — waits for every required check to pass **on the
       commit it pushed**, and then merges the pull request with a merge commit.
-      Merging closes the issue, because the body says `Closes #…`, and GitHub
+      Merging closes the issue if the body says `Closes #…` — a documentation
+      change that left items open says `Part of #…` instead — and GitHub
       deletes the remote branch.
 
       It will do that up to **three times**. If a required check goes red on
