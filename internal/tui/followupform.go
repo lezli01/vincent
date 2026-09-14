@@ -22,6 +22,10 @@ const (
 	fuAgent
 	fuModel
 	fuEffort
+	// fuPaused holds the task in `paused` instead of queuing the run (§6,
+	// task 096 decision C), the new-task form's start row on this form: the
+	// follow-up is recorded now and starts when a human resumes it.
+	fuPaused
 	fuRowCount
 )
 
@@ -65,6 +69,7 @@ type followUpForm struct {
 	agent    string
 	model    string
 	effort   string
+	paused   bool
 
 	cursor  fuRow
 	editor  textarea.Model
@@ -228,6 +233,10 @@ func (f *followUpForm) openRow() {
 		f.picker = newPicker(int(fuModel), "model", f.catalogOptions(f.models()), true, f.model)
 	case fuEffort:
 		f.picker = newPicker(int(fuEffort), "effort", f.catalogOptions(f.efforts()), true, f.effort)
+	case fuPaused:
+		// A two-valued row has nothing to open, so enter toggles it — the
+		// new-task form's start row does the same.
+		f.paused = !f.paused
 	case fuRowCount:
 	}
 }
@@ -247,7 +256,7 @@ func (f *followUpForm) setRow(row fuRow, value string) {
 		f.model = value
 	case fuEffort:
 		f.effort = value
-	case fuRowCount:
+	case fuPaused, fuRowCount:
 	}
 }
 
@@ -391,6 +400,11 @@ func (f *followUpForm) catalogOptions(opts []apiclient.AgentOption) []pickerOpti
 // is sent: the daemon refuses a request that names two things to run.
 func (f *followUpForm) request() apiclient.FollowUpInput {
 	in := apiclient.FollowUpInput{Agent: f.agent, Model: f.model, Effort: f.effort}
+	// Only a held draft names `paused`, so an untouched form sends the body
+	// it always did.
+	if f.paused {
+		in.Paused = ptr(true)
+	}
 	switch f.form {
 	case apiclient.FollowUpFormCommand:
 		in.Run = f.run
@@ -479,7 +493,7 @@ func (f *followUpForm) lines(width int) []string {
 	return out
 }
 
-func fuRows() []fuRow { return []fuRow{fuForm, fuBody, fuAgent, fuModel, fuEffort} }
+func fuRows() []fuRow { return []fuRow{fuForm, fuBody, fuAgent, fuModel, fuEffort, fuPaused} }
 
 // subject is the one line saying what this follow-up is about, so the popup
 // does not rely on the panels behind it to explain itself. It names the state
@@ -537,6 +551,13 @@ func (f *followUpForm) rowValue(row fuRow) string {
 		v = f.model
 	case fuEffort:
 		v = f.effort
+	case fuPaused:
+		if f.paused {
+			return styleOK.Render("paused") + "  " +
+				styleDim.Render("waits on the board until you resume it · enter to toggle")
+		}
+		return styleOK.Render("when a slot is free") + "  " +
+			styleDim.Render("enter to hold it paused instead")
 	case fuRowCount:
 	}
 	if v == "" {
@@ -566,6 +587,8 @@ func (f *followUpForm) rowLabel(row fuRow) string {
 		return "model "
 	case fuEffort:
 		return "effort"
+	case fuPaused:
+		return "start "
 	case fuRowCount:
 	}
 	return ""

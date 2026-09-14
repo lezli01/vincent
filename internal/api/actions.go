@@ -70,6 +70,12 @@ type retryRequest struct {
 	// nothing else in the API can change a branch name, so without it a blocked
 	// task would be permanently dead and its transcripts orphaned.
 	BranchOverride string `json:"branch_override"`
+	// Paused holds the retried task in `paused` instead of re-queuing it, so
+	// `resume` is what admits it (§6, task 096 decision C) — the `paused` of
+	// `POST /v1/tasks`, on the action a trigger's `retry` reaction replays.
+	// From `awaiting_children` it is a 400: that retry is a cascade, and no
+	// task goes through `queued` for the hold to replace.
+	Paused *bool `json:"paused"`
 }
 
 // retryResponse is the task as every other action renders it, plus how many
@@ -144,7 +150,13 @@ func (s *Server) handleTaskRetry(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, "task actions", errors.New("no task runner is configured"))
 		return
 	}
-	updated, descendants, err := s.deps.Runner.Retry(r.Context(), id,
+	// A held retry (task 096 decision C) is the same retry under §6's held
+	// table; the runner refuses one aimed at a parked parent with a 400.
+	retry := s.deps.Runner.Retry
+	if ptrValue(req.Paused) {
+		retry = s.deps.Runner.RetryHeld
+	}
+	updated, descendants, err := retry(r.Context(), id,
 		store.Override{Prompt: req.PromptOverride, Run: req.RunOverride})
 	if err != nil {
 		s.writeActionError(w, err)
@@ -313,6 +325,11 @@ type followUpRequest struct {
 	Agent    *string `json:"agent"`
 	Model    *string `json:"model"`
 	Effort   *string `json:"effort"`
+	// Paused holds the task in `paused` instead of re-queuing it, so `resume`
+	// is what starts the run (§6, task 096 decision C) — the `paused` of
+	// `POST /v1/tasks`, on the action a trigger's `follow_up` reaction
+	// replays. The request is persisted either way.
+	Paused *bool `json:"paused"`
 }
 
 // handleTaskFollowUp runs one more piece of work in a finished task's
@@ -381,7 +398,11 @@ func (s *Server) handleTaskFollowUp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, "follow-up: "+mismatch)
 		return
 	}
-	updated, err := s.deps.Runner.FollowUp(ctx, id, sel)
+	followUp := s.deps.Runner.FollowUp
+	if ptrValue(req.Paused) {
+		followUp = s.deps.Runner.FollowUpHeld
+	}
+	updated, err := followUp(ctx, id, sel)
 	if err != nil {
 		s.writeActionError(w, err)
 		return
@@ -773,6 +794,14 @@ func (s *Server) writeActionError(w http.ResponseWriter, err error) {
 		e, _ := taskrun.AsParkedOverride(err)
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, e.Error())
 
+	// A held retry (`paused: true`) aimed at the same parked parent. The
+	// retry legal there is a cascade that never queues the parent, so there
+	// is nothing to hold — a request to correct, not a state conflict (task
+	// 096 decision C).
+	case isParkedHold(err):
+		e, _ := taskrun.AsParkedHold(err)
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, e.Error())
+
 	// A structurally mismatched answer is untranslatable to the live agent
 	// session; the request never reaches the task (§7.4, §13.2).
 	case isAnswerValidation(err):
@@ -818,6 +847,11 @@ func isFollowUpOverride(err error) bool {
 
 func isParkedOverride(err error) bool {
 	_, ok := taskrun.AsParkedOverride(err)
+	return ok
+}
+
+func isParkedHold(err error) bool {
+	_, ok := taskrun.AsParkedHold(err)
 	return ok
 }
 

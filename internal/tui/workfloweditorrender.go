@@ -65,15 +65,28 @@ func (w *workflowsView) renderEditor(width, height int) string {
 
 func (w *workflowsView) renderEditorRows(width int) []string {
 	e := w.editor
-	rows := make([]string, 0, len(e.rows))
-	for i, row := range e.rows {
+	return renderFormRows(e.rows, e.cursor, e.editing, e.input, e.overlay, width, nil)
+}
+
+// renderFormRows draws a schema-driven form's rows: the label column, the
+// value (or the field or overlay editing it), the descend arrow, the required
+// marker, and the help of the row under the cursor. It is shared by the
+// workflow editor and the triggers form (task 096.6), which build their rows
+// from two different served descriptors and draw them one way. note, when set,
+// returns a trailing annotation for row i — the triggers form's refusal on
+// the field that caused it.
+func renderFormRows(formRows []wfEditRow, cursor, editing int, input *textField,
+	overlay wfEditorOverlay, width int, note func(i int) string,
+) []string {
+	rows := make([]string, 0, len(formRows))
+	for i, row := range formRows {
 		label := row.label
 		if label == "" {
 			label = row.field.Name
 		}
 		mark := "  "
 		style := styleDim
-		if i == e.cursor {
+		if i == cursor {
 			mark = styleFocus.Render("› ")
 			style = styleTitle
 		}
@@ -81,14 +94,14 @@ func (w *workflowsView) renderEditorRows(width int) []string {
 		if value == "" {
 			value = unsetMarker
 		}
-		if i == e.editing {
+		if i == editing {
 			// 21 is the mark and the padded label the value sits after.
 			switch {
-			case e.input != nil:
-				e.input.SetWidth(max(width-21, 10))
-				value = e.input.View()
-			case e.overlay != nil:
-				value = e.overlay.View(max(width-21, 10), 0)
+			case input != nil:
+				input.SetWidth(max(width-21, 10))
+				value = input.View()
+			case overlay != nil:
+				value = overlay.View(max(width-21, 10), 0)
 			}
 		}
 		if row.descend != "" {
@@ -98,11 +111,16 @@ func (w *workflowsView) renderEditorRows(width int) []string {
 		if row.field.Required && row.value == "" {
 			line += " " + styleBad.Render("required")
 		}
+		if note != nil {
+			if n := note(i); n != "" {
+				line += "  " + n
+			}
+		}
 		if width > 0 {
 			line = strings.Join(truncateRows(strings.Split(line, "\n"), width), "\n")
 		}
 		rows = append(rows, strings.Split(line, "\n")...)
-		if i == e.cursor && row.field.Help != "" {
+		if i == cursor && row.field.Help != "" {
 			rows = append(rows, "    "+styleDim.Render(row.field.Help))
 		}
 	}

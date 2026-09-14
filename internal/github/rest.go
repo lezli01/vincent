@@ -31,20 +31,16 @@ const maxResponseBytes = 8 << 20
 // restIssue is the REST API's shape (see ghIssue for why the two legs do not
 // share a struct).
 type restIssue struct {
-	Number  int    `json:"number"`
-	Title   string `json:"title"`
-	Body    string `json:"body"`
-	HTMLURL string `json:"html_url"`
-	State   string `json:"state"`
-	Labels  []struct {
-		Name string `json:"name"`
-	} `json:"labels"`
-	User struct {
+	Number  int         `json:"number"`
+	Title   string      `json:"title"`
+	Body    string      `json:"body"`
+	HTMLURL string      `json:"html_url"`
+	State   string      `json:"state"`
+	Labels  []wireLabel `json:"labels"`
+	User    struct {
 		Login string `json:"login"`
 	} `json:"user"`
-	Assignees []struct {
-		Login string `json:"login"`
-	} `json:"assignees"`
+	Assignees []wireAccount `json:"assignees"`
 	Milestone *struct {
 		Number int    `json:"number"`
 		Title  string `json:"title"`
@@ -73,13 +69,10 @@ func (r restIssue) normalize(repo Repo, now time.Time) Issue {
 		UpdatedAt: r.UpdatedAt,
 		FetchedAt: now,
 	}
-	for _, l := range r.Labels {
-		if l.Name != "" {
-			issue.Labels = append(issue.Labels, l.Name)
-		}
-	}
-	if len(r.Assignees) > 0 {
-		issue.Assignee = normalizeLogin(r.Assignees[0].Login)
+	issue.Labels = labelNames(r.Labels)
+	issue.Assignees = logins(r.Assignees)
+	if len(issue.Assignees) > 0 {
+		issue.Assignee = issue.Assignees[0]
 	}
 	if r.Milestone != nil {
 		issue.Milestone, issue.MilestoneNumber = r.Milestone.Title, r.Milestone.Number
@@ -93,6 +86,12 @@ func (c *Client) restList(ctx context.Context, cred credential, repo Repo, opts 
 	q.Set("per_page", strconv.Itoa(opts.limit()))
 	q.Set("sort", "created")
 	q.Set("direction", "desc")
+	if since := opts.since(); !since.IsZero() {
+		// Update order with the bound, for the reason ListOptions.Since gives:
+		// one page has to hold the recently changed rows, not the newest.
+		q.Set("since", since.Format(time.RFC3339))
+		q.Set("sort", "updated")
+	}
 	body, err := c.restGET(ctx, cred, fmt.Sprintf("/repos/%s/%s/issues?%s",
 		url.PathEscape(repo.Owner), url.PathEscape(repo.Name), q.Encode()))
 	if err != nil {
@@ -236,25 +235,31 @@ type restPull struct {
 	// MergedAt is the only merged signal both the collection and the single
 	// resource carry; the single resource's `merged` bool is deliberately not
 	// read, so one field decides it on both routes.
-	MergedAt *time.Time `json:"merged_at"`
+	MergedAt *time.Time  `json:"merged_at"`
+	Labels   []wireLabel `json:"labels"`
+	// RequestedReviewers is read and `requested_teams` deliberately is not;
+	// see PullRequest.RequestedReviewers.
+	RequestedReviewers []wireAccount `json:"requested_reviewers"`
 }
 
 func (r restPull) normalize(repo Repo, now time.Time) PullRequest {
 	pull := PullRequest{
-		Repo:       repo.String(),
-		Number:     r.Number,
-		Title:      r.Title,
-		Body:       r.Body,
-		URL:        r.HTMLURL,
-		State:      normalizeState(r.State),
-		Draft:      r.Draft,
-		HeadBranch: r.Head.Ref,
-		HeadSHA:    r.Head.SHA,
-		BaseBranch: r.Base.Ref,
-		Author:     normalizeLogin(r.User.Login),
-		CreatedAt:  r.CreatedAt,
-		UpdatedAt:  r.UpdatedAt,
-		FetchedAt:  now,
+		Repo:               repo.String(),
+		Number:             r.Number,
+		Title:              r.Title,
+		Body:               r.Body,
+		URL:                r.HTMLURL,
+		State:              normalizeState(r.State),
+		Draft:              r.Draft,
+		HeadBranch:         r.Head.Ref,
+		HeadSHA:            r.Head.SHA,
+		BaseBranch:         r.Base.Ref,
+		Author:             normalizeLogin(r.User.Login),
+		Labels:             labelNames(r.Labels),
+		RequestedReviewers: logins(r.RequestedReviewers),
+		CreatedAt:          r.CreatedAt,
+		UpdatedAt:          r.UpdatedAt,
+		FetchedAt:          now,
 	}
 	if r.Head.Repo != nil {
 		pull.HeadRepo = r.Head.Repo.FullName
@@ -271,6 +276,12 @@ func (c *Client) restListPulls(ctx context.Context, cred credential, repo Repo, 
 	q.Set("per_page", strconv.Itoa(opts.limit()))
 	q.Set("sort", "created")
 	q.Set("direction", "desc")
+	if !opts.since().IsZero() {
+		// The pulls collection has no `since` parameter. Update order is what
+		// makes one page the right page instead: every row inside the window
+		// sorts before every row outside it, and ListPulls drops the tail.
+		q.Set("sort", "updated")
+	}
 	body, err := c.restGET(ctx, cred, fmt.Sprintf("/repos/%s/%s/pulls?%s",
 		url.PathEscape(repo.Owner), url.PathEscape(repo.Name), q.Encode()))
 	if err != nil {

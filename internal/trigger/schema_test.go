@@ -11,17 +11,39 @@ import (
 	"github.com/lezli01/vincent/internal/workflow"
 )
 
-// validDoc is a minimal valid trigger, as nested maps so a test can add,
-// change or delete one key.
-func validDoc() map[string]any {
-	return map[string]any{
-		"id": "t1",
-		"source": map[string]any{
-			"type": SourceCommand, "project": 1, "poll_interval": "1m", "command": []any{"poll"},
-		},
-		"action": map[string]any{"type": ActionCreateTask, "title": "{{ .Event.id }}"},
+// docFor is a minimal valid trigger for one source and action type, as nested
+// maps so a test can add, change or delete one key.
+func docFor(source, action string) map[string]any {
+	doc := map[string]any{"id": "t1"}
+	switch source {
+	case SourceGitHubIssues:
+		doc["source"] = map[string]any{"type": source, "project": 1}
+		doc["match"] = map[string]any{"action": "labeled"}
+	case SourceGitHubPRs:
+		doc["source"] = map[string]any{"type": source, "project": 1}
+		doc["match"] = map[string]any{"action": "merged"}
+	case SourceHTTP:
+		doc["source"] = map[string]any{"type": source, "project": 1, "signature": map[string]any{
+			"scheme": SignatureGitHubHMACSHA256, "secret_env": "HOOK_SECRET",
+		}}
+	default:
+		doc["source"] = map[string]any{"type": SourceCommand, "project": 1, "poll_interval": "1m", "command": []any{"poll"}}
 	}
+	switch action {
+	case ActionFollowUp:
+		doc["action"] = map[string]any{"type": action, "target": TargetBranch, "branch": "{{ .Event.ref }}", "prompt": "fix it"}
+	case ActionRetry:
+		doc["action"] = map[string]any{"type": action, "target": TargetBranch, "branch": "{{ .Event.ref }}"}
+	case ActionCancel:
+		doc["action"] = map[string]any{"type": action, "target": TargetBranch, "branch": "{{ .Event.ref }}"}
+		doc["on_fire"] = OnFireCreate
+	default:
+		doc["action"] = map[string]any{"type": ActionCreateTask, "title": "{{ .Event.id }}"}
+	}
+	return doc
 }
+
+func validDoc() map[string]any { return docFor(SourceCommand, ActionCreateTask) }
 
 func parseDoc(t *testing.T, doc map[string]any) workflow.Errors {
 	t.Helper()
@@ -83,6 +105,20 @@ func names(fs []SchemaField) []string {
 	return out
 }
 
+// unionNames is every field name any variant takes.
+func unionNames(vs []SchemaVariant) []string {
+	var out []string
+	for _, v := range vs {
+		for _, f := range v.Fields {
+			if !slices.Contains(out, f.Name) {
+				out = append(out, f.Name)
+			}
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 // sample is a valid value for a field of this control, used to prove the
 // validator accepts every field the descriptor offers.
 func sample(f SchemaField) any {
@@ -108,71 +144,105 @@ func sample(f SchemaField) any {
 	}
 }
 
-// TestTriggerSchemaMatchesValidation walks the descriptor against the
-// validator in both directions: every key the decoder accepts is described,
-// every described field is accepted with a sample value, every required
-// field is refused at its own path when absent, and every enum member is
-// accepted while a value outside the set is refused at that path.
-func TestTriggerSchemaMatchesValidation(t *testing.T) {
-	s := SchemaDescriptor()
-	sections := []struct {
-		prefix string
-		fields []SchemaField
-		keys   []string
-	}{
-		{"", s.TopLevel, yamlKeys(Definition{})},
-		{"source.", s.Sources[0].Fields, yamlKeys(Source{})},
-		{"action.", s.Actions[0].Fields, yamlKeys(Action{})},
-		{"limits.", s.Limits, yamlKeys(Limits{})},
-	}
-	if len(s.Sources) != len(SourceTypes()) || len(s.Actions) != len(ActionTypes()) {
-		t.Fatalf("variants %d/%d, want one per source and action type", len(s.Sources), len(s.Actions))
-	}
-	for _, sec := range sections {
-		if got := names(sec.fields); !slices.Equal(got, sec.keys) {
-			t.Errorf("%q: descriptor names %v, decoder keys %v", sec.prefix, got, sec.keys)
+// walk checks one section of the descriptor against the validator over base:
+// every described field is accepted with a sample value, every required field
+// is refused at its own path when absent, and every enum member is accepted
+// while a value outside the set is refused at that path.
+func walk(t *testing.T, prefix string, fields []SchemaField, base func(path string) map[string]any) {
+	t.Helper()
+	for _, f := range fields {
+		path := prefix + f.Name
+		switch f.Control {
+		case ControlSource, ControlAction, ControlLimits, ControlSignature:
+			continue // descents: their fields are walked as their own section
 		}
-		for _, f := range sec.fields {
-			path := sec.prefix + f.Name
-			switch f.Control {
-			case ControlSource, ControlAction, ControlLimits:
-				continue // descents: their fields are walked as their own section
+		isType := path == "source.type" || path == "action.type"
+		if path != "id" && !isType {
+			doc := base(path)
+			setPath(doc, path, sample(f), false)
+			if errs := parseDoc(t, doc); len(errs) > 0 {
+				t.Errorf("%s = %v refused: %v", path, sample(f), errs)
 			}
-			if path != "id" && path != "source.type" && path != "action.type" {
-				doc := validDoc()
-				setPath(doc, path, sample(f), false)
-				if errs := parseDoc(t, doc); len(errs) > 0 {
-					t.Errorf("%s = %v refused: %v", path, sample(f), errs)
-				}
+		}
+		if f.Required {
+			doc := base(path)
+			setPath(doc, path, nil, true)
+			if errs := parseDoc(t, doc); !hasPath(errs, path) {
+				t.Errorf("%s is required in the descriptor, but its absence was %v", path, errs)
 			}
-			if f.Required {
-				doc := validDoc()
-				setPath(doc, path, nil, true)
-				if errs := parseDoc(t, doc); !hasPath(errs, path) {
-					t.Errorf("%s is required in the descriptor, but its absence was %v", path, errs)
-				}
-			}
-			if f.Control == workflow.ControlEnum {
+		}
+		if f.Control == workflow.ControlEnum {
+			// A variant's `type` member switches variants, and the switched
+			// document legitimately lacks the new variant's required keys;
+			// each type is walked as its own base instead.
+			if !isType {
 				for _, v := range f.Values {
-					doc := validDoc()
+					doc := base(path)
 					setPath(doc, path, v, false)
 					if errs := parseDoc(t, doc); len(errs) > 0 {
 						t.Errorf("%s = %q (a served member) refused: %v", path, v, errs)
 					}
 				}
-				doc := validDoc()
-				setPath(doc, path, "no-such-value", false)
-				if errs := parseDoc(t, doc); !hasPath(errs, path) {
-					t.Errorf("%s = no-such-value accepted or refused elsewhere: %v", path, errs)
-				}
 			}
-			for _, dv := range f.Dangerous {
-				if dv.Warning == "" {
-					t.Errorf("%s: dangerous value %q has no warning", path, dv.Value)
-				}
+			doc := base(path)
+			setPath(doc, path, "no-such-value", false)
+			if errs := parseDoc(t, doc); !hasPath(errs, path) {
+				t.Errorf("%s = no-such-value accepted or refused elsewhere: %v", path, errs)
+			}
+		}
+		for _, dv := range f.Dangerous {
+			if dv.Warning == "" {
+				t.Errorf("%s: dangerous value %q has no warning", path, dv.Value)
 			}
 		}
 	}
+}
+
+// TestTriggerSchemaMatchesValidation walks the descriptor against the
+// validator in both directions: every key the decoder accepts is described by
+// some variant, and every variant's fields are walked over a document of that
+// variant.
+func TestTriggerSchemaMatchesValidation(t *testing.T) {
+	s := SchemaDescriptor()
+	if got := names(s.TopLevel); !slices.Equal(got, yamlKeys(Definition{})) {
+		t.Errorf("top level: descriptor names %v, decoder keys %v", got, yamlKeys(Definition{}))
+	}
+	if got := unionNames(s.Sources); !slices.Equal(got, yamlKeys(Source{})) {
+		t.Errorf("source: descriptor names %v, decoder keys %v", got, yamlKeys(Source{}))
+	}
+	if got := unionNames(s.Actions); !slices.Equal(got, yamlKeys(Action{})) {
+		t.Errorf("action: descriptor names %v, decoder keys %v", got, yamlKeys(Action{}))
+	}
+	if got := names(s.Limits); !slices.Equal(got, yamlKeys(Limits{})) {
+		t.Errorf("limits: descriptor names %v, decoder keys %v", got, yamlKeys(Limits{}))
+	}
+	if got := names(s.Signature); !slices.Equal(got, yamlKeys(Signature{})) {
+		t.Errorf("signature: descriptor names %v, decoder keys %v", got, yamlKeys(Signature{}))
+	}
+	if len(s.Sources) != len(SourceTypes()) || len(s.Actions) != len(ActionTypes()) {
+		t.Fatalf("variants %d/%d, want one per source and action type", len(s.Sources), len(s.Actions))
+	}
+
+	walk(t, "", s.TopLevel, func(path string) map[string]any {
+		if path == "allowed_actors" {
+			return docFor(SourceGitHubIssues, ActionCreateTask)
+		}
+		return validDoc()
+	})
+	for _, v := range s.Sources {
+		if errs := parseDoc(t, docFor(v.Type, ActionCreateTask)); len(errs) > 0 {
+			t.Fatalf("base document for source %s is invalid: %v", v.Type, errs)
+		}
+		walk(t, "source.", v.Fields, func(string) map[string]any { return docFor(v.Type, ActionCreateTask) })
+	}
+	for _, v := range s.Actions {
+		if errs := parseDoc(t, docFor(SourceCommand, v.Type)); len(errs) > 0 {
+			t.Fatalf("base document for action %s is invalid: %v", v.Type, errs)
+		}
+		walk(t, "action.", v.Fields, func(string) map[string]any { return docFor(SourceCommand, v.Type) })
+	}
+	walk(t, "limits.", s.Limits, func(string) map[string]any { return validDoc() })
+	walk(t, "source.signature.", s.Signature, func(string) map[string]any { return docFor(SourceHTTP, ActionCreateTask) })
 
 	// The three values decision 19 names are marked, and nothing else.
 	var marked []string

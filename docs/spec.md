@@ -135,7 +135,9 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 29 | Free chat | **A first-class entity beside Task, never a task with a `kind` column.** A `chat` is a titled conversation with an agent, scoped to a project, running in its own git worktree and `vincent/{id}-{slug}` branch, with its own four-state lifecycle (§5.5), its own `chats`/`chat_turns` tables (§14) and its own route family (§13.2). It never appears on the task board, in `GET /v1/tasks` or in any §17 aggregate over `step_runs`, whose `task_id` stays `NOT NULL`. Continuity comes from the **agent CLI resuming its own session** — §7.3's fresh-session rule is amended *for chats only* — so turn N sees turns 1..N-1 without vincent replaying any log as prompt context. A turn is bounded by its own cap `max_parallel_chats` (default 3) and is **refused with 409, never queued**: `internal/scheduler` stays the only place `queued → running` happens because a chat turn is never `queued`, and row 28's "no live-but-uncounted agent CLI" reasoning is extended rather than excepted (§11). **No chat route is an MCP tool** — row 28's exclusion list grows by the whole chat family, because an agent must not start unqueued agent processes and `mcp.max_depth`/`mcp.max_tasks` bound tasks by walking `created_by_task_id`, a chain a chat is not in (§13.4). Only adapters that can resume may hold a chat: claude yes (§9.2), **codex and cursor are refused at creation with a typed reason, not emulated** (§9.3, §9.7). *Amended 2026-08-31 (issue #279):* `GET /v1/agents` publishes that answer as `supports_resume` (§9.6) so a client's picker offers only adapters that can hold a chat; the creation-time refusal is unchanged and stays the authority, and an absent field — an older daemon — filters nothing. A stored session the CLI no longer knows fails the turn with `session_lost` and leaves the chat usable; a turn interrupted by a daemon restart is finalized `interrupted` and is **never re-run**, because re-running would re-send the human's message into a session that died with the process (§12.4). Chat worktrees join gc's claim namespace and worktree directories are named by owner, so chat 7 and task 7 cannot collide (§10). §16 is untouched: chats are full-auto by default exactly as tasks are (§5.5, §6, §7.3, §9.1, §9.2, §9.3, §9.7, §10, §11, §12.3, §12.4, §13.2, §13.3, §13.4, §14, §15, §20; task 063, issue #255, added 2026-08-30). *Amended 2026-08-31 (task 067, issue #269, closing 063.2 and 063.3):* chats reach the TUI, as **two views of their own** — a chats board and a chat workspace — never as rows on the task board, so "it never appears on the task board" is unchanged and now literal in the client too. Attention is the chats board's own: an `awaiting_input` chat is pinned and badged there and nowhere else, and `!` and the home board's needs-attention count stay task-only. A chat turn is bounded by §7.2's `agent_timeout` and §7.4's `input_timeout` verbatim, so the slot this row says it holds is no longer held forever (§11, §12.3, §13.2, §13.3, §13.4, §15). *Amended 2026-08-31 (task 070, issue #268):* **codex resumes now**, so "codex and cursor are refused at creation with a typed reason" reads **cursor alone** — codex met the precondition task 063 decision 3 attached to it, a capture against a named build (codex-cli 0.150.1) pinning `codex exec --json resume <thread_id>`, and its `thread.started` id is read into `RunResult.SessionID` (§9.3). Nothing else in this row moves: continuity still comes from the CLI resuming its own session, vincent still replays no log as prompt context, and the refusal is still the authority for the adapters that cannot (§9.7). *Amended 2026-08-31 (task 071, issue #282):* a chat's live output is **normalized in the daemon exactly as a task's is** — §13.3's typed chunks, with the verbatim line kept as `raw` — and the chat workspace renders it with the output pane's own renderer at the session's shared verbosity level. The chat is still its own entity; what it is not is its own rendering vocabulary *Amended 2026-08-31 (task 072, issue #283):* **cursor resumes too**, pinned to a capture against cursor-agent 2026.08.11-e8db854, so "codex and cursor are refused at creation" is retired entirely and **no shipped adapter is refused**. The refusal path is unchanged and unretired — it is the contract for the next adapter — and is now proven against a stub adapter rather than a shipped one, which is what stops it asserting the opposite of the truth the day a capability lands. Two consequences are stated positively rather than worked around: a resumed codex run is always full-auto, because `codex exec resume` has no `--sandbox`, guarded structurally by chats having no requestable permission mode; and cursor cannot report a lost session at all, because it adopts an unknown `--resume` id and answers rather than refusing (§9.3, §9.7). *Amended 2026-09-01 (task 074, issue #288):* a chat has **two** terminal states, not one — an idle chat may `hand_off` its worktree and branch to a task that adopts them verbatim, and `handed_off` is terminal because reusing `archived` would run the archive path, which removes the worktree this transfers. The chat remains a separate entity and this row's "never a task with a `kind` column" is untouched: what is added is a lifecycle transition *between* the two entities, with one authoritative foreign key (`chats.handoff_task_id`) and the reverse direction served by a lookup. It is one transaction — task row, branch claim, link, transition, claim release, both events — with the scheduler notified after the commit, so the scheduler cannot admit a task before it owns a complete workspace and gc never sees the directory claimed twice or not at all. The task becomes the sole owner of that worktree and branch (§10). The new route joins this row's own MCP exclusion list rather than excepting it, which is why it is a chats-family route and not a field on `POST /v1/tasks` (§13.4). §7.3 is untouched: the chat's session is not transferred, and workflow steps still start fresh (§5.5, §10, §12.3, §13.2, §13.3, §13.4, §14, §15) |
 | 30 | Archived boards and permanent delete | *Added 2026-09-09 (task 092, issue #350).* **Archived history is a screen, and a permanent delete is a route.** Two TUI views — archived tasks, archived chats — are the live boards *in a second mode* rather than two new models (§15): the archive needs grouping, folding, `/` and the bulk selection, and a copy would drift on the first change to any of the four. They get palette rows and no keys, because task 049 retired `1..6` to stop adding memorized ones and task 067 gave chats the same treatment. `DELETE /v1/tasks/{id}` and `DELETE /v1/chats/{id}` (§13.2) are the only things in vincent that delete a task or chat row — the §17 pruner removes transcript *files* and never a row, and that sentence in the retention table is amended to say so. Delete is **not a §6 action**: `taskstate` has no opinion on it and it never appears in `available_actions`, which is what makes the workspace an archived row opens read-only for free; its precedent is `DELETE /v1/projects/{id}`, likewise no action, and both routes join that route's §13.4 destructive-admin exclusion. It **refuses rather than cascading**, naming the row that is holding on: a live row (`not_archived`), an archived fan-out parent whose lanes still exist (`has_lanes` — `parent_task_id` has no `ON DELETE` clause, so without the guard it is a driver error), a `handed_off` chat (`handed_off` — the task owns the worktree, §5.5), and an archived task such a chat points at (`handoff_target`). §10's standing rule is untouched and its task 008 exception merely widens to "at archive time **and at permanent delete**": a branch carrying any commit past its base is reported `has_commits` and kept whatever was answered, and the remote leg is not offered at all. Two durable events are added, `task.deleted` and `chat.deleted` (§13.3) — PR D's "there is no separate `task.archived` type" does not reach them, because that type was redundant with `task.state_changed` and a delete has no state to change to — while the historical `events` rows are deliberately kept, their id being the `Last-Event-ID` cursor. No migration: `archived_at` has been a column since `0001_init.sql`, chats measure the same window over `updated_at` by task 074 decision 6, and every cascade this needs already exists. There is no bulk endpoint and there is not going to be one (task 011): every sweep, in the TUI and in `vincent task delete --before`, is one `DELETE` per row (§5.5, §6, §10, §13.2, §13.3, §13.4, §15, §17, §20) |
 | 31 | TUI key vocabulary | *Added 2026-09-10 (task 093, issue #353).* **One operation, one key, and the registry is what says so.** The binding registry made the help *accurate* from T3.11 — `?`, the footer and the palette all render from it — which is exactly what let the *vocabulary* drift unseen: it faithfully advertised four different keys for "refresh". §15 now carries the table (refresh `R`, archive `A`, delete-a-persisted-record `D`, remove-a-draft-row `d`, add `a`, `$EDITOR` `e`, free text `t`, browser `o`, open-the-row `enter`, cycle-a-listing `s`, filter `/`, fold, lane `l`, page) and **three clauses, not the one the issue asked for**: a key may be shared only for the same operation; it may mean two things only where the registry can prove the surfaces never co-exist; and a key already carrying a term takes no second meaning. The second clause is task 025's deliberate partition of `R` promoted from an accident to the rule, which is why "exactly one key registry-wide" was not adopted literally. The §6 action letters `p a x r E R s c A F` **do not move**, so they decide the contested cases: `R` won refresh, `A` won archive, and `D`/`d` split on persisted-versus-draft, which is what makes pressing `d` on an archived board safe. Enforcement is three tests in `internal/tui/bindings_test.go` beside `TestEveryPanelKeyIsHandled`, with an allow-list that must carry a reason and must stay non-empty; the disjointness the archived boards rely on is **derived from `taskstate.HumanActionsFrom`**, not listed, so an FSM change that starts offering an action on an archived row fails the test rather than shipping a shadowed key. It closes a live bug rather than only a style one: the task workspace's Pull Request tab intercepted `r` and `c`, so **retry and cancel were unreachable there** while the footer advertised both. Scope is `internal/tui` and the docs — no CLI, API, MCP, store or workflow change, and no user-configurable keymap, which is a larger question this does not answer (§15) |
-| 32 | The footer fills its width, and says what it hides | *Added 2026-09-10 (task 094, issue #352).* **A cap is not a layout.** The footer's five-key limit was a constant, and a constant is wrong at both 80 and 200 columns: eleven of the twenty-one binding contexts declare more hinted keys than five, so on more than half the surfaces keys were dropped silently while `pad := max(width-lw-pw, 2)` spent the remaining columns on blank space. Width now decides, as a strict prefix of registry priority order, measured exactly rather than iterated: every candidate admission count is costed against the `+N` that count itself implies, so there is no "admitted because +9 shrank to +8" state to detect afterwards. The segments to the right of the hints are measured **first** and come out of the budget — the line truncates from the left, so hints are what a full line loses first, and admitting them against the whole width would let the actions push them straight back off. This **supersedes** the phase 3 refactor decision and the PR R / T3.12 decision in `docs/history/v0-tasks.md` ("max 5, priority-ordered"), and only those: what they were protecting — one line that never wraps, and a pinned `: commands  ? help  q quit` that never truncates — is untouched, and §15 is amended in place to say so. The `+N` counts this surface's palette-reachable rows that the line is not advertising, **not** everything the palette lists: the five global rows and the eight navigation entries are what the pinned segment stands for, and counting them would pin `N` near fourteen and never at zero. Alias rows are **declared** (`binding.aliased`) rather than parsed out of hint text — splitting on `/` and mapping `↑↓←→` back to key names is text parsing over a human-written field that breaks silently the first time a hint is reworded — and a test asserts the declaration against what the hints actually say. `paletteEntries` still lists the board's fold rows where the footer, gated by `shell.liveBindings`, does not; that mismatch is left where it is rather than widened into here (§15) |
+| 32 | The footer fills its width, and says what it hides | *Added 2026-09-10 (task 094, issue #352).* **A cap is not a layout.** The footer's five-key limit was a constant, and a constant is wrong at both 80 and 200 columns: eleven of the twenty-one binding contexts declare more hinted keys than five, so on more than half the surfaces keys were dropped silently while `pad := max(width-lw-pw, 2)` spent the remaining columns on blank space. Width now decides, as a strict prefix of registry priority order, measured exactly rather than iterated: every candidate admission count is costed against the `+N` that count itself implies, so there is no "admitted because +9 shrank to +8" state to detect afterwards. The segments to the right of the hints are measured **first** and come out of the budget — the line truncates from the left, so hints are what a full line loses first, and admitting them against the whole width would let the actions push them straight back off. This **supersedes** the phase 3 refactor decision and the PR R / T3.12 decision in `docs/history/v0-tasks.md` ("max 5, priority-ordered"), and only those: what they were protecting — one line that never wraps, and a pinned `: commands  ? help  q quit` that never truncates — is untouched, and §15 is amended in place to say so. The `+N` counts this surface's palette-reachable rows that the line is not advertising, **not** everything the palette lists: the five global rows and the eight navigation entries are what the pinned segment stands for, and counting them would pin `N` near fourteen and never at zero. Alias rows are **declared** (`binding.aliased`) rather than parsed out of hint text — splitting on `/` and mapping `↑↓←→` back to key names is text parsing over a human-written field that breaks silently the first time a hint is reworded — and a test asserts the declaration against what the hints actually say. `paletteEntries` still lists the board's fold rows where the footer, gated by `shell.liveBindings`, does not; that mismatch is left where it is rather than widened into here. *Amended 2026-09-14 (task 096):* the triggers view is a ninth navigation entry, so the pinned segment stands for nine; the reasoning is unchanged (§15) |
+| 33 | Event triggers | *Added 2026-09-13 (task 096; issues #356, #362, #365).* **A trigger is a robot pressing a key a human could have pressed.** A YAML file under `{config_dir}/triggers/` names a source (`command`, `github_issues`, `github_prs` or `http`), a `match:` prefilter and an §8.4 `if:` guard, an action and a dedupe key. Triggers are global scope only, never `.vincent/`, so that anyone who can merge to a repository cannot start agents on a maintainer's machine. An action **replays an existing route** in-process, the way row 28's MCP does: `create_task` is `POST /v1/tasks`, and the reactions `follow_up`, `retry` and `cancel` are the §6 action routes against the task whose `branch_name` the event names. §13.1's bounds, the validation, the FSM's 409 and `Idempotency-Key` therefore hold by construction, and from the step path down a triggered task is indistinguishable from a hand-created one (`.Event` is never snapshotted, §8.4). Where a route lacked an affordance a trigger needed, the route grew it for every client: `paused` on create, follow-up and retry, and `restricted` and `max_task_cost_usd` on create. **It inverts §16's premise that a human pressed the key**, so its defaults differ from every other default in the product. Triggers are off twice, by `triggers.enabled` and by each file's own `enabled:`. `on_fire: propose` holds every task a trigger creates or re-queues in `paused` for a human, agent steps are clamped `restricted`, untrusted GitHub events are refused without an author allowlist, and each trigger has a rate limit. Runtime state lives in SQLite: a cursor per trigger, and a delivery ledger kept 30 days. The first poll after arming seeds and fires nothing, so neither a cold start nor re-arming floods (§5.3, §6, §8.4, §12.2, §12.3, §13.2, §13.3, §13.4, §14, §15, §16, §17, §20) |
+| 34 | Trigger ingress | *Added 2026-09-13 (task 096 decision 31G).* **A pushed event needs the bearer token and a signature, and no route is exempt from row 4.** `POST /v1/triggers/{id}/events` sits in the same `recover → log → auth` chain as every other route, then verifies the trigger's own `github_hmac_sha256` signature over the raw body, using a secret the daemon reads from its environment (§2). Only a caller on this machine that can read `{data_dir}/token` and holds the secret can deliver, so rows 1 and 4 are untouched. A GitHub.com webhook through a tunnel **cannot** deliver. What works is a sender on the same machine, such as a self-hosted runner, or a relay on the same machine that adds the header. The route is not an MCP tool, because an agent that can inject events can start agents (§13.1, §13.2, §13.4, §16) |
 
 ## 4. Architecture
 
@@ -324,7 +326,7 @@ A unit of work delivered by running a workflow against a project.
 | `agent_override` / `model_override` / `effort_override` | optional, chosen at creation (§13.2); replace the workflow's `defaults` but never an explicit step field (§8.6) |
 | `restricted` | *Added 2026-09-11 (task 096).* A one-way permission clamp, chosen at creation (§13.2) and snapshotted: when set, every agent step runs `restricted`, including one whose own field says `full-auto` (§9.4). False for every task created without it, which runs the workflow as written |
 | `max_task_cost_usd` | *Added 2026-09-11 (task 096).* This task's own spend cap, chosen at creation (§13.2). The engine blocks `cost_limit` at the lower of it and `config.yaml`'s `max_task_cost_usd` (§12.3); 0 means no cap from this side, so it can tighten the global cap and never lift it |
-| `state` | §6. *Amended 2026-09-11 (task 096):* `queued` at creation, or `paused` when the request asked for `paused` — no column of its own, a task created held is an ordinary row in `paused` |
+| `state` | §6. *Amended 2026-09-11 (task 096):* `queued` at creation, or `paused` when the request asked for `paused` — no column of its own, a task created held is an ordinary row in `paused`. *Amended 2026-09-13 (task 096):* a `retry` or a `follow_up` sent with `paused` lands an existing task there the same way (§6) |
 | `current_step` | index into the snapshot's step list |
 | `pending_input` | normalized InputRequest (§7.4) while state is `awaiting_input`; cleared on answer, timeout, or process exit |
 | `pending_follow_up` | *Added 2026-08-25 (task 027).* The follow-up run a human asked for from `done` or `aborted` (§6): its compiled workflow, the run form and text it came from, the optional agent/model/effort, the **origin state** the task is returned to, the 1-based **round**, and the run's own **step cursor**. NULL when no follow-up is in flight |
@@ -805,6 +807,29 @@ directly in `paused`, so there is no instant at which it is admissible, and
 was rejected because the scheduler can start the agent between the two calls,
 which is what a held create exists to prevent (task 096 decision 9).
 
+**Amended 2026-09-13 (task 096): `retry` and `follow_up` may land in `paused`
+too.** Both routes accept `paused: true` (§13.2), which is the affordance a
+trigger's `on_fire: propose` needs on a task that already exists (task 096
+decision 31C). `internal/taskstate` keeps these rows in a second, *held* table
+beside the one below, not as new actions. A held follow-up is still a
+follow-up: its 409 still names `follow_up`, and `available_actions` lists one
+spelling. Each held row replaces a `queued` with `paused` and changes nothing
+else, so `retry` goes from `blocked` to `paused`, and `follow_up` from `done` or
+`aborted` to `paused`. Everything the plain action writes is still written: the
+retry cursor stamp, the override, and the follow-up request with its origin and
+round. `resume` then admits the task.
+
+There is no held row from `awaiting_children`. The retry there is the cascade,
+which never queues the parent, so a held one is a `400` rather than a `409`. A
+held retry on a `blocked` parent also holds every lane its cascade re-admits,
+because a held call starts nothing anywhere in the tree (task 096 decision 33).
+An aborted-origin follow-up needs no change to `restore`: `paused` is not
+settled, so the request survives the hold and the resume, and the run ends
+through `restore` exactly as an unheld one does (decision 34). One consequence
+is stated rather than fixed. A hold can make the wait before a human's choice
+indefinite, and cancelling a held follow-up on a `done` task leaves it
+`aborted`, as cancelling any unfinished follow-up does.
+
 ### States
 
 | State | Meaning | Consumes a concurrency slot? |
@@ -815,7 +840,7 @@ which is what a held create exists to prevent (task 096 decision 9).
 | `awaiting_input` | The running agent emitted a structured input request (§7.4); its live process is idle, waiting for the answer | **yes** |
 | `awaiting_children` | A `fan_out` step's lanes are running as child tasks (§7.6, *added 2026-08-17, task 014*); the parent owns no process. Cancel and retry are the only human actions — approve/reject/skip would be meaningless, which is why this is not a reuse of `awaiting_gate`. *Amended 2026-09-05 (task 090, issue #328): `retry` from here is the cascade to every blocked descendant, and writes nothing to the parent's own row* | no |
 | `blocked` | A step failed and retries are exhausted; waiting for a human decision | no |
-| `paused` | Engineer-requested soft pause (takes effect at the next step boundary). *Amended 2026-09-11 (task 096): or created held, with `paused: true` on `POST /v1/tasks`* | no |
+| `paused` | Engineer-requested soft pause (takes effect at the next step boundary). *Amended 2026-09-11 (task 096): or created held, with `paused: true` on `POST /v1/tasks`*. *Amended 2026-09-13 (task 096): or held by a `retry` or `follow_up` sent with `paused: true`* | no |
 | `done` | All steps succeeded; worktree/branch retained for inspection | no |
 | `aborted` | Engineer aborted, or rejected terminally; worktree/branch retained | no |
 | `archived` | Terminal. Worktree removed; record kept for history. The branch is retained unless it carries no commits past its base, in which case `delete_empty_branch_on_archive` deletes it (§10, *amended 2026-08-16, task 008*) | no |
@@ -827,7 +852,7 @@ which is what a held create exists to prevent (task 096 decision 9).
 | `cancel` (abort) | queued, running, awaiting_input, awaiting_gate, awaiting_children, blocked, paused | Kills any running process (graceful term, then kill after 10 s; `taskkill /T /F` on Windows); → `aborted`. *Amended 2026-08-17 (task 014): from `awaiting_children` it cascades to every unsettled descendant, whose branches and worktrees survive.* |
 | `pause` | queued, running | `running`: finishes the current step, then holds; → `paused`. The request is persisted, so it survives a daemon crash; every other human action clears it |
 | `resume` | paused | → `queued` |
-| `retry` | blocked, awaiting_children | Re-runs the failed step (fresh attempt, retry counter reset); → `queued`. *Amended 2026-09-05 (task 090, issue #328): from `awaiting_children` it is the **cascade** — every `blocked` descendant at any depth is re-admitted in one call, and the parked parent's own row is not written at all: no transition, no `task.state_changed` whose from and to are equal, and no `retry_cursor_at` stamp, because nothing was retried on the parent and stamping the cursor would hand the join a fresh §7.2 budget nobody asked for. A `blocked` parent takes both: its own `blocked → queued`, then the same cascade over anything blocked beneath it. The count is reported as `retried_descendants` (§13.2). This amends [task 014 decision 22](tasks/014-workflow-fan-out.md) in scope, not in substance — an `aborted` lane is still fixed by hand before the parent is retried, because nothing here re-admits an aborted task* |
+| `retry` | blocked, awaiting_children | Re-runs the failed step (fresh attempt, retry counter reset); → `queued`. *Amended 2026-09-05 (task 090, issue #328): from `awaiting_children` it is the **cascade** — every `blocked` descendant at any depth is re-admitted in one call, and the parked parent's own row is not written at all: no transition, no `task.state_changed` whose from and to are equal, and no `retry_cursor_at` stamp, because nothing was retried on the parent and stamping the cursor would hand the join a fresh §7.2 budget nobody asked for. A `blocked` parent takes both: its own `blocked → queued`, then the same cascade over anything blocked beneath it. The count is reported as `retried_descendants` (§13.2). This amends [task 014 decision 22](tasks/014-workflow-fan-out.md) in scope, not in substance — an `aborted` lane is still fixed by hand before the parent is retried, because nothing here re-admits an aborted task*. *Amended 2026-09-13 (task 096): with `paused: true`, → `paused` instead of `queued`, from `blocked` only, and the cascade's lanes are held too; from `awaiting_children` that is a `400`* |
 | `edit + retry` | blocked | Overrides the step's prompt/command **in this task's snapshot only**, then retries; the override is recorded on the StepRun. *Amended 2026-09-05 (task 090): every override is a `400` from `awaiting_children` — a parked parent's cursor is a `fan_out` step, which carries no prompt or command to rewrite, and `branch_override` would rename the branch every live lane holds as its `base_branch`* |
 | `repair` | blocked | *Added 2026-08-24 (task 025).* Runs one ad-hoc agent, prompted by the operator, in the task's existing worktree and branch (§7.2, §8.6, §13.2); → `queued`, and back to `blocked` at the same step with the same reason when it exits. It decides nothing about the blocked step and does not consume its retry budget |
 | `skip` | blocked, awaiting_gate | Marks the step `skipped`, advances to the next step; → `queued` |
@@ -836,7 +861,7 @@ which is what a held create exists to prevent (task 096 decision 9).
 | `reject` | awaiting_gate | Gate step → `rejected`; → `blocked` (from which: retry earlier via edit, skip, or abort) |
 | `set priority` | queued, paused | Reorders scheduler admission |
 | `archive` | done, aborted | Removes worktree (warns if dirty — uncommitted changes would be lost; requires `force` in that case); → `archived` |
-| `follow_up` | done, aborted | *Added 2026-08-25 (task 027).* Runs one more piece of work — an agent prompt, a shell command or a registry workflow — in the task's existing worktree and branch (§7.2, §8.3, §8.6, §13.2); → `queued`, and back to the state it came from when the run ends. Repeatable; it decides nothing about the task's verdict and spends none of the workflow's retry budgets |
+| `follow_up` | done, aborted | *Added 2026-08-25 (task 027).* Runs one more piece of work — an agent prompt, a shell command or a registry workflow — in the task's existing worktree and branch (§7.2, §8.3, §8.6, §13.2); → `queued`, and back to the state it came from when the run ends. Repeatable; it decides nothing about the task's verdict and spends none of the workflow's retry budgets. *Amended 2026-09-13 (task 096): with `paused: true`, → `paused` instead of `queued`, the request persisted, and `resume` starts the run* |
 
 **Amended 2026-09-09 (task 092, issue #350): permanent delete is deliberately
 not in this table.** `DELETE /v1/tasks/{id}` and `DELETE /v1/chats/{id}` (§13.2)
@@ -2348,6 +2373,18 @@ agent will receive. The vocabulary is:
 
 A guard is rendered and shown but not judged against `true`/`false`: a sentinel
 can legitimately make one non-boolean, so that is a warning, never an error.
+
+*Recorded 2026-09-13 (task 096 decision 11).* **There is no `.Event` root.** An
+event trigger's templates (its `if:`, its `dedupe_key` and its action's fields)
+render inside the daemon at fire time, over a context of their own whose only
+root is `.Event`. The event is gone once the action has replayed. Nothing of it
+reaches the task except the title, description, fields, prompt or branch those
+templates rendered to. A step therefore never sees `.Event`, and a triggered
+task renders exactly like a hand-created one. The claim that `.Event` would join
+`.Task`, `.Issue` and `.Loop` here was wrong on its own terms: those three are
+read from the task row, and an event is not on it. Trigger templates use the
+same `text/template` builtins as this section, and like it they have no FuncMap
+(§20).
 
 ### 8.5 Environment for command, check and agent steps
 
@@ -4229,10 +4266,11 @@ One Go binary, `vincent`:
 | `vincent daemon backup <path.tar.gz> / restore <path.tar.gz>` | *Added 2026-08-25 (task 030).* One `.tar.gz` of the database (`VACUUM INTO`, §14), `transcripts/`, `config.yaml` and `workflows/`, plus a manifest. `backup` is a thin API client and needs a **running** daemon; `restore` runs client-side and needs a **stopped** one, and refuses a newer schema or an occupied destination without `--force` |
 | `vincent service install / uninstall / status` | Registers OS-native autostart, always as the invoking user: launchd agent, systemd user unit, Windows Scheduled Task |
 | `vincent workflow ls / validate [file] / render <file> / init <name>` | Registry listing / YAML validation / template dry run / writing a new registry file. *Amended 2026-08-26 (task 034):* `init` writes the §5.2 scope directory a `--project` flag selects — global by default, resolved from §12.2 with **no daemon**; `--project N` needs one, purely to resolve the id to a repository root. `--from <example>` writes an embedded `examples/*.yaml` with its top-level `name:` rewritten. It refuses an existing path (`O_EXCL`) or a name another file in the same scope already declares, and only warns when the name shadows a lower scope. *Added 2026-08-28 (task 044):* `render` executes every template the file declares — `prompt`, `run`, `check`, `instructions`, `if` and `for_each` — against a synthetic §8.4 preview context and prints what each step would send, with the §8.6 triple each agent step resolves to. Where `validate` parses a template, this **executes** it, which is the only way `missingkey=error` catches a typo'd field. It is offline for the same reason `validate` is; `--task`/`--project` reach the daemon for a real task's facts and for registry lookups. Exit 0 clean · 1 a render error · 2 no daemon answered a `--task`/`--project` |
-| `vincent task add / ls / show <id> / cancel <id> / follow-up <id>` | Thin API clients for scripting. *Amended 2026-08-25 (task 027):* `follow-up` takes exactly one of `--prompt`, `--run` and `--workflow`, plus optional `--agent`/`--model`/`--effort` (§13.2). *Amended 2026-08-28 (task 045):* `add` fills the §8.1.2 field map from repeatable `--field name=value` and/or `--fields-file <path\|->` |
+| `vincent task add / ls / show <id> / cancel <id> / follow-up <id>` | Thin API clients for scripting. *Amended 2026-08-25 (task 027):* `follow-up` takes exactly one of `--prompt`, `--run` and `--workflow`, plus optional `--agent`/`--model`/`--effort` (§13.2). *Amended 2026-08-28 (task 045):* `add` fills the §8.1.2 field map from repeatable `--field name=value` and/or `--fields-file <path\|->`. *Amended 2026-09-14 (task 096):* `follow-up` also takes `--paused`, §13.2's `paused: true`: the follow-up is recorded and the task held in `paused` until `resume` |
 | `vincent task transcript <id>` | *Added 2026-08-28 (task 047).* Prints one attempt's transcript through `GET /v1/tasks/{id}/steps/{run_id}/transcript` (§13.2). `--step` takes a **step_run id**; omitted, it selects the running attempt, else the newest by run id. Default output is the normalized records rendered as text, `--json` is those records as NDJSON, `--raw` is the agent's own dialect byte for byte. `-f` opens on a tail and resumes from `X-Next-Offset`, ending when that attempt stops running |
 | `vincent project add <path> / ls / rm <id>` | Thin API clients for scripting. *Amended 2026-08-28 (task 048):* `rm` deletes the registration and its task rows, forwarding `--force` as `?force`. It never prompts — the daemon's two 409s (`N non-archived task(s)`, and one naming a `running` task) are the confirmation story, and an interactive question would be the first in a command tree whose purpose is scripting |
-| `vincent task pause / resume / skip / approve / reject / retry / repair / archive / answer <id>` | *Added 2026-08-28 (task 048).* The rest of §6's human actions, one subcommand each, one id per invocation. All carry `--json` and print the daemon's post-action view of the task; a 409 from the FSM is exit 1 with the daemon's own wording. `retry` takes `--branch` (§18's `branch_exists` recovery) and the edit+retry pair `--prompt`/`--run`; `repair` requires `--prompt` and takes the §8.6 triple; `archive` takes `--force` and surfaces `details.reason: worktree_dirty` with the way out; `answer` takes `--answer <n>=<value>` against the questions `task show` numbers, `--allow`/`--deny` for a permission request, or `--body <file\|->` to post a §13.2 payload verbatim. Each of `--prompt`, `--run` and `--body` has a `-file` twin, and `-` reads stdin |
+| `vincent task pause / resume / skip / approve / reject / retry / repair / archive / answer <id>` | *Added 2026-08-28 (task 048).* The rest of §6's human actions, one subcommand each, one id per invocation. All carry `--json` and print the daemon's post-action view of the task; a 409 from the FSM is exit 1 with the daemon's own wording. `retry` takes `--branch` (§18's `branch_exists` recovery) and the edit+retry pair `--prompt`/`--run`; `repair` requires `--prompt` and takes the §8.6 triple; `archive` takes `--force` and surfaces `details.reason: worktree_dirty` with the way out; `answer` takes `--answer <n>=<value>` against the questions `task show` numbers, `--allow`/`--deny` for a permission request, or `--body <file\|->` to post a §13.2 payload verbatim. Each of `--prompt`, `--run` and `--body` has a `-file` twin, and `-` reads stdin. *Amended 2026-09-14 (task 096):* `retry` also takes `--paused`, §13.2's `paused: true`, holding the task (and a blocked parent's lanes) in `paused`; the daemon refuses it on a parent parked in `awaiting_children` |
+| `vincent trigger test <id> --event <file\|->` | *Added 2026-09-14 (task 096 decision 29).* The one trigger command: a dry run through `POST /v1/triggers/{id}/test` (§13.2) of the JSON event in `--event`, which is required, `-` reading stdin. It prints each pipeline stage and the outcome the event would get, or the route's body with `--json`, fires nothing and writes nothing, and exits `1` when that outcome is `error`. Every other trigger operation is the TUI's view 11 or the API |
 | `vincent status <message>` | *Added 2026-08-26 (task 036).* Records what the current step is doing, in its own words (§5.4). Runs **from inside a step**: it addresses itself with §8.5's `VINCENT_TASK_ID` and `VINCENT_STEP_ID`, takes no id argument, and errors naming those variables when they are unset. Silent on success — its stdout is the step's transcript |
 | `vincent gc [--dry-run] [--force] [--json]` | Reclaims data-root directories no task claims (§10); a thin API client like the rest |
 | `vincent config get [key] / set <key> <value>` | *Added 2026-08-30 (task 060).* Reads and writes `config.yaml` through `GET`/`PATCH /v1/config` (§12.3) — a thin API client like the rest, never a second editor, so the CLI and the TUI's editor are one operation with one validation. `get` with no key prints every key as `path = value` in the file's own order; with one, that key's value alone. Keys are the dotted paths the file carries. Lists and argv are whitespace-separated inside a single argument (`notify.on "blocked awaiting_gate"`), which is also why an argv element containing a space has to be edited in the file. A `set` is in force when it answers; `listen` is the exception the command says out loud. Exit 0 · 1 the daemon refused it, with the file byte-identical · 2 no daemon answered |
@@ -4520,6 +4558,7 @@ platform the standing answer to an agent that will not resolve is the §12.3
 {config_dir}/                # created 0700 (§12.2 amendment below)
   config.yaml                # §12.3, created 0600
   workflows/*.yaml           # global workflows
+  triggers/*.yaml            # event triggers, written 0600; global scope only (§12.3, task 096)
 {data_dir}/
   vincent.db                 # SQLite, WAL mode
   token                      # API bearer token, created 0600 at first start
@@ -4557,6 +4596,18 @@ than being the outlier.
 - **Scope is the config directory and `config.yaml`.** `{data_dir}` is already
   `0700` in practice — the daemon creates `{data_dir}/logs` `0700` before the
   store opens — and `vincent.db` keeps the driver's mode.
+
+*Amended 2026-09-13 (task 096).* `{config_dir}/triggers/` holds event-trigger
+definitions, one `{id}.yaml` per trigger, and the daemon watches it with live
+reload. There is no project-scope twin under `.vincent/` (task 096 decision 8).
+Every write through the API is `0600`, whether the file is new or not. That is
+`config.yaml`'s rule rather than a workflow's "an existing file keeps its
+mode", because a trigger's argv may carry a secret and no repository owns the
+file (decision 20). A missing directory is an empty registry, so moving it
+aside removes every trigger. A directory the daemon cannot read is **not** read
+as empty: the triggers already loaded stay loaded. A trigger's runtime state
+(its cursor, its poll status and its ledger) lives in `vincent.db` (§14), never
+beside the file.
 
 **What a transcript promises, exactly.** *Added 2026-08-24 (#139).* A
 transcript is the complete record of one attempt: agent stream lines verbatim,
@@ -4632,6 +4683,8 @@ update:                        # check for a newer vincent release (task 055)
 notify:                        # run a command when a task enters one of these states (task 046)
   on: []                       # §6 state names; [] (the default) fires nothing
   command: []                  # argv, never a shell string; the envelope arrives on stdin
+triggers:                      # event triggers under {config_dir}/triggers/ (task 096)
+  enabled: false               # the global switch; each trigger file's own enabled: is the other
 mcp:                           # the §13.4 MCP server (task 057)
   wire_steps: true             # give vincent's own agent steps the tool list; opt-out
   max_depth: 3                 # how deep tasks created over MCP may chain
@@ -4744,6 +4797,21 @@ storm, and never a task state change.
 
 `poll_interval: 0` switches the reconciler off while leaving the rest of the
 integration on. It must be refusable without refusing `github.enabled` entirely.
+
+*Amended 2026-09-13 (task 096.3, decision 31D).* The same tick judges
+`type: github_issues` and `type: github_prs` triggers. For each project with an
+armed GitHub trigger it makes at most one issues listing and one pulls listing,
+and hands both to every such trigger, so the cost does not grow with the number
+of triggers. Each listing asks for `state: all` and 100 rows, starting two
+minutes before the oldest watermark among that project's triggers. These
+listings are separate from the open-pull-request listing above, which is
+unchanged (decision 35). The quiet failure policy above does **not** apply to
+them. Each of the following makes every affected trigger's poll status read
+failing, with the reason: a failed listing, `github.enabled: false`,
+`poll_interval: 0`, or a project whose `origin` is not a github.com repository.
+A trigger that silently never fires is exactly the question its ledger exists
+to answer. With GitHub not polled, the reconciler's idle heartbeat still runs
+to report that.
 
 *Amended 2026-08-29 (task 055).* This was the daemon's **first** standing
 outbound network traffic when it landed, and that sentence read as though it
@@ -5002,6 +5070,39 @@ its own: it drives `gh` when that is installed and authenticated, and otherwise
 reads `GITHUB_TOKEN` or `GH_TOKEN` out of the environment the daemon already
 inherited (§2's "secret management" non-goal, decision record row 26). Read per
 use, so a hot reload governs the next call rather than requiring a restart.
+
+**`triggers` (task 096, added 2026-09-13).** The daemon's inward signal, and the
+mirror of `notify`. Where `notify` runs a user's argv when a task changes state,
+a trigger file under `{config_dir}/triggers/` (§12.2) polls a command or GitHub,
+or accepts a signed push. For each new event that passes its filter it creates
+a task or acts on one (decision record rows 33 and 34). `enabled` is the global
+switch, and the second of **two** off-by-default keys beside each file's own
+`enabled:`. Task 069 decision 2 held that where a keypress is the consent, a
+second key nobody would turn on adds nothing. A trigger has no keypress, so
+this key has to be the consent. Absent means `false`.
+
+The key is read per poll and per pushed event, and the config applier wakes the
+trigger manager on a reload. Turning it on arms every enabled, valid trigger at
+once, and turning it off disarms them at once. **Arming seeds:** a trigger's
+first poll after arming, whether from its own `enabled:` or from this key,
+records what the source shows and fires nothing. **Disarming drops the
+cursor**, so events from an off period never fire (task 096 decision 16). A
+restart does neither: the cursor persists, and the next poll is a catch-up
+capped at 20 events (§17). The key is editable over `PATCH /v1/config`, which
+is not an MCP tool (§13.4), and the TUI's editor asks before changing it (task
+060's `dangerous` flag). While it is off, `GET /v1/triggers` still lists every
+file with `armed: false` and a reason, both dry runs still work, and a pushed
+event is a `409` (§13.2).
+
+A `type: command` trigger's argv is executed directly, never through a shell,
+with the previous cursor in `VINCENT_TRIGGER_CURSOR`. That is the only
+`VINCENT_*` variable vincent sets for it; one the daemon itself inherited is
+passed on or not by the same policy as any other name. It runs under a fixed **1-minute** timeout that
+kills the whole process tree, and under the `environment` policy above like
+every other child of the daemon. A GitHub trigger is judged on
+`github.poll_interval`'s tick (above), so it needs `github.enabled` and a
+non-zero interval. With either missing, its poll status reads failing with the
+reason rather than going quiet.
 
 **`tui` (task 009, added 2026-08-16).** The one section the daemon does not act
 on. It validates it, hot-reloads it with the rest of the file and serves it on
@@ -5376,6 +5477,29 @@ operations that reach the same end state when re-sent.
   so there is no retry for a key to survive, and minting one per composed form
   would fight the rule that a new explicit user action is a new operation. The
   header is for external callers.
+
+*Amended 2026-09-13 (task 096; decision record row 34).* **The trigger ingress
+is authenticated twice, and exempt from nothing.** `POST /v1/triggers/{id}/events`
+requires the bearer token above like every other route. It then requires the
+trigger's own signature: under the `github_hmac_sha256` scheme,
+`X-Hub-Signature-256` carrying an HMAC-SHA256 of the raw body, keyed by the
+value of the environment variable the trigger names and compared in constant
+time. The signature covers the bytes as they arrived, so this route alone reads
+its body **raw** rather than decoding it. It reads under the **4 MiB** tier,
+because a webhook payload routinely exceeds 64 KiB, and only after verifying
+does it parse the body as a JSON object. A body over the bound is a `413`, as
+everywhere else. A bad or missing signature, or a secret variable the daemon's
+environment does not set, is a `401`, and the three cases are indistinguishable
+on purpose. `POST /v1/triggers/validate`, `PATCH /v1/triggers/{id}` and
+`POST /v1/triggers/{id}/test` also read under the 4 MiB tier, because each
+carries a trigger source or a vendor payload.
+
+A trigger's own dedupe is its ledger (§14), keyed by a template over the event.
+A `create_task` it replays carries an `Idempotency-Key` the daemon derives from
+that key: `trigger:{id}:` followed by a hash. That keeps two triggers, or a
+trigger and a CI job pushing in with its build id, from replaying each other's
+tasks, and keeps the header inside the bound above whatever the rendered key
+says.
 
 ### 13.2 Endpoints
 
@@ -5838,6 +5962,82 @@ GET    /v1/workflows/schema             *Added 2026-08-30 (task 065).* §8.2 as 
                                         validates against, so a client renders forms from it
                                         instead of carrying a second copy
 POST   /v1/workflows/validate           { yaml } → { valid, errors[], warnings[] }
+GET    /v1/triggers                     *Added 2026-09-13 (task 096).* { enabled, dir, triggers[] }.
+                                        `enabled` is `triggers.enabled` (§12.3). Each row is
+                                        { id, file, version, valid, errors[], enabled, armed,
+                                        disarmed_reason?, source_type, action_type, project_id,
+                                        on_fire, permission?, poll: { seeded, last_poll_at, ok,
+                                        error?, last_fire_at } }. A file that does not validate
+                                        is listed with its errors, never hidden, with no parsed
+                                        definition: it omits source_type, action_type,
+                                        project_id and on_fire, and reads enabled: false,
+                                        whatever its file says. `armed` is
+                                        valid + enabled + triggers.enabled, and `disarmed_reason`
+                                        names the first of those that is missing
+POST   /v1/triggers                     { id, project_id, poll_interval?, command[]?, workflow?,
+                                          title? } → 201 { id, file, version, errors[] }.
+                                        Writes {config_dir}/triggers/{id}.yaml, 0600, from a
+                                        daemon-rendered starter: `type: command`, `create_task`,
+                                        `enabled: false` and **no `on_fire` line**, so no YAML
+                                        travels on the wire. 409 when the file exists
+GET    /v1/triggers/schema              the trigger schema as data, the way /v1/workflows/schema
+                                        serves §8.2: top-level fields, the source and action
+                                        variants, and the values marked dangerous
+                                        (`enabled: true`, `on_fire: create`,
+                                        `permission: workflow`), each with the warning a client
+                                        shows before committing it
+POST   /v1/triggers/validate            { source, id? } → { valid, errors[] }. `id`, when given, is
+                                        the file stem the document's `id` must match
+GET    /v1/triggers/{id}                the list row plus `source` (the file's bytes) and
+                                        `definition` (null when it does not validate)
+PATCH  /v1/triggers/{id}                { version, ops[] } → 200, in the create response's shape.
+                                        The ops and the version token are PATCH /v1/workflows'.
+                                        A stale version is 409 with `details.version`. A result
+                                        that does not validate is 400 with the findings, as a JSON
+                                        string, in `details.errors`, and the file is left
+                                        byte-identical. Written 0600 whatever its mode was
+DELETE /v1/triggers/{id}?version=       204. Removes the file. The registry reload drops the
+                                        trigger's cursor, and the ledger is **kept**, so a
+                                        re-created id cannot refire an event it already
+                                        delivered (task 096 decision 21). `version` is required,
+                                        and a stale one is 409
+POST   /v1/triggers/{id}/test           { event } → a judgement: { event_id, matched, match_miss?,
+                                        if?, if_rendered?, dedupe_key?, would_dedupe, action?,
+                                        outcome, error? }. Runs the supplied event through the real
+                                        pipeline (match, allowed_actors, if:, dedupe, rate limit,
+                                        render, reaction target), and `action` is the request it
+                                        would replay, unsent. Writes nothing, and works while
+                                        the trigger or triggers.enabled is off. `outcome: fired`
+                                        here means "would be replayed"
+POST   /v1/triggers/{id}/poll           → { seed, events[], truncated, refused, cursor?, error? }.
+                                        Runs the source once for real (the command, or a GitHub
+                                        listing) and judges each event as /test does, with no
+                                        fire, no cursor advance, no ledger row and no change to
+                                        poll health. `seed` says a real poll now would seed. A
+                                        failing command or listing is a 200 carrying `error`.
+                                        400 for type: http, which has no poll
+GET    /v1/triggers/{id}/deliveries     ?limit=1..1000 (default 100) → { deliveries[] }, newest
+                                        first: { id, trigger_id, event_id, dedupe_key, outcome,
+                                        task_id, detail?, created_at }. `outcome` is fired |
+                                        seeded | deduped | filtered | rate_limited | refused |
+                                        error, and `task_id` is the task created or acted on.
+                                        Served for an id with no file, because the ledger
+                                        outlives the file
+POST   /v1/triggers/{id}/events         the `type: http` ingress (§13.1, decision record row 34).
+                                        A raw body of at most 4 MiB (413 over it), with the bearer
+                                        **and** the signature. 404 for no such trigger; 400 for
+                                        a source that is not type: http; 409 invalid_state with
+                                        `details.reason` when the trigger is not armed or its
+                                        file does not validate; 401 for a bad or missing
+                                        signature or an unset secret variable, with no ledger
+                                        row; 400 for a body that is not a JSON object, or that
+                                        has no string `id` and no X-GitHub-Delivery header to
+                                        take one from. 200 → the delivery: the judgement plus
+                                        { delivery_id, task_id?, detail? }. A push has no
+                                        catch-up cap
+                                        Across the trigger routes, an unknown id is 404, and a
+                                        file that does not validate is 400 with its findings on
+                                        /test and /poll
 POST   /v1/resolve                      { workflow, project_id?, agent?, model?, effort?,
                                           title?, fields?, base_branch?, branch_name? } →
                                         { workflow, steps[], branch } — §8.6 applied to every step
@@ -6030,7 +6230,7 @@ DELETE /v1/tasks/{id}                   *Added 2026-09-09 (task 092, issue #350)
 POST   /v1/tasks/{id}/cancel
 POST   /v1/tasks/{id}/pause
 POST   /v1/tasks/{id}/resume
-POST   /v1/tasks/{id}/retry            { prompt_override?, run_override?, branch_override? }
+POST   /v1/tasks/{id}/retry            { prompt_override?, run_override?, branch_override?, paused? }
                                         (blocked, awaiting_children). branch_override renames
                                         the task's branch before re-admission — the recovery
                                         path for a branch_exists block (§10, task 001); it is
@@ -6043,7 +6243,11 @@ POST   /v1/tasks/{id}/retry            { prompt_override?, run_override?, branch
                                         awaiting_children; all three overrides are a 400 from
                                         that state. The response is the ordinary task object
                                         plus retried_descendants, always present and 0 when
-                                        nothing was cascaded
+                                        nothing was cascaded. *Amended 2026-09-13 (task 096
+                                        decision 31C):* `paused: true` lands the task in
+                                        `paused` instead of `queued` (§6's held table), and a
+                                        blocked parent's cascade holds the lanes it re-admits
+                                        too. From awaiting_children `paused` is a 400
 POST   /v1/tasks/{id}/repair           { prompt, agent?, model?, effort? }
                                         (blocked only; added 2026-08-24, task 025). Runs one
                                         ad-hoc agent in the task's existing worktree and
@@ -6060,7 +6264,7 @@ POST   /v1/tasks/{id}/repair           { prompt, agent?, model?, effort? }
                                         queued) plus `warnings`. The repair returns the task
                                         to `blocked` at the same step with the same
                                         `block_reason` whatever the agent exits with
-POST   /v1/tasks/{id}/follow_up        { prompt? | run? | workflow?, agent?, model?, effort? }
+POST   /v1/tasks/{id}/follow_up        { prompt? | run? | workflow?, agent?, model?, effort?, paused? }
                                         (done/aborted only; added 2026-08-25, task 027). Runs
                                         one more piece of work in the task's existing worktree
                                         and branch (§6, §7.2). **Exactly one** of `prompt`
@@ -6084,7 +6288,10 @@ POST   /v1/tasks/{id}/follow_up        { prompt? | run? | workflow?, agent?, mod
                                         `warnings[]`. The response is the task (now queued)
                                         plus `warnings`. The run returns the task to the state
                                         it came from — done to done, aborted to aborted —
-                                        whatever it exits with
+                                        whatever it exits with. *Amended 2026-09-13 (task 096
+                                        decision 31C):* `paused: true` persists the request and
+                                        lands the task in `paused` instead of `queued`, so the
+                                        response's task is paused and `resume` starts the run
 POST   /v1/tasks/{id}/skip             (blocked/awaiting_gate only)
 POST   /v1/tasks/{id}/approve          (awaiting_gate only)
 POST   /v1/tasks/{id}/reject           (awaiting_gate only)
@@ -6273,7 +6480,21 @@ Two kinds of streams:
    `task.status_changed`, `task.children_changed`, `project.*`,
    `workflow.registry_changed`, `agent.quota_changed`,
    `task.github_pull_changed`, `task.deleted`, `chat.deleted`,
-   `daemon.shutting_down`.
+   `trigger.fired`, `trigger.poll_changed`, `daemon.shutting_down`.
+   *Added 2026-09-13 (task 096): `trigger.fired` announces a delivery whose
+   outcome is `fired`, published post-commit after its ledger row. Its payload
+   is `{trigger_id, delivery_id, action}`; the event's `project_id` is the
+   trigger's project, and its `task_id` is the task created or acted on. It is
+   the **only** outcome that publishes. `seeded`, `deduped`, `filtered`,
+   `rate_limited`, `refused` and `error` are ledger rows a client reads from
+   §13.2, and an event per filtered poll would grow this table with nothing
+   anyone reacts to. A task the trigger created still announces itself with its
+   own `task.created`. `trigger.poll_changed` announces a trigger's poll health,
+   with payload `{trigger_id, ok, error}` and no `task_id` or `project_id`. It
+   is emitted on the trigger's first poll after arming and on every transition
+   from ok to failing or back, never per poll (task 096 decision 24). A client
+   keeps "last poll" times current by re-reading `GET /v1/triggers` on its own
+   timer.*
    *Added 2026-09-09 (task 092, issue #350): `task.deleted` and `chat.deleted` —
    payload `{id, title}` — announce a permanent delete (§13.2). PR D's ruling
    that an archive needs no type of its own does **not** cover them: that type
@@ -6570,6 +6791,23 @@ version of it would be consent nobody gave. Nothing is lost. A step's agent
 already has a full-auto shell in its own worktree (§16) and can run `git push`
 and `gh pr create` there — that is decision record row 11's original path and it
 stays open.
+
+*Amended 2026-09-13 (task 096 decisions 22 and 31G).* Four more: the three
+trigger writes and the trigger ingress.
+
+    POST   /v1/triggers
+    PATCH  /v1/triggers/{id}
+    DELETE /v1/triggers/{id}
+    POST   /v1/triggers/{id}/events
+
+The writes are excluded under task 065's wording: an agent must not author or
+arm a trigger that starts agents, and enabling one is a `PATCH`. The ingress is
+excluded because an agent that can inject events can start agents. The
+signature it would have to forge is no reason to offer the route. The reads,
+`POST /v1/triggers/validate` and both dry runs (`/test` and `/poll`) are
+ordinary tools. A dry run fires nothing, and `poll` runs only a command the user
+already configured, which a full-auto agent could run anyway (§16).
+`PATCH /v1/config`, which switches `triggers.enabled`, was already excluded.
 
 The task 057 property that the tool surface **equals** `Routes()` minus the
 exclusions is unchanged, and is still asserted by a test — the exclusion list it
@@ -6925,9 +7163,10 @@ CREATE TABLE chat_turns (
     duration_ms   INTEGER
 );
 
--- Event-trigger runtime state (task 096, added 2026-09-11; migration 0029).
+-- Event-trigger runtime state (task 096, added 2026-09-11; migrations 0029, 0030).
 -- A trigger's definition is a file under {config_dir}/triggers/, never a row:
 -- both tables key on the trigger id as text, and there is no triggers table.
+-- cursor is a command's watermark string, or a GitHub trigger's snapshot JSON.
 CREATE TABLE trigger_cursors (         -- one row per trigger that has polled
     trigger_id      TEXT PRIMARY KEY,
     cursor          TEXT,              -- NULL = unseeded: the next poll seeds and fires nothing
@@ -6943,7 +7182,7 @@ CREATE TABLE trigger_deliveries (      -- the ledger: one row per event judged
     event_id    TEXT NOT NULL DEFAULT '',
     dedupe_key  TEXT NOT NULL DEFAULT '',
     outcome     TEXT NOT NULL CHECK (outcome IN
-                  ('fired', 'deduped', 'filtered', 'rate_limited', 'refused', 'error')),
+                  ('fired', 'seeded', 'deduped', 'filtered', 'rate_limited', 'refused', 'error')),
     task_id     INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
     detail      TEXT NOT NULL DEFAULT '', -- a `refused` row's §13.1 envelope, an `error` row's text
     created_at  TEXT NOT NULL
@@ -6977,9 +7216,31 @@ outlives the file, so deleting a trigger and re-creating its id cannot refire an
 event it already delivered, and is pruned at 30 days instead (§17).
 `task_id` is `ON DELETE SET NULL`, not `CASCADE`: a `fired` row is the dedupe
 record for its key, and deleting the task it created must not let the event fire
-again. No running daemon writes either table yet: `internal/trigger`'s firing
-pipeline records deliveries, but nothing wires it into the daemon until the rest
-of 096.2 lands. The schema, its typed CRUD and the prune are in place.
+again. *Amended 2026-09-13:* the running daemon writes both tables. This
+paragraph used to say none did until the rest of 096.2 landed, and that
+sentence is retired.
+
+*Added 2026-09-13 (task 096, migration 0030).* `trigger_deliveries.outcome`
+gains **`seeded`**, for an event the first poll after arming was shown. It is
+recorded so that a source keeping no cursor of its own does not fire its whole
+backlog on the second poll (task 096 decision 31B). The dedupe lookup treats
+`seeded` as delivered, exactly like `fired`, while the hourly rate limit counts
+`fired` alone. SQLite cannot alter a CHECK in place, so the migration renames
+the table aside, creates it again under the real name, copies every row with
+its id, drops the old table and recreates the three indexes. 0029 is not
+edited.
+
+`trigger_cursors.cursor` stays opaque TEXT and carries two shapes, with no
+migration. For a `type: command` trigger it is the watermark string its command
+printed, or `""` for a command that prints none; the value is non-NULL either
+way, which is what "seeded" means. For a GitHub trigger it is a snapshot as
+JSON: `{kind, seeded_at, watermark, items}`, holding per issue or pull-request
+number the state, labels, assignees, draft, merged, requested reviewers and
+`updated_at`. Closed items idle for 30 days are pruned from it (decision 31D).
+A GitHub trigger whose cursor is not a snapshot, because the file changed
+source type while armed, seeds again. Reactions need no new column: a reaction
+finds its task by `project_id` and `branch_name` among unarchived rows, newest
+first, which the existing columns serve.
 
 WAL mode, `busy_timeout` set, all writes through the daemon's single connection pool.
 Migrations are embedded in the binary and applied at startup.
@@ -7411,7 +7672,10 @@ stream for the live tail.
    repair, `ctrl+t` (above, task 063) is the way to read the task's details
    without paying that. Like repair it is excluded from bulk actions (task 011):
    the input is written for one task, and the batch case is
-   `vincent task follow-up` (§12.1).
+   `vincent task follow-up` (§12.1). *Amended 2026-09-14 (task 096):* a
+   **start** row after the pickers, toggled with `enter`, sends §13.2's
+   `paused: true`; with it set, `ctrl+s` records the follow-up and holds the
+   task in `paused` rather than starting the run.
 
    The detail timeline must render a follow-up round as **its own tier**, headed
    as a round rather than numbered as a step: its rows sit at
@@ -7677,7 +7941,9 @@ stream for the live tail.
    default", not "written in the file". Four keys — `notify.command`,
    `environment.*`, `agents.*.path` and `listen` — are behind an explicit
    confirmation, because they decide what the daemon executes or exposes and
-   agents already run full-auto by default (§16). `listen` is written and does
+   agents already run full-auto by default (§16). *Amended 2026-09-14 (task
+   096):* `triggers.enabled` is a fifth, because turning it on lets a third
+   party start agents (§12.3). `listen` is written and does
    not take effect until a restart, and the editor says so before it applies
    rather than showing a pending value as though it were in force. While the
    editor is open the view **captures input**, which it never did before: every
@@ -7938,6 +8204,53 @@ stream for the live tail.
    `enter` opens the row's existing workspace, which is **read-only for free**:
    an archived task offers no `available_actions`, so there is nothing to
    withhold and no flag saying so.
+
+11. **Triggers.** *Added 2026-09-13 (task 096.6, issue #362).* A takeover
+   reached from the command palette, like Workflows and Projects, with no key
+   of its own (task 049). It shows `{config_dir}/triggers/` and what the daemon
+   learned running each file. It is deliberately not a section of the projects
+   view, which would suggest the project scope that task 096 decision 8 ruled
+   out.
+
+   The **list** shows every file the registry holds, broken ones included with
+   their findings. Each row gives the id, the source and action type, the
+   project, whether the trigger is armed and why not, its poll health and its
+   last fire. While `triggers.enabled` is off, a **banner** above the list says
+   so, because every row then reads disarmed for a reason no row can fix.
+
+   **Create and edit** use task 065's form, rendered from
+   `GET /v1/triggers/schema` rather than from a client copy of the rules.
+   - `a` creates: the daemon renders a disabled starter.
+   - `i` or `enter` opens the form on a file.
+   - `e` hands the file to `$EDITOR`.
+   - `space` toggles `enabled`.
+   - `D` deletes after asking, and says that the ledger is kept.
+   - `R` re-reads, and `/` filters.
+
+   Edits travel as ops carrying the version token, so comments survive, and a
+   second writer is a 409 the form reports. A refused value stays on its field
+   with the daemon's message. Committing any value the schema marks **dangerous**
+   (`enabled: true`, `on_fire: create` or `permission: workflow`) asks first,
+   with the schema's warning, whether it comes from the form or from `space`
+   (task 096 decision 19). Disabling never asks.
+
+   `tab` moves to the selected trigger's **ledger**: its recent deliveries, with
+   outcome, event id, task, detail and time, `seeded` among them. There,
+   `enter` opens a delivery's task in its workspace. This is the daemon view's
+   list/log split (view 6).
+
+   Both **dry runs** are here. One judges a sample event the user supplies
+   against the selected trigger. It shows whether the event matched and which
+   key missed, what `if:` rendered, the dedupe key and whether the ledger would
+   dedupe it, and the request it would replay. The other runs the source once,
+   live, and shows the same for each event returned. Neither writes anything,
+   and both work on a disarmed trigger. The sample event is **session memory
+   only** and is never written to `tui.json`, because a vendor payload may
+   carry sensitive text (decision 27). The keys for both, like every key here,
+   are registered in `internal/tui/bindings.go`.
+
+   The daemon view's config editor lists `triggers.enabled` with task 060's
+   `dangerous` flag, so saving it asks first as well.
 
 ### Layout
 
@@ -9247,6 +9560,78 @@ worktree** (§9.7), which extends this section's existing note about vincent
 writing to cursor's own config. It is workspace-scoped and per-task; the user's
 global cursor config is untouched.
 
+*Added 2026-09-13 (task 096; decision record rows 33 and 34).* **Event triggers
+invert this section's premise.** Everything above is defensible because **a
+human pressed the key**, or wrote the workflow that pressed it: full-auto by
+default, arbitrary commands as the invoking user, and a worktree that isolates
+collisions rather than privileges. A trigger breaks that chain. A third party
+labelling an issue, opening a pull request or turning a CI build red causes
+agents to run as you, with nobody at the keyboard. That is why a trigger's
+defaults differ from every other default in the product, and the list below is
+the whole of the posture, not a set of tips.
+
+- **Off twice by default.** A file under `{config_dir}/triggers/` does nothing
+  until its own `enabled: true` **and** `triggers.enabled` in `config.yaml` are
+  both on (§12.3). The second key exists because there is no keypress to be the
+  consent, in contrast to task 069 decision 2. Both are marked dangerous: the
+  TUI asks before turning either on, and neither can be changed over MCP
+  (§13.4).
+- **`on_fire: propose` is the default, everywhere.** A task a trigger creates
+  lands in `paused`, and so does a task it retries or follows up (§6), so a human
+  admits each one with `resume`. `on_fire: create`, which runs unattended, is
+  always an explicit line in the file. A `cancel` has no held form, so it must
+  write that line.
+- **Agent steps are clamped `restricted`.** A triggered task is created with
+  `restricted: true` (§5.3, §9.4) unless the file says `permission: workflow`,
+  which is itself a dangerous value. The clamp only tightens. It bounds what the
+  agent CLI's own permission model bounds, and nothing a step does to vincent
+  (§9.4, and the task 057 note above). `limits.max_task_cost_usd` caps spend
+  where the adapter reports cost. `limits.max_per_hour` caps how many deliveries
+  fire, and an event over it is recorded and dropped, never queued.
+- **Untrusted events need an allowlist, and the allowlist is the author.** On
+  `github_issues` and `github_prs`, some events are ones an outsider can cause
+  on a public repository: `opened`, `reopened`, `closed`, `ready_for_review` and
+  `review_requested`. A trigger that can match any of them (including any
+  trigger with no `match.action`, which matches every event) is **refused at
+  load** unless it names `allowed_actors`. The trusted events are issue
+  `labeled`, `unlabeled` and `assigned`, which need triage, and pull-request
+  `merged`, which needs write. A state diff has no actor (task 096 decision 10),
+  so `allowed_actors` matches the issue's or pull request's **author**. It stops
+  a stranger's issue from starting work. It does **not** say who applied a label,
+  requested a review or closed anything. CODEOWNERS requests reviews on an
+  outsider's pull request, which is why `review_requested` is untrusted. The key
+  is refused on `command` and `http` sources, whose events carry no identity
+  vincent can verify: a `command` source's trust is whatever its script
+  filters, and an `http` source's is its signature.
+- **Prompt injection becomes remote.** An issue body, a pull-request title or a
+  CI log reaches a trigger's templates as `.Event`. Whatever the file renders
+  into a title, description, field, prompt or branch reaches an agent. The
+  exposure already existed through `.Issue` (row 26), but there a human chose
+  the issue and read it. `.Event` is never snapshotted onto the task (§8.4), so
+  an attacker's text reaches only the fields the trigger's author chose to
+  render. It still reaches those. Container execution (task 061, above) is the
+  real control for unattended work: point `action.workflow` at a workflow whose
+  steps are containerized, and read the bullet above on what a container does
+  not yet confine.
+- **No project scope.** Triggers are global and live in `{config_dir}`, never in
+  `.vincent/`, so merge rights on a repository cannot start agents on a
+  maintainer's machine (task 096 decision 8). The accepted cost is that a
+  trigger cannot be reviewed alongside the repository it serves.
+- **A trigger file is code the daemon runs as you.** A `command` source's argv
+  runs on an interval with `notify.command`'s posture: argv, never a shell
+  string; the §12.3 environment; and a whole-tree kill at the timeout. It may
+  carry a token, which is why every trigger file is written `0600` (§12.2).
+  `POST /v1/triggers/{id}/poll` runs it too. That route is an MCP tool because
+  it runs only a command the user already configured, which a full-auto agent
+  could run anyway.
+- **The ingress needs the daemon token.** `POST /v1/triggers/{id}/events`
+  requires the bearer token **and** the trigger's HMAC signature (§13.1, row
+  34), so only a caller on this machine that can read `{data_dir}/token` and
+  holds the secret can deliver. The loopback boundary is unchanged. No tunnel
+  reaches the route without a relay on this machine that holds the token, and
+  such a relay is already something running as you. The secret lives in the
+  daemon's environment, never in the file.
+
 ## 17. Observability
 
 - **Per step:** duration (active time — time spent `awaiting_input` is tracked
@@ -9371,6 +9756,28 @@ read for. A skipped `fan_out` lane is debug, not warn — it is the designed
 behaviour, not a fault. Nothing here touches task state, a step run or the exit
 code of anything: a notifier that fails loses one notification and nothing
 else.
+
+**What triggers log (task 096, added 2026-09-13).** A trigger's durable record
+is its ledger (§14) and its poll status on `GET /v1/triggers`, and the log
+carries the rest.
+
+- **Truncated catch-up is warn, once.** A poll that returned more events than
+  the catch-up cap of 20 is logged at **warn**, naming the trigger, how many
+  events the poll returned and how many were judged. It is logged **once per
+  trigger per daemon run**, beside the four warn-once lines above: a trigger
+  that is behind stays behind for many polls, and one line says so where a line
+  per poll would bury everything else. The events past the cap are dropped, not
+  deferred.
+- **Poll failures.** A failing poll command (a non-zero exit, a timeout, or too
+  much output) is logged at warn on every poll. A failing GitHub listing is
+  recorded only in the poll status. Either way the transition is a
+  `trigger.poll_changed` event (§13.3).
+- **Other warn lines.** A seed event whose `dedupe_key` does not render, a
+  command output line that is not an event, and a cursor or `seeded` row that
+  could not be written are each logged at warn. A delivery that could not be
+  recorded mid-poll is logged at error, and the poll reads failing.
+- **Info lines.** A seed is logged at info with the count it saw, and a poll
+  command's stderr at info, one record per line.
 
 ## 18. Edge cases and errors
 
@@ -9711,6 +10118,17 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
   prompt, check, run and guard at once and invites the expression-language
   argument 015 decision 4 settled, so it earns its own task. The trigger is
   the first `for_each` that cannot filter at its source.
+- **Scheduled and recurring triggers**, as a `type: schedule` trigger source
+  (task 096, *Explicitly not in scope*; recorded 2026-09-13). Task 096
+  designed the `action:` block so that such a source reuses it verbatim, so the
+  day it is built it is one more source type, not a subsystem. The trigger for
+  building it is the first recurring task that a `type: command` source
+  printing one event per period cannot express. Two more pieces are deferred
+  from the same task, each with its named trigger. A real **actor** on GitHub
+  events, from the timeline API (task 096 decision 10), waits for the first
+  need for a trustworthy actor. **Signature schemes** beyond
+  `github_hmac_sha256` wait for the first sender that signs differently; the
+  schema takes a scheme as one more value.
 - LLM-as-judge verification as an optional third success layer.
 - Multi-user / remote daemons / fleet view across hosts.
 - Task templates & recurring tasks; ~~issue-tracker ingestion (Jira → task)~~ —
@@ -9721,7 +10139,14 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
   one write vincent has is pull-request creation, added by task 069 below — and the issue is snapshotted at creation rather
   than re-fetched, so the step path is unchanged. Jira and task templates stay
   deferred; nothing here was a decision *against* them, only a v1 scope line,
-  and v1 shipped. ~~**Pull requests** — checking, listing or reporting on them
+  and v1 shipped. *Retired 2026-09-13 (task 096, decision record row 33):* the
+  ingestion line is done, and for more than Jira. Event triggers start work,
+  with nobody picking, from three kinds of source: any system with a pollable
+  API through a `type: command` source, GitHub issue and pull-request
+  transitions, and a signed push from the same machine. Vincent still ships no
+  per-vendor adapter and stores no vendor credential (§2). **Task templates and
+  recurring tasks stay deferred** (the entry below names the trigger for the
+  recurring half). ~~**Pull requests** — checking, listing or reporting on them
   — are the intended next piece and are deliberately not built~~ — **promoted
   out of future work, 2026-08-29** (§5.3, §12.3, §13.2, §13.3, §14; decision
   record row 27, task 052): a project's open pull requests are listed, and a

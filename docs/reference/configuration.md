@@ -1270,6 +1270,34 @@ a tool result lands in an agent's context and its transcript, which is not that
 boundary. `command` can reasonably hold a webhook URL with a token in it; see
 the [security model](../security-model.md) for what running it means.
 
+### `triggers`
+
+```yaml
+triggers:
+  enabled: true
+```
+
+The global switch for [event triggers](../guides/triggers.md): the files under
+`{config_dir}/triggers/` that start or act on tasks when a command, GitHub or a
+signed push reports an event. **Off by default.**
+
+A trigger is off twice. A file does nothing until its own `enabled: true`
+**and** this key are both on. The second key exists because a trigger has no
+keypress to be the consent: with both on, someone labelling an issue or a CI job
+going red causes agents to run as you.
+
+While it is off, no trigger polls and `POST /v1/triggers/{id}/events` answers
+`409`. The dry runs still work, because they fire nothing. Turning it on arms
+every enabled trigger with a **fresh seed**: the first poll records what the
+source already shows and fires nothing, so a backlog that existed before you
+turned it on never starts work.
+
+Read per poll and per pushed event, so a [reload](#reload-semantics) reaches the
+next one. `PATCH /v1/config` can set it, but the route is not an MCP tool, so an
+agent cannot. The TUI's config editor asks before saving it. See the
+[security model](../security-model.md#event-triggers-let-someone-else-start-an-agent)
+before you do.
+
 ### `tui`
 
 ```yaml

@@ -427,7 +427,8 @@ you — but it is worth stating rather than leaving implicit:
   `agents.*.path` and `environment` are all writable through the API, and so is
   `listen`. This is not a new privilege — anyone who can call the endpoint holds
   the daemon's token and can already run an agent step as you — but it is why
-  the route is **not** an MCP tool, and why the TUI puts those four keys behind
+  the route is **not** an MCP tool, and why the TUI puts those four keys, and
+  [`triggers.enabled`](#event-triggers-let-someone-else-start-an-agent), behind
   an explicit confirmation.
 - Whatever your notifier does with the envelope is outside vincent. The envelope
   carries the task title and the agent's question summary, so a hook that posts
@@ -435,6 +436,70 @@ you — but it is worth stating rather than leaving implicit:
 
 It is off unless you configure it. See
 [`notify`](reference/configuration.md#notify).
+
+## Event triggers let someone else start an agent
+
+Everything above is defensible because **you pressed the key**, or wrote the
+workflow that pressed it. An [event trigger](guides/triggers.md) breaks that
+chain: a third party labelling an issue, opening a pull request or turning a CI
+build red causes agents to run as you, with nobody at the keyboard. That is why
+a trigger's defaults differ from every other default in vincent, and the list
+below is the whole posture, not a set of tips.
+
+- **Off twice by default.** A file under `{config_dir}/triggers/` does nothing
+  until its own `enabled: true` **and**
+  [`triggers.enabled`](reference/configuration.md#triggers) in `config.yaml` are
+  both on. Both are dangerous values: the TUI asks before turning either on, and
+  neither can be changed over MCP. Turning either on arms the trigger with a
+  seed that fires nothing, so an old backlog never starts work.
+- **Proposed, not started.** `on_fire: propose` is the default. A task a trigger
+  creates, retries or follows up lands `paused`, and you admit each one with
+  `resume`. `on_fire: create`, which runs unattended, is always an explicit line
+  in the file. A `cancel` has no held form, so it is refused at load unless it
+  writes that line.
+- **Agent steps are clamped `restricted`.** A triggered task is created with
+  [restricted mode](#restricted-mode) unless the file says
+  `permission: workflow`, which is itself a dangerous value. The clamp bounds
+  what the agent CLI's own permission model bounds, and nothing more.
+  `limits.max_task_cost_usd` caps spend where the adapter reports cost, and
+  `limits.max_per_hour` caps how many deliveries fire. An event over the limit
+  is recorded and dropped, never queued.
+- **Untrusted events need an allowlist, and the allowlist is the author.** On
+  the GitHub sources, some events are ones an outsider can cause on a public
+  repository: `opened`, `reopened`, `closed`, `ready_for_review` and
+  `review_requested`. A trigger that can match any of them, including one with
+  no `match.action`, is **refused at load** unless it names `allowed_actors`.
+  The trusted events are issue `labeled`, `unlabeled` and `assigned`, which need
+  triage rights, and pull-request `merged`, which needs write. vincent sees a
+  state diff, not who made it, so `allowed_actors` matches the issue's or pull
+  request's **author**. It stops a stranger's issue from starting work. It does
+  **not** say who applied a label or requested a review.
+- **Prompt injection becomes remote.** An issue body, a pull-request title or a
+  CI log reaches the trigger's templates as `.Event`. Whatever the file renders
+  into a title, description, field or prompt reaches an agent. `.Event` is never
+  stored on the task, so an attacker's text reaches only the fields the
+  trigger's author chose to render, but it does reach those. For unattended
+  work, point the trigger at a workflow whose steps
+  [run in a container](#what-the-container-does-and-does-not-isolate).
+- **No project scope.** Triggers live in `{config_dir}`, never in a repository's
+  `.vincent/`, so merge rights on a repository cannot start agents on your
+  machine. The cost is that a trigger is not reviewed alongside the repository
+  it serves.
+- **A trigger file is code the daemon runs as you.** A `command` source's argv
+  runs on an interval with `notify.command`'s posture: argv, never a shell
+  string, and a whole-tree kill at the timeout. The file may carry a token, so
+  every trigger file is written `0600`. The live poll dry run runs that command
+  too, and it is an MCP tool because it runs only what you already configured.
+- **Pushed events need the daemon token.** `POST /v1/triggers/{id}/events`
+  requires the bearer token **and** the trigger's HMAC signature, with the
+  secret read from the daemon's environment rather than the file. Only a caller
+  on this machine that can read `{data_dir}/token` can deliver. A GitHub.com
+  webhook through a bare tunnel cannot reach it; a relay on this machine that
+  adds the header can, and such a relay is already something running as you.
+  The route is not an MCP tool: an agent that can inject events can start
+  agents.
+
+See [Event triggers](guides/triggers.md) for the files themselves.
 
 ## Tightening it
 

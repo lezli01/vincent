@@ -49,6 +49,16 @@ var Excluded = []Route{
 	// the filesystem, not through this API.
 	{Method: http.MethodPost, Path: "/v1/workflows"},
 	{Method: http.MethodPatch, Path: "/v1/workflows"},
+	// The trigger writes (task 096 decision 22), under the same wording: an
+	// agent must not author or arm a trigger that starts agents, and enabling
+	// one is a PATCH. The reads, validate and both dry runs stay tools — a
+	// dry run fires nothing.
+	{Method: http.MethodPost, Path: "/v1/triggers"},
+	{Method: http.MethodPatch, Path: "/v1/triggers/{id}"},
+	{Method: http.MethodDelete, Path: "/v1/triggers/{id}"},
+	// The trigger ingress (decision 31G), on decision 22's reasoning: an agent
+	// that can inject events can start agents.
+	{Method: http.MethodPost, Path: "/v1/triggers/{id}/events"},
 	// The one route that writes to a forge (task 069 decision 3). Row 27 was
 	// amended to let a *human* push a task's branch and open its pull
 	// request; "the keypress is the consent" (decision 2) is only true while
@@ -152,6 +162,13 @@ var routes = []Route{
 	{http.MethodGet, "/v1/workflows/schema", "workflow_schema", "The §8.2 workflow schema as data: which fields are legal on which step type, and where each type may be nested. Read-only."},
 	{http.MethodPost, "/v1/workflows/validate", "workflow_validate", "Validate workflow YAML without running it (§8.2). Body: {source}."},
 	{http.MethodGet, "/v1/workflows/definition", "workflow_definition", "One workflow's parsed definition, by name and scope."},
+	{http.MethodGet, "/v1/triggers", "trigger_list", "The event triggers under {config_dir}/triggers (task 096): each file's validity, whether it is armed and why not, its source and action type, and its poll health. Read-only."},
+	{http.MethodGet, "/v1/triggers/schema", "trigger_schema", "The trigger schema as data: top-level fields, the source and action variants, and which values are dangerous. Read-only."},
+	{http.MethodPost, "/v1/triggers/validate", "trigger_validate", "Validate trigger YAML without writing it. Body: {source, id?}."},
+	{http.MethodGet, "/v1/triggers/{id}", "trigger_get", "One trigger: its summary, file source and parsed definition."},
+	{http.MethodPost, "/v1/triggers/{id}/test", "trigger_test", "Dry run: judge a supplied event through the trigger's real pipeline and write nothing. Body: {event}."},
+	{http.MethodPost, "/v1/triggers/{id}/poll", "trigger_poll", "Dry run: run the trigger's source once and judge what it returns, with no fire, no cursor advance, no ledger row and no poll-health change."},
+	{http.MethodGet, "/v1/triggers/{id}/deliveries", "trigger_deliveries", "A trigger's delivery ledger, newest first. Query: limit."},
 	{http.MethodPost, "/v1/resolve", "resolve", "Resolve a path to the project that owns it."},
 	{http.MethodGet, "/v1/tasks", "task_list", "List tasks, filtered by the query parameters the API documents."},
 	{http.MethodPost, "/v1/tasks", "task_create", "Create a task. Body: {project_id, workflow, prompt, ...} as documented for POST /v1/tasks."},
@@ -160,14 +177,14 @@ var routes = []Route{
 	{http.MethodPost, "/v1/tasks/{id}/cancel", "task_cancel", "Cancel a task (§6). Kills its live agent process if it has one."},
 	{http.MethodPost, "/v1/tasks/{id}/pause", "task_pause", "Request a pause at the next step boundary (§6)."},
 	{http.MethodPost, "/v1/tasks/{id}/resume", "task_resume", "Resume a paused task (§6)."},
-	{http.MethodPost, "/v1/tasks/{id}/retry", "task_retry", "Retry a blocked task's failed step, or cascade a retry to every blocked descendant of a fan-out parent parked in awaiting_children (§6). Body: {prompt_override|run_override|branch_override}, none of which a parked parent accepts."},
+	{http.MethodPost, "/v1/tasks/{id}/retry", "task_retry", "Retry a blocked task's failed step, or cascade a retry to every blocked descendant of a fan-out parent parked in awaiting_children (§6). Body: {prompt_override|run_override|branch_override, paused?}, none of which a parked parent accepts; paused holds the task (and a blocked parent's lanes) in paused until resumed."},
 	{http.MethodPost, "/v1/tasks/{id}/repair", "task_repair", "Re-run a blocked task's step with a repair prompt (§6). Body: {prompt}."},
 	{http.MethodPost, "/v1/tasks/{id}/skip", "task_skip", "Skip a blocked task's failed step and continue (§6)."},
 	{http.MethodPost, "/v1/tasks/{id}/approve", "task_approve", "Approve a task waiting at a human gate (§7.3)."},
 	{http.MethodPost, "/v1/tasks/{id}/reject", "task_reject", "Reject a task waiting at a human gate (§7.3). Body: {reason?}."},
 	{http.MethodPost, "/v1/tasks/{id}/answer", "task_answer", "Answer a task's pending mid-run input request (§7.4). Body: {answers} or {response}."},
 	{http.MethodPost, "/v1/tasks/{id}/archive", "task_archive", "Archive a settled task: removes its worktree, and may delete an empty branch under delete_empty_branch_on_archive (§10)."},
-	{http.MethodPost, "/v1/tasks/{id}/follow_up", "task_follow_up", "Queue follow-up work on a finished task's branch (§7.10). Body: {prompt, ...}."},
+	{http.MethodPost, "/v1/tasks/{id}/follow_up", "task_follow_up", "Queue follow-up work on a finished task's branch (§7.10). Body: {prompt, ..., paused?}; paused holds the task in paused until resumed."},
 	{http.MethodGet, "/v1/tasks/{id}/workflow", "task_workflow", "The workflow snapshot the task is running, as it was at creation."},
 	{http.MethodGet, "/v1/tasks/{id}/steps", "task_steps", "The task's steps and their step runs."},
 	{http.MethodPost, "/v1/tasks/{id}/steps/{step_id}/status", "step_status", "Set the step-authored status line a board renders (task 036). Body: {status}."},

@@ -274,6 +274,76 @@ func TestRetryIsLegalOnlyFromBlockedAndParked(t *testing.T) {
 	}
 }
 
+// wantHeld is the held table of task 096 decision C, restated independently:
+// the (state, action) pairs a caller may ask to land in `paused` instead of
+// `queued`. Every pair not listed must be rejected by NextHeld.
+var wantHeld = map[State]map[Action]State{
+	Blocked: {Retry: Paused},
+	Done:    {FollowUp: Paused},
+	Aborted: {FollowUp: Paused},
+}
+
+// TestHeldTable walks every state × every action through NextHeld, so a held
+// form cannot be added or dropped unnoticed.
+func TestHeldTable(t *testing.T) {
+	for _, from := range All {
+		for _, a := range allActions {
+			tr, ok := NextHeld(from, a)
+			want, wantOK := wantHeld[from][a]
+			switch {
+			case wantOK && !ok:
+				t.Errorf("NextHeld(%s, %s) rejected; want %s", from, a, want)
+			case !wantOK && ok:
+				t.Errorf("NextHeld(%s, %s) = %s; want rejected", from, a, tr.To)
+			case wantOK && tr.To != want:
+				t.Errorf("NextHeld(%s, %s) = %s; want %s", from, a, tr.To, want)
+			}
+			if ok != CanHold(from, a) {
+				t.Errorf("CanHold(%s, %s) disagrees with NextHeld", from, a)
+			}
+		}
+	}
+}
+
+// TestHeldOnlySubstitutesPausedForQueued pins what makes the held table safe
+// to share with the API's 409 rule: every held pair is a human action the
+// plain table allows from the same state, whose plain target is `queued`, and
+// the held form is immediate. A held action can therefore never reach a state
+// its plain form could not, other than waiting in `paused` first.
+func TestHeldOnlySubstitutesPausedForQueued(t *testing.T) {
+	for _, from := range All {
+		for _, a := range allActions {
+			held, ok := NextHeld(from, a)
+			if !ok {
+				continue
+			}
+			if !Human(a) {
+				t.Errorf("NextHeld(%s, %s) allowed on an engine event", from, a)
+			}
+			plain, plainOK := Next(from, a)
+			if !plainOK || plain.To != Queued {
+				t.Errorf("NextHeld(%s, %s) allowed, but Next = %+v, %v; want a plain re-queue",
+					from, a, plain, plainOK)
+			}
+			if held.To != Paused || held.Deferred {
+				t.Errorf("NextHeld(%s, %s) = %+v; want an immediate paused", from, a, held)
+			}
+		}
+	}
+}
+
+// TestRetryFromParkedParentCannotHold is the 400 of decision C: the retry
+// legal from `awaiting_children` re-admits the blocked lanes rather than
+// taking the parent through `queued`, so it has no held form.
+func TestRetryFromParkedParentCannotHold(t *testing.T) {
+	if !Can(AwaitingChildren, Retry) {
+		t.Fatal("Can(awaiting_children, retry) = false; the cascade is task 090's")
+	}
+	if CanHold(AwaitingChildren, Retry) {
+		t.Error("CanHold(awaiting_children, retry) = true; the cascade never goes through queued")
+	}
+}
+
 func TestCanSetPriority(t *testing.T) {
 	for _, s := range All {
 		want := s == Queued || s == Paused

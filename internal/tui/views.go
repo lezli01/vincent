@@ -32,6 +32,9 @@ const (
 	// four would drift on the first change to any of them (decision 5).
 	viewArchived
 	viewArchivedChats
+	// viewTriggers is §15 view 11 (task 096.6): a takeover of its own rather
+	// than a section of projects or a tab of workflows (decision 14).
+	viewTriggers
 	viewCount
 )
 
@@ -141,5 +144,6 @@ func newViews(ctx context.Context) [viewCount]panel {
 		viewChat:          newChatView(level, raw),
 		viewArchived:      newArchivedBoard(),
 		viewArchivedChats: newArchivedChatsView(),
+		viewTriggers:      newTriggersView(),
 	}
 }

@@ -17,6 +17,7 @@ state stay on your machine; vincent provides the control plane around them.
 | Human oversight | Approval gates, mid-run answers where supported, blocked-step recovery, edit-and-retry, ad-hoc repair agents, follow-up runs on finished tasks, a notify hook that reaches you with no client open |
 | Visibility | Grouped task board, live output, durable transcripts, metrics, file-grouped diffs, workflow graph |
 | GitHub | Create a task from an issue or a **pull request**, prefilled and editable — a pull-request task runs on that pull request's head branch; issue details in templates; a project's pull requests, each linked to the task whose branch it came from, with that task's own tab carrying its live CI checks; and **open a pull request** for a task — push its branch and create the PR from inside vincent, the one thing vincent writes to GitHub. No stored credential |
+| Event triggers | Start or act on tasks from a polled command, GitHub issue and pull-request changes, or a signed push; off twice by default, proposed paused and restricted, deduplicated and rate-limited, with a delivery ledger and dry runs |
 | Integration | Full CLI, JSON output, stable exit codes, localhost REST API, durable state SSE and live output streams |
 | Operations | Automatic usage-limit waits, one-command diagnostics, configuration editing from the TUI and CLI, orphan cleanup, database integrity checks, backup and restore |
 | Platforms | Windows, macOS, and Linux; Homebrew, a universal macOS `.pkg`, WinGet, Scoop, mise, deb/rpm, and archives |
@@ -426,6 +427,31 @@ switch it off entirely.
 See the [new-task form](guides/tui.md), the
 [configuration reference](reference/configuration.md), and the
 [workflow schema](reference/workflow-schema.md) for `.Issue`.
+
+## Start work from an event
+
+A trigger is a file under `{config_dir}/triggers/` that turns an outside event
+into vincent work, so a labelled issue, a review request or a red CI build can
+start a task without you opening the TUI. It reads events from one of four
+sources: a command the daemon polls, a project's GitHub issues, its pull
+requests, or a signed push to `POST /v1/triggers/{id}/events`. `match:`, `if:`
+and `allowed_actors` filter them, a `dedupe_key` makes each event fire once, and
+`limits.max_per_hour` caps the rate.
+
+A trigger that fires can create a task, follow up a finished one, retry a
+blocked one, or cancel one, finding the task by its branch. By default it only
+**proposes**: the task lands `paused` with its agent steps restricted, and you
+start it with `resume`.
+
+Triggers are off twice: a file needs its own `enabled: true` and
+`triggers.enabled` in `config.yaml`. Turning one on seeds it, so events that
+already existed never fire. Every event judged is recorded in a delivery
+ledger. `vincent trigger test` and the live poll show what a trigger would do
+without writing anything. The TUI's triggers view, opened from the command
+palette, creates, edits and enables them and shows each one's ledger.
+
+See [Event triggers](guides/triggers.md) and the
+[security model](security-model.md#event-triggers-let-someone-else-start-an-agent).
 
 ## Link a task to its pull request
 

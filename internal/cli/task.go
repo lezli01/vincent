@@ -543,13 +543,15 @@ func newTaskFollowUpCmd() *cobra.Command {
 		agent    string
 		model    string
 		effort   string
+		paused   bool
 	)
 	cmd := &cobra.Command{
 		Use:   "follow-up <id>",
 		Short: "Run more work in a finished task's worktree, before it is archived",
 		Long: "Run one more piece of work in a done or aborted task's existing worktree and " +
 			"branch, recorded in that task's own ledger. Exactly one of --prompt, --run and " +
-			"--workflow says what to run. The task returns to the state it came from.",
+			"--workflow says what to run. The task returns to the state it came from. " +
+			"--paused holds the task paused instead of queuing it; `vincent task resume` starts the run.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := taskID(args[0])
@@ -559,6 +561,11 @@ func newTaskFollowUpCmd() *cobra.Command {
 			in := apiclient.FollowUpInput{
 				Prompt: prompt, Run: run, Workflow: workflow,
 				Agent: agent, Model: model, Effort: effort,
+			}
+			// Sent only when named (task 096 decision C), so a plain
+			// follow-up body is byte-for-byte what it was before the flag.
+			if cmd.Flags().Changed("paused") {
+				in.Paused = &paused
 			}
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
 				t, warnings, err := c.FollowUp(ctx, id, in)
@@ -572,8 +579,14 @@ func newTaskFollowUpCmd() *cobra.Command {
 				if wantJSON(cmd) {
 					return emitJSON(cmd.OutOrStdout(), t)
 				}
+				// What the daemon reported, not what the flag asked for (task
+				// 048): the line names the state the task is actually in.
+				what := "the follow-up is queued"
+				if t.State == "paused" {
+					what = fmt.Sprintf("the follow-up runs once resumed (vincent task resume %d)", t.ID)
+				}
 				if _, err := fmt.Fprintf(cmd.OutOrStdout(),
-					"task %d is now %s: the follow-up is queued\n", t.ID, t.State); err != nil {
+					"task %d is now %s: %s\n", t.ID, t.State, what); err != nil {
 					return err
 				}
 				for _, w := range warnings {
@@ -589,6 +602,8 @@ func newTaskFollowUpCmd() *cobra.Command {
 	cmd.Flags().StringVar(&agent, "agent", "", "Agent for the run (§8.6, request level)")
 	cmd.Flags().StringVar(&model, "model", "", "Model for the run (§8.6, request level)")
 	cmd.Flags().StringVar(&effort, "effort", "", "Effort for the run (§8.6, request level)")
+	cmd.Flags().BoolVar(&paused, "paused", false,
+		"Hold the task paused instead of queuing the run; it starts only when resumed (`vincent task resume`)")
 	// One thing runs. Cobra refuses the combination locally so the daemon
 	// never sees a request that says two things at once, and the message
 	// names the flags rather than the JSON fields behind them.
@@ -729,6 +744,7 @@ func newTaskRejectCmd() *cobra.Command {
 
 func newTaskRetryCmd() *cobra.Command {
 	var branch, prompt, promptFile, run, runFile string
+	var paused bool
 	cmd := &cobra.Command{
 		Use:   "retry <id>",
 		Short: "Re-run the step a task blocked on",
@@ -740,7 +756,9 @@ func newTaskRetryCmd() *cobra.Command {
 			"On a fan-out parent parked in awaiting_children it cascades instead: every\n" +
 			"blocked descendant is re-admitted in one call and the parent stays parked,\n" +
 			"and the three override flags are refused, since a fan_out step carries no\n" +
-			"text to edit.",
+			"text to edit. --paused holds the retried task — and a blocked parent's\n" +
+			"lanes — paused instead of queuing it, until `vincent task resume`; it is\n" +
+			"refused on a parked parent, whose retry never queues it.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := taskID(args[0])
@@ -753,6 +771,11 @@ func newTaskRetryCmd() *cobra.Command {
 			}
 			if ov.Run, err = flagText(cmd, run, runFile); err != nil {
 				return err
+			}
+			// Sent only when named (task 096 decision C): a plain retry
+			// still posts no body at all.
+			if cmd.Flags().Changed("paused") {
+				ov.Paused = &paused
 			}
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
 				t, retried, err := c.Retry(ctx, id, ov)
@@ -797,6 +820,8 @@ func newTaskRetryCmd() *cobra.Command {
 	cmd.Flags().StringVar(&run, "run", "", "Replace the failed step's command (edit+retry)")
 	cmd.Flags().StringVar(&runFile, "run-file", "",
 		"Read the replacement command from this file, or from stdin with -")
+	cmd.Flags().BoolVar(&paused, "paused", false,
+		"Hold the retried task paused instead of queuing it; it runs only when resumed (`vincent task resume`)")
 	// The literal and the file are two spellings of one value, so cobra
 	// refuses the pair locally rather than letting one silently win.
 	cmd.MarkFlagsMutuallyExclusive("prompt", "prompt-file")

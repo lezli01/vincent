@@ -260,6 +260,50 @@ func TestRetryFromBlockedReportsNoCascade(t *testing.T) {
 	}
 }
 
+// TestRetryPausedReachesTheWire: `Override.Paused` is what the daemon reads
+// (task 096 decision C) — the retried task comes back `paused`, resume
+// re-queues it, and the same flag on a parked parent is a 400 rather than a
+// cascade.
+func TestRetryPausedReachesTheWire(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	id := h.snapshotTask(t)
+	h.setState(t, id, store.TaskRunning)
+	h.setState(t, id, store.TaskBlocked)
+
+	held := true
+	got, retried, err := h.client().Retry(ctx, id, apiclient.Override{Paused: &held})
+	if err != nil {
+		t.Fatalf("Retry paused: %v", err)
+	}
+	if got.State != string(store.TaskPaused) || retried != 0 {
+		t.Errorf("retry = state %q, retried %d; want paused, 0", got.State, retried)
+	}
+	resumed, err := h.client().Resume(ctx, id)
+	if err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	if resumed.State != string(store.TaskQueued) {
+		t.Errorf("state after resume = %q, want queued", resumed.State)
+	}
+}
+
+// TestRetryPausedFromParkedParentIsRefused: the retry legal from
+// `awaiting_children` is a cascade that never queues the parent, so a held
+// one is a 400 rather than a cascade (task 096 decision C).
+func TestRetryPausedFromParkedParentIsRefused(t *testing.T) {
+	h := newHarness(t)
+	parent := h.parkedParent(t)
+	h.lane(t, parent, store.TaskBlocked)
+
+	held := true
+	_, _, err := h.client().Retry(context.Background(), parent, apiclient.Override{Paused: &held})
+	var apiErr *apiclient.Error
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusBadRequest {
+		t.Fatalf("held retry from awaiting_children = %v, want a 400", err)
+	}
+}
+
 // TestRetryOverrideFromParkedParentIsRefused: a parked parent's cursor is a
 // `fan_out` step, which carries no text — so edit+retry is a 400 there, which
 // is why the `E` key checks stepEditable before offering itself.

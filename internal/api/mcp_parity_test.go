@@ -123,6 +123,13 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		// stays a tool — the row and its transcripts survive it.
 		{http.MethodDelete, "/v1/tasks/{id}"},
 		{http.MethodDelete, "/v1/chats/{id}"},
+		// Task 096 decision 22: an agent must not author or arm a trigger
+		// that starts agents — enabling is a PATCH — and decision 31G: an
+		// agent that can inject an event can start agents.
+		{http.MethodPost, "/v1/triggers"},
+		{http.MethodPatch, "/v1/triggers/{id}"},
+		{http.MethodDelete, "/v1/triggers/{id}"},
+		{http.MethodPost, "/v1/triggers/{id}/events"},
 	}
 	if len(mcp.Excluded) != len(want) {
 		t.Fatalf("mcp.Excluded has %d entries, want %d", len(mcp.Excluded), len(want))

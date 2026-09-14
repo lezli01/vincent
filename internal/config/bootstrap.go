@@ -258,6 +258,23 @@ update:
 #   on: [blocked, awaiting_gate, awaiting_input]
 #   command: ["/usr/local/bin/notify-me"]
 
+# Event triggers start work from a system rather than from you: a trigger file
+# under triggers/ beside this one polls a command or GitHub, or accepts a
+# pushed event, and creates or acts on a task for each new event that passes
+# its filter.
+#
+# Off twice by default. A trigger file does nothing until its own
+# "enabled: true" AND this key are both on. Turning this on arms every enabled
+# trigger with a fresh seed: events that existed before it was armed never
+# fire.
+#
+# WARNING: with both on, a third party (someone labelling an issue, a CI job)
+# causes agents to run as you. Triggered tasks are created paused and
+# restricted unless a trigger file says otherwise.
+#
+# triggers:
+#   enabled: true
+
 # What clients render, not what the daemon does. The daemon validates these,
 # hot-reloads them and serves them on GET /v1/config; the TUI reads them from
 # there.

@@ -110,6 +110,9 @@ type daemonView struct {
 	// saved names the key the last successful patch changed, so the block can
 	// say what moved rather than silently re-rendering.
 	saved string
+	// pendingKey is a key another view asked to open (openConfigKeyMsg)
+	// before the config had loaded; applyConfig opens it when it lands.
+	pendingKey string
 
 	// statusLine is the open §16 status-line flow, nil when it is not open.
 	// It is a takeover for the same reason the config editor is.
@@ -325,6 +328,9 @@ func (d *daemonView) update(msg tea.Msg) (panel, tea.Cmd) {
 	case configSavedMsg:
 		d.applySaved(msg)
 		return d, nil
+	case openConfigKeyMsg:
+		d.openKey(msg.path)
+		return d, nil
 	case daemonDoctorMsg:
 		d.applyDoctor(msg)
 		return d, nil
@@ -373,6 +379,30 @@ func (d *daemonView) applyConfig(msg daemonConfigMsg) {
 	d.configOK = true
 	d.config = msg.config
 	d.configAt = d.now()
+	if d.pendingKey != "" && d.form == nil {
+		d.openKey(d.pendingKey)
+	}
+}
+
+// openKey puts the config list's cursor on one key and opens its editor: how
+// another view sends somebody to a switch it can name but must not flip — the
+// triggers view's banner and `triggers.enabled`. The editor is the one that
+// asks before a dangerous key applies. A config that has not loaded yet opens
+// the key when it lands.
+func (d *daemonView) openKey(path string) {
+	for i, k := range d.keys {
+		if k.path != path {
+			continue
+		}
+		d.focusConfig, d.cursor = true, i
+		if !d.configOK {
+			d.pendingKey = path
+			return
+		}
+		d.pendingKey = ""
+		d.form = newConfigForm(k, d.config)
+		return
+	}
 }
 
 // applyDoctor keeps the last-good report behind a failed refresh, the way the

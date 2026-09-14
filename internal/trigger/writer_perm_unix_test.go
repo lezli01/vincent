@@ -29,7 +29,7 @@ func TestWritesAreOwnerOnly(t *testing.T) {
 
 	// A hand-created 0644 file is tightened by the first write through the
 	// daemon, not kept as workflows' existing files are.
-	path := writeFile(t, dir, "t2.yaml", string(Starter(StarterSpec{ID: "t2", Project: 1})), 0o644)
+	path := writeFile(t, dir, "t2.yaml", string(Starter(StarterSpec{ID: "t2", Project: 1})))
 	if err := os.Chmod(path, 0o644); err != nil {
 		t.Fatal(err)
 	}

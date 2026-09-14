@@ -20,6 +20,7 @@ localhost API.
 - [`vincent skills`](#vincent-skills)
 - [`vincent chat`](#vincent-chat)
 - [`vincent workflow`](#vincent-workflow)
+- [`vincent trigger`](#vincent-trigger)
 - [`vincent github`](#vincent-github)
 - [`vincent gc`](#vincent-gc)
 
@@ -30,7 +31,7 @@ localhost API.
 | Code | Meaning |
 |---|---|
 | `0` | Success |
-| `1` | The request was rejected — the daemon answered no (bad id, invalid state transition), a daemon-free command refused it (`workflow validate` on an invalid file, `workflow render` on a template that does not execute, `workflow init` on a name already taken), or the client refused the input before sending anything (a `--fields-file` that is not one JSON object of strings) |
+| `1` | The request was rejected — the daemon answered no (bad id, invalid state transition), a daemon-free command refused it (`workflow validate` on an invalid file, `workflow render` on a template that does not execute, `workflow init` on a name already taken), or the client refused the input before sending anything (a `--fields-file` that is not one JSON object of strings, a `trigger test --event` file that is not one JSON object) |
 | `2` | No daemon answered |
 
 `vincent daemon status` overloads them usefully: `0` healthy, `1` not running,
@@ -702,7 +703,7 @@ unfinished lane.
 
 ```sh
 vincent task follow-up <id> (--prompt TEXT | --run CMD | --workflow NAME)
-                            [--agent NAME] [--model M] [--effort E] [--json]
+                            [--agent NAME] [--model M] [--effort E] [--paused] [--json]
 ```
 
 Runs one more piece of work in a **finished** task's existing worktree and
@@ -726,6 +727,10 @@ The command returns as soon as the run is queued — the scheduler admits it lik
 anything else. When it ends the task returns to the state it came from: `done`
 to `done`, `aborted` to `aborted`, whatever the run did. A follow-up never
 changes a task's verdict, and it is repeatable.
+
+`--paused` records the follow-up but holds the task `paused` instead of queuing
+the run, so nothing starts until `vincent task resume <id>`. Cancelling a held
+follow-up drops it and leaves the task `aborted`.
 
 It was the first human action to get a command line, and it got one because
 batches want one:
@@ -771,7 +776,7 @@ failed is how a workflow gets past a check the run does not need.
 
 ```sh
 vincent task retry <id> [--branch NAME] [--prompt TEXT | --prompt-file FILE]
-                        [--run CMD | --run-file FILE] [--json]
+                        [--run CMD | --run-file FILE] [--paused] [--json]
 ```
 
 Re-runs the step the task blocked on. Valid from `blocked`, and from
@@ -784,6 +789,7 @@ kind of recovery:
 | `--branch NAME` | Renames the task's branch **before** the retry re-admits it. This is the [`branch_exists`](task-lifecycle.md) recovery: the task, its id and its transcripts all survive, which deleting and re-creating it would not. Refused on a task created from a pull request |
 | `--prompt` / `--run` | Edit+retry. The text replaces that step's prompt or command in **this task's** workflow snapshot, and in no other task's — the registry file is untouched |
 | `--prompt-file` / `--run-file` | The same, read from a file, or from stdin with `-`. A replacement prompt is usually several lines, which argv is a poor place for |
+| `--paused` | Records the retry, and any edit or rename with it, but holds the task `paused` instead of queuing it; `vincent task resume` re-admits it. A blocked parent's lanes are held too. Refused on a parent parked in `awaiting_children`, whose retry never queues it |
 
 `--prompt` with `--prompt-file` (or `--run` with `--run-file`) is a usage error:
 they are two spellings of one value, so it exits 1 before any request is sent.
@@ -956,6 +962,7 @@ vincent config set defaults.agent_timeout 90m
 vincent config set notify.on "blocked awaiting_gate"
 vincent config set notify.command "/usr/local/bin/notify-me"
 vincent config set environment.set "LANG=C.UTF-8 TZ=Etc/UTC"
+vincent config set triggers.enabled true
 ```
 
 Details worth knowing:
@@ -1509,6 +1516,55 @@ non-boolean.
 
 `.Host` is the machine running the command, not a remote daemon — the only
 honest answer offline, and the one place a preview and a real run can differ.
+
+## `vincent trigger`
+
+Event triggers turn outside events into tasks. You create and edit them in the
+[TUI](../guides/tui.md) or by hand under `{config_dir}/triggers/`, and turn them
+on with `triggers.enabled` in [`config.yaml`](configuration.md). The command line
+has one trigger command, the dry run. Scripts and fixtures need it.
+
+### `vincent trigger test`
+
+```sh
+vincent trigger test <id> --event FILE [--json]
+```
+
+Sends one sample event to `POST /v1/triggers/{id}/test` and prints what the
+trigger would do with it. The stages print in pipeline order: the `match:`
+result, the `if:` verdict, the rendered dedupe key and whether the ledger
+already holds it, and the request the action would replay. A stage the event
+never reached prints `-`.
+
+```
+$ vincent trigger test triage --event bug.json
+trigger triage, event bug-1
+  match:    matched
+  if:       true
+  dedupe:   bug-1 (new)
+  action:   create_task POST /v1/tasks
+  body:     {
+              "project_id": 1,
+              "title": "Triage Crash",
+              "paused": true,
+              "restricted": true
+            }
+  outcome:  fired: the action would be replayed
+```
+
+`FILE` holds one JSON object, the event as the trigger's templates see it under
+`.Event`. `--event -` reads it from stdin. An outcome of `fired` means the
+action **would** be replayed. Nothing is sent and nothing is written: no task,
+no ledger row, no cursor and no event. The command works while the trigger is
+disabled or `triggers.enabled` is off, because it fires nothing.
+
+Unlike [`workflow render`](#vincent-workflow-render), it needs a daemon.
+Whether an event would be deduplicated depends on the daemon's delivery ledger.
+
+Exit `0` when the event was judged, whatever the outcome. Exit `1` when the
+file is not one JSON object, when the daemon refused the request (an unknown id,
+or a trigger file that does not validate), or when the outcome is `error`
+because a template did not render. Exit `2` when no daemon answered.
 
 ## `vincent github`
 

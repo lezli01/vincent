@@ -160,6 +160,15 @@ const (
 	// context because while it is open it owns the keyboard, and its keys are
 	// nothing like the log pane's underneath it.
 	ctxConfigEdit bindingContext = "config editor"
+	// The triggers takeover (§15 view 11, task 096.6). Five contexts for one
+	// view, for the reason the workflows takeover has four: the list, its
+	// ledger pane, the form, the create prompt and a dry run each own the
+	// keyboard in turn, and `enter` means something different in every one.
+	ctxTriggers      bindingContext = "triggers"
+	ctxTriggerLedger bindingContext = "trigger ledger"
+	ctxTriggerForm   bindingContext = "trigger form"
+	ctxTriggerCreate bindingContext = "trigger create"
+	ctxTriggerDryRun bindingContext = "trigger dry run"
 )
 
 // vocabularyTerm is the shared operation a row performs — the left column of
@@ -284,6 +293,9 @@ var bindings = []binding{
 	// archive, and neither was ever going to be free.
 	{label: "archived tasks — history, with a permanent delete", scope: scopeGlobal, nav: true, navTarget: viewArchived},
 	{label: "archived chats — ended conversations, with a permanent delete", scope: scopeGlobal, nav: true, navTarget: viewArchivedChats},
+	// Triggers get a palette row and no key (task 096 decision 14), the
+	// pattern every takeover but new task follows.
+	{label: "triggers — what starts work on its own, and what each event became", scope: scopeGlobal, nav: true, navTarget: viewTriggers},
 
 	// Task actions, gated on available_actions. `p` appears twice because
 	// pause and resume are distinct actions behind one key; the palette
@@ -621,6 +633,40 @@ var bindings = []binding{
 	{key: "enter", label: "apply the change; the daemon validates and writes config.yaml", scope: scopePanel, context: ctxConfigEdit, noPalette: true},
 	{key: "y", label: "confirm a key that decides what the daemon executes or exposes", scope: scopePanel, context: ctxConfigEdit, noPalette: true},
 	{key: "esc", label: "close the editor without saving (the confirmation returns to the field)", scope: scopePanel, context: ctxConfigEdit, noPalette: true},
+
+	// Triggers (§15 view 11, task 096 decision 25). `space` flips `enabled`
+	// and asks before it turns one on (decision 19); `T` and `X` are the two
+	// dry runs, which fire nothing; `B` opens the global switch in the daemon
+	// view's editor rather than flipping it from here.
+	{key: "down", label: "move the selection (↑/↓)", scope: scopePanel, context: ctxTriggers, priority: 1},
+	{key: "enter", label: "open the selected trigger in the form (i also opens it)", scope: scopePanel, context: ctxTriggers, hint: "enter edit", priority: 2},
+	{key: "space", label: "enable or disable the selected trigger — enabling asks first", scope: scopePanel, context: ctxTriggers, hint: "space on/off", priority: 3},
+	{key: "a", label: "create a trigger from a starter", scope: scopePanel, context: ctxTriggers, hint: "a add", priority: 4, term: termAdd},
+	{key: "e", label: "open the trigger's file in $EDITOR", scope: scopePanel, context: ctxTriggers, priority: 5, term: termEditor},
+	{key: "D", label: "delete the trigger's file — its ledger is kept (asks first)", scope: scopePanel, context: ctxTriggers, priority: 6, term: termDelete},
+	{key: "T", label: "dry-run a sample event through the trigger's filter; fires nothing", scope: scopePanel, context: ctxTriggers, hint: "T test", priority: 7},
+	{key: "X", label: "poll the source once and judge what it returns; fires nothing", scope: scopePanel, context: ctxTriggers, hint: "X poll", priority: 8},
+	{key: "tab", label: "move between the trigger list and its delivery ledger", scope: scopePanel, context: ctxTriggers, hint: "tab ledger", priority: 9},
+	{key: "B", label: "open triggers.enabled, the global switch, in the daemon view's editor", scope: scopePanel, context: ctxTriggers, priority: 10},
+	{key: "R", label: "re-read the triggers and the ledger", scope: scopePanel, context: ctxTriggers, hint: "R refresh", priority: 11, term: termRefresh},
+	{key: "/", label: "filter by id, source, action or project", scope: scopePanel, context: ctxTriggers, priority: 12, term: termFilter},
+
+	{key: "down", label: "move through the deliveries (↑/↓)", scope: scopePanel, context: ctxTriggerLedger, priority: 1},
+	{key: "enter", label: "open the task the delivery created or acted on", scope: scopePanel, context: ctxTriggerLedger, hint: "enter open task", priority: 2},
+	{key: "tab", label: "back to the trigger list", scope: scopePanel, context: ctxTriggerLedger, hint: "tab list", priority: 3},
+	{key: "R", label: "re-read the triggers and the ledger", scope: scopePanel, context: ctxTriggerLedger, hint: "R refresh", priority: 4, term: termRefresh},
+
+	// The form, the create prompt and the dry runs own the keyboard and print
+	// their own key lines, so these are here to keep ? complete.
+	{key: "down", label: "move between the trigger's fields (↑/↓)", scope: scopePanel, context: ctxTriggerForm, noPalette: true},
+	{key: "enter", label: "edit the field; the daemon validates and writes the file", scope: scopePanel, context: ctxTriggerForm, noPalette: true},
+	{key: "R", label: "re-read the trigger from disk", scope: scopePanel, context: ctxTriggerForm, noPalette: true, term: termRefresh},
+	{key: "esc", label: "close the form", scope: scopePanel, context: ctxTriggerForm, noPalette: true},
+	{key: "tab", label: "move between the starter's inputs", scope: scopePanel, context: ctxTriggerCreate, noPalette: true},
+	{key: "enter", label: "write the new trigger — it is created disabled", scope: scopePanel, context: ctxTriggerCreate, noPalette: true},
+	{key: "esc", label: "close the prompt", scope: scopePanel, context: ctxTriggerCreate, noPalette: true},
+	{key: "ctrl+s", label: "run the dry run on the sample event", scope: scopePanel, context: ctxTriggerDryRun, noPalette: true},
+	{key: "esc", label: "close the dry run", scope: scopePanel, context: ctxTriggerDryRun, noPalette: true},
 
 	// Answer form: these exist only while the popup owns the keyboard, and
 	// the popup prints them itself — they are here so ? stays complete.

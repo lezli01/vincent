@@ -12,6 +12,7 @@ The daemon serves REST + SSE on loopback. Every client — the TUI, the
 - [Doctor](#doctor)
 - [Projects](#projects)
 - [Workflows](#workflows)
+- [Triggers](#triggers)
 - [Tasks](#tasks)
 - [Chats](#chats)
 - [Transcripts and diffs](#transcripts-and-diffs)
@@ -61,8 +62,9 @@ parse out of prose — an invalid state transition is always `409` with
 Every `409` carries the code `invalid_state`; what varies is `details`. A
 conflict that is not about a task's state names itself in `details.reason` —
 `idempotency_key_reused` when an `Idempotency-Key` is re-sent with a different
-body, and the GitHub integration's reasons on the issue routes. Branch on
-`details`, not on a per-case code.
+body, the GitHub integration's reasons on the issue routes, and why a trigger
+is not armed on its [ingress](#pushing-an-event). Branch on `details`, not on a
+per-case code.
 
 ## Request bodies
 
@@ -80,7 +82,7 @@ echoed back.
 | Limit | Bytes | Applies to |
 |---|---|---|
 | Ordinary request body | 64 KiB | every route not listed below |
-| Large request body | 4 MiB | `POST /v1/tasks`, `POST /v1/resolve`, `POST /v1/tasks/{id}/retry`, `/repair`, `/answer`, `POST /v1/workflows/validate`, `PATCH /v1/workflows` — the bodies that carry a prompt or a workflow source |
+| Large request body | 4 MiB | `POST /v1/tasks`, `POST /v1/resolve`, `POST /v1/tasks/{id}/retry`, `/repair`, `/answer`, `POST /v1/workflows/validate`, `PATCH /v1/workflows`, `POST /v1/triggers/validate`, `PATCH /v1/triggers/{id}`, `POST /v1/triggers/{id}/test`, `POST /v1/triggers/{id}/events` — the bodies that carry a prompt, a workflow or trigger source, or a vendor's event payload |
 | `yaml` in `POST /v1/workflows/validate` | 1 MiB | the same bound a workflow file gets when the registry loads it |
 
 Individual fields are bounded too — over one is `400 validation_failed` naming
@@ -97,7 +99,7 @@ the field and the limit:
 | one `answers` key | 64 KiB |
 | one `fields` / `answers` value | 64 KiB |
 | `fields` / `answers` entries, values per answer | 100 |
-| `ops` entries in one `PATCH /v1/workflows` | 512 |
+| `ops` entries in one `PATCH /v1/workflows` or `PATCH /v1/triggers/{id}` | 512 |
 
 The two keys differ because they are different kinds of thing. A `fields` key is
 a short identifier you choose. An `answers` key is not yours to choose at all: it
@@ -1110,6 +1112,258 @@ two used to drift. Each row names a `control` telling a client what to draw
 older client usable against a newer daemon. Agent, model and effort value sets
 are **not** here — those come from [`GET /v1/agents`](#daemon).
 
+## Triggers
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/v1/triggers` | Every file under `{config_dir}/triggers/`, broken ones included → `{ enabled, dir, triggers[] }` |
+| `POST` | `/v1/triggers` | `{ id, project_id, poll_interval?, command[]?, workflow?, title? }` → `201` with the written file and its version. Writes a disabled starter |
+| `GET` | `/v1/triggers/schema` | The trigger schema as data: top-level fields, the source and action variants, and which values are dangerous |
+| `POST` | `/v1/triggers/validate` | `{ source, id? }` → `{ valid, errors[] }`. Writes nothing |
+| `GET` | `/v1/triggers/{id}` | The list row plus `source` and `definition` |
+| `PATCH` | `/v1/triggers/{id}` | `{ version, ops[] }` → the create's response shape. Applies edit operations to the file |
+| `DELETE` | `/v1/triggers/{id}?version=` | → `204`. Removes the file and keeps its ledger |
+| `POST` | `/v1/triggers/{id}/test` | `{ event }` → a [judgement](#dry-runs). Writes nothing |
+| `POST` | `/v1/triggers/{id}/poll` | → `{ seed, events[], truncated, refused, cursor?, error? }`. Runs the source once and records nothing |
+| `GET` | `/v1/triggers/{id}/deliveries?limit=` | The [ledger](#the-delivery-ledger), newest first → `{ deliveries[] }` |
+| `POST` | `/v1/triggers/{id}/events` | The `type: http` ingress: one signed event → its delivery. See [Pushing an event](#pushing-an-event) |
+
+A trigger is a file, `{config_dir}/triggers/{id}.yaml`, that polls a command or
+GitHub, or accepts a signed push, and creates or acts on a task for each new
+event that passes its filter. There is no project-scope directory. The
+definition is the file; the trigger's cursor, poll health and ledger live in
+the database. A trigger does anything only when it is **armed**: its file
+validates, its own `enabled:` is `true`, and the global
+[`triggers.enabled`](configuration.md#triggers) is on. That key is switched over
+[`PATCH /v1/config`](#daemon). With it off, every route here still answers:
+the list shows each trigger disarmed, and both dry runs work.
+
+`GET /v1/triggers` answers `{ enabled, dir, triggers[] }`, where `enabled` is
+`triggers.enabled` and `dir` is the directory the daemon watches. Each row is:
+
+```json
+{ "id": "ci-failures", "file": "/home/you/.config/vincent/triggers/ci-failures.yaml",
+  "version": "…", "valid": true, "errors": [],
+  "enabled": true, "armed": false,
+  "disarmed_reason": "triggers.enabled is off in config.yaml",
+  "source_type": "command", "action_type": "create_task", "project_id": 3,
+  "on_fire": "propose", "permission": "restricted",
+  "poll": { "seeded": false, "last_poll_at": null, "ok": false, "last_fire_at": null } }
+```
+
+- A file that does not validate is **listed with its `errors[]`**, never hidden
+  — the same findings a workflow entry carries. `source_type`, `action_type`,
+  `project_id` and `on_fire` are absent on such a row, because there is no
+  parsed definition to read them from.
+- `armed` is `valid`, `enabled` and `triggers.enabled` together.
+  `disarmed_reason` names the first one missing, in that order, as a sentence
+  for a person: `the trigger file does not validate`, `the trigger is
+  disabled`, or `triggers.enabled is off in config.yaml`. It is absent on an
+  armed trigger.
+- `on_fire` and `permission` are the values in effect, not the values written:
+  a file with no `on_fire:` reads `propose`, and one with no `permission:`
+  reads `restricted`. `permission` is present only on a `create_task` action.
+- `poll` is the trigger's poll health. `seeded` says it holds a cursor, so its
+  next poll judges events instead of seeding. `ok` and `error` are the last
+  poll's result. `last_poll_at` and `last_fire_at` are `null` until each has
+  happened. A trigger that has never polled carries the zero values shown above.
+
+`GET /v1/triggers/{id}` is the row plus `source`, the file's bytes, and
+`definition`, the parsed document as JSON. A file that does not validate is a
+`200` with `definition: null`, the rule
+[the workflow definition](#one-workflows-full-definition) follows. A `404`
+means no file by that id.
+
+### Writing a trigger
+
+Trigger writes follow [Writing a workflow](#writing-a-workflow): YAML crosses
+the wire in neither direction, an edit is a list of operations, and `version`
+is a precondition.
+
+**Create.** `id` is lowercase letters, digits, `-`, `_` or `.`, starting with a
+letter or digit and never containing `..`; anything else is
+`400 validation_failed`. `project_id` is
+required, and a project that does not exist is a `404`. The daemon renders the
+file itself: a `type: command` source running `command` every `poll_interval`,
+a `create_task` action with `workflow` and `title`, `enabled: false`, and **no
+`on_fire` line**, so it proposes until someone writes otherwise. Each absent
+input gets a placeholder that validates — `5m`, `/path/to/poll-command`, and
+`{{ .Event.id }}` for the title — so the starter is a working file for a form
+to edit. An input that does not validate is a `400` carrying the findings. A
+file already at that id is a `409`. The answer is `201` with
+`{ id, file, version, errors[] }`.
+
+**Patch.** The same `{ version, ops[] }` as
+[`PATCH /v1/workflows`](#writing-a-workflow), with the same operations and the
+same 512-operation bound, answered `200` in the create's shape. A stale
+`version` is a `409` with the current token in `details.version`. An operation
+the daemon cannot apply, or a result that does not validate, is a
+`400 validation_failed` whose `details.errors` holds the findings as a
+**JSON-encoded string**. Either way the file is byte-identical to what it was.
+That is also how an edit changing `id` away from the file's name is refused.
+
+**Delete.** `?version=` is required: without it the answer is a `400`, and with
+a stale one a `409` carrying `details.version`. The file goes, and so does the
+trigger's cursor. Its ledger is **kept**, so re-creating the id cannot fire
+again an event the old trigger already delivered.
+
+Every write leaves the file `0600`, whether it was new or not. A trigger's argv
+may carry a secret, and no repository owns the file. That is `config.yaml`'s
+rule, not a workflow's. An id that could not name a file is a `404` on `PATCH`
+and `DELETE`.
+
+`POST /v1/triggers/validate` parses `source` without writing anything. `id`,
+when given, is the file stem the document's own `id` must match.
+
+`GET /v1/triggers/schema` is the trigger schema served as data, the way
+[`GET /v1/workflows/schema`](#writing-a-workflow) serves a workflow's:
+`{ top_level[], sources[], actions[], limits[], signature[] }`. A field row is
+`{ name, control, values[]?, required?, default?, help?, dangerous[]? }`, and
+a variant is `{ type, fields[], help?, events[]?, trusted[]? }`. The source
+types are `command`, `github_issues`, `github_prs` and `http`. The action types
+are `create_task` and the three reactions, `follow_up`, `retry` and `cancel`.
+On a GitHub source, `events[]` names the events it emits, and `trusted[]` the
+ones a trigger may match without naming `allowed_actors`. `control` adds
+`source`, `action`, `limits`, `signature`, `match`, `project` and `number` to
+the workflow schema's vocabulary. `dangerous[]` lists `{ value, warning }`
+pairs a client confirms before committing — `enabled: true`,
+`on_fire: create` and `permission: workflow` — and shows the warning when it
+asks.
+
+### Dry runs
+
+Both dry runs use the pipeline a real event goes through, and neither writes
+anything. Both work while the trigger or `triggers.enabled` is off. A file that
+does not validate is a `400` with its findings in `details.errors`.
+
+`POST /v1/triggers/{id}/test` judges the `event` you supply, which must be a
+JSON object. It runs `match:`, `allowed_actors`, `if:`, the dedupe lookup, the
+rate limit and the action's templates, and returns the judgement:
+
+```json
+{ "event_id": "build-4812",
+  "matched": true,
+  "if": true, "if_rendered": "true",
+  "dedupe_key": "build-4812", "would_dedupe": false,
+  "action": { "type": "create_task", "method": "POST", "path": "/v1/tasks",
+              "body": { "project_id": 3, "title": "CI failed: build-4812",
+                        "paused": true, "restricted": true } },
+  "outcome": "fired" }
+```
+
+- `matched` is the `match:` verdict. `match_miss` names the first key that
+  failed, or `allowed_actors` for an author the list does not name.
+- `if` is the guard's verdict and `if_rendered` what it rendered to. `if` is
+  absent when the trigger has no guard or the guard was not reached.
+- `dedupe_key` is the rendered key. `would_dedupe` says the ledger already
+  holds a `fired` or `seeded` row for it.
+- `action` is the request the trigger would replay, **unsent**: `type`,
+  `method`, `path` and `body`. For `create_task` the body is a
+  [`POST /v1/tasks`](#tasks) body, `paused: true` unless `on_fire: create` and
+  `restricted: true` unless `permission: workflow`. A reaction also carries the
+  `branch` it rendered and the `task_id` it resolved, with that id in `path`.
+  Its body is a `/follow_up` or `/retry` body, likewise `paused` unless
+  `on_fire: create`, and a `cancel` has none. `action` is absent when the
+  pipeline stopped before rendering, or rendering failed.
+- `outcome` is the [ledger outcome](#the-delivery-ledger) the event would get.
+  Here `fired` means "would be replayed": a dry run stops short of the replay,
+  so it cannot know whether the route would refuse.
+- `error` says why the pipeline stopped: a template or `if:` that failed to
+  render, an event with no `id` on a trigger with no `dedupe_key`, or a
+  reaction target that did not resolve.
+
+`POST /v1/triggers/{id}/poll` runs the source once **for real** — the command,
+or a GitHub listing — and judges each event it returns as `/test` does. It
+fires nothing, advances no cursor, writes no ledger row and leaves poll health
+alone, but the command itself runs with whatever effects it has.
+
+- `seed` says a real poll right now would seed and fire nothing. A command's
+  events are judged anyway, to show what the filter will do once the trigger is
+  armed. A GitHub source has no events to judge until its snapshot exists, so
+  its seeding poll answers an empty `events[]`.
+- `truncated` counts events past the 20-event cap on one poll, which were not
+  judged. `refused` counts command output lines that were not events.
+- `cursor` is the watermark the command printed, which a real poll would store.
+- A command that fails or times out, or a listing that fails, is still a
+  `200`: `error` says why, `events[]` is empty and the other fields are zero.
+- A `type: http` trigger has no poll, and is a `400`.
+
+### The delivery ledger
+
+`GET /v1/triggers/{id}/deliveries?limit=` reads one row per event the trigger
+judged, newest first. `limit` is 1 to 1000 and defaults to 100; anything else is
+a `400`.
+
+```json
+{ "deliveries": [ {
+    "id": 57, "trigger_id": "ci-failures", "event_id": "build-4812",
+    "dedupe_key": "build-4812", "outcome": "fired", "task_id": 142,
+    "created_at": "2026-09-13T09:30:00.000000000Z" } ] }
+```
+
+| `outcome` | Meaning |
+|---|---|
+| `fired` | The replayed route created or acted on a task, and `task_id` names it |
+| `seeded` | The first poll after arming was shown the event. Nothing fired, but it dedupes like `fired`, so a source that keeps no cursor of its own does not fire its backlog on the next poll |
+| `deduped` | A `fired` or `seeded` row already holds its dedupe key |
+| `filtered` | `match:`, `allowed_actors` or `if:` rejected it |
+| `rate_limited` | It was over `limits.max_per_hour`, which counts `fired` rows alone. Dropped, not queued |
+| `refused` | The replayed route answered `4xx`. `detail` keeps that answer's error envelope, and a reaction's `task_id` names the task it targeted. A reaction whose branch matched no unarchived task is `refused` too, with nothing replayed: `detail` names the branch and `task_id` is `null` |
+| `error` | A template or `if:` failed to render, the event had no `id` and the trigger no `dedupe_key`, or the replay answered `5xx` or never reached the route. `detail` says which |
+
+`task_id` is `null` when no task was involved, and becomes `null` if that task
+is later [permanently deleted](#permanent-delete). The ledger outlives the
+file: an id with no file still lists its rows, and only an id that could not
+name a file is a `404`.
+
+A `create_task` replay carries an `Idempotency-Key` the daemon derives from the
+dedupe key — `trigger:{id}:` followed by a hash. Two triggers, or a trigger and
+a script sending its own key, therefore never replay each other's tasks. A task
+a trigger creates is otherwise an ordinary task.
+
+### Pushing an event
+
+`POST /v1/triggers/{id}/events` is how a `type: http` trigger receives an event,
+and it is **authenticated twice**. It needs the bearer token like every other
+route, then the trigger's own signature. Under the one scheme,
+`github_hmac_sha256`, that is `X-Hub-Signature-256: sha256={hex}`: an
+HMAC-SHA256 of the raw body, keyed by the value of the environment variable the
+trigger's `signature.secret_env` names. The daemon reads that variable when the
+request arrives and compares in constant time.
+
+The signature covers the bytes as sent, so this route reads its body **raw**,
+under the 4 MiB tier, and parses it only after the signature verifies. The
+event's id is the body's string `id`; failing that, it is the
+`X-GitHub-Delivery` header. A body with neither is refused. A webhook sent
+straight from GitHub.com cannot add the bearer header, so it cannot deliver:
+only a caller on this machine that can read `{data_dir}/token` **and** holds
+the secret can.
+
+```sh
+BODY='{"id":"build-4812","status":"failed"}'
+SIG="sha256=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$CI_TRIGGER_SECRET" | awk '{print $NF}')"
+curl -s -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -H "X-Hub-Signature-256: $SIG" --data-binary "$BODY" \
+  "http://127.0.0.1:$PORT/v1/triggers/ci-failures/events" | jq
+```
+
+Refusals come in this order, and none of them writes a ledger row:
+
+| Status | When |
+|---|---|
+| `404 not_found` | No trigger by that id |
+| `413 payload_too_large` | The body is over 4 MiB |
+| `400 validation_failed` | The trigger's source is not `type: http` |
+| `409 invalid_state` | The trigger is not armed, including a file that does not validate. `details.reason` is its `disarmed_reason` |
+| `401 unauthorized` | The signature is missing or wrong, or the daemon's environment does not set the secret variable. The three are indistinguishable on purpose |
+| `400 validation_failed` | The body is not a JSON object, or has no string `id` and the request no `X-GitHub-Delivery` |
+
+Past those, the answer is a `200` carrying the delivery: the judgement above
+plus `{ delivery_id, task_id?, detail? }`. Its `outcome` is the one actually
+recorded, so a push the replayed route refused is still a `200`, with
+`outcome: refused`. A push has no per-poll cap, and pushes are judged one at a
+time.
+
 ## Tasks
 
 | Method | Path | Notes |
@@ -1397,17 +1651,39 @@ Human actions, all `POST /v1/tasks/{id}/…`:
 | `/cancel` | most states | |
 | `/pause` | queued, running | |
 | `/resume` | paused | |
-| `/retry` | blocked, awaiting_children | `{ prompt_override?, run_override?, branch_override? }` — `branch_override` renames the branch before re-admission, which is how a `branch_exists` block is recovered. **`409`** on a task created from a pull request: renaming its branch would detach it from that pull request. From `awaiting_children` it means the cascade below, and all three overrides are a **`400`** |
+| `/retry` | blocked, awaiting_children | `{ prompt_override?, run_override?, branch_override?, paused? }` — `paused` [holds](#holding-a-retry-or-a-follow-up) the task instead of re-queuing it. `branch_override` renames the branch before re-admission, which is how a `branch_exists` block is recovered. **`409`** on a task created from a pull request: renaming its branch would detach it from that pull request. From `awaiting_children` it means the cascade below, and all three overrides and `paused` are a **`400`** |
 | `/repair` | blocked | `{ prompt, agent?, model?, effort? }` — runs one ad-hoc agent in the task's existing worktree, then returns the task to `blocked` at the same step with the same reason |
 | `/skip` | blocked, awaiting_gate | |
 | `/approve` | awaiting_gate | |
 | `/reject` | awaiting_gate | |
 | `/answer` | awaiting_input | `{ answers?, allow? }` |
 | `/archive` | done, aborted | `{ force? }` or `?force` |
-| `/follow_up` | done, aborted | `{ prompt? \| run? \| workflow?, agent?, model?, effort? }` — exactly one of the three; runs it in the task's existing worktree, then returns the task to the state it came from |
+| `/follow_up` | done, aborted | `{ prompt? \| run? \| workflow?, agent?, model?, effort?, paused? }` — exactly one of the three; `paused` [holds](#holding-a-retry-or-a-follow-up) the task instead of queuing the run; runs it in the task's existing worktree, then returns the task to the state it came from |
 
 Anything else returns `409` with `details.state`. See
 [Task lifecycle](task-lifecycle.md).
+
+### Holding a retry or a follow-up
+
+`"paused": true` on `/retry` or `/follow_up` holds the task: it lands in
+`paused` instead of `queued`, and `/resume` is what admits it. Everything else
+the action writes is written now. A retry still resets the step's retry budget
+and applies its override. A follow-up still records its request and the state
+it will return to. It is the hold `POST /v1/tasks` offers at creation, applied to
+a task that already exists, so no agent can start between the action and a human
+looking at it.
+
+A held retry on a `blocked` parent holds the blocked lanes its cascade reaches
+too, and `retried_descendants` counts them. A held call starts nothing. From
+`awaiting_children` a held retry is `400 validation_failed`: that retry
+re-admits the lanes and never queues the parent, so there is nothing to hold.
+Where the action itself is not valid, a held request gets the same `409` a plain
+one does. Omitting `paused`, or sending `false`, is the plain action.
+
+A held follow-up runs and ends like any other once resumed: `done` back to
+`done`, `aborted` back to `aborted`. Cancelling it while it waits drops the
+follow-up and leaves the task `aborted`, as `/cancel` does to any follow-up
+that has not finished.
 
 `/retry` on a `fan_out` parent parked in `awaiting_children` is a **cascade**:
 the parent has no step of its own to re-run, so the one call re-admits every
@@ -1477,8 +1753,8 @@ flight.
 
 The optional `agent` / `model` / `effort` behave exactly as `/repair`'s do,
 except that an explicit agent field on a step of a named workflow still wins —
-that is what a step field means. The response is the task, now `queued`, plus
-`warnings`.
+that is what a step field means. The response is the task, now `queued` (or
+`paused`, when the request said `paused: true`), plus `warnings`.
 
 The run returns the task to the state it came from: `done` to `done`, `aborted`
 to `aborted`, whatever it exits with. A follow-up never changes a task's
@@ -1971,6 +2247,7 @@ chat.created            chat.state_changed      chat.turn_changed
 chat.archived           chat.handed_off
 task.deleted            chat.deleted
 project.*               workflow.registry_changed
+trigger.fired           trigger.poll_changed
 agent.quota_changed     daemon.shutting_down
 ```
 
@@ -2030,6 +2307,20 @@ they need.
   untouched, because the link is a fact about GitHub rather than about the
   task's own progress. Re-fetch
   [`/v1/tasks/{id}/github/pull`](#github-pull-requests) when you see one.
+- `trigger.fired` carries `{ trigger_id, delivery_id, action }`, where `action`
+  is the action type. The event's `project_id` is the trigger's project and its
+  `task_id` is the task created or acted on, so `?project_id=` filters it and
+  that task's own stream receives it. It is published after the
+  [ledger](#the-delivery-ledger) row is recorded, and `fired` is the **only**
+  outcome that publishes. The others are ledger rows you read from
+  `/v1/triggers/{id}/deliveries`: an event per filtered poll would fill the
+  table with nothing anyone reacts to. A task a trigger created still announces
+  itself with its own `task.created`.
+- `trigger.poll_changed` carries `{ trigger_id, ok, error }` and no `task_id`
+  or `project_id`, so a `?project_id=` subscription never sees it. It is
+  emitted on a trigger's first poll after arming and on every change from ok to
+  failing or back — never once per poll. To keep last-poll times current,
+  re-read [`GET /v1/triggers`](#triggers) on your own timer.
 
 ### Live output — ephemeral
 
@@ -2084,6 +2375,10 @@ Every route on this page is a tool, with these exceptions:
 | `PATCH /v1/config` | An agent must not reconfigure the daemon supervising it — a patch changes the argv it spawns, what its children inherit, and whether steps get MCP at all |
 | `POST /v1/workflows` | Same line: a workflow file is what that daemon runs. `GET /v1/workflows/schema` is an ordinary tool |
 | `PATCH /v1/workflows` | Same |
+| `POST /v1/triggers` | An agent must not author or arm a trigger that starts agents, and enabling one is a `PATCH`. The reads, `POST /v1/triggers/validate` and both dry runs are ordinary tools: a dry run fires nothing, and `/poll` runs only a command the user configured |
+| `PATCH /v1/triggers/{id}` | Same |
+| `DELETE /v1/triggers/{id}` | Same |
+| `POST /v1/triggers/{id}/events` | An agent that can inject events can start agents. The signature it would have to forge is no reason to offer the route |
 | `POST /v1/tasks/{id}/github/pull/create` | The one route that writes to a forge. Nothing gates it behind the keypress it exists for — no config key, no confirmation the daemon can check — so an agent-callable version would be consent nobody gave. An agent that wants a pull request runs `git push` and `gh pr create` in its own worktree |
 | `GET /v1/events` | A tool call is request/response; use `task_wait` |
 | `GET /v1/tasks/{id}/events` | Same |

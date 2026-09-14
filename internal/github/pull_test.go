@@ -309,6 +309,16 @@ func TestPullLegsAgreeOnBotAuthor(t *testing.T) {
 	if len(gh) != 1 || len(rest) != 1 {
 		t.Fatalf("fixtures hold %d gh and %d rest rows, want 1 each", len(gh), len(rest))
 	}
+	// gh_2.98.0_pr_list_bot.json was captured before ghPullFields asked for
+	// `labels` and `reviewRequests`, so its row carries neither while the REST
+	// capture of the same bump carries both. This test is about Author, so the
+	// two are checked on the REST row and then set aside;
+	// TestPullLegsAgreeOnStateAll holds them to captures that asked on both legs.
+	if len(rest[0].Labels) == 0 || !reflect.DeepEqual(rest[0].RequestedReviewers, []string{"lezli01"}) {
+		t.Errorf("rest row labels = %v, reviewers = %v; want the captured labels and [lezli01]",
+			rest[0].Labels, rest[0].RequestedReviewers)
+	}
+	rest[0].Labels, rest[0].RequestedReviewers = nil, nil
 	if !reflect.DeepEqual(gh[0], rest[0]) {
 		t.Fatalf("the two legs disagree about a bot-authored pull request:\n gh   = %+v\n rest = %+v", gh[0], rest[0])
 	}

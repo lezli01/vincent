@@ -9,7 +9,10 @@
 // cursor's run argv is otherwise claude-shaped, and --trust is the one flag
 // only cursor passes, in both permission modes); anything else is
 // claude-shaped. `models` and `status` as argv[1] answer cursor's option and
-// login probes (§9.7), and `app-server` answers codex's quota reader (§9.6). Scenario selection is environment-driven so argv stays
+// login probes (§9.7), and `app-server` answers codex's quota reader (§9.6).
+// `trigger-poll` and `hmac` are not agent probes at all: they are the m16
+// gate's trigger poll command and webhook signer (task 096, trigger.go).
+// Scenario selection is environment-driven so argv stays
 // true to the real CLIs:
 //
 //	FAKEAGENT_SCENARIO    success (default) | error-event | nonzero-exit |
@@ -226,6 +229,13 @@ func main() {
 			// with `--stdio` after it and no run flags, so it lands here for
 			// the same reason `models` and `login status` do.
 			appServerMain()
+			return
+		case "trigger-poll":
+			// The m16 gate's poll command and signer (task 096): see trigger.go.
+			triggerPollMain(os.Args[2:])
+			return
+		case "hmac":
+			hmacMain(os.Args[2:])
 			return
 		case "models":
 			fmt.Print(cursorModels)

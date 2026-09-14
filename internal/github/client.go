@@ -127,10 +127,25 @@ func (c *Client) Probe(ctx context.Context, repo Repo) Availability {
 // ListOptions bound a listing. The zero value is "the most recent open
 // issues", which is what the picker opens with.
 type ListOptions struct {
-	// State is open (default), closed or all.
+	// State is StateOpen (default), StateClosed or StateAll. A caller that
+	// diffs one listing against the last asks for StateAll: an open-only
+	// listing cannot tell "was closed" from "fell out of the window" (task 096
+	// decision D).
 	State string
 	// Limit caps the rows; <= 0 means DefaultListLimit.
 	Limit int
+	// Since, when non-zero, keeps only rows updated at or after it, and makes
+	// both legs fetch in update order rather than creation order — so Limit
+	// keeps the most recently *changed* rows, which is what a poller asks
+	// about: an old issue that was just closed is exactly the row a
+	// creation-ordered page would cut. Zero is no bound, and the picker's
+	// creation order.
+	//
+	// It is honoured to the second (both wire formats carry whole seconds) and
+	// inclusively. The `gh` leg answers through GitHub's search index, which
+	// is eventually consistent with writes, so a poller should overlap its
+	// windows rather than pass the previous poll's instant exactly.
+	Since time.Time
 }
 
 func (o ListOptions) state() string {
@@ -139,8 +154,8 @@ func (o ListOptions) state() string {
 		return StateOpen
 	case StateClosed:
 		return StateClosed
-	case "all":
-		return "all"
+	case StateAll:
+		return StateAll
 	default:
 		return StateOpen
 	}
@@ -151,6 +166,35 @@ func (o ListOptions) limit() int {
 		return DefaultListLimit
 	}
 	return o.Limit
+}
+
+// since is Since in UTC, truncated to the second. Truncating rather than
+// rounding keeps the bound inclusive: a row updated within the same second as
+// Since is never dropped for a sub-second the wire could not have carried.
+func (o ListOptions) since() time.Time {
+	if o.Since.IsZero() {
+		return time.Time{}
+	}
+	return o.Since.UTC().Truncate(time.Second)
+}
+
+// keepSince drops rows updated before since; a zero since keeps everything.
+//
+// On the REST pulls leg it *is* the bound, because that collection has no
+// `since` parameter. On the other three the server already applied one, and
+// filtering again anyway is what makes the legs agree at the edge rather than
+// trusting two servers' separate notions of "after" (task 035 decision 1).
+func keepSince[T any](rows []T, since time.Time, updated func(T) time.Time) []T {
+	if since.IsZero() {
+		return rows
+	}
+	kept := rows[:0]
+	for _, row := range rows {
+		if !updated(row).Before(since) {
+			kept = append(kept, row)
+		}
+	}
+	return kept
 }
 
 // List returns repo's issues, newest first. Pull requests are never included:
@@ -174,6 +218,7 @@ func (c *Client) List(ctx context.Context, repo Repo, opts ListOptions) ([]Issue
 			"via", cred.via, "reason", ReasonOf(err), "detail", err)
 		return nil, err
 	}
+	issues = keepSince(issues, opts.since(), func(i Issue) time.Time { return i.UpdatedAt })
 	sortIssues(issues)
 	return issues, nil
 }
@@ -205,6 +250,10 @@ func (c *Client) Get(ctx context.Context, repo Repo, number int) (Issue, error) 
 // serves is open-only: an open listing is what a "which of my branches has a
 // PR" screen is asking, and pulling a repository's whole pull-request history
 // to answer a question about one row is what GetPull exists to avoid.
+//
+// A poller asks differently (task 096 decision D): StateAll bounded by Since,
+// which sees a merge or a close as a changed row rather than a vanished one,
+// at the cost of one page however many pull requests the repository has.
 func (c *Client) ListPulls(ctx context.Context, repo Repo, opts ListOptions) ([]PullRequest, error) {
 	cred, err := c.credential(ctx)
 	if err != nil {
@@ -223,6 +272,7 @@ func (c *Client) ListPulls(ctx context.Context, repo Repo, opts ListOptions) ([]
 			"via", cred.via, "reason", ReasonOf(err), "detail", err)
 		return nil, err
 	}
+	pulls = keepSince(pulls, opts.since(), func(p PullRequest) time.Time { return p.UpdatedAt })
 	sortPulls(pulls)
 	return pulls, nil
 }

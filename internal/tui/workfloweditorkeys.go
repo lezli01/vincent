@@ -192,7 +192,26 @@ func (w *workflowsView) commitRow(row wfEditRow, value string) tea.Cmd {
 	if value == row.value {
 		return nil
 	}
-	op := apiclient.WorkflowOp{Op: apiclient.WorkflowOpSet, Path: row.path}
+	op, bad := rowOp(row, value)
+	// The row shows what was typed until the daemon answers. A rejected value
+	// stays visible beside its error, which is what makes the error
+	// actionable (§15).
+	e.rows[e.cursor].value = value
+	if bad != "" {
+		e.err = bad
+		return nil
+	}
+	e.saving = true
+	return w.editorPatchCmd([]apiclient.WorkflowOp{op})
+}
+
+// rowOp is the one translation from a committed row to the edit operation
+// that writes it, shared by every form that edits a daemon-owned YAML file by
+// ops — this editor and the triggers form (task 096.6) — so the two cannot
+// disagree about what "(unset)" or a comma-separated list means. bad is a
+// refusal this side can already make, prefixed with the field's name.
+func rowOp(row wfEditRow, value string) (op apiclient.WorkflowOp, bad string) {
+	op = apiclient.WorkflowOp{Op: apiclient.WorkflowOpSet, Path: row.path}
 	switch {
 	case value == unsetMarker || (value == "" && !row.field.Required):
 		op.Op = apiclient.WorkflowOpRemove
@@ -208,18 +227,11 @@ func (w *workflowsView) commitRow(row wfEditRow, value string) tea.Cmd {
 			// daemon stays the authority — a value that passes here and is
 			// still refused lands on the same row beside the same error —
 			// but "2 minutes" is not a §12.1 duration and never was.
-			e.rows[e.cursor].value = value
-			e.err = row.field.Name + ": " + err
-			return nil
+			return op, row.field.Name + ": " + err
 		}
 		op.Value = renderYAMLScalar(value)
 	}
-	// The row shows what was typed until the daemon answers. A rejected value
-	// stays visible beside its error, which is what makes the error
-	// actionable (§15).
-	e.rows[e.cursor].value = value
-	e.saving = true
-	return w.editorPatchCmd([]apiclient.WorkflowOp{op})
+	return op, ""
 }
 
 // renderFlowList splits a comma-separated row into a YAML flow sequence.

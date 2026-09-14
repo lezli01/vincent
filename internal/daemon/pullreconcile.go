@@ -9,6 +9,7 @@ import (
 	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/trigger"
 )
 
 // The task↔pull-request reconciler (task 052, spec §12.3).
@@ -34,8 +35,17 @@ type PullReconciler struct {
 	git    *gitx.Git
 	client *github.Client
 	logger *slog.Logger
+	// triggers is judged on the same tick (task 096.3, decision 31D); nil is
+	// a reconciler with no GitHub triggers to feed.
+	triggers *trigger.Manager
 	// now is the clock, seamed for tests.
 	now func() time.Time
+}
+
+// WithTriggers makes the tick also judge GitHub triggers.
+func (r *PullReconciler) WithTriggers(m *trigger.Manager) *PullReconciler {
+	r.triggers = m
+	return r
 }
 
 // NewPullReconciler builds the reconciler. It performs no I/O.
@@ -54,9 +64,15 @@ func (r *PullReconciler) Run(ctx context.Context) {
 	const idle = time.Minute
 	for {
 		wait := idle
-		if cfg := r.cfg(); cfg.GitHub.Polls() {
+		cfg := r.cfg()
+		switch {
+		case cfg.GitHub.Polls():
 			r.Tick(ctx)
 			wait = cfg.GitHub.PollInterval.Std()
+		case !cfg.GitHub.Enabled:
+			r.failTriggers(ctx, errTriggerGitHubOff)
+		default:
+			r.failTriggers(ctx, errTriggerGitHubNoPoll)
 		}
 		timer := time.NewTimer(wait)
 		select {
@@ -75,8 +91,17 @@ func (r *PullReconciler) Tick(ctx context.Context) {
 	// The gate first, and it stops at the first "no" — exactly as the API's
 	// does. A disabled integration makes no call, and neither does a project
 	// whose origin is not a github.com remote.
-	if !r.cfg().GitHub.Enabled || r.client == nil || r.git == nil {
+	if !r.cfg().GitHub.Enabled {
+		r.failTriggers(ctx, errTriggerGitHubOff)
 		return
+	}
+	if r.client == nil || r.git == nil {
+		r.failTriggers(ctx, errTriggerGitHubNoClient)
+		return
+	}
+	var wants map[int64]trigger.GitHubWant
+	if r.triggers != nil {
+		wants = r.triggers.GitHubWants(ctx)
 	}
 	projects, err := r.store.ListProjects(ctx)
 	if err != nil {
@@ -87,15 +112,37 @@ func (r *PullReconciler) Tick(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		r.reconcileProject(ctx, project)
+		want, triggered := wants[project.ID]
+		repo, ok := r.repoFor(ctx, project)
+		if triggered {
+			// One listing per kind for every GitHub trigger on the project,
+			// however many there are; its failure is each trigger's failing
+			// poll status, never quiet (decision 31D).
+			listing := trigger.GitHubListing{Err: errTriggerGitHubNotRepo}
+			if ok {
+				listing = listForTriggers(ctx, r.client, repo, want)
+			}
+			r.triggers.JudgeGitHub(ctx, project.ID, listing)
+		}
+		if ok {
+			r.reconcileProject(ctx, project, repo)
+		}
 	}
 }
 
-func (r *PullReconciler) reconcileProject(ctx context.Context, project store.Project) {
-	repo, ok := r.repoFor(ctx, project)
-	if !ok {
+// failTriggers marks every armed GitHub trigger failing with err. It runs on
+// the idle heartbeat while GitHub is not polled, so a trigger that cannot
+// work says why rather than going quiet.
+func (r *PullReconciler) failTriggers(ctx context.Context, err error) {
+	if r.triggers == nil {
 		return
 	}
+	for project := range r.triggers.GitHubWants(ctx) {
+		r.triggers.JudgeGitHub(ctx, project, trigger.GitHubListing{Err: err})
+	}
+}
+
+func (r *PullReconciler) reconcileProject(ctx context.Context, project store.Project, repo github.Repo) {
 	candidates, err := r.store.LinkCandidates(ctx, project.ID)
 	if err != nil {
 		r.logf("pull request reconcile: tasks not listed",
@@ -158,13 +205,7 @@ func (r *PullReconciler) reconcileProject(ctx context.Context, project store.Pro
 // narrowness: an SSH alias, or a GitHub remote not named `origin`, is simply
 // not GitHub-based (task 035 decision 5, unreversed by task 052).
 func (r *PullReconciler) repoFor(ctx context.Context, project store.Project) (github.Repo, bool) {
-	ctx, cancel := context.WithTimeout(ctx, gitx.QueryTimeout)
-	defer cancel()
-	remote, err := r.git.Run(ctx, project.Path, "remote", "get-url", "origin")
-	if err != nil {
-		return github.Repo{}, false
-	}
-	return github.ParseRemote(remote)
+	return githubRepoFor(ctx, r.git, project)
 }
 
 func (r *PullReconciler) clock() time.Time {

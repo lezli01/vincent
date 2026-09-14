@@ -6,10 +6,16 @@
 took on `master` first. Commit subjects on this branch written before the move
 say "091"; they mean this document.*
 
-Status: **in progress (1/6)**.
+Status: **done (6/6)**.
 
-**Spec:** would amend §2, §3 (a new decision row), §5, §8.4, §12.3, §13.1, §13.2,
-§13.3, §13.4, §14, §15, §16, §17, §20.
+**Spec:** amends §3 (decision rows 33 and 34), §5.3, §6, §8.4, §12.2, §12.3,
+§13.1, §13.2, §13.3, §13.4, §14, §15, §16, §17, §20.
+
+*Amended 2026-09-13:* this line used to read "would amend §2, §3 (a new
+decision row), §5, …". §2 is not amended after all: its secret-management
+non-goal holds as written, because a `type: http` source names the environment
+variable holding its secret and the daemon reads it at the moment of use
+(decision 31G). §12.2 joined the list for `{config_dir}/triggers/`.
 
 ## Problem
 
@@ -110,7 +116,7 @@ pairing is the point: notify is the daemon's **outward** signal (task
   *step* (*Only if build status is failed*), not a build feature: TeamCity has
   no build feature that makes an arbitrary HTTP call without a plugin. No spec
   amendment: nothing here changes behaviour.
-- [~] **096.2** `internal/trigger`: the registry, the `type: command` source, the
+- [x] **096.2** `internal/trigger`: the registry, the `type: command` source, the
   `create_task` action, `on_fire: propose`, the delivery ledger, and
   `vincent trigger test`. Depends: 096.1 (for the payload shapes its fixtures
   come from). *2026-09-11:* started together with 096.6 on one branch
@@ -121,19 +127,56 @@ pairing is the point: notify is the daemon's **outward** signal (task
   are not a workflow feature — no field, step type or semantics reaches a
   workflow author — so `skills/vincent-workflows/SKILL.md`,
   `internal/workflow/builtin.go` and `update-workflows`' checklist are
-  deliberately not amended, as 065 recorded for its own.
-- [ ] **096.3** `type: github_issues` and `type: github_prs`, on the existing
-  `github.poll_interval` reconciler tick. Depends: 096.2.
-- [ ] **096.4** Reaction actions — `follow_up`, `retry` and `cancel` against the
-  task whose `branch_name` matches the event's ref. Depends: 096.2.
-- [ ] **096.5** `type: http` ingress (`POST /v1/triggers/{id}/events`) with
-  per-source HMAC verification. Depends: 096.2.
-- [ ] **096.6** The Triggers takeover in the TUI (§15 view 11, issue
+  deliberately not amended, as 065 recorded for its own. ✓ 2026-09-13 — the
+  rest landed in the pull request that closed this task (decision 31A): the
+  registry with fsnotify live reload, the manager that arms, seeds, polls and
+  fires, `triggers.enabled` in `config.yaml`, the `seeded` ledger outcome and
+  migration 0030 (decision 31B), `trigger.fired` and `trigger.poll_changed` on
+  §13.3's fan-out, the `/v1/triggers` routes with their MCP tools and
+  exclusions, and `vincent trigger test` (decision 29). The manager is wired in
+  `daemon.Run` beside `internal/notify`, as the opening of this document said it
+  would be, and the config applier wakes it on a reload, so turning
+  `triggers.enabled` on arms at once rather than on the manager's five-second
+  backstop. A poll command gets a fixed **one-minute** timeout, longer than
+  notify's ten seconds because a poll is a vendor search over the user's
+  network rather than a local toast, and inherits the §12.3 `environment`
+  policy like every other child of the daemon.
+- [x] **096.3** `type: github_issues` and `type: github_prs`, on the existing
+  `github.poll_interval` reconciler tick. Depends: 096.2. ✓ 2026-09-13 —
+  decisions 31D, 31E, 31F, 32 and 35. The reconciler asks the manager what each
+  project's armed GitHub triggers need, makes at most one issues listing and one
+  pulls listing for that project per tick, and hands the result to every
+  trigger on it. `internal/github`'s `ListOptions` gains `Since` and `StateAll`
+  on both legs (on `gh`, which has no since flag, a
+  `--search 'updated:>=… sort:updated-desc'` qualifier); `PullRequest` gains
+  `Labels` and `RequestedReviewers` and `Issue` gains `Assignees`, with fixtures
+  captured from gh 2.100.0 and REST API 2022-11-28. The snapshot rides in
+  `trigger_cursors.cursor`, so there is no migration.
+- [x] **096.4** Reaction actions — `follow_up`, `retry` and `cancel` against the
+  task whose `branch_name` matches the event's ref. Depends: 096.2. ✓ 2026-09-13
+  — decisions 31C, 33 and 34. Each replays its §6 route against the unarchived
+  task in `source.project` on the rendered branch (`store.FindTaskForBranch`).
+  Under `propose` a follow-up or retry sends `paused: true`, which both routes
+  now accept for every client through `internal/taskstate`'s held table;
+  `vincent task retry` and `vincent task follow-up` gained `--paused`, and the
+  TUI's follow-up form gained the new-task form's **start** row. A `cancel` is
+  refused at load unless it writes `on_fire: create`.
+- [x] **096.5** `type: http` ingress (`POST /v1/triggers/{id}/events`) with
+  per-source HMAC verification. Depends: 096.2. ✓ 2026-09-13 — decision 31G.
+  The route stays behind the bearer token and verifies `github_hmac_sha256`
+  over the raw body, read under §13.1's 4 MiB tier. A GitHub.com webhook cannot
+  deliver through a bare tunnel, because it cannot add the bearer; appendix B
+  example 5 and *Explicitly not in scope* are amended to say what does work.
+- [x] **096.6** The Triggers takeover in the TUI (§15 view 11, issue
   [#362](https://github.com/lezli01/vincent/issues/362)): list, schema-driven
   create and edit on task 065's form, enable/disable, delete, the ledger, and
   both dry runs, over the write routes, served schema and dry-run routes it
   adds. Takes over *Observability*'s "TUI surface" bullet. Depends: 096.2.
-  Decisions 14–30.
+  Decisions 14–30. ✓ 2026-09-13 — reached from the command palette, with
+  decision 25's keys, confirmation before any value the served schema marks
+  dangerous (decision 19), a banner while `triggers.enabled` is off, and a
+  sample event held in session memory only (decision 27). The config form marks
+  `triggers.enabled` with task 060's `dangerous` flag (decision 31H).
 
 Spec amendments and the derived documentation pages land in the same pull
 request as the sub-task that makes each true, per `docs/tasks/README.md`.
@@ -477,6 +520,242 @@ database, unlike the purely local `vincent workflow render`.
 `internal/workflow`, never `internal/api`** — the `internal/mcp` shape.
 `internal/api` imports it for the registry, schema, writer and dry run.
 
+**31 (2026-09-13). Settled in the evaluation of issue
+[#365](https://github.com/lezli01/vincent/issues/365).** Eight calls, cited
+from the code as 31A–31H.
+
+*31A. Scope* (author). The five remaining sub-tasks, which are the rest of 096.2
+plus 096.3, 096.4, 096.5 and 096.6, land in one pull request, and that pull
+request closes this task. This **widens decision 15**, which bundled only 096.2
+and 096.6. Decision 15 is not edited: its reasoning about order still holds,
+and the branch follows it. Config, registry, poller and events come first, then
+routes, CLI and MCP, then the view. After those come the GitHub sources, the
+reactions with their route widenings, the ingress, the gate, and last the
+records.
+
+*31B. Seeding records the ledger* (author). Decision 6's seed fires nothing, and
+for a `type: command` source that keeps no cursor that is not enough. Poll 2
+sees the events poll 1 saw, the ledger holds nothing for them, and every one of
+them fires. So the first poll after arming writes one ledger row per event it
+returned, with a new outcome, **`seeded`**, keyed by the event's rendered
+`dedupe_key`. A seed runs no `match:` and no `if:`, and no catch-up cap applies,
+because recording is not firing and every event the source showed before arming
+must be covered. An event whose key does not render is logged at warn and
+skipped. `store.TriggerKeyDelivered` treats `fired` **or** `seeded` as
+delivered, while `CountTriggerFiredSince` still counts `fired` alone, so a seed
+spends none of the hourly limit. Migration 0030 rebuilds `trigger_deliveries`
+to widen the `outcome` CHECK, because SQLite cannot alter one in place. It
+renames the old table aside, creates the new one, copies the rows, drops the
+old table and recreates the three indexes. 0029 is not edited. The seed still
+stores the command's cursor line, or `""` when it prints none. GitHub sources
+seed through their snapshot (31D) rather than through ledger rows, and
+`type: http` has no poll, so it has no seed. *Beaten:* a seed that stores a
+cursor and nothing else, which is exactly the flood above; and a seed capped at
+20, which lets event 21 of a pre-arming backlog fire on poll 2.
+
+*31C. Reactions under `propose`* (author). Decision 9's pattern again: the
+affordance goes on the route, for every client. `POST /v1/tasks/{id}/follow_up`
+and `/retry` accept `"paused": true`, the task lands in `paused` instead of
+`queued`, and `resume` admits it. `internal/taskstate` gains a second, *held*
+table beside the first (`NextHeld` and `CanHold`), with `retry` from blocked to
+paused, and `follow_up` from done or aborted to paused. These are not new
+actions, because a held follow-up is still a follow-up: a 409 still names
+`follow_up`, and `available_actions` must not list a second spelling. A held
+retry from `awaiting_children` is a **400**, not a 409. That retry is task
+090's cascade: it writes nothing to the parent and never queues it, so there is
+no `queued` for a hold to replace, and the request is one the caller can
+correct. `vincent task retry`, `vincent task follow-up` and the TUI's follow-up
+form get the flag the way 096.2's widenings did. MCP picks it up by replaying
+the same routes.
+
+A `cancel` trigger is refused at load unless it writes `on_fire: create`. With
+`on_fire` absent the default is propose, and there is no held cancel to
+propose. Appendix B example 7 already carried that line "because it is
+required", and examples 4 and 5 stay valid.
+
+Target resolution for `target: branch` looks for the task in `source.project`
+whose `branch_name` equals the rendered `branch:`. It ignores archived tasks,
+and takes the newest when more than one row holds the name
+(`store.FindTaskForBranch`). With no match the delivery is `refused`, and its
+detail names the branch; having nothing to act on is the route's own 404 in
+spirit. An FSM-invalid target gets the route's own 409, recorded `refused` with
+the envelope as its detail, which is example 5's wording. The ledger's `task_id`
+is the task acted on (#362: "created or acted on"). A reaction refuses
+`workflow`, `title`, `description`, `fields`, `github_issue`, `github_pull`,
+`permission` and `limits.max_task_cost_usd` at load. Each of those is a
+property of a task being created, and a key that is set and then ignored is a
+control that does not control. `Idempotency-Key` rides only a `create_task`
+replay: a reaction's dedupe belongs to the ledger alone, and a header its route
+ignores would be a false claim.
+
+*31D. GitHub sources ride the reconciler tick* (author). `type: github_issues`
+and `type: github_prs` are judged on `internal/daemon/pullreconcile.go`'s
+`github.poll_interval` tick. Each project with an armed GitHub trigger gets one
+listing per kind per tick, shared by every trigger on it, so API use does not
+grow with the number of triggers. `source.poll_interval` on a GitHub source is
+refused at load, and examples 1, 6 and 7 drop it. The daemon owns the fetch:
+`internal/trigger` defines a `GitHubLister` and receives listings, and never
+imports `internal/github`. `ListOptions` gains `Since` and `StateAll` on both
+legs. A listing asks for `state: all`, so close and merge transitions are
+visible, with a limit of 100. It starts two minutes before the lowest watermark
+on the project, because the `gh` leg answers through the search index, which
+lags writes, and the diff is idempotent over an unchanged item.
+
+The per-trigger snapshot is JSON in `trigger_cursors.cursor`, which is opaque
+by design: `{kind, seeded_at, watermark, items}`. Each item, keyed by number,
+holds the state, labels and assignees, plus draft, merged and requested
+reviewers for a pull request, and its `updated_at`. A restart is therefore
+decision 16's capped catch-up diff, not a re-seed, and no migration is needed.
+The first tick after arming stores the snapshot and fires nothing. An item the
+snapshot has never seen fires `opened` only when it was created after the seed.
+An older one, beyond the seed listing's limit, becomes a baseline, because
+calling it "opened" would be a lie. Closed items not updated for 30 days (the
+ledger's horizon) are pruned, so a busy repository's cursor does not grow
+without end.
+
+`github_issues` synthesizes `opened`, `closed`, `reopened`, `labeled`,
+`unlabeled` and `assigned`. `github_prs` synthesizes `opened`,
+`ready_for_review`, `review_requested`, `closed` and `merged`, with `gh`'s
+`MERGED` state normalized to REST's `closed` plus `merged: true`. There is no
+`.Event.Actor` (decision 10). An unknown `match.action` value on a GitHub source
+is refused at load.
+
+The trigger's poll status reads failing, with the reason, in each of these
+cases: `github.enabled` is off, `github.poll_interval` is `0`, the project's
+`origin` is not a github.com repository, or the listing failed. It is never
+quiet. That is the opposite of the reconciler's own debug-level failure policy,
+and deliberately so: a trigger that silently never fires is exactly the
+question the ledger exists to answer.
+
+*31E. `review_requested` is in* (author). `internal/github.PullRequest` gains
+`RequestedReviewers` on both legs, holding user logins only (a team request is
+not a login and is excluded), and gains `Labels`. The new fixtures are named for
+the gh version and the REST API version they came from. *Narrowed the same day
+by decision 32:* example 6 works, but only with `allowed_actors`.
+
+*31F. Trusted events and `allowed_actors`.* An event is **trusted** when the
+change behind it is one an outsider cannot make on a public repository. Each
+event was checked against GitHub's repository role table: issue `labeled`,
+`unlabeled` and `assigned` need the triage role, and pull-request `merged` needs
+write. Every other event is untrusted:
+
+- `opened` and `reopened` are the author's, on issues and pull requests alike.
+- `closed` is too, because an author may close their own.
+- `ready_for_review` is the author's.
+- `review_requested` is untrusted per decision 32.
+
+A GitHub trigger with no `allowed_actors` is **refused at load** when its
+`match.action` could match an untrusted event, and the refusal names that event.
+That covers both a `match.action` that lists an untrusted event and one that is
+absent, since an absent one matches every event the source has. On these
+sources `allowed_actors` matches the **author** of the issue or pull request,
+case-insensitively, because that is the only identity a state diff has. §16 and
+the guide say so in those words. The key is refused on `command` and `http`
+sources, whose events carry no identity vincent can verify. *Beaten:* arming
+such a trigger with a warning, which is the "control that does not control"
+that decision 10 refused.
+
+*31G. HTTP ingress requires the bearer and a signature* (author).
+`POST /v1/triggers/{id}/events` stays behind §13.1's bearer token like every
+other route, and additionally verifies the trigger's own signature. Only a
+caller on this machine that can read `{data_dir}/token` **and** holds the shared
+secret can deliver, and no auth exemption is added to `authMiddleware`. These
+consequences are stated here rather than left to be discovered:
+
+- **A GitHub.com webhook through a bare tunnel cannot deliver**, because GitHub
+  cannot add the bearer header. Example 5 is amended to a self-hosted runner, or
+  to a same-box relay that adds the header, and the tunnel bullet under
+  *Explicitly not in scope* is narrowed the same way.
+- `source.signature.scheme` is a closed set holding `github_hmac_sha256` alone.
+  That scheme is `X-Hub-Signature-256`: `sha256=` followed by the hex HMAC-SHA256
+  of the raw body. The secret is read from `secret_env` in the daemon's
+  environment at the moment of use (§2) and compared in constant time. The
+  schema is shaped so that a later scheme is one more value.
+- The handler reads the raw bytes under §13.1's **4 MiB** tier, because a webhook
+  payload routinely exceeds 64 KiB. It verifies them, then decodes. A body over
+  the bound is 413.
+- The route checks, in this order:
+  1. An unknown id is 404.
+  2. A body over the bound is 413.
+  3. A valid file whose source is not `type: http` is 400.
+  4. A trigger that is not armed (disabled, `triggers.enabled` off, or a file
+     that does not validate) is 409 `invalid_state` with `details.reason`.
+  5. A bad or missing signature, or an unset secret variable, is 401 with no
+     ledger row. The three are indistinguishable on purpose.
+  6. A body that is not a JSON object is 400, and so is an event with neither a
+     string `id` nor an `X-GitHub-Delivery` header to take one from.
+
+  An event that passes all of these runs the pipeline a poll runs, with no
+  catch-up cap for a single push, and the answer is the delivery. Pushes to one
+  daemon are judged one at a time, so two deliveries of one key cannot both
+  pass the dedupe lookup.
+- The route joins `mcp.Excluded` beside decision 22's three writes, on decision
+  22's reasoning: an agent that can inject events can start agents.
+
+*31H. Smaller calls, settled from the recorded design.*
+
+- **Dry runs.** The two dry runs are #362's.
+  `POST /v1/triggers/{id}/test` judges a supplied event and writes nothing.
+  `POST /v1/triggers/{id}/poll` runs the source once for real and judges what it
+  returns, with no fire, no cursor advance, no ledger row and no change to poll
+  health; it is a 400 for `type: http`. Both work while the trigger or
+  `triggers.enabled` is off, since neither fires anything.
+- **`triggers.enabled`** (§12.3) defaults to `false` and is hot-reloaded. It is
+  editable over `PATCH /v1/config`, which is already MCP-excluded, and the
+  config form marks it with task 060's `dangerous` flag. Turning it on re-arms
+  every enabled trigger with a fresh seed (decision 16).
+- **Events.** `trigger.fired` publishes only for a `fired` delivery, carrying the
+  project and the task created or acted on. `trigger.poll_changed` publishes on
+  the first poll after arming and on each transition between ok and failing
+  (decision 24). No other outcome publishes, because the view refreshes its
+  ledger on its own timer.
+- **CLI and MCP.** The CLI gains exactly `vincent trigger test --event
+  fixture.json` (decision 29). The reads, `validate` and both dry runs stay MCP
+  tools (decision 22).
+
+**32 (2026-09-13). `review_requested` is untrusted, which narrows decision
+31E.** Requesting a reviewer by hand needs the triage role. On that reading the
+event would be trusted, and appendix B example 6 would work as written. But
+CODEOWNERS requests reviews **automatically** when an outsider opens a pull
+request that touches owned paths. So an outsider can cause the reviewer field
+to be set, and a trigger matching `reviewer: lezli01` would start a review task
+for any stranger's pull request. The event is therefore untrusted under 31F's
+rule that an event which cannot be confirmed is untrusted, and example 6 gains
+`allowed_actors`. *Beaten:* trusting it and documenting CODEOWNERS as a caveat,
+which leaves the unsafe choice as the default.
+
+**33 (2026-09-13). A held retry holds its cascade too.** A retry on a `blocked`
+fan-out parent does two things: the parent's own move from `blocked` to
+`queued`, then task 090's cascade over the blocked lanes beneath it. With
+`paused: true` the parent lands in `paused`, and every lane the cascade
+re-admits lands in `paused` as well; `retried_descendants` counts them.
+`paused: true` promises that the call starts nothing anywhere in the tree. A
+parent held while its lanes were admitted would break that promise for every
+lane. *Beaten:* holding the parent alone, which reads as held on the board while
+agents start underneath it.
+
+**34 (2026-09-13). An aborted-origin follow-up that passes through `paused`
+needs no change to task 027's `Restore`.** Checked, as 31C required. `paused`
+is not a settled state, so the store keeps the follow-up request (its origin,
+round and cursor) through the hold and through `resume`. The admission after
+that runs the follow-up and ends it the way an unheld one ends: through
+`Restore` (from `running` to `aborted`) for an aborted origin, and through
+`Complete` for a done one. One consequence is recorded rather than fixed.
+Cancelling a held follow-up on a **done** task leaves it `aborted`, under task
+027 decision 8's rule that `cancel` means what it always means. A hold can now
+make the wait before that choice indefinite, where before it lasted only as
+long as the scheduler took to admit the task.
+
+**35 (2026-09-13). The reconciler's own listing is untouched.** A trigger
+listing is a separate call from task 052's open-pull-request listing, even on a
+project that has both. That listing is open-only and shaped around links; a
+trigger's lists every state and is bounded by a watermark. Merging them would
+make the link reconciler's correctness depend on whether a trigger happens to be
+armed. A project's GitHub cost per tick is therefore task 052's call plus at
+most one issues listing and one pulls listing, however many triggers it has. The
+reconciler's quiet failure policy is also unchanged for its own call; only the
+trigger half reports failures (31D).
+
 ## Security: this inverts §16, and it is the substance of the work
 
 Every agent run in vincent today traces to a human keypress or a human-authored
@@ -504,7 +783,11 @@ amendment is the most important edit this task makes.
   Each source documents which of its events are trusted, and a trigger on an
   untrusted event with no actor allowlist should be refused at load rather than
   silently armed. On `type: github_issues` there is no actor at all, and the
-  allowlist degrades to the issue's author (decision 10).
+  allowlist degrades to the issue's author (decision 10). *Settled 2026-09-13
+  by decisions 31F and 32:* the trusted events are issue `labeled`, `unlabeled`
+  and `assigned`, and pull-request `merged`. A GitHub trigger that can match
+  any other event must name `allowed_actors`, which matches the author, or it
+  is refused at load. The key is refused on `command` and `http` sources.
 - **Rate limits** per trigger, and a `max_task_cost_usd` (task
   [033](033-task-cost-cap.md)) on triggered tasks defaulting tighter than a
   hand-created one. *Narrowed 2026-09-11 by decision 18:* the cap is per task
@@ -529,7 +812,8 @@ makes it worse: there is no delivery receipt on the sending side to go and check
 - **`trigger_deliveries`**: `(trigger_id, event_id, dedupe_key, received_at,
   outcome, action_json)`, where `outcome` is one of `fired`, `deduped`,
   `filtered`, `rate_limited`, `refused`, `error` — and the rendered action for
-  the ones that fired.
+  the ones that fired. *Amended 2026-09-13 (decision 31B):* and `seeded`, for an
+  event a seed poll was shown.
 - **A `trigger.fired` event** on §13.3's fan-out, published post-commit like
   every other.
 - **A TUI surface** — a triggers view, or a section on the projects view —
@@ -551,7 +835,12 @@ makes it worse: there is no delivery receipt on the sending side to go and check
 - **Shipping a tunnel or a relay.** §20's multi-user / remote-daemon / fleet
   line. `cloudflared` and `smee.io` are documented for `type: http`, the way §20
   documents `terminal-notifier` and `notify-send` for `notify:` — one line away,
-  not bundled.
+  not bundled. *Narrowed 2026-09-13 by decision 31G:* a tunnel on its own
+  delivers nothing from a sender that cannot add a header. The ingress needs
+  the daemon's bearer token as well as the signature, so GitHub.com's webhook
+  cannot use one directly. What does work is either a sender on the daemon's
+  machine, such as a self-hosted runner, or a relay on this machine that
+  receives from the tunnel and adds the bearer before forwarding.
 - **Scheduled and recurring triggers.** Adjacent — §20's "task templates &
   recurring tasks" — and deliberately out. The `action:` block should be
   designed so a later `type: schedule` source reuses it verbatim; that is the
@@ -613,11 +902,25 @@ Stderr is captured into the daemon log. The child gets a fixed timeout and has
 its whole process tree killed on expiry, exactly as `notify` treats its own
 children (task 046).
 
+*Amended 2026-09-13 (decisions 31B and 31H):* the fixed timeout is one minute.
+A seed run records a `seeded` ledger row per event line. It stores the cursor
+line when the command prints one and `""` when it does not, and in both cases
+the next run is judged rather than seeded. A line that is not a JSON object, or
+has no string `id`, is logged and counted, and a dry-run poll reports that count
+as `refused`. Stdout over 8 MiB fails the poll rather than being parsed short.
+
 ## Appendix B — example triggers
 
 Seven definitions covering the design surface. None of these run today; they are
 the acceptance corpus 096.2 should be written against, and the shapes 096.1's
 documentation should teach.
+
+*Amended 2026-09-13:* they run now. One mechanical difference applies to all
+seven and is left unedited below: `source.project` is the project's numeric id,
+not its name (096.2), because the replay then needs no resolution step and the
+form's project picker writes the id. Read `project: vincent` as that id.
+Examples 1, 5, 6 and 7 are amended where the shipped design differs in
+substance.
 
 ### 1. A GitHub label starts a task — the headline case
 
@@ -628,7 +931,6 @@ enabled: true
 source:
   type: github_issues
   project: vincent
-  poll_interval: 60s
 match:
   action: labeled
   labels: [agent-please]
@@ -658,6 +960,15 @@ the issue's *author* — on a public repository, the field an outsider controls
 thing. Labelling needs write access, which is what actually protects this
 trigger; the file lives in `{config_dir}` because there is no project scope
 (decision 8).
+
+*Amended 2026-09-13 (decisions 31D and 31F):* `poll_interval: 60s` is gone,
+because a GitHub source is judged on `github.poll_interval`'s tick and refuses
+an interval of its own. `labeled` is a trusted event, so this file needs no
+`allowed_actors` and loads as written. The protection is that applying a label
+needs the triage role, not write access as the paragraph above said. On a
+`labeled` event `.Event.labels` holds the labels just added, and `match:` reads
+an event list as "contains", so `labels: [agent-please]` passes an event that
+added that label alongside others.
 
 ### 2. Jira "Ready for Dev" — the generic source, unattended
 
@@ -794,19 +1105,40 @@ source:
     secret_env: VINCENT_GHA_WEBHOOK_SECRET
 match:
   action: completed
-  conclusion: failure
-if: '{{ eq .Event.workflow_run.head_branch_prefix "vincent/" }}'
+  workflow_run.conclusion: failure
+if: '{{ and (ge (len .Event.workflow_run.head_branch) 8) (eq (slice .Event.workflow_run.head_branch 0 8) "vincent/") }}'
 action:
   type: retry
   target: branch
   branch: '{{ .Event.workflow_run.head_branch }}'
-dedupe_key: 'gha:{{ .Event.workflow_run.id }}'
+dedupe_key: 'gha:{{ printf "%.0f" .Event.workflow_run.id }}'
 on_fire: propose
 ```
 
-Delivered to `POST /v1/triggers/gha-check-failed/events` — reachable from a
-self-hosted runner on the same machine, or through a tunnel the user runs and
-vincent does not ship.
+Delivered to `POST /v1/triggers/gha-check-failed/events` by a sender on the
+daemon's machine that can add both headers. One such sender is a job on a
+self-hosted runner there, run on `workflow_run: completed`, that posts the
+event with the daemon's bearer token, an `X-Hub-Signature-256` it computes, and
+its run id as `X-GitHub-Delivery`. The other is a relay on this machine that
+receives GitHub's webhook from a tunnel and adds the bearer before forwarding.
+
+*Amended 2026-09-13 (decisions 31C and 31G):* four corrections to the first
+draft.
+
+- **Delivery.** The draft said "or through a tunnel the user runs". A tunnel
+  alone cannot deliver: the route needs the daemon's bearer token as well as the
+  signature, and GitHub.com cannot add a header.
+- **The guard.** The `if:` read a `head_branch_prefix` that no payload carries.
+  Trigger templates get §8.4's builtins and no FuncMap (§20), so the prefix test
+  is written with `len` and `slice`.
+- **The match.** `match:` read `conclusion` at the top level, where a
+  `workflow_run` payload has none.
+- **The key.** `dedupe_key` needs `printf "%.0f"`, because a JSON number
+  reaches `.Event` as a float and a large run id would otherwise render in
+  exponent form.
+
+A branch that names no vincent task lands `refused` rather than being dropped
+silently, and under `propose` the retry lands `paused` for `resume` to start.
 
 *Demonstrates:* 096.5; HMAC verification in the source's own dialect with the
 secret read from the environment rather than stored (§2); and `retry` as a
@@ -823,10 +1155,10 @@ enabled: true
 source:
   type: github_prs
   project: vincent
-  poll_interval: 5m
 match:
   action: review_requested
   reviewer: lezli01
+allowed_actors: [lezli01, a-trusted-teammate]
 action:
   type: create_task
   workflow: cursor-review
@@ -843,6 +1175,16 @@ review workflow needs. Note it creates no `.Pull` template variable: row 27 keep
 a pull request a pointer and never a snapshot, and this changes nothing about
 that.
 
+*Amended 2026-09-13 (decisions 31D, 31E and 32):* `poll_interval` is gone, for
+example 1's reason. `review_requested` is untrusted, because CODEOWNERS requests
+a review on a pull request an outsider opens, so without `allowed_actors` this
+file is refused at load. The list names the pull-request **authors** whose
+review requests may start a task. `.Event.reviewer` holds the logins newly
+requested, and `match:` reads it as "contains". A review requested at the moment
+a pull request opens arrives as its own event beside `opened`. `.Event.Pull`
+belongs to the trigger's templates and is gone once the task exists (decision
+11), so the note above about `.Pull` still holds.
+
 ### 7. A merged pull request cancels its task
 
 ```yaml
@@ -852,9 +1194,8 @@ enabled: false
 source:
   type: github_prs
   project: vincent
-  poll_interval: 5m
 match:
-  state: closed
+  action: merged
 action:
   type: cancel
   target: branch
@@ -871,4 +1212,12 @@ raises.
 
 *Settled 2026-09-11 by decision 7:* it should not. The `on_fire: create` line
 above stays because it is required — `cancel` gets no default of its own.
+
+*Amended 2026-09-13 (decisions 31C, 31D and 31F):* `poll_interval` is gone, and
+`match: state: closed` became `action: merged`. With no `match.action` the
+trigger could match every `github_prs` event, several of them untrusted, and it
+would be refused at load for naming no `allowed_actors`. `merged` needs write
+access and is trusted. A cancel against a task that is already `done` gets the
+FSM's 409 and lands `refused`. The `on_fire: create` line is now enforced at
+load as well as required.
 

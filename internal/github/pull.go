@@ -54,6 +54,20 @@ type PullRequest struct {
 	HeadSHA    string `json:"head_sha,omitempty"`
 	BaseBranch string `json:"base_branch,omitempty"`
 	Author     string `json:"author,omitempty"`
+	// Labels are the label names, as Issue.Labels are.
+	Labels []string `json:"labels,omitempty"`
+	// RequestedReviewers are the logins still asked to review (task 096
+	// decision E). GitHub removes a request when that reviewer submits a
+	// review, so this is "who is being waited on" rather than a history —
+	// which is what a review_requested diff between two listings reads.
+	//
+	// Accounts only: a *team* review request is left out on both legs. A team
+	// is not a login, the legs spell one differently (REST
+	// `requested_teams[].slug` with no organization, `gh` a `reviewRequests`
+	// entry typed Team), and no captured payload here holds one to normalize
+	// against. Folding slugs into this list would let a team named like a
+	// user match that user's login.
+	RequestedReviewers []string `json:"requested_reviewers,omitempty"`
 
 	CreatedAt time.Time `json:"created_at,omitzero"`
 	UpdatedAt time.Time `json:"updated_at,omitzero"`

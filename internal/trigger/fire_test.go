@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -49,8 +50,20 @@ func newFakeAPI(t *testing.T, st *store.Store, status int, body string) *fakeAPI
 }
 
 type recorded struct {
-	key  string
-	body CreateBody
+	method      string
+	path        string
+	contentType string
+	key         string
+	raw         []byte
+	body        CreateBody
+}
+
+// requests is a copy of what the handler has been sent so far, safe to read
+// while a poller replays on its own goroutine.
+func (f *fakeAPI) requests() []recorded {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.reqs)
 }
 
 func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -59,7 +72,10 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var body CreateBody
 	b, _ := io.ReadAll(r.Body)
 	_ = json.Unmarshal(b, &body)
-	f.reqs = append(f.reqs, recorded{key: r.Header.Get("Idempotency-Key"), body: body})
+	f.reqs = append(f.reqs, recorded{
+		method: r.Method, path: r.URL.Path, contentType: r.Header.Get("Content-Type"),
+		key: r.Header.Get("Idempotency-Key"), raw: b, body: body,
+	})
 	status := f.status
 	if status == 0 {
 		status = http.StatusCreated

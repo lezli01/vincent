@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -35,6 +36,7 @@ import (
 	"github.com/lezli01/vincent/internal/selfupdate"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskrun"
+	"github.com/lezli01/vincent/internal/trigger"
 	"github.com/lezli01/vincent/internal/version"
 	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
@@ -394,6 +396,35 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	})
 	notifier.Start(ctx)
 	broker.OnEvent(notifier.OnEvent)
+
+	// The inward signal (§12.3, task 096), wired beside the outward one on
+	// purpose: notify runs a user's argv when a task changes state, a trigger
+	// runs one on an interval — or accepts a signed push, or diffs GitHub —
+	// and turns what it sees into tasks. Nothing it does is its own execution
+	// path: every action replays a route into the API's inner mux, reached
+	// through apiHolder because the server is built after the runner below
+	// (decision 30). Off twice by default — `triggers.enabled` and each file's
+	// `enabled:` — and read per use, so a hot reload reaches the next poll.
+	triggerRegistry := trigger.NewRegistry(filepath.Join(dirs.Config, triggerDirName), logger)
+	triggerRegistry.Reload()
+	if err := triggerRegistry.Watch(ctx); err != nil {
+		logger.Warn("trigger hot-reload unavailable", "error", err)
+	}
+	triggers := trigger.NewManager(trigger.Deps{
+		Store: st,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			srv := apiHolder.Load()
+			if srv == nil {
+				http.Error(w, "daemon is starting", http.StatusServiceUnavailable)
+				return
+			}
+			srv.Inner().ServeHTTP(w, r)
+		}),
+		Registry: triggerRegistry,
+		Enabled:  func() bool { return currentConfig().Triggers.Enabled },
+		Env:      func() []string { return currentConfig().Environment.ResolveProcess() },
+		Logger:   logger,
+	})
 	// Registry reloads become durable workflow.registry_changed events
 	// (§13.3). Registered after the initial loads so boot churn stays out of
 	// the event log.
@@ -409,6 +440,9 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	// config toggle per call through the API's own gate, so a hot reload
 	// governs the next request rather than requiring a restart.
 	githubClient := github.New(github.Options{Logger: logger})
+	// A GitHub trigger's live-poll dry run fetches through the same lister the
+	// reconciler's tick uses, so the manager itself never reaches the network.
+	triggers.SetGitHubLister(newTriggerGitHubLister(st, currentConfig, git, githubClient))
 	// The task↔pull-request reconciler (task 052, §12.3), wired here beside
 	// the scheduler and the notifier because it is a subsystem of the same
 	// kind: it owns its own goroutine, reads currentConfig() per tick so a
@@ -418,7 +452,11 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	// why `github.poll_interval: 0` switches it off on its own — the loop
 	// still runs and still does nothing, so switching it back on needs no
 	// restart.
-	go NewPullReconciler(st, currentConfig, git, githubClient, logger).Run(ctx)
+	//
+	// Since task 096.3 the same tick judges GitHub triggers: one listing per
+	// kind per project that has an armed GitHub trigger, shared by every
+	// trigger on it (decision 31D).
+	go NewPullReconciler(st, currentConfig, git, githubClient, logger).WithTriggers(triggers).Run(ctx)
 	// The release check (task 055, §12.3), the same shape again: one
 	// goroutine, config per tick, quiet failure. It is the daemon's first
 	// standing outbound call that fires for **every** install rather than
@@ -497,6 +535,9 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		shells.Reprobe()
 		// max_parallel_tasks may have changed (§11).
 		sched.Wake()
+		// triggers.enabled may have changed: arm or disarm now rather than on
+		// the manager's next backstop pass (decision 16).
+		triggers.Wake()
 	}
 	applyConfig := func(next config.Config) {
 		applyMu.Lock()
@@ -505,29 +546,32 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	}
 
 	srv := api.New(api.Deps{
-		Token:        token,
-		Config:       currentConfig,
-		StartedAt:    startedAt,
-		ListenAddr:   ln.Addr().String(),
-		Dirs:         dirs,
-		LogPath:      LogPath(dirs.Data),
-		TailLog:      TailFile,
-		RequestStop:  requestStop,
-		Logger:       logger,
-		Store:        st,
-		Git:          git,
-		GitHub:       githubClient,
-		Worktrees:    worktrees,
-		Agents:       agents,
-		Catalog:      catalog,
-		Workflows:    workflows,
-		Runner:       runner,
-		Chats:        chats,
-		WakeRunner:   sched.Wake,
-		Broker:       broker,
-		Reclaimer:    reclaimer,
-		UpdateStatus: updateCheck.Result,
-		ApplyConfig:  applyConfig,
+		Token:           token,
+		Config:          currentConfig,
+		StartedAt:       startedAt,
+		ListenAddr:      ln.Addr().String(),
+		Dirs:            dirs,
+		LogPath:         LogPath(dirs.Data),
+		TailLog:         TailFile,
+		RequestStop:     requestStop,
+		Logger:          logger,
+		Store:           st,
+		Git:             git,
+		GitHub:          githubClient,
+		Worktrees:       worktrees,
+		Agents:          agents,
+		Catalog:         catalog,
+		Workflows:       workflows,
+		Runner:          runner,
+		Chats:           chats,
+		WakeRunner:      sched.Wake,
+		Broker:          broker,
+		Reclaimer:       reclaimer,
+		UpdateStatus:    updateCheck.Result,
+		ApplyConfig:     applyConfig,
+		Triggers:        triggers,
+		TriggerRegistry: triggerRegistry,
+		TriggerWriter:   trigger.NewWriter(triggerRegistry.Dir()),
 		OnProjectsChanged: func() {
 			pctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -539,6 +583,9 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		},
 	})
 	apiHolder.Store(srv)
+	// After the holder is set: the first reconcile may seed, and a later poll
+	// replays into the server.
+	triggers.Start(ctx)
 
 	if err := config.Watch(ctx, logger, dirs.Config, &applyMu, applyLocked); err != nil {
 		logger.Warn("config hot-reload unavailable", "error", err)
@@ -574,6 +621,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		logger.Info("shutting down: stop requested via API")
 	case err := <-serveErr:
 		logger.Error("http server failed", "error", err)
+		triggers.Stop()
 		sched.Stop()
 		runner.Stop()
 		chats.Stop()
@@ -590,6 +638,9 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		&store.Event{Type: store.EventDaemonShuttingDown}); err != nil {
 		logger.Warn("daemon.shutting_down event not recorded", "error", err)
 	}
+	// Triggers first: nothing new should be created or acted on while the
+	// rest winds down.
+	triggers.Stop()
 	sched.Stop()
 	runner.StopGraceful(processGrace)
 	chats.Stop()

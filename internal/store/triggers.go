@@ -13,10 +13,16 @@ import (
 // {config_dir}/triggers/ and never reach this package.
 
 // Delivery outcomes: what the firing pipeline decided about one event (task
-// 096 *Observability*). They are the CHECK constraint of migration 0029.
+// 096 *Observability*). They are the CHECK constraint of migration 0030.
 const (
-	// DeliveryFired is an event whose replayed POST /v1/tasks created a task.
+	// DeliveryFired is an event whose replayed route created or acted on a
+	// task.
 	DeliveryFired = "fired"
+	// DeliverySeeded is an event the first poll after arming was shown (task
+	// 096 decision 31B). It fired nothing — recording is not firing — and it
+	// dedupes like DeliveryFired, so a source that keeps no cursor of its own
+	// does not flood on its second poll with the backlog its seed saw.
+	DeliverySeeded = "seeded"
 	// DeliveryDeduped is an event whose dedupe key had already fired.
 	DeliveryDeduped = "deduped"
 	// DeliveryFiltered is an event `match:` or `if:` rejected.
@@ -31,6 +37,40 @@ const (
 	// answered 5xx or never reached the handler.
 	DeliveryError = "error"
 )
+
+// Trigger events on §13.3's fan-out (task 096 decisions 24 and 31H).
+const (
+	// EventTriggerFired is a delivery whose outcome is `fired`. Payload
+	// `{trigger_id, delivery_id, action}`, with the event's project_id and
+	// task_id set: the task created or acted on. Only `fired` publishes — the
+	// other outcomes are ledger rows the triggers view refreshes on its own
+	// timer, and a durable event per filtered poll would grow the events table
+	// with nothing anyone reacts to.
+	EventTriggerFired = "trigger.fired"
+	// EventTriggerPollChanged is a trigger's poll health on its first poll
+	// after arming, and on every ok → failing and failing → ok transition —
+	// never per poll. Payload `{trigger_id, ok, error}`.
+	EventTriggerPollChanged = "trigger.poll_changed"
+)
+
+// FindTaskForBranch returns the task in projectID whose branch_name is branch,
+// ignoring archived tasks and preferring the newest when more than one row
+// holds the name (task 096 decision 31C: a reaction's `target: branch`). §10's
+// claim keeps that to one unarchived row in practice; the ordering is what
+// makes the answer deterministic if it ever is not. ErrNotFound when none.
+func (s *Store) FindTaskForBranch(ctx context.Context, projectID int64, branch string) (*Task, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT `+taskColumns+` FROM tasks
+		WHERE project_id = ? AND branch_name = ? AND archived_at IS NULL
+		ORDER BY id DESC LIMIT 1`, projectID, branch)
+	t, err := scanTask(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("no task on branch %q: %w", branch, ErrNotFound)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find task for branch: %w", err)
+	}
+	return t, nil
+}
 
 // TriggerCursor is one trigger's poll watermark and health.
 type TriggerCursor struct {
@@ -186,19 +226,20 @@ func (s *Store) RecordTriggerDelivery(ctx context.Context, d *TriggerDelivery) (
 	return &out, nil
 }
 
-// TriggerKeyDelivered reports whether dedupeKey has already *fired* for this
-// trigger. Only a `fired` row counts: a `deduped` row created nothing and is
-// itself evidence of an earlier `fired` one, while a `filtered`,
-// `rate_limited`, `refused` or `error` row is an event that did not become a
-// task — a relabel after a filter change, an hour later under the limit, or
-// the same event after the refusal's cause was fixed must still be able to
-// fire.
+// TriggerKeyDelivered reports whether dedupeKey has already *fired* or been
+// *seeded* for this trigger. A `seeded` row counts because it is the record of
+// an event that existed before the trigger was armed, which decision 16 says
+// must never fire. A `deduped` row created nothing and is itself evidence of
+// an earlier one, while a `filtered`, `rate_limited`, `refused` or `error` row
+// is an event that did not become a task — a relabel after a filter change, an
+// hour later under the limit, or the same event after the refusal's cause was
+// fixed must still be able to fire.
 func (s *Store) TriggerKeyDelivered(ctx context.Context, triggerID, dedupeKey string) (bool, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM trigger_deliveries
-		WHERE trigger_id = ? AND dedupe_key = ? AND outcome = ?`,
-		triggerID, dedupeKey, DeliveryFired).Scan(&n)
+		WHERE trigger_id = ? AND dedupe_key = ? AND outcome IN (?, ?)`,
+		triggerID, dedupeKey, DeliveryFired, DeliverySeeded).Scan(&n)
 	if err != nil {
 		return false, fmt.Errorf("trigger key delivered: %w", err)
 	}

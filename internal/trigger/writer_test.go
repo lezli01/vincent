@@ -34,10 +34,10 @@ action:
     Acceptance criteria live in the ticket.
 `
 
-func writeFile(t *testing.T, dir, name, content string, perm os.FileMode) string {
+func writeFile(t *testing.T, dir, name, content string) string {
 	t.Helper()
 	p := filepath.Join(dir, name)
-	if err := os.WriteFile(p, []byte(content), perm); err != nil {
+	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return p
@@ -73,7 +73,7 @@ func TestPatchByteFidelity(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
-			path := writeFile(t, dir, "jira.yaml", content, 0o600)
+			path := writeFile(t, dir, "jira.yaml", content)
 			w := NewWriter(dir)
 			v, err := workflow.Version(path)
 			if err != nil {
@@ -116,7 +116,7 @@ func TestPatchByteFidelity(t *testing.T) {
 // that names a path that is not there — changes nothing on disk.
 func TestPatchRefusedLeavesBytes(t *testing.T) {
 	dir := t.TempDir()
-	path := writeFile(t, dir, "jira.yaml", handWritten, 0o600)
+	path := writeFile(t, dir, "jira.yaml", handWritten)
 	w := NewWriter(dir)
 	v, _ := workflow.Version(path)
 	for _, ops := range [][]workflow.Op{
