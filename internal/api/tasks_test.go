@@ -82,8 +82,11 @@ func newTaskHarness(t *testing.T, agentTimeout time.Duration, withRunner bool) *
 	if withRunner {
 		runner.Start(t.Context())
 		sched.Start(t.Context())
-		t.Cleanup(sched.Stop)
+		// Cleanups run last-first, so this stops admission before the runner
+		// waits on its actors — the daemon's order. The other way round, an
+		// admission's wg.Add races runner.Stop's wg.Wait.
 		t.Cleanup(runner.Stop)
+		t.Cleanup(sched.Stop)
 	}
 	s := New(Deps{
 		Token:       testToken,
