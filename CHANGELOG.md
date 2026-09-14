@@ -255,6 +255,16 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **A follow-up that names a workflow now honors that workflow's declared
+  fields.** `POST /v1/tasks/{id}/follow_up` with `workflow` skipped the field
+  checks `POST /v1/tasks` applies, so it queued a run whose required field the
+  task never carried, accepted a value outside the workflow's enum, and
+  rendered `""` where a required field's `default:` belonged — a step depending
+  on it then did the wrong thing or blocked. Those are now `400`s and the
+  default is filled in. A follow-up can supply the values itself with the new
+  optional `fields` body key (`--field name=value` on `vincent task follow-up`,
+  and in the MCP `task_follow_up` hint); they apply to that run only, and the
+  task keeps the fields it was created with (issue #369).
 - **A containerized task no longer gets your agent credentials by default.**
   `container.mount_agent_config` defaulted to `true`, so setting only
   `container.image` bind-mounted `~/.claude`, `~/.codex` and `~/.cursor`

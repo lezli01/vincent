@@ -1,6 +1,9 @@
 package store
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 // followUpDoc is the compiled workflow a follow-up request carries. Its
 // content is not this file's business — the store neither parses nor
@@ -29,6 +32,7 @@ func followUpRequest(origin TaskState) FollowUpRequest {
 	return FollowUpRequest{
 		Form: FollowUpAgent, Prompt: "rebase onto main", Workflow: followUpDoc,
 		Agent: "claude", Model: "sonnet", Effort: "high",
+		Fields: map[string]string{"ticket": "OPS-1"},
 		Origin: origin, Round: 1,
 	}
 }
@@ -46,21 +50,21 @@ func TestPendingFollowUpRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("follow-up transition: %v", err)
 	}
-	if queued.PendingFollowUp == nil || *queued.PendingFollowUp != req {
+	if queued.PendingFollowUp == nil || !reflect.DeepEqual(*queued.PendingFollowUp, req) {
 		t.Fatalf("pending follow-up = %+v, want %+v", queued.PendingFollowUp, req)
 	}
 	running, _, err := s.TransitionTask(t.Context(), task.ID, TaskQueued, TaskRunning, TaskChange{})
 	if err != nil {
 		t.Fatalf("admit: %v", err)
 	}
-	if running.PendingFollowUp == nil || *running.PendingFollowUp != req {
+	if running.PendingFollowUp == nil || !reflect.DeepEqual(*running.PendingFollowUp, req) {
 		t.Fatalf("pending follow-up after admission = %+v, want it intact", running.PendingFollowUp)
 	}
 	reloaded, err := s.GetTask(t.Context(), task.ID)
 	if err != nil {
 		t.Fatalf("GetTask: %v", err)
 	}
-	if reloaded.PendingFollowUp == nil || *reloaded.PendingFollowUp != req {
+	if reloaded.PendingFollowUp == nil || !reflect.DeepEqual(*reloaded.PendingFollowUp, req) {
 		t.Fatalf("pending follow-up did not survive a reload: %+v", reloaded.PendingFollowUp)
 	}
 }

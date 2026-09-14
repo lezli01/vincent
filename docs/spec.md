@@ -329,7 +329,7 @@ A unit of work delivered by running a workflow against a project.
 | `state` | §6. *Amended 2026-09-11 (task 096):* `queued` at creation, or `paused` when the request asked for `paused` — no column of its own, a task created held is an ordinary row in `paused`. *Amended 2026-09-13 (task 096):* a `retry` or a `follow_up` sent with `paused` lands an existing task there the same way (§6) |
 | `current_step` | index into the snapshot's step list |
 | `pending_input` | normalized InputRequest (§7.4) while state is `awaiting_input`; cleared on answer, timeout, or process exit |
-| `pending_follow_up` | *Added 2026-08-25 (task 027).* The follow-up run a human asked for from `done` or `aborted` (§6): its compiled workflow, the run form and text it came from, the optional agent/model/effort, the **origin state** the task is returned to, the 1-based **round**, and the run's own **step cursor**. NULL when no follow-up is in flight |
+| `pending_follow_up` | *Added 2026-08-25 (task 027).* The follow-up run a human asked for from `done` or `aborted` (§6): its compiled workflow, the run form and text it came from, the optional agent/model/effort, the **origin state** the task is returned to, the 1-based **round**, and the run's own **step cursor**. NULL when no follow-up is in flight. *Amended 2026-09-14 (task 027 decision 14):* also the round's own **fields** when they differ from the task's — the request's values laid over the task's, with a named workflow's required defaults applied (§8.1.2) — which that round renders in place of the task row's |
 | `workflow_origin` | *Added 2026-08-28 (task 043).* Where the definition behind `workflow_name` came from, captured **once at creation** beside `workflow_snapshot`. It holds the **scope** that won §5.2's shadowing walk (`builtin`, `global`, `project`, or `derived`), the source **file relative to that scope's root** (`.vincent/workflows/adhoc.yaml`, `workflows/release.yaml`; absent for a built-in, which has none), and a **digest** — `sha256:<hex>` over the registry entry's source bytes exactly as loaded, with no normalization. It is **never recomputed**, so it identifies the *file version the task was created from* rather than the bytes the engine runs: include expansion (§7.9), fan-out resolution (§7.6) and `edit + retry` all rewrite `workflow_snapshot` afterwards, and `edit + retry` is separately audited through `step_runs.prompt_override` / `run_override`. A `fan_out` lane records `derived` naming its parent task (§7.6): its steps come from the parent's snapshot, resolved at the *parent's* creation, so it never read a registry at all. NULL for a task created before this was recorded, which is reported as `unknown` — never re-derived from today's registry, which would report a substitution as though it had always been there |
 | `github_issue` | *Added 2026-08-26 (task 035).* The GitHub issue this task was created from, captured **once at creation** and NULL for every task created without one. It holds the normalized issue — repo, number, title, body, url, state, labels, author, assignee, milestone (title and number), the issue's own timestamps and the instant it was fetched — and it is **never re-fetched**: every step renders `.Issue` (§8.4) from this snapshot, so an issue edited on GitHub afterwards is deliberately not reflected. That is the reasoning `workflow_snapshot` already rests on: a run is reproducible, no network call enters the step path, and a step render still cannot fail for an external reason. A `fan_out` lane inherits its parent's copy verbatim (§7.6) |
 | `github_pull` | *Added 2026-08-29 (task 052).* The pull request this task is linked to (`github_pull_json`, migration 0018); NULL for a task no pull request has ever matched. Unlike `github_issue` it is a **pointer, not a snapshot** — repo, number, `source` (`auto` when the reconciler (§12.3) matched an open pull request's head branch to this task's `branch_name`, `human` when a person said so), `suppressed` (the sticky record of a human unlink, which is why the column needs three states and not two), and `linked_at`. Nothing renderable is stored: title, state, draft and merged status are re-read on every request (§13.2), because they are live by nature and a stored copy of them would read exactly like a current one while being wrong. Deliberately **not** folded into `github_issue_json`, which is defined as "NULL = no linked issue" holding a bare issue. *Amended 2026-08-30 (task 064):* the envelope gains `branch` — this task's `branch_name` **is** the pull request's head branch, because the task was created from it — and `fork`, meaning that head lives in another repository so the branch carries no upstream and nothing can push back. Both are read by admission (§10), by archive (§10, which then touches neither branch leg) and by the retry guard (§18); neither is renderable, so the pointer-not-snapshot rule is untouched. A JSON shape change, not a migration |
@@ -2180,6 +2180,24 @@ every type gains a `default:`.
   presence. A key present but empty is never defaulted.
 - A client that predates `enum` sees an unknown type, falls through to a
   free-text row and runs no local check. The daemon still gates the value.
+
+*Amended 2026-09-14 (task 027 decisions 13 and 14, issue #369).*
+`POST /v1/tasks/{id}/follow_up` is a **second validation boundary**. A follow-up
+that names a workflow (§6) runs that workflow, so it is held to that workflow's
+declarations exactly as creation holds a new task to its own: the task's stored
+fields, with any `fields` the request supplies laid over them key by key, go
+through the same required-default substitution, enum normalization and
+validation above, against the named registry workflow alone. A failure is a
+400 before anything is persisted. A value the task was created with is checked
+too — it was legal under the workflow the task ran, not under the one about to
+run. The `prompt` and `run` forms compile to a workflow that declares nothing,
+so there the supplied `fields` are an overlay with nothing to check.
+
+The result is **round-scoped**. It is stored on `pending_follow_up` (§5.4) and
+is what that round's `.Task.Fields` (§8.4) renders — including the fields a
+`fan_out` lane spawned inside the round inherits, and the listing a repair of
+the round shows. The task row keeps the fields creation recorded, and a later
+follow-up starts again from those.
 
 ### 8.2 Step types and fields
 
@@ -6285,7 +6303,7 @@ POST   /v1/tasks/{id}/repair           { prompt, agent?, model?, effort? }
                                         queued) plus `warnings`. The repair returns the task
                                         to `blocked` at the same step with the same
                                         `block_reason` whatever the agent exits with
-POST   /v1/tasks/{id}/follow_up        { prompt? | run? | workflow?, agent?, model?, effort?, paused? }
+POST   /v1/tasks/{id}/follow_up        { prompt? | run? | workflow?, agent?, model?, effort?, fields?, paused? }
                                         (done/aborted only; added 2026-08-25, task 027). Runs
                                         one more piece of work in the task's existing worktree
                                         and branch (§6, §7.2). **Exactly one** of `prompt`
@@ -6312,7 +6330,13 @@ POST   /v1/tasks/{id}/follow_up        { prompt? | run? | workflow?, agent?, mod
                                         whatever it exits with. *Amended 2026-09-13 (task 096
                                         decision 31C):* `paused: true` persists the request and
                                         lands the task in `paused` instead of `queued`, so the
-                                        response's task is paused and `resume` starts the run
+                                        response's task is paused and `resume` starts the run.
+                                        *Amended 2026-09-14 (task 027 decisions 13 and 14,
+                                        issue #369):* `fields` are laid over the task's stored
+                                        fields for this run only; a named workflow's declared
+                                        fields are substituted and validated against the result
+                                        as creation does (§8.1.2), a failure is a 400, and the
+                                        task row keeps its own fields
 POST   /v1/tasks/{id}/skip             (blocked/awaiting_gate only)
 POST   /v1/tasks/{id}/approve          (awaiting_gate only)
 POST   /v1/tasks/{id}/reject           (awaiting_gate only)

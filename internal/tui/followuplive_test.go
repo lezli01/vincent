@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -156,7 +157,7 @@ func TestFollowUpFormPostsEachRunForm(t *testing.T) {
 			f := newFollowUpForm(1, 1, "done")
 			f.form = tc.form
 			tc.set(f)
-			if got := f.request(); got != tc.want {
+			if got := f.request(); !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("request = %+v, want %+v", got, tc.want)
 			}
 		})

@@ -75,6 +75,21 @@ type followUpEnv struct {
 	// every step id in it to its own.
 	pos   int
 	order map[string]int
+	// fields is the round's own field map (task 027 decision 14), laid over
+	// the task row's fields wherever a step of the round reads them.
+	fields map[string]string
+}
+
+// taskFields is the `.Task.Fields` a step reads: the task row's, with a
+// follow-up round's own values laid over them (task 027 decision 14). The
+// overlay is read here rather than written into the task because `transition`
+// overwrites *task with the row it reads back, and because a later round must
+// not inherit it.
+func (e *stepEnv) taskFields() map[string]string {
+	if e.followUp == nil || len(e.followUp.fields) == 0 {
+		return e.task.Fields
+	}
+	return mergeFields(e.task.Fields, e.followUp.fields)
 }
 
 // followUpRowIndex is decision 2's placement: round n of a task whose
@@ -148,9 +163,11 @@ func (r *Runner) runFollowUp(
 				log.Error("persist follow-up cursor", "error", err)
 			}
 		},
-		finish:   func() { r.finishFollowUp(task, pending, log) },
-		followUp: &followUpEnv{base: base, round: req.Round, order: bodyOrder(fu.Steps)},
-		log:      log,
+		finish: func() { r.finishFollowUp(task, pending, log) },
+		followUp: &followUpEnv{
+			base: base, round: req.Round, order: bodyOrder(fu.Steps), fields: req.Fields,
+		},
+		log: log,
 	})
 }
 

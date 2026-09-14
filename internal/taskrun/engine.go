@@ -1238,7 +1238,7 @@ func (r *Runner) renderContext(ctx context.Context, env *stepEnv, attempt int, p
 	return workflow.RenderContext{
 		Task: workflow.TaskContext{
 			ID: env.task.ID, Title: env.task.Title, Description: env.task.Description,
-			Fields: env.task.Fields, BaseBranch: env.task.BaseBranch, BranchName: env.task.BranchName,
+			Fields: env.taskFields(), BaseBranch: env.task.BaseBranch, BranchName: env.task.BranchName,
 		},
 		Project: workflow.ProjectContext{
 			Name: env.project.Name, Path: env.project.Path, DefaultBranch: env.project.DefaultBranch,

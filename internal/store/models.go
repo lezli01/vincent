@@ -494,6 +494,13 @@ type FollowUpRequest struct {
 	Agent  string `json:"agent,omitempty"`
 	Model  string `json:"model,omitempty"`
 	Effort string `json:"effort,omitempty"`
+	// Fields is this round's `.Task.Fields` (issue #369, task 027 decisions 13
+	// and 14): the task's fields with the request's laid over them and — for
+	// the workflow form — the named workflow's declared defaults applied and
+	// validated (§8.1.2). It is round-scoped: the engine lays it over the task
+	// row's fields for this round only, and the task row keeps what creation
+	// recorded. nil means the round renders the task's own fields.
+	Fields map[string]string `json:"fields,omitempty"`
 	// Origin is the state the follow-up was launched from, and the state the
 	// task is returned to when it ends (decision 5). A follow-up decides
 	// nothing about the task's verdict.

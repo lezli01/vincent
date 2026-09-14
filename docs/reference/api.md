@@ -1658,7 +1658,7 @@ Human actions, all `POST /v1/tasks/{id}/…`:
 | `/reject` | awaiting_gate | |
 | `/answer` | awaiting_input | `{ answers?, allow? }` |
 | `/archive` | done, aborted | `{ force? }` or `?force` |
-| `/follow_up` | done, aborted | `{ prompt? \| run? \| workflow?, agent?, model?, effort?, paused? }` — exactly one of the three; `paused` [holds](#holding-a-retry-or-a-follow-up) the task instead of queuing the run; runs it in the task's existing worktree, then returns the task to the state it came from |
+| `/follow_up` | done, aborted | `{ prompt? \| run? \| workflow?, agent?, model?, effort?, fields?, paused? }` — exactly one of the three; `fields` apply to this run only, over the task's own; `paused` [holds](#holding-a-retry-or-a-follow-up) the task instead of queuing the run; runs it in the task's existing worktree, then returns the task to the state it came from |
 
 Anything else returns `409` with `details.state`. See
 [Task lifecycle](task-lifecycle.md).
@@ -1755,6 +1755,20 @@ The optional `agent` / `model` / `effort` behave exactly as `/repair`'s do,
 except that an explicit agent field on a step of a named workflow still wins —
 that is what a step field means. The response is the task, now `queued` (or
 `paused`, when the request said `paused: true`), plus `warnings`.
+
+A named workflow's [declared fields](../guides/workflows.md#54-task-fields) apply to a
+follow-up exactly as they apply to a new task. The task's fields, with the
+optional `fields` object laid over them key by key, are checked against that
+workflow: a missing required field takes its `default:`, and one with no
+default, a mistyped value, or a value outside an enum is
+`400 validation_failed`. A value the task was created with is checked too, since
+the workflow it was legal under is not the one about to run — send `fields` to
+supply or correct it. With `prompt` or `run` there is nothing to check, and
+`fields` is only what the run renders.
+
+Those values belong to **this run**. `.Task.Fields` in its templates, and in any
+fan-out lane it spawns, carries them; the task keeps the fields it was created
+with, and the next follow-up starts from those again.
 
 The run returns the task to the state it came from: `done` to `done`, `aborted`
 to `aborted`, whatever it exits with. A follow-up never changes a task's
