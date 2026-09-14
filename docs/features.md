@@ -17,7 +17,7 @@ state stay on your machine; vincent provides the control plane around them.
 | Human oversight | Approval gates, mid-run answers where supported, blocked-step recovery, edit-and-retry, ad-hoc repair agents, follow-up runs on finished tasks, a notify hook that reaches you with no client open |
 | Visibility | Grouped task board, live output, durable transcripts, metrics, file-grouped diffs, workflow graph |
 | GitHub | Create a task from an issue or a **pull request**, prefilled and editable — a pull-request task runs on that pull request's head branch; issue details in templates; a project's pull requests, each linked to the task whose branch it came from, with that task's own tab carrying its live CI checks; and **open a pull request** for a task — push its branch and create the PR from inside vincent, the one thing vincent writes to GitHub. No stored credential |
-| Event triggers | Start or act on tasks from a polled command, GitHub issue and pull-request changes, or a signed push; off twice by default, proposed paused and restricted, deduplicated and rate-limited, with a delivery ledger and dry runs |
+| Event triggers | Start or act on tasks from a polled command, GitHub issue and pull-request changes, or a signed push; off twice by default, proposed paused and restricted, deduplicated and rate-limited, with a delivery ledger and dry runs; built-in workflows that write triggers and never switch one on |
 | Integration | Full CLI, JSON output, stable exit codes, localhost REST API, durable state SSE and live output streams |
 | Operations | Automatic usage-limit waits, one-command diagnostics, configuration editing from the TUI and CLI, orphan cleanup, database integrity checks, backup and restore |
 | Platforms | Windows, macOS, and Linux; Homebrew, a universal macOS `.pkg`, WinGet, Scoop, mise, deb/rpm, and archives |
@@ -450,6 +450,15 @@ ledger. `vincent trigger test` and the live poll show what a trigger would do
 without writing anything. The TUI's triggers view, opened from the command
 palette, creates, edits and enables them and shows each one's ledger.
 
+An agent can write triggers for you, and cannot switch one on. The
+`create-trigger` built-in writes a new trigger for a project, and
+`update-triggers` proposes improvements to a project's existing triggers for you
+to approve. Both install through `vincent trigger apply`, which refuses
+`enabled: true`, `on_fire: create` and `permission: workflow` on any file it did
+not already hold them on. The published `vincent-triggers` skill teaches the
+same to an agent you talk to directly, and `vincent trigger validate` checks a
+file with no daemon running.
+
 See [Event triggers](guides/triggers.md) and the
 [security model](security-model.md#event-triggers-let-someone-else-start-an-agent).
 
@@ -545,8 +554,8 @@ See the [pull-requests screen](guides/tui.md#pull-requests), the
 health, the recent log tail, the database's footprint, row counts and integrity,
 agent availability, login state and whether the installed CLI build is one
 vincent has been tested against, the GitHub integration, whether the
-[workflow-authoring skill](reference/cli.md#vincent-skills) is installed and
-current for your agents, whether a newer vincent
+[workflow- and trigger-authoring skills](reference/cli.md#vincent-skills) are
+installed and current for your agents, whether a newer vincent
 has been released and whether the running daemon is older than the binary you
 just ran, disk use, worktrees, and task counts. It supports JSON output for bug
 reports and automation, while `--fix` can reclaim orphans and compact the

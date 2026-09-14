@@ -207,7 +207,8 @@ A named, ordered list of steps defined in YAML (§8). Workflows live in files, n
 DB; the daemon maintains a registry of parsed workflows from three scopes:
 
 - **Built-in:** shipped in the binary. Lowest precedence — a global or project file
-  of the same name shadows it. Three are present:
+  of the same name shadows it. Five are present. *Amended 2026-09-14 (task 098):
+  this said three, before `create-trigger` and `update-triggers`.*
   - `adhoc` — the single-step agent workflow used when a task is created without
     naming one (§5.3). *Amended 2026-08-27 (task 037): its prompt — and every
     other built-in agent prompt — asks the agent to report through `vincent
@@ -245,6 +246,42 @@ DB; the daemon maintains a registry of parsed workflows from three scopes:
     worktree and branch**, reviewed and merged like any other diff — these
     files are versioned by the repository, and merging is what makes a
     rewritten workflow live.
+  - `create-trigger` — *added 2026-09-14 (task 098).* Writes one event-trigger
+    file (§12.2, task 096) for the task's own project, **disarmed**. It declares
+    one task field, `trigger_id`: required, held to `^[a-z0-9][a-z0-9._-]*$`,
+    and both the trigger's `id:` and its file name. It has two steps. `author`
+    is an agent step under `on_input: wait` and `max_retries: 0`, for
+    `create-workflow`'s reasons: it stages the file and its manifest in
+    `{data_dir}/trigger-proposals/{task id}/` (§12.2), checks the file with
+    `vincent trigger validate`, and may ask. `install` is a command step running
+    `vincent trigger apply --proposal {{.Task.ID}} --project {{.Project.ID}}`
+    (§12.1). There is no manual gate, as there is none on `create-workflow`,
+    because what it writes cannot fire until a human arms it (§16). The prompt
+    sets `source.project` to `.Project.ID`, asks before replacing a trigger
+    `vincent trigger ls` already lists, never writes a workflow (it points to
+    `create-workflow` when `action.workflow` does not exist), and puts a poll
+    script under `{config_dir}/trigger-scripts/`. It refuses a `cancel` trigger,
+    which loads only with `on_fire: create`, and any request that arms one.
+  - `update-triggers` — *added 2026-09-14 (task 098).* A maintenance pass over
+    the trigger files whose `source.project` is the task's own project. It
+    declares no task fields and has six steps: a `vincent trigger ls --project`
+    inventory under `allow_failure`, whose exit 1 is the "this project has no
+    triggers" signal; a `condition` that ends the run `done` when there are
+    none; a `propose` agent step under `on_input: deny` and `max_retries: 1`,
+    which clears its own staging directory, stages full proposed files and the
+    manifest, and validates each; a `manual` approval whose instructions render
+    the proposal and name the staging path; an `apply` command step running
+    `vincent trigger apply`; and a final `ls` for the record. Rejecting the gate
+    ends the task with every trigger untouched. The pass may not change a
+    trigger's `id`, file name or `source.project`, delete a file, change
+    `enabled`, `on_fire` or `permission`, or change what a `dedupe_key` renders
+    for an event already delivered, which would fire it again. Its review
+    checklist is version-coupled to trigger features, as `update-workflows`' is
+    to workflow features.
+
+  Both trigger built-ins carry the `vincent-triggers` skill, embedded from
+  `skills/vincent-triggers/SKILL.md` at build time the way the workflow pair
+  carries `vincent-workflows` (§9.8).
 - **Global:** `{config_dir}/workflows/*.yaml` — available to every project.
 - **Project:** `{repo}/.vincent/workflows/*.yaml` — available to that project only,
   git-versioned and shareable with a team. A project workflow **shadows** a global
@@ -291,8 +328,9 @@ and the violated type or bound — the same treatment as a file that fails to pa
 its valid siblings in the scope stay available.
 
 *Amended 2026-08-28 (task 043, issue #145).* Built-in shadowing **stands**. A
-global or project file named `adhoc`, `create-workflow` or `update-workflows`
-still wins the lookup, including for a task created without naming a workflow —
+global or project file named `adhoc`, `create-workflow`, `update-workflows`,
+`create-trigger` or `update-triggers` (the last two named here since
+2026-09-14, task 098) still wins the lookup, including for a task created without naming a workflow —
 the phase 2 reasoning holds: creation is one uniform path and `workflow` stays
 optional. There is no reserved namespace, no `builtin:` selector and no
 `allow_shadow_builtin` declaration; a qualified name would be a new grammar
@@ -2337,7 +2375,7 @@ defensively: `{{ with index .Task.Fields "ticket" }}…{{ end }}`.
 | Variable | Contents |
 |---|---|
 | `.Task` | `ID`, `Title`, `Description`, `Fields` (map[string]string), `BaseBranch`, `BranchName` |
-| `.Project` | `Name`, `Path` (original repo root), `DefaultBranch` |
+| `.Project` | `ID`, `Name`, `Path` (original repo root), `DefaultBranch`. *Amended 2026-09-14 (task 098):* `ID` is the project's numeric id, the one `source.project` names in a trigger file and `--project` takes on the command line. It was added for the trigger built-ins (§5.2), which pass it to `vincent trigger ls` and `apply` |
 | `.Workflow` | `Name`, `Description` |
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
 | `.Steps` | map of *completed* step id → `{Status, Result, ExitCode}`; `Result` is the agent's final result text (agent steps) or the last **200** lines of stdout (command steps). *Corrected 2026-08-18 (task 016): this said 100; the daemon has always used 200, and a `for_each:` reading `.Steps[…].Result` (§7.8) makes the exact bound load-bearing rather than incidental.* *Amended 2026-08-18 (task 015):* a step skipped by its guard appears with `Status: "skipped"`, and a **failed** step appears once the engine has advanced past it — which happens only under `allow_failure` (§7.2), and is what a downstream guard reads. A step's own failed attempt stays out of `.Steps` mid-retry, because `.LastFailure` is already that channel; `interrupted` never appears, since §7.2 says it is not an outcome. *Amended 2026-08-18 (task 016):* "advanced past it" is compared on `(step_index, iteration, body position)`, which is what lets a loop body's later steps read its earlier ones while a `parallel` group's members stay blind to each other (§7.8). Under repetition a step id resolves to its **latest** iteration. *Amended 2026-09-02 (issue #311):* "stdout" was always the statement here, and until now the engine put a command's **stdout and stderr** into `Result`, interleaved in whichever order the two reader goroutines observed them. It now captures stdout separately (`step_runs.stdout_tail`, migration 0025), so a `for_each:` (§7.6, §7.8) cannot pick up a progress meter, a `Switched to branch …` or a deprecation notice as an item. `result_summary` still carries both streams and is unchanged: it is what a human reads on the board, in the detail view and in the repair prompt, where a step that failed with a stderr-only diagnostic must not summarize as blank. A row written before the migration records no stdout tail and renders `Result` from `result_summary` as it did, so a task in flight over an upgrade is unaffected. `.LastFailure` and the `<previous-attempt-failure>` block below are **both** streams, deliberately: what a human reads on a failure is not the value a template consumes. *Amended 2026-09-02 (issue #313):* the bound is **200 lines or 256 KiB**, whichever binds first — the byte half has always been enforced and was never written down here, which is what a `for_each:` author needs to know to size a list. Both halves cut by dropping whole **leading** lines, so what survives is a shorter list of intact items rather than a truncated one; only a single line longer than 256 KiB on its own is cut mid-line, at a rune boundary. The engine had instead been persisting the stdout tail at `result_summary`'s own 4096-byte cap, a raw head slice on no boundary at all: a lane list over 4 KiB lost its items mid-line, and one item that size destroyed the whole list. `result_summary` keeps that cap — it bounds a row a human reads, and never bounded this |
@@ -2380,7 +2418,7 @@ agent will receive. The vocabulary is:
 | `.Task.ID` | `0`, following `.Loop.Index`'s precedent |
 | `.Task.Title` / `.Description` / `.BranchName` / `.BaseBranch` | `<task.title>`, `<task.description>`, `<branch>`, `<base_branch>` |
 | `.Task.Fields` | one entry per **required** declared field (§8.1.2), bound to its `default:`, else an `enum`'s first declared value, else `<field.NAME>` — a sentinel is never a member of its own enum, so a preview binds a value the workflow could actually receive where one exists *(amended 2026-08-30, task 058)*. Optional declared and undeclared names stay absent, so reading one without `{{ with index … }}` is the error the defensive-read rule above says it is |
-| `.Project.*` | `<project.name>`, `<project.path>`, `<project.default_branch>` |
+| `.Project.*` | `<project.name>`, `<project.path>`, `<project.default_branch>`, and `.Project.ID` `0`, following `.Task.ID`'s precedent *(added 2026-09-14, task 098)* |
 | `.Steps` | one entry per step id the **file** declares, nested bodies and inline fan-out lanes included — an `include` step and a lane naming a registry workflow contribute none, since neither survives as a step of this task (§7.9, §7.6) — each `{Status: <steps.ID.status>, Result: <steps.ID.result>, ExitCode: 0}`. A forward reference renders clean: restricting the map to steps that would have completed interacts with `parallel` blindness, loop iterations and `allow_failure` in ways that produce false positives, and a false positive exits 1 inside a pre-commit hook |
 | `.Step.Attempt` | `1`, and the `<previous-attempt-failure>` block above is not appended |
 | `.Loop` | the zero value outside a loop; `{Index: 1, Item: <loop.item>, IsFirst: true}` for a step inside one |
@@ -3690,6 +3728,14 @@ workflows splice the same text into their own prompts at build time (§7,
 task 024 decision 7), which is why the gap this section closes only bites where
 it is hardest to notice.
 
+*Amended 2026-09-14 (task 098).* The published skills are no longer only about
+workflow authoring. `vincent-triggers` covers `{config_dir}/triggers` files,
+poll scripts, arming, dry runs and the delivery ledger, and the
+`create-trigger` and `update-triggers` built-ins (§5.2) splice it into their
+prompts the way the workflow pair splices `vincent-workflows`. For the workflow
+a trigger's `action.workflow` names, it defers to `vincent-workflows`. It needed
+no change to any surface below, which is the glob doing its job.
+
 **The published set is a glob, not a list.** `skills.FS` embeds `*/SKILL.md`;
 every surface below enumerates that. A second directory under `skills/` is
 reported by `vincent doctor`, listed by `vincent skills` and offered by the TUI
@@ -4288,7 +4334,10 @@ One Go binary, `vincent`:
 | `vincent task transcript <id>` | *Added 2026-08-28 (task 047).* Prints one attempt's transcript through `GET /v1/tasks/{id}/steps/{run_id}/transcript` (§13.2). `--step` takes a **step_run id**; omitted, it selects the running attempt, else the newest by run id. Default output is the normalized records rendered as text, `--json` is those records as NDJSON, `--raw` is the agent's own dialect byte for byte. `-f` opens on a tail and resumes from `X-Next-Offset`, ending when that attempt stops running |
 | `vincent project add <path> / ls / rm <id>` | Thin API clients for scripting. *Amended 2026-08-28 (task 048):* `rm` deletes the registration and its task rows, forwarding `--force` as `?force`. It never prompts — the daemon's two 409s (`N non-archived task(s)`, and one naming a `running` task) are the confirmation story, and an interactive question would be the first in a command tree whose purpose is scripting |
 | `vincent task pause / resume / skip / approve / reject / retry / repair / archive / answer <id>` | *Added 2026-08-28 (task 048).* The rest of §6's human actions, one subcommand each, one id per invocation. All carry `--json` and print the daemon's post-action view of the task; a 409 from the FSM is exit 1 with the daemon's own wording. `retry` takes `--branch` (§18's `branch_exists` recovery) and the edit+retry pair `--prompt`/`--run`; `repair` requires `--prompt` and takes the §8.6 triple; `archive` takes `--force` and surfaces `details.reason: worktree_dirty` with the way out; `answer` takes `--answer <n>=<value>` against the questions `task show` numbers, `--allow`/`--deny` for a permission request, or `--body <file\|->` to post a §13.2 payload verbatim. Each of `--prompt`, `--run` and `--body` has a `-file` twin, and `-` reads stdin. *Amended 2026-09-14 (task 096):* `retry` also takes `--paused`, §13.2's `paused: true`, holding the task (and a blocked parent's lanes) in `paused`; the daemon refuses it on a parent parked in `awaiting_children` |
-| `vincent trigger test <id> --event <file\|->` | *Added 2026-09-14 (task 096 decision 29).* The one trigger command: a dry run through `POST /v1/triggers/{id}/test` (§13.2) of the JSON event in `--event`, which is required, `-` reading stdin. It prints each pipeline stage and the outcome the event would get, or the route's body with `--json`, fires nothing and writes nothing, and exits `1` when that outcome is `error`. Every other trigger operation is the TUI's view 11 or the API |
+| `vincent trigger test <id> --event <file\|->` | *Added 2026-09-14 (task 096 decision 29).* The one trigger command: a dry run through `POST /v1/triggers/{id}/test` (§13.2) of the JSON event in `--event`, which is required, `-` reading stdin. It prints each pipeline stage and the outcome the event would get, or the route's body with `--json`, fires nothing and writes nothing, and exits `1` when that outcome is `error`. Every other trigger operation is the TUI's view 11 or the API. *Amended 2026-09-14 (task 098):* no longer the one trigger command. The three rows below add two offline reads and the verb the trigger built-ins install through |
+| `vincent trigger validate <file> [--json]` | *Added 2026-09-14 (task 098 decision 3).* Validates one trigger file **with no daemon**: `trigger.Parse` with the file's stem as the expected id, so the verdict is `POST /v1/triggers/validate`'s (§13.2) plus the check that `id:` equals the file name. Text output is `<file>: valid`, or one `<file>:<line>: <path>: <message>` line per error; `--json` is `{file, id, valid, errors: [{line, path, message}]}`. Exit 0 valid · 1 invalid or unreadable, mirroring `vincent workflow validate` |
+| `vincent trigger ls --project <id> [--json]` | *Added 2026-09-14 (task 098 decision 4).* Reads `{config_dir}/triggers/*.yaml` **with no daemon** and prints, one per line, the path of every file whose `source.project` is `<id>`. A file that does not parse is still listed when its `source.project` can be read leniently, so a broken trigger can be found and repaired; a file whose project cannot be read at all is reported on stderr and left out. `--json` is an array of `{file, id, project, version, valid, enabled, on_fire, permission, errors}`, with `on_fire` and `permission` `""` when the file leaves them out and `version` the token `apply` compares. Exit 0 at least one file matched · 1 none did, with `--json` too — the probe shape of `git ls-files --error-unmatch` |
+| `vincent trigger apply --proposal <task_id> --project <id>` | *Added 2026-09-14 (task 098 decisions 3 and 5).* Installs the staged proposal in `{data_dir}/trigger-proposals/<task_id>/` (§12.2) into `{config_dir}/triggers/`, **without arming anything**. The directory holds full proposed `<id>.yaml` files and `manifest.json`, an object mapping each trigger id to the version token `ls --json` reported or to `"absent"` for a new file. It refuses, writes nothing and names every offending file and key when any staged file fails `Parse`; a staged file's `source.project` is not `--project`; a staged file has no manifest entry or an entry has no staged file; an existing file's version no longer matches, a file recorded `absent` now exists, or a recorded file is gone; or any file **arms** relative to the file on disk, a new file comparing against absent: `enabled` from false or absent to `true`, `on_fire` from absent or `propose` to `create`, `permission` from absent or `restricted` to `workflow`. An already-armed value may be kept and disarming is always allowed; there is no override flag (§16). Each file is written `0600` through `internal/trigger`'s version-guarded whole-file replace, `wrote <path>` is printed per file, and the staging directory is removed once every file is written. It never touches `triggers.enabled` in `config.yaml`. Exit 0 installed · 1 refused |
 | `vincent status <message>` | *Added 2026-08-26 (task 036).* Records what the current step is doing, in its own words (§5.4). Runs **from inside a step**: it addresses itself with §8.5's `VINCENT_TASK_ID` and `VINCENT_STEP_ID`, takes no id argument, and errors naming those variables when they are unset. Silent on success — its stdout is the step's transcript |
 | `vincent gc [--dry-run] [--force] [--json]` | Reclaims data-root directories no task claims (§10); a thin API client like the rest |
 | `vincent config get [key] / set <key> <value>` | *Added 2026-08-30 (task 060).* Reads and writes `config.yaml` through `GET`/`PATCH /v1/config` (§12.3) — a thin API client like the rest, never a second editor, so the CLI and the TUI's editor are one operation with one validation. `get` with no key prints every key as `path = value` in the file's own order; with one, that key's value alone. Keys are the dotted paths the file carries. Lists and argv are whitespace-separated inside a single argument (`notify.on "blocked awaiting_gate"`), which is also why an argv element containing a space has to be edited in the file. A `set` is in force when it answers; `listen` is the exception the command says out loud. Exit 0 · 1 the daemon refused it, with the file byte-identical · 2 no daemon answered |
@@ -4577,6 +4626,7 @@ platform the standing answer to an agent that will not resolve is the §12.3
   config.yaml                # §12.3, created 0600
   workflows/*.yaml           # global workflows
   triggers/*.yaml            # event triggers, written 0600; global scope only (§12.3, task 096)
+  trigger-scripts/           # poll scripts for command triggers, by convention only (task 098)
 {data_dir}/                  # created 0700 (§12.2 amendment below)
   vincent.db                 # SQLite, WAL mode
   token                      # API bearer token, created 0600 at first start
@@ -4587,6 +4637,7 @@ platform the standing answer to an agent that will not resolve is the §12.3
   transcripts/{task_id}/{step_index}-{attempt}.jsonl
   transcripts/{task_id}/{step_index}-{step_id}-{attempt}.jsonl  # sub-step of a parallel group (§7.5)
   transcripts/{task_id}/{step_index}-i{iteration}-{step_id}-{attempt}.jsonl  # loop body step (§7.8)
+  trigger-proposals/{task_id}/  # staged trigger files + manifest.json, 0700/0600 (task 098)
   logs/daemon.log            # rotated, size-capped
 ```
 
@@ -4636,6 +4687,27 @@ aside removes every trigger. A directory the daemon cannot read is **not** read
 as empty: the triggers already loaded stay loaded. A trigger's runtime state
 (its cursor, its poll status and its ledger) lives in `vincent.db` (§14), never
 beside the file.
+
+*Amended 2026-09-14 (task 098).* Two more trigger locations:
+
+- **`{data_dir}/trigger-proposals/{task_id}/`** holds a proposal staged by the
+  `create-trigger` or `update-triggers` built-in (§5.2): the full proposed
+  `{id}.yaml` files and a `manifest.json` recording each file's version token,
+  or `"absent"`. The directory is `0700` and its files `0600`. It is outside
+  every repository and outside the registry directory, because a trigger's argv
+  can carry a token, so a proposal never goes in a worktree. `vincent trigger
+  apply` (§12.1) removes it after a successful install. Otherwise it stays until
+  the task is deleted, and `DELETE /v1/tasks/{id}` (§13.2) removes it with the
+  transcripts.
+- **`{config_dir}/trigger-scripts/`** is where a `type: command` trigger's poll
+  script lives. It is a documented convention, not a path the daemon enforces
+  or watches. It sits beside `triggers/` rather than inside it, so a script
+  never shares a directory with the files the registry reads. On POSIX the
+  directory and each script are `0700`. The argv runs with no shell, so on
+  Windows it is `[pwsh, -NoProfile, -File, <absolute path>.ps1]`. Credentials
+  come from the daemon's inherited environment (§2, §12.3) and never go in the
+  script or the trigger file, and a poll script never lives in a repository
+  (task 096 decision 8).
 
 **What a transcript promises, exactly.** *Added 2026-08-24 (#139).* A
 transcript is the complete record of one attempt: agent stream lines verbatim,
@@ -6244,6 +6316,11 @@ PATCH  /v1/tasks/{id}                   { priority }               (queued/pause
 DELETE /v1/tasks/{id}                   *Added 2026-09-09 (task 092, issue #350).* Permanent
                                         delete of an **archived** task: the row, its step_runs
                                         and its `{data_dir}/transcripts/{id}` directory.
+                                        *Amended 2026-09-14 (task 098):* and its
+                                        `{data_dir}/trigger-proposals/{id}` directory, a
+                                        staged trigger proposal (§12.2), under the same
+                                        data-root containment check as the transcripts, so
+                                        nothing outside the data directory is touched.
                                         `?delete_branch=true` or `{ delete_branch }` also applies
                                         §10's empty-branch judgement to its branch — never to a
                                         branch with commits, and never to a remote.
@@ -9719,6 +9796,22 @@ the whole of the posture, not a set of tips.
   reaches the route without a relay on this machine that holds the token, and
   such a relay is already something running as you. The secret lives in the
   daemon's environment, never in the file.
+- **Built-ins author triggers; only a human arms one.** *Added 2026-09-14 (task
+  098).* The `create-trigger` and `update-triggers` built-ins (§5.2) let an
+  agent, in a task a human started, write trigger files. They install only
+  through `vincent trigger apply` (§12.1), which refuses every change that
+  **arms** a trigger relative to the file on disk, a new file comparing against
+  absent: `enabled` to `true`, `on_fire` to `create`, `permission` to
+  `workflow`. An already-armed value may be kept, disarming is always allowed,
+  and there is no override flag. The fourth switch, `triggers.enabled`, is in
+  `config.yaml`, which apply cannot touch. A human arms in the TUI, which asks
+  first, or in `$EDITOR`. Apply also refuses a file for any project but the
+  one it was given and a file that changed since the proposal read it, so a run
+  in one project cannot rewrite another's triggers. `update-triggers` may
+  rewrite a trigger that is already armed, and such a rewrite is live once
+  written, so its proposal waits at a `manual` gate. The trigger write routes
+  stay off MCP (§13.4). A proposal is staged in `{data_dir}` (§12.2), never in
+  a worktree, because a trigger's argv can carry a token.
 
 ## 17. Observability
 

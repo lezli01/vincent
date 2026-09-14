@@ -500,8 +500,8 @@ Full documentation lives in **[docs/](docs/README.md)**.
 
 **Agent skill**
 
-Install the portable workflow-authoring skill for Claude Code, Codex, Cursor,
-or another Agent Skills client:
+Install the portable workflow- and trigger-authoring skills for Claude Code,
+Codex, Cursor, or another Agent Skills client:
 
 ```sh
 vincent skills install
@@ -513,14 +513,17 @@ hand, which prompts for the selection instead:
 
 ```sh
 npx skills add lezli01/vincent --skill vincent-workflows -g
+npx skills add lezli01/vincent --skill vincent-triggers -g
 ```
 
 `vincent skills ls` says what is installed and whether it is current, and
 `vincent doctor` carries the same rows. Neither needs a running daemon, and
 only the install needs node.
 
-It asks about human gates and cost constraints, prefers deterministic commands
-and native control flow, and validates generated workflow YAML.
+The workflow skill asks about human gates and cost constraints, prefers
+deterministic commands and native control flow, and validates generated
+workflow YAML. The trigger skill writes [event triggers](docs/guides/triggers.md)
+switched off, with a dedupe key and limits, and leaves turning one on to you.
 
 **Platforms** — [Windows](docs/platforms/windows.md) ·
 [macOS](docs/platforms/macos.md) · [Linux](docs/platforms/linux.md)

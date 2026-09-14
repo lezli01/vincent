@@ -111,6 +111,7 @@ the living engineering specification records implementation contracts.
 | [095](095-published-skill-installation.md) | Report whether vincent's published skills are installed, and install them | ✅ done (10/10) |
 | [096](096-event-triggers.md) | Event triggers: starting vincent work from GitHub, Jira, Trello and CI systems | ✅ done (6/6) |
 | [097](097-workflow-graph-run-colours.md) | Color the task Workflow tab graph by run state | ✅ done (4/4) |
+| [098](098-trigger-authoring-skill-and-builtins.md) | The `vincent-triggers` skill and the `create-trigger` and `update-triggers` built-ins | ✅ done (6/6) |
 
 ## How to add and update a task document
 
