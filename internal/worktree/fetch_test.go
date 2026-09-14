@@ -62,28 +62,8 @@ func TestCreateFetchesTheBaseBranch(t *testing.T) {
 	wantTip(t, c.Path, "HEAD", remoteTip, "task branch tip")
 }
 
-// TestCreateFetchLeavesTheLocalBaseAlone: the user's checkout is not vincent's
-// to move. Same SHA, same working-tree state — including the uncommitted file
-// that makes a fast-forward unsafe in the first place — still checked out.
-func TestCreateFetchLeavesTheLocalBaseAlone(t *testing.T) {
-	repo, localTip, _ := remoteAhead(t)
-	testrepo.WriteFile(t, repo, "wip.txt", "half-finished\n")
-	before := testrepo.Run(t, repo, "status", "--porcelain")
-	if before == "" {
-		t.Fatal("fixture is wrong: the working tree should be dirty")
-	}
-	m := newManager(t)
-	if _, err := m.Create(t.Context(), repo, TaskOwner(1), "vincent/1-fresh", "main", true); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	wantTip(t, repo, "refs/heads/main", localTip, "local base after the fetch")
-	if got := testrepo.Run(t, repo, "status", "--porcelain"); got != before {
-		t.Errorf("working tree changed:\n%s\nwant:\n%s", got, before)
-	}
-	if got := testrepo.Run(t, repo, "rev-parse", "--abbrev-ref", "HEAD"); got != "main" {
-		t.Errorf("checked out branch = %q, want main", got)
-	}
-}
+// What the fetch does to the user's own base branch afterwards — fast-forward
+// it when that is safe, and say why not otherwise — is basefastforward_test.go.
 
 // TestCreateSetsNoUpstreamOnTheTaskBranch is the guard between this feature
 // and a deleted `master` on somebody's forge. Under `branch.autoSetupMerge`
@@ -223,9 +203,15 @@ func TestCreateFetchDisabled(t *testing.T) {
 // has_commits and delete_empty_branch_on_archive silently stops firing. Both
 // halves are asserted: with the SHA it still deletes, and without one it does
 // not — which is why the column exists.
+//
+// The local base has to stay behind for that premise to hold, and since the
+// base fast-forward (issue #430) it only does when the fast-forward is skipped.
+// An untracked file in the checkout is the commonest reason it is, so that is
+// the fixture: a base left stale is still a base the task did not begin at.
 func TestDeleteEmptyBranchUsesTheRecordedBaseSHA(t *testing.T) {
 	const branch = "vincent/1-nothing"
 	repo, _, _ := remoteAhead(t)
+	testrepo.WriteFile(t, repo, "wip.txt", "keeps main from moving\n")
 	m := newManager(t)
 	c, err := m.CreateAndClaim(t.Context(), repo, TaskOwner(1), branch, "main", true, nil)
 	if err != nil {
@@ -233,6 +219,9 @@ func TestDeleteEmptyBranchUsesTheRecordedBaseSHA(t *testing.T) {
 	}
 	if c.BaseSHA == "" {
 		t.Fatal("fixture is wrong: no base SHA was recorded")
+	}
+	if c.FastForward.Reason != SkipCheckoutDirty {
+		t.Fatalf("fixture is wrong: fast-forward = %+v, want the local base left stale", c.FastForward)
 	}
 	if err := m.Remove(t.Context(), repo, c.Path, false); err != nil {
 		t.Fatalf("remove: %v", err)
