@@ -255,6 +255,16 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **A containerized task no longer gets your agent credentials by default.**
+  `container.mount_agent_config` defaulted to `true`, so setting only
+  `container.image` bind-mounted `~/.claude`, `~/.codex` and `~/.cursor`
+  read-write into every task container — though only `command` steps and
+  checks run there and the agent itself still runs on the host. The default is
+  now `false` until agent steps move into the container. This changes the
+  default on existing installations; a `config.yaml` that sets the key keeps
+  its value. `container.network: false` with `mcp.wire_steps: true` is no
+  longer refused at task creation either, for the same reason: every agent
+  reaches the MCP endpoint from the host (issue #366).
 - **The MCP tool descriptions told a model to send bodies the handlers
   reject.** Several `Body: {...}` hints named keys no handler decodes —
   `step_status` asked for `{status}` where the route reads `{message}`,

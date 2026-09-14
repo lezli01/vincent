@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"testing"
@@ -206,6 +208,33 @@ func TestContainerMountsAreIdenticalInsideAndOut(t *testing.T) {
 	}
 	if len(want) != 0 {
 		t.Errorf("missing mounts: %v", want)
+	}
+}
+
+// TestDefaultContainerWithholdsAgentCredentials is issue #366, measured where
+// the mounts are built: a user who sets only `container.image` must not find
+// the host's agent configuration directories inside the container. The agent
+// process still runs on the host until task 062, so nothing in there needs
+// them. The directories are created so the test cannot pass by the "a missing
+// directory is skipped" rule instead of by the default.
+func TestDefaultContainerWithholdsAgentCredentials(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	agentDirs := map[string]bool{}
+	for _, dir := range []string{".claude", ".codex", ".cursor"} {
+		p := filepath.Join(home, dir)
+		if err := os.Mkdir(p, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		agentDirs[p] = true
+	}
+	c := config.Default().Container
+	c.Image = "alpine:3"
+	for _, m := range containerMounts("/repos/app", "/data/worktrees/7", c) {
+		if agentDirs[m.Source] {
+			t.Errorf("default container config mounts agent credentials %q into the container", m.Source)
+		}
 	}
 }
 

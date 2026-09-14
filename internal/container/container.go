@@ -44,13 +44,14 @@ type CreateSpec struct {
 	// Labels are applied at creation; LabelTask is always among them.
 	Labels map[string]string
 	Mounts []Mount
-	// Network false drops the container off the network entirely. It is a
-	// contradiction with `mcp.wire_steps: true` and refused at task creation
-	// (decision 1) rather than producing an agent wired to a dead endpoint.
+	// Network false drops the container off the network entirely. Decision 1
+	// makes that a contradiction with `mcp.wire_steps: true` for an agent step
+	// inside the container; the creation-time refusal waits for task 062,
+	// because until then every agent runs on the host (issue #366).
 	Network bool
 	// AddHostGateway maps host.docker.internal to the host, which is how a
-	// containerized agent step reaches the daemon's per-step MCP endpoint
-	// (decision 1).
+	// containerized agent step will reach the daemon's per-step MCP endpoint
+	// once task 062 rewrites the endpoint's host (decision 1).
 	AddHostGateway bool
 	// User is passed as `--user`; empty means the image's own user. It is set
 	// on a Linux host so files land owned by the invoking user (decision 5),

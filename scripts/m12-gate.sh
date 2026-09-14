@@ -10,8 +10,9 @@
 #   3. a step timeout stops the process inside the container and the task's
 #      container **survives**, so a retry finds what an earlier step installed
 #   4. a daemon killed mid-step leaves no container behind: recovery removes it
-#   5. `container.network: false` with `mcp.wire_steps: true` is refused at task
-#      creation with a 400 naming both keys
+#   5. `container.network: false` with `mcp.wire_steps: true` is accepted at
+#      task creation and runs to done in a container with no network (issue
+#      #366; task 062 reinstates the refusal once an agent runs inside)
 #
 # It **skips cleanly** (exit 0, one line saying why) on a host that cannot run
 # the feature. CI runs its assertions on the Linux leg only, and the two skips
@@ -137,8 +138,8 @@ api() { # api METHOD PATH [JSON_BODY]
   printf '%s' "$out"
 }
 
-# api_status prints "STATUS<newline>BODY" without failing on a 4xx, for the
-# scenario whose whole point is the 400.
+# api_status prints "STATUS<newline>BODY" without failing on a 4xx, so a
+# scenario can assert the exact status and still show a refusal's body.
 api_status() { # api_status METHOD PATH [JSON_BODY]
   local method="$1" path="$2" body="${3:-}" out
   local args=(-sS -X "$method" -H "Authorization: Bearer $TOKEN" -w $'\n%{http_code}')
@@ -324,7 +325,12 @@ if "$DOCKER" inspect "$ORPHAN" >/dev/null 2>&1; then
 fi
 echo "   ok: recovery removed the orphaned container"
 
-echo "== scenario 5: no network with wired MCP is refused at creation"
+echo "== scenario 5: no network with wired MCP is accepted and runs"
+# Task 061 decision 1 refused this pair at creation. Issue #366 deferred that
+# refusal to task 062: no agent runs in the container yet, so every agent
+# reaches the per-step MCP endpoint from the host whatever the container's
+# network is, and a no-network container is a configuration that works. 062
+# reinstates the 400 together with the host.docker.internal rewrite.
 write_config "container:
   image: $IMAGE
   network: false
@@ -337,11 +343,12 @@ OUT="$(api_status POST /tasks \
   "$(jq -cn --argjson p "$PROJECT" '{project_id: $p, workflow: "contained", title: "no network"}')")"
 STATUS="${OUT%%$'\n'*}"
 BODY="${OUT#*$'\n'}"
-[[ "$STATUS" == 400 ]] || fail "a no-network containerized task returned HTTP $STATUS: $BODY"
-MESSAGE="$(printf '%s' "$BODY" | jq -r .error.message)"
-grep -q container.network <<<"$MESSAGE" || fail "the refusal does not name container.network: $MESSAGE"
-grep -q mcp.wire_steps <<<"$MESSAGE" || fail "the refusal does not name mcp.wire_steps: $MESSAGE"
-echo "   ok: 400 naming both keys"
+[[ "$STATUS" == 201 ]] || fail "a no-network containerized task with mcp.wire_steps on returned HTTP $STATUS: $BODY"
+NONET_TASK="$(printf '%s' "$BODY" | jq -r .id)"
+wait_for_state "$NONET_TASK" done 120
+MODE="$("$DOCKER" inspect --format '{{.HostConfig.NetworkMode}}' "$(containers_for "$NONET_TASK")")"
+[[ "$MODE" == none ]] || fail "task $NONET_TASK's container has network mode $MODE, want none"
+echo "   ok: accepted, and ran to done in a container with no network"
 
 daemon_down
 echo "GATE PASS: m12 (container step execution)"

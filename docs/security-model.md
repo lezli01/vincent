@@ -126,17 +126,17 @@ image's, not your machine's.
 **Does not:**
 
 - **Close the network.** Outbound traffic is on by default.
-  `container.network: false` closes it, and is refused together with
-  `mcp.wire_steps: true` because a container with no network cannot reach the
-  daemon.
-- **Withhold your agent credentials.** `mount_agent_config` is on by default and
-  bind-mounts `~/.claude`, `~/.codex` and `~/.cursor` into the container
-  **read-write**, because subscription auth takes no key from the environment
-  and cursor writes its model choice back to its own config. Anything running
-  inside the container can read those credentials and write to those
-  directories. Turning
-  the knob off is supported; an agent CLI that then cannot log in is the
-  consequence, not a bug.
+  `container.network: false` closes it for the steps inside the container. The
+  agent process still runs on the host, so it keeps its network and the daemon's
+  per-step MCP endpoint either way.
+- **Withhold your agent credentials once you mount them.** `mount_agent_config`
+  is off by default, so `~/.claude`, `~/.codex` and `~/.cursor` are not in the
+  container. Turn it on and they are bind-mounted **read-write**: anything
+  running inside the container can read those credentials and write to those
+  directories. Nothing in the container needs them today, because the agent
+  runs on the host. The default turns back on when the agent moves into the
+  container, since subscription auth takes no key from the environment and
+  cursor writes its model choice back to its own config.
 - **Raise a privilege boundary.** On a Linux host every step execs as your own
   uid and gid, so files land owned correctly — and so an escape lands as the
   same user the daemon already runs as.

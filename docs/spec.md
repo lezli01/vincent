@@ -4692,7 +4692,7 @@ mcp:                           # the §13.4 MCP server (task 057)
 container:                     # run a task's steps in a container (§16, task 061)
   image: ""                    # "" (default) = every step runs on this host
   runtime: docker              # a docker-CLI-compatible binary; only docker is verified in CI
-  mount_agent_config: true     # bind-mount ~/.claude, ~/.codex, ~/.cursor read-write
+  mount_agent_config: false    # bind-mount ~/.claude, ~/.codex, ~/.cursor read-write; off until 062 (#366)
   network: true                # false drops the container off the network entirely
   extra_mounts: []             # host:container[:ro]; the repo and worktree are mounted already
 tui:                           # view preference; the daemon validates and relays it (§15)
@@ -4727,6 +4727,17 @@ image is the user's: it must already carry the agent CLI a workflow's agent
 steps resolve to, and `git`. Vincent builds nothing, publishes nothing and
 bundles nothing, the posture it already takes toward `gh` and `cosign`.
 
+*Amended 2026-09-14 (issue #366).* `mount_agent_config` defaults to **false**
+until task 062. With only commands and checks in the container, nothing inside
+it reads `~/.claude`, `~/.codex` or `~/.cursor`, so task 061's default of true
+handed the host's agent credentials, writable, to the image and to step code
+for no benefit. The knob keeps its semantics, and 062 turns the default back on
+when it moves the agent in; a `config.yaml` that sets the key keeps its value.
+For the same reason `network: false` with `mcp.wire_steps: true` is no longer
+refused at task creation (task 061 decision 1): every agent reaches the
+per-step MCP endpoint from the host, whatever the container's network is. Task
+062 reinstates that refusal together with the `host.docker.internal` rewrite.
+
 The block resolves at **two** levels — a workflow's `defaults.container:` over
 this one, per field (task 061 decision 6). There is no task level, no
 `POST /v1/tasks` field and no CLI flag; §20 records the trigger for adding one.
@@ -4748,7 +4759,7 @@ What is refused, and where (task 061 decision 3):
 |---|---|---|
 | The daemon runs on **Windows** | task creation | `400 validation_failed` — a `C:\...` path cannot exist in a Linux container, and paths are identical inside and out |
 | `runtime` is missing or cannot talk to a daemon | task creation | `400 validation_failed` — cheap, local, one `docker version` |
-| `network: false` with `mcp.wire_steps: true` | task creation | `400 validation_failed` — a container with no network cannot reach the daemon's per-step MCP endpoint |
+| `network: false` with `mcp.wire_steps: true` | task creation, **once task 062 lands** | `400 validation_failed` — a container with no network cannot reach the daemon's per-step MCP endpoint. *Amended 2026-09-14 (issue #366): not refused until then, because every agent still runs on the host* |
 | A step pins `shell: pwsh` or `shell: cmd` | load (workflow pins its own image) or task creation | validation error naming the step (§8.3) |
 | The image is missing and cannot be pulled | **admission** | task blocks `container_image_unavailable`, before a worktree, a branch or a retry is spent |
 | The runtime disappeared under a created task | **admission** | task blocks `container_unavailable` |
@@ -9449,15 +9460,22 @@ currently true to show (§15 view 6).
   What it does **not** confine is stated here with the same honesty §16 already
   applies to `/mcp/step/{run_id}` not being a boundary:
   - **Outbound network is open by default.** `container.network: false` closes
-    it, and is refused together with `mcp.wire_steps: true` because a container
-    with no network cannot reach the daemon's per-step MCP endpoint.
+    it, and task 062 refuses it together with `mcp.wire_steps: true` because a
+    container with no network cannot reach the daemon's per-step MCP endpoint.
+    *Amended 2026-09-14 (issue #366): task 061 shipped that refusal and it is
+    deferred to 062, because until then every agent runs on the host and
+    reaches the endpoint from there, whatever the container's network is.*
   - **The agent's credentials are inside it.** `mount_agent_config` defaults to
     true and bind-mounts `~/.claude`, `~/.codex` and `~/.cursor` **read-write**,
     because subscription auth takes no key from the environment and cursor
     persists `--model` to its own config (§9.7). An agent in the container can
     therefore read the host's agent credentials and write to those directories.
     The knob turns it off; an agent CLI that then cannot authenticate is the
-    documented consequence, not a bug.
+    documented consequence, not a bug. *Amended 2026-09-14 (issue #366): the
+    default is **false** until task 062 moves the agent into the container and
+    turns it back on. Until then nothing in the container reads those
+    directories, so the default of true handed them, writable, to the image and
+    to step code for no benefit; setting the key still mounts them.*
   - **The daemon is reachable.** Every container is created with
     `--add-host=host.docker.internal:host-gateway` whenever it has a network at
     all, so a process inside it can call the daemon's MCP surface — with the

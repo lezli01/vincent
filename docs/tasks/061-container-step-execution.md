@@ -37,6 +37,15 @@ These were settled before any code was written and are binding.
    need the rewrite anyway — two paths) and silently defeats the `network`
    knob.
 
+   *Amended 2026-09-14 (issue #366):* the creation-time refusal is **deferred
+   to task 062**. This task split agent steps off into 062, so no agent step
+   runs in the container yet: every agent reaches the per-step MCP endpoint
+   from the host, whatever the container's network is, and the refusal
+   rejected a configuration that works. 062 reinstates it together with the
+   `host.docker.internal` rewrite. This departs from the decision as written,
+   deliberately and on the author's call; the rewrite and `--add-host` parts
+   stand.
+
 2. **Paths are identical inside and out; POSIX hosts only.** The project path
    and `{data_dir}/worktrees/{task_id}` are bind-mounted at their own absolute
    host paths. A worktree's `.git` is a file holding an absolute
@@ -55,7 +64,7 @@ These were settled before any code was written and are binding.
 3. **The creation gate is split; the image check moves to admission.** Task
    creation refuses only what is cheap and local — the runtime binary missing
    or unusable, a containerized task on a Windows host, and decision 1's
-   contradiction. A missing, unpullable image **blocks at admission** with
+   contradiction (deferred to 062 on 2026-09-14; see decision 1). A missing, unpullable image **blocks at admission** with
    `container_image_unavailable`, before a worktree, a branch or a retry is
    spent; `container_unavailable` is the §12.4-shaped backstop for a task whose
    daemon changed underneath it. This is task 041's actual shape rather than
