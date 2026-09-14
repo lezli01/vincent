@@ -63,7 +63,7 @@ func rejected(typ, field string) bool {
 		return false
 	}
 	var refused bool
-	validateStep(step, "steps[0]", Options{}, func(path, format string, _ ...any) {
+	validateStep(step, "steps[0]", Options{Authored: true}, func(path, format string, _ ...any) {
 		if path == "steps[0]."+field && strings.Contains(format, "is not valid on a") {
 			refused = true
 		}

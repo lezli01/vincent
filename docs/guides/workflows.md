@@ -406,8 +406,8 @@ step, where the step wins.
 | `permission_mode` | agent steps | `full-auto` |
 | `on_input` | agent steps | `wait` |
 | `input_timeout` | agent steps | `defaults.input_timeout` in config — 24h |
-| `max_retries` | all steps | `1` |
-| `retry_backoff` | all steps | `0s` — an immediate retry ([§8.2](#82-retries)) |
+| `max_retries` | agent, command and fan_out steps | `1` |
+| `retry_backoff` | agent, command and fan_out steps | `0s` — an immediate retry ([§8.2](#82-retries)) |
 | `timeout` | all steps | `defaults.agent_timeout` (60m) or `defaults.command_timeout` (15m) in config |
 | `container` | command steps and checks | the daemon's [`container:`](../reference/configuration.md#container) block, merged per field |
 

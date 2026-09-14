@@ -116,6 +116,9 @@ Every runtime step has a unique `id` and a `type`; `name`, `max_retries`,
 `retry_backoff`, `timeout`, and `if` are common optional fields where the step
 type permits them. `allow_failure` is limited to `agent` and `command`. Some structural
 types deliberately reject timeout or retry fields; see the table below.
+`max_retries` and `retry_backoff` bind to an attempt, so `manual`, `parallel`,
+`condition`, `break`, `loop`, and `include` reject both — put retries on a
+group's sub-steps, never on the group.
 
 ## Step selection and fields
 

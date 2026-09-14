@@ -428,6 +428,11 @@ steps:
           that renders empty unless the body sends them to stdout, which
           "exec 2>&1" on its first line does for a body that is all
           diagnostics.
+      13. Retry fields where there is an attempt. max_retries and
+          retry_backoff on a parallel or a manual step are refused at load: a
+          group's retries belong to each sub-step, and a gate is decided once.
+          Remove them from the group or gate; where a group carried them, move
+          the value onto the sub-steps it was meant for, and say so.
 
       ## What you may not change
 

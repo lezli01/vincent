@@ -477,11 +477,12 @@ func materialise(step Step, callee Defaults, override agent.Level) Step {
 
 	// `timeout`, `max_retries` and `retry_backoff` bind to an attempt, which a
 	// `condition` and a `break` do not have — writing any of them onto one
-	// would produce a snapshot §8.2 rejects. A `loop` has a timeout but no
-	// attempt of its own.
+	// would produce a snapshot §8.2 rejects. A `loop`, a `parallel` group and
+	// a `manual` gate have a timeout but no attempt of their own (issue #374);
+	// a group's sub-steps still inherit all three, materialised above.
 	switch step.Type {
 	case StepCondition, StepBreak:
-	case StepLoop:
+	case StepLoop, StepParallel, StepManual:
 		step.Timeout = firstDuration(step.Timeout, callee.Timeout)
 	default:
 		step.Timeout = firstDuration(step.Timeout, callee.Timeout)
