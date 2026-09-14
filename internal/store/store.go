@@ -39,10 +39,9 @@ type Store struct {
 // connection pragmas (WAL, busy timeout, foreign keys), and runs any pending
 // embedded migrations. The parent directory is created if missing.
 func Open(path string) (*Store, error) {
-	// G301: the data dir keeps the platform-default mode. Tightening it is a
-	// user-visible change to an existing installation and needs its own spec
-	// amendment; task 040 records it as follow-up rather than smuggling it in.
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: see above
+	// Owner-only like every directory beside it: it holds the database, and must
+	// not rely on the daemon happening to create logs/ first (spec §12.2, #367).
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("create data dir: %w", err)
 	}
 	db, err := sql.Open("sqlite", dsn(path))
