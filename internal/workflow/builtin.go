@@ -235,6 +235,9 @@ const UpdateWorkflowsName = "update-workflows"
 // features a workflow can be behind on, so a workflow feature that lands
 // without a line here is a feature this built-in will never propagate. Adding
 // that line is part of shipping the feature (decision 5).
+// TestUpdateWorkflowsChecklistNamesEveryField holds it to that: every key the
+// §8.2 schema descriptor offers must be named under "The bar", less the
+// exemptions that test lists with their reasons (issue #376).
 //
 // `on_input: deny` rather than create-workflow's `wait` (decision 4). The two
 // built-ins face opposite ways: create-workflow is designing something that
@@ -375,12 +378,24 @@ steps:
          genuinely decided by a run — a planning step emitting one JSON object
          per work unit — becomes for_each: plus a single lane: template with a
          max_lanes: ceiling, in place of a hand-guessed list of guarded lanes.
+         A parallel group that starts more processes than the machine should
+         run at once carries max_parallel, and a loop whose real bound is not
+         the default of ten says so in max_iterations; both are what the
+         session envelope counts. A lane that needs another capability, or
+         must be admitted ahead of its siblings, overrides model, effort or
+         priority on the lane rather than in a copied workflow. A fan-out whose
+         conflicts people keep resolving the same mechanical way may carry
+         merge: with on_conflict: agent and a checked resolver, counted in the
+         envelope; everywhere else merge stays at block.
       3. Verification. A step that changes state a command can check carries a
-         check:. An agent's claim that it worked is not verification.
+         check:, and check_timeout where that check can outlast the daemon's
+         command timeout — it never inherits the step's own timeout. An
+         agent's claim that it worked is not verification.
       4. Typed inputs. A value the prompt tells a human to bury in the task
-         description becomes a declared field, with a type, and a pattern where
-         one exists. A workflow that digs an issue number out of the task title
-         reads .Issue instead.
+         description becomes a declared field under fields:, with a type, a
+         pattern where one exists, and a label where its name is a slug a
+         person would not read easily. A workflow that digs an issue number out
+         of the task title reads .Issue instead.
       5. Closed sets and defaults. A field whose legal values are a fixed list
          is type: enum with values:, not a string with a pattern spelling the
          same alternation and not a set restated in prose — only a list can be
@@ -391,12 +406,18 @@ steps:
       6. Failure policy, per step. max_retries: 0 on a probe and on anything
          whose replay is not provably safe; allow_failure: true where a red
          result is data a later guard reads; retry_backoff where retrying
-         immediately cannot help.
+         immediately cannot help. timeout on a step whose hang is likelier
+         than its slow work, rather than the daemon's default; input_timeout
+         on a step that can wait on a question nobody may be there to answer,
+         since the wait holds the task's slot.
       7. Human mechanism, deliberately chosen. A manual gate sits immediately
          before the effect it authorizes and names what to inspect.
          on_input: require only where the conversation genuinely is part of the
          run, and never on a step that resolves to an adapter with no control
          channel. on_input: deny on a step meant to run untended.
+         permission_mode: restricted on an agent step that needs no writes — a
+         review, a plan — where its adapter can restrict on the host; never
+         the reverse.
       8. Visibility. A step that runs for minutes, or that someone waits on,
          reports through vincent status — in the script for a command step, in
          the prompt for an agent step, in the wording used above.
@@ -414,8 +435,8 @@ steps:
       10. Defensive templates. Rendering uses missingkey=error, so an optional
           field is read as {{"{{"}}with index .Task.Fields "x"}}…{{"{{"}}end}}
           and never bare. A required field may be read directly.
-      11. Secrets. Nothing in a prompt, a field, an instruction or a run: body
-          that you would not want sitting in a transcript.
+      11. Secrets. Nothing in a prompt, a field, an instruction, a run: body or
+          an env: map that you would not want sitting in a transcript.
       12. Streams, in a command step whose output something reads. A command
           step's .Steps.<id>.Result is its stdout alone, never its stderr. Two
           things follow, and both need checking rather than assuming. A

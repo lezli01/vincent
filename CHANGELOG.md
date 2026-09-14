@@ -280,6 +280,15 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **`create-workflow` can author every workflow key.** Its prompt carries the
+  `vincent-workflows` skill, and outside a vincent checkout that skill is all it
+  knows about the schema. The skill never named 20 of the keys a workflow may
+  carry, including `timeout`, `permission_mode`, `env`, `max_parallel`,
+  `max_iterations`, `merge.on_conflict` and `defaults.container`, so the
+  built-in could not write them. The skill (now 1.1.0) gains a compact index of
+  every key with when to use it. `update-workflows`' checklist also gains the
+  14 feature keys it had missed, so it now brings existing workflows up to
+  them. Tests keep both lists in step with the schema (issue #376).
 - **vincent is built with Go 1.26.8.** `go.mod` still pinned go1.26.6: the
   weekly job that adopts Go patch releases had never managed to open its pull
   request, so source builds and release binaries went without the standard

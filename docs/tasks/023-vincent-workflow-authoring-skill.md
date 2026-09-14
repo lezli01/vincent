@@ -33,6 +33,13 @@ workflow is committed.
    `vincent workflow validate` the final deterministic check. This beats
    duplicating the entire documentation set or adding a helper script around an
    existing command.
+   *Amended 2026-09-14 (issue #376).* The entry point stays focused, but it must
+   name every authorable key, with a line of when-to-use guidance each. Outside
+   a vincent checkout it is the whole schema `create-workflow` has, because
+   only `SKILL.md` is embedded (task 024 decision 7) and its header tells the
+   agent that `references/` is not on disk. Types, defaults and edge rules stay
+   in the references. `TestSkillNamesEveryAuthorableField` fails when a key the
+   §8.2 schema descriptor offers is missing from `SKILL.md`.
 5. **2026-08-21 — Bundle the repository's license with the skill.** Standalone
    installers must retain the same terms as the source repository. This beats
    relying on consumers to discover a parent-directory license after the skill
