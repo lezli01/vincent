@@ -397,6 +397,8 @@ later reader sees one shape — and after it the step is an ordinary static
 `fan_out`, which is what keeps the graph, the preview, the editor and
 `edit + retry` free of a derived case. The registry is still not re-read: the
 lane's `workflow:` was resolved at creation like any other (§5.3 above).
+*(Amended 2026-09-14, issue #370: "the preview" here is a snapshot's; `vincent
+workflow render` previews an authored file and has a derived case — §7.6.)*
 
 `current_step` is left where the finished run put it — one past the last step —
 for the whole of a follow-up, and a follow-up is walked by the cursor inside
@@ -1443,6 +1445,14 @@ does not finish until every lane is merged.
   round's `step_runs` row was the alternative and was rejected: the retry
   budget can rewrite that row, and the picture a reader is shown must not
   change because a lane was retried.
+
+  *Amended 2026-09-14 (issue #370), amending task 080 decision 5.* "The
+  preview" above is true only of a snapshot. `vincent workflow render` previews
+  an **authored** file, where the `lane:` template is still live, so it does
+  carry a derived case: the template is walked like a declared lane, its own
+  `if`, `id`, `needs` and `fields` render with `.Item` bound to placeholders,
+  and its steps are marked with the `for_each` they expand over (§8.4, task 044
+  decision 10).
 
   `fan_out.max_depth` is unchanged: it counts nesting, and a dynamic width does
   not nest. `fan_out.max_tasks` **cannot** be checked at task creation for a
