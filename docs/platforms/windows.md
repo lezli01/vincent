@@ -16,23 +16,18 @@ different.
 
 ## Install
 
-WinGet is the shortest system-managed path:
-
-```powershell
-winget install --id lezli01.Vincent --exact
-```
-
-Or use vincent's Scoop bucket:
+vincent's Scoop bucket is the shortest system-managed path:
 
 ```powershell
 scoop bucket add vincent https://github.com/lezli01/scoop-bucket
 scoop install vincent/vincent
 ```
 
-Both support x86-64 and ARM64, install Git when it is missing, and consume the
-same release zip as the manual path. Stable releases update Scoop immediately;
-WinGet can lag while Microsoft reviews the catalog pull request. mise is also
-supported: `mise use -g github:lezli01/vincent`.
+It supports x86-64 and ARM64, installs Git when it is missing, and consumes the
+same release zip as the manual path; stable releases update it immediately.
+WinGet is submitted but not yet in Microsoft's catalog — no submission has been
+merged, so `winget install --id lezli01.Vincent --exact` does not find it yet.
+mise is also supported: `mise use -g github:lezli01/vincent`.
 
 To install without a manager, unzip the release archive and put `vincent.exe`
 somewhere on your `PATH`:

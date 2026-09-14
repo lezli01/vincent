@@ -105,7 +105,7 @@ func (e *Error) Error() string {
 
 // ReasonOf extracts the reason from an error this package produced, falling
 // back to ReasonUnreachable for anything else — an unclassified failure is
-// still a failure to reach GitHub, and inventing a tenth reason for it would
+// still a failure to reach GitHub, and inventing another reason for it would
 // give clients a value they cannot act on.
 func ReasonOf(err error) string {
 	var e *Error

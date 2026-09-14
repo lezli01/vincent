@@ -20,7 +20,7 @@ state stay on your machine; vincent provides the control plane around them.
 | Event triggers | Start or act on tasks from a polled command, GitHub issue and pull-request changes, or a signed push; off twice by default, proposed paused and restricted, deduplicated and rate-limited, with a delivery ledger and dry runs; built-in workflows that write triggers and never switch one on |
 | Integration | Full CLI, JSON output, stable exit codes, localhost REST API, durable state SSE and live output streams |
 | Operations | Automatic usage-limit waits, one-command diagnostics, configuration editing from the TUI and CLI, orphan cleanup, database integrity checks, backup and restore |
-| Platforms | Windows, macOS, and Linux; Homebrew, a universal macOS `.pkg`, WinGet, Scoop, mise, deb/rpm, and archives |
+| Platforms | Windows, macOS, and Linux; Homebrew, a universal macOS `.pkg`, Scoop, mise, deb/rpm, and archives; WinGet submitted, pending Microsoft review |
 
 ## Orchestrate work instead of terminals
 
@@ -372,10 +372,12 @@ The daemon serves the Model Context Protocol on the same loopback listener,
 behind the same bearer token, so any MCP client gets the whole API as tools —
 with discovery, argument schemas and typed errors rather than hand-rolled curl.
 
-- The tool surface is the route table, minus six destructive-admin routes an
-  agent has no business calling: stopping, backing up, garbage-collecting,
-  repairing or reconfiguring the daemon, and force-deleting a project. The
-  configuration one is also the only tool whose body differs from its route's:
+- The tool surface is the route table, minus the routes an agent has no
+  business calling: stopping, backing up, garbage-collecting, repairing or
+  reconfiguring the daemon, editing its workflows or triggers, opening a pull
+  request, reporting a quota reading, deleting anything permanently, and
+  driving a chat. The configuration route is also the only tool whose body
+  differs from its route's:
   `config_get` masks `environment.set`'s values and `notify.command`'s argv,
   because a tool result lands in the model's context and in the transcript.
 - One bounded `task_wait` call blocks until a task is done, aborted, archived,
@@ -604,7 +606,7 @@ external database. Releases cover Windows, macOS, and Linux, and are published
 as archives plus platform-friendly packages:
 
 - Homebrew or a universal installer package on macOS
-- WinGet or Scoop on Windows
+- Scoop on Windows (WinGet submitted, pending Microsoft review)
 - deb and rpm packages on Linux
 - mise or release archives on all platforms
 

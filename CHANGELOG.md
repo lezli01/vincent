@@ -300,6 +300,12 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **The Windows install instructions no longer offer WinGet as working.** The
+  README, the installation guide, the Windows page and the feature guide led
+  with `winget install --id lezli01.Vincent --exact`, but Microsoft has not yet
+  merged any of vincent's catalog submissions, so that command finds nothing.
+  Scoop is now the documented Windows path, and every WinGet mention says the
+  package is submitted and awaiting Microsoft's review (issue #377).
 - **`create-workflow` can author every workflow key.** Its prompt carries the
   `vincent-workflows` skill, and outside a vincent checkout that skill is all it
   knows about the schema. The skill never named 20 of the keys a workflow may
