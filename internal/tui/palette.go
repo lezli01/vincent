@@ -42,8 +42,11 @@ func newPalette(entries []paletteEntry) *palette {
 // task as the action bar sees it; editable reports whether the current step
 // has text E could edit; connected gates the action group — nothing can act
 // on a task the daemon cannot see; github gates the rows that only mean
-// something when some project's integration is usable (task 052.6).
-func paletteEntries(ctx bindingContext, target taskActions, editable, connected, github bool) []paletteEntry {
+// something when some project's integration is usable (task 052.6); live,
+// when non-nil, drops the surface's panel rows whose keys are inert in its
+// current state — the same gate the footer applies, so the palette never
+// offers a press the footer knows does nothing (issue #372).
+func paletteEntries(ctx bindingContext, target taskActions, editable, connected, github bool, live func([]binding) []binding) []paletteEntry {
 	out := make([]paletteEntry, 0, len(bindings))
 	if connected && (target.id != 0 || target.bulk()) {
 		// A selection is what the keys act on, so it is what the section is
@@ -74,7 +77,11 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 			})
 		}
 	}
-	for _, b := range withoutGitHub(bindingsFor(ctx), github) {
+	rows := withoutGitHub(bindingsFor(ctx), github)
+	if live != nil {
+		rows = live(rows)
+	}
+	for _, b := range rows {
 		if b.noPalette {
 			continue
 		}

@@ -367,18 +367,39 @@ func shortRef(ref string) string {
 	return ref
 }
 
-// pullHintLine names what the selected row can do. Re-run is deliberately
-// *absent* rather than present-and-refusing on a row no Actions run backs
-// (task 068 decision 3) — and absent on every row until 068.4 lands the write
-// leg, because a key hint for an operation that does not exist yet is the
-// same lie in a different place.
+// pullHintLine names what the selected row can do, read off the registry's
+// ctxTaskPull rows rather than spelled out a second time: a literal list here
+// went on saying `c open check` and `r refresh` after task 093 moved the one
+// to `enter` and removed the other, so on this tab it advertised cancel and
+// retry as something else (issue #372). The tab key and the selection row are
+// left out — the tab strip and the list already say them — and no
+// withoutGitHub pass is needed, because the tab is on the strip only while
+// the integration is usable. Re-run is deliberately *absent* rather than
+// present-and-refusing on a row no Actions run backs (task 068 decision 3) —
+// and absent on every row until 068.4 lands the write leg, because a key hint
+// for an operation that does not exist yet is the same lie in a different
+// place.
 func (t *taskView) pullHintLine() string {
-	hints := []string{"o open PR", "r refresh", "u unlink"}
-	if len(t.lanes) > 0 {
-		hints = append(hints, "l open lane")
-	}
-	if run := t.selectedCheck(); run != nil && run.URL != "" {
-		hints = append([]string{"c open check"}, hints...)
+	var hints []string
+	for _, b := range bindingsFor(ctxTaskPull) {
+		switch b.key {
+		case "7", "down":
+			continue
+		case "enter":
+			if run := t.selectedCheck(); run == nil || run.URL == "" {
+				continue
+			}
+		case "l":
+			// The row carries no footer hint; here it is named only while
+			// this task has lanes to open.
+			if len(t.lanes) > 0 {
+				hints = append(hints, "l open lane")
+			}
+			continue
+		}
+		if b.hint != "" {
+			hints = append(hints, b.hint)
+		}
 	}
 	return strings.Join(hints, " · ")
 }

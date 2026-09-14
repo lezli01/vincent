@@ -201,7 +201,7 @@ func TestPullTabOpensTheSelectedCheck(t *testing.T) {
 		t.Fatal("enter opened something for a check with no page")
 	}
 	if !v.pullTab.noteBad {
-		t.Fatal("c said nothing about a check with no page")
+		t.Fatal("enter said nothing about a check with no page")
 	}
 }
 
