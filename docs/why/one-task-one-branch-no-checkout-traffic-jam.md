@@ -9,7 +9,7 @@ working directory turns it back into a queue.
 
 Vincent gives every task its own git worktree and branch before the workflow
 runs. The task receives an isolated directory containing the same repository,
-while the developer's active checkout stays untouched. Starting another task
+and never works in the developer's active checkout. Starting another task
 creates another worktree instead of competing for the first one.
 
 This makes concurrency understandable. The scheduler controls how many tasks may

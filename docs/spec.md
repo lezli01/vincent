@@ -6358,14 +6358,14 @@ GET    /v1/tasks/{id}                   full task incl. step runs summary and pe
                                         source file relative to that scope's root and a
                                         digest of the bytes it was loaded from, or
                                         `derived` naming a fan-out lane's parent (§5.3).
+                                        null for a task created before origin was
+                                        recorded, which is *not recorded* and never a
+                                        re-lookup of today's registry.
                                         *Added 2026-09-14 (task 099, issue #430):* every task
                                         representation also carries `base_sha` (omitted when
                                         none was recorded) and `base_refresh` (null, not
                                         omitted, when none was) — the §5.3 columns, reversing
                                         task 056 decision 4
-                                        null for a task created before origin was
-                                        recorded, which is *not recorded* and never a
-                                        re-lookup of today's registry
                                         Detail-only: `workflow_steps[]` — the task's snapshot
                                         as { index, id, type, prompt?, run?, instructions?,
                                         resolved_from[]? }, which is what edit+retry prefills

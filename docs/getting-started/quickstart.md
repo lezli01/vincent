@@ -142,7 +142,7 @@ vincent task ls
 
 The task is `queued` immediately. When a scheduler slot frees up it becomes
 `running` in its own git worktree, on a branch named `vincent/{id}-{slug}` unless
-you configured a different convention. Nothing touches your checkout.
+you configured a different convention. The task never works in your checkout.
 
 Useful additions at creation time:
 

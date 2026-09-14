@@ -249,9 +249,10 @@ list with the user-facing context a commit subject cannot carry.
   worktree is created is now followed by a fast-forward of your local base
   branch to the fetched commit, and of its checkout when it is checked out —
   so `git log master` in your own checkout stops drifting behind what tasks
-  build on. It only ever fast-forwards, runs no git hooks, and leaves the
-  branch exactly where it is when it is ahead of or has diverged from the
-  remote, or when its checkout has any change (untracked files included) or
+  build on. It only ever fast-forwards, runs no merge or checkout hooks, and
+  leaves the branch exactly where it is when it is ahead of or has diverged
+  from the remote, or when its checkout has any change (untracked files
+  included) or
   a merge, rebase, cherry-pick, revert or bisect in progress. A skip never
   blocks the task, which starts from the fetched commit either way. What
   happened is now visible on the task: `base_sha` and a new `base_refresh`
