@@ -17,7 +17,7 @@ the living engineering specification records implementation contracts.
 | [001](001-configurable-branch-names.md) | Configurable branch names | ✅ done (11/11) |
 | [002](002-homebrew-tap.md) | Homebrew tap for macOS | ✅ done (6/6) |
 | [003](003-usage-limit-classification.md) | Classify agent usage limits and auth expiry | ✅ done (7/7) |
-| [004](004-go-toolchain-pin.md) | Pin the Go toolchain and automate its patch bumps | ✅ done (3/3) |
+| [004](004-go-toolchain-pin.md) | Pin the Go toolchain and automate its patch bumps | ⚠ blocked on the owner (5/6) |
 | [005](005-orphaned-worktree-gc.md) | Reclaim orphaned worktrees: `vincent gc` and a startup reconcile | ✅ done (8/8) |
 | [006](006-vincent-doctor.md) | `vincent doctor` — one diagnostic report | ✅ done (8/8) |
 | [007](007-release-please.md) | Release Please automation | ✅ done (6/6) |

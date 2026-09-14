@@ -117,8 +117,11 @@ func newActionLiveHarness(t *testing.T) *actionLiveHarness {
 	ctx := testCtx(t)
 	runner.Start(ctx)
 	sched.Start(ctx)
-	t.Cleanup(sched.Stop)
+	// Cleanups run last-first, so this stops admission before the runner
+	// waits on its actors — the daemon's order. The other way round, an
+	// admission's wg.Add races runner.Stop's wg.Wait.
 	t.Cleanup(runner.Stop)
+	t.Cleanup(sched.Stop)
 
 	u, err := url.Parse(ts.URL)
 	if err != nil {

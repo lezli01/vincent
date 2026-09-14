@@ -280,6 +280,11 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **vincent is built with Go 1.26.8.** `go.mod` still pinned go1.26.6: the
+  weekly job that adopts Go patch releases had never managed to open its pull
+  request, so source builds and release binaries went without the standard
+  library fixes in go1.26.7 and go1.26.8. The toolchain is bumped, and the job
+  now opens an issue when it fails instead of failing silently (issue #373).
 - **TUI hints no longer name keys that do nothing.** The Pull Request tab's
   hint line still read `c open check` and `r refresh`, though `c` there is
   cancel and `r` is retry since open-check moved to `enter` and the refresh key

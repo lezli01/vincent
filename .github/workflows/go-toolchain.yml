@@ -29,7 +29,15 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: write # push the bump branch
-      pull-requests: write # open the pull request
+      # Open the pull request. Necessary, not sufficient: with GITHUB_TOKEN,
+      # `gh pr create` is also refused — "GitHub Actions is not permitted to
+      # create or approve pull requests" — unless the repository setting
+      # Settings → Actions → General → Workflow permissions → "Allow GitHub
+      # Actions to create and approve pull requests" is on. It was off until
+      # #373, and every run with a patch to adopt failed at that step, after
+      # pushing its branch (004 decision 5).
+      pull-requests: write
+      issues: write # report a failed run (the last step)
     steps:
       - uses: actions/checkout@v7
         # Unlike every other workflow here, this one pushes, so the token has to
@@ -134,3 +142,30 @@ jobs:
           gh pr create \
             --title "Bump Go toolchain to ${LATEST}" \
             --body-file /tmp/pr-body.md
+
+      # A failed scheduled run notifies nobody: this job failed four Mondays
+      # running before anyone looked (#373). One tracking issue, commented on
+      # while it stays open, so a job that keeps failing does not open an issue
+      # a week. Creating issues needs only `issues: write` — not the repository
+      # setting the pull request step depends on, which is exactly the failure
+      # this has to be able to report. GH_REPO because the failure may be the
+      # checkout itself (004 decision 6).
+      - if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          title="Go toolchain bump workflow is failing"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          body="[Run ${GITHUB_RUN_ID}](${run_url}) of \`.github/workflows/go-toolchain.yml\` (${GITHUB_EVENT_NAME}) failed. Until it passes, go.mod's \`toolchain\` directive is not following Go patch releases. If the pull request step reads \"GitHub Actions is not permitted to create or approve pull requests\", the repository setting task 004 decision 5 depends on is off."
+          # A listing rather than `--search`: the search index lags, and a
+          # dispatch right after a failure would then open a second issue.
+          number=$(gh issue list --state open --limit 1000 --json number,title \
+            --jq "[.[] | select(.title == \"${title}\")][0].number // empty")
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi
