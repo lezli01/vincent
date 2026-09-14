@@ -663,7 +663,7 @@ task has parallel steps or fan-out lanes).
 
 | Output | What it is |
 |---|---|
-| default | The records rendered as text, the vocabulary the TUI's output pane renders: assistant output, tool calls and their outcomes, command output, the agent's running to-do list as a `# plan:` line, vincent's own annotations. Token usage is dropped — `task show` carries it |
+| default | The records rendered as text, the vocabulary the TUI's output pane renders: the run header (working directory and the tools the agent was given) as a first `# ` line, assistant output, tool calls and their outcomes, command output, the agent's running to-do list as a `# plan:` line, vincent's own annotations, and a closing `= done` line carrying whatever the agent reported about the run — elapsed time, turns, an unusual stop or terminal reason, permission denials, cost. Token usage is dropped — `task show` carries it |
 | `--json` | The normalized records as NDJSON, one JSON object per line, in vincent's vocabulary including its `vincent.*` annotations. This is the `jq` route |
 | `--raw` | The agent's own JSONL, byte for byte, exactly as it was recorded |
 
@@ -671,7 +671,10 @@ What an *agent's* command printed is the one record the default rendering drops.
 The output pane shows it at `verbose` only and this command has no verbosity
 control, so the alternative to dropping it is showing every command's whole
 output to every reader; `--raw` and `--json` both carry it for a reader who
-wants the body.
+wants the body. The result line stops at the pane's `normal` content for the
+same reason: the API-time, cache and per-model breakdown is `--json` only.
+An adapter that reports none of that metadata — codex, cursor — prints no
+header and a bare `= done`.
 
 Everything a reader reads goes to **stdout**, including a command step's stderr,
 which is tagged `[stderr]` rather than split onto the other file descriptor: a
