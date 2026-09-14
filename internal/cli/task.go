@@ -411,6 +411,18 @@ func progress(t apiclient.Task) string {
 	return fmt.Sprintf("%d/%d", k, t.StepTotal)
 }
 
+// taskBaseRows are `task show`'s starting-point rows (issue #430): `base`
+// always, naming the commit the branch was cut from when the daemon recorded
+// one, and `refresh` only when that base may be stale or the local base branch
+// was left behind. A healthy refresh prints nothing — it is the expected case.
+func taskBaseRows(t apiclient.TaskDetail) [][2]string {
+	rows := [][2]string{{"base", t.BaseDisplay()}}
+	if warning := t.BaseRefresh.Warning(); warning != "" {
+		rows = append(rows, [2]string{"refresh", warning})
+	}
+	return rows
+}
+
 func newTaskShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <id>",
@@ -445,6 +457,7 @@ func newTaskShowCmd() *cobra.Command {
 					{"step", progress(t.Task)},
 					{"branch", t.BranchName},
 				}
+				fields = append(fields, taskBaseRows(t)...)
 				if t.BlockReason != nil && *t.BlockReason != "" {
 					fields = append(fields, [2]string{"blocked", *t.BlockReason})
 				}
