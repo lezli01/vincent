@@ -80,6 +80,11 @@
     "description": "Automate vincent with JSON CLI output, exit codes, the localhost REST API, and server-sent events."
   },
   {
+    "path": "docs/guides/triggers.md",
+    "seo_title": "Start vincent tasks from events with triggers",
+    "description": "Turn polled commands, GitHub issue and pull-request changes, or signed pushes into proposed vincent tasks, follow-ups, retries, and cancels, with dry runs and a delivery ledger."
+  },
+  {
     "path": "docs/guides/troubleshooting.md",
     "seo_title": "Troubleshoot vincent",
     "description": "Diagnose daemon, workflow, agent, worktree, permission, and task failures in vincent."

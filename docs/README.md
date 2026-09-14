@@ -82,6 +82,7 @@ and design choices that made a durable orchestrator feel necessary.
 | [Using the TUI](guides/tui.md) | The board, task detail, the five takeover screens, every key |
 | [Scripting vincent](guides/scripting.md) | `--json`, exit codes, and driving the API directly from a script or CI |
 | [Driving vincent from an agent](guides/mcp.md) | The MCP server: the API as tools, the bounded wait, and wiring vincent's own steps |
+| [Event triggers](guides/triggers.md) | Start or act on tasks from a polled command, GitHub issue and pull-request changes, or a signed push, with dry runs and a delivery ledger |
 | [Running at login](guides/running-at-login.md) | `vincent service install` on launchd, systemd and Task Scheduler |
 | [Troubleshooting](guides/troubleshooting.md) | The failures people actually hit, and what each one means |
 
