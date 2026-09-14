@@ -68,6 +68,9 @@ type TaskContext struct {
 
 // ProjectContext is `.Project`.
 type ProjectContext struct {
+	// ID is the project's numeric id — what a trigger's source.project names
+	// and `vincent trigger ls --project` takes (task 098 decision 4).
+	ID            int64
 	Name          string
 	Path          string
 	DefaultBranch string

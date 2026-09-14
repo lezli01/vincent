@@ -16,7 +16,7 @@ func testContext() RenderContext {
 			BaseBranch:  "main",
 			BranchName:  "vincent/42-add-rate-limiting",
 		},
-		Project:  ProjectContext{Name: "vincent", Path: "/repos/vincent", DefaultBranch: "main"},
+		Project:  ProjectContext{ID: 3, Name: "vincent", Path: "/repos/vincent", DefaultBranch: "main"},
 		Workflow: Info{Name: "feature-pr", Description: "Implement and publish"},
 		Step:     StepContext{ID: "implement", Name: "Implement the change", Index: 0, Attempt: 2},
 		Steps: map[string]StepResult{
@@ -38,6 +38,7 @@ func TestRenderEveryContextVariable(t *testing.T) {
 		{`{{index .Task.Fields "ticket"}}`, "OPS-123"},
 		{"{{.Task.BaseBranch}}", "main"},
 		{"{{.Task.BranchName}}", "vincent/42-add-rate-limiting"},
+		{"{{.Project.ID}}", "3"},
 		{"{{.Project.Name}}", "vincent"},
 		{"{{.Project.Path}}", "/repos/vincent"},
 		{"{{.Project.DefaultBranch}}", "main"},

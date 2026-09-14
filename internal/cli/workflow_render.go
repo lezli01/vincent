@@ -216,7 +216,7 @@ func bindRemote(ctx context.Context, cmd *cobra.Command, c *apiclient.Client, f 
 		for _, p := range projects {
 			if p.ID == projectID {
 				in.Project = workflow.ProjectContext{
-					Name: p.Name, Path: p.Path, DefaultBranch: p.DefaultBranch,
+					ID: p.ID, Name: p.Name, Path: p.Path, DefaultBranch: p.DefaultBranch,
 				}
 				break
 			}
