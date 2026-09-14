@@ -115,29 +115,25 @@ func TestContainerGateRefusesAnUnusableRuntime(t *testing.T) {
 	}
 }
 
-// TestContainerGateRefusesNoNetworkWithWiredMCP pins decision 1's
-// contradiction. A container with no network cannot reach the daemon's
-// per-step MCP endpoint, and §9.1's rule is that a missing MCP channel fails
-// loudly rather than running a prompt premised on tools that are not there.
-func TestContainerGateRefusesNoNetworkWithWiredMCP(t *testing.T) {
+// TestContainerGateAllowsNoNetworkWithWiredMCP is issue #366. Decision 1's
+// contradiction — a container with no network cannot reach the daemon's
+// per-step MCP endpoint — only exists once an agent step runs inside the
+// container, which is task 062. Until then every agent process runs on the
+// host and reaches the endpoint over loopback whatever the container's network
+// is, so refusing the pair rejects a configuration that works. 062 reinstates
+// the refusal together with the host.docker.internal rewrite.
+func TestContainerGateAllowsNoNetworkWithWiredMCP(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the windows refusal fires first (decision 2)")
 	}
-	cfg := containerConfig()
-	cfg.Container.Network = false
-	cfg.MCP.WireSteps = true
-	s := gateServer(t, cfg, gateRuntime{})
-	msg := s.containerMismatch(t.Context(), parseWorkflow(t, gateWorkflowYAML))
-	if !strings.Contains(msg, "container.network") || !strings.Contains(msg, "mcp.wire_steps") {
-		t.Fatalf("refusal does not name both sides of the contradiction: %q", msg)
-	}
-
-	// Turning the other knob off resolves it, rather than the pair being
-	// permanently forbidden: a no-network container is a legitimate ask.
-	cfg.MCP.WireSteps = false
-	if msg := gateServer(t, cfg, gateRuntime{}).containerMismatch(
-		t.Context(), parseWorkflow(t, gateWorkflowYAML)); msg != "" {
-		t.Fatalf("a no-network task with mcp.wire_steps off was still refused: %s", msg)
+	for _, wire := range []bool{true, false} {
+		cfg := containerConfig()
+		cfg.Container.Network = false
+		cfg.MCP.WireSteps = wire
+		if msg := gateServer(t, cfg, gateRuntime{}).containerMismatch(
+			t.Context(), parseWorkflow(t, gateWorkflowYAML)); msg != "" {
+			t.Errorf("a no-network task with mcp.wire_steps %v was refused: %s", wire, msg)
+		}
 	}
 }
 
