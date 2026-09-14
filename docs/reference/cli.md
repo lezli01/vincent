@@ -253,8 +253,8 @@ vincent daemon logs [-n | --lines N] [-f | --follow]
 
 Prints the tail of `{data_dir}/logs/daemon.log` — 500 lines by default
 (`-n`/`--lines`), the same window the TUI's daemon view shows. `-f`
-(`--follow`) keeps printing lines as they are
-appended, on a two-second cadence, until Ctrl-C.
+(`--follow`) keeps printing lines as they are appended, on a two-second
+cadence, until Ctrl-C.
 
 It reads the file **from disk and never contacts the daemon**, which is the
 point rather than a shortcut: the log is worth reading exactly when the daemon
@@ -692,9 +692,10 @@ transcript is one interleaved stream and two descriptors would scramble the
 ordering that makes it readable. The command's own diagnostics go to stderr, so
 stdout stays pipeable.
 
-`-f` (`--follow`) opens on the tail and then resumes from the record boundary the daemon
-reports, printing records as the attempt writes them. It ends when that attempt
-stops running — it does not wait for a later retry, which is a different run.
+`-f` (`--follow`) opens on the tail and then resumes from the record boundary
+the daemon reports, printing records as the attempt writes them. It ends when
+that attempt stops running — it does not wait for a later retry, which is a
+different run.
 
 A step run that never had a transcript — a manual gate — prints a line saying so
 on stderr and exits `0`; nothing failed. A transcript whose file is gone (pruned

@@ -45,8 +45,9 @@ which is a recurring certificate cost this project does not take on. The prompt
 appears once per binary and can also appear for WinGet, Scoop, or mise: those
 channels verify the archive but do not add Authenticode signing.
 
-Package-manager metadata moves on stable releases only. If a newly introduced
-channel has not received its first stable release, use mise or the archive.
+Package-manager metadata moves on stable releases only, and a WinGet submission
+is not installable until Microsoft merges it. If a channel reports that vincent
+is not found, use mise or the archive.
 
 Full detail, including how to verify a download: [Installation](../getting-started/installation.md).
 

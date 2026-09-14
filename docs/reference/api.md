@@ -812,9 +812,8 @@ immediately as `human`, so nothing has to wait for the reconciler's next tick:
 credential with write scope, or GitHub refused the create — `reason` is one of
 the [reasons above](#github-issues), including `pull_exists` when a pull request
 for the branch already exists and `bad_request` when GitHub rejects the values;
-the branch is on the
-remote, so GitHub's own page works and a client opens it exactly as it would
-have before:
+the branch is on the remote, so GitHub's own page works and a client opens it
+exactly as it would have before:
 
 ```json
 { "created": false, "pushed": true, "branch": "vincent/61-add-rate-limiting",
