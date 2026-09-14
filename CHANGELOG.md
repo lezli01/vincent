@@ -13,6 +13,30 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Event triggers start work from outside events.** A file under
+  `{config_dir}/triggers/` watches a source and turns each new event into a
+  task, or into a follow-up, retry or cancel of the task on a branch. Four
+  sources: a command the daemon polls (NDJSON events, an optional cursor line,
+  argv never run through a shell), a project's GitHub issues, its pull
+  requests (both judged on the existing `github.poll_interval` tick, one
+  listing per project), and a signed push to `POST /v1/triggers/{id}/events`,
+  which needs the daemon's bearer token and a `github_hmac_sha256` signature.
+
+  Triggers are **off twice**: a file needs its own `enabled: true` and the new
+  `triggers.enabled` key in `config.yaml`. Turning either on seeds the trigger,
+  so events that already existed never fire; a seed is recorded in the ledger
+  as `seeded`. By default a trigger only proposes: the task lands `paused` with
+  its agent steps restricted, and `resume` starts it. GitHub events an outsider
+  can cause are refused at load unless the trigger names `allowed_actors`,
+  matched against the issue or pull-request author.
+
+  The TUI gains a triggers view from the command palette: create, edit, enable
+  and delete triggers, see each one's poll health and delivery ledger, and dry
+  run one against a sample event or a live poll. `vincent trigger test` runs the
+  same dry run from a fixture. The `/v1/triggers` routes cover the rest; the
+  writes and the push route are not MCP tools. New SSE events
+  `trigger.fired` and `trigger.poll_changed`.
+
 - **vincent tells you whether its workflow-authoring skill is installed, and
   installs it.** vincent publishes an agent skill so that an agent you talk to
   *directly* — outside a vincent run — knows how to write a vincent workflow,
@@ -183,6 +207,15 @@ list with the user-facing context a commit subject cannot carry.
   `--paused`, `--restricted` and `--max-task-cost-usd`, and the TUI's new-task
   form gains a **start** row in its Git & priority stage: `enter` switches it
   to create the task paused.
+
+- **Hold a retry or a follow-up paused.** `POST /v1/tasks/{id}/retry` and
+  `POST /v1/tasks/{id}/follow_up` accept `paused: true`. The retry or
+  follow-up is recorded, but the task lands in `paused` instead of `queued`,
+  and `resume` is what starts it. A held retry on a blocked fan-out parent
+  holds the lanes it re-admits too. On a parent parked in `awaiting_children`
+  it is a `400`, because that retry never queues the parent.
+  `vincent task retry` and `vincent task follow-up` gain `--paused`, and the
+  TUI's follow-up form gains the same **start** row as the new-task form.
 
 ### Changed
 

@@ -787,8 +787,8 @@ the commit a reviewer asked for, drop the stray file the agent left.
 
 | Key | Does |
 |---|---|
-| `↑` / `↓` | Move between the run form, what to run, and the agent / model / effort rows |
-| `enter` | Open the row under the cursor — the run-form list, the text field, or that row's picker |
+| `↑` / `↓` | Move between the run form, what to run, the agent / model / effort rows and the start row |
+| `enter` | Open the row under the cursor — the run-form list, the text field, or that row's picker; on the start row, toggle holding the task paused |
 | `e` | Write the prompt or command in `$EDITOR` instead |
 | `t` | In an open workflow / agent / model / effort list, type a value it does not offer |
 | `ctrl+s` | Start the follow-up |
@@ -806,6 +806,10 @@ means:
 
 Switching between the three keeps what you typed in each, so you can look at the
 command form and come back to your prompt.
+
+**The start row** at the bottom works like the new-task form's. Left alone, the
+follow-up runs when a slot is free. Switched with `enter`, the follow-up is
+recorded and the task waits `paused` on the board until you resume it.
 
 When the run finishes, the task returns to the state it came from — `done` to
 `done`, `aborted` to `aborted` — whatever it exited with. A follow-up never
@@ -1524,6 +1528,178 @@ went, how many branches with them, and how many the daemon refused. A refusal
 names what is holding on: a fan-out parent still has its lanes, or a handed-off
 chat still points at the task. Delete those first and try again.
 
+### Triggers
+
+What starts work on its own, and what each event became. The screen shows every
+file under `{config_dir}/triggers/` and what the daemon learned running it. Like
+the other takeovers it has no key and is reached from the command palette (`:`).
+The global switch is [`triggers`](../reference/configuration.md#triggers); read
+[what a trigger lets someone else do](../security-model.md#event-triggers-let-someone-else-start-an-agent)
+before turning one on.
+
+![The triggers screen: an armed command trigger selected above a disabled GitHub
+issues trigger, with its delivery ledger listing two seeded events](../assets/tui-triggers.png)
+
+The list has one row per file, broken ones included. Each row shows the id,
+whether the file is enabled, whether it is **armed**, the source and action
+types, the project, `on_fire`, poll health, and when it last polled and last
+fired. The armed column reads `● armed`, or says why not: `disabled`, `✗ invalid`,
+`global off`, or the daemon's own reason. Poll health is `ok`, `failing` or
+`not yet`, and `push` for an `http` source, which never polls. Below the table
+are the facts for the selected trigger that the table has no room for: its file,
+whether it is armed (and, for an armed trigger that has not polled yet, that its
+next poll only seeds and fires nothing), the last poll error, and any findings
+that keep the file from validating. The screen re-reads every five seconds while
+it is open, and also whenever a trigger event or a project change arrives.
+
+**While `triggers.enabled` is off**, a banner above the list says so. Every
+trigger is then inert whatever its own `enabled:` says, so every row reads
+disarmed for a reason no row can fix. The view does not flip that switch itself.
+`B` opens `triggers.enabled` in the [daemon view's](#daemon) config editor,
+which asks before it applies a value. The form repeats the warning at its top.
+
+| Key | Does |
+|---|---|
+| `↑` / `↓` | Move the selection |
+| `enter` or `i` | Open the selected trigger in the form |
+| `space` | Enable or disable the selected trigger — enabling asks first |
+| `a` | Create a trigger from a starter |
+| `e` | Open the trigger's file in `$EDITOR` |
+| `D` | Delete the trigger's file — its ledger is kept (asks first) |
+| `T` | Dry-run a sample event through the trigger's filter; fires nothing |
+| `X` | Poll the source once and judge what it returns; fires nothing |
+| `tab` | Move between the trigger list and its delivery ledger |
+| `B` | Open `triggers.enabled`, the global switch, in the daemon view's editor |
+| `R` | Re-read the triggers and the ledger |
+| `/` | Filter by id, source, action or project |
+
+**Switching a trigger on asks; switching it off does not.** The question shows
+the warning the daemon serves for `enabled: true`, then what it means for this
+trigger. With `on_fire: propose`, each task is created paused for you to resume.
+With `on_fire: create`, each task starts running as soon as a slot is free. If
+`triggers.enabled` is off, the question also says nothing polls until it is
+turned on. Only `y` answers yes, and `n` or `esc` leaves the trigger as it is.
+Any other key leaves the question open, so a stray keypress cannot answer it.
+A file that does not validate cannot be switched at all; fix it with `e` first.
+
+**`D` deletes the file and keeps the ledger.** The question says so. The poll
+cursor is dropped, but the delivery history stays, so a trigger re-created with
+the same id cannot fire an event that already fired.
+
+Toggling and deleting both carry the version of the file the screen last read.
+If the file changed on disk since then, for example because you saved it in
+`$EDITOR`, the write is refused. The screen says so and re-reads, and you try
+again against what is actually there.
+
+#### The delivery ledger — `tab`
+
+`tab` moves the arrows to the selected trigger's **ledger**: its newest
+deliveries, one row for every event the trigger judged, whether it fired or not.
+Each row shows when the event was judged, the outcome (`fired`, `seeded`,
+`deduped`, `filtered`, `rate_limited`, `refused` or `error`), the event id, the
+task, and the detail. This is the daemon view's list and log split: `tab`
+decides which list the arrows move.
+
+| Key | Does |
+|---|---|
+| `↑` / `↓` | Move through the deliveries |
+| `enter` | Open the task the delivery created or acted on |
+| `tab` | Back to the trigger list (`esc` too) |
+| `R` | Re-read the triggers and the ledger |
+
+A delivery that touched no task, such as a `filtered` or `deduped` one, says
+so when you press `enter` rather than opening nothing.
+
+#### Creating and editing — `a`, `enter`
+
+`a` opens a short prompt asking for what a new file needs: an **id**, which
+becomes the file name `{id}.yaml`, and a **project**. It also offers the two
+things a starter is usually edited for first: the poll **command**, an argv
+separated by spaces that is run directly and never through a shell, and how
+often to **poll**, with a default of `5m`. The daemon writes a `type: command`
+trigger. It is **disabled** and has no `on_fire` line, so it means `propose`
+until someone writes otherwise. The form then opens on the new file. An id that
+is already in use is refused on the prompt, and with no registered project
+there is nothing to create a trigger in.
+
+| Key | Does, in the create prompt |
+|---|---|
+| `tab` | Move between the starter's inputs (`shift+tab` goes back) |
+| `enter` | Write the new trigger — it is created disabled |
+| `esc` | Close the prompt |
+
+On the project row, `←` / `→` step through the registered projects.
+
+`enter` or `i` opens the **form**: the workflow editor's form, drawn from the
+schema the daemon serves rather than from a copy of the rules kept in the client.
+Its rows are the top-level keys. `source`, `action` and `limits` hold nested
+blocks, and so does a source's `signature`. `enter` goes into a block and `esc`
+comes back out. A source or an action shows only the fields of the variant its
+`type` names. For a GitHub source, the type row also lists the events the source
+produces and which of them are trusted without `allowed_actors`. A key the file
+leaves out shows what leaving it out means, and the project row names the
+project its id refers to. The id cannot be edited: it is the file name, so
+renaming a trigger means creating a new one.
+
+| Key | Does, in the form |
+|---|---|
+| `↑` / `↓` | Move between the trigger's fields |
+| `enter` | Edit the field; the daemon validates and writes the file |
+| `R` | Re-read the trigger from disk |
+| `esc` | Close the form |
+
+An enum or a boolean cycles in place. `if:`, `dedupe_key` and the other
+templates open the full-pane multi-line editor, `match:` opens the key/value
+sub-form, with one `key=value` per entry and `a|b` meaning any of those values,
+and the project row opens a picker of registered projects. These are the same
+overlays [the workflow editor](#authoring--i-a-f) opens, with the same keys.
+
+As in the workflow editor, **committing a row is the write**. Each change is a
+single edit operation carrying the version the form last read. The daemon owns
+the file and applies the change to its bytes, so comments, key order and blank
+lines survive. Booleans, numbers and project ids are checked before the write.
+Everything else is checked by the daemon. A value it refuses is not reverted:
+it stays on its row with the daemon's message beside it, and nothing is written.
+If another writer got there first, the form says the file changed on disk since
+it read it, re-reads it, and asks you to make the change again.
+
+Three values ask before they are written, because each one takes a keypress out
+of starting agents: `enabled: true`, `on_fire: create` and `permission:
+workflow`. The question shows the warning the schema serves. For `enabled`, it
+also says what enabling means given the trigger's `on_fire`, just as `space`
+does. `y` writes the value, and `n` or `esc` keeps the file as it is.
+
+A file that does not validate cannot be loaded into the form. The form says so
+and quotes the first finding; `esc`, then `e`, opens the file in `$EDITOR`.
+After you save there, the screen re-reads it.
+
+#### Dry runs — `T`, `X`
+
+Neither dry run fires anything, and both work on a trigger that is not armed.
+
+`T` judges a **sample event** you write. Its pane opens on a minimal event,
+`{"id": "sample-1"}`, and `ctrl+s` runs it through the trigger's real `match:`,
+`if:`, dedupe key and action rendering. The result shows whether the event
+matched and which key missed, what `if:` rendered, the dedupe key and whether
+that event was already delivered, and the request the action would replay. The
+sample has to be a single JSON object. Each trigger keeps its own sample **for
+this session only**: reopening `T` on the same trigger brings the sample back,
+but it is never written to disk, not even to `{data_dir}/tui.json`, because an
+event copied from a vendor can carry text nobody meant to store.
+
+`X` runs the **source once, for real**, and judges each event it returns in the
+same way. It changes nothing: no task is created, the cursor does not advance,
+no ledger row is written, and poll health is untouched. The result also shows
+how many events came back, how many were over the catch-up cap, how many output
+lines were refused, the cursor the source reported, and, for a trigger with no
+cursor yet, that a real poll now would record these events as seeded and fire
+nothing.
+
+| Key | Does, in a dry run |
+|---|---|
+| `ctrl+s` | Run the dry run — judge the sample, or poll the source again |
+| `esc` | Close the dry run |
+
 ### Daemon
 
 Version, uptime, the config in effect, the adapters detected, and a live tail of
@@ -1544,10 +1720,11 @@ row says "differs from the default" rather than "set in the file". A refusal
 renders against the field, with the value that caused it still there to fix, and
 nothing is written.
 
-Four keys ask before they apply: `notify.command`, `environment.*`,
-`agents.*.path` and `listen`. They decide what the daemon executes or exposes,
-and [agents run full-auto by default](../security-model.md) — a stray keystroke
-must not change the argv the daemon spawns as you. `listen` is written to the
+Five keys ask before they apply: `notify.command`, `environment.*`,
+`agents.*.path`, `listen` and `triggers.enabled`. They decide what the daemon
+executes or exposes, and [agents run full-auto by default](../security-model.md)
+— a stray keystroke must not change the argv the daemon spawns as you, or let a
+trigger file start agents as you. `listen` is written to the
 file and the running daemon keeps the address it bound until it is restarted;
 the editor says so before you apply it.
 
@@ -1567,7 +1744,7 @@ And inside the editor:
 |---|---|
 | `←` / `→` | Choose a value, for a key with a fixed vocabulary |
 | `enter` | Apply the change — the daemon validates and writes `config.yaml` |
-| `y` | Confirm one of the four keys that decide what the daemon executes or exposes |
+| `y` | Confirm one of the five keys that decide what the daemon executes or exposes |
 | `esc` | Close without saving; on the confirmation it returns to the field |
 
 Everything here is also

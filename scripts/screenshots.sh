@@ -205,6 +205,10 @@ agents:
     path: "$BIN/agent-slow"
   cursor:
     path: "$BIN/agent-fast"
+# On, so the triggers shot shows an armed trigger rather than the global-off
+# banner. The seeded triggers only ever seed, so no task comes of it.
+triggers:
+  enabled: true
 EOF
 }
 
@@ -213,7 +217,7 @@ do_seed() {
   command -v jq >/dev/null 2>&1 || fail "jq is not on PATH"
 
   do_clean >/dev/null 2>&1 || true
-  mkdir -p "$BIN" "$CONFIG_DIR/workflows" "$DATA_DIR" "$REPOS" "$TAPES" "$GIFS"
+  mkdir -p "$BIN" "$CONFIG_DIR/workflows" "$CONFIG_DIR/triggers" "$DATA_DIR" "$REPOS" "$TAPES" "$GIFS"
 
   # Built with the release ldflags rather than plain `go build`: the TUI
   # header prints its own version, and an uninjected build prints the module
@@ -526,6 +530,57 @@ EOF
   add "$P_ADAPT" docs-refresh 'refresh the adapter capability table' >/dev/null
   add "$P_REL" docs-refresh 'refresh the release checklist' >/dev/null
 
+  # Triggers (task 096): an armed command source whose first poll records the
+  # two events it already shows as `seeded` ledger rows and fires nothing —
+  # the events file is never appended to, so no task comes of it and the board
+  # shots are unchanged — beside a disabled GitHub source, which never polls.
+  say "triggers"
+  printf '%s\n' '{"id":"build-4211","branch":"feat/1-add-rate-limiting"}' \
+    '{"id":"build-4212","branch":"feat/2-bump-the-design-tokens"}' > "$SHOTS/ci-events.ndjson"
+  cat > "$CONFIG_DIR/triggers/ci-red.yaml" <<EOF
+id: ci-red
+enabled: true
+source:
+  type: command
+  project: $P_API
+  poll_interval: 30s
+  command: ["$FAKEAGENT", "trigger-poll", "$SHOTS/ci-events.ndjson"]
+action:
+  type: create_task
+  workflow: feature-pr
+  title: 'fix the red build {{ .Event.id }}'
+dedupe_key: 'ci:{{ .Event.id }}'
+limits:
+  max_per_hour: 5
+EOF
+  cat > "$CONFIG_DIR/triggers/label-to-task.yaml" <<EOF
+id: label-to-task
+enabled: false
+source:
+  type: github_issues
+  project: $P_WEB
+match:
+  action: labeled
+  labels: [agent-please]
+action:
+  type: create_task
+  workflow: feature-pr
+  title: '{{ .Event.Issue.Title }}'
+  github_issue: '{{ .Event.Issue.Number }}'
+dedupe_key: 'gh:issue:{{ .Event.Issue.Number }}:label:agent-please'
+EOF
+  chmod 600 "$CONFIG_DIR"/triggers/*.yaml
+  # Not api(): the file reaches the registry on the watcher's next reload, so
+  # a 404 before it does is expected rather than fatal.
+  local seeded="" got=""
+  for (( i = 0; i < 60; i++ )); do
+    got="$(curl -sS -H "Authorization: Bearer $TOKEN" "$BASE/triggers/ci-red" || true)"
+    seeded="$(jq -r '.poll.seeded // false' <<<"$got" 2>/dev/null || true)"
+    [[ "$seeded" == "true" ]] && break
+    sleep 0.5
+  done
+  [[ "$seeded" == "true" ]] || fail "trigger ci-red never seeded: $got"
+
   sleep 6
   say "seeded — $(api GET /tasks | jq 'length') tasks across $(api GET /projects | jq 'length') projects"
 }
@@ -745,6 +800,19 @@ Sleep 1s
 Enter
 Sleep 3s
 Screenshot "'"$OUT"'/tui-workflow-step.png"
+Sleep 2s
+'
+
+  # Triggers (task 096): the list with the armed command source selected and
+  # its ledger of `seeded` deliveries beside it.
+  tape tui-triggers 1250 '
+Type ":"
+Sleep 1s
+Type "triggers"
+Sleep 1s
+Enter
+Sleep 4s
+Screenshot "'"$OUT"'/tui-triggers.png"
 Sleep 2s
 '
 }

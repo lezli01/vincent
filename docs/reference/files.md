@@ -30,10 +30,22 @@ platform where data nests inside config's directory.
 {config_dir}/          # created 0700
   config.yaml          # daemon configuration — you or a client edit this, created 0600
   workflows/*.yaml     # global workflows, available to every project; 0644
+  triggers/*.yaml      # event triggers, one {id}.yaml each; written 0600
 ```
 
-Both are watched. Editing `config.yaml` hot-reloads valid changes; saving a
-workflow file reloads the registry. Neither needs a restart.
+All three are watched. Editing `config.yaml` hot-reloads valid changes; saving a
+workflow file reloads the registry, and saving a trigger file reloads the
+triggers. None needs a restart.
+
+`triggers/` holds [event triggers](../guides/triggers.md). It is global only:
+there is no `.vincent/triggers/` in a repository. The daemon writes it on the
+`/v1/triggers` routes the TUI's triggers view calls, and every write is `0600`,
+new file or not, because a trigger's argv can carry a secret. Like a workflow
+write, a trigger write carries a version token and a stale one is refused. A
+missing directory means no triggers. A directory the daemon cannot read keeps
+the triggers already loaded. A trigger's cursor, poll status and delivery
+ledger live in `vincent.db`, never beside the file, and deleting the file keeps
+its ledger.
 
 `config.yaml` is also written by the daemon, on
 [`PATCH /v1/config`](api.md#daemon) — what
