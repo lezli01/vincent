@@ -64,18 +64,20 @@ const (
 // choice the step made. Cursor on Windows is the one case today (§9.7).
 var ErrRestrictedUnsupported = errors.New("restricted permission mode is unsupported on this platform")
 
-// ErrMCPUnsupported is returned by Start when the adapter — or the installed
-// version of its CLI — cannot carry the MCP server the step asked for (spec
-// §9.1, §13.4, task 057 decision 8). The engine fails the step with
-// `mcp_unsupported`, mirroring ErrRestrictedUnsupported.
+// ErrMCPUnsupported is returned by Start when the adapter cannot carry the MCP
+// server the step asked for (spec §9.1, §13.4, task 057 decision 8). The
+// engine fails the step with `mcp_unsupported`, mirroring
+// ErrRestrictedUnsupported.
+//
+// No shipped adapter returns it, and none checks the installed CLI version
+// for MCP support (amended 2026-09-14, issue #375). It is the contract for a
+// future adapter with no per-run MCP surface, proven against a stub.
 //
 // This is a deliberate departure from the standing rule that a capability an
 // adapter lacks is stated in §9.x and ignored at run time. The reasoning is
 // that a workflow whose prompt depends on the vincent tools should fail loudly
 // rather than run an agent that silently has none: the run would burn minutes
-// and money producing work premised on a channel that was never there. Task
-// 041's version-compatibility surface is where the gap is reported ahead of a
-// run.
+// and money producing work premised on a channel that was never there.
 var ErrMCPUnsupported = errors.New("this agent CLI cannot be given an MCP server for a single run")
 
 // ErrResumeUnsupported is returned by Start when the adapter cannot resume a

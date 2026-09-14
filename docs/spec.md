@@ -2818,9 +2818,9 @@ no vincent tools — every run before task 057, and every run under
 `mcp.wire_steps: false`.
 
 Each adapter carries it its own way (§9.2, §9.3, §9.7); none share a mechanism.
-An adapter — or an installed CLI version — that **cannot** carry one returns
-`ErrMCPUnsupported` from `Start`, and the engine fails the step with
-`mcp_unsupported`, mirroring `ErrRestrictedUnsupported`.
+An adapter that **cannot** carry one returns `ErrMCPUnsupported` from `Start`,
+and the engine fails the step with `mcp_unsupported`, mirroring
+`ErrRestrictedUnsupported`.
 
 That is a deliberate departure from the standing rule that a capability an
 adapter lacks is stated here and ignored at run time, and it is recorded as a
@@ -2828,8 +2828,25 @@ departure rather than left to read as an oversight. The reasoning: a workflow
 whose prompt depends on the vincent tools should fail loudly rather than burn an
 agent run producing work premised on a channel that was never there. A user who
 prefers the older behaviour turns the wiring off with one line
-(`mcp.wire_steps: false`, §12.3). Task 041's version-compatibility surface is
-where the gap is reported ahead of a run.
+(`mcp.wire_steps: false`, §12.3).
+
+*Amended 2026-09-14 (issue #375, task 057 decision 8).* **No shipped adapter
+returns `ErrMCPUnsupported`.** claude, codex and cursor all carry the server on
+every run, and none of them looks at the installed CLI version to decide. This
+paragraph used to say "an adapter — or an installed CLI version —" refuses, and
+that §9.5's task 041 surface reports the gap ahead of a run. Both halves are
+withdrawn. Vincent does not probe a CLI build for MCP support, and no facet of
+§9.5, `GET /v1/agents`, `/v1/info` or `/v1/doctor` reports it. The refusal
+path and `mcp_unsupported` stay unretired as the contract for the next adapter,
+one with no per-run MCP surface at all. They are proven against a stub adapter,
+not a shipped one, the precedent task 072 set for the chat-resume refusal
+(§3 row 29). Version floors were considered and rejected, both for all three
+adapters and for claude and codex only. They would contradict task 041 decision
+1: version comparison is exact-string, a version verdict blocks nothing, and
+cursor's calver admits no range. And they would guard nothing, since every
+pinned build is far past every known floor (claude `--mcp-config` since 0.2.75,
+codex `mcp_servers.*.url` with `bearer_token_env_var` since 0.46.0; cursor
+records no date for `--approve-mcps`).
 
 ### 9.2 Claude Code adapter
 
