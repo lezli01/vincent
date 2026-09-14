@@ -94,12 +94,15 @@ and interchangeable; a TUI-only constraint would not be a workflow contract.
   Depends: 022.1–022.6. Done only when formatting, tests, race tests, lint,
   cross-platform builds, and the relevant manual TUI walkthrough have actually
   run; unavailable checks remain explicitly blocked.
-  **Blocked 2026-08-21:** this managed workspace cannot report process start
-  times even for its own PID, so the full and full-race suites fail only in
-  `internal/procx` and the two downstream `internal/taskrun` recovery tests
-  (tracked in [#379](https://github.com/lezli01/vincent/issues/379), 2026-09-13).
-  It also cannot provide the human terminal needed to grade a manual TUI
-  walkthrough; the focused render and navigation tests pass.
+  **Blocked 2026-09-14:** the human walkthrough of the New task field rows
+  remains, tracked in [#380](https://github.com/lezli01/vincent/issues/380),
+  and the #163 diff review found a defect still present at `b885c53`: an
+  optional declared field whose value is only whitespace skips type and pattern
+  validation in the daemon (`ValidateTaskFields` trims before its absent
+  check), so `retries: "  "` on an optional `integer` field is accepted and
+  stored, while New task's `fieldValidationMessage` rejects the same value;
+  formatting, tests, race tests, lint and cross-platform builds have run (see
+  Verification).
 
 ## Verification
 
@@ -117,3 +120,31 @@ and interchangeable; a TUI-only constraint would not be a workflow contract.
 - Focused TUI render, editing, workflow-switch, validation, and daemon-error
   routing tests — pass; a human visual walkthrough is unavailable in this
   workspace (2026-08-21).
+- PR #163's CI run
+  [32513467431](https://github.com/lezli01/vincent/actions/runs/32513467431)
+  at head `4b720b0` (merged as `ee3c06d`, 2026-08-21) — `success`: `ci`
+  (`mage lint`, `mage testrace`, `mage build`) on ubuntu, macOS and windows,
+  `gates` on all three, and `packaging-config`. This is the run on the diff
+  itself (checked 2026-09-14).
+- Local run at `b885c53` (`master`) on macOS, 2026-09-14 — a run of today's
+  tree, not of the 2026-08-21 diff. Every command passed:
+  `go test ./internal/procx -count=1`,
+  `go test ./internal/taskrun -run 'Orphan|Recover' -count=1`,
+  `go run mage.go test`, `go run mage.go testrace`, `go run mage.go lint`
+  (`0 issues.`), the host-built linter with `GOOS=windows`, `darwin` and
+  `linux` (`0 issues.` each), and `go run mage.go build`. The `internal/procx`
+  and `internal/taskrun` failures recorded above were the workspace's process
+  view and do not reproduce on a host.
+- Review of the #163 diff (`git diff ee3c06d^1 ee3c06d`, 29 files,
+  +1302/−56) found one defect, still present at `b885c53` (2026-09-14):
+  `ValidateTaskFields` in `internal/workflow/fields.go` treats a
+  whitespace-only value as absent, so an optional declared field skips its type
+  and pattern checks, while New task's `fieldValidationMessage` in
+  `internal/tui/newtaskpicker.go` skips only `""`. A throwaway test at
+  `b885c53`, supplied through `go test -overlay` and not committed, passed
+  `retries: "  "` (the package fixture's optional `integer` field) through
+  `PrepareTaskFields` and `ValidateTaskFields`: no error, value kept. Non-finite
+  numbers and `pattern` on a non-string field are rejected as decision 2
+  requires, and undeclared fields stay accepted (decision 3).
+- The human walkthrough of the New task field rows has not run; it is tracked in
+  [#380](https://github.com/lezli01/vincent/issues/380) (2026-09-14).

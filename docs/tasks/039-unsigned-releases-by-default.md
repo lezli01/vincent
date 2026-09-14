@@ -160,17 +160,40 @@ configuration and user documentation that make them true.
   this environment, which is the only thing that had blocked it. ✓ 2026-08-27
 - [!] **039.6 — Prove a tag publishes without the certificates.** — with 032.7
   dropped this is the *only* remaining release proof: no signed release is ever
-  coming to supersede it. — **owner-only**:
-  it needs a real `v*` tag, and the thing being proved is that the release
-  workflow completes end to end and attaches every asset (tracked in
-  [#379](https://github.com/lezli01/vincent/issues/379), 2026-09-13).
-  Re-cut `0.7.0` (its
+  coming to supersede it. — **only the `brew install` check is unrecorded**
+  (narrowed 2026-09-14): the tag half has run, see below. It needs a real
+  `v*` tag, and the thing being proved is that the release
+  workflow completes end to end and attaches every asset. Re-cut `0.7.0` (its
   curated changelog prose is in `2baafbb`, per `6041bfd`) and confirm the release
   carries the thirteen `v0.6.0` assets plus `vincent_0.7.0_darwin_universal.pkg`,
   that Homebrew, Scoop and WinGet moved, and that `brew install
   lezli01/tap/vincent` yields a binary that runs. A green secretless
   `workflow_dispatch` dry run does **not** close this: it never publishes, and
   publishing is what `v0.7.0` failed at.
+  **Narrowed 2026-09-14 (#379):** the re-cut tags have proved the publishing
+  half. The failed first cut was release run
+  [33057721082](https://github.com/lezli01/vincent/actions/runs/33057721082)
+  (2026-08-27).
+  - `v0.7.0`, release run
+    [33243913259](https://github.com/lezli01/vincent/actions/runs/33243913259)
+    at `fca143f`, started 2026-08-29T08:45:49Z — `success`. The `release`
+    job skipped "Verify the darwin signatures" and "Notarize the darwin
+    binaries", which is the no-certificate path; `verify-packages` passed; all
+    three `smoke` legs passed with "Assess the macOS signature" skipped. The
+    release carries 14 assets: exactly `v0.6.0`'s 13 names plus
+    `vincent_0.7.0_darwin_universal.pkg`. Homebrew tap `25318d6`
+    (08:49:19Z) and Scoop bucket `73fd7e8` (08:49:21Z) moved, and WinGet
+    submission microsoft/winget-pkgs#426043 was opened (08:49:17Z) and is
+    still open on 2026-09-14.
+  - `v0.8.0`, release run
+    [33895256784](https://github.com/lezli01/vincent/actions/runs/33895256784)
+    at `0b344ab`, started 2026-09-04T16:27:38Z — `success`, with the same
+    steps skipped and the same jobs passing; 14 assets with the same names as
+    `v0.7.0`'s; tap `1b2a254`, Scoop `17c4f46`, and WinGet submission
+    microsoft/winget-pkgs#429585, still open on 2026-09-14.
+
+  Unrecorded: `brew install lezli01/tap/vincent` yielding a binary that runs,
+  which needs a person on a Mac.
 
 ## What the tests prove, and what they do not
 
@@ -185,7 +208,8 @@ config and documentation — and none was invented to look like there is.
   `.pkg` built by `scripts/macos-pkg.sh`. That is the regression test for the
   split, and it is the same run a fork produces.
 - Nothing available before a tag proves that a *published* release is complete.
-  That is 039.6, and it is why this task is not done.
+  That is 039.6: the re-cut `v0.7.0` and `v0.8.0` tags have since proved it,
+  and only the `brew install` check keeps this task open.
 - The [032 gate](../gates/032-macos-notarization.md) cannot be walked at all
   while releases are unsigned; its preamble now says so rather than sitting there
   looking runnable.

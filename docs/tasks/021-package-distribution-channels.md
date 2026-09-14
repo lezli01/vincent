@@ -88,16 +88,18 @@ configuration and user documentation.
   installation/platform guides, and RELEASING without claiming an unpublished
   channel is already live. ✓ 2026-08-20
 - [!] **021.6 — Run repository verification and review the final diff.** — the
-  container's PID namespace makes the existing `procx` live-process tests and
-  dependent `taskrun` recovery tests fail; the same four failures reproduce
-  without `-race` and are already recorded by task 020 (tracked in
-  [#379](https://github.com/lezli01/vincent/issues/379), 2026-09-13).
+  #158 diff review (2026-09-14) found the WinGet install command documented as
+  working while no submission has passed Microsoft's moderator review (tracked
+  in [#377](https://github.com/lezli01/vincent/issues/377)); every other check
+  has run (see Verification (2026-09-14, #379)).
   Done only when GoReleaser check/snapshot, package payload checks, docs/link
   lint, and the repository's required code checks have actually run;
   unavailable checks remain explicit.
-- [!] **021.7 — Bootstrap and prove the external channels.** — requires the
-  owner's authorization and credentials for external repository/account writes
-  (tracked in [#379](https://github.com/lezli01/vincent/issues/379), 2026-09-13).
+- [!] **021.7 — Bootstrap and prove the external channels.** — publication is
+  proven: every stable tag since v0.4.0 updates Scoop automatically and opens a
+  WinGet pull request, but no WinGet submission has passed Microsoft's
+  moderator review, and no install through the five paths is recorded;
+  installing needs a person on real systems.
   Confirm the Scoop bucket and WinGet fork, install the two destination
   credentials, publish a stable tag, and install that version through all five
   new paths. This is an external repository/account
@@ -144,8 +146,114 @@ Run with Go 1.26.6, GoReleaser 2.17.1, actionlint 1.7.12, and mise 2026.8.9:
   without the race detector.
 
 The owner has since created `lezli01/scoop-bucket` and the
-`lezli01/winget-pkgs` fork and configured their destination credentials. No
-stable tag has yet proved publication and installation through these channels.
+`lezli01/winget-pkgs` fork and configured their destination credentials.
+Stable tags v0.4.0–v0.8.0 have since proved publication (see below); no
+install through these channels is recorded.
 AUR support is intentionally deferred to
 [#157](https://github.com/lezli01/vincent/issues/157) because new AUR account
 registration is temporarily suspended.
+
+## Verification (2026-09-14, #379)
+
+Re-run for 021.6 and 021.7. The 2026-08-20 record above stays as history; its
+`procx`/`taskrun` failures were that workspace's `/proc` view and do not
+reproduce on a host.
+
+**Required code checks and the GoReleaser configuration**
+
+- PR #158's CI run
+  [32457224455](https://github.com/lezli01/vincent/actions/runs/32457224455)
+  at head `d9f1ef0` (merged as `9883ba4`, 2026-08-21) — `success`: `ci`
+  (`mage lint`, `mage testrace`, `mage build`) and `gates` on ubuntu, macOS
+  and windows, and `packaging-config` (`goreleaser check`). This is the run on
+  the diff itself.
+- `goreleaser check` with GoReleaser 2.18.1 at `b885c53` on macOS — pass,
+  `1 configuration file(s) validated`.
+- Local run at `b885c53` (`master`) on macOS, 2026-09-14 — a run of today's
+  tree, not of the 2026-08-21 diff. Every command passed:
+  `go test ./internal/procx -count=1`,
+  `go test ./internal/taskrun -run 'Orphan|Recover' -count=1`,
+  `go run mage.go test`, `go run mage.go testrace`, `go run mage.go lint`
+  (`0 issues.`), the host-built linter with `GOOS=windows`, `darwin` and
+  `linux` (`0 issues.` each), and `go run mage.go build`.
+- No local `goreleaser release --snapshot` was run; the release runs below
+  built and inspected the packages for real.
+
+**Package payload checks.** "Verify generated packages and manifests" was a
+step of the `release` job through v0.6.0 and is its own `verify-packages` job
+from v0.7.0. At `b885c53` it counts two debs, two rpms, three WinGet YAML files
+and the Scoop JSON; checks deb and rpm name, `git` dependency, `/usr/bin/vincent`
+and the license file with `dpkg-deb` and `rpm`; extracts the amd64 deb and the
+x86_64 rpm and runs both binaries' `version`; and checks the Scoop JSON and the
+three WinGet manifests.
+
+- v0.4.0, release run
+  [32460147877](https://github.com/lezli01/vincent/actions/runs/32460147877)
+  — `failure`: `cpio: /usr/bin/vincent: Cannot open: Permission denied`, then
+  `Process completed with exit code 2.`
+- v0.4.1, release run
+  [32463249226](https://github.com/lezli01/vincent/actions/runs/32463249226),
+  which carries `233e839` ("constrain RPM package extraction") — `failure` in
+  the same step: its last output is ``cpio: Removing leading `/' from member
+  names``, then `Process completed with exit code 1.`
+- `a979b8a` ("verify RPM packages through tar") landed before v0.4.2. The
+  check has passed on every stable tag since: v0.4.2
+  ([32465985805](https://github.com/lezli01/vincent/actions/runs/32465985805)),
+  v0.5.0
+  ([32568455683](https://github.com/lezli01/vincent/actions/runs/32568455683)),
+  v0.6.0
+  ([32891537655](https://github.com/lezli01/vincent/actions/runs/32891537655)),
+  v0.7.0
+  ([33243913259](https://github.com/lezli01/vincent/actions/runs/33243913259))
+  and v0.8.0
+  ([33895256784](https://github.com/lezli01/vincent/actions/runs/33895256784)).
+- The merged workflow attested after this check, so the failed runs published
+  unattested assets: the attestations API returns 404 for
+  `vincent-0.4.0-1.aarch64.rpm` and one attestation for
+  `vincent-0.4.2-1.aarch64.rpm`. At `b885c53` "Attest build provenance" runs in
+  the `release` job, before `verify-packages`.
+
+**Docs and link lint.** No repository script exists, so the 2026-08-20 method
+was repeated. `git diff --check 9883ba4^1 9883ba4` printed nothing and exited
+0. The relative link targets in the nine Markdown files that diff changed were
+resolved at `b885c53` by a script following inline, image and
+reference-definition links outside fenced code: 189 of 190 resolve, and the
+190th is `[label](url "title")` inside inline code in `docs/spec.md`, not a
+link.
+
+**Review of the #158 diff** (`git diff 9883ba4^1 9883ba4`, 12 files,
++644/−54):
+
+- Defect, fixed since: `rpm2cpio … | cpio -idm` kept the payload's absolute
+  paths, so the rpm binary was never extracted under the temp root — the
+  v0.4.0 and v0.4.1 failures above. `233e839` and `a979b8a` replaced it with
+  `rpm2archive | tar`.
+- Defect, still present at `b885c53`: `README.md`,
+  `docs/getting-started/installation.md` and `docs/platforms/windows.md`
+  present `winget install --id lezli01.Vincent --exact` as a working path, but
+  no submission has merged (see Publication).
+  [#377](https://github.com/lezli01/vincent/issues/377) owns those pages.
+- Checked and not counted as a defect: GoReleaser publishes the release assets
+  and the manager metadata before package inspection runs, both at the merge
+  and at `b885c53`; `RELEASING.md` describes `verify-packages` as inspection
+  after publication, not as a gate. All three manager publishers use
+  `skip_upload: auto`.
+
+**Publication (021.7)**, checked 2026-09-14:
+
+- Scoop: `lezli01/scoop-bucket` has one automated commit per stable tag —
+  `cb59bea` v0.4.0, `439daee` v0.4.1, `5372f7f` v0.4.2, `f3ef226` v0.5.0,
+  `aa4adff` v0.6.0, `73fd7e8` v0.7.0, `17c4f46` v0.8.0.
+- WinGet: microsoft/winget-pkgs has one pull request per stable tag, all open
+  and each labelled `Azure-Pipeline-Passed`, `Validation-Completed` and
+  `New-Package` — #422036 (v0.4.0), #422051 (v0.4.1), #422063 (v0.4.2),
+  #422568 (v0.5.0), #424154 (v0.6.0), #426043 (v0.7.0), #429585 (v0.8.0).
+  `manifests/l/lezli01` does not exist in microsoft/winget-pkgs (HTTP 404), so
+  the package is not in the catalog.
+- deb and rpm: every release from v0.4.0 to v0.8.0 carries two debs and two
+  rpms.
+- Supporting context, task 002's channel rather than one of these five:
+  `lezli01/homebrew-tap` moved on the same tags, v0.4.0 `b3f1fc3` through
+  v0.8.0 `1b2a254`.
+- No install through WinGet, Scoop, mise, deb or rpm is recorded for any stable
+  tag. The only recorded install is 021.3's isolated mise install of 0.3.0.
