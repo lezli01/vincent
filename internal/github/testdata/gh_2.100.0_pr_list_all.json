@@ -1,0 +1,121 @@
+[
+  {
+    "author": {
+      "id": "MDQ6VXNlcjY1Mzg5NjM=",
+      "is_bot": false,
+      "login": "lezli01",
+      "name": ""
+    },
+    "baseRefName": "master",
+    "body": ":robot: I have created a release *beep* *boop*",
+    "createdAt": "2026-09-05T05:58:25Z",
+    "headRefName": "release-please--branches--master--components--vincent",
+    "headRefOid": "5b3d78d52677d6460f4e0e09fcf2a947576aaba6",
+    "headRepository": {
+      "id": "R_kgDOTTMFiQ",
+      "name": "vincent",
+      "nameWithOwner": "lezli01/vincent"
+    },
+    "headRepositoryOwner": {
+      "id": "MDQ6VXNlcjY1Mzg5NjM=",
+      "login": "lezli01"
+    },
+    "isDraft": false,
+    "labels": [
+      {
+        "id": "LA_kwDOTTMFic8AAAACwjUWJA",
+        "name": "autorelease: pending",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "mergedAt": null,
+    "number": 334,
+    "reviewRequests": [],
+    "state": "OPEN",
+    "statusCheckRollup": [],
+    "title": "chore(master): release 0.9.0",
+    "updatedAt": "2026-09-11T10:49:40Z",
+    "url": "https://github.com/lezli01/vincent/pull/334"
+  },
+  {
+    "author": {
+      "id": "MDQ6VXNlcjY1Mzg5NjM=",
+      "is_bot": false,
+      "login": "lezli01",
+      "name": ""
+    },
+    "baseRefName": "master",
+    "body": "## Summary",
+    "createdAt": "2026-09-11T08:55:00Z",
+    "headRefName": "vincent/244-362-triggers-view-in-the-tui-create-edit",
+    "headRefOid": "97b9419d8d4d9b6f23e9b5326a051dc0586c702d",
+    "headRepository": {
+      "id": "R_kgDOTTMFiQ",
+      "name": "vincent",
+      "nameWithOwner": "lezli01/vincent"
+    },
+    "headRepositoryOwner": {
+      "id": "MDQ6VXNlcjY1Mzg5NjM=",
+      "login": "lezli01"
+    },
+    "isDraft": false,
+    "labels": [],
+    "mergedAt": "2026-09-11T10:48:26Z",
+    "number": 364,
+    "reviewRequests": [],
+    "state": "MERGED",
+    "statusCheckRollup": [],
+    "title": "Add event triggers and the Triggers view, starting with paused, restricted and cost-capped task creation",
+    "updatedAt": "2026-09-11T10:48:29Z",
+    "url": "https://github.com/lezli01/vincent/pull/364"
+  },
+  {
+    "author": {
+      "is_bot": true,
+      "login": "app/dependabot"
+    },
+    "baseRefName": "master",
+    "body": "Bumps [golang.org/x/sys](https://github.com/golang/sys) from 0.47.0 to 0.48.0.",
+    "createdAt": "2026-09-10T19:14:56Z",
+    "headRefName": "dependabot/go_modules/golang.org/x/sys-0.48.0",
+    "headRefOid": "2cc036f378c59591fbfaa8b685a448b42da11dd0",
+    "headRepository": {
+      "id": "R_kgDOTTMFiQ",
+      "name": "vincent",
+      "nameWithOwner": "lezli01/vincent"
+    },
+    "headRepositoryOwner": {
+      "id": "MDQ6VXNlcjY1Mzg5NjM=",
+      "login": "lezli01"
+    },
+    "isDraft": false,
+    "labels": [
+      {
+        "id": "LA_kwDOTTMFic8AAAACvEaPyQ",
+        "name": "dependencies",
+        "description": "Pull requests that update a dependency file",
+        "color": "0366d6"
+      },
+      {
+        "id": "LA_kwDOTTMFic8AAAACyhFW1w",
+        "name": "go",
+        "description": "Pull requests that update go code",
+        "color": "16e2e2"
+      }
+    ],
+    "mergedAt": null,
+    "number": 360,
+    "reviewRequests": [
+      {
+        "__typename": "User",
+        "login": "lezli01"
+      }
+    ],
+    "state": "OPEN",
+    "statusCheckRollup": [],
+    "title": "chore: bump golang.org/x/sys from 0.47.0 to 0.48.0",
+    "updatedAt": "2026-09-10T19:14:57Z",
+    "url": "https://github.com/lezli01/vincent/pull/360"
+  }
+]

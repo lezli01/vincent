@@ -141,7 +141,12 @@ func (r *Runner) cascadeArchive(ctx context.Context, id int64, force bool) error
 // are unsettled parks again through parkForUnsettled under barrier mode, and
 // reads an unsettled lane as "not yet" in mergeSet under eager. Whatever order
 // the scheduler picks, the tree converges.
-func (r *Runner) cascadeRetry(ctx context.Context, id int64) (int, error) {
+//
+// held re-admits each lane into `paused` rather than `queued`, for a held
+// retry of a blocked parent (task 096 decision C). Every lane in the set is
+// `blocked`, which has a held form, so the hold never changes which lanes the
+// walk reaches.
+func (r *Runner) cascadeRetry(ctx context.Context, id int64, held bool) (int, error) {
 	rollup, err := r.deps.Store.ChildrenOf(ctx, id)
 	if err != nil {
 		return 0, fmt.Errorf("retry: list descendants of task %d: %w", id, err)
@@ -152,7 +157,7 @@ func (r *Runner) cascadeRetry(ctx context.Context, id int64) (int, error) {
 	for _, childID := range blocked {
 		// persistCtx per child, as cascadeCancel does: a client that
 		// disconnects mid-cascade must not leave half the tree re-admitted.
-		_, n, err := r.Retry(r.persistCtx(), childID, store.Override{})
+		_, n, err := r.retryTask(r.persistCtx(), childID, store.Override{}, held)
 		if err != nil {
 			if _, invalid := AsInvalidAction(err); invalid {
 				continue // it moved between the rollup and the write

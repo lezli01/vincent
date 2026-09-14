@@ -315,6 +315,10 @@ func configFields() map[string]configField {
 			func(v *[]string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{Notify: &apiclient.ConfigNotifyPatch{Command: v}}
 			}),
+		"triggers.enabled": boolField(func(c apiclient.Config) bool { return c.Triggers.Enabled },
+			func(b *bool) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Triggers: &apiclient.ConfigTriggersPatch{Enabled: b}}
+			}),
 		"container.image": str(func(c apiclient.Config) string { return c.Container.Image },
 			func(v *string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{Container: &apiclient.ConfigContainerPatch{Image: v}}

@@ -8,10 +8,52 @@ import (
 
 // Issue states, normalized. `gh` reports OPEN/CLOSED and the REST API reports
 // open/closed; one spelling reaches the rest of vincent.
+//
+// StateAll is never a state anything is *in*: it is the ListOptions.State
+// that asks for both, spelled the way both legs spell it on the wire.
 const (
 	StateOpen   = "open"
 	StateClosed = "closed"
+	StateAll    = "all"
 )
+
+// wireLabel and wireAccount are the two element shapes the legs share: a
+// label is `{name}` and an account `{login}` on `gh` and on REST alike. The
+// structs around them stay per-leg (see ghIssue for why); only these leaves
+// are one type, so flattening them is written once.
+type (
+	wireLabel struct {
+		Name string `json:"name"`
+	}
+	wireAccount struct {
+		Login string `json:"login"`
+	}
+)
+
+// labelNames flattens a label array, skipping nameless entries. It returns
+// nil rather than an empty slice for none, so a row with no labels compares
+// equal whichever leg produced it.
+func labelNames(labels []wireLabel) []string {
+	var names []string
+	for _, l := range labels {
+		if l.Name != "" {
+			names = append(names, l.Name)
+		}
+	}
+	return names
+}
+
+// logins flattens an account array through normalizeLogin, nil for none, for
+// the reason labelNames is.
+func logins(accounts []wireAccount) []string {
+	var out []string
+	for _, a := range accounts {
+		if login := normalizeLogin(a.Login); login != "" {
+			out = append(out, login)
+		}
+	}
+	return out
+}
 
 // Issue is the normalized GitHub issue — the *only* shape either leg
 // produces, and the shape persisted verbatim on the task as
@@ -37,6 +79,11 @@ type Issue struct {
 	Labels   []string `json:"labels,omitempty"`
 	Author   string   `json:"author,omitempty"`
 	Assignee string   `json:"assignee,omitempty"`
+	// Assignees is every assignee; Assignee is the first of them, the single
+	// string a declared field receives. It exists for a caller that diffs
+	// assignment rather than rendering it (task 096 decision D): a second
+	// assignee added to an assigned issue is invisible in Assignee.
+	Assignees []string `json:"assignees,omitempty"`
 	// Milestone and MilestoneNumber are the two halves a declared field may
 	// ask for: a `string` milestone field gets the title, an `integer` one
 	// gets the number (decision 7).

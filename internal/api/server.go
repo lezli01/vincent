@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +23,7 @@ import (
 	"github.com/lezli01/vincent/internal/release"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskrun"
+	"github.com/lezli01/vincent/internal/trigger"
 	"github.com/lezli01/vincent/internal/version"
 	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
@@ -116,6 +118,13 @@ type Deps struct {
 	// Nil is tolerated (tests without a poller); the endpoint then reports
 	// the never-polled, disabled state, which is the truth for that daemon.
 	UpdateStatus func() release.Status
+	// Triggers, TriggerRegistry and TriggerWriter serve the §13.2 trigger
+	// routes (task 096). The manager arms, dry-runs and ingests; the registry
+	// is the files; the writer edits them. Nil is tolerated (tests without
+	// triggers) — the routes then answer 500.
+	Triggers        *trigger.Manager
+	TriggerRegistry *trigger.Registry
+	TriggerWriter   *trigger.Writer
 }
 
 // AgentStatus is one adapter's availability as reported by /v1/info
@@ -153,6 +162,9 @@ type AgentStatus struct {
 type Server struct {
 	deps    Deps
 	handler http.Handler
+	// inner is the route mux below recover → log → auth: what an in-process
+	// replay reaches, as MCP's does (task 096 decision 30).
+	inner   http.Handler
 	httpSrv *http.Server
 	// snaps memoizes parsed workflow snapshots for the task list's step
 	// columns; entries are immutable, so it needs no invalidation (§18).
@@ -223,6 +235,13 @@ func New(deps Deps) *Server {
 // Handler exposes the fully-wrapped handler for tests.
 func (s *Server) Handler() http.Handler { return s.handler }
 
+// Inner is the route mux without the §13.1 middleware. It is what a trigger's
+// action replays against in process (task 096 decision 30): the event was
+// authenticated where it arrived — a poll the daemon ran, a push that passed
+// the bearer and its signature — and re-presenting a token here would be
+// ceremony, not a check. Never serve it on a listener.
+func (s *Server) Inner() http.Handler { return s.inner }
+
 // Routes returns the registered route table in registration order. It is the
 // source the §13.4 tool surface is asserted against (task 057).
 func (s *Server) Routes() []Route {
@@ -282,6 +301,19 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/workflows/schema", s.handleWorkflowSchema)
 	rt.handle(http.MethodPost, "/v1/workflows/validate", s.handleWorkflowValidate)
 	rt.handle(http.MethodGet, "/v1/workflows/definition", s.handleWorkflowDefinition)
+	// Event triggers (§13.2, task 096). The three writes and the ingress are
+	// not MCP tools (decisions 22 and 31G); the reads and both dry runs are.
+	rt.handle(http.MethodGet, "/v1/triggers", s.handleTriggerList)
+	rt.handle(http.MethodPost, "/v1/triggers", s.handleTriggerCreate)
+	rt.handle(http.MethodGet, "/v1/triggers/schema", s.handleTriggerSchema)
+	rt.handle(http.MethodPost, "/v1/triggers/validate", s.handleTriggerValidate)
+	rt.handle(http.MethodGet, "/v1/triggers/{id}", s.handleTriggerGet)
+	rt.handle(http.MethodPatch, "/v1/triggers/{id}", s.handleTriggerPatch)
+	rt.handle(http.MethodDelete, "/v1/triggers/{id}", s.handleTriggerDelete)
+	rt.handle(http.MethodPost, "/v1/triggers/{id}/test", s.handleTriggerTest)
+	rt.handle(http.MethodPost, "/v1/triggers/{id}/poll", s.handleTriggerPoll)
+	rt.handle(http.MethodGet, "/v1/triggers/{id}/deliveries", s.handleTriggerDeliveries)
+	rt.handle(http.MethodPost, "/v1/triggers/{id}/events", s.handleTriggerEvents)
 	rt.handle(http.MethodPost, "/v1/resolve", s.handleResolve)
 	rt.handle(http.MethodGet, "/v1/tasks", s.handleTaskList)
 	rt.handle(http.MethodPost, "/v1/tasks", s.handleTaskCreate)
@@ -329,6 +361,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/events", s.handleEvents)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/events", s.handleTaskEvents)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/events", s.handleChatEvents)
+	rt.finish()
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, CodeNotFound, "no such endpoint")
 	})
@@ -354,6 +387,7 @@ func (s *Server) buildHandler() http.Handler {
 	mux.Handle("/mcp", s.mcp.Handler())
 	mux.Handle("/mcp/", s.mcp.Handler())
 	mux.Handle(mcp.StepPathPrefix+"{run_id}", s.mcp.StepHandler())
+	s.inner = mux
 	var h http.Handler = mux
 	h = s.authMiddleware(h)
 	h = s.logMiddleware(h)
@@ -368,20 +402,86 @@ type router struct {
 	mux     *http.ServeMux
 	allowed map[string][]string
 	routes  []Route
+	// paths is every distinct path, in registration order.
+	paths []string
 }
 
 func (rt *router) handle(method, path string, h http.HandlerFunc) {
 	rt.routes = append(rt.routes, Route{Method: method, Path: path})
 	if len(rt.allowed[path]) == 0 {
-		rt.mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+		rt.paths = append(rt.paths, path)
+	}
+	rt.allowed[path] = append(rt.allowed[path], method)
+	rt.mux.HandleFunc(method+" "+path, h)
+}
+
+// standardMethods are the methods a per-method 405 fallback is registered for.
+var standardMethods = []string{
+	http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch,
+	http.MethodDelete, http.MethodOptions, http.MethodConnect, http.MethodTrace,
+}
+
+// finish registers each path's 405 fallback, once every route is known.
+//
+// A fallback is normally one method-less pattern for the path. ServeMux
+// refuses that when the path is a literal sibling of a wildcard route:
+// "/v1/triggers/schema" beside "GET /v1/triggers/{id}" has the more specific
+// path and the less specific methods, which ServeMux calls a conflict rather
+// than picking one (task 096 added the first such pair). A path like that gets
+// one fallback per standard method it does not serve instead — each more
+// specific than the wildcard route in both respects.
+func (rt *router) finish() {
+	for _, path := range rt.paths {
+		fallback := func(w http.ResponseWriter, r *http.Request) {
 			allow := strings.Join(rt.allowed[path], ", ")
 			w.Header().Set("Allow", allow)
 			writeError(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed,
 				fmt.Sprintf("%s is not allowed on %s (allowed: %s)", r.Method, path, allow))
-		})
+		}
+		if !rt.shadowsWildcard(path) {
+			rt.mux.HandleFunc(path, fallback)
+			continue
+		}
+		allowed := rt.allowed[path]
+		for _, m := range standardMethods {
+			// A GET route already answers HEAD.
+			if slices.Contains(allowed, m) || (m == http.MethodHead && slices.Contains(allowed, http.MethodGet)) {
+				continue
+			}
+			rt.mux.HandleFunc(m+" "+path, fallback)
+		}
 	}
-	rt.allowed[path] = append(rt.allowed[path], method)
-	rt.mux.HandleFunc(method+" "+path, h)
+}
+
+// shadowsWildcard reports whether another registered path matches everything
+// path does through a wildcard where path has a literal.
+func (rt *router) shadowsWildcard(path string) bool {
+	segs := strings.Split(path, "/")
+	isWild := func(s string) bool { return strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}") }
+	for _, other := range rt.paths {
+		oseg := strings.Split(other, "/")
+		if other == path || len(oseg) != len(segs) {
+			continue
+		}
+		covers, general := true, false
+		for i := range segs {
+			a, b := segs[i], oseg[i]
+			switch {
+			case a == b, isWild(a) && isWild(b):
+			case isWild(b):
+				general = true
+			default:
+				covers = false
+			}
+			if !covers {
+				break
+			}
+		}
+		if covers && general {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

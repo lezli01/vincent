@@ -202,3 +202,13 @@ jobs:
       - name: M15 gate (archived boards and delete)
         shell: bash
         run: ./scripts/m15-gate.sh
+
+      # M16: event triggers (task 096; §12.3, §13.2, §13.3, §16). The poll
+      # command is a real executable run directly, never through a shell, so
+      # Windows is where "argv, not a command line" is proven — along with the
+      # registry's live reload of files the gate writes, a cursor handed back
+      # through a child's environment, and an HMAC over bytes that must reach
+      # the daemon exactly as they were signed.
+      - name: M16 gate (event triggers)
+        shell: bash
+        run: ./scripts/m16-gate.sh

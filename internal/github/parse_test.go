@@ -104,6 +104,9 @@ func TestBothLegsAgree(t *testing.T) {
 		len(viaGH.Labels) == 0 {
 		t.Fatalf("the agreement fixture carries no assignee/milestone/labels to compare: %+v", viaGH)
 	}
+	if !reflect.DeepEqual(viaGH.Assignees, []string{viaGH.Assignee}) {
+		t.Errorf("assignees = %v, want the whole list with Assignee (%q) as its first", viaGH.Assignees, viaGH.Assignee)
+	}
 }
 
 // TestRESTListDropsPullRequests: the REST `/issues` collection includes pull

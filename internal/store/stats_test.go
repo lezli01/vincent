@@ -3,6 +3,7 @@ package store
 import (
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -37,7 +38,10 @@ func migratedTables(t *testing.T) []string {
 		}
 	}
 	sort.Strings(names)
-	return names
+	// A table rebuilt by a later migration (0030 recreates
+	// trigger_deliveries to widen its CHECK) is created twice and is still one
+	// table.
+	return slices.Compact(names)
 }
 
 func TestTableRowsEnumeratesEveryMigratedTable(t *testing.T) {

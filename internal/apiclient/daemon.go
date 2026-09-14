@@ -165,6 +165,8 @@ type Config struct {
 	GitHub                 ConfigGitHub      `json:"github"`
 	Update                 ConfigUpdate      `json:"update"`
 	Notify                 ConfigNotify      `json:"notify"`
+	// Triggers is the inward signal's global switch (§12.3, task 096).
+	Triggers ConfigTriggers `json:"triggers"`
 	// Container is §16's container execution mode (task 061). Image empty is
 	// the default and means the steps run on this host.
 	Container ConfigContainer `json:"container"`
@@ -323,6 +325,12 @@ type ConfigNotify struct {
 	Command []string `json:"command"`
 }
 
+// ConfigTriggers is the global trigger switch (§12.3, task 096): off by
+// default, and no trigger polls or accepts a pushed event while it is.
+type ConfigTriggers struct {
+	Enabled bool `json:"enabled"`
+}
+
 // Config fetches the configuration in effect. There is no event for a
 // config reload, so callers refetch rather than subscribe.
 func (c *Client) Config(ctx context.Context) (Config, error) {
@@ -382,6 +390,7 @@ type ConfigPatch struct {
 	GitHub                      *ConfigGitHubPatch      `json:"github,omitempty"`
 	Update                      *ConfigUpdatePatch      `json:"update,omitempty"`
 	Notify                      *ConfigNotifyPatch      `json:"notify,omitempty"`
+	Triggers                    *ConfigTriggersPatch    `json:"triggers,omitempty"`
 	Container                   *ConfigContainerPatch   `json:"container,omitempty"`
 	TUI                         *ConfigTUIPatch         `json:"tui,omitempty"`
 }
@@ -435,6 +444,11 @@ type ConfigUpdatePatch struct {
 type ConfigNotifyPatch struct {
 	On      *[]string `json:"on,omitempty"`
 	Command *[]string `json:"command,omitempty"`
+}
+
+// ConfigTriggersPatch is the optional half of ConfigTriggers.
+type ConfigTriggersPatch struct {
+	Enabled *bool `json:"enabled,omitempty"`
 }
 
 // ConfigContainerPatch is the optional half of ConfigContainer.

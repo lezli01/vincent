@@ -192,6 +192,12 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(v.open(msg.id), m.switchTo(viewChat))
 		}
 		return m, nil
+	case openConfigKeyMsg:
+		// The triggers view's global-off banner (task 096.6) names a switch
+		// it must not flip itself: the daemon view's editor is where a config
+		// key is changed, and it is the one that asks first. Delivered before
+		// the switch for the reason openChatMsg is.
+		return m, tea.Batch(m.deliver(viewDaemon, msg), m.switchTo(viewDaemon))
 	case githubProbeMsg:
 		// The listing failing leaves the previous answer standing: a probe
 		// that could not be made is not an integration that stopped working,
@@ -482,6 +488,8 @@ func (m *root) activeContext() bindingContext {
 		return m.views[viewChats].(*chatsView).bindingContext()
 	case viewChat:
 		return m.views[viewChat].(*chatView).bindingContext()
+	case viewTriggers:
+		return m.views[viewTriggers].(*triggersView).bindingContext()
 	default:
 		s := m.views[viewHome].(*shell)
 		return s.focusedContext()

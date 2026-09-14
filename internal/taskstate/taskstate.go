@@ -265,6 +265,43 @@ func Can(from State, a Action) bool {
 	return ok
 }
 
+// held is the §6 table for the human actions a caller may ask to *hold*: the
+// task lands in `paused` where the plain action would re-queue it, and
+// `resume` is what admits it (task 096 decision C). It is the affordance
+// event triggers need for `on_fire: propose` on an existing task, placed on
+// the route for every client the way `POST /v1/tasks`' `paused` was
+// (decision 9) — so the rules live here, beside the table they vary.
+//
+// It is a second table rather than more actions because the action is the
+// same one: a held follow-up is a follow-up, a 409 still names `follow_up`,
+// and `available_actions` must not list a second spelling of it.
+//
+// Every row substitutes `paused` for a `queued` in table, and nothing else.
+// Retry from `awaiting_children` is deliberately absent: that retry writes
+// nothing to the parent and re-admits its blocked lanes instead, so there is
+// no `queued` on it to substitute. Repair is absent too — it returns the
+// task to `blocked` whatever it does, and holding one buys nothing a trigger
+// asks for.
+var held = map[Action]map[State]Transition{
+	Retry:    {Blocked: {To: Paused}},
+	FollowUp: {Done: {To: Paused}, Aborted: {To: Paused}},
+}
+
+// NextHeld returns the transition for applying a to a task in state from
+// when the caller asks for the task to be held in `paused` instead of
+// re-queued. ok is false when the action has no held form from that state,
+// which includes every state Next itself rejects.
+func NextHeld(from State, a Action) (Transition, bool) {
+	t, ok := held[a][from]
+	return t, ok
+}
+
+// CanHold reports whether action a may be applied held from state from.
+func CanHold(from State, a Action) bool {
+	_, ok := NextHeld(from, a)
+	return ok
+}
+
 // CanSetPriority reports whether priority may be changed in this state
 // (§6: queued and paused only). Priority is not a transition — it reorders
 // scheduler admission without changing state.

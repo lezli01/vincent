@@ -351,6 +351,20 @@ func configKeys() []configKey {
 				return apiclient.ConfigPatch{Notify: &apiclient.ConfigNotifyPatch{Command: &v}}, nil
 			},
 		},
+		func() configKey {
+			// Task 096 decision 31H: the second of the two off-by-default
+			// switches, and the one that lets a third party start agents as
+			// you, so it asks before committing like every other key that
+			// decides what the daemon executes.
+			k := boolKey("triggers.enabled", "triggers enabled",
+				"let enabled trigger files poll and act; off, no trigger does anything",
+				func(c apiclient.Config) bool { return c.Triggers.Enabled },
+				func(b bool) apiclient.ConfigPatch {
+					return apiclient.ConfigPatch{Triggers: &apiclient.ConfigTriggersPatch{Enabled: &b}}
+				})
+			k.dangerous = true
+			return k
+		}(),
 		{
 			// §16's container execution mode (task 061). Shown and edited here
 			// for the same reason every other key is (task 060): the daemon

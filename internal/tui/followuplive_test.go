@@ -163,6 +163,82 @@ func TestFollowUpFormPostsEachRunForm(t *testing.T) {
 	}
 }
 
+// TestFollowUpFormPausedToggle is task 096 decision C's form half, the
+// new-task form's start row on this form: enter toggles holding the task
+// paused, and only a held draft names `paused` on the wire.
+func TestFollowUpFormPausedToggle(t *testing.T) {
+	f := newFollowUpForm(1, 1, "done")
+	f.prompt = "tidy it"
+	if f.request().Paused != nil {
+		t.Fatal("an untouched form sent paused")
+	}
+	for range int(fuPaused) {
+		f.update(keyPress("j"), nil)
+	}
+	if f.cursor != fuPaused {
+		t.Fatalf("cursor = %d after moving down, want the start row", f.cursor)
+	}
+	f.update(keyPress("enter"), nil)
+	if p := f.request().Paused; p == nil || !*p {
+		t.Fatalf("paused = %v after toggling on, want true", p)
+	}
+	if f.picker != nil || f.editing {
+		t.Error("enter on the start row opened an entry instead of toggling")
+	}
+	if row := strings.Join(f.rowLines(fuPaused, 80), "\n"); !strings.Contains(row, "paused") {
+		t.Errorf("start row = %q, want it to say paused", row)
+	}
+	f.update(keyPress("enter"), nil)
+	if f.request().Paused != nil {
+		t.Error("toggled off, the form still sends paused")
+	}
+}
+
+// TestDetailHoldsAFollowUpPausedLive drives the start row against the real
+// handlers: the follow-up is recorded on the task, which waits in `paused`
+// instead of being admitted.
+func TestDetailHoldsAFollowUpPausedLive(t *testing.T) {
+	t.Setenv("FAKEAGENT_SCENARIO", "hang")
+	h := newActionLiveHarness(t)
+	task := h.createParkedTask(t, "holdable")
+	h.finishTask(t, task.ID, store.TaskDone)
+
+	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})
+	h.p.push(cmd)
+	h.p.until(30*time.Second, "the daemon to offer follow-up", func() bool {
+		return detailOf(h.m).taskID == task.ID && detailOf(h.m).target().has(apiclient.ActionFollowUp)
+	})
+	h.press(t, "F")
+	form := detailOf(h.m).followUp
+	if form == nil {
+		t.Fatal("F did not open the follow-up form")
+	}
+	const prompt = "hold this until reviewed"
+	h.press(t, "j")
+	h.press(t, "enter")
+	h.typeText(t, prompt)
+	h.pressCtrlS(t)
+	for range int(fuPaused - fuBody) {
+		h.press(t, "j")
+	}
+	h.press(t, "enter")
+	if !form.paused {
+		t.Fatal("enter on the start row did not hold the follow-up")
+	}
+	h.pressCtrlS(t)
+
+	h.p.until(60*time.Second, "the follow-up to be held", func() bool {
+		return h.state(t, task.ID) == store.TaskPaused
+	})
+	stored, err := h.st.GetTask(context.Background(), task.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if req := stored.PendingFollowUp; req == nil || req.Prompt != prompt || req.Origin != store.TaskDone {
+		t.Fatalf("the daemon recorded %+v, want the typed prompt from done", req)
+	}
+}
+
 // TestTimelineRendersAFollowUpAsItsOwnRound: a follow-up's rows sit past the
 // workflow's last index, and the timeline must not number them as steps of a
 // workflow that never grew (task 027 decision 1).

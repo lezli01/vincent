@@ -42,6 +42,14 @@
 // to the previous head, and rendering them under the new one would show a
 // green build for code nobody ran.
 //
+// Listings also serve a poller (task 096 decisions D and E). ListOptions.State
+// takes StateAll and ListOptions.Since bounds a listing by update time, on
+// both legs, so a caller diffing one listing against the last sees an issue
+// close or a pull request merge as a changed row rather than one that quietly
+// left an open-only window. Issue carries every assignee and PullRequest its
+// labels and requested reviewers for that diff — as live as the rest of a
+// listing: nothing here stores one.
+//
 // Issues and pull requests are stored differently on purpose. An Issue is
 // snapshotted, because a run has to be reproducible and `.Issue` has to
 // render offline. A pull request is only ever *pointed at* — a PullLink of

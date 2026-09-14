@@ -6,6 +6,7 @@ import (
 	"math"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"text/template"
 	"time"
@@ -15,14 +16,41 @@ import (
 	"github.com/lezli01/vincent/internal/workflow"
 )
 
-// SourceCommand is the only source type in 096.2; `github_issues`,
-// `github_prs` (096.3) and `http` (096.5) join SourceTypes, and the served
-// schema carries them to every client with no client change.
-const SourceCommand = "command"
+// Source types. The served schema carries each to every client as a variant,
+// so a type added here reaches the form with no client change.
+const (
+	// SourceCommand runs an argv on an interval and reads NDJSON (096.2,
+	// appendix A).
+	SourceCommand = "command"
+	// SourceGitHubIssues and SourceGitHubPRs diff a project's issues or pull
+	// requests on the github.poll_interval tick (096.3, decisions 10 and 31D).
+	SourceGitHubIssues = "github_issues"
+	SourceGitHubPRs    = "github_prs"
+	// SourceHTTP accepts a pushed, signed event on
+	// POST /v1/triggers/{id}/events (096.5, decision 31G).
+	SourceHTTP = "http"
+)
 
-// ActionCreateTask is the only action type in 096.2; `follow_up`, `retry`
-// and `cancel` arrive with 096.4.
-const ActionCreateTask = "create_task"
+// Action types.
+const (
+	// ActionCreateTask replays POST /v1/tasks.
+	ActionCreateTask = "create_task"
+	// ActionFollowUp, ActionRetry and ActionCancel replay the matching §6
+	// action against the task whose branch the event names (096.4, decision
+	// 31C).
+	ActionFollowUp = "follow_up"
+	ActionRetry    = "retry"
+	ActionCancel   = "cancel"
+)
+
+// TargetBranch is the one reaction target: the unarchived task in
+// source.project whose branch_name equals the rendered `branch:`.
+const TargetBranch = "branch"
+
+// SignatureGitHubHMACSHA256 is `X-Hub-Signature-256`: an HMAC-SHA256 of the
+// raw body, hex, prefixed `sha256=`. The set is closed and has one member
+// (decision 31G); the schema is shaped so a later scheme is one more value.
+const SignatureGitHubHMACSHA256 = "github_hmac_sha256"
 
 // on_fire values (decision 7). Absent means propose.
 const (
@@ -55,64 +83,86 @@ type Definition struct {
 	// equal the file's stem, which is what makes the filesystem enforce its
 	// uniqueness: two files could otherwise declare one id and share a cursor
 	// and a dedupe history neither of them owns.
-	ID string `yaml:"id"`
+	ID string `yaml:"id" json:"id"`
 	// Enabled is the per-trigger switch; absent means false (task 096,
 	// Security: "off by default, both per trigger and globally").
-	Enabled bool   `yaml:"enabled"`
-	Source  Source `yaml:"source"`
+	Enabled bool   `yaml:"enabled" json:"enabled"`
+	Source  Source `yaml:"source" json:"source"`
 	// Match is the cheap structural prefilter in front of If (decision 3):
 	// dotted paths into the event, each with the value it must have.
-	Match map[string]any `yaml:"match"`
+	Match map[string]any `yaml:"match" json:"match,omitempty"`
 	// If is an `if:` guard over `.Event`, with §7.7's strict true/false.
-	If     string `yaml:"if"`
-	Action Action `yaml:"action"`
+	If string `yaml:"if" json:"if,omitempty"`
+	// AllowedActors is, on a GitHub source, the issue or pull request
+	// *authors* whose events may pass (decision 31F). A state diff has no
+	// actor (decision 10), so the author is the only identity there is — on a
+	// public repository, the field an outsider controls, which is exactly why
+	// a trigger that can match an event an outsider causes must name it.
+	AllowedActors []string `yaml:"allowed_actors" json:"allowed_actors,omitempty"`
+	Action        Action   `yaml:"action" json:"action"`
 	// OnFire is `propose` (the default, decision 7) or `create`.
-	OnFire string `yaml:"on_fire"`
+	OnFire string `yaml:"on_fire" json:"on_fire,omitempty"`
 	// DedupeKey is a template over `.Event`; absent means the event's `id`
 	// (appendix A).
-	DedupeKey string `yaml:"dedupe_key"`
-	Limits    Limits `yaml:"limits"`
+	DedupeKey string `yaml:"dedupe_key" json:"dedupe_key,omitempty"`
+	Limits    Limits `yaml:"limits" json:"limits"`
 	// Permission is `restricted` (the default, decision 12) or `workflow`,
 	// which runs the workflow as written (decision 17).
-	Permission string `yaml:"permission"`
+	Permission string `yaml:"permission" json:"permission,omitempty"`
 }
 
 // Source is where events come from.
 type Source struct {
-	Type string `yaml:"type"`
-	// Project is the id of the project the action's task is created in —
-	// POST /v1/tasks' `project_id`, sent verbatim. An id rather than a name
-	// because the replay then needs no resolution step of its own, and the
-	// form's project picker (GET /v1/projects) writes it.
-	Project      int64    `yaml:"project"`
-	PollInterval string   `yaml:"poll_interval"`
-	Command      []string `yaml:"command"`
+	Type string `yaml:"type" json:"type"`
+	// Project is the id of the project the action's task is created in, or
+	// whose branches a reaction resolves against — POST /v1/tasks'
+	// `project_id`, sent verbatim. An id rather than a name because the
+	// replay then needs no resolution step of its own, and the form's project
+	// picker (GET /v1/projects) writes it.
+	Project      int64    `yaml:"project" json:"project"`
+	PollInterval string   `yaml:"poll_interval" json:"poll_interval,omitempty"`
+	Command      []string `yaml:"command" json:"command,omitempty"`
+	// Signature is a `type: http` source's verification (decision 31G).
+	Signature *Signature `yaml:"signature" json:"signature,omitempty"`
+}
+
+// Signature is how a pushed event proves it came from the configured sender.
+type Signature struct {
+	Scheme string `yaml:"scheme" json:"scheme"`
+	// SecretEnv names the variable in the daemon's environment that holds the
+	// shared secret. The secret itself is never in the file (§2).
+	SecretEnv string `yaml:"secret_env" json:"secret_env"`
 }
 
 // Action is what an event that passed the filter does.
 type Action struct {
-	Type        string            `yaml:"type"`
-	Workflow    string            `yaml:"workflow"`
-	Title       string            `yaml:"title"`
-	Description string            `yaml:"description"`
-	Fields      map[string]string `yaml:"fields"`
+	Type        string            `yaml:"type" json:"type"`
+	Workflow    string            `yaml:"workflow" json:"workflow,omitempty"`
+	Title       string            `yaml:"title" json:"title,omitempty"`
+	Description string            `yaml:"description" json:"description,omitempty"`
+	Fields      map[string]string `yaml:"fields" json:"fields,omitempty"`
 	// GitHubIssue and GitHubPull are templates that must render to an issue
 	// or pull-request number, or to nothing.
-	GitHubIssue string `yaml:"github_issue"`
-	GitHubPull  string `yaml:"github_pull"`
+	GitHubIssue string `yaml:"github_issue" json:"github_issue,omitempty"`
+	GitHubPull  string `yaml:"github_pull" json:"github_pull,omitempty"`
+	// Target and Branch pick a reaction's task (decision 31C).
+	Target string `yaml:"target" json:"target,omitempty"`
+	Branch string `yaml:"branch" json:"branch,omitempty"`
+	// Prompt is a follow_up's prompt, or a retry's prompt override.
+	Prompt string `yaml:"prompt" json:"prompt,omitempty"`
 }
 
 // Limits are the per-trigger bounds.
 type Limits struct {
 	// MaxPerHour caps `fired` deliveries in a trailing hour; 0 is no cap. An
 	// event over it is recorded `rate_limited` and dropped (decision 28).
-	MaxPerHour int `yaml:"max_per_hour"`
+	MaxPerHour int `yaml:"max_per_hour" json:"max_per_hour,omitempty"`
 	// MaxTaskCostUSD is sent as the created task's own cost cap (decision
 	// 18); 0 sends nothing.
-	MaxTaskCostUSD float64 `yaml:"max_task_cost_usd"`
+	MaxTaskCostUSD float64 `yaml:"max_task_cost_usd" json:"max_task_cost_usd,omitempty"`
 }
 
-// Interval is the parsed poll interval of a valid definition.
+// Interval is the parsed poll interval of a valid command definition.
 func (d *Definition) Interval() time.Duration {
 	iv, err := time.ParseDuration(d.Source.PollInterval)
 	if err != nil {
@@ -137,7 +187,18 @@ func (d *Definition) EffectivePermission() string {
 	return d.Permission
 }
 
+// Polls reports whether the source is one the poller runs on its own
+// interval. GitHub sources ride the reconciler's tick, and `http` has no poll.
+func (d *Definition) Polls() bool { return d.Source.Type == SourceCommand }
+
+// IsGitHub reports whether the source is one of the two GitHub state diffs.
+func (d *Definition) IsGitHub() bool {
+	return d.Source.Type == SourceGitHubIssues || d.Source.Type == SourceGitHubPRs
+}
+
 var safeID = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]*$`)
+
+var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // ValidID reports whether id may name a trigger file: a slug, so it cannot
 // address anything outside the triggers directory.
@@ -184,6 +245,14 @@ func validate(d *Definition, stem string) workflow.Errors {
 	add := func(path, format string, args ...any) {
 		errs = append(errs, workflow.Error{Path: path, Message: fmt.Sprintf(format, args...)})
 	}
+	// refuse reports a key the chosen variant does not take. A key that is
+	// set and ignored is a control that does not control, which is worse than
+	// an error in front of the author.
+	refuse := func(path string, set bool, why string) {
+		if set {
+			add(path, "is not allowed here: %s", why)
+		}
+	}
 
 	switch {
 	case d.ID == "":
@@ -194,27 +263,7 @@ func validate(d *Definition, stem string) workflow.Errors {
 		add("id", "must match the file name %q", stem+".yaml")
 	}
 
-	switch d.Source.Type {
-	case "":
-		add("source.type", "is required")
-	case SourceCommand:
-		if d.Source.Project <= 0 {
-			add("source.project", "is required: the id of the project tasks are created in")
-		}
-		switch iv, err := time.ParseDuration(d.Source.PollInterval); {
-		case d.Source.PollInterval == "":
-			add("source.poll_interval", "is required")
-		case err != nil:
-			add("source.poll_interval", "is not a duration: %v", err)
-		case iv < MinPollInterval:
-			add("source.poll_interval", "must be at least %s", MinPollInterval)
-		}
-		if len(d.Source.Command) == 0 || strings.TrimSpace(d.Source.Command[0]) == "" {
-			add("source.command", "is required: the argv to run, executed directly and never through a shell")
-		}
-	default:
-		add("source.type", "must be one of %s", strings.Join(SourceTypes(), ", "))
-	}
+	validateSource(d, add, refuse)
 
 	for key, want := range d.Match {
 		path := "match." + key
@@ -227,6 +276,7 @@ func validate(d *Definition, stem string) workflow.Errors {
 			add(path, "must be a scalar or a list of scalars")
 		}
 	}
+	validateGitHubTrust(d, add, refuse)
 
 	checkTemplate := func(path, text string) {
 		if text == "" {
@@ -239,29 +289,7 @@ func validate(d *Definition, stem string) workflow.Errors {
 	checkTemplate("if", d.If)
 	checkTemplate("dedupe_key", d.DedupeKey)
 
-	switch d.Action.Type {
-	case "":
-		add("action.type", "is required")
-	case ActionCreateTask:
-		if strings.TrimSpace(d.Action.Title) == "" {
-			add("action.title", "is required")
-		}
-		checkTemplate("action.workflow", d.Action.Workflow)
-		checkTemplate("action.title", d.Action.Title)
-		checkTemplate("action.description", d.Action.Description)
-		checkTemplate("action.github_issue", d.Action.GitHubIssue)
-		checkTemplate("action.github_pull", d.Action.GitHubPull)
-		for k, v := range d.Action.Fields {
-			checkTemplate("action.fields."+k, v)
-		}
-		// POST /v1/tasks refuses both, and a trigger that could only ever be
-		// refused is better caught at load than in the ledger.
-		if d.Action.GitHubIssue != "" && d.Action.GitHubPull != "" {
-			add("action.github_pull", "cannot be combined with github_issue")
-		}
-	default:
-		add("action.type", "must be one of %s", strings.Join(ActionTypes(), ", "))
-	}
+	validateAction(d, add, refuse, checkTemplate)
 
 	switch d.OnFire {
 	case "", OnFirePropose, OnFireCreate:
@@ -281,6 +309,217 @@ func validate(d *Definition, stem string) workflow.Errors {
 	}
 	sortErrors(errs)
 	return errs
+}
+
+type addFunc func(path, format string, args ...any)
+
+type refuseFunc func(path string, set bool, why string)
+
+func validateSource(d *Definition, add addFunc, refuse refuseFunc) {
+	s := d.Source
+	switch s.Type {
+	case "":
+		add("source.type", "is required")
+		return
+	case SourceCommand, SourceGitHubIssues, SourceGitHubPRs, SourceHTTP:
+	default:
+		add("source.type", "must be one of %s", strings.Join(SourceTypes(), ", "))
+		return
+	}
+	if s.Project <= 0 {
+		add("source.project", "is required: the id of the project tasks are created in")
+	}
+	switch s.Type {
+	case SourceCommand:
+		switch iv, err := time.ParseDuration(s.PollInterval); {
+		case s.PollInterval == "":
+			add("source.poll_interval", "is required")
+		case err != nil:
+			add("source.poll_interval", "is not a duration: %v", err)
+		case iv < MinPollInterval:
+			add("source.poll_interval", "must be at least %s", MinPollInterval)
+		}
+		if len(s.Command) == 0 || strings.TrimSpace(s.Command[0]) == "" {
+			add("source.command", "is required: the argv to run, executed directly and never through a shell")
+		}
+		refuse("source.signature", s.Signature != nil, "only a type: http source is signed")
+	case SourceGitHubIssues, SourceGitHubPRs:
+		// One listing per project per github.poll_interval tick, shared by
+		// every trigger on it (decision 31D): a per-trigger interval would be
+		// a per-trigger listing, and API use would grow with trigger count.
+		refuse("source.poll_interval", s.PollInterval != "",
+			"GitHub sources are judged on the github.poll_interval tick in config.yaml")
+		refuse("source.command", len(s.Command) > 0, "a GitHub source runs no command")
+		refuse("source.signature", s.Signature != nil, "only a type: http source is signed")
+	case SourceHTTP:
+		refuse("source.poll_interval", s.PollInterval != "", "a type: http source is pushed, never polled")
+		refuse("source.command", len(s.Command) > 0, "a type: http source runs no command")
+		if s.Signature == nil {
+			add("source.signature", "is required: a pushed event must be signed")
+		} else {
+			switch s.Signature.Scheme {
+			case "":
+				add("source.signature.scheme", "is required")
+			case SignatureGitHubHMACSHA256:
+			default:
+				add("source.signature.scheme", "must be one of %s", strings.Join(SignatureSchemes(), ", "))
+			}
+			switch {
+			case s.Signature.SecretEnv == "":
+				add("source.signature.secret_env", "is required: the environment variable holding the secret")
+			case !envName.MatchString(s.Signature.SecretEnv):
+				add("source.signature.secret_env", "must be an environment variable name")
+			}
+		}
+	}
+	if !d.IsGitHub() {
+		refuse("allowed_actors", len(d.AllowedActors) > 0,
+			"only a GitHub source has an author to match; a command or http event carries no identity vincent can verify")
+	}
+}
+
+// githubEvents are the `action` values each GitHub source synthesizes.
+var githubEvents = map[string][]string{
+	SourceGitHubIssues: {"opened", "closed", "reopened", "labeled", "unlabeled", "assigned"},
+	SourceGitHubPRs:    {"opened", "ready_for_review", "review_requested", "closed", "merged"},
+}
+
+// trustedEvents are the events whose triggering change an outsider cannot
+// make on a public repository (decision 31F), each confirmed against
+// GitHub's repository role table: applying or removing a label and assigning
+// need triage, and merging needs write. Everything else is untrusted —
+// opening and reopening are the author's; so is closing, because an author
+// may close their own issue or pull request; marking a draft ready is the
+// author's; and a review request, although setting one by hand needs triage,
+// is also made automatically by CODEOWNERS on a pull request an outsider
+// opened, so its reviewer field is one an outsider can cause.
+var trustedEvents = map[string]map[string]bool{
+	SourceGitHubIssues: {"labeled": true, "unlabeled": true, "assigned": true},
+	SourceGitHubPRs:    {"merged": true},
+}
+
+// GitHubEvents returns the events a GitHub source type synthesizes.
+func GitHubEvents(sourceType string) []string { return slices.Clone(githubEvents[sourceType]) }
+
+// TrustedGitHubEvent reports whether an event of a GitHub source is trusted.
+func TrustedGitHubEvent(sourceType, action string) bool { return trustedEvents[sourceType][action] }
+
+// validateGitHubTrust refuses, at load, a GitHub trigger that can match an
+// untrusted event and names no allowed_actors (decision 31F). "Can match" is
+// read off `match.action`: absent, it matches every event the source has.
+func validateGitHubTrust(d *Definition, add addFunc, _ refuseFunc) {
+	if !d.IsGitHub() {
+		return
+	}
+	known := githubEvents[d.Source.Type]
+	actions := known
+	if want, ok := d.Match["action"]; ok {
+		actions = nil
+		vals := []any{want}
+		if l, isList := want.([]any); isList {
+			vals = l
+		}
+		for _, v := range vals {
+			a := scalarString(v)
+			if !slices.Contains(known, a) {
+				add("match.action", "%q is not an event %s synthesizes (%s)",
+					a, d.Source.Type, strings.Join(known, ", "))
+				continue
+			}
+			actions = append(actions, a)
+		}
+	}
+	if len(d.AllowedActors) > 0 {
+		return
+	}
+	for _, a := range actions {
+		if !trustedEvents[d.Source.Type][a] {
+			add("allowed_actors", "is required: this trigger can match %q, whose author an outsider "+
+				"controls on a public repository; list the authors to accept, or match only %s",
+				a, strings.Join(trustedList(d.Source.Type), ", "))
+			return
+		}
+	}
+}
+
+func trustedList(sourceType string) []string {
+	var out []string
+	for _, e := range githubEvents[sourceType] {
+		if trustedEvents[sourceType][e] {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func validateAction(d *Definition, add addFunc, refuse refuseFunc, checkTemplate func(path, text string)) {
+	a := d.Action
+	switch a.Type {
+	case "":
+		add("action.type", "is required")
+		return
+	case ActionCreateTask:
+		if strings.TrimSpace(a.Title) == "" {
+			add("action.title", "is required")
+		}
+		checkTemplate("action.workflow", a.Workflow)
+		checkTemplate("action.title", a.Title)
+		checkTemplate("action.description", a.Description)
+		checkTemplate("action.github_issue", a.GitHubIssue)
+		checkTemplate("action.github_pull", a.GitHubPull)
+		for k, v := range a.Fields {
+			checkTemplate("action.fields."+k, v)
+		}
+		// POST /v1/tasks refuses both, and a trigger that could only ever be
+		// refused is better caught at load than in the ledger.
+		if a.GitHubIssue != "" && a.GitHubPull != "" {
+			add("action.github_pull", "cannot be combined with github_issue")
+		}
+		const why = "only a follow_up, retry or cancel names a target"
+		refuse("action.target", a.Target != "", why)
+		refuse("action.branch", a.Branch != "", why)
+		refuse("action.prompt", a.Prompt != "", "a created task's work is its workflow and description")
+	case ActionFollowUp, ActionRetry, ActionCancel:
+		switch a.Target {
+		case "":
+			add("action.target", "is required: %q", TargetBranch)
+		case TargetBranch:
+		default:
+			add("action.target", "must be %q", TargetBranch)
+		}
+		if strings.TrimSpace(a.Branch) == "" {
+			add("action.branch", "is required: a template rendering the branch whose task this acts on")
+		}
+		checkTemplate("action.branch", a.Branch)
+		switch a.Type {
+		case ActionFollowUp:
+			if strings.TrimSpace(a.Prompt) == "" {
+				add("action.prompt", "is required: what the follow-up run is told to do")
+			}
+			checkTemplate("action.prompt", a.Prompt)
+		case ActionRetry:
+			checkTemplate("action.prompt", a.Prompt)
+		case ActionCancel:
+			refuse("action.prompt", a.Prompt != "", "a cancel runs nothing")
+			// Decision 31C: cancel has no paused form, so the propose default
+			// cannot be honoured; the author must write the unattended
+			// opt-in explicitly, which decision 7 makes the only way to get it.
+			if d.OnFire != OnFireCreate {
+				add("on_fire", "must be %q for a cancel action: there is no held cancel to propose", OnFireCreate)
+			}
+		}
+		const why = "only a create_task creates a task"
+		refuse("action.workflow", a.Workflow != "", why)
+		refuse("action.title", a.Title != "", why)
+		refuse("action.description", a.Description != "", why)
+		refuse("action.fields", len(a.Fields) > 0, why)
+		refuse("action.github_issue", a.GitHubIssue != "", why)
+		refuse("action.github_pull", a.GitHubPull != "", why)
+		refuse("permission", d.Permission != "", "the restricted clamp is set when a task is created")
+		refuse("limits.max_task_cost_usd", d.Limits.MaxTaskCostUSD != 0, "a task's cost cap is set when it is created")
+	default:
+		add("action.type", "must be one of %s", strings.Join(ActionTypes(), ", "))
+	}
 }
 
 // sortErrors orders errors by path so a map-driven check reports the same
@@ -318,10 +557,18 @@ func scalar(v any) bool {
 }
 
 // SourceTypes are the `source.type` values this build accepts.
-func SourceTypes() []string { return []string{SourceCommand} }
+func SourceTypes() []string {
+	return []string{SourceCommand, SourceGitHubIssues, SourceGitHubPRs, SourceHTTP}
+}
 
 // ActionTypes are the `action.type` values this build accepts.
-func ActionTypes() []string { return []string{ActionCreateTask} }
+func ActionTypes() []string {
+	return []string{ActionCreateTask, ActionFollowUp, ActionRetry, ActionCancel}
+}
+
+// SignatureSchemes are the `source.signature.scheme` values this build
+// accepts.
+func SignatureSchemes() []string { return []string{SignatureGitHubHMACSHA256} }
 
 // ErrNotFound reports an id the registry does not hold, or a file that is
 // not there.

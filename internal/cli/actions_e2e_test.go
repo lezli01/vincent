@@ -101,6 +101,27 @@ func TestHumanActionCommands(t *testing.T) {
 		if _, code := runVincent(t, dataDir, cfgDir, "task", "cancel", id); code != 0 {
 			t.Fatalf("cancel: code %d", code)
 		}
+
+		// `task follow-up --paused` (task 096 decision C) on the task just
+		// aborted: the follow-up is recorded, the task is held rather than
+		// queued, and `resume` is what queues the run.
+		out, code = runVincent(t, dataDir, cfgDir,
+			"task", "follow-up", id, "--run", "git --version", "--paused")
+		if code != 0 || !strings.Contains(out, "paused") {
+			t.Fatalf("task follow-up --paused: code %d, out %q; want 0 and paused", code, out)
+		}
+		if got := taskJSON(t, dataDir, cfgDir, id); got.State != "paused" {
+			t.Fatalf("state after a held follow-up = %q, want paused", got.State)
+		}
+		if out, code := runVincent(t, dataDir, cfgDir, "task", "resume", id); code != 0 {
+			t.Fatalf("resume the held follow-up: code %d, out %q", code, out)
+		}
+		if got := taskJSON(t, dataDir, cfgDir, id); got.State != "queued" {
+			t.Errorf("state after resume = %q, want queued behind the slot holder", got.State)
+		}
+		if _, code := runVincent(t, dataDir, cfgDir, "task", "cancel", id); code != 0 {
+			t.Fatalf("cancel the queued follow-up: code %d", code)
+		}
 	})
 
 	t.Run("pause and resume a queued task", func(t *testing.T) {
@@ -190,6 +211,21 @@ func TestHumanActionCommands(t *testing.T) {
 		if state := taskState(t, dataDir, cfgDir, id); state != "blocked" {
 			t.Errorf("the refused retry moved the task to %s; it must send no request", state)
 		}
+
+		// `--paused` holds the retry (task 096 decision C): the task waits in
+		// paused, and resume is what re-admits the step — which blocks again,
+		// since nothing about it changed.
+		out, code = runVincent(t, dataDir, cfgDir, "task", "retry", id, "--paused")
+		if code != 0 || !strings.Contains(out, "paused") {
+			t.Fatalf("task retry --paused: code %d, out %q; want 0 and paused", code, out)
+		}
+		if state := taskState(t, dataDir, cfgDir, id); state != "paused" {
+			t.Fatalf("state after a held retry = %s, want paused", state)
+		}
+		if out, code := runVincent(t, dataDir, cfgDir, "task", "resume", id); code != 0 {
+			t.Fatalf("resume the held retry: code %d, out %q", code, out)
+		}
+		waitForState(t, dataDir, cfgDir, id, "blocked")
 
 		out, code = runVincent(t, dataDir, cfgDir, "task", "retry", id, "--run", "sleep 30")
 		if code != 0 || !strings.Contains(out, "queued") {

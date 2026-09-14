@@ -74,6 +74,7 @@ type configResponse struct {
 	GitHub                 configGitHub       `json:"github"`
 	Update                 configUpdateStatus `json:"update"`
 	Notify                 configNotify       `json:"notify"`
+	Triggers               configTriggers     `json:"triggers"`
 	// Container is §16's container execution mode (task 061). Served like
 	// every other key: `image: ""` — the default — is what says the steps run
 	// on the host, and a client that could not see it could not tell a
@@ -218,6 +219,11 @@ type configUpdateStatus struct {
 	PollInterval string `json:"poll_interval"`
 }
 
+// configTriggers is the global switch for event triggers (§12.3, task 096).
+type configTriggers struct {
+	Enabled bool `json:"enabled"`
+}
+
 type configNotify struct {
 	On []string `json:"on"`
 	// Command is argv, served in full. It can carry a secret, and that is why
@@ -274,7 +280,8 @@ func configBody(cfg config.Config) configResponse {
 			Check:        cfg.Update.Check,
 			PollInterval: cfg.Update.PollInterval.String(),
 		},
-		Notify: configNotify{On: notifyStates(cfg.Notify.On), Command: stringList(cfg.Notify.Command)},
+		Notify:   configNotify{On: notifyStates(cfg.Notify.On), Command: stringList(cfg.Notify.Command)},
+		Triggers: configTriggers{Enabled: cfg.Triggers.Enabled},
 		Container: configContainer{
 			Image:            cfg.Container.Image,
 			Runtime:          cfg.Container.Runtime,
@@ -369,6 +376,7 @@ type configPatch struct {
 	GitHub                      *githubPatch       `json:"github"`
 	Update                      *updatePolicyPatch `json:"update"`
 	Notify                      *notifyPatch       `json:"notify"`
+	Triggers                    *triggersPatch     `json:"triggers"`
 	Container                   *containerPatch    `json:"container"`
 	TUI                         *tuiPatch          `json:"tui"`
 }
@@ -431,6 +439,10 @@ type updatePolicyPatch struct {
 type notifyPatch struct {
 	On      *[]string `json:"on"`
 	Command *[]string `json:"command"`
+}
+
+type triggersPatch struct {
+	Enabled *bool `json:"enabled"`
 }
 
 type containerPatch struct {
@@ -543,6 +555,9 @@ func (p configPatch) sets() []config.Set {
 		if v.Command != nil {
 			add("notify.command", config.RenderList(*v.Command))
 		}
+	}
+	if v := p.Triggers; v != nil {
+		addIfBool(add, "triggers.enabled", v.Enabled)
 	}
 	if v := p.Container; v != nil {
 		addIfString(add, "container.image", v.Image)

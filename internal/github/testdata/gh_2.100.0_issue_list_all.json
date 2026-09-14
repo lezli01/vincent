@@ -1,0 +1,77 @@
+[
+  {
+    "assignees": [],
+    "author": {
+      "id": "MDQ6VXNlcjY1Mzg5NjM=",
+      "is_bot": false,
+      "login": "lezli01",
+      "name": ""
+    },
+    "body": "## Problem",
+    "createdAt": "2026-09-13T15:42:09Z",
+    "labels": [
+      {
+        "id": "LA_kwDOTTMFic8AAAACq8hN5w",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      }
+    ],
+    "milestone": null,
+    "number": 365,
+    "state": "OPEN",
+    "title": "Finish event triggers: wire the daemon, add routes, CLI, TUI view and the remaining sources",
+    "updatedAt": "2026-09-13T15:42:09Z",
+    "url": "https://github.com/lezli01/vincent/issues/365"
+  },
+  {
+    "assignees": [],
+    "author": {
+      "id": "MDQ6VXNlcjY1Mzg5NjM=",
+      "is_bot": false,
+      "login": "lezli01",
+      "name": ""
+    },
+    "body": "## Problem",
+    "createdAt": "2026-09-11T07:14:39Z",
+    "labels": [
+      {
+        "id": "LA_kwDOTTMFic8AAAACq8hN5w",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      }
+    ],
+    "milestone": null,
+    "number": 362,
+    "state": "CLOSED",
+    "title": "Triggers view in the TUI: create, edit, enable and delete event triggers",
+    "updatedAt": "2026-09-11T10:48:27Z",
+    "url": "https://github.com/lezli01/vincent/issues/362"
+  },
+  {
+    "assignees": [],
+    "author": {
+      "id": "MDQ6VXNlcjY1Mzg5NjM=",
+      "is_bot": false,
+      "login": "lezli01",
+      "name": ""
+    },
+    "body": "### Problem",
+    "createdAt": "2026-09-11T07:26:32Z",
+    "labels": [
+      {
+        "id": "LA_kwDOTTMFic8AAAACq8hN5w",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      }
+    ],
+    "milestone": null,
+    "number": 363,
+    "state": "OPEN",
+    "title": "Add a vincent-triggers skill with create-trigger and update-triggers built-ins",
+    "updatedAt": "2026-09-11T07:26:32Z",
+    "url": "https://github.com/lezli01/vincent/issues/363"
+  }
+]

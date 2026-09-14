@@ -303,6 +303,10 @@ type Config struct {
 	// enters one of the listed states (§12.3, task 046). Its zero value is
 	// off, so a daemon nobody configured spawns nothing.
 	Notify Notify `yaml:"notify"`
+	// Triggers is the inward signal's global switch (§12.3, task 096). Its
+	// zero value is off, so a daemon nobody configured polls nothing and
+	// accepts no pushed event, however many trigger files are enabled.
+	Triggers Triggers `yaml:"triggers"`
 	// Update governs the release check (§12.3, task 055): whether the daemon
 	// asks GitHub for the latest stable release on a timer, and how often.
 	//
@@ -418,6 +422,21 @@ type Update struct {
 
 // Polls reports whether the release check should run at all.
 func (u Update) Polls() bool { return u.Check && u.PollInterval > 0 }
+
+// Triggers configures the daemon's inward signal (spec §12.3 — task 096): the
+// definitions under {config_dir}/triggers/ that start work from a system
+// rather than from a person.
+//
+// Enabled is the second of two off-by-default keys, beside each trigger's own
+// `enabled:` (task 096, Security). Unlike task 069's single gate, where the
+// keypress is the consent, a trigger has no keypress, so this key has to be
+// it. A plain bool: Load unmarshals into Default(), whose false is what an
+// absent key means, and there is nothing to validate. It is read per poll and
+// per pushed event, so a hot reload reaches the next one; turning it on arms
+// every enabled trigger with a fresh seed (decision 16).
+type Triggers struct {
+	Enabled bool `yaml:"enabled"`
+}
 
 // Notify configures the daemon's outward signal (spec §12.3 — task 046): a
 // command spawned when a task enters one of the listed states, with a JSON

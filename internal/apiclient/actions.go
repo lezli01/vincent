@@ -51,6 +51,10 @@ type Override struct {
 	// transcripts (task 001). Unlike the other two it does not touch the
 	// snapshot.
 	Branch string `json:"branch_override,omitempty"`
+	// Paused holds the retried task in `paused` instead of re-queuing it;
+	// `resume` admits it (§6, task 096 decision C). A blocked parent's
+	// cascade holds its lanes too, and from `awaiting_children` it is a 400.
+	Paused *bool `json:"paused,omitempty"`
 }
 
 // Cancel aborts the task, killing any live process (§6).
@@ -160,6 +164,9 @@ type FollowUpInput struct {
 	Agent    string `json:"agent,omitempty"`
 	Model    string `json:"model,omitempty"`
 	Effort   string `json:"effort,omitempty"`
+	// Paused holds the task in `paused` instead of re-queuing it; `resume`
+	// starts the run (§6, task 096 decision C).
+	Paused *bool `json:"paused,omitempty"`
 }
 
 // FollowUp runs one more piece of work in a finished task's existing worktree

@@ -23,20 +23,16 @@ const ghFields = "number,title,body,url,state,labels,author,assignees,milestone,
 // a single struct carrying both spellings would silently accept a half-parsed
 // answer from either.
 type ghIssue struct {
-	Number int    `json:"number"`
-	Title  string `json:"title"`
-	Body   string `json:"body"`
-	URL    string `json:"url"`
-	State  string `json:"state"`
-	Labels []struct {
-		Name string `json:"name"`
-	} `json:"labels"`
+	Number int         `json:"number"`
+	Title  string      `json:"title"`
+	Body   string      `json:"body"`
+	URL    string      `json:"url"`
+	State  string      `json:"state"`
+	Labels []wireLabel `json:"labels"`
 	Author struct {
 		Login string `json:"login"`
 	} `json:"author"`
-	Assignees []struct {
-		Login string `json:"login"`
-	} `json:"assignees"`
+	Assignees []wireAccount `json:"assignees"`
 	Milestone *struct {
 		Number int    `json:"number"`
 		Title  string `json:"title"`
@@ -58,15 +54,13 @@ func (g ghIssue) normalize(repo Repo, now time.Time) Issue {
 		UpdatedAt: g.UpdatedAt,
 		FetchedAt: now,
 	}
-	for _, l := range g.Labels {
-		if l.Name != "" {
-			issue.Labels = append(issue.Labels, l.Name)
-		}
-	}
-	// The first assignee only. §8.1.2 field values are single strings, and a
-	// joined list under a field named `assignee` would read as one login.
-	if len(g.Assignees) > 0 {
-		issue.Assignee = normalizeLogin(g.Assignees[0].Login)
+	issue.Labels = labelNames(g.Labels)
+	issue.Assignees = logins(g.Assignees)
+	// Assignee is the first assignee only. §8.1.2 field values are single
+	// strings, and a joined list under a field named `assignee` would read as
+	// one login.
+	if len(issue.Assignees) > 0 {
+		issue.Assignee = issue.Assignees[0]
 	}
 	if g.Milestone != nil {
 		issue.Milestone, issue.MilestoneNumber = g.Milestone.Title, g.Milestone.Number
@@ -85,16 +79,35 @@ func (c *Client) ghAuthenticated(ctx context.Context, path string) bool {
 }
 
 func (c *Client) ghList(ctx context.Context, cred credential, repo Repo, opts ListOptions) ([]Issue, error) {
-	out, err := c.runGH(ctx, cred.ghPath,
-		"issue", "list",
-		"--repo", repo.String(),
-		"--state", opts.state(),
-		"--limit", strconv.Itoa(opts.limit()),
-		"--json", ghFields)
+	out, err := c.runGH(ctx, cred.ghPath, ghListArgs("issue", repo, opts, ghFields)...)
 	if err != nil {
 		return nil, err
 	}
 	return parseGHList(out, repo, c.now())
+}
+
+// ghListArgs is the whole `gh issue list` / `gh pr list` argv, in one place so
+// a test can assert on it (ghCreateArgs's precedent). noun is "issue" or "pr".
+//
+// Neither subcommand has a since flag, so Since becomes a `--search`
+// qualifier — `updated:>=` with a UTC RFC 3339 instant, which GitHub's search
+// syntax accepts. `sort:updated-desc` rides with it because a search is
+// otherwise returned in creation order (observed against gh 2.100.0), and
+// with a Limit that would keep the newest rows instead of the recently
+// changed ones ListOptions.Since promises. `--state` still carries the state
+// rather than an `is:` qualifier in the query: gh honours the flag alongside
+// a search (observed: `--state all` returned open, closed and merged rows).
+func ghListArgs(noun string, repo Repo, opts ListOptions, fields string) []string {
+	args := []string{
+		noun, "list",
+		"--repo", repo.String(),
+		"--state", opts.state(),
+		"--limit", strconv.Itoa(opts.limit()),
+	}
+	if since := opts.since(); !since.IsZero() {
+		args = append(args, "--search", "updated:>="+since.Format(time.RFC3339)+" sort:updated-desc")
+	}
+	return append(args, "--json", fields)
 }
 
 // parseGHList is the `gh issue list --json` half of the leg, split from the
@@ -219,7 +232,11 @@ func (c *Client) ghVersion(ctx context.Context, path string) string {
 // --json` shape both legs could be normalized from, and splitting the rollup
 // into a second field list would reintroduce exactly the drift one list
 // exists to prevent.
-const ghPullFields = "number,title,body,url,state,isDraft,headRefName,headRefOid,headRepositoryOwner,headRepository,baseRefName,author,createdAt,updatedAt,mergedAt,statusCheckRollup"
+//
+// `labels` and `reviewRequests` are what a listing diff reads (task 096
+// decisions D and E), and they ride on the view as well for the same
+// one-list reason.
+const ghPullFields = "number,title,body,url,state,isDraft,headRefName,headRefOid,headRepositoryOwner,headRepository,baseRefName,author,createdAt,updatedAt,mergedAt,statusCheckRollup,labels,reviewRequests"
 
 // ghPull is `gh pr --json`'s shape. Its own type, for the reason ghIssue is:
 // `gh` and the REST API disagree about almost every name (`isDraft` vs
@@ -248,9 +265,18 @@ type ghPull struct {
 	Author struct {
 		Login string `json:"login"`
 	} `json:"author"`
-	CreatedAt time.Time  `json:"createdAt"`
-	UpdatedAt time.Time  `json:"updatedAt"`
-	MergedAt  *time.Time `json:"mergedAt"`
+	CreatedAt time.Time   `json:"createdAt"`
+	UpdatedAt time.Time   `json:"updatedAt"`
+	MergedAt  *time.Time  `json:"mergedAt"`
+	Labels    []wireLabel `json:"labels"`
+	// ReviewRequests is one entry per outstanding request, discriminated by
+	// `__typename`: an account is `{"__typename":"User","login":…}` (captured
+	// from gh 2.100.0), and a Team entry is skipped — see
+	// PullRequest.RequestedReviewers.
+	ReviewRequests []struct {
+		TypeName string `json:"__typename"`
+		Login    string `json:"login"`
+	} `json:"reviewRequests"`
 	// StatusCheckRollup is GitHub's own folding of check runs and legacy
 	// commit statuses into one array, discriminated by `__typename`. The two
 	// shapes share almost no field names, which is why both sets are declared
@@ -316,9 +342,18 @@ func (g ghPull) normalize(repo Repo, now time.Time) PullRequest {
 		HeadRepo:   joinRepo(g.HeadRepoOwner.Login, g.HeadRepo.Name),
 		BaseBranch: g.Base,
 		Author:     normalizeLogin(g.Author.Login),
+		Labels:     labelNames(g.Labels),
 		CreatedAt:  g.CreatedAt,
 		UpdatedAt:  g.UpdatedAt,
 		FetchedAt:  now,
+	}
+	for _, r := range g.ReviewRequests {
+		if strings.EqualFold(r.TypeName, "Team") {
+			continue
+		}
+		if login := normalizeLogin(r.Login); login != "" {
+			pull.RequestedReviewers = append(pull.RequestedReviewers, login)
+		}
 	}
 	// `gh` reports a third state, MERGED, that the REST API does not have.
 	// Folding it onto State+Merged is what makes the two legs agree: a merged
@@ -330,12 +365,7 @@ func (g ghPull) normalize(repo Repo, now time.Time) PullRequest {
 }
 
 func (c *Client) ghListPulls(ctx context.Context, cred credential, repo Repo, opts ListOptions) ([]PullRequest, error) {
-	out, err := c.runGH(ctx, cred.ghPath,
-		"pr", "list",
-		"--repo", repo.String(),
-		"--state", opts.state(),
-		"--limit", strconv.Itoa(opts.limit()),
-		"--json", ghPullFields)
+	out, err := c.runGH(ctx, cred.ghPath, ghListArgs("pr", repo, opts, ghPullFields)...)
 	if err != nil {
 		return nil, err
 	}

@@ -96,6 +96,31 @@ func (e *ParkedOverrideError) Error() string {
 			"retry without an override, or edit the blocked lane itself", e.TaskID)
 }
 
+// ParkedHoldError reports a held retry (`paused: true`) aimed at a parent
+// parked in `awaiting_children`. The API answers 400.
+//
+// The retry legal from that state writes nothing to the parent and re-admits
+// its blocked lanes (task 090), so no task goes through `queued` for a hold to
+// replace (task 096 decision C). It is a request the caller can correct — drop
+// `paused`, or retry the blocked lanes held one by one — not a state conflict.
+type ParkedHoldError struct {
+	TaskID int64
+}
+
+func (e *ParkedHoldError) Error() string {
+	return fmt.Sprintf(
+		"task %d is parked on a fan_out step: its retry re-admits the blocked lanes under it "+
+			"and never queues the task, so it cannot be held paused; retry without paused, "+
+			"or retry each blocked lane with paused", e.TaskID)
+}
+
+// AsParkedHold extracts a *ParkedHoldError from err, if that is what it is.
+func AsParkedHold(err error) (*ParkedHoldError, bool) {
+	var e *ParkedHoldError
+	ok := errors.As(err, &e)
+	return e, ok
+}
+
 // Cancel aborts a task and stops any process it is running (§6). The task
 // reaches `aborted` first, so a client that observes the state knows the
 // decision is final even while the process tree is still winding down.
@@ -187,12 +212,34 @@ func (r *Runner) Resume(ctx context.Context, id int64) (*store.Task, error) {
 // its own reason can have a blocked lane under it too — and the middle return
 // value is how many descendants this call re-admitted.
 func (r *Runner) Retry(ctx context.Context, id int64, ov store.Override) (*store.Task, int, error) {
+	return r.retryTask(ctx, id, ov, false)
+}
+
+// RetryHeld is Retry landing the task in `paused` instead of `queued` (task
+// 096 decision C). Everything else about the retry — the cursor stamp, the
+// override, the pending follow-up it keeps — is written exactly as Retry
+// writes it, and `resume` admits the task. The cascade holds too, so a held
+// retry admits nothing at all. From `awaiting_children`, where the cascade is
+// the whole retry and no task goes through `queued`, it is refused with a
+// *ParkedHoldError.
+func (r *Runner) RetryHeld(ctx context.Context, id int64, ov store.Override) (*store.Task, int, error) {
+	return r.retryTask(ctx, id, ov, true)
+}
+
+// retryTask is Retry and RetryHeld; held selects the §6 table the task moves
+// under.
+func (r *Runner) retryTask(ctx context.Context, id int64, ov store.Override, held bool) (*store.Task, int, error) {
 	task, err := r.deps.Store.GetTask(ctx, id)
 	if err != nil {
 		return nil, 0, err
 	}
 	if !taskstate.Can(task.State, taskstate.Retry) {
 		return nil, 0, &InvalidActionError{TaskID: id, Action: taskstate.Retry, State: task.State}
+	}
+	if held && !taskstate.CanHold(task.State, taskstate.Retry) {
+		// Legal, but with no held form: the one such state is
+		// `awaiting_children`, whose retry is a cascade (task 090).
+		return nil, 0, &ParkedHoldError{TaskID: id}
 	}
 	if task.State == store.TaskAwaitingChildren {
 		if !ov.Empty() {
@@ -210,7 +257,7 @@ func (r *Runner) Retry(ctx context.Context, id int64, ov store.Override) (*store
 		//
 		// A cascade error is returned rather than logged, because nothing
 		// else happened on this path — reporting success would be a lie.
-		n, err := r.cascadeRetry(ctx, id)
+		n, err := r.cascadeRetry(ctx, id, false)
 		if err != nil {
 			return nil, n, err
 		}
@@ -236,7 +283,11 @@ func (r *Runner) Retry(ctx context.Context, id int64, ov store.Override) (*store
 		ch.Snapshot = &snapshot
 		ch.PendingOverride = &ov
 	}
-	updated, err := r.transitionFrom(ctx, task, taskstate.Retry, ch)
+	transition := r.transitionFrom
+	if held {
+		transition = r.transitionHeldFrom
+	}
+	updated, err := transition(ctx, task, taskstate.Retry, ch)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -249,7 +300,11 @@ func (r *Runner) Retry(ctx context.Context, id int64, ov store.Override) (*store
 	// The error is logged, not returned: the parent's own retry has already
 	// committed, and reporting it as a failure would tell the caller the
 	// opposite of what happened.
-	n, err := r.cascadeRetry(ctx, id)
+	//
+	// A held retry holds its lanes too. `paused: true` is a promise that the
+	// call starts nothing, and a parent held while the lanes under it were
+	// re-admitted would break it for every lane.
+	n, err := r.cascadeRetry(ctx, id, held)
 	if err != nil {
 		r.deps.Logger.Error("retry: cascade to lanes", "task", id, "error", err)
 	}
@@ -300,6 +355,24 @@ func (r *Runner) Repair(ctx context.Context, id int64, req store.RepairRequest) 
 // moving the cursor would hand every step of the finished run a fresh budget
 // nobody asked for (§7.2).
 func (r *Runner) FollowUp(ctx context.Context, id int64, req store.FollowUpRequest) (*store.Task, error) {
+	return r.followUpTask(ctx, id, req, false)
+}
+
+// FollowUpHeld is FollowUp landing the task in `paused` instead of `queued`
+// (task 096 decision C), with the request — origin, round and cursor —
+// persisted exactly as FollowUp persists it. `paused` is not settled, so
+// TransitionTask keeps the request, `resume` re-queues it, and the admission
+// after that runs and ends it as any other follow-up: Complete for a done
+// origin, Restore for an aborted one.
+func (r *Runner) FollowUpHeld(ctx context.Context, id int64, req store.FollowUpRequest) (*store.Task, error) {
+	return r.followUpTask(ctx, id, req, true)
+}
+
+// followUpTask is FollowUp and FollowUpHeld; held selects the §6 table the
+// task moves under.
+func (r *Runner) followUpTask(
+	ctx context.Context, id int64, req store.FollowUpRequest, held bool,
+) (*store.Task, error) {
 	if req.Empty() {
 		return nil, &FollowUpRequestError{TaskID: id, Message: "a follow-up needs something to run"}
 	}
@@ -307,7 +380,13 @@ func (r *Runner) FollowUp(ctx context.Context, id int64, req store.FollowUpReque
 	if err != nil {
 		return nil, err
 	}
-	if !taskstate.Can(task.State, taskstate.FollowUp) {
+	can, transition := taskstate.Can, r.transitionFrom
+	if held {
+		// The held table has a row for every state follow-up is legal from,
+		// so this refuses exactly what the plain check would: a 409.
+		can, transition = taskstate.CanHold, r.transitionHeldFrom
+	}
+	if !can(task.State, taskstate.FollowUp) {
 		return nil, &InvalidActionError{TaskID: id, Action: taskstate.FollowUp, State: task.State}
 	}
 	// The origin rides the request because the transition about to happen
@@ -319,7 +398,7 @@ func (r *Runner) FollowUp(ctx context.Context, id int64, req store.FollowUpReque
 		return nil, err
 	}
 	req.Round, req.Cursor, req.Abandoned = round, 0, false
-	return r.transitionFrom(ctx, task, taskstate.FollowUp,
+	return transition(ctx, task, taskstate.FollowUp,
 		store.TaskChange{PendingFollowUp: &req})
 }
 
@@ -580,25 +659,50 @@ func (r *Runner) humanAction(
 func (r *Runner) transitionFrom(
 	ctx context.Context, task *store.Task, action taskstate.Action, ch store.TaskChange,
 ) (*store.Task, error) {
-	updated, err := r.applyAction(ctx, task, action, ch)
+	return r.transitionUnder(ctx, task, action, taskstate.Next, ch)
+}
+
+// transitionHeldFrom is transitionFrom for an action the caller asked to hold
+// in `paused` rather than re-queue (task 096 decision C). It differs only in
+// which §6 table it consults — for the swap and for the one retry after a
+// lost race alike — so a held action that loses its race to a state with no
+// held form answers the conflict rather than silently re-queuing.
+func (r *Runner) transitionHeldFrom(
+	ctx context.Context, task *store.Task, action taskstate.Action, ch store.TaskChange,
+) (*store.Task, error) {
+	return r.transitionUnder(ctx, task, action, taskstate.NextHeld, ch)
+}
+
+// fsmRule is the §6 lookup an action is applied under: taskstate.Next, or
+// taskstate.NextHeld for an action asked to land in `paused`.
+type fsmRule func(taskstate.State, taskstate.Action) (taskstate.Transition, bool)
+
+// transitionUnder is transitionFrom's body, parameterized by the table.
+func (r *Runner) transitionUnder(
+	ctx context.Context, task *store.Task, action taskstate.Action, rule fsmRule, ch store.TaskChange,
+) (*store.Task, error) {
+	updated, err := r.applyAction(ctx, task, action, rule, ch)
 	conflict, lost := store.AsStateConflict(err)
-	if !lost || !taskstate.Can(conflict.Got, action) {
+	if !lost {
+		return updated, err
+	}
+	if _, ok := rule(conflict.Got, action); !ok {
 		return updated, err
 	}
 	fresh, err := r.deps.Store.GetTask(ctx, task.ID)
 	if err != nil {
 		return nil, err
 	}
-	return r.applyAction(ctx, fresh, action, ch)
+	return r.applyAction(ctx, fresh, action, rule, ch)
 }
 
 // applyAction is one attempt at an action, from the state the task it is
 // given carries. Every human action but `pause` clears a pending pause: each
 // of them is a human saying "go" (§6).
 func (r *Runner) applyAction(
-	ctx context.Context, task *store.Task, action taskstate.Action, ch store.TaskChange,
+	ctx context.Context, task *store.Task, action taskstate.Action, rule fsmRule, ch store.TaskChange,
 ) (*store.Task, error) {
-	tr, ok := taskstate.Next(task.State, action)
+	tr, ok := rule(task.State, action)
 	if !ok {
 		return nil, &InvalidActionError{TaskID: task.ID, Action: action, State: task.State}
 	}

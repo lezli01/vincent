@@ -43,6 +43,23 @@ func TestTriggerHelperProcess(t *testing.T) {
 		for _, l := range args[1:] {
 			fmt.Println(l)
 		}
+	case "file":
+		// Prints the file named by the next argument, so a test changes what a
+		// trigger's source returns between polls by rewriting it. Every run
+		// first appends the cursor it was handed to that path plus ".polls",
+		// one line per run, which is how a test counts polls and reads back
+		// the watermark. A missing file is a failing poll (exit 3).
+		path := args[1]
+		if f, err := os.OpenFile(path+".polls", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+			_, _ = fmt.Fprintln(f, "cursor="+os.Getenv(CursorEnv))
+			_ = f.Close()
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "helper: no output file:", err)
+			os.Exit(3)
+		}
+		_, _ = os.Stdout.Write(b)
 	case "fail":
 		fmt.Fprintln(os.Stderr, "helper: deliberate failure")
 		os.Exit(3)

@@ -7,19 +7,20 @@ import "github.com/lezli01/vincent/internal/workflow"
 // GET /v1/triggers/schema so the TUI form renders from it rather than
 // re-deriving the validator, and walked against the validator by
 // TestTriggerSchemaMatchesValidation in both directions. The source and
-// action types 096.3–096.5 add reach the form as new variants here, with no
+// action types 096.3–096.5 added reach the form as variants here, with no
 // client change.
 //
 // Scalar controls reuse workflow's vocabulary (ControlString, ControlEnum,
 // …) so one form renderer draws both documents. The ones below are the
 // nested bodies and pickers a trigger has and a workflow does not.
 const (
-	// ControlSource, ControlAction and ControlLimits are descents: a form
-	// opens a sub-form on them rather than typing into them. Source and
-	// action descend into the variant their `type` picks.
-	ControlSource = "source"
-	ControlAction = "action"
-	ControlLimits = "limits"
+	// ControlSource, ControlAction, ControlLimits and ControlSignature are
+	// descents: a form opens a sub-form on them rather than typing into them.
+	// Source and action descend into the variant their `type` picks.
+	ControlSource    = "source"
+	ControlAction    = "action"
+	ControlLimits    = "limits"
+	ControlSignature = "signature"
 	// ControlMatch is `match:`, a descent into a free map of dotted event
 	// path → expected value (a scalar, or a flow list meaning any of).
 	ControlMatch = "match"
@@ -59,14 +60,19 @@ type SchemaVariant struct {
 	Type   string        `json:"type"`
 	Fields []SchemaField `json:"fields"`
 	Help   string        `json:"help,omitempty"`
+	// Events are the `action` values a GitHub source synthesizes, and Trusted
+	// the subset a trigger may match without allowed_actors (decision 31F).
+	Events  []string `json:"events,omitempty"`
+	Trusted []string `json:"trusted,omitempty"`
 }
 
 // Schema is the whole descriptor GET /v1/triggers/schema serves.
 type Schema struct {
-	TopLevel []SchemaField   `json:"top_level"`
-	Sources  []SchemaVariant `json:"sources"`
-	Actions  []SchemaVariant `json:"actions"`
-	Limits   []SchemaField   `json:"limits"`
+	TopLevel  []SchemaField   `json:"top_level"`
+	Sources   []SchemaVariant `json:"sources"`
+	Actions   []SchemaVariant `json:"actions"`
+	Limits    []SchemaField   `json:"limits"`
+	Signature []SchemaField   `json:"signature"`
 }
 
 // Warnings for the three dangerous values (decision 19). The enable warning
@@ -84,6 +90,11 @@ const (
 // SchemaDescriptor returns the served descriptor. It is built rather than
 // stored so enum members come from the constants the validator checks.
 func SchemaDescriptor() Schema {
+	sourceType := SchemaField{Name: "type", Control: workflow.ControlEnum, Values: SourceTypes(), Required: true}
+	project := SchemaField{Name: "project", Control: ControlProject, Required: true, Help: "the project tasks are created in, or whose branches a reaction acts on"}
+	actionType := SchemaField{Name: "type", Control: workflow.ControlEnum, Values: ActionTypes(), Required: true}
+	target := SchemaField{Name: "target", Control: workflow.ControlEnum, Values: []string{TargetBranch}, Required: true, Help: "the task whose branch_name the event names"}
+	branch := SchemaField{Name: "branch", Control: workflow.ControlTemplate, Required: true, Help: "template over .Event rendering the branch"}
 	return Schema{
 		TopLevel: []SchemaField{
 			{Name: "id", Control: workflow.ControlString, Required: true, Help: "the trigger's name; the file is {id}.yaml"},
@@ -95,46 +106,95 @@ func SchemaDescriptor() Schema {
 			{Name: "source", Control: ControlSource, Required: true, Values: SourceTypes(), Help: "where events come from"},
 			{Name: "match", Control: ControlMatch, Help: "prefilter: event path → value it must have"},
 			{Name: "if", Control: workflow.ControlTemplate, Help: "guard over .Event: render true to act (§7.7)"},
+			{Name: "allowed_actors", Control: workflow.ControlList, Help: "GitHub sources: the issue or pull request authors to accept; required to match an untrusted event"},
 			{Name: "action", Control: ControlAction, Required: true, Values: ActionTypes(), Help: "what an event that passes does"},
 			{
 				Name: "on_fire", Control: workflow.ControlEnum, Values: []string{OnFirePropose, OnFireCreate},
-				Default: OnFirePropose, Help: "propose creates the task paused for you to admit; create starts it",
+				Default: OnFirePropose, Help: "propose creates or re-runs the task paused for you to admit; create starts it",
 				Dangerous: []DangerousValue{{Value: OnFireCreate, Warning: warnCreate}},
 			},
 			{Name: "dedupe_key", Control: workflow.ControlTemplate, Default: "{{ .Event.id }}", Help: "an event whose key already fired is skipped"},
 			{Name: "limits", Control: ControlLimits, Help: "per-trigger bounds"},
 			{
 				Name: "permission", Control: workflow.ControlEnum, Values: []string{PermissionRestricted, PermissionWorkflow},
-				Default: PermissionRestricted, Help: "restricted clamps every agent step; workflow runs it as written",
+				Default: PermissionRestricted, Help: "create_task only: restricted clamps every agent step; workflow runs it as written",
 				Dangerous: []DangerousValue{{Value: PermissionWorkflow, Warning: warnWorkflow}},
 			},
 		},
-		Sources: []SchemaVariant{{
-			Type: SourceCommand,
-			Help: "run an argv on an interval and read NDJSON events from its stdout",
-			Fields: []SchemaField{
-				{Name: "type", Control: workflow.ControlEnum, Values: SourceTypes(), Required: true},
-				{Name: "project", Control: ControlProject, Required: true, Help: "the project tasks are created in"},
-				{Name: "poll_interval", Control: workflow.ControlDuration, Required: true, Help: "at least " + MinPollInterval.String()},
-				{Name: "command", Control: workflow.ControlList, Required: true, Help: "argv, run directly — never through a shell"},
+		Sources: []SchemaVariant{
+			{
+				Type: SourceCommand,
+				Help: "run an argv on an interval and read NDJSON events from its stdout",
+				Fields: []SchemaField{
+					sourceType, project,
+					{Name: "poll_interval", Control: workflow.ControlDuration, Required: true, Help: "at least " + MinPollInterval.String()},
+					{Name: "command", Control: workflow.ControlList, Required: true, Help: "argv, run directly — never through a shell"},
+				},
 			},
-		}},
-		Actions: []SchemaVariant{{
-			Type: ActionCreateTask,
-			Help: "create a task, as POST /v1/tasks would for a person",
-			Fields: []SchemaField{
-				{Name: "type", Control: workflow.ControlEnum, Values: ActionTypes(), Required: true},
-				{Name: "workflow", Control: workflow.ControlWorkflow, Help: "defaults to the project's default workflow"},
-				{Name: "title", Control: workflow.ControlTemplate, Required: true, Help: "template over .Event"},
-				{Name: "description", Control: workflow.ControlText, Help: "template over .Event"},
-				{Name: "fields", Control: workflow.ControlMap, Help: "workflow field → template over .Event"},
-				{Name: "github_issue", Control: workflow.ControlTemplate, Help: "renders to an issue number, or nothing"},
-				{Name: "github_pull", Control: workflow.ControlTemplate, Help: "renders to a pull request number, or nothing"},
+			{
+				Type:   SourceGitHubIssues,
+				Help:   "diff the project's GitHub issues on the github.poll_interval tick; no actor, only the author",
+				Fields: []SchemaField{sourceType, project},
+				Events: GitHubEvents(SourceGitHubIssues), Trusted: trustedList(SourceGitHubIssues),
 			},
-		}},
+			{
+				Type:   SourceGitHubPRs,
+				Help:   "diff the project's GitHub pull requests on the github.poll_interval tick; no actor, only the author",
+				Fields: []SchemaField{sourceType, project},
+				Events: GitHubEvents(SourceGitHubPRs), Trusted: trustedList(SourceGitHubPRs),
+			},
+			{
+				Type: SourceHTTP,
+				Help: "accept a signed event on POST /v1/triggers/{id}/events; the caller also needs the daemon's bearer token",
+				Fields: []SchemaField{
+					sourceType, project,
+					{Name: "signature", Control: ControlSignature, Required: true, Help: "how a pushed event proves its sender"},
+				},
+			},
+		},
+		Actions: []SchemaVariant{
+			{
+				Type: ActionCreateTask,
+				Help: "create a task, as POST /v1/tasks would for a person",
+				Fields: []SchemaField{
+					actionType,
+					{Name: "workflow", Control: workflow.ControlWorkflow, Help: "defaults to the project's default workflow"},
+					{Name: "title", Control: workflow.ControlTemplate, Required: true, Help: "template over .Event"},
+					{Name: "description", Control: workflow.ControlText, Help: "template over .Event"},
+					{Name: "fields", Control: workflow.ControlMap, Help: "workflow field → template over .Event"},
+					{Name: "github_issue", Control: workflow.ControlTemplate, Help: "renders to an issue number, or nothing"},
+					{Name: "github_pull", Control: workflow.ControlTemplate, Help: "renders to a pull request number, or nothing"},
+				},
+			},
+			{
+				Type: ActionFollowUp,
+				Help: "run follow-up work on the finished task whose branch the event names",
+				Fields: []SchemaField{
+					actionType, target, branch,
+					{Name: "prompt", Control: workflow.ControlText, Required: true, Help: "template over .Event: what the follow-up is told"},
+				},
+			},
+			{
+				Type: ActionRetry,
+				Help: "retry the blocked task whose branch the event names",
+				Fields: []SchemaField{
+					actionType, target, branch,
+					{Name: "prompt", Control: workflow.ControlText, Help: "template over .Event: overrides the failed step's prompt"},
+				},
+			},
+			{
+				Type:   ActionCancel,
+				Help:   "cancel the task whose branch the event names; requires on_fire: create",
+				Fields: []SchemaField{actionType, target, branch},
+			},
+		},
 		Limits: []SchemaField{
 			{Name: "max_per_hour", Control: workflow.ControlInt, Help: "fires in a trailing hour; 0 is no cap"},
-			{Name: "max_task_cost_usd", Control: ControlNumber, Help: "each created task's cost cap; 0 sends none"},
+			{Name: "max_task_cost_usd", Control: ControlNumber, Help: "create_task only: each created task's cost cap; 0 sends none"},
+		},
+		Signature: []SchemaField{
+			{Name: "scheme", Control: workflow.ControlEnum, Values: SignatureSchemes(), Required: true, Help: "github_hmac_sha256 is X-Hub-Signature-256"},
+			{Name: "secret_env", Control: workflow.ControlString, Required: true, Help: "the daemon environment variable holding the secret; never the secret itself"},
 		},
 	}
 }
