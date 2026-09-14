@@ -10,14 +10,20 @@ import "strconv"
 // reader watching a running task never has the picture move under them
 // (task 017 decisions 3 and 5).
 //
-// Meaning is carried by words and glyphs, never by color (task 017 decision
-// 6). A false `if:` guard (§7.7), the human `skip` action (§6) and a node the
-// task never reached are three different things, and they read as three
-// different things with every escape sequence stripped:
+// Meaning is carried by words and glyphs first, then by color (task 017
+// decision 6, task 097). A false `if:` guard (§7.7), the human `skip` action
+// (§6) and a node the task never reached are three different things, and they
+// read as three different things with every escape sequence stripped:
 //
 //	skipped if   — the guard was false
 //	skipped      — a human skipped it
 //	(nothing)    — never reached
+//
+// Color only restates what the words already say: a node takes the style of
+// its newest attempt, and an edge the run took (taken.go) takes a node's. The
+// palette is the host's (Theme.NodeState, Theme.LaneState); this package never
+// picks a color, and a rendering with every style stripped is byte-identical
+// to the uncolored rendering of the same overlay.
 
 // RunState is what one node's step did in this task. The zero value is "never
 // reached", which is why the overlay's maps hold only the nodes that ran.
@@ -60,8 +66,14 @@ type Overlay struct {
 	// a lane id alone is unique only inside its own fan_out.
 	Lanes map[string]RunState
 	// Off is the attempts no node answers for, drawn under END by
-	// AttachOffGraph (decision 3).
+	// AttachOffGraph (decision 3). Their run state is not here but in Nodes,
+	// under OffNodeID: Off is compared to decide whether to re-lay-out, and a
+	// state change must never do that (task 097 decision 3).
 	Off []OffGraphRun
+	// Done is whether the task is `done`, which is the only thing that says
+	// END was reached: END writes no step_run of its own (task 097
+	// decision 4). It lights the edges into END and never paints END itself.
+	Done bool
 }
 
 // Empty reports an overlay with nothing to say — a task that has not run a

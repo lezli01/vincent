@@ -13,11 +13,13 @@ import (
 // scene plus visual state (decision 9): it decides nothing about topology,
 // and running it twice on the same inputs gives the same picture.
 //
-// Meaning is carried by characters, never by color (decision 6). Box shapes
-// tell node from frame, frame weights tell a `parallel` group from a `fan_out`
-// from a `loop`, edge labels spell `true` and `false`, and the selected node
-// is drawn with a heavy border. Styles are applied afterwards over spans that
-// already read correctly with every style stripped.
+// Meaning is carried by characters first, then by color (decision 6, task
+// 097). Box shapes tell node from frame, frame weights tell a `parallel` group
+// from a `fan_out` from a `loop`, edge labels spell `true` and `false`, and
+// the selected node is drawn with a heavy border. Styles are applied
+// afterwards over spans that already read correctly with every style stripped
+// — including a run state's tint, which restates words the node already
+// prints and never changes a character.
 
 // glyphSet is every structural character in one place, so a future
 // terminal-compatibility mode can swap an ASCII palette in without touching
@@ -92,6 +94,15 @@ type Theme struct {
 	Frame     lipgloss.Style
 	Edge      lipgloss.Style
 	EdgeLabel lipgloss.Style
+
+	// NodeState styles a node the overlay says something about, and every edge
+	// the run took (task 097). LaneState styles a fan_out lane's caption from
+	// its child task. They are lookups rather than a palette because color is
+	// the host's choice and topology is this package's: a nil lookup, or one
+	// answering false, leaves the cell its role's style — which is what the
+	// definition viewer, with no run to show, gets.
+	NodeState func(RunState) (lipgloss.Style, bool)
+	LaneState func(RunState) (lipgloss.Style, bool)
 }
 
 // ViewState is what the viewer knows that the diagram does not: which node is
@@ -106,6 +117,13 @@ type ViewState struct {
 // Render returns the scene as one string per row, unwrapped and uncropped —
 // cropping is the viewport's job (decision 8).
 func Render(d Diagram, s Scene, st ViewState, th Theme) []string {
+	return paint(d, s, st, th).lines(th)
+}
+
+// paint lays every glyph, role and tint onto the canvas. It is Render without
+// the final styling pass, so a test can read what each cell *is* without
+// depending on a terminal's color profile.
+func paint(d Diagram, s Scene, st ViewState, th Theme) *canvas {
 	c := newCanvas(s.Width, s.Height)
 	g := unicodeGlyphs
 
@@ -115,10 +133,14 @@ func Render(d Diagram, s Scene, st ViewState, th Theme) []string {
 	}
 	for _, grp := range s.Groups {
 		c.frame(grp, g)
-		c.captions(byGroup[grp.ID], s, st.Run)
+		c.captions(byGroup[grp.ID], s, st.Run, th)
 	}
-	for _, e := range s.Edges {
-		c.edge(e, g)
+	for i, run := range takenEdges(d, s, st.Run) {
+		pen := 0
+		if run.stated {
+			pen = c.tint(run.state, th.NodeState, false)
+		}
+		c.edge(s.Edges[i], g, run.taken, pen)
 	}
 	c.paintWires(g)
 	byID := map[string]Node{}
@@ -126,21 +148,45 @@ func Render(d Diagram, s Scene, st ViewState, th Theme) []string {
 		byID[n.ID] = n
 	}
 	for _, pn := range s.Nodes {
-		c.node(pn, byID[pn.ID], pn.ID == st.Selected, st.Run.Nodes[pn.ID], g)
+		rs, reached := st.Run.Nodes[pn.ID]
+		pen := 0
+		if reached {
+			pen = c.tint(rs, th.NodeState, false)
+		}
+		c.node(pn, byID[pn.ID], pn.ID == st.Selected, rs, pen, g)
 	}
 	c.paintLabels()
-	return c.lines(th)
+	return c
 }
 
 type canvas struct {
 	w, h   int
 	runes  [][]rune
 	styles [][]cellStyle
+	// pens is each cell's run-state tint, an index into tints plus one; 0 is
+	// no tint, and the cell takes its role's style. It is recorded beside the
+	// role rather than replacing it, so a cell still says what it is.
+	pens  [][]int
+	tints []tint
+	// tintIDs dedupes tints, so two cells in the same state share one pen and
+	// lines() can run them together.
+	tintIDs map[tintKey]int
+	// pen is what put records into pens, set around each drawing call that
+	// has a state to show.
+	pen int
 	// wires accumulates every edge's directions per cell before any glyph is
 	// chosen. Two connectors sharing a cell then resolve to a tee or a
 	// crossing instead of one silently overwriting the other.
 	wires  map[Point]dirSet
 	arrows map[Point]string
+	// wirePens and arrowPens are the tints of the taken edges through and
+	// into a cell. Only a taken edge writes one, so a taken edge beats an
+	// untaken one sharing its cell, and of two taken edges the later in
+	// Scene.Edges wins. An arrowhead's is kept apart because it belongs to the
+	// edges that end there, not to a wire that merely crosses (task 097
+	// decision 7).
+	wirePens  map[Point]int
+	arrowPens map[Point]int
 	// reserved are the cells a lane caption claimed. The layout keeps a row
 	// above a fan_out's columns for exactly this text, and the header's
 	// connector crosses it on its way down — so the caption wins there, and
@@ -158,21 +204,56 @@ type pendingLabel struct {
 	text string
 }
 
+// tint is one run state's style, as the host's lookup answered it.
+type tint struct {
+	key   tintKey
+	style lipgloss.Style
+}
+
+// tintKey is what a tint was asked for: a node's state or a lane's, which the
+// host may color differently.
+type tintKey struct {
+	rs   RunState
+	lane bool
+}
+
 func newCanvas(w, h int) *canvas {
 	c := &canvas{
 		w: max(w, 0), h: max(h, 0),
 		wires: map[Point]dirSet{}, arrows: map[Point]string{}, reserved: map[Point]bool{},
+		wirePens: map[Point]int{}, arrowPens: map[Point]int{}, tintIDs: map[tintKey]int{},
 	}
 	c.runes = make([][]rune, c.h)
 	c.styles = make([][]cellStyle, c.h)
+	c.pens = make([][]int, c.h)
 	for y := range c.runes {
 		c.runes[y] = make([]rune, c.w)
 		c.styles[y] = make([]cellStyle, c.w)
+		c.pens[y] = make([]int, c.w)
 		for x := range c.runes[y] {
 			c.runes[y][x] = ' '
 		}
 	}
 	return c
+}
+
+// tint returns the pen for a run state, or 0 when the host has no style for
+// it — a nil lookup, or one answering false.
+func (c *canvas) tint(rs RunState, lookup func(RunState) (lipgloss.Style, bool), lane bool) int {
+	if lookup == nil {
+		return 0
+	}
+	key := tintKey{rs: rs, lane: lane}
+	if id, ok := c.tintIDs[key]; ok {
+		return id
+	}
+	style, ok := lookup(rs)
+	if !ok {
+		return 0
+	}
+	c.tints = append(c.tints, tint{key: key, style: style})
+	c.tintIDs[key] = len(c.tints)
+	return len(c.tints)
 }
 
 // continuation marks the second column of a double-width character. The grid
@@ -196,6 +277,7 @@ func (c *canvas) put(x, y int, r rune, style cellStyle) {
 	}
 	c.runes[y][x] = r
 	c.styles[y][x] = style
+	c.pens[y][x] = c.pen
 }
 
 // text writes a string cell by cell, advancing by display width rather than
@@ -266,7 +348,7 @@ func (c *canvas) frame(g PlacedGroup, gl glyphSet) {
 // captions names a fan_out's lanes above their columns. A lane is a thing the
 // workflow language names and may guard — a child task of its own — so its id
 // and its `if` belong on screen rather than only in the inspector.
-func (c *canvas) captions(g Group, s Scene, run Overlay) {
+func (c *canvas) captions(g Group, s Scene, run Overlay, th Theme) {
 	if g.Kind != GroupFanOut {
 		return
 	}
@@ -329,12 +411,17 @@ func (c *canvas) captions(g Group, s Scene, run Overlay) {
 		}
 		// A lane's run state lands here rather than on its inline steps: they
 		// run in a child task, so the parent holds no step_run for them
-		// (task 051 decision 1).
+		// (task 051 decision 1). Its color is the child *task's*, the board's
+		// palette, because a lane is a task (task 097 decision 6).
+		pen := 0
 		if rs, ok := run.Lanes[col.Key]; ok {
 			text = laneCaption(text, rs)
+			pen = c.tint(rs, th.LaneState, true)
 		}
 		caption := truncate(text, spot.limit)
+		c.pen = pen
 		c.text(spot.x, spot.y, caption, styleFrame)
+		c.pen = 0
 		for i := range ansi.StringWidth(caption) {
 			c.reserved[Point{spot.x + i, spot.y}] = true
 		}
@@ -378,16 +465,24 @@ func placedGroup(s Scene, id string) (PlacedGroup, bool) {
 	return PlacedGroup{}, false
 }
 
-func (c *canvas) edge(e RoutedEdge, gl glyphSet) {
+func (c *canvas) edge(e RoutedEdge, gl glyphSet, taken bool, pen int) {
 	cells := polyline(e.Points)
 	for i := 1; i < len(cells); i++ {
 		a, b := cells[i-1], cells[i]
 		c.wires[a] |= toward(a, b)
 		c.wires[b] |= toward(b, a)
 	}
+	if taken {
+		for _, p := range cells {
+			c.wirePens[p] = pen
+		}
+	}
 	if len(cells) >= 2 {
 		last, prev := cells[len(cells)-1], cells[len(cells)-2]
 		c.arrows[last] = arrowGlyph(prev, last, gl)
+		if taken {
+			c.arrowPens[last] = pen
+		}
 	}
 	if e.Label != "" {
 		at := cells[0]
@@ -486,11 +581,14 @@ func (c *canvas) paintWires(gl glyphSet) {
 		if c.reserved[p] {
 			continue
 		}
+		c.pen = c.wirePens[p]
 		if arrow, isHead := c.arrows[p]; isHead && arrow != "" {
 			glyph = arrow
+			c.pen = c.arrowPens[p]
 		}
 		c.set(p.X, p.Y, glyph, styleEdge)
 	}
+	c.pen = 0
 }
 
 // paintLabels writes each branch's `true` or `false` near its bend, at the
@@ -533,15 +631,24 @@ func (c *canvas) free(x, y, width int) bool {
 	return true
 }
 
-func (c *canvas) node(p PlacedNode, n Node, selected bool, rs RunState, gl glyphSet) {
+// node draws one box. pen is its run state's tint, which covers the border, the
+// label row and the kind row alike (task 097 decision 1).
+func (c *canvas) node(p PlacedNode, n Node, selected bool, rs RunState, pen int, gl glyphSet) {
 	tl, tr, bl, br := gl.nodeTopLeft, gl.nodeTopRight, gl.nodeBottomLeft, gl.nodeBottomRight
 	h, v := gl.nodeH, gl.nodeV
 	style := styleNode
 	if selected {
 		tl, tr, bl, br = gl.selTopLeft, gl.selTopRight, gl.selBottomLeft, gl.selBottomRight
 		h, v = gl.selH, gl.selV
-		style = styleSelected
+		// A node the run colored says it is selected by its heavy border
+		// alone: the Selected role's color would paint over the state the
+		// node is there to show. An uncolored node keeps it.
+		if pen == 0 {
+			style = styleSelected
+		}
 	}
+	c.pen = pen
+	defer func() { c.pen = 0 }()
 	right, bottom := p.X+p.W-1, p.Y+p.H-1
 	for x := p.X; x <= right; x++ {
 		c.set(x, p.Y, h, style)
@@ -672,13 +779,15 @@ func (c *canvas) lines(th Theme) []string {
 		var b strings.Builder
 		x := 0
 		for x < c.w {
-			style := c.styles[y][x]
+			style, pen := c.styles[y][x], c.pens[y][x]
 			start := x
-			for x < c.w && c.styles[y][x] == style {
+			for x < c.w && c.styles[y][x] == style && c.pens[y][x] == pen {
 				x++
 			}
 			run := cells(c.runes[y][start:x])
-			if s, ok := styles[style]; ok {
+			if pen > 0 {
+				run = c.tints[pen-1].style.Render(run)
+			} else if s, ok := styles[style]; ok {
 				run = s.Render(run)
 			}
 			b.WriteString(run)

@@ -89,6 +89,41 @@ func graphTheme() workflowgraph.Theme {
 	}
 }
 
+// taskGraphTheme is graphTheme plus run-state colors, for the task workspace's
+// Workflow tab (task 097). The workflows screen keeps graphTheme as it is: a
+// definition has no run to color (decision 8).
+//
+// Neither lookup owns a palette. A node takes the Steps tab's step-state
+// colors and a lane the board's task-state colors, so the graph is never a
+// third opinion about what `blocked` looks like (decision 2).
+func taskGraphTheme() workflowgraph.Theme {
+	th := graphTheme()
+	th.NodeState = nodeRunStyle
+	th.LaneState = laneRunStyle
+	return th
+}
+
+// nodeRunStyle colors a node by its newest attempt. The task parked on it
+// wins over the step's own state, which is the precedence the node's glyph
+// already follows: a `running` step whose task is `blocked` is shown blocked.
+func nodeRunStyle(rs workflowgraph.RunState) (lipgloss.Style, bool) {
+	if style, ok := stateStyles[rs.Task]; ok && rs.Task != "" {
+		return style, true
+	}
+	return stepStateStyle(rs.State)
+}
+
+// laneRunStyle colors a fan_out lane's caption by its child task, parked state
+// first — including a pause that has been requested and not yet reached, which
+// the caption already names `paused` (decision 6).
+func laneRunStyle(rs workflowgraph.RunState) (lipgloss.Style, bool) {
+	if style, ok := stateStyles[rs.Task]; ok && rs.Task != "" {
+		return style, true
+	}
+	style, ok := stateStyles[rs.State]
+	return style, ok
+}
+
 // openGraph opens the layer on the entry under the cursor. A workflow already
 // known not to parse has no graph to draw and its findings are already on
 // screen in the expansion, so `g` says so instead of opening a layer that

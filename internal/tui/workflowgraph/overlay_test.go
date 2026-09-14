@@ -112,6 +112,42 @@ func TestOverlayDoesNotRelayOut(t *testing.T) {
 	}
 }
 
+// Coloring is the same promise: a themed graph whose overlay advances — states
+// change, the task finishes, an off-graph attempt's state moves — keeps every
+// coordinate and its selection (task 097, 017 decisions 3 and 5).
+func TestChangingARunColorDoesNotRelayOut(t *testing.T) {
+	m := New()
+	m.SetTheme(testTheme())
+	m.SetSize(120, 60)
+	m.SetDefinition(fixtureLoop())
+	off := []OffGraphRun{{StepID: "follow_up_1", Label: "follow up", Type: "agent"}}
+	m.SetOverlay(Overlay{Off: off, Nodes: map[string]RunState{
+		"plan": {State: "succeeded"}, "work": {State: "running", Iteration: 1},
+		OffNodeID("follow_up_1"): {State: "running"},
+	}})
+	m.Select("work")
+	before := append([]PlacedNode{}, m.scene.Nodes...)
+	edges := len(m.scene.Edges)
+
+	m.SetOverlay(Overlay{Off: off, Done: true, Nodes: map[string]RunState{
+		"plan": {State: "succeeded"}, "work": {State: "failed", Iteration: 2},
+		"verify": {State: "stopped", Iteration: 2}, "ship": {State: "succeeded"},
+		OffNodeID("follow_up_1"): {State: "succeeded"},
+	}})
+
+	if m.Selected() != "work" {
+		t.Errorf("selection = %q, want it kept across the overlay", m.Selected())
+	}
+	if len(before) != len(m.scene.Nodes) || edges != len(m.scene.Edges) {
+		t.Fatalf("the overlay changed the scene: %d nodes to %d", len(before), len(m.scene.Nodes))
+	}
+	for i := range before {
+		if before[i] != m.scene.Nodes[i] {
+			t.Errorf("node %s moved: %+v to %+v", before[i].ID, before[i], m.scene.Nodes[i])
+		}
+	}
+}
+
 // A guard skip (§7.7), a human skip (§6) and a node the task never reached
 // are three different things, and they read as three different things with
 // every escape sequence stripped (017 decision 6).

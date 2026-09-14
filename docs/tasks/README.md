@@ -110,6 +110,7 @@ the living engineering specification records implementation contracts.
 | [094](094-footer-width-and-hidden-keys.md) | The footer fills its width, and a `+N` says how many keys it is hiding | ✅ done (5/5) |
 | [095](095-published-skill-installation.md) | Report whether vincent's published skills are installed, and install them | ✅ done (10/10) |
 | [096](096-event-triggers.md) | Event triggers: starting vincent work from GitHub, Jira, Trello and CI systems | ✅ done (6/6) |
+| [097](097-workflow-graph-run-colours.md) | Color the task Workflow tab graph by run state | ✅ done (4/4) |
 
 ## How to add and update a task document
 

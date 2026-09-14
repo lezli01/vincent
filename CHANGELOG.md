@@ -244,6 +244,14 @@ list with the user-facing context a commit subject cannot carry.
   (`p a x r E R s c A F`) did not move. The new-task form's **Fields** editor
   also joins the registry, so its `a` and `d` finally appear in `?` and in the
   footer instead of only in an inline hint.
+- **The task Workflow tab's graph is colored by run state.** Nodes take the
+  Steps tab's colors — green for succeeded, cyan for running, red for failed —
+  and a parked task's board color (bold red for blocked) on the step it is
+  parked on; lane captions take their child task's board color. Edges light up
+  along the path the run actually took, so a condition's untaken branch stays
+  uncolored. The words and glyphs are unchanged, and the workflows screen's
+  `g` graph is not colored. Attempts drawn off-graph below `END` now say their
+  state, and the Steps tab now colors `approved` green and `rejected` red.
 
 ### Fixed
 

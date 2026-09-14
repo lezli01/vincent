@@ -9027,6 +9027,42 @@ never on the inline step nodes). `l` opens the lane under the graph cursor.
 `e` and `R` are absent from this tab: a snapshot has no file to open and no
 registry entry to re-read.
 
+*Amended 2026-09-14 (task 097, issue #418): the overlay is colored by run
+state.* "Words and glyphs first, colour second" now has its second half. Every
+color restates words already on screen, so the picture with every style
+stripped is byte-identical to the uncolored rendering of the same overlay;
+coloring moves no coordinate and loses no selection.
+
+- **A node takes its newest attempt's style**, and a task parked on it wins over
+  the step's state: `succeeded` and `approved` green, `running` cyan, `failed`
+  and `rejected` red, `interrupted` yellow, `skipped` and `stopped` faint; task
+  `blocked` red and bold, `awaiting_input` yellow and bold, `paused` magenta. A
+  node never reached is drawn as before. Border, label row and kind row all take
+  the style. This is the Steps tab's step-state palette and the board's
+  task-state palette — one of each, shared.
+- **A colored node shows its selection by the heavy border glyphs alone.** An
+  uncolored node keeps the `Selected` style.
+- **A lane caption takes its child task's board style** — the parked state when
+  the child is parked or pause-requested, else the child's own state.
+- **Off-graph attempts carry state words, and then color.** Each prints its
+  newest attempt's glyph and state the way an authored node does; before this
+  they printed neither.
+- **An edge is colored when the run took it.** A flow edge when both ends were
+  reached. A `condition`'s `false` branch only when its newest row is
+  `stopped`, and its onward edge only when that row is `succeeded` and the
+  target was reached; a `break`'s `true` branch and onward edge the same way.
+  A back-edge when its source was reached and some node in the loop's body, at
+  any depth, ran iteration 2 or later. `needs:` edges and edges touching a
+  lane's inline steps never — those steps are the child's. END counts as
+  reached only when the task is `done`, and is itself never painted. A
+  `parallel` or `loop` header counts as reached when anything in its group
+  was, and a fan_out's merge when the fan_out's row is past `running` or
+  anything after it was reached; those boxes stay unpainted, because they have
+  no row and no words. A taken edge takes its source's style, or its target's
+  when the source has none. Edge labels keep their own style.
+- **The workflows screen's `g` definition graph is not colored by run state** —
+  a definition has no run.
+
 ### Discovery
 
 Three surfaces, one source. **`bindings.go` is the single registry** — every
