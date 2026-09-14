@@ -1284,7 +1284,30 @@ The overlay reads with color off, like the rest of the picture:
 | `blocked`, `awaiting_input`, `paused` | Where the task is parked, with the reason |
 | `it 2`, `try 3` | Which loop pass, and which attempt |
 | `api #42 running` on a lane caption | That fan-out lane's child task and its state |
-| A frame below `END` | Attempts that ran outside the workflow — a follow-up round, a repair |
+| A frame below `END` | Attempts that ran outside the workflow — a follow-up round, a repair — each with its state, like any other node |
+
+With color on, the same states are colored — the Steps tab's colors for a
+step, the board's for a parked task or a lane:
+
+| Color | On a node |
+|---|---|
+| Green | `succeeded`, `approved` |
+| Cyan | `running` |
+| Red | `failed`, `rejected` |
+| Yellow | `interrupted` |
+| Faint | `skipped`, `stopped` |
+| Bold red | The task is `blocked` here |
+| Bold yellow | The task is `awaiting_input` here |
+| Magenta | The task is `paused` here |
+| No color | Never reached |
+
+A lane caption takes its child task's board color. A colored node that is
+selected keeps its color and shows the selection by its heavier border.
+
+The edges light up along the path the run actually took, so a condition's
+untaken branch stays uncolored even after the task finishes. A loop's back-edge
+lights only once the loop has gone round a second time. The edge into `END`
+lights only when the task is `done`.
 
 A loop still draws **once**, with its back-edge: nothing unrolls as it runs, so
 the picture never moves under you while you are reading it.
