@@ -1181,7 +1181,8 @@ the wire in neither direction, an edit is a list of operations, and `version`
 is a precondition.
 
 **Create.** `id` is lowercase letters, digits, `-`, `_` or `.`, starting with a
-letter or digit; anything else is `400 validation_failed`. `project_id` is
+letter or digit and never containing `..`; anything else is
+`400 validation_failed`. `project_id` is
 required, and a project that does not exist is a `404`. The daemon renders the
 file itself: a `type: command` source running `command` every `poll_interval`,
 a `create_task` action with `workflow` and `title`, `enabled: false`, and **no
@@ -1267,15 +1268,19 @@ rate limit and the action's templates, and returns the judgement:
 - `outcome` is the [ledger outcome](#the-delivery-ledger) the event would get.
   Here `fired` means "would be replayed": a dry run stops short of the replay,
   so it cannot know whether the route would refuse.
-- `error` is a render failure's message, or an unresolved reaction target's.
+- `error` says why the pipeline stopped: a template or `if:` that failed to
+  render, an event with no `id` on a trigger with no `dedupe_key`, or a
+  reaction target that did not resolve.
 
 `POST /v1/triggers/{id}/poll` runs the source once **for real** — the command,
 or a GitHub listing — and judges each event it returns as `/test` does. It
 fires nothing, advances no cursor, writes no ledger row and leaves poll health
 alone, but the command itself runs with whatever effects it has.
 
-- `seed` says a real poll right now would seed and fire nothing. The events are
-  judged anyway, to show what the filter will do once the trigger is armed.
+- `seed` says a real poll right now would seed and fire nothing. A command's
+  events are judged anyway, to show what the filter will do once the trigger is
+  armed. A GitHub source has no events to judge until its snapshot exists, so
+  its seeding poll answers an empty `events[]`.
 - `truncated` counts events past the 20-event cap on one poll, which were not
   judged. `refused` counts command output lines that were not events.
 - `cursor` is the watermark the command printed, which a real poll would store.
@@ -1303,8 +1308,8 @@ a `400`.
 | `deduped` | A `fired` or `seeded` row already holds its dedupe key |
 | `filtered` | `match:`, `allowed_actors` or `if:` rejected it |
 | `rate_limited` | It was over `limits.max_per_hour`, which counts `fired` rows alone. Dropped, not queued |
-| `refused` | The replayed route answered `4xx`. `detail` keeps that answer's error envelope, and a reaction's `task_id` names the task it targeted |
-| `error` | A template failed to render, or the replay answered `5xx` or never reached the route. `detail` says which |
+| `refused` | The replayed route answered `4xx`. `detail` keeps that answer's error envelope, and a reaction's `task_id` names the task it targeted. A reaction whose branch matched no unarchived task is `refused` too, with nothing replayed: `detail` names the branch and `task_id` is `null` |
+| `error` | A template or `if:` failed to render, the event had no `id` and the trigger no `dedupe_key`, or the replay answered `5xx` or never reached the route. `detail` says which |
 
 `task_id` is `null` when no task was involved, and becomes `null` if that task
 is later [permanently deleted](#permanent-delete). The ledger outlives the

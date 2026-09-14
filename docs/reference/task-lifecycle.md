@@ -179,7 +179,7 @@ which it was not before follow-ups existed.
 | `cancel` | queued, running, awaiting_input, awaiting_gate, awaiting_children, blocked, paused | Kills any running process — graceful termination, then a kill after 10s — and moves to `aborted`. From `awaiting_children` it cascades to every unfinished lane, whose branches and worktrees survive |
 | `pause` | queued, running | From `running`, finishes the current step then holds. The request is persisted, so it survives a daemon crash; any other action clears it |
 | `resume` | paused | → `queued` |
-| `retry` | blocked, awaiting_children | Re-runs the failed step as a fresh attempt with the retry counter reset → `queued`. From `awaiting_children` it re-admits every blocked descendant instead and leaves the parent parked; the response says how many |
+| `retry` | blocked, awaiting_children | Re-runs the failed step as a fresh attempt with the retry counter reset → `queued`, or → `paused` when it is [held](api.md#holding-a-retry-or-a-follow-up). From `awaiting_children` it re-admits every blocked descendant instead and leaves the parent parked; the response says how many, and a held retry is refused there |
 | `edit + retry` | blocked | Overrides the step's prompt or command **in this task's snapshot only**, then retries. The override is recorded on the step run. A parked fan-out parent refuses it: its `fan_out` step has no text to edit, so edit the blocked lane instead |
 | `repair` | blocked | Runs one ad-hoc agent, prompted by you, in the task's existing worktree and branch → `queued`, and back to `blocked` at the same step with the same reason when it exits. It does not consume the blocked step's retry budget |
 | `skip` | blocked, awaiting_gate | Marks the step `skipped` and advances → `queued`. A step skipped this way carries no `skip_reason`, which is how it stays distinguishable from one an `if:` guard skipped |
@@ -188,7 +188,7 @@ which it was not before follow-ups existed.
 | `reject` | awaiting_gate | Gate `rejected` → `blocked`, from which you can edit-and-retry an earlier step, skip, or abort |
 | `set priority` | queued, paused | Reorders scheduler admission |
 | `archive` | done, aborted | Removes the worktree → `archived`, then deletes the branch **only** if it has no commits past its base. Refuses on a dirty worktree unless forced — uncommitted work would be lost, and a refusal never reaches the branch |
-| `follow_up` | done, aborted | Runs one more piece of work — an agent prompt, a shell command or a registry workflow — in the task's existing worktree and branch → `queued`, and back to the state it came from when it ends. Repeatable; it never changes the task's verdict and never spends the workflow's retry budgets |
+| `follow_up` | done, aborted | Runs one more piece of work — an agent prompt, a shell command or a registry workflow — in the task's existing worktree and branch → `queued` (→ `paused` when [held](api.md#holding-a-retry-or-a-follow-up)), and back to the state it came from when it ends. Repeatable; it never changes the task's verdict and never spends the workflow's retry budgets |
 
 In the TUI these are the action bar keys (`a`, `x`, `r`, `R`, `E`, `s`, `p`,
 `c`, `A`, `F`); over the API they are `POST /v1/tasks/{id}/{action}`; from the

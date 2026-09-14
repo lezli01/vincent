@@ -24,8 +24,8 @@ list with the user-facing context a commit subject cannot carry.
 
   Triggers are **off twice**: a file needs its own `enabled: true` and the new
   `triggers.enabled` key in `config.yaml`. Turning either on seeds the trigger,
-  so events that already existed never fire; a seed is recorded in the ledger
-  as `seeded`. By default a trigger only proposes: the task lands `paused` with
+  so events that already existed never fire; a command source's seed is
+  recorded in the ledger as `seeded`. By default a trigger only proposes: the task lands `paused` with
   its agent steps restricted, and `resume` starts it. GitHub events an outsider
   can cause are refused at load unless the trigger names `allowed_actors`,
   matched against the issue or pull-request author.

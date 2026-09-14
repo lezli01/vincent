@@ -35,10 +35,11 @@ story: this is loopback, and the token is the one every other client uses.
 The tool list **is** the route table: projects, workflows, `resolve`, tasks and
 every human action (`task_cancel`, `task_pause`, `task_approve`, `task_answer`,
 `task_archive`, `task_follow_up`, …), steps, step status, transcripts, diffs,
-the GitHub reads, and the read-only `health`, `info`, `config_get`,
-`agent_list`, `doctor`, `orphan_list`.
+the GitHub reads, the [trigger](triggers.md) reads, `trigger_validate` and both
+dry runs, and the read-only `health`, `info`, `config_get`, `agent_list`,
+`doctor`, `orphan_list`.
 
-Twelve routes are deliberately **not** tools:
+Sixteen routes are deliberately **not** tools:
 
 - `POST /v1/daemon/stop`
 - `POST /v1/agents/{name}/quota`
@@ -51,6 +52,10 @@ Twelve routes are deliberately **not** tools:
 - `PATCH /v1/config`
 - `POST /v1/workflows`
 - `PATCH /v1/workflows`
+- `POST /v1/triggers`
+- `PATCH /v1/triggers/{id}`
+- `DELETE /v1/triggers/{id}`
+- `POST /v1/triggers/{id}/events`
 - `POST /v1/tasks/{id}/github/pull/create`
 
 An agent should not be able to stop, garbage-collect or reconfigure the daemon
@@ -68,6 +73,12 @@ agent must not edit one. Nothing regresses — the built-in `create-workflow`
 workflow writes its deliverable through the filesystem, not through this API —
 and the read side is untouched: `workflow_list`, `workflow_definition`,
 `workflow_validate` and `workflow_schema` are all ordinary tools.
+
+The four trigger routes draw it once more. A [trigger](triggers.md) starts
+agents from outside, so an agent must not author, edit, arm or delete one
+(enabling is a `PATCH`), and must not push an event into one either: an agent
+that can inject events can start agents. The reads, `trigger_validate` and both
+dry runs stay tools, because a dry run fires nothing.
 
 The quota push is the same line drawn around a *fact* rather than an action: a
 step that could report its own adapter at 99% would paint every board and status

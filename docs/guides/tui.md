@@ -1578,7 +1578,7 @@ the warning the daemon serves for `enabled: true`, then what it means for this
 trigger. With `on_fire: propose`, each task is created paused for you to resume.
 With `on_fire: create`, each task starts running as soon as a slot is free. If
 `triggers.enabled` is off, the question also says nothing polls until it is
-turned on. Only `y` answers yes, and `n` or `esc` leaves the trigger as it is.
+turned on. Only `y` (or `Y`) answers yes, and `n` or `esc` leaves the trigger as it is.
 Any other key leaves the question open, so a stray keypress cannot answer it.
 A file that does not validate cannot be switched at all; fix it with `e` first.
 

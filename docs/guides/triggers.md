@@ -267,7 +267,8 @@ requested). A merged pull request reads `state: closed`, and its `Merged` is
 true.
 
 The default event id is `github:issue:{number}:{action}:{updated-at}` (or
-`github:pull:…`). The same issue labelled again later is therefore a new id, so
+`github:pull:…`), where `{updated-at}` is Unix seconds, not the RFC 3339 form
+`.Event.Issue.UpdatedAt` carries. The same issue labelled again later is therefore a new id, so
 set a `dedupe_key` when you mean once per issue.
 
 The first tick after arming stores the snapshot and fires nothing. After that,
@@ -484,7 +485,9 @@ replay. Here `fired` means "would be replayed". The command exits `1` when the
 outcome is `error`, so a pre-commit hook can use it.
 
 **Run the source once for real** with `POST /v1/triggers/{id}/poll`. It runs the
-command, or makes the GitHub listing, and judges every event it gets back. The
+command, or makes the GitHub listing, and judges every event it gets back. A
+GitHub trigger that has not seeded yet has no snapshot to diff the listing
+against, so it judges nothing and `events` comes back empty. The
 answer holds `seed` (a real poll now would only seed), `events` (one judgement
 each), `truncated` (events past the cap of 20), `refused` (command output lines
 that were not events), the `cursor` the command printed, and `error` when the
@@ -505,7 +508,7 @@ enabling a trigger is not.
 | Outcome | Meaning |
 |---|---|
 | `fired` | The replayed route created or acted on a task. |
-| `seeded` | The seed poll after arming saw the event. Nothing fired, and the key counts as delivered. |
+| `seeded` | A command source's seed poll after arming saw the event. Nothing fired, and the key counts as delivered. A GitHub source seeds its snapshot instead, and writes no rows. |
 | `deduped` | The dedupe key had already fired or been seeded. |
 | `filtered` | `match:`, `allowed_actors` or `if:` dropped it. |
 | `rate_limited` | Over `limits.max_per_hour`. Dropped, not queued. |
