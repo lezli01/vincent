@@ -165,5 +165,7 @@ by [047](047-cli-logs-and-transcripts.md) as `vincent task transcript` — and
 2026-09-13), `agents` (tracked in
 [#393](https://github.com/lezli01/vincent/issues/393), 2026-09-13), the project
 `PATCH /v1/projects/{id}` (tracked in
-[#394](https://github.com/lezli01/vincent/issues/394), 2026-09-13), and
-`resolve`.
+[#394](https://github.com/lezli01/vincent/issues/394), 2026-09-13), the task
+`PATCH /v1/tasks/{id}` (priority), and `resolve`. Two `PATCH` routes added
+after this record have no subcommand either: `PATCH /v1/workflows` (task 065)
+and `PATCH /v1/triggers/{id}` (task 096).

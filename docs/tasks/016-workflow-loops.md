@@ -180,8 +180,10 @@ Dynamic per-item fan-out is therefore a separate question — plausibly
 `for_each:` on a `fan_out` step — and it needs its own answer to "what replaces
 the creation-time bound". Recorded in §20 with that trigger, not smuggled in
 here. *Noted 2026-09-14 (issue #378):* the trigger was met 2026-09-01 by
-[080](080-fan-out-dag.md) decision 6, which moves the bounds to spawn time for a
-derived lane list; `.Loop.Item` stayed a string (080 decision 1).
+[080](080-fan-out-dag.md) decision 6, which moves `fan_out.max_tasks` to spawn
+time for a derived lane list, beside a per-step `max_lanes:`, and keeps the
+cycle check and `fan_out.max_depth` at creation; `.Loop.Item` stayed a string
+(080 decision 1).
 Keeping them apart also keeps §7.5's and §7.6's meanings intact: a loop
 is a group that runs its members in order and more than once, and it inherits
 §7.5's "concurrent writes to one worktree are a workflow bug" only in the

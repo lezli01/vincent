@@ -238,8 +238,10 @@ truthiness in a guard (§7.7). These are binding decisions from tasks 015 and
   up, and what replaces it is discovering a depth explosion as two hundred
   worktrees six hours later — the exact failure §7.6 exists to refuse in front
   of the person typing. *Superseded 2026-09-01 by
-  [080](080-fan-out-dag.md):* the creation-time refusal is replaced, for a
-  derived lane list, by the step's `max_lanes:`, a spawn-time
+  [080](080-fan-out-dag.md):* the cycle and `max_depth` refusals stay at
+  creation, because a derived lane's `workflow:` is still resolved there and a
+  dynamic width does not nest. Only the `max_tasks` refusal is given up, and for
+  a derived lane list it is replaced by the step's `max_lanes:`, a spawn-time
   `fan_out.max_tasks` check and the `fan_out_limit` block, which stop the step
   before any worktree is spawned.
 - **Structured `for_each` items** (maps rather than strings). §8.4 is

@@ -363,8 +363,9 @@ transition.
   (`for_each:` + `lane:`). The two objections are answered rather than ignored:
   derived lanes are materialized into the snapshot at spawn (080 decision 5), so
   the snapshot stays the authority and step indices stay stable across a crash;
-  and the creation-time checks move to spawn time for a derived list only (080
-  decision 6).
+  and of decision 5's creation-time checks only `fan_out.max_tasks` moves, to
+  spawn time and for a derived list only, while the cycle check and
+  `fan_out.max_depth` stay at creation (080 decision 6).
 - **Policing whether a `parallel` step writes files.** The group shares one
   worktree; concurrent writes are undefined behaviour, documented as such. §10
   already states that worktrees isolate working trees, not process-level

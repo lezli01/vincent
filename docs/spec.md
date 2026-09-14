@@ -10365,9 +10365,11 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
   (§7.6, task 080, issue #301): `for_each:` and a single `lane:` template on a
   `fan_out` step, each line a JSON object. The named trigger — an answer to
   "what replaces the creation-time bound" — is task 080 decision 6: for a
-  *derived* lane list only, the bound moves to spawn time, as the step's
-  `max_lanes:`, the run-time `fan_out.max_tasks` check and the `fan_out_limit`
-  block (§18), while a static lane list keeps §7.6's creation-time checks.
+  *derived* lane list only, the task-count bound moves to spawn time, as the
+  step's `max_lanes:`, the run-time `fan_out.max_tasks` check and the
+  `fan_out_limit` block (§18). The cycle check and `fan_out.max_depth` stay at
+  creation for a derived list too, and a static lane list keeps all of §7.6's
+  creation-time checks.
   *Corrected 2026-09-14 (issue #378):* this entry still read as future work
   after task 080 landed.
 - **A template FuncMap for §8.4** — `hasSuffix`, `contains`, `split`, `trim`,
