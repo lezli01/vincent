@@ -297,6 +297,15 @@ list with the user-facing context a commit subject cannot carry.
   expands over (`derived_lane` in `--json`). With `--project`, a registry
   workflow reached through an `include` or a named lane also kept its `lane:`,
   `max_lanes`, `schedule` and lanes' `needs` (issue #370).
+- **`vincent task transcript` now prints a claude run's header and result
+  metadata.** The default text rendering dropped the `agent.run_header` record,
+  so the working directory and the tools the agent was given never appeared,
+  and ended every run on `= done` or `= done ($cost)` though the transcript
+  records how long it took, over how many turns, why it stopped and how many
+  tool calls were denied. A run now opens on `# <dir> - N tools: …` and ends on
+  e.g. `= done (7.3s, 2 turns, 1 denied, $0.0221)` — the output pane's `normal`
+  content; codex and cursor, which report none of it, are unchanged (issue
+  #371).
 - **A follow-up that names a workflow now honors that workflow's declared
   fields.** `POST /v1/tasks/{id}/follow_up` with `workflow` skipped the field
   checks `POST /v1/tasks` applies, so it queued a run whose required field the

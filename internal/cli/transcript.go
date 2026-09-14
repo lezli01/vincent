@@ -292,6 +292,8 @@ func stepRunState(ctx context.Context, c *apiclient.Client, taskID, runID int64)
 // point of that rule — `vincent task show` already carries those numbers.
 func renderTranscriptRecord(rec apiclient.TranscriptRecord, sawOutput bool) (string, bool) {
 	switch rec.Type {
+	case "agent.run_header":
+		return renderTranscriptRunHeader(rec)
 	case "agent.output":
 		return rec.Text, rec.Text != ""
 	case "agent.tool_use":
@@ -366,12 +368,32 @@ func renderTranscriptRecord(rec apiclient.TranscriptRecord, sawOutput bool) (str
 	}
 }
 
+// renderTranscriptRunHeader renders what the agent CLI announced before the
+// run started — where it ran and the tools it was given (task 066) — as the
+// pane's run header does, with an ASCII separator. A header carrying neither
+// field has nothing to say, so it prints nothing.
+func renderTranscriptRunHeader(rec apiclient.TranscriptRecord) (string, bool) {
+	if rec.WorkDir == "" && len(rec.AvailableTools) == 0 {
+		return "", false
+	}
+	line := "# " + firstNonEmpty(rec.WorkDir, "run started")
+	if n := len(rec.AvailableTools); n > 0 {
+		unit := "tools"
+		if n == 1 {
+			unit = "tool"
+		}
+		line += fmt.Sprintf(" - %d %s: %s", n, unit, strings.Join(rec.AvailableTools, ", "))
+	}
+	return line, true
+}
+
 // renderTranscriptResult renders the terminal record. On success it says the
-// outcome and nothing else: every dialect's result text repeats assistant
-// messages already printed — cursor's is the whole turn concatenated — so
-// printing it again is the same words twice. The text is kept when nothing
-// else rendered, which is what a codex turn with no agent_message looks like,
-// and always on error, where it may be the only content there is.
+// outcome and what the run reported about itself, and not the result text:
+// every dialect's result text repeats assistant messages already printed —
+// cursor's is the whole turn concatenated — so printing it again is the same
+// words twice. The text is kept when nothing else rendered, which is what a
+// codex turn with no agent_message looks like, and always on error, where it
+// may be the only content there is.
 func renderTranscriptResult(rec apiclient.TranscriptRecord, sawOutput bool) string {
 	if rec.IsError {
 		return "! " + firstNonEmpty(rec.Message, rec.ResultText, "run failed")
@@ -379,10 +401,62 @@ func renderTranscriptResult(rec apiclient.TranscriptRecord, sawOutput bool) stri
 	if !sawOutput {
 		return "= " + firstNonEmpty(rec.ResultText, "run finished")
 	}
-	if rec.CostUSD != nil {
-		return fmt.Sprintf("= done ($%.4f)", *rec.CostUSD)
+	if details := transcriptResultDetails(rec); len(details) > 0 {
+		return "= done (" + strings.Join(details, ", ") + ")"
 	}
 	return "= done"
+}
+
+// transcriptResultDetails is the result line's metadata at the level this
+// command mirrors the output pane at, `normal` (spec §15, task 066): elapsed
+// time, turns, an unusual stop or terminal reason, permission denials, cost.
+// Each part appears only when the adapter reported it — zero is unreported —
+// so a codex or cursor result stays `= done`. The API-time, cache and
+// per-model breakdown is the pane's `verbose` tail, and is left to `--json`
+// the way agent.command_output is left to it.
+func transcriptResultDetails(rec apiclient.TranscriptRecord) []string {
+	var parts []string
+	if rec.DurationMS > 0 {
+		parts = append(parts, formatTranscriptDuration(rec.DurationMS))
+	}
+	switch {
+	case rec.NumTurns == 1:
+		parts = append(parts, "1 turn")
+	case rec.NumTurns > 1:
+		parts = append(parts, fmt.Sprintf("%d turns", rec.NumTurns))
+	}
+	// Every successful claude run ends end_turn/completed; only an unusual
+	// reason distinguishes "the model finished" from "it hit a limit".
+	if rec.StopReason != "" && rec.StopReason != "end_turn" {
+		parts = append(parts, "stop: "+rec.StopReason)
+	}
+	if rec.TerminalReason != "" && rec.TerminalReason != "completed" {
+		parts = append(parts, rec.TerminalReason)
+	}
+	if n := len(rec.PermissionDenials); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d denied", n))
+	}
+	if rec.CostUSD != nil {
+		parts = append(parts, fmt.Sprintf("$%.4f", *rec.CostUSD))
+	}
+	return parts
+}
+
+// formatTranscriptDuration spells an agent-reported duration the way the
+// pane does: a decimal under a minute, because most agent runs are seconds
+// long, and the board's compact form above that.
+func formatTranscriptDuration(ms int64) string {
+	d := time.Duration(ms) * time.Millisecond
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	case d < time.Hour:
+		return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh%02dm", int(d.Hours()), int(d.Minutes())%60)
+	default:
+		return fmt.Sprintf("%dd%02dh", int(d.Hours())/24, int(d.Hours())%24)
+	}
 }
 
 // rawField reads one string field of a record this struct does not name.

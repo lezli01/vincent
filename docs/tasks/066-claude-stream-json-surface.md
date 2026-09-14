@@ -118,6 +118,11 @@ field on the wire that no client can use is a field that will be wrong later.
   `agent.run_header` record and enriched `agent.result`,
   `internal/taskrun/steps.go`'s matching live chunks, and
   `internal/apiclient/transcript.go` so `vincent task transcript` renders them.
+  Only the apiclient half landed here; the command itself kept dropping the
+  run header and printing a bare `= done ($cost)`. Its renderer
+  (`internal/cli/transcript.go`) was delivered by the fix for issue #371
+  (2026-09-14), at the pane's `normal` content, and is asserted off the same
+  `2.1.226` fixtures by `internal/cli/transcript_runheader_test.go`.
 - [x] **066.4** `internal/tui`: the run-header line, the level-aware
   `resultOutcome`, the `⊘` blocked mark, and the verbose-only breakdown — all
   inside §15's two-column gutter scheme, with no timestamps.
