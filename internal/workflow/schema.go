@@ -232,13 +232,13 @@ func SchemaDescriptor() Schema {
 				},
 			},
 			{
-				Type: StepManual, Common: []string{"id", "name", "if", "max_retries", "retry_backoff", "timeout"},
+				Type: StepManual, Common: []string{"id", "name", "if", "timeout"},
 				Contexts: []string{ContextBody},
 				Help:     "stop and wait for a person (§7.3)",
 				Fields:   []SchemaField{{Name: "instructions", Control: ControlText, Required: true}},
 			},
 			{
-				Type: StepParallel, Common: []string{"id", "name", "if", "max_retries", "retry_backoff", "timeout"},
+				Type: StepParallel, Common: []string{"id", "name", "if", "timeout"},
 				Contexts: []string{ContextBody},
 				Help:     "run sub-steps concurrently in one admission (§7.5)",
 				Fields: []SchemaField{

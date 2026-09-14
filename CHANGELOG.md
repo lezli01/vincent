@@ -285,6 +285,16 @@ list with the user-facing context a commit subject cannot carry.
   request, so source builds and release binaries went without the standard
   library fixes in go1.26.7 and go1.26.8. The toolchain is bumped, and the job
   now opens an issue when it fails instead of failing silently (issue #373).
+- **`parallel` and `manual` steps now refuse `max_retries` and `retry_backoff`
+  instead of ignoring them.** Neither step owns an attempt — a group's retries
+  belong to each sub-step, and a gate is decided once — so both fields were
+  accepted, offered by the workflow editor, and silently did nothing. **This
+  breaks a workflow that sets either field on either type:** validation, the
+  registry and task creation now refuse it until the field is removed (move a
+  group's value onto its sub-steps); the built-in `update-workflows` workflow
+  now does that for you. Tasks created before the change keep running, and an
+  included workflow's retry `defaults:` no longer land on its `parallel` and
+  `manual` steps (issue #374).
 - **TUI hints no longer name keys that do nothing.** The Pull Request tab's
   hint line still read `c open check` and `r refresh`, though `c` there is
   cancel and `r` is retry since open-check moved to `enter` and the refresh key

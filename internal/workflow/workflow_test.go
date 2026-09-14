@@ -182,7 +182,7 @@ func TestParseValidation(t *testing.T) {
 		},
 		{
 			name:     "negative max_retries",
-			src:      "name: x\nsteps:\n  - {id: a, type: manual, instructions: hi, max_retries: -1}\n",
+			src:      "name: x\nsteps:\n  - {id: a, type: command, run: \"true\", max_retries: -1}\n",
 			wantSub:  "max_retries must not be negative",
 			wantPath: "steps[0].max_retries",
 		},

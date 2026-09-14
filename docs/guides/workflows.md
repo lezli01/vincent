@@ -406,8 +406,8 @@ step, where the step wins.
 | `permission_mode` | agent steps | `full-auto` |
 | `on_input` | agent steps | `wait` |
 | `input_timeout` | agent steps | `defaults.input_timeout` in config — 24h |
-| `max_retries` | all steps | `1` |
-| `retry_backoff` | all steps | `0s` — an immediate retry ([§8.2](#82-retries)) |
+| `max_retries` | agent and command steps; a fan_out merge takes only its own | `1` — `0` on a fan_out merge |
+| `retry_backoff` | agent, command and fan_out steps | `0s` — an immediate retry ([§8.2](#82-retries)) |
 | `timeout` | all steps | `defaults.agent_timeout` (60m) or `defaults.command_timeout` (15m) in config |
 | `container` | command steps and checks | the daemon's [`container:`](../reference/configuration.md#container) block, merged per field |
 
@@ -1682,7 +1682,8 @@ for telling it apart from a quota wall.
 
 It is settable in `defaults:` and per step, where the step wins — including
 `retry_backoff: 0` on one step to opt it out of a workflow-wide default. It is
-refused on `condition`, `break`, `loop` and `include` steps, exactly as
+refused on `manual`, `parallel`, `condition`, `break`, `loop` and `include`
+steps, exactly as
 `max_retries` is, and the [`on_conflict: agent`](#merge-and-conflicts) merge
 resolver never waits: its attempts belong to the join.
 
