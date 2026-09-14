@@ -359,7 +359,8 @@ A unit of work delivered by running a workflow against a project.
 | `base_branch` | defaults to project `default_branch` |
 | `branch_name` | `vincent/{id}-{slug}` by default (slug: lowercase title, `[a-z0-9-]`, max 40 chars). *Amended 2026-08-13 (task 001):* configurable through the chain `built-in < config.yaml < project < per-task literal`. Resolved and persisted inside the task's insert transaction, so no committed task carries an empty one. *Amended 2026-08-30 (task 064):* the chain gains a level above the literal — a task created from a pull request (`github_pull`, §13.2) runs on that pull request's **head branch**, which nothing else may override |
 | `worktree_path` | assigned when the worktree is created |
-| `base_sha` | *Added 2026-08-29 (task 056).* The commit `branch_name` was actually cut from, written beside `worktree_path` when creation fetched `base_branch` from its upstream (§10). NULL means `base_branch` itself still names the fork point — every task predating this and every task created with `fetch_base_branch: false`. It exists because once a task branch starts at a fetched remote tip, `base_branch` names a moving ref that is no longer where the task began, and the two places that read it as the fork point — `GET /v1/tasks/{id}/diff`'s merge-base (§13.2) and archive's empty-branch check (§10) — would otherwise both answer against the stale local commit. *Amended 2026-08-30 (task 064):* on a task created from a pull request it is the **head commit as it stood at admission**, so the diff tab answers "what did this task change" rather than re-rendering the pull request's own diff |
+| `base_sha` | *Added 2026-08-29 (task 056).* The commit `branch_name` was actually cut from, written beside `worktree_path` when creation fetched `base_branch` from its upstream (§10). NULL means `base_branch` itself still names the fork point — every task predating this and every task created with `fetch_base_branch: false`. It exists because once a task branch starts at a fetched remote tip, `base_branch` names a moving ref that is no longer where the task began, and the two places that read it as the fork point — `GET /v1/tasks/{id}/diff`'s merge-base (§13.2) and archive's empty-branch check (§10) — would otherwise both answer against the stale local commit. *Amended 2026-08-30 (task 064):* on a task created from a pull request it is the **head commit as it stood at admission**, so the diff tab answers "what did this task change" rather than re-rendering the pull request's own diff. *Amended 2026-09-14 (task 099, issue #430):* now served on every task representation (§13.2), reversing 056 decision 4 — without it a human cannot tell a task cut from a fresh upstream tip from one cut from a stale local branch |
+| `base_refresh` | *Added 2026-09-14 (task 099, issue #430).* JSON: what worktree creation's base fetch and the fast-forward of the local base that follows it did (§10) — `{fetch: {result: fetched\|no_upstream\|error\|disabled, remote?, ref?, error?}, fast_forward: {result: advanced\|up_to_date\|skipped\|not_attempted, reason?: diverged\|local_ahead\|checkout_dirty\|checkout_busy\|error, worktree?, error?}}`. Written in the same claim write as `worktree_path` and `base_sha`, so a worktree that already existed is never re-recorded. NULL means no worktree was created since migration 0031, or the task came from a pull request, which refreshes no base; `disabled` is recorded, so "key off" and "not recorded" stay apart. A chat handoff copies the chat's (§5.5). Display-only: nothing reads it to decide anything, so a malformed value reads as NULL rather than making the row unreadable |
 | `priority` | integer, default 0; higher runs first |
 | `agent_override` / `model_override` / `effort_override` | optional, chosen at creation (§13.2); replace the workflow's `defaults` but never an explicit step field (§8.6) |
 | `restricted` | *Added 2026-09-11 (task 096).* A one-way permission clamp, chosen at creation (§13.2) and snapshotted: when set, every agent step runs `restricted`, including one whose own field says `full-auto` (§9.4). False for every task created without it, which runs the workflow as written |
@@ -616,7 +617,7 @@ talking to can edit files and make commits without colliding with any task.
 | `state` | `idle` \| `running` \| `awaiting_input` \| `archived` \| `handed_off` (below) |
 | `agent` | fixed at creation, and must be an adapter that can resume (§9.1) |
 | `model`, `effort`, `permission_mode` | resolved once at creation, not per turn |
-| `branch`, `base_branch`, `base_sha`, `worktree_path` | §10, exactly a task's |
+| `branch`, `base_branch`, `base_sha`, `base_refresh`, `worktree_path` | §10, exactly a task's. *Amended 2026-09-14 (task 099):* `base_refresh` added (§5.3), and creating a chat now honours `fetch_base_branch` rather than always fetching |
 | `session_id` | **the agent CLI's own conversation id** — the whole of §7.3's chat-only amendment. Empty before the first turn finishes |
 | `pending_input` | the §7.4 request being awaited; non-null exactly in `awaiting_input` |
 | *(permanent delete)* | *Added 2026-09-09 (task 092, issue #350):* `DELETE /v1/chats/{id}` is legal from **`archived` alone**, and is refused from `handed_off` for the reason `archive` is: the task named by `handoff_task_id` owns the worktree and the branch, and a deleted row cannot say that. It is not a §5.5 transition — it removes the row rather than moving it — so the state machine above is unchanged. Its task mirror is refused too: an archived task a `handed_off` chat points at cannot be deleted while that chat exists, because `handoff_task_id` is `ON DELETE SET NULL` and the chat would be left pointing at nothing |
@@ -663,7 +664,9 @@ the arrangement `internal/taskstate` has for §6.
 #### Handoff (added 2026-09-01, task 074, issue #288)
 
 `hand_off` creates a task in the chat's project that **adopts** the chat's
-`worktree_path`, `branch`, `base_branch` and `base_sha` verbatim. Nothing is
+`worktree_path`, `branch`, `base_branch` and `base_sha` verbatim — and, *amended
+2026-09-14 (task 099)*, `base_refresh`, so the task says how its base was
+refreshed. Nothing is
 copied, renamed, merged or committed: committed *and* uncommitted work are both
 present when the task's first step runs, because the directory is not touched.
 No third worktree-creation mode exists behind this — the engine's
@@ -3865,6 +3868,9 @@ precedent. `vincent doctor` still exits 0 (§17, task 005 decision 7).
 
 - **Location:** `{data_dir}/worktrees/{task_id}` — outside every repo, so IDE file
   watchers and repo tooling in the main checkout are never disturbed.
+  *Amended 2026-09-14 (task 099):* still true of the worktrees themselves, but
+  creating one may now fast-forward the base branch's own checkout — usually the
+  main one — changing its files the way a `git pull` there would (below).
 - **Creation** (when the scheduler first admits the task):
   `git -C {project.path} worktree add {worktree_path} -b {branch_name} --no-track {start}`.
   If `base_branch` doesn't resolve locally, task creation fails fast with a clear error.
@@ -3888,6 +3894,30 @@ precedent. `vincent doctor` still exits 0 (§17, task 005 decision 7).
     out and often dirty, and would need its own refusal path. The visible cost is
     that `git log {base}` in the human's checkout no longer matches what tasks build
     on.
+
+    *Amended 2026-09-14 (task 099, issue #430): no longer true — the refusal path
+    now exists.* After a fetch that resolved a commit, and only then, creation
+    fast-forwards `refs/heads/{base}` to it, still under the per-repository lock and
+    before `worktree add`. Only a strict fast-forward moves anything: a local base
+    already at the commit is `up_to_date`, and one ahead of it (`local_ahead`) or
+    diverged from it (`diverged`) is left exactly where it is. A base checked out in
+    any worktree — normally the human's own checkout — moves **with** its working
+    tree or not at all: a checkout partway through a merge, rebase, cherry-pick,
+    revert or bisect is `checkout_busy`, and one with any `status --porcelain`
+    output, untracked files included (the T1.5/T1.6 rule), is `checkout_dirty`. A
+    clean one is switched with `git read-tree -m -u {old} {new}`, then the ref is
+    written with the compare-and-swap `git update-ref refs/heads/{base} {new} {old}`;
+    if the ref moved in between, the tree is switched back and the outcome is
+    `error`, so the checkout's HEAD and working tree never disagree. It is plumbing
+    throughout — never `merge --ff-only`, `pull` or `checkout` — so no post-merge or
+    post-checkout hook runs in the human's checkout during an admission;
+    `reference-transaction` still fires on the ref update, as it already did for
+    `worktree add`. None of it blocks, fails the creation or adds a `block_reason`,
+    and the task branch starts at the fetched commit whatever it answers. What the
+    fetch and the fast-forward did is recorded as `base_refresh` (§5.3) in the
+    claim write. Chats follow the same key: `POST /v1/chats` reads
+    `fetch_base_branch` per request instead of always fetching. A pull-request task
+    (the second mode, below) refreshes no base and records no `base_refresh`.
   - **A fetch never blocks.** No remote, no upstream, an unreachable host, an auth
     failure or a timeout all fall back to the local base with a log line. No new
     `block_reason` exists for it, and no step can fail for a network reason — §26's
@@ -5075,6 +5105,11 @@ repository where fetching is slow or needs interactive auth. Read per worktree
 creation, so a hot reload reaches the next admission. There is deliberately **no
 per-project override yet**: the global key is the escape hatch, and a per-project one
 is its own piece of work if a real repository needs the granularity.
+*Amended 2026-09-14 (task 099, issue #430):* the same key now also governs the
+fast-forward of the project's local base branch that follows a successful fetch
+(§10). There is no second key — a fast-forward without a fetch has nothing to move
+to — so `false` turns both off. It also reaches chats now, which used to fetch
+regardless of it.
 
 **`delete_empty_branch_on_archive` / `delete_remote_branch_on_archive` (task 008,
 added 2026-08-16).** The §10 branch-cleanup pair. The local key is the standing
@@ -5974,7 +6009,11 @@ POST   /v1/chats                        { project_id, title, agent?, model?, eff
                                         key, and a chat's premise is continuity. An adapter that
                                         cannot resume is refused `400 agent_cannot_resume`
                                         (§9.3, §9.7): vincent will not replay the log as prompt
-                                        context in its place
+                                        context in its place.
+                                        *Amended 2026-09-14 (task 099):* the worktree is created
+                                        under `fetch_base_branch` (§12.3), read per request as a
+                                        task's admission reads it, and every chat representation
+                                        carries `base_sha` and `base_refresh` (§5.5)
 DELETE /v1/chats/{id}                   *Added 2026-09-09 (task 092, issue #350).* Permanent
                                         delete of an **archived** chat: the row, its chat_turns
                                         (through the schema's cascade) and its
@@ -6319,6 +6358,11 @@ GET    /v1/tasks/{id}                   full task incl. step runs summary and pe
                                         source file relative to that scope's root and a
                                         digest of the bytes it was loaded from, or
                                         `derived` naming a fan-out lane's parent (§5.3).
+                                        *Added 2026-09-14 (task 099, issue #430):* every task
+                                        representation also carries `base_sha` (omitted when
+                                        none was recorded) and `base_refresh` (null, not
+                                        omitted, when none was) — the §5.3 columns, reversing
+                                        task 056 decision 4
                                         null for a task created before origin was
                                         recorded, which is *not recorded* and never a
                                         re-lookup of today's registry
@@ -7022,6 +7066,7 @@ CREATE TABLE tasks (
   branch_name         TEXT NOT NULL,
   worktree_path       TEXT,
   base_sha            TEXT,                   -- commit branch_name was cut from (§5.3, task 056); NULL = base_branch is the fork point
+  base_refresh        TEXT,                   -- JSON: base fetch + local fast-forward outcome (§5.3, §10, task 099); NULL = not recorded
   priority            INTEGER NOT NULL DEFAULT 0,
   agent_override      TEXT,                   -- task-level selection (§8.6); NULL = none
   model_override      TEXT,
@@ -7277,6 +7322,7 @@ CREATE TABLE chats (
     branch          TEXT    NOT NULL, -- vincent/{id}-{slug}, as a task's (§10)
     base_branch     TEXT    NOT NULL,
     base_sha        TEXT,
+    base_refresh    TEXT,             -- task 099: as a task's (§5.3)
     worktree_path   TEXT,             -- the §10 claim; NULL once archived
     session_id      TEXT,             -- the agent CLI's own session (§7.3 amended)
     pending_input   TEXT,             -- the §7.4 request being awaited, as JSON

@@ -603,6 +603,15 @@ vincent task show <id> [--json]
 Shows one task with its step runs, the actions valid right now, and any pending
 input request.
 
+The `base` row is where the task started: `master @ 1a2b3c4` when the daemon
+recorded the commit the branch was cut from, or the branch name alone when it
+did not — the worktree does not exist yet, or nothing was fetched
+([`fetch_base_branch`](configuration.md#fetch_base_branch) is off, the base has
+no upstream, or the fetch failed). A `refresh` row follows only when something
+about that start needs your attention: the fetch failed, so the base may be
+stale, or your local base branch was not fast-forwarded, with the reason and
+git's message. A healthy refresh prints no row.
+
 The `origin` row says which definition the task's workflow name resolved to —
 `built-in`, `project .vincent/workflows/adhoc.yaml`, `global
 workflows/release.yaml`, `derived from task 41` for a fan-out lane, or `unknown`

@@ -504,10 +504,16 @@ time *you* ran `git pull` — on a daemon left running for days over projects th
 keep receiving merged pull requests, that is arbitrarily stale, and the agent
 writes against code that has already moved.
 
-Your own checkout is never touched. The local branch keeps its SHA and its
-working tree and stays checked out where it was; vincent does not fast-forward
-it, because it is frequently checked out and often dirty. The visible cost is
-that `git log <base>` in your checkout no longer matches what tasks build on.
+Your local base branch moves too, when that loses nothing. After a successful
+fetch, vincent fast-forwards `<base>` to the fetched commit — and, when it is
+checked out (usually in your own checkout), that working tree with it, without
+running any `post-merge` or `post-checkout` hook. The branch is left exactly
+where it is when it has commits the remote does not (it is ahead, or has
+diverged), or when its checkout has any change at all, untracked files included,
+or is partway through a merge, rebase, cherry-pick, revert or bisect. A skipped
+fast-forward never blocks the task, which starts from the fetched commit either
+way; it shows on the task as a `base refresh` row in the TUI's detail view, a
+`refresh` row in `vincent task show`, and `base_refresh` in the API.
 
 The remote comes from the base branch's own configuration — `branch.<base>.remote`
 and `branch.<base>.merge` — so a local `master` that tracks `main` upstream fetches
@@ -519,7 +525,7 @@ does not fetch:
 | The repository has no remote | Created from the local base, logged at debug |
 | The base branch has no upstream | Created from the local base, logged at debug |
 | A `fan_out` lane, whose base is its parent's `vincent/…` branch | Created from the parent's branch, logged at debug |
-| The remote is unreachable, refuses auth, or does not answer within 60 seconds | Created from the local base, logged as a **warning** |
+| The remote is unreachable, refuses auth, or does not answer within 60 seconds | Created from the local base, logged as a **warning** and shown on the task |
 
 A fetch never blocks a task and never introduces a block reason. Task creation
 itself stays offline: `POST /v1/tasks` still rejects a `base_branch` that does not
@@ -527,8 +533,9 @@ exist locally, and the fetch happens later, when the scheduler first admits the
 task.
 
 Set it to `false` for a repository where fetching is slow or needs interactive
-auth; that restores the previous behaviour exactly. Read per worktree creation,
-so a hot reload applies to the next task admitted. There is no per-project
+auth; that turns off the fetch and the fast-forward alike. It covers chats as
+well as tasks. Read per worktree creation, so a hot reload applies to the next
+task admitted or chat created. There is no per-project
 override.
 
 ### `delete_remote_branch_on_archive`
