@@ -20,17 +20,19 @@ import (
 // refusal on an unhealthy environment. So a missing or unpullable image is an
 // admission block (`container_image_unavailable`), not a 400.
 //
-// Three things are refused here:
+// Two things are refused here:
 //
 //   - a Windows daemon, because paths are identical inside and out (decision
 //     2) and `C:\...` cannot exist in a Linux container;
 //   - a missing or unusable runtime binary, which is local and costs one
-//     `docker version`;
-//   - `container.network: false` together with `mcp.wire_steps: true`
-//     (decision 1), which is a contradiction: a container with no network
-//     cannot reach the daemon's per-step MCP endpoint, and §9.1's rule is
-//     that a missing MCP channel fails loudly rather than running a prompt
-//     premised on tools that are not there.
+//     `docker version`.
+//
+// Decision 1's refusal of `container.network: false` together with
+// `mcp.wire_steps: true` is deliberately absent until task 062 (issue #366).
+// The pair is a contradiction only for an agent running inside the container;
+// until 062 every agent runs on the host and reaches the per-step MCP endpoint
+// from there, whatever the container's network is. 062 reinstates it together
+// with the host.docker.internal rewrite.
 //
 // It also carries decision 8's second `shell:` refusal. A workflow that pins
 // its own image is refused at load; every other case can only be judged here,
@@ -47,11 +49,6 @@ func (s *Server) containerMismatch(ctx context.Context, wf *workflow.Workflow) s
 		return fmt.Sprintf("workflow %q runs in container image %q, which this daemon cannot do on "+
 			"windows: a containerized task mounts its worktree and repository at their own absolute "+
 			"paths, and a windows path cannot exist inside a linux container", wf.Name, c.Image)
-	}
-	if !c.Network && cfg.MCP.WireSteps {
-		return fmt.Sprintf("workflow %q asks for container.network: false while mcp.wire_steps is true: "+
-			"a container with no network cannot reach the daemon's per-step MCP endpoint. "+
-			"Set mcp.wire_steps: false, or leave container.network on", wf.Name)
 	}
 	if conflicts := workflow.ContainerShellConflicts(wf); len(conflicts) > 0 {
 		return fmt.Sprintf("workflow %q runs in container image %q: %s",

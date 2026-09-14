@@ -24,17 +24,21 @@ type Container struct {
 	// and the documentation says which of the three is tested.
 	Runtime string `yaml:"runtime"`
 	// MountAgentConfig bind-mounts the host's agent configuration directories
-	// into the container read-write. It defaults to true because
-	// subscription-based auth takes no key from the environment, and cursor
-	// persists `--model` to its own config (§9.7). Turning it off is
-	// supported and its consequence — an agent CLI that cannot authenticate —
-	// is documented rather than hidden.
+	// into the container read-write. It defaults to false (issue #366): as of
+	// task 061 only `command` steps and `check:`s run in the container, the
+	// agent process is still spawned on the host, and nothing inside reads
+	// those directories — mounting them would hand the host's agent
+	// credentials to the image and to step code for no benefit. Task 062,
+	// which moves the agent in, turns the default back on: subscription-based
+	// auth takes no key from the environment, and cursor persists `--model` to
+	// its own config (§9.7), so an agent CLI in the container needs them.
 	MountAgentConfig bool `yaml:"mount_agent_config"`
 	// Network keeps outbound traffic on, which is the default. False drops
-	// the container off the network entirely; combined with
-	// `mcp.wire_steps: true` that is a contradiction, and it is refused at
-	// task creation rather than producing an agent wired to a dead endpoint
-	// (task 061 decision 1).
+	// the container off the network entirely. It is accepted together with
+	// `mcp.wire_steps: true` for now: every agent still runs on the host and
+	// reaches the per-step MCP endpoint from there. Task 062 reinstates task
+	// 061 decision 1's creation-time refusal of that pair when it moves the
+	// agent into the container (issue #366).
 	Network bool `yaml:"network"`
 	// ExtraMounts are additional bind mounts, each `host:container` or
 	// `host:container:ro`. The project repository and the task's worktree are

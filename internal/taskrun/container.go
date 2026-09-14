@@ -289,9 +289,11 @@ func LogContainerEnvironmentOnce(log *slog.Logger, e config.Environment) {
 
 // agentConfigMounts are the host's agent configuration directories, mounted at
 // their own paths so subscription-based auth survives into the container
-// (`mount_agent_config`). Nothing less works: the CLIs that authenticate by
-// subscription take no key from the environment, and cursor persists `--model`
-// to its own config (§9.7).
+// (`mount_agent_config`). They are for an agent process running inside the
+// container, which is task 062: the CLIs that authenticate by subscription take
+// no key from the environment, and cursor persists `--model` to its own config
+// (§9.7). Until 062 the agent runs on the host, nothing in the container reads
+// them, and the knob defaults off (issue #366).
 //
 // A directory that does not exist is skipped rather than created: an empty
 // mount would make a CLI believe it had been configured and never logged in.

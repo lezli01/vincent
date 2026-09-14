@@ -252,7 +252,7 @@ update:
 container:
   image: ""
   runtime: docker
-  mount_agent_config: true
+  mount_agent_config: false
   network: true
   extra_mounts: []
 
@@ -1081,7 +1081,7 @@ tools. If that is not what you want, turn `wire_steps` off.
 container:
   image: ""
   runtime: docker
-  mount_agent_config: true
+  mount_agent_config: false
   network: true
   extra_mounts: []
 ```
@@ -1124,17 +1124,19 @@ CI; `podman` and `nerdctl` are accepted because they take the same argv, which
 is not the same claim as tested.
 
 **`mount_agent_config`** bind-mounts `~/.claude`, `~/.codex` and `~/.cursor`
-into the container **read-write**, and is on by default. Subscription-based auth
+into the container **read-write**, and is **off** by default. Nothing in the
+container needs them today: only `command` steps and checks run there, and the
+agent process runs on the host with its own configuration. Turning it on puts
+your agent credentials within reach of the image and of every containerized
+step — see [the security model](../security-model.md). When the agent itself
+moves into the container, this default turns back on: subscription-based auth
 takes no key from the environment, and cursor persists `--model` to its own
-config, so without this an agent CLI in the container cannot authenticate. It
-also means the container can read your agent credentials — see
-[the security model](../security-model.md).
+config, so an agent CLI in the container cannot authenticate without them.
 
 **`network`** keeps outbound traffic on, which is the default. `false` drops the
-container off the network entirely; combined with `mcp.wire_steps: true` that is
-a contradiction — a container with no network cannot reach the daemon's per-step
-MCP endpoint — and the task is refused at creation. Turn `mcp.wire_steps` off,
-or leave the network on.
+container off the network entirely. It works with `mcp.wire_steps: true`: agent
+steps run on the host and reach the daemon's per-step MCP endpoint from there,
+whatever the container's network is.
 
 **`extra_mounts`** are additional bind mounts, each `host:container` or
 `host:container:ro`. Both paths must start with `/`, on every platform — a
@@ -1153,7 +1155,6 @@ beats this one per field. There is no per-task override.
 |---|---|---|
 | The daemon runs on Windows | task creation | `400 validation_failed` |
 | `runtime` missing or not usable | task creation | `400 validation_failed` naming the binary |
-| `network: false` with `mcp.wire_steps: true` | task creation | `400 validation_failed` naming both keys |
 | A step pins `shell: pwsh` or `shell: cmd` | workflow load, or task creation | a validation error naming the step |
 | The image is missing and cannot be pulled | when the task is admitted | the task blocks `container_image_unavailable` |
 | The runtime went away after creation | when the task is admitted | the task blocks `container_unavailable` |
