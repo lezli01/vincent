@@ -30,13 +30,6 @@ func TestMCPToolBodyHintsMatchRequestStructs(t *testing.T) {
 		"task_github_pull_link": reflect.TypeOf(githubPullLinkRequest{}),
 	}
 
-	// exempt: the tool names a body in its description, but its handler never
-	// decodes one — handleTaskReject goes through runAction, which takes no
-	// request struct. Left as its own follow-up rather than changed here.
-	exempt := map[string]string{
-		"task_reject": "handleTaskReject goes through runAction, which decodes no body",
-	}
-
 	// The hint marker is "Body:", not "Body: {": task_follow_up's hint reads
 	// "Body: exactly one of {prompt, run, workflow}, ...", so gating on the
 	// brace would miss it. The {…} groups are extracted below regardless.
@@ -45,7 +38,7 @@ func TestMCPToolBodyHintsMatchRequestStructs(t *testing.T) {
 
 	tagsOf := func(typ reflect.Type) map[string]bool {
 		tags := make(map[string]bool, typ.NumField())
-		for i := 0; i < typ.NumField(); i++ {
+		for i := range typ.NumField() {
 			name, _, _ := strings.Cut(typ.Field(i).Tag.Get("json"), ",")
 			if name == "" || name == "-" {
 				continue
@@ -63,9 +56,7 @@ func TestMCPToolBodyHintsMatchRequestStructs(t *testing.T) {
 		hinted[r.Tool] = true
 		typ, ok := structs[r.Tool]
 		if !ok {
-			if _, isExempt := exempt[r.Tool]; !isExempt {
-				t.Errorf("tool %q names a body but has no request struct in this test: add it to structs, or to exempt with a reason", r.Tool)
-			}
+			t.Errorf("tool %q names a body but has no request struct in this test: add it to structs", r.Tool)
 			continue
 		}
 		tags := tagsOf(typ)
@@ -88,11 +79,6 @@ func TestMCPToolBodyHintsMatchRequestStructs(t *testing.T) {
 	for tool := range structs {
 		if !hinted[tool] {
 			t.Errorf("stale structs entry %q: no tool description names a body for it anymore — remove the entry, or fix the description in internal/mcp/tools.go", tool)
-		}
-	}
-	for tool := range exempt {
-		if !hinted[tool] {
-			t.Errorf("stale exempt entry %q: no tool description names a body for it anymore — remove the entry, or fix the description in internal/mcp/tools.go", tool)
 		}
 	}
 }
