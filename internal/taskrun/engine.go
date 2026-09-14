@@ -743,36 +743,47 @@ func (r *Runner) ensureWorktree(ctx context.Context, task *store.Task, project *
 	// Read per admission, not cached: a hot reload then reaches the next task
 	// admitted, the way usage_limit_recheck_interval reaches the next hold.
 	fetch := r.deps.Config().FetchBaseBranch
-	claim := func(c worktree.Created) error {
-		// A failed persist is logged and the run continues, as it always
-		// has: the worktree is real and the step can use it. What it leaves
-		// behind is an unclaimed directory, which is precisely the crash case
-		// `vincent gc` reclaims.
-		var sha *string
-		if c.BaseSHA != "" {
-			sha = &c.BaseSHA
-		}
-		if err := r.deps.Store.SetTaskProgress(ctx, task.ID, nil, &c.Path, sha); err != nil {
-			log.Error("persist worktree path", "error", err)
-		}
-		return nil
-	}
 	// The second creation mode (§10, task 064): a task created from a pull
 	// request runs *on* that pull request's head branch, so admission fetches
 	// the head and checks it out rather than cutting a new branch. It is
 	// selected by the flag the create call wrote on the link, not by the link
 	// existing — a human may link any task to any pull request, and that must
 	// not change how the task's branch was made (decision 8).
+	fromPull := task.GitHubPull.FromPull()
+	// refreshOf is what the claim records about the base refresh (§10, task
+	// 099), so a human can later tell a stale base from an old task without
+	// reading the daemon log. A pull-request task records none: the fetch it
+	// ran was the *head's*, not the base's, and no base fast-forward is
+	// attempted on that path — a record of either would claim something that
+	// did not happen, and NULL is the honest "this admission refreshed no base".
+	refreshOf := func(c worktree.Created) *store.BaseRefresh {
+		if fromPull {
+			return nil
+		}
+		return &store.BaseRefresh{Fetch: store.BaseFetch(c.Fetch), FastForward: store.BaseFastForward(c.FastForward)}
+	}
+	claim := func(c worktree.Created) error {
+		// A failed persist is logged and the run continues, as it always
+		// has: the worktree is real and the step can use it. What it leaves
+		// behind is an unclaimed directory, which is precisely the crash case
+		// `vincent gc` reclaims. One write for path, base SHA and refresh
+		// record, so a reader never sees the worktree without the base it was
+		// cut from.
+		if err := r.deps.Store.ClaimTaskWorktree(ctx, task.ID, c.Path, c.BaseSHA, refreshOf(c)); err != nil {
+			log.Error("persist worktree path", "error", err)
+		}
+		return nil
+	}
 	var created worktree.Created
 	var err error
-	if task.GitHubPull.FromPull() {
+	if fromPull {
 		created, err = r.deps.Worktrees.CreatePullAndClaim(ctx, project.Path, worktree.TaskOwner(task.ID),
 			task.BaseBranch, pullSpecFor(task), claim)
 		logPullFetch(log, task, created.Fetch)
 	} else {
 		created, err = r.deps.Worktrees.CreateAndClaim(ctx, project.Path, worktree.TaskOwner(task.ID),
 			task.BranchName, task.BaseBranch, fetch, claim)
-		logBaseFetch(log, task.BaseBranch, created.Fetch)
+		logBaseRefresh(log, task.BaseBranch, created.Fetch, created.FastForward)
 	}
 	if err != nil {
 		if ctx.Err() != nil {
@@ -789,6 +800,7 @@ func (r *Runner) ensureWorktree(ctx context.Context, task *store.Task, project *
 	}
 	task.WorktreePath = created.Path
 	task.BaseSHA = created.BaseSHA
+	task.BaseRefresh = refreshOf(created)
 	return nil
 }
 
@@ -827,12 +839,25 @@ func logPullFetch(log *slog.Logger, task *store.Task, out worktree.FetchOutcome)
 		"fork", task.GitHubPull.Fork)
 }
 
-// logBaseFetch reports what the base-branch fetch did (§10, task 056). Only a
-// failure is a warning: no upstream is the correct and expected answer for a
-// repository with no remote, a branch that never left the machine, and every
-// fan_out lane, whose base is its parent's branch (§7.6) — warning on those
-// would cry wolf on normal operation.
-func logBaseFetch(log *slog.Logger, base string, out worktree.FetchOutcome) {
+// logBaseRefresh reports what the base-branch fetch did (§10, task 056) and
+// what fast-forwarding the local base did after it (§10, task 099).
+//
+// For the fetch, only a failure is a warning: no upstream is the correct and
+// expected answer for a repository with no remote, a branch that never left
+// the machine, and every fan_out lane, whose base is its parent's branch
+// (§7.6) — warning on those would cry wolf on normal operation.
+//
+// For the fast-forward, the level follows who has to act. Moving a branch in
+// the human's own repository is worth an Info line, since it changed
+// something they did not ask this task to change. A local base ahead of its
+// remote is the human's unpushed work and the ordinary state of a developer's
+// checkout, so it is Debug like no upstream. A diverged base, or a checkout
+// that was dirty or busy, left the base stale for a reason the human can fix,
+// so those are Info with the reason. A git error is a Warn with git's words.
+// Nothing here blocks or fails the task: the worktree was cut from the
+// fetched commit either way, and only the project's local ref stayed behind.
+// The worktree package holds no logger, which is why this lives here.
+func logBaseRefresh(log *slog.Logger, base string, out worktree.FetchOutcome, ff worktree.FastForwardOutcome) {
 	switch out.Result {
 	case worktree.FetchDone:
 		log.Debug("fetched the base branch before creating the worktree",
@@ -842,6 +867,27 @@ func logBaseFetch(log *slog.Logger, base string, out worktree.FetchOutcome) {
 	case worktree.FetchFailed:
 		log.Warn("base branch fetch failed; branching from the local ref, which may be stale",
 			"base", base, "remote", out.Remote, "ref", out.Ref, "error", out.Error)
+	}
+	switch ff.Result {
+	case worktree.FastForwardAdvanced:
+		attrs := []any{"base", base}
+		if ff.Worktree != "" {
+			attrs = append(attrs, "worktree", ff.Worktree)
+		}
+		log.Info("fast-forwarded the local base branch to the fetched commit", attrs...)
+	case worktree.FastForwardUpToDate:
+		log.Debug("local base branch already at the fetched commit", "base", base)
+	case worktree.FastForwardSkipped:
+		switch ff.Reason {
+		case worktree.SkipLocalAhead:
+			log.Debug("local base branch is ahead of the fetched commit; left as is", "base", base)
+		case worktree.SkipError:
+			log.Warn("fast-forwarding the local base branch failed; it may be stale",
+				"base", base, "error", ff.Error)
+		default:
+			log.Info("did not fast-forward the local base branch; it may be stale",
+				"base", base, "reason", ff.Reason)
+		}
 	}
 }
 

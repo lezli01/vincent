@@ -39,8 +39,12 @@ and an optional per-project concurrency cap.
 vincent project add /path/to/repo --name api --default-branch develop
 ```
 
-Vincent never modifies your checkout. It reads the repository to create
-worktrees; your working tree, your current branch and your stash are untouched.
+No task ever works in your checkout. Vincent reads the repository to create
+worktrees, and changes one thing there: when a task's base branch is merely
+behind its remote, it fast-forwards that branch to the fetched commit — with its
+working tree, if it is checked out and clean
+([`fetch_base_branch`](../reference/configuration.md#fetch_base_branch), on by
+default). A checkout with any change in it, and your stash, are never touched.
 
 ## A workflow
 
@@ -113,8 +117,8 @@ different convention per project or globally, or name one task's branch outright
 see [Configuration](../reference/configuration.md). That is where the agent
 runs and where commands execute.
 
-What this **does** buy you: two tasks in the same repository never collide, your
-own checkout is never touched, and the diff of a task is a real git diff you can
+What this **does** buy you: two tasks in the same repository never collide, no task
+ever works in your own checkout, and the diff of a task is a real git diff you can
 read before anything is pushed.
 
 What it **does not** buy you: privilege isolation. A full-auto agent runs as

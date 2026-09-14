@@ -82,10 +82,11 @@ var fullHex = regexp.MustCompile(`^[0-9a-f]{40,64}$`)
 // the outcome is a task based on a different upstream commit, not a corrupt
 // repository.
 //
-// Nothing here mutates the user's local base branch. It is frequently checked
-// out — and often dirty — in the human's own working copy, so a fast-forward
-// would need its own refusal path; branching from the fetched commit touches
-// no shared repository state and cannot fail for that reason.
+// Nothing here mutates the user's local base branch; create hands the fetched
+// commit to fastForwardBase for that, afterwards. The branch is frequently
+// checked out — and often dirty — in the human's own working copy, so the
+// fast-forward has its own refusal path and records its own outcome, and the
+// task branch starts at the fetched commit whether or not the base could move.
 func (m *Manager) fetchBase(ctx context.Context, repo, base string) (string, FetchOutcome) {
 	up, ok := m.branchUpstream(ctx, repo, base)
 	if !ok {

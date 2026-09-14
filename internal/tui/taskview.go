@@ -983,6 +983,7 @@ func (t *taskView) detailLines(width int) []string {
 	paths := []taskDetailFact{
 		{"workflow origin", task.WorkflowOrigin.Display()},
 		{"branch", valueOr(task.BranchName, "not created")},
+		{"base", valueOr(task.BaseDisplay(), "unknown")},
 	}
 	if task.WorktreePath != nil {
 		paths = append(paths, taskDetailFact{"worktree", *task.WorktreePath})
@@ -990,6 +991,16 @@ func (t *taskView) detailLines(width int) []string {
 	overviewLines := renderTaskDetailFacts(width, overview)
 	overviewLines = append(overviewLines, "")
 	overviewLines = append(overviewLines, renderTaskDetailFactList(width, paths)...)
+	// Only a degraded refresh earns a row (issue #430): a base that was
+	// fetched and fast-forwarded, or already current, is the expected case
+	// and says nothing.
+	if warning := task.BaseRefresh.Warning(); warning != "" {
+		for _, line := range styledTaskDetailFactLines(
+			taskDetailFact{"base refresh", warning}, max(width-4, 12),
+			func(s string) string { return styleWarn.Render(s) }) {
+			overviewLines = append(overviewLines, "  "+line)
+		}
+	}
 	out = appendTaskDetailSection(out, "Overview", overviewLines)
 
 	execution := []taskDetailFact{
@@ -1191,6 +1202,13 @@ func renderTaskDetailFactList(width int, facts []taskDetailFact) []string {
 }
 
 func taskDetailFactLines(fact taskDetailFact, width int) []string {
+	return styledTaskDetailFactLines(fact, width, func(s string) string { return s })
+}
+
+// styledTaskDetailFactLines is taskDetailFactLines with every wrapped value
+// line passed through style, which is how a warning row keeps its colour
+// across a wrap without the label taking it too.
+func styledTaskDetailFactLines(fact taskDetailFact, width int, style func(string) string) []string {
 	labelWidth := min(18, max(width-9, 8))
 	valueWidth := max(width-labelWidth-1, 8)
 	value := valueOr(fact.value, "none")
@@ -1205,7 +1223,7 @@ func taskDetailFactLines(fact taskDetailFact, width int) []string {
 				continue
 			}
 			for _, valueLine := range wrapTaskDetailText(paragraph, max(width-2, 8)) {
-				out = append(out, "  "+valueLine)
+				out = append(out, "  "+style(valueLine))
 			}
 		}
 		return out
@@ -1228,9 +1246,9 @@ func taskDetailFactLines(fact taskDetailFact, width int) []string {
 	out := make([]string, len(values))
 	for i, valueLine := range values {
 		if i == 0 {
-			out[i] = styleDim.Render(label) + " " + valueLine
+			out[i] = styleDim.Render(label) + " " + style(valueLine)
 		} else {
-			out[i] = indent + valueLine
+			out[i] = indent + style(valueLine)
 		}
 	}
 	return out

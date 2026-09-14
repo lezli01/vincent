@@ -37,19 +37,23 @@ const CodeRepoOperationInProgress = worktree.ReasonRepoOperationInProgress
 
 // chatBody is a chat as the API renders it (§5.5, §13.2).
 type chatBody struct {
-	ID           int64           `json:"id"`
-	ProjectID    int64           `json:"project_id"`
-	Title        string          `json:"title"`
-	State        string          `json:"state"`
-	Agent        string          `json:"agent"`
-	Model        string          `json:"model,omitempty"`
-	Effort       string          `json:"effort,omitempty"`
-	Branch       string          `json:"branch"`
-	BaseBranch   string          `json:"base_branch"`
-	BaseSHA      string          `json:"base_sha,omitempty"`
-	WorktreePath string          `json:"worktree_path,omitempty"`
-	SessionID    string          `json:"session_id,omitempty"`
-	PendingInput json.RawMessage `json:"pending_input,omitempty"`
+	ID         int64  `json:"id"`
+	ProjectID  int64  `json:"project_id"`
+	Title      string `json:"title"`
+	State      string `json:"state"`
+	Agent      string `json:"agent"`
+	Model      string `json:"model,omitempty"`
+	Effort     string `json:"effort,omitempty"`
+	Branch     string `json:"branch"`
+	BaseBranch string `json:"base_branch"`
+	BaseSHA    string `json:"base_sha,omitempty"`
+	// BaseRefresh is what the base fetch and the local base's fast-forward did
+	// when the chat's worktree was created (§10, §13.2, task 099); null, not
+	// omitted, when nothing was recorded.
+	BaseRefresh  *baseRefreshBody `json:"base_refresh"`
+	WorktreePath string           `json:"worktree_path,omitempty"`
+	SessionID    string           `json:"session_id,omitempty"`
+	PendingInput json.RawMessage  `json:"pending_input,omitempty"`
 	// HandoffTaskID is the task this chat's worktree and branch were handed
 	// to (§5.5, task 074). It is the one authoritative edge; a task's
 	// `source_chat_id` is this read backwards.
@@ -82,9 +86,9 @@ func renderChat(c *store.Chat) chatBody {
 	return chatBody{
 		ID: c.ID, ProjectID: c.ProjectID, Title: c.Title, State: string(c.State),
 		Agent: c.Agent, Model: c.Model, Effort: c.Effort, Branch: c.Branch,
-		BaseBranch: c.BaseBranch, BaseSHA: c.BaseSHA, WorktreePath: c.WorktreePath,
-		SessionID: c.SessionID, PendingInput: c.PendingInput, HandoffTaskID: c.HandoffTaskID,
-		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
+		BaseBranch: c.BaseBranch, BaseSHA: c.BaseSHA, BaseRefresh: renderBaseRefresh(c.BaseRefresh),
+		WorktreePath: c.WorktreePath, SessionID: c.SessionID, PendingInput: c.PendingInput,
+		HandoffTaskID: c.HandoffTaskID, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 	}
 }
 
@@ -177,18 +181,47 @@ func (s *Server) handleChatCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return
 	}
+	// A chat's base is refreshed exactly as a task's is (§10, task 099): the
+	// `fetch_base_branch` key is read per request, so a hot-reloaded `false`
+	// holds for the next chat, and the outcome is recorded on the row in the
+	// same write that claims the worktree. With the key off no fetch runs, no
+	// base_sha is recorded, and the record says disabled / not_attempted.
+	fetch := s.deps.Config().FetchBaseBranch
+	var refresh *store.BaseRefresh
 	created, err := s.deps.Worktrees.CreateAndClaim(
-		r.Context(), project.Path, worktree.ChatOwner(chat.ID), chat.Branch, base, true,
+		r.Context(), project.Path, worktree.ChatOwner(chat.ID), chat.Branch, base, fetch,
 		func(c worktree.Created) error {
-			_, err := s.deps.Store.SetChatWorktree(r.Context(), chat.ID, c.Path, c.BaseSHA)
+			refresh = &store.BaseRefresh{
+				Fetch:       store.BaseFetch(c.Fetch),
+				FastForward: store.BaseFastForward(c.FastForward),
+			}
+			_, err := s.deps.Store.ClaimChatWorktree(r.Context(), chat.ID, c.Path, c.BaseSHA, refresh)
 			return err
 		})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return
 	}
-	chat.WorktreePath, chat.BaseSHA = created.Path, created.BaseSHA
+	s.logBaseRefresh(chat.ID, base, created)
+	chat.WorktreePath, chat.BaseSHA, chat.BaseRefresh = created.Path, created.BaseSHA, refresh
 	writeJSON(w, http.StatusCreated, renderChat(chat))
+}
+
+// logBaseRefresh reports a chat's base refresh that did not do what was asked.
+// A failed fetch and a fast-forward that git itself refused are Warn: the chat
+// started from a possibly stale base, or the human's branch was left behind,
+// for a reason worth reading. Every other outcome — no upstream, a dirty or
+// diverged local base — is an ordinary answer already recorded on the row, and
+// logging it would cry wolf on every chat.
+func (s *Server) logBaseRefresh(chatID int64, base string, c worktree.Created) {
+	if c.Fetch.Degraded() {
+		s.deps.Logger.Warn("chat base fetch failed; starting from the local base",
+			"chat", chatID, "base", base, "remote", c.Fetch.Remote, "error", c.Fetch.Error)
+	}
+	if c.FastForward.Skipped() && c.FastForward.Reason == worktree.SkipError {
+		s.deps.Logger.Warn("chat base fast-forward failed; local base left where it was",
+			"chat", chatID, "base", base, "error", c.FastForward.Error)
+	}
 }
 
 // handleChatList lists chats. They are here and nowhere else: chats never

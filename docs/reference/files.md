@@ -176,8 +176,11 @@ Two rules worth internalizing:
   git worktree list
   ```
 
-Your own checkout is never touched: vincent reads the repository to create
-worktrees and never modifies your working tree, current branch or stash.
+No task works in your own checkout: vincent reads the repository to create
+worktrees, and the only change it makes there is fast-forwarding a base branch
+that is behind its remote, with its checkout when that is clean — see
+[`fetch_base_branch`](configuration.md#fetch_base_branch). A checkout with any
+change in it, and your stash, are never modified.
 
 **What reclaims a worktree.** Archiving the task, normally. A worktree whose task
 row is gone — a deleted project whose removal failed, a crash before the path was

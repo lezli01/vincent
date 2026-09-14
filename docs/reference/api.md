@@ -1645,6 +1645,37 @@ look the name up again to invent one.
 
 The `task.created` event carries the same object under `workflow_origin`.
 
+Every task representation also carries where the task started, and how its base
+was refreshed first:
+
+```json
+"base_branch": "master",
+"base_sha": "1a2b3c4d5e6f…",
+"base_refresh": {
+  "fetch": {"result": "fetched", "remote": "origin", "ref": "refs/heads/master"},
+  "fast_forward": {"result": "skipped", "reason": "checkout_dirty"}
+}
+```
+
+`base_sha` is the commit the task branch was cut from, and is absent when the
+branch was cut from the local `base_branch` itself. `base_refresh` is recorded
+once, when the scheduler first admits the task and creates its worktree. It is
+`null` before that, for a task whose worktree predates the record, and for a task
+created from a pull request, which refreshes no base.
+
+`fetch.result` is `fetched`, `no_upstream`, `disabled`
+([`fetch_base_branch: false`](configuration.md#fetch_base_branch)) or `error` —
+the task started from the local branch, which may be stale, and `error` carries
+git's message. `fast_forward.result` is what then happened to your local base
+branch: `advanced` (it moved to the fetched commit, with its checkout at
+`worktree` when it has one), `up_to_date`, `not_attempted` (nothing was fetched),
+or `skipped` with a `reason` of `local_ahead`, `diverged`, `checkout_dirty`,
+`checkout_busy` or `error`. None of these is a failure; the task runs either way.
+
+A chat carries the same two fields, its worktree is created under the same
+`fetch_base_branch` key, and `POST /v1/chats/{id}/handoff` copies both to the
+task.
+
 Human actions, all `POST /v1/tasks/{id}/…`:
 
 | Path | Valid from | Body |

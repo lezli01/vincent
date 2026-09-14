@@ -23,6 +23,7 @@ type Chat struct {
 	Branch       string          `json:"branch"`
 	BaseBranch   string          `json:"base_branch"`
 	BaseSHA      string          `json:"base_sha,omitempty"`
+	BaseRefresh  *BaseRefresh    `json:"base_refresh"`
 	WorktreePath string          `json:"worktree_path,omitempty"`
 	SessionID    string          `json:"session_id,omitempty"`
 	PendingInput json.RawMessage `json:"pending_input,omitempty"`

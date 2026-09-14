@@ -81,9 +81,12 @@ itself because a parse failed has failed in the wrong direction.
 
 Every task runs in its own `git worktree` on its own branch.
 
-**Does:** keep two tasks in the same repository from colliding; keep your own
-checkout, current branch and stash untouched; make every change reviewable as a
-real git diff before anything is pushed.
+**Does:** keep two tasks in the same repository from colliding; keep every task
+out of your own checkout, which vincent itself changes only by fast-forwarding a
+base branch that is behind its remote, and only when that checkout is clean
+([`fetch_base_branch`](reference/configuration.md#fetch_base_branch)); leave your
+stash untouched; make every change reviewable as a real git diff before anything
+is pushed.
 
 **Does not:** confine the process. The worktree is a directory, not a sandbox. A
 full-auto agent's cwd is the worktree; its *reach* is your whole account.

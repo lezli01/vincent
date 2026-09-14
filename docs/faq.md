@@ -66,9 +66,16 @@ pointing it at anything sensitive.
 
 ### Does it touch my working copy?
 
-No. Each task gets its own `git worktree` on its own branch — `vincent/{id}-{slug}`
-unless you configure a different convention. Your checkout, current branch and
-stash are untouched.
+No task works in it. Each task gets its own `git worktree` on its own branch —
+`vincent/{id}-{slug}` unless you configure a different convention.
+
+The one change vincent makes there is a fast-forward. Before a task's worktree is
+created, its base branch is fetched from its remote, and a local base branch that
+is simply behind is moved to the fetched commit — with its working tree, when it
+is checked out and clean. A checkout with any change in it or an operation in
+progress, a branch with commits the remote lacks, and your stash are left alone.
+[`fetch_base_branch: false`](reference/configuration.md#fetch_base_branch) turns
+it off.
 
 ### Does it delete my branches?
 

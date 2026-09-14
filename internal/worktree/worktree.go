@@ -174,6 +174,12 @@ type Manager struct {
 	// in the other order.
 	reposMu sync.Mutex
 	repos   map[string]*sync.Mutex
+
+	// beforeBaseRefUpdate, when set, runs just before fastForwardBase's
+	// compare-and-swap `update-ref`. It is nil outside this package's tests:
+	// gitx.Git has no fake, and a lost race against a human's own commit
+	// cannot be provoked from outside the window it happens in.
+	beforeBaseRefUpdate func()
 }
 
 // NewManager returns a Manager storing worktrees under dataDir.
@@ -223,6 +229,10 @@ type Created struct {
 	// Fetch says what the base-branch fetch did; the zero value means none
 	// was asked for.
 	Fetch FetchOutcome
+	// FastForward says what happened to the project's local base branch after
+	// the fetch (fastForwardBase). create always sets it; the zero value comes
+	// only from the pull-request mode, which does not fetch the base.
+	FastForward FastForwardOutcome
 }
 
 // Create adds branch (from base) and a worktree for it, returning the
@@ -335,13 +345,22 @@ func (m *Manager) create(
 	if err := m.mkdirRoot(); err != nil {
 		return Created{}, err
 	}
-	out := Created{Path: target, Fetch: FetchOutcome{Result: FetchDisabled}}
+	out := Created{
+		Path:        target,
+		Fetch:       FetchOutcome{Result: FetchDisabled},
+		FastForward: FastForwardOutcome{Result: FastForwardNotAttempted},
+	}
 	start := base
 	if fetch {
 		sha, fo := m.fetchBase(ctx, projectPath, base)
 		out.Fetch = fo
 		if sha != "" {
 			out.BaseSHA, start = sha, sha
+			// Before the add, still under the lock: no peer admission can
+			// fetch or move the base between the resolve and the update. Its
+			// outcome is recorded and never fails the creation, and the task
+			// branch starts at sha whatever it says.
+			out.FastForward = m.fastForwardBase(ctx, projectPath, base, sha)
 		}
 	}
 	addCtx, cancel := context.WithTimeout(ctx, gitx.WorktreeTimeout)

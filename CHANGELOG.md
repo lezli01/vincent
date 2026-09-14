@@ -244,6 +244,26 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
+- **A new task refreshes your local base branch, and shows what it started
+  from.** With `fetch_base_branch` on (the default), the fetch before a task's
+  worktree is created is now followed by a fast-forward of your local base
+  branch to the fetched commit, and of its checkout when it is checked out —
+  so `git log master` in your own checkout stops drifting behind what tasks
+  build on. It only ever fast-forwards, runs no merge or checkout hooks, and
+  leaves the branch exactly where it is when it is ahead of or has diverged
+  from the remote, or when its checkout has any change (untracked files
+  included) or
+  a merge, rebase, cherry-pick, revert or bisect in progress. A skip never
+  blocks the task, which starts from the fetched commit either way. What
+  happened is now visible on the task: `base_sha` and a new `base_refresh`
+  record are on the task and chat API responses, the TUI detail view's
+  Overview gains a `base` row (`master @ 1a2b3c4`) and a highlighted
+  `base refresh` row when the fetch failed or the fast-forward was skipped,
+  and `vincent task show` prints the same as `base` and `refresh`. A chat
+  handed off to a task passes its record on. Chats also honour
+  `fetch_base_branch: false` now; they used to fetch regardless. Spec §5.3,
+  §5.5, §10, §12.3, §13.2, §14.
+
 - **One key, one meaning: the TUI's keyboard now follows a vocabulary.** The
   same operation answered to different keys depending on the screen — refresh
   was `R` on seven surfaces and `r` on three, archive was `A` on the task board

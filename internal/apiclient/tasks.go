@@ -407,10 +407,15 @@ type TaskDetail struct {
 	// task's §8.4 context and its §8.6 level-2 override from exactly these
 	// four, and re-deriving either client-side is what task 048 declined to
 	// do.
-	BaseBranch     string  `json:"base_branch"`
-	AgentOverride  *string `json:"agent_override"`
-	ModelOverride  *string `json:"model_override"`
-	EffortOverride *string `json:"effort_override"`
+	BaseBranch string `json:"base_branch"`
+	// BaseSHA is the commit the branch was cut from, absent when it was cut
+	// from the local base; BaseRefresh is how that base was refreshed first,
+	// nil before the worktree exists (issue #430).
+	BaseSHA        string       `json:"base_sha,omitempty"`
+	BaseRefresh    *BaseRefresh `json:"base_refresh"`
+	AgentOverride  *string      `json:"agent_override"`
+	ModelOverride  *string      `json:"model_override"`
+	EffortOverride *string      `json:"effort_override"`
 	// Restricted and MaxTaskCostUSD are the create-time limits (task 096
 	// decisions 17, 18); MaxTaskCostUSD is nil when the task set none.
 	Restricted     bool            `json:"restricted"`

@@ -12,6 +12,7 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/testrepo"
 	"github.com/lezli01/vincent/internal/workflow"
+	"github.com/lezli01/vincent/internal/worktree"
 )
 
 // fanOutBudget is how long a fan-out test waits. It is larger than the
@@ -391,9 +392,11 @@ func (h *engineHarness) firstStepEnv(t *testing.T, task *store.Task, snapshot st
 
 // TestFanOutLanesInheritTheParentBranchWithoutFetching wires task 056 through
 // the engine end to end. The parent's base is a branch whose remote has moved
-// on, so it starts at the fetched tip and records the SHA; each lane's base is
-// the parent's own branch (§7.6), which has no upstream and never will, so no
-// fetch is attempted and no base SHA is recorded for it.
+// on, so it starts at the fetched tip, records the SHA, and — the checkout
+// being clean — fast-forwards the project's own main to that tip (task 099);
+// each lane's base is the parent's own branch (§7.6), which has no upstream
+// and never will, so no fetch is attempted, nothing is moved, and no base SHA
+// is recorded for it.
 func TestFanOutLanesInheritTheParentBranchWithoutFetching(t *testing.T) {
 	h := newEngineHarness(t)
 	remoteTip := advanceRemoteMain(t, h.repo)
@@ -419,6 +422,17 @@ func TestFanOutLanesInheritTheParentBranchWithoutFetching(t *testing.T) {
 	}
 	if lane.BaseSHA != "" {
 		t.Errorf("lane base_sha = %q; a lane's base has no upstream to fetch", lane.BaseSHA)
+	}
+	if r := done.BaseRefresh; r == nil || r.Fetch.Result != worktree.FetchDone ||
+		r.FastForward.Result != worktree.FastForwardAdvanced {
+		t.Errorf("parent base_refresh = %+v, want fetched and advanced", r)
+	}
+	if got := testrepo.Run(t, h.repo, "rev-parse", "refs/heads/main"); got != remoteTip {
+		t.Errorf("project refs/heads/main = %s, want the parent's admission to fast-forward it to %s", got, remoteTip)
+	}
+	if r := lane.BaseRefresh; r == nil || r.Fetch.Result != worktree.FetchNoUpstream ||
+		r.FastForward.Result != worktree.FastForwardNotAttempted {
+		t.Errorf("lane base_refresh = %+v, want no_upstream and not_attempted", r)
 	}
 	// And the lane really forked from the parent's branch, not from the remote
 	// tip it would have landed on had the parent's upstream been inherited.
