@@ -87,6 +87,13 @@ also audits them (decision 5).
    does. That is accepted and stated in the source comment: adding the line is
    part of shipping a workflow feature, alongside the schema reference and the
    guide.
+   *Amended 2026-09-14 (issue #376).* Accepted staleness turned out to be the
+   norm. By then the checklist left out 14 feature keys, most of which shipped
+   before it existed, so it is now drift-tested:
+   `TestUpdateWorkflowsChecklistNamesEveryField` fails when a key the §8.2
+   schema descriptor offers is not named under "The bar". The test exempts only
+   keys no workflow can be behind on and the `container` sub-keys item 9 forbids
+   the pass to add, each with a reason, and it fails on a stale exemption.
 6. **2026-08-27 — No task fields.** A `only: <names>` field was considered for
    bounding cost on a large registry and rejected: decision 3 validates every
    file regardless, so a field that narrows what the agent may fix while the
