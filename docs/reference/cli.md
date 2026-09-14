@@ -1518,6 +1518,11 @@ also resolve `include` steps and named fan-out lanes through the registry.
 Without one, those steps are reported as unresolved and every other step still
 renders.
 
+A derived fan-out's `lane:` template renders once, not once per item: its
+steps are marked `<derived lane>` with the `for_each` they expand over
+(`derived_lane` in `--json`), and its own `if`, `id`, `needs` and `fields` bind
+each `.Item` key they read to a placeholder such as `<item.id>`.
+
 Exit `0` clean, `1` a template that does not execute, `2` no daemon answered a
 `--task`/`--project`. A guard that renders to something other than `true`/`false`
 is a warning, not a failure: a preview placeholder can legitimately make one

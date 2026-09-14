@@ -287,6 +287,16 @@ list with the user-facing context a commit subject cannot carry.
   from the key registry. And with `tui.board.group_by: []`, the `ctrl+p`
   palette no longer lists the board's fold keys, which do nothing on a flat
   board and were already missing from the footer (issue #372).
+- **`vincent workflow render` now renders a derived fan-out's lane.** A
+  `fan_out` with `for_each:` and a `lane:` template rendered only its
+  `for_each` items: the template's inline steps, its `if:`, `id`, `needs` and
+  `fields` were never executed, so a typo such as `{{ .Task.Titel }}` in a
+  derived lane's `run:` printed `ok` and exited `0`. They now render — the
+  template's own fields with `.Item` keys bound to `<item.KEY>` placeholders —
+  and each of its steps is marked as a lane template with the `for_each` it
+  expands over (`derived_lane` in `--json`). With `--project`, a registry
+  workflow reached through an `include` or a named lane also kept its `lane:`,
+  `max_lanes`, `schedule` and lanes' `needs` (issue #370).
 - **A follow-up that names a workflow now honors that workflow's declared
   fields.** `POST /v1/tasks/{id}/follow_up` with `workflow` skipped the field
   checks `POST /v1/tasks` applies, so it queued a run whose required field the
