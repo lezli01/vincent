@@ -1546,19 +1546,21 @@ vincent trigger validate <file> [--json]
 Checks one trigger file without a daemon. The verdict is the one
 `POST /v1/triggers/validate` gives, plus one more check: the file's `id:` must
 equal its name without `.yaml`, which is what the registry requires of a file
-under `{config_dir}/triggers/`. The file does not have to be in that directory.
+under `{config_dir}/triggers/`. The file does not have to be in that directory,
+but its name must end in `.yaml`, the only files the registry loads.
 
 ```
 $ vincent trigger validate label-to-task.yaml
-label-to-task.yaml: valid
+label-to-task.yaml: ok — trigger label-to-task
 ```
 
-An invalid file prints one line per error, as `FILE:LINE: PATH: MESSAGE`.
-`--json` prints one object:
+An invalid file prints one `  error: line LINE: PATH: MESSAGE` line per error
+on stderr, then `FILE: invalid (N error(s))`. `--json` prints one object, with
+`id` only when the file is valid:
 
 ```json
-{ "file": "label-to-task.yaml", "id": "label-to-task", "valid": false,
-  "errors": [ { "line": 4, "path": "source.project", "message": "…" } ] }
+{ "file": "label-to-task.yaml", "valid": false,
+  "errors": [ { "path": "source.project", "line": 4, "message": "…" } ] }
 ```
 
 Exit `0` valid, `1` invalid or unreadable, as for
@@ -1636,7 +1638,11 @@ triggers view, which asks first, or in your editor. Apply never touches
 Each file is written `0600`, and `wrote <path>` is printed for it. Once every
 file is written, the proposal directory is removed.
 
-Exit `0` installed, `1` refused.
+`removed <dir>` follows. A proposal with an empty manifest and no staged file
+installs nothing and is removed the same way: that is `update-triggers` finding
+every trigger already right.
+
+Exit `0` installed, `1` refused, nothing staged at that path, or a write failed.
 
 ### `vincent trigger test`
 
