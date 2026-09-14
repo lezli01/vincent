@@ -557,7 +557,12 @@ func TestManagerDisarmDropsCursorAndRearmSeeds(t *testing.T) {
 			// that no poller runs, so no child holds the file.
 			setOutput(t, out, evLine("e1"), evLine("e2"))
 			tc.rearm(t, h, out)
-			waitFor(t, "the re-arm seed", func() bool { return hasRow(h.ledger("jira"), "e2", store.DeliverySeeded) })
+			// The cursor is the seed poll's last write; the ledger rows come
+			// before it, so stopping on them alone can cancel the poll short
+			// of its cursor and its poll_changed.
+			waitFor(t, "the re-arm seed", func() bool {
+				return hasRow(h.ledger("jira"), "e2", store.DeliverySeeded) && h.cursor("jira") != nil
+			})
 			h.m.Stop()
 
 			if n := count(h.ledger("jira"), store.DeliveryFired); n != 0 {

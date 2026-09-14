@@ -435,7 +435,10 @@ func (m *Manager) putCursor(ctx context.Context, prev, next *store.TriggerCursor
 	if err != nil {
 		return
 	}
-	if err := m.deps.Store.AppendEvent(ctx, &store.Event{Type: store.EventTriggerPollChanged, Payload: payload}); err != nil {
+	// The row is committed, so its event must follow it even when a disarm or
+	// shutdown cancels ctx between the two writes: the next poll reads this
+	// row as not-first with unchanged health, and would never publish it.
+	if err := m.deps.Store.AppendEvent(context.WithoutCancel(ctx), &store.Event{Type: store.EventTriggerPollChanged, Payload: payload}); err != nil {
 		m.log.Warn("trigger.poll_changed not recorded", "trigger", next.TriggerID, "error", err)
 	}
 }
