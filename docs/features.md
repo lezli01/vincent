@@ -342,8 +342,8 @@ out and workflow templates need no translation. A workflow can pin its own image
 in `defaults.container:`.
 
 macOS and Linux hosts only, and the container is a filesystem boundary rather
-than a network or credential one — outbound traffic is open by default and your
-agent's configuration is mounted inside it so it can authenticate. Read
+than a network or credential one — outbound traffic is open by default, and
+turning on `mount_agent_config` puts your agent's credentials inside it. Read
 [the security model](security-model.md) for what that means and
 [`container`](reference/configuration.md#container) for the knobs.
 
