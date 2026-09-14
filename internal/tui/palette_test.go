@@ -269,3 +269,34 @@ func TestPaletteOffersTheStatusLineKey(t *testing.T) {
 		t.Error("the daemon palette does not offer the claude status line")
 	}
 }
+
+// TestPaletteFlatBoardDropsFoldRows (issue #372): with `group_by: []` the
+// board's fold keys do nothing, so the palette must not offer them — the
+// footer already drops them through shell.liveBindings (task 054 decision 5),
+// and task 094 decision 5 left the palette's copy of the same lie for this
+// issue. Driven through root.openPalette, the palette's one real caller.
+func TestPaletteFlatBoardDropsFoldRows(t *testing.T) {
+	m := newRoot(testCtx(t), fakeConnector(), ackedDir(t))
+	m.phase = phaseConnected
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	if ctx := m.activeContext(); ctx != ctxTasks {
+		t.Fatalf("fixture: active context is %s, want %s", ctx, ctxTasks)
+	}
+	m.views[viewHome].(*shell).board.group = nil
+
+	folds := map[string]bool{}
+	for _, b := range bindingsFor(ctxTasks) {
+		if b.fold {
+			folds[b.label] = true
+		}
+	}
+	if len(folds) == 0 {
+		t.Fatal("fixture: the board declares no fold rows")
+	}
+	m.openPalette()
+	for _, e := range m.palette.entries {
+		if e.group == string(ctxTasks) && folds[e.label] {
+			t.Errorf("a flat board's palette still offers %q (key %q), which does nothing", e.label, e.key)
+		}
+	}
+}
