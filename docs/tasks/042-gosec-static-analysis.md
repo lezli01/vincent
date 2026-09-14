@@ -118,6 +118,10 @@ vulnerability; one — the `slices.Equal` rewrite — was worth changing anyway.
   scope. It carries a suppression saying so, and this paragraph is the follow-up
   record.
 
+  *Resolved 2026-09-14 (#367).* `store.Open` now creates the data directory
+  `0o700` and the suppression is gone, with its own spec §12.2 amendment. An
+  existing data directory's mode is still left alone.
+
 - **The G202 suppressions were made checkable before they were written
   (2026-08-28).** Five sites in `internal/store` built an `IN (?, ?, ?)` list by
   hand, in two different spellings (`strings.Repeat("?,", n-1) + "?"` and

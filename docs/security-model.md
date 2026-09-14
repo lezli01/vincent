@@ -234,8 +234,9 @@ strip the styling and the block is byte-for-byte what the agent sent.
 - **Loopback only.** `listen:` is validated to a loopback host; anything else is
   rejected at config load.
 - **Bearer token on every request**, read from `{data_dir}/token`, created
-  `0600`. On Windows it relies on the per-user ACL that `%LOCALAPPDATA%`
-  inherits. Compared in constant time.
+  `0600`. The token and `vincent.db` sit in `{data_dir}`, which vincent creates
+  owner-only (`0700`) on POSIX. On Windows both rely on the per-user ACL that
+  `%LOCALAPPDATA%` inherits. Compared in constant time.
 - **CORS is disabled**, which together with the token blocks drive-by requests
   from a browser tab.
 - **No TLS**, deliberately: the socket is loopback and the token is the

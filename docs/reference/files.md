@@ -87,7 +87,7 @@ Project-scoped workflows live in the repository instead, at
 ## The data directory
 
 ```
-{data_dir}/
+{data_dir}/                                         # created 0700
   vincent.db                                        # SQLite, WAL mode
   token                                             # API bearer token, 0600
   daemon.json                                       # { port, pid, started_at }
@@ -99,6 +99,10 @@ Project-scoped workflows live in the repository instead, at
   transcripts/{task_id}/{step_index}-{attempt}.jsonl
   transcripts/chat-{chat_id}/{turn_seq}.jsonl
 ```
+
+On POSIX vincent creates `{data_dir}` owner-only (`0700`); on Windows the
+per-user ACL of `%LOCALAPPDATA%` applies instead. Vincent does not change the
+mode of a data directory that already exists.
 
 | File | What it is |
 |---|---|

@@ -4559,7 +4559,7 @@ platform the standing answer to an agent that will not resolve is the §12.3
   config.yaml                # §12.3, created 0600
   workflows/*.yaml           # global workflows
   triggers/*.yaml            # event triggers, written 0600; global scope only (§12.3, task 096)
-{data_dir}/
+{data_dir}/                  # created 0700 (§12.2 amendment below)
   vincent.db                 # SQLite, WAL mode
   token                      # API bearer token, created 0600 at first start
   daemon.json                # { "port": N, "pid": N, "started_at": … } for client discovery
@@ -4596,6 +4596,16 @@ than being the outlier.
 - **Scope is the config directory and `config.yaml`.** `{data_dir}` is already
   `0700` in practice — the daemon creates `{data_dir}/logs` `0700` before the
   store opens — and `vincent.db` keeps the driver's mode.
+
+  *Amended 2026-09-14 (#367).* The store now creates `{data_dir}` `0700`
+  itself, like every directory beside it, instead of relying on the daemon's
+  startup order to have created it first. This is hardening, not a fix to an
+  exposed installation: no vincent code path ever produced a `0755`
+  `{data_dir}`. The scope above is otherwise unchanged, deliberately: an
+  existing `{data_dir}` — which can only be broader than `0700` if something
+  outside vincent made it so (a pre-created `VINCENT_DATA_DIR`, a hand `chmod`,
+  another tool) — is **not** re-tightened, logged or reported by
+  `vincent doctor`. `vincent.db` still keeps the driver's mode.
 
 *Amended 2026-09-13 (task 096).* `{config_dir}/triggers/` holds event-trigger
 definitions, one `{id}.yaml` per trigger, and the daemon watches it with live
