@@ -1,6 +1,6 @@
 # 004 — Pin the Go toolchain and automate its patch bumps
 
-**Status:** ✅ done (3/3) · **Opened:** 2026-08-15
+**Status:** ⚠ blocked on the owner (5/6) · **Opened:** 2026-08-15
 
 `go.mod` names an exact patch toolchain, and a scheduled workflow opens the pull
 request that moves it. The Vulnerabilities workflow's most common failure needs
@@ -52,6 +52,15 @@ That is the opposite of what the attestation in `release.yml` exists to promise.
 The `go` directive stays at `1.26`. It states the language version vincent
 requires; the toolchain states what builds it. Conflating them would make every
 patch bump a claim about the minimum Go a consumer needs.
+
+*Amended 2026-09-14 (issue #373).* `go.mod` reads `go 1.26.0`, not `1.26`, and
+that is not drift to revert. `go mod tidy` records the highest `go` version any
+required module declares, verbatim: golangci-lint v2.13.1, a `tool` dependency,
+declares `go 1.26.0`, and tidy raised ours to match (fe5c1cf). Forcing `go 1.26`
+back would last until the next tidy. The directive still names the 1.26
+language series, which is what this decision protects, and the workflow's
+resolve step trims it to its minor before matching go.dev (328f1e3), so a patch
+bump still cannot become a language-version change.
 
 ### 2. This supersedes the v0 "bumped manually each Go release" decision
 
@@ -109,6 +118,41 @@ run, and tells the reviewer to close-and-reopen or push an empty commit to get
 the full three-platform matrix. The evidence is present either way; only its
 placement differs.
 
+*Amended 2026-09-14 (issue #373).* Choosing `GITHUB_TOKEN` also depends on a
+repository setting, on top of the job's `pull-requests: write`: *Settings →
+Actions → General → Workflow permissions → "Allow GitHub Actions to create and
+approve pull requests"*. Without it, `gh pr create` fails with "GitHub Actions
+is not permitted to create or approve pull requests (createPullRequest)" after
+the branch has already been pushed. The setting was off from the start and
+nobody recorded the dependency. The job failed on 2026-08-24, 08-31, 09-07 and
+09-14, every run that had a patch to adopt, and left `chore/go-toolchain-1.26.7`
+and `chore/go-toolchain-1.26.8` on the remote with no pull request. Its one
+success, 2026-08-17, took the no-op path. The `GITHUB_TOKEN` choice stands,
+with no PAT and no reuse of `RELEASE_PLEASE_TOKEN`. The owner turns the setting
+on (004.6), and the workflow's comment on `pull-requests: write` names the
+dependency, so the next reader learns it from the file and not from a failed
+run.
+
+### 6. A failed run opens an issue
+
+*2026-09-14 (issue #373).* A scheduled workflow that fails tells nobody, and
+four failures of this one went unnoticed: the vuln sweep an hour later was red
+too, for a reason people already expected. The job's last step runs
+`if: failure()`. It opens one issue titled "Go toolchain bump workflow is
+failing", or comments on that issue while it is open, and links the failed run.
+The job's `GITHUB_TOKEN` gains `issues: write`. Unlike opening a pull request,
+creating an issue depends on no repository setting, so the alert still works
+when that setting is the fault. A run cancelled by `timeout-minutes` is not a
+failure to `failure()` and is not reported.
+
+**Beat:** GitHub's failed-run notification. For a scheduled workflow it goes
+only to the user who last edited the cron line, and only if their notification
+settings allow it. Nothing in the repository states it.
+
+**Beat:** an issue per failure. A job that fails every week until someone acts
+would open an issue every week. A comment on the one open issue keeps a single
+place to look, and closing the issue re-arms the alert.
+
 ## Tasks
 
 - [x] **004.1** — `toolchain go1.26.6` in `go.mod`. ✓ 2026-08-15
@@ -116,6 +160,17 @@ placement differs.
       `go mod edit`, build/test gate, govulncheck report, pull request. ✓ 2026-08-15
 - [x] **004.3** — The build-from-source prerequisite in `README.md` and
       `docs/getting-started/installation.md` states the pin. ✓ 2026-08-15
+- [x] **004.4** — `toolchain go1.26.8` in `go.mod`, adopted by hand because
+      004.2's pull request step had never succeeded (#373). The README and
+      installation page state the pin without naming a patch and are
+      unchanged. ✓ 2026-09-14
+- [x] **004.5** — `go-toolchain.yml` reports its own failure: `issues: write`
+      and an `if: failure()` step that opens or comments on one tracking issue
+      (decision 6), plus the comment on `pull-requests: write` naming the
+      repository setting it depends on (decision 5 amendment). ✓ 2026-09-14
+- [!] **004.6** — "Allow GitHub Actions to create and approve pull requests" is
+      on, and a run of the job has opened a bump pull request. Blocked on the
+      owner: a repository setting cannot be changed from a branch.
 
 ## Out of scope
 
@@ -137,3 +192,16 @@ placement differs.
 - The resolve step's `go.dev/dl` query, run against the live release list, picks
   `go1.26.6` for `go 1.26` and reports `changed=false` against the new pin — the
   no-op path a Monday with no new patch takes.
+- 004.4: go1.26.8 is the newest 1.26 patch on the Go module proxy
+  (`golang.org/toolchain`) on 2026-09-14. With `GOTOOLCHAIN=go1.26.8`,
+  `go run mage.go build` passes and `go run mage.go vuln` reports "No
+  vulnerabilities found." for linux, darwin and windows (macOS host).
+- 004.5: `actionlint` on `.github/workflows/go-toolchain.yml` reports nothing
+  for the new failure step. Its one finding, SC2016 (info) on the pull request
+  step's single-quoted backticks, is older than this change and intended: that
+  line is Markdown, not an expansion.
+- 004.6 is unproven. With the pin already at go1.26.8, a `workflow_dispatch`
+  run takes the no-op path and never reaches `gh pr create`. The first real
+  proof that the pull request path works is the first Monday after go1.26.9
+  ships with the repository setting on. If that run fails, the 004.5 issue
+  reports it.
