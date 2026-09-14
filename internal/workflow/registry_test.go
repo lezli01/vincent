@@ -61,6 +61,27 @@ func TestRegistryListsBuiltinsWithoutAnyFiles(t *testing.T) {
 	}
 }
 
+// A global or project file shadows every built-in by name (§5.2, task 043),
+// the trigger pair included (task 098).
+func TestRegistryShadowsEveryBuiltin(t *testing.T) {
+	for name := range builtinSources {
+		t.Run(name, func(t *testing.T) {
+			reg, globalDir := newTestRegistry(t)
+			repo := t.TempDir()
+			writeWorkflow(t, globalDir, name, manualWorkflow(name, "global"))
+			reg.ReloadGlobal()
+			if got, ok := reg.Lookup(0, name); !ok || got.Scope != ScopeGlobal {
+				t.Errorf("Lookup(%q) = %+v, %v; want the global file", name, got, ok)
+			}
+			writeWorkflow(t, filepath.Join(repo, ProjectDirName), name, manualWorkflow(name, "project"))
+			reg.SetProjects(map[int64]string{7: repo})
+			if got, ok := reg.Lookup(7, name); !ok || got.Scope != ScopeProject {
+				t.Errorf("Lookup(7, %q) = %+v, %v; want the project file", name, got, ok)
+			}
+		})
+	}
+}
+
 func TestRegistryScopeShadowing(t *testing.T) {
 	reg, globalDir := newTestRegistry(t)
 	repo := t.TempDir()
