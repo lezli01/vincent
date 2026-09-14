@@ -56,15 +56,26 @@ ONLY="${VINCENT_GATE_SCENARIO:-}"
 
 fail() { echo "GATE FAIL: $*" >&2; exit 1; }
 
+hostpath() {
+  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s\n' "$1"; fi
+}
+
+# Isolate from the invoking installation before anything can stop a daemon.
+# The EXIT trap and setup's daemon_down both run `vincent daemon stop`, and
+# the first of them runs before setup exports a scenario's dirs: without
+# these it resolves the real ones, and when the gate runs inside a vincent
+# step that is the daemon supervising it — which then interrupts the step,
+# re-queues it, and re-runs the gate into the same stop.
+export VINCENT_CONFIG_DIR
+VINCENT_CONFIG_DIR="$(hostpath "$TMP/config")"
+export VINCENT_DATA_DIR
+VINCENT_DATA_DIR="$(hostpath "$TMP/data")"
+
 cleanup() {
   "$VINCENT" daemon stop --force >/dev/null 2>&1 || true
   rm -rf "$TMP"
 }
 trap cleanup EXIT
-
-hostpath() {
-  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s\n' "$1"; fi
-}
 
 run_scenario() { # run_scenario N — honours VINCENT_GATE_SCENARIO
   [[ -z "$ONLY" || "$ONLY" == "$1" ]]
