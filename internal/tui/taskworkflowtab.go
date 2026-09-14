@@ -76,7 +76,7 @@ type workflowTab struct {
 
 func newWorkflowTab() *workflowTab {
 	g := workflowgraph.New()
-	g.SetTheme(graphTheme())
+	g.SetTheme(taskGraphTheme())
 	// `tab` is the workspace's tab cycle here, so the component's own
 	// source-order walk stands down rather than shadowing it (decision 5).
 	g.SetSourceWalk(false)
@@ -221,6 +221,9 @@ func buildOverlay(task apiclient.TaskDetail, nodes []workflowgraph.Node, laneCol
 	out := workflowgraph.Overlay{
 		Nodes: map[string]workflowgraph.RunState{},
 		Lanes: map[string]workflowgraph.RunState{},
+		// END writes no row, so the task's own state is the only thing that
+		// says the flow got there (task 097 decision 4).
+		Done: task.State == stateDone,
 	}
 	// byStep is every node an authored step id can paint. A step inside a
 	// fan_out lane is deliberately excluded: it runs in the lane's child
@@ -254,16 +257,6 @@ func buildOverlay(task apiclient.TaskDetail, nodes []workflowgraph.Node, laneCol
 	current := currentStepID(task)
 	for _, stepID := range order {
 		r := newest[stepID]
-		ids, ok := byStep[stepID]
-		if !ok {
-			// An attempt no node answers for — a follow-up round's step, a
-			// repair's rewrite. It is drawn off-graph rather than dropped
-			// (decision 3).
-			out.Off = append(out.Off, workflowgraph.OffGraphRun{
-				StepID: r.StepID, Label: stepLabel(r), Type: r.StepType,
-			})
-			continue
-		}
 		rs := workflowgraph.RunState{
 			State:     r.State,
 			Attempt:   r.Attempt,
@@ -275,6 +268,20 @@ func buildOverlay(task apiclient.TaskDetail, nodes []workflowgraph.Node, laneCol
 		}
 		if rs.Current {
 			rs.Task, rs.BlockReason = parkedState(task)
+		}
+		ids, ok := byStep[stepID]
+		if !ok {
+			// An attempt no node answers for — a follow-up round's step, a
+			// repair's rewrite. It is drawn off-graph rather than dropped
+			// (decision 3), and says what it did the way an authored node
+			// does: its state goes on the node it is drawn as, never into
+			// OffGraphRun, whose equality decides a re-layout (task 097
+			// decision 3).
+			out.Off = append(out.Off, workflowgraph.OffGraphRun{
+				StepID: r.StepID, Label: stepLabel(r), Type: r.StepType,
+			})
+			out.Nodes[workflowgraph.OffNodeID(r.StepID)] = rs
+			continue
 		}
 		for _, id := range ids {
 			out.Nodes[id] = rs

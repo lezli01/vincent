@@ -895,19 +895,31 @@ func attemptStateGlyph(state string) string {
 
 func renderAttemptState(state string) string {
 	label := fmt.Sprintf("%-11s", state)
+	if style, ok := stepStateStyle(state); ok {
+		return style.Render(label)
+	}
+	return label
+}
+
+// stepStateStyle is the one palette for a §5.4 step-run state. The Steps tab
+// and the Workflow tab's graph both read it (task 097 decision 2), so a step
+// cannot be green in one and some other color in the other. A human `approve`
+// ends a manual step as well as a `succeeded` does, and a `reject` as badly as
+// a `failed`, so each pair shares a color.
+func stepStateStyle(state string) (lipgloss.Style, bool) {
 	switch state {
-	case "succeeded":
-		return styleOK.Render(label)
+	case "succeeded", "approved":
+		return styleOK, true
 	case "running":
-		return styleFocus.Render(label)
-	case "failed":
-		return styleBad.Render(label)
+		return styleFocus, true
+	case "failed", "rejected":
+		return styleBad, true
 	case "interrupted":
-		return styleWarn.Render(label)
+		return styleWarn, true
 	case "skipped", stepStateStopped:
-		return styleDim.Render(label)
+		return styleDim, true
 	default:
-		return label
+		return lipgloss.Style{}, false
 	}
 }
 

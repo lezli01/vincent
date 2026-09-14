@@ -40,7 +40,10 @@
 //     and can block.
 //   - Topology survives having every style stripped. Box shapes, frame
 //     weights, type words and the `true`/`false` labels carry the meaning;
-//     color only reinforces it.
+//     color only reinforces it. A task's run overlay is words first, then
+//     color (task 097): a node and the edges the run took are tinted by the
+//     host's palette, and the stripped picture is the uncolored one, byte
+//     for byte.
 //   - Equal input gives equal output, at every stage.
 //
 // This first version is a viewer. Its boundaries are shaped so that adding
