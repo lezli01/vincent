@@ -247,6 +247,16 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **The MCP tool descriptions told a model to send bodies the handlers
+  reject.** Several `Body: {...}` hints named keys no handler decodes —
+  `step_status` asked for `{status}` where the route reads `{message}`,
+  `workflow_validate` asked for `{source}` where it reads `{yaml}`, and
+  `task_create` never mentioned `fields` at all. JSON decoding is
+  `DisallowUnknownFields` API-wide, so following the description was a 400
+  rather than a silent no-op. The five descriptions issue #368 names are
+  corrected, a new test asserts every named key is a `json` tag on the request
+  struct its handler decodes, and it caught two more than the issue listed.
+
 - **Retry and cancel were unreachable from the task workspace's Pull Request
   tab.** The tab took `r` for its own refresh and `c` for "open the selected
   check" before the task's own actions ever saw the press — while the footer,
