@@ -2283,7 +2283,7 @@ the common `if` and `timeout`, and rejects `max_retries`, `retry_backoff`
 `max_retries` and `retry_backoff`, because neither owns an attempt — a group's
 retry budgets are per sub-step (§7.5), and a gate is decided once by a person
 (§7.3). Both keep `timeout`: it bounds a `parallel` group, and on a `manual`
-step it is still accepted and unread, which is tracked separately. The
+step it is still accepted and unread, a gap this change leaves open. The
 rejection applies to authored documents only; a task snapshot written before
 this change, including one whose include expansion copied a callee's retry
 defaults onto such a step, still loads and ignores the value as before.*
