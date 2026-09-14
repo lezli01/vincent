@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/tui/workflowgraph"
@@ -144,6 +146,95 @@ func TestBuildOverlayKeepsOffSnapshotRuns(t *testing.T) {
 
 	if len(ov.Off) != 1 || ov.Off[0].StepID != "follow_up_1" {
 		t.Fatalf("off-snapshot runs = %+v, want the follow-up round's step", ov.Off)
+	}
+	// Its state rides on the node it is drawn as, not in OffGraphRun, whose
+	// equality decides a re-layout (task 097 decision 3).
+	if got := ov.Nodes[workflowgraph.OffNodeID("follow_up_1")]; got.State != "running" {
+		t.Errorf("off-graph node state = %+v, want the attempt's own", got)
+	}
+}
+
+// END writes no row, so only a done task says the flow reached it (task 097
+// decision 4).
+func TestBuildOverlayMarksDoneOnlyForADoneTask(t *testing.T) {
+	d := workflowgraph.Build(&apiclient.WorkflowBody{
+		Steps: []apiclient.WorkflowStepDef{{ID: "plan", Type: "agent"}},
+	})
+	for _, state := range []string{"queued", "running", "blocked", "aborted", "archived", "done"} {
+		ov := buildOverlay(apiclient.TaskDetail{Task: apiclient.Task{State: state}}, d.Nodes, nil, nil)
+		if want := state == "done"; ov.Done != want {
+			t.Errorf("task %s: Done = %v, want %v", state, ov.Done, want)
+		}
+	}
+}
+
+// One step-state palette: the Steps tab and the graph read the same lookup, so
+// `approved` is green and `rejected` red on both (task 097 decision 2).
+func TestStepStateStyleIsShared(t *testing.T) {
+	for state, want := range map[string]string{
+		"succeeded": "ok", "approved": "ok", "running": "focus",
+		"failed": "bad", "rejected": "bad", "interrupted": "warn",
+		"skipped": "dim", "stopped": "dim",
+	} {
+		style, ok := stepStateStyle(state)
+		if !ok {
+			t.Errorf("%s has no style", state)
+			continue
+		}
+		ref := map[string]lipgloss.Style{
+			"ok": styleOK, "focus": styleFocus, "bad": styleBad, "warn": styleWarn, "dim": styleDim,
+		}[want]
+		if style.GetForeground() != ref.GetForeground() || style.GetFaint() != ref.GetFaint() {
+			t.Errorf("%s is not styled %s", state, want)
+		}
+		label := fmt.Sprintf("%-11s", state)
+		if got := renderAttemptState(state); got != ref.Render(label) {
+			t.Errorf("renderAttemptState(%s) does not use the shared %s style", state, want)
+		}
+	}
+	if _, ok := stepStateStyle("pending"); ok {
+		t.Error("a state with no color was given one")
+	}
+}
+
+// A node's parked task wins over its step state; a lane's parked state wins
+// over its child's state; both come from palettes the TUI already has.
+func TestRunStyleLookups(t *testing.T) {
+	blocked := workflowgraph.RunState{State: "running", Task: "blocked"}
+	if got, _ := nodeRunStyle(blocked); got.GetForeground() != stateStyles[stateBlocked].GetForeground() || !got.GetBold() {
+		t.Error("a blocked node is not styled by the board's blocked style")
+	}
+	if got, _ := nodeRunStyle(workflowgraph.RunState{State: "running"}); got.GetForeground() != styleFocus.GetForeground() {
+		t.Error("a running node is not styled by the step palette")
+	}
+	if _, ok := nodeRunStyle(workflowgraph.RunState{Current: true}); ok {
+		t.Error("a node with no state was colored")
+	}
+
+	paused := workflowgraph.RunState{State: "running", Task: "paused", ChildTaskID: 3}
+	if got, _ := laneRunStyle(paused); got.GetForeground() != stateStyles[statePaused].GetForeground() {
+		t.Error("a pause-requested lane is not styled paused")
+	}
+	for _, state := range []string{"done", "aborted", "running", "awaiting_children"} {
+		got, ok := laneRunStyle(workflowgraph.RunState{State: state, ChildTaskID: 3})
+		if !ok || got.GetForeground() != stateStyles[state].GetForeground() {
+			t.Errorf("a %s lane is not styled by the board's %s style", state, state)
+		}
+	}
+}
+
+// The workflows screen's definition graph is not colored by run state; the
+// Workflow tab's is (task 097 decision 8).
+func TestOnlyTheTaskGraphIsColoredByRunState(t *testing.T) {
+	if th := graphTheme(); th.NodeState != nil || th.LaneState != nil {
+		t.Error("graphTheme carries run-state lookups")
+	}
+	layer := newGraphLayer(wfResolveKey{name: "x"}, &apiclient.WorkflowEntry{Name: "x"})
+	if th := layer.graph.Theme(); th.NodeState != nil || th.LaneState != nil {
+		t.Error("the workflows screen's graph is colored by run state")
+	}
+	if th := newWorkflowTab().graph.Theme(); th.NodeState == nil || th.LaneState == nil {
+		t.Error("the Workflow tab's graph has no run-state lookups")
 	}
 }
 

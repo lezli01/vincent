@@ -435,15 +435,17 @@ func (m *root) openPalette() {
 	ctx := m.activeContext()
 	target := taskActions{}
 	editable := false
+	var live func([]binding) []binding
 	if s, ok := m.views[m.active].(*shell); ok {
 		target = s.board.target()
 		editable = s.detail.stepEditable()
+		live = s.liveBindings
 	} else if t, ok := m.views[m.active].(*taskView); ok {
 		target = t.target()
 		editable = t.detail.stepEditable()
 	}
 	m.palette = newPalette(paletteEntries(
-		ctx, target, editable, m.phase == phaseConnected, m.githubAvailable()))
+		ctx, target, editable, m.phase == phaseConnected, m.githubAvailable(), live))
 }
 
 // panelOwnsKey reports whether the active surface declares key as one of its

@@ -111,6 +111,13 @@ a remote-tracking ref it exists for a `fan_out` lane.
 The column is deliberately **not** added to the task DTO in `internal/api`:
 nothing in the TUI or CLI has a question it answers, and §13.2 stays unchanged.
 
+*Amended 2026-09-14 ([099](099-fresh-base-fast-forward.md), issue #430):* this
+paragraph is reversed. `base_sha` is on the task DTO now, beside a `base_refresh`
+record, because the question it answers turned out to be real: once the fetch
+exists, a task cut from a fresh upstream tip and one cut from a stale local
+branch look identical from every client. The column, and both consumers'
+fallback to the branch name, are unchanged.
+
 **5. `git branch -D`, in one narrow case only.** *(2026-08-29)*
 
 Not anticipated by the plan, and found by decision 4's own test. Fixing
@@ -159,6 +166,14 @@ archive regression, including the NULL fallback. `internal/api` pins the diff
 regression, again with the NULL control. `internal/taskrun` wires it through the
 engine: a `fan_out` parent records the fetched tip, and its lane fetches nothing
 and forks from the parent's branch.
+
+*Amended 2026-09-14 ([099](099-fresh-base-fast-forward.md)):* "the local base being
+byte-identical afterwards" rested on §10's "nothing local is mutated", which 099
+amends — a clean local base that is behind is now fast-forwarded, and
+`TestCreateFetchLeavesTheLocalBaseAlone` was removed for it, its cases moving to
+`basefastforward_test.go`. Byte-identical
+still holds, and is still asserted, wherever 099 leaves the base alone: a dirty or
+busy checkout, a diverged or ahead local base, and no fetch.
 
 No new gate script. The behaviour is observable from unit tests, and the gates'
 `run:` bodies are held to the sh∩pwsh intersection, which makes a network-remote

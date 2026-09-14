@@ -40,7 +40,7 @@ func TestPaletteReachesEveryRegistryEntry(t *testing.T) {
 		}
 		found := false
 		for _, ctx := range contexts {
-			for _, e := range paletteEntries(ctx, everyAction, true, true, true) {
+			for _, e := range paletteEntries(ctx, everyAction, true, true, true, nil) {
 				if e.label == b.label {
 					found = true
 				}
@@ -59,7 +59,7 @@ func TestPaletteOmitsInvalidActions(t *testing.T) {
 		apiclient.ActionApprove, apiclient.ActionReject,
 	}}
 	labels := strings.Builder{}
-	for _, e := range paletteEntries(ctxTasks, target, false, true, true) {
+	for _, e := range paletteEntries(ctxTasks, target, false, true, true, nil) {
 		labels.WriteString(e.label + "\n")
 	}
 	got := labels.String()
@@ -77,7 +77,7 @@ func TestPaletteOmitsInvalidActions(t *testing.T) {
 // to edit — a gate has none, so the palette must not offer it.
 func TestPaletteEditGate(t *testing.T) {
 	target := taskActions{id: 3, state: stateBlocked, actions: []string{apiclient.ActionRetry}}
-	for _, e := range paletteEntries(ctxTasks, target, false, true, true) {
+	for _, e := range paletteEntries(ctxTasks, target, false, true, true, nil) {
 		if strings.Contains(e.label, "edit the step's prompt") {
 			t.Fatal("palette offers edit+retry on a step with nothing to edit")
 		}
@@ -88,7 +88,7 @@ func TestPaletteEditGate(t *testing.T) {
 // nothing can act on a task, but `:` is how §15 says the daemon view stays
 // reachable — navigation and panel commands survive.
 func TestPaletteDisconnectedKeepsNavigation(t *testing.T) {
-	entries := paletteEntries(ctxTasks, everyAction, true, false, true)
+	entries := paletteEntries(ctxTasks, everyAction, true, false, true, nil)
 	var nav, actions int
 	for _, e := range entries {
 		if e.nav {
@@ -116,7 +116,7 @@ func TestPaletteDisconnectedKeepsNavigation(t *testing.T) {
 // wall — and navigation needs its own section, since reaching the takeover
 // screens is why the digits could be retired.
 func TestPaletteSectionsAreVisiblySeparate(t *testing.T) {
-	p := newPalette(paletteEntries(ctxTasks, everyAction, true, true, true))
+	p := newPalette(paletteEntries(ctxTasks, everyAction, true, true, true, nil))
 	out := p.render(60, 18)
 	plain := ansi.Strip(out)
 
@@ -257,7 +257,7 @@ func TestHelpIsContextual(t *testing.T) {
 // able to find it, and the palette is where a key nobody remembers is found.
 func TestPaletteOffersTheStatusLineKey(t *testing.T) {
 	var found bool
-	for _, e := range paletteEntries(ctxDaemon, everyAction, true, true, true) {
+	for _, e := range paletteEntries(ctxDaemon, everyAction, true, true, true, nil) {
 		if strings.Contains(e.label, "status line") {
 			found = true
 			if !strings.Contains(e.label, "remove") {
@@ -267,5 +267,36 @@ func TestPaletteOffersTheStatusLineKey(t *testing.T) {
 	}
 	if !found {
 		t.Error("the daemon palette does not offer the claude status line")
+	}
+}
+
+// TestPaletteFlatBoardDropsFoldRows (issue #372): with `group_by: []` the
+// board's fold keys do nothing, so the palette must not offer them — the
+// footer already drops them through shell.liveBindings (task 054 decision 5),
+// and task 094 decision 5 left the palette's copy of the same lie for this
+// issue. Driven through root.openPalette, the palette's one real caller.
+func TestPaletteFlatBoardDropsFoldRows(t *testing.T) {
+	m := newRoot(testCtx(t), fakeConnector(), ackedDir(t))
+	m.phase = phaseConnected
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	if ctx := m.activeContext(); ctx != ctxTasks {
+		t.Fatalf("fixture: active context is %s, want %s", ctx, ctxTasks)
+	}
+	m.views[viewHome].(*shell).board.group = nil
+
+	folds := map[string]bool{}
+	for _, b := range bindingsFor(ctxTasks) {
+		if b.fold {
+			folds[b.label] = true
+		}
+	}
+	if len(folds) == 0 {
+		t.Fatal("fixture: the board declares no fold rows")
+	}
+	m.openPalette()
+	for _, e := range m.palette.entries {
+		if e.group == string(ctxTasks) && folds[e.label] {
+			t.Errorf("a flat board's palette still offers %q (key %q), which does nothing", e.label, e.key)
+		}
 	}
 }

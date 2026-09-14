@@ -411,6 +411,18 @@ func progress(t apiclient.Task) string {
 	return fmt.Sprintf("%d/%d", k, t.StepTotal)
 }
 
+// taskBaseRows are `task show`'s starting-point rows (issue #430): `base`
+// always, naming the commit the branch was cut from when the daemon recorded
+// one, and `refresh` only when that base may be stale or the local base branch
+// was left behind. A healthy refresh prints nothing — it is the expected case.
+func taskBaseRows(t apiclient.TaskDetail) [][2]string {
+	rows := [][2]string{{"base", t.BaseDisplay()}}
+	if warning := t.BaseRefresh.Warning(); warning != "" {
+		rows = append(rows, [2]string{"refresh", warning})
+	}
+	return rows
+}
+
 func newTaskShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <id>",
@@ -445,6 +457,7 @@ func newTaskShowCmd() *cobra.Command {
 					{"step", progress(t.Task)},
 					{"branch", t.BranchName},
 				}
+				fields = append(fields, taskBaseRows(t)...)
 				if t.BlockReason != nil && *t.BlockReason != "" {
 					fields = append(fields, [2]string{"blocked", *t.BlockReason})
 				}
@@ -543,6 +556,7 @@ func newTaskFollowUpCmd() *cobra.Command {
 		agent    string
 		model    string
 		effort   string
+		fields   []string
 		paused   bool
 	)
 	cmd := &cobra.Command{
@@ -558,9 +572,15 @@ func newTaskFollowUpCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// The spelling task create uses, so a script that fills a
+			// workflow's declared field in one place fills it in the other.
+			fieldMap, err := parseFieldFlags(fields)
+			if err != nil {
+				return err
+			}
 			in := apiclient.FollowUpInput{
 				Prompt: prompt, Run: run, Workflow: workflow,
-				Agent: agent, Model: model, Effort: effort,
+				Agent: agent, Model: model, Effort: effort, Fields: fieldMap,
 			}
 			// Sent only when named (task 096 decision C), so a plain
 			// follow-up body is byte-for-byte what it was before the flag.
@@ -602,6 +622,8 @@ func newTaskFollowUpCmd() *cobra.Command {
 	cmd.Flags().StringVar(&agent, "agent", "", "Agent for the run (§8.6, request level)")
 	cmd.Flags().StringVar(&model, "model", "", "Model for the run (§8.6, request level)")
 	cmd.Flags().StringVar(&effort, "effort", "", "Effort for the run (§8.6, request level)")
+	cmd.Flags().StringArrayVar(&fields, "field", nil,
+		"Field for this run only, as name=value, laid over the task's own; repeat for additional fields")
 	cmd.Flags().BoolVar(&paused, "paused", false,
 		"Hold the task paused instead of queuing the run; it starts only when resumed (`vincent task resume`)")
 	// One thing runs. Cobra refuses the combination locally so the daemon

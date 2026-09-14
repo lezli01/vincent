@@ -174,3 +174,7 @@ and a `parallel` group ignores both — it owns no attempt of its own. That
 asymmetry predates this task (§8.2 rejects them on `loop` but not on
 `parallel`), and making the two structure types agree is a schema change with
 its own compatibility question. It wants its own issue.
+
+Resolved 2026-09-14 by issue #374: an authored `parallel` or `manual` step now
+rejects both fields, a task snapshot that carries them still loads, and include
+expansion no longer copies a callee's retry defaults onto either type.

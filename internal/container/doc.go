@@ -27,5 +27,6 @@
 // The container confines the filesystem outside the two mounts, the shell and
 // the installed tooling. It is not a network boundary — outbound traffic is on
 // by default — and it is not a credential boundary once `mount_agent_config`
-// puts the host's agent configuration inside it. §16 states both.
+// puts the host's agent configuration inside it. That knob is off by default
+// until task 062 moves the agent in (issue #366). §16 states both.
 package container

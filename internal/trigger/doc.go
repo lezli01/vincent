@@ -19,7 +19,12 @@
 //     a removal, an invalid file is not, an unreadable directory is not;
 //   - the writer (writer.go): a daemon-rendered starter on create, and
 //     workflow.Edit's line-oriented ops on edit, so comments survive; every
-//     write is 0600 (decision 20) and carries a version token;
+//     write is 0600 (decision 20) and carries a version token, and a
+//     version-guarded whole-file Replace for a staged proposal;
+//   - proposals (proposal.go, task 098): the daemon-free lister `vincent
+//     trigger ls` prints, the pure arming check, and ApplyProposal, which
+//     installs files a built-in staged under {data_dir}/trigger-proposals/
+//     only when none arms a trigger — the never-arm rule in code;
 //   - the manager (manager.go): arming and disarming as the registry and
 //     `triggers.enabled` change, one poller goroutine per armed `type:
 //     command` trigger, the seed that fires nothing and records `seeded`

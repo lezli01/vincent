@@ -105,8 +105,14 @@ func mergeNodeID(stepID string) string { return syntheticPrefix + "merge:" + ste
 func refNodeID(stepID, lane string) string {
 	return syntheticPrefix + "ref:" + stepID + ":" + lane
 }
-func groupID(stepID string) string   { return syntheticPrefix + "group:" + stepID }
-func offNodeID(stepID string) string { return syntheticPrefix + "off:" + stepID }
+func groupID(stepID string) string { return syntheticPrefix + "group:" + stepID }
+
+// OffNodeID is the node an off-snapshot attempt is drawn as (decision 3). It
+// is exported because the overlay keys that node's run state by it: the state
+// rides in Overlay.Nodes and never in OffGraphRun, whose equality decides
+// whether the diagram is rebuilt — a state change must never re-lay-out
+// (task 097 decision 3).
+func OffNodeID(stepID string) string { return syntheticPrefix + "off:" + stepID }
 
 // LaneKey names one fan_out lane across the whole diagram: a lane id alone is
 // unique only within its own step, the same way a lane's step ids are
@@ -285,7 +291,7 @@ func AttachOffGraph(d Diagram, runs []OffGraphRun) Diagram {
 	col := Column{}
 	nodes := make([]Node, 0, len(runs))
 	for _, r := range runs {
-		id := offNodeID(r.StepID)
+		id := OffNodeID(r.StepID)
 		label := r.Label
 		if label == "" {
 			label = r.StepID

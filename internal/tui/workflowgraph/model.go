@@ -85,6 +85,10 @@ func (m *Model) SetTheme(th Theme) {
 	m.sync()
 }
 
+// Theme reports the styles the graph was given, so a host can check which
+// screen dresses its picture by run state (task 097 decision 8).
+func (m *Model) Theme() Theme { return m.theme }
+
 // Mode reports the interaction mode. Read-only in 017.
 func (m *Model) Mode() Mode { return m.mode }
 

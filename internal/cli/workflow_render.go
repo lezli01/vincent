@@ -3,7 +3,9 @@ package cli
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -47,6 +49,10 @@ type renderStep struct {
 	// or a fan-out lane naming a registry workflow, neither of which can be
 	// looked up without a daemon. It is reported, never fatal.
 	Unresolved string `json:"unresolved,omitempty"`
+	// DerivedLane marks a step inside a derived fan-out's `lane:` template
+	// (§7.6, task 080) with the `for_each` templates the lane expands over:
+	// it is previewed once, and runs once per item.
+	DerivedLane []string `json:"derived_lane,omitempty"`
 }
 
 // renderField is one rendered template body. Output and Error are mutually
@@ -216,7 +222,7 @@ func bindRemote(ctx context.Context, cmd *cobra.Command, c *apiclient.Client, f 
 		for _, p := range projects {
 			if p.ID == projectID {
 				in.Project = workflow.ProjectContext{
-					Name: p.Name, Path: p.Path, DefaultBranch: p.DefaultBranch,
+					ID: p.ID, Name: p.Name, Path: p.Path, DefaultBranch: p.DefaultBranch,
 				}
 				break
 			}
@@ -318,17 +324,17 @@ func stepsFromDefinition(in []apiclient.WorkflowStepDef) []workflow.Step {
 			Check: s.Check, Run: s.Run, Shell: s.Shell, Env: s.Env,
 			Instructions: s.Instructions,
 			Steps:        stepsFromDefinition(s.Steps), MaxParallel: s.MaxParallel,
+			MaxLanes: s.MaxLanes, Schedule: s.Schedule,
 			Count: s.Count, ForEach: workflow.ForEach(s.ForEach),
 			MaxIterations: s.MaxIterations,
 			Workflow:      s.Workflow, ResolvedFrom: s.ResolvedFrom,
 		}
 		for _, lane := range s.Lanes {
-			step.Lanes = append(step.Lanes, workflow.Lane{
-				ID: lane.ID, If: lane.If, Workflow: lane.Workflow,
-				ResolvedFrom: lane.ResolvedFrom, Steps: stepsFromDefinition(lane.Steps),
-				Fields: lane.Fields, Agent: lane.Agent, Model: lane.Model,
-				Effort: lane.Effort, Priority: lane.Priority,
-			})
+			step.Lanes = append(step.Lanes, laneFromDefinition(lane))
+		}
+		if s.Lane != nil {
+			lane := laneFromDefinition(*s.Lane)
+			step.Lane = &lane
 		}
 		if s.Merge != nil {
 			merge := &workflow.Merge{OnConflict: s.Merge.OnConflict}
@@ -342,6 +348,19 @@ func stepsFromDefinition(in []apiclient.WorkflowStepDef) []workflow.Step {
 		out = append(out, step)
 	}
 	return out
+}
+
+// laneFromDefinition maps one lane back, for a declared list and a derived
+// step's `lane:` template alike — one mapping, so the two cannot drift apart.
+// `derived_from` is not carried: §7.6 refuses it in an authored document, and
+// a registry callee is one.
+func laneFromDefinition(lane apiclient.WorkflowLaneDef) workflow.Lane {
+	return workflow.Lane{
+		ID: lane.ID, If: lane.If, Needs: workflow.LaneNeeds(lane.Needs), Workflow: lane.Workflow,
+		ResolvedFrom: lane.ResolvedFrom, Steps: stepsFromDefinition(lane.Steps),
+		Fields: lane.Fields, Agent: lane.Agent, Model: lane.Model,
+		Effort: lane.Effort, Priority: lane.Priority,
+	}
 }
 
 // renderWorkflow executes every template the file declares and collects the
@@ -361,7 +380,7 @@ func renderWorkflow(file string, wf *workflow.Workflow, in workflow.PreviewInput
 	for _, ps := range workflow.PreviewSteps(wf) {
 		out := renderStep{
 			ID: ps.Step.ID, Path: ps.Path, Type: ps.Step.Type,
-			Fields: []renderField{}, Unresolved: ps.Unresolved,
+			Fields: []renderField{}, Unresolved: ps.Unresolved, DerivedLane: ps.DerivedLane,
 		}
 		if ps.Unresolved != "" {
 			res.Steps = append(res.Steps, out)
@@ -377,9 +396,21 @@ func renderWorkflow(file string, wf *workflow.Workflow, in workflow.PreviewInput
 		if ps.Conflicts {
 			rc.Conflicts = []string{workflow.SentinelConflict}
 		}
+		var item map[string]any
+		if ps.Step.Lane != nil {
+			item = workflow.PreviewItem(*ps.Step.Lane)
+		}
 		for _, tf := range templateFields(ps.Step) {
 			field := renderField{Field: tf.name}
-			text, err := workflow.Render(tf.name, tf.text, rc)
+			var text string
+			var err error
+			if tf.item {
+				// Spawn renders these with RenderLane (task 080), so the
+				// preview does too, and fails where a run would.
+				text, err = workflow.RenderLane(tf.name, tf.text, rc, item)
+			} else {
+				text, err = workflow.Render(tf.name, tf.text, rc)
+			}
 			if err != nil {
 				field.Error = err.Error()
 				res.Errors = append(res.Errors, renderIssue{
@@ -414,11 +445,13 @@ func renderWorkflow(file string, wf *workflow.Workflow, in workflow.PreviewInput
 }
 
 // templateField is one body this command executes. guard marks the ones §7.7
-// judges against true/false.
+// judges against true/false; item marks a derived lane template's own fields,
+// which render with `.Item` bound.
 type templateField struct {
 	name  string
 	text  string
 	guard bool
+	item  bool
 }
 
 // templateFields is the set of bodies a step declares as templates: exactly
@@ -443,6 +476,23 @@ func templateFields(step workflow.Step) []templateField {
 	}
 	for i, lane := range step.Lanes {
 		add(fmt.Sprintf("lanes[%d].if", i), lane.If, true)
+	}
+	// A derived step's `lane:` template renders its guard, id, needs and
+	// fields once per item at spawn (§7.6, task 080).
+	if lane := step.Lane; lane != nil {
+		addItem := func(name, text string, guard bool) {
+			if text != "" {
+				out = append(out, templateField{name: name, text: text, guard: guard, item: true})
+			}
+		}
+		addItem("lane.if", lane.If, true)
+		addItem("lane.id", lane.ID, false)
+		for i, need := range lane.Needs {
+			addItem(fmt.Sprintf("lane.needs[%d]", i), need, false)
+		}
+		for _, k := range slices.Sorted(maps.Keys(lane.Fields)) {
+			addItem("lane.fields."+k, lane.Fields[k], false)
+		}
 	}
 	return out
 }
@@ -484,6 +534,12 @@ func printRender(cmd *cobra.Command, res renderResult) error {
 		}
 		if _, err := fmt.Fprintln(out, header); err != nil {
 			return err
+		}
+		if len(s.DerivedLane) > 0 {
+			if _, err := fmt.Fprintf(out, "  %s: a lane template, rendered once per item of %s\n",
+				workflow.SentinelLane, strings.Join(s.DerivedLane, ", ")); err != nil {
+				return err
+			}
 		}
 		if s.Unresolved != "" {
 			if _, err := fmt.Fprintf(out, "  unresolved: %s — pass --project <id> to resolve it through the registry\n",

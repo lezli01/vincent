@@ -1,0 +1,4 @@
+interface:
+  display_name: "vincent Triggers"
+  short_description: "Author, dry-run, and debug disarmed vincent event triggers"
+  default_prompt: "Use $vincent-triggers to author and validate a safe, disarmed vincent event trigger."

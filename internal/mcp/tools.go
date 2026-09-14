@@ -184,7 +184,7 @@ var routes = []Route{
 	{http.MethodPost, "/v1/tasks/{id}/reject", "task_reject", "Reject a task waiting at a human gate (§7.3)."},
 	{http.MethodPost, "/v1/tasks/{id}/answer", "task_answer", "Answer a task's pending mid-run input request (§7.4). Body: {answers, allow?}."},
 	{http.MethodPost, "/v1/tasks/{id}/archive", "task_archive", "Archive a settled task: removes its worktree, and may delete an empty branch under delete_empty_branch_on_archive (§10)."},
-	{http.MethodPost, "/v1/tasks/{id}/follow_up", "task_follow_up", "Queue one more piece of work on a finished task's branch before it is archived (§6, task 027). Body: exactly one of {prompt, run, workflow}, plus {agent?, model?, effort?, paused?}; paused holds the task in paused until resumed."},
+	{http.MethodPost, "/v1/tasks/{id}/follow_up", "task_follow_up", "Queue one more piece of work on a finished task's branch before it is archived (§6, task 027). Body: exactly one of {prompt, run, workflow}, plus {agent?, model?, effort?, fields?, paused?}; fields are this run's values laid over the task's, validated against a named workflow's declared fields; paused holds the task in paused until resumed."},
 	{http.MethodGet, "/v1/tasks/{id}/workflow", "task_workflow", "The workflow snapshot the task is running, as it was at creation."},
 	{http.MethodGet, "/v1/tasks/{id}/steps", "task_steps", "The task's steps and their step runs."},
 	{http.MethodPost, "/v1/tasks/{id}/steps/{step_id}/status", "step_status", "Set the step-authored status line a board renders (task 036). Body: {message} — an empty message clears the line."},

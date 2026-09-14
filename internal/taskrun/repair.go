@@ -259,10 +259,16 @@ func (r *Runner) repairPrompt(
 			sb.WriteString("\n")
 		}
 	}
-	if len(task.Fields) > 0 {
+	// A repair of a follow-up round lists the fields that round ran with
+	// (task 027 decision 14), not only what the task row carries.
+	fields := task.Fields
+	if target.followUp && task.PendingFollowUp != nil {
+		fields = mergeFields(task.Fields, task.PendingFollowUp.Fields)
+	}
+	if len(fields) > 0 {
 		sb.WriteString("fields:\n")
-		for _, k := range sortedKeys(task.Fields) {
-			fmt.Fprintf(&sb, "  %s: %s\n", k, task.Fields[k])
+		for _, k := range sortedKeys(fields) {
+			fmt.Fprintf(&sb, "  %s: %s\n", k, fields[k])
 		}
 	}
 	fmt.Fprintf(&sb, "workflow: %s\n", wf.Name)

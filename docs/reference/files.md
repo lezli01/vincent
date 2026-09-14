@@ -31,9 +31,10 @@ platform where data nests inside config's directory.
   config.yaml          # daemon configuration — you or a client edit this, created 0600
   workflows/*.yaml     # global workflows, available to every project; 0644
   triggers/*.yaml      # event triggers, one {id}.yaml each; written 0600
+  trigger-scripts/     # poll scripts for command triggers, by convention; 0700
 ```
 
-All three are watched. Editing `config.yaml` hot-reloads valid changes; saving a
+The first three are watched. Editing `config.yaml` hot-reloads valid changes; saving a
 workflow file reloads the registry, and saving a trigger file reloads the
 triggers. None needs a restart.
 
@@ -45,7 +46,18 @@ write, a trigger write carries a version token and a stale one is refused. A
 missing directory means no triggers. A directory the daemon cannot read keeps
 the triggers already loaded. A trigger's cursor, poll status and delivery
 ledger live in `vincent.db`, never beside the file, and deleting the file keeps
-its ledger.
+its ledger. [`vincent trigger apply`](cli.md#vincent-trigger-apply) writes it
+too, with the same `0600`, when a `create-trigger` or `update-triggers` task
+installs its proposal.
+
+`trigger-scripts/` is where a `command` trigger's poll script goes. vincent
+does not enforce the location or watch it; it is the convention the built-ins
+and the `vincent-triggers` skill follow, and a trigger names its script there
+by absolute path. It sits beside `triggers/` rather than inside it, so no
+script shares a directory with the files the registry reads. On POSIX, keep
+the directory and each script `0700`. A script reads credentials from the
+daemon's environment rather than holding them, and it does not belong in a
+repository. See [Event triggers](../guides/triggers.md#command-poll-anything).
 
 `config.yaml` is also written by the daemon, on
 [`PATCH /v1/config`](api.md#daemon) — what
@@ -79,7 +91,8 @@ machines, or hand-edit — with one caveat from the modes above: a literal
 [`environment.set`](configuration.md#environment) value travels with the file,
 so prefer inheriting the name. Nothing in this directory changes behind your
 back: a later start touches the modes above and no content, and the only other
-writes are the two above, which happen when a client asks for them.
+writes are the ones above, which happen when a client asks for them or a trigger
+built-in's task runs `vincent trigger apply`.
 
 Project-scoped workflows live in the repository instead, at
 `.vincent/workflows/*.yaml`, and shadow a global file of the same name.
@@ -87,7 +100,7 @@ Project-scoped workflows live in the repository instead, at
 ## The data directory
 
 ```
-{data_dir}/
+{data_dir}/                                         # created 0700
   vincent.db                                        # SQLite, WAL mode
   token                                             # API bearer token, 0600
   daemon.json                                       # { port, pid, started_at }
@@ -98,7 +111,12 @@ Project-scoped workflows live in the repository instead, at
   worktrees/chat-{chat_id}/                         # one git worktree per chat
   transcripts/{task_id}/{step_index}-{attempt}.jsonl
   transcripts/chat-{chat_id}/{turn_seq}.jsonl
+  trigger-proposals/{task_id}/                      # staged trigger files + manifest.json
 ```
+
+On POSIX vincent creates `{data_dir}` owner-only (`0700`); on Windows the
+per-user ACL of `%LOCALAPPDATA%` applies instead. Vincent does not change the
+mode of a data directory that already exists.
 
 | File | What it is |
 |---|---|
@@ -108,6 +126,7 @@ Project-scoped workflows live in the repository instead, at
 | `daemon.lock` | Single-instance enforcement; releases automatically when the process dies |
 | `tui.json` | TUI-local view state: the first-run full-auto acknowledgment, the board's collapsed groups, and whether the offer to make vincent [claude's status line](cli.md#vincent-statusline) was declined. Written by the TUI, never read by the daemon; deleting it re-shows the full-auto notice, opens every group and lets the status-line offer come back |
 | `logs/daemon.log` | The daemon log, rotated and size-capped. Read by `vincent daemon logs` and the TUI's daemon view — from disk in both cases, so it still works when the daemon is what died |
+| `trigger-proposals/{task_id}/` | A trigger proposal a `create-trigger` or `update-triggers` task staged: the full proposed `{id}.yaml` files and `manifest.json`. The directory is `0700` and the files `0600`, because a trigger's argv can carry a token. [`vincent trigger apply`](cli.md#vincent-trigger-apply) removes it once every file is installed; a proposal that was rejected at its approval step stays until the task is deleted |
 
 ## Worktrees and branches
 
@@ -157,8 +176,11 @@ Two rules worth internalizing:
   git worktree list
   ```
 
-Your own checkout is never touched: vincent reads the repository to create
-worktrees and never modifies your working tree, current branch or stash.
+No task works in your own checkout: vincent reads the repository to create
+worktrees, and the only change it makes there is fast-forwarding a base branch
+that is behind its remote, with its checkout when that is clean — see
+[`fetch_base_branch`](configuration.md#fetch_base_branch). A checkout with any
+change in it, and your stash, are never modified.
 
 **What reclaims a worktree.** Archiving the task, normally. A worktree whose task
 row is gone — a deleted project whose removal failed, a crash before the path was
@@ -207,7 +229,9 @@ remove an archived row *and* its transcript directory, in that order: the row
 goes first, so a failed unlink cannot resurrect something already reported gone
 — and `vincent gc` treats a transcript directory with no row as its own, which
 is what closes that gap. They are the only thing in vincent that deletes a task
-or a chat row; the retention pass removes files and never a row.
+or a chat row; the retention pass removes files and never a row. Deleting a task
+also removes its `trigger-proposals/{task_id}/` directory, under the same check
+that keeps the delete inside the data directory.
 
 They contain everything the agent did. The **rendered prompt or command** an
 attempt was handed is recorded on the attempt's own row in the database instead —
@@ -243,11 +267,12 @@ vincent daemon --config-dir /srv/v-cfg --data-dir /srv/v-data
 |---|---|
 | `logs/daemon.log` | Nothing; it is recreated |
 | `transcripts/{task_id}/`, `transcripts/chat-{chat_id}/` | That task's or chat's output history is gone; the record and its metrics stay |
+| `trigger-proposals/{task_id}/` | That task's staged trigger proposal is gone, so its `apply` step has nothing to install |
 | `worktrees/{task_id}/` | Effectively an unregistered archive — prefer archiving the task, which does it properly. For a directory whose task no longer exists, prefer `vincent gc`, which checks it is not somebody's live worktree first |
 | `daemon.json`, `daemon.lock` | Only safe while the daemon is stopped; both are recreated |
 | `token` | Recreated at next start, and every existing client must re-read it |
 | `vincent.db` | **Everything is gone** — projects, tasks, history. Branches in your repositories survive. This is the row [Backup and restore](#backup-and-restore) exists for |
-| `{config_dir}/` | Your config and global workflows; defaults are rewritten at next start |
+| `{config_dir}/` | Your config, global workflows, triggers and poll scripts; defaults are rewritten at next start |
 
 ## Backup and restore
 

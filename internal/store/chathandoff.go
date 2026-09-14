@@ -33,8 +33,8 @@ import (
 // `worktree_path` is cleared because that is what transferring the claim means
 // concretely: the reclaimer's rule is that the claim decides, and two rows
 // naming one directory is exactly the ambiguity it must never see. `branch`,
-// `base_branch` and `base_sha` stay on the chat row as history — nothing reads
-// them for ownership once the chat is terminal.
+// `base_branch`, `base_sha` and `base_refresh` stay on the chat row as history
+// — nothing reads them for ownership once the chat is terminal.
 //
 // t is filled in as insertTaskTx fills it: id, timestamps and, when it needs
 // one, its branch name. Its workspace fields are the caller's to have set from
@@ -60,6 +60,15 @@ func (s *Store) HandoffChat(ctx context.Context, chatID int64, t *Task) (*Chat, 
 		// verbatim, so there is no name that needs the id. claimBranchTx
 		// still runs inside insertTaskTx, so a live task already holding
 		// this branch collides here exactly as any other create does.
+		//
+		// The base-refresh record travels with the worktree it describes
+		// (task 099): the task adopts a directory whose creation it never
+		// saw, so the chat's record is the only one there will ever be. The
+		// caller may already have set it from the chat; the row read here is
+		// the authority when it has not.
+		if t.BaseRefresh == nil {
+			t.BaseRefresh = c.BaseRefresh
+		}
 		if taskEv, err = insertTaskTx(ctx, tx, t, now, nil); err != nil {
 			return err
 		}

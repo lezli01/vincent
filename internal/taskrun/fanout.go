@@ -682,7 +682,10 @@ func (r *Runner) laneTask(env *stepEnv, lane workflow.Lane, order int) (*store.T
 		ProjectID:   env.task.ProjectID,
 		Title:       fmt.Sprintf("%s — %s", env.task.Title, lane.ID),
 		Description: env.task.Description,
-		Fields:      mergeFields(env.task.Fields, lane.Fields),
+		// A lane spawned inside a follow-up round inherits that round's
+		// fields, which is what the round itself renders (task 027 decision
+		// 14); its branch name below is resolved from the same map.
+		Fields: mergeFields(env.taskFields(), lane.Fields),
 		// The parent's issue snapshot, verbatim (task 035 decision 9). No
 		// lane re-fetches anything: `.Issue` is a property of the work, and
 		// a lane is doing part of the parent's work.

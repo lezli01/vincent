@@ -182,7 +182,7 @@ func TestParseValidation(t *testing.T) {
 		},
 		{
 			name:     "negative max_retries",
-			src:      "name: x\nsteps:\n  - {id: a, type: manual, instructions: hi, max_retries: -1}\n",
+			src:      "name: x\nsteps:\n  - {id: a, type: command, run: \"true\", max_retries: -1}\n",
 			wantSub:  "max_retries must not be negative",
 			wantPath: "steps[0].max_retries",
 		},
@@ -936,6 +936,200 @@ func TestBuiltinUpdateWorkflowsPromptRenders(t *testing.T) {
 	}
 	if got, err := Render("run", steps[5].Run, rc); err != nil || !strings.Contains(got, "master") {
 		t.Errorf("changes run = %q, err = %v; want the base branch rendered in", got, err)
+	}
+}
+
+// TestBuiltinCreateTriggerIsValid pins create-trigger's shape (task 098
+// decision 6): an agent step that may ask and never replays, then the apply
+// that installs its proposal. There is no gate — apply is the enforcement.
+func TestBuiltinCreateTriggerIsValid(t *testing.T) {
+	e, ok := builtins()[CreateTriggerName]
+	if !ok {
+		t.Fatalf("builtins() has no %q entry", CreateTriggerName)
+	}
+	if !e.Valid() {
+		t.Fatalf("built-in create-trigger is invalid: %v", e.Errors)
+	}
+	if e.Scope != ScopeBuiltin || e.File != "" {
+		t.Errorf("scope = %q, file = %q; want builtin scope and no file", e.Scope, e.File)
+	}
+	steps := e.Workflow.Steps
+	if len(steps) != 2 || steps[0].ID != "author" || steps[1].ID != "install" {
+		t.Fatalf("steps = %+v, want author then install", steps)
+	}
+	author := steps[0]
+	if author.Type != StepAgent || author.OnInput != InputWait {
+		t.Errorf("author = %+v, want an agent step under on_input: wait", author)
+	}
+	if mr := author.MaxRetries; mr == nil || *mr != 0 {
+		t.Errorf("author max_retries = %v, want 0 (a replay would find the first proposal)", mr)
+	}
+	install := steps[1]
+	if install.Type != StepCommand || !strings.Contains(install.Run, "vincent trigger apply") {
+		t.Errorf("install = %+v, want a command step running vincent trigger apply", install)
+	}
+	if mr := install.MaxRetries; mr == nil || *mr != 0 {
+		t.Errorf("install max_retries = %v, want 0", mr)
+	}
+
+	if len(e.Workflow.Fields) != 1 {
+		t.Fatalf("fields = %+v, want trigger_id alone", e.Workflow.Fields)
+	}
+	if f := e.Workflow.Fields[0]; f.Name != "trigger_id" || f.Type != FieldString || !f.Required {
+		t.Errorf("field[0] = %+v, want a required string named trigger_id", f)
+	}
+	for _, tc := range []struct {
+		value string
+		want  bool
+	}{
+		{"jira-ready", true},
+		{"ci.failure_follow-up", true},
+		{"Jira", false},
+		{"a b", false},
+		{"../escape", false},
+		{`a\b`, false},
+		{"-leading", false},
+		{"", false},
+	} {
+		errs := e.Workflow.ValidateTaskFields(map[string]string{"trigger_id": tc.value})
+		if got := len(errs) == 0; got != tc.want {
+			t.Errorf("trigger_id %q accepted = %v, want %v (%v)", tc.value, got, tc.want, errs)
+		}
+	}
+}
+
+// TestBuiltinUpdateTriggersIsValid pins update-triggers' shape (task 098
+// decision 7). The assertion that matters most is ordering: the manual gate
+// comes before the only step that runs apply, so nothing is installed
+// unapproved.
+func TestBuiltinUpdateTriggersIsValid(t *testing.T) {
+	e, ok := builtins()[UpdateTriggersName]
+	if !ok {
+		t.Fatalf("builtins() has no %q entry", UpdateTriggersName)
+	}
+	if !e.Valid() {
+		t.Fatalf("built-in update-triggers is invalid: %v", e.Errors)
+	}
+	if len(e.Workflow.Fields) != 0 {
+		t.Errorf("fields = %+v, want none", e.Workflow.Fields)
+	}
+	steps := e.Workflow.Steps
+	wantIDs := []string{"inventory", "has-triggers", "propose", "approve", "apply", "result"}
+	if len(steps) != len(wantIDs) {
+		t.Fatalf("steps = %d, want %d (%v)", len(steps), len(wantIDs), wantIDs)
+	}
+	for i, want := range wantIDs {
+		if steps[i].ID != want {
+			t.Fatalf("steps[%d].ID = %q, want %q", i, steps[i].ID, want)
+		}
+	}
+
+	if probe := steps[0]; probe.Type != StepCommand || !probe.AllowFailure ||
+		probe.MaxRetries == nil || *probe.MaxRetries != 0 {
+		t.Errorf("inventory = %+v, want an allow_failure command step with max_retries 0", probe)
+	}
+	if steps[1].Type != StepCondition || steps[1].If == "" {
+		t.Errorf("has-triggers = %+v, want a condition step carrying a guard", steps[1])
+	}
+	propose := steps[2]
+	if propose.Type != StepAgent || propose.OnInput != InputDeny {
+		t.Errorf("propose = %+v, want an agent step under on_input: deny", propose)
+	}
+	if mr := propose.MaxRetries; mr == nil || *mr != 1 {
+		t.Errorf("propose max_retries = %v, want 1 (it clears its own staging and writes nothing live)", mr)
+	}
+
+	gate, applies := -1, []int{}
+	for i, s := range steps {
+		if s.Type == StepManual && gate < 0 {
+			gate = i
+		}
+		if strings.Contains(s.Run, "trigger apply") || strings.Contains(s.Prompt, "\nvincent trigger apply --proposal") {
+			applies = append(applies, i)
+		}
+	}
+	if gate < 0 {
+		t.Fatal("update-triggers has no manual gate")
+	}
+	if len(applies) != 1 || applies[0] <= gate {
+		t.Errorf("steps running apply = %v, manual gate at %d; want exactly one, after the gate", applies, gate)
+	}
+	if mr := steps[applies[0]].MaxRetries; mr == nil || *mr != 0 {
+		t.Errorf("apply max_retries = %v, want 0", mr)
+	}
+}
+
+// Both trigger prompts are rendered, with their command bodies and the gate's
+// instructions, because each piece fails silently in its own way: a missing
+// splice, an executed skill example, an id that never reached apply.
+func TestBuiltinTriggerPromptsRender(t *testing.T) {
+	rc := RenderContext{
+		Task: TaskContext{
+			ID: 42, Title: "watch jira", BaseBranch: "master",
+			Fields: map[string]string{"trigger_id": "jira-ready"},
+		},
+		Project: ProjectContext{ID: 7, Name: "vincent", Path: "/repo/root"},
+		Steps: map[string]StepResult{
+			"inventory": {Status: "succeeded", Result: "/cfg/triggers/jira-ready.yaml"},
+			"propose":   {Status: "succeeded", Result: "PROPOSAL SUMMARY"},
+		},
+	}
+	render := func(name, src string) string {
+		t.Helper()
+		got, err := Render(name, src, rc)
+		if err != nil {
+			t.Fatalf("Render(%s) error = %v", name, err)
+		}
+		return got
+	}
+
+	create := builtins()[CreateTriggerName].Workflow.Steps
+	update := builtins()[UpdateTriggersName].Workflow.Steps
+	for name, prompt := range map[string]string{
+		CreateTriggerName:  render("create prompt", create[0].Prompt),
+		UpdateTriggersName: render("update prompt", update[2].Prompt),
+	} {
+		for _, want := range []string{
+			"You never arm a trigger.",                   // the rule apply enforces
+			"## The safety rule",                         // the skill, spliced
+			`{{ printf "%.0f" .Event.workflow_run.id }}`, // an escaped skill example, back as text
+			"trigger-proposals and\n42",                  // the staging directory names this task
+			"--project 7 --json",
+			"vincent status",
+		} {
+			if !strings.Contains(prompt, want) {
+				t.Errorf("%s prompt is missing %q:\n%s", name, want, prompt)
+			}
+		}
+		if strings.Contains(prompt, "name: vincent-triggers") {
+			t.Errorf("%s prompt still carries the skill's front matter", name)
+		}
+	}
+	if got := render("create prompt", create[0].Prompt); !strings.Contains(got, "use jira-ready\n  verbatim") &&
+		!strings.Contains(got, "use jira-ready\nverbatim") {
+		t.Errorf("create-trigger prompt does not carry trigger_id:\n%s", got)
+	}
+	if got := render("update prompt", update[2].Prompt); !strings.Contains(got, "/cfg/triggers/jira-ready.yaml") {
+		t.Errorf("update-triggers prompt does not carry the inventory:\n%s", got)
+	}
+
+	const apply = "vincent trigger apply --proposal 42 --project 7"
+	if got := render("install", create[1].Run); got != apply {
+		t.Errorf("create-trigger install = %q, want %q", got, apply)
+	}
+	if got := render("apply", update[4].Run); got != apply {
+		t.Errorf("update-triggers apply = %q, want %q", got, apply)
+	}
+	for _, step := range []Step{update[0], update[5]} {
+		if got := render(step.ID, step.Run); got != "vincent trigger ls --project 7" {
+			t.Errorf("update-triggers %s = %q, want the project's ls", step.ID, got)
+		}
+	}
+	gate := render("approve", update[3].Instructions)
+	for _, want := range []string{"trigger-proposals/42/", "PROPOSAL SUMMARY"} {
+		if !strings.Contains(gate, want) {
+			t.Errorf("approve instructions are missing %q:\n%s", want, gate)
+		}
 	}
 }
 

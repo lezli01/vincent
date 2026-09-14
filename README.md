@@ -76,7 +76,7 @@ It is released under the [MIT License](LICENSE) and created by `lezli01` at
 | **Durable local control plane** | A background daemon owns execution and state, so tasks keep running when terminals and TUI sessions close. Install it as a per-user service to resume work after login or reboot. |
 | **Structured, reusable workflows** | Combine agent prompts, deterministic commands, approval gates, parallel groups, isolated fan-out, conditions, loops, breaks, and reusable includes in validated YAML. |
 | **Agent choice at every level** | Run Claude Code, Codex, or Cursor using the CLIs and authentication already on your machine; choose the agent, model, effort, and permission mode per workflow, step, or task. |
-| **Safe parallel development** | Every task receives its own git worktree and branch. Global and per-project concurrency caps, priorities, and platform restrictions keep many workloads organized without touching your checkout. |
+| **Safe parallel development** | Every task receives its own git worktree and branch. Global and per-project concurrency caps, priorities, and platform restrictions keep many workloads organized without any of them working in your checkout. |
 | **Conversations, not just tasks** | Start a chat with an agent in its own worktree and branch, continued through the agent CLI's own session, with every turn's transcript, tokens and cost recorded. Chats run outside the task scheduler under their own cap. |
 | **Verification and recovery** | Checks decide whether work succeeded, retries receive the real failure, timeouts are enforced, transcripts are durable, and interrupted steps recover after a daemon restart. |
 | **Human control where it matters** | Pause at approval gates, answer supported agents mid-run, inspect file-grouped diffs, edit and retry blocked steps, and decide when publishing happens. |
@@ -500,8 +500,8 @@ Full documentation lives in **[docs/](docs/README.md)**.
 
 **Agent skill**
 
-Install the portable workflow-authoring skill for Claude Code, Codex, Cursor,
-or another Agent Skills client:
+Install the portable workflow- and trigger-authoring skills for Claude Code,
+Codex, Cursor, or another Agent Skills client:
 
 ```sh
 vincent skills install
@@ -513,14 +513,17 @@ hand, which prompts for the selection instead:
 
 ```sh
 npx skills add lezli01/vincent --skill vincent-workflows -g
+npx skills add lezli01/vincent --skill vincent-triggers -g
 ```
 
 `vincent skills ls` says what is installed and whether it is current, and
 `vincent doctor` carries the same rows. Neither needs a running daemon, and
 only the install needs node.
 
-It asks about human gates and cost constraints, prefers deterministic commands
-and native control flow, and validates generated workflow YAML.
+The workflow skill asks about human gates and cost constraints, prefers
+deterministic commands and native control flow, and validates generated
+workflow YAML. The trigger skill writes [event triggers](docs/guides/triggers.md)
+switched off, with a dedupe key and limits, and leaves turning one on to you.
 
 **Platforms** — [Windows](docs/platforms/windows.md) ·
 [macOS](docs/platforms/macos.md) · [Linux](docs/platforms/linux.md)

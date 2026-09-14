@@ -15,8 +15,20 @@ func TestContainerDefaultIsTheHost(t *testing.T) {
 	if c.RuntimeBinary() != "docker" {
 		t.Errorf("default runtime = %q, want docker", c.RuntimeBinary())
 	}
-	if !c.MountAgentConfig || !c.Network {
-		t.Errorf("mounts and network should default on, got %+v", c)
+	if !c.Network {
+		t.Errorf("network should default on, got %+v", c)
+	}
+}
+
+// TestContainerDefaultWithholdsAgentConfig is issue #366. Only `command`
+// steps and `check:`s run in the container until task 062 moves the agent
+// process in; nothing inside it reads ~/.claude, ~/.codex or ~/.cursor, so
+// mounting them read-write by default hands the host's agent credentials to
+// the image and to step code for no benefit.
+func TestContainerDefaultWithholdsAgentConfig(t *testing.T) {
+	if Default().Container.MountAgentConfig {
+		t.Error("container.mount_agent_config defaults to true: every containerized task " +
+			"bind-mounts the host's agent credentials read-write, though no agent runs inside it")
 	}
 }
 

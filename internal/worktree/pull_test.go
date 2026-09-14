@@ -187,7 +187,7 @@ func TestCreatePullForkGetsNoUpstream(t *testing.T) {
 	remotes := testrepo.Run(t, local, "remote")
 	for _, name := range strings.Fields(remotes) {
 		if name != "origin" {
-			t.Errorf("remote %q was added; §10 says nothing local is mutated", name)
+			t.Errorf("remote %q was added; no remote is ever added for a fork", name)
 		}
 	}
 }

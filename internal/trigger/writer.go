@@ -124,6 +124,35 @@ func (w *Writer) Patch(id, version string, ops []workflow.Op) (string, error) {
 	return workflow.Version(path)
 }
 
+// Replace swaps an existing trigger file's whole content for src when version
+// still matches. It is `vincent trigger apply`'s write (task 098 decision 3):
+// a proposal stages a full file rather than ops, so there is nothing for Edit
+// to preserve, and the version guard is what stops it overwriting a change a
+// human made after the proposal read the file. src must validate as the
+// document for id.
+func (w *Writer) Replace(id, version string, src []byte) (string, error) {
+	path, err := w.Path(id)
+	if err != nil {
+		return "", err
+	}
+	if _, errs := Parse(src, id); len(errs) > 0 {
+		return "", &InvalidError{Errors: errs}
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	_, current, err := w.read(path)
+	if err != nil {
+		return "", err
+	}
+	if version != current {
+		return "", &StaleError{Current: current}
+	}
+	if err := config.WriteFile(path, src); err != nil {
+		return "", err
+	}
+	return workflow.Version(path)
+}
+
 // Delete removes a trigger file when version still matches. The ledger is
 // kept and the cursor goes by decision 16, both of which are the registry's
 // and poller's business, not the file's.

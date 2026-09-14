@@ -235,6 +235,9 @@ const UpdateWorkflowsName = "update-workflows"
 // features a workflow can be behind on, so a workflow feature that lands
 // without a line here is a feature this built-in will never propagate. Adding
 // that line is part of shipping the feature (decision 5).
+// TestUpdateWorkflowsChecklistNamesEveryField holds it to that: every key the
+// §8.2 schema descriptor offers must be named under "The bar", less the
+// exemptions that test lists with their reasons (issue #376).
 //
 // `on_input: deny` rather than create-workflow's `wait` (decision 4). The two
 // built-ins face opposite ways: create-workflow is designing something that
@@ -375,12 +378,24 @@ steps:
          genuinely decided by a run — a planning step emitting one JSON object
          per work unit — becomes for_each: plus a single lane: template with a
          max_lanes: ceiling, in place of a hand-guessed list of guarded lanes.
+         A parallel group that starts more processes than the machine should
+         run at once carries max_parallel, and a loop whose real bound is not
+         the default of ten says so in max_iterations; both are what the
+         session envelope counts. A lane that needs another capability, or
+         must be admitted ahead of its siblings, overrides model, effort or
+         priority on the lane rather than in a copied workflow. A fan-out whose
+         conflicts people keep resolving the same mechanical way may carry
+         merge: with on_conflict: agent and a checked resolver, counted in the
+         envelope; everywhere else merge stays at block.
       3. Verification. A step that changes state a command can check carries a
-         check:. An agent's claim that it worked is not verification.
+         check:, and check_timeout where that check can outlast the daemon's
+         command timeout — it never inherits the step's own timeout. An
+         agent's claim that it worked is not verification.
       4. Typed inputs. A value the prompt tells a human to bury in the task
-         description becomes a declared field, with a type, and a pattern where
-         one exists. A workflow that digs an issue number out of the task title
-         reads .Issue instead.
+         description becomes a declared field under fields:, with a type, a
+         pattern where one exists, and a label where its name is a slug a
+         person would not read easily. A workflow that digs an issue number out
+         of the task title reads .Issue instead.
       5. Closed sets and defaults. A field whose legal values are a fixed list
          is type: enum with values:, not a string with a pattern spelling the
          same alternation and not a set restated in prose — only a list can be
@@ -391,12 +406,18 @@ steps:
       6. Failure policy, per step. max_retries: 0 on a probe and on anything
          whose replay is not provably safe; allow_failure: true where a red
          result is data a later guard reads; retry_backoff where retrying
-         immediately cannot help.
+         immediately cannot help. timeout on a step whose hang is likelier
+         than its slow work, rather than the daemon's default; input_timeout
+         on a step that can wait on a question nobody may be there to answer,
+         since the wait holds the task's slot.
       7. Human mechanism, deliberately chosen. A manual gate sits immediately
          before the effect it authorizes and names what to inspect.
          on_input: require only where the conversation genuinely is part of the
          run, and never on a step that resolves to an adapter with no control
          channel. on_input: deny on a step meant to run untended.
+         permission_mode: restricted on an agent step that needs no writes — a
+         review, a plan — where its adapter can restrict on the host; never
+         the reverse.
       8. Visibility. A step that runs for minutes, or that someone waits on,
          reports through vincent status — in the script for a command step, in
          the prompt for an agent step, in the wording used above.
@@ -414,8 +435,8 @@ steps:
       10. Defensive templates. Rendering uses missingkey=error, so an optional
           field is read as {{"{{"}}with index .Task.Fields "x"}}…{{"{{"}}end}}
           and never bare. A required field may be read directly.
-      11. Secrets. Nothing in a prompt, a field, an instruction or a run: body
-          that you would not want sitting in a transcript.
+      11. Secrets. Nothing in a prompt, a field, an instruction, a run: body or
+          an env: map that you would not want sitting in a transcript.
       12. Streams, in a command step whose output something reads. A command
           step's .Steps.<id>.Result is its stdout alone, never its stderr. Two
           things follow, and both need checking rather than assuming. A
@@ -428,6 +449,11 @@ steps:
           that renders empty unless the body sends them to stdout, which
           "exec 2>&1" on its first line does for a body that is all
           diagnostics.
+      13. Retry fields where there is an attempt. max_retries and
+          retry_backoff on a parallel or a manual step are refused at load: a
+          group's retries belong to each sub-step, and a gate is decided once.
+          Remove them from the group or gate; where a group carried them, move
+          the value onto the sub-steps it was meant for, and say so.
 
       ## What you may not change
 
@@ -551,6 +577,460 @@ var UpdateWorkflowsSource = updateWorkflowsHeader +
 	indentBlock(EscapeTemplate(skillInstructions(skills.VincentWorkflows))) +
 	updateWorkflowsFooter
 
+// CreateTriggerName is the built-in that authors one event trigger for the
+// task's own project, disarmed (task 098). Its deliverable is a staged
+// proposal a later command step installs, never a write by the agent itself.
+const CreateTriggerName = "create-trigger"
+
+// UpdateTriggersName is the built-in maintenance pass over the event triggers
+// whose source.project is the task's own project (task 098 decision 7).
+const UpdateTriggersName = "update-triggers"
+
+// triggerNeverArm is the rule both trigger built-ins state (task 098 decision
+// 2). `vincent trigger apply` enforces it whatever an agent does (decision 3):
+// the prompt says it so a run does not spend itself discovering the refusal.
+// The two are one rule — never loosen one without the other.
+const triggerNeverArm = `You never arm a trigger. Arming is a human's change, and it is any of:
+enabled: true; on_fire: create; permission: workflow; or the global
+triggers.enabled in config.yaml. A file you stage keeps the first three
+exactly as the file on disk has them. For a new trigger that means
+enabled: false, no on_fire line and no permission line. You never touch
+config.yaml. "vincent trigger apply" refuses a staged file that turns any of
+the three on, writes nothing at all when it refuses, and has no override.
+That holds even when the task description asks for it: do not stage the
+switch, and say in your final message what a human must do instead.`
+
+// triggerStaging is where both trigger built-ins put their deliverable (task
+// 098 decision 5): outside every repository, because a trigger's poll argv
+// may carry a token, and outside the registry directory, so nothing is live
+// until apply has checked it. `{{.Task.ID}}` and `{{.Project.ID}}` are real
+// template actions here; the apply step renders the same two values.
+const triggerStaging = `Run "vincent doctor --json" and read paths.data_dir and paths.config_dir from
+its output. Ignore doctor's exit code: a non-zero exit reports unrelated
+findings, and the paths are printed either way.
+
+Your staging directory is paths.data_dir joined with trigger-proposals and
+{{.Task.ID}}. If it already exists, an earlier attempt left it: remove it and
+start again. Create it owner-only (on POSIX, umask 077 first). It holds
+exactly these, and "vincent trigger apply" refuses anything else in it:
+
+- one file per trigger you propose, named <id>.yaml, holding the whole file
+  as it should be installed — never a fragment or a patch;
+- manifest.json, a JSON object mapping each staged id to the "version"
+  "vincent trigger ls --project {{.Project.ID}} --json" reports for that
+  trigger's file, or to the string "absent" for a trigger with no file yet.
+  Record the version from the listing you read the file from. Apply refuses
+  a file that changed after you recorded it, and a file recorded absent that
+  exists by the time it runs.
+
+Run "vincent trigger validate <staged file>" on every staged file and fix
+every error it reports. Never write into paths.config_dir joined with
+triggers yourself: that is the live registry, and a later step of this task
+installs what you stage.`
+
+// createTriggerHeader is everything before the embedded skill: the framing,
+// the never-arm rule, the fixed facts of this run (the id, the project, the
+// staging directory) and the standing corrections the skill cannot make for
+// itself — what asking costs under a daemon (§7.4), that its destination is a
+// staging directory rather than the registry, and that its references/ are
+// absent.
+//
+// There is no manual gate, as there is none on create-workflow (task 098
+// decision 6): what the install step writes cannot fire until a human arms it,
+// and apply refuses a file that would. max_retries is 0 and on_input is wait
+// for create-workflow's reasons (task 024 decisions 5 and 9).
+//
+// It is a var rather than a const because StatusInstruction and the rule
+// above are re-indented into it at init.
+var createTriggerHeader = `# Built into vincent: authors one event trigger for this project, disarmed,
+# and installs it through "vincent trigger apply" (task 098). Shadowed by a
+# global or project workflow named "create-trigger".
+#
+# The design rules below the "How to design it" heading are
+# skills/vincent-triggers/SKILL.md, embedded at build time — edit the skill,
+# not this file. The never-arm rule above them is enforced by the install
+# step's apply, not only stated.
+name: create-trigger
+description: Author a new event trigger for this project, disarmed, and install it
+defaults:
+  agent: claude
+fields:
+  - name: trigger_id
+    label: Trigger id
+    type: string
+    required: true
+    # workflow_name's pattern (task 024 decision 10): the value is also a file
+    # name. trigger.ValidID additionally refuses ".." when apply writes it.
+    pattern: '^[a-z0-9][a-z0-9._-]*$'
+    description: >-
+      Id for the new trigger. It becomes both its id: and its file name under
+      {config_dir}/triggers, so it is lowercase and has no spaces or path
+      separators.
+steps:
+  - id: author
+    name: Design and stage the trigger
+    type: agent
+    max_retries: 0
+    on_input: wait
+    prompt: |
+      You are running unattended in a dedicated git worktree created for this
+      task; the current working directory is that worktree. Your deliverable is
+      one new vincent event trigger for this project, staged for installation,
+      plus its poll script when it is a type: command trigger. A later step of
+      this task installs what you stage. Leave the worktree unchanged: a
+      trigger file or a poll script can hold what must never be committed.
+
+      Task: {{.Task.Title}}
+
+      {{.Task.Description}}
+
+      ## While you work
+
+` + indentBlock(StatusInstruction) + `
+
+      ## The rule you cannot break
+
+` + indentBlock(triggerNeverArm) + `
+
+      A cancel trigger loads only with on_fire: create, so no trigger you stage
+      can be a cancel. If that is what the task asks for, stage nothing and
+      explain in your final message that a human writes it by hand, following
+      the vincent-triggers skill.
+
+      ## What is fixed
+
+      - The id is not yours to choose: use {{ index .Task.Fields "trigger_id" }}
+        verbatim, both as the trigger's id: and as the staged file's name with
+        a .yaml extension.
+      - source.project is {{.Project.ID}}, this project's numeric id, and never
+        another.
+      - Run "vincent trigger ls --project {{.Project.ID}} --json". Exit 1 only
+        means the project has no triggers yet. If it lists that id, do not
+        replace the trigger unasked; that is what rule 1 below is for. If the
+        answer is to replace it, the manifest records the version ls reported;
+        otherwise it records "absent". A file of that id under the triggers
+        directory that the listing does not show belongs to another project:
+        ask for a different id.
+      - Run "vincent workflow ls" to check action.workflow. If the workflow the
+        trigger should start does not exist, ask, or name an existing one and
+        say in your final message that the create-workflow built-in writes new
+        workflows. You never write a workflow.
+      - A type: command trigger's poll script goes in paths.config_dir joined
+        with trigger-scripts: beside the triggers directory, never inside it,
+        and never in a repository. On POSIX, make the directory and the script
+        owner-only (0700). command: names the script by absolute path, and on
+        Windows it is [pwsh, -NoProfile, -File, <absolute path>.ps1]. The
+        script is the one file you write in place; the trigger is only staged.
+
+      ## Staging
+
+` + indentBlock(triggerStaging) + `
+
+      ## How to design it
+
+      What follows is the vincent-triggers skill, reproduced verbatim. Follow
+      it, with three corrections it cannot make for itself — where they
+      disagree with it, they win:
+
+      1. You may stop and ask, but asking is expensive here and nobody may be
+         watching. A question parks this task in awaiting_input, where it holds
+         its concurrency slot with your process alive, and if it goes
+         unanswered the step fails on the input timeout — there is no path
+         where an unanswered question falls back to your own judgement. So ask
+         only where an answer changes the YAML and you cannot settle it from
+         the task, the project's existing triggers and workflows, or the
+         repository. Batch what you must ask into as few exchanges as you can,
+         decide everything else yourself, and list in your final message both
+         the questions you asked and the ones you answered on your own.
+      2. The destination is the staging directory above, not the triggers
+         directory the skill's authoring step names, and the switches are the
+         rule above, not the skill's "unless the user asks". The skill's dry run
+         ("vincent trigger test") needs the trigger loaded, which it is not
+         until the next step installs it: skip it, and say so.
+      3. The skill's own references/ files are not on disk here. Read
+         docs/guides/triggers.md from the repository if this is a vincent
+         checkout, which the skill already prefers; otherwise work from what
+         the skill states directly and from the validator.
+
+`
+
+// createTriggerFooter closes the prompt and carries the install step. apply is
+// the deterministic half of the rule, not a review: a proposal that arms, or
+// that names another project, blocks the task here with nothing written.
+const createTriggerFooter = `
+      ## When you are done
+
+      Deliver the skill's own report as your final message, with the staged
+      path, the validator's verdict and the questions and assumptions rule 1
+      above asks for. End with what a human must do to arm the trigger once
+      the next step has installed it: set enabled: true in the TUI's triggers
+      view, which asks first, or in an editor, and turn triggers.enabled on in
+      config.yaml if it is off.
+  - id: install
+    name: Install the trigger, disarmed
+    type: command
+    max_retries: 0
+    # "vincent" and plain arguments are spelled the same under /bin/sh and
+    # pwsh (§8.3). A replay would find the file already written, so no retry.
+    run: 'vincent trigger apply --proposal {{.Task.ID}} --project {{.Project.ID}}'
+`
+
+// CreateTriggerSource is the built-in trigger-authoring workflow: an agent
+// step carrying the `vincent-triggers` skill, embedded at build time, and the
+// apply step that installs its proposal disarmed.
+//
+// It is a var because the skill is spliced in at init. Nothing may reassign
+// it.
+var CreateTriggerSource = createTriggerHeader +
+	indentBlock(EscapeTemplate(skillInstructions(skills.VincentTriggers))) +
+	createTriggerFooter
+
+// updateTriggersHeader is everything before the embedded skill: the framing,
+// the inventory, the never-arm rule, the staging contract, this file's own
+// review checklist, and the corrections the skill cannot make for itself.
+//
+// The checklist under "The bar" is version-coupled to trigger features, as
+// update-workflows' is to workflow features (task 098 decision 7): a trigger
+// feature that lands without a line here is one this built-in will never
+// propagate. Adding that line, and re-reading both trigger built-ins, is part
+// of shipping the feature.
+//
+// Unlike create-trigger there is a manual gate before apply. A rewrite of an
+// armed trigger is live the moment it is written, where create-trigger's new
+// file cannot fire at all. on_input is deny for update-workflows' reason (task
+// 037 decision 4), and the one retry is safe because the agent clears its own
+// staging directory before writing and writes nothing live.
+var updateTriggersHeader = `# Built into vincent: proposes improvements to this project's event triggers
+# and installs them once a person approves (task 098). Shadowed by a global or
+# project workflow named "update-triggers".
+#
+# The design rules below the "How to design them" heading are
+# skills/vincent-triggers/SKILL.md, embedded at build time — edit the skill,
+# not this file. The checklist above them is this file's own, and is coupled to
+# the trigger feature set on purpose: a trigger feature that ships without a
+# line there is one this workflow will never propagate.
+name: update-triggers
+description: Propose improvements to this project's event triggers and install them once approved
+defaults:
+  agent: claude
+steps:
+  # The probe and the list in one command: ls exits 1 when this project has no
+  # trigger files, which the condition below reads, and prints their paths when
+  # it has some.
+  - id: inventory
+    name: List this project's triggers
+    type: command
+    max_retries: 0
+    allow_failure: true
+    run: 'vincent trigger ls --project {{.Project.ID}}'
+  # A project with no triggers is not a failure — there is nothing to update.
+  - id: has-triggers
+    name: Stop if there are none
+    type: condition
+    if: '{{ eq (index .Steps "inventory").Status "succeeded" }}'
+  - id: propose
+    name: Stage a proposal
+    type: agent
+    max_retries: 1
+    on_input: deny
+    prompt: |
+      You are running unattended in a dedicated git worktree created for this
+      task; the current working directory is that worktree, and nothing you do
+      belongs in it. Your deliverable is a proposal: whole rewritten copies of
+      this project's trigger files, staged outside every repository. A person
+      reviews it at the next step, and only after they approve does "vincent
+      trigger apply" install it. Nothing you do here changes what the daemon
+      is running.
+
+      Task: {{.Task.Title}}
+
+      {{.Task.Description}}
+
+      ## The triggers
+
+      A previous step listed every trigger file whose source.project is
+      {{.Project.ID}}, this project's id:
+
+      {{ (index .Steps "inventory").Result }}
+
+      Those are the whole job. Another project's triggers are out of scope, and
+      so is config.yaml. Read the files where they are, and write nothing under
+      the config directory: not a trigger, not a poll script. A poll script or
+      a workflow that needs a change is a finding for your final message.
+
+      ## Nobody is watching
+
+      This step runs under on_input: deny. A question you ask is answered "no
+      user is available" and you carry on alone, so asking buys you nothing.
+      Where you are unsure, propose the conservative change or none, and say
+      which in your final message. The proposal is the conversation.
+
+      ## While you work
+
+` + indentBlock(StatusInstruction) + `
+
+      ## The rule you cannot break
+
+` + indentBlock(triggerNeverArm) + `
+
+      ## Staging
+
+` + indentBlock(triggerStaging) + `
+
+      Stage only the triggers you change. A trigger that is already right is
+      left byte for byte and is not staged. When no trigger needs a change,
+      write manifest.json as {} and stage nothing else: apply installs nothing
+      and succeeds, which is a correct outcome.
+
+      ## Find out what this vincent can actually do
+
+      - Run "vincent version" first and keep its exact output for your final
+        message.
+      - "vincent trigger validate <file>" is the verdict on every staged file.
+        It needs no daemon, and a key a source or action does not take is an
+        error rather than an ignored setting — which makes it the way to ask
+        whether this version has a feature at all.
+      - "vincent trigger ls --project {{.Project.ID}} --json" gives each file's
+        id, version, validity, enabled, on_fire and permission, and the errors
+        of a file that does not validate. An invalid trigger is one to repair.
+      - If this repository is a vincent checkout, its own
+        docs/guides/triggers.md is the exact reference for the version it
+        builds. Read it before you rely on anything below.
+
+      ## The bar
+
+      Work through this list for every trigger, and report per trigger which
+      items applied:
+
+      1. match: as a prefilter in front of if:, so a sparse event is dropped
+         before a template reads a key it lacks.
+      2. An explicit dedupe_key — within "What you may not change" below.
+      3. limits.max_per_hour.
+      4. limits.max_task_cost_usd on a create_task action.
+      5. github_issue or github_pull to link a created task, instead of a
+         number parsed out of a title.
+      6. No poll_interval on a github_issues or github_prs source; they run on
+         github.poll_interval.
+      7. allowed_actors wherever match.action can match an untrusted GitHub
+         event — anything but issue labeled, unlabeled or assigned and pull
+         request merged, and an absent match.action matches everything.
+      8. A follow_up, retry or cancel action carries none of the keys a
+         reaction refuses: permission, workflow, title, description, fields,
+         github_issue, github_pull and limits.max_task_cost_usd.
+      9. An http source is signed with signature.scheme github_hmac_sha256 and
+         a secret_env, and the secret itself is never in the file.
+      10. No secret in an argv. A credential a poll command needs comes from
+          the daemon's inherited environment.
+      11. A poll script follows the contract: one JSON object per stdout line
+          with a string id, an optional trailing cursor line, and a non-zero
+          exit on failure. Report a script that does not; do not edit it.
+      12. A key built from a JSON number a poll script or a pushed body sent
+          renders it through printf "%.0f", because it arrives as a float.
+      13. Nothing relies on .Event in the steps of the workflow action.workflow
+          names: .Event exists only in trigger templates. Report such a
+          workflow; do not edit it.
+
+      ## What you may not change
+
+      Each trigger encodes a decision somebody made. You are improving how it
+      is expressed, not what it does:
+
+      - A trigger keeps its id, its file name and its source.project, and no
+        file is deleted.
+      - enabled, on_fire and permission keep their current values. Apply
+        refuses one that arms, and a disarming change is not yours to make
+        either: report it as a finding.
+      - A dedupe_key must never change what it renders for an event already
+        delivered. The ledger matches the rendered key, so a different
+        rendering fires every delivered event again. Make an implicit key
+        explicit only in a form that renders exactly the event's id, which is
+        what the absent key used, and leave an explicit key's rendering alone.
+      - A trigger that is already right is left byte for byte, and saying so is
+        a correct outcome.
+      - A trigger that is wrong in a way you cannot fix conservatively is left
+        alone and reported.
+
+      ## How to design them
+
+      What follows is the vincent-triggers skill, reproduced verbatim. Follow
+      it, with three corrections it cannot make for itself — where they
+      disagree with it, they win:
+
+      1. The deliverable is the staged proposal above, not an edit in the
+         triggers directory the skill's authoring step names, and the switches
+         are the rule above, not the skill's "unless the user asks".
+         "vincent trigger test" judges the file already loaded, not your
+         proposal; the validator is the verdict on what you stage.
+      2. You cannot ask, per "Nobody is watching" above. Every question the
+         skill's "Gather only decisions that matter" section raises is one you
+         answer from the trigger file, its comments, the project, and the
+         ledger through the trigger_deliveries MCP tool where it is available —
+         or one you leave the current behavior alone over.
+      3. The skill's own references/ files are not on disk here. Read
+         docs/guides/triggers.md from the repository if this is a vincent
+         checkout, which the skill already prefers; otherwise work from what
+         the skill states directly and from the validator.
+
+`
+
+// updateTriggersFooter closes the prompt and carries the gate, the apply and
+// the record. The gate sits immediately before apply, the effect it
+// authorizes, and nothing before it runs apply (task 098 decision 7).
+const updateTriggersFooter = `
+      ## When you are done
+
+      Your final message is what the person at the approval step reads before
+      anything is installed:
+
+      - the exact "vincent version" output;
+      - one entry per trigger the inventory listed: changed or untouched, a
+        before/after diff of every change, which numbered items from "The bar"
+        applied, and what you deliberately left alone;
+      - for every dedupe_key you touched, why it renders the same for events
+        already delivered;
+      - findings you could not act on here: poll scripts, workflows, and any
+        switch a human may want to change;
+      - the validator's verdict for every staged file.
+  - id: approve
+    name: Approve the trigger proposal
+    type: manual
+    instructions: |
+      Nothing has been installed yet. The full proposed trigger files and their
+      manifest.json are staged in {data_dir}/trigger-proposals/{{.Task.ID}}/
+      ("vincent doctor" prints the data dir). Diff each staged <id>.yaml against
+      the file of the same name under {config_dir}/triggers/.
+
+      Approving runs "vincent trigger apply", which installs every staged file at
+      once, and refuses the whole proposal, writing nothing, when a file does not
+      validate, names another project, changed since it was read, or arms a
+      trigger. A rewrite of an armed trigger is live as soon as it is written.
+      Rejecting ends the task with every trigger untouched.
+
+      The proposal:
+
+      {{ (index .Steps "propose").Result }}
+  - id: apply
+    name: Install the approved proposal
+    type: command
+    max_retries: 0
+    run: 'vincent trigger apply --proposal {{.Task.ID}} --project {{.Project.ID}}'
+  - id: result
+    name: List the triggers after the pass
+    type: command
+    max_retries: 0
+    run: 'vincent trigger ls --project {{.Project.ID}}'
+`
+
+// UpdateTriggersSource is the built-in maintenance pass over a project's
+// triggers: an inventory, an agent proposal carrying the same
+// `vincent-triggers` skill create-trigger carries, a manual gate, and apply.
+//
+// It is a var for the same reason CreateTriggerSource is. Nothing may reassign
+// it.
+var UpdateTriggersSource = updateTriggersHeader +
+	indentBlock(EscapeTemplate(skillInstructions(skills.VincentTriggers))) +
+	updateTriggersFooter
+
 // skillInstructions drops an Agent Skill's YAML front matter, keeping the
 // Markdown a model is meant to act on. A file with no front matter is
 // returned unchanged, so this cannot silently eat the first section.
@@ -596,6 +1076,8 @@ var builtinSources = map[string]string{
 	AdhocName:           AdhocSource,
 	CreateWorkflowName:  CreateWorkflowSource,
 	UpdateWorkflowsName: UpdateWorkflowsSource,
+	CreateTriggerName:   CreateTriggerSource,
+	UpdateTriggersName:  UpdateTriggersSource,
 }
 
 // BuiltinSource returns the compiled-in source of a built-in workflow. It is

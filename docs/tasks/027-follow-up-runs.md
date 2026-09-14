@@ -1,6 +1,6 @@
 # 027 — Follow-up runs on a done or aborted task
 
-**Status:** ✅ done (9/9)
+**Status:** ✅ done (10/10)
 **Opened:** 2026-08-25
 
 A new human action, `follow_up`, valid from `done` and `aborted` — the two
@@ -171,6 +171,33 @@ recorded; the rest are followed.
     request time, before the compiled document is re-validated, so what
     validates is what runs.
 
+13. **2026-09-14 — A follow-up may supply its own `fields`, and a named
+    workflow's declared fields are enforced** (issue #369). 027.5 ported
+    creation's snapshot checks to the workflow form but not tasks 022 and 058's
+    field contract, so a follow-up could run a workflow whose required field
+    the task never carried, or whose enum it violated, and rendered `""` where
+    a required default belonged. The request gains an optional `fields` map,
+    merged over the task's stored fields with the request winning key by key;
+    for the workflow form the merged map goes through `PrepareTaskFields` and
+    `ValidateTaskFields` against the registry entry — never the expanded
+    document, since only the selected root workflow owns the contract (§8.1.2)
+    — and a failure is a 400 before anything is persisted. Without a request
+    `fields`, a workflow declaring a required field with no default could never
+    run as a follow-up on a task that lacks it. The `prompt` and `run` forms
+    compile to a workflow that declares nothing, so there `fields` is accepted
+    as the round's overlay with nothing to validate: one rule for all three
+    forms rather than a 400 for two of them.
+
+14. **2026-09-14 — Those values are round-scoped.** The prepared map is stored
+    on `FollowUpRequest.Fields` inside `pending_follow_up_json` (no migration)
+    when it differs from the task's, and laid over `task.Fields` in that
+    round's render context only. The task row keeps what creation recorded,
+    and a later follow-up naming a different workflow does not inherit them.
+    Everything in the round that reads `.Task.Fields` sees the overlay: step
+    templates, the fields and branch name of a `fan_out` lane spawned inside
+    it (a lane inherits the round's fields, which is what the round renders),
+    and the fields listed in a repair of one of its steps.
+
 ## Work
 
 - [x] **027.1 — Store: migration `0012_follow_up.sql`, `FollowUpRequest`, the
@@ -195,6 +222,10 @@ recorded; the rest are followed.
 - [x] **027.9 — Tests across `taskstate`, `store`, `taskrun`, `api`, the TUI
   live harness and the CLI e2e binary; spec amendments, derived documentation,
   and an `m2` gate scenario.** ✓ 2026-08-25
+- [x] **027.10 — Decisions 13 and 14 (issue #369): `fields` on the follow-up
+  request, §8.1.2's checks against a named workflow, `FollowUpRequest.Fields`,
+  the engine's round-scoped overlay, `apiclient`, `--field` on the CLI, the MCP
+  hint, and the spec and reference amendments.** ✓ 2026-09-14
 
 ## Notes taken while building
 

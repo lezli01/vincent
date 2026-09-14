@@ -81,9 +81,12 @@ itself because a parse failed has failed in the wrong direction.
 
 Every task runs in its own `git worktree` on its own branch.
 
-**Does:** keep two tasks in the same repository from colliding; keep your own
-checkout, current branch and stash untouched; make every change reviewable as a
-real git diff before anything is pushed.
+**Does:** keep two tasks in the same repository from colliding; keep every task
+out of your own checkout, which vincent itself changes only by fast-forwarding a
+base branch that is behind its remote, and only when that checkout is clean
+([`fetch_base_branch`](reference/configuration.md#fetch_base_branch)); leave your
+stash untouched; make every change reviewable as a real git diff before anything
+is pushed.
 
 **Does not:** confine the process. The worktree is a directory, not a sandbox. A
 full-auto agent's cwd is the worktree; its *reach* is your whole account.
@@ -126,17 +129,17 @@ image's, not your machine's.
 **Does not:**
 
 - **Close the network.** Outbound traffic is on by default.
-  `container.network: false` closes it, and is refused together with
-  `mcp.wire_steps: true` because a container with no network cannot reach the
-  daemon.
-- **Withhold your agent credentials.** `mount_agent_config` is on by default and
-  bind-mounts `~/.claude`, `~/.codex` and `~/.cursor` into the container
-  **read-write**, because subscription auth takes no key from the environment
-  and cursor writes its model choice back to its own config. Anything running
-  inside the container can read those credentials and write to those
-  directories. Turning
-  the knob off is supported; an agent CLI that then cannot log in is the
-  consequence, not a bug.
+  `container.network: false` closes it for the steps inside the container. The
+  agent process still runs on the host, so it keeps its network and the daemon's
+  per-step MCP endpoint either way.
+- **Withhold your agent credentials once you mount them.** `mount_agent_config`
+  is off by default, so `~/.claude`, `~/.codex` and `~/.cursor` are not in the
+  container. Turn it on and they are bind-mounted **read-write**: anything
+  running inside the container can read those credentials and write to those
+  directories. Nothing in the container needs them today, because the agent
+  runs on the host. The default turns back on when the agent moves into the
+  container, since subscription auth takes no key from the environment and
+  cursor writes its model choice back to its own config.
 - **Raise a privilege boundary.** On a Linux host every step execs as your own
   uid and gid, so files land owned correctly — and so an escape lands as the
   same user the daemon already runs as.
@@ -234,8 +237,9 @@ strip the styling and the block is byte-for-byte what the agent sent.
 - **Loopback only.** `listen:` is validated to a loopback host; anything else is
   rejected at config load.
 - **Bearer token on every request**, read from `{data_dir}/token`, created
-  `0600`. On Windows it relies on the per-user ACL that `%LOCALAPPDATA%`
-  inherits. Compared in constant time.
+  `0600`. The token and `vincent.db` sit in `{data_dir}`, which vincent creates
+  owner-only (`0700`) on POSIX. On Windows both rely on the per-user ACL that
+  `%LOCALAPPDATA%` inherits. Compared in constant time.
 - **CORS is disabled**, which together with the token blocks drive-by requests
   from a browser tab.
 - **No TLS**, deliberately: the socket is loopback and the token is the
@@ -498,6 +502,19 @@ below is the whole posture, not a set of tips.
   adds the header can, and such a relay is already something running as you.
   The route is not an MCP tool: an agent that can inject events can start
   agents.
+- **An agent may write a trigger, but only you switch one on.** The
+  `create-trigger` and `update-triggers` built-ins let an agent, in a task you
+  started, write trigger files. They install only through
+  [`vincent trigger apply`](reference/cli.md#vincent-trigger-apply), which
+  refuses any change that arms a trigger compared with the file on disk:
+  `enabled` to `true`, `on_fire` to `create` or `permission` to `workflow`. A
+  new file counts as having none of them. A value already armed may stay, and
+  there is no override flag. `triggers.enabled` is in `config.yaml`, which apply
+  cannot touch. Apply also refuses a file for another project and a file that
+  changed since the proposal read it. A rewrite of a trigger that is already
+  armed is live once written, which is why `update-triggers` waits for your
+  approval before applying. A proposal waits in `{data_dir}`, never in a
+  repository, because a trigger's argv can carry a token.
 
 See [Event triggers](guides/triggers.md) for the files themselves.
 

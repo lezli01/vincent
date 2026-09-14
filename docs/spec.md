@@ -135,7 +135,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 29 | Free chat | **A first-class entity beside Task, never a task with a `kind` column.** A `chat` is a titled conversation with an agent, scoped to a project, running in its own git worktree and `vincent/{id}-{slug}` branch, with its own four-state lifecycle (§5.5), its own `chats`/`chat_turns` tables (§14) and its own route family (§13.2). It never appears on the task board, in `GET /v1/tasks` or in any §17 aggregate over `step_runs`, whose `task_id` stays `NOT NULL`. Continuity comes from the **agent CLI resuming its own session** — §7.3's fresh-session rule is amended *for chats only* — so turn N sees turns 1..N-1 without vincent replaying any log as prompt context. A turn is bounded by its own cap `max_parallel_chats` (default 3) and is **refused with 409, never queued**: `internal/scheduler` stays the only place `queued → running` happens because a chat turn is never `queued`, and row 28's "no live-but-uncounted agent CLI" reasoning is extended rather than excepted (§11). **No chat route is an MCP tool** — row 28's exclusion list grows by the whole chat family, because an agent must not start unqueued agent processes and `mcp.max_depth`/`mcp.max_tasks` bound tasks by walking `created_by_task_id`, a chain a chat is not in (§13.4). Only adapters that can resume may hold a chat: claude yes (§9.2), **codex and cursor are refused at creation with a typed reason, not emulated** (§9.3, §9.7). *Amended 2026-08-31 (issue #279):* `GET /v1/agents` publishes that answer as `supports_resume` (§9.6) so a client's picker offers only adapters that can hold a chat; the creation-time refusal is unchanged and stays the authority, and an absent field — an older daemon — filters nothing. A stored session the CLI no longer knows fails the turn with `session_lost` and leaves the chat usable; a turn interrupted by a daemon restart is finalized `interrupted` and is **never re-run**, because re-running would re-send the human's message into a session that died with the process (§12.4). Chat worktrees join gc's claim namespace and worktree directories are named by owner, so chat 7 and task 7 cannot collide (§10). §16 is untouched: chats are full-auto by default exactly as tasks are (§5.5, §6, §7.3, §9.1, §9.2, §9.3, §9.7, §10, §11, §12.3, §12.4, §13.2, §13.3, §13.4, §14, §15, §20; task 063, issue #255, added 2026-08-30). *Amended 2026-08-31 (task 067, issue #269, closing 063.2 and 063.3):* chats reach the TUI, as **two views of their own** — a chats board and a chat workspace — never as rows on the task board, so "it never appears on the task board" is unchanged and now literal in the client too. Attention is the chats board's own: an `awaiting_input` chat is pinned and badged there and nowhere else, and `!` and the home board's needs-attention count stay task-only. A chat turn is bounded by §7.2's `agent_timeout` and §7.4's `input_timeout` verbatim, so the slot this row says it holds is no longer held forever (§11, §12.3, §13.2, §13.3, §13.4, §15). *Amended 2026-08-31 (task 070, issue #268):* **codex resumes now**, so "codex and cursor are refused at creation with a typed reason" reads **cursor alone** — codex met the precondition task 063 decision 3 attached to it, a capture against a named build (codex-cli 0.150.1) pinning `codex exec --json resume <thread_id>`, and its `thread.started` id is read into `RunResult.SessionID` (§9.3). Nothing else in this row moves: continuity still comes from the CLI resuming its own session, vincent still replays no log as prompt context, and the refusal is still the authority for the adapters that cannot (§9.7). *Amended 2026-08-31 (task 071, issue #282):* a chat's live output is **normalized in the daemon exactly as a task's is** — §13.3's typed chunks, with the verbatim line kept as `raw` — and the chat workspace renders it with the output pane's own renderer at the session's shared verbosity level. The chat is still its own entity; what it is not is its own rendering vocabulary *Amended 2026-08-31 (task 072, issue #283):* **cursor resumes too**, pinned to a capture against cursor-agent 2026.08.11-e8db854, so "codex and cursor are refused at creation" is retired entirely and **no shipped adapter is refused**. The refusal path is unchanged and unretired — it is the contract for the next adapter — and is now proven against a stub adapter rather than a shipped one, which is what stops it asserting the opposite of the truth the day a capability lands. Two consequences are stated positively rather than worked around: a resumed codex run is always full-auto, because `codex exec resume` has no `--sandbox`, guarded structurally by chats having no requestable permission mode; and cursor cannot report a lost session at all, because it adopts an unknown `--resume` id and answers rather than refusing (§9.3, §9.7). *Amended 2026-09-01 (task 074, issue #288):* a chat has **two** terminal states, not one — an idle chat may `hand_off` its worktree and branch to a task that adopts them verbatim, and `handed_off` is terminal because reusing `archived` would run the archive path, which removes the worktree this transfers. The chat remains a separate entity and this row's "never a task with a `kind` column" is untouched: what is added is a lifecycle transition *between* the two entities, with one authoritative foreign key (`chats.handoff_task_id`) and the reverse direction served by a lookup. It is one transaction — task row, branch claim, link, transition, claim release, both events — with the scheduler notified after the commit, so the scheduler cannot admit a task before it owns a complete workspace and gc never sees the directory claimed twice or not at all. The task becomes the sole owner of that worktree and branch (§10). The new route joins this row's own MCP exclusion list rather than excepting it, which is why it is a chats-family route and not a field on `POST /v1/tasks` (§13.4). §7.3 is untouched: the chat's session is not transferred, and workflow steps still start fresh (§5.5, §10, §12.3, §13.2, §13.3, §13.4, §14, §15) |
 | 30 | Archived boards and permanent delete | *Added 2026-09-09 (task 092, issue #350).* **Archived history is a screen, and a permanent delete is a route.** Two TUI views — archived tasks, archived chats — are the live boards *in a second mode* rather than two new models (§15): the archive needs grouping, folding, `/` and the bulk selection, and a copy would drift on the first change to any of the four. They get palette rows and no keys, because task 049 retired `1..6` to stop adding memorized ones and task 067 gave chats the same treatment. `DELETE /v1/tasks/{id}` and `DELETE /v1/chats/{id}` (§13.2) are the only things in vincent that delete a task or chat row — the §17 pruner removes transcript *files* and never a row, and that sentence in the retention table is amended to say so. Delete is **not a §6 action**: `taskstate` has no opinion on it and it never appears in `available_actions`, which is what makes the workspace an archived row opens read-only for free; its precedent is `DELETE /v1/projects/{id}`, likewise no action, and both routes join that route's §13.4 destructive-admin exclusion. It **refuses rather than cascading**, naming the row that is holding on: a live row (`not_archived`), an archived fan-out parent whose lanes still exist (`has_lanes` — `parent_task_id` has no `ON DELETE` clause, so without the guard it is a driver error), a `handed_off` chat (`handed_off` — the task owns the worktree, §5.5), and an archived task such a chat points at (`handoff_target`). §10's standing rule is untouched and its task 008 exception merely widens to "at archive time **and at permanent delete**": a branch carrying any commit past its base is reported `has_commits` and kept whatever was answered, and the remote leg is not offered at all. Two durable events are added, `task.deleted` and `chat.deleted` (§13.3) — PR D's "there is no separate `task.archived` type" does not reach them, because that type was redundant with `task.state_changed` and a delete has no state to change to — while the historical `events` rows are deliberately kept, their id being the `Last-Event-ID` cursor. No migration: `archived_at` has been a column since `0001_init.sql`, chats measure the same window over `updated_at` by task 074 decision 6, and every cascade this needs already exists. There is no bulk endpoint and there is not going to be one (task 011): every sweep, in the TUI and in `vincent task delete --before`, is one `DELETE` per row (§5.5, §6, §10, §13.2, §13.3, §13.4, §15, §17, §20) |
 | 31 | TUI key vocabulary | *Added 2026-09-10 (task 093, issue #353).* **One operation, one key, and the registry is what says so.** The binding registry made the help *accurate* from T3.11 — `?`, the footer and the palette all render from it — which is exactly what let the *vocabulary* drift unseen: it faithfully advertised four different keys for "refresh". §15 now carries the table (refresh `R`, archive `A`, delete-a-persisted-record `D`, remove-a-draft-row `d`, add `a`, `$EDITOR` `e`, free text `t`, browser `o`, open-the-row `enter`, cycle-a-listing `s`, filter `/`, fold, lane `l`, page) and **three clauses, not the one the issue asked for**: a key may be shared only for the same operation; it may mean two things only where the registry can prove the surfaces never co-exist; and a key already carrying a term takes no second meaning. The second clause is task 025's deliberate partition of `R` promoted from an accident to the rule, which is why "exactly one key registry-wide" was not adopted literally. The §6 action letters `p a x r E R s c A F` **do not move**, so they decide the contested cases: `R` won refresh, `A` won archive, and `D`/`d` split on persisted-versus-draft, which is what makes pressing `d` on an archived board safe. Enforcement is three tests in `internal/tui/bindings_test.go` beside `TestEveryPanelKeyIsHandled`, with an allow-list that must carry a reason and must stay non-empty; the disjointness the archived boards rely on is **derived from `taskstate.HumanActionsFrom`**, not listed, so an FSM change that starts offering an action on an archived row fails the test rather than shipping a shadowed key. It closes a live bug rather than only a style one: the task workspace's Pull Request tab intercepted `r` and `c`, so **retry and cancel were unreachable there** while the footer advertised both. Scope is `internal/tui` and the docs — no CLI, API, MCP, store or workflow change, and no user-configurable keymap, which is a larger question this does not answer (§15) |
-| 32 | The footer fills its width, and says what it hides | *Added 2026-09-10 (task 094, issue #352).* **A cap is not a layout.** The footer's five-key limit was a constant, and a constant is wrong at both 80 and 200 columns: eleven of the twenty-one binding contexts declare more hinted keys than five, so on more than half the surfaces keys were dropped silently while `pad := max(width-lw-pw, 2)` spent the remaining columns on blank space. Width now decides, as a strict prefix of registry priority order, measured exactly rather than iterated: every candidate admission count is costed against the `+N` that count itself implies, so there is no "admitted because +9 shrank to +8" state to detect afterwards. The segments to the right of the hints are measured **first** and come out of the budget — the line truncates from the left, so hints are what a full line loses first, and admitting them against the whole width would let the actions push them straight back off. This **supersedes** the phase 3 refactor decision and the PR R / T3.12 decision in `docs/history/v0-tasks.md` ("max 5, priority-ordered"), and only those: what they were protecting — one line that never wraps, and a pinned `: commands  ? help  q quit` that never truncates — is untouched, and §15 is amended in place to say so. The `+N` counts this surface's palette-reachable rows that the line is not advertising, **not** everything the palette lists: the five global rows and the eight navigation entries are what the pinned segment stands for, and counting them would pin `N` near fourteen and never at zero. Alias rows are **declared** (`binding.aliased`) rather than parsed out of hint text — splitting on `/` and mapping `↑↓←→` back to key names is text parsing over a human-written field that breaks silently the first time a hint is reworded — and a test asserts the declaration against what the hints actually say. `paletteEntries` still lists the board's fold rows where the footer, gated by `shell.liveBindings`, does not; that mismatch is left where it is rather than widened into here. *Amended 2026-09-14 (task 096):* the triggers view is a ninth navigation entry, so the pinned segment stands for nine; the reasoning is unchanged (§15) |
+| 32 | The footer fills its width, and says what it hides | *Added 2026-09-10 (task 094, issue #352).* **A cap is not a layout.** The footer's five-key limit was a constant, and a constant is wrong at both 80 and 200 columns: eleven of the twenty-one binding contexts declare more hinted keys than five, so on more than half the surfaces keys were dropped silently while `pad := max(width-lw-pw, 2)` spent the remaining columns on blank space. Width now decides, as a strict prefix of registry priority order, measured exactly rather than iterated: every candidate admission count is costed against the `+N` that count itself implies, so there is no "admitted because +9 shrank to +8" state to detect afterwards. The segments to the right of the hints are measured **first** and come out of the budget — the line truncates from the left, so hints are what a full line loses first, and admitting them against the whole width would let the actions push them straight back off. This **supersedes** the phase 3 refactor decision and the PR R / T3.12 decision in `docs/history/v0-tasks.md` ("max 5, priority-ordered"), and only those: what they were protecting — one line that never wraps, and a pinned `: commands  ? help  q quit` that never truncates — is untouched, and §15 is amended in place to say so. The `+N` counts this surface's palette-reachable rows that the line is not advertising, **not** everything the palette lists: the five global rows and the eight navigation entries are what the pinned segment stands for, and counting them would pin `N` near fourteen and never at zero. Alias rows are **declared** (`binding.aliased`) rather than parsed out of hint text — splitting on `/` and mapping `↑↓←→` back to key names is text parsing over a human-written field that breaks silently the first time a hint is reworded — and a test asserts the declaration against what the hints actually say. `paletteEntries` still lists the board's fold rows where the footer, gated by `shell.liveBindings`, does not; that mismatch is left where it is rather than widened into here. *Amended 2026-09-14 (task 096):* the triggers view is a ninth navigation entry, so the pinned segment stands for nine; the reasoning is unchanged (§15). *Amended 2026-09-14 (issue #372):* the mismatch is gone — `root.openPalette` hands `paletteEntries` the shell's `liveBindings`, so a flat board's palette drops the fold rows the footer drops, and a grouped board's still lists them |
 | 33 | Event triggers | *Added 2026-09-13 (task 096; issues #356, #362, #365).* **A trigger is a robot pressing a key a human could have pressed.** A YAML file under `{config_dir}/triggers/` names a source (`command`, `github_issues`, `github_prs` or `http`), a `match:` prefilter and an §8.4 `if:` guard, an action and a dedupe key. Triggers are global scope only, never `.vincent/`, so that anyone who can merge to a repository cannot start agents on a maintainer's machine. An action **replays an existing route** in-process, the way row 28's MCP does: `create_task` is `POST /v1/tasks`, and the reactions `follow_up`, `retry` and `cancel` are the §6 action routes against the task whose `branch_name` the event names. §13.1's bounds, the validation, the FSM's 409 and `Idempotency-Key` therefore hold by construction, and from the step path down a triggered task is indistinguishable from a hand-created one (`.Event` is never snapshotted, §8.4). Where a route lacked an affordance a trigger needed, the route grew it for every client: `paused` on create, follow-up and retry, and `restricted` and `max_task_cost_usd` on create. **It inverts §16's premise that a human pressed the key**, so its defaults differ from every other default in the product. Triggers are off twice, by `triggers.enabled` and by each file's own `enabled:`. `on_fire: propose` holds every task a trigger creates or re-queues in `paused` for a human, agent steps are clamped `restricted`, untrusted GitHub events are refused without an author allowlist, and each trigger has a rate limit. Runtime state lives in SQLite: a cursor per trigger, and a delivery ledger kept 30 days. The first poll after arming seeds and fires nothing, so neither a cold start nor re-arming floods (§5.3, §6, §8.4, §12.2, §12.3, §13.2, §13.3, §13.4, §14, §15, §16, §17, §20) |
 | 34 | Trigger ingress | *Added 2026-09-13 (task 096 decision 31G).* **A pushed event needs the bearer token and a signature, and no route is exempt from row 4.** `POST /v1/triggers/{id}/events` sits in the same `recover → log → auth` chain as every other route, then verifies the trigger's own `github_hmac_sha256` signature over the raw body, using a secret the daemon reads from its environment (§2). Only a caller on this machine that can read `{data_dir}/token` and holds the secret can deliver, so rows 1 and 4 are untouched. A GitHub.com webhook through a tunnel **cannot** deliver. What works is a sender on the same machine, such as a self-hosted runner, or a relay on the same machine that adds the header. The route is not an MCP tool, because an agent that can inject events can start agents (§13.1, §13.2, §13.4, §16) |
 
@@ -207,7 +207,8 @@ A named, ordered list of steps defined in YAML (§8). Workflows live in files, n
 DB; the daemon maintains a registry of parsed workflows from three scopes:
 
 - **Built-in:** shipped in the binary. Lowest precedence — a global or project file
-  of the same name shadows it. Three are present:
+  of the same name shadows it. Five are present. *Amended 2026-09-14 (task 098):
+  this said three, before `create-trigger` and `update-triggers`.*
   - `adhoc` — the single-step agent workflow used when a task is created without
     naming one (§5.3). *Amended 2026-08-27 (task 037): its prompt — and every
     other built-in agent prompt — asks the agent to report through `vincent
@@ -245,6 +246,42 @@ DB; the daemon maintains a registry of parsed workflows from three scopes:
     worktree and branch**, reviewed and merged like any other diff — these
     files are versioned by the repository, and merging is what makes a
     rewritten workflow live.
+  - `create-trigger` — *added 2026-09-14 (task 098).* Writes one event-trigger
+    file (§12.2, task 096) for the task's own project, **disarmed**. It declares
+    one task field, `trigger_id`: required, held to `^[a-z0-9][a-z0-9._-]*$`,
+    and both the trigger's `id:` and its file name. It has two steps. `author`
+    is an agent step under `on_input: wait` and `max_retries: 0`, for
+    `create-workflow`'s reasons: it stages the file and its manifest in
+    `{data_dir}/trigger-proposals/{task id}/` (§12.2), checks the file with
+    `vincent trigger validate`, and may ask. `install` is a command step running
+    `vincent trigger apply --proposal {{.Task.ID}} --project {{.Project.ID}}`
+    (§12.1). There is no manual gate, as there is none on `create-workflow`,
+    because what it writes cannot fire until a human arms it (§16). The prompt
+    sets `source.project` to `.Project.ID`, asks before replacing a trigger
+    `vincent trigger ls` already lists, never writes a workflow (it points to
+    `create-workflow` when `action.workflow` does not exist), and puts a poll
+    script under `{config_dir}/trigger-scripts/`. It refuses a `cancel` trigger,
+    which loads only with `on_fire: create`, and any request that arms one.
+  - `update-triggers` — *added 2026-09-14 (task 098).* A maintenance pass over
+    the trigger files whose `source.project` is the task's own project. It
+    declares no task fields and has six steps: a `vincent trigger ls --project`
+    inventory under `allow_failure`, whose exit 1 is the "this project has no
+    triggers" signal; a `condition` that ends the run `done` when there are
+    none; a `propose` agent step under `on_input: deny` and `max_retries: 1`,
+    which clears its own staging directory, stages full proposed files and the
+    manifest, and validates each; a `manual` approval whose instructions render
+    the proposal and name the staging path; an `apply` command step running
+    `vincent trigger apply`; and a final `ls` for the record. Rejecting the gate
+    ends the task with every trigger untouched. The pass may not change a
+    trigger's `id`, file name or `source.project`, delete a file, change
+    `enabled`, `on_fire` or `permission`, or change what a `dedupe_key` renders
+    for an event already delivered, which would fire it again. Its review
+    checklist is version-coupled to trigger features, as `update-workflows`' is
+    to workflow features.
+
+  Both trigger built-ins carry the `vincent-triggers` skill, embedded from
+  `skills/vincent-triggers/SKILL.md` at build time the way the workflow pair
+  carries `vincent-workflows` (§9.8).
 - **Global:** `{config_dir}/workflows/*.yaml` — available to every project.
 - **Project:** `{repo}/.vincent/workflows/*.yaml` — available to that project only,
   git-versioned and shareable with a team. A project workflow **shadows** a global
@@ -291,8 +328,9 @@ and the violated type or bound — the same treatment as a file that fails to pa
 its valid siblings in the scope stay available.
 
 *Amended 2026-08-28 (task 043, issue #145).* Built-in shadowing **stands**. A
-global or project file named `adhoc`, `create-workflow` or `update-workflows`
-still wins the lookup, including for a task created without naming a workflow —
+global or project file named `adhoc`, `create-workflow`, `update-workflows`,
+`create-trigger` or `update-triggers` (the last two named here since
+2026-09-14, task 098) still wins the lookup, including for a task created without naming a workflow —
 the phase 2 reasoning holds: creation is one uniform path and `workflow` stays
 optional. There is no reserved namespace, no `builtin:` selector and no
 `allow_shadow_builtin` declaration; a qualified name would be a new grammar
@@ -321,7 +359,8 @@ A unit of work delivered by running a workflow against a project.
 | `base_branch` | defaults to project `default_branch` |
 | `branch_name` | `vincent/{id}-{slug}` by default (slug: lowercase title, `[a-z0-9-]`, max 40 chars). *Amended 2026-08-13 (task 001):* configurable through the chain `built-in < config.yaml < project < per-task literal`. Resolved and persisted inside the task's insert transaction, so no committed task carries an empty one. *Amended 2026-08-30 (task 064):* the chain gains a level above the literal — a task created from a pull request (`github_pull`, §13.2) runs on that pull request's **head branch**, which nothing else may override |
 | `worktree_path` | assigned when the worktree is created |
-| `base_sha` | *Added 2026-08-29 (task 056).* The commit `branch_name` was actually cut from, written beside `worktree_path` when creation fetched `base_branch` from its upstream (§10). NULL means `base_branch` itself still names the fork point — every task predating this and every task created with `fetch_base_branch: false`. It exists because once a task branch starts at a fetched remote tip, `base_branch` names a moving ref that is no longer where the task began, and the two places that read it as the fork point — `GET /v1/tasks/{id}/diff`'s merge-base (§13.2) and archive's empty-branch check (§10) — would otherwise both answer against the stale local commit. *Amended 2026-08-30 (task 064):* on a task created from a pull request it is the **head commit as it stood at admission**, so the diff tab answers "what did this task change" rather than re-rendering the pull request's own diff |
+| `base_sha` | *Added 2026-08-29 (task 056).* The commit `branch_name` was actually cut from, written beside `worktree_path` when creation fetched `base_branch` from its upstream (§10). NULL means `base_branch` itself still names the fork point — every task predating this and every task created with `fetch_base_branch: false`. It exists because once a task branch starts at a fetched remote tip, `base_branch` names a moving ref that is no longer where the task began, and the two places that read it as the fork point — `GET /v1/tasks/{id}/diff`'s merge-base (§13.2) and archive's empty-branch check (§10) — would otherwise both answer against the stale local commit. *Amended 2026-08-30 (task 064):* on a task created from a pull request it is the **head commit as it stood at admission**, so the diff tab answers "what did this task change" rather than re-rendering the pull request's own diff. *Amended 2026-09-14 (task 099, issue #430):* now served on every task representation (§13.2), reversing 056 decision 4 — without it a human cannot tell a task cut from a fresh upstream tip from one cut from a stale local branch |
+| `base_refresh` | *Added 2026-09-14 (task 099, issue #430).* JSON: what worktree creation's base fetch and the fast-forward of the local base that follows it did (§10) — `{fetch: {result: fetched\|no_upstream\|error\|disabled, remote?, ref?, error?}, fast_forward: {result: advanced\|up_to_date\|skipped\|not_attempted, reason?: diverged\|local_ahead\|checkout_dirty\|checkout_busy\|error, worktree?, error?}}`. Written in the same claim write as `worktree_path` and `base_sha`, so a worktree that already existed is never re-recorded. NULL means no worktree was created since migration 0031, or the task came from a pull request, which refreshes no base; `disabled` is recorded, so "key off" and "not recorded" stay apart. A chat handoff copies the chat's (§5.5). Display-only: nothing reads it to decide anything, so a malformed value reads as NULL rather than making the row unreadable |
 | `priority` | integer, default 0; higher runs first |
 | `agent_override` / `model_override` / `effort_override` | optional, chosen at creation (§13.2); replace the workflow's `defaults` but never an explicit step field (§8.6) |
 | `restricted` | *Added 2026-09-11 (task 096).* A one-way permission clamp, chosen at creation (§13.2) and snapshotted: when set, every agent step runs `restricted`, including one whose own field says `full-auto` (§9.4). False for every task created without it, which runs the workflow as written |
@@ -329,7 +368,7 @@ A unit of work delivered by running a workflow against a project.
 | `state` | §6. *Amended 2026-09-11 (task 096):* `queued` at creation, or `paused` when the request asked for `paused` — no column of its own, a task created held is an ordinary row in `paused`. *Amended 2026-09-13 (task 096):* a `retry` or a `follow_up` sent with `paused` lands an existing task there the same way (§6) |
 | `current_step` | index into the snapshot's step list |
 | `pending_input` | normalized InputRequest (§7.4) while state is `awaiting_input`; cleared on answer, timeout, or process exit |
-| `pending_follow_up` | *Added 2026-08-25 (task 027).* The follow-up run a human asked for from `done` or `aborted` (§6): its compiled workflow, the run form and text it came from, the optional agent/model/effort, the **origin state** the task is returned to, the 1-based **round**, and the run's own **step cursor**. NULL when no follow-up is in flight |
+| `pending_follow_up` | *Added 2026-08-25 (task 027).* The follow-up run a human asked for from `done` or `aborted` (§6): its compiled workflow, the run form and text it came from, the optional agent/model/effort, the **origin state** the task is returned to, the 1-based **round**, and the run's own **step cursor**. NULL when no follow-up is in flight. *Amended 2026-09-14 (task 027 decision 14):* also the round's own **fields** when they differ from the task's — the request's values laid over the task's, with a named workflow's required defaults applied (§8.1.2) — which that round renders in place of the task row's |
 | `workflow_origin` | *Added 2026-08-28 (task 043).* Where the definition behind `workflow_name` came from, captured **once at creation** beside `workflow_snapshot`. It holds the **scope** that won §5.2's shadowing walk (`builtin`, `global`, `project`, or `derived`), the source **file relative to that scope's root** (`.vincent/workflows/adhoc.yaml`, `workflows/release.yaml`; absent for a built-in, which has none), and a **digest** — `sha256:<hex>` over the registry entry's source bytes exactly as loaded, with no normalization. It is **never recomputed**, so it identifies the *file version the task was created from* rather than the bytes the engine runs: include expansion (§7.9), fan-out resolution (§7.6) and `edit + retry` all rewrite `workflow_snapshot` afterwards, and `edit + retry` is separately audited through `step_runs.prompt_override` / `run_override`. A `fan_out` lane records `derived` naming its parent task (§7.6): its steps come from the parent's snapshot, resolved at the *parent's* creation, so it never read a registry at all. NULL for a task created before this was recorded, which is reported as `unknown` — never re-derived from today's registry, which would report a substitution as though it had always been there |
 | `github_issue` | *Added 2026-08-26 (task 035).* The GitHub issue this task was created from, captured **once at creation** and NULL for every task created without one. It holds the normalized issue — repo, number, title, body, url, state, labels, author, assignee, milestone (title and number), the issue's own timestamps and the instant it was fetched — and it is **never re-fetched**: every step renders `.Issue` (§8.4) from this snapshot, so an issue edited on GitHub afterwards is deliberately not reflected. That is the reasoning `workflow_snapshot` already rests on: a run is reproducible, no network call enters the step path, and a step render still cannot fail for an external reason. A `fan_out` lane inherits its parent's copy verbatim (§7.6) |
 | `github_pull` | *Added 2026-08-29 (task 052).* The pull request this task is linked to (`github_pull_json`, migration 0018); NULL for a task no pull request has ever matched. Unlike `github_issue` it is a **pointer, not a snapshot** — repo, number, `source` (`auto` when the reconciler (§12.3) matched an open pull request's head branch to this task's `branch_name`, `human` when a person said so), `suppressed` (the sticky record of a human unlink, which is why the column needs three states and not two), and `linked_at`. Nothing renderable is stored: title, state, draft and merged status are re-read on every request (§13.2), because they are live by nature and a stored copy of them would read exactly like a current one while being wrong. Deliberately **not** folded into `github_issue_json`, which is defined as "NULL = no linked issue" holding a bare issue. *Amended 2026-08-30 (task 064):* the envelope gains `branch` — this task's `branch_name` **is** the pull request's head branch, because the task was created from it — and `fork`, meaning that head lives in another repository so the branch carries no upstream and nothing can push back. Both are read by admission (§10), by archive (§10, which then touches neither branch leg) and by the retry guard (§18); neither is renderable, so the pointer-not-snapshot rule is untouched. A JSON shape change, not a migration |
@@ -359,6 +398,8 @@ later reader sees one shape — and after it the step is an ordinary static
 `fan_out`, which is what keeps the graph, the preview, the editor and
 `edit + retry` free of a derived case. The registry is still not re-read: the
 lane's `workflow:` was resolved at creation like any other (§5.3 above).
+*(Amended 2026-09-14, issue #370: "the preview" here is a snapshot's; `vincent
+workflow render` previews an authored file and has a derived case — §7.6.)*
 
 `current_step` is left where the finished run put it — one past the last step —
 for the whole of a follow-up, and a follow-up is walked by the cursor inside
@@ -576,7 +617,7 @@ talking to can edit files and make commits without colliding with any task.
 | `state` | `idle` \| `running` \| `awaiting_input` \| `archived` \| `handed_off` (below) |
 | `agent` | fixed at creation, and must be an adapter that can resume (§9.1) |
 | `model`, `effort`, `permission_mode` | resolved once at creation, not per turn |
-| `branch`, `base_branch`, `base_sha`, `worktree_path` | §10, exactly a task's |
+| `branch`, `base_branch`, `base_sha`, `base_refresh`, `worktree_path` | §10, exactly a task's. *Amended 2026-09-14 (task 099):* `base_refresh` added (§5.3), and creating a chat now honours `fetch_base_branch` rather than always fetching |
 | `session_id` | **the agent CLI's own conversation id** — the whole of §7.3's chat-only amendment. Empty before the first turn finishes |
 | `pending_input` | the §7.4 request being awaited; non-null exactly in `awaiting_input` |
 | *(permanent delete)* | *Added 2026-09-09 (task 092, issue #350):* `DELETE /v1/chats/{id}` is legal from **`archived` alone**, and is refused from `handed_off` for the reason `archive` is: the task named by `handoff_task_id` owns the worktree and the branch, and a deleted row cannot say that. It is not a §5.5 transition — it removes the row rather than moving it — so the state machine above is unchanged. Its task mirror is refused too: an archived task a `handed_off` chat points at cannot be deleted while that chat exists, because `handoff_task_id` is `ON DELETE SET NULL` and the chat would be left pointing at nothing |
@@ -623,7 +664,9 @@ the arrangement `internal/taskstate` has for §6.
 #### Handoff (added 2026-09-01, task 074, issue #288)
 
 `hand_off` creates a task in the chat's project that **adopts** the chat's
-`worktree_path`, `branch`, `base_branch` and `base_sha` verbatim. Nothing is
+`worktree_path`, `branch`, `base_branch` and `base_sha` verbatim — and, *amended
+2026-09-14 (task 099)*, `base_refresh`, so the task says how its base was
+refreshed. Nothing is
 copied, renamed, merged or committed: committed *and* uncommitted work are both
 present when the task's first step runs, because the directory is not touched.
 No third worktree-creation mode exists behind this — the engine's
@@ -1406,6 +1449,14 @@ does not finish until every lane is merged.
   budget can rewrite that row, and the picture a reader is shown must not
   change because a lane was retried.
 
+  *Amended 2026-09-14 (issue #370), amending task 080 decision 5.* "The
+  preview" above is true only of a snapshot. `vincent workflow render` previews
+  an **authored** file, where the `lane:` template is still live, so it does
+  carry a derived case: the template is walked like a declared lane, its own
+  `if`, `id`, `needs` and `fields` render with `.Item` bound to placeholders,
+  and its steps are marked with the `for_each` they expand over (§8.4, task 044
+  decision 10).
+
   `fan_out.max_depth` is unchanged: it counts nesting, and a dynamic width does
   not nest. `fan_out.max_tasks` **cannot** be checked at task creation for a
   derived list, so a per-step `max_lanes:` and a run-time tree-size check block
@@ -2181,6 +2232,24 @@ every type gains a `default:`.
 - A client that predates `enum` sees an unknown type, falls through to a
   free-text row and runs no local check. The daemon still gates the value.
 
+*Amended 2026-09-14 (task 027 decisions 13 and 14, issue #369).*
+`POST /v1/tasks/{id}/follow_up` is a **second validation boundary**. A follow-up
+that names a workflow (§6) runs that workflow, so it is held to that workflow's
+declarations exactly as creation holds a new task to its own: the task's stored
+fields, with any `fields` the request supplies laid over them key by key, go
+through the same required-default substitution, enum normalization and
+validation above, against the named registry workflow alone. A failure is a
+400 before anything is persisted. A value the task was created with is checked
+too — it was legal under the workflow the task ran, not under the one about to
+run. The `prompt` and `run` forms compile to a workflow that declares nothing,
+so there the supplied `fields` are an overlay with nothing to check.
+
+The result is **round-scoped**. It is stored on `pending_follow_up` (§5.4) and
+is what that round's `.Task.Fields` (§8.4) renders — including the fields a
+`fan_out` lane spawned inside the round inherits, and the listing a repair of
+the round shows. The task row keeps the fields creation recorded, and a later
+follow-up starts again from those.
+
 ### 8.2 Step types and fields
 
 Common to all steps: `id` (required), `name`, `type` (required), `max_retries`,
@@ -2212,6 +2281,15 @@ table's common fields, after `condition` and `break`.*
 the common `if` and `timeout`, and rejects `max_retries`, `retry_backoff`
 (*2026-08-25, task 028*) and `allow_failure`: it has no attempt of its own. A `break` is the exception a `condition` is —
 `id`, `name` and `if` only.*
+
+*Amended 2026-09-14, issue #374: `parallel` and `manual` also reject
+`max_retries` and `retry_backoff`, because neither owns an attempt — a group's
+retry budgets are per sub-step (§7.5), and a gate is decided once by a person
+(§7.3). Both keep `timeout`: it bounds a `parallel` group, and on a `manual`
+step it is still accepted and unread, a gap this change leaves open. The
+rejection applies to authored documents only; a task snapshot written before
+this change, including one whose include expansion copied a callee's retry
+defaults onto such a step, still loads and ignores the value as before.*
 
 A lane carries `id` plus exactly one of `workflow` (a registry name) or
 `steps` (inline), and optionally `if` (*added 2026-08-18, task 015*), `fields`,
@@ -2319,7 +2397,7 @@ defensively: `{{ with index .Task.Fields "ticket" }}…{{ end }}`.
 | Variable | Contents |
 |---|---|
 | `.Task` | `ID`, `Title`, `Description`, `Fields` (map[string]string), `BaseBranch`, `BranchName` |
-| `.Project` | `Name`, `Path` (original repo root), `DefaultBranch` |
+| `.Project` | `ID`, `Name`, `Path` (original repo root), `DefaultBranch`. *Amended 2026-09-14 (task 098):* `ID` is the project's numeric id, the one `source.project` names in a trigger file and `--project` takes on the command line. It was added for the trigger built-ins (§5.2), which pass it to `vincent trigger ls` and `apply` |
 | `.Workflow` | `Name`, `Description` |
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
 | `.Steps` | map of *completed* step id → `{Status, Result, ExitCode}`; `Result` is the agent's final result text (agent steps) or the last **200** lines of stdout (command steps). *Corrected 2026-08-18 (task 016): this said 100; the daemon has always used 200, and a `for_each:` reading `.Steps[…].Result` (§7.8) makes the exact bound load-bearing rather than incidental.* *Amended 2026-08-18 (task 015):* a step skipped by its guard appears with `Status: "skipped"`, and a **failed** step appears once the engine has advanced past it — which happens only under `allow_failure` (§7.2), and is what a downstream guard reads. A step's own failed attempt stays out of `.Steps` mid-retry, because `.LastFailure` is already that channel; `interrupted` never appears, since §7.2 says it is not an outcome. *Amended 2026-08-18 (task 016):* "advanced past it" is compared on `(step_index, iteration, body position)`, which is what lets a loop body's later steps read its earlier ones while a `parallel` group's members stay blind to each other (§7.8). Under repetition a step id resolves to its **latest** iteration. *Amended 2026-09-02 (issue #311):* "stdout" was always the statement here, and until now the engine put a command's **stdout and stderr** into `Result`, interleaved in whichever order the two reader goroutines observed them. It now captures stdout separately (`step_runs.stdout_tail`, migration 0025), so a `for_each:` (§7.6, §7.8) cannot pick up a progress meter, a `Switched to branch …` or a deprecation notice as an item. `result_summary` still carries both streams and is unchanged: it is what a human reads on the board, in the detail view and in the repair prompt, where a step that failed with a stderr-only diagnostic must not summarize as blank. A row written before the migration records no stdout tail and renders `Result` from `result_summary` as it did, so a task in flight over an upgrade is unaffected. `.LastFailure` and the `<previous-attempt-failure>` block below are **both** streams, deliberately: what a human reads on a failure is not the value a template consumes. *Amended 2026-09-02 (issue #313):* the bound is **200 lines or 256 KiB**, whichever binds first — the byte half has always been enforced and was never written down here, which is what a `for_each:` author needs to know to size a list. Both halves cut by dropping whole **leading** lines, so what survives is a shorter list of intact items rather than a truncated one; only a single line longer than 256 KiB on its own is cut mid-line, at a rune boundary. The engine had instead been persisting the stdout tail at `result_summary`'s own 4096-byte cap, a raw head slice on no boundary at all: a lane list over 4 KiB lost its items mid-line, and one item that size destroyed the whole list. `result_summary` keeps that cap — it bounds a row a human reads, and never bounded this |
@@ -2362,10 +2440,11 @@ agent will receive. The vocabulary is:
 | `.Task.ID` | `0`, following `.Loop.Index`'s precedent |
 | `.Task.Title` / `.Description` / `.BranchName` / `.BaseBranch` | `<task.title>`, `<task.description>`, `<branch>`, `<base_branch>` |
 | `.Task.Fields` | one entry per **required** declared field (§8.1.2), bound to its `default:`, else an `enum`'s first declared value, else `<field.NAME>` — a sentinel is never a member of its own enum, so a preview binds a value the workflow could actually receive where one exists *(amended 2026-08-30, task 058)*. Optional declared and undeclared names stay absent, so reading one without `{{ with index … }}` is the error the defensive-read rule above says it is |
-| `.Project.*` | `<project.name>`, `<project.path>`, `<project.default_branch>` |
-| `.Steps` | one entry per step id the **file** declares, nested bodies and inline fan-out lanes included — an `include` step and a lane naming a registry workflow contribute none, since neither survives as a step of this task (§7.9, §7.6) — each `{Status: <steps.ID.status>, Result: <steps.ID.result>, ExitCode: 0}`. A forward reference renders clean: restricting the map to steps that would have completed interacts with `parallel` blindness, loop iterations and `allow_failure` in ways that produce false positives, and a false positive exits 1 inside a pre-commit hook |
+| `.Project.*` | `<project.name>`, `<project.path>`, `<project.default_branch>`, and `.Project.ID` `0`, following `.Task.ID`'s precedent *(added 2026-09-14, task 098)* |
+| `.Steps` | one entry per step id the **file** declares, nested bodies and inline fan-out lanes included — a derived fan-out's `lane:` template's inline steps too *(amended 2026-09-14, issue #370)* — an `include` step and a lane naming a registry workflow contribute none, since neither survives as a step of this task (§7.9, §7.6) — each `{Status: <steps.ID.status>, Result: <steps.ID.result>, ExitCode: 0}`. A forward reference renders clean: restricting the map to steps that would have completed interacts with `parallel` blindness, loop iterations and `allow_failure` in ways that produce false positives, and a false positive exits 1 inside a pre-commit hook |
 | `.Step.Attempt` | `1`, and the `<previous-attempt-failure>` block above is not appended |
 | `.Loop` | the zero value outside a loop; `{Index: 1, Item: <loop.item>, IsFirst: true}` for a step inside one |
+| `.Item` | only in a derived fan-out's `lane:` template's own `if`, `id`, `needs` and `fields` (§7.6), which render with `RenderLane` exactly as spawn does: an object binding each `.Item` key chain those fields spell out to `<item.KEY>` — `<item.id>`, `<item.meta.owner>` — so a well-formed read renders a placeholder and a typo beside it still fails. A key read through a rebound dot (`{{ with .Item }}{{ .id }}`) is not bound. The template's inline steps render once, marked with the `for_each` they expand over; they see no `.Item`, as at run time *(added 2026-09-14, issue #370)* |
 | `.Issue` | the zero value, so `{{ if .Issue.Number }}` takes the unlinked branch |
 | `.Worktree.Path` / `.LastFailure` | `<worktree>`, `{<last_failure.reason>, <last_failure.output>}` |
 | `.Conflicts` | one element, `<conflicts[0]>`, on an `on_conflict: agent` resolver step; empty everywhere else |
@@ -3672,6 +3751,14 @@ workflows splice the same text into their own prompts at build time (§7,
 task 024 decision 7), which is why the gap this section closes only bites where
 it is hardest to notice.
 
+*Amended 2026-09-14 (task 098).* The published skills are no longer only about
+workflow authoring. `vincent-triggers` covers `{config_dir}/triggers` files,
+poll scripts, arming, dry runs and the delivery ledger, and the
+`create-trigger` and `update-triggers` built-ins (§5.2) splice it into their
+prompts the way the workflow pair splices `vincent-workflows`. For the workflow
+a trigger's `action.workflow` names, it defers to `vincent-workflows`. It needed
+no change to any surface below, which is the glob doing its job.
+
 **The published set is a glob, not a list.** `skills.FS` embeds `*/SKILL.md`;
 every surface below enumerates that. A second directory under `skills/` is
 reported by `vincent doctor`, listed by `vincent skills` and offered by the TUI
@@ -3781,6 +3868,9 @@ precedent. `vincent doctor` still exits 0 (§17, task 005 decision 7).
 
 - **Location:** `{data_dir}/worktrees/{task_id}` — outside every repo, so IDE file
   watchers and repo tooling in the main checkout are never disturbed.
+  *Amended 2026-09-14 (task 099):* still true of the worktrees themselves, but
+  creating one may now fast-forward the base branch's own checkout — usually the
+  main one — changing its files the way a `git pull` there would (below).
 - **Creation** (when the scheduler first admits the task):
   `git -C {project.path} worktree add {worktree_path} -b {branch_name} --no-track {start}`.
   If `base_branch` doesn't resolve locally, task creation fails fast with a clear error.
@@ -3804,6 +3894,30 @@ precedent. `vincent doctor` still exits 0 (§17, task 005 decision 7).
     out and often dirty, and would need its own refusal path. The visible cost is
     that `git log {base}` in the human's checkout no longer matches what tasks build
     on.
+
+    *Amended 2026-09-14 (task 099, issue #430): no longer true — the refusal path
+    now exists.* After a fetch that resolved a commit, and only then, creation
+    fast-forwards `refs/heads/{base}` to it, still under the per-repository lock and
+    before `worktree add`. Only a strict fast-forward moves anything: a local base
+    already at the commit is `up_to_date`, and one ahead of it (`local_ahead`) or
+    diverged from it (`diverged`) is left exactly where it is. A base checked out in
+    any worktree — normally the human's own checkout — moves **with** its working
+    tree or not at all: a checkout partway through a merge, rebase, cherry-pick,
+    revert or bisect is `checkout_busy`, and one with any `status --porcelain`
+    output, untracked files included (the T1.5/T1.6 rule), is `checkout_dirty`. A
+    clean one is switched with `git read-tree -m -u {old} {new}`, then the ref is
+    written with the compare-and-swap `git update-ref refs/heads/{base} {new} {old}`;
+    if the ref moved in between, the tree is switched back and the outcome is
+    `error`, so the checkout's HEAD and working tree never disagree. It is plumbing
+    throughout — never `merge --ff-only`, `pull` or `checkout` — so no post-merge or
+    post-checkout hook runs in the human's checkout during an admission;
+    `reference-transaction` still fires on the ref update, as it already did for
+    `worktree add`. None of it blocks, fails the creation or adds a `block_reason`,
+    and the task branch starts at the fetched commit whatever it answers. What the
+    fetch and the fast-forward did is recorded as `base_refresh` (§5.3) in the
+    claim write. Chats follow the same key: `POST /v1/chats` reads
+    `fetch_base_branch` per request instead of always fetching. A pull-request task
+    (the second mode, below) refreshes no base and records no `base_refresh`.
   - **A fetch never blocks.** No remote, no upstream, an unreachable host, an auth
     failure or a timeout all fall back to the local base with a log line. No new
     `block_reason` exists for it, and no step can fail for a network reason — §26's
@@ -4270,7 +4384,10 @@ One Go binary, `vincent`:
 | `vincent task transcript <id>` | *Added 2026-08-28 (task 047).* Prints one attempt's transcript through `GET /v1/tasks/{id}/steps/{run_id}/transcript` (§13.2). `--step` takes a **step_run id**; omitted, it selects the running attempt, else the newest by run id. Default output is the normalized records rendered as text, `--json` is those records as NDJSON, `--raw` is the agent's own dialect byte for byte. `-f` opens on a tail and resumes from `X-Next-Offset`, ending when that attempt stops running |
 | `vincent project add <path> / ls / rm <id>` | Thin API clients for scripting. *Amended 2026-08-28 (task 048):* `rm` deletes the registration and its task rows, forwarding `--force` as `?force`. It never prompts — the daemon's two 409s (`N non-archived task(s)`, and one naming a `running` task) are the confirmation story, and an interactive question would be the first in a command tree whose purpose is scripting |
 | `vincent task pause / resume / skip / approve / reject / retry / repair / archive / answer <id>` | *Added 2026-08-28 (task 048).* The rest of §6's human actions, one subcommand each, one id per invocation. All carry `--json` and print the daemon's post-action view of the task; a 409 from the FSM is exit 1 with the daemon's own wording. `retry` takes `--branch` (§18's `branch_exists` recovery) and the edit+retry pair `--prompt`/`--run`; `repair` requires `--prompt` and takes the §8.6 triple; `archive` takes `--force` and surfaces `details.reason: worktree_dirty` with the way out; `answer` takes `--answer <n>=<value>` against the questions `task show` numbers, `--allow`/`--deny` for a permission request, or `--body <file\|->` to post a §13.2 payload verbatim. Each of `--prompt`, `--run` and `--body` has a `-file` twin, and `-` reads stdin. *Amended 2026-09-14 (task 096):* `retry` also takes `--paused`, §13.2's `paused: true`, holding the task (and a blocked parent's lanes) in `paused`; the daemon refuses it on a parent parked in `awaiting_children` |
-| `vincent trigger test <id> --event <file\|->` | *Added 2026-09-14 (task 096 decision 29).* The one trigger command: a dry run through `POST /v1/triggers/{id}/test` (§13.2) of the JSON event in `--event`, which is required, `-` reading stdin. It prints each pipeline stage and the outcome the event would get, or the route's body with `--json`, fires nothing and writes nothing, and exits `1` when that outcome is `error`. Every other trigger operation is the TUI's view 11 or the API |
+| `vincent trigger test <id> --event <file\|->` | *Added 2026-09-14 (task 096 decision 29).* The one trigger command: a dry run through `POST /v1/triggers/{id}/test` (§13.2) of the JSON event in `--event`, which is required, `-` reading stdin. It prints each pipeline stage and the outcome the event would get, or the route's body with `--json`, fires nothing and writes nothing, and exits `1` when that outcome is `error`. Every other trigger operation is the TUI's view 11 or the API. *Amended 2026-09-14 (task 098):* no longer the one trigger command. The three rows below add two offline reads and the verb the trigger built-ins install through |
+| `vincent trigger validate <file> [--json]` | *Added 2026-09-14 (task 098 decision 3).* Validates one trigger file **with no daemon**: `trigger.Parse` with the file's stem as the expected id, so the verdict is `POST /v1/triggers/validate`'s (§13.2) plus the check that `id:` equals the file name and that the name ends in `.yaml`. Text output is `<file>: ok — trigger <id>`, or one `  error: line <line>: <path>: <message>` line per error on stderr followed by `<file>: invalid (<n> error(s))`; `--json` is `{file, id, valid, errors: [{path, line, message}]}`, `id` present only when the file is valid. Exit 0 valid · 1 invalid or unreadable, mirroring `vincent workflow validate` |
+| `vincent trigger ls --project <id> [--json]` | *Added 2026-09-14 (task 098 decision 4).* Reads `{config_dir}/triggers/*.yaml` **with no daemon** and prints, one per line, the path of every file whose `source.project` is `<id>`. A file that does not parse is still listed when its `source.project` can be read leniently, so a broken trigger can be found and repaired; a file whose project cannot be read at all is reported on stderr and left out. `--json` is an array of `{file, id, project, version, valid, enabled, on_fire, permission, errors}`, with `on_fire` and `permission` `""` when the file leaves them out and `version` the token `apply` compares. Exit 0 at least one file matched · 1 none did, with `--json` too — the probe shape of `git ls-files --error-unmatch` |
+| `vincent trigger apply --proposal <task_id> --project <id>` | *Added 2026-09-14 (task 098 decisions 3 and 5).* Installs the staged proposal in `{data_dir}/trigger-proposals/<task_id>/` (§12.2) into `{config_dir}/triggers/`, **without arming anything**. The directory holds full proposed `<id>.yaml` files and `manifest.json`, an object mapping each trigger id to the version token `ls --json` reported or to `"absent"` for a new file. It refuses, writes nothing and names every offending file and key when any staged file fails `Parse`; a staged file's `source.project` is not `--project`; a staged file has no manifest entry or an entry has no staged file; an existing file's version no longer matches, a file recorded `absent` now exists, or a recorded file is gone; or any file **arms** relative to the file on disk, a new file comparing against absent: `enabled` from false or absent to `true`, `on_fire` from absent or `propose` to `create`, `permission` from absent or `restricted` to `workflow`. An already-armed value may be kept and disarming is always allowed; there is no override flag (§16). Each file is written `0600` through `internal/trigger`'s version-guarded whole-file replace, `wrote <path>` is printed per file, and the staging directory is removed once every file is written, printing `removed <dir>`. A proposal with an empty manifest and no staged file installs nothing and is removed the same way — `update-triggers` finding every trigger already right. It never touches `triggers.enabled` in `config.yaml`. Exit 0 installed · 1 refused, nothing staged at that path, or a write failed |
 | `vincent status <message>` | *Added 2026-08-26 (task 036).* Records what the current step is doing, in its own words (§5.4). Runs **from inside a step**: it addresses itself with §8.5's `VINCENT_TASK_ID` and `VINCENT_STEP_ID`, takes no id argument, and errors naming those variables when they are unset. Silent on success — its stdout is the step's transcript |
 | `vincent gc [--dry-run] [--force] [--json]` | Reclaims data-root directories no task claims (§10); a thin API client like the rest |
 | `vincent config get [key] / set <key> <value>` | *Added 2026-08-30 (task 060).* Reads and writes `config.yaml` through `GET`/`PATCH /v1/config` (§12.3) — a thin API client like the rest, never a second editor, so the CLI and the TUI's editor are one operation with one validation. `get` with no key prints every key as `path = value` in the file's own order; with one, that key's value alone. Keys are the dotted paths the file carries. Lists and argv are whitespace-separated inside a single argument (`notify.on "blocked awaiting_gate"`), which is also why an argv element containing a space has to be edited in the file. A `set` is in force when it answers; `listen` is the exception the command says out loud. Exit 0 · 1 the daemon refused it, with the file byte-identical · 2 no daemon answered |
@@ -4559,7 +4676,8 @@ platform the standing answer to an agent that will not resolve is the §12.3
   config.yaml                # §12.3, created 0600
   workflows/*.yaml           # global workflows
   triggers/*.yaml            # event triggers, written 0600; global scope only (§12.3, task 096)
-{data_dir}/
+  trigger-scripts/           # poll scripts for command triggers, by convention only (task 098)
+{data_dir}/                  # created 0700 (§12.2 amendment below)
   vincent.db                 # SQLite, WAL mode
   token                      # API bearer token, created 0600 at first start
   daemon.json                # { "port": N, "pid": N, "started_at": … } for client discovery
@@ -4569,6 +4687,7 @@ platform the standing answer to an agent that will not resolve is the §12.3
   transcripts/{task_id}/{step_index}-{attempt}.jsonl
   transcripts/{task_id}/{step_index}-{step_id}-{attempt}.jsonl  # sub-step of a parallel group (§7.5)
   transcripts/{task_id}/{step_index}-i{iteration}-{step_id}-{attempt}.jsonl  # loop body step (§7.8)
+  trigger-proposals/{task_id}/  # staged trigger files + manifest.json, 0700/0600 (task 098)
   logs/daemon.log            # rotated, size-capped
 ```
 
@@ -4597,6 +4716,16 @@ than being the outlier.
   `0700` in practice — the daemon creates `{data_dir}/logs` `0700` before the
   store opens — and `vincent.db` keeps the driver's mode.
 
+  *Amended 2026-09-14 (#367).* The store now creates `{data_dir}` `0700`
+  itself, like every directory beside it, instead of relying on the daemon's
+  startup order to have created it first. This is hardening, not a fix to an
+  exposed installation: no vincent code path ever produced a `0755`
+  `{data_dir}`. The scope above is otherwise unchanged, deliberately: an
+  existing `{data_dir}` — which can only be broader than `0700` if something
+  outside vincent made it so (a pre-created `VINCENT_DATA_DIR`, a hand `chmod`,
+  another tool) — is **not** re-tightened, logged or reported by
+  `vincent doctor`. `vincent.db` still keeps the driver's mode.
+
 *Amended 2026-09-13 (task 096).* `{config_dir}/triggers/` holds event-trigger
 definitions, one `{id}.yaml` per trigger, and the daemon watches it with live
 reload. There is no project-scope twin under `.vincent/` (task 096 decision 8).
@@ -4608,6 +4737,27 @@ aside removes every trigger. A directory the daemon cannot read is **not** read
 as empty: the triggers already loaded stay loaded. A trigger's runtime state
 (its cursor, its poll status and its ledger) lives in `vincent.db` (§14), never
 beside the file.
+
+*Amended 2026-09-14 (task 098).* Two more trigger locations:
+
+- **`{data_dir}/trigger-proposals/{task_id}/`** holds a proposal staged by the
+  `create-trigger` or `update-triggers` built-in (§5.2): the full proposed
+  `{id}.yaml` files and a `manifest.json` recording each file's version token,
+  or `"absent"`. The directory is `0700` and its files `0600`. It is outside
+  every repository and outside the registry directory, because a trigger's argv
+  can carry a token, so a proposal never goes in a worktree. `vincent trigger
+  apply` (§12.1) removes it after a successful install. Otherwise it stays until
+  the task is deleted, and `DELETE /v1/tasks/{id}` (§13.2) removes it with the
+  transcripts.
+- **`{config_dir}/trigger-scripts/`** is where a `type: command` trigger's poll
+  script lives. It is a documented convention, not a path the daemon enforces
+  or watches. It sits beside `triggers/` rather than inside it, so a script
+  never shares a directory with the files the registry reads. On POSIX the
+  directory and each script are `0700`. The argv runs with no shell, so on
+  Windows it is `[pwsh, -NoProfile, -File, <absolute path>.ps1]`. Credentials
+  come from the daemon's inherited environment (§2, §12.3) and never go in the
+  script or the trigger file, and a poll script never lives in a repository
+  (task 096 decision 8).
 
 **What a transcript promises, exactly.** *Added 2026-08-24 (#139).* A
 transcript is the complete record of one attempt: agent stream lines verbatim,
@@ -4692,7 +4842,7 @@ mcp:                           # the §13.4 MCP server (task 057)
 container:                     # run a task's steps in a container (§16, task 061)
   image: ""                    # "" (default) = every step runs on this host
   runtime: docker              # a docker-CLI-compatible binary; only docker is verified in CI
-  mount_agent_config: true     # bind-mount ~/.claude, ~/.codex, ~/.cursor read-write
+  mount_agent_config: false    # bind-mount ~/.claude, ~/.codex, ~/.cursor read-write; off until 062 (#366)
   network: true                # false drops the container off the network entirely
   extra_mounts: []             # host:container[:ro]; the repo and worktree are mounted already
 tui:                           # view preference; the daemon validates and relays it (§15)
@@ -4727,6 +4877,17 @@ image is the user's: it must already carry the agent CLI a workflow's agent
 steps resolve to, and `git`. Vincent builds nothing, publishes nothing and
 bundles nothing, the posture it already takes toward `gh` and `cosign`.
 
+*Amended 2026-09-14 (issue #366).* `mount_agent_config` defaults to **false**
+until task 062. With only commands and checks in the container, nothing inside
+it reads `~/.claude`, `~/.codex` or `~/.cursor`, so task 061's default of true
+handed the host's agent credentials, writable, to the image and to step code
+for no benefit. The knob keeps its semantics, and 062 turns the default back on
+when it moves the agent in; a `config.yaml` that sets the key keeps its value.
+For the same reason `network: false` with `mcp.wire_steps: true` is no longer
+refused at task creation (task 061 decision 1): every agent reaches the
+per-step MCP endpoint from the host, whatever the container's network is. Task
+062 reinstates that refusal together with the `host.docker.internal` rewrite.
+
 The block resolves at **two** levels — a workflow's `defaults.container:` over
 this one, per field (task 061 decision 6). There is no task level, no
 `POST /v1/tasks` field and no CLI flag; §20 records the trigger for adding one.
@@ -4748,7 +4909,7 @@ What is refused, and where (task 061 decision 3):
 |---|---|---|
 | The daemon runs on **Windows** | task creation | `400 validation_failed` — a `C:\...` path cannot exist in a Linux container, and paths are identical inside and out |
 | `runtime` is missing or cannot talk to a daemon | task creation | `400 validation_failed` — cheap, local, one `docker version` |
-| `network: false` with `mcp.wire_steps: true` | task creation | `400 validation_failed` — a container with no network cannot reach the daemon's per-step MCP endpoint |
+| `network: false` with `mcp.wire_steps: true` | task creation, **once task 062 lands** | `400 validation_failed` — a container with no network cannot reach the daemon's per-step MCP endpoint. *Amended 2026-09-14 (issue #366): not refused until then, because every agent still runs on the host* |
 | A step pins `shell: pwsh` or `shell: cmd` | load (workflow pins its own image) or task creation | validation error naming the step (§8.3) |
 | The image is missing and cannot be pulled | **admission** | task blocks `container_image_unavailable`, before a worktree, a branch or a retry is spent |
 | The runtime disappeared under a created task | **admission** | task blocks `container_unavailable` |
@@ -4944,6 +5105,11 @@ repository where fetching is slow or needs interactive auth. Read per worktree
 creation, so a hot reload reaches the next admission. There is deliberately **no
 per-project override yet**: the global key is the escape hatch, and a per-project one
 is its own piece of work if a real repository needs the granularity.
+*Amended 2026-09-14 (task 099, issue #430):* the same key now also governs the
+fast-forward of the project's local base branch that follows a successful fetch
+(§10). There is no second key — a fast-forward without a fetch has nothing to move
+to — so `false` turns both off. It also reaches chats now, which used to fetch
+regardless of it.
 
 **`delete_empty_branch_on_archive` / `delete_remote_branch_on_archive` (task 008,
 added 2026-08-16).** The §10 branch-cleanup pair. The local key is the standing
@@ -5843,7 +6009,11 @@ POST   /v1/chats                        { project_id, title, agent?, model?, eff
                                         key, and a chat's premise is continuity. An adapter that
                                         cannot resume is refused `400 agent_cannot_resume`
                                         (§9.3, §9.7): vincent will not replay the log as prompt
-                                        context in its place
+                                        context in its place.
+                                        *Amended 2026-09-14 (task 099):* the worktree is created
+                                        under `fetch_base_branch` (§12.3), read per request as a
+                                        task's admission reads it, and every chat representation
+                                        carries `base_sha` and `base_refresh` (§5.5)
 DELETE /v1/chats/{id}                   *Added 2026-09-09 (task 092, issue #350).* Permanent
                                         delete of an **archived** chat: the row, its chat_turns
                                         (through the schema's cascade) and its
@@ -6190,7 +6360,12 @@ GET    /v1/tasks/{id}                   full task incl. step runs summary and pe
                                         `derived` naming a fan-out lane's parent (§5.3).
                                         null for a task created before origin was
                                         recorded, which is *not recorded* and never a
-                                        re-lookup of today's registry
+                                        re-lookup of today's registry.
+                                        *Added 2026-09-14 (task 099, issue #430):* every task
+                                        representation also carries `base_sha` (omitted when
+                                        none was recorded) and `base_refresh` (null, not
+                                        omitted, when none was) — the §5.3 columns, reversing
+                                        task 056 decision 4
                                         Detail-only: `workflow_steps[]` — the task's snapshot
                                         as { index, id, type, prompt?, run?, instructions?,
                                         resolved_from[]? }, which is what edit+retry prefills
@@ -6205,6 +6380,11 @@ PATCH  /v1/tasks/{id}                   { priority }               (queued/pause
 DELETE /v1/tasks/{id}                   *Added 2026-09-09 (task 092, issue #350).* Permanent
                                         delete of an **archived** task: the row, its step_runs
                                         and its `{data_dir}/transcripts/{id}` directory.
+                                        *Amended 2026-09-14 (task 098):* and its
+                                        `{data_dir}/trigger-proposals/{id}` directory, a
+                                        staged trigger proposal (§12.2), under the same
+                                        data-root containment check as the transcripts, so
+                                        nothing outside the data directory is touched.
                                         `?delete_branch=true` or `{ delete_branch }` also applies
                                         §10's empty-branch judgement to its branch — never to a
                                         branch with commits, and never to a remote.
@@ -6264,7 +6444,7 @@ POST   /v1/tasks/{id}/repair           { prompt, agent?, model?, effort? }
                                         queued) plus `warnings`. The repair returns the task
                                         to `blocked` at the same step with the same
                                         `block_reason` whatever the agent exits with
-POST   /v1/tasks/{id}/follow_up        { prompt? | run? | workflow?, agent?, model?, effort?, paused? }
+POST   /v1/tasks/{id}/follow_up        { prompt? | run? | workflow?, agent?, model?, effort?, fields?, paused? }
                                         (done/aborted only; added 2026-08-25, task 027). Runs
                                         one more piece of work in the task's existing worktree
                                         and branch (§6, §7.2). **Exactly one** of `prompt`
@@ -6291,7 +6471,13 @@ POST   /v1/tasks/{id}/follow_up        { prompt? | run? | workflow?, agent?, mod
                                         whatever it exits with. *Amended 2026-09-13 (task 096
                                         decision 31C):* `paused: true` persists the request and
                                         lands the task in `paused` instead of `queued`, so the
-                                        response's task is paused and `resume` starts the run
+                                        response's task is paused and `resume` starts the run.
+                                        *Amended 2026-09-14 (task 027 decisions 13 and 14,
+                                        issue #369):* `fields` are laid over the task's stored
+                                        fields for this run only; a named workflow's declared
+                                        fields are substituted and validated against the result
+                                        as creation does (§8.1.2), a failure is a 400, and the
+                                        task row keeps its own fields
 POST   /v1/tasks/{id}/skip             (blocked/awaiting_gate only)
 POST   /v1/tasks/{id}/approve          (awaiting_gate only)
 POST   /v1/tasks/{id}/reject           (awaiting_gate only)
@@ -6880,6 +7066,7 @@ CREATE TABLE tasks (
   branch_name         TEXT NOT NULL,
   worktree_path       TEXT,
   base_sha            TEXT,                   -- commit branch_name was cut from (§5.3, task 056); NULL = base_branch is the fork point
+  base_refresh        TEXT,                   -- JSON: base fetch + local fast-forward outcome (§5.3, §10, task 099); NULL = not recorded
   priority            INTEGER NOT NULL DEFAULT 0,
   agent_override      TEXT,                   -- task-level selection (§8.6); NULL = none
   model_override      TEXT,
@@ -7135,6 +7322,7 @@ CREATE TABLE chats (
     branch          TEXT    NOT NULL, -- vincent/{id}-{slug}, as a task's (§10)
     base_branch     TEXT    NOT NULL,
     base_sha        TEXT,
+    base_refresh    TEXT,             -- task 099: as a task's (§5.3)
     worktree_path   TEXT,             -- the §10 claim; NULL once archived
     session_id      TEXT,             -- the agent CLI's own session (§7.3 amended)
     pending_input   TEXT,             -- the §7.4 request being awaited, as JSON
@@ -9027,6 +9215,42 @@ never on the inline step nodes). `l` opens the lane under the graph cursor.
 `e` and `R` are absent from this tab: a snapshot has no file to open and no
 registry entry to re-read.
 
+*Amended 2026-09-14 (task 097, issue #418): the overlay is colored by run
+state.* "Words and glyphs first, colour second" now has its second half. Every
+color restates words already on screen, so the picture with every style
+stripped is byte-identical to the uncolored rendering of the same overlay;
+coloring moves no coordinate and loses no selection.
+
+- **A node takes its newest attempt's style**, and a task parked on it wins over
+  the step's state: `succeeded` and `approved` green, `running` cyan, `failed`
+  and `rejected` red, `interrupted` yellow, `skipped` and `stopped` faint; task
+  `blocked` red and bold, `awaiting_input` yellow and bold, `paused` magenta. A
+  node never reached is drawn as before. Border, label row and kind row all take
+  the style. This is the Steps tab's step-state palette and the board's
+  task-state palette — one of each, shared.
+- **A colored node shows its selection by the heavy border glyphs alone.** An
+  uncolored node keeps the `Selected` style.
+- **A lane caption takes its child task's board style** — the parked state when
+  the child is parked or pause-requested, else the child's own state.
+- **Off-graph attempts carry state words, and then color.** Each prints its
+  newest attempt's glyph and state the way an authored node does; before this
+  they printed neither.
+- **An edge is colored when the run took it.** A flow edge when both ends were
+  reached. A `condition`'s `false` branch only when its newest row is
+  `stopped`, and its onward edge only when that row is `succeeded` and the
+  target was reached; a `break`'s `true` branch and onward edge the same way.
+  A back-edge when its source was reached and some node in the loop's body, at
+  any depth, ran iteration 2 or later. `needs:` edges and edges touching a
+  lane's inline steps never — those steps are the child's. END counts as
+  reached only when the task is `done`, and is itself never painted. A
+  `parallel` or `loop` header counts as reached when anything in its group
+  was, and a fan_out's merge when the fan_out's row is past `running` or
+  anything after it was reached; those boxes stay unpainted, because they have
+  no row and no words. A taken edge takes its source's style, or its target's
+  when the source has none. Edge labels keep their own style.
+- **The workflows screen's `g` definition graph is not colored by run state** —
+  a definition has no run.
+
 ### Discovery
 
 Three surfaces, one source. **`bindings.go` is the single registry** — every
@@ -9413,15 +9637,22 @@ currently true to show (§15 view 6).
   What it does **not** confine is stated here with the same honesty §16 already
   applies to `/mcp/step/{run_id}` not being a boundary:
   - **Outbound network is open by default.** `container.network: false` closes
-    it, and is refused together with `mcp.wire_steps: true` because a container
-    with no network cannot reach the daemon's per-step MCP endpoint.
+    it, and task 062 refuses it together with `mcp.wire_steps: true` because a
+    container with no network cannot reach the daemon's per-step MCP endpoint.
+    *Amended 2026-09-14 (issue #366): task 061 shipped that refusal and it is
+    deferred to 062, because until then every agent runs on the host and
+    reaches the endpoint from there, whatever the container's network is.*
   - **The agent's credentials are inside it.** `mount_agent_config` defaults to
     true and bind-mounts `~/.claude`, `~/.codex` and `~/.cursor` **read-write**,
     because subscription auth takes no key from the environment and cursor
     persists `--model` to its own config (§9.7). An agent in the container can
     therefore read the host's agent credentials and write to those directories.
     The knob turns it off; an agent CLI that then cannot authenticate is the
-    documented consequence, not a bug.
+    documented consequence, not a bug. *Amended 2026-09-14 (issue #366): the
+    default is **false** until task 062 moves the agent into the container and
+    turns it back on. Until then nothing in the container reads those
+    directories, so the default of true handed them, writable, to the image and
+    to step code for no benefit; setting the key still mounts them.*
   - **The daemon is reachable.** Every container is created with
     `--add-host=host.docker.internal:host-gateway` whenever it has a network at
     all, so a process inside it can call the daemon's MCP surface — with the
@@ -9631,6 +9862,22 @@ the whole of the posture, not a set of tips.
   reaches the route without a relay on this machine that holds the token, and
   such a relay is already something running as you. The secret lives in the
   daemon's environment, never in the file.
+- **Built-ins author triggers; only a human arms one.** *Added 2026-09-14 (task
+  098).* The `create-trigger` and `update-triggers` built-ins (§5.2) let an
+  agent, in a task a human started, write trigger files. They install only
+  through `vincent trigger apply` (§12.1), which refuses every change that
+  **arms** a trigger relative to the file on disk, a new file comparing against
+  absent: `enabled` to `true`, `on_fire` to `create`, `permission` to
+  `workflow`. An already-armed value may be kept, disarming is always allowed,
+  and there is no override flag. The fourth switch, `triggers.enabled`, is in
+  `config.yaml`, which apply cannot touch. A human arms in the TUI, which asks
+  first, or in `$EDITOR`. Apply also refuses a file for any project but the
+  one it was given and a file that changed since the proposal read it, so a run
+  in one project cannot rewrite another's triggers. `update-triggers` may
+  rewrite a trigger that is already armed, and such a rewrite is live once
+  written, so its proposal waits at a `manual` gate. The trigger write routes
+  stay off MCP (§13.4). A proposal is staged in `{data_dir}` (§12.2), never in
+  a worktree, because a trigger's argv can carry a token.
 
 ## 17. Observability
 

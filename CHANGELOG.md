@@ -37,6 +37,31 @@ list with the user-facing context a commit subject cannot carry.
   writes and the push route are not MCP tools. New SSE events
   `trigger.fired` and `trigger.poll_changed`.
 
+- **An agent can write your triggers, and cannot switch one on.** Two new
+  built-in workflows and a published skill do for event triggers what
+  `create-workflow`, `update-workflows` and the `vincent-workflows` skill do for
+  workflows. `create-trigger` writes one trigger for the task's project, under
+  the id its required `trigger_id` field names. `update-triggers` reviews a
+  project's existing triggers against what triggers can do now, and shows each
+  proposed change as a before/after diff at an approval step. Both stage their
+  files in `{data_dir}/trigger-proposals/{task id}/` and install them with the
+  new `vincent trigger apply`, which **refuses any change that arms a
+  trigger**: `enabled: true`, `on_fire: create` or `permission: workflow`, on a
+  new file or an existing one. It also refuses a file that does not validate, a
+  file for another project, and a file that changed since the proposal read it,
+  and writes nothing when it refuses. Turning a trigger on stays yours, in the
+  TUI or in your editor. Neither built-in writes a `cancel` trigger, because
+  one only loads with `on_fire: create`.
+
+  Two more commands need no daemon: `vincent trigger validate <file>` checks a
+  trigger file, with the API's verdict plus the check that its id matches its
+  file name, and `vincent trigger ls --project <id>` lists a project's trigger
+  files, with `--json` adding each file's version token and switches. Workflow
+  templates gain `.Project.ID`, the project's numeric id. Poll scripts have a
+  documented home, `{config_dir}/trigger-scripts/`. Deleting a task also
+  deletes its staged proposal. `vincent skills install` installs the new skill,
+  or run `npx skills add lezli01/vincent --skill vincent-triggers -g`.
+
 - **vincent tells you whether its workflow-authoring skill is installed, and
   installs it.** vincent publishes an agent skill so that an agent you talk to
   *directly* — outside a vincent run — knows how to write a vincent workflow,
@@ -219,6 +244,26 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
+- **A new task refreshes your local base branch, and shows what it started
+  from.** With `fetch_base_branch` on (the default), the fetch before a task's
+  worktree is created is now followed by a fast-forward of your local base
+  branch to the fetched commit, and of its checkout when it is checked out —
+  so `git log master` in your own checkout stops drifting behind what tasks
+  build on. It only ever fast-forwards, runs no merge or checkout hooks, and
+  leaves the branch exactly where it is when it is ahead of or has diverged
+  from the remote, or when its checkout has any change (untracked files
+  included) or
+  a merge, rebase, cherry-pick, revert or bisect in progress. A skip never
+  blocks the task, which starts from the fetched commit either way. What
+  happened is now visible on the task: `base_sha` and a new `base_refresh`
+  record are on the task and chat API responses, the TUI detail view's
+  Overview gains a `base` row (`master @ 1a2b3c4`) and a highlighted
+  `base refresh` row when the fetch failed or the fast-forward was skipped,
+  and `vincent task show` prints the same as `base` and `refresh`. A chat
+  handed off to a task passes its record on. Chats also honour
+  `fetch_base_branch: false` now; they used to fetch regardless. Spec §5.3,
+  §5.5, §10, §12.3, §13.2, §14.
+
 - **One key, one meaning: the TUI's keyboard now follows a vocabulary.** The
   same operation answered to different keys depending on the screen — refresh
   was `R` on seven surfaces and `r` on three, archive was `A` on the task board
@@ -244,9 +289,87 @@ list with the user-facing context a commit subject cannot carry.
   (`p a x r E R s c A F`) did not move. The new-task form's **Fields** editor
   also joins the registry, so its `a` and `d` finally appear in `?` and in the
   footer instead of only in an inline hint.
+- **The task Workflow tab's graph is colored by run state.** Nodes take the
+  Steps tab's colors — green for succeeded, cyan for running, red for failed —
+  and a parked task's board color (bold red for blocked) on the step it is
+  parked on; lane captions take their child task's board color. Edges light up
+  along the path the run actually took, so a condition's untaken branch stays
+  uncolored. The words and glyphs are unchanged, and the workflows screen's
+  `g` graph is not colored. Attempts drawn off-graph below `END` now say their
+  state, and the Steps tab now colors `approved` green and `rejected` red.
 
 ### Fixed
 
+- **`create-workflow` can author every workflow key.** Its prompt carries the
+  `vincent-workflows` skill, and outside a vincent checkout that skill is all it
+  knows about the schema. The skill never named 20 of the keys a workflow may
+  carry, including `timeout`, `permission_mode`, `env`, `max_parallel`,
+  `max_iterations`, `merge.on_conflict` and `defaults.container`, so the
+  built-in could not write them. The skill (now 1.1.0) gains a compact index of
+  every key with when to use it. `update-workflows`' checklist also gains the
+  14 feature keys it had missed, so it now brings existing workflows up to
+  them. Tests keep both lists in step with the schema (issue #376).
+- **vincent is built with Go 1.26.8.** `go.mod` still pinned go1.26.6: the
+  weekly job that adopts Go patch releases had never managed to open its pull
+  request, so source builds and release binaries went without the standard
+  library fixes in go1.26.7 and go1.26.8. The toolchain is bumped, and the job
+  now opens an issue when it fails instead of failing silently (issue #373).
+- **`parallel` and `manual` steps now refuse `max_retries` and `retry_backoff`
+  instead of ignoring them.** Neither step owns an attempt — a group's retries
+  belong to each sub-step, and a gate is decided once — so both fields were
+  accepted, offered by the workflow editor, and silently did nothing. **This
+  breaks a workflow that sets either field on either type:** validation, the
+  registry and task creation now refuse it until the field is removed (move a
+  group's value onto its sub-steps); the built-in `update-workflows` workflow
+  now does that for you. Tasks created before the change keep running, and an
+  included workflow's retry `defaults:` no longer land on its `parallel` and
+  `manual` steps (issue #374).
+- **TUI hints no longer name keys that do nothing.** The Pull Request tab's
+  hint line still read `c open check` and `r refresh`, though `c` there is
+  cancel and `r` is retry since open-check moved to `enter` and the refresh key
+  was removed; it now reads `enter open check · o open PR · u unlink`, taken
+  from the key registry. And with `tui.board.group_by: []`, the `ctrl+p`
+  palette no longer lists the board's fold keys, which do nothing on a flat
+  board and were already missing from the footer (issue #372).
+- **`vincent workflow render` now renders a derived fan-out's lane.** A
+  `fan_out` with `for_each:` and a `lane:` template rendered only its
+  `for_each` items: the template's inline steps, its `if:`, `id`, `needs` and
+  `fields` were never executed, so a typo such as `{{ .Task.Titel }}` in a
+  derived lane's `run:` printed `ok` and exited `0`. They now render — the
+  template's own fields with `.Item` keys bound to `<item.KEY>` placeholders —
+  and each of its steps is marked as a lane template with the `for_each` it
+  expands over (`derived_lane` in `--json`). With `--project`, a registry
+  workflow reached through an `include` or a named lane also kept its `lane:`,
+  `max_lanes`, `schedule` and lanes' `needs` (issue #370).
+- **`vincent task transcript` now prints a claude run's header and result
+  metadata.** The default text rendering dropped the `agent.run_header` record,
+  so the working directory and the tools the agent was given never appeared,
+  and ended every run on `= done` or `= done ($cost)` though the transcript
+  records how long it took, over how many turns, why it stopped and how many
+  tool calls were denied. A run now opens on `# <dir> - N tools: …` and ends on
+  e.g. `= done (7.3s, 2 turns, 1 denied, $0.0221)` — the output pane's `normal`
+  content; codex and cursor, which report none of it, are unchanged (issue
+  #371).
+- **A follow-up that names a workflow now honors that workflow's declared
+  fields.** `POST /v1/tasks/{id}/follow_up` with `workflow` skipped the field
+  checks `POST /v1/tasks` applies, so it queued a run whose required field the
+  task never carried, accepted a value outside the workflow's enum, and
+  rendered `""` where a required field's `default:` belonged — a step depending
+  on it then did the wrong thing or blocked. Those are now `400`s and the
+  default is filled in. A follow-up can supply the values itself with the new
+  optional `fields` body key (`--field name=value` on `vincent task follow-up`,
+  and in the MCP `task_follow_up` hint); they apply to that run only, and the
+  task keeps the fields it was created with (issue #369).
+- **A containerized task no longer gets your agent credentials by default.**
+  `container.mount_agent_config` defaulted to `true`, so setting only
+  `container.image` bind-mounted `~/.claude`, `~/.codex` and `~/.cursor`
+  read-write into every task container — though only `command` steps and
+  checks run there and the agent itself still runs on the host. The default is
+  now `false` until agent steps move into the container. This changes the
+  default on existing installations; a `config.yaml` that sets the key keeps
+  its value. `container.network: false` with `mcp.wire_steps: true` is no
+  longer refused at task creation either, for the same reason: every agent
+  reaches the MCP endpoint from the host (issue #366).
 - **The MCP tool descriptions told a model to send bodies the handlers
   reject.** Several `Body: {...}` hints named keys no handler decodes —
   `step_status` asked for `{status}` where the route reads `{message}`,

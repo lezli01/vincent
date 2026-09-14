@@ -60,19 +60,27 @@ type taskResponse struct {
 	// shared response rather than on the list row because the detail endpoint
 	// needs it too — omitting it there left every client's ProjectName empty
 	// and `vincent task show` printing a blank project (T4.4 finding).
-	ProjectName    string            `json:"project_name,omitempty"`
-	Title          string            `json:"title"`
-	Description    string            `json:"description"`
-	Fields         map[string]string `json:"fields,omitempty"`
-	Workflow       string            `json:"workflow"`
-	Snapshot       string            `json:"workflow_snapshot,omitempty"` // detail view only
-	BaseBranch     string            `json:"base_branch"`
-	BranchName     string            `json:"branch_name"`
-	WorktreePath   *string           `json:"worktree_path"`
-	Priority       int               `json:"priority"`
-	AgentOverride  *string           `json:"agent_override"`
-	ModelOverride  *string           `json:"model_override"`
-	EffortOverride *string           `json:"effort_override"`
+	ProjectName string            `json:"project_name,omitempty"`
+	Title       string            `json:"title"`
+	Description string            `json:"description"`
+	Fields      map[string]string `json:"fields,omitempty"`
+	Workflow    string            `json:"workflow"`
+	Snapshot    string            `json:"workflow_snapshot,omitempty"` // detail view only
+	BaseBranch  string            `json:"base_branch"`
+	// BaseSHA is the commit the task branch was cut from when a base fetch
+	// resolved one, and BaseRefresh is what that fetch and the local base's
+	// fast-forward did (§10, §13.2, task 099). Serving them reverses task 056
+	// decision 4, which kept base_sha off the wire: without it a human cannot
+	// tell a task that started from a fresh upstream tip from one that started
+	// from a stale local branch. BaseRefresh is null, not omitted, when absent.
+	BaseSHA        string           `json:"base_sha,omitempty"`
+	BaseRefresh    *baseRefreshBody `json:"base_refresh"`
+	BranchName     string           `json:"branch_name"`
+	WorktreePath   *string          `json:"worktree_path"`
+	Priority       int              `json:"priority"`
+	AgentOverride  *string          `json:"agent_override"`
+	ModelOverride  *string          `json:"model_override"`
+	EffortOverride *string          `json:"effort_override"`
 	// Restricted and MaxTaskCostUSD are the create-time limits (task 096
 	// decisions 17, 18), served so a client can show why a task runs
 	// restricted or blocked `cost_limit` under a generous global cap.
@@ -207,6 +215,8 @@ func toTaskResponse(t *store.Task, summary snapshotSummary) taskResponse {
 		Fields:           t.Fields,
 		Workflow:         t.WorkflowName,
 		BaseBranch:       t.BaseBranch,
+		BaseSHA:          t.BaseSHA,
+		BaseRefresh:      renderBaseRefresh(t.BaseRefresh),
 		BranchName:       t.BranchName,
 		WorktreePath:     nilIfEmpty(t.WorktreePath),
 		Priority:         t.Priority,

@@ -164,6 +164,11 @@ type FollowUpInput struct {
 	Agent    string `json:"agent,omitempty"`
 	Model    string `json:"model,omitempty"`
 	Effort   string `json:"effort,omitempty"`
+	// Fields are this run's field values, laid over the task's own for that
+	// run only. A named workflow's declared fields are validated against the
+	// result, and its required defaults fill what is absent (§8.1.2, task 027
+	// decisions 13 and 14); the task keeps the fields it was created with.
+	Fields map[string]string `json:"fields,omitempty"`
 	// Paused holds the task in `paused` instead of re-queuing it; `resume`
 	// starts the run (§6, task 096 decision C).
 	Paused *bool `json:"paused,omitempty"`

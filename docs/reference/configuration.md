@@ -252,7 +252,7 @@ update:
 container:
   image: ""
   runtime: docker
-  mount_agent_config: true
+  mount_agent_config: false
   network: true
   extra_mounts: []
 
@@ -504,10 +504,16 @@ time *you* ran `git pull` — on a daemon left running for days over projects th
 keep receiving merged pull requests, that is arbitrarily stale, and the agent
 writes against code that has already moved.
 
-Your own checkout is never touched. The local branch keeps its SHA and its
-working tree and stays checked out where it was; vincent does not fast-forward
-it, because it is frequently checked out and often dirty. The visible cost is
-that `git log <base>` in your checkout no longer matches what tasks build on.
+Your local base branch moves too, when that loses nothing. After a successful
+fetch, vincent fast-forwards `<base>` to the fetched commit — and, when it is
+checked out (usually in your own checkout), that working tree with it, without
+running any `post-merge` or `post-checkout` hook. The branch is left exactly
+where it is when it has commits the remote does not (it is ahead, or has
+diverged), or when its checkout has any change at all, untracked files included,
+or is partway through a merge, rebase, cherry-pick, revert or bisect. A skipped
+fast-forward never blocks the task, which starts from the fetched commit either
+way; it shows on the task as a `base refresh` row in the TUI's detail view, a
+`refresh` row in `vincent task show`, and `base_refresh` in the API.
 
 The remote comes from the base branch's own configuration — `branch.<base>.remote`
 and `branch.<base>.merge` — so a local `master` that tracks `main` upstream fetches
@@ -519,7 +525,7 @@ does not fetch:
 | The repository has no remote | Created from the local base, logged at debug |
 | The base branch has no upstream | Created from the local base, logged at debug |
 | A `fan_out` lane, whose base is its parent's `vincent/…` branch | Created from the parent's branch, logged at debug |
-| The remote is unreachable, refuses auth, or does not answer within 60 seconds | Created from the local base, logged as a **warning** |
+| The remote is unreachable, refuses auth, or does not answer within 60 seconds | Created from the local base, logged as a **warning** and shown on the task |
 
 A fetch never blocks a task and never introduces a block reason. Task creation
 itself stays offline: `POST /v1/tasks` still rejects a `base_branch` that does not
@@ -527,8 +533,9 @@ exist locally, and the fetch happens later, when the scheduler first admits the
 task.
 
 Set it to `false` for a repository where fetching is slow or needs interactive
-auth; that restores the previous behaviour exactly. Read per worktree creation,
-so a hot reload applies to the next task admitted. There is no per-project
+auth; that turns off the fetch and the fast-forward alike. It covers chats as
+well as tasks. Read per worktree creation, so a hot reload applies to the next
+task admitted or chat created. There is no per-project
 override.
 
 ### `delete_remote_branch_on_archive`
@@ -1081,7 +1088,7 @@ tools. If that is not what you want, turn `wire_steps` off.
 container:
   image: ""
   runtime: docker
-  mount_agent_config: true
+  mount_agent_config: false
   network: true
   extra_mounts: []
 ```
@@ -1124,17 +1131,19 @@ CI; `podman` and `nerdctl` are accepted because they take the same argv, which
 is not the same claim as tested.
 
 **`mount_agent_config`** bind-mounts `~/.claude`, `~/.codex` and `~/.cursor`
-into the container **read-write**, and is on by default. Subscription-based auth
+into the container **read-write**, and is **off** by default. Nothing in the
+container needs them today: only `command` steps and checks run there, and the
+agent process runs on the host with its own configuration. Turning it on puts
+your agent credentials within reach of the image and of every containerized
+step — see [the security model](../security-model.md). When the agent itself
+moves into the container, this default turns back on: subscription-based auth
 takes no key from the environment, and cursor persists `--model` to its own
-config, so without this an agent CLI in the container cannot authenticate. It
-also means the container can read your agent credentials — see
-[the security model](../security-model.md).
+config, so an agent CLI in the container cannot authenticate without them.
 
 **`network`** keeps outbound traffic on, which is the default. `false` drops the
-container off the network entirely; combined with `mcp.wire_steps: true` that is
-a contradiction — a container with no network cannot reach the daemon's per-step
-MCP endpoint — and the task is refused at creation. Turn `mcp.wire_steps` off,
-or leave the network on.
+container off the network entirely. It works with `mcp.wire_steps: true`: agent
+steps run on the host and reach the daemon's per-step MCP endpoint from there,
+whatever the container's network is.
 
 **`extra_mounts`** are additional bind mounts, each `host:container` or
 `host:container:ro`. Both paths must start with `/`, on every platform — a
@@ -1153,7 +1162,6 @@ beats this one per field. There is no per-task override.
 |---|---|---|
 | The daemon runs on Windows | task creation | `400 validation_failed` |
 | `runtime` missing or not usable | task creation | `400 validation_failed` naming the binary |
-| `network: false` with `mcp.wire_steps: true` | task creation | `400 validation_failed` naming both keys |
 | A step pins `shell: pwsh` or `shell: cmd` | workflow load, or task creation | a validation error naming the step |
 | The image is missing and cannot be pulled | when the task is admitted | the task blocks `container_image_unavailable` |
 | The runtime went away after creation | when the task is admitted | the task blocks `container_unavailable` |

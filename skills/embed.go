@@ -7,11 +7,13 @@
 // files belongs in it — it depends on no other package in this module and
 // must stay that way, so any package may import it.
 //
-// The published skill is the single source: editing
+// The published skills are the single source: editing
 // `vincent-workflows/SKILL.md` changes the built-in `create-workflow` and
-// `update-workflows` prompts at the next build, with no Go change. That
-// coupling is deliberate (task 024 decision 7) and is why the consumers escape
-// and re-indent the text rather than assuming anything about its shape.
+// `update-workflows` prompts at the next build, and editing
+// `vincent-triggers/SKILL.md` changes `create-trigger` and `update-triggers`
+// (task 098), with no Go change. That coupling is deliberate (task 024
+// decision 7) and is why the consumers escape and re-indent the text rather
+// than assuming anything about its shape.
 package skills
 
 import "embed"
@@ -21,6 +23,13 @@ import "embed"
 //
 //go:embed vincent-workflows/SKILL.md
 var VincentWorkflows string
+
+// VincentTriggers is `skills/vincent-triggers/SKILL.md` verbatim, YAML front
+// matter included, for the trigger built-ins the way VincentWorkflows is for
+// the workflow pair.
+//
+//go:embed vincent-triggers/SKILL.md
+var VincentTriggers string
 
 // FS is every published skill's `SKILL.md`, keyed by its path inside this
 // directory (`vincent-workflows/SKILL.md`). It is the *set* of what this

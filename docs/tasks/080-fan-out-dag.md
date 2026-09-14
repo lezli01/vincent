@@ -145,6 +145,12 @@ the spawn round's `step_runs` row was the alternative and was rejected: the
 retry budget can rewrite that row, and the picture a reader is shown must not
 change because a lane was retried. Spec §7.6 carries the same note.
 
+**Amended 2026-09-14 (issue #370).** The same sentence was false of the
+**preview** too, for a different reason: `vincent workflow render` previews an
+*authored* file, where the `lane:` template is still live, so it rendered the
+`for_each` items and nothing else. It now walks and renders the template —
+task 044 decision 10 records how. Spec §7.6 carries the same note.
+
 ### 6. Bounds move to spawn time for derived lists
 
 `fan_out.max_depth` survives unchanged — it counts nesting, and a dynamic width

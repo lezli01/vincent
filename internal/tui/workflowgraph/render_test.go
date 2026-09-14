@@ -101,6 +101,53 @@ func TestStylingDoesNotChangeThePicture(t *testing.T) {
 	}
 }
 
+// Run-state color is decoration too (task 097): every corpus workflow, under a
+// synthetic overlay that touches every state, every lane and END, strips to
+// exactly the uncolored rendering of that same overlay.
+func TestRunColorDoesNotChangeThePicture(t *testing.T) {
+	states := []RunState{
+		{State: "succeeded", Attempt: 1},
+		{State: "running", Current: true, Iteration: 2},
+		{State: "failed", Attempt: 3},
+		{State: "stopped"},
+		{State: "skipped", SkipReason: "condition"},
+		{State: "running", Task: "blocked", BlockReason: "check_failed"},
+		{State: "approved"},
+	}
+	for name, wf := range corpus() {
+		d := AttachOffGraph(Build(wf), []OffGraphRun{{StepID: "follow_up_1", Label: "follow up", Type: "agent"}})
+		s := Layout(d, DefaultOptions())
+		run := Overlay{Done: true, Nodes: map[string]RunState{}, Lanes: map[string]RunState{}}
+		i := 0
+		for _, n := range d.Nodes {
+			if n.StepID == "" {
+				continue
+			}
+			run.Nodes[n.ID] = states[i%len(states)]
+			i++
+		}
+		for _, g := range d.Groups {
+			for _, col := range g.Columns {
+				if col.Key != "" {
+					run.Lanes[col.Key] = RunState{State: "done", ChildTaskID: int64(i), Task: "paused"}
+					i++
+				}
+			}
+		}
+		view := ViewState{Selected: "plan", Run: run}
+		plain := Render(d, s, view, Theme{})
+		styled := Render(d, s, view, testTheme())
+		if len(plain) != len(styled) {
+			t.Fatalf("%s: styled render has %d rows, plain has %d", name, len(styled), len(plain))
+		}
+		for row := range plain {
+			if got := ansi.Strip(styled[row]); got != plain[row] {
+				t.Errorf("%s row %d: stripped %q, want %q", name, row, got, plain[row])
+			}
+		}
+	}
+}
+
 // Labels are cut to a display width, not a rune or byte count, so a node of
 // wide characters still occupies exactly its column budget.
 func TestWideLabelsRespectDisplayWidth(t *testing.T) {

@@ -17,7 +17,7 @@ the living engineering specification records implementation contracts.
 | [001](001-configurable-branch-names.md) | Configurable branch names | ✅ done (11/11) |
 | [002](002-homebrew-tap.md) | Homebrew tap for macOS | ✅ done (6/6) |
 | [003](003-usage-limit-classification.md) | Classify agent usage limits and auth expiry | ✅ done (7/7) |
-| [004](004-go-toolchain-pin.md) | Pin the Go toolchain and automate its patch bumps | ✅ done (3/3) |
+| [004](004-go-toolchain-pin.md) | Pin the Go toolchain and automate its patch bumps | ⚠ blocked on the owner (5/6) |
 | [005](005-orphaned-worktree-gc.md) | Reclaim orphaned worktrees: `vincent gc` and a startup reconcile | ✅ done (8/8) |
 | [006](006-vincent-doctor.md) | `vincent doctor` — one diagnostic report | ✅ done (8/8) |
 | [007](007-release-please.md) | Release Please automation | ✅ done (6/6) |
@@ -40,7 +40,7 @@ the living engineering specification records implementation contracts.
 | [024](024-create-workflow-builtin.md) | `create-workflow`, a built-in that writes workflows | ✅ done (7/7) |
 | [025](025-ad-hoc-repair-agent.md) | An ad-hoc repair agent for a blocked step | ✅ done (8/8) |
 | [026](026-agent-quota-visibility.md) | Reporting each agent's usage-quota state in the daemon and TUI | ✅ done (7/7) |
-| [027](027-follow-up-runs.md) | Follow-up runs on a done or aborted task | ✅ done (9/9) |
+| [027](027-follow-up-runs.md) | Follow-up runs on a done or aborted task | ✅ done (10/10) |
 | [028](028-retry-backoff.md) | `retry_backoff`: pacing step retries through task 003's admission hold | ✅ done (5/5) |
 | [029](029-database-size-reporting.md) | Reporting the database's footprint, row counts and retention span | ✅ done (6/6) |
 | [030](030-daemon-backup-and-restore.md) | `vincent daemon backup` / `restore` | ✅ done (6/6) |
@@ -110,6 +110,9 @@ the living engineering specification records implementation contracts.
 | [094](094-footer-width-and-hidden-keys.md) | The footer fills its width, and a `+N` says how many keys it is hiding | ✅ done (5/5) |
 | [095](095-published-skill-installation.md) | Report whether vincent's published skills are installed, and install them | ✅ done (10/10) |
 | [096](096-event-triggers.md) | Event triggers: starting vincent work from GitHub, Jira, Trello and CI systems | ✅ done (6/6) |
+| [097](097-workflow-graph-run-colours.md) | Color the task Workflow tab graph by run state | ✅ done (4/4) |
+| [098](098-trigger-authoring-skill-and-builtins.md) | The `vincent-triggers` skill and the `create-trigger` and `update-triggers` built-ins | ✅ done (6/6) |
+| [099](099-fresh-base-fast-forward.md) | Fresh base: fast-forward the local base branch and show what a task started from | ✅ done (6/6) |
 
 ## How to add and update a task document
 

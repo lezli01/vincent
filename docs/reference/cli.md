@@ -31,7 +31,7 @@ localhost API.
 | Code | Meaning |
 |---|---|
 | `0` | Success |
-| `1` | The request was rejected — the daemon answered no (bad id, invalid state transition), a daemon-free command refused it (`workflow validate` on an invalid file, `workflow render` on a template that does not execute, `workflow init` on a name already taken), or the client refused the input before sending anything (a `--fields-file` that is not one JSON object of strings, a `trigger test --event` file that is not one JSON object) |
+| `1` | The request was rejected — the daemon answered no (bad id, invalid state transition), a daemon-free command refused it (`workflow validate` on an invalid file, `workflow render` on a template that does not execute, `workflow init` on a name already taken, `trigger validate` on an invalid file, `trigger ls` that matched no file, `trigger apply` on a proposal it refuses), or the client refused the input before sending anything (a `--fields-file` that is not one JSON object of strings, a `trigger test --event` file that is not one JSON object) |
 | `2` | No daemon answered |
 
 `vincent daemon status` overloads them usefully: `0` healthy, `1` not running,
@@ -123,8 +123,8 @@ has. The runtime is probed **even when `container.image` is unset**, because
 "would this work if I turned it on" is the question the group exists to answer.
 So do the **Skills** rows: a missing, stale or unreadable skill costs you help
 in your own agent session and stops no vincent run, because the built-in
-`create-workflow` and `update-workflows` workflows carry the skill's text in
-their own prompts. The group ends with `run: vincent skills install` when
+workflows that use a skill (`create-workflow`, `update-workflows`,
+`create-trigger` and `update-triggers`) carry its text in their own prompts. The group ends with `run: vincent skills install` when
 anything is not current.
 
 An adapter row also ends with what vincent knows about the build itself:
@@ -603,6 +603,15 @@ vincent task show <id> [--json]
 Shows one task with its step runs, the actions valid right now, and any pending
 input request.
 
+The `base` row is where the task started: `master @ 1a2b3c4` when the daemon
+recorded the commit the branch was cut from, or the branch name alone when it
+did not — the worktree does not exist yet, or nothing was fetched
+([`fetch_base_branch`](configuration.md#fetch_base_branch) is off, the base has
+no upstream, or the fetch failed). A `refresh` row follows only when something
+about that start needs your attention: the fetch failed, so the base may be
+stale, or your local base branch was not fast-forwarded, with the reason and
+git's message. A healthy refresh prints no row.
+
 The `origin` row says which definition the task's workflow name resolved to —
 `built-in`, `project .vincent/workflows/adhoc.yaml`, `global
 workflows/release.yaml`, `derived from task 41` for a fan-out lane, or `unknown`
@@ -663,7 +672,7 @@ task has parallel steps or fan-out lanes).
 
 | Output | What it is |
 |---|---|
-| default | The records rendered as text, the vocabulary the TUI's output pane renders: assistant output, tool calls and their outcomes, command output, the agent's running to-do list as a `# plan:` line, vincent's own annotations. Token usage is dropped — `task show` carries it |
+| default | The records rendered as text, the vocabulary the TUI's output pane renders: the run header (working directory and the tools the agent was given) as a first `# ` line, assistant output, tool calls and their outcomes, command output, the agent's running to-do list as a `# plan:` line, vincent's own annotations, and a closing `= done` line carrying whatever the agent reported about the run — elapsed time, turns, an unusual stop or terminal reason, permission denials, cost. Token usage is dropped — `task show` carries it |
 | `--json` | The normalized records as NDJSON, one JSON object per line, in vincent's vocabulary including its `vincent.*` annotations. This is the `jq` route |
 | `--raw` | The agent's own JSONL, byte for byte, exactly as it was recorded |
 
@@ -671,7 +680,10 @@ What an *agent's* command printed is the one record the default rendering drops.
 The output pane shows it at `verbose` only and this command has no verbosity
 control, so the alternative to dropping it is showing every command's whole
 output to every reader; `--raw` and `--json` both carry it for a reader who
-wants the body.
+wants the body. The result line stops at the pane's `normal` content for the
+same reason: the API-time, cache and per-model breakdown is `--json` only.
+An adapter that reports none of that metadata — codex, cursor — prints no
+header and a bare `= done`.
 
 Everything a reader reads goes to **stdout**, including a command step's stderr,
 which is tagged `[stderr]` rather than split onto the other file descriptor: a
@@ -703,7 +715,8 @@ unfinished lane.
 
 ```sh
 vincent task follow-up <id> (--prompt TEXT | --run CMD | --workflow NAME)
-                            [--agent NAME] [--model M] [--effort E] [--paused] [--json]
+                            [--agent NAME] [--model M] [--effort E] [--field NAME=VALUE]...
+                            [--paused] [--json]
 ```
 
 Runs one more piece of work in a **finished** task's existing worktree and
@@ -722,6 +735,12 @@ Exactly one of the three run flags is required, and they are mutually exclusive:
 `--agent`, `--model` and `--effort` apply to this run and outrank the task's own
 overrides and the workflow's `defaults:`; a value no catalog recognizes is a
 warning on stderr, not a failure.
+
+`--field name=value` sets a field for this run only, laid over the task's own,
+with the spelling `task add` uses; repeat it for more. A `--workflow` that
+declares fields checks them exactly as `task add` does — the task's values
+included — so a required field the task never carried, with no default, exits 1
+until a `--field` supplies it. The task keeps the fields it was created with.
 
 The command returns as soon as the run is queued — the scheduler admits it like
 anything else. When it ends the task returns to the state it came from: `done`
@@ -1132,10 +1151,12 @@ vincent update --check --json
 
 ## `vincent skills`
 
-vincent publishes agent skills — `skills/vincent-workflows/` today — so an agent
-you talk to **directly**, outside a vincent run, knows how to author a vincent
-workflow. Runs inside vincent do not need them: the built-in `create-workflow`
-and `update-workflows` workflows carry the same text in their own prompts.
+vincent publishes agent skills — `skills/vincent-workflows/` and
+`skills/vincent-triggers/` — so an agent you talk to **directly**, outside a
+vincent run, knows how to author a vincent workflow or an event trigger. Runs
+inside vincent do not need them: the built-in `create-workflow` and
+`update-workflows` workflows carry the first skill's text in their own prompts,
+and `create-trigger` and `update-triggers` carry the second's.
 
 Neither subcommand talks to the daemon, so **neither can exit 2**. Detection is
 a filesystem read and works on a machine with no node installed; only `install`
@@ -1509,6 +1530,11 @@ also resolve `include` steps and named fan-out lanes through the registry.
 Without one, those steps are reported as unresolved and every other step still
 renders.
 
+A derived fan-out's `lane:` template renders once, not once per item: its
+steps are marked `<derived lane>` with the `for_each` they expand over
+(`derived_lane` in `--json`), and its own `if`, `id`, `needs` and `fields` bind
+each `.Item` key they read to a placeholder such as `<item.id>`.
+
 Exit `0` clean, `1` a template that does not execute, `2` no daemon answered a
 `--task`/`--project`. A guard that renders to something other than `true`/`false`
 is a warning, not a failure: a preview placeholder can legitimately make one
@@ -1520,9 +1546,120 @@ honest answer offline, and the one place a preview and a real run can differ.
 ## `vincent trigger`
 
 Event triggers turn outside events into tasks. You create and edit them in the
-[TUI](../guides/tui.md) or by hand under `{config_dir}/triggers/`, and turn them
-on with `triggers.enabled` in [`config.yaml`](configuration.md). The command line
-has one trigger command, the dry run. Scripts and fixtures need it.
+[TUI](../guides/tui.md), by hand under `{config_dir}/triggers/`, or with the
+`create-trigger` and `update-triggers`
+[built-in workflows](../guides/triggers.md#letting-an-agent-write-triggers),
+and turn them on with `triggers.enabled` in [`config.yaml`](configuration.md).
+`validate` and `ls` read the files directly and need no daemon. `apply` installs
+a proposal those built-ins staged, and never arms anything. `test` is the dry
+run, and needs a daemon.
+
+### `vincent trigger validate`
+
+```sh
+vincent trigger validate <file> [--json]
+```
+
+Checks one trigger file without a daemon. The verdict is the one
+`POST /v1/triggers/validate` gives, plus one more check: the file's `id:` must
+equal its name without `.yaml`, which is what the registry requires of a file
+under `{config_dir}/triggers/`. The file does not have to be in that directory,
+but its name must end in `.yaml`, the only files the registry loads.
+
+```
+$ vincent trigger validate label-to-task.yaml
+label-to-task.yaml: ok — trigger label-to-task
+```
+
+An invalid file prints one `  error: line LINE: PATH: MESSAGE` line per error
+on stderr, then `FILE: invalid (N error(s))`. `--json` prints one object, with
+`id` only when the file is valid:
+
+```json
+{ "file": "label-to-task.yaml", "valid": false,
+  "errors": [ { "path": "source.project", "line": 4, "message": "…" } ] }
+```
+
+Exit `0` valid, `1` invalid or unreadable, as for
+[`workflow validate`](#vincent-workflow-validate).
+
+### `vincent trigger ls`
+
+```sh
+vincent trigger ls --project <id> [--json]
+```
+
+Reads `{config_dir}/triggers/*.yaml` without a daemon and prints the path of
+every file whose `source.project` is `<id>`, one per line. `<id>` is the
+project's numeric id, the one `vincent project ls --json` reports.
+
+A file that does not validate is still listed when its `source.project` can be
+read, so a broken trigger for the project can be found and repaired. A file
+whose project cannot be read at all is reported on stderr and left out.
+
+`--json` prints an array with one object per listed file:
+
+| Field | Value |
+|---|---|
+| `file` | The file's path |
+| `id` | The trigger id |
+| `project` | `source.project` |
+| `version` | The file's version token, which [`apply`](#vincent-trigger-apply) compares |
+| `valid` | Whether the file validates |
+| `enabled` | The file's `enabled` |
+| `on_fire` | The file's `on_fire`, or `""` when it leaves the key out |
+| `permission` | The file's `permission`, or `""` when it leaves the key out |
+| `errors` | Why the file does not validate |
+
+Exit `0` when at least one file matched, `1` when none did, with or without
+`--json`. That makes it a probe: a workflow step can branch on whether a
+project has any triggers at all.
+
+### `vincent trigger apply`
+
+```sh
+vincent trigger apply --proposal <task_id> --project <id>
+```
+
+Installs a trigger proposal into `{config_dir}/triggers/` **without arming
+anything**. It is the step the `create-trigger` and `update-triggers` built-ins
+end with, and the only way either one writes a trigger.
+
+A proposal is a directory, `{data_dir}/trigger-proposals/<task_id>/`, holding
+the full proposed `<id>.yaml` files and a `manifest.json`. The manifest maps
+each trigger id to the `version` that `vincent trigger ls --json` reported for
+the file it replaces, or to `"absent"` for a new file:
+
+```json
+{ "label-to-task": "absent", "ci-failure-follow-up": "<version from ls --json>" }
+```
+
+Apply refuses the whole proposal, writes nothing, and names every offending
+file and key, when:
+
+- a staged file does not validate;
+- a staged file's `source.project` is not `--project`;
+- a staged file has no manifest entry, or a manifest entry has no staged file;
+- a file changed since its version was recorded, a file recorded `"absent"`
+  now exists, or a recorded file is gone;
+- a file **arms** a trigger compared with the file on disk, where a new file
+  compares against no file: `enabled` from `false` or absent to `true`,
+  `on_fire` from absent or `propose` to `create`, or `permission` from absent
+  or `restricted` to `workflow`.
+
+A value that is already armed may stay, and disarming is always allowed. There
+is no flag to override any of this. Arm a trigger yourself, in the TUI's
+triggers view, which asks first, or in your editor. Apply never touches
+`triggers.enabled` in `config.yaml`.
+
+Each file is written `0600`, and `wrote <path>` is printed for it. Once every
+file is written, the proposal directory is removed.
+
+`removed <dir>` follows. A proposal with an empty manifest and no staged file
+installs nothing and is removed the same way: that is `update-triggers` finding
+every trigger already right.
+
+Exit `0` installed, `1` refused, nothing staged at that path, or a write failed.
 
 ### `vincent trigger test`
 

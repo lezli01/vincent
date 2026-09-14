@@ -658,6 +658,83 @@ on_fire: create
 `allowed_actors`. `on_fire: create` is required for a cancel. A task that is
 already `done` gets the route's `409` and lands `refused`.
 
+## Letting an agent write triggers
+
+An agent can author a trigger for you, but it can never arm one. Arming stays
+your change.
+
+### The `vincent-triggers` skill
+
+The published `vincent-triggers` skill teaches an agent this page: the sources,
+the trusted-event rule, dedupe keys, limits, poll scripts and the ledger. It
+installs beside `vincent-workflows`:
+
+```sh
+vincent skills install
+# or by hand:
+npx skills add lezli01/vincent --skill vincent-triggers -g
+```
+
+The skill writes every trigger disarmed. It sets `enabled: false`, leaves out
+`on_fire` and `permission`, and always sets a `dedupe_key` and `limits`. It
+changes a switch only when you ask for that exact change. For the workflow a
+trigger's `action.workflow` names, it defers to `vincent-workflows`.
+
+### The `create-trigger` and `update-triggers` built-ins
+
+Two built-in workflows use the skill against the task's own project:
+
+- **`create-trigger`** writes one new trigger. Its `trigger_id` field becomes
+  the trigger's `id:` and its file name. The agent step may ask you questions.
+  It then stages the file, and a command step installs it with
+  `vincent trigger apply`. There is no approval gate, because the file cannot
+  fire until you arm it.
+- **`update-triggers`** reviews every trigger whose `source.project` is the
+  task's project. It lists them, stages whole rewritten copies, and stops at a
+  manual gate whose instructions show the proposal. Approving installs it with
+  `vincent trigger apply`. Rejecting leaves every trigger untouched. The pass
+  never changes a trigger's `id`, file name, `source.project`, `enabled`,
+  `on_fire` or `permission`, deletes no file, and never changes what a
+  `dedupe_key` renders for events already delivered.
+
+Neither built-in can produce a `cancel` trigger, because a cancel loads only
+with `on_fire: create`. Write one by hand.
+
+### Proposals and `vincent trigger apply`
+
+A built-in's agent never writes `{config_dir}/triggers/` itself. It stages files
+in `{data_dir}/trigger-proposals/<task id>/`, outside every repository, beside a
+`manifest.json` that maps each trigger id to the version `vincent trigger ls
+--project <id> --json` reported, or to `"absent"` for a new trigger. The
+directory is removed after a successful apply, and when the task is deleted.
+
+`vincent trigger apply --proposal <task id> --project <id>` checks every staged
+file before it writes any. It refuses the whole proposal, and writes nothing,
+when a file:
+
+- does not validate;
+- names a different `source.project` than `--project`;
+- changed on disk since the proposal recorded its version, or appeared after
+  being recorded as absent;
+- **arms** the trigger: `enabled` from off to `true`, `on_fire` to `create`, or
+  `permission` to `workflow`.
+
+An already-armed value may be kept, and disarming is allowed. There is no
+override flag. You arm a trigger in the TUI's triggers view, which asks first,
+or in an editor. `triggers.enabled` lives in `config.yaml`, and apply never
+touches it. See the [CLI reference](../reference/cli.md#vincent-trigger) for
+`validate`, `ls` and `apply`.
+
+### Where poll scripts live
+
+By convention a `type: command` trigger's script goes in
+`{config_dir}/trigger-scripts/`. vincent does not enforce the location. It sits
+beside `triggers/`, never inside it, and never in a repository. On POSIX, make
+the directory and each script owner-only (`0700`). Name the script by absolute
+path. The argv runs with no shell, so on Windows write
+`command: [pwsh, -NoProfile, -File, <absolute path>.ps1]`. Credentials come
+from the daemon's environment, never from the script or the trigger file.
+
 ## Security
 
 A trigger lets someone else start an agent that runs as you. Agents run
@@ -683,7 +760,8 @@ for the full posture.
 - [Configuration](../reference/configuration.md#triggers): `triggers.enabled`,
   and [`github`](../reference/configuration.md#github) for the tick GitHub
   sources ride.
-- [CLI](../reference/cli.md#vincent-trigger): `vincent trigger test`.
+- [CLI](../reference/cli.md#vincent-trigger): `vincent trigger validate`, `ls`,
+  `apply` and `test`.
 - [HTTP API](../reference/api.md#triggers): the `/v1/triggers` routes and the event stream.
 - [Using the TUI](./tui.md#triggers): the triggers view.
 - [Security model](../security-model.md).

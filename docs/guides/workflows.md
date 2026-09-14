@@ -126,7 +126,7 @@ schema follows from them:
 |---|---|---|
 | **Project** | `.vincent/workflows/*.yaml` inside the repo | Highest — shadows global |
 | **Global** | `{config_dir}/workflows/*.yaml` | Shadows built-in |
-| **Built-in** | `adhoc`, `create-workflow` and `update-workflows` — always present | Lowest |
+| **Built-in** | `adhoc`, `create-workflow`, `update-workflows`, `create-trigger` and `update-triggers` — always present | Lowest |
 
 `{config_dir}` is `%APPDATA%\vincent` on Windows, `~/Library/Application
 Support/vincent` on macOS and `~/.config/vincent` on Linux; the full table is in
@@ -176,6 +176,12 @@ Details that matter in practice:
   not in the worktree and is not touched; the global registry is out of scope.
   It takes no task fields, never asks you anything (`on_input: deny`), and
   finishes with nothing to do on a project that has no workflows of its own.
+- **`create-trigger` and `update-triggers` do the same for event triggers.**
+  The first writes a new trigger for the task's project, and the second
+  proposes improvements to the project's existing triggers behind an approval
+  step. Both install through `vincent trigger apply`, which refuses any change
+  that would switch a trigger on, so arming one stays yours. See
+  [Letting an agent write triggers](triggers.md#letting-an-agent-write-triggers).
 - Two files in **one scope** declaring the same `name:` is an error, resolved
   deterministically: the first in filename order keeps the name, and the loser
   is listed as invalid rather than silently dropped.
@@ -400,8 +406,8 @@ step, where the step wins.
 | `permission_mode` | agent steps | `full-auto` |
 | `on_input` | agent steps | `wait` |
 | `input_timeout` | agent steps | `defaults.input_timeout` in config — 24h |
-| `max_retries` | all steps | `1` |
-| `retry_backoff` | all steps | `0s` — an immediate retry ([§8.2](#82-retries)) |
+| `max_retries` | agent and command steps; a fan_out merge takes only its own | `1` — `0` on a fan_out merge |
+| `retry_backoff` | agent, command and fan_out steps | `0s` — an immediate retry ([§8.2](#82-retries)) |
 | `timeout` | all steps | `defaults.agent_timeout` (60m) or `defaults.command_timeout` (15m) in config |
 | `container` | command steps and checks | the daemon's [`container:`](../reference/configuration.md#container) block, merged per field |
 
@@ -1001,7 +1007,7 @@ is whether `.Steps.foo` exists — that is a run-time fact.
 | Variable | Fields |
 |---|---|
 | `.Task` | `ID`, `Title`, `Description`, `Fields` (map), `BaseBranch`, `BranchName` |
-| `.Project` | `Name`, `Path` (the original repo root, not the worktree), `DefaultBranch` |
+| `.Project` | `ID` (the project's numeric id), `Name`, `Path` (the original repo root, not the worktree), `DefaultBranch` |
 | `.Workflow` | `Name`, `Description` |
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
 | `.Steps` | completed steps by id → `{Status, Result, ExitCode}` — [§5.3](#53-passing-one-steps-output-to-the-next) |
@@ -1142,7 +1148,10 @@ from `.Task.Fields` and `{{ with index .Task.Fields "x" }}` keeps working the
 way it always did.
 
 The daemon checks required/type/pattern/membership rules at task creation,
-including for CLI and API callers. The selected root workflow owns the contract: fields from
+including for CLI and API callers, and again when a
+[follow-up](../reference/task-lifecycle.md#human-actions) names the workflow — against the
+task's fields with any the follow-up supplies laid over them, for that run only.
+The selected root workflow owns the contract: fields from
 included workflows and named fan-out lane workflows are not automatically
 merged, so a composing workflow re-declares any input it exposes.
 
@@ -1673,7 +1682,8 @@ for telling it apart from a quota wall.
 
 It is settable in `defaults:` and per step, where the step wins — including
 `retry_backoff: 0` on one step to opt it out of a workflow-wide default. It is
-refused on `condition`, `break`, `loop` and `include` steps, exactly as
+refused on `manual`, `parallel`, `condition`, `break`, `loop` and `include`
+steps, exactly as
 `max_retries` is, and the [`on_conflict: agent`](#merge-and-conflicts) merge
 resolver never waits: its attempts belong to the join.
 

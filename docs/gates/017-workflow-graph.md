@@ -363,12 +363,23 @@ then `5`.
 | 13 | Run a workflow whose `fan_out` derives its lanes with `lane:`/`for_each:` (task 080), then open `5` | The heavy frame is marked `derived from …` with the `for_each:` it came from; narrow the pane and the mark degrades to `derived` rather than vanishing. A hand-written list — `lanedag.yaml` — has no mark at all |
 | 14 | Watch `lanedag.yaml` run, and block one lane | `api`/`db` carry `w1` and `wire` `w2` throughout; a blocked lane's caption carries that lane's **own** block reason, not just its state |
 | 15 | Press `l` with the cursor inside a lane | That lane's task workspace opens. `esc` comes back to this task, not to the board. On a node outside every lane, `l` does nothing |
+| 16 | Watch `sequence.yaml` run, color on | Finished nodes green, the running node cyan, nodes below it uncolored. The edges between finished nodes are colored; the edge into `END` stays uncolored until the task is `done` |
+| 17 | Block a task on a failed check, and select the blocked node | The blocked node is bold red. Selected, it keeps that color and shows the selection by its heavier border only |
+| 18 | Run `condition.yaml` both ways | The branch the condition did **not** take stays uncolored — including the `false` edge into `END` of a task that held and finished |
+| 19 | Repeat 16–18 with `NO_COLOR=1` | Every node reads exactly as in legs 2–4. Color added nothing a reader needs |
 
 ## Runs
 
 | Date | Version | Platform | By | Result |
 |---|---|---|---|---|
 | — | — | — | — | not yet walked |
+
+Runtime legs 16–19 were added on 2026-09-14 with issue #418 (task 097, the
+graph colored by run state) and have not been walked. Their automated half is
+`internal/tui/workflowgraph/taken_test.go`, which pins the taken-edge rules,
+node and lane tints, the selected-node rule and crossing precedence off the
+canvas, and `TestRunColorDoesNotChangeThePicture`, which holds every corpus
+workflow's colored render to its uncolored text.
 
 Corpus entry 13 was added on 2026-09-03 with issue #320 (task 086, the fan-out
 drawn from a lane template) and has not been walked. Its automated half is

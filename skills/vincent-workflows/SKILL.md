@@ -1,10 +1,10 @@
 ---
 name: vincent-workflows
-description: Create, edit, review, and validate vincent workflow YAML under .vincent/workflows. Use for vincent workflow fields, step selection, templates, checks, human gates, retries, conditions, loops, parallel work, fan-out, includes, or validation errors. Do not use for GitHub Actions or other workflow systems.
+description: Create, edit, review, and validate vincent workflow YAML under .vincent/workflows. Use for vincent workflow fields, step selection, templates, checks, human gates, retries, conditions, loops, parallel work, fan-out, includes, or validation errors. Do not use for vincent event triggers under {config_dir}/triggers (use vincent-triggers), GitHub Actions, or other workflow systems.
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.0.0
+  version: 1.1.0
 ---
 
 # vincent Workflows
@@ -171,6 +171,93 @@ prefer preflight or dry-run → optional manual approval → one effect attempt 
 separate read-only postcondition check. Set `max_retries: 0` when replay is not
 provably safe. After an ambiguous failure, inspect remote state before any
 human-triggered retry.
+
+## Know every key before you write one
+
+This index names every key a workflow file may carry, with when it earns its
+place; the validator rejects any other. Types, defaults, and edge rules live
+in the schema reference. Leave a key out when its default already says what
+you mean — every key written is one a reviewer must check.
+
+**Top level.** `name` (the registry key) and `steps` are required;
+`description` is the picker text. `platforms:` (`linux`, `darwin`, `windows`,
+`posix`) restricts the whole workflow to the hosts its `run:` bodies are
+written for — declare it rather than let a POSIX-only body fail on Windows,
+and use an `if:` on `.Host.OS` for a single step instead. `fields:` declares
+task inputs; `defaults:` sets step fallbacks.
+
+**A declared field.** `name` and `type` are required, then `required`,
+`pattern`, `values`, `multiple`, and `default` as described above.
+`description` is the help text; `label` is the text a form shows instead of
+the name, worth setting when the name is a slug nobody would read easily.
+
+**Every step.** A unique `id` and a `type`; `name` when the id does not explain
+itself; `if` to guard it.
+
+- Failure policy. `max_retries` counts attempts after the first (default 1),
+  and each agent retry is another session in the envelope.
+  `allow_failure: true` (agent and command only) when a red result is data a
+  later guard reads. `retry_backoff` only when the failure is transient — a network call,
+  a lock held elsewhere — since an immediate retry of a deterministic failure
+  fails the same way. Both retry fields bind to an attempt: `manual`,
+  `parallel`, `condition`, `break`, `loop`, and `include` refuse them, so put
+  a group's retries on its sub-steps.
+- Time bounds. `timeout` ends an attempt (daemon defaults: 60m agent, 15m
+  command); on a `parallel` or `loop` it bounds the whole group. Tighten it
+  where a hang is likelier than slow work. `check_timeout` bounds the `check`
+  on its own and defaults to the daemon's command timeout, never the step's
+  `timeout`. `input_timeout` bounds each wait in `awaiting_input` (default
+  24h); shorten it on a step whose question nobody may be there to answer,
+  because the slot is held for the whole wait.
+
+**Agent step.** `prompt`; `agent`, `model`, and `effort` only for a specific
+capability (Cursor has no effort); `on_input`, `check`, `check_timeout`.
+`permission_mode: restricted` for a step that needs no writes or approval-gated
+actions — a review, a plan, a triage. Denied actions become `permission` input
+requests under `on_input`, and Cursor cannot restrict on Windows. Never widen a
+step to `full-auto` for convenience.
+
+**Command step.** `run`; `check`, `check_timeout`. `shell` (`sh`, `pwsh`, or
+`cmd`) only when a body truly needs one shell: a pinned shell that is missing
+fails rather than falls back, so pair it with `platforms:` or a `.Host.OS`
+guard. `env` adds non-secret configuration a command reads, such as
+`CI: "true"`; it is never for a secret, since the file and the rendered step
+are inspectable. Credentials come from the daemon's environment.
+
+**Structure.** `manual` takes `instructions`; `condition` and `break` take
+`if`; `include` takes `workflow`. `parallel` takes `steps` and `max_parallel`,
+which caps processes started at once inside this one task (default 4), is not
+governed by the daemon's concurrency caps, and never shrinks the envelope:
+every member still runs. `loop` takes `steps`, one of `count` or `for_each`,
+and `max_iterations` (default 10) — the multiplier the envelope counts for its
+body, so set it to the real bound; exceeding it blocks.
+
+**Fan-out.** `lanes`, or a `lane` template with `for_each` and `max_lanes`;
+`schedule`; `merge`. A lane takes `id`, one of `workflow` or `steps`, `if`,
+`needs`, and `fields` (a map handed to the child task). `agent`, `model`,
+`effort`, and `priority` on a lane override the inherited selection and
+scheduler priority for its whole subtree — only for a lane that needs another
+capability or must be admitted ahead of its siblings.
+`merge.on_conflict: block` (the default) stops for a person at no agent cost; `on_conflict: agent`
+resolves with `merge.agent`, a complete agent step that counts as one more
+session in the envelope and cannot use `on_input: require`. Choose it only
+when conflicts are expected, mechanically reviewable, and checked.
+
+**Defaults.** `defaults:` takes `agent`, `model`, `effort`, `permission_mode`,
+`on_input`, `input_timeout`, `max_retries`, `retry_backoff`, and `timeout`,
+which a step's own value overrides — set one when most steps share the value,
+not to restate the daemon's. It also takes `container`, which runs the
+workflow's command steps and checks in a container and merges per key over the
+daemon's `container:` config: `image` is the switch (`""` forces the host),
+`runtime` names the CLI (`docker`, `podman`), `mount_agent_config` mounts the
+agent CLI's credentials, `network` gives the container a network, and
+`extra_mounts` adds host paths. Add a container only when the user asks for
+one — which image a project runs in is a deployment decision. With an image,
+`run:` bodies use the image's `/bin/sh` (`shell: pwsh` or `cmd` is refused),
+and `platforms:` still gates on the daemon's host.
+
+`derived_from` and `resolved_from` appear only in a task's workflow snapshot,
+written by the daemon. Never author them.
 
 ## Author and validate
 

@@ -859,6 +859,7 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 			"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
 			"run", "shell", "env", "steps", "max_parallel", "lanes", "merge",
 			"allow_failure")
+		rejectAttemptFields(step, base, opts, add)
 	case StepParallel:
 		if len(step.Steps) == 0 {
 			add(base+".steps", "parallel steps require at least one sub-step")
@@ -866,11 +867,13 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 		if step.MaxParallel != nil && *step.MaxParallel < 1 {
 			add(base+".max_parallel", "max_parallel must be at least 1, got %d", *step.MaxParallel)
 		}
-		// A group carries no work of its own: only `timeout` and
-		// `max_retries`, checked below for every type, bound the group itself.
+		// A group carries no work of its own: only `timeout`, checked below
+		// for every type, bounds the group itself. Retries belong to each
+		// sub-step (task 014 decisions 17 and 18).
 		rejectFields(step, base, add, "prompt", "agent", "model", "effort",
 			"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
 			"run", "shell", "env", "instructions", "lanes", "merge", "allow_failure")
+		rejectAttemptFields(step, base, opts, add)
 	case StepFanOut:
 		validateFanOutShape(step, base, add)
 		validateMerge(step, base, opts, add)
@@ -1352,6 +1355,19 @@ func validateSubStep(wf *Workflow, sub Step, base string, opts Options, add func
 // rejectFields reports the named fields as not allowed for this step's type.
 // Strict decoding catches unknown keys; this catches keys that are known but
 // belong to a different step type (§8.2).
+// rejectAttemptFields refuses `max_retries` and `retry_backoff` on a step type
+// that owns no attempt for them to bind to — a `parallel` group, whose retry
+// budgets are per sub-step (§7.5, task 014 decision 17), and a `manual` gate,
+// which a person decides once (§7.3). It refuses only an authored document:
+// a task created before issue #374 may carry either field on one of these
+// steps in its snapshot, and must keep loading with the value ignored as it
+// always was (the task 080 decision 5 mechanism).
+func rejectAttemptFields(step Step, base string, opts Options, add func(string, string, ...any)) {
+	if opts.Authored {
+		rejectFields(step, base, add, "max_retries", "retry_backoff")
+	}
+}
+
 func rejectFields(step Step, base string, add func(string, string, ...any), fields ...string) {
 	set := map[string]bool{
 		"prompt": step.Prompt != "", "agent": step.Agent != "", "model": step.Model != "",

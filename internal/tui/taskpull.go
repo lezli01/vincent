@@ -174,7 +174,7 @@ func (t *taskView) pullSectionLines(width int) []string {
 		out = append(out, "")
 		out = append(out, renderTaskDetailFacts(width, []taskDetailFact{
 			{"branch", valueOr(t.detail.task.BranchName, "not created")},
-			{"base", valueOr(t.detail.task.BaseBranch, "unknown")},
+			{"base", valueOr(t.detail.task.BaseDisplay(), "unknown")},
 		})...)
 		out = append(out, "", styleDim.Render(
 			"  P pushes this branch to origin and opens its pull request — the prefill is editable first"))

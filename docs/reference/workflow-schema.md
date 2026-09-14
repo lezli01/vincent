@@ -76,12 +76,15 @@ steps:
 
 Files live in `.vincent/workflows/*.yaml` (project scope), or
 `{config_dir}/workflows/*.yaml` (global). Project shadows global by `name`.
-Three built-in workflows are always present: `adhoc`, a single agent step;
+Five built-in workflows are always present: `adhoc`, a single agent step;
 `create-workflow`, a single agent step that writes another workflow file into
-one of the two registries; and
+one of the two registries;
 [`update-workflows`](../guides/workflows.md#12-where-workflow-files-live),
 which rewrites the workflows a project already versions against everything on
-this page and validates each one.
+this page and validates each one; and
+[`create-trigger` and `update-triggers`](../guides/triggers.md#letting-an-agent-write-triggers),
+which write a new event trigger for the task's project and propose improvements
+to its existing ones, and never arm a trigger.
 
 ## Top level
 
@@ -239,8 +242,8 @@ Every key here is also settable per step, where it wins.
 | `permission_mode` | `full-auto` \| `restricted` | `full-auto` | agent steps; `restricted` also gates which agents may run the step |
 | `on_input` | `wait` \| `deny` \| `require` | `wait` | agent steps; `require` also gates which agents may run the step |
 | `input_timeout` | duration | `24h` (config) | agent steps |
-| `max_retries` | int | `1` | all steps |
-| `retry_backoff` | duration | `0s` | all steps |
+| `max_retries` | int | `1` | `agent` and `command` steps; a `fan_out` merge takes only its own, and gets one attempt without it |
+| `retry_backoff` | duration | `0s` | steps that own an attempt: `agent`, `command`, `fan_out` |
 | `timeout` | duration | `60m` agent / `15m` command (config) | all steps |
 | `container` | mapping | daemon `container:` | command steps and checks — where the task's step processes run |
 
@@ -296,8 +299,8 @@ Common to every step:
 | `id` | slug | ✅ | Unique within the file, sub-steps included. How `.Steps` addresses it |
 | `name` | string | | Display name; defaults to `id` |
 | `type` | `agent` \| `command` \| `manual` \| `parallel` \| `fan_out` \| `condition` \| `loop` \| `break` \| `include` | ✅ | `check` is a *field*, not a type |
-| `max_retries` | int | | Overrides `defaults` |
-| `retry_backoff` | duration | | Wait before each retry; overrides `defaults`. `0s` means retry at once, which is the default. Not valid on `condition`, `break`, `loop` or `include` steps, which own no attempt |
+| `max_retries` | int | | Overrides `defaults`. Not valid on `manual`, `parallel`, `condition`, `break`, `loop` or `include` steps, which own no attempt — a group's sub-steps carry their own |
+| `retry_backoff` | duration | | Wait before each retry; overrides `defaults`. `0s` means retry at once, which is the default. Not valid on `manual`, `parallel`, `condition`, `break`, `loop` or `include` steps, which own no attempt |
 | `timeout` | duration | | Per attempt; overrides `defaults`. On a `parallel` group or a `loop`, bounds the whole thing |
 | `if` | template | | Guard: skip this step unless it renders `true`. See [Conditions](#conditions) |
 
@@ -1010,7 +1013,7 @@ starts.
 | Variable | Fields |
 |---|---|
 | `.Task` | `ID`, `Title`, `Description`, `Fields` (map), `BaseBranch`, `BranchName` |
-| `.Project` | `Name`, `Path` (the original repo root), `DefaultBranch` |
+| `.Project` | `ID` (the project's numeric id), `Name`, `Path` (the original repo root), `DefaultBranch` |
 | `.Workflow` | `Name`, `Description` |
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
 | `.Loop` | `Index` (1-based iteration, **0** outside any loop), `Item`, `IsFirst`, `IsLast`. See [`type: loop`](#type-loop) |
@@ -1202,7 +1205,9 @@ other half of the same pre-commit check.
   of a `parallel` group included; `type` known.
 - A `parallel` group has at least one sub-step and a `max_parallel` of at
   least 1; its sub-steps are not `manual`, not `parallel`, not `condition`,
-  and do not resolve to `on_input: require`.
+  and do not resolve to `on_input: require`. The group rejects `max_retries`
+  and `retry_backoff`: retries belong to each sub-step. A `manual` step rejects
+  both too — a person decides it once.
 - A `condition` step has an `if:` and nothing else — `timeout`, `max_retries`
   and `allow_failure` included. `allow_failure` is valid on `agent` and
   `command` steps only. A `condition` step in **last** position is a *warning*:

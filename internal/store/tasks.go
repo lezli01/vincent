@@ -14,7 +14,7 @@ import (
 )
 
 const taskColumns = `id, project_id, title, description, fields_json, workflow_name, workflow_snapshot,
-	base_branch, branch_name, worktree_path, base_sha, priority, agent_override, model_override, effort_override,
+	base_branch, branch_name, worktree_path, base_sha, base_refresh, priority, agent_override, model_override, effort_override,
 	restricted, max_task_cost_usd,
 	state, current_step, block_reason, pause_requested, retry_cursor_at, pending_override_json,
 	pending_repair_json, pending_follow_up_json, pending_input_json, admit_not_before, queued_reason,
@@ -183,17 +183,21 @@ func insertTaskTx(
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)
 	}
+	refreshJSON, err := marshalBaseRefresh(t.BaseRefresh)
+	if err != nil {
+		return nil, fmt.Errorf("insert task: %w", err)
+	}
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO tasks (project_id, title, description, fields_json, workflow_name, workflow_snapshot,
-			base_branch, branch_name, worktree_path, base_sha, priority, agent_override, model_override, effort_override,
+			base_branch, branch_name, worktree_path, base_sha, base_refresh, priority, agent_override, model_override, effort_override,
 			restricted, max_task_cost_usd,
 			state, current_step, block_reason, admit_not_before, queued_reason,
 			parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json,
 			github_pull_json, workflow_origin_json, created_by_task_id,
 			created_at, updated_at, started_at, finished_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ProjectID, t.Title, t.Description, fields, t.WorkflowName, t.WorkflowSnapshot,
-		t.BaseBranch, t.BranchName, nullString(t.WorktreePath), nullString(t.BaseSHA), t.Priority,
+		t.BaseBranch, t.BranchName, nullString(t.WorktreePath), nullString(t.BaseSHA), refreshJSON, t.Priority,
 		nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
 		t.Restricted, t.MaxTaskCostUSD,
 		string(t.State), t.CurrentStep, nullString(t.BlockReason),
@@ -480,17 +484,21 @@ func (s *Store) UpdateTask(ctx context.Context, t *Task) error {
 	if err != nil {
 		return fmt.Errorf("update task %d: %w", t.ID, err)
 	}
+	refreshJSON, err := marshalBaseRefresh(t.BaseRefresh)
+	if err != nil {
+		return fmt.Errorf("update task %d: %w", t.ID, err)
+	}
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE tasks SET title = ?, description = ?, fields_json = ?, workflow_name = ?,
 			workflow_snapshot = ?, base_branch = ?, branch_name = ?, worktree_path = ?, base_sha = ?,
-			priority = ?, agent_override = ?, model_override = ?, effort_override = ?,
+			base_refresh = ?, priority = ?, agent_override = ?, model_override = ?, effort_override = ?,
 			state = ?, current_step = ?, block_reason = ?,
 			admit_not_before = ?, queued_reason = ?,
 			updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?
 		WHERE id = ?`,
 		t.Title, t.Description, fields, t.WorkflowName,
 		t.WorkflowSnapshot, t.BaseBranch, t.BranchName, nullString(t.WorktreePath), nullString(t.BaseSHA),
-		t.Priority, nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
+		refreshJSON, t.Priority, nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
 		string(t.State), t.CurrentStep, nullString(t.BlockReason),
 		formatTimePtr(t.AdmitNotBefore), nullString(t.QueuedReason),
 		formatTime(t.UpdatedAt), formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt),
@@ -958,6 +966,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		t                              Task
 		fields                         string
 		worktree, baseSHA, blockReason sql.NullString
+		baseRefresh                    sql.NullString
 		agentOv, modelOv, effortOv     sql.NullString
 		retryCursor, pendingOv         sql.NullString
 		pendingRepair, pendingFollowUp sql.NullString
@@ -974,7 +983,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		started, finished, archived    sql.NullString
 	)
 	if err := r.Scan(&t.ID, &t.ProjectID, &t.Title, &t.Description, &fields, &t.WorkflowName,
-		&t.WorkflowSnapshot, &t.BaseBranch, &t.BranchName, &worktree, &baseSHA, &t.Priority,
+		&t.WorkflowSnapshot, &t.BaseBranch, &t.BranchName, &worktree, &baseSHA, &baseRefresh, &t.Priority,
 		&agentOv, &modelOv, &effortOv,
 		&t.Restricted, &t.MaxTaskCostUSD,
 		(*string)(&t.State), &t.CurrentStep, &blockReason,
@@ -1006,6 +1015,7 @@ func scanTask(r rowScanner) (*Task, error) {
 	}
 	t.WorktreePath = worktree.String
 	t.BaseSHA = baseSHA.String
+	t.BaseRefresh = unmarshalBaseRefresh(baseRefresh)
 	t.BlockReason = blockReason.String
 	t.PendingInputJSON = pendingInput.String
 	t.QueuedReason = queuedWhy.String

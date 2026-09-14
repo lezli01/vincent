@@ -18,6 +18,8 @@ import (
 
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/claude"
+	"github.com/lezli01/vincent/internal/agent/codex"
+	"github.com/lezli01/vincent/internal/agent/cursor"
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/config"
@@ -104,7 +106,8 @@ func newLiveHarness(t *testing.T) *liveHarness {
 		t.Fatalf("token: %v", err)
 	}
 	git := gitx.New()
-	agents := agent.NewRegistry(claude.New(func() string { return "" }))
+	noPath := func() string { return "" }
+	agents := agent.NewRegistry(claude.New(noPath), codex.New(noPath), cursor.New(noPath))
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	// The runner is never started: nothing here admits a task, and the rows
 	// under test are written directly.
@@ -152,9 +155,18 @@ func (h *liveHarness) addRun(
 	t *testing.T, taskID int64, stepID string, state store.StepRunState, lines ...string,
 ) *store.StepRun {
 	t.Helper()
+	return h.addRunAs(t, "claude", taskID, stepID, state, lines...)
+}
+
+// addRunAs is addRun for a named adapter, whose parser the endpoint then
+// normalizes the transcript with.
+func (h *liveHarness) addRunAs(
+	t *testing.T, agentName string, taskID int64, stepID string, state store.StepRunState, lines ...string,
+) *store.StepRun {
+	t.Helper()
 	run := &store.StepRun{
 		TaskID: taskID, StepIndex: 0, StepID: stepID, StepType: "agent",
-		Attempt: 1, State: state, Agent: "claude",
+		Attempt: 1, State: state, Agent: agentName,
 	}
 	if len(lines) > 0 {
 		dir := filepath.Join(h.dataDir, "transcripts")

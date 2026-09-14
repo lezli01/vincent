@@ -19,14 +19,22 @@ runs *and* how every agent is launched is not independently reviewable.
   task's risk.
 - **061 decision 1's MCP rewrite**: the per-step endpoint's host becomes
   `host.docker.internal` for a containerized agent step, with
-  `--add-host=host.docker.internal:host-gateway` on the container. The
-  creation-time refusal of `network: false` + `mcp.wire_steps: true` already
-  landed in 061.
-- **`mount_agent_config`**: `~/.claude`, `~/.codex` and `~/.cursor`
-  bind-mounted read-write by default, because subscription auth takes no key
-  from the environment and cursor persists `--model` to its own config and
-  writes `.cursor/mcp.json` into the worktree (§9.7). The read-only knob and
-  its consequences are documented, not hidden.
+  `--add-host=host.docker.internal:host-gateway` on the container.
+- **061 decision 1's creation-time refusal, reinstated.** `network: false`
+  with `mcp.wire_steps: true` is refused with `400 validation_failed` once an
+  agent step can run inside the container. 061 shipped it and issue #366
+  deferred it here (2026-09-14), because no agent ran in the container and the
+  pair worked. Restore the branch in `containerMismatch`
+  (`internal/api/container.go`), its API test, `m12` scenario 5, and the
+  refusal rows in §12.3 and the configuration reference.
+- **`mount_agent_config` flipped back on by default**: `~/.claude`, `~/.codex`
+  and `~/.cursor` bind-mounted read-write, because subscription auth takes no
+  key from the environment and cursor persists `--model` to its own config and
+  writes `.cursor/mcp.json` into the worktree (§9.7). Issue #366 turned the
+  default off (2026-09-14) while nothing in the container read them; this task
+  flips it back in `config.Default()`, the §12.3 listing, §16 and the
+  configuration and security pages. The read-only knob and its consequences
+  are documented, not hidden.
 - **`RunHandle.Terminate` / `Kill` / `PID` made container-aware** via 061
   decision 9's pid file.
 - **Transcripts, §17 token and cost parsing, and exit codes proven identical**

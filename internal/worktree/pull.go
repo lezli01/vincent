@@ -56,9 +56,9 @@ type PullSpec struct {
 	Ref string
 	// Fork says the head lives in another repository. A fork's branch is
 	// created with **no upstream**: nothing can push back, and the daemon
-	// does not `git remote add` the fork — §10 (task 056) states nothing
-	// local is mutated, and a remote left behind after archive is exactly the
-	// residue that rule exists to prevent (decision 5).
+	// does not `git remote add` the fork — a remote left behind after archive
+	// is repository configuration nobody asked for and nothing cleans up
+	// (decision 5).
 	Fork bool
 }
 
