@@ -1,0 +1,22 @@
+-- 0031_base_refresh: what the base-branch fetch and the local fast-forward did
+-- when a task's or a chat's worktree was created (task 099, spec §10).
+--
+-- Since task 099 the worktree path, after fetching `base_branch` from its
+-- upstream, may also fast-forward the project's local base branch to the
+-- fetched commit. Both halves can be skipped or can fail without failing the
+-- worktree — a fetch without an upstream, a local branch that diverged, a
+-- checkout that is dirty — and a user looking at the task later has to be able
+-- to see which of those happened. The outcome is only known at that one
+-- moment, so it is recorded then, or it is lost at the next restart.
+--
+-- One JSON column and not a column per field: the record is display-only,
+-- read by id for one row at a time and never queried inside, and its shape is
+-- the store's BaseRefresh struct. No index is added.
+--
+-- NULL means the worktree was never created, or was created before this
+-- migration. Neither is an error; there is simply nothing to show.
+--
+-- Written where `base_sha` is written — inside the claim callback on first
+-- creation — so a worktree that already existed is never re-recorded.
+ALTER TABLE tasks ADD COLUMN base_refresh TEXT; -- NULL = no worktree created since 0031
+ALTER TABLE chats ADD COLUMN base_refresh TEXT; -- ditto, for a chat's worktree

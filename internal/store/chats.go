@@ -40,7 +40,7 @@ func IsChatEvent(t string) bool {
 }
 
 const chatColumns = `id, project_id, title, state, agent, model, effort, permission_mode,
-	branch, base_branch, base_sha, worktree_path, session_id, pending_input, handoff_task_id,
+	branch, base_branch, base_sha, base_refresh, worktree_path, session_id, pending_input, handoff_task_id,
 	created_at, updated_at`
 
 const chatTurnColumns = `id, chat_id, seq, prompt, state, fail_reason, error_message, result_text,
@@ -62,14 +62,19 @@ func (s *Store) CreateChat(ctx context.Context, c *Chat) error {
 	if c.State == "" {
 		c.State = chatstate.Idle
 	}
+	refreshJSON, err := marshalBaseRefresh(c.BaseRefresh)
+	if err != nil {
+		return fmt.Errorf("insert chat: %w", err)
+	}
 	var ev *Event
-	err := s.withTx(ctx, func(tx *sql.Tx) error {
+	err = s.withTx(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `
 			INSERT INTO chats (project_id, title, state, agent, model, effort, permission_mode,
-				branch, base_branch, base_sha, worktree_path, session_id, pending_input, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				branch, base_branch, base_sha, base_refresh, worktree_path, session_id, pending_input,
+				created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			c.ProjectID, c.Title, string(c.State), c.Agent, nullString(c.Model), nullString(c.Effort),
-			c.PermissionMode, c.Branch, c.BaseBranch, nullString(c.BaseSHA), nullString(c.WorktreePath),
+			c.PermissionMode, c.Branch, c.BaseBranch, nullString(c.BaseSHA), refreshJSON, nullString(c.WorktreePath),
 			nullString(c.SessionID), nullString(string(c.PendingInput)),
 			formatTime(c.CreatedAt), formatTime(c.UpdatedAt))
 		if err != nil {
@@ -311,12 +316,18 @@ func (s *Store) updateChat(ctx context.Context, id int64, evType string, mutate 
 		}
 		mutate(c)
 		c.UpdatedAt = time.Now()
+		// base_refresh is written back as read unless mutate replaced it, so
+		// SetChatWorktree clearing the claim keeps the record (task 099).
+		refreshJSON, err := marshalBaseRefresh(c.BaseRefresh)
+		if err != nil {
+			return fmt.Errorf("update chat %d: %w", id, err)
+		}
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE chats SET title = ?, state = ?, model = ?, effort = ?, base_sha = ?,
+			UPDATE chats SET title = ?, state = ?, model = ?, effort = ?, base_sha = ?, base_refresh = ?,
 				worktree_path = ?, session_id = ?, pending_input = ?, updated_at = ?
 			WHERE id = ?`,
 			c.Title, string(c.State), nullString(c.Model), nullString(c.Effort), nullString(c.BaseSHA),
-			nullString(c.WorktreePath), nullString(c.SessionID), nullString(string(c.PendingInput)),
+			refreshJSON, nullString(c.WorktreePath), nullString(c.SessionID), nullString(string(c.PendingInput)),
 			formatTime(c.UpdatedAt), c.ID); err != nil {
 			return fmt.Errorf("update chat %d: %w", id, err)
 		}
@@ -558,14 +569,15 @@ func (s *Store) ListChatIDs(ctx context.Context) ([]int64, error) {
 
 func scanChat(r rowScanner) (*Chat, error) {
 	var c Chat
-	var model, effort, baseSHA, worktreePath, sessionID, pending sql.NullString
+	var model, effort, baseSHA, baseRefresh, worktreePath, sessionID, pending sql.NullString
 	var handoffTaskID sql.NullInt64
 	var createdAt, updatedAt string
 	if err := r.Scan(&c.ID, &c.ProjectID, &c.Title, (*string)(&c.State), &c.Agent, &model, &effort,
-		&c.PermissionMode, &c.Branch, &c.BaseBranch, &baseSHA, &worktreePath, &sessionID, &pending,
+		&c.PermissionMode, &c.Branch, &c.BaseBranch, &baseSHA, &baseRefresh, &worktreePath, &sessionID, &pending,
 		&handoffTaskID, &createdAt, &updatedAt); err != nil {
 		return nil, err
 	}
+	c.BaseRefresh = unmarshalBaseRefresh(baseRefresh)
 	if handoffTaskID.Valid {
 		id := handoffTaskID.Int64
 		c.HandoffTaskID = &id

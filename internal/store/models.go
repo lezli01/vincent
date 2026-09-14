@@ -91,7 +91,14 @@ type Task struct {
 	// task 056). "" means BaseBranch itself still names the fork point, which
 	// is every task created before the fetch existed or with
 	// `fetch_base_branch: false`.
-	BaseSHA        string
+	BaseSHA string
+	// BaseRefresh is what the base-branch fetch and the local fast-forward
+	// did when this task's worktree was created (§10, task 099), written in
+	// the same statement as WorktreePath and BaseSHA. nil means the worktree
+	// was never created, or was created before migration 0031 — and it stays
+	// nil on a task that adopted a worktree someone else created, except a
+	// chat handoff, which carries the chat's record over.
+	BaseRefresh    *BaseRefresh
 	Priority       int
 	AgentOverride  string // task-level selection (spec §8.6); "" = none
 	ModelOverride  string
@@ -585,6 +592,10 @@ type Chat struct {
 	Branch         string
 	BaseBranch     string
 	BaseSHA        string
+	// BaseRefresh is the chat's worktree-creation record, exactly as a
+	// task's is (§10, task 099). It stays on the row after a handoff, as
+	// history, the way BaseSHA does.
+	BaseRefresh *BaseRefresh
 	// WorktreePath is the §10 claim. Empty once archived, which is what
 	// takes the directory out of gc's claim set.
 	WorktreePath string
