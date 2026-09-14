@@ -543,6 +543,7 @@ func newTaskFollowUpCmd() *cobra.Command {
 		agent    string
 		model    string
 		effort   string
+		fields   []string
 		paused   bool
 	)
 	cmd := &cobra.Command{
@@ -558,9 +559,15 @@ func newTaskFollowUpCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// The spelling task create uses, so a script that fills a
+			// workflow's declared field in one place fills it in the other.
+			fieldMap, err := parseFieldFlags(fields)
+			if err != nil {
+				return err
+			}
 			in := apiclient.FollowUpInput{
 				Prompt: prompt, Run: run, Workflow: workflow,
-				Agent: agent, Model: model, Effort: effort,
+				Agent: agent, Model: model, Effort: effort, Fields: fieldMap,
 			}
 			// Sent only when named (task 096 decision C), so a plain
 			// follow-up body is byte-for-byte what it was before the flag.
@@ -602,6 +609,8 @@ func newTaskFollowUpCmd() *cobra.Command {
 	cmd.Flags().StringVar(&agent, "agent", "", "Agent for the run (§8.6, request level)")
 	cmd.Flags().StringVar(&model, "model", "", "Model for the run (§8.6, request level)")
 	cmd.Flags().StringVar(&effort, "effort", "", "Effort for the run (§8.6, request level)")
+	cmd.Flags().StringArrayVar(&fields, "field", nil,
+		"Field for this run only, as name=value, laid over the task's own; repeat for additional fields")
 	cmd.Flags().BoolVar(&paused, "paused", false,
 		"Hold the task paused instead of queuing the run; it starts only when resumed (`vincent task resume`)")
 	// One thing runs. Cobra refuses the combination locally so the daemon

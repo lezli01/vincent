@@ -703,7 +703,8 @@ unfinished lane.
 
 ```sh
 vincent task follow-up <id> (--prompt TEXT | --run CMD | --workflow NAME)
-                            [--agent NAME] [--model M] [--effort E] [--paused] [--json]
+                            [--agent NAME] [--model M] [--effort E] [--field NAME=VALUE]...
+                            [--paused] [--json]
 ```
 
 Runs one more piece of work in a **finished** task's existing worktree and
@@ -722,6 +723,12 @@ Exactly one of the three run flags is required, and they are mutually exclusive:
 `--agent`, `--model` and `--effort` apply to this run and outrank the task's own
 overrides and the workflow's `defaults:`; a value no catalog recognizes is a
 warning on stderr, not a failure.
+
+`--field name=value` sets a field for this run only, laid over the task's own,
+with the spelling `task create` uses; repeat it for more. A `--workflow` that
+declares fields checks them exactly as `task create` does — the task's values
+included — so a required field the task never carried, with no default, exits 1
+until a `--field` supplies it. The task keeps the fields it was created with.
 
 The command returns as soon as the run is queued — the scheduler admits it like
 anything else. When it ends the task returns to the state it came from: `done`

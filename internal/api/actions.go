@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 
@@ -325,6 +326,13 @@ type followUpRequest struct {
 	Agent    *string `json:"agent"`
 	Model    *string `json:"model"`
 	Effort   *string `json:"effort"`
+	// Fields are this round's field values, laid key by key over the task's
+	// stored fields (task 027 decisions 13 and 14). For the workflow form the
+	// result is held to the named workflow's declared fields exactly as
+	// POST /v1/tasks holds a new task to them (§8.1.2); the prompt and run
+	// forms declare none, so there it is an overlay with nothing to check.
+	// Either way it is round-scoped and never written to the task row.
+	Fields map[string]string `json:"fields"`
 	// Paused holds the task in `paused` instead of re-queuing it, so `resume`
 	// is what starts the run (§6, task 096 decision C) — the `paused` of
 	// `POST /v1/tasks`, on the action a trigger's `follow_up` reaction
@@ -434,9 +442,13 @@ func followUpForm(req followUpRequest) (store.FollowUpRequest, string) {
 	}
 	switch len(chosen) {
 	case 1:
+		if msg := boundMap("fields", req.Fields, maxFieldCount, maxFieldKeyBytes, maxFieldValueBytes); msg != "" {
+			return out, msg
+		}
 		out.Agent = strings.TrimSpace(ptrValue(req.Agent))
 		out.Model = strings.TrimSpace(ptrValue(req.Model))
 		out.Effort = strings.TrimSpace(ptrValue(req.Effort))
+		out.Fields = req.Fields
 		return out, ""
 	case 0:
 		return out, "a follow-up needs something to run: one of prompt, run or workflow"
@@ -466,6 +478,9 @@ func (s *Server) compileFollowUp(
 		wf  *workflow.Workflow
 		err error
 	)
+	// The round's fields are the task's with the request's laid over them
+	// (decision 13).
+	fields := followUpFields(task.Fields, sel.Fields)
 	if sel.Form == store.FollowUpWorkflow {
 		entry, found := s.deps.Workflows.Lookup(task.ProjectID, sel.WorkflowName)
 		if !found {
@@ -479,6 +494,16 @@ func (s *Server) compileFollowUp(
 		if mismatch := entry.Workflow.PlatformMismatch(workflow.HostPlatform()); mismatch != "" {
 			return nil, fmt.Sprintf("workflow %q cannot run here: %s", sel.WorkflowName, mismatch)
 		}
+		// §8.1.2's field contract, exactly as task creation applies it: a
+		// required field's default fills an absent key, enums normalize, and
+		// what still fails is a 400 (issue #369). Against the registry entry,
+		// not the expanded document — only the selected root workflow owns
+		// the contract. A value the task was created with is held to it too:
+		// the workflow it was legal under is not the one about to run.
+		fields = entry.Workflow.PrepareTaskFields(fields)
+		if fieldErrs := entry.Workflow.ValidateTaskFields(fields); len(fieldErrs) > 0 {
+			return nil, fieldErrs.Error()
+		}
 		wf = entry.Workflow
 	} else {
 		wf, err = taskrun.CompileFollowUp(*sel)
@@ -486,6 +511,13 @@ func (s *Server) compileFollowUp(
 			return nil, err.Error()
 		}
 	}
+	// Stored only when the round differs from the task row, so a follow-up
+	// that neither supplies nor defaults a field stores exactly the request it
+	// always did, and the round renders the task's own fields.
+	if maps.Equal(fields, task.Fields) {
+		fields = nil
+	}
+	sel.Fields = fields
 	if workflow.HasInclude(wf) {
 		expanded, xerr := workflow.Expand(wf, workflow.ExpandOptions{
 			Lookup:   s.laneLookup(task.ProjectID),
@@ -528,6 +560,18 @@ func (s *Server) compileFollowUp(
 	}
 	sel.Workflow = string(out)
 	return revalidated, ""
+}
+
+// followUpFields lays a follow-up request's fields over the task's, the
+// request winning key by key (task 027 decision 13). Neither input is
+// modified: the result is the round's, and the task row keeps its own.
+func followUpFields(task, request map[string]string) map[string]string {
+	out := maps.Clone(task)
+	if out == nil {
+		out = make(map[string]string, len(request))
+	}
+	maps.Copy(out, request)
+	return out
 }
 
 // taskDepth is how many fan-out levels sit above a task: 0 for a root, 1 for

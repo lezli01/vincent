@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -188,6 +189,66 @@ func TestFollowUpWorkflowRefusesAnEnumViolation(t *testing.T) {
 	resp, body := h.doJSON(t, http.MethodPost, followUpPath(task.ID),
 		map[string]any{"workflow": "deploy-check"})
 	wantFollowUpRefused(t, h, task.ID, resp, body, "environment")
+}
+
+// TestFollowUpFieldsSatisfyARequiredFieldForTheRoundOnly is task 027
+// decisions 13 and 14: a follow-up may supply the field its workflow requires,
+// the value is kept on the pending request for that round, and the task row
+// keeps what creation recorded.
+func TestFollowUpFieldsSatisfyARequiredFieldForTheRoundOnly(t *testing.T) {
+	h := newFollowUpFieldsHarness(t, false)
+	task := doneTaskWithFields(t, h, map[string]string{"owner": "alice"})
+
+	resp, body := h.doJSON(t, http.MethodPost, followUpPath(task.ID), map[string]any{
+		"workflow": "release-notes", "fields": map[string]string{"ticket": "OPS-7"},
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("follow_up: %d %s", resp.StatusCode, body)
+	}
+	stored, err := h.store.GetTask(t.Context(), task.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if _, ok := stored.Fields["ticket"]; ok {
+		t.Errorf("task fields = %v: a follow-up's field reached the task row", stored.Fields)
+	}
+	if stored.PendingFollowUp == nil {
+		t.Fatal("no pending follow-up recorded")
+	}
+	want := map[string]string{"owner": "alice", "ticket": "OPS-7"}
+	if got := stored.PendingFollowUp.Fields; !maps.Equal(got, want) {
+		t.Errorf("round fields = %v, want %v", got, want)
+	}
+}
+
+// TestFollowUpFieldsAreValidated: a value the request supplies is held to the
+// named workflow's declaration too, and it wins over the task's stored value
+// key by key — so it can also correct one the workflow would refuse.
+func TestFollowUpFieldsAreValidated(t *testing.T) {
+	h := newFollowUpFieldsHarness(t, false)
+	task := doneTaskWithFields(t, h, map[string]string{"environment": "qa"})
+
+	resp, body := h.doJSON(t, http.MethodPost, followUpPath(task.ID), map[string]any{
+		"workflow": "deploy-check", "fields": map[string]string{"environment": "moon"},
+	})
+	wantFollowUpRefused(t, h, task.ID, resp, body, "environment")
+
+	resp, body = h.doJSON(t, http.MethodPost, followUpPath(task.ID), map[string]any{
+		"workflow": "deploy-check", "fields": map[string]string{"environment": "prod"},
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("follow_up with a valid supplied value: %d %s", resp.StatusCode, body)
+	}
+	stored, err := h.store.GetTask(t.Context(), task.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if got := stored.Fields["environment"]; got != "qa" {
+		t.Errorf("task environment = %q, want the stored %q", got, "qa")
+	}
+	if got := stored.PendingFollowUp.Fields["environment"]; got != "prod" {
+		t.Errorf("round environment = %q, want the supplied %q", got, "prod")
+	}
 }
 
 // TestFollowUpWorkflowFillsARequiredDefault is the defaults leg of issue #369,

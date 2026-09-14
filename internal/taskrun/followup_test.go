@@ -652,6 +652,46 @@ func TestEarlierRoundsAreInvisibleToALaterRound(t *testing.T) {
 	}
 }
 
+// followUpFieldsWorkflow exits 0 only when the round renders `ticket: OPS-7`.
+const followUpFieldsWorkflow = `name: fields-check
+steps:
+  - id: check
+    type: command
+    max_retries: 0
+    run: 'exit {{ if eq (index .Task.Fields "ticket") "OPS-7" }}0{{ else }}3{{ end }}'
+`
+
+// TestFollowUpFieldsAreRoundScoped is task 027 decision 14 (issue #369): the
+// fields a follow-up request carries reach that round's `.Task.Fields`, are
+// never written to the task row, and are not inherited by a later round that
+// carries none.
+func TestFollowUpFieldsAreRoundScoped(t *testing.T) {
+	h := newEngineHarness(t)
+	done := doneTask(t, h)
+
+	first := workflowFollowUp(t, "fields-check", followUpFieldsWorkflow)
+	first.Fields = map[string]string{"ticket": "OPS-7"}
+	if _, err := h.runner.FollowUp(t.Context(), done.ID, first); err != nil {
+		t.Fatalf("FollowUp 1: %v", err)
+	}
+	got := h.settle(t, done.ID)
+	if got.State != store.TaskDone {
+		t.Fatalf("round 1 = %s/%q, want done: the step did not render the request's field",
+			got.State, got.BlockReason)
+	}
+	if _, ok := got.Fields["ticket"]; ok {
+		t.Errorf("task fields = %v: a round's field reached the task row", got.Fields)
+	}
+
+	second := workflowFollowUp(t, "fields-check", followUpFieldsWorkflow)
+	if _, err := h.runner.FollowUp(t.Context(), done.ID, second); err != nil {
+		t.Fatalf("FollowUp 2: %v", err)
+	}
+	if got := h.settle(t, done.ID); got.State != store.TaskBlocked {
+		t.Fatalf("round 2 = %s, want blocked: it rendered round 1's field", got.State)
+	}
+}
+
 // TestFollowUpRoundIndex pins decision 2's arithmetic on its own, so a change
 // to it fails here rather than in a gate.
 func TestFollowUpRoundIndex(t *testing.T) {

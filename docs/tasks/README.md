@@ -40,7 +40,7 @@ the living engineering specification records implementation contracts.
 | [024](024-create-workflow-builtin.md) | `create-workflow`, a built-in that writes workflows | ✅ done (7/7) |
 | [025](025-ad-hoc-repair-agent.md) | An ad-hoc repair agent for a blocked step | ✅ done (8/8) |
 | [026](026-agent-quota-visibility.md) | Reporting each agent's usage-quota state in the daemon and TUI | ✅ done (7/7) |
-| [027](027-follow-up-runs.md) | Follow-up runs on a done or aborted task | ✅ done (9/9) |
+| [027](027-follow-up-runs.md) | Follow-up runs on a done or aborted task | ✅ done (10/10) |
 | [028](028-retry-backoff.md) | `retry_backoff`: pacing step retries through task 003's admission hold | ✅ done (5/5) |
 | [029](029-database-size-reporting.md) | Reporting the database's footprint, row counts and retention span | ✅ done (6/6) |
 | [030](030-daemon-backup-and-restore.md) | `vincent daemon backup` / `restore` | ✅ done (6/6) |
