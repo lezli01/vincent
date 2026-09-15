@@ -321,27 +321,13 @@ func stepRenderedBlock(value *string, width int, markTrailer bool) []string {
 	if !markTrailer {
 		return appendWrappedIndented(nil, *value, width, "    ")
 	}
-	body, trailer := splitFailureTrailer(*value)
+	body, trailer := apiclient.SplitFailureTrailer(*value)
 	out := appendWrappedIndented(nil, body, width, "    ")
 	if trailer == "" {
 		return out
 	}
 	out = append(out, "", styleDim.Render("    ── appended by vincent: the previous attempt's failure ──"), "")
 	return appendWrappedIndented(out, trailer, width, "    ")
-}
-
-// failureTrailerTag opens the block a retried agent step's prompt carries
-// (§8.4). It is the daemon's, not the workflow's.
-const failureTrailerTag = "<previous-attempt-failure"
-
-// splitFailureTrailer separates the workflow's own render from the daemon's
-// appended block. An attempt that was not a retry has no trailer.
-func splitFailureTrailer(prompt string) (body, trailer string) {
-	i := strings.Index(prompt, failureTrailerTag)
-	if i < 0 {
-		return prompt, ""
-	}
-	return strings.TrimRight(prompt[:i], "\n"), prompt[i:]
 }
 
 // stepResolutionLines is the §8.6 resolution the row journaled. These are the
