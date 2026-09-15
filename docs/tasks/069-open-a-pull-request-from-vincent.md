@@ -1,6 +1,6 @@
 # 069 — Open a pull request from vincent itself
 
-**Status:** 🔄 in progress (7/8) · **Issue:**
+**Status:** ✅ done (8/8) · **Issue:**
 [#273](https://github.com/lezli01/vincent/issues/273)
 · **Spec:** §10, §12.3, §13.2, §13.4, §15, §18, §20, decision record rows 11 and 27
 
@@ -135,27 +135,21 @@ issue's second complaint fixed even on the unhappy path.
       integration; `cmd/fakegh pr create`.
 - [x] 069.7 Spec amendments (rows 11 and 27, §10, §12.3, §13.2, §13.4, §15,
       §18, §20), this record, and the derived pages under `docs/`.
-- [ ] 069.8 `scripts/069-gate.sh` and `docs/gates/069-open-a-pull-request.md`,
+- [x] 069.8 `scripts/069-gate.sh` and `docs/gates/069-open-a-pull-request.md`,
       driving a real push to a local bare remote and `cmd/fakegh`'s `pr
-      create`, plus the `ci.yml` step. **Not landed in this change** — see
-      "Open" below (tracked in
-      [#383](https://github.com/lezli01/vincent/issues/383), 2026-09-13).
+      create`, plus the `ci.yml` step. Landed as five scenarios — a ready pull
+      request through the API, a draft through `vincent github pr create`,
+      `pull_already_linked` then `pull_exists` after an unlink, the
+      `forbidden` fallback after a push, and `push_rejected` with nothing
+      created — wired into the `gates` job on all three platforms
+      ([#383](https://github.com/lezli01/vincent/issues/383)). ✓ 2026-09-15
 
 ## Open
 
-The gate can prove the push leg against a local bare remote and the create leg
+The gate proves the push leg against a local bare remote and the create leg
 against `fakegh`; it cannot prove the two together against real GitHub. That is
-the same wall task 064.9 hit: it is a manual walkthrough recorded in
-`docs/gates/`, not a reason to hold the work.
-
-069.8 is left open deliberately rather than half-landed (tracked in
-[#383](https://github.com/lezli01/vincent/issues/383), 2026-09-13). The gate script is a
-`ci.yml` change, and a cloud session's token has no `workflow` scope and so
-cannot write `.github/workflows/` by any route — push or API (#120, #122,
-#125). A gate committed without its CI step is a gate that has never run on any
-platform, and CLAUDE.md is explicit that such a gate is not known to pass: two
-Windows-only faults were found exactly that way when `m6`/`m7`/`m8` were
-finally wired in. The route is covered end to end in the meantime by
-`internal/api/githubpullcreate_route_test.go`, which pushes to a real bare
-repository and drives `cmd/fakegh`, and by `internal/tui`'s live tests against
-the real handlers.
+the same wall task 064.9 hit, and it is a manual walkthrough rather than a
+reason to hold the work: the real-GitHub leg is written up in
+[`docs/gates/069-open-a-pull-request.md`](../gates/069-open-a-pull-request.md)
+for a human with a throwaway repository and an authenticated `gh`, and it has
+**not yet been walked**.
