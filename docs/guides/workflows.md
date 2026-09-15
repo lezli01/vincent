@@ -1514,12 +1514,15 @@ silent success the design refused.
 | Action | Effect |
 |---|---|
 | `skip` | Skips the **whole loop** and advances past it. There is no "skip this iteration" |
-| `retry` | Resumes at the failed body step **of the iteration it stopped in**, with a fresh budget. It does not restart at iteration 1 |
+| `retry` | Resumes at the failed body step **of the iteration it stopped in**, with a fresh budget. An earlier step that failed under `allow_failure` runs again first, and every step after one that runs again runs too. It does not restart at iteration 1 |
 | `edit + retry` | Rewrites that body step in the task's snapshot, so the fix applies to **every remaining iteration** |
 
 The same is true after a crash: a loop's position is derived from its rows on
 every admission, so a restarted daemon resumes mid-iteration rather than redoing
-an hour of work.
+an hour of work. A `break` or `condition` is the exception: it is asked again on
+every resume, because the step it reads may have re-run and changed the answer.
+And once any step runs again, everything after it in that iteration runs again
+too: a result that followed an answer which has just changed is not kept.
 
 > **A loop is one step**: one index, one slot, one worktree, one timeline entry,
 > and its iterations are strictly sequential. It adds no concurrency your caps

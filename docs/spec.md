@@ -1907,9 +1907,32 @@ once, a loop is a **sequence** run more than once.
   rather than a reachable failure; a `for_each` whose source is *not* stable
   across admissions is a workflow bug, and the one silent way it could fail is
   the one closed here.
+  *Amended 2026-09-15:* "succeeded" means **work**, not a verdict. A `break`
+  that did not take and a `condition` that let the body carry on also write
+  `succeeded` rows, but those rows are a guard's answer, and §7.7 says a guard
+  is asked again every time it is reached. A resumed iteration therefore
+  re-evaluates every `break` and `condition` it reaches, whatever their latest
+  row says; only `agent` and `command` rows that succeeded are skipped. Before
+  this, a retried merge pass whose probe re-ran and turned green walked past
+  the `break` that read it — its old "not yet" row counted as done — and ran a
+  whole extra iteration against a pull request that had already merged.
+  *Amended 2026-09-15, reopening task 016 decision 7:* a row is kept only
+  while **nothing before it has run again**. A resumed iteration still re-runs
+  every body step whose latest row did not succeed — the one that blocked,
+  and any earlier one that failed under `allow_failure` — but once a body step
+  starts an attempt on this admission, every body step after it runs again
+  too, whatever its row says. A row produced downstream of an answer that has
+  just been replaced is not finished work: keeping it paired a retried pass's
+  fresh rebase with the old pass's push and CI wait. Re-asking a question is
+  not running a step, so a guard that skips its step again, or a `break` or
+  `condition` answering again, keeps what follows. The cost is accepted: an
+  expensive step after one that re-ran runs again.
 - **Human actions** (§6). `skip` skips the **whole loop step** and advances
   past it; there is no "skip this iteration". `retry` resumes at the failed
-  body step of the current iteration with a fresh budget. `edit + retry`
+  body step of the current iteration with a fresh budget. *Amended
+  2026-09-15:* "resumes" is the rule under **Resuming** — an earlier body step
+  that failed under `allow_failure` runs again first, and every body step after
+  one that runs again runs with it. `edit + retry`
   rewrites that body step in the task's snapshot and therefore applies to
   **every remaining iteration**, which is the useful behaviour: fix the
   prompt, let it keep going.
@@ -10114,7 +10137,7 @@ carries the rest.
 | A `break` step's guard is true | *Added 2026-08-18 (task 016).* The loop ends there and **succeeds**: one `stopped` row, the cursor advances past the loop step. A false guard records `succeeded` and the body carries on |
 | A step's retry is paced by `retry_backoff` | *Added 2026-08-25 (task 028).* The attempt is recorded `failed` with its own reason and consumes a retry, and the task returns to `queued` with `queued_reason: retry_backoff` and an `admit_not_before` of `now + retry_backoff` (§7.2, §11) — releasing its slot, so other work keeps running. Recovery is unattended: the scheduler re-admits and the same step re-runs with the budget the recount says is left. Distinct from `usage_limit`, whose attempt is `interrupted` and costs nothing, so a reader can tell a quota wall from a flaky step. It never becomes a `block_reason`: when the budget *is* spent the task blocks with the step's own failure reason, with no wait first |
 | A loop body step exhausts its retry budget | *Added 2026-08-18 (task 016).* The iteration fails and the task blocks with **that step's own** reason, not `loop_limit`. `allow_failure:` (§7.2) is how a probe's red result becomes data a `break` can read instead |
-| The daemon dies mid-iteration | *Added 2026-08-18 (task 016).* §12.4 finalizes the running row as `interrupted`, and the re-admitted loop derives its position from the rows: body steps whose latest attempt succeeded are skipped, and it continues **mid-iteration**. Iterations that already have rows keep the `for_each` item those rows recorded; only new iterations draw from a re-derived list (§7.8) |
+| The daemon dies mid-iteration | *Added 2026-08-18 (task 016).* §12.4 finalizes the running row as `interrupted`, and the re-admitted loop derives its position from the rows: body steps whose latest attempt succeeded are skipped, and it continues **mid-iteration**. *Amended 2026-09-15:* a `break` or `condition` is never skipped that way — its `succeeded` row is a guard's answer, and it is asked again. And once a body step runs again, every body step after it in that iteration runs again too (§7.8, task 016 decision 7 reopened). Iterations that already have rows keep the `for_each` item those rows recorded; only new iterations draw from a re-derived list (§7.8) |
 | Every lane of a `fan_out` is guarded off | *Added 2026-08-18 (task 015).* A no-op success: the step records a row saying no lane was selected and advances. It must not park — a parent in `awaiting_children` with no children would be re-queued, spawn nothing and park again (§7.6) |
 | `answer` posted when task isn't `awaiting_input` | `409` with the current state (standard invalid-transition handling) |
 | Agent process dies while `awaiting_input` | Attempt fails with its exit code (retry policy applies); `pending_input` cleared |
