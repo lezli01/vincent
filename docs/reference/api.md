@@ -620,8 +620,11 @@ false the body carries a `reason` and a human-readable `message`:
 | `timeout` | GitHub did not answer in time |
 | `unreachable` | The call failed, or the API answered something with no more specific meaning |
 | `bad_response` | The answer arrived and did not parse |
+| `pull_exists` | A pull request for this branch and base already exists (pull request creation only) |
+| `bad_request` | GitHub refused the values as unusable — a base branch that does not exist, say (pull request creation only) |
 
-Those reasons are the whole client-facing vocabulary. `gh`'s stderr and the
+Those reasons are the whole client-facing vocabulary; the last two come only
+from `POST /v1/tasks/{id}/github/pull/create`. `gh`'s stderr and the
 API's response body never appear in any of these fields — they go to the daemon
 log.
 
@@ -806,9 +809,11 @@ immediately as `human`, so nothing has to wait for the reconciler's next tick:
 ```
 
 **Pushed, not created** — also 200, and also not a failure. There was no
-credential with write scope, or GitHub refused the create; the branch is on the
-remote, so GitHub's own page works and a client opens it exactly as it would
-have before:
+credential with write scope, or GitHub refused the create — `reason` is one of
+the [reasons above](#github-issues), including `pull_exists` when a pull request
+for the branch already exists and `bad_request` when GitHub rejects the values;
+the branch is on the remote, so GitHub's own page works and a client opens it
+exactly as it would have before:
 
 ```json
 { "created": false, "pushed": true, "branch": "vincent/61-add-rate-limiting",
@@ -2426,6 +2431,7 @@ Every route on this page is a tool, with these exceptions:
 | `DELETE /v1/triggers/{id}` | Same |
 | `POST /v1/triggers/{id}/events` | An agent that can inject events can start agents. The signature it would have to forge is no reason to offer the route |
 | `POST /v1/tasks/{id}/github/pull/create` | The one route that writes to a forge. Nothing gates it behind the keypress it exists for — no config key, no confirmation the daemon can check — so an agent-callable version would be consent nobody gave. An agent that wants a pull request runs `git push` and `gh pr create` in its own worktree |
+| `POST /v1/agents/{name}/quota` | An agent must not forge a daemon-level fact about the host it runs on: a step reporting its own adapter at 99% would paint every board with a wall that does not exist, and a reading carries a source, not a caller |
 | `GET /v1/events` | A tool call is request/response; use `task_wait` |
 | `GET /v1/tasks/{id}/events` | Same |
 | every `/v1/chats` route | Two reasons, either sufficient: a chat turn starts an agent CLI *without* going through admission, so a tool that could send one would let an agent start unqueued agent processes — the exact thing `mcp.max_tasks` bounds; and the recursion bounds walk `created_by_task_id`, a chain a chat is not in, so exposing chats would mean inventing depth semantics for a non-task. An agent that needs a conversation already has its own session |

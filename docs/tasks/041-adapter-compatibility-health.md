@@ -36,6 +36,7 @@ refusal.
   the requirement is a **convention** — spell adapter-compatibility commits
   `feat(agents):` / `fix(agents):` with the CLI version in the subject, and the
   release notes state it for free. Recorded here rather than built.
+  *2026-09-14 (issue #377):* now stated in CONTRIBUTING.md's ground rules.
 
 ## Tasks
 

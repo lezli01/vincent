@@ -83,7 +83,7 @@ It is released under the [MIT License](LICENSE) and created by `lezli01` at
 | **A TUI built for active workloads** | Use a grouped task board, guided task creation, project and workflow workspaces, bulk actions, live output, cost and duration metrics, and a navigable workflow graph. |
 | **Automation-ready interfaces** | Every operation is available through CLI subcommands and a localhost REST + SSE API. `--json`, stable exit codes, and offline workflow validation make scripting and CI practical. |
 | **Drivable by an agent over MCP** | The daemon serves the Model Context Protocol on the same listener, so any MCP client gets the API as tools with discovery, schemas, typed errors, and one bounded call that waits for a task. Vincent's own agent steps are wired in by default. |
-| **Cross-platform delivery** | Run the same single binary on Windows, macOS, and Linux through Homebrew, WinGet, Scoop, mise, deb/rpm packages, or release archives. |
+| **Cross-platform delivery** | Run the same single binary on Windows, macOS, and Linux through Homebrew, Scoop, mise, deb/rpm packages, or release archives (WinGet is submitted and awaiting Microsoft's review). |
 
 Explore the [complete feature guide](docs/features.md), or jump directly to the
 [five-minute quickstart](#quickstart).
@@ -273,17 +273,18 @@ universal installer for both architectures. It is unsigned, so open it with
 right-click → *Open*, or run `sudo installer -pkg vincent_*_darwin_universal.pkg
 -target /`.
 
-### WinGet or Scoop (Windows)
+### Scoop (Windows)
 
 ```powershell
-winget install --id lezli01.Vincent --exact
-
-# Or, with Scoop:
 scoop bucket add vincent https://github.com/lezli01/scoop-bucket
 scoop install vincent/vincent
 ```
 
-Both install the same Windows zip published on GitHub. Releases are not
+vincent is also submitted to the WinGet catalog, but Microsoft has not yet
+merged a submission, so `winget install --id lezli01.Vincent --exact` does not
+find it today.
+
+Scoop installs the same Windows zip published on GitHub. Releases are not
 Authenticode-signed, so SmartScreen may still appear on first launch.
 
 ### deb or rpm (Linux)
@@ -309,9 +310,9 @@ vincent version
 mise selects the matching GitHub release archive for the current OS and
 architecture. Pin a version with `github:lezli01/vincent@0.8.0`.
 
-Package-manager metadata moves on stable releases only. If a newly added
-channel has not received its first stable release yet, use mise or the archive
-path below.
+Package-manager metadata moves on stable releases only, and a WinGet
+submission is not installable until Microsoft merges it. If a channel reports
+that vincent is not found, use mise or the archive path below.
 
 ### Archive (all platforms)
 
