@@ -565,7 +565,7 @@ Tests are self-contained: they run against temporary SQLite databases,
 throwaway git repositories, and a fake agent built from `cmd/fakeagent` on
 the fly — no real agent CLI, network access, or running daemon required.
 CI runs lint, the race-enabled tests, and the build on Linux, macOS, and
-Windows, plus seven end-to-end acceptance gates that exercise the daemon,
+Windows, plus sixteen end-to-end acceptance gates that exercise the daemon,
 workflow engine, adapters, control flow, and API against the fake agent on all
 three platforms.
 
