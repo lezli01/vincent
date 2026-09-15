@@ -496,10 +496,13 @@ the pull request; the link appears immediately.
 `vincent github pr create --task ID --title TITLE [--draft]` does the same
 thing without the TUI.
 
-This is the **only** thing vincent writes to GitHub. It never updates, comments
-on, closes or merges anything, it happens only when you ask for it, and
-[`github.enabled`](reference/configuration.md#github) turns it off along with
-every read. Agents cannot reach it: it is deliberately not an MCP tool, and an
+Opening one is a write to GitHub, and so are the five things you can then do to
+a task's linked pull request from the CLI — merge, close, reopen, comment, and
+re-run failed Actions jobs (see
+[`vincent github pr merge`](reference/cli.md#vincent-github-pr-merge)). Each
+happens only when you ask for it, and
+[`github.enabled`](reference/configuration.md#github) turns every one of them
+off along with every read. Agents cannot reach them: none is an MCP tool, and an
 agent that wants a pull request runs `git push` and `gh pr create` in its own
 worktree, as it always could.
 

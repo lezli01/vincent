@@ -22,8 +22,9 @@ ask for them — and, when you press the key for it, pushing a task's branch and
 opening its pull request.
 Both use your existing `gh` login, or a `GITHUB_TOKEN`/`GH_TOKEN`
 already in the daemon's environment; vincent stores neither. Opening a pull
-request is the **only** thing it writes to GitHub: it never updates, comments
-on, closes or merges anything, and it happens only when you ask.
+request — and merging, closing, reopening, commenting on or re-running the
+failed checks of a task's linked one — are the only things it writes to GitHub,
+and each happens only when you ask.
 
 Two calls the daemon makes **without** being asked, both switchable:
 
