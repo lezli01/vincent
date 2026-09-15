@@ -241,3 +241,14 @@ jobs:
       - name: 052 gate (GitHub pull requests)
         shell: bash
         run: ./scripts/052-gate.sh
+
+      # 069: opening a pull request from vincent (task 069; §10, §13.2). Every
+      # leg of it touches the host: the push goes to a `pushurl` that is a
+      # host path (a drive-letter path on Windows), `gh` is resolved from PATH
+      # to a fake built as `gh.exe` there, the pull request body reaches it on
+      # stdin via `--body-file -` because argv would hit Windows' command-line
+      # limit, and the argv the fake records is read back with the platform's
+      # own line endings.
+      - name: 069 gate (open a pull request)
+        shell: bash
+        run: ./scripts/069-gate.sh
