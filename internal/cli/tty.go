@@ -9,9 +9,13 @@ import (
 
 // isTTY reports whether a writer is attached to a terminal.
 //
-// It is the repository's only TTY test, and it exists for one caller: the
+// It is the repository's only TTY test, and it exists for two callers: the
 // in-progress indicator `vincent chat send` draws while it waits (task 089),
-// which must not appear when stderr is a pipe or a file.
+// which must not appear when stderr is a pipe or a file; and `vincent task
+// diff`'s colour, the CLI's first (task 100), which must not appear when stdout
+// is one — piped, that output is the daemon's bytes exactly and goes to `git
+// apply`. The colour decision past this test (NO_COLOR, TERM=dumb) belongs to
+// colorprofile, in diffColor.
 //
 // The *os.File assertion is load-bearing on its own, before term.IsTerminal is
 // consulted at all. Cobra's test writers are *bytes.Buffer, so every command

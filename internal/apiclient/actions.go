@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 // Human actions as the daemon names them in available_actions (§6). A client
@@ -373,28 +374,73 @@ func (c *Client) send(ctx context.Context, method, path string, body, out any) e
 // situations a reader must be able to tell apart, so the *Error is returned
 // as-is rather than flattened to "no diff".
 func (c *Client) Diff(ctx context.Context, id int64) (string, error) {
-	path := "/v1/tasks/" + strconv.FormatInt(id, 10) + "/diff"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	body, err := c.DiffStream(ctx, id)
 	if err != nil {
-		return "", fmt.Errorf("build diff request: %w", err)
+		return "", err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	resp, err := c.rest.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("GET diff: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return "", decodeError(resp)
-	}
+	defer func() { _ = body.Close() }()
 	// A diff is bounded by the worktree, but an agent can rewrite a vendored
 	// tree; the pane truncates for display and this bounds the read.
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxDiffBytes))
+	out, err := io.ReadAll(io.LimitReader(body, maxDiffBytes))
 	if err != nil {
 		return "", fmt.Errorf("read diff: %w", err)
 	}
-	return string(body), nil
+	return string(out), nil
 }
 
 // maxDiffBytes caps a single diff read at 8 MiB; T4.3 owns real limits.
 const maxDiffBytes = 8 << 20
+
+// DiffStream is Diff without the cap: the response body itself, for the
+// caller to read to the end and close.
+//
+// Diff's silent cut is right for a pane that truncates for display anyway and
+// wrong for `vincent task diff`, whose output is piped into `git apply` — a
+// patch cut at 8 MiB is a corrupt patch delivered with exit 0 (task 100
+// decision 4). The error handling is Diff's: a non-2xx answer comes back as the
+// daemon's *Error, with the body already closed.
+//
+// The body is read on the stream client, which has no timeout: requestTimeout
+// would bound the whole read, and a reader paging a large diff through `less`
+// holds the body open far longer than that. A wedged daemon is still caught —
+// requestTimeout bounds the wait for the response headers, and only that.
+func (c *Client) DiffStream(ctx context.Context, id int64) (io.ReadCloser, error) {
+	path := "/v1/tasks/" + strconv.FormatInt(id, 10) + "/diff"
+	ctx, cancel := context.WithCancel(ctx)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("build diff request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	headers := time.AfterFunc(requestTimeout, cancel)
+	resp, err := c.stream.Do(req)
+	if !headers.Stop() && err == nil {
+		// The deadline fired as the headers arrived: the body is already
+		// cancelled, so report the timeout rather than a truncated read.
+		_ = resp.Body.Close()
+		err = context.DeadlineExceeded
+	}
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("GET diff: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		defer cancel()
+		defer func() { _ = resp.Body.Close() }()
+		return nil, decodeError(resp)
+	}
+	return cancelOnClose{ReadCloser: resp.Body, cancel: cancel}, nil
+}
+
+// cancelOnClose releases a streamed response's context when its body is
+// closed.
+type cancelOnClose struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (b cancelOnClose) Close() error {
+	defer b.cancel()
+	return b.ReadCloser.Close()
+}

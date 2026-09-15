@@ -48,6 +48,10 @@ healthy, `1` problems found, `2` no daemon answered. So does
   cannot reach one exits `2` with a pointer to `vincent daemon start` —
   except `vincent doctor`, which prints its whole report first, because the
   daemon being down is one of the things it is there to tell you.
+- **Colour only on a terminal.** [`vincent task diff`](#vincent-task-diff) is
+  the one subcommand that colours its output, and only when stdout is a terminal
+  and `NO_COLOR` is unset (`TERM=dumb` turns it off too). Piped or redirected,
+  output is exactly the bytes the daemon served. There is no `--color` flag.
 - Clients discover the daemon by reading `{data_dir}/daemon.json` and then
   health-probing it, so a stale file from an unclean shutdown produces the same
   "no daemon" answer rather than a transport error later.
@@ -700,6 +704,69 @@ different run.
 A step run that never had a transcript — a manual gate — prints a line saying so
 on stderr and exits `0`; nothing failed. A transcript whose file is gone (pruned
 by `transcript_retention_days`, or deleted) exits `1`.
+
+### `vincent task diff`
+
+```sh
+vincent task diff <id> [--by lane] [--stat] [--json]
+```
+
+Prints the task's diff: its worktree compared with the merge-base of its base
+and `HEAD` — committed, staged and unstaged changes to tracked files. Untracked
+files are not included. It is the same change the TUI's Diff tab shows, read
+from the same endpoint.
+
+Piped or redirected, the output is **exactly the bytes the daemon served**, with
+no size limit, so it can go straight to `git apply`:
+
+```sh
+vincent task diff 7 > task-7.patch
+vincent task diff 7 | git apply --check
+```
+
+On a terminal with `NO_COLOR` unset, file headers are bold, `@@` hunk lines
+cyan, additions green and removals red.
+
+`--by lane` splits a fan-out parent's diff by the lane that produced each
+change. Every section is printed in the daemon's order under one ASCII header
+line, a section with no change included, and the remainder is always last:
+
+```
+# lane api (task 42, merge 3f1c9a0b2d4e)
+diff --git a/api.go b/api.go
+…
+# remainder (the task's own commits and uncommitted work)
+diff --git a/README.md b/README.md
+…
+```
+
+A task that fanned out nothing prints a single remainder section. `git apply`
+ignores the header lines, so the grouped output still applies. `lane` is the
+only grouping: any other `--by` value exits `1` before a request is sent.
+
+`--stat` prints a per-file table instead of the patch. `ADDED` and `REMOVED`
+count the lines inside hunks; a binary file reads `binary` in both. A renamed
+file is named by its new path, a deleted one by its old path. With `--by lane`
+a leading `LANE` column credits each file to its section, `-` for the
+remainder. The table is never coloured, and an empty diff still prints its
+header row.
+
+```
+FILE      ADDED   REMOVED
+api.go    +12     -3
+logo.png  binary  binary
+```
+
+| Flags | `--json` output |
+|---|---|
+| none | `{"diff": "<text>"}` |
+| `--by lane` | The sections array as the API serves it: `lane_id`, `child_task_id`, `merge_commit`, `remainder`, `diff`. Never empty — the remainder is always there |
+| `--stat` | `[{"path", "added", "removed", "binary"}]` |
+| `--stat --by lane` | The same rows, each also carrying `lane_id`, `child_task_id` and `remainder` |
+
+An empty diff prints nothing and exits `0`, as `git diff` does (`{"diff": ""}`
+and `[]` under `--json`). A task with no worktree yet, one whose worktree is
+gone, or an unknown task exits `1` with the daemon's message on stderr.
 
 ### `vincent task cancel`
 

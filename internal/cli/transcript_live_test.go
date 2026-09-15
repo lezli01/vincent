@@ -70,6 +70,8 @@ type liveHarness struct {
 	// how "no transcript is decided client-side, before the request" is
 	// asserted rather than assumed.
 	transcriptCalls atomic.Int64
+	// diffCalls does the same for the diff endpoint (diff_live_test.go).
+	diffCalls atomic.Int64
 }
 
 func newLiveHarness(t *testing.T) *liveHarness {
@@ -128,6 +130,9 @@ func newLiveHarness(t *testing.T) *liveHarness {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/transcript") {
 			h.transcriptCalls.Add(1)
+		}
+		if strings.HasSuffix(r.URL.Path, "/diff") {
+			h.diffCalls.Add(1)
 		}
 		handler.ServeHTTP(w, r)
 	}))

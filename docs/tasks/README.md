@@ -113,6 +113,7 @@ the living engineering specification records implementation contracts.
 | [097](097-workflow-graph-run-colours.md) | Color the task Workflow tab graph by run state | ✅ done (4/4) |
 | [098](098-trigger-authoring-skill-and-builtins.md) | The `vincent-triggers` skill and the `create-trigger` and `update-triggers` built-ins | ✅ done (6/6) |
 | [099](099-fresh-base-fast-forward.md) | Fresh base: fast-forward the local base branch and show what a task started from | ✅ done (6/6) |
+| [100](100-cli-task-diff.md) | `vincent task diff`, with per-lane attribution | ✅ done (4/4) |
 
 ## How to add and update a task document
 

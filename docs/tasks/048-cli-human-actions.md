@@ -169,3 +169,7 @@ by [047](047-cli-logs-and-transcripts.md) as `vincent task transcript` — and
 `PATCH /v1/tasks/{id}` (priority), and `resolve`. Two `PATCH` routes added
 after this record have no subcommand either: `PATCH /v1/workflows` (task 065)
 and `PATCH /v1/triggers/{id}` (task 096).
+
+*Amended 2026-09-15 (task [100](100-cli-task-diff.md), issue #389):* `task diff`
+is struck — it shipped as `vincent task diff`, with `--by lane`, `--stat` and
+`--json`.
