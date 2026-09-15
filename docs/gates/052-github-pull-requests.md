@@ -7,7 +7,7 @@ on the next tick — with the compare URL produced without a single call to
 GitHub.
 
 The scripted half is [`scripts/052-gate.sh`](../../scripts/052-gate.sh). It is
-task-numbered rather than `m10` because this is not a §19 milestone; 017 and
+task-numbered rather than `mN` because this is not a §19 milestone; 017 and
 032 set that precedent.
 
 ```sh
@@ -30,8 +30,9 @@ matched against.
    /v1/projects/{id}/github` answers `available: true` for a repository whose
    `origin` is `github.com` — which is the whole of what makes a project a
    GitHub project, since §13.2 deliberately stores no flag. `GET
-   …/github/pulls` then returns exactly the corpus's two open rows, newest
-   first, with the draft among them and the **merged** row absent: an
+   …/github/pulls` then returns exactly the corpus's three open rows — the
+   linkable one, the draft and task 064's fork row — newest first, with the
+   **merged** row absent: an
    open-only listing can never answer for a merged pull request, which is what
    the durable link exists to serve through the task route instead.
 2. **The reconciler's auto-link.** With `github.poll_interval: 1s` and the
@@ -66,26 +67,20 @@ judgement, the way M3's and 017's are, and this gate deliberately stops at the
 API. The browser opener is likewise not exercised here — a gate that launched
 a browser on CI would be a gate nobody could run.
 
-## Not wired into CI
+## CI
 
-`.github/workflows/ci.yml` enumerates its gate steps by hand, and the session
-that wrote this gate could not edit `.github/workflows/` — an agent session's
-token has no `workflow` scope, by push or by API (#120, #122, #125). The step
-to add to the `gates` job is:
+The gate runs as the `052 gate (GitHub pull requests)` step of `ci.yml`'s
+`gates` job, on Linux, macOS and Windows, from #381 on.
 
-```yaml
-      - name: 052 gate (GitHub pull requests)
-        run: ./scripts/052-gate.sh
-        shell: bash
-```
-
-Until that lands, **this gate is not known to pass on Windows**: it has only
-been run on macOS. That is the exact failure mode CLAUDE.md records for m6, m7
-and m8, where wiring them in turned up two Windows-only faults in a script
-that had been green on Linux for weeks.
+Until then it was unwired: the session that wrote it could not edit
+`.github/workflows/` (#120, #122, #125). While unwired it went red without
+anyone seeing — on 2026-08-30 task 064 added a fork row, #355, to `cmd/fakegh`'s
+pull request list, and scenario 1 still expected the two open rows it had been
+written against. #381 corrected that expectation and wired the step in.
 
 ## Runs
 
 | Date | Platform | Result | By |
 |---|---|---|---|
 | 2026-08-29 | macOS (darwin/arm64) | GATE PASS, all five scenarios | task 052.7 |
+| 2026-09-15 | macOS (darwin/arm64) | GATE PASS, all five scenarios, after scenario 1 expected task 064's fork row | #381 |
