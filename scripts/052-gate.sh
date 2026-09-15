@@ -174,10 +174,13 @@ if run_scenario 1; then
   [[ "$(jq -r .repo <<<"$probe")" == "octo/repo" ]] \
     || fail "the probe named repo $(jq -r .repo <<<"$probe"), want octo/repo"
 
+  # Three open rows, newest createdAt first. The third, #355, is the fork row
+  # task 064 added to fakegh's corpus: a real open pull request shape, which
+  # an open-only listing must carry.
   pulls="$(api GET "/projects/$pid/github/pulls")"
   numbers="$(jq -r '.[].number' <<<"$pulls" | tr -d '\r')"
-  [[ "$numbers" == $'412\n401' ]] \
-    || fail "listing returned numbers $(printf '%s' "$numbers" | tr '\n' ' '), want 412 401"
+  [[ "$numbers" == $'412\n401\n355' ]] \
+    || fail "listing returned numbers $(printf '%s' "$numbers" | tr '\n' ' '), want 412 401 355"
 
   # The merged row is in the corpus and must not be in an open listing: it is
   # what the durable link exists to serve, through the task route instead.
