@@ -30,7 +30,7 @@ the living engineering specification records implementation contracts.
 | [014](014-workflow-fan-out.md) | Parallel steps and workflow fan-out | ✅ done (14/14) |
 | [015](015-conditional-steps.md) | Conditions between steps (`if:`, `type: condition`) | ✅ done (10/10) |
 | [016](016-workflow-loops.md) | Loops in workflows (`type: loop`, `type: break`) | ✅ done (10/10) |
-| [017](017-workflow-visualization.md) | Workflow visualization in the TUI | ✅ done (9/9) |
+| [017](017-workflow-visualization.md) | Workflow visualization in the TUI | ⚠ verification blocked (8/9) |
 | [018](018-control-flow-review.md) | Control-flow review: four correctness fixes | ✅ done (9/9) |
 | [019](019-workflow-includes.md) | Including one workflow in another (`type: include`) | ✅ done (10/10) |
 | [020](020-guided-takeover-layouts.md) | Guided takeover layouts for task, project, and workflow views | ⚠ verification blocked (6/7) |
@@ -66,7 +66,7 @@ the living engineering specification records implementation contracts.
 | [050](050-board-column-widths-and-wrapping.md) | Cap the board TITLE column and wrap overflowing cells | ✅ done (2/2) |
 | [051](051-live-workflow-graph-tab.md) | Live workflow graph tab on the task workspace | ✅ done (5/5) |
 | [052](052-github-pull-requests.md) | List a GitHub project's open pull requests and link them to board tasks | ✅ done (7/7) |
-| [053](053-workflow-step-detail.md) | A full step-detail modal in the workflow graph | ✅ done (5/5) |
+| [053](053-workflow-step-detail.md) | A full step-detail modal in the workflow graph | ⚠ verification blocked (4/5) |
 | [054](054-collapsible-board-groups.md) | Collapsible groups on the task board | ✅ done (1/1) |
 | [055](055-release-check-and-self-update.md) | Check for a newer release, and offer an in-place update | ✅ done (2/2) |
 | [056](056-fetch-base-branch.md) | Fetch the base branch before creating a task worktree | ✅ done (1/1) |

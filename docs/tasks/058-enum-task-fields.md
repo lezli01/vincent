@@ -176,4 +176,5 @@ other side: the members *are* the constraint.
 
 No gate script: this is a schema and form-contract change with no daemon
 end-to-end behaviour a gate would exercise that the API tests do not. The New
-task picker is judged by eye, the way M3 and [017](017-workflow-visualization.md) are.
+task picker is judged by eye, the way M3 and [017](017-workflow-visualization.md) are
+— walkthrough in [`docs/gates/022-task-fields.md`](../gates/022-task-fields.md).
