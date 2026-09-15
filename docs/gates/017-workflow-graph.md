@@ -354,9 +354,9 @@ steps:
 labelled `go-checks`, never expanded. The graph draws the file as authored and
 does not resolve the registry (task 019 decision 12), so `go-checks` does not
 need to exist. `recheck` sits inside the loop's double frame and reads as
-correctly there as `verify` does outside it. `enter` on either says its steps
-are **spliced into this one** — not that it becomes a child task, which is what
-a `fan_out` lane's collapsed reference says.
+correctly there as `verify` does outside it. `enter` on either says it becomes
+`steps spliced into this task at creation` — not `a child task running that
+workflow`, which is what a `fan_out` lane's collapsed reference says.
 
 ## The manual legs
 
@@ -386,15 +386,17 @@ then `5`. The corpus is written to be drawn, not run: its command steps call
 `make` targets (`make build`, `make test`, `make verify`, `make ship`,
 `make deploy` and others) and fail in a repository without them, so create the
 tasks in a project whose repository has those targets, or skip that step by
-hand when a leg needs the task to carry on. The guards in `guarded.yaml` and
-`gate.yaml` read `.Fields.mode` and `.Fields.deploy`, which the run-time
-template context does not have — task fields are `.Task.Fields` (spec §8.4) —
-so as written each fails its guard with a template error. For legs 3 and 18,
-run a copy under another name with the guard spelled
+hand when a leg needs the task to carry on. Five corpus files read
+`.Fields.…`, which the run-time template context does not have — task fields
+are `.Task.Fields` (spec §8.4) — so as written each fails with a template error
+when that template renders: `guarded.yaml` (`mode`), `gate.yaml` (`deploy`),
+`spread.yaml`'s `web` lane (`web`), `group.yaml` (`slow`) and `detail.yaml`
+(`branch`, in a guard and a prompt). For legs 3, 6 and 18, run a copy under
+another name with the reference spelled `index .Task.Fields "…"` — for example
 `{{ eq (index .Task.Fields "mode") "full" }}` or
-`{{ index .Task.Fields "deploy" }}`, and for leg 18 add `deploy` as a custom
-field, `true` and then `false`: a guard that renders empty is an error, not
-false.
+`{{ index .Task.Fields "deploy" }}` — and add the field as a custom field;
+for leg 18, `deploy` set to `true` and then `false`: a guard that renders empty
+is an error, not false.
 
 | # | Do | Expect |
 |---|---|---|
