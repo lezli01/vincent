@@ -97,6 +97,8 @@ description plus `Closes #N` when the task carries an issue snapshot **from the
 same repository**, escaped into
 `https://github.com/{owner}/{name}/compare/{base}...{head}?expand=1`.
 
+*Amended 2026-09-15: this paragraph is no longer true. Task 069 made vincent push a branch and open a pull request, and task 068.4 made it merge, close, reopen, comment on and re-run the checks of one — all human-triggered — and decision record row 11 is rewritten ([068](068-pull-request-tab.md) decision 1).*
+
 **Decision record row 11 stands unamended.** vincent still pushes nothing, opens
 nothing and merges nothing; pushing the branch remains the workflow's job, and
 what row 11 forbids is hardcoded delivery *behavior*, not a link a human clicks.

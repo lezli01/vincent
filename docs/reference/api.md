@@ -817,8 +817,8 @@ exactly as it would have before:
 
 ```json
 { "created": false, "pushed": true, "branch": "vincent/61-add-rate-limiting",
-  "remote": "origin", "reason": "forbidden",
-  "message": "the credential may not do this in this repository",
+  "remote": "origin", "reason": "no_write_scope",
+  "message": "the credential may read this repository but not write to it",
   "compare_url": "https://github.com/octo/repo/compare/main...vincent%2F61-add-rate-limiting?expand=1&title=…" }
 ```
 
