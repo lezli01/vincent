@@ -314,6 +314,25 @@ func (s StepRun) Duration(now time.Time) (time.Duration, bool) {
 // makes follow mode meaningful (a finished attempt will never gain a line).
 func (s StepRun) Live() bool { return s.FinishedAt == nil && s.State == "running" }
 
+// failureTrailerTag opens the block a retried agent step's prompt carries
+// (§8.4). It is the daemon's, not the workflow's, and it has to stay the tag
+// workflow.AppendFailureBlock writes — the round trip in the test holds the
+// two together.
+const failureTrailerTag = "<previous-attempt-failure"
+
+// SplitFailureTrailer separates a recorded prompt's own render from the block
+// the daemon appended on a retry (task 088 decision 3). An attempt that was
+// not a retry has no trailer. It lives here rather than in either client
+// because the TUI's Step Details tab and `vincent task show --step` both mark
+// that join, and two copies could disagree about where it is (task 100).
+func SplitFailureTrailer(prompt string) (body, trailer string) {
+	i := strings.Index(prompt, failureTrailerTag)
+	if i < 0 {
+		return prompt, ""
+	}
+	return strings.TrimRight(prompt[:i], "\n"), prompt[i:]
+}
+
 // ChildrenRollup summarizes a fan-out subtree (§13.2, task 014). Blocked and
 // AwaitingGate are ids: the client re-fetches whichever it decides to show,
 // the way §13.3 hands out everything else.
