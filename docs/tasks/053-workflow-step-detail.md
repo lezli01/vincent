@@ -1,6 +1,6 @@
 # 053 — A full step-detail modal in the workflow graph
 
-**Status:** ✅ done (5/5)
+**Status:** ⚠ verification blocked (4/5)
 **Spec:** amends §15 (Workflow graph)
 **Supersedes:** task 017 decision 15's "the escape hatch for reading a prompt
 is `e`", and decision 13's parenthetical about not wanting a third Escape
@@ -119,5 +119,8 @@ neither Bubble Tea nor Lip Gloss.
   wrapping, scrolling and the workflow-level header. ✓ 2026-08-29
 - [x] **053.4** Register `ctxWorkflowStep` and the `enter` row, with probes in
   `bindings_test.go`. ✓ 2026-08-29
-- [x] **053.5** Spec §15 amendment, `docs/guides/tui.md`, the gate corpus entry
-  and its walk, and the screenshot tape. ✓ 2026-08-29
+- [!] **053.5** Spec §15 amendment, `docs/guides/tui.md`, the gate corpus entry
+  and its walk, and the screenshot tape.
+  **Blocked 2026-09-15:** the spec amendment, the TUI guide, corpus entry 10 and
+  the `tui-workflow-step` tape landed; the walk of entry 10 and manual legs 8–10
+  has not run; tracked in [#380](https://github.com/lezli01/vincent/issues/380).

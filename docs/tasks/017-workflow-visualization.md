@@ -1,6 +1,6 @@
 # 017 — Workflow visualization in the TUI
 
-**Status:** ✅ done (9/9) · **Opened:** 2026-08-18
+**Status:** ⚠ verification blocked (8/9) · **Opened:** 2026-08-18
 
 Vincent's workflow screen currently explains a workflow as a numbered list of
 its top-level steps. That was sufficient while workflows were mostly linear,
@@ -707,11 +707,16 @@ should depend on a specific color profile.
   focus transitions, resize and large graphs. Run the normal race-enabled test
   suite and the three-platform CI matrix; do not mark done from assumed
   portability.
-- [x] **017.8 — Behaviour docs and acceptance walkthrough.** ✓ 2026-08-18 Depends: 017.7.
+- [!] **017.8 — Behaviour docs and acceptance walkthrough.** Depends: 017.7.
   Amend `docs/spec.md`, `docs/reference/api.md` and `docs/guides/tui.md` in the
   same change as the implemented behaviour. Document keys and graph semantics,
   add `docs/gates/017-workflow-graph.md` carrying the acceptance corpus and its
   run record (decision 21), then walk it in the TUI before closing the task.
+  **Blocked 2026-09-15:** the docs, corpus and run record landed 2026-08-18
+  (`1caa59e`), but the walk this item requires has never run — the Runs table
+  in `docs/gates/017-workflow-graph.md` is empty, and #132 was closed
+  2026-08-28 without one; tracked in
+  [#380](https://github.com/lezli01/vincent/issues/380).
 
 - [x] **017.9 — A viewport for the workflows list.** ✓ 2026-08-18 Depends: 017.6. Discovered
   while designing the graph layer: `workflowrender.go` joins every line into one

@@ -6,7 +6,8 @@ correctly, and reads correctly, in a real terminal.
 This gate has **no script**, deliberately. What is being judged is whether a
 picture is legible — the same judgement `scripts/m3-gate.sh` declines to
 automate, seeding a walkthrough instead of asserting. The topology underneath
-is already asserted: `internal/tui/workflowgraph` holds ten golden renders plus
+is already asserted: `internal/tui/workflowgraph` holds golden renders under
+`internal/tui/workflowgraph/testdata/` plus
 geometry invariants (back-edge target, frame containment, rank order, no
 overlaps), and a live test drives the real definition endpoint end to end. A
 gate script would re-assert that over curl, more slowly, and still not answer
@@ -320,6 +321,43 @@ iterates is discovered when the step runs, so any number of columns other than
 the one template would be invented. Before task 086 this frame drew *no* columns
 at all — a picture that said the step spawns nothing.
 
+### 14. `include.yaml` — an include, at the top level and inside a loop
+
+```yaml
+name: include
+steps:
+  - id: plan
+    type: agent
+    prompt: plan the work
+
+  - id: verify
+    type: include
+    workflow: go-checks
+
+  - id: repeat
+    type: loop
+    count: 2
+    steps:
+      - id: attempt
+        type: agent
+        prompt: fix what the checks found
+      - id: recheck
+        type: include
+        workflow: go-checks
+
+  - id: ship
+    type: command
+    run: git push
+```
+
+**Look for:** `verify` and `recheck` each drawn as **one collapsed box**
+labelled `go-checks`, never expanded. The graph draws the file as authored and
+does not resolve the registry (task 019 decision 12), so `go-checks` does not
+need to exist. `recheck` sits inside the loop's double frame and reads as
+correctly there as `verify` does outside it. `enter` on either says it becomes
+`steps spliced into this task at creation` — not `a child task running that
+workflow`, which is what a `fan_out` lane's collapsed reference says.
+
 ## The manual legs
 
 These cannot be asserted from a test, which is why the gate exists.
@@ -344,28 +382,42 @@ is *running*, so what is judged is the same thing: whether it reads correctly.
 There is no script here for 017 decision 21's reason.
 
 Create a task on each of the corpus workflows and open the task with `enter`,
-then `5`.
+then `5`. The corpus is written to be drawn, not run: its command steps call
+`make` targets (`make build`, `make test`, `make verify`, `make ship`,
+`make deploy` and others) and fail in a repository without them, so create the
+tasks in a project whose repository has those targets, or skip that step by
+hand when a leg needs the task to carry on. Five corpus files read
+`.Fields.…`, which the run-time template context does not have — task fields
+are `.Task.Fields` (spec §8.4) — so as written each fails with a template error
+when that template renders: `guarded.yaml` (`mode`), `gate.yaml` (`deploy`),
+`spread.yaml`'s `web` lane (`web`), `group.yaml` (`slow`) and `detail.yaml`
+(`branch`, in a guard and a prompt). For legs 3, 6 and 18, run a copy under
+another name with the reference spelled `index .Task.Fields "…"` — for example
+`{{ eq (index .Task.Fields "mode") "full" }}` or
+`{{ index .Task.Fields "deploy" }}` — and add the field as a custom field;
+for leg 18, `deploy` set to `true` and then `false`: a guard that renders empty
+is an error, not false.
 
 | # | Do | Expect |
 |---|---|---|
 | 1 | Open `5` on a `queued` task | Every node bare — no state, no marker. A queued task has run nothing |
-| 2 | Watch a task on `sequence.yaml` run to the end | The marker advances one node at a time; finished nodes read `succeeded`; nothing below the cursor is painted |
+| 2 | Watch a task on `seq.yaml` run to the end | The marker advances one node at a time; finished nodes read `succeeded`; nothing below the cursor is painted |
 | 3 | Run `guarded.yaml` with the guard false, then skip a step by hand | `skipped if` on the guarded one, a bare `skipped` on the one you skipped. They must not read alike |
 | 4 | Park a task on a gate, then block one on a failed check | `awaiting_input` and `blocked` land on the step that owns them, with the block reason |
-| 5 | Watch `loop.yaml` run three iterations | The loop still draws **once**, with its back-edge. The iteration badge advances. No node moves |
+| 5 | Watch `repeat.yaml` run three iterations | The loop still draws **once**, with its back-edge. The iteration badge advances. No node moves |
 | 6 | Watch `spread.yaml` fan out | Each lane caption carries its child task's `#id` and state; the lane's inline step boxes stay bare |
 | 7 | Select a node, then let a step finish | The selection is still on the same node, at the same place on screen |
 | 8 | `F` a follow-up round on a finished task, then reopen `5` | The follow-up's step appears in a frame below `END`, not inside the flow |
-| 9 | Press `tab` on the Workflow tab | The workspace moves to the next tab. The graph selection does **not** move |
+| 9 | Press `tab` on the Workflow tab | The workspace moves to the next tab. The graph selection does **not** move. Record in the run's Result whether a source-order node walk is missed here — 051 decision 5 gives it a non-colliding key only if it is |
 | 10 | Press `?` on the Workflow tab | The help lists this tab's keys — no `e`, no `R` |
 | 11 | `NO_COLOR=1`, then repeat 2–6 | Every state above is still readable as words and glyphs |
 | 12 | Narrow the terminal below ~26 columns | The tab says so rather than drawing a flattened shape |
 | 13 | Run a workflow whose `fan_out` derives its lanes with `lane:`/`for_each:` (task 080), then open `5` | The heavy frame is marked `derived from …` with the `for_each:` it came from; narrow the pane and the mark degrades to `derived` rather than vanishing. A hand-written list — `lanedag.yaml` — has no mark at all |
 | 14 | Watch `lanedag.yaml` run, and block one lane | `api`/`db` carry `w1` and `wire` `w2` throughout; a blocked lane's caption carries that lane's **own** block reason, not just its state |
 | 15 | Press `l` with the cursor inside a lane | That lane's task workspace opens. `esc` comes back to this task, not to the board. On a node outside every lane, `l` does nothing |
-| 16 | Watch `sequence.yaml` run, color on | Finished nodes green, the running node cyan, nodes below it uncolored. The edges between finished nodes are colored; the edge into `END` stays uncolored until the task is `done` |
+| 16 | Watch `seq.yaml` run, color on | Finished nodes green, the running node cyan, nodes below it uncolored. The edges between finished nodes are colored; the edge into `END` stays uncolored until the task is `done` |
 | 17 | Block a task on a failed check, and select the blocked node | The blocked node is bold red. Selected, it keeps that color and shows the selection by its heavier border only |
-| 18 | Run `condition.yaml` both ways | The branch the condition did **not** take stays uncolored — including the `false` edge into `END` of a task that held and finished |
+| 18 | Run `gate.yaml` both ways | The branch the condition did **not** take stays uncolored — including the `false` edge into `END` of a task that held and finished |
 | 19 | Repeat 16–18 with `NO_COLOR=1` | Every node reads exactly as in legs 2–4. Color added nothing a reader needs |
 
 ## Runs
@@ -396,6 +448,16 @@ which pins entry 12's picture against
 Legs 8–10 and corpus entry 10 were added on 2026-08-29 with task 053 (the
 step-detail popup) and have not been walked either; the automated half of that
 work is in `internal/tui` and `internal/tui/workflowgraph`.
+
+Runtime legs 1–12 were added on 2026-08-29 with task 051 (the Workflow tab of
+the task workspace) and have not been walked.
+
+Corpus entry 14 was added to `docs/gates/corpus/` as `include.yaml` on
+2026-08-19 with task 019, and documented here on 2026-09-15; it has not been
+walked. Its automated half is `fixtureInclude` in
+`internal/tui/workflowgraph/corpus_test.go`, which the diagram and detail tests
+draw, and `TestGateCorpusIsServable` in `internal/api/workflowdef_test.go`,
+which serves every corpus file through the real definition endpoint.
 
 Add a row per walk. A gate that has never been walked on a platform is not
 known to pass there.

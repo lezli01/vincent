@@ -114,4 +114,4 @@ the release archive rather than from a package manager.
 
 | Date | Version | Platform | Walked by | Result |
 |---|---|---|---|---|
-| — | — | — | — | not yet walked; needs a release published after this task landed |
+| — | — | — | — | not yet walked; legs 1–3 can be walked against v0.8.0 (2026-09-04), the first release carrying this task; the swap legs 4–6 also need a later release to update to, and so does leg 7, because `vincent update` answers "the latest release" before it looks at how the binary was installed; none is published as of 2026-09-15 |

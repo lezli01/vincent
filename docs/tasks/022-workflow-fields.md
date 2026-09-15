@@ -95,7 +95,8 @@ and interchangeable; a TUI-only constraint would not be a workflow contract.
   cross-platform builds, and the relevant manual TUI walkthrough have actually
   run; unavailable checks remain explicitly blocked.
   **Blocked 2026-09-14:** the human walkthrough of the New task field rows
-  remains, tracked in [#380](https://github.com/lezli01/vincent/issues/380),
+  remains ([`docs/gates/022-task-fields.md`](../gates/022-task-fields.md)),
+  tracked in [#380](https://github.com/lezli01/vincent/issues/380),
   and the #163 diff review found a defect still present at `b885c53`: an
   optional declared field whose value is only whitespace skips type and pattern
   validation in the daemon (`ValidateTaskFields` trims before its absent
@@ -147,4 +148,5 @@ and interchangeable; a TUI-only constraint would not be a workflow contract.
   numbers and `pattern` on a non-string field are rejected as decision 2
   requires, and undeclared fields stay accepted (decision 3).
 - The human walkthrough of the New task field rows has not run; it is tracked in
-  [#380](https://github.com/lezli01/vincent/issues/380) (2026-09-14).
+  [#380](https://github.com/lezli01/vincent/issues/380) (2026-09-14). Its
+  walkthrough is [`docs/gates/022-task-fields.md`](../gates/022-task-fields.md).
