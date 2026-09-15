@@ -20,13 +20,15 @@
 #
 # Shape:
 #
-#   fetch    (cheap guard: open, and labeled bug, enhancement or documentation)
+#   fetch    (cheap guard: open, and labeled bug, enhancement, documentation or ci)
 #   classify (the branch point — a probe whose exit code the guards read)
 #     ├─ diagnose  (bug)            reproduce, ask, write the failing test
 #     ├─ digest    (enhancement)    understand, ask, write the plan
-#     └─ survey    (documentation)  verify each claim at HEAD, ask, write the scope
+#     ├─ survey    (documentation)  verify each claim at HEAD, ask, write the scope
+#     └─ inspect   (ci)             read what CI runs, ask, write the plan and its proof
 #   triage (stop on reject / needs-info)
-#     └─ confirm-red (bug only)  prove the test fails on the unfixed code
+#     ├─ confirm-red (bug only)  prove the test fails on the unfixed code
+#     └─ pin-proof   (ci only)   freeze the commands that must pass on this host
 #   implement (write it, commit it, draft the PR)
 #   docs-sync (audit what the source derives: pages, spec, the embedded skill)
 #   verify    (the expensive cross-platform legs, repaired in a bounded loop)
@@ -45,22 +47,26 @@
 # workflow **carries on**, which is what a two-path workflow needs.
 #
 # Guards can only read `.Steps`, `.Task.Fields` and `.Host` — never a file. So
-# the label lives in a probe: `classify` exits 0 for `bug`, 1 for `enhancement`
-# and 2 for `documentation`, under `allow_failure: true` so that a nonzero exit
-# is data rather than a blocked task. Every guard downstream is one of:
+# the label lives in a probe: `classify` exits 0 for `bug`, 1 for `enhancement`,
+# 2 for `documentation` and 3 for `ci`, under `allow_failure: true` so that a
+# nonzero exit is data rather than a blocked task. Every guard downstream is one
+# of:
 #
 #     {{ eq (index .Steps "classify").ExitCode 0 }}   bug
 #     {{ eq (index .Steps "classify").ExitCode 1 }}   enhancement
 #     {{ eq (index .Steps "classify").ExitCode 2 }}   documentation
+#     {{ eq (index .Steps "classify").ExitCode 3 }}   ci
 #
-# A **failed `classify` row on the board is the normal enhancement or
-# documentation path**, not an error. It is the one wart of doing this honestly;
-# the alternative is asking a human to retype a label GitHub already holds.
+# A **failed `classify` row on the board is the normal enhancement,
+# documentation or ci path**, not an error. It is the one wart of doing this
+# honestly; the alternative is asking a human to retype a label GitHub already
+# holds.
 #
 # The probe was `is-bug`, exiting 0 or 1, while there were two paths. An issue
 # carrying several of the labels takes the strictest path among them — bug,
-# then enhancement, then documentation — and the step's own comment says why
-# documentation comes last.
+# then ci, then enhancement, then documentation — and the step's own comment
+# says why each sits where it does. The exit codes are not the precedence: `ci`
+# arrived last and took 3 so that no existing guard had to change.
 #
 # ## What still differs, and why
 #
@@ -81,7 +87,7 @@
 # `confirm-red`, and the gate step puts it in front of the human who approves
 # the PR. Prefer a test.
 #
-# `implement` is one step for all three paths, with one `{{if}}` block in its
+# `implement` is one step for all four paths, with one `{{if}}` block in its
 # prompt. The shared 80% — commit conventions, the PR template's four claims,
 # the spec amendment rule, the scratch-directory rule, the two PR artifacts — is
 # written once, which is the point of merging.
@@ -120,6 +126,48 @@
 # but on this path a screenshot can *be* the issue (#413–#415), so `implement`
 # may extend and run `scripts/screenshots.sh` when `survey` scoped it. It still
 # never draws a screen or edits a PNG by hand.
+#
+# ## The ci path
+#
+# A `ci` issue in this repository is rarely "CI is broken". CI here is
+# `.github/workflows/ci.yml` — lint, the race detector and a build on Linux,
+# macOS and Windows, then every acceptance gate (`scripts/*-gate.sh`) as its own
+# named step on the same three — beside the scheduled `go-toolchain.yml` and
+# `vuln.yml` and the release workflows. The label marks what an audit finds
+# missing around that: a gate written and never wired into `ci.yml` (#381), a
+# gate a task promised and never wrote (#382, #383), a scenario an existing gate
+# lacks (#384), a fake-CLI scenario an end-to-end proof needs (#385). Next to
+# `enhancement` it has meant wiring a gate (#120, #122, #125), next to
+# `documentation` a gate plus the pages it proves (#388), and next to `bug` a
+# job that fails or flakes (#340, #373).
+#
+# What makes that a path of its own is where the proof lives. A gate is judged
+# by running it on every platform `ci.yml` runs it on, and this machine is one
+# of three — so the path proves what it can here and says plainly what it
+# cannot:
+#
+# - `inspect` writes the plan and `proof.txt`: the commands — gate scripts,
+#   single scenarios, narrow tests — that must pass on this host once the change
+#   exists. `pin-proof` freezes them into `proof.sh` before `implement` starts,
+#   for the reason `confirm-red` freezes `green.sh`: the step being judged does
+#   not get to rewrite its own bar. It runs nothing, because the gate a line
+#   names usually does not exist yet. A change only GitHub can execute — a
+#   schedule, a permission — writes `none: <reason>`, as loudly as the bug
+#   path's escape hatch.
+# - `implement`'s check and every `verify-probe` run `proof.sh`, and the probe
+#   runs `actionlint` over any workflow file the branch touched.
+# - The other two platforms first run the change in the pull request's own CI
+#   — a same-repository `pull_request` run reads `ci.yml` from the branch — and
+#   the merge tail already waits for the `gates` job on all three before it
+#   merges. `repair-checks` is where a Windows-only fault gets fixed, and it is
+#   told a platform is never skipped to make a gate green.
+# - Gate records follow the documentation path's rule: nothing is recorded that
+#   did not happen, so a run line names this host and no other. An item only a
+#   person can do — a repository setting, a secret, a real-GitHub leg — is
+#   scoped out, and `closes: no` makes the pull request say `Part of #N`.
+#
+# `classify`'s comment says why `ci` outranks `enhancement` and `documentation`
+# and yields to `bug`.
 #
 # ## Documentation is a step, not a checkbox
 #
@@ -300,9 +348,9 @@
 #
 # ## Why the brief and the implementation are two steps
 #
-# `diagnose`, `digest` and `survey` run with `on_input: wait`, so they park the
-# task in `awaiting_input` and ask you through claude's AskUserQuestion tool
-# (§7.4). If implementation shared that step, every retry after a failed check
+# `diagnose`, `digest`, `survey` and `inspect` run with `on_input: wait`, so
+# they park the task in `awaiting_input` and ask you through claude's
+# AskUserQuestion tool (§7.4). If implementation shared that step, every retry after a failed check
 # would replay the questioning and ask you the same things again. Splitting
 # costs `implement` the live Q&A session — which is why the brief writes its
 # answers in as resolved decisions, not as a transcript. `defaults.on_input:
@@ -342,7 +390,8 @@
 # `platforms:` line; nothing else in the file depends on it.
 #
 # Requires `gh` (authenticated), `jq`, `git`, `go`, and the worktree's `origin`
-# pointing at the repo that owns the issue.
+# pointing at the repo that owns the issue. The ci path runs gate scripts, which
+# also want `bash` and `curl`, and uses `actionlint` when it is installed.
 #
 # ## Saying what is happening
 #
@@ -393,7 +442,7 @@
 # (verbatim), the project's template, `branch_template` in config.yaml, then the
 # built-in (task 001, internal/worktree/branch.go).
 name: github-resolve-issue
-description: Read a GitHub bug, enhancement or documentation issue, clarify it with the author, deliver the fix, feature or documentation change, open the PR, then rebase and merge it once you approve.
+description: Read a GitHub bug, enhancement, documentation or ci issue, clarify it with the author, deliver the fix, feature, documentation or CI change, open the PR, then rebase and merge it once you approve.
 
 platforms: [posix]
 
@@ -488,11 +537,11 @@ steps:
       # The label is the only thing that decides which path runs, so a missing
       # one fails here rather than silently defaulting to a path. An issue
       # carrying more than one is sent down the strictest path it carries by
-      # `classify`: bug, then enhancement, then documentation.
-      if ! jq -e '[.labels[].name] | any(. == "bug" or . == "enhancement" or . == "documentation")' \
+      # `classify`: bug, then ci, then enhancement, then documentation.
+      if ! jq -e '[.labels[].name] | any(. == "bug" or . == "enhancement" or . == "documentation" or . == "ci")' \
         .vincent-issue/issue.json > /dev/null; then
-        say "issue #$id is labeled neither bug, enhancement nor documentation"
-        echo "issue #$id is labeled neither 'bug', 'enhancement' nor 'documentation'; refusing to guess at its type" >&2
+        say "issue #$id is labeled none of bug, enhancement, documentation or ci"
+        echo "issue #$id is labeled none of 'bug', 'enhancement', 'documentation' or 'ci'; refusing to guess at its type" >&2
         jq -r '"labels: " + ([.labels[].name] | join(", "))' .vincent-issue/issue.json >&2
         exit 1
       fi
@@ -501,24 +550,30 @@ steps:
       say "#$id open, $(jq -r '[.comments[]] | length' .vincent-issue/issue.json) comment(s) to read"
 
   - id: classify
-    name: Classify — bug, enhancement or documentation?
+    name: Classify — bug, ci, enhancement or documentation?
     type: command
     shell: sh
     timeout: 1m
-    # The branch point. Exit 0 means bug, 1 enhancement, 2 documentation, and
-    # every guard below reads `.Steps.classify.ExitCode`. `allow_failure` is
-    # what turns a nonzero exit into data instead of a blocked task
-    # (§ Conditions).
+    # The branch point. Exit 0 means bug, 1 enhancement, 2 documentation, 3
+    # ci, and every guard below reads `.Steps.classify.ExitCode`.
+    # `allow_failure` is what turns a nonzero exit into data instead of a
+    # blocked task (§ Conditions).
     #
-    # A `failed` row here is therefore the *normal* enhancement or
-    # documentation path, not a problem — the stdout line says which way it
-    # went.
+    # A `failed` row here is therefore the *normal* enhancement, documentation
+    # or ci path, not a problem — the stdout line says which way it went.
     #
-    # The order of the tests is the precedence. `documentation` is checked
-    # last because next to `bug` or `enhancement` it marks a code change that
-    # also moves the docs — #376 is labeled both — and those paths already
-    # audit the docs in `docs-sync`. The documentation path is for an issue
-    # whose deliverable *is* the documentation.
+    # The order of the tests is the precedence, and it is not the order of the
+    # exit codes. `ci` is tested second. Next to `enhancement` it has only ever
+    # meant wiring a gate into CI (#120, #122, #125), and next to
+    # `documentation` a gate plus the pages it proves (#388): both are this
+    # path's work, whose proof is a gate run, not a plan's or a survey's. It
+    # yields to `bug`, because a job that is red because the product is wrong
+    # wants the reproduce-first rule — and a job red for a reason no test can
+    # hold still has `none:` on that path. `documentation` is checked last
+    # because next to `bug` or `enhancement` it marks a code change that also
+    # moves the docs — #376 is labeled both — and those paths already audit
+    # the docs in `docs-sync`. The documentation path is for an issue whose
+    # deliverable *is* the documentation.
     allow_failure: true
     # A probe never retries: the answer is a file this workflow already wrote.
     max_retries: 0
@@ -537,6 +592,11 @@ steps:
         echo "path: bug — a regression test must be observed failing before the fix."
         say "bug path: a regression test must be seen failing first"
         exit 0
+      fi
+      if jq -e '[.labels[].name] | index("ci")' .vincent-issue/issue.json > /dev/null; then
+        echo "path: ci — the pinned gates must pass here; the pull request's CI proves the other platforms."
+        say "ci path: gates pass here, then on all three in PR CI (this exit 3 is normal)"
+        exit 3
       fi
       if jq -e '[.labels[].name] | index("enhancement")' .vincent-issue/issue.json > /dev/null; then
         echo "path: enhancement — no reproduction to prove; judged by the new behaviour."
@@ -957,21 +1017,215 @@ steps:
       git diff --cached --quiet
     check_timeout: 1m
 
+  - id: inspect
+    name: Scope the CI change
+    type: agent
+    if: '{{ eq (index .Steps "classify").ExitCode 3 }}'
+    # The ci path's brief step, in the role the other three play on theirs.
+    # What it settles is where the proof for this change can come from: which
+    # gate or job the issue is about, what is still true of it at HEAD, which
+    # commands prove the change on this host, and which parts only the other
+    # two platforms' CI — or only a person — can prove.
+    on_input: wait
+    input_timeout: 12h
+    timeout: 45m
+    prompt: |
+      You are scoping a GitHub issue labeled `ci` against this repository. You
+      are NOT implementing it yet: do not change a single file.
+
+      The issue is in `.vincent-issue/issue.json` — number, title, body, state,
+      labels, creation date and every comment. Read it first, comments
+      included.
+
+      You are on branch {{.Task.BranchName}}, based on {{.Task.BaseBranch}}, in
+      a dedicated worktree at {{.Worktree.Path}}.
+
+      This step is budgeted 45 minutes and can park in `awaiting_input` for
+      half a day, so say what you are doing as you go:
+
+          vincent status "<one short line about what you are doing now>"
+
+      Run it before each numbered step below, and again the moment you stop to
+      ask the author — `vincent status "waiting on your call: skip on macOS?"`
+      is the difference between a row that looks hung and one that explains
+      itself. Under ten words. When something is wrong, make the status say
+      what is wrong: "052 gate already wired in ci.yml", not "still working".
+      The last thing you set stays on the finished step, so end on your
+      verdict — "verdict: proceed, one new m6 scenario".
+
+      Do this in order:
+
+      1. Read `CLAUDE.md`, all of it — its Commands section above all. It is
+         the rulebook for gates: which gates `ci.yml` runs and why `m12` is the
+         exception, why a gate script is committed executable, why a gate's
+         workflow `run:` bodies are spelled in the intersection of `/bin/sh`
+         and `pwsh`, why a multi-line `jq` capture needs `| tr -d '\r'`, and
+         why nothing is ever piped into `grep -q`. Each of those was a real
+         Windows-only or intermittent failure first.
+
+      2. Read what CI actually runs. `.github/workflows/ci.yml` is the one an
+         issue here is most often about: a `ci` job (lint,
+         `go run mage.go testrace`, build) and a `gates` job running every gate
+         as its own named step, each on `ubuntu-latest`, `macos-latest` and
+         `windows-latest`. Read which of those branch protection requires on
+         {{.Task.BaseBranch}}:
+         `gh api "repos/$(gh repo view --json nameWithOwner --jq .nameWithOwner)/branches/{{.Task.BaseBranch}}/protection/required_status_checks"`.
+         The other workflows are scheduled (`go-toolchain.yml`, `vuln.yml`),
+         tag-driven (`release.yml`) or about the pull request itself. Then read
+         the gate scripts the issue names, their records under `docs/gates/`,
+         and the task record under `docs/tasks/` it cites.
+
+      3. Work out which kind of issue this is, because the proof differs:
+
+         - **A gate to write, extend or wire into CI.** The gate script is the
+           proof, and it runs here.
+         - **Test infrastructure** — a `cmd/fakeagent` or `cmd/fakegh`
+           scenario, a helper a gate or an e2e test needs. Its tests are the
+           proof, plus the gate leg it unblocks.
+         - **A job that fails or flakes.** Read the runs, not the issue's
+           summary of them: `gh run list --workflow <file>`,
+           `gh run view <id> --log-failed`. Find the cause. If the cause is the
+           product rather than CI or the test harness, that is a question for
+           the author (below).
+         - **A workflow change** — a schedule, a permission, a new job. Only
+           GitHub runs it; `actionlint` is the only local proof there is.
+
+      4. **Verify it at HEAD.** Issues here are often written by an audit at an
+         older commit, and CI wiring lands on other branches all the time. Is
+         the gate already a step in `ci.yml`? Does the scenario already exist?
+         Has the job gone green since (`gh run list`)? Find things by content,
+         not by cited line number. An issue that is already done is a
+         `reject` — name the commit.
+
+      5. Sort out what this workflow **cannot do**. It can edit files, run the
+         suite and any gate script on this host, and read GitHub. It proves
+         nothing about the platforms this machine is not: the pull request's
+         own CI is the first run of the change there, and the merge tail waits
+         for it. It cannot walk a manual gate, cannot run a leg that needs a
+         real agent CLI session, a container runtime this host lacks or a real
+         GitHub write, and it cannot change a repository setting or a secret.
+         Those items are **human-only**. Nothing in this workflow may record
+         one as done: a gate run record, a `✓ YYYY-MM-DD` or an `[x]` with no
+         run behind it is a false record.
+
+         Check the push, too: `git remote get-url --push origin`. Over HTTPS, a
+         push that touches `.github/workflows/` is refused unless the token
+         carries the `workflow` scope, and `gh auth status` lists the scopes.
+         Over SSH that scope is not involved. If the change edits a workflow
+         file and the push would be refused, that is a question for the author
+         now rather than a failure at `publish` after the whole run.
+
+      6. Use the AskUserQuestion tool when — and only when — you genuinely
+         cannot settle the plan without the author. The cases that warrant it:
+
+         - **Human-only items.** Ask whether to scope them out and deliver the
+           rest. If nothing within reach is left, that is a `reject`, and the
+           brief says a person must do it.
+         - **The fault is in the product.** A job red because the code is
+           wrong wants the `bug` label and a run down that path, which proves a
+           regression test red first. Ask before planning a product fix here.
+         - **Proof weaker than CI's today.** A platform skipped for a gate,
+           `continue-on-error`, a fixed wait lengthened instead of a cause
+           found, a job dropped from the matrix. `m12`'s skip is the precedent
+           and it states its reason; anything like it is the author's call,
+           never yours.
+         - **An item overturns a recorded decision** — a task record's
+           decision, a "phase 2 decision", something in
+           `docs/history/v0-tasks.md`.
+         - **A tool or a permission is missing** — a container runtime,
+           `actionlint`, the `workflow` scope.
+
+         Batch related questions into as few calls as you can, with concrete
+         options where you can offer them. If the issue is clear and within
+         reach, ask nothing and move on.
+
+      7. Write `.vincent-issue/brief.md`. Its **first line** must be exactly one
+         of:
+
+             verdict: proceed
+             verdict: reject
+             verdict: needs-info
+
+         and its **second line** exactly one of:
+
+             closes: yes
+             closes: no
+
+         - `proceed` — something within reach still needs doing.
+         - `reject` — nothing is left for this workflow: already done, wrong,
+           or human-only. You must have asked the author before rejecting an
+           issue with work that still stands.
+         - `needs-info` — you asked, and what came back still does not settle
+           what should be built. The issue stays open for a later run.
+         - `closes: yes` only when this run delivers **everything** the issue
+           asks for that still stands. Anything scoped out makes it
+           `closes: no`, and the pull request will then say `Part of #N`
+           rather than closing the issue. On `reject` or `needs-info`, write
+           `closes: no`.
+
+         Below those two lines, the plan: which kind of issue this is and what
+         is true of it at HEAD; every file the change touches — the gate
+         script, the `ci.yml` step and its comment, the gate list in
+         `CLAUDE.md`, the gate record under `docs/gates/`, the task record and
+         its index row; each gate scenario and what it asserts from the API;
+         which platform proves each leg, and where; the human-only items and
+         what becomes of them; and the decisions that came out of your
+         questions, written as settled decisions in prose, not as a Q&A
+         transcript. On `reject` or `needs-info`, write why instead, and what
+         would change the answer.
+
+      8. Write `.vincent-issue/proof.txt` — the commands that must pass on this
+         host once the change exists, **one per line**, run from the
+         repository root, each as narrow as it can be while still proving the
+         change. For example:
+
+             ./scripts/052-gate.sh
+             VINCENT_GATE_SCENARIO=12 ./scripts/m6-gate.sh
+             go test ./internal/cli -run TestCrashRecoveryE2E
+
+         A gate this change writes does not exist yet: name the path it will
+         have. The next steps freeze this file before implementation starts,
+         and every line then has to pass in `implement`'s check and on every
+         cross-platform pass after it.
+
+         If nothing about this change can run on this host — a schedule, a
+         permission, a job only GitHub executes — write instead a single line:
+
+             none: <one sentence saying why nothing here can run it>
+
+         It costs the change its local proof, and a human is shown the reason
+         before the PR goes out. On `reject` or `needs-info`, write
+         `none: <verdict>`.
+
+      Do not commit. Do not push. Do not run `gh` for anything that writes. Do
+      not modify any file outside `.vincent-issue/`.
+    # `survey`'s check plus the proof file. `closes:` is machine-readable for
+    # the reason it is on the documentation path, and `proof.txt` has to exist
+    # because `pin-proof` freezes it and `implement`'s check runs what it froze.
+    check: >
+      test -s .vincent-issue/brief.md &&
+      head -n 1 .vincent-issue/brief.md | grep -Eq '^verdict: (proceed|reject|needs-info)$' &&
+      sed -n 2p .vincent-issue/brief.md | grep -Eq '^closes: (yes|no)$' &&
+      test -s .vincent-issue/proof.txt &&
+      git diff --quiet &&
+      git diff --cached --quiet
+    check_timeout: 1m
+
   - id: triage
     name: Act on the verdict
     type: command
     shell: sh
     timeout: 1m
     # `reject` and `needs-info` are legitimate outcomes of a brief step, so
-    # `diagnose`/`digest`/`survey` pass their checks either way. This step is
-    # what turns one into a failed task with a legible reason, instead of a
-    # pull request nobody wanted. The two are kept distinct on purpose:
+    # `diagnose`/`digest`/`survey`/`inspect` pass their checks either way. This
+    # step is what turns one into a failed task with a legible reason, instead
+    # of a pull request nobody wanted. The two are kept distinct on purpose:
     # `reject` means never, `needs-info` means re-run this task once the thread
     # has more in it.
     #
-    # Path-independent: all three briefs are written to the same path with the
+    # Path-independent: all four briefs are written to the same path with the
     # same verdict vocabulary, which is most of why merging the two workflows
-    # was worth doing, and why the documentation path could join them.
+    # was worth doing, and why the documentation and ci paths could join them.
     max_retries: 0
     # The status is what makes the two stopping verdicts tell themselves apart
     # on the board. Both exit 1 and both classify `nonzero_exit`, and the whole
@@ -1012,8 +1266,8 @@ steps:
     timeout: 15m
     # Deterministic by construction — a second identical run is the same run.
     max_retries: 0
-    # The load-bearing step of the bug path, and the one thing neither other
-    # path has an equivalent of. It proves the regression test observes the bug,
+    # The load-bearing step of the bug path, and the one thing no other path
+    # has an equivalent of. It proves the regression test observes the bug,
     # in the one window where that is observable: after the test exists and
     # before the fix does.
     #
@@ -1060,6 +1314,64 @@ steps:
       echo "--- confirmed red: the test fails on the unfixed code ---"
       say "confirmed red: the test fails on the unfixed code"
 
+  - id: pin-proof
+    name: Pin the commands that must pass
+    type: command
+    if: '{{ eq (index .Steps "classify").ExitCode 3 }}'
+    shell: sh
+    timeout: 1m
+    # A copy, not a run: a second identical run is the same run.
+    max_retries: 0
+    # The ci path's `confirm-red`, without the run. `implement`'s check and
+    # every `verify-probe` execute `proof.sh`; reading `proof.txt` there
+    # instead would let the step being judged delete the gate it could not
+    # make pass. The copy taken here was taken before any of the change
+    # existed.
+    #
+    # Nothing is run, because there is nothing to observe yet: the gate a line
+    # names is usually the one `implement` is about to write, and a gate over
+    # behaviour that already ships would pass unchanged and prove nothing by
+    # it. The bug path's proof is a test seen red; this path's is the same
+    # commands green here, then the pull request's CI green on all three
+    # platforms.
+    #
+    # `set -ex` heads the pinned file. `-e` because it holds several lines and
+    # `sh` would otherwise report only the last one's exit code — a red gate
+    # followed by a green one would read as a pass. `-x` because its output
+    # lands in a check failure or a repair prompt, where "which line" is the
+    # first question.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      # Blank lines go first: an agent's trailing newline is not a command,
+      # and a file of nothing but blank lines names none.
+      grep -v '^[[:space:]]*$' .vincent-issue/proof.txt > .vincent-issue/proof.lines || true
+      if [ ! -s .vincent-issue/proof.lines ]; then
+        say "proof.txt names no command"
+        echo ".vincent-issue/proof.txt names no command" >&2
+        exit 1
+      fi
+
+      first=$(head -n 1 .vincent-issue/proof.lines)
+      case "$first" in
+        none:*)
+          echo "NO LOCAL PROOF -${first#none:}"
+          echo "nothing about this change runs on this host; the pull request's CI"
+          echo "and the gate step are all that stand between it and the base branch."
+          printf 'exit 0\n' > .vincent-issue/proof.sh
+          # Loud for the reason `confirm-red`'s escape hatch is loud: a green
+          # row whose status says the proof is missing.
+          say "NO LOCAL PROOF: only the PR's CI will run this change"
+          exit 0
+          ;;
+      esac
+
+      { echo 'set -ex'; cat .vincent-issue/proof.lines; } > .vincent-issue/proof.sh
+      echo "--- pinned: these must pass here, in implement's check and on every verify pass ---"
+      cat .vincent-issue/proof.lines
+      say "pinned $(wc -l < .vincent-issue/proof.lines | tr -d ' ') command(s) that must pass here"
+
   - id: implement
     name: Implement the change
     type: agent
@@ -1069,10 +1381,10 @@ steps:
     # the §8.4 failure block and the second attempt fixes it. The expensive,
     # non-self-healing checks live in `verify` instead.
     max_retries: 2
-    # One step for all three paths. The `{{if}}` covers exactly what differs —
-    # the framing, the path-specific rules, the frozen regression test on the
-    # bug path and the `Closes`/`Part of` choice on the documentation path —
-    # and everything below it is the same work whichever path ran.
+    # One step for all four paths. The `{{if}}` covers exactly what differs —
+    # the framing, the path-specific rules, the frozen command on the bug and
+    # ci paths and the `Closes`/`Part of` choice on the documentation and ci
+    # paths — and everything below it is the same work whichever path ran.
     prompt: |
       {{- if eq (index .Steps "classify").ExitCode 0 }}
       Fix the bug diagnosed in `.vincent-issue/brief.md`. That diagnosis is the
@@ -1145,6 +1457,56 @@ steps:
       Commit it: `docs:` for the documentation, `test:` or `ci:` for code the
       survey scoped. A correction belongs in `CHANGELOG.md` only if a user
       acting on the old text would have done the wrong thing.
+      {{- else if eq (index .Steps "classify").ExitCode 3 }}
+      Make the CI change planned in `.vincent-issue/brief.md`. That plan is the
+      agreed scope — it was checked against what CI runs at HEAD, and the
+      author's answers are written into it as decisions. Do not re-open them,
+      do not expand the scope, and leave alone every item it marked human-only
+      or scoped out. The original issue is still in `.vincent-issue/issue.json`
+      for reference.
+
+      `.vincent-issue/proof.sh` holds the commands the plan said must pass on
+      this host, frozen before you started. This step's check runs it, and so
+      does every cross-platform pass after it.
+
+      `CLAUDE.md`'s Commands section is the rulebook; read it first. Every one
+      of these rules is there because a Windows leg or an intermittent run
+      found it:
+
+      - **A gate script is committed executable**:
+        `git update-index --chmod=+x scripts/<name>.sh`. `chmod` on Windows
+        never reaches the index and Git Bash ignores the bit, so a
+        non-executable gate passes there and fails both POSIX legs with exit
+        126. The check asserts the mode of every `scripts/*.sh`.
+      - **A gate's workflow `run:` bodies** run under the daemon's shell —
+        `/bin/sh` or `pwsh` — so they are spelled in the intersection of the
+        two: `exit N` as the whole body, `sleep N`, `git ...`. Assert
+        concurrency and timing from the API, never from inside a step body.
+      - **In the gate's own bash**, a multi-line `jq` capture gets
+        `| tr -d '\r'`, and nothing is piped into `grep -q`, `head` or any
+        other consumer that exits early: capture first, then match a
+        here-string.
+      - **A gate is self-isolating**: its own `mktemp -d` state via
+        `VINCENT_CONFIG_DIR` and `VINCENT_DATA_DIR`, its own port read from
+        `daemon.json`, `trap cleanup EXIT`. Copy the shape of the nearest
+        existing gate rather than inventing one.
+      - **Wiring** is a named step in `ci.yml`'s `gates` job, with the comment
+        every other step there carries — what the gate proves, and why all
+        three platforms matter to it — and the gate added to the list in
+        `CLAUDE.md`'s Commands section in the same change.
+      - **Never make CI green by proving less.** No `continue-on-error`, no
+        platform skipped, no fixed wait lengthened to outlast a cause you have
+        not found, no job dropped from the matrix — unless the plan records the
+        author deciding it, and then the skip says why, the way `m12`'s does.
+      - **Record only what happened.** A gate record under `docs/gates/` gets a
+        run line for a run you performed in this session, on this host, and
+        no other; the other platforms are recorded from their CI runs, never
+        predicted here. A task's `[x]` and `✓ YYYY-MM-DD` need the same, and
+        change with its row in `docs/tasks/README.md` in the same edit.
+
+      Commit it: `ci:` for workflow wiring, `test:` for gates and test
+      infrastructure, `fix:` where a job was red because of the code, `docs:`
+      for the records.
       {{- else }}
       Implement the enhancement described in `.vincent-issue/brief.md`. That
       plan is the agreed scope — the author has already answered the open
@@ -1211,6 +1573,13 @@ steps:
         `closes: no`: then write `Part of #<the issue number>` instead, and
         list under it every item this change leaves open and why, so merging
         does not close an issue that still has work in it.
+        {{- else if eq (index .Steps "classify").ExitCode 3 }}
+        **Except** when the second line of `.vincent-issue/brief.md` is
+        `closes: no`: then write `Part of #<the issue number>` instead, and
+        list under it every item this change leaves open and why. Either way,
+        say which commands in `.vincent-issue/proof.sh` passed on this host,
+        and that this pull request's own CI is the first run on the platforms
+        this machine is not.
         {{- end }}
         Tick a checklist box only if you actually did that thing; a checklist
         ticked unconditionally is worth nothing to the reviewer, and leaving a
@@ -1235,15 +1604,26 @@ steps:
     # The documentation path keeps the suite and the linter as its bar, and
     # not out of habit: the docs-claims tests in `internal/cli` assert what the
     # published pages say, so a correction that breaks one fails here.
+    #
+    # The ci path runs `proof.sh` in the slot `green.sh` takes on the bug
+    # path, frozen by `pin-proof` for the same reason. The mode clause runs on
+    # every path, because the trap it catches is not a ci-path trap: a script
+    # under `scripts/` committed without its executable bit passes on Windows,
+    # where Git Bash ignores the bit, and fails both POSIX legs with exit 126
+    # (CLAUDE.md). It names the scripts, because §8.4 hands the retry this
+    # output. 25 minutes rather than 15 because on the ci path gates run before
+    # the suite; on the other paths a ceiling costs nothing.
     check: >
       ! git ls-files .vincent-issue | grep -q . &&
       test "$(git rev-list --count {{.Task.BaseBranch}}..HEAD)" -gt 0 &&
       test -s .vincent-issue/pr-title.txt &&
       test -s .vincent-issue/pr.md &&
+      { noexec=$(git ls-files -s -- 'scripts/*.sh' | awk '$1 != "100755" { print $4 }'); test -z "$noexec" || { echo 'scripts not committed executable (git update-index --chmod=+x):' >&2; echo "$noexec" >&2; false; }; } &&
       {{if eq (index .Steps "classify").ExitCode 0}}sh .vincent-issue/green.sh &&{{end}}
+      {{if eq (index .Steps "classify").ExitCode 3}}sh .vincent-issue/proof.sh &&{{end}}
       go run mage.go test &&
       go run mage.go lint
-    check_timeout: 15m
+    check_timeout: 25m
 
   - id: docs-scope
     name: List what the change touched
@@ -1349,6 +1729,25 @@ steps:
       to show it happened is a finding. Report it in `docs.md` and in the PR
       body; do not quietly delete it.
       {{- end }}
+      {{- if eq (index .Steps "classify").ExitCode 3 }}
+
+      **This change is CI work.** The issue is labeled `ci`, so beside the
+      derivations below there are three records that describe CI, and the
+      audit checks them first:
+
+      - The gate list in `CLAUDE.md`'s Commands section tracks `ci.yml`'s
+        `gates` job and `scripts/*-gate.sh`. A gate this change added or wired
+        that is missing there, or a sentence counting the gates that no longer
+        counts right, is stale. On this path you may edit `CLAUDE.md` for that,
+        and for nothing else in it.
+      - A gate record under `docs/gates/` says when a gate last ran and where.
+        A run line for a platform nobody ran, or a date with no run behind it,
+        is a finding: report it in `docs.md` and in the PR body; do not quietly
+        delete it.
+      - A task the change completes has its status marker and its row in
+        `docs/tasks/README.md` changed together — and only if the gate that
+        proves it actually passed.
+      {{- end }}
 
       Read `CLAUDE.md` first. Public documentation there is **derived from the
       source, not from planning records**, and each derivation is a rule you
@@ -1406,7 +1805,7 @@ steps:
         the report below and in `.vincent-issue/pr.md`, and leave the images
         alone — a person re-runs the script.
       - **Do not touch anything outside** `docs/`, `skills/`, `CHANGELOG.md`,
-        `README.md` and `internal/workflow/builtin.go`. If you find a bug in
+        `README.md`{{ if eq (index .Steps "classify").ExitCode 3 }}, `CLAUDE.md`{{ end }} and `internal/workflow/builtin.go`. If you find a bug in
         the change itself, report it rather than fixing it here; this step's
         commits are documentation commits.
 
@@ -1449,13 +1848,17 @@ steps:
     # skill say still pass.
     #
     # It deliberately does not re-run the full suite: `verify` is next.
+    #
+    # On the ci path the lane also takes in `CLAUDE.md`, whose gate list is
+    # derived from `ci.yml`'s `gates` job the way the pages are derived from
+    # the code.
     check: >
       test -s .vincent-issue/docs.md &&
       head -n 1 .vincent-issue/docs.md | grep -Eq '^docs: (updated|none needed)$' &&
       ! git ls-files .vincent-issue | grep -q . &&
       git diff --quiet &&
       git diff --cached --quiet &&
-      { offenders=$(git diff --name-only "$(cat .vincent-issue/pre-docs.sha)"..HEAD | grep -vE '^(docs/|skills/|CHANGELOG\.md$|README\.md$|internal/workflow/builtin\.go$)'); test -z "$offenders" || { echo 'docs-sync changed files outside docs/, skills/, CHANGELOG.md, README.md and internal/workflow/builtin.go:' >&2; echo "$offenders" >&2; false; }; } &&
+      { offenders=$(git diff --name-only "$(cat .vincent-issue/pre-docs.sha)"..HEAD | grep -vE '^(docs/|skills/|CHANGELOG\.md$|README\.md${{ if eq (index .Steps "classify").ExitCode 3 }}|CLAUDE\.md${{ end }}|internal/workflow/builtin\.go$)'); test -z "$offenders" || { echo 'docs-sync changed files outside docs/, skills/, CHANGELOG.md, README.md{{ if eq (index .Steps "classify").ExitCode 3 }}, CLAUDE.md{{ end }} and internal/workflow/builtin.go:' >&2; echo "$offenders" >&2; false; }; } &&
       go build -o .vincent-issue/vincent ./cmd/vincent &&
       { for f in .vincent/workflows/*.yaml; do .vincent-issue/vincent workflow validate "$f" && .vincent-issue/vincent workflow render "$f" > /dev/null || exit 1; done; } &&
       go test ./internal/config ./internal/cli ./internal/workflow ./internal/api
@@ -1474,7 +1877,7 @@ steps:
         name: Run the cross-platform legs
         type: command
         shell: sh
-        timeout: 20m
+        timeout: 30m
         # A probe never retries — a second identical run is the same run — and
         # `allow_failure` is what turns a red leg into something the `break`
         # guard and the repair prompt can read instead of a blocked task.
@@ -1513,6 +1916,17 @@ steps:
         # GOOS-tagged file that stopped compiling is the commonest thing this
         # loop exists to repair, and without this the repair session is handed
         # the word FAIL and no reason.
+        #
+        # On the ci path the probe also runs `proof.sh` — a gate that went red
+        # after `docs-sync` or a repair is exactly what this loop is for — and
+        # `actionlint` over the workflow files the branch changed.
+        # `-shellcheck=` turns off the half of actionlint that `ci.yml` already
+        # fails at HEAD (`./bin/vincent* version` is SC2211); the half left is
+        # the schema and expression check that catches a broken workflow before
+        # GitHub does. A host without actionlint says so in the output rather
+        # than failing: the tool is optional, and the pull request's CI is the
+        # real judge of a workflow file. The step's 30 minutes are for the
+        # gates; four probes and three repairs still fit the loop's 5h.
         run: |
           exec 2>&1
           set -e
@@ -1527,7 +1941,22 @@ steps:
             say "$pass: linting GOOS=$os"
             GOOS=$os "$LINT" run ./...
           done
-          say "$pass: race detector and all three lint targets green"
+          {{- if eq (index .Steps "classify").ExitCode 3 }}
+          echo "--- pinned proof: .vincent-issue/proof.sh ---"
+          say "$pass: running the pinned gate commands"
+          sh .vincent-issue/proof.sh
+          workflows=$(git diff --name-only --diff-filter=d {{.Task.BaseBranch}}..HEAD -- .github/workflows)
+          if [ -n "$workflows" ]; then
+            if command -v actionlint >/dev/null 2>&1; then
+              echo "--- actionlint -shellcheck= ---"
+              say "$pass: actionlint on the changed workflows"
+              actionlint -shellcheck= $workflows
+            else
+              echo "--- actionlint is not installed: the changed workflow files are unlinted here ---"
+            fi
+          fi
+          {{- end }}
+          say "$pass: race detector{{ if eq (index .Steps "classify").ExitCode 3 }}, all three lint targets and the pinned gates{{ else }} and all three lint targets{{ end }} green"
 
       - id: verify-ok
         name: Stop once the legs are green
@@ -1552,6 +1981,10 @@ steps:
               go run mage.go testrace
               LINT=$(go tool -n golangci-lint)
               for os in windows darwin linux; do GOOS=$os "$LINT" run ./...; done
+          {{- if eq (index .Steps "classify").ExitCode 3 }}
+              sh .vincent-issue/proof.sh
+              actionlint -shellcheck= <each workflow file this branch changed>
+          {{- end }}
 
           Its output (this is pass {{.Loop.Index}} of the repair loop):
 
@@ -1593,6 +2026,12 @@ steps:
           - Stay inside the scope the brief agreed. If the legs are red for a
             reason that predates this branch, say so plainly and fix only what
             this branch broke.
+          {{- if eq (index .Steps "classify").ExitCode 3 }}
+          - A red command from `proof.sh` is the change failing its own proof.
+            Fix the gate or the code under it. Never edit
+            `.vincent-issue/proof.sh`, skip a scenario, or lengthen a fixed
+            wait to outlast a cause you have not found.
+          {{- end }}
 
           **Commit your fix.** The next pass re-runs the legs against what is
           committed, and two files should still be true afterwards: update
@@ -1683,6 +2122,25 @@ steps:
       - Were items left out? The second line of `.vincent-issue/brief.md` says
         `closes: yes` or `closes: no`. On `no` the PR body must say `Part of`,
         not `Closes`, or merging closes an issue that still has work in it.
+      {{- else if eq (index .Steps "classify").ExitCode 3 -}}
+      This ran as a **CI change**:
+
+      - What proved it? The pinned commands below ran green on this host and
+        nowhere else. The other platforms have not run it at all: this pull
+        request's own CI is their first run, and the merge tail waits for it.
+      - Does it prove less than before anywhere — a platform skipped, a
+        `continue-on-error`, a scenario dropped, a fixed wait lengthened —
+        without the brief recording you deciding it?
+      - Is every new gate script executable, and wired into `ci.yml` and
+        listed in `CLAUDE.md` together?
+      - Does a gate record or a ticked task claim a run on a platform nobody
+        ran? And on `closes: no` — the second line of
+        `.vincent-issue/brief.md` — the PR body must say `Part of`, not
+        `Closes`.
+
+      Pinned proof:
+
+      {{ (index .Steps "pin-proof").Result }}
       {{- else -}}
       This ran as an **enhancement**: does it actually solve the issue, is it
       the change you want, and did it stay inside the scope the brief agreed?
@@ -1788,7 +2246,7 @@ steps:
       else may have pulled — waits for every required check to pass **on the
       commit it pushed**, and then merges the pull request with a merge commit.
       Merging closes the issue if the body says `Closes #…` — a documentation
-      change that left items open says `Part of #…` instead — and GitHub
+      or CI change that left items open says `Part of #…` instead — and GitHub
       deletes the remote branch.
 
       It will do that up to **three times**. If a required check goes red on
@@ -1804,6 +2262,13 @@ steps:
       thread, and whether the base branch has moved under it in a way that
       makes this change wrong rather than merely conflicted.
 
+      {{ if eq (index .Steps "classify").ExitCode 3 -}}
+      This is a **CI change**, so the wait below is not a formality: it is the
+      first time the change runs on the platforms this machine is not, and a
+      gate red only on Windows is the likeliest thing to send the tail into a
+      repair pass.
+
+      {{ end -}}
       What stops the tail rather than merging: someone else pushing to the
       branch, a rebase whose conflicts the resolver cannot finish, a required
       check still red after two repair passes, and a pull request merged or
@@ -2703,6 +3168,16 @@ steps:
             no longer runs is not a check that passed, and this repository's
             required contexts are named in branch protection — removing one
             leaves the wait hanging on a context nothing will ever report.
+          {{- if eq (index .Steps "classify").ExitCode 3 }}
+          - This branch **is** CI work, so the red check may be the change
+            itself failing on a platform this machine is not — the finding
+            the issue exists to surface, not noise. Fix the gate or the
+            workflow: a CRLF left in a multi-line `jq` capture, a pipe into
+            `grep -q`, a `run:` body `pwsh` cannot parse, a script that lost
+            its executable bit. Editing `ci.yml` to repair a step is in scope;
+            skipping the platform, `continue-on-error` or dropping the step is
+            not.
+          {{- end }}
           - A failure only CI sees is usually a platform or a race. CI runs the
             suite and every gate on Windows, macOS and Linux (`CLAUDE.md`) and
             this machine is one of the three, so reproduce it the way the

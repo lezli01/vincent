@@ -302,6 +302,17 @@ steps:
       is recorded that did not happen — no gate run record, `✓` date or ticked
       box without a run behind it.
 
+      If this unit writes a gate script, a fake CLI scenario or CI wiring,
+      `CLAUDE.md`'s Commands section is the rulebook, and every rule there was
+      a real Windows-only or intermittent failure first: a gate script is
+      committed executable (`git update-index --chmod=+x`), which this step's
+      check asserts; a gate's workflow `run:` bodies are spelled in the
+      intersection of `/bin/sh` and `pwsh`; a multi-line `jq` capture gets
+      `| tr -d '\r'`; nothing is piped into `grep -q`; and CI is never made
+      green by proving less — no platform skipped, no `continue-on-error`.
+      This machine is one of the three platforms; the pull request's CI proves
+      the other two, long after you are finished.
+
       ## The bar
 
       `.vincent-issue/unit-check.sh` is the command the plan says proves this
@@ -363,12 +374,19 @@ steps:
     # header. The parent's `schedule: barrier` holds the base branch still
     # while this lane runs; three-dot is what keeps the ownership clause honest
     # if it ever does move.
+    #
+    # The mode clause is the parent's `integrate` check brought forward: a
+    # script under `scripts/` committed without its executable bit passes on
+    # Windows and fails both POSIX legs with exit 126 (CLAUDE.md), and the lane
+    # that wrote it is the cheapest place to catch that — its retry can still
+    # fix it.
     check: >
       test -z "$(git ls-files .vincent-issue)" &&
       git diff --quiet &&
       git diff --cached --quiet &&
       test "$(git rev-list --count {{.Task.BaseBranch}}..HEAD)" -gt 0 &&
       { stray=$(git diff --name-only {{.Task.BaseBranch}}...HEAD | grep -vEf .vincent-issue/unit-files.re || true); test -z "$stray" || { echo 'this unit committed paths the plan did not give it:' >&2; echo "$stray" >&2; echo 'owned paths (ERE):' >&2; cat .vincent-issue/unit-files.re >&2; false; }; } &&
+      { noexec=$(git ls-files -s -- 'scripts/*.sh' | awk '$1 != "100755" { print $4 }'); test -z "$noexec" || { echo 'scripts not committed executable (git update-index --chmod=+x):' >&2; echo "$noexec" >&2; false; }; } &&
       sh .vincent-issue/unit-check.sh
     check_timeout: 15m
 
