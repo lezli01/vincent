@@ -227,3 +227,14 @@ jobs:
       - name: 064 gate (task from a pull request)
         shell: bash
         run: ./scripts/064-gate.sh
+
+      # 052: GitHub pull requests (task 052, issue #381; §13.2). `cmd/fakegh`
+      # is built as `gh.exe` on Windows and has to be found on the detached
+      # daemon's PATH the way the real CLI is; `FAKEGH_PR_BRANCH` has to reach
+      # the daemon through a stop/start; the argv log is written by a Go child
+      # and read back through the platform's own line endings; and the
+      # worktree branch a pull request's head is matched against is made by
+      # git on the host.
+      - name: 052 gate (GitHub pull requests)
+        shell: bash
+        run: ./scripts/052-gate.sh
