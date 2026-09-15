@@ -1853,7 +1853,7 @@ now works:
 ```
 $ vincent github pr create --task 61 --title "List a project's open pull requests"
 Pushed vincent/61-list-open-pull-requests to origin.
-vincent could not create the pull request (forbidden).
+vincent could not create the pull request (no_write_scope).
 Open this instead:
 https://github.com/octo/repo/compare/main...vincent%2F61-list-open-pull-requests?expand=1&title=…
 ```

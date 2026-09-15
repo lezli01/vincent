@@ -37,6 +37,12 @@ record rows say so in place.
    path. **Merging stays out of scope**, and row 11's prohibition on hardcoded
    merge behaviour is untouched.
 
+   *Amended 2026-09-15 (task 068.4, #386):* no longer true of vincent. Row 11
+   is rewritten (task 068 decision 1) and `internal/github` gains merge, close,
+   reopen, comment and re-run beside `CreatePull`, all human-triggered and all
+   excluded from MCP under this task's decision 3. `CreatePull`'s 403 is now
+   `no_write_scope` rather than `forbidden`, the reason every write gives.
+
    Two rejected alternatives, recorded so they are not rediscovered.
    *Push only, no create* — vincent pushes and the existing compare URL then
    works — fixes the dead-page complaint but not the acceptance criterion the
@@ -140,7 +146,7 @@ issue's second complaint fixed even on the unhappy path.
       create`, plus the `ci.yml` step. Landed as five scenarios — a ready pull
       request through the API, a draft through `vincent github pr create`,
       `pull_already_linked` then `pull_exists` after an unlink, the
-      `forbidden` fallback after a push, and `push_rejected` with nothing
+      `forbidden` fallback after a push (*`no_write_scope` since 2026-09-15, task 068.4*), and `push_rejected` with nothing
       created — wired into the `gates` job on all three platforms
       ([#383](https://github.com/lezli01/vincent/issues/383)). ✓ 2026-09-15
 
