@@ -16,7 +16,7 @@ state stay on your machine; vincent provides the control plane around them.
 | Agents | Claude Code, Codex, and Cursor; per-workflow, per-step, and per-task selection |
 | Human oversight | Approval gates, mid-run answers where supported, blocked-step recovery, edit-and-retry, ad-hoc repair agents, follow-up runs on finished tasks, a notify hook that reaches you with no client open |
 | Visibility | Grouped task board, live output, durable transcripts, metrics, file-grouped diffs, workflow graph |
-| GitHub | Create a task from an issue or a **pull request**, prefilled and editable — a pull-request task runs on that pull request's head branch; issue details in templates; a project's pull requests, each linked to the task whose branch it came from, with that task's own tab carrying its live CI checks; and **open a pull request** for a task — push its branch and create the PR from inside vincent, the one thing vincent writes to GitHub. No stored credential |
+| GitHub | Create a task from an issue or a **pull request**, prefilled and editable — a pull-request task runs on that pull request's head branch; issue details in templates; a project's pull requests, each linked to the task whose branch it came from, with that task's own tab carrying its live CI checks; and **open a pull request** for a task — push its branch and create the PR from inside vincent — then merge, close, reopen, comment on or re-run its failed checks from the CLI, each written to GitHub only when you ask. No stored credential |
 | Event triggers | Start or act on tasks from a polled command, GitHub issue and pull-request changes, or a signed push; off twice by default, proposed paused and restricted, deduplicated and rate-limited, with a delivery ledger and dry runs; built-in workflows that write triggers and never switch one on |
 | Integration | Full CLI, JSON output, stable exit codes, localhost REST API, durable state SSE and live output streams |
 | Operations | Automatic usage-limit waits, one-command diagnostics, configuration editing from the TUI and CLI, orphan cleanup, database integrity checks, backup and restore |
@@ -423,8 +423,8 @@ explicit flags winning, and `vincent github issues` lists issues without the TUI
 
 Vincent stores no credential: it prefers your existing `gh` CLI and falls back to
 `GITHUB_TOKEN`/`GH_TOKEN` from the daemon's environment. Nothing about an issue
-is ever written back — the only thing vincent writes to GitHub is a pull
-request you ask it to open, [below](#open-a-pull-request). When it is
+is ever written back — vincent writes to GitHub only when you ask it to open a
+task's pull request or act on one, [below](#open-a-pull-request). When it is
 unavailable the row does not appear, `vincent doctor` reports why, and
 everything else is unaffected. Set `github.enabled: false` in `config.yaml` to
 switch it off entirely.
@@ -550,7 +550,7 @@ other is the release check under [Run it on your platform](#run-it-on-your-platf
 listing and leaves everything else working on demand. It fires only for projects
 whose `origin` is a github.com repository, so a daemon with no such project never
 makes it. It writes nothing to GitHub either: the reconciler only reads, and the
-one write vincent makes there happens when you ask for it, never on a tick.
+writes vincent makes there happen when you ask for them, never on a tick.
 
 See the [pull-requests screen](guides/tui.md#pull-requests), the
 [CLI reference](reference/cli.md#vincent-github-prs) and the
