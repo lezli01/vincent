@@ -392,6 +392,107 @@ func TestLoopRetryResumesMidIteration(t *testing.T) {
 	}
 }
 
+// TestLoopRetryReevaluatesABreakThatDidNotTake: a break that let the body
+// carry on writes a `succeeded` row, but that row is a guard's answer, not
+// finished work. A resumed iteration must ask it again (task 015 decision 10),
+// because the probe it reads may have re-run and turned green — which is what
+// a retried merge pass does when its merge lands. Treating the old answer as
+// done ran the rest of the body, and then a whole extra iteration, after the
+// loop's own exit condition was already true.
+func TestLoopRetryReevaluatesABreakThatDidNotTake(t *testing.T) {
+	h := newEngineHarness(t)
+	h.start(t)
+	probe := script(
+		"test -f fixed.txt",
+		"if (-not (Test-Path fixed.txt)) { exit 1 }",
+	)
+	snapshot := loopSnapshot("count: 2",
+		commandStep("probe", probe, "allow_failure: true", "max_retries: 0"),
+		"  - {id: passed, type: break, if: '{{ eq (index .Steps \"probe\").ExitCode 0 }}'}\n",
+		commandStep("boom", script("exit 3", "exit 3"), "max_retries: 0"),
+	)
+	task := h.createTask(t, snapshot)
+
+	blocked := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskDone)
+	if blocked.State != store.TaskBlocked {
+		t.Fatalf("task state = %s, want blocked on boom", blocked.State)
+	}
+	if err := os.WriteFile(filepath.Join(blocked.WorktreePath, "fixed.txt"), []byte("ok\n"), 0o600); err != nil {
+		t.Fatalf("write flag file: %v", err)
+	}
+	if _, _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+
+	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
+	if done.State != store.TaskDone {
+		t.Fatalf("task state after retry = %s (block_reason %q), want done — the re-run probe is green, so the break must take",
+			done.State, done.BlockReason)
+	}
+	byIteration := iterationsOf(h.stepRuns(t, task.ID))
+	if len(byIteration) != 1 {
+		t.Errorf("iterations = %d, want 1 — the loop must end in the iteration whose break took", len(byIteration))
+	}
+	var booms int
+	last := byIteration[1][len(byIteration[1])-1]
+	for _, r := range byIteration[1] {
+		if r.StepID == "boom" {
+			booms++
+		}
+	}
+	if booms != 1 {
+		t.Errorf("boom rows = %d, want 1 — nothing after a taken break may run", booms)
+	}
+	if last.StepID != "passed" || last.State != store.StepStopped {
+		t.Errorf("iteration 1 last row = %s/%s, want passed/stopped", last.StepID, last.State)
+	}
+}
+
+// TestLoopRetryReevaluatesAConditionThatPassed is the same rule for the
+// other decision step a body may hold: a `condition` that let the iteration
+// carry on is asked again on resume, and a false answer now ends the
+// iteration instead of running the step after it.
+func TestLoopRetryReevaluatesAConditionThatPassed(t *testing.T) {
+	h := newEngineHarness(t)
+	h.start(t)
+	probe := script(
+		"test -f fixed.txt",
+		"if (-not (Test-Path fixed.txt)) { exit 1 }",
+	)
+	snapshot := loopSnapshot("count: 2",
+		commandStep("probe", probe, "allow_failure: true", "max_retries: 0"),
+		"  - {id: broken, type: condition, if: '{{ ne (index .Steps \"probe\").ExitCode 0 }}'}\n",
+		commandStep("boom", script("exit 3", "exit 3"), "max_retries: 0"),
+	)
+	task := h.createTask(t, snapshot)
+
+	blocked := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskDone)
+	if blocked.State != store.TaskBlocked {
+		t.Fatalf("task state = %s, want blocked on boom", blocked.State)
+	}
+	if err := os.WriteFile(filepath.Join(blocked.WorktreePath, "fixed.txt"), []byte("ok\n"), 0o600); err != nil {
+		t.Fatalf("write flag file: %v", err)
+	}
+	if _, _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+
+	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
+	if done.State != store.TaskDone {
+		t.Fatalf("task state after retry = %s (block_reason %q), want done — the condition is now false, so boom must not run",
+			done.State, done.BlockReason)
+	}
+	var booms int
+	for _, r := range h.stepRuns(t, task.ID) {
+		if r.StepID == "boom" {
+			booms++
+		}
+	}
+	if booms != 1 {
+		t.Errorf("boom rows = %d, want 1 — only the pass before the fix got past the condition", booms)
+	}
+}
+
 // TestLoopSkipSkipsTheWholeLoop pins decision 12: `skip` keeps its §6 meaning
 // and skips the whole loop step. There is no "skip this iteration" action —
 // a second meaning for one word would need a state nobody can see.

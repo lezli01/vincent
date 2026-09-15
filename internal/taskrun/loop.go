@@ -205,10 +205,17 @@ func (r *Runner) runIteration(
 ) (stepOutcome, bool) {
 	latest := latestStatesIn(history, iteration)
 	for pos, body := range env.step.Steps {
-		if latest[body.ID] == store.StepSucceeded {
+		if latest[body.ID] == store.StepSucceeded && !isDecision(body) {
 			// This body step already succeeded in this iteration under an
 			// earlier admission. Re-running it would discard finished work,
 			// which is §7.5's rule verbatim (decision 7).
+			//
+			// A `break` or `condition` is never skipped this way. Its
+			// `succeeded` row is a guard's answer rather than work, and a guard
+			// is asked again every time it is reached (§7.7, task 015 decision
+			// 10): the step it reads may have re-run on this admission and
+			// changed the answer. Skipping it let a retried merge pass walk past
+			// the break that should have ended the loop.
 			continue
 		}
 		bodyEnv := &stepEnv{
@@ -241,6 +248,12 @@ func (r *Runner) runIteration(
 		}
 	}
 	return stepOutcome{}, false
+}
+
+// isDecision reports a body step that runs nothing and only answers a guard:
+// its rows are verdicts to re-ask, never work to keep.
+func isDecision(step workflow.Step) bool {
+	return step.Type == workflow.StepBreak || step.Type == workflow.StepCondition
 }
 
 // runBodyStep runs one member of a loop body. stop reports that the loop is
