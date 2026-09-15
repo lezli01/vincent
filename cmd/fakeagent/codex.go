@@ -98,6 +98,9 @@ func codexMain(scenario string) {
 			"message": unauthenticatedMessage,
 		}})
 		os.Exit(1)
+	case "mcp-callback":
+		mcpCallback(dialectCodex, nil)
+		codexSuccess(prompt)
 	default: // success
 		codexSuccess(prompt)
 	}

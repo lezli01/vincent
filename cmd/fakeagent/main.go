@@ -27,6 +27,9 @@
 //	                      usage-limit wording in its result text) |
 //	                      set-status (runs the real `vincent status` command
 //	                      from inside the step — task 036) |
+//	                      mcp-callback (calls step_status over the MCP server
+//	                      its argv or workspace wired it, then succeeds — task
+//	                      057.9, mcp.go; every dialect) |
 //	                      echo-prompt (appends the prompt it was handed,
 //	                      verbatim, to FAKEAGENT_PROMPT_FILE — issue #323) |
 //	                      sleep (internal: silent child)
@@ -53,6 +56,16 @@
 //	                      set-status: a second message set just before the
 //	                      step ends — the value that must survive on the
 //	                      finished row
+//	FAKEAGENT_MCP_STATUS  mcp-callback: the message step_status reports
+//	                      (default "fakeagent called back over MCP")
+//	FAKEAGENT_MCP_ASK     mcp-callback, claude dialect: "1" then asks one
+//	                      question and, once answered, calls step_status again
+//	                      on the same session. codex and cursor have no
+//	                      mid-run input, so it is ignored there
+//	FAKEAGENT_MCP_STATUS_FINAL
+//	                      mcp-callback: the message of that second call
+//	                      (default "fakeagent called back again after the
+//	                      answer")
 //	FAKEAGENT_USAGE_LIMIT_RESET
 //	                      usage-limit: seconds from now until the window
 //	                      reopens, embedded in the message as the CLI does.
@@ -101,7 +114,8 @@
 //	                      2026.08.04-fake000) — lets tests drive the §7.4
 //	                      supports_input version gate and the task-041
 //	                      version verdict
-//	FAKEAGENT_EDIT_FILE   success, ask-question (post-answer): append a line
+//	FAKEAGENT_EDIT_FILE   success, mcp-callback, ask-question (post-answer):
+//	                      append a line
 //	                      to this worktree-relative tracked file, so gate
 //	                      runs produce a non-empty diff
 //	FAKEAGENT_SPAWN_CHILD hang: spawn a sleeping child first and emit its pid
@@ -370,6 +384,9 @@ func main() {
 		}
 		emitText(reports)
 		emitSuccessResult([]byte(reports), 1, 1)
+	case "mcp-callback":
+		mcpCallback(dialectClaude, stdin)
+		claudeSuccess(prompt)
 	case "flood":
 		// An agent that will not stop talking: emits until something kills
 		// it, which is exactly what the §12.3 transcript cap must do.
@@ -639,6 +656,17 @@ const longQuestionText = "Two colors would both work for the header, and the " +
 // askQuestion emits an AskUserQuestion control_request in the captured shape
 // and blocks until answered; the answers round-trip into the result text.
 func askQuestion(prompt []byte, rd *bufio.Reader) {
+	answered := awaitAnswer(rd)
+	emitText("question answered: " + answered)
+	if f := os.Getenv("FAKEAGENT_EDIT_FILE"); f != "" {
+		editFile(f) // the answered agent then does work the gate can publish
+	}
+	emitSuccessResult([]byte(string(prompt)+" | "+answered), 100, 42)
+}
+
+// awaitAnswer asks askQuestion's question and blocks until it is answered,
+// returning the answers as JSON. It exits the run when stdin closes first.
+func awaitAnswer(rd *bufio.Reader) string {
 	question := "Which color do you prefer?"
 	if os.Getenv("FAKEAGENT_ASK_LONG") == "1" {
 		question = longQuestionText
@@ -682,11 +710,7 @@ func askQuestion(prompt []byte, rd *bufio.Reader) {
 		"answers":  resp.Response.Response.UpdatedInput["answers"],
 		"response": resp.Response.Response.UpdatedInput["response"],
 	})
-	emitText("question answered: " + string(answered))
-	if f := os.Getenv("FAKEAGENT_EDIT_FILE"); f != "" {
-		editFile(f) // the answered agent then does work the gate can publish
-	}
-	emitSuccessResult([]byte(string(prompt)+" | "+string(answered)), 100, 42)
+	return string(answered)
 }
 
 // askPermission emits a Write permission control_request in the captured

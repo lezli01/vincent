@@ -13,6 +13,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/agenttest"
+	"github.com/lezli01/vincent/internal/mcp/mcptest"
 )
 
 func fakeAdapter(t *testing.T) *Adapter {
@@ -362,5 +363,38 @@ func TestBuildArgsNoMCP(t *testing.T) {
 func TestRestrictedToolsCarryVincent(t *testing.T) {
 	if !strings.Contains(restrictedTools, "mcp__vincent__*") {
 		t.Errorf("restrictedTools = %q, want mcp__vincent__* in it", restrictedTools)
+	}
+}
+
+// TestStartMCPCallback is per-step wiring proven from a running process
+// (task 057.9): the fake agent reads the endpoint and secret out of the
+// `--mcp-config` this adapter rendered, and calls step_status over the real
+// per-step endpoint. argv alone (TestBuildArgsMCP) cannot show that anything
+// on the other end of it can connect.
+func TestStartMCPCallback(t *testing.T) {
+	srv := mcptest.New(t)
+	env := append(os.Environ(), "FAKEAGENT_SCENARIO=mcp-callback", "FAKEAGENT_MCP_STATUS=claude called back")
+	env = append(env, srv.Env()...)
+	h, err := fakeAdapter(t).Start(t.Context(), agent.RunSpec{
+		Prompt:         "call back",
+		WorkDir:        t.TempDir(),
+		PermissionMode: agent.FullAuto,
+		Env:            env,
+		MCP:            srv.MCP,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	drain(t, h)
+	res, err := h.Wait()
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if res.ExitCode != 0 || res.IsError {
+		t.Fatalf("got exit=%d isError=%v (%s), want clean success", res.ExitCode, res.IsError, res.ErrorMessage)
+	}
+	want := mcptest.StatusCall{TaskID: "42", StepID: mcptest.StepID, Message: "claude called back"}
+	if got := srv.StatusCalls(); len(got) != 1 || got[0] != want {
+		t.Errorf("status calls = %+v, want exactly %+v", got, want)
 	}
 }

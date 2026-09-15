@@ -9,6 +9,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/agenttest"
+	"github.com/lezli01/vincent/internal/mcp/mcptest"
 )
 
 func fakeAdapter(t *testing.T) *Adapter {
@@ -337,5 +338,48 @@ func TestBuildArgsNoMCP(t *testing.T) {
 		if strings.Contains(a, "mcp") {
 			t.Fatalf("argv carries %q; want nothing about MCP", a)
 		}
+	}
+}
+
+// TestStartMCPCallback is per-step wiring proven from a running process
+// (task 057.9): the fake agent reads the `-c mcp_servers.vincent.*` overrides
+// this adapter rendered and the token from the variable they name, and calls
+// step_status over the real per-step endpoint.
+func TestStartMCPCallback(t *testing.T) {
+	srv := mcptest.New(t)
+	// The spec's environment carries no token, so a call that authenticates
+	// can only have been given one by the adapter, through MCPTokenEnv.
+	var env []string
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, MCPTokenEnv+"=") {
+			env = append(env, kv)
+		}
+	}
+	env = append(env, "FAKEAGENT_SCENARIO=mcp-callback", "FAKEAGENT_MCP_STATUS=codex called back")
+	env = append(env, srv.Env()...)
+	h, err := fakeAdapter(t).Start(t.Context(), agent.RunSpec{
+		Prompt:         "call back",
+		WorkDir:        t.TempDir(),
+		PermissionMode: agent.FullAuto,
+		Env:            env,
+		MCP:            srv.MCP,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if strings.Contains(strings.Join(h.Argv(), " "), srv.MCP.Token) {
+		t.Errorf("argv = %q carries the token; codex's must reach the child only through %s", h.Argv(), MCPTokenEnv)
+	}
+	drain(t, h)
+	res, err := h.Wait()
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if res.ExitCode != 0 || res.IsError {
+		t.Fatalf("got exit=%d isError=%v (%s), want clean success", res.ExitCode, res.IsError, res.ErrorMessage)
+	}
+	want := mcptest.StatusCall{TaskID: "42", StepID: mcptest.StepID, Message: "codex called back"}
+	if got := srv.StatusCalls(); len(got) != 1 || got[0] != want {
+		t.Errorf("status calls = %+v, want exactly %+v", got, want)
 	}
 }
