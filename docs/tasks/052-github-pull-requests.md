@@ -176,6 +176,11 @@ is given in the pull request instead (tracked in
 Task-numbered rather than `m10` because
 this is not a §19 milestone, following 017 and 032.
 
+*Amended 2026-09-15 (issue #381).* The step is now in `ci.yml`'s `gates` job,
+on all three platforms. Wiring it in found the gate red since 2026-08-30: task
+064 added a fork row, #355, to `cmd/fakegh`'s pull request list, and scenario 1
+still expected two open rows. The gate was corrected to the corpus's three.
+
 ## Sub-tasks
 
 | ID | Task | Status |
