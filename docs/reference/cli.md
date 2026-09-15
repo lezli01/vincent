@@ -1827,10 +1827,9 @@ head branch against a task's own branch; a link made or removed by hand over
 vincent github pr create --task ID --title TITLE [--body TEXT] [--draft] [--json]
 ```
 
-Pushes the task's branch to `origin` and opens its pull request. This is the
-**only** command under `vincent github` that writes to GitHub, and the only
-write vincent makes there at all — it never updates, comments on, closes or
-merges anything.
+Pushes the task's branch to `origin` and opens its pull request. It and the
+five commands below it are the only commands under `vincent github` that write
+to GitHub, and each acts only on the task you name, only when you run it.
 
 ```
 $ vincent github pr create --task 61 --title "List a project's open pull requests" --draft
@@ -1861,6 +1860,66 @@ https://github.com/octo/repo/compare/main...vincent%2F61-list-open-pull-requests
 A task that already has a linked pull request is refused: unlink it first. The
 same action is `P` in the TUI, in the task workspace and on the Pull Requests
 takeover.
+
+### `vincent github pr merge`
+
+```sh
+vincent github pr merge --task ID --method merge|squash|rebase --head-sha SHA [--json]
+```
+
+Merges the task's linked pull request. There is no confirmation prompt, so both
+`--method` and `--head-sha` are required: they are where you name exactly what
+is sent. There is no default method and no config key for one.
+
+```
+$ vincent github pr merge --task 61 --method squash --head-sha 3f9c2e1d…
+Merged octo/repo#412 (merged)
+https://github.com/octo/repo/pull/412
+```
+
+The daemon reads the pull request first and refuses — merging nothing — when
+its head is no longer `--head-sha` (`head_changed`), a check is still running
+(`checks_running`), the branch is behind its base (`branch_behind`), or GitHub
+would not merge it as it stands (`not_mergeable`: a conflict, a draft, a
+required review, or a pull request already closed or merged). The merge itself
+is pinned to `--head-sha`, so a push landing after that read is refused too. It
+never deletes the branch and never uses an admin override.
+
+### `vincent github pr close` and `vincent github pr reopen`
+
+```sh
+vincent github pr close --task ID [--json]
+vincent github pr reopen --task ID [--json]
+```
+
+Closes the task's linked pull request without merging it, or reopens a closed
+one, and prints the pull request as it reads afterwards.
+
+### `vincent github pr comment`
+
+```sh
+vincent github pr comment --task ID (--body TEXT | --body-file PATH) [--json]
+```
+
+Posts a comment on the task's linked pull request and prints its URL.
+`--body-file -` reads the comment from stdin. An empty comment is refused. Run
+it twice and it comments twice.
+
+### `vincent github pr rerun`
+
+```sh
+vincent github pr rerun --task ID --run-id ID [--json]
+```
+
+Re-runs the failed jobs of one GitHub Actions run. The run must be behind a
+**failed**, Actions-backed check on the pull request's current head, as the
+daemon's live [check rollup](api.md#github-pull-requests) reads it; any other
+run id is refused (`bad_request`) and nothing is sent.
+
+Every command in this group needs a linked pull request — a task with none, or
+whose link was removed, is refused with `pull_not_linked` — and a credential
+that may write: a 403 from GitHub is `no_write_scope`. None of them is an MCP
+tool, so an agent running in a step cannot reach them.
 
 ### `vincent github status`
 
