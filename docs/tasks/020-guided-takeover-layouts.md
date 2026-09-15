@@ -84,10 +84,11 @@ than a quieter hierarchy around the capabilities vincent already has.
   Depends: 020.2–020.5. Done when §15 and the user guide describe the wide and
   compact compositions without promising capabilities the code lacks.
 - [!] **020.7 — Run repository verification and review the final diff.** — the
-  container's PID namespace makes existing `procx` live-process tests report
-  their own PID as missing; the failures reproduce without `-race` and lie
-  outside the packages changed here (tracked in
-  [#379](https://github.com/lezli01/vincent/issues/379), 2026-09-13).
+  #153 diff review (2026-09-14) found a real defect: `ctrl+s` failed silently
+  when a local check rejected a row on a stage the wide New task form was not
+  showing. `49659a2` (#163) has since fixed it and every required check has run
+  (see Verification), so closing needs only the owner's call on a review whose
+  one defect is already fixed.
   Depends: 020.1–020.6. Done only when formatting, focused TUI tests and the
   repository's required checks have actually run; any unavailable check stays
   explicitly blocked rather than being inferred green.
@@ -107,3 +108,32 @@ Run 2026-08-20 with the pinned Go 1.26.6 toolchain:
   `internal/taskrun` orphan-recovery tests because this environment's `/proc`
   view cannot find the test process. The same failures reproduce without
   `-race` in `go test ./internal/procx ./internal/taskrun -count=1`.
+
+### Re-run 2026-09-14 (#379)
+
+- PR #153's CI run
+  [32349602452](https://github.com/lezli01/vincent/actions/runs/32349602452)
+  at head `b11624b` (merged as `a4fdae6`, 2026-08-20) — `success`: `ci`
+  (`mage lint`, `mage testrace`, `mage build`) and `gates` on ubuntu, macOS
+  and windows. This is the run on the diff itself.
+- Local run at `b885c53` (`master`) on macOS, 2026-09-14 — a run of today's
+  tree, not of the 2026-08-20 diff. Every command passed:
+  `go test ./internal/procx -count=1`,
+  `go test ./internal/taskrun -run 'Orphan|Recover' -count=1`,
+  `go run mage.go test`, `go run mage.go testrace`, `go run mage.go lint`
+  (`0 issues.`), the host-built linter with `GOOS=windows`, `darwin` and
+  `linux` (`0 issues.` each), and `go run mage.go build`.
+- The `internal/procx` live-PID and `internal/taskrun` orphan-recovery failures
+  recorded above were that workspace's `/proc` view; they do not reproduce on a
+  host.
+- Review of the #153 diff (`git diff a4fdae6^1 a4fdae6`, 19 files,
+  +1033/−24) found one defect, since fixed: `submit()` recorded a local
+  check's error on its row (no project, an invalid or wrong-platform workflow,
+  an agent that cannot answer mid-run) and returned without moving the cursor,
+  so on the wide layout the error could sit on a stage that was not showing and
+  `ctrl+s` appeared to do nothing. `49659a2`, merged with #163 (`ee3c06d`,
+  2026-08-21), moves the cursor to the first invalid row.
+- Checked and not counted as a defect: while the first-run notice's error line
+  shows (only when recording the acknowledgment failed), the body loses a row,
+  so a terminal exactly 24 rows tall draws the compact composition; decision 2
+  keeps every cursor and sub-layer across that change.
