@@ -15,14 +15,14 @@ import (
 // be browsed without opening the TUI — the same reason every other data view
 // has a subcommand.
 //
-// It was read-only until task 069 and now has exactly one write, `pr create`,
-// which is the same amendment decision record row 27 took: one write path, for
-// pull-request creation, on a human's say-so. `issues`, `prs` and `status`
-// still write nothing.
+// It was read-only until task 069 gave it `pr create`, and task 068.4 added
+// `pr merge`, `close`, `reopen`, `comment` and `rerun` — every write under the
+// `pr` noun, each on a human's say-so, which is what decision record rows 11
+// and 27 now say. `issues`, `prs` and `status` still write nothing.
 func newGitHubCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "github",
-		Short: "Read GitHub issues and pull requests, and open one for a task",
+		Short: "Read GitHub issues and pull requests, and act on a task's pull request",
 	}
 	cmd.AddCommand(newGitHubIssuesCmd(), newGitHubPullsCmd(), newGitHubPRCmd(), newGitHubStatusCmd())
 	return cmd
@@ -195,8 +195,7 @@ func githubPullSummary(t apiclient.TaskDetail) string {
 // be able to drive the one route that writes to a forge without driving a
 // terminal.
 //
-// It is the only thing under `vincent github` that writes, and it writes only
-// when a human runs it. `--draft` is the popup's toggle; the title and body
+// It writes only when a human runs it. `--draft` is the popup's toggle; the title and body
 // are the prefill a human edits, and `--body` is optional because a pull
 // request with no description is a legal one.
 func newGitHubPRCreateCmd() *cobra.Command {
@@ -253,13 +252,170 @@ func newGitHubPRCreateCmd() *cobra.Command {
 	return cmd
 }
 
-// newGitHubPRCmd groups the write path under its own noun, so `prs` stays the
+// newGitHubPRCmd groups the writes under their own noun, so `prs` stays the
 // listing and nothing that writes hides inside it.
 func newGitHubPRCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pr",
 		Short: "Act on one task's pull request",
 	}
-	cmd.AddCommand(newGitHubPRCreateCmd())
+	cmd.AddCommand(newGitHubPRCreateCmd(), newGitHubPRMergeCmd(),
+		newGitHubPRStateCmd("close", "Close a task's linked pull request without merging it", "Closed",
+			(*apiclient.Client).CloseGitHubPull),
+		newGitHubPRStateCmd("reopen", "Reopen a task's closed pull request", "Reopened",
+			(*apiclient.Client).ReopenGitHubPull),
+		newGitHubPRCommentCmd(), newGitHubPRRerunCmd())
+	return cmd
+}
+
+// `vincent github pr merge` (task 068.4). The CLI has no confirmation popup,
+// so the flags are where the human names exactly what is sent (task 068
+// decision 4): `--method` has no default, and `--head-sha` is the commit the
+// merge is for. The daemon refuses `head_changed`, and merges nothing, when
+// the pull request's head has moved past it.
+func newGitHubPRMergeCmd() *cobra.Command {
+	var (
+		taskID  int64
+		method  string
+		headSHA string
+	)
+	cmd := &cobra.Command{
+		Use:   "merge",
+		Short: "Merge a task's linked pull request",
+		Long: "Merge the pull request linked to a task.\n\n" +
+			"There is no confirmation prompt, so both --method and --head-sha are\n" +
+			"required: they are where you name exactly what is sent. The merge is\n" +
+			"refused, and nothing is merged, when the pull request's head is no\n" +
+			"longer --head-sha, when a check is still running, when the branch is\n" +
+			"behind its base, or when GitHub would not merge it as it stands.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				pull, err := c.MergeGitHubPull(ctx, taskID, apiclient.GitHubPullMergeRequest{
+					Method: method, HeadSHA: headSHA,
+				})
+				return printPullWrite(cmd, "Merged", pull, err)
+			})
+		},
+	}
+	cmd.Flags().Int64Var(&taskID, "task", 0, "Task id (required)")
+	cmd.Flags().StringVar(&method, "method", "", "Merge method: merge, squash or rebase (required)")
+	cmd.Flags().StringVar(&headSHA, "head-sha", "", "The head commit being merged (required)")
+	_ = cmd.MarkFlagRequired("task")
+	_ = cmd.MarkFlagRequired("method")
+	_ = cmd.MarkFlagRequired("head-sha")
+	jsonFlag(cmd)
+	return cmd
+}
+
+// newGitHubPRStateCmd is `pr close` and `pr reopen`: a task id, and nothing
+// else to name.
+func newGitHubPRStateCmd(use, short, done string,
+	call func(*apiclient.Client, context.Context, int64) (apiclient.GitHubPullRequest, error),
+) *cobra.Command {
+	var taskID int64
+	cmd := &cobra.Command{
+		Use:   use,
+		Short: short,
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				pull, err := call(c, ctx, taskID)
+				return printPullWrite(cmd, done, pull, err)
+			})
+		},
+	}
+	cmd.Flags().Int64Var(&taskID, "task", 0, "Task id (required)")
+	_ = cmd.MarkFlagRequired("task")
+	jsonFlag(cmd)
+	return cmd
+}
+
+// printPullWrite renders a write that answers with the pull request.
+func printPullWrite(cmd *cobra.Command, done string, pull apiclient.GitHubPullRequest, err error) error {
+	if err != nil {
+		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+		return exitError{code: 1}
+	}
+	if wantJSON(cmd) {
+		return emitJSON(cmd.OutOrStdout(), pull)
+	}
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s %s#%d (%s)\n%s\n",
+		done, pull.Repo, pull.Number, pull.Status(), pull.URL)
+	return nil
+}
+
+// `vincent github pr comment`. `--body-file -` reads stdin, so a long comment
+// is something a pipe carries rather than something argv has to quote.
+func newGitHubPRCommentCmd() *cobra.Command {
+	var (
+		taskID   int64
+		body     string
+		bodyFile string
+	)
+	cmd := &cobra.Command{
+		Use:   "comment",
+		Short: "Comment on a task's linked pull request",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			text, err := flagText(cmd, body, bodyFile)
+			if err != nil {
+				return err
+			}
+			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				out, err := c.CommentGitHubPull(ctx, taskID, text)
+				if err != nil {
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+					return exitError{code: 1}
+				}
+				if wantJSON(cmd) {
+					return emitJSON(cmd.OutOrStdout(), out)
+				}
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Commented on task %d's pull request\n%s\n", taskID, out.URL)
+				return nil
+			})
+		},
+	}
+	cmd.Flags().Int64Var(&taskID, "task", 0, "Task id (required)")
+	cmd.Flags().StringVar(&body, "body", "", "Comment text")
+	cmd.Flags().StringVar(&bodyFile, "body-file", "", "Read the comment from a file (- for stdin)")
+	_ = cmd.MarkFlagRequired("task")
+	cmd.MarkFlagsMutuallyExclusive("body", "body-file")
+	cmd.MarkFlagsOneRequired("body", "body-file")
+	jsonFlag(cmd)
+	return cmd
+}
+
+// `vincent github pr rerun`. The run id is the `run_id` of a failed row in
+// `vincent`'s check rollup; the daemon refuses any other before sending.
+func newGitHubPRRerunCmd() *cobra.Command {
+	var (
+		taskID int64
+		runID  int64
+	)
+	cmd := &cobra.Command{
+		Use:   "rerun",
+		Short: "Re-run the failed jobs of a GitHub Actions run on a task's pull request",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				out, err := c.RerunGitHubPullChecks(ctx, taskID, runID)
+				if err != nil {
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+					return exitError{code: 1}
+				}
+				if wantJSON(cmd) {
+					return emitJSON(cmd.OutOrStdout(), out)
+				}
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Requested a re-run of the failed jobs in run %d\n", out.RunID)
+				return nil
+			})
+		},
+	}
+	cmd.Flags().Int64Var(&taskID, "task", 0, "Task id (required)")
+	cmd.Flags().Int64Var(&runID, "run-id", 0, "GitHub Actions run id (required)")
+	_ = cmd.MarkFlagRequired("task")
+	_ = cmd.MarkFlagRequired("run-id")
+	jsonFlag(cmd)
 	return cmd
 }

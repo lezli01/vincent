@@ -5,12 +5,12 @@ import (
 	"strings"
 )
 
-// The one write path (task 069, decision record row 27 as amended).
+// Pull-request creation (task 069, decision record row 27 as amended).
 //
-// Everything else in this package reads. This creates a pull request, and it
-// is the whole of what "internal/github is no longer read-only" means: there
-// is no second write method, no update, no comment, no merge, and row 11's
-// prohibition on hardcoded merge behaviour is untouched.
+// It was the first write in this package and, until task 068.4, the only one.
+// It is no longer alone — write.go holds merge, close, reopen, comment and
+// re-run — and it follows the same rules they do: a human's act, reached from
+// no MCP tool, and a 403 is `no_write_scope`.
 //
 // Both legs answer into the same normalized PullRequest the read side
 // produces, so a client cannot tell which one ran — and neither leg's own

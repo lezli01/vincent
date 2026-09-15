@@ -13,6 +13,19 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Merge, close, reopen, comment on and re-run the checks of a task's pull
+  request from vincent.** The daemon gains five routes under
+  `POST /v1/tasks/{id}/github/pull/` — `merge`, `close`, `reopen`, `comment`
+  and `checks/rerun` — and `vincent github pr` gains the matching subcommands.
+  They act only on a task's linked pull request, only when a human asks, over
+  the same `gh` or `GITHUB_TOKEN` credential the reads use, and none of them is
+  an MCP tool. A merge names its method and the head commit it is for, and is
+  refused before anything is sent when the branch is behind
+  (`branch_behind`), a check is still running (`checks_running`), the head
+  moved (`head_changed`) or GitHub would not merge it (`not_mergeable`). A
+  re-run is accepted only for a failed GitHub Actions run on the current head.
+  The Pull Request tab's buttons for these follow separately.
+
 - **`vincent task diff` prints a task's diff from the command line.** Piped,
   the output is the daemon's diff byte for byte with no size limit, so it can go
   straight to `git apply`; on a terminal it is coloured unless `NO_COLOR` is
@@ -250,6 +263,11 @@ list with the user-facing context a commit subject cannot carry.
   TUI's follow-up form gains the same **start** row as the new-task form.
 
 ### Changed
+
+- **A credential that cannot write to GitHub is now reported as `no_write_scope`.**
+  Opening a pull request with a read-only token still pushes the branch and
+  falls back to GitHub's compare page, but its `reason` is now `no_write_scope`
+  rather than `forbidden`; `forbidden` is kept for reads.
 
 - **A new task refreshes your local base branch, and shows what it started
   from.** With `fetch_base_branch` on (the default), the fetch before a task's
