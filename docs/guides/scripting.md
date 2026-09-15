@@ -244,6 +244,24 @@ vincent daemon logs -n 200
 vincent daemon logs -f | grep -i error
 ```
 
+## Reading a task's diff
+
+`vincent task diff <id>` prints the task's diff against its base. Piped, it is
+the daemon's bytes exactly, with no size limit and no colour, so it is a patch:
+
+```sh
+# carry a task's change into another checkout
+vincent task diff 7 | git -C ../other-checkout apply
+
+# which files did each fan-out lane touch?
+vincent task diff 7 --stat --by lane --json |
+  jq -r '.[] | "\(if .remainder then "-" else .lane_id end) \(.path)"'
+```
+
+`--json` alone is `{"diff": "<text>"}`, and `--by lane --json` is the API's
+sections array. An empty diff prints nothing and exits `0`; a task with no
+worktree exits `1`.
+
 ## Validating workflows in CI
 
 `vincent workflow validate` runs **entirely locally**: no daemon, no network, no

@@ -13,6 +13,13 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **`vincent task diff` prints a task's diff from the command line.** Piped,
+  the output is the daemon's diff byte for byte with no size limit, so it can go
+  straight to `git apply`; on a terminal it is coloured unless `NO_COLOR` is
+  set. `--by lane` splits a fan-out parent's diff into one `# lane` section per
+  lane plus a `# remainder`, `--stat` prints a per-file table of added and
+  removed lines, and `--json` covers every form.
+
 - **Event triggers start work from outside events.** A file under
   `{config_dir}/triggers/` watches a source and turns each new event into a
   task, or into a follow-up, retry or cancel of the task on a branch. Four
