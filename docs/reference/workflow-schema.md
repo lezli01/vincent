@@ -756,14 +756,17 @@ Each body step spends its own budget within each iteration.
 
 `skip` skips the **whole loop** and advances past it — there is no "skip this
 iteration". `retry` resumes at the failed body step of the iteration it
-stopped in, with a fresh budget; it does not restart at iteration 1. `edit +
+stopped in, with a fresh budget; it does not restart at iteration 1. An earlier step
+that failed under `allow_failure` runs again first, and so does every step after
+one that runs again. `edit +
 retry` rewrites that body step in the task's snapshot, so it applies to
 **every remaining iteration** — fix the prompt, let it keep going.
 
 The same is true after a crash: position is derived from the rows on every
 admission, so a restarted daemon resumes mid-iteration rather than redoing work
 you may have waited an hour for. Work is what is kept: a `break` or `condition`
-is re-evaluated on every resume, whatever it answered before.
+is re-evaluated on every resume, whatever it answered before. And work is kept
+only while nothing before it in the iteration has run again.
 
 > **A loop is one step: one index, one slot, one worktree, one timeline entry**,
 > and its iterations are strictly sequential. Unlike `max_parallel`, it adds no

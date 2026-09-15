@@ -247,6 +247,39 @@ so by accident, because §7.5's rule it copied governs a group, which holds no
 decision steps. Resuming a retried merge pass walked past a `break` whose probe
 had just turned green (§7.8 amendment of the same date).
 
+*Reopened 2026-09-15.* The skip is a **prefix** rule, not a per-step one.
+Keeping every succeeded row on its own let a resumed iteration re-run an earlier
+step — any whose latest row failed under `allow_failure` — and then keep the
+rows produced downstream of that step's old answer. Task 277 hit it: a retried
+merge pass re-ran `rebase` and kept the previous pass's `repush` and
+`await-head`. The rule is now: skip a succeeded `agent` or `command` row only
+while no body step has started an attempt on this admission; from the first one
+that does, every later body step runs. A guard skipping its step again, and a
+`break` or `condition` answering again, do not count as running — they changed
+nothing, and counting them would restart every pass-shaped body at its first
+guarded step.
+
+This departs from §7.5 on purpose, and the departure is why the rule was wrong
+here and is right there. A group is a set whose siblings cannot see each other,
+so no row in it is downstream of another and keeping rows one by one is exact. A
+loop body is a sequence, and decision 9's positional visibility is precisely
+what makes a later row depend on an earlier one.
+
+**Cost, accepted:** an expensive step after a re-run one runs again. In a
+converge loop, a crash after the repair re-runs the probe and, if it is still
+red, the repair. That is the pass the body describes; keeping the old repair
+against a new probe answer is the inconsistency this closes.
+
+**Beat:** resume strictly at the blocked step and keep every earlier row,
+`allow_failure` failures included. It is consistent too, and cheaper, but a
+retry could then never re-run a pass: task 277's blocked `repair-checks` had
+nothing to repair — CI was red for an unrelated flake — and would have blocked
+again on every retry, leaving `skip`, which skips the whole loop, as the only
+way out.
+
+**Beat:** restart the iteration on every resume. It discards the kept prefix,
+which is still the work this decision exists to protect.
+
 **Beat:** composite step ids (`repair#3`), needing no migration. They poison
 `.Steps` keys, break the "step ids are unique across the whole workflow" rule by
 manufacturing ids that are not in the file, and make every consumer parse a
@@ -347,7 +380,9 @@ its iterations to fan out or to run a group.
   for one word would need a state nobody can see.
 - **`retry`** resumes: the failed body step of the current iteration re-runs
   with a fresh budget, derived per decision 7, and the loop carries on from
-  there. It does not restart at iteration 1.
+  there. It does not restart at iteration 1. *Amended 2026-09-15:* derived per
+  decision 7 as reopened — an earlier step that failed under `allow_failure`
+  re-runs too, and every body step after the first one that runs runs again.
 - **`edit + retry`** overrides a body step's prompt or command in the task's
   snapshot, and therefore applies to **every remaining iteration**. This is the
   useful behaviour — fix the prompt, let it keep going — and it is stated in §6
