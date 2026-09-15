@@ -242,6 +242,15 @@ list with the user-facing context a commit subject cannot carry.
   `vincent task retry` and `vincent task follow-up` gain `--paused`, and the
   TUI's follow-up form gains the same **start** row as the new-task form.
 
+- **`vincent task show` shows holds and what a step was given.** A queued task
+  waiting out an agent's usage limit or a step's retry backoff prints a `hold`
+  row with the reason and the local time the daemon will try again. `vincent
+  task show <id> --step RUN` prints one attempt's recorded inputs, the TUI's
+  Step Details tab as text: the rendered prompt, `run` and `check` bodies in
+  full, the agent, model and effort with the level each came from, the shell,
+  working directory and timeouts, the loop and `if:` record, and the outcome.
+  With `--json` it prints that attempt's step run object, unchanged.
+
 ### Changed
 
 - **A new task refreshes your local base branch, and shows what it started
