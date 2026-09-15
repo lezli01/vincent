@@ -204,11 +204,16 @@ func (r *Runner) runIteration(
 	iteration int, history []store.StepRun,
 ) (stepOutcome, bool) {
 	latest := latestStatesIn(history, iteration)
+	// rerun is set once a body step has run on this admission. From there on
+	// nothing is kept: every later row was produced downstream of the old
+	// result, so keeping it would pair a fresh answer with a stale one
+	// (decision 7, reopened 2026-09-15).
+	rerun := false
 	for pos, body := range env.step.Steps {
-		if latest[body.ID] == store.StepSucceeded && !isDecision(body) {
+		if !rerun && latest[body.ID] == store.StepSucceeded && !isDecision(body) {
 			// This body step already succeeded in this iteration under an
-			// earlier admission. Re-running it would discard finished work,
-			// which is §7.5's rule verbatim (decision 7).
+			// earlier admission, and nothing before it has run again since.
+			// Re-running it would discard finished work (decision 7).
 			//
 			// A `break` or `condition` is never skipped this way. Its
 			// `succeeded` row is a guard's answer rather than work, and a guard
@@ -234,10 +239,11 @@ func (r *Runner) runIteration(
 			followUp: env.followUp,
 			log:      env.log.With("body_step", body.ID, "iteration", iteration),
 		}
-		outcome, stop := r.runBodyStep(ctx, bodyEnv)
+		outcome, stop, ran := r.runBodyStep(ctx, bodyEnv)
 		if stop {
 			return outcome, true
 		}
+		rerun = rerun || ran
 		if outcome.state == store.StepStopped {
 			// A `condition` whose guard is false ends *this iteration*; the
 			// loop carries on with the next. That is `continue`, spelled with
@@ -258,34 +264,37 @@ func isDecision(step workflow.Step) bool {
 
 // runBodyStep runs one member of a loop body. stop reports that the loop is
 // over — a `break` taken, a failure, or an interruption; a returned
-// `stopped` outcome without stop ends only the iteration.
-func (r *Runner) runBodyStep(ctx context.Context, env *stepEnv) (out stepOutcome, stop bool) {
+// `stopped` outcome without stop ends only the iteration. ran reports that
+// the step started an attempt, as opposed to a guard or a decision step only
+// answering a question: that is what makes the rest of a resumed iteration
+// run again rather than keep its rows (decision 7, reopened).
+func (r *Runner) runBodyStep(ctx context.Context, env *stepEnv) (out stepOutcome, stop, ran bool) {
 	if env.step.Guarded() || env.step.Type == workflow.StepCondition {
 		pass, rendered, err := r.evaluateGuard(ctx, env)
 		switch {
 		case err != nil:
 			r.recordGuardOutcome(ctx, env, store.StepFailed, "", ReasonConditionError, rendered)
-			return stepOutcome{state: store.StepFailed, reason: ReasonConditionError}, true
+			return stepOutcome{state: store.StepFailed, reason: ReasonConditionError}, true, false
 		case env.step.Type == workflow.StepBreak && pass:
 			// The loop ends here and **succeeds**; the cursor advances past
 			// it (§7.8). A break is a decision the workflow made, which is
 			// exactly what separates it from `loop_limit` (decision 5).
 			r.recordGuardOutcome(ctx, env, store.StepStopped, "", "", rendered)
 			env.log.Info("loop ended by a break step")
-			return stepOutcome{state: store.StepSucceeded}, true
+			return stepOutcome{state: store.StepSucceeded}, true, false
 		case env.step.Type == workflow.StepBreak:
 			r.recordGuardOutcome(ctx, env, store.StepSucceeded, "", "", rendered)
-			return stepOutcome{}, false
+			return stepOutcome{}, false, false
 		case env.step.Type == workflow.StepCondition && !pass:
 			r.recordGuardOutcome(ctx, env, store.StepStopped, "", "", rendered)
-			return stepOutcome{state: store.StepStopped}, false
+			return stepOutcome{state: store.StepStopped}, false, false
 		case env.step.Type == workflow.StepCondition:
 			r.recordGuardOutcome(ctx, env, store.StepSucceeded, "", "", rendered)
-			return stepOutcome{}, false
+			return stepOutcome{}, false, false
 		case !pass:
 			r.recordGuardOutcome(ctx, env, store.StepSkipped, store.SkipReasonCondition, "", rendered)
 			env.log.Info("body step skipped by its guard")
-			return stepOutcome{}, false
+			return stepOutcome{}, false, false
 		}
 	}
 	if env.step.Type == workflow.StepBreak {
@@ -293,7 +302,7 @@ func (r *Runner) runBodyStep(ctx context.Context, env *stepEnv) (out stepOutcome
 		// branch above always claims it. Refusing to fall through to
 		// runStepWithRetries keeps a corrupted snapshot from spawning a
 		// process for a step type that has none.
-		return stepOutcome{state: store.StepFailed, reason: ReasonInvalidSnapshot}, true
+		return stepOutcome{state: store.StepFailed, reason: ReasonInvalidSnapshot}, true, false
 	}
 	outcome := r.runStepWithRetries(ctx, env)
 	if outcome.costExceeded {
@@ -302,11 +311,11 @@ func (r *Runner) runBodyStep(ctx context.Context, env *stepEnv) (out stepOutcome
 		// a loop rather than after it: a body step's success is otherwise
 		// discarded, and discarding it would let the remaining iterations run
 		// — the overshoot the boundary check exists to keep at one attempt.
-		return outcome, true
+		return outcome, true, true
 	}
 	switch outcome.state {
 	case store.StepSucceeded:
-		return stepOutcome{}, false
+		return stepOutcome{}, false, true
 	case store.StepFailed:
 		// The backoff test comes first: a body step owed a paced retry has
 		// budget left, so this is not its verdict yet and `allow_failure`
@@ -319,13 +328,13 @@ func (r *Runner) runBodyStep(ctx context.Context, env *stepEnv) (out stepOutcome
 			// happened — and that row is what the `break` guard two lines
 			// below reads (§7.2, task 015 decision 5).
 			env.log.Info("body step failed; continuing on allow_failure", "reason", outcome.reason)
-			return stepOutcome{}, false
+			return stepOutcome{}, false, true
 		}
-		return outcome, true
+		return outcome, true, true
 	default:
 		// Interrupted, and everything a body step cannot produce. Either way
 		// the loop stops and the engine decides what that means for the task.
-		return outcome, true
+		return outcome, true, true
 	}
 }
 

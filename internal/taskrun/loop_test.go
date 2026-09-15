@@ -392,6 +392,86 @@ func TestLoopRetryResumesMidIteration(t *testing.T) {
 	}
 }
 
+// TestLoopRetryRerunsWhatFollowsARerunStep: once a resumed iteration runs a
+// body step again, nothing after it is kept (decision 7, reopened). Here the
+// probe failed under allow_failure, so a retry runs it again — and `tick`,
+// which succeeded after the old probe answer, must run after the new one
+// rather than keep a result produced downstream of an answer that no longer
+// stands. That mix is what left a retried merge pass pushing and waiting on
+// state an earlier rebase had produced.
+func TestLoopRetryRerunsWhatFollowsARerunStep(t *testing.T) {
+	h := newEngineHarness(t)
+	h.start(t)
+	gated := script(
+		"test -f fixed.txt",
+		"if (-not (Test-Path fixed.txt)) { exit 1 }",
+	)
+	snapshot := loopSnapshot("count: 1",
+		commandStep("probe", gated, "allow_failure: true", "max_retries: 0"),
+		commandStep("tick", appendCmd("ticks.txt", "x")),
+		commandStep("boom", gated, "max_retries: 0"),
+	)
+	task := h.createTask(t, snapshot)
+
+	blocked := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskDone)
+	if blocked.State != store.TaskBlocked {
+		t.Fatalf("task state = %s, want blocked on boom", blocked.State)
+	}
+	if err := os.WriteFile(filepath.Join(blocked.WorktreePath, "fixed.txt"), []byte("ok\n"), 0o600); err != nil {
+		t.Fatalf("write flag file: %v", err)
+	}
+	if _, _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+
+	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
+	if done.State != store.TaskDone {
+		t.Fatalf("task state after retry = %s (block_reason %q), want done", done.State, done.BlockReason)
+	}
+	if got := countLines(t, done.WorktreePath, "ticks.txt"); got != 2 {
+		t.Errorf("ticks = %d, want 2 — tick follows the re-run probe, so it must run again", got)
+	}
+}
+
+// TestLoopRetryKeepsWorkPastAGuardThatStillSkips: re-asking a guard is not
+// running a step. A body step whose guard skips it again on resume changed
+// nothing, so the succeeded work after it is still kept — otherwise every
+// guarded step in a pass-shaped body would restart the pass (decision 7,
+// reopened).
+func TestLoopRetryKeepsWorkPastAGuardThatStillSkips(t *testing.T) {
+	h := newEngineHarness(t)
+	h.start(t)
+	boom := script(
+		"test -f fixed.txt",
+		"if (-not (Test-Path fixed.txt)) { exit 1 }",
+	)
+	snapshot := loopSnapshot("count: 1",
+		commandStep("never", appendCmd("never.txt", "x"), "if: '{{ not .Loop.IsFirst }}'"),
+		commandStep("tick", appendCmd("ticks.txt", "x")),
+		commandStep("boom", boom, "max_retries: 0"),
+	)
+	task := h.createTask(t, snapshot)
+
+	blocked := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskDone)
+	if blocked.State != store.TaskBlocked {
+		t.Fatalf("task state = %s, want blocked on boom", blocked.State)
+	}
+	if err := os.WriteFile(filepath.Join(blocked.WorktreePath, "fixed.txt"), []byte("ok\n"), 0o600); err != nil {
+		t.Fatalf("write flag file: %v", err)
+	}
+	if _, _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+
+	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
+	if done.State != store.TaskDone {
+		t.Fatalf("task state after retry = %s (block_reason %q), want done", done.State, done.BlockReason)
+	}
+	if got := countLines(t, done.WorktreePath, "ticks.txt"); got != 1 {
+		t.Errorf("ticks = %d, want 1 — a guard that skipped again ran nothing, so tick is kept", got)
+	}
+}
+
 // TestLoopRetryReevaluatesABreakThatDidNotTake: a break that let the body
 // carry on writes a `succeeded` row, but that row is a guard's answer, not
 // finished work. A resumed iteration must ask it again (task 015 decision 10),
