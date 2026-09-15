@@ -362,6 +362,9 @@ localhost API.
   it fits pre-commit hooks and CI. `vincent workflow render` belongs there too:
   it executes a workflow's templates against a preview context, so a reference
   no task would satisfy is caught before a task is created.
+- `vincent task diff` prints a task's change as a patch that pipes straight
+  into `git apply`, split into one section per fan-out lane with `--by lane`,
+  or as a per-file table of added and removed lines with `--stat`.
 
 Start with [Scripting vincent](guides/scripting.md), then use the complete
 [HTTP API reference](reference/api.md) when you need direct integration.
