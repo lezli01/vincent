@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -150,6 +151,16 @@ func parseGHIssue(out []byte, repo Repo, now time.Time) (Issue, error) {
 // carrying a named reason plus the stderr as *detail* — which reaches the
 // daemon log and nothing else (decision 1).
 func (c *Client) runGH(ctx context.Context, path string, args ...string) ([]byte, error) {
+	out, stderr, err := execGH(ctx, path, nil, args...)
+	if err != nil {
+		return nil, ghError(err, stderr, ctx.Err())
+	}
+	return out, nil
+}
+
+// execGH is the one place `gh` is executed. stdin is nil for every call but
+// the two that take a body on `--body-file -`.
+func execGH(ctx context.Context, path string, stdin io.Reader, args ...string) (stdout []byte, stderr string, err error) {
 	// G204: path is the configured or PATH-resolved `gh`, args are an argument
 	// slice built by this package. Never a shell string.
 	cmd := exec.CommandContext(ctx, path, args...) //nolint:gosec // G204: see above
@@ -157,13 +168,16 @@ func (c *Client) runGH(ctx context.Context, path string, args ...string) ([]byte
 	// GH_PAGER and NO_COLOR are not set here: `--json` output is neither
 	// paged nor colored by gh, and inheriting the user's environment is the
 	// point (§2).
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return nil, ghError(err, stderr.String(), ctx.Err())
+	if stdin != nil {
+		cmd.Stdin = stdin
 	}
-	return stdout.Bytes(), nil
+	var out, errOut bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errOut
+	if err := cmd.Run(); err != nil {
+		return nil, errOut.String(), err
+	}
+	return out.Bytes(), errOut.String(), nil
 }
 
 // ghError maps a failed `gh` invocation onto the reason vocabulary. The
@@ -197,7 +211,8 @@ func ghError(runErr error, stderr string, ctxErr error) *Error {
 		return &Error{Reason: ReasonUnauthorized, Detail: detail}
 	case strings.Contains(lower, "not logged"), strings.Contains(lower, "gh auth login"):
 		return &Error{Reason: ReasonNoCredential, Detail: detail}
-	case strings.Contains(lower, "http 403"), strings.Contains(lower, "must have admin"):
+	case strings.Contains(lower, "http 403"), strings.Contains(lower, "must have admin"),
+		strings.Contains(lower, "resource not accessible"):
 		return &Error{Reason: ReasonForbidden, Detail: detail}
 	case strings.Contains(lower, "could not resolve to"),
 		strings.Contains(lower, "not found"),
@@ -444,7 +459,7 @@ func parseGHChecks(out []byte, now time.Time) (CheckRollup, error) {
 	return newRollup(raw.HeadOid, runs, now), nil
 }
 
-// ghCreatePull is the `gh` half of the one write path (task 069).
+// ghCreatePull is the `gh` half of pull-request creation (task 069).
 //
 // `gh pr create` prints the new pull request's web URL on stdout and nothing
 // else — there is no `--json` on it — so the number is parsed out of that
@@ -458,7 +473,7 @@ func parseGHChecks(out []byte, now time.Time) (CheckRollup, error) {
 // platform's command-line limit, which is 32 KiB on Windows.
 func (c *Client) ghCreatePull(ctx context.Context, cred credential, repo Repo, opts CreateOptions) (PullRequest, error) {
 	args := ghCreateArgs(repo, opts)
-	out, err := c.runGHStdin(ctx, cred.ghPath, opts.Body, args...)
+	out, err := runGHWrite(ctx, cred.ghPath, strings.NewReader(opts.Body), classifyGHCreate, args...)
 	if err != nil {
 		return PullRequest{}, err
 	}
@@ -512,29 +527,44 @@ func pullNumberFromURL(out string) (int, bool) {
 	return n, true
 }
 
-// runGHStdin is runGH with a body on the child's stdin, for `--body-file -`.
-func (c *Client) runGHStdin(ctx context.Context, path, stdin string, args ...string) ([]byte, error) {
-	// G204: path is the configured or PATH-resolved `gh`, args are an argument
-	// slice built by this package. Never a shell string.
-	cmd := exec.CommandContext(ctx, path, args...) //nolint:gosec // G204: see above
-	hideConsole(cmd)
-	cmd.Stdin = strings.NewReader(stdin)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return nil, ghCreateError(err, stderr.String(), ctx.Err())
+// runGHWrite runs a mutating `gh` subcommand (task 069, task 068.4). stdin
+// is nil unless the subcommand takes `--body-file -`.
+//
+// Failures map through ghWriteError rather than ghError: classify names the
+// refusals only this write can have, and a 403 is ReasonNoWriteScope.
+func runGHWrite(ctx context.Context, path string, stdin io.Reader, classify func(lowerStderr string) string, args ...string) ([]byte, error) {
+	out, stderr, err := execGH(ctx, path, stdin, args...)
+	if err != nil {
+		return nil, ghWriteError(err, stderr, ctx.Err(), classify)
 	}
-	return stdout.Bytes(), nil
+	return out, nil
 }
 
-// ghCreateError is ghError plus the one failure only a create can have: a
-// pull request already exists for this head and base. `gh` reports it as an
-// ordinary exit 1 with the API's own sentence on stderr, so it is recognized
-// before the generic mapping runs and never surfaces as "unreachable".
-func ghCreateError(runErr error, stderr string, ctxErr error) *Error {
-	if strings.Contains(strings.ToLower(stderr), "already exists") {
-		return &Error{Reason: ReasonPullExists, Detail: strings.TrimSpace(stderr)}
+// ghWriteError is ghError for a write. `gh` reports every refusal as an
+// ordinary exit 1 with the API's own sentence on stderr, so a write's own
+// refusals are recognized first — they must never surface as
+// "unreachable" — and a 403 becomes no_write_scope: a credential that could
+// read the pull request a moment ago and cannot write to it is one condition,
+// and it gets one spelling on every write (task 068.4 decision 4).
+func ghWriteError(runErr error, stderr string, ctxErr error, classify func(string) string) *Error {
+	var exit *exec.ExitError
+	if ctxErr == nil && classify != nil && errors.As(runErr, &exit) {
+		if reason := classify(strings.ToLower(stderr)); reason != "" {
+			return &Error{Reason: reason, Detail: strings.TrimSpace(stderr)}
+		}
 	}
-	return ghError(runErr, stderr, ctxErr)
+	e := ghError(runErr, stderr, ctxErr)
+	if e.Reason == ReasonForbidden {
+		e.Reason = ReasonNoWriteScope
+	}
+	return e
+}
+
+// classifyGHCreate names the one failure only a create can have: a pull
+// request already exists for this head and base.
+func classifyGHCreate(lower string) string {
+	if strings.Contains(lower, "already exists") {
+		return ReasonPullExists
+	}
+	return ""
 }

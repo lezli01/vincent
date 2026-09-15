@@ -161,8 +161,8 @@ func TestCreatePullFallsBackToCompareURL(t *testing.T) {
 	if !out.Pushed {
 		t.Error("the push did not happen before the create was attempted")
 	}
-	if out.Reason != github.ReasonForbidden {
-		t.Errorf("fallback reason is %q, want %q", out.Reason, github.ReasonForbidden)
+	if out.Reason != github.ReasonNoWriteScope {
+		t.Errorf("fallback reason is %q, want %q", out.Reason, github.ReasonNoWriteScope)
 	}
 	// The branch is path-escaped in the URL, which is what github.CompareURL
 	// has always done and is not this route's business to change.

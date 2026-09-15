@@ -422,47 +422,67 @@ func parseRESTChecks(runsBody, statusBody []byte, ref string, now time.Time) (Ch
 	return newRollup(ref, runs, now), nil
 }
 
-// restCreatePull is the REST half of the one write path (task 069):
-// `POST /repos/{owner}/{name}/pulls`. It is the only non-GET this package
-// makes, and the response it decodes is the same restPull the read side
-// already normalizes — a created pull request and a fetched one are the same
-// resource, so a second shape for one of them would be a second place for the
-// names to drift.
+// restCreatePull is the REST half of pull-request creation (task 069):
+// `POST /repos/{owner}/{name}/pulls`. The response it decodes is the same
+// restPull the read side already normalizes — a created pull request and a
+// fetched one are the same resource, so a second shape for one of them would
+// be a second place for the names to drift.
 func (c *Client) restCreatePull(ctx context.Context, cred credential, repo Repo, opts CreateOptions) (PullRequest, error) {
-	body, err := c.restPOST(ctx, cred, fmt.Sprintf("/repos/%s/%s/pulls",
+	body, err := c.restWrite(ctx, cred, http.MethodPost, fmt.Sprintf("/repos/%s/%s/pulls",
 		url.PathEscape(repo.Owner), url.PathEscape(repo.Name)), map[string]any{
 		"title": opts.Title,
 		"body":  opts.Body,
 		"head":  opts.Head,
 		"base":  opts.Base,
 		"draft": opts.Draft,
-	})
+	}, classifyRESTCreate)
 	if err != nil {
 		return PullRequest{}, err
 	}
 	return parseRESTPull(body, repo, c.now())
 }
 
-// restPOST is restGET's write counterpart. The two are separate functions
-// rather than one with a method argument so that "this package makes exactly
-// one kind of write" is a thing a reader can check by looking at the callers
-// of this one.
-func (c *Client) restPOST(ctx context.Context, cred credential, path string, payload any) ([]byte, error) {
+// classifyRESTCreate separates the duplicate head from every other 422.
+// GitHub answers 422 for both, and the message the API itself writes is the
+// only thing that tells them apart — the one place this package reads a
+// GitHub sentence, because the status alone cannot tell a duplicate from a
+// typo'd base branch. The sentence itself never leaves as anything but
+// Detail.
+func classifyRESTCreate(status int, lowerBody string) string {
+	if status == http.StatusUnprocessableEntity && strings.Contains(lowerBody, "already exists") {
+		return ReasonPullExists
+	}
+	return ""
+}
+
+// restWrite is restGET's write counterpart, for every mutating method this
+// package sends (task 069, task 068.4). The callers of this function are the
+// whole of what vincent writes to GitHub over REST, which is a thing a reader
+// can check by looking at them.
+//
+// A nil payload sends no body, which is what the re-run endpoint takes.
+// classify names the refusals only that write can have, and may be nil.
+func (c *Client) restWrite(ctx context.Context, cred credential, method, path string, payload any, classify func(status int, lowerBody string) string) ([]byte, error) {
 	base := c.opts.BaseURL
 	if base == "" {
 		base = DefaultBaseURL
 	}
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return nil, newError(ReasonBadRequest, "encode request: %v", err)
+	var reqBody io.Reader
+	if payload != nil {
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			return nil, newError(ReasonBadRequest, "encode request: %v", err)
+		}
+		reqBody = bytes.NewReader(encoded)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		strings.TrimRight(base, "/")+path, bytes.NewReader(encoded))
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(base, "/")+path, reqBody)
 	if err != nil {
 		return nil, newError(ReasonUnreachable, "build request: %v", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("Content-Type", "application/json")
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	req.Header.Set("X-GitHub-Api-Version", apiVersion)
 	req.Header.Set("User-Agent", "vincent")
 	req.Header.Set("Authorization", "Bearer "+cred.token)
@@ -481,7 +501,7 @@ func (c *Client) restPOST(ctx context.Context, cred credential, path string, pay
 	defer func() { _ = resp.Body.Close() }()
 	respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, restWriteError(resp, respBody)
+		return nil, restWriteError(resp, respBody, classify)
 	}
 	if readErr != nil {
 		return nil, newError(ReasonUnreachable, "read response: %v", readErr)
@@ -489,23 +509,29 @@ func (c *Client) restPOST(ctx context.Context, cred credential, path string, pay
 	return respBody, nil
 }
 
-// restWriteError is restError plus the two statuses only a write produces.
-// GitHub answers 422 both for "a pull request already exists for this head"
-// and for every other unusable value, and the two are separated by the
-// message the API itself writes — the one place this package reads a GitHub
-// sentence, because the status alone cannot tell a duplicate from a typo'd
-// base branch. The sentence itself never leaves as anything but Detail.
-func restWriteError(resp *http.Response, body []byte) *Error {
-	if resp.StatusCode == http.StatusUnprocessableEntity {
-		detail := strings.TrimSpace(string(body))
-		if len(detail) > 512 {
-			detail = detail[:512]
-		}
-		reason := ReasonBadRequest
-		if strings.Contains(strings.ToLower(detail), "already exists") {
-			reason = ReasonPullExists
-		}
-		return &Error{Reason: reason, Detail: fmt.Sprintf("http 422: %s", detail)}
+// restWriteError is restError for a write: the write's own refusals first,
+// then any other 422 as bad_request, and a 403 that is not a spent rate
+// limit as no_write_scope rather than forbidden — one condition, one spelling
+// on every write (task 068.4 decision 4). A 404 stays not_found even though
+// GitHub sometimes answers a missing write permission with one: reading a 404
+// as a scope problem would be a guess about a repository GitHub declined to
+// describe.
+func restWriteError(resp *http.Response, body []byte, classify func(int, string) string) *Error {
+	detail := strings.TrimSpace(string(body))
+	if len(detail) > 512 {
+		detail = detail[:512]
 	}
-	return restError(resp, body)
+	if classify != nil {
+		if reason := classify(resp.StatusCode, strings.ToLower(detail)); reason != "" {
+			return &Error{Reason: reason, Detail: fmt.Sprintf("http %d: %s", resp.StatusCode, detail)}
+		}
+	}
+	if resp.StatusCode == http.StatusUnprocessableEntity {
+		return &Error{Reason: ReasonBadRequest, Detail: fmt.Sprintf("http 422: %s", detail)}
+	}
+	e := restError(resp, body)
+	if e.Reason == ReasonForbidden {
+		e.Reason = ReasonNoWriteScope
+	}
+	return e
 }

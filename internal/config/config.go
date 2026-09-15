@@ -342,19 +342,21 @@ const (
 
 // GitHub configures the GitHub integration (spec §12.3 — task 035, task 069).
 //
-// It was read-only until task 069, which gave it **one** write path:
-// pull-request creation, from a human pressing a key in vincent. There is
-// deliberately no second key gating that write (task 069 decision 2) — the
-// consent is the keypress and the editable popup in front of it, not a line
-// in config.yaml nobody would turn on — so `enabled: false` turns the write
-// off with everything else, and is the one switch there is.
+// It was read-only until task 069 gave it pull-request creation, and task
+// 068.4 added merge, close, reopen, comment and re-run of failed checks — all
+// on a task's pull request, all from a human in vincent. There is
+// deliberately no second key gating any write (task 069 decision 2) — the
+// consent is the human's own act, not a line in config.yaml nobody would turn
+// on — so `enabled: false` turns every write off with everything else, and is
+// the one switch there is.
 //
 // There is deliberately no token key here either. vincent stores no
 // credential of its own: it drives `gh`, or reads GITHUB_TOKEN/GH_TOKEN from
 // the environment the daemon already inherited, which is what keeps §2's
 // "secret management" non-goal intact (decision 1). A credential with no
 // write scope is not a misconfiguration — the create falls back to GitHub's
-// own compare page, which is what vincent did before task 069.
+// own compare page, which is what vincent did before task 069, and every
+// other write refuses with `no_write_scope`.
 type GitHub struct {
 	// Enabled turns the integration on. It defaults to **true** and is an
 	// opt-*out*: it is inert on every project whose origin is not a
@@ -362,8 +364,9 @@ type GitHub struct {
 	// issue picker, names an issue, or asks for a pull request, so
 	// on-by-default costs nothing unasked for (decision 6).
 	//
-	// It is also the **only** gate on task 069's one write path. Nothing is
-	// pushed and no pull request is opened while this is false.
+	// It is also the **only** gate on every write (task 069, task 068.4).
+	// Nothing is pushed, opened, merged, closed, reopened, commented on or
+	// re-run while this is false.
 	//
 	// A plain bool is right here, as it is for
 	// DeleteEmptyBranchOnArchive: Load unmarshals into Default(), so an

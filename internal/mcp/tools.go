@@ -59,17 +59,25 @@ var Excluded = []Route{
 	// The trigger ingress (decision 31G), on decision 22's reasoning: an agent
 	// that can inject events can start agents.
 	{Method: http.MethodPost, Path: "/v1/triggers/{id}/events"},
-	// The one route that writes to a forge (task 069 decision 3). Row 27 was
-	// amended to let a *human* push a task's branch and open its pull
-	// request; "the keypress is the consent" (decision 2) is only true while
-	// a human is the one pressing it, and there is no second gate behind it —
+	// The routes that write to a forge (task 069 decision 3, task 068.4).
+	// Rows 11 and 27 let a *human* push a task's branch, open its pull
+	// request, and merge, close, reopen, comment on and re-run its checks;
+	// "the keypress is the consent" (069 decision 2) is only true while a
+	// human is the one pressing it, and there is no second gate behind it —
 	// no config key, no confirmation the daemon can check — so an
-	// agent-callable version of it would be consent nobody gave.
+	// agent-callable version would be consent nobody gave. And
+	// `mcp.wire_steps` defaults to true, so a tool here would put these writes
+	// on the step path, which task 068 decision 1 says nothing reaches.
 	//
 	// Nothing is lost. A step's agent already has a full-auto shell in its own
-	// worktree and can run `git push` and `gh pr create` there, which is
-	// decision record row 11's original path and stays open.
+	// worktree and can run `git push`, `gh pr create` and `gh pr merge` there,
+	// which is decision record row 11's original path and stays open.
 	{Method: http.MethodPost, Path: "/v1/tasks/{id}/github/pull/create"},
+	{Method: http.MethodPost, Path: "/v1/tasks/{id}/github/pull/merge"},
+	{Method: http.MethodPost, Path: "/v1/tasks/{id}/github/pull/close"},
+	{Method: http.MethodPost, Path: "/v1/tasks/{id}/github/pull/reopen"},
+	{Method: http.MethodPost, Path: "/v1/tasks/{id}/github/pull/comment"},
+	{Method: http.MethodPost, Path: "/v1/tasks/{id}/github/pull/checks/rerun"},
 	// The reported-quota push route (task 082), under row 28's rule rather
 	// than as a new design line: an agent must not be able to forge a
 	// daemon-level fact about the host it runs on. A step that could report

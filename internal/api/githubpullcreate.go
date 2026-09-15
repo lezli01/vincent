@@ -14,17 +14,18 @@ import (
 
 // POST /v1/tasks/{id}/github/pull/create (spec §13.2, task 069).
 //
-// The one route in vincent that writes to a forge. It pushes the task's
+// The first route in vincent that wrote to a forge. It pushes the task's
 // branch to `origin` and creates its pull request, and it exists because the
 // alternative was a browser and a terminal: the compare page 052 hands off to
 // is dead for a branch nobody pushed, and the push was a manual step in the
 // worktree.
 //
-// Decision record rows 11 and 27 are amended for exactly this and nothing
-// else. Workflow-owned delivery is unchanged for workflow runs — no step
-// type, no default workflow and no automatic behaviour reaches this — and
-// merging stays out of scope. What changed is that a human pressing a key in
-// vincent may now do what they previously did in a browser.
+// Decision record rows 11 and 27 were amended for this, and task 068.4 then
+// rewrote row 11 for the writes in githubpullwrite.go. What holds for all of
+// them: no step type, no default workflow and no automatic behaviour reaches
+// a write, and a human pressing a key in vincent may now do what they
+// previously did in a browser. *Amended 2026-09-15 (task 068.4):* "merging
+// stays out of scope" was true of task 069 and is no longer true of vincent.
 //
 // The route is excluded from the MCP tool surface (§13.4, decision 3): "the
 // keypress is the consent" (decision 2) is only true while a human is the one

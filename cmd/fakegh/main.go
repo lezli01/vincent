@@ -11,14 +11,34 @@
 //	gh pr list --repo owner/name --state S --limit N --json FIELDS
 //	gh pr view N --repo owner/name --json FIELDS
 //	gh pr create --repo owner/name --base B --head H --title T --body-file - [--draft]
+//	gh pr merge N -R owner/name --merge|--squash|--rebase --match-head-commit SHA
+//	gh pr close N -R owner/name
+//	gh pr reopen N -R owner/name
+//	gh pr comment N -R owner/name --body-file -
+//	gh run rerun ID --failed -R owner/name
 //
 // Scenario selection is environment-driven:
 //
 //	FAKEGH_SCENARIO  success (default) | logged-out | empty | not-found |
 //	                 unauthorized | rate-limited | forbidden | bad-json |
 //	                 hang | pr-exists (a `pr create` refused because one
-//	                 already exists for the head — the write path's one
-//	                 expected refusal, task 069)
+//	                 already exists for the head — task 069) |
+//	                 read-only (every read answers, every write is refused
+//	                 with a 403 — the scope a merge's preflight read passes
+//	                 and its write does not, task 068.4) |
+//	                 behind | blocked-running | blocked | dirty (the
+//	                 `mergeStateStatus` #412 reports, the last with no
+//	                 unfinished check in its rollup) |
+//	                 head-moved (`pr merge` refused because the head moved
+//	                 after the preflight — the `--match-head-commit` pin)
+//	FAKEGH_STATE_FILE
+//	                 when set, `pr merge`, `pr close` and `pr reopen` record
+//	                 the state they left a pull request in here, and `pr view`
+//	                 reads it back, so a write-then-read sequence answers the
+//	                 new state.
+//	FAKEGH_STDIN_FILE
+//	                 when set, `pr comment` writes the body it read from stdin
+//	                 here, so a test can assert the body travelled on stdin.
 //	FAKEGH_CREATED_FILE
 //	                 when set, `pr create` writes the pull request it made
 //	                 here and `pr view`/`pr list` read it back, so the
@@ -65,6 +85,14 @@ func main() {
 		pullCreate(scenario, args)
 	case len(args) >= 3 && args[0] == "pr" && args[1] == "view":
 		pullView(scenario, args[2])
+	case len(args) >= 3 && args[0] == "pr" && args[1] == "merge":
+		pullMerge(scenario, args)
+	case len(args) >= 3 && args[0] == "pr" && (args[1] == "close" || args[1] == "reopen"):
+		pullSetState(scenario, args[1], args[2])
+	case len(args) >= 3 && args[0] == "pr" && args[1] == "comment":
+		pullComment(scenario, args[2])
+	case len(args) >= 3 && args[0] == "run" && args[1] == "rerun":
+		runRerun(scenario, args[2])
 	default:
 		fmt.Fprintf(os.Stderr, "fakegh: unsupported invocation %q\n", strings.Join(args, " "))
 		os.Exit(2)
@@ -218,14 +246,175 @@ func pullView(scenario, number string) {
 		fmt.Fprintf(os.Stderr, "gh: invalid pull request number %q\n", number)
 		os.Exit(1)
 	}
+	pull := findPull(n)
+	// The merge state a preflight reads (task 068.4). Only #412 carries one
+	// that varies by scenario; every other row answers what GitHub would.
+	switch {
+	case n != 412:
+		if draft, _ := pull["isDraft"].(bool); draft {
+			pull["mergeStateStatus"] = "DRAFT"
+		} else {
+			pull["mergeStateStatus"] = "CLEAN"
+		}
+	case scenario == "behind":
+		pull["mergeStateStatus"] = "BEHIND"
+	case scenario == "blocked-running":
+		pull["mergeStateStatus"] = "BLOCKED"
+	case scenario == "blocked":
+		pull["mergeStateStatus"] = "BLOCKED"
+		pull["statusCheckRollup"] = withoutRunning(pull["statusCheckRollup"])
+	case scenario == "dirty":
+		pull["mergeStateStatus"] = "DIRTY"
+	default:
+		pull["mergeStateStatus"] = "CLEAN"
+	}
+	emit(pull)
+}
+
+// findPull is the corpus row numbered n, or a 404 exit the way the real CLI
+// reports one.
+func findPull(n int) map[string]any {
 	for _, pull := range pullCorpus() {
 		if pull["number"] == n {
-			emit(pull)
-			return
+			return pull
 		}
 	}
 	fmt.Fprintf(os.Stderr, "gh: Could not resolve to a PullRequest with the number of %d. (HTTP 404)\n", n)
 	os.Exit(1)
+	return nil
+}
+
+// withoutRunning drops the unfinished checks, so a blocked merge has nothing
+// to wait for.
+func withoutRunning(rollup any) []map[string]any {
+	rows, _ := rollup.([]map[string]any)
+	kept := []map[string]any{}
+	for _, row := range rows {
+		if row["status"] == "IN_PROGRESS" || row["status"] == "QUEUED" {
+			continue
+		}
+		kept = append(kept, row)
+	}
+	return kept
+}
+
+// writeRefused is the 403 every write answers under `forbidden` and
+// `read-only`, in the real CLI's words, and any other failure scenario's
+// stderr. It reports whether the invocation was refused (it exits first).
+func writeRefused(scenario string) bool {
+	if scenario == "forbidden" || scenario == "read-only" {
+		fmt.Fprintln(os.Stderr, "gh: HTTP 403: Resource not accessible by integration")
+		os.Exit(1)
+		return true
+	}
+	return fail(scenario)
+}
+
+func pullNumber(raw string) int {
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gh: invalid pull request number %q\n", raw)
+		os.Exit(1)
+	}
+	return n
+}
+
+// pullMerge answers `gh pr merge` (task 068.4). The pin is honoured the way
+// GitHub honours it: a `--match-head-commit` that is not the head refuses,
+// and so does every merge under `head-moved`, which stands for a push landing
+// between the daemon's preflight and its send.
+func pullMerge(scenario string, args []string) {
+	if writeRefused(scenario) {
+		return
+	}
+	pull := findPull(pullNumber(args[2]))
+	if scenario == "head-moved" || flagValue(args, "--match-head-commit") != pull["headRefOid"] {
+		fmt.Fprintln(os.Stderr,
+			"GraphQL: Head branch was modified. Review and try the merge again. (mergePullRequest)")
+		os.Exit(1)
+	}
+	if pull["state"] != "OPEN" {
+		fmt.Fprintf(os.Stderr, "X Pull request octo/repo#%v is not mergeable\n", pull["number"])
+		os.Exit(1)
+	}
+	recordState(pull["number"], "MERGED")
+	fmt.Fprintf(os.Stderr, "✓ Merged pull request octo/repo#%v\n", pull["number"])
+}
+
+func pullSetState(scenario, verb, number string) {
+	if writeRefused(scenario) {
+		return
+	}
+	pull := findPull(pullNumber(number))
+	state, word := "CLOSED", "Closed"
+	if verb == "reopen" {
+		state, word = "OPEN", "Reopened"
+	}
+	recordState(pull["number"], state)
+	fmt.Fprintf(os.Stderr, "✓ %s pull request octo/repo#%v\n", word, pull["number"])
+}
+
+// pullComment answers `gh pr comment`, whose body arrives on stdin because
+// the adapter passes `--body-file -`. The real CLI prints the comment's URL.
+func pullComment(scenario, number string) {
+	if writeRefused(scenario) {
+		return
+	}
+	pull := findPull(pullNumber(number))
+	body, _ := io.ReadAll(os.Stdin)
+	if path := os.Getenv("FAKEGH_STDIN_FILE"); path != "" {
+		_ = os.WriteFile(path, body, 0o600)
+	}
+	fmt.Printf("https://github.com/octo/repo/pull/%v#issuecomment-1\n", pull["number"])
+}
+
+func runRerun(scenario, id string) {
+	if writeRefused(scenario) {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "✓ Requested rerun (failed jobs) of run %s\n", id)
+}
+
+// recordState persists a write's resulting state so a later `pr view` reads
+// it back.
+func recordState(number any, state string) {
+	path := os.Getenv("FAKEGH_STATE_FILE")
+	if path == "" {
+		return
+	}
+	states := readStates()
+	states[fmt.Sprint(number)] = state
+	if encoded, err := json.Marshal(states); err == nil {
+		_ = os.WriteFile(path, encoded, 0o600)
+	}
+}
+
+func readStates() map[string]string {
+	states := map[string]string{}
+	path := os.Getenv("FAKEGH_STATE_FILE")
+	if path == "" {
+		return states
+	}
+	if raw, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(raw, &states)
+	}
+	return states
+}
+
+// applyStates lays the recorded write results over the corpus.
+func applyStates(rows []map[string]any) []map[string]any {
+	states := readStates()
+	for _, row := range rows {
+		state, ok := states[fmt.Sprint(row["number"])]
+		if !ok {
+			continue
+		}
+		row["state"] = state
+		if state == "MERGED" {
+			row["mergedAt"] = "2026-09-15T10:00:00Z"
+		}
+	}
+	return rows
 }
 
 // pullCorpus is the fixed pull-request set, shaped exactly like
@@ -246,7 +435,7 @@ func pullCorpus() []map[string]any {
 	if branch == "" {
 		branch = "vincent/1-add-a-thing"
 	}
-	return append(out, []map[string]any{
+	return applyStates(append(out, []map[string]any{
 		{
 			"number":              412,
 			"title":               "Add a thing",
@@ -356,7 +545,7 @@ func pullCorpus() []map[string]any {
 			"updatedAt":           "2026-05-02T08:00:00Z",
 			"mergedAt":            nil,
 		},
-	}...)
+	}...))
 }
 
 func emit(v any) {
@@ -424,16 +613,12 @@ const createdPullNumber = 999
 // a pull request body is prose a human just typed and putting it in argv
 // would put it under Windows' 32 KiB command-line limit.
 func pullCreate(scenario string, args []string) {
-	switch scenario {
-	case "pr-exists":
+	if scenario == "pr-exists" {
 		fmt.Fprintln(os.Stderr,
 			"gh: a pull request for branch \"x\" into branch \"main\" already exists:")
 		os.Exit(1)
-	case "forbidden":
-		fmt.Fprintln(os.Stderr, "gh: HTTP 403: Resource not accessible by integration")
-		os.Exit(1)
 	}
-	if fail(scenario) {
+	if writeRefused(scenario) {
 		return
 	}
 	body, _ := io.ReadAll(os.Stdin)
