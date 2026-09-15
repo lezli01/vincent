@@ -18,6 +18,7 @@
 #  10. `schedule: eager` starts a lane while an unrelated sibling still runs
 #  11. the merged diff is attributed back to the lane that produced it
 #  12. one retry on a parked parent re-admits every blocked lane under it
+#  13. a lane list derived from an earlier step runs as a DAG
 #
 # Every scenario uses command steps only, so no agent CLI is involved at all
 # and the gate is as fast on CI as it is locally.
@@ -554,7 +555,7 @@ fi
 # --------------------------------------------------------------------------
 # Scenario 10: `schedule: eager` spawns a dependent lane before an unrelated
 # sibling has settled (task 081). The first m6 scenario to drive `needs:` at
-# all — task 080 left the DAG scenario out.
+# all; task 080's own barrier DAG, over a derived list, is scenario 13.
 #
 # Asserted from the API rather than from inside a step body: the gate polls
 # the lane list until the dependent lane exists, and reads the unrelated
@@ -804,6 +805,125 @@ YAML
   done
   daemon_down
   echo "=== scenario 12 PASS"
+fi
+
+# --------------------------------------------------------------------------
+# Scenario 13: a lane list derived from an earlier step runs as a DAG (task
+# 080, #384). `for_each:` plus one `lane:` template turns what `plan` printed
+# into three lanes, and `wire` needs the other two.
+#
+# The list is a committed `plan.jsonl` read back by `git show`, because a
+# single `run:` body that prints several JSON lines has no spelling `/bin/sh`
+# and `pwsh` share — the engine test emits its list per OS, which one gate
+# YAML cannot. It is m8 scenario 5's `git tag -l` trick with a file instead
+# of tags, and the task's branch is cut from `main`, so the file is there.
+#
+# Ordering is proved after the run rather than by polling a window, so there
+# is no race to flake on. Two facts carry it: the recorded timestamps, and git
+# ancestry — `wire`'s worktree is cut from the parent's branch after its
+# dependencies merged (decision 7), so their commits are ancestors of its own.
+# The ancestry is the strict half: the API serves timestamps in whole seconds,
+# and a barrier parent routinely merges and spawns inside the second its last
+# lane finished, so the timestamp check can only say "not before".
+# --------------------------------------------------------------------------
+if run_scenario 13; then
+  echo "=== scenario 13: a derived lane list runs as a DAG"
+  scenario_dirs s13
+  REPO="$TMP/s13/repo"; make_repo "$REPO"
+  printf '%s\n' '{"id":"api","needs":[]}' '{"id":"db","needs":[]}' \
+    '{"id":"wire","needs":["api","db"]}' > "$REPO/plan.jsonl"
+  git -C "$REPO" add plan.jsonl && git -C "$REPO" commit -qm plan
+  write_workflow fan-derived "$(cat <<'YAML'
+name: fan-derived
+steps:
+  - id: plan
+    type: command
+    max_retries: 0
+    run: 'git show HEAD:plan.jsonl'
+  - id: build
+    type: fan_out
+    for_each: '{{ .Steps.plan.Result }}'
+    lane:
+      id: '{{ .Item.id }}'
+      needs: '{{ .Item.needs }}'
+      fields: { name: '{{ .Item.id }}' }
+      steps:
+        - id: write
+          type: command
+          max_retries: 0
+          run: 'git config -f {{ index .Task.Fields "name" }}.txt gate.lane {{ index .Task.Fields "name" }} && git add -A && git commit -qm {{ index .Task.Fields "name" }}'
+YAML
+)"
+  daemon_up
+  PID="$(register_project "$REPO")"
+  TID="$(create_task "$PID" fan-derived "a derived DAG")"
+  wait_for_state "$TID" done 180
+
+  # Spawned under the names the items gave them. Several lines of jq output,
+  # so `tr -d '\r'` for the reason scenario 11 gives.
+  LANES="$(api GET "/tasks?parent_id=$TID")"
+  IDS="$(jq -r '[.[] | .lane_id] | sort | .[]' <<<"$LANES" | tr -d '\r')"
+  [[ "$IDS" == $'api\ndb\nwire' ]] || fail "derived lanes are [$IDS], want api, db, wire"
+
+  # Admitted in dependency order: `wire` was created no earlier than either
+  # dependency finished. Both are RFC3339 UTC at a fixed width, so string order
+  # is time order.
+  WIRE_CREATED="$(jq -r '.[] | select(.lane_id == "wire") | .created_at' <<<"$LANES" | tr -d '\r')"
+  for dep in api db; do
+    FINISHED="$(jq -r --arg l "$dep" '.[] | select(.lane_id == $l) | .finished_at // ""' <<<"$LANES" | tr -d '\r')"
+    [[ -n "$FINISHED" ]] || fail "lane $dep has no finished_at"
+    if [[ "$WIRE_CREATED" < "$FINISHED" ]]; then
+      fail "wire was created at $WIRE_CREATED, before its dependency $dep finished at $FINISHED"
+    fi
+  done
+
+  # Two rounds on the step's own rows (decision 3): round 0 spawned api and
+  # db, round 1 spawned wire. A flat, single-round run would show only 0.
+  ROUNDS="$(api GET "/tasks/$TID" \
+    | jq -c '[.steps[] | select(.step_id == "build") | .iteration] | unique' | tr -d '\r')"
+  [[ "$ROUNDS" == "[0,1]" ]] || fail "build step rows carry iterations $ROUNDS, want [0,1]"
+
+  # Merged: every lane's file is on the parent's branch, under the
+  # `Merge lane '{id}' of task {n}` subject §7.6 fixes. Captured, then matched
+  # against a here-string — see m7 scenario 4's comment.
+  BRANCH="$(api GET "/tasks/$TID" | jq -r .branch_name | tr -d '\r')"
+  SUBJECTS="$(git -C "$REPO" log --format=%s "$BRANCH" | tr -d '\r')"
+  for lane in api db wire; do
+    branch_has "$REPO" "$BRANCH" "$lane.txt" || fail "$lane.txt is missing from the parent's branch"
+    grep -q "^Merge lane '$lane' of task " <<<"$SUBJECTS" \
+      || fail "the join never merged lane $lane: $SUBJECTS"
+  done
+
+  # Happens-after is real in git: wire's commit descends from both of its
+  # dependencies' commits.
+  commit_of() { # commit_of SUBJECT — the one commit on $BRANCH with that subject
+    git -C "$REPO" log --format=%H --grep="^$1\$" "$BRANCH" | tr -d '\r'
+  }
+  WIRE="$(commit_of wire)"
+  [[ -n "$WIRE" ]] || fail "no commit named wire on $BRANCH: $SUBJECTS"
+  for dep in api db; do
+    DEP="$(commit_of "$dep")"
+    [[ -n "$DEP" ]] || fail "no commit named $dep on $BRANCH: $SUBJECTS"
+    git -C "$REPO" merge-base --is-ancestor "$DEP" "$WIRE" \
+      || fail "wire's commit $WIRE does not descend from $dep's $DEP; it was cut before $dep merged"
+  done
+
+  # The snapshot is materialized and remembers what it was derived from: a
+  # plain lanes list, no live driver, and `derived_from` naming the templates.
+  BUILD="$(api GET "/tasks/$TID/workflow" | jq -c '.definition.steps[] | select(.id == "build")')"
+  DERIVED_LANE="$(jq -r '.derived_from.lane // ""' <<<"$BUILD" | tr -d '\r')"
+  [[ "$DERIVED_LANE" == '{{ .Item.id }}' ]] || fail "derived_from.lane = $DERIVED_LANE: $BUILD"
+  N="$(jq '.derived_from.for_each // [] | length' <<<"$BUILD" | tr -d '\r')"
+  [[ "$N" -gt 0 ]] || fail "derived_from carries no for_each templates: $BUILD"
+  LIVE="$(jq -r '(.lane != null) or (.for_each != null)' <<<"$BUILD" | tr -d '\r')"
+  [[ "$LIVE" == false ]] || fail "the materialized step still carries a live lane:/for_each: $BUILD"
+  N="$(jq '.lanes // [] | length' <<<"$BUILD" | tr -d '\r')"
+  [[ "$N" == 3 ]] || fail "the snapshot has $N materialized lanes, want 3: $BUILD"
+  NEEDS="$(jq -c '.lanes[] | select(.id == "wire") | .needs | sort' <<<"$BUILD" | tr -d '\r')"
+  [[ "$NEEDS" == '["api","db"]' ]] || fail "wire's rendered needs are $NEEDS, want [\"api\",\"db\"]"
+
+  daemon_down
+  echo "=== scenario 13 PASS"
 fi
 
 echo "M6 GATE PASS"
