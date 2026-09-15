@@ -63,7 +63,11 @@ jobs:
 
       - name: Smoke-test vincent version
         shell: bash
-        run: ./bin/vincent* version
+        # The glob is how one line finds bin/vincent.exe on Windows and
+        # bin/vincent elsewhere, so it is a command name on purpose.
+        run: |
+          # shellcheck disable=SC2211
+          ./bin/vincent* version
 
   # Acceptance gates (spec §19). One job per OS, not one per gate: each script
   # is self-isolating — its own `mktemp -d` state dirs via VINCENT_CONFIG_DIR /
@@ -212,3 +216,14 @@ jobs:
       - name: M16 gate (event triggers)
         shell: bash
         run: ./scripts/m16-gate.sh
+
+      # 064: a task from a pull request, on the pull request's own head
+      # branch (task 064; §10, §13.2), against a local bare repository and
+      # the fake `gh`. The matrix earns its place because the whole feature is
+      # git on the host: the gate hands a `C:/…` bare-repository path to `git
+      # remote add`, the daemon's pwsh runs `git push` through the upstream
+      # admission configured, and "no remote was added for the fork" and the
+      # branch's upstream are read back through Windows' own line endings.
+      - name: 064 gate (task from a pull request)
+        shell: bash
+        run: ./scripts/064-gate.sh

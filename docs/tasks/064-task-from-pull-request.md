@@ -147,7 +147,10 @@ no mutating `gh` subcommand. Fetching is a read.
   an honoured `--state`.
 - [x] **064.8** — docs, the §3/§5.3/§8.5/§10/§12.1/§13.2/§14/§15/§18/§20 spec
   amendments, and this record.
-- [ ] **064.9** — `scripts/064-gate.sh` and `docs/gates/064-task-from-pull-request.md`:
-  the end-to-end walk against a local bare remote. Not in this pull request;
-  see its body for why (tracked in
-  [#382](https://github.com/lezli01/vincent/issues/382), 2026-09-13).
+- [x] **064.9** — `scripts/064-gate.sh` and `docs/gates/064-task-from-pull-request.md`:
+  the end-to-end walk against a local bare remote. The gate is
+  [`scripts/064-gate.sh`](../../scripts/064-gate.sh), wired into `ci.yml`'s
+  `gates` job on all three platforms; its record, with the manual walk against
+  real GitHub, is
+  [`docs/gates/064-task-from-pull-request.md`](../gates/064-task-from-pull-request.md)
+  ([#382](https://github.com/lezli01/vincent/issues/382)). ✓ 2026-09-15
