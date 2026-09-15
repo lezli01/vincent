@@ -250,10 +250,11 @@ strip the styling and the block is byte-for-byte what the agent sent.
   [MCP server](guides/mcp.md) rides the same loopback listener, the same bearer
   token and the same `recover → log → auth` chain, and a tool call is dispatched
   by replaying it against the same handler `/v1` uses — so it grants exactly what
-  the token already granted. Five destructive-admin routes are deliberately not
-  tools (`daemon/stop`, `daemon/backup`, `DELETE /v1/projects/{id}`,
-  `maintenance/gc`, `doctor/fix`): an agent must not be able to stop, back up,
-  garbage-collect or reconfigure the daemon supervising it. That is a design
+  the token already granted. Some routes are deliberately not tools: an agent
+  must not be able to stop, back up, garbage-collect or reconfigure the daemon
+  supervising it, rewrite its workflows or triggers, inject a trigger event,
+  open a pull request, forge a quota reading, permanently delete a project, task
+  or chat, or drive a chat — see [the full list](guides/mcp.md). That is a design
   line, **not** a privilege boundary — the token still reaches those routes on
   `/v1`.
 - **`POST /mcp/step/{run_id}` is not a security boundary**, and is stated here

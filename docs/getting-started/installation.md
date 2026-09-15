@@ -90,6 +90,11 @@ config, database and transcripts, `~/Library/Application Support/vincent`.
 
 ## WinGet (Windows)
 
+Every stable release since v0.4.0 has been submitted to Microsoft's public
+WinGet catalog, and none has been merged yet, so the commands below will not
+find the package until the first submission is merged. Use
+[Scoop](#scoop-windows) or [mise](#mise-all-platforms) meanwhile.
+
 ```powershell
 winget install --id lezli01.Vincent --exact
 vincent version
@@ -104,8 +109,8 @@ Upgrade with `winget upgrade --id lezli01.Vincent --exact`. Before uninstalling
 a copy used by the background service, run `vincent service uninstall`, then
 `winget uninstall --id lezli01.Vincent --exact`.
 
-Microsoft reviews submissions to the public WinGet catalog. A new stable
-release can therefore appear here after its GitHub assets do.
+Once the package is in the catalog, a new stable release can still appear here
+after its GitHub assets do, because Microsoft reviews each submission.
 
 ## Scoop (Windows)
 
@@ -172,9 +177,9 @@ These files are GitHub release assets, not an apt or dnf repository. The system
 package database records the install, but it cannot discover a newer release;
 download the next deb/rpm and run the same command to upgrade.
 
-WinGet and Scoop metadata is published only for stable releases. If a
-newly introduced channel reports that vincent is not found before its first
-stable publication, use [mise](#mise-all-platforms) or
+WinGet and Scoop metadata is published only for stable releases, and a WinGet
+submission is not installable until Microsoft merges it. If a channel reports
+that vincent is not found, use [mise](#mise-all-platforms) or
 [download a release](#download-a-release).
 
 ## Download a release

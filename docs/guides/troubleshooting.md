@@ -190,12 +190,13 @@ codex for that step on Windows, or drop the step to `full-auto` **knowingly**.
 ### `mcp_unsupported`
 
 The step was to be wired to vincent's own [MCP server](mcp.md) — the default —
-and the adapter, or the CLI build you have, cannot carry one for a single run.
+and the adapter cannot carry one for a single run.
 
-All three shipped adapters can, so you should not meet this: claude takes
+All three shipped adapters can, so you will not meet this: claude takes
 `--mcp-config`, codex takes `-c mcp_servers.…` overrides, and cursor gets a
-`.cursor/mcp.json` written into the task worktree. It is the reason reserved for
-a CLI that drops or renames that surface in a future release.
+`.cursor/mcp.json` written into the task worktree. None of them checks your CLI
+build for MCP support. The reason is reserved for a future adapter with no
+per-run MCP surface.
 
 The step **fails** rather than starting an agent that silently has no vincent
 tools, because a prompt written against those tools would otherwise burn a run

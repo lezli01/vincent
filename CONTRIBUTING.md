@@ -13,6 +13,13 @@ Thanks for your interest in contributing!
   [Conventional Commits](https://www.conventionalcommits.org/):
   `type(scope?): summary` with types like `feat`, `fix`, `docs`, `ci`,
   `chore`, `refactor`, `test`.
+- **Adapter compatibility changes name the CLI.** A commit that changes which
+  agent CLI versions vincent works with — a newly verified version, a known-bad
+  one, a parser change for a new output shape — is `feat(agents):` or
+  `fix(agents):`, with the CLI and its version in the subject:
+  `fix(agents): parse cursor-agent X.Y.Z model list`. Release notes are built
+  from commit subjects, so that is how a release states its compatibility
+  changes.
 - **Plain-language PR titles.** Put the Conventional Commit prefix on the commits,
   not on the PR title: use `Add scheduler caps`, not `feat: add scheduler caps`.
   GitHub copies the PR title into the merge commit body, and a conventional title

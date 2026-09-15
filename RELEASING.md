@@ -246,10 +246,15 @@ all.
    - `smoke` (one job per OS) downloads the **real published archive**, unpacks
      it, asserts `vincent version` reports the tag rather than `dev`, runs
      `vincent workflow validate` and checks that `vincent task ls` exits 2 with
-     no daemon running, then verifies the archive against `checksums.txt`. The
-     macOS leg additionally writes a synthetic `com.apple.quarantine` attribute
-     and asserts the binary still passes `codesign --verify` and
-     `spctl --assess`.
+     no daemon running, then verifies the archive against `checksums.txt`. On a
+     signed release (`macos_signed` is `1`, which the Application certificate
+     secret decides), the macOS leg additionally writes a synthetic
+     `com.apple.quarantine` attribute and asserts the binary still passes
+     `codesign --verify`, carries the hardened runtime, and passes
+     `spctl --assess`. On an unsigned release — every release this repository
+     ships today — that step is skipped: there is no signature to assess, and
+     `codesign --verify` on an ad-hoc binary would fail the job over the
+     documented state of the release (task 039).
 
    A red `smoke` job means the release is published but the artifact is
    defective — treat it as an incident, not a flake, and go to
