@@ -240,6 +240,13 @@ latest attempt succeeded and continues **mid-iteration**, which is §7.5's rule
 verbatim. Restarting the iteration would discard work a human may have waited an
 hour for.
 
+*Amended 2026-09-15.* The skip applies to `agent` and `command` rows only. A
+`break` or `condition` row that says `succeeded` is a guard's answer, and this
+decision never meant to make one sticky against task 015 decision 10 — it did
+so by accident, because §7.5's rule it copied governs a group, which holds no
+decision steps. Resuming a retried merge pass walked past a `break` whose probe
+had just turned green (§7.8 amendment of the same date).
+
 **Beat:** composite step ids (`repair#3`), needing no migration. They poison
 `.Steps` keys, break the "step ids are unique across the whole workflow" rule by
 manufacturing ids that are not in the file, and make every consumer parse a

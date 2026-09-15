@@ -1519,7 +1519,8 @@ silent success the design refused.
 
 The same is true after a crash: a loop's position is derived from its rows on
 every admission, so a restarted daemon resumes mid-iteration rather than redoing
-an hour of work.
+an hour of work. A `break` or `condition` is the exception: it is asked again on
+every resume, because the step it reads may have re-run and changed the answer.
 
 > **A loop is one step**: one index, one slot, one worktree, one timeline entry,
 > and its iterations are strictly sequential. It adds no concurrency your caps

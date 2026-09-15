@@ -762,7 +762,8 @@ retry` rewrites that body step in the task's snapshot, so it applies to
 
 The same is true after a crash: position is derived from the rows on every
 admission, so a restarted daemon resumes mid-iteration rather than redoing work
-you may have waited an hour for.
+you may have waited an hour for. Work is what is kept: a `break` or `condition`
+is re-evaluated on every resume, whatever it answered before.
 
 > **A loop is one step: one index, one slot, one worktree, one timeline entry**,
 > and its iterations are strictly sequential. Unlike `max_parallel`, it adds no
