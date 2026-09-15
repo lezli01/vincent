@@ -152,8 +152,11 @@ jobs:
       # speaking streamable HTTP, so the three-OS matrix proves the SSE frame
       # parsing as much as the feature — the `data:` lines are CRLF-delimited
       # by the spec, which is exactly the class of thing that passes on Linux
-      # and fails on Windows. Command steps and one manual gate, so no agent
-      # CLI is involved.
+      # and fails on Windows. One leg runs the fake agent's `mcp-callback`
+      # scenario as the claude CLI (task 057.9): the step reads the endpoint
+      # its argv was wired to and calls back over `/mcp/step/{run_id}` before
+      # and after `awaiting_input` — a second MCP client, whose own CRLF
+      # handling and config path Windows tests too.
       - name: M10 gate (MCP)
         shell: bash
         run: ./scripts/m10-gate.sh

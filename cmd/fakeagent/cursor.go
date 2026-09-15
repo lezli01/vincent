@@ -98,6 +98,9 @@ func cursorMain(scenario string) {
 			"result": unauthenticatedMessage,
 		})
 		os.Exit(1)
+	case "mcp-callback":
+		mcpCallback(dialectCursor, nil)
+		cursorSuccess(prompt)
 	default: // success
 		cursorSuccess(prompt)
 	}

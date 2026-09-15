@@ -10,13 +10,20 @@
 #   4. it reads the task's transcript and its diff
 #   5. an invalid action reaches the client as a tool error still carrying
 #      the §13.1 envelope's `code` and `details.state`
-#   6. the daemon is still up at the end — nothing in the tool surface could
+#   6. an agent step calls back over its own per-step endpoint and keeps it
+#      across `awaiting_input`: it reports a status through `step_status`,
+#      parks on a question, is answered through `task_answer`, and reports
+#      again on the same session
+#   7. the daemon is still up at the end — nothing in the tool surface could
 #      have stopped it
 #
-# The workflow is command steps and one `manual` gate, so no agent CLI is
-# involved and the gate is as fast on CI as it is locally. That also keeps the
-# `run:` bodies inside the sh∩pwsh intersection the other gates are held to
-# (§8.3): `git ...` only.
+# Scenarios 1-5 run command steps and one `manual` gate, so no agent CLI is
+# involved in them. Scenario 6 is the leg 057.8 deferred to 057.9: the claude
+# CLI is cmd/fakeagent's `mcp-callback` scenario, which reads the endpoint and
+# secret out of the `--mcp-config` the adapter rendered — an MCP client the
+# daemon wired, independent of curl. config.yaml carries no `mcp:` block, so
+# what it proves is `mcp.wire_steps`' default. Every `run:` body stays inside
+# the sh∩pwsh intersection the other gates are held to (§8.3): `git ...` only.
 #
 # The MCP client is curl. Streamable HTTP is a POST per JSON-RPC message whose
 # response is an SSE frame, so `mcp_rpc` posts, keeps the `Mcp-Session-Id` the
@@ -30,8 +37,10 @@ TMP="$(mktemp -d)"
 BIN="$TMP/bin"
 
 VINCENT="$BIN/vincent"
+FAKEAGENT="$BIN/fakeagent"
 if [[ "${OS:-}" == "Windows_NT" ]]; then
   VINCENT+=".exe"
+  FAKEAGENT+=".exe"
 fi
 
 fail() { echo "GATE FAIL: $*" >&2; exit 1; }
@@ -46,8 +55,8 @@ hostpath() {
   if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s\n' "$1"; fi
 }
 
-echo "== build vincent"
-(cd "$ROOT" && go build -o "$(hostpath "$BIN")/" ./cmd/vincent)
+echo "== build vincent + fakeagent"
+(cd "$ROOT" && go build -o "$(hostpath "$BIN")/" ./cmd/vincent ./cmd/fakeagent)
 
 CONFIG_DIR="$TMP/config"
 DATA_DIR="$TMP/data"
@@ -198,6 +207,33 @@ steps:
     type: command
     run: git commit --allow-empty -m m10-gate-published
 '
+write_workflow gate10-agent 'name: gate10-agent
+steps:
+  - id: ask
+    type: agent
+    agent: claude
+    max_retries: 0
+    prompt: |
+      Report a status through the step_status tool, ask one question, and once
+      it is answered report again and append a line to README.md.
+  - id: commit
+    type: command
+    run: git commit -am m10-gate-agent-answered
+'
+# Scenario 6's agent, written before the daemon starts. There is no `mcp:`
+# block on purpose: the leg must prove wiring with no user configuration.
+cat > "$CONFIG_DIR/config.yaml" <<EOF
+agents:
+  claude:
+    path: "$(hostpath "$FAKEAGENT")"
+EOF
+# The step inherits the daemon's environment, so these must be exported before
+# `daemon_up`. No other scenario runs an agent step, so none of them reads them.
+export FAKEAGENT_SCENARIO=mcp-callback
+export FAKEAGENT_MCP_ASK=1
+export FAKEAGENT_MCP_STATUS="m10 gate: called back while running"
+export FAKEAGENT_MCP_STATUS_FINAL="m10 gate: called back after the answer"
+export FAKEAGENT_EDIT_FILE=README.md
 daemon_up
 mcp_init
 
@@ -259,7 +295,56 @@ DIFF="$(mcp_tool task_diff "$(jq -cn --argjson t "$TASK_ID" '{id:$t}')")"
 [[ -n "$DIFF" ]] || fail "task_diff returned nothing"
 echo "   transcript and diff read for run $RUN_ID"
 
-echo "== scenario 6: the daemon the agent was talking to is still up"
+echo "== scenario 6: an agent step calls back over its per-step endpoint, across awaiting_input"
+AGENT_TASK_ID="$(mcp_tool task_create "$(jq -cn --argjson p "$PROJECT_ID" \
+  '{body:{project_id:$p, workflow:"gate10-agent", title:"m10 gate agent"}}')" | jq -r .id)"
+[[ "$AGENT_TASK_ID" =~ ^[0-9]+$ ]] || fail "task_create returned no id for the agent task"
+wait_via_mcp "$AGENT_TASK_ID" awaiting_input 5
+
+# ask_status -> the newest `ask` step run's status_message, read through a
+# tool. The step can only have set it one way: over /mcp/step/{run_id}, with
+# the secret the daemon minted for that run and handed to claude's argv.
+ask_status() {
+  mcp_tool task_steps "$(jq -cn --argjson t "$AGENT_TASK_ID" '{id:$t}')" \
+    | jq -r '[.[] | select(.step_id == "ask")][-1].status_message // empty'
+}
+STATUS="$(ask_status)"
+[[ "$STATUS" == "$FAKEAGENT_MCP_STATUS" ]] \
+  || fail "the parked agent step's status_message is '$STATUS', want '$FAKEAGENT_MCP_STATUS'"
+
+AGENT_TASK="$(mcp_tool task_get "$(jq -cn --argjson t "$AGENT_TASK_ID" '{id:$t}')")"
+PENDING="$(jq -c .pending_input <<<"$AGENT_TASK")"
+[[ "$(jq -r .kind <<<"$PENDING")" == "question" ]] || fail "pending_input is not a question: $PENDING"
+# First option per question, built from pending_input the way m2 answers.
+ANSWER="$(jq -c '{answers: [.questions[]
+  | (.options[0] // "Blue") as $pick
+  | {key: .text, value: (if .multi_select then [$pick] else $pick end)}]
+  | from_entries}' <<<"$PENDING")"
+mcp_tool task_answer "$(jq -cn --argjson t "$AGENT_TASK_ID" --argjson b "$ANSWER" \
+  '{id:$t, body:$b}')" >/dev/null
+wait_via_mcp "$AGENT_TASK_ID" done 5
+
+# The second report went over the same session after the task sat in
+# awaiting_input, so the per-step secret outlived the park. It also reached
+# the daemon inside §13.3's one-second floor between two status writes of one
+# step run (task 036), so it was coalesced rather than written on arrival: the
+# engine persists it when the floor expires, by row id, even once the step has
+# finished. The task can reach `done` before that, so this waits for the value
+# rather than for a length of time. A report that had failed would have failed
+# the step instead — the scenario exits nonzero on any tool error.
+STATUS=""
+for ((i = 0; i < 10; i++)); do
+  STATUS="$(ask_status)"
+  [[ "$STATUS" == "$FAKEAGENT_MCP_STATUS_FINAL" ]] && break
+  sleep 1
+done
+[[ "$STATUS" == "$FAKEAGENT_MCP_STATUS_FINAL" ]] \
+  || fail "the finished agent step's status_message is '$STATUS', want '$FAKEAGENT_MCP_STATUS_FINAL'"
+AGENT_DIFF="$(mcp_tool task_diff "$(jq -cn --argjson t "$AGENT_TASK_ID" '{id:$t}')")"
+[[ -n "$AGENT_DIFF" ]] || fail "task_diff returned nothing for the agent task"
+echo "   task $AGENT_TASK_ID called back before and after its answer, and reached done"
+
+echo "== scenario 7: the daemon the agent was talking to is still up"
 HEALTH="$(mcp_tool health '{}')"
 printf '%s' "$HEALTH" | jq -e '.status == "ok"' >/dev/null \
   || fail "the daemon did not answer health: $HEALTH"

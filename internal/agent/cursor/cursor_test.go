@@ -13,6 +13,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/agenttest"
+	"github.com/lezli01/vincent/internal/mcp/mcptest"
 )
 
 func fakeAdapter(t *testing.T) *Adapter {
@@ -438,5 +439,42 @@ func TestNoWorkspaceMCPConfigWithoutAServer(t *testing.T) {
 	_, _ = h.Wait()
 	if _, err := os.Stat(filepath.Join(dir, agent.CursorMCPDir)); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("stat .cursor = %v, want nothing written when no server was wired", err)
+	}
+}
+
+// TestStartMCPCallback is per-step wiring proven from a running process
+// (task 057.9): the fake agent reads the workspace `.cursor/mcp.json` this
+// adapter wrote and calls step_status over the real per-step endpoint. The
+// scenario refuses to run without that file, so a recorded call is the proof
+// the file existed for the run; it must still be gone after Wait.
+func TestStartMCPCallback(t *testing.T) {
+	srv := mcptest.New(t)
+	dir := t.TempDir()
+	env := append(os.Environ(), "FAKEAGENT_SCENARIO=mcp-callback", "FAKEAGENT_MCP_STATUS=cursor called back")
+	env = append(env, srv.Env()...)
+	h, err := fakeAdapter(t).Start(t.Context(), agent.RunSpec{
+		Prompt:         "call back",
+		WorkDir:        dir,
+		PermissionMode: agent.FullAuto,
+		Env:            env,
+		MCP:            srv.MCP,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	drain(t, h)
+	res, err := h.Wait()
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if res.ExitCode != 0 || res.IsError {
+		t.Fatalf("got exit=%d isError=%v (%s), want clean success", res.ExitCode, res.IsError, res.ErrorMessage)
+	}
+	want := mcptest.StatusCall{TaskID: "42", StepID: mcptest.StepID, Message: "cursor called back"}
+	if got := srv.StatusCalls(); len(got) != 1 || got[0] != want {
+		t.Errorf("status calls = %+v, want exactly %+v", got, want)
+	}
+	if _, err := os.Stat(agent.CursorMCPConfigPath(dir)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("stat after Wait = %v, want the workspace config removed", err)
 	}
 }
