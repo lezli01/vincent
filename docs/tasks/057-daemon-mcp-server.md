@@ -1,6 +1,6 @@
 # 057 — Serve MCP from the daemon so agents can drive vincent directly
 
-**Status:** 🔄 in progress (8/9)
+**Status:** ✅ done (9/9)
 **Issue:** [#243](https://github.com/lezli01/vincent/issues/243)
 **Spec:** adds §13.4; amends §3 (decision row 28), §9.1, §9.2, §9.3, §9.4,
 §9.7, §11, §12.3, §12.4, §14, §16, §20
@@ -285,10 +285,29 @@ their own steps.
   *It uses a manual gate rather than `awaiting_input`, so no agent CLI is
   involved and the `run:` bodies stay in the sh∩pwsh intersection — the
   `awaiting_input` leg belongs with 057.9, which needs the fake agent anyway.*
-- [ ] **057.9** — `cmd/fakeagent` scenario that calls back into the daemon over
+
+  *That leg landed with 057.9, as the gate's scenario 6.*
+- [x] **057.9** — `cmd/fakeagent` scenario that calls back into the daemon over
   its per-step endpoint, so auto-wiring is proven end to end from a step rather
   than from the adapter's argv alone (tracked in
-  [#385](https://github.com/lezli01/vincent/issues/385), 2026-09-13).
+  [#385](https://github.com/lezli01/vincent/issues/385), 2026-09-13). ✓ 2026-09-15
+
+  The `mcp-callback` scenario (`cmd/fakeagent/mcp.go`) reads each dialect's
+  carrier the way its real CLI does. For claude that is `--mcp-config` beside
+  `--strict-mcp-config`. For codex it is the `-c mcp_servers.vincent.*` TOML
+  overrides, plus the token from the variable they name. For cursor it is
+  `.cursor/mcp.json` beside `--approve-mcps`. A carrier missing a piece fails
+  the run on stderr. The scenario then calls `step_status` through a
+  hand-rolled streamable-HTTP client, not the go-sdk, which task 057 decision 2
+  keeps inside `internal/mcp`. The client reads both JSON and CRLF SSE framing.
+  `internal/mcp/mcptest` serves the real per-step endpoint over a stub `/v1`
+  mux. Each of the three adapters has a `TestStartMCPCallback` that starts the
+  compiled fake agent through its real `Start` against that endpoint. m10's
+  scenario 6 runs the fake agent as claude with no `mcp:` block. The step
+  reports a status while parked on a question. It is answered through
+  `task_answer` and reports again on the same session. The second value is
+  asserted on the finished row. The gate waits for that value rather than a
+  fixed time, because it arrives inside task 036's one-second coalescing floor.
 
 ## Risks
 

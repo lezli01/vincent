@@ -70,7 +70,7 @@ the living engineering specification records implementation contracts.
 | [054](054-collapsible-board-groups.md) | Collapsible groups on the task board | ✅ done (1/1) |
 | [055](055-release-check-and-self-update.md) | Check for a newer release, and offer an in-place update | ✅ done (2/2) |
 | [056](056-fetch-base-branch.md) | Fetch the base branch before creating a task worktree | ✅ done (1/1) |
-| [057](057-daemon-mcp-server.md) | Serve MCP from the daemon so agents can drive vincent directly | 🔄 in progress (8/9) |
+| [057](057-daemon-mcp-server.md) | Serve MCP from the daemon so agents can drive vincent directly | ✅ done (9/9) |
 | [058](058-enum-task-fields.md) | Enum task fields: workflow-declared value sets, selectable in New task | ✅ done (1/1) |
 | [059](059-popup-task-details-tab.md) | A task-details tab inside the answer, repair and follow-up popups | ✅ done (5/5) |
 | [060](060-daemon-configuration-editing.md) | Edit the daemon configuration from the TUI | ✅ done (8/8) |
