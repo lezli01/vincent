@@ -1707,10 +1707,11 @@ because a template did not render. Exit `2` when no daemon answered.
 
 ## `vincent github`
 
-A project's GitHub issues and pull requests, and the one action that opens a
-pull request for a task. `issues`, `prs` and `status` are read-only;
-[`pr create`](#vincent-github-pr-create) is the single command here that writes
-to GitHub, and it writes only when you run it. The daemon makes every call — a
+A project's GitHub issues and pull requests, and the actions that open a task's
+pull request and act on it. `issues`, `prs` and `status` are read-only;
+[`pr create`](#vincent-github-pr-create) and the `pr merge`, `close`, `reopen`,
+`comment` and `rerun` commands below it write to GitHub, and each writes only
+when you run it. The daemon makes every call — a
 client never talks to GitHub. All of these need a daemon.
 
 ### `vincent github issues`

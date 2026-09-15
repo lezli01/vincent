@@ -384,12 +384,15 @@ Everything else vincent writes lives in its
 worktrees it creates in your repositories — and the one file you name yourself
 when you run [`vincent daemon backup`](reference/files.md#backup-and-restore).
 
-One write leaves the machine, and only when you ask for it:
+Writes to GitHub leave the machine, and only when you ask for them:
 [opening a pull request](features.md#open-a-pull-request) pushes a task's branch
-to `origin` and creates the pull request, using the same `gh` login or
-`GITHUB_TOKEN`/`GH_TOKEN` the read side uses. It never force-pushes, it sends
-committed work only, it is not an MCP tool so an agent cannot reach it, and
-`github.enabled: false` turns it off with every read.
+to `origin` and creates the pull request, and a task's linked pull request can
+be merged, closed, reopened, commented on or have its failed checks re-run. All
+of them use the same `gh` login or `GITHUB_TOKEN`/`GH_TOKEN` the read side uses.
+The push never forces and sends committed work only, a merge is pinned to the
+head commit you named and never deletes the branch, none of them is an MCP tool
+so an agent cannot reach them, and `github.enabled: false` turns them off with
+every read.
 
 **One of those worktree files carries a token.** To give a cursor step
 [vincent's own tools](guides/mcp.md) — cursor has no per-run MCP flag — the
