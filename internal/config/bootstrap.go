@@ -185,10 +185,11 @@ agents:
 # makes no call at all until you open the issue picker, name an issue on the
 # command line, or ask for a pull request.
 #
-# It reads GitHub, with one exception: pressing P on a task pushes that task's
-# branch to origin and opens its pull request. That is the only thing vincent
-# writes to GitHub — it never updates, comments on, closes or merges anything
-# — and it happens only when you ask for it, from a form you edit first. The
+# It reads GitHub, and writes only when you ask it to: pressing P on a task
+# pushes that task's branch to origin and opens its pull request, and a task's
+# linked pull request can be merged, closed, reopened, commented on and have
+# its failed checks re-run. Nothing writes on its own, from a workflow step or
+# from an agent — every write is something you asked for. The
 # push never forces: a diverged or rejected push creates no pull request and
 # changes nothing on the remote.
 #
@@ -196,8 +197,9 @@ agents:
 # and authenticated, and otherwise reads GITHUB_TOKEN or GH_TOKEN out of the
 # environment the daemon inherited. A credential that cannot write is fine —
 # vincent then falls back to opening GitHub's own new-pull-request page in
-# your browser. Set enabled to false to stop the daemon talking to GitHub at
-# all, reads and that one write together.
+# your browser, and refuses a merge, close, reopen, comment or re-run by
+# saying the credential has no write scope. Set enabled to false to stop the
+# daemon talking to GitHub at all, reads and writes together.
 #
 # poll_interval is how often the daemon reconciles the link between a task and
 # its pull request, by matching an open pull request's head branch against the

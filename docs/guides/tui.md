@@ -280,7 +280,7 @@ Inside a field `enter` is a newline (a pull-request body usually wants more than
 one line), `ctrl+s` keeps the text, and `esc` discards it. A title is required:
 `ctrl+s` without one says so rather than sending something GitHub cannot use.
 
-`ctrl+s` is **the one thing vincent writes to GitHub.** It pushes committed work
+`ctrl+s` **writes to GitHub.** It pushes committed work
 only — anything uncommitted in the task's worktree is not in the pull request,
 which the popup says above the rows — and it never force-pushes: a diverged,
 protected or rejected push creates no pull request and changes nothing on the

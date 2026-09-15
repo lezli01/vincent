@@ -408,12 +408,90 @@ type GitHubPullCreated struct {
 }
 
 // CreateGitHubPull pushes a task's branch to `origin` and opens its pull
-// request (task 069). It is the only call in this client that writes to a
-// forge, and it is made only when a human asks for it.
+// request (task 069). It and the five pull-request writes below are the calls
+// in this client that write to a forge, and each is made only when a human
+// asks for it.
 func (c *Client) CreateGitHubPull(ctx context.Context, taskID int64, req GitHubPullCreateRequest) (GitHubPullCreated, error) {
 	var out GitHubPullCreated
 	if err := c.send(ctx, http.MethodPost, taskPullPath(taskID)+"/create", req, &out); err != nil {
 		return GitHubPullCreated{}, err
+	}
+	return out, nil
+}
+
+// The pull-request writes (task 068.4). Each acts on the task's *linked* pull
+// request; a task with no live link is refused 409 with `pull_not_linked`,
+// and a GitHub refusal is a 409 whose Details carry the daemon's named reason
+// (`not_mergeable`, `checks_running`, `branch_behind`, `head_changed`,
+// `no_write_scope`, …) and never GitHub's own text.
+
+// GitHubPullMergeRequest is exactly what a human confirmed: the method, with
+// no default, and the head commit they were shown. The daemon refuses with
+// `head_changed` and merges nothing when the live head differs.
+type GitHubPullMergeRequest struct {
+	// Method is merge, squash or rebase.
+	Method  string `json:"method"`
+	HeadSHA string `json:"head_sha"`
+}
+
+// MergeGitHubPull merges a task's linked pull request and returns it as the
+// merge left it.
+func (c *Client) MergeGitHubPull(ctx context.Context, taskID int64, req GitHubPullMergeRequest) (GitHubPullRequest, error) {
+	var out GitHubPullRequest
+	if err := c.send(ctx, http.MethodPost, taskPullPath(taskID)+"/merge", req, &out); err != nil {
+		return GitHubPullRequest{}, err
+	}
+	return out, nil
+}
+
+// CloseGitHubPull closes a task's linked pull request without merging it.
+func (c *Client) CloseGitHubPull(ctx context.Context, taskID int64) (GitHubPullRequest, error) {
+	var out GitHubPullRequest
+	if err := c.send(ctx, http.MethodPost, taskPullPath(taskID)+"/close", nil, &out); err != nil {
+		return GitHubPullRequest{}, err
+	}
+	return out, nil
+}
+
+// ReopenGitHubPull reopens a task's closed, unmerged pull request.
+func (c *Client) ReopenGitHubPull(ctx context.Context, taskID int64) (GitHubPullRequest, error) {
+	var out GitHubPullRequest
+	if err := c.send(ctx, http.MethodPost, taskPullPath(taskID)+"/reopen", nil, &out); err != nil {
+		return GitHubPullRequest{}, err
+	}
+	return out, nil
+}
+
+// GitHubPullComment is the answer to a comment: the created comment's page.
+type GitHubPullComment struct {
+	URL string `json:"url"`
+}
+
+// CommentGitHubPull posts a comment on a task's linked pull request. There is
+// no idempotency key: a second call posts a second comment.
+func (c *Client) CommentGitHubPull(ctx context.Context, taskID int64, body string) (GitHubPullComment, error) {
+	var out GitHubPullComment
+	req := map[string]string{"body": body}
+	if err := c.send(ctx, http.MethodPost, taskPullPath(taskID)+"/comment", req, &out); err != nil {
+		return GitHubPullComment{}, err
+	}
+	return out, nil
+}
+
+// GitHubPullRerun is the answer to a re-run: the run whose failed jobs were
+// re-requested.
+type GitHubPullRerun struct {
+	RunID int64 `json:"run_id"`
+}
+
+// RerunGitHubPullChecks re-runs the failed jobs of one GitHub Actions run on
+// the linked pull request's head. The daemon refuses a run id that is not a
+// failed, Actions-backed row of the live rollup (`bad_request`) before sending.
+func (c *Client) RerunGitHubPullChecks(ctx context.Context, taskID, runID int64) (GitHubPullRerun, error) {
+	var out GitHubPullRerun
+	req := map[string]int64{"run_id": runID}
+	if err := c.send(ctx, http.MethodPost, taskPullPath(taskID)+"/checks/rerun", req, &out); err != nil {
+		return GitHubPullRerun{}, err
 	}
 	return out, nil
 }

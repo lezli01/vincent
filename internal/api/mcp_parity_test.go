@@ -100,12 +100,18 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		// rewriting the rules it runs under.
 		{http.MethodPost, "/v1/workflows"},
 		{http.MethodPatch, "/v1/workflows"},
-		// Task 069 decision 3: the one route that writes to a forge. Row 27
-		// was amended to let a *human* push a task's branch and open its pull
-		// request, and "the keypress is the consent" is only true while a
-		// human is the one pressing it. An agent's path to the same outcome —
-		// `git push` and `gh pr create` in its own worktree — is untouched.
+		// Task 069 decision 3 and task 068.4: the routes that write to a
+		// forge. Rows 11 and 27 let a *human* open, merge, close, reopen and
+		// comment on a pull request and re-run its checks, and "the keypress
+		// is the consent" is only true while a human is the one pressing it.
+		// An agent's path to the same outcome — `git push`, `gh pr create`
+		// and `gh pr merge` in its own worktree — is untouched.
 		{http.MethodPost, "/v1/tasks/{id}/github/pull/create"},
+		{http.MethodPost, "/v1/tasks/{id}/github/pull/merge"},
+		{http.MethodPost, "/v1/tasks/{id}/github/pull/close"},
+		{http.MethodPost, "/v1/tasks/{id}/github/pull/reopen"},
+		{http.MethodPost, "/v1/tasks/{id}/github/pull/comment"},
+		{http.MethodPost, "/v1/tasks/{id}/github/pull/checks/rerun"},
 		// Task 074 decision 1: handoff creates a task, and that is exactly
 		// why it belongs here. `task_create` is bounded by mcp.max_depth and
 		// mcp.max_tasks walking `created_by_task_id`; a chat is not in that

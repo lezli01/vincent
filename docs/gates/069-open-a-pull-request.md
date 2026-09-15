@@ -68,7 +68,9 @@ create would be refused `pull_already_linked` for the wrong reason.
    second `pr create`, and the task is still unlinked.
 4. **The fallback when the create fails after the push.** Under
    `FAKEGH_SCENARIO=forbidden` the `POST` answers `200` — the fallback is not an
-   error — with `created: false`, `pushed: true`, `reason: forbidden` and a
+   error — with `created: false`, `pushed: true`, `reason: no_write_scope` (*it was
+   `forbidden` until 2026-09-15, when task 068.4 gave a 403 on every write one
+   spelling; the script asserts the new one*) and a
    `compare_url` naming `main...` and the path-escaped branch. The branch is on
    the remote, so that page is live, and the task is unlinked.
 5. **A rejected push creates nothing.** A diverging commit is seeded under the

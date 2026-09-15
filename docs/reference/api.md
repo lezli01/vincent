@@ -614,17 +614,24 @@ false the body carries a `reason` and a human-readable `message`:
 | `not_github` | No `origin`, or one that is not a github.com repository |
 | `no_credential` | `gh` is absent or logged out, and neither `GITHUB_TOKEN` nor `GH_TOKEN` is set |
 | `unauthorized` | GitHub rejected the credential |
-| `forbidden` | Authenticated, but not permitted to read this repository's issues or pull requests |
-| `not_found` | No such repository, issue or pull request |
+| `forbidden` | Authenticated, but not permitted to read this repository's issues or pull requests. The same 403 on a write is `no_write_scope` |
+| `not_found` | No such repository, issue, pull request or check run. GitHub also answers 404 to some writes the credential may not make, and that is still `not_found` |
 | `rate_limited` | The API rate limit is spent |
 | `timeout` | GitHub did not answer in time |
 | `unreachable` | The call failed, or the API answered something with no more specific meaning |
 | `bad_response` | The answer arrived and did not parse |
 | `pull_exists` | A pull request for this branch and base already exists (pull request creation only) |
-| `bad_request` | GitHub refused the values as unusable — a base branch that does not exist, say (pull request creation only) |
+| `bad_request` | GitHub refused the values as unusable — a base branch that does not exist, say — or vincent refused them before sending, such as a re-run of a run that is not a failed Actions check on the head (pull request creation and re-run) |
+| `no_write_scope` | The credential may read this repository but not write to it: a 403 on any write that is not a spent rate limit |
+| `not_mergeable` | GitHub will not merge the pull request as it stands — closed or already merged, a draft, conflicted, or blocked by something other than a running check (merge only) |
+| `checks_running` | The merge is blocked and a check on the head commit has not finished (merge only) |
+| `branch_behind` | The branch is behind its base and the repository requires it to be up to date (merge only) |
+| `head_changed` | The pull request's head is not the commit the merge was confirmed for, so nothing was merged (merge only) |
 
-Those reasons are the whole client-facing vocabulary; the last two come only
-from `POST /v1/tasks/{id}/github/pull/create`. `gh`'s stderr and the
+Those reasons are the whole client-facing vocabulary; everything from
+`pull_exists` down comes only from a write —
+`POST /v1/tasks/{id}/github/pull/create` or one of the routes that
+[act on a linked pull request](#acting-on-a-linked-pull-request). `gh`'s stderr and the
 API's response body never appear in any of these fields — they go to the daemon
 log.
 
@@ -720,6 +727,11 @@ pushed back. Both are absent on a link a reconciler or a human made.
 | `DELETE` | `/v1/tasks/{id}/github/pull` | Unlink, and remember the refusal |
 | `GET` | `/v1/tasks/{id}/github/pull/checks` | The live check rollup for the linked pull request's head commit |
 | `POST` | `/v1/tasks/{id}/github/pull/create` | `{ title, body, draft }` — push the branch and open the pull request |
+| `POST` | `/v1/tasks/{id}/github/pull/merge` | `{ method, head_sha }` — merge the linked pull request, pinned to that head |
+| `POST` | `/v1/tasks/{id}/github/pull/close` | Close the linked pull request without merging it |
+| `POST` | `/v1/tasks/{id}/github/pull/reopen` | Reopen the linked pull request |
+| `POST` | `/v1/tasks/{id}/github/pull/comment` | `{ body }` — comment on the linked pull request |
+| `POST` | `/v1/tasks/{id}/github/pull/checks/rerun` | `{ run_id }` — re-run the failed jobs of one Actions run on its head |
 
 ```json
 {
@@ -776,9 +788,9 @@ request to GitHub — and it is the fallback behind
 
 ### Opening a pull request
 
-`POST /v1/tasks/{id}/github/pull/create` is the **one route in vincent that
-writes to GitHub**. It pushes the task's branch to `origin` and creates its pull
-request:
+`POST /v1/tasks/{id}/github/pull/create` **writes to GitHub**, as do the routes
+that [act on a linked pull request](#acting-on-a-linked-pull-request). It pushes
+the task's branch to `origin` and creates its pull request:
 
 ```sh
 curl -sS -X POST -H "Authorization: Bearer $TOKEN" \
@@ -817,8 +829,8 @@ exactly as it would have before:
 
 ```json
 { "created": false, "pushed": true, "branch": "vincent/61-add-rate-limiting",
-  "remote": "origin", "reason": "forbidden",
-  "message": "the credential may not do this in this repository",
+  "remote": "origin", "reason": "no_write_scope",
+  "message": "the credential may read this repository but not write to it",
   "compare_url": "https://github.com/octo/repo/compare/main...vincent%2F61-add-rate-limiting?expand=1&title=…" }
 ```
 
@@ -858,6 +870,64 @@ branch on:
              "message": "GitHub is not available for this project: …",
              "details": { "reason": "no_credential" } } }
 ```
+
+### Acting on a linked pull request
+
+Five routes write to a task's **linked** pull request, and to nothing else: the
+number comes from the stored link and the repository from the project's
+`origin`, so a caller cannot aim one at a pull request the task does not name.
+
+| Route | Body | 200 answer |
+|---|---|---|
+| `POST /v1/tasks/{id}/github/pull/merge` | `{ method, head_sha }` | The pull request, re-read after the merge |
+| `POST /v1/tasks/{id}/github/pull/close` | none | The pull request as the close left it |
+| `POST /v1/tasks/{id}/github/pull/reopen` | none | The pull request as the reopen left it |
+| `POST /v1/tasks/{id}/github/pull/comment` | `{ body }` | `{ url }`, the new comment's page |
+| `POST /v1/tasks/{id}/github/pull/checks/rerun` | `{ run_id }` | `{ run_id }` |
+
+```sh
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"method":"squash","head_sha":"3f9c2e1d…"}' \
+  http://127.0.0.1:8765/v1/tasks/61/github/pull/merge
+```
+
+Each is gated like creation — `github.enabled` and the capability probe, with
+the 409 above when the integration is not usable — and then refuses a task with
+no live link, a suppressed one included, with **409** `pull_not_linked`. A body
+that does not validate is `400 validation_failed`: `method` must be `merge`,
+`squash` or `rebase` and has no default, `head_sha` is required, a comment
+cannot be empty, and `run_id` must be a positive run id.
+
+A **merge** reads the pull request before it sends anything, and refuses —
+merging nothing — with `head_changed` when the live head is not `head_sha`,
+`branch_behind` when the repository requires an up-to-date branch and this one
+is behind, `checks_running` when the merge is blocked on a check that has not
+finished, or `not_mergeable` when the pull request is closed, already merged, a
+draft, conflicted or blocked for another reason. The merge itself is pinned to
+`head_sha`, so a push landing after that read is refused too. It never deletes
+the branch, never queues an auto-merge and never uses an admin override.
+
+A **re-run** re-reads the [check rollup](#github-pull-requests) for the current
+head and re-runs the failed jobs of `run_id` only when a **failed** row —
+`failure`, `timed_out`, `cancelled` or `action_required` — carries that
+`run_id`. A third-party check, a legacy commit status, a run that did
+not fail or a run id from anywhere else is refused `bad_request`, and nothing is
+sent.
+
+A refusal from GitHub is **409** with `details.reason` from the
+[vocabulary above](#github-issues) — a 403 is `no_write_scope` — and never
+GitHub's own text:
+
+```json
+{ "error": { "code": "invalid_state",
+             "message": "could not merge octo/repo#412: the merge is blocked until the running checks finish",
+             "details": { "reason": "checks_running" } } }
+```
+
+There is no task-state guard, no idempotency key and no event: a running task's
+pull request may be merged, a second merge is refused `not_mergeable`, and a
+comment sent twice posts twice. None of the five is an [MCP tool](#mcp).
 
 ## Workflows
 
@@ -2430,7 +2500,12 @@ Every route on this page is a tool, with these exceptions:
 | `PATCH /v1/triggers/{id}` | Same |
 | `DELETE /v1/triggers/{id}` | Same |
 | `POST /v1/triggers/{id}/events` | An agent that can inject events can start agents. The signature it would have to forge is no reason to offer the route |
-| `POST /v1/tasks/{id}/github/pull/create` | The one route that writes to a forge. Nothing gates it behind the keypress it exists for — no config key, no confirmation the daemon can check — so an agent-callable version would be consent nobody gave. An agent that wants a pull request runs `git push` and `gh pr create` in its own worktree |
+| `POST /v1/tasks/{id}/github/pull/create` | A write to a forge. Nothing gates it behind the human asking for it — no config key, no confirmation the daemon can check — so an agent-callable version would be consent nobody gave. An agent that wants a pull request runs `git push` and `gh pr create` in its own worktree |
+| `POST /v1/tasks/{id}/github/pull/merge` | Same, and because `mcp.wire_steps` is on by default, a tool would put the write on the step path, which nothing reaches. An agent runs `gh pr merge` in its own worktree |
+| `POST /v1/tasks/{id}/github/pull/close` | Same |
+| `POST /v1/tasks/{id}/github/pull/reopen` | Same |
+| `POST /v1/tasks/{id}/github/pull/comment` | Same |
+| `POST /v1/tasks/{id}/github/pull/checks/rerun` | Same |
 | `POST /v1/agents/{name}/quota` | An agent must not forge a daemon-level fact about the host it runs on: a step reporting its own adapter at 99% would paint every board with a wall that does not exist, and a reading carries a source, not a caller |
 | `GET /v1/events` | A tool call is request/response; use `task_wait` |
 | `GET /v1/tasks/{id}/events` | Same |
