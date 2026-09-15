@@ -226,3 +226,7 @@ starting tree depend on timing rather than on the graph.
   2026-09-13), and `SentinelLane` is still in place for it.
 - A `scripts/m6-gate.sh` scenario driving a derived DAG end to end (tracked in
   [#384](https://github.com/lezli01/vincent/issues/384), 2026-09-13).
+  *Delivered 2026-09-15 (issue #384):* `m6` scenario 13 derives three lanes
+  from a step's output, `wire` needing the other two, and asserts the derived
+  names, dependency order (timestamps and git ancestry), two rounds, the
+  merges and the materialized `derived_from`.
