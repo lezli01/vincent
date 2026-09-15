@@ -157,7 +157,7 @@ only thing that notices.
 *other* queued task on that adapter — stays out, as the issue asks. Each task
 discovers the wall independently, costing N process spawns per window. It wants
 its own issue, and the generic `admit_not_before` column chosen above is what it
-will build on.
+will build on (tracked in [#399](https://github.com/lezli01/vincent/issues/399), 2026-09-13).
 
 **Crash recovery needs no change.** The hold is a column on the task row, so a
 crash during a wait leaves a queued task with its hold intact; the startup sweep

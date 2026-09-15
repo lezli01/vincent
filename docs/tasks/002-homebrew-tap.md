@@ -122,3 +122,7 @@ reinstalling non-interactively, which exited 0 and added `lezli01/tap/vincent` t
 **Still unproven:** the automated publish. The tap's current cask was pushed by
 hand, so the first tagged release after this lands is what exercises
 `HOMEBREW_TAP_TOKEN` and the goreleaser publish step for real.
+*Proven 2026-08-15, recorded 2026-09-14 (issue #378):* v0.1.1's release pushed
+`77c7639` to `lezli01/homebrew-tap` as `goreleaser`, with `HOMEBREW_TAP_TOKEN`,
+and every release since — through v0.8.0 (`1b2a254`, 2026-09-04) — was
+published the same way.

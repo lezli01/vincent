@@ -188,8 +188,9 @@ already build the real binary and drive real daemons — which is what
 **Scheduled backups with retention.** Deferred, as the issue proposed: cron and
 Task Scheduler cover the scheduling, and a daemon-side timer with a retention
 policy is its own decision with its own configuration surface. Manual command
-first.
+first (tracked in [#410](https://github.com/lezli01/vincent/issues/410), 2026-09-13).
 
 **Restoring a single task.** The archive is whole-installation. Pulling one
 task's rows and transcripts out of a backup is a different feature with a
-different shape, and nothing here forecloses it.
+different shape, and nothing here forecloses it (tracked in
+[#411](https://github.com/lezli01/vincent/issues/411), 2026-09-13).

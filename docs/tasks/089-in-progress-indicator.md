@@ -173,7 +173,9 @@ on the line this exists to keep clean is worse than a few spaces.
 
 - **No screenshots were regenerated, and none went stale.** `scripts/screenshots.sh`
   seeds no chat and has no chat tape — the gap task 071 recorded and task 085
-  re-recorded — so no `docs/assets/tui-*.png` shows view 8 or view 9. The one
+  re-recorded — so no `docs/assets/tui-*.png` shows view 8 or view 9 (tracked in
+  [#413](https://github.com/lezli01/vincent/issues/413), 2026-09-13).
+  The one
   task-workspace capture, `tui-diff.png`, is of the **Diff** tab, where this
   indicator deliberately does not draw. If a chat tape or an Output-tab tape is
   ever added, it will show one arbitrary spinner frame, which is why the elapsed

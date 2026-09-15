@@ -6,8 +6,8 @@
 set at five); §12.1 (the `vincent skills` row); §15 (the `S` offer beside the
 status-line one); §17 (the doctor group). All dated 2026-09-10, in place.
 **Keeps, without relitigating:**
-[041](041-agent-health-facets.md) — the §9.5 facet vocabulary stays at five.
-[006](006-doctor.md) decision 7 — doctor's unhealthy set stays closed.
+[041](041-adapter-compatibility-health.md) — the §9.5 facet vocabulary stays at five.
+[006](006-vincent-doctor.md) decision 7 — doctor's unhealthy set stays closed.
 [082](082-reported-agent-quota.md) decision 2 — vincent may write another
 tool's configuration file when a human asks it to, on a screen that shows
 exactly what it will write.

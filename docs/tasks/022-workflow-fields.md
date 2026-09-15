@@ -96,7 +96,8 @@ and interchangeable; a TUI-only constraint would not be a workflow contract.
   run; unavailable checks remain explicitly blocked.
   **Blocked 2026-08-21:** this managed workspace cannot report process start
   times even for its own PID, so the full and full-race suites fail only in
-  `internal/procx` and the two downstream `internal/taskrun` recovery tests.
+  `internal/procx` and the two downstream `internal/taskrun` recovery tests
+  (tracked in [#379](https://github.com/lezli01/vincent/issues/379), 2026-09-13).
   It also cannot provide the human terminal needed to grade a manual TUI
   walkthrough; the focused render and navigation tests pass.
 

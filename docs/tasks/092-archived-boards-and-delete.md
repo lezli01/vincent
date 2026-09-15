@@ -12,17 +12,17 @@ not offered; §13.2 — the two `DELETE` routes, the new query parameters on
 destructive-admin exclusion; §15 — a tenth view and its palette rows; §17 —
 the retention table's "DB rows are never deleted" qualified to the *pruner*.
 Decision record row 30.
-**Keeps, without relitigating:** [008](008-empty-branch-cleanup.md) — the
+**Keeps, without relitigating:** [008](008-archive-branch-cleanup.md) — the
 §10 rule that a branch carrying any commit past its base is never deleted, and
 [056](056-fetch-base-branch.md)'s `base_sha` fork point, both reused verbatim.
-[011](011-bulk-actions.md) — "there is no bulk endpoint and there is not going
+[011](011-bulk-task-selection.md) — "there is no bulk endpoint and there is not going
 to be one"; every sweep here is one `DELETE` per row.
-[049](049-command-palette.md) — retiring `1..6` without substituting new
+[049](049-full-screen-task-workspace.md) — retiring `1..6` without substituting new
 memorized keys is the point, so the two boards get palette rows and no key,
 exactly as [067](067-chats-in-the-tui.md) gave chats one.
 [074](074-chat-handoff.md) decision 5 — `handed_off` means the task owns the
 worktree, which is why both directions of that link are a refusal.
-[074](074-chat-handoff.md) decision 6 and [079](079-chat-listing-scope.md)
+[074](074-chat-handoff.md) decision 6 and [079](079-terminal-chats-leave-the-board.md)
 decision 2 — a chat's `updated_at` *is* when it ended, so no `archived_at`
 column is added for chats.
 

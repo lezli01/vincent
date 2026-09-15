@@ -210,7 +210,8 @@ capability an adapter lacks is "stated in spec §9.x and ignored at run time", a
 §9.1 says so rather than letting it read as an oversight: a workflow whose prompt
 depends on the vincent tools should fail loudly rather than burn an agent run
 producing work premised on a channel that was never there. Task 041's
-version-compatibility surface is where the gap is reported ahead of a run.
+version-compatibility surface is where the gap is reported ahead of a run
+(tracked in [#375](https://github.com/lezli01/vincent/issues/375), 2026-09-13).
 
 **9. Restricted mode gets the vincent tools wholesale.** *(2026-08-29)*
 
@@ -269,7 +270,8 @@ their own steps.
   `awaiting_input` leg belongs with 057.9, which needs the fake agent anyway.*
 - [ ] **057.9** — `cmd/fakeagent` scenario that calls back into the daemon over
   its per-step endpoint, so auto-wiring is proven end to end from a step rather
-  than from the adapter's argv alone.
+  than from the adapter's argv alone (tracked in
+  [#385](https://github.com/lezli01/vincent/issues/385), 2026-09-13).
 
 ## Risks
 

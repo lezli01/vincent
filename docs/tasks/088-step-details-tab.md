@@ -158,4 +158,5 @@ runs at all.
 No gate script. What is judged is whether a panel is legible, which is the same
 reason M3's and task 017's surfaces have none; the daemon half is asserted in Go
 tests, and the tab's screenshot tape and `docs/gates/` run record are the
-follow-up.
+follow-up (tracked in [#380](https://github.com/lezli01/vincent/issues/380) and
+[#414](https://github.com/lezli01/vincent/issues/414), 2026-09-13).

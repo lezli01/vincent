@@ -198,4 +198,5 @@ or `status` command", which is now stale — claude's `logged_in: null` could
 become a real boolean, and the v0 T1.7 decision it protects (no state-file
 parsing) would be untouched by using an official subcommand. That is a genuine
 improvement to the same panel this work touches, and it is a different change
-with its own fixture to capture. It wants its own issue.
+with its own fixture to capture. It wants its own issue (tracked in
+[#398](https://github.com/lezli01/vincent/issues/398), 2026-09-13).

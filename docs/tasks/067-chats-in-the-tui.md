@@ -221,4 +221,5 @@ two standing rules: `| tr -d '\r'` on any multi-line `jq` capture, and never
 source of `docs/assets/tui-*.png` and it is not run in CI; capturing the two new
 panels is a seeded VHS run on a macOS or Linux workstation, and this task
 deliberately does not ship a drawing in the meantime. `docs/guides/tui.md`
-describes both panels in prose and key tables until that run happens.
+describes both panels in prose and key tables until that run happens (tracked in
+[#413](https://github.com/lezli01/vincent/issues/413), 2026-09-13).

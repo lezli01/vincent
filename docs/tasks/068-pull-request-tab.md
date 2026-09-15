@@ -142,8 +142,8 @@ would show a green build for code nobody ran.
 | 068.1 | `CheckRun` and `CheckRollup` in `internal/github`, produced identically by both legs, with the Actions provenance decision 3 needs | ✅ done |
 | 068.2 | `GET /v1/tasks/{id}/github/pull/checks`, its `internal/apiclient` type and its MCP tool | ✅ done |
 | 068.3 | The Pull Request tab: conditional presence, the cycle that skips it, the check rows, open-check, refresh, and unlink's second home. *Task 093 moved open-check from `c` to `enter` and removed refresh (noted 2026-09-14, issue #372)* | ✅ done |
-| 068.4 | The write leg (`gh pr merge`/`close`/`reopen`/`comment`, `gh run rerun --failed`; `PUT /pulls/{n}/merge`, `PATCH /pulls/{n}`, `POST /issues/{n}/comments`, `POST /actions/runs/{id}/rerun-failed-jobs`), its new reason cases, the write routes and the tab's confirmed actions. **Row 11 is rewritten here**, with its three reaffirmations amended in the same pull request | ☐ open |
-| 068.5 | `scripts/068-gate.sh` and `docs/gates/068-*.md`, `cmd/fakegh`'s write subcommands, the re-captured `docs/assets/tui-*.png`, and the derived documentation for the write surface | ☐ open |
+| 068.4 | The write leg (`gh pr merge`/`close`/`reopen`/`comment`, `gh run rerun --failed`; `PUT /pulls/{n}/merge`, `PATCH /pulls/{n}`, `POST /issues/{n}/comments`, `POST /actions/runs/{id}/rerun-failed-jobs`), its new reason cases, the write routes and the tab's confirmed actions. **Row 11 is rewritten here**, with its three reaffirmations amended in the same pull request (tracked in [#386](https://github.com/lezli01/vincent/issues/386) and [#387](https://github.com/lezli01/vincent/issues/387), 2026-09-13) | ☐ open |
+| 068.5 | `scripts/068-gate.sh` and `docs/gates/068-*.md`, `cmd/fakegh`'s write subcommands, the re-captured `docs/assets/tui-*.png`, and the derived documentation for the write surface (tracked in [#388](https://github.com/lezli01/vincent/issues/388), 2026-09-13) | ☐ open |
 
 ## What 068.4 must hold
 

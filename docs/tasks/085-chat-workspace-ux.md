@@ -154,7 +154,9 @@ handler — and two copies of that arithmetic drift.
 
 - **No chat screenshot.** `scripts/screenshots.sh` seeds no chat and has no chat
   tape, the gap task 071 recorded under its own "Not done here", so no
-  `docs/assets/tui-*.png` shows this view and none went stale. No existing
+  `docs/assets/tui-*.png` shows this view and none went stale (tracked in
+  [#413](https://github.com/lezli01/vincent/issues/413), 2026-09-13).
+  No existing
   capture shows a non-default level either: the pane title names a level only
   when it is not the default, and every tape runs at `normal`.
 - **No gate.** The level is client-only session state that never crosses the

@@ -21,6 +21,12 @@ Nothing in the product surface hinted at it either: `default_branch` was
 documented as "auto-detected from `origin/HEAD`", which reads as if the remote
 is consulted at run time. It is consulted once, at project registration.
 
+## Tasks
+
+- [x] **056.1** Fetch the base branch before creating a task worktree: the fetch
+  in `Manager.create`, the start point from `FETCH_HEAD`, `base_sha`,
+  `fetch_base_branch`, and the §5.2/§5.3/§10/§12.3/§14 amendments. ✓ 2026-08-29
+
 ## Decisions
 
 **1. The fetch goes in `Manager.create`, at first admission.** *(2026-08-29)*

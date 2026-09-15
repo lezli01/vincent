@@ -34,7 +34,7 @@ closed set of strings deserves the same.
 A fifth type, `enum`, whose members live in `values:` and whose cardinality is
 declared per field in `multiple:`, plus a `default:` that belongs to every type.
 Task fields stay `map[string]string` in storage, on the wire, in templates, in
-branch names and in fan-out inheritance — [022](022-workflow-declared-task-fields.md)
+branch names and in fan-out inheritance — [022](022-workflow-fields.md)
 decision 1 is untouched. The daemon stays the authoritative validation boundary
 (022 decision 5) and the map stays open (022 decision 3).
 
@@ -146,7 +146,7 @@ other side: the members *are* the constraint.
 
 ## Consequences that follow
 
-- **Task [035](035-github-issue-prefill.md)'s prefill needs no change.** It
+- **Task [035](035-github-issue-selection.md)'s prefill needs no change.** It
   offers a value only when `FieldDefinition.Validate` accepts it (035 decision
   7), and that is the routine `ValidateTaskFields` calls, so membership checking
   arrives for free. A prefilled single member is already a canonical `multiple`
@@ -176,4 +176,4 @@ other side: the members *are* the constraint.
 
 No gate script: this is a schema and form-contract change with no daemon
 end-to-end behaviour a gate would exercise that the API tests do not. The New
-task picker is judged by eye, the way M3 and [017](017-workflow-graph.md) are.
+task picker is judged by eye, the way M3 and [017](017-workflow-visualization.md) are.

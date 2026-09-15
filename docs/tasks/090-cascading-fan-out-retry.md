@@ -39,16 +39,16 @@ count out to the clients.
 
 - [x] **090.1** The state machine and the engine: `Retry` becomes legal from
   `awaiting_children`, and `Runner.Retry` grows the parked branch and
-  `cascadeRetry`.
+  `cascadeRetry`. ✓ 2026-09-05
 - [x] **090.2** `POST /v1/tasks/{id}/retry` answers 200 from `awaiting_children`,
-  reports `retried_descendants`, and refuses `branch_override` there.
+  reports `retried_descendants`, and refuses `branch_override` there. ✓ 2026-09-05
 - [x] **090.3** The clients: `apiclient.Retry` carries the count, the TUI offers
   `r` on a parked parent and stops offering `E` where it is now a 400, and the
-  CLI and the action bar say how many lanes were re-admitted.
+  CLI and the action bar say how many lanes were re-admitted. ✓ 2026-09-05
 - [x] **090.4** `scripts/m6-gate.sh` scenario 12: two lanes blocked on one
-  missing repository setting, one retry on the parent, both merged.
+  missing repository setting, one retry on the parent, both merged. ✓ 2026-09-05
 - [x] **090.5** The spec, the API/CLI/TUI/lifecycle pages, the workflows guide
-  and the changelog.
+  and the changelog. ✓ 2026-09-05
 
 ## Decisions
 

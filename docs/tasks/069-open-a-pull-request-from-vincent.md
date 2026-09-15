@@ -138,7 +138,8 @@ issue's second complaint fixed even on the unhappy path.
 - [ ] 069.8 `scripts/069-gate.sh` and `docs/gates/069-open-a-pull-request.md`,
       driving a real push to a local bare remote and `cmd/fakegh`'s `pr
       create`, plus the `ci.yml` step. **Not landed in this change** — see
-      "Open" below.
+      "Open" below (tracked in
+      [#383](https://github.com/lezli01/vincent/issues/383), 2026-09-13).
 
 ## Open
 
@@ -147,7 +148,8 @@ against `fakegh`; it cannot prove the two together against real GitHub. That is
 the same wall task 064.9 hit: it is a manual walkthrough recorded in
 `docs/gates/`, not a reason to hold the work.
 
-069.8 is left open deliberately rather than half-landed. The gate script is a
+069.8 is left open deliberately rather than half-landed (tracked in
+[#383](https://github.com/lezli01/vincent/issues/383), 2026-09-13). The gate script is a
 `ci.yml` change, and a cloud session's token has no `workflow` scope and so
 cannot write `.github/workflows/` by any route — push or API (#120, #122,
 #125). A gate committed without its CI step is a gate that has never run on any

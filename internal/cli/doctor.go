@@ -394,7 +394,7 @@ func doctorAgentRows(agents []apiclient.DoctorAgent) [][]string {
 // They trail deliberately — the blocking conditions ("not found", "auth no")
 // lead, and a verdict is context, not a refusal. None of them is a Problem
 // either: an untested build is the normal state for a user on a current CLI,
-// and `vincent doctor` does not exit 1 over it (task 005 decision 7).
+// and `vincent doctor` does not exit 1 over it (task 006 decision 7).
 //
 // The version verdict is skipped when empty, which is what an adapter with
 // nothing installed reports: there is no build to have an opinion about.

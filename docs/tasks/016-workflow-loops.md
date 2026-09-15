@@ -179,7 +179,12 @@ too would leave nothing to check at creation.
 Dynamic per-item fan-out is therefore a separate question — plausibly
 `for_each:` on a `fan_out` step — and it needs its own answer to "what replaces
 the creation-time bound". Recorded in §20 with that trigger, not smuggled in
-here. Keeping them apart also keeps §7.5's and §7.6's meanings intact: a loop
+here. *Noted 2026-09-14 (issue #378):* the trigger was met 2026-09-01 by
+[080](080-fan-out-dag.md) decision 6, which moves `fan_out.max_tasks` to spawn
+time for a derived lane list, beside a per-step `max_lanes:`, and keeps the
+cycle check and `fan_out.max_depth` at creation; `.Loop.Item` stayed a string
+(080 decision 1).
+Keeping them apart also keeps §7.5's and §7.6's meanings intact: a loop
 is a group that runs its members in order and more than once, and it inherits
 §7.5's "concurrent writes to one worktree are a workflow bug" only in the
 degenerate sense that there is no concurrency to have.
@@ -474,8 +479,9 @@ the record of what was drafted; the spec is the live text.
 - [x] **016.6 — Engine: `for_each:`.** List resolution (sequence or scalar,
   split on newlines); `loop_item` on the row and rows-are-authoritative
   resumption; the over-cap block before iteration 1; the empty-list no-op.
-  Document the `outputTailLines` (100-line) bound on a list drawn from
-  `.Steps[…].Result`. Spec §7.8.
+  Document the `outputTailLines` (200-line) bound on a list drawn from
+  `.Steps[…].Result` — *corrected 2026-09-14: the draft said 100; see "§8.4's
+  output tail is 200 lines" below*. Spec §7.8.
   *Depends: 016.4.*
 - [x] **016.7 — Recovery and human actions.** §12.4 finalization of an
   interrupted body step; `skip` skipping the whole loop; `retry` resuming at the

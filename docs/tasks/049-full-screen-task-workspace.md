@@ -1,6 +1,6 @@
 # 049 — Board-only home and full-screen task workspace
 
-**Status:** ✅ done (5/5)
+**Status:** ✅ done (8/8)
 **Spec:** amends §15
 
 ## Problem
@@ -65,12 +65,12 @@ moving between tabs cannot select a different attempt.
 - [x] **049.5** Amend §15 and the TUI-facing guides, update the screenshot
   capture flow, regenerate affected assets, and pass the full verification
   suite. ✓ 2026-08-28
-- [x] **044.6** Add the Output attempt selector and let `enter` open the
+- [x] **049.6** Add the Output attempt selector and let `enter` open the
   timeline's selected attempt there. ✓ 2026-08-28
-- [x] **044.7** Refine Steps & Attempts and Task Details with clearer visual
+- [x] **049.7** Refine Steps & Attempts and Task Details with clearer visual
   hierarchy, responsive fact groups, breathing room, and lossless wrapping for
   long metadata. ✓ 2026-08-28
-- [x] **044.8** Replace the all-at-once Task Details document with a selectable
+- [x] **049.8** Replace the all-at-once Task Details document with a selectable
   section sidebar and an independently scrollable content pane. ✓ 2026-08-28
 
 ## What the tests prove

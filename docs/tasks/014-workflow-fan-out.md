@@ -358,7 +358,14 @@ transition.
 - **Run-time dynamic fan-out** — an agent deciding mid-run that there are seven
   subtasks. It breaks the snapshot-as-authority rule (decision 4) and makes step
   indices unstable across a crash, and it is what decision 5's creation-time
-  checks trade away.
+  checks trade away. *Superseded 2026-09-01 by [080](080-fan-out-dag.md):* a
+  `fan_out` step may derive its lane list from an earlier step's output
+  (`for_each:` + `lane:`). The two objections are answered rather than ignored:
+  derived lanes are materialized into the snapshot at spawn (080 decision 5), so
+  the snapshot stays the authority and step indices stay stable across a crash;
+  and of decision 5's creation-time checks only `fan_out.max_tasks` moves, to
+  spawn time and for a derived list only, while the cycle check and
+  `fan_out.max_depth` stay at creation (080 decision 6).
 - **Policing whether a `parallel` step writes files.** The group shares one
   worktree; concurrent writes are undefined behaviour, documented as such. §10
   already states that worktrees isolate working trees, not process-level

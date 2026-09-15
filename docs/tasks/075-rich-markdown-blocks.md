@@ -76,7 +76,7 @@ deliberately keeps escape sequences out of wrapping.
 
 The reference block satisfies every acceptance criterion without it. OSC 8
 becomes its own issue if it is wanted, with the escaping rules and the gating as
-its subject.
+its subject (tracked in [#404](https://github.com/lezli01/vincent/issues/404), 2026-09-13).
 
 The same reasoning gives the highlighter its safety property, asserted by
 `TestHighlightingEmitsStylesNeverCharacters`: highlighting emits **styles only,
@@ -157,7 +157,8 @@ composed lines directly, the way `mdRule` already renders without lines.
 
 A raw/rendered toggle, a copy-raw action and a link picker remain the follow-ups
 073 decision 4 scoped; the reference numbering is what a picker would address.
-OSC 8 is its own issue per decision 3. Reference links, autolinks and bare-URL
+OSC 8 is its own issue per decision 3 (tracked in
+[#404](https://github.com/lezli01/vincent/issues/404), 2026-09-13). Reference links, autolinks and bare-URL
 styling are out per decision 4, and are the obvious content of a later
 subset-widening issue if agent output makes the case for them.
 

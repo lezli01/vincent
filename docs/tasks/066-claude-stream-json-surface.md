@@ -52,7 +52,7 @@ around. The parser reads the field, it reaches the normalized record and the
 live chunk, and the pane keeps rendering flat. Capturing a `Task` run and
 designing the tree is follow-up work in its own document; because §13.2
 re-normalizes on every read, transcripts recorded before that lands will render
-under it.
+under it (tracked in [#401](https://github.com/lezli01/vincent/issues/401), 2026-09-13).
 
 **3. Tool outcomes get a verb, not a diff delta.** `ToolResult.Summary`'s doc
 comment promised "created (+1 −0)", but the only fixture with a structured
@@ -67,7 +67,9 @@ the types a capture has shown (`create` → `created`); an unobserved type yield
 no verb rather than a guessed past tense. A
 `tool_result_meta[].non_execution_kind` of `permission-rule` renders as a
 blocked call (`⊘`) rather than as an error string (`✗`). Deltas wait for a
-fixture that has one. The doc comment that made the unkept promise was corrected
+fixture that has one (tracked in
+[#402](https://github.com/lezli01/vincent/issues/402), 2026-09-13).
+The doc comment that made the unkept promise was corrected
 in the same change, in `internal/agent/agent.go` and in §9.1's type listing.
 
 **4. No migration; nothing is persisted on `step_runs`.** The durable half is
@@ -161,7 +163,8 @@ The unit tests are necessary and **not sufficient.** T4.16's own record is
 explicit that every test it wrote proves a *parser* and none of them proves a
 *pane*, and its acceptance was the owner walking the TUI against a real claude
 run — the same reason `scripts/m3-gate.sh` seeds instead of asserting. This
-change adds two record shapes to that pane, so 066.5 is the leg that closes it.
+change adds two record shapes to that pane, so 066.5 is the leg that closes it
+(tracked in [#380](https://github.com/lezli01/vincent/issues/380), 2026-09-13).
 
 ## Walkthrough record
 
@@ -173,9 +176,11 @@ change adds two record shapes to that pane, so 066.5 is the leg that closes it.
 
 1. **Subagent nesting.** Capture a claude run that uses the `Task` tool, design
    the pane's tree within §15's model, amend §15. The wire field is already
-   there and already recorded.
+   there and already recorded (tracked in
+   [#401](https://github.com/lezli01/vincent/issues/401), 2026-09-13).
 2. **Edit deltas.** Capture a run containing an `Edit` with a non-empty
    `structuredPatch`, then make `ToolResult.Summary` keep the promise its doc
-   comment made from T4.14 until this task removed it.
+   comment made from T4.14 until this task removed it (tracked in
+   [#402](https://github.com/lezli01/vincent/issues/402), 2026-09-13).
 3. **Durable result metadata on `step_runs`**, if and when a client needs it off
    `/v1/tasks` rather than off a transcript (decision 4).

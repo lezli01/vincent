@@ -15,7 +15,7 @@ import (
 // TestDoctorWithoutADaemon is the property that separates doctor from every
 // other data subcommand: the daemon being down is one of the answers, so the
 // report is still printed in full and only the exit code says the request was
-// never made (task 005 decision 7).
+// never made (task 006 decision 7).
 func TestDoctorWithoutADaemon(t *testing.T) {
 	dataDir, cfgDir := t.TempDir(), t.TempDir()
 	pointAgentsAtNothing(t, cfgDir)

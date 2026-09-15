@@ -14,7 +14,7 @@ import (
 // row of a user's attention: environment.set values are literal, so that file
 // is where an API token ends up (§12.3). The row carries the exact chmod, and
 // it is a warning rather than a Problem — the closed set that sets the exit
-// code is unchanged (task 005 decision 7).
+// code is unchanged (task 006 decision 7).
 func TestConfigPermissionsWarn(t *testing.T) {
 	d := dirs(t)
 	path := filepath.Join(d.Config, config.FileName)

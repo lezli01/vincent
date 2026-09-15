@@ -149,4 +149,5 @@ no mutating `gh` subcommand. Fetching is a read.
   amendments, and this record.
 - [ ] **064.9** — `scripts/064-gate.sh` and `docs/gates/064-task-from-pull-request.md`:
   the end-to-end walk against a local bare remote. Not in this pull request;
-  see its body for why.
+  see its body for why (tracked in
+  [#382](https://github.com/lezli01/vincent/issues/382), 2026-09-13).

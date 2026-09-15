@@ -38,18 +38,20 @@ daemon.
 - [x] **091.1** `usage_limit_auto_continue` in `internal/config`: the field
   beside `UsageLimitRecheckInterval`, the `always` default, enum validation
   modelled on `log_level`'s, and the commented entry in the generated
-  `config.yaml`.
+  `config.yaml`. ✓ 2026-09-08
 - [x] **091.2** The engine: `usageLimitStop` computes the effective reset,
   records the per-adapter observation and answers hold-or-block;
   `holdForUsageLimit` writes only the hold it was told to write, and the block
   is the caller's `fail` with `ReasonUsageLimit`. `runRepair` takes the same
-  decision and routes to `finishRepair` where it says not to wait.
+  decision and routes to `finishRepair` where it says not to wait. ✓ 2026-09-08
 - [x] **091.3** The clients: `GET`/`PATCH /v1/config`, the `apiclient` wire
   types, `vincent config get|set`, and a `kindEnum` key in the TUI daemon view.
+  ✓ 2026-09-08
 - [x] **091.4** `scripts/m2-gate.sh` scenario 13: `never` against a CLI that
   named no reset blocks, `reported_only` against one that did still holds.
+  ✓ 2026-09-08
 - [x] **091.5** The spec amendments above, the configuration, task-lifecycle,
-  troubleshooting, agents and features pages, and the changelog.
+  troubleshooting, agents and features pages, and the changelog. ✓ 2026-09-08
 
 ## Decisions
 

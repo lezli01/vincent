@@ -43,7 +43,7 @@ an old build indefinitely. They are the users this task exists for.
   `README.md`, `LICENSE` and `examples/*.yaml` beside the binary. The swap
   verifies the *archive*, then extracts `vincent`/`vincent.exe` from the
   verified bytes. `vincent_{version}_darwin_universal.pkg` is deliberately
-  outside `checksums.txt` ([039](039-macos-installer-package.md)) and is
+  outside `checksums.txt` ([039](039-unsigned-releases-by-default.md)) and is
   therefore never an update source.
 - **`vincent status` is the step-status command**
   ([036](036-step-status-message.md)): it runs from inside a step, addresses
@@ -88,7 +88,7 @@ an old build indefinitely. They are the users this task exists for.
    doctor`.** Both already report daemon identity and `GET /v1/info` already
    serves the running daemon's `version`, so the comparison against
    `version.Version()` in the local binary costs nothing. Following
-   [035](035-github-issues.md)'s precedent, the doctor rows are **rows, not
+   [035](035-github-issue-selection.md)'s precedent, the doctor rows are **rows, not
    problems**: neither a newer release nor a stale daemon changes the exit code,
    because both leave everything working.
 
@@ -230,7 +230,8 @@ Rekor, and that a swapped binary starts on a machine with Gatekeeper or
 SmartScreen in front of it. That leg is
 [a gate walkthrough](../gates/055-update-gate.md) against a real published
 release, in the shape of [`m5`](../gates/m5-gate.md) — a record of when it was
-walked, not a script. There is no scripted acceptance gate here because a gate
+walked, not a script (tracked in
+[#380](https://github.com/lezli01/vincent/issues/380), 2026-09-13). There is no scripted acceptance gate here because a gate
 drives a real daemon over curl and nothing in the swap path involves one.
 
 ## One note on the exit-code tests

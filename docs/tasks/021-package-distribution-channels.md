@@ -90,12 +90,14 @@ configuration and user documentation.
 - [!] **021.6 — Run repository verification and review the final diff.** — the
   container's PID namespace makes the existing `procx` live-process tests and
   dependent `taskrun` recovery tests fail; the same four failures reproduce
-  without `-race` and are already recorded by task 020.
+  without `-race` and are already recorded by task 020 (tracked in
+  [#379](https://github.com/lezli01/vincent/issues/379), 2026-09-13).
   Done only when GoReleaser check/snapshot, package payload checks, docs/link
   lint, and the repository's required code checks have actually run;
   unavailable checks remain explicit.
 - [!] **021.7 — Bootstrap and prove the external channels.** — requires the
-  owner's authorization and credentials for external repository/account writes.
+  owner's authorization and credentials for external repository/account writes
+  (tracked in [#379](https://github.com/lezli01/vincent/issues/379), 2026-09-13).
   Confirm the Scoop bucket and WinGet fork, install the two destination
   credentials, publish a stable tag, and install that version through all five
   new paths. This is an external repository/account
