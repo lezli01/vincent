@@ -213,6 +213,23 @@ producing work premised on a channel that was never there. Task 041's
 version-compatibility surface is where the gap is reported ahead of a run
 (tracked in [#375](https://github.com/lezli01/vincent/issues/375), 2026-09-13).
 
+*Amended 2026-09-14 (issue #375).* "An adapter or version" reads **an
+adapter**, and the last sentence above is withdrawn. 057.5 shipped the three
+wirings with no version check, and no adapter returns `ErrMCPUnsupported`:
+every build vincent pins is far past the first release that could carry the
+server (claude `--mcp-config` since 0.2.75; codex `mcp_servers.*.url` with
+`bearer_token_env_var` since 0.46.0; cursor's changelog gives no date for
+`--approve-mcps`). Task 041's surface does not report MCP support, and vincent
+does not probe for it. The sentinel and `mcp_unsupported` stay as the contract
+for a future adapter with no per-run MCP surface, proven against the stub in
+`internal/taskrun/engine_test.go`, as task 072 kept the chat-resume refusal.
+
+Two alternatives lost. **Version floors for all three adapters** contradict task
+041 decision 1, which stands: version comparison is exact-string, a verdict
+blocks nothing, and cursor's calver admits no range. **Floors for claude and
+codex only** fail the same way, and a gate that covers two adapters of three is
+worse than none. Neither would have refused a single pinned build.
+
 **9. Restricted mode gets the vincent tools wholesale.** *(2026-08-29)*
 
 Claude's restricted argv was `--allowedTools

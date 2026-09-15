@@ -49,9 +49,10 @@ const (
 	// the backstop for exactly that — running a step full-auto because
 	// restricting was unavailable would invert the choice the step made.
 	ReasonRestrictedUnsupported = "restricted_unsupported"
-	// ReasonMCPUnsupported is an agent step whose adapter — or whose
-	// installed CLI version — cannot carry the §13.4 MCP server the daemon
-	// wired for it (task 057 decision 8).
+	// ReasonMCPUnsupported is an agent step whose adapter cannot carry the
+	// §13.4 MCP server the daemon wired for it (task 057 decision 8). No
+	// shipped adapter triggers it; it is reserved for one with no per-run MCP
+	// surface.
 	//
 	// It fails the step rather than running without the tools, which is a
 	// deliberate departure from the standing rule that a capability an

@@ -995,7 +995,8 @@ steps:
 }
 
 // mcpRefusingAdapter is an adapter that cannot carry an MCP server, standing
-// in for a CLI version that has no way to be given one. It embeds a real
+// in for a future adapter with no per-run MCP surface — no shipped adapter
+// refuses, so the refusal path is proven here (issue #375). It embeds a real
 // adapter so it keeps that adapter's name, detection and catalog, and refuses
 // only where task 057 decision 8 says an adapter refuses: at Start.
 type mcpRefusingAdapter struct{ agent.Adapter }
