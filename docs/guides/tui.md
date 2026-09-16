@@ -997,11 +997,11 @@ branch name, priority and agent — above the create action](../assets/tui-new-t
 The agent row warns when the adapter the task would run on is out of quota —
 `· usage limit until 14:20`, from the same quota the board header badges.
 It **warns and nothing else**: the form submits, and the task meets the ordinary
-[`usage_limit` stop](troubleshooting.md#usage_limit--do-nothing-unless-you-asked-to-be-told) if
-the window is still shut when it is admitted — waiting it out, or blocking
-there where
+[`usage_limit` wait](troubleshooting.md#usage_limit--do-nothing-unless-you-asked-to-be-told) if
+the window is still shut when it reaches its agent step — without starting the
+agent, when it is a window vincent watched close. Where
 [`usage_limit_auto_continue`](../reference/configuration.md#usage_limit_auto_continue)
-says not to wait.
+says not to wait, it starts the agent and blocks on the stop instead.
 
 The override pickers are fed by live adapter data, tagged with where each option
 came from, and always accept free text: `t` inside an open list types a value
