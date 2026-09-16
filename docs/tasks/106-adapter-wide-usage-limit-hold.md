@@ -217,6 +217,8 @@ chat turn is never queued, and sending one is a human action that means go.
 ## Verification
 
 - `go run mage.go test` green.
+- `go test -race` on `internal/taskrun`, `internal/notify` and
+  `internal/scheduler` green; the full `-race` suite is left to CI.
 - `go tool golangci-lint` built for the host and run with `GOOS=windows`,
   `darwin` and `linux`: green.
 - `VINCENT_GATE_SCENARIO=5`, `13` and `14 ./scripts/m2-gate.sh`: green on macOS.
