@@ -355,8 +355,10 @@ list with the user-facing context a commit subject cannot carry.
   passed on a branch with no commits of its own and left the change
   uncommitted, while `diagnose`'s and the fan-out lanes' guards failed for
   steps that had committed nothing. All seventeen ranges are now anchored at
-  `origin/<base>`, which the first step of each workflow fetches before
-  anything reads it (issue #449).
+  `origin/<base>`, which the first step of each of the three parent workflows
+  fetches before anything reads it. A fan-out lane needs no fetch of its own:
+  it runs in another worktree of the same repository, and reads the ref its
+  parent already moved (issue #449).
 - **The Windows install instructions no longer offer WinGet as working.** The
   README, the installation guide, the Windows page and the feature guide
   offered WinGet as a working channel, but Microsoft has not yet merged any of
