@@ -359,6 +359,19 @@ list with the user-facing context a commit subject cannot carry.
   fetches before anything reads it. A fan-out lane needs no fetch of its own:
   it runs in another worktree of the same repository, and reads the ref its
   parent already moved (issue #449).
+- **The resolver workflows ask for a plain-language pull request title.**
+  `github-resolve-issue` and `github-resolve-issue-dag` — the workflows this
+  repository runs on itself, readable as worked examples in
+  `.vincent/workflows/` — told their implementing agent to write a Conventional
+  Commits title into `.vincent-issue/pr-title.txt` and handed that file
+  straight to `gh pr create --title`, so every pull request they opened landed
+  red on `.github/workflows/pr-title.yml`, a required check no step in the run
+  can see. Both prompts now ask for a plain-language title and say why (GitHub
+  copies the title into the merge commit body, so a prefix makes Release Please
+  record the change twice), their enumeration of the pull request template's
+  claims regains the plain-language one it had dropped, and each step's `check`
+  rejects the same pattern the required check does — turning an unseen red
+  check into a step failure the existing `max_retries` repairs (issue #450).
 - **The Windows install instructions no longer offer WinGet as working.** The
   README, the installation guide, the Windows page and the feature guide
   offered WinGet as a working channel, but Microsoft has not yet merged any of
