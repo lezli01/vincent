@@ -252,3 +252,16 @@ jobs:
       - name: 069 gate (open a pull request)
         shell: bash
         run: ./scripts/069-gate.sh
+
+      # 068: the pull request write surface (task 068.5; §13.2) — merge,
+      # close, reopen, comment and re-run, through the API and the CLI,
+      # against the fake `gh`. The matrix earns its place because every write
+      # is a child process of the detached daemon: `gh` is resolved from its
+      # PATH to a fake built as `gh.exe` on Windows, `FAKEGH_SCENARIO` has to
+      # reach it across each stop/start, the comment body travels to it on
+      # stdin via `--body-file -` and has to arrive byte-identical, CRLF
+      # included, and the argv log it writes is read back with the platform's
+      # own line endings.
+      - name: 068 gate (pull request writes)
+        shell: bash
+        run: ./scripts/068-gate.sh
