@@ -84,6 +84,18 @@
 # is "commits in HEAD and not in A", which is still this lane's own commits
 # after A has moved.
 #
+# `A` is `origin/{{.Task.BaseBranch}}` and not the bare local base, because
+# three dots survive a base that has moved *ahead* but not one that is
+# *behind*: the merge base of a stale base and HEAD is that stale commit, so
+# both clauses would read the pull requests that merged while this task ran as
+# this lane's own work (#449). Spec §5.3 says why the local ref goes stale —
+# the branch was cut from the *fetched* base tip (§10), and the local base is a
+# ref every worktree of the repository shares, so one holding it checked out
+# cannot fast-forward it. This file needs no fetch of its own: a lane runs in
+# another worktree of the **same** repository and `refs/remotes/*` lives in the
+# shared common git directory, so the parent's `fetch` step has already moved
+# the ref these clauses read.
+#
 # ## Defaults
 #
 # There is no `defaults:` block, and adding one would be a trap: a lane child's
@@ -370,10 +382,10 @@ steps:
     # hands the retry the check's *output* — an agent told only "check failed"
     # would have to guess which file it left behind.
     #
-    # Three-dot on the diff and two-dot on the rev-list, deliberately: see the
-    # header. The parent's `schedule: barrier` holds the base branch still
-    # while this lane runs; three-dot is what keeps the ownership clause honest
-    # if it ever does move.
+    # Three-dot on the diff, two-dot on the rev-list and `origin/` on both,
+    # deliberately: see the header. The parent's `schedule: barrier` holds the
+    # base branch still while this lane runs; three-dot is what keeps the
+    # ownership clause honest if it ever does move.
     #
     # The mode clause is the parent's `integrate` check brought forward: a
     # script under `scripts/` committed without its executable bit passes on
@@ -384,8 +396,8 @@ steps:
       test -z "$(git ls-files .vincent-issue)" &&
       git diff --quiet &&
       git diff --cached --quiet &&
-      test "$(git rev-list --count {{.Task.BaseBranch}}..HEAD)" -gt 0 &&
-      { stray=$(git diff --name-only {{.Task.BaseBranch}}...HEAD | grep -vEf .vincent-issue/unit-files.re || true); test -z "$stray" || { echo 'this unit committed paths the plan did not give it:' >&2; echo "$stray" >&2; echo 'owned paths (ERE):' >&2; cat .vincent-issue/unit-files.re >&2; false; }; } &&
+      test "$(git rev-list --count origin/{{.Task.BaseBranch}}..HEAD)" -gt 0 &&
+      { stray=$(git diff --name-only origin/{{.Task.BaseBranch}}...HEAD | grep -vEf .vincent-issue/unit-files.re || true); test -z "$stray" || { echo 'this unit committed paths the plan did not give it:' >&2; echo "$stray" >&2; echo 'owned paths (ERE):' >&2; cat .vincent-issue/unit-files.re >&2; false; }; } &&
       { noexec=$(git ls-files -s -- 'scripts/*.sh' | awk '$1 != "100755" { print $4 }'); test -z "$noexec" || { echo 'scripts not committed executable (git update-index --chmod=+x):' >&2; echo "$noexec" >&2; false; }; } &&
       sh .vincent-issue/unit-check.sh
     check_timeout: 15m
