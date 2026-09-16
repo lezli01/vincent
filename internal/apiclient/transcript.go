@@ -190,16 +190,8 @@ func (c *Client) Transcript(
 func (c *Client) TranscriptRaw(
 	ctx context.Context, taskID, runID int64, opts TranscriptOptions,
 ) (data []byte, nextOffset int64, err error) {
-	resp, nextOffset, err := c.transcript(ctx, taskID, runID, opts, "raw")
-	if err != nil {
-		return nil, 0, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	data, err = io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, 0, fmt.Errorf("read transcript: %w", err)
-	}
-	return data, nextOffset, nil
+	return c.transcriptRawAt(ctx, fmt.Sprintf(
+		"/v1/tasks/%d/steps/%d/transcript%s", taskID, runID, opts.query("raw")))
 }
 
 // transcript performs the request both forms share and hands back the open
@@ -209,6 +201,20 @@ func (c *Client) transcript(
 ) (resp *http.Response, nextOffset int64, err error) {
 	return c.transcriptAt(ctx, fmt.Sprintf(
 		"/v1/tasks/%d/steps/%d/transcript%s", taskID, runID, opts.query(format)))
+}
+
+// transcriptRawAt reads one raw transcript range unparsed, for both routes.
+func (c *Client) transcriptRawAt(ctx context.Context, path string) (data []byte, nextOffset int64, err error) {
+	resp, nextOffset, err := c.transcriptAt(ctx, path)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	data, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, 0, fmt.Errorf("read transcript: %w", err)
+	}
+	return data, nextOffset, nil
 }
 
 // transcriptAt performs one transcript GET and hands back the open body plus

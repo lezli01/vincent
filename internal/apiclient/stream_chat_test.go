@@ -197,6 +197,43 @@ func TestChatTurnTranscriptSeam(t *testing.T) {
 	}
 }
 
+// TestChatTurnTranscriptRaw is the byte-faithful form `vincent chat transcript
+// --raw` prints (task 103): the file's bytes, a line no parser reads included,
+// and the same resume offset the normalized form reports.
+func TestChatTurnTranscriptRaw(t *testing.T) {
+	h := newHarness(t)
+	c := h.chat(t, "raw")
+	turn, err := h.st.CreateChatTurn(t.Context(), c.ID, "go")
+	if err != nil {
+		t.Fatalf("CreateChatTurn: %v", err)
+	}
+	first := `{"type":"vincent.note","kind":"one"}` + "\n" + "not json at all\n"
+	h.writeChatTranscript(t, c.ID, turn.Seq, first)
+
+	data, next, err := h.client().ChatTurnTranscriptRaw(
+		t.Context(), c.ID, turn.Seq, apiclient.TranscriptOptions{})
+	if err != nil {
+		t.Fatalf("ChatTurnTranscriptRaw: %v", err)
+	}
+	if string(data) != first {
+		t.Fatalf("raw body = %q, want the file verbatim %q", data, first)
+	}
+	if next != int64(len(first)) {
+		t.Fatalf("X-Next-Offset = %d, want %d", next, len(first))
+	}
+
+	second := `{"type":"vincent.note","kind":"two"}` + "\n"
+	h.writeChatTranscript(t, c.ID, turn.Seq, first+second)
+	data, _, err = h.client().ChatTurnTranscriptRaw(
+		t.Context(), c.ID, turn.Seq, apiclient.TranscriptOptions{Offset: next})
+	if err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if string(data) != second {
+		t.Fatalf("resume returned %q, want only the appended bytes %q", data, second)
+	}
+}
+
 // TestChatTurnTranscriptRejectsOffsetAndTail keeps the step route's range
 // contract on the chat route: the two are mutually exclusive.
 func TestChatTurnTranscriptRejectsOffsetAndTail(t *testing.T) {
