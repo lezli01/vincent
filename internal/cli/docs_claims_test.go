@@ -210,8 +210,6 @@ var tuiOnlyClientCalls = map[string]string{
 	"StreamEvents": "live transport; subcommands poll (`task transcript -f`, `chat transcript -f`, `chat send`)",
 	"StreamTask":   "live transport; subcommands poll (`task transcript -f`, `chat transcript -f`, `chat send`)",
 	"StreamChat":   "live transport; subcommands poll (`task transcript -f`, `chat transcript -f`, `chat send`)",
-	// Temporary: whichever of #394 and #395 merges second drops this entry.
-	"PatchProject": "no `vincent project edit` until #394 — drop this entry and the CLI reference row when it lands",
 }
 
 // TestDocsClaimsTUIClientCallsHaveSubcommands: the parity claim covers more
