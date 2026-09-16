@@ -833,7 +833,8 @@ Include:
   `{data_dir}/logs/daemon.log`)
 - the workflow YAML, if a step misbehaved
 - the step's transcript if you can share it (`vincent task transcript <id> --step
-  RUN`) — **read it first**, it contains the prompt and everything the agent did
+  RUN`, or `vincent chat transcript <id> --turn N` for a chat) — **read it
+  first**, it contains the prompt and everything the agent did
 
 [Open an issue](https://github.com/lezli01/vincent/issues/new/choose). Security
 issues go through

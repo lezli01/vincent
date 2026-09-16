@@ -13,6 +13,16 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **`vincent chat transcript` reads and follows a chat turn's transcript.** A
+  chat's transcripts were reachable only from the TUI's chat workspace. The new
+  command prints one turn — the running turn, else the newest, or the one
+  `--turn N` names by the number `chat show` prints — exactly as
+  `vincent task transcript` prints an attempt: rendered as text, as NDJSON
+  with `--json`, or as the agent's own JSONL byte for byte with `--raw`. `-f`
+  follows the turn until it ends. A turn that failed before it could record
+  anything (`agent_unavailable`, `transcript_io_error`) says so and exits 0; a
+  transcript pruned by `transcript_retention_days` exits 1.
+
 - **Merge, close, reopen, comment on and re-run the checks of a task's pull
   request from vincent.** The daemon gains five routes under
   `POST /v1/tasks/{id}/github/pull/` — `merge`, `close`, `reopen`, `comment`

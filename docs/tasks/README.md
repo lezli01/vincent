@@ -116,6 +116,7 @@ the living engineering specification records implementation contracts.
 | [100](100-cli-task-diff.md) | `vincent task diff`, with per-lane attribution | ✅ done (4/4) |
 | [101](101-cli-holds-and-step-inputs.md) | Show admission holds and recorded step inputs in `vincent task show` | ✅ done (4/4) |
 | [102](102-cli-pull-request-link-and-checks.md) | `vincent github pr link`, `unlink`, `show` and `checks` | ✅ done (3/3) |
+| [103](103-cli-chat-transcript.md) | `vincent chat transcript`: read and follow a chat turn's transcript | ✅ done (4/4) |
 
 ## How to add and update a task document
 
