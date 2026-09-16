@@ -179,19 +179,73 @@ type transcriptPrinter struct {
 	sawOutput bool
 }
 
-// print fetches one range and writes it, returning the offset to resume from.
+// transcriptSource is the subject a printer reads: a task's step run or a
+// chat's turn (task 103 decision 5). Both routes share one byte-range
+// contract (§13.2), so everything past these three calls — the rendering, the
+// resume offset, how a follow ends — is one code path, and the two commands
+// cannot drift apart in how a transcript reads.
+type transcriptSource interface {
+	// normalized fetches a range as vincent's records.
+	normalized(ctx context.Context, opts apiclient.TranscriptOptions) ([]apiclient.TranscriptRecord, int64, error)
+	// raw fetches the same range as the agent's own bytes.
+	raw(ctx context.Context, opts apiclient.TranscriptOptions) ([]byte, int64, error)
+	// state reports whether the subject is still running and, for when it is
+	// not, the line a follow ends on.
+	state(ctx context.Context) (running bool, label string, err error)
+}
+
+// stepRunSource is one attempt of a task, for `vincent task transcript`.
+type stepRunSource struct {
+	c             *apiclient.Client
+	taskID, runID int64
+}
+
+func (s stepRunSource) normalized(
+	ctx context.Context, opts apiclient.TranscriptOptions,
+) ([]apiclient.TranscriptRecord, int64, error) {
+	return s.c.Transcript(ctx, s.taskID, s.runID, opts)
+}
+
+func (s stepRunSource) raw(ctx context.Context, opts apiclient.TranscriptOptions) ([]byte, int64, error) {
+	return s.c.TranscriptRaw(ctx, s.taskID, s.runID, opts)
+}
+
+func (s stepRunSource) state(ctx context.Context) (bool, string, error) {
+	t, err := s.c.GetTask(ctx, s.taskID)
+	if err != nil {
+		return false, "", err
+	}
+	for i := range t.Steps {
+		if t.Steps[i].ID == s.runID {
+			state := t.Steps[i].State
+			return state == "running", fmt.Sprintf("step run %d is %s", s.runID, state), nil
+		}
+	}
+	return false, "", fmt.Errorf("step run %d is no longer on task %d", s.runID, s.taskID)
+}
+
+// print fetches one range of a step run's transcript and writes it, returning
+// the offset to resume from.
 func (p *transcriptPrinter) print(
 	ctx context.Context, c *apiclient.Client, taskID, runID int64, opts apiclient.TranscriptOptions,
 ) (int64, error) {
+	return p.printFrom(ctx, stepRunSource{c: c, taskID: taskID, runID: runID}, opts)
+}
+
+// printFrom fetches one range of src and writes it, returning the offset to
+// resume from.
+func (p *transcriptPrinter) printFrom(
+	ctx context.Context, src transcriptSource, opts apiclient.TranscriptOptions,
+) (int64, error) {
 	if p.raw {
-		data, next, err := c.TranscriptRaw(ctx, taskID, runID, opts)
+		data, next, err := src.raw(ctx, opts)
 		if err != nil {
 			return 0, err
 		}
 		_, err = p.out.Write(data)
 		return next, err
 	}
-	records, next, err := c.Transcript(ctx, taskID, runID, opts)
+	records, next, err := src.normalized(ctx, opts)
 	if err != nil {
 		return 0, err
 	}
@@ -227,14 +281,22 @@ func (p *transcriptPrinter) write(rec apiclient.TranscriptRecord) error {
 	return err
 }
 
-// follow re-fetches from the resume offset until the attempt stops running.
-// The state is read *before* each fetch so the last fetch happens after the
-// run settled: reading it after would leave whatever the step wrote between
-// the two calls unprinted.
-// The poll interval is a parameter so a test can drive the loop faster than a
-// human would wait; the command always passes transcriptPollInterval.
+// follow re-fetches a step run's transcript from the resume offset until the
+// attempt stops running.
 func (p *transcriptPrinter) follow(
 	ctx context.Context, c *apiclient.Client, taskID, runID, offset int64, every time.Duration,
+) error {
+	return p.followFrom(ctx, stepRunSource{c: c, taskID: taskID, runID: runID}, offset, every)
+}
+
+// followFrom re-fetches src from the resume offset until it stops running.
+// The state is read *before* each fetch so the last fetch happens after the
+// subject settled: reading it after would leave whatever it wrote between the
+// two calls unprinted.
+// The poll interval is a parameter so a test can drive the loop faster than a
+// human would wait; the commands always pass transcriptPollInterval.
+func (p *transcriptPrinter) followFrom(
+	ctx context.Context, src transcriptSource, offset int64, every time.Duration,
 ) error {
 	ticker := time.NewTicker(every)
 	defer ticker.Stop()
@@ -244,36 +306,24 @@ func (p *transcriptPrinter) follow(
 			return nil
 		case <-ticker.C:
 		}
-		state, err := stepRunState(ctx, c, taskID, runID)
+		running, label, err := src.state(ctx)
 		if err != nil {
 			return transcriptError(p.errOut, err)
 		}
-		next, err := p.print(ctx, c, taskID, runID, apiclient.TranscriptOptions{Offset: offset})
+		next, err := p.printFrom(ctx, src, apiclient.TranscriptOptions{Offset: offset})
 		if err != nil {
 			return transcriptError(p.errOut, err)
 		}
 		offset = next
-		// Only this attempt: a later retry is a different step run, and
-		// sitting here waiting for one would make the command hang on a task
-		// that is finished as far as the printed run is concerned.
-		if state != "running" {
-			_, _ = fmt.Fprintf(p.errOut, "step run %d is %s\n", runID, state)
+		// Only this subject: a later retry is a different step run and a
+		// later send a different turn, and sitting here waiting for one would
+		// make the command hang on work that is finished as far as the
+		// printed transcript is concerned.
+		if !running {
+			_, _ = fmt.Fprintln(p.errOut, label)
 			return nil
 		}
 	}
-}
-
-func stepRunState(ctx context.Context, c *apiclient.Client, taskID, runID int64) (string, error) {
-	t, err := c.GetTask(ctx, taskID)
-	if err != nil {
-		return "", err
-	}
-	for i := range t.Steps {
-		if t.Steps[i].ID == runID {
-			return t.Steps[i].State, nil
-		}
-	}
-	return "", fmt.Errorf("step run %d is no longer on task %d", runID, taskID)
 }
 
 // renderTranscriptRecord maps one normalized record to a line of text,
@@ -334,8 +384,9 @@ func renderTranscriptRecord(rec apiclient.TranscriptRecord, sawOutput bool) (str
 		// Skipped, deliberately. The pane shows this at `verbose` only
 		// (task 070 decision 2) and this command has no verbosity control,
 		// so the alternative to skipping is showing every command's whole
-		// output to every reader. `--format raw` still carries it verbatim,
-		// which is what a reader who wants the body asks for.
+		// output to every reader. `--raw` still carries it verbatim, and
+		// `--json` as its normalized record, which is what a reader who
+		// wants the body asks for.
 		return "", false
 	case "agent.error":
 		return "! " + firstNonEmpty(rec.Message, "agent error"), true
