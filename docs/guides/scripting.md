@@ -113,6 +113,15 @@ read, `1` the task has no linked pull request or GitHub could not be read. For
 `checks`, `0` means the rollup was read **whatever CI concluded**; read that
 from `--json`'s `.state`, never from the exit code.
 
+[`vincent agents`](../reference/cli.md#vincent-agents) does the opposite of
+overloading: it exits `0` whenever the daemon answered, however many adapters
+are missing, logged out, untested or out of quota. Read their health from
+`--json` instead:
+
+```sh
+vincent agents --json | jq -r '.[] | select(.available and .logged_in != false) | .name'
+```
+
 What sets exit `1` is a **closed set**: `config.yaml` exists and does not parse,
 the daemon is alive but not answering, `PRAGMA integrity_check` is not `ok`, the
 database is at a schema version this binary does not understand, orphaned

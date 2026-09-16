@@ -179,3 +179,7 @@ list never named, are no longer API-only. `POST`, `DELETE` and `GET
 /v1/tasks/{id}/github/pull` and `GET /v1/tasks/{id}/github/pull/checks` are
 `vincent github pr link`, `pr unlink`, `pr show` and `pr checks`
 ([102](102-cli-pull-request-link-and-checks.md)).
+
+*Amended 2026-09-16 (task [104](104-cli-agents.md), issue #393):* `agents` is
+struck — `GET /v1/agents` shipped as `vincent agents`, with `--refresh` and
+`--json`.

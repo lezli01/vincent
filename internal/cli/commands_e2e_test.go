@@ -249,6 +249,7 @@ func TestCommandsAgainstLiveDaemon(t *testing.T) {
 			{"project", "ls"},
 			{"task", "ls"},
 			{"workflow", "ls"},
+			{"agents"},
 		} {
 			out, code := runVincent(t, dataDir, cfgDir, args...)
 			if code != 2 {

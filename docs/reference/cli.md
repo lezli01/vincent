@@ -9,6 +9,7 @@ localhost API.
 - [`vincent`](#vincent)
 - [`vincent version`](#vincent-version)
 - [`vincent doctor`](#vincent-doctor)
+- [`vincent agents`](#vincent-agents)
 - [`vincent daemon`](#vincent-daemon)
 - [`vincent service`](#vincent-service)
 - [`vincent project`](#vincent-project)
@@ -96,7 +97,7 @@ One report answering "why is nothing running?". Eleven groups:
 | Daemon | running / not running / unresponsive, pid, port, version, uptime |
 | Log | daemon log path, size, mtime, and the last 20 lines |
 | Database | path, size, total on disk including WAL/SHM, applied schema version, `PRAGMA integrity_check`, per-table row counts, workflow-snapshot bytes, and how far back the events table reaches |
-| Agents | per adapter: found, path, version, `logged_in`, whether the build is one vincent has been tested against, and whether the adapter can restrict on this OS |
+| Agents | per adapter: found, path, version, `logged_in`, whether the build is one vincent has been tested against, and whether the adapter can restrict on this OS. Quota is not here — it needs a daemon this report does not; see [`vincent agents`](#vincent-agents) |
 | GitHub | whether [`github.enabled`](configuration.md#github) is on, whether `gh` is installed and logged in, whether a token variable is set, and whether issues are readable |
 | Container | whether [`container.image`](configuration.md#container) names an image, which image, whether the configured runtime answered, and whether steps run in it or on this host |
 | Skills | per [published skill](#vincent-skills): the version this binary ships, the state of the copy in the global skills store, and the agents it is linked into |
@@ -205,6 +206,65 @@ vincent doctor --json | jq '.problems[]'
 vincent doctor --fix --force
 ```
 
+## `vincent agents`
+
+```sh
+vincent agents [--json] [--refresh]
+```
+
+One row per agent adapter, in the daemon's registration order: what the TUI's
+daemon view shows under *adapters*, for a script or a shell. It is a thin client
+of [`GET /v1/agents`](api.md#daemon) and needs a running daemon — with none it exits
+`2`.
+
+```
+AGENT   VERSION             BUILD     LOGIN          QUOTA                                                                                                NOTES
+claude  2.1.226             tested    unknown        claude status line · 5h 28.5% → 2026-09-16T14:40:00+02:00 · 7d 62% · read 2026-09-16T11:40:02+02:00
+codex   -                   -         -              spent → 2026-09-16T13:40:00+02:00                                                                    not found: …; no mid-run input
+cursor  2026.09.02-1c4f7a0  untested  NOT LOGGED IN  unknown                                                                                              no mid-run input
+```
+
+| Column | Shows |
+|---|---|
+| `VERSION` | The installed CLI's version, `-` when none was found |
+| `BUILD` | `tested`, `untested` or `incompatible` — whether vincent has been tested against this build. `-` when there is nothing installed to judge |
+| `LOGIN` | `ok`, `NOT LOGGED IN` or `unknown`, the words [`vincent doctor`](#vincent-doctor) uses. `unknown` is an adapter that cannot cheaply tell, never a no. `-` for an adapter that is not installed |
+| `QUOTA` | The adapter's usage window, below |
+| `NOTES` | Bad news only: `not found: <why>`, `no mid-run input` (an `on_input: require` step cannot use it), `no restricted mode on <os>`, `option probe failed (curated catalog)`. A healthy adapter's cell is empty |
+
+`QUOTA` is the one block the daemon serves, labelled by where it came from.
+Nothing is merged on the client: when a source has reported a reading, that is
+what the daemon serves, and the last usage-limit stop it watched is the
+fallback ([Agent CLIs](../guides/agents.md#how-much-quota-is-left-and-who-will-say)).
+
+| Cell | Meaning |
+|---|---|
+| `unknown` | No reading and no recorded stop. Not the same as fine |
+| `<source> · <window> <pct> → <reset> · … · read <time>` | A reading: `codex app-server`, `claude status line`, or an unrecognised source as it arrived; every window it named; and when it was taken. A window that named no reset shows no time |
+| `spent → <reset>` | A usage-limit stop whose window is still shut, with the reset the CLI stated |
+| `spent ≈ <reset>` | The same, with a reset vincent estimated from [`usage_limit_recheck_interval`](configuration.md#usage_limit_recheck_interval) because the CLI named none |
+| `ok · last spent <time>` | A stop whose window has since reopened |
+
+Times are local RFC3339: a seven-day window's reset is days away, and a bare
+clock would not say which day.
+
+**Exit `0` whenever the daemon answered**, whatever the adapters' health. A
+missing, logged-out, untested or quota-spent adapter is the normal state of some
+adapter on most machines, and an exit code that fired on it would be no use in a
+script. An API error is `1`.
+
+By default the answer comes from the daemon's catalog cache, which re-probes an
+adapter on its own when its binary changes. `--refresh` forces a fresh probe of
+every adapter first — the TUI new-task view's `R` — and waits for it.
+
+`--json` emits the endpoint's `agents` array unchanged, with every field the
+table leaves out: models and efforts, `supports_resume`, the tested builds and
+the raw verdicts.
+
+```sh
+vincent agents --json | jq -r '.[] | select(.input_verdict == "supported") | .name'
+```
+
 ## `vincent daemon`
 
 ```sh
@@ -243,11 +303,12 @@ are marked `interrupted` — the same resume path as a crash, so nothing is lost
 ### `vincent daemon status`
 
 ```sh
-vincent daemon status [--json]
+vincent daemon status
 ```
 
-Reports whether the daemon is running, its identity, and which agent CLIs it
-resolved. Exit `0` healthy, `1` not running, `2` unresponsive.
+Reports whether the daemon is running and its identity: pid, port, version and
+start time. Exit `0` healthy, `1` not running, `2` unresponsive. Which agent
+CLIs the daemon resolved is [`vincent agents`](#vincent-agents).
 
 If the binary you just ran is newer than the daemon that answered — which is
 what you have right after [`vincent update`](#vincent-update) — it says so and

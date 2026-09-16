@@ -161,8 +161,9 @@ Two consequences:
     codex: { path: "/home/me/.local/bin/codex" }
   ```
 
-If `vincent daemon status` under a running service lists no adapters, this is
-why. Reinstall from a shell where `which claude` works.
+If [`vincent agents`](../reference/cli.md#vincent-agents) under a running
+service shows a CLI you installed as `not found`, this is why. Reinstall from a
+shell where `which claude` works.
 
 ## Terminal notes
 
