@@ -64,26 +64,23 @@ func newQuotaHarness(t *testing.T, clock *quotaClock, mutate func(*config.Config
 	return h, logs
 }
 
-// seedWall files an observed, still-shut window for agentName, reset an hour
-// from the harness clock's now.
-func seedWall(t *testing.T, h *engineHarness, clock *quotaClock, agentName string, reported bool) *store.AgentQuota {
+// seedWall files an observed, still-shut window for claude — the one adapter
+// that recognizes a quota stop (§9.1) — reset an hour from the harness
+// clock's now.
+func seedWall(t *testing.T, h *engineHarness, clock *quotaClock, reported bool) *store.AgentQuota {
 	t.Helper()
 	now := clock.now()
 	q := &store.AgentQuota{
-		Agent:            agentName,
+		Agent:            "claude",
 		ObservedAt:       now.Add(-time.Minute).UTC(),
 		ResetsAt:         now.Add(time.Hour).UTC(),
 		ResetsAtReported: reported,
 		Source:           store.QuotaSourceObserved,
 	}
 	if _, err := h.store.UpsertAgentQuota(t.Context(), q); err != nil {
-		t.Fatalf("seed %s observation: %v", agentName, err)
+		t.Fatalf("seed claude observation: %v", err)
 	}
-	stored, err := h.store.GetAgentQuota(t.Context(), agentName)
-	if err != nil {
-		t.Fatalf("read back %s observation: %v", agentName, err)
-	}
-	return stored
+	return claudeQuota(t, h)
 }
 
 // quotaEvents counts the daemon-level `agent.quota_changed` events so far.
@@ -153,7 +150,7 @@ func resume(h *engineHarness, clock *quotaClock) {
 func TestWalledAdapterHoldsWithoutSpawning(t *testing.T) {
 	clock := &quotaClock{}
 	h, logs := newQuotaHarness(t, clock, nil)
-	wall := seedWall(t, h, clock, "claude", false)
+	wall := seedWall(t, h, clock, false)
 	eventsBefore := quotaEvents(t, h)
 
 	task := h.createTask(t, claudeStepSnapshot)
@@ -200,7 +197,7 @@ func TestWalledAdapterHoldsWithoutSpawning(t *testing.T) {
 func TestExpiredObservationSpawns(t *testing.T) {
 	clock := &quotaClock{}
 	h, _ := newQuotaHarness(t, clock, nil)
-	seedWall(t, h, clock, "claude", true)
+	seedWall(t, h, clock, true)
 	clock.advance(2 * time.Hour)
 
 	task := h.createTask(t, claudeStepSnapshot)
@@ -241,7 +238,7 @@ func TestEarlyHoldFollowsTheMode(t *testing.T) {
 				c.UsageLimitAutoContinue = config.UsageLimitAlways
 			})
 			h.reload(func(c *config.Config) { c.UsageLimitAutoContinue = tc.mode })
-			wall := seedWall(t, h, clock, "claude", tc.reported)
+			wall := seedWall(t, h, clock, tc.reported)
 
 			task := h.createTask(t, claudeStepSnapshot)
 			h.start(t)
@@ -269,7 +266,7 @@ func TestEarlyHoldFollowsTheMode(t *testing.T) {
 func TestWallOnAnotherAdapterDoesNotHold(t *testing.T) {
 	clock := &quotaClock{}
 	h, _ := newQuotaHarness(t, clock, nil)
-	seedWall(t, h, clock, "claude", true)
+	seedWall(t, h, clock, true)
 
 	task := h.createTask(t, codexStepSnapshot)
 	h.start(t)
@@ -285,7 +282,7 @@ func TestWallOnAnotherAdapterDoesNotHold(t *testing.T) {
 func TestCommandStepBeforeTheWallRunsOnce(t *testing.T) {
 	clock := &quotaClock{}
 	h, _ := newQuotaHarness(t, clock, nil)
-	wall := seedWall(t, h, clock, "claude", false)
+	wall := seedWall(t, h, clock, false)
 
 	snapshot := "name: prep-then-agent\ndefaults:\n  agent: claude\nsteps:\n" +
 		commandStep("prepare", "git --version") +
@@ -323,7 +320,7 @@ func TestCommandStepBeforeTheWallRunsOnce(t *testing.T) {
 func TestParallelGroupHoldsOnlyTheWalledLane(t *testing.T) {
 	clock := &quotaClock{}
 	h, _ := newQuotaHarness(t, clock, nil)
-	wall := seedWall(t, h, clock, "claude", false)
+	wall := seedWall(t, h, clock, false)
 
 	agentLane := func(id, adapter string) string {
 		return "  - id: " + id + "\n    type: agent\n    agent: " + adapter +
@@ -362,7 +359,7 @@ func TestRepairOnAWalledAdapterHolds(t *testing.T) {
 	clock := &quotaClock{}
 	h, _ := newQuotaHarness(t, clock, nil)
 	blocked := blockedOnCheck(t, h)
-	wall := seedWall(t, h, clock, "claude", false)
+	wall := seedWall(t, h, clock, false)
 
 	if _, err := h.runner.Repair(t.Context(), blocked.ID,
 		store.RepairRequest{Prompt: "try something", Agent: "claude"}); err != nil {
@@ -394,7 +391,7 @@ func TestFollowUpOnAWalledAdapterHolds(t *testing.T) {
 	clock := &quotaClock{}
 	h, _ := newQuotaHarness(t, clock, nil)
 	done := doneTask(t, h)
-	wall := seedWall(t, h, clock, "claude", false)
+	wall := seedWall(t, h, clock, false)
 
 	if _, err := h.runner.FollowUp(t.Context(), done.ID, agentFollowUp(t, "one more thing")); err != nil {
 		t.Fatalf("FollowUp: %v", err)
@@ -468,7 +465,7 @@ func TestEditRetryOverrideSurvivesAnEarlyHold(t *testing.T) {
 func TestPauseResumeWhileWalledDoesNotSpawn(t *testing.T) {
 	clock := &quotaClock{}
 	h, _ := newQuotaHarness(t, clock, nil)
-	wall := seedWall(t, h, clock, "claude", false)
+	wall := seedWall(t, h, clock, false)
 
 	task := h.createTask(t, claudeStepSnapshot)
 	h.start(t)
