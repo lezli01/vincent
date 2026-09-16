@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -423,7 +424,26 @@ func taskBaseRows(t apiclient.TaskDetail) [][2]string {
 	return rows
 }
 
+// taskHoldRows is `task show`'s hold row (task 101 decision 3): a queued task
+// waiting on something other than a free slot, and when the daemon will try
+// again. The reason is printed as it arrives, because there are two producers
+// — `usage_limit` and `retry_backoff` — and a third would otherwise print
+// nothing. A hold with no resume time prints the reason alone, as the TUI's
+// detail header does. A queued task never carries a block_reason (task 003
+// decision 1), so this and the `blocked` row cannot both appear.
+func taskHoldRows(t apiclient.TaskDetail) [][2]string {
+	reason, until, ok := t.Hold()
+	if !ok {
+		return nil
+	}
+	if until == nil {
+		return [][2]string{{"hold", reason}}
+	}
+	return [][2]string{{"hold", reason + " until " + until.Local().Format(time.RFC3339)}}
+}
+
 func newTaskShowCmd() *cobra.Command {
+	var stepRun int64
 	cmd := &cobra.Command{
 		Use:   "show <id>",
 		Short: "Show a task and its step runs",
@@ -438,6 +458,12 @@ func newTaskShowCmd() *cobra.Command {
 				if err != nil {
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
 					return exitError{code: 1}
+				}
+				// One attempt instead of the task (task 101 decision 1), read
+				// out of the detail already fetched: the runs are in it, so
+				// there is no second request and no endpoint.
+				if cmd.Flags().Changed("step") {
+					return printStepRun(cmd.OutOrStdout(), cmd.ErrOrStderr(), t, stepRun, wantJSON(cmd))
 				}
 				if wantJSON(cmd) {
 					return emitJSON(cmd.OutOrStdout(), t)
@@ -458,6 +484,7 @@ func newTaskShowCmd() *cobra.Command {
 					{"branch", t.BranchName},
 				}
 				fields = append(fields, taskBaseRows(t)...)
+				fields = append(fields, taskHoldRows(t)...)
 				if t.BlockReason != nil && *t.BlockReason != "" {
 					fields = append(fields, [2]string{"blocked", *t.BlockReason})
 				}
@@ -538,6 +565,8 @@ func newTaskShowCmd() *cobra.Command {
 			})
 		},
 	}
+	cmd.Flags().Int64Var(&stepRun, "step", 0,
+		"Print what one attempt was given instead of the task: a step_run id, the RUN column")
 	jsonFlag(cmd)
 	return cmd
 }

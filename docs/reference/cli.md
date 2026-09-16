@@ -602,7 +602,7 @@ Valid states: `queued`, `running`, `awaiting_gate`, `awaiting_input`,
 ### `vincent task show`
 
 ```sh
-vincent task show <id> [--json]
+vincent task show <id> [--step RUN] [--json]
 ```
 
 Shows one task with its step runs, the actions valid right now, and any pending
@@ -616,6 +616,17 @@ no upstream, or the fetch failed). A `refresh` row follows only when something
 about that start needs your attention: the fetch failed, so the base may be
 stale, or your local base branch was not fast-forwarded, with the reason and
 git's message. A healthy refresh prints no row.
+
+A queued task waiting on something other than a free slot prints a `hold` row:
+the reason, and when the daemon will try again. `usage_limit until
+2026-09-15T14:20:00+02:00` is an agent's usage limit being waited out;
+`retry_backoff until …` is a step's
+[`retry_backoff`](workflow-schema.md#step-fields) pacing its next attempt. The
+time is local RFC3339, the way `doctor` and `daemon status` print instants, and a
+hold with no resume time prints the reason alone. A task in the ordinary queue
+prints no row. A held task is never `blocked`, so the `hold` and `blocked` rows
+never appear together. `--json` carries the same facts as `queued_reason` and
+`admit_not_before`.
 
 The `origin` row says which definition the task's workflow name resolved to —
 `built-in`, `project .vincent/workflows/adhoc.yaml`, `global
@@ -660,6 +671,35 @@ RUN  STEP       STATE      AGENT   REASON        STATUS
 2    verify     failed     -       check_failed  3 tests red in internal/store
 ```
 
+`--step RUN` prints what one attempt was *given* instead of the task. `RUN` is a
+step_run id from that `RUN` column, the same id
+[`vincent task transcript --step`](#vincent-task-transcript) takes. After one
+header line (run id, step id, attempt, state) come the four sections of the
+TUI's Step Details tab, in its order:
+
+| Section | What it holds |
+|---|---|
+| `input:` | The rendered prompt, `run` and `check` bodies, printed in full and indented, then the result summary |
+| `resolution:` | Agent, model and effort, each with the level that supplied it (`claude (from the step)`); permission mode; timeout; check timeout; shell; working dir; and the include chain the step was resolved from |
+| `control flow:` | What `if:` rendered to, the loop iteration, the `for_each` item and the `for_each` list as its items, and the fan-out lane |
+| `outcome:` | Tokens, cost, active duration, time waiting on a human, exit code, check exit code, failure and skip reasons, whether a human edited the step before this retry, and the transcript path |
+
+An agent step always has a `rendered prompt` entry and a command step a
+`rendered run` entry. `rendered check` and `if: rendered to` appear only when the
+step had one. Two wordings are different facts: `not recorded (this attempt
+predates the record)` means nothing was recorded, and `(rendered empty)` means
+the template rendered to nothing. A body cut at the record's 64 KiB ceiling opens
+the input section with a notice saying so. On a retried agent step, vincent
+appends the previous attempt's failure to the prompt; a
+`--- appended by vincent: the previous attempt's failure ---` line marks where
+the workflow's own text ends.
+
+With `--json`, `--step` prints the attempt's step run object unchanged: the
+matching element of the `steps` array `task show --json` prints. `vincent task
+show 7 --step 12 --json | jq -r .rendered_prompt` is the exact bytes. A run id
+that is not one of the task's own runs exits `1` with `Error: task 7 has no step
+run 12`. A fan-out lane's runs belong to the lane's task, so ask that task.
+
 ### `vincent task transcript`
 
 ```sh
@@ -670,7 +710,9 @@ Prints one attempt's transcript — the complete record of what it did, which
 `task show` only names the file of.
 
 `--step` takes a **step_run id**: the `RUN` column `task show` prints, which is
-unambiguous across retries where every attempt is its own run. Omitted, it
+unambiguous across retries where every attempt is its own run. The same id given
+to [`vincent task show --step`](#vincent-task-show) prints what that attempt was
+handed rather than what it did. Omitted, it
 selects the running attempt if there is one, and otherwise the newest attempt by
 run id (creation order — which, unlike the step order, stays chronological when a
 task has parallel steps or fan-out lanes).

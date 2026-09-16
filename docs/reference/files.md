@@ -236,7 +236,8 @@ that keeps the delete inside the data directory.
 They contain everything the agent did. The **rendered prompt or command** an
 attempt was handed is recorded on the attempt's own row in the database instead —
 the claude adapter passes the prompt on stdin, so no transcript ever carried it —
-and the task workspace's Step Details tab is what reads it back. Both hold
+and the task workspace's Step Details tab and `vincent task show <id> --step RUN`
+are what read it back. Both hold
 whatever was substituted into them. **Read one before pasting it into an issue.**
 
 ## Overriding the locations

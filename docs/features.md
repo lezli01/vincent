@@ -576,7 +576,9 @@ daemon**, so it still answers when the daemon is the thing that is broken; `-f`
 follows it. The transcript command prints one attempt's complete record — the
 file `vincent task show` only names — rendered as text for a person, as NDJSON
 for `jq`, or as the agent's own dialect byte for byte, with `-f` following an
-attempt while it is still running.
+attempt while it is still running. `vincent task show <id> --step RUN` prints
+what that attempt was *given* — the Step Details tab as text — and `task show`
+names a queued task's hold and when it lifts.
 
 `config.yaml` is editable without leaving vincent. `vincent config get` prints
 every key in effect and `vincent config set` changes one; the TUI's daemon view
