@@ -3342,7 +3342,9 @@ hardcoded policy" above stays true: the clamp is per task (task 096 decision 17)
 
 `GET /v1/info` reports, per adapter: found/not-found, path, version,
 `supports_input` (§7.4), and `logged_in` — `null` when the adapter has no
-cheap authentication probe (**claude**), a definite boolean when it does
+cheap authentication probe (**claude** — *until 2026-09-16: task 107 gave it
+`auth status`, so no adapter is `null` by design; see that amendment below*), a
+definite boolean when it does
 (codex, cursor). The distinction is load-bearing: an installed-but-unauthenticated
 CLI probes as healthy and then fails every single run, so a client that can
 only say "found" misleads. Availability is served from the §9.6 binary-identity
