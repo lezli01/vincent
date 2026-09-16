@@ -1,9 +1,12 @@
 package taskrun
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"time"
 
+	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/store"
 )
 
@@ -17,8 +20,14 @@ import (
 // cache, and `agent.Adapter` still gains no method for them, because an
 // adapter that has no quota surface must not grow a stub saying so.
 //
-// Nothing here touches admission: `internal/scheduler` keeps both caps and its
-// walk unchanged, and a near-spent agent is displayed, never withheld.
+// An observation is also a brake, since task 106: usageWall is what an agent
+// spawn consults first, so every other task on an adapter whose window vincent
+// watched close waits the window out instead of spending a process spawn
+// rediscovering it. The brake lives here and not in `internal/scheduler`,
+// which keeps both caps and its walk unchanged and never parses a snapshot
+// (task 081): a queued task has no stored adapter, and only the engine, at the
+// spawn, knows which one the step at the cursor resolves to (task 106
+// decision 1). Reported readings are still displayed, never withheld.
 
 // recordUsageLimit stores the reset a quota stop just taught us, so the fact
 // outlives the hold it causes. Before task 026 the reset lived only in the
@@ -77,4 +86,47 @@ func (r *Runner) clearUsageLimit(agentName string, ranAt time.Time, log *slog.Lo
 	if cleared {
 		log.Info("agent usage window reopened; observation cleared", "agent", agentName)
 	}
+}
+
+// usageWall returns the observed window an agent spawn on agentName would walk
+// straight into, or nil when the spawn should go ahead (task 106).
+//
+// Three filters, each a decision rather than a convenience:
+//
+//   - The mode is read here, at the check, never cached, so a hot reload
+//     (§12.3) reaches the next spawn (task 091 decision 6). It applies only
+//     where the stop itself would wait: `never` holds nothing, and
+//     `reported_only` holds only on a reset the CLI named. An operator who
+//     does not trust the classifier must not have one wrong match spread to
+//     every task on the adapter — and letting the next task spawn is what
+//     retires a wrong observation (task 026 decision 3). Decision 2.
+//   - Only `observed` rows count, even though the table holds nothing else
+//     today, so a future writer of reported readings cannot change admission
+//     behaviour by accident (task 082, decision 3).
+//   - A read that fails is logged and the spawn goes ahead. A display table's
+//     read failure must not stall work, which is recordUsageLimit's rule for
+//     its write (decision 4).
+func (r *Runner) usageWall(ctx context.Context, agentName string, log *slog.Logger) *store.AgentQuota {
+	if agentName == "" {
+		return nil
+	}
+	mode := r.deps.Config().UsageLimitAutoContinue
+	if mode == config.UsageLimitNever {
+		return nil
+	}
+	q, err := r.deps.Store.GetAgentQuota(ctx, agentName)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		log.Error("read agent quota; spawning anyway", "agent", agentName, "error", err)
+		return nil
+	}
+	if q.Source != store.QuotaSourceObserved || !q.Spent(r.now()) {
+		return nil
+	}
+	if mode == config.UsageLimitReportedOnly && !q.ResetsAtReported {
+		return nil
+	}
+	return q
 }

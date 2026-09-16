@@ -46,6 +46,11 @@ type engineHarness struct {
 	// config() and reload(), never directly.
 	cfgMu sync.RWMutex
 	cfg   config.Config
+	// schedNow is the scheduler's clock, nil for the real one. A test that
+	// injects the runner's clock through Deps.Now sets this to the same
+	// function, so the §11 hold and the engine's reading of a usage window
+	// are measured against one time.
+	schedNow func() time.Time
 }
 
 // config is the Deps.Config hook every runner and scheduler in these tests is
@@ -130,6 +135,7 @@ func (h *engineHarness) start(t *testing.T) {
 		Config:   h.config,
 		Admitter: h.runner,
 		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Now:      h.schedNow,
 	})
 	h.store.SetEventHook(func(e *store.Event) {
 		if scheduler.WakeOn(e) {

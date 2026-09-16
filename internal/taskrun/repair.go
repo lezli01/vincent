@@ -135,13 +135,22 @@ func (r *Runner) runRepair(
 	outcome := r.runStepWithRetries(ctx, env)
 	if outcome.state == store.StepInterrupted {
 		if outcome.reason == ReasonUsageLimit {
+			if outcome.wall != nil {
+				// The repair never spawned: its adapter's observed window is
+				// still shut (task 106). Held the way the hold branch below
+				// holds, request undrained, and recording nothing — the
+				// observation it read is already on record.
+				r.holdForUsageLimit(task, outcome.wall.ResetsAt, outcome.agentName,
+					outcome.wall.ResetsAtReported, log)
+				return
+			}
 			until, hold := r.usageLimitStop(outcome.agentName, outcome.retryAfter, log)
 			if hold {
 				// Waiting the window out: the request is deliberately left
 				// undrained, so the next admission runs the repair again
 				// rather than turning it into a plain retry (task 003
 				// decision 1).
-				r.holdForUsageLimit(task, until, outcome.retryAfter, log)
+				r.holdForUsageLimit(task, until, outcome.agentName, outcome.retryAfter != nil, log)
 				return
 			}
 			// `usage_limit_auto_continue` says not to wait. There is nothing
