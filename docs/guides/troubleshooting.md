@@ -357,8 +357,9 @@ because the repository behind it is gone.
 ### `base_branch_missing` / `project_path_missing`
 
 The base branch was deleted, or the repository moved. Re-point the project
-(`PATCH /v1/projects/{id}`, or edit it in the projects view) or set the task's
-base branch to one that exists.
+(`vincent project edit <id> --path /new/path`, add `--default-branch` if the
+stored one is gone, or edit it in the projects view) or set the task's base
+branch to one that exists.
 
 ### `pull_fetch_failed` / `pull_branch_diverged` / `pull_branch_checked_out`
 

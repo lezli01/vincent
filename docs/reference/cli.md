@@ -32,7 +32,7 @@ localhost API.
 | Code | Meaning |
 |---|---|
 | `0` | Success |
-| `1` | The request was rejected — the daemon answered no (bad id, invalid state transition), a daemon-free command refused it (`workflow validate` on an invalid file, `workflow render` on a template that does not execute, `workflow init` on a name already taken, `trigger validate` on an invalid file, `trigger ls` that matched no file, `trigger apply` on a proposal it refuses), or the client refused the input before sending anything (a `--fields-file` that is not one JSON object of strings, a `trigger test --event` file that is not one JSON object, a `github pr link` number that is not a positive integer, a `github pr unlink` on a task with no live link) |
+| `1` | The request was rejected — the daemon answered no (bad id, invalid state transition), a daemon-free command refused it (`workflow validate` on an invalid file, `workflow render` on a template that does not execute, `workflow init` on a name already taken, `trigger validate` on an invalid file, `trigger ls` that matched no file, `trigger apply` on a proposal it refuses), or the client refused the input before sending anything (a `--fields-file` that is not one JSON object of strings, a `trigger test --event` file that is not one JSON object, a `github pr link` number that is not a positive integer, a `github pr unlink` on a task with no live link, a `project edit` that names no field or whose `--max-parallel` is not a whole number) |
 | `2` | No daemon answered |
 
 `vincent daemon status` overloads them usefully: `0` healthy, `1` not running,
@@ -426,7 +426,7 @@ Registers a local git repository.
 |---|---|
 | `--name` | The directory name |
 | `--default-branch` | Detected **once, here**: `origin/HEAD`, then local `main`, then `master`, then the current branch. The name is stored and never re-detected; what is refreshed later is the branch's content, per task, when `fetch_base_branch` is on |
-| `--workflow` | None — tasks then name their own |
+| `--workflow` | None — a task that names no workflow runs `adhoc` |
 | `--max-parallel` | Unset — only the global cap applies |
 
 Registration is refused if no default branch can be determined (a detached or
@@ -439,6 +439,45 @@ vincent project ls [--json]
 ```
 
 Lists registered projects with their ids, paths and defaults.
+
+### `vincent project edit`
+
+```sh
+vincent project edit <id> [--name NAME] [--path PATH] [--default-branch BRANCH]
+                          [--workflow NAME] [--max-parallel N] [--branch-template TMPL]
+                          [--json]
+```
+
+Changes a registered project's settings. Only the fields whose flags you pass
+are sent; every other field keeps its value.
+
+| Flag | Changes | Empty value |
+|---|---|---|
+| `--name` | The project name | Refused by the daemon |
+| `--path` | The repository the project points at. Sent as typed, so it must be absolute, and it passes the same checks as `project add` | Refused by the daemon |
+| `--default-branch` | The branch new tasks start from. It must exist as a local branch | Refused by the daemon |
+| `--workflow` | The default workflow for new tasks | Clears it: tasks fall back to `adhoc` |
+| `--max-parallel` | This project's concurrency cap, a whole number of at least `1` | Clears it: only the global cap applies |
+| `--branch-template` | This project's [`branch_template`](configuration.md#branch_template) | Clears it: the project uses the global one again |
+
+A value of only whitespace counts as empty. `--max-parallel` refuses anything
+that is not a whole number before sending anything; `0` or a negative number is
+sent, and the daemon refuses it.
+
+```sh
+vincent project edit 1 --max-parallel 2 --branch-template 'feat/{{.Slug}}'
+vincent project edit 1 --workflow "" --max-parallel ""    # clear both
+vincent project edit 1 --path /new/checkout --default-branch main
+```
+
+When `--path` points at a repository that lacks the stored default branch, the
+daemon refuses the change. Pass `--default-branch` in the same command, as in
+the last example.
+
+With no field flag, the command exits `1` without contacting the daemon, even
+when none is running. It never starts a daemon. A refusal from the daemon, such
+as a name already in use or a missing branch, is printed as the daemon wrote it
+and exits `1`. `--json` prints the updated project.
 
 ### `vincent project rm`
 

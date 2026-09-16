@@ -247,6 +247,7 @@ func TestCommandsAgainstLiveDaemon(t *testing.T) {
 	t.Run("no daemon exits 2", func(t *testing.T) {
 		for _, args := range [][]string{
 			{"project", "ls"},
+			{"project", "edit", "1", "--name", "x"},
 			{"task", "ls"},
 			{"workflow", "ls"},
 			{"agents"},
