@@ -91,8 +91,10 @@ Three behaviors matter:
   [reports its own quota](agents.md#how-much-quota-is-left-and-who-will-say) is
   badged the same way once that reading hits 100%, and reads a bare `⏳` when
   the source named no reset, since `⏳00:00` would be a time vincent invented.
-  The badge is a statement, not a brake: admission is unchanged and nothing is
-  withheld.
+  A reading is only a statement: nothing is withheld on a percentage. A window
+  vincent *watched* close is also a brake. In the default mode, a task that
+  reaches an agent step on that adapter shows the same `queued → 14:20` and
+  waits for the window without starting the agent.
 
 `/` filters by id, title, project or state; `tab` commits the filter, `esc`
 clears it, and `enter` opens the selected task.
@@ -995,11 +997,11 @@ branch name, priority and agent — above the create action](../assets/tui-new-t
 The agent row warns when the adapter the task would run on is out of quota —
 `· usage limit until 14:20`, from the same quota the board header badges.
 It **warns and nothing else**: the form submits, and the task meets the ordinary
-[`usage_limit` stop](troubleshooting.md#usage_limit--do-nothing-unless-you-asked-to-be-told) if
-the window is still shut when it is admitted — waiting it out, or blocking
-there where
+[`usage_limit` wait](troubleshooting.md#usage_limit--do-nothing-unless-you-asked-to-be-told) if
+the window is still shut when it reaches its agent step — without starting the
+agent, when it is a window vincent watched close. Where
 [`usage_limit_auto_continue`](../reference/configuration.md#usage_limit_auto_continue)
-says not to wait.
+says not to wait, it starts the agent and blocks on the stop instead.
 
 The override pickers are fed by live adapter data, tagged with where each option
 came from, and always accept free text: `t` inside an open list types a value

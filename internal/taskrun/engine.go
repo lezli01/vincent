@@ -408,6 +408,15 @@ type stepOutcome struct {
 	// and for an aggregated outcome (`parallel`, `loop`) whose collected
 	// attempt was not one.
 	agentName string
+	// wall is set on a reason=usage_limit outcome that never spawned: the
+	// observed window the pre-spawn check found still shut (task 106). It is
+	// what tells the two quota routes apart where they are acted on. A stop
+	// the CLI reported is recorded, then held or blocked; a wall that was
+	// avoided taught nothing new, so it is held until the observation's own
+	// reset and records nothing — re-recording would stamp a fresh
+	// `observed_at` and could promote an estimate to a CLI-reported reset.
+	// nil on every outcome that ran something.
+	wall *store.AgentQuota
 	// backoffUntil is set on a `failed` outcome that has retry budget left
 	// and a non-zero `retry_backoff` (task 028): the instant the next attempt
 	// may start. It is the signal to re-queue the task with a §11 admission
@@ -678,12 +687,20 @@ func (r *Runner) runSteps(ctx context.Context, project *store.Project, w *stepWa
 			// still says what the step did while block_reason says why
 			// nothing further was tried.
 			if outcome.reason == ReasonUsageLimit {
+				// The wall was avoided rather than hit (task 106): the check
+				// only reports one in a mode that holds, so there is no block
+				// branch, and the observation it read is already on record.
+				if outcome.wall != nil {
+					r.holdForUsageLimit(task, outcome.wall.ResetsAt, outcome.agentName,
+						outcome.wall.ResetsAtReported, env.log)
+					return
+				}
 				until, hold := r.usageLimitStop(outcome.agentName, outcome.retryAfter, env.log)
 				if !hold {
 					r.fail(task, ReasonUsageLimit, env.log, "agent usage limit reached", nil)
 					return
 				}
-				r.holdForUsageLimit(task, until, outcome.retryAfter, env.log)
+				r.holdForUsageLimit(task, until, outcome.agentName, outcome.retryAfter != nil, env.log)
 				return
 			}
 			r.interrupt(task, log)
@@ -1108,6 +1125,22 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 		run.AgentSource = string(src.Agent)
 		run.ModelSource = string(src.Model)
 		run.EffortSource = string(src.Effort)
+		// The pre-spawn quota check (task 106), placed where the adapter is
+		// finally exact — guards, lanes, loop bodies, a repair's request and a
+		// follow-up's own workflow have all been resolved by now — and before
+		// anything is recorded. No transcript and no row, so the timeline does
+		// not show an attempt that never ran, no retry is counted, and an
+		// `edit + retry` override stays on the task for the attempt that does.
+		if wall := r.usageWall(ctx, sel.Agent, env.log); wall != nil {
+			env.log.Info("adapter's usage window is still shut; not spawning",
+				"agent", sel.Agent, "attempt", attempt,
+				"resets_at", wall.ResetsAt.Format(time.RFC3339),
+				"reported_by_cli", wall.ResetsAtReported)
+			return stepOutcome{
+				state: store.StepInterrupted, reason: ReasonUsageLimit,
+				agentName: sel.Agent, wall: wall,
+			}
+		}
 	}
 
 	tr, err := openTranscript(r.deps.DataDir, env.task.ID, env.index, env.iteration(), attempt, subStepIDOf(env))
@@ -1440,12 +1473,18 @@ func (r *Runner) usageLimitStop(
 // is on with `block_reason: usage_limit`, which is the caller's `fail` and
 // not this.
 //
+// It is also where a wall the pre-spawn check avoided ends (task 106), with
+// the observation's reset as `until` and no attempt row at all. Both routes
+// write the same hold with the same `queued_reason` — one condition, one
+// reason (task 091 decision 2) — and the payload names the adapter, so the
+// timeline says whose window the task is waiting on.
+//
 // Nothing sleeps here. The actor ends with the admission per the phase 2
 // decision, and the scheduler picks the task up within a tick of the hold
 // expiring — a sleeping actor would hold the slot for a whole quota window,
 // which with max_parallel_tasks slots held that way means nothing runs at all.
 func (r *Runner) holdForUsageLimit(
-	task *store.Task, until time.Time, retryAfter *time.Time, log *slog.Logger,
+	task *store.Task, until time.Time, agentName string, reported bool, log *slog.Logger,
 ) {
 	reason := ReasonUsageLimit
 	ch := store.TaskChange{
@@ -1454,12 +1493,14 @@ func (r *Runner) holdForUsageLimit(
 		EventPayload: map[string]any{
 			"queued_reason":    reason,
 			"admit_not_before": until.Format(time.RFC3339),
+			"agent":            agentName,
 		},
 	}
 	if r.transition(task, taskstate.Interrupt, ch, log) {
 		log.Info("agent usage limit reached; task re-queued until it resets",
+			"agent", agentName,
 			"admit_not_before", until.Format(time.RFC3339),
-			"reported_by_cli", retryAfter != nil)
+			"reported_by_cli", reported)
 	}
 }
 

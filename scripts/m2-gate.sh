@@ -18,11 +18,13 @@
 # unattended (scenario 11), and that a step can report its own status message
 # — visible on the running row and on the finished one (scenario 12), and that
 # `usage_limit_auto_continue` decides whether a recognized quota stop waits the
-# window out or blocks for a human (scenario 13).
+# window out or blocks for a human (scenario 13), and that once one task hits
+# an adapter's wall every other task on that adapter waits the window out
+# without spawning a process (scenario 14).
 # Runs against the committed fakeagent so CI never calls a real
 # API; run manually with VINCENT_GATE_AGENT=claude to exercise the real CLI
 # (scenario 1 only — killing a paid run and 8× cap spend prove nothing extra).
-# VINCENT_GATE_SCENARIO=1..13 runs a single scenario for debugging.
+# VINCENT_GATE_SCENARIO=1..14 runs a single scenario for debugging.
 #
 # Each scenario gets fresh config/data/repo dirs and its own daemon:
 # FAKEAGENT_SCENARIO is read from the daemon's environment, so it can only
@@ -1691,6 +1693,129 @@ EOF
   echo "=== scenario 13 PASS (task $walled blocked on the wall, task $held still waits it out)"
 }
 
+# ---------------------------------------------------------------------------
+# Scenario 14 — the adapter-wide hold (task 106, §7.2/§9.6/§11): once task A
+# hits claude's wall, task B on the same adapter must not spawn a process into
+# the window vincent already knows is shut. It is re-queued at its agent step
+# on the ordinary usage_limit hold, until the observation's own reset, with no
+# attempt recorded. Two daemons, like scenario 13: FAKEAGENT_* is read at
+# daemon start, and the `never` leg needs a CLI that stays walled.
+# ---------------------------------------------------------------------------
+scenario14_config() { # scenario14_config MODE
+  cat > "$CONFIG_DIR/config.yaml" <<EOF
+max_parallel_tasks: 1
+usage_limit_recheck_interval: 30s
+usage_limit_auto_continue: $1
+agents:
+  claude:
+    path: "$(hostpath "$FAKEAGENT")"
+EOF
+  mkdir -p "$CONFIG_DIR/workflows"
+  cat > "$CONFIG_DIR/workflows/m2-quota-wide.yaml" <<EOF
+name: m2-quota-wide
+description: M2 gate — one agent step on an adapter another task walled.
+defaults:
+  agent: claude
+  max_retries: 0
+steps:
+  - id: work
+    type: agent
+    prompt: "Do the work for {{.Task.Title}}"
+EOF
+}
+
+scenario14() {
+  echo "=== scenario 14: one wall holds every task on the adapter without spawning"
+  scenario_dirs s14
+
+  export FAKEAGENT_SCENARIO=usage-limit
+  # Walled exactly once, so the unattended half below finishes. The reset is
+  # left to the estimate: 30 s is long enough for task B to be admitted inside
+  # the window on a slow runner, and short enough to wait out.
+  unset FAKEAGENT_USAGE_LIMIT_RESET
+  export FAKEAGENT_USAGE_LIMIT_MARKER
+  FAKEAGENT_USAGE_LIMIT_MARKER="$(hostpath "$TMP/s14-window-spent")"
+  scenario14_config always
+  daemon_up
+
+  local repo="$TMP/s14/repo" proj a b task="" ok=0
+  make_repo "$repo"
+  proj="$(register_project "$repo")"
+  a="$(api POST /tasks "{\"project_id\":$proj,\"workflow\":\"m2-quota-wide\",\"title\":\"Hits the wall\"}" | jq -r .id)"
+
+  echo "== task A hits the wall and is held"
+  for _ in $(seq 1 90); do
+    task="$(api GET "/tasks/$a")"
+    [[ "$(jq -r '.queued_reason // "null"' <<<"$task")" == "usage_limit" ]] && { ok=1; break; }
+    [[ "$(jq -r .state <<<"$task")" == "blocked" ]] \
+      && { jq . <<<"$task" >&2; fail "task $a blocked instead of waiting on the quota window"; }
+    sleep 1
+  done
+  (( ok )) || { jq . <<<"$task" >&2; fail "task $a never picked up queued_reason=usage_limit"; }
+
+  echo "== task B, created while A waits, is held at its agent step without spawning"
+  b="$(api POST /tasks "{\"project_id\":$proj,\"workflow\":\"m2-quota-wide\",\"title\":\"Behind the wall\"}" | jq -r .id)"
+  ok=0
+  for _ in $(seq 1 30); do
+    task="$(api GET "/tasks/$b")"
+    [[ "$(jq -r '.queued_reason // "null"' <<<"$task")" == "usage_limit" ]] && { ok=1; break; }
+    [[ "$(jq -r .state <<<"$task")" == "done" || "$(jq -r .state <<<"$task")" == "blocked" ]] \
+      && { jq . <<<"$task" >&2; fail "task $b reached $(jq -r .state <<<"$task"); it should be waiting on A's window"; }
+    sleep 1
+  done
+  (( ok )) || { jq . <<<"$task" >&2; fail "task $b never picked up queued_reason=usage_limit"; }
+  # Captured together, straight after the hold is seen: the hold ends when the
+  # window does, and every fact below is a claim about the held task.
+  local steps quota
+  steps="$(api GET "/tasks/$b/steps")"
+  quota="$(api GET /agents | jq -c '.agents[] | select(.name == "claude") | .quota')"
+  [[ "$(jq -r .state <<<"$task")" == "queued" ]] || fail "held task B is $(jq -r .state <<<"$task"), want queued"
+  [[ "$(jq 'length' <<<"$steps")" == "0" ]] \
+    || fail "task B recorded $(jq 'length' <<<"$steps") attempts, want 0 — it spawned into a known wall: $steps"
+  [[ "$quota" != "null" && -n "$quota" ]] || fail "GET /v1/agents carries no quota block for claude"
+  [[ "$(jq -r .admit_not_before <<<"$task")" == "$(jq -r .resets_at <<<"$quota")" ]] \
+    || fail "task B admit_not_before = $(jq -r .admit_not_before <<<"$task"), want claude's resets_at $(jq -r .resets_at <<<"$quota")"
+  [[ "$(jq -r '.block_reason // "null"' <<<"$task")" == "null" ]] \
+    || fail "a quota-held task must not carry a block_reason: $task"
+
+  echo "== both finish unattended once the window reopens"
+  wait_for_state "$a" done 120
+  wait_for_state "$b" done 120
+  steps="$(api GET "/tasks/$b/steps")"
+  [[ "$(jq 'length' <<<"$steps")" == "1" ]] \
+    || fail "task B attempts = $(jq 'length' <<<"$steps"), want 1 — the one after the reset: $steps"
+  [[ "$(jq -r '.[0].state' <<<"$steps")" == "succeeded" ]] || fail "task B's run did not succeed: $steps"
+
+  "$VINCENT" daemon stop
+
+  echo "== never: task B is not held early, and finds the wall itself"
+  scenario_dirs s14b
+  # No marker: the CLI stays walled, so B's own stop is what blocks it.
+  unset FAKEAGENT_USAGE_LIMIT_MARKER
+  scenario14_config never
+  daemon_up
+
+  local repo2="$TMP/s14b/repo" proj2 a2 b2
+  make_repo "$repo2"
+  proj2="$(register_project "$repo2")"
+  a2="$(api POST /tasks "{\"project_id\":$proj2,\"workflow\":\"m2-quota-wide\",\"title\":\"Hits the wall\"}" | jq -r .id)"
+  wait_for_state "$a2" blocked 90
+  b2="$(api POST /tasks "{\"project_id\":$proj2,\"workflow\":\"m2-quota-wide\",\"title\":\"Finds it too\"}" | jq -r .id)"
+  wait_for_state "$b2" blocked 90
+  task="$(api GET "/tasks/$b2")"
+  [[ "$(jq -r '.block_reason // "null"' <<<"$task")" == "usage_limit" ]] \
+    || fail "task B block_reason = $(jq -r '.block_reason // "null"' <<<"$task"), want usage_limit: $task"
+  steps="$(api GET "/tasks/$b2/steps")"
+  [[ "$(jq 'length' <<<"$steps")" == "1" ]] \
+    || fail "task B attempts = $(jq 'length' <<<"$steps"), want 1 — under never it spawns and meets the wall: $steps"
+  [[ "$(jq -r '.[0].failure_reason' <<<"$steps")" == "usage_limit" ]] \
+    || fail "task B attempt reason is $(jq -r '.[0].failure_reason' <<<"$steps"), want usage_limit: $steps"
+
+  unset FAKEAGENT_SCENARIO
+  "$VINCENT" daemon stop
+  echo "=== scenario 14 PASS (task $b waited on task $a's window; under never task $b2 found it itself)"
+}
+
 WHICH="${VINCENT_GATE_SCENARIO:-all}"
 if (( REAL_AGENT )); then
   echo "== real-agent mode: scenario 1 only (PR G decision)"
@@ -1710,8 +1835,9 @@ case "$WHICH" in
   11) scenario11 ;;
   12) scenario12 ;;
   13) scenario13 ;;
+  14) scenario14 ;;
   all) scenario1; scenario2; scenario3; scenario4; scenario5; scenario6; scenario7; scenario8
-     scenario9; scenario10; scenario11; scenario12; scenario13 ;;
+     scenario9; scenario10; scenario11; scenario12; scenario13; scenario14 ;;
   *) fail "unknown VINCENT_GATE_SCENARIO: $WHICH" ;;
 esac
 

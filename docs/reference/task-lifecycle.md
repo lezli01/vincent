@@ -88,7 +88,7 @@ Two reasons produce that wait, and they are worth telling apart:
 
 | `queued_reason` | What it means |
 |---|---|
-| `usage_limit` | The agent's usage quota for the window is spent. The attempt is recorded `interrupted` and costs **no** retry; the wait ends at the reset the CLI named, or after [`usage_limit_recheck_interval`](configuration.md#usage_limit_recheck_interval) when it named none. Whether there is a wait at all is [`usage_limit_auto_continue`](configuration.md#usage_limit_auto_continue) — under `never`, and under `reported_only` when the CLI named no reset, the task blocks instead |
+| `usage_limit` | The agent's usage quota for the window is spent. The attempt is recorded `interrupted` and costs **no** retry; the wait ends at the reset the CLI named, or after [`usage_limit_recheck_interval`](configuration.md#usage_limit_recheck_interval) when it named none. Whether there is a wait at all is [`usage_limit_auto_continue`](configuration.md#usage_limit_auto_continue) — under `never`, and under `reported_only` when the CLI named no reset, the task blocks instead. In the modes that wait, a task that never hit the limit can carry it too: it reached an agent step on an adapter whose window vincent saw close, and waits out that reset with no attempt recorded and no process started |
 | `retry_backoff` | The step failed and its next attempt is being paced by [`retry_backoff`](workflow-schema.md#step-fields). The attempt is recorded `failed` with its own reason and **does** consume a retry; the wait is the configured duration. When the budget runs out the task blocks with the step's own reason, with no wait first |
 
 `retry_backoff` is a `queued_reason` only, and is never a step's failure reason

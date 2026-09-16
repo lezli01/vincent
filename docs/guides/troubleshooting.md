@@ -611,15 +611,19 @@ is spent. By default vincent treats this as a wait, not a failure:
   work carries on;
 - the row shows the time it will resume — `queued → 14:20` on the board, and
   `queued · usage limit → 14:20` in the detail header;
-- when that time comes the step re-runs by itself. There is nothing to press.
+- when that time comes the step re-runs by itself. There is nothing to press;
+- every other task on that agent waits too. When one reaches an agent step while
+  the window is still shut, it goes back to `queued` with the same reason and
+  resume time **without** starting the agent, so its timeline shows no attempt.
 
 The resume time is the reset the CLI reported. When it reported none, vincent
 waits [`usage_limit_recheck_interval`](../reference/configuration.md#usage_limit_recheck_interval)
 (default 15 minutes) and tries again, repeating until the window reopens. If you
 know your plan's window, set that knob to match it.
 
-If you would rather not wait, cancel the task, or pause and resume it to try
-again immediately — any human action drops the wait.
+If you would rather not wait, cancel the task. Pausing and resuming drops the
+wait too, but while vincent's recorded window for that agent is still shut the
+task goes straight back to waiting on it, without starting the agent.
 
 **If it is blocked here instead of waiting**, someone turned
 [`usage_limit_auto_continue`](../reference/configuration.md#usage_limit_auto_continue)

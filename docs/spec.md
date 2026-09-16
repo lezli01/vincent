@@ -756,6 +756,11 @@ clears it, so admission, parking and cancel all drop it. One consequence, accept
 rather than fixed: pausing a held task and resuming it re-admits it at once and it
 re-discovers the wall. That costs one process spawn and buys the rule this section
 already applies to every other pending flag — a human action means go.
+*Amended 2026-09-16 (task 106):* while the adapter's observation (§14) is still
+live, re-discovering the wall costs **no** spawn. The re-admission meets §7.2's
+pre-spawn check, which finds the window shut before a process starts and writes
+the same hold again. The rule is unchanged: the human action still drops the
+hold, and the task is still re-admitted at once.
 
 **Amended 2026-08-24 (task 025): `blocked → queued` has a second producer.** It
 used to mean only "the human decided — retry or skip". It now also means "the
@@ -1031,6 +1036,32 @@ stdout/stderr are captured to the step transcript.
   block is taken in the *interrupted* arm of the engine's outcome switch,
   above the failed arm, so the `allow_failure` bullet below never reaches
   it: an account out of quota is not a result a workflow may branch on.
+
+  *Amended 2026-09-16 (task 106).* A recognized stop now also holds the
+  **other** tasks on that adapter, each at its next agent spawn. Just before
+  an agent process would start, after the step's adapter is resolved (§8.6),
+  the engine reads the adapter's observation (§14). Guards, `parallel` lanes,
+  loop bodies, repairs and follow-up rounds have all been resolved by then.
+  If the observation's `resets_at` is still ahead and the mode is one where a
+  stop would wait, the process is not spawned. The modes that wait are
+  `always`, and `reported_only` when the reset was CLI-reported; `never`
+  never holds. The task gets no attempt row, no transcript and no retry, and
+  is re-queued on the same `queued_reason: usage_limit` hold until the
+  observation's `resets_at`. The hold transition's payload names the `agent`
+  on both routes. Nothing is re-recorded: no new `observed_at`, no promotion
+  of an estimate to a reported reset, no `agent.quota_changed`. A command
+  step ahead of the agent step still runs and the cursor advances past it. In
+  a `parallel` group the open lanes run, the walled lane is not started, and
+  only it runs on re-admission (§7.5). A pending `edit + retry` override stays
+  on the task for the attempt that does run. A failed read of the observation
+  is logged and the step spawns: a display table's read must not stall work.
+  Only `observed` rows count; a reported reading (§9.6) never holds a task.
+  Under `never`, and under `reported_only` against an estimate, each task
+  still finds the limit itself, because those modes exist for an operator who
+  does not trust the classifier, and the next spawn is what retires a wrong
+  observation. Every held task becomes admissible under §11's caps when the
+  reset passes, so re-checking an estimated window costs up to
+  `max_parallel_tasks` spawns rather than one per queued task.
 - **`retry_backoff` paces the retries.** *Added 2026-08-25 (task 028).* A step
   may carry `retry_backoff`, a duration, settable per step and in
   `defaults:`. Its default is **zero**, which is an immediate retry — every
@@ -3551,6 +3582,11 @@ defaults:
   - **§11 is unchanged.** This is display. Admission ordering, both concurrency
     caps and the walk's pause→hold→caps sequence are as they were; a
     near-exhausted agent is shown, never withheld.
+    *Amended 2026-09-16 (task 106):* still true of §11, no longer true of the
+    engine. An **observed** window now keeps agent processes from spawning on
+    that adapter in the modes where a stop would wait (§7.2), through the
+    ordinary `usage_limit` hold. Reported readings are still display only: a
+    window at 100% is not a proven stop, and a restart clears them.
 
 *Amended 2026-09-02 (task 082, issue #310): the clause's own expiry condition
 is taken.* "`used_percent` and `window` … fill in the day a vendor ships a
@@ -4353,7 +4389,13 @@ precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
   `usage_limit_auto_continue: never`, and under `reported_only` when the CLI
   named no reset, a quota stop blocks the task (§7.2) and writes no hold at
   all. `retry_backoff` is unconditional. Either way this walk is unchanged: a
-  stop that produced no hold never reaches it. The walk applies the three checks **in this order**:
+  stop that produced no hold never reaches it. *Amended 2026-09-16 (task 106):*
+  `usage_limit` has a second route in, the engine's pre-spawn check (§7.2). It
+  writes the identical hold for a task whose next agent step resolves to an
+  adapter with a still-shut observed window. The walk is unchanged by it too
+  and still parses no snapshot: a queued task has no stored adapter, and only
+  the engine, at the spawn, knows which one the step at the cursor resolves to.
+  The walk applies the three checks **in this order**:
   1. **pause** — a pending pause parks the task, held or not. This runs first
      because a human asked for `paused`, and a task showing `queued` until a hold
      expired would be the same lie the cap check already avoids. It is also why
@@ -5163,6 +5205,20 @@ estimate, even where it times no wait. Claude-only in effect, since it is the
 only adapter that recognizes the wording at all (§9.1); inert on codex and
 cursor.
 
+*Amended 2026-09-16 (task 106).* The mode also decides what a recorded wall
+means for the **other** tasks on the adapter, at §7.2's pre-spawn check:
+
+| value | a task reaching an agent spawn while the adapter's observed window is still shut … |
+|---|---|
+| `always` | is held until that window's `resets_at`, without spawning |
+| `reported_only` | is held when that reset was CLI-reported; spawns against an estimate |
+| `never` | spawns, and finds the limit itself |
+
+The mode is read at the check as well as at the stop, so a hot reload reaches
+the next spawn. Holding every task on a match the operator has said they
+distrust would spread one wrong classification across the adapter, and the
+spawn that is let through is what retires a wrong observation (§14).
+
 **`max_task_cost_usd` (task 033, added 2026-08-26).** A ceiling, in US dollars,
 on what **one task** may spend — the §17 rollup of `cost_usd` over every attempt
 of every step it runs, retries included. Past it the task goes `blocked` with
@@ -5280,7 +5336,10 @@ blocked"), `queued_reason`, `current_step`, `steps_total`, `worktree_path`,
 `branch`; `project_id`, `project`, `workflow`; and `input` (`{kind, summary}`)
 on a transition into `awaiting_input`, taken from what that §7.4 transition
 already carries. `steps_total` comes from the task's own workflow snapshot,
-which is the honest *n* for that run.
+which is the honest *n* for that run. *Amended 2026-09-16 (task 106):*
+`admit_not_before` rides beside `queued_reason`, RFC3339 or `null` when the
+task carries no hold, so a notifier can say *until when* as well as *why*
+without calling back. It covers `usage_limit` and `retry_backoff` holds alike.
 
 *Global, not per-project, and hot-reloading.* Projects are database rows, not
 YAML, so a per-project override would need a column and API surface for a case
@@ -6887,6 +6946,10 @@ Two kinds of streams:
    client re-derive "a task hold implies an agent-level fact", which is the
    kind of inference the daemon publishes rather than delegates.
    `scheduler.WakeOn` is **false** for it: nothing about admission changes.
+   *Amended 2026-09-16 (task 106):* still false, although an observation now
+   stops agent spawns (§7.2). Recording or clearing one makes no queued task
+   admissible: a held task keeps its own `admit_not_before`, and waits it out
+   even when a success clears the observation early.
    *Amended 2026-09-02 (task 082, issue #310):* a **reported** reading appends
    the same event with the same four fields — `spent` from the tightest
    window's percentage, `resets_at` from that window and null when the source
@@ -7640,7 +7703,10 @@ actors hitting the same wall in the same second cannot make the state go
 backwards. The row is written by `internal/taskrun` alongside the §11 hold and
 deleted by the next successful agent step on that adapter; the daemon remains
 the single writer and the row is agent-scoped rather than task-scoped, so no
-taskrun or scheduler ownership invariant moves.
+taskrun or scheduler ownership invariant moves. *Amended 2026-09-16 (task
+106):* the row is now also **read** by `internal/taskrun` before every agent
+spawn, and a still-shut `observed` row holds the task (§7.2). Still one writer,
+and the scheduler still never reads it.
 
 *Amended 2026-09-02 (task 082, issue #310).* Still no `used_percent` and no
 `window` column, and now for a stronger reason than "nothing can fill them": a
@@ -10264,7 +10330,7 @@ carries the rest.
 | Model/effort unknown to the catalog | Validation warning only; the CLI is the final authority — a rejected value fails the step with the CLI's error (retry policy applies) |
 | Model *in* the catalog but rejected at run time | Real, not hypothetical, on cursor (§9.7): the step fails with the stderr tail as the message, since no `result` event arrives. Catalog membership is advisory in both directions |
 | Agent CLI installed but not authenticated | `logged_in: false` where the adapter can tell (§9.5); the new-task form flags it like an unavailable agent. Where it cannot (`null`), the step runs and fails. *Amended 2026-08-14 (task 003):* where the adapter recognizes the CLI's auth wording, that failure is now named `agent_unauthenticated` instead of surfacing as `nonzero_exit`/`agent_error`. Everything else about the row is unchanged and deliberately so — the step still runs, the attempt still fails, the §7.2 budget still applies, and the task still ends up blocked. There is no pre-flight refusal on `logged_in: false`. *Amended 2026-08-15 (task 005):* the "where it cannot (`null`)" set is now **claude alone** — codex probes `login status`, cursor probes `status` (§9.5). Every other clause of this row stands untouched, task 003 decision 4 included: making the state visible is not the same as blocking on it, and `vincent doctor` is where a user sees it before a task burns its retry budget |
-| Agent stopped by a usage limit | *Added 2026-08-14 (task 003).* Where the adapter recognizes the wording, the attempt is recorded `interrupted` with reason `usage_limit`, consumes **no** retry (§7.2), and the task returns to `queued` with an admission hold (§11) — releasing its slot, so other work keeps running. The hold ends at the reset time the CLI reported, or `usage_limit_recheck_interval` after the stop when it reported none. Recovery is unattended: the scheduler re-admits and the step re-runs. The board says `queued` *with* its reason rather than `blocked` (§15). Where the adapter recognizes nothing — codex and cursor today (§9.1) — the run reads as `nonzero_exit`/`agent_error` exactly as before. *Amended 2026-08-24 (task 026):* the reset the engine acted on is additionally recorded per adapter (§14) and published on change (§13.3), so the fact outlives the hold — `admit_not_before` is cleared by the next transition out of `queued`, and until now the observation went with it. It is retired by the next successful agent step on that adapter, never by a timer. *Amended 2026-09-08:* the wording is only ever read from a run that **failed** (§9.1) — a step that succeeded while writing about quota stops is a success, not a wall. *Amended 2026-09-08 (task 091):* all of the above is what `usage_limit_auto_continue: always` — the default — does. Under `never`, and under `reported_only` when the CLI named no reset, the same stop **blocks** the task instead with `block_reason: usage_limit` (§7.2, §12.3): the attempt is still `interrupted` and still costs no retry, the cursor does not advance, and a human retry re-runs the step |
+| Agent stopped by a usage limit | *Added 2026-08-14 (task 003).* Where the adapter recognizes the wording, the attempt is recorded `interrupted` with reason `usage_limit`, consumes **no** retry (§7.2), and the task returns to `queued` with an admission hold (§11) — releasing its slot, so other work keeps running. The hold ends at the reset time the CLI reported, or `usage_limit_recheck_interval` after the stop when it reported none. Recovery is unattended: the scheduler re-admits and the step re-runs. The board says `queued` *with* its reason rather than `blocked` (§15). Where the adapter recognizes nothing — codex and cursor today (§9.1) — the run reads as `nonzero_exit`/`agent_error` exactly as before. *Amended 2026-08-24 (task 026):* the reset the engine acted on is additionally recorded per adapter (§14) and published on change (§13.3), so the fact outlives the hold — `admit_not_before` is cleared by the next transition out of `queued`, and until now the observation went with it. It is retired by the next successful agent step on that adapter, never by a timer. *Amended 2026-09-08:* the wording is only ever read from a run that **failed** (§9.1) — a step that succeeded while writing about quota stops is a success, not a wall. *Amended 2026-09-08 (task 091):* all of the above is what `usage_limit_auto_continue: always` — the default — does. Under `never`, and under `reported_only` when the CLI named no reset, the same stop **blocks** the task instead with `block_reason: usage_limit` (§7.2, §12.3): the attempt is still `interrupted` and still costs no retry, the cursor does not advance, and a human retry re-runs the step. *Amended 2026-09-16 (task 106):* in the modes that hold, every **other** task on the adapter is held too, at its next agent spawn, with no attempt recorded and no process started, until the observation's `resets_at`. When that passes the §11 walk releases them all under the normal caps |
 | `effort` set on a step whose agent has no effort concept | Ignored by the adapter and documented as ignored (cursor, §9.7); a claude/codex effort value on a cursor step is already an §8.2 *error* — it belongs to another adapter's catalog |
 | `restricted` step on an adapter that cannot restrict on this OS | Step fails to start with `restricted_unsupported` (cursor on Windows, §9.7), under the retry policy → typically blocked. Never downgraded to full-auto, and deliberately *not* `agent_unavailable`: the CLI is installed and healthy, so "not found" would send the user to reinstall what is already there. *Amended 2026-08-28 (task 041):* **task creation refuses these** with a `400` naming the step and the agent (§9.4), and `GET /v1/agents` publishes the `restricted_verdict` the gate uses. Reaching the engine anyway means the task and its daemon parted company — a data directory carried to Windows, or a workflow edited after the task was queued — so the reason above stays exactly as it is, as the backstop. Retries are not gated: enforcement is creation-time, and the backstop is what catches the rest. *Amended 2026-09-11 (task 096):* a task created with the `restricted` clamp (§9.4) makes **every** agent step a restricted one, so the same `400` refuses a clamped task whose agent steps resolve to such an adapter — even when its workflow says `full-auto` throughout |
 | Step declaring `on_input: require` on an agent that cannot ask | *Added 2026-08-17 (task 013).* A workflow pinning an adapter with no control channel (codex, cursor) fails §8.2 validation outright. Otherwise creation is refused with a `400` naming the step and the agent, and the TUI's picker will not select that agent; `GET /v1/agents` publishes the `input_verdict` the gate uses. A task that reaches the engine anyway — claude upgraded past the §9.3 ceiling, a data directory moved — fails the attempt with `input_unsupported` under the §7.2 budget, before anything is spawned. Only a positive "cannot" refuses: an absent or unprobed binary is unknown, and unknown never blocks (§9.6) |

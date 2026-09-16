@@ -451,12 +451,13 @@ reported reading is rendered from. A reading wins where there is one, so:
   `codex app-server · 5h 28% → 2026-09-16T13:00:00+02:00 · … · read …`,
   `spent → …` or `spent ≈ …` for an observation, `unknown` for neither.
 
-The warning is advisory. The form still submits, admission is unchanged, and a
-task queued against a spent window simply parks on the ordinary
-[`usage_limit` wait](troubleshooting.md#usage_limit--do-nothing-unless-you-asked-to-be-told) — or blocks
-there, if
+The warning is advisory. The form still submits and admission is unchanged. A
+task queued against a window vincent watched close parks on the ordinary
+[`usage_limit` wait](troubleshooting.md#usage_limit--do-nothing-unless-you-asked-to-be-told)
+when it reaches its agent step, without starting the agent. If
 [`usage_limit_auto_continue`](../reference/configuration.md#usage_limit_auto_continue)
-says not to wait. Since only claude recognizes a quota stop at all, that key is
+says not to wait, it starts and finds the limit itself. A reported reading never
+holds a task, even at 100%. Since only claude recognizes a quota stop at all, that key is
 inert on the other two, exactly as the table above says. The next
 successful step on that adapter retires the **observation** — and only the
 observation, since a step completing proves the wall vincent watched has come

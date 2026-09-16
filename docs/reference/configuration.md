@@ -728,6 +728,21 @@ once more, and meets the new mode at the next stop. The spent window still
 reaches [`GET /v1/agents`](api.md) and the board's agent badge in every mode —
 that is how you see why a task just blocked.
 
+The mode also decides what happens to **every other task** headed for that
+agent once a stop has been recorded. vincent checks the recorded window just
+before it would start an agent process:
+
+| value | a task reaching an agent step while the window is still shut … |
+|---|---|
+| `always` (default) | waits too, without starting the agent: it goes back to `queued` with `queued_reason: usage_limit` until the recorded reset, and no attempt is recorded |
+| `reported_only` | waits too when the CLI named the reset; starts normally when the reset is vincent's estimate |
+| `never` | starts normally, and finds the limit itself |
+
+Only windows vincent watched close count. A quota an agent merely
+[reports](../guides/agents.md#how-much-quota-is-left-and-who-will-say), even at
+100%, never holds a task. When the reset passes, every waiting task becomes
+eligible again under the normal concurrency caps.
+
 Only claude recognizes a spent quota at all, so this key is inert on codex and
 cursor. See [Agents](../guides/agents.md).
 
@@ -1229,6 +1244,7 @@ a one-line script.
   "to": "blocked",
   "block_reason": "step_failed",
   "queued_reason": "",
+  "admit_not_before": null,
   "current_step": 2,
   "steps_total": 5,
   "worktree_path": "/home/you/.local/share/vincent/worktrees/42",
@@ -1239,7 +1255,9 @@ a one-line script.
 }
 ```
 
-`block_reason` is empty unless `to` is `blocked`. A transition into
+`block_reason` is empty unless `to` is `blocked`. `admit_not_before` is when a
+queued task will next be tried, the *until* beside `queued_reason`'s *why*, as
+RFC3339; it is `null` when the task is not waiting on a clock. A transition into
 `awaiting_input` additionally carries the agent's question:
 
 ```json
