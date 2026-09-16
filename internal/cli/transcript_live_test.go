@@ -125,6 +125,9 @@ func newLiveHarness(t *testing.T) *liveHarness {
 		// The registry is what lets the endpoint normalize a recorded run
 		// with the parser that read it live.
 		Agents: agents,
+		// The chat-turn route derives its file from the data dir rather than
+		// from a stored path (chattranscript_live_test.go).
+		Dirs: config.Dirs{Data: dataDir},
 	})
 	handler := s.Handler()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
