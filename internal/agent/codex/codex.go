@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
-	"github.com/lezli01/vincent/internal/procx"
 )
 
 // binaryName is what PATH resolution looks for when no path is configured.
@@ -237,34 +236,29 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 	if err != nil {
 		return nil, err
 	}
-	//nolint:gosec // path comes from config or PATH resolution by design.
-	cmd := exec.Command(path, buildArgs(spec)...)
-	cmd.Dir = spec.WorkDir
-	if spec.Env != nil {
-		cmd.Env = spec.Env
-	}
+	env := spec.Env
 	if spec.MCP != nil {
 		// Appended after the resolved environment on purpose: §12.3's
 		// `environment.unset` must not be able to strip the channel the step
 		// was wired to, and a later assignment is what the child reads.
-		if cmd.Env == nil {
-			cmd.Env = os.Environ()
+		if env == nil {
+			env = os.Environ()
 		}
-		cmd.Env = append(cmd.Env, MCPTokenEnv+"="+spec.MCP.Token)
+		env = append(env, MCPTokenEnv+"="+spec.MCP.Token)
 	}
-	cmd.Stdin = strings.NewReader(spec.Prompt)
 	stderr := &tailWriter{max: 64 * 1024}
-	cmd.Stderr = stderr
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("codex stdout pipe: %w", err)
-	}
-	proc, err := procx.Start(cmd)
+	proc, err := agent.Launch(spec.Launcher, agent.Command{
+		Path:   path,
+		Args:   buildArgs(spec),
+		Dir:    spec.WorkDir,
+		Env:    env,
+		Stdin:  strings.NewReader(spec.Prompt),
+		Stderr: stderr,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("start codex: %w", err)
 	}
 	r := &run{
-		cmd:        cmd,
 		resuming:   spec.ResumeSessionID != "",
 		proc:       proc,
 		stderr:     stderr,
@@ -272,7 +266,7 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 		readerDone: make(chan struct{}),
 		procDone:   make(chan struct{}),
 	}
-	go r.readLoop(stdout)
+	go r.readLoop(proc.Stdout())
 	go func() {
 		select {
 		case <-ctx.Done():
@@ -285,8 +279,7 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 
 // run is a live Codex process.
 type run struct {
-	cmd    *exec.Cmd
-	proc   *procx.Proc
+	proc   agent.Process
 	stderr *tailWriter
 
 	events     chan agent.Event
@@ -377,7 +370,7 @@ func (r *run) Kill() error { return r.proc.Kill() }
 func (r *run) Terminate() error { return r.proc.Terminate() }
 
 // PID implements agent.RunHandle.
-func (r *run) PID() int { return r.cmd.Process.Pid }
+func (r *run) PID() int { return r.proc.PID() }
 
 // Wait implements agent.RunHandle. It blocks until the stream is fully
 // consumed and the process has exited, then assembles the RunResult per
@@ -392,15 +385,14 @@ func (r *run) PID() int { return r.cmd.Process.Pid }
 func (r *run) Wait() (agent.RunResult, error) {
 	r.waitOnce.Do(func() {
 		<-r.readerDone
-		err := r.cmd.Wait()
+		exitCode, err := r.proc.Wait()
 		close(r.procDone)
 		r.proc.Release()
 
-		var exitErr *exec.ExitError
-		if err != nil && !errors.As(err, &exitErr) {
+		if err != nil {
 			r.waitErr = fmt.Errorf("wait for codex: %w", err)
 		}
-		res := agent.RunResult{ExitCode: r.cmd.ProcessState.ExitCode()}
+		res := agent.RunResult{ExitCode: exitCode}
 		r.mu.Lock()
 		terminal, streamErr, sessionID := r.terminal, r.streamErr, r.sessionID
 		r.mu.Unlock()
@@ -470,7 +462,7 @@ func (w *tailWriter) String() string {
 }
 
 // Argv implements agent.RunHandle: the command line actually spawned.
-func (r *run) Argv() []string { return r.cmd.Args }
+func (r *run) Argv() []string { return r.proc.Argv() }
 
 // SupportsResume implements agent.Resumer. It became true with task 070,
 // which satisfied the precondition task 063 decision 3 set: the stream's

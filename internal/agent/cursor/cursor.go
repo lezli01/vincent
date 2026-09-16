@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
-	"github.com/lezli01/vincent/internal/procx"
 )
 
 // binaryName is what PATH resolution looks for when no path is configured.
@@ -254,25 +253,19 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 			return nil, err
 		}
 	}
-	//nolint:gosec // path comes from config or PATH resolution by design.
-	cmd := exec.Command(path, args...)
-	cmd.Dir = spec.WorkDir
-	if spec.Env != nil {
-		cmd.Env = spec.Env
-	}
-	cmd.Stdin = strings.NewReader(spec.Prompt)
 	stderr := &tailWriter{max: 64 * 1024}
-	cmd.Stderr = stderr
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("cursor stdout pipe: %w", err)
-	}
-	proc, err := procx.Start(cmd)
+	proc, err := agent.Launch(spec.Launcher, agent.Command{
+		Path:   path,
+		Args:   args,
+		Dir:    spec.WorkDir,
+		Env:    spec.Env,
+		Stdin:  strings.NewReader(spec.Prompt),
+		Stderr: stderr,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("start cursor-agent: %w", err)
 	}
 	r := &run{
-		cmd:        cmd,
 		proc:       proc,
 		stderr:     stderr,
 		events:     make(chan agent.Event, 64),
@@ -282,7 +275,7 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 	if spec.MCP != nil {
 		r.mcpWorkDir = spec.WorkDir
 	}
-	go r.readLoop(stdout)
+	go r.readLoop(proc.Stdout())
 	go func() {
 		select {
 		case <-ctx.Done():
@@ -295,8 +288,7 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 
 // run is a live cursor-agent process.
 type run struct {
-	cmd    *exec.Cmd
-	proc   *procx.Proc
+	proc   agent.Process
 	stderr *tailWriter
 
 	events     chan agent.Event
@@ -388,7 +380,7 @@ func (r *run) Kill() error { return r.proc.Kill() }
 func (r *run) Terminate() error { return r.proc.Terminate() }
 
 // PID implements agent.RunHandle.
-func (r *run) PID() int { return r.cmd.Process.Pid }
+func (r *run) PID() int { return r.proc.PID() }
 
 // Wait implements agent.RunHandle. It blocks until the stream is fully
 // consumed and the process has exited, then assembles the RunResult per §7.1.
@@ -415,7 +407,7 @@ func (r *run) PID() int { return r.cmd.Process.Pid }
 func (r *run) Wait() (agent.RunResult, error) {
 	r.waitOnce.Do(func() {
 		<-r.readerDone
-		err := r.cmd.Wait()
+		exitCode, err := r.proc.Wait()
 		close(r.procDone)
 		r.proc.Release()
 		if r.mcpWorkDir != "" {
@@ -425,11 +417,10 @@ func (r *run) Wait() (agent.RunResult, error) {
 			_ = agent.RemoveCursorMCPConfig(r.mcpWorkDir)
 		}
 
-		var exitErr *exec.ExitError
-		if err != nil && !errors.As(err, &exitErr) {
+		if err != nil {
 			r.waitErr = fmt.Errorf("wait for cursor-agent: %w", err)
 		}
-		res := agent.RunResult{ExitCode: r.cmd.ProcessState.ExitCode()}
+		res := agent.RunResult{ExitCode: exitCode}
 		r.mu.Lock()
 		terminal, streamErr, sessionID := r.terminal, r.streamErr, r.sessionID
 		r.mu.Unlock()
@@ -487,7 +478,7 @@ func (w *tailWriter) String() string {
 }
 
 // Argv implements agent.RunHandle: the command line actually spawned.
-func (r *run) Argv() []string { return r.cmd.Args }
+func (r *run) Argv() []string { return r.proc.Argv() }
 
 // SupportsResume implements agent.Resumer: cursor-agent reloads one of its
 // own chats with `--resume <session_id>` (§9.7), which is what lets a chat

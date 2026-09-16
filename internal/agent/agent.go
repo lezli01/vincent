@@ -213,6 +213,11 @@ type RunSpec struct {
 	// and any other caller get; the engine always populates it, so a running
 	// step's environment is a decided value rather than an inherited one.
 	Env []string
+	// Launcher starts the run's process (task 062.1). nil means the host
+	// launcher, which is what tests, chats and any other caller get — the
+	// same nil-keeps-today's-behaviour convention Env follows. The adapter
+	// builds the Command; the launcher decides where it runs.
+	Launcher Launcher
 }
 
 // RunHandle is a live agent run (spec §9.1).
