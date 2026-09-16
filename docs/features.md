@@ -365,6 +365,9 @@ localhost API.
 - `vincent task diff` prints a task's change as a patch that pipes straight
   into `git apply`, split into one section per fan-out lane with `--by lane`,
   or as a per-file table of added and removed lines with `--stat`.
+- `vincent agents` shows each agent CLI's version, whether vincent has tested
+  that build, whether you are logged in, and its usage quota, and exits 0
+  whatever the adapters' health so a script can read it.
 
 Start with [Scripting vincent](guides/scripting.md), then use the complete
 [HTTP API reference](reference/api.md) when you need direct integration.

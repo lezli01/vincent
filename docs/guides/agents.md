@@ -39,8 +39,8 @@ silently drops.
 | Recognizes a usage limit / auth failure in a run | ✅ | — | — |
 | Reports **remaining** quota without running | **push only** (its status line) | ✅ `app-server --stdio` | **—** (no usage surface) |
 
-`vincent daemon status`, the TUI's daemon view, and `GET /v1/agents` all report
-what vincent actually resolved on your machine — path, version, the model and
+[`vincent agents`](../reference/cli.md#vincent-agents), the TUI's daemon view,
+and `GET /v1/agents` all report what vincent actually resolved on your machine — path, version, the model and
 effort options it discovered, and the health verdicts below: whether the build
 you have is one vincent has been tested against, and whether the adapter can
 restrict anything on this operating system.
@@ -309,8 +309,8 @@ standing fix for "my shell finds it, vincent does not".
 **Detection is cached by binary identity** — resolved path + mtime + version.
 Help output is a pure function of the installed binary, so the cache cannot go
 stale by construction: upgrading a CLI invalidates it and the next request
-re-probes. `GET /v1/agents?refresh=true` (or `R` in the TUI's new-task view)
-forces one.
+re-probes. `vincent agents --refresh`, `GET /v1/agents?refresh=true` or `R` in
+the TUI's new-task view forces one.
 
 A failed probe **expires**; a clean one does not. Nothing about a binary changes
 when a probe times out, so caching that failure forever would serve one bad
@@ -408,7 +408,8 @@ running a step, and they answer in opposite directions.
   stdio and replies to `account/rateLimits/read` with the same `primary` and
   `secondary` windows the CLI prints when it walls a run. Vincent asks on the
   ordinary catalog refresh — at most once every five minutes, and
-  unconditionally on `vincent doctor` or `GET /v1/agents?refresh=true`. There is
+  unconditionally on `vincent doctor`, `vincent agents --refresh` or
+  `GET /v1/agents?refresh=true`. There is
   nothing to install and nothing to configure.
 - **claude pushes.** Claude Code has no `usage` or `limits` command to poll, but
   it hands its status line a JSON object carrying both windows on every render.
@@ -443,7 +444,12 @@ reported reading is rendered from. A reading wins where there is one, so:
   an observation as `usage limit → 14:20` with `→` for a reset the CLI stated
   and `≈` for one vincent estimated. An adapter with neither says
   `quota unknown`;
-- the new-task form warns under the agent row — `· usage limit until 14:20`.
+- the new-task form warns under the agent row — `· usage limit until 14:20`;
+- [`vincent agents`](../reference/cli.md#vincent-agents) prints the same block
+  in its `QUOTA` column for a shell or a script, with full local timestamps
+  because a seven-day reset is days away —
+  `codex app-server · 5h 28% → 2026-09-16T13:00:00+02:00 · … · read …`,
+  `spent → …` or `spent ≈ …` for an observation, `unknown` for neither.
 
 The warning is advisory. The form still submits, admission is unchanged, and a
 task queued against a spent window simply parks on the ordinary

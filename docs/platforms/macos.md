@@ -159,8 +159,9 @@ Two consequences:
     claude: { path: "/opt/homebrew/bin/claude" }
   ```
 
-Verify with `vincent daemon status` or the TUI's daemon view: if the adapter list
-is empty under a service that is running, this is why.
+Verify with [`vincent agents`](../reference/cli.md#vincent-agents) or the TUI's
+daemon view: if a CLI you installed shows as `not found` under a service that is
+running, this is why.
 
 ## Terminal notes
 

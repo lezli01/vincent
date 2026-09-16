@@ -336,10 +336,11 @@ answer to "vincent says the agent is missing but my shell finds it".
 vincent version          # build info: version, commit, build date
 vincent daemon start     # starts the background daemon
 vincent daemon status    # exit 0 healthy, 1 not running, 2 unresponsive
+vincent agents           # which agent CLIs the daemon resolved
 ```
 
-`vincent daemon status` prints the daemon's identity and which agent CLIs it
-resolved. If an agent you installed is missing from that list, read
+`vincent daemon status` prints the daemon's identity, and `vincent agents` which
+agent CLIs it resolved. If an agent you installed shows as `not found` there, read
 [Troubleshooting → an agent CLI is not found](../guides/troubleshooting.md#an-agent-cli-is-not-found).
 
 Then go run something: [Quickstart](quickstart.md).

@@ -133,7 +133,8 @@ starting the daemon again simply retries it.
 
 ### An agent CLI is not found
 
-`vincent daemon status` and the TUI's daemon view list what the daemon resolved.
+[`vincent agents`](../reference/cli.md#vincent-agents) and the TUI's daemon view
+list what the daemon resolved.
 If your shell finds the binary and the daemon does not, it is a `PATH` problem —
 in this order:
 
@@ -250,14 +251,17 @@ family vincent has verified the protocol against.
 Where you meet it:
 
 - **The new-task picker greys the agent out**, and `POST /v1/tasks` answers
-  `400` naming the step. Pick an agent whose `input_verdict` in
-  `vincent agents` (or `GET /v1/agents`) is `supported`.
+  `400` naming the step. Pick an agent whose row in
+  [`vincent agents`](../reference/cli.md#vincent-agents) carries no
+  `no mid-run input` note — or whose `input_verdict` in `vincent agents --json`
+  (or `GET /v1/agents`) is `supported`.
 - **The workflow fails to validate** when a step pins `agent: codex` or
   `agent: cursor` outright. Change the pin, or drop `require` back to `wait` if
   the questions are optional after all.
 - **A task blocks with `input_unsupported`** when the answer changed after the
   task was created — almost always a claude upgrade past the verified family.
-  Check `vincent agents`; the fix is on the machine, not in the workflow, and
+  Check `vincent agents` for the `no mid-run input` note beside its `BUILD`
+  verdict; the fix is on the machine, not in the workflow, and
   `retry` refuses until it is done rather than reproducing the block.
 
 An agent that is **not installed** never triggers any of this: an unknown

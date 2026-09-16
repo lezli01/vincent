@@ -23,6 +23,18 @@ list with the user-facing context a commit subject cannot carry.
   anything (`agent_unavailable`, `transcript_io_error`) says so and exits 0; a
   transcript pruned by `transcript_retention_days` exits 1.
 
+- **`vincent agents` shows every agent CLI's version, build verdict, login
+  state and usage quota from the command line.** One row per adapter:
+  whether vincent has been tested against the installed build, whether you are
+  logged in (`unknown` when the CLI cannot say), and the quota the daemon knows
+  — a reading a source reported, with every window and when it was read, or the
+  last usage-limit stop it watched, with `→` for a reset the CLI stated and `≈`
+  for one vincent estimated. A missing CLI, no mid-run input, no restricted mode
+  on this OS and a failed option probe appear as notes. It exits 0 whenever the
+  daemon answered, whatever the adapters' health; `--refresh` re-probes every
+  adapter first and `--json` prints `GET /v1/agents`'s array unchanged
+  (issue #393).
+
 - **Merge, close, reopen, comment on and re-run the checks of a task's pull
   request from vincent.** The daemon gains five routes under
   `POST /v1/tasks/{id}/github/pull/` — `merge`, `close`, `reopen`, `comment`
@@ -364,6 +376,12 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **The documentation no longer promises agent output from
+  `vincent daemon status`.** The CLI reference gave it a `--json` flag and said
+  it reported which agent CLIs the daemon resolved, and the agent guide repeated
+  the claim; the command has never done either. Both now point to the new
+  `vincent agents`, which is also the command the troubleshooting guide already
+  told readers to run (issue #393).
 - **The shipped issue-resolution workflows no longer judge a task against a
   stale local base branch.** `github-resolve-issue`, its DAG pair
   `github-resolve-issue-dag` / `github-resolve-issue-unit` and
