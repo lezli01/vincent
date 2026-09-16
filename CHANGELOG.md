@@ -386,6 +386,13 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **The documentation no longer says every TUI action has a subcommand
+  without exception.** The README, quickstart and scripting guide now
+  point to a list in the CLI reference of the few things only the TUI
+  does: authoring workflows and triggers in place, a task's Workflow tab,
+  the resolve preview, live slot usage, editing a project, and live
+  streams. A test in `internal/cli` keeps that list and the TUI's API
+  calls in step (issue #395).
 - **The documentation no longer promises agent output from
   `vincent daemon status`.** The CLI reference gave it a `--json` flag and said
   it reported which agent CLIs the daemon resolved, and the agent guide repeated
