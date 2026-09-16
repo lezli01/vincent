@@ -173,3 +173,9 @@ and `PATCH /v1/triggers/{id}` (task 096).
 *Amended 2026-09-15 (task [100](100-cli-task-diff.md), issue #389):* `task diff`
 is struck — it shipped as `vincent task diff`, with `--by lane`, `--stat` and
 `--json`.
+
+*Amended 2026-09-15 (issue #391):* the task pull-request routes, which this
+list never named, are no longer API-only. `POST`, `DELETE` and `GET
+/v1/tasks/{id}/github/pull` and `GET /v1/tasks/{id}/github/pull/checks` are
+`vincent github pr link`, `pr unlink`, `pr show` and `pr checks`
+([102](102-cli-pull-request-link-and-checks.md)).

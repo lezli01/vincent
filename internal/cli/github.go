@@ -12,14 +12,14 @@ import (
 	"github.com/lezli01/vincent/internal/github"
 )
 
-// `vincent github` (spec §12.1, task 035, task 069, task 100). It exists so
+// `vincent github` (spec §12.1, task 035, task 069, task 102). It exists so
 // issues can be browsed without opening the TUI — the same reason every other
 // data view has a subcommand.
 //
 // It was read-only until task 069 gave it `pr create`, and task 068.4 added
 // `pr merge`, `close`, `reopen`, `comment` and `rerun` — every write under the
 // `pr` noun, each on a human's say-so, which is what decision record rows 11
-// and 27 now say. Task 100's `pr link` and `pr unlink` write too, but only
+// and 27 now say. Task 102's `pr link` and `pr unlink` write too, but only
 // vincent's own link column — no request reaches GitHub from either. `issues`,
 // `prs`, `status`, `pr show` and `pr checks` write nothing anywhere.
 func newGitHubCmd() *cobra.Command {
@@ -255,7 +255,7 @@ func newGitHubPRCreateCmd() *cobra.Command {
 	return cmd
 }
 
-// `vincent github pr link` is the human link without the TUI (task 100): the
+// `vincent github pr link` is the human link without the TUI (task 102): the
 // POST route the takeover's link action drives.
 //
 // The number is positional and the task is `--task`, so it reads "link PR 412
@@ -313,7 +313,7 @@ func newGitHubPRLinkCmd() *cobra.Command {
 	return cmd
 }
 
-// `vincent github pr unlink` is the human unlink without the TUI (task 100).
+// `vincent github pr unlink` is the human unlink without the TUI (task 102).
 //
 // It refuses before sending anything when the task has no live link
 // (decision 3). DELETE on a never-linked task is not a no-op: it writes a
@@ -377,7 +377,7 @@ func pullLinkLive(l *apiclient.GitHubPullLink) bool {
 }
 
 // `vincent github pr show` is the CLI's read of a task's pull request, live
-// (task 100 decision 4) — the row the TUI fetches on every workspace open.
+// (task 102 decision 4) — the row the TUI fetches on every workspace open.
 // `task show --json` carries only the stored pointer; this is what the pull
 // request says now.
 //
@@ -445,7 +445,7 @@ func newGitHubPRShowCmd() *cobra.Command {
 }
 
 // `vincent github pr checks` is the Pull Request tab's check rows without the
-// TUI (task 100). The rollup is fetched live on every call and never cached
+// TUI (task 102). The rollup is fetched live on every call and never cached
 // (task 068 decision 6); the route enforces that, and this adds nothing.
 //
 // Exit 0 means the rollup was read, **whatever CI concluded** (decision 5): a

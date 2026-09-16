@@ -482,7 +482,9 @@ rule missed, unlink one it got wrong — and a task's own workspace shows its
 pull request beside its branch, on a **Pull Request** tab that adds one row per
 CI check on its head commit and carries a second copy of unlink.
 `vincent github prs --project ID` prints one project's open pull requests with
-the task each one belongs to. Only the *link* is stored: a pull request's title,
+the task each one belongs to, and `vincent github pr link`, `pr unlink`,
+`pr show` and `pr checks` link, unlink, read and list the checks of one task's
+pull request without the TUI. Only the *link* is stored: a pull request's title,
 state, draft and merged status — and every check on it — are re-read every time
 they are shown, which is what lets a task still name a pull request that has
 since merged and dropped off the open listing.

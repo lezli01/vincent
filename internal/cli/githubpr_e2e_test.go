@@ -15,7 +15,7 @@ import (
 	"github.com/lezli01/vincent/internal/testrepo"
 )
 
-// `vincent github pr link`, `unlink`, `show` and `checks` (task 100), through
+// `vincent github pr link`, `unlink`, `show` and `checks` (task 102), through
 // the real binary against a real detached daemon with cmd/fakegh as `gh`.
 
 // runVincentGHSplit is runVincentGH with stdout kept apart from stderr, for
