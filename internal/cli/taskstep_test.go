@@ -11,7 +11,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// `vincent task show --step` and the `hold` row (task 100). The renderer is
+// `vincent task show --step` and the `hold` row (task 101). The renderer is
 // exercised over apiclient.StepRun values directly: what is asserted is the
 // text, and every field it reads is already on the wire.
 

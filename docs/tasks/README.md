@@ -114,6 +114,7 @@ the living engineering specification records implementation contracts.
 | [098](098-trigger-authoring-skill-and-builtins.md) | The `vincent-triggers` skill and the `create-trigger` and `update-triggers` built-ins | ✅ done (6/6) |
 | [099](099-fresh-base-fast-forward.md) | Fresh base: fast-forward the local base branch and show what a task started from | ✅ done (6/6) |
 | [100](100-cli-task-diff.md) | `vincent task diff`, with per-lane attribution | ✅ done (4/4) |
+| [101](101-cli-holds-and-step-inputs.md) | Show admission holds and recorded step inputs in `vincent task show` | ✅ done (4/4) |
 
 ## How to add and update a task document
 

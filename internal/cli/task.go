@@ -424,7 +424,7 @@ func taskBaseRows(t apiclient.TaskDetail) [][2]string {
 	return rows
 }
 
-// taskHoldRows is `task show`'s hold row (task 100 decision 3): a queued task
+// taskHoldRows is `task show`'s hold row (task 101 decision 3): a queued task
 // waiting on something other than a free slot, and when the daemon will try
 // again. The reason is printed as it arrives, because there are two producers
 // — `usage_limit` and `retry_backoff` — and a third would otherwise print
@@ -459,7 +459,7 @@ func newTaskShowCmd() *cobra.Command {
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
 					return exitError{code: 1}
 				}
-				// One attempt instead of the task (task 100 decision 1), read
+				// One attempt instead of the task (task 101 decision 1), read
 				// out of the detail already fetched: the runs are in it, so
 				// there is no second request and no endpoint.
 				if cmd.Flags().Changed("step") {

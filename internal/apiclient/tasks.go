@@ -324,7 +324,7 @@ const failureTrailerTag = "<previous-attempt-failure"
 // the daemon appended on a retry (task 088 decision 3). An attempt that was
 // not a retry has no trailer. It lives here rather than in either client
 // because the TUI's Step Details tab and `vincent task show --step` both mark
-// that join, and two copies could disagree about where it is (task 100).
+// that join, and two copies could disagree about where it is (task 101).
 func SplitFailureTrailer(prompt string) (body, trailer string) {
 	i := strings.Index(prompt, failureTrailerTag)
 	if i < 0 {

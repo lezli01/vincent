@@ -14,7 +14,7 @@ import (
 	"github.com/lezli01/vincent/internal/testrepo"
 )
 
-// TestTaskShowStepFromRealDaemon is task 100's proof that `task show --step`
+// TestTaskShowStepFromRealDaemon is task 101's proof that `task show --step`
 // reads what the engine actually recorded, not only what a stub serves: a
 // command step runs to completion against a real daemon, and the text view
 // carries its rendered `run` body, the shell it ran under and its working

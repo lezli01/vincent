@@ -11,7 +11,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// `vincent task show <id> --step RUN` (task 100): what one attempt was
+// `vincent task show <id> --step RUN` (task 101): what one attempt was
 // actually given, as text. It is the TUI's Step Details tab read from a shell
 // — the same four sections in the same order, and the same rule for when a
 // field appears — but it is new code rather than the tab's lipgloss panes,
