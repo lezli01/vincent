@@ -34,7 +34,17 @@ list with the user-facing context a commit subject cannot carry.
   (`branch_behind`), a check is still running (`checks_running`), the head
   moved (`head_changed`) or GitHub would not merge it (`not_mergeable`). A
   re-run is accepted only for a failed GitHub Actions run on the current head.
-  The Pull Request tab's buttons for these follow separately.
+  The task workspace's Pull Request tab offers them too, below.
+
+- **The task workspace's Pull Request tab merges, closes, reopens, comments
+  and re-runs failed checks.** `m` opens a merge popup that lists merge, squash
+  and rebase with none chosen — `y` does nothing until you pick one — and
+  merges the head commit whose checks are on the tab. `X` closes an open pull
+  request or reopens a closed one, and `ctrl+r` re-runs the failed jobs of the
+  selected GitHub Actions check; both ask `y`/`n` first. `i` opens a comment
+  popup that `ctrl+s` posts. A key appears only where its write can apply, a
+  write that has not answered cannot be sent twice, and a refusal shows the
+  daemon's reason on the tab.
 
 - **`vincent task diff` prints a task's diff from the command line.** Piped,
   the output is the daemon's diff byte for byte with no size limit, so it can go

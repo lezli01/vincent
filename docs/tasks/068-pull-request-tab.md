@@ -1,6 +1,6 @@
 # 068 — Pull request tab on the task workspace, with checks and PR actions
 
-**Status:** 🔄 in progress (3/5) · **Issue:**
+**Status:** 🔄 in progress (4/5) · **Issue:**
 [#271](https://github.com/lezli01/vincent/issues/271)
 · **Spec:** §2, §5.3, §8.4, §12.3, §13.2, §13.4, §15
 
@@ -142,7 +142,7 @@ would show a green build for code nobody ran.
 | 068.1 | `CheckRun` and `CheckRollup` in `internal/github`, produced identically by both legs, with the Actions provenance decision 3 needs | ✅ done |
 | 068.2 | `GET /v1/tasks/{id}/github/pull/checks`, its `internal/apiclient` type and its MCP tool | ✅ done |
 | 068.3 | The Pull Request tab: conditional presence, the cycle that skips it, the check rows, open-check, refresh, and unlink's second home. *Task 093 moved open-check from `c` to `enter` and removed refresh (noted 2026-09-14, issue #372)* | ✅ done |
-| 068.4 | The write leg (`gh pr merge`/`close`/`reopen`/`comment`, `gh run rerun --failed`; `PUT /pulls/{n}/merge`, `PATCH /pulls/{n}`, `POST /issues/{n}/comments`, `POST /actions/runs/{id}/rerun-failed-jobs`), its new reason cases, the write routes and the tab's confirmed actions. **Row 11 is rewritten here**, with its three reaffirmations amended in the same pull request (tracked in [#386](https://github.com/lezli01/vincent/issues/386) and [#387](https://github.com/lezli01/vincent/issues/387), 2026-09-13). *Delivered in two pull requests:* the daemon half — `internal/github` writes, the five routes, `internal/apiclient`, `vincent github pr` subcommands, `cmd/fakegh`'s write subcommands, and row 11 rewritten — landed 2026-09-15 (#386); the tab's confirmed actions are #387 | ☐ open (daemon half done) |
+| 068.4 | The write leg (`gh pr merge`/`close`/`reopen`/`comment`, `gh run rerun --failed`; `PUT /pulls/{n}/merge`, `PATCH /pulls/{n}`, `POST /issues/{n}/comments`, `POST /actions/runs/{id}/rerun-failed-jobs`), its new reason cases, the write routes and the tab's confirmed actions. **Row 11 is rewritten here**, with its three reaffirmations amended in the same pull request (tracked in [#386](https://github.com/lezli01/vincent/issues/386) and [#387](https://github.com/lezli01/vincent/issues/387), 2026-09-13). *Delivered in two pull requests:* the daemon half — `internal/github` writes, the five routes, `internal/apiclient`, `vincent github pr` subcommands, `cmd/fakegh`'s write subcommands, and row 11 rewritten — landed 2026-09-15 (#386); the tab's confirmed actions landed 2026-09-16 (#387) | ✅ done |
 | 068.5 | `scripts/068-gate.sh` and `docs/gates/068-*.md`, `cmd/fakegh`'s write subcommands, the re-captured `docs/assets/tui-*.png`, and the derived documentation for the write surface (tracked in [#388](https://github.com/lezli01/vincent/issues/388), 2026-09-13) | ☐ open |
 
 ## What 068.4 must hold
@@ -212,6 +212,63 @@ is validated against the live rollup — only a failed, Actions-backed row's run
 — so it cannot re-run an arbitrary run in the repository. There is no
 task-state guard and no idempotency key (069 decisions 4 and 7). Never
 `--delete-branch`, `--auto` or `--admin`.
+
+## 068.4, TUI half (#387, 2026-09-16)
+
+Settled with the author before the work, and binding:
+
+1. **Keys: `m` merge · `X` close/reopen · `i` comment · `ctrl+r` re-run the
+   failed jobs.** All four are `ctxTaskPull` rows, `github: true`, with no
+   vocabulary term — they are surface-local. The §6 letters `p a x r E R s c A
+   F` do not move (task 093 decision 1), which rules out `c`, `x` and `r`. `X`
+   is one key for close and reopen, whichever the state allows, on `p`'s
+   pause/resume precedent. `ctrl+r` carries a modifier because `r` is retry,
+   and that also makes it the hardest of the four to hit by accident. `X`
+   (triggers poll), `i` (workflows form, daemon status line) and `ctrl+r`
+   (chat detail) carry no term on the surfaces that already use them, and none
+   of those can be open beside a task workspace, so the three vocabulary tests
+   pass unchanged with no new exception.
+2. **The merge popup opens with no method selected.** merge / squash / rebase
+   are listed with none chosen, and `y` does nothing until `←`/`→` picks one;
+   `n` and `esc` close it and send nothing. This is decision 4 applied to the
+   popup: the wire has no default and the CLI's `--method` is required.
+
+Taken without asking, because each is conventional or forced by a record:
+
+- **Every write is absent, not present-and-refusing,** where it cannot apply —
+  decision 3 extended from re-run to all four. `m` needs an open, non-draft
+  pull request with a known head; `X` is `close` on an open one (drafts
+  included), `reopen` on a closed unmerged one, absent on a merged one; `i`
+  needs any fetched pull request; `ctrl+r` needs the selected row to be both
+  Actions-backed and failed. All four are absent when the pull row carries a
+  reason instead of a pull request. The hint line, the footer, the palette and
+  the key handler read the same predicates (`taskView.liveBindings`). `m` is
+  not hidden on a blocked, behind or failing pull request: the merge state is
+  not on the row, and the daemon's preflight answers with a named reason.
+- **The merge pin follows the check rollup.** The popup names `repo#number`,
+  the title, head → base, the short head commit and the rollup's state; the
+  head it shows and sends is the rollup's `Ref` (decision 6), the pull row's
+  `HeadSHA` only while no rollup has loaded. When both are known and differ
+  the popup says the head moved and `y` stays inert until a refetch makes them
+  agree. `enter` never confirms.
+- **Close, reopen and re-run confirm inline** with a y/n that names the
+  consequence; the re-run prompt lists every failed row of the run it acts on.
+  Any key but `y` declines.
+- **The comment popup is its own confirmation** (task 069 decision 2's
+  reasoning): typed inline or in `$EDITOR`, posted by `ctrl+s`, discarded by
+  `esc`; a blank body is refused in the client and paste lands in the body.
+- **In-flight writes cannot be sent twice** (task 069 decision 7): each write's
+  key, and the comment's `ctrl+s`, are refused until the answer lands.
+- **Popups and prompts own the keyboard and the footer** (`ctxPullMerge`,
+  `ctxPullComment`, `ctxPullConfirm`).
+- **After a reply the tab refetches** what it changed — the daemon publishes no
+  event for these writes — and the note line says what happened, or carries the
+  daemon's 409 message verbatim.
+- No task-state guard, and nothing offers `--delete-branch`, `--auto`,
+  `--admin`, or a merge anywhere but this tab.
+
+The gate, its walkthrough, the re-captured screenshots and the rest of the
+derived documentation are 068.5 (#388).
 
 ## What 068.1–068.3 changed
 

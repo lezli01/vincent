@@ -66,6 +66,7 @@ func (t *taskView) applyPull(msg taskPullMsg) {
 	}
 	t.pull, t.pullErr = msg.pull, ""
 	t.leaveAbsentPullTab()
+	t.refreshPullMerge()
 	if t.pullFormPending {
 		// The takeover's intent, now that the prefill it needs has arrived.
 		// openCreatePR reports its own refusal into pullNote when the task

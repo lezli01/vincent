@@ -38,10 +38,10 @@ import (
 // this is one screen a human is looking at right now.
 const checksPollInterval = 15 * time.Second
 
-// taskPullTab is the tab's own state: the rows, the cursor, and nothing else.
-// Everything renderable about the pull request itself is read from taskView's
-// existing pull row, so the tab and the Task Details section cannot disagree
-// about what is linked.
+// taskPullTab is the tab's own state: the rows, the cursor, and the writes in
+// progress. Everything renderable about the pull request itself is read from
+// taskView's existing pull row, so the tab and the Task Details section cannot
+// disagree about what is linked.
 type taskPullTab struct {
 	checks   apiclient.GitHubTaskChecks
 	loaded   bool
@@ -50,6 +50,12 @@ type taskPullTab struct {
 	note     string
 	noteBad  bool
 	fetching bool
+	// confirm is the inline y/n in front of close, reopen or re-run (task
+	// 068.4); while it is up it owns the keyboard.
+	confirm *pullConfirm
+	// inflight is which writes have been sent and not yet answered. Each
+	// refuses its own key until the answer lands.
+	inflight [pullWriteCount]bool
 }
 
 // taskChecksMsg carries GET /v1/tasks/{id}/github/pull/checks.
@@ -131,6 +137,13 @@ func (t *taskView) checksTickCmd() tea.Cmd {
 // here or by a reconciler tick — and it is the only state a conditional tab
 // can strand a human on.
 func (t *taskView) leaveAbsentPullTab() {
+	if !t.pullTabAvailable() {
+		// A question about a pull request that is no longer linked has no
+		// honest answer; neither does a popup confirming a write to it.
+		t.pullTab.confirm = nil
+		t.pullMerge, t.pullComment = nil, nil
+		t.dropEmptyPopup()
+	}
 	if t.tab == taskTabPull && !t.pullTabAvailable() {
 		t.tab = taskTabDetails
 	}
@@ -150,6 +163,7 @@ func (t *taskView) applyChecks(msg taskChecksMsg) {
 	if t.pullTab.cursor >= len(msg.checks.Runs) {
 		t.pullTab.cursor = max(len(msg.checks.Runs)-1, 0)
 	}
+	t.refreshPullMerge()
 }
 
 // selectedCheck is the row the key hints are about, and nil when there are no
@@ -176,6 +190,9 @@ func (t *taskView) updatePullTabKey(msg tea.KeyPressMsg) tea.Cmd {
 		return t.openCheckCmd()
 	case "u":
 		return t.unlinkPullCmd()
+	}
+	if cmd, handled := t.updatePullWriteKey(msg); handled {
+		return cmd
 	}
 	// Task actions stay reachable from here, as they do from Task Details:
 	// the tab a human happens to be reading is not a statement about what
@@ -256,7 +273,11 @@ func (t *taskView) renderPullTab(width, height int) string {
 		}
 		lines = append(lines, "", style.Render("  "+note))
 	}
-	lines = append(lines, "", styleDim.Render("  "+t.pullHintLine()))
+	if c := t.pullTab.confirm; c != nil {
+		lines = append(lines, "", ansi.Truncate(styleWarn.Render("  "+c.text), max(width, 1), "…"))
+	} else {
+		lines = append(lines, "", styleDim.Render("  "+t.pullHintLine()))
+	}
 	for len(lines) < height {
 		lines = append(lines, "")
 	}
@@ -374,14 +395,13 @@ func shortRef(ref string) string {
 // retry as something else (issue #372). The tab key and the selection row are
 // left out — the tab strip and the list already say them — and no
 // withoutGitHub pass is needed, because the tab is on the strip only while
-// the integration is usable. Re-run is deliberately *absent* rather than
-// present-and-refusing on a row no Actions run backs (task 068 decision 3) —
-// and absent on every row until 068.4 lands the write leg, because a key hint
-// for an operation that does not exist yet is the same lie in a different
-// place.
+// the integration is usable. The four writes are deliberately *absent* rather
+// than present-and-refusing where they cannot apply (task 068 decision 3,
+// extended to all four by 068.4): liveBindings reads the same predicates the
+// key handler does, and gives `X` the label its state earns.
 func (t *taskView) pullHintLine() string {
 	var hints []string
-	for _, b := range bindingsFor(ctxTaskPull) {
+	for _, b := range t.liveBindings(bindingsFor(ctxTaskPull)) {
 		switch b.key {
 		case "7", "down":
 			continue

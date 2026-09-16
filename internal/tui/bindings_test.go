@@ -1708,6 +1708,118 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 		},
 		"l": laneOpenProbe(taskTabPull),
+		// The confirmed writes (task 068.4). Each opens its confirmation and
+		// sends nothing on its own.
+		"m": func(t *testing.T) {
+			v, log := writeTabFixture(t)
+			pressPull(t, v, "m")
+			if v.pullMerge == nil || !v.popup || len(log.all()) != 0 {
+				t.Fatal("m did not open the merge confirmation, or sent something")
+			}
+		},
+		"X": func(t *testing.T) {
+			v, log := writeTabFixture(t)
+			pressPull(t, v, "X")
+			if v.pullTab.confirm == nil || v.pullTab.confirm.write != pullWriteClose || len(log.all()) != 0 {
+				t.Fatal("X did not ask to close, or sent something")
+			}
+		},
+		"i": func(t *testing.T) {
+			v, log := writeTabFixture(t)
+			pressPull(t, v, "i")
+			if v.pullComment == nil || !v.popup || len(log.all()) != 0 {
+				t.Fatal("i did not open the comment popup, or sent something")
+			}
+		},
+		"ctrl+r": func(t *testing.T) {
+			v, log := writeTabFixture(t)
+			pressPull(t, v, "ctrl+r")
+			if v.pullTab.confirm == nil || v.pullTab.confirm.runID != 77 || len(log.all()) != 0 {
+				t.Fatal("ctrl+r did not ask to re-run run 77, or sent something")
+			}
+		},
+	},
+	ctxPullMerge: {
+		"left": func(t *testing.T) {
+			f := newPullMergeForm(4)
+			f.update(registryKey(t, "left"))
+			if f.method != 0 {
+				t.Fatalf("left chose method %d, want merge", f.method)
+			}
+		},
+		"y": func(t *testing.T) {
+			v, log := writeTabFixture(t)
+			pressPull(t, v, "m", "right", "y")
+			if len(log.posts()) != 1 {
+				t.Fatalf("y sent %+v, want one merge", log.posts())
+			}
+		},
+		"n": func(t *testing.T) {
+			f := newPullMergeForm(4)
+			if _, exit := f.update(registryKey(t, "n")); !exit {
+				t.Fatal("n did not close the merge popup")
+			}
+		},
+		"esc": func(t *testing.T) {
+			f := newPullMergeForm(4)
+			if _, exit := f.update(registryKey(t, "esc")); !exit {
+				t.Fatal("esc did not close the merge popup")
+			}
+		},
+	},
+	ctxPullComment: {
+		"enter": func(t *testing.T) {
+			f := newPullCommentForm(4, "octo/api#41")
+			f.stopEdit()
+			f.update(registryKey(t, "enter"))
+			if !f.editing {
+				t.Fatal("enter did not open the body")
+			}
+		},
+		"e": func(t *testing.T) {
+			f := newPullCommentForm(4, "octo/api#41")
+			f.stopEdit()
+			called := false
+			f.openEditor = func(string) tea.Cmd { called = true; return nil }
+			f.update(registryKey(t, "e"))
+			if !called {
+				t.Fatal("e did not reach $EDITOR")
+			}
+		},
+		"ctrl+s": func(t *testing.T) {
+			f := newPullCommentForm(4, "octo/api#41")
+			var sent string
+			f.submit = func(body string) tea.Cmd { sent = body; return func() tea.Msg { return nil } }
+			f.paste("LGTM")
+			if _, exit := f.update(registryKey(t, "ctrl+s")); exit || sent != "LGTM" {
+				t.Fatalf("ctrl+s sent %q (exit=%v), want the body with the popup still up", sent, exit)
+			}
+		},
+		"esc": func(t *testing.T) {
+			f := newPullCommentForm(4, "octo/api#41")
+			if _, exit := f.update(registryKey(t, "esc")); exit || f.editing {
+				t.Fatal("the first esc did not stop typing")
+			}
+			if _, exit := f.update(registryKey(t, "esc")); !exit {
+				t.Fatal("the second esc did not close the popup")
+			}
+		},
+	},
+	ctxPullConfirm: {
+		"y": func(t *testing.T) {
+			v, log := writeTabFixture(t)
+			pressPull(t, v, "X", "y")
+			if len(log.posts()) != 1 {
+				t.Fatalf("y sent %+v, want one close", log.posts())
+			}
+		},
+		"n": func(t *testing.T) {
+			v, log := writeTabFixture(t)
+			pressPull(t, v, "X", "n")
+			if v.pullTab.confirm != nil || len(log.all()) != 0 {
+				t.Fatal("n did not decline without sending")
+			}
+		},
 	},
 	ctxTaskWorkflow: {
 		"down": func(t *testing.T) {
