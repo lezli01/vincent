@@ -1,6 +1,6 @@
 # 068 — Pull request tab on the task workspace, with checks and PR actions
 
-**Status:** 🔄 in progress (4/5) · **Issue:**
+**Status:** ✅ done (5/5) · **Issue:**
 [#271](https://github.com/lezli01/vincent/issues/271)
 · **Spec:** §2, §5.3, §8.4, §12.3, §13.2, §13.4, §15
 
@@ -143,7 +143,7 @@ would show a green build for code nobody ran.
 | 068.2 | `GET /v1/tasks/{id}/github/pull/checks`, its `internal/apiclient` type and its MCP tool | ✅ done |
 | 068.3 | The Pull Request tab: conditional presence, the cycle that skips it, the check rows, open-check, refresh, and unlink's second home. *Task 093 moved open-check from `c` to `enter` and removed refresh (noted 2026-09-14, issue #372)* | ✅ done |
 | 068.4 | The write leg (`gh pr merge`/`close`/`reopen`/`comment`, `gh run rerun --failed`; `PUT /pulls/{n}/merge`, `PATCH /pulls/{n}`, `POST /issues/{n}/comments`, `POST /actions/runs/{id}/rerun-failed-jobs`), its new reason cases, the write routes and the tab's confirmed actions. **Row 11 is rewritten here**, with its three reaffirmations amended in the same pull request (tracked in [#386](https://github.com/lezli01/vincent/issues/386) and [#387](https://github.com/lezli01/vincent/issues/387), 2026-09-13). *Delivered in two pull requests:* the daemon half — `internal/github` writes, the five routes, `internal/apiclient`, `vincent github pr` subcommands, `cmd/fakegh`'s write subcommands, and row 11 rewritten — landed 2026-09-15 (#386); the tab's confirmed actions landed 2026-09-16 (#387) | ✅ done |
-| 068.5 | `scripts/068-gate.sh` and `docs/gates/068-*.md`, `cmd/fakegh`'s write subcommands, the re-captured `docs/assets/tui-*.png`, and the derived documentation for the write surface (tracked in [#388](https://github.com/lezli01/vincent/issues/388), 2026-09-13) | ☐ open |
+| 068.5 | `scripts/068-gate.sh` and `docs/gates/068-*.md`, `cmd/fakegh`'s write subcommands, the re-captured `docs/assets/tui-*.png`, and the derived documentation for the write surface (tracked in [#388](https://github.com/lezli01/vincent/issues/388), 2026-09-13). *The gate and [its record](../gates/068-pull-request-tab.md) landed; `cmd/fakegh`'s write subcommands had already landed with 068.4's daemon half (#386), and the re-captured screenshot moved to [#414](https://github.com/lezli01/vincent/issues/414) with the rest of the task-workspace screenshots, as #388 records. The gate's manual leg against real GitHub is written and not yet walked (noted 2026-09-16, #388)* | ✅ done |
 
 ## What 068.4 must hold
 
@@ -268,7 +268,8 @@ Taken without asking, because each is conventional or forced by a record:
   `--admin`, or a merge anywhere but this tab.
 
 The gate, its walkthrough, the re-captured screenshots and the rest of the
-derived documentation are 068.5 (#388).
+derived documentation are 068.5 (#388). *The screenshots moved to #414 with
+the rest of the task-workspace screenshots (noted 2026-09-16, #388).*
 
 ## What 068.1–068.3 changed
 
