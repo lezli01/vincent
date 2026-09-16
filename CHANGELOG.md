@@ -34,7 +34,7 @@ list with the user-facing context a commit subject cannot carry.
   (`branch_behind`), a check is still running (`checks_running`), the head
   moved (`head_changed`) or GitHub would not merge it (`not_mergeable`). A
   re-run is accepted only for a failed GitHub Actions run on the current head.
-  The Pull Request tab's buttons for these follow separately.
+  The task workspace's Pull Request tab offers them too, below.
 
 - **The task workspace's Pull Request tab merges, closes, reopens, comments
   and re-runs failed checks.** `m` opens a merge popup that lists merge, squash

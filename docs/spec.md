@@ -9681,16 +9681,6 @@ What moved: the chats board's `r`→`R` and `a`→`A`; both archived boards'
 workspace's Pull Request tab `c`→`enter`; and "type your own answer" `e`→`t` in
 the answer form and in all four pickers.
 
-*Amended 2026-09-16 (task 068.4, issue #387):* the Pull Request tab gains four
-surface-local keys and none of the vocabulary's: `m` merge, `X` close or reopen
-(one key, whichever the state allows, as `p` is pause or resume), `i` comment
-and `ctrl+r` re-run the failed jobs — a modifier because `r` is retry. No §6
-letter moves. `X`, `i` and `ctrl+r` mean other things on the triggers
-takeover, the workflows list, the daemon view and a chat, which carry no term
-for them and are never open beside a task workspace, so clause 2 holds without
-an exception. While their confirmations are up they own the keyboard, the
-footer and `?`.
-
 The Pull Request tab **loses its refresh key outright**. `R` is repair on every
 tab of that workspace and does not move, and the tab already re-reads on its own
 timer. That key was also half of a live bug this amendment closes: `r` and `c`
@@ -9714,6 +9704,16 @@ lane (issue #316) and meaning *link* on the pull-request takeover, which has no
 lanes (task 052 decision 6) · `r` as *retry connecting* while disconnected ·
 `d` as the output tab's alias · `i` · `u` · the unregistered vim aliases
 `h j k l f b u G`. Task 049's retirement of `1..6` is untouched.
+
+*Amended 2026-09-16 (task 068.4, issue #387):* the Pull Request tab gains four
+surface-local keys and none of the vocabulary's: `m` merge, `X` close or reopen
+(one key, whichever the state allows, as `p` is pause or resume), `i` comment
+and `ctrl+r` re-run the failed jobs — a modifier because `r` is retry. No §6
+letter moves. `X`, `i` and `ctrl+r` mean other things on the triggers
+takeover, the workflows list, the daemon view and a chat, which carry no term
+for them and are never open beside a task workspace, so clause 2 holds without
+an exception. While their confirmations are up they own the keyboard, the
+footer and `?`.
 
 ### Mouse
 
@@ -10606,7 +10606,9 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
   reaches GitHub, every write route is excluded from MCP, and a `merge` step type
   is still not licensed. The daemon routes and the `vincent github pr`
   subcommands land first; the Pull Request tab's confirmed actions follow in
-  #387.
+  #387. *Amended 2026-09-16 (task 068.4, issue #387): they have landed — `m`,
+  `X`, `i` and `ctrl+r` on the tab, each confirmed first (§15 view 2, §15
+  Keys).*
 - ~~Container/VM-sandboxed step execution~~ — **the container half is
   promoted out of future work, 2026-08-30** (§16, task 061, issue #256): a
   `container:` block names an image, and a task's step processes run inside one

@@ -16,7 +16,7 @@ state stay on your machine; vincent provides the control plane around them.
 | Agents | Claude Code, Codex, and Cursor; per-workflow, per-step, and per-task selection |
 | Human oversight | Approval gates, mid-run answers where supported, blocked-step recovery, edit-and-retry, ad-hoc repair agents, follow-up runs on finished tasks, a notify hook that reaches you with no client open |
 | Visibility | Grouped task board, live output, durable transcripts, metrics, file-grouped diffs, workflow graph |
-| GitHub | Create a task from an issue or a **pull request**, prefilled and editable — a pull-request task runs on that pull request's head branch; issue details in templates; a project's pull requests, each linked to the task whose branch it came from, with that task's own tab carrying its live CI checks; and **open a pull request** for a task — push its branch and create the PR from inside vincent — then merge, close, reopen, comment on or re-run its failed checks from the CLI, each written to GitHub only when you ask. No stored credential |
+| GitHub | Create a task from an issue or a **pull request**, prefilled and editable — a pull-request task runs on that pull request's head branch; issue details in templates; a project's pull requests, each linked to the task whose branch it came from, with that task's own tab carrying its live CI checks; and **open a pull request** for a task — push its branch and create the PR from inside vincent — then merge, close, reopen, comment on or re-run its failed checks from the task's Pull Request tab or the CLI, each written to GitHub only when you ask. No stored credential |
 | Event triggers | Start or act on tasks from a polled command, GitHub issue and pull-request changes, or a signed push; off twice by default, proposed paused and restricted, deduplicated and rate-limited, with a delivery ledger and dry runs; built-in workflows that write triggers and never switch one on |
 | Integration | Full CLI, JSON output, stable exit codes, localhost REST API, durable state SSE and live output streams |
 | Operations | Automatic usage-limit waits, one-command diagnostics, configuration editing from the TUI and CLI, orphan cleanup, database integrity checks, backup and restore |
@@ -502,10 +502,11 @@ the pull request; the link appears immediately.
 thing without the TUI.
 
 Opening one is a write to GitHub, and so are the five things you can then do to
-a task's linked pull request from the CLI — merge, close, reopen, comment, and
-re-run failed Actions jobs (see
+a task's linked pull request from its Pull Request tab or the CLI — merge,
+close, reopen, comment, and re-run failed Actions jobs (see the
+[task workspace](guides/tui.md#task-detail) and
 [`vincent github pr merge`](reference/cli.md#vincent-github-pr-merge)). Each
-happens only when you ask for it, and
+happens only when you ask for it — on the tab, each asks first — and
 [`github.enabled`](reference/configuration.md#github) turns every one of them
 off along with every read. Agents cannot reach them: none is an MCP tool, and an
 agent that wants a pull request runs `git push` and `gh pr create` in its own
