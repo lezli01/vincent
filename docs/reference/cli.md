@@ -426,7 +426,7 @@ Registers a local git repository.
 |---|---|
 | `--name` | The directory name |
 | `--default-branch` | Detected **once, here**: `origin/HEAD`, then local `main`, then `master`, then the current branch. The name is stored and never re-detected; what is refreshed later is the branch's content, per task, when `fetch_base_branch` is on |
-| `--workflow` | None — tasks then name their own |
+| `--workflow` | None — a task that names no workflow runs `adhoc` |
 | `--max-parallel` | Unset — only the global cap applies |
 
 Registration is refused if no default branch can be determined (a detached or
