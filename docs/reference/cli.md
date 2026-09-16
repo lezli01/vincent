@@ -84,8 +84,8 @@ neither a subcommand nor on this list:
 | Creating and editing a workflow in the workflows view | `vincent workflow init`, your `$EDITOR`, then `vincent workflow validate` |
 | A task's **Workflow** tab | No subcommand; `vincent workflow render` previews a workflow file |
 | The triggers view: its list, a trigger's delivery ledger, a dry poll, and creating, editing, arming or deleting a trigger | `vincent trigger ls`, `validate`, `test` and `apply`. Arming is done in the TUI or in `$EDITOR`, never by `apply` |
-| The agent / model / effort preview in the new-task form and the workflows view | `vincent workflow render`, which resolves the same triple the same way |
-| The daemon summary on the board header and daemon view | `vincent daemon status`, `vincent agents`, `vincent doctor` and `vincent config get` between them; how many slots are in use right now is shown only in the TUI |
+| The agent / model / effort preview in the new-task form and the workflows view, and the new-task form's branch-name preview | `vincent workflow render`, which resolves the same triple the same way. No subcommand previews the branch name a task would get; `vincent task show` prints it once the task exists |
+| The daemon summary on the board header and daemon view | `vincent daemon status`, `vincent agents`, `vincent doctor` and `vincent config get` between them. The daemon-wide count of slots in use right now, with its lanes and on-input breakdown, is shown only in the TUI; `vincent project ls --json` carries each project's `slots_used` |
 | Editing a project | Not yet a subcommand |
 | Live updates as they happen | Subcommands poll: `vincent task transcript -f`, `vincent chat transcript -f`, and `vincent chat send` waits for the answer |
 
