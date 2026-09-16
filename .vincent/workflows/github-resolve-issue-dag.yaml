@@ -1936,9 +1936,10 @@ steps:
 
       ## Then write the pull request
 
-      This repository's pull request template makes four claims. Satisfy the
+      This repository's pull request template makes five claims. Satisfy the
       ones that apply and be honest about the ones that do not:
 
+      - A plain-language PR title, carrying no Conventional Commit prefix.
       - Conventional Commits.
       - Tests added or updated for behaviour changes.
       - User-visible changes noted under `## [Unreleased]` in `CHANGELOG.md`.
@@ -1949,8 +1950,13 @@ steps:
 
       Write two files:
 
-      - `.vincent-issue/pr-title.txt` — one line, Conventional Commits style,
-        no trailing prose.
+      - `.vincent-issue/pr-title.txt` — one line, plain language, no trailing
+        prose, and never a Conventional Commits prefix: `Add workflow fields`,
+        never `feat: add workflow fields`. A prefix belongs on the commits, not
+        on the pull request — GitHub copies the title into the merge commit
+        body, so a prefixed title makes Release Please record the change twice,
+        and `.github/workflows/pr-title.yml` is a required check that fails the
+        pull request for it.
       - `.vincent-issue/pr.md` — the pull request body, following
         `.github/PULL_REQUEST_TEMPLATE.md`. Under **Related**, write
         `Closes #<the issue number from issue.json>` so merging the PR closes
@@ -1998,13 +2004,14 @@ steps:
     # that changed an interface and the lane that updated its call sites have
     # both merged by now, which is exactly why neither of them could assert it.
     #
-    # The ci path's `proof.sh` takes `green.sh`'s slot, and the mode clause and
-    # the 25 minutes are the sequential file's too; its `implement` check says
-    # why.
+    # The ci path's `proof.sh` takes `green.sh`'s slot, and the mode clause, the
+    # title clause and the 25 minutes are the sequential file's too; its
+    # `implement` check says why.
     check: >
       ! git ls-files .vincent-issue | grep -q . &&
       test "$(git rev-list --count origin/{{.Task.BaseBranch}}..HEAD)" -gt 0 &&
       test -s .vincent-issue/pr-title.txt &&
+      { ! grep -Eq '^[a-z][a-z0-9_-]*(\([^)]+\))?!?:[[:space:]]+' .vincent-issue/pr-title.txt || { echo 'pr-title.txt carries a Conventional Commit prefix, which .github/workflows/pr-title.yml rejects; write a plain-language title:' >&2; cat .vincent-issue/pr-title.txt >&2; false; }; } &&
       test -s .vincent-issue/pr.md &&
       { noexec=$(git ls-files -s -- 'scripts/*.sh' | awk '$1 != "100755" { print $4 }'); test -z "$noexec" || { echo 'scripts not committed executable (git update-index --chmod=+x):' >&2; echo "$noexec" >&2; false; }; } &&
       {{if eq (index .Steps "classify").ExitCode 0}}sh .vincent-issue/green.sh &&{{end}}

@@ -1559,9 +1559,10 @@ steps:
       Commits follow Conventional Commits (`feat`, `fix`, `docs`, `ci`, `chore`,
       `refactor`, `test`). Never add a co-author trailer.
 
-      This repository's pull request template makes four claims. Satisfy the
+      This repository's pull request template makes five claims. Satisfy the
       ones that apply and be honest about the ones that do not:
 
+      - A plain-language PR title, carrying no Conventional Commit prefix.
       - Conventional Commits.
       - Tests added or updated for behaviour changes.
       - User-visible changes noted under `## [Unreleased]` in `CHANGELOG.md` —
@@ -1578,8 +1579,13 @@ steps:
 
       Then write two more files:
 
-      - `.vincent-issue/pr-title.txt` — one line, Conventional Commits style,
-        no trailing prose.
+      - `.vincent-issue/pr-title.txt` — one line, plain language, no trailing
+        prose, and never a Conventional Commits prefix: `Add workflow fields`,
+        never `feat: add workflow fields`. A prefix belongs on the commits, not
+        on the pull request — GitHub copies the title into the merge commit
+        body, so a prefixed title makes Release Please record the change twice,
+        and `.github/workflows/pr-title.yml` is a required check that fails the
+        pull request for it.
       - `.vincent-issue/pr.md` — the pull request body, following
         `.github/PULL_REQUEST_TEMPLATE.md`. Under **Related**, write
         `Closes #<the issue number from issue.json>` so merging the PR closes
@@ -1632,10 +1638,19 @@ steps:
     # (CLAUDE.md). It names the scripts, because §8.4 hands the retry this
     # output. 25 minutes rather than 15 because on the ci path gates run before
     # the suite; on the other paths a ceiling costs nothing.
+    #
+    # The title clause carries the same pattern `.github/workflows/pr-title.yml`
+    # rejects a pull request title with, so a conventional prefix fails here —
+    # where §7.2 can retry it against the `max_retries` this step already has —
+    # rather than landing as a red required check no step in this workflow can
+    # see and a human has to notice on GitHub (issue #450). It reads the file
+    # directly, so CLAUDE.md's "never pipe into `grep -q`" SIGPIPE trap does
+    # not apply, and the `test -s` before it is what guarantees the file exists.
     check: >
       ! git ls-files .vincent-issue | grep -q . &&
       test "$(git rev-list --count origin/{{.Task.BaseBranch}}..HEAD)" -gt 0 &&
       test -s .vincent-issue/pr-title.txt &&
+      { ! grep -Eq '^[a-z][a-z0-9_-]*(\([^)]+\))?!?:[[:space:]]+' .vincent-issue/pr-title.txt || { echo 'pr-title.txt carries a Conventional Commit prefix, which .github/workflows/pr-title.yml rejects; write a plain-language title:' >&2; cat .vincent-issue/pr-title.txt >&2; false; }; } &&
       test -s .vincent-issue/pr.md &&
       { noexec=$(git ls-files -s -- 'scripts/*.sh' | awk '$1 != "100755" { print $4 }'); test -z "$noexec" || { echo 'scripts not committed executable (git update-index --chmod=+x):' >&2; echo "$noexec" >&2; false; }; } &&
       {{if eq (index .Steps "classify").ExitCode 0}}sh .vincent-issue/green.sh &&{{end}}
