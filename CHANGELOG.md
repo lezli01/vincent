@@ -13,6 +13,16 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **`vincent project edit` changes a registered project from the command
+  line.** Until now only the TUI's projects view could edit a project, and a
+  project's branch template could only be set through the API. The new command
+  has one flag per setting: `--name`, `--path`, `--default-branch`,
+  `--workflow`, `--max-parallel` and `--branch-template`. It sends only the
+  flags you pass. An empty value (`--workflow ""`) clears the workflow, the cap
+  or the branch template. Pass `--path` with `--default-branch` to repoint a
+  project at a repository that lacks its stored default branch. With no flag
+  the command changes nothing and exits 1.
+
 - **`vincent chat transcript` reads and follows a chat turn's transcript.** A
   chat's transcripts were reachable only from the TUI's chat workspace. The new
   command prints one turn — the running turn, else the newest, or the one

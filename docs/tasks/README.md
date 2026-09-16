@@ -118,6 +118,7 @@ the living engineering specification records implementation contracts.
 | [102](102-cli-pull-request-link-and-checks.md) | `vincent github pr link`, `unlink`, `show` and `checks` | ✅ done (3/3) |
 | [103](103-cli-chat-transcript.md) | `vincent chat transcript`: read and follow a chat turn's transcript | ✅ done (4/4) |
 | [104](104-cli-agents.md) | `vincent agents`: login state, build verdict and quota from the command line | ✅ done (4/4) |
+| [105](105-cli-project-edit.md) | `vincent project edit`: change a registered project's settings from the command line | ✅ done (4/4) |
 
 ## How to add and update a task document
 

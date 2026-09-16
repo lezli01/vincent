@@ -183,3 +183,7 @@ list never named, are no longer API-only. `POST`, `DELETE` and `GET
 *Amended 2026-09-16 (task [104](104-cli-agents.md), issue #393):* `agents` is
 struck — `GET /v1/agents` shipped as `vincent agents`, with `--refresh` and
 `--json`.
+
+*Amended 2026-09-16 (task [105](105-cli-project-edit.md), issue #394):* the
+project `PATCH /v1/projects/{id}` is struck — it shipped as
+`vincent project edit`, with a flag for each of its six fields and `--json`.

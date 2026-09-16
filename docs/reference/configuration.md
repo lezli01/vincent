@@ -367,7 +367,7 @@ Names resolve through a chain, most specific first:
 |---|---|
 | a pull request's head branch | the task was created from a pull request (`--github-pull` / `github_pull`). Nothing below overrides it |
 | the task's own name | `--branch` / `branch_name`, used **verbatim**, never rendered |
-| project template | `PATCH /v1/projects/{id}` → `branch_template` |
+| project template | [`vincent project edit --branch-template`](cli.md#vincent-project-edit), or `PATCH /v1/projects/{id}` → `branch_template` |
 | global template | this key |
 | built-in | nothing configured |
 
@@ -1355,7 +1355,8 @@ grouping whenever it is not the one configured here.
 
 These live in the database, not in `config.yaml`, because they belong to a
 registered repository rather than to the daemon. Set them at registration, edit
-them in the TUI's projects view, or `PATCH /v1/projects/{id}`:
+them with [`vincent project edit`](cli.md#vincent-project-edit), in the TUI's
+projects view, or with `PATCH /v1/projects/{id}`:
 
 | Setting | Meaning |
 |---|---|
@@ -1369,6 +1370,7 @@ them in the TUI's projects view, or `PATCH /v1/projects/{id}`:
 ```sh
 vincent project add /path/to/repo --name api --default-branch develop \
   --workflow feature-pr --max-parallel 2
+vincent project edit 1 --branch-template 'api/{{.Slug}}'
 ```
 
 ## Environment variables
