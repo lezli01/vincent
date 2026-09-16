@@ -170,9 +170,11 @@ func TestCreatePullDuplicateHeadIsNamedOnBothLegs(t *testing.T) {
 	})
 }
 
-// A 403 is `forbidden` on both legs. The write path is where a read-scoped
-// credential lands, and the API's job is to say so in one word rather than
-// hand a client GitHub's sentence.
+// A 403 is `no_write_scope` on both legs — the reason every write gives, not
+// the read side's `forbidden` (task 068.4 decision 4; it was `forbidden` until
+// 2026-09-15). The write path is where a read-scoped credential lands, and
+// the API's job is to say so in one word rather than hand a client GitHub's
+// sentence.
 func TestCreatePullForbiddenIsNamedOnBothLegs(t *testing.T) {
 	t.Run("rest", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -186,13 +188,13 @@ func TestCreatePullForbiddenIsNamedOnBothLegs(t *testing.T) {
 		})
 		_, err := c.CreatePull(context.Background(), Repo{Owner: "octo", Name: "repo"},
 			CreateOptions{Base: "master", Head: "topic", Title: "T"})
-		assertReasonAndNoLeak(t, err, ReasonForbidden, "not accessible")
+		assertReasonAndNoLeak(t, err, ReasonNoWriteScope, "not accessible")
 	})
 	t.Run("gh", func(t *testing.T) {
 		c, _ := ghClient(t, "forbidden")
 		_, err := c.CreatePull(context.Background(), Repo{Owner: "octo", Name: "repo"},
 			CreateOptions{Base: "master", Head: "topic", Title: "T"})
-		assertReasonAndNoLeak(t, err, ReasonForbidden, "not accessible")
+		assertReasonAndNoLeak(t, err, ReasonNoWriteScope, "not accessible")
 	})
 }
 

@@ -17,6 +17,8 @@ reach the pull request when a workflow pushes. That is the whole point of the
 feature and it is also where the cost is: §10 was written as *cut a new branch,
 refuse a pre-existing one*, and this inverts both halves for one class of task.
 
+*Amended 2026-09-15: the next paragraph was true when written and is not now — task 069 made vincent push and open pull requests, task 068.4 made it merge, close, reopen, comment and re-run, all human-triggered, and row 11 is rewritten ([068](068-pull-request-tab.md) decision 1).*
+
 Decision record row 11 and row 27 are untouched. vincent still pushes nothing,
 opens nothing and merges nothing; `internal/github` gained no write method and
 no mutating `gh` subcommand. Fetching is a read.

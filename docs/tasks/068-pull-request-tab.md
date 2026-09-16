@@ -142,7 +142,7 @@ would show a green build for code nobody ran.
 | 068.1 | `CheckRun` and `CheckRollup` in `internal/github`, produced identically by both legs, with the Actions provenance decision 3 needs | ✅ done |
 | 068.2 | `GET /v1/tasks/{id}/github/pull/checks`, its `internal/apiclient` type and its MCP tool | ✅ done |
 | 068.3 | The Pull Request tab: conditional presence, the cycle that skips it, the check rows, open-check, refresh, and unlink's second home. *Task 093 moved open-check from `c` to `enter` and removed refresh (noted 2026-09-14, issue #372)* | ✅ done |
-| 068.4 | The write leg (`gh pr merge`/`close`/`reopen`/`comment`, `gh run rerun --failed`; `PUT /pulls/{n}/merge`, `PATCH /pulls/{n}`, `POST /issues/{n}/comments`, `POST /actions/runs/{id}/rerun-failed-jobs`), its new reason cases, the write routes and the tab's confirmed actions. **Row 11 is rewritten here**, with its three reaffirmations amended in the same pull request (tracked in [#386](https://github.com/lezli01/vincent/issues/386) and [#387](https://github.com/lezli01/vincent/issues/387), 2026-09-13) | ☐ open |
+| 068.4 | The write leg (`gh pr merge`/`close`/`reopen`/`comment`, `gh run rerun --failed`; `PUT /pulls/{n}/merge`, `PATCH /pulls/{n}`, `POST /issues/{n}/comments`, `POST /actions/runs/{id}/rerun-failed-jobs`), its new reason cases, the write routes and the tab's confirmed actions. **Row 11 is rewritten here**, with its three reaffirmations amended in the same pull request (tracked in [#386](https://github.com/lezli01/vincent/issues/386) and [#387](https://github.com/lezli01/vincent/issues/387), 2026-09-13). *Delivered in two pull requests:* the daemon half — `internal/github` writes, the five routes, `internal/apiclient`, `vincent github pr` subcommands, `cmd/fakegh`'s write subcommands, and row 11 rewritten — landed 2026-09-15 (#386); the tab's confirmed actions are #387 | ☐ open (daemon half done) |
 | 068.5 | `scripts/068-gate.sh` and `docs/gates/068-*.md`, `cmd/fakegh`'s write subcommands, the re-captured `docs/assets/tui-*.png`, and the derived documentation for the write surface (tracked in [#388](https://github.com/lezli01/vincent/issues/388), 2026-09-13) | ☐ open |
 
 ## What 068.4 must hold
@@ -166,6 +166,52 @@ would show a green build for code nobody ran.
   property rather than a hope.
 - The MCP tools for the write routes need descriptions that **say they write to
   GitHub**.
+
+  > **Superseded 2026-09-15 (#386).** There are no such tools: all five write
+  > routes are in `mcp.Excluded`, under task 069 decision 3's wording. "The
+  > keypress is the consent" only holds while a human presses it, and
+  > `mcp.wire_steps` defaults to true, so a tool would put these writes on the
+  > step path that decision 1 says nothing reaches. That rule wins over this
+  > bullet. Nothing is lost: a step's agent can run `gh pr merge` in its own
+  > worktree, which is row 11's original path. The "a rejected confirmation
+  > sends nothing" test above belongs to the TUI half (#387).
+
+## 068.4, daemon half (#386, 2026-09-15)
+
+Settled with the author before the work, and binding:
+
+1. **The write routes are excluded from MCP** (above). Spec §13.4 carries the
+   amendment and the new count, and `internal/api/mcp_parity_test.go` names the
+   five routes.
+2. **CLI subcommands ship with the routes**, under `vincent github pr`:
+   `merge` (`--task`, `--method`, `--head-sha`), `close`, `reopen`, `comment`
+   (`--body` or `--body-file -`) and `rerun` (`--task`, `--run-id`). `merge`
+   requires `--method` and `--head-sha`: the CLI has no confirmation popup, so
+   the flags are where the human names exactly what is sent (decision 4).
+3. **Merge refusals come from a preflight read, and the merge is pinned to a
+   head SHA.** `mergeStateStatus` (`gh`) or `mergeable_state` (REST), plus the
+   live rollup when blocked: `BEHIND` → `branch_behind`; `BLOCKED` with an
+   unfinished check → `checks_running`; `BLOCKED` otherwise, `DIRTY`, `DRAFT`,
+   closed or merged → `not_mergeable`; `CLEAN`, `UNSTABLE`, `HAS_HOOKS` and
+   `UNKNOWN` → send. A head that is not the confirmed `head_sha` is
+   `head_changed`, and the send carries the pin (`--match-head-commit`, REST
+   `sha`) so a push between preflight and merge is refused rather than merged
+   (decision 6). GitHub's own refusal text is a fallback that reaches only the
+   daemon log. The merge state is **not** a `PullRequest` field: the REST
+   listing cannot fill it, which is 068.1's reasoning about a workflow name.
+4. **A 403 on any write is `no_write_scope`, `CreatePull` included.**
+   `forbidden` stays the read side's reason. This changes task 069's fallback
+   reason, so `scripts/069-gate.sh` scenario 4, its gate record and the 069
+   record carry dated notes. A 404 is never reinterpreted as missing scope.
+
+Decided without asking, as conventional or already forced by a record: every
+route refuses 409 `pull_not_linked` without a live link and runs the §13.2
+gate first; merge, close and reopen answer the pull request re-read after the
+write, comment its URL, re-run its run id, and no event is published. A re-run
+is validated against the live rollup — only a failed, Actions-backed row's run
+— so it cannot re-run an arbitrary run in the repository. There is no
+task-state guard and no idempotency key (069 decisions 4 and 7). Never
+`--delete-branch`, `--auto` or `--admin`.
 
 ## What 068.1–068.3 changed
 

@@ -14,8 +14,10 @@
 #      a human unlink (suppressed does not count as linked, decision 4) the
 #      create reaches GitHub, whose own refusal is the backstop — a 200
 #      fallback carrying `pull_exists` and a compare URL
-#   4. the create fails after the push: a 200 fallback carrying `forbidden`,
-#      whose compare URL names a branch the remote really has, and no link
+#   4. the create fails after the push: a 200 fallback carrying
+#      `no_write_scope` (it was `forbidden` until 2026-09-15, when task 068.4
+#      gave every write's 403 one spelling), whose compare URL names a branch
+#      the remote really has, and no link
 #   5. a rejected push creates nothing: a diverged branch on the remote is
 #      refused 409 `push_rejected`, never forced over (decision 5), and `gh`
 #      is never asked
@@ -369,8 +371,10 @@ if run_scenario 4; then
 
   api_status POST "/tasks/$TASK_ID/github/pull/create" "$(create_body "Fall back to the compare page" false)"
   [[ "$STATUS" == "200" ]] || fail "a refused create answered $STATUS, want the 200 fallback: $BODY"
-  expect "$BODY" "the fallback is not a pushed forbidden" \
-    '.created == false and .pushed == true and .reason == "forbidden"'
+  # A 403 on a write is `no_write_scope` — the create included, since task
+  # 068.4 (2026-09-15). `forbidden` stays the read side's reason.
+  expect "$BODY" "the fallback is not a pushed no_write_scope" \
+    '.created == false and .pushed == true and .reason == "no_write_scope"'
   # url.PathEscape escapes the branch's `/`; the slug is otherwise [a-z0-9-].
   escaped="${BRANCH//\//%2F}"
   expect "$BODY" "the compare URL does not name main...$escaped" \

@@ -12,13 +12,13 @@ import (
 	"github.com/lezli01/vincent/internal/workflow"
 )
 
-// The GitHub pull-request endpoints (spec §13.2, tasks 052 and 068).
-// Read-only against GitHub throughout *as of 068.3*: the listing fetches and
+// The GitHub pull-request endpoints (spec §13.2, tasks 052 and 068). Every
+// route in this file is read-only against GitHub: the listing fetches and
 // returns, the single fetch fetches and returns, the check rollup fetches and
-// returns, and the two write routes touch only vincent's own
-// `github_pull_json` column. Nothing here sends anything to GitHub yet — task
-// 068 decision 1 settled that it will, and 068.4 is where merge, close,
-// re-run and comment land beside these.
+// returns, and link and unlink touch only vincent's own `github_pull_json`
+// column. The routes that send something to GitHub live beside these —
+// create in githubpullcreate.go (task 069), and merge, close, reopen, comment
+// and re-run in githubpullwrite.go (task 068.4).
 
 // githubPullResponse is one row of GET /v1/projects/{id}/github/pulls, and
 // the `pull` half of GET /v1/tasks/{id}/github/pull.

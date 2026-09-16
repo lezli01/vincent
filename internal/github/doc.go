@@ -1,17 +1,20 @@
 // Package github is the daemon's door to GitHub (task 035, task 052, task
-// 069, spec §5.3, §13.2). It answers four questions — is this project's
-// `origin` a github.com repository, can this daemon reach it, what does one
-// issue look like, and what does one pull request look like — and it performs
-// exactly one action: it creates a pull request.
+// 068, task 069, spec §5.3, §13.2). It answers four questions — is this
+// project's `origin` a github.com repository, can this daemon reach it, what
+// does one issue look like, and what does one pull request look like — and it
+// acts on a pull request when a human asks it to.
 //
-// It was read-only until task 069, and that amendment is deliberate and
-// narrow. **CreatePull is the only write.** No other method here writes, no
-// other `POST` is made and no other mutating `gh` subcommand is run: nothing
-// updates, comments on, closes or merges anything, and decision record row
-// 11's prohibition on hardcoded merge behaviour is untouched. The write is
-// reached only from a human pressing a key in vincent — the route in front of
-// it is excluded from the MCP tool surface (§13.4) — and `github.enabled`
-// gates it exactly as it gates every read.
+// It was read-only until task 069 gave it one write, CreatePull, and that
+// posture is now dated rather than current: task 068.4 added MergePull,
+// ClosePull, ReopenPull, CommentPull and RerunFailedJobs (write.go), which is
+// decision record row 11 rewritten — vincent delivers, human-triggered. The
+// callers of runGHWrite and restWrite are the whole of what it writes. Every
+// write is reached only from a human in vincent — the routes in front of them
+// are excluded from the MCP tool surface (§13.4) — `github.enabled` gates them
+// exactly as it gates every read, and a 403 on any of them is
+// `no_write_scope`, never the read side's `forbidden`. A merge reads before it
+// writes: its refusals come from a preflight of the merge state and the live
+// check rollup, and the send is pinned to the head commit the human confirmed.
 //
 // CompareURL is unchanged, and is now the fallback rather than the only path:
 // it is string construction over a parsed Repo, nothing is sent when it is
@@ -31,9 +34,11 @@
 // "secret management (daemon inherits the user's environment)" non-goal
 // intact.
 //
-// Nothing in this package is reachable from the step path: an issue is
-// snapshotted onto the task at creation and every later render reads the
-// snapshot, so a step render still cannot fail for an external reason (§8.4).
+// Nothing in this package is reachable from the step path, the writes
+// included: an issue is snapshotted onto the task at creation and every later
+// render reads the snapshot, so a step render still cannot fail for an
+// external reason (§8.4), and no step type, default workflow or automatic
+// behaviour calls a write (task 068 decision 1).
 //
 // Checks are the third shape, and they are neither: they are fetched on
 // demand and never held at all. A check rollup is a fact about a *commit*,

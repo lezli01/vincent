@@ -39,7 +39,7 @@ the GitHub reads, the [trigger](triggers.md) reads, `trigger_validate` and both
 dry runs, and the read-only `health`, `info`, `config_get`, `agent_list`,
 `doctor`, `orphan_list`.
 
-Sixteen routes are deliberately **not** tools:
+Twenty-one routes are deliberately **not** tools:
 
 - `POST /v1/daemon/stop`
 - `POST /v1/agents/{name}/quota`
@@ -57,6 +57,11 @@ Sixteen routes are deliberately **not** tools:
 - `DELETE /v1/triggers/{id}`
 - `POST /v1/triggers/{id}/events`
 - `POST /v1/tasks/{id}/github/pull/create`
+- `POST /v1/tasks/{id}/github/pull/merge`
+- `POST /v1/tasks/{id}/github/pull/close`
+- `POST /v1/tasks/{id}/github/pull/reopen`
+- `POST /v1/tasks/{id}/github/pull/comment`
+- `POST /v1/tasks/{id}/github/pull/checks/rerun`
 
 An agent should not be able to stop, garbage-collect or reconfigure the daemon
 that is supervising it. Those stay CLI-and-curl only. The two
@@ -88,12 +93,15 @@ downstream could tell that from the real thing — the
 Nothing is lost, because the two things that push are a status line and an
 app-server probe, neither of which is an agent step reaching for a tool.
 
-The last one is the [one route that writes to GitHub](../features.md#open-a-pull-request):
-it pushes a task's branch and opens its pull request, and the only thing gating
-it is a human pressing the key — no config switch, no confirmation the daemon
-can check. An agent-callable version would be consent nobody gave. Nothing is
-lost: an agent that wants a pull request has a shell in its own worktree and
-runs `git push` and `gh pr create` there.
+The last six are the routes that [write to GitHub](../features.md#open-a-pull-request):
+one pushes a task's branch and opens its pull request, and the other five merge,
+close, reopen, comment on and re-run the failed checks of a task's linked one.
+The only thing gating any of them is a human asking — no config switch, no
+confirmation the daemon can check. An agent-callable version would be consent
+nobody gave, and because `mcp.wire_steps` is on by default it would put those
+writes on the step path. Nothing is lost: an agent that wants a pull request has
+a shell in its own worktree and runs `git push`, `gh pr create` or `gh pr merge`
+there.
 
 `config_get` is the one tool whose body differs from its route's. The HTTP
 response serves `config.yaml` in full; the tool masks `environment.set`'s
