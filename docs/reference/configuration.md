@@ -1103,10 +1103,11 @@ the task's worktree and removed with it.
 
 **Which steps, today.** Every `command` step, and every `check:` — including a
 check hanging off an agent step. A `manual` step runs no process, so there is
-nothing to contain. The **agent process itself still runs on the host**: moving
-it needs a launch seam across all three adapters and is the next piece of this
-work. A containerized task whose workflow has agent steps is therefore a mixed
-run, and it is neither refused at creation nor warned about.
+nothing to contain. The **agent process itself still runs on the host**: the
+three adapters start their runs through one launch seam, but its only launcher
+is the host's, and a container launcher is the next piece of this work. A
+containerized task whose workflow has agent steps is therefore a mixed run, and
+it is neither refused at creation nor warned about.
 
 **The image is yours.** It must already carry the agent CLI your workflows'
 agent steps resolve to, and `git`. Vincent builds no image, publishes none and

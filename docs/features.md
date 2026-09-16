@@ -330,10 +330,11 @@ which is the default, and nothing changes: every step runs on the host exactly
 as before.
 
 Today that covers **command steps and every `check:`**, including a check on an
-agent step. The **agent process itself still runs on the host** — putting it in
-the container needs a launch seam across all three adapters, and that is the
-next piece of this work. A containerized task with agent steps is a mixed run
-until then, and vincent neither refuses it nor warns about it.
+agent step. The **agent process itself still runs on the host** — all three
+adapters now start their runs through one launch seam, but the only launcher so
+far is the host's, and a container launcher is the next piece of this work. A
+containerized task with agent steps is a mixed run until then, and vincent
+neither refuses it nor warns about it.
 
 The image is yours and must already carry your agent CLI and `git` — vincent
 builds, publishes and bundles nothing. The repository and the worktree are

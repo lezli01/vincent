@@ -2604,6 +2604,36 @@ type RunSpec struct {
     ResumeSessionID string           // resume the CLI's own prior session (§7.3 amended; task 063).
                                      // "" is the fresh session every workflow step gets and always got;
                                      // only a chat turn ever sets it
+    Launcher       Launcher          // starts the run's process (task 062.1); nil = HostLauncher
+}
+
+// Command, Launcher and Process are the launch seam (task 062.1, added
+// 2026-09-16). An adapter builds the Command; the Launcher the caller chose
+// starts it; the adapter's RunHandle stops, identifies and waits on the run
+// only through the Process.
+type Command struct {
+    Path      string    // the resolved binary
+    Args      []string  // argv after Path, exactly as the adapter built it
+    Dir       string    // the task worktree
+    Env       []string  // nil = inherit the daemon's, as RunSpec.Env
+    Stdin     io.Reader // the prompt; ignored when StdinPipe is set
+    StdinPipe bool      // retain a stdin to write to after launch (claude's §7.4 input mode)
+    Stderr    io.Writer // the adapter's stderr tail
+}
+
+type Launcher interface {
+    Launch(cmd Command) (Process, error)
+}
+
+type Process interface {
+    Stdout() io.Reader
+    Stdin() io.WriteCloser         // nil unless Command.StdinPipe
+    Wait() (exitCode int, err error) // err is waiting failing, never a non-zero exit
+    Terminate() error
+    Kill() error                   // the whole tree
+    PID() int                      // journaled for §12.4
+    Argv() []string
+    Release()                      // the platform handle (a Job object on Windows)
 }
 
 // Resumer is the optional capability an adapter implements when its CLI can
@@ -2716,6 +2746,28 @@ type Option struct {
 
 The daemon consumes only this interface; adding an agent (Gemini CLI, etc.) is one new
 adapter with zero core changes.
+
+**The launch seam (task 062.1, added 2026-09-16).** An adapter builds its run's
+argv and hands it over; it never spawns the process itself. `Start` resolves the
+binary, builds a `Command` — argv, worktree, environment, the prompt on stdin or
+a request for a retained stdin pipe, the stderr tail — and passes it to
+`agent.Launch(spec.Launcher, cmd)`. Everything the `RunHandle` does to the
+process afterwards goes through the returned `Process`: `Kill`, `Terminate`,
+`PID`, `Argv` and `Wait`'s exit code delegate to it, while stream reading, §17
+parsing and failure classification stay in the adapter. The launcher owns the
+process and not just the argv because `Kill`, `Terminate` and `PID` are exactly
+what a containerized run has to answer differently, and the engine's cancel path
+reaches them through the handle (task 062 decision 1).
+
+`HostLauncher` is the only launcher that ships. It reproduces the spawn the three
+adapters each performed before the seam: the resolved path, a process group on
+POSIX, a Job object with `CREATE_NO_WINDOW` on Windows (procx), and a PID
+`procx.Identity` can journal. A nil `RunSpec.Launcher` means the host launcher,
+the same nil-keeps-today's-behaviour rule `Env` follows; the task engine passes
+it explicitly from one helper, and chats leave it nil. Only the three runs go
+through the seam: the §9.5/§9.6 probes, claude's in-`Start` `--version` probe,
+codex's `app-server` quota exchange and a command step's spawn describe or run
+on the host and do not.
 
 **Tool subjects (T4.14).** `ToolUse` carried only a name through M4, so the
 output pane rendered `▸ Bash` — a keyword, not an event. Every dialect has the
@@ -4915,7 +4967,11 @@ every `check:` — including a check hanging off an agent step; a `manual` step
 runs no process, so containerizing it is vacuous. The **agent** process itself
 is still spawned on the host: moving it needs a spawn seam across all three
 adapters and is task 062. Until that lands, a containerized task whose workflow
-has agent steps is a mixed run, and it is neither refused nor warned about.* The
+has agent steps is a mixed run, and it is neither refused nor warned about.*
+*Amended 2026-09-16 (task 062.1, issue #396): the spawn seam has landed (§9.1),
+but its only launcher is the host's, so agent processes still run on the host
+and the mixed run above is still what a containerized task gets. Task 062.2
+(issue #397) adds the container launcher.* The
 image is the user's: it must already carry the agent CLI a workflow's agent
 steps resolve to, and `git`. Vincent builds nothing, publishes nothing and
 bundles nothing, the posture it already takes toward `gh` and `cosign`.
@@ -9789,7 +9845,10 @@ currently true to show (§15 view 6).
   worktree and removed with it — every `command` step and every `check:` as of
   task 061, and the **agent** process itself once task 062 lands the spawn seam.
   Until then a containerized task's agent steps still run on the host, so the
-  confinement below is the container's and does not yet reach them. What that
+  confinement below is the container's and does not yet reach them. *Amended
+  2026-09-16 (task 062.1, issue #396): the seam landed as 062.1 (§9.1) with only
+  a host launcher, so agent processes still run on the host; the container
+  launcher is 062.2 (issue #397).* What that
   confines is real and is the point: the
   filesystem outside the two bind mounts — the project repository and the task's
   worktree, both at their own absolute paths — the shell, and whatever tooling
@@ -10618,7 +10677,9 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
   `container:` block names an image, and a task's step processes run inside one
   container created with its worktree and removed with it — command steps and
   checks as of task 061, agent steps once **062** lands the spawn seam the three
-  adapters need. The image
+  adapters need. *Amended 2026-09-16 (task 062.1, issue #396): the seam landed
+  as 062.1 with only a host launcher, so agent steps still run on the host until
+  062.2 (issue #397) adds the container launcher.* The image
   is the user's and must already carry the agent CLI and `git`; vincent builds,
   publishes and bundles nothing, which is the posture it already takes toward
   `gh` and `cosign`. **VM-level** sandboxing stays deferred, and so do three
