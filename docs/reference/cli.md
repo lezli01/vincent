@@ -221,7 +221,7 @@ of [`GET /v1/agents`](api.md#daemon) and needs a running daemon — with none it
 AGENT   VERSION             BUILD     LOGIN          QUOTA                                                                                                NOTES
 claude  2.1.226             tested    unknown        claude status line · 5h 28.5% → 2026-09-16T14:40:00+02:00 · 7d 62% · read 2026-09-16T11:40:02+02:00
 codex   -                   -         -              spent → 2026-09-16T13:40:00+02:00                                                                    not found: …; no mid-run input
-cursor  2026.09.02-1c4f7a0  untested  NOT LOGGED IN  unknown
+cursor  2026.09.02-1c4f7a0  untested  NOT LOGGED IN  unknown                                                                                              no mid-run input
 ```
 
 | Column | Shows |
@@ -255,7 +255,7 @@ script. An API error is `1`.
 
 By default the answer comes from the daemon's catalog cache, which re-probes an
 adapter on its own when its binary changes. `--refresh` forces a fresh probe of
-every adapter first — the TUI's `R` — and waits for it.
+every adapter first — the TUI new-task view's `R` — and waits for it.
 
 `--json` emits the endpoint's `agents` array unchanged, with every field the
 table leaves out: models and efforts, `supports_resume`, the tested builds and
