@@ -151,7 +151,12 @@ vincent task ls --state blocked --json | jq -r '.[] | "\(.id)\t\(.title)"'
 [`vincent chat`](../reference/cli.md#vincent-chat) carries `--json` on every
 subcommand too. `chat send --json` emits the finished turn, so a script reads
 the answer and the accounting off one object and still exits 1 when the turn
-failed.
+failed. `chat transcript --json` is the `jq` route into what the agent did in a
+turn — the same NDJSON records `task transcript --json` prints for an attempt:
+
+```sh
+vincent chat transcript 3 --turn 2 --json | jq -r 'select(.type == "agent.tool_use") | .tools[].name'
+```
 
 `vincent task show <id> --json` carries two fields worth knowing about:
 `available_actions`, which is what the daemon will accept right now — read it

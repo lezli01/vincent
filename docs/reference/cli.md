@@ -1443,6 +1443,47 @@ The chat's header and every turn in order, with each turn's prompt, answer and
 request first, with its questions numbered: those are the numbers
 `vincent chat answer --answer N=VALUE` reads.
 
+`show` prints what each turn was asked and what it answered, not what the agent
+did along the way; [`vincent chat transcript`](#vincent-chat-transcript) prints
+that.
+
+### `vincent chat transcript`
+
+```sh
+vincent chat transcript CHAT_ID [--turn N] [-f | --follow] [--json | --raw]
+```
+
+Prints one turn's transcript — the complete record of what the agent did while
+answering it. It is [`vincent task transcript`](#vincent-task-transcript) for a
+chat, and reads the same way.
+
+`--turn` takes the turn number `chat show` prints as `--- turn N (STATE) ---`. Omitted,
+it selects the running turn if there is one, and otherwise the newest turn. A
+turn number the chat does not have exits `1` with
+`Error: turn N not found on chat M`, and a chat with no turns yet exits `1` with
+`Error: chat M has no turns yet`.
+
+| Output | What it is |
+|---|---|
+| default | The records rendered as text, exactly as `task transcript` renders an attempt: the run header as a first `# ` line, assistant output, tool calls and their outcomes, the agent's running to-do list as a `# plan:` line, vincent's own annotations, and a closing `= done` line carrying whatever the agent reported about the turn |
+| `--json` | The normalized records as NDJSON, one JSON object per line, in vincent's vocabulary including its `vincent.*` annotations. This is the `jq` route |
+| `--raw` | The agent's own JSONL, byte for byte, exactly as it was recorded |
+
+As on `task transcript`, what an agent's command printed is the one record the
+default rendering drops; `--raw` and `--json` both carry it. Everything a reader
+reads goes to **stdout**, and the command's own diagnostics go to stderr.
+
+`-f` (`--follow`) opens on the tail and then resumes from the record boundary
+the daemon reports, printing records as the turn writes them. It ends when that
+turn stops running, with `turn N is done` (or `failed`, or `interrupted`) on
+stderr. A turn waiting on an answer is still running, so the follow keeps
+going; it does not wait for a later `chat send`, which is a different turn.
+
+A turn that failed before its transcript was opened — `agent_unavailable` or
+`transcript_io_error` — prints `turn N (REASON) has no transcript` on stderr and
+exits `0`; the reason is the whole answer. A transcript whose file is gone
+(pruned by `transcript_retention_days`, or deleted) exits `1`.
+
 ### `vincent chat archive`
 
 ```sh

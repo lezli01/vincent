@@ -241,6 +241,21 @@ func (r *Runner) Running(chatID int64) bool {
 	return r.live[chatID] != nil
 }
 
+// TurnWritesNoTranscript reports whether a turn that failed for reason ended
+// before its transcript file existed. It is a statement about runTurn's
+// ordering: the adapter lookup and transcript.Open are the only two failures
+// ahead of the writer, and every later ending — Start's agent_error and
+// session_lost included — leaves a file behind, even an empty one.
+//
+// It is exported for a client holding the turn row, which is how `vincent chat
+// transcript` tells "there never was a transcript" from "the file is gone"
+// without a second 404 vocabulary on the wire (task 103 decision 4). It lives
+// here rather than beside that command because a reordering of runTurn is what
+// would make it false; its test pins it to exactly these two reasons.
+func TurnWritesNoTranscript(reason string) bool {
+	return reason == ReasonAgentUnavailable || reason == ReasonTranscriptIOError
+}
+
 // runTurn is the actor: one goroutine, sole writer of this chat's state and
 // this turn's row, living for exactly one turn.
 func (r *Runner) runTurn(chat *store.Chat, turn *store.ChatTurn) {

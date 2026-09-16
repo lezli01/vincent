@@ -232,3 +232,15 @@ func (c *Client) ChatTurnTranscript(
 	records, err = decodeTranscript(resp.Body)
 	return records, nextOffset, err
 }
+
+// ChatTurnTranscriptRaw fetches the same byte range in the agent's own
+// dialect, returning the file's bytes unaltered plus the offset to resume
+// from. Like TranscriptRaw, and for the same reason, it never goes through
+// decodeTranscript: that decoder drops a line it cannot parse, and the caller
+// asked for what the file says.
+func (c *Client) ChatTurnTranscriptRaw(
+	ctx context.Context, chatID int64, seq int, opts TranscriptOptions,
+) (data []byte, nextOffset int64, err error) {
+	return c.transcriptRawAt(ctx,
+		fmt.Sprintf("/v1/chats/%d/turns/%d/transcript%s", chatID, seq, opts.query("raw")))
+}

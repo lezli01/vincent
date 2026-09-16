@@ -18,8 +18,8 @@ import (
 // newChatCmd is `vincent chat` (spec §5.5, §12.1, task 063): the CLI half of
 // free chat, so the feature is not TUI-only.
 //
-// The verbs are the §5.5 actions plus a read: start, send, answer, cancel,
-// list, show, archive. `send` blocks until the turn ends and prints the
+// The verbs are the §5.5 actions plus the reads: start, send, answer, cancel,
+// list, show, transcript, archive. `send` blocks until the turn ends and prints the
 // answer, which is what a conversation in a terminal has to do — a
 // fire-and-forget send would leave the human polling `show`.
 //
@@ -38,8 +38,8 @@ func newChatCmd() *cobra.Command {
 			"and a chat turn never waits for a scheduler slot.",
 	}
 	cmd.AddCommand(newChatStartCmd(), newChatSendCmd(), newChatAnswerCmd(),
-		newChatCancelCmd(), newChatListCmd(), newChatShowCmd(), newChatArchiveCmd(),
-		newChatHandoffCmd(), newChatDeleteCmd())
+		newChatCancelCmd(), newChatListCmd(), newChatShowCmd(), newChatTranscriptCmd(),
+		newChatArchiveCmd(), newChatHandoffCmd(), newChatDeleteCmd())
 	return cmd
 }
 
