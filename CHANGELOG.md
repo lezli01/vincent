@@ -271,6 +271,16 @@ list with the user-facing context a commit subject cannot carry.
   working directory and timeouts, the loop and `if:` record, and the outcome.
   With `--json` it prints that attempt's step run object, unchanged.
 
+- **A task's pull request from the command line.** `vincent github pr link
+  NUMBER --task ID` and `vincent github pr unlink --task ID` link and unlink a
+  task's pull request the way the TUI does, writing only vincent's own link and
+  sending nothing to GitHub. `unlink` refuses a task with no live link instead
+  of recording a refusal that would stop vincent ever linking it. `vincent
+  github pr show --task ID` reads the linked pull request live, and `vincent
+  github pr checks --task ID` lists the CI checks on its head commit; both exit
+  0 when GitHub was read — for `checks`, whatever CI concluded — and 1 when
+  there is no link or GitHub could not be read.
+
 ### Changed
 
 - **A credential that cannot write to GitHub is now reported as `no_write_scope`.**

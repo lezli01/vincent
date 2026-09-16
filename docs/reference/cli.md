@@ -31,13 +31,18 @@ localhost API.
 | Code | Meaning |
 |---|---|
 | `0` | Success |
-| `1` | The request was rejected — the daemon answered no (bad id, invalid state transition), a daemon-free command refused it (`workflow validate` on an invalid file, `workflow render` on a template that does not execute, `workflow init` on a name already taken, `trigger validate` on an invalid file, `trigger ls` that matched no file, `trigger apply` on a proposal it refuses), or the client refused the input before sending anything (a `--fields-file` that is not one JSON object of strings, a `trigger test --event` file that is not one JSON object) |
+| `1` | The request was rejected — the daemon answered no (bad id, invalid state transition), a daemon-free command refused it (`workflow validate` on an invalid file, `workflow render` on a template that does not execute, `workflow init` on a name already taken, `trigger validate` on an invalid file, `trigger ls` that matched no file, `trigger apply` on a proposal it refuses), or the client refused the input before sending anything (a `--fields-file` that is not one JSON object of strings, a `trigger test --event` file that is not one JSON object, a `github pr link` number that is not a positive integer, a `github pr unlink` on a task with no live link) |
 | `2` | No daemon answered |
 
 `vincent daemon status` overloads them usefully: `0` healthy, `1` not running,
 `2` running but unresponsive. `vincent doctor` follows the same shape: `0`
 healthy, `1` problems found, `2` no daemon answered. So does
 [`vincent update`](#vincent-update) — see its own table.
+[`vincent github pr show`](#vincent-github-pr-show) and
+[`vincent github pr checks`](#vincent-github-pr-checks) set their own for a
+different reason: the routes behind them answer `200` whatever they found, so
+`1` there means the task has no linked pull request or GitHub could not be
+read, not that the request was malformed.
 
 ## Global behavior
 
@@ -1816,11 +1821,15 @@ because a template did not render. Exit `2` when no daemon answered.
 
 ## `vincent github`
 
-A project's GitHub issues and pull requests, and the actions that open a task's
-pull request and act on it. `issues`, `prs` and `status` are read-only;
-[`pr create`](#vincent-github-pr-create) and the `pr merge`, `close`, `reopen`,
-`comment` and `rerun` commands below it write to GitHub, and each writes only
-when you run it. The daemon makes every call — a
+A project's GitHub issues and pull requests, a task's link to its pull request,
+and the actions that open a task's pull request and act on it. `issues`, `prs`,
+`status`, [`pr show`](#vincent-github-pr-show) and
+[`pr checks`](#vincent-github-pr-checks) are read-only.
+[`pr link`](#vincent-github-pr-link) and
+[`pr unlink`](#vincent-github-pr-unlink) write only vincent's own record of the
+link, and send nothing to GitHub. [`pr create`](#vincent-github-pr-create) and
+the `pr merge`, `close`, `reopen`, `comment` and `rerun` commands below it write
+to GitHub, and each writes only when you run it. The daemon makes every call — a
 client never talks to GitHub. All of these need a daemon.
 
 ### `vincent github issues`
@@ -1861,8 +1870,9 @@ own link, which reads live whatever the listing was asked for.
 `TASK` is the board task this pull request is linked to. The daemon makes that
 link in the background every
 [`github.poll_interval`](configuration.md#github), matching a pull request's
-head branch against a task's own branch; a link made or removed by hand over
-[the API](api.md#github-pull-requests) wins over it.
+head branch against a task's own branch; a link made or removed by hand with
+[`pr link`](#vincent-github-pr-link) or [`pr unlink`](#vincent-github-pr-unlink)
+wins over it.
 
 ### `vincent github pr create`
 
@@ -1871,8 +1881,9 @@ vincent github pr create --task ID --title TITLE [--body TEXT] [--draft] [--json
 ```
 
 Pushes the task's branch to `origin` and opens its pull request. It and the
-five commands below it are the only commands under `vincent github` that write
-to GitHub, and each acts only on the task you name, only when you run it.
+`pr merge`, `close`, `reopen`, `comment` and `rerun` commands below are the only
+commands under `vincent github` that write to GitHub, and each acts only on the
+task you name, only when you run it.
 
 ```
 $ vincent github pr create --task 61 --title "List a project's open pull requests" --draft
@@ -1903,6 +1914,112 @@ https://github.com/octo/repo/compare/main...vincent%2F61-list-open-pull-requests
 A task that already has a linked pull request is refused: unlink it first. The
 same action is `P` in the TUI, in the task workspace and on the Pull Requests
 takeover.
+
+### `vincent github pr link`
+
+```sh
+vincent github pr link NUMBER --task ID [--json]
+```
+
+Links pull request `NUMBER` to a task by hand — for a pull request opened from
+a branch vincent did not create, or one the head-branch matching got wrong.
+
+```
+$ vincent github pr link 412 --task 61
+Linked task 61 to octo/repo#412.
+```
+
+Only vincent's own record is written. Nothing is sent to GitHub, and the number
+is not checked there: a wrong one shows up as not found the next time it is
+read, with [`pr show`](#vincent-github-pr-show). A link made by hand wins over
+the daemon's matching and clears an earlier unlink. `--json` prints the task.
+
+Exit `1` when `NUMBER` is not a positive integer (refused before anything is
+sent), or when the daemon refused — a project whose `origin` is not a
+github.com URL has no repository to link to. Exit `2` when no daemon answered.
+The same action is on the TUI's Pull Requests takeover.
+
+### `vincent github pr unlink`
+
+```sh
+vincent github pr unlink --task ID [--json]
+```
+
+Removes a task's pull-request link, and keeps it removed.
+
+```
+$ vincent github pr unlink --task 61
+Unlinked octo/repo#412 from task 61.
+vincent will not link it again on its own; `vincent github pr link` restores it.
+```
+
+The unlink is **sticky**: the daemon's head-branch matching will not link that
+pull request to the task again. Nothing is sent to GitHub. `--json` prints the
+task, whose `github_pull` is now `suppressed` with its repo and number kept.
+
+A task with no live link — never linked, or already unlinked — is refused with
+exit `1` before the unlink is sent, and nothing about it changes. Exit `2` when
+no daemon answered. The same action is `u` on the TUI's Pull Request tab and on
+the Pull Requests takeover.
+
+### `vincent github pr show`
+
+```sh
+vincent github pr show --task ID [--json]
+```
+
+A task's linked pull request, read live from GitHub on every call — so a pull
+request that has since merged or closed says so.
+
+```
+$ vincent github pr show --task 61
+octo/repo#412: List a GitHub project's open pull requests
+state      open
+branch     vincent/61-list-open-pull-requests → main
+linked by  auto
+url        https://github.com/octo/repo/pull/412
+```
+
+`state` is `open`, `draft`, `closed` or `merged`; `linked by` is `auto` for the
+daemon's head-branch match and `human` for a link made by hand.
+
+Exit `0` when the pull request was read. Exit `1` when the task has no live
+link — it then prints the GitHub page that would open one, when there is one —
+or when GitHub could not be read, with the reason (the integration switched
+off, no credential, the pull request not found). Exit `2` when no daemon
+answered. `--json` prints the answer as the daemon gave it, with `linked` and
+any `reason`, and exits by the same rule.
+
+### `vincent github pr checks`
+
+```sh
+vincent github pr checks --task ID [--json]
+```
+
+The CI checks on the head commit of a task's linked pull request, read live
+from GitHub on every call and never cached.
+
+```
+$ vincent github pr checks --task 61
+octo/repo#412: failure on d3adb33fd3ad
+CHECK              STATE        RUN   URL
+build              failure      5150  https://github.com/octo/repo/actions/runs/5150/job/71
+test               in_progress  5150  https://github.com/octo/repo/actions/runs/5150/job/72
+license/cla        success      -     https://cla.example.test/octo/repo/pull/412
+ci/legacy-builder  success      -     https://legacy.example.test/build/9
+```
+
+The first line is the whole commit's state — `failure` if anything failed,
+`in_progress` while anything is still running, `success` when everything that
+finished passed. `RUN` is the GitHub Actions run behind a check, and `-` for a
+third-party check or a legacy commit status. A pull request with no checks
+prints one line saying none are reported on its head commit.
+
+Exit `0` when the checks were read, **whatever CI concluded**: read the verdict
+from `--json`'s `.state`. Exit `1` when the task has no live link or GitHub
+could not be read, with the reason. Exit `2` when no daemon answered. `--json`
+prints the answer as the daemon gave it, with `linked` and any `reason`, and
+exits by the same rule. The same rows are the TUI's Pull Request tab.
 
 ### `vincent github pr merge`
 
@@ -1959,10 +2076,10 @@ Re-runs the failed jobs of one GitHub Actions run. The run must be behind a
 daemon's live [check rollup](api.md#github-pull-requests) reads it; any other
 run id is refused (`bad_request`) and nothing is sent.
 
-Every command in this group needs a linked pull request — a task with none, or
-whose link was removed, is refused with `pull_not_linked` — and a credential
-that may write: a 403 from GitHub is `no_write_scope`. None of them is an MCP
-tool, so an agent running in a step cannot reach them.
+Every one of those five commands needs a linked pull request — a task with none,
+or whose link was removed, is refused with `pull_not_linked` — and a credential
+that may write: a 403 from GitHub is `no_write_scope`. None of the five is an
+MCP tool, so an agent running in a step cannot reach them.
 
 ### `vincent github status`
 
