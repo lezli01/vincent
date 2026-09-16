@@ -294,8 +294,14 @@ func TestBoardApprovesGateFromTheRow(t *testing.T) {
 		t.Fatalf("CreateStepRun: %v", err)
 	}
 
-	h.p.until(30*time.Second, "the board to show the gated task", func() bool {
-		return strings.Contains(content(h.m), "gated")
+	// Wait for the row to *offer* approve, not merely to be on the board. The
+	// refetch CreateTask's event starts runs on its own goroutine, concurrently
+	// with the two writes above, so the first row to land can be the task as
+	// it was while still queued. A key the row does not offer is dropped
+	// (resolveAction), and nothing presses it again once the gate shows up.
+	h.p.until(30*time.Second, "the board to offer approve on the gated task", func() bool {
+		target := h.m.views[viewHome].(*shell).board.target()
+		return target.id == task.ID && target.has(apiclient.ActionApprove)
 	})
 	h.press(t, "a")
 
