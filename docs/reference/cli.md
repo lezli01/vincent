@@ -1457,7 +1457,7 @@ Prints one turn's transcript — the complete record of what the agent did while
 answering it. It is [`vincent task transcript`](#vincent-task-transcript) for a
 chat, and reads the same way.
 
-`--turn` takes the turn number `chat show` prints as `--- turn N ---`. Omitted,
+`--turn` takes the turn number `chat show` prints as `--- turn N (STATE) ---`. Omitted,
 it selects the running turn if there is one, and otherwise the newest turn. A
 turn number the chat does not have exits `1` with
 `Error: turn N not found on chat M`, and a chat with no turns yet exits `1` with
