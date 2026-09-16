@@ -158,6 +158,9 @@ only thing that notices.
 discovers the wall independently, costing N process spawns per window. It wants
 its own issue, and the generic `admit_not_before` column chosen above is what it
 will build on (tracked in [#399](https://github.com/lezli01/vincent/issues/399), 2026-09-13).
+*2026-09-16:* built as [task 106](106-adapter-wide-usage-limit-hold.md). It is a
+pre-spawn check in the engine, not a scheduler-side suppression of admission,
+and it writes this task's `admit_not_before` hold.
 
 **Crash recovery needs no change.** The hold is a column on the task row, so a
 crash during a wait leaves a queued task with its hold intact; the startup sweep

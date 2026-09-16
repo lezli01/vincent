@@ -84,6 +84,11 @@ single writer, so no taskrun or scheduler ownership invariant moves. Task 003's
 out-of-scope note reserves the *agent-wide hold* — one task's `usage_limit`
 suppressing admission of every other queued task on that adapter — for its own
 issue; this is not that. Nothing here touches admission.
+*2026-09-16:* no longer true of spawning.
+[Task 106](106-adapter-wide-usage-limit-hold.md) reads the observation before
+every agent spawn and holds the task while the window is shut, in the
+`usage_limit_auto_continue` modes that wait. The scheduler's admission is still
+untouched.
 
 ### 4. `logged_in` gets a TTL in the catalog cache, in this PR (2026-08-24)
 

@@ -325,6 +325,18 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
+- **One usage-limit stop now holds every task on that agent.** Before, when
+  Claude Code hit its usage limit, only that task waited. Every other task on
+  the agent still started a process into a window vincent already knew was
+  closed, and hit the same limit. Now a task that reaches an agent step while
+  the recorded window is still shut goes back to `queued` with
+  `queued_reason: usage_limit` until the recorded reset. It starts no process
+  and records no attempt. This follows `usage_limit_auto_continue`: `always`
+  holds, `reported_only` holds only when the CLI named the reset, and `never`
+  lets each task find the limit itself. Only windows vincent watched close
+  count; a reported quota never holds a task. The notify hook's envelope also
+  gains `admit_not_before`, so a notifier can say when a waiting task resumes.
+
 - **A credential that cannot write to GitHub is now reported as `no_write_scope`.**
   Opening a pull request with a read-only token still pushes the branch and
   falls back to GitHub's compare page, but its `reason` is now `no_write_scope`

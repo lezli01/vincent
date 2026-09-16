@@ -91,8 +91,10 @@ Three behaviors matter:
   [reports its own quota](agents.md#how-much-quota-is-left-and-who-will-say) is
   badged the same way once that reading hits 100%, and reads a bare `⏳` when
   the source named no reset, since `⏳00:00` would be a time vincent invented.
-  The badge is a statement, not a brake: admission is unchanged and nothing is
-  withheld.
+  A reading is only a statement: nothing is withheld on a percentage. A window
+  vincent *watched* close is also a brake. In the default mode, a task that
+  reaches an agent step on that adapter shows the same `queued → 14:20` and
+  waits for the window without starting the agent.
 
 `/` filters by id, title, project or state; `tab` commits the filter, `esc`
 clears it, and `enter` opens the selected task.

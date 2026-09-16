@@ -119,6 +119,7 @@ the living engineering specification records implementation contracts.
 | [103](103-cli-chat-transcript.md) | `vincent chat transcript`: read and follow a chat turn's transcript | ✅ done (4/4) |
 | [104](104-cli-agents.md) | `vincent agents`: login state, build verdict and quota from the command line | ✅ done (4/4) |
 | [105](105-cli-project-edit.md) | `vincent project edit`: change a registered project's settings from the command line | ✅ done (4/4) |
+| [106](106-adapter-wide-usage-limit-hold.md) | Hold every task on an adapter once one of them hits its usage limit | ✅ done (5/5) |
 
 ## How to add and update a task document
 
