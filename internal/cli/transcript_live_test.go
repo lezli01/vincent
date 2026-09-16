@@ -72,9 +72,28 @@ type liveHarness struct {
 	transcriptCalls atomic.Int64
 	// diffCalls does the same for the diff endpoint (diff_live_test.go).
 	diffCalls atomic.Int64
+	// agentsRefreshes and agentsCached split GET /v1/agents by whether the
+	// request asked for `?refresh=true` (agents_live_test.go).
+	agentsRefreshes atomic.Int64
+	agentsCached    atomic.Int64
 }
 
-func newLiveHarness(t *testing.T) *liveHarness {
+// liveOption adjusts what newLiveHarness wires.
+type liveOption func(*liveOptions)
+
+type liveOptions struct {
+	agents  *agent.Registry
+	catalog bool
+}
+
+// withAgentCatalog serves the harness from reg and puts an agent catalog over
+// it, which is what GET /v1/agents needs to answer at all. Without it the
+// registry resolves no binary and the endpoint answers 500.
+func withAgentCatalog(reg *agent.Registry) liveOption {
+	return func(o *liveOptions) { o.agents, o.catalog = reg, true }
+}
+
+func newLiveHarness(t *testing.T, opts ...liveOption) *liveHarness {
 	t.Helper()
 	dataDir := t.TempDir()
 	t.Setenv(config.EnvDataDir, dataDir)
@@ -109,7 +128,15 @@ func newLiveHarness(t *testing.T) *liveHarness {
 	}
 	git := gitx.New()
 	noPath := func() string { return "" }
-	agents := agent.NewRegistry(claude.New(noPath), codex.New(noPath), cursor.New(noPath))
+	o := liveOptions{agents: agent.NewRegistry(claude.New(noPath), codex.New(noPath), cursor.New(noPath))}
+	for _, opt := range opts {
+		opt(&o)
+	}
+	agents := o.agents
+	var catalog *agent.CatalogCache
+	if o.catalog {
+		catalog = agent.NewCatalogCache(agents)
+	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	// The runner is never started: nothing here admits a task, and the rows
 	// under test are written directly.
@@ -124,7 +151,7 @@ func newLiveHarness(t *testing.T) *liveHarness {
 		Store: st, Broker: broker, Git: git, Runner: runner, WakeRunner: func() {},
 		// The registry is what lets the endpoint normalize a recorded run
 		// with the parser that read it live.
-		Agents: agents,
+		Agents: agents, Catalog: catalog,
 		// The chat-turn route derives its file from the data dir rather than
 		// from a stored path (chattranscript_live_test.go).
 		Dirs: config.Dirs{Data: dataDir},
@@ -136,6 +163,13 @@ func newLiveHarness(t *testing.T) *liveHarness {
 		}
 		if strings.HasSuffix(r.URL.Path, "/diff") {
 			h.diffCalls.Add(1)
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/agents" {
+			if r.URL.Query().Get("refresh") == "true" {
+				h.agentsRefreshes.Add(1)
+			} else {
+				h.agentsCached.Add(1)
+			}
 		}
 		handler.ServeHTTP(w, r)
 	}))
