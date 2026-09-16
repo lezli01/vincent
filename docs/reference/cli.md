@@ -2176,7 +2176,8 @@ vincent github pr rerun --task ID --run-id ID [--json]
 Re-runs the failed jobs of one GitHub Actions run. The run must be behind a
 **failed**, Actions-backed check on the pull request's current head, as the
 daemon's live [check rollup](api.md#github-pull-requests) reads it; any other
-run id is refused (`bad_request`) and nothing is sent.
+run id is refused (`bad_request`) and nothing is sent. A run id below 1 is
+refused (`validation_failed`) before GitHub is asked at all.
 
 Every one of those five commands needs a linked pull request — a task with none,
 or whose link was removed, is refused with `pull_not_linked` — and a credential
