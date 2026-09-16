@@ -145,9 +145,9 @@ are long-lived by contract and no write deadline is set.
 ```json
 { "agents": [ {
     "name": "claude", "available": true, "path": "…", "version": "2.1.224",
-    "supports_input": true, "input_verdict": "supported", "logged_in": null,
+    "supports_input": true, "input_verdict": "supported", "logged_in": true,
     "supports_resume": true,
-    "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226",
+    "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226, 2.1.268",
     "restricted_verdict": "supported",
     "models":  [ { "value": "sonnet", "source": "cli" } ],
     "efforts": [ { "value": "max",    "source": "cli" } ],
@@ -159,19 +159,23 @@ are long-lived by contract and no write deadline is set.
 `source` is provenance: `cli` was discovered from the installed binary,
 `curated` comes from vincent's own floor. Results are cached by **binary
 identity** (path + mtime + version), so upgrading a CLI invalidates the cache by
-construction. `logged_in` is `null` where the adapter has no cheap
-authentication probe (**claude**, whose CLI exposes no non-interactive auth
-surface) and a definite boolean where it does (**codex** via `login status`,
-**cursor** via `status`) — because an installed-but-unauthenticated CLI probes
-as healthy and then fails every run. It is never guessed: a probe that times out
-or cannot be spawned reports `null`, not `false`.
+construction. `logged_in` is a definite boolean from each adapter's own
+authentication probe — **claude** via `auth status`, **codex** via
+`login status`, **cursor** via `status` — because an installed-but-unauthenticated
+CLI probes as healthy and then fails every run. It is never guessed: a probe
+that times out, cannot be spawned or answers something unreadable reports
+`null`, not `false`. claude is asked only on builds from 2.1.41 (where
+`auth status` was introduced) up to, not including, 3.0.0; any other claude
+reports `null`. `true` means the CLI found credentials configured — a login, an
+API key, a cloud-provider switch — not that they were checked, for every
+adapter.
 
 Adapter health is five separate facets, and each has exactly one field:
 
 | Facet | Field | Notes |
 |---|---|---|
 | installed | `available`, `path` | |
-| authenticated | `logged_in` | `null` = the adapter cannot tell; never a guess |
+| authenticated | `logged_in` | `null` = the probe could not tell; never a guess |
 | protocol-compatible | `supports_input`, `version_verdict` | |
 | permission-compatible | `restricted_verdict` | |
 | model-catalog | `probe_error` | non-null = you are reading the curated catalog |

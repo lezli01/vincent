@@ -2979,6 +2979,16 @@ records no date for `--approve-mcps`).
 - `Options()` probes `claude --help` ad hoc: the `--effort` enum (`low, medium,
   high, xhigh, max` as of 2.1.x) and the documented model aliases are parsed
   from the help text (source `cli`) and merged with the curated catalog (§9.6).
+- **`logged_in` is answerable** (*added 2026-09-16, task 107*): `Detect` probes
+  `claude auth status --json` alongside `--version`, for builds in
+  `[2.1.41, 3.0.0)` only — 2.1.41 is where the subcommand was introduced, and
+  outside the range nothing is spawned and the field stays `null`. Only a
+  boolean `loggedIn` in the JSON on stdout decides, whatever the exit code;
+  everything else, a bare exit 1 included, is `null`. Pinned against 2.1.268
+  (`testdata/auth_status_logged_in_2.1.268.json`,
+  `auth_status_logged_out_2.1.268.json`, `help_auth_status_2.1.268.txt`). The
+  reasoning, and why this is stricter than codex's and cursor's rule, is in
+  §9.5.
 - **Mid-run input (§7.4):** pinned against claude 2.1.226 (fixtures captured from
   real runs live in `internal/agent/claude/testdata/`). The process is additionally
   started with `--input-format stream-json --permission-prompt-tool stdio` (the
@@ -3046,6 +3056,10 @@ on a current CLI and **changes no behaviour whatsoever**. The separate
 `supports_input` family gate `[2.1.0, 3.0.0)` is untouched: it gates one
 capability and degrades the invocation visibly, which is a different question
 from whether vincent has ever seen this build.
+*Amended 2026-09-16 (task 107):* `2.1.268` joins the list — the build the
+`auth status` fixtures were captured from (§9.5). The `auth status` gate
+`[2.1.41, 3.0.0)` is, like the input gate, a family range rather than this
+list, and for the same reason.
 
 *Amended 2026-08-31 (task 066).* The parser reads more of the dialect it was
 already recording. Four groups, all of them present in the `2.1.226` fixtures
@@ -3358,6 +3372,51 @@ a claim about a CLI, not a gap in an adapter:
   reading that as a definite "not authenticated" is a false accusation against
   a logged-in account (T4.22).
 
+*Amended 2026-09-16 (task 107).* The claude bullet above was **wrong when it
+was written**, not merely overtaken. `help_2.1.224.txt` holds only the Options
+section of `claude --help` — no Commands list — and the Claude Code changelog
+records `claude auth login`, `claude auth status` and `claude auth logout` as
+added in **2.1.41**, so 2.1.224 already had the command. The fixture is not
+recaptured (the option probe it serves is unaffected); it is named here as cut
+down so no future reader draws the same conclusion from it. claude now reports
+a definite boolean, which leaves **no adapter `null` by design**: `null` means a
+probe that could not answer, or a claude outside the gate below.
+
+- **Only the JSON field decides.** `Detect` runs `claude auth status --json`
+  (the flag passed although it is the default, so a change of default cannot
+  change the format). A JSON object on stdout whose `loggedIn` is a boolean is
+  the answer **whatever the exit code**; exit 1 with no readable JSON, a
+  missing or non-boolean `loggedIn`, a timeout, a cancellation and a failure
+  to spawn are all `null`. This is deliberately stricter than codex's and
+  cursor's rule, whose "non-zero exit is `false`" leg exists because their
+  logged-out wording has never been captured. claude's has: logged out is exit
+  1 *with* `{"loggedIn":false,…}` on stdout (captured against 2.1.268 with an
+  empty `CLAUDE_CONFIG_DIR`, which signs nobody out). Exit 1 is also what every
+  ordinary CLI failure returns — an unknown option, a settings deadlock, a
+  config error — and reading those as "not authenticated" is the false
+  accusation T4.22 forbids. The codex/cursor rule is unchanged.
+- **Version gate `[2.1.41, 3.0.0)`.** Outside it, or when the version does not
+  parse, nothing is spawned and the field is `null`. A CLI older than the
+  subcommand could take `auth status` for a prompt and open an interactive
+  session with no TTY, which would hang until the probe timeout on every
+  re-probe; not spawning it is the only safe probe. The ceiling follows the
+  `supports_input` family; a 3.x CLI stays `null` until its output is captured,
+  which is harmless because `null` is what every claude reported before.
+- **`true` means credentials are configured, not checked.** The CLI's boolean
+  is passed through: a claude.ai login, `ANTHROPIC_API_KEY`,
+  `ANTHROPIC_AUTH_TOKEN` and a Bedrock/Vertex/Foundry switch all report `true`,
+  just as they will run, and none of them is validated. codex's `login status`
+  has the same property. **vincent reads `loggedIn` and nothing else** — the
+  same answer carries the account's email, organization and subscription, and
+  none of it is decoded, logged, stored or sent over the API.
+- It is an official, documented subcommand whose stdout is read; vincent never
+  touches `~/.claude*`, the keychain or `.credentials.json`, so the v0 **T1.7
+  decision** (no state-file parsing) stands untouched. So does task 003
+  decision 4: a claude `false` is a visible warning, never a block, and not a
+  `vincent doctor` problem. A claude that answers joins the §9.6 `authTTL`
+  refresh with no change to the cache; one that returns `null` costs nothing
+  extra.
+
 There is still **no pre-flight refusal** on `logged_in: false` (§18, task 003
 decision 4). This makes the state visible, not blocking.
 
@@ -3412,9 +3471,9 @@ defaults:
 ```json
 { "agents": [ {
     "name": "claude", "available": true, "path": "…", "version": "2.1.224",
-    "supports_input": true, "input_verdict": "supported", "logged_in": null,
+    "supports_input": true, "input_verdict": "supported", "logged_in": true,
     "supports_resume": true,
-    "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226",
+    "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226, 2.1.268",
     "restricted_verdict": "supported",
     "models":  [ { "value": "sonnet", "source": "cli" }, { "value": "opus", "source": "cli" } ],
     "efforts": [ { "value": "low", "source": "cli" }, { "value": "max", "source": "cli" } ],
@@ -10329,7 +10388,7 @@ carries the rest.
 | Option probe fails (help unparseable) | `GET /v1/agents` serves the curated catalog with `probe_error` set; selection and free text keep working (§9.6) |
 | Model/effort unknown to the catalog | Validation warning only; the CLI is the final authority — a rejected value fails the step with the CLI's error (retry policy applies) |
 | Model *in* the catalog but rejected at run time | Real, not hypothetical, on cursor (§9.7): the step fails with the stderr tail as the message, since no `result` event arrives. Catalog membership is advisory in both directions |
-| Agent CLI installed but not authenticated | `logged_in: false` where the adapter can tell (§9.5); the new-task form flags it like an unavailable agent. Where it cannot (`null`), the step runs and fails. *Amended 2026-08-14 (task 003):* where the adapter recognizes the CLI's auth wording, that failure is now named `agent_unauthenticated` instead of surfacing as `nonzero_exit`/`agent_error`. Everything else about the row is unchanged and deliberately so — the step still runs, the attempt still fails, the §7.2 budget still applies, and the task still ends up blocked. There is no pre-flight refusal on `logged_in: false`. *Amended 2026-08-15 (task 005):* the "where it cannot (`null`)" set is now **claude alone** — codex probes `login status`, cursor probes `status` (§9.5). Every other clause of this row stands untouched, task 003 decision 4 included: making the state visible is not the same as blocking on it, and `vincent doctor` is where a user sees it before a task burns its retry budget |
+| Agent CLI installed but not authenticated | `logged_in: false` where the adapter can tell (§9.5); the new-task form flags it like an unavailable agent. Where it cannot (`null`), the step runs and fails. *Amended 2026-08-14 (task 003):* where the adapter recognizes the CLI's auth wording, that failure is now named `agent_unauthenticated` instead of surfacing as `nonzero_exit`/`agent_error`. Everything else about the row is unchanged and deliberately so — the step still runs, the attempt still fails, the §7.2 budget still applies, and the task still ends up blocked. There is no pre-flight refusal on `logged_in: false`. *Amended 2026-08-15 (task 005):* the "where it cannot (`null`)" set is now **claude alone** — codex probes `login status`, cursor probes `status` (§9.5). Every other clause of this row stands untouched, task 003 decision 4 included: making the state visible is not the same as blocking on it, and `vincent doctor` is where a user sees it before a task burns its retry budget. *Amended 2026-09-16 (task 107):* the "where it cannot (`null`)" set is now **empty by design** — claude probes `auth status` (§9.5). `null` is left to a probe that could not answer and to a claude outside `[2.1.41, 3.0.0)`, and for those this row's "the step runs and fails" still holds. Task 003 decision 4 stands |
 | Agent stopped by a usage limit | *Added 2026-08-14 (task 003).* Where the adapter recognizes the wording, the attempt is recorded `interrupted` with reason `usage_limit`, consumes **no** retry (§7.2), and the task returns to `queued` with an admission hold (§11) — releasing its slot, so other work keeps running. The hold ends at the reset time the CLI reported, or `usage_limit_recheck_interval` after the stop when it reported none. Recovery is unattended: the scheduler re-admits and the step re-runs. The board says `queued` *with* its reason rather than `blocked` (§15). Where the adapter recognizes nothing — codex and cursor today (§9.1) — the run reads as `nonzero_exit`/`agent_error` exactly as before. *Amended 2026-08-24 (task 026):* the reset the engine acted on is additionally recorded per adapter (§14) and published on change (§13.3), so the fact outlives the hold — `admit_not_before` is cleared by the next transition out of `queued`, and until now the observation went with it. It is retired by the next successful agent step on that adapter, never by a timer. *Amended 2026-09-08:* the wording is only ever read from a run that **failed** (§9.1) — a step that succeeded while writing about quota stops is a success, not a wall. *Amended 2026-09-08 (task 091):* all of the above is what `usage_limit_auto_continue: always` — the default — does. Under `never`, and under `reported_only` when the CLI named no reset, the same stop **blocks** the task instead with `block_reason: usage_limit` (§7.2, §12.3): the attempt is still `interrupted` and still costs no retry, the cursor does not advance, and a human retry re-runs the step. *Amended 2026-09-16 (task 106):* in the modes that hold, every **other** task on the adapter is held too, at its next agent spawn, with no attempt recorded and no process started, until the observation's `resets_at`. When that passes the §11 walk releases them all under the normal caps |
 | `effort` set on a step whose agent has no effort concept | Ignored by the adapter and documented as ignored (cursor, §9.7); a claude/codex effort value on a cursor step is already an §8.2 *error* — it belongs to another adapter's catalog |
 | `restricted` step on an adapter that cannot restrict on this OS | Step fails to start with `restricted_unsupported` (cursor on Windows, §9.7), under the retry policy → typically blocked. Never downgraded to full-auto, and deliberately *not* `agent_unavailable`: the CLI is installed and healthy, so "not found" would send the user to reinstall what is already there. *Amended 2026-08-28 (task 041):* **task creation refuses these** with a `400` naming the step and the agent (§9.4), and `GET /v1/agents` publishes the `restricted_verdict` the gate uses. Reaching the engine anyway means the task and its daemon parted company — a data directory carried to Windows, or a workflow edited after the task was queued — so the reason above stays exactly as it is, as the backstop. Retries are not gated: enforcement is creation-time, and the backstop is what catches the rest. *Amended 2026-09-11 (task 096):* a task created with the `restricted` clamp (§9.4) makes **every** agent step a restricted one, so the same `400` refuses a clamped task whose agent steps resolve to such an adapter — even when its workflow says `full-auto` throughout |

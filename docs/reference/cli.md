@@ -234,7 +234,7 @@ of [`GET /v1/agents`](api.md#daemon) and needs a running daemon — with none it
 
 ```
 AGENT   VERSION             BUILD     LOGIN          QUOTA                                                                                                NOTES
-claude  2.1.226             tested    unknown        claude status line · 5h 28.5% → 2026-09-16T14:40:00+02:00 · 7d 62% · read 2026-09-16T11:40:02+02:00
+claude  2.1.226             tested    ok             claude status line · 5h 28.5% → 2026-09-16T14:40:00+02:00 · 7d 62% · read 2026-09-16T11:40:02+02:00
 codex   -                   -         -              spent → 2026-09-16T13:40:00+02:00                                                                    not found: …; no mid-run input
 cursor  2026.09.02-1c4f7a0  untested  NOT LOGGED IN  unknown                                                                                              no mid-run input
 ```
@@ -243,7 +243,7 @@ cursor  2026.09.02-1c4f7a0  untested  NOT LOGGED IN  unknown                    
 |---|---|
 | `VERSION` | The installed CLI's version, `-` when none was found |
 | `BUILD` | `tested`, `untested` or `incompatible` — whether vincent has been tested against this build. `-` when there is nothing installed to judge |
-| `LOGIN` | `ok`, `NOT LOGGED IN` or `unknown`, the words [`vincent doctor`](#vincent-doctor) uses. `unknown` is an adapter that cannot cheaply tell, never a no. `-` for an adapter that is not installed |
+| `LOGIN` | `ok`, `NOT LOGGED IN` or `unknown`, the words [`vincent doctor`](#vincent-doctor) uses. `unknown` is a probe that could not tell — it timed out, or the CLI predates the command — never a no. `-` for an adapter that is not installed |
 | `QUOTA` | The adapter's usage window, below |
 | `NOTES` | Bad news only: `not found: <why>`, `no mid-run input` (an `on_input: require` step cannot use it), `no restricted mode on <os>`, `option probe failed (curated catalog)`. A healthy adapter's cell is empty |
 

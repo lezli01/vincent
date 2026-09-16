@@ -13,6 +13,17 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **vincent now tells you when claude is not logged in.** claude was the one
+  agent whose login state always read *unknown*. vincent now asks
+  `claude auth status`, so `vincent doctor`, `vincent agents`, `GET /v1/agents`
+  and the new-task form show a logged-out claude the way they already showed a
+  logged-out codex or cursor — before a task burns its retries. It is a
+  warning, never a block. It needs claude 2.1.41 or later (older builds stay
+  *unknown*). A yes means the CLI found credentials configured — a login, an
+  API key, a cloud-provider switch — not that they still work. vincent reads
+  only the yes/no, never the account email, organization or plan the command
+  also prints.
+
 - **`vincent project edit` changes a registered project from the command
   line.** Until now only the TUI's projects view could edit a project, and a
   project's branch template could only be set through the API. The new command

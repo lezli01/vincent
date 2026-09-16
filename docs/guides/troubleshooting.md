@@ -168,9 +168,10 @@ codex   found  0.147.0  auth NOT LOGGED IN  /opt/homebrew/bin/codex
 ```
 
 Run the CLI by hand once and log in (`codex login`, `cursor-agent login`,
-`claude` interactively), then run doctor again. Cursor and codex answer this
-cheaply, so vincent asks them; claude has no non-interactive auth surface, so it
-shows *unknown* rather than claiming fine.
+`claude auth login` or `claude` interactively), then run doctor again. All three
+answer this cheaply, so vincent asks them. A claude older than 2.1.41 has no
+`auth status` command, so it shows *unknown* rather than claiming fine. `ok`
+means the CLI found credentials configured, not that they were checked.
 
 ### `restricted_unsupported`
 
@@ -685,12 +686,15 @@ cancel, or pause and resume.
 ### `agent_unauthenticated`
 
 The agent CLI is installed and runs, but is not logged in. This one **does**
-block — waiting cannot fix it. Log in with the CLI's own command (`claude`
-interactively, `cursor-agent login`), then `r` to retry the task.
+block — waiting cannot fix it. Log in with the CLI's own command
+(`claude auth login` or `claude` interactively, `codex login`,
+`cursor-agent login`), then `r` to retry the task.
 
 `vincent doctor` catches most of these before a task is ever created: it reports
-`logged_in` for codex and cursor, both re-probed on every run. claude has no
-cheap probe, so there the first sign is still a failed step.
+`logged_in` for claude, codex and cursor, re-probed on every run. What it cannot
+catch is credentials that are configured but no longer valid — an expired API
+key still reads as logged in — and a claude older than 2.1.41, which has no
+`auth status` command; there the first sign is still a failed step.
 
 ### `transcript_limit`
 
