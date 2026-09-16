@@ -443,6 +443,7 @@ func (m *root) openPalette() {
 	} else if t, ok := m.views[m.active].(*taskView); ok {
 		target = t.target()
 		editable = t.detail.stepEditable()
+		live = t.liveBindings
 	}
 	m.palette = newPalette(paletteEntries(
 		ctx, target, editable, m.phase == phaseConnected, m.githubAvailable(), live))
@@ -923,6 +924,8 @@ func (m *root) footerLine() string {
 	rows := withoutGitHub(bindingsFor(ctx), m.githubAvailable())
 	if s, ok := m.views[m.active].(*shell); ok {
 		rows = s.liveBindings(rows)
+	} else if t, ok := m.views[m.active].(*taskView); ok {
+		rows = t.liveBindings(rows)
 	}
 	retry := m.phase == phaseFailed || m.phase == phaseReconnecting
 	line, hits := buildFooter(m.width, rows, bar, target, attention, retry)

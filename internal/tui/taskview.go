@@ -90,6 +90,11 @@ type taskView struct {
 	// the tab and the Task Details section cannot disagree about what is
 	// linked.
 	pullTab taskPullTab
+	// pullMerge and pullComment are the Pull Request tab's two popups (task
+	// 068.4), open only while a human has one up. Close, reopen and re-run
+	// confirm inline instead, on pullTab.confirm.
+	pullMerge   *pullMergeForm
+	pullComment *pullCommentForm
 
 	connected bool
 	width     int
@@ -190,7 +195,7 @@ func (t *taskView) hintedProject() int64 {
 }
 
 func (t *taskView) capturesInput() bool {
-	return t.popup || t.detail.capturesInput()
+	return t.popup || t.pullTab.confirm != nil || t.detail.capturesInput()
 }
 
 func (t *taskView) paste(text string) tea.Cmd {
@@ -199,6 +204,12 @@ func (t *taskView) paste(text string) tea.Cmd {
 	}
 	if f := t.createPR; f != nil {
 		return f.paste(text)
+	}
+	if f := t.pullComment; f != nil {
+		return f.paste(text)
+	}
+	if t.pullMerge != nil {
+		return nil
 	}
 	if f := t.detail.followUp; f != nil {
 		return f.paste(text)
@@ -215,6 +226,17 @@ func (t *taskView) paste(text string) tea.Cmd {
 func (t *taskView) bindingContext() bindingContext {
 	if t.createPR != nil {
 		return ctxCreatePR
+	}
+	// The pull-request writes' popups and prompt own the footer and the ?
+	// sheet while they own the keyboard (task 068.4).
+	if t.popup && t.pullMerge != nil {
+		return ctxPullMerge
+	}
+	if t.popup && t.pullComment != nil {
+		return ctxPullComment
+	}
+	if t.pullTab.confirm != nil {
+		return ctxPullConfirm
 	}
 	// While a form popup owns the keyboard it owns the footer and the ? sheet
 	// too. Without these three arms both described the tab underneath, which
@@ -276,6 +298,7 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 		t.stepDetails.reset()
 		t.popup = false
 		t.createPR = nil
+		t.pullMerge, t.pullComment = nil, nil
 		t.pull, t.pullLoaded, t.pullErr = apiclient.GitHubTaskPull{}, false, ""
 		t.pullNote, t.pullNoteBad = "", false
 		t.pullTab = taskPullTab{}
@@ -332,6 +355,13 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return t, tea.Batch(t.checksCmd(), t.checksTickCmd())
 	case taskPullCreatedMsg:
 		return t, t.applyCreatedPull(msg)
+	case pullWriteMsg:
+		return t, t.applyPullWrite(msg)
+	case pullCommentEditMsg:
+		if t.pullComment != nil {
+			t.pullComment.applyEdit(msg)
+		}
+		return t, nil
 	case createPREditMsg:
 		if t.createPR != nil {
 			t.createPR.applyEdit(msg)
@@ -371,16 +401,18 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 	// other way round — which is what lets the lane pane be an ordinary
 	// detail rather than a second, thinner copy of one.
 	cmd := tea.Batch(t.detail.update(msg), t.laneUpdate(msg))
-	if t.popup && t.detail.form == nil && t.detail.repair == nil &&
-		t.detail.followUp == nil && t.createPR == nil {
-		t.popup = false
-	}
+	t.dropEmptyPopup()
 	return t, cmd
 }
 
 func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	if t.popup {
 		return t.updatePopupKey(msg)
+	}
+	if t.pullTab.confirm != nil {
+		// The inline y/n owns the keyboard: tab, the digits, esc and the §6
+		// letters are all spent on declining it.
+		return t.updatePullConfirmKey(msg)
 	}
 
 	switch msg.String() {
@@ -526,7 +558,7 @@ func (t *taskView) openPopup() {
 // hasFormPopup reports whether the open popup is one of the three that carry
 // the task-details tab. The compare-URL editor (task 052.6) does not.
 func (t *taskView) hasFormPopup() bool {
-	return t.createPR == nil &&
+	return t.createPR == nil && t.pullMerge == nil && t.pullComment == nil &&
 		(t.detail.followUp != nil || t.detail.repair != nil || t.detail.form != nil)
 }
 
@@ -535,6 +567,22 @@ func (t *taskView) updatePopupKey(msg tea.KeyPressMsg) tea.Cmd {
 		cmd, exit := f.update(msg)
 		if exit {
 			t.createPR, t.popup = nil, false
+		}
+		return cmd
+	}
+	if f := t.pullMerge; f != nil {
+		cmd, exit := f.update(msg)
+		if exit {
+			t.pullMerge = nil
+			t.dropEmptyPopup()
+		}
+		return cmd
+	}
+	if f := t.pullComment; f != nil {
+		cmd, exit := f.update(msg)
+		if exit {
+			t.pullComment = nil
+			t.dropEmptyPopup()
 		}
 		return cmd
 	}
@@ -737,7 +785,7 @@ func (t *taskView) render(width, height int) string {
 	lines = append(lines, body)
 	out := strings.Join(lines, "\n")
 	if t.popup && (t.detail.form != nil || t.detail.repair != nil ||
-		t.detail.followUp != nil || t.createPR != nil) {
+		t.detail.followUp != nil || t.createPR != nil || t.pullMerge != nil || t.pullComment != nil) {
 		// overlay clips to the background it is given. The root adds visual
 		// padding only after this render returns, so give the popup the full
 		// content height here or a short timeline would clip it away.
@@ -746,9 +794,14 @@ func (t *taskView) render(width, height int) string {
 			padded = append(padded, "")
 		}
 		out = strings.Join(padded, "\n")
-		if t.createPR != nil {
+		switch {
+		case t.createPR != nil:
 			out = t.overlayCreatePR(out)
-		} else {
+		case t.pullMerge != nil:
+			out = t.overlayPullPopup(out, "Merge "+t.pullSubject(), t.pullMerge.height, t.pullMerge.render)
+		case t.pullComment != nil:
+			out = t.overlayPullPopup(out, "Comment on "+t.pullSubject(), t.pullComment.height, t.pullComment.render)
+		default:
 			p := popupOverlayFor(t.detail)
 			p.tab, p.details = t.popupTab, t.renderPopupDetails
 			out = overlayPopup(out, t.width, t.height, p)
@@ -1370,14 +1423,20 @@ func joinInt64(values []int64) string {
 // same geometry the shell's popups use — the popup is the same kind of thing
 // and should not sit somewhere else on the screen.
 func (t *taskView) overlayCreatePR(bg string) string {
+	return t.overlayPullPopup(bg, "Open a pull request — #"+strconv.FormatInt(t.detail.taskID, 10),
+		t.createPR.height, t.createPR.render)
+}
+
+// overlayPullPopup draws a pull-request popup — the create form, or one of
+// the Pull Request tab's two confirmations — on that geometry.
+func (t *taskView) overlayPullPopup(bg, title string, height func(int) int, render func(int, int) string) string {
 	pw := min(t.width-6, 120)
 	if pw < 20 {
 		pw = t.width
 	}
 	inner := pw - 2
-	ph := min(t.createPR.height(inner)+2, max(t.height-4, 6))
-	popup := frame("Open a pull request — #"+strconv.FormatInt(t.detail.taskID, 10),
-		t.createPR.render(inner, ph-2), pw, ph, true)
+	ph := min(height(inner)+2, max(t.height-4, 6))
+	popup := frame(title, render(inner, ph-2), pw, ph, true)
 	return overlay(bg, popup, max((t.width-pw)/2, 0), max((t.height-ph)/3, 1))
 }
 

@@ -113,8 +113,17 @@ const (
 	// own context rather than more rows on ctxTaskDetails because the tab
 	// only exists for a task with a linked pull request, and a footer that
 	// advertised `c open check` on a task with no checks would be describing
-	// a screen that is not there.
+	// a screen that is not there. Since 068.4 it also carries the four
+	// confirmed writes, whose rows the task view drops wherever the write
+	// cannot apply (taskView.liveBindings).
 	ctxTaskPull bindingContext = "task pull request"
+	// The Pull Request tab's confirmations (task 068.4, issue #387). Three
+	// contexts for the reason every popup has its own: each owns the keyboard
+	// while it is up, and `y`, `n`, `enter` and `esc` mean something
+	// different in each — and nothing like the tab underneath.
+	ctxPullMerge   bindingContext = "merge a pull request"
+	ctxPullComment bindingContext = "comment on a pull request"
+	ctxPullConfirm bindingContext = "confirm a pull request write"
 	// ctxWorkflowStep is the step-detail modal over the graph (task 053). Its
 	// own context for the reason the popups have theirs: while it is open it
 	// owns the keyboard, and a row shared with the graph could only describe
@@ -577,6 +586,18 @@ var bindings = []binding{
 	// means the same thing on this tab whether or not a lane has a pull
 	// request of its own.
 	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskPull, priority: 7, term: termLane},
+	// The confirmed writes (task 068 decisions 1, 3 and 4; issue #387). All
+	// four are surface-local, so none carries a term, and none moves a §6
+	// letter (task 093 decision 1): `X` is one key for close and reopen the
+	// way `p` is for pause and resume, and re-run is ctrl+r because `r` is
+	// retry. `X`, `i` and ctrl+r mean other things on the triggers takeover,
+	// the workflows list, the daemon view and a chat — none of which can be
+	// open beside a task workspace. Each row is absent wherever its write
+	// cannot apply, not present and refusing.
+	{key: "m", label: "merge this pull request — choose merge, squash or rebase in the confirmation (none is preselected); pinned to the head commit whose checks are shown", scope: scopePanel, context: ctxTaskPull, hint: "m merge", priority: 8, github: true},
+	{key: "X", label: "close this pull request without merging, or reopen a closed one (asks first)", scope: scopePanel, context: ctxTaskPull, hint: "X close", priority: 9, github: true},
+	{key: "i", label: "comment on this pull request — the popup is the confirmation, ctrl+s posts", scope: scopePanel, context: ctxTaskPull, hint: "i comment", priority: 10, github: true},
+	{key: "ctrl+r", label: "re-run the failed jobs of the selected check's GitHub Actions run (asks first; only on a failed Actions row)", scope: scopePanel, context: ctxTaskPull, hint: "ctrl+r re-run failed jobs", priority: 11, github: true},
 
 	// Pull requests (task 052.6). Link and unlink live only here: they are the
 	// two actions that write vincent's own column, and they belong on the one
@@ -706,6 +727,20 @@ var bindings = []binding{
 	{key: "ctrl+s", label: "push the branch to origin and open the pull request", scope: scopePanel, context: ctxCreatePR, noPalette: true},
 	{key: "ctrl+o", label: "open GitHub's own new-pull-request page with this prefill instead", scope: scopePanel, context: ctxCreatePR, noPalette: true},
 	{key: "esc", label: "close the popup without sending anything (the draft is discarded)", scope: scopePanel, context: ctxCreatePR, noPalette: true},
+
+	// The Pull Request tab's confirmations (task 068.4). Same again: each
+	// owns the keyboard while it is up and prints its own key line, so these
+	// are here to keep ? complete.
+	{key: "left", label: "choose the merge method — merge, squash or rebase (←/→); none is chosen until you pick one", scope: scopePanel, context: ctxPullMerge, noPalette: true},
+	{key: "y", label: "merge with the chosen method at the head commit shown — does nothing until a method is chosen, or while the head has moved", scope: scopePanel, context: ctxPullMerge, noPalette: true},
+	{key: "n", label: "close without merging (esc too; enter never confirms)", scope: scopePanel, context: ctxPullMerge, noPalette: true},
+	{key: "esc", label: "close without merging", scope: scopePanel, context: ctxPullMerge, noPalette: true},
+	{key: "enter", label: "type the comment in the popup", scope: scopePanel, context: ctxPullComment, noPalette: true},
+	{key: "e", label: "write the comment in $EDITOR", scope: scopePanel, context: ctxPullComment, noPalette: true, term: termEditor},
+	{key: "ctrl+s", label: "post the comment — the popup is the confirmation; a blank one is not sent", scope: scopePanel, context: ctxPullComment, noPalette: true},
+	{key: "esc", label: "stop typing; pressed again, close without posting (the comment is discarded)", scope: scopePanel, context: ctxPullComment, noPalette: true},
+	{key: "y", label: "yes — send the close, reopen or re-run the prompt names", scope: scopePanel, context: ctxPullConfirm, hint: "y yes", priority: 1, noPalette: true},
+	{key: "n", label: "no — nothing is sent (any other key declines too)", scope: scopePanel, context: ctxPullConfirm, hint: "n no", priority: 2, noPalette: true},
 }
 
 // isHomeContext reports whether a context belongs to the board/task daily loop
