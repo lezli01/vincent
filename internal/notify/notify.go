@@ -93,10 +93,15 @@ type Envelope struct {
 	To           string `json:"to"`
 	BlockReason  string `json:"block_reason"`
 	QueuedReason string `json:"queued_reason"`
-	CurrentStep  int    `json:"current_step"`
-	StepsTotal   int    `json:"steps_total"`
-	WorktreePath string `json:"worktree_path"`
-	Branch       string `json:"branch"`
+	// AdmitNotBefore is when a held task may next be admitted (§11): the
+	// *until* beside queued_reason's *why*, so a one-line notifier can say
+	// "waiting until 14:20" without calling the API back (task 106 decision
+	// 6). RFC3339, and null whenever the task carries no hold.
+	AdmitNotBefore *string `json:"admit_not_before"`
+	CurrentStep    int     `json:"current_step"`
+	StepsTotal     int     `json:"steps_total"`
+	WorktreePath   string  `json:"worktree_path"`
+	Branch         string  `json:"branch"`
 
 	ProjectID int64  `json:"project_id"`
 	Project   string `json:"project"`
@@ -282,21 +287,22 @@ func (n *Notifier) envelope(ctx context.Context, j job, log *slog.Logger) (Envel
 		return Envelope{}, false
 	}
 	env := Envelope{
-		EventID:      j.eventID,
-		TS:           j.ts.UTC().Format(time.RFC3339),
-		Type:         EnvelopeType,
-		TaskID:       task.ID,
-		Title:        task.Title,
-		From:         j.from,
-		To:           j.to,
-		QueuedReason: task.QueuedReason,
-		CurrentStep:  task.CurrentStep,
-		StepsTotal:   n.deps.StepCount(task.WorkflowSnapshot),
-		WorktreePath: task.WorktreePath,
-		Branch:       task.BranchName,
-		ProjectID:    task.ProjectID,
-		Workflow:     task.WorkflowName,
-		Input:        j.input,
+		EventID:        j.eventID,
+		TS:             j.ts.UTC().Format(time.RFC3339),
+		Type:           EnvelopeType,
+		TaskID:         task.ID,
+		Title:          task.Title,
+		From:           j.from,
+		To:             j.to,
+		QueuedReason:   task.QueuedReason,
+		AdmitNotBefore: admitNotBefore(task),
+		CurrentStep:    task.CurrentStep,
+		StepsTotal:     n.deps.StepCount(task.WorkflowSnapshot),
+		WorktreePath:   task.WorktreePath,
+		Branch:         task.BranchName,
+		ProjectID:      task.ProjectID,
+		Workflow:       task.WorkflowName,
+		Input:          j.input,
 	}
 	// block_reason means "set while blocked" (§14); carrying one on any other
 	// state would lie to whoever reads it.
@@ -312,6 +318,16 @@ func (n *Notifier) envelope(ctx context.Context, j job, log *slog.Logger) (Envel
 		env.Project = p.Name
 	}
 	return env, true
+}
+
+// admitNotBefore renders the task's admission hold for the envelope, or nil
+// when it has none — `retry_backoff` and `usage_limit` holds alike.
+func admitNotBefore(task *store.Task) *string {
+	if task.AdmitNotBefore == nil {
+		return nil
+	}
+	at := task.AdmitNotBefore.UTC().Format(time.RFC3339)
+	return &at
 }
 
 // run spawns one notifier child, feeds it the envelope and waits out the

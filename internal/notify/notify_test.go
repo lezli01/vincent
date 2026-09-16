@@ -219,6 +219,60 @@ func TestAwaitingInputCarriesTheQuestion(t *testing.T) {
 	}
 }
 
+// TestHeldTransitionCarriesAdmitNotBefore: queued_reason says why a task is
+// waiting, and admit_not_before says until when (task 106 decision 6). A
+// transition that carries no hold sends the key as JSON null rather than
+// dropping it, so a notifier is written once against one shape.
+func TestHeldTransitionCarriesAdmitNotBefore(t *testing.T) {
+	capture := func(t *testing.T, mutate func(*store.Task), from, to taskstate.State) map[string]any {
+		t.Helper()
+		dir := t.TempDir()
+		h := newHarness(t, []taskstate.State{to}, helperArgv(t, "capture", dir))
+		if mutate != nil {
+			mutate(h.store.tasks[1])
+		}
+		h.notifier.OnEvent(stateEvent(5, 1, from, to, nil))
+		waitFor(t, "the notifier child to write its capture", func() bool {
+			return len(helperFiles(t, dir)) == 2
+		})
+		var raw map[string]any
+		for _, body := range helperFiles(t, dir) {
+			if strings.HasPrefix(strings.TrimSpace(body), "{") {
+				if err := json.Unmarshal([]byte(body), &raw); err != nil {
+					t.Fatalf("decode envelope: %v", err)
+				}
+			}
+		}
+		return raw
+	}
+
+	t.Run("held", func(t *testing.T) {
+		until := time.Date(2026, 9, 16, 14, 20, 0, 0, time.FixedZone("CEST", 2*60*60))
+		raw := capture(t, func(task *store.Task) {
+			task.BlockReason = ""
+			task.QueuedReason = "usage_limit"
+			task.AdmitNotBefore = &until
+		}, taskstate.Running, taskstate.Queued)
+		if raw["queued_reason"] != "usage_limit" {
+			t.Errorf("queued_reason = %v, want usage_limit", raw["queued_reason"])
+		}
+		if raw["admit_not_before"] != "2026-09-16T12:20:00Z" {
+			t.Errorf("admit_not_before = %v, want the hold in RFC3339 UTC", raw["admit_not_before"])
+		}
+	})
+
+	t.Run("not held", func(t *testing.T) {
+		raw := capture(t, nil, taskstate.Running, taskstate.Blocked)
+		v, ok := raw["admit_not_before"]
+		if !ok {
+			t.Fatal("admit_not_before is missing; want it present as null")
+		}
+		if v != nil {
+			t.Errorf("admit_not_before = %v on a transition with no hold, want null", v)
+		}
+	})
+}
+
 // TestSpawnsNothing covers every way a transition must be ignored.
 func TestSpawnsNothing(t *testing.T) {
 	cases := []struct {
