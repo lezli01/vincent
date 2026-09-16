@@ -6038,6 +6038,9 @@ POST   /v1/tasks/{id}/github/pull/checks/rerun
                                         rollup for the current head has a failed, Actions-backed
                                         row with that `run_id`; any other is refused 409
                                         `bad_request` before sending. **200** `{ run_id }`.
+                                        *Amended 2026-09-16 (task 068.5, issue #388):* a `run_id`
+                                        below 1 is refused earlier, **400** `validation_failed`,
+                                        before the §13.2 gate and so before GitHub is asked.
                                         All five: a GitHub refusal is **409** with `details.reason`
                                         from the vocabulary (`no_write_scope` for a 403) and never
                                         GitHub's own text; no event is published, because the link
