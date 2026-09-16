@@ -21,6 +21,7 @@ require (
 	github.com/spf13/pflag v1.0.10
 	golang.org/x/mod v0.40.0
 	golang.org/x/sys v0.47.0
+	golang.org/x/tools v0.49.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	modernc.org/sqlite v1.58.0
 )
@@ -230,7 +231,6 @@ require (
 	golang.org/x/telemetry v0.0.0-20260811182544-a038080d80e5 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	golang.org/x/tools v0.49.0 // indirect
 	golang.org/x/vuln v1.7.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect

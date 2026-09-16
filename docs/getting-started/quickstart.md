@@ -182,9 +182,10 @@ vincent task show 1
 vincent task ls --state running
 ```
 
-Everything the TUI does is a subcommand, including the human actions on a live
-task — approve, reject, retry, repair, skip, pause, resume, answer, archive —
-so the gate you are about to approve by hand can also be approved from a script:
+Everything the TUI does is a subcommand, apart from the few screens the
+[CLI reference](../reference/cli.md#what-only-the-tui-does) lists. That
+includes the human actions on a live task — approve, reject, retry, repair,
+skip, pause, resume, answer, archive — so the gate you are about to approve by hand can also be approved from a script:
 
 ```sh
 vincent task approve 1

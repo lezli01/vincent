@@ -1,7 +1,8 @@
 # Scripting vincent
 
-Everything the TUI does is a subcommand, and everything either does is the same
-localhost API. That includes the actions that act on a *live* task — approve,
+Everything the TUI does is a subcommand, apart from the few screens listed
+under [what only the TUI does](../reference/cli.md#what-only-the-tui-does), and
+everything either does is the same localhost API. That includes the actions that act on a *live* task — approve,
 reject, retry, repair, skip, pause, resume, answer, archive — so a blocked task
 can be rescued from a shell loop, a cron job or an SSH session with no usable
 terminal. The [CLI reference](../reference/cli.md) is the full tree.

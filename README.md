@@ -459,8 +459,10 @@ The task appears on the board, runs in its own worktree on branch
 TUI, press `a` to approve, and the publish step pushes the branch. `q` quits
 the TUI — the daemon and any running task keep going without it.
 
-Everything the TUI does is a subcommand, and everything either does is the same
-localhost API. That covers the data commands (`vincent task show 1`, `vincent task diff 1`, plus
+Everything the TUI does is a subcommand, apart from the few screens the
+[CLI reference lists](docs/reference/cli.md#what-only-the-tui-does) — editing
+workflows and triggers in place among them — and everything either does is the
+same localhost API. That covers the data commands (`vincent task show 1`, `vincent task diff 1`, plus
 `project`, `workflow` and `daemon`) and every human action on a live task —
 `approve`, `reject`, `retry`, `repair`, `skip`, `pause`, `resume`, `answer`,
 `archive`, `follow-up` — so a blocked task can be rescued from a shell loop

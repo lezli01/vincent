@@ -187,3 +187,11 @@ struck — `GET /v1/agents` shipped as `vincent agents`, with `--refresh` and
 *Amended 2026-09-16 (task [105](105-cli-project-edit.md), issue #394):* the
 project `PATCH /v1/projects/{id}` is struck — it shipped as
 `vincent project edit`, with a flag for each of its six fields and `--json`.
+
+*Amended 2026-09-16 (issue #395):* the TUI-facing part of this list is now
+enforced. `TestDocsClaimsTUIClientCallsHaveSubcommands`
+(`internal/cli/docs_claims_test.go`) fails when the TUI calls an `apiclient`
+method no subcommand calls and its exemption list does not name it with a
+reason, and when an exemption goes stale. `resolve` is on that list, as are
+the workflow and trigger routes; the task `PATCH` (priority) is not, because
+the TUI does not call it.
