@@ -200,8 +200,9 @@ type Agent struct {
 	Available bool   `json:"available"`
 	Path      string `json:"path,omitempty"`
 	Version   string `json:"version,omitempty"`
-	// LoggedIn is null where the CLI exposes no non-interactive auth surface
-	// — claude today (§9.5). It is never a guess.
+	// LoggedIn is null where the probe could not answer — a timeout, an
+	// unreadable reply, or a claude older than `auth status` (§9.5). It is
+	// never a guess.
 	LoggedIn *bool  `json:"logged_in"`
 	Error    string `json:"error,omitempty"`
 	// The remaining fields are the five §9.5 health facets task 041 named,

@@ -172,7 +172,7 @@ type Availability struct {
 	Path          string // resolved binary path when found
 	Version       string
 	SupportsInput bool   // mid-run input requests (spec §7.4)
-	LoggedIn      *bool  // nil = unknown (best effort; always nil in v1 for claude)
+	LoggedIn      *bool  // nil = unknown (best effort; §9.5 — the probe could not answer, or the CLI has none)
 	Error         string // why not found / not probed
 	// VersionVerdict is what vincent knows about this *build* (task 041):
 	// tested, untested, or a build known to break. It rides here rather than

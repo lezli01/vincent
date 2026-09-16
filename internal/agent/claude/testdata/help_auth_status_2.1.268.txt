@@ -1,0 +1,8 @@
+Usage: claude auth status [options]
+
+Show authentication status
+
+Options:
+  -h, --help  Display help for command
+  --json      Output as JSON (default)
+  --text      Output as human-readable text

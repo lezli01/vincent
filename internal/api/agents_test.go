@@ -51,12 +51,13 @@ func newAgentsServer(t *testing.T) *httptest.Server {
 }
 
 // TestAgentsReportLoggedIn pins the three states of the §9.5 field. The
-// distinction is the point of adding it: null means the adapter cannot tell,
-// which is normal, while false means installed-and-doomed — a state that was
-// previously indistinguishable from healthy.
+// distinction is the point of adding it: null means the probe could not tell,
+// while false means installed-and-doomed — a state that was previously
+// indistinguishable from healthy. claude answers through `auth status` since
+// task 107, and both endpoints serve it from the same cache, so both are read.
 func TestAgentsReportLoggedIn(t *testing.T) {
 	fake := agenttest.BuildFakeAgent(t)
-	probe := func(t *testing.T) []agentResponse {
+	probe := func(t *testing.T) (agents []agentResponse, info []AgentStatus) {
 		t.Helper()
 		reg := agent.NewRegistry(
 			claude.New(func() string { return fake }),
@@ -83,28 +84,43 @@ func TestAgentsReportLoggedIn(t *testing.T) {
 		if len(out.Agents) != 2 {
 			t.Fatalf("agents = %d, want claude and cursor", len(out.Agents))
 		}
-		return out.Agents
+		resp, body = doRequest(t, ts, http.MethodGet, "/v1/info", testToken)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("info: %d %s", resp.StatusCode, body)
+		}
+		var inf infoResponse
+		if err := json.Unmarshal(body, &inf); err != nil {
+			t.Fatalf("info body: %v", err)
+		}
+		if len(inf.Agents) != 2 {
+			t.Fatalf("info agents = %d, want claude and cursor", len(inf.Agents))
+		}
+		return out.Agents, inf.Agents
+	}
+	definite := func(t *testing.T, where string, got *bool, want bool) {
+		t.Helper()
+		if got == nil || *got != want {
+			t.Errorf("%s logged_in = %v, want a definite %v", where, got, want)
+		}
 	}
 
 	t.Run("logged in", func(t *testing.T) {
-		agents := probe(t)
-		if agents[0].LoggedIn != nil {
-			t.Errorf("claude logged_in = %v, want null — it has no cheap probe (§9.5)", *agents[0].LoggedIn)
-		}
-		if agents[1].LoggedIn == nil || !*agents[1].LoggedIn {
-			t.Errorf("cursor logged_in = %v, want a definite true", agents[1].LoggedIn)
-		}
+		agents, info := probe(t)
+		definite(t, "claude /v1/agents", agents[0].LoggedIn, true)
+		definite(t, "claude /v1/info", info[0].LoggedIn, true)
+		definite(t, "cursor /v1/agents", agents[1].LoggedIn, true)
 	})
 
 	t.Run("logged out", func(t *testing.T) {
 		t.Setenv("FAKEAGENT_CURSOR_LOGGED_OUT", "1")
-		agents := probe(t)
-		cu := agents[1]
-		if !cu.Available {
-			t.Error("cursor available = false; a logged-out CLI is still installed")
-		}
-		if cu.LoggedIn == nil || *cu.LoggedIn {
-			t.Errorf("cursor logged_in = %v, want a definite false", cu.LoggedIn)
+		t.Setenv("FAKEAGENT_CLAUDE_LOGGED_OUT", "1")
+		agents, info := probe(t)
+		for i, name := range []string{"claude", "cursor"} {
+			if !agents[i].Available {
+				t.Errorf("%s available = false; a logged-out CLI is still installed", name)
+			}
+			definite(t, name+" /v1/agents", agents[i].LoggedIn, false)
+			definite(t, name+" /v1/info", info[i].LoggedIn, false)
 		}
 	})
 }

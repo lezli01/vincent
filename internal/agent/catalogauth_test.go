@@ -56,14 +56,14 @@ func TestCatalogAuthTTLRefreshesDetectOnly(t *testing.T) {
 }
 
 // TestCatalogAuthTTLSkipsAdaptersThatCannotTell keeps the TTL honest about its
-// own purpose: claude reports `logged_in: null` because its CLI has no cheap
-// auth surface (§9.5), and spawning a subprocess every five minutes to be told
-// nothing again is pure cost.
+// own purpose: a claude older than `auth status` (2.1.41, task 107) reports
+// `logged_in: null` because it has nothing to ask (§9.5), and spawning a
+// subprocess every five minutes to be told nothing again is pure cost.
 func TestCatalogAuthTTLSkipsAdaptersThatCannotTell(t *testing.T) {
 	bin := fakeBinary(t)
 	stub := &stubAdapter{
 		name: "claude", path: bin,
-		av:   Availability{Found: true, Path: bin, Version: "2.1.241"}, // LoggedIn nil
+		av:   Availability{Found: true, Path: bin, Version: "2.1.40"}, // LoggedIn nil
 		opts: cachedOpts("sonnet"),
 	}
 	c := NewCatalogCache(NewRegistry(stub))
@@ -79,6 +79,50 @@ func TestCatalogAuthTTLSkipsAdaptersThatCannotTell(t *testing.T) {
 	}
 	if stub.detects != 1 {
 		t.Fatalf("detects = %d, want no re-probe for an adapter with no auth state to go stale", stub.detects)
+	}
+}
+
+// TestCatalogAuthTTLRefreshesClaude pins the generic TTL for the adapter task
+// 107 newly brought under it. Nothing in the cache changed for claude: once
+// its Detect returns a boolean, staleAuth re-asks after authTTL, and a
+// re-probe that declines to answer — a timeout, an unreadable reply — keeps
+// the boolean it had rather than downgrading it to unknown (redetect's rule).
+func TestCatalogAuthTTLRefreshesClaude(t *testing.T) {
+	bin := fakeBinary(t)
+	stub := &stubAdapter{
+		name: "claude", path: bin,
+		av:   Availability{Found: true, Path: bin, Version: "2.1.268", LoggedIn: boolPtr(false)},
+		opts: cachedOpts("sonnet"),
+	}
+	c := NewCatalogCache(NewRegistry(stub))
+	now := time.Now()
+	c.now = func() time.Time { return now }
+
+	if e, _ := c.Entry(t.Context(), "claude", false); e.Availability.LoggedIn == nil || *e.Availability.LoggedIn {
+		t.Fatalf("logged_in = %v, want false from the first probe", e.Availability.LoggedIn)
+	}
+
+	// Past the TTL the user has run `claude auth login`, and the daemon says so.
+	now = now.Add(authTTL)
+	stub.av.LoggedIn = boolPtr(true)
+	e, _ := c.Entry(t.Context(), "claude", false)
+	if stub.detects != 2 || stub.options != 1 {
+		t.Fatalf("detects = %d, options = %d past authTTL; want a Detect-only refresh", stub.detects, stub.options)
+	}
+	if e.Availability.LoggedIn == nil || !*e.Availability.LoggedIn {
+		t.Fatalf("logged_in = %v, want true after the refresh", e.Availability.LoggedIn)
+	}
+
+	// A later re-probe that cannot tell keeps the answer it had.
+	now = now.Add(authTTL)
+	stub.av.LoggedIn = nil
+	e, _ = c.Entry(t.Context(), "claude", false)
+	if stub.detects != 3 {
+		t.Fatalf("detects = %d, want the entry re-probed again past authTTL", stub.detects)
+	}
+	if e.Availability.LoggedIn == nil || !*e.Availability.LoggedIn {
+		t.Fatalf("logged_in = %v after a re-probe that answered nil, want the previous true kept",
+			e.Availability.LoggedIn)
 	}
 }
 

@@ -1,0 +1,8 @@
+{
+  "loggedIn": false,
+  "authMethod": "none",
+  "apiProvider": "firstParty",
+  "analyticsDisabled": false,
+  "projectsDirectory": "/tmp/empty-claude-config/projects",
+  "configDirectory": "/tmp/empty-claude-config"
+}
