@@ -31,13 +31,18 @@ localhost API.
 | Code | Meaning |
 |---|---|
 | `0` | Success |
-| `1` | The request was rejected — the daemon answered no (bad id, invalid state transition), a daemon-free command refused it (`workflow validate` on an invalid file, `workflow render` on a template that does not execute, `workflow init` on a name already taken, `trigger validate` on an invalid file, `trigger ls` that matched no file, `trigger apply` on a proposal it refuses), or the client refused the input before sending anything (a `--fields-file` that is not one JSON object of strings, a `trigger test --event` file that is not one JSON object) |
+| `1` | The request was rejected — the daemon answered no (bad id, invalid state transition), a daemon-free command refused it (`workflow validate` on an invalid file, `workflow render` on a template that does not execute, `workflow init` on a name already taken, `trigger validate` on an invalid file, `trigger ls` that matched no file, `trigger apply` on a proposal it refuses), or the client refused the input before sending anything (a `--fields-file` that is not one JSON object of strings, a `trigger test --event` file that is not one JSON object, a `github pr link` number that is not a positive integer, a `github pr unlink` on a task with no live link) |
 | `2` | No daemon answered |
 
 `vincent daemon status` overloads them usefully: `0` healthy, `1` not running,
 `2` running but unresponsive. `vincent doctor` follows the same shape: `0`
 healthy, `1` problems found, `2` no daemon answered. So does
 [`vincent update`](#vincent-update) — see its own table.
+[`vincent github pr show`](#vincent-github-pr-show) and
+[`vincent github pr checks`](#vincent-github-pr-checks) set their own for a
+different reason: the routes behind them answer `200` whatever they found, so
+`1` there means the task has no linked pull request or GitHub could not be
+read, not that the request was malformed.
 
 ## Global behavior
 
@@ -1953,7 +1958,7 @@ pull request to the task again. Nothing is sent to GitHub. `--json` prints the
 task, whose `github_pull` is now `suppressed` with its repo and number kept.
 
 A task with no live link — never linked, or already unlinked — is refused with
-exit `1` before anything is sent, and nothing about it changes. Exit `2` when
+exit `1` before the unlink is sent, and nothing about it changes. Exit `2` when
 no daemon answered. The same action is `u` on the TUI's Pull Request tab and on
 the Pull Requests takeover.
 

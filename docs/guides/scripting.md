@@ -105,6 +105,14 @@ manager owns this install, and `1` that verification or the swap failed and the
 binary was left untouched. Neither `2` means "no daemon" — the command never
 contacts one.
 
+[`vincent github pr show`](../reference/cli.md#vincent-github-pr-show) and
+[`pr checks`](../reference/cli.md#vincent-github-pr-checks) overload only the
+`1`: the routes behind them answer `200` whatever they found, so the command
+carries the verdict instead — `0` the pull request or its check rollup was
+read, `1` the task has no linked pull request or GitHub could not be read. For
+`checks`, `0` means the rollup was read **whatever CI concluded**; read that
+from `--json`'s `.state`, never from the exit code.
+
 What sets exit `1` is a **closed set**: `config.yaml` exists and does not parse,
 the daemon is alive but not answering, `PRAGMA integrity_check` is not `ok`, the
 database is at a schema version this binary does not understand, orphaned
