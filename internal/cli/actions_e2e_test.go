@@ -408,6 +408,106 @@ func TestHumanActionCommands(t *testing.T) {
 		}
 	})
 
+	// `project edit` (task 105): every field PATCH takes, set, read back,
+	// cleared and refused through the real binary.
+	t.Run("project edit", func(t *testing.T) {
+		// A project of its own: repointing project 1 would carry off the
+		// workflows every other subtest selects.
+		repo := testrepo.Init(t, "main")
+		testrepo.Run(t, repo, "branch", "develop")
+		other := testrepo.Init(t, "main") // has no develop branch
+		out, code := runVincent(t, dataDir, cfgDir, "project", "add", repo, "--json")
+		if code != 0 {
+			t.Fatalf("project add: code %d, out %q", code, out)
+		}
+		var added projectView
+		if err := json.Unmarshal([]byte(out), &added); err != nil {
+			t.Fatalf("project add --json is not JSON: %v (%q)", err, out)
+		}
+		id := strconv.FormatInt(added.ID, 10)
+		first := projectByID(t, dataDir, cfgDir, 1)
+
+		out, code = runVincent(t, dataDir, cfgDir, "project", "edit", id,
+			"--name", "edited", "--default-branch", "develop", "--workflow", "blocky",
+			"--max-parallel", "2", "--branch-template", "edit/{{.ID}}")
+		if code != 0 {
+			t.Fatalf("project edit: code %d, out %q", code, out)
+		}
+		if !strings.Contains(out, "project "+id+" updated") {
+			t.Errorf("project edit does not say what it updated: %q", out)
+		}
+		got := projectByID(t, dataDir, cfgDir, added.ID)
+		if got.Name != "edited" || got.DefaultBranch != "develop" ||
+			deref(got.DefaultWorkflow) != "blocky" || got.MaxParallelTasks == nil ||
+			*got.MaxParallelTasks != 2 || deref(got.BranchTemplate) != "edit/{{.ID}}" {
+			t.Fatalf("after edit = %+v, want every field set", got)
+		}
+
+		// An empty value clears an optional field (decision 1), and leaves
+		// the fields it did not name alone.
+		out, code = runVincent(t, dataDir, cfgDir, "project", "edit", id,
+			"--workflow", "", "--max-parallel", "", "--branch-template", "")
+		if code != 0 {
+			t.Fatalf("project edit clearing: code %d, out %q", code, out)
+		}
+		got = projectByID(t, dataDir, cfgDir, added.ID)
+		if got.DefaultWorkflow != nil || got.MaxParallelTasks != nil || got.BranchTemplate != nil {
+			t.Errorf("after clearing = %+v, want workflow, cap and branch template null", got)
+		}
+		if got.Name != "edited" || got.DefaultBranch != "develop" {
+			t.Errorf("clearing touched fields it did not name: %+v", got)
+		}
+
+		// Each refusal is the daemon's, word for word, and exits 1.
+		for _, tc := range []struct {
+			args []string
+			want string
+		}{
+			{[]string{"--path", other}, "pass default_branch in the same request"},
+			{[]string{"--path", filepath.Join("relative", "repo")}, "must be absolute"},
+			{[]string{"--max-parallel", "0"}, "must be at least 1"},
+			{[]string{"--default-branch", "nope"}, "does not resolve to a local branch"},
+			{[]string{"--name", first.Name}, "already in use"},
+		} {
+			args := append([]string{"project", "edit", id}, tc.args...)
+			out, code := runVincent(t, dataDir, cfgDir, args...)
+			if code != 1 || !strings.Contains(out, tc.want) {
+				t.Errorf("%v: code %d, out %q; want 1 and %q", tc.args, code, out, tc.want)
+			}
+		}
+		if got := projectByID(t, dataDir, cfgDir, added.ID); got.Path != added.Path || got.Name != "edited" {
+			t.Errorf("a refused edit changed the project: %+v", got)
+		}
+
+		// Repointing with the branch the new repository does have succeeds,
+		// and --json prints the project the daemon returned.
+		out, code = runVincent(t, dataDir, cfgDir, "project", "edit", id,
+			"--path", other, "--default-branch", "main", "--json")
+		if code != 0 {
+			t.Fatalf("project edit repoint: code %d, out %q", code, out)
+		}
+		var repointed projectView
+		if err := json.Unmarshal([]byte(out), &repointed); err != nil {
+			t.Fatalf("project edit --json is not JSON: %v (%q)", err, out)
+		}
+		if repointed.ID != added.ID || repointed.Path != filepath.Clean(other) || repointed.DefaultBranch != "main" {
+			t.Errorf("project edit --json = %+v, want the repointed project", repointed)
+		}
+
+		// No field flag: refused on the client, and nothing changes.
+		before := projectByID(t, dataDir, cfgDir, added.ID)
+		out, code = runVincent(t, dataDir, cfgDir, "project", "edit", id, "--json")
+		if code != 1 || !strings.Contains(out, "--branch-template") {
+			t.Errorf("project edit with no field: code %d, out %q; want 1 and the flag list", code, out)
+		}
+		if after := projectByID(t, dataDir, cfgDir, added.ID); after.UpdatedAt != before.UpdatedAt {
+			t.Errorf("an empty edit reached the daemon: updated_at %s → %s", before.UpdatedAt, after.UpdatedAt)
+		}
+		if out, code := runVincent(t, dataDir, cfgDir, "project", "edit", "one", "--name", "x"); code != 1 {
+			t.Errorf("project edit with a non-number id: code %d, want 1 (out %q)", code, out)
+		}
+	})
+
 	t.Run("project rm", func(t *testing.T) {
 		// A project still holding tasks is refused, and the count reaches the
 		// user intact — it is the thing that tells them what --force will do.
@@ -490,10 +590,49 @@ func TestHumanActionCommands(t *testing.T) {
 				t.Errorf("%v does not point at `vincent daemon start`: %q", args, out)
 			}
 		}
+		// An edit naming no field never reaches for a daemon, so it is the
+		// input's refusal (1), not the missing daemon's (2).
+		if out, code := runVincent(t, dataDir, cfgDir, "project", "edit", "1"); code != 1 ||
+			!strings.Contains(out, "nothing to change") {
+			t.Errorf("project edit with no field and no daemon: code %d, out %q; want 1", code, out)
+		}
 		if out, code := runVincent(t, dataDir, cfgDir, "daemon", "status"); code != 1 {
 			t.Errorf("daemon status after the actions: code %d, want 1 (out %q)", code, out)
 		}
 	})
+}
+
+// projectView is the part of a project's JSON these assertions read.
+type projectView struct {
+	ID               int64   `json:"id"`
+	Name             string  `json:"name"`
+	Path             string  `json:"path"`
+	DefaultBranch    string  `json:"default_branch"`
+	DefaultWorkflow  *string `json:"default_workflow"`
+	MaxParallelTasks *int    `json:"max_parallel_tasks"`
+	BranchTemplate   *string `json:"branch_template"`
+	UpdatedAt        string  `json:"updated_at"`
+}
+
+// projectByID reads one project back through `project ls --json`, the way a
+// script would after an edit.
+func projectByID(t *testing.T, dataDir, cfgDir string, id int64) projectView {
+	t.Helper()
+	out, code := runVincent(t, dataDir, cfgDir, "project", "ls", "--json")
+	if code != 0 {
+		t.Fatalf("project ls --json: code %d, out %q", code, out)
+	}
+	var projects []projectView
+	if err := json.Unmarshal([]byte(out), &projects); err != nil {
+		t.Fatalf("project ls --json is not JSON: %v (%q)", err, out)
+	}
+	for _, p := range projects {
+		if p.ID == id {
+			return p
+		}
+	}
+	t.Fatalf("project %d is not in project ls: %q", id, out)
+	return projectView{}
 }
 
 // writeActionWorkflow puts a project-scope workflow in the repository, named after

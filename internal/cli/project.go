@@ -2,8 +2,10 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -13,9 +15,9 @@ import (
 func newProjectCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "project",
-		Short: "Register, inspect and remove projects",
+		Short: "Register, inspect, edit and remove projects",
 	}
-	cmd.AddCommand(newProjectAddCmd(), newProjectLsCmd(), newProjectRmCmd())
+	cmd.AddCommand(newProjectAddCmd(), newProjectLsCmd(), newProjectEditCmd(), newProjectRmCmd())
 	return cmd
 }
 
@@ -107,6 +109,140 @@ func newProjectLsCmd() *cobra.Command {
 	}
 	jsonFlag(cmd)
 	return cmd
+}
+
+// projectEditFlags are the flags of `project edit` that change a field, one
+// per field PATCH /v1/projects/{id} accepts, in the order the help lists them.
+var projectEditFlags = []string{
+	"name", "path", "default-branch", "workflow", "max-parallel", "branch-template",
+}
+
+// errEmptyProjectPatch refuses an edit that names no field. PATCH would accept
+// an empty body and answer the project unchanged, which reads as success to a
+// caller whose flag was mistyped into an argument, so the CLI says so instead.
+var errEmptyProjectPatch = errors.New("nothing to change: pass at least one of --" +
+	strings.Join(projectEditFlags, ", --"))
+
+func newProjectEditCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "edit <id>",
+		Short: "Change a registered project's settings",
+		Long: "Changes only the fields whose flags are given; every other field is left\n" +
+			"as it is. An empty value (--workflow \"\", --max-parallel \"\",\n" +
+			"--branch-template \"\") clears that setting. --path is sent as typed and\n" +
+			"must be absolute; when the new repository lacks the stored default branch,\n" +
+			"pass --default-branch in the same command.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("project id must be a number: %q", args[0])
+			}
+			// Refused before a client exists: an edit that changes nothing
+			// never needs a daemon, so it exits 1 with or without one.
+			req, err := projectPatchFromFlags(cmd)
+			if err != nil {
+				return err
+			}
+			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				p, err := c.PatchProject(ctx, id, req)
+				if err != nil {
+					// The daemon re-runs registration's checks on a new path and
+					// explains a repoint that lost the default branch; its own
+					// wording is the useful part, so it is printed unchanged.
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+					return exitError{code: 1}
+				}
+				if wantJSON(cmd) {
+					return emitJSON(cmd.OutOrStdout(), p)
+				}
+				parallelCap := "none"
+				if p.MaxParallelTasks != nil {
+					parallelCap = strconv.Itoa(*p.MaxParallelTasks)
+				}
+				template := "inherited"
+				if p.BranchTemplate != nil && *p.BranchTemplate != "" {
+					template = *p.BranchTemplate
+				}
+				_, err = fmt.Fprintf(cmd.OutOrStdout(),
+					"project %d updated: %s (%s, default branch %s, workflow %s, cap %s, branch template %s)\n",
+					p.ID, p.Name, p.Path, p.DefaultBranch, p.Workflow(), parallelCap, template)
+				return err
+			})
+		},
+	}
+	cmd.Flags().String("name", "", "New project name")
+	cmd.Flags().String("path", "", "New absolute path to the repository")
+	cmd.Flags().String("default-branch", "", "Base branch for new tasks; must exist in the repository")
+	cmd.Flags().String("workflow", "", `Default workflow for new tasks; "" falls back to adhoc`)
+	cmd.Flags().String("max-parallel", "", `Per-project concurrency cap; "" removes the cap`)
+	cmd.Flags().String("branch-template", "", `Branch name template; "" inherits config.yaml`)
+	jsonFlag(cmd)
+	return cmd
+}
+
+// projectPatchFromFlags builds the PATCH body from the flags the user set,
+// leaving every other field absent so an edit never stomps a field it did not
+// name (§13.2). It reads flags and nothing else, which is what lets it be
+// tested without a daemon.
+//
+// An empty or whitespace-only value clears an optional field — the TUI
+// project form's rule, since it trims its rows, and `config set`'s rule for
+// emptying a value. Name, path and default branch have no cleared state, so
+// their value goes out as typed and the daemon is the one that refuses an
+// empty one. --max-parallel is a string for the same reason: an integer is
+// sent as given, so 0 comes back with the daemon's own message, and anything
+// else is refused here because there is no number to send.
+func projectPatchFromFlags(cmd *cobra.Command) (apiclient.PatchProjectRequest, error) {
+	flags := cmd.Flags()
+	var req apiclient.PatchProjectRequest
+	changed := false
+	required := func(flag string) apiclient.Opt[string] {
+		v, _ := flags.GetString(flag)
+		return apiclient.SetOpt(v)
+	}
+	optional := func(flag string) apiclient.Opt[string] {
+		v, _ := flags.GetString(flag)
+		if strings.TrimSpace(v) == "" {
+			return apiclient.NullOpt[string]()
+		}
+		return apiclient.SetOpt(v)
+	}
+	for _, flag := range projectEditFlags {
+		if !flags.Changed(flag) {
+			continue
+		}
+		changed = true
+		switch flag {
+		case "name":
+			req.Name = required(flag)
+		case "path":
+			req.Path = required(flag)
+		case "default-branch":
+			req.DefaultBranch = required(flag)
+		case "workflow":
+			req.DefaultWorkflow = optional(flag)
+		case "branch-template":
+			req.BranchTemplate = optional(flag)
+		case "max-parallel":
+			v, _ := flags.GetString(flag)
+			v = strings.TrimSpace(v)
+			if v == "" {
+				req.MaxParallelTasks = apiclient.NullOpt[int]()
+				continue
+			}
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				return apiclient.PatchProjectRequest{}, fmt.Errorf(
+					"--max-parallel must be a whole number, or \"\" to remove the cap: %q", v)
+			}
+			req.MaxParallelTasks = apiclient.SetOpt(n)
+		}
+	}
+	if !changed {
+		return apiclient.PatchProjectRequest{}, errEmptyProjectPatch
+	}
+	return req, nil
 }
 
 func newProjectRmCmd() *cobra.Command {
