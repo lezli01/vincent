@@ -17,7 +17,7 @@ VINCENT_GATE_SCENARIO=2 ./scripts/m5-gate.sh     # one scenario, for debugging
 |---|---|---|
 | 1 | A `agent: cursor` workflow runs to done; the step records `agent=cursor`, tokens, **no** cost and **no** effort; the transcript carries cursor-shaped lines; the branch carries the edit | yes |
 | 2 | A model the CLI rejects fails with the **stderr tail** in the step record — cursor emits no `result` event on that path (§9.7, §18) | yes |
-| 3 | An installed-but-unauthenticated CLI reports `logged_in: false` while staying `available: true`, on both `/v1/agents` and `/v1/info`; adapters that cannot tell report `null` (§9.5) | no — it would mean signing you out |
+| 3 | An installed-but-unauthenticated CLI reports `logged_in: false` while staying `available: true`, on both `/v1/agents` and `/v1/info`; claude, pointed at the same fake binary, answers its own `auth status` probe with a definite `true` (§9.5, task 107) | no — it would mean signing you out |
 | 4 | A `restricted` step is refused where cursor's sandbox is unavailable, never downgraded to full-auto; elsewhere the same workflow simply runs (§9.4) | no — asserts vincent's own behavior |
 
 ## Prerequisite (Windows, when the daemon is parented by Git Bash)

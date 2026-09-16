@@ -53,6 +53,12 @@ All dated 2026-08-15 and binding.
 
 ### 1. Codex gains an auth probe; claude stays `null`
 
+*Superseded 2026-09-16 (task 107), for claude only.* The codex half stands. The
+claude half was drawn from a cut-down fixture: `help_2.1.224.txt` holds only the
+Options section of `claude --help`, not its Commands list, and `claude auth
+status` has existed since 2.1.41. claude now probes it for a definite boolean —
+see [task 107](107-claude-auth-probe.md). The original text follows.
+
 The issue asserted that both adapters gain "a cheap authentication probe".
 Codex has one — `codex login status`. Claude does not: the captured `--help`
 (`internal/agent/claude/testdata/help_2.1.224.txt`, 2.1.224) carries no
@@ -206,4 +212,5 @@ The report is still printed in full.
   cheap.
 - **`git worktree prune` in user repos.** Decision 3.
 - **A claude auth probe.** Decision 1; revisit if the CLI ever grows a
-  non-interactive auth surface.
+  non-interactive auth surface. *Done in [task 107](107-claude-auth-probe.md)
+  (2026-09-16).*

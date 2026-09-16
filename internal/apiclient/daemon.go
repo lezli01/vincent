@@ -24,8 +24,8 @@ type AgentStatus struct {
 	TestedVersions    string `json:"tested_versions,omitempty"`
 	RestrictedVerdict string `json:"restricted_verdict,omitempty"`
 	// LoggedIn is nil when the adapter cannot cheaply tell (§9.5). Renderers
-	// must distinguish nil from false: "unknown" is the normal state for
-	// claude and codex, while false means every run will fail at the API.
+	// must distinguish nil from false: "unknown" is a probe that could not
+	// answer, while false means every run will fail at the API.
 	LoggedIn *bool  `json:"logged_in"`
 	Error    string `json:"error,omitempty"`
 	// Quota is the adapter's usage window as last observed (task 026), or

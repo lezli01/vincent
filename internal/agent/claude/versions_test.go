@@ -19,6 +19,7 @@ func TestDetectVersionVerdict(t *testing.T) {
 		want         agent.VersionVerdict
 	}{
 		{name: "fixture build is tested", want: agent.VersionTested},
+		{name: "auth status fixture build is tested", version: "2.1.268", want: agent.VersionTested},
 		{name: "newer build is untested", version: "9.9.9", want: agent.VersionUntested},
 		{
 			name:         "known-bad build is incompatible",

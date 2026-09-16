@@ -395,7 +395,15 @@ scenario3() {
   echo "=== scenario 3: logged-out cursor is flagged before a task is created"
   scenario_dirs s3
   export FAKEAGENT_CURSOR_LOGGED_OUT=1
-  cursor_config
+  # claude points at the same fake binary, so the two dialects' probes are
+  # asked of one executable under one environment (task 107).
+  cat > "$CONFIG_DIR/config.yaml" <<EOF
+agents:
+  cursor:
+    path: "$(hostpath "$FAKEAGENT")"
+  claude:
+    path: "$(hostpath "$FAKEAGENT")"
+EOF
   daemon_up
 
   local entry
@@ -411,11 +419,13 @@ scenario3() {
   [[ "$(jq -r .logged_in <<<"$info_entry")" == "false" ]] \
     || fail "/v1/info disagrees with /v1/agents about logged_in: $info_entry"
 
-  # The adapters that cannot tell must report null, never a guessed false.
+  # claude answers through its own `auth status` probe (task 107): against the
+  # same fake binary, where cursor is a definite false, claude is a definite
+  # true — the two probes are independent, and claude is no longer null.
   local claude_logged_in
   claude_logged_in="$(api GET /agents | jq -r '.agents[] | select(.name == "claude") | .logged_in')"
-  [[ "$claude_logged_in" == "null" ]] \
-    || fail "claude reports logged_in=$claude_logged_in; it has no probe and must report null"
+  [[ "$claude_logged_in" == "true" ]] \
+    || fail "claude reports logged_in=$claude_logged_in; its auth status probe must answer a definite true"
 
   "$VINCENT" daemon stop --force >/dev/null 2>&1 || true
   unset FAKEAGENT_CURSOR_LOGGED_OUT

@@ -587,8 +587,8 @@ func boolWord(v bool) string {
 }
 
 // loggedInWord renders the §9.5 tri-state. "unknown" is a real answer, not a
-// hedge: claude's CLI exposes no non-interactive auth surface, so vincent
-// declines to accuse it either way.
+// hedge: when a probe cannot answer — it timed out, its reply was unreadable,
+// or the CLI predates the command — vincent declines to accuse it either way.
 func loggedInWord(v *bool) string {
 	switch {
 	case v == nil:

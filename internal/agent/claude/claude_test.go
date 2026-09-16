@@ -117,8 +117,11 @@ func TestDetect(t *testing.T) {
 	if !av.SupportsInput {
 		t.Error("SupportsInput = false; 2.1.224 is inside the verified family")
 	}
-	if av.LoggedIn != nil {
-		t.Error("LoggedIn must stay nil (unknown) in v1")
+	// task 107: 2.1.224 is inside the `auth status` gate, so the §9.5 field is
+	// a definite boolean now — and it rides Detect, which is what carries it
+	// to /v1/agents, /v1/info, doctor and the new-task form alike.
+	if av.LoggedIn == nil || !*av.LoggedIn {
+		t.Errorf("LoggedIn = %v, want a definite true — claude can answer this (§9.5)", av.LoggedIn)
 	}
 }
 

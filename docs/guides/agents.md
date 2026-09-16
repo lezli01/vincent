@@ -34,8 +34,8 @@ silently drops.
 | `effort:` | ✅ | ✅ | **—** (it lives in the model id) |
 | `restricted` mode | ✅ | ✅ | ✅ on macOS/Linux, **refused on Windows** |
 | Carries [vincent's MCP server](mcp.md) for one run | ✅ `--mcp-config` | ✅ `-c mcp_servers.…` | ✅ `.cursor/mcp.json` **in the worktree** |
-| Tested-build list | `2.1.224`, `2.1.226` | `0.142.5`, `0.147.0`, `0.150.1` | `2026.08.04-aaa8809`, `2026.08.11-e8db854` |
-| Reports whether you are logged in | — | — | ✅ |
+| Tested-build list | `2.1.224`, `2.1.226`, `2.1.268` | `0.142.5`, `0.147.0`, `0.150.1` | `2026.08.04-aaa8809`, `2026.08.11-e8db854` |
+| Reports whether you are logged in | ✅ from 2.1.41 | ✅ | ✅ |
 | Recognizes a usage limit / auth failure in a run | ✅ | — | — |
 | Reports **remaining** quota without running | **push only** (its status line) | ✅ `app-server --stdio` | **—** (no usage surface) |
 
@@ -323,16 +323,24 @@ set, and free-text entry is unaffected.
 ### "Found" is not "usable"
 
 An installed but unauthenticated CLI probes as healthy and then fails every
-single run. Where a CLI can answer cheaply, vincent asks: `cursor-agent status`
-and `codex login status` populate `logged_in`, so both report a definite
-true/false. **claude** exposes no non-interactive auth surface at all — no
-`login`, `auth` or `status` command — and the only definite answer is a real
-prompt round-trip, which would bill you for a health check. So `logged_in` is
-`null` for claude, which the TUI renders as unknown rather than as fine.
+single run. Every supported CLI can answer that cheaply, so vincent asks:
+`claude auth status`, `codex login status` and `cursor-agent status` populate
+`logged_in` with a definite true/false. claude is asked only from 2.1.41, the
+build that introduced `auth status`, up to 3.0.0; an older (or not yet verified
+newer) claude is never asked, reports `null`, and the TUI renders that as
+unknown rather than as fine.
 
-Neither probe ever guesses. A non-zero exit is `false`, an explicit negative is
-`false`, an explicit positive is `true`, and **anything else — including a probe
-that times out or cannot be spawned — is `null`**. That last rule is why a slow
+`true` means the CLI found credentials configured, not that they work: a
+claude.ai login, an `ANTHROPIC_API_KEY` or a Bedrock/Vertex switch all report
+`true` for claude, and codex's `login status` makes the same claim. An expired
+or revoked key still shows up as a failed step. vincent reads only the yes/no —
+never the account email, organization or plan the CLI prints alongside it.
+
+No probe ever guesses. For codex and cursor, a non-zero exit is `false`, an
+explicit negative is `false`, an explicit positive is `true`. For claude, only
+the `loggedIn` field of its JSON answer decides, whatever the exit code — a
+bare exit `1` is just as often a CLI error. And for all three, **anything else —
+including a probe that times out or cannot be spawned — is `null`**. That last rule is why a slow
 machine never gets told it is logged out: on Windows a killed probe exits `1`,
 and reading that as "not authenticated" would be a false accusation.
 

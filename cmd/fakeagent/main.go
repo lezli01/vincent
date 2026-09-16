@@ -9,7 +9,9 @@
 // cursor's run argv is otherwise claude-shaped, and --trust is the one flag
 // only cursor passes, in both permission modes); anything else is
 // claude-shaped. `models` and `status` as argv[1] answer cursor's option and
-// login probes (§9.7), and `app-server` answers codex's quota reader (§9.6).
+// login probes (§9.7), `login status` codex's (task 005), `auth status`
+// claude's (task 107, claude_auth.go), and `app-server` answers codex's quota
+// reader (§9.6).
 // `trigger-poll` and `hmac` are not agent probes at all: they are the m16
 // gate's trigger poll command and webhook signer (task 096, trigger.go).
 // Scenario selection is environment-driven so argv stays
@@ -97,6 +99,17 @@
 //	                      caller's deadline kills it: the T4.22 leg where a
 //	                      Windows timeout exits 1 and must not read as
 //	                      "not authenticated"
+//	FAKEAGENT_CLAUDE_LOGGED_OUT
+//	                      "1" makes claude's `auth status` print the captured
+//	                      logged-out JSON and exit 1 (task 107)
+//	FAKEAGENT_CLAUDE_AUTH_UNKNOWN
+//	                      "1" makes `auth status` exit 1 with non-JSON on
+//	                      stderr — the leg that must stay `null`, because for
+//	                      claude only the JSON field decides
+//	FAKEAGENT_CLAUDE_AUTH_HANG
+//	                      "1" makes `auth status` never answer (T4.22)
+//	FAKEAGENT_ARGV_FILE   each invocation appends its argv, one space-joined
+//	                      line, so a test can assert a probe was never spawned
 //	FAKEAGENT_CODEX_APP_SERVER
 //	                      picks what `app-server --stdio` answers the §9.6
 //	                      quota reader with (task 082): healthy (default) |
@@ -191,6 +204,7 @@ Options:
 `
 
 func main() {
+	recordArgv(os.Args[1:])
 	for _, a := range os.Args[1:] {
 		switch a {
 		case "--version", "-v", "-V":
@@ -264,6 +278,14 @@ func main() {
 		case "login":
 			if len(os.Args) > 2 && os.Args[2] == "status" {
 				codexLoginStatus()
+				return
+			}
+		case "auth":
+			// claude's `auth status --json` (task 107). Matched on both
+			// words, like `login status`: without this a claude-shaped
+			// probe falls through into the run path.
+			if len(os.Args) > 2 && os.Args[2] == "status" {
+				claudeAuthStatus()
 				return
 			}
 		}

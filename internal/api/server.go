@@ -143,12 +143,12 @@ type AgentStatus struct {
 	VersionVerdict    string `json:"version_verdict"`
 	TestedVersions    string `json:"tested_versions,omitempty"`
 	RestrictedVerdict string `json:"restricted_verdict"`
-	// LoggedIn is null where the adapter has no cheap authentication probe
-	// (claude, whose CLI exposes no non-interactive auth surface) and a
-	// definite boolean where it has one (codex's `login status`, cursor's
-	// `status`). The distinction carries weight: an
-	// installed-but-unauthenticated CLI probes as available and then fails
-	// every run (spec §9.5).
+	// LoggedIn is a definite boolean where the adapter's probe answers
+	// (claude's `auth status`, codex's `login status`, cursor's `status`) and
+	// null where it cannot — a timeout, an unreadable reply, or a claude
+	// outside the builds that ship the subcommand. The distinction carries
+	// weight: an installed-but-unauthenticated CLI probes as available and
+	// then fails every run (spec §9.5).
 	LoggedIn *bool  `json:"logged_in"`
 	Error    string `json:"error,omitempty"`
 	// Quota is this adapter's usage window as the daemon last observed it

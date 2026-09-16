@@ -87,10 +87,13 @@ func (a *Adapter) resolvePath() (string, error) {
 
 var versionRe = regexp.MustCompile(`\d+\.\d+\.\d+`)
 
-// Detect implements agent.Adapter: path resolution plus a --version probe.
-// logged_in stays unknown in v1 — there is no cheap documented probe, and
-// state-file parsing would be an unpinned surface (T1.7 decision).
-// SupportsInput is version-gated to the fixture-verified family (input.go).
+// Detect implements agent.Adapter: path resolution, a --version probe, and a
+// `claude auth status --json` probe for logged_in (task 107, auth.go). The
+// auth probe is version-gated to the builds that ship the subcommand, so an
+// older CLI spawns nothing extra and keeps reporting unknown. It reads the
+// official command's output only — state-file parsing stays ruled out (T1.7
+// decision). SupportsInput is version-gated to the fixture-verified family
+// (input.go).
 func (a *Adapter) Detect(ctx context.Context) (agent.Availability, error) {
 	path, err := a.resolvePath()
 	if err != nil {
@@ -104,6 +107,7 @@ func (a *Adapter) Detect(ctx context.Context) (agent.Availability, error) {
 		Found:          true,
 		Path:           path,
 		Version:        version,
+		LoggedIn:       loggedIn(ctx, path, version),
 		SupportsInput:  supportsInput(version),
 		VersionVerdict: versionVerdict(version),
 		TestedVersions: agent.TestedVersionList(testedVersions),
