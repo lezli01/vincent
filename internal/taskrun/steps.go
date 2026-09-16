@@ -17,6 +17,13 @@ import (
 	"github.com/lezli01/vincent/internal/workflow"
 )
 
+// agentLauncher is where an agent step's process runs (task 062.1). It is
+// the one place the engine chooses, so task 062.2 — which starts a step
+// inside its task's container — changes this function and none of the three
+// adapters. Until then every agent step runs on the host, container or not:
+// §12.3's "mixed run" caveat is this line.
+func agentLauncher() agent.Launcher { return agent.HostLauncher{} }
+
 // runAgentStep runs one agent attempt: render the prompt, spawn the adapter,
 // stream its events into the transcript, and classify the result (§7.1).
 func (r *Runner) runAgentStep(
@@ -113,8 +120,9 @@ func (r *Runner) runAgentStep(
 		// variables layer over the policy, so `environment.unset` cannot
 		// reach them. There is no step-level `env:` here: `env:` is a
 		// command-step field (§8.1).
-		Env: commandEnv(r.childEnv(), rc, nil),
-		MCP: mcpSrv,
+		Env:      commandEnv(r.childEnv(), rc, nil),
+		MCP:      mcpSrv,
+		Launcher: agentLauncher(),
 	})
 	if err != nil {
 		tr.Note("error", map[string]any{"error": err.Error()})

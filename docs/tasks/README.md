@@ -75,7 +75,7 @@ the living engineering specification records implementation contracts.
 | [059](059-popup-task-details-tab.md) | A task-details tab inside the answer, repair and follow-up popups | ✅ done (5/5) |
 | [060](060-daemon-configuration-editing.md) | Edit the daemon configuration from the TUI | ✅ done (8/8) |
 | [061](061-container-step-execution.md) | Run a task's steps inside a container: the exec seam | ✅ done (1/1) |
-| [062](062-agent-steps-in-containers.md) | Agent steps inside the task's container | 📋 planned (0/1) |
+| [062](062-agent-steps-in-containers.md) | Agent steps inside the task's container | 🔄 in progress (1/2) |
 | [063](063-free-chat.md) | Free chat: conversational agent sessions beside tasks | ✅ done (3/3) |
 | [064](064-task-from-pull-request.md) | Create a task from a pull request, on the PR's head branch | ✅ done (9/9) |
 | [065](065-workflow-editor-in-the-tui.md) | A workflow editor in the TUI: create, edit and fork through structured forms | ✅ done (13/13) |

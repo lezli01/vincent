@@ -116,9 +116,10 @@ the worktree, and it is worth being exact about how far it goes.
 
 **Start with what it does not cover yet.** Today the container holds every
 `command` step and every `check:`. The **agent process itself still runs on the
-host**, with your whole home directory and filesystem in reach — the launch seam
-that moves it is the next piece of this work. Do not read a containerized task
-as a sandboxed agent until that lands.
+host**, with your whole home directory and filesystem in reach — the adapters'
+launch seam exists, but only a host launcher plugs into it so far, and the
+container launcher that moves the agent is the next piece of this work. Do not
+read a containerized task as a sandboxed agent until that lands.
 
 **Does:** confine the filesystem to two bind mounts — the project repository and
 the task's worktree, each at its own absolute path — plus whatever you list in
