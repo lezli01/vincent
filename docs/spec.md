@@ -7852,6 +7852,35 @@ stream for the live tail.
    landed — the five write routes exist (§13.2) and row 11 is rewritten — and
    the tab's confirmed actions that call them follow in #387. Until they do, the
    tab still writes nothing to GitHub.*
+   *Amended 2026-09-16 (task 068.4, issue #387): the previous note's "Until they
+   do, the tab still writes nothing to GitHub" is no longer true. The tab now
+   writes, human-triggered, through the §13.2 routes: `m` merges, `X` closes an
+   open pull request (drafts included) or reopens a closed, unmerged one, `i`
+   comments, and `ctrl+r` re-runs the failed jobs of the selected check's GitHub
+   Actions run. Each confirms first, in one of three shapes: **close, reopen and
+   re-run** ask inline with a y/n that names the consequence (the re-run prompt
+   lists every failed row of the run, since the route takes one run id), and
+   any key but `y` declines; **merge** opens a popup listing merge, squash and
+   rebase with **no method preselected** — `y` does nothing until `←`/`→` picks
+   one, `n`/`esc` close it, and `enter` never confirms; **comment** opens a
+   popup that is its own confirmation (task 069 decision 2's reasoning) —
+   `ctrl+s` posts, `esc` discards, a blank body is refused in the client. Every
+   write is **absent, not present-and-refusing**, where it cannot apply — task
+   068 decision 3, extended from re-run to all four, on the hint line, the
+   footer, the palette and the key alike: `m` needs an open, non-draft pull
+   request with a known head, `X` is absent on a merged one, `ctrl+r` needs the
+   selected row to be both Actions-backed and failed, and all four are absent
+   when the pull row carries a reason instead of a pull request. The merge state
+   is not on the row, so `m` is not hidden on a blocked or behind pull request —
+   the daemon's preflight answers with a named reason. The **head a merge is
+   pinned to is the check rollup's `Ref`**, the commit whose checks the human
+   was reading (decision 6), and the pull row's `head_sha` only while no rollup
+   has loaded; when both are known and differ the popup says the head moved and
+   `y` stays inert until a refetch makes them agree. A write in flight refuses
+   its own key until it answers, the daemon publishes no event for these
+   writes so the tab refetches what it changed, and a refusal is the daemon's
+   message on the tab's note line. There is still no merge anywhere but this
+   tab, and nothing offers `--delete-branch`, `--auto` or `--admin`.*
    *Amended 2026-09-05 (issue #323): a **Step Details** tab, selected by `6`,
    which **supersedes task 068.3's placement** above — it is inserted ahead of
    Pull Request rather than appended after it, so Pull Request answers to `7`.
@@ -9651,6 +9680,16 @@ What moved: the chats board's `r`→`R` and `a`→`A`; both archived boards'
 `d`→`s`; the projects view's `d`→`D`; the pull-request list's `c`→`a`; the task
 workspace's Pull Request tab `c`→`enter`; and "type your own answer" `e`→`t` in
 the answer form and in all four pickers.
+
+*Amended 2026-09-16 (task 068.4, issue #387):* the Pull Request tab gains four
+surface-local keys and none of the vocabulary's: `m` merge, `X` close or reopen
+(one key, whichever the state allows, as `p` is pause or resume), `i` comment
+and `ctrl+r` re-run the failed jobs — a modifier because `r` is retry. No §6
+letter moves. `X`, `i` and `ctrl+r` mean other things on the triggers
+takeover, the workflows list, the daemon view and a chat, which carry no term
+for them and are never open beside a task workspace, so clause 2 holds without
+an exception. While their confirmations are up they own the keyboard, the
+footer and `?`.
 
 The Pull Request tab **loses its refresh key outright**. `R` is repair on every
 tab of that workspace and does not move, and the tab already re-reads on its own

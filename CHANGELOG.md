@@ -36,6 +36,16 @@ list with the user-facing context a commit subject cannot carry.
   re-run is accepted only for a failed GitHub Actions run on the current head.
   The Pull Request tab's buttons for these follow separately.
 
+- **The task workspace's Pull Request tab merges, closes, reopens, comments
+  and re-runs failed checks.** `m` opens a merge popup that lists merge, squash
+  and rebase with none chosen — `y` does nothing until you pick one — and
+  merges the head commit whose checks are on the tab. `X` closes an open pull
+  request or reopens a closed one, and `ctrl+r` re-runs the failed jobs of the
+  selected GitHub Actions check; both ask `y`/`n` first. `i` opens a comment
+  popup that `ctrl+s` posts. A key appears only where its write can apply, a
+  write that has not answered cannot be sent twice, and a refusal shows the
+  daemon's reason on the tab.
+
 - **`vincent task diff` prints a task's diff from the command line.** Piped,
   the output is the daemon's diff byte for byte with no size limit, so it can go
   straight to `git apply`; on a terminal it is coloured unless `NO_COLOR` is

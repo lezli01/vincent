@@ -338,8 +338,29 @@ workspace, and the poll is what makes a fourth trigger unnecessary. `↑`/`↓`
 select a row, `enter` opens it in a browser, `o` opens the pull request and `u`
 unlinks it from the task; the refusal is sticky, so the reconciler will not
 link it again. Every §6 action key works here too — the tab you happen to be
-reading is not a statement about what you may do to the task. Nothing here
-writes to GitHub.
+reading is not a statement about what you may do to the task.
+
+Four keys on this tab **write to GitHub**, and each asks first. A key is only
+there when its write can apply — the hint line and the footer leave it out
+otherwise, and pressing it does nothing:
+
+| Key | Does | Offered when |
+|---|---|---|
+| `m` | Merge — a popup lists merge, squash and rebase with **none chosen**; `←`/`→` picks one, `y` merges, `n` or `esc` cancels | The pull request is open and not a draft |
+| `X` | Close without merging, or reopen — asks `y`/`n` first | Close on an open pull request, reopen on a closed one; never on a merged one |
+| `i` | Comment — type in the popup (or `e` for `$EDITOR`), `ctrl+s` posts, `esc` stops typing and then discards | Always, once the pull request has been read |
+| `ctrl+r` | Re-run the failed jobs of the selected check's GitHub Actions run — asks `y`/`n` first, naming every failed job of that run | The selected row is a failed GitHub Actions check |
+
+The merge popup shows the head commit it merges: the one whose checks are on the
+tab. If GitHub reports a different head for the pull request, the popup says the
+head moved and `y` does nothing until the tab has re-read both. `enter` never
+merges. In the y/n prompts, any key but `y` answers no. A write that has not
+answered yet cannot be sent a second time, and none of the four exists while
+GitHub could not be read. When the daemon refuses — the branch is behind, a
+check is still running, the credential cannot write — its reason is on the
+tab's note line, and nothing was sent. After a write the tab re-reads the pull
+request and its checks. The TUI itself never talks to GitHub: every call is the
+daemon's.
 
 **Diff** gives the task's file-grouped git diff the entire view. **Workflow**
 draws the workflow this task ran as a control-flow graph with its run state on
@@ -412,6 +433,10 @@ output. It is the sentence that decides whether to open the transcript.
 | `1`–`5` | Steps & Attempts / Task Details / Output / Diff / Workflow |
 | `6` | Step Details — what the selected attempt was handed, and the resolution behind it |
 | `7` | Pull Request — only when this task has a linked pull request and GitHub is on; `tab`/`shift+tab` skip it otherwise |
+| `m` | On Pull Request, merge it — the method is chosen in the popup, none preselected |
+| `X` | On Pull Request, close it without merging, or reopen a closed one (asks first) |
+| `i` | On Pull Request, comment on it (`ctrl+s` posts) |
+| `ctrl+r` | On Pull Request, re-run the failed jobs of the selected check's GitHub Actions run (asks first) |
 | `↑`/`↓` | On Step Details, select an attempt (`←`/`→` do it too, and move the same cursor everywhere else) |
 | `pgup`/`pgdn` | On Step Details, scroll the facts |
 | `enter` | From Steps & Attempts, open the selected attempt in Output — or open the folded iteration/round tier the cursor is on |
