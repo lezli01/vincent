@@ -546,6 +546,25 @@ steps:
         exit 1
       fi
 
+      # Every range below this step is anchored at `origin/{{.Task.BaseBranch}}`,
+      # and this is the one fetch that makes that ref fresh before `diagnose`,
+      # the earliest reader, runs. Spec §5.3: the branch was cut from the
+      # *fetched* base tip (§10), so the bare local base is not the fork point
+      # — and it is a ref every other worktree of the repository shares, so
+      # another worktree holding it checked out leaves it behind `origin/<base>`
+      # for the whole run. Counting `<base>..HEAD` against a stale local ref
+      # counts the pull requests that merged while this task ran: it passes
+      # `implement`'s "has this branch committed anything?" on a branch with
+      # nothing of its own, and fails `diagnose`'s "has it committed nothing?"
+      # on a step that committed nothing (#449).
+      #
+      # `set -e` is on, so a fetch that cannot reach the remote fails here, two
+      # seconds in, rather than leaving every later range to be judged against
+      # whatever `origin/<base>` happens to hold. `rebase` already fetches this
+      # same ref, so requiring a reachable `origin` adds no prerequisite.
+      say "fetching origin/{{.Task.BaseBranch}}"
+      git fetch origin {{.Task.BaseBranch}}
+
       jq -r '"#\(.number) \(.title)\n\(.url)\nreported: \(.createdAt)"' .vincent-issue/issue.json
       say "#$id open, $(jq -r '[.comments[]] | length' .vincent-issue/issue.json) comment(s) to read"
 
@@ -760,7 +779,7 @@ steps:
       head -n 1 .vincent-issue/brief.md | grep -Eq '^verdict: (proceed|reject|needs-info)$' &&
       test -s .vincent-issue/red-test.txt &&
       git diff --cached --quiet &&
-      test "$(git rev-list --count {{.Task.BaseBranch}}..HEAD)" -eq 0 &&
+      test "$(git rev-list --count origin/{{.Task.BaseBranch}}..HEAD)" -eq 0 &&
       { offenders=$( { git diff --name-only; git ls-files --others --exclude-standard; } | grep -v '^\.vincent-issue/' | grep -vE '(_test\.go$|(^|/)testdata/)' ); test -z "$offenders" || { echo 'diagnose changed files outside .vincent-issue/, *_test.go and testdata/:' >&2; echo "$offenders" >&2; false; }; }
     check_timeout: 2m
 
@@ -1615,7 +1634,7 @@ steps:
     # the suite; on the other paths a ceiling costs nothing.
     check: >
       ! git ls-files .vincent-issue | grep -q . &&
-      test "$(git rev-list --count {{.Task.BaseBranch}}..HEAD)" -gt 0 &&
+      test "$(git rev-list --count origin/{{.Task.BaseBranch}}..HEAD)" -gt 0 &&
       test -s .vincent-issue/pr-title.txt &&
       test -s .vincent-issue/pr.md &&
       { noexec=$(git ls-files -s -- 'scripts/*.sh' | awk '$1 != "100755" { print $4 }'); test -z "$noexec" || { echo 'scripts not committed executable (git update-index --chmod=+x):' >&2; echo "$noexec" >&2; false; }; } &&
@@ -1652,7 +1671,7 @@ steps:
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
 
       git rev-parse HEAD > .vincent-issue/pre-docs.sha
-      git diff --name-only {{.Task.BaseBranch}}..HEAD > .vincent-issue/changed.txt
+      git diff --name-only origin/{{.Task.BaseBranch}}..HEAD > .vincent-issue/changed.txt
       # `|| true` and the default together: `grep -c` exits 1 on no match, and
       # an unset `n` would make the `[` below a syntax error rather than a
       # count — either of which would kill this step under `set -e` and take
@@ -1945,7 +1964,7 @@ steps:
           echo "--- pinned proof: .vincent-issue/proof.sh ---"
           say "$pass: running the pinned gate commands"
           sh .vincent-issue/proof.sh
-          workflows=$(git diff --name-only --diff-filter=d {{.Task.BaseBranch}}..HEAD -- .github/workflows)
+          workflows=$(git diff --name-only --diff-filter=d origin/{{.Task.BaseBranch}}..HEAD -- .github/workflows)
           if [ -n "$workflows" ]; then
             if command -v actionlint >/dev/null 2>&1; then
               echo "--- actionlint -shellcheck= ---"
@@ -2049,7 +2068,7 @@ steps:
           ! git ls-files .vincent-issue | grep -q . &&
           git diff --quiet &&
           git diff --cached --quiet &&
-          test "$(git rev-list --count {{.Task.BaseBranch}}..HEAD)" -gt 0 &&
+          test "$(git rev-list --count origin/{{.Task.BaseBranch}}..HEAD)" -gt 0 &&
           go build ./...
         check_timeout: 5m
 

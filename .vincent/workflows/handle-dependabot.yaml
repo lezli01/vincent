@@ -247,6 +247,19 @@ steps:
         exit 1
       fi
 
+      # The file list below, and the range the approval gate calls "the bump
+      # itself", are anchored at the remote-tracking ref rather than at the bare
+      # local base. Spec §5.3: the branch was cut from the *fetched* base tip
+      # (§10), and the local base is a ref every other worktree of the
+      # repository shares, so one holding it checked out leaves it behind
+      # `origin/<base>` for the whole run — and the report a human approves a
+      # merge from then lists files from the pull requests that landed while
+      # this task ran (#449). This fetch is what makes the ref fresh, and it
+      # sits after the refusals above so a task pointed at the wrong pull
+      # request still fails with the message that names what is wrong.
+      say "fetching origin/{{.Task.BaseBranch}}"
+      git fetch origin {{.Task.BaseBranch}}
+
       # stdout, because this is what the gate and the report quote back.
       echo "pull request: $(cat "$scratch/url")"
       echo "title:        $(cat "$scratch/title")"
@@ -254,7 +267,7 @@ steps:
       echo "branch:       $head_ref -> $base_ref"
       echo "head:         $remote_head"
       echo "files:"
-      git diff --name-only "{{.Task.BaseBranch}}...HEAD" | sed 's/^/  /'
+      git diff --name-only "origin/{{.Task.BaseBranch}}...HEAD" | sed 's/^/  /'
       say "#{{index .Task.Fields "pull"}} checks out: $(cat "$scratch/title")"
 
   - id: risk
@@ -413,7 +426,7 @@ steps:
       - The pull request body is dependabot's own copy of the release notes and
         changelog. Read it first:
         `gh pr view {{index .Task.Fields "pull"}} --json body --jq .body`
-      - `git diff {{.Task.BaseBranch}}...HEAD` is the bump itself.
+      - `git diff origin/{{.Task.BaseBranch}}...HEAD` is the bump itself.
       - Then read this repository. Find every place the bumped dependency is
         actually used and check those call sites against what changed. A
         breaking change in a package nobody here imports is not a finding, and

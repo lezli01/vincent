@@ -344,6 +344,19 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **The shipped issue-resolution workflows no longer judge a task against a
+  stale local base branch.** `github-resolve-issue`, its DAG pair
+  `github-resolve-issue-dag` / `github-resolve-issue-unit` and
+  `handle-dependabot` asked "has this branch committed anything?" and "what did
+  this change touch?" against the bare local base ref. That ref is shared with
+  every other worktree of the repository, so one holding it checked out keeps
+  it behind `origin/<base>` for the whole run, and the range then spans the
+  pull requests that merged while the task ran: `implement`'s commit count
+  passed on a branch with no commits of its own and left the change
+  uncommitted, while `diagnose`'s and the fan-out lanes' guards failed for
+  steps that had committed nothing. All seventeen ranges are now anchored at
+  `origin/<base>`, which the first step of each workflow fetches before
+  anything reads it (issue #449).
 - **The Windows install instructions no longer offer WinGet as working.** The
   README, the installation guide, the Windows page and the feature guide
   offered WinGet as a working channel, but Microsoft has not yet merged any of
