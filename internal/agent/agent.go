@@ -294,6 +294,19 @@ const (
 	// Only codex reports one today, from `command_execution.aggregated_output`
 	// (§9.3). claude and cursor report a tool's output nowhere vincent parses.
 	EventCommandOutput EventType = "command_output"
+	// EventSubagentStarted, EventSubagentProgress and EventSubagentFinished
+	// report a subagent the run spawned — its start, a running tally, and
+	// its end — keyed by the call that spawned it (task 109). Every one
+	// carries a Subagent. The records a subagent itself produces are
+	// ordinary events stamped with ParentCallID; these three are the main
+	// loop's own account of the sub-run.
+	//
+	// Only claude reports them today, from its `local_agent` task lines
+	// (§9.2); codex and cursor have no subagents in their dialects and never
+	// produce these events (§9.3, §9.7).
+	EventSubagentStarted  EventType = "subagent_started"
+	EventSubagentProgress EventType = "subagent_progress"
+	EventSubagentFinished EventType = "subagent_finished"
 	// EventInputRequest carries a mid-run input request (spec §7.4). A nil
 	// Request means the adapter received a control message it could not
 	// parse or that violates the serial-request contract — the engine fails
@@ -333,15 +346,19 @@ type Event struct {
 	// renders both must therefore check Output on a result event too; the
 	// two are separate *records* precisely because they are shown at
 	// different verbosity levels.
-	Output  *CommandOutput
-	Message string // EventError: what went wrong
+	Output *CommandOutput
+	// Subagent rides on the three EventSubagent* events.
+	Subagent *Subagent
+	Message  string // EventError: what went wrong
 	// ParentCallID attributes this event to the tool call that spawned the
 	// sub-run it came from — claude's `parent_tool_use_id`, which is stamped
-	// on every line a `Task` subagent produces (task 066). Empty is the main
-	// loop, and is also every adapter that does not report the field.
+	// on every line a subagent produces (task 066). Empty is the main loop,
+	// and is also every adapter that does not report the field.
 	//
-	// It is carried but not yet rendered: §15's pane is a flat two-column
-	// gutter, and nesting is its own piece of work with its own capture.
+	// §15's pane draws a record carrying it behind a rail, one level quieter
+	// than the main loop (task 109). Nothing keys on the spawning tool's
+	// name: claude called it `Task` in its tool list and `Agent` in every
+	// captured call.
 	ParentCallID string
 	// Raw is the verbatim stream line, which transcripts write. The one
 	// exception is a coalesced EventThinking: its Text was accumulated
@@ -365,6 +382,34 @@ type RunHeader struct {
 	// it. "What could this agent actually reach" has no other answer in a
 	// transcript.
 	Tools []string
+}
+
+// Subagent is what the main loop reported about one subagent it spawned
+// (task 109, §9.2). Which fields are set depends on the event carrying it:
+// a start names the sub-run, a progress event tallies it, and a finish gives
+// its status and a one-line summary. Every field is empty for an adapter that
+// does not report subagents, and nothing synthesizes one from tool calls.
+type Subagent struct {
+	// CallID is the tool call that spawned the subagent — the id every record
+	// the subagent produces carries as its ParentCallID.
+	CallID string
+	// Description is the sub-run's short title, and AgentType the kind of
+	// agent the run asked for. Background is a sub-run the main loop did not
+	// wait on.
+	Description string
+	AgentType   string
+	Background  bool
+	// Status is how the sub-run ended, verbatim from the dialect. Summary is
+	// its final report reduced to one capped line: the report itself is a
+	// body, and the transcript holds it (T4.16).
+	Status  string
+	Summary string
+	// ToolUses, TotalTokens and Duration are the running or final tally, and
+	// LastTool the tool the sub-run most recently used. Zero is unreported.
+	ToolUses    int
+	TotalTokens int64
+	Duration    time.Duration
+	LastTool    string
 }
 
 // Plan is the agent's running to-do list (task 070, §9.3): every item it

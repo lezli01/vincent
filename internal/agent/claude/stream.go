@@ -25,11 +25,24 @@ type streamLine struct {
 	Result       string         `json:"result"`
 	TotalCostUSD *float64       `json:"total_cost_usd"`
 	Usage        *streamUsage   `json:"usage"`
-	// ParentToolUseID is the `Task` call a subagent's lines belong to, and
-	// is `null` on every line of the main loop — which is every line of
-	// every fixture captured so far (task 066). It is read and carried, and
-	// nothing renders it yet: §15's pane is flat.
+	// ParentToolUseID is the spawning call a subagent's lines belong to, and
+	// is `null` on every line of the main loop (task 066). The call is named
+	// `Agent` in every captured run, and nothing here reads the name: the id
+	// is the attribution (task 109).
 	ParentToolUseID string `json:"parent_tool_use_id"`
+	// The rest of the block is the `system` task lines claude writes about
+	// the subagents and background shells it runs (task 109). Only
+	// `task_started` names its `task_type`; `task_progress` and
+	// `task_notification` do not, which is why streamParser remembers the
+	// calls it has seen.
+	TaskType     string `json:"task_type"`
+	ToolUseID    string `json:"tool_use_id"`
+	Description  string `json:"description"`
+	SubagentType string `json:"subagent_type"`
+	Backgrounded bool   `json:"is_backgrounded"`
+	Status       string `json:"status"`
+	Summary      string `json:"summary"`
+	LastToolName string `json:"last_tool_name"`
 	// CWD and Tools are the `system`/`init` line's payload — the run header
 	// (task 066). They appear on no other line type.
 	CWD   string   `json:"cwd"`
@@ -83,11 +96,15 @@ type streamToolResultMeta struct {
 }
 
 // streamToolUseResult is the object shape of a `user` line's
-// `tool_use_result`. Only `type` is read: it is the verb, and everything else
-// in the payload is the tool's body, which never enters the normalized stream
-// (T4.16).
+// `tool_use_result`. Only `type` and `status` are read: they are the verb,
+// and everything else in the payload is the tool's body, which never enters
+// the normalized stream (T4.16).
 type streamToolUseResult struct {
 	Type string `json:"type"`
+	// Status is how a subagent call returned (task 109): `async_launched`
+	// for one that went to the background, `completed` for one the main
+	// loop waited on.
+	Status string `json:"status"`
 }
 
 type streamMessage struct {
@@ -124,6 +141,12 @@ type streamUsage struct {
 	// tens of thousands of cache reads (task 066).
 	CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
 	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+	// The task lines reuse the key for a different tally (task 109): a
+	// subagent's running or final tokens, tool uses and wall clock. No line
+	// carries both shapes.
+	TotalTokens int64 `json:"total_tokens"`
+	ToolUses    int   `json:"tool_uses"`
+	DurationMS  int64 `json:"duration_ms"`
 }
 
 // sessionIDOf reads claude's `session_id` off one verbatim stream line, or ""
@@ -141,22 +164,105 @@ func sessionIDOf(raw []byte) string {
 }
 
 // NewLineParser returns a parser for claude transcript lines (§13.2
-// format=normalized). Claude's dialect is stateless — every line stands on
-// its own — so each call hands back the same pure function.
-func (a *Adapter) NewLineParser() agent.LineParser { return parseLine }
+// format=normalized). Each call hands back a fresh one, because the dialect
+// is no longer quite stateless: see streamParser.
+func (a *Adapter) NewLineParser() agent.LineParser { return new(streamParser).parse }
 
-// parseLine normalizes one verbatim stream-json line into an agent.Event.
-// The raw line always rides along for lossless transcripts.
-func parseLine(raw []byte) agent.Event {
+// streamParser normalizes claude's stream-json. Every line stands on its own
+// except one: a subagent's `task_notification` does not say it is a
+// subagent's (task 109). Only `task_started` names its `task_type`, and a
+// failed subagent's notification carries no `usage` either, so it is
+// indistinguishable on its face from a background shell's. The parser
+// therefore remembers every call it has seen acting as a subagent — named by
+// a `local_agent` start, a progress line, or a child line's
+// `parent_tool_use_id` — and recognizes a notification by its call.
+//
+// The memory costs one thing, and it is stated rather than hidden: a
+// transcript range that opens after every earlier line of a subagent can
+// leave that subagent's failed notification as agent.raw. A completed one is
+// still recognized by its usage.
+//
+// The zero value is ready to use. A parser belongs to one stream.
+type streamParser struct {
+	subagents map[string]bool
+}
+
+// parse normalizes one verbatim stream-json line into an agent.Event. The raw
+// line always rides along for lossless transcripts.
+func (p *streamParser) parse(raw []byte) agent.Event {
 	var line streamLine
 	if err := json.Unmarshal(raw, &line); err != nil {
 		return agent.Event{Type: agent.EventUnknown, Raw: raw}
 	}
-	ev := parseTyped(&line, raw)
+	p.remember(line.ParentToolUseID)
+	var ev agent.Event
+	if line.Type == "system" && strings.HasPrefix(line.Subtype, "task_") {
+		ev = p.parseTask(&line, raw)
+	} else {
+		ev = parseTyped(&line, raw)
+	}
 	// Every line carries it, so it is attached once here rather than in each
 	// of the four arms (task 066).
 	ev.ParentCallID = line.ParentToolUseID
 	return ev
+}
+
+func (p *streamParser) remember(callID string) {
+	if callID == "" {
+		return
+	}
+	if p.subagents == nil {
+		p.subagents = map[string]bool{}
+	}
+	p.subagents[callID] = true
+}
+
+// parseTask normalizes the task lines of a subagent (task 109). A background
+// shell's (`local_bash`) and every subtype not named here stay unknown, which
+// is the phase 1 tolerant-parsing rule: nobody asked for background shells,
+// and `task_updated` carries a patch rather than a state.
+func (p *streamParser) parseTask(line *streamLine, raw []byte) agent.Event {
+	unknown := agent.Event{Type: agent.EventUnknown, Raw: raw}
+	if line.ToolUseID == "" {
+		return unknown
+	}
+	sub := &agent.Subagent{CallID: line.ToolUseID}
+	if u := line.Usage; u != nil {
+		sub.ToolUses = u.ToolUses
+		sub.TotalTokens = u.TotalTokens
+		sub.Duration = time.Duration(u.DurationMS) * time.Millisecond
+	}
+	switch line.Subtype {
+	case "task_started":
+		if line.TaskType != "local_agent" {
+			return unknown
+		}
+		p.remember(line.ToolUseID)
+		sub.Description = line.Description
+		sub.AgentType = line.SubagentType
+		sub.Background = line.Backgrounded
+		return agent.Event{Type: agent.EventSubagentStarted, Subagent: sub, Raw: raw}
+	case "task_progress":
+		// Every captured progress line is a subagent's and names its
+		// subagent_type; a shell reports none, so one without it is left
+		// alone rather than guessed at.
+		if line.SubagentType == "" && !p.subagents[line.ToolUseID] {
+			return unknown
+		}
+		p.remember(line.ToolUseID)
+		sub.Description = line.Description
+		sub.AgentType = line.SubagentType
+		sub.LastTool = line.LastToolName
+		return agent.Event{Type: agent.EventSubagentProgress, Subagent: sub, Raw: raw}
+	case "task_notification":
+		if !p.subagents[line.ToolUseID] && line.Usage == nil {
+			return unknown
+		}
+		sub.Status = line.Status
+		sub.Summary = agent.OneLine(line.Summary, resultSummaryMax)
+		return agent.Event{Type: agent.EventSubagentFinished, Subagent: sub, Raw: raw}
+	}
+	return unknown
 }
 
 func parseTyped(line *streamLine, raw []byte) agent.Event {
@@ -247,14 +353,21 @@ func parseToolResults(line *streamLine, raw []byte) agent.Event {
 	if line.Message == nil {
 		return ev
 	}
-	verb := resultVerb(line.ToolUseResult)
+	verb, launched := resultVerb(line.ToolUseResult)
 	for _, b := range line.Message.Content {
 		if b.Type != "tool_result" {
 			continue
 		}
+		summary := resultSummary(b.Content)
+		if launched {
+			// The text beside a background launch is claude's instruction
+			// to its own model — internal metadata it asks never be quoted
+			// — and the verb already says what happened (task 109).
+			summary = ""
+		}
 		ev.Results = append(ev.Results, agent.ToolResult{
 			CallID:  b.ToolUseID,
-			Summary: resultSummary(b.Content),
+			Summary: summary,
 			Verb:    verb,
 			Blocked: blockedByRule(line.ToolResultMeta, b.ToolUseID),
 			IsError: b.IsError,
@@ -275,19 +388,31 @@ var resultVerbs = map[string]string{
 	"create": "created",
 }
 
-// resultVerb reads the verb off a `user` line's `tool_use_result`. The
-// payload is either the structured object or a bare string, so the object
-// decode is *probed* — a string there is not an error, it is claude's other
-// shape, and it simply carries no verb.
-func resultVerb(payload json.RawMessage) string {
+// resultStatusVerbs maps a subagent call's `tool_use_result.status` onto its
+// verb (task 109), under resultVerbs' rule. `completed` is observed too and
+// deliberately absent: a call the main loop waited on returns the report, and
+// its first line says more than a verb would.
+var resultStatusVerbs = map[string]string{
+	"async_launched": "started in background",
+}
+
+// resultVerb reads the verb off a `user` line's `tool_use_result`, and
+// whether it reports a background launch. The payload is either the
+// structured object or a bare string, so the object decode is *probed* — a
+// string there is not an error, it is claude's other shape, and it simply
+// carries no verb.
+func resultVerb(payload json.RawMessage) (verb string, launched bool) {
 	if len(payload) == 0 {
-		return ""
+		return "", false
 	}
 	var res streamToolUseResult
 	if err := json.Unmarshal(payload, &res); err != nil {
-		return ""
+		return "", false
 	}
-	return resultVerbs[res.Type]
+	if v, ok := resultStatusVerbs[res.Status]; ok {
+		return v, true
+	}
+	return resultVerbs[res.Type], false
 }
 
 // blockedByRule reports whether a permission rule refused this call, from the

@@ -284,6 +284,10 @@ type run struct {
 	stdinOnce sync.Once
 	stdinMu   sync.Mutex // serializes control writes
 
+	// lines normalizes the stream. It remembers subagent calls (task 109),
+	// and only the read loop touches it, so it needs no lock.
+	lines streamParser
+
 	events     chan agent.Event
 	readerDone chan struct{}
 	procDone   chan struct{}
@@ -435,7 +439,7 @@ func (r *run) parseStreamLine(line []byte) agent.Event {
 		}
 		return agent.Event{Type: agent.EventUnknown, Raw: line}
 	default:
-		return parseLine(line)
+		return r.lines.parse(line)
 	}
 }
 

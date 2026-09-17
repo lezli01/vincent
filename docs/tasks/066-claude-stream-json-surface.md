@@ -53,6 +53,7 @@ live chunk, and the pane keeps rendering flat. Capturing a `Task` run and
 designing the tree is follow-up work in its own document; because §13.2
 re-normalizes on every read, transcripts recorded before that lands will render
 under it (tracked in [#401](https://github.com/lezli01/vincent/issues/401), 2026-09-13).
+*Delivered by [task 109](109-claude-subagent-nesting.md), 2026-09-17.*
 
 **3. Tool outcomes get a verb, not a diff delta.** `ToolResult.Summary`'s doc
 comment promised "created (+1 −0)", but the only fixture with a structured
@@ -178,6 +179,10 @@ change adds two record shapes to that pane, so 066.5 is the leg that closes it
    the pane's tree within §15's model, amend §15. The wire field is already
    there and already recorded (tracked in
    [#401](https://github.com/lezli01/vincent/issues/401), 2026-09-13).
+   *Delivered by [task 109](109-claude-subagent-nesting.md), 2026-09-17:* no
+   new capture was needed (16 recorded runs already had subagents, whose
+   spawning tool is `Agent`, not `Task`), and the tree is a chronological rail
+   rather than a tree under the spawning call. §15 is amended there.
 2. **Edit deltas.** Capture a run containing an `Edit` with a non-empty
    `structuredPatch`, then make `ToolResult.Summary` keep the promise its doc
    comment made from T4.14 until this task removed it (tracked in

@@ -93,6 +93,14 @@ func liveChunkBody(ev Event) []Chunk {
 			return nil
 		}
 		return one("agent.thinking", map[string]any{"text": ev.Text})
+	case EventSubagentStarted, EventSubagentProgress, EventSubagentFinished:
+		// All three go live (task 109): the pane's rail labels come from the
+		// start, and a progress chunk is what stops a live tail from counting
+		// those lines as unrecognized.
+		if ev.Subagent == nil {
+			return nil
+		}
+		return one("agent."+string(ev.Type), subagentChunk(ev.Subagent))
 	case EventUsage:
 		// Usage payloads are adapter-native; the raw line is the honest shape.
 		return one("agent.usage", map[string]any{"raw": string(ev.Raw)})
@@ -113,6 +121,35 @@ func headerChunk(h *RunHeader) map[string]any {
 	}
 	if len(h.Tools) > 0 {
 		chunk["available_tools"] = h.Tools
+	}
+	return chunk
+}
+
+// subagentChunk maps a subagent's start, progress or finish onto the §13.3
+// live-chunk shape, matching what api.normalizeLine writes for the same event.
+// Every key is omitted when unreported, so each event type carries only what
+// it has.
+func subagentChunk(s *Subagent) map[string]any {
+	chunk := map[string]any{}
+	for k, v := range map[string]string{
+		"call_id": s.CallID, "description": s.Description, "subagent_type": s.AgentType,
+		"status": s.Status, "summary": s.Summary, "last_tool": s.LastTool,
+	} {
+		if v != "" {
+			chunk[k] = v
+		}
+	}
+	if s.Background {
+		chunk["background"] = true
+	}
+	if s.ToolUses != 0 {
+		chunk["tool_uses"] = s.ToolUses
+	}
+	if s.TotalTokens != 0 {
+		chunk["total_tokens"] = s.TotalTokens
+	}
+	if ms := s.Duration.Milliseconds(); ms != 0 {
+		chunk["duration_ms"] = ms
 	}
 	return chunk
 }

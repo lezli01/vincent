@@ -102,10 +102,22 @@ type normalizedLine struct {
 	OutputTokens int64        `json:"output_tokens,omitempty"`
 	CostUSD      *float64     `json:"cost_usd,omitempty"`
 	// ParentCallID rides on any record produced inside a subagent call
-	// (task 066). It is carried on the wire ahead of any renderer: the pane
-	// is flat today, and a transcript recorded now renders under whatever
-	// nesting lands later, because §13.2 re-normalizes on every read.
+	// (task 066), and the pane draws such a record behind its rail (task
+	// 109). A transcript recorded before the renderer existed renders nested
+	// too, because §13.2 re-normalizes on every read.
 	ParentCallID string `json:"parent_call_id,omitempty"`
+	// The agent.subagent_* records (task 109): a subagent's start, running
+	// tally and finish, keyed by the spawning call on `call_id`. `summary`
+	// is the finished report cut to one line; the report is in the
+	// transcript. `duration_ms` is the subagent's own wall clock.
+	Description  string `json:"description,omitempty"`
+	SubagentType string `json:"subagent_type,omitempty"`
+	Background   bool   `json:"background,omitempty"`
+	Status       string `json:"status,omitempty"`
+	Summary      string `json:"summary,omitempty"`
+	ToolUses     int    `json:"tool_uses,omitempty"`
+	TotalTokens  int64  `json:"total_tokens,omitempty"`
+	LastTool     string `json:"last_tool,omitempty"`
 	// WorkDir and AvailableTools are the agent.run_header record (task 066):
 	// where the CLI said it was running and what it said it could reach.
 	// The tool list cannot ride on `tools` — that is agent.tool_use's
@@ -349,6 +361,21 @@ func normalizedRecord(ev agent.Event, raw []byte) normalizedLine {
 			return normalizedLine{Type: "agent.command_output"}
 		}
 		return commandOutputLine(ev.Output)
+	case agent.EventSubagentStarted, agent.EventSubagentProgress, agent.EventSubagentFinished:
+		out := normalizedLine{Type: "agent." + string(ev.Type)}
+		if s := ev.Subagent; s != nil {
+			out.CallID = s.CallID
+			out.Description = s.Description
+			out.SubagentType = s.AgentType
+			out.Background = s.Background
+			out.Status = s.Status
+			out.Summary = s.Summary
+			out.ToolUses = s.ToolUses
+			out.TotalTokens = s.TotalTokens
+			out.DurationMS = s.Duration.Milliseconds()
+			out.LastTool = s.LastTool
+		}
+		return out
 	case agent.EventError:
 		return normalizedLine{Type: "agent.error", Message: ev.Message}
 	case agent.EventResult:

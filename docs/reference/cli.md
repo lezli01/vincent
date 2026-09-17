@@ -839,7 +839,7 @@ task has parallel steps or fan-out lanes).
 
 | Output | What it is |
 |---|---|
-| default | The records rendered as text, the vocabulary the TUI's output pane renders: the run header (working directory and the tools the agent was given) as a first `# ` line, assistant output, tool calls and their outcomes, command output, the agent's running to-do list as a `# plan:` line, vincent's own annotations, and a closing `= done` line carrying whatever the agent reported about the run — elapsed time, turns, an unusual stop or terminal reason, permission denials, cost. Token usage is dropped — `task show` carries it |
+| default | The records rendered as text, the vocabulary the TUI's output pane renders: the run header (working directory and the tools the agent was given) as a first `# ` line, assistant output, tool calls and their outcomes, a subagent's work behind a `| ` rail, command output, the agent's running to-do list as a `# plan:` line, vincent's own annotations, and a closing `= done` line carrying whatever the agent reported about the run — elapsed time, turns, an unusual stop or terminal reason, permission denials, cost. Token usage is dropped — `task show` carries it |
 | `--json` | The normalized records as NDJSON, one JSON object per line, in vincent's vocabulary including its `vincent.*` annotations. This is the `jq` route |
 | `--raw` | The agent's own JSONL, byte for byte, exactly as it was recorded |
 
@@ -853,6 +853,29 @@ An adapter that reports none of that metadata — codex — prints no header and
 bare `= done`. Cursor reports part of it: its `# ` line is the working directory
 with no tools, and its result line carries the elapsed time, as in
 `= done (2.0s)`.
+
+A **subagent's** work prints nested, in the order it arrived, at the pane's
+[`normal` content](../guides/tui.md#when-the-agent-runs-subagents): its prose,
+tool calls, outcomes and errors, each behind a `| ` rail, and never its
+reasoning or plan. A `| -> <description>` line names the subagent whenever the
+output moves into one or from one to another, and the next line from the agent
+itself ends the rail. When a subagent ends, one line on the rail says how:
+
+```text
+> Agent Check each claim in the gate walkthrough against the code
+< started in background
+| -> Verify the gate walkthrough
+| > Bash git log --oneline -5
+| = completed - Verify the gate walkthrough - 14 tool uses - 5m00s
+```
+
+A failed subagent's line starts `| ! failed`, a stopped one's `| ~ stopped`,
+and any other status `| - <status>`. Tool uses and duration appear only when
+the agent reported them. `< started in background` is the outcome of a call
+that launched a subagent without waiting for it. The label names the
+subagent by the description it was started with, or by the spawning call's
+summary when that is all there is. Only
+[Claude Code](../guides/agents.md#claude-code) reports subagents.
 
 Everything a reader reads goes to **stdout**, including a command step's stderr,
 which is tagged `[stderr]` rather than split onto the other file descriptor: a
@@ -1582,7 +1605,7 @@ turn number the chat does not have exits `1` with
 
 | Output | What it is |
 |---|---|
-| default | The records rendered as text, exactly as `task transcript` renders an attempt: the run header as a first `# ` line, assistant output, tool calls and their outcomes, the agent's running to-do list as a `# plan:` line, vincent's own annotations, and a closing `= done` line carrying whatever the agent reported about the turn |
+| default | The records rendered as text, exactly as `task transcript` renders an attempt: the run header as a first `# ` line, assistant output, tool calls and their outcomes, a subagent's work behind a `| ` rail, the agent's running to-do list as a `# plan:` line, vincent's own annotations, and a closing `= done` line carrying whatever the agent reported about the turn |
 | `--json` | The normalized records as NDJSON, one JSON object per line, in vincent's vocabulary including its `vincent.*` annotations. This is the `jq` route |
 | `--raw` | The agent's own JSONL, byte for byte, exactly as it was recorded |
 

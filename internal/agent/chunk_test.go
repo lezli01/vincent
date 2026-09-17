@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 // The live chunk shapes (§13.3) and the normalized transcript shapes (§13.2)
@@ -167,5 +168,49 @@ func TestParentCallIDRidesEveryChunk(t *testing.T) {
 		if c.Payload["parent_call_id"] != "call_1" {
 			t.Errorf("%s dropped parent_call_id: %+v", c.Type, c.Payload)
 		}
+	}
+}
+
+// TestSubagentChunkShape pins the three subagent chunks (task 109): each
+// carries only the fields its event reported, under the names
+// api.normalizeLine writes.
+func TestSubagentChunkShape(t *testing.T) {
+	for _, tc := range []struct {
+		ev   Event
+		kind string
+		want string
+	}{
+		{
+			Event{Type: EventSubagentStarted, Subagent: &Subagent{
+				CallID: "toolu_1", Description: "Verify the gate", AgentType: "general-purpose", Background: true,
+			}},
+			"agent.subagent_started",
+			`{"background":true,"call_id":"toolu_1","description":"Verify the gate","subagent_type":"general-purpose"}`,
+		},
+		{
+			Event{Type: EventSubagentProgress, Subagent: &Subagent{
+				CallID: "toolu_1", ToolUses: 3, TotalTokens: 2048, Duration: 1500 * time.Millisecond, LastTool: "Bash",
+			}},
+			"agent.subagent_progress",
+			`{"call_id":"toolu_1","duration_ms":1500,"last_tool":"Bash","tool_uses":3,"total_tokens":2048}`,
+		},
+		{
+			Event{Type: EventSubagentFinished, Subagent: &Subagent{
+				CallID: "toolu_1", Status: "failed", Summary: "Agent terminated early",
+			}},
+			"agent.subagent_finished",
+			`{"call_id":"toolu_1","status":"failed","summary":"Agent terminated early"}`,
+		},
+	} {
+		chunks := LiveChunks(tc.ev)
+		if len(chunks) != 1 || chunks[0].Type != tc.kind {
+			t.Fatalf("%s: chunks = %+v, want one %s", tc.ev.Type, chunks, tc.kind)
+		}
+		if got := marshal(t, chunks[0].Payload); got != tc.want {
+			t.Errorf("%s chunk =\n%s\nwant\n%s", tc.kind, got, tc.want)
+		}
+	}
+	if chunks := LiveChunks(Event{Type: EventSubagentStarted}); chunks != nil {
+		t.Errorf("a subagent event with no payload published %+v", chunks)
 	}
 }

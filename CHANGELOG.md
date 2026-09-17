@@ -24,6 +24,27 @@ list with the user-facing context a commit subject cannot carry.
   stop reasons, so none are shown. cursor-agent `2026.08.25-3e8eec8` is now a
   tested build.
 
+- **A Claude Code run's subagents now render nested, instead of as the
+  agent's own words.** When claude hands work to subagents, often several in
+  the background at once, their prose and tool calls used to read exactly as
+  if the main agent had produced them. The output pane, the chat workspace,
+  `vincent task transcript` and `vincent chat transcript` now draw every
+  subagent line behind a rail (`┊` in the TUI, `| ` on the command line), in
+  the order it arrived. A `↳` label names which subagent is speaking whenever
+  that changes, and one completion line reports how each ended:
+  `┊ ✓ completed · <description> · 14 tool uses · 5m00s`, with `✗ failed` and
+  `■ stopped` marked apart. A background launch's outcome reads
+  `✓ started in background`, not claude's internal metadata text. A subagent's
+  internals show one level quieter than the agent's own: nothing at `quiet`,
+  its prose and errors at `compact`, its tool calls from `normal`, and its
+  reasoning and plan at `verbose`. The command line prints the `normal` view.
+  `GET …/transcript?format=normalized` and the live streams gain
+  `agent.subagent_started`, `agent.subagent_progress` and
+  `agent.subagent_finished` records, and `parent_call_id` is now rendered
+  rather than only carried. Because transcripts are normalized on read, claude
+  runs already on disk render nested too. Codex and cursor report no subagents
+  (issue #401).
+
 - **vincent now tells you when claude is not logged in.** claude was the one
   agent whose login state always read *unknown*. vincent now asks
   `claude auth status`, so `vincent doctor`, `vincent agents`, `GET /v1/agents`
