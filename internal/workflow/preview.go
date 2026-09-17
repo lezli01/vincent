@@ -36,8 +36,11 @@ const (
 	// until the step runs (§7.6, task 080). A `lane:` template plus
 	// `for_each:` has no lane list to draw before spawn — the width is a fact
 	// the run discovers — so every surface that draws lanes draws one of these
-	// instead of guessing a count. After the step materializes its lanes into
-	// the snapshot (decision 5) there is nothing left to stand in for.
+	// instead of guessing a count. `vincent workflow render` draws it twice:
+	// as the fan-out row's lane-list label, `<derived lane>: unknown width …`
+	// (issue #407), and on every step row inside the template, marking what
+	// it is rendered once per item of. After the step materializes its lanes
+	// into the snapshot (decision 5) there is nothing left to stand in for.
 	SentinelLane     = "<derived lane>"
 	SentinelConflict = "<conflicts[0]>"
 )

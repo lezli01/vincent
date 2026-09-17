@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"slices"
@@ -53,6 +54,30 @@ type renderStep struct {
 	// (§7.6, task 080) with the `for_each` templates the lane expands over:
 	// it is previewed once, and runs once per item.
 	DerivedLane []string `json:"derived_lane,omitempty"`
+	// Schedule, MaxLanes and Lanes are a `fan_out` step's lane graph (§7.6,
+	// issue #407), present only on a step that declares `lanes:` or a `lane:`
+	// template. Schedule is the resolved mode, so an unnamed one reads
+	// `barrier`; the human output badges `eager` alone (task 084 decision 9).
+	Schedule string       `json:"schedule,omitempty"`
+	MaxLanes *int         `json:"max_lanes,omitempty"`
+	Lanes    []renderLane `json:"lanes,omitempty"`
+}
+
+// renderLane is one lane of a fan-out's graph. A declared lane carries its
+// `needs:` edges and the wave they put it in, numbered from 1 as the TUI's
+// diagram numbers them. A derived template is one entry marked Derived, with
+// the `for_each` templates it expands over and no wave: its width, and so its
+// graph, is a fact only the run discovers.
+type renderLane struct {
+	ID    string   `json:"id"`
+	Needs []string `json:"needs,omitempty"`
+	Wave  int      `json:"wave,omitempty"`
+	// Guarded marks a lane carrying `if:`. A guarded-off lane imposes no
+	// ordering (§7.6, task 080 decision 8), so its edges may not hold; the
+	// guard itself is shown as the step's `lanes[N].if` field, never judged.
+	Guarded bool     `json:"guarded,omitempty"`
+	Derived bool     `json:"derived,omitempty"`
+	ForEach []string `json:"for_each,omitempty"`
 }
 
 // renderField is one rendered template body. Output and Error are mutually
@@ -382,6 +407,11 @@ func renderWorkflow(file string, wf *workflow.Workflow, in workflow.PreviewInput
 			ID: ps.Step.ID, Path: ps.Path, Type: ps.Step.Type,
 			Fields: []renderField{}, Unresolved: ps.Unresolved, DerivedLane: ps.DerivedLane,
 		}
+		if lanes := laneGraph(ps.Step); len(lanes) > 0 {
+			out.Schedule = ps.Step.ScheduleMode()
+			out.MaxLanes = ps.Step.MaxLanes
+			out.Lanes = lanes
+		}
 		if ps.Unresolved != "" {
 			res.Steps = append(res.Steps, out)
 			continue
@@ -442,6 +472,36 @@ func renderWorkflow(file string, wf *workflow.Workflow, in workflow.PreviewInput
 	}
 	res.OK = len(res.Errors) == 0
 	return res
+}
+
+// laneGraph is a `fan_out` step's lanes as render draws them (issue #407), or
+// nil for any other row — including the two fan_out rows previewWalk emits
+// for a lane whose body is a registry workflow, which carry no lanes of their
+// own.
+//
+// Waves come from workflow.LaneWaves, the engine's own derivation, and cover
+// every declared lane: whether a guard selects a lane is a run-time fact the
+// preview does not judge (task 044 decision 6). A derived template draws no
+// waves even when its `for_each` would resolve offline — the per-item pass
+// stays deferred (task 044 decision 10).
+func laneGraph(step workflow.Step) []renderLane {
+	if step.Type != workflow.StepFanOut {
+		return nil
+	}
+	if step.Lane != nil {
+		return []renderLane{{ID: workflow.SentinelLane, Derived: true, ForEach: step.ForEach}}
+	}
+	if len(step.Lanes) == 0 {
+		return nil
+	}
+	waves := workflow.LaneWaves(step.Lanes)
+	out := make([]renderLane, 0, len(step.Lanes))
+	for _, lane := range step.Lanes {
+		out = append(out, renderLane{
+			ID: lane.ID, Needs: lane.Needs, Wave: waves[lane.ID] + 1, Guarded: lane.If != "",
+		})
+	}
+	return out
 }
 
 // templateField is one body this command executes. guard marks the ones §7.7
@@ -548,6 +608,9 @@ func printRender(cmd *cobra.Command, res renderResult) error {
 			}
 			continue
 		}
+		if _, err := io.WriteString(out, laneBlock(s)); err != nil {
+			return err
+		}
 		if s.Selection != nil {
 			if _, err := fmt.Fprintf(out, "  agent: %s  model: %s  effort: %s\n",
 				sourced(s.Selection.Agent), sourced(s.Selection.Model), sourced(s.Selection.Effort)); err != nil {
@@ -579,6 +642,69 @@ func printRender(cmd *cobra.Command, res renderResult) error {
 	_, err := fmt.Fprintf(out, "%s: ok — %s, %d step(s) rendered, %d warning(s)\n",
 		res.File, res.Name, len(res.Steps), len(res.Warnings))
 	return err
+}
+
+// laneBlock draws a fan-out's lane graph on the step's own row: an optional
+// `schedule: eager` line, then one `lanes:` line per wave, in wave order, each
+// naming that wave's lanes in declaration order. It is plain line-oriented
+// text — no box drawing, nothing that depends on terminal width — so it
+// survives a pipe. Empty for a step with no graph.
+func laneBlock(s renderStep) string {
+	if len(s.Lanes) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	derived := s.Lanes[0].Derived
+	if s.Schedule == workflow.ScheduleEager {
+		b.WriteString("  schedule: eager")
+		// Task 081 decision 4, made visible: with no edge to wait on, eager
+		// has nothing to do sooner than barrier. A derived list's flatness is
+		// unknowable before spawn, so its eager prints bare.
+		if !derived && slices.IndexFunc(s.Lanes, func(l renderLane) bool { return l.Wave > 1 }) < 0 {
+			b.WriteString(" (runs as barrier: no lane needs another)")
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("  lanes:\n")
+	if derived {
+		lane := s.Lanes[0]
+		fmt.Fprintf(&b, "    %s: unknown width", lane.ID)
+		if s.MaxLanes != nil {
+			fmt.Fprintf(&b, ", at most %d", *s.MaxLanes)
+		}
+		fmt.Fprintf(&b, ", one per item of %s\n", strings.Join(lane.ForEach, ", "))
+		return b.String()
+	}
+	last := 0
+	for _, lane := range s.Lanes {
+		last = max(last, lane.Wave)
+	}
+	for wave := 1; wave <= last; wave++ {
+		var names []string
+		for _, lane := range s.Lanes {
+			if lane.Wave == wave {
+				names = append(names, laneLabel(lane))
+			}
+		}
+		fmt.Fprintf(&b, "    wave %d: %s\n", wave, strings.Join(names, ", "))
+	}
+	return b.String()
+}
+
+// laneLabel is one lane in its wave line: its id, tagged `guarded` when an
+// `if:` may leave it unspawned, and with the lanes it needs.
+func laneLabel(lane renderLane) string {
+	var tags []string
+	if lane.Guarded {
+		tags = append(tags, "guarded")
+	}
+	if len(lane.Needs) > 0 {
+		tags = append(tags, "needs "+strings.Join(lane.Needs, ", "))
+	}
+	if len(tags) == 0 {
+		return lane.ID
+	}
+	return lane.ID + " (" + strings.Join(tags, "; ") + ")"
 }
 
 // sourced renders one §8.6 field as "value (level)". An empty value is the

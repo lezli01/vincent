@@ -132,29 +132,7 @@ steps:
 // `lane:` template must survive the trip back to the parser's model — or the
 // lane's step, and the template's own id, never render at all.
 func TestRenderProjectResolvesDerivedFanOut(t *testing.T) {
-	dataDir := t.TempDir()
-	token, err := daemon.EnsureToken(dataDir)
-	if err != nil {
-		t.Fatalf("token: %v", err)
-	}
-
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
-	broker := events.New()
-	t.Cleanup(broker.Close)
-	st.SetEventHook(broker.Publish)
-
-	ctx := context.Background()
-	project := &store.Project{Name: "live", Path: t.TempDir(), DefaultBranch: "main"}
-	if err := st.CreateProject(ctx, project); err != nil {
-		t.Fatalf("CreateProject: %v", err)
-	}
-
-	globalDir := t.TempDir()
-	callee := `name: derive
+	dataDir, projectID := serveRegistryWorkflow(t, "derive", `name: derive
 steps:
   - id: plan
     type: command
@@ -171,30 +149,7 @@ steps:
         - id: implement
           type: command
           run: "make {{ .Task.Title }}"
-`
-	if err := os.WriteFile(filepath.Join(globalDir, "derive.yaml"), []byte(callee), 0o600); err != nil {
-		t.Fatalf("write callee: %v", err)
-	}
-	reg := workflow.NewRegistry(globalDir, workflow.Options{}, nil)
-	reg.Reload()
-	if e, ok := reg.Lookup(project.ID, "derive"); !ok || len(e.Errors) > 0 {
-		t.Fatalf("callee did not load cleanly: ok=%v %+v", ok, e.Errors)
-	}
-
-	srv := api.New(api.Deps{
-		Token:       token,
-		Config:      config.Default,
-		StartedAt:   time.Now(),
-		ListenAddr:  "127.0.0.1:0",
-		RequestStop: func() {},
-		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Store:       st,
-		Broker:      broker,
-		Workflows:   reg,
-	})
-	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
-	publishDaemon(t, dataDir, ts.URL)
+`)
 
 	file := filepath.Join(t.TempDir(), "wf.yaml")
 	body := `name: outer
@@ -208,7 +163,7 @@ steps:
 	}
 
 	out, code := runWorkflowInDataDir(t, dataDir,
-		"render", file, "--project", strconv.FormatInt(project.ID, 10), "--json")
+		"render", file, "--project", strconv.FormatInt(projectID, 10), "--json")
 	if code != 0 {
 		t.Fatalf("render --project exit code = %d, want 0: %s", code, out)
 	}
@@ -237,6 +192,94 @@ steps:
 	if strings.Join(derivedLane, ",") != "{{ .Steps.plan.Result }}" {
 		t.Errorf("implement's derived_lane = %q, want the for_each it expands over", derivedLane)
 	}
+}
+
+// TestRenderProjectDrawsResolvedLaneDAG is issue #407's `--project` path: a
+// callee whose declared lanes carry `needs:` comes back through the real GET
+// /v1/workflows/definition, and after the include is spliced the fan-out draws
+// the same graph a local file would — which only holds while the definition
+// DTO carries a lane's `needs` and the step's `schedule`.
+func TestRenderProjectDrawsResolvedLaneDAG(t *testing.T) {
+	dataDir, projectID := serveRegistryWorkflow(t, "dag", `name: dag
+steps:
+  - id: spread
+    type: fan_out
+    schedule: eager
+    lanes:
+      - {id: api, steps: [{id: api_impl, type: command, run: api}]}
+      - {id: db, steps: [{id: db_migrate, type: command, run: db}]}
+      - {id: wire, needs: [api, db], steps: [{id: wire_up, type: command, run: wire}]}
+`)
+
+	file := filepath.Join(t.TempDir(), "wf.yaml")
+	if err := os.WriteFile(file, []byte("name: outer\nsteps:\n  - {id: shared, type: include, workflow: dag}\n"), 0o600); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+
+	out, code := runWorkflowInDataDir(t, dataDir, "render", file, "--project", strconv.FormatInt(projectID, 10))
+	if code != 0 {
+		t.Fatalf("render --project exit code = %d, want 0: %s", code, out)
+	}
+	want := "spread (fan_out)\n" +
+		"  schedule: eager\n" +
+		"  lanes:\n" +
+		"    wave 1: api, db\n" +
+		"    wave 2: wire (needs api, db)\n"
+	if !strings.Contains(out, want) {
+		t.Errorf("the resolved fan-out does not draw its graph; want\n%s\nin\n%s", want, out)
+	}
+}
+
+// serveRegistryWorkflow starts the real API handlers over httptest with one
+// project and a global registry holding callee under name, and publishes the
+// daemon.json a client discovers. It returns that data dir and the project id.
+func serveRegistryWorkflow(t *testing.T, name, callee string) (dataDir string, projectID int64) {
+	t.Helper()
+	dataDir = t.TempDir()
+	token, err := daemon.EnsureToken(dataDir)
+	if err != nil {
+		t.Fatalf("token: %v", err)
+	}
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	broker := events.New()
+	t.Cleanup(broker.Close)
+	st.SetEventHook(broker.Publish)
+
+	project := &store.Project{Name: "live", Path: t.TempDir(), DefaultBranch: "main"}
+	if err := st.CreateProject(context.Background(), project); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	globalDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(globalDir, name+".yaml"), []byte(callee), 0o600); err != nil {
+		t.Fatalf("write callee: %v", err)
+	}
+	reg := workflow.NewRegistry(globalDir, workflow.Options{}, nil)
+	reg.Reload()
+	if e, ok := reg.Lookup(project.ID, name); !ok || len(e.Errors) > 0 {
+		t.Fatalf("callee did not load cleanly: ok=%v %+v", ok, e.Errors)
+	}
+
+	srv := api.New(api.Deps{
+		Token:       token,
+		Config:      config.Default,
+		StartedAt:   time.Now(),
+		ListenAddr:  "127.0.0.1:0",
+		RequestStop: func() {},
+		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Store:       st,
+		Broker:      broker,
+		Workflows:   reg,
+	})
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	publishDaemon(t, dataDir, ts.URL)
+	return dataDir, project.ID
 }
 
 // publishDaemon writes the daemon.json a client discovers, pointing at an
