@@ -163,6 +163,8 @@ func TestConfigPatchRejectionLeavesTheFileByteIdentical(t *testing.T) {
 		{"a duration that will not parse", `{"defaults":{"agent_timeout":"soon"}}`},
 		{"a branch template that does not compile", `{"branch_template":"vincent/{{.ID"}`},
 		{"a notify state that is not one", `{"notify":{"on":["exploded"]}}`},
+		{"a backup interval under an hour", `{"backup":{"interval":"30m"}}`},
+		{"a relative backup dir", `{"backup":{"dir":"backups"}}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newConfigHarness(t)
@@ -375,6 +377,40 @@ func TestConfigPatchRoundTripsTUIHyperlinks(t *testing.T) {
 		if h.cur.Load().TUI.Board.GroupBy == nil {
 			t.Error("patching tui.hyperlinks lost tui.board.group_by")
 		}
+	}
+}
+
+// The backup block is served, written into its documented place and put into
+// force (task 115). Setting the interval alone is the whole switch, and the
+// file keeps one `backup:` block rather than growing a second at the end.
+func TestConfigPatchRoundTripsBackup(t *testing.T) {
+	h := newConfigHarness(t)
+	_, getBody := doRequest(t, h.ts, http.MethodGet, "/v1/config", testToken)
+	if !strings.Contains(string(getBody), `"backup":{"interval":"0s","keep":7,"dir":""}`) {
+		t.Fatalf("GET /v1/config does not serve backup off by default: %s", getBody)
+	}
+	dir := t.TempDir()
+	body, err := json.Marshal(map[string]any{"backup": map[string]any{"interval": "24h", "keep": 3, "dir": dir}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, out := h.patch(t, string(body))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, out)
+	}
+	var answered configResponse
+	if err := json.Unmarshal(out, &answered); err != nil {
+		t.Fatalf("parse patch response: %v", err)
+	}
+	if want := (configBackup{Interval: "24h0m0s", Keep: 3, Dir: dir}); answered.Backup != want {
+		t.Errorf("the patch response says %+v, want %+v", answered.Backup, want)
+	}
+	applied := h.cur.Load().Backup
+	if !applied.Enabled() || applied.Keep != 3 || applied.Dir != dir {
+		t.Errorf("the applied config says %+v", applied)
+	}
+	if n := strings.Count(string(h.bytes(t)), "\nbackup:"); n != 1 {
+		t.Errorf("backup: appears %d times, want 1:\n%s", n, h.bytes(t))
 	}
 }
 

@@ -4839,7 +4839,7 @@ One Go binary, `vincent`:
 | `vincent daemon` | Runs the daemon in the foreground (logs to stderr; for debugging/service managers). `--config-dir`/`--data-dir` pin the §12.2 directories for a manager with no per-process environment |
 | `vincent daemon start / stop / status` | Background daemon management (start detaches; stop = graceful shutdown) |
 | `vincent daemon logs [-n N] [-f]` | *Added 2026-08-28 (task 047).* Prints the tail of `{data_dir}/logs/daemon.log` (§17), 500 lines by default, `-f` following it on a two-second cadence. It reads the file **from disk and never calls the API**, so it needs no daemon and starts none — it cannot exit 2. A missing file is an error naming the path; an empty one prints nothing and succeeds |
-| `vincent daemon backup <path.tar.gz> / restore <path.tar.gz>` | *Added 2026-08-25 (task 030).* One `.tar.gz` of the database (`VACUUM INTO`, §14), `transcripts/`, `config.yaml` and `workflows/`, plus a manifest. `backup` is a thin API client and needs a **running** daemon; `restore` runs client-side and needs a **stopped** one, and refuses a newer schema or an occupied destination without `--force` |
+| `vincent daemon backup <path.tar.gz> / restore <path.tar.gz>` | *Added 2026-08-25 (task 030).* One `.tar.gz` of the database (`VACUUM INTO`, §14), `transcripts/`, `config.yaml` and `workflows/`, plus a manifest. `backup` is a thin API client and needs a **running** daemon; `restore` runs client-side and needs a **stopped** one, and refuses a newer schema or an occupied destination without `--force`. *Amended 2026-09-17 (task 115):* the daemon can also take the same archive **on a schedule**, into `backup.dir`, keeping the newest `backup.keep` of its own archives (§12.3). There is no new command: `restore` takes a scheduled archive exactly as it takes a manual one |
 | `vincent service install / uninstall / status` | Registers OS-native autostart, always as the invoking user: launchd agent, systemd user unit, Windows Scheduled Task |
 | `vincent workflow ls / validate [file] / render <file> / init <name>` | Registry listing / YAML validation / template dry run / writing a new registry file. *Amended 2026-08-26 (task 034):* `init` writes the §5.2 scope directory a `--project` flag selects — global by default, resolved from §12.2 with **no daemon**; `--project N` needs one, purely to resolve the id to a repository root. `--from <example>` writes an embedded `examples/*.yaml` with its top-level `name:` rewritten. It refuses an existing path (`O_EXCL`) or a name another file in the same scope already declares, and only warns when the name shadows a lower scope. *Added 2026-08-28 (task 044):* `render` executes every template the file declares — `prompt`, `run`, `check`, `instructions`, `if` and `for_each` — against a synthetic §8.4 preview context and prints what each step would send, with the §8.6 triple each agent step resolves to. Where `validate` parses a template, this **executes** it, which is the only way `missingkey=error` catches a typo'd field. It is offline for the same reason `validate` is; `--task`/`--project` reach the daemon for a real task's facts and for registry lookups. Exit 0 clean · 1 a render error · 2 no daemon answered a `--task`/`--project` |
 | `vincent task add / ls / show <id> / cancel <id> / follow-up <id>` | Thin API clients for scripting. *Amended 2026-08-25 (task 027):* `follow-up` takes exactly one of `--prompt`, `--run` and `--workflow`, plus optional `--agent`/`--model`/`--effort` (§13.2). *Amended 2026-08-28 (task 045):* `add` fills the §8.1.2 field map from repeatable `--field name=value` and/or `--fields-file <path\|->`. *Amended 2026-09-14 (task 096):* `follow-up` also takes `--paused`, §13.2's `paused: true`: the follow-up is recorded and the task held in `paused` until `resume`. *Amended 2026-09-15 (task 101):* `show` prints a `hold` row for a queued task carrying a §11 hold — `<queued_reason> until <admit_not_before>` in local RFC3339, or the reason alone when there is no resume time — and `show <id> --step RUN` prints one step_run's §5.4 recorded inputs as ASCII text in the Step Details tab's four sections (input, resolution, control flow, outcome), looked up in the detail's own `steps[]`; with `--json` it prints that element unchanged. An id that is not one of the task's runs exits 1. No wire change |
@@ -4856,7 +4856,7 @@ One Go binary, `vincent`:
 | `vincent gc [--dry-run] [--force] [--json]` | Reclaims data-root directories no task claims (§10); a thin API client like the rest |
 | `vincent config get [key] / set <key> <value>` | *Added 2026-08-30 (task 060).* Reads and writes `config.yaml` through `GET`/`PATCH /v1/config` (§12.3) — a thin API client like the rest, never a second editor, so the CLI and the TUI's editor are one operation with one validation. `get` with no key prints every key as `path = value` in the file's own order; with one, that key's value alone. Keys are the dotted paths the file carries. Lists and argv are whitespace-separated inside a single argument (`notify.on "blocked awaiting_gate"`), which is also why an argv element containing a space has to be edited in the file. A `set` is in force when it answers; `listen` is the exception the command says out loud. Exit 0 · 1 the daemon refused it, with the file byte-identical · 2 no daemon answered |
 | `vincent github issues / prs / pr create / status --project <id>` | *Added 2026-08-26 (task 035).* Read-only GitHub views: the project's issues newest first, and whether they can be read at all. Thin API clients like the rest — the daemon makes every GitHub call. Nothing under this command writes to GitHub. *Amended 2026-08-31 (task 069, issue #273):* the last clause stops being true for **one** subcommand. `vincent github pr create --task <id> --title <t> [--body <text>] [--draft]` drives §13.2's create route: it pushes the task's branch and opens its pull request, and it is the one thing under `vincent github` that writes to GitHub — `issues`, `prs` and `status` still write nothing. It exists for the reason every other subcommand does (the TUI holds no action the daemon does not) and because a gate script has to be able to drive that route without driving a terminal. `--body` is optional: a pull request with no description is a legal one. The fallback is **not** an error — a push that succeeded and a create that did not prints the compare URL and exits 0. *Amended 2026-09-15 (task 068.4, issue #386):* `pr create` is no longer the one writer. `vincent github pr merge --task <id> --method merge\|squash\|rebase --head-sha <sha>`, `pr close --task <id>`, `pr reopen --task <id>`, `pr comment --task <id> (--body <text> \| --body-file <path>)` and `pr rerun --task <id> --run-id <id>` drive §13.2's five write routes on the task's linked pull request. `merge` requires both flags because the CLI has no confirmation popup: they are where the human names exactly what is sent (task 068 decision 4). `--body-file -` reads stdin. `issues`, `prs` and `status` still write nothing. *Amended 2026-09-15 (task 102, issue #391):* four more subcommands under `pr` drive §13.2's existing task pull-request routes, all taking the task as `--task <id>` like `pr create`: `vincent github pr link <number> --task <id>` (POST), `pr unlink --task <id>` (DELETE), `pr show --task <id>` (GET the live row) and `pr checks --task <id>` (GET the live rollup). `link` and `unlink` write **only vincent's own link column** — no request reaches GitHub from either, and `link` does not check that the number exists — so the only commands under `vincent github` that write to GitHub stay `pr create` and task 068.4's five, and `show` and `checks` write nothing anywhere. `unlink` refuses with exit 1 and sends nothing when the task has no live link (never linked, or already suppressed): a DELETE there would record a suppressed number-0 link that stops the reconciler ever auto-linking the task. That is a client-side fast failure; the route is unchanged. Both GET routes answer 200 whatever they found, so `show` and `checks` set their own exit code: 0 when the pull request or rollup was read — for `checks`, **whatever CI concluded**, the verdict being `--json`'s `.state` — 1 when there is no live link or a named `reason` stopped the read (printed as `github.Message(reason)`), 2 when no daemon answered. `--json` emits each route's body unchanged under the same exit rule |
-| `vincent doctor` | One diagnostic report: paths, daemon, log tail, database, agents, storage, task counts (§17). `--json` for scripting and bug reports; `--fix` (`--force`) reclaims orphaned worktrees and compacts the database. Exit 0 healthy · 1 problems found · 2 no daemon answered. *Amended 2026-08-26 (task 035):* it also reports the GitHub integration — the `github.enabled` toggle, `gh`'s presence, version and login state, whether a token variable is set (its **name**, never its value), and whether issues are readable. It is a **row, not a problem**: every "no" it can report leaves task creation without an issue working exactly as before, so none of it changes the exit code. *Amended 2026-08-29 (task 055):* it also reports the release check (§12.3) — whether `update.check` is on, the latest stable release and when it was last seen, this binary's version, and whether the running daemon is older than it. Rows, not problems, for the same reason: a newer release and a daemon still running the previous build both leave everything working. *Amended 2026-09-10 (task 095):* it also reports the published skills of §9.8 — one row per skill with the version this binary ships, the version installed in the global store and the agents it is linked into. A row and not a problem, on the same precedent: the built-in workflows carry the skill's text in their own prompts, so nothing a skill row can say stops a task from running, and `vincent doctor` still exits 0 |
+| `vincent doctor` | One diagnostic report: paths, daemon, log tail, database, agents, storage, task counts (§17). `--json` for scripting and bug reports; `--fix` (`--force`) reclaims orphaned worktrees and compacts the database. Exit 0 healthy · 1 problems found · 2 no daemon answered. *Amended 2026-08-26 (task 035):* it also reports the GitHub integration — the `github.enabled` toggle, `gh`'s presence, version and login state, whether a token variable is set (its **name**, never its value), and whether issues are readable. It is a **row, not a problem**: every "no" it can report leaves task creation without an issue working exactly as before, so none of it changes the exit code. *Amended 2026-08-29 (task 055):* it also reports the release check (§12.3) — whether `update.check` is on, the latest stable release and when it was last seen, this binary's version, and whether the running daemon is older than it. Rows, not problems, for the same reason: a newer release and a daemon still running the previous build both leave everything working. *Amended 2026-09-10 (task 095):* it also reports the published skills of §9.8 — one row per skill with the version this binary ships, the version installed in the global store and the agents it is linked into. A row and not a problem, on the same precedent: the built-in workflows carry the skill's text in their own prompts, so nothing a skill row can say stops a task from running, and `vincent doctor` still exits 0. *Amended 2026-09-17 (task 115):* it also reports scheduled backups (§12.3) in a `BACKUP` group: whether `backup.interval` turns them on, the directory, interval and keep, the last success and last attempt, when the next run is due, the last archive's size, how many scheduled archives are kept, and the last error. Unlike the rows above, **a failed attempt is a problem** and exits 1 (§17, task 115 decision 4). A backup that is merely overdue is not |
 | `vincent agents [--json] [--refresh]` | *Added 2026-09-16 (task 104, issue #393).* A thin client of `GET /v1/agents` (§9.6, §13.2) that, like every data subcommand, **never auto-starts a daemon**. It prints one row per adapter in registration order — `AGENT`, `VERSION`, `BUILD` (the task 041 `version_verdict`), `LOGIN` (§9.5's tri-state in `vincent doctor`'s words, `-` for an adapter not installed) and `QUOTA` — then a `NOTES` cell holding only bad news: `not found`, `no mid-run input`, `no restricted mode on <os>`, `option probe failed (curated catalog)`. `QUOTA` renders the **one merged block** the endpoint serves, labelled by its `source` (a reading wins, an observation is the fallback, task 082), and merges nothing client-side: `unknown` for a null block; a reading's windows with `read <observed_at>`; `spent → <reset>` for a reset the CLI stated and `spent ≈ <reset>` for one vincent estimated (task 026 decision 2); `ok · last spent <observed_at>` for a lapsed observation. Times are local RFC3339. By default it answers from the catalog cache; `--refresh` sends `?refresh=true`. `--json` emits the endpoint's `agents` array unchanged. Exit 0 whenever the daemon answered, whatever the adapters' health (task 041 decision 4) · 1 the API returned an error · 2 no daemon answered. No wire change |
 | `vincent update [--check] [--dry-run] [--require-signature] [--json]` | *Added 2026-08-29 (task 055).* Asks GitHub for the latest **stable** release and, unless `--check` is given, installs it over this binary. It queries the feed **itself** rather than through the daemon, so it works with no daemon and before the daemon's own check has polled — and so `update.check: false` (§12.3) stays a literal promise. A binary a package manager owns is never modified: the channel is detected from the resolved `os.Executable()` path and its upgrade command is printed. A binary vincent owns is verified before anything runs (§16) and swapped in place; on any failure nothing is replaced. `--check`: exit 0 up to date · 1 the check failed · 2 an update is available. Otherwise: 0 nothing to do or swapped · 1 verification or the swap failed and the binary is untouched · 2 an update exists but this install is package-managed. `--json` carries `swapped`, which separates the two 0s |
 | `vincent skills ls / install [name...]` | *Added 2026-09-10 (task 095).* Lists the agent skills this repository publishes with the version shipped, the version installed in the global skills store and the agents each is linked into, and installs them (§9.8). **It never talks to the daemon**, so it cannot exit 2: detection is a filesystem read that works with no node on the machine, and the install writes into the invoking user's own agent directories — nothing daemon-owned, which is why the write is here and not behind `doctor --fix`. `install` shells out to `npx skills add … --agent <slugs> --yes --global`; with no name it installs everything not already current, `--agent` narrows the selection. Both carry `--json`. Exit 0 fine · 1 an install failed, `npx` missing included |
@@ -4996,7 +4996,10 @@ diagnoses is healthy would be useless. In that mode the database and task rows
 read *unknown — daemon not running* rather than being read from a second
 process ("only the daemon opens SQLite" is an ownership invariant, §4), and
 `--fix` is refused — every repair is a write, and the daemon performs every
-write.
+write. *Amended 2026-09-17 (task 115):* the backup group reads `known: false` in
+that mode for the same reason. Its settings come from `config.yaml` and are
+shown, but the last attempt and its error live in the daemon's memory, so the
+local report raises no backup problem.
 
 Single-instance enforcement: a lock file in the data dir; a second daemon exits with a
 pointer to the running instance.
@@ -5153,8 +5156,17 @@ platform the standing answer to an agent that will not resolve is the §12.3
   transcripts/{task_id}/{step_index}-{step_id}-{attempt}.jsonl  # sub-step of a parallel group (§7.5)
   transcripts/{task_id}/{step_index}-i{iteration}-{step_id}-{attempt}.jsonl  # loop body step (§7.8)
   trigger-proposals/{task_id}/  # staged trigger files + manifest.json, 0700/0600 (task 098)
+  backups/                   # scheduled backups when backup.dir is "", created 0700 (§12.3, task 115)
+    vincent-backup-{YYYYMMDDTHHMMSSZ}.tar.gz  # one timer-written archive, 0600
   logs/daemon.log            # rotated, size-capped
 ```
+
+*Amended 2026-09-17 (task 115).* `{data_dir}/backups/` is where scheduled
+backups (§12.3) go when `backup.dir` is `""`. The timer creates it `0700` on
+first use, and its archives are `0600`, as `vincent daemon backup` writes them.
+It is not a data root: `vincent gc` does not scan it, and a backup archive does
+not include it. It is on the same disk as `vincent.db`, so it guards against
+corruption and mistakes, not against losing the disk.
 
 **The config directory and `config.yaml` are owner-only.** *Added 2026-08-25
 (#141).* On POSIX the daemon creates `{config_dir}/` `0700` and
@@ -5287,6 +5299,10 @@ github:
 update:                        # check for a newer vincent release (task 055)
   check: true                  # opt-out; false = the daemon makes no such request at all
   poll_interval: 24h           # 0 = off, same as check: false; negative is refused
+backup:                        # scheduled daemon backups (task 115)
+  interval: 0                  # 0 (default) = off; e.g. 24h. Negative, or above 0 and under 1h, is refused
+  keep: 7                      # timer-written archives kept; 0 = keep everything; negative is refused
+  dir: ""                      # "" = {data_dir}/backups; otherwise an absolute path
 # `notify:` is silent on chats (task 063, added 2026-08-30). It exists for
 # unattended work that finishes hours after the human left; a chat turn ends
 # while its human is looking at it, and a hook that fired on every turn would be
@@ -5519,6 +5535,54 @@ does — and it is what makes the check answer before the first poll and with no
 daemon running. The endpoint therefore serves the cache and never refreshes: a
 `?refresh` parameter would hand any client the ability to make the request the
 user disabled.
+
+**`backup` and scheduled backups (task 115, added 2026-09-17).** The daemon
+takes the archive `vincent daemon backup` writes (§12.1) on a timer. The timer
+is wired in `internal/daemon.Run` beside the transcript pruner (§17), checks
+about once a minute, and reads this block on every check, so an edit to any of
+the three keys takes effect at the next check with no restart and no hook into
+the config applier. `interval` is the only switch, and `0`, the default, is off:
+every archive carries every transcript (task 030 decision 1), so turning it on
+for existing installs would quietly spend up to `keep` times that much disk. A
+negative `interval` or `keep` refuses the file, for `update.poll_interval`'s
+reason. So does an interval above 0 and under an hour: each run holds the
+store's single connection for the length of `VACUUM INTO` (§14) and then re-tars
+every transcript, and anything tighter is cron's job. `dir: ""` resolves to
+`{data_dir}/backups` (§12.2), created `0700` on first use. A non-empty `dir` must
+be absolute, for the reason `POST /v1/daemon/backup` refuses a relative path:
+the daemon would resolve it against its own working directory, which nobody
+chose. The default location is on the same disk as the database. It protects
+against corruption and mistakes, not against losing the disk.
+
+- **The schedule is counted from the newest archive on disk**, not from daemon
+  start and not from memory. The timer names its archives
+  `vincent-backup-<UTC YYYYMMDDTHHMMSSZ>.tar.gz`, fixed width, so the newest
+  name is the last success and a restart does not reset the clock. An install
+  whose newest archive is older than `interval`, or that has none, runs at the
+  first check after startup. A failed attempt is retried **one hour** later, not
+  at the next check, which would loop hot against a stale newest archive.
+- **An archive never carries its final name until it is complete.** The
+  database copy and the archive are written into a `.vincent-backup-*` staging
+  directory inside `dir` and renamed into place in the same directory. A daemon
+  killed mid-run therefore leaves a staging directory, never a truncated file
+  that would count as the newest success. Leftover staging directories are swept
+  when the timer starts, and only then: a manual backup runs through this same
+  daemon, so none can be in progress at that moment. A `dir` inside
+  `{data_dir}/transcripts` fails the run, because the archive would read itself.
+- **Retention is by count, over the timer's own archives only.** After a
+  successful run, and never after a failed one, archives matching the name
+  pattern beyond the newest `keep` are deleted. `keep: 0` keeps everything, as
+  `transcript_retention_days: 0` does. A manual `vincent daemon backup` archive
+  in the same directory, and any other file, is never counted and never
+  deleted. A prune that fails is logged at warn and reported as `prune_error`.
+  It is not a doctor problem, because the backup it followed succeeded.
+- **Status is in memory**, beside the archives that are its durable half. The
+  last attempt, its error, the next due time, the last archive's size and the
+  retained count are what `GET /v1/doctor`'s `backup` group serves (§13.2). A
+  failed last attempt is a doctor problem (§17). The block is not secret, so
+  §13.4's `config_get` redaction does not change, but `dir` decides where copies
+  of `config.yaml` and every transcript land, and the TUI's editor asks before
+  changing it (§15).
 
 **`usage_limit_recheck_interval` (task 003, added 2026-08-14).** How long a task
 waits before being re-admitted after its agent reported a spent usage quota
@@ -5904,7 +5968,10 @@ and `PATCH /v1/tasks/{id}` already set. What it guarantees:
 `PATCH /v1/config` is **not** an MCP tool (§13.4), and the four keys that decide
 what the daemon executes or exposes — `notify.command`, `environment`,
 `agents.*.path` and `listen` — are behind an explicit confirmation in the TUI
-(§15).
+(§15). *Amended 2026-09-17 (task 115):* `backup.dir` joins them. A scheduled
+archive holds `config.yaml`, with its `environment.set` values and
+`notify.command`, and every transcript, so the directory decides what the daemon
+exposes.
 
 *Amended 2026-08-30 (task 065, issue #261).* **The workflow write routes carry
 the same posture, with one deliberate difference.** `POST` and
@@ -6310,6 +6377,21 @@ GET    /v1/doctor                       the whole §17 diagnostic in one body: p
                                         rule still holds for `vincent doctor`, which is the
                                         deliberate-command loop it was written about. The TUI's
                                         daemon panel opens on a keypress and passes probe=false
+                                        *Amended 2026-09-17 (task 115):* a `backup` group, the
+                                        scheduled timer's state (§12.3) →
+                                        { known, enabled, dir, interval, keep,
+                                          last_success_at, last_attempt_at, last_error?,
+                                          next_due_at, last_bytes, retained, prune_error? }.
+                                        `dir` is `backup.dir` resolved; timestamps are null when
+                                        unknown; `last_error` and `prune_error` are omitted when
+                                        empty. `known` is false only on a report composed with
+                                        no daemon, whose settings still come from config.yaml.
+                                        It adds a member to the closed set: a `backup` problem,
+                                        "the last scheduled backup failed: <error>", present iff
+                                        known && enabled && last_error is non-empty (§17). An
+                                        overdue backup and a `prune_error` are not problems.
+                                        The GET serves a copy of the timer's status and never
+                                        takes a backup
 POST   /v1/doctor/fix                   { force? } or ?force — runs gc's reclaim (§10) and
                                         compacts the database, then answers
                                         { actions[], report } with a report taken afterwards.
@@ -8154,7 +8236,11 @@ task 005 decision 4 skips while work is in flight because it rewrites the live
 file under an exclusive lock — this takes no such lock and needs no quiet
 moment; its cost is that the store's single connection is held for the duration
 of the copy, so every other daemon query queues behind it, bounded by the size
-of the database.
+of the database. *Amended 2026-09-17 (task 115):* the scheduled timer (§12.3)
+takes the same copy, so this cost now **recurs once per `backup.interval`** on
+an install that turns backups on, rather than only when someone runs the
+command. That is why an interval above 0 and under an hour is refused: each run
+holds the connection for the copy and then re-tars every transcript.
 
 *Added 2026-08-14 (task 003).* `admit_not_before` / `queued_reason` carry no index:
 `ListAdmissible` already returns the whole queued set in §11 order and the hold is
@@ -8847,6 +8933,13 @@ stream for the live tail.
    named separately: a failed fetch keeps the last-good counts behind the dim stale
    line, a disconnected daemon says unavailable, and a report with `known: false`
    says unknown rather than zero.
+   **A backup row (task 115, added 2026-09-17):** the `backup` group of the same
+   `GET /v1/doctor?probe=false` report (§13.2): whether scheduled backups are on
+   and, when they are, how they are going, with the last attempt's error when it
+   failed. That error is the one `vincent doctor` counts as a problem (§17), so
+   the view shows it rather than leaving it to the command. Like the database
+   block it reports and offers nothing to press. `vincent daemon backup` takes a
+   manual archive, and the schedule is edited in the view's configuration block.
    **Adapter verdicts (task 041, added 2026-08-28):** each adapter row trails
    with its §9.5 health facets — `untested` and the builds it was judged
    against, `incompatible`, and "no restricted mode here" where the adapter
@@ -8875,7 +8968,11 @@ stream for the live tail.
    confirmation, because they decide what the daemon executes or exposes and
    agents already run full-auto by default (§16). *Amended 2026-09-14 (task
    096):* `triggers.enabled` is a fifth, because turning it on lets a third
-   party start agents (§12.3). `listen` is written and does
+   party start agents (§12.3). *Amended 2026-09-17 (task 115):* `backup.dir` is
+   a sixth, because a scheduled archive holds `config.yaml` (with
+   `environment.set` values and `notify.command`) and every transcript, and a
+   synced or shared folder there decides what the daemon exposes.
+   `backup.interval` and `backup.keep` are not. `listen` is written and does
    not take effect until a restart, and the editor says so before it applies
    rather than showing a pending value as though it were in force. While the
    editor is open the view **captures input**, which it never did before: every
@@ -10901,6 +10998,15 @@ the whole of the posture, not a set of tips.
   independent of `transcript_retention_days`. A month answers "why did my
   trigger not fire last week?" while bounding a table that grows with every
   poll's events (task 096 decision 13).
+- **Scheduled backups** (*added 2026-09-17, task 115*): a timer wired in
+  `daemon.Run` beside the retention pass above takes the `vincent daemon backup`
+  archive every `backup.interval` into `backup.dir`, and after each successful
+  run deletes its own archives beyond the newest `backup.keep` (§12.3). It
+  shares no knob with `transcript_retention_days`, and it never prunes rows or
+  transcripts: it copies them. It is off until `backup.interval` is set. A
+  written archive is logged at info with its path and size, a failed run at
+  error, and a failed prune at warn. The last attempt is served as `GET
+  /v1/doctor`'s `backup` group (§13.2).
 - **Entry point** (*added 2026-08-15, task 005*): `vincent doctor` and
   `GET /v1/doctor`. Everything above answers "what happened to this task"; the
   question that had no surface at all was "why is nothing running?", which took
@@ -10922,6 +11028,23 @@ the whole of the posture, not a set of tips.
   the repair lives in `vincent skills install` rather than in `--fix` because it
   is a client-side write into the user's own agent directories and every `--fix`
   repair is a daemon-owned one.
+
+  *Amended 2026-09-17 (task 115): a failed scheduled backup is a problem, which
+  amends task 006 decision 7.* The report grows a `backup` group (§12.3,
+  §13.2), and when backups are on (`backup.interval > 0`) and **the most recent
+  attempt failed**, `Report.Evaluate` adds a `backup` problem carrying the error
+  and `vincent doctor` exits 1. The next successful attempt clears it. When
+  backups are off there is never a problem, and neither is there on a local
+  report with no daemon, which shows the group `known: false` as it shows the
+  database group. This widens decision 7's closed unhealthy set on purpose, and
+  it differs from the GitHub, update and skills rows, which never move the exit
+  code. Those rows report defaults nobody chose. This one reports a feature the
+  user switched on, so it cannot fire "on almost every machine", which is what
+  decision 7 guards against, and a backup that fails silently is found out on
+  the day it is needed. An info-only row was the alternative and would have paid
+  exactly that cost. **Overdue alone is not a problem**: a daemon that was down
+  missed a run but nothing failed, and it runs at the first check after it
+  starts. A failed prune after a successful run is not a problem either.
 
   *Amended 2026-08-15 (task 005).* Retention is about **archived rows**: the pruner
   walks `archived_at`, so a transcript directory whose row was cascade-deleted with its
@@ -11059,6 +11182,8 @@ carries the rest.
 | Project path missing | New/step-starting tasks in that project → blocked with `project_path_missing` |
 | Daemon port taken | Ephemeral port by default makes this nearly impossible; pinned-port conflict fails startup with a clear message |
 | User wants a copy of daemon state | *Added 2026-08-25 (task 030).* `vincent daemon backup <path.tar.gz>` — one archive holding a `VACUUM INTO` copy of the database (§14), `transcripts/`, `config.yaml`, `workflows/` and a manifest. It needs a **running** daemon and refuses without one, in `doctor --fix`'s words: only the daemon opens the database. It needs no quiet daemon, so a backup may be taken while tasks run. `vincent daemon restore` is the reverse and needs a **stopped** daemon; it refuses a manifest whose schema version exceeds the binary's, and an occupied destination without `--force`, which moves the displaced state aside as `<name>.bak-<ts>` rather than deleting it — the same posture as the row below |
+| Scheduled backup fails | *Added 2026-09-17 (task 115).* Any failure of a timer run (§12.3) — the database copy, the tar, the rename into place, a `backup.dir` inside `{data_dir}/transcripts` or `{config_dir}/workflows` — is logged at error, removes its staging directory so no file ever carries a scheduled archive's name half-written, prunes nothing, and is retried **one hour later** rather than at the next check. The status carries the error as `last_error`, and `GET /v1/doctor` raises a `backup` problem, so `vincent doctor` exits 1 until an attempt succeeds (§17). No task is touched. A daemon killed mid-run leaves a `.vincent-backup-*` staging directory, which the timer sweeps when it next starts. A prune that fails after a successful run is logged at warn and reported as `prune_error`, not as a problem |
+| Backup directory unwritable or disk full | *Added 2026-09-17 (task 115).* A failed attempt, handled exactly as the row above: a `backup.dir` that cannot be created `0700` or written, or a disk that fills during the copy or the tar, fails the run and removes the partial work with its staging directory. **Nothing already kept is lost**, because pruning runs only after a success. The default `{data_dir}/backups` is on the database's disk, so a disk that fills there also threatens `vincent.db` and transcripts, and it gives no protection against losing that disk: pointing `backup.dir` at another disk is the remedy for both |
 | DB corruption | Startup fails loudly, points at the file, never auto-deletes. *Amended 2026-08-25 (task 030):* what rescues this case is an **earlier** good copy, which is what `vincent daemon backup` is for; a fresh copy of the damage is not a remedy, and taking one is not offered as a cold-copy mode |
 | Agent emits gigabytes of output | Transcript writes are streamed to disk; SSE output chunks are rate-limited/coalesced (~10 Hz); per-run transcript size cap (`transcript_max_bytes`, default 512 MB) fails the step past the cap with `transcript_limit` |
 | Template references missing field | Step fails at render time (before any process starts) with the template error. *Amended 2026-08-28 (task 044):* this outcome is now reachable without creating a task — `vincent workflow render <file>` executes the same templates against the §8.4 preview context and names the step and the field |

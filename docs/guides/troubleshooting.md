@@ -38,19 +38,23 @@ if not which piece is missing; whether the
 [skills vincent publishes](../reference/cli.md#vincent-skills) are installed and
 current for your agents; whether a newer vincent has been
 [released](../reference/cli.md#vincent-update) and whether the running daemon is
-older than the binary you just ran; free disk, worktree count and bytes, and any
+older than the binary you just ran; whether
+[scheduled backups](../reference/configuration.md#backup) are on, when the last
+one succeeded and when the next is due; free disk, worktree count and bytes, and any
 orphaned worktrees; and task counts by state — so "12 blocked" is visible
 without opening the board.
 
 **It works with no daemon**, which is the point: the daemon being down is one of
 the answers. In that mode it exits `2`, still prints everything it can read from
-disk, and reports the database and task rows as *unknown — daemon not running*
-rather than opening SQLite behind the daemon's back.
+disk, and reports the database and task rows — and, with scheduled backups on,
+how the last one went — as *unknown — daemon not running* rather than opening
+SQLite behind the daemon's back.
 
 The bottom of the report is a `PROBLEMS` table — the closed set that makes it
 exit `1`: a `config.yaml` that does not parse, a daemon alive but unresponsive,
 a failed `integrity_check`, a database written by a newer vincent, orphaned
-worktrees, or an unreconciled task. A missing or logged-out agent CLI is printed
+worktrees, an unreconciled task, or — with `backup.interval` set — a scheduled
+backup whose last attempt failed. A missing or logged-out agent CLI is printed
 plainly and deliberately does **not** set the exit code, so doctor stays usable
 in a script on a machine that only ever installs one of the three adapters.
 

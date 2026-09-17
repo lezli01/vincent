@@ -25,6 +25,24 @@ list with the user-facing context a commit subject cannot carry.
   `lanes` to that step. No existing row, field or step count changes (issue
   #407).
 
+- **Scheduled backups, with retention.** Set `backup.interval` in
+  `config.yaml` (at least `1h`), with `vincent config set`, or in the daemon
+  view's config editor, and the daemon takes the archive `vincent daemon
+  backup` writes on that interval into `backup.dir` (`{data_dir}/backups` by
+  default), keeping the newest `backup.keep` (7 by default; `0` keeps
+  everything). Off by default, because every archive carries every transcript.
+  The schedule counts from the newest archive on disk, so a restart does not
+  reset it and an overdue backup runs as soon as the daemon starts; a failed
+  run is retried an hour later. Only archives named
+  `vincent-backup-<UTC timestamp>.tar.gz` are ever counted or deleted, so one
+  you took by hand in the same directory is left alone, and an archive gets
+  that name only once it is complete. `vincent doctor`, `GET /v1/doctor` and
+  the TUI daemon view report the last success, the next run and the last
+  error, and a failed backup is a doctor problem, so `vincent doctor` exits 1
+  until one succeeds. The default directory is on the database's disk: it
+  protects against corruption and mistakes, not a lost disk. Restore a
+  scheduled archive with `vincent daemon restore`, as before (issue #410).
+
 - **`f1` opens help anywhere, including in a chat.** A chat's composer, a
   filter and every form take `?` as a character, so help could not be opened
   there at all. `f1` toggles the same overlay everywhere, beside `ctrl+p` for

@@ -92,7 +92,7 @@ for key in listen max_parallel_tasks branch_template defaults \
            fetch_base_branch transcript_retention_days transcript_max_bytes \
            max_task_cost_usd usage_limit_recheck_interval log_level debug \
            environment agents parallel fan_out loop include mcp github \
-           update notify tui; do
+           update backup notify tui; do
   printf '%s' "$CFG" | jq -e --arg k "$key" 'has($k)' >/dev/null \
     || fail "GET /v1/config does not serve $key"
 done

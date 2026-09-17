@@ -120,6 +120,10 @@ agents:
 		// and stays on through a config that overrides everything else, which
 		// is what "opt-out" has to mean for it to be true.
 		Update: Update{Check: true, PollInterval: Duration(24 * time.Hour)},
+		// And for `backup:` — off, because the interval is the switch and the
+		// file names none (task 115 decision 1), with retention's count ready
+		// for the day somebody sets one.
+		Backup: Backup{Keep: DefaultBackupKeep},
 		MCP:    MCP{WireSteps: true, MaxDepth: 3, MaxTasks: 32},
 		// And for `container:` — the file names no key, so the §16 default
 		// survives: no image, which is the whole switch. An installation that
@@ -450,5 +454,82 @@ func TestUpdateNegativePollIntervalRefused(t *testing.T) {
 	path := writeConfig(t, "listen: 127.0.0.1:7777\nupdate:\n  poll_interval: -1h\n")
 	if _, err := Load(path); err == nil {
 		t.Fatal("a negative update.poll_interval loaded")
+	}
+}
+
+// Scheduled backups are off until somebody sets an interval (task 115
+// decision 1): every archive carries every transcript, so a default that took
+// them would quietly spend disk on every existing install.
+func TestBackupDefaultsOff(t *testing.T) {
+	cfg, err := Load(writeConfig(t, "listen: 127.0.0.1:7777\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Backup.Interval != 0 || cfg.Backup.Enabled() {
+		t.Errorf("backup.interval = %s (enabled %v), want 0 and off", cfg.Backup.Interval, cfg.Backup.Enabled())
+	}
+	if cfg.Backup.Keep != DefaultBackupKeep || DefaultBackupKeep != 7 {
+		t.Errorf("backup.keep = %d, want 7", cfg.Backup.Keep)
+	}
+	if cfg.Backup.Dir != "" {
+		t.Errorf("backup.dir = %q, want empty", cfg.Backup.Dir)
+	}
+	// Naming only the interval keeps the other two defaults: the one key is
+	// the whole switch.
+	cfg, err = Load(writeConfig(t, "backup:\n  interval: 24h\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Backup.Enabled() || cfg.Backup.Keep != DefaultBackupKeep || cfg.Backup.Dir != "" {
+		t.Errorf("interval alone = %+v, want enabled with keep 7 and dir \"\"", cfg.Backup)
+	}
+}
+
+// The interval is 0 or at least an hour; keep and the interval are never
+// negative; the directory is absolute or empty (task 115 decision 2).
+func TestBackupValidation(t *testing.T) {
+	abs := t.TempDir()
+	for _, tc := range []struct {
+		name string
+		yaml string
+		ok   bool
+	}{
+		{"interval zero is off", "backup:\n  interval: 0s\n", true},
+		{"one hour is the floor", "backup:\n  interval: 1h\n", true},
+		{"a day", "backup:\n  interval: 24h\n", true},
+		{"keep zero keeps everything", "backup:\n  interval: 24h\n  keep: 0\n", true},
+		{"an absolute dir", "backup:\n  interval: 24h\n  dir: " + RenderString(abs) + "\n", true},
+		{"negative interval", "backup:\n  interval: -1h\n", false},
+		// Every run holds the store's only connection for a VACUUM INTO;
+		// below an hour that is load, not a backup.
+		{"interval under an hour", "backup:\n  interval: 30m\n", false},
+		{"interval just under an hour", "backup:\n  interval: 59m59s\n", false},
+		{"negative keep", "backup:\n  keep: -1\n", false},
+		// Relative to the daemon's working directory, which nobody chose.
+		{"relative dir", "backup:\n  dir: backups\n", false},
+		{"dot-relative dir", "backup:\n  dir: ./backups\n", false},
+		{"unknown key", "backup:\n  keep_days: 7\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Load(writeConfig(t, tc.yaml))
+			if tc.ok && err != nil {
+				t.Errorf("Load refused %q: %v", tc.yaml, err)
+			}
+			if !tc.ok && err == nil {
+				t.Errorf("Load accepted %q", tc.yaml)
+			}
+		})
+	}
+}
+
+// `backup.dir: ""` is {data_dir}/backups; anything else is itself.
+func TestBackupResolveDir(t *testing.T) {
+	data := t.TempDir()
+	if got, want := (Backup{}).ResolveDir(data), filepath.Join(data, "backups"); got != want {
+		t.Errorf("empty dir resolves to %q, want %q", got, want)
+	}
+	elsewhere := filepath.Join(t.TempDir(), "offsite")
+	if got := (Backup{Dir: elsewhere}).ResolveDir(data); got != elsewhere {
+		t.Errorf("absolute dir resolves to %q, want itself (%q)", got, elsewhere)
 	}
 }

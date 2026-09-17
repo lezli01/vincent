@@ -329,6 +329,61 @@ func TestDatabaseAndTasksUnknownWithoutADaemon(t *testing.T) {
 	}
 }
 
+// TestBackupUnknownWithoutADaemon is the local report's half of task 115
+// decision 4: the settings are read from config.yaml, but whether the last
+// run failed lives in the daemon's memory, so a report nobody answered says
+// unknown and never raises the problem — even with backups switched on.
+func TestBackupUnknownWithoutADaemon(t *testing.T) {
+	d := dirs(t)
+	write(t, filepath.Join(d.Config, config.FileName), "backup:\n  interval: 24h\n  keep: 3\n")
+	rep := Compose(t.Context(), Options{Dirs: d, Daemon: Daemon{Status: StatusNotRunning}})
+	b := rep.Backup
+	if b.Known {
+		t.Errorf("backup claimed known without a daemon: %+v", b)
+	}
+	if !b.Enabled || b.Interval != "24h0m0s" || b.Keep != 3 {
+		t.Errorf("the configured settings were not read: %+v", b)
+	}
+	if want := filepath.Join(d.Data, config.BackupDirName); b.Dir != want {
+		t.Errorf("Dir = %q, want the resolved default %q", b.Dir, want)
+	}
+	if b.LastSuccessAt != nil || b.LastAttemptAt != nil || b.NextDueAt != nil || b.LastError != "" {
+		t.Errorf("a local report invented timer status: %+v", b)
+	}
+	if hasProblem(rep, GroupBackup) {
+		t.Errorf("a local report raised a backup problem: %v", rep.Problems)
+	}
+}
+
+// TestBackupProblemOnlyForAFailedRunThatWasSwitchedOn is decision 4's rule on
+// Evaluate itself: a backup problem needs a daemon that answered, backups on,
+// and a last attempt that failed. Each of the three alone is not one.
+func TestBackupProblemOnlyForAFailedRunThatWasSwitchedOn(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		backup Backup
+		want   bool
+	}{
+		{"on and failed", Backup{Known: true, Enabled: true, LastError: "disk full"}, true},
+		{"off with a stale error", Backup{Known: true, LastError: "disk full"}, false},
+		{"on and succeeding", Backup{Known: true, Enabled: true}, false},
+		{"on, unknown", Backup{Enabled: true, LastError: "disk full"}, false},
+		// A prune failure follows a backup that succeeded.
+		{"on, prune failed", Backup{Known: true, Enabled: true, PruneError: "permission denied"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rep := &Report{Backup: tc.backup}
+			rep.Evaluate()
+			if got := hasProblem(rep, GroupBackup); got != tc.want {
+				t.Errorf("backup problem = %v, want %v (problems %v)", got, tc.want, rep.Problems)
+			}
+			if tc.want && !strings.Contains(rep.Problems[0].Message, tc.backup.LastError) {
+				t.Errorf("the problem does not carry the error: %q", rep.Problems[0].Message)
+			}
+		})
+	}
+}
+
 // TestTaskCountsCarryTheWholeVocabulary: a reader should see "blocked 0"
 // rather than nothing at all.
 func TestTaskCountsCarryTheWholeVocabulary(t *testing.T) {

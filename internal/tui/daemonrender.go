@@ -301,15 +301,63 @@ func (d *daemonView) databaseReportLines() []string {
 	}
 	db := d.doctor.Database
 	if !db.Known {
-		return []string{field("rows", styleDim.Render("unknown — the daemon did not open the database"))}
+		out := []string{field("rows", styleDim.Render("unknown — the daemon did not open the database"))}
+		return append(out, backupLines(d.doctor.Backup)...)
 	}
 	out := []string{
 		field("rows", dbRowSummary(db.TableRows)),
 		field("workflow snapshots", byteSize(db.WorkflowSnapshotBytes)),
 		field("history", dbSpan(db.OldestEventAt, d.now())),
 	}
+	out = append(out, backupLines(d.doctor.Backup)...)
 	if line, ok := d.staleLine(d.doctorErr, d.doctorAt); ok {
 		out = append(out, line)
+	}
+	return out
+}
+
+// backupLines is the scheduled-backup row (task 115, §15), under the database
+// it copies. It rides the doctor report this block already fetches rather than
+// a request of its own, and like the rest of this view it reports and offers
+// no action: a backup is taken by the timer or by `vincent daemon backup`.
+//
+// Off is one line, because it is the default on every install and a block of
+// blanks would read as a feature that is broken. A failed last attempt is its
+// own line in the problem colour, since it is the one thing here `vincent
+// doctor` exits 1 over (decision 4) and the row is where someone looking at
+// this view would otherwise never learn it.
+func backupLines(b apiclient.DoctorBackup) []string {
+	if !b.Enabled {
+		return []string{field("backups", "off"+styleDim.Render("   backup.interval turns them on"))}
+	}
+	keep := "keep " + strconv.Itoa(b.Keep)
+	if b.Keep == 0 {
+		keep = "keep all"
+	}
+	out := []string{field("backups", "every "+b.Interval+styleDim.Render("   "+keep+"   "+b.Dir))}
+	if !b.Known {
+		return append(out, field("last backup", styleDim.Render("unknown — the daemon reported no backup status")))
+	}
+	last := styleDim.Render("none yet")
+	if b.LastSuccessAt != nil {
+		last = b.LastSuccessAt.Local().Format("2006-01-02 15:04")
+	}
+	var notes []string
+	if b.LastBytes > 0 {
+		notes = append(notes, byteSize(b.LastBytes))
+	}
+	notes = append(notes, strconv.Itoa(b.Retained)+" kept")
+	if b.NextDueAt != nil {
+		notes = append(notes, "next "+b.NextDueAt.Local().Format("2006-01-02 15:04"))
+	}
+	out = append(out, field("last backup", last+styleDim.Render("   "+strings.Join(notes, "   "))))
+	if b.LastError != "" {
+		out = append(out, styleBad.Render("   ⚠ last backup failed: "+b.LastError))
+	}
+	if b.PruneError != "" {
+		// Warn, not bad: the backup it followed succeeded, and it is not a
+		// doctor problem.
+		out = append(out, styleWarn.Render("   ⚠ old archives were not removed: "+b.PruneError))
 	}
 	return out
 }

@@ -164,7 +164,10 @@ type Config struct {
 	MCP                    ConfigMCP         `json:"mcp"`
 	GitHub                 ConfigGitHub      `json:"github"`
 	Update                 ConfigUpdate      `json:"update"`
-	Notify                 ConfigNotify      `json:"notify"`
+	// Backup is the scheduled-backup policy (task 115); how the timer is
+	// doing is GET /v1/doctor's backup group, not this.
+	Backup ConfigBackup `json:"backup"`
+	Notify ConfigNotify `json:"notify"`
 	// Triggers is the inward signal's global switch (§12.3, task 096).
 	Triggers ConfigTriggers `json:"triggers"`
 	// Container is §16's container execution mode (task 061). Image empty is
@@ -321,6 +324,16 @@ type ConfigUpdate struct {
 	PollInterval string `json:"poll_interval"`
 }
 
+// ConfigBackup is the scheduled-backup policy (§12.3, task 115). Interval
+// "0s" is off and is the default; Keep 0 keeps every archive; Dir "" is
+// {data_dir}/backups, served as written rather than resolved so that writing
+// it back does not pin a location nobody chose.
+type ConfigBackup struct {
+	Interval string `json:"interval"`
+	Keep     int    `json:"keep"`
+	Dir      string `json:"dir"`
+}
+
 // ConfigNotify is the §12.3 outward signal (task 046). Command is argv.
 type ConfigNotify struct {
 	On      []string `json:"on"`
@@ -391,6 +404,7 @@ type ConfigPatch struct {
 	MCP                         *ConfigMCPPatch         `json:"mcp,omitempty"`
 	GitHub                      *ConfigGitHubPatch      `json:"github,omitempty"`
 	Update                      *ConfigUpdatePatch      `json:"update,omitempty"`
+	Backup                      *ConfigBackupPatch      `json:"backup,omitempty"`
 	Notify                      *ConfigNotifyPatch      `json:"notify,omitempty"`
 	Triggers                    *ConfigTriggersPatch    `json:"triggers,omitempty"`
 	Container                   *ConfigContainerPatch   `json:"container,omitempty"`
@@ -440,6 +454,13 @@ type ConfigGitHubPatch struct {
 type ConfigUpdatePatch struct {
 	Check        *bool   `json:"check,omitempty"`
 	PollInterval *string `json:"poll_interval,omitempty"`
+}
+
+// ConfigBackupPatch is the optional half of ConfigBackup.
+type ConfigBackupPatch struct {
+	Interval *string `json:"interval,omitempty"`
+	Keep     *int    `json:"keep,omitempty"`
+	Dir      *string `json:"dir,omitempty"`
 }
 
 // ConfigNotifyPatch is the optional half of ConfigNotify.

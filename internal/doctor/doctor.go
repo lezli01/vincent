@@ -12,6 +12,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/agent/codex"
 	"github.com/lezli01/vincent/internal/agent/cursor"
+	"github.com/lezli01/vincent/internal/backupsched"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/release"
@@ -43,6 +44,7 @@ const (
 	GroupDatabase = "database"
 	GroupStorage  = "storage"
 	GroupTasks    = "tasks"
+	GroupBackup   = "backup"
 )
 
 // Report is one complete diagnostic. Every group is always present: a row
@@ -81,7 +83,13 @@ type Report struct {
 	// which agents they are linked into. It sits beside the agents group
 	// rather than in it (decision 4) and, like the three rows above, is a
 	// row and not a problem.
-	Skills  []Skill `json:"skills"`
+	Skills []Skill `json:"skills"`
+	// Backup is the scheduled-backup group (task 115). Unlike the rows
+	// above, a failed attempt **is** a problem: it reports a feature the user
+	// switched on, so it cannot fire on almost every machine, and a backup
+	// that fails silently is found out the day it is needed (task 115
+	// decision 4, amending task 006 decision 7).
+	Backup  Backup  `json:"backup"`
 	Storage Storage `json:"storage"`
 	Tasks   Tasks   `json:"tasks"`
 	// Problems is the closed set of findings that make `vincent doctor` exit
@@ -275,6 +283,32 @@ type Update struct {
 	Error string `json:"error,omitempty"`
 }
 
+// Backup is the §12.3 scheduled-backup group (task 115). The settings come
+// from config.yaml; the rest is the timer's in-memory status, so Known is
+// false when no daemon answered — the database group's rule — and every
+// figure below it renders as unknown rather than as "never".
+type Backup struct {
+	Known   bool `json:"known"`
+	Enabled bool `json:"enabled"`
+	// Dir is `backup.dir` resolved: {data_dir}/backups when it is empty.
+	Dir      string `json:"dir"`
+	Interval string `json:"interval"`
+	Keep     int    `json:"keep"`
+	// LastSuccessAt is read from the newest timer-written archive's name, so
+	// it survives a restart.
+	LastSuccessAt *time.Time `json:"last_success_at"`
+	LastAttemptAt *time.Time `json:"last_attempt_at"`
+	// LastError is why the most recent attempt failed; with Enabled it is a
+	// Problem until the next attempt succeeds.
+	LastError string     `json:"last_error,omitempty"`
+	NextDueAt *time.Time `json:"next_due_at"`
+	LastBytes int64      `json:"last_bytes"`
+	Retained  int        `json:"retained"`
+	// PruneError is why retention last failed. Not a Problem: the backup it
+	// followed succeeded.
+	PruneError string `json:"prune_error,omitempty"`
+}
+
 // Storage is the data dir's footprint (§17) and the §10 residue.
 type Storage struct {
 	// WorktreesDir is {data_dir}/worktrees, which the count and byte total
@@ -387,6 +421,9 @@ type Options struct {
 	// package must not import it. A zero value is the honest answer for a
 	// local report with no daemon — nothing has been checked.
 	Update release.Status
+	// Backup is the scheduled-backup timer's status (task 115), nil when no
+	// daemon answered — which is the local report's honest "unknown".
+	Backup *backupsched.Status
 }
 
 // Compose builds every group this package can answer without a database and
@@ -412,6 +449,7 @@ func Compose(ctx context.Context, opts Options) *Report {
 	r.Container = DetectContainer(ctx, cfg)
 	r.Update = updateRow(cfg, opts.Update, r.Daemon.Version)
 	r.Skills = DetectSkills()
+	r.Backup = backupRow(cfg, opts.Dirs, opts.Backup)
 	r.Storage = inspectStorage(ctx, opts)
 	r.Evaluate()
 	return r
@@ -585,6 +623,38 @@ func updateRow(cfg config.Config, st release.Status, daemonVersion string) Updat
 	return out
 }
 
+// backupRow renders the scheduled-backup group from the configuration and,
+// when a daemon answered, its timer's status.
+func backupRow(cfg config.Config, dirs config.Dirs, st *backupsched.Status) Backup {
+	out := Backup{
+		Enabled:  cfg.Backup.Enabled(),
+		Dir:      cfg.Backup.ResolveDir(dirs.Data),
+		Interval: cfg.Backup.Interval.String(),
+		Keep:     cfg.Backup.Keep,
+	}
+	if st == nil {
+		return out
+	}
+	out.Known = true
+	out.LastSuccessAt = timePtr(st.LastSuccessAt)
+	out.LastAttemptAt = timePtr(st.LastAttemptAt)
+	out.NextDueAt = timePtr(st.NextDueAt)
+	out.LastError = st.LastError
+	out.LastBytes = st.LastBytes
+	out.Retained = st.Retained
+	out.PruneError = st.PruneError
+	return out
+}
+
+// timePtr is nil for the zero time, which the wire spells null.
+func timePtr(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	u := t.UTC()
+	return &u
+}
+
 // zeroStateCounts is the §6 vocabulary with every count at zero, so a report
 // shows "blocked 0" rather than nothing at all.
 func zeroStateCounts() map[string]int {
@@ -656,6 +726,14 @@ func (r *Report) Evaluate() {
 					"marked running (§12.4). They will not be admitted; restart the daemon to retry "+
 					"crash recovery, and check the daemon log for why it could not reconcile them",
 				len(r.Tasks.Unreconciled), u.TaskID, u.State, u.OpenStepRuns),
+		})
+	}
+	// Only an attempt that ran and failed: overdue alone means the daemon was
+	// down, which is not a defect of the backup (task 115 decision 4).
+	if r.Backup.Known && r.Backup.Enabled && r.Backup.LastError != "" {
+		r.Problems = append(r.Problems, Problem{
+			Group:   GroupBackup,
+			Message: "the last scheduled backup failed: " + r.Backup.LastError,
 		})
 	}
 	if r.Storage.OrphansKnown && len(r.Storage.Orphans) > 0 {

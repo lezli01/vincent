@@ -201,6 +201,13 @@ adapters, and a doctor that exits 1 on almost every machine is useless in a
 script. Task counts never affect the exit code: twelve blocked tasks is
 information, not a defect.
 
+*Amended 2026-09-17 ([task 115](115-scheduled-daemon-backups.md) decision 4):*
+the closed set gains one member. When scheduled backups are on and the last
+attempt failed, that is a `backup` problem and exit 1. It reports a feature the
+user switched on, so it cannot fire on almost every machine, and a backup that
+fails silently is found out the day it is needed. Overdue alone is not a
+problem.
+
 When no daemon answers, exit 2 wins over any exit-1 finding in the local report.
 The report is still printed in full.
 

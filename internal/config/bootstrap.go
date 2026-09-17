@@ -233,6 +233,33 @@ update:
   check: true
   poll_interval: 24h
 
+# Take the archive "vincent daemon backup" writes on a schedule (task 115).
+# Off by default: interval is the one switch, and every archive carries all
+# transcripts, which can run to gigabytes. Set it to at least 1h (24h is a
+# sensible start); anything shorter is refused, because each run holds the
+# database for the length of the copy.
+#
+# interval is counted from the newest scheduled archive already in dir, so a
+# restart does not reset it and an overdue backup runs right after startup. A
+# failed run is retried an hour later, and shows as a problem in
+# "vincent doctor" until one succeeds.
+#
+# keep is how many scheduled archives survive each successful run; 0 keeps
+# everything. Only files named vincent-backup-<UTC timestamp>.tar.gz count or
+# are ever deleted: an archive you took by hand in the same directory is left
+# alone.
+#
+# dir "" means <data dir>/backups. That is on the same disk as the database:
+# it protects against corruption and mistakes, not against losing the disk.
+# Point dir at another disk for that. An archive holds this file (including
+# environment.set values and notify.command) and every transcript, so do not
+# point it at a folder other people can read.
+#
+# backup:
+#   interval: 24h
+#   keep: 7
+#   dir: ""
+
 # Tell someone when a task needs them, without a client attached (task 046).
 # The daemon runs "command" whenever a task enters one of the states in "on",
 # and writes a JSON envelope describing the transition to the command's stdin

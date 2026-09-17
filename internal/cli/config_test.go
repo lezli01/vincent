@@ -75,6 +75,7 @@ func TestConfigValuesRoundTripThroughSet(t *testing.T) {
 		MCP:      apiclient.ConfigMCP{WireSteps: true, MaxDepth: 3, MaxTasks: 32},
 		GitHub:   apiclient.ConfigGitHub{Enabled: true, PollInterval: "5m0s"},
 		Update:   apiclient.ConfigUpdate{Check: true, PollInterval: "24h0m0s"},
+		Backup:   apiclient.ConfigBackup{Interval: "24h0m0s", Keep: 7, Dir: "/var/backups/vincent"},
 		Notify:   apiclient.ConfigNotify{On: []string{"blocked"}, Command: []string{"/bin/echo", "hi"}},
 		TUI:      apiclient.ConfigTUI{Board: apiclient.ConfigBoard{GroupBy: []string{"project", "workflow"}}},
 	}

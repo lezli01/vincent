@@ -307,6 +307,18 @@ func configFields() map[string]configField {
 			func(v *string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{Update: &apiclient.ConfigUpdatePatch{PollInterval: v}}
 			}),
+		"backup.interval": str(func(c apiclient.Config) string { return c.Backup.Interval },
+			func(v *string) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Backup: &apiclient.ConfigBackupPatch{Interval: v}}
+			}),
+		"backup.keep": intField(func(c apiclient.Config) int { return c.Backup.Keep },
+			func(n *int) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Backup: &apiclient.ConfigBackupPatch{Keep: n}}
+			}),
+		"backup.dir": str(func(c apiclient.Config) string { return c.Backup.Dir },
+			func(v *string) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Backup: &apiclient.ConfigBackupPatch{Dir: v}}
+			}),
 		"notify.on": listField(func(c apiclient.Config) []string { return c.Notify.On },
 			func(v *[]string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{Notify: &apiclient.ConfigNotifyPatch{On: v}}

@@ -225,6 +225,7 @@ func doctorGroups(rep *apiclient.DoctorReport) []doctorGroup {
 		{"CONTAINER", doctorContainerRows(rep.Container)},
 		{"SKILLS", doctorSkillRows(rep.Skills)},
 		{"UPDATE", doctorUpdateRows(rep.Update)},
+		{"BACKUP", doctorBackupRows(rep.Backup)},
 		{"STORAGE", doctorStorageRows(rep.Storage)},
 		{"TASKS", doctorTaskRows(rep.Tasks)},
 	}
@@ -463,6 +464,62 @@ func doctorUpdateRows(u apiclient.DoctorUpdate) [][]string {
 		rows = append(rows, []string{"running daemon", u.DaemonVersion})
 	}
 	return rows
+}
+
+// doctorBackupRows renders the scheduled-backup group (task 115).
+//
+// The settings are read from config.yaml and are always printed. Everything
+// after them lives in the daemon's timer, so with no daemon it is one row
+// saying unknown — the database group's rule — rather than a "none yet" that
+// would be a claim about archives nobody looked at. Unlike the update and
+// GitHub rows, a failed last attempt here is a problem and sets the exit code
+// (decision 4); the row carries the error so the problem line is not the only
+// place it appears.
+func doctorBackupRows(b apiclient.DoctorBackup) [][]string {
+	if !b.Enabled {
+		return [][]string{
+			{"enabled", "no (backup.interval is 0)"},
+			{"dir", b.Dir},
+		}
+	}
+	keep := strconv.Itoa(b.Keep)
+	if b.Keep == 0 {
+		keep = "0 (every archive is kept)"
+	}
+	rows := [][]string{
+		{"enabled", "yes"},
+		{"interval", b.Interval},
+		{"keep", keep},
+		{"dir", b.Dir},
+	}
+	if !b.Known {
+		return append(rows, []string{"state", "unknown — daemon not running"})
+	}
+	rows = append(rows,
+		[]string{"last success", doctorTime(b.LastSuccessAt, "none in this directory yet")},
+		[]string{"last attempt", doctorTime(b.LastAttemptAt, "none since the daemon started")},
+		[]string{"next due", doctorTime(b.NextDueAt, "-")})
+	if b.LastError != "" {
+		rows = append(rows, []string{"last error", b.LastError})
+	}
+	// Zero is "no archive written by this daemon yet", not an empty archive:
+	// the size is remembered from a run, not read off the disk.
+	if b.LastBytes > 0 {
+		rows = append(rows, []string{"last size", humanBytes(b.LastBytes)})
+	}
+	rows = append(rows, []string{"retained", strconv.Itoa(b.Retained)})
+	if b.PruneError != "" {
+		rows = append(rows, []string{"prune error", b.PruneError + " (the backup itself succeeded)"})
+	}
+	return rows
+}
+
+// doctorTime renders an optional timestamp, or what its absence means.
+func doctorTime(at *time.Time, none string) string {
+	if at == nil {
+		return none
+	}
+	return at.Local().Format(time.RFC3339)
 }
 
 // doctorGitHubRows renders the GitHub issue integration row (task 035).

@@ -425,6 +425,10 @@ Everything else vincent writes lives in its
 [config and data directories](reference/files.md), plus the git branches and
 worktrees it creates in your repositories — and the one file you name yourself
 when you run [`vincent daemon backup`](reference/files.md#backup-and-restore).
+If you turn on [scheduled backups](reference/configuration.md#backup) and point
+`backup.dir` outside the data directory, the daemon writes its archives there
+too, and deletes the older ones it wrote. It deletes only files named
+`vincent-backup-<timestamp>.tar.gz`, never anything else in that directory.
 
 Writes to GitHub leave the machine, and only when you ask for them:
 [opening a pull request](features.md#open-a-pull-request) pushes a task's branch
@@ -451,6 +455,22 @@ have read the daemon token anyway.
 every rendered prompt and everything the agents did, plus your `config.yaml`.
 It does *not* carry the API token. Treat the file the way you would treat the
 data directory it came from.
+
+The same applies to **scheduled backups**, which keep writing new archives
+without anyone running a command. Each one holds `config.yaml`, including any
+literal [`environment.set`](reference/configuration.md#environment) values and
+the [`notify.command`](reference/configuration.md#notify) argv (a webhook URL
+with a secret in it, for example), and every transcript. The default
+`backup.dir` is `{data_dir}/backups`, created `0700`, with archives `0600`, so
+by default they are as private as the data directory. Pointing `backup.dir` at a
+synced or shared folder decides who else can read all of that, which is why the
+TUI's config editor asks before changing it, as it does for `notify.command`
+and `environment`. Pick a location only you can read: a directory that already
+exists keeps its own permissions, and on Windows its ACL. `backup.dir` is not a
+secret, so the MCP `config_get` tool shows it unmasked. No MCP tool changes it,
+because `PATCH /v1/config` is not an MCP tool, but that is not a boundary: a
+full-auto agent can edit `config.yaml` itself, or read the token off disk and
+call the API, like anything else running as you.
 
 ## The notify hook runs your code
 
@@ -599,7 +619,7 @@ Stated so you do not assume otherwise:
   handed — the substituted text, not the workflow's template — which the task
   workspace's Step Details tab shows. So a secret interpolated into a prompt is
   on disk in the database as well as in the transcript, and `vincent daemon
-  backup` copies both. Read one before pasting it into an issue.
+  backup` and scheduled backups copy both. Read one before pasting it into an issue.
 - **Remote access.** There is no remote binding, and adding one would need a
   different auth story than a loopback token.
 

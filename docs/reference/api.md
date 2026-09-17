@@ -235,6 +235,10 @@ answers with what it wrote:
   [Files](files.md#backup-and-restore). There is no restore endpoint —
   `vincent daemon restore` runs client-side, because the daemon it would
   overwrite has to be down.
+- The daemon can also take this archive **on a schedule**, set by
+  [`backup`](configuration.md#backup) in `config.yaml`. There is no endpoint
+  for it: `PATCH /v1/config` turns it on, and the timer's state is the `backup`
+  group of [`GET /v1/doctor`](#doctor).
 
 ### Usage quota
 
@@ -395,6 +399,13 @@ daemon running.
                   "links": [ { "agent": "claude", "adapter": "claude",
                                "path": "/home/you/.claude/skills/vincent-workflows",
                                "symlink": true } ] } ],
+  "backup":   { "known": true, "enabled": true,
+                "dir": "/home/you/.local/share/vincent/backups",
+                "interval": "24h0m0s", "keep": 7,
+                "last_success_at": "2026-09-17T03:00:00Z",
+                "last_attempt_at": "2026-09-17T03:00:00Z",
+                "next_due_at": "2026-09-18T03:00:00Z",
+                "last_bytes": 1503238553, "retained": 7 },
   "storage":  { "worktrees_dir": "…", "disk_free_bytes": 127310651392,
                 "disk_total_bytes": 494384795648,
                 "worktree_count": 3, "worktree_bytes": 8412736,
@@ -409,7 +420,8 @@ daemon running.
 - **`problems[]` is the daemon's verdict**, not something a client re-derives:
   it is the closed set that makes the CLI exit `1` (config that does not parse,
   an unresponsive daemon, a failed `integrity_check`, a schema newer than the
-  binary, orphaned worktrees, or an unreconciled task). A missing or logged-out
+  binary, orphaned worktrees, a failed scheduled backup, or an unreconciled
+  task). A missing or logged-out
   agent CLI and any number of blocked tasks are reported and never appear here.
 - **`paths.config_permissions[]` is a warning, not a verdict.** Each entry is a
   config path whose mode grants group or other access — `{ "path", "mode",
@@ -459,8 +471,23 @@ daemon running.
   growth driver beside `events`, reported separately because one byte total
   cannot tell "many small events" from "a few enormous snapshots". Nothing here
   prunes, warns, or moves the exit code.
-- `known: false` on `database` or `tasks` means the report was composed without
-  a daemon (the CLI's degraded path); over this endpoint they are always `true`.
+- **`backup` is the scheduled-backup timer's state** (see
+  [`backup`](configuration.md#backup)). `enabled`, `dir` (resolved, so `""`
+  reads as `{data_dir}/backups`), `interval` and `keep` are the settings in
+  effect. `last_success_at` comes from the newest scheduled archive's name, so
+  it survives a restart. `last_attempt_at`, `next_due_at`, `last_bytes` and
+  `retained` (how many scheduled archives are in `dir`) describe the timer's
+  latest check. Timestamps are `null` when there is nothing to report.
+  `last_error` and `prune_error` are omitted when empty. A `last_error` while
+  `enabled` is `true` puts a `backup` entry in `problems[]`, with the message
+  `the last scheduled backup failed: <error>`, until an attempt succeeds. A
+  `prune_error`, an old archive that could not be deleted after a successful
+  run, never does, and neither does a `next_due_at` in the past. Reading this
+  group never takes a backup.
+- `known: false` on `database`, `tasks` or `backup` means the report was
+  composed without a daemon (the CLI's degraded path); over this endpoint they
+  are always `true`. A `backup` group with `known: false` still carries its
+  settings, read from `config.yaml`, and never raises a problem.
 - An **orphan** is an entry under a data root that no task row claims — the same
   set `GET /v1/maintenance/orphans` returns, from the same scan. Each carries
   `kind` (`worktree` or `transcript`), `task_id`, `size_bytes`, and `skip` when

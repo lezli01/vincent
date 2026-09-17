@@ -35,6 +35,9 @@ type DoctorLog = doctor.Log
 // DoctorDatabase is the report's §14 store group.
 type DoctorDatabase = doctor.Database
 
+// DoctorBackup is the report's scheduled-backup group (task 115).
+type DoctorBackup = doctor.Backup
+
 // DoctorAgent is one adapter's §9.5 availability in the report.
 type DoctorAgent = doctor.Agent
 

@@ -197,12 +197,18 @@ func TestConfigEditorRendersAValidationErrorAgainstTheField(t *testing.T) {
 // The four keys that decide what the daemon executes or exposes. Agents run
 // full-auto by default (§16); a stray keystroke must not change the argv the
 // daemon spawns as you, or the address it binds.
+//
+// backup.dir is the fifth, for what it exposes (task 115 decision 6): every
+// archive carries config.yaml and every transcript, so a directory someone
+// else can read is a disclosure. Its value has to be absolute on the host
+// running the test, which is why it is a temp dir rather than a literal.
 func TestConfigEditorRefusesDangerousKeysWithoutConfirmation(t *testing.T) {
 	for _, tc := range []struct{ path, value, wantInFile string }{
 		{"notify.command", "/bin/echo hi", "/bin/echo"},
 		{"environment.set", "TZ=Etc/UTC", "Etc/UTC"},
 		{"agents.claude.path", "/opt/claude", "/opt/claude"},
 		{"listen", "127.0.0.1:9999", "127.0.0.1:9999"},
+		{"backup.dir", filepath.Join(t.TempDir(), "offsite-backups"), "offsite-backups"},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			h := newConfigLive(t)

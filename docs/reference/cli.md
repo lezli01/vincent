@@ -104,7 +104,7 @@ empty.
 vincent doctor [--json] [--fix [--force]]
 ```
 
-One report answering "why is nothing running?". Eleven groups:
+One report answering "why is nothing running?". Twelve groups:
 
 | Group | Rows |
 |---|---|
@@ -117,6 +117,7 @@ One report answering "why is nothing running?". Eleven groups:
 | Container | whether [`container.image`](configuration.md#container) names an image, which image, whether the configured runtime answered, and whether steps run in it or on this host |
 | Skills | per [published skill](#vincent-skills): the version this binary ships, the state of the copy in the global skills store, and the agents it is linked into |
 | Update | whether [`update.check`](configuration.md#update) is on, the latest stable release and when it was last seen, this binary's version, and whether the running daemon is older than it |
+| Backup | whether [scheduled backups](configuration.md#backup) are on, the directory, interval and keep, the last success and last attempt, when the next run is due, the last archive's size, how many scheduled archives are kept, and the last error |
 | Storage | disk free under the data dir, worktree count and bytes, orphans |
 | Tasks | counts by state, so "12 blocked" is visible without opening the board, plus any task whose state and step runs contradict each other |
 
@@ -126,7 +127,8 @@ are listed under `PROBLEMS`), `2` when no daemon answered.
 **Unhealthy is a closed set**: `config.yaml` exists and does not parse, the
 daemon is alive but not answering, `integrity_check` is not `ok`, the database
 is at a schema version newer than this binary understands, orphaned worktrees
-are present, or a task is **unreconciled** — `queued` (or finished) while one of
+are present, scheduled backups are on and the last attempt failed, or a task is
+**unreconciled** — `queued` (or finished) while one of
 its step runs is still marked `running`, which means crash recovery could not
 close the previous attempt and admission will not run that task until it does
 (a `fan_out` step's own row is excluded: a parent waiting on its lanes holds
@@ -151,6 +153,17 @@ in your own agent session and stops no vincent run, because the built-in
 workflows that use a skill (`create-workflow`, `update-workflows`,
 `create-trigger` and `update-triggers`) carry its text in their own prompts. The group ends with `run: vincent skills install` when
 anything is not current.
+
+The **Backup** group is the exception to that rule. When
+[`backup.interval`](configuration.md#backup) is set and the last scheduled
+backup failed, `PROBLEMS` lists `the last scheduled backup failed: <error>` and
+the command exits `1` until a later attempt succeeds. The other rows report
+defaults nobody chose. This one reports a feature you turned on, and a backup
+that fails without anyone noticing is found out on the day it is needed. With
+backups off the group only shows the settings and never sets the exit code. A
+backup that is merely overdue, for example because the daemon was stopped, is
+not a problem, and neither is a failure to delete old archives after a
+successful run, which the group shows as a prune error.
 
 An adapter row also ends with what vincent knows about the build itself:
 `untested version` and the builds it was judged against, `incompatible version`
@@ -187,7 +200,9 @@ touches the file at all.
 **Without a daemon** the report is still printed in full — paths, whether the
 config parses, adapter detection, published-skill state, the log tail, disk free
 and the worktree count — and the database and task rows read
-`unknown — daemon not running`.
+`unknown — daemon not running`. The Backup group shows its settings from
+`config.yaml`, but its last attempt is unknown and it raises no problem: that
+state lives in the daemon.
 They are not read from a second process: only the daemon opens the database. The
 byte figures, the row counts and the span are unknown together, for that reason
 and no other.
@@ -383,7 +398,9 @@ wrote /home/you/vincent-2026-08-25.tar.gz (1.4GB: database 8.2MB, transcripts 1.
 ```
 
 What the archive does **not** carry, and why, is in
-[Files](files.md#backup-and-restore).
+[Files](files.md#backup-and-restore). To have the daemon take the same archive
+on a schedule, set [`backup.interval`](configuration.md#backup); see
+[Scheduled backups](files.md#scheduled-backups).
 
 ### `vincent daemon restore`
 
