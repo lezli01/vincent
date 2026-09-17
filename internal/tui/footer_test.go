@@ -264,7 +264,7 @@ func TestFooterNarrowCountsWhatTheCutTook(t *testing.T) {
 func TestFooterMoreIsClickable(t *testing.T) {
 	bar := &actionBar{}
 	rows := bindingsFor(ctxTasks)
-	line, hits := buildFooter(120, rows, bar, footerTarget, 0, false)
+	line, hits := buildFooter(120, rows, bar, footerTarget, 0, false, false)
 	plain := []rune(ansi.Strip(line))
 	var colons []footerHit
 	for _, h := range hits {
@@ -280,7 +280,7 @@ func TestFooterMoreIsClickable(t *testing.T) {
 	}
 	// Two columns of room: the `+N` is composed but the cut takes it, and a
 	// fragment must not be clickable.
-	_, tight := buildFooter(29, rows, bar, footerTarget, 0, false)
+	_, tight := buildFooter(29, rows, bar, footerTarget, 0, false, false)
 	for _, h := range tight {
 		if h.key == ":" && h.x0 < 3 {
 			t.Errorf("a cut +N is still clickable at x0=%d", h.x0)

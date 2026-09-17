@@ -309,8 +309,32 @@ func (v *chatsView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		return v, v.applyNote(msg)
 	case tea.KeyPressMsg:
 		return v.updateKey(msg)
+	case tea.MouseWheelMsg:
+		v.updateWheel(msg)
+		return v, nil
 	}
 	return v, nil
+}
+
+// updateWheel is one wheel notch on the board (task 114 decision 5): the
+// cursor moves one chat, skipping the project headings, the way a notch moves
+// one task on the home board. The board is its one scrollable panel, so it is
+// the focused one and PR S's rule needs no exception. A layer that owns the
+// keyboard owns the wheel too (task 078 decision 3) — the new-chat form covers
+// the board, and each confirmation asks about the chat under the cursor, which
+// a stray notch would walk away from while the question still names it. An
+// open filter does not: it narrows the
+// rows the wheel walks, as it does on the home board. The wheel never turns an
+// archived page, which is a fetch and stays on its keys.
+func (v *chatsView) updateWheel(msg tea.MouseWheelMsg) {
+	if v.create != nil || v.confirm != nil || v.delPrompt != nil {
+		return
+	}
+	if msg.Button == tea.MouseWheelUp {
+		v.moveCursor(-1)
+	} else {
+		v.moveCursor(1)
+	}
 }
 
 // applyNote reloads when a chat event says the board changed.

@@ -21,13 +21,16 @@ type palette struct {
 }
 
 // paletteEntry is one runnable line. key is empty for the palette-only
-// navigation entries, which deliberately have no shortcut.
+// navigation entries, which deliberately have no shortcut. global marks a
+// scopeGlobal row, whose key the root runs itself even where a text field has
+// the keyboard (task 114 decision 3).
 type paletteEntry struct {
 	group     string
 	label     string
 	key       string
 	nav       bool
 	navTarget viewID
+	global    bool
 }
 
 func newPalette(entries []paletteEntry) *palette {
@@ -73,7 +76,7 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 		if b.nav {
 			out = append(out, paletteEntry{
 				group: "views", label: b.label, key: b.key,
-				nav: true, navTarget: b.navTarget,
+				nav: true, navTarget: b.navTarget, global: true,
 			})
 		}
 	}
@@ -89,7 +92,7 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 	}
 	for _, b := range bindings {
 		if b.scope == scopeGlobal && !b.nav && !b.noPalette {
-			out = append(out, paletteEntry{group: "global", label: b.label, key: b.key})
+			out = append(out, paletteEntry{group: "global", label: b.label, key: b.key, global: true})
 		}
 	}
 	return out
