@@ -153,6 +153,42 @@ func TestToolResultWithOutputSplits(t *testing.T) {
 	}
 }
 
+// TestPatchChunkShape pins agent.patch (task 110). The key is `patch`, so a
+// client can tell what an edit changed from what a command printed.
+func TestPatchChunkShape(t *testing.T) {
+	got := marshal(t, patchChunk(&Patch{
+		CallID: "toolu_1", Name: "Edit", Text: "@@ -1,1 +1,1 @@\n-a\n+b", Truncated: true,
+	}))
+	want := `{"call_id":"toolu_1","name":"Edit","patch":"@@ -1,1 +1,1 @@\n-a\n+b","truncated":true}`
+	if got != want {
+		t.Errorf("patch chunk =\n%s\nwant\n%s", got, want)
+	}
+	// claude names the tool only on the call, so a patch it reports carries
+	// neither name nor flag unless they were set.
+	got = marshal(t, patchChunk(&Patch{CallID: "toolu_1", Text: "@@ -1 +1 @@"}))
+	if got != `{"call_id":"toolu_1","patch":"@@ -1 +1 @@"}` {
+		t.Errorf("minimal patch chunk = %s", got)
+	}
+}
+
+// TestToolResultWithPatchSplits is TestToolResultWithOutputSplits for an
+// edit: claude reports the outcome and the hunks on one line, and the live
+// tail publishes them result first, as the transcript route writes them.
+func TestToolResultWithPatchSplits(t *testing.T) {
+	chunks := LiveChunks(Event{
+		Type:    EventToolResult,
+		Results: []ToolResult{{CallID: "toolu_1", Summary: "+1 −1"}},
+		Patch:   &Patch{CallID: "toolu_1", Text: "@@ -1,1 +1,1 @@\n-a\n+b"},
+	})
+	if len(chunks) != 2 {
+		t.Fatalf("chunks = %d, want the result and its patch: %+v", len(chunks), chunks)
+	}
+	if chunks[0].Type != "agent.tool_result" || chunks[1].Type != "agent.patch" {
+		t.Errorf("types = %q, %q; want agent.tool_result then agent.patch",
+			chunks[0].Type, chunks[1].Type)
+	}
+}
+
 // TestParentCallIDRidesEveryChunk is why LiveChunks attaches it once rather
 // than each arm doing it: a split line's second chunk is as nested as its
 // first, and a client that indents by parent_call_id would otherwise put the

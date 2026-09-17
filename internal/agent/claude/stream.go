@@ -2,6 +2,7 @@ package claude
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -96,15 +97,31 @@ type streamToolResultMeta struct {
 }
 
 // streamToolUseResult is the object shape of a `user` line's
-// `tool_use_result`. Only `type` and `status` are read: they are the verb,
-// and everything else in the payload is the tool's body, which never enters
-// the normalized stream (T4.16).
+// `tool_use_result`. Only `type`, `status` and `structuredPatch` are read:
+// the first two are the verb, and the patch is an edit's delta and its
+// hunks. Everything else in the payload is the tool's body — an edit's
+// `originalFile`, `oldString` and `newString`, a write's `content` — and
+// never enters the normalized stream (T4.16).
 type streamToolUseResult struct {
 	Type string `json:"type"`
 	// Status is how a subagent call returned (task 109): `async_launched`
 	// for one that went to the background, `completed` for one the main
 	// loop waited on.
 	Status string `json:"status"`
+	// StructuredPatch is what an `Edit`, or a `Write` of type `update`,
+	// changed (task 110). An `Edit`'s payload carries no `type` at all, and a
+	// `Write` of type `create` always sends this empty.
+	StructuredPatch []streamHunk `json:"structuredPatch"`
+}
+
+// streamHunk is one hunk of a `structuredPatch`. Every entry of Lines starts
+// with `+`, `-` or a space, as a unified diff's body lines do.
+type streamHunk struct {
+	OldStart int      `json:"oldStart"`
+	OldLines int      `json:"oldLines"`
+	NewStart int      `json:"newStart"`
+	NewLines int      `json:"newLines"`
+	Lines    []string `json:"lines"`
 }
 
 type streamMessage struct {
@@ -353,7 +370,8 @@ func parseToolResults(line *streamLine, raw []byte) agent.Event {
 	if line.Message == nil {
 		return ev
 	}
-	verb, launched := resultVerb(line.ToolUseResult)
+	res := decodeToolUseResult(line.ToolUseResult)
+	verb, launched := resultVerb(res)
 	for _, b := range line.Message.Content {
 		if b.Type != "tool_result" {
 			continue
@@ -373,10 +391,48 @@ func parseToolResults(line *streamLine, raw []byte) agent.Event {
 			IsError: b.IsError,
 		})
 	}
+	// An edit's patch replaces the prose outcome with its delta and rides
+	// along as the body (task 110). `tool_use_result` belongs to the line,
+	// not to a block, so it is attributed only when the line reports exactly
+	// one result — every recorded line with a patch does — rather than
+	// guessed onto one of several.
+	if len(ev.Results) == 1 && !ev.Results[0].IsError && res != nil && len(res.StructuredPatch) > 0 {
+		r := &ev.Results[0]
+		text, added, removed := unifiedPatch(res.StructuredPatch)
+		r.Summary = fmt.Sprintf("+%d −%d", added, removed)
+		text, truncated := agent.TruncatePatch(text)
+		ev.Patch = &agent.Patch{CallID: r.CallID, Name: r.Name, Text: text, Truncated: truncated}
+	}
 	if len(ev.Results) > 0 {
 		ev.Type = agent.EventToolResult
 	}
 	return ev
+}
+
+// unifiedPatch renders a `structuredPatch` as unified hunks and counts the
+// lines it adds and removes. The counts are the `+` and `-` body lines across
+// every hunk — a hunk header's oldLines and newLines include context — and
+// they are taken from the whole patch, before any cap, so a truncated patch
+// still reports its true delta.
+func unifiedPatch(hunks []streamHunk) (text string, added, removed int) {
+	var b strings.Builder
+	for i, h := range hunks {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		fmt.Fprintf(&b, "@@ -%d,%d +%d,%d @@", h.OldStart, h.OldLines, h.NewStart, h.NewLines)
+		for _, l := range h.Lines {
+			switch {
+			case strings.HasPrefix(l, "+"):
+				added++
+			case strings.HasPrefix(l, "-"):
+				removed++
+			}
+			b.WriteByte('\n')
+			b.WriteString(l)
+		}
+	}
+	return b.String(), added, removed
 }
 
 // resultVerbs maps claude's structured `tool_use_result.type` onto the verb a
@@ -384,8 +440,13 @@ func parseToolResults(line *streamLine, raw []byte) agent.Event {
 // unmapped one yields no verb rather than a guessed past tense: a wrong guess
 // fails silently — the verb is simply wrong, and nothing distinguishes that
 // from a tool that reported no type at all (the T4.17 rule).
+//
+// `update` is a `Write` that overwrote an existing file (task 110). An `Edit`
+// sends no `type` at all, and is left without a verb rather than given one
+// inferred from its payload's keys.
 var resultVerbs = map[string]string{
 	"create": "created",
+	"update": "updated",
 }
 
 // resultStatusVerbs maps a subagent call's `tool_use_result.status` onto its
@@ -396,17 +457,26 @@ var resultStatusVerbs = map[string]string{
 	"async_launched": "started in background",
 }
 
-// resultVerb reads the verb off a `user` line's `tool_use_result`, and
-// whether it reports a background launch. The payload is either the
-// structured object or a bare string, so the object decode is *probed* — a
-// string there is not an error, it is claude's other shape, and it simply
-// carries no verb.
-func resultVerb(payload json.RawMessage) (verb string, launched bool) {
+// decodeToolUseResult probes a `user` line's `tool_use_result` for the
+// structured object. The payload is either that object or a bare string, so
+// a failed decode is not an error — a string there is claude's other shape,
+// and it simply carries no verb and no patch. nil is either that or no
+// payload at all.
+func decodeToolUseResult(payload json.RawMessage) *streamToolUseResult {
 	if len(payload) == 0 {
-		return "", false
+		return nil
 	}
 	var res streamToolUseResult
 	if err := json.Unmarshal(payload, &res); err != nil {
+		return nil
+	}
+	return &res
+}
+
+// resultVerb reads the verb off a decoded `tool_use_result`, and whether it
+// reports a background launch.
+func resultVerb(res *streamToolUseResult) (verb string, launched bool) {
+	if res == nil {
 		return "", false
 	}
 	if v, ok := resultStatusVerbs[res.Status]; ok {

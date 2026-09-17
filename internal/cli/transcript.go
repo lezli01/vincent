@@ -490,6 +490,11 @@ func renderTranscriptRecord(rec apiclient.TranscriptRecord, sawOutput bool) (str
 		// `--json` as its normalized record, which is what a reader who
 		// wants the body asks for.
 		return "", false
+	case "agent.patch":
+		// Skipped for agent.command_output's reason (task 110): the pane
+		// shows an edit's hunks at `verbose` only. The edit's `+N −M` delta
+		// is its outcome and prints on the agent.tool_result line.
+		return "", false
 	case "agent.error":
 		return "! " + firstNonEmpty(rec.Message, "agent error"), true
 	case "agent.result":

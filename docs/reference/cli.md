@@ -843,11 +843,12 @@ task has parallel steps or fan-out lanes).
 | `--json` | The normalized records as NDJSON, one JSON object per line, in vincent's vocabulary including its `vincent.*` annotations. This is the `jq` route |
 | `--raw` | The agent's own JSONL, byte for byte, exactly as it was recorded |
 
-What an *agent's* command printed is the one record the default rendering drops.
-The output pane shows it at `verbose` only and this command has no verbosity
-control, so the alternative to dropping it is showing every command's whole
-output to every reader; `--raw` and `--json` both carry it for a reader who
-wants the body. The result line stops at the pane's `normal` content for the
+What an *agent's* command printed, and the hunks of a file edit it made, are the
+two records the default rendering drops. The output pane shows both at `verbose`
+only and this command has no verbosity control, so the alternative to dropping
+them is showing every command's whole output and every edit's whole patch to
+every reader; `--raw` and `--json` both carry them for a reader who wants the
+body. An edit's outcome line still says how much it changed, as `< +13 −9`. The result line stops at the pane's `normal` content for the
 same reason: the API-time, cache and per-model breakdown is `--json` only.
 An adapter that reports none of that metadata — codex — prints no header and a
 bare `= done`. Cursor reports part of it: its `# ` line is the working directory
@@ -1612,8 +1613,9 @@ turn number the chat does not have exits `1` with
 | `--json` | The normalized records as NDJSON, one JSON object per line, in vincent's vocabulary including its `vincent.*` annotations. This is the `jq` route |
 | `--raw` | The agent's own JSONL, byte for byte, exactly as it was recorded |
 
-As on `task transcript`, what an agent's command printed is the one record the
-default rendering drops; `--raw` and `--json` both carry it. Everything a reader
+As on `task transcript`, what an agent's command printed and the hunks of its
+edits are the two records the default rendering drops; `--raw` and `--json` both
+carry them. Everything a reader
 reads goes to **stdout**, and the command's own diagnostics go to stderr.
 
 `-f` (`--follow`) opens on the tail and then resumes from the record boundary

@@ -2746,8 +2746,9 @@ type ToolUse struct {                // T4.14
 type ToolResult struct {             // T4.16
     CallID  string // the ToolUse this reports on
     Name    string // when the dialect repeats it; "" is normal
-    Summary string // the outcome in a few words: "exit 0" — never the tool's
-                   // output body, which stays in the transcript
+    Summary string // the outcome in a few words: "exit 0", an edit's "+13 −9"
+                   // (task 110) — never the tool's output body, which stays in
+                   // the transcript or rides on its own event field
     Verb    string // task 066: the dialect's structured outcome ("created"); ""
                    // when it reported none, or named a type no capture has shown
     Blocked bool   // task 066: a permission rule refused the call, as distinct
@@ -2771,6 +2772,14 @@ type Subagent struct {               // task 109, added 2026-09-17
     TotalTokens int64
     Duration    time.Duration
     LastTool    string        // the tool it most recently used
+}
+
+type Patch struct {                  // task 110, added 2026-09-17; rides on Event.Patch
+    CallID    string // the ToolUse whose edit this is
+    Name      string // that tool, when the dialect names it on the outcome; "" for claude
+    Text      string // unified hunks, each under its `@@ -a,b +c,d @@` header,
+                     // capped at agent.PatchMax runes
+    Truncated bool   // the cap cut Text, stated rather than silent
 }
 
 type RunResult struct {
@@ -2914,6 +2923,15 @@ recording and discarding:
   to `agent.raw`, so a tool call was never followed by its outcome. The event
   carries an **outcome only**, capped at the adapter: the tool's output body
   can be hundreds of lines, and the transcript already holds it verbatim.
+
+  *Amended 2026-09-17 (task 110, issue #402).* An edit's outcome is its line
+  delta, `+N −M`, which is what T4.14 first promised `Summary` would say and
+  task 066 decision 3 withdrew for want of a capture. The edit's hunks are its
+  body, and they stay out of `ToolResult`: they ride on `Event.Patch`, a
+  `Patch` carried by the same `EventToolResult`, the way task 070 carried a
+  command's output on `Event.Output`. No event type of its own exists, because
+  no dialect sends a patch on a line of its own. Only claude fills it (§9.2);
+  codex and cursor never do (§9.3, §9.7).
 - **`Thinking`** carries the model's reasoning. Adapters emit it only for
   **whole blocks**; a dialect that streams token-level deltas coalesces them
   itself and emits when the block closes. See the §9.7 amendment for why that
@@ -3203,6 +3221,42 @@ since they were captured:
 - **`parent_tool_use_id`** is read onto `Event.ParentCallID`. It is `null` on
   every line of all three captures.
 
+*Amended 2026-09-17 (task 110, issue #402).* **Edit deltas and patches.** Pinned
+against vincent's own recorded transcripts from claude 2.1.232 to 2.1.268 rather
+than a fresh capture, and trimmed into `testdata/stream_edit_2.1.268.jsonl`:
+
+- **An `Edit` result has no `type`.** Its `tool_use_result` keys are
+  `filePath`, `oldString`, `newString`, `originalFile`, `structuredPatch`,
+  `userModified` and `replaceAll` (2,342 results with a non-empty patch). It
+  therefore gets **no verb**; inferring one from the keys is the guess task 066
+  decision 3 refused.
+- **A `Write` that overwrote a file has `type: "update"`** and a non-empty
+  `structuredPatch` (52 results). `update` joins the verb table as `updated`,
+  under the T4.17 rule. A `Write` of `type: "create"` (981 results) always
+  sends `structuredPatch: []`, and keeps `created` and its prose summary.
+- **The delta comes from `structuredPatch`.** Each hunk is
+  `{oldStart, oldLines, newStart, newLines, lines[]}`, and every line starts
+  with `+`, `-` or a space. For a non-error result with a non-empty patch,
+  `ToolResult.Summary` becomes `+N −M` — the `+` and `-` lines across every
+  hunk, never the headers' context-inclusive counts, and counted before any cap
+  — which is exactly cursor's form (§9.7), with no path because the call line
+  already names the file. An empty patch yields no delta, and `+0 −0` is never
+  invented.
+- **The hunks become `Event.Patch`**, rendered as unified text with an
+  `@@ -a,b +c,d @@` header per hunk and capped at `agent.PatchMax` (8,000
+  runes; 41 of 2,394 recorded patches exceed it) with `Truncated` stated. Only
+  the hunk fields are read — never `originalFile`, `content`, `oldString` or
+  `newString`. `tool_use_result` belongs to the line, not to a block, so the
+  patch is attributed only on a line reporting exactly one `tool_result`,
+  which every recorded line carrying a patch does.
+- **A subagent's edits carry no `tool_use_result`** (380 `Edit` and 48 `Write`
+  results with a `parent_tool_use_id` have none), so they keep their prose
+  summary and produce no patch. That is the dialect, stated rather than worked
+  around.
+- **A failed edit** ("String to replace not found") sends a string
+  `tool_use_result` with `is_error: true`, and the object probe yields no delta
+  and no patch.
+
 The tool's output **body** still never enters the normalized stream (T4.16), and
 the transcript remains the durable copy. Nothing is persisted (task 066
 decision 4).
@@ -3353,6 +3407,9 @@ transcript is something people paste into issues.
     `agent.command_output`, capped at `agent.CommandOutputMax` runes with the
     truncation visible. It rides on the same line as the outcome, so one
     `item.completed` produces two records (§13.2).
+  - *Added 2026-09-17 (task 110).* codex produces **no `agent.patch`**:
+    `file_change` is read for each change's path and kind and for no hunks,
+    which the adapter's tests state positively over every fixture.
   - `file_change` and `mcp_tool_call` summaries are built **by this adapter**,
     not by widening `agent.toolSummaryKeys`: `changes` is an array of objects
     the shared extractor cannot read, and `server`/`tool` are codex-shaped
@@ -4017,7 +4074,10 @@ would invalidate every one of them.
     double-count every call. Its outcome keys on the *presence* of
     `result.success`: present is a success carrying its detail (an edit's
     `linesAdded`/`linesRemoved` render as `+1 −0`, which says something the
-    invocation line did not), absent is a failure with **no detail at all**.
+    invocation line did not — *amended 2026-09-17 (task 110):* the form claude's
+    edit delta now shares, §9.2), absent is a failure with **no detail at
+    all**. cursor reports no hunks, and produces **no `agent.patch`**, which
+    the adapter's tests state positively over every fixture.
     No capture of a failed cursor tool call exists — the fixture's `completed`
     payloads are reconstructed, because the capture machine had a user-level
     hook that rejected every call — so keying on presence is correct in both
@@ -7166,6 +7226,24 @@ GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
                                         adapters' tests state positively. The field is now
                                         rendered (§15), and the same on-read reasoning
                                         applies: claude runs already on disk render nested.
+                                        **v0 wire change (task 110, 2026-09-17):** one
+                                        more record type in the shared vocabulary,
+                                        `agent.patch` (`patch`, `truncated`, `call_id`,
+                                        `name`, and `parent_call_id` when set): an edit's
+                                        unified hunks, capped at `agent.PatchMax` runes
+                                        with the cut stated. It is the body
+                                        `agent.tool_result` refuses to carry, as
+                                        `agent.command_output` is for a command, and it
+                                        follows its outcome from the same line: a claude
+                                        `user` line reporting an `Edit`, or a `Write` of
+                                        type `update`, yields the result and then the
+                                        patch. That result's `summary` is now `+N −M`,
+                                        and a `Write` overwrite's verb is `updated`.
+                                        Every key is omitted when unreported. claude
+                                        fills it and codex and cursor fill none, which
+                                        their adapters' tests state positively. On-read
+                                        normalization means every claude run already on
+                                        disk renders deltas and patches.
 GET    /v1/tasks/{id}/diff              unified diff of worktree vs merge-base with base branch
                                         (includes uncommitted changes)
                                         ?by=lane -> JSON {sections:[...]} instead: one section per
@@ -7331,6 +7409,9 @@ Two kinds of streams:
    `agent.subagent_finished` (task 109, 2026-09-17 — §13.2's three records under
    the same keys, moved together per task 066 decision 5; like the records they
    carry no `parent_call_id`, and a sub-run's own chunks carry it),
+   `agent.patch` (task 110, 2026-09-17 — §13.2's record under the same keys,
+   published after the `agent.tool_result` chunk its line also produces, in the
+   order task 070 set for command output),
    `agent.usage`, `command.output` chunks are streamed on the **per-task** stream only
    and are *not* written to the events table (they are durable in transcript files;
    catch-up = fetch the transcript, then follow live). Chunks are one SSE event each,
@@ -9502,6 +9583,17 @@ mark at all:
   the record's cap cut ends in `… output truncated`, because truncation a
   reader cannot see is indistinguishable from a command that printed exactly
   that much.
+- *Added 2026-09-17 (task 110, issue #402).* **An edit's outcome is its delta,
+  and `agent.patch` is `verbose`-only.** A claude edit's `agent.tool_result`
+  renders `✓ +13 −9` (an overwrite `✓ updated · +1 −1`) wherever outcomes render,
+  from `compact` up, the same as cursor's. It replaces the prose line rather
+  than adding one, so `compact` does not grow (task 066 decision 1). The hunks
+  render under it at `verbose` only, for `agent.command_output`'s reason:
+  gutterless, `+` and `-` lines in the Diff tab's add and remove colors, `@@`
+  headers dim, context lines unstyled. Each line is preformatted — a patch's
+  indentation is part of what changed — so a line wider than the pane continues
+  on the next row rather than being clipped. A patch the record's cap cut ends
+  in `… patch truncated`.
 
 Still **no timestamps**.
 
@@ -9536,7 +9628,9 @@ two-column prefix in front of the gutter. Everything else in the model stands.
   plan, and a count of its unrecognized lines on the rail. Two consequences are
   stated rather than left implicit: a subagent's `agent.command_output`, being
   `verbose`-only at top level, **never renders nested** (the transcript, `e`,
-  `--raw` and `--json` keep it), and a subagent's `agent.raw` lines are **never
+  `--raw` and `--json` keep it) — *amended 2026-09-17 (task 110):* nor does a
+  subagent's `agent.patch`, for the same reason, though the dialect rarely sends
+  one there (§9.2) — and a subagent's `agent.raw` lines are **never
   shown whole** in the pane. The main loop's own rules were rejected because a
   subagent's prose would still read as the agent's at `quiet` (task 109
   decision 2).

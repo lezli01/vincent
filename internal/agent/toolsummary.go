@@ -54,11 +54,28 @@ const CommandOutputMax = 8000
 // as one long line is not the thing that was printed — and it trims to a
 // rune boundary so the result is still valid UTF-8.
 func TruncateOutput(s string) (string, bool) {
+	return truncateRunes(s, CommandOutputMax)
+}
+
+// PatchMax caps a Patch in runes (task 110). It is CommandOutputMax's value
+// for the same reason — a patch is a body, and a truncated one is worth
+// little — but a constant of its own, so that the two can move apart without
+// one silently dragging the other. At 8000 runes, 41 of the 2,394 recorded
+// claude edits it was measured against are cut.
+const PatchMax = 8000
+
+// TruncatePatch applies PatchMax to an edit's unified hunks, with
+// TruncateOutput's newline and rune-boundary guarantees.
+func TruncatePatch(s string) (string, bool) {
+	return truncateRunes(s, PatchMax)
+}
+
+func truncateRunes(s string, maxRunes int) (string, bool) {
 	runes := []rune(s)
-	if len(runes) <= CommandOutputMax {
+	if len(runes) <= maxRunes {
 		return s, false
 	}
-	return string(runes[:CommandOutputMax]), true
+	return string(runes[:maxRunes]), true
 }
 
 // ToolSummary extracts a one-line subject from a tool call's arguments.

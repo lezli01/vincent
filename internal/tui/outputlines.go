@@ -596,6 +596,37 @@ func commandOutputLine(rec apiclient.TranscriptRecord) paneLine {
 	}
 }
 
+// patchLine renders an edit's hunks under its outcome (task 110). It is
+// gutterless like command output, and styled the way the Diff tab styles the
+// same lines: additions and removals in its colors, hunk headers dim. The
+// line is preformatted — a patch's indentation is part of what changed, and
+// word wrapping would collapse it — so a long line continues on the next row
+// rather than being clipped. Truncation is stated for commandOutputLine's
+// reason.
+func patchLine(rec apiclient.TranscriptRecord) paneLine {
+	lines := strings.Split(strings.TrimRight(rec.Patch, "\n"), "\n")
+	segs := make([]segment, 0, len(lines)+1)
+	for i, l := range lines {
+		style := lipgloss.NewStyle()
+		switch {
+		case strings.HasPrefix(l, "@@"):
+			style = styleDim
+		case strings.HasPrefix(l, "+"):
+			style = styleDiffAdd
+		case strings.HasPrefix(l, "-"):
+			style = styleDiffDel
+		}
+		if i > 0 {
+			l = "\n" + l
+		}
+		segs = append(segs, segment{text: l, style: style})
+	}
+	if rec.Truncated {
+		segs = append(segs, segment{text: "\n… patch truncated", style: styleDim})
+	}
+	return paneLine{gutter: gutterNone, gutterStyle: styleDim, segs: segs, pre: true}
+}
+
 // toolResultLine renders one outcome under its call.
 func toolResultLine(r apiclient.TranscriptToolResult) paneLine {
 	mark, style := "✓ ", styleOKDim
@@ -1065,6 +1096,15 @@ func renderRecord(rec apiclient.TranscriptRecord, sawOutput bool, level outputLe
 			return paneLine{}, false
 		}
 		return commandOutputLine(rec), true
+	case "agent.patch":
+		// Verbose only, for agent.command_output's reason (task 110): the
+		// edit's `+N −M` delta is its outcome and already renders from
+		// compact up, and the hunks are the body. A subagent's record arrives
+		// here one level down, so it never renders at all (task 109).
+		if level != levelVerbose || rec.Patch == "" {
+			return paneLine{}, false
+		}
+		return patchLine(rec), true
 	case "agent.usage":
 		if level != levelVerbose {
 			return paneLine{}, false
