@@ -254,6 +254,22 @@ func (s *Server) Routes() []Route {
 // per-step session around an agent run (task 057 decision 6).
 func (s *Server) MCP() *mcp.Server { return s.mcp }
 
+// StepBridgeHandler is the handler the daemon serves on a container network's
+// gateway (task 062.2 decision 1): `/mcp/step/{run_id}` and nothing else. The
+// per-run secret is what authenticates that path; `/v1` and `/mcp` answer only
+// on the loopback listener, so the daemon token never becomes reachable from a
+// bridge. It must be called after Handler, which builds the MCP server.
+func (s *Server) StepBridgeHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		writeError(w, http.StatusNotFound, CodeNotFound, "no such endpoint")
+	})
+	if s.mcp != nil {
+		mux.Handle(mcp.StepPathPrefix+"{run_id}", s.mcp.StepHandler())
+	}
+	return s.recoverMiddleware(s.logMiddleware(mux))
+}
+
 // Serve serves on ln until Shutdown; it returns http.ErrServerClosed then.
 func (s *Server) Serve(ln net.Listener) error {
 	if err := s.httpSrv.Serve(ln); err != nil {
@@ -375,7 +391,9 @@ func (s *Server) buildHandler() http.Handler {
 	// bearer token, discovery through the same daemon.json. `/mcp` is the
 	// shared endpoint every client reaches; `/mcp/step/{run_id}` is the
 	// per-step one the daemon wires an agent step to, which authenticates its
-	// own run secret instead and is exempted in authMiddleware.
+	// own run secret instead and is exempted in authMiddleware. That path
+	// alone is also served on a container gateway (StepBridgeHandler, task
+	// 062.2 decision 1).
 	//
 	// The MCP server is handed `mux`, not the wrapped handler: a tool call
 	// replayed in process has already been authenticated at the endpoint it

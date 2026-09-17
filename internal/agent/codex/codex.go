@@ -54,18 +54,13 @@ func (a *Adapter) Path() (string, error) { return a.resolvePath() }
 
 // resolvePath returns the binary to execute: the configured path when set,
 // otherwise "codex" from PATH.
-func (a *Adapter) resolvePath() (string, error) {
-	if p := a.pathFn(); p != "" {
-		if _, err := exec.LookPath(p); err != nil {
-			return "", fmt.Errorf("configured codex path %s: %w", p, err)
-		}
-		return p, nil
-	}
-	p, err := exec.LookPath(binaryName)
-	if err != nil {
-		return "", fmt.Errorf("codex not found on PATH: %w", err)
-	}
-	return p, nil
+func (a *Adapter) resolvePath() (string, error) { return a.resolvePathWith(nil) }
+
+// resolvePathWith resolves the binary where a run through l executes: on the
+// host for nil, inside the image for a containerized step (task 062.2
+// decision 2), where `agents.codex.path` names a host path and is ignored.
+func (a *Adapter) resolvePathWith(l agent.Launcher) (string, error) {
+	return agent.ResolveWith(l, "codex", a.pathFn(), binaryName)
 }
 
 var versionRe = regexp.MustCompile(`\d+\.\d+\.\d+`)
@@ -232,7 +227,7 @@ const MCPTokenEnv = "VINCENT_MCP_TOKEN"
 // argv limit); the process tree is killed when ctx is canceled. The caller
 // must consume Events() until closed; Wait blocks on stream end.
 func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandle, error) {
-	path, err := a.resolvePath()
+	path, err := a.resolvePathWith(spec.Launcher)
 	if err != nil {
 		return nil, err
 	}

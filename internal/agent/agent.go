@@ -216,7 +216,8 @@ type RunSpec struct {
 	// Launcher starts the run's process (task 062.1). nil means the host
 	// launcher, which is what tests, chats and any other caller get — the
 	// same nil-keeps-today's-behaviour convention Env follows. The adapter
-	// builds the Command; the launcher decides where it runs.
+	// builds the Command; the launcher decides where it runs, and Start
+	// resolves the binary through it too (task 062.2 decision 2).
 	Launcher Launcher
 }
 

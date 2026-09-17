@@ -409,7 +409,7 @@ step, where the step wins.
 | `max_retries` | agent and command steps; a fan_out merge takes only its own | `1` — `0` on a fan_out merge |
 | `retry_backoff` | agent, command and fan_out steps | `0s` — an immediate retry ([§8.2](#82-retries)) |
 | `timeout` | all steps | `defaults.agent_timeout` (60m) or `defaults.command_timeout` (15m) in config |
-| `container` | command steps and checks | the daemon's [`container:`](../reference/configuration.md#container) block, merged per field |
+| `container` | agent steps, command steps and checks | the daemon's [`container:`](../reference/configuration.md#container) block, merged per field |
 
 Durations are Go duration strings: `90s`, `45m`, `1h30m`. A bare number is a
 validation error.
@@ -1273,6 +1273,10 @@ Worth knowing when you write that instruction:
 - It is **not** a failure reason and nothing renders it as one. It is also not
   visible to `.Steps` or to an `if:` guard — free text an agent chose at run
   time is not something a workflow should branch on.
+- `vincent status` does not work in a step that runs
+  [in a container](../reference/configuration.md#container): the image has no
+  vincent binary and cannot reach the daemon on `127.0.0.1`. Ask a containerized
+  agent for the `step_status` [MCP tool](mcp.md#steps-in-a-container) instead.
 
 ---
 

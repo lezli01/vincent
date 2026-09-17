@@ -331,22 +331,25 @@ repository, the shell, and the tooling the image carries. Leave the key empty,
 which is the default, and nothing changes: every step runs on the host exactly
 as before.
 
-Today that covers **command steps and every `check:`**, including a check on an
-agent step. The **agent process itself still runs on the host** — all three
-adapters now start their runs through one launch seam, but the only launcher so
-far is the host's, and a container launcher is the next piece of this work. A
-containerized task with agent steps is a mixed run until then, and vincent
-neither refuses it nor warns about it.
+That covers **agent steps, command steps and every `check:`**. The agent CLI
+runs inside the container, and its transcript, token and cost records and exit
+code are the same as on the host. Its `~/.claude`, `~/.codex` and `~/.cursor`
+are mounted in by default so it can log in, and vincent's own tools still reach
+it. Chats keep running on the host.
 
 The image is yours and must already carry your agent CLI and `git` — vincent
-builds, publishes and bundles nothing. The repository and the worktree are
+builds, publishes and bundles nothing. The CLI is found on the image's `PATH`,
+so the host does not need it installed. The repository and the worktree are
 mounted at their own absolute paths, so a path means the same thing inside and
 out and workflow templates need no translation. A workflow can pin its own image
 in `defaults.container:`.
 
 macOS and Linux hosts only, and the container is a filesystem boundary rather
 than a network or credential one — outbound traffic is open by default, and
-turning on `mount_agent_config` puts your agent's credentials inside it. Read
+`mount_agent_config`, on by default, puts your agent's credentials inside it.
+On macOS, claude keeps its login in the Keychain, so a containerized claude
+step needs `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` in
+`environment`. Read
 [the security model](security-model.md) for what that means and
 [`container`](reference/configuration.md#container) for the knobs.
 

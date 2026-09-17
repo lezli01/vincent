@@ -20,19 +20,18 @@ import (
 // refusal on an unhealthy environment. So a missing or unpullable image is an
 // admission block (`container_image_unavailable`), not a 400.
 //
-// Two things are refused here:
+// Three things are refused here:
 //
 //   - a Windows daemon, because paths are identical inside and out (decision
 //     2) and `C:\...` cannot exist in a Linux container;
+//   - `container.network: false` together with `mcp.wire_steps: true` for a
+//     workflow with an agent step (decision 1, narrowed by task 062.2
+//     decision 5): the agent runs inside a container with no network, which
+//     cannot reach the per-step MCP endpoint, and §9.1's rule is that a
+//     missing MCP channel fails loudly. A command-only workflow wires nothing
+//     and keeps running with no network, as it has since issue #366;
 //   - a missing or unusable runtime binary, which is local and costs one
 //     `docker version`.
-//
-// Decision 1's refusal of `container.network: false` together with
-// `mcp.wire_steps: true` is deliberately absent until task 062 (issue #366).
-// The pair is a contradiction only for an agent running inside the container;
-// until 062 every agent runs on the host and reaches the per-step MCP endpoint
-// from there, whatever the container's network is. 062 reinstates it together
-// with the host.docker.internal rewrite.
 //
 // It also carries decision 8's second `shell:` refusal. A workflow that pins
 // its own image is refused at load; every other case can only be judged here,
@@ -50,6 +49,11 @@ func (s *Server) containerMismatch(ctx context.Context, wf *workflow.Workflow) s
 			"windows: a containerized task mounts its worktree and repository at their own absolute "+
 			"paths, and a windows path cannot exist inside a linux container", wf.Name, c.Image)
 	}
+	if !c.Network && cfg.MCP.WireSteps && hasAgentStep(wf) {
+		return fmt.Sprintf("workflow %q runs an agent step in a container with container.network: false "+
+			"while mcp.wire_steps is true: a container with no network cannot reach the daemon's per-step "+
+			"MCP endpoint. Set mcp.wire_steps: false, or leave container.network on", wf.Name)
+	}
 	if conflicts := workflow.ContainerShellConflicts(wf); len(conflicts) > 0 {
 		return fmt.Sprintf("workflow %q runs in container image %q: %s",
 			wf.Name, c.Image, conflicts[0].Message)
@@ -58,6 +62,19 @@ func (s *Server) containerMismatch(ctx context.Context, wf *workflow.Workflow) s
 		return msg
 	}
 	return ""
+}
+
+// hasAgentStep reports whether wf runs an agent anywhere — top level or inside
+// a `parallel`, `fan_out`, `condition` or `loop` body. The workflow it is
+// handed is already include-expanded (§7.9), so a spliced-in agent step counts.
+func hasAgentStep(wf *workflow.Workflow) bool {
+	found := false
+	workflow.WalkSteps(wf.Steps, func(step workflow.Step, _ string) {
+		if step.Type == workflow.StepAgent {
+			found = true
+		}
+	})
+	return found
 }
 
 // containerRuntimeMissing probes the configured runtime. It is the one part of

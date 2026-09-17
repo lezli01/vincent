@@ -45,6 +45,24 @@ list with the user-facing context a commit subject cannot carry.
   runs already on disk render nested too. Codex and cursor report no subagents
   (issue #401).
 
+- **Agent steps now run inside the task's container.** With `container.image`
+  set, a task's agent steps run in its container next to its command steps and
+  checks, so a containerized task no longer starts its agents on your machine.
+  The agent CLI is the image's: vincent finds `claude`, `codex` or
+  `cursor-agent` on the image's `PATH`, ignores `agents.*.path` there, and
+  fails the step `agent_unavailable` when the image lacks it. The host no
+  longer needs the CLI installed. Transcripts, token and cost records and exit
+  codes match a host run, and a timeout or cancel stops the agent while the
+  container stays up for the next step. Claude's mid-run questions are judged
+  against the claude in the image. Chats still run on the host. Vincent's own
+  MCP tools reach a containerized agent at `host.docker.internal`. On Linux with
+  Docker Engine, the daemon opens a second listener on the container network's
+  gateway for this: it serves only the per-step endpoint, each request needs
+  that step's own secret, and anything on the same bridge network can reach the
+  port. Docker Desktop keeps using the loopback port. `vincent status` does not
+  work inside a container; a containerized agent reports progress with the
+  `step_status` MCP tool instead (issue #397).
+
 - **vincent now tells you when claude is not logged in.** claude was the one
   agent whose login state always read *unknown*. vincent now asks
   `claude auth status`, so `vincent doctor`, `vincent agents`, `GET /v1/agents`
@@ -367,6 +385,26 @@ list with the user-facing context a commit subject cannot carry.
   there is no link or GitHub could not be read.
 
 ### Changed
+
+- **A containerized task mounts your agent credentials by default again.**
+  `container.mount_agent_config` is `true` again, now that the agent runs in
+  the container and needs them. `~/.claude`, `~/.codex` and `~/.cursor` are
+  mounted read-write beneath a vincent home at `/vincent-home`, and every
+  containerized step runs with `HOME=/vincent-home` unless your `environment`
+  policy sets, inherits or unsets `HOME`. The image's own home directory is
+  hidden while the mounts are on. On macOS, claude keeps its login in the
+  Keychain, which a container cannot read, so a containerized claude step on a
+  Mac needs `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` passed through
+  `environment`. This changes the default on existing installations; a
+  `config.yaml` that sets the key keeps its value (issue #397).
+
+- **`container.network: false` with `mcp.wire_steps: true` is refused again
+  for workflows with agent steps.** A container with no network cannot reach
+  the daemon's MCP endpoint, and agents now run in the container. Creating a
+  task is a `400 validation_failed` when its workflow has an agent step anywhere
+  — at the top level, inside `parallel`, `fan_out` or `loop`, or
+  brought in by an `include`. A workflow of command steps only still runs with
+  no network (issue #397).
 
 - **One usage-limit stop now holds every task on that agent.** Before, when
   Claude Code hit its usage limit, only that task waited. Every other task on

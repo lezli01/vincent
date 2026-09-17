@@ -60,18 +60,13 @@ func (a *Adapter) Path() (string, error) { return a.resolvePath() }
 
 // resolvePath returns the binary to execute: the configured path when set,
 // otherwise "cursor-agent" from PATH.
-func (a *Adapter) resolvePath() (string, error) {
-	if p := a.pathFn(); p != "" {
-		if _, err := exec.LookPath(p); err != nil {
-			return "", fmt.Errorf("configured cursor path %s: %w", p, err)
-		}
-		return p, nil
-	}
-	p, err := exec.LookPath(binaryName)
-	if err != nil {
-		return "", fmt.Errorf("cursor-agent not found on PATH: %w", err)
-	}
-	return p, nil
+func (a *Adapter) resolvePath() (string, error) { return a.resolvePathWith(nil) }
+
+// resolvePathWith resolves the binary where a run through l executes: on the
+// host for nil, inside the image for a containerized step (task 062.2
+// decision 2), where `agents.cursor.path` names a host path and is ignored.
+func (a *Adapter) resolvePathWith(l agent.Launcher) (string, error) {
+	return agent.ResolveWith(l, "cursor", a.pathFn(), binaryName)
 }
 
 // Detect implements agent.Adapter: path resolution, a --version probe, and a
@@ -237,7 +232,7 @@ func buildArgs(spec agent.RunSpec) ([]string, error) {
 // argv limit); the process tree is killed when ctx is canceled. The caller
 // must consume Events() until closed; Wait blocks on stream end.
 func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandle, error) {
-	path, err := a.resolvePath()
+	path, err := a.resolvePathWith(spec.Launcher)
 	if err != nil {
 		return nil, err
 	}

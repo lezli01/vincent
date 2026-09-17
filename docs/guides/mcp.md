@@ -191,6 +191,33 @@ rather than running an agent that silently has no tools. That is deliberate: a
 prompt written against the vincent tools should fail loudly. Turn `wire_steps`
 off if you would rather it ran anyway.
 
+### Steps in a container
+
+An agent step of a task with a
+[`container.image`](../reference/configuration.md#container) runs inside the
+container, where `127.0.0.1` is not the daemon. Its endpoint is
+`http://host.docker.internal:{port}/mcp/step/{run_id}` instead — in claude's and
+codex's per-run config and in cursor's `.cursor/mcp.json` alike — and the tools
+are the same.
+
+- **On Linux with Docker Engine**, the daemon's loopback listener cannot be
+  reached from a container, so vincent opens a second listener on the container
+  network's gateway address for as long as a containerized step needs it. It
+  answers `/mcp/step/{run_id}` and nothing else: `/v1` and `/mcp` are `404`
+  there, and every request needs that step run's secret. Anything else on the
+  same bridge network can reach the port, so the secret is what keeps it to the
+  one step.
+- **On Docker Desktop** (macOS, and Docker Desktop for Linux) and runtimes such
+  as rootless podman, that bind is not possible, and `host.docker.internal`
+  already leads to the daemon's own loopback port, which is what is used.
+- **A container with no network reaches neither.** `container.network: false`
+  with `wire_steps` on is refused when you create a task whose workflow has an
+  agent step. A workflow of command steps only is unaffected.
+- **`vincent status` does not work in a container** — the image has no vincent
+  binary and no route to the daemon on `127.0.0.1`. Tell a containerized agent
+  to report its progress with the `step_status` tool instead; the task and step
+  ids are in `VINCENT_TASK_ID` and `VINCENT_STEP_ID`, as usual.
+
 ## Bounds
 
 A step's agent can create a task whose step runs an agent that creates a task.
@@ -203,7 +230,9 @@ enforced when the task is created; the refusal names the key it hit. See the
 The per-step endpoint is **not a sandbox**. A full-auto agent can read the daemon
 token and reach `/mcp` directly, and `permission_mode: restricted` bounds the
 filesystem and the shell — not what a step does to vincent. A restricted step can
-create and cancel tasks. See the [security model](../security-model.md).
+create and cancel tasks. For a containerized step on Linux, the endpoint is also
+the one thing vincent serves off loopback, [as above](#steps-in-a-container). See
+the [security model](../security-model.md).
 
 ## See also
 
