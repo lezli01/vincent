@@ -322,7 +322,7 @@ func (f *createPRForm) lines(width int) []string {
 		out = append(out, styleDim.Render("  ctrl+s keeps this text · esc discards it"))
 	default:
 		out = append(out, styleDim.Render(
-			"  enter edit · e $EDITOR · space toggle draft · ctrl+s push and create · ctrl+o browser · esc leave"))
+			"  enter edit · "+opKey(keymap.Editor)+" $EDITOR · space toggle draft · ctrl+s push and create · ctrl+o browser · esc leave"))
 	}
 	return out
 }

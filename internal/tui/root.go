@@ -225,6 +225,7 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.broadcast(msg)
 	case boardConfigMsg, daemonConfigMsg, configSavedMsg:
 		m.applyHyperlinks(msg)
+		m.applyKeymap(msg)
 		return m, m.broadcast(msg)
 	case newTaskFromPullMsg:
 		return m.updateNewTaskFromPull(msg)
@@ -622,6 +623,22 @@ func synthKey(key string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyDown}
 	case "space":
 		return tea.KeyPressMsg{Code: ' ', Text: " "}
+	case "shift+tab":
+		return tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}
+	}
+	// A `tui.keys` override may bind an operation to any key keymap.ParseKey
+	// accepts (task 115), and the palette replays whatever the registry says:
+	// alt+ and the navigation names have to round-trip too.
+	if rest, ok := strings.CutPrefix(key, "alt+"); ok {
+		msg := synthKey(rest)
+		msg.Mod |= tea.ModAlt
+		if rest != "space" && len([]rune(rest)) == 1 {
+			msg.Text = ""
+		}
+		return msg
+	}
+	if code, ok := namedKeyCodes[key]; ok {
+		return tea.KeyPressMsg{Code: code}
 	}
 	// Any ctrl+<letter>, rather than a case per key. The named list above had
 	// grown three of them and was already one behind the registry: ctrl+r and
@@ -640,6 +657,13 @@ func synthKey(key string) tea.KeyPressMsg {
 		}
 	}
 	return tea.KeyPressMsg{Code: rune(key[0]), Text: key}
+}
+
+// namedKeyCodes are the navigation keys synthKey rebuilds by name.
+var namedKeyCodes = map[string]rune{
+	"left": tea.KeyLeft, "right": tea.KeyRight, "home": tea.KeyHome, "end": tea.KeyEnd,
+	"pgup": tea.KeyPgUp, "pgdown": tea.KeyPgDown, "backspace": tea.KeyBackspace,
+	"delete": tea.KeyDelete, "insert": tea.KeyInsert,
 }
 
 // updateNoticeKey is the §16 overlay's key handling: it swallows everything
@@ -825,6 +849,29 @@ func (m *root) applyHyperlinks(msg tea.Msg) {
 	}
 }
 
+// applyKeymap installs `tui.keys` wherever the TUI already reads `tui:` (task
+// 115 decision 9): the board's fetch on every connect and reconnect, the
+// daemon view's, and the answer to the config editor's own PATCH — so a
+// binding changed from the editor works on the next press, with no reconnect.
+// A failed fetch or a refused save changes nothing, for applyHyperlinks'
+// reason.
+func (m *root) applyKeymap(msg tea.Msg) {
+	switch msg := msg.(type) {
+	case boardConfigMsg:
+		if msg.err == nil {
+			applyKeys(msg.keys)
+		}
+	case daemonConfigMsg:
+		if msg.err == nil {
+			applyKeys(msg.config.TUI.Keys)
+		}
+	case configSavedMsg:
+		if msg.err == nil {
+			applyKeys(msg.cfg.TUI.Keys)
+		}
+	}
+}
+
 // broadcast routes a message to every view, not just the visible one.
 // Connection lifecycle, window size and stream events all have to reach a
 // view that is currently off-screen: the board must keep its rows current
@@ -954,9 +1001,12 @@ func (m *root) body() string {
 	case phaseStarting:
 		return "\n  starting daemon…\n"
 	case phaseFailed:
+		// r is retry-connecting, fixed; the palette and quit are rebindable
+		// (task 115 decision 8).
 		return fmt.Sprintf(
-			"\n  %s\n\n  log: %s\n\n  press r to retry, : for the daemon view and its log, q to quit\n",
-			styleBad.Render("daemon unreachable: "+errString(m.connErr)), m.logPath)
+			"\n  %s\n\n  log: %s\n\n  press r to retry, %s for the daemon view and its log, %s to quit\n",
+			styleBad.Render("daemon unreachable: "+errString(m.connErr)), m.logPath,
+			opKey(keymap.Palette), opKey(keymap.Quit))
 	case phaseReconnecting:
 		return fmt.Sprintf("\n  %s\n\n  retrying in %s — press r to restart the daemon if it stays down\n",
 			styleWarn.Render("connection lost: "+errString(m.connErr)), m.retryIn)

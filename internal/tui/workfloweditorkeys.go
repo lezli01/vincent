@@ -332,7 +332,7 @@ func (w *workflowsView) updateEditorMsg(msg tea.Msg) (panel, tea.Cmd, bool) {
 			// The file broke between the list load and this fetch. $EDITOR is
 			// the escape hatch for a file the forms cannot load, which is why
 			// `e` is still on the list behind this layer.
-			e.err = "this file does not parse; press esc and use e to open it in $EDITOR"
+			e.err = "this file does not parse; press esc and use " + opKey(keymap.Editor) + " to open it in $EDITOR"
 			return w, nil, true
 		}
 		e.rebuild()
@@ -354,7 +354,7 @@ func (w *workflowsView) updateEditorMsg(msg tea.Msg) (panel, tea.Cmd, bool) {
 			if errors.As(msg.err, &apiErr) && apiErr.Status == 409 {
 				e.stale = true
 				e.version = apiErr.Details["version"]
-				e.err = msg.err.Error() + " — press R to re-read it"
+				e.err = msg.err.Error() + " — press " + opKey(keymap.Refresh) + " to re-read it"
 				return w, nil, true
 			}
 			e.err = msg.err.Error()

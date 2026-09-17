@@ -410,11 +410,11 @@ func (t *taskView) pullHintLine() string {
 			if run := t.selectedCheck(); run == nil || run.URL == "" {
 				continue
 			}
-		case "l":
+		case opKey(keymap.Lane):
 			// The row carries no footer hint; here it is named only while
 			// this task has lanes to open.
 			if len(t.lanes) > 0 {
-				hints = append(hints, "l open lane")
+				hints = append(hints, opKey(keymap.Lane)+" open lane")
 			}
 			continue
 		}

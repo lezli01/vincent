@@ -180,7 +180,7 @@ func (f *pullCommentForm) lines(width int) []string {
 	case f.editing:
 		out = append(out, styleDim.Render("  ctrl+s post · esc stop typing"))
 	default:
-		out = append(out, styleDim.Render("  enter type · e $EDITOR · ctrl+s post · esc discard"))
+		out = append(out, styleDim.Render("  enter type · "+opKey(keymap.Editor)+" $EDITOR · ctrl+s post · esc discard"))
 	}
 	return out
 }

@@ -77,7 +77,10 @@ type (
 		// read it; the root does, because this fetch is the one that rides
 		// every connect and reconnect.
 		hyperlinks bool
-		err        error
+		// keys is `tui.keys` (task 115), read by the root for the same
+		// reason hyperlinks is.
+		keys map[string]string
+		err  error
 	}
 	// boardTickMsg drives the elapsed column.
 	boardTickMsg struct {
@@ -383,7 +386,7 @@ func (b *board) configCmd() tea.Cmd {
 		cfg, err := client.Config(ctx)
 		return boardConfigMsg{
 			archived: archived, board: cfg.TUI.Board,
-			laneDepth: cfg.FanOut.MaxDepth, hyperlinks: cfg.TUI.Hyperlinks, err: err,
+			laneDepth: cfg.FanOut.MaxDepth, hyperlinks: cfg.TUI.Hyperlinks, keys: cfg.TUI.Keys, err: err,
 		}
 	}
 }
@@ -1613,7 +1616,7 @@ func (b *board) emptyBody(rows []boardRow) (string, bool) {
 		return styleDim.Render(fmt.Sprintf(
 			"\n  no tasks match %q — esc to clear the filter\n", b.filter.Value())), true
 	default:
-		return styleDim.Render("\n  no tasks yet — press n to create one\n"), true
+		return styleDim.Render("\n  no tasks yet — press " + opKey(keymap.New) + " to create one\n"), true
 	}
 }
 

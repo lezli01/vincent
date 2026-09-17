@@ -261,7 +261,7 @@ func newNewTask() *newTask {
 	priority.SetPlaceholder("0")
 	priority.SetValue("0")
 	desc := textarea.New()
-	desc.Placeholder = "describe the task (markdown); e opens $EDITOR"
+	desc.Placeholder = "describe the task (markdown); " + opKey(keymap.Editor) + " opens $EDITOR"
 	desc.SetHeight(5)
 	return &newTask{
 		exec:    tea.ExecProcess,

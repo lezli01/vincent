@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // The triggers view's rendering. The list is the daemon view's shape: a table
@@ -336,7 +337,7 @@ func (v *triggersView) renderForm(width, height int) string {
 	case f.input != nil:
 		out = append(out, "", styleDim.Render("  enter commit · esc cancel"))
 	default:
-		out = append(out, "", styleDim.Render("  enter edit · R reload · esc back · e $EDITOR from the list"))
+		out = append(out, "", styleDim.Render("  enter edit · "+opKey(keymap.Refresh)+" reload · esc back · "+opKey(keymap.Editor)+" $EDITOR from the list"))
 	}
 	return clampLines(truncateRows(out, width), height)
 }

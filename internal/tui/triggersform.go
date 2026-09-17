@@ -177,7 +177,7 @@ func (v *triggersView) applyFormLoaded(msg trigFormLoadedMsg) {
 	f.def = msg.detail.Definition
 	if f.def == nil {
 		f.rows = nil
-		f.err = "this file does not validate, so the form cannot load it — esc, then e opens it in $EDITOR"
+		f.err = "this file does not validate, so the form cannot load it — esc, then " + opKey(keymap.Editor) + " opens it in $EDITOR"
 		if len(msg.detail.Errors) > 0 {
 			f.err += " (" + findingText(msg.detail.Errors[0]) + ")"
 		}

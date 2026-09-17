@@ -260,7 +260,7 @@ func footerAdmit(hints, rest []footerSeg, countable, avail int) int {
 // menu: paletteEntries already lists exactly these rows from the same
 // registry, and a second surface would be a second thing to keep in sync.
 func footerMoreSeg(n int) footerSeg {
-	return footerSeg{text: styleDim.Render(fmt.Sprintf("+%d", n)), key: ":", global: true}
+	return footerSeg{text: styleDim.Render(fmt.Sprintf("+%d", n)), key: opKey(keymap.Palette), global: true}
 }
 
 // footerCountable is what `+N` counts against (task 094 decision 3): the rows

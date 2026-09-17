@@ -223,7 +223,7 @@ func (o *wfEditorMap) View(width, _ int) string {
 			add = styleFocus.Render("› ") + "add a key"
 		}
 	}
-	rows = append(rows, add, styleDim.Render("  enter edit · d drop · ctrl+s save · esc cancel"))
+	rows = append(rows, add, styleDim.Render("  enter edit · "+opKey(keymap.DraftRemove)+" drop · ctrl+s save · esc cancel"))
 	return strings.Join(rows, "\n")
 }
 

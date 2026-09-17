@@ -23,6 +23,10 @@ func keys(s string) []tea.KeyPressMsg {
 
 // press sends one named key.
 func press(n *newTask, name string) tea.Cmd {
+	if to, ok := probeRemap[name]; ok {
+		_, cmd := n.update(synthKey(to))
+		return cmd
+	}
 	var msg tea.KeyPressMsg
 	switch name {
 	case "enter":

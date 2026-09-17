@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // The editor's structural half (issue #320, claim 5). internal/workflow's
@@ -355,7 +356,7 @@ func (w *workflowsView) editorAdd() tea.Cmd {
 	e := w.editor
 	t, ok := e.listTarget()
 	if !ok {
-		e.err = "a adds to a list: move to a step, a lane or a declared field first"
+		e.err = opKey(keymap.Add) + " adds to a list: move to a step, a lane or a declared field first"
 		return nil
 	}
 	if t.kind != "steps" {
@@ -407,7 +408,7 @@ func (w *workflowsView) editorRemove() {
 	}
 	row := e.rows[e.cursor]
 	if row.list == "" {
-		e.err = "d removes a list item: move to a step, a lane or a declared field first"
+		e.err = opKey(keymap.DraftRemove) + " removes a list item: move to a step, a lane or a declared field first"
 		return
 	}
 	path := fmt.Sprintf("%s[%d]", row.list, row.index)

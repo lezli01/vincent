@@ -43,7 +43,7 @@ func helpText(ctx bindingContext, github bool) string {
 			key := r.key
 			if key == "" {
 				// Palette-only navigation: the palette is its key.
-				key = ":"
+				key = opKey(keymap.Palette)
 			}
 			b.WriteString("  ")
 			b.WriteString(padRight(key, 8))
@@ -80,10 +80,10 @@ func helpText(ctx bindingContext, github bool) string {
 	// second popup section is what made the difference visible).
 	if isHomeContext(ctx) {
 		writeSection("answer form (while a task is waiting on you)", bindingsFor(ctxForm))
-		writeSection("repair form (R on a blocked task)", bindingsFor(ctxRepairForm))
-		writeSection("follow-up form (F on a finished task)", bindingsFor(ctxFollowUpForm))
+		writeSection("repair form ("+opKey(keymap.Repair)+" on a blocked task)", bindingsFor(ctxRepairForm))
+		writeSection("follow-up form ("+opKey(keymap.FollowUp)+" on a finished task)", bindingsFor(ctxFollowUpForm))
 	}
-	writeSection("go to (from the : palette)", nav)
+	writeSection("go to (from the "+opKey(keymap.Palette)+" palette)", nav)
 	return b.String()
 }
 

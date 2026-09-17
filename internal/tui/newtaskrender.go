@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // ntLabels are the row captions, in row order.
@@ -103,7 +104,7 @@ func ntRowsForStage(stage ntStage) []ntRow {
 // the original all-fields form as the responsive fallback.
 func (n *newTask) render(width, height int) string {
 	if n.loadErr != nil {
-		return fmt.Sprintf("\n  %s\n\n  press R to retry\n",
+		return fmt.Sprintf("\n  %s\n\n  press "+opKey(keymap.Refresh)+" to retry\n",
 			styleBad.Render("could not load the form: "+errString(n.loadErr)))
 	}
 	if !n.loaded {
@@ -419,7 +420,7 @@ func (n *newTask) descriptionSummary() string {
 		return ""
 	}
 	if text == "" {
-		return styleDim.Render("(none) · enter to type, e for $EDITOR")
+		return styleDim.Render("(none) · enter to type, " + opKey(keymap.Editor) + " for $EDITOR")
 	}
 	first, _, more := strings.Cut(text, "\n")
 	if more {
@@ -556,7 +557,7 @@ func (n *newTask) renderExpansion(row ntRow) []string {
 		return n.renderFields()
 	case n.mode == ntEditing && row == ntDescription:
 		return append(strings.Split(n.desc.View(), "\n"),
-			styleDim.Render("    esc leaves the field · e (from the row) opens $EDITOR"))
+			styleDim.Render("    esc leaves the field · "+opKey(keymap.Editor)+" (from the row) opens $EDITOR"))
 	}
 	if row == ntWorkflow && n.mode == ntNavigating {
 		return n.renderWorkflowDetail(n.workflow)
