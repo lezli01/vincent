@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
 	"regexp"
 	"strings"
 	"sync"
@@ -71,18 +70,13 @@ func (a *Adapter) Path() (string, error) { return a.resolvePath() }
 
 // resolvePath returns the binary to execute: the configured path when set,
 // otherwise "claude" from PATH.
-func (a *Adapter) resolvePath() (string, error) {
-	if p := a.pathFn(); p != "" {
-		if _, err := exec.LookPath(p); err != nil {
-			return "", fmt.Errorf("configured claude path %s: %w", p, err)
-		}
-		return p, nil
-	}
-	p, err := exec.LookPath(binaryName)
-	if err != nil {
-		return "", fmt.Errorf("claude not found on PATH: %w", err)
-	}
-	return p, nil
+func (a *Adapter) resolvePath() (string, error) { return a.resolvePathWith(nil) }
+
+// resolvePathWith resolves the binary where a run through l executes: on the
+// host for nil, inside the image for a containerized step (task 062.2
+// decision 2), where `agents.claude.path` names a host path and is ignored.
+func (a *Adapter) resolvePathWith(l agent.Launcher) (string, error) {
+	return agent.ResolveWith(l, "claude", a.pathFn(), binaryName)
 }
 
 var versionRe = regexp.MustCompile(`\d+\.\d+\.\d+`)
@@ -99,7 +93,7 @@ func (a *Adapter) Detect(ctx context.Context) (agent.Availability, error) {
 	if err != nil {
 		return agent.Availability{Error: err.Error()}, nil
 	}
-	version, err := probeVersion(ctx, path)
+	version, err := probeVersion(ctx, nil, path)
 	if err != nil {
 		return agent.Availability{Path: path, Error: err.Error()}, nil
 	}
@@ -114,11 +108,31 @@ func (a *Adapter) Detect(ctx context.Context) (agent.Availability, error) {
 	}, nil
 }
 
-// probeVersion runs `claude --version` and extracts the semver, falling back
-// to the raw output when no semver is found (an unparseable version never
-// enables input mode — supportsInput rejects it).
-func probeVersion(ctx context.Context, path string) (string, error) {
-	out, _, err := agent.Probe(ctx, versionTimeout, path, "--version")
+// InputVerdictWith implements agent.InputProber: the §7.4 verdict for a run
+// through l, from the version the CLI *there* reports. A binary that cannot be
+// found or probed is unknown, never a refusal — the catalog's own rule.
+func (a *Adapter) InputVerdictWith(ctx context.Context, l agent.Launcher) agent.InputVerdict {
+	path, err := a.resolvePathWith(l)
+	if err != nil {
+		return agent.InputUnknown
+	}
+	version, err := probeVersion(ctx, l, path)
+	if err != nil {
+		return agent.InputUnknown
+	}
+	if supportsInput(version) {
+		return agent.InputSupported
+	}
+	return agent.InputUnsupported
+}
+
+// probeVersion runs `claude --version` through l and extracts the semver,
+// falling back to the raw output when no semver is found (an unparseable
+// version never enables input mode — supportsInput rejects it). l is nil for
+// the host; Start passes its run's launcher, so a containerized run's §7.4
+// input mode follows the CLI inside the image (task 062.2 decision 2).
+func probeVersion(ctx context.Context, l agent.Launcher, path string) (string, error) {
+	out, _, err := agent.ProbeWith(ctx, l, versionTimeout, path, "--version")
 	if err != nil {
 		return "", fmt.Errorf("claude --version failed: %w", err)
 	}
@@ -207,12 +221,12 @@ func mcpConfig(srv *agent.MCPServer) (string, error) {
 // user message, stdin retained for Respond. A failed version probe degrades
 // to the plain invocation — never a run failure.
 func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandle, error) {
-	path, err := a.resolvePath()
+	path, err := a.resolvePathWith(spec.Launcher)
 	if err != nil {
 		return nil, err
 	}
 	inputMode := false
-	if version, verr := probeVersion(ctx, path); verr == nil {
+	if version, verr := probeVersion(ctx, spec.Launcher, path); verr == nil {
 		inputMode = supportsInput(version)
 	}
 	args, err := buildArgs(spec, inputMode)

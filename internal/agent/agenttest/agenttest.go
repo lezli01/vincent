@@ -31,18 +31,54 @@ func BuildFakeAgent(t *testing.T) string {
 }
 
 func build() (string, error) {
+	name := "fakeagent"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return compile(name, nil)
+}
+
+// linuxBuilds caches one cross-compiled fakeagent per architecture.
+var linuxBuilds sync.Map // arch → func() (string, error)
+
+// BuildFakeAgentLinux returns a cmd/fakeagent cross-compiled for linux/arch —
+// the binary a containerized agent step runs inside a Linux image (task
+// 062.2). arch "" means amd64; Docker Desktop on Apple Silicon runs arm64
+// images, which is why it is a parameter rather than a constant. cgo is off,
+// so the binary is static and needs nothing from the image but a kernel.
+func BuildFakeAgentLinux(t *testing.T, arch string) string {
+	t.Helper()
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain not available")
+	}
+	if arch == "" {
+		arch = "amd64"
+	}
+	once, _ := linuxBuilds.LoadOrStore(arch, sync.OnceValues(func() (string, error) {
+		return compile("fakeagent-linux-"+arch, []string{"GOOS=linux", "GOARCH=" + arch, "CGO_ENABLED=0"})
+	}))
+	path, err := once.(func() (string, error))()
+	if err != nil {
+		t.Fatalf("cross-compile fakeagent for linux/%s: %v", arch, err)
+	}
+	return path
+}
+
+// compile builds cmd/fakeagent into a fresh process-lifetime temp dir, with
+// env layered over the test process's own.
+func compile(name string, env []string) (string, error) {
 	_, self, _, _ := runtime.Caller(0)
 	root := filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(self)))) // internal/agent/agenttest → repo root
 	dir, err := os.MkdirTemp("", "vincent-fakeagent-")
 	if err != nil {
 		return "", err
 	}
-	out := filepath.Join(dir, "fakeagent")
-	if runtime.GOOS == "windows" {
-		out += ".exe"
-	}
+	out := filepath.Join(dir, name)
 	cmd := exec.Command("go", "build", "-o", out, "./cmd/fakeagent")
 	cmd.Dir = root
+	if env != nil {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	if b, err := cmd.CombinedOutput(); err != nil {
 		return "", &buildError{output: string(b), err: err}
 	}

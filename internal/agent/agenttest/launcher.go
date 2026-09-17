@@ -2,8 +2,10 @@ package agenttest
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
 )
@@ -17,9 +19,16 @@ type RecordingLauncher struct {
 	// OnLaunch, when set, runs before the host launch with the Command about
 	// to start — the moment a test checks what must already be on disk.
 	OnLaunch func(agent.Command)
+	// OnResolve and OnProbe, when set, answer the launcher's pre-start hooks
+	// in place of the host (task 062.2): a test that stands in for an image
+	// says what its PATH holds and what its CLI reports, while Launch still
+	// runs the real child on the host.
+	OnResolve func(adapter, configured, binary string) (string, error)
+	OnProbe   func(path string, args ...string) (stdout, stderr []byte, err error)
 
 	mu       sync.Mutex
 	launches []*Launch
+	probes   [][]string
 }
 
 // Launch is one Command a RecordingLauncher started, and every byte that
@@ -70,6 +79,35 @@ func (r *RecordingLauncher) Launch(cmd agent.Command) (agent.Process, error) {
 		return p, err
 	}
 	return recordedStdin{Process: p, rec: rec}, nil
+}
+
+// Resolve implements agent.Launcher: OnResolve when set, the host otherwise.
+func (r *RecordingLauncher) Resolve(adapter, configured, binary string) (string, error) {
+	if r.OnResolve != nil {
+		return r.OnResolve(adapter, configured, binary)
+	}
+	return agent.HostLauncher{}.Resolve(adapter, configured, binary)
+}
+
+// Probe implements agent.Launcher: OnProbe when set, the host otherwise.
+// Every probe is recorded, path first.
+func (r *RecordingLauncher) Probe(
+	ctx context.Context, timeout time.Duration, path string, args ...string,
+) (stdout, stderr []byte, err error) {
+	r.mu.Lock()
+	r.probes = append(r.probes, append([]string{path}, args...))
+	r.mu.Unlock()
+	if r.OnProbe != nil {
+		return r.OnProbe(path, args...)
+	}
+	return agent.HostLauncher{}.Probe(ctx, timeout, path, args...)
+}
+
+// Probes returns every probe's argv so far, in order.
+func (r *RecordingLauncher) Probes() [][]string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([][]string(nil), r.probes...)
 }
 
 // Launches returns every launch so far, in order.
