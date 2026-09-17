@@ -1479,6 +1479,7 @@ time.
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
 | `DELETE` | `/v1/tasks/{id}` | Permanent delete of an **archived** task. `?delete_branch=true` (or `{ "delete_branch": true }`) → `{ deleted: true, branch? }`. See [Permanent delete](#permanent-delete) |
+| `POST` | `/v1/tasks/import` | `{ path, task_id, project_id? }` — one archived task back out of a backup archive. See [Importing a task](#importing-a-task) |
 | `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt, in position order. `state` may be `stopped` (a `condition` step ended the run, or a `break` ended its loop), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did. A row inside a `loop` (§7.8) carries `iteration` (1-based) and, for `for_each`, `loop_item` — a loop's body steps share the loop's `step_index`, so those are what tell two of them apart — plus `loop_total`, how many iterations the admission that wrote the row planned to run (the `count:`, or the resolved `for_each` list's length; `0` outside a loop and on a row written before the daemon recorded it). A `fan_out` step with `needs:` between its lanes puts its rounds on the same `iteration` column (0-based, so a flat lane list still reads `0`), which is the one other place a non-zero `iteration` appears — under `schedule: eager` that number is a monotonic merge counter rather than the lane's wave, and the step may write up to one merge row per lane; the two cannot be confused because a `fan_out` is not valid inside a loop body. A `fan_out` row appears when its round's lanes are **spawned**, not when they merge: the park opens the row `running` and that round's merge admission finalizes the same one (§7.6), so a parent whose lanes are working is on the timeline rather than missing from it. Each row also carries **what the attempt was given**: `rendered_prompt`, `rendered_run`, `rendered_check` and `rendered_if` are the substituted text the adapter, the shell and the guard actually saw — the full bytes, unlike `prompt_override`/`run_override`, which are booleans here — with `rendered_for_each` the resolved list an iteration drew its `loop_item` from, carried as a **string holding a JSON array** rather than as an array field, and `input_truncated` saying a field was cut at its 64 KiB ceiling. Beside them the resolution the attempt ran under: `agent_source`, `model_source` and `effort_source` name which level supplied each part (`step`, `task`, `workflow`, `adapter`), and `permission_mode`, `timeout_ms`, `check_timeout_ms`, `shell` and `work_dir` are the values that were in force, recorded rather than re-resolved, so they still describe the attempt after a config reload or a task patch. `null` (or `0`, or `""`) means nothing was recorded — an attempt from before the daemon recorded any of this, and every field the step type has no input for — while an empty string on a rendered field is a render that produced nothing. `rendered_if` is evidence, not a decision: a guard is re-evaluated every time it is reached |
 | `POST` | `/v1/tasks/{id}/steps/{step_id}/status` | `{ message }` → `{ message }` as stored. What the **running** step is doing, in its own words. Called by that step's own process — see [Step status](#step-status) |
 | `GET` | `/v1/tasks/{id}/workflow` | This task's own workflow **snapshot** as a full definition — what ran, not what the registry says now. See [The task's workflow](#the-tasks-workflow) |
@@ -1546,6 +1547,54 @@ column nulls itself, and `mcp.max_depth`'s walk simply stops one link early.
 A client resuming `/v1/events` from a cursor older than a delete will see events
 for an id that now `404`s. That is the same thing a project delete does to a
 stale cursor, and it is survivable: re-fetch, and drop what is gone.
+
+### Importing a task
+
+`POST /v1/tasks/import` is the undo for a permanent delete: it copies one task
+out of an archive [`POST /v1/daemon/backup`](#backup) wrote — the row, its step
+attempts and its transcript directory — into this installation, in one
+transaction that appends a `task.restored` event. What
+[`vincent task import`](cli.md#vincent-task-import) calls.
+
+```sh
+curl -sS -X POST http://127.0.0.1:PORT/v1/tasks/import \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"path": "/home/me/vincent-2026-09-01.tar.gz", "task_id": 12}'
+```
+
+```json
+{ "task_id": 12, "project_id": 3, "title": "Add login",
+  "step_runs": 4, "step_runs_renumbered": false,
+  "transcript_files": 4, "transcript_bytes": 1234,
+  "archived_at": "2026-09-17T12:00:00.000000000Z",
+  "backup_schema_version": 31, "backup_created_at": "2026-09-01T08:00:00.000000000Z" }
+```
+
+`path` must be absolute. The task keeps its id and comes back `archived`, with
+`archived_at` set to the import time so [retention](files.md#transcripts)
+starts over. `worktree_path` is cleared and `created_by_task_id` is cleared
+unless that task exists here; every other column is copied as it is. Step
+attempt ids are all kept when all are free, and all renumbered in their original
+order when any is taken — `step_runs_renumbered` says which. `project_id`
+imports into another project; without it the backed-up project must exist here
+under the same id **and** the same name. The task's historical `events` are not
+copied. An archive from an older schema imports: the daemon migrates a staged
+copy of its database, never the live one.
+
+| Status | `details.reason` | Meaning |
+|---|---|---|
+| `400` | — | `path` is missing, relative or not a regular file; the file is not a vincent backup or has no database; an entry is unsafe |
+| `400` | `schema_too_new` | The archive was written by a newer schema than this daemon's |
+| `404` | `task_not_in_backup` | The archive has no task with that id |
+| `404` | `project_not_found` | `project_id` names no project |
+| `409` | `task_exists` | A task here already holds the id |
+| `409` | `not_archived` | The task was not archived in the backup; `details.state` is the state it was in |
+| `409` | `project_mismatch` | No project here matches the backed-up one by id and name |
+| `409` | `parent_missing` | A fan-out lane whose parent is not here. Import the parent first |
+| `409` | `transcripts_present` | `{data_dir}/transcripts/{task_id}/` already exists. Nothing is merged or deleted |
+
+The `409`s carry `details.action: "import"`. There is no bulk import; the route
+is not an [MCP tool](#the-mcp-endpoint).
 
 ### The task's workflow
 
@@ -2435,6 +2484,7 @@ task.github_pull_changed
 chat.created            chat.state_changed      chat.turn_changed
 chat.archived           chat.handed_off
 task.deleted            chat.deleted
+task.restored
 project.*               workflow.registry_changed
 trigger.fired           trigger.poll_changed
 agent.quota_changed     daemon.shutting_down
@@ -2452,6 +2502,10 @@ they need.
   `task.state_changed` with `to: archived`, but a delete has no state to change
   to, so without a type no other client would ever learn the row is gone. The
   event outlives the row it records.
+- `task.restored` carries `{ id, title }` and announces a task
+  [imported from a backup](#importing-a-task). Unlike `task.deleted` it carries
+  the task id, so it also reaches the per-task stream. It is not a state change
+  and triggers no notification.
 - There is no separate `task.archived` or `task.awaiting_input` type. Both are
   `task.state_changed` with the appropriate `to`; the `awaiting_input` payload
   additionally carries the request kind and a one-line summary, which is the
@@ -2560,6 +2614,7 @@ Every route on this page is a tool, with these exceptions:
 | `DELETE /v1/projects/{id}` | Destructive admin |
 | `DELETE /v1/tasks/{id}` | Destructive admin, on the same line: a row a human archived is history nobody else may discard. Archive stays a tool — the row and its transcripts survive it |
 | `DELETE /v1/chats/{id}` | Same |
+| `POST /v1/tasks/import` | Destructive admin, beside the deletes it undoes: it reads a file the caller names and writes rows no agent should be able to create |
 | `POST /v1/maintenance/gc` | Destructive admin |
 | `POST /v1/doctor/fix` | Destructive admin |
 | `PATCH /v1/config` | An agent must not reconfigure the daemon supervising it — a patch changes the argv it spawns, what its children inherit, and whether steps get MCP at all |

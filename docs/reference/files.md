@@ -377,6 +377,16 @@ To move an installation to another machine, restore into an empty pair of
 directories and start the daemon; your repositories and their branches are the
 other half, and vincent recreates worktrees as tasks need them.
 
+**One task back, without restoring everything.**
+[`vincent task import <archive> <task-id>`](cli.md#vincent-task-import) copies a
+single archived task — its row, its step attempts and its
+`transcripts/{task_id}/` — out of an archive into the **running** daemon. It is
+the undo for [`vincent task delete`](cli.md#vincent-task-delete). The task keeps
+its id, and its `archived_at` becomes the import time, so retention starts over
+rather than pruning what you just brought back. It refuses rather than
+replacing or merging: a task with that id, or a `transcripts/{task_id}/`
+directory, already here is left alone.
+
 To remove vincent entirely: `vincent service uninstall`, `vincent daemon stop`,
 delete the binary, delete both directories, then clean up any branches left in
 the repositories you used — the ones that carry commits, since the empty ones

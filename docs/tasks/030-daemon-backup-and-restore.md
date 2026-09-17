@@ -196,4 +196,7 @@ of its own.
 **Restoring a single task.** The archive is whole-installation. Pulling one
 task's rows and transcripts out of a backup is a different feature with a
 different shape, and nothing here forecloses it (tracked in
-[#411](https://github.com/lezli01/vincent/issues/411), 2026-09-13).
+[#411](https://github.com/lezli01/vincent/issues/411), 2026-09-13). Built as
+[117](117-single-task-import.md), `vincent task import`, 2026-09-17: daemon-side,
+because inserting rows opens the database, which decision 5's exception never
+covered.

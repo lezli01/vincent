@@ -43,6 +43,17 @@ list with the user-facing context a commit subject cannot carry.
   protects against corruption and mistakes, not a lost disk. Restore a
   scheduled archive with `vincent daemon restore`, as before (issue #410).
 
+- **A deleted task can be brought back from a backup.**
+  `vincent task import <archive.tar.gz> <task-id>` (`POST /v1/tasks/import`)
+  copies one archived task — its record, its step attempts and its transcripts
+  — out of a `vincent daemon backup` archive into the running daemon, under its
+  original id and still archived. It also imports a task from another
+  installation's backup. It refuses rather than replacing anything: a task with
+  that id, a task that was not archived in the backup, a lane whose parent is
+  missing, stray transcripts, or a project that no longer matches (pass
+  `--project` to choose one). Clients see a new `task.restored` event. It is not
+  an MCP tool.
+
 - **`f1` opens help anywhere, including in a chat.** A chat's composer, a
   filter and every form take `?` as a character, so help could not be opened
   there at all. `f1` toggles the same overlay everywhere, beside `ctrl+p` for

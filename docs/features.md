@@ -617,6 +617,10 @@ WAL is missing whatever has not been checkpointed. `vincent daemon restore` is
 the reverse, runs against a stopped daemon, and deletes nothing: a destination
 that already holds state needs `--force`, which moves the old state aside as
 `<name>.bak-<timestamp>`.
+`vincent task import` brings **one** archived task back out of a backup into
+the running daemon — its record, its attempts and its transcripts, under its
+original id — which is how a permanent delete is undone without rolling back
+everything else.
 
 The daemon can take the same archive **on a schedule**. Set `backup.interval`
 (at least `1h`) and it writes one into `backup.dir` — `{data_dir}/backups` by

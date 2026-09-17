@@ -39,7 +39,7 @@ the GitHub reads, the [trigger](triggers.md) reads, `trigger_validate` and both
 dry runs, and the read-only `health`, `info`, `config_get`, `agent_list`,
 `doctor`, `orphan_list`.
 
-Twenty-one routes are deliberately **not** tools:
+Twenty-two routes are deliberately **not** tools:
 
 - `POST /v1/daemon/stop`
 - `POST /v1/agents/{name}/quota`
@@ -47,6 +47,7 @@ Twenty-one routes are deliberately **not** tools:
 - `DELETE /v1/projects/{id}`
 - `DELETE /v1/tasks/{id}`
 - `DELETE /v1/chats/{id}`
+- `POST /v1/tasks/import`
 - `POST /v1/maintenance/gc`
 - `POST /v1/doctor/fix`
 - `PATCH /v1/config`
@@ -67,6 +68,9 @@ An agent should not be able to stop, garbage-collect or reconfigure the daemon
 that is supervising it. Those stay CLI-and-curl only. The two
 [permanent deletes](../reference/api.md#permanent-delete) are on the project
 delete's line: a row a human archived is history nobody else may discard.
+The [task import](../reference/api.md#importing-a-task) that undoes one sits
+beside them: it reads a file the caller names and writes rows no agent should
+be able to create.
 `task_archive` stays an ordinary tool, because the row and its transcripts
 survive an archive. The configuration one is
 the sharpest of them: a patch can change the argv the daemon spawns
