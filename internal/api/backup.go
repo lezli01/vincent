@@ -67,27 +67,11 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// VACUUM INTO refuses an existing path, so the copy is staged under a
-	// name nothing else can hold — a fresh directory beside the destination,
-	// which also means one RemoveAll cleans up on every exit path.
-	staging, err := os.MkdirTemp(filepath.Dir(dst), ".vincent-backup-")
-	if err != nil {
-		s.internalError(w, "backup", err)
-		return
-	}
-	defer func() { _ = os.RemoveAll(staging) }()
-
-	dbCopy := filepath.Join(staging, backup.DatabaseEntry)
-	if err := s.deps.Store.BackupTo(r.Context(), dbCopy); err != nil {
-		s.internalError(w, "backup", err)
-		return
-	}
-
 	created := backup.FormatTime(time.Now())
-	res, err := backup.Create(dst, backup.Source{
-		Database:  dbCopy,
-		DataDir:   s.deps.Dirs.Data,
-		ConfigDir: s.deps.Dirs.Config,
+	res, err := backup.Take(r.Context(), dst, backup.Snapshot{
+		CopyDatabase: s.deps.Store.BackupTo,
+		DataDir:      s.deps.Dirs.Data,
+		ConfigDir:    s.deps.Dirs.Config,
 		Manifest: backup.Manifest{
 			VincentVersion: version.Version(),
 			SchemaVersion:  schemaVersion,
