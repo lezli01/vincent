@@ -74,6 +74,31 @@ type taskActions struct {
 	// only the row under the cursor — so a key can never act on a task the
 	// count beside it did not include.
 	marked []markedTask
+	// openChatID is the task's `open_chat_id` (task 115): the chat that
+	// locks it. While it is set the daemon offers no `chat`, and `T` opens
+	// this one instead of asking for a second.
+	openChatID int64
+}
+
+// offersChat reports whether `T` does anything for this target: the daemon
+// offers `chat`, or a chat is already open on the task and the key reopens
+// it. Never under a bulk selection — a conversation is about one task, the
+// reason `F` is not a bulk action either.
+func (t taskActions) offersChat() bool {
+	if t.bulk() || t.id == 0 {
+		return false
+	}
+	return t.openChatID != 0 || t.has(apiclient.ActionChat)
+}
+
+// offers is has for a registry row's action, with `chat` answered by
+// offersChat: the palette and the footer gate the `T` row on the lock as well
+// as on the action, and every other row on the action alone.
+func (t taskActions) offers(action string) bool {
+	if action == apiclient.ActionChat {
+		return t.offersChat()
+	}
+	return t.has(action)
 }
 
 // markedTask is one member of a bulk selection: which task, and what the

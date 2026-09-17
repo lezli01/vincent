@@ -321,6 +321,13 @@ func (d *detail) updateMsg(msg tea.Msg) tea.Cmd {
 		return nil
 	case actionResultMsg:
 		return d.applyAction(msg)
+	case taskChatOpenedMsg:
+		if msg.taskID != d.taskID {
+			return nil
+		}
+		d.actions.applyChat(msg)
+		d.refreshPending = false
+		return d.loadCmd()
 	case editRetryMsg:
 		return d.applyEdit(msg)
 	case repairAgentsLoadedMsg:
@@ -646,6 +653,12 @@ func (d *detail) updateGlobalNote(n apiclient.Note) tea.Cmd {
 	if !ok || d.taskID == 0 {
 		return nil
 	}
+	// A linked chat opening or closing names its task only in the payload
+	// (task 115), and it is the one change to the task's `open_chat_id` and
+	// available_actions that no task event announces.
+	if id, ok := lockEventTask(ev.Event); ok && id == d.taskID {
+		return d.scheduleRefresh()
+	}
 	if ev.Event.TaskID == nil || *ev.Event.TaskID != d.taskID {
 		return nil
 	}
@@ -788,6 +801,8 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// The follow-up form (§6, task 027). `f` is follow-output and is
 		// panel-scoped, so the capital is free in the task-action scope.
 		return d.openFollowUp()
+	case taskChatKey:
+		return taskChatCmd(d.client, d.target(), d.actions)
 	case "f":
 		d.setFollowing(true)
 		return nil
@@ -1181,7 +1196,10 @@ func (d *detail) currentStepName() string {
 
 // target is the slice of the task the action bar works from.
 func (d *detail) target() taskActions {
-	return taskActions{id: d.taskID, state: d.task.State, actions: d.task.AvailableActions}
+	return taskActions{
+		id: d.taskID, state: d.task.State, actions: d.task.AvailableActions,
+		openChatID: derefID(d.task.OpenChatID),
+	}
 }
 
 // toggleTab switches the lower pane between output and diff. Opening the diff

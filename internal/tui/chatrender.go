@@ -124,6 +124,11 @@ func (v *chatView) headerLine(width int) string {
 	if v.chat.HandoffTaskID != nil {
 		left += styleDim.Render(fmt.Sprintf("  ·  handed off to task %d", *v.chat.HandoffTaskID))
 	}
+	// The same permanence for a chat opened on a task (task 115): the task
+	// is whose worktree this is, and whose lock this chat holds while open.
+	if v.chat.LinkedTaskID != nil {
+		left += styleDim.Render(fmt.Sprintf("  ·  on task #%d", *v.chat.LinkedTaskID))
+	}
 	right := plural(len(v.turns), "turn", "turns")
 	// The level rides in the header for the reason the output pane's title
 	// carries it: ctrl+r on a conversation with no reasoning and no
@@ -234,7 +239,9 @@ func chatComposerWidth(pane int) int { return max(pane-2, 10) }
 
 func (v *chatView) footerLines(width int) []string {
 	out := []string{""}
-	if v.note != "" {
+	if v.closing && v.chat != nil {
+		out = append(out, " "+styleWarn.Render(v.closePrompt()))
+	} else if v.note != "" {
 		style := styleDim
 		if v.noteBad {
 			style = styleBad
@@ -288,8 +295,13 @@ func (v *chatView) footerLines(width int) []string {
 	} else {
 		out = append(out, strings.Split(box, "\n")...)
 	}
-	hint := " enter send · ctrl+x stop the turn · ctrl+r detail · " +
-		rawToggleKey + " raw · " + copyPickKey + " copy · " + linkPickKey + " links · " +
+	hint := " enter send · ctrl+x stop the turn · ctrl+r detail · "
+	if v.chat != nil && v.chat.LinkedTaskID != nil {
+		// Ahead of the reader keys: it is the only way this chat's task
+		// unlocks, and the line truncates from the right.
+		hint += chatCloseKey + " close · "
+	}
+	hint += rawToggleKey + " raw · " + copyPickKey + " copy · " + linkPickKey + " links · " +
 		"pgup/pgdown scroll · ctrl+g live · esc back to the chats board"
 	out = append(out, styleDim.Render(ansi.Truncate(hint, width, "…")))
 	return out

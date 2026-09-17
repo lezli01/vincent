@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/chatstate"
 )
 
 // The chat workspace (§15, task 067, closing task 063.2): turn history above,
@@ -56,6 +58,12 @@ type (
 	// chatCanceledMsg reports POST /v1/chats/{id}/cancel.
 	chatCanceledMsg struct {
 		chatID int64
+		err    error
+	}
+	// chatClosedMsg reports POST /v1/chats/{id}/close (task 115).
+	chatClosedMsg struct {
+		chatID int64
+		chat   *apiclient.Chat
 		err    error
 	}
 	// chatTickMsg advances the in-progress indicator's frame (task 089). It
@@ -146,6 +154,11 @@ type chatView struct {
 	noteBad bool
 	loadErr string
 
+	// closing is the close confirmation on screen (task 115). It owns the
+	// next key: `y` closes, anything else keeps the chat open and is spent
+	// on declining, so a draft is never typed into by the answer.
+	closing bool
+
 	width, height int
 }
 
@@ -226,6 +239,7 @@ func (v *chatView) open(id int64) tea.Cmd {
 	v.chat, v.turns = nil, nil
 	v.resetRecords()
 	v.note, v.loadErr = "", ""
+	v.closing = false
 	v.composer.SetValue("")
 	v.composer.Focus()
 	return tea.Batch(v.loadCmd(), v.streamCmd())
@@ -339,6 +353,8 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		return v, v.applyAnswered(msg)
 	case chatCanceledMsg:
 		return v, v.applyCanceled(msg)
+	case chatClosedMsg:
+		return v, v.applyClosed(msg)
 	case chatTickMsg:
 		// Render-only, and a no-op for a stray tick: clearing the guard is
 		// all this does, and update's armTick re-arms only while a turn is
@@ -690,16 +706,31 @@ func (v *chatView) applyCanceled(msg chatCanceledMsg) tea.Cmd {
 
 func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	if v.form != nil {
+		// A question that arrived under the close confirmation replaces it:
+		// the popup owns the keyboard, and a `y` meant for the prompt must
+		// not be read as an answer to something else later.
+		v.closing = false
 		cmd, exit := v.form.updateWith(msg, v.answerCmd)
 		if exit {
 			v.form = nil
 		}
 		return v, cmd
 	}
+	if v.closing {
+		v.closing = false
+		if msg.String() == "y" {
+			return v, v.closeCmd()
+		}
+		v.note, v.noteBad = "the chat stays open", false
+		return v, nil
+	}
 	switch msg.String() {
 	case "esc":
 		return v, func() tea.Msg { return selectViewMsg{id: viewChats} }
 	case "ctrl+c":
+		return v, nil
+	case chatCloseKey:
+		v.askClose()
 		return v, nil
 	case "enter":
 		return v, v.sendCmd()
@@ -754,12 +785,91 @@ func (v *chatView) handoffCmd() tea.Cmd {
 	if chat == nil {
 		return nil
 	}
+	if chat.LinkedTaskID != nil {
+		// The daemon refuses it too (409 chat_linked_to_task). Saying so here
+		// is what stops a form being filled in for a transfer that cannot
+		// happen: the worktree is the task's already.
+		v.note, v.noteBad = linkedChatDecline(*chat), true
+		return nil
+	}
 	if chat.State != "idle" {
 		v.note, v.noteBad = "only an idle chat can be handed off to a task", true
 		return nil
 	}
 	seed := *chat
 	return func() tea.Msg { return newTaskFromChatMsg{chat: seed} }
+}
+
+// askClose raises the close confirmation, for a chat opened on a task only:
+// a free chat ends by archive or hand-off, and the daemon refuses its close.
+// It asks because a running turn is killed first and a closed chat takes no
+// more messages — the worktree and the branch are the task's and untouched.
+func (v *chatView) askClose() {
+	chat := v.chat
+	switch {
+	case chat == nil:
+		return
+	case chat.LinkedTaskID == nil:
+		v.note, v.noteBad = "only a chat opened on a task can be closed — archive this one from the chats board", true
+	case chatstate.Terminal(chatstate.State(chat.State)):
+		v.note, v.noteBad = "this chat is already "+chat.State, true
+	default:
+		v.closing = true
+		v.note = ""
+	}
+}
+
+// closePrompt is the confirmation's text: what closing does, and to whom.
+func (v *chatView) closePrompt() string {
+	prompt := fmt.Sprintf("close this chat? task #%d unlocks, and its worktree and branch stay as they are", derefID(v.chat.LinkedTaskID))
+	if v.runningTurn() != nil {
+		prompt += " — the running turn is stopped first"
+	}
+	return prompt + " (y/n)"
+}
+
+func (v *chatView) closeCmd() tea.Cmd {
+	client, id := v.client, v.chatID
+	if client == nil {
+		v.note, v.noteBad = "not connected", true
+		return nil
+	}
+	v.note, v.noteBad = "closing…", false
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
+		defer cancel()
+		chat, err := client.CloseChat(ctx, id)
+		return chatClosedMsg{chatID: id, chat: chat, err: err}
+	}
+}
+
+func (v *chatView) applyClosed(msg chatClosedMsg) tea.Cmd {
+	if msg.chatID != v.chatID {
+		return nil
+	}
+	if msg.err != nil {
+		v.note, v.noteBad = errString(msg.err), true
+		return nil
+	}
+	v.note, v.noteBad = fmt.Sprintf("chat closed — task #%d is unlocked", derefID(msg.chat.LinkedTaskID)), false
+	return v.loadCmd()
+}
+
+// liveBindings keeps exactly one way this chat can end (task 115): close for
+// a chat opened on a task, hand-off for a free one. The other is refused by
+// the daemon, and a footer offering it would describe a press that can only
+// fail. Before the chat has loaded neither is known, and neither is offered.
+func (v *chatView) liveBindings(rows []binding) []binding {
+	linked := v.chat != nil && v.chat.LinkedTaskID != nil
+	free := v.chat != nil && v.chat.LinkedTaskID == nil
+	out := make([]binding, 0, len(rows))
+	for _, b := range rows {
+		if b.context == ctxChat && ((b.key == chatCloseKey && !linked) || (b.key == chatHandoffKey && !free)) {
+			continue
+		}
+		out = append(out, b)
+	}
+	return out
 }
 
 func (v *chatView) sendCmd() tea.Cmd {

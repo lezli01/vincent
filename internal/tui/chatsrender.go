@@ -126,6 +126,13 @@ func (v *chatsView) rowLine(r chatRow, selected bool, width int) string {
 		"", // the turn count is not on the list DTO; see chatTurnsCell
 		chatActivity(*c, v.now()))
 	title := c.Title
+	// A chat opened on a task says which one ahead of its title (task 115):
+	// the task holds the worktree and the lock, and it is what a reader of
+	// this row goes looking for. A prefix rather than a column, because
+	// most chats have no task and a column of dashes would tax every row.
+	if c.LinkedTaskID != nil {
+		title = styleDim.Render(fmt.Sprintf("task #%d · ", *c.LinkedTaskID)) + title
+	}
 	if room := width - len(cursor) - ansi.StringWidth(fixed); room > 0 {
 		title = ansi.Truncate(title, room, "…")
 	}
@@ -146,6 +153,8 @@ func chatStateLabel(state string) string {
 		return "archived"
 	case "handed_off":
 		return "handed off"
+	case "closed":
+		return "closed"
 	default:
 		return state
 	}

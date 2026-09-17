@@ -463,6 +463,10 @@ func (b *board) update(msg tea.Msg) (panel, tea.Cmd) {
 		return b, tickCmd(b.archived)
 	case noteMsg:
 		return b, b.updateNote(msg.note)
+	case taskChatOpenedMsg:
+		b.actions.applyChat(msg)
+		b.refreshPending = false
+		return b, b.loadCmd()
 	case actionResultMsg:
 		b.actions.applyResult(msg)
 		// Refetch immediately rather than through the debounce: a 409 means
@@ -538,7 +542,10 @@ func (b *board) target() taskActions {
 	}
 	for _, t := range b.visible() {
 		if t.ID == id {
-			return taskActions{id: t.ID, state: t.State, actions: t.AvailableActions, marked: marked}
+			return taskActions{
+				id: t.ID, state: t.State, actions: t.AvailableActions, marked: marked,
+				openChatID: derefID(t.OpenChatID),
+			}
 		}
 	}
 	return taskActions{id: id, marked: marked}
@@ -598,7 +605,9 @@ func (b *board) updateNote(n apiclient.Note) tea.Cmd {
 	if id, ok := enteredAwaitingInput(ev.Event); ok && b.expandFor(id) {
 		cmds = append(cmds, b.saveFolds())
 	}
-	if isTaskEvent(ev.Event.Type) {
+	// A linked chat opening or closing changes a row's `open_chat_id` and
+	// available_actions without a task event (task 115).
+	if _, lock := lockEventTask(ev.Event); isTaskEvent(ev.Event.Type) || lock {
 		cmds = append(cmds, b.scheduleRefresh())
 	}
 	if ev.Event.Type == eventAgentQuotaChanged {
@@ -783,6 +792,14 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			return b, b.collapseAll()
 		default:
 			return b, b.expandAll()
+		}
+	}
+
+	// `T` is the one task-action key that is not a §6 call returning the
+	// task (task 115); it opens a workspace, so it has no bulk form.
+	if msg.String() == taskChatKey {
+		if cmd := taskChatCmd(b.client, b.target(), b.actions); cmd != nil {
+			return b, cmd
 		}
 	}
 
