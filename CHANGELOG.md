@@ -655,6 +655,12 @@ list with the user-facing context a commit subject cannot carry.
   said `d remove` while the key that removes a project is `D`; it now shows the
   key in force.
 
+- **Task Details in the TUI shows the task's cost.** The `cost` fact always
+  read `—`, because `GET /v1/tasks/{id}` serves no top-level `cost_usd` and the
+  view read that field alone. It now adds up the attempts the detail does
+  carry, and still reads `—` when none reported a cost.
+  ([#409](https://github.com/lezli01/vincent/issues/409))
+
 - **The `fix-and-test` example no longer accepts a task on Windows that it
   cannot finish.** Its first step's check, `! go test ./...`, is POSIX shell
   syntax that pwsh rejects, so on Windows the check always failed and the task
