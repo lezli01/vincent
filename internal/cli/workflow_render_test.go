@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -420,6 +421,223 @@ func TestWorkflowFromDefinitionCarriesDerivedFanOut(t *testing.T) {
 	}
 	if lanes := wf.Steps[1].Lanes; len(lanes) != 2 || strings.Join(lanes[1].Needs, ",") != "api" {
 		t.Errorf("declared lanes = %+v, want docs to need api", lanes)
+	}
+}
+
+// renderJSON runs `render --json` on file, which must exit 0, and decodes it.
+func renderJSON(t *testing.T, file string) renderResult {
+	t.Helper()
+	out, code := runWorkflowCLI(t, "render", file, "--json")
+	if code != 0 {
+		t.Fatalf("render --json exit code = %d, want 0: %s", code, out)
+	}
+	var got renderResult
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("--json is not JSON: %v (%s)", err, out)
+	}
+	return got
+}
+
+// stepAt returns the rendered row at path, failing the test when there is none.
+func stepAt(t *testing.T, res renderResult, path string) renderStep {
+	t.Helper()
+	for _, s := range res.Steps {
+		if s.Path == path {
+			return s
+		}
+	}
+	t.Fatalf("no rendered row at %s: %+v", path, res.Steps)
+	return renderStep{}
+}
+
+// laneSummary flattens a lane graph to `id/wave/needs/guarded` terms, so one
+// comparison pins every fact the block draws.
+func laneSummary(lanes []renderLane) string {
+	terms := make([]string, 0, len(lanes))
+	for _, l := range lanes {
+		term := l.ID + "/" + strconv.Itoa(l.Wave) + "/" + strings.Join(l.Needs, "+")
+		if l.Guarded {
+			term += "/guarded"
+		}
+		terms = append(terms, term)
+	}
+	return strings.Join(terms, " ")
+}
+
+// TestRenderDrawsLaneDAG is issue #407's acceptance on corpus entry 12 — task
+// 080's `needs:` graph as task 084 fixed it: the fan-out's own row names its
+// waves, the edges and `eager`, and the rows beneath it are unchanged.
+func TestRenderDrawsLaneDAG(t *testing.T) {
+	file := filepath.Join("..", "..", "docs", "gates", "corpus", "lanedag.yaml")
+
+	out, code := runWorkflowCLI(t, "render", file)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0: %s", code, out)
+	}
+	want := "steps[1] spread (fan_out)\n" +
+		"  schedule: eager\n" +
+		"  lanes:\n" +
+		"    wave 1: api, db\n" +
+		"    wave 2: wire (needs api, db)\n" +
+		"steps[1].lanes[0].steps[0] api_impl (agent)\n"
+	if !strings.Contains(out, want) {
+		t.Errorf("the fan-out row does not draw its graph; want\n%s\nin\n%s", want, out)
+	}
+	if !strings.Contains(out, "6 step(s) rendered") {
+		t.Errorf("the lane block changed the step count: %s", out)
+	}
+
+	spread := stepAt(t, renderJSON(t, file), "steps[1]")
+	if spread.Schedule != workflow.ScheduleEager {
+		t.Errorf("schedule = %q, want %q", spread.Schedule, workflow.ScheduleEager)
+	}
+	if got, want := laneSummary(spread.Lanes), "api/1/ db/1/ wire/2/api+db"; got != want {
+		t.Errorf("lanes = %q, want %q", got, want)
+	}
+}
+
+// TestRenderDerivedLaneListHasUnknownWidth: a `lane:` template's list is as
+// wide as a run discovers, so it draws one label and no waves (task 044
+// decision 10's per-item pass stays deferred).
+func TestRenderDerivedLaneListHasUnknownWidth(t *testing.T) {
+	file := writeWorkflow(t, derivedFanOut("true", "make {{ .Task.Title }}"))
+
+	out, code := runWorkflowCLI(t, "render", file)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0: %s", code, out)
+	}
+	want := "steps[1] build (fan_out)\n" +
+		"  schedule: eager\n" +
+		"  lanes:\n" +
+		"    <derived lane>: unknown width, at most 8, one per item of {{ .Steps.plan.Result }}\n"
+	if !strings.Contains(out, want) {
+		t.Errorf("want\n%s\nin\n%s", want, out)
+	}
+	if strings.Contains(out, "wave ") || strings.Contains(out, "runs as barrier") {
+		t.Errorf("a derived list drew a wave or judged its flatness: %s", out)
+	}
+
+	build := stepAt(t, renderJSON(t, file), "steps[1]")
+	if build.Schedule != workflow.ScheduleEager || build.MaxLanes == nil || *build.MaxLanes != 8 {
+		t.Errorf("schedule = %q, max_lanes = %v; want eager and 8", build.Schedule, build.MaxLanes)
+	}
+	if len(build.Lanes) != 1 {
+		t.Fatalf("lanes = %+v, want the single derived entry", build.Lanes)
+	}
+	lane := build.Lanes[0]
+	if lane.ID != workflow.SentinelLane || !lane.Derived || lane.Wave != 0 ||
+		strings.Join(lane.ForEach, ",") != "{{ .Steps.plan.Result }}" {
+		t.Errorf("derived entry = %+v, want %q, derived, no wave, the raw for_each", lane, workflow.SentinelLane)
+	}
+}
+
+// TestRenderFlatLaneList: `eager` on a list no lane orders says it runs as
+// barrier (task 081 decision 4), and an unnamed schedule draws no badge while
+// --json still resolves it (task 084 decision 9).
+func TestRenderFlatLaneList(t *testing.T) {
+	flat := func(schedule string) string {
+		return workflowWith(`  - id: spread
+    type: fan_out` + schedule + `
+    lanes:
+      - {id: a, steps: [{id: as, type: command, run: a}]}
+      - {id: b, steps: [{id: bs, type: command, run: b}]}`)
+	}
+
+	t.Run("eager", func(t *testing.T) {
+		out, code := runWorkflowCLI(t, "render", writeWorkflow(t, flat("\n    schedule: eager")))
+		if code != 0 {
+			t.Fatalf("exit code = %d, want 0: %s", code, out)
+		}
+		want := "  schedule: eager (runs as barrier: no lane needs another)\n  lanes:\n    wave 1: a, b\n"
+		if !strings.Contains(out, want) {
+			t.Errorf("want\n%s\nin\n%s", want, out)
+		}
+	})
+
+	t.Run("unnamed", func(t *testing.T) {
+		file := writeWorkflow(t, flat(""))
+		out, code := runWorkflowCLI(t, "render", file)
+		if code != 0 {
+			t.Fatalf("exit code = %d, want 0: %s", code, out)
+		}
+		if !strings.Contains(out, "  lanes:\n    wave 1: a, b\n") || strings.Contains(out, "wave 2") {
+			t.Errorf("want one wave naming both lanes: %s", out)
+		}
+		if strings.Contains(out, "schedule:") {
+			t.Errorf("barrier was badged: %s", out)
+		}
+		if s := stepAt(t, renderJSON(t, file), "steps[0]"); s.Schedule != workflow.ScheduleBarrier {
+			t.Errorf("--json schedule = %q, want %q", s.Schedule, workflow.ScheduleBarrier)
+		}
+	})
+}
+
+// TestRenderGuardedLaneIsTagged: a guarded lane may impose no ordering (task
+// 080 decision 8), so it is tagged — and its dependent still draws in wave 2,
+// because whether the guard holds is not the preview's to judge.
+func TestRenderGuardedLaneIsTagged(t *testing.T) {
+	file := writeWorkflow(t, workflowWith(`  - id: spread
+    type: fan_out
+    lanes:
+      - {id: api, steps: [{id: as, type: command, run: a}]}
+      - id: db
+        if: "{{ .Task.Title }}"
+        steps: [{id: ds, type: command, run: d}]
+      - {id: wire, needs: [api, db], steps: [{id: ws, type: command, run: w}]}`))
+
+	out, code := runWorkflowCLI(t, "render", file)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0: %s", code, out)
+	}
+	if want := "    wave 1: api, db (guarded)\n    wave 2: wire (needs api, db)\n"; !strings.Contains(out, want) {
+		t.Errorf("want\n%s\nin\n%s", want, out)
+	}
+	spread := stepAt(t, renderJSON(t, file), "steps[0]")
+	if got, want := laneSummary(spread.Lanes), "api/1/ db/1//guarded wire/2/api+db"; got != want {
+		t.Errorf("lanes = %q, want %q", got, want)
+	}
+}
+
+// TestRenderNamedLanesOffline: a lane naming a registry workflow still has its
+// id and edges in the file, so the parent draws it; its own unresolved row is
+// not a fan-out with lanes and grows no block (decision 7). A fan_out nested
+// inside an inline lane draws its own block on its own row.
+func TestRenderNamedLanesOffline(t *testing.T) {
+	file := writeWorkflow(t, workflowWith(`  - id: spread
+    type: fan_out
+    lanes:
+      - {id: api, workflow: build-api}
+      - id: db
+        steps:
+          - id: inner
+            type: fan_out
+            lanes:
+              - {id: x, steps: [{id: xs, type: command, run: x}]}
+              - {id: y, needs: [x], steps: [{id: ys, type: command, run: y}]}
+      - {id: wire, needs: [api, db], workflow: wire-up}`))
+
+	out, code := runWorkflowCLI(t, "render", file)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0: %s", code, out)
+	}
+	if want := "    wave 1: api, db\n    wave 2: wire (needs api, db)\n"; !strings.Contains(out, want) {
+		t.Errorf("the parent does not draw its named lanes; want\n%s\nin\n%s", want, out)
+	}
+	if want := "inner (fan_out)\n  lanes:\n    wave 1: x\n    wave 2: y (needs x)\n"; !strings.Contains(out, want) {
+		t.Errorf("the nested fan-out does not draw its own block; want\n%s\nin\n%s", want, out)
+	}
+	if n := strings.Count(out, "  lanes:\n"); n != 2 {
+		t.Errorf("%d lanes: blocks, want 2 — an unresolved lane row grew one: %s", n, out)
+	}
+
+	res := renderJSON(t, file)
+	for _, path := range []string{"steps[0].lanes[0]", "steps[0].lanes[2]"} {
+		if s := stepAt(t, res, path); s.Unresolved == "" || s.Lanes != nil || s.Schedule != "" {
+			t.Errorf("%s = %+v, want an unresolved row with no graph", path, s)
+		}
+	}
+	if s := stepAt(t, res, "steps[0].lanes[1].steps[0]"); laneSummary(s.Lanes) != "x/1/ y/2/x" {
+		t.Errorf("nested lanes = %q, want x in wave 1 and y after it", laneSummary(s.Lanes))
 	}
 }
 

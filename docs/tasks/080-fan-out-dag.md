@@ -223,7 +223,11 @@ starting tree depend on timing rather than on the graph.
   TUI half:* the graph draws `needs:` edges, stacks the waves, badges `eager`
   and marks a derived list with what it came from. The CLI renderer is still
   deferred (tracked in [#407](https://github.com/lezli01/vincent/issues/407),
-  2026-09-13), and `SentinelLane` is still in place for it.
+  2026-09-13), and `SentinelLane` is still in place for it. *Delivered
+  2026-09-17 (issue #407) for the CLI half:* `vincent workflow render` draws a
+  `lanes:` block on the fan-out's row, with its waves, `needs:` edges, `eager`
+  and a derived list's `<derived lane>: unknown width` label (task 044
+  decision 11).
 - A `scripts/m6-gate.sh` scenario driving a derived DAG end to end (tracked in
   [#384](https://github.com/lezli01/vincent/issues/384), 2026-09-13).
   *Delivered 2026-09-15 (issue #384):* `m6` scenario 13 derives three lanes

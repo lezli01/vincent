@@ -1837,6 +1837,41 @@ steps are marked `<derived lane>` with the `for_each` they expand over
 (`derived_lane` in `--json`), and its own `if`, `id`, `needs` and `fields` bind
 each `.Item` key they read to a placeholder such as `<item.id>`.
 
+A `fan_out` step's own row draws its lane graph. A `lanes:` block has one line
+per wave, in wave order. Each line names that wave's lanes in declaration order.
+A lane that [`needs:`](workflow-schema.md) others says which, and a lane with an
+`if:` is tagged `guarded`, because a lane its guard skips orders nothing. Waves
+are numbered from 1, the same way the engine derives them, and they cover every
+declared lane: whether a guard holds is decided at run time, not here.
+`schedule: eager` is shown only when the step declares it. On a list where no
+lane needs another, the line also says the step runs as barrier. A lane that
+names a registry workflow keeps its id and edges in the parent's block even
+offline, and a `fan_out` nested inside a lane draws its own block on its own
+row. The step rows and the step count below the block are unchanged.
+
+```
+steps[1] spread (fan_out)
+  schedule: eager
+  lanes:
+    wave 1: api, db (guarded)
+    wave 2: wire (needs api, db)
+```
+
+A `lane:` template has no width until it runs, so its block is one line and
+draws no waves. `at most N` appears only when `max_lanes:` is set:
+
+```
+steps[1] build (fan_out)
+  schedule: eager
+  lanes:
+    <derived lane>: unknown width, at most 8, one per item of {{ .Steps.plan.Result }}
+```
+
+`--json` adds the same graph to that step only: `schedule` (the resolved mode,
+so `barrier` when none is named), `max_lanes` when set, and `lanes`, one
+`{id, needs, wave, guarded}` per lane. A `lane:` template yields a single
+`{"id": "<derived lane>", "derived": true, "for_each": [...]}` with no `wave`.
+
 Exit `0` clean, `1` a template that does not execute, `2` no daemon answered a
 `--task`/`--project`. A guard that renders to something other than `true`/`false`
 is a warning, not a failure: a preview placeholder can legitimately make one

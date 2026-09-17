@@ -9,7 +9,9 @@ dropped
 **Claims:** 080's deferred *"drawing `needs:` edges in the TUI workflow graph
 and the CLI renderer"*, for its TUI half only; the CLI renderer stays deferred
 and `workflow.SentinelLane` stays in place for it (tracked in
-[#407](https://github.com/lezli01/vincent/issues/407), 2026-09-13)
+[#407](https://github.com/lezli01/vincent/issues/407), 2026-09-13).
+*Delivered 2026-09-17 (issue #407):* `vincent workflow render` now draws the
+graph ([044](044-workflow-render-preview.md) decision 11)
 **Keeps, without relitigating:** [014](014-workflow-fan-out.md) decision 13
 (descendants are excluded from the task list) and [051](051-live-workflow-graph-tab.md)
 decision 1 (a lane's state rides on its caption, never on its inline step
@@ -275,3 +277,7 @@ in the child and never appear on this graph.
 - The **CLI graph renderer** is still deferred from task 080, and
   `workflow.SentinelLane` is still in place for it (tracked in
   [#407](https://github.com/lezli01/vincent/issues/407), 2026-09-13).
+  *Delivered 2026-09-17 (issue #407):* `vincent workflow render` draws the
+  waves, `needs:` edges, `eager` and the derived list's unknown-width label on
+  the fan-out's row, deriving the waves from `workflow.LaneWaves`
+  ([044](044-workflow-render-preview.md) decision 11).

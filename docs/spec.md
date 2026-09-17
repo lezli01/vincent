@@ -1499,6 +1499,14 @@ does not finish until every lane is merged.
   and its steps are marked with the `for_each` they expand over (§8.4, task 044
   decision 10).
 
+  *Amended 2026-09-17 (issue #407).* `vincent workflow render` also draws a
+  `fan_out` step's lane graph on the step's own row. Declared lanes are listed
+  by wave, from `LaneWaves` and numbered from 1, with their `needs:` edges, and
+  a guarded lane is tagged because it may impose no ordering. `schedule: eager`
+  shows only where declared, noting when a flat list runs as barrier. A `lane:`
+  template draws `<derived lane>: unknown width`, with `max_lanes` when set,
+  and no waves (task 044 decision 11).
+
   `fan_out.max_depth` is unchanged: it counts nesting, and a dynamic width does
   not nest. `fan_out.max_tasks` **cannot** be checked at task creation for a
   derived list, so a per-step `max_lanes:` and a run-time tree-size check block
