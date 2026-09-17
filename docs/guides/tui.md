@@ -2003,7 +2003,8 @@ showing — the ones that did not fit, the ones with no short form, and, on a
 narrow terminal, whatever the `…` truncation took. Click it, or press `:`, and
 the palette lists them. No `+N` means nothing is left over. The popups and
 forms never carry one at all — the palette does not list their keys, so it has
-nothing to point them at, and `?` is what shows those.
+nothing to point them at, and `?` is what shows those — or `f1`, on the ones
+that have the keyboard.
 
 The right-hand end of the footer never truncates: `: commands  ? help  q quit`.
 While a text field has the keyboard — a chat's composer, a filter, a form —

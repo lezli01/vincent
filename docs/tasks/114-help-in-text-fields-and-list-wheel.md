@@ -140,11 +140,14 @@ The home shell answers the wheel itself and never forwards it to
 - [x] **114.4 — Documentation**: §15 Discovery, Keys, view 8 and view 10
   amended, dated; `docs/guides/tui.md` (the palette, every key, the footer's
   pinned part, chats, chat workspace, archived); `CHANGELOG.md`; closed-by
-  notes on the #405 bullets in 076 and 078. The screenshots taken while a text
-  field has the keyboard (likely `tui-new-task` and `tui-workflow-editor`,
-  whose pinned footer changes) were **not** re-captured:
-  `scripts/screenshots.sh seed` stopped at "task 4 never reached
-  awaiting_input" on 2026-09-17, in the daemon-driven seed before any capture,
-  so the committed images are unchanged and wait for the next run.
+  notes on the #405 bullets in 076 and 078. No screenshot changed: no tape in
+  `scripts/screenshots.sh` shoots a surface that has the keyboard —
+  `tui-new-task` is taken navigating the Review step, `tui-workflow-editor` on
+  its row list, and `tui-board` and `tui-diff` after `tab` commits their
+  filters — so every committed capture still correctly shows `: commands
+  ? help  q quit` (checked against the tapes, the images and each view's
+  `capturesInput`, 2026-09-17). Nothing was re-run; `scripts/screenshots.sh
+  seed` separately stopped at "task 4 never reached awaiting_input" on this
+  machine that day, before any capture.
   `internal/tui` is covered by no gate script, so the tests are the whole
   assurance, as they were for 073, 076 and 078. ✓ 2026-09-17
