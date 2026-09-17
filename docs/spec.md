@@ -7114,8 +7114,10 @@ POST   /v1/tasks/import                 *Added 2026-09-17 (task 117, issue #411)
                                         every refusal is checked before anything is placed; a
                                         failed insert removes the transcript directory it
                                         placed. 400 validation_failed: a path that is missing,
-                                        relative or not a regular file, not a vincent backup,
-                                        no database, an unsafe entry, or `details.reason`
+                                        relative or not a regular file, a `task_id` that is
+                                        not positive, not a vincent backup, no database or one
+                                        that cannot be opened, an unsafe entry, or
+                                        `details.reason`
                                         `schema_too_new`. 404 not_found with `details.reason`
                                         `task_not_in_backup` or `project_not_found`. 409
                                         invalid_state with `details: {action: "import",
@@ -10922,8 +10924,9 @@ specifics:
 - **The §13.4 exclusions are not tools.** An agent cannot stop, back up,
   garbage-collect or reconfigure the daemon supervising it. It also cannot
   rewrite its workflows or triggers, inject a trigger event, open a pull
-  request, forge a quota reading, permanently delete a project, task or chat, or
-  drive a chat. *(Amended 2026-09-14, issue #377.)*
+  request, forge a quota reading, permanently delete a project, task or chat,
+  import a task from a backup, or drive a chat. *(Amended 2026-09-14, issue
+  #377; 2026-09-17, task 117 — the import.)*
 - **`restricted` does not restrict what a step does to vincent** (§9.4). The
   allow-list carries `mcp__vincent__*` in full, so a restricted step can create
   and cancel tasks. It bounds the filesystem and the shell, and that is all it

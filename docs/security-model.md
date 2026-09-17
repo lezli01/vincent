@@ -288,7 +288,7 @@ strip the styling and the block is byte-for-byte what the agent sent.
   must not be able to stop, back up, garbage-collect or reconfigure the daemon
   supervising it, rewrite its workflows or triggers, inject a trigger event,
   open a pull request, forge a quota reading, permanently delete a project, task
-  or chat, or drive a chat — see [the full list](guides/mcp.md). That is a design
+  or chat, import a task from a backup, or drive a chat — see [the full list](guides/mcp.md). That is a design
   line, **not** a privilege boundary — the token still reaches those routes on
   `/v1`.
 - **`POST /mcp/step/{run_id}` is not a security boundary**, and is stated here

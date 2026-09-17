@@ -1211,7 +1211,7 @@ Unlike [`vincent daemon restore`](#vincent-daemon-restore) it needs a
 the daemon opens the database. The archive path is resolved before it is sent.
 
 ```
-imported task 12 "Add login" into project 3: 4 step run(s), ids kept, transcripts 1.2 KB
+imported task 12 "Add login" into project 3: 4 step run(s), ids kept, transcripts 1.2KB
 ```
 
 `ids renumbered` instead of `ids kept` means a step attempt id was already taken

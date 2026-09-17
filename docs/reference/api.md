@@ -1583,7 +1583,7 @@ copy of its database, never the live one.
 
 | Status | `details.reason` | Meaning |
 |---|---|---|
-| `400` | — | `path` is missing, relative or not a regular file; the file is not a vincent backup or has no database; an entry is unsafe |
+| `400` | — | `path` is missing, relative or not a regular file; `task_id` is not a positive id; the file is not a vincent backup, or has no database or one that cannot be opened; an entry is unsafe |
 | `400` | `schema_too_new` | The archive was written by a newer schema than this daemon's |
 | `404` | `task_not_in_backup` | The archive has no task with that id |
 | `404` | `project_not_found` | `project_id` names no project |
@@ -1594,7 +1594,7 @@ copy of its database, never the live one.
 | `409` | `transcripts_present` | `{data_dir}/transcripts/{task_id}/` already exists. Nothing is merged or deleted |
 
 The `409`s carry `details.action: "import"`. There is no bulk import; the route
-is not an [MCP tool](#the-mcp-endpoint).
+is not an [MCP tool](#mcp).
 
 ### The task's workflow
 

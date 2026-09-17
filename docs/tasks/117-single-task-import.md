@@ -50,7 +50,7 @@ installation's backup when its id is free here.
   and only it can write a task back into it.` and exits 2. A refusal is exit 1
   with `Error: <message>` on stderr.
 - Success is one line, `imported task 12 "<title>" into project 3: 4 step
-  run(s), ids kept, transcripts 1.2 KB` (`ids renumbered` when decision 3
+  run(s), ids kept, transcripts 1.2KB` (`ids renumbered` when decision 3
   renumbered them). `--json` prints the response body:
   `{task_id, project_id, title, step_runs, step_runs_renumbered,
   transcript_files, transcript_bytes, archived_at, backup_schema_version,
