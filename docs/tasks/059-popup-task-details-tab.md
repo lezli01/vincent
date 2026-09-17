@@ -48,6 +48,10 @@ follow-up if it is ever wanted.
 **Beat:** deleting the shell's dead popup path in the same change. It is a
 second reviewable thing with its own risk of taking a live test with it (tracked in
 [#406](https://github.com/lezli01/vincent/issues/406), 2026-09-13).
+*(2026-09-17)* Removed: `shell.popup` and the routing, reconcile and drawing
+that existed only for it are gone, and `overlayPopup` lost its no-tab branch
+with them — `taskView` is its one caller and always draws the strip. The
+assertions that covered live code moved onto `taskView`.
 
 **2. The Details tab is the sidebar renderer, from an extracted sub-model.**
 *(2026-08-30)*
