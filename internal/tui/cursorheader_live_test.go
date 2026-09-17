@@ -71,7 +71,15 @@ func TestCursorRunHeaderAndResultByLevel(t *testing.T) {
 // records the pane renders.
 func cursorFixtureRecords(t *testing.T) []apiclient.TranscriptRecord {
 	t.Helper()
-	const token = "cursor-token"
+	return fixtureRecords(t, cursor.New(func() string { return "" }),
+		filepath.Join("..", "agent", "cursor", "testdata", "success_2026.08.04.jsonl"))
+}
+
+// fixtureRecords serves a captured run through the real API handler with its
+// adapter registered, and returns the normalized records the pane renders.
+func fixtureRecords(t *testing.T, adapter agent.Adapter, fixture string) []apiclient.TranscriptRecord {
+	t.Helper()
+	const token = "fixture-token"
 	ctx := context.Background()
 	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -86,30 +94,30 @@ func cursorFixtureRecords(t *testing.T) []apiclient.TranscriptRecord {
 		RequestStop: func() {},
 		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Store:       st,
-		Agents:      agent.NewRegistry(cursor.New(func() string { return "" })),
+		Agents:      agent.NewRegistry(adapter),
 	})
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 
-	proj := &store.Project{Name: "cursor", Path: "/nowhere", DefaultBranch: "main"}
+	proj := &store.Project{Name: adapter.Name(), Path: "/nowhere", DefaultBranch: "main"}
 	if err := st.CreateProject(ctx, proj); err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
 	task := &store.Task{
-		ProjectID: proj.ID, Title: "cursor run", WorkflowName: "three",
+		ProjectID: proj.ID, Title: adapter.Name() + " run", WorkflowName: "three",
 		WorkflowSnapshot: threeStepWorkflow, BaseBranch: "main", State: store.TaskQueued,
 	}
 	resolve := func(id int64) (string, error) { return worktree.BranchName(id, task.Title), nil }
 	if err := st.CreateTask(ctx, task, resolve); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
-	path, err := filepath.Abs(filepath.Join("..", "agent", "cursor", "testdata", "success_2026.08.04.jsonl"))
+	path, err := filepath.Abs(fixture)
 	if err != nil {
 		t.Fatalf("fixture path: %v", err)
 	}
 	run := &store.StepRun{
 		TaskID: task.ID, StepIndex: 0, StepID: "one", StepType: "agent",
-		Attempt: 1, State: store.StepSucceeded, Agent: "cursor", TranscriptPath: path,
+		Attempt: 1, State: store.StepSucceeded, Agent: adapter.Name(), TranscriptPath: path,
 		StartedAt: time.Now(),
 	}
 	if err := st.CreateStepRun(ctx, run); err != nil {
