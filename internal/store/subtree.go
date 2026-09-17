@@ -12,6 +12,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 
@@ -197,6 +198,75 @@ func (s *Store) NonTerminalDescendants(ctx context.Context, taskID int64) ([]int
 		return nil, fmt.Errorf("descendants of task %d: %w", taskID, err)
 	}
 	return out, nil
+}
+
+// CostRollup is the spend of a set of tasks summed over every attempt of every
+// step (§17). HasCost means the same as TaskRollup's: at least one step run in
+// the set reported a cost, so "nothing reported" is never read as $0.00.
+type CostRollup struct {
+	CostUSD float64
+	HasCost bool
+}
+
+// TreeCost returns the id of the root of the fan-out tree taskID belongs to and
+// the spend of that whole tree: the root and every descendant at any depth,
+// archived ones included, over every step run they have ever written (task
+// 115). It is what `max_tree_cost_usd` is compared against.
+//
+// It climbs `parent_task_id` to the root first and then walks back down,
+// because a lane's sibling is not its ancestor: the budget is shared by the
+// tree, not by the chain above the task asking. The downward walk runs the way
+// idx_tasks_parent does, as ChildrenOf's does; both walks are bounded by
+// `fan_out.max_depth`, enforced when the tree was made.
+//
+// It is kept out of ChildrenOf on purpose. That query is the scheduler's
+// re-queue test for a parked parent, and it should not pay for a step_runs
+// join it never reads. A task that does not exist reports root 0 and no cost.
+func (s *Store) TreeCost(ctx context.Context, taskID int64) (int64, CostRollup, error) {
+	var (
+		root sql.NullInt64
+		cost sql.NullFloat64
+	)
+	err := s.db.QueryRowContext(ctx, `
+		WITH RECURSIVE
+		ancestors(id, parent_task_id) AS (
+			SELECT id, parent_task_id FROM tasks WHERE id = ?
+			UNION ALL
+			SELECT t.id, t.parent_task_id FROM tasks t JOIN ancestors a ON t.id = a.parent_task_id
+		),
+		root(id) AS (SELECT id FROM ancestors WHERE parent_task_id IS NULL),
+		tree(id) AS (
+			SELECT id FROM root
+			UNION ALL
+			SELECT t.id FROM tasks t JOIN tree ON t.parent_task_id = tree.id
+		)
+		SELECT (SELECT id FROM root),
+			(SELECT SUM(cost_usd) FROM step_runs WHERE task_id IN (SELECT id FROM tree))`,
+		taskID).Scan(&root, &cost)
+	if err != nil {
+		return 0, CostRollup{}, fmt.Errorf("tree cost of task %d: %w", taskID, err)
+	}
+	return root.Int64, CostRollup{CostUSD: cost.Float64, HasCost: cost.Valid}, nil
+}
+
+// DescendantsCost returns the spend of one task's descendants at any depth,
+// not counting the task's own step runs — §13.2's `children.cost_usd` (task
+// 115). Archived descendants count, for ChildrenOf's reason: excluding them
+// would make the figure disagree with the rows a client can list.
+func (s *Store) DescendantsCost(ctx context.Context, taskID int64) (CostRollup, error) {
+	var cost sql.NullFloat64
+	err := s.db.QueryRowContext(ctx, `
+		WITH RECURSIVE subtree(id) AS (
+			SELECT id FROM tasks WHERE parent_task_id = ?
+			UNION ALL
+			SELECT t.id FROM tasks t JOIN subtree ON t.parent_task_id = subtree.id
+		)
+		SELECT SUM(cost_usd) FROM step_runs WHERE task_id IN (SELECT id FROM subtree)`,
+		taskID).Scan(&cost)
+	if err != nil {
+		return CostRollup{}, fmt.Errorf("descendants cost of task %d: %w", taskID, err)
+	}
+	return CostRollup{CostUSD: cost.Float64, HasCost: cost.Valid}, nil
 }
 
 // EventTaskChildrenChanged tells a fan-out ancestor that something in its

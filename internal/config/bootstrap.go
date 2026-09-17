@@ -77,10 +77,18 @@ transcript_max_bytes: 512MB
 # and retry to carry on. 0 disables it, which is the default.
 #
 # It counts one task. Each fan_out lane is its own task and gets its own
-# budget, so a tree of twenty lanes may spend twenty times this. Only agents
-# that report cost are counted — codex and cursor report none, so the cap is
-# inert on them.
+# budget, so a tree of twenty lanes may spend twenty times this; cap the whole
+# tree with max_tree_cost_usd. Only agents that report cost are counted —
+# codex and cursor report none, so the cap is inert on them.
 max_task_cost_usd: 0
+
+# Ceiling on what one fan_out tree may spend, in US dollars: a root task and
+# every lane below it at any depth, summed over every attempt. Past it, the
+# task whose attempt crossed the line blocks with tree_cost_limit. Every task
+# still working in the tree may finish one more attempt before it blocks too.
+# Raise this and retry the parent to carry on. 0 disables it, which is the
+# default. Where both caps are passed at once the block is cost_limit.
+max_tree_cost_usd: 0
 
 # How long a task waits before trying again after its agent reported that the
 # usage quota for the window is spent, when the CLI named no reset time. When

@@ -223,8 +223,21 @@ type Config struct {
 	//
 	// Per task, not per daemon and not per tree: a `fan_out` lane is an
 	// ordinary task row (task 014 decision 1), so a tree of twenty lanes may
-	// spend twenty times this before any single row trips.
+	// spend twenty times this before any single row trips. MaxTreeCostUSD is
+	// the cap for that.
 	MaxTaskCostUSD float64 `yaml:"max_task_cost_usd"`
+	// MaxTreeCostUSD caps what **one fan-out tree** may spend: a root task
+	// and every descendant at any depth, over every attempt they ever ran
+	// (§12.3, §18 — task 115). Past it, the task whose attempt crossed the
+	// line blocks `tree_cost_limit` at that attempt boundary. Zero — the
+	// default — is off.
+	//
+	// Independent of MaxTaskCostUSD rather than folded into its minimum: the
+	// two measure different things, and both are checked at the same
+	// boundary (decision 2). It is config only, with no create-time or
+	// workflow counterpart (decision 1), and it sits beside MaxTaskCostUSD for
+	// that key's reasons.
+	MaxTreeCostUSD float64 `yaml:"max_tree_cost_usd"`
 	// UsageLimitRecheckInterval is how long a task waits before trying again
 	// after its agent reported a spent usage quota *without* a reset time
 	// (task 003, §11). When the CLI does report one, that timestamp wins and
@@ -955,6 +968,9 @@ func (c Config) validate() error {
 	// respawn loop. A negative budget cannot be honoured by any run.
 	if c.MaxTaskCostUSD < 0 {
 		return fmt.Errorf("max_task_cost_usd must not be negative, got %v", c.MaxTaskCostUSD)
+	}
+	if c.MaxTreeCostUSD < 0 {
+		return fmt.Errorf("max_tree_cost_usd must not be negative, got %v", c.MaxTreeCostUSD)
 	}
 	// Positive, not merely non-negative: zero would re-admit a quota-held task
 	// on the very next tick, which is the tight respawn loop the hold exists
