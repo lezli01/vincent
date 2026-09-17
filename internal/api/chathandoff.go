@@ -53,6 +53,12 @@ func (s *Server) handleChatHandoff(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, b)
 		return
 	}
+	if chat.Linked() && !chatstate.Terminal(chat.State) {
+		// The worktree is the task's (task 115 decision 2); this replaces
+		// 074's "nothing to hand over", which the empty path would produce.
+		writeChatLinked(w, chat, string(chatstate.HandOff))
+		return
+	}
 	if !chatstate.Allowed(chat.State, chatstate.HandOff) {
 		writeConflict(w, "only an idle chat can be handed off to a task",
 			map[string]string{"state": string(chat.State), "action": string(chatstate.HandOff)})

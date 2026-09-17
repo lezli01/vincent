@@ -31,7 +31,7 @@ const (
 // filtering on the payload's id: a chat event carries no task_id column, so
 // without this a replay would scan every task event behind the cursor.
 func ChatEventTypes() []string {
-	return []string{EventChatCreated, EventChatState, EventChatTurn, EventChatArchived, EventChatHandedOff}
+	return []string{EventChatCreated, EventChatState, EventChatTurn, EventChatArchived, EventChatHandedOff, EventChatClosed}
 }
 
 // IsChatEvent reports whether an event type belongs to the chat family.
@@ -41,7 +41,7 @@ func IsChatEvent(t string) bool {
 
 const chatColumns = `id, project_id, title, state, agent, model, effort, permission_mode,
 	branch, base_branch, base_sha, base_refresh, worktree_path, session_id, pending_input, handoff_task_id,
-	created_at, updated_at`
+	linked_task_id, opening_context, created_at, updated_at`
 
 const chatTurnColumns = `id, chat_id, seq, prompt, state, fail_reason, error_message, result_text,
 	session_id, input_tokens, output_tokens, cost_usd, exit_code, pid, proc_identity,
@@ -120,7 +120,13 @@ func chatEvent(evType string, c *Chat, turn *ChatTurn) (*Event, error) {
 		return nil, fmt.Errorf("marshal %s event: %w", evType, err)
 	}
 	pid := c.ProjectID
-	return &Event{Type: evType, ProjectID: &pid, Payload: payload}, nil
+	ev := &Event{Type: evType, ProjectID: &pid, Payload: payload}
+	// A linked chat's events name its task (task 115), so a client can
+	// re-fetch the task whose lock the chat just placed or lifted.
+	if err := linkedChatEventPayload(ev, c); err != nil {
+		return nil, err
+	}
+	return ev, nil
 }
 
 // GetChat returns the chat with the given id, or ErrNotFound.
@@ -148,12 +154,15 @@ func (s *Store) GetChat(ctx context.Context, id int64) (*Chat, error) {
 // filter, which no caller ever was.
 type ChatFilter struct {
 	ProjectID *int64
+	// TaskID narrows to the chats linked to one task (task 115), which is how
+	// a task's workspace lists its conversations.
+	TaskID *int64
 	States    []chatstate.State
 	// Archived selects how terminal chats are treated, the way TaskFilter's
-	// field of the same name and type does (§13.2). It covers *both*
-	// terminal states — `archived` and `handed_off` alike (§5.5, task 074
-	// decision 5) — because both are equally done with, whatever the
-	// parameter's name says. An explicit States always wins.
+	// field of the same name and type does (§13.2). It covers *every*
+	// terminal state — `archived`, `handed_off` and `closed` alike (§5.5,
+	// task 074 decision 5, task 115) — because all are equally done with,
+	// whatever the parameter's name says. An explicit States always wins.
 	Archived ArchivedFilter
 	// ArchivedBefore and ArchivedSince bound when the chat ended, measured
 	// over `updated_at` and with no new column (task 092). Task 074 decision
@@ -183,6 +192,10 @@ func (s *Store) ListChats(ctx context.Context, f ChatFilter) ([]Chat, error) {
 		q += ` AND project_id = ?`
 		args = append(args, *f.ProjectID)
 	}
+	if f.TaskID != nil {
+		q += ` AND linked_task_id = ?`
+		args = append(args, *f.TaskID)
+	}
 	if len(f.States) > 0 {
 		//nolint:gosec // G202: placeholders renders bind markers only, never values.
 		q += ` AND state IN ` + placeholders(len(f.States))
@@ -196,11 +209,11 @@ func (s *Store) ListChats(ctx context.Context, f ChatFilter) ([]Chat, error) {
 		// be absurd.
 		switch f.Archived {
 		case ArchivedExclude:
-			q += ` AND state NOT IN (?, ?)`
-			args = append(args, string(chatstate.Archived), string(chatstate.HandedOff))
+			q += ` AND state NOT IN (?, ?, ?)`
+			args = append(args, terminalChatStateArgs()...)
 		case ArchivedOnly:
-			q += ` AND state IN (?, ?)`
-			args = append(args, string(chatstate.Archived), string(chatstate.HandedOff))
+			q += ` AND state IN (?, ?, ?)`
+			args = append(args, terminalChatStateArgs()...)
 		case ArchivedAll:
 		}
 	}
@@ -253,6 +266,13 @@ func (s *Store) ListChats(ctx context.Context, f ChatFilter) ([]Chat, error) {
 // single-writer arrangement.
 func (s *Store) SetChatState(ctx context.Context, id int64, st chatstate.State) (*Chat, error) {
 	return s.updateChat(ctx, id, EventChatState, func(c *Chat) {
+		if chatstate.Terminal(c.State) {
+			// A terminal chat stays terminal. The one writer that can
+			// reach here late is a turn's finish racing a close (task
+			// 115): the close already waited for the turn, but a write
+			// that lands after it must not reopen the chat.
+			return
+		}
 		c.State = st
 		if st != chatstate.AwaitingInput {
 			// Leaving awaiting_input for any reason retires the request: a
@@ -570,13 +590,19 @@ func (s *Store) ListChatIDs(ctx context.Context) ([]int64, error) {
 func scanChat(r rowScanner) (*Chat, error) {
 	var c Chat
 	var model, effort, baseSHA, baseRefresh, worktreePath, sessionID, pending sql.NullString
-	var handoffTaskID sql.NullInt64
+	var handoffTaskID, linkedTaskID sql.NullInt64
+	var openingContext sql.NullString
 	var createdAt, updatedAt string
 	if err := r.Scan(&c.ID, &c.ProjectID, &c.Title, (*string)(&c.State), &c.Agent, &model, &effort,
 		&c.PermissionMode, &c.Branch, &c.BaseBranch, &baseSHA, &baseRefresh, &worktreePath, &sessionID, &pending,
-		&handoffTaskID, &createdAt, &updatedAt); err != nil {
+		&handoffTaskID, &linkedTaskID, &openingContext, &createdAt, &updatedAt); err != nil {
 		return nil, err
 	}
+	if linkedTaskID.Valid {
+		id := linkedTaskID.Int64
+		c.LinkedTaskID = &id
+	}
+	c.OpeningContext = openingContext.String
 	c.BaseRefresh = unmarshalBaseRefresh(baseRefresh)
 	if handoffTaskID.Valid {
 		id := handoffTaskID.Int64
@@ -627,7 +653,7 @@ func scanChatTurn(r rowScanner) (*ChatTurn, error) {
 // the chat half of transcript pruning (§12.3 retention), the mirror of
 // ArchivedTaskIDsBefore.
 //
-// Both terminal states count (task 074). A handed-off chat's transcripts age
+// Every terminal state counts (task 074; `closed` since task 115). A handed-off chat's transcripts age
 // out on the same clock an archived one's do, and they can: they live under
 // `{transcripts}/chat-{id}`, which the task that took the worktree never
 // claims, so pruning them cannot reach task-owned state. The turn rows and the
@@ -640,8 +666,8 @@ func scanChatTurn(r rowScanner) (*ChatTurn, error) {
 // be a migration for a value already on the row.
 func (s *Store) TerminalChatIDsBefore(ctx context.Context, cutoff time.Time) ([]int64, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id FROM chats WHERE state IN (?, ?) AND updated_at < ? ORDER BY id`,
-		string(chatstate.Archived), string(chatstate.HandedOff), formatTime(cutoff))
+		`SELECT id FROM chats WHERE state IN (?, ?, ?) AND updated_at < ? ORDER BY id`,
+		string(chatstate.Archived), string(chatstate.HandedOff), string(chatstate.Closed), formatTime(cutoff))
 	if err != nil {
 		return nil, fmt.Errorf("list terminal chats: %w", err)
 	}

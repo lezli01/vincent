@@ -57,9 +57,12 @@ type chatBody struct {
 	// HandoffTaskID is the task this chat's worktree and branch were handed
 	// to (§5.5, task 074). It is the one authoritative edge; a task's
 	// `source_chat_id` is this read backwards.
-	HandoffTaskID *int64    `json:"handoff_task_id,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	HandoffTaskID *int64 `json:"handoff_task_id,omitempty"`
+	// LinkedTaskID is the task this chat was opened on (§5.5, task 115): it
+	// works in that task's worktree, and while it is open the task is locked.
+	LinkedTaskID *int64    `json:"linked_task_id,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // chatTurnBody is one turn as the API renders it.
@@ -88,7 +91,8 @@ func renderChat(c *store.Chat) chatBody {
 		Agent: c.Agent, Model: c.Model, Effort: c.Effort, Branch: c.Branch,
 		BaseBranch: c.BaseBranch, BaseSHA: c.BaseSHA, BaseRefresh: renderBaseRefresh(c.BaseRefresh),
 		WorktreePath: c.WorktreePath, SessionID: c.SessionID, PendingInput: c.PendingInput,
-		HandoffTaskID: c.HandoffTaskID, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
+		HandoffTaskID: c.HandoffTaskID, LinkedTaskID: c.LinkedTaskID,
+		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 	}
 }
 
@@ -235,6 +239,14 @@ func (s *Server) handleChatList(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.ProjectID = &id
+	}
+	if v := r.URL.Query().Get("task_id"); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed, "task_id must be an integer")
+			return
+		}
+		f.TaskID = &id
 	}
 	for _, st := range r.URL.Query()["state"] {
 		if !chatstate.Valid(chatstate.State(st)) {
@@ -412,6 +424,8 @@ func archiveRefusal(st chatstate.State) string {
 		return "this chat is already archived"
 	case chatstate.HandedOff:
 		return "this chat was handed off to a task, which owns its worktree now"
+	case chatstate.Closed:
+		return "this chat is already closed"
 	default:
 		return "a chat with a live turn cannot be archived"
 	}
@@ -423,6 +437,12 @@ func archiveRefusal(st chatstate.State) string {
 func (s *Server) handleChatArchive(w http.ResponseWriter, r *http.Request) {
 	chat, ok := s.chatFromPath(w, r)
 	if !ok {
+		return
+	}
+	if chat.Linked() && !chatstate.Terminal(chat.State) {
+		// Not in the linked table at all (task 115 decision 2): the worktree
+		// archive would remove is the task's.
+		writeChatLinked(w, chat, string(chatstate.Archive))
 		return
 	}
 	if !chatstate.Allowed(chat.State, chatstate.Archive) {

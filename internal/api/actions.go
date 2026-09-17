@@ -192,6 +192,12 @@ func (s *Server) checkRetryBranchOverride(w http.ResponseWriter, r *http.Request
 		s.internalError(w, "get task", err)
 		return false
 	}
+	// The rename commits before the action does, so a locked task is refused
+	// before it (task 115) — the swap's own check would come too late.
+	if err := s.deps.Store.RefuseLocked(r.Context(), id); err != nil {
+		s.writeActionError(w, err)
+		return false
+	}
 	if task.State == store.TaskAwaitingChildren {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, fmt.Sprintf(
 			"task %d is parked on a fan_out step; branch_override would rename the branch "+
@@ -798,6 +804,11 @@ func (s *Server) writeActionError(w http.ResponseWriter, err error) {
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
 
+	// A task an open linked chat has locked (task 115).
+	case isTaskLocked(err):
+		e, _ := store.AsTaskLocked(err)
+		writeTaskLocked(w, e, "")
+
 	case isInvalidAction(err):
 		e, _ := taskrun.AsInvalidAction(err)
 		writeConflict(w, e.Error(),
@@ -862,6 +873,11 @@ func (s *Server) writeActionError(w http.ResponseWriter, err error) {
 	default:
 		s.internalError(w, "task action", err)
 	}
+}
+
+func isTaskLocked(err error) bool {
+	_, ok := store.AsTaskLocked(err)
+	return ok
 }
 
 func isInvalidAction(err error) bool {

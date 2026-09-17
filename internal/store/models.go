@@ -610,9 +610,22 @@ type Chat struct {
 	// `source_chat_id` is this column read backwards. Non-nil exactly in
 	// `handed_off`, unless that task has since been deleted.
 	HandoffTaskID *int64
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// LinkedTaskID names the task this chat was opened on (task 115): the
+	// chat works in that task's worktree and branch, and while it is open the
+	// task is locked. Nil for a free chat. A linked chat's WorktreePath is
+	// always empty — the task keeps the §10 claim, and chatrun resolves the
+	// task's path at the start of every turn.
+	LinkedTaskID *int64
+	// OpeningContext is the task context assembled when a linked chat was
+	// opened, prepended to its first turn's prompt only.
+	OpeningContext string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
+
+// Linked reports whether the chat is linked to a task (task 115), which is
+// what selects §5.5's linked transition table.
+func (c *Chat) Linked() bool { return c.LinkedTaskID != nil }
 
 // ChatTurn is one exchange: a human message and the agent run it produced
 // (spec §5.5, §14). Its accounting columns are step_runs' — tokens, cost,

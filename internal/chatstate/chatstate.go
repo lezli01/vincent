@@ -45,10 +45,19 @@ const (
 	// remove task-owned workspace state" true by construction rather than by
 	// a guard: `archive` is simply not legal from here.
 	HandedOff State = "handed_off"
+	// Closed is the third terminal state (task 115, §5.5 amended
+	// 2026-09-17), and the only one a chat linked to a task can reach: the
+	// conversation is over, and the worktree and branch it worked in were
+	// never its own. Closing touches neither — they belong to the task.
+	//
+	// It is not `archived` because archiving means "the worktree is gone",
+	// which is exactly what closing a linked chat must never do; and it is
+	// not `handed_off` because nothing was transferred.
+	Closed State = "closed"
 )
 
 // All lists every state, in the order §5.5 documents them.
-var All = []State{Idle, Running, AwaitingInput, Archived, HandedOff}
+var All = []State{Idle, Running, AwaitingInput, Archived, HandedOff, Closed}
 
 // Valid reports whether s is a known state.
 func Valid(s State) bool {
@@ -68,10 +77,10 @@ func Valid(s State) bool {
 // stdin, and a cap that did not count it would be a cap on nothing.
 func HoldsProcess(s State) bool { return s == Running || s == AwaitingInput }
 
-// Terminal reports whether no further transition is possible. There are two
-// such states, not one: a chat ends either by being archived or by being
-// handed off to a task (task 074).
-func Terminal(s State) bool { return s == Archived || s == HandedOff }
+// Terminal reports whether no further transition is possible. There are three
+// such states: a free chat ends by being archived or by being handed off to a
+// task (task 074), and a chat linked to a task ends by being closed (task 115).
+func Terminal(s State) bool { return s == Archived || s == HandedOff || s == Closed }
 
 // Action is something that moves a chat between states: a human action or a
 // runner event.
@@ -100,6 +109,10 @@ const (
 	// Nothing is copied, renamed or committed: the transfer *is* the task row
 	// naming the same directory the chat named.
 	HandOff Action = "hand_off"
+	// Close ends a chat linked to a task (task 115). It is the linked
+	// table's only way out of `idle`, and it leaves the task's worktree and
+	// branch exactly as they were.
+	Close Action = "close"
 )
 
 // Runner events. They are transitions the daemon performs while running a
@@ -145,25 +158,62 @@ var transitions = map[State]map[Action]State{
 	},
 	Archived:  {},
 	HandedOff: {},
+	Closed:    {},
 }
 
-// Next returns the state a reaches from s, and whether the pair is legal.
-func Next(s State, a Action) (State, bool) {
-	next, ok := transitions[s][a]
+// linked is §5.5's table for a chat linked to a task (task 115 decision 2),
+// the pattern taskstate's held table follows (task 096). Only `idle` differs:
+// `archive` and `hand_off` are simply absent, because the worktree they would
+// remove or transfer is the task's, and `close` is the way out. The refusal is
+// structural, the way task 074 decision 5 made `handed_off`'s.
+var linked = map[State]map[Action]State{
+	Idle: {
+		Send:  Running,
+		Close: Closed,
+	},
+	Running:       transitions[Running],
+	AwaitingInput: transitions[AwaitingInput],
+	Archived:      {},
+	HandedOff:     {},
+	Closed:        {},
+}
+
+// tableFor picks the free or the linked table.
+func tableFor(isLinked bool) map[State]map[Action]State {
+	if isLinked {
+		return linked
+	}
+	return transitions
+}
+
+// Next returns the state a reaches from s on a free chat, and whether the
+// pair is legal.
+func Next(s State, a Action) (State, bool) { return NextFor(false, s, a) }
+
+// NextFor is Next under the table for a free (false) or linked (true) chat.
+func NextFor(isLinked bool, s State, a Action) (State, bool) {
+	next, ok := tableFor(isLinked)[s][a]
 	return next, ok
 }
 
-// Allowed reports whether a is legal from s.
-func Allowed(s State, a Action) bool {
-	_, ok := transitions[s][a]
+// Allowed reports whether a is legal from s on a free chat.
+func Allowed(s State, a Action) bool { return AllowedFor(false, s, a) }
+
+// AllowedFor is Allowed under the table for a free or linked chat.
+func AllowedFor(isLinked bool, s State, a Action) bool {
+	_, ok := tableFor(isLinked)[s][a]
 	return ok
 }
 
-// Actions lists the actions legal from s, sorted, so a client can render the
-// affordances without a second copy of the table.
-func Actions(s State) []Action {
-	out := make([]Action, 0, len(transitions[s]))
-	for a := range transitions[s] {
+// Actions lists the actions legal from s on a free chat, sorted, so a client
+// can render the affordances without a second copy of the table.
+func Actions(s State) []Action { return ActionsFor(false, s) }
+
+// ActionsFor is Actions under the table for a free or linked chat.
+func ActionsFor(isLinked bool, s State) []Action {
+	t := tableFor(isLinked)
+	out := make([]Action, 0, len(t[s]))
+	for a := range t[s] {
 		out = append(out, a)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })

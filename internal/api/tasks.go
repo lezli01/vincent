@@ -159,6 +159,11 @@ type taskResponse struct {
 	// 074). It is the reverse of the one stored edge, `chats.handoff_task_id`,
 	// read as a single indexed query per list rather than per rendered task.
 	SourceChatID *int64 `json:"source_chat_id,omitempty"`
+	// OpenChatID names the open chat linked to this task (task 115). While
+	// it is set the task is locked — `available_actions` is `[cancel]` or
+	// `[]` — and a client opening a chat opens this one. It is
+	// `chats.linked_task_id` read backwards, once per list.
+	OpenChatID *int64 `json:"open_chat_id,omitempty"`
 }
 
 // snapshotStepResponse is one step of the task's snapshot (spec §13.2).
@@ -1296,6 +1301,11 @@ func (s *Server) toListResponse(ctx context.Context, tasks []store.Task) ([]list
 	if err != nil {
 		return nil, err
 	}
+	// The same shape for the lock (task 115): one indexed query, one map.
+	openChats, err := s.deps.Store.OpenLinkedChatIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	out := make([]listTaskResponse, 0, len(tasks))
 	for i := range tasks {
@@ -1312,6 +1322,10 @@ func (s *Server) toListResponse(ctx context.Context, tasks []store.Task) ([]list
 		row.StatusMessage = nilIfEmpty(statuses[t.ID])
 		if chatID, ok := sources[t.ID]; ok {
 			row.SourceChatID = &chatID
+		}
+		if chatID, ok := openChats[t.ID]; ok {
+			row.OpenChatID = &chatID
+			row.AvailableActions = lockAwareActions(t.State, chatID)
 		}
 		if ru := rollups[t.ID]; ru.HasCost {
 			cost := ru.CostUSD
@@ -1348,6 +1362,10 @@ func (s *Server) handleTaskGet(w http.ResponseWriter, r *http.Request) {
 	// this task's workspace came out of.
 	if chatID, err := s.deps.Store.SourceChatID(r.Context(), t.ID); err == nil && chatID != 0 {
 		resp.SourceChatID = &chatID
+	}
+	if chatID, err := s.deps.Store.OpenLinkedChatID(r.Context(), t.ID); err == nil && chatID != 0 {
+		resp.OpenChatID = &chatID
+		resp.AvailableActions = lockAwareActions(t.State, chatID)
 	}
 	// The children rollup (§13.2, task 014 decisions 13, 27). Present
 	// whenever the task has lanes, in any state — a parent mid-join, or one

@@ -250,7 +250,7 @@ func (r *Runner) repairPrompt(
 	ctx context.Context, task *store.Task, project *store.Project,
 	target repairTarget, req store.RepairRequest,
 ) string {
-	wf, index, step := target.wf, target.index, target.step
+	wf := target.wf
 	var sb strings.Builder
 	sb.WriteString("You are repairing a blocked task in a git worktree.\n\n")
 	if target.followUp {
@@ -259,8 +259,29 @@ func (r *Runner) repairPrompt(
 		sb.WriteString(workflowRepairIntro)
 	}
 
-	fmt.Fprintf(&sb, "<task id=%q>\n", fmt.Sprint(task.ID))
-	fmt.Fprintf(&sb, "title: %s\n", task.Title)
+	fields := task.Fields
+	if target.followUp && task.PendingFollowUp != nil {
+		fields = mergeFields(task.Fields, task.PendingFollowUp.Fields)
+	}
+	writeTaskBlock(&sb, task, project, wf.Name, fields)
+	r.writeFailureBlock(ctx, &sb, task, project, target, req.BlockReason)
+
+	sb.WriteString("<repair-instructions>\n")
+	sb.WriteString(strings.TrimSuffix(req.Prompt, "\n"))
+	sb.WriteString("\n</repair-instructions>\n")
+	return sb.String()
+}
+
+// writeTaskBlock writes the `<task>` element a repair prompt and a linked
+// chat's opening context both start from (task 025 decision 4, task 115):
+// title, description, the fields the run used, and where the work lives.
+// fields is passed in because a follow-up round's differ from the task row's
+// (task 027 decision 14).
+func writeTaskBlock(
+	sb *strings.Builder, task *store.Task, project *store.Project, workflowName string, fields map[string]string,
+) {
+	fmt.Fprintf(sb, "<task id=%q>\n", fmt.Sprint(task.ID))
+	fmt.Fprintf(sb, "title: %s\n", task.Title)
 	if task.Description != "" {
 		sb.WriteString("description:\n")
 		sb.WriteString(task.Description)
@@ -268,47 +289,54 @@ func (r *Runner) repairPrompt(
 			sb.WriteString("\n")
 		}
 	}
-	// A repair of a follow-up round lists the fields that round ran with
-	// (task 027 decision 14), not only what the task row carries.
-	fields := task.Fields
-	if target.followUp && task.PendingFollowUp != nil {
-		fields = mergeFields(task.Fields, task.PendingFollowUp.Fields)
-	}
 	if len(fields) > 0 {
 		sb.WriteString("fields:\n")
 		for _, k := range sortedKeys(fields) {
-			fmt.Fprintf(&sb, "  %s: %s\n", k, fields[k])
+			fmt.Fprintf(sb, "  %s: %s\n", k, fields[k])
 		}
 	}
-	fmt.Fprintf(&sb, "workflow: %s\n", wf.Name)
-	fmt.Fprintf(&sb, "project: %s (%s)\n", project.Name, project.Path)
-	fmt.Fprintf(&sb, "branch: %s (from %s)\n", task.BranchName, task.BaseBranch)
-	fmt.Fprintf(&sb, "worktree: %s\n", task.WorktreePath)
+	if workflowName != "" {
+		fmt.Fprintf(sb, "workflow: %s\n", workflowName)
+	}
+	fmt.Fprintf(sb, "project: %s (%s)\n", project.Name, project.Path)
+	fmt.Fprintf(sb, "branch: %s (from %s)\n", task.BranchName, task.BaseBranch)
+	fmt.Fprintf(sb, "worktree: %s\n", task.WorktreePath)
 	sb.WriteString("</task>\n\n")
+}
 
+// writeFailureBlock writes the bounded failure block of 025 decision 4: the
+// blocked step's definition, rendered, its failure, and the last
+// repairTranscriptLines lines of the failed attempt's transcript with the
+// file's absolute path. A repair prompt and a linked chat opened on a blocked
+// task share it, so the two cannot drift (task 115).
+func (r *Runner) writeFailureBlock(
+	ctx context.Context, sb *strings.Builder, task *store.Task, project *store.Project,
+	target repairTarget, blockReason string,
+) {
+	index, step := target.index, target.step
 	element := "blocked-step"
 	if target.followUp {
 		element = "blocked-follow-up-step"
 	}
-	fmt.Fprintf(&sb, "<%s index=%q id=%q type=%q>\n",
+	fmt.Fprintf(sb, "<%s index=%q id=%q type=%q>\n",
 		element, fmt.Sprint(index+1), step.ID, step.Type)
-	if req.BlockReason != "" {
-		fmt.Fprintf(&sb, "block reason: %s\n", req.BlockReason)
+	if blockReason != "" {
+		fmt.Fprintf(sb, "block reason: %s\n", blockReason)
 	}
 	run := r.lastAttemptAt(ctx, task.ID, index)
 	if run != nil {
-		if run.FailureReason != "" && run.FailureReason != req.BlockReason {
-			fmt.Fprintf(&sb, "failure reason: %s\n", run.FailureReason)
+		if run.FailureReason != "" && run.FailureReason != blockReason {
+			fmt.Fprintf(sb, "failure reason: %s\n", run.FailureReason)
 		}
 		if run.ExitCode != nil {
-			fmt.Fprintf(&sb, "exit code: %d\n", *run.ExitCode)
+			fmt.Fprintf(sb, "exit code: %d\n", *run.ExitCode)
 		}
 		if run.CheckExitCode != nil {
-			fmt.Fprintf(&sb, "check exit code: %d\n", *run.CheckExitCode)
+			fmt.Fprintf(sb, "check exit code: %d\n", *run.CheckExitCode)
 		}
 	}
 	if body, field := r.renderBlockedStep(ctx, task, project, target); body != "" {
-		fmt.Fprintf(&sb, "--- %s ---\n", field)
+		fmt.Fprintf(sb, "--- %s ---\n", field)
 		sb.WriteString(strings.TrimSuffix(body, "\n"))
 		sb.WriteString("\n")
 	}
@@ -321,18 +349,13 @@ func (r *Runner) repairPrompt(
 		sb.WriteString(strings.TrimSuffix(run.ResultSummary, "\n") + "\n")
 	}
 	if run != nil && run.TranscriptPath != "" {
-		fmt.Fprintf(&sb, "--- transcript: %s ---\n", run.TranscriptPath)
+		fmt.Fprintf(sb, "--- transcript: %s ---\n", run.TranscriptPath)
 		if tail := tailLines(run.TranscriptPath, repairTranscriptLines, repairTranscriptTailBytes); tail != "" {
-			fmt.Fprintf(&sb, "(last %d lines; read the file above for the rest)\n", repairTranscriptLines)
+			fmt.Fprintf(sb, "(last %d lines; read the file above for the rest)\n", repairTranscriptLines)
 			sb.WriteString(tail + "\n")
 		}
 	}
-	fmt.Fprintf(&sb, "</%s>\n\n", element)
-
-	sb.WriteString("<repair-instructions>\n")
-	sb.WriteString(strings.TrimSuffix(req.Prompt, "\n"))
-	sb.WriteString("\n</repair-instructions>\n")
-	return sb.String()
+	fmt.Fprintf(sb, "</%s>\n\n", element)
 }
 
 // renderBlockedStep renders the blocked step's prompt or command against the
