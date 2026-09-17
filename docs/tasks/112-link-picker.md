@@ -22,9 +22,9 @@ and the link halves of 3 and 8, are what this discharges.
 
 Nothing here contradicts a recorded decision. It keeps 071 decision 4 (the
 composer owns every letter, so ctrl chords only), 076 decision 7 (one ctrl key
-per action, the same key in both contexts), 075 decision 3 (no OSC 8, and the
-renderer never reaches the opener), 093's key vocabulary, and §16's scheme
-refusal in `openURLCmd`. It is entirely client-side, in `internal/tui` alone:
+per action, the same key in both contexts), 075 decision 3 (the renderer never
+reaches the opener; it emits OSC 8 only as task 111's opt-in allows), 093's key
+vocabulary, and §16's scheme refusal in `openURLCmd`. It is entirely client-side, in `internal/tui` alone:
 no daemon package, no API route, no migration, no wire change.
 
 ## Decisions
@@ -113,7 +113,10 @@ assurance (073's position). `internal/tui/linkpicker_test.go`:
 
 ## Left open
 
-- **OSC 8 hyperlinks** stay [#404](https://github.com/lezli01/vincent/issues/404)'s.
+- **OSC 8 hyperlinks** are [#404](https://github.com/lezli01/vincent/issues/404)'s,
+  which landed as [task 111](111-osc-8-hyperlinks.md) while this was open. The
+  two do not touch: a terminal click goes through the terminal, and the picker
+  goes through `openURLCmd`.
 - **Reference links, autolinks and bare URLs** stay literal (075 decision 4), so
   they have no `[n]` and no row. Widening the subset is its own issue.
 - **A per-link cursor in the pane** stays rejected (076 decision 6, #292's own

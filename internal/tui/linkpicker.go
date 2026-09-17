@@ -24,9 +24,9 @@ import (
 // Its scope and its rows follow the copy picker exactly (decision 2): every
 // assistant document in the loaded records or turns, newest first, under the
 // same "message n" ordinals, and each row a reference to a document resolved
-// at pick time. What the renderer draws is unchanged — the pane still emits
-// no hyperlink and never reaches the opener (task 075 decision 3). Only an
-// explicit pick here does.
+// at pick time. What the renderer draws is unchanged — the pane never reaches
+// the opener (task 075 decision 3), and emits a hyperlink only under task
+// 111's opt-in. Only an explicit pick here opens anything.
 
 // linkItem is one row: one numbered destination of one document.
 type linkItem struct {
