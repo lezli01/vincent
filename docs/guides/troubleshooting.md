@@ -273,6 +273,12 @@ Where you meet it:
   Check `vincent agents` for the `no mid-run input` note beside its `BUILD`
   verdict; the fix is on the machine, not in the workflow, and
   `retry` refuses until it is done rather than reproducing the block.
+- **A task [in a container](../reference/configuration.md#container) blocks
+  with `input_unsupported`** when the claude in its image is outside the
+  verified family. Task creation and `retry` judge your host's claude, so
+  neither catches it; only the step checks the image's, with `claude --version`
+  inside the container, and `vincent agents` does not show that one. The fix is
+  the image, and a retry blocks again until it is.
 
 An agent that is **not installed** never triggers any of this: an unknown
 verdict is not a refusal, and you get `agent_unavailable` at run time instead if
