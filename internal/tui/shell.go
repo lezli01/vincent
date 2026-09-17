@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // selectionSettle is how long the task-table cursor must rest on a row
@@ -201,7 +202,7 @@ func (s *shell) updateBoardOnly(msg tea.Msg) (panel, tea.Cmd) {
 			s.board.commitFilter()
 			return s, nil
 		}
-		if msg.String() == "enter" && !s.board.capturesInput() {
+		if msg.String() == opKey(keymap.OpenRow) && !s.board.capturesInput() {
 			if id, ok := s.board.selected(); ok {
 				state := s.stateOf(id)
 				return s, func() tea.Msg { return selectTaskMsg{id: id, state: state} }
@@ -318,16 +319,16 @@ func (s *shell) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			return s, s.checkSelection()
 		}
 		return s, nil
-	case "enter":
+	case opKey(keymap.OpenRow):
 		if s.focus == panelTasks {
 			return s, s.openSelected()
 		}
-	case "E", "R", "F":
+	case opKey(keymap.EditRetry), opKey(keymap.Repair), opKey(keymap.FollowUp):
 		// Edit+retry, repair and follow-up (task 027) need the task's steps,
 		// which detail holds, and their forms post from there — the keys act
-		// on the task, so they work from any panel. F is deliberately not a
-		// bulk action: the three run forms are written for one task, and "run
-		// this prompt against nine finished branches" is a shell loop over
+		// on the task, so they work from any panel. Follow-up is deliberately
+		// not a bulk action: the three run forms are written for one task, and
+		// "run this prompt against nine finished branches" is a shell loop over
 		// `vincent task follow-up`, which is what decision 11 shipped the
 		// command for.
 		s.syncDetailFocus()

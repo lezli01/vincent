@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // The triggers form (§15 view 11, task 096.6): task 065's form machinery on
@@ -176,7 +177,7 @@ func (v *triggersView) applyFormLoaded(msg trigFormLoadedMsg) {
 	f.def = msg.detail.Definition
 	if f.def == nil {
 		f.rows = nil
-		f.err = "this file does not validate, so the form cannot load it — esc, then e opens it in $EDITOR"
+		f.err = "this file does not validate, so the form cannot load it — esc, then " + opKey(keymap.Editor) + " opens it in $EDITOR"
 		if len(msg.detail.Errors) > 0 {
 			f.err += " (" + findingText(msg.detail.Errors[0]) + ")"
 		}
@@ -409,7 +410,7 @@ func (v *triggersView) updateFormKey(msg tea.KeyPressMsg) tea.Cmd {
 		f.cursor = min(max(len(f.rows)-1, 0), f.cursor+1)
 	case "enter":
 		return v.formActivate()
-	case "R":
+	case opKey(keymap.Refresh):
 		f.err, f.note = "", ""
 		f.rowErr = map[string]string{}
 		f.loading = true

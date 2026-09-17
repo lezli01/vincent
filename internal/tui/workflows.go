@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // scopeProject is the scope string the registry gives an entry that lives in
@@ -362,20 +363,20 @@ func (w *workflowsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return w, w.resolveCmd()
 	case "g":
 		return w, w.openGraph()
-	case "e":
+	case opKey(keymap.Editor):
 		// Unchanged: `e` means $EDITOR here and in the six other contexts
 		// bindings.go gives it, so the structured editor takes its own keys
 		// rather than giving one key two meanings (task 065 decision 6).
 		return w, w.editCmd()
 	case "i":
 		return w, w.openEditor()
-	case "a":
+	case opKey(keymap.Add):
 		w.openCreate(false)
 		return w, nil
 	case "f":
 		w.openCreate(true)
 		return w, nil
-	case "R":
+	case opKey(keymap.Refresh):
 		w.err = ""
 		return w, w.loadCmd()
 	case "esc":

@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // forceHint is the phrase handleProjectDelete uses when force is the remedy.
@@ -279,7 +280,7 @@ func (p *projectsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case "/":
+	case opKey(keymap.Filter):
 		p.filtering = true
 		p.filter.Focus()
 		return p, nil
@@ -292,7 +293,7 @@ func (p *projectsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			return p, nil
 		}
 		return p, func() tea.Msg { return selectViewMsg{id: viewHome} }
-	case "a":
+	case opKey(keymap.Add):
 		p.err = ""
 		p.form = newProjectForm(p.client, nil)
 		return p, p.form.loadCmd()
@@ -303,7 +304,7 @@ func (p *projectsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			return p, p.form.loadCmd()
 		}
 		return p, nil
-	case "D":
+	case opKey(keymap.Delete):
 		// `D` destroys a persisted record after a confirmation, which is what
 		// it means on both archived boards too (task 093).
 		p.askDelete()

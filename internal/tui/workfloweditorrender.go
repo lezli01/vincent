@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"strings"
+
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // The editor's rendering. It draws rows, never YAML: the whole argument for a
@@ -57,8 +59,8 @@ func (w *workflowsView) renderEditor(width, height int) string {
 		out = append(out, "", styleDim.Render("  enter commit · esc cancel"))
 	default:
 		out = append(out, "", styleDim.Render(
-			"  enter edit · a add · d remove · K/J move · R reload · esc back · "+
-				"e $EDITOR from the list"))
+			"  enter edit · "+opKey(keymap.Add)+" add · "+opKey(keymap.DraftRemove)+" remove · K/J move · "+
+				opKey(keymap.Refresh)+" reload · esc back · "+opKey(keymap.Editor)+" $EDITOR from the list"))
 	}
 	return clampLines(out, height)
 }

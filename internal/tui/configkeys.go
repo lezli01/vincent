@@ -449,6 +449,18 @@ func configKeys() []configKey {
 		// Task 111. The help names the §16 consequence rather than the
 		// feature: what turning it on changes is that agent-supplied URLs
 		// reach the terminal inside an escape sequence, sanitized.
+		// Task 118. The daemon runs keymap.Build on the PATCH, so a refusal
+		// arrives as the field error and names the operation, the key and
+		// what it collides with; a success is applied the moment it lands.
+		{
+			path: "tui.keys", label: "key bindings", kind: kindMap,
+			help: "operation=key pairs, e.g. refresh=f5; each replaces that operation's default key everywhere",
+			read: func(c apiclient.Config) string { return joinPairs(c.TUI.Keys) },
+			write: func(s string) (apiclient.ConfigPatch, error) {
+				m, err := parsePairs(s)
+				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Keys: &m}}, err
+			},
+		},
 		boolKey("tui.hyperlinks", "hyperlinks",
 			"make sanitized http(s) Markdown links clickable (OSC 8); only if your terminal supports it",
 			func(c apiclient.Config) bool { return c.TUI.Hyperlinks },

@@ -80,7 +80,8 @@ func newConfigSetCmd() *cobra.Command {
 		Long: "Change one key in config.yaml and apply it.\n\n" +
 			"Lists and argv are whitespace-separated in one argument: " +
 			`vincent config set notify.on "blocked awaiting_gate". ` +
-			"environment.set takes NAME=VALUE pairs the same way. An argument " +
+			"environment.set takes NAME=VALUE pairs the same way, and tui.keys " +
+			`OPERATION=KEY pairs: vincent config set tui.keys "refresh=ctrl+e". An argument ` +
 			"containing a space cannot be written this way and has to be edited " +
 			"in the file.",
 		Args: cobra.ExactArgs(2),
@@ -362,6 +363,19 @@ func configFields() map[string]configField {
 			func(b *bool) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Hyperlinks: b}}
 			}),
+		// OPERATION=KEY pairs, environment.set's spelling (task 118). The
+		// whole map is replaced, so "" restores the shipped keymap. A key
+		// value may itself be "=": the pair is cut at the first one.
+		"tui.keys": {
+			read: func(c apiclient.Config) string { return pairsText(c.TUI.Keys) },
+			write: func(s string) (apiclient.ConfigPatch, error) {
+				m, err := parsePairsArg(s)
+				if err != nil {
+					return apiclient.ConfigPatch{}, err
+				}
+				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Keys: &m}}, nil
+			},
+		},
 	}
 }
 

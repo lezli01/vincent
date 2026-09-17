@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +31,16 @@ import (
 // a defect.
 func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 	t.Helper()
+	// Under a non-default keymap a probe written against a row's default key
+	// presses the operation's effective key instead (task 118): the probe
+	// then proves the handler moved with the registry.
+	if to, ok := probeRemap[key]; ok {
+		msg := synthKey(to)
+		if got := msg.String(); got != to {
+			t.Fatalf("registryKey(%q) rebound to %q presses as %q", key, to, got)
+		}
+		return msg
+	}
 	var msg tea.KeyPressMsg
 	switch key {
 	case "enter":
@@ -75,6 +86,14 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 	case "pgdown":
 		msg = tea.KeyPressMsg{Code: tea.KeyPgDown}
 	default:
+		if rest, ok := strings.CutPrefix(key, "ctrl+"); ok && len([]rune(rest)) == 1 {
+			msg = tea.KeyPressMsg{Code: []rune(rest)[0], Mod: tea.ModCtrl}
+			break
+		}
+		if n, err := strconv.Atoi(strings.TrimPrefix(key, "f")); err == nil && strings.HasPrefix(key, "f") && n >= 1 && n <= 20 {
+			msg = tea.KeyPressMsg{Code: tea.KeyF1 + rune(n-1)}
+			break
+		}
 		r := []rune(key)
 		if len(r) != 1 {
 			t.Fatalf("registryKey: no press known for %q — teach this helper", key)
@@ -2226,6 +2245,30 @@ func TestEveryPanelKeyIsHandled(t *testing.T) {
 		}
 		t.Run(name, probe)
 	}
+
+	// The same walk under a keymap that moves every term the probes reach
+	// (task 118): each row's probe presses its operation's new key, so a
+	// handler still matching the old literal fails here.
+	// One operation at a time, so a fixture that presses another row's
+	// default key on its way to the one under test still reaches it.
+	t.Run("rebound", func(t *testing.T) {
+		for _, b := range bindings {
+			if b.scope != scopePanel || b.op == "" {
+				continue
+			}
+			probe, ok := panelKeyProbes[b.context][b.key]
+			to, moved := reboundKeys[string(b.op)]
+			if !ok || !moved {
+				continue
+			}
+			t.Run(string(b.context)+"/"+string(b.op), func(t *testing.T) {
+				withKeymap(t, map[string]string{string(b.op): to})
+				probeRemap = map[string]string{b.key: to}
+				t.Cleanup(func() { probeRemap = nil })
+				probe(t)
+			})
+		}
+	})
 
 	// A probe outliving its row is dead weight that reads as coverage.
 	for ctx, keys := range panelKeyProbes {

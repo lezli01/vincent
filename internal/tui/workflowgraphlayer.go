@@ -8,6 +8,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 	"github.com/lezli01/vincent/internal/tui/workflowgraph"
 )
 
@@ -239,9 +240,9 @@ func (w *workflowsView) updateGraphKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			w.graph = nil
 		}
 		return w, nil
-	case "e":
+	case opKey(keymap.Editor):
 		return w, w.editCmd()
-	case "R":
+	case opKey(keymap.Refresh):
 		g.err = ""
 		g.loading = true
 		return w, w.definitionCmd(g.key)

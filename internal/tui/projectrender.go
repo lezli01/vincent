@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/table"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 func (p *projectsView) render(width, height int) string {
@@ -164,7 +165,8 @@ func (p *projectsView) renderProjectOverview(pr apiclient.Project, height int) s
 				"  … %d more on the board", len(tasks)-shown)))
 		}
 	}
-	lines = append(lines, styleDim.Render("  enter/e edit · a add · d remove · n new task"))
+	lines = append(lines, styleDim.Render("  enter/e edit · "+opKey(keymap.Add)+" add · "+
+		opKey(keymap.Delete)+" remove · "+opKey(keymap.New)+" new task"))
 	return strings.Join(window(lines, 0, height), "\n")
 }
 
@@ -355,7 +357,7 @@ func (p *projectsView) emptyBody(rows []apiclient.Project) (string, bool) {
 		return styleDim.Render(fmt.Sprintf(
 			"\n  no projects match %q — esc to clear the filter\n", p.filter.Value())), true
 	default:
-		return styleDim.Render("\n  no projects registered — press a to add a repository\n"), true
+		return styleDim.Render("\n  no projects registered — press " + opKey(keymap.Add) + " to add a repository\n"), true
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // fuRow is one line of the follow-up form.
@@ -200,7 +201,7 @@ func (f *followUpForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cm
 		f.cursor = min(f.cursor+1, fuRowCount-1)
 	case "enter":
 		f.openRow()
-	case "e":
+	case opKey(keymap.Editor):
 		if f.cursor == fuBody && f.bodyIsText() && f.openEditor != nil {
 			return f.openEditor(f.body()), false
 		}
@@ -488,7 +489,7 @@ func (f *followUpForm) lines(width int) []string {
 		out = append(out, styleDim.Render("  queueing the follow-up…"))
 	default:
 		out = append(out, styleDim.Render(
-			"  enter edit · e $EDITOR · ctrl+s start the follow-up · ctrl+t task details · esc leave the form"))
+			"  enter edit · "+opKey(keymap.Editor)+" $EDITOR · ctrl+s start the follow-up · ctrl+t task details · esc leave the form"))
 	}
 	return out
 }

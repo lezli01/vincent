@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 var (
@@ -206,18 +207,18 @@ func (d *detail) detailHints() []string {
 		hints = append(hints, styleAsk.Render("enter answer"))
 	}
 	if d.target().has(apiclient.ActionRetry) && d.stepEditable() {
-		hints = append(hints, styleKey.Render("E")+" edit+retry")
+		hints = append(hints, styleKey.Render(opKey(keymap.EditRetry))+" edit+retry")
 	}
 	// `repair` has no row in actionOrder — it is a form, not a key that acts
 	// (task 025) — so its hint is the view's, the way `answer`'s is.
 	if d.target().has(apiclient.ActionRepair) {
-		hints = append(hints, styleKey.Render("R")+" repair")
+		hints = append(hints, styleKey.Render(opKey(keymap.Repair))+" repair")
 	}
 	// `follow_up` has no row in actionOrder either, and for the same reason:
 	// three run forms need a chooser, so it is a form rather than a key that
 	// acts (task 027).
 	if d.target().has(apiclient.ActionFollowUp) {
-		hints = append(hints, styleKey.Render("F")+" follow-up")
+		hints = append(hints, styleKey.Render(opKey(keymap.FollowUp))+" follow-up")
 	}
 	return hints
 }
@@ -1157,7 +1158,7 @@ func (d *detail) outputLinesAt() ([]string, []lineAnchor) {
 		// Naming the key here is the whole point of T4.11: this line is the
 		// one moment a reader is looking straight at the missing output, so
 		// it is where the way to the rest of it belongs.
-		note = "… earlier output truncated — press e for the whole transcript"
+		note = "… earlier output truncated — press " + opKey(keymap.Editor) + " for the whole transcript"
 	}
 	d.mdcache.begin()
 	defer d.mdcache.sweep()
@@ -1394,7 +1395,7 @@ func (d *detail) laneBlameLines() []string {
 	}
 	if tail := b.laneFactLine(); tail != "" {
 		lines = append(lines, ansi.Truncate(styleWarn.Render("      "+tail)+
-			styleDim.Render("   l open the lane"), width, "…"))
+			styleDim.Render("   "+opKey(keymap.Lane)+" open the lane"), width, "…"))
 	}
 	return lines
 }
@@ -1429,7 +1430,7 @@ func (d *detail) laneBlameStepLines(r apiclient.StepRun, indent string) []string
 	}
 	out := []string{styleBad.Render(line)}
 	if b.taskID != 0 {
-		out[0] += styleDim.Render("   l open the lane")
+		out[0] += styleDim.Render("   " + opKey(keymap.Lane) + " open the lane")
 	}
 	for _, m := range b.messageLines() {
 		out = append(out, styleDim.Render(indent+"  "+m))

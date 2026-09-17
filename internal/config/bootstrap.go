@@ -318,10 +318,20 @@ update:
 # nothing detects whether your terminal supports OSC 8, and one that does not
 # may print the sequence. The destination stays printed under the message
 # either way.
+#
+# keys rebinds the TUI's operations, one key each: an operation id such as
+# refresh, approve, palette or quit, mapped to a key written the way the TUI
+# names it (R, ctrl+e, f5). Unset, every operation keeps its shipped key. An
+# override moves the operation on every screen that has it, and its old key
+# stops working for it. A key that already means something else, an operation
+# that is not rebindable, or a plain character on an operation that works
+# while you type is refused, the way any invalid value in this file is.
 tui:
   board:
     group_by: [project, workflow]
   hyperlinks: false
+  # keys:
+  #   refresh: ctrl+e
 `
 
 // EnsureDefaultFile writes the commented default config.yaml into dir when

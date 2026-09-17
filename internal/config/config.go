@@ -12,6 +12,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 
+	"github.com/lezli01/vincent/internal/keymap"
 	"github.com/lezli01/vincent/internal/taskstate"
 )
 
@@ -562,10 +563,13 @@ func (n Notify) Fires(s taskstate.State) bool {
 // validate rejects a state name that is not in §6's vocabulary, so a typo is
 // refused at load and the last good configuration stays active (§12.3).
 //
-// This is why internal/config imports internal/taskstate — the one internal
-// import this package has (task 046 decision 4). taskstate is itself a leaf
-// (it imports only `sort`), so there is no cycle, and the alternative is a
-// second copy of §6's ten state names drifting from the first. The
+// This is why internal/config imports internal/taskstate (task 046 decision
+// 4). taskstate is itself a leaf (it imports only `sort`), so there is no
+// cycle, and the alternative is a second copy of §6's ten state names
+// drifting from the first. Decision 4 made it the one internal import; task
+// 118 decision 3 explicitly amends that to two, adding internal/keymap to
+// validate `tui.keys` for the same reason — keymap is also a leaf, so the
+// dependency direction stays one-way. The
 // branch_template precedent of validating in internal/daemon does not apply:
 // that one exists because the branch-template context lives in
 // internal/worktree, a package with real dependencies.
@@ -609,6 +613,29 @@ type TUI struct {
 	// terminal is one that does; the TUI still links only a destination that
 	// passes its sanitizer, and keeps printing the destination as text.
 	Hyperlinks bool `yaml:"hyperlinks"`
+	// Keys rebinds the TUI's operations: operation id → one key, in Bubble
+	// Tea's key-string form (`R`, `ctrl+r`, `f5`) — task 118, §12.3, §15.
+	// Empty or absent is the shipped keymap. An override replaces the
+	// operation's default on every surface that carries it rather than
+	// adding an alias (task 118 decision 6).
+	//
+	// The daemon never reads it; it validates it, so a keymap that breaks
+	// §15's vocabulary is refused at load, on hot reload and on
+	// PATCH /v1/config instead of reaching a TUI that would have to guess.
+	Keys map[string]string `yaml:"keys"`
+}
+
+// validate holds the whole `tui` block: the board's grouping, and the keymap
+// through internal/keymap's checker — the same one the TUI's registry tests run
+// over the shipped defaults (task 118 decision 4).
+func (t TUI) validate() error {
+	if err := t.Board.validate(); err != nil {
+		return err
+	}
+	if _, err := keymap.Build(t.Keys); err != nil {
+		return fmt.Errorf("tui.keys: %w", err)
+	}
+	return nil
 }
 
 // BoardView configures the task table — the board's Tasks panel.
@@ -948,7 +975,7 @@ func (c Config) validate() error {
 	default:
 		return fmt.Errorf("log_level must be one of debug, info, warn, error; got %q", c.LogLevel)
 	}
-	if err := c.TUI.Board.validate(); err != nil {
+	if err := c.TUI.validate(); err != nil {
 		return err
 	}
 	if err := c.Notify.validate(); err != nil {

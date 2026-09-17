@@ -10,6 +10,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/github"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // createPullTimeout bounds the one client call that causes a write to
@@ -112,7 +113,7 @@ func (t *taskView) openPullCmd() tea.Cmd {
 // the create need, so one condition covers both actions (task 069).
 func (t *taskView) openCreatePR() tea.Cmd {
 	if t.pull.Linked {
-		t.pullNote, t.pullNoteBad = "this task already has a pull request — press o to open it", true
+		t.pullNote, t.pullNoteBad = "this task already has a pull request — press "+opKey(keymap.Browser)+" to open it", true
 		return nil
 	}
 	if t.pull.CompareURL == "" {
@@ -167,7 +168,7 @@ func (t *taskView) pullSectionLines(width int) []string {
 			out = append(out, "", styleWarn.Render(
 				"  ⚠ could not read its current state: "+t.pull.Reason))
 		}
-		out = append(out, "", styleDim.Render("  o opens it in a browser"))
+		out = append(out, "", styleDim.Render("  "+opKey(keymap.Browser)+" opens it in a browser"))
 	case t.pull.Reason != "":
 		out = append(out, styleWarn.Render("  GitHub is not usable for this project: "+t.pull.Reason))
 	case t.pull.CompareURL != "":

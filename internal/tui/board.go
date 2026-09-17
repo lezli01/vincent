@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 const (
@@ -76,7 +77,10 @@ type (
 		// read it; the root does, because this fetch is the one that rides
 		// every connect and reconnect.
 		hyperlinks bool
-		err        error
+		// keys is `tui.keys` (task 118), read by the root for the same
+		// reason hyperlinks is.
+		keys map[string]string
+		err  error
 	}
 	// boardTickMsg drives the elapsed column.
 	boardTickMsg struct {
@@ -382,7 +386,7 @@ func (b *board) configCmd() tea.Cmd {
 		cfg, err := client.Config(ctx)
 		return boardConfigMsg{
 			archived: archived, board: cfg.TUI.Board,
-			laneDepth: cfg.FanOut.MaxDepth, hyperlinks: cfg.TUI.Hyperlinks, err: err,
+			laneDepth: cfg.FanOut.MaxDepth, hyperlinks: cfg.TUI.Hyperlinks, keys: cfg.TUI.Keys, err: err,
 		}
 	}
 }
@@ -701,10 +705,10 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 
 	if b.archived {
 		switch msg.String() {
-		case "D":
+		case opKey(keymap.Delete):
 			b.askDelete()
 			return b, nil
-		case "s":
+		case opKey(keymap.Scope):
 			// The date window (task 093). `s` cycles what a list is showing
 			// everywhere it appears, and on an archived board that is the
 			// window; skip is a §6 action and an archived task offers none.
@@ -725,7 +729,7 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case "/":
+	case opKey(keymap.Filter):
 		b.filtering = true
 		b.filter.Focus()
 		return b, nil
@@ -1612,7 +1616,7 @@ func (b *board) emptyBody(rows []boardRow) (string, bool) {
 		return styleDim.Render(fmt.Sprintf(
 			"\n  no tasks match %q — esc to clear the filter\n", b.filter.Value())), true
 	default:
-		return styleDim.Render("\n  no tasks yet — press n to create one\n"), true
+		return styleDim.Render("\n  no tasks yet — press " + opKey(keymap.New) + " to create one\n"), true
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/config"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // The config editor against the real handlers over httptest (the *live_test.go
@@ -169,6 +170,105 @@ func TestConfigEditorTogglesHyperlinks(t *testing.T) {
 	task := m.views[viewTask].(*taskView)
 	if !links.get() || !chat.links.get() || !task.detail.links.get() {
 		t.Error("the save did not reach both workspaces")
+	}
+}
+
+// saveKeysThroughRoot types value into the tui.keys row and routes the PATCH's
+// answer through m, the way the running program delivers it: the root is where
+// the effective keymap is installed (task 118 decision 9), so a save handed to
+// the daemon view alone would prove the file and not the binding.
+func saveKeysThroughRoot(t *testing.T, h *configLiveHarness, m *root, value string) configSavedMsg {
+	t.Helper()
+	h.open(t, "tui.keys")
+	if h.view.form == nil {
+		t.Fatal("enter did not open the editor")
+	}
+	h.view.form.input.SetValue(value)
+	_, cmd := h.view.update(namedKey("enter"))
+	if cmd == nil {
+		t.Fatalf("enter did not save %q", value)
+	}
+	saved, ok := cmd().(configSavedMsg)
+	if !ok {
+		t.Fatalf("the save of %q did not answer with a configSavedMsg", value)
+	}
+	m.Update(saved)
+	return saved
+}
+
+// newKeysRoot is a root around the harness's daemon view, with the keymap put
+// back afterwards: it is package state, and a rebinding left behind would
+// move every later test's keys.
+func newKeysRoot(t *testing.T, h *configLiveHarness) *root {
+	t.Helper()
+	t.Cleanup(func() { setKeymap(keymap.Default()) })
+	links := newHyperlinkHolder()
+	m := &root{views: newViews(t.Context(), links), links: links}
+	m.views[viewDaemon] = h.view
+	return m
+}
+
+// TestConfigEditorRebindsAKeyWithoutReconnecting is task 118 decision 9
+// through the real handlers: a binding changed from the editor is the one the
+// next keypress meets. The daemon validates and writes it; the TUI adopts the
+// PATCH's answer rather than waiting for a reconnect to fetch it again.
+func TestConfigEditorRebindsAKeyWithoutReconnecting(t *testing.T) {
+	h := newConfigLive(t)
+	m := newKeysRoot(t, h)
+	if got := opKey(keymap.Refresh); got != "R" {
+		t.Fatalf("refresh starts on %q, want the shipped R", got)
+	}
+	if saved := saveKeysThroughRoot(t, h, m, "refresh=f5"); saved.err != nil {
+		t.Fatalf("the daemon refused refresh=f5: %v", saved.err)
+	}
+	if h.view.form != nil {
+		t.Fatalf("the editor stayed open after a successful save: %+v", h.view.form)
+	}
+	if !strings.Contains(h.file(t), "refresh: f5") {
+		t.Errorf("config.yaml was not written:\n%s", h.file(t))
+	}
+	if got := h.view.config.TUI.Keys["refresh"]; got != "f5" {
+		t.Errorf("the daemon view did not adopt the saved keymap: refresh=%q", got)
+	}
+	if got := opKey(keymap.Refresh); got != "f5" {
+		t.Errorf("opKey(refresh) = %q after the save, want f5", got)
+	}
+}
+
+// A keymap the daemon refuses changes nothing anywhere. The keymap is rebound
+// first so the assertion can fail: a refused save carries a zero config, and a
+// root that installed it anyway would land on the shipped keymap — which, had
+// the test started there, would look exactly like keeping it.
+func TestConfigEditorKeepsTheKeymapTheDaemonRefuses(t *testing.T) {
+	for _, tc := range []struct{ name, value string }{
+		{"collision", "refresh=a"},
+		{"unknown operation", "nosuch=f5"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newConfigLive(t)
+			m := newKeysRoot(t, h)
+			if saved := saveKeysThroughRoot(t, h, m, "refresh=f5"); saved.err != nil {
+				t.Fatalf("the daemon refused refresh=f5: %v", saved.err)
+			}
+			before := h.file(t)
+
+			saved := saveKeysThroughRoot(t, h, m, tc.value)
+			if saved.err == nil {
+				t.Fatalf("the daemon accepted %q", tc.value)
+			}
+			if h.view.form == nil {
+				t.Fatal("a refused keymap closed the editor")
+			}
+			if h.view.form.err == "" {
+				t.Error("the daemon's refusal is not rendered against the field")
+			}
+			if after := h.file(t); after != before {
+				t.Errorf("a refused keymap reached config.yaml:\n%s", after)
+			}
+			if got := opKey(keymap.Refresh); got != "f5" {
+				t.Errorf("opKey(refresh) = %q after a refused save, want the f5 it had", got)
+			}
+		})
 	}
 }
 

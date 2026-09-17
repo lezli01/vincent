@@ -151,6 +151,15 @@ every user. Worth its own issue (tracked in
 [#412](https://github.com/lezli01/vincent/issues/412), 2026-09-13); it is not a
 substitute for this one.
 
+*Amended 2026-09-17 (task [118](118-user-configurable-tui-keymap.md), issue
+#412):* the keymap is now its own work. `tui.keys` rebinds an *operation* on
+every surface that carries it, and the three clauses above hold the override
+through the same checker that holds the defaults, which is how it answers the
+objection here rather than moving the choice of a consistent default onto every
+user. Decision 2 is untouched: the §6 action letters still do not move as
+defaults. "No aliasing" below is carried over as task 118 decision 6 — an
+override replaces the default.
+
 No aliasing. Keeping every current key and adding a standard second one doubles
 what `?` has to explain and leaves `d` still cycling the window on the archive,
 which is the dangerous case.

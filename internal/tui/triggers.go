@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // The triggers takeover (§15 view 11, task 096.6). It is the view the inward
@@ -421,20 +422,20 @@ func (v *triggersView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, v.move(1)
 	case "enter", "i":
 		return v, v.openForm()
-	case "a":
+	case opKey(keymap.Add):
 		v.openCreate()
 		return v, nil
-	case "e":
+	case opKey(keymap.Editor):
 		return v, v.editCmd()
-	case "D":
+	case opKey(keymap.Delete):
 		v.askDelete()
 		return v, nil
 	case "space", " ":
 		return v, v.toggle()
-	case "R":
+	case opKey(keymap.Refresh):
 		v.err, v.note = "", ""
 		return v, v.loadCmd()
-	case "/":
+	case opKey(keymap.Filter):
 		v.filtering = true
 		return v, v.filter.Focus()
 	case "tab":
@@ -470,7 +471,7 @@ func (v *triggersView) updateLedgerKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, v.openDelivery()
 	case "tab", "esc":
 		v.focus = trigFocusList
-	case "R":
+	case opKey(keymap.Refresh):
 		v.err, v.note = "", ""
 		return v, v.loadCmd()
 	}

@@ -17,6 +17,7 @@ vincent          # opens the TUI
 - [The takeover screens](#the-takeover-screens)
 - [The command palette](#the-command-palette)
 - [Every key](#every-key)
+- [Rebinding keys](#rebinding-keys)
 - [Mouse, selection and paste](#mouse-selection-and-paste)
 - [When the daemon is unreachable](#when-the-daemon-is-unreachable)
 
@@ -2040,6 +2041,143 @@ Global bindings — active whenever the focused surface is not capturing text:
 | `esc` | Close one layer: popup tab → popup → screen → selection → filter — never quits |
 | `q` | Quit the TUI (the daemon keeps running) |
 | `ctrl+c` | Quit |
+
+## Rebinding keys
+
+Every key in this guide is a **default**. To move one, set
+[`tui.keys`](../reference/configuration.md#tuikeys) in `config.yaml`: a map from
+an operation to the one key you want for it.
+
+```yaml
+tui:
+  keys:
+    refresh: ctrl+e
+    quit: f10
+```
+
+The same map can be set with `vincent config set tui.keys "refresh=ctrl+e
+quit=f10"`, or from the [daemon view's](#daemon) config editor. An empty map,
+the default, is the keymap this guide describes.
+
+A key is written the way the terminal reports it: one character (`R`, `/`,
+`!`), or one of the names `enter`, `tab`, `esc`, `space`, `backspace`,
+`delete`, `insert`, `home`, `end`, `pgup`, `pgdown`, `up`, `down`, `left`,
+`right` and `f1` to `f20` — optionally after `ctrl+`, `alt+` and `shift+`, in
+that order. A shifted letter is written as itself: `R`, not `shift+r`.
+
+**An override moves the operation everywhere it appears.** With `refresh:
+ctrl+e`, every screen that re-reads does so on `ctrl+e` — the chats board, the
+workflows list, the daemon view and the rest — and `?`, the footer and the
+palette say `ctrl+e` there. **It replaces the default instead of adding a
+second key**, so `R` no longer refreshes anything; in the task workspace it is
+still repair, which is an operation of its own. The key you vacate is free, so
+two operations can swap in one edit:
+
+```yaml
+tui:
+  keys:
+    pause: x
+    reject: p
+```
+
+Setting an operation to its own default changes nothing.
+
+### The operations
+
+The first twelve are the operations screens share, the next nine are the
+[task actions](#the-action-bar), and the last eight are the global keys.
+
+| Operation | Default | Does |
+|---|---|---|
+| `refresh` | `R` | Refresh, or re-read |
+| `archive` | `A` | Archive a task or a chat |
+| `delete` | `D` | Delete a persisted record: an archived task or chat, a project, a trigger |
+| `draft_remove` | `d` | Remove a row from an open draft |
+| `add` | `a` | Add or create |
+| `editor` | `e` | Edit in `$EDITOR` |
+| `free_text` | `t` | Type free text instead of picking from a list |
+| `browser` | `o` | Open in a browser |
+| `open_row` | `enter` | Open or expand the row under the cursor |
+| `scope` | `s` | Cycle what a listing shows |
+| `filter` | `/` | Filter |
+| `lane` | `l` | Open a fan-out lane |
+| `pause` | `p` | Pause or resume the task |
+| `approve` | `a` | Approve the gate |
+| `reject` | `x` | Reject the gate |
+| `retry` | `r` | Retry the blocked step |
+| `edit_retry` | `E` | Edit the step in `$EDITOR`, then retry |
+| `repair` | `R` | Repair with an agent |
+| `skip` | `s` | Skip the current step |
+| `cancel` | `c` | Cancel the task |
+| `follow_up` | `F` | Follow up on a finished task |
+| `palette` | `:` | Open the command palette |
+| `palette_alt` | `ctrl+p` | Open the command palette, also while a text field has the keyboard |
+| `help` | `?` | Toggle help |
+| `help_alt` | `f1` | Toggle help, also while a text field has the keyboard |
+| `next_attention` | `!` | Jump to the next task needing a human |
+| `mouse` | `M` | Toggle the mouse |
+| `quit` | `q` | Quit the TUI |
+| `new` | `n` | New task — or new chat, on the chats board |
+
+`new` is one operation on both boards because it is one gesture, "make a new
+one here", so moving it moves both.
+
+### What stays where it is
+
+Some keys are not operations, and `tui.keys` cannot move them or give their key
+to anything else:
+
+- **Keys that belong to one screen** and mean nothing shared — `g` groups the
+  board, `L` shows a fan-out's lanes, `m` merges a pull request, and `X`, `i`,
+  `u`, `P`, `U`, `S` and the like.
+- **Keys that work as a set** — folding (`←`/`→`, `C`/`O`, `space`), paging
+  (`<`/`>`), moving (`↑`/`↓`, `K`/`J`) and the task tabs (`[`/`]`).
+- **`esc`**, because it closes one layer at a time on every screen; **`ctrl+c`**,
+  because it must always be able to quit; **`ctrl+v`**, the paste fallback; and
+  **`tab`/`shift+tab`**, which move focus everywhere.
+- **A popup's `y` and `n`**, which answer the question the popup is asking.
+- **The aliases**: the vim-style `h j k l f b u G`, the output tab's `d`, and
+  `r` for retrying the connection while the daemon is unreachable.
+
+Naming one of these in `tui.keys` — `group`, `fold`, `page`, `esc`, `tab`,
+`yes`, `resume` and so on — is refused with the reason it is fixed.
+
+### What is refused
+
+The daemon checks the whole map before it accepts any of it. It checks the
+names and the key strings first and reports every problem among them at once;
+only a map whose names and keys are all valid is checked for the last two
+refusals below, which are again reported all at once:
+
+- **An operation that does not exist**, with the list of those that do.
+- **Something that is not a key**, such as `reload` or `shift+r`.
+- **A key that already means something else**, anywhere in the TUI: another
+  operation, or one of the fixed keys above — even on a screen that is never
+  open at the same time. A handful of defaults share a key by a recorded
+  decision (`R` is refresh and repair, `a` is add and approve, `s` is scope and
+  skip), and those decisions cover the defaults only. Moving `refresh` to `r` is
+  refused, because `r` is retry.
+- **A key a text field would type**, for `palette_alt` and `help_alt`. A
+  printable key is one character, or `space`, with no `ctrl` or `alt`. Those
+  two exist to work while a chat's composer, a filter or a form has the
+  keyboard, where a letter would be typed instead, so bind them to a `ctrl`,
+  `alt` or function key. The same holds for any operation answered in the chat
+  workspace or the new-chat form, whose text fields take every printable key.
+
+Each message names the operation, the key and what the key already means — for
+example `refresh: "q" already means quit (quit the TUI)`. A refused
+`vincent config set` or editor save leaves `config.yaml` untouched, and a hand
+edit that fails is rejected on reload with the last good keymap still in force.
+
+### When a change takes effect
+
+Saved in the daemon view's config editor, a keymap applies at once. Set any
+other way — `vincent config set`, or an edit to the file — it reaches a running
+TUI the next time the TUI reads the configuration: when you open the daemon view
+or refresh it, or when the TUI reconnects.
+
+This guide cannot know your keymap, so it always shows the defaults. `?`, the
+footer and the palette show the keys in force.
 
 ## Mouse, selection and paste
 

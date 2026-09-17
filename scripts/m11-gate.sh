@@ -17,6 +17,9 @@
 #   6. `vincent config get|set` does the same job from the command line
 #   7. PATCH /v1/config is not an MCP tool: an agent must not be able to
 #      reconfigure the daemon supervising it (task 057 decision 4)
+#   8. `tui.keys` (task 118): a keymap that breaks §15's vocabulary is refused
+#      with the file byte-identical, and an accepted one round-trips through
+#      GET, the file and `vincent config get|set`
 #
 # No workflow and no agent CLI: what is under test is an endpoint and a file,
 # so the gate needs neither, which also keeps it fast on all three platforms.
@@ -206,7 +209,49 @@ if grep -qx 'config_set' <<<"$NAMES"; then
   fail "config_set is exposed; an agent must not be able to reconfigure its own daemon"
 fi
 
-echo "== 8. the daemon is still up"
+echo "== 8. tui.keys: a refused keymap writes nothing, an accepted one round-trips"
+# Served as an object even when empty: {} is the shipped keymap.
+KEYS="$(api GET /config | jq -c .tui.keys)" || fail "GET /v1/config (tui.keys) failed"
+[[ "$KEYS" == "{}" ]] || fail "tui.keys is served as $KEYS by default, want {}"
+cp "$CONFIG_FILE" "$TMP/before.yaml"
+# q is quit's key on every surface, so giving it to refresh is a second
+# meaning (§15 clause 3), refused by the checker config runs at load.
+STATUS="$(api_status PATCH /config -d '{"tui":{"keys":{"refresh":"q"}}}')" \
+  || fail "curl PATCH (tui.keys collision) failed"
+[[ "$STATUS" == "400" ]] || fail "refresh: q answered $STATUS, want 400"
+jq -e '.error.code == "validation_failed" and (.error.message | contains("tui.keys: refresh"))' \
+  "$TMP/body.json" >/dev/null \
+  || fail "the keymap refusal does not name tui.keys and the operation: $(cat "$TMP/body.json")"
+cmp -s "$TMP/before.yaml" "$CONFIG_FILE" || fail "a refused keymap changed config.yaml"
+# A fixed key is refused by name, not as an unknown operation.
+STATUS="$(api_status PATCH /config -d '{"tui":{"keys":{"group":"G"}}}')" \
+  || fail "curl PATCH (tui.keys fixed) failed"
+[[ "$STATUS" == "400" ]] || fail "group: G answered $STATUS, want 400"
+jq -e '.error.message | contains("tui.keys: group: not rebindable")' "$TMP/body.json" >/dev/null \
+  || fail "a fixed key is not refused by name: $(cat "$TMP/body.json")"
+cmp -s "$TMP/before.yaml" "$CONFIG_FILE" || fail "a refused fixed key changed config.yaml"
+KEYS="$(api GET /config | jq -c .tui.keys)" || fail "GET after the refusals failed"
+[[ "$KEYS" == "{}" ]] || fail "a refused keymap is in force: $KEYS"
+
+api PATCH /config -d '{"tui":{"keys":{"refresh":"ctrl+e"}}}' >/dev/null \
+  || fail "PATCH tui.keys failed"
+KEYS="$(api GET /config | jq -c .tui.keys)" || fail "GET after PATCH tui.keys failed"
+[[ "$KEYS" == '{"refresh":"ctrl+e"}' ]] || fail "GET right after the 200 serves tui.keys as $KEYS"
+# Uncommented where the template documents it, not appended as a second key.
+KEYS_LINES="$(grep -c '^  keys: ' "$CONFIG_FILE")"
+[[ "$KEYS_LINES" == "1" ]] || fail "tui.keys appears $KEYS_LINES times in config.yaml"
+KEYS_LINE="$(grep '^  keys: ' "$CONFIG_FILE" | tr -d '\r')"
+[[ "$KEYS_LINE" == "  keys: {refresh: ctrl+e}" ]] || fail "config.yaml carries $KEYS_LINE"
+OUT="$("$VINCENT" config get tui.keys | tr -d '\r')"
+[[ "$OUT" == "refresh=ctrl+e" ]] || fail "vincent config get tui.keys = $OUT, want refresh=ctrl+e"
+if "$VINCENT" config set tui.keys "refresh=q" >/dev/null 2>&1; then
+  fail "vincent config set accepted a keymap giving refresh quit's key"
+fi
+"$VINCENT" config set tui.keys "" >/dev/null || fail "vincent config set tui.keys \"\" failed"
+KEYS="$(api GET /config | jq -c .tui.keys)" || fail "GET after clearing tui.keys failed"
+[[ "$KEYS" == "{}" ]] || fail "clearing tui.keys left $KEYS"
+
+echo "== 9. the daemon is still up"
 api GET /health | jq -e '.status == "ok"' >/dev/null \
   || fail "the daemon did not survive the gate"
 

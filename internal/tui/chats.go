@@ -11,6 +11,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/chatstate"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // The chats board (§15, task 067, closing task 063.2).
@@ -553,10 +554,10 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	v.note = ""
 	if v.archived {
 		switch msg.String() {
-		case "D":
+		case opKey(keymap.Delete):
 			v.askDelete()
 			return v, nil
-		case "s":
+		case opKey(keymap.Scope):
 			// The date window, not the live board's scope cycle: `s` means
 			// "cycle what this list is showing" on both, and on an archived
 			// board the thing to cycle is the window (task 093).
@@ -572,7 +573,7 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 				return v, v.loadCmd()
 			}
 			return v, nil
-		case "A", "n":
+		case opKey(keymap.Archive), opKey(keymap.New):
 			// Archive and new chat have no meaning here: the rows are already
 			// terminal and this board makes nothing. Swallowed rather than
 			// left to fall through to the live board's handler below — where
@@ -593,7 +594,7 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.moveCursor(-1)
 	case "down", "j":
 		v.moveCursor(1)
-	case "/":
+	case opKey(keymap.Filter):
 		v.filtering = true
 		v.filter.Focus()
 		return v, nil
@@ -601,12 +602,12 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, v.collapseAtCursor()
 	case "right":
 		return v, v.expandAtCursor()
-	case "enter":
+	case opKey(keymap.OpenRow):
 		if c, ok := v.current(); ok {
 			id := c.ID
 			return v, func() tea.Msg { return openChatMsg{id: id} }
 		}
-	case "n":
+	case opKey(keymap.New):
 		// A chat needs a project, and the form offers no way to register
 		// one: opening it on an installation that has none is a dead end
 		// whose only exit is `esc` (issue #279). Refuse only on a positive
@@ -618,7 +619,7 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 		v.create = newNewChatForm(v.client, v.hintedProject())
 		return v, v.create.init()
-	case "A":
+	case opKey(keymap.Archive):
 		if c, ok := v.current(); ok {
 			// A terminal chat has nothing left to archive and no worktree to
 			// remove, so the prompt would ask a human to confirm removing
@@ -634,10 +635,10 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 				text: fmt.Sprintf("archive %q and remove its worktree? (y/n)", c.Title),
 			}
 		}
-	case "s":
+	case opKey(keymap.Scope):
 		v.cycleScope()
 		return v, v.loadCmd()
-	case "R":
+	case opKey(keymap.Refresh):
 		return v, v.loadCmd()
 	}
 	return v, nil

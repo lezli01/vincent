@@ -199,6 +199,7 @@ func TestApplyOverTheTemplateStillParses(t *testing.T) {
 		{Path: "update.check", Value: "false"},
 		{Path: "tui.board.group_by", Value: RenderList(nil)},
 		{Path: "tui.hyperlinks", Value: "true"},
+		{Path: "tui.keys", Value: RenderMap(map[string]string{"refresh": "ctrl+e"})},
 	}
 	got, err := Apply([]byte(defaultConfigYAML), sets)
 	if err != nil {
@@ -214,7 +215,8 @@ func TestApplyOverTheTemplateStillParses(t *testing.T) {
 		cfg.Agents.Cursor.Path != "/opt/cursor-agent" || cfg.MCP.WireSteps ||
 		cfg.Include.MaxDepth != 9 || cfg.Loop.MaxIterations != 3 ||
 		cfg.GitHub.PollInterval != 0 || cfg.Update.Check ||
-		len(cfg.TUI.Board.GroupBy) != 0 || !cfg.TUI.Hyperlinks || len(cfg.Environment.Unset) != 1 {
+		len(cfg.TUI.Board.GroupBy) != 0 || !cfg.TUI.Hyperlinks || len(cfg.Environment.Unset) != 1 ||
+		cfg.TUI.Keys["refresh"] != "ctrl+e" {
 		t.Errorf("a set did not take: %+v", cfg)
 	}
 	// Every key was already documented, so nothing was appended: the file has
@@ -226,7 +228,7 @@ func TestApplyOverTheTemplateStillParses(t *testing.T) {
 
 // RenderString has one job: what it emits has to read back as what went in.
 func TestRenderStringRoundTrips(t *testing.T) {
-	for _, s := range []string{"", "info", "true", "no", "60m", "a b", "vincent/{{.ID}}-{{.Slug}}", "#hash", "C:\\bin\\cursor.exe"} {
+	for _, s := range []string{"", "info", "true", "no", "60m", "a b", "vincent/{{.ID}}-{{.Slug}}", "#hash", "C:\\bin\\cursor.exe", "@", "@home", "a@b", "ctrl+e", ":", "ctrl+:", "-", "-1h", ":a", "127.0.0.1:0"} {
 		src := "log_level: " + RenderString(s) + "\n"
 		var out struct {
 			LogLevel string `yaml:"log_level"`

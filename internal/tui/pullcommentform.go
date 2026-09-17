@@ -5,6 +5,7 @@ import (
 
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // The comment popup (task 068.4, issue #387).
@@ -113,7 +114,7 @@ func (f *pullCommentForm) update(msg tea.KeyPressMsg) (cmd tea.Cmd, exit bool) {
 	switch msg.String() {
 	case "enter":
 		f.startEdit()
-	case "e":
+	case opKey(keymap.Editor):
 		if f.openEditor != nil {
 			return f.openEditor(f.body), false
 		}
@@ -179,7 +180,7 @@ func (f *pullCommentForm) lines(width int) []string {
 	case f.editing:
 		out = append(out, styleDim.Render("  ctrl+s post · esc stop typing"))
 	default:
-		out = append(out, styleDim.Render("  enter type · e $EDITOR · ctrl+s post · esc discard"))
+		out = append(out, styleDim.Render("  enter type · "+opKey(keymap.Editor)+" $EDITOR · ctrl+s post · esc discard"))
 	}
 	return out
 }

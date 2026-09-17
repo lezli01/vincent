@@ -6,6 +6,7 @@ import (
 
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // The pull-request form (task 052.6 decision 4, task 069).
@@ -179,7 +180,7 @@ func (f *createPRForm) update(msg tea.KeyPressMsg) (cmd tea.Cmd, exit bool) {
 			return nil, false
 		}
 		f.startEdit(f.cursor)
-	case "e":
+	case opKey(keymap.Editor):
 		if f.cursor == cprDraft {
 			return nil, false
 		}
@@ -321,7 +322,7 @@ func (f *createPRForm) lines(width int) []string {
 		out = append(out, styleDim.Render("  ctrl+s keeps this text · esc discards it"))
 	default:
 		out = append(out, styleDim.Render(
-			"  enter edit · e $EDITOR · space toggle draft · ctrl+s push and create · ctrl+o browser · esc leave"))
+			"  enter edit · "+opKey(keymap.Editor)+" $EDITOR · space toggle draft · ctrl+s push and create · ctrl+o browser · esc leave"))
 	}
 	return out
 }

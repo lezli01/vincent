@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 var taskFieldDecimalNumber = regexp.MustCompile(`^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$`)
@@ -209,10 +210,10 @@ func (p *picker) update(msg tea.KeyPressMsg) pickerResult {
 			p.cursor++
 			p.scrollToCursor()
 		}
-	case "/":
+	case opKey(keymap.Filter):
 		p.filtering = true
 		p.filter.Focus()
-	case "t":
+	case opKey(keymap.FreeText):
 		// Free text, not $EDITOR (task 093). `e` opens $EDITOR on every form a
 		// picker can be raised over, so the two meanings had to be told apart
 		// by key rather than by which layer happened to be open.
@@ -663,7 +664,7 @@ func (n *newTask) updateFields(msg tea.KeyPressMsg) tea.Cmd {
 			f.cursor++
 			f.err = ""
 		}
-	case "a":
+	case opKey(keymap.Add):
 		f.rows = append(f.rows, kv{})
 		f.cursor = len(f.rows) - 1
 		f.startEdit(1)
@@ -691,7 +692,7 @@ func (n *newTask) updateFields(msg tea.KeyPressMsg) tea.Cmd {
 		case msg.String() == "enter":
 			f.startEdit(1)
 		}
-	case "d":
+	case opKey(keymap.DraftRemove):
 		if len(f.rows) > 0 {
 			if f.rows[f.cursor].declared {
 				f.err = "workflow-declared fields cannot be deleted"

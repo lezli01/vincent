@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // The chats board's rendering, split from the view for the reason every other
@@ -77,7 +78,7 @@ func (v *chatsView) bodyLines(width int) (lines []string, cursorRow int) {
 	rows := v.rows()
 	if len(rows) == 0 {
 		if v.loaded {
-			return []string{styleDim.Render("  No chats. Press n to start one.")}, 0
+			return []string{styleDim.Render("  No chats. Press " + opKey(keymap.New) + " to start one.")}, 0
 		}
 		return []string{styleDim.Render("  …")}, 0
 	}

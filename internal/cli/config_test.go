@@ -77,7 +77,11 @@ func TestConfigValuesRoundTripThroughSet(t *testing.T) {
 		Update:   apiclient.ConfigUpdate{Check: true, PollInterval: "24h0m0s"},
 		Backup:   apiclient.ConfigBackup{Interval: "24h0m0s", Keep: 7, Dir: "/var/backups/vincent"},
 		Notify:   apiclient.ConfigNotify{On: []string{"blocked"}, Command: []string{"/bin/echo", "hi"}},
-		TUI:      apiclient.ConfigTUI{Board: apiclient.ConfigBoard{GroupBy: []string{"project", "workflow"}}},
+		TUI: apiclient.ConfigTUI{
+			Board: apiclient.ConfigBoard{GroupBy: []string{"project", "workflow"}},
+			// "=" as a key is the case the pair spelling has to survive.
+			Keys: map[string]string{"refresh": "ctrl+e", "help": "="},
+		},
 	}
 	for _, path := range configPaths() {
 		value, ok := configValue(cfg, path)
@@ -98,6 +102,11 @@ func TestConfigValuesRoundTripThroughSet(t *testing.T) {
 		top := strings.Split(path, ".")[0]
 		if !strings.Contains(string(b), `"`+top+`"`) {
 			t.Errorf("%s: the patch does not mention %q: %s", path, top, b)
+		}
+		if path == "tui.keys" {
+			if p := patch.TUI; p == nil || p.Keys == nil || !reflect.DeepEqual(*p.Keys, cfg.TUI.Keys) {
+				t.Errorf("tui.keys: `get` printed %q and `set` would write %s", value, b)
+			}
 		}
 	}
 }

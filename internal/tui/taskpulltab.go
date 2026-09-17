@@ -13,6 +13,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/github"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // The task workspace's Pull Request tab (task 068, spec §15 view 2).
@@ -184,9 +185,9 @@ func (t *taskView) updatePullTabKey(msg tea.KeyPressMsg) tea.Cmd {
 	case "down", "j":
 		t.movePullCursor(1)
 		return nil
-	case "o":
+	case opKey(keymap.Browser):
 		return t.openPullCmd()
-	case "enter":
+	case opKey(keymap.OpenRow):
 		return t.openCheckCmd()
 	case "u":
 		return t.unlinkPullCmd()
@@ -409,11 +410,11 @@ func (t *taskView) pullHintLine() string {
 			if run := t.selectedCheck(); run == nil || run.URL == "" {
 				continue
 			}
-		case "l":
+		case opKey(keymap.Lane):
 			// The row carries no footer hint; here it is named only while
 			// this task has lanes to open.
 			if len(t.lanes) > 0 {
-				hints = append(hints, "l open lane")
+				hints = append(hints, opKey(keymap.Lane)+" open lane")
 			}
 			continue
 		}

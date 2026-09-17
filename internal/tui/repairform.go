@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // rfRow is one line of the repair form.
@@ -180,7 +181,7 @@ func (f *repairForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cmd 
 		f.cursor = min(f.cursor+1, rfRowCount-1)
 	case "enter":
 		f.openRow()
-	case "e":
+	case opKey(keymap.Editor):
 		if f.cursor == rfPrompt && f.openEditor != nil {
 			return f.openEditor(f.prompt), false
 		}
@@ -359,7 +360,7 @@ func (f *repairForm) lines(width int) []string {
 		out = append(out, styleDim.Render("  starting the repair agent…"))
 	default:
 		out = append(out, styleDim.Render(
-			"  enter edit · e $EDITOR · ctrl+s start the repair · ctrl+t task details · esc leave the form"))
+			"  enter edit · "+opKey(keymap.Editor)+" $EDITOR · ctrl+s start the repair · ctrl+t task details · esc leave the form"))
 	}
 	return out
 }

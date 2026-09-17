@@ -11,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // connPhase is the daemon-connection state machine the shell renders. The
@@ -224,6 +225,7 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.broadcast(msg)
 	case boardConfigMsg, daemonConfigMsg, configSavedMsg:
 		m.applyHyperlinks(msg)
+		m.applyKeymap(msg)
 		return m, m.broadcast(msg)
 	case newTaskFromPullMsg:
 		return m.updateNewTaskFromPull(msg)
@@ -376,7 +378,7 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// decision 1): help had been unreachable from a chat, a filter or a form
 	// by its key, and a text field that took `?` as a key would lose it as a
 	// character.
-	if k := msg.String(); k == paletteAltKey || k == helpAltKey {
+	if k := msg.String(); k == opKey(keymap.PaletteAlt) || k == opKey(keymap.HelpAlt) {
 		cmd, _ := m.globalKey(msg)
 		return m, cmd
 	}
@@ -405,7 +407,7 @@ func (m *root) updateHelpKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
-	case "?", "esc", helpAltKey:
+	case opKey(keymap.Help), "esc", opKey(keymap.HelpAlt):
 		m.help = false
 	}
 	return m, nil
@@ -416,24 +418,24 @@ func (m *root) updateHelpKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // `!` while disconnected, `n` on the new-task form — is the caller's to route.
 func (m *root) globalKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	switch key := msg.String(); key {
-	case "q", "ctrl+c":
+	case opKey(keymap.Quit), "ctrl+c":
 		return tea.Quit, true
-	case ":", paletteAltKey:
+	case opKey(keymap.Palette), opKey(keymap.PaletteAlt):
 		m.openPalette()
 		return nil, true
-	case "?", helpAltKey:
+	case opKey(keymap.Help), opKey(keymap.HelpAlt):
 		m.help = !m.help
 		return nil, true
-	case "M":
+	case opKey(keymap.Mouse):
 		m.mouseOn = !m.mouseOn
 		return nil, true
-	case "!":
+	case opKey(keymap.NextAttention):
 		// Jump to the next task needing a human — global, so it also pulls
 		// a takeover screen back to the board it acts on.
 		if m.phase == phaseConnected {
 			return tea.Batch(m.switchTo(viewHome), m.deliver(viewHome, jumpAttentionMsg{})), true
 		}
-	case "n":
+	case opKey(keymap.New):
 		// Not while the form is already up: there, n is "no" to the discard
 		// prompt, and re-opening would throw away the draft it is asking
 		// about. And not when the active surface declares n as a row of its
@@ -621,6 +623,22 @@ func synthKey(key string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyDown}
 	case "space":
 		return tea.KeyPressMsg{Code: ' ', Text: " "}
+	case "shift+tab":
+		return tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}
+	}
+	// A `tui.keys` override may bind an operation to any key keymap.ParseKey
+	// accepts (task 118), and the palette replays whatever the registry says:
+	// alt+ and the navigation names have to round-trip too.
+	if rest, ok := strings.CutPrefix(key, "alt+"); ok {
+		msg := synthKey(rest)
+		msg.Mod |= tea.ModAlt
+		if rest != "space" && len([]rune(rest)) == 1 {
+			msg.Text = ""
+		}
+		return msg
+	}
+	if code, ok := namedKeyCodes[key]; ok {
+		return tea.KeyPressMsg{Code: code}
 	}
 	// Any ctrl+<letter>, rather than a case per key. The named list above had
 	// grown three of them and was already one behind the registry: ctrl+r and
@@ -639,6 +657,13 @@ func synthKey(key string) tea.KeyPressMsg {
 		}
 	}
 	return tea.KeyPressMsg{Code: rune(key[0]), Text: key}
+}
+
+// namedKeyCodes are the navigation keys synthKey rebuilds by name.
+var namedKeyCodes = map[string]rune{
+	"left": tea.KeyLeft, "right": tea.KeyRight, "home": tea.KeyHome, "end": tea.KeyEnd,
+	"pgup": tea.KeyPgUp, "pgdown": tea.KeyPgDown, "backspace": tea.KeyBackspace,
+	"delete": tea.KeyDelete, "insert": tea.KeyInsert,
 }
 
 // updateNoticeKey is the §16 overlay's key handling: it swallows everything
@@ -824,6 +849,29 @@ func (m *root) applyHyperlinks(msg tea.Msg) {
 	}
 }
 
+// applyKeymap installs `tui.keys` wherever the TUI already reads `tui:` (task
+// 118 decision 9): the board's fetch on every connect and reconnect, the
+// daemon view's, and the answer to the config editor's own PATCH — so a
+// binding changed from the editor works on the next press, with no reconnect.
+// A failed fetch or a refused save changes nothing, for applyHyperlinks'
+// reason.
+func (m *root) applyKeymap(msg tea.Msg) {
+	switch msg := msg.(type) {
+	case boardConfigMsg:
+		if msg.err == nil {
+			applyKeys(msg.keys)
+		}
+	case daemonConfigMsg:
+		if msg.err == nil {
+			applyKeys(msg.config.TUI.Keys)
+		}
+	case configSavedMsg:
+		if msg.err == nil {
+			applyKeys(msg.cfg.TUI.Keys)
+		}
+	}
+}
+
 // broadcast routes a message to every view, not just the visible one.
 // Connection lifecycle, window size and stream events all have to reach a
 // view that is currently off-screen: the board must keep its rows current
@@ -953,9 +1001,12 @@ func (m *root) body() string {
 	case phaseStarting:
 		return "\n  starting daemon…\n"
 	case phaseFailed:
+		// r is retry-connecting, fixed; the palette and quit are rebindable
+		// (task 118 decision 8).
 		return fmt.Sprintf(
-			"\n  %s\n\n  log: %s\n\n  press r to retry, : for the daemon view and its log, q to quit\n",
-			styleBad.Render("daemon unreachable: "+errString(m.connErr)), m.logPath)
+			"\n  %s\n\n  log: %s\n\n  press r to retry, %s for the daemon view and its log, %s to quit\n",
+			styleBad.Render("daemon unreachable: "+errString(m.connErr)), m.logPath,
+			opKey(keymap.Palette), opKey(keymap.Quit))
 	case phaseReconnecting:
 		return fmt.Sprintf("\n  %s\n\n  retrying in %s — press r to restart the daemon if it stays down\n",
 			styleWarn.Render("connection lost: "+errString(m.connErr)), m.retryIn)

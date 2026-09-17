@@ -52,6 +52,8 @@ func TestMCPConfigGetRedactsOnlyTheTwoSecretFields(t *testing.T) {
 	cfg := config.Default()
 	cfg.Environment.Set = map[string]string{"API_TOKEN": "s3cret", "LANG": "C.UTF-8"}
 	cfg.Notify.Command = []string{"/usr/local/bin/notify", "https://hooks.example/T0/B0/xoxb"}
+	// Not a secret, so served unmasked on both paths (task 118).
+	cfg.TUI.Keys = map[string]string{"refresh": "ctrl+e"}
 	ts, _ := newTestServer(t, func() config.Config { return cfg })
 
 	_, httpBody := doRequest(t, ts, http.MethodGet, "/v1/config", testToken)
