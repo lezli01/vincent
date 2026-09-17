@@ -9790,7 +9790,9 @@ every other record stays literal.
   capability probe, the payload would carry an agent-supplied URL inside an
   escape sequence, and a link spanning a wrap boundary would have to be closed
   and reopened per line under an invariant that keeps escape sequences out of
-  wrapping entirely. The numbering is what a later reader action would name.
+  wrapping entirely. ~~The numbering is what a later reader action would
+  name.~~ *Amended 2026-09-17 (task 110):* the numbering is what the link
+  picker names — see the task 110 amendment below.
   *Amended 2026-09-17 (task 111, issue #404):* with `tui.hyperlinks` on (§12.3)
   a link whose destination passes §16's hyperlink sanitizer is clickable in
   three places — its label, its dim `[n]`, and the destination text on its
