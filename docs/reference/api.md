@@ -2187,9 +2187,10 @@ up by re-fetching the running turn's transcript and discarding every chunk whose
 `offset` is at or before the `X-Next-Offset` it reported. Chunks carry
 `chat_id`, `turn_id`, `offset`, the same normalized fields a task's chunks carry
 under the same type names (`agent.output`, `agent.tool_use`, `agent.tool_result`,
-`agent.run_header`, `agent.thinking`, `agent.subagent_started`,
-`agent.subagent_progress`, `agent.subagent_finished`, `agent.usage`), **and**
-the agent's own `raw` line beside them.
+`agent.run_header`, `agent.thinking`, `agent.plan`, `agent.command_output`,
+`agent.patch`, `agent.subagent_started`, `agent.subagent_progress`,
+`agent.subagent_finished`, `agent.usage`), **and** the agent's own `raw` line
+beside them.
 
 A chat's stream carries one type a task's does not: **`agent.raw`**, for a line
 vincent's parsers do not model. A task leaves those to its transcript, but a
