@@ -35,7 +35,8 @@ type TranscriptRecord struct {
 	Phase  string `json:"phase"`
 	Stream string `json:"stream"`
 	// Message carries an error's text; Kind and Summary describe an input
-	// request the run stopped for.
+	// request the run stopped for. Summary is also agent.subagent_finished's
+	// report, cut to one line.
 	Message string `json:"message"`
 	Kind    string `json:"kind"`
 	Summary string `json:"summary"`
@@ -52,8 +53,18 @@ type TranscriptRecord struct {
 	CostUSD      *float64 `json:"cost_usd"`
 	// ParentCallID names the subagent call a record was produced inside,
 	// empty for the main loop and for every adapter that does not report it.
-	// It is on the wire ahead of any renderer for it.
 	ParentCallID string `json:"parent_call_id"`
+	// Description, SubagentType, Background, Status, ToolUses, TotalTokens
+	// and LastTool are the agent.subagent_started, _progress and _finished
+	// records, whose CallID is the spawning call and whose DurationMS is the
+	// subagent's own wall clock.
+	Description  string `json:"description"`
+	SubagentType string `json:"subagent_type"`
+	Background   bool   `json:"background"`
+	Status       string `json:"status"`
+	ToolUses     int    `json:"tool_uses"`
+	TotalTokens  int64  `json:"total_tokens"`
+	LastTool     string `json:"last_tool"`
 	// WorkDir and AvailableTools are the agent.run_header record: what the
 	// CLI announced about the run before starting it.
 	WorkDir        string   `json:"work_dir"`
@@ -85,7 +96,8 @@ type TranscriptRecord struct {
 	Output    string `json:"output"`
 	Truncated bool   `json:"truncated"`
 	// CallID correlates an agent.command_output with the agent.tool_use
-	// whose command produced it.
+	// whose command produced it, and names the spawning call on an
+	// agent.subagent_* record.
 	CallID string `json:"call_id"`
 	Name   string `json:"name"`
 	// Raw is the whole record, for the annotation fields this struct does not

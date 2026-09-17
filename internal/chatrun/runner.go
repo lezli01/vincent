@@ -446,6 +446,7 @@ func (r *Runner) consume(
 			case agent.EventUsage, agent.EventResult, agent.EventOutput, agent.EventToolUse,
 				agent.EventToolResult, agent.EventThinking, agent.EventRunHeader,
 				agent.EventPlan, agent.EventCommandOutput,
+				agent.EventSubagentStarted, agent.EventSubagentProgress, agent.EventSubagentFinished,
 				agent.EventError, agent.EventUnknown:
 				// Rendering is the client's job: every one of these is already
 				// in the transcript and on the stream, and internal/tui's

@@ -9,6 +9,10 @@ import (
 	"github.com/lezli01/vincent/internal/agent"
 )
 
+// parseLine normalizes one line with a parser that has seen nothing before
+// it, which is what every single-line case here means.
+func parseLine(raw []byte) agent.Event { return new(streamParser).parse(raw) }
+
 func TestParseLine(t *testing.T) {
 	tests := []struct {
 		name string
@@ -432,10 +436,10 @@ func TestUnobservedToolUseResultTypeHasNoVerb(t *testing.T) {
 	}
 }
 
-// TestParentToolUseIDIsEmptyInCaptures pins what the fixtures actually
-// contain: `parent_tool_use_id` is null on every line of all three, so the
-// field is carried and there is nothing here to nest. A capture of a `Task`
-// run is what unblocks the renderer, and it is follow-up work.
+// TestParentToolUseIDIsEmptyInCaptures pins what these three fixtures
+// contain: `parent_tool_use_id` is null on every line of all three, because
+// none of those runs spawned a subagent. The captures that did are task 109's
+// (subagent109_test.go).
 func TestParentToolUseIDIsEmptyInCaptures(t *testing.T) {
 	for _, name := range []string{
 		"stream_permission_allow_2.1.226.jsonl",
@@ -452,7 +456,7 @@ func TestParentToolUseIDIsEmptyInCaptures(t *testing.T) {
 }
 
 // TestParentToolUseIDIsRead is the other half: the field is read when it is
-// there. It has to be asserted synthetically because no captured run has one.
+// there, on a line of any type.
 func TestParentToolUseIDIsRead(t *testing.T) {
 	line := `{"type":"assistant","parent_tool_use_id":"toolu_parent",` +
 		`"message":{"content":[{"type":"text","text":"from a subagent"}]}}`
