@@ -139,23 +139,78 @@ func TestEscLeavesTheFormWithoutAnswering(t *testing.T) {
 }
 
 // openPopupWith puts req on a task that is waiting on input and opens the
-// answer popup the way a human does, returning the shell it is open on. The
-// popup is sized by the shell (§15), so this is the only place the form meets
-// the width it is actually drawn at.
-func openPopupWith(t *testing.T, req apiclient.InputRequest) *shell {
+// answer popup the way a human does — enter on the task workspace — returning
+// the view it is open on. The popup is sized by overlayPopup (§15), so this is
+// the only place the form meets the width it is actually drawn at.
+func openPopupWith(t *testing.T, req apiclient.InputRequest) *taskView {
 	t.Helper()
-	s, _ := newShellFixture(t, task(3, stateAwaitingInput))
-	s.settle()
-	s.detail.form = newAnswerForm(req)
-	s.update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if !s.popup {
+	d := taskDetailFixture(t)
+	d.task.State = stateAwaitingInput
+	d.form = newAnswerForm(req)
+	v := newTaskView(d)
+	v.update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !v.popup {
 		t.Fatal("enter did not open the answer popup")
 	}
-	return s
+	return v
 }
 
 // popupView is the screen the popup is drawn on, with the styling stripped.
-func popupView(s *shell) string { return ansi.Strip(s.render(120, 37)) }
+func popupView(v *taskView) string { return ansi.Strip(v.render(120, 37)) }
+
+// TestTaskAnswerPopup: the form never opens itself; enter opens it, its keys
+// stay inside it rather than reaching the workspace's tab strip, and a
+// cleared request takes the popup with it. That esc keeps the picks is
+// TestAnswerPopupEscOnTheFormTabStillKeepsThePicks.
+func TestTaskAnswerPopup(t *testing.T) {
+	v := newTaskView(taskDetailFixture(t))
+	awaiting := v.detail.task
+	awaiting.State = stateAwaitingInput
+	awaiting.PendingInput = []byte(`{"kind":"question","questions":[` +
+		`{"text":"Which colour?","options":["teal","mauve"]}]}`)
+
+	// The request arriving builds the form and nothing else (§15).
+	v.update(detailLoadedMsg{id: 7, task: awaiting})
+	if v.detail.form == nil {
+		t.Fatal("fixture: the pending request built no answer form")
+	}
+	if v.popup {
+		t.Fatal("the popup opened itself")
+	}
+
+	v.update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !v.popup {
+		t.Fatal("enter did not open the answer popup")
+	}
+	if !strings.Contains(ansi.Strip(v.render(120, 37)), "Which colour?") {
+		t.Fatal("open popup does not render the question")
+	}
+
+	// Keys go to the form, not the workspace: space picks an option, and `]`
+	// — next tab everywhere else — moves nothing.
+	v.update(tea.KeyPressMsg{Code: ' ', Text: " "})
+	if got := v.detail.form.answers["Which colour?"]; len(got) != 1 || got[0] != "teal" {
+		t.Fatalf("space picked %v, want the first option", got)
+	}
+	v.update(tea.KeyPressMsg{Code: ']', Text: "]"})
+	if v.tab != taskTabSteps {
+		t.Fatalf("tab moved to %v while the popup was open", v.tab)
+	}
+	if !v.popup {
+		t.Fatal("a key meant for the form closed the popup")
+	}
+
+	// A cleared request (the refetch after an answer) closes an open popup.
+	answered := v.detail.task
+	answered.State, answered.PendingInput = stateRunning, nil
+	v.update(detailLoadedMsg{id: 7, task: answered})
+	if v.detail.form != nil {
+		t.Fatal("fixture: the refetch kept the answered request's form")
+	}
+	if v.popup {
+		t.Fatal("the popup outlived its request")
+	}
+}
 
 // TestFormPopupShowsLongTextInFull is issue #83: the popup is capped at 76
 // columns and every content line is truncated to fit it, so a question, an
@@ -207,11 +262,11 @@ func TestFormPopupShowsLongTextInFull(t *testing.T) {
 func TestFormPopupIsWideEnoughToReadAQuestion(t *testing.T) {
 	const question = "Should the retry keep the original prompt, or use the one you just edited in $EDITOR?"
 
-	s := openPopupWith(t, apiclient.InputRequest{
+	v := openPopupWith(t, apiclient.InputRequest{
 		Kind:      apiclient.InputKindQuestion,
 		Questions: []apiclient.InputQuestion{{Text: question, Options: []string{"Edited", "Original"}}},
 	})
-	view := popupView(s)
+	view := popupView(v)
 	for _, line := range strings.Split(popupOf(view), "\n") {
 		if strings.Contains(line, question) {
 			return
@@ -228,26 +283,26 @@ func TestFormPopupShowsALongTypedAnswerInFull(t *testing.T) {
 	const answer = "Use the edited prompt, but keep the original as a comment at the top of the step so the diff " +
 		"between what was asked and what was run stays visible in the transcript afterwards."
 
-	s := openPopupWith(t, questionRequest())
-	form := s.detail.form
-	s.update(keyPress("t"))
+	v := openPopupWith(t, questionRequest())
+	form := v.detail.form
+	v.update(keyPress("t"))
 	if !form.capturing() {
 		t.Fatal("t did not open the text field")
 	}
 	form.paste(answer)
 
-	if flat := popupText(popupView(s)); !strings.Contains(flat, answer) {
+	if flat := popupText(popupView(v)); !strings.Contains(flat, answer) {
 		t.Errorf("the answer being typed is not on screen in full; the popup renders:\n%s",
-			popupOf(popupView(s)))
+			popupOf(popupView(v)))
 	}
 
-	s.update(tea.KeyPressMsg{Code: tea.KeyEnter}) // commit the free text
+	v.update(tea.KeyPressMsg{Code: tea.KeyEnter}) // commit the free text
 	if form.capturing() {
 		t.Fatal("enter did not close the text field")
 	}
-	if flat := popupText(popupView(s)); !strings.Contains(flat, answer) {
+	if flat := popupText(popupView(v)); !strings.Contains(flat, answer) {
 		t.Errorf("the committed answer is not shown back in full; the popup renders:\n%s",
-			popupOf(popupView(s)))
+			popupOf(popupView(v)))
 	}
 }
 
@@ -260,18 +315,24 @@ func popupText(view string) string {
 }
 
 // popupOf pulls the answer popup out of a rendered screen so a failure shows
-// the box the assertion is about rather than the whole terminal.
+// the box the assertion is about rather than the whole terminal. It cuts each
+// row to the frame's own columns: the workspace behind the popup shows through
+// on either side, and a stray tab label there would otherwise land in the
+// middle of a wrapped question.
 func popupOf(view string) string {
 	var out []string
-	in := false
+	left, right := -1, -1
 	for _, line := range strings.Split(view, "\n") {
 		switch {
-		case strings.Contains(line, "Answer — #"):
-			in = true
-			out = append(out, line)
-		case in:
-			out = append(out, line)
-			if strings.Contains(line, "└") {
+		case left < 0 && strings.Contains(line, "Answer — #"):
+			top := strings.Index(line, "┌")
+			left = ansi.StringWidth(line[:top])
+			right = ansi.StringWidth(line[:top+strings.Index(line[top:], "┐")]) + 1
+			out = append(out, ansi.Cut(line, left, right))
+		case left >= 0:
+			row := ansi.Cut(line, left, right)
+			out = append(out, row)
+			if strings.HasPrefix(row, "└") {
 				return strings.Join(out, "\n")
 			}
 		}

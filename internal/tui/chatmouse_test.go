@@ -145,6 +145,41 @@ func TestTaskWheelIgnoredBehindAPopup(t *testing.T) {
 	}
 }
 
+// TestTaskClickIgnoredBehindAPopup is the wheel test's click twin: popup
+// interaction stays keyboard, so a stray click must not answer a question,
+// switch the tab under it, or close it.
+func TestTaskClickIgnoredBehindAPopup(t *testing.T) {
+	v := popupTaskView(t, func(d *detail) { d.form = newAnswerForm(questionRequest()) })
+	f := v.detail.form
+	v.render(v.width, v.height) // lay out the tab strip the click aims at
+
+	var output taskTabHit
+	for _, hit := range v.tabHits {
+		if hit.tab == taskTabOutput {
+			output = hit
+		}
+	}
+	if output.x1 == 0 {
+		t.Fatal("fixture: the tab strip has no Output tab to click")
+	}
+	v.update(tea.MouseClickMsg{X: output.x0, Y: 1, Button: tea.MouseLeft})
+	if !v.popup {
+		t.Fatal("a click closed the popup")
+	}
+	if v.tab != taskTabSteps {
+		t.Fatalf("a click behind the popup switched the tab to %v", v.tab)
+	}
+	if v.detail.form != f || len(f.answers) != 0 || f.submitting {
+		t.Fatal("a click reached the answer form")
+	}
+
+	v.popup = false
+	v.update(tea.MouseClickMsg{X: output.x0, Y: 1, Button: tea.MouseLeft})
+	if v.tab != taskTabOutput {
+		t.Fatalf("the same click with no popup left the tab on %v, want Output", v.tab)
+	}
+}
+
 // TestChatRenderFillsExactlyItsHeight is the regression test for the footer
 // clip: footerLines appended the composer as one element while bubbles pads
 // its View to SetHeight(3), so render returned height+2 lines, the frame kept

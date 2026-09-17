@@ -43,12 +43,6 @@ type shell struct {
 	bar *actionBar
 
 	focus panelID
-	// popup shows a form over the panels: the §7.4 answer form, the §6 repair
-	// form (task 025), or the §6 follow-up form (task 027). None of the three
-	// ever opens itself — `enter` on the awaiting task opens the first, `R`
-	// on a blocked task the second and `F` on a finished one the third
-	// (§15: a form announces itself and the human opens it).
-	popup bool
 	// connected mirrors the root's connection state: false renders the
 	// panels marked stale behind a banner instead of hiding them (§15
 	// Disconnected).
@@ -109,36 +103,20 @@ func (s *shell) setConnected(ok bool) { s.connected = ok }
 // hintedProject forwards the board's cursor project to the new-task form.
 func (s *shell) hintedProject() int64 { return s.board.hintedProject() }
 
-// capturesInput reports whether a text surface owns the keyboard: the answer
-// popup, or the focused panel's own capture (§15: the shell consults the
-// focused panel only).
+// capturesInput reports whether a text surface owns the keyboard: the focused
+// panel's own capture (§15: the shell consults the focused panel only).
 func (s *shell) capturesInput() bool {
 	if s.boardOnly {
 		return s.board.capturesInput()
 	}
-	if s.popup {
-		return true
-	}
 	return s.focusedCaptures()
 }
 
-// paste hands pasted text to the surface that owns the keyboard: whichever
-// popup is open — the answer form's free-text field or the repair form's
-// prompt — or the task filter while it is being typed.
+// paste hands pasted text to the surface that owns the keyboard: the task
+// filter while it is being typed.
 func (s *shell) paste(text string) tea.Cmd {
 	if s.boardOnly {
 		return s.board.paste(text)
-	}
-	if s.popup {
-		if f := s.detail.followUp; f != nil {
-			return f.paste(text)
-		}
-		if f := s.detail.repair; f != nil {
-			return f.paste(text)
-		}
-		if f := s.detail.form; f != nil {
-			return f.paste(text)
-		}
 	}
 	if s.focus == panelTasks {
 		return s.board.paste(text)
@@ -289,46 +267,14 @@ func (s *shell) selectAttention() {
 	s.board.restoreSelection(s.board.rows())
 }
 
-// forward hands one message to both sub-models and keeps the popup honest:
-// a request that was answered or withdrawn takes its form — and therefore
-// the popup — with it.
+// forward hands one message to both sub-models.
 func (s *shell) forward(msg tea.Msg) tea.Cmd {
 	_, bc := s.board.update(msg)
 	dc := s.detail.update(msg)
-	if s.popup && s.detail.form == nil && s.detail.repair == nil && s.detail.followUp == nil {
-		s.popup = false
-	}
 	return tea.Batch(bc, dc)
 }
 
 func (s *shell) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
-	if s.popup && s.detail.followUp != nil {
-		cmd, exit := s.detail.followUp.update(msg, s.detail.client)
-		if exit {
-			// Leaving throws the draft away with it, for the reason the
-			// repair form's does: half a prompt kept behind a popup nobody
-			// can see is worse than retyping it.
-			s.detail.followUp, s.popup = nil, false
-		}
-		return s, cmd
-	}
-	if s.popup && s.detail.repair != nil {
-		cmd, exit := s.detail.repair.update(msg, s.detail.client)
-		if exit {
-			// Leaving the form throws the draft away with it: a repair is one
-			// prompt for one block, and half a prompt kept behind a popup
-			// nobody can see is worse than retyping it.
-			s.detail.repair, s.popup = nil, false
-		}
-		return s, cmd
-	}
-	if s.popup && s.detail.form != nil {
-		cmd, exit := s.detail.form.update(msg, s.detail.client, s.detail.taskID)
-		if exit {
-			s.popup = false
-		}
-		return s, cmd
-	}
 	if cmd, handled := s.bulkKey(msg); handled {
 		return s, cmd
 	}
@@ -373,39 +319,19 @@ func (s *shell) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 		return s, nil
 	case "enter":
-		if s.openAnswer() {
-			return s, nil
-		}
 		if s.focus == panelTasks {
 			return s, s.openSelected()
 		}
-	case "E":
-		// Edit+retry needs the failing step's text, which detail holds —
-		// the key acts on the task, so it works from any panel.
+	case "E", "R", "F":
+		// Edit+retry, repair and follow-up (task 027) need the task's steps,
+		// which detail holds, and their forms post from there — the keys act
+		// on the task, so they work from any panel. F is deliberately not a
+		// bulk action: the three run forms are written for one task, and "run
+		// this prompt against nine finished branches" is a shell loop over
+		// `vincent task follow-up`, which is what decision 11 shipped the
+		// command for.
 		s.syncDetailFocus()
 		return s, s.detail.update(msg)
-	case "R":
-		// Repair, for the same reason: detail holds the blocked step and the
-		// form posts from there. Opening it raises the popup, which then owns
-		// the keyboard.
-		s.syncDetailFocus()
-		cmd := s.detail.update(msg)
-		if s.detail.repair != nil {
-			s.popup = true
-		}
-		return s, cmd
-	case "F":
-		// Follow-up (task 027), same shape as repair. It is deliberately not
-		// a bulk action: the three run forms are written for one task, and
-		// "run this prompt against nine finished branches" is a shell loop
-		// over `vincent task follow-up`, which is what decision 11 shipped
-		// the command for.
-		s.syncDetailFocus()
-		cmd := s.detail.update(msg)
-		if s.detail.followUp != nil {
-			s.popup = true
-		}
-		return s, cmd
 	}
 	return s, tea.Batch(s.routeKey(msg), s.checkSelection())
 }
@@ -458,19 +384,6 @@ func (s *shell) syncDetailFocus() {
 
 func (s *shell) cycleFocus(delta int) {
 	s.focus = panelID((int(s.focus) + delta + 3) % 3)
-}
-
-// openAnswer opens the answer popup when the tracked task has a pending
-// request, reporting whether it did. It handles `enter` from any panel: the
-// form is an interrupt, and the row badge plus the action-bar hint told the
-// human to press it.
-func (s *shell) openAnswer() bool {
-	d := s.detail
-	if d.form == nil || d.taskID == 0 || d.taskID != s.lastSel {
-		return false
-	}
-	s.popup = true
-	return true
 }
 
 // openSelected is `enter` on the task table: open the row under the cursor
@@ -531,12 +444,8 @@ func (s *shell) checkSelection() tea.Cmd {
 // updateClick is §15's click scope on the home screen: click a panel to
 // focus it, click a row to select it, click the output panel's title tabs
 // to switch them. Coordinates arrive body-relative (the root strips its
-// header); the banner line is the shell's own offset. Popups stay keyboard:
-// a stray click must not answer a question.
+// header); the banner line is the shell's own offset.
 func (s *shell) updateClick(msg tea.MouseClickMsg) tea.Cmd {
-	if s.popup {
-		return nil
-	}
 	y := msg.Y - s.bannerLines
 	id, ok := hitTest(msg.X, y, s.lastBoxes)
 	if !ok {
@@ -730,11 +639,7 @@ func (s *shell) render(width, height int) string {
 			lipgloss.JoinHorizontal(lipgloss.Top,
 				s.renderBox(boxes[1]), s.renderBox(boxes[2])))
 	}
-	out := strings.Join(parts, "\n")
-	if s.popup && (s.detail.form != nil || s.detail.repair != nil || s.detail.followUp != nil) {
-		out = overlayPopup(out, s.bodyW, s.bodyH, popupOverlayFor(s.detail))
-	}
-	return out
+	return strings.Join(parts, "\n")
 }
 
 func (s *shell) renderBoardOnly() string {
@@ -847,8 +752,7 @@ type popupOverlay struct {
 	tabName string
 	form    popupForm
 	tab     popupTab
-	// details draws the Task details tab. Nil means this popup has no tabs,
-	// and then no strip is drawn and the frame is sized to the form.
+	// details draws the Task details tab.
 	details func(width, height int) string
 }
 
@@ -880,8 +784,8 @@ func popupOverlayFor(d *detail) popupOverlay {
 // (§15), and what is behind it stays visible around it — the tail underneath
 // is what says why the agent is asking.
 //
-// It is a free function rather than a method because taskView borrows it for
-// its own popup path and has no shell to hang it on (task 059).
+// It is a free function rather than a method because taskView's popup path is
+// its one caller, and the popup's tab state lives on that view (task 059).
 func overlayPopup(bg string, bodyW, bodyH int, p popupOverlay) string {
 	if p.form == nil {
 		return bg
@@ -896,24 +800,16 @@ func overlayPopup(bg string, bodyW, bodyH int, p popupOverlay) string {
 	}
 	inner := pw - 2
 
-	var ph int
-	var body string
-	if p.details == nil {
-		ph = min(p.form.height(inner)+2, max(bodyH-4, 6))
-		body = p.form.render(inner, ph-2)
-	} else {
-		// With tabs the popup takes the whole height budget rather than
-		// shrinking to the form (task 059 decision 3): the frame must not
-		// resize under the reader on a ctrl+t, and the details tab wants
-		// every line it can have.
-		ph = max(bodyH-4, 6)
-		contentH := max(ph-4, 1) // the two border rows, the strip, its blank
-		content := p.form.render(inner, contentH)
-		if p.tab == popupTabDetails {
-			content = p.details(inner, contentH)
-		}
-		body = popupTabStrip(p.tabName, p.tab) + "\n\n" + content
+	// The popup takes the whole height budget rather than shrinking to the
+	// form (task 059 decision 3): the frame must not resize under the reader
+	// on a ctrl+t, and the details tab wants every line it can have.
+	ph := max(bodyH-4, 6)
+	contentH := max(ph-4, 1) // the two border rows, the strip, its blank
+	content := p.form.render(inner, contentH)
+	if p.tab == popupTabDetails {
+		content = p.details(inner, contentH)
 	}
+	body := popupTabStrip(p.tabName, p.tab) + "\n\n" + content
 
 	popup := frame(p.title, body, pw, ph, true)
 	x := max((bodyW-pw)/2, 0)

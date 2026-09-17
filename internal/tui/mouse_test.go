@@ -223,26 +223,6 @@ func TestShellClickOutputTab(t *testing.T) {
 	}
 }
 
-// TestShellPopupIgnoresClicks: popup interaction stays keyboard — a stray
-// click must not answer a question or steal focus from it.
-func TestShellPopupIgnoresClicks(t *testing.T) {
-	s, _ := newShellFixture(t, task(3, stateAwaitingInput))
-	s.settle()
-	s.detail.form = newAnswerForm(apiclient.InputRequest{
-		Kind:      apiclient.InputKindQuestion,
-		Questions: []apiclient.InputQuestion{{Text: "Sure?", Options: []string{"y"}}},
-	})
-	s.update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if !s.popup {
-		t.Fatal("fixture: popup did not open")
-	}
-	before := s.focus
-	s.update(tea.MouseClickMsg{X: 2, Y: s.lastBoxes[1].y + 1, Button: tea.MouseLeft})
-	if !s.popup || s.focus != before {
-		t.Fatal("a click reached the panels under the popup")
-	}
-}
-
 // TestRootFooterClickFiresHint: clicking a footer hint replays its key —
 // the pinned `q quit` is the always-present span to prove it with.
 func TestRootFooterClickFiresHint(t *testing.T) {

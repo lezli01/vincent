@@ -154,61 +154,6 @@ func TestShellEnterOpensImmediately(t *testing.T) {
 	}
 }
 
-// TestShellAnswerPopup: the form never opens itself; enter opens it, its
-// keys stay inside it, esc closes one layer, and an answered request takes
-// the popup with it.
-func TestShellAnswerPopup(t *testing.T) {
-	s, _ := newShellFixture(t, task(3, stateAwaitingInput))
-	s.settle()
-	if s.detail.taskID != 3 {
-		t.Fatalf("detail task = %d, want 3", s.detail.taskID)
-	}
-	s.detail.form = newAnswerForm(apiclient.InputRequest{
-		Kind: apiclient.InputKindQuestion,
-		Questions: []apiclient.InputQuestion{
-			{Text: "Which colour?", Options: []string{"teal", "mauve"}},
-		},
-	})
-	if s.popup {
-		t.Fatal("the popup opened itself")
-	}
-
-	s.update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if !s.popup {
-		t.Fatal("enter did not open the answer popup")
-	}
-	if !strings.Contains(s.render(120, 37), "Which colour?") {
-		t.Fatal("open popup does not render the question")
-	}
-
-	// Keys go to the form, not the panels: space picks an option.
-	s.update(tea.KeyPressMsg{Code: ' ', Text: " "})
-	if got := s.detail.form.answers["Which colour?"]; len(got) != 1 || got[0] != "teal" {
-		t.Fatalf("space picked %v, want the first option", got)
-	}
-	if s.focus != panelTasks {
-		t.Fatalf("focus moved to %v while the popup was open", s.focus)
-	}
-
-	// esc closes the popup — one layer — and the typed answer survives for
-	// the next open.
-	s.update(tea.KeyPressMsg{Code: tea.KeyEscape})
-	if s.popup {
-		t.Fatal("esc did not close the popup")
-	}
-	if got := s.detail.form.answers["Which colour?"]; len(got) != 1 {
-		t.Fatalf("closing the popup lost the picked answer: %v", got)
-	}
-
-	// A cleared request (the refetch after an answer) closes an open popup.
-	s.update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	s.detail.form = nil
-	s.update(boardLoadedMsg{tasks: []apiclient.Task{task(3, stateRunning)}})
-	if s.popup {
-		t.Fatal("the popup outlived its request")
-	}
-}
-
 // TestShellReopensAfterALostSettle: a settle window that fires while a
 // takeover screen is active is delivered there and lost; returning to the
 // home screen must not leave the panels on "loading…" forever.

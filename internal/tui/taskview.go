@@ -1420,8 +1420,8 @@ func joinInt64(values []int64) string {
 }
 
 // overlayCreatePR draws the compare-URL editor over the workspace, on the
-// same geometry the shell's popups use — the popup is the same kind of thing
-// and should not sit somewhere else on the screen.
+// same geometry overlayPopup gives the form popups — the popup is the same
+// kind of thing and should not sit somewhere else on the screen.
 func (t *taskView) overlayCreatePR(bg string) string {
 	return t.overlayPullPopup(bg, "Open a pull request — #"+strconv.FormatInt(t.detail.taskID, 10),
 		t.createPR.height, t.createPR.render)
