@@ -1434,9 +1434,12 @@ as it does with the setting off: label, `[1]`, printed destination, no link.
 It is off by default because nothing detects whether your terminal supports
 OSC 8. iTerm2, WezTerm, kitty, GNOME Terminal and Windows Terminal do; a
 terminal that does not, such as the legacy Windows console, may print the
-sequence instead. Turn it on only in a terminal you know handles it. The TUI's
-config editor and `vincent config set tui.hyperlinks true` can change it, and
-both workspaces follow the saved value without a restart. See the
+sequence instead. Turn it on only in a terminal you know handles it. Saving it
+in the TUI's config editor applies it to both workspaces at once, with no
+restart. A change made anywhere else — `vincent config set tui.hyperlinks true`
+or an edit to this file — reaches a running TUI the next time it reads the
+config: when you open the daemon view or press `R` there, or when it
+reconnects. See the
 [security model](../security-model.md#what-an-agent-writes-cannot-drive-your-terminal)
 for why the destination is sanitized.
 
