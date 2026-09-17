@@ -175,8 +175,14 @@ type transcriptPrinter struct {
 	raw    bool
 	json   bool
 	// sawOutput reports whether the agent has said anything yet, which is
-	// what decides whether the terminal result record repeats it.
+	// what decides whether the terminal result record repeats it. A
+	// subagent's prose does not count: it is not what the result repeats.
 	sawOutput bool
+	// rail is the subagent the last printed line belonged to, "" for the
+	// main loop, and labels names each spawning call seen so far (task 109).
+	// Both are carried across fetches for sawOutput's reason.
+	rail   string
+	labels map[string]string
 }
 
 // transcriptSource is the subject a printer reads: a task's step run or a
@@ -270,15 +276,109 @@ func (p *transcriptPrinter) write(rec apiclient.TranscriptRecord) error {
 		_, err := fmt.Fprintln(p.out, line)
 		return err
 	}
+	p.learnLabel(rec)
+	parent := rec.ParentCallID
+	switch {
+	case rec.Type == "agent.subagent_started" || rec.Type == "agent.subagent_progress":
+		// Never a line (task 109): the start names the rail label, and
+		// progress arrives after every few of the subagent's lines.
+		return nil
+	case rec.Type == "agent.subagent_finished":
+		p.rail = ""
+		_, err := fmt.Fprintln(p.out, renderTranscriptSubagentFinished(rec, p.label(rec.CallID)))
+		return err
+	case parent != "" && !transcriptChildShown(rec.Type):
+		return nil
+	}
 	text, ok := renderTranscriptRecord(rec, p.sawOutput)
-	if rec.Type == "agent.output" && rec.Text != "" {
+	if rec.Type == "agent.output" && rec.Text != "" && parent == "" {
 		p.sawOutput = true
 	}
 	if !ok {
 		return nil
 	}
-	_, err := fmt.Fprintln(p.out, text)
+	if parent == "" {
+		p.rail = ""
+		_, err := fmt.Fprintln(p.out, text)
+		return err
+	}
+	if p.rail != parent {
+		p.rail = parent
+		if _, err := fmt.Fprintln(p.out, transcriptRail+"-> "+p.label(parent)); err != nil {
+			return err
+		}
+	}
+	// Every line of a multi-line message carries the rail, or the prose
+	// after its first line would read as the main loop's.
+	_, err := fmt.Fprintln(p.out, transcriptRail+strings.ReplaceAll(text, "\n", "\n"+transcriptRail))
 	return err
+}
+
+// transcriptRail is drawn in front of every line a subagent produced (task
+// 109) — the pane's `┊ ` in ASCII, for the reason the markers are.
+const transcriptRail = "| "
+
+// transcriptChildShown is what this command prints of a subagent. It has no
+// levels and prints the pane's `normal`, where a subagent — one level quieter
+// — shows its prose, its tool calls and their outcomes, and its errors.
+func transcriptChildShown(recType string) bool {
+	switch recType {
+	case "agent.output", "agent.tool_use", "agent.tool_result", "agent.error":
+		return true
+	}
+	return false
+}
+
+// learnLabel records the name a spawning call's rail label shows: the
+// description its subagent's start gave, else the call's own subject. No tool
+// name is read.
+func (p *transcriptPrinter) learnLabel(rec apiclient.TranscriptRecord) {
+	if p.labels == nil {
+		p.labels = map[string]string{}
+	}
+	switch rec.Type {
+	case "agent.tool_use":
+		for _, t := range rec.Tools {
+			if _, named := p.labels[t.CallID]; t.CallID != "" && t.Summary != "" && !named {
+				p.labels[t.CallID] = t.Summary
+			}
+		}
+	case "agent.subagent_started":
+		if rec.CallID != "" && rec.Description != "" {
+			p.labels[rec.CallID] = rec.Description
+		}
+	}
+}
+
+func (p *transcriptPrinter) label(callID string) string {
+	return firstNonEmpty(p.labels[callID], "subagent")
+}
+
+// renderTranscriptSubagentFinished renders how a subagent ended, on the rail
+// it closes: its status, its name and its tally. `stopped` gets its own
+// marker for the reason the pane gives it its own mark, and a status no
+// capture has shown gets a neutral one (task 109).
+func renderTranscriptSubagentFinished(rec apiclient.TranscriptRecord, label string) string {
+	mark := "- "
+	switch rec.Status {
+	case "completed":
+		mark = "= "
+	case "failed":
+		mark = "! "
+	case "stopped":
+		mark = "~ "
+	}
+	parts := []string{firstNonEmpty(rec.Status, "finished"), label}
+	switch {
+	case rec.ToolUses == 1:
+		parts = append(parts, "1 tool use")
+	case rec.ToolUses > 1:
+		parts = append(parts, fmt.Sprintf("%d tool uses", rec.ToolUses))
+	}
+	if rec.DurationMS > 0 {
+		parts = append(parts, formatTranscriptDuration(rec.DurationMS))
+	}
+	return transcriptRail + mark + strings.Join(parts, " - ")
 }
 
 // follow re-fetches a step run's transcript from the resume offset until the
@@ -366,7 +466,9 @@ func renderTranscriptRecord(rec apiclient.TranscriptRecord, sawOutput bool) (str
 		if res.IsError {
 			mark = "! "
 		}
-		return mark + strings.TrimSpace(res.Name+" "+res.Summary), true
+		// A result with no summary still says what it did — a subagent
+		// launched into the background reports only its verb (task 109).
+		return mark + strings.TrimSpace(res.Name+" "+firstNonEmpty(res.Summary, res.Verb)), true
 	case "agent.plan":
 		if len(rec.Items) == 0 {
 			return "", false
