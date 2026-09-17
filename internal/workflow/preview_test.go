@@ -3,6 +3,7 @@ package workflow
 import (
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -41,6 +42,28 @@ func renderAll(t *testing.T, wf *Workflow) {
 			}
 			if _, err := Render(field, text, rc); err != nil {
 				t.Errorf("%s (%s): %s does not render: %v", ps.Path, ps.Step.ID, field, err)
+			}
+		}
+		// A derived fan-out's `lane:` template renders its own guard, id,
+		// needs and fields once per item at spawn, with `.Item` bound (§7.6,
+		// task 080) — so the preview renders them the way
+		// `vincent workflow render` does, through RenderLane.
+		if lane := ps.Step.Lane; lane != nil {
+			item := PreviewItem(*lane)
+			laneBodies := map[string]string{"lane.if": lane.If, "lane.id": lane.ID}
+			for i, need := range lane.Needs {
+				laneBodies["lane.needs."+strconv.Itoa(i)] = need
+			}
+			for k, v := range lane.Fields {
+				laneBodies["lane.fields."+k] = v
+			}
+			for field, text := range laneBodies {
+				if text == "" {
+					continue
+				}
+				if _, err := RenderLane(field, text, rc, item); err != nil {
+					t.Errorf("%s (%s): %s does not render: %v", ps.Path, ps.Step.ID, field, err)
+				}
 			}
 		}
 	}
