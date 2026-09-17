@@ -2731,6 +2731,19 @@ type RunHeader struct {              // task 066, added 2026-08-31
     Tools   []string // the tool set the run was given, in the CLI's order
 }
 
+type Subagent struct {               // task 109, added 2026-09-17
+    CallID      string        // the spawning call: its children's ParentCallID
+    Description string        // the sub-run's short title
+    AgentType   string        // the kind of agent the run asked for
+    Background  bool          // the main loop did not wait on it
+    Status      string        // how it ended, verbatim from the dialect
+    Summary     string        // its final report as one capped line, never the body
+    ToolUses    int           // running or final tally; 0 = unreported
+    TotalTokens int64
+    Duration    time.Duration
+    LastTool    string        // the tool it most recently used
+}
+
 type RunResult struct {
     ExitCode     int
     ResultText   string   // agent's final answer/summary
@@ -2842,6 +2855,20 @@ It is read, carried on the wire and on the live chunk, and **not rendered** —
 `null`, so there is nothing to test a tree against. Nesting is its own work with
 its own capture; because §13.2 re-normalizes on read, transcripts recorded now
 will render under it when it lands.
+
+*Amended 2026-09-17 (task 109, issue #401).* `ParentCallID` **is rendered**
+now: §15 draws a record carrying it behind a rail, one level quieter than the
+main loop. The capture turned out to exist already, in 16 recorded claude runs
+(§9.2). Three event types join the normalized stream, the main loop's own
+account of a sub-run, each carrying a `Subagent` keyed by the spawning call:
+`EventSubagentStarted` (`subagent_started`: description, agent type,
+background), `EventSubagentProgress` (`subagent_progress`: the running tally
+and last tool) and `EventSubagentFinished` (`subagent_finished`: status, the
+final tally and a one-line summary). The records the sub-run itself produces
+stay ordinary events stamped with `ParentCallID`; these three are not stamped.
+Only claude produces them. codex and cursor never do, which §9.3 and §9.7 state
+positively, and nothing synthesizes one from tool calls. Nothing keys on the
+spawning tool's name.
 
 Both are stated positively where an adapter lacks them (§9.3, §9.7) and neither
 is ever emulated. Nothing is persisted: `step_runs` keeps vincent's own timing
@@ -3103,6 +3130,53 @@ The tool's output **body** still never enters the normalized stream (T4.16), and
 the transcript remains the durable copy. Nothing is persisted (task 066
 decision 4).
 
+*Amended 2026-09-17 (task 109, issue #401).* **Subagents.** Pinned against 16
+recorded runs from 2.1.251 to 2.1.268, trimmed into
+`testdata/stream_subagent_async_2.1.268.jsonl`,
+`stream_subagent_sync_2.1.263.jsonl` and
+`stream_subagent_failed_2.1.268.jsonl`:
+
+- **The spawning tool is `Agent`** in every captured call, although the
+  `system`/`init` tool list names it `Task`. Neither name appears in the parser
+  or the pane: attribution is `parent_tool_use_id` and the task lines'
+  `tool_use_id` (task 109 decision 6). Subagents run concurrently, and their
+  lines interleave with each other and with the main loop's. `spawn_depth` is 1
+  in every capture.
+- **The `local_agent` task lines normalize** to §9.1's three subagent events,
+  keyed by `tool_use_id`. `task_started` whose `task_type` is `local_agent`
+  becomes `EventSubagentStarted` (`description`, `subagent_type`,
+  `is_backgrounded`). `task_progress` becomes `EventSubagentProgress`
+  (`usage.tool_uses`, `usage.total_tokens`, `usage.duration_ms`,
+  `last_tool_name`). `task_notification` becomes `EventSubagentFinished`, with
+  `status` verbatim, the same `usage`, and `summary` (the subagent's whole final
+  report) reduced to one line of 120 runes: the report is a body, and the
+  transcript holds it (T4.16). The statuses a subagent's notification has shown
+  are `completed` and `failed`.
+- **Recognition is stateful per stream** (task 109 decision 7). Only
+  `task_started` carries `task_type`. `task_progress` has been seen only for
+  subagents and carries `subagent_type`. A subagent's `task_notification` never
+  carries `task_type`, and carries `usage` when `completed` but none when
+  `failed`, which on its face is a background shell's notification. The parser
+  therefore remembers every call id it has seen act as a subagent (a
+  `local_agent` start, a progress line, any line's `parent_tool_use_id`), and
+  takes a notification as a subagent's when its call is remembered or it
+  carries `usage`. `NewLineParser` now returns a fresh parser per stream rather
+  than one pure function. The cost is stated: a range fetched with `tail=` or
+  `offset=` that opens after every line of a subagent can leave that
+  subagent's `failed` notification as `agent.raw`.
+- **A background launch has a verb.** A `user` line whose
+  `tool_use_result.status` is `async_launched` yields a `ToolResult` with verb
+  `started in background` and **no summary**: the text beside it is claude's
+  internal metadata, addressed to its own model and asking never to be quoted.
+  A synchronous call's `status: "completed"` result is unchanged; its summary is
+  the report's first line, which says more than a verb would.
+- **Still `EventUnknown`**, with `Raw` intact: `local_bash` task lines (a
+  background shell's, including those with `owned_by_subagent: true`, and the
+  only lines `stopped` has been seen on), `task_updated`,
+  `background_tasks_changed`, hook lines and every other `system` subtype.
+  Background shells are out of scope; the phase 1 tolerant-parsing rule covers
+  the rest.
+
 *Added 2026-08-29 (task 057).* The §13.4 MCP server rides on
 `--mcp-config <inline JSON>` with `--strict-mcp-config` beside it, so the
 user's own `.mcp.json` and global servers never leak into a vincent step.
@@ -3140,6 +3214,10 @@ transcript is something people paste into issues.
   remaining field stays zero here and **nothing emulates a value**, which is
   the standing §9.x rule and is what `TestNoRunHeaderOrResultMetadata`, now
   narrowed to exactly those fields, asserts over every codex fixture.
+  *Amended 2026-09-17 (task 109):* likewise **no subagent events**. No codex
+  capture has a subagent in it, so this adapter produces none of §9.1's three
+  `EventSubagent*` events, which is asserted over every codex fixture, and
+  nothing emulates one from its tool items.
 - **Resumes its own thread** (*replaces "Cannot resume (stated positively,
   2026-08-30, task 063)", 2026-08-31, task 070*). `agent.CanResume` is **true**
   for codex, and a chat on it is created like a claude one. The precondition
@@ -3770,6 +3848,10 @@ would invalidate every one of them.
   which has no place in a transcript record) and the result line's
   `request_id`. Pinned against captures from cursor-agent 2026.08.25-3e8eec8
   as well as every earlier fixture, which already carried the same fields.
+  *Amended 2026-09-17 (task 109):* likewise **no subagent events**. No cursor
+  capture has a subagent in it, so this adapter produces none of §9.1's three
+  `EventSubagent*` events, which is asserted over every cursor fixture, and
+  nothing emulates one from its tool calls.
 - **Resume (pinned against cursor-agent 2026.08.11-e8db854, 2026-08-31, task
   072).** `agent.CanResume` is true for cursor, so a chat may run on it (§5.5,
   §13.2), replacing task 063's "cannot resume" on that decision's own deferral
@@ -6927,6 +7009,29 @@ GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
                                         `item.completed`, and the two are separate records
                                         because clients show them at different verbosity
                                         levels.
+                                        **v0 wire change (task 109, 2026-09-17):** three
+                                        more record types in the shared vocabulary, the
+                                        main loop's account of a subagent, each keyed by
+                                        the spawning call's `call_id` —
+                                        `agent.subagent_started` (`description`,
+                                        `subagent_type`, `background`),
+                                        `agent.subagent_progress` (`description`,
+                                        `subagent_type`, `tool_uses`, `total_tokens`,
+                                        `duration_ms`, `last_tool`) and
+                                        `agent.subagent_finished` (`status`, `summary` —
+                                        one line capped at the adapter, never the report —
+                                        `tool_uses`, `total_tokens`, `duration_ms`). Every
+                                        key is omitted when unreported. None of the three
+                                        carries `parent_call_id`: they are main-loop lines
+                                        about a sub-run, and the sub-run's own records are
+                                        the ones stamped with it. An `agent.tool_result`
+                                        entry may now carry the verb `started in
+                                        background` with no `summary`, for a call claude
+                                        launched without waiting on it. claude fills all of
+                                        it and codex and cursor fill none, which their
+                                        adapters' tests state positively. The field is now
+                                        rendered (§15), and the same on-read reasoning
+                                        applies: claude runs already on disk render nested.
 GET    /v1/tasks/{id}/diff              unified diff of worktree vs merge-base with base branch
                                         (includes uncommitted changes)
                                         ?by=lane -> JSON {sections:[...]} instead: one section per
@@ -7088,6 +7193,10 @@ Two kinds of streams:
    `agent.plan` and `agent.command_output` (task 070 — the same two records
    §13.2 adds, published as chunks with the same keys, because a client renders
    the live tail and the fetched scrollback through one path),
+   `agent.subagent_started`, `agent.subagent_progress` and
+   `agent.subagent_finished` (task 109, 2026-09-17 — §13.2's three records under
+   the same keys, moved together per task 066 decision 5; like the records they
+   carry no `parent_call_id`, and a sub-run's own chunks carry it),
    `agent.usage`, `command.output` chunks are streamed on the **per-task** stream only
    and are *not* written to the events table (they are durable in transcript files;
    catch-up = fetch the transcript, then follow live). Chunks are one SSE event each,
@@ -7147,6 +7256,8 @@ makes "the same" checkable rather than aspirational. `agent.result` and
 `agent.error` are **not** published live: they normalize to their own record
 types in the transcript, and a chunk the refetch would contradict is worse than
 no chunk — a turn's outcome reaches a client as the turn's own state.
+*Amended 2026-09-17 (task 109):* the three subagent types join that list, from
+the same shared mapping, so a chat's pane draws the same rail (§15).
 
 ### 13.4 Model Context Protocol (task 057)
 
@@ -9222,10 +9333,68 @@ mark at all:
   reader cannot see is indistinguishable from a command that printed exactly
   that much.
 
-Still **no timestamps**, and `parent_call_id` — which every record may now carry
-— is deliberately **not rendered**: the gutter is two columns and flat, and
-nesting subagent work under its parent is its own design problem with its own
-capture (task 066 decision 2).
+Still **no timestamps**.
+
+*Amended 2026-09-17 (task 109, issue #401).* This paragraph said
+`parent_call_id` was deliberately **not rendered**, because the gutter is two
+columns and flat and nesting was its own design problem with its own capture
+(task 066 decision 2). The capture exists (§9.2), and that sentence is replaced
+by what follows. **This amends T4.16's flat two-column gutter model**, and says
+so here rather than changing it silently: a subagent's records gain a second
+two-column prefix in front of the gutter. Everything else in the model stands.
+
+- **A chronological rail.** A record carrying `parent_call_id` stays exactly
+  where it arrived, and is drawn behind a two-column rail, `┊ `, with its own
+  gutter composed after it: a nested tool call is `┊ ▸ `, its outcome
+  `┊     ✓ `, nested prose `┊ ` and then the prose. Wrapped continuation lines
+  keep the rail, for the reason a blockquote's bar is drawn on every line. The
+  rejected layout is grouping children under their spawning call: subagents run
+  concurrently and interleave with each other and the main loop, so live lines
+  would land above the tail, and `vincent task transcript --follow` would have
+  to buffer each subagent until it finished (task 109 decision 1).
+- **A label on every switch.** When the rendered stream moves into a subagent,
+  or from one subagent to another, a line `┊ ↳ <description>` names which one.
+  The description is `agent.subagent_started`'s, else the spawning
+  `agent.tool_use` call's summary, else `subagent`. The label is emitted only if
+  the child record after it renders at the current level, so no level leaves a
+  dangling label. Any rendered main-loop line ends the rail, so the next child
+  line is labelled again.
+- **One level quieter.** A child record renders at level L only where a
+  main-loop record of its type renders at L−1. At `quiet` nothing of a
+  subagent's internals shows; `compact` shows its prose and errors; `normal` adds
+  its tool calls and their outcomes; `verbose` adds its truncated reasoning, its
+  plan, and a count of its unrecognized lines on the rail. Two consequences are
+  stated rather than left implicit: a subagent's `agent.command_output`, being
+  `verbose`-only at top level, **never renders nested** (the transcript, `e`,
+  `--raw` and `--json` keep it), and a subagent's `agent.raw` lines are **never
+  shown whole** in the pane. The main loop's own rules were rejected because a
+  subagent's prose would still read as the agent's at `quiet` (task 109
+  decision 2).
+- **The sub-run's lifecycle.** `agent.subagent_started` and
+  `agent.subagent_progress` never render a line. Progress is normalized only so
+  that it does not become an `… N unrecognized line(s)` count between child
+  records at `compact` and `normal`. `agent.subagent_finished` is a main-loop
+  record that follows the top-level tool-call rules, hidden at `quiet` and shown
+  from `compact` up, and is drawn on the rail as the completion line:
+  `┊ ✓ completed · <description> · 14 tool uses · 5m00s`. `failed` is
+  `┊ ✗ failed · …` and `stopped` is `┊ ■ stopped · …`, apart from `✗ ` because
+  an agent that was stopped and one that failed send a reader to different
+  places, the reasoning behind `⊘ `. Any other status is `┊ · <status> · …`,
+  with no wording of its own (the T4.17 rule). Tool uses and duration appear
+  only when reported. The spawn itself is the ordinary `▸ ` tool call, and a
+  background launch's outcome is `✓ started in background`.
+- **Depth one.** Only `spawn_depth: 1` has been captured, so a record whose
+  parent is itself a child call renders on the same single rail. A second rail
+  waits for a capture that has one.
+- **The command line prints `normal`.** `vincent task transcript` and
+  `vincent chat transcript` have no levels, and print the pane's `normal`
+  content for a child record, as they do for the run header: prose, tool calls,
+  outcomes and errors on an ASCII rail `| `, labelled `| -> <description>`, and
+  never its reasoning, plan, unrecognized lines or command output. The
+  completion line is `| = completed - <description> - 14 tool uses - 5m00s`,
+  `| ! failed - …`, `| ~ stopped - …` or `| - <status> - …`, and a tool outcome
+  with no summary prints its verb (`< started in background`). `--json` and
+  `--raw` are unchanged.
 
 *Amended 2026-09-01 (task 073).* Assistant prose is rendered as **Markdown**;
 every other record stays literal.
@@ -9252,7 +9421,11 @@ every other record stays literal.
   between a document and a record that is not prose is unchanged. Two records
   that each carry part of one paragraph therefore reflow into that paragraph
   rather than staying two lines, which is the same change seen from the other
-  side.
+  side. *Amended 2026-09-17 (task 109):* a change of `parent_call_id` closes the
+  document too, so a subagent's prose and the main loop's, or two subagents',
+  never parse as one document. Only main-loop prose counts as the attempt
+  having rendered output for the result-text fallback above: a subagent's
+  prose is not the agent's answer.
   - **The bound on reflow, and what is deliberately not built.** No part of
     this classifies an unfinished Markdown tail. `agent.output` never carries a
     partial document: claude runs message-level `stream-json` with no

@@ -2187,8 +2187,9 @@ up by re-fetching the running turn's transcript and discarding every chunk whose
 `offset` is at or before the `X-Next-Offset` it reported. Chunks carry
 `chat_id`, `turn_id`, `offset`, the same normalized fields a task's chunks carry
 under the same type names (`agent.output`, `agent.tool_use`, `agent.tool_result`,
-`agent.run_header`, `agent.thinking`, `agent.usage`), **and** the agent's own
-`raw` line beside them.
+`agent.run_header`, `agent.thinking`, `agent.subagent_started`,
+`agent.subagent_progress`, `agent.subagent_finished`, `agent.usage`), **and**
+the agent's own `raw` line beside them.
 
 A chat's stream carries one type a task's does not: **`agent.raw`**, for a line
 vincent's parsers do not model. A task leaves those to its transcript, but a
@@ -2302,6 +2303,29 @@ The transcript is the attempt's JSONL file, ranged:
   `available_tools`), `duration_ms`, `api_duration_ms`, `cache_read_tokens`
   and `cache_write_tokens`, and [Codex](../guides/agents.md#codex) the two
   cache counts.
+- A subagent's lifecycle, as the main loop reported it, is three records, each
+  keyed by `call_id`, the spawning tool call every one of the subagent's own
+  records names as its `parent_call_id`:
+
+  | Type | Fields |
+  |---|---|
+  | `agent.subagent_started` | `call_id`, `description`, `subagent_type`, `background` |
+  | `agent.subagent_progress` | `call_id`, `description`, `subagent_type`, `tool_uses`, `total_tokens`, `duration_ms`, `last_tool` |
+  | `agent.subagent_finished` | `call_id`, `status`, `summary`, `tool_uses`, `total_tokens`, `duration_ms` |
+
+  `status` is the CLI's own word, passed through (`completed` and `failed` are
+  the ones seen so far). `summary` is the subagent's report cut to one line; the
+  report itself is only in the raw transcript. These three records carry no
+  `parent_call_id` themselves: they are the main agent's lines about a
+  subagent. The call that spawned a background subagent reports an
+  `agent.tool_result` entry with `verb: "started in background"` and no
+  `summary`. Every key is omitted when unreported, and only Claude Code produces
+  any of it. The [output pane](../guides/tui.md#when-the-agent-runs-subagents)
+  draws a record carrying `parent_call_id` nested, behind a rail. A claude
+  transcript range fetched with `tail=` or `offset=` that starts after every
+  earlier line of a failed subagent can return that subagent's finish as
+  `agent.raw`: a failed finish line does not say it is a subagent's, so it is
+  recognized from the lines before it.
 - `agent.plan` carries `items` (`[{text, completed}]`) and `plan_call_id` — the
   agent's running to-do list, **whole on every record** rather than as a delta,
   so a client that joins mid-run learns where the agent is. `agent.command_output`
@@ -2454,8 +2478,9 @@ they need.
 ### Live output — ephemeral
 
 `agent.output`, `agent.tool_use`, `agent.tool_result`, `agent.thinking`,
-`agent.run_header`, `agent.plan`, `agent.command_output`, `agent.usage` and
-`command.output` chunks stream on the
+`agent.run_header`, `agent.plan`, `agent.command_output`,
+`agent.subagent_started`, `agent.subagent_progress`, `agent.subagent_finished`,
+`agent.usage` and `command.output` chunks stream on the
 **per-task** stream only and are **not** written to the events table. Their
 durable copy is the transcript file.
 

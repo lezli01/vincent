@@ -459,8 +459,9 @@ output. It is the sentence that decides whether to open the transcript.
 Every record is a two-column **gutter** plus its content. What the agent *said*
 is unmarked and sits flush left; what it *did* is glyphed — `·` reasoning, `▸` a
 tool call with its outcome indented under it, `#` the run header, `☰` the plan.
-A monochrome terminal or an SSH session loses nothing to that scheme, which
-colour alone would not survive. There are no timestamps: on an 80-column pane
+A [subagent's](#when-the-agent-runs-subagents) work is drawn behind a `┊` rail
+in front of those same marks. A monochrome terminal or an SSH session loses
+nothing to that scheme, which colour alone would not survive. There are no timestamps: on an 80-column pane
 they would spend nine columns of every line answering a question the timeline
 already answers per attempt.
 
@@ -470,7 +471,8 @@ Markdown document, so a table, a list or a fenced block spread across them is
 the one thing it was written as, and its link references are numbered once for
 the whole message. Anything that is not assistant prose — reasoning, a tool
 call, command output — ends the message, and what comes after it starts the
-next.
+next. So does a switch between the agent and one of its subagents, or between
+two subagents: their prose is never read as one message.
 
 **What the agent said is rendered as Markdown.** Headings, emphasis, strong
 text, ordered and unordered lists, nested lists, blockquotes, inline code,
@@ -614,6 +616,44 @@ does not appear. Whatever an agent does not report is left out; vincent does not
 synthesise it from what it happens to know. The plan and the command
 output run the other way: only [Codex](agents.md#codex) reports those, and on
 claude and cursor they are absent for the same reason rather than invented.
+
+### When the agent runs subagents
+
+[Claude Code](agents.md#claude-code) can hand part of a job to **subagents**,
+often several at once in the background while it keeps working itself. Their
+lines arrive interleaved with each other and with the agent's own, and the pane
+keeps them in that order. It marks whose they are instead of regrouping them:
+
+- **A rail.** Every line a subagent produced is drawn behind `┊`, with its
+  usual mark after it: `┊ ▸` a subagent's tool call, its outcome indented under
+  it, `┊` and then its prose. A wrapped line keeps the rail.
+- **A label when the speaker changes.** When the pane moves from the agent into
+  a subagent, or from one subagent to another, a `┊ ↳` line names which one, by
+  the description it was started with. The next line from the agent itself ends
+  the rail, so the subagent after it is named again.
+- **A completion line.** When a subagent ends, the agent's own account of it is
+  one line on the rail: `┊ ✓ completed · <description> · 14 tool uses · 5m00s`.
+  A subagent that failed is `┊ ✗ failed`, and one that was stopped is
+  `┊ ■ stopped`. Tool uses and duration appear when claude reported them.
+
+The spawn is an ordinary `▸` tool call. A subagent launched in the background
+has the outcome `✓ started in background`, and its completion line comes later,
+whenever it finishes.
+
+A subagent's internals show **one level quieter** than the agent's own:
+
+| Level | What a subagent shows |
+|---|---|
+| `quiet` | Nothing: no rail, no labels, no completion line |
+| `compact` | Its prose and its errors, and the completion line |
+| `normal` | Also its tool calls and their outcomes |
+| `verbose` | Also its reasoning (truncated), its plan, and a count of its unrecognized lines |
+
+Two things never render nested, at any level. What a subagent's commands
+printed stays out of the pane; the whole transcript `e` opens has it. And a
+subagent's unrecognized lines are only ever counted, never expanded.
+
+Codex and cursor report no subagents, so their panes have no rail.
 
 ### Reading the whole transcript
 
@@ -1512,7 +1552,9 @@ a merge or rebase is refused with the operation named.
 
 The body is the task workspace's [output pane](#task-detail), same records
 and same marks: `▸` a tool call, the outcome indented under it, `·` reasoning,
-`#` the run header, `✓`/`✗` the result. `ctrl+r` cycles the same four levels
+`#` the run header, `✓`/`✗` the result, and `┊` a
+[subagent's work](#when-the-agent-runs-subagents), with its `↳` label and
+completion line. `ctrl+r` cycles the same four levels
 `v` cycles there, and it is the **same level** — set it in either place and the
 other is on it too. `ctrl+r` rather than `v` because the composer owns every
 printable key: a letter would be typed into your draft.
