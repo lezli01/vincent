@@ -325,6 +325,9 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 	case clipboardResultMsg:
 		v.note, v.noteBad = msg.notice()
 		return v, nil
+	case linkOpenedMsg:
+		v.note, v.noteBad = msg.notice()
+		return v, nil
 	case chatTranscriptMsg:
 		v.applyTranscript(msg)
 		return v, nil
@@ -719,6 +722,8 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, nil
 	case copyPickKey:
 		return v, openCopyPicker(v.copyDocs(), v.resolveDoc)
+	case linkPickKey:
+		return v, openLinkPicker(v.copyDocs(), v.resolveDoc)
 	case "pgup":
 		v.vp.PageUp()
 		v.syncFollowToViewport()

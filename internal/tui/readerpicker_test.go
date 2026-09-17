@@ -554,11 +554,11 @@ func TestReaderHintsNameTheCtrlKeys(t *testing.T) {
 	for _, ctx := range []bindingContext{ctxOutput, ctxChat} {
 		var hints []string
 		for _, b := range bindingsFor(ctx) {
-			if b.key == rawToggleKey || b.key == copyPickKey {
+			if b.key == rawToggleKey || b.key == copyPickKey || b.key == linkPickKey {
 				hints = append(hints, b.hint)
 			}
 		}
-		if len(hints) != 2 {
+		if len(hints) != 3 {
 			t.Fatalf("%s: the registry hints the reader actions %v", ctx, hints)
 		}
 		for _, h := range hints {
@@ -571,7 +571,7 @@ func TestReaderHintsNameTheCtrlKeys(t *testing.T) {
 	// has to be checked against the registry by hand.
 	v := chatViewFixture()
 	foot := ansi.Strip(strings.Join(v.footerLines(200), "\n"))
-	for _, k := range []string{rawToggleKey, copyPickKey} {
+	for _, k := range []string{rawToggleKey, copyPickKey, linkPickKey} {
 		if !strings.Contains(foot, k) {
 			t.Fatalf("the chat footer does not name %s:\n%s", k, foot)
 		}
@@ -582,7 +582,7 @@ func TestReaderHintsNameTheCtrlKeys(t *testing.T) {
 // listed entry replays its direct key, so an entry whose key the replay could
 // not synthesize would be a row that does nothing.
 func TestPaletteRunsTheReaderActions(t *testing.T) {
-	for _, key := range []string{rawToggleKey, copyPickKey, chatExpandKey, "ctrl+g"} {
+	for _, key := range []string{rawToggleKey, copyPickKey, linkPickKey, chatExpandKey, "ctrl+g"} {
 		if got := synthKey(key); got.String() != key {
 			t.Fatalf("synthKey(%q) produces %q", key, got.String())
 		}
