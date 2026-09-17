@@ -126,6 +126,7 @@ the living engineering specification records implementation contracts.
 | [110](110-claude-edit-deltas.md) | Show edit deltas in claude tool results | 🔄 in progress (4/5) |
 | [111](111-osc-8-hyperlinks.md) | Opt-in OSC 8 hyperlinks in the output pane | ✅ done (4/4) |
 | [112](112-link-picker.md) | Open and copy links from assistant Markdown | ✅ done (3/3) |
+| [113](113-control-flow-examples.md) | Example workflows that show control flow | ✅ done (4/4) |
 
 ## How to add and update a task document
 

@@ -7,8 +7,17 @@
 #
 # The first step's check is inverted: it succeeds when the test suite fails,
 # because at that point a red test is the deliverable.
+#
+# That inversion is also why this file declares `platforms: [posix]`. `!` is
+# POSIX shell syntax: pwsh, which runs a command body on Windows, reads it as
+# `-not` and refuses the bare command after it, so on Windows the check could
+# never pass. Declaring the restriction means a Windows daemon lists the
+# workflow as `unsupported` and refuses a task on it, rather than accepting
+# the task and blocking it once its retries are spent (docs/guides/workflows.md
+# §10.3).
 name: fix-and-test
 description: Write a failing test that reproduces a bug, then make it pass.
+platforms: [posix]
 
 defaults:
   agent: claude
@@ -31,8 +40,8 @@ steps:
       where the bug lives, following the testing conventions already in this
       repository. Change nothing else. When you are done the test suite must
       fail, and it must fail on your new test.
-    # Inverted deliberately: this step is done when the suite is red.
-    # `!` is understood by bash, cmd and PowerShell 7 alike (§8.3).
+    # Inverted deliberately: this step is done when the suite is red. `!` is
+    # POSIX-only; see `platforms:` above.
     check: '! go test ./...'
     check_timeout: 15m
 

@@ -11,12 +11,32 @@ schema is shaped the way it is. Keep the
 [Workflow schema](../reference/workflow-schema.md) beside it when you need every
 field and default in table form.
 
-Five ready-to-copy files live in [`examples/`](../../examples), and the binary
+Eight ready-to-copy files live in [`examples/`](../../examples), and the binary
 will install one for you:
 
 ```sh
 vincent workflow init my-flow --from feature-pr   # or drop --from for a skeleton
 ```
+
+Each one is a realistic shape of work, and its header comment says why each
+feature in it is there:
+
+| Example | The work | What it shows |
+|---|---|---|
+| [`feature-pr`](../../examples/feature-pr.yaml) | Implement, verify, gate, push | An agent `check`, a `manual` gate in front of the push |
+| [`fix-and-test`](../../examples/fix-and-test.yaml) | A failing test, then the fix | An inverted `check`, `platforms: [posix]` |
+| [`converge`](../../examples/converge.yaml) | Repair until the suite is green | `loop`, `break`, `if:`, `allow_failure` |
+| [`docs-update`](../../examples/docs-update.yaml) | Bring docs back in line with code | Passing one step's `.Result` to the next |
+| [`cursor-review`](../../examples/cursor-review.yaml) | A review pass on the Cursor CLI | Cursor's model ids, no `effort:` |
+| [`go-checks`](../../examples/go-checks.yaml) | Run tests and vet together | `parallel`, a fragment written to be included |
+| [`ship`](../../examples/ship.yaml) | Agree on a change, publish it if there is one | `include`, `allow_failure` probe, `condition`, `if:`, `on_input: require`, `manual`, `max_retries: 0` |
+| [`split-work`](../../examples/split-work.yaml) | Plan units, build each in its own lane | Derived `fan_out`: `for_each:`, `lane:`, `needs:`, `max_lanes:`, `schedule:`, `merge: on_conflict: agent`; `include` |
+
+`ship` and `split-work` include `go-checks` by name, and `--from` installs one
+file under the name you give it — so install the fragment under its own name
+first: `vincent workflow init go-checks --from go-checks`. A missing include
+target is not caught by `vincent workflow validate`; it is a `400` when a task
+is created ([§4.10](#410-include)).
 
 If you would rather read one working workflow than a guide, start with
 [`feature-pr.yaml`](../../examples/feature-pr.yaml) and come back here for the
@@ -600,6 +620,9 @@ Sub-steps are ordinary `agent` and `command` steps with their own `check`,
 exactly as at the top level. They may not be any other type — see
 [§4.11](#411-where-each-type-may-appear).
 
+[`go-checks.yaml`](../../examples/go-checks.yaml) is this group as a working
+file.
+
 > **Sub-steps share one working tree.** Two of them writing the same file is a
 > bug in your workflow. Vincent isolates worktrees between *tasks*, not
 > processes inside one task.
@@ -723,6 +746,9 @@ lane's `workflow:` has to be a literal — it is resolved once, when the task is
 created — but everything else may vary per item. Set `max_lanes:`: a list
 nobody has produced yet cannot be counted at creation, so that ceiling and
 `fan_out.max_tasks` are checked at spawn, before a single worktree exists.
+[`split-work.yaml`](../../examples/split-work.yaml) is a complete derived
+fan-out with inline lane steps, including the planning prompt that has to
+produce those lines.
 
 **How the step runs.** Spawning parks the parent in `awaiting_children` and
 releases its slot; the scheduler brings it back once every descendant has
@@ -822,7 +848,8 @@ ended.
 
 There is deliberately no "stop and block for a human" variant, because you
 already have one: a `command` step that exits nonzero. What `condition` adds is
-*stop and succeed*.
+*stop and succeed*. [`ship.yaml`](../../examples/ship.yaml) uses one to end a
+task as `done` when there turned out to be nothing to publish.
 
 A `condition` in **last** position is a warning, not an error — the task is
 `done` whether it continues or stops, so the step cannot do anything a missing
@@ -931,6 +958,13 @@ through a run because of an include.
 
 Editing `go-checks.yaml` never affects a task that is already running: the task
 took its copy when it was created. New tasks pick up the new version.
+
+The shipped [`go-checks.yaml`](../../examples/go-checks.yaml) is a fragment
+along these lines, included by [`ship.yaml`](../../examples/ship.yaml) and
+[`split-work.yaml`](../../examples/split-work.yaml). An include names its
+target by `name:`, and neither `vincent workflow validate` nor
+`vincent workflow init --from` resolves it, so install the fragment under its
+shipped name: `vincent workflow init go-checks --from go-checks`.
 
 ### 4.11 Where each type may appear
 
@@ -1610,7 +1644,8 @@ Without this, an agent asked to "add a failing test and fix it" reliably writes
 a test that passes against its own fix. See
 [`fix-and-test.yaml`](../../examples/fix-and-test.yaml). Note that `!` is POSIX
 shell syntax — a file relying on it should declare `platforms: [posix]` or pin
-`shell: sh`.
+`shell: sh`. `fix-and-test` declares `platforms: [posix]` for exactly that
+reason.
 
 ### 7.4 What a check is not
 
@@ -1884,9 +1919,11 @@ places:
 
 `require` is not valid inside a `parallel` group, inside a `loop` body, or on a
 `merge.agent` resolver: `awaiting_input` holds one pending request for the whole
-task. A step's own `on_input` still wins over `defaults:`, so a
-mostly-interactive workflow can mark one long cleanup step `on_input: deny` and
-leave it unattended.
+task. [`ship.yaml`](../../examples/ship.yaml) puts it on the top-level step that
+implements the change, and pins `agent: claude` on that step so a task-level
+`--agent` cannot swap in an agent that would guess instead of asking. A step's
+own `on_input` still wins over `defaults:`, so a mostly-interactive workflow can
+mark one long cleanup step `on_input: deny` and leave it unattended.
 
 ---
 
@@ -1980,6 +2017,8 @@ is what makes it usable as a portable pre-commit check.
 
 The restriction is **whole-workflow**. Omitting the key means "runs anywhere",
 which is the right answer for most files.
+[`fix-and-test.yaml`](../../examples/fix-and-test.yaml) is a shipped example
+that declares `platforms: [posix]`, because its inverted check starts with `!`.
 
 ### 10.4 Gating one step by platform
 
@@ -2131,7 +2170,7 @@ workflow-level problem: see
 
 - [Workflow schema](../reference/workflow-schema.md) — every field and default,
   in tables.
-- [Example workflows](../../examples) — five working files.
+- [Example workflows](../../examples) — eight working files.
 - [Agent CLIs](agents.md) — what each adapter can and cannot do.
 - [Task lifecycle](../reference/task-lifecycle.md) — what `blocked` means and
   what you can do from there.

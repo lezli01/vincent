@@ -120,11 +120,21 @@ succeeded, because an agent reporting success is a claim and a build is a fact;
 a failed check retries the step with the failure appended to the prompt. Then a
 human gate, and only after approval does anything get pushed.
 
-The other four examples are
+The other seven examples are
 [`fix-and-test`](../../examples/fix-and-test.yaml) (write a failing test, then
-fix it), [`docs-update`](../../examples/docs-update.yaml) (runs `restricted`),
+fix it; macOS and Linux only),
+[`docs-update`](../../examples/docs-update.yaml) (bring the docs back in line
+with the code, then have a human read them),
 [`converge`](../../examples/converge.yaml) (loops a repair step until the test
-suite is green), and [`cursor-review`](../../examples/cursor-review.yaml).
+suite is green), [`cursor-review`](../../examples/cursor-review.yaml) (a review
+pass on the Cursor CLI), [`go-checks`](../../examples/go-checks.yaml) (tests and
+vet in parallel, written to be included by other workflows),
+[`ship`](../../examples/ship.yaml) (asks before it builds, and ends as done when
+there is nothing to publish), and
+[`split-work`](../../examples/split-work.yaml) (plans the work as units, then
+fans them out into child tasks and merges them back). `ship` and `split-work`
+include `go-checks`, so install it under its own name first:
+`vincent workflow init go-checks --from go-checks`.
 
 `feature-pr` is written for a Go repository — its check is
 `go build ./... && go test ./...`. Open the file and change that line to

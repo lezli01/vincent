@@ -1,0 +1,142 @@
+# split-work — let an agent cut a change into units, build each unit in its
+# own lane, merge them back into one branch, then verify the result.
+#
+# For work too big for one agent turn whose parts can be written apart: a
+# feature that touches a parser, a store and a command, say. You cannot list
+# the lanes in the file, because nobody knows the units until the repository
+# has been read, so a planning step decides them at run time.
+#
+# It includes `go-checks` after the merge, so install that fragment first,
+# under its shipped name — an include is resolved by `name:` when a task is
+# created, and neither `vincent workflow validate` nor `init --from` looks for
+# it:
+#
+#   vincent workflow init go-checks --from go-checks
+#   vincent workflow init split-work --from split-work
+#
+# How the pieces fit:
+#
+#   plan      prints one JSON object per line: `id`, `needs`, `summary`. Its
+#             final message *is* the lane list, which is why the prompt is
+#             strict about its shape — a line that is not a JSON object blocks
+#             the fan-out with `fan_out_invalid`, naming the line.
+#   for_each  turns that output into items. Each line becomes `.Item` in the
+#             `lane:` template, and each item becomes a real child task with
+#             its own worktree, branch, retries and transcript (§7.6).
+#   lane      one template, rendered once per item. Only its `id`, `needs`,
+#             `fields` and `if` may vary per item, and `.Item` exists only in
+#             those — not in the lane's steps. `fields:` is how per-item data
+#             reaches them: a lane's fields are merged over the task's, so
+#             the steps read `.Task.Fields` like any other task's. The steps
+#             are inline so this file stands alone; a `workflow:` lane would
+#             need another file installed.
+#   needs     a lane spawns only after every lane it names has finished and
+#             merged, so its worktree already has their code.
+#   merge     lanes merge `--no-ff` into this task's branch, one at a time.
+#             A conflict means the plan called two units independent that were
+#             not; the resolver below tries first, its check has to pass, and
+#             the review gate at the end reads what it did.
+#
+# Every lane is a task, so the fan-out fills `max_parallel_tasks` instead of
+# exceeding it, and leaves one worktree per lane on disk until the tree is
+# archived.
+name: split-work
+description: Plan a change as units, build each unit in its own lane, merge them, verify, and gate.
+
+defaults:
+  agent: claude
+  max_retries: 2
+  timeout: 45m
+
+steps:
+  - id: plan
+    type: agent
+    prompt: |
+      Plan this change as units of work that different people could write at
+      the same time. Read the repository; change no file.
+
+      {{.Task.Title}}
+      {{with .Task.Description}}
+      Details:
+      {{.}}
+      {{end}}
+      A program reads your final message line by line. Make it one JSON object
+      per line and nothing else: no prose, no heading, no code fence, no blank
+      line. Every object has exactly these three keys:
+
+      {"id": "parser", "needs": [], "summary": "Parse the new flag."}
+      {"id": "command", "needs": ["parser"], "summary": "Wire the flag into the command."}
+
+      - id: unique; lowercase letters, digits and '-' only.
+      - needs: the ids of units whose code this unit builds on; [] for none.
+        Never a cycle.
+      - summary: one sentence saying what the unit delivers.
+
+      Prefer two to six units. Two units that would edit the same file are
+      one unit.
+
+  - id: build
+    type: fan_out
+    # A ceiling for a list nobody has produced yet: it cannot be counted when
+    # the task is created, so it is checked before the first lane spawns.
+    max_lanes: 8
+    # barrier: a lane waits for its round, not only for its own needs, so a
+    # re-run starts every lane from the same tree. `eager` would spawn a lane
+    # the moment its own needs merge — faster, but its starting tree then
+    # depends on which unrelated lanes happened to finish first. Units cut
+    # from one change tend to touch neighbouring files, which is exactly where
+    # that difference shows.
+    schedule: barrier
+    for_each: '{{ (index .Steps "plan").Result }}'
+    lane:
+      id: '{{ .Item.id }}'
+      needs: '{{ .Item.needs }}'
+      fields:
+        unit: '{{ .Item.summary }}'
+      steps:
+        - id: implement
+          type: agent
+          prompt: |
+            This task, {{.Task.Title}}, is one unit of a larger change.
+
+            Your unit: {{ index .Task.Fields "unit" }}
+
+            Deliver that unit and nothing beyond it; other units are being
+            written at the same time on other branches. Units this one builds
+            on are already merged into the branch you start from. Add or
+            update tests for what you change. Do not commit — a later step
+            does that.
+          check: go build ./...
+          check_timeout: 15m
+
+        - id: commit
+          type: command
+          # A lane's title is the parent's plus the lane id.
+          run: 'git add -A && git commit -m "{{.Task.Title}}"'
+    merge:
+      on_conflict: agent
+      agent:
+        id: resolve
+        prompt: |
+          Merging the units of "{{.Task.Title}}" conflicted in:
+          {{ range .Conflicts }}- {{ . }}
+          {{ end }}
+          Resolve every conflict keeping both sides' intent. Do not delete a
+          test, and do not drop either side's change to make it merge.
+        check: go build ./...
+        check_timeout: 15m
+
+  # Replaced by go-checks' own steps when a task is created: the suite runs
+  # once, on the merged branch, which is the tree the review gate approves.
+  - id: checks
+    type: include
+    workflow: go-checks
+
+  - id: review
+    type: manual
+    instructions: |
+      Review task #{{.Task.ID}} on branch {{.Task.BranchName}}. Its lanes
+      are listed by `vincent task ls --include-children`, each with its own
+      transcript, and any conflict resolution is in this task's transcript.
+      `git diff {{.Task.BaseBranch}}...{{.Task.BranchName}}` is the whole
+      change.
