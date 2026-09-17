@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/config"
@@ -413,5 +415,86 @@ func TestConfigKeyUsageLimitAutoContinuePatchesItsOwnField(t *testing.T) {
 	}
 	if patch.UsageLimitRecheck != nil || patch.LogLevel != nil {
 		t.Errorf("the patch edits a neighbouring key too: %+v", patch)
+	}
+}
+
+// max_tree_cost_usd through the real handlers (task 115): typed, saved,
+// written into the documented key of config.yaml and adopted by the block —
+// and a negative cap is refused against the field without reaching the file,
+// which is config's floor arriving over the wire rather than a client copy of
+// it.
+func TestConfigEditorWritesTheTreeCostCap(t *testing.T) {
+	h := newConfigLive(t)
+	h.open(t, "max_tree_cost_usd")
+	if h.view.form == nil {
+		t.Fatal("enter did not open the editor")
+	}
+	h.view.form.input.SetValue("-3")
+	h.press(t, "enter")
+	if h.view.form == nil || h.view.form.err == "" {
+		t.Fatalf("a negative tree cap was not refused against the field: %+v", h.view.form)
+	}
+	if strings.Contains(h.file(t), "max_tree_cost_usd: -3") {
+		t.Error("a refused tree cap reached config.yaml")
+	}
+
+	h.view.form.input.SetValue("7.5")
+	h.press(t, "enter")
+	if h.view.form != nil {
+		t.Fatalf("the editor stayed open after a successful save: %+v", h.view.form)
+	}
+	if h.view.config.MaxTreeCostUSD != 7.5 {
+		t.Errorf("the block did not adopt the new cap: %v", h.view.config.MaxTreeCostUSD)
+	}
+	if h.view.config.MaxTaskCostUSD != 0 {
+		t.Errorf("saving the tree cap moved the per-task cap to %v", h.view.config.MaxTaskCostUSD)
+	}
+	file := h.file(t)
+	if !strings.Contains(file, "max_tree_cost_usd: 7.5") {
+		t.Errorf("config.yaml was not written:\n%s", file)
+	}
+	if n := strings.Count(file, "\nmax_tree_cost_usd:"); n != 1 {
+		t.Errorf("max_tree_cost_usd: appears %d times, want the documented key edited in place", n)
+	}
+}
+
+// The write and show halves of the tree cap's row, for
+// TestConfigKeyUsageLimitAutoContinuePatchesItsOwnField's reason: a row wired
+// to MaxTaskCostUSD would still save with a 200 and edit the wrong cap. Zero
+// shows "off", never "$0" (task 033 decision 5's spelling).
+func TestConfigKeyTreeCostCapPatchesItsOwnField(t *testing.T) {
+	var key configKey
+	for _, k := range configKeys() {
+		if k.path == "max_tree_cost_usd" {
+			key = k
+		}
+	}
+	if key.path == "" {
+		t.Fatal("the config key table does not carry max_tree_cost_usd")
+	}
+	if key.label != "max tree cost" {
+		t.Errorf("label = %q, want max tree cost", key.label)
+	}
+	if got := key.read(apiclient.Config{MaxTaskCostUSD: 1, MaxTreeCostUSD: 12.25}); got != "12.25" {
+		t.Errorf("read = %q, want 12.25", got)
+	}
+	if got := key.show(apiclient.Config{MaxTaskCostUSD: 5}); got != "off" {
+		t.Errorf("show at zero = %q, want off", got)
+	}
+	if got := ansi.Strip(key.show(apiclient.Config{MaxTreeCostUSD: 12.25})); !strings.HasPrefix(got, "$12.25") {
+		t.Errorf("show when set = %q, want $12.25 first", got)
+	}
+	patch, err := key.write(" 20 ")
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if patch.MaxTreeCostUSD == nil || *patch.MaxTreeCostUSD != 20 {
+		t.Errorf("the patch does not carry the value: %+v", patch)
+	}
+	if patch.MaxTaskCostUSD != nil {
+		t.Errorf("the patch edits the per-task cap too: %+v", patch)
+	}
+	if _, err := key.write("twenty"); err == nil {
+		t.Error("a cap that is not a number was accepted")
 	}
 }

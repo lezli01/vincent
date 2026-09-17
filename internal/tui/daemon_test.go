@@ -92,6 +92,53 @@ func TestDaemonViewRendersTheTaskCostCap(t *testing.T) {
 	}
 }
 
+// TestDaemonViewRendersTheTreeCostCap is the same for task 115's tree cap, on
+// its row of the full key list: "off" at zero, and once set the figure as
+// written with the suffix that says it counts a whole tree — the one thing
+// that tells it apart from the per-task row beside it. Asserted per line,
+// because the per-task row says "off" too and a whole-screen match would pass
+// on that alone.
+func TestDaemonViewRendersTheTreeCostCap(t *testing.T) {
+	d := newTestDaemonView(nil, nil)
+	d.update(daemonInfoMsg{info: testInfo()})
+	d.update(daemonConfigMsg{config: testConfig()})
+	// The full list scrolls under the cursor, so park it on the row.
+	d.focusConfig = true
+	for i, k := range d.keys {
+		if k.path == "max_tree_cost_usd" {
+			d.cursor = i
+		}
+	}
+	treeLine := func(out string) string {
+		t.Helper()
+		for _, line := range strings.Split(out, "\n") {
+			if strings.Contains(line, "max tree cost") {
+				return line
+			}
+		}
+		t.Fatalf("no max tree cost row:\n%s", out)
+		return ""
+	}
+	line := treeLine(renderDaemon(d))
+	if !strings.Contains(line, "off") || strings.Contains(line, "$") {
+		t.Errorf("an unset tree cap renders %q, want off", line)
+	}
+
+	capped := testConfig()
+	capped.MaxTaskCostUSD = 2.5
+	capped.MaxTreeCostUSD = 40
+	d.update(daemonConfigMsg{config: capped})
+	line = treeLine(renderDaemon(d))
+	for _, want := range []string{"$40", "per tree"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("the tree cap row does not show %q: %q", want, line)
+		}
+	}
+	if strings.Contains(line, "2.5") {
+		t.Errorf("the tree cap row shows the per-task cap: %q", line)
+	}
+}
+
 func loadedDaemon(d *daemonView) {
 	d.update(daemonInfoMsg{info: testInfo()})
 	d.update(daemonConfigMsg{config: testConfig()})

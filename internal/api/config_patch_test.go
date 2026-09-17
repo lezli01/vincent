@@ -167,6 +167,7 @@ func TestConfigPatchRejectionLeavesTheFileByteIdentical(t *testing.T) {
 		{"a relative backup dir", `{"backup":{"dir":"backups"}}`},
 		{"a keymap giving quit's key to refresh", `{"tui":{"keys":{"refresh":"q"}}}`},
 		{"a keymap rebinding a fixed key", `{"tui":{"keys":{"group":"G"}}}`},
+		{"a negative tree cost cap", `{"max_tree_cost_usd":-1}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newConfigHarness(t)
@@ -499,6 +500,48 @@ func TestConfigPatchRefusesABadKeymap(t *testing.T) {
 	}
 	if got := h.cur.Load().TUI.Keys; !reflect.DeepEqual(got, map[string]string{"refresh": "f5"}) {
 		t.Errorf("the keymap in force is %v, want the last good one", got)
+	}
+}
+
+// max_tree_cost_usd is served, written into config.yaml and put into force
+// (task 115), on all three legs for usage_limit_auto_continue's reason. Zero
+// goes through the same path as any other value: it is how a client turns the
+// cap back off, so a patch that treated it as "unset" would strand the cap on.
+func TestConfigPatchRoundTripsTreeCostCap(t *testing.T) {
+	h := newConfigHarness(t)
+	for _, c := range []struct {
+		body string
+		want float64
+		line string
+	}{
+		{`{"max_tree_cost_usd":7.5}`, 7.5, "max_tree_cost_usd: 7.5"},
+		{`{"max_tree_cost_usd":0}`, 0, "max_tree_cost_usd: 0"},
+	} {
+		resp, body := h.patch(t, c.body)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("patch %s: status = %d, want 200 (body %s)", c.body, resp.StatusCode, body)
+		}
+		var answered configResponse
+		if err := json.Unmarshal(body, &answered); err != nil {
+			t.Fatalf("parse patch response: %v", err)
+		}
+		if answered.MaxTreeCostUSD != c.want {
+			t.Errorf("patch %s: the response says %v, want %v", c.body, answered.MaxTreeCostUSD, c.want)
+		}
+		if got := h.cur.Load().MaxTreeCostUSD; got != c.want {
+			t.Errorf("patch %s: the applied config says %v, want %v", c.body, got, c.want)
+		}
+		// The per-task cap is a separate key and is not touched by this one.
+		if got := h.cur.Load().MaxTaskCostUSD; got != 0 {
+			t.Errorf("patch %s: max_task_cost_usd moved to %v", c.body, got)
+		}
+		file := string(h.bytes(t))
+		if !strings.Contains(file, c.line) {
+			t.Errorf("config.yaml does not carry %q:\n%s", c.line, file)
+		}
+		if n := strings.Count(file, "\nmax_tree_cost_usd:"); n != 1 {
+			t.Errorf("max_tree_cost_usd: appears %d times, want 1 — the documented key was appended to", n)
+		}
 	}
 }
 

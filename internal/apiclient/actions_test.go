@@ -319,6 +319,58 @@ func TestRetryOverrideFromParkedParentIsRefused(t *testing.T) {
 	}
 }
 
+// TestDetailChildrenCostCrossesTheWire is task 115's `children.cost_usd`
+// through the real handler: the server DTO is unexported, so only a live
+// round trip notices the key renamed on one side. Null must decode as nil and
+// not as 0 — the TUI renders nil as "—" and 0 as "$0.00", and lanes that
+// reported nothing were not free — and once a lane reports, the figure is the
+// lanes' spend alone, without the parent's own.
+func TestDetailChildrenCostCrossesTheWire(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	parent := h.parkedParent(t)
+	h.lane(t, parent, store.TaskRunning)
+	h.lane(t, parent, store.TaskBlocked)
+	lanes, err := h.st.ListTasks(ctx, store.TaskFilter{ParentID: parent})
+	if err != nil || len(lanes) != 2 {
+		t.Fatalf("ListTasks(parent) = %d lanes, %v; want 2", len(lanes), err)
+	}
+	seed := func(taskID int64, attempt int, cost *float64) {
+		t.Helper()
+		run := &store.StepRun{
+			TaskID: taskID, StepIndex: 0, StepID: "one", StepType: "command",
+			Attempt: attempt, State: store.StepSucceeded, CostUSD: cost,
+		}
+		if err := h.st.CreateStepRun(ctx, run); err != nil {
+			t.Fatalf("CreateStepRun: %v", err)
+		}
+	}
+	own, first, second := 8.0, 0.75, 0.5
+	seed(parent, 1, &own)
+	seed(lanes[0].ID, 1, nil)
+
+	got, err := h.client().GetTask(ctx, parent)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if got.Children == nil {
+		t.Fatal("Children is nil on a parent with two lanes")
+	}
+	if got.Children.CostUSD != nil {
+		t.Errorf("Children.CostUSD = %v with no lane reporting a cost, want nil", *got.Children.CostUSD)
+	}
+
+	seed(lanes[0].ID, 2, &first)
+	seed(lanes[1].ID, 1, &second)
+	got, err = h.client().GetTask(ctx, parent)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if got.Children == nil || got.Children.CostUSD == nil || *got.Children.CostUSD != 1.25 {
+		t.Errorf("Children = %+v, want CostUSD 1.25 — the lanes' spend, not the parent's %v", got.Children, own)
+	}
+}
+
 // parkedParent is a task parked on a fan_out join, which is what a `retry`
 // cascades from.
 func (h *harness) parkedParent(t *testing.T) int64 {

@@ -660,3 +660,69 @@ func TestOpenLaneFromTheDiffTabUsesTheSectionUnderTheCursor(t *testing.T) {
 		t.Errorf("an ungrouped diff offered a lane")
 	}
 }
+
+// TestTaskDetailRelationshipsShowTreeCost is task 115's "tree cost" fact: the
+// task's own spend plus its descendants', which is the figure the tree cap is
+// compared against when the task is the root. Neither side reporting renders
+// "—" and never "$0.00" (task 033 decision 5); one side reporting is that
+// side's figure alone, since the other added nothing. A task with no lanes has
+// no tree to cost, so the fact is absent rather than a dash.
+func TestTaskDetailRelationshipsShowTreeCost(t *testing.T) {
+	cost := func(v float64) *float64 { return &v }
+	treeCostValue := func(t *testing.T, own *float64, children *apiclient.ChildrenRollup) (string, bool) {
+		t.Helper()
+		d := taskDetailFixture(t)
+		d.task.CostUSD = own
+		d.task.Children = children
+		plain := ansi.Strip(strings.Join(newTaskView(d).detailLines(120), "\n"))
+		for _, line := range strings.Split(plain, "\n") {
+			_, after, ok := strings.Cut(line, "tree cost")
+			if !ok {
+				continue
+			}
+			fields := strings.Fields(after)
+			if len(fields) == 0 {
+				t.Fatalf("tree cost has no value: %q", line)
+			}
+			return fields[0], true
+		}
+		return "", false
+	}
+
+	// A detail fetched on its own carries no top-level cost_usd, only its
+	// attempts; the parent's side is summed from those.
+	d := taskDetailFixture(t)
+	d.task.CostUSD = nil
+	d.task.Steps = []apiclient.StepRun{{CostUSD: cost(1.5)}, {}, {CostUSD: cost(2)}}
+	d.task.Children = &apiclient.ChildrenRollup{Total: 1, CostUSD: cost(0.25)}
+	if plain := ansi.Strip(strings.Join(newTaskView(d).detailLines(120), "\n")); !strings.Contains(plain, "$3.75") {
+		t.Errorf("tree cost summed from the attempts is missing $3.75:\n%s", plain)
+	}
+
+	if got, ok := treeCostValue(t, cost(3), nil); ok {
+		t.Errorf("a task with no lanes shows tree cost %q, want no such fact", got)
+	}
+	for _, c := range []struct {
+		name     string
+		own      *float64
+		children *float64
+		want     string
+	}{
+		{"nothing reported", nil, nil, "—"},
+		{"only the lanes reported", nil, cost(2), "$2.00"},
+		{"only the parent reported", cost(16), nil, "$16.00"},
+		{"both reported", cost(16), cost(2.5), "$18.50"},
+		// A reported zero is a figure, not an absence.
+		{"lanes reported zero", nil, cost(0), "$0.00"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got, ok := treeCostValue(t, c.own, &apiclient.ChildrenRollup{Total: 2, Settled: 1, CostUSD: c.children})
+			if !ok {
+				t.Fatal("a parent with lanes has no tree cost fact")
+			}
+			if got != c.want {
+				t.Errorf("tree cost = %q, want %q", got, c.want)
+			}
+		})
+	}
+}

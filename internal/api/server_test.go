@@ -169,6 +169,7 @@ func TestConfigView(t *testing.T) {
 	}
 	for _, key := range []string{
 		"delete_empty_branch_on_archive", "delete_remote_branch_on_archive", "max_task_cost_usd",
+		"max_tree_cost_usd",
 	} {
 		if !strings.Contains(string(body), key) {
 			t.Errorf("%s missing from the config view", key)
@@ -199,6 +200,37 @@ func TestConfigViewServesTheTaskCostCap(t *testing.T) {
 	}
 	if cfg.MaxTaskCostUSD != 12.5 {
 		t.Errorf("max_task_cost_usd = %v, want 12.5", cfg.MaxTaskCostUSD)
+	}
+}
+
+// TestConfigViewServesTheTreeCostCap is the same for task 115's tree cap: it
+// arrives beside the per-task cap, each with its own value, and the default
+// zero is served as a number rather than dropped — a client reads it as "off".
+func TestConfigViewServesTheTreeCostCap(t *testing.T) {
+	ts, _ := newTestServer(t, nil)
+	_, body := doRequest(t, ts, http.MethodGet, "/v1/config", testToken)
+	if !strings.Contains(string(body), `"max_tree_cost_usd":0`) {
+		t.Errorf("the default tree cap is not served as 0: %s", body)
+	}
+
+	capped := func() config.Config {
+		c := config.Default()
+		c.MaxTaskCostUSD = 2.5
+		c.MaxTreeCostUSD = 40
+		return c
+	}
+	ts, _ = newTestServer(t, capped)
+	resp, body := doRequest(t, ts, http.MethodGet, "/v1/config", testToken)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, body)
+	}
+	var cfg configResponse
+	if err := json.Unmarshal(body, &cfg); err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if cfg.MaxTreeCostUSD != 40 || cfg.MaxTaskCostUSD != 2.5 {
+		t.Errorf("max_tree_cost_usd = %v, max_task_cost_usd = %v; want 40 and 2.5",
+			cfg.MaxTreeCostUSD, cfg.MaxTaskCostUSD)
 	}
 }
 

@@ -60,6 +60,7 @@ defaults:
 transcript_retention_days: 7
 transcript_max_bytes: 32MB
 max_task_cost_usd: 12.5
+max_tree_cost_usd: 40
 usage_limit_recheck_interval: 2m
 log_level: warn
 agents:
@@ -90,6 +91,7 @@ agents:
 		TranscriptRetentionDays:    7,
 		TranscriptMaxBytes:         32 << 20,
 		MaxTaskCostUSD:             12.5,
+		MaxTreeCostUSD:             40,
 		UsageLimitRecheckInterval:  Duration(2 * time.Minute),
 		// And the same for `usage_limit_auto_continue`: the file names it
 		// nowhere, so task 003's hold-and-requeue survives a config that
@@ -234,6 +236,32 @@ func TestTaskCostCapDefaultsOff(t *testing.T) {
 	}
 }
 
+// TestTreeCostCapDefaultsOff pins the same property for task 115's tree cap:
+// zero is the default and the documented "no cap", an explicit zero is that
+// value rather than a refusal, and the key is independent of the per-task
+// cap — setting one leaves the other where it was.
+func TestTreeCostCapDefaultsOff(t *testing.T) {
+	if got := Default().MaxTreeCostUSD; got != 0 {
+		t.Errorf("max_tree_cost_usd default = %v, want 0 (off)", got)
+	}
+	for content, want := range map[string]float64{
+		"max_tree_cost_usd: 0\n":    0,
+		"max_tree_cost_usd: 7.25\n": 7.25,
+		"max_tree_cost_usd: 20\n":   20,
+	} {
+		cfg, err := Load(writeConfig(t, content))
+		if err != nil {
+			t.Fatalf("Load(%q): %v", content, err)
+		}
+		if cfg.MaxTreeCostUSD != want {
+			t.Errorf("Load(%q) = %v, want %v", content, cfg.MaxTreeCostUSD, want)
+		}
+		if cfg.MaxTaskCostUSD != 0 {
+			t.Errorf("Load(%q) set max_task_cost_usd to %v; the two caps are independent", content, cfg.MaxTaskCostUSD)
+		}
+	}
+}
+
 // TestUsageLimitAutoContinueDefaultsToAlways pins the default task 091's key
 // rests on: a recognized usage-limit stop re-queues the task and waits, which
 // is what every version before this key did. An installation that never names
@@ -356,6 +384,9 @@ func TestLoadRejectsInvalid(t *testing.T) {
 		// (task 033), so only a budget no run could honour is refused.
 		"negative task cost cap":        "max_task_cost_usd: -1\n",
 		"task cost cap is not a number": "max_task_cost_usd: five dollars\n",
+		// The tree cap has the per-task cap's floor for its reason (task 115).
+		"negative tree cost cap":        "max_tree_cost_usd: -0.5\n",
+		"tree cost cap is not a number": "max_tree_cost_usd: a lot\n",
 		// Zero would re-admit a quota-held task on the very next tick, which
 		// is the respawn loop the hold exists to stop (task 003).
 		"zero recheck interval":     "usage_limit_recheck_interval: 0s\n",
