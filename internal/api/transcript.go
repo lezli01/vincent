@@ -150,9 +150,13 @@ type normalizedLine struct {
 	// (§13.2).
 	Output    string `json:"output,omitempty"`
 	Truncated bool   `json:"truncated,omitempty"`
-	// CallID correlates an agent.command_output with the agent.tool_use
-	// whose command produced it. Name repeats that tool, when the dialect
-	// named it on the outcome.
+	// Patch is the agent.patch record: an edit's unified hunks, under the
+	// same `truncated` flag (task 110). It is not `output` — a reader must be
+	// able to tell what an edit changed from what a command printed.
+	Patch string `json:"patch,omitempty"`
+	// CallID correlates an agent.command_output or agent.patch with the
+	// agent.tool_use that produced it. Name repeats that tool, when the
+	// dialect named it on the outcome.
 	CallID string `json:"call_id,omitempty"`
 	Name   string `json:"name,omitempty"`
 }
@@ -276,7 +280,8 @@ func vincentLine(raw []byte) (json.RawMessage, bool) {
 // normalizeLine maps one transcript line to its normalized form. It returns
 // a slice because one stream line can carry two records: codex reports a
 // command's outcome and the body it printed on the same `item.completed`,
-// and the two are separate records because they are shown at different
+// claude an edit's outcome and its hunks on the same `user` line (task 110),
+// and each pair is two records because they are shown at different
 // verbosity levels (task 070 decision 2). Every other line yields exactly
 // one, which is what it yielded before.
 func normalizeLine(raw []byte, parse agent.LineParser) []any {
@@ -306,6 +311,18 @@ func normalizedEvent(ev agent.Event, raw []byte) []any {
 		extra := commandOutputLine(ev.Output)
 		extra.ParentCallID = ev.ParentCallID
 		recs = append(recs, extra)
+	}
+	// An edit's hunks follow its outcome the same way (task 110). claude
+	// reports both on one `user` line, and no line carries a patch alone.
+	if ev.Patch != nil {
+		recs = append(recs, normalizedLine{
+			Type:         "agent.patch",
+			Name:         ev.Patch.Name,
+			CallID:       ev.Patch.CallID,
+			Patch:        ev.Patch.Text,
+			Truncated:    ev.Patch.Truncated,
+			ParentCallID: ev.ParentCallID,
+		})
 	}
 	return recs
 }

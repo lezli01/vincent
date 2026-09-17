@@ -95,8 +95,12 @@ type TranscriptRecord struct {
 	// `text`, which is the agent's own prose.
 	Output    string `json:"output"`
 	Truncated bool   `json:"truncated"`
-	// CallID correlates an agent.command_output with the agent.tool_use
-	// whose command produced it, and names the spawning call on an
+	// Patch is the agent.patch record: an edit's unified hunks, each under
+	// its `@@` header. Truncated says the record's cap cut it, as it does for
+	// command output.
+	Patch string `json:"patch"`
+	// CallID correlates an agent.command_output or agent.patch with the
+	// agent.tool_use that produced it, and names the spawning call on an
 	// agent.subagent_* record.
 	CallID string `json:"call_id"`
 	Name   string `json:"name"`

@@ -348,6 +348,11 @@ type Event struct {
 	// two are separate *records* precisely because they are shown at
 	// different verbosity levels.
 	Output *CommandOutput
+	// Patch is a file edit's hunks. It rides on the EventToolResult that
+	// reports the edit's outcome, the way Output does for codex, because
+	// claude reports both on one `user` line (task 110). It gets no event
+	// type of its own: no dialect sends a patch on a line of its own.
+	Patch *Patch
 	// Subagent rides on the three EventSubagent* events.
 	Subagent *Subagent
 	Message  string // EventError: what went wrong
@@ -450,6 +455,26 @@ type CommandOutput struct {
 	Truncated bool
 }
 
+// Patch is what a file edit changed, as unified hunks (task 110, §9.2). It is
+// CommandOutput's counterpart for an edit: ToolResult carries the edit's
+// `+N −M` delta as its outcome, and this is the body, carried under its own
+// size discipline and shown only to a reader who asked for the machine.
+//
+// Only claude reports one today, from `tool_use_result.structuredPatch`.
+// codex and cursor produce none (§9.3, §9.7).
+type Patch struct {
+	// CallID matches the ToolUse whose edit this is, and Name is that tool.
+	// Both are empty when the dialect gave neither.
+	CallID string
+	Name   string
+	// Text is the hunks in unified form, each under its own
+	// `@@ -a,b +c,d @@` header, capped at PatchMax runes.
+	Text string
+	// Truncated says the cap was hit and Text is a prefix, for
+	// CommandOutput.Truncated's reason.
+	Truncated bool
+}
+
 // ToolUse is one tool invocation surfaced by the agent.
 type ToolUse struct {
 	Name string
@@ -475,8 +500,9 @@ type ToolResult struct {
 	// Name is the tool, when the dialect repeats it on the result. Empty is
 	// normal — claude names the tool only on the call.
 	Name string
-	// Summary is the outcome in a few words: "exit 0", the first line of the
-	// result text. Never the tool's output body.
+	// Summary is the outcome in a few words: "exit 0", an edit's `+13 −9`
+	// line delta, the first line of the result text. Never the tool's output
+	// body — an edit's hunks ride on Event.Patch (task 110).
 	Summary string
 	// Verb is what the invocation *did*, taken from the dialect's own
 	// structured outcome rather than from its prose — claude's

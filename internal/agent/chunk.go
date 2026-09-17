@@ -28,10 +28,10 @@ type Chunk struct {
 // `agent.raw` from the transcript route.
 //
 // One event can become more than one chunk. A codex tool result arrives with
-// the body the command printed on the same line, and the transcript route
-// splits it into two records; the live tail publishes the same two, in the
-// same order, because a client renders both through one path (task 071
-// decision 2, task 066 decision 5).
+// the body the command printed on the same line, and a claude edit's with its
+// hunks (task 110); the transcript route splits each into two records, and
+// the live tail publishes the same two, in the same order, because a client
+// renders both through one path (task 071 decision 2, task 066 decision 5).
 //
 // ParentCallID rides on every chunk it is set on, attached here rather than in
 // each arm for the reason normalizedEvent gives (task 066).
@@ -71,6 +71,13 @@ func liveChunkBody(ev Event) []Chunk {
 		if ev.Output != nil {
 			chunks = append(chunks, Chunk{
 				Type: "agent.command_output", Payload: outputChunk(ev.Output),
+			})
+		}
+		// An edit's hunks follow its outcome for the same reason and in the
+		// same order the transcript route writes them (task 110).
+		if ev.Patch != nil {
+			chunks = append(chunks, Chunk{
+				Type: "agent.patch", Payload: patchChunk(ev.Patch),
 			})
 		}
 		return chunks
@@ -185,6 +192,24 @@ func outputChunk(o *CommandOutput) map[string]any {
 		chunk["name"] = o.Name
 	}
 	if o.Truncated {
+		chunk["truncated"] = true
+	}
+	return chunk
+}
+
+// patchChunk maps an edit's hunks onto the §13.3 live-chunk shape, matching
+// what api.normalizeLine writes for the same event. The key is `patch`, not
+// `output`: a client must be able to tell what an edit changed from what a
+// command printed (task 110).
+func patchChunk(p *Patch) map[string]any {
+	chunk := map[string]any{"patch": p.Text}
+	if p.CallID != "" {
+		chunk["call_id"] = p.CallID
+	}
+	if p.Name != "" {
+		chunk["name"] = p.Name
+	}
+	if p.Truncated {
 		chunk["truncated"] = true
 	}
 	return chunk
