@@ -13,6 +13,18 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **`vincent workflow render` now draws a fan-out's lane graph.** It printed
+  one row per step and nothing about a `fan_out` step's lanes: no lane ids, no
+  `needs:`, no waves and no `schedule: eager`. The fan-out's own row now carries
+  a `lanes:` block with one line per wave, such as
+  `wave 2: wire (needs api, db)`. A lane with an `if:` is tagged `guarded`, and
+  `schedule: eager` is shown where declared, noting when a list with no `needs:`
+  runs as barrier. A `lane:` template draws
+  `<derived lane>: unknown width, at most N, one per item of …` instead, because
+  its width is unknown until it runs. `--json` adds `schedule`, `max_lanes` and
+  `lanes` to that step. No existing row, field or step count changes (issue
+  #407).
+
 - **`f1` opens help anywhere, including in a chat.** A chat's composer, a
   filter and every form take `?` as a character, so help could not be opened
   there at all. `f1` toggles the same overlay everywhere, beside `ctrl+p` for

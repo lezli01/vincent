@@ -172,7 +172,56 @@ to the parser's model dropped `lane`, `max_lanes`, `schedule` and a lane's
 makes `for_each` resolve to JSON objects. Offline the list reads a
 `<steps.ID.result>` sentinel and never resolves, so the per-item pass would
 almost never run; left for later. Drawing `needs:` edges stays deferred with
-task 080.
+task 080. *(Delivered 2026-09-17, issue #407 — decision 11. The per-item pass
+is still deferred.)*
+
+**11. A `fan_out` step's row draws its lane graph.** *(added 2026-09-17, issue
+#407)*
+
+Task 080's "Not in this change" and task 084's follow-up both deferred drawing
+`needs:` edges in "the CLI renderer", and this command is the only one. It
+printed one row per step and nothing about the lanes: no lane ids, no `needs:`,
+no waves and no `eager`, and a declared lane with inline steps has no row of its
+own.
+
+The graph goes on the fan-out's own row: an optional `schedule: eager` line,
+then a `lanes:` block with one line per wave, in wave order. Each line names
+that wave's lanes in declaration order, and a lane that needs others says
+`(needs a, b)`. It is plain line-oriented text, with no box drawing and nothing
+that depends on terminal width, so it is safe to pipe. The rows beneath and the
+`N step(s) rendered` count are unchanged. `--json` carries the same graph
+additively, on that step only: `schedule` (the resolved mode), `max_lanes` when
+set, and `lanes` as `{id, needs, wave, guarded}`.
+
+- **Waves come from `workflow.LaneWaves`**, the engine's derivation, not a
+  third restatement. They are numbered from 1 in both outputs, as the TUI's
+  diagram numbers them, and cover every declared lane. Whether a guard selects
+  a lane is not judged (decision 6).
+- **A guarded lane is tagged `guarded`**, because task 080 decision 8 lets a
+  guarded-off lane impose no ordering. Its guard's text stays the
+  `lanes[N].if` field.
+- **`eager` is shown only where declared**, as task 084 decision 9 leaves
+  `barrier` unbadged. On a declared list with every lane in wave 1 it reads
+  `schedule: eager (runs as barrier: no lane needs another)`, which is task 081
+  decision 4 made visible. A derived template's `eager` prints bare, because its
+  flatness is unknowable before spawn.
+- **A `lane:` template draws one line**, `<derived lane>: unknown width, at
+  most N, one per item of …`, with `at most N` only when `max_lanes:` is set.
+  In JSON it is a single `{id: "<derived lane>", derived: true, for_each}`
+  entry with no `wave`. No waves are drawn even when `for_each` would resolve
+  offline, which keeps decision 10's beat.
+- **Rows that are not real fan-outs get no block.** The unresolved rows
+  `PreviewSteps` emits for a named lane and for a template naming a workflow
+  carry no lanes. A named lane still appears by id, with its `needs`, in its
+  parent's block offline. A `fan_out` nested inside a lane gets its own block.
+
+No new `update-workflows` checklist line, for decision 9's reason: this adds no
+YAML schema surface.
+
+**Beat:** a `steps[N].lanes[M] ID (lane)` row per lane, which changes the row
+sequence and the step count and would make lanes `steps[]` entries of a new
+`type` that scripts reading `type: fan_out` never expected. A trailing edge
+list, which puts the facts furthest from the lanes they describe.
 
 ## Tasks
 
@@ -234,6 +283,19 @@ task 080.
   definition mapping to `lane`, `max_lanes`, `schedule` and lane `needs`; and
   `TestRenderProjectResolvesDerivedFanOut` includes a registry workflow with a
   derived fan-out through the real handlers and renders its lane step.
+- **Lane graphs** *(added 2026-09-17, issue #407)* — `TestRenderDrawsLaneDAG`
+  renders corpus entry 12 (`docs/gates/corpus/lanedag.yaml`) with
+  `schedule: eager`, `wave 1: api, db` and `wave 2: wire (needs api, db)`, still
+  `6 step(s) rendered`, and the same waves and needs in `--json`;
+  `TestRenderDerivedLaneListHasUnknownWidth` draws the unknown-width label with
+  `at most 8` and no wave, and a single `derived` JSON entry;
+  `TestRenderFlatLaneList` notes that a flat `eager` list runs as barrier, and
+  leaves an unnamed schedule unbadged while `--json` says `barrier`;
+  `TestRenderGuardedLaneIsTagged` tags a guarded lane and keeps its dependent in
+  wave 2; `TestRenderNamedLanesOffline` draws named lanes in their parent's
+  block, grows no block on their unresolved rows, and draws a nested fan-out's
+  own; and `TestRenderProjectDrawsResolvedLaneDAG` includes a registry workflow
+  whose lanes carry `needs` through the real handlers and draws the same block.
 
 No new gate script: the acceptance is a CLI verdict on a file, fully decidable
 in Go, and `m2` already covers the daemon-backed paths this command does not
