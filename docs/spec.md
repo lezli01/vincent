@@ -5921,9 +5921,11 @@ key that already means anything else — an operation or a fixed key, on any
 surface — unless a recorded exception on that exact default key covers both
 meanings, which does not travel with an operation that moves; and a printable
 key for `palette_alt`, `help_alt` or any operation answered where a text field
-owns the printable keys. Every problem is reported at once, joined with `; `
-under a `tui.keys: ` prefix, each naming the operation, the key and what the
-key already means. As for `board.group_by`, a refused `PATCH` leaves the file
+owns the printable keys. Problems are joined with `; ` under a `tui.keys: `
+prefix, each naming the operation, the key and what the key already means, in
+two passes: every unknown id, fixed name and malformed key string at once, and
+only when there are none, every collision and printable-key refusal at once —
+a map with both kinds reports the first kind alone. As for `board.group_by`, a refused `PATCH` leaves the file
 byte-identical and a refused reload keeps the last good configuration.
 `GET /v1/config` serves `tui.keys` as an object, never `null`. This makes
 `keymap` `internal/config`'s second internal import beside `taskstate`, and

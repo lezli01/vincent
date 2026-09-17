@@ -2055,8 +2055,8 @@ tui:
     quit: f10
 ```
 
-The same map can be set with `vincent config set tui.keys '{refresh: ctrl+e,
-quit: f10}'`, or from the [daemon view's](#daemon) config editor. An empty map,
+The same map can be set with `vincent config set tui.keys "refresh=ctrl+e
+quit=f10"`, or from the [daemon view's](#daemon) config editor. An empty map,
 the default, is the keymap this guide describes.
 
 A key is written the way the terminal reports it: one character (`R`, `/`,
@@ -2144,8 +2144,10 @@ Naming one of these in `tui.keys` — `group`, `fold`, `page`, `esc`, `tab`,
 
 ### What is refused
 
-The daemon checks the whole map before it accepts any of it, and reports every
-problem at once:
+The daemon checks the whole map before it accepts any of it. It checks the
+names and the key strings first and reports every problem among them at once;
+only a map whose names and keys are all valid is checked for the last two
+refusals below, which are again reported all at once:
 
 - **An operation that does not exist**, with the list of those that do.
 - **Something that is not a key**, such as `reload` or `shift+r`.

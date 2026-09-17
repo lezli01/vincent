@@ -1590,7 +1590,10 @@ means:
 - a plain character or `space` for `palette_alt` or `help_alt`, whose purpose
   is to work while a text field has the keyboard.
 
-Every problem is reported at once, under a `tui.keys:` prefix. As with any
+Problems are reported under a `tui.keys:` prefix, in two passes: every unknown
+id, fixed name and malformed key at once, and only when there are none, every
+key that already means something else and every plain character for
+`palette_alt` or `help_alt` at once. As with any
 invalid value, a refused load does not start the daemon, a refused reload keeps
 the last good configuration, and a refused `PATCH /v1/config` or
 `vincent config set tui.keys "refresh=f5 pause=x reject=p"` leaves the file
