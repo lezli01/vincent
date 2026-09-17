@@ -159,6 +159,12 @@ func TestActionsFromEveryValidState(t *testing.T) {
 			if action == taskstate.Answer {
 				continue // T2.12 owns answer; it needs a live input request
 			}
+			if action == taskstate.Chat {
+				// Opening a linked chat moves nothing and is the API's
+				// write, not the runner's (task 115); internal/api's
+				// linked-chat tests own it.
+				continue
+			}
 			t.Run(string(from)+"/"+string(action), func(t *testing.T) {
 				h := newActionHarness(t)
 				task := h.task(t, from)
