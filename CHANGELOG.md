@@ -24,6 +24,15 @@ list with the user-facing context a commit subject cannot carry.
   because vincent cannot detect whether a terminal supports OSC 8. Served and
   written as `tui.hyperlinks` on `GET` and `PATCH /v1/config`.
 
+- **Links in an agent's Markdown can now be opened and copied.** `ctrl+l` in
+  the task output pane or a chat opens a link picker that lists every `[n]`
+  link and image in the assistant's messages, newest first, and shows the
+  selected link's whole destination. `enter` opens it in your browser and
+  `ctrl+y` copies it. Only `http` and `https` links open; `mailto:`, `file:`,
+  relative and other links are marked `copy only`, can still be copied, and
+  say why when you try to open them. The outcome shows where you pressed the
+  key.
+
 - **A cursor step now shows where it ran and how long it took.** cursor
   reports its working directory when a run starts, and its duration and cache
   token counts when it ends, but vincent ignored all three. The output pane and
