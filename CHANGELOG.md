@@ -13,6 +13,17 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Links in agent prose can be clickable, if you opt in.** Set
+  `tui.hyperlinks: true` in `config.yaml`, or flip it in the daemon view's
+  config editor, and a Markdown link or image in the output pane and the chat
+  workspace becomes an OSC 8 terminal hyperlink: the label, its dim `[1]` and
+  the destination printed in the reference list under the message. Only an
+  `http` or `https` URL with a host, no `user@` part, at most 2048 bytes and
+  plain printable ASCII is linked; anything else renders as text exactly as
+  before, and the reference list always stays on screen. Off by default,
+  because vincent cannot detect whether a terminal supports OSC 8. Served and
+  written as `tui.hyperlinks` on `GET` and `PATCH /v1/config`.
+
 - **A cursor step now shows where it ran and how long it took.** cursor
   reports its working directory when a run starts, and its duration and cache
   token counts when it ends, but vincent ignored all three. The output pane and
