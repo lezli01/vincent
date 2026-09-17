@@ -19,7 +19,7 @@ state stay on your machine; vincent provides the control plane around them.
 | GitHub | Create a task from an issue or a **pull request**, prefilled and editable — a pull-request task runs on that pull request's head branch; issue details in templates; a project's pull requests, each linked to the task whose branch it came from, with that task's own tab carrying its live CI checks; and **open a pull request** for a task — push its branch and create the PR from inside vincent — then merge, close, reopen, comment on or re-run its failed checks from the task's Pull Request tab or the CLI, each written to GitHub only when you ask. No stored credential |
 | Event triggers | Start or act on tasks from a polled command, GitHub issue and pull-request changes, or a signed push; off twice by default, proposed paused and restricted, deduplicated and rate-limited, with a delivery ledger and dry runs; built-in workflows that write triggers and never switch one on |
 | Integration | Full CLI, JSON output, stable exit codes, localhost REST API, durable state SSE and live output streams |
-| Operations | Automatic usage-limit waits, one-command diagnostics, configuration editing from the TUI and CLI, orphan cleanup, database integrity checks, backup and restore |
+| Operations | Automatic usage-limit waits, one-command diagnostics, configuration editing from the TUI and CLI, orphan cleanup, database integrity checks, backup and restore, scheduled backups with retention |
 | Platforms | Windows, macOS, and Linux; Homebrew, a universal macOS `.pkg`, Scoop, mise, deb/rpm, and archives; WinGet submitted, pending Microsoft review |
 
 ## Orchestrate work instead of terminals
@@ -617,6 +617,16 @@ WAL is missing whatever has not been checkpointed. `vincent daemon restore` is
 the reverse, runs against a stopped daemon, and deletes nothing: a destination
 that already holds state needs `--force`, which moves the old state aside as
 `<name>.bak-<timestamp>`.
+
+The daemon can take the same archive **on a schedule**. Set `backup.interval`
+(at least `1h`) and it writes one into `backup.dir` — `{data_dir}/backups` by
+default — keeping the newest `backup.keep` of its own archives and never
+touching one you took by hand. The schedule counts from the newest archive on
+disk, so a restart does not reset it and an overdue backup runs as soon as the
+daemon starts. A failed backup is a problem in `vincent doctor`, which exits
+`1` until the next one succeeds. The default directory is on the database's
+disk, so it guards against corruption and mistakes rather than a lost disk;
+point `backup.dir` at another disk for that.
 
 See [Troubleshooting](guides/troubleshooting.md) for the diagnostic workflow,
 [Files](reference/files.md#backup-and-restore) for what an archive holds and

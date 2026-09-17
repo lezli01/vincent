@@ -112,6 +112,7 @@ Project-scoped workflows live in the repository instead, at
   transcripts/{task_id}/{step_index}-{attempt}.jsonl
   transcripts/chat-{chat_id}/{turn_seq}.jsonl
   trigger-proposals/{task_id}/                      # staged trigger files + manifest.json
+  backups/vincent-backup-{timestamp}.tar.gz         # scheduled backups, when backup.dir is ""
 ```
 
 On POSIX vincent creates `{data_dir}` owner-only (`0700`); on Windows the
@@ -127,6 +128,7 @@ mode of a data directory that already exists.
 | `tui.json` | TUI-local view state: the first-run full-auto acknowledgment, the board's collapsed groups, and whether the offer to make vincent [claude's status line](cli.md#vincent-statusline) was declined. Written by the TUI, never read by the daemon; deleting it re-shows the full-auto notice, opens every group and lets the status-line offer come back |
 | `logs/daemon.log` | The daemon log, rotated and size-capped. Read by `vincent daemon logs` and the TUI's daemon view — from disk in both cases, so it still works when the daemon is what died |
 | `trigger-proposals/{task_id}/` | A trigger proposal a `create-trigger` or `update-triggers` task staged: the full proposed `{id}.yaml` files and `manifest.json`. The directory is `0700` and the files `0600`, because a trigger's argv can carry a token. [`vincent trigger apply`](cli.md#vincent-trigger-apply) removes it once every file is installed; a proposal that was rejected at its approval step stays until the task is deleted |
+| `backups/` | Where [scheduled backups](#scheduled-backups) go when [`backup.dir`](configuration.md#backup) is `""`. Created `0700` the first time a scheduled backup runs, so it does not exist until you turn them on. Each archive is `0600` |
 
 ## Worktrees and branches
 
@@ -269,6 +271,7 @@ vincent daemon --config-dir /srv/v-cfg --data-dir /srv/v-data
 | `logs/daemon.log` | Nothing; it is recreated |
 | `transcripts/{task_id}/`, `transcripts/chat-{chat_id}/` | That task's or chat's output history is gone; the record and its metrics stay |
 | `trigger-proposals/{task_id}/` | That task's staged trigger proposal is gone, so its `apply` step has nothing to install |
+| `backups/vincent-backup-*.tar.gz` | That backup is gone. The next scheduled run is counted from the newest archive left, so deleting the newest one makes a run due sooner |
 | `worktrees/{task_id}/` | Effectively an unregistered archive — prefer archiving the task, which does it properly. For a directory whose task no longer exists, prefer `vincent gc`, which checks it is not somebody's live worktree first |
 | `daemon.json`, `daemon.lock` | Only safe while the daemon is stopped; both are recreated |
 | `token` | Recreated at next start, and every existing client must re-read it |
@@ -328,6 +331,47 @@ safe. It refuses:
 
 With `--force` each of those is **moved aside** as `<name>.bak-<timestamp>`.
 Nothing is deleted on any path, and the command prints where everything went.
+
+### Scheduled backups
+
+The daemon can take the same archive on a timer. It is off until you set
+[`backup.interval`](configuration.md#backup):
+
+```sh
+vincent config set backup.interval 24h
+```
+
+- **Schedule.** The interval is at least `1h`, and it is counted from the
+  newest scheduled archive already in the directory, so a restart does not
+  reset it. A backup that is overdue, or a directory with none yet, runs as soon
+  as the daemon starts. After that the daemon checks about once a minute, and a
+  failed run is retried an hour later.
+- **Where.** [`backup.dir`](configuration.md#backup), which defaults to
+  `{data_dir}/backups/`, created owner-only on first use. Archives are `0600`
+  and named `vincent-backup-<UTC timestamp>.tar.gz`, for example
+  `vincent-backup-20260917T030000Z.tar.gz`. An archive only gets that name once
+  it is complete. A half-written one lives in a `.vincent-backup-*` directory
+  beside it, which the daemon removes when it next starts.
+- **Retention.** After each successful run the daemon keeps the newest
+  `backup.keep` scheduled archives (7 by default; `0` keeps everything) and
+  deletes the rest. It only ever counts or deletes files with that name, so a
+  `vincent daemon backup` archive you saved into the same directory, and
+  anything else there, is never touched. A failed run deletes nothing.
+- **Watching it.** [`vincent doctor`](cli.md#vincent-doctor)'s `BACKUP` group and
+  the TUI daemon view show the last success, the next run, how many archives are
+  kept and the last error. A failed last attempt is a doctor problem and makes
+  `vincent doctor` exit `1`. An overdue backup, for example after the machine
+  was off, is not.
+
+> **The default location is on the same disk as the database.** A scheduled
+> backup there protects against a corrupt database and against mistakes. It does
+> not protect against losing the disk, and a disk that fills affects the
+> database and the backups together. Point `backup.dir` at another disk for
+> that protection.
+
+A scheduled archive restores exactly like a manual one, with
+`vincent daemon restore`. Restore does not bring back `backups/` itself: the
+archive holds the database, transcripts and config, not other archives.
 
 To move an installation to another machine, restore into an empty pair of
 directories and start the daemon; your repositories and their branches are the

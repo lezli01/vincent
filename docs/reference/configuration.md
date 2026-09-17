@@ -245,6 +245,33 @@ update:
   check: true
   poll_interval: 24h
 
+# Take the archive "vincent daemon backup" writes on a schedule (task 115).
+# Off by default: interval is the one switch, and every archive carries all
+# transcripts, which can run to gigabytes. Set it to at least 1h (24h is a
+# sensible start); anything shorter is refused, because each run holds the
+# database for the length of the copy.
+#
+# interval is counted from the newest scheduled archive already in dir, so a
+# restart does not reset it and an overdue backup runs right after startup. A
+# failed run is retried an hour later, and shows as a problem in
+# "vincent doctor" until one succeeds.
+#
+# keep is how many scheduled archives survive each successful run; 0 keeps
+# everything. Only files named vincent-backup-<UTC timestamp>.tar.gz count or
+# are ever deleted: an archive you took by hand in the same directory is left
+# alone.
+#
+# dir "" means <data dir>/backups. That is on the same disk as the database:
+# it protects against corruption and mistakes, not against losing the disk.
+# Point dir at another disk for that. An archive holds this file (including
+# environment.set values and notify.command) and every transcript, so do not
+# point it at a folder other people can read.
+#
+# backup:
+#   interval: 24h
+#   keep: 7
+#   dir: ""
+
 # Run a task's steps inside a container instead of on this host (task 061).
 # "image" is the whole switch and "" is the default: no image, and every step
 # runs here exactly as it always has. The image is yours — it must already
@@ -1072,6 +1099,65 @@ switches the check back on.
 
 **Nothing is ever downloaded or installed by the check.** Applying an update is
 [`vincent update`](cli.md#vincent-update), which you run.
+
+### `backup`
+
+```yaml
+backup:
+  interval: 0
+  keep: 7
+  dir: ""
+```
+
+Scheduled daemon backups: the same archive
+[`vincent daemon backup`](cli.md#vincent-daemon-backup) writes, taken by the
+daemon on a timer. **Off by default.** Every archive carries every transcript,
+which can run to gigabytes, so the daemon does not start spending disk on it
+until you ask.
+
+**`interval`** is the only switch. `0` is off. Any other value must be at least
+`1h`, and `24h` is a sensible start. A negative interval, or one under an hour,
+is refused: each run holds the database's only connection for the length of the
+copy and then re-reads every transcript, and anything more frequent is a job for
+cron or Task Scheduler. The interval is counted from the **newest scheduled
+archive already in `dir`**, not from when the daemon started. A restart does not
+reset the clock, and a backup that is overdue — or a directory with no archive
+yet — runs at the first check after the daemon starts. A failed run is retried
+an hour later, and until one succeeds it is a problem in
+[`vincent doctor`](cli.md#vincent-doctor), which then exits `1`. An overdue
+backup alone is not a problem.
+
+**`keep`** is how many scheduled archives survive each successful run. Older
+ones are deleted, and `0` keeps everything. A failed run deletes nothing. Only
+files named `vincent-backup-<UTC timestamp>.tar.gz` (for example
+`vincent-backup-20260917T030000Z.tar.gz`) count toward `keep` or are ever
+deleted. An archive you took by hand in the same directory, and any other file,
+is left alone. A negative `keep` is refused.
+
+**`dir`** is where archives are written. `""` means `{data_dir}/backups`,
+created owner-only on first use; any other value must be an **absolute path**.
+Archives are written `0600`. Each one is written under a temporary
+`.vincent-backup-*` directory in `dir` and moved to its final name only when it
+is complete, so a daemon stopped mid-run never leaves a half-written archive
+that looks like a good one. A `dir` inside `{data_dir}/transcripts` or
+`{config_dir}/workflows` fails every run, because the archive would include
+itself.
+
+> **The default location is on the same disk as the database.** It protects
+> against corruption and against mistakes, not against losing the disk. To
+> survive that, point `dir` at another disk.
+
+An archive holds this file, including
+[`environment.set`](#environment) values and
+[`notify.command`](#notify), and every transcript. Do not point `dir` at a
+folder other people can read, or at a synced folder you would not put those in.
+The TUI's config editor asks before it changes `dir`.
+
+All three keys are read on every check, about once a minute, so a
+[reload](#reload-semantics) takes effect at the next check with no restart.
+`vincent doctor`'s `BACKUP` group and the TUI daemon view show the last
+success, the next run and the last error; see
+[Files](files.md#scheduled-backups) for restoring from one.
 ### `mcp`
 
 ```yaml
@@ -1521,9 +1607,9 @@ describes is still there afterwards. See
 [`vincent config`](cli.md#vincent-config).
 
 The TUI's daemon view shows and edits the same thing, alongside the adapters
-detected and the log tail — `tab`, then `enter` on a key. Four keys
-(`notify.command`, `environment`, `agents.*.path`, `listen`) ask for a
-confirmation first.
+detected and the log tail — `tab`, then `enter` on a key. Six keys
+(`notify.command`, `environment`, `agents.*.path`, `listen`,
+`triggers.enabled`, `backup.dir`) ask for a confirmation first.
 
 ---
 

@@ -1961,9 +1961,20 @@ everything else here it reports and offers nothing to press; `vincent doctor`
 prints the same figures in pasteable form, and `vincent doctor --fix` is what
 compacts the file. `R` re-reads it along with the rest of the view.
 
+The database block ends with a **backups** row for
+[scheduled backups](../reference/configuration.md#backup). With
+`backup.interval` at `0` it reads `off`. Once they are on it shows the
+interval, `keep` and the directory, then a `last backup` line with when the
+newest scheduled archive was written, its size, how many are kept and when the
+next is due. A failed attempt adds a red `last backup failed` line carrying the
+error, which stays until an attempt succeeds; it is the same failure that makes
+`vincent doctor` exit `1`. A retention pass that could not delete an old
+archive is a yellow line instead, because the backup it followed succeeded.
+Like the rest of the block it offers nothing to press.
+
 | Key | Does |
 |---|---|
-| `R` | Re-read the daemon info, the config, the database figures and the log |
+| `R` | Re-read the daemon info, the config, the database and backup figures and the log |
 | `f` or `G` | Follow the end of the log again |
 | `↑`/`↓` | Scroll the log |
 

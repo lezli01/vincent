@@ -189,6 +189,9 @@ already build the real binary and drive real daemons — which is what
 Task Scheduler cover the scheduling, and a daemon-side timer with a retention
 policy is its own decision with its own configuration surface. Manual command
 first (tracked in [#410](https://github.com/lezli01/vincent/issues/410), 2026-09-13).
+*Done in [task 115](115-scheduled-daemon-backups.md) (2026-09-17):* a daemon
+timer takes this archive on `backup.interval` and keeps the newest `backup.keep`
+of its own.
 
 **Restoring a single task.** The archive is whole-installation. Pulling one
 task's rows and transcripts out of a backup is a different feature with a
