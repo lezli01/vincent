@@ -13,6 +13,17 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **A cursor step now shows where it ran and how long it took.** cursor
+  reports its working directory when a run starts, and its duration and cache
+  token counts when it ends, but vincent ignored all three. The output pane and
+  `vincent task transcript` now show the directory as the run's `#` header
+  line and the elapsed time on the result line. At `verbose`, the pane also
+  shows the API time and the cache counts. `GET …/transcript?format=normalized`
+  carries them as `work_dir`, `duration_ms`, `api_duration_ms`,
+  `cache_read_tokens` and `cache_write_tokens`. cursor lists no tools, turns or
+  stop reasons, so none are shown. cursor-agent `2026.08.25-3e8eec8` is now a
+  tested build.
+
 - **vincent now tells you when claude is not logged in.** claude was the one
   agent whose login state always read *unknown*. vincent now asks
   `claude auth status`, so `vincent doctor`, `vincent agents`, `GET /v1/agents`

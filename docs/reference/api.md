@@ -2297,7 +2297,11 @@ The transcript is the attempt's JSONL file, ranged:
   entries carry `verb` and `blocked`; and any record may carry `parent_call_id`,
   the tool call a subagent's line belongs to. **Every one of those keys is
   omitted when unreported**, so absent and zero are distinguishable — only
-  [Claude Code](../guides/agents.md#claude-code) fills them today.
+  [Claude Code](../guides/agents.md#claude-code) fills all of them today.
+  [Cursor](../guides/agents.md#cursor) fills `work_dir` (never
+  `available_tools`), `duration_ms`, `api_duration_ms`, `cache_read_tokens`
+  and `cache_write_tokens`, and [Codex](../guides/agents.md#codex) the two
+  cache counts.
 - `agent.plan` carries `items` (`[{text, completed}]`) and `plan_call_id` — the
   agent's running to-do list, **whole on every record** rather than as a delta,
   so a client that joins mid-run learns where the agent is. `agent.command_output`

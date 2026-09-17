@@ -605,9 +605,13 @@ A tool call that a permission rule **refused** is marked `⊘` rather than `✗`
 every level. The distinction is worth a glyph: `✗` is the agent's problem, and
 `⊘` is the step's [permission mode](agents.md).
 
-Only [Claude Code](agents.md#claude-code) reports the run header and the run
-metadata today. On codex and cursor those lines simply do not appear — vincent
-does not synthesise one from what it happens to know. The plan and the command
+[Claude Code](agents.md#claude-code) reports the run header and the run metadata
+in full. [Cursor](agents.md#cursor) reports part of both: its header is the
+working directory with no tool list, because cursor names none, and its result
+line carries the elapsed time — plus the API split and the cache counts at
+`verbose` — but no turns, stop reasons or refused calls. On codex the header
+does not appear. Whatever an agent does not report is left out; vincent does not
+synthesise it from what it happens to know. The plan and the command
 output run the other way: only [Codex](agents.md#codex) reports those, and on
 claude and cursor they are absent for the same reason rather than invented.
 

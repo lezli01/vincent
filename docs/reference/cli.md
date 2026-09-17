@@ -849,8 +849,10 @@ control, so the alternative to dropping it is showing every command's whole
 output to every reader; `--raw` and `--json` both carry it for a reader who
 wants the body. The result line stops at the pane's `normal` content for the
 same reason: the API-time, cache and per-model breakdown is `--json` only.
-An adapter that reports none of that metadata — codex, cursor — prints no
-header and a bare `= done`.
+An adapter that reports none of that metadata — codex — prints no header and a
+bare `= done`. Cursor reports part of it: its `# ` line is the working directory
+with no tools, and its result line carries the elapsed time, as in
+`= done (2.0s)`.
 
 Everything a reader reads goes to **stdout**, including a command step's stderr,
 which is tagged `[stderr]` rather than split onto the other file descriptor: a

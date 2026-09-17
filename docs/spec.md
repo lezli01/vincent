@@ -2739,9 +2739,11 @@ type RunResult struct {
     CostUSD      *float64 // nil if unreported (e.g. codex)
     Failure      *Failure // task 003: the adapter's verdict, nil = nothing recognized
     // task 066, added 2026-08-31: the run's own account of itself, as its
-    // terminal result reported it. Zero/nil throughout for an adapter that
-    // reports none of it, which is codex and cursor for every member. None of
-    // it is persisted — it reaches a reader through the transcript (§13.2).
+    // terminal result reported it. Zero/nil for every member an adapter does
+    // not report (amended 2026-09-17, task 108: codex fills the cache counts
+    // since task 070, cursor the durations and cache counts since task 108,
+    // and neither fills the rest — §9.3, §9.7). None of it is persisted — it
+    // reaches a reader through the transcript (§13.2).
     Duration            time.Duration      // the CLI's own wall clock, not vincent's
     APIDuration         time.Duration      // of which was spent in API calls
     NumTurns            int
@@ -2845,7 +2847,9 @@ Both are stated positively where an adapter lacks them (§9.3, §9.7) and neithe
 is ever emulated. Nothing is persisted: `step_runs` keeps vincent's own timing
 and token columns, and a claude-only duration there would be a second duration
 disagreeing with vincent's own, since claude's excludes what a §7.4 input wait
-adds to ours.
+adds to ours. *Amended 2026-09-17 (task 108):* cursor's duration is read too,
+and is not persisted either, for the same reason — it is the CLI's clock, not
+vincent's.
 
 **The adapter's failure verdict (task 003, added 2026-08-14).** `RunResult`
 carries an optional `Failure`: the adapter's reading of *why* its CLI stopped,
@@ -3746,6 +3750,25 @@ would invalidate every one of them.
   fixtures — and the shared vocabulary was designed so cursor can fill these
   later without another wire change. Until it does, all of them stay zero and
   none of them is emulated, asserted over every cursor fixture.
+  *Amended 2026-09-17 (task 108, issue #400):* cursor fills its share now, and
+  "none of it is read" is retired. A `system` line with subtype `init` is the
+  run header, `RunHeader.WorkDir` from its `cwd`, with **no tool list** —
+  `Tools` stays nil, because the line lists none and a set assembled from the
+  calls seen later would be a guess; any other `system` subtype stays
+  `unknown` with its raw line. The `result` line's `duration_ms` and
+  `duration_api_ms` become `Duration` and `APIDuration`, and
+  `usage.cacheReadTokens`/`cacheWriteTokens` become `CacheReadTokens` and
+  `CacheCreationTokens`, copied as reported, whatever the result's subtype.
+  What stays zero, and is still asserted zero over every cursor fixture:
+  `NumTurns`, `StopReason`, `TerminalReason`, `ModelUsage`,
+  `PermissionDenials`, `ReasoningOutputTokens`, `ToolResult.Verb`/`.Blocked`
+  and `ParentCallID` — no cursor line carries them, and nothing emulates one.
+  What cursor reports and is still **not read**: the init line's `model`,
+  `permissionMode` and `apiKeySource` (`RunHeader` has no field for them, a
+  field would be a wire change, and `apiKeySource` concerns authentication,
+  which has no place in a transcript record) and the result line's
+  `request_id`. Pinned against captures from cursor-agent 2026.08.25-3e8eec8
+  as well as every earlier fixture, which already carried the same fields.
 - **Resume (pinned against cursor-agent 2026.08.11-e8db854, 2026-08-31, task
   072).** `agent.CanResume` is true for cursor, so a chat may run on it (§5.5,
   §13.2), replacing task 063's "cannot resume" on that decision's own deferral
@@ -3832,7 +3855,12 @@ would invalidate every one of them.
     directions today and degrades to a true statement rather than a silent
     hole, where a guessed failure shape would not.
   - Usage keys are camelCase (`inputTokens`, `outputTokens`, plus
-    `cacheReadTokens`/`cacheWriteTokens` which vincent does not record);
+    ~~`cacheReadTokens`/`cacheWriteTokens` which vincent does not record~~
+    `cacheReadTokens`/`cacheWriteTokens`, *amended 2026-09-17 (task 108):*
+    copied as reported into `CacheReadTokens`/`CacheCreationTokens` and never
+    folded into the plain in/out counts. The captures show no fixed relation
+    between `inputTokens` and `cacheReadTokens`, so this spec does not say
+    whether one includes the other);
     **`CostUSD` is nil** — cursor reports no cost.
   - `result.result` is the concatenation of *every* assistant message in the
     turn, not the last one; it is used verbatim as the result text.
@@ -3900,7 +3928,9 @@ would invalidate every one of them.
   the other two changed. Its `quota` value and its rendering are what task 026
   shipped, byte for byte.
 - **Version verdict compares whole strings** (*added 2026-08-28, task 041*).
-  The verified builds are `2026.08.04-aaa8809` and `2026.08.11-e8db854`, and the
+  The verified builds are `2026.08.04-aaa8809`, `2026.08.11-e8db854` and
+  `2026.08.25-3e8eec8` (*added 2026-09-17, task 108*, the capture build for the
+  run header and the result metadata), and the
   comparison is exact string equality — calver plus a commit sha has no ordering
   to range over, and the sha is part of the binary's identity, not decoration.
   Rather than let one adapter answer a version question differently from the

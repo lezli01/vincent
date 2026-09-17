@@ -315,7 +315,7 @@ API keys or login credentials.
 |---|---|
 | Claude Code | Model and effort discovery, usage and cost reporting, restricted mode, mid-run questions, and the fullest account of its own run — the working directory and tool set it was given, its duration, turns, cache split and refused tool calls. Its remaining usage quota reaches vincent when you let it draw your status line |
 | Codex | Headless execution, restricted mode, session resume so it can hold a chat, its remaining usage quota answered on request over its app-server, and its running to-do list, command output and full token usage in the output pane; no mid-run input or cost reported by the CLI |
-| Cursor | Headless execution and model discovery; reasoning effort is part of the model id, restricted mode is unavailable on Windows, and it has no usage-quota surface to report from |
+| Cursor | Headless execution and model discovery, and the working directory, duration and cache split of its run in the output pane; reasoning effort is part of the model id, restricted mode is unavailable on Windows, and it has no usage-quota surface to report from |
 
 Agent, model, effort, and permission settings resolve from step to task override
 to workflow default to adapter default. The TUI shows which level won, and free
