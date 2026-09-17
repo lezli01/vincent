@@ -168,7 +168,7 @@ func (t *taskView) pullSectionLines(width int) []string {
 			out = append(out, "", styleWarn.Render(
 				"  ⚠ could not read its current state: "+t.pull.Reason))
 		}
-		out = append(out, "", styleDim.Render("  " + opKey(keymap.Browser) + " opens it in a browser"))
+		out = append(out, "", styleDim.Render("  "+opKey(keymap.Browser)+" opens it in a browser"))
 	case t.pull.Reason != "":
 		out = append(out, styleWarn.Render("  GitHub is not usable for this project: "+t.pull.Reason))
 	case t.pull.CompareURL != "":
