@@ -286,6 +286,12 @@ func (d *detail) updateMsg(msg tea.Msg) tea.Cmd {
 		text, bad := msg.notice()
 		d.actions.setStatus(text, bad)
 		return nil
+	case linkOpenedMsg:
+		// A link opened from the output pane reports here, beside the copy
+		// notice, and never in the pull-request note (task 112 decision 5).
+		text, bad := msg.notice()
+		d.actions.setStatus(text, bad)
+		return nil
 	case detailTranscriptMsg:
 		d.applyTranscript(msg)
 		return nil
@@ -794,6 +800,11 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return d.toggleRaw()
 	case copyPickKey:
 		return openCopyPicker(copyDocsFromRecords(d.records, d.recordSeqs()),
+			func(seq int64) (string, bool) {
+				return resolveDocs(d.records, d.recordSeqs(), seq)
+			})
+	case linkPickKey:
+		return openLinkPicker(copyDocsFromRecords(d.records, d.recordSeqs()),
 			func(seq int64) (string, bool) {
 				return resolveDocs(d.records, d.recordSeqs(), seq)
 			})

@@ -246,7 +246,11 @@ numbered reference list at the end of the message; an image is its alt text
 plus its printed source. **By default vincent emits no OSC 8 hyperlink, and the
 pane never opens anything**, so a `javascript:` or `file:` destination an agent
 wrote is something you can read and copy but not something the terminal can be
-made to act on.
+made to act on. The one way vincent itself opens a destination is when you pick
+it in the TUI's link picker (`ctrl+l`), which prints the whole destination
+first and opens only `http` and `https` — every other scheme is listed as copy
+only — handing the URL to the platform's opener as a single argument, never
+through a shell.
 
 If you turn on [`tui.hyperlinks`](reference/configuration.md#tuihyperlinks),
 a link becomes clickable only when its destination passes a strict check: an

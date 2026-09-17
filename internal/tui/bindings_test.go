@@ -64,6 +64,8 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 		msg = tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl}
 	case "ctrl+y":
 		msg = tea.KeyPressMsg{Code: 'y', Mod: tea.ModCtrl}
+	case "ctrl+l":
+		msg = tea.KeyPressMsg{Code: 'l', Mod: tea.ModCtrl}
 	case "ctrl+r":
 		msg = tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl}
 	case "ctrl+g":
@@ -874,6 +876,24 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("ctrl+y reached the composer: %q", v.composer.Value())
 			}
 		},
+		"ctrl+l": func(t *testing.T) {
+			v := chatViewFixture()
+			v.turns = []apiclient.ChatTurn{{ID: 1, Seq: 1, State: "done", Prompt: "hi"}}
+			v.turnRecords[1] = []apiclient.TranscriptRecord{
+				{Type: "agent.output", Text: "see [the spec](https://example.test/spec)"},
+			}
+			_, cmd := v.updateKey(registryKey(t, "ctrl+l"))
+			if cmd == nil {
+				t.Fatal("ctrl+l did not open the link picker")
+			}
+			msg, ok := drain(cmd).(openLinkPickerMsg)
+			if !ok || len(msg.items) != 1 {
+				t.Fatalf("ctrl+l produced %#v, want a link picker with one row", drain(cmd))
+			}
+			if v.composer.Value() != "" {
+				t.Fatalf("ctrl+l reached the composer: %q", v.composer.Value())
+			}
+		},
 		"ctrl+g": func(t *testing.T) {
 			v := chatViewFixture()
 			v.following = false
@@ -1127,6 +1147,23 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			msg, ok := drain(cmd).(openCopyPickerMsg)
 			if !ok || len(msg.items) == 0 {
 				t.Fatalf("ctrl+y produced %#v, want a copy picker with rows", drain(cmd))
+			}
+		},
+		"ctrl+l": func(t *testing.T) {
+			d := newTestDetail(t)
+			d.taskID = 4
+			loadDetail(d, []apiclient.StepRun{attempt(1, 0, 1, "implement", "running", true)})
+			d.focus = focusOutput
+			d.records = []apiclient.TranscriptRecord{
+				{Type: "agent.output", Text: "see [the spec](https://example.test/spec)"},
+			}
+			cmd := d.updateKey(registryKey(t, "ctrl+l"))
+			if cmd == nil {
+				t.Fatal("ctrl+l did not open the link picker")
+			}
+			msg, ok := drain(cmd).(openLinkPickerMsg)
+			if !ok || len(msg.items) != 1 {
+				t.Fatalf("ctrl+l produced %#v, want a link picker with one row", drain(cmd))
 			}
 		},
 		"e": func(t *testing.T) {

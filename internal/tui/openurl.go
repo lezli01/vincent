@@ -51,20 +51,32 @@ var openURL = openURLPlatform
 func openURLCmd(raw string) tea.Cmd {
 	raw = strings.TrimSpace(raw)
 	return func() tea.Msg {
-		if raw == "" {
-			return openedURLMsg{err: errors.New("nothing to open")}
-		}
-		u, err := url.Parse(raw)
-		if err != nil {
-			return openedURLMsg{url: raw, err: fmt.Errorf("not a URL: %w", err)}
-		}
-		if u.Scheme != "http" && u.Scheme != "https" {
-			return openedURLMsg{url: raw, err: fmt.Errorf("refusing to open a %q URL", u.Scheme)}
+		if err := openableURL(raw); err != nil {
+			return openedURLMsg{url: raw, err: err}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), openTimeout)
 		defer cancel()
 		return openedURLMsg{url: raw, err: openURL(ctx, raw)}
 	}
+}
+
+// openableURL is openURLCmd's refusal rule on its own, and the only copy of
+// it: the link picker marks a row "copy only" by asking this (task 112), so
+// what a row promises and what enter then does cannot disagree. nil means
+// openURLCmd would hand the URL to the platform.
+func openableURL(raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return errors.New("nothing to open")
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("not a URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("refusing to open a %q URL", u.Scheme)
+	}
+	return nil
 }
 
 // openFailure is the sentence a view puts on screen when an open failed.

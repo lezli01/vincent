@@ -279,7 +279,8 @@ the whole palette → replay → effect path.
   was in flight, so the blocker is no longer the renderer: it is naming a
   reference, which decision 1 leaves to that task. Issue criteria 4 and 5, and
   the link parts of 3 and 8, are theirs (tracked in
-  [#403](https://github.com/lezli01/vincent/issues/403), 2026-09-13).
+  [#403](https://github.com/lezli01/vincent/issues/403), 2026-09-13; landed as
+  [task 112](112-link-picker.md), 2026-09-17).
 - **Semantic identities.** Captured text is the stability mechanism until #291
   has a document model to reference.
 - **`?` in a chat.** Still swallowed by the composer. The palette answers the

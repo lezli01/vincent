@@ -78,6 +78,12 @@ type root struct {
 	// readerResolve re-reads a picked row's document from the view that
 	// offered it, and is nil while no picker is up.
 	readerResolve func(seq int64) (string, bool)
+	// linkPick is the task 112 link picker, open when non-nil, and routed
+	// exactly like reader: the three popups are never open together, because
+	// whichever is up owns every key that would raise another.
+	linkPick *linkPicker
+	// linkPickResolve is readerResolve for the link picker.
+	linkPickResolve func(seq int64) (string, bool)
 	// mouseOn drives tea.View's mouse mode: on by default, M toggles (§15
 	// Mouse). Off restores native click-drag text selection.
 	mouseOn bool
@@ -241,7 +247,7 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseClickMsg:
 		return m.updateMouseClick(msg)
 	case tea.MouseWheelMsg:
-		if m.notice.active || m.palette != nil || m.reader != nil || m.help {
+		if m.notice.active || m.palette != nil || m.reader != nil || m.linkPick != nil || m.help {
 			return m, nil
 		}
 		msg.Y-- // the body starts under the header line
@@ -250,6 +256,14 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.reader = newReaderPicker(msg.items)
 		m.readerResolve = msg.resolve
 		return m, nil
+	case openLinkPickerMsg:
+		m.linkPick = newLinkPicker(msg.items)
+		m.linkPickResolve = msg.resolve
+		return m, nil
+	case linkOpenedMsg:
+		// Like a copy's outcome, to the surface the human pressed the key on
+		// and nowhere else (task 112 decision 5).
+		return m, m.deliver(m.active, msg)
 	case clipboardResultMsg:
 		return m, m.updateClipboardResult(msg)
 	case noteMsg:
@@ -283,6 +297,9 @@ func (m *root) updatePaste(text string) tea.Cmd {
 	if m.reader != nil {
 		return m.reader.paste(text)
 	}
+	if m.linkPick != nil {
+		return m.linkPick.paste(text)
+	}
 	if m.palette != nil {
 		return m.palette.paste(text)
 	}
@@ -300,7 +317,7 @@ func (m *root) updatePaste(text string) tea.Cmd {
 // everything else lands in the active screen's body. Popups stay keyboard;
 // right-clicks and the rest are out of scope.
 func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
-	if msg.Button != tea.MouseLeft || m.notice.active || m.palette != nil || m.reader != nil || m.help {
+	if msg.Button != tea.MouseLeft || m.notice.active || m.palette != nil || m.reader != nil || m.linkPick != nil || m.help {
 		return m, nil
 	}
 	if m.height > 0 && msg.Y == m.height-1 {
@@ -325,13 +342,16 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// tea.PasteMsg and takes the same route bracketed paste does. Nothing
 	// capturing text means nothing to paste into — don't shell out to read a
 	// clipboard whose contents would be dropped.
-	if msg.String() == "ctrl+v" && (m.palette != nil || m.reader != nil || m.activeCapturesInput()) {
+	if msg.String() == "ctrl+v" && (m.palette != nil || m.reader != nil || m.linkPick != nil || m.activeCapturesInput()) {
 		return m, readClipboardCmd()
 	}
 	// An open popup owns every key but ctrl+c — it is the top of the §15 esc
 	// stack.
 	if m.reader != nil && msg.String() != "ctrl+c" {
 		return m.updateReaderKey(msg)
+	}
+	if m.linkPick != nil && msg.String() != "ctrl+c" {
+		return m.updateLinksKey(msg)
 	}
 	if m.palette != nil && msg.String() != "ctrl+c" {
 		return m.updatePaletteKey(msg)
@@ -439,6 +459,27 @@ func (m *root) updateReaderKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	return m, writeClipboardCmd(run.label, pickText(*run, resolve))
+}
+
+// updateLinksKey routes keys into the open link picker and carries out what
+// it picks: enter opens the destination, ctrl+y copies it (task 112). Both go
+// through the existing chokepoints — openURLCmd's scheme refusal and
+// writeClipboardCmd's sanitizing — so a refused row reaches no opener, and its
+// notice names why.
+func (m *root) updateLinksKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	run, act, done, cmd := m.linkPick.update(msg)
+	resolve := m.linkPickResolve
+	if done {
+		m.linkPick, m.linkPickResolve = nil, nil
+	}
+	if run == nil {
+		return m, cmd
+	}
+	dest := pickLink(*run, resolve)
+	if act == linkCopy {
+		return m, writeClipboardCmd(linkLabel(*run), dest)
+	}
+	return m, openLinkCmd(dest)
 }
 
 // openPalette builds the palette for the active surface.
@@ -1005,6 +1046,8 @@ func (m *root) popupRender() (func(w, h int) string, bool) {
 	switch {
 	case m.reader != nil:
 		return m.reader.render, true
+	case m.linkPick != nil:
+		return m.linkPick.render, true
 	case m.palette != nil:
 		return m.palette.render, true
 	default:

@@ -9790,7 +9790,9 @@ every other record stays literal.
   capability probe, the payload would carry an agent-supplied URL inside an
   escape sequence, and a link spanning a wrap boundary would have to be closed
   and reopened per line under an invariant that keeps escape sequences out of
-  wrapping entirely. The numbering is what a later reader action would name.
+  wrapping entirely. ~~The numbering is what a later reader action would
+  name.~~ *Amended 2026-09-17 (task 112):* the numbering is what the link
+  picker names — see the task 112 amendment below.
   *Amended 2026-09-17 (task 111, issue #404):* with `tui.hyperlinks` on (§12.3)
   a link whose destination passes §16's hyperlink sanitizer is clickable in
   three places — its label, its dim `[n]`, and the destination text on its
@@ -9819,8 +9821,10 @@ every other record stays literal.
 - **Rendering is derived and never stored.** The JSONL transcript and every API
   payload keep the agent's exact bytes (§13.3), no render path mutates a
   record, and a resize re-renders from the Markdown rather than re-wrapping
-  previously rendered ANSI. A link picker is still a follow-up: the reference
-  numbering is what a later action would name.
+  previously rendered ANSI. ~~A link picker is still a follow-up: the reference
+  numbering is what a later action would name.~~ *Amended 2026-09-17 (task
+  112):* the numbering is what the link picker names — see the task 112
+  amendment below.
 
 *Amended 2026-09-01 (task 076).* The reader can see the source and take it
 away. Both actions are client-side and session-scoped; nothing about them is
@@ -9866,12 +9870,11 @@ persisted, sent to the daemon or written to a transcript.
   when it was verified, and otherwise says it was sent to the terminal and names
   the system clipboard's error. A payload that sanitizes away to nothing is an
   error, not a silent no-op.
-- **Link actions are still not here.** The renderer grew links while this was
-  in flight (task 075), so what is missing is no longer the construct but a way
-  to say *which* reference a reader means — the same targeting problem the
-  picker answers for documents and fences, and the one the numbering above was
-  written to leave open. Copying a destination, inspecting one and opening one
-  are that follow-up's. What the payloads do owe the numbering is to carry it:
+- **Link actions are not the copy picker's.** The renderer grew links while
+  this was in flight (task 075), so what was missing was no longer the construct
+  but a way to say *which* reference a reader means. *Amended 2026-09-17 (task
+  112):* copying, inspecting and opening a destination are the link picker's,
+  below. What the payloads do owe the numbering is to carry it:
   a plain-text copy keeps each `[n]` and ends with the same `[n] dest` block
   the pane draws, because a destination stripped of both its punctuation and
   its reference would be a destination deleted.
@@ -9880,11 +9883,53 @@ persisted, sent to the daemon or written to a transcript.
   the palette. A bare letter cannot work in a chat, where the composer owns
   every printable key.
 
+*Amended 2026-09-17 (task 112).* The reader can act on a link. Like the two
+actions above this is client-side only: no route, no stored state, and the
+renderer is unchanged.
+
+- **`ctrl+l` opens the link picker**, in the task workspace's output pane and
+  the chat workspace alike, and from the palette. It is a popup of its own
+  rather than rows in the copy picker, whose `enter` copies: a link needs two
+  actions and the search line takes every letter, so the second one is a ctrl
+  key, and a popup titled "copy" must not open a browser on `enter`.
+- **Its scope is the copy picker's**: every assistant document in the loaded
+  records or turns (the §17 retention fallback included), newest first, under
+  the same `message n` ordinals — a document with no links takes its ordinal
+  and shows no group, so one document has one name in both popups. Rows are
+  **one per `[n]`**, exactly the pane's reference block: the same parse and the
+  same numbering, identical destinations sharing a row, image sources included.
+  A row shows `[n]`, the label of the destination's first occurrence (alt text
+  for an image, the destination when there is no label) and the destination;
+  search matches the label, the group and the destination. Raw mode changes
+  nothing here — links are derived from the source, not from what is drawn.
+- **A row is a reference**, `(document, n)`, resolved when it is picked, with
+  the destination captured when the popup was built as its fallback. A row
+  delivers what it showed: when the document is gone, or its `[n]` now names a
+  different destination because the record cap pruned the front of it, the
+  captured destination is used.
+- **`enter` opens, `ctrl+y` copies**, and `esc` closes. `ctrl+y` means copy
+  inside the popup exactly as it does outside it. The popup draws the cursor
+  row's **whole destination**, stripped and hard-wrapped like a reference line,
+  above a one-line key hint, so a reader always sees the exact bytes `enter`
+  would hand to the opener; `enter` is the explicit action and no confirmation
+  follows it.
+- **A destination the opener refuses stays listed and copyable.** Any scheme
+  but `http`/`https` — `mailto:`, `file:`, `javascript:`, a relative path — or
+  a destination that does not parse is marked `copy only`; `enter` on it opens
+  nothing and says why. The mark is the opener's own validity check, never a
+  second copy of the scheme rule.
+- **Outcomes are notices where the key was pressed**: the task workspace's
+  status line, or the chat's note — never the pull-request note, which is the
+  pull-request opener's. A copy is the copy picker's notice (`link [2] copied`,
+  or sent to the terminal); an open says `opened <url>` or why it could not,
+  because a browser that opened on another desktop is otherwise
+  indistinguishable from nothing.
+
 Views 3–7 stay full-screen because they are forms and lists, not observations: the
 new-task flow is eight fields with pickers, and squeezing it beside a live tail
 serves neither. Takeovers are for surfaces you visit deliberately; popups are
-for what interrupts you — the palette, confirmations, the three form popups and
-the copy picker.
+for what interrupts you — the palette, confirmations, the three form popups, the
+copy picker and the link picker (task 112).
 *(Amended 2026-08-30, task 063: the dividing line is the interruption, not the
 size. A form popup with a tab strip takes the whole height budget and carries
 the task inspector inside it, and is no longer a small thing.)*
@@ -10460,7 +10505,14 @@ currently true to show (§15 view 6).
   reference block stays on screen with hyperlinks on as the anti-spoofing
   disclosure: what a click opens is printed as text beside the message. The one opener in the TUI (`openURLCmd`, reached from
   the pull-request surfaces) still refuses every scheme but http and https, and
-  the renderer never reaches it.
+  the renderer never reaches it. *Amended 2026-09-17 (task 112):* the renderer
+  still opens nothing and emits OSC 8 only as the task 111 amendment above
+  allows, but an explicit pick in the §15
+  link picker now reaches `openURLCmd`. Nothing about the opener is loosened:
+  it refuses every scheme but http and https, the picker marks a refused
+  destination `copy only` by asking the same check rather than a copy of it,
+  and the URL — already stripped by the chokepoint above — is passed to the
+  platform helper as one argv element, never through a shell.
 - **Full-auto agents are the headline risk.** In full-auto, an agent can execute
   arbitrary commands *as the user*, not confined to the worktree. Mitigations:
   per-workflow/step `restricted` mode, everything transcripted, nothing merges or

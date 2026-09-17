@@ -289,7 +289,7 @@ func (v *chatView) footerLines(width int) []string {
 		out = append(out, strings.Split(box, "\n")...)
 	}
 	hint := " enter send · ctrl+x stop the turn · ctrl+r detail · " +
-		rawToggleKey + " raw · " + copyPickKey + " copy · " +
+		rawToggleKey + " raw · " + copyPickKey + " copy · " + linkPickKey + " links · " +
 		"pgup/pgdown scroll · ctrl+g live · esc back to the chats board"
 	out = append(out, styleDim.Render(ansi.Truncate(hint, width, "…")))
 	return out

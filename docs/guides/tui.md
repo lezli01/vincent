@@ -450,6 +450,7 @@ output. It is the sentence that decides whether to open the transcript.
 | `v` | More or less detail: quiet → compact → normal → verbose (tool lines, then reasoning, the run's own metadata, then unrecognized lines) |
 | `ctrl+o` | Show the assistant's original Markdown instead of the rendered view |
 | `ctrl+y` | Copy an assistant message, its plain text, or one of its code blocks |
+| `ctrl+l` | List the links in the assistant's messages — open one in a browser or copy it |
 | `e` | Open this attempt's **whole** transcript in `$EDITOR` |
 | `↑`/`↓` | Select an attempt or Task Details section, scroll Output, or move between diff files — according to the active tab |
 | `pgup`/`pgdn` | Scroll the selected Task Details section |
@@ -496,9 +497,11 @@ columns' widest unbreakable words, each row becomes a stacked
 sideways scroll. A link renders its label as ordinary text with a dim `[1]`,
 and the message ends with the `[1] https://…` lines that resolve them, one per
 distinct destination. An image is its alt text plus its source in that same
-list. Nothing here is fetched or opened, and by default nothing is turned into
-a terminal hyperlink: vincent emits no OSC 8, so a destination is text you can
-read and copy. If your terminal supports OSC 8, set
+list. Nothing here is fetched, and by default nothing is turned into a
+terminal hyperlink: vincent emits no OSC 8, so a destination is text you can
+read and copy, and it opens only when you pick it in the
+[link picker](#seeing-the-source-and-taking-it-away). If your terminal supports
+OSC 8, set
 [`tui.hyperlinks: true`](../reference/configuration.md#tuihyperlinks) (or flip
 it in the daemon view's config editor) and the label, its `[1]` and the
 printed destination become clickable — but only for an `http` or `https` link
@@ -554,8 +557,26 @@ vincent tries your system clipboard first and, if that refuses, hands the text
 to your terminal over OSC 52 — which is the one that works over SSH. The notice
 says which happened, and never claims a copy it could not verify.
 
-Copying a link's destination is not here yet: links still render as the
-characters the agent sent, so there is no destination for the picker to offer.
+`ctrl+l` opens a **link picker**: every link and image in the assistant prose
+on screen, one row per `[n]` the pane numbers it by, grouped under the same
+`MESSAGE n` headers as the copy picker and searchable by label, message or
+destination. A destination linked twice in one message is one row, because the
+pane gives it one number.
+
+| Key | Does |
+|---|---|
+| `enter` | Open the row's destination in your browser |
+| `ctrl+y` | Copy the row's destination |
+| `esc` | Close the picker |
+
+Under the rows the picker prints the selected row's **whole** destination, so
+you can read exactly what `enter` would open before you press it. Only `http`
+and `https` links open; anything else — `mailto:`, `file:`, `javascript:`, a
+relative path — is marked `copy only`, and `enter` on it opens nothing and says
+why. The result is a notice where you pressed the key — the pane's status
+line, or the chat's note: `opened <url>`, the reason it could not be opened, or
+the copy notice above. Raw mode (`ctrl+o`)
+does not change the list.
 
 ### What `v` adds
 
@@ -1551,6 +1572,7 @@ periodic repaint.
 | `ctrl+t` | Hand the worktree and branch to a new task — the chat ends |
 | `ctrl+o` | Show the assistant's original Markdown instead of the rendered view |
 | `ctrl+y` | Copy an assistant message, its plain text, or one of its code blocks |
+| `ctrl+l` | List the links in the assistant's messages — open one in a browser or copy it |
 | `pgup` / `pgdown` | Scroll the conversation (the mouse wheel scrolls it a line at a time) |
 | `ctrl+g` | Jump to the live end and follow it again |
 | `esc` | Back to the chats board |

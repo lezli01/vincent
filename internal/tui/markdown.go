@@ -201,9 +201,17 @@ func markdownBlockLinesLinked(text string, width int, links bool) ([]string, []i
 // it is already the one value every inline scan and the reference block are
 // handed. The two emitters that never link — the clipboard payload and the
 // copy picker's fence scan — build a bare registry, so they cannot.
+//
+// The numbering is also what the link picker names a destination by (task
+// 112), so the registry keeps what the first occurrence called it: the picker
+// reads it rather than scanning the text a second time.
 type mdRefs struct {
 	order []string
-	index map[string]int
+	// labels and images run parallel to order: the plain label and the image
+	// flag of each destination's first occurrence.
+	labels []string
+	images []bool
+	index  map[string]int
 	// links turns on OSC 8 for destinations hyperlinkTarget accepts, and doc
 	// is the document identity their ids are built from.
 	links bool
@@ -225,8 +233,8 @@ func (r *mdRefs) linked(style lipgloss.Style, dest string, n int) lipgloss.Style
 }
 
 // add returns the 1-based number for a destination, assigning one on first
-// sight.
-func (r *mdRefs) add(dest string) int {
+// sight. label and image are recorded only then — the first label wins.
+func (r *mdRefs) add(dest, label string, image bool) int {
 	if n, ok := r.index[dest]; ok {
 		return n
 	}
@@ -234,8 +242,34 @@ func (r *mdRefs) add(dest string) int {
 		r.index = make(map[string]int, 4)
 	}
 	r.order = append(r.order, dest)
+	r.labels = append(r.labels, label)
+	r.images = append(r.images, image)
 	r.index[dest] = len(r.order)
 	return len(r.order)
+}
+
+// mdLink is one numbered destination of a document: what the pane's
+// reference block prints as `[n] dest`, plus the label the link picker shows
+// beside it (task 112).
+type mdLink struct {
+	n     int
+	label string
+	dest  string
+	image bool
+}
+
+// markdownLinks lists a document's numbered destinations in reference-block
+// order. It is the same parse and the same registry markdownBlockLines draws
+// the reference block from, so a number here is the number on screen — there
+// is no second inline scanner to drift from it (task 076 decision 5).
+func markdownLinks(text string) []mdLink {
+	refs := &mdRefs{}
+	parseMarkdown(sanitizeText(text), refs)
+	out := make([]mdLink, len(refs.order))
+	for i, dest := range refs.order {
+		out[i] = mdLink{n: i + 1, label: refs.labels[i], dest: dest, image: refs.images[i]}
+	}
+	return out
 }
 
 // renderMDRefs draws the reference block. Its lines are preformatted, so a
@@ -746,7 +780,7 @@ func inlineSegments(text string, base lipgloss.Style, depth int, refs *mdRefs) [
 					label = dest
 				}
 				labelSegs := inlineSegments(label, base, depth+1, refs)
-				n := refs.add(dest)
+				n := refs.add(dest, inlineLabel(labelSegs), text[i] == '!')
 				// With `tui.hyperlinks` on, the label and its `[n]` are one
 				// link (task 111 decision 2). linked is a no-op otherwise.
 				for k := range labelSegs {
@@ -1090,8 +1124,14 @@ func codeBlocks(text string) []string {
 // the pane shows. So the only thing left to undo is the code span's
 // backticks — which is exactly what segment.code marks.
 func inlinePlain(text string, refs *mdRefs) string {
+	return plainSegments(inlineSegments(text, lipgloss.NewStyle(), 0, refs))
+}
+
+// plainSegments is inlinePlain's reading of segments the scanner already
+// produced.
+func plainSegments(segs []segment) string {
 	var b strings.Builder
-	for _, seg := range inlineSegments(text, lipgloss.NewStyle(), 0, refs) {
+	for _, seg := range segs {
 		if seg.code {
 			b.WriteString(codeSpanBody(seg.text))
 			continue
@@ -1099,6 +1139,13 @@ func inlinePlain(text string, refs *mdRefs) string {
 		b.WriteString(seg.text)
 	}
 	return b.String()
+}
+
+// inlineLabel is a link label as the one line the link picker shows (task
+// 112): its plain text with whitespace collapsed, so a label never spans two
+// rows.
+func inlineLabel(segs []segment) string {
+	return strings.Join(strings.Fields(plainSegments(segs)), " ")
 }
 
 // codeSpanBody drops a code span's matching backtick runs. The run length is
