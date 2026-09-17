@@ -23,6 +23,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/codex"
 	"github.com/lezli01/vincent/internal/agent/cursor"
 	"github.com/lezli01/vincent/internal/api"
+	"github.com/lezli01/vincent/internal/backupsched"
 	"github.com/lezli01/vincent/internal/chatrun"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/container"
@@ -368,6 +369,19 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	// ticker is what makes retention work on a daemon that survives reboots
 	// (T4.1) rather than only on the restarts it no longer has.
 	go taskrun.NewTranscriptPruner(runnerDeps).Run(ctx)
+	// Scheduled backups (§12.3, §17, task 115) run beside it. The staging
+	// sweep happens here, synchronously, before the API serves: a manual
+	// backup goes through this daemon, so nothing can be staging one yet.
+	backups := backupsched.New(backupsched.Deps{
+		Config:        currentConfig,
+		DataDir:       dirs.Data,
+		ConfigDir:     dirs.Config,
+		CopyDatabase:  st.BackupTo,
+		SchemaVersion: st.SchemaVersion,
+		Logger:        logger,
+	})
+	backups.SweepStaging()
+	go backups.Run(ctx)
 	// Orphan reconcile (task 005, §10). It runs after recovery, which
 	// reconciles rows and processes but never directories, and it **reports
 	// only**: silently deleting a directory that may hold an agent's
@@ -583,6 +597,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		Broker:          broker,
 		Reclaimer:       reclaimer,
 		UpdateStatus:    updateCheck.Result,
+		BackupStatus:    backups.Status,
 		ApplyConfig:     applyConfig,
 		Triggers:        triggers,
 		TriggerRegistry: triggerRegistry,

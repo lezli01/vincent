@@ -334,3 +334,101 @@ func waitTaskState(t *testing.T, dataDir, cfgDir string, id int64, want string) 
 	}
 	t.Fatalf("task %d never reached %s", id, want)
 }
+
+// TestScheduledBackupE2E is task 115's acceptance through the real binary: a
+// daemon started with backups on over an empty directory writes an archive at
+// startup — the overdue case — and `vincent daemon restore` restores that
+// archive into a clean installation a daemon then starts on.
+func TestScheduledBackupE2E(t *testing.T) {
+	dataDir, cfgDir := t.TempDir(), t.TempDir()
+	backupDir := filepath.Join(t.TempDir(), "scheduled")
+	repo := testrepo.Init(t, "main")
+
+	// Generation one, backups off: a project, so the archive has a row to
+	// carry across.
+	writeConfig := func(extra string) {
+		t.Helper()
+		body := "listen: \"127.0.0.1:0\"\n" + extra
+		if err := os.WriteFile(filepath.Join(cfgDir, config.FileName), []byte(body), 0o600); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+	}
+	writeConfig("")
+	first := startDaemonProcess(t, dataDir, cfgDir, "success")
+	c1 := waitDaemonAPI(t, dataDir, first)
+	if out, code := runVincent(t, dataDir, cfgDir, "project", "add", repo); code != 0 {
+		t.Fatalf("project add: code %d, out %q", code, out)
+	}
+	c1.post(t, "/v1/daemon/stop", nil, http.StatusAccepted, nil)
+	waitExit(t, first)
+	if _, err := os.Stat(backupDir); err == nil {
+		t.Fatal("a daemon with backups off created the backup directory")
+	}
+
+	// Generation two, backups on and nothing in the directory yet.
+	writeConfig(fmt.Sprintf("backup:\n  interval: 24h\n  keep: 3\n  dir: %q\n", backupDir))
+	second := startDaemonProcess(t, dataDir, cfgDir, "success")
+	c2 := waitDaemonAPI(t, dataDir, second)
+
+	var archive string
+	deadline := time.Now().Add(60 * time.Second)
+	for archive == "" && time.Now().Before(deadline) {
+		entries, _ := os.ReadDir(backupDir)
+		for _, e := range entries {
+			if strings.HasPrefix(e.Name(), "vincent-backup-") && strings.HasSuffix(e.Name(), ".tar.gz") {
+				archive = filepath.Join(backupDir, e.Name())
+			}
+		}
+		if archive == "" {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+	if archive == "" {
+		t.Fatalf("no scheduled archive appeared in %s", backupDir)
+	}
+	if _, err := backup.ReadManifest(archive); err != nil {
+		t.Fatalf("scheduled archive does not read: %v", err)
+	}
+
+	// Doctor reports it: known, enabled, one retained, no problem.
+	var rep struct {
+		Backup struct {
+			Known         bool       `json:"known"`
+			Enabled       bool       `json:"enabled"`
+			Dir           string     `json:"dir"`
+			LastSuccessAt *time.Time `json:"last_success_at"`
+			LastError     string     `json:"last_error"`
+			Retained      int        `json:"retained"`
+		} `json:"backup"`
+		Problems []struct {
+			Group string `json:"group"`
+		} `json:"problems"`
+	}
+	c2.get(t, "/v1/doctor?probe=false", &rep)
+	b := rep.Backup
+	if !b.Known || !b.Enabled || b.Dir != backupDir || b.LastSuccessAt == nil || b.LastError != "" || b.Retained != 1 {
+		t.Errorf("doctor backup group = %+v", b)
+	}
+	for _, p := range rep.Problems {
+		if p.Group == "backup" {
+			t.Errorf("a successful scheduled backup raised a doctor problem: %+v", rep.Problems)
+		}
+	}
+	c2.post(t, "/v1/daemon/stop", nil, http.StatusAccepted, nil)
+	waitExit(t, second)
+
+	newData, newCfg := t.TempDir(), t.TempDir()
+	out, code := runVincent(t, newData, newCfg, "daemon", "restore", archive)
+	if code != 0 {
+		t.Fatalf("daemon restore of the scheduled archive: code %d, out %q", code, out)
+	}
+	third := startDaemonProcess(t, newData, newCfg, "success")
+	c3 := waitDaemonAPI(t, newData, third)
+	var projects []map[string]any
+	c3.get(t, "/v1/projects", &projects)
+	if len(projects) != 1 {
+		t.Errorf("restored projects = %+v, want the one added before the backup", projects)
+	}
+	c3.post(t, "/v1/daemon/stop", nil, http.StatusAccepted, nil)
+	waitExit(t, third)
+}

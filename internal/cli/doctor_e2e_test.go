@@ -24,7 +24,7 @@ func TestDoctorWithoutADaemon(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("exit = %d, want 2 (no daemon answered)\n%s", code, out)
 	}
-	for _, want := range []string{"PATHS", "DAEMON", "LOG", "DATABASE", "AGENTS", "STORAGE", "TASKS"} {
+	for _, want := range []string{"PATHS", "DAEMON", "LOG", "DATABASE", "AGENTS", "BACKUP", "STORAGE", "TASKS"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the degraded report is missing the %s group:\n%s", want, out)
 		}

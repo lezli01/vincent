@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
+	"github.com/lezli01/vincent/internal/backupsched"
 	"github.com/lezli01/vincent/internal/chatrun"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/container"
@@ -118,6 +119,11 @@ type Deps struct {
 	// Nil is tolerated (tests without a poller); the endpoint then reports
 	// the never-polled, disabled state, which is the truth for that daemon.
 	UpdateStatus func() release.Status
+	// BackupStatus returns the scheduled-backup timer's in-memory status
+	// (task 115), which GET /v1/doctor renders as its backup group. Nil is
+	// tolerated (tests without a timer); the group then reads unknown and
+	// never raises a problem.
+	BackupStatus func() backupsched.Status
 	// Triggers, TriggerRegistry and TriggerWriter serve the §13.2 trigger
 	// routes (task 096). The manager arms, dry-runs and ingests; the registry
 	// is the files; the writer edits them. Nil is tolerated (tests without

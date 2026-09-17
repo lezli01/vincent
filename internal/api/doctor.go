@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/lezli01/vincent/internal/backupsched"
 	"github.com/lezli01/vincent/internal/doctor"
 	"github.com/lezli01/vincent/internal/release"
 	"github.com/lezli01/vincent/internal/store"
@@ -68,6 +69,13 @@ func (s *Server) doctorReport(ctx context.Context, probe bool) *doctor.Report {
 	if s.deps.UpdateStatus != nil {
 		updateStatus = s.deps.UpdateStatus()
 	}
+	// A copy of the timer's status, never a fresh run: a GET does not take a
+	// backup, and the timer is the only thing that does on a schedule.
+	var backupStatus *backupsched.Status
+	if s.deps.BackupStatus != nil {
+		st := s.deps.BackupStatus()
+		backupStatus = &st
+	}
 	rep := doctor.Compose(ctx, doctor.Options{
 		Dirs:        s.deps.Dirs,
 		LogPath:     s.deps.LogPath,
@@ -76,6 +84,7 @@ func (s *Server) doctorReport(ctx context.Context, probe bool) *doctor.Report {
 		Agents:      s.doctorAgents(ctx, probe),
 		ScanOrphans: scan,
 		Update:      updateStatus,
+		Backup:      backupStatus,
 	})
 	s.fillDatabase(ctx, rep)
 	s.fillTasks(ctx, rep)

@@ -14,6 +14,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/backupsched"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/doctor"
 	"github.com/lezli01/vincent/internal/gitx"
@@ -30,6 +31,13 @@ import (
 func newDoctorClient(t *testing.T) (*apiclient.Client, config.Dirs) {
 	t.Helper()
 	dirs := config.Dirs{Config: t.TempDir(), Data: t.TempDir()}
+	return newDoctorClientWith(t, dirs, nil), dirs
+}
+
+// newDoctorClientWith is newDoctorClient over caller-chosen dirs, with a hook
+// to wire the Deps one group reads before the server starts.
+func newDoctorClientWith(t *testing.T, dirs config.Dirs, wire func(*api.Deps)) *apiclient.Client {
+	t.Helper()
 	st, err := store.Open(filepath.Join(dirs.Data, "vincent.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -48,7 +56,7 @@ func newDoctorClient(t *testing.T) (*apiclient.Client, config.Dirs) {
 		DataDir:   dirs.Data,
 		Logger:    logger,
 	})
-	s := api.New(api.Deps{
+	deps := api.Deps{
 		Token:       testToken,
 		Config:      config.Default,
 		StartedAt:   time.Now().Add(-90 * time.Second),
@@ -64,10 +72,14 @@ func newDoctorClient(t *testing.T) (*apiclient.Client, config.Dirs) {
 		Reclaimer:   reclaimer,
 		Agents:      agents,
 		Catalog:     agent.NewCatalogCache(agents),
-	})
+	}
+	if wire != nil {
+		wire(&deps)
+	}
+	s := api.New(deps)
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
-	return apiclient.New(ts.URL, testToken), dirs
+	return apiclient.New(ts.URL, testToken)
 }
 
 func TestDoctorRoundTripsEveryGroup(t *testing.T) {
@@ -258,5 +270,87 @@ func TestDoctorSkillsRoundTrip(t *testing.T) {
 		if strings.Contains(strings.ToLower(p.Message), "skill") {
 			t.Errorf("a skill produced a problem: %+v", p)
 		}
+	}
+}
+
+// TestDoctorBackupRoundTrips is the DoctorBackup alias's live test (task
+// 115): the settings read from config.yaml and the timer's in-memory status
+// survive the daemon's encoder and this client's decoder — three *time.Time
+// and an int64 are what a `json:"-"` would drop while still compiling — and a
+// failed last attempt with backups on arrives as a backup problem, while the
+// same group with no error arrives as none.
+func TestDoctorBackupRoundTrips(t *testing.T) {
+	success := time.Date(2026, 9, 16, 3, 0, 0, 0, time.UTC)
+	attempt := success.Add(24 * time.Hour)
+	for _, tc := range []struct {
+		name    string
+		lastErr string
+	}{
+		{"failed", "write archive: no space left on device"},
+		{"succeeding", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dirs := config.Dirs{Config: t.TempDir(), Data: t.TempDir()}
+			elsewhere := filepath.Join(t.TempDir(), "offsite")
+			yaml := "backup:\n  interval: 24h\n  keep: 4\n  dir: " + config.RenderString(elsewhere) + "\n"
+			if err := os.WriteFile(filepath.Join(dirs.Config, config.FileName), []byte(yaml), 0o600); err != nil {
+				t.Fatalf("write config.yaml: %v", err)
+			}
+			status := backupsched.Status{
+				Dir:           elsewhere,
+				LastSuccessAt: success,
+				LastAttemptAt: attempt,
+				LastError:     tc.lastErr,
+				NextDueAt:     attempt.Add(time.Hour),
+				LastBytes:     123456789,
+				Retained:      4,
+				PruneError:    "remove old archive: permission denied",
+			}
+			c := newDoctorClientWith(t, dirs, func(d *api.Deps) {
+				d.BackupStatus = func() backupsched.Status { return status }
+			})
+			rep, err := c.Doctor(t.Context(), false)
+			if err != nil {
+				t.Fatalf("Doctor: %v", err)
+			}
+			b := rep.Backup
+			if !b.Known || !b.Enabled {
+				t.Fatalf("backup = %+v, want known and enabled", b)
+			}
+			if b.Dir != elsewhere || b.Interval != "24h0m0s" || b.Keep != 4 {
+				t.Errorf("settings did not survive the wire: %+v", b)
+			}
+			for name, got := range map[string]struct {
+				at   *time.Time
+				want time.Time
+			}{
+				"last_success_at": {b.LastSuccessAt, success},
+				"last_attempt_at": {b.LastAttemptAt, attempt},
+				"next_due_at":     {b.NextDueAt, status.NextDueAt},
+			} {
+				if got.at == nil || !got.at.Equal(got.want) {
+					t.Errorf("%s = %v, want %v", name, got.at, got.want)
+				}
+			}
+			if b.LastError != tc.lastErr || b.LastBytes != status.LastBytes ||
+				b.Retained != status.Retained || b.PruneError != status.PruneError {
+				t.Errorf("status did not survive the wire: %+v", b)
+			}
+			var problem *apiclient.DoctorProblem
+			for i := range rep.Problems {
+				if rep.Problems[i].Group == doctor.GroupBackup {
+					problem = &rep.Problems[i]
+				}
+			}
+			switch {
+			case tc.lastErr != "" && problem == nil:
+				t.Errorf("a failed backup with backups on is not a problem: %v", rep.Problems)
+			case tc.lastErr != "" && !strings.Contains(problem.Message, tc.lastErr):
+				t.Errorf("the problem does not carry the error: %q", problem.Message)
+			case tc.lastErr == "" && problem != nil:
+				// A prune failure alone follows a backup that succeeded.
+				t.Errorf("a succeeding backup raised a problem: %+v", *problem)
+			}
+		})
 	}
 }

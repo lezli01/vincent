@@ -9,12 +9,14 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/agenttest"
 	"github.com/lezli01/vincent/internal/agent/claude"
+	"github.com/lezli01/vincent/internal/backupsched"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/doctor"
 	"github.com/lezli01/vincent/internal/gitx"
@@ -37,7 +39,13 @@ type doctorHarness struct {
 
 func newDoctorHarness(t *testing.T) *doctorHarness {
 	t.Helper()
-	dirs := config.Dirs{Config: t.TempDir(), Data: t.TempDir()}
+	return newDoctorHarnessWith(t, config.Dirs{Config: t.TempDir(), Data: t.TempDir()}, nil)
+}
+
+// newDoctorHarnessWith is newDoctorHarness over caller-chosen dirs, with a
+// hook to wire the Deps a particular group reads before the server starts.
+func newDoctorHarnessWith(t *testing.T, dirs config.Dirs, wire func(*Deps)) *doctorHarness {
+	t.Helper()
 	st, err := store.Open(filepath.Join(dirs.Data, "vincent.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -58,7 +66,7 @@ func newDoctorHarness(t *testing.T) *doctorHarness {
 		DataDir:   dirs.Data,
 		Logger:    logger,
 	})
-	s := New(Deps{
+	deps := Deps{
 		Token:       testToken,
 		Config:      config.Default,
 		StartedAt:   time.Now().Add(-time.Minute),
@@ -74,7 +82,11 @@ func newDoctorHarness(t *testing.T) *doctorHarness {
 		Reclaimer:   reclaimer,
 		Agents:      reg,
 		Catalog:     agent.NewCatalogCache(reg),
-	})
+	}
+	if wire != nil {
+		wire(&deps)
+	}
+	s := New(deps)
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	return &doctorHarness{
@@ -179,8 +191,94 @@ func TestDoctorReportsEveryGroup(t *testing.T) {
 	if rep.Log.Path == "" {
 		t.Error("log path is empty")
 	}
+	// No timer is wired, so the backup group is present and unknown, with
+	// its settings still read from the (absent) file's defaults.
+	if rep.Backup.Known || rep.Backup.Enabled || rep.Backup.Keep != config.DefaultBackupKeep ||
+		rep.Backup.Dir != filepath.Join(h.dirs.Data, config.BackupDirName) {
+		t.Errorf("backup = %+v, want an unknown, off group resolving under the data dir", rep.Backup)
+	}
 	if !rep.Healthy() {
 		t.Errorf("a fresh installation is unhealthy: %v", rep.Problems)
+	}
+}
+
+// TestDoctorBackupProblemIffOnAndFailed is task 115 decision 4 over the real
+// route: the backup group is a problem if and only if backups are switched on
+// in config.yaml and the timer says its last attempt failed. Off with a stale
+// error is not one (the user turned it off), on and succeeding is not one, and
+// a daemon with no timer wired reports the group unknown rather than guessing.
+func TestDoctorBackupProblemIffOnAndFailed(t *testing.T) {
+	attempt := time.Date(2026, 9, 17, 3, 0, 0, 0, time.UTC)
+	success := attempt.Add(-24 * time.Hour)
+	for _, tc := range []struct {
+		name      string
+		config    string
+		status    *backupsched.Status
+		wantKnown bool
+		wantProb  bool
+	}{
+		{"off with an error", "", &backupsched.Status{LastError: "disk full"}, true, false},
+		{"on with an error", "backup:\n  interval: 24h\n", &backupsched.Status{
+			LastAttemptAt: attempt, LastSuccessAt: success, LastError: "disk full",
+			NextDueAt: attempt.Add(time.Hour), LastBytes: 4096, Retained: 2,
+		}, true, true},
+		{"on and succeeding", "backup:\n  interval: 24h\n", &backupsched.Status{
+			LastAttemptAt: attempt, LastSuccessAt: attempt,
+			NextDueAt: attempt.Add(24 * time.Hour), LastBytes: 4096, Retained: 3,
+		}, true, false},
+		{"on with no timer wired", "backup:\n  interval: 24h\n", nil, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dirs := config.Dirs{Config: t.TempDir(), Data: t.TempDir()}
+			if tc.config != "" {
+				if err := os.WriteFile(filepath.Join(dirs.Config, config.FileName), []byte(tc.config), 0o600); err != nil {
+					t.Fatalf("write config.yaml: %v", err)
+				}
+			}
+			h := newDoctorHarnessWith(t, dirs, func(d *Deps) {
+				if tc.status != nil {
+					st := *tc.status
+					d.BackupStatus = func() backupsched.Status { return st }
+				}
+			})
+			rep := h.report(t)
+			b := rep.Backup
+			if b.Known != tc.wantKnown {
+				t.Errorf("Known = %v, want %v (%+v)", b.Known, tc.wantKnown, b)
+			}
+			if b.Dir != filepath.Join(dirs.Data, config.BackupDirName) {
+				t.Errorf("Dir = %q, want {data_dir}/backups", b.Dir)
+			}
+			got := false
+			for _, p := range rep.Problems {
+				if p.Group == doctor.GroupBackup {
+					got = true
+					if !strings.Contains(p.Message, "disk full") {
+						t.Errorf("the problem does not carry the error: %q", p.Message)
+					}
+				}
+			}
+			if got != tc.wantProb {
+				t.Errorf("backup problem = %v, want %v (problems %v)", got, tc.wantProb, rep.Problems)
+			}
+			if !tc.wantKnown {
+				if b.LastError != "" || b.LastAttemptAt != nil || b.NextDueAt != nil {
+					t.Errorf("an unknown group carried timer status: %+v", b)
+				}
+				return
+			}
+			// The timer's figures reach the wire as they were reported.
+			st := tc.status
+			if b.LastError != st.LastError || b.LastBytes != st.LastBytes || b.Retained != st.Retained {
+				t.Errorf("status did not round-trip: %+v from %+v", b, st)
+			}
+			if !st.LastAttemptAt.IsZero() && (b.LastAttemptAt == nil || !b.LastAttemptAt.Equal(st.LastAttemptAt)) {
+				t.Errorf("LastAttemptAt = %v, want %v", b.LastAttemptAt, st.LastAttemptAt)
+			}
+			if st.LastAttemptAt.IsZero() && b.LastAttemptAt != nil {
+				t.Errorf("a never-attempted timer served LastAttemptAt %v, want null", b.LastAttemptAt)
+			}
+		})
 	}
 }
 

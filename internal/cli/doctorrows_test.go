@@ -207,3 +207,68 @@ func TestDoctorContainerRowEnabledAndUsable(t *testing.T) {
 		t.Errorf("row does not name the image:\n%s", out)
 	}
 }
+
+// TestDoctorBackupRowsOff: with backups off the group states the switch and
+// where archives would go, and nothing about a timer that is not running.
+func TestDoctorBackupRowsOff(t *testing.T) {
+	out := joinRows(doctorBackupRows(apiclient.DoctorBackup{Known: true, Dir: "/data/backups", Keep: 7, Interval: "0s"}))
+	if !strings.Contains(out, "backup.interval is 0") || !strings.Contains(out, "/data/backups") {
+		t.Errorf("the off row does not name the switch and the directory:\n%s", out)
+	}
+	for _, forbidden := range []string{"last success", "next due", "retained"} {
+		if strings.Contains(out, forbidden) {
+			t.Errorf("an off group rendered %q:\n%s", forbidden, out)
+		}
+	}
+}
+
+// TestDoctorBackupRowsUnknownWithoutADaemon: the settings are the file's and
+// print; the status is the timer's and says unknown rather than "never".
+func TestDoctorBackupRowsUnknownWithoutADaemon(t *testing.T) {
+	out := joinRows(doctorBackupRows(apiclient.DoctorBackup{
+		Enabled: true, Dir: "/data/backups", Interval: "24h0m0s", Keep: 7,
+	}))
+	for _, want := range []string{"enabled\tyes", "interval\t24h0m0s", "keep\t7", "dir\t/data/backups", "unknown — daemon not running"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+	for _, forbidden := range []string{"last success", "last attempt", "next due", "retained"} {
+		if strings.Contains(out, forbidden) {
+			t.Errorf("an unknown group rendered %q as if the timer had been asked:\n%s", forbidden, out)
+		}
+	}
+}
+
+// TestDoctorBackupRowsRenderTheTimerStatus: every figure the timer reports
+// reaches the table, the failure reason included.
+func TestDoctorBackupRowsRenderTheTimerStatus(t *testing.T) {
+	success := time.Date(2026, 9, 16, 3, 0, 0, 0, time.UTC)
+	attempt := success.Add(24 * time.Hour)
+	next := attempt.Add(time.Hour)
+	out := joinRows(doctorBackupRows(apiclient.DoctorBackup{
+		Known: true, Enabled: true, Dir: "/data/backups", Interval: "24h0m0s", Keep: 0,
+		LastSuccessAt: &success, LastAttemptAt: &attempt, NextDueAt: &next,
+		LastError: "disk full", LastBytes: 3 << 20, Retained: 5, PruneError: "permission denied",
+	}))
+	for _, want := range []string{
+		"keep\t0 (every archive is kept)",
+		"last success\t" + success.Local().Format(time.RFC3339),
+		"last attempt\t" + attempt.Local().Format(time.RFC3339),
+		"next due\t" + next.Local().Format(time.RFC3339),
+		"last error\tdisk full",
+		"last size\t3.0MB",
+		"retained\t5",
+		"prune error\tpermission denied",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+	// A timer that has not succeeded in this directory says so, and no size
+	// is invented for a run that wrote nothing.
+	out = joinRows(doctorBackupRows(apiclient.DoctorBackup{Known: true, Enabled: true, Interval: "24h0m0s", Keep: 7}))
+	if !strings.Contains(out, "none in this directory yet") || strings.Contains(out, "last size") {
+		t.Errorf("a never-succeeded timer rendered wrongly:\n%s", out)
+	}
+}

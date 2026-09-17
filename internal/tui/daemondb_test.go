@@ -207,3 +207,47 @@ func TestDaemonViewRefreshRefetchesTheCounts(t *testing.T) {
 		t.Errorf("report = %+v, want the daemon's counts", got.report.Database)
 	}
 }
+
+// TestDaemonViewBackupRowStates: the backup row under the database block has
+// three shapes that must not read alike — off (the default everywhere, one
+// line), on with no timer status (unknown, never "none yet"), and on with a
+// status whose prune failed (a warning, not the failure line).
+func TestDaemonViewBackupRowStates(t *testing.T) {
+	render := func(b apiclient.DoctorBackup) string {
+		d := newTestDaemonView(nil, nil)
+		rep := testDoctorReport()
+		rep.Backup = b
+		d.update(daemonDoctorMsg{report: rep})
+		return renderDaemon(d)
+	}
+
+	out := render(apiclient.DoctorBackup{Known: true, Keep: 7, Dir: "/data/backups", Interval: "0s"})
+	if line := lineWith(out, "backups"); !strings.Contains(line, "off") || !strings.Contains(line, "backup.interval") {
+		t.Errorf("the off row does not say off and name the switch: %q", line)
+	}
+	if strings.Contains(out, "last backup") {
+		t.Errorf("an off timer rendered a last-backup line:\n%s", out)
+	}
+
+	out = render(apiclient.DoctorBackup{Enabled: true, Keep: 0, Dir: "/data/backups", Interval: "24h0m0s"})
+	if !strings.Contains(out, "every 24h0m0s") || !strings.Contains(out, "keep all") {
+		t.Errorf("the schedule is not rendered:\n%s", out)
+	}
+	if line := lineWith(out, "last backup"); !strings.Contains(line, "unknown") || strings.Contains(line, "none yet") {
+		t.Errorf("an unknown status does not say unknown: %q", line)
+	}
+
+	out = render(apiclient.DoctorBackup{
+		Known: true, Enabled: true, Keep: 7, Dir: "/data/backups", Interval: "24h0m0s",
+		Retained: 7, PruneError: "permission denied",
+	})
+	if line := lineWith(out, "last backup"); !strings.Contains(line, "none yet") || !strings.Contains(line, "7 kept") {
+		t.Errorf("a timer with no success yet renders wrongly: %q", line)
+	}
+	if !strings.Contains(out, "old archives were not removed: permission denied") {
+		t.Errorf("the prune failure is not rendered:\n%s", out)
+	}
+	if strings.Contains(out, "last backup failed") {
+		t.Errorf("a prune failure rendered as a failed backup:\n%s", out)
+	}
+}
