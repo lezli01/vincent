@@ -13,6 +13,16 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **`f1` opens help anywhere, including in a chat.** A chat's composer, a
+  filter and every form take `?` as a character, so help could not be opened
+  there at all. `f1` toggles the same overlay everywhere, beside `ctrl+p` for
+  the palette, and the footer's right-hand end now reads `ctrl+p commands  f1
+  help  ctrl+c quit` while a text field has the keyboard.
+
+- **The mouse wheel moves the cursor on the chats board and both archived
+  boards**, one row per tick, as it already did on the task board. It stands
+  still while a form or a confirmation is up, and never turns an archived page.
+
 - **Links in agent prose can be clickable, if you opt in.** Set
   `tui.hyperlinks: true` in `config.yaml`, with `vincent config set`, or in
   the daemon view's config editor, and a Markdown link or image in the output pane and the chat
@@ -437,6 +447,10 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
+- **The help overlay now takes the keyboard while it is open.** `?`, `esc` and
+  `f1` close it and `ctrl+c` quits; every other key is ignored. Before, the
+  arrows, `enter` and `q` still acted on the board behind it.
+
 - **A containerized task mounts your agent credentials by default again.**
   `container.mount_agent_config` is `true` again, now that the agent runs in
   the container and needs them. `~/.claude`, `~/.codex` and `~/.cursor` are
@@ -541,6 +555,10 @@ list with the user-facing context a commit subject cannot carry.
 
 - **The quickstart no longer says the `docs-update` example runs
   `restricted`.** It runs full-auto, and its header explains why (issue #408).
+- **The palette and the footer no longer type into a chat's draft.** Running
+  "toggle this help", quit, the mouse toggle, next attention or new task from
+  the palette in a chat — or clicking `? help` or `q quit` in its footer —
+  typed that key into the message instead of doing it.
 
 - **The documentation no longer says every TUI action has a subcommand
   without exception.** The README, quickstart and scripting guide now

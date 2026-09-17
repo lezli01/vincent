@@ -285,7 +285,10 @@ the whole palette → replay → effect path.
   has a document model to reference.
 - **`?` in a chat.** Still swallowed by the composer. The palette answers the
   issue's reachability criterion; moving help is a separate call (tracked in
-  [#405](https://github.com/lezli01/vincent/issues/405), 2026-09-13).
+  [#405](https://github.com/lezli01/vincent/issues/405), 2026-09-13). *Closed
+  by [114](114-help-in-text-fields-and-list-wheel.md), 2026-09-17: `f1` opens
+  help wherever a text field has the keyboard, and the palette's help row no
+  longer types `?` into the draft.*
 - **No new screenshot.** Raw is a display state of an existing panel and the
   picker is a panel no capture shows; the chat views have never been captured at
   all (task 071, "Not done here").

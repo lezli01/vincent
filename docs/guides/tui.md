@@ -1469,6 +1469,11 @@ task-only.
 | `s` | Cycle the listing between live, archived and handed-off, and all |
 | `R` | Reload the board |
 
+The mouse wheel moves the cursor one chat per tick, skipping the project
+headings, as it does on the task board. It stands still while the new-chat form
+or the archive confirmation is up, since those ask about the chat under the
+cursor.
+
 `s` is a peek at history from the live board; the [Archived](#archived) screen
 is where history is paged, windowed and deleted.
 
@@ -1575,6 +1580,8 @@ periodic repaint.
 | `ctrl+l` | List the links in the assistant's messages — open one in a browser or copy it |
 | `pgup` / `pgdown` | Scroll the conversation (the mouse wheel scrolls it a line at a time) |
 | `ctrl+g` | Jump to the live end and follow it again |
+| `ctrl+p` | Command palette — `:` is a character here |
+| `f1` | Help — `?` is a character here |
 | `esc` | Back to the chats board |
 
 `ctrl+t` opens the new-task form in **handoff mode**: the project, the base
@@ -1650,6 +1657,10 @@ there is nothing to withhold and no flag saying so.
 | `enter` | Open the row's workspace, read-only |
 | `/` | Filter, exactly as on the live board |
 | `space` / `V` | Select rows for the delete |
+
+The mouse wheel moves the cursor one row per tick on both lists. It never turns
+the page — that is a fetch, and stays on `<` and `>` — and it stands still while
+the delete confirmation is up, which names the rows it would delete.
 
 The confirmation takes three answers: `y` deletes the row, its step attempts (or
 its turns) and its transcripts; `b` does that **and** deletes its branch; `n` —
@@ -1965,7 +1976,9 @@ reading.
 
 `:` opens it — or `ctrl+p`, which works everywhere `:` does *and* while a text
 field has the keyboard. In a chat the composer takes every printable key, so
-there `:` types a colon into your draft and `ctrl+p` is the way in.
+there `:` types a colon into your draft and `ctrl+p` is the way in. Help has
+the same pair: `?` everywhere it is not a character, and `f1` everywhere,
+including a chat's composer, a filter and every form.
 
 Everything reachable in the TUI is in there by name — navigation to every
 screen, and every task action the daemon currently offers. Type to filter,
@@ -1976,9 +1989,12 @@ knowing.
 
 ## Every key
 
-`?` toggles a help overlay listing every binding for the surface you are on.
-The overlay, the palette and the footer all render from **one registry** in the
-source, so a key that exists is a key that is documented.
+`?` toggles a help overlay listing every binding for the surface you are on —
+or `f1`, which also works while a text field has the keyboard. While the
+overlay is open it owns the keyboard: `?`, `esc` and `f1` close it, `ctrl+c`
+still quits, and every other key is ignored rather than acting on the screen
+behind it. The overlay, the palette and the footer all render from **one
+registry** in the source, so a key that exists is a key that is documented.
 
 The footer shows as many of the focused surface's keys as the terminal is wide
 enough for, in priority order, and then tells you what is left: a dim **`+N`**
@@ -1989,6 +2005,13 @@ the palette lists them. No `+N` means nothing is left over. The popups and
 forms never carry one at all — the palette does not list their keys, so it has
 nothing to point them at, and `?` is what shows those.
 
+The right-hand end of the footer never truncates: `: commands  ? help  q quit`.
+While a text field has the keyboard — a chat's composer, a filter, a form —
+those three keys would be typed, so it reads `ctrl+p commands  f1 help  ctrl+c
+quit` instead. Clicking either version, or running a global row from the
+palette, does what the row says even in a text field; nothing is typed into
+it.
+
 Global bindings — active whenever the focused surface is not capturing text:
 
 | Key | Does |
@@ -1996,6 +2019,7 @@ Global bindings — active whenever the focused surface is not capturing text:
 | `:` | Command palette |
 | `ctrl+p` | Command palette, also while a text field has the keyboard |
 | `?` | Toggle help |
+| `f1` | Toggle help, also while a text field has the keyboard |
 | `tab` / `shift+tab` | Move between task tabs; on the board filter, commit it |
 | `!` | Jump to the next task needing a human |
 | `n` | New task |

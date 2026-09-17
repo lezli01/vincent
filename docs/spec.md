@@ -8993,6 +8993,15 @@ stream for the live tail.
    is waiting on a human, not working, and this header already badges it — and a
    board with nothing running arms no repaint.
 
+   *Amended 2026-09-17 (task 114, issue #405).* **The wheel moves the cursor**,
+   one chat per tick, skipping the project headings exactly as `↑`/`↓` do — the
+   home board's wheel on the board where it had been missing. This board is its
+   only scrollable panel, so it is always the focused one and the Mouse rule
+   below needs no exception. A layer that owns the keyboard owns the wheel too
+   (task 078 decision 3): the new-chat form and the archive confirmation hold
+   the cursor still, because each is about the row under it. An open filter
+   does not; it narrows the rows the wheel walks. Clicking a row is not added.
+
 9. **Chat workspace.** *Added 2026-08-31 (task 067, closing 063.2 and 063.3).*
    One conversation: the finished turns above, the running turn's live tail
    below them, and a composer at the bottom. `enter` sends, `ctrl+x` stops the
@@ -9128,6 +9137,12 @@ stream for the live tail.
    `enter` opens the row's existing workspace, which is **read-only for free**:
    an archived task offers no `available_actions`, so there is nothing to
    withhold and no flag saying so.
+
+   *Amended 2026-09-17 (task 114, issue #405).* **Both boards take the wheel**:
+   one row per tick, headings skipped, as on the live boards they mirror. The
+   delete confirmation holds the cursor still, because it names the rows it
+   would delete. The wheel never turns a page — paging is a fetch and stays on
+   `<`/`>`.
 
 11. **Triggers.** *Added 2026-09-13 (task 096.6, issue #362).* A takeover
    reached from the command palette, like Workflows and Projects, with no key
@@ -10143,12 +10158,34 @@ types a colon into the draft and opens nothing; the palette is this section's
 "what can be done right now" surface, and it must be reachable from everywhere,
 not only from a resting list.
 
+*Amended 2026-09-17 (task 114, issue #405).* **`f1` opens help on the same
+terms.** `?` is printable too, so on a surface that owns the keyboard it types
+itself and help was unreachable there — in a chat, a filter and every form.
+`f1` is hoisted beside `ctrl+p` and toggles the same overlay everywhere; `?` is
+unchanged wherever it already worked. A function key rather than `ctrl+/`,
+which legacy terminals send as `ctrl+_` and which moves with the keyboard
+layout. Its costs are accepted rather than worked around: MacBook keyboards
+need `fn`, and VS Code's integrated terminal keeps F1 unless its settings hand
+it over. **The help overlay owns the keyboard** while it is open, by the
+palette's rule: `?`, `esc` and `f1` close it, `ctrl+c` quits, and every other
+key is swallowed — a key under the sheet acting on the board, or typing into a
+draft nobody can see, is what this rules out. **A global row runs as the
+root's own key** wherever it is fired from: a palette row or a footer click
+for help, quit, the mouse toggle, `!` or new task takes effect even while a
+text field has the keyboard, rather than replaying its key into that field.
+
 **The footer is one line and never wraps.** Left to right: the focused panel's
 keys (at most five, in registry priority order), then the task's
 `available_actions`, then — pinned right and never truncated — `: commands`,
 `? help`, `q quit`. Overflow truncates from the left with `…`. The pinned segment
 is exempt because `:` is the escape hatch that makes every other key optional; a
 narrow terminal dropping it would fail exactly when the human is most lost.
+*Amended 2026-09-17 (task 114, issue #405):* the pinned segment names the keys
+that work on the surface in front of the human. While a text field has the
+keyboard, `:`, `?` and `q` would be typed, so it reads `ctrl+p commands`,
+`f1 help`, `ctrl+c quit` instead; each span still fires its key when clicked.
+It is still measured first and never truncated, and its extra width comes out
+of the hints' budget.
 
 *Amended 2026-09-10 (task 094, issue #352).* **The width decides how many keys
 reach the line, and the line says how many it is not showing.** "At most five"
@@ -10177,7 +10214,7 @@ palette does not list.
 
 ### Keys
 
-Global: `:` palette (`ctrl+p` where a text field has the keyboard) · `?` help · `n` new task · `q` quit (the daemon keeps running;
+Global: `:` palette (`ctrl+p` where a text field has the keyboard) · `?` help (`f1` where a text field has the keyboard; *added 2026-09-17, task 114*) · `n` new task · `q` quit (the daemon keeps running;
 a status line reminds of the running task count on exit) · `tab`/`shift+tab` move
 focus between panels · `M` toggle mouse.
 
