@@ -1,6 +1,6 @@
 # 115 — A user-configurable TUI keymap
 
-**Status:** 🔄 in progress (3/6)
+**Status:** ✅ done (6/6)
 **Issue:** [#412](https://github.com/lezli01/vincent/issues/412)
 **Spec:** amends §12.3 (`tui` example and prose), §15 Keys; decision record row
 35 added, row 31 narrowed
@@ -240,18 +240,23 @@ refactor lands and is reviewed before any keymap can change a key.
   `PATCH /v1/config`; `tui.keys` served on `GET /v1/config` as an object, never
   `null`, and accepted on `PATCH`; `ConfigTUI.Keys` and its patch field; the
   task 046 decision 4 amendment in `internal/config`. ✓ 2026-09-17
-- [~] **115.3 — Dispatch refactor**: every handler of a rebindable operation
+- [x] **115.3 — Dispatch refactor**: every handler of a rebindable operation
   asks the registry for its key; the converse test that every rebindable
   operation a handler matches is registered. Defaults only — behaviour
-  byte-identical.
-- [~] **115.4 — Rendering**: hints, labels, popup key lines and banners from the
+  byte-identical. Tests: `TestEveryMatchedKeyIsRegistered`,
+  `TestRegistryAgreesWithTheCatalog`, `TestActionsLiveIsTheFSMs`. ✓ 2026-09-17
+- [x] **115.4 — Rendering**: hints, labels, popup key lines and banners from the
   effective keymap; the test that renders every registered surface under a
-  non-default keymap.
-- [~] **115.5 — Applying the keymap in the TUI**: the config fetch sites and the
+  non-default keymap (`TestReboundKeysRender`). ✓ 2026-09-17
+- [x] **115.5 — Applying the keymap in the TUI**: the config fetch sites and the
   editor's `PATCH`; the `tui.keys` row in the daemon view's config editor;
   probes under a non-default keymap (the rebound key fires, the vacated one does
   nothing); a live test that a keymap set through the editor is picked up
-  without reconnecting.
+  without reconnecting. Tests: the `rebound` walk in
+  `TestEveryPanelKeyIsHandled`, `TestReboundKeyReplacesTheDefault`,
+  `TestConfigEditorRebindsAKeyWithoutReconnecting`,
+  `TestConfigEditorKeepsTheKeymapTheDaemonRefuses`, and `m11` scenario 8. ✓
+  2026-09-17
 - [x] **115.6 — Documentation**: §12.3 (the `tui.keys` example line, a dated
   amendment, and the dated note on the `notify:` comment's import claim); §15
   Keys amended, dated; decision record row 35 and a dated narrowing of row 31;
