@@ -1,0 +1,61 @@
+# go-checks — run the test suite and vet side by side, and nothing else.
+#
+# Written to be *included*. A workflow that says
+#
+#   - { id: checks, type: include, workflow: go-checks }
+#
+# gets these steps spliced in where that line was, when a task is created
+# (§7.9) — which is how `ship` and `split-work` verify a tree without each
+# repeating the same steps. It also runs on its own: a task on `go-checks` asks
+# "is this branch green?" and changes nothing.
+#
+# Install it under its shipped name, or the workflows that include it cannot
+# find it:
+#
+#   vincent workflow init go-checks --from go-checks
+#
+# An include names a workflow by its `name:`, and `init --from` installs one
+# file under whatever name you give it. Nothing checks an include target before
+# a task needs it: `vincent workflow validate` passes an including file whether
+# or not `go-checks` exists, and a missing one is a 400 naming it only when a
+# task is created on the workflow that includes it.
+#
+# Three choices make it a fragment worth including:
+#
+#   parallel     `go test` and `go vet` read the tree and report an exit code;
+#                neither affects the other. Side by side they cost the longer
+#                wait rather than the sum. A failure does not cancel the other
+#                member, so a red run reports both verdicts, and a retry re-runs
+#                only the member that failed.
+#   max_retries  0, in defaults. Both are deterministic probes: a second run
+#                of the same tree reaches the same answer a minute later. A
+#                fragment keeps its own defaults after it is spliced in, so an
+#                includer that retries its agent steps twice does not make
+#                these retry too.
+#   step ids     prefixed `go-`. An include shares its includer's id namespace
+#                and a collision is a 400 at task creation, so an unprefixed
+#                `test` would break the first workflow that already has one.
+#
+# There is no `platforms:` here, and a fragment should avoid one: `go` is a
+# binary on PATH, so both bodies run under sh and pwsh alike, and a fragment
+# whose platforms rule out the host is refused when a task that includes it is
+# created, whatever the includer itself declares.
+name: go-checks
+description: Run go test and go vet side by side; written to be included by other workflows.
+
+defaults:
+  max_retries: 0
+
+steps:
+  - id: go-verify
+    type: parallel
+    # Bounds the whole group, not each member.
+    timeout: 20m
+    steps:
+      - id: go-test
+        type: command
+        run: go test ./...
+
+      - id: go-vet
+        type: command
+        run: go vet ./...

@@ -1,0 +1,123 @@
+# ship — agree on a change with the agent, make it, and publish it only if
+# there is something to publish.
+#
+# `feature-pr` assumes every task produces a change. This one does not: an
+# agent that finds the work already done, or talks you out of it, leaves
+# nothing to push, and the right end for that task is `done`, not a blocked
+# commit step complaining there is nothing to commit.
+#
+# It includes `go-checks`, so install that fragment first, under its shipped
+# name — an include is resolved by `name:` when a task is created, and neither
+# `vincent workflow validate` nor `init --from` looks for it:
+#
+#   vincent workflow init go-checks --from go-checks
+#   vincent workflow init ship --from ship
+#
+# Read the run as five decisions:
+#
+#   implement  `on_input: require`: the agent is told to ask before it guesses,
+#              and require makes asking a promise. The step pins
+#              `agent: claude` because only an input-capable adapter can keep
+#              it — a task-level `--agent` never overrides a step field — and
+#              an agent that cannot ask would guess and say nothing (§9.4).
+#              Require is valid here and not inside a parallel group, a loop
+#              body or a merge resolver: a task holds one pending question.
+#   changed    a probe. `git diff --quiet` exits 1 when the staged tree differs
+#              from the base branch, and `allow_failure: true` is what turns
+#              that exit code into an answer instead of a blocked task.
+#   shippable  a `condition`: false ends the task here, as `done`. Nothing
+#              after it runs or records anything.
+#   changelog  an `if:` guard on one optional step. False skips just this step
+#              and the run carries on — the decision is made per task, from a
+#              field, instead of by keeping two copies of this file.
+#   review     a `manual` gate in front of the only step that leaves the
+#              machine. `publish` carries `max_retries: 0`: retrying a push
+#              that half-happened does it twice.
+#
+# The publish step assumes a remote named `origin` you can push to.
+name: ship
+description: Make an agreed change, stop as done if nothing changed, verify, gate, and push.
+
+fields:
+  - name: changelog
+    label: Update CHANGELOG.md
+    description: Add an entry for this change before it is committed.
+    type: boolean
+    default: "false"
+
+defaults:
+  agent: claude
+  max_retries: 2
+  timeout: 45m
+
+steps:
+  - id: implement
+    type: agent
+    agent: claude
+    on_input: require
+    prompt: |
+      Make this change in the current branch ({{.Task.BranchName}}).
+
+      {{.Task.Title}}
+      {{with .Task.Description}}
+      Details:
+      {{.}}
+      {{end}}
+      Before you edit anything, ask me about whatever is ambiguous — scope,
+      naming, behaviour at the edges. Asking is expected; guessing is not.
+      If the change turns out to be already done or not worth making, say so
+      and change nothing. Otherwise add or update tests alongside it. Do not
+      commit — a later step does that.
+    check: go build ./...
+    check_timeout: 15m
+
+  # Staged so that the probe sees new files: `git diff` ignores untracked ones.
+  - id: stage
+    type: command
+    run: git add -A
+
+  - id: changed
+    type: command
+    run: git diff --cached --quiet {{.Task.BaseBranch}}
+    allow_failure: true
+    # A probe has nothing to gain from retrying: the answer is the same.
+    max_retries: 0
+
+  - id: shippable
+    type: condition
+    if: '{{ ne (index .Steps "changed").ExitCode 0 }}'
+
+  - id: changelog
+    type: agent
+    if: '{{ eq (index .Task.Fields "changelog") "true" }}'
+    prompt: |
+      Add an entry for this change to CHANGELOG.md, under the section for
+      unreleased work, in the voice of the entries already there.
+
+      {{.Task.Title}}
+
+      Describe what a user of the project will notice, not how it was done.
+      Change no other file, and do not commit.
+
+  - id: commit
+    type: command
+    run: 'git add -A && git commit -m "{{.Task.Title}}"'
+
+  # Replaced by go-checks' own steps when a task is created. It runs after the
+  # commit so the tree it verifies is exactly the one the gate approves.
+  - id: checks
+    type: include
+    workflow: go-checks
+
+  - id: review
+    type: manual
+    instructions: |
+      Review task #{{.Task.ID}} on branch {{.Task.BranchName}} before it is
+      pushed. The questions the agent asked, and your answers, are in the
+      transcript; `git diff {{.Task.BaseBranch}}...{{.Task.BranchName}}` is
+      the change. Approve to push, reject to stop here.
+
+  - id: publish
+    type: command
+    run: git push -u origin {{.Task.BranchName}}
+    max_retries: 0
