@@ -108,6 +108,24 @@ type Resumer interface {
 	SupportsResume() bool
 }
 
+// RestrictedResumer is implemented by an adapter that can say whether a
+// resumed run honors `restricted` (§9.4). An adapter that does not implement it
+// keeps the permission mode on a resumed run the way it does on a fresh one.
+type RestrictedResumer interface {
+	// SupportsRestrictedResume reports whether a resumed run can be
+	// restricted at all.
+	SupportsRestrictedResume() bool
+}
+
+// CanResumeRestricted reports whether every turn of a restricted chat would
+// run restricted on a (task 115). A chat linked to a task whose workflow says
+// `restricted` is refused on an adapter that cannot, rather than letting its
+// second turn quietly run full-auto.
+func CanResumeRestricted(a Adapter) bool {
+	r, ok := a.(RestrictedResumer)
+	return !ok || r.SupportsRestrictedResume()
+}
+
 // CanResume reports whether a can resume a prior session. It is what the API
 // consults before creating a chat on an adapter (§5.5).
 func CanResume(a Adapter) bool {

@@ -159,6 +159,12 @@ func (s *Server) handleTaskChat(w http.ResponseWriter, r *http.Request) {
 	if wf.ClampedPermissionMode(workflow.Step{}, task.Restricted) == workflow.PermissionRestricted {
 		permission = agent.Restricted
 	}
+	if permission == agent.Restricted && !agent.CanResumeRestricted(adapter) {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, fmt.Sprintf(
+			"task %d runs restricted, and agent %q cannot keep a resumed turn restricted; "+
+				"choose an agent that can", id, name))
+		return
+	}
 	opening, err := s.deps.Runner.ChatContext(ctx, task)
 	if err != nil {
 		s.internalError(w, "assemble chat context", err)

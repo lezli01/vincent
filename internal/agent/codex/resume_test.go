@@ -2,6 +2,7 @@ package codex
 
 import (
 	"bufio"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -184,4 +185,20 @@ func readFixtureText(t *testing.T, name string) string {
 		t.Fatalf("read fixture: %v", err)
 	}
 	return strings.TrimSpace(string(b))
+}
+
+// TestResumedRestrictedRunIsRefused is task 115's fail-closed rule: a chat
+// linked to a restricted task must never have a later turn run full-auto
+// because `exec resume` has no sandbox flag.
+func TestResumedRestrictedRunIsRefused(t *testing.T) {
+	a := New(func() string { return "/nonexistent/codex" })
+	if agent.CanResumeRestricted(a) {
+		t.Error("codex claims a resumed run can be restricted")
+	}
+	_, err := a.Start(t.Context(), agent.RunSpec{
+		Prompt: "hi", ResumeSessionID: "thread-1", PermissionMode: agent.Restricted,
+	})
+	if !errors.Is(err, agent.ErrRestrictedUnsupported) {
+		t.Errorf("Start(resumed, restricted) = %v, want ErrRestrictedUnsupported", err)
+	}
 }
