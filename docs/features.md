@@ -313,7 +313,7 @@ API keys or login credentials.
 
 | Agent | What vincent integrates |
 |---|---|
-| Claude Code | Model and effort discovery, usage and cost reporting, restricted mode, mid-run questions, and the fullest account of its own run — the working directory and tool set it was given, its duration, turns, cache split and refused tool calls, and its subagents' work nested in the output pane rather than read as its own. Its remaining usage quota reaches vincent when you let it draw your status line |
+| Claude Code | Model and effort discovery, usage and cost reporting, restricted mode, mid-run questions, and the fullest account of its own run — the working directory and tool set it was given, its duration, turns, cache split and refused tool calls, the lines each edit changed with its hunks at `verbose`, and its subagents' work nested in the output pane rather than read as its own. Its remaining usage quota reaches vincent when you let it draw your status line |
 | Codex | Headless execution, restricted mode, session resume so it can hold a chat, its remaining usage quota answered on request over its app-server, and its running to-do list, command output and full token usage in the output pane; no mid-run input or cost reported by the CLI |
 | Cursor | Headless execution and model discovery, and the working directory, duration and cache split of its run in the output pane; reasoning effort is part of the model id, restricted mode is unavailable on Windows, and it has no usage-quota surface to report from |
 

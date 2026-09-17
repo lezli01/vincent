@@ -187,5 +187,9 @@ change adds two record shapes to that pane, so 066.5 is the leg that closes it
    `structuredPatch`, then make `ToolResult.Summary` keep the promise its doc
    comment made from T4.14 until this task removed it (tracked in
    [#402](https://github.com/lezli01/vincent/issues/402), 2026-09-13).
+   *Delivered by [task 110](110-claude-edit-deltas.md), 2026-09-17:* no new
+   capture was needed (2,342 recorded `Edit` results already carried a
+   non-empty `structuredPatch`, with no `type`), the delta is `+N −M` in
+   cursor's form, and the hunks ride a new verbose-only `agent.patch` record.
 3. **Durable result metadata on `step_runs`**, if and when a client needs it off
    `/v1/tasks` rather than off a transcript (decision 4).

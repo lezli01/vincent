@@ -45,6 +45,22 @@ list with the user-facing context a commit subject cannot carry.
   runs already on disk render nested too. Codex and cursor report no subagents
   (issue #401).
 
+- **A Claude Code edit now says how much it changed, and `verbose` shows the
+  change.** An `Edit`'s outcome used to be claude's own sentence about it —
+  "The file /Users/…/x.go has been updated successfully. (file state is
+  current…" — cut off mid-line, repeating the path the call line above already
+  names. It is now the lines added and removed, `✓ +13 −9`, the same form cursor
+  edits already used, and a `Write` that overwrote a file reads
+  `✓ updated · +1 −1`. At `verbose`, the output pane shows the edit's hunks under
+  that line, with additions and removals in the Diff tab's colors and a long
+  patch ending in `… patch truncated`. `vincent task transcript` prints the
+  delta and not the hunks. `GET …/transcript?format=normalized` and the live
+  streams gain an `agent.patch` record (`patch`, `truncated`, `call_id`).
+  Creating a new file still reads `created`, and a subagent's edits keep
+  claude's sentence, because claude reports no change for either. Because
+  transcripts are normalized on read, claude runs already on disk show deltas
+  too (issue #402).
+
 - **Agent steps now run inside the task's container.** With `container.image`
   set, a task's agent steps run in its container next to its command steps and
   checks, so a containerized task no longer starts its agents on your machine.

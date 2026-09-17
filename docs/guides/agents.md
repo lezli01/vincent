@@ -86,6 +86,12 @@ The most capable adapter, and the only one that can be interrupted mid-step.
   than as the agent's own. Codex and cursor report no subagents, and vincent
   does not infer one from their tool calls. See
   [When the agent runs subagents](tui.md#when-the-agent-runs-subagents).
+- **Reports what its edits changed.** An edit's outcome is the lines it added
+  and removed, `✓ +13 −9`, and at `verbose` the output pane shows the hunks
+  themselves. A new file reads `created`, and a subagent's edits keep claude's
+  own sentence, because claude reports no change for either. Cursor reports the
+  counts for its edits and no hunks; codex reports neither. See
+  [the output pane](tui.md#what-v-adds).
 - **Reports token usage and cost.** The board's cost column sums every attempt,
   retries included. The other two adapters report no cost at all — which also
   means [`max_task_cost_usd`](../reference/configuration.md#max_task_cost_usd)

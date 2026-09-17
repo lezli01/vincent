@@ -2334,8 +2334,16 @@ The transcript is the attempt's JSONL file, ranged:
   reported rather than silent. `agent.result` additionally carries
   `reasoning_tokens`. Only [Codex](../guides/agents.md#codex) fills these today,
   and the same omitted-when-unreported rule applies.
+- `agent.patch` carries `patch`, `truncated`, `call_id` and `name` (and
+  `parent_call_id` when set) — what a file edit changed, as unified hunks each
+  under its `@@ -a,b +c,d @@` header, capped with the cut reported. It is the
+  edit's body; the edit's outcome is its `agent.tool_result` entry, whose
+  `summary` is the line delta `+N −M` (and whose `verb` is `updated` for a
+  `Write` that overwrote a file). Only [Claude Code](../guides/agents.md#claude-code)
+  fills it, and not for a subagent's edits, whose results carry no patch.
 - One stream line can produce **two** records: codex reports a command's outcome
-  and the body it printed on a single event, and they are separate records
+  and the body it printed on a single event, and claude an edit's outcome and
+  its hunks, and they are separate records
   because clients show them at different verbosity levels. Read the NDJSON as a
   record stream, not one record per source line.
 
@@ -2478,7 +2486,7 @@ they need.
 ### Live output — ephemeral
 
 `agent.output`, `agent.tool_use`, `agent.tool_result`, `agent.thinking`,
-`agent.run_header`, `agent.plan`, `agent.command_output`,
+`agent.run_header`, `agent.plan`, `agent.command_output`, `agent.patch`,
 `agent.subagent_started`, `agent.subagent_progress`, `agent.subagent_finished`,
 `agent.usage` and `command.output` chunks stream on the
 **per-task** stream only and are **not** written to the events table. Their

@@ -603,6 +603,16 @@ otherwise flood the level most readers use. A body long enough to hit the cap
 ends in **… output truncated**, because a cut a reader cannot see is
 indistinguishable from a command that printed exactly that much.
 
+A file edit works the same way. Its outcome, from `compact` up, is the number of
+lines it added and removed — `✓ +13 −9`, or `✓ updated · +1 −1` for a file an
+agent overwrote — in place of the tool's sentence about it. `verbose` adds the
+**change itself** under that line: the edit's hunks, additions and removals in
+the Diff tab's colors, each `@@` hunk header dim. A long line continues on the
+next row rather than being cut off, and a patch long enough to hit the cap ends
+in **… patch truncated**. [Claude Code](agents.md#claude-code) reports the change
+for its edits and overwrites; cursor reports the counts for its edits and no
+change, and codex reports neither.
+
 A tool call that a permission rule **refused** is marked `⊘` rather than `✗`, at
 every level. The distinction is worth a glyph: `✗` is the agent's problem, and
 `⊘` is the step's [permission mode](agents.md).
@@ -649,9 +659,11 @@ A subagent's internals show **one level quieter** than the agent's own:
 | `normal` | Also its tool calls and their outcomes |
 | `verbose` | Also its reasoning (truncated), its plan, and a count of its unrecognized lines |
 
-Two things never render nested, at any level. What a subagent's commands
-printed stays out of the pane; the whole transcript `e` opens has it. And a
-subagent's unrecognized lines are only ever counted, never expanded.
+Three things never render nested, at any level. What a subagent's commands
+printed stays out of the pane, and so does the change a subagent's edit made;
+the whole transcript `e` opens has both, though claude rarely reports a
+subagent's change at all. And a subagent's unrecognized lines are only ever
+counted, never expanded.
 
 Codex and cursor report no subagents, so their panes have no rail.
 
