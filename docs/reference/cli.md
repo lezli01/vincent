@@ -1193,6 +1193,45 @@ and it does not stop at the first refusal. `--json` emits one entry per row
 with `id`, `deleted`, `branch` and, on a refusal, `reason` and `error`. Exit is
 1 if any row was refused or failed.
 
+### `vincent task import`
+
+```sh
+vincent task import <archive.tar.gz> <task-id> [--project <id>] [--json]
+```
+
+Brings one **archived** task back out of an archive written by
+[`vincent daemon backup`](#vincent-daemon-backup): its row, its step attempts
+and its transcripts. It is the undo for [`vincent task delete`](#vincent-task-delete),
+and it also imports a task from another installation's backup when that id is
+free here. The task keeps its id and comes back archived and read-only; no
+branch or worktree is touched.
+
+Unlike [`vincent daemon restore`](#vincent-daemon-restore) it needs a
+**running** daemon, and exits `2` without one: an import writes rows, and only
+the daemon opens the database. The archive path is resolved before it is sent.
+
+```
+imported task 12 "Add login" into project 3: 4 step run(s), ids kept, transcripts 1.2KB
+```
+
+`ids renumbered` instead of `ids kept` means a step attempt id was already taken
+here, so every attempt got a fresh id in its original order. `--json` prints the
+response body. Refusals are exit `1` with the daemon's wording:
+
+| Refusal | `details.reason` |
+| --- | --- |
+| A task here already holds that id | `task_exists` |
+| The task was not archived in the backup | `not_archived` |
+| No project here has the backed-up project's id **and** name — pass `--project <id>` to import into another one | `project_mismatch` |
+| It is a fan-out lane whose parent is not here — import the parent first | `parent_missing` |
+| `{data_dir}/transcripts/{task-id}/` already exists — move it aside | `transcripts_present` |
+| The archive has no task with that id | `task_not_in_backup` |
+| `--project` names no project | `project_not_found` |
+| The archive's schema is newer than this binary's | `schema_too_new` |
+
+An archive from an older vincent imports: the daemon migrates a staged copy of
+its database, never your live one. There is no bulk import — one call per task.
+
 ### `vincent task answer`
 
 ```sh

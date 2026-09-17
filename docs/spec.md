@@ -4840,6 +4840,7 @@ One Go binary, `vincent`:
 | `vincent daemon start / stop / status` | Background daemon management (start detaches; stop = graceful shutdown) |
 | `vincent daemon logs [-n N] [-f]` | *Added 2026-08-28 (task 047).* Prints the tail of `{data_dir}/logs/daemon.log` (§17), 500 lines by default, `-f` following it on a two-second cadence. It reads the file **from disk and never calls the API**, so it needs no daemon and starts none — it cannot exit 2. A missing file is an error naming the path; an empty one prints nothing and succeeds |
 | `vincent daemon backup <path.tar.gz> / restore <path.tar.gz>` | *Added 2026-08-25 (task 030).* One `.tar.gz` of the database (`VACUUM INTO`, §14), `transcripts/`, `config.yaml` and `workflows/`, plus a manifest. `backup` is a thin API client and needs a **running** daemon; `restore` runs client-side and needs a **stopped** one, and refuses a newer schema or an occupied destination without `--force`. *Amended 2026-09-17 (task 115):* the daemon can also take the same archive **on a schedule**, into `backup.dir`, keeping the newest `backup.keep` of its own archives (§12.3). There is no new command: `restore` takes a scheduled archive exactly as it takes a manual one |
+| `vincent task import <archive.tar.gz> <task-id> [--project <id>]` | *Added 2026-09-17 (task 117, issue #411).* Copies one task that was `archived` in a `daemon backup` archive — its row, its step runs and its `transcripts/{id}/` — back into this installation, with its id, `archived`. The undo for `vincent task delete`. A thin API client of `POST /v1/tasks/import` (§13.2) that needs a **running** daemon, exits 2 without one, and resolves the archive path before sending it |
 | `vincent service install / uninstall / status` | Registers OS-native autostart, always as the invoking user: launchd agent, systemd user unit, Windows Scheduled Task |
 | `vincent workflow ls / validate [file] / render <file> / init <name>` | Registry listing / YAML validation / template dry run / writing a new registry file. *Amended 2026-08-26 (task 034):* `init` writes the §5.2 scope directory a `--project` flag selects — global by default, resolved from §12.2 with **no daemon**; `--project N` needs one, purely to resolve the id to a repository root. `--from <example>` writes an embedded `examples/*.yaml` with its top-level `name:` rewritten. It refuses an existing path (`O_EXCL`) or a name another file in the same scope already declares, and only warns when the name shadows a lower scope. *Added 2026-08-28 (task 044):* `render` executes every template the file declares — `prompt`, `run`, `check`, `instructions`, `if` and `for_each` — against a synthetic §8.4 preview context and prints what each step would send, with the §8.6 triple each agent step resolves to. Where `validate` parses a template, this **executes** it, which is the only way `missingkey=error` catches a typo'd field. It is offline for the same reason `validate` is; `--task`/`--project` reach the daemon for a real task's facts and for registry lookups. Exit 0 clean · 1 a render error · 2 no daemon answered a `--task`/`--project` |
 | `vincent task add / ls / show <id> / cancel <id> / follow-up <id>` | Thin API clients for scripting. *Amended 2026-08-25 (task 027):* `follow-up` takes exactly one of `--prompt`, `--run` and `--workflow`, plus optional `--agent`/`--model`/`--effort` (§13.2). *Amended 2026-08-28 (task 045):* `add` fills the §8.1.2 field map from repeatable `--field name=value` and/or `--fields-file <path\|->`. *Amended 2026-09-14 (task 096):* `follow-up` also takes `--paused`, §13.2's `paused: true`: the follow-up is recorded and the task held in `paused` until `resume`. *Amended 2026-09-15 (task 101):* `show` prints a `hold` row for a queued task carrying a §11 hold — `<queued_reason> until <admit_not_before>` in local RFC3339, or the reason alone when there is no resume time — and `show <id> --step RUN` prints one step_run's §5.4 recorded inputs as ASCII text in the Step Details tab's four sections (input, resolution, control flow, outcome), looked up in the detail's own `steps[]`; with `--json` it prints that element unchanged. An id that is not one of the task's runs exits 1. No wire change |
@@ -4968,6 +4969,15 @@ good copy, not a fresh copy of the damage — and the documentation keeps "stop
 the daemon, then copy `vincent.db`, `vincent.db-wal` and `vincent.db-shm`
 together" as the no-binary fallback, which is also the honest answer for a
 daemon that will not start.
+
+*Added 2026-09-17 (task 117, issue #411).* `vincent task import` is **not** a
+third exception to §4, though it reads the same archive `daemon restore` does.
+Restore is client-side only because it opens nothing; an import inserts rows,
+which means opening SQLite, and only the daemon does that. So it is a thin API
+client like `backup`: the CLI resolves the archive to an absolute path and POSTs
+it, and the daemon reads the archive, migrates a *staged copy* of its database —
+never the live file — and writes the rows. Without a daemon it refuses in
+`backup`'s words.
 
 *Added 2026-08-29 (task 055).* `vincent update` is the **second stated
 exception** to "the daemon owns everything" (§4), beside `daemon restore`'s
@@ -7078,6 +7088,46 @@ DELETE /v1/tasks/{id}                   *Added 2026-09-09 (task 092, issue #350)
                                         Last-Event-ID cursor (§13.3). There is no bulk delete and
                                         there is not going to be one (task 011) — a sweep is one
                                         DELETE per row
+POST   /v1/tasks/import                 *Added 2026-09-17 (task 117, issue #411).* { path,
+                                        task_id, project_id? } → 200 { task_id, project_id,
+                                        title, step_runs, step_runs_renumbered,
+                                        transcript_files, transcript_bytes, archived_at,
+                                        backup_schema_version, backup_created_at }. Copies one
+                                        task out of a `daemon backup` archive (§12.1): the row,
+                                        its step_runs and `transcripts/{task_id}/`, in one
+                                        transaction that appends `task.restored` (§13.3). The
+                                        undo for DELETE /v1/tasks/{id}, and a literal segment
+                                        with no POST /v1/tasks/{id} to shadow. `path` must be
+                                        absolute. The task keeps its id and comes back
+                                        `archived`, `archived_at` stamped now (§17),
+                                        `worktree_path` NULL, `created_by_task_id` NULL unless
+                                        that task is live; every other column is copied as it
+                                        is, and no git operation runs. Step run ids are all
+                                        kept when all are free and all renumbered, in order,
+                                        when any is taken (§14). `project_id` re-homes the task;
+                                        without it the backed-up project must be live under the
+                                        same id **and** name. `transcript_path` is re-rooted at
+                                        this data dir by its `transcripts/{task_id}/` segment,
+                                        either separator. The archive is staged under the data
+                                        dir with task 030's entry checks, the staged database
+                                        is opened (and so migrated) as a store of its own, and
+                                        every refusal is checked before anything is placed; a
+                                        failed insert removes the transcript directory it
+                                        placed. 400 validation_failed: a path that is missing,
+                                        relative or not a regular file, a `task_id` that is
+                                        not positive, not a vincent backup, no database or one
+                                        that cannot be opened, an unsafe entry, or
+                                        `details.reason`
+                                        `schema_too_new`. 404 not_found with `details.reason`
+                                        `task_not_in_backup` or `project_not_found`. 409
+                                        invalid_state with `details: {action: "import",
+                                        reason}`: `task_exists`, `not_archived` (with the
+                                        backed-up `state` — a task live at backup time carries
+                                        running step runs §12.4 would treat as orphans),
+                                        `project_mismatch`, `parent_missing` (a fan-out lane
+                                        whose parent is not live) or `transcripts_present` (a
+                                        stray directory, never merged or deleted). One task per
+                                        call (task 011)
 POST   /v1/tasks/{id}/cancel
 POST   /v1/tasks/{id}/pause
 POST   /v1/tasks/{id}/resume
@@ -7377,7 +7427,7 @@ Two kinds of streams:
    `task.created`, `task.state_changed`, `task.priority_changed`, `task.step_advanced`,
    `task.status_changed`, `task.children_changed`, `project.*`,
    `workflow.registry_changed`, `agent.quota_changed`,
-   `task.github_pull_changed`, `task.deleted`, `chat.deleted`,
+   `task.github_pull_changed`, `task.deleted`, `chat.deleted`, `task.restored`,
    `trigger.fired`, `trigger.poll_changed`, `daemon.shutting_down`.
    *Added 2026-09-13 (task 096): `trigger.fired` announces a delivery whose
    outcome is `fired`, published post-commit after its ledger row. Its payload
@@ -7408,6 +7458,15 @@ Two kinds of streams:
    `task_id` column — it is a foreign key, and the point of the event is that
    the task is gone — so it reaches `GET /v1/events` and not the per-task
    stream, and a chat's events never carried a chat_id column at all.*
+   *Added 2026-09-17 (task 117, issue #411): `task.restored` — payload
+   `{id, title}` — announces a task imported from a backup (§13.2). It is
+   `task.deleted`'s mirror and, like it, not a §6 action: an import enters no
+   state, so notify and triggers do not react to it. Unlike `task.deleted` it
+   carries a `task_id`, because the row exists once the import commits, so it
+   also reaches the per-task stream. The imported task's historical events are
+   **not** copied: after a same-installation delete they are still here, and a
+   copy could only be appended under new cursor ids, replaying old state
+   changes to every resuming client.*
    *Amended 2026-08-29 (task 052, issue #231): `task.github_pull_changed` —
    payload `{repo, number, source, suppressed}`, empty when the link was
    cleared — announces that a task's pull-request link changed, because the
@@ -7738,6 +7797,14 @@ step path — which task 068 decision 1 says nothing reaches. This supersedes ta
 068's plan for MCP tools whose descriptions say they write to GitHub. Nothing is
 lost, as with create: a step's agent can run `gh pr merge` in its own worktree,
 which is decision record row 11's original path.
+
+*Amended 2026-09-17 (task 117, issue #411).* One more, beside the permanent
+deletes it undoes:
+
+    POST   /v1/tasks/import
+
+It reads an arbitrary file the caller names and writes rows — ids, step runs,
+provenance — that no agent should be able to create.
 
 The task 057 property that the tool surface **equals** `Routes()` minus the
 exclusions is unchanged, and is still asserted by a test — the exclusion list it
@@ -8241,6 +8308,17 @@ takes the same copy, so this cost now **recurs once per `backup.interval`** on
 an install that turns backups on, rather than only when someone runs the
 command. That is why an interval above 0 and under an hour is refused: each run
 holds the connection for the copy and then re-tars every transcript.
+
+*Added 2026-09-17 (task 117, issue #411).* An **import inserts with explicit
+ids** (§13.2). The task id never changes: `AUTOINCREMENT` never reissues a
+deleted id, so undoing a delete always gets it back, and a live task holding it
+is a refusal rather than a fallback to a fresh id — the transcript directory,
+the default branch name and the kept `events` rows all carry it. Step run ids
+may change, all together and in their original order, because no column
+references `step_runs.id` and transcript files are named by step index and
+attempt. The row is copied column by column from the staged database, which
+`Open` has migrated to this binary's schema, so a column added later travels
+without the import naming it. `events` rows are not copied (§13.3).
 
 *Added 2026-08-14 (task 003).* `admit_not_before` / `queued_reason` carry no index:
 `ListAdmissible` already returns the whole queued set in §11 order and the hold is
@@ -10846,8 +10924,9 @@ specifics:
 - **The §13.4 exclusions are not tools.** An agent cannot stop, back up,
   garbage-collect or reconfigure the daemon supervising it. It also cannot
   rewrite its workflows or triggers, inject a trigger event, open a pull
-  request, forge a quota reading, permanently delete a project, task or chat, or
-  drive a chat. *(Amended 2026-09-14, issue #377.)*
+  request, forge a quota reading, permanently delete a project, task or chat,
+  import a task from a backup, or drive a chat. *(Amended 2026-09-14, issue
+  #377; 2026-09-17, task 117 — the import.)*
 - **`restricted` does not restrict what a step does to vincent** (§9.4). The
   allow-list carries `mcp__vincent__*` in full, so a restricted step can create
   and cancel tasks. It bounds the filesystem and the shell, and that is all it
@@ -10997,7 +11076,12 @@ the whole of the posture, not a set of tips.
   same pass, on the same terms as `idempotency_keys`: no config knob, and
   independent of `transcript_retention_days`. A month answers "why did my
   trigger not fire last week?" while bounding a table that grows with every
-  poll's events (task 096 decision 13).
+  poll's events (task 096 decision 13). *Amended 2026-09-17 (task 117,
+  issue #411):* a task imported from a backup (§13.2) has `archived_at` stamped
+  at import, so its retention window restarts. Keeping the backed-up value would
+  prune the transcripts of any task archived more than
+  `transcript_retention_days` ago on the next pass — and the transcripts are the
+  reason to import it.
 - **Scheduled backups** (*added 2026-09-17, task 115*): a timer wired in
   `daemon.Run` beside the retention pass above takes the `vincent daemon backup`
   archive every `backup.interval` into `backup.dir`, and after each successful
@@ -11184,6 +11268,7 @@ carries the rest.
 | User wants a copy of daemon state | *Added 2026-08-25 (task 030).* `vincent daemon backup <path.tar.gz>` — one archive holding a `VACUUM INTO` copy of the database (§14), `transcripts/`, `config.yaml`, `workflows/` and a manifest. It needs a **running** daemon and refuses without one, in `doctor --fix`'s words: only the daemon opens the database. It needs no quiet daemon, so a backup may be taken while tasks run. `vincent daemon restore` is the reverse and needs a **stopped** daemon; it refuses a manifest whose schema version exceeds the binary's, and an occupied destination without `--force`, which moves the displaced state aside as `<name>.bak-<ts>` rather than deleting it — the same posture as the row below |
 | Scheduled backup fails | *Added 2026-09-17 (task 115).* Any failure of a timer run (§12.3) — the database copy, the tar, the rename into place, a `backup.dir` inside `{data_dir}/transcripts` or `{config_dir}/workflows` — is logged at error, removes its staging directory so no file ever carries a scheduled archive's name half-written, prunes nothing, and is retried **one hour later** rather than at the next check. The status carries the error as `last_error`, and `GET /v1/doctor` raises a `backup` problem, so `vincent doctor` exits 1 until an attempt succeeds (§17). No task is touched. A daemon killed mid-run leaves a `.vincent-backup-*` staging directory, which the timer sweeps when it next starts. A prune that fails after a successful run is logged at warn and reported as `prune_error`, not as a problem |
 | Backup directory unwritable or disk full | *Added 2026-09-17 (task 115).* A failed attempt, handled exactly as the row above: a `backup.dir` that cannot be created `0700` or written, or a disk that fills during the copy or the tar, fails the run and removes the partial work with its staging directory. **Nothing already kept is lost**, because pruning runs only after a success. The default `{data_dir}/backups` is on the database's disk, so a disk that fills there also threatens `vincent.db` and transcripts, and it gives no protection against losing that disk: pointing `backup.dir` at another disk is the remedy for both |
+| User wants back one deleted task | *Added 2026-09-17 (task 117, issue #411).* `vincent task import <archive.tar.gz> <task-id>` copies the task from a backup taken before the delete back into the running installation, with its id, its step runs and its transcripts, `archived`. It refuses rather than replacing or merging anything: a live task with that id, a task that was not archived in the backup, a fan-out lane whose parent is not here, a stray `transcripts/{id}/` directory, and a project that no longer matches by id and name unless `--project` names one. A whole-installation rollback is still `daemon restore` |
 | DB corruption | Startup fails loudly, points at the file, never auto-deletes. *Amended 2026-08-25 (task 030):* what rescues this case is an **earlier** good copy, which is what `vincent daemon backup` is for; a fresh copy of the damage is not a remedy, and taking one is not offered as a cold-copy mode |
 | Agent emits gigabytes of output | Transcript writes are streamed to disk; SSE output chunks are rate-limited/coalesced (~10 Hz); per-run transcript size cap (`transcript_max_bytes`, default 512 MB) fails the step past the cap with `transcript_limit` |
 | Template references missing field | Step fails at render time (before any process starts) with the template error. *Amended 2026-08-28 (task 044):* this outcome is now reachable without creating a task — `vincent workflow render <file>` executes the same templates against the §8.4 preview context and names the step and the field |

@@ -98,6 +98,10 @@ var Excluded = []Route{
 	// sense that matters, the row and its transcripts survive it.
 	{Method: http.MethodDelete, Path: "/v1/tasks/{id}"},
 	{Method: http.MethodDelete, Path: "/v1/chats/{id}"},
+	// The import that undoes a task delete (task 117), on the same line. It
+	// reads an arbitrary file the caller names and writes rows — ids, step
+	// runs, provenance — that no agent should be able to create.
+	{Method: http.MethodPost, Path: "/v1/tasks/import"},
 	{Method: http.MethodPost, Path: "/v1/maintenance/gc"},
 	{Method: http.MethodPost, Path: "/v1/doctor/fix"},
 	// The chat family (task 063 decision 2). An agent must not be able to

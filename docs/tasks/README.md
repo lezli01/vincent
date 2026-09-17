@@ -129,6 +129,7 @@ the living engineering specification records implementation contracts.
 | [113](113-control-flow-examples.md) | Example workflows that show control flow | ✅ done (4/4) |
 | [114](114-help-in-text-fields-and-list-wheel.md) | Help while a text field has the keyboard, and the wheel on the list boards | ✅ done (4/4) |
 | [115](115-scheduled-daemon-backups.md) | Scheduled daemon backups with retention | ✅ done (6/6) |
+| [117](117-single-task-import.md) | `vincent task import`: restore one archived task from a backup | ✅ done (6/6) |
 
 ## How to add and update a task document
 
