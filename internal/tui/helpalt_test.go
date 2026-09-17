@@ -37,7 +37,7 @@ func isQuit(cmd tea.Cmd) bool {
 	return ok
 }
 
-// TestF1OpensHelpFromAChat is task 112 decision 1: help is reachable from the
+// TestF1OpensHelpFromAChat is task 114 decision 1: help is reachable from the
 // chat composer, and reaching it leaves the draft alone.
 func TestF1OpensHelpFromAChat(t *testing.T) {
 	m, v := chatWithDraft(t)

@@ -64,7 +64,7 @@ func assertChatsWheelHeld(t *testing.T, v *chatsView, at int, layer string) {
 	}
 }
 
-// TestChatsBoardWheelMovesTheCursor is task 112 decision 5 on the live chats
+// TestChatsBoardWheelMovesTheCursor is task 114 decision 5 on the live chats
 // board: one chat per tick, headings skipped, and nothing while a layer that
 // owns the keyboard is up — proven by the same tick moving the cursor again
 // once that layer closes.

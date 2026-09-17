@@ -316,7 +316,7 @@ func (v *chatsView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 	return v, nil
 }
 
-// updateWheel is one wheel notch on the board (task 112 decision 5): the
+// updateWheel is one wheel notch on the board (task 114 decision 5): the
 // cursor moves one chat, skipping the project headings, the way a notch moves
 // one task on the home board. The board is its one scrollable panel, so it is
 // the focused one and PR S's rule needs no exception. A layer that owns the

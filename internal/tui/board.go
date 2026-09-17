@@ -483,7 +483,7 @@ func (b *board) update(msg tea.Msg) (panel, tea.Cmd) {
 	case tea.KeyPressMsg:
 		return b.updateKey(msg)
 	case tea.MouseWheelMsg:
-		// Only the archived board gets here (task 112 decision 5): the home
+		// Only the archived board gets here (task 114 decision 5): the home
 		// shell answers the wheel itself and never forwards it. The delete
 		// confirmation owns the wheel the way it owns the keyboard (task 078
 		// decision 3) — it names the rows it would delete.

@@ -270,7 +270,7 @@ var bindings = []binding{
 	// a row teaching the way to open the thing you already opened.
 	{key: paletteAltKey, label: "open the command palette (works while a text field has the keyboard)", scope: scopeGlobal, noPalette: true},
 	{key: "?", label: "toggle this help", scope: scopeGlobal},
-	// The same help, reachable where `?` is not (task 112 decision 1): a text
+	// The same help, reachable where `?` is not (task 114 decision 1): a text
 	// field takes `?` as a character. noPalette for the reason the ctrl+p row
 	// is — `?`'s own row already runs help from the palette.
 	{key: helpAltKey, label: "toggle this help (works while a text field has the keyboard)", scope: scopeGlobal, noPalette: true},
@@ -806,7 +806,7 @@ const (
 	// text, where `:` types a colon into the draft. The root hoists it above
 	// the input-capture gate the way it already hoists ctrl+v.
 	paletteAltKey = "ctrl+p"
-	// helpAltKey is `?` for the same surfaces (task 112). A function key
+	// helpAltKey is `?` for the same surfaces (task 114). A function key
 	// rather than a ctrl chord because it reads the same on every platform
 	// and keyboard layout; ctrl+/ arrives as ctrl+_ from legacy terminals.
 	// The costs are recorded rather than worked around: MacBook keyboards

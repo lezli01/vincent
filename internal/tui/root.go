@@ -338,7 +338,7 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.updateNoticeKey(msg)
 	}
 	// The help overlay owns every key but ctrl+c, the palette's rule (task
-	// 112 decision 2). It sits above the input-capture gate: over a chat, a
+	// 114 decision 2). It sits above the input-capture gate: over a chat, a
 	// key that fell through would type into a draft the sheet is hiding, and
 	// esc would leave the chat instead of closing the sheet. Mouse and paste
 	// already stand down while it is open.
@@ -372,7 +372,7 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// §15's "what can be done right now" surface, and it had been unreachable
 	// from a chat since the workspace landed.
 	//
-	// f1 is `?` for the same surfaces, hoisted for the same reason (task 112
+	// f1 is `?` for the same surfaces, hoisted for the same reason (task 114
 	// decision 1): help had been unreachable from a chat, a filter or a form
 	// by its key, and a text field that took `?` as a key would lose it as a
 	// character.
@@ -456,7 +456,7 @@ func (m *root) globalKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 // replayKey runs a key the human chose rather than pressed: a palette entry
 // or a footer span, both of which fire the key they show (the one-execution-
 // path rule). A global row replays into the root's own bindings, past the
-// input-capture gate (task 112 decision 3): picking "toggle this help" or
+// input-capture gate (task 114 decision 3): picking "toggle this help" or
 // clicking `q quit` in a chat must do what it says, not type `?` or `q` into
 // the draft. A global key the root does not consume in its current state is
 // dropped rather than delegated where a text field has the keyboard, for the
@@ -632,7 +632,7 @@ func synthKey(key string) tea.KeyPressMsg {
 	}
 	// Any function key, by the same reasoning. The default arm would read f1
 	// as the letter f carrying the text "f1" — a press no terminal sends, and
-	// one a Code match would take for `f` (task 112).
+	// one a Code match would take for `f` (task 114).
 	if n, ok := strings.CutPrefix(key, "f"); ok {
 		if i, err := strconv.Atoi(n); err == nil && i >= 1 && i <= 63 {
 			return tea.KeyPressMsg{Code: tea.KeyF1 + rune(i-1)}

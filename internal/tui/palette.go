@@ -23,7 +23,7 @@ type palette struct {
 // paletteEntry is one runnable line. key is empty for the palette-only
 // navigation entries, which deliberately have no shortcut. global marks a
 // scopeGlobal row, whose key the root runs itself even where a text field has
-// the keyboard (task 112 decision 3).
+// the keyboard (task 114 decision 3).
 type paletteEntry struct {
 	group     string
 	label     string

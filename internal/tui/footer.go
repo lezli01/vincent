@@ -16,7 +16,7 @@ import (
 // surface's palette-reachable keys the line is not showing. Pinned right and
 // never truncated: `: commands  ? help  q quit`, or `ctrl+p commands  f1 help
 // ctrl+c quit` while a text field has the keyboard and the other three would
-// be typed into it (task 112 decision 4). Overflow truncates from the
+// be typed into it (task 114 decision 4). Overflow truncates from the
 // left with `…`: the pinned segment is the escape hatch that makes every
 // other key optional, so a narrow terminal dropping it would fail exactly
 // when the human is most lost.
@@ -30,7 +30,7 @@ import (
 // footerHit is one clickable span: clicking it fires the key it shows
 // (§15 Mouse) — the palette's one-execution-path rule again. global marks a
 // span standing for one of the root's own keys, which a click fires past the
-// input-capture gate (task 112 decision 3).
+// input-capture gate (task 114 decision 3).
 type footerHit struct {
 	x0, x1 int
 	key    string
@@ -293,7 +293,7 @@ func padBetween(left, right string, width int) string {
 }
 
 // footerPinnedSegs is the escape hatch, named in the keys that work on the
-// surface in front of the human (task 112 decision 4). While a text field has
+// surface in front of the human (task 114 decision 4). While a text field has
 // the keyboard `:`, `?` and `q` are characters it would take, so the pinned
 // part names the three keys the root hoists above the capture gate instead: a
 // footer that advertises a key a chat types into the draft is teaching the
