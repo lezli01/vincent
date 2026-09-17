@@ -133,7 +133,7 @@ type TaskChange struct {
 	// with from/to. Reserved keys (from, to) are overwritten.
 	EventPayload map[string]any
 	// CloseLinkedChats closes every open chat linked to the task in the same
-	// transaction, ahead of the compare-and-swap (task 115). It is `cancel`
+	// transaction, ahead of the compare-and-swap (task 119). It is `cancel`
 	// on a locked task: the chat's process is already dead, and the close
 	// and the abort commit together or not at all.
 	CloseLinkedChats bool
@@ -237,7 +237,7 @@ func transitionTaskTx(
 	if t.State != from {
 		return nil, nil, &StateConflictError{TaskID: id, Want: from, Got: t.State}
 	}
-	// The task 115 lock, inside the swap's own transaction: every path to a
+	// The task 119 lock, inside the swap's own transaction: every path to a
 	// §6 transition — the #127 re-apply, the task 090 cascade, a held action
 	// — comes through here, and the single writer makes check and write one.
 	if err := refuseLockedTx(ctx, tx, id, from); err != nil {

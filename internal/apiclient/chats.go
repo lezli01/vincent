@@ -30,7 +30,7 @@ type Chat struct {
 	// HandoffTaskID is the task this chat's worktree and branch were handed
 	// to (task 074). Set exactly in `handed_off`.
 	HandoffTaskID *int64 `json:"handoff_task_id,omitempty"`
-	// LinkedTaskID is the task this chat was opened on (task 115). Such a
+	// LinkedTaskID is the task this chat was opened on (task 119). Such a
 	// chat works in that task's worktree and branch rather than its own, and
 	// while it is open the task is locked; it ends in `closed`, never in
 	// `archived` or `handed_off`.
@@ -90,7 +90,7 @@ func (c *Client) CreateChat(ctx context.Context, req CreateChatRequest) (*Chat, 
 // more call sites to touch for every parameter after them.
 type ListChatsOptions struct {
 	ProjectID int64
-	// TaskID narrows to the chats opened on one task (task 115) — at most
+	// TaskID narrows to the chats opened on one task (task 119) — at most
 	// one of them open, and any number closed. Closed is terminal, so the
 	// closed ones come back only with Archived set, as on any other listing.
 	TaskID int64
@@ -199,7 +199,7 @@ func (c *Client) ArchiveChat(ctx context.Context, id int64, force bool) (*Chat, 
 	return &out, nil
 }
 
-// CloseChat ends a chat opened on a task (task 115): a live turn is cancelled
+// CloseChat ends a chat opened on a task (task 119): a live turn is cancelled
 // first, the chat moves to `closed`, and the task's lock lifts. The worktree
 // and branch are the task's and are left exactly as they are.
 //

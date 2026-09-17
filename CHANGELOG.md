@@ -33,7 +33,7 @@ list with the user-facing context a commit subject cannot carry.
   `POST /v1/tasks/{id}/chat`, `POST /v1/chats/{id}/close`,
   `GET /v1/chats?task_id=`, `open_chat_id` on a task, `linked_task_id` on a
   chat, the `chat.closed` event and a third terminal chat state, `closed`;
-  `vincent task chat` and `vincent chat close` (task 115, issue #472).
+  `vincent task chat` and `vincent chat close` (task 119, issue #472).
 
 - **`vincent workflow render` now draws a fan-out's lane graph.** It printed
   one row per step and nothing about a `fan_out` step's lanes: no lane ids, no

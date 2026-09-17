@@ -314,7 +314,7 @@ func TestReboundKeyReplacesTheDefault(t *testing.T) {
 	}
 }
 
-// TestReboundChatKeyReplacesT: `chat` is a §6 action like the rest (task 115),
+// TestReboundChatKeyReplacesT: `chat` is a §6 action like the rest (task 119),
 // so the board's `T` handler, which sits ahead of the action bar rather than
 // behind resolveAction, moves with it too.
 func TestReboundChatKeyReplacesT(t *testing.T) {

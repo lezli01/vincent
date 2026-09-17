@@ -197,7 +197,7 @@ func (s *Store) DeleteChatCascade(ctx context.Context, id int64) (err error) {
 	}
 	switch chatstate.State(state) {
 	case chatstate.Archived, chatstate.Closed:
-		// A closed linked chat owns no worktree or branch (task 115), so
+		// A closed linked chat owns no worktree or branch (task 119), so
 		// deleting its row takes nothing from its task.
 	case chatstate.HandedOff:
 		return &DeleteRefusedError{

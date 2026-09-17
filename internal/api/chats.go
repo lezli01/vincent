@@ -58,7 +58,7 @@ type chatBody struct {
 	// to (§5.5, task 074). It is the one authoritative edge; a task's
 	// `source_chat_id` is this read backwards.
 	HandoffTaskID *int64 `json:"handoff_task_id,omitempty"`
-	// LinkedTaskID is the task this chat was opened on (§5.5, task 115): it
+	// LinkedTaskID is the task this chat was opened on (§5.5, task 119): it
 	// works in that task's worktree, and while it is open the task is locked.
 	LinkedTaskID *int64    `json:"linked_task_id,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -440,7 +440,7 @@ func (s *Server) handleChatArchive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if chat.Linked() && !chatstate.Terminal(chat.State) {
-		// Not in the linked table at all (task 115 decision 2): the worktree
+		// Not in the linked table at all (task 119 decision 2): the worktree
 		// archive would remove is the task's.
 		writeChatLinked(w, chat, string(chatstate.Archive))
 		return

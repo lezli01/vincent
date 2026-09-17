@@ -341,7 +341,7 @@ func footerRestSegs(bar *actionBar, target taskActions, attention int, retry boo
 		// `T` has no actionOrder row because it posts to no §6 endpoint that
 		// hands back the task, and it is on the line anyway: a locked task
 		// offers `c cancel` or nothing, and the chat holding the lock is the
-		// one thing that explains why (task 115).
+		// one thing that explains why (task 119).
 		if target.offersChat() {
 			label := "chat"
 			if target.openChatID != 0 {

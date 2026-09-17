@@ -131,7 +131,7 @@ the living engineering specification records implementation contracts.
 | [115](115-scheduled-daemon-backups.md) | Scheduled daemon backups with retention | ✅ done (6/6) |
 | [117](117-single-task-import.md) | `vincent task import`: restore one archived task from a backup | ✅ done (6/6) |
 | [118](118-user-configurable-tui-keymap.md) | A user-configurable TUI keymap: `tui.keys` rebinds an operation on every surface, held to §15's three clauses | ✅ done (6/6) |
-| [115](115-chat-on-a-step.md) | Chat on a stopped task: a conversation in the task's own worktree, locking the task while it is open | 🔄 in progress (8/10) |
+| [119](119-chat-on-a-step.md) | Chat on a stopped task: a conversation in the task's own worktree, locking the task while it is open | 🔄 in progress (8/10) |
 
 ## How to add and update a task document
 

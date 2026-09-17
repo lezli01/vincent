@@ -45,7 +45,7 @@ const (
 	// remove task-owned workspace state" true by construction rather than by
 	// a guard: `archive` is simply not legal from here.
 	HandedOff State = "handed_off"
-	// Closed is the third terminal state (task 115, §5.5 amended
+	// Closed is the third terminal state (task 119, §5.5 amended
 	// 2026-09-17), and the only one a chat linked to a task can reach: the
 	// conversation is over, and the worktree and branch it worked in were
 	// never its own. Closing touches neither — they belong to the task.
@@ -79,7 +79,7 @@ func HoldsProcess(s State) bool { return s == Running || s == AwaitingInput }
 
 // Terminal reports whether no further transition is possible. There are three
 // such states: a free chat ends by being archived or by being handed off to a
-// task (task 074), and a chat linked to a task ends by being closed (task 115).
+// task (task 074), and a chat linked to a task ends by being closed (task 119).
 func Terminal(s State) bool { return s == Archived || s == HandedOff || s == Closed }
 
 // Action is something that moves a chat between states: a human action or a
@@ -109,7 +109,7 @@ const (
 	// Nothing is copied, renamed or committed: the transfer *is* the task row
 	// naming the same directory the chat named.
 	HandOff Action = "hand_off"
-	// Close ends a chat linked to a task (task 115). It is the linked
+	// Close ends a chat linked to a task (task 119). It is the linked
 	// table's only way out of `idle`, and it leaves the task's worktree and
 	// branch exactly as they were.
 	Close Action = "close"
@@ -161,7 +161,7 @@ var transitions = map[State]map[Action]State{
 	Closed:    {},
 }
 
-// linked is §5.5's table for a chat linked to a task (task 115 decision 2),
+// linked is §5.5's table for a chat linked to a task (task 119 decision 2),
 // the pattern taskstate's held table follows (task 096). Only `idle` differs:
 // `archive` and `hand_off` are simply absent, because the worktree they would
 // remove or transfer is the task's, and `close` is the way out. The refusal is

@@ -71,7 +71,7 @@ type Task struct {
 	BlockReason      *string  `json:"block_reason"`
 	PauseRequested   bool     `json:"pause_requested"`
 	AvailableActions []string `json:"available_actions"`
-	// OpenChatID names the open chat linked to this task (task 115), nil when
+	// OpenChatID names the open chat linked to this task (task 119), nil when
 	// there is none. While it is set the task is locked — AvailableActions is
 	// `[cancel]` or empty — and a client asked to open a chat on the task
 	// opens this one rather than a second. It rides on the list row, not only

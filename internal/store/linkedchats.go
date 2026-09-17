@@ -1,6 +1,6 @@
 package store
 
-// Chats linked to a task (task 115, spec §5.5, §6, §10).
+// Chats linked to a task (task 119, spec §5.5, §6, §10).
 //
 // A linked chat works in its task's worktree and on its branch while the task
 // is stopped, and while it is open the task is locked: every §6 action but
@@ -21,13 +21,13 @@ import (
 	"github.com/lezli01/vincent/internal/taskstate"
 )
 
-// EventChatClosed is a linked chat reaching `closed` (task 115, §13.3). It
+// EventChatClosed is a linked chat reaching `closed` (task 119, §13.3). It
 // carries the linked task's id so a client can re-fetch the task, whose lock
 // just lifted, without a second fetch to find which task that is.
 const EventChatClosed = "chat.closed"
 
 // TaskLockedError is a §6 action refused because a chat linked to the task is
-// open (task 115). The API answers 409 `task_locked_by_chat` with the chat's
+// open (task 119). The API answers 409 `task_locked_by_chat` with the chat's
 // id, which is what the operator closes to lift it.
 type TaskLockedError struct {
 	TaskID int64
@@ -49,7 +49,7 @@ func AsTaskLocked(err error) (*TaskLockedError, bool) {
 // ErrTaskHasNoWorktree is a chat refused because the task never got a
 // worktree — blocked on `branch_exists`, say, or aborted before admission.
 // The daemon does not create one on the chat's behalf: the engine owns
-// worktree preparation (task 115).
+// worktree preparation (task 119).
 var ErrTaskHasNoWorktree = errors.New("task has no worktree")
 
 // openLinkedChatSQL finds the chat locking a task. The three terminal states
@@ -144,7 +144,7 @@ func (s *Store) RefuseLocked(ctx context.Context, taskID int64) error {
 
 // OpenLinkedChat inserts c as a chat linked to task taskID, in one
 // transaction that first proves the task is still in state want, has a
-// worktree, and has no open chat already (task 115). A task that moved is a
+// worktree, and has no open chat already (task 119). A task that moved is a
 // *StateConflictError; a second chat is a *TaskLockedError.
 //
 // The chat copies the task's branch, base branch and base SHA as display
@@ -205,7 +205,7 @@ func (s *Store) OpenLinkedChat(ctx context.Context, taskID int64, want TaskState
 }
 
 // CloseChat moves a linked chat from `idle` to `closed` under the linked
-// table and publishes chat.closed (task 115). A chat in any other state, or a
+// table and publishes chat.closed (task 119). A chat in any other state, or a
 // free chat, is ErrInvalidChatAction: the caller cancels a live turn first.
 func (s *Store) CloseChat(ctx context.Context, id int64) (*Chat, error) {
 	var (
@@ -256,7 +256,7 @@ func closeChatTx(ctx context.Context, tx *sql.Tx, c *Chat) (*Chat, *Event, error
 }
 
 // closeLinkedChatsTx closes every open chat linked to taskID, returning the
-// events to publish after commit. It is `cancel` on a locked task (task 115):
+// events to publish after commit. It is `cancel` on a locked task (task 119):
 // the chat's close and the task's abort commit together.
 func closeLinkedChatsTx(ctx context.Context, tx *sql.Tx, taskID int64) ([]*Event, error) {
 	open, err := openLinkedChatsTx(ctx, tx, taskID)

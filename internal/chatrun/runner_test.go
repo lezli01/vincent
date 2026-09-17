@@ -574,7 +574,7 @@ func assertSlotFree(t *testing.T, h *harness) {
 	}
 }
 
-// TestRecoverLeavesALinkedChatOpen is task 115's restart rule: an interrupted
+// TestRecoverLeavesALinkedChatOpen is task 119's restart rule: an interrupted
 // linked turn is finalized and never re-run, exactly like a free one, and the
 // chat returns to idle still open — so the task it locked stays locked with no
 // extra code.

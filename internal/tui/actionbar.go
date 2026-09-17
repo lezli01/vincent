@@ -74,7 +74,7 @@ type taskActions struct {
 	// only the row under the cursor — so a key can never act on a task the
 	// count beside it did not include.
 	marked []markedTask
-	// openChatID is the task's `open_chat_id` (task 115): the chat that
+	// openChatID is the task's `open_chat_id` (task 119): the chat that
 	// locks it. While it is set the daemon offers no `chat`, and `T` opens
 	// this one instead of asking for a second.
 	openChatID int64

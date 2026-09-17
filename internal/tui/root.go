@@ -209,7 +209,7 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case taskChatOpenedMsg:
-		// `T` landing (task 115). The bars that said "opening a chat…" hear
+		// `T` landing (task 119). The bars that said "opening a chat…" hear
 		// the outcome either way, and each refetches its task — the lock is
 		// on it now; a chat that exists is then opened the way enter on the
 		// chats board opens one.

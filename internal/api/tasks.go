@@ -159,7 +159,7 @@ type taskResponse struct {
 	// 074). It is the reverse of the one stored edge, `chats.handoff_task_id`,
 	// read as a single indexed query per list rather than per rendered task.
 	SourceChatID *int64 `json:"source_chat_id,omitempty"`
-	// OpenChatID names the open chat linked to this task (task 115). While
+	// OpenChatID names the open chat linked to this task (task 119). While
 	// it is set the task is locked — `available_actions` is `[cancel]` or
 	// `[]` — and a client opening a chat opens this one. It is
 	// `chats.linked_task_id` read backwards, once per list.
@@ -1301,7 +1301,7 @@ func (s *Server) toListResponse(ctx context.Context, tasks []store.Task) ([]list
 	if err != nil {
 		return nil, err
 	}
-	// The same shape for the lock (task 115): one indexed query, one map.
+	// The same shape for the lock (task 119): one indexed query, one map.
 	openChats, err := s.deps.Store.OpenLinkedChatIDs(ctx)
 	if err != nil {
 		return nil, err

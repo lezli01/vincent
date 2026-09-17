@@ -606,7 +606,7 @@ func (b *board) updateNote(n apiclient.Note) tea.Cmd {
 		cmds = append(cmds, b.saveFolds())
 	}
 	// A linked chat opening or closing changes a row's `open_chat_id` and
-	// available_actions without a task event (task 115).
+	// available_actions without a task event (task 119).
 	if _, lock := lockEventTask(ev.Event); isTaskEvent(ev.Event.Type) || lock {
 		cmds = append(cmds, b.scheduleRefresh())
 	}
@@ -796,7 +796,7 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	}
 
 	// `T` is the one task-action key that is not a §6 call returning the
-	// task (task 115); it opens a workspace, so it has no bulk form.
+	// task (task 119); it opens a workspace, so it has no bulk form.
 	if msg.String() == opKey(keymap.Chat) {
 		if cmd := taskChatCmd(b.client, b.target(), b.actions); cmd != nil {
 			return b, cmd

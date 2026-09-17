@@ -357,7 +357,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	// there is no admission loop to join.
 	//
 	// The two runners reach each other through injected functions, never an
-	// import (task 115): a linked chat's turn asks the task runner where it
+	// import (task 119): a linked chat's turn asks the task runner where it
 	// runs, and `cancel` on a locked task asks the chat runner to stop the
 	// turn. The closures read `runner` at call time, after it is built.
 	var runner *taskrun.Runner

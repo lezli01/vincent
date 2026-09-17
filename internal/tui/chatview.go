@@ -60,7 +60,7 @@ type (
 		chatID int64
 		err    error
 	}
-	// chatClosedMsg reports POST /v1/chats/{id}/close (task 115).
+	// chatClosedMsg reports POST /v1/chats/{id}/close (task 119).
 	chatClosedMsg struct {
 		chatID int64
 		chat   *apiclient.Chat
@@ -154,7 +154,7 @@ type chatView struct {
 	noteBad bool
 	loadErr string
 
-	// closing is the close confirmation on screen (task 115). It owns the
+	// closing is the close confirmation on screen (task 119). It owns the
 	// next key: `y` closes, anything else keeps the chat open and is spent
 	// on declining, so a draft is never typed into by the answer.
 	closing bool
@@ -855,7 +855,7 @@ func (v *chatView) applyClosed(msg chatClosedMsg) tea.Cmd {
 	return v.loadCmd()
 }
 
-// liveBindings keeps exactly one way this chat can end (task 115): close for
+// liveBindings keeps exactly one way this chat can end (task 119): close for
 // a chat opened on a task, hand-off for a free one. The other is refused by
 // the daemon, and a footer offering it would describe a press that can only
 // fail. Before the chat has loaded neither is known, and neither is offered.

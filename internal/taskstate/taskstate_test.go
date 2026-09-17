@@ -40,7 +40,7 @@ var wantTransitions = map[State]map[Action]State{
 		Skip:    Queued,
 		Approve: Queued,
 		Reject:  Blocked,
-		Chat:    AwaitingGate, // a linked chat moves nothing (task 115)
+		Chat:    AwaitingGate, // a linked chat moves nothing (task 119)
 	},
 	AwaitingInput: {
 		Cancel:      Aborted,
@@ -368,7 +368,7 @@ func TestValid(t *testing.T) {
 	}
 }
 
-// TestChatIsOfferedFromExactlyTheFourStoppedStates pins task 115: a chat is
+// TestChatIsOfferedFromExactlyTheFourStoppedStates pins task 119: a chat is
 // opened on a task that has stopped with its worktree still there, every row
 // is a self-loop, and the lock it places leaves `cancel` alone where cancel is
 // legal and nothing anywhere else.

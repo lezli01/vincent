@@ -1,7 +1,7 @@
 package api
 
 // POST /v1/tasks/{id}/chat and POST /v1/chats/{id}/close — a chat linked to a
-// task (task 115, spec §5.5, §6, §13.2).
+// task (task 119, spec §5.5, §6, §13.2).
 //
 // Both routes join internal/mcp's literal exclusion list, extending 063
 // decision 2 rather than excepting it: a linked chat starts agent processes
@@ -23,7 +23,7 @@ import (
 )
 
 // CodeTaskLockedByChat is a §6 action refused because a chat linked to the
-// task is open (task 115). `details.chat_id` names the chat to close.
+// task is open (task 119). `details.chat_id` names the chat to close.
 const CodeTaskLockedByChat = "task_locked_by_chat"
 
 // CodeTaskHasNoWorktree is a chat refused on a task that never got a
@@ -33,7 +33,7 @@ const CodeTaskHasNoWorktree = "task_has_no_worktree"
 
 // CodeChatLinkedToTask is a chat action refused because the chat works in a
 // task's worktree, which that task owns: `archive`, `hand_off`, and
-// `DELETE ?delete_branch=true` (task 115). `details.task_id` names the task.
+// `DELETE ?delete_branch=true` (task 119). `details.task_id` names the task.
 const CodeChatLinkedToTask = "chat_linked_to_task"
 
 // writeTaskLocked renders a *store.TaskLockedError.
@@ -70,7 +70,7 @@ type openTaskChatRequest struct {
 	Effort *string `json:"effort"`
 }
 
-// handleTaskChat opens a chat linked to a stopped task (task 115). It moves
+// handleTaskChat opens a chat linked to a stopped task (task 119). It moves
 // nothing: the task stays in its state, locked, until the chat closes.
 func (s *Server) handleTaskChat(w http.ResponseWriter, r *http.Request) {
 	var req openTaskChatRequest
@@ -193,7 +193,7 @@ func (s *Server) handleTaskChat(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, renderChat(chat))
 }
 
-// handleChatClose ends a linked chat (task 115). A live turn is cancelled
+// handleChatClose ends a linked chat (task 119). A live turn is cancelled
 // first; the chat then moves `idle → closed` and the task's lock lifts. The
 // worktree and branch are the task's and are not touched.
 func (s *Server) handleChatClose(w http.ResponseWriter, r *http.Request) {
@@ -234,7 +234,7 @@ func (s *Server) handleChatClose(w http.ResponseWriter, r *http.Request) {
 }
 
 // lockAwareActions is availableActions for a task that may be locked (task
-// 115): `[cancel]` where cancel is legal and `[]` elsewhere while a chat is
+// 119): `[cancel]` where cancel is legal and `[]` elsewhere while a chat is
 // open.
 func lockAwareActions(st store.TaskState, openChatID int64) []string {
 	if openChatID == 0 {

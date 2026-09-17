@@ -1,6 +1,6 @@
 package cli
 
-// `vincent task chat` and `vincent chat close` — the CLI half of task 115, so
+// `vincent task chat` and `vincent chat close` — the CLI half of task 119, so
 // talking to an agent inside a stopped task's worktree is not a TUI-only
 // feature. Opening is a §6 action and hangs off `task`; closing ends a chat
 // and hangs off `chat`, beside `archive`, which is how a free chat ends.

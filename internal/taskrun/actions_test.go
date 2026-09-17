@@ -161,7 +161,7 @@ func TestActionsFromEveryValidState(t *testing.T) {
 			}
 			if action == taskstate.Chat {
 				// Opening a linked chat moves nothing and is the API's
-				// write, not the runner's (task 115); internal/api's
+				// write, not the runner's (task 119); internal/api's
 				// linked-chat tests own it.
 				continue
 			}

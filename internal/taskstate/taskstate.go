@@ -112,7 +112,7 @@ const (
 	// `aborted → done` edge behind it.
 	FollowUp Action = "follow_up"
 	// Chat opens a §5.5 chat linked to the task, working in the task's own
-	// worktree and branch (task 115). It moves nothing — a self-loop from
+	// worktree and branch (task 119). It moves nothing — a self-loop from
 	// each of the four states a task stops in with its worktree still there
 	// — and it is an action at all so `available_actions` can gate the
 	// client's key the way every other affordance is gated (§15, task 092).
@@ -236,7 +236,7 @@ var table = map[Action]map[State]Transition{
 	// producer of `queued → running` and both §11 caps apply.
 	FollowUp: {Done: {To: Queued}, Aborted: {To: Queued}},
 	// A chat is offered from the states a task stops in with a worktree a
-	// human might want to talk about (task 115): blocked, at a gate, and
+	// human might want to talk about (task 119): blocked, at a gate, and
 	// the two finished states follow-up already covers. Every row is a
 	// self-loop — opening a chat decides nothing about the task.
 	Chat: {
@@ -323,7 +323,7 @@ func CanHold(from State, a Action) bool {
 }
 
 // Lockable reports whether a task in this state can be locked by an open
-// linked chat (task 115): exactly the states `chat` is offered from. It is
+// linked chat (task 119): exactly the states `chat` is offered from. It is
 // the set the store's compare-and-swap consults before it looks for a chat.
 func Lockable(s State) bool { return Can(s, Chat) }
 

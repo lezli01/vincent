@@ -29,7 +29,7 @@ import (
 )
 
 // linkedHarness is the task spine and the chat spine over one store, wired to
-// each other the way daemon.Run wires them (task 115): both runners are real,
+// each other the way daemon.Run wires them (task 119): both runners are real,
 // and so are the worktrees the chats work in.
 type linkedHarness struct {
 	*taskHarness

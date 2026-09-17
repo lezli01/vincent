@@ -15,7 +15,7 @@ import (
 	"github.com/lezli01/vincent/internal/keymap"
 )
 
-// A chat on a task (task 115, §6, §15): `T` from anywhere a task's actions
+// A chat on a task (task 119, §6, §15): `T` from anywhere a task's actions
 // are, the chat workspace for the conversation, and the task's own list of
 // the chats it has had.
 //
@@ -92,7 +92,7 @@ func (a *actionBar) applyChat(msg taskChatOpenedMsg) {
 
 // lockEventTask reads the task a linked chat's opening or closing names. The
 // id rides in the payload rather than in the envelope's task_id, which stays
-// the task *events'* own (§13.3, task 115).
+// the task *events'* own (§13.3, task 119).
 func lockEventTask(ev apiclient.Event) (int64, bool) {
 	if ev.Type != eventChatCreated && ev.Type != eventChatClosed {
 		return 0, false
@@ -129,7 +129,7 @@ type taskChatsMsg struct {
 }
 
 // chatsCmd lists every chat this task has had, closed ones included: they are
-// the task's history (task 115), and the daemon hides terminal chats unless
+// the task's history (task 119), and the daemon hides terminal chats unless
 // asked. Refetched on open, on re-entering the workspace, and on any event of
 // a chat linked to this task.
 func (t *taskView) chatsCmd() tea.Cmd {

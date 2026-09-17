@@ -1,6 +1,6 @@
 package taskrun
 
-// Chats linked to a task (task 115, spec §5.5, §6, §16).
+// Chats linked to a task (task 119, spec §5.5, §6, §16).
 //
 // internal/taskrun owns everything a linked chat needs to know about its task
 // — the context its first turn opens with, the launcher its turns run through,
@@ -25,7 +25,7 @@ import (
 
 // ChatTurnStopper stops a linked chat's live turn and waits for it to end. It
 // is what `cancel` on a locked task calls before its one transaction closes
-// the chat and aborts the task (task 115); internal/chatrun implements it.
+// the chat and aborts the task (task 119); internal/chatrun implements it.
 type ChatTurnStopper interface {
 	StopTurn(ctx context.Context, chatID int64)
 }
@@ -39,7 +39,7 @@ const chatIntro = "A human opened this conversation on a vincent task that has s
 	"and a human decides what it does next.\n\n"
 
 // ChatContext assembles the context a chat opened on task opens with (task
-// 115): the task block every state gets, then what the state it stopped in
+// 119): the task block every state gets, then what the state it stopped in
 // adds — the bounded failure block for `blocked`, the gate for
 // `awaiting_gate`, the last step's summary for `done` and `aborted`.
 //
@@ -103,10 +103,10 @@ func (r *Runner) ChatContext(ctx context.Context, task *store.Task) (string, err
 
 // ErrTaskContainerMissing is a linked-chat turn on a task whose workflow runs
 // in a container that no longer exists. The turn fails rather than running on
-// the host: the operator chose to confine that worktree (task 115 decision 3).
+// the host: the operator chose to confine that worktree (task 119 decision 3).
 var ErrTaskContainerMissing = errors.New("the task's container is not running")
 
-// ChatLauncher is where a linked chat's turn runs (task 115 decision 3): in
+// ChatLauncher is where a linked chat's turn runs (task 119 decision 3): in
 // the task's container when its workflow runs in one, on the host otherwise.
 // turnID keys the pid file 061 decision 9's kill reaches the process through.
 func (r *Runner) ChatLauncher(ctx context.Context, taskID, turnID int64) (agent.Launcher, error) {
@@ -159,7 +159,7 @@ func (r *Runner) chatContainer(ctx context.Context, taskID int64) (taskContainer
 // the prefixes differ.
 func chatExecKey(turnID int64) string { return "chat-" + strconv.FormatInt(turnID, 10) }
 
-// cancelLocked is `cancel` on a task an open chat has locked (task 115): the
+// cancelLocked is `cancel` on a task an open chat has locked (task 119): the
 // chat's live turn is stopped first, then one transaction closes the chat and
 // aborts the task. A crash between the two leaves an idle open chat on a task
 // that is still locked, and the operator repeats the cancel.

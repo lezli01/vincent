@@ -54,7 +54,7 @@ func (s *Server) handleChatHandoff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if chat.Linked() && !chatstate.Terminal(chat.State) {
-		// The worktree is the task's (task 115 decision 2); this replaces
+		// The worktree is the task's (task 119 decision 2); this replaces
 		// 074's "nothing to hand over", which the empty path would produce.
 		writeChatLinked(w, chat, string(chatstate.HandOff))
 		return

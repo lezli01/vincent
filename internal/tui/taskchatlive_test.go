@@ -14,7 +14,7 @@ import (
 
 // finishWithWorktree leaves a parked task `done` with a worktree on record,
 // which is what a chat on it needs: the daemon never makes one for a chat
-// (task 115). The path only has to be recorded — nothing in these tests runs
+// (task 119). The path only has to be recorded — nothing in these tests runs
 // a turn in it.
 func (h *actionLiveHarness) finishWithWorktree(t *testing.T, id int64) {
 	t.Helper()
@@ -88,7 +88,7 @@ func (h *actionLiveHarness) backToTask(t *testing.T, want int64) {
 	})
 }
 
-// TestTaskChatKeyOpensAndReopensLive is task 115's key against the real
+// TestTaskChatKeyOpensAndReopensLive is task 119's key against the real
 // handlers: `T` is offered exactly when the daemon offers `chat`, opens the
 // chat workspace on a chat linked to the task, and — once the task carries
 // `open_chat_id` — reopens that chat rather than asking for a second. The
@@ -147,7 +147,7 @@ func TestTaskChatKeyOpensAndReopensLive(t *testing.T) {
 }
 
 // TestTaskWorkspaceListsLinkedChatsLive: a task's workspace lists every chat
-// opened on it, the closed one included — they are its history (task 115).
+// opened on it, the closed one included — they are its history (task 119).
 func TestTaskWorkspaceListsLinkedChatsLive(t *testing.T) {
 	h := newActionLiveHarness(t)
 	task := h.createParkedTask(t, "talked-about")

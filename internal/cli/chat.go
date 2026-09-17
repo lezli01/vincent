@@ -258,7 +258,7 @@ func newChatListCmd() *cobra.Command {
 				// Terminal chats are hidden by default, the way archived
 				// tasks are (§13.2): `archived`, `handed_off` and `closed`
 				// alike, since all three are done with (§5.5, task 074
-				// decision 5, task 115).
+				// decision 5, task 119).
 				scope := apiclient.ArchivedExclude
 				if archived {
 					scope = apiclient.ArchivedAll

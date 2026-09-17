@@ -273,7 +273,7 @@ func (r *Runner) repairPrompt(
 }
 
 // writeTaskBlock writes the `<task>` element a repair prompt and a linked
-// chat's opening context both start from (task 025 decision 4, task 115):
+// chat's opening context both start from (task 025 decision 4, task 119):
 // title, description, the fields the run used, and where the work lives.
 // fields is passed in because a follow-up round's differ from the task row's
 // (task 027 decision 14).
@@ -308,7 +308,7 @@ func writeTaskBlock(
 // blocked step's definition, rendered, its failure, and the last
 // repairTranscriptLines lines of the failed attempt's transcript with the
 // file's absolute path. A repair prompt and a linked chat opened on a blocked
-// task share it, so the two cannot drift (task 115).
+// task share it, so the two cannot drift (task 119).
 func (r *Runner) writeFailureBlock(
 	ctx context.Context, sb *strings.Builder, task *store.Task, project *store.Project,
 	target repairTarget, blockReason string,

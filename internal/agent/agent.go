@@ -118,7 +118,7 @@ type RestrictedResumer interface {
 }
 
 // CanResumeRestricted reports whether every turn of a restricted chat would
-// run restricted on a (task 115). A chat linked to a task whose workflow says
+// run restricted on a (task 119). A chat linked to a task whose workflow says
 // `restricted` is refused on an adapter that cannot, rather than letting its
 // second turn quietly run full-auto.
 func CanResumeRestricted(a Adapter) bool {

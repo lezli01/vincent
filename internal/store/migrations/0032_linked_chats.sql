@@ -1,4 +1,4 @@
--- 0032_linked_chats: a chat linked to a task (task 115, spec §5.5, §14).
+-- 0032_linked_chats: a chat linked to a task (task 119, spec §5.5, §14).
 --
 -- `linked_task_id` is the one authoritative edge, on `chats`, for the reason
 -- 0023 put `handoff_task_id` there (task 074 decision 2): the lock a linked
@@ -8,7 +8,7 @@
 --
 -- A linked chat stores no `worktree_path`. The task keeps sole ownership of
 -- the §10 claim, so gc's claim sets need no change and no chat-side removal
--- has anything to act on (task 115 decision 1); chatrun resolves the task's
+-- has anything to act on (task 119 decision 1); chatrun resolves the task's
 -- path at the start of each turn.
 --
 -- ON DELETE CASCADE rather than 0023's SET NULL: a linked chat is the task's

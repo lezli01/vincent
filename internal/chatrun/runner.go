@@ -99,7 +99,7 @@ type Deps struct {
 	Events *events.Broker
 	// Now is the clock, nil meaning time.Now. Injected by tests.
 	Now func() time.Time
-	// Launchers is where a linked chat's turn runs (task 115 decision 3):
+	// Launchers is where a linked chat's turn runs (task 119 decision 3):
 	// the task's container when its workflow runs in one, the host
 	// otherwise. internal/taskrun implements it and the daemon wires it, so
 	// this package never imports taskrun. Nil — and every free chat — means
@@ -112,7 +112,7 @@ type Deps struct {
 }
 
 // ErrLinkedTaskNoWorktree is a linked-chat turn whose task no longer names a
-// worktree. The turn fails; the chat never creates one (task 115).
+// worktree. The turn fails; the chat never creates one (task 119).
 var ErrLinkedTaskNoWorktree = errors.New("the linked task has no worktree")
 
 // Runner owns every live chat turn.
@@ -130,7 +130,7 @@ type Runner struct {
 	// turns is every accepted turn from Send until its goroutine returns,
 	// including the window before the process starts that live does not
 	// cover. StopTurn is what needs it: closing a chat must wait for a turn
-	// that has not yet reached track (task 115).
+	// that has not yet reached track (task 119).
 	turns map[int64]*turnCtl
 }
 
@@ -228,7 +228,7 @@ func (r *Runner) Send(ctx context.Context, chatID int64, prompt string) (*store.
 }
 
 // StopTurn cancels the chat's accepted turn, if it has one, and waits until
-// its goroutine has written the turn's ending (task 115). It is what closing a
+// its goroutine has written the turn's ending (task 119). It is what closing a
 // linked chat, and cancelling the task it locks, do first.
 func (r *Runner) StopTurn(ctx context.Context, chatID int64) {
 	r.mu.Lock()
@@ -244,7 +244,7 @@ func (r *Runner) StopTurn(ctx context.Context, chatID int64) {
 	}
 }
 
-// Close ends a chat linked to a task (task 115): a live turn is cancelled
+// Close ends a chat linked to a task (task 119): a live turn is cancelled
 // first, then the chat moves `idle → closed`. The task's worktree and branch
 // are not touched — they were never the chat's.
 func (r *Runner) Close(ctx context.Context, chatID int64) (*store.Chat, error) {
@@ -428,7 +428,7 @@ func (r *Runner) runTurn(
 
 // turnPlace resolves where a turn runs. A free chat runs in its own worktree
 // on the host. A linked chat runs in its task's worktree, read through the
-// store at the start of every turn because the task owns that claim (task 115
+// store at the start of every turn because the task owns that claim (task 119
 // decision 1), and through whatever launcher the task's container settings
 // call for (decision 3).
 func (r *Runner) turnPlace(
@@ -456,7 +456,7 @@ func (r *Runner) turnPlace(
 
 // turnPrompt is what the agent is sent: the human's message, verbatim, with a
 // linked chat's opening context ahead of it on the first turn and on no later
-// one (task 115). The message is literal, never a template (025 decision 5).
+// one (task 119). The message is literal, never a template (025 decision 5).
 func turnPrompt(chat *store.Chat, turn *store.ChatTurn) string {
 	if turn.Seq != 1 || chat.OpeningContext == "" {
 		return turn.Prompt

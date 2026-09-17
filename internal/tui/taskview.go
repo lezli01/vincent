@@ -98,7 +98,7 @@ type taskView struct {
 	pullComment *pullCommentForm
 
 	// chats is every chat opened on this task, closed ones included (task
-	// 115), for the Task Details tab's Chats section. Fetched rather than
+	// 119), for the Task Details tab's Chats section. Fetched rather than
 	// derived from the task: the task carries only the open one's id.
 	chats    []apiclient.Chat
 	chatsErr string

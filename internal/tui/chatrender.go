@@ -124,7 +124,7 @@ func (v *chatView) headerLine(width int) string {
 	if v.chat.HandoffTaskID != nil {
 		left += styleDim.Render(fmt.Sprintf("  ·  handed off to task %d", *v.chat.HandoffTaskID))
 	}
-	// The same permanence for a chat opened on a task (task 115): the task
+	// The same permanence for a chat opened on a task (task 119): the task
 	// is whose worktree this is, and whose lock this chat holds while open.
 	if v.chat.LinkedTaskID != nil {
 		left += styleDim.Render(fmt.Sprintf("  ·  on task #%d", *v.chat.LinkedTaskID))

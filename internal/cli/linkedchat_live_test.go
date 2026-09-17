@@ -11,7 +11,7 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 )
 
-// `vincent task chat` and `vincent chat close` (task 115) against the real
+// `vincent task chat` and `vincent chat close` (task 119) against the real
 // handlers. The task is written straight into the store in the state the
 // engine would have left it — blocked, with a worktree claimed — because the
 // action moves nothing and runs nothing: opening a chat is a row and a lock,

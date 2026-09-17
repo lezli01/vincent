@@ -187,7 +187,7 @@ func readFixtureText(t *testing.T, name string) string {
 	return strings.TrimSpace(string(b))
 }
 
-// TestResumedRestrictedRunIsRefused is task 115's fail-closed rule: a chat
+// TestResumedRestrictedRunIsRefused is task 119's fail-closed rule: a chat
 // linked to a restricted task must never have a later turn run full-auto
 // because `exec resume` has no sandbox flag.
 func TestResumedRestrictedRunIsRefused(t *testing.T) {

@@ -59,7 +59,7 @@ func TestTransitionTable(t *testing.T) {
 }
 
 // TestLinkedTransitionTable walks every (state, action) pair under the table
-// for a chat linked to a task (task 115 decision 2). It differs from the free
+// for a chat linked to a task (task 119 decision 2). It differs from the free
 // table in `idle` alone: `close` is the way out, and `archive` and `hand_off`
 // are not in it at all, because the worktree they would remove or transfer is
 // the task's.
@@ -121,7 +121,7 @@ func TestLinkedTransitionTable(t *testing.T) {
 // TestArchivedIsTheOnlyTerminal; each is amended rather than patched. §5.5's
 // "archived is the only terminal state" was amended 2026-09-01 by task 074,
 // because handing a chat off transfers the worktree that archiving would
-// remove; its "two terminal states" was amended 2026-09-17 by task 115,
+// remove; its "two terminal states" was amended 2026-09-17 by task 119,
 // because closing a chat linked to a task must leave the task's worktree
 // exactly where archiving would remove it.
 func TestTheThreeTerminalStates(t *testing.T) {

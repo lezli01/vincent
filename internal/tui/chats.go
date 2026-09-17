@@ -622,7 +622,7 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case opKey(keymap.Archive):
 		if c, ok := v.current(); ok {
 			// A chat opened on a task works in the task's worktree, which
-			// the task owns: the daemon refuses its archive (task 115), and
+			// the task owns: the daemon refuses its archive (task 119), and
 			// closing it is how it ends.
 			if c.LinkedTaskID != nil {
 				v.note, v.noteBad = linkedChatDecline(c), true
@@ -696,7 +696,7 @@ var chatScopes = []apiclient.ArchivedScope{
 
 // chatScopeLabel names a listing as the header and the note read it. The wire
 // parameter is spelled `archived` for parity with tasks, but it covers
-// `handed_off` (§5.5, task 074 decision 5) and `closed` (task 115) too, so the
+// `handed_off` (§5.5, task 074 decision 5) and `closed` (task 119) too, so the
 // human-readable form names all three rather than repeating the parameter's
 // name.
 func chatScopeLabel(s apiclient.ArchivedScope) string {
@@ -733,7 +733,7 @@ func chatArchiveDecline(state string) string {
 }
 
 // liveBindings drops `A` while the cursor is on a chat opened on a task (task
-// 115): the key only declines there, and the footer should not offer it.
+// 119): the key only declines there, and the footer should not offer it.
 func (v *chatsView) liveBindings(rows []binding) []binding {
 	c, ok := v.current()
 	if !ok || c.LinkedTaskID == nil {

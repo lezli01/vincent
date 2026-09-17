@@ -31,7 +31,7 @@ func chatBand(state string) int {
 		return 1
 	case "idle":
 		return 2
-	default: // archived, handed_off, closed — all terminal (tasks 074, 115)
+	default: // archived, handed_off, closed — all terminal (tasks 074, 119)
 		return 3
 	}
 }

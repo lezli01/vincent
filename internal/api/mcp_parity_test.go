@@ -121,7 +121,7 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		// chain, so an agent that could hand one off would be creating tasks
 		// outside the bound. 063 decision 2 is extended, not excepted.
 		{http.MethodPost, "/v1/chats/{id}/handoff"},
-		// Task 115: a chat linked to a task is still a chat (063 decision 2,
+		// Task 119: a chat linked to a task is still a chat (063 decision 2,
 		// extended): opening one starts agent processes outside the
 		// created_by_task_id chain, and closing one is its lifecycle.
 		{http.MethodPost, "/v1/tasks/{id}/chat"},

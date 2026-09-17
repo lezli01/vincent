@@ -22,7 +22,7 @@ func (h *actionHarness) lockLane(t *testing.T, lane *store.Task) *store.Chat {
 	return c
 }
 
-// TestRetryCascadeSkipsALockedLane is task 115 decision 4: a parent's retry
+// TestRetryCascadeSkipsALockedLane is task 119 decision 4: a parent's retry
 // re-admits every unlocked blocked lane, leaves the one an open chat has
 // locked blocked and untouched, and does not count it.
 func TestRetryCascadeSkipsALockedLane(t *testing.T) {

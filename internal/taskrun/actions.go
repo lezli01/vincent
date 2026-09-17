@@ -131,7 +131,7 @@ func (r *Runner) Cancel(ctx context.Context, id int64) (*store.Task, error) {
 	}
 	var task *store.Task
 	if chatID != 0 {
-		// A locked task (task 115): stop the chat's turn, then close the
+		// A locked task (task 119): stop the chat's turn, then close the
 		// chat and abort the task in one transaction.
 		task, err = r.cancelLocked(ctx, id, chatID)
 	} else {
@@ -426,7 +426,7 @@ func (r *Runner) Skip(ctx context.Context, id int64) (*store.Task, error) {
 		return nil, &InvalidActionError{TaskID: id, Action: taskstate.Skip, State: task.State}
 	}
 	// The decision row is written ahead of the swap, so the lock is
-	// checked ahead of it too (task 115).
+	// checked ahead of it too (task 119).
 	if err := r.deps.Store.RefuseLocked(ctx, id); err != nil {
 		return nil, err
 	}
@@ -465,7 +465,7 @@ func (r *Runner) Approve(ctx context.Context, id int64) (*store.Task, error) {
 		return nil, &InvalidActionError{TaskID: id, Action: taskstate.Approve, State: task.State}
 	}
 	// The decision row is written ahead of the swap, so the lock is
-	// checked ahead of it too (task 115).
+	// checked ahead of it too (task 119).
 	if err := r.deps.Store.RefuseLocked(ctx, id); err != nil {
 		return nil, err
 	}
@@ -494,7 +494,7 @@ func (r *Runner) Reject(ctx context.Context, id int64) (*store.Task, error) {
 		return nil, &InvalidActionError{TaskID: id, Action: taskstate.Reject, State: task.State}
 	}
 	// The decision row is written ahead of the swap, so the lock is
-	// checked ahead of it too (task 115).
+	// checked ahead of it too (task 119).
 	if err := r.deps.Store.RefuseLocked(ctx, id); err != nil {
 		return nil, err
 	}
@@ -529,7 +529,7 @@ func (r *Runner) Archive(
 			&InvalidActionError{TaskID: id, Action: taskstate.Archive, State: task.State}
 	}
 	// Archive removes the worktree ahead of the swap, so the lock is checked
-	// ahead of it too (task 115).
+	// ahead of it too (task 119).
 	if err := r.deps.Store.RefuseLocked(ctx, id); err != nil {
 		return nil, worktree.BranchOutcome{}, err
 	}

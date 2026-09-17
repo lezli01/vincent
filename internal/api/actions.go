@@ -193,7 +193,7 @@ func (s *Server) checkRetryBranchOverride(w http.ResponseWriter, r *http.Request
 		return false
 	}
 	// The rename commits before the action does, so a locked task is refused
-	// before it (task 115) — the swap's own check would come too late.
+	// before it (task 119) — the swap's own check would come too late.
 	if err := s.deps.Store.RefuseLocked(r.Context(), id); err != nil {
 		s.writeActionError(w, err)
 		return false
@@ -804,7 +804,7 @@ func (s *Server) writeActionError(w http.ResponseWriter, err error) {
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
 
-	// A task an open linked chat has locked (task 115).
+	// A task an open linked chat has locked (task 119).
 	case isTaskLocked(err):
 		e, _ := store.AsTaskLocked(err)
 		writeTaskLocked(w, e, "")

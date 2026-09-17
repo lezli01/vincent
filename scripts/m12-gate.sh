@@ -21,7 +21,7 @@
 #      endpoint, through host.docker.internal (task 062.2 decision 1)
 #   9. a daemon killed mid agent step leaves no container behind
 #  10. a chat opened on a blocked containerized task runs its turn inside that
-#      task's container, and a free chat's turn runs on the host (task 115
+#      task's container, and a free chat's turn runs on the host (task 119
 #      decision 3)
 #
 # It **skips cleanly** (exit 0, one line saying why) on a host that cannot run
@@ -522,7 +522,7 @@ GOT_STATUS="$(api GET "/tasks/$MCP_TASK/steps" | jq -r '.[0].status_message // e
 echo "   ok: step_status reached from inside the container"
 
 echo "== scenario 10: a chat opened on a containerized task runs its turn in that task's container"
-# Task 115 decision 3: a linked chat's turn runs where the task's steps do,
+# Task 119 decision 3: a linked chat's turn runs where the task's steps do,
 # through the same pid-file wrapper, keyed `chat-<turn id>` instead of
 # `step-<run id>` — so scenario 6's proof carries over with the key changed.
 # `slow` is scenario 3's command-only workflow, which blocks on a timeout and

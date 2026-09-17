@@ -10,7 +10,7 @@ scenarios, and CI runs them on the Linux leg (the macOS and Windows skips are
 explained there and in [task 061](../tasks/061-container-step-execution.md)).
 Scenarios 6–10 run `cmd/fakeagent`, cross-compiled for linux and bind-mounted
 into the image as `claude`, so no real agent CLI is involved. Scenario 10 is
-task 115's: a chat opened on a blocked containerized task runs its turn inside
+task 119's: a chat opened on a blocked containerized task runs its turn inside
 that task's container, and a free chat's turn runs on the host.
 
 ```sh

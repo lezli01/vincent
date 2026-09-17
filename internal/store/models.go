@@ -610,7 +610,7 @@ type Chat struct {
 	// `source_chat_id` is this column read backwards. Non-nil exactly in
 	// `handed_off`, unless that task has since been deleted.
 	HandoffTaskID *int64
-	// LinkedTaskID names the task this chat was opened on (task 115): the
+	// LinkedTaskID names the task this chat was opened on (task 119): the
 	// chat works in that task's worktree and branch, and while it is open the
 	// task is locked. Nil for a free chat. A linked chat's WorktreePath is
 	// always empty — the task keeps the §10 claim, and chatrun resolves the
@@ -623,7 +623,7 @@ type Chat struct {
 	UpdatedAt      time.Time
 }
 
-// Linked reports whether the chat is linked to a task (task 115), which is
+// Linked reports whether the chat is linked to a task (task 119), which is
 // what selects §5.5's linked transition table.
 func (c *Chat) Linked() bool { return c.LinkedTaskID != nil }
 

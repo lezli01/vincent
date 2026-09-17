@@ -18,7 +18,7 @@
 #   9. handoff: a task adopts the chat's worktree and branch (task 074)
 #  10. the listing excludes both terminal states by default and ?archived=
 #      brings them back, an explicit ?state= still winning (task 079)
-#  11. a chat opened on a blocked task (task 115): its turn edits the task's
+#  11. a chat opened on a blocked task (task 119): its turn edits the task's
 #      own worktree, every §6 action but cancel is 409 task_locked_by_chat
 #      while it is open, close lifts the lock and leaves the worktree, and the
 #      retry the chat's edit makes pass runs the task to done
@@ -181,7 +181,7 @@ wait_task() {
 # brings its own repo, project, workflow and daemon environment. Unselected, it
 # runs last, after leg 10.
 chat_on_a_task() {
-  echo "== 11. a chat on a blocked task works in its worktree and locks it (task 115)"
+  echo "== 11. a chat on a blocked task works in its worktree and locks it (task 119)"
   # The step's body is `git commit -a`, which is in the sh∩pwsh intersection and
   # says pass or fail by its own exit code: 1 on a clean worktree ("nothing to
   # commit"), 0 once a tracked file changed. So the task blocks on its first

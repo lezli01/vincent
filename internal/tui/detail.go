@@ -654,7 +654,7 @@ func (d *detail) updateGlobalNote(n apiclient.Note) tea.Cmd {
 		return nil
 	}
 	// A linked chat opening or closing names its task only in the payload
-	// (task 115), and it is the one change to the task's `open_chat_id` and
+	// (task 119), and it is the one change to the task's `open_chat_id` and
 	// available_actions that no task event announces.
 	if id, ok := lockEventTask(ev.Event); ok && id == d.taskID {
 		return d.scheduleRefresh()

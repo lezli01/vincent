@@ -121,7 +121,7 @@ func chatEvent(evType string, c *Chat, turn *ChatTurn) (*Event, error) {
 	}
 	pid := c.ProjectID
 	ev := &Event{Type: evType, ProjectID: &pid, Payload: payload}
-	// A linked chat's events name its task (task 115), so a client can
+	// A linked chat's events name its task (task 119), so a client can
 	// re-fetch the task whose lock the chat just placed or lifted.
 	if err := linkedChatEventPayload(ev, c); err != nil {
 		return nil, err
@@ -154,14 +154,14 @@ func (s *Store) GetChat(ctx context.Context, id int64) (*Chat, error) {
 // filter, which no caller ever was.
 type ChatFilter struct {
 	ProjectID *int64
-	// TaskID narrows to the chats linked to one task (task 115), which is how
+	// TaskID narrows to the chats linked to one task (task 119), which is how
 	// a task's workspace lists its conversations.
 	TaskID *int64
 	States []chatstate.State
 	// Archived selects how terminal chats are treated, the way TaskFilter's
 	// field of the same name and type does (§13.2). It covers *every*
 	// terminal state — `archived`, `handed_off` and `closed` alike (§5.5,
-	// task 074 decision 5, task 115) — because all are equally done with,
+	// task 074 decision 5, task 119) — because all are equally done with,
 	// whatever the parameter's name says. An explicit States always wins.
 	Archived ArchivedFilter
 	// ArchivedBefore and ArchivedSince bound when the chat ended, measured
@@ -269,7 +269,7 @@ func (s *Store) SetChatState(ctx context.Context, id int64, st chatstate.State) 
 		if chatstate.Terminal(c.State) {
 			// A terminal chat stays terminal. The one writer that can
 			// reach here late is a turn's finish racing a close (task
-			// 115): the close already waited for the turn, but a write
+			// 119): the close already waited for the turn, but a write
 			// that lands after it must not reopen the chat.
 			return
 		}
@@ -653,7 +653,7 @@ func scanChatTurn(r rowScanner) (*ChatTurn, error) {
 // the chat half of transcript pruning (§12.3 retention), the mirror of
 // ArchivedTaskIDsBefore.
 //
-// Every terminal state counts (task 074; `closed` since task 115). A handed-off chat's transcripts age
+// Every terminal state counts (task 074; `closed` since task 119). A handed-off chat's transcripts age
 // out on the same clock an archived one's do, and they can: they live under
 // `{transcripts}/chat-{id}`, which the task that took the worktree never
 // claims, so pruning them cannot reach task-owned state. The turn rows and the

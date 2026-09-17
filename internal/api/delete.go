@@ -67,7 +67,7 @@ func (s *Server) handleTaskDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The task's linked chats go with it through the schema's cascade (task
-	// 115); their transcripts are listed first, while the rows still exist.
+	// 119); their transcripts are listed first, while the rows still exist.
 	taskID := id
 	linked, err := s.deps.Store.ListChats(r.Context(),
 		store.ChatFilter{TaskID: &taskID, Archived: store.ArchivedAll})
@@ -100,7 +100,7 @@ func (s *Server) handleChatDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	if wantBranch && chat.Linked() {
 		// The branch copy on a linked chat is display history, never trusted
-		// for a delete: the branch is the task's (task 115 decision 1).
+		// for a delete: the branch is the task's (task 119 decision 1).
 		writeChatLinked(w, chat, "delete")
 		return
 	}

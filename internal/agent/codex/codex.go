@@ -183,7 +183,7 @@ func buildArgs(spec agent.RunSpec) []string {
 		// Restricted has no argv spelling on a resumed run, and such a run is
 		// always full-auto (§9.3, task 072 decision 1). A free chat is always
 		// full-auto anyway, but a chat linked to a restricted task is not
-		// (task 115): SupportsRestrictedResume says so, the API refuses such
+		// (task 119): SupportsRestrictedResume says so, the API refuses such
 		// a chat on this adapter, and Start refuses the run outright, so the
 		// argv below is only ever reached by a full-auto resume.
 		args = append(args, "--dangerously-bypass-approvals-and-sandbox")
@@ -228,7 +228,7 @@ const MCPTokenEnv = "VINCENT_MCP_TOKEN"
 // must consume Events() until closed; Wait blocks on stream end.
 func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandle, error) {
 	if spec.ResumeSessionID != "" && spec.PermissionMode == agent.Restricted {
-		// Fail closed (task 115): `exec resume` has no sandbox flag, and a
+		// Fail closed (task 119): `exec resume` has no sandbox flag, and a
 		// restricted run that silently went full-auto is the one outcome
 		// worse than a refused one.
 		return nil, agent.ErrRestrictedUnsupported

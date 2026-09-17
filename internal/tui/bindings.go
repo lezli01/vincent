@@ -332,7 +332,7 @@ var bindings = []binding{
 	{op: keymap.Cancel, key: "c", label: "cancel the task (asks first — a running step is killed)", scope: scopeTaskAction, action: apiclient.ActionCancel, priority: 7},
 	{op: keymap.Archive, key: "A", label: "archive the task (asks first — the worktree is removed)", scope: scopeTaskAction, action: apiclient.ActionArchive, priority: 8, term: termArchive},
 	{op: keymap.FollowUp, key: "F", label: "follow up — run an agent prompt, a shell command or a workflow in this finished task's worktree; it returns to the state it came from", scope: scopeTaskAction, action: apiclient.ActionFollowUp, priority: 9},
-	// `T` for talk (task 115). Every letter the word "chat" offers is spoken
+	// `T` for talk (task 119). Every letter the word "chat" offers is spoken
 	// for where a task's actions are: `c` is cancel, `C` folds, `h` walks the
 	// Output tab's attempts, and `t` is the vocabulary's free text. `T` is
 	// the triggers takeover's dry run, which clause 2 allows — that screen
@@ -497,7 +497,7 @@ var bindings = []binding{
 	// ctrl+t rather than `h`, for the reason ctrl+r is a combination: the
 	// composer owns every printable key (task 074).
 	{key: "ctrl+t", label: "hand the worktree and branch to a new task (the chat ends)", scope: scopePanel, context: ctxChat, hint: "ctrl+t hand off", priority: 6},
-	// The linked chat's way out (task 115), and the free chat's hand-off
+	// The linked chat's way out (task 119), and the free chat's hand-off
 	// never shows beside it: chatView.liveBindings keeps exactly one of the
 	// two, because a chat opened on a task can be closed and nothing else,
 	// and a free chat cannot be closed at all. ctrl+q for the reason ctrl+t

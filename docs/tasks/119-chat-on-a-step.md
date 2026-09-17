@@ -1,7 +1,11 @@
-# 115 — Chat on a stopped task: a conversation in the task's own worktree
+# 119 — Chat on a stopped task: a conversation in the task's own worktree
 
 **Status:** 🔄 in progress (8/10)
 **Issue:** [#472](https://github.com/lezli01/vincent/issues/472)
+**Renumbered:** opened as 115; 115, 117 and 118 reached `master` first
+([115](115-scheduled-daemon-backups.md), [117](117-single-task-import.md),
+[118](118-user-configurable-tui-keymap.md)), so this record, its task IDs and
+every citation of them are 119.
 **Spec:** amends §5.5, §6, §7.3, §9.3, §10, §11, §12.4, §13.2, §13.3, §13.4, §14,
 §15, §16, §17, §18
 **Builds on, without relitigating:** [025](025-ad-hoc-repair-agent.md) decisions
@@ -243,7 +247,7 @@ implementation does not reopen them.
 
 ## Work
 
-- [x] **115.1 — Store and state machines**: migration
+- [x] **119.1 — Store and state machines**: migration
   `0032_linked_chats.sql` (`linked_task_id … ON DELETE CASCADE`,
   `opening_context`, the `(linked_task_id, state)` index); `chatstate`'s
   `closed`, `Close`, the linked table and three-state `Terminal`; `taskstate`'s
@@ -251,26 +255,26 @@ implementation does not reopen them.
   `transitionTaskTx`, `RefuseLocked`, `OpenLinkedChat`, `CloseChat`, the close
   inside `cancel`'s transaction, `OpenLinkedChatIDs`, the `task_id` filter,
   retention and delete widened to `closed`. ✓ 2026-09-17
-- [x] **115.2 — Engine**: `taskrun.Runner.ChatContext` over the failure block
+- [x] **119.2 — Engine**: `taskrun.Runner.ChatContext` over the failure block
   extracted from `repair.go`; `ChatLauncher` and `StopChatOrphan`;
   `cancelLocked` through the injected `ChatTurnStopper`; the lock pre-check
   ahead of `skip`, `approve`, `reject` and `archive`; the retry cascade skipping
   locked lanes. ✓ 2026-09-17
-- [x] **115.3 — Chat runner and wiring**: per-turn worktree resolution,
+- [x] **119.3 — Chat runner and wiring**: per-turn worktree resolution,
   `opening_context` on turn 1, the injected launcher source, `StopTurn` and
   `Close`, container-aware recovery, and the two-way injection in
   `daemon.Run`. ✓ 2026-09-17
-- [x] **115.4 — API and MCP**: `POST /v1/tasks/{id}/chat` and
+- [x] **119.4 — API and MCP**: `POST /v1/tasks/{id}/chat` and
   `POST /v1/chats/{id}/close`; lock-aware `available_actions`, `open_chat_id`
   and `linked_task_id`; `GET /v1/chats?task_id=`; the linked refusals on
   archive, hand-off and `DELETE ?delete_branch=true`; `task_locked_by_chat`,
   `task_has_no_worktree` and `chat_linked_to_task`; the `branch_override`
   pre-check; both routes on the MCP exclusion list. ✓ 2026-09-17
-- [x] **115.5 — Client library and CLI**: `apiclient` wire types, `ActionChat`,
+- [x] **119.5 — Client library and CLI**: `apiclient` wire types, `ActionChat`,
   `OpenTaskChat`, `CloseChat`; `vincent task chat TASK_ID [--title] [--agent]
   [--model] [--effort] [--json]` and `vincent chat close CHAT_ID [--json]`, for
   parity with task 048, round-tripped against the real handlers.
-- [x] **115.6 — TUI**: a task-action binding in `bindings.go` chosen against task
+- [x] **119.6 — TUI**: a task-action binding in `bindings.go` chosen against task
   093's vocabulary, offered when the daemon lists `chat` and reopening the
   chat named by `open_chat_id`; the task on the chats board; the task
   workspace's list of linked chats, closed ones included; close in the chat
@@ -283,20 +287,20 @@ implementation does not reopen them.
   rather than to the task it was opened from, and the archived chats board
   still offers delete-with-branch on a closed linked chat, which the daemon
   refuses with `chat_linked_to_task`.
-- [x] **115.7 — m14 gate scenario**: a check-failing task blocks, a linked chat
+- [x] **119.7 — m14 gate scenario**: a check-failing task blocks, a linked chat
   opens, the fake agent writes the file, `retry` while it is open is `409`,
   close, `retry` reaches `done`, the worktree survives close. Bodies in the
   sh∩pwsh intersection, assertions on here-strings rather than `grep -q`.
-- [~] **115.8 — m12 gate scenario (Linux leg)**: a linked-chat turn on a
+- [~] **119.8 — m12 gate scenario (Linux leg)**: a linked-chat turn on a
   containerized task runs inside the task's container, and a free chat still
   runs on the host.
-- [x] **115.9 — Documentation**: the spec amendments above, dated; this
+- [x] **119.9 — Documentation**: the spec amendments above, dated; this
   document and its index row; `docs/reference/api.md`, `files.md`,
   `task-lifecycle.md` and `configuration.md`; `docs/features.md`;
   `docs/guides/agents.md`; `CHANGELOG.md`. The CLI reference and the TUI guide's
-  keys and chats sections land with 115.5 and 115.6.
-- [ ] **115.10 — Screenshots**: re-run `scripts/screenshots.sh` for the chats
-  board and the task workspace once 115.6 has changed them.
+  keys and chats sections land with 119.5 and 119.6.
+- [ ] **119.10 — Screenshots**: re-run `scripts/screenshots.sh` for the chats
+  board and the task workspace once 119.6 has changed them.
 
 ## Open questions
 
