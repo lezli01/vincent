@@ -11,7 +11,10 @@ import (
 // task 070 added to the shared vocabulary are filled by codex alone today,
 // and nothing here synthesizes one (§9.7).
 func TestNoPlanOrCommandOutput(t *testing.T) {
-	for _, name := range []string{"success_2026.08.04.jsonl", "tools_2026.08.11.jsonl"} {
+	for _, name := range []string{
+		"success_2026.08.04.jsonl", "tools_2026.08.11.jsonl",
+		"success_2026.08.25.jsonl", "tools_2026.08.25.jsonl",
+	} {
 		for i, ev := range parseFixture(t, name) {
 			if ev.Type == agent.EventPlan || ev.Plan != nil {
 				t.Errorf("%s line %d: produced a plan", name, i)

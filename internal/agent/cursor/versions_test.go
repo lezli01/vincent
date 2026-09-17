@@ -20,6 +20,13 @@ func TestDetectVersionVerdict(t *testing.T) {
 	}{
 		{name: "verified calver+sha is tested", version: testedVersions[0], want: agent.VersionTested},
 		{
+			// Task 108's capture build: the run header and result metadata
+			// were read off it, which is what makes it a tested one.
+			name:    "the 2026.08.25 capture build is tested",
+			version: "2026.08.25-3e8eec8",
+			want:    agent.VersionTested,
+		},
+		{
 			name:    "same calver, different sha is untested",
 			version: "2026.08.04-ffffff0",
 			want:    agent.VersionUntested,
