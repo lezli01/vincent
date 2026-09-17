@@ -1868,11 +1868,12 @@ row says "differs from the default" rather than "set in the file". A refusal
 renders against the field, with the value that caused it still there to fix, and
 nothing is written.
 
-Five keys ask before they apply: `notify.command`, `environment.*`,
-`agents.*.path`, `listen` and `triggers.enabled`. They decide what the daemon
-executes or exposes, and [agents run full-auto by default](../security-model.md)
-— a stray keystroke must not change the argv the daemon spawns as you, or let a
-trigger file start agents as you. `listen` is written to the
+Six keys ask before they apply: `notify.command`, `environment.*`,
+`agents.*.path`, `listen`, `triggers.enabled` and `backup.dir`. They decide what
+the daemon executes or exposes, and [agents run full-auto by default](../security-model.md)
+— a stray keystroke must not change the argv the daemon spawns as you, let a
+trigger file start agents as you, or send archives of `config.yaml` and every
+transcript to a folder someone else can read. `listen` is written to the
 file and the running daemon keeps the address it bound until it is restarted;
 the editor says so before you apply it.
 

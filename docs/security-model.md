@@ -466,9 +466,11 @@ by default they are as private as the data directory. Pointing `backup.dir` at a
 synced or shared folder decides who else can read all of that, which is why the
 TUI's config editor asks before changing it, as it does for `notify.command`
 and `environment`. Pick a location only you can read: a directory that already
-exists keeps its own permissions, and on Windows its ACL. `backup.dir` is not a secret, so the MCP `config_get` tool shows
-it unmasked, and an agent cannot change it: `PATCH /v1/config` is not an MCP
-tool.
+exists keeps its own permissions, and on Windows its ACL. `backup.dir` is not a
+secret, so the MCP `config_get` tool shows it unmasked. No MCP tool changes it,
+because `PATCH /v1/config` is not an MCP tool, but that is not a boundary: a
+full-auto agent can edit `config.yaml` itself, or read the token off disk and
+call the API, like anything else running as you.
 
 ## The notify hook runs your code
 

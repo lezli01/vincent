@@ -126,7 +126,8 @@ vincent agents --json | jq -r '.[] | select(.available and .logged_in != false) 
 What sets exit `1` is a **closed set**: `config.yaml` exists and does not parse,
 the daemon is alive but not answering, `PRAGMA integrity_check` is not `ok`, the
 database is at a schema version this binary does not understand, orphaned
-worktrees are present, or a task is unreconciled — `queued` (or finished) while
+worktrees are present, [scheduled backups](../reference/configuration.md#backup)
+are on and the last attempt failed, or a task is unreconciled — `queued` (or finished) while
 one of its step runs is still marked `running`, which is crash recovery having
 failed to close the previous attempt. A `fan_out` step's own row is not
 counted: a parent waiting on its lanes is `queued` with that round's row open

@@ -46,8 +46,9 @@ without opening the board.
 
 **It works with no daemon**, which is the point: the daemon being down is one of
 the answers. In that mode it exits `2`, still prints everything it can read from
-disk, and reports the database, task and backup rows as *unknown — daemon not running*
-rather than opening SQLite behind the daemon's back.
+disk, and reports the database and task rows — and, with scheduled backups on,
+how the last one went — as *unknown — daemon not running* rather than opening
+SQLite behind the daemon's back.
 
 The bottom of the report is a `PROBLEMS` table — the closed set that makes it
 exit `1`: a `config.yaml` that does not parse, a daemon alive but unresponsive,
