@@ -21,7 +21,9 @@ creation gate and `GET /v1/info` reporting, the taskrun create/exec/stop/remove
 paths, container-aware recovery, the two block reasons, a `vincent doctor` row,
 the `mount_agent_config` knob *(on by default at landing; off by default since
 2026-09-14, issue #366, until 062 flips it back — added to this list 2026-09-14,
-issue #378)*,
+issue #378; on by default again since 2026-09-17, task 062.2 decision 3, with the
+directories mounted beneath a vincent-provided HOME rather than at their own host
+paths — see decision 5's amendment below)*,
 and the §2/§8.3/§8.5/§12.3/§12.4/§16/§20 amendments.
 
 ## Decisions
@@ -49,6 +51,24 @@ These were settled before any code was written and are binding.
    deliberately and on the author's call; the rewrite and `--add-host` parts
    stand.
 
+   *Amended 2026-09-17 (task 062.2 decisions 1 and 5, issue #397), on the
+   author's call:* two parts of this decision change as written.
+   **Reachability on Linux.** The rewrite alone does not reach the daemon on
+   native Docker Engine: `host-gateway` resolves to the bridge's gateway IP
+   (docker0, e.g. `172.17.0.1`), and the daemon listens on `127.0.0.1` only
+   (§13.1). So for a containerized agent step with `mcp.wire_steps: true` the
+   daemon binds a second listener on the container network's gateway IP that
+   serves `/mcp/step/{run_id}` and nothing else, guarded by the per-run secret,
+   and falls back to the loopback port where that bind is impossible (Docker
+   Desktop, including Docker Desktop for Linux, and rootless podman). The URL
+   stays `http://host.docker.internal:{port}/mcp/step/{run_id}`, and
+   `--add-host` stands. `--network=host` stays beaten, for the reason above.
+   **The refusal, reinstated narrowed.** `container.network: false` with
+   `mcp.wire_steps: true` is refused again, but only for a workflow that, after
+   §7.9 include expansion, has an agent step at any depth. A command-only
+   workflow wires nothing and keeps running with no network, as it has since
+   issue #366.
+
 2. **Paths are identical inside and out; POSIX hosts only.** The project path
    and `{data_dir}/worktrees/{task_id}` are bind-mounted at their own absolute
    host paths. A worktree's `.git` is a file holding an absolute
@@ -67,7 +87,8 @@ These were settled before any code was written and are binding.
 3. **The creation gate is split; the image check moves to admission.** Task
    creation refuses only what is cheap and local — the runtime binary missing
    or unusable, a containerized task on a Windows host, and decision 1's
-   contradiction (deferred to 062 on 2026-09-14; see decision 1). A missing, unpullable image **blocks at admission** with
+   contradiction (deferred to 062 on 2026-09-14; reinstated for workflows with
+   an agent step on 2026-09-17; see decision 1). A missing, unpullable image **blocks at admission** with
    `container_image_unavailable`, before a worktree, a branch or a retry is
    spent; `container_unavailable` is the §12.4-shaped backstop for a task whose
    daemon changed underneath it. This is task 041's actual shape rather than
@@ -100,6 +121,20 @@ These were settled before any code was written and are binding.
    which is slow on a large repository and races a still-running `parallel`
    sub-step.
 
+   *Amended 2026-09-17 (task 062.2 decision 3, issue #397), on the author's
+   call:* the agent configuration directories are **no longer mounted at their
+   own host paths**. A CLI finds `~/.claude` through `$HOME`, and under
+   `--user {uid}` an image's HOME is usually `/`, so mounts at the host paths
+   were never where the agent looked. With `mount_agent_config` on (the default
+   again), the container is created with a writable tmpfs home at
+   `/vincent-home` (mode 1777, beside `/vincent-run`), the host's `~/.claude`,
+   `~/.codex` and `~/.cursor` that exist are bind-mounted read-write beneath it,
+   and every containerized step runs with `HOME=/vincent-home` unless the
+   user's `environment` policy sets, inherits or unsets HOME. That also answers
+   the HOME caveat above for the mounted case. The image's own HOME contents are
+   hidden while the mounts are on. The worktree and repository keep decision
+   2's identical paths.
+
 6. **Two override levels, not three.** `container.image` and its siblings
    resolve from workflow `defaults:`, else `config.yaml`. No task column, no
    `POST /v1/tasks` field, no CLI flag, no New-task TUI control. **The
@@ -115,7 +150,10 @@ These were settled before any code was written and are binding.
    apply exactly as specified on top of the image's own environment. **The
    alternative it beat:** a separate `container.env` block, which is more
    honest about one key meaning two things but duplicates the whole vocabulary
-   so every future environment feature lands twice.
+   so every future environment feature lands twice. *Amended 2026-09-17 (task
+   062.2): an agent step now runs in the container and gets this same base,
+   plus `HOME=/vincent-home` when the agent configuration is mounted (decision
+   5's amendment).*
 
 8. **`shell: pwsh | cmd` is refused twice, at the two places that can know.**
    At **load**, when the workflow's own `defaults:` pins a `container.image` —

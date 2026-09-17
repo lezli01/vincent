@@ -252,7 +252,7 @@ update:
 container:
   image: ""
   runtime: docker
-  mount_agent_config: false
+  mount_agent_config: true
   network: true
   extra_mounts: []
 
@@ -1105,7 +1105,7 @@ tools. If that is not what you want, turn `wire_steps` off.
 container:
   image: ""
   runtime: docker
-  mount_agent_config: false
+  mount_agent_config: true
   network: true
   extra_mounts: []
 ```
@@ -1116,17 +1116,21 @@ consulted and every step runs here, byte for byte what it did before this key
 existed. Name an image and the task's steps run inside a container created with
 the task's worktree and removed with it.
 
-**Which steps, today.** Every `command` step, and every `check:` — including a
-check hanging off an agent step. A `manual` step runs no process, so there is
-nothing to contain. The **agent process itself still runs on the host**: the
-three adapters start their runs through one launch seam, but its only launcher
-is the host's, and a container launcher is the next piece of this work. A
-containerized task whose workflow has agent steps is therefore a mixed run, and
-it is neither refused at creation nor warned about.
+**Which steps.** Every `agent` step, every `command` step, and every `check:`.
+A `manual` step runs no process, so there is nothing to contain. An agent step's
+transcript, token and cost records and exit code are the same as a host run's,
+and a timeout or cancel stops the agent while the container survives for the
+next step. [Chats](cli.md#vincent-chat) are not tasks and keep running on the
+host.
 
 **The image is yours.** It must already carry the agent CLI your workflows'
 agent steps resolve to, and `git`. Vincent builds no image, publishes none and
-bundles none — the same posture it takes toward `gh` and `cosign`.
+bundles none — the same posture it takes toward `gh` and `cosign`. The CLI is
+looked up by its plain name (`claude`, `codex`, `cursor-agent`) on the
+**image's** `PATH`: [`agents.*.path`](#agents) is a host path and is ignored
+inside the container, and the host does not need the CLI installed at all. An
+image without it fails the step `agent_unavailable`, the same as a missing CLI
+on the host.
 
 Two mounts are made for you and need no `extra_mounts` entry: the project
 repository and the task's worktree, each **at its own absolute host path**. That
@@ -1149,19 +1153,49 @@ CI; `podman` and `nerdctl` are accepted because they take the same argv, which
 is not the same claim as tested.
 
 **`mount_agent_config`** bind-mounts `~/.claude`, `~/.codex` and `~/.cursor`
-into the container **read-write**, and is **off** by default. Nothing in the
-container needs them today: only `command` steps and checks run there, and the
-agent process runs on the host with its own configuration. Turning it on puts
-your agent credentials within reach of the image and of every containerized
-step — see [the security model](../security-model.md). When the agent itself
-moves into the container, this default turns back on: subscription-based auth
-takes no key from the environment, and cursor persists `--model` to its own
-config, so an agent CLI in the container cannot authenticate without them.
+into the container **read-write**, and is **on** by default. The agent CLI runs
+in the container and needs them: subscription-based auth takes no key from the
+environment, and cursor persists `--model` to its own config. It also puts your
+agent credentials within reach of the image and of every containerized step —
+see [the security model](../security-model.md). Turn it off and an agent CLI
+that then cannot authenticate is the expected result. A `config.yaml` that
+already sets the key keeps its value.
+
+With it on, the directories are mounted under a **vincent home**: the container
+gets a writable, empty `/vincent-home`, each of the three directories that
+exists on your machine is mounted beneath it (`/vincent-home/.claude` and so
+on), and every containerized step — agent and command alike — runs with
+`HOME=/vincent-home`. A directory you do not have is skipped rather than
+created. Two consequences:
+
+- **The image's own HOME is hidden** while the mounts are on. Anything your image
+  put in its user's home directory is not where the step looks. If you need it,
+  set `HOME` yourself: a [`environment`](#environment) policy that sets `HOME`,
+  lists it in `inherit` or unsets it is left alone.
+- **On macOS, claude's login does not carry over.** Claude Code keeps its OAuth
+  login in the macOS Keychain, not in `~/.claude`, and the container cannot
+  reach the Keychain. A Mac host must give a containerized claude step
+  `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` through
+  [`environment`](#environment). A containerized step reads `inherit: all` as
+  `none`, so the variable has to be named in `inherit` or given under `set`.
+  Codex's `auth.json` and claude's `.credentials.json`
+  on Linux are files in the mounted directories and do carry over.
 
 **`network`** keeps outbound traffic on, which is the default. `false` drops the
-container off the network entirely. It works with `mcp.wire_steps: true`: agent
-steps run on the host and reach the daemon's per-step MCP endpoint from there,
-whatever the container's network is.
+container off the network entirely. A container with no network cannot reach
+the daemon's per-step MCP endpoint, so `network: false` with
+`mcp.wire_steps: true` is refused at task creation **for a workflow that has an
+agent step** anywhere — at the top level, inside `parallel`, `fan_out` or
+`loop`, or spliced in by an `include`. A workflow of command
+steps and checks only wires nothing and runs with no network. To run agents
+offline, set `mcp.wire_steps: false`.
+
+With the network on and `wire_steps` on, a containerized agent step reaches its
+[MCP endpoint](../guides/mcp.md#your-own-steps-get-this-too) at
+`host.docker.internal`. On Linux with Docker Engine, the daemon opens a second
+listener on the container network's gateway address for that — it answers the
+per-step endpoint and nothing else. Docker Desktop forwards
+`host.docker.internal` to the daemon's own loopback port instead.
 
 **`extra_mounts`** are additional bind mounts, each `host:container` or
 `host:container:ro`. Both paths must start with `/`, on every platform — a
@@ -1180,6 +1214,7 @@ beats this one per field. There is no per-task override.
 |---|---|---|
 | The daemon runs on Windows | task creation | `400 validation_failed` |
 | `runtime` missing or not usable | task creation | `400 validation_failed` naming the binary |
+| `network: false` with `mcp.wire_steps: true`, and the workflow has an agent step | task creation | `400 validation_failed` naming the workflow |
 | A step pins `shell: pwsh` or `shell: cmd` | workflow load, or task creation | a validation error naming the step |
 | The image is missing and cannot be pulled | when the task is admitted | the task blocks `container_image_unavailable` |
 | The runtime went away after creation | when the task is admitted | the task blocks `container_unavailable` |
@@ -1189,9 +1224,8 @@ inside `POST /v1/tasks` would run it against the API's request timeouts, and
 checking only what is already on disk would refuse every first run on a fresh
 machine. Blocking at admission still costs you no worktree, no branch and no
 retry. A step the container was going to run is **never** quietly moved to the
-host when the runtime or the image fails — the task blocks instead. (Agent
-steps, which this delivery has not moved in yet, are a separate matter and are
-described above.)
+host when the runtime or the image fails — the task blocks instead. That
+includes agent steps.
 
 Run `vincent doctor` to see whether the runtime answers on this machine — it
 probes even when `image` is empty, because "would this work if I turned it on"

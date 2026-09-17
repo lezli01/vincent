@@ -4,7 +4,7 @@ description: Create, edit, review, and validate vincent workflow YAML under .vin
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.1.0
+  version: 1.1.1
 ---
 
 # vincent Workflows
@@ -247,14 +247,18 @@ when conflicts are expected, mechanically reviewable, and checked.
 `on_input`, `input_timeout`, `max_retries`, `retry_backoff`, and `timeout`,
 which a step's own value overrides — set one when most steps share the value,
 not to restate the daemon's. It also takes `container`, which runs the
-workflow's command steps and checks in a container and merges per key over the
-daemon's `container:` config: `image` is the switch (`""` forces the host),
-`runtime` names the CLI (`docker`, `podman`), `mount_agent_config` mounts the
-agent CLI's credentials, `network` gives the container a network, and
-`extra_mounts` adds host paths. Add a container only when the user asks for
+workflow's agent steps, command steps and checks in a container and merges per
+key over the daemon's `container:` config: `image` is the switch (`""` forces
+the host), `runtime` names the CLI (`docker`, `podman`), `mount_agent_config`
+mounts the agent CLI's credentials, `network` gives the container a network,
+and `extra_mounts` adds host paths. Add a container only when the user asks for
 one — which image a project runs in is a deployment decision. With an image,
 `run:` bodies use the image's `/bin/sh` (`shell: pwsh` or `cmd` is refused),
-and `platforms:` still gates on the daemon's host.
+the image must carry the agent CLI, and `platforms:` still gates on the
+daemon's host. `network: false` on a workflow with an agent step is refused at
+task creation while the daemon wires MCP into steps. Inside a container
+`vincent status` does not work, so ask an agent for the `step_status` tool
+instead.
 
 `derived_from` and `resolved_from` appear only in a task's workflow snapshot,
 written by the daemon. Never author them.

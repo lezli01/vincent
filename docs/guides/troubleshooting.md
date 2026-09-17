@@ -152,6 +152,15 @@ in this order:
    the editor launcher. If only `cursor` is on your `PATH`, `cursor-agent` is not
    installed.
 
+**A task that runs [in a container](../reference/configuration.md#container)**
+uses the CLI in the image, not yours, so none of the above applies to it:
+`agents.*.path` is ignored there, and `agent_unavailable` means the image has
+no `claude`, `codex` or `cursor-agent` on its own `PATH`. Check with
+`docker run --rm <image> /bin/sh -c 'command -v claude'`. On macOS, a
+containerized claude step that is not logged in while your own claude is has hit
+the Keychain gap — claude's login does not reach the container; see
+[Agents in a container](agents.md#agents-in-a-container).
+
 Detection is cached by binary identity (path + mtime + version), so upgrading a
 CLI is picked up automatically. Force a re-probe with `R` in the new-task view
 or `GET /v1/agents?refresh=true`.

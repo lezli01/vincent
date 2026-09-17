@@ -114,33 +114,50 @@ processes run inside one container, created with the task's worktree and removed
 with it. It is the first thing vincent offers that confines a task's work beyond
 the worktree, and it is worth being exact about how far it goes.
 
-**Start with what it does not cover yet.** Today the container holds every
-`command` step and every `check:`. The **agent process itself still runs on the
-host**, with your whole home directory and filesystem in reach — the adapters'
-launch seam exists, but only a host launcher plugs into it so far, and the
-container launcher that moves the agent is the next piece of this work. Do not
-read a containerized task as a sandboxed agent until that lands.
+**What it covers.** The container holds every agent step, every `command` step
+and every `check:` of the task — the agent CLI itself runs inside it, not on
+your machine. [Chats](reference/cli.md#vincent-chat) are not tasks and still
+run on the host, with your whole home directory in reach.
 
 **Does:** confine the filesystem to two bind mounts — the project repository and
-the task's worktree, each at its own absolute path — plus whatever you list in
-`extra_mounts`. The rest of your home directory, your SSH keys, your other
-repositories and your system are not there. The shell and the tooling are the
-image's, not your machine's.
+the task's worktree, each at its own absolute path — plus your agent
+configuration directories (below) and whatever you list in `extra_mounts`. The
+rest of your home directory, your SSH keys, your other repositories and your
+system are not there. The shell and the tooling are the image's, not your
+machine's.
 
 **Does not:**
 
 - **Close the network.** Outbound traffic is on by default.
-  `container.network: false` closes it for the steps inside the container. The
-  agent process still runs on the host, so it keeps its network and the daemon's
-  per-step MCP endpoint either way.
-- **Withhold your agent credentials once you mount them.** `mount_agent_config`
-  is off by default, so `~/.claude`, `~/.codex` and `~/.cursor` are not in the
-  container. Turn it on and they are bind-mounted **read-write**: anything
-  running inside the container can read those credentials and write to those
-  directories. Nothing in the container needs them today, because the agent
-  runs on the host. The default turns back on when the agent moves into the
-  container, since subscription auth takes no key from the environment and
-  cursor writes its model choice back to its own config.
+  `container.network: false` closes it. With the network closed the agent
+  cannot reach vincent's per-step MCP endpoint either, so vincent refuses that
+  setting together with `mcp.wire_steps: true` for any workflow that has an
+  agent step.
+- **Withhold your agent credentials.** `mount_agent_config` is **on** by
+  default, so `~/.claude`, `~/.codex` and `~/.cursor` are bind-mounted
+  **read-write** under the container's `HOME`: the agent needs them, because
+  subscription auth takes no key from the environment and cursor writes its
+  model choice back to its own config. Anything running inside the container —
+  the agent, every command step, anything the image runs — can read those
+  credentials and write to those directories. Turn the knob off and they are
+  not there; an agent CLI that then cannot authenticate is the expected result.
+- **Carry your macOS claude login.** On macOS, Claude Code keeps its OAuth
+  login in the Keychain, which a container cannot reach. A containerized claude
+  step on a Mac needs `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` through
+  [`environment`](reference/configuration.md#environment), and then that token
+  is in the container's environment, readable by every step there. Codex's
+  `auth.json` and claude's `.credentials.json` on Linux are files in the mounted
+  directories.
+- **Keep the daemon unreachable.** A containerized agent reaches vincent's
+  per-step MCP endpoint at `host.docker.internal`. On Linux with Docker Engine,
+  vincent's API stays on loopback, but the daemon opens a second listener on
+  the container network's gateway address while a containerized step needs
+  it. That listener answers only `/mcp/step/{run_id}` — `/v1` and `/mcp` are
+  `404` there — and each request needs the secret minted for that one step
+  run. **Anything else on that bridge network**, including other containers,
+  can reach the port; the per-run secret is what stops them using it. Docker
+  Desktop forwards `host.docker.internal` to the daemon's loopback port
+  instead, and no second listener is opened.
 - **Raise a privilege boundary.** On a Linux host every step execs as your own
   uid and gid, so files land owned correctly — and so an escape lands as the
   same user the daemon already runs as.
@@ -236,7 +253,9 @@ strip the styling and the block is byte-for-byte what the agent sent.
 ## The API surface
 
 - **Loopback only.** `listen:` is validated to a loopback host; anything else is
-  rejected at config load.
+  rejected at config load. The one thing ever served elsewhere is the per-step
+  MCP endpoint for a [containerized agent step](#what-the-container-does-and-does-not-isolate),
+  on the container network's gateway address, and only that path.
 - **Bearer token on every request**, read from `{data_dir}/token`, created
   `0600`. The token and `vincent.db` sit in `{data_dir}`, which vincent creates
   owner-only (`0700`) on POSIX. On Windows both rely on the per-user ACL that
@@ -265,7 +284,11 @@ strip the styling and the block is byte-for-byte what the agent sent.
   wait that would deadlock, and to record which task created which — not to
   confine the step. A full-auto agent can read `{data_dir}/token` off disk and
   reach `/mcp` directly, which is the same conclusion as everywhere else on this
-  page: the boundary is the OS user.
+  page: the boundary is the OS user. For a containerized agent step on Linux with
+  Docker Engine, this endpoint is also served on a listener on the container
+  network's gateway, which anything on that bridge network can reach. There the
+  per-run secret is the only thing standing between another container and the
+  step's tools — one path, one step run, for as long as the step lasts.
 - **`POST /v1/daemon/backup` writes a file at a path the caller names**, as the
   daemon's user, anywhere that user can write. That is stated here rather than
   left to be discovered — but it is not an *additional* grant: the same token
@@ -282,7 +305,11 @@ is the boundary that matters.
 
 **Vincent has no credential store of its own.** No vendor API keys, no OAuth
 flow, no keychain entries. An agent step spawns the CLI you installed, which
-authenticates however it already does.
+authenticates however it already does. In a
+[container](#what-the-container-does-and-does-not-isolate) that CLI is the
+image's, and it authenticates with your `~/.claude`, `~/.codex` and `~/.cursor`,
+mounted in by default — except claude's macOS Keychain login, which has to be
+passed in as a token variable instead.
 
 That is a statement about *vincent's* credentials, not about yours. Two files
 vincent owns can hold sensitive data because you put it there:

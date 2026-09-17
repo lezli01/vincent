@@ -15,6 +15,7 @@ silently drops.
 - [Codex](#codex)
 - [Cursor](#cursor)
 - [How vincent finds a CLI](#how-vincent-finds-a-cli)
+- [Agents in a container](#agents-in-a-container)
 - [Choosing models and effort](#choosing-models-and-effort)
 - [Choosing between them](#choosing-between-them)
 
@@ -106,7 +107,8 @@ The most capable adapter, and the only one that can be interrupted mid-step.
   [`vincent statusline`](../reference/cli.md#vincent-statusline) is what catches
   them, and the daemon view's `i` is what installs it — after showing the exact
   JSON it would write to `~/.claude/settings.json`. Until then claude reports
-  nothing. See [How much quota is left](#how-much-quota-is-left-and-who-will-say).
+  nothing, and a claude step [in a container](#agents-in-a-container) reports
+  nothing either. See [How much quota is left](#how-much-quota-is-left-and-who-will-say).
 
 ### Mid-run questions
 
@@ -481,6 +483,53 @@ never left standing over a CLI that is visibly working.
 `GET /v1/agents` and `GET /v1/info` carry all of it as
 [`quota`](../reference/api.md#usage-quota), whose `source` says which kind of
 fact you are holding.
+
+## Agents in a container
+
+Set [`container.image`](../reference/configuration.md#container) and a task's
+agent steps run **inside the task's container**, next to its command steps. The
+CLI that runs is the image's, not yours: vincent looks up `claude`, `codex` or
+`cursor-agent` by name on the image's `PATH`. `agents.*.path` is a host path and
+is ignored there, and the host does not need the CLI installed. An image without
+it fails the step `agent_unavailable`. The transcript, the token and cost
+records and the exit code are the same as a host run's. Chats are not tasks and
+always run on the host.
+
+Everything on this page that vincent *probes* still describes the host's CLI —
+`vincent agents`, `vincent doctor`, `GET /v1/agents`, the model and effort
+catalog, login state, codex's quota reading and the usage-limit holds. The one
+exception is claude's
+[mid-run questions](#mid-run-questions): whether a containerized claude can take
+an answer is decided by running `claude --version` **in the image**, so
+`on_input: require` is judged against the claude that will actually run.
+
+**Logging in.** [`mount_agent_config`](../reference/configuration.md#container),
+on by default, mounts your `~/.claude`, `~/.codex` and `~/.cursor` read-write
+under the container's `HOME`, so a CLI you are logged in to on the host is
+logged in inside the container too. There is one gap: **claude on macOS** keeps
+its login in the Keychain, not in `~/.claude`, and the container cannot reach
+it. On a Mac, pass `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` to the container through
+[`environment`](../reference/configuration.md#environment). Codex's
+`auth.json`, and claude's own credentials file on Linux, carry over as they are.
+
+**`vincent status` does not work inside a container.** The image has no vincent
+binary, and `127.0.0.1` inside the container is not your daemon. A
+containerized agent reports what it is doing through the `step_status` tool on
+[its MCP endpoint](mcp.md#your-own-steps-get-this-too) instead, which it has as
+long as `mcp.wire_steps` is on. If a prompt asks for `vincent status`, ask for
+that tool when the workflow runs in a container.
+
+**The `vincent statusline` hook does not report from a container.** If you
+installed it, the mounted `~/.claude/settings.json` points claude at a vincent
+binary on your host that the container does not have. Claude tolerates a status
+line that fails, so the run is unaffected, but the usage windows it would have
+pushed during that run never reach the daemon.
+
+**Permission modes are unchanged.** `restricted` in a container is still
+restricted, and `full-auto` is still full-auto, with the container's reach
+instead of your machine's. Cursor's "`restricted` needs macOS or Linux" rule is
+judged against the host, and a Windows daemon refuses containerized tasks
+anyway. See [the security model](../security-model.md#what-the-container-does-and-does-not-isolate).
 
 ## Choosing models and effort
 

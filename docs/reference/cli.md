@@ -1271,7 +1271,10 @@ Records what the current step is doing, in its own words. It runs **from inside
 a step** — an agent's shell tool, or a `command` step's script — and takes no
 task or step argument: it reads `VINCENT_TASK_ID` and `VINCENT_STEP_ID` from
 [the environment](../guides/workflows.md#the-vincent-environment) the daemon
-sets on every agent and command step.
+sets on every agent and command step. It does not work in a step that runs
+[in a container](configuration.md#container), where there is no vincent binary
+and no daemon on `127.0.0.1`; a containerized agent uses the `step_status`
+[MCP tool](../guides/mcp.md#steps-in-a-container) instead.
 
 ```sh
 vincent status "running the store suite"

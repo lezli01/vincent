@@ -88,7 +88,9 @@ amendments in this specification record superseded boundaries, while
   of this is no longer deferred — §16's container execution mode runs a task's
   step processes inside one container, on an image the user supplies. Agent
   steps are the one kind still spawned on the host in this delivery; task 062
-  moves them in. The
+  moves them in. *(Amended 2026-09-17, task 062.2, issue #397: it has — an
+  agent step of a containerized task now runs inside that container too, so no
+  step process of such a task is spawned on the host.)* The
   boundary the parenthesis names is unchanged and still true: a worktree is not
   a security boundary, and neither is a container whose network is open and
   whose agent credentials are mounted inside it (§16 says so in those words).
@@ -1296,7 +1298,16 @@ The requirement is enforced at three layers, and only ever on a *positive*
   without re-deriving the asymmetry.
 - **Run (§7.2).** The engine re-checks before spawning, and fails the attempt
   with `input_unsupported` when the answer is now no — the task and its daemon
-  having parted company is the only way to get here.
+  having parted company is the only way to get here. *Amended 2026-09-17
+  (task 062.2, issue #397): a **containerized** step is the second way. Its
+  re-check is judged against the CLI in the image, not the host catalog,
+  because that is the binary about to run: an adapter implementing the optional
+  `agent.InputProber` (§9.1; claude, whose answer is a version question) probes
+  through the run's launcher, so claude's `--version` runs inside the
+  container. An adapter that does not implement it keeps the catalog's verdict,
+  whose only "cannot" for codex and cursor is the static one and true in any
+  image. As everywhere in this section, only a positive "cannot" fails the
+  step. The creation layer above still reads the host catalog.*
 
 A step's own `on_input` wins over `defaults:` as every other field does, so
 `defaults: {on_input: require}` with one step's `on_input: deny` leaves that
@@ -2543,6 +2554,13 @@ top of the image's own environment. The `VINCENT_*` values stay true on both
 sides because the worktree and the repository are mounted at their own absolute
 paths (§16), so `VINCENT_WORKTREE` and `VINCENT_PROJECT_PATH` name the same
 directory inside the container as out.
+*Amended 2026-09-17 (task 062.2, issue #397): a containerized **agent** step now
+runs in the container, so this image-based base applies to it exactly as to a
+command step. With `container.mount_agent_config` on — the default — every
+containerized step also gets `HOME=/vincent-home`, the vincent home its agent
+configuration is mounted beneath (§12.3), unless the `environment` policy sets
+`HOME`, names it in `inherit` or unsets it. Inside the container `vincent
+status` is unavailable (§13.4), although these variables are set.*
 
 ```
 VINCENT_TASK_ID, VINCENT_TASK_TITLE, VINCENT_PROJECT_NAME, VINCENT_PROJECT_PATH,
@@ -2654,6 +2672,17 @@ type Command struct {
 
 type Launcher interface {
     Launch(cmd Command) (Process, error)
+    // Resolve and Probe answer what a run asks about its binary before it
+    // starts, where the run will execute (task 062.2, added 2026-09-17).
+    Resolve(adapter, configured, binary string) (string, error) // configured = agents.*.path, "" when unset
+    Probe(ctx context.Context, timeout time.Duration, path string, args ...string) (stdout, stderr []byte, err error)
+}
+
+// InputProber is optional (task 062.2): an adapter whose §7.4 input support is
+// a version question judges it through a given Launcher, so a containerized
+// step's `require` re-check asks the image's CLI. claude implements it.
+type InputProber interface {
+    InputVerdictWith(ctx context.Context, l Launcher) InputVerdict
 }
 
 type Process interface {
@@ -2814,6 +2843,54 @@ it explicitly from one helper, and chats leave it nil. Only the three runs go
 through the seam: the §9.5/§9.6 probes, claude's in-`Start` `--version` probe,
 codex's `app-server` quota exchange and a command step's spawn describe or run
 on the host and do not.
+
+*Amended 2026-09-17 (task 062.2, issue #397): a container launcher ships
+beside the host's, and the launcher answers two pre-start questions as well.*
+`Launcher` gains `Resolve` and `Probe`, the hooks 062.1 decision 2 left for
+this task. `Start` resolves its binary through the run's launcher, and claude's
+in-`Start` `--version` probe (§7.4 input mode) runs through it too, so both
+follow the run to wherever it executes. `HostLauncher` implements them exactly
+as the adapters did: the configured `agents.*.path`, else a `PATH` lookup, and
+the shared probe. Everything else 062.1 decision 2 kept on the host stays
+there: `Detect`, `Options`, the catalog, codex's `app-server` quota exchange
+and the usage-limit holds keep describing the **host's** CLI and account.
+
+The engine's one helper picks the launcher. A task with an active container
+gets the container launcher; any other task gets `HostLauncher` byte for byte,
+and `container.image: ""` consults no runtime. Chats keep a nil launcher and run
+on the host. The container launcher:
+
+- **Resolves in the image.** It looks up the adapter's bare binary name on the
+  image's `PATH` with a plain `docker exec {id} /bin/sh -c 'command -v "$1"'
+  vincent {binary}` — no pid-file wrapper — and ignores `agents.*.path`, which
+  is a host path. A CLI missing from the image fails `Start`, so the step fails
+  `agent_unavailable` exactly as a missing host CLI does. The host does not
+  need the CLI installed. Probes run the same unwrapped way.
+- **Launches through 061 decision 9's wrapper.** The run is
+  `docker exec --interactive --workdir {worktree} [--user {uid}:{gid}] --env NAME
+  … {id} /bin/sh -c '{pid-file wrapper}' vincent {path} {args…}`, with `--user`
+  on a Linux host only. `-i`, never `-t` (061 decision 10), so transcripts and
+  §17's token and cost records match a host run byte for byte.
+- **Keeps environment values off the host argv.** Every step variable is passed
+  as a bare `--env NAME`, its value present only in the docker client's own
+  process environment, so a secret — codex's `VINCENT_MCP_TOKEN`, which task 057
+  decision 8 moved off argv for exactly this reason — never appears on a host
+  command line. `HOME`, `PATH` and `DOCKER_*` are the exception and are passed
+  literally as `--env NAME=value`: the client resolves itself with those, so it
+  keeps the daemon's own values for them. The base environment is the image's
+  (§8.5, 061 decision 7), as it already was for command steps.
+- **Stops inside the container.** `Terminate` sends `TERM` to the pid-file
+  process group inside the container; `Kill` sends `KILL` there and then kills
+  the host client, and stays idempotent. Each signal is its own `docker exec`
+  with a context of its own, because the run context is already cancelled when
+  a stop arrives. The container survives a step stop. `PID` is the host
+  client's, and the run also journals `step_runs.container_id` (§12.4). A
+  signalled exit that `docker exec` reports as `128+n` is mapped to the host's
+  `-1` when vincent sent the signal, so `exit_code` and failure classification
+  see what a host run would.
+
+A command step's spawn is still 061's own path and does not go through this
+launcher.
 
 **Tool subjects (T4.14).** `ToolUse` carried only a name through M4, so the
 output pane rendered `▸ Bash` — a keyword, not an event. Every dialect has the
@@ -3419,6 +3496,15 @@ the engine runs under, so a clamped task whose agent steps resolve to an adapter
 that cannot restrict on this host (cursor on Windows) is refused at creation
 with `400 validation_failed` rather than failing its step. "No daemon-global
 hardcoded policy" above stays true: the clamp is per task (task 096 decision 17).
+
+*Amended 2026-09-17 (task 062.2, issue #397).* **Permission mode and
+containerization are orthogonal axes that compose.** Now that an agent step of a
+containerized task runs inside the container (§9.1, §12.3), `restricted` there
+is still restricted and `full-auto` there is still full-auto, with the
+container's reach rather than the host's (§16). There is no `contained` mode,
+and neither axis implies the other. Cursor's "cannot restrict" rule keeps being
+judged against the **host** platform, which for a containerized task is already
+settled: a Windows daemon refuses the task at creation (task 061 decision 2).
 
 ### 9.5 Detection
 
@@ -4698,7 +4784,7 @@ One Go binary, `vincent`:
 | `vincent trigger validate <file> [--json]` | *Added 2026-09-14 (task 098 decision 3).* Validates one trigger file **with no daemon**: `trigger.Parse` with the file's stem as the expected id, so the verdict is `POST /v1/triggers/validate`'s (§13.2) plus the check that `id:` equals the file name and that the name ends in `.yaml`. Text output is `<file>: ok — trigger <id>`, or one `  error: line <line>: <path>: <message>` line per error on stderr followed by `<file>: invalid (<n> error(s))`; `--json` is `{file, id, valid, errors: [{path, line, message}]}`, `id` present only when the file is valid. Exit 0 valid · 1 invalid or unreadable, mirroring `vincent workflow validate` |
 | `vincent trigger ls --project <id> [--json]` | *Added 2026-09-14 (task 098 decision 4).* Reads `{config_dir}/triggers/*.yaml` **with no daemon** and prints, one per line, the path of every file whose `source.project` is `<id>`. A file that does not parse is still listed when its `source.project` can be read leniently, so a broken trigger can be found and repaired; a file whose project cannot be read at all is reported on stderr and left out. `--json` is an array of `{file, id, project, version, valid, enabled, on_fire, permission, errors}`, with `on_fire` and `permission` `""` when the file leaves them out and `version` the token `apply` compares. Exit 0 at least one file matched · 1 none did, with `--json` too — the probe shape of `git ls-files --error-unmatch` |
 | `vincent trigger apply --proposal <task_id> --project <id>` | *Added 2026-09-14 (task 098 decisions 3 and 5).* Installs the staged proposal in `{data_dir}/trigger-proposals/<task_id>/` (§12.2) into `{config_dir}/triggers/`, **without arming anything**. The directory holds full proposed `<id>.yaml` files and `manifest.json`, an object mapping each trigger id to the version token `ls --json` reported or to `"absent"` for a new file. It refuses, writes nothing and names every offending file and key when any staged file fails `Parse`; a staged file's `source.project` is not `--project`; a staged file has no manifest entry or an entry has no staged file; an existing file's version no longer matches, a file recorded `absent` now exists, or a recorded file is gone; or any file **arms** relative to the file on disk, a new file comparing against absent: `enabled` from false or absent to `true`, `on_fire` from absent or `propose` to `create`, `permission` from absent or `restricted` to `workflow`. An already-armed value may be kept and disarming is always allowed; there is no override flag (§16). Each file is written `0600` through `internal/trigger`'s version-guarded whole-file replace, `wrote <path>` is printed per file, and the staging directory is removed once every file is written, printing `removed <dir>`. A proposal with an empty manifest and no staged file installs nothing and is removed the same way — `update-triggers` finding every trigger already right. It never touches `triggers.enabled` in `config.yaml`. Exit 0 installed · 1 refused, nothing staged at that path, or a write failed |
-| `vincent status <message>` | *Added 2026-08-26 (task 036).* Records what the current step is doing, in its own words (§5.4). Runs **from inside a step**: it addresses itself with §8.5's `VINCENT_TASK_ID` and `VINCENT_STEP_ID`, takes no id argument, and errors naming those variables when they are unset. Silent on success — its stdout is the step's transcript |
+| `vincent status <message>` | *Added 2026-08-26 (task 036).* Records what the current step is doing, in its own words (§5.4). Runs **from inside a step**: it addresses itself with §8.5's `VINCENT_TASK_ID` and `VINCENT_STEP_ID`, takes no id argument, and errors naming those variables when they are unset. Silent on success — its stdout is the step's transcript. *Amended 2026-09-17 (task 062.2 decision 4): not from inside a container — the image carries no vincent binary and `127.0.0.1` there is not the daemon; a containerized agent uses the `step_status` MCP tool (§13.4)* |
 | `vincent gc [--dry-run] [--force] [--json]` | Reclaims data-root directories no task claims (§10); a thin API client like the rest |
 | `vincent config get [key] / set <key> <value>` | *Added 2026-08-30 (task 060).* Reads and writes `config.yaml` through `GET`/`PATCH /v1/config` (§12.3) — a thin API client like the rest, never a second editor, so the CLI and the TUI's editor are one operation with one validation. `get` with no key prints every key as `path = value` in the file's own order; with one, that key's value alone. Keys are the dotted paths the file carries. Lists and argv are whitespace-separated inside a single argument (`notify.on "blocked awaiting_gate"`), which is also why an argv element containing a space has to be edited in the file. A `set` is in force when it answers; `listen` is the exception the command says out loud. Exit 0 · 1 the daemon refused it, with the file byte-identical · 2 no daemon answered |
 | `vincent github issues / prs / pr create / status --project <id>` | *Added 2026-08-26 (task 035).* Read-only GitHub views: the project's issues newest first, and whether they can be read at all. Thin API clients like the rest — the daemon makes every GitHub call. Nothing under this command writes to GitHub. *Amended 2026-08-31 (task 069, issue #273):* the last clause stops being true for **one** subcommand. `vincent github pr create --task <id> --title <t> [--body <text>] [--draft]` drives §13.2's create route: it pushes the task's branch and opens its pull request, and it is the one thing under `vincent github` that writes to GitHub — `issues`, `prs` and `status` still write nothing. It exists for the reason every other subcommand does (the TUI holds no action the daemon does not) and because a gate script has to be able to drive that route without driving a terminal. `--body` is optional: a pull request with no description is a legal one. The fallback is **not** an error — a push that succeeded and a create that did not prints the compare URL and exits 0. *Amended 2026-09-15 (task 068.4, issue #386):* `pr create` is no longer the one writer. `vincent github pr merge --task <id> --method merge\|squash\|rebase --head-sha <sha>`, `pr close --task <id>`, `pr reopen --task <id>`, `pr comment --task <id> (--body <text> \| --body-file <path>)` and `pr rerun --task <id> --run-id <id>` drive §13.2's five write routes on the task's linked pull request. `merge` requires both flags because the CLI has no confirmation popup: they are where the human names exactly what is sent (task 068 decision 4). `--body-file -` reads stdin. `issues`, `prs` and `status` still write nothing. *Amended 2026-09-15 (task 102, issue #391):* four more subcommands under `pr` drive §13.2's existing task pull-request routes, all taking the task as `--task <id>` like `pr create`: `vincent github pr link <number> --task <id>` (POST), `pr unlink --task <id>` (DELETE), `pr show --task <id>` (GET the live row) and `pr checks --task <id>` (GET the live rollup). `link` and `unlink` write **only vincent's own link column** — no request reaches GitHub from either, and `link` does not check that the number exists — so the only commands under `vincent github` that write to GitHub stay `pr create` and task 068.4's five, and `show` and `checks` write nothing anywhere. `unlink` refuses with exit 1 and sends nothing when the task has no live link (never linked, or already suppressed): a DELETE there would record a suppressed number-0 link that stops the reconciler ever auto-linking the task. That is a client-side fast failure; the route is unchanged. Both GET routes answer 200 whatever they found, so `show` and `checks` set their own exit code: 0 when the pull request or rollup was read — for `checks`, **whatever CI concluded**, the verdict being `--json`'s `.state` — 1 when there is no live link or a named `reason` stopped the read (printed as `github.Message(reason)`), 2 when no daemon answered. `--json` emits each route's body unchanged under the same exit rule |
@@ -5153,7 +5239,7 @@ mcp:                           # the §13.4 MCP server (task 057)
 container:                     # run a task's steps in a container (§16, task 061)
   image: ""                    # "" (default) = every step runs on this host
   runtime: docker              # a docker-CLI-compatible binary; only docker is verified in CI
-  mount_agent_config: false    # bind-mount ~/.claude, ~/.codex, ~/.cursor read-write; off until 062 (#366)
+  mount_agent_config: true     # bind-mount ~/.claude, ~/.codex, ~/.cursor read-write under the vincent home (062.2)
   network: true                # false drops the container off the network entirely
   extra_mounts: []             # host:container[:ro]; the repo and worktree are mounted already
 tui:                           # view preference; the daemon validates and relays it (§15)
@@ -5187,10 +5273,19 @@ has agent steps is a mixed run, and it is neither refused nor warned about.*
 *Amended 2026-09-16 (task 062.1, issue #396): the spawn seam has landed (§9.1),
 but its only launcher is the host's, so agent processes still run on the host
 and the mixed run above is still what a containerized task gets. Task 062.2
-(issue #397) adds the container launcher.* The
+(issue #397) adds the container launcher.*
+*Amended 2026-09-17 (task 062.2, issue #397): it has. An agent step of a
+containerized task runs inside the task's container through the container
+launcher (§9.1), so a containerized task has no mixed run left: every step
+process it starts runs in its one container. Chats (§5.5) are not tasks and
+keep running on the host.* The
 image is the user's: it must already carry the agent CLI a workflow's agent
 steps resolve to, and `git`. Vincent builds nothing, publishes nothing and
 bundles nothing, the posture it already takes toward `gh` and `cosign`.
+*Amended 2026-09-17 (task 062.2): the CLI is resolved on the **image's**
+`PATH` by its bare binary name, and `agents.*.path` does not apply inside the
+image. A CLI the image lacks fails the step `agent_unavailable`; the host no
+longer needs it installed for a containerized task.*
 
 *Amended 2026-09-14 (issue #366).* `mount_agent_config` defaults to **false**
 until task 062. With only commands and checks in the container, nothing inside
@@ -5202,6 +5297,30 @@ For the same reason `network: false` with `mcp.wire_steps: true` is no longer
 refused at task creation (task 061 decision 1): every agent reaches the
 per-step MCP endpoint from the host, whatever the container's network is. Task
 062 reinstates that refusal together with the `host.docker.internal` rewrite.
+
+*Amended 2026-09-17 (task 062.2 decisions 3 and 5, issue #397).*
+`mount_agent_config` defaults to **true** again, now that the agent runs in the
+container and reads those directories: subscription auth takes no key from the
+environment, and cursor persists `--model` to its own config (§9.7). A
+`config.yaml` that sets the key keeps its value. The directories no longer land
+at their own host paths. With the knob on, the container is created with a
+writable tmpfs **vincent home** at `/vincent-home` (mode 1777, beside the
+`/vincent-run` scratch mount), and each of `~/.claude`, `~/.codex` and
+`~/.cursor` that exists on the host is bind-mounted read-write beneath it —
+`/vincent-home/.claude` and so on. Every containerized step, command and agent
+alike, runs with `HOME=/vincent-home`, because a CLI finds its config through
+`$HOME` and an image's own `HOME` under `--user {uid}` is usually `/`. A HOME
+the user's `environment` policy decides wins: one it sets, lists in `inherit`
+or unsets is left alone. Two consequences are stated rather than discovered:
+the image's own HOME contents are hidden while the mounts are on, and **on
+macOS claude keeps its OAuth login in the Keychain**, not in `~/.claude`, so a
+Mac host must supply `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` through
+`environment` for a containerized claude step to authenticate. Codex's
+file-based `auth.json` and Linux claude's `.credentials.json` do carry over.
+The worktree and repository keep their identical paths (task 061 decision 2),
+which is what claude's cwd-keyed session store needs. The `network: false`
+with `mcp.wire_steps: true` refusal returns, **narrowed** to a workflow that
+runs an agent: see the table below.
 
 The block resolves at **two** levels — a workflow's `defaults.container:` over
 this one, per field (task 061 decision 6). There is no task level, no
@@ -5224,7 +5343,7 @@ What is refused, and where (task 061 decision 3):
 |---|---|---|
 | The daemon runs on **Windows** | task creation | `400 validation_failed` — a `C:\...` path cannot exist in a Linux container, and paths are identical inside and out |
 | `runtime` is missing or cannot talk to a daemon | task creation | `400 validation_failed` — cheap, local, one `docker version` |
-| `network: false` with `mcp.wire_steps: true` | task creation, **once task 062 lands** | `400 validation_failed` — a container with no network cannot reach the daemon's per-step MCP endpoint. *Amended 2026-09-14 (issue #366): not refused until then, because every agent still runs on the host* |
+| `network: false` with `mcp.wire_steps: true` | task creation, **once task 062 lands** | `400 validation_failed` — a container with no network cannot reach the daemon's per-step MCP endpoint. *Amended 2026-09-14 (issue #366): not refused until then, because every agent still runs on the host.* *Amended 2026-09-17 (task 062.2 decision 5, issue #397): refused again, but only when the workflow, after §7.9 include expansion, has an agent step at any depth — top level or inside a `parallel`, `fan_out` or `loop` body. A command-only workflow wires nothing and still runs with no network* |
 | A step pins `shell: pwsh` or `shell: cmd` | load (workflow pins its own image) or task creation | validation error naming the step (§8.3) |
 | The image is missing and cannot be pulled | **admission** | task blocks `container_image_unavailable`, before a worktree, a branch or a retry is spent |
 | The runtime disappeared under a created task | **admission** | task blocks `container_unavailable` |
@@ -5238,6 +5357,9 @@ sit on that side of the line. A containerized step is never quietly run on the
 host *because the runtime or the image failed*: that would invert the choice
 the workflow made, which is §9.4's reasoning verbatim. It is not a claim about
 agent steps, which task 061 has not moved into the container at all.
+*Amended 2026-09-17 (task 062.2): it is now — an agent step of a containerized
+task runs through the container launcher or fails, and is never moved to the
+host either.*
 
 **`mcp:` (task 057, added 2026-08-29).** There is deliberately **no `enabled`
 key.** `/mcp` is part of the API surface the way `/v1` is — same listener, same
@@ -5753,7 +5875,11 @@ about `config.yaml` and stays about `config.yaml`.
   **not** remove the container: it signals the process inside by the pid file the
   step wrote to a container-private scratch mount, waits the same 15 s, then
   kills. The task's container survives a step, so a retry finds whatever an
-  earlier step installed.
+  earlier step installed. *Amended 2026-09-17 (task 062.2, issue #397): this
+  now covers a containerized **agent** run as well as a command step. The agent
+  step journals `step_runs.container_id` beside the `docker exec` client's PID,
+  so recovery removes the labelled container rather than trusting the client
+  PID, and a step stop signals the agent through the same pid file.*
 - *Added 2026-08-15 (task 005).* Recovery reconciles **rows and processes, not
   directories**. The directory tree is reconciled by a separate startup pass that only
   reports (§10): it logs one warning per orphan and raises the `orphans` count on
@@ -5853,7 +5979,10 @@ daemon that died mid-step never got there, and the file is untracked inside a
 git worktree — so a leftover shows up in `git status`, in the task diff and in
 dirty detection, on a task that is about to be re-queued. A removal failure is
 logged rather than fatal: its token died with the daemon that minted it, so a
-stale copy is a nuisance and not a correctness problem.
+stale copy is a nuisance and not a correctness problem. *Amended 2026-09-17
+(task 062.2, issue #397): a containerized cursor step writes the same file, on
+the host side of the worktree bind mount, so the sweep reaches it unchanged; a
+test pins that against a containerized task's worktree path.*
 
 *Amended 2026-09-01 (task 080).* A `fan_out` crashed mid-round is recovered by
 re-running **the round**, not the step. The round number is derived from the
@@ -5875,7 +6004,12 @@ the next admission recomputes it from the rows.
 
 ### 13.1 Transport and auth
 
-- HTTP/1.1 + JSON on `127.0.0.1` only. No TLS in v1 (loopback).
+- HTTP/1.1 + JSON on `127.0.0.1` only. No TLS in v1 (loopback). *Amended
+  2026-09-17 (task 062.2 decision 1, issue #397): `/v1` and `/mcp` are still
+  served on loopback only. The one exception is a **step-only listener** bound
+  on a container network's gateway IP while a containerized agent step needs
+  it. It serves `/mcp/step/{run_id}` and nothing else, authenticated by that
+  step run's secret rather than the token (§13.4, §16).*
 - Every request requires `Authorization: Bearer {token}` where the token is read from
   `{data_dir}/token` (0600). This blocks other local users and drive-by browser
   requests (CORS is additionally disabled).
@@ -7271,7 +7405,9 @@ consumes. It is a second protocol, not a second server.
 `internal/api/server.go`'s route table beside the `/v1` routes and sits inside
 the same `recover → log → auth` chain: loopback only, no TLS,
 `Authorization: Bearer {token}` from `{data_dir}/token`, discovery through
-`daemon.json`. There is no new listener and no new auth story. The §13.1 timeout
+`daemon.json`. There is no new listener and no new auth story. *(Amended
+2026-09-17, task 062.2: true of `/mcp`; the per-step endpoint alone is also
+served on a container gateway listener — see "Per-step endpoints" below.)* The §13.1 timeout
 posture already suits a long-lived MCP response and is unchanged: a read-header,
 a whole-request *read* and an idle timeout, and deliberately no write timeout —
 the same property §13.3's streams rely on.
@@ -7455,6 +7591,40 @@ when the step ends. Identity comes out of band, so the agent does not have to
 cooperate to be identified, and it is what makes the wait refusal and the
 provenance column correct. It is **not** a security boundary and must not be read
 as one — see §16.
+
+*Amended 2026-09-17 (task 062.2 decision 1, issue #397).* **A containerized
+agent step reaches its endpoint through the container gateway.** Inside the
+container `127.0.0.1` is not the daemon, and on native Docker Engine
+`host-gateway` resolves to the bridge's gateway IP (docker0's `172.17.0.1`, for
+example), where a loopback listener cannot be reached. So for a containerized
+agent step with `mcp.wire_steps: true` the daemon looks up the container
+network's gateway IP (`docker inspect`) and binds a **second listener** on it,
+on an ephemeral port. That listener serves **only** `/mcp/step/{run_id}`,
+authenticated by the per-run secret; everything else, `/v1` and `/mcp`
+included, is `404` there. Listeners are reference counted per gateway IP: one
+lives while any containerized step needs it, closes after the last releases it,
+and closes at shutdown. Where the gateway IP is not a local address — Docker
+Desktop (Docker Desktop for Linux included) and runtimes like rootless podman —
+the bind fails, and the daemon falls back to its loopback port, which those
+runtimes forward `host.docker.internal` to. Either way the URL the adapter is
+handed, cursor's `.cursor/mcp.json` included, is
+`http://host.docker.internal:{port}/mcp/step/{run_id}`, `{port}` being whichever
+listener serves it; a host step's URL is unchanged. Anything else on that bridge
+network can reach the gateway port too, so the per-run secret is the only guard
+(§16). *The alternatives beaten:* `--network=host` on Linux, which is task 061
+decision 1's beaten alternative and a second code path, and refusing
+`wire_steps` on native Linux, which would make a containerized step quietly
+less capable. A container with no network cannot reach either listener, which
+is why `network: false` with `wire_steps` is refused for a workflow with an
+agent step (§12.3).
+
+*Amended 2026-09-17 (task 062.2 decision 4).* **`vincent status` does not work
+inside a container.** The image carries no vincent binary, and `127.0.0.1`
+there is not the daemon. A containerized agent reports its status through the
+`step_status` tool on this endpoint when steps are wired (§5.4). A host-path
+`vincent statusline` hook in a mounted `~/.claude/settings.json` fails the same
+way; claude tolerates a failing status line, and that run's usage-limit
+observations (§9.2) are lost.
 
 **Recursion is bounded by provenance.** A task created through MCP records
 `created_by_task_id` (§14), deliberately distinct from `parent_task_id`:
@@ -10179,7 +10349,10 @@ currently true to show (§15 view 6).
   confinement below is the container's and does not yet reach them. *Amended
   2026-09-16 (task 062.1, issue #396): the seam landed as 062.1 (§9.1) with only
   a host launcher, so agent processes still run on the host; the container
-  launcher is 062.2 (issue #397).* What that
+  launcher is 062.2 (issue #397).* *Amended 2026-09-17 (task 062.2, issue
+  #397): the container launcher has landed, so a containerized task's agent
+  steps run inside the container and the confinement below reaches them. Chats
+  still run on the host.* What that
   confines is real and is the point: the
   filesystem outside the two bind mounts — the project repository and the task's
   worktree, both at their own absolute paths — the shell, and whatever tooling
@@ -10193,6 +10366,9 @@ currently true to show (§15 view 6).
     *Amended 2026-09-14 (issue #366): task 061 shipped that refusal and it is
     deferred to 062, because until then every agent runs on the host and
     reaches the endpoint from there, whatever the container's network is.*
+    *Amended 2026-09-17 (task 062.2 decision 5): refused again, for a workflow
+    with an agent step at any depth after include expansion; a command-only
+    workflow still runs with no network (§12.3).*
   - **The agent's credentials are inside it.** `mount_agent_config` defaults to
     true and bind-mounts `~/.claude`, `~/.codex` and `~/.cursor` **read-write**,
     because subscription auth takes no key from the environment and cursor
@@ -10204,13 +10380,32 @@ currently true to show (§15 view 6).
     turns it back on. Until then nothing in the container reads those
     directories, so the default of true handed them, writable, to the image and
     to step code for no benefit; setting the key still mounts them.*
+    *Amended 2026-09-17 (task 062.2 decision 3): the default is **true** again,
+    and this bullet reads as first written — the agent now runs in the
+    container and needs them. They are mounted beneath a vincent home at
+    `/vincent-home` that every containerized step runs with as `HOME`, so a
+    command step reaches them exactly as the agent does (§12.3). One credential
+    does not carry over: claude on macOS keeps its OAuth login in the Keychain,
+    so a Mac host supplies `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`
+    through `environment`, and that value is then in the container's
+    environment. Codex's `auth.json` and Linux claude's `.credentials.json` are
+    files in the mounted directories.*
   - **The daemon is reachable.** Every container is created with
     `--add-host=host.docker.internal:host-gateway` whenever it has a network at
     all, so a process inside it can call the daemon's MCP surface — with the
     same per-run token scoping §13.4 already specifies, and the same caveat that
     the endpoint is not a boundary. The per-step endpoint's *host rewrite* to
     `host.docker.internal`, which is what makes a containerized **agent** step
-    use it, is task 062.
+    use it, is task 062. *Amended 2026-09-17 (task 062.2 decision 1): the
+    rewrite has landed, and on a Linux host with native Docker Engine the
+    endpoint is not reached on loopback at all. The daemon binds a step-only
+    listener on the container network's gateway IP that serves
+    `/mcp/step/{run_id}` and nothing else, guarded by the per-run secret
+    (§13.1, §13.4). That listener is reachable by **anything on that bridge
+    network**, not only the task's container: other containers on the same
+    bridge can connect to the port, and the per-run secret is what stops them
+    using it. Where the bind is impossible (Docker Desktop, rootless podman) the
+    daemon's loopback port is used as before.*
   - **It is not a privilege boundary.** On a Linux host every exec runs as the
     invoking user's uid:gid so files land owned correctly, which means a
     container escape lands on the same user the daemon already runs as.
@@ -10337,7 +10532,15 @@ specifics:
   carries a secret minted for one step run, and it exists to make `task_wait`'s
   deadlock refusal correct and to attribute provenance — not to confine the
   agent. A full-auto agent can read the daemon token and reach `/mcp` directly.
-  It must not be documented, or relied on, as a sandbox.
+  It must not be documented, or relied on, as a sandbox. *Amended 2026-09-17
+  (task 062.2 decision 1, issue #397): it is still not a sandbox, and it is now
+  also the one thing vincent serves off loopback. For a containerized agent
+  step the daemon binds a listener on the container network's gateway IP that
+  answers **one path**, `/mcp/step/{run_id}`, guarded by the per-run secret;
+  `/v1` and `/mcp` are `404` there. Anything else on that bridge network can
+  reach the port, so on that listener the per-run secret is the whole of the
+  access control, not a convenience. The listener exists only while a
+  containerized step holds it (§13.4).*
 
 The cursor adapter additionally writes `.cursor/mcp.json` into the **task
 worktree** (§9.7), which extends this section's existing note about vincent
@@ -11010,7 +11213,13 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
   checks as of task 061, agent steps once **062** lands the spawn seam the three
   adapters need. *Amended 2026-09-16 (task 062.1, issue #396): the seam landed
   as 062.1 with only a host launcher, so agent steps still run on the host until
-  062.2 (issue #397) adds the container launcher.* The image
+  062.2 (issue #397) adds the container launcher.* *Amended 2026-09-17 (task
+  062.2, issue #397): it has, and agent steps run in the container too. Two
+  things it left out are named here: `vincent status` from inside a container,
+  which would need a vincent binary in the image and a route to the daemon
+  (062.2 decision 4; a containerized agent uses §13.4's `step_status` tool
+  instead), and passing a command step's variables to `docker exec` by name,
+  as agent steps now do, rather than as 061 shipped it.* The image
   is the user's and must already carry the agent CLI and `git`; vincent builds,
   publishes and bundles nothing, which is the posture it already takes toward
   `gh` and `cosign`. **VM-level** sandboxing stays deferred, and so do three
