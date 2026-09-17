@@ -157,7 +157,7 @@ type ChatFilter struct {
 	// TaskID narrows to the chats linked to one task (task 115), which is how
 	// a task's workspace lists its conversations.
 	TaskID *int64
-	States    []chatstate.State
+	States []chatstate.State
 	// Archived selects how terminal chats are treated, the way TaskFilter's
 	// field of the same name and type does (§13.2). It covers *every*
 	// terminal state — `archived`, `handed_off` and `closed` alike (§5.5,

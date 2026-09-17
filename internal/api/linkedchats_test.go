@@ -48,7 +48,7 @@ func newLinkedHarness(t *testing.T) *linkedHarness {
 	dataDir := t.TempDir()
 	wt := worktree.NewManager(git, dataDir)
 	reg := agent.NewRegistry(claude.New(func() string { return fake }), agenttest.StubNonResuming{})
-	cfg := func() config.Config { return config.Default() }
+	cfg := config.Default
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	t.Setenv("FAKEAGENT_SESSION_DIR", t.TempDir())
 
@@ -96,9 +96,9 @@ func newLinkedHarness(t *testing.T) *linkedHarness {
 
 // blockedWithWorktree is a task blocked at step 0 with a real worktree on its
 // own branch, the state a linked chat is opened on.
-func (h *linkedHarness) blockedWithWorktree(t *testing.T, reason string) taskResponse {
+func (h *linkedHarness) blockedWithWorktree(t *testing.T) taskResponse {
 	t.Helper()
-	task := blockedTask(t, h.taskHarness, reason)
+	task := blockedTask(t, h.taskHarness, "check_failed")
 	stored, err := h.store.GetTask(t.Context(), task.ID)
 	if err != nil {
 		t.Fatalf("GetTask: %v", err)
@@ -173,7 +173,7 @@ func (h *linkedHarness) waitIdle(t *testing.T, chatID int64, turns int) []chatTu
 // task exactly as it was.
 func TestLinkedChatLocksTheTaskUntilClosed(t *testing.T) {
 	h := newLinkedHarness(t)
-	task := h.blockedWithWorktree(t, "check_failed")
+	task := h.blockedWithWorktree(t)
 	before, err := h.store.GetTask(t.Context(), task.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -295,7 +295,7 @@ func TestLinkedChatLocksTheTaskUntilClosed(t *testing.T) {
 // not.
 func TestLinkedChatTurnWorksInTheTaskWorktree(t *testing.T) {
 	h := newLinkedHarness(t)
-	task := h.blockedWithWorktree(t, "check_failed")
+	task := h.blockedWithWorktree(t)
 	stored, err := h.store.GetTask(t.Context(), task.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -344,7 +344,7 @@ func TestLinkedChatTurnWorksInTheTaskWorktree(t *testing.T) {
 // leaves, and it closes the chat and aborts the task together.
 func TestCancelOnALockedTaskClosesTheChat(t *testing.T) {
 	h := newLinkedHarness(t)
-	task := h.blockedWithWorktree(t, "check_failed")
+	task := h.blockedWithWorktree(t)
 	chat := h.openChat(t, task.ID)
 	code, body := h.post(t, fmt.Sprintf("/v1/tasks/%d/cancel", task.ID), nil)
 	if code != http.StatusOK {
@@ -378,7 +378,7 @@ func TestOpenChatRefusals(t *testing.T) {
 		t.Errorf("open with no worktree = %d %s, want 409 %s", code, body, CodeTaskHasNoWorktree)
 	}
 
-	task := h.blockedWithWorktree(t, "check_failed")
+	task := h.blockedWithWorktree(t)
 	code, body = h.post(t, fmt.Sprintf("/v1/tasks/%d/chat", task.ID),
 		map[string]any{"agent": agenttest.StubNonResuming{}.Name()})
 	if code != http.StatusBadRequest || decodeError(t, body).Code != CodeAgentCannotResume {

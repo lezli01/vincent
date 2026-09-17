@@ -259,23 +259,9 @@ func closeChatTx(ctx context.Context, tx *sql.Tx, c *Chat) (*Chat, *Event, error
 // events to publish after commit. It is `cancel` on a locked task (task 115):
 // the chat's close and the task's abort commit together.
 func closeLinkedChatsTx(ctx context.Context, tx *sql.Tx, taskID int64) ([]*Event, error) {
-	args := append([]any{taskID}, terminalChatStateArgs()...)
-	rows, err := tx.QueryContext(ctx, `SELECT `+chatColumns+` FROM chats
-		WHERE linked_task_id = ? AND state NOT IN (?, ?, ?) ORDER BY id`, args...)
+	open, err := openLinkedChatsTx(ctx, tx, taskID)
 	if err != nil {
-		return nil, fmt.Errorf("list open chats of task %d: %w", taskID, err)
-	}
-	var open []*Chat
-	for rows.Next() {
-		c, err := scanChat(rows)
-		if err != nil {
-			_ = rows.Close()
-			return nil, fmt.Errorf("scan chat: %w", err)
-		}
-		open = append(open, c)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, fmt.Errorf("list open chats of task %d: %w", taskID, err)
+		return nil, err
 	}
 	evs := make([]*Event, 0, len(open))
 	for _, c := range open {
@@ -286,6 +272,31 @@ func closeLinkedChatsTx(ctx context.Context, tx *sql.Tx, taskID int64) ([]*Event
 		evs = append(evs, ev)
 	}
 	return evs, nil
+}
+
+// openLinkedChatsTx reads the open chats linked to taskID. It is its own
+// function so the rows are closed before closeLinkedChatsTx writes: one
+// connection cannot hold a cursor open across its own UPDATE.
+func openLinkedChatsTx(ctx context.Context, tx *sql.Tx, taskID int64) ([]*Chat, error) {
+	args := append([]any{taskID}, terminalChatStateArgs()...)
+	rows, err := tx.QueryContext(ctx, `SELECT `+chatColumns+` FROM chats
+		WHERE linked_task_id = ? AND state NOT IN (?, ?, ?) ORDER BY id`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list open chats of task %d: %w", taskID, err)
+	}
+	defer func() { _ = rows.Close() }()
+	var open []*Chat
+	for rows.Next() {
+		c, err := scanChat(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan chat: %w", err)
+		}
+		open = append(open, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list open chats of task %d: %w", taskID, err)
+	}
+	return open, nil
 }
 
 // linkedChatEventPayload adds linked_task_id to a chat event's payload.
