@@ -1133,8 +1133,8 @@ func (d *detail) runByID(id int64) apiclient.StepRun {
 }
 
 // capturesInput reports whether the sub-model is consuming raw keystrokes:
-// a y/n confirmation. (The answer form's text entry is captured by the
-// shell's popup routing before keys reach here.)
+// a y/n confirmation. (The answer form's text entry is captured by
+// taskView's popup routing, updatePopupKey, before keys reach here.)
 func (d *detail) capturesInput() bool {
 	return d.actions.capturing()
 }
