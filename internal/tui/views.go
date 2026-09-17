@@ -112,8 +112,9 @@ type clientAware interface {
 }
 
 // newViews returns the initial view set. ctx bounds background work a view
-// owns — the detail sub-model's per-task subscription.
-func newViews(ctx context.Context) [viewCount]panel {
+// owns — the detail sub-model's per-task subscription. links is the session's
+// `tui.hyperlinks`, which the root fills from the daemon's config (task 110).
+func newViews(ctx context.Context, links *hyperlinkHolder) [viewCount]panel {
 	// One verbosity level for the session, handed to both panes that render
 	// transcript records (task 071 decision 3). Built here because this is
 	// the one place that constructs both of them.
@@ -122,7 +123,7 @@ func newViews(ctx context.Context) [viewCount]panel {
 	// (task 076 decision 2): toggling raw in a chat is visible in the task
 	// workspace, and neither one resets it.
 	raw := newRawHolder()
-	home := newShell(ctx, level, raw)
+	home := newShell(ctx, level, raw, links)
 	// Keep the board and detail sub-models independently testable while routing
 	// them as separate screens. The task view owns detail updates; the home shell
 	// retains the pointer only so both screens share the established action state.
@@ -141,7 +142,7 @@ func newViews(ctx context.Context) [viewCount]panel {
 		// has to know the answer before the probes land.
 		viewPullRequests:  newPullRequestsView(),
 		viewChats:         newChatsView(),
-		viewChat:          newChatView(level, raw),
+		viewChat:          newChatView(level, raw, links),
 		viewArchived:      newArchivedBoard(),
 		viewArchivedChats: newArchivedChatsView(),
 		viewTriggers:      newTriggersView(),

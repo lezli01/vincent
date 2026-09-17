@@ -133,8 +133,8 @@ func TestRawTouchesNothingDurable(t *testing.T) {
 // workspaces, and it survives leaving and reopening a view.
 func TestRawIsOneSessionValue(t *testing.T) {
 	level, raw := newLevelHolder(), newRawHolder()
-	d := newDetail(testCtx(t), level, raw)
-	v := newChatView(level, raw)
+	d := newDetail(testCtx(t), level, raw, newHyperlinkHolder())
+	v := newChatView(level, raw, newHyperlinkHolder())
 
 	d.toggleRaw()
 	if !v.raw.get() {
@@ -146,7 +146,7 @@ func TestRawIsOneSessionValue(t *testing.T) {
 	}
 
 	raw.toggle()
-	if !newChatView(level, raw).raw.get() {
+	if !newChatView(level, raw, newHyperlinkHolder()).raw.get() {
 		t.Fatal("a freshly opened chat view lost the session's raw choice")
 	}
 }

@@ -420,6 +420,15 @@ func configKeys() []configKey {
 				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Board: &apiclient.ConfigBoardPatch{GroupBy: &v}}}, nil
 			},
 		},
+		// Task 110. The help names the §16 consequence rather than the
+		// feature: what turning it on changes is that agent-supplied URLs
+		// reach the terminal inside an escape sequence, sanitized.
+		boolKey("tui.hyperlinks", "hyperlinks",
+			"make sanitized http(s) Markdown links clickable (OSC 8); only if your terminal supports it",
+			func(c apiclient.Config) bool { return c.TUI.Hyperlinks },
+			func(b bool) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Hyperlinks: &b}}
+			}),
 	}
 	return keys
 }

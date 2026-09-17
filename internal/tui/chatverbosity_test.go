@@ -99,8 +99,8 @@ func TestChatLevelsMeanWhatTheSpecSays(t *testing.T) {
 func TestChatLevelIsTheOutputPanesLevel(t *testing.T) {
 	level := newLevelHolder()
 	raw := newRawHolder()
-	d := newDetail(testCtx(t), level, raw)
-	v := newChatView(level, raw)
+	d := newDetail(testCtx(t), level, raw, newHyperlinkHolder())
+	v := newChatView(level, raw, newHyperlinkHolder())
 	v.chatID = 1
 
 	if _, cmd := v.updateKey(registryKey(t, "ctrl+r")); cmd != nil {

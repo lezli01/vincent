@@ -336,7 +336,7 @@ func TestMarkdownCacheKeysOnEverythingThatChangesTheResult(t *testing.T) {
 	const doc = "# Title\n\nbody\n"
 	render := func(width int, level outputLevel, raw bool) {
 		c.begin()
-		c.lines(doc, width, level, raw)
+		c.lines(doc, width, level, raw, false)
 		c.sweep()
 	}
 	render(80, levelNormal, false)

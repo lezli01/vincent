@@ -98,6 +98,12 @@ type chatView struct {
 	// raw is the session's rendered/raw choice, shared with the task
 	// workspace's output pane (task 076 decision 2).
 	raw *rawHolder
+	// links is the session's `tui.hyperlinks`, shared with the task
+	// workspace's output pane (task 110), and builtLinks is the value the
+	// body was last built with: the setting arrives from the daemon rather
+	// than from a key here, so a change is noticed at render time.
+	links      *hyperlinkHolder
+	builtLinks bool
 
 	// vp scrolls the conversation; following means it is showing the end,
 	// which a manual scroll drops and ctrl+g re-arms (decision 5).
@@ -143,7 +149,7 @@ type chatView struct {
 	width, height int
 }
 
-func newChatView(level *levelHolder, raw *rawHolder) *chatView {
+func newChatView(level *levelHolder, raw *rawHolder, links *hyperlinkHolder) *chatView {
 	ta := textarea.New()
 	ta.Placeholder = "message… (enter sends, shift+enter for a newline)"
 	ta.SetHeight(3)
@@ -152,6 +158,7 @@ func newChatView(level *levelHolder, raw *rawHolder) *chatView {
 		composer:    ta,
 		level:       level,
 		raw:         raw,
+		links:       links,
 		vp:          viewport.New(),
 		following:   true,
 		turnRecords: map[int][]apiclient.TranscriptRecord{},

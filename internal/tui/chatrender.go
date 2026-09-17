@@ -83,7 +83,7 @@ func (v *chatView) render(width, height int) string {
 func (v *chatView) bodyView(width, height int) string {
 	v.vp.SetWidth(max(width, 1))
 	v.vp.SetHeight(max(height, 1))
-	if v.bodyDirty || v.builtWidth != width {
+	if v.bodyDirty || v.builtWidth != width || v.builtLinks != v.links.get() {
 		// The paused anchor, as in the task workspace (#291): a resize, the
 		// maxRecords cap and the level and raw toggles all rebuild the body,
 		// and a reader who scrolled away from the tail keeps their place
@@ -94,6 +94,7 @@ func (v *chatView) bodyView(width, height int) string {
 		v.anchors = anchors
 		v.bodyDirty = false
 		v.builtWidth = width
+		v.builtLinks = v.links.get()
 		switch y, ok := anchorIndex(anchors, keep); {
 		case v.following:
 			v.vp.GotoBottom()
@@ -170,6 +171,7 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 	}
 	level := v.level.get()
 	raw := v.raw.get()
+	links := v.links.get()
 	v.mdcache.begin()
 	defer v.mdcache.sweep()
 	for i := range v.turns {
@@ -186,7 +188,7 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 		switch recs := v.turnRecords[t.Seq]; {
 		case len(recs) > 0:
 			body, at := outputLinesAt(recs, v.recordSeqs(t.Seq), level, width,
-				lineOpts{expandKey: chatExpandKey, raw: raw, cache: &v.mdcache})
+				lineOpts{expandKey: chatExpandKey, raw: raw, hyperlinks: links, cache: &v.mdcache})
 			lines = append(lines, body...)
 			anchors = append(anchors, at...)
 		case t.State == "running":
@@ -207,7 +209,7 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 			// It follows the rendered/raw toggle too (task 076 decision 2):
 			// a retained-away answer is still assistant prose, and the
 			// mode is the session's, not the record's.
-			body, _ := v.mdcache.lines(t.ResultText, width, level, raw)
+			body, _ := v.mdcache.lines(t.ResultText, width, level, raw, links)
 			lines = append(lines, body...)
 			pad(len(body))
 		}

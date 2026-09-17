@@ -1785,7 +1785,7 @@ func (t *taskView) syncLaneDetail() tea.Cmd {
 	if want == 0 {
 		return nil
 	}
-	lane := newDetail(t.detail.ctx, t.detail.level, t.detail.raw)
+	lane := newDetail(t.detail.ctx, t.detail.level, t.detail.raw, t.detail.links)
 	lane.client = t.detail.client
 	// The parent's opener, not the client's, so a test counting streams
 	// counts this one too.

@@ -72,7 +72,11 @@ type (
 		archived  bool
 		board     apiclient.ConfigBoard
 		laneDepth int
-		err       error
+		// hyperlinks is `tui.hyperlinks` (task 110). The board does not
+		// read it; the root does, because this fetch is the one that rides
+		// every connect and reconnect.
+		hyperlinks bool
+		err        error
 	}
 	// boardTickMsg drives the elapsed column.
 	boardTickMsg struct {
@@ -378,7 +382,7 @@ func (b *board) configCmd() tea.Cmd {
 		cfg, err := client.Config(ctx)
 		return boardConfigMsg{
 			archived: archived, board: cfg.TUI.Board,
-			laneDepth: cfg.FanOut.MaxDepth, err: err,
+			laneDepth: cfg.FanOut.MaxDepth, hyperlinks: cfg.TUI.Hyperlinks, err: err,
 		}
 	}
 }
