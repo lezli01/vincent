@@ -357,7 +357,7 @@ func wrapLine(pl paneLine, width int) []string {
 					need = cols(tok)
 				}
 				if pendingSpace {
-					emit(" ", seg.style)
+					emit(" ", separatorStyle(runStyle, seg.style))
 					pendingSpace = false
 				}
 				emit(tok, seg.style)
@@ -788,6 +788,10 @@ type lineOpts struct {
 	// rather than as a fourth argument because it is a pane-specific
 	// display choice, which is exactly what this struct carries.
 	raw bool
+	// hyperlinks is the session's `tui.hyperlinks` (task 111): Markdown
+	// links whose destination passes hyperlinkTarget are drawn as OSC 8
+	// hyperlinks. Raw mode ignores it — source is shown, never linked.
+	hyperlinks bool
 	// cache memoizes rendered documents for the pane that owns it (#291).
 	// Nil renders every document every time, which is what a caller with no
 	// pane behind it wants.
@@ -977,7 +981,7 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 			// because it spans a run of records rather than one of them.
 			doc := docs[k]
 			i = doc.last
-			block, blockAt := opts.cache.lines(doc.text, recWidth, recLevel, opts.raw)
+			block, blockAt := opts.cache.lines(doc.text, recWidth, recLevel, opts.raw, opts.hyperlinks)
 			if len(block) == 0 {
 				continue
 			}
@@ -1042,11 +1046,14 @@ func blockOrdinal(at []int, i int) int {
 // assistant prose — the pane and the chat's §17 retention fallback — reach it
 // through the memo (see markdowncache.go), and nothing else changes, because
 // nothing else was ever interpreted as Markdown (task 073 decision 5).
-func assistantBlockLines(text string, width int, raw bool) ([]string, []int) {
+//
+// links is `tui.hyperlinks` (task 111), and raw wins over it: raw mode shows
+// what the agent wrote, and a hyperlink is not source.
+func assistantBlockLines(text string, width int, raw, links bool) ([]string, []int) {
 	if raw {
 		return rawBlockLines(text, width)
 	}
-	return markdownBlockLines(text, width)
+	return markdownBlockLinesLinked(text, width, links)
 }
 
 // renderRecord maps one normalized record to a pane line. A record with

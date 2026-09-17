@@ -261,8 +261,9 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
   structure instead of literal syntax — while reasoning, tool calls, command
   output and errors stay literal behind their own gutter marks. A table is laid
   out to the pane and degrades to stacked `column: value` records rather than
-  being clipped; a link's destination is printed in a numbered reference list,
-  never opened or turned into a terminal hyperlink; a fenced block shows its
+  being clipped; a link's destination is printed in a numbered reference list
+  and never opened, and becomes a terminal hyperlink only for sanitized http(s)
+  links when you opt in with `tui.hyperlinks`; a fenced block shows its
   language and is tinted with styling only. Every marker is a glyph rather than
   a colour, so a monochrome terminal keeps every distinction, and the
   transcript on disk keeps the agent's exact bytes. One key swaps the rendered

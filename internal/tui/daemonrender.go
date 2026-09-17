@@ -168,6 +168,7 @@ func (d *daemonView) configSummaryLines() []string {
 		// What the file says, which is not necessarily what the board is
 		// showing: `g` regroups for the session without writing anything.
 		field("task grouping", groupSummary(c.TUI.Board.GroupBy)),
+		field("hyperlinks", onOff(c.TUI.Hyperlinks)),
 	}
 	for _, a := range []struct {
 		name string

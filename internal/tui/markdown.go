@@ -145,7 +145,19 @@ func markdownLines(text string, width int) []string {
 // ordinal is its first line of content: an anchor that restored onto the
 // separator would put the block one line lower than the reader left it.
 func markdownBlockLines(text string, width int) ([]string, []int) {
+	return markdownBlockLinesLinked(text, width, false)
+}
+
+// markdownBlockLinesLinked is markdownBlockLines with `tui.hyperlinks`
+// (task 111): when links is set, a link whose destination passes
+// hyperlinkTarget carries an OSC 8 hyperlink on its label, its `[n]` and its
+// reference line's destination. When it is not, this is exactly the render
+// markdownBlockLines has always produced.
+func markdownBlockLinesLinked(text string, width int, links bool) ([]string, []int) {
 	refs := &mdRefs{}
+	if links {
+		refs.links, refs.doc = true, hyperlinkDocID(text)
+	}
 	blocks := parseMarkdown(sanitizeText(text), refs)
 	out := make([]string, 0, len(blocks)*2)
 	at := make([]int, 0, len(blocks)*2)
@@ -181,12 +193,35 @@ func markdownBlockLines(text string, width int) ([]string, []int) {
 // mdRefs numbers the destinations one rendered message links to (task 075
 // decision 2). Numbering is per message and by first appearance, and two
 // identical destinations share a number: what the reference block is for is
-// putting the exact destination on screen without an OSC 8 hyperlink and
-// without a keybinding, and repeating a URL under two numbers would only make
+// putting the exact destination on screen without a keybinding — and, with
+// `tui.hyperlinks` off, which is the default, without an OSC 8 hyperlink, and repeating a URL under two numbers would only make
 // that list longer.
+//
+// It also carries the document's `tui.hyperlinks` choice (task 111), because
+// it is already the one value every inline scan and the reference block are
+// handed. The two emitters that never link — the clipboard payload and the
+// copy picker's fence scan — build a bare registry, so they cannot.
 type mdRefs struct {
 	order []string
 	index map[string]int
+	// links turns on OSC 8 for destinations hyperlinkTarget accepts, and doc
+	// is the document identity their ids are built from.
+	links bool
+	doc   string
+}
+
+// linked returns style carrying the hyperlink for reference n, or style
+// untouched when hyperlinks are off or the destination is refused — which is
+// how a refused destination renders exactly as it does with the setting off.
+func (r *mdRefs) linked(style lipgloss.Style, dest string, n int) lipgloss.Style {
+	if r == nil || !r.links {
+		return style
+	}
+	uri, ok := hyperlinkTarget(dest)
+	if !ok {
+		return style
+	}
+	return style.Hyperlink(uri, "id="+hyperlinkID(r.doc, n))
 }
 
 // add returns the 1-based number for a destination, assigning one on first
@@ -218,7 +253,10 @@ func renderMDRefs(r *mdRefs, width int) []string {
 			pre:         true,
 			segs: []segment{
 				{text: "[" + strconv.Itoa(i+1) + "] ", style: styleMDRef},
-				{text: dest, style: styleMDRef},
+				// The printed destination is the clickable copy when
+				// hyperlinks are on (task 111 decision 2): what opens is
+				// what is on screen.
+				{text: dest, style: r.linked(styleMDRef, dest, i+1)},
 			},
 		}
 		out = append(out, wrapLine(pl, width)...)
@@ -696,8 +734,10 @@ func inlineSegments(text string, base lipgloss.Style, depth int, refs *mdRefs) [
 		switch text[i] {
 		case '[', '!':
 			// An inline link or image. The label is prose and the
-			// destination becomes a numbered reference; nothing here opens,
-			// fetches or hyperlinks anything (decisions 2 and 3).
+			// destination becomes a numbered reference; nothing here opens
+			// or fetches anything (decisions 2 and 3), and nothing is
+			// hyperlinked unless the human turned `tui.hyperlinks` on
+			// (task 111).
 			if label, dest, next, ok := linkAt(text, i); ok && depth < 3 && refs != nil {
 				flush()
 				if label == "" {
@@ -705,10 +745,17 @@ func inlineSegments(text string, base lipgloss.Style, depth int, refs *mdRefs) [
 					// all that is left to hang the reference on.
 					label = dest
 				}
-				segs = append(segs, inlineSegments(label, base, depth+1, refs)...)
+				labelSegs := inlineSegments(label, base, depth+1, refs)
+				n := refs.add(dest)
+				// With `tui.hyperlinks` on, the label and its `[n]` are one
+				// link (task 111 decision 2). linked is a no-op otherwise.
+				for k := range labelSegs {
+					labelSegs[k].style = refs.linked(labelSegs[k].style, dest, n)
+				}
+				segs = append(segs, labelSegs...)
 				segs = append(segs, segment{
-					text:  " [" + strconv.Itoa(refs.add(dest)) + "]",
-					style: base.Faint(true),
+					text:  " [" + strconv.Itoa(n) + "]",
+					style: refs.linked(base.Faint(true), dest, n),
 				})
 				i = next
 				continue

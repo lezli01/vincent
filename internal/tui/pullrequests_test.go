@@ -102,7 +102,7 @@ func TestPullRequestsNavRowIsWithheldWithoutAGitHubProject(t *testing.T) {
 // Probes that have not answered yet are not "available": the row must not
 // flicker into existence and out again while the fan-out lands.
 func TestPullRequestsProbeInFlightIsNotAvailable(t *testing.T) {
-	m := &root{views: newViews(t.Context())}
+	m := &root{views: newViews(t.Context(), newHyperlinkHolder())}
 	if m.githubAvailable() {
 		t.Fatal("the nav row is offered before any probe answered")
 	}

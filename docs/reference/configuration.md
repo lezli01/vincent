@@ -291,9 +291,16 @@ container:
 # levels: project, workflow. Use [] for one flat list of tasks. A grouped
 # level drops its own column — the header already names it — and "g" cycles
 # the grouping for the session without touching this file.
+#
+# hyperlinks makes a Markdown link in the output pane clickable, as an OSC 8
+# hyperlink, when its destination is a plain http or https URL. Off by default:
+# nothing detects whether your terminal supports OSC 8, and one that does not
+# may print the sequence. The destination stays printed under the message
+# either way.
 tui:
   board:
     group_by: [project, workflow]
+  hyperlinks: false
 ```
 
 ## Keys
@@ -1367,6 +1374,7 @@ before you do.
 tui:
   board:
     group_by: [project, workflow]
+  hyperlinks: false
 ```
 
 The one section the daemon does not act on. It validates it, hot-reloads it with
@@ -1403,6 +1411,37 @@ A grouped level costs no column — the header names it, so `PROJECT` and
 **`g` cycles the grouping for the session** — project›workflow → project →
 workflow → flat — and never writes to this file. The Tasks panel title names the
 grouping whenever it is not the one configured here.
+
+#### `tui.hyperlinks`
+
+Whether a Markdown link in the output pane is clickable. Default `false`.
+
+With it on, a link in assistant prose — `[label](url)` or `![alt](src)`, in the
+task workspace and in a chat — becomes an [OSC 8](https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda)
+terminal hyperlink in three places: the label, its dim `[1]`, and the
+destination on the `[1] https://…` reference line under the message. The
+reference line is still printed, so what a click opens is always on screen as
+text. Nothing else is linked: bare URLs, autolinks and the GitHub links vincent
+shows itself stay as they are, raw mode (`ctrl+o`) shows source, and a copied
+message carries no escape sequence.
+
+Only a destination that passes a strict check is linked. It has to be an `http`
+or `https` URL with a host, no `user@` part, at most 2048 bytes, and printable
+ASCII only — no spaces, no control characters, no non-ASCII characters (so a
+look-alike Unicode host is refused, not encoded). Anything else renders exactly
+as it does with the setting off: label, `[1]`, printed destination, no link.
+
+It is off by default because nothing detects whether your terminal supports
+OSC 8. iTerm2, WezTerm, kitty, GNOME Terminal and Windows Terminal do; a
+terminal that does not, such as the legacy Windows console, may print the
+sequence instead. Turn it on only in a terminal you know handles it. Saving it
+in the TUI's config editor applies it to both workspaces at once, with no
+restart. A change made anywhere else — `vincent config set tui.hyperlinks true`
+or an edit to this file — reaches a running TUI the next time it reads the
+config: when you open the daemon view or press `R` there, or when it
+reconnects. See the
+[security model](../security-model.md#what-an-agent-writes-cannot-drive-your-terminal)
+for why the destination is sanitized.
 
 ## Per-project settings
 

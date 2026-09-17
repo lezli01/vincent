@@ -345,6 +345,11 @@ func configFields() map[string]configField {
 			func(v *[]string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Board: &apiclient.ConfigBoardPatch{GroupBy: v}}}
 			}),
+		"tui.hyperlinks": boolField(
+			func(c apiclient.Config) bool { return c.TUI.Hyperlinks },
+			func(b *bool) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Hyperlinks: b}}
+			}),
 	}
 }
 

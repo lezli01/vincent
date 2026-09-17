@@ -149,6 +149,11 @@ type detail struct {
 	// raw is the session's rendered/raw choice, shared with the chat
 	// workspace the same way the level is (task 076 decision 2).
 	raw *rawHolder
+	// links is the session's `tui.hyperlinks`, shared with the chat
+	// workspace (task 111). builtLinks is what the pane was last built with,
+	// so a config change that lands while the pane is up rebuilds it.
+	links      *hyperlinkHolder
+	builtLinks bool
 
 	following bool
 	newLines  int
@@ -208,13 +213,14 @@ type detail struct {
 	width, height int
 }
 
-func newDetail(ctx context.Context, level *levelHolder, raw *rawHolder) *detail {
+func newDetail(ctx context.Context, level *levelHolder, raw *rawHolder, links *hyperlinkHolder) *detail {
 	return &detail{
 		ctx:       ctx,
 		now:       time.Now,
 		vp:        viewport.New(),
 		level:     level,
 		raw:       raw,
+		links:     links,
 		following: true,
 		actions:   &actionBar{},
 		diff:      newDiffPane(),

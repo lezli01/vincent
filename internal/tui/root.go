@@ -102,6 +102,12 @@ type root struct {
 	// overlay and the footer.
 	github []githubProject
 
+	// links is the session's `tui.hyperlinks` (task 111). The root fills it
+	// because the config arrives in three messages bound for three different
+	// views — the board's fetch, the daemon view's fetch and the config
+	// editor's save — and both output panes read it.
+	links *hyperlinkHolder
+
 	width  int
 	height int
 }
@@ -112,12 +118,14 @@ type root struct {
 // which directory this is; it is empty when resolution failed, which the
 // notice treats as "show it".
 func newRoot(ctx context.Context, cn connector, dataDir string) *root {
+	links := newHyperlinkHolder()
 	m := &root{
 		cn:      cn,
 		ctx:     ctx,
 		phase:   phaseProbing,
 		dataDir: dataDir,
-		views:   newViews(ctx),
+		views:   newViews(ctx, links),
+		links:   links,
 		mouseOn: true,
 		notice:  firstRunNotice{active: !noticeAcknowledged(dataDir)},
 	}
@@ -206,6 +214,9 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil {
 			m.github = msg.available()
 		}
+		return m, m.broadcast(msg)
+	case boardConfigMsg, daemonConfigMsg, configSavedMsg:
+		m.applyHyperlinks(msg)
 		return m, m.broadcast(msg)
 	case newTaskFromPullMsg:
 		return m.updateNewTaskFromPull(msg)
@@ -684,6 +695,30 @@ func (m *root) switchTo(id viewID) tea.Cmd {
 		m.deliver(prev, viewDeactivatedMsg{id: prev}),
 		m.deliver(id, viewActivatedMsg{id: id}),
 	)
+}
+
+// applyHyperlinks adopts `tui.hyperlinks` from whichever config answer
+// arrived (task 111). A failed fetch or a refused save changes nothing, for
+// the reason board.applyConfig gives: a request that failed is not a
+// statement about the setting.
+func (m *root) applyHyperlinks(msg tea.Msg) {
+	if m.links == nil {
+		return
+	}
+	switch msg := msg.(type) {
+	case boardConfigMsg:
+		if msg.err == nil {
+			m.links.set(msg.hyperlinks)
+		}
+	case daemonConfigMsg:
+		if msg.err == nil {
+			m.links.set(msg.config.TUI.Hyperlinks)
+		}
+	case configSavedMsg:
+		if msg.err == nil {
+			m.links.set(msg.cfg.TUI.Hyperlinks)
+		}
+	}
 }
 
 // broadcast routes a message to every view, not just the visible one.

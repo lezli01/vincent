@@ -496,8 +496,13 @@ columns' widest unbreakable words, each row becomes a stacked
 sideways scroll. A link renders its label as ordinary text with a dim `[1]`,
 and the message ends with the `[1] https://…` lines that resolve them, one per
 distinct destination. An image is its alt text plus its source in that same
-list. Nothing here is fetched, opened, or turned into a terminal hyperlink:
-vincent emits no OSC 8, so a destination is text you can read and copy.
+list. Nothing here is fetched or opened, and by default nothing is turned into
+a terminal hyperlink: vincent emits no OSC 8, so a destination is text you can
+read and copy. If your terminal supports OSC 8, set
+[`tui.hyperlinks: true`](../reference/configuration.md#tuihyperlinks) (or flip
+it in the daemon view's config editor) and the label, its `[1]` and the
+printed destination become clickable — but only for an `http` or `https` link
+that passes vincent's sanitizer. The reference list stays either way.
 
 Constructs outside that list — reference links, autolinks, bare URLs, titled
 links, HTML, footnotes — render as the characters the agent sent, and raw HTML

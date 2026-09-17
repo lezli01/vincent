@@ -14,7 +14,7 @@ import (
 )
 
 func TestRoutedHomeRendersOnlyTheTaskBoard(t *testing.T) {
-	views := newViews(context.Background())
+	views := newViews(context.Background(), newHyperlinkHolder())
 	home := views[viewHome].(*shell)
 	home.board.updateLoaded(boardLoadedMsg{tasks: []apiclient.Task{{
 		ID: 1, ProjectName: "api", Title: "board-only task", State: stateRunning,
@@ -230,7 +230,7 @@ func TestTaskDetailsSidebarSupportsMouseSelection(t *testing.T) {
 func taskDetailFixture(t *testing.T) *detail {
 	t.Helper()
 	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
-	d := newDetail(context.Background(), newLevelHolder(), newRawHolder())
+	d := newDetail(context.Background(), newLevelHolder(), newRawHolder(), newHyperlinkHolder())
 	d.taskID = 7
 	d.loaded = true
 	d.task = apiclient.TaskDetail{

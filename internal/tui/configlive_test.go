@@ -132,6 +132,46 @@ func TestConfigEditorWritesThroughTheRealAPI(t *testing.T) {
 	}
 }
 
+// TestConfigEditorTogglesHyperlinks is task 111 through the real handlers: the
+// row writes tui.hyperlinks, and the save the root routes is what both
+// workspaces read.
+func TestConfigEditorTogglesHyperlinks(t *testing.T) {
+	h := newConfigLive(t)
+	links := newHyperlinkHolder()
+	m := &root{views: newViews(t.Context(), links), links: links}
+	m.views[viewDaemon] = h.view
+
+	h.open(t, "tui.hyperlinks")
+	if h.view.form == nil {
+		t.Fatal("enter did not open the editor")
+	}
+	for h.view.form.value() != "true" {
+		h.press(t, "right")
+	}
+	// The save lands through the root, which is the one place both
+	// workspaces' holder is filled from.
+	_, cmd := h.view.update(namedKey("enter"))
+	if cmd == nil {
+		t.Fatal("enter did not save")
+	}
+	saved, ok := cmd().(configSavedMsg)
+	if !ok || saved.err != nil {
+		t.Fatalf("the save did not answer with a config: %+v", saved)
+	}
+	m.Update(saved)
+	if !strings.Contains(h.file(t), "hyperlinks: true") {
+		t.Fatalf("config.yaml was not written:\n%s", h.file(t))
+	}
+	if !h.view.config.TUI.Hyperlinks {
+		t.Error("the daemon view did not adopt the saved setting")
+	}
+	chat := m.views[viewChat].(*chatView)
+	task := m.views[viewTask].(*taskView)
+	if !links.get() || !chat.links.get() || !task.detail.links.get() {
+		t.Error("the save did not reach both workspaces")
+	}
+}
+
 // A refusal renders against the field and keeps the editor open, which is the
 // only way the value that caused it is still on screen to fix.
 func TestConfigEditorRendersAValidationErrorAgainstTheField(t *testing.T) {

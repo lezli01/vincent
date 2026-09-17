@@ -1100,7 +1100,7 @@ func (d *detail) renderOutputPane(height int) string {
 	}
 	d.vp.SetWidth(max(d.width, 1))
 	d.vp.SetHeight(height)
-	if d.outputDirty || d.builtWidth != d.width {
+	if d.outputDirty || d.builtWidth != d.width || d.builtLinks != d.links.get() {
 		// A paused reader keeps their place across the rebuild (#291): the
 		// topmost visible block is captured before the rebuild and restored
 		// after it, which is what a resize, a maxRecords prune and the level
@@ -1112,6 +1112,7 @@ func (d *detail) renderOutputPane(height int) string {
 		d.anchors = anchors
 		d.outputDirty = false
 		d.builtWidth = d.width
+		d.builtLinks = d.links.get()
 		switch y, ok := anchorIndex(anchors, keep); {
 		case d.following:
 			d.vp.GotoBottom()
@@ -1161,7 +1162,10 @@ func (d *detail) outputLinesAt() ([]string, []lineAnchor) {
 	d.mdcache.begin()
 	defer d.mdcache.sweep()
 	return outputLinesAt(d.records, d.recordSeqs(), d.level.get(), max(d.width, 1),
-		lineOpts{expandKey: "v", truncatedNote: note, raw: d.raw.get(), cache: &d.mdcache})
+		lineOpts{
+			expandKey: "v", truncatedNote: note, raw: d.raw.get(),
+			hyperlinks: d.links.get(), cache: &d.mdcache,
+		})
 }
 
 // plain is a record with the blank gutter: assistant prose and command

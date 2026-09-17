@@ -191,6 +191,8 @@ type ConfigContainer struct {
 // ConfigTUI is the `tui` section of config.yaml as served.
 type ConfigTUI struct {
 	Board ConfigBoard `json:"board"`
+	// Hyperlinks turns on OSC 8 links in the output pane (task 111).
+	Hyperlinks bool `json:"hyperlinks"`
 }
 
 // ConfigBoard configures the task table. GroupBy names the grouping levels,
@@ -462,7 +464,8 @@ type ConfigContainerPatch struct {
 
 // ConfigTUIPatch is the optional half of ConfigTUI.
 type ConfigTUIPatch struct {
-	Board *ConfigBoardPatch `json:"board,omitempty"`
+	Board      *ConfigBoardPatch `json:"board,omitempty"`
+	Hyperlinks *bool             `json:"hyperlinks,omitempty"`
 }
 
 // ConfigBoardPatch is the optional half of ConfigBoard.

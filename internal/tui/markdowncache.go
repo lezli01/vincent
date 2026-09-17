@@ -11,7 +11,9 @@ import "crypto/sha256"
 // honest cost of reading a run of records as one document.
 //
 // The key is the source's digest plus every input that changes the result:
-// the pane width, the verbosity level and the raw toggle. The issue's "theme"
+// the pane width, the verbosity level, the raw toggle and `tui.hyperlinks`
+// (task 111) — without the last, toggling the setting would serve the
+// previous render. The issue's "theme"
 // and "completion state" are not in it — this TUI has no theme concept, and
 // with whole records there is no partial state to key on. There is no
 // client-side throttle and no second timer either; the daemon already
@@ -21,6 +23,7 @@ type mdCacheKey struct {
 	width  int
 	level  outputLevel
 	raw    bool
+	links  bool
 }
 
 type mdCacheEntry struct {
@@ -63,17 +66,17 @@ func (c *mdCache) sweep() {
 
 // lines renders one document, from the memo when it can. A nil cache renders
 // every time, which is what the call sites that have no pane behind them want.
-func (c *mdCache) lines(text string, width int, level outputLevel, raw bool) ([]string, []int) {
+func (c *mdCache) lines(text string, width int, level outputLevel, raw, links bool) ([]string, []int) {
 	if c == nil {
-		return assistantBlockLines(text, width, raw)
+		return assistantBlockLines(text, width, raw, links)
 	}
-	key := mdCacheKey{digest: sha256.Sum256([]byte(text)), width: width, level: level, raw: raw}
+	key := mdCacheKey{digest: sha256.Sum256([]byte(text)), width: width, level: level, raw: raw, links: links}
 	if e, ok := c.entries[key]; ok {
 		e.gen = c.gen
 		c.entries[key] = e
 		return e.lines, e.blocks
 	}
-	lines, blocks := assistantBlockLines(text, width, raw)
+	lines, blocks := assistantBlockLines(text, width, raw, links)
 	c.renders++
 	if c.entries == nil {
 		c.entries = make(map[mdCacheKey]mdCacheEntry, 8)

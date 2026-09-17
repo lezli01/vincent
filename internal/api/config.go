@@ -98,7 +98,8 @@ type configContainer struct {
 }
 
 type configTUI struct {
-	Board configBoard `json:"board"`
+	Board      configBoard `json:"board"`
+	Hyperlinks bool        `json:"hyperlinks"`
 }
 
 type configBoard struct {
@@ -289,7 +290,10 @@ func configBody(cfg config.Config) configResponse {
 			Network:          cfg.Container.Network,
 			ExtraMounts:      stringList(cfg.Container.ExtraMounts),
 		},
-		TUI: configTUI{Board: configBoard{GroupBy: boardGroupBy(cfg.TUI.Board.GroupBy)}},
+		TUI: configTUI{
+			Board:      configBoard{GroupBy: boardGroupBy(cfg.TUI.Board.GroupBy)},
+			Hyperlinks: cfg.TUI.Hyperlinks,
+		},
 	}
 }
 
@@ -454,7 +458,8 @@ type containerPatch struct {
 }
 
 type tuiPatch struct {
-	Board *boardPatch `json:"board"`
+	Board      *boardPatch `json:"board"`
+	Hyperlinks *bool       `json:"hyperlinks"`
 }
 
 type boardPatch struct {
@@ -568,8 +573,11 @@ func (p configPatch) sets() []config.Set {
 			add("container.extra_mounts", config.RenderList(*v.ExtraMounts))
 		}
 	}
-	if v := p.TUI; v != nil && v.Board != nil && v.Board.GroupBy != nil {
-		add("tui.board.group_by", config.RenderList(*v.Board.GroupBy))
+	if v := p.TUI; v != nil {
+		if v.Board != nil && v.Board.GroupBy != nil {
+			add("tui.board.group_by", config.RenderList(*v.Board.GroupBy))
+		}
+		addIfBool(add, "tui.hyperlinks", v.Hyperlinks)
 	}
 	// Order is the struct's, which is config.yaml's, so two clients sending
 	// the same patch produce the same bytes.

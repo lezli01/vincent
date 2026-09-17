@@ -431,7 +431,11 @@ func wrapSegments(segs []segment, width int) [][]segment {
 				need = cols(tok)
 			}
 			if pendingSpace {
-				push(" ", seg.style)
+				prev := lipgloss.NewStyle()
+				if n := len(cur); n > 0 {
+					prev = cur[n-1].style
+				}
+				push(" ", separatorStyle(prev, seg.style))
 				pendingSpace = false
 			}
 			push(tok, seg.style)

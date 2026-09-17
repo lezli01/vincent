@@ -5305,6 +5305,7 @@ container:                     # run a task's steps in a container (§16, task 0
 tui:                           # view preference; the daemon validates and relays it (§15)
   board:
     group_by: [project, workflow]  # task-table grouping, outermost first; [] = flat
+  hyperlinks: false            # OSC 8 links for sanitized http(s) Markdown links; opt-in (task 111)
 ```
 
 *Amended 2026-08-31 (task 067, issue #269).* Four of these keys reach **chats**
@@ -5801,6 +5802,14 @@ the flat table every version before this one rendered. `state` is deliberately
 not a level: the band sort already orders by state and pins what is waiting on a
 human above everything, and a state grouping would fight the one ordering rule
 the board is not allowed to lose.
+
+*Amended 2026-09-17 (task 111, issue #404):* `tui.hyperlinks`, a bool, default
+`false`, turns on OSC 8 hyperlinks for Markdown links in the output pane (§15,
+§16). It is opt-in because nothing probes whether a terminal understands OSC 8,
+so there is no env-var or per-terminal override: the human who turns it on is
+the capability probe. The TUI reads it with the rest of this section on every
+connect and reconnect and again after its config editor saves, and holds one
+session value both workspaces read.
 
 **`environment` (T4.23).** Governs every process the daemon spawns — agent
 steps via `RunSpec.Env` (§9.1), command steps and their checks via §8.5's
@@ -9704,7 +9713,9 @@ every other record stays literal.
     document moves** when a record arrives. Token-level deltas would need the
     classifier; reopening T1.7 is what would build it.
   - **Rendering is memoized per document**, keyed on the source's digest, the
-    pane width, the verbosity level and the raw toggle. A live chunk re-renders
+    pane width, the verbosity level, the raw toggle and — *amended 2026-09-17
+    (task 111)* — `tui.hyperlinks`, so toggling the setting re-renders rather
+    than serving the previous document. A live chunk re-renders
     the document it extended rather than every record in the pane. There is no
     client-side throttle and no second timer: §13.3's daemon-side coalescing is
     the rate limit.
@@ -9763,8 +9774,8 @@ every other record stays literal.
   pipe table**, which loses the cells the reader came for, and a **second
   scrolling axis** inside the viewport, which makes keyboard and mouse
   behaviour ambiguous in a pane that has only ever scrolled one way.
-- **A link's destination is a numbered reference, never a hyperlink escape**
-  *(added 2026-09-01, task 075)*. An inline link's label renders as ordinary
+- **A link's destination is a numbered reference, and a hyperlink escape only
+  on opt-in** *(added 2026-09-01, task 075; amended 2026-09-17, task 111)*. An inline link's label renders as ordinary
   prose carrying a dim `[n]`, and the message ends with a block of `[n] dest`
   lines — one per distinct destination, numbered per rendered message,
   identical destinations sharing a number. *Amended 2026-09-01 (issue #291):*
@@ -9775,12 +9786,23 @@ every other record stays literal.
   boundary. An image renders its **alt text** as the link-shaped item and its
   source as the reference; nothing is fetched, and there is no fetch in this
   path to disable. Destinations are shown literally whatever their scheme.
-  **vincent emits no OSC 8 hyperlink**, here or by default: there is no
-  reliable capability probe, the payload would carry an agent-supplied URL
-  inside an escape sequence, and a link spanning a wrap boundary would have to
-  be closed and reopened per line under an invariant that keeps escape
-  sequences out of wrapping entirely. The numbering is what a later reader
-  action would name.
+  **vincent emits no OSC 8 hyperlink** by default: there is no reliable
+  capability probe, the payload would carry an agent-supplied URL inside an
+  escape sequence, and a link spanning a wrap boundary would have to be closed
+  and reopened per line under an invariant that keeps escape sequences out of
+  wrapping entirely. The numbering is what a later reader action would name.
+  *Amended 2026-09-17 (task 111, issue #404):* with `tui.hyperlinks` on (§12.3)
+  a link whose destination passes §16's hyperlink sanitizer is clickable in
+  three places — its label, its dim `[n]`, and the destination text on its
+  reference line — each carrying one `id=` so a label wrapped across lines is
+  one link on hover. The reference block is **never** dropped: it is what
+  keeps the true destination on screen when a label reads as a different URL.
+  The link is a style attribute, applied per produced line after layout, so
+  each line opens and closes its own link and wrapping still sees only plain
+  text. Only the inline links and images above are linked; bare URLs,
+  autolinks, reference and titled links stay literal, raw mode shows source
+  and emits no link, and the clipboard payloads carry none. A destination the
+  sanitizer refuses renders exactly as it does with the setting off.
 - **A fenced block shows its language and is highlighted with styles only**
   *(added 2026-09-01, task 075)*. The info string's first word is drawn as a
   dim header at the block's rail when present. Body lines are tinted by a
@@ -10422,7 +10444,21 @@ currently true to show (§15 view 6).
   (task 075):* vincent emits **no OSC 8 hyperlink** and the pane opens nothing,
   so a link in agent prose is text a human may read and copy, never a thing the
   terminal can be made to act on — and an image is its alt text plus a printed
-  source, never a fetch. The one opener in the TUI (`openURLCmd`, reached from
+  source, never a fetch. *Amended 2026-09-17 (task 111, issue #404):* only
+  vincent's own styles are emitted, plus — when `tui.hyperlinks` is on, which
+  it is not by default — an OSC 8 wrapper around a destination that passed the
+  hyperlink sanitizer. The sanitizer is one function and the only door to a
+  link. A destination becomes a link only if it is at most 2048 bytes; every
+  byte is printable ASCII 0x21–0x7E (refusing C0/C1 controls, DEL, ESC, BEL,
+  the 8-bit ST, space and all non-ASCII, so a look-alike Unicode host is
+  refused rather than percent-encoded); `net/url` parses it; its scheme is
+  `http` or `https`; its host is non-empty; and it has no userinfo, so
+  `https://github.com@evil.example` is refused. The URI inside the escape is
+  the validated original string, byte-identical to the printed reference, and
+  the link id is built by vincent from a digest of the document and the
+  reference number, `[A-Za-z0-9-]` only, with no agent byte in it. The
+  reference block stays on screen with hyperlinks on as the anti-spoofing
+  disclosure: what a click opens is printed as text beside the message. The one opener in the TUI (`openURLCmd`, reached from
   the pull-request surfaces) still refuses every scheme but http and https, and
   the renderer never reaches it.
 - **Full-auto agents are the headline risk.** In full-auto, an agent can execute

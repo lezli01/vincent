@@ -526,6 +526,14 @@ func stateNames() []string {
 // TUI holds the settings clients read for themselves (§15).
 type TUI struct {
 	Board BoardView `yaml:"board"`
+	// Hyperlinks wraps the output pane's Markdown links in OSC 8 hyperlinks
+	// (task 111). Off by default because nothing probes whether the terminal
+	// understands the sequence — a terminal that does not may print it — and
+	// because the destination is agent-supplied text inside an escape
+	// sequence (§16). Turning it on is the human's statement that their
+	// terminal is one that does; the TUI still links only a destination that
+	// passes its sanitizer, and keeps printing the destination as text.
+	Hyperlinks bool `yaml:"hyperlinks"`
 }
 
 // BoardView configures the task table — the board's Tasks panel.

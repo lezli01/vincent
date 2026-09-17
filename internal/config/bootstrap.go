@@ -285,9 +285,16 @@ update:
 # levels: project, workflow. Use [] for one flat list of tasks. A grouped
 # level drops its own column — the header already names it — and "g" cycles
 # the grouping for the session without touching this file.
+#
+# hyperlinks makes a Markdown link in the output pane clickable, as an OSC 8
+# hyperlink, when its destination is a plain http or https URL. Off by default:
+# nothing detects whether your terminal supports OSC 8, and one that does not
+# may print the sequence. The destination stays printed under the message
+# either way.
 tui:
   board:
     group_by: [project, workflow]
+  hyperlinks: false
 `
 
 // EnsureDefaultFile writes the commented default config.yaml into dir when

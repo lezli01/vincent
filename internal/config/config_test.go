@@ -317,6 +317,24 @@ func TestBoardGroupingOneLevel(t *testing.T) {
 	}
 }
 
+// TestTUIHyperlinksIsOptIn: OSC 8 links are off unless the file says
+// otherwise, because nothing probes the terminal (task 111).
+func TestTUIHyperlinksIsOptIn(t *testing.T) {
+	if Default().TUI.Hyperlinks {
+		t.Error("tui.hyperlinks defaults to true; it must be opt-in")
+	}
+	cfg, err := Load(writeConfig(t, "tui:\n  hyperlinks: true\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.TUI.Hyperlinks {
+		t.Error("tui.hyperlinks: true did not decode")
+	}
+	if len(cfg.TUI.Board.GroupBy) != 2 {
+		t.Errorf("setting hyperlinks dropped the default grouping: %v", cfg.TUI.Board.GroupBy)
+	}
+}
+
 func TestLoadRejectsInvalid(t *testing.T) {
 	cases := map[string]string{
 		"unknown key":           "max_parallel_jobs: 5\n",
