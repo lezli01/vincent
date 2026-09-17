@@ -78,7 +78,7 @@ type root struct {
 	// readerResolve re-reads a picked row's document from the view that
 	// offered it, and is nil while no picker is up.
 	readerResolve func(seq int64) (string, bool)
-	// linkPick is the task 110 link picker, open when non-nil, and routed
+	// linkPick is the task 112 link picker, open when non-nil, and routed
 	// exactly like reader: the three popups are never open together, because
 	// whichever is up owns every key that would raise another.
 	linkPick *linkPicker
@@ -262,7 +262,7 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case linkOpenedMsg:
 		// Like a copy's outcome, to the surface the human pressed the key on
-		// and nowhere else (task 110 decision 5).
+		// and nowhere else (task 112 decision 5).
 		return m, m.deliver(m.active, msg)
 	case clipboardResultMsg:
 		return m, m.updateClipboardResult(msg)
@@ -462,7 +462,7 @@ func (m *root) updateReaderKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 // updateLinksKey routes keys into the open link picker and carries out what
-// it picks: enter opens the destination, ctrl+y copies it (task 110). Both go
+// it picks: enter opens the destination, ctrl+y copies it (task 112). Both go
 // through the existing chokepoints — openURLCmd's scheme refusal and
 // writeClipboardCmd's sanitizing — so a refused row reaches no opener, and its
 // notice names why.

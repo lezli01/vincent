@@ -9791,8 +9791,8 @@ every other record stays literal.
   escape sequence, and a link spanning a wrap boundary would have to be closed
   and reopened per line under an invariant that keeps escape sequences out of
   wrapping entirely. ~~The numbering is what a later reader action would
-  name.~~ *Amended 2026-09-17 (task 110):* the numbering is what the link
-  picker names — see the task 110 amendment below.
+  name.~~ *Amended 2026-09-17 (task 112):* the numbering is what the link
+  picker names — see the task 112 amendment below.
   *Amended 2026-09-17 (task 111, issue #404):* with `tui.hyperlinks` on (§12.3)
   a link whose destination passes §16's hyperlink sanitizer is clickable in
   three places — its label, its dim `[n]`, and the destination text on its
@@ -9823,7 +9823,7 @@ every other record stays literal.
   record, and a resize re-renders from the Markdown rather than re-wrapping
   previously rendered ANSI. ~~A link picker is still a follow-up: the reference
   numbering is what a later action would name.~~ *Amended 2026-09-17 (task
-  110):* the numbering is what the link picker names — see the task 110
+  112):* the numbering is what the link picker names — see the task 112
   amendment below.
 
 *Amended 2026-09-01 (task 076).* The reader can see the source and take it
@@ -9873,7 +9873,7 @@ persisted, sent to the daemon or written to a transcript.
 - **Link actions are not the copy picker's.** The renderer grew links while
   this was in flight (task 075), so what was missing was no longer the construct
   but a way to say *which* reference a reader means. *Amended 2026-09-17 (task
-  110):* copying, inspecting and opening a destination are the link picker's,
+  112):* copying, inspecting and opening a destination are the link picker's,
   below. What the payloads do owe the numbering is to carry it:
   a plain-text copy keeps each `[n]` and ends with the same `[n] dest` block
   the pane draws, because a destination stripped of both its punctuation and
@@ -9883,7 +9883,7 @@ persisted, sent to the daemon or written to a transcript.
   the palette. A bare letter cannot work in a chat, where the composer owns
   every printable key.
 
-*Amended 2026-09-17 (task 110).* The reader can act on a link. Like the two
+*Amended 2026-09-17 (task 112).* The reader can act on a link. Like the two
 actions above this is client-side only: no route, no stored state, and the
 renderer is unchanged.
 
@@ -9929,7 +9929,7 @@ Views 3–7 stay full-screen because they are forms and lists, not observations:
 new-task flow is eight fields with pickers, and squeezing it beside a live tail
 serves neither. Takeovers are for surfaces you visit deliberately; popups are
 for what interrupts you — the palette, confirmations, the three form popups, the
-copy picker and the link picker (task 110).
+copy picker and the link picker (task 112).
 *(Amended 2026-08-30, task 063: the dividing line is the interruption, not the
 size. A form popup with a tab strip takes the whole height budget and carries
 the task inspector inside it, and is no longer a small thing.)*
@@ -10505,7 +10505,7 @@ currently true to show (§15 view 6).
   reference block stays on screen with hyperlinks on as the anti-spoofing
   disclosure: what a click opens is printed as text beside the message. The one opener in the TUI (`openURLCmd`, reached from
   the pull-request surfaces) still refuses every scheme but http and https, and
-  the renderer never reaches it. *Amended 2026-09-17 (task 110):* the renderer
+  the renderer never reaches it. *Amended 2026-09-17 (task 112):* the renderer
   still opens nothing and emits OSC 8 only as the task 111 amendment above
   allows, but an explicit pick in the §15
   link picker now reaches `openURLCmd`. Nothing about the opener is loosened:

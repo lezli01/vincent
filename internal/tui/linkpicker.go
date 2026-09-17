@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// The link picker (task 110): one key lists the numbered destinations of the
+// The link picker (task 112): one key lists the numbered destinations of the
 // assistant prose on screen — the `[n]` a label carries and the reference
 // block resolves (task 075) — and a pick opens one in the browser or copies
 // it.

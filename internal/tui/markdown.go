@@ -203,7 +203,7 @@ func markdownBlockLinesLinked(text string, width int, links bool) ([]string, []i
 // copy picker's fence scan — build a bare registry, so they cannot.
 //
 // The numbering is also what the link picker names a destination by (task
-// 110), so the registry keeps what the first occurrence called it: the picker
+// 112), so the registry keeps what the first occurrence called it: the picker
 // reads it rather than scanning the text a second time.
 type mdRefs struct {
 	order []string
@@ -250,7 +250,7 @@ func (r *mdRefs) add(dest, label string, image bool) int {
 
 // mdLink is one numbered destination of a document: what the pane's
 // reference block prints as `[n] dest`, plus the label the link picker shows
-// beside it (task 110).
+// beside it (task 112).
 type mdLink struct {
 	n     int
 	label string
@@ -1142,7 +1142,7 @@ func plainSegments(segs []segment) string {
 }
 
 // inlineLabel is a link label as the one line the link picker shows (task
-// 110): its plain text with whitespace collapsed, so a label never spans two
+// 112): its plain text with whitespace collapsed, so a label never spans two
 // rows.
 func inlineLabel(segs []segment) string {
 	return strings.Join(strings.Fields(plainSegments(segs)), " ")

@@ -288,7 +288,7 @@ func (d *detail) updateMsg(msg tea.Msg) tea.Cmd {
 		return nil
 	case linkOpenedMsg:
 		// A link opened from the output pane reports here, beside the copy
-		// notice, and never in the pull-request note (task 110 decision 5).
+		// notice, and never in the pull-request note (task 112 decision 5).
 		text, bad := msg.notice()
 		d.actions.setStatus(text, bad)
 		return nil

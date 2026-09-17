@@ -61,7 +61,7 @@ func openURLCmd(raw string) tea.Cmd {
 }
 
 // openableURL is openURLCmd's refusal rule on its own, and the only copy of
-// it: the link picker marks a row "copy only" by asking this (task 110), so
+// it: the link picker marks a row "copy only" by asking this (task 112), so
 // what a row promises and what enter then does cannot disagree. nil means
 // openURLCmd would hand the URL to the platform.
 func openableURL(raw string) error {

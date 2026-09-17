@@ -378,7 +378,7 @@ var bindings = []binding{
 	{key: rawToggleKey, label: "show the assistant's original Markdown instead of the rendered view", scope: scopePanel, context: ctxOutput, hint: "ctrl+o raw", priority: 6},
 	{key: copyPickKey, label: "copy an assistant message, its plain text, or one of its code blocks", scope: scopePanel, context: ctxOutput, hint: "ctrl+y copy", priority: 7},
 	// No vocabulary term, for copyPickKey's reason: the key raises a picker,
-	// and the picker's enter is what opens (task 110 decision 1).
+	// and the picker's enter is what opens (task 112 decision 1).
 	{key: linkPickKey, label: "list the links in the assistant's messages — open one in a browser or copy it", scope: scopePanel, context: ctxOutput, hint: "ctrl+l links", priority: 8},
 	{key: "e", label: "open this attempt's whole transcript in $EDITOR (the pane holds only the end of it)", scope: scopePanel, context: ctxOutput, hint: "e transcript", priority: 5, term: termEditor},
 	{key: "down", label: "scroll (↑/↓; scrolling up pauses follow)", scope: scopePanel, context: ctxOutput, hint: "↑/↓ scroll", priority: 4},
@@ -788,7 +788,7 @@ func withoutGitHub(rows []binding, available bool) []binding {
 	return out
 }
 
-// The reader-action keys (task 076 decision 7; the link picker is task 110's
+// The reader-action keys (task 076 decision 7; the link picker is task 112's
 // third). All are ctrl-modified in both contexts rather than a letter in the
 // output pane and a ctrl twin in the chat — the `v`/`ctrl+r` split task 071
 // chose is a cost, not a model, and one action should have one name in the

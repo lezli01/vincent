@@ -1,4 +1,4 @@
-# 110 — Open and copy links from assistant Markdown
+# 112 — Open and copy links from assistant Markdown
 
 **Status:** ✅ done (3/3)
 **Issue:** [#403](https://github.com/lezli01/vincent/issues/403)
@@ -73,9 +73,9 @@ no daemon package, no API route, no migration, no wire change.
 
 ## Tasks
 
-- [x] **110.1** `markdownLinks` over `mdRefs`, and `openableURL` split out of `openURLCmd` ✓ 2026-09-17
-- [x] **110.2** The link picker, `ctrl+l` in both workspaces, the root popup slot and `linkOpenedMsg` ✓ 2026-09-17
-- [x] **110.3** §15/§16 amendments, the TUI guide, features, 076/077 "Left open" ✓ 2026-09-17
+- [x] **112.1** `markdownLinks` over `mdRefs`, and `openableURL` split out of `openURLCmd` ✓ 2026-09-17
+- [x] **112.2** The link picker, `ctrl+l` in both workspaces, the root popup slot and `linkOpenedMsg` ✓ 2026-09-17
+- [x] **112.3** §15/§16 amendments, the TUI guide, features, 076/077 "Left open" ✓ 2026-09-17
 
 ## What the tests prove
 

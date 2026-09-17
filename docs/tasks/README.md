@@ -125,7 +125,7 @@ the living engineering specification records implementation contracts.
 | [109](109-claude-subagent-nesting.md) | Render claude subagent runs nested in the output pane and the transcript commands | 🔄 in progress (4/5) |
 | [110](110-claude-edit-deltas.md) | Show edit deltas in claude tool results | 🔄 in progress (4/5) |
 | [111](111-osc-8-hyperlinks.md) | Opt-in OSC 8 hyperlinks in the output pane | ✅ done (4/4) |
-| [110](110-link-picker.md) | Open and copy links from assistant Markdown | ✅ done (3/3) |
+| [112](112-link-picker.md) | Open and copy links from assistant Markdown | ✅ done (3/3) |
 
 ## How to add and update a task document
 

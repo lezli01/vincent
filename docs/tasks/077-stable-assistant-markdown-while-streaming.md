@@ -195,6 +195,6 @@ whole assurance — task 073's position, unchanged.
 - **Link reader actions** remain task 076 decision 1's follow-up. This task
   gives them the thing they were waiting for — a document and block identity a
   reference can be named against — but binds no key and adds no picker row for
-  them. *Tracked by [task 110](110-link-picker.md), 2026-09-17.*
+  them. *Tracked by [task 112](112-link-picker.md), 2026-09-17.*
 - **No new screenshot.** Nothing here changes a panel's shape; what changed is
   what a split message parses as, which no capture would show.

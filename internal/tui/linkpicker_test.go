@@ -16,7 +16,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// The link picker (task 110). internal/tui is covered by no gate script, so
+// The link picker (task 112). internal/tui is covered by no gate script, so
 // these hermetic tests are the whole assurance — task 073's position.
 
 // linkDoc links from every block kind the renderer numbers in, repeats one
