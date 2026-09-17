@@ -75,11 +75,26 @@ type Deps struct {
 	// It is a func rather than an interface because the daemon is the only
 	// thing that can answer it: the endpoint's URL comes from the listener
 	// internal/api owns, and this package may not import that.
-	MCPForStep func(runID, taskID int64, stepID string) (*agent.MCPServer, func())
+	//
+	// route says where the step's process runs (task 062.2 decision 1): a
+	// containerized step reaches the daemon through host.docker.internal, not
+	// through the loopback address a host step dials.
+	MCPForStep func(runID, taskID int64, stepID string, route MCPRoute) (*agent.MCPServer, func())
 	// Containers resolves a `container.runtime` value to the Runtime that
 	// drives it (§16, task 061). Nil means container.New, which is what the
 	// daemon wires; tests substitute a fake so no `go test` needs docker.
 	Containers func(binary string) container.Runtime
+}
+
+// MCPRoute is where an agent step's process reaches the §13.4 per-step
+// endpoint from (task 062.2 decision 1). The zero value is the host.
+type MCPRoute struct {
+	// Container is set for a step running inside its task's container.
+	Container bool
+	// Gateway looks up the container network's gateway IP, "" when there is
+	// none. It is a func so a daemon with `mcp.wire_steps: false` never spends
+	// the `docker inspect` on it.
+	Gateway func() string
 }
 
 // Runner executes admitted tasks and applies the §6 human actions.

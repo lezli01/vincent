@@ -24,21 +24,18 @@ type Container struct {
 	// and the documentation says which of the three is tested.
 	Runtime string `yaml:"runtime"`
 	// MountAgentConfig bind-mounts the host's agent configuration directories
-	// into the container read-write. It defaults to false (issue #366): as of
-	// task 061 only `command` steps and `check:`s run in the container, the
-	// agent process is still spawned on the host, and nothing inside reads
-	// those directories — mounting them would hand the host's agent
-	// credentials to the image and to step code for no benefit. Task 062,
-	// which moves the agent in, turns the default back on: subscription-based
+	// read-write beneath a vincent-provided HOME inside the container, and
+	// points every containerized step's HOME there (task 062.2 decision 3).
+	// It defaults to true: agent steps run in the container, subscription-based
 	// auth takes no key from the environment, and cursor persists `--model` to
-	// its own config (§9.7), so an agent CLI in the container needs them.
+	// its own config (§9.7), so an agent CLI in the container needs them. It
+	// was false while only commands ran there (issue #366).
 	MountAgentConfig bool `yaml:"mount_agent_config"`
 	// Network keeps outbound traffic on, which is the default. False drops
-	// the container off the network entirely. It is accepted together with
-	// `mcp.wire_steps: true` for now: every agent still runs on the host and
-	// reaches the per-step MCP endpoint from there. Task 062 reinstates task
-	// 061 decision 1's creation-time refusal of that pair when it moves the
-	// agent into the container (issue #366).
+	// the container off the network entirely, which task creation refuses
+	// together with `mcp.wire_steps: true` for a workflow with an agent step:
+	// that agent could not reach the per-step MCP endpoint (task 061 decision
+	// 1, narrowed by 062.2 decision 5).
 	Network bool `yaml:"network"`
 	// ExtraMounts are additional bind mounts, each `host:container` or
 	// `host:container:ro`. The project repository and the task's worktree are

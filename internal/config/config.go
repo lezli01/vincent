@@ -735,11 +735,11 @@ func Default() Config {
 		GitHub: GitHub{Enabled: true, PollInterval: Duration(5 * time.Minute)},
 		// On by default with a day between calls (task 055 decision 3).
 		Update: Update{Check: true, PollInterval: Duration(24 * time.Hour)},
-		// Runtime named and network on: inert until an image is set. Agent
-		// configuration stays unmounted while only commands and checks run in
-		// the container, because nothing in there reads it (issue #366); task
-		// 062 turns it back on when it moves the agent in (§16).
-		Container: Container{Runtime: "docker", Network: true},
+		// Runtime named, mounts and network on: inert until an image is set,
+		// and the shape a container user wants when they set one (§16). The
+		// mounts were off while only commands ran in the container (issue
+		// #366); task 062.2 moved the agent in, and back on they came.
+		Container: Container{Runtime: "docker", MountAgentConfig: true, Network: true},
 		TUI: TUI{Board: BoardView{
 			GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow},
 		}},

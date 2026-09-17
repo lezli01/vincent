@@ -7,9 +7,11 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/lezli01/vincent/internal/agent"
+	"github.com/lezli01/vincent/internal/container"
 	"github.com/lezli01/vincent/internal/store"
 )
 
@@ -87,5 +89,47 @@ func TestRemoveCursorMCPConfigIsIdempotent(t *testing.T) {
 		if err := agent.RemoveCursorMCPConfig(dir); err != nil {
 			t.Fatalf("RemoveCursorMCPConfig on a clean worktree: %v", err)
 		}
+	}
+}
+
+// TestRecoverSweepsCursorMCPConfigOfAContainerizedTask pins §12.4's sweep
+// against a containerized task (task 062.2): the worktree is mounted at its own
+// path, so the `.cursor/mcp.json` a containerized cursor step wrote — naming
+// host.docker.internal — is on the host at the task's worktree path, and
+// recovery removes it along with the task's container.
+func TestRecoverSweepsCursorMCPConfigOfAContainerizedTask(t *testing.T) {
+	st, projectID := recoverStore(t)
+	task := recoverTask(t, st, projectID, store.TaskRunning)
+	worktreePath := t.TempDir()
+	task.WorktreePath = worktreePath
+	if err := st.UpdateTask(t.Context(), task); err != nil {
+		t.Fatalf("UpdateTask: %v", err)
+	}
+	rt := newFakeRuntime()
+	name := container.Name(task.ID)
+	if _, err := rt.Create(t.Context(), container.CreateSpec{
+		Name: name, Labels: map[string]string{container.LabelTask: strconv.FormatInt(task.ID, 10)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	run := journalRun(t, st, task.ID, nil, nil)
+	run.ContainerID = &name
+	if err := st.UpdateStepRun(t.Context(), run); err != nil {
+		t.Fatal(err)
+	}
+	srv := &agent.MCPServer{Name: "vincent", URL: "http://host.docker.internal:1/mcp/step/1", Token: "s3cret"}
+	if err := agent.WriteCursorMCPConfig(worktreePath, srv); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Recover(t.Context(), st, discardLogger(),
+		WithContainers(func(string) container.Runtime { return rt }, "fake")); err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+	if _, err := os.Stat(agent.CursorMCPConfigPath(worktreePath)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("stat after recovery = %v, want the leftover config removed", err)
+	}
+	if got := rt.removals(); len(got) != 1 || got[0] != name {
+		t.Errorf("removed = %v, want [%s]", got, name)
 	}
 }

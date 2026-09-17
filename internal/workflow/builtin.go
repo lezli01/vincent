@@ -429,6 +429,9 @@ steps:
          run: bodies execute under the image's /bin/sh whatever the host is, a
          step pinning shell: pwsh or shell: cmd is refused at load, and
          platforms: still gates on the daemon's host rather than on the image.
+         Its agent steps run in the image too, where there is no vincent
+         binary: a prompt there reports through the update_status tool, not
+         vincent status.
          Do not add a container: block to a workflow that has none — which
          image a project runs in is a deployment decision, not one this pass
          gets to make.

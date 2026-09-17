@@ -124,7 +124,7 @@ agents:
 		// And for `container:` — the file names no key, so the §16 default
 		// survives: no image, which is the whole switch. An installation that
 		// overrides everything else still runs every step on the host.
-		Container: Container{Runtime: "docker", Network: true},
+		Container: Container{Runtime: "docker", MountAgentConfig: true, Network: true},
 		TUI:       TUI{Board: BoardView{GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow}}},
 	}
 	if !reflect.DeepEqual(cfg, want) {

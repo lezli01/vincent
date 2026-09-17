@@ -1025,7 +1025,7 @@ func TestEngineMCPUnsupportedIsItsOwnReason(t *testing.T) {
 			mcpRefusingAdapter{Adapter: base},
 		)
 		d.Catalog = agent.NewCatalogCache(d.Agents)
-		d.MCPForStep = func(int64, int64, string) (*agent.MCPServer, func()) {
+		d.MCPForStep = func(int64, int64, string, MCPRoute) (*agent.MCPServer, func()) {
 			return &agent.MCPServer{Name: "vincent", URL: "http://127.0.0.1:1/mcp", Token: "s"}, nil
 		}
 	})

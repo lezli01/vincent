@@ -297,6 +297,15 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	// read it and this one writes it, and -race is a CI gate on all three
 	// platforms.
 	var apiHolder atomic.Pointer[api.Server]
+	// The gateway listeners a containerized agent step's endpoint may need
+	// (task 062.2 decision 1), handed the step-only handler lazily for the
+	// same reason MCPForStep reads the holder.
+	bridge := newStepBridge(func() http.Handler {
+		if srv := apiHolder.Load(); srv != nil {
+			return srv.StepBridgeHandler()
+		}
+		return http.NotFoundHandler()
+	}, logger)
 	runnerDeps := taskrun.Deps{
 		Store:     st,
 		Config:    currentConfig,
@@ -310,7 +319,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		// Wiring vincent's own agent steps to §13.4 (task 057 decision 10).
 		// `mcp.wire_steps` is read per step rather than captured, so a hot
 		// reload governs the next step the way the rest of §12.3 does.
-		MCPForStep: func(runID, taskID int64, stepID string) (*agent.MCPServer, func()) {
+		MCPForStep: func(runID, taskID int64, stepID string, route taskrun.MCPRoute) (*agent.MCPServer, func()) {
 			if !currentConfig().MCP.WireSteps {
 				return nil, nil
 			}
@@ -328,12 +337,18 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 					"task", taskID, "run", runID, "error", err)
 				return nil, nil
 			}
+			// A containerized step dials host.docker.internal, through a
+			// gateway listener where one binds (task 062.2 decision 1).
+			url, releaseBridge := bridge.endpoint(route, ln.Addr().String(), sess.URLPath())
 			server := &agent.MCPServer{
 				Name:  mcp.ServerName,
-				URL:   "http://" + ln.Addr().String() + sess.URLPath(),
+				URL:   url,
 				Token: sess.Secret,
 			}
-			return server, func() { srv.MCP().CloseStep(runID) }
+			return server, func() {
+				srv.MCP().CloseStep(runID)
+				releaseBridge()
+			}
 		},
 	}
 	runner := taskrun.New(runnerDeps)
@@ -621,6 +636,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		logger.Info("shutting down: stop requested via API")
 	case err := <-serveErr:
 		logger.Error("http server failed", "error", err)
+		bridge.close(context.Background())
 		triggers.Stop()
 		sched.Stop()
 		runner.Stop()
@@ -650,6 +666,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	broker.Close()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
+	bridge.close(shutdownCtx)
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Warn("http shutdown incomplete", "error", err)
 	}

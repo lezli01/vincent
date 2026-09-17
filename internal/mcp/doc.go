@@ -45,4 +45,11 @@
 // tool's refusal correct. It is **not** a security boundary and must not be
 // documented as one: a full-auto agent can read `{data_dir}/token` and reach
 // `/mcp` directly (spec §16).
+//
+// A containerized agent step dials it as host.docker.internal (task 062.2
+// decision 1). On native Linux docker that name is the bridge gateway, where a
+// loopback listener cannot be reached, so the daemon binds a second listener on
+// the gateway serving this one path and nothing else — `/v1` and `/mcp` stay
+// loopback-only. The per-run secret is its only guard, and anything else on
+// that bridge can reach the port.
 package mcp

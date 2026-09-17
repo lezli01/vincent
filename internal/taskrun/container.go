@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -118,7 +119,11 @@ func (r *Runner) ensureContainer(
 		// step needs to reach the daemon's per-step MCP endpoint (decision 1).
 		Network:        c.Network,
 		AddHostGateway: c.Network,
-		User:           container.HostUser(),
+		// The vincent home the agent configuration mounts land beneath (task
+		// 062.2 decision 3). Without the mounts there is nothing to put
+		// there, and the image keeps its own HOME.
+		Home: c.MountAgentConfig,
+		User: container.HostUser(),
 	})
 	if err != nil {
 		if ctx.Err() != nil {
@@ -233,8 +238,29 @@ func (r *Runner) removeTaskContainer(ctx context.Context, task *store.Task, log 
 // macOS or Linux host's PATH, HOME, TMPDIR and SHELL inside a Linux image is a
 // broken container, not an inherited one, and a user who wrote nothing should
 // still learn that the default read differently.
-func (r *Runner) containerEnv() []string {
-	return config.ContainerEnvironment(r.deps.Config().Environment).Resolve(nil)
+//
+// With `mount_agent_config` on, HOME is the vincent home the configuration
+// directories are mounted beneath (task 062.2 decision 3), for command and
+// agent steps alike — a `run:` body that calls an agent CLI finds the same
+// login the agent step does. The resolved settings are the task's, so a
+// workflow's own `defaults.container` decides it.
+func (r *Runner) containerEnv(c config.Container) []string {
+	e := r.deps.Config().Environment
+	out := config.ContainerEnvironment(e).Resolve(nil)
+	if c.MountAgentConfig && !policyNamesHome(e) {
+		out = append(out, "HOME="+container.HomeDir)
+	}
+	return out
+}
+
+// policyNamesHome reports whether the user's own §12.3 policy says anything
+// about HOME — sets it, inherits it by name, or unsets it. Any of those is a
+// decision about HOME, and it wins over the vincent home (decision 3).
+func policyNamesHome(e config.Environment) bool {
+	if _, ok := e.Set["HOME"]; ok {
+		return true
+	}
+	return slices.Contains(e.Inherit.Names, "HOME") || slices.Contains(e.Unset, "HOME")
 }
 
 // containerGraceTimeout is how long a stopped step gets between TERM and KILL
@@ -287,13 +313,18 @@ func LogContainerEnvironmentOnce(log *slog.Logger, e config.Environment) {
 	})
 }
 
-// agentConfigMounts are the host's agent configuration directories, mounted at
-// their own paths so subscription-based auth survives into the container
-// (`mount_agent_config`). They are for an agent process running inside the
-// container, which is task 062: the CLIs that authenticate by subscription take
-// no key from the environment, and cursor persists `--model` to its own config
-// (§9.7). Until 062 the agent runs on the host, nothing in the container reads
-// them, and the knob defaults off (issue #366).
+// agentConfigMounts are the host's agent configuration directories, mounted
+// beneath the vincent home so subscription-based auth survives into the
+// container (`mount_agent_config`). They are for the agent process running
+// inside the container (task 062.2): the CLIs that authenticate by
+// subscription take no key from the environment, and cursor persists
+// `--model` to its own config (§9.7).
+//
+// They land under container.HomeDir rather than at their own host paths
+// (062.2 decision 3, amending 061): a CLI finds `~/.claude` through `$HOME`,
+// and the image's HOME under `--user uid` is usually `/`. The worktree and the
+// repository keep 061 decision 2's identical paths, which is what claude's
+// cwd-keyed session store needs.
 //
 // A directory that does not exist is skipped rather than created: an empty
 // mount would make a CLI believe it had been configured and never logged in.
@@ -311,7 +342,7 @@ func agentConfigMounts(c config.Container) []container.Mount {
 		if _, err := os.Stat(p); err != nil {
 			continue
 		}
-		out = append(out, container.Mount{Source: p, Target: p})
+		out = append(out, container.Mount{Source: p, Target: container.HomeDir + "/" + dir})
 	}
 	return out
 }

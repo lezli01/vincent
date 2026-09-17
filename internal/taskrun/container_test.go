@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -28,6 +29,10 @@ type fakeRuntime struct {
 	// runtime at all, and "removed nothing" alone would also be true of a
 	// task that spawned `docker inspect` and found nothing.
 	consulted int
+	// execDirect, when set, answers ExecDirect — a test standing in for an
+	// image's PATH and CLI. gateway is what Gateway reports.
+	execDirect func(container.ExecSpec) []string
+	gateway    string
 }
 
 func newFakeRuntime() *fakeRuntime { return &fakeRuntime{labels: map[string]string{}} }
@@ -46,6 +51,15 @@ func (f *fakeRuntime) Create(_ context.Context, spec container.CreateSpec) (stri
 func (f *fakeRuntime) Exec(id string, spec container.ExecSpec) []string {
 	return append([]string{"fake", "exec", id}, spec.Argv...)
 }
+
+func (f *fakeRuntime) ExecDirect(id string, spec container.ExecSpec) []string {
+	if f.execDirect != nil {
+		return f.execDirect(spec)
+	}
+	return append([]string{"fake", "exec", id}, spec.Argv...)
+}
+
+func (f *fakeRuntime) Gateway(context.Context, string) (string, error) { return f.gateway, nil }
 
 func (f *fakeRuntime) Signal(_ context.Context, id, key, signal string) error {
 	f.mu.Lock()
@@ -211,30 +225,81 @@ func TestContainerMountsAreIdenticalInsideAndOut(t *testing.T) {
 	}
 }
 
-// TestDefaultContainerWithholdsAgentCredentials is issue #366, measured where
-// the mounts are built: a user who sets only `container.image` must not find
-// the host's agent configuration directories inside the container. The agent
-// process still runs on the host until task 062, so nothing in there needs
-// them. The directories are created so the test cannot pass by the "a missing
-// directory is skipped" rule instead of by the default.
-func TestDefaultContainerWithholdsAgentCredentials(t *testing.T) {
+// TestDefaultContainerMountsAgentConfigUnderTheVincentHome is task 062.2
+// decision 3, measured where the mounts are built: a user who sets only
+// `container.image` finds the host's agent configuration directories beneath
+// the vincent home, where HOME points, and not at their own host paths. The
+// worktree and repository keep theirs (061 decision 2).
+func TestDefaultContainerMountsAgentConfigUnderTheVincentHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	agentDirs := map[string]bool{}
+	want := map[string]string{}
 	for _, dir := range []string{".claude", ".codex", ".cursor"} {
 		p := filepath.Join(home, dir)
 		if err := os.Mkdir(p, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		agentDirs[p] = true
+		want[p] = container.HomeDir + "/" + dir
 	}
 	c := config.Default().Container
 	c.Image = "alpine:3"
 	for _, m := range containerMounts("/repos/app", "/data/worktrees/7", c) {
-		if agentDirs[m.Source] {
-			t.Errorf("default container config mounts agent credentials %q into the container", m.Source)
+		target, ok := want[m.Source]
+		if !ok {
+			continue
 		}
+		if m.Target != target || m.ReadOnly {
+			t.Errorf("mount %q → %q (ro=%v), want read-write at %q", m.Source, m.Target, m.ReadOnly, target)
+		}
+		delete(want, m.Source)
+	}
+	if len(want) != 0 {
+		t.Errorf("agent config not mounted: %v", want)
+	}
+	c.MountAgentConfig = false
+	if got := agentConfigMounts(c); got != nil {
+		t.Errorf("mounts with mount_agent_config off = %v, want none", got)
+	}
+}
+
+// TestContainerEnvHome is decision 3's HOME rule: the vincent home while the
+// mounts are on, the image's own HOME while they are off, and whatever the
+// user's own environment policy says about HOME when it says anything.
+func TestContainerEnvHome(t *testing.T) {
+	on := config.Container{Image: "img", MountAgentConfig: true}
+	off := config.Container{Image: "img"}
+	cases := []struct {
+		name string
+		env  config.Environment
+		c    config.Container
+		want string // "" = no HOME at all
+	}{
+		{"mounts on", config.Environment{}, on, container.HomeDir},
+		{"mounts off", config.Environment{}, off, ""},
+		{"policy sets HOME", config.Environment{Set: map[string]string{"HOME": "/work"}}, on, "/work"},
+		{"policy unsets HOME", config.Environment{Unset: []string{"HOME"}}, on, ""},
+		{
+			"policy inherits HOME by name",
+			config.Environment{Inherit: config.Inherit{Mode: config.InheritListMode, Names: []string{"HOME"}}},
+			on, "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.Default()
+			cfg.Environment = tc.env
+			r := New(Deps{Config: func() config.Config { return cfg }})
+			got := ""
+			for _, kv := range r.containerEnv(tc.c) {
+				if v, ok := strings.CutPrefix(kv, "HOME="); ok {
+					got = v
+				}
+			}
+			if got != tc.want {
+				t.Errorf("HOME = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

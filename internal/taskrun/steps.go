@@ -17,13 +17,6 @@ import (
 	"github.com/lezli01/vincent/internal/workflow"
 )
 
-// agentLauncher is where an agent step's process runs (task 062.1). It is
-// the one place the engine chooses, so task 062.2 — which starts a step
-// inside its task's container — changes this function and none of the three
-// adapters. Until then every agent step runs on the host, container or not:
-// §12.3's "mixed run" caveat is this line.
-func agentLauncher() agent.Launcher { return agent.HostLauncher{} }
-
 // runAgentStep runs one agent attempt: render the prompt, spawn the adapter,
 // stream its events into the transcript, and classify the result (§7.1).
 func (r *Runner) runAgentStep(
@@ -66,6 +59,12 @@ func (r *Runner) runAgentStep(
 	inputTimeout := resolveInputTimeout(env.step, env.wf.Defaults, r.deps.Config())
 	onInput := resolveInputPolicy(env.step, env.wf.Defaults)
 
+	// Where the process runs: the task's container when it has one (task
+	// 062.2), the host otherwise. Chosen before the pre-flight, because a
+	// containerized step's `require` is judged against the image's CLI.
+	tc := r.taskContainerOf(env.task.ID)
+	launcher := agentLauncher(tc, run.ID, env.log)
+
 	// The §7.4 `require` pre-flight (task 013). It runs before Start rather
 	// than as an adapter error because `require` is a precondition, not a
 	// behaviour: once the process is up, `require` and `wait` are the same
@@ -73,7 +72,7 @@ func (r *Runner) runAgentStep(
 	// positive "cannot" fails the step — an absent binary is
 	// agent_unavailable's business, and an unprobed one is nobody's.
 	if env.wf.StepRequiresInput(env.step) &&
-		r.deps.Catalog.InputVerdict(ctx, sel.Agent) == agent.InputUnsupported {
+		r.inputVerdict(ctx, adapter, launcher, tc, sel.Agent) == agent.InputUnsupported {
 		tr.Note("error", map[string]any{
 			"error": "agent " + sel.Agent + " cannot take mid-run input, which this step requires",
 		})
@@ -91,7 +90,7 @@ func (r *Runner) runAgentStep(
 	// exactly as long as the attempt, and released on every exit path.
 	var mcpSrv *agent.MCPServer
 	if r.deps.MCPForStep != nil {
-		srv, release := r.deps.MCPForStep(run.ID, env.task.ID, env.step.ID)
+		srv, release := r.deps.MCPForStep(run.ID, env.task.ID, env.step.ID, mcpRouteFor(tc, env.log))
 		if release != nil {
 			defer release()
 		}
@@ -120,9 +119,13 @@ func (r *Runner) runAgentStep(
 		// variables layer over the policy, so `environment.unset` cannot
 		// reach them. There is no step-level `env:` here: `env:` is a
 		// command-step field (§8.1).
-		Env:      commandEnv(r.childEnv(), rc, nil),
+		//
+		// The base is the image's for a containerized step, exactly as a
+		// command step's is (061 decision 7): a macOS PATH inside a Linux
+		// image is a broken agent, not an inherited one.
+		Env:      commandEnv(r.stepBaseEnv(env.task.ID), rc, nil),
 		MCP:      mcpSrv,
-		Launcher: agentLauncher(),
+		Launcher: launcher,
 	})
 	if err != nil {
 		tr.Note("error", map[string]any{"error": err.Error()})
@@ -167,6 +170,13 @@ func (r *Runner) runAgentStep(
 	run.PID = &pid
 	run.ProcStartedAt = &started
 	run.ProcIdentity = journalIdentity(pid, env.log)
+	if tc.active() {
+		// The PID names the runtime client; the container id is what §12.4
+		// recovery acts on, exactly as for a containerized command step (061
+		// decision 4).
+		id := tc.id
+		run.ContainerID = &id
+	}
 	if err := r.deps.Store.UpdateStepRun(r.persistCtx(), run); err != nil {
 		env.log.Error("journal agent pid", "error", err)
 	}
@@ -825,11 +835,12 @@ func (r *Runner) childEnv() []string {
 // a call site that forgot to ask would silently ship a macOS PATH into a Linux
 // image.
 func (r *Runner) stepBaseEnv(taskID int64) []string {
-	if !r.taskContainerOf(taskID).active() {
+	tc := r.taskContainerOf(taskID)
+	if !tc.active() {
 		return r.childEnv()
 	}
 	LogContainerEnvironmentOnce(r.deps.Logger, r.deps.Config().Environment)
-	return r.containerEnv()
+	return r.containerEnv(tc.settings)
 }
 
 // commandEnv builds a step's environment: the §12.3 resolved base, then the
