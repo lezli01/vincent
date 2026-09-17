@@ -12,6 +12,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/chatstate"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // A chat on a task (task 115, §6, §15): `T` from anywhere a task's actions
@@ -22,12 +23,11 @@ import (
 // `chat` or it does not, and names the chat holding the lock in
 // `open_chat_id`; the key reads those two and nothing else.
 
-// taskChatKey is `T` (see its registry row for why that letter), and
-// chatCloseKey is the linked chat's close in the chat workspace.
-const (
-	taskChatKey  = "T"
-	chatCloseKey = "ctrl+q"
-)
+// chatCloseKey is the linked chat's close in the chat workspace. It is fixed:
+// the chat workspace offers no §6 action, and its composer owns every
+// printable key. The key that opens a chat is the `chat` operation's
+// (keymap.Chat, `T` by default), so a `tui.keys` override moves it.
+const chatCloseKey = "ctrl+q"
 
 // Linked-chat event types the TUI reacts to. They are the two that move a
 // task's lock; every other chat event leaves `open_chat_id` where it was.
@@ -187,7 +187,7 @@ func (t *taskView) chatsSectionLines() []string {
 	}
 	if open := t.detail.task.OpenChatID; open != nil {
 		out = append(out, "", styleDim.Render(fmt.Sprintf(
-			"  chat #%d holds this task — %s reopens it; closing it there unlocks the task", *open, taskChatKey)))
+			"  chat #%d holds this task — %s reopens it; closing it there unlocks the task", *open, opKey(keymap.Chat))))
 	}
 	return out
 }

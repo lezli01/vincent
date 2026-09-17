@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 	"github.com/lezli01/vincent/internal/store"
 )
 
@@ -57,7 +58,7 @@ func paletteOffersKey(m *root, key string) bool {
 // workspace to be showing a chat opened on that task, returning its id.
 func (h *actionLiveHarness) pressChat(t *testing.T, taskID int64) int64 {
 	t.Helper()
-	h.press(t, taskChatKey)
+	h.press(t, opKey(keymap.Chat))
 	chat := h.m.views[viewChat].(*chatView)
 	// The workspace's per-chat stream is not under the root's context, and
 	// an open SSE connection holds httptest's Close. Cleanups run
@@ -101,7 +102,7 @@ func TestTaskChatKeyOpensAndReopensLive(t *testing.T) {
 	h.p.until(30*time.Second, "the task workspace to load", func() bool {
 		return detailOf(h.m).taskID == task.ID && detailOf(h.m).loaded
 	})
-	if paletteOffersKey(h.m, taskChatKey) {
+	if paletteOffersKey(h.m, opKey(keymap.Chat)) {
 		t.Fatal("a queued task offers T")
 	}
 
@@ -109,7 +110,7 @@ func TestTaskChatKeyOpensAndReopensLive(t *testing.T) {
 	h.p.until(30*time.Second, "the daemon to offer chat", func() bool {
 		return detailOf(h.m).target().has(apiclient.ActionChat)
 	})
-	if !paletteOffersKey(h.m, taskChatKey) {
+	if !paletteOffersKey(h.m, opKey(keymap.Chat)) {
 		t.Fatal("a done task does not offer T")
 	}
 
@@ -121,7 +122,7 @@ func TestTaskChatKeyOpensAndReopensLive(t *testing.T) {
 	// Locked: the daemon offers no `chat`, and the key is still on offer
 	// because it now means "reopen".
 	h.backToTask(t, first)
-	if !paletteOffersKey(h.m, taskChatKey) {
+	if !paletteOffersKey(h.m, opKey(keymap.Chat)) {
 		t.Fatal("a task holding an open chat does not offer T to reopen it")
 	}
 	if again := h.pressChat(t, task.ID); again != first {

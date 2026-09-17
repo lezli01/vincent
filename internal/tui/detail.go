@@ -801,7 +801,7 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// The follow-up form (§6, task 027). `f` is follow-output and is
 		// panel-scoped, so the capital is free in the task-action scope.
 		return d.openFollowUp()
-	case taskChatKey:
+	case opKey(keymap.Chat):
 		return taskChatCmd(d.client, d.target(), d.actions)
 	case "f":
 		d.setFollowing(true)

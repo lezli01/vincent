@@ -2128,7 +2128,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first twelve are the operations screens share, the next nine are the
+The first twelve are the operations screens share, the next ten are the
 [task actions](#the-action-bar), and the last eight are the global keys.
 
 | Operation | Default | Does |
@@ -2154,6 +2154,7 @@ The first twelve are the operations screens share, the next nine are the
 | `skip` | `s` | Skip the current step |
 | `cancel` | `c` | Cancel the task |
 | `follow_up` | `F` | Follow up on a finished task |
+| `chat` | `T` | Chat in the task's worktree, or reopen the chat open on it |
 | `palette` | `:` | Open the command palette |
 | `palette_alt` | `ctrl+p` | Open the command palette, also while a text field has the keyboard |
 | `help` | `?` | Toggle help |

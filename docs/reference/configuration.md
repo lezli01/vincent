@@ -1570,7 +1570,7 @@ The operations are the ones a reader names, and nothing else:
 | Kind | Operation ids |
 |---|---|
 | Vocabulary terms | `refresh`, `archive`, `delete`, `draft_remove`, `add`, `editor`, `free_text`, `browser`, `open_row`, `scope`, `filter`, `lane` |
-| Task actions | `pause` (pause and resume), `approve`, `reject`, `retry`, `edit_retry`, `repair`, `skip`, `cancel`, `follow_up`; `archive` is the term's id |
+| Task actions | `pause` (pause and resume), `approve`, `reject`, `retry`, `edit_retry`, `repair`, `skip`, `cancel`, `follow_up`, `chat`; `archive` is the term's id |
 | Global | `palette`, `palette_alt`, `help`, `help_alt`, `next_attention`, `mouse`, `quit`, `new` (also a new chat on the chats board) |
 
 An override moves its operation on **every** screen that has it, and it

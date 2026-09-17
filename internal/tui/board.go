@@ -797,7 +797,7 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 
 	// `T` is the one task-action key that is not a §6 call returning the
 	// task (task 115); it opens a workspace, so it has no bulk form.
-	if msg.String() == taskChatKey {
+	if msg.String() == opKey(keymap.Chat) {
 		if cmd := taskChatCmd(b.client, b.target(), b.actions); cmd != nil {
 			return b, cmd
 		}

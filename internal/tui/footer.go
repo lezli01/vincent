@@ -348,7 +348,7 @@ func footerRestSegs(bar *actionBar, target taskActions, attention int, retry boo
 				label = fmt.Sprintf("chat #%d", target.openChatID)
 			}
 			segs = append(segs, footerSeg{
-				text: styleKey.Render(taskChatKey) + " " + label, key: taskChatKey, counts: true,
+				text: styleKey.Render(opKey(keymap.Chat)) + " " + label, key: opKey(keymap.Chat), counts: true,
 			})
 		}
 	}

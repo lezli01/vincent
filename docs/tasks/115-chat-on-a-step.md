@@ -275,7 +275,10 @@ implementation does not reopen them.
   chat named by `open_chat_id`; the task on the chats board; the task
   workspace's list of linked chats, closed ones included; close in the chat
   workspace, and the linked refusals for archive and hand-off. The keys are
-  `T` ("talk") on a task and `ctrl+q` to close in the chat workspace. Two
+  `T` ("talk") on a task and `ctrl+q` to close in the chat workspace. `chat`
+  is a §6 action, so on rebasing onto task 118's keymap it became a `tui.keys`
+  operation with `T` as its default and an exception on `T` for the triggers
+  takeover's dry run; `ctrl+q` is recorded as a fixed key. Two
   rough edges remain: `esc` from a linked chat returns to the chats board
   rather than to the task it was opened from, and the archived chats board
   still offers delete-with-branch on a closed linked chat, which the daemon

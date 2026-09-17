@@ -6053,8 +6053,8 @@ that order, a shifted character written as itself), and `{}`, the default, is
 (`refresh`, `archive`, `delete`, `draft_remove`, `add`, `editor`, `free_text`,
 `browser`, `open_row`, `scope`, `filter`, `lane`), §6's actions (`pause`, one id
 for pause and resume, `approve`, `reject`, `retry`, `edit_retry`, `repair`,
-`skip`, `cancel`, `follow_up`, with `archive` shared with the term) and the
-global chrome (`palette`, `palette_alt`, `help`, `help_alt`, `next_attention`,
+`skip`, `cancel`, `follow_up`, `chat` — *added 2026-09-17, task 115* — with
+`archive` shared with the term) and the global chrome (`palette`, `palette_alt`, `help`, `help_alt`, `next_attention`,
 `mouse`, `quit`, and `new`, which is also the chats board's `n`). Every other key
 the TUI answers is fixed (§15). An override **replaces** the operation's
 default on every surface that carries it; it is not an alias, so the vacated
@@ -9158,7 +9158,8 @@ stream for the live tail.
    finished arms no repaint.
 
    *Amended 2026-09-17 (task 115, issue #472).* **A stopped task can be talked
-   to from here.** A task-action binding, `T` ("talk"; Keys, below), is offered when the
+   to from here.** A task-action binding, `T` ("talk"; Keys, below) — the
+   `chat` operation's default, which `tui.keys` may move (§12.3) — is offered when the
    daemon lists `chat` in `available_actions`, and opens view 9 on a new chat
    linked to the task; on a task whose `open_chat_id` is set — where
    `available_actions` has withdrawn `chat` — the same key opens **that** chat
@@ -11056,6 +11057,14 @@ prints; and the keys the handlers answer beside the registry — the vim aliases
 `h j k l f b u G`, the output tab's `d` and `r` as retry-connecting. The daemon
 publishes no config event, so a keymap edited outside the TUI's own
 config editor takes effect at the TUI's next configuration read (§12.3).
+
+*Amended 2026-09-17 (task 115, issue #472).* `chat` is a §6 action, so it is an
+operation like the rest: `T` by default, moved by `tui.keys` on every surface
+that offers task actions. `T` is also the triggers takeover's dry run, which
+carries no term and offers no `available_actions`; that shared default is
+recorded as an exception on `T` alone, so it does not travel with a moved
+`chat`. The chat workspace's `ctrl+q` close is a fixed key, for the reason its
+`ctrl+t` hand-off is: the composer owns every printable key there.
 
 ### Mouse
 

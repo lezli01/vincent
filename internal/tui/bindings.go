@@ -336,11 +336,12 @@ var bindings = []binding{
 	// for where a task's actions are: `c` is cancel, `C` folds, `h` walks the
 	// Output tab's attempts, and `t` is the vocabulary's free text. `T` is
 	// the triggers takeover's dry run, which clause 2 allows — that screen
-	// offers no available_actions. One row covers both halves of the key:
+	// offers no available_actions — and keymap records as an exception on the
+	// default key alone. One row covers both halves of the key:
 	// with `open_chat_id` set the daemon offers no `chat`, and the key opens
 	// that chat instead (taskActions.offersChat), so the row is gated there
 	// rather than on the action alone.
-	{key: taskChatKey, label: "chat with an agent in this task's worktree — the task stays locked until the chat is closed; with a chat already open, reopen it", scope: scopeTaskAction, action: apiclient.ActionChat, priority: 10},
+	{op: keymap.Chat, key: "T", label: "chat with an agent in this task's worktree — the task stays locked until the chat is closed; with a chat already open, reopen it", scope: scopeTaskAction, action: apiclient.ActionChat, priority: 10},
 
 	// Task table.
 	{key: "down", label: "move the selection (↑/↓ — the panels follow the cursor)", scope: scopePanel, context: ctxTasks, hint: "↑/↓ select", priority: 3},
