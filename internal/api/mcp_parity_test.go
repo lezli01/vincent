@@ -74,6 +74,9 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 	want := []struct{ method, path string }{
 		{http.MethodPost, "/v1/daemon/stop"},
 		{http.MethodPost, "/v1/daemon/backup"},
+		// Task 117: an import reads a file the caller names and writes rows
+		// no agent should be able to create.
+		{http.MethodPost, "/v1/tasks/import"},
 		// Task 060 decision 4: a step must not rewrite the rules it runs
 		// under — the argv the daemon spawns, what its children inherit, or
 		// whether steps get MCP at all.

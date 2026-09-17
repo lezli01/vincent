@@ -339,6 +339,10 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodPost, "/v1/resolve", s.handleResolve)
 	rt.handle(http.MethodGet, "/v1/tasks", s.handleTaskList)
 	rt.handle(http.MethodPost, "/v1/tasks", s.handleTaskCreate)
+	// One archived task back out of a backup (§13.2, task 117) — the undo for
+	// the permanent delete below, and on the same §13.4 exclusion. A literal
+	// segment: there is no POST /v1/tasks/{id} for it to shadow.
+	rt.handle(http.MethodPost, "/v1/tasks/import", s.handleTaskImport)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}", s.handleTaskGet)
 	rt.handle(http.MethodPatch, "/v1/tasks/{id}", s.handleTaskPatch)
 	// Permanent delete of an archived row (§13.2, task 092). Not a §6 action
