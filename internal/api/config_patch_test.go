@@ -337,6 +337,47 @@ func TestConfigPatchRoundTripsUsageLimitAutoContinue(t *testing.T) {
 	}
 }
 
+// tui.hyperlinks is served, written and put into force (task 110). The TUI
+// reads it from nowhere else, so a key the PATCH dropped would be a setting
+// the config editor shows and cannot change.
+func TestConfigPatchRoundTripsTUIHyperlinks(t *testing.T) {
+	h := newConfigHarness(t)
+	_, getBody := doRequest(t, h.ts, http.MethodGet, "/v1/config", testToken)
+	if !strings.Contains(string(getBody), `"hyperlinks":false`) {
+		t.Fatalf("GET /v1/config does not serve tui.hyperlinks off by default: %s", getBody)
+	}
+	for _, want := range []bool{true, false} {
+		body := `{"tui":{"hyperlinks":false}}`
+		if want {
+			body = `{"tui":{"hyperlinks":true}}`
+		}
+		resp, out := h.patch(t, body)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("patch %v: status = %d, want 200 (body %s)", want, resp.StatusCode, out)
+		}
+		var answered configResponse
+		if err := json.Unmarshal(out, &answered); err != nil {
+			t.Fatalf("parse patch response: %v", err)
+		}
+		if answered.TUI.Hyperlinks != want {
+			t.Errorf("the patch response says %v, want %v", answered.TUI.Hyperlinks, want)
+		}
+		if got := h.cur.Load().TUI.Hyperlinks; got != want {
+			t.Errorf("the applied config says %v, want %v", got, want)
+		}
+		line := "hyperlinks: false"
+		if want {
+			line = "hyperlinks: true"
+		}
+		if !strings.Contains(string(h.bytes(t)), line) {
+			t.Errorf("config.yaml does not carry %q:\n%s", line, h.bytes(t))
+		}
+		if h.cur.Load().TUI.Board.GroupBy == nil {
+			t.Error("patching tui.hyperlinks lost tui.board.group_by")
+		}
+	}
+}
+
 func itoaForTest(n int) string {
 	if n == 0 {
 		return "0"

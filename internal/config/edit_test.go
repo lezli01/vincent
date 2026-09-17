@@ -162,6 +162,7 @@ func TestApplyOverTheTemplateStillParses(t *testing.T) {
 		{Path: "github.poll_interval", Value: "0s"},
 		{Path: "update.check", Value: "false"},
 		{Path: "tui.board.group_by", Value: RenderList(nil)},
+		{Path: "tui.hyperlinks", Value: "true"},
 	}
 	got, err := Apply([]byte(defaultConfigYAML), sets)
 	if err != nil {
@@ -177,7 +178,7 @@ func TestApplyOverTheTemplateStillParses(t *testing.T) {
 		cfg.Agents.Cursor.Path != "/opt/cursor-agent" || cfg.MCP.WireSteps ||
 		cfg.Include.MaxDepth != 9 || cfg.Loop.MaxIterations != 3 ||
 		cfg.GitHub.PollInterval != 0 || cfg.Update.Check ||
-		len(cfg.TUI.Board.GroupBy) != 0 || len(cfg.Environment.Unset) != 1 {
+		len(cfg.TUI.Board.GroupBy) != 0 || !cfg.TUI.Hyperlinks || len(cfg.Environment.Unset) != 1 {
 		t.Errorf("a set did not take: %+v", cfg)
 	}
 	// Every key was already documented, so nothing was appended: the file has
