@@ -349,6 +349,9 @@ type ChildrenRollup struct {
 	ByState      map[string]int `json:"by_state"`
 	Blocked      []int64        `json:"blocked"`
 	AwaitingGate []int64        `json:"awaiting_gate"`
+	// CostUSD is the descendants' summed spend, not counting the task's own;
+	// nil when no descendant reported a cost (task 115).
+	CostUSD *float64 `json:"cost_usd"`
 }
 
 // LoopRollup is the §7.8 loop rollup: where a task is inside the `loop` step

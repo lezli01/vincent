@@ -56,7 +56,10 @@ type configResponse struct {
 	// MaxTaskCostUSD is the per-task spend ceiling; 0 is no cap (task 033).
 	// Served for the same reason every other key is: the TUI reads no
 	// configuration from disk (§15).
-	MaxTaskCostUSD    float64 `json:"max_task_cost_usd"`
+	MaxTaskCostUSD float64 `json:"max_task_cost_usd"`
+	// MaxTreeCostUSD is the per-fan-out-tree spend ceiling; 0 is no cap
+	// (task 115).
+	MaxTreeCostUSD    float64 `json:"max_tree_cost_usd"`
 	UsageLimitRecheck string  `json:"usage_limit_recheck_interval"`
 	// UsageLimitAutoContinue is what a recognized quota stop does: hold and
 	// re-queue the task ("always"), hold only when the CLI named a reset time
@@ -266,6 +269,7 @@ func configBody(cfg config.Config) configResponse {
 		TranscriptRetentionDays:     cfg.TranscriptRetentionDays,
 		TranscriptMaxBytes:          cfg.TranscriptMaxBytes.Bytes(),
 		MaxTaskCostUSD:              cfg.MaxTaskCostUSD,
+		MaxTreeCostUSD:              cfg.MaxTreeCostUSD,
 		UsageLimitRecheck:           cfg.UsageLimitRecheckInterval.String(),
 		UsageLimitAutoContinue:      cfg.UsageLimitAutoContinue,
 		LogLevel:                    cfg.LogLevel,
@@ -388,6 +392,7 @@ type configPatch struct {
 	TranscriptRetentionDays     *int               `json:"transcript_retention_days"`
 	TranscriptMaxBytes          *int64             `json:"transcript_max_bytes"`
 	MaxTaskCostUSD              *float64           `json:"max_task_cost_usd"`
+	MaxTreeCostUSD              *float64           `json:"max_tree_cost_usd"`
 	UsageLimitRecheck           *string            `json:"usage_limit_recheck_interval"`
 	UsageLimitAutoContinue      *string            `json:"usage_limit_auto_continue"`
 	LogLevel                    *string            `json:"log_level"`
@@ -537,6 +542,9 @@ func (p configPatch) sets() []config.Set {
 	}
 	if p.MaxTaskCostUSD != nil {
 		add("max_task_cost_usd", ftoa(*p.MaxTaskCostUSD))
+	}
+	if p.MaxTreeCostUSD != nil {
+		add("max_tree_cost_usd", ftoa(*p.MaxTreeCostUSD))
 	}
 	addIfString(add, "usage_limit_recheck_interval", p.UsageLimitRecheck)
 	addIfString(add, "usage_limit_auto_continue", p.UsageLimitAutoContinue)

@@ -1077,7 +1077,7 @@ func (t *taskView) detailLines(width int) []string {
 
 	execution := []taskDetailFact{
 		{"current step", taskStep(task.Task)},
-		{"cost", formatCost(task.CostUSD)},
+		{"cost", formatCost(taskOwnCost(task))},
 		{"tokens", fmt.Sprintf("%d input · %d output", task.InputTokens, task.OutputTokens)},
 		{"pause requested", strconv.FormatBool(task.PauseRequested)},
 	}
@@ -1121,6 +1121,7 @@ func (t *taskView) detailLines(width int) []string {
 	if task.Children != nil {
 		relationships = append(relationships,
 			taskDetailFact{"child progress", fmt.Sprintf("%d/%d settled", task.Children.Settled, task.Children.Total)},
+			taskDetailFact{"tree cost", formatCost(treeCost(taskOwnCost(task), task.Children.CostUSD))},
 			taskDetailFact{"children blocked", joinInt64(task.Children.Blocked)},
 			taskDetailFact{"children at gate", joinInt64(task.Children.AwaitingGate)},
 		)
@@ -1833,4 +1834,48 @@ func (t *taskView) laneUpdate(msg tea.Msg) tea.Cmd {
 		return nil
 	}
 	return t.laneDetail.update(msg)
+}
+
+// taskOwnCost is the task's own §17 cost rollup. `GET /v1/tasks/{id}`
+// serves no top-level `cost_usd` — only list rows carry one — so a detail
+// fetched on its own sums the attempts it does carry, every one of them, the
+// way the list's rollup does. Nil when no attempt reported a cost (task 033
+// decision 5); a `cost_usd` the task already carries wins.
+func taskOwnCost(task apiclient.TaskDetail) *float64 {
+	if task.CostUSD != nil {
+		return task.CostUSD
+	}
+	var (
+		sum      float64
+		reported bool
+	)
+	for _, run := range task.Steps {
+		if run.CostUSD != nil {
+			sum += *run.CostUSD
+			reported = true
+		}
+	}
+	if !reported {
+		return nil
+	}
+	return &sum
+}
+
+// treeCost is the spend of a fan-out tree as seen from its parent: the task's
+// own rollup plus its descendants' (task 115 decision 5), which is the figure
+// `max_tree_cost_usd` is compared against when the task is the root. Nil when
+// neither side reported a cost, so formatCost renders "—" rather than $0.00
+// (task 033 decision 5); a side that reported nothing adds nothing.
+func treeCost(own, children *float64) *float64 {
+	if own == nil && children == nil {
+		return nil
+	}
+	var sum float64
+	if own != nil {
+		sum += *own
+	}
+	if children != nil {
+		sum += *children
+	}
+	return &sum
 }

@@ -213,6 +213,16 @@ func configFields() map[string]configField {
 				return apiclient.ConfigPatch{MaxTaskCostUSD: &f}, nil
 			},
 		},
+		"max_tree_cost_usd": {
+			read: func(c apiclient.Config) string { return floatText(c.MaxTreeCostUSD) },
+			write: func(s string) (apiclient.ConfigPatch, error) {
+				f, err := parseFloatArg(s)
+				if err != nil {
+					return apiclient.ConfigPatch{}, err
+				}
+				return apiclient.ConfigPatch{MaxTreeCostUSD: &f}, nil
+			},
+		},
 		"usage_limit_recheck_interval": str(func(c apiclient.Config) string { return c.UsageLimitRecheck },
 			func(v *string) apiclient.ConfigPatch { return apiclient.ConfigPatch{UsageLimitRecheck: v} }),
 		"usage_limit_auto_continue": str(func(c apiclient.Config) string { return c.UsageLimitAutoContinue },
