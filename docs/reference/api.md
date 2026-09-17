@@ -2304,7 +2304,7 @@ Refusals when opening:
 | `409` | `invalid_state` | The task is not in one of the four states; `details.state` says where it is |
 | `409` | `task_locked_by_chat` | A chat is already open on it; `details.chat_id` names it |
 | `409` | `task_has_no_worktree` | The task never got one — blocked on `branch_exists` or `base_branch_missing`, or aborted before it started. Vincent does not create one for a chat |
-| `400` | `validation_failed` | An unregistered agent |
+| `400` | `validation_failed` | An unregistered agent; or, on a task that runs `restricted`, an agent that cannot keep a resumed turn restricted — codex, whose `exec resume` has no `--sandbox` |
 | `400` | `agent_cannot_resume` | The agent cannot hold a conversation |
 
 A git operation in progress in the worktree is not a refusal: a half-finished

@@ -1167,8 +1167,9 @@ command's own.
 for the step level of §8.6's chain, as a repair's do; the agent must be able to
 resume its own session, and one that cannot exits 1 with
 `agent_cannot_resume`. The chat runs with the permission mode a repair on the
-task would — a task whose workflow is `restricted` gets a restricted chat — and
-in the task's container when its workflow runs in one.
+task would — a task whose workflow is `restricted` gets a restricted chat, and
+a chat that resolves to codex exits 1 there, because codex cannot keep a
+resumed turn restricted — and in the task's container when its workflow runs in one.
 
 A task that never got a worktree — blocked on `branch_exists`, or aborted
 before it was admitted — exits 1 with `task_has_no_worktree`: vincent does not
@@ -1580,9 +1581,11 @@ Exit `0` everything asked for is installed · `1` an install failed.
 
 ## `vincent chat`
 
-Chats are conversations with an agent (spec §5.5). Each gets its own git
-worktree and `vincent/{id}-{slug}` branch, exactly as a task does, and every
-turn resumes the agent's own session — so turn N sees turns 1..N-1.
+Chats are conversations with an agent (spec §5.5). Each one you start gets its
+own git worktree and `vincent/{id}-{slug}` branch, exactly as a task does, and
+every turn resumes the agent's own session — so turn N sees turns 1..N-1. A
+chat opened on a task with [`vincent task chat`](#vincent-task-chat) works in
+that task's worktree and branch instead.
 
 Chats are not tasks. They never appear on the board, they run no workflow, and
 a chat turn never waits for a scheduler slot: it starts when you send it, or it
@@ -1758,7 +1761,13 @@ vincent chat delete --before <date|duration> [--branch] [--json]
 ```
 
 Aliased as `vincent chat rm`. `vincent task delete` for a chat: permanently
-deletes an **archived** chat — the row, its turns and its transcript directory.
+deletes an **archived** or **closed** chat — the row, its turns and its
+transcript directory.
+
+`--branch` on a chat opened on a task is refused (`chat_linked_to_task`): the
+branch is the task's. A `--before --branch` sweep does not skip those rows, so
+each one is reported as an error and the sweep exits 1; sweep without
+`--branch` to remove them.
 
 A `handed_off` chat is refused (`details.reason: "handed_off"`). The task it
 was handed to owns the worktree and the branch, so that task is what to delete;

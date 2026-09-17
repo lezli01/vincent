@@ -1,9 +1,9 @@
 # 115 — Chat on a stopped task: a conversation in the task's own worktree
 
-**Status:** 🔄 in progress (4/10)
+**Status:** 🔄 in progress (8/10)
 **Issue:** [#472](https://github.com/lezli01/vincent/issues/472)
-**Spec:** amends §5.5, §6, §7.3, §10, §11, §12.4, §13.2, §13.3, §13.4, §14, §15,
-§16, §17, §18
+**Spec:** amends §5.5, §6, §7.3, §9.3, §10, §11, §12.4, §13.2, §13.3, §13.4, §14,
+§15, §16, §17, §18
 **Builds on, without relitigating:** [025](025-ad-hoc-repair-agent.md) decisions
 1, 2, 4, 5 and 6; [027](027-follow-up-runs.md); [063](063-free-chat.md) decisions
 1, 2, 5 and 9; [074](074-chat-handoff.md) decisions 2 and 5
@@ -303,6 +303,6 @@ implementation does not reopen them.
   full-auto. Task 072 called that combination unreachable because a free chat
   is always full-auto; a linked chat makes it reachable. It fails closed at both
   ends: the codex adapter reports `SupportsRestrictedResume() == false` and
-  `Start` returns `restricted_unsupported` for a resumed restricted run, and
+  `Start` returns `agent.ErrRestrictedUnsupported` for a resumed restricted run, and
   `POST /v1/tasks/{id}/chat` refuses such an adapter with a 400 before
   anything is written.

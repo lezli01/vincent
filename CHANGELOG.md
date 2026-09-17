@@ -26,7 +26,10 @@ list with the user-facing context a commit subject cannot carry.
   task closes the chat and aborts the task together. A later stop can open a
   new chat, and closed ones stay listed on the task. On a containerized task
   the chat's turns run in the task's container. Its cost stays on the chat and
-  does not count toward `max_task_cost_usd`. New:
+  does not count toward `max_task_cost_usd`. A task that runs `restricted` gets
+  a restricted chat, and refuses codex for it: `codex exec resume` cannot keep
+  a turn restricted, so codex now refuses a resumed restricted run instead of
+  running it full-auto. New:
   `POST /v1/tasks/{id}/chat`, `POST /v1/chats/{id}/close`,
   `GET /v1/chats?task_id=`, `open_chat_id` on a task, `linked_task_id` on a
   chat, the `chat.closed` event and a third terminal chat state, `closed`;

@@ -195,7 +195,7 @@ which it was not before follow-ups existed.
 | `chat` | blocked, awaiting_gate, done, aborted | Opens a [chat](#chatting-with-a-stopped-task) with an agent in the task's existing worktree and branch. The task does not move, and it is **locked** — every other action but `cancel` is refused — until you close the chat |
 
 In the TUI these are the action bar keys (`a`, `x`, `r`, `R`, `E`, `s`, `p`,
-`c`, `A`, `F`); over the API they are `POST /v1/tasks/{id}/{action}`; from the
+`c`, `A`, `F`, `T`); over the API they are `POST /v1/tasks/{id}/{action}`; from the
 CLI, [`vincent task <action> <id>`](cli.md#vincent-task) — one subcommand each,
 spelled in kebab-case (`follow_up` is `vincent task follow-up`). `set priority`
 is the exception: it is a `PATCH`, and has no subcommand.

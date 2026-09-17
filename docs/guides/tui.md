@@ -1508,7 +1508,7 @@ cursor.
 `s` is a peek at history from the live board; the [Archived](#archived) screen
 is where history is paged, windowed and deleted.
 
-Archived and handed-off chats are **off this board by default**, the way
+Archived, handed-off and closed chats are **off this board by default**, the way
 archived tasks are off the task board. `s` cycles the listing — live, then the
 terminal ones, then both — and the header names the listing whenever it is not
 the default, so an empty board is never mistaken for no chats. A terminal chat's
@@ -1717,7 +1717,9 @@ Rows are listed **newest-archived first**, which is the only order an archive
 has. A selection deletes one row at a time and reports what happened — how many
 went, how many branches with them, and how many the daemon refused. A refusal
 names what is holding on: a fan-out parent still has its lanes, or a handed-off
-chat still points at the task. Delete those first and try again.
+chat still points at the task. Delete those first and try again. On a closed
+[chat opened on a task](#talking-to-an-agent-about-a-task), `b` is refused
+because the branch is the task's; `y` deletes it.
 
 ### Triggers
 

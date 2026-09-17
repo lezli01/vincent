@@ -199,7 +199,12 @@ not installed. A task that reaches the engine anyway blocks with
 `restricted_unsupported`, under the normal retry policy. Falling back
 to full-auto was rejected outright: it would run wide-open a step that explicitly
 asked not to be, converting a safety choice into its opposite on exactly one OS —
-the failure mode nobody would think to check for.
+the failure mode nobody would think to check for. The same holds for a
+[chat opened on a task](reference/task-lifecycle.md#chatting-with-a-stopped-task)
+that runs `restricted`, which takes the task's permission mode: `codex exec
+resume` has no `--sandbox`, so codex could not keep the chat's second turn
+restricted. Opening a codex chat on such a task is refused with `400`, and codex
+refuses a resumed restricted run itself.
 
 **Denied actions can become questions.** On an input-capable adapter (claude), a
 denied action surfaces as a `permission` request and the task waits for you —
