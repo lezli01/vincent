@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -323,7 +324,7 @@ func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	if m.height > 0 && msg.Y == m.height-1 {
 		for _, h := range m.footerHits {
 			if msg.X >= h.x0 && msg.X < h.x1 {
-				return m.updateKey(synthKey(h.key))
+				return m.replayKey(h.key, h.global)
 			}
 		}
 		return m, nil
@@ -335,6 +336,14 @@ func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.notice.active {
 		return m.updateNoticeKey(msg)
+	}
+	// The help overlay owns every key but ctrl+c, the palette's rule (task
+	// 112 decision 2). It sits above the input-capture gate: over a chat, a
+	// key that fell through would type into a draft the sheet is hiding, and
+	// esc would leave the chat instead of closing the sheet. Mouse and paste
+	// already stand down while it is open.
+	if m.help {
+		return m.updateHelpKey(msg)
 	}
 	// ctrl+v is the explicit paste, for terminals that hand the key to the
 	// app rather than pasting for you. It is caught ahead of every layer so
@@ -362,9 +371,14 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// into the draft and opens nothing (task 076 decision 7). The palette is
 	// §15's "what can be done right now" surface, and it had been unreachable
 	// from a chat since the workspace landed.
-	if msg.String() == paletteAltKey {
-		m.openPalette()
-		return m, nil
+	//
+	// f1 is `?` for the same surfaces, hoisted for the same reason (task 112
+	// decision 1): help had been unreachable from a chat, a filter or a form
+	// by its key, and a text field that took `?` as a key would lose it as a
+	// character.
+	if k := msg.String(); k == paletteAltKey || k == helpAltKey {
+		cmd, _ := m.globalKey(msg)
+		return m, cmd
 	}
 	// A view that is capturing text (the board's filter) owns every key but
 	// ctrl+c: typing "q" into a filter must not quit the TUI.
@@ -373,32 +387,51 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.views[m.active] = v
 		return m, cmd
 	}
+	if cmd, ok := m.globalKey(msg); ok {
+		return m, cmd
+	}
+	// The rest of the §15 esc stack — a takeover screen's own layers, ending
+	// in leave-to-home, and the board's filter layer — belongs to the views,
+	// and the bottom is a no-op: esc never quits. The top layer, the help
+	// overlay, closed in updateHelpKey before the key got here.
+	return m.delegate(msg)
+}
+
+// updateHelpKey is the open help overlay's keyboard: the three keys that
+// close it, ctrl+c because the TUI must always be killable, and nothing else.
+// It is what makes helpFooter's promise true — the keys of the surface under
+// the sheet do nothing until it closes.
+func (m *root) updateHelpKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "?", "esc", helpAltKey:
+		m.help = false
+	}
+	return m, nil
+}
+
+// globalKey runs the root's own single-key bindings, and reports whether key
+// was one of them in the state the root is in. A key it does not consume —
+// `!` while disconnected, `n` on the new-task form — is the caller's to route.
+func (m *root) globalKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	switch key := msg.String(); key {
 	case "q", "ctrl+c":
-		return m, tea.Quit
-	case ":":
+		return tea.Quit, true
+	case ":", paletteAltKey:
 		m.openPalette()
-		return m, nil
-	case "?":
+		return nil, true
+	case "?", helpAltKey:
 		m.help = !m.help
-		return m, nil
-	case "esc":
-		// The top layers of the §15 esc stack that the root owns: the help
-		// overlay, then a takeover screen's own layers (the views handle
-		// those, ending in leave-to-home). The board owns the filter
-		// layer, and the bottom is a no-op — esc never quits.
-		if m.help {
-			m.help = false
-			return m, nil
-		}
+		return nil, true
 	case "M":
 		m.mouseOn = !m.mouseOn
-		return m, nil
+		return nil, true
 	case "!":
 		// Jump to the next task needing a human — global, so it also pulls
 		// a takeover screen back to the board it acts on.
 		if m.phase == phaseConnected {
-			return m, tea.Batch(m.switchTo(viewHome), m.deliver(viewHome, jumpAttentionMsg{}))
+			return tea.Batch(m.switchTo(viewHome), m.deliver(viewHome, jumpAttentionMsg{})), true
 		}
 	case "n":
 		// Not while the form is already up: there, n is "no" to the discard
@@ -408,16 +441,37 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		// are, so on the chats board it falls through to delegate and makes a
 		// chat. The yield is scoped to this arm rather than sitting ahead of
 		// the switch because n is the only global key that both collides with
-		// a panel row and consumes the key unconditionally: esc is declared by
-		// ctxChat and ctxNewChat too, and must still close the help overlay
-		// first.
+		// a panel row and consumes the key unconditionally.
 		if m.phase == phaseConnected && m.active != viewNewTask && !m.panelOwnsKey(key) {
-			return m, m.openNewTask()
+			return m.openNewTask(), true
 		}
 	case "r":
 		if m.phase == phaseFailed || m.phase == phaseReconnecting {
-			return m, m.restartConnect()
+			return m.restartConnect(), true
 		}
+	}
+	return nil, false
+}
+
+// replayKey runs a key the human chose rather than pressed: a palette entry
+// or a footer span, both of which fire the key they show (the one-execution-
+// path rule). A global row replays into the root's own bindings, past the
+// input-capture gate (task 112 decision 3): picking "toggle this help" or
+// clicking `q quit` in a chat must do what it says, not type `?` or `q` into
+// the draft. A global key the root does not consume in its current state is
+// dropped rather than delegated where a text field has the keyboard, for the
+// same reason. Everything else — panel rows, task actions — takes the route
+// a keypress takes.
+func (m *root) replayKey(key string, global bool) (tea.Model, tea.Cmd) {
+	msg := synthKey(key)
+	if !global {
+		return m.updateKey(msg)
+	}
+	if cmd, ok := m.globalKey(msg); ok {
+		return m, cmd
+	}
+	if m.activeCapturesInput() {
+		return m, nil
 	}
 	return m.delegate(msg)
 }
@@ -441,7 +495,7 @@ func (m *root) updatePaletteKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if run.nav && (run.key == "" || m.panelOwnsKey(run.key)) {
 		return m, m.switchTo(run.navTarget)
 	}
-	return m.updateKey(synthKey(run.key))
+	return m.replayKey(run.key, run.global)
 }
 
 // updateReaderKey routes keys into the open copy picker and puts whatever it
@@ -575,6 +629,14 @@ func synthKey(key string) tea.KeyPressMsg {
 	// (task 074). A rule the registry cannot outrun is the fix.
 	if mod, ok := strings.CutPrefix(key, "ctrl+"); ok && len([]rune(mod)) == 1 {
 		return tea.KeyPressMsg{Code: []rune(mod)[0], Mod: tea.ModCtrl}
+	}
+	// Any function key, by the same reasoning. The default arm would read f1
+	// as the letter f carrying the text "f1" — a press no terminal sends, and
+	// one a Code match would take for `f` (task 112).
+	if n, ok := strings.CutPrefix(key, "f"); ok {
+		if i, err := strconv.Atoi(n); err == nil && i >= 1 && i <= 63 {
+			return tea.KeyPressMsg{Code: tea.KeyF1 + rune(i-1)}
+		}
 	}
 	return tea.KeyPressMsg{Code: rune(key[0]), Text: key}
 }
@@ -1004,7 +1066,7 @@ func (m *root) footerLine() string {
 		rows = t.liveBindings(rows)
 	}
 	retry := m.phase == phaseFailed || m.phase == phaseReconnecting
-	line, hits := buildFooter(m.width, rows, bar, target, attention, retry)
+	line, hits := buildFooter(m.width, rows, bar, target, attention, retry, m.activeCapturesInput())
 	m.footerHits = hits
 	return line
 }

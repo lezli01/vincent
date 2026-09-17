@@ -14,7 +14,9 @@ import (
 // surface's keys — as many as the width holds, in registry priority order —
 // then the selected task's available_actions, then `+N`: how many of this
 // surface's palette-reachable keys the line is not showing. Pinned right and
-// never truncated: `: commands  ? help  q quit`. Overflow truncates from the
+// never truncated: `: commands  ? help  q quit`, or `ctrl+p commands  f1 help
+// ctrl+c quit` while a text field has the keyboard and the other three would
+// be typed into it (task 112 decision 4). Overflow truncates from the
 // left with `…`: the pinned segment is the escape hatch that makes every
 // other key optional, so a narrow terminal dropping it would fail exactly
 // when the human is most lost.
@@ -26,10 +28,13 @@ import (
 // the mechanism, and it was wrong at both 80 and 200 columns.
 
 // footerHit is one clickable span: clicking it fires the key it shows
-// (§15 Mouse) — the palette's one-execution-path rule again.
+// (§15 Mouse) — the palette's one-execution-path rule again. global marks a
+// span standing for one of the root's own keys, which a click fires past the
+// input-capture gate (task 112 decision 3).
 type footerHit struct {
 	x0, x1 int
 	key    string
+	global bool
 }
 
 // footerSeg is one composed segment; key is empty for unclickable text
@@ -41,6 +46,9 @@ type footerSeg struct {
 	// report as hidden — a registry row the palette lists, or a task action.
 	// Losing one to the `…` puts it back into the count (task 094).
 	counts bool
+	// global marks a segment firing one of the root's own keys: the pinned
+	// part, `!`, `r retry` and `+N`'s palette.
+	global bool
 }
 
 // renderFooter composes the line; buildFooter additionally reports the
@@ -48,18 +56,15 @@ type footerSeg struct {
 // pending confirmation replaces the left segments outright — it owns the
 // keyboard, so nothing else is actionable anyway. attention is the
 // needs-a-human count behind the `!` hint, shown only when non-zero; retry
-// adds the reconnect hint while the daemon is unreachable.
+// adds the reconnect hint while the daemon is unreachable. textField reports
+// that the active surface is capturing text, which picks the pinned part.
 func renderFooter(width int, panelRows []binding, bar *actionBar, target taskActions, attention int, retry bool) string {
-	line, _ := buildFooter(width, panelRows, bar, target, attention, retry)
+	line, _ := buildFooter(width, panelRows, bar, target, attention, retry, false)
 	return line
 }
 
-func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActions, attention int, retry bool) (string, []footerHit) {
-	pinnedSegs := []footerSeg{
-		{text: styleKey.Render(":") + styleDim.Render(" commands  "), key: ":"},
-		{text: styleKey.Render("?") + styleDim.Render(" help  "), key: "?"},
-		{text: styleKey.Render("q") + styleDim.Render(" quit"), key: "q"},
-	}
+func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActions, attention int, retry, textField bool) (string, []footerHit) {
+	pinnedSegs := footerPinnedSegs(textField)
 	var pinned strings.Builder
 	for _, s := range pinnedSegs {
 		pinned.WriteString(s.text)
@@ -196,7 +201,7 @@ func footerFit(segs []footerSeg, n, avail int) (string, []footerHit, int) {
 			continue
 		}
 		if s.key != "" {
-			hits = append(hits, footerHit{x0: x0, x1: x0 + ansi.StringWidth(s.text), key: s.key})
+			hits = append(hits, footerHit{x0: x0, x1: x0 + ansi.StringWidth(s.text), key: s.key, global: s.global})
 		}
 	}
 	return line, hits, lost
@@ -254,7 +259,7 @@ func footerAdmit(hints, rest []footerSeg, countable, avail int) int {
 // menu: paletteEntries already lists exactly these rows from the same
 // registry, and a second surface would be a second thing to keep in sync.
 func footerMoreSeg(n int) footerSeg {
-	return footerSeg{text: styleDim.Render(fmt.Sprintf("+%d", n)), key: ":"}
+	return footerSeg{text: styleDim.Render(fmt.Sprintf("+%d", n)), key: ":", global: true}
 }
 
 // footerCountable is what `+N` counts against (task 094 decision 3): the rows
@@ -287,11 +292,29 @@ func padBetween(left, right string, width int) string {
 	return left + strings.Repeat(" ", pad) + right
 }
 
+// footerPinnedSegs is the escape hatch, named in the keys that work on the
+// surface in front of the human (task 112 decision 4). While a text field has
+// the keyboard `:`, `?` and `q` are characters it would take, so the pinned
+// part names the three keys the root hoists above the capture gate instead: a
+// footer that advertises a key a chat types into the draft is teaching the
+// wrong thing on exactly the surface where help was hardest to find.
+func footerPinnedSegs(textField bool) []footerSeg {
+	palette, help, quit := ":", "?", "q"
+	if textField {
+		palette, help, quit = paletteAltKey, helpAltKey, "ctrl+c"
+	}
+	return []footerSeg{
+		{text: styleKey.Render(palette) + styleDim.Render(" commands  "), key: palette, global: true},
+		{text: styleKey.Render(help) + styleDim.Render(" help  "), key: help, global: true},
+		{text: styleKey.Render(quit) + styleDim.Render(" quit"), key: quit, global: true},
+	}
+}
+
 func pinnedHits(x int, segs []footerSeg) []footerHit {
 	out := make([]footerHit, 0, len(segs))
 	for _, s := range segs {
 		w := ansi.StringWidth(s.text)
-		out = append(out, footerHit{x0: x, x1: x + w, key: s.key})
+		out = append(out, footerHit{x0: x, x1: x + w, key: s.key, global: s.global})
 		x += w
 	}
 	return out
@@ -318,14 +341,14 @@ func footerRestSegs(bar *actionBar, target taskActions, attention int, retry boo
 		// `!` is a global row, and the pinned segment stands for those: shown
 		// here, never counted.
 		segs = append(segs, footerSeg{
-			text: styleWarn.Render(fmt.Sprintf("! next attention (%d)", attention)), key: "!",
+			text: styleWarn.Render(fmt.Sprintf("! next attention (%d)", attention)), key: "!", global: true,
 		})
 	}
 	if retry {
 		// The reconnect hint has no registry row at all — the only `r` row is
 		// the §6 retry action — so the palette cannot reach it and `+N` never
 		// speaks for it.
-		segs = append(segs, footerSeg{text: styleKey.Render("r") + " retry", key: "r"})
+		segs = append(segs, footerSeg{text: styleKey.Render("r") + " retry", key: "r", global: true})
 	}
 	if bar != nil && bar.status != "" {
 		style := styleDim
