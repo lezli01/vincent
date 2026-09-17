@@ -117,7 +117,7 @@ not consume a retry**. See [Task lifecycle](reference/task-lifecycle.md#interrup
 
 ### Do I have to write YAML?
 
-Not to start: the built-in `adhoc` workflow is one agent step, and five
+Not to start: the built-in `adhoc` workflow is one agent step, and eight
 [examples](../examples) ship ready to copy. You will want your own soon after —
 [Writing workflows](guides/workflows.md) is short. If you would rather not write
 the first one by hand, run the built-in `create-workflow` against the repository

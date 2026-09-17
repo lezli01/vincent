@@ -94,7 +94,7 @@ reasoning).
 - [x] **113.1 — `examples/go-checks.yaml`, `examples/ship.yaml`, `examples/split-work.yaml`, each with a header saying what shape of work it is and why each control-flow feature is there.** ✓ 2026-09-17
 - [x] **113.2 — `fix-and-test.yaml` declares `platforms: [posix]` with a corrected comment; `cursor-review.yaml`'s shell comment names `/bin/sh` and `pwsh`.** ✓ 2026-09-17
 - [x] **113.3 — Tests: the portability scan with its negative case and pattern table; `renderAll` renders a `lane:` template's own `if`, `id`, `needs` and `fields` through `RenderLane`, as `vincent workflow render` does.** Depends: 113.1, 113.2. ✓ 2026-09-17
-- [x] **113.4 — Docs: a table of every example in the workflow guide with links from §4.5, §4.6, §4.7, §4.10, §7.3, §9.4 and §10.3; counts and name lists in the quickstart, `README.md`, `docs/README.md`, the CLI reference and the schema reference; the scripting guide's Windows note; `CHANGELOG.md`.** ✓ 2026-09-17
+- [x] **113.4 — Docs: a table of every example in the workflow guide with links from §4.5, §4.6, §4.7, §4.10, §7.3, §9.4 and §10.3; counts and name lists in the quickstart, the FAQ, `README.md`, `docs/README.md`, the CLI reference and the schema reference; the scripting guide's Windows note; `CHANGELOG.md`.** ✓ 2026-09-17
 
 ## What the tests prove
 
