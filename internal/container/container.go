@@ -13,6 +13,13 @@ import (
 // noise a workflow author would have to explain.
 const ScratchDir = "/vincent-run"
 
+// HomeDir is the vincent-provided HOME every containerized step runs with
+// while `mount_agent_config` is on (task 062.2 decision 3). An image's HOME is
+// usually `/` under `--user uid` on Linux, where `~/.claude` finds nothing;
+// this is a writable tmpfs with the host's agent configuration directories
+// bind-mounted beneath it.
+const HomeDir = "/vincent-home"
+
 // LabelTask names the task a container belongs to. Recovery matches on it
 // before removing anything: a container id journaled by a step run is only
 // killed when the container still claims the task that journaled it (§12.4 —
@@ -45,14 +52,16 @@ type CreateSpec struct {
 	Labels map[string]string
 	Mounts []Mount
 	// Network false drops the container off the network entirely. Decision 1
-	// makes that a contradiction with `mcp.wire_steps: true` for an agent step
-	// inside the container; the creation-time refusal waits for task 062,
-	// because until then every agent runs on the host (issue #366).
+	// makes that a contradiction with `mcp.wire_steps: true` for a workflow
+	// with an agent step, which task creation refuses (062.2 decision 5).
 	Network bool
 	// AddHostGateway maps host.docker.internal to the host, which is how a
-	// containerized agent step will reach the daemon's per-step MCP endpoint
-	// once task 062 rewrites the endpoint's host (decision 1).
+	// containerized agent step reaches the daemon's per-step MCP endpoint
+	// (decision 1, 062.2 decision 1).
 	AddHostGateway bool
+	// Home mounts a writable tmpfs at HomeDir (062.2 decision 3). Mounts
+	// targeting paths beneath it land on top of it.
+	Home bool
 	// User is passed as `--user`; empty means the image's own user. It is set
 	// on a Linux host so files land owned by the invoking user (decision 5),
 	// and left empty on macOS where Docker Desktop maps ownership itself.
@@ -69,9 +78,11 @@ type ExecSpec struct {
 	// resolved shell and its flags, or an agent CLI and its flags. The
 	// runtime wraps it; it never rewrites it.
 	Argv []string
-	// Env are `K=V` strings layered on top of the image's own environment.
+	// Env are `--env` values layered on top of the image's own environment.
 	// A containerized step's base is the image's, never the daemon's
-	// (decision 7).
+	// (decision 7). An entry is `K=V`, or a bare `K` whose value the runtime
+	// client reads from its own environment — which is how an agent step's
+	// secrets stay off the host argv (SplitEnv).
 	Env     []string
 	WorkDir string
 	User    string
@@ -97,6 +108,15 @@ type Runtime interface {
 	// parsing paths are the same code they are for a host step — which is
 	// what makes "identical to a host run" testable rather than asserted.
 	Exec(id string, spec ExecSpec) []string
+	// ExecDirect is Exec without the pid-file wrapper: the argv runs as the
+	// exec's own process. It is for short probes — resolving an agent CLI on
+	// the image's PATH, its `--version` — that nothing ever signals (task
+	// 062.2 decision 2). Key is ignored.
+	ExecDirect(id string, spec ExecSpec) []string
+	// Gateway returns the gateway IP of the container's network, the address
+	// the host answers on from inside it (062.2 decision 1). "" with no error
+	// means the container has no network with a gateway.
+	Gateway(ctx context.Context, id string) (string, error)
 	// Signal delivers a signal to the process ExecSpec.Key names, from
 	// inside the container. Killing the host-side client would leave that
 	// process running (decision 9).
@@ -123,6 +143,46 @@ func New(binary string) Runtime {
 		binary = "docker"
 	}
 	return &dockerRuntime{bin: binary}
+}
+
+// clientEnvNames are the variables the runtime client resolves its own daemon
+// connection and configuration from. They keep the daemon's values on the host
+// side, so a step's value for one of them is passed literally instead.
+func clientEnvName(name string) bool {
+	return name == "HOME" || name == "PATH" || strings.HasPrefix(name, "DOCKER_")
+}
+
+// SplitEnv turns a step's `K=V` environment into the two halves a
+// containerized agent exec needs (task 062.2): flags for ExecSpec.Env and
+// values for the runtime client's own environment. Every variable goes in by
+// name, its value only in the client's environment, so a secret — codex's MCP
+// token (task 057 decision 8), an API key the policy passes — never appears on
+// the host argv. The client's resolution variables (HOME, PATH, DOCKER_*) are
+// the exception: their host values are what lets the client find its daemon,
+// so the step's values go in literally. Duplicates keep the last value, the
+// way exec does.
+func SplitEnv(env []string) (flags, client []string) {
+	last := make(map[string]string, len(env))
+	var order []string
+	for _, kv := range env {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok || k == "" {
+			continue
+		}
+		if _, seen := last[k]; !seen {
+			order = append(order, k)
+		}
+		last[k] = v
+	}
+	for _, k := range order {
+		if clientEnvName(k) {
+			flags = append(flags, k+"="+last[k])
+			continue
+		}
+		flags = append(flags, k)
+		client = append(client, k+"="+last[k])
+	}
+	return flags, client
 }
 
 // Name builds the container name for a task. It is derived rather than stored

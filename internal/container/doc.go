@@ -1,5 +1,6 @@
-// Package container runs a task's step processes inside a container instead of
-// on the daemon's own host (spec §16, §20 — task 061).
+// Package container runs a task's step processes — commands, checks and, as of
+// task 062.2, agent CLIs — inside a container instead of on the daemon's own
+// host (spec §16, §20 — tasks 061 and 062).
 //
 // The shape mirrors internal/agent: one Runtime interface, one implementation
 // per CLI, and a step engine that never learns which one it holds. Today the
@@ -27,6 +28,6 @@
 // The container confines the filesystem outside the two mounts, the shell and
 // the installed tooling. It is not a network boundary — outbound traffic is on
 // by default — and it is not a credential boundary once `mount_agent_config`
-// puts the host's agent configuration inside it. That knob is off by default
-// until task 062 moves the agent in (issue #366). §16 states both.
+// puts the host's agent configuration inside it, which it does by default now
+// that agent steps run in the container too (task 062.2). §16 states both.
 package container

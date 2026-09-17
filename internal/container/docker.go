@@ -41,6 +41,19 @@ func (d *dockerRuntime) EnsureImage(ctx context.Context, image string) error {
 }
 
 func (d *dockerRuntime) Create(ctx context.Context, spec CreateSpec) (string, error) {
+	out, err := d.run(ctx, createArgs(spec)...)
+	if err != nil {
+		return "", fmt.Errorf("%w: create %s: %w", ErrUnavailable, spec.Image, err)
+	}
+	id := strings.TrimSpace(out)
+	if id == "" {
+		return "", fmt.Errorf("%w: create %s returned no id", ErrUnavailable, spec.Image)
+	}
+	return id, nil
+}
+
+// createArgs is Create's argv after the binary, apart so a table can pin it.
+func createArgs(spec CreateSpec) []string {
 	argv := []string{"run", "--detach", "--name", spec.Name}
 	for _, k := range sortedKeys(spec.Labels) {
 		argv = append(argv, "--label", k+"="+spec.Labels[k])
@@ -57,6 +70,11 @@ func (d *dockerRuntime) Create(ctx context.Context, spec CreateSpec) (string, er
 	// mode=1777 so a step running as the invoking user can write its pid file
 	// into a scratch mount an image's own user may also touch.
 	argv = append(argv, "--tmpfs", ScratchDir+":rw,mode=1777")
+	if spec.Home {
+		// Before the volumes: docker orders mounts by target depth anyway,
+		// and reading the argv in that order is reading what lands on what.
+		argv = append(argv, "--tmpfs", HomeDir+":rw,mode=1777")
+	}
 	for _, m := range spec.Mounts {
 		v := m.Source + ":" + m.Target
 		if m.ReadOnly {
@@ -68,19 +86,20 @@ func (d *dockerRuntime) Create(ctx context.Context, spec CreateSpec) (string, er
 	// shell, an init — does not decide whether the container stays up. What
 	// keeps it up is this sleep loop, and nothing else runs until a step
 	// execs in.
-	argv = append(argv, "--entrypoint", "/bin/sh", spec.Image, "-c", "while :; do sleep 3600; done")
-	out, err := d.run(ctx, argv...)
-	if err != nil {
-		return "", fmt.Errorf("%w: create %s: %w", ErrUnavailable, spec.Image, err)
-	}
-	id := strings.TrimSpace(out)
-	if id == "" {
-		return "", fmt.Errorf("%w: create %s returned no id", ErrUnavailable, spec.Image)
-	}
-	return id, nil
+	return append(argv, "--entrypoint", "/bin/sh", spec.Image, "-c", "while :; do sleep 3600; done")
 }
 
 func (d *dockerRuntime) Exec(id string, spec ExecSpec) []string {
+	argv := append(d.execFlags(spec), id, "/bin/sh", "-c", pidFileWrapper(spec.Key), "vincent")
+	return append(argv, spec.Argv...)
+}
+
+func (d *dockerRuntime) ExecDirect(id string, spec ExecSpec) []string {
+	return append(append(d.execFlags(spec), id), spec.Argv...)
+}
+
+// execFlags is the `docker exec` prefix both exec shapes share.
+func (d *dockerRuntime) execFlags(spec ExecSpec) []string {
 	// -i, never -t (decision 10): a TTY merges stdout and stderr and
 	// translates newlines, which corrupts the JSONL an adapter's LineParser
 	// reads and therefore §17's token and cost records.
@@ -94,8 +113,21 @@ func (d *dockerRuntime) Exec(id string, spec ExecSpec) []string {
 	for _, e := range spec.Env {
 		argv = append(argv, "--env", e)
 	}
-	argv = append(argv, id, "/bin/sh", "-c", pidFileWrapper(spec.Key), "vincent")
-	return append(argv, spec.Argv...)
+	return argv
+}
+
+func (d *dockerRuntime) Gateway(ctx context.Context, id string) (string, error) {
+	out, err := d.run(ctx, "inspect", "--format",
+		"{{range .NetworkSettings.Networks}}{{.Gateway}} {{end}}", id)
+	if err != nil {
+		return "", fmt.Errorf("inspect %s network: %w", id, err)
+	}
+	// The first network with a gateway: a task container is created on one
+	// network, and `--network none` reports none at all.
+	if gws := strings.Fields(out); len(gws) > 0 {
+		return gws[0], nil
+	}
+	return "", nil
 }
 
 // pidFileWrapper writes the in-container pid and then execs the real argv, so

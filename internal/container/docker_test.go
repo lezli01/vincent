@@ -78,3 +78,75 @@ func TestRuntimeDefaultsToDocker(t *testing.T) {
 		t.Errorf("New(\"podman\").Name() = %q, want podman", got)
 	}
 }
+
+// TestExecDirectArgv pins the unwrapped exec an agent CLI is resolved and
+// probed through (task 062.2 decision 2): the same flags as Exec, and the argv
+// as the exec's own process — no pid file, since nothing signals a probe.
+func TestExecDirectArgv(t *testing.T) {
+	got := New("docker").ExecDirect("cid", ExecSpec{
+		Key: "ignored", Argv: []string{"/bin/sh", "-c", `command -v "$1"`, "vincent", "claude"},
+		Env: []string{"HOME=/vincent-home"}, User: "501:20",
+	})
+	want := []string{
+		"docker", "exec", "--interactive", "--user", "501:20", "--env", "HOME=/vincent-home",
+		"cid", "/bin/sh", "-c", `command -v "$1"`, "vincent", "claude",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ExecDirect argv =\n  %q\nwant\n  %q", got, want)
+	}
+}
+
+// TestCreateArgs pins the container's creation argv, and in particular task
+// 062.2 decision 3's tmpfs home: present only when asked for, and ahead of the
+// bind mounts that land beneath it.
+func TestCreateArgs(t *testing.T) {
+	base := CreateSpec{
+		Image: "img", Name: "vincent-task-1", Labels: map[string]string{LabelTask: "1"},
+		Mounts:  []Mount{{Source: "/h/.claude", Target: HomeDir + "/.claude"}},
+		Network: true, AddHostGateway: true,
+	}
+	tail := []string{
+		"--volume", "/h/.claude:/vincent-home/.claude",
+		"--entrypoint", "/bin/sh", "img", "-c", "while :; do sleep 3600; done",
+	}
+	head := []string{
+		"run", "--detach", "--name", "vincent-task-1", "--label", LabelTask + "=1",
+		"--add-host=host.docker.internal:host-gateway", "--tmpfs", "/vincent-run:rw,mode=1777",
+	}
+	cases := []struct {
+		name string
+		home bool
+		want []string
+	}{
+		{"no home", false, append(append([]string(nil), head...), tail...)},
+		{"home", true, append(append(append([]string(nil), head...), "--tmpfs", "/vincent-home:rw,mode=1777"), tail...)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := base
+			spec.Home = tc.home
+			if got := createArgs(spec); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("createArgs =\n  %q\nwant\n  %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestSplitEnv is the rule that keeps a step's secrets off the host argv
+// (task 062.2): every variable is a bare name on the argv with its value in the
+// client's environment, except the client's own resolution variables, which
+// keep their host values client-side and go in literally.
+func TestSplitEnv(t *testing.T) {
+	flags, client := SplitEnv([]string{
+		"PATH=/usr/bin", "VINCENT_MCP_TOKEN=s3cret", "HOME=/vincent-home",
+		"DOCKER_HOST=unix:///x", "A=1", "A=2", "malformed",
+	})
+	wantFlags := []string{"PATH=/usr/bin", "VINCENT_MCP_TOKEN", "HOME=/vincent-home", "DOCKER_HOST=unix:///x", "A"}
+	wantClient := []string{"VINCENT_MCP_TOKEN=s3cret", "A=2"}
+	if !reflect.DeepEqual(flags, wantFlags) {
+		t.Errorf("flags = %q, want %q", flags, wantFlags)
+	}
+	if !reflect.DeepEqual(client, wantClient) {
+		t.Errorf("client = %q, want %q", client, wantClient)
+	}
+}
