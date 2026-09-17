@@ -3739,8 +3739,9 @@ would invalidate every one of them.
   launcher and would open a GUI; the adapter resolves `cursor-agent` only. The
   adapter's `Name()` — and therefore the workflow `agent:` value and the
   `agents.cursor.path` config key — is `cursor`.
-- **Reports no run header and no run metadata *yet* (stated positively,
-  2026-08-31, task 066).** Cursor's `tool_call/completed` carries no outcome
+- **Reports a run header and part of the run metadata** (*replaces "Reports
+  no run header and no run metadata yet (stated positively, 2026-08-31, task
+  066)", 2026-09-17, task 108*). Cursor's `tool_call/completed` carries no outcome
   type and no non-execution kind, so `ToolResult.Verb` and `.Blocked` stay
   empty. The rest is scope, not absence, and saying so is the point of stating
   it here: cursor's `system`/`init` line **does** carry `cwd` (though no tool
