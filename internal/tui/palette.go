@@ -6,6 +6,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // palette is the §15 command palette: `:` opens a searchable popup listing
@@ -50,7 +52,7 @@ func newPalette(entries []paletteEntry) *palette {
 // current state — the same gate the footer applies, so the palette never
 // offers a press the footer knows does nothing (issue #372).
 func paletteEntries(ctx bindingContext, target taskActions, editable, connected, github bool, live func([]binding) []binding) []paletteEntry {
-	out := make([]paletteEntry, 0, len(bindings))
+	out := make([]paletteEntry, 0, len(registry()))
 	if connected && (target.id != 0 || target.bulk()) {
 		// A selection is what the keys act on, so it is what the section is
 		// titled after (task 011) — running `archive` from here with nine rows
@@ -59,11 +61,11 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 		if target.bulk() {
 			group = "actions on " + selectedNoun(len(target.marked))
 		}
-		for _, b := range bindings {
+		for _, b := range registry() {
 			if b.scope != scopeTaskAction || !target.has(b.action) {
 				continue
 			}
-			if b.key == "E" && !editable {
+			if b.op == keymap.EditRetry && !editable {
 				continue
 			}
 			out = append(out, paletteEntry{group: group, label: b.label, key: b.key})
@@ -72,7 +74,7 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 	// Views get their own section: navigating to them is the reason the
 	// digits could be retired, so it must not read as one more command
 	// (T3.8 finding).
-	for _, b := range withoutGitHub(bindings, github) {
+	for _, b := range withoutGitHub(registry(), github) {
 		if b.nav {
 			out = append(out, paletteEntry{
 				group: "views", label: b.label, key: b.key,
@@ -90,7 +92,7 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 		}
 		out = append(out, paletteEntry{group: string(ctx), label: b.label, key: b.key})
 	}
-	for _, b := range bindings {
+	for _, b := range registry() {
 		if b.scope == scopeGlobal && !b.nav && !b.noPalette {
 			out = append(out, paletteEntry{group: "global", label: b.label, key: b.key, global: true})
 		}

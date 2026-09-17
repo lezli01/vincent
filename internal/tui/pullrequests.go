@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // The pull-requests takeover (§15 view 7, task 052.6).
@@ -421,7 +422,7 @@ func (v *pullRequestsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "down", "j":
 		v.cursor = min(v.cursor+1, max(len(v.rows())-1, 0))
 		return v, nil
-	case "/":
+	case opKey(keymap.Filter):
 		v.filtering = true
 		v.filter.Focus()
 		return v, nil
@@ -435,16 +436,16 @@ func (v *pullRequestsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			return v, nil
 		}
 		return v, func() tea.Msg { return selectViewMsg{id: viewHome} }
-	case "R":
+	case opKey(keymap.Refresh):
 		return v, v.loadCmd()
-	case "o":
+	case opKey(keymap.Browser):
 		return v, v.openSelected()
 	case "enter":
 		return v, v.openTask()
-	case "s":
+	case opKey(keymap.Scope):
 		v.cycleState()
 		return v, v.loadCmd()
-	case "a":
+	case opKey(keymap.Add):
 		return v, v.createTask()
 	case "l":
 		v.openLinkPicker()

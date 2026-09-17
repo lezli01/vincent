@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 const (
@@ -701,10 +702,10 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 
 	if b.archived {
 		switch msg.String() {
-		case "D":
+		case opKey(keymap.Delete):
 			b.askDelete()
 			return b, nil
-		case "s":
+		case opKey(keymap.Scope):
 			// The date window (task 093). `s` cycles what a list is showing
 			// everywhere it appears, and on an archived board that is the
 			// window; skip is a §6 action and an archived task offers none.
@@ -725,7 +726,7 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case "/":
+	case opKey(keymap.Filter):
 		b.filtering = true
 		b.filter.Focus()
 		return b, nil

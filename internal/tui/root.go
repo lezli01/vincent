@@ -11,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // connPhase is the daemon-connection state machine the shell renders. The
@@ -376,7 +377,7 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// decision 1): help had been unreachable from a chat, a filter or a form
 	// by its key, and a text field that took `?` as a key would lose it as a
 	// character.
-	if k := msg.String(); k == paletteAltKey || k == helpAltKey {
+	if k := msg.String(); k == opKey(keymap.PaletteAlt) || k == opKey(keymap.HelpAlt) {
 		cmd, _ := m.globalKey(msg)
 		return m, cmd
 	}
@@ -405,7 +406,7 @@ func (m *root) updateHelpKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
-	case "?", "esc", helpAltKey:
+	case opKey(keymap.Help), "esc", opKey(keymap.HelpAlt):
 		m.help = false
 	}
 	return m, nil
@@ -416,24 +417,24 @@ func (m *root) updateHelpKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // `!` while disconnected, `n` on the new-task form — is the caller's to route.
 func (m *root) globalKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	switch key := msg.String(); key {
-	case "q", "ctrl+c":
+	case opKey(keymap.Quit), "ctrl+c":
 		return tea.Quit, true
-	case ":", paletteAltKey:
+	case opKey(keymap.Palette), opKey(keymap.PaletteAlt):
 		m.openPalette()
 		return nil, true
-	case "?", helpAltKey:
+	case opKey(keymap.Help), opKey(keymap.HelpAlt):
 		m.help = !m.help
 		return nil, true
-	case "M":
+	case opKey(keymap.Mouse):
 		m.mouseOn = !m.mouseOn
 		return nil, true
-	case "!":
+	case opKey(keymap.NextAttention):
 		// Jump to the next task needing a human — global, so it also pulls
 		// a takeover screen back to the board it acts on.
 		if m.phase == phaseConnected {
 			return tea.Batch(m.switchTo(viewHome), m.deliver(viewHome, jumpAttentionMsg{})), true
 		}
-	case "n":
+	case opKey(keymap.New):
 		// Not while the form is already up: there, n is "no" to the discard
 		// prompt, and re-opening would throw away the draft it is asking
 		// about. And not when the active surface declares n as a row of its

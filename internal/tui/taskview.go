@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // taskViewTab names the full-screen task surfaces. Steps is deliberately
@@ -448,7 +449,7 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// One task at a time. Drilling into a lane and pressing esc used to
 		// land on the board however deep the reader had gone (#316).
 		return t.popCmd()
-	case "l":
+	case opKey(keymap.Lane):
 		if cmd := t.openLaneCmd(); cmd != nil {
 			return cmd
 		}
@@ -481,13 +482,13 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		if t.tab == taskTabSteps && t.detail.selectedRun != 0 {
 			return t.setTab(taskTabOutput)
 		}
-	case "R":
+	case opKey(keymap.Repair):
 		cmd := t.detail.update(msg)
 		if t.detail.repair != nil {
 			t.openPopup()
 		}
 		return cmd
-	case "F":
+	case opKey(keymap.FollowUp):
 		cmd := t.detail.update(msg)
 		if t.detail.followUp != nil {
 			t.openPopup()
@@ -684,7 +685,7 @@ func (t *taskView) setTab(tab taskViewTab) tea.Cmd {
 
 func (t *taskView) updateDetailsKey(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
-	case "o":
+	case opKey(keymap.Browser):
 		// The pull-request section's two keys (task 052.6 decision 2). Both
 		// only reach a browser, which is what keeps the tab a read-only
 		// inspector. Neither is offered inside a popup (task 059 decision 6).

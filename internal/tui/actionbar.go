@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // actionTimeout bounds one action call. Cancel kills a process tree and
@@ -35,31 +36,24 @@ type actionResultMsg struct {
 	err     error
 }
 
-// actionKeys binds §15's keys to the actions they can mean. `p` is pause or
-// resume depending on which the daemon offers, which is why a key maps to a
-// list; the rest are one to one. `x` rejects a gate — §15 gave approve `a`
-// and retry `r`, and left reject unnamed.
-var actionKeys = map[string][]string{
-	"p": {apiclient.ActionPause, apiclient.ActionResume},
-	"c": {apiclient.ActionCancel},
-	"a": {apiclient.ActionApprove},
-	"x": {apiclient.ActionReject},
-	"r": {apiclient.ActionRetry},
-	"s": {apiclient.ActionSkip},
-	"A": {apiclient.ActionArchive},
-}
-
-// actionOrder fixes how the hint line reads, so the bar does not reshuffle
+// actionOps binds the §6 actions the bar dispatches to the operations whose
+// keys they answer (task 115). Pause and resume share one operation, which is
+// why `p` resolves to whichever the daemon offers; the rest are one to one.
+// `x` rejects a gate — §15 gave approve `a` and retry `r`, and left reject
+// unnamed. The order is how the hint line reads, so the bar does not reshuffle
 // under a cursor as states change.
-var actionOrder = []struct{ action, key string }{
-	{apiclient.ActionPause, "p"},
-	{apiclient.ActionResume, "p"},
-	{apiclient.ActionApprove, "a"},
-	{apiclient.ActionReject, "x"},
-	{apiclient.ActionRetry, "r"},
-	{apiclient.ActionSkip, "s"},
-	{apiclient.ActionCancel, "c"},
-	{apiclient.ActionArchive, "A"},
+var actionOps = []struct {
+	action string
+	op     keymap.Op
+}{
+	{apiclient.ActionPause, keymap.Pause},
+	{apiclient.ActionResume, keymap.Pause},
+	{apiclient.ActionApprove, keymap.Approve},
+	{apiclient.ActionReject, keymap.Reject},
+	{apiclient.ActionRetry, keymap.Retry},
+	{apiclient.ActionSkip, keymap.Skip},
+	{apiclient.ActionCancel, keymap.Cancel},
+	{apiclient.ActionArchive, keymap.Archive},
 }
 
 // confirmed actions are the ones that destroy something a human cannot get
@@ -197,9 +191,9 @@ func (a *actionBar) handleKey(key string, client *apiclient.Client, t taskAction
 // resolveAction reports which action a key means for this task, if any. `p`
 // is pause or resume depending on which the daemon offers.
 func resolveAction(key string, t taskActions) (string, bool) {
-	for _, action := range actionKeys[key] {
-		if t.has(action) {
-			return action, true
+	for _, o := range actionOps {
+		if opKey(o.op) == key && t.has(o.action) {
+			return o.action, true
 		}
 	}
 	return "", false
@@ -377,10 +371,10 @@ func (a *actionBar) render(t taskActions) string {
 	if a.pending != "" {
 		return styleWarn.Render(" " + a.confirmPrompt(t))
 	}
-	parts := make([]string, 0, len(actionOrder)+2)
-	for _, o := range actionOrder {
+	parts := make([]string, 0, len(actionOps)+2)
+	for _, o := range actionOps {
 		if t.has(o.action) {
-			parts = append(parts, styleKey.Render(o.key)+" "+actionLabel(t, o.action))
+			parts = append(parts, styleKey.Render(opKey(o.op))+" "+actionLabel(t, o.action))
 		}
 	}
 	line := " " + strings.Join(parts, styleDim.Render(" · "))

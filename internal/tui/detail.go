@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 const (
@@ -766,9 +767,9 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// other one" are the same move. A third tab would have to split them,
 		// and this is the place that changes.
 		return d.toggleTab()
-	case "e":
+	case opKey(keymap.Editor):
 		return d.openTranscript()
-	case "E":
+	case opKey(keymap.EditRetry):
 		// The same gate the hint line and the palette use: retry on offer
 		// *and* a step carrying text to edit. A fan_out parent parked in
 		// `awaiting_children` offers retry — as the cascade (task 090) — and
@@ -778,12 +779,12 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			return d.editRetry()
 		}
 		return nil
-	case "R":
+	case opKey(keymap.Repair):
 		// The repair form (§6, task 025). `r` is retry and `E` is edit+retry;
 		// `R` is free in the task workspace, where the takeover screens that use
 		// it for re-probing never are.
 		return d.openRepair()
-	case "F":
+	case opKey(keymap.FollowUp):
 		// The follow-up form (§6, task 027). `f` is follow-output and is
 		// panel-scoped, so the capital is free in the task-action scope.
 		return d.openFollowUp()

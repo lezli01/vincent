@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // The triggers form (§15 view 11, task 096.6): task 065's form machinery on
@@ -409,7 +410,7 @@ func (v *triggersView) updateFormKey(msg tea.KeyPressMsg) tea.Cmd {
 		f.cursor = min(max(len(f.rows)-1, 0), f.cursor+1)
 	case "enter":
 		return v.formActivate()
-	case "R":
+	case opKey(keymap.Refresh):
 		f.err, f.note = "", ""
 		f.rowErr = map[string]string{}
 		f.loading = true

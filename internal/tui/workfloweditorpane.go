@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // The editor's typed-value overlays: the multi-line pane a block scalar is
@@ -163,7 +164,7 @@ func (o *wfEditorMap) Update(msg tea.KeyPressMsg) (wfEditorOverlay, tea.Cmd) {
 		}
 		in.Focus()
 		o.input = &in
-	case "d":
+	case opKey(keymap.DraftRemove):
 		// No confirmation here, deliberately: nothing has reached the file
 		// yet, and esc still abandons the whole sub-form. The confirmation
 		// §15 view 5 asks for guards the key that writes a removal.

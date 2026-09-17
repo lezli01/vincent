@@ -14,6 +14,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // loadTimeout bounds the three catalog fetches the form opens with.
@@ -776,11 +777,11 @@ func (n *newTask) updateNavigating(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		n.moveCursor(-1)
 	case "enter":
 		return n, n.activate()
-	case "e":
+	case opKey(keymap.Editor):
 		if n.cursor == ntDescription {
 			return n, n.editDescription()
 		}
-	case "R":
+	case opKey(keymap.Refresh):
 		return n, n.loadCmd(true)
 	case "+", "=":
 		n.nudgePriority(1)

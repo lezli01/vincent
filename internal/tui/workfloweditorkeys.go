@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // The editor's keys and its one write path. Every committed row becomes one
@@ -47,9 +48,9 @@ func (w *workflowsView) updateEditorKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return w, nil
 	case "enter":
 		return w, w.editorActivate()
-	case "a":
+	case opKey(keymap.Add):
 		return w, w.editorAdd()
-	case "d":
+	case opKey(keymap.DraftRemove):
 		// The removal itself waits on the confirmation the overlay asks for,
 		// so nothing is sent from here.
 		w.editorRemove()
@@ -58,7 +59,7 @@ func (w *workflowsView) updateEditorKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return w, w.editorMove(-1)
 	case "J":
 		return w, w.editorMove(1)
-	case "R":
+	case opKey(keymap.Refresh):
 		// The reload a 409 offers, and the manual one. Both re-read the file
 		// and rebuild the rows from what it now says.
 		e.err, e.stale = "", false

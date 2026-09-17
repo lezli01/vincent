@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // formRowKind is what one line of the form does when the cursor is on it.
@@ -175,7 +176,7 @@ func (f *answerForm) updateWith(msg tea.KeyPressMsg, submit func(apiclient.Input
 		f.cursor = f.nextSelectable(f.cursor, 1)
 	case " ", "space":
 		f.pick()
-	case "t":
+	case opKey(keymap.FreeText):
 		f.startFreeText()
 	case "enter":
 		return f.submitTo(submit), false

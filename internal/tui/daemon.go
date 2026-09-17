@@ -10,6 +10,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/daemon"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 const (
@@ -497,7 +498,7 @@ func (d *daemonView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "esc":
 		// The takeover layer of the §15 esc stack: back to the home screen.
 		return d, func() tea.Msg { return selectViewMsg{id: viewHome} }
-	case "R":
+	case opKey(keymap.Refresh):
 		return d, d.refreshCmd()
 	case "tab":
 		// Two scrollable things on one view: tab says which one j/k mean.

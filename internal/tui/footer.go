@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // The §15 footer: one line, never wraps. Left to right: the focused
@@ -299,9 +300,9 @@ func padBetween(left, right string, width int) string {
 // footer that advertises a key a chat types into the draft is teaching the
 // wrong thing on exactly the surface where help was hardest to find.
 func footerPinnedSegs(textField bool) []footerSeg {
-	palette, help, quit := ":", "?", "q"
+	palette, help, quit := opKey(keymap.Palette), opKey(keymap.Help), opKey(keymap.Quit)
 	if textField {
-		palette, help, quit = paletteAltKey, helpAltKey, "ctrl+c"
+		palette, help, quit = opKey(keymap.PaletteAlt), opKey(keymap.HelpAlt), "ctrl+c"
 	}
 	return []footerSeg{
 		{text: styleKey.Render(palette) + styleDim.Render(" commands  "), key: palette, global: true},
@@ -326,10 +327,11 @@ func pinnedHits(x int, segs []footerSeg) []footerHit {
 func footerRestSegs(bar *actionBar, target taskActions, attention int, retry bool) []footerSeg {
 	segs := make([]footerSeg, 0, 8)
 	if bar != nil && (target.id != 0 || target.bulk()) {
-		for _, o := range actionOrder {
+		for _, o := range actionOps {
 			if target.has(o.action) {
+				key := opKey(o.op)
 				segs = append(segs, footerSeg{
-					text: styleKey.Render(o.key) + " " + actionLabel(target, o.action), key: o.key, counts: true,
+					text: styleKey.Render(key) + " " + actionLabel(target, o.action), key: key, counts: true,
 				})
 			}
 		}
@@ -341,7 +343,7 @@ func footerRestSegs(bar *actionBar, target taskActions, attention int, retry boo
 		// `!` is a global row, and the pinned segment stands for those: shown
 		// here, never counted.
 		segs = append(segs, footerSeg{
-			text: styleWarn.Render(fmt.Sprintf("! next attention (%d)", attention)), key: "!", global: true,
+			text: styleWarn.Render(fmt.Sprintf("%s next attention (%d)", opKey(keymap.NextAttention), attention)), key: opKey(keymap.NextAttention), global: true,
 		})
 	}
 	if retry {

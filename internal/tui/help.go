@@ -1,6 +1,10 @@
 package tui
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/lezli01/vincent/internal/keymap"
+)
 
 // helpTitle names the surface the overlay is describing, so it is obvious
 // the sheet is about where you are.
@@ -16,7 +20,7 @@ func helpTitle(ctx bindingContext) string {
 // sheet is closed, and offering them is what made two contradictory rows
 // (T3.8 finding).
 func helpFooter(width int) string {
-	pinned := styleKey.Render("?") + styleDim.Render(" close  ") +
+	pinned := styleKey.Render(opKey(keymap.Help)) + styleDim.Render(" close  ") +
 		styleKey.Render("esc") + styleDim.Render(" close")
 	line := " " + styleDim.Render("the keys of the surface you were on, plus the global ones")
 	return padBetween(line, pinned, width)
@@ -49,7 +53,7 @@ func helpText(ctx bindingContext, github bool) string {
 	}
 
 	var global, nav, actions []binding
-	for _, r := range withoutGitHub(bindings, github) {
+	for _, r := range withoutGitHub(registry(), github) {
 		switch {
 		case r.nav:
 			nav = append(nav, r)
