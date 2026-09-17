@@ -141,6 +141,10 @@ The home shell answers the wheel itself and never forwards it to
   amended, dated; `docs/guides/tui.md` (the palette, every key, the footer's
   pinned part, chats, chat workspace, archived); `CHANGELOG.md`; closed-by
   notes on the #405 bullets in 076 and 078. The screenshots taken while a text
-  field has the keyboard were re-captured with `scripts/screenshots.sh`.
+  field has the keyboard (likely `tui-new-task` and `tui-workflow-editor`,
+  whose pinned footer changes) were **not** re-captured:
+  `scripts/screenshots.sh seed` stopped at "task 4 never reached
+  awaiting_input" on 2026-09-17, in the daemon-driven seed before any capture,
+  so the committed images are unchanged and wait for the next run.
   `internal/tui` is covered by no gate script, so the tests are the whole
   assurance, as they were for 073, 076 and 078. ✓ 2026-09-17
