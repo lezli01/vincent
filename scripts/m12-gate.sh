@@ -10,9 +10,16 @@
 #   3. a step timeout stops the process inside the container and the task's
 #      container **survives**, so a retry finds what an earlier step installed
 #   4. a daemon killed mid-step leaves no container behind: recovery removes it
-#   5. `container.network: false` with `mcp.wire_steps: true` is accepted at
-#      task creation and runs to done in a container with no network (issue
-#      #366; task 062 reinstates the refusal once an agent runs inside)
+#   5. `container.network: false` with `mcp.wire_steps: true` is refused at
+#      task creation for a workflow with an agent step, and accepted — and runs
+#      to done with no network — for a command-only one (task 062.2 decision 5)
+#   6. an agent step runs inside the image, and its exit code, token and cost
+#      records equal the same scenario run on the host (task 062.2)
+#   7. a containerized agent step's timeout stops the agent inside the
+#      container, and the container survives
+#   8. a containerized agent step reaches `step_status` over its per-step MCP
+#      endpoint, through host.docker.internal (task 062.2 decision 1)
+#   9. a daemon killed mid agent step leaves no container behind
 #
 # It **skips cleanly** (exit 0, one line saying why) on a host that cannot run
 # the feature. CI runs its assertions on the Linux leg only, and the two skips
@@ -29,8 +36,10 @@
 # That is a real coverage gap and it is stated rather than implied: a gate that
 # has never run on a platform is not known to pass there.
 #
-# No agent CLI is involved: the steps are `command` steps, so the gate is as
-# fast on CI as it is locally. Their `run:` bodies are the one place in this
+# No real agent CLI is involved: scenarios 1–5 run `command` steps, and 6–9 run
+# cmd/fakeagent cross-compiled for the runtime's linux architecture and
+# bind-mounted into the image as `claude`, so the gate is as fast on CI as it is
+# locally. Their `run:` bodies are the one place in this
 # repository that are **not** held to the sh∩pwsh intersection, because the
 # feature under test is precisely that a containerized body executes under the
 # image's /bin/sh (§8.3's inverse). The one uncontainerized task's body is held
@@ -325,12 +334,68 @@ if "$DOCKER" inspect "$ORPHAN" >/dev/null 2>&1; then
 fi
 echo "   ok: recovery removed the orphaned container"
 
-echo "== scenario 5: no network with wired MCP is accepted and runs"
-# Task 061 decision 1 refused this pair at creation. Issue #366 deferred that
-# refusal to task 062: no agent runs in the container yet, so every agent
-# reaches the per-step MCP endpoint from the host whatever the container's
-# network is, and a no-network container is a configuration that works. 062
-# reinstates the 400 together with the host.docker.internal rewrite.
+echo "== build fakeagent for the host and for the image"
+# The image's claude is fakeagent built for the runtime's own architecture —
+# Docker Desktop on Apple Silicon runs arm64 — static, so alpine needs nothing
+# for it. The host copy is what agents.claude.path names: the containerized run
+# must ignore it (task 062.2 decision 2), and the host parity run uses it.
+case "$("$DOCKER" info --format '{{.Architecture}}' 2>/dev/null)" in
+  aarch64|arm64) FAKE_ARCH=arm64 ;;
+  *) FAKE_ARCH=amd64 ;;
+esac
+mkdir -p "$BIN/linux"
+(cd "$ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$FAKE_ARCH" go build -o "$BIN/linux/claude" ./cmd/fakeagent)
+(cd "$ROOT" && go build -o "$BIN/fakeagent" ./cmd/fakeagent)
+
+AGENT_STEP='    type: agent
+    agent: claude
+    max_retries: 0
+    prompt: m12 gate'
+write_workflow agent-contained "name: agent-contained
+steps:
+  - id: build
+$AGENT_STEP
+"
+write_workflow agent-onhost "name: agent-onhost
+defaults:
+  container:
+    image: \"\"
+steps:
+  - id: build
+$AGENT_STEP
+"
+write_workflow agent-hang "name: agent-hang
+steps:
+  - id: build
+    timeout: 5s
+$AGENT_STEP
+"
+write_workflow agent-slow "name: agent-slow
+steps:
+  - id: build
+    timeout: 10m
+$AGENT_STEP
+"
+
+# agent_config YAML_TAIL writes a containerized config with the image's claude
+# mounted and the host's named, plus whatever the scenario adds.
+agent_config() {
+  write_config "container:
+  image: $IMAGE
+  extra_mounts:
+    - \"$BIN/linux/claude:/usr/local/bin/claude:ro\"
+agents:
+  claude:
+    path: \"$BIN/fakeagent\"
+$1"
+}
+
+echo "== scenario 5: no network with wired MCP is refused only for an agent workflow"
+# Task 061 decision 1 refused this pair outright; issue #366 dropped the
+# refusal while every agent ran on the host. Task 062.2 decision 5 brings it
+# back for exactly the workflows it is true of: an agent in a container with
+# no network cannot reach its per-step endpoint. A command-only workflow wires
+# nothing and still runs.
 write_config "container:
   image: $IMAGE
   network: false
@@ -340,15 +405,118 @@ mcp:
 daemon_down
 daemon_up
 OUT="$(api_status POST /tasks \
+  "$(jq -cn --argjson p "$PROJECT" '{project_id: $p, workflow: "agent-contained", title: "no network agent"}')")"
+STATUS="${OUT%%$'\n'*}"
+BODY="${OUT#*$'\n'}"
+[[ "$STATUS" == 400 ]] || fail "a no-network agent workflow with mcp.wire_steps on returned HTTP $STATUS, want 400: $BODY"
+[[ "$(jq -r .error.code <<<"$BODY")" == validation_failed ]] \
+  || fail "the no-network refusal is not validation_failed: $BODY"
+OUT="$(api_status POST /tasks \
   "$(jq -cn --argjson p "$PROJECT" '{project_id: $p, workflow: "contained", title: "no network"}')")"
 STATUS="${OUT%%$'\n'*}"
 BODY="${OUT#*$'\n'}"
-[[ "$STATUS" == 201 ]] || fail "a no-network containerized task with mcp.wire_steps on returned HTTP $STATUS: $BODY"
+[[ "$STATUS" == 201 ]] || fail "a no-network command-only task with mcp.wire_steps on returned HTTP $STATUS: $BODY"
 NONET_TASK="$(printf '%s' "$BODY" | jq -r .id)"
 wait_for_state "$NONET_TASK" done 120
 MODE="$("$DOCKER" inspect --format '{{.HostConfig.NetworkMode}}' "$(containers_for "$NONET_TASK")")"
 [[ "$MODE" == none ]] || fail "task $NONET_TASK's container has network mode $MODE, want none"
-echo "   ok: accepted, and ran to done in a container with no network"
+echo "   ok: agent workflow refused; command-only workflow accepted and ran with no network"
+
+echo "== scenario 6: an agent step runs in the image, identical to a host run"
+agent_config "mcp:
+  wire_steps: false
+"
+daemon_down
+daemon_up
+IN_TASK="$(create_task "$PROJECT" agent-contained "agent in container")"
+wait_for_state "$IN_TASK" done 120
+HOST_AGENT_TASK="$(create_task "$PROJECT" agent-onhost "agent on host")"
+wait_for_state "$HOST_AGENT_TASK" done 120
+# What a step's records say, minus what differs by construction (ids, times).
+records() { api GET "/tasks/$1/steps" \
+  | jq -c '[.[] | {step_id, state, exit_code, failure_reason, input_tokens, output_tokens, cost_usd}]'; }
+IN_RECORDS="$(records "$IN_TASK")"
+HOST_RECORDS="$(records "$HOST_AGENT_TASK")"
+[[ "$IN_RECORDS" == "$HOST_RECORDS" ]] \
+  || fail "containerized agent records differ from the host's: $IN_RECORDS vs $HOST_RECORDS"
+# The pid file is written by the in-container wrapper and nowhere else, so its
+# presence is the proof the agent process ran inside the container.
+IN_RUN="$(api GET "/tasks/$IN_TASK/steps" | jq -r '.[0].id')"
+"$DOCKER" exec "$(containers_for "$IN_TASK")" test -s "/vincent-run/step-$IN_RUN.pid" \
+  || fail "no pid file for run $IN_RUN in task $IN_TASK's container: the agent did not run inside"
+[[ "$(count_containers_for "$HOST_AGENT_TASK")" == 0 ]] \
+  || fail "the host agent task created a container"
+echo "   ok: ran inside, records equal the host run's"
+
+echo "== scenario 7: a containerized agent step's timeout stops the agent, the container survives"
+agent_config "environment:
+  set:
+    FAKEAGENT_SCENARIO: hang
+mcp:
+  wire_steps: false
+"
+daemon_down
+daemon_up
+HANG_TASK="$(create_task "$PROJECT" agent-hang "agent hang")"
+wait_for_state "$HANG_TASK" blocked 120
+REASON="$(api GET "/tasks/$HANG_TASK" | jq -r .block_reason)"
+[[ "$REASON" == timeout ]] || fail "task $HANG_TASK blocked $REASON, want timeout"
+[[ "$(count_containers_for "$HANG_TASK")" == 1 ]] \
+  || fail "the agent timeout removed the task's container"
+RUNNING="$("$DOCKER" inspect --format '{{.State.Running}}' "$(containers_for "$HANG_TASK")")"
+[[ "$RUNNING" == true ]] || fail "the task's container is not running after an agent timeout"
+LEFT="$("$DOCKER" exec "$(containers_for "$HANG_TASK")" sh -c 'ps -o args= | grep -c "[c]laude"' || true)"
+[[ "${LEFT:-0}" == 0 ]] || fail "the timed-out agent is still running inside the container"
+echo "   ok: agent stopped inside, container kept"
+
+echo "== scenario 9: a daemon killed mid agent step leaves no container behind"
+# Before scenario 8 because it shares scenario 7's hang configuration.
+KILL_AGENT_TASK="$(create_task "$PROJECT" agent-slow "agent killed")"
+wait_for_state "$KILL_AGENT_TASK" running 120
+for _ in $(seq 1 30); do
+  STEPS="$(api GET "/tasks/$KILL_AGENT_TASK/steps")"
+  [[ "$(jq -r '[.[] | select(.state == "running")] | length' <<<"$STEPS")" == 1 ]] \
+    && [[ "$(count_containers_for "$KILL_AGENT_TASK")" == 1 ]] && break
+  sleep 1
+done
+[[ "$(count_containers_for "$KILL_AGENT_TASK")" == 1 ]] || fail "task $KILL_AGENT_TASK never got a container"
+# Scenario 4's reasoning: the orphan is identified by id before the kill, since
+# the recovered step's re-run creates a fresh container under the same name.
+AGENT_ORPHAN="$(containers_for "$KILL_AGENT_TASK")"
+DAEMON_PID="$(jq -r .pid "$DATA_DIR/daemon.json")"
+kill -9 "$DAEMON_PID" 2>/dev/null || fail "could not kill the daemon"
+sleep 2
+daemon_up
+for _ in $(seq 1 30); do
+  "$DOCKER" inspect "$AGENT_ORPHAN" >/dev/null 2>&1 || break
+  sleep 1
+done
+if "$DOCKER" inspect "$AGENT_ORPHAN" >/dev/null 2>&1; then
+  fail "recovery left task $KILL_AGENT_TASK's container $AGENT_ORPHAN behind"
+fi
+api_status POST "/tasks/$KILL_AGENT_TASK/cancel" '{}' >/dev/null
+echo "   ok: recovery removed the orphaned container"
+
+echo "== scenario 8: a containerized agent step calls back over its per-step endpoint"
+# The agent dials host.docker.internal: on native Linux docker that is the
+# bridge gateway, where the daemon binds a step-only listener; on Docker
+# Desktop it is forwarded to the loopback port (task 062.2 decision 1).
+GATE_STATUS="m12 gate: called back from the container"
+agent_config "environment:
+  set:
+    FAKEAGENT_SCENARIO: mcp-callback
+    FAKEAGENT_MCP_STATUS: \"$GATE_STATUS\"
+mcp:
+  wire_steps: true
+"
+daemon_down
+daemon_up
+MCP_TASK="$(create_task "$PROJECT" agent-contained "agent mcp callback")"
+wait_for_state "$MCP_TASK" done 120
+GOT_STATUS="$(api GET "/tasks/$MCP_TASK/steps" | jq -r '.[0].status_message // empty')"
+[[ "$GOT_STATUS" == "$GATE_STATUS" ]] \
+  || fail "the containerized step's status_message is '$GOT_STATUS', want '$GATE_STATUS'"
+echo "   ok: step_status reached from inside the container"
 
 daemon_down
 echo "GATE PASS: m12 (container step execution)"
