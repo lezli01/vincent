@@ -31,7 +31,7 @@ import (
 // flow-style form — because the editor deals in lines, not in types.
 type Set struct {
 	// Path is dotted and lowercase: "log_level", "defaults.agent_timeout",
-	// "agents.claude.path", "tui.board.group_by".
+	// "agents.claude.path", "tui.board.group_by", "tui.keys".
 	Path string
 	// Value is a single line of YAML: a scalar ("60m", "true", "3"), a flow
 	// sequence ("[project, workflow]") or a flow mapping ("{LANG: C.UTF-8}").
@@ -298,8 +298,14 @@ func WriteFile(path string, b []byte) (err error) {
 // RenderString renders a Go string as a YAML scalar: bare when YAML reads it
 // back unchanged, double-quoted otherwise. An empty string is always quoted —
 // a bare empty value parses as null, which is a different thing from "".
+//
+// Three more shapes the plain-scalar alphabet admits are quoted, because a
+// bare one does not parse back: a leading "@" (reserved), a trailing ":" (read
+// as a mapping key) and a lone "-" (read as a sequence entry). Each is a key a
+// `tui.keys` override may name — ":" is the palette's default (task 115).
 func RenderString(s string) string {
-	if s == "" || !plainScalar.MatchString(s) || isYAMLWord(s) {
+	if s == "" || !plainScalar.MatchString(s) || isYAMLWord(s) ||
+		strings.HasPrefix(s, "@") || strings.HasSuffix(s, ":") || s == "-" {
 		return strconv.Quote(s)
 	}
 	return s

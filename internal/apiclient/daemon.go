@@ -196,6 +196,11 @@ type ConfigTUI struct {
 	Board ConfigBoard `json:"board"`
 	// Hyperlinks turns on OSC 8 links in the output pane (task 111).
 	Hyperlinks bool `json:"hyperlinks"`
+	// Keys is `tui.keys`: operation id → key, overriding the shipped keymap
+	// (task 115). Empty is the shipped keymap. The daemon has already refused
+	// a map that breaks §15's vocabulary, so what arrives here is one the TUI
+	// can apply as it stands.
+	Keys map[string]string `json:"keys"`
 }
 
 // ConfigBoard configures the task table. GroupBy names the grouping levels,
@@ -487,6 +492,9 @@ type ConfigContainerPatch struct {
 type ConfigTUIPatch struct {
 	Board      *ConfigBoardPatch `json:"board,omitempty"`
 	Hyperlinks *bool             `json:"hyperlinks,omitempty"`
+	// Keys replaces the whole map; a pointer to an empty map restores the
+	// shipped keymap.
+	Keys *map[string]string `json:"keys,omitempty"`
 }
 
 // ConfigBoardPatch is the optional half of ConfigBoard.

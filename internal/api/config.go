@@ -101,6 +101,10 @@ type configContainer struct {
 type configTUI struct {
 	Board      configBoard `json:"board"`
 	Hyperlinks bool        `json:"hyperlinks"`
+	// Keys is `tui.keys` as written, operation id → key (task 115). Always an
+	// object, empty included, on group_by's rule: `{}` is the shipped keymap
+	// the file chose, and `null` would read as a daemon that predates the key.
+	Keys map[string]string `json:"keys"`
 }
 
 type configBoard struct {
@@ -310,6 +314,7 @@ func configBody(cfg config.Config) configResponse {
 		TUI: configTUI{
 			Board:      configBoard{GroupBy: boardGroupBy(cfg.TUI.Board.GroupBy)},
 			Hyperlinks: cfg.TUI.Hyperlinks,
+			Keys:       stringMap(cfg.TUI.Keys),
 		},
 	}
 }
@@ -484,6 +489,10 @@ type containerPatch struct {
 type tuiPatch struct {
 	Board      *boardPatch `json:"board"`
 	Hyperlinks *bool       `json:"hyperlinks"`
+	// Keys replaces the whole map rather than merging into it, the way
+	// environment.set does: `{}` goes back to the shipped keymap, and an
+	// operation left out of the map goes back to its default.
+	Keys *map[string]string `json:"keys"`
 }
 
 type boardPatch struct {
@@ -607,6 +616,9 @@ func (p configPatch) sets() []config.Set {
 			add("tui.board.group_by", config.RenderList(*v.Board.GroupBy))
 		}
 		addIfBool(add, "tui.hyperlinks", v.Hyperlinks)
+		if v.Keys != nil {
+			add("tui.keys", config.RenderMap(*v.Keys))
+		}
 	}
 	// Order is the struct's, which is config.yaml's, so two clients sending
 	// the same patch produce the same bytes.

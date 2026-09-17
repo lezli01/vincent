@@ -165,6 +165,8 @@ func TestConfigPatchRejectionLeavesTheFileByteIdentical(t *testing.T) {
 		{"a notify state that is not one", `{"notify":{"on":["exploded"]}}`},
 		{"a backup interval under an hour", `{"backup":{"interval":"30m"}}`},
 		{"a relative backup dir", `{"backup":{"dir":"backups"}}`},
+		{"a keymap giving quit's key to refresh", `{"tui":{"keys":{"refresh":"q"}}}`},
+		{"a keymap rebinding a fixed key", `{"tui":{"keys":{"group":"G"}}}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newConfigHarness(t)
@@ -411,6 +413,92 @@ func TestConfigPatchRoundTripsBackup(t *testing.T) {
 	}
 	if n := strings.Count(string(h.bytes(t)), "\nbackup:"); n != 1 {
 		t.Errorf("backup: appears %d times, want 1:\n%s", n, h.bytes(t))
+	}
+}
+
+// tui.keys is served, written and put into force (task 115). The TUI applies
+// the keymap it reads here and nowhere else, so each of the three halves —
+// the served object, the patch, the apply — is asserted end to end.
+func TestConfigPatchRoundTripsTUIKeys(t *testing.T) {
+	h := newConfigHarness(t)
+	_, getBody := doRequest(t, h.ts, http.MethodGet, "/v1/config", testToken)
+	if !strings.Contains(string(getBody), `"keys":{}`) {
+		t.Fatalf("GET /v1/config does not serve tui.keys as an empty object by default: %s", getBody)
+	}
+
+	resp, out := h.patch(t, `{"tui":{"keys":{"refresh":"ctrl+e","help":"?"}}}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, out)
+	}
+	want := map[string]string{"refresh": "ctrl+e", "help": "?"}
+	var answered configResponse
+	if err := json.Unmarshal(out, &answered); err != nil {
+		t.Fatalf("parse patch response: %v", err)
+	}
+	if !reflect.DeepEqual(answered.TUI.Keys, want) {
+		t.Errorf("the patch response says %v, want %v", answered.TUI.Keys, want)
+	}
+	if got := h.cur.Load().TUI.Keys; !reflect.DeepEqual(got, want) {
+		t.Errorf("the applied config says %v, want %v", got, want)
+	}
+	// Uncommented where the template documents it, as a flow mapping.
+	if !strings.Contains(string(h.bytes(t)), "\n  keys: {help: \"?\", refresh: ctrl+e}\n") {
+		t.Errorf("config.yaml does not carry the keymap in place:\n%s", h.bytes(t))
+	}
+	_, getBody = doRequest(t, h.ts, http.MethodGet, "/v1/config", testToken)
+	var served configResponse
+	if err := json.Unmarshal(getBody, &served); err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if !reflect.DeepEqual(served.TUI.Keys, want) {
+		t.Errorf("GET after the patch serves %v, want %v", served.TUI.Keys, want)
+	}
+	if served.TUI.Board.GroupBy == nil || served.TUI.Hyperlinks {
+		t.Errorf("patching tui.keys disturbed its siblings: %+v", served.TUI)
+	}
+
+	// The map is replaced, not merged: `{}` is the shipped keymap again.
+	resp, out = h.patch(t, `{"tui":{"keys":{}}}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("clear: status = %d, want 200 (body %s)", resp.StatusCode, out)
+	}
+	if !strings.Contains(string(out), `"keys":{}`) || len(h.cur.Load().TUI.Keys) != 0 {
+		t.Errorf("clearing tui.keys left %v (body %s)", h.cur.Load().TUI.Keys, out)
+	}
+}
+
+// A refused keymap is refused the way group_by is: 400 with the validation
+// envelope, a message naming the key path, the operation and what the key
+// already means, nothing written and nothing applied.
+func TestConfigPatchRefusesABadKeymap(t *testing.T) {
+	h := newConfigHarness(t)
+	if resp, out := h.patch(t, `{"tui":{"keys":{"refresh":"f5"}}}`); resp.StatusCode != http.StatusOK {
+		t.Fatalf("seed: status = %d, want 200 (body %s)", resp.StatusCode, out)
+	}
+	before := h.bytes(t)
+	applied := h.applied.Load()
+
+	resp, out := h.patch(t, `{"tui":{"keys":{"refresh":"q"}}}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %s)", resp.StatusCode, out)
+	}
+	var env errorBody
+	if err := json.Unmarshal(out, &env); err != nil || env.Error.Code != CodeValidationFailed {
+		t.Fatalf("want the snake_case validation envelope, got %s", out)
+	}
+	for _, want := range []string{"tui.keys: ", `refresh: "q" already means quit`} {
+		if !strings.Contains(env.Error.Message, want) {
+			t.Errorf("message %q does not say %q", env.Error.Message, want)
+		}
+	}
+	if !bytes.Equal(before, h.bytes(t)) {
+		t.Error("a refused keymap changed config.yaml")
+	}
+	if h.applied.Load() != applied {
+		t.Error("a refused keymap was applied")
+	}
+	if got := h.cur.Load().TUI.Keys; !reflect.DeepEqual(got, map[string]string{"refresh": "f5"}) {
+		t.Errorf("the keymap in force is %v, want the last good one", got)
 	}
 }
 
