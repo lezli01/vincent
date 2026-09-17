@@ -9153,7 +9153,7 @@ stream for the live tail.
    finished arms no repaint.
 
    *Amended 2026-09-17 (task 115, issue #472).* **A stopped task can be talked
-   to from here.** A task-action binding (Keys, below) is offered when the
+   to from here.** A task-action binding, `T` ("talk"; Keys, below), is offered when the
    daemon lists `chat` in `available_actions`, and opens view 9 on a new chat
    linked to the task; on a task whose `open_chat_id` is set — where
    `available_actions` has withdrawn `chat` — the same key opens **that** chat
@@ -9628,7 +9628,8 @@ stream for the live tail.
    the daemon does have and has told the client about.
 
    *Amended 2026-09-17 (task 115, issue #472).* On a chat **linked to a task**
-   the workspace offers **close** (`POST /v1/chats/{id}/close`): closing ends
+   the workspace offers **close** on `ctrl+q` (`POST /v1/chats/{id}/close`) —
+   a control key because the composer takes every printable one: closing ends
    the conversation and lifts the task's lock, and never touches the worktree
    or the branch. Hand-off and archive decline with the daemon's own
    `chat_linked_to_task` reason — the worktree is the task's — rather than

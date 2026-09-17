@@ -270,11 +270,16 @@ implementation does not reopen them.
   `OpenTaskChat`, `CloseChat`; `vincent task chat TASK_ID [--title] [--agent]
   [--model] [--effort] [--json]` and `vincent chat close CHAT_ID [--json]`, for
   parity with task 048, round-tripped against the real handlers.
-- [~] **115.6 — TUI**: a task-action binding in `bindings.go` chosen against task
+- [x] **115.6 — TUI**: a task-action binding in `bindings.go` chosen against task
   093's vocabulary, offered when the daemon lists `chat` and reopening the
   chat named by `open_chat_id`; the task on the chats board; the task
   workspace's list of linked chats, closed ones included; close in the chat
-  workspace, and the linked refusals for archive and hand-off.
+  workspace, and the linked refusals for archive and hand-off. The keys are
+  `T` ("talk") on a task and `ctrl+q` to close in the chat workspace. Two
+  rough edges remain: `esc` from a linked chat returns to the chats board
+  rather than to the task it was opened from, and the archived chats board
+  still offers delete-with-branch on a closed linked chat, which the daemon
+  refuses with `chat_linked_to_task`.
 - [x] **115.7 — m14 gate scenario**: a check-failing task blocks, a linked chat
   opens, the fake agent writes the file, `retry` while it is open is `409`,
   close, `retry` reaches `done`, the worktree survives close. Bodies in the
@@ -282,7 +287,7 @@ implementation does not reopen them.
 - [~] **115.8 — m12 gate scenario (Linux leg)**: a linked-chat turn on a
   containerized task runs inside the task's container, and a free chat still
   runs on the host.
-- [~] **115.9 — Documentation**: the spec amendments above, dated; this
+- [x] **115.9 — Documentation**: the spec amendments above, dated; this
   document and its index row; `docs/reference/api.md`, `files.md`,
   `task-lifecycle.md` and `configuration.md`; `docs/features.md`;
   `docs/guides/agents.md`; `CHANGELOG.md`. The CLI reference and the TUI guide's
