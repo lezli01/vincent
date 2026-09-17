@@ -304,6 +304,12 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
   tab, what each step of that task did on it, live. `enter` opens any node in
   full: its prompt or `run:` body, and the values it inherits from the file's
   `defaults` block.
+- Keys are yours to move. `tui.keys` in `config.yaml` rebinds an operation —
+  refresh, approve, the palette, quit and the rest of the shared vocabulary —
+  on every screen that has it, and the footer, the palette and `?` show the key
+  in force. The daemon checks a keymap against the same rules the shipped keys
+  obey and refuses one that would give a key two meanings or take a key a text
+  field types, so a rebinding never breaks a screen you did not look at.
 
 The screenshots in the main [README](../README.md#tui-tour) are real renders
 using representative workloads. [Using the TUI](guides/tui.md) documents every

@@ -121,6 +121,16 @@ package with real dependencies, and that reason does not apply to a ten-element
 string set. The alternative was a second copy of §6's vocabulary in `config`,
 free to drift from the first.
 
+*Amended 2026-09-17 (task [115](115-user-configurable-tui-keymap.md) decision
+3, issue #412):* the exception widens by one package. `internal/config` now
+imports `internal/keymap` as well, to validate `tui.keys` against §15's key
+vocabulary at load, on hot reload and on `PATCH /v1/config`. The reasoning is
+this decision's own: `keymap` is a leaf that imports only the standard library,
+so there is no cycle and the direction stays one-way, and the alternative was a
+second copy of the operation catalog and its clause checker in `config`, free to
+drift from the one the TUI's registry tests hold the defaults to. "Only
+`taskstate`" now reads "`taskstate` and `keymap`, both leaves".
+
 **5 (2026-08-28). The payload is an enriched envelope, assembled by the daemon.**
 A notifier handed `{task_id, to}` cannot write a message without calling back
 into the API with a bearer token, which defeats a one-line shell script. One JSON

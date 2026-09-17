@@ -54,6 +54,20 @@ list with the user-facing context a commit subject cannot carry.
   `--project` to choose one). Clients see a new `task.restored` event. It is not
   an MCP tool.
 
+- **Rebind the TUI's keys.** `tui.keys` in `config.yaml` maps an operation to a
+  key — `refresh: f5`, `quit: ctrl+q` — and the operation moves on every screen
+  that has it: the old key stops working for it, and the footer, the palette,
+  `?` and every hint show the new one. The operations are the shared vocabulary
+  (refresh, archive, delete, add, `$EDITOR`, filter, …), the task actions and
+  the global keys. Set it in the file, with
+  `vincent config set tui.keys "refresh=f5"`, or in the daemon view's config
+  editor, which applies it at once. The daemon refuses an unknown operation, a
+  key that is not rebindable (`esc`, `tab`, the fold and page keys, …), a key
+  that already means something else anywhere in the TUI, and a plain character
+  for `palette_alt` or `help_alt`, naming the operation, the key and the
+  conflict; a refused change leaves `config.yaml` untouched. `GET` and
+  `PATCH /v1/config` carry the map as `tui.keys`.
+
 - **`f1` opens help anywhere, including in a chat.** A chat's composer, a
   filter and every form take `?` as a character, so help could not be opened
   there at all. `f1` toggles the same overlay everywhere, beside `ctrl+p` for
@@ -584,6 +598,10 @@ list with the user-facing context a commit subject cannot carry.
   state, and the Steps tab now colors `approved` green and `rejected` red.
 
 ### Fixed
+
+- **The projects screen names the delete key it answers.** Its summary line
+  said `d remove` while the key that removes a project is `D`; it now shows the
+  key in force.
 
 - **The `fix-and-test` example no longer accepts a task on Windows that it
   cannot finish.** Its first step's check, `! go test ./...`, is POSIX shell

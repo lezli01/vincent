@@ -1295,6 +1295,7 @@ vincent config set notify.on "blocked awaiting_gate"
 vincent config set notify.command "/usr/local/bin/notify-me"
 vincent config set environment.set "LANG=C.UTF-8 TZ=Etc/UTC"
 vincent config set triggers.enabled true
+vincent config set tui.keys "refresh=f5 pause=x reject=p"
 ```
 
 Details worth knowing:
@@ -1313,7 +1314,9 @@ Details worth knowing:
 - **Lists and argv are whitespace-separated in one argument**, as in the
   examples above. An argument containing a space cannot be written this way and
   has to be edited in the file. Setting a list to `""` empties it, which is how
-  the notify hook is switched off from the command line.
+  the notify hook is switched off from the command line. `environment.set` and
+  `tui.keys` take `NAME=VALUE` pairs the same way; a set replaces the whole
+  map, so `vincent config set tui.keys ""` restores the shipped keymap.
 - **`environment.inherit` takes `all`, `none`, or a list of names.**
 - **Per-project settings are not here.** They live in the database and are
   edited with [`vincent project`](#vincent-project) or the TUI's projects view.

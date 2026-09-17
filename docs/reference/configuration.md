@@ -324,10 +324,20 @@ container:
 # nothing detects whether your terminal supports OSC 8, and one that does not
 # may print the sequence. The destination stays printed under the message
 # either way.
+#
+# keys rebinds the TUI's operations, one key each: an operation id such as
+# refresh, approve, palette or quit, mapped to a key written the way the TUI
+# names it (R, ctrl+e, f5). Unset, every operation keeps its shipped key. An
+# override moves the operation on every screen that has it, and its old key
+# stops working for it. A key that already means something else, an operation
+# that is not rebindable, or a plain character on an operation that works
+# while you type is refused, the way any invalid value in this file is.
 tui:
   board:
     group_by: [project, workflow]
   hyperlinks: false
+  # keys:
+  #   refresh: ctrl+e
 ```
 
 ## Keys
@@ -1461,6 +1471,7 @@ tui:
   board:
     group_by: [project, workflow]
   hyperlinks: false
+  keys: {}
 ```
 
 The one section the daemon does not act on. It validates it, hot-reloads it with
@@ -1528,6 +1539,67 @@ config: when you open the daemon view or press `R` there, or when it
 reconnects. See the
 [security model](../security-model.md#what-an-agent-writes-cannot-drive-your-terminal)
 for why the destination is sanitized.
+
+#### `tui.keys`
+
+Rebinds the TUI's keys. A map of operation id to one key; the default, `{}`, is
+the shipped keymap that the [TUI guide](../guides/tui.md) tables list.
+
+```yaml
+tui:
+  keys:
+    refresh: f5
+    pause: x      # pause and reject swap keys
+    reject: p
+```
+
+A key is written the way the TUI names it: a single character (`R`, `/`), a
+named key (`enter`, `tab`, `esc`, `space`, `backspace`, `delete`, `insert`,
+`home`, `end`, `pgup`, `pgdown`, `up`, `down`, `left`, `right`, `f1`–`f20`), or
+either one behind `ctrl+`, `alt+` and `shift+`, in that order. A shifted
+character is written as itself: `R`, never `shift+r`.
+
+The operations are the ones a reader names, and nothing else:
+
+| Kind | Operation ids |
+|---|---|
+| Vocabulary terms | `refresh`, `archive`, `delete`, `draft_remove`, `add`, `editor`, `free_text`, `browser`, `open_row`, `scope`, `filter`, `lane` |
+| Task actions | `pause` (pause and resume), `approve`, `reject`, `retry`, `edit_retry`, `repair`, `skip`, `cancel`, `follow_up`; `archive` is the term's id |
+| Global | `palette`, `palette_alt`, `help`, `help_alt`, `next_attention`, `mouse`, `quit`, `new` (also a new chat on the chats board) |
+
+An override moves its operation on **every** screen that has it, and it
+**replaces** the default rather than adding a second key: the old key stops
+working for that operation and is free for another override in the same map,
+so two operations can swap. Mapping an operation to its own default changes
+nothing. The footer, the palette, `?` and every hint that names a key show the
+key in force.
+
+The daemon refuses, naming the operation, the key and what the key already
+means:
+
+- an unknown operation id, listing the ones that exist;
+- a key that is not rebindable — the grouping and lane-board keys, the fold,
+  page and move sets, `esc`, `ctrl+c`, `ctrl+v`, `tab`, the confirmations' `y`
+  and `n`, the vim aliases — by the name you might try for it (`group`, `fold`,
+  `esc`, `resume`, …), with the reason;
+- a string no key press produces, `shift+r` included;
+- a key that already means anything else, anywhere in the TUI, even on a screen
+  never open beside the operation. The shipped keymap's few shared keys (`R` is
+  refresh and repair, `a` is add and approve, `s` is scope and skip) are
+  recorded for those keys only: `refresh: r` is refused, because `r` is retry;
+- a plain character or `space` for `palette_alt` or `help_alt`, whose purpose
+  is to work while a text field has the keyboard.
+
+Every problem is reported at once, under a `tui.keys:` prefix. As with any
+invalid value, a refused load does not start the daemon, a refused reload keeps
+the last good configuration, and a refused `PATCH /v1/config` or
+`vincent config set tui.keys "refresh=f5 pause=x reject=p"` leaves the file
+byte-identical. That command, like the config editor's row, replaces the whole
+map; `""` restores the shipped keymap.
+
+Saving it in the TUI's config editor applies it at once. A change made anywhere
+else reaches a running TUI the next time it reads the config: when you open the
+daemon view or refresh there, or when it reconnects.
 
 ## Per-project settings
 
