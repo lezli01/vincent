@@ -211,7 +211,7 @@ type CostRollup struct {
 // TreeCost returns the id of the root of the fan-out tree taskID belongs to and
 // the spend of that whole tree: the root and every descendant at any depth,
 // archived ones included, over every step run they have ever written (task
-// 115). It is what `max_tree_cost_usd` is compared against.
+// 116). It is what `max_tree_cost_usd` is compared against.
 //
 // It climbs `parent_task_id` to the root first and then walks back down,
 // because a lane's sibling is not its ancestor: the budget is shared by the
@@ -251,7 +251,7 @@ func (s *Store) TreeCost(ctx context.Context, taskID int64) (int64, CostRollup, 
 
 // DescendantsCost returns the spend of one task's descendants at any depth,
 // not counting the task's own step runs — §13.2's `children.cost_usd` (task
-// 115). Archived descendants count, for ChildrenOf's reason: excluding them
+// 116). Archived descendants count, for ChildrenOf's reason: excluding them
 // would make the figure disagree with the rows a client can list.
 func (s *Store) DescendantsCost(ctx context.Context, taskID int64) (CostRollup, error) {
 	var cost sql.NullFloat64

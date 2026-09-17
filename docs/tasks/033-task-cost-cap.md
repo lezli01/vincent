@@ -46,6 +46,9 @@ troubleshooting page all say it in as many words — rather than worked around.
 a rule for which task blocks when the tree total trips, and neither is a
 question this issue asked. Layerable later against the same enforcement point
 (tracked in [#409](https://github.com/lezli01/vincent/issues/409), 2026-09-13).
+*Landed 2026-09-17 as [task 116](116-tree-cost-cap.md):* `max_tree_cost_usd`, at
+this enforcement point, blocking `tree_cost_limit`. Its decisions 1–7 answer
+both open questions, and this decision's per-task cap is unchanged.
 
 ### 2. The check fires at every attempt boundary, not at top-level step boundaries (2026-08-26)
 

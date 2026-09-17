@@ -4,7 +4,7 @@ description: Create, edit, review, arm, and debug vincent event triggers, the YA
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.0.0
+  version: 1.0.1
 ---
 
 # vincent Triggers
@@ -50,7 +50,11 @@ Consequences of the rule:
   nothing.
 - **No `container:`.** A trigger has no `container:` key, and a file with one
   is refused. For `on_fire: create`, recommend an `action.workflow` whose steps
-  run in a container, plus a tight `limits.max_task_cost_usd`.
+  run in a container, plus a tight `limits.max_task_cost_usd`. That limit caps
+  one task, not a tree. If the workflow fans out, also recommend
+  `max_tree_cost_usd` in `config.yaml`, which caps the task and all its lanes
+  together. It is a config key, not a trigger key, so never write it into the
+  trigger file.
 - **Global only.** Triggers are global. There is no `.vincent/triggers/`, so
   never write a trigger or its poll script into a repository.
 - **Untrusted event text.** Event text comes from outside. An issue body or CI

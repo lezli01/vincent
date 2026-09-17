@@ -158,7 +158,10 @@ edit the step for this task and retry, skip it, or cancel the task.
 Spend can be bounded as well. `max_task_cost_usd` blocks a task with
 `cost_limit` once its cost across every attempt passes a ceiling you set. It is
 off by default, it counts one task at a time, and it only sees the agents that
-report cost at all.
+report cost at all. `max_tree_cost_usd` is the same kind of ceiling for a whole
+fan-out tree: the parent and every lane below it share one budget, and the task
+whose attempt crosses it blocks with `tree_cost_limit`. A parent's detail shows
+what its lanes have spent.
 
 When the problem is in the worktree rather than in the step, a blocked task can
 also be **repaired**: one throwaway agent, prompted by you and handed the

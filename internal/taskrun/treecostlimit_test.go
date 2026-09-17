@@ -10,7 +10,7 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 )
 
-// `max_tree_cost_usd` end to end (task 115, §12.3, §18). Every cap here is
+// `max_tree_cost_usd` end to end (task 116, §12.3, §18). Every cap here is
 // chosen against fakeAgentCostUSD, like costlimit_test.go's: one claude-shaped
 // agent attempt anywhere in a tree adds exactly that to the tree's rollup.
 
@@ -59,7 +59,7 @@ func (h *engineHarness) settleLanes(t *testing.T, parentID int64, want int) (don
 	return done, blocked
 }
 
-// TestEngineTreeCostCapBlocksTheLaneThatCrosses is task 115's done-when. Two
+// TestEngineTreeCostCapBlocksTheLaneThatCrosses is task 116's done-when. Two
 // lanes, each well under any per-task cap, together spend past
 // `max_tree_cost_usd`: the lane whose attempt crosses blocks
 // `tree_cost_limit`, its row keeps its own state, and no retry is consumed.

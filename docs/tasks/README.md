@@ -129,6 +129,7 @@ the living engineering specification records implementation contracts.
 | [113](113-control-flow-examples.md) | Example workflows that show control flow | ✅ done (4/4) |
 | [114](114-help-in-text-fields-and-list-wheel.md) | Help while a text field has the keyboard, and the wheel on the list boards | ✅ done (4/4) |
 | [115](115-scheduled-daemon-backups.md) | Scheduled daemon backups with retention | ✅ done (6/6) |
+| [116](116-tree-cost-cap.md) | `max_tree_cost_usd`: a cost cap across a whole fan-out tree | ✅ done (6/6) |
 | [117](117-single-task-import.md) | `vincent task import`: restore one archived task from a backup | ✅ done (6/6) |
 | [118](118-user-configurable-tui-keymap.md) | A user-configurable TUI keymap: `tui.keys` rebinds an operation on every surface, held to §15's three clauses | ✅ done (6/6) |
 | [119](119-chat-on-a-step.md) | Chat on a stopped task: a conversation in the task's own worktree, locking the task while it is open | 🔄 in progress (8/10) |

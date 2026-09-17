@@ -573,7 +573,10 @@ searches Jira using `$VINCENT_TRIGGER_CURSOR` and prints one line per issue,
 with an `id` that includes the issue's update time. It finishes with a cursor
 line. The Jira credential comes from the daemon's environment. `on_fire: create`
 runs unattended, so pair it with a tight `max_task_cost_usd` and a workflow
-whose steps run in a container.
+whose steps run in a container. That limit caps one task. If the workflow fans
+out, each lane is a task of its own, so also set
+[`max_tree_cost_usd`](../reference/configuration.md#max_tree_cost_usd) in
+`config.yaml` to bound the task and its lanes together.
 
 ### A red CI build follows up its task
 

@@ -175,7 +175,7 @@ func (r *Runner) runRepair(
 	// `max_tree_cost_usd`, needs nothing here: this path ends `blocked`
 	// whatever the run did, and the reason it restores — the one the task was
 	// blocked with — says more than cost_limit or tree_cost_limit would (tasks
-	// 033, 115). The repair's spend still counts toward both rollups, and the
+	// 033, 116). The repair's spend still counts toward both rollups, and the
 	// next ordinary retry is where the caps speak.
 	log.Info("repair finished; returning the task to blocked",
 		"outcome", string(outcome.state), "reason", outcome.reason)

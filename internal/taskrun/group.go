@@ -110,7 +110,7 @@ func (r *Runner) runGroup(ctx context.Context, env *stepEnv) stepOutcome {
 			// A sub-step that took the task or its tree past a cost cap is
 			// excluded for the stronger reason: `allow_failure` says this
 			// failure does not stop the workflow, and the budget stop is not
-			// this failure's verdict at all (tasks 033, 115).
+			// this failure's verdict at all (tasks 033, 116).
 			if out.state == store.StepFailed && out.backoffUntil == nil &&
 				out.costLimit == "" && allowFailure(sub, out.reason) {
 				subEnv.log.Info("sub-step failed; allowed by allow_failure", "reason", out.reason)
@@ -243,7 +243,7 @@ func collectGroup(outcomes []stepOutcome) stepOutcome {
 	var failure, backoff, cost *stepOutcome
 	for i := range outcomes {
 		// Whatever else the group did, one sub-step took the task or its tree
-		// past a budget, and that is the group's verdict (tasks 033, 115). It
+		// past a budget, and that is the group's verdict (tasks 033, 116). It
 		// is collected from a succeeded sub-step as readily as from a failed
 		// one: the reason is about spend, not about what the sub-step
 		// produced. The first in declaration order wins, like a failure's.

@@ -184,7 +184,7 @@ const (
 	ReasonCostLimit = "cost_limit"
 	// ReasonTreeCostLimit is a task whose attempt took its whole fan-out
 	// tree's rolled-up spend past `max_tree_cost_usd` (§12.3, §18 — task
-	// 115). The tree is the root and every descendant at any depth, so the
+	// 116). The tree is the root and every descendant at any depth, so the
 	// task that blocks is whichever one's attempt crossed the line: usually a
 	// lane, sometimes the parent's own step before the fan-out or after the
 	// join. Everything ReasonCostLimit says about the boundary, the row and
@@ -445,7 +445,7 @@ type stepOutcome struct {
 	// costLimit is set at the attempt boundary at which a spend cap was
 	// passed, and it *is* the block reason: ReasonCostLimit for this task's
 	// own rollup against `max_task_cost_usd` (task 033), ReasonTreeCostLimit
-	// for its fan-out tree's against `max_tree_cost_usd` (task 115). Empty is
+	// for its fan-out tree's against `max_tree_cost_usd` (task 116). Empty is
 	// no cap passed. The task blocks with it whatever the attempt itself did —
 	// a success stops the workflow here, and a failure with budget left does
 	// not get its retry.
@@ -1005,7 +1005,7 @@ func (r *Runner) runStepWithRetries(ctx context.Context, env *stepEnv) stepOutco
 
 // overCostCap reports which spend cap, if any, this task's finished attempt
 // took it past: ReasonCostLimit for `max_task_cost_usd` (§12.3, §17 — task
-// 033), ReasonTreeCostLimit for `max_tree_cost_usd` (task 115), or "" for
+// 033), ReasonTreeCostLimit for `max_tree_cost_usd` (task 116), or "" for
 // neither. It is asked once per finished attempt, which is the only boundary
 // cost is known at: an agent run reports it on its terminal result line and
 // nowhere else (§9.1).
@@ -1025,7 +1025,7 @@ func (r *Runner) runStepWithRetries(ctx context.Context, env *stepEnv) stepOutco
 // rollup is "unreported" rather than $0.00 and the cap is inert on them by
 // construction. A tree mixing them with claude counts what was reported.
 //
-// The per-task cap is asked first and wins when both are over (task 115
+// The per-task cap is asked first and wins when both are over (task 116
 // decision 2): it is the lower of config's and the task's own
 // `max_task_cost_usd` (task 096 decision 18), so the block is still
 // `cost_limit` whichever side set it. The tree cap is independent of it, not
@@ -1076,7 +1076,7 @@ func (r *Runner) overTaskCostCap(ctx context.Context, env *stepEnv, out stepOutc
 
 // overTreeCostCap is overCostCap's tree half: the spend of the whole fan-out
 // tree this task belongs to — root, every descendant, archived ones too —
-// against limit (task 115). A task that never fanned out is a tree of one, so
+// against limit (task 116). A task that never fanned out is a tree of one, so
 // the cap still means something on it.
 //
 // Only the task whose attempt this is can block here, which is the point

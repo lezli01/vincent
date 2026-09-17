@@ -228,7 +228,7 @@ type Config struct {
 	MaxTaskCostUSD float64 `yaml:"max_task_cost_usd"`
 	// MaxTreeCostUSD caps what **one fan-out tree** may spend: a root task
 	// and every descendant at any depth, over every attempt they ever ran
-	// (§12.3, §18 — task 115). Past it, the task whose attempt crossed the
+	// (§12.3, §18 — task 116). Past it, the task whose attempt crossed the
 	// line blocks `tree_cost_limit` at that attempt boundary. Zero — the
 	// default — is off.
 	//
