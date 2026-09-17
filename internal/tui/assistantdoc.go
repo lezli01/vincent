@@ -16,7 +16,9 @@ import (
 // document instead.
 //
 // What closes a document is any other record — reasoning, tool use, tool
-// result, command output, `agent.raw`, a result line — and a run or turn
+// result, command output, `agent.raw`, a result line — a change of
+// `parent_call_id`, so a subagent's prose and the main loop's never parse as
+// one document even when nothing separates them (task 109), and a run or turn
 // boundary, which falls out for free because the task pane renders one
 // attempt's records and the chat renders one turn's. The rule is deliberately
 // independent of the verbosity level: a level that hides a record must not
@@ -63,7 +65,7 @@ func assistantDocs(recs []apiclient.TranscriptRecord, seqs []int64) []assistantD
 		}
 		j := i
 		var b strings.Builder
-		for j < len(recs) && recs[j].Type == recTypeOutput {
+		for j < len(recs) && recs[j].Type == recTypeOutput && recs[j].ParentCallID == recs[i].ParentCallID {
 			if j > i {
 				// A record ends at a line: joining with a newline is what
 				// reconstructs the source a splitting adapter started with,

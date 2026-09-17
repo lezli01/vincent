@@ -1,0 +1,51 @@
+== quiet
+  Red
+== compact
+▸ AskUserQuestion
+  … 1 unrecognized line(s) (v)
+    ✓ Your questions have been answered: "Which color do you prefer?"="Red". You
+      can now continue with these answers in mind.
+
+  Red
+✓ done · $0.01
+== normal
+# C:\work\repo · 5 tools: Task, AskUserQuestion, Bash, Read, Write
+· The user wants me to use the AskUserQuestion tool to ask them about their
+  color preference with specific parameters:
+  - Header: 'Color'
+  … +6 lines (v)
+▸ AskUserQuestion
+  … 1 unrecognized line(s) (v)
+    ✓ Your questions have been answered: "Which color do you prefer?"="Red". You
+      can now continue with these answers in mind.
+· The user chose "Red". I should now simply reply with the chosen color and
+  finish, as instructed.
+
+  Red
+✓ done · 5.3s · 2 turns · $0.01
+== verbose
+# C:\work\repo · 5 tools: Task, AskUserQuestion, Bash, Read, Write
+· The user wants me to use the AskUserQuestion tool to ask them about their
+  color preference with specific parameters:
+  - Header: 'Color'
+  - Question: 'Which color do you prefer?'
+  - Two options: 'Red' and 'Blue'
+
+  After they answer, I should reply with just the chosen color and finish.
+
+  Let me set up the tool call correctly.
+▸ AskUserQuestion
+  {"type":"control_request","request_id":"b997de17-76a2-4f83-8c1b-8de038194905",
+  "request":{"subtype":"can_use_tool","tool_name":"AskUserQuestion","display_nam
+  e":"AskUserQuestion","input":{"questions":[{"question":"Which color do you
+  prefer?","header":"Color","options":[{"label":"Red","description":"The color
+  red"},{"label":"Blue","description":"The color
+  blue"}],"multiSelect":false}]},"tool_use_id":"toolu_01MTWzGkgqRLrwCSDbDjWYXV",
+  "requires_user_interaction":true}}
+    ✓ Your questions have been answered: "Which color do you prefer?"="Red". You
+      can now continue with these answers in mind.
+· The user chose "Red". I should now simply reply with the chosen color and
+  finish, as instructed.
+
+  Red
+✓ done · 5.3s · 2 turns · $0.01

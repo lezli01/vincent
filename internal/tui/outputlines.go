@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -247,6 +248,22 @@ const (
 	// columns like the rest, and its own glyph because a plan is neither
 	// something the agent said nor something it ran.
 	gutterPlan = "☰ "
+	// gutterRail is drawn in front of every line a subagent produced, and
+	// in front of its label and its completion line (task 109). The record's
+	// own gutter follows it, so a nested call is `┊ ▸ ` and nested prose is
+	// the rail and then the prose.
+	gutterRail = "┊ "
+	// gutterLabel names the subagent the rail belongs to.
+	gutterLabel = "↳ "
+)
+
+// The subagent records (task 109). A subagent's own records are ordinary
+// records carrying parent_call_id; these three are the main loop's account of
+// the sub-run.
+const (
+	recSubagentStarted  = "agent.subagent_started"
+	recSubagentProgress = "agent.subagent_progress"
+	recSubagentFinished = "agent.subagent_finished"
 )
 
 // wrapLine lays a paneLine out across a pane of the given width, styling each
@@ -620,6 +637,81 @@ func toolResultLine(r apiclient.TranscriptToolResult) paneLine {
 	}
 }
 
+// subagentLabels maps every spawning call in a record window to the name its
+// rail label shows (task 109): the description the subagent's start gave,
+// else the spawning call's own subject. Nothing here reads a tool's name —
+// claude has called the tool both `Task` and `Agent` — so a call that spawned
+// nothing simply has an entry nobody asks for.
+func subagentLabels(records []apiclient.TranscriptRecord) map[string]string {
+	out := map[string]string{}
+	started := map[string]bool{}
+	for _, rec := range records {
+		switch rec.Type {
+		case "agent.tool_use":
+			for _, t := range rec.Tools {
+				if t.CallID != "" && t.Summary != "" && !started[t.CallID] {
+					out[t.CallID] = t.Summary
+				}
+			}
+		case recSubagentStarted:
+			if rec.CallID != "" && rec.Description != "" {
+				out[rec.CallID] = rec.Description
+				started[rec.CallID] = true
+			}
+		}
+	}
+	return out
+}
+
+// subagentLabel is the name a rail label or completion line gives a call.
+func subagentLabel(labels map[string]string, callID string) string {
+	return firstNonEmpty(labels[callID], "subagent")
+}
+
+// subagentFinishedLine renders how a subagent ended (task 109): its status,
+// its name, and the tally it reported. The marks follow the tool outcome's:
+// `stopped` gets its own, because "the agent was stopped" and "the agent
+// failed" send a reader to different places, and a status no capture has
+// shown gets a neutral mark and its own word rather than a guessed meaning
+// (the T4.17 rule).
+func subagentFinishedLine(rec apiclient.TranscriptRecord, label string) paneLine {
+	mark, style := "· ", styleDim
+	switch rec.Status {
+	case "completed":
+		mark, style = "✓ ", styleOKDim
+	case "failed":
+		mark, style = "✗ ", styleErrDim
+	case "stopped":
+		mark = "■ "
+	}
+	parts := []string{firstNonEmpty(rec.Status, "finished"), label}
+	if rec.ToolUses > 0 {
+		parts = append(parts, plural(rec.ToolUses, "tool use", "tool uses"))
+	}
+	if rec.DurationMS > 0 {
+		parts = append(parts, formatAgentDuration(rec.DurationMS))
+	}
+	return paneLine{
+		gutter:      mark,
+		gutterStyle: style,
+		segs:        []segment{{text: strings.Join(parts, " · "), style: style}},
+	}
+}
+
+// railed draws lines behind the rail, or returns them untouched for the main
+// loop. The lines were wrapped two columns narrower, so a continuation keeps
+// the rail too.
+func railed(on bool, lines []string) []string {
+	if !on {
+		return lines
+	}
+	rail := styleDim.Render(gutterRail)
+	for i, l := range lines {
+		lines[i] = rail + l
+	}
+	return lines
+}
+
 // thinkingBlock renders a reasoning block at the given level: hidden at
 // compact and below, truncated at normal, whole at verbose. Truncation is
 // applied after wrapping, so "3 lines" means three lines of the pane.
@@ -673,6 +765,14 @@ type lineOpts struct {
 
 // outputLines renders the normalized records into wrapped pane lines.
 //
+// A subagent's records are drawn where they arrived, behind a rail, one level
+// quieter than the main loop's (task 109): quiet shows none of them, compact
+// its prose and errors, normal its tool calls and outcomes too, and verbose
+// its reasoning, its plan and a count of its unrecognized lines. A label names
+// the subagent whenever the rendered stream moves onto a rail, and is drawn
+// only in front of a line that renders, so no level leaves one dangling. Its
+// command output and its unrecognized lines are never shown whole.
+//
 // Three rules shape the result beyond the per-record rendering. Consecutive
 // unrecognized lines collapse into a count — a dialect vincent does not model
 // must not be able to drown the output a human is reading — and `v` expands
@@ -716,24 +816,59 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 	// sawOutput drives the T4.16 result de-duplication: every dialect's
 	// result text repeats assistant messages already on screen — cursor's is
 	// the whole turn concatenated — so the final record shows its outcome
-	// alone, unless nothing else ever rendered.
+	// alone, unless nothing else ever rendered. Only the main loop's prose
+	// counts: a subagent's is not what the result repeats.
 	var sawOutput, lastWasOutput bool
-	rawRun := 0
+	// rail is the subagent the last rendered line belonged to, and "" is the
+	// main loop (task 109).
+	rail := ""
+	labels := subagentLabels(records)
+	// enter is called before a rendered record's lines are appended. A
+	// main-loop record ends the rail; a subagent's gets the label when the
+	// stream moved onto its rail. It reports whether to draw the rail.
+	enter := func(parent string) bool {
+		if parent == "" {
+			rail = ""
+			return false
+		}
+		if rail != parent {
+			note(railed(true, wrapLine(paneLine{
+				gutter:      gutterLabel,
+				gutterStyle: styleDim,
+				segs:        []segment{{text: subagentLabel(labels, parent), style: styleDim}},
+			}, max(width-cols(gutterRail), 1))))
+			rail = parent
+		}
+		return true
+	}
+	// separate draws the blank line in front of assistant prose, which is
+	// railed when the prose continues the rail it follows.
+	separate := func(parent string) {
+		if len(lines) == 0 || (lastWasOutput && rail == parent) {
+			return
+		}
+		if parent != "" && rail == parent {
+			note([]string{styleDim.Render(strings.TrimRight(gutterRail, " "))})
+			return
+		}
+		note([]string{""})
+	}
+	rawRun, rawParent := 0, ""
 	flushRaw := func() {
 		if rawRun == 0 {
 			return
 		}
+		n := rawRun
+		rawRun = 0
 		// Quiet is the level below the count. Everywhere else the count is
 		// an offer — "there are lines here, `v` shows them" — and quiet is
 		// the level that makes no offers, so an unparsed line leaves no
 		// trace at all rather than a row of arithmetic about itself.
 		if level == levelQuiet {
-			rawRun = 0
 			return
 		}
-		note([]string{styleDim.Render(fmt.Sprintf(
-			"%s… %d unrecognized line(s) (%s)", gutterNone, rawRun, opts.expandKey))})
-		rawRun = 0
+		note(railed(enter(rawParent), []string{styleDim.Render(fmt.Sprintf(
+			"%s… %d unrecognized line(s) (%s)", gutterNone, n, opts.expandKey))}))
 	}
 	docs := assistantDocs(records, seqs)
 	docAt := make(map[int]int, len(docs))
@@ -742,9 +877,35 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 	}
 	for i := 0; i < len(records); i++ {
 		rec := records[i]
+		parent := rec.ParentCallID
+		if parent != "" && level == levelQuiet {
+			// Quiet is what the agent said and what went wrong; a subagent's
+			// internals are neither, one level down.
+			continue
+		}
+		if rec.Type == recSubagentStarted || rec.Type == recSubagentProgress {
+			// Never a line, and not a break in a run of unrecognized lines
+			// either: these were such lines until task 109 modeled them.
+			continue
+		}
 		if rec.Type == "agent.raw" {
+			if parent != "" {
+				// A subagent's unrecognized lines are counted at verbose
+				// and never shown whole: whole is the main loop's verbose,
+				// and a subagent is one level quieter.
+				if level != levelVerbose {
+					continue
+				}
+				if rawRun > 0 && rawParent != parent {
+					flushRaw()
+				}
+				rawParent = parent
+				rawRun++
+				continue
+			}
 			if level == levelVerbose {
 				flushRaw()
+				enter("")
 				fromRecord(seqAt(seqs, i), wrapLine(paneLine{
 					gutter:      gutterNone,
 					gutterStyle: styleDim,
@@ -753,10 +914,30 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 				lastWasOutput = false
 				continue
 			}
+			rawParent = ""
 			rawRun++
 			continue
 		}
 		flushRaw()
+		// A subagent's record renders where a main-loop record of its type
+		// would render one level down, two columns narrower for the rail.
+		recLevel, recWidth := level, width
+		if parent != "" {
+			recLevel, recWidth = level-1, max(width-cols(gutterRail), 1)
+		}
+		if rec.Type == recSubagentFinished {
+			// The main loop's own line, so it follows a tool call's rule —
+			// hidden at quiet — and is drawn on the rail it closes.
+			if level == levelQuiet {
+				continue
+			}
+			rail = ""
+			fromRecord(seqAt(seqs, i), railed(true, wrapLine(
+				subagentFinishedLine(rec, subagentLabel(labels, rec.CallID)),
+				max(width-cols(gutterRail), 1))))
+			lastWasOutput = false
+			continue
+		}
 		if k, ok := docAt[i]; ok {
 			// Assistant prose is the one record type that is Markdown
 			// (task 073 decision 5), and it is handled here rather than in
@@ -765,14 +946,18 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 			// because it spans a run of records rather than one of them.
 			doc := docs[k]
 			i = doc.last
-			block, blockAt := opts.cache.lines(doc.text, width, level, opts.raw)
+			block, blockAt := opts.cache.lines(doc.text, recWidth, recLevel, opts.raw)
 			if len(block) == 0 {
 				continue
 			}
-			if !lastWasOutput && len(lines) > 0 {
-				note([]string{""})
+			separate(parent)
+			if parent == "" {
+				sawOutput = true
 			}
-			sawOutput = true
+			if enter(parent) {
+				// The memo owns the slice it hands back.
+				block = railed(true, slices.Clone(block))
+			}
 			off, prev := 0, -1
 			for n, l := range block {
 				b := blockOrdinal(blockAt, n)
@@ -787,23 +972,23 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 			continue
 		}
 		if rec.Type == "agent.thinking" {
-			if block := thinkingBlock(rec.Text, level, width, opts.expandKey); len(block) > 0 {
-				fromRecord(seqAt(seqs, i), block)
+			if block := thinkingBlock(rec.Text, recLevel, recWidth, opts.expandKey); len(block) > 0 {
+				fromRecord(seqAt(seqs, i), railed(enter(parent), block))
 				lastWasOutput = false
 			}
 			continue
 		}
-		pl, ok := renderRecord(rec, sawOutput, level)
+		pl, ok := renderRecord(rec, sawOutput, recLevel)
 		if !ok {
 			continue
 		}
 		if pl.isOutput {
-			if !lastWasOutput && len(lines) > 0 {
-				note([]string{""})
+			separate(parent)
+			if parent == "" {
+				sawOutput = true
 			}
-			sawOutput = true
 		}
-		fromRecord(seqAt(seqs, i), wrapLine(pl, width))
+		fromRecord(seqAt(seqs, i), railed(enter(parent), wrapLine(pl, recWidth)))
 		lastWasOutput = pl.isOutput
 	}
 	flushRaw()
