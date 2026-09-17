@@ -333,6 +333,32 @@ func configKeys() []configKey {
 			func(s string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{Update: &apiclient.ConfigUpdatePatch{PollInterval: &s}}
 			}),
+		// Scheduled backups (task 115). The interval is the one switch, so it
+		// is the row whose help has to say what off and the floor are.
+		durationKey("backup.interval", "backup interval",
+			"how often the daemon takes a backup; 0 is off, otherwise at least 1h",
+			func(c apiclient.Config) string { return c.Backup.Interval },
+			func(s string) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Backup: &apiclient.ConfigBackupPatch{Interval: &s}}
+			}),
+		intKey("backup.keep", "backup keep", "scheduled archives kept after each successful backup; 0 keeps all",
+			func(c apiclient.Config) int { return c.Backup.Keep },
+			func(n int) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Backup: &apiclient.ConfigBackupPatch{Keep: &n}}
+			}),
+		{
+			// Dangerous for what it exposes rather than what it runs (task 115
+			// decision 6): every archive holds config.yaml — environment.set
+			// values, notify.command — and every transcript, so pointing the
+			// directory at a synced or shared folder decides who can read them.
+			path: "backup.dir", label: "backup dir", kind: kindText, dangerous: true,
+			help: "absolute directory for scheduled archives; empty is <data dir>/backups, on the same disk",
+			read: func(c apiclient.Config) string { return c.Backup.Dir },
+			write: func(s string) (apiclient.ConfigPatch, error) {
+				v := strings.TrimSpace(s)
+				return apiclient.ConfigPatch{Backup: &apiclient.ConfigBackupPatch{Dir: &v}}, nil
+			},
+		},
 		{
 			path: "notify.on", label: "notify on", kind: kindList, choices: stateNames(),
 			help: "states that fire the notify hook, whitespace-separated",
@@ -597,6 +623,7 @@ func defaultClientConfig() apiclient.Config {
 		},
 		GitHub: apiclient.ConfigGitHub{Enabled: d.GitHub.Enabled, PollInterval: d.GitHub.PollInterval.String()},
 		Update: apiclient.ConfigUpdate{Check: d.Update.Check, PollInterval: d.Update.PollInterval.String()},
+		Backup: apiclient.ConfigBackup{Interval: d.Backup.Interval.String(), Keep: d.Backup.Keep, Dir: d.Backup.Dir},
 		Notify: apiclient.ConfigNotify{On: notifyStateNames(d), Command: d.Notify.Command},
 		Container: apiclient.ConfigContainer{
 			Image:            d.Container.Image,

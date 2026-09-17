@@ -73,6 +73,7 @@ type configResponse struct {
 	MCP                    configMCP          `json:"mcp"`
 	GitHub                 configGitHub       `json:"github"`
 	Update                 configUpdateStatus `json:"update"`
+	Backup                 configBackup       `json:"backup"`
 	Notify                 configNotify       `json:"notify"`
 	Triggers               configTriggers     `json:"triggers"`
 	// Container is §16's container execution mode (task 061). Served like
@@ -220,6 +221,17 @@ type configUpdateStatus struct {
 	PollInterval string `json:"poll_interval"`
 }
 
+// configBackup is the scheduled-backup block of config.yaml (task 115): the
+// policy the timer reads, not how it is going — that is GET /v1/doctor's
+// backup group. Dir is served as written, "" included, rather than resolved:
+// the empty string is the configured choice "under the data dir", and a
+// client that wrote the resolved path back would pin a location nobody chose.
+type configBackup struct {
+	Interval string `json:"interval"`
+	Keep     int    `json:"keep"`
+	Dir      string `json:"dir"`
+}
+
 // configTriggers is the global switch for event triggers (§12.3, task 096).
 type configTriggers struct {
 	Enabled bool `json:"enabled"`
@@ -280,6 +292,11 @@ func configBody(cfg config.Config) configResponse {
 		Update: configUpdateStatus{
 			Check:        cfg.Update.Check,
 			PollInterval: cfg.Update.PollInterval.String(),
+		},
+		Backup: configBackup{
+			Interval: cfg.Backup.Interval.String(),
+			Keep:     cfg.Backup.Keep,
+			Dir:      cfg.Backup.Dir,
 		},
 		Notify:   configNotify{On: notifyStates(cfg.Notify.On), Command: stringList(cfg.Notify.Command)},
 		Triggers: configTriggers{Enabled: cfg.Triggers.Enabled},
@@ -379,6 +396,7 @@ type configPatch struct {
 	MCP                         *mcpPatch          `json:"mcp"`
 	GitHub                      *githubPatch       `json:"github"`
 	Update                      *updatePolicyPatch `json:"update"`
+	Backup                      *backupPatch       `json:"backup"`
 	Notify                      *notifyPatch       `json:"notify"`
 	Triggers                    *triggersPatch     `json:"triggers"`
 	Container                   *containerPatch    `json:"container"`
@@ -438,6 +456,12 @@ type githubPatch struct {
 type updatePolicyPatch struct {
 	Check        *bool   `json:"check"`
 	PollInterval *string `json:"poll_interval"`
+}
+
+type backupPatch struct {
+	Interval *string `json:"interval"`
+	Keep     *int    `json:"keep"`
+	Dir      *string `json:"dir"`
 }
 
 type notifyPatch struct {
@@ -552,6 +576,11 @@ func (p configPatch) sets() []config.Set {
 	if v := p.Update; v != nil {
 		addIfBool(add, "update.check", v.Check)
 		addIfString(add, "update.poll_interval", v.PollInterval)
+	}
+	if v := p.Backup; v != nil {
+		addIfString(add, "backup.interval", v.Interval)
+		addIfInt(add, "backup.keep", v.Keep)
+		addIfString(add, "backup.dir", v.Dir)
 	}
 	if v := p.Notify; v != nil {
 		if v.On != nil {

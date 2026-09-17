@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/goccy/go-yaml"
 )
@@ -78,6 +79,41 @@ func TestApplyUncommentsADocumentedBlock(t *testing.T) {
 	}
 	if !cfg.Notify.Enabled() {
 		t.Errorf("notify did not take effect: %+v", cfg.Notify)
+	}
+}
+
+// The `backup:` block ships commented out too (task 115), and setting its one
+// switch from a client has to uncomment it where it is documented rather than
+// append a second block, the same as notify's.
+func TestApplyUncommentsTheBackupBlock(t *testing.T) {
+	got, err := Apply([]byte(defaultConfigYAML), []Set{{Path: "backup.interval", Value: "24h"}})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	out := string(got)
+	if n := strings.Count(out, "\nbackup:"); n != 1 {
+		t.Errorf("backup: appears %d times, want exactly 1:\n%s", n, out)
+	}
+	if !strings.Contains(out, "\nbackup:\n  interval: 24h\n") {
+		t.Errorf("backup.interval was not uncommented in place:\n%s", out)
+	}
+	if !strings.Contains(out, "it protects against corruption and mistakes, not against losing the disk") {
+		t.Error("the backup block's same-disk warning was flattened")
+	}
+	cfg, err := Decode(got)
+	if err != nil {
+		t.Fatalf("the edited template no longer parses: %v\n%s", err, out)
+	}
+	if !cfg.Backup.Enabled() || cfg.Backup.Interval.Std() != 24*time.Hour {
+		t.Errorf("backup did not take effect: %+v", cfg.Backup)
+	}
+	// Only the key asked for is in force; the block's other lines keep
+	// their documented defaults whether or not the editor uncommented them.
+	if cfg.Backup.Keep != DefaultBackupKeep || cfg.Backup.Dir != "" {
+		t.Errorf("uncommenting the interval changed keep or dir: %+v", cfg.Backup)
+	}
+	if a, b := strings.Count(out, "\n"), strings.Count(defaultConfigYAML, "\n"); a != b {
+		t.Errorf("the template grew from %d lines to %d; the documented block was appended to", b, a)
 	}
 }
 

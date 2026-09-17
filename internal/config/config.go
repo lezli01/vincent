@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -314,6 +315,13 @@ type Config struct {
 	// a reload that switches the poller off, which takes effect without a
 	// restart.
 	Update Update `yaml:"update"`
+	// Backup governs scheduled daemon backups (§12.3, task 115): the same
+	// archive `vincent daemon backup` writes, taken on an interval into a
+	// directory, with the timer's own archives pruned past a count. Its zero
+	// interval is off, so a daemon nobody configured writes nothing.
+	//
+	// It is read per check, so a hot reload governs the next one.
+	Backup Backup `yaml:"backup"`
 	// MCP governs §13.4's Model Context Protocol server (task 057): whether
 	// the daemon wires its own agent steps to it, and how deep an agent may
 	// create tasks that create tasks.
@@ -425,6 +433,73 @@ type Update struct {
 
 // Polls reports whether the release check should run at all.
 func (u Update) Polls() bool { return u.Check && u.PollInterval > 0 }
+
+// MinBackupInterval is the shortest `backup.interval` that loads (task 115
+// decision 2). Every run holds the store's only connection for the length of
+// a `VACUUM INTO` (task 030 decision 7) and then re-tars every transcript;
+// below an hour that is a load generator rather than a backup, and cron covers
+// anything tighter.
+const MinBackupInterval = time.Hour
+
+// DefaultBackupKeep is how many timer-written archives are kept when
+// `backup.keep` is not set.
+const DefaultBackupKeep = 7
+
+// BackupDirName is where `backup.dir: ""` resolves to under the data dir.
+const BackupDirName = "backups"
+
+// Backup configures scheduled daemon backups (spec §12.3 — task 115).
+type Backup struct {
+	// Interval is the one switch. `0` — the default — is off, because every
+	// archive carries transcripts that can run to gigabytes and turning it on
+	// for every existing install would quietly spend up to Keep times that
+	// much disk (decision 1). It is measured from the newest timer-written
+	// archive on disk, not from daemon start, so a restart does not reset it.
+	Interval Duration `yaml:"interval"`
+	// Keep is how many timer-written archives survive a successful run; `0`
+	// keeps everything, as `transcript_retention_days: 0` does. Only files
+	// named the way the timer names them count or are ever removed — a
+	// manual `vincent daemon backup` archive in the same directory is not.
+	Keep int `yaml:"keep"`
+	// Dir is where archives land; `""` resolves to {data_dir}/backups. That
+	// default is on the same disk as the database: it guards against
+	// corruption and mistakes, not against losing the disk.
+	Dir string `yaml:"dir"`
+}
+
+// Enabled reports whether the timer takes backups at all.
+func (b Backup) Enabled() bool { return b.Interval > 0 }
+
+// ResolveDir returns the directory archives are written into, given the
+// resolved data dir.
+func (b Backup) ResolveDir(dataDir string) string {
+	if b.Dir == "" {
+		return filepath.Join(dataDir, BackupDirName)
+	}
+	return filepath.Clean(b.Dir)
+}
+
+func (b Backup) validate() error {
+	// Non-negative for update.poll_interval's reason: a negative value is a
+	// typo that would otherwise read as "off" and look like it worked.
+	if b.Interval < 0 {
+		return fmt.Errorf("backup.interval must not be negative, got %s", b.Interval)
+	}
+	if b.Interval > 0 && b.Interval.Std() < MinBackupInterval {
+		return fmt.Errorf("backup.interval must be 0 (off) or at least %s, got %s",
+			Duration(MinBackupInterval), b.Interval)
+	}
+	if b.Keep < 0 {
+		return fmt.Errorf("backup.keep must not be negative (0 keeps everything), got %d", b.Keep)
+	}
+	// Absolute for the reason POST /v1/daemon/backup refuses a relative path:
+	// the daemon would resolve it against its own working directory, which is
+	// nobody's choice.
+	if b.Dir != "" && !filepath.IsAbs(b.Dir) {
+		return fmt.Errorf("backup.dir must be an absolute path, got %q", b.Dir)
+	}
+	return nil
+}
 
 // Triggers configures the daemon's inward signal (spec §12.3 — task 096): the
 // definitions under {config_dir}/triggers/ that start work from a system
@@ -743,6 +818,8 @@ func Default() Config {
 		GitHub: GitHub{Enabled: true, PollInterval: Duration(5 * time.Minute)},
 		// On by default with a day between calls (task 055 decision 3).
 		Update: Update{Check: true, PollInterval: Duration(24 * time.Hour)},
+		// Off: the interval is the switch (task 115 decision 1).
+		Backup: Backup{Keep: DefaultBackupKeep},
 		// Runtime named, mounts and network on: inert until an image is set,
 		// and the shape a container user wants when they set one (§16). The
 		// mounts were off while only commands ran in the container (issue
@@ -882,6 +959,9 @@ func (c Config) validate() error {
 	// and look like it worked.
 	if c.Update.PollInterval < 0 {
 		return fmt.Errorf("update.poll_interval must not be negative, got %s", c.Update.PollInterval)
+	}
+	if err := c.Backup.validate(); err != nil {
+		return err
 	}
 	if err := c.Container.Validate(); err != nil {
 		return err
