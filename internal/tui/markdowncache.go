@@ -12,7 +12,7 @@ import "crypto/sha256"
 //
 // The key is the source's digest plus every input that changes the result:
 // the pane width, the verbosity level, the raw toggle and `tui.hyperlinks`
-// (task 110) — without the last, toggling the setting would serve the
+// (task 111) — without the last, toggling the setting would serve the
 // previous render. The issue's "theme"
 // and "completion state" are not in it — this TUI has no theme concept, and
 // with whole records there is no partial state to key on. There is no

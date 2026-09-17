@@ -9714,7 +9714,7 @@ every other record stays literal.
     classifier; reopening T1.7 is what would build it.
   - **Rendering is memoized per document**, keyed on the source's digest, the
     pane width, the verbosity level, the raw toggle and — *amended 2026-09-17
-    (task 110)* — `tui.hyperlinks`, so toggling the setting re-renders rather
+    (task 111)* — `tui.hyperlinks`, so toggling the setting re-renders rather
     than serving the previous document. A live chunk re-renders
     the document it extended rather than every record in the pane. There is no
     client-side throttle and no second timer: §13.3's daemon-side coalescing is

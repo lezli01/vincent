@@ -149,7 +149,7 @@ func markdownBlockLines(text string, width int) ([]string, []int) {
 }
 
 // markdownBlockLinesLinked is markdownBlockLines with `tui.hyperlinks`
-// (task 110): when links is set, a link whose destination passes
+// (task 111): when links is set, a link whose destination passes
 // hyperlinkTarget carries an OSC 8 hyperlink on its label, its `[n]` and its
 // reference line's destination. When it is not, this is exactly the render
 // markdownBlockLines has always produced.
@@ -197,7 +197,7 @@ func markdownBlockLinesLinked(text string, width int, links bool) ([]string, []i
 // `tui.hyperlinks` off, which is the default, without an OSC 8 hyperlink, and repeating a URL under two numbers would only make
 // that list longer.
 //
-// It also carries the document's `tui.hyperlinks` choice (task 110), because
+// It also carries the document's `tui.hyperlinks` choice (task 111), because
 // it is already the one value every inline scan and the reference block are
 // handed. The two emitters that never link — the clipboard payload and the
 // copy picker's fence scan — build a bare registry, so they cannot.
@@ -254,7 +254,7 @@ func renderMDRefs(r *mdRefs, width int) []string {
 			segs: []segment{
 				{text: "[" + strconv.Itoa(i+1) + "] ", style: styleMDRef},
 				// The printed destination is the clickable copy when
-				// hyperlinks are on (task 110 decision 2): what opens is
+				// hyperlinks are on (task 111 decision 2): what opens is
 				// what is on screen.
 				{text: dest, style: r.linked(styleMDRef, dest, i+1)},
 			},
@@ -737,7 +737,7 @@ func inlineSegments(text string, base lipgloss.Style, depth int, refs *mdRefs) [
 			// destination becomes a numbered reference; nothing here opens
 			// or fetches anything (decisions 2 and 3), and nothing is
 			// hyperlinked unless the human turned `tui.hyperlinks` on
-			// (task 110).
+			// (task 111).
 			if label, dest, next, ok := linkAt(text, i); ok && depth < 3 && refs != nil {
 				flush()
 				if label == "" {
@@ -748,7 +748,7 @@ func inlineSegments(text string, base lipgloss.Style, depth int, refs *mdRefs) [
 				labelSegs := inlineSegments(label, base, depth+1, refs)
 				n := refs.add(dest)
 				// With `tui.hyperlinks` on, the label and its `[n]` are one
-				// link (task 110 decision 2). linked is a no-op otherwise.
+				// link (task 111 decision 2). linked is a no-op otherwise.
 				for k := range labelSegs {
 					labelSegs[k].style = refs.linked(labelSegs[k].style, dest, n)
 				}

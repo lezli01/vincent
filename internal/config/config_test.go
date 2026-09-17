@@ -318,7 +318,7 @@ func TestBoardGroupingOneLevel(t *testing.T) {
 }
 
 // TestTUIHyperlinksIsOptIn: OSC 8 links are off unless the file says
-// otherwise, because nothing probes the terminal (task 110).
+// otherwise, because nothing probes the terminal (task 111).
 func TestTUIHyperlinksIsOptIn(t *testing.T) {
 	if Default().TUI.Hyperlinks {
 		t.Error("tui.hyperlinks defaults to true; it must be opt-in")

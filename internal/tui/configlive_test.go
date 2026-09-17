@@ -132,7 +132,7 @@ func TestConfigEditorWritesThroughTheRealAPI(t *testing.T) {
 	}
 }
 
-// TestConfigEditorTogglesHyperlinks is task 110 through the real handlers: the
+// TestConfigEditorTogglesHyperlinks is task 111 through the real handlers: the
 // row writes tui.hyperlinks, and the save the root routes is what both
 // workspaces read.
 func TestConfigEditorTogglesHyperlinks(t *testing.T) {

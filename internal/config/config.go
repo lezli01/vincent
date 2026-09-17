@@ -527,7 +527,7 @@ func stateNames() []string {
 type TUI struct {
 	Board BoardView `yaml:"board"`
 	// Hyperlinks wraps the output pane's Markdown links in OSC 8 hyperlinks
-	// (task 110). Off by default because nothing probes whether the terminal
+	// (task 111). Off by default because nothing probes whether the terminal
 	// understands the sequence — a terminal that does not may print it — and
 	// because the destination is agent-supplied text inside an escape
 	// sequence (§16). Turning it on is the human's statement that their

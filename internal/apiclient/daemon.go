@@ -191,7 +191,7 @@ type ConfigContainer struct {
 // ConfigTUI is the `tui` section of config.yaml as served.
 type ConfigTUI struct {
 	Board ConfigBoard `json:"board"`
-	// Hyperlinks turns on OSC 8 links in the output pane (task 110).
+	// Hyperlinks turns on OSC 8 links in the output pane (task 111).
 	Hyperlinks bool `json:"hyperlinks"`
 }
 

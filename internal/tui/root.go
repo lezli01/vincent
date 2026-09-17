@@ -102,7 +102,7 @@ type root struct {
 	// overlay and the footer.
 	github []githubProject
 
-	// links is the session's `tui.hyperlinks` (task 110). The root fills it
+	// links is the session's `tui.hyperlinks` (task 111). The root fills it
 	// because the config arrives in three messages bound for three different
 	// views — the board's fetch, the daemon view's fetch and the config
 	// editor's save — and both output panes read it.
@@ -698,7 +698,7 @@ func (m *root) switchTo(id viewID) tea.Cmd {
 }
 
 // applyHyperlinks adopts `tui.hyperlinks` from whichever config answer
-// arrived (task 110). A failed fetch or a refused save changes nothing, for
+// arrived (task 111). A failed fetch or a refused save changes nothing, for
 // the reason board.applyConfig gives: a request that failed is not a
 // statement about the setting.
 func (m *root) applyHyperlinks(msg tea.Msg) {

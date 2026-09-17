@@ -10,7 +10,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// Opt-in OSC 8 hyperlinks (task 110). The sanitizer is asserted directly,
+// Opt-in OSC 8 hyperlinks (task 111). The sanitizer is asserted directly,
 // because the pane's sanitizeText strips some hostile bytes before the
 // renderer ever sees them and the sanitizer has to hold even if that ordering
 // changes; the rendering is asserted by parsing the OSC 8 spans back out of

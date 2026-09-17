@@ -150,7 +150,7 @@ type detail struct {
 	// workspace the same way the level is (task 076 decision 2).
 	raw *rawHolder
 	// links is the session's `tui.hyperlinks`, shared with the chat
-	// workspace (task 110). builtLinks is what the pane was last built with,
+	// workspace (task 111). builtLinks is what the pane was last built with,
 	// so a config change that lands while the pane is up rebuilds it.
 	links      *hyperlinkHolder
 	builtLinks bool

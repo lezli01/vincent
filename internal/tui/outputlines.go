@@ -788,7 +788,7 @@ type lineOpts struct {
 	// rather than as a fourth argument because it is a pane-specific
 	// display choice, which is exactly what this struct carries.
 	raw bool
-	// hyperlinks is the session's `tui.hyperlinks` (task 110): Markdown
+	// hyperlinks is the session's `tui.hyperlinks` (task 111): Markdown
 	// links whose destination passes hyperlinkTarget are drawn as OSC 8
 	// hyperlinks. Raw mode ignores it — source is shown, never linked.
 	hyperlinks bool
@@ -1047,7 +1047,7 @@ func blockOrdinal(at []int, i int) int {
 // through the memo (see markdowncache.go), and nothing else changes, because
 // nothing else was ever interpreted as Markdown (task 073 decision 5).
 //
-// links is `tui.hyperlinks` (task 110), and raw wins over it: raw mode shows
+// links is `tui.hyperlinks` (task 111), and raw wins over it: raw mode shows
 // what the agent wrote, and a hyperlink is not source.
 func assistantBlockLines(text string, width int, raw, links bool) ([]string, []int) {
 	if raw {

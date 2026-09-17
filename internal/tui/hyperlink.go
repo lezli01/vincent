@@ -9,7 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// Opt-in OSC 8 hyperlinks in the output pane (task 110).
+// Opt-in OSC 8 hyperlinks in the output pane (task 111).
 //
 // Task 075 decision 3 kept every link a numbered reference and emitted no
 // hyperlink escape, for three reasons this file answers one by one:
@@ -35,7 +35,7 @@ const maxHyperlinkBytes = 2048
 
 // hyperlinkTarget decides whether a Markdown destination may be emitted inside
 // an OSC 8 sequence, and returns the URI to emit. It is stricter than "a URL
-// that parses" on purpose (task 110 decision 4):
+// that parses" on purpose (task 111 decision 4):
 //
 //   - at most maxHyperlinkBytes bytes;
 //   - every byte printable ASCII, 0x21–0x7E, which refuses C0 and C1

@@ -72,7 +72,7 @@ type (
 		archived  bool
 		board     apiclient.ConfigBoard
 		laneDepth int
-		// hyperlinks is `tui.hyperlinks` (task 110). The board does not
+		// hyperlinks is `tui.hyperlinks` (task 111). The board does not
 		// read it; the root does, because this fetch is the one that rides
 		// every connect and reconnect.
 		hyperlinks bool

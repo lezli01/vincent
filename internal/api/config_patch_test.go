@@ -337,7 +337,7 @@ func TestConfigPatchRoundTripsUsageLimitAutoContinue(t *testing.T) {
 	}
 }
 
-// tui.hyperlinks is served, written and put into force (task 110). The TUI
+// tui.hyperlinks is served, written and put into force (task 111). The TUI
 // reads it from nowhere else, so a key the PATCH dropped would be a setting
 // the config editor shows and cannot change.
 func TestConfigPatchRoundTripsTUIHyperlinks(t *testing.T) {

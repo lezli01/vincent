@@ -99,7 +99,7 @@ type chatView struct {
 	// workspace's output pane (task 076 decision 2).
 	raw *rawHolder
 	// links is the session's `tui.hyperlinks`, shared with the task
-	// workspace's output pane (task 110), and builtLinks is the value the
+	// workspace's output pane (task 111), and builtLinks is the value the
 	// body was last built with: the setting arrives from the daemon rather
 	// than from a key here, so a change is noticed at render time.
 	links      *hyperlinkHolder
