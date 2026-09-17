@@ -465,6 +465,12 @@ breaks hand-made JSON. `project_id` is the id `vincent project ls` prints, and
 (`vincent workflow init fix-and-test --from fix-and-test`); any workflow the
 project can see will do.
 
+`fix-and-test` declares `platforms: [posix]`, and the runner below talks to a
+daemon on its own machine, so on a **Windows** host that create is a `400`
+naming the restriction. There, put a workflow that runs on Windows in the
+`workflow` field — `feature-pr`, or your own
+([Portability](workflows.md#10-portability)).
+
 ### GitHub Actions
 
 A job that runs only when an earlier one failed:

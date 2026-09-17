@@ -33,6 +33,21 @@ list with the user-facing context a commit subject cannot carry.
   say why when you try to open them. The outcome shows where you pressed the
   key.
 
+- **Three example workflows that show control flow.** `vincent workflow init
+  --from` now offers `go-checks`, `ship` and `split-work` beside the other
+  five. `go-checks` runs `go test` and `go vet` as a `parallel` group and is
+  written to be included. `ship` asks before it builds (`on_input: require`),
+  probes for a change with `allow_failure`, ends as `done` through a
+  `condition` when there is nothing to publish, guards an optional changelog
+  step with `if:`, includes `go-checks`, and pushes only after a `manual`
+  gate. `split-work` has an agent plan the change as units, fans them out as
+  child tasks with a derived `fan_out` (`for_each:`, `lane:`, `needs:`,
+  `max_lanes:`, `schedule:`), merges them with an agent resolving any
+  conflict, and includes `go-checks` on the merged branch. Both includers need
+  the fragment installed under its own name first:
+  `vincent workflow init go-checks --from go-checks`. The workflow guide lists
+  every example with the features it shows (issue #408).
+
 - **A cursor step now shows where it ran and how long it took.** cursor
   reports its working directory when a run starts, and its duration and cache
   token counts when it ends, but vincent ignored all three. The output pane and
@@ -514,6 +529,18 @@ list with the user-facing context a commit subject cannot carry.
   state, and the Steps tab now colors `approved` green and `rejected` red.
 
 ### Fixed
+
+- **The `fix-and-test` example no longer accepts a task on Windows that it
+  cannot finish.** Its first step's check, `! go test ./...`, is POSIX shell
+  syntax that pwsh rejects, so on Windows the check always failed and the task
+  blocked once its retries were spent — while the file's comment claimed the
+  syntax was portable. It now declares `platforms: [posix]`: a Windows daemon
+  lists it as `unsupported` and `POST /v1/tasks` refuses it with a `400`. A CI
+  job on a Windows host that creates `fix-and-test` tasks, as the scripting
+  guide's snippets do, needs another workflow there (issue #408).
+
+- **The quickstart no longer says the `docs-update` example runs
+  `restricted`.** It runs full-auto, and its header explains why (issue #408).
 
 - **The documentation no longer says every TUI action has a subcommand
   without exception.** The README, quickstart and scripting guide now

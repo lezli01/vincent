@@ -1712,7 +1712,7 @@ The daemon picks it up on save.
 
 | Flag | Effect |
 |---|---|
-| `--from <example>` | Start from a [shipped example](../../examples) instead of the skeleton: `converge`, `cursor-review`, `docs-update`, `feature-pr`, `fix-and-test`. They are embedded in the binary, so this works from any directory |
+| `--from <example>` | Start from a [shipped example](../../examples) instead of the skeleton: `converge`, `cursor-review`, `docs-update`, `feature-pr`, `fix-and-test`, `go-checks`, `ship`, `split-work`. They are embedded in the binary, so this works from any directory |
 | `--project ID` | Write into that repository's `.vincent/workflows/` instead of `{config_dir}/workflows/`. **The one part that needs a daemon**, because only the daemon knows which projects exist and where they are |
 | `--json` | The written path, name, scope, source example, and what it shadows |
 

@@ -179,7 +179,7 @@ Three things to know about the Cursor adapter specifically:
   deliberate: a restricted mode that quietly isn't restricted is worse than
   none.
 
-Five ready-to-copy workflows ship in [`examples/`](examples), and
+Eight ready-to-copy workflows ship in [`examples/`](examples), and
 `vincent workflow init <name> --from <example>` installs one without a checkout;
 [Writing workflows](docs/guides/workflows.md) is the authoring guide and
 [Agent CLIs](docs/guides/agents.md) covers the adapters in full.
@@ -433,8 +433,12 @@ vincent workflow ls --project 1  # add this project's own .vincent/workflows
 tests, stops at a human gate, and pushes only after you approve. The others
 are [`fix-and-test`](examples/fix-and-test.yaml) (write a failing test, then
 fix it), [`converge`](examples/converge.yaml) (loop until the suite is green),
-[`docs-update`](examples/docs-update.yaml), and
-[`cursor-review`](examples/cursor-review.yaml).
+[`docs-update`](examples/docs-update.yaml),
+[`cursor-review`](examples/cursor-review.yaml),
+[`go-checks`](examples/go-checks.yaml) (a parallel verification fragment, for
+including), [`ship`](examples/ship.yaml) (probe, then stop as done or gate and
+push), and [`split-work`](examples/split-work.yaml) (fan a planned change out
+into child tasks and merge them back).
 
 Its check is `go build ./... && go test ./...`, so open the file and change
 that line to whatever proves *your* repository still works before pointing it
