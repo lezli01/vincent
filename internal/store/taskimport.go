@@ -423,7 +423,7 @@ func insertRow(ctx context.Context, tx *sql.Tx, table string, r Row) error {
 	for i, c := range r.Columns {
 		cols[i] = `"` + strings.ReplaceAll(c, `"`, `""`) + `"`
 	}
-	q := "INSERT INTO " + table + " (" + strings.Join(cols, ", ") + ") VALUES " + placeholders(len(cols))
+	q := "INSERT INTO " + table + " (" + strings.Join(cols, ", ") + ") VALUES " + placeholders(len(cols)) //nolint:gosec // G202: see above
 	_, err := tx.ExecContext(ctx, q, r.Values...)
 	return err
 }

@@ -64,7 +64,7 @@ func TestBackupRestoreRoundTripE2E(t *testing.T) {
 		t.Fatalf("project add: code %d, out %q", code, out)
 	}
 	doneID := addTask(t, dataDir, cfgDir, "finished before the backup")
-	waitTaskState(t, dataDir, cfgDir, doneID, "done")
+	waitTaskDone(t, dataDir, cfgDir, doneID)
 	c1.post(t, "/v1/daemon/stop", nil, http.StatusAccepted, nil)
 	waitExit(t, first)
 
@@ -309,8 +309,9 @@ func addTask(t *testing.T, dataDir, cfgDir, title string) int64 {
 	return created.ID
 }
 
-func waitTaskState(t *testing.T, dataDir, cfgDir string, id int64, want string) {
+func waitTaskDone(t *testing.T, dataDir, cfgDir string, id int64) {
 	t.Helper()
+	const want = "done"
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
 		out, code := runVincent(t, dataDir, cfgDir, "task", "ls", "--json")

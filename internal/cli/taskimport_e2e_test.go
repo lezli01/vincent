@@ -64,9 +64,9 @@ func TestTaskImportRoundTripE2E(t *testing.T) {
 		t.Fatalf("project add: code %d, out %q", code, out)
 	}
 	// The second task is the one imported, so its step run ids start past 1.
-	waitTaskState(t, dataDir, cfgDir, addTask(t, dataDir, cfgDir, "first"), "done")
+	waitTaskDone(t, dataDir, cfgDir, addTask(t, dataDir, cfgDir, "first"))
 	id := addTask(t, dataDir, cfgDir, "brought back")
-	waitTaskState(t, dataDir, cfgDir, id, "done")
+	waitTaskDone(t, dataDir, cfgDir, id)
 	idText := strconv.FormatInt(id, 10)
 	if out, code := runVincent(t, dataDir, cfgDir, "task", "archive", idText); code != 0 {
 		t.Fatalf("task archive: code %d, out %q", code, out)
@@ -153,7 +153,7 @@ func TestTaskImportRoundTripE2E(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &occupant); err != nil || occupant.ID == id {
 		t.Fatalf("occupant task = %q (%v); its id must not be %d", out, err, id)
 	}
-	waitTaskState(t, data2, cfg2, occupant.ID, "done")
+	waitTaskDone(t, data2, cfg2, occupant.ID)
 
 	out, code = runVincent(t, data2, cfg2, "task", "import", archive, idText, "--json")
 	if code != 0 {

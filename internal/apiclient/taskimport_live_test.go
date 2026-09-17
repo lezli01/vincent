@@ -154,8 +154,8 @@ func createArchive(t *testing.T, dst, db string, src config.Dirs, schema int) {
 }
 
 // wantImportError asserts a refusal arrived as the §13.1 envelope with the
-// reason a client branches on.
-func wantImportError(t *testing.T, err error, status int, reason string) *apiclient.Error {
+// reason a client branches on, and returns its details.
+func wantImportError(t *testing.T, err error, status int, reason string) map[string]string {
 	t.Helper()
 	var apiErr *apiclient.Error
 	if !errors.As(err, &apiErr) {
@@ -167,7 +167,7 @@ func wantImportError(t *testing.T, err error, status int, reason string) *apicli
 	if reason != "" && apiErr.Details["reason"] != reason {
 		t.Fatalf("reason = %q (%s), want %q", apiErr.Details["reason"], apiErr.Message, reason)
 	}
-	return apiErr
+	return apiErr.Details
 }
 
 func TestImportTaskOverTheWire(t *testing.T) {
@@ -225,9 +225,9 @@ func TestImportTaskRefusalsOverTheWire(t *testing.T) {
 		archive, id := makeImportArchive(t, backedUp{state: store.TaskDone})
 		live := newImportLive(t)
 		_, err := live.client.ImportTask(ctx, apiclient.TaskImportRequest{Path: archive, TaskID: id})
-		apiErr := wantImportError(t, err, http.StatusConflict, apiclient.ImportRefusedNotArchived)
-		if apiErr.Details["state"] != string(store.TaskDone) {
-			t.Errorf("details = %v, want the backed-up state", apiErr.Details)
+		details := wantImportError(t, err, http.StatusConflict, apiclient.ImportRefusedNotArchived)
+		if details["state"] != string(store.TaskDone) {
+			t.Errorf("details = %v, want the backed-up state", details)
 		}
 	})
 
