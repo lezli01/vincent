@@ -50,8 +50,8 @@ steps:
     # This step is also the verification. If the agent wrote nothing, `git
     # add` finds no REVIEW.md and the step fails with nonzero_exit — the task
     # blocks instead of reporting a review that never happened. Nothing more
-    # portable is needed: `&&` behaves the same under bash, cmd, and
-    # PowerShell 7, which is what §8.3 may hand a command step.
+    # portable is needed: `&&` between two simple commands behaves the same
+    # under /bin/sh and pwsh, the two shells §8.3 hands a command step.
     run: 'git add REVIEW.md && git commit -m "review: {{.Task.Title}}"'
 
   - id: read
