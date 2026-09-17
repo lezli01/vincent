@@ -26,8 +26,8 @@ Tip: use --model <id> (or /model <id> in interactive mode) to switch.
 // `cursor-agent -p --output-format stream-json --trust [--resume <id>] …`,
 // prompt from stdin,
 // cursor stream-json on stdout. The emitted shapes mirror the fixtures
-// captured from a real cursor-agent 2026.08.04-aaa8809
-// (internal/agent/cursor/testdata).
+// captured from real cursor-agent 2026.08.04-aaa8809 and 2026.08.25-3e8eec8
+// runs (internal/agent/cursor/testdata).
 func cursorMain(scenario string) {
 	prompt, _ := io.ReadAll(os.Stdin)
 
@@ -38,9 +38,12 @@ func cursorMain(scenario string) {
 	prior := openSession(dialectCursor)
 	rememberPrompt(prompt)
 
+	// cwd is the process's own working directory, which is what the real CLI
+	// reports and what the adapter reads as the run header (task 108).
+	cwd, _ := os.Getwd()
 	emit(map[string]any{
 		"type": "system", "subtype": "init", "apiKeySource": "login",
-		"model": "Fake", "permissionMode": "default",
+		"cwd": cwd, "model": "Fake", "permissionMode": "default",
 	})
 	emit(map[string]any{"type": "user", "message": map[string]any{
 		"role":    "user",
@@ -143,12 +146,13 @@ func emitCursorText(text string) {
 	}, "session_id": "fake-session-1"})
 }
 
-// emitCursorResult ends the turn. Usage keys are camelCase and no cost is
-// reported — both real cursor properties the adapter is written against.
+// emitCursorResult ends the turn. Usage keys are camelCase, both durations
+// ride beside each other and no cost is reported — all real cursor properties
+// the adapter is written against.
 func emitCursorResult(prompt []byte, inTok, outTok int64) {
 	emit(map[string]any{
 		"type": "result", "subtype": "success", "is_error": false,
-		"duration_ms": 1, "result": "done: " + flatten(string(prompt), 1000),
+		"duration_ms": 1, "duration_api_ms": 1, "result": "done: " + flatten(string(prompt), 1000),
 		"usage": map[string]int64{
 			"inputTokens": inTok, "outputTokens": outTok,
 			"cacheReadTokens": 0, "cacheWriteTokens": 0,
