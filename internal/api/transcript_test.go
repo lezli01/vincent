@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/agent/codex"
+	"github.com/lezli01/vincent/internal/agent/cursor"
 	"github.com/lezli01/vincent/internal/store"
 )
 
@@ -536,6 +539,55 @@ func TestNormalizeOmitsUnreportedResultMetadata(t *testing.T) {
 	} {
 		if strings.Contains(buf.String(), absent) {
 			t.Errorf("unreported %s reached the wire: %s", absent, buf.String())
+		}
+	}
+}
+
+// TestNormalizeCursorRunHeaderAndResultMetadata is cursor's share of task
+// 066's wire names (task 108), off a captured cursor run. The header carries
+// the directory and no `available_tools` key at all — cursor's init line lists
+// no tools — and the result carries the durations and cache counts while
+// omitting every key cursor does not report, so a client can still tell
+// "unreported" from "zero".
+func TestNormalizeCursorRunHeaderAndResultMetadata(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "agent", "cursor", "testdata", "success_2026.08.04.jsonl"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	var buf bytes.Buffer
+	parser := cursor.New(func() string { return "" }).NewLineParser()
+	if err := normalizeTranscript(&buf, bytes.NewReader(src), parser); err != nil {
+		t.Fatalf("normalizeTranscript: %v", err)
+	}
+	var header, result string
+	for _, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+		switch {
+		case strings.Contains(line, `"type":"agent.run_header"`):
+			if header != "" {
+				t.Errorf("a second run header: %s", line)
+			}
+			header = line
+		case strings.Contains(line, `"type":"agent.result"`):
+			result = line
+		}
+	}
+	if header != `{"type":"agent.run_header","work_dir":"/tmp/wt"}` {
+		t.Errorf("run header = %s, want the work_dir and no available_tools key", header)
+	}
+	for _, want := range []string{
+		`"duration_ms":2002`, `"api_duration_ms":2002`, `"cache_read_tokens":8000`,
+		`"input_tokens":8274`, `"output_tokens":39`,
+	} {
+		if !strings.Contains(result, want) {
+			t.Errorf("result missing %s: %s", want, result)
+		}
+	}
+	for _, absent := range []string{
+		"num_turns", "stop_reason", "terminal_reason", "model_usage",
+		"permission_denials", "reasoning_tokens", "cost_usd",
+	} {
+		if strings.Contains(result, absent) {
+			t.Errorf("unreported %s reached the wire: %s", absent, result)
 		}
 	}
 }

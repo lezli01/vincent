@@ -10,7 +10,7 @@ import "github.com/lezli01/vincent/internal/agent"
 // than a range (§9.7) — there is no ordering to put 2026.08.04-aaa8809 into,
 // and a gate that works for two adapters of three answers a different
 // question depending on which one you ask.
-var testedVersions = []string{"2026.08.04-aaa8809", "2026.08.11-e8db854"}
+var testedVersions = []string{"2026.08.04-aaa8809", "2026.08.11-e8db854", "2026.08.25-3e8eec8"}
 
 // incompatibleVersions are builds vincent knows break. It ships empty: no
 // cursor-agent release has been observed to break these parsers. Tests inject

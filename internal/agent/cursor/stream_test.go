@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
 )
@@ -13,7 +14,12 @@ import (
 // The fixtures are captured from real cursor-agent runs with absolute paths,
 // session ids and account identifiers scrubbed, each named for the CLI version
 // it came from: success_2026.08.04.jsonl from 2026.08.04-aaa8809,
-// tools_2026.08.11.jsonl from 2026.08.11-e8db854.
+// tools_2026.08.11.jsonl from 2026.08.11-e8db854, and success_2026.08.25.jsonl
+// and tools_2026.08.25.jsonl from 2026.08.25-3e8eec8 (task 108). The last two
+// are scrubbed the same way — `session_id` and `conversationId` to SESSION,
+// `request_id` and `requestId` to REQ, `model_call_id` to MC, the throwaway
+// repo to /tmp/wt — and keep their tool call ids, durations and token counts
+// exactly as captured, because the tests below assert those values.
 //
 // tools_2026.08.11.jsonl replaces a 2026.08.04 capture whose `completed`
 // payloads had to be reconstructed to their documented shape, because that
@@ -62,12 +68,16 @@ func TestParseSuccessFixture(t *testing.T) {
 	if counts[agent.EventOutput] != 1 {
 		t.Errorf("output events = %d, want 1 (the single assistant message)", counts[agent.EventOutput])
 	}
-	// system, user and the three thinking deltas stay unknown — the deltas
-	// are swallowed into the buffer and are still unmodeled lines, which is
-	// what a reader asking for raw lines should see (§9.7, amended by T4.16).
-	if counts[agent.EventUnknown] != 5 {
-		t.Errorf("unknown events = %d, want 5 (system, user, 3 thinking deltas)",
+	// user and the three thinking deltas stay unknown — the deltas are
+	// swallowed into the buffer and are still unmodeled lines, which is what a
+	// reader asking for raw lines should see (§9.7, amended by T4.16). The
+	// system/init line is the run header since task 108.
+	if counts[agent.EventUnknown] != 4 {
+		t.Errorf("unknown events = %d, want 4 (user, 3 thinking deltas)",
 			counts[agent.EventUnknown])
+	}
+	if counts[agent.EventRunHeader] != 1 {
+		t.Errorf("run header events = %d, want 1 (the system/init line)", counts[agent.EventRunHeader])
 	}
 	// The deltas coalesce into exactly one thinking event, emitted when
 	// `completed` closes the block. Per-delta events are what §9.7 refused,
@@ -103,8 +113,36 @@ func TestParseSuccessFixture(t *testing.T) {
 	}
 }
 
+// TestParseToolsFixture runs over both tool captures: the 2026.08.25 one is
+// what makes that build a tested one (task 108 decision 1), so every arm the
+// older capture pins — tool names, subjects, call correlation, outcomes and
+// the concatenated result text — has to hold for it too. The builds differ in
+// their call ids, which 2026.08.25 reports as two ids joined by a newline.
 func TestParseToolsFixture(t *testing.T) {
-	events := parseFixture(t, "tools_2026.08.11.jsonl")
+	for _, tc := range []struct {
+		fixture         string
+		editID, shellID string
+	}{
+		{"tools_2026.08.11.jsonl", "tool_1", "tool_2"},
+		{
+			"tools_2026.08.25.jsonl",
+			"call-fc8df3e2-e81f-4ce4-9156-1a6166d8a792-0\nfc_899ae317-65c9-9d65-abdd-e079d14a17e9_0",
+			"call-fc8df3e2-e81f-4ce4-9156-1a6166d8a792-1\nfc_899ae317-65c9-9d65-abdd-e079d14a17e9_1",
+		},
+	} {
+		t.Run(tc.fixture, func(t *testing.T) {
+			parseToolsFixture(t, tc.fixture, tc.editID, tc.shellID)
+		})
+	}
+}
+
+func parseToolsFixture(t *testing.T, fixture, editID, shellID string) {
+	t.Helper()
+	events := parseFixture(t, fixture)
+	// Both captures think once before the calls and once after them.
+	if n := countType(events, agent.EventThinking); n != 2 {
+		t.Errorf("thinking events = %d, want 2 coalesced blocks", n)
+	}
 	var tools []string
 	for _, ev := range events {
 		if ev.Type == agent.EventToolUse {
@@ -132,13 +170,13 @@ func TestParseToolsFixture(t *testing.T) {
 	if len(uses) != 2 {
 		t.Fatalf("tool uses = %d, want 2", len(uses))
 	}
-	if uses[0].Summary != "/tmp/wt/hi.txt" || uses[0].CallID != "tool_1" {
-		t.Errorf("edit call = %+v, want the edited path and tool_1", uses[0])
+	if uses[0].Summary != "/tmp/wt/hi.txt" || uses[0].CallID != editID {
+		t.Errorf("edit call = %+v, want the edited path and %q", uses[0], editID)
 	}
 	// The shell call carries both `command` and `description`; the command
 	// is the subject a reader wants.
-	if uses[1].Summary != "git status" || uses[1].CallID != "tool_2" {
-		t.Errorf("shell call = %+v, want the command and tool_2", uses[1])
+	if uses[1].Summary != "git status" || uses[1].CallID != shellID {
+		t.Errorf("shell call = %+v, want the command and %q", uses[1], shellID)
 	}
 	// T4.16: the edit's `completed` reports what it did, correlated to the
 	// call by id. `+1 −0` rather than the path, which the call line already
@@ -152,8 +190,8 @@ func TestParseToolsFixture(t *testing.T) {
 	if len(results) != 2 {
 		t.Fatalf("tool results = %d, want 2 (both calls complete in a real run)", len(results))
 	}
-	if results[0].CallID != "tool_1" || results[0].IsError || results[0].Summary != "+1 −0" {
-		t.Errorf("edit result = %+v, want tool_1 succeeding with +1 −0", results[0])
+	if results[0].CallID != editID || results[0].IsError || results[0].Summary != "+1 −0" {
+		t.Errorf("edit result = %+v, want %q succeeding with +1 −0", results[0], editID)
 	}
 	// The shell outcome falls through to ToolSummary, whose first preference is
 	// `command` — so it repeats the invocation rather than reporting what came
@@ -163,8 +201,8 @@ func TestParseToolsFixture(t *testing.T) {
 	// code does, and pinned here so a change to that is a deliberate one: this
 	// is the one place the "an outcome must say something the invocation did
 	// not" rule above is not honoured.
-	if results[1].CallID != "tool_2" || results[1].IsError || results[1].Summary != "git status" {
-		t.Errorf("shell result = %+v, want tool_2 succeeding, summarised by its command", results[1])
+	if results[1].CallID != shellID || results[1].IsError || results[1].Summary != "git status" {
+		t.Errorf("shell result = %+v, want %q succeeding, summarised by its command", results[1], shellID)
 	}
 	// The result text is every assistant message concatenated, not the last.
 	last := events[len(events)-1]
@@ -175,6 +213,16 @@ func TestParseToolsFixture(t *testing.T) {
 		!strings.Contains(last.Result.ResultText, "Created `hi.txt`") {
 		t.Errorf("ResultText = %q, want every assistant message concatenated (§9.7)", last.Result.ResultText)
 	}
+}
+
+func countType(events []agent.Event, typ agent.EventType) int {
+	n := 0
+	for _, ev := range events {
+		if ev.Type == typ {
+			n++
+		}
+	}
+	return n
 }
 
 func TestParseTable(t *testing.T) {
@@ -338,20 +386,124 @@ func TestCoalescedThinkingRawIsTheClosingLine(t *testing.T) {
 	}
 }
 
-// TestNoRunHeaderOrResultMetadata states positively what task 066 did *not*
-// do to this adapter. The shared vocabulary grew a run header, a structured
-// tool verb and the result's own account of a run; cursor reports no structured
-// tool outcome, and the equivalents its dialect *does* carry — `cwd` on the
-// init line, `duration_ms`/`duration_api_ms` and the cache token split on the
-// result — are deliberately not read: task 066 widened one adapter, and each
-// dialect deserves its own fixtures. Every new field therefore stays zero here,
-// and nothing emulates a value (§9.7).
-func TestNoRunHeaderOrResultMetadata(t *testing.T) {
-	for _, name := range []string{"success_2026.08.04.jsonl", "tools_2026.08.11.jsonl"} {
-		for i, ev := range parseFixture(t, name) {
-			if ev.Type == agent.EventRunHeader || ev.Header != nil {
-				t.Errorf("%s line %d: produced a run header", name, i)
+// allFixtures is every cursor capture, old and new. The run header and the
+// result metadata are read off all of them: the 2026.08.04 and 2026.08.11
+// captures already carried `cwd`, the durations and the cache split, which
+// is why task 108 needed no re-capture of them.
+var allFixtures = []string{
+	"success_2026.08.04.jsonl",
+	"tools_2026.08.11.jsonl",
+	"resume_2026.08.11.jsonl",
+	"resume_unknown_2026.08.11.jsonl",
+	"success_2026.08.25.jsonl",
+	"tools_2026.08.25.jsonl",
+}
+
+// TestRunHeaderAndResultMetadata is task 108: cursor fills its share of the
+// vocabulary task 066 added. The init line's `cwd` becomes the run header —
+// with no tool list, because cursor's init line has none and nothing builds
+// one from the calls seen later — and the result line's durations and cache
+// counts are copied as captured, with no arithmetic (§9.7).
+func TestRunHeaderAndResultMetadata(t *testing.T) {
+	want := map[string]struct {
+		workDir             string
+		duration, api       time.Duration
+		cacheRead, cacheCre int64
+		inputTokens         int64
+	}{
+		"success_2026.08.04.jsonl":        {"/tmp/wt", 2002 * time.Millisecond, 2002 * time.Millisecond, 8000, 0, 8274},
+		"tools_2026.08.11.jsonl":          {"/tmp/wt", 16902 * time.Millisecond, 16902 * time.Millisecond, 17088, 0, 17161},
+		"resume_2026.08.11.jsonl":         {"/tmp/worktree", 4741 * time.Millisecond, 4741 * time.Millisecond, 35318, 0, 92},
+		"resume_unknown_2026.08.11.jsonl": {"/tmp/worktree", 2667 * time.Millisecond, 2667 * time.Millisecond, 5746, 0, 10946},
+		"success_2026.08.25.jsonl":        {"/tmp/wt", 13153 * time.Millisecond, 13153 * time.Millisecond, 3840, 0, 15149},
+		"tools_2026.08.25.jsonl":          {"/tmp/wt", 15079 * time.Millisecond, 15079 * time.Millisecond, 24192, 0, 14033},
+	}
+	for _, name := range allFixtures {
+		t.Run(name, func(t *testing.T) {
+			w, ok := want[name]
+			if !ok {
+				t.Fatalf("no expectation for fixture %s", name)
 			}
+			events := parseFixture(t, name)
+			var headers []*agent.RunHeader
+			var res *agent.RunResult
+			for i, ev := range events {
+				if ev.Type == agent.EventRunHeader {
+					if ev.Header == nil {
+						t.Fatalf("line %d: run header event carries no header", i)
+					}
+					headers = append(headers, ev.Header)
+				}
+				if ev.Type == agent.EventResult {
+					res = ev.Result
+				}
+			}
+			if len(headers) != 1 {
+				t.Fatalf("run headers = %d, want exactly 1", len(headers))
+			}
+			if events[0].Type != agent.EventRunHeader {
+				t.Errorf("first event = %q, want the run header", events[0].Type)
+			}
+			if headers[0].WorkDir != w.workDir {
+				t.Errorf("WorkDir = %q, want %q", headers[0].WorkDir, w.workDir)
+			}
+			if headers[0].Tools != nil {
+				t.Errorf("Tools = %v, want nil: cursor's init line lists none", headers[0].Tools)
+			}
+			if res == nil {
+				t.Fatal("no result event")
+			}
+			if res.Duration != w.duration || res.APIDuration != w.api {
+				t.Errorf("durations = %v (%v api), want %v (%v api)",
+					res.Duration, res.APIDuration, w.duration, w.api)
+			}
+			if res.CacheReadTokens != w.cacheRead || res.CacheCreationTokens != w.cacheCre {
+				t.Errorf("cache = %d read / %d written, want %d / %d",
+					res.CacheReadTokens, res.CacheCreationTokens, w.cacheRead, w.cacheCre)
+			}
+			// Cache traffic is never folded into the plain count (decision 7).
+			if res.InputTokens != w.inputTokens {
+				t.Errorf("InputTokens = %d, want %d as reported", res.InputTokens, w.inputTokens)
+			}
+		})
+	}
+}
+
+// TestRunHeaderAndResultMetadataLines covers the lines no capture has: a
+// system subtype other than init, and an error result, which carries its
+// timing and cache counts the way a success does (task 108 decision 8).
+func TestRunHeaderAndResultMetadataLines(t *testing.T) {
+	other := `{"type":"system","subtype":"status","cwd":"/tmp/wt"}`
+	if ev := (&stream{}).parse([]byte(other)); ev.Type != agent.EventUnknown ||
+		ev.Header != nil || string(ev.Raw) != other {
+		t.Errorf("system/status = %+v, want unknown with its raw line intact", ev)
+	}
+
+	errLine := `{"type":"result","subtype":"error","is_error":true,"result":"boom",` +
+		`"duration_ms":1200,"duration_api_ms":900,` +
+		`"usage":{"inputTokens":5,"outputTokens":6,"cacheReadTokens":7,"cacheWriteTokens":8}}`
+	ev := (&stream{}).parse([]byte(errLine))
+	if ev.Type != agent.EventResult || ev.Result == nil || !ev.Result.IsError {
+		t.Fatalf("error result = %+v, want an error RunResult", ev)
+	}
+	res := ev.Result
+	if res.Duration != 1200*time.Millisecond || res.APIDuration != 900*time.Millisecond {
+		t.Errorf("durations = %v (%v api), want 1.2s (900ms api)", res.Duration, res.APIDuration)
+	}
+	if res.CacheReadTokens != 7 || res.CacheCreationTokens != 8 {
+		t.Errorf("cache = %d / %d, want 7 / 8", res.CacheReadTokens, res.CacheCreationTokens)
+	}
+}
+
+// TestUnreportedMetadataStaysZero states positively what cursor still does
+// not report. Task 108 taught this adapter the run header and the result's
+// durations and cache counts; turns, stop and terminal reasons, per-model
+// usage, permission denials, a structured tool verb or block, and subagent
+// attribution have no equivalent on any cursor line, so they stay zero
+// whatever the fixture — nothing emulates a value (§9.7).
+func TestUnreportedMetadataStaysZero(t *testing.T) {
+	for _, name := range allFixtures {
+		for i, ev := range parseFixture(t, name) {
 			if ev.ParentCallID != "" {
 				t.Errorf("%s line %d: parent = %q", name, i, ev.ParentCallID)
 			}
@@ -361,11 +513,10 @@ func TestNoRunHeaderOrResultMetadata(t *testing.T) {
 				}
 			}
 			if res := ev.Result; res != nil {
-				if res.Duration != 0 || res.APIDuration != 0 || res.NumTurns != 0 ||
-					res.StopReason != "" || res.TerminalReason != "" ||
-					res.CacheReadTokens != 0 || res.CacheCreationTokens != 0 ||
-					res.ModelUsage != nil || res.PermissionDenials != nil {
-					t.Errorf("%s line %d: result carries claude-only metadata: %+v", name, i, res)
+				if res.NumTurns != 0 || res.StopReason != "" || res.TerminalReason != "" ||
+					res.ModelUsage != nil || res.PermissionDenials != nil ||
+					res.ReasoningOutputTokens != 0 {
+					t.Errorf("%s line %d: result carries metadata cursor does not report: %+v", name, i, res)
 				}
 			}
 		}

@@ -5,18 +5,26 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
 )
 
 // streamLine is the superset of `cursor-agent --output-format stream-json`
-// fields vincent reads (pinned against cursor-agent 2026.08.04-aaa8809;
-// fixtures in testdata/ were captured from real runs). Parsing is tolerant:
+// fields vincent reads (pinned against cursor-agent 2026.08.04-aaa8809, and
+// 2026.08.25-3e8eec8 for the run header and the result's metadata; fixtures in
+// testdata/ were captured from real runs). Parsing is tolerant:
 // unknown event types become EventUnknown, transcripted verbatim but not
 // normalized (phase 1 decision).
 type streamLine struct {
 	Type    string `json:"type"`
 	Subtype string `json:"subtype"`
+	// CWD is the directory the CLI reports working in (type=system,
+	// subtype=init). The same line's `model`, `permissionMode` and
+	// `apiKeySource` stay unread: RunHeader has no field for any of them, and
+	// the last concerns authentication, which has no place in a transcript
+	// record (task 108 decision 5).
+	CWD     string `json:"cwd"`
 	Message *struct {
 		Content []struct {
 			Type string `json:"type"`
@@ -34,16 +42,22 @@ type streamLine struct {
 	CallID string `json:"call_id"`
 	// Text carries a thinking delta's fragment (type=thinking,
 	// subtype=delta); the closing `completed` line has none.
-	Text    string `json:"text"`
-	IsError bool   `json:"is_error"` // type=result
-	Result  string `json:"result"`   // type=result
-	Usage   *struct {
+	Text          string `json:"text"`
+	IsError       bool   `json:"is_error"`        // type=result
+	Result        string `json:"result"`          // type=result
+	DurationMS    int64  `json:"duration_ms"`     // type=result
+	DurationAPIMS int64  `json:"duration_api_ms"` // type=result
+	Usage         *struct {
 		InputTokens  int64 `json:"inputTokens"`
 		OutputTokens int64 `json:"outputTokens"`
-		// cacheReadTokens/cacheWriteTokens are reported and deliberately not
-		// recorded: §17 tracks tokens in/out, and folding cache traffic into
+		// The cache counts are copied as reported, and never folded into the
+		// two above: §17 tracks tokens in/out, and folding cache traffic into
 		// either would make cursor's numbers incomparable with the other
-		// adapters'.
+		// adapters'. No fixed relation between inputTokens and cacheReadTokens
+		// holds across the captures, so nothing here says whether one includes
+		// the other (task 108 decision 7).
+		CacheReadTokens  int64 `json:"cacheReadTokens"`
+		CacheWriteTokens int64 `json:"cacheWriteTokens"`
 	} `json:"usage"`
 }
 
@@ -86,6 +100,18 @@ func (s *stream) parse(raw []byte) agent.Event {
 		return agent.Event{Type: agent.EventUnknown, Raw: raw}
 	}
 	switch line.Type {
+	case "system":
+		// The opening init line is the run's header, the way claude's is
+		// (task 108). It lists no tools, so Tools stays nil: a tool set
+		// assembled from the calls seen later would be a guess about what the
+		// run could reach, not the CLI's account of it (§9.7).
+		if line.Subtype == "init" {
+			return agent.Event{
+				Type:   agent.EventRunHeader,
+				Header: &agent.RunHeader{WorkDir: line.CWD},
+				Raw:    raw,
+			}
+		}
 	case "assistant":
 		// Assistant messages arrive whole (content blocks), not as deltas.
 		if text := assistantText(line); text != "" {
@@ -130,6 +156,10 @@ func (s *stream) parse(raw []byte) agent.Event {
 			// is_error flag is absent: the flag is the CLI's own summary and
 			// the subtype is the shape of the terminal event.
 			IsError: line.IsError || (line.Subtype != "" && line.Subtype != "success"),
+			// The run's own timing is read whatever the subtype: an error
+			// result carries it too, as claude's does (task 108 decision 8).
+			Duration:    time.Duration(line.DurationMS) * time.Millisecond,
+			APIDuration: time.Duration(line.DurationAPIMS) * time.Millisecond,
 		}
 		if res.IsError {
 			res.ErrorMessage = line.Result
@@ -140,13 +170,19 @@ func (s *stream) parse(raw []byte) agent.Event {
 		if line.Usage != nil {
 			res.InputTokens = line.Usage.InputTokens
 			res.OutputTokens = line.Usage.OutputTokens
+			res.CacheReadTokens = line.Usage.CacheReadTokens
+			res.CacheCreationTokens = line.Usage.CacheWriteTokens
 		}
-		// CostUSD stays nil: cursor reports no cost (spec §9.7).
+		// CostUSD stays nil: cursor reports no cost (spec §9.7). NumTurns,
+		// StopReason, TerminalReason, ModelUsage and PermissionDenials stay
+		// zero for the same reason — the line carries none of them, and
+		// nothing emulates one.
 		return agent.Event{Type: agent.EventResult, Result: &res, Raw: raw}
 	}
-	// system and user fall through here on purpose, as do the thinking
-	// `delta` lines parseThinking swallowed — they are genuinely unmodeled
-	// lines and a client that asks to see raw lines should see them.
+	// user and every system subtype but init fall through here on purpose, as
+	// do the thinking `delta` lines parseThinking swallowed — they are
+	// genuinely unmodeled lines and a client that asks to see raw lines should
+	// see them.
 	return agent.Event{Type: agent.EventUnknown, Raw: raw}
 }
 

@@ -73,14 +73,31 @@ func TestTranscriptRendersRunHeaderAndResultMetadata(t *testing.T) {
 	}
 }
 
-// The adapters that report none of it render none of it. Cursor's stream even
-// carries a cwd and a duration_ms, which its parser deliberately does not read
-// (task 066, TestNoRunHeaderOrResultMetadata) — so neither may reach the text,
-// and the result line stays exactly what it always was.
+// Cursor reports half of it (task 108): its init line's `cwd` is the header,
+// with no tool list to count, and its result line's duration is the elapsed
+// time. It reports no turns and no denials, so the line carries neither.
+func TestTranscriptRendersCursorRunHeaderAndDuration(t *testing.T) {
+	h := newLiveHarness(t)
+	run := h.addRunAs(t, "cursor", h.taskID, "implement", store.StepSucceeded,
+		fixtureLines(t, filepath.Join("..", "agent", "cursor", "testdata", "success_2026.08.04.jsonl"))...)
+	lines := renderedTranscript(t, h, run)
+	all := strings.Join(lines, "\n")
+	if lines[0] != "# /tmp/wt" {
+		t.Errorf("run header = %q, want %q with no tool count:\n%s", lines[0], "# /tmp/wt", all)
+	}
+	if got := lines[len(lines)-1]; got != "= done (2.0s)" {
+		t.Errorf("result line = %q, want %q:\n%s", got, "= done (2.0s)", all)
+	}
+}
+
+// The adapter that reports none of it renders none of it. Codex has no header
+// line and no run duration, so neither may reach the text, and the result
+// line stays exactly what it always was. Cursor left this test when task 108
+// taught its parser the header and the duration
+// (TestTranscriptRendersCursorRunHeaderAndDuration above).
 func TestTranscriptNoRunHeaderForAdaptersThatReportNone(t *testing.T) {
 	for _, tc := range []struct{ agent, fixture string }{
 		{"codex", filepath.Join("..", "agent", "codex", "testdata", "success.jsonl")},
-		{"cursor", filepath.Join("..", "agent", "cursor", "testdata", "success_2026.08.04.jsonl")},
 	} {
 		t.Run(tc.agent, func(t *testing.T) {
 			h := newLiveHarness(t)
@@ -92,9 +109,6 @@ func TestTranscriptNoRunHeaderForAdaptersThatReportNone(t *testing.T) {
 				if strings.HasPrefix(line, "# ") {
 					t.Errorf("%s rendered a run header %q:\n%s", tc.agent, line, all)
 				}
-			}
-			if strings.Contains(all, "/tmp/wt") {
-				t.Errorf("%s rendered a working directory its parser does not read:\n%s", tc.agent, all)
 			}
 			if got := lines[len(lines)-1]; got != "= done" {
 				t.Errorf("%s result line = %q, want %q:\n%s", tc.agent, got, "= done", all)

@@ -121,6 +121,7 @@ the living engineering specification records implementation contracts.
 | [105](105-cli-project-edit.md) | `vincent project edit`: change a registered project's settings from the command line | ✅ done (4/4) |
 | [106](106-adapter-wide-usage-limit-hold.md) | Hold every task on an adapter once one of them hits its usage limit | ✅ done (5/5) |
 | [107](107-claude-auth-probe.md) | Probe claude's login state with `claude auth status` | ✅ done (5/5) |
+| [108](108-cursor-stream-surface.md) | Read cursor's run header and result metadata | ✅ done (4/4) |
 
 ## How to add and update a task document
 

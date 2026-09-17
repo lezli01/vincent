@@ -271,8 +271,9 @@ const (
 	// stream, and it is the one event that describes the run rather than
 	// something that occurred inside it.
 	//
-	// Only claude reports one today (§9.2); codex and cursor emit no
-	// equivalent line and never produce this event (§9.3, §9.7).
+	// claude reports one (§9.2), and so does cursor, from its init line's
+	// `cwd` with no tool list (task 108, §9.7). codex emits no equivalent line
+	// and never produces this event (§9.3).
 	EventRunHeader EventType = "run_header"
 	// EventPlan carries the agent's running to-do list — the plan it wrote
 	// for itself and ticks over as it works (task 070). It is emitted every
@@ -504,14 +505,14 @@ type RunResult struct {
 	OutputTokens int64
 	CostUSD      *float64 // nil if unreported (e.g. codex)
 	// The fields below are the run's own account of itself, as the terminal
-	// result line reported it (task 066, §9.2). Every one is zero or empty
-	// for an adapter that does not report it, which is codex and cursor for
-	// all of them — a missing capability is stated in §9.x and never
-	// emulated. None of them is persisted: `step_runs` keeps vincent's own
+	// result line reported it (task 066, §9.2). Each is zero or empty for an
+	// adapter that does not report it: codex fills only the cache counts
+	// (task 070), cursor the durations and the cache counts (task 108), and
+	// a missing capability is stated in §9.x and never emulated. None of them is persisted: `step_runs` keeps vincent's own
 	// timing and token columns, and these reach a reader through the
 	// transcript, which §13.2 re-normalizes on every read.
 	//
-	// Duration is claude's, not vincent's, and the two legitimately
+	// Duration is the CLI's, not vincent's, and the two legitimately
 	// disagree: claude's excludes the time a §7.4 input wait adds to ours.
 	Duration    time.Duration // wall clock the CLI measured; 0 if unreported
 	APIDuration time.Duration // of which was spent in API calls
