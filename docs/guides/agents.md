@@ -174,9 +174,14 @@ a step that reaches the engine anyway fails with `input_unsupported`.
   worked around:
   - A **resumed run is always full-auto.** `codex exec resume` has no
     `--sandbox`, so `restricted` has no spelling on it. Only a chat turn ever
-    resumes, and a chat is always full-auto — there is no permission mode to
-    ask for on one — so this is a combination you cannot reach rather than a
-    restriction that gets dropped.
+    resumes, and a chat you start yourself is always full-auto — there is no
+    permission mode to ask for on one. A chat
+    [opened on a task](../reference/task-lifecycle.md#chatting-with-a-stopped-task)
+    is the exception: it takes the task's permission mode, and codex cannot
+    keep a resumed turn restricted. So opening a codex chat on a task that runs
+    `restricted` is refused, and codex itself refuses a resumed restricted run
+    rather than running it full-auto. claude and cursor pass their restriction
+    on every turn, so use one of those for a chat on a restricted task.
   - A thread codex no longer knows fails that turn with `session_lost` rather
     than quietly starting a new one.
 - **The plan and command output are surfaced.** Codex reports a running to-do
@@ -499,7 +504,10 @@ CLI that runs is the image's, not yours: vincent looks up `claude`, `codex` or
 is ignored there, and the host does not need the CLI installed. An image without
 it fails the step `agent_unavailable`. The transcript, the token and cost
 records and the exit code are the same as a host run's. Chats are not tasks and
-always run on the host.
+run on the host — except a chat
+[opened on a containerized task](../reference/task-lifecycle.md#chatting-with-a-stopped-task),
+whose turns run in that task's container with the image's CLI, resuming the
+session the mounted agent configuration keeps between turns.
 
 Everything on this page that vincent *probes* still describes the host's CLI —
 `vincent agents`, `vincent doctor`, `GET /v1/agents`, the model and effort

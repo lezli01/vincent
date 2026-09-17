@@ -59,12 +59,23 @@ Codes are stable `snake_case` strings; HTTP status codes are used properly.
 parse out of prose — an invalid state transition is always `409` with
 `details.state` set to the state actually found. It is omitted when empty.
 
-Every `409` carries the code `invalid_state`; what varies is `details`. A
+Almost every `409` carries the code `invalid_state`; what varies is `details`. A
 conflict that is not about a task's state names itself in `details.reason` —
 `idempotency_key_reused` when an `Idempotency-Key` is re-sent with a different
 body, the GitHub integration's reasons on the issue routes, and why a trigger
 is not armed on its [ingress](#pushing-an-event). Branch on `details`, not on a
 per-case code.
+
+The exceptions are the chat conflicts, which have codes of their own because a
+client does something different for each:
+
+| Code | Means | `details` |
+|---|---|---|
+| `chat_cap_reached` | A chat turn was refused because `max_parallel_chats` chats already hold a live process ([Sending a turn](#sending-a-turn)) | `state` |
+| `repo_operation_in_progress` | A chat hand-off was refused because its worktree is partway through a git operation | `operation` |
+| `task_locked_by_chat` | A task action was refused because a [chat linked to the task](#a-chat-on-a-stopped-task) is open. Close that chat, or `cancel` the task | `chat_id` |
+| `task_has_no_worktree` | A chat cannot be opened on this task: it never got a worktree, and vincent does not create one for a chat | `state`, `action` |
+| `chat_linked_to_task` | Archive, hand-off, or a delete with `delete_branch=true` on a chat linked to a task. The worktree and branch are that task's | `task_id`, `state`, `action` |
 
 ## Request bodies
 
@@ -1536,6 +1547,12 @@ what is holding on:
 | `handoff_target` | A `handed_off` chat points at this task and would be left pointing at nothing |
 | `handed_off` | The chat was handed off to a task, which owns its worktree and branch. Delete that task |
 
+A [chat opened on a task](#a-chat-on-a-stopped-task) counts as archived once it
+is `closed`, so it can be deleted too. `delete_branch=true` on such a chat, in
+any state, is refused with the code `chat_linked_to_task` and `details.task_id`:
+the branch is the task's. Deleting the task instead deletes its closed chats and
+their transcripts along with it.
+
 An unknown id is `404`.
 
 Two things a delete deliberately does **not** do. It does not purge the row's
@@ -1846,9 +1863,16 @@ Human actions, all `POST /v1/tasks/{id}/…`:
 | `/answer` | awaiting_input | `{ answers?, allow? }` |
 | `/archive` | done, aborted | `{ force? }` or `?force` |
 | `/follow_up` | done, aborted | `{ prompt? \| run? \| workflow?, agent?, model?, effort?, fields?, paused? }` — exactly one of the three; `fields` apply to this run only, over the task's own; `paused` [holds](#holding-a-retry-or-a-follow-up) the task instead of queuing the run; runs it in the task's existing worktree, then returns the task to the state it came from |
+| `/chat` | blocked, awaiting_gate, done, aborted | `{ title?, agent?, model?, effort? }`, or no body — opens a [chat linked to the task](#a-chat-on-a-stopped-task) in its worktree, and locks the task until the chat is closed. `201` with the chat; the task does not move |
 
 Anything else returns `409` with `details.state`. See
 [Task lifecycle](task-lifecycle.md).
+
+While a linked chat is open the task is **locked**: every action above except
+`/cancel` is `409` with the code `task_locked_by_chat` and `details.chat_id`
+naming the chat to close — a second `/chat` included. `/retry` with
+`branch_override` is refused before the branch is renamed. `/cancel` on a locked
+task stops the chat's turn, closes the chat and aborts the task in one step.
 
 ### Holding a retry or a follow-up
 
@@ -1889,7 +1913,9 @@ with nothing blocked under it — so a client never has to tell "no cascade" fro
 `GET /v1/tasks?parent_id={id}` if you need them. A `blocked` parent does both,
 its own retry and then the cascade. A descendant that is `awaiting_gate`,
 `paused` or itself parked is left alone; an `aborted` lane is not re-admitted
-by anything, and is still fixed and retried by hand.
+by anything, and is still fixed and retried by hand. A `blocked` lane an open
+[linked chat](#a-chat-on-a-stopped-task) has locked is skipped too: it stays
+`blocked`, is not counted, and is retried by hand once its chat is closed.
 
 `/repair` runs one throwaway agent against a blocked task's worktree — the
 escape hatch for a block that `retry` cannot clear because the worktree itself
@@ -2085,6 +2111,10 @@ events on the stream to say what forty rows already say.
   returns both.
 - **Every task representation carries `available_actions`** (the actions valid
   right now) and `pause_requested`, so clients never restate the state machine.
+  While a [linked chat](#a-chat-on-a-stopped-task) is open it also carries
+  `open_chat_id`, and `available_actions` is `["cancel"]` where cancel is legal
+  (`blocked`, `awaiting_gate`) and `[]` otherwise. `open_chat_id` is omitted
+  when no chat is open.
   The detail response adds `workflow_steps[]` — this task's snapshot, which is
   what edit-and-retry prefills an editor with, reflecting any earlier edit. A
   step spliced in by [`type: include`](workflow-schema.md#type-include) carries
@@ -2129,22 +2159,26 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/tasks" \
 ## Chats
 
 A **chat** is a titled conversation with an agent, scoped to a project, running
-in its own git worktree and `vincent/{id}-{slug}` branch. Each turn resumes the
-agent CLI's own session, so turn N has turns 1..N-1 in context. Chats are a
+in its own git worktree and `vincent/{id}-{slug}` branch — or, when it was
+[opened on a task](#a-chat-on-a-stopped-task), in that task's. Each turn resumes
+the agent CLI's own session, so turn N has turns 1..N-1 in context. Chats are a
 separate family from tasks: they never appear in `GET /v1/tasks` or on the
 board, and tasks never appear here.
 
 ```
-GET    /v1/chats?project_id=&state=&archived=&archived_before=&archived_since=
-                &limit=&offset=       newest first; state may repeat
+GET    /v1/chats?project_id=&task_id=&state=&archived=&archived_before=
+                &archived_since=&limit=&offset=
+                                      newest first; state may repeat
 POST   /v1/chats                      create, with a worktree and a branch
+POST   /v1/tasks/{id}/chat            open a chat on a stopped task, in its worktree
 GET    /v1/chats/{id}                 { chat, turns[] } — the whole conversation
 POST   /v1/chats/{id}/send            start a turn
 POST   /v1/chats/{id}/answer          answer a mid-run request
 POST   /v1/chats/{id}/cancel          stop the live turn
 POST   /v1/chats/{id}/archive         remove the worktree; terminal
 POST   /v1/chats/{id}/handoff         give the worktree and branch to a new task; terminal
-DELETE /v1/chats/{id}                 permanent delete of an archived chat
+POST   /v1/chats/{id}/close           end a chat opened on a task; terminal
+DELETE /v1/chats/{id}                 permanent delete of an archived or closed chat
                                       — see Permanent delete
 GET    /v1/chats/{id}/events          SSE: this chat's events plus its live output
 GET    /v1/chats/{id}/turns/{seq}/transcript
@@ -2152,20 +2186,25 @@ GET    /v1/chats/{id}/turns/{seq}/transcript
 ```
 
 None of these is an [MCP tool](#the-mcp-endpoint) — the whole family is
-excluded, the stream and the transcript included. `handoff` is on that list for
-a reason worth stating: it creates a task, and `task_create`'s bounds
-(`mcp.max_depth`, `mcp.max_tasks`) are walked over `created_by_task_id`, which
-a chat is not in.
+excluded, the stream and the transcript included, and so is
+`POST /v1/tasks/{id}/chat`, which lives under `/v1/tasks` but starts a chat.
+`handoff` is on that list for a reason worth stating: it creates a task, and
+`task_create`'s bounds (`mcp.max_depth`, `mcp.max_tasks`) are walked over
+`created_by_task_id`, which a chat is not in.
 
 `archived=false|true|all` is `GET /v1/tasks`' parameter, spelled and defaulted
 the same way: terminal chats are hidden unless you ask for them. It covers
-**both** terminal states — `archived` and `handed_off` alike — which its name
-does not say; an explicit `state=` wins over it, and anything but
-`false|true|all` is a `400 validation_failed`.
+**all three** terminal states — `archived`, `handed_off` and `closed` alike —
+which its name does not say; an explicit `state=` wins over it, and anything but
+`false|true|all` is a `400 validation_failed`. `task_id=` narrows the list to
+the chats opened on one task; add `archived=all` to include the closed ones.
+Every chat carries `linked_task_id` when it was opened on a task, and omits it
+otherwise.
 
 `POST /v1/chats/{id}/archive` is legal from `idle` alone, so its `409` names
-the state that blocked it: an already-archived chat is told so, and a
-handed-off one that the task owns its worktree now.
+the state that blocked it: an already-archived or already-closed chat is told
+so, and a handed-off one that the task owns its worktree now. A live chat
+opened on a task is refused with `chat_linked_to_task` and `details.task_id`.
 
 `POST /v1/chats/{id}/handoff` takes `POST /v1/tasks`' body and is validated by
 the same code, so it accepts exactly the task the create route accepts.
@@ -2181,7 +2220,8 @@ chat exactly as it was: `400` when the task does not validate, `409` when the
 chat is not idle, has no worktree to give, or its worktree is partway through a
 git operation (code `repo_operation_in_progress`, with `details.operation`
 naming it). Ordinary uncommitted work is preserved, never refused and never
-committed.
+committed. A live chat opened on a task has nothing of its own to hand over and
+is refused `chat_linked_to_task`, naming the task.
 
 ### Creating one
 
@@ -2207,11 +2247,99 @@ list.
 ### States
 
 `idle` → `running` → `idle`, with `awaiting_input` in the middle when the agent
-asks something, and two terminal states: `archived`, and `handed_off` for a chat
-whose worktree and branch now belong to a task. Anything outside that table is a
-`409` — sending to an archived chat, answering one that asked nothing, handing
-off one that has already been handed off. There is no pause: a paused chat is an
-idle one nobody has sent to.
+asks something, and three terminal states: `archived`; `handed_off` for a chat
+whose worktree and branch now belong to a task; and `closed` for a chat opened
+on a task that has ended. Anything outside that table is a `409` — sending to an
+archived chat, answering one that asked nothing, handing off one that has
+already been handed off. There is no pause: a paused chat is an idle one nobody
+has sent to.
+
+A chat opened on a task follows a second table. From `idle` it offers `send`
+and `close`, and nothing else: `archive` and `hand_off` would reach a worktree
+and a branch that belong to the task.
+
+### A chat on a stopped task
+
+When a task stops for a human — `blocked`, `awaiting_gate`, `done` or
+`aborted` — you can open a chat **on the task**. It works in the task's own
+worktree and on its branch, so the agent sees the files exactly as the task left
+them, and the conversation is recorded like any chat's, with a transcript per
+turn and its own cost.
+
+```bash
+curl -sS -X POST http://127.0.0.1:PORT/v1/tasks/7/chat \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"title": "why does the check fail?"}'
+```
+
+Every field is optional, and the body may be left off. `title` defaults to the
+task's. `agent`, `model` and `effort` resolve the way
+[`/repair`](#tasks)'s do — what you send, then the task's overrides, then the
+workflow's `defaults:`, then the adapter's default — and an unset agent falls to
+the first adapter that can resume. The chat is `restricted` when the task's
+workflow `defaults:` or the task's own `restricted` say so. The answer is `201`
+with the chat, `idle`, carrying `linked_task_id` and an empty `worktree_path`:
+the worktree is still the task's, and every turn reads the task's path when it
+starts.
+
+The task does not move, and no `task.*` event is sent. Its first turn's prompt
+opens with the task's context, assembled by the daemon when the chat is opened:
+the title, description and fields; for `blocked`, the same failure block
+[`/repair`](#tasks) gets, including the last 200 lines of the failed attempt's
+transcript and its path; for `awaiting_gate`, the gate's text; for `done` and
+`aborted`, the last step's summary and the abort reason. Your message follows
+it, as literal text. Later turns carry no context — the session has it.
+
+**While the chat is open, the task is locked.** Every task action except
+`/cancel` is `409 task_locked_by_chat` with `details.chat_id`, whoever sends it —
+a client, a trigger reaction, or an agent through the MCP `task_*` tools. The
+task's `available_actions` says so (`["cancel"]` or `[]`) and it carries
+`open_chat_id`. `PATCH /v1/tasks/{id}` and the pull-request routes are not
+actions and still work.
+
+Refusals when opening:
+
+| Status | Code | When |
+|---|---|---|
+| `409` | `invalid_state` | The task is not in one of the four states; `details.state` says where it is |
+| `409` | `task_locked_by_chat` | A chat is already open on it; `details.chat_id` names it |
+| `409` | `task_has_no_worktree` | The task never got one — blocked on `branch_exists` or `base_branch_missing`, or aborted before it started. Vincent does not create one for a chat |
+| `400` | `validation_failed` | An unregistered agent |
+| `400` | `agent_cannot_resume` | The agent cannot hold a conversation |
+
+A git operation in progress in the worktree is not a refusal: a half-finished
+rebase is a good thing to talk about.
+
+**Closing** ends it:
+
+```bash
+curl -sS -X POST http://127.0.0.1:PORT/v1/chats/12/close -H "Authorization: Bearer $TOKEN"
+```
+
+A live turn is stopped first. The chat becomes `closed`, the task's lock lifts,
+and a `chat.closed` event names the task in `linked_task_id`. Nothing in the
+worktree or on the branch changes. The answer is `200` with the chat; a free
+chat, or one already terminal, is `409 invalid_state`. After closing, the task
+takes actions again and a new chat can be opened at its next stop; the closed
+ones stay listed under `GET /v1/chats?task_id=7&archived=all`.
+
+`/cancel` on the locked task is the other way out: it stops the turn, closes the
+chat and aborts the task together.
+
+Three more things to know:
+
+- **Archive, hand-off and `delete_branch`** are refused on a chat opened on a
+  task with `409 chat_linked_to_task` and `details.task_id`. A closed one can be
+  [deleted](#permanent-delete) without `delete_branch`, and permanently deleting
+  the task deletes its closed chats and their transcripts with it.
+- **Turns do not count toward the task's cost cap.** Their tokens and cost stay
+  on the chat, so neither `max_task_cost_usd` nor the task's own cost rollup
+  sees them. `max_parallel_chats`, `agent_timeout` and `input_timeout` apply as
+  to any chat.
+- **A task that runs in a [container](configuration.md#container)** has its
+  chat's turns run in that container too. If the container is gone, the turn
+  fails rather than running on your host. A turn interrupted by a daemon restart
+  is not re-run; the chat stays open, and the task stays locked.
 
 ### Sending a turn
 
@@ -2482,7 +2610,7 @@ task.created            task.state_changed      task.priority_changed
 task.step_advanced      task.status_changed     task.children_changed
 task.github_pull_changed
 chat.created            chat.state_changed      chat.turn_changed
-chat.archived           chat.handed_off
+chat.archived           chat.handed_off         chat.closed
 task.deleted            chat.deleted
 task.restored
 project.*               workflow.registry_changed
@@ -2538,7 +2666,11 @@ they need.
   Each payload is `{ id, title, state }`; `chat.turn_changed` adds `turn_id`,
   `turn_seq`, `turn_state` and — when the turn failed — `fail_reason`, and
   `chat.handed_off` adds `handoff_task_id`, so a follower can link the chat to
-  its task without a fetch.
+  its task without a fetch. Every event of a chat
+  [opened on a task](#a-chat-on-a-stopped-task) adds `linked_task_id`, and
+  `chat.closed` announces that such a chat ended — re-fetch that task too,
+  because its lock just lifted. Opening or closing one emits no `task.*` event:
+  the task's state did not change.
   Re-fetch `GET /v1/chats/{id}` when you see one. There is **no per-chat event
   stream and no live-output route**: a chat's normalized output is written to
   the turn's transcript file, and over HTTP a finished turn's `result_text` is
@@ -2634,6 +2766,7 @@ Every route on this page is a tool, with these exceptions:
 | `GET /v1/events` | A tool call is request/response; use `task_wait` |
 | `GET /v1/tasks/{id}/events` | Same |
 | every `/v1/chats` route | Two reasons, either sufficient: a chat turn starts an agent CLI *without* going through admission, so a tool that could send one would let an agent start unqueued agent processes — the exact thing `mcp.max_tasks` bounds; and the recursion bounds walk `created_by_task_id`, a chain a chat is not in, so exposing chats would mean inventing depth semantics for a non-task. An agent that needs a conversation already has its own session |
+| `POST /v1/tasks/{id}/chat` | It opens a chat, so the `/v1/chats` reasons apply although the path is under `/v1/tasks`. The lock it places does reach the tools: a `task_*` action on a locked task gets `409 task_locked_by_chat` like any other client |
 
 `task_create` additionally takes an optional `idempotency_key` string, which
 becomes the `Idempotency-Key` header — a tool call has no header surface, and

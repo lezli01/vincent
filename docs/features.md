@@ -10,11 +10,11 @@ state stay on your machine; vincent provides the control plane around them.
 |---|---|
 | Orchestration | Durable daemon, priority queue, global and per-project concurrency, per-user service installation |
 | Git isolation | One worktree and branch per task, configurable branch names, safe archive cleanup |
-| Chats | Conversations with an agent in their own worktree and branch, continued through the agent CLI's own session, with transcripts and cost |
+| Chats | Conversations with an agent in their own worktree and branch — or in a stopped task's, holding the task still while you talk — continued through the agent CLI's own session, with transcripts and cost |
 | Workflows | Validated YAML, templates, declared task fields, checks, retries, timeouts, platform restrictions |
 | Control flow | Parallel groups, isolated fan-out and merge, conditions, loops, breaks, reusable workflow includes |
 | Agents | Claude Code, Codex, and Cursor; per-workflow, per-step, and per-task selection |
-| Human oversight | Approval gates, mid-run answers where supported, blocked-step recovery, edit-and-retry, ad-hoc repair agents, follow-up runs on finished tasks, a notify hook that reaches you with no client open |
+| Human oversight | Approval gates, mid-run answers where supported, blocked-step recovery, edit-and-retry, ad-hoc repair agents, a chat in a stopped task's worktree, follow-up runs on finished tasks, a notify hook that reaches you with no client open |
 | Visibility | Grouped task board, live output, durable transcripts, metrics, file-grouped diffs, workflow graph |
 | GitHub | Create a task from an issue or a **pull request**, prefilled and editable — a pull-request task runs on that pull request's head branch; issue details in templates; a project's pull requests, each linked to the task whose branch it came from, with that task's own tab carrying its live CI checks; and **open a pull request** for a task — push its branch and create the PR from inside vincent — then merge, close, reopen, comment on or re-run its failed checks from the task's Pull Request tab or the CLI, each written to GitHub only when you ask. No stored credential |
 | Event triggers | Start or act on tasks from a polled command, GitHub issue and pull-request changes, or a signed push; off twice by default, proposed paused and restricted, deduplicated and rate-limited, with a delivery ledger and dry runs; built-in workflows that write triggers and never switch one on |
@@ -74,6 +74,29 @@ first step runs. The chat ends, linked to the task; the task owns the worktree
 and branch from then on. `ctrl+t` in the chat workspace,
 [`vincent chat handoff`](reference/cli.md#vincent-chat-handoff), or
 `POST /v1/chats/{id}/handoff`.
+
+It works the other way round too: **chat with a stopped task**. When a task
+stops for you — blocked on a failing step, waiting at a gate, done, or aborted
+— open a chat on the task and talk the fix through in the task's own worktree,
+on its own branch. The agent starts with what the task already knows: its
+title, description and fields, and then what the stop is about — a blocked
+step's failure with the tail of its transcript, the gate's instructions, or the
+last step's summary. Where a repair is one prompt and one run, this is a
+conversation: look, try, check, adjust.
+
+While that chat is open, the task is **locked**. Nothing moves it and nothing
+races it — `retry`, `skip`, `approve` and every other action are refused until
+the chat is closed, even between turns, and `cancel` is the one action that
+still works. Closing the chat changes no file and no branch, so you read the
+diff and then decide what the task does next. A later stop can have a new chat,
+and the closed ones stay listed on the task as its history. On a task that runs
+in a container, the chat's turns run in that container too. The conversation's
+tokens and cost stay on the chat rather than counting toward the task's
+`max_task_cost_usd`. Open one with
+[`vincent task chat`](reference/cli.md#vincent-task-chat) or
+`POST /v1/tasks/{id}/chat`, close it with
+[`vincent chat close`](reference/cli.md#vincent-chat-close), or do both from the
+TUI — see [Task lifecycle](reference/task-lifecycle.md#chatting-with-a-stopped-task).
 
 Chats never appear on the task board and never enter the scheduler. A turn
 starts the moment you send it, bounded only by its own
@@ -143,7 +166,10 @@ blocked step's failure context, runs in that task's existing worktree and
 branch. It changes files and nothing else — the task returns to `blocked` at the
 same step with the same reason, so you read the diff and then decide. The repair
 is recorded as its own step run with its own transcript and cost, and does not
-consume the blocked step's retries.
+consume the blocked step's retries. When the fix needs more than one prompt,
+[chat with the stopped task](#talk-to-an-agent-without-a-workflow) instead: a
+whole conversation in the same worktree, with the task held still until you
+close it.
 
 A finished task keeps its worktree, its branch and its commits until you archive
 it, and that window is where the last mile of real work lives — a branch that
@@ -344,7 +370,8 @@ That covers **agent steps, command steps and every `check:`**. The agent CLI
 runs inside the container, and its transcript, token and cost records and exit
 code are the same as on the host. Its `~/.claude`, `~/.codex` and `~/.cursor`
 are mounted in by default so it can log in, and vincent's own tools still reach
-it. Chats keep running on the host.
+it. Chats keep running on the host, except a chat opened on a containerized
+task, whose turns run in that task's container.
 
 The image is yours and must already carry your agent CLI and `git` — vincent
 builds, publishes and bundles nothing. The CLI is found on the image's `PATH`,

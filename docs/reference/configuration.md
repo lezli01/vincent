@@ -626,10 +626,11 @@ removing the project.
 
 This covers [chats](cli.md#vincent-chat) too: an **ended** chat's turn
 transcripts under `{data_dir}/transcripts/chat-{chat_id}/` are pruned on the
-same pass, under the same setting, measured from when the chat ended. Both
-endings count — `archived` and [`handed_off`](cli.md#vincent-chat-handoff) — and
-a handed-off chat's transcripts are its own rather than the worktree's, so
-pruning them never reaches the task that inherited it. A chat that has not ended
+same pass, under the same setting, measured from when the chat ended. All three
+endings count — `archived`, [`handed_off`](cli.md#vincent-chat-handoff) and
+[`closed`](cli.md#vincent-chat-close) — and a handed-off or closed chat's
+transcripts are its own rather than the worktree's, so pruning them never
+reaches the task that owns it. A chat that has not ended
 keeps its transcripts however old it is, exactly as a task does. Chat and turn
 rows are the same: the pruner never touches them, and
 [`vincent chat delete`](cli.md#vincent-chat-delete) is what removes one.
@@ -674,7 +675,9 @@ attempt of every step it has run, retries included — and repair runs and
 follow-up runs, which are step runs of that task like any other. It is a
 lifetime total and never resets. That is the same number the board and detail
 views show. When it goes over, the task is `blocked` with `cost_limit` and
-nothing further runs.
+nothing further runs. A [chat opened on the task](task-lifecycle.md#chatting-with-a-stopped-task)
+is not part of it: its turns' cost stays on the chat, so they do not count
+toward this cap.
 
 It is a **block, not a step failure**. The step run that finished keeps its own
 state and its own reason — if it succeeded, it still reads `succeeded` — no
@@ -1224,7 +1227,10 @@ A `manual` step runs no process, so there is nothing to contain. An agent step's
 transcript, token and cost records and exit code are the same as a host run's,
 and a timeout or cancel stops the agent while the container survives for the
 next step. [Chats](cli.md#vincent-chat) are not tasks and keep running on the
-host.
+host — except a chat [opened on a containerized task](task-lifecycle.md#chatting-with-a-stopped-task),
+whose turns run inside that task's container, because the worktree it works in
+is one you chose to confine. If that container is gone, the turn fails rather
+than running on the host.
 
 **The image is yours.** It must already carry the agent CLI your workflows'
 agent steps resolve to, and `git`. Vincent builds no image, publishes none and

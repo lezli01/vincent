@@ -117,7 +117,10 @@ the worktree, and it is worth being exact about how far it goes.
 **What it covers.** The container holds every agent step, every `command` step
 and every `check:` of the task — the agent CLI itself runs inside it, not on
 your machine. [Chats](reference/cli.md#vincent-chat) are not tasks and still
-run on the host, with your whole home directory in reach.
+run on the host, with your whole home directory in reach — all but one kind: a
+chat [opened on a containerized task](reference/task-lifecycle.md#chatting-with-a-stopped-task)
+runs its turns inside that task's container, so a conversation cannot hand an
+unconfined agent a worktree you chose to confine.
 
 **Does:** confine the filesystem to two bind mounts — the project repository and
 the task's worktree, each at its own absolute path — plus your agent

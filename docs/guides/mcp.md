@@ -119,7 +119,12 @@ agent CLI without going through admission, so a tool that could send one would
 let an agent start unqueued agent processes, which is the exact thing
 `max_tasks` below bounds. The recursion bounds cannot help either: they walk
 `created_by_task_id`, and a chat is not in that chain. Nothing is lost — an
-agent calling these tools already has a session of its own.
+agent calling these tools already has a session of its own. The same goes for
+`POST /v1/tasks/{id}/chat`, which lives under `/v1/tasks` but opens a
+[chat on a stopped task](../reference/api.md#a-chat-on-a-stopped-task). What
+such a chat does reach is the tools' results: while it is open its task is
+locked, so `task_retry`, `task_skip` and every other action tool but
+`task_cancel` answers `409 task_locked_by_chat`, exactly as it would for a human.
 
 Each tool takes the route's path parameters by name, plus `body` (for `POST` and
 `PATCH`) or `query` (for `GET`):
