@@ -14,8 +14,8 @@ list with the user-facing context a commit subject cannot carry.
 ### Added
 
 - **Links in agent prose can be clickable, if you opt in.** Set
-  `tui.hyperlinks: true` in `config.yaml`, or flip it in the daemon view's
-  config editor, and a Markdown link or image in the output pane and the chat
+  `tui.hyperlinks: true` in `config.yaml`, with `vincent config set`, or in
+  the daemon view's config editor, and a Markdown link or image in the output pane and the chat
   workspace becomes an OSC 8 terminal hyperlink: the label, its dim `[1]` and
   the destination printed in the reference list under the message. Only an
   `http` or `https` URL with a host, no `user@` part, at most 2048 bytes and

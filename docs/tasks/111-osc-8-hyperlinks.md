@@ -122,7 +122,8 @@ alone. It is a separate door, and the renderer still never reaches it.
 
 - [x] **111.1 — Config**: `config.TUI.Hyperlinks` and the template's
   `hyperlinks: false`; `configTUI`/`tuiPatch` in `internal/api`;
-  `ConfigTUI`/`ConfigTUIPatch` in `internal/apiclient`. Tests: default off and
+  `ConfigTUI`/`ConfigTUIPatch` in `internal/apiclient`; the `tui.hyperlinks`
+  entry in `vincent config`'s key table. Tests: default off and
   decode, the template edit round trip, `TestConfigPatchRoundTripsTUIHyperlinks`.
   ✓ 2026-09-17
 - [x] **111.2 — Renderer**: `hyperlink.go`, `mdRefs.linked`, the label, marker

@@ -1435,8 +1435,8 @@ It is off by default because nothing detects whether your terminal supports
 OSC 8. iTerm2, WezTerm, kitty, GNOME Terminal and Windows Terminal do; a
 terminal that does not, such as the legacy Windows console, may print the
 sequence instead. Turn it on only in a terminal you know handles it. The TUI's
-config editor can change it, and both workspaces follow the saved value without
-a restart. See the
+config editor and `vincent config set tui.hyperlinks true` can change it, and
+both workspaces follow the saved value without a restart. See the
 [security model](../security-model.md#what-an-agent-writes-cannot-drive-your-terminal)
 for why the destination is sanitized.
 
