@@ -79,6 +79,12 @@ The most capable adapter, and the only one that can be interrupted mid-step.
   tool calls and stop reason all come from claude's stream and from no other
   adapter's. A tool call a permission rule refused is marked apart from one that
   ran and failed. See [the output pane](tui.md#what-v-adds).
+- **Reports its subagents.** When claude hands work to subagents, every line
+  names the one that produced it, and claude says how each one ended. The output
+  pane and `vincent task transcript` draw that work nested behind a rail rather
+  than as the agent's own. Codex and cursor report no subagents, and vincent
+  does not infer one from their tool calls. See
+  [When the agent runs subagents](tui.md#when-the-agent-runs-subagents).
 - **Reports token usage and cost.** The board's cost column sums every attempt,
   retries included. The other two adapters report no cost at all — which also
   means [`max_task_cost_usd`](../reference/configuration.md#max_task_cost_usd)

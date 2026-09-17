@@ -277,7 +277,8 @@ subagent, the ending a reader most needs to see, never gets a completion line.
   `--raw` unchanged. ✓ 2026-09-17
 - [x] **109.4 — Documentation**: §9.1, §9.2, §9.3, §9.7, §13.2, §13.3 and §15
   amended, dated; `docs/guides/tui.md`, `docs/reference/api.md`,
-  `docs/reference/cli.md`, `CHANGELOG.md`; task 066's follow-up 1 annotated. No
+  `docs/reference/cli.md`, `docs/guides/agents.md`, `docs/features.md`,
+  `CHANGELOG.md`; task 066's follow-up 1 annotated. No
   `docs/assets/tui-*.png` changes: `scripts/screenshots.sh` seeds through the
   fake agent, and no shot shows a subagent run. ✓ 2026-09-17
 - [ ] **109.5 — Owner walkthrough**: watch a real claude run with parallel
