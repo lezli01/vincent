@@ -222,7 +222,7 @@ leaf packages (`taskstate`, `keymap`, `gitx`, `procx`, `version`, `config`) depe
 nothing internal — with one deliberate exception: `config` imports `taskstate`
 and `keymap`, and only those, to validate `notify.on` against §6's state
 vocabulary and `tui.keys` against §15's key vocabulary rather than keeping a
-second copy of either (task 046 decision 4, widened by task 115 decision 3).
+second copy of either (task 046 decision 4, widened by task 118 decision 3).
 `taskstate` and `keymap` are themselves leaves, so the direction stays one-way.
 `internal/daemon/daemon.go:Run` is the single wiring point — read it first to see
 how the pieces connect.
@@ -269,7 +269,7 @@ is a correctness bug, not a style issue:
 | `internal/worktree` | Per-task git worktrees, `vincent/{id}-{slug}` branches, dirty detection |
 | `internal/notify` | The outward signal (§12.3, task 046): a broker subscriber that spawns `notify.command` when a task enters a state in `notify.on`, with an enriched JSON envelope on the child's stdin. Bounded queue, four workers, fixed 10 s per child, no replay |
 | `internal/trigger` | The inward signal (task 096): `{config_dir}/triggers/*.yaml` definitions, their validator and the schema descriptor the form renders from, and the 0600 writer that edits them with `workflow.Edit` ops. Replays `POST /v1/tasks` through an `http.Handler` the way `internal/mcp` does, and never imports `internal/api` (decision 30) |
-| `internal/keymap` | The TUI's rebindable operations (task 115, §12.3, §15): ids, default keys and surfaces, the fixed keys and recorded exceptions, key-string parsing, and the one clause checker the registry tests run over the defaults and `config` runs over `tui.keys`. A leaf |
+| `internal/keymap` | The TUI's rebindable operations (task 118, §12.3, §15): ids, default keys and surfaces, the fixed keys and recorded exceptions, key-string parsing, and the one clause checker the registry tests run over the defaults and `config` runs over `tui.keys`. A leaf |
 | `internal/tui` | Bubble Tea client: six views (board, detail, new-task, projects, workflows, daemon) routed by `viewID` |
 
 Adapters differ in what they *can* do, and the differences are documented, never

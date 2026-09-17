@@ -9,6 +9,6 @@
 //   - internal/keymap, to validate `tui.keys` against §15's key vocabulary
 //     with the same checker the TUI's registry tests run over the defaults.
 //
-// Task 046 decision 4 allowed taskstate and only taskstate; task 115
+// Task 046 decision 4 allowed taskstate and only taskstate; task 118
 // decision 3 explicitly amends it to add keymap, on the same reasoning.
 package config

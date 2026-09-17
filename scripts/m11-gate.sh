@@ -17,7 +17,7 @@
 #   6. `vincent config get|set` does the same job from the command line
 #   7. PATCH /v1/config is not an MCP tool: an agent must not be able to
 #      reconfigure the daemon supervising it (task 057 decision 4)
-#   8. `tui.keys` (task 115): a keymap that breaks §15's vocabulary is refused
+#   8. `tui.keys` (task 118): a keymap that breaks §15's vocabulary is refused
 #      with the file byte-identical, and an accepted one round-trips through
 #      GET, the file and `vincent config get|set`
 #

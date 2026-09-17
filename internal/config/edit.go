@@ -302,7 +302,7 @@ func WriteFile(path string, b []byte) (err error) {
 // Three more shapes the plain-scalar alphabet admits are quoted, because a
 // bare one does not parse back: a leading "@" (reserved), a trailing ":" (read
 // as a mapping key) and a lone "-" (read as a sequence entry). Each is a key a
-// `tui.keys` override may name — ":" is the palette's default (task 115).
+// `tui.keys` override may name — ":" is the palette's default (task 118).
 func RenderString(s string) string {
 	if s == "" || !plainScalar.MatchString(s) || isYAMLWord(s) ||
 		strings.HasPrefix(s, "@") || strings.HasSuffix(s, ":") || s == "-" {

@@ -7,7 +7,7 @@ import (
 	"github.com/lezli01/vincent/internal/keymap"
 )
 
-// The effective keymap (task 115). Every handler of a rebindable operation
+// The effective keymap (task 118). Every handler of a rebindable operation
 // asks opKey for the key it answers, and every surface that names one renders
 // the same answer, so a `tui.keys` override moves the handler and the help
 // together — the help advertising a key the handler ignores is the defect task

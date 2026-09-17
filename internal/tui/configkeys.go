@@ -449,7 +449,7 @@ func configKeys() []configKey {
 		// Task 111. The help names the §16 consequence rather than the
 		// feature: what turning it on changes is that agent-supplied URLs
 		// reach the terminal inside an escape sequence, sanitized.
-		// Task 115. The daemon runs keymap.Build on the PATCH, so a refusal
+		// Task 118. The daemon runs keymap.Build on the PATCH, so a refusal
 		// arrives as the field error and names the operation, the key and
 		// what it collides with; a success is applied the moment it lands.
 		{

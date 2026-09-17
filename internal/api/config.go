@@ -101,7 +101,7 @@ type configContainer struct {
 type configTUI struct {
 	Board      configBoard `json:"board"`
 	Hyperlinks bool        `json:"hyperlinks"`
-	// Keys is `tui.keys` as written, operation id → key (task 115). Always an
+	// Keys is `tui.keys` as written, operation id → key (task 118). Always an
 	// object, empty included, on group_by's rule: `{}` is the shipped keymap
 	// the file chose, and `null` would read as a daemon that predates the key.
 	Keys map[string]string `json:"keys"`

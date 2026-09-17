@@ -32,7 +32,7 @@ import (
 func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 	t.Helper()
 	// Under a non-default keymap a probe written against a row's default key
-	// presses the operation's effective key instead (task 115): the probe
+	// presses the operation's effective key instead (task 118): the probe
 	// then proves the handler moved with the registry.
 	if to, ok := probeRemap[key]; ok {
 		msg := synthKey(to)
@@ -2247,7 +2247,7 @@ func TestEveryPanelKeyIsHandled(t *testing.T) {
 	}
 
 	// The same walk under a keymap that moves every term the probes reach
-	// (task 115): each row's probe presses its operation's new key, so a
+	// (task 118): each row's probe presses its operation's new key, so a
 	// handler still matching the old literal fails here.
 	// One operation at a time, so a fixture that presses another row's
 	// default key on its way to the one under test still reaches it.

@@ -363,7 +363,7 @@ func configFields() map[string]configField {
 			func(b *bool) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Hyperlinks: b}}
 			}),
-		// OPERATION=KEY pairs, environment.set's spelling (task 115). The
+		// OPERATION=KEY pairs, environment.set's spelling (task 118). The
 		// whole map is replaced, so "" restores the shipped keymap. A key
 		// value may itself be "=": the pair is cut at the first one.
 		"tui.keys": {

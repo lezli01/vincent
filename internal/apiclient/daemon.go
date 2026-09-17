@@ -197,7 +197,7 @@ type ConfigTUI struct {
 	// Hyperlinks turns on OSC 8 links in the output pane (task 111).
 	Hyperlinks bool `json:"hyperlinks"`
 	// Keys is `tui.keys`: operation id → key, overriding the shipped keymap
-	// (task 115). Empty is the shipped keymap. The daemon has already refused
+	// (task 118). Empty is the shipped keymap. The daemon has already refused
 	// a map that breaks §15's vocabulary, so what arrives here is one the TUI
 	// can apply as it stands.
 	Keys map[string]string `json:"keys"`

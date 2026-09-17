@@ -1,5 +1,5 @@
 // Package keymap is the catalog of the TUI's rebindable operations and the
-// checker that holds a keymap to §15's key vocabulary (task 115).
+// checker that holds a keymap to §15's key vocabulary (task 118).
 //
 // It is the one definition of three things that used to live only in the
 // TUI's binding registry and its tests: which operations a `tui.keys` override
@@ -16,7 +16,7 @@
 // and on PATCH /v1/config), so the defaults can never pass a rule an override
 // is refused by.
 //
-// What an operation is (task 115 decision 1): one of §15's vocabulary terms,
+// What an operation is (task 118 decision 1): one of §15's vocabulary terms,
 // one of §6's actions, or a piece of global chrome. Everything else — a
 // surface-local row, a multi-key set such as fold or page, esc, ctrl+c, the
 // popups' y/n — is fixed, and the catalog records every key the TUI answers

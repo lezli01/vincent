@@ -121,7 +121,7 @@ package with real dependencies, and that reason does not apply to a ten-element
 string set. The alternative was a second copy of §6's vocabulary in `config`,
 free to drift from the first.
 
-*Amended 2026-09-17 (task [115](115-user-configurable-tui-keymap.md) decision
+*Amended 2026-09-17 (task [118](118-user-configurable-tui-keymap.md) decision
 3, issue #412):* the exception widens by one package. `internal/config` now
 imports `internal/keymap` as well, to validate `tui.keys` against §15's key
 vocabulary at load, on hot reload and on `PATCH /v1/config`. The reasoning is

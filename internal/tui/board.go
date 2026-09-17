@@ -77,7 +77,7 @@ type (
 		// read it; the root does, because this fetch is the one that rides
 		// every connect and reconnect.
 		hyperlinks bool
-		// keys is `tui.keys` (task 115), read by the root for the same
+		// keys is `tui.keys` (task 118), read by the root for the same
 		// reason hyperlinks is.
 		keys map[string]string
 		err  error

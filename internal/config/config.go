@@ -567,7 +567,7 @@ func (n Notify) Fires(s taskstate.State) bool {
 // 4). taskstate is itself a leaf (it imports only `sort`), so there is no
 // cycle, and the alternative is a second copy of §6's ten state names
 // drifting from the first. Decision 4 made it the one internal import; task
-// 115 decision 3 explicitly amends that to two, adding internal/keymap to
+// 118 decision 3 explicitly amends that to two, adding internal/keymap to
 // validate `tui.keys` for the same reason — keymap is also a leaf, so the
 // dependency direction stays one-way. The
 // branch_template precedent of validating in internal/daemon does not apply:
@@ -614,10 +614,10 @@ type TUI struct {
 	// passes its sanitizer, and keeps printing the destination as text.
 	Hyperlinks bool `yaml:"hyperlinks"`
 	// Keys rebinds the TUI's operations: operation id → one key, in Bubble
-	// Tea's key-string form (`R`, `ctrl+r`, `f5`) — task 115, §12.3, §15.
+	// Tea's key-string form (`R`, `ctrl+r`, `f5`) — task 118, §12.3, §15.
 	// Empty or absent is the shipped keymap. An override replaces the
 	// operation's default on every surface that carries it rather than
-	// adding an alias (task 115 decision 6).
+	// adding an alias (task 118 decision 6).
 	//
 	// The daemon never reads it; it validates it, so a keymap that breaks
 	// §15's vocabulary is refused at load, on hot reload and on
@@ -627,7 +627,7 @@ type TUI struct {
 
 // validate holds the whole `tui` block: the board's grouping, and the keymap
 // through internal/keymap's checker — the same one the TUI's registry tests run
-// over the shipped defaults (task 115 decision 4).
+// over the shipped defaults (task 118 decision 4).
 func (t TUI) validate() error {
 	if err := t.Board.validate(); err != nil {
 		return err

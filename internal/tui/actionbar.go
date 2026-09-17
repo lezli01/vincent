@@ -37,7 +37,7 @@ type actionResultMsg struct {
 }
 
 // actionOps binds the §6 actions the bar dispatches to the operations whose
-// keys they answer (task 115). Pause and resume share one operation, which is
+// keys they answer (task 118). Pause and resume share one operation, which is
 // why `p` resolves to whichever the daemon offers; the rest are one to one.
 // `x` rejects a gate — §15 gave approve `a` and retry `r`, and left reject
 // unnamed. The order is how the hint line reads, so the bar does not reshuffle

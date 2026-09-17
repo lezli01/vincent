@@ -15,7 +15,7 @@ import (
 	"github.com/lezli01/vincent/internal/taskstate"
 )
 
-// Task 115. The registry became the dispatch source, and internal/keymap
+// Task 118. The registry became the dispatch source, and internal/keymap
 // became the definition of which of its rows a user may move. These tests hold
 // the two together — a catalog that disagrees with the registry would let
 // config accept a keymap the TUI cannot honour, or refuse one it could.
@@ -137,7 +137,7 @@ func TestRegistryAgreesWithTheCatalog(t *testing.T) {
 }
 
 // TestActionsLiveIsTheFSMs holds the catalog's per-context "actions live"
-// fact against taskstate rather than trusting it (task 115 decision 3): the
+// fact against taskstate rather than trusting it (task 118 decision 3): the
 // home contexts offer actions, and the archived boards offer none because an
 // archived task has no human action.
 func TestActionsLiveIsTheFSMs(t *testing.T) {

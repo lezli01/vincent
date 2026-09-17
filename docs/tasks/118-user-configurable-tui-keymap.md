@@ -1,7 +1,10 @@
-# 115 — A user-configurable TUI keymap
+# 118 — A user-configurable TUI keymap
 
 **Status:** ✅ done (6/6)
 **Issue:** [#412](https://github.com/lezli01/vincent/issues/412)
+**Renumbered:** opened as 115; 115 and 117 reached `master` first
+([115](115-scheduled-daemon-backups.md), [117](117-single-task-import.md)), so
+this record, its task IDs and every citation of them are 118.
 **Spec:** amends §12.3 (`tui` example and prose), §15 Keys; decision record row
 35 added, row 31 narrowed
 **Amends:** [046](046-notify-hook.md) decision 4 — `internal/config`'s one
@@ -62,7 +65,7 @@ is the layer stack; `ctrl+c`; `ctrl+v`; `tab`/`shift+tab`; the popups' `y`/`n`
 confirmations; and the unregistered vim aliases (`h j k l f b u G`, and the
 output tab's `d`).
 
-As built (115.1), a name a reader might reasonably try for a fixed key —
+As built (118.1), a name a reader might reasonably try for a fixed key —
 `group`, `lanes`, `merge`, `fold`, `fold_all`, `page`, `select`, `views`,
 `back`, `esc`, `close`, `interrupt`, `paste`, `tab`, `confirm`, `decline`,
 `yes`, `no`, `resume`, `follow` — is refused as "not rebindable" with the
@@ -127,7 +130,7 @@ defaults pass their own checker. Unknown operation ids and fixed operations are
 refused by name. Error messages name the operation, the key, and the meaning it
 collides with, in the house style of `tui.board.group_by: …`.
 
-As built (115.1), `keymap.Check` indexes every key the catalog and the fixed
+As built (118.1), `keymap.Check` indexes every key the catalog and the fixed
 list carry and refuses a key that already means anything else anywhere — which
 subsumes "live beside it" — unless a recorded exception on that exact key names
 both operations or, for a fixed meaning, allows one. The exceptions are tied to
@@ -156,7 +159,7 @@ rebound only to non-printable keys, because their whole reason to exist
 text field has the keyboard. `ctrl+v`, `esc` and `ctrl+c` are fixed (decision
 1).
 
-As built (115.1), "printable" is one character, or `space`, with neither `ctrl+`
+As built (118.1), "printable" is one character, or `space`, with neither `ctrl+`
 nor `alt+`. The two escape hatches carry a `Typing` mark that refuses a
 printable key for them wherever they are answered, which covers every text
 field they work in, the popups' included. The catalog also marks the chat
@@ -182,7 +185,7 @@ key-string form (`R`, `ctrl+r`, `f5`, `shift+tab`). An empty map, the default,
 is the shipped keymap. Mapping an operation to its own default is accepted and
 is a no-op.
 
-As built (115.1): modifiers are `ctrl+`, `alt+` and `shift+`, in that order;
+As built (118.1): modifiers are `ctrl+`, `alt+` and `shift+`, in that order;
 the named keys are `enter`, `tab`, `esc`, `space`, `backspace`, `delete`,
 `insert`, `home`, `end`, `pgup`, `pgdown`, `up`, `down`, `left`, `right` and
 `f1`–`f20`; anything else must be a single character. A shifted character is
@@ -221,10 +224,10 @@ shown.
 
 ## Work
 
-115.1 and 115.3 are deliberately behaviour-neutral, so the large mechanical
+118.1 and 118.3 are deliberately behaviour-neutral, so the large mechanical
 refactor lands and is reviewed before any keymap can change a key.
 
-- [x] **115.1 — `internal/keymap`**: the catalog, the defaults, the fixed keys,
+- [x] **118.1 — `internal/keymap`**: the catalog, the defaults, the fixed keys,
   the exceptions, `ParseKey`, `Check` and `Build`, and `doc.go`;
   `bindings_test.go`'s clause tests moved onto the shared checker with no
   behaviour change. Tests in `keymap_test.go`:
@@ -235,20 +238,20 @@ refactor lands and is reviewed before any keymap can change a key.
   operation, the key and the conflicting meaning), `TestBuildAccepts` (a free
   ctrl key, a function key, the default as a no-op, a swap) and
   `TestCatalogIsWellFormed`. ✓ 2026-09-17
-- [x] **115.2 — Config, API and apiclient**: `TUI.Keys` (`yaml:"keys"`),
+- [x] **118.2 — Config, API and apiclient**: `TUI.Keys` (`yaml:"keys"`),
   validated through `keymap.Build` at load, on hot reload and on
   `PATCH /v1/config`; `tui.keys` served on `GET /v1/config` as an object, never
   `null`, and accepted on `PATCH`; `ConfigTUI.Keys` and its patch field; the
   task 046 decision 4 amendment in `internal/config`. ✓ 2026-09-17
-- [x] **115.3 — Dispatch refactor**: every handler of a rebindable operation
+- [x] **118.3 — Dispatch refactor**: every handler of a rebindable operation
   asks the registry for its key; the converse test that every rebindable
   operation a handler matches is registered. Defaults only — behaviour
   byte-identical. Tests: `TestEveryMatchedKeyIsRegistered`,
   `TestRegistryAgreesWithTheCatalog`, `TestActionsLiveIsTheFSMs`. ✓ 2026-09-17
-- [x] **115.4 — Rendering**: hints, labels, popup key lines and banners from the
+- [x] **118.4 — Rendering**: hints, labels, popup key lines and banners from the
   effective keymap; the test that renders every registered surface under a
   non-default keymap (`TestReboundKeysRender`). ✓ 2026-09-17
-- [x] **115.5 — Applying the keymap in the TUI**: the config fetch sites and the
+- [x] **118.5 — Applying the keymap in the TUI**: the config fetch sites and the
   editor's `PATCH`; the `tui.keys` row in the daemon view's config editor;
   probes under a non-default keymap (the rebound key fires, the vacated one does
   nothing); a live test that a keymap set through the editor is picked up
@@ -257,7 +260,7 @@ refactor lands and is reviewed before any keymap can change a key.
   `TestConfigEditorRebindsAKeyWithoutReconnecting`,
   `TestConfigEditorKeepsTheKeymapTheDaemonRefuses`, and `m11` scenario 8. ✓
   2026-09-17
-- [x] **115.6 — Documentation**: §12.3 (the `tui.keys` example line, a dated
+- [x] **118.6 — Documentation**: §12.3 (the `tui.keys` example line, a dated
   amendment, and the dated note on the `notify:` comment's import claim); §15
   Keys amended, dated; decision record row 35 and a dated narrowing of row 31;
   dated notes in the [046](046-notify-hook.md) and

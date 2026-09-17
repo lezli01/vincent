@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// `tui.keys` (task 115). The daemon never uses a keymap; what it owes the TUI
+// `tui.keys` (task 118). The daemon never uses a keymap; what it owes the TUI
 // is that a keymap which breaks §15's vocabulary never loads — not at start,
 // not on a hot reload, not through PATCH /v1/config — so a TUI only ever
 // receives one it can apply.

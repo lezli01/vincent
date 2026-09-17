@@ -175,7 +175,7 @@ func TestConfigEditorTogglesHyperlinks(t *testing.T) {
 
 // saveKeysThroughRoot types value into the tui.keys row and routes the PATCH's
 // answer through m, the way the running program delivers it: the root is where
-// the effective keymap is installed (task 115 decision 9), so a save handed to
+// the effective keymap is installed (task 118 decision 9), so a save handed to
 // the daemon view alone would prove the file and not the binding.
 func saveKeysThroughRoot(t *testing.T, h *configLiveHarness, m *root, value string) configSavedMsg {
 	t.Helper()
@@ -208,7 +208,7 @@ func newKeysRoot(t *testing.T, h *configLiveHarness) *root {
 	return m
 }
 
-// TestConfigEditorRebindsAKeyWithoutReconnecting is task 115 decision 9
+// TestConfigEditorRebindsAKeyWithoutReconnecting is task 118 decision 9
 // through the real handlers: a binding changed from the editor is the one the
 // next keypress meets. The daemon validates and writes it; the TUI adopts the
 // PATCH's answer rather than waiting for a reconnect to fetch it again.

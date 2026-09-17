@@ -227,7 +227,7 @@ type binding struct {
 	priority int
 	// action is the §6 action a scopeTaskAction row is gated on.
 	action string
-	// op is the rebindable operation the row performs (task 115): a
+	// op is the rebindable operation the row performs (task 118): a
 	// vocabulary term, a §6 action or a piece of global chrome. key is then
 	// the operation's *default*, and registry() swaps in the effective key
 	// and rewrites the hint to match; a row with no op is fixed.

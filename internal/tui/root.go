@@ -627,7 +627,7 @@ func synthKey(key string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}
 	}
 	// A `tui.keys` override may bind an operation to any key keymap.ParseKey
-	// accepts (task 115), and the palette replays whatever the registry says:
+	// accepts (task 118), and the palette replays whatever the registry says:
 	// alt+ and the navigation names have to round-trip too.
 	if rest, ok := strings.CutPrefix(key, "alt+"); ok {
 		msg := synthKey(rest)
@@ -850,7 +850,7 @@ func (m *root) applyHyperlinks(msg tea.Msg) {
 }
 
 // applyKeymap installs `tui.keys` wherever the TUI already reads `tui:` (task
-// 115 decision 9): the board's fetch on every connect and reconnect, the
+// 118 decision 9): the board's fetch on every connect and reconnect, the
 // daemon view's, and the answer to the config editor's own PATCH — so a
 // binding changed from the editor works on the next press, with no reconnect.
 // A failed fetch or a refused save changes nothing, for applyHyperlinks'
@@ -1002,7 +1002,7 @@ func (m *root) body() string {
 		return "\n  starting daemon…\n"
 	case phaseFailed:
 		// r is retry-connecting, fixed; the palette and quit are rebindable
-		// (task 115 decision 8).
+		// (task 118 decision 8).
 		return fmt.Sprintf(
 			"\n  %s\n\n  log: %s\n\n  press r to retry, %s for the daemon view and its log, %s to quit\n",
 			styleBad.Render("daemon unreachable: "+errString(m.connErr)), m.logPath,

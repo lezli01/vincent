@@ -19,7 +19,7 @@ import (
 )
 
 // `vincent config get/set tui.keys` against the real PATCH /v1/config over
-// httptest (task 115): the refusal the command prints is the daemon's, and a
+// httptest (task 118): the refusal the command prints is the daemon's, and a
 // refused keymap leaves config.yaml byte-identical.
 func TestConfigSetTUIKeysAgainstTheRealHandler(t *testing.T) {
 	dataDir := t.TempDir()

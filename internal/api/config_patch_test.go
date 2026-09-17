@@ -416,7 +416,7 @@ func TestConfigPatchRoundTripsBackup(t *testing.T) {
 	}
 }
 
-// tui.keys is served, written and put into force (task 115). The TUI applies
+// tui.keys is served, written and put into force (task 118). The TUI applies
 // the keymap it reads here and nowhere else, so each of the three halves —
 // the served object, the patch, the apply — is asserted end to end.
 func TestConfigPatchRoundTripsTUIKeys(t *testing.T) {
