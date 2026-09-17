@@ -19,7 +19,7 @@ import (
 // free chat, so the feature is not TUI-only.
 //
 // The verbs are the §5.5 actions plus the reads: start, send, answer, cancel,
-// list, show, transcript, archive. `send` blocks until the turn ends and prints the
+// list, show, transcript, archive, handoff, close. `send` blocks until the turn ends and prints the
 // answer, which is what a conversation in a terminal has to do — a
 // fire-and-forget send would leave the human polling `show`.
 //
@@ -39,7 +39,7 @@ func newChatCmd() *cobra.Command {
 	}
 	cmd.AddCommand(newChatStartCmd(), newChatSendCmd(), newChatAnswerCmd(),
 		newChatCancelCmd(), newChatListCmd(), newChatShowCmd(), newChatTranscriptCmd(),
-		newChatArchiveCmd(), newChatHandoffCmd(), newChatDeleteCmd())
+		newChatArchiveCmd(), newChatHandoffCmd(), newChatCloseCmd(), newChatDeleteCmd())
 	return cmd
 }
 
@@ -247,7 +247,7 @@ func runChatTurn(ctx context.Context, cmd *cobra.Command, c *apiclient.Client, i
 }
 
 func newChatListCmd() *cobra.Command {
-	var projectID int64
+	var projectID, taskID int64
 	var archived bool
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -256,14 +256,15 @@ func newChatListCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
 				// Terminal chats are hidden by default, the way archived
-				// tasks are (§13.2): `archived` and `handed_off` alike, since
-				// both are done with (§5.5, task 074 decision 5).
+				// tasks are (§13.2): `archived`, `handed_off` and `closed`
+				// alike, since all three are done with (§5.5, task 074
+				// decision 5, task 115).
 				scope := apiclient.ArchivedExclude
 				if archived {
 					scope = apiclient.ArchivedAll
 				}
 				chats, err := c.ListChats(ctx, apiclient.ListChatsOptions{
-					ProjectID: projectID, Archived: scope,
+					ProjectID: projectID, TaskID: taskID, Archived: scope,
 				})
 				if err != nil {
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
@@ -291,8 +292,9 @@ func newChatListCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().Int64Var(&projectID, "project", 0, "only this project's chats")
+	cmd.Flags().Int64Var(&taskID, "task", 0, "only the chats opened on this task")
 	cmd.Flags().BoolVar(&archived, "archived", false,
-		"Include archived and handed-off chats")
+		"Include archived, handed-off and closed chats")
 	jsonFlag(cmd)
 	return cmd
 }

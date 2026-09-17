@@ -1129,6 +1129,51 @@ one of them must be given, and `-` reads stdin. `--agent`, `--model` and
 `--effort` apply to this run only, standing in for the step level of §8.6's
 chain; a value no catalog recognizes is a warning on stderr, not a failure.
 
+### `vincent task chat`
+
+```sh
+vincent task chat <id> [--title TITLE] [--agent NAME] [--model M] [--effort E] [--json]
+```
+
+Opens a [chat](#vincent-chat) that works in a stopped task's **own** worktree
+and branch, to ask why it blocked, look over what a gate is about to approve,
+or talk about finished work. Valid from `blocked`, `awaiting_gate`, `done` and
+`aborted`; anything else exits 1 with the state it actually found. It prints the
+chat — its id, the task, its title, agent and branch — and the two commands
+that come next; `--json` emits the chat object, which names the task as
+`linked_task_id`.
+
+The chat opens with the task's context already in it: the task's objective, and
+the failed step, the gate or the last step it stopped on. Talk to it with
+[`vincent chat send`](#vincent-chat-send), and end it with
+[`vincent chat close`](#vincent-chat-close).
+
+The task does **not** move. It keeps its state, and while the chat is open the
+task is locked: every action on it but `cancel` exits 1, and it carries
+`open_chat_id` and offers `[cancel]` — or nothing, where cancel is not legal
+either — in `available_actions`. `vincent task cancel` stops the chat's turn
+and closes the chat along with aborting the task. A task holds one open chat at
+a time, so a second `task chat` exits 1 and names the open one:
+
+```
+Error: task 7 is locked by chat 12, which works in its worktree; close the chat first
+  chat 12 is open on it: continue with `vincent chat send 12 MESSAGE`, or end it with `vincent chat close 12`
+```
+
+The first line is the daemon's, printed as it stands; the second is the
+command's own.
+
+`--title` defaults to the task's. `--agent`, `--model` and `--effort` stand in
+for the step level of §8.6's chain, as a repair's do; the agent must be able to
+resume its own session, and one that cannot exits 1 with
+`agent_cannot_resume`. The chat runs with the permission mode a repair on the
+task would — a task whose workflow is `restricted` gets a restricted chat — and
+in the task's container when its workflow runs in one.
+
+A task that never got a worktree — blocked on `branch_exists`, or aborted
+before it was admitted — exits 1 with `task_has_no_worktree`: vincent does not
+create one for a chat.
+
 ### `vincent task archive`
 
 ```sh
@@ -1626,14 +1671,17 @@ interrupted.
 ### `vincent chat list`
 
 ```sh
-vincent chat list [--project ID] [--archived] [--json]
+vincent chat list [--project ID] [--task ID] [--archived] [--json]
 ```
 
 One line per chat: id, state, agent, title. `--json` emits the chat objects.
+`--task` narrows the list to the chats opened on one task with
+[`vincent task chat`](#vincent-task-chat).
 
-Archived and handed-off chats are hidden unless you pass `--archived`, the way
-`vincent task list --archived` works. Both terminal states come back under the
-one flag: a handed-off chat is as done with as an archived one.
+Archived, handed-off and closed chats are hidden unless you pass `--archived`,
+the way `vincent task list --archived` works. All three terminal states come
+back under the one flag: a handed-off or closed chat is as done with as an
+archived one.
 
 ### `vincent chat show`
 
@@ -1698,6 +1746,10 @@ Removes the chat's worktree and, under `delete_empty_branch_on_archive`, an
 empty branch with it — the same archive a task gets. A worktree with local
 changes is refused; `--force` is the way past it.
 
+A chat opened on a task is refused with `chat_linked_to_task`: the worktree
+is the task's. [`vincent chat close`](#vincent-chat-close) is how that chat
+ends.
+
 ### `vincent chat delete`
 
 ```sh
@@ -1746,6 +1798,30 @@ chat that has already been handed off or archived is refused for the same
 reason (409). Ordinary uncommitted changes are **not** a refusal. From then on
 the task owns the worktree and the branch: `vincent chat archive` is not legal
 on a handed-off chat, so chat cleanup can never remove task-owned state.
+
+A chat opened on a task is refused with `chat_linked_to_task`: its worktree and
+branch already belong to that task.
+
+### `vincent chat close`
+
+```sh
+vincent chat close CHAT_ID [--json]
+```
+
+Ends a chat opened with [`vincent task chat`](#vincent-task-chat). A live turn
+is cancelled first; the chat becomes `closed`, a terminal state, and the task's
+lock lifts, so its actions come back. It prints `chat N closed; task M is
+unlocked`; `--json` emits the chat as it now stands.
+
+Nothing on disk is touched: the worktree and branch are the task's, and they
+stay exactly as the chat left them — which is the point of talking to an agent
+there. Retry, approve or archive the task afterwards as you would have.
+
+A chat started with `vincent chat start` cannot be closed — archive it — and
+neither can a chat that is already closed; both exit 1. A closed chat is hidden
+from `vincent chat list` unless you pass `--archived`. `vincent chat delete`
+removes a closed chat's row and transcripts like an archived one's, but refuses
+`--branch` on it (`chat_linked_to_task`): the branch is the task's.
 
 ## `vincent workflow`
 

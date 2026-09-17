@@ -22,6 +22,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/cursor"
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/chatrun"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/events"
@@ -145,10 +146,18 @@ func newLiveHarness(t *testing.T, opts ...liveOption) *liveHarness {
 		Worktrees: worktree.NewManager(git, dataDir),
 		Agents:    agents, DataDir: dataDir, Logger: logger,
 	})
+	// Nor is the chat runner: `chat close` (linkedchat_live_test.go) reaches
+	// it only to stop a live turn, and no test here starts one.
+	chats := chatrun.New(chatrun.Deps{
+		Store: st, Config: config.Default,
+		Worktrees: worktree.NewManager(git, dataDir),
+		Agents:    agents, DataDir: dataDir, Logger: logger,
+	})
 	s := api.New(api.Deps{
 		Token: token, Config: config.Default, StartedAt: time.Now(),
 		ListenAddr: "127.0.0.1:0", RequestStop: func() {}, Logger: logger,
 		Store: st, Broker: broker, Git: git, Runner: runner, WakeRunner: func() {},
+		Chats: chats,
 		// The registry is what lets the endpoint normalize a recorded run
 		// with the parser that read it live.
 		Agents: agents, Catalog: catalog,
