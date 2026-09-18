@@ -614,6 +614,7 @@ func defaultClientConfig() apiclient.Config {
 	return apiclient.Config{
 		Listen:           d.Listen,
 		MaxParallelTasks: d.MaxParallelTasks,
+		MaxParallelChats: d.MaxParallelChats,
 		BranchTemplate:   d.BranchTemplate,
 		Defaults: apiclient.ConfigDefaults{
 			AgentTimeout:   d.Defaults.AgentTimeout.String(),

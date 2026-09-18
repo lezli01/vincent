@@ -141,7 +141,10 @@ nothing more than that.
 - **TUI** (`internal/tui/configlive_test.go`), against the real handlers over
   `httptest`: the editor writes through end to end, a validation error renders
   against its field with the refused value still on screen, and each of the four
-  dangerous keys refuses to apply without the confirmation.
+  dangerous keys refuses to apply without the confirmation. Since 2026-09-18
+  (issue #415) it also holds every row's "default" to what a daemon running
+  `config.Default()` serves: `defaultClientConfig` had left out
+  `max_parallel_chats`, so that row read `3  default 0`.
 - **Gate m11.** Real daemon, real file, over curl: every key served, a patch in
   force without a restart, comments and key order intact, an invalid patch
   leaving the bytes alone, 0600 on POSIX, `vincent config get|set`, and
