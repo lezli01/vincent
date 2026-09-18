@@ -34,6 +34,15 @@
 #      announced as trigger.fired, a daemon stop past several occurrences
 #      fires exactly once on restart, and the cron grammar is asserted
 #      through POST …/validate rather than waited for
+#  12. overrun: skip holds its concurrency group while an unadmitted proposal
+#      sits in `paused`, another group still fires, the dry run reports the
+#      decision without writing, and settling the task releases the group
+#  13. overrun: cancel_previous aborts the group and records the supersede
+#      link, the new task taking a branch of its own
+#  14. overrun: queue_coalesce holds three events and fires the newest when
+#      the group empties, recording the other two `superseded`
+#  15. overrun: queue_serial drains oldest first, one at a time, and its
+#      backlog survives a daemon restart
 #
 # Each scenario gets fresh config/data/repo dirs and its own daemon (PR G
 # decision, as m7): scenario 5 flips the global switch, which would disarm
@@ -106,6 +115,16 @@ CONFIG_DIR="" DATA_DIR="" REPO="" SEEN="" PROJECT_ID="" PORT="" TOKEN="" BASE=""
 
 daemon_down() { "$VINCENT" daemon stop --force >/dev/null 2>&1 || true; }
 
+# daemon_up starts a daemon on the current dirs and re-reads its listener. The
+# port is chosen per run, so a scenario that restarts the daemon must call this
+# rather than keep the address it had.
+daemon_up() {
+  "$VINCENT" daemon start >/dev/null
+  PORT="$(jq -r .port "$DATA_DIR/daemon.json")"
+  TOKEN="$(cat "$DATA_DIR/token")"
+  BASE="http://127.0.0.1:$PORT/v1"
+}
+
 # setup NAME — fresh dirs, a repo, two workflows, a daemon with
 # triggers.enabled on, and a registered project.
 setup() {
@@ -164,10 +183,7 @@ YAML
   printf 'gate repo\n' > "$REPO/README.md"
   git -C "$REPO" add . && git -C "$REPO" commit -qm init
 
-  "$VINCENT" daemon start >/dev/null
-  PORT="$(jq -r .port "$DATA_DIR/daemon.json")"
-  TOKEN="$(cat "$DATA_DIR/token")"
-  BASE="http://127.0.0.1:$PORT/v1"
+  daemon_up
   PROJECT_ID="$(api POST /projects "$(jq -cn --arg p "$(hostpath "$REPO")" '{path: $p}')" | jq -r .id)"
   [[ "$PROJECT_ID" =~ ^[0-9]+$ ]] || fail "project registration returned no id"
 }
@@ -235,6 +251,9 @@ delivery_field() {
 }
 
 task_count() { api GET /tasks | jq 'length'; }
+
+# tasks_at_least N — re-read on every wait_for attempt, unlike a substitution.
+tasks_at_least() { [[ "$(task_count)" -ge "$1" ]]; }
 
 task_field() { api GET "/tasks/$1" | jq -r --arg f "$2" '.[$f]'; }
 
@@ -755,6 +774,141 @@ action:
   title: 'sweep'
 " '{id: "weekdays", source: $src}')")"
   jq -e '.valid | not' <<<"$BAD" >/dev/null || fail "a cron descriptor the grammar refuses validated: $BAD"
+fi
+
+# ---------------------------------------------------------------------------
+if run_scenario 12; then
+  echo "== 12. overrun: skip holds the group while a proposal is unadmitted"
+  setup s12
+  EVENTS="$TMP/s12/events.ndjson"
+  : > "$EVENTS"
+  write_trigger hold "$(command_trigger hold "$EVENTS" 1s "$CREATE_ACTION" \
+    '{"overrun":"skip","concurrency_key":"{{ .Event.ticket }}"}')"
+  wait_for "hold to seed" 80 trigger_is hold '.armed and .poll.seeded'
+
+  emit "$EVENTS" '{"id":"h1","ticket":"V-1"}'
+  wait_for "h1 to fire" 80 has_outcome hold fired h1
+  FIRST="$(delivery_field hold fired h1 task_id)"
+  GROUP="$(delivery_field hold fired h1 concurrency_key)"
+  [[ "$GROUP" == "V-1" ]] || fail "the fired row records no group: $GROUP"
+  # on_fire defaults to propose, so the task is paused — and a paused task
+  # holds its group (task 121 decision 3).
+  [[ "$(task_field "$FIRST" state)" == "paused" ]] || fail "the first task is not a proposal"
+
+  emit "$EVENTS" '{"id":"h2","ticket":"V-1"}'
+  wait_for "h2 to be superseded" 80 has_outcome hold superseded h2
+  [[ "$(task_count)" == "1" ]] || fail "a skipped event created a task: $(task_count) tasks"
+
+  # A different ticket is a different group.
+  emit "$EVENTS" '{"id":"h3","ticket":"V-2"}'
+  wait_for "h3 to fire" 80 has_outcome hold fired h3
+  [[ "$(task_count)" == "2" ]] || fail "the second group did not fire: $(task_count) tasks"
+
+  # The dry run reports the decision and writes nothing.
+  BEFORE="$(ledger_size hold)"
+  JUDGE="$(api POST /triggers/hold/test '{"event":{"id":"h4","ticket":"V-1"}}')"
+  jq -e '.outcome == "superseded" and .would_skip == true and .concurrency_key == "V-1"' <<<"$JUDGE" >/dev/null \
+    || fail "the dry run does not report the overrun decision: $JUDGE"
+  [[ "$(ledger_size hold)" == "$BEFORE" ]] || fail "the dry run wrote a ledger row"
+
+  # Settling the first task releases the group. This source re-shows its whole
+  # window every poll, so the event that was skipped is judged again and fires
+  # now that nothing in V-1 is unfinished — a skip is a drop, not a ban.
+  api POST "/tasks/$FIRST/resume" >/dev/null
+  wait_state "$FIRST" done
+  wait_for "the released group to fire again" 80 tasks_at_least 3
+fi
+
+# ---------------------------------------------------------------------------
+if run_scenario 13; then
+  echo "== 13. overrun: cancel_previous cancels the group and records the link"
+  setup s13
+  EVENTS="$TMP/s13/events.ndjson"
+  : > "$EVENTS"
+  write_trigger sweep "$(command_trigger sweep "$EVENTS" 1s "$CREATE_ACTION" \
+    '{"overrun":"cancel_previous","concurrency_key":"{{ .Event.ticket }}"}')"
+  wait_for "sweep to seed" 80 trigger_is sweep '.armed and .poll.seeded'
+
+  emit "$EVENTS" '{"id":"c1","ticket":"V-9"}'
+  wait_for "c1 to fire" 80 has_outcome sweep fired c1
+  FIRST="$(delivery_field sweep fired c1 task_id)"
+
+  emit "$EVENTS" '{"id":"c2","ticket":"V-9"}'
+  wait_for "c2 to fire" 80 has_outcome sweep fired c2
+  SECOND="$(delivery_field sweep fired c2 task_id)"
+  LINK="$(delivery_field sweep fired c2 superseded_task_id)"
+  [[ "$LINK" == "$FIRST" ]] || fail "the second delivery's supersede link is $LINK, want $FIRST"
+  [[ "$SECOND" != "$FIRST" ]] || fail "cancel_previous reused the cancelled task"
+  wait_state "$FIRST" aborted
+  # The cancelled task keeps its own branch, and the new one has its own.
+  [[ "$(task_field "$FIRST" branch_name)" != "$(task_field "$SECOND" branch_name)" ]] \
+    || fail "the superseding task took the cancelled task's branch"
+fi
+
+# ---------------------------------------------------------------------------
+if run_scenario 14; then
+  echo "== 14. overrun: queue_coalesce drains the newest held event"
+  setup s14
+  EVENTS="$TMP/s14/events.ndjson"
+  : > "$EVENTS"
+  write_trigger newest "$(command_trigger newest "$EVENTS" 1s "$CREATE_ACTION" \
+    '{"overrun":"queue_coalesce","concurrency_key":"{{ .Event.ticket }}"}')"
+  wait_for "newest to seed" 80 trigger_is newest '.armed and .poll.seeded'
+
+  emit "$EVENTS" '{"id":"q1","ticket":"V-3"}'
+  wait_for "q1 to fire" 80 has_outcome newest fired q1
+  FIRST="$(delivery_field newest fired q1 task_id)"
+
+  emit "$EVENTS" '{"id":"q2","ticket":"V-3"}' '{"id":"q3","ticket":"V-3"}' '{"id":"q4","ticket":"V-3"}'
+  wait_for "three events to be held" 80 has_outcome newest queued q4
+  [[ "$(task_count)" == "1" ]] || fail "a held event created a task: $(task_count) tasks"
+
+  api POST "/tasks/$FIRST/resume" >/dev/null
+  wait_state "$FIRST" done
+  wait_for "the newest held event to drain" 80 has_outcome newest fired q4
+  wait_for "the coalesced events to be recorded" 80 has_outcome newest superseded q2
+  has_outcome newest superseded q3 || fail "q3 was not recorded as coalesced"
+  [[ "$(outcomes newest fired q2)" == "0" ]] || fail "a coalesced event fired"
+  [[ "$(task_count)" == "2" ]] || fail "a coalesced drain created $(task_count) tasks, want 2"
+fi
+
+# ---------------------------------------------------------------------------
+if run_scenario 15; then
+  echo "== 15. overrun: queue_serial drains in order, across a daemon restart"
+  setup s15
+  EVENTS="$TMP/s15/events.ndjson"
+  : > "$EVENTS"
+  write_trigger queue "$(command_trigger queue "$EVENTS" 1s "$CREATE_ACTION" \
+    '{"overrun":"queue_serial","concurrency_key":"{{ .Event.ticket }}"}')"
+  wait_for "queue to seed" 80 trigger_is queue '.armed and .poll.seeded'
+
+  emit "$EVENTS" '{"id":"s1","ticket":"V-7"}'
+  wait_for "s1 to fire" 80 has_outcome queue fired s1
+  FIRST="$(delivery_field queue fired s1 task_id)"
+
+  emit "$EVENTS" '{"id":"s2","ticket":"V-7"}' '{"id":"s3","ticket":"V-7"}'
+  wait_for "s2 to be held" 80 has_outcome queue queued s2
+  wait_for "s3 to be held" 80 has_outcome queue queued s3
+
+  # The backlog is a table, not a field: it outlives the daemon that held it.
+  daemon_down
+  daemon_up
+  wait_for "the trigger to arm again" 80 trigger_is queue '.armed'
+
+  api POST "/tasks/$FIRST/resume" >/dev/null
+  wait_state "$FIRST" done
+  wait_for "s2 to drain first" 80 has_outcome queue fired s2
+  [[ "$(outcomes queue fired s3)" == "0" ]] || fail "queue_serial drained two events at once"
+  SECOND="$(delivery_field queue fired s2 task_id)"
+  api POST "/tasks/$SECOND/resume" >/dev/null
+  wait_state "$SECOND" done
+  wait_for "s3 to drain second" 80 has_outcome queue fired s3
+  # Every event fired exactly once, in arrival order. A `superseded` row here
+  # is this source re-showing an event already held, not a dropped one.
+  for e in s1 s2 s3; do
+    [[ "$(outcomes queue fired "$e")" == "1" ]] || fail "$e fired $(outcomes queue fired "$e") times, want 1"
+  done
+  [[ "$(task_count)" == "3" ]] || fail "queue_serial created $(task_count) tasks, want 3"
 fi
 
 echo "GATE PASS: m16 (event triggers)"
