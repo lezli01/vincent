@@ -50,6 +50,8 @@ limits:
 | `action` | yes | — | `type` and the keys that type takes |
 | `on_fire` | no | `propose` | `propose` or `create`. **Dangerous:** `create`. A `cancel` requires `create` |
 | `dedupe_key` | no | `{{ .Event.id }}` | Template. Rendering empty is an `error` |
+| `overrun` | no | `parallel` | `parallel`, `skip`, `cancel_previous`, `queue_coalesce`, `queue_serial`: what to do when the group has unfinished work. **Dangerous:** `cancel_previous` |
+| `concurrency_key` | no | the trigger id, or a reaction's resolved target task | Template naming the group. Refused unless `overrun` is set to something other than `parallel` |
 | `limits.max_per_hour` | no | `0`, no cap | Integer ≥ 0. Counts `fired` deliveries in the trailing hour |
 | `limits.max_task_cost_usd` | no | `0`, none sent | Number ≥ 0. `create_task` only. It becomes the task's own cap, which can tighten the global cap but never lift it |
 | `permission` | no | `restricted` | `restricted` or `workflow`. `create_task` only. **Dangerous:** `workflow` |
@@ -303,8 +305,27 @@ outcome.
 5. `limits.max_per_hour` is spent → `rate_limited`, dropped, never queued.
 6. An action template fails to render → `error`.
 7. A reaction finds no task on the branch → `refused`.
-8. The replayed route answers 2xx → `fired`, 4xx → `refused`, anything else
+8. `overrun:` finds unfinished work in the group → `superseded` (`skip`),
+   `queued` (either queue mode), or a cancel of everything in flight and then a
+   fire (`cancel_previous`). `parallel` never reaches this stage.
+9. The replayed route answers 2xx → `fired`, 4xx → `refused`, anything else
    → `error`.
+
+An event the group already holds is recorded `superseded` rather than held
+again, so a source that re-shows its window every poll does not fill the
+backlog with copies of one event.
+
+A held (`queued`) event is judged again from stage 1 when its group empties,
+minus stage 8 — so a rate cap met in the meantime is honoured. A `queued` row
+does not count as delivered, so stage 4 does not swallow a repeat while one is
+held. "Unfinished" is every state but `done`, `aborted` and `archived`:
+`paused` — which is what `on_fire: propose` creates — holds its group, and so
+do `blocked`, `awaiting_gate` and `awaiting_children`.
+
+Held events live in a table, so they survive a daemon restart; there are at
+most 100 per trigger, and at the cap the oldest is dropped and recorded
+`superseded`. Disarming a trigger discards its backlog and records each held
+event.
 
 ## Dangerous values
 
@@ -316,6 +337,7 @@ for that exact change.
 | `enabled: true` | Polls and acts on every event that passes the filter while `triggers.enabled` is on |
 | `on_fire: create` | Starts agents for every event with no keypress; `propose` holds each task |
 | `permission: workflow` | Lifts the `restricted` clamp: agent steps run as the workflow wrote them, full-auto included |
+| `overrun: cancel_previous` | An inbound event cancels every unfinished task in its group before firing: it destroys agent work mid-run. Name `allowed_actors` on a GitHub source |
 | `triggers.enabled: true` | The global switch in `config.yaml`, which arms every enabled trigger |
 
 ## Examples

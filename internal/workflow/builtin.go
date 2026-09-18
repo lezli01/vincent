@@ -939,6 +939,14 @@ steps:
           periodic, is a schedule instead — but a source.type change is a
           finding to report, not an edit to make, when the trigger is armed
           and its cursor means something to it.
+      15. overrun: on any trigger whose source can emit twice about one object
+          — a ticket saved repeatedly, an issue edited, a build re-run — with a
+          concurrency_key naming that object. Absent it is parallel, which
+          starts a task per event however many are already running. skip is the
+          conservative choice; queue_serial keeps every event; cancel_previous
+          destroys work in flight and is not yours to add. Say in the report
+          that a paused task holds its group, so under the on_fire: propose
+          default one unadmitted proposal stops the trigger until a human acts.
 
       ## What you may not change
 
@@ -950,6 +958,11 @@ steps:
       - enabled, on_fire and permission keep their current values. Apply
         refuses one that arms, and a disarming change is not yours to make
         either: report it as a finding.
+      - A concurrency_key must never change what it renders while a group has
+        work in flight: a new rendering makes the running tasks invisible to
+        the next event, which then fires alongside them. Adding overrun with a
+        new concurrency_key to a trigger that has none is safe — nothing was
+        grouped before — but re-rendering an existing one is not.
       - A dedupe_key must never change what it renders for an event already
         delivered. The ledger matches the rendered key, so a different
         rendering fires every delivered event again. Make an implicit key
@@ -998,6 +1011,8 @@ const updateTriggersFooter = `
         applied, and what you deliberately left alone;
       - for every dedupe_key you touched, why it renders the same for events
         already delivered;
+      - for every overrun or concurrency_key you added, the group it names and
+        what now happens to an event that arrives while its group is busy;
       - findings you could not act on here: poll scripts, workflows, and any
         switch a human may want to change;
       - the validator's verdict for every staged file.

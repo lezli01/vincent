@@ -4,7 +4,7 @@ description: Create, edit, review, arm, and debug vincent event triggers, the YA
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.1.0
+  version: 1.2.0
 ---
 
 # vincent Triggers
@@ -183,6 +183,55 @@ events carry no identity vincent can verify.
   events already delivered.** A new rendering misses the ledger and fires those
   events again.
 
+## Overrun: the previous run is still going
+
+`overrun:` says what to do with an event whose group already has unfinished
+work. Absent it is `parallel`, which is no check at all — every event fires,
+however many of this trigger's tasks are mid-flight. Set it on any source that
+emits repeatedly about the same object.
+
+| value | behaviour |
+|---|---|
+| `parallel` | the default: no check |
+| `skip` | record the event and drop it; the work in flight stands |
+| `cancel_previous` | cancel every in-flight task in the group, then fire |
+| `queue_coalesce` | hold it; when the group empties, fire the **newest** held event |
+| `queue_serial` | hold it; when the group empties, fire the **oldest**, and repeat |
+
+`concurrency_key:` names the group, as a template over `.Event`. Absent it is
+the trigger id — one at a time per trigger — and, for a reaction, the task its
+`branch:` resolved to.
+
+- It is **not** `dedupe_key`. On the case this exists for, the dedupe key is
+  per modification (`{{ .Event.id }}`) and the group is the object
+  (`{{ .Event.ticket }}`). Setting them to the same thing disarms the feature.
+- It is refused without an `overrun:` other than `parallel`: a group nothing
+  consults is a control that does not control.
+- **Changing it on a live trigger re-groups events already in flight**, the
+  same standing warning `dedupe_key` carries.
+
+Read the ledger before you believe a trigger did nothing: `superseded` is an
+event overrun dropped, `queued` one it is holding.
+
+Two things to say out loud when you write one:
+
+- **A `paused` task holds its group, and `on_fire: propose` creates every task
+  paused.** With `skip`, one unreviewed proposal holds its group until a human
+  admits or archives it. That is intended — a second proposal for the same
+  object is noise — but with `propose` and `skip` together, a trigger that
+  looks dead is usually one waiting on a proposal nobody looked at. So do
+  `blocked`, `awaiting_gate` and `awaiting_children`; only `done`, `aborted`
+  and `archived` release a group.
+- **`cancel_previous` destroys work.** An inbound event kills an agent mid-run.
+  The cancelled task keeps its branch and worktree and the delivery records
+  which task it superseded, but nothing un-cancels it. On a GitHub source, name
+  `allowed_actors` — it is what stands between a stranger's event and a
+  cancelled run.
+
+A queue mode holds at most 100 events per trigger; at the cap the oldest is
+dropped and recorded `superseded`. Held events survive a daemon restart and are
+discarded when the trigger is disarmed.
+
 ## Poll scripts
 
 Put the script in `{config_dir}/trigger-scripts/`. This is a convention; vincent
@@ -285,6 +334,8 @@ Report correctness and safety findings first, then check each trigger for:
 
 - `match:` in front of `if:`,
 - an explicit `dedupe_key`,
+- `overrun:` on any source that can emit twice about one object, with a
+  `concurrency_key:` naming that object and not repeating `dedupe_key`,
 - `limits.max_per_hour`, and `max_task_cost_usd` on a `create_task`,
 - `github_issue` or `github_pull` prefill,
 - no `poll_interval` on a GitHub source,
@@ -308,5 +359,6 @@ Some things must stay as they are:
 - `id`, the file name and `source.project`.
 - `enabled`, `on_fire` and `permission`, unless the user asks to change them.
 - What `dedupe_key` renders for events already delivered.
+- What `concurrency_key` renders, while a group has work in flight.
 
 A trigger that is already right stays byte for byte.
