@@ -81,10 +81,15 @@ type triggerDelivery struct {
 	TriggerID string `json:"trigger_id"`
 	EventID   string `json:"event_id"`
 	DedupeKey string `json:"dedupe_key"`
-	Outcome   string `json:"outcome"`
-	TaskID    *int64 `json:"task_id"`
-	Detail    string `json:"detail,omitempty"`
-	CreatedAt string `json:"created_at"`
+	// ConcurrencyKey is the `overrun:` group this event was judged in, absent
+	// for a trigger that declares none; SupersededTaskID the task a
+	// `cancel_previous` fire replaced (task 122).
+	ConcurrencyKey   string `json:"concurrency_key,omitempty"`
+	Outcome          string `json:"outcome"`
+	TaskID           *int64 `json:"task_id"`
+	SupersededTaskID *int64 `json:"superseded_task_id,omitempty"`
+	Detail           string `json:"detail,omitempty"`
+	CreatedAt        string `json:"created_at"`
 }
 
 // triggersReady writes a 500 for a server wired without triggers.
@@ -391,7 +396,8 @@ func (s *Server) handleTriggerDeliveries(w http.ResponseWriter, r *http.Request)
 	for _, d := range rows {
 		out.Deliveries = append(out.Deliveries, triggerDelivery{
 			ID: d.ID, TriggerID: d.TriggerID, EventID: d.EventID, DedupeKey: d.DedupeKey,
-			Outcome: d.Outcome, TaskID: d.TaskID, Detail: d.Detail,
+			ConcurrencyKey: d.ConcurrencyKey, Outcome: d.Outcome, TaskID: d.TaskID,
+			SupersededTaskID: d.SupersededTaskID, Detail: d.Detail,
 			CreatedAt: d.CreatedAt.UTC().Format(time.RFC3339Nano),
 		})
 	}

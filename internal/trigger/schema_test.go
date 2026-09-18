@@ -236,8 +236,15 @@ func TestTriggerSchemaMatchesValidation(t *testing.T) {
 	}
 
 	walk(t, "", s.TopLevel, func(path string) map[string]any {
-		if path == "allowed_actors" {
+		switch path {
+		case "allowed_actors":
 			return docFor(SourceGitHubIssues, ActionCreateTask)
+		case "concurrency_key":
+			// It names a group only `overrun:` consults, and the validator
+			// refuses it alone (task 122).
+			doc := validDoc()
+			doc["overrun"] = OverrunSkip
+			return doc
 		}
 		return validDoc()
 	})
@@ -272,7 +279,9 @@ func TestTriggerSchemaMatchesValidation(t *testing.T) {
 		}
 	}
 	slices.Sort(marked)
-	if want := []string{"enabled=true", "on_fire=create", "permission=workflow"}; !slices.Equal(marked, want) {
+	// Decision 19's three, plus task 122's cancel_previous: the one overrun
+	// mode that destroys work a human did not ask to lose.
+	if want := []string{"enabled=true", "on_fire=create", "overrun=cancel_previous", "permission=workflow"}; !slices.Equal(marked, want) {
 		t.Errorf("dangerous values %v, want %v", marked, want)
 	}
 }

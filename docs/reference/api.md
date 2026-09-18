@@ -1347,8 +1347,12 @@ ones a trigger may match without naming `allowed_actors`. `control` adds
 `source`, `action`, `limits`, `signature`, `match`, `project` and `number` to
 the workflow schema's vocabulary. `dangerous[]` lists `{ value, warning }`
 pairs a client confirms before committing — `enabled: true`,
-`on_fire: create` and `permission: workflow` — and shows the warning when it
-asks.
+`on_fire: create`, `permission: workflow` and `overrun: cancel_previous` — and
+shows the warning when it asks. The first three take a keypress out of starting
+agents; the fourth destroys work in flight.
+[`vincent trigger apply`](cli.md#vincent-trigger-apply) refuses the first three
+on a file it did not already hold them on, and only those: `cancel_previous`
+arms nothing that was not already armed.
 
 ### Dry runs
 
@@ -1358,7 +1362,8 @@ does not validate is a `400` with its findings in `details.errors`.
 
 `POST /v1/triggers/{id}/test` judges the `event` you supply, which must be a
 JSON object. It runs `match:`, `allowed_actors`, `if:`, the dedupe lookup, the
-rate limit and the action's templates, and returns the judgement:
+rate limit, the action's templates and the `overrun:` check, and returns the
+judgement:
 
 ```json
 { "event_id": "build-4812",
@@ -1377,6 +1382,14 @@ rate limit and the action's templates, and returns the judgement:
   absent when the trigger has no guard or the guard was not reached.
 - `dedupe_key` is the rendered key. `would_dedupe` says the ledger already
   holds a `fired` or `seeded` row for it.
+- `overrun` is the mode the trigger declared, absent for the `parallel`
+  default, which is not checked at all. `concurrency_key` is the rendered
+  group, `in_flight` the unsettled tasks found in it, and `would_skip`,
+  `would_cancel` and `would_queue` the decision — one of them at most, and none
+  when the group is empty. The check runs **last**, after rendering and after a
+  reaction's target resolution, because a reaction's group is the task it
+  resolved to. Like the rest of the dry run it writes nothing: no ledger row
+  and no held event.
 - `action` is the request the trigger would replay, **unsent**: `type`,
   `method`, `path` and `body`. For `create_task` the body is a
   [`POST /v1/tasks`](#tasks) body, `paused: true` unless `on_fire: create` and
@@ -1419,7 +1432,8 @@ a `400`.
 ```json
 { "deliveries": [ {
     "id": 57, "trigger_id": "ci-failures", "event_id": "build-4812",
-    "dedupe_key": "build-4812", "outcome": "fired", "task_id": 142,
+    "dedupe_key": "build-4812", "concurrency_key": "build", "outcome": "fired",
+    "task_id": 142, "superseded_task_id": 140,
     "created_at": "2026-09-13T09:30:00.000000000Z" } ] }
 ```
 
@@ -1432,6 +1446,14 @@ a `400`.
 | `rate_limited` | It was over `limits.max_per_hour`, which counts `fired` rows alone. Dropped, not queued |
 | `refused` | The replayed route answered `4xx`. `detail` keeps that answer's error envelope, and a reaction's `task_id` names the task it targeted. A reaction whose branch matched no unarchived task is `refused` too, with nothing replayed: `detail` names the branch and `task_id` is `null` |
 | `error` | A template or `if:` failed to render, the event had no `id` and the trigger no `dedupe_key`, or the replay answered `5xx` or never reached the route. `detail` says which |
+| `superseded` | `overrun:` dropped it in favour of work already in flight or of a newer event: `skip`'s drop, a `queue_coalesce` drain's discards, an event its group already held, a held event a disarm threw away, or the oldest held event at the 100-per-trigger cap. `detail` says which |
+| `queued` | A queue mode is holding it in the backlog until its group empties. It is deliberately *not* delivered, so a second identical event reaches the overrun step rather than being `deduped`; it gets a second row when it fires |
+
+`concurrency_key` is the `overrun:` group the row was judged in, absent for a
+trigger that declares none. `superseded_task_id` is the task an
+`overrun: cancel_previous` fire replaced — the chain a rapid-fire source leaves
+behind — and, like `task_id`, becomes `null` if that task is permanently
+deleted.
 
 `task_id` is `null` when no task was involved, and becomes `null` if that task
 is later [permanently deleted](#permanent-delete). The ledger outlives the

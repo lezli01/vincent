@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -121,6 +122,17 @@ var outcomeText = map[string]string{
 	apiclient.TriggerRateLimited: "limits.max_per_hour is spent for the trailing hour",
 	apiclient.TriggerRefused:     "the action has no target to act on",
 	apiclient.TriggerError:       "a template did not render",
+	apiclient.TriggerSuperseded:  "overrun: the group already has unfinished work",
+	apiclient.TriggerQueued:      "overrun: the event would be held until the group empties",
+}
+
+// trigInFlight names a group's unsettled tasks: "task 4, task 7".
+func trigInFlight(ids []int64) string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, "task "+strconv.FormatInt(id, 10))
+	}
+	return strings.Join(out, ", ")
 }
 
 // renderJudgement prints one stage per line in pipeline order — match, if,
@@ -158,6 +170,19 @@ func renderJudgement(w io.Writer, id string, j apiclient.TriggerJudgement) error
 		}
 	}
 	fmt.Fprintf(&b, "  dedupe:   %s\n", dedupe)
+
+	if j.Overrun != "" {
+		what := "nothing in flight"
+		switch {
+		case j.WouldSkip:
+			what = trigInFlight(j.InFlight) + " in flight: it would be skipped"
+		case j.WouldCancel:
+			what = trigInFlight(j.InFlight) + " in flight: they would be cancelled first"
+		case j.WouldQueue:
+			what = trigInFlight(j.InFlight) + " in flight: it would be held"
+		}
+		fmt.Fprintf(&b, "  overrun:  %s, group %q, %s\n", j.Overrun, j.ConcurrencyKey, what)
+	}
 
 	if a := j.Action; a != nil {
 		fmt.Fprintf(&b, "  action:   %s %s %s\n", a.Type, a.Method, a.Path)

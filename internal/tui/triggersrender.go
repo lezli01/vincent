@@ -276,11 +276,23 @@ func (v *triggersView) ledgerLines(width, height int) []string {
 		if d.TaskID != nil {
 			task = "#" + strconv.FormatInt(*d.TaskID, 10)
 		}
+		detail := d.Detail
+		// The supersede link a `cancel_previous` fire wrote (task 122): the
+		// chain is readable here rather than on the board, which is not asked
+		// to render a relationship only triggers ever set.
+		if d.SupersededTaskID != nil {
+			link := "superseded #" + strconv.FormatInt(*d.SupersededTaskID, 10)
+			if detail == "" {
+				detail = link
+			} else {
+				detail = link + " · " + detail
+			}
+		}
 		when := d.CreatedAt
 		rows = append(rows, mark+trigCell(v.ago(&when), 10, styleDim)+"  "+
 			trigCell(d.Outcome, 12, trigOutcomeStyle(d.Outcome))+"  "+
 			trigCell(d.EventID, 24, lipgloss.NewStyle())+"  "+
-			trigCell(task, 6, lipgloss.NewStyle())+"  "+styleDim.Render(d.Detail))
+			trigCell(task, 6, lipgloss.NewStyle())+"  "+styleDim.Render(detail))
 	}
 	cursor := 0
 	if v.focus == trigFocusLedger {
@@ -290,11 +302,20 @@ func (v *triggersView) ledgerLines(width, height int) []string {
 	return truncateRows(out, width)
 }
 
+// trigInFlight names the group's unsettled tasks: "#4, #7".
+func trigInFlight(ids []int64) string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, "#"+strconv.FormatInt(id, 10))
+	}
+	return strings.Join(out, ", ")
+}
+
 func trigOutcomeStyle(outcome string) lipgloss.Style {
 	switch outcome {
 	case apiclient.TriggerFired:
 		return styleOK
-	case apiclient.TriggerRateLimited:
+	case apiclient.TriggerRateLimited, apiclient.TriggerSuperseded, apiclient.TriggerQueued:
 		return styleWarn
 	case apiclient.TriggerRefused, apiclient.TriggerError:
 		return styleBad
@@ -487,6 +508,20 @@ func judgementLines(j apiclient.TriggerJudgement) []string {
 		if len(a.Body) > 0 {
 			out = append(out, workflowFact("body", styleDim.Render(string(a.Body))))
 		}
+	}
+	if j.Overrun != "" {
+		line := j.Overrun + " · group " + strconv.Quote(j.ConcurrencyKey)
+		switch {
+		case j.WouldSkip:
+			line += styleWarn.Render("   " + trigInFlight(j.InFlight) + " in flight — it would be skipped")
+		case j.WouldCancel:
+			line += styleWarn.Render("   " + trigInFlight(j.InFlight) + " in flight — they would be cancelled first")
+		case j.WouldQueue:
+			line += styleWarn.Render("   " + trigInFlight(j.InFlight) + " in flight — it would be held")
+		default:
+			line += styleDim.Render("   nothing in flight")
+		}
+		out = append(out, workflowFact("overrun", line))
 	}
 	out = append(out, workflowFact("outcome", trigOutcomeStyle(j.Outcome).Render(j.Outcome)))
 	if j.Error != "" {

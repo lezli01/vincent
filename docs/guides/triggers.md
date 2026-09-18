@@ -100,6 +100,8 @@ limits:
 | `action` | What an event that passes does: `create_task`, `follow_up`, `retry` or `cancel`. |
 | `on_fire` | `propose` (the default) or `create`. |
 | `dedupe_key` | A template over `.Event`. Absent means the event's `id`. |
+| `overrun` | What to do when this event's concurrency group still has unfinished work: `parallel` (the default), `skip`, `cancel_previous`, `queue_coalesce` or `queue_serial`. |
+| `concurrency_key` | A template over `.Event` naming that group. Absent means the trigger id, or a reaction's resolved task. Needs an `overrun`. |
 | `limits` | `max_per_hour`, and `max_task_cost_usd` for a `create_task`. |
 | `permission` | `create_task` only: `restricted` (the default) or `workflow`. |
 
@@ -130,9 +132,74 @@ decides its ledger outcome:
    `error`.
 7. **Target.** A reaction finds its task by branch. No task on that branch is
    `refused`.
-8. **Replay.** The request goes to the route. A 2xx answer is `fired`, a 4xx
+8. **Overrun.** If the trigger sets `overrun:`, the group its
+   `concurrency_key:` names is checked for unfinished work. `skip` records the
+   event `superseded`; a queue mode records it `queued` and holds it;
+   `cancel_previous` cancels what it found and carries on. `parallel`, the
+   default, never reaches this step.
+9. **Replay.** The request goes to the route. A 2xx answer is `fired`, a 4xx
    (such as the state machine's `409`) is `refused`, and anything else is an
    `error`.
+
+### Overrun: what happens while the last run is still going
+
+By default a trigger fires every event that passes the filter, whatever it
+started before. That is right for a one-shot event and wrong for a source that
+emits repeatedly about the same object: a ticket saved four times in a minute
+starts four tasks on four worktrees, three of them stale before an agent reaches
+them.
+
+`overrun:` says what to do instead, and `concurrency_key:` — a template over
+`.Event` — names the group:
+
+```yaml
+overrun: skip
+concurrency_key: '{{ .Event.ticket }}'
+dedupe_key: '{{ .Event.id }}'
+```
+
+| `overrun` | Behaviour |
+|---|---|
+| `parallel` | The default, and what every trigger did before this existed: no check at all. |
+| `skip` | Record the event `superseded` and drop it. The work in flight stands. |
+| `cancel_previous` | Cancel every unfinished task in the group, then fire. The new task gets its own branch and worktree; the cancelled ones keep theirs, and the delivery records which task it superseded. |
+| `queue_coalesce` | Hold the event. When the group empties, fire the **newest** held event and record the rest `superseded`. |
+| `queue_serial` | Hold the event. When the group empties, fire the **oldest**, then the next, and so on. |
+
+`concurrency_key:` is deliberately not `dedupe_key:`. Above, the dedupe key is
+per modification and the group is the ticket; setting them to the same thing
+would mean the trigger fires once ever, which is the behaviour this feature
+exists to avoid. Absent, the group is the trigger id — one task at a time for
+the whole trigger — and for a `follow_up`, `retry` or `cancel` it is the task
+the `branch:` resolved to. Setting it without an `overrun:` is a load error.
+
+**Unfinished means every state but `done`, `aborted` and `archived`** — so
+`paused`, `blocked`, `awaiting_gate` and `awaiting_children` all hold a group.
+The consequential case is `on_fire: propose`, the default, which creates every
+task `paused`: **an unreviewed proposal holds its group.** A `skip` trigger
+whose first proposal nobody admits will never fire for that group again. That is
+intended — a second proposal for the same ticket is noise — but it is also why a
+trigger that fired once and then went quiet is usually waiting on a proposal, not
+broken.
+
+An event a group already holds is recorded `superseded` rather than held twice,
+so a source that re-shows its whole window on every poll does not fill the
+backlog with copies of one event.
+
+Held events live in the database, so they survive a daemon restart, and there
+are at most 100 per trigger; at the cap the oldest is dropped and recorded
+`superseded`. Disarming a trigger discards its backlog and records each held
+event, the same way disarming drops the poll cursor. A held event is judged
+again in full when it drains, so a rate limit met in the meantime is honoured
+and a reaction re-resolves its branch.
+
+`vincent trigger test` reports the overrun decision before anything is written,
+naming the tasks it found in flight.
+
+**`cancel_previous` destroys work.** An inbound event kills an agent mid-run.
+Nothing on disk is lost — the cancelled task keeps its branch and worktree — but
+nothing un-cancels it either. On a GitHub source, `allowed_actors` is what stands
+between a stranger's event and a cancelled run.
 
 ### Filtering: `match:` and `if:`
 
@@ -147,9 +214,9 @@ Anything richer goes in `if:`, which is a Go `text/template` like a workflow's
 `if:`. It must render exactly `true` or `false` once surrounding whitespace is
 trimmed.
 
-Every trigger template (`if`, `dedupe_key` and the action's fields) sees a single
-root, `.Event`, and has the standard template builtins and no extra functions.
-Templates render with `missingkey=error`: a key the event does not carry makes
+Every trigger template (`if`, `dedupe_key`, `concurrency_key` and the action's
+fields) sees a single root, `.Event`, and has the standard template builtins and
+no extra functions. Templates render with `missingkey=error`: a key the event does not carry makes
 the delivery an `error` rather than rendering empty text. Filter sparse events
 with `match:` first. JSON numbers arrive as floats, so write
 `{{ printf "%.0f" .Event.number }}` where a large number must render as digits.
@@ -164,7 +231,10 @@ task. A key that renders empty is an `error`.
 Only `fired` and `seeded` rows count as delivered. An event that was `filtered`,
 `rate_limited`, `refused` or an `error` can still fire later. That covers a
 relabel after you change the filter, the same event an hour later under the
-limit, or a retry after the refusal's cause is fixed. Ledger rows are pruned
+limit, or a retry after the refusal's cause is fixed. A `superseded` or
+`queued` row is not delivered either: a `queued` event fires when its group
+empties, and a `superseded` one fires if the source shows it again once the
+group is free. Ledger rows, and any events a queue mode still holds, are pruned
 after a fixed 30 days.
 
 A `create_task` replay also carries an `Idempotency-Key` derived from the
@@ -610,6 +680,8 @@ enabling a trigger is not.
 | `rate_limited` | Over `limits.max_per_hour`. Dropped, not queued. |
 | `refused` | The route answered with a 4xx, or a reaction found no task on the branch. `detail` holds the reason. |
 | `error` | A template did not render, or the route answered with a 5xx or was never reached. |
+| `superseded` | `overrun:` dropped it: `skip` found unfinished work, a newer held event coalesced past it, the group already held this event, a disarm discarded it, or the backlog hit its cap. `detail` says which. |
+| `queued` | A queue mode is holding it until its group empties. It gets a second row when it fires. |
 
 Read it with `GET /v1/triggers/{id}/deliveries?limit=` (newest first, up to
 1000 rows, 100 by default). The ledger outlives the file and is pruned after 30
@@ -775,9 +847,11 @@ npx skills add lezli01/vincent --skill vincent-triggers -g
 ```
 
 The skill writes every trigger disarmed. It sets `enabled: false`, leaves out
-`on_fire` and `permission`, and always sets a `dedupe_key` and `limits`. It
-changes a switch only when you ask for that exact change. For the workflow a
-trigger's `action.workflow` names, it defers to `vincent-workflows`.
+`on_fire` and `permission`, and always sets a `dedupe_key` and `limits`. On a
+source that can emit twice about one object it sets `overrun:` and a
+`concurrency_key:` naming that object, never `cancel_previous`, which destroys
+work. It changes a switch only when you ask for that exact change. For the
+workflow a trigger's `action.workflow` names, it defers to `vincent-workflows`.
 
 ### The `create-trigger` and `update-triggers` built-ins
 
@@ -794,7 +868,8 @@ Two built-in workflows use the skill against the task's own project:
   `vincent trigger apply`. Rejecting leaves every trigger untouched. The pass
   never changes a trigger's `id`, file name, `source.project`, `enabled`,
   `on_fire` or `permission`, deletes no file, and never changes what a
-  `dedupe_key` renders for events already delivered.
+  `dedupe_key` renders for events already delivered or what a
+  `concurrency_key` renders while its group has work in flight.
 
 Neither built-in can produce a `cancel` trigger, because a cancel loads only
 with `on_fire: create`. Write one by hand.

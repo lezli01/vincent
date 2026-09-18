@@ -20,8 +20,12 @@ const (
 	TriggerDeduped     = "deduped"
 	TriggerFiltered    = "filtered"
 	TriggerRateLimited = "rate_limited"
-	TriggerRefused     = "refused"
-	TriggerError       = "error"
+	// TriggerSuperseded is an event `overrun:` dropped, and TriggerQueued one
+	// it is holding until the group empties (task 122).
+	TriggerSuperseded = "superseded"
+	TriggerQueued     = "queued"
+	TriggerRefused    = "refused"
+	TriggerError      = "error"
 )
 
 // Trigger events on §13.3's stream.
@@ -157,16 +161,25 @@ type TriggerReplay struct {
 
 // TriggerJudgement is what the pipeline decided about one event.
 type TriggerJudgement struct {
-	EventID     string         `json:"event_id"`
-	Matched     bool           `json:"matched"`
-	MatchMiss   string         `json:"match_miss,omitempty"`
-	If          *bool          `json:"if,omitempty"`
-	IfRendered  string         `json:"if_rendered,omitempty"`
-	DedupeKey   string         `json:"dedupe_key,omitempty"`
-	WouldDedupe bool           `json:"would_dedupe"`
-	Action      *TriggerReplay `json:"action,omitempty"`
-	Outcome     string         `json:"outcome"`
-	Error       string         `json:"error,omitempty"`
+	EventID     string `json:"event_id"`
+	Matched     bool   `json:"matched"`
+	MatchMiss   string `json:"match_miss,omitempty"`
+	If          *bool  `json:"if,omitempty"`
+	IfRendered  string `json:"if_rendered,omitempty"`
+	DedupeKey   string `json:"dedupe_key,omitempty"`
+	WouldDedupe bool   `json:"would_dedupe"`
+	// Overrun is the `overrun:` mode consulted, "" for the parallel default;
+	// ConcurrencyKey the rendered group, InFlight its unsettled tasks, and
+	// the three Would* flags the decision (task 122).
+	Overrun        string         `json:"overrun,omitempty"`
+	ConcurrencyKey string         `json:"concurrency_key,omitempty"`
+	InFlight       []int64        `json:"in_flight,omitempty"`
+	WouldSkip      bool           `json:"would_skip,omitempty"`
+	WouldCancel    bool           `json:"would_cancel,omitempty"`
+	WouldQueue     bool           `json:"would_queue,omitempty"`
+	Action         *TriggerReplay `json:"action,omitempty"`
+	Outcome        string         `json:"outcome"`
+	Error          string         `json:"error,omitempty"`
 }
 
 // TriggerDryPoll is POST /v1/triggers/{id}/poll.
@@ -181,14 +194,16 @@ type TriggerDryPoll struct {
 
 // TriggerDelivery is one ledger row.
 type TriggerDelivery struct {
-	ID        int64  `json:"id"`
-	TriggerID string `json:"trigger_id"`
-	EventID   string `json:"event_id"`
-	DedupeKey string `json:"dedupe_key"`
-	Outcome   string `json:"outcome"`
-	TaskID    *int64 `json:"task_id"`
-	Detail    string `json:"detail,omitempty"`
-	CreatedAt string `json:"created_at"`
+	ID               int64  `json:"id"`
+	TriggerID        string `json:"trigger_id"`
+	EventID          string `json:"event_id"`
+	DedupeKey        string `json:"dedupe_key"`
+	ConcurrencyKey   string `json:"concurrency_key,omitempty"`
+	Outcome          string `json:"outcome"`
+	TaskID           *int64 `json:"task_id"`
+	SupersededTaskID *int64 `json:"superseded_task_id,omitempty"`
+	Detail           string `json:"detail,omitempty"`
+	CreatedAt        string `json:"created_at"`
 }
 
 // Triggers lists the trigger files and whether triggers are on globally.

@@ -1799,9 +1799,10 @@ again against what is actually there.
 `tab` moves the arrows to the selected trigger's **ledger**: its newest
 deliveries, one row for every event the trigger judged, whether it fired or not.
 Each row shows when the event was judged, the outcome (`fired`, `seeded`,
-`deduped`, `filtered`, `rate_limited`, `refused` or `error`), the event id, the
-task, and the detail. This is the daemon view's list and log split: `tab`
-decides which list the arrows move.
+`deduped`, `filtered`, `rate_limited`, `refused`, `error`, `superseded` or
+`queued`), the event id, the task, and the detail — which carries
+`superseded #N` when an `overrun: cancel_previous` fire replaced a task. This is
+the daemon view's list and log split: `tab` decides which list the arrows move.
 
 | Key | Does |
 |---|---|
@@ -1866,11 +1867,11 @@ it stays on its row with the daemon's message beside it, and nothing is written.
 If another writer got there first, the form says the file changed on disk since
 it read it, re-reads it, and asks you to make the change again.
 
-Three values ask before they are written, because each one takes a keypress out
-of starting agents: `enabled: true`, `on_fire: create` and `permission:
-workflow`. The question shows the warning the schema serves. For `enabled`, it
-also says what enabling means given the trigger's `on_fire`, just as `space`
-does. `y` writes the value, and `n` or `esc` keeps the file as it is.
+Four values ask before they are written, because each one takes a keypress out
+of starting agents or destroys work in flight: `enabled: true`, `on_fire:
+create`, `permission: workflow` and `overrun: cancel_previous`. The question
+shows the warning the schema serves. For `enabled`, it also says what enabling
+means given the trigger's `on_fire`, just as `space` does. `y` writes the value, and `n` or `esc` keeps the file as it is.
 
 A file that does not validate cannot be loaded into the form. The form says so
 and quotes the first finding; `esc`, then `e`, opens the file in `$EDITOR`.
@@ -1882,11 +1883,12 @@ Neither dry run fires anything, and both work on a trigger that is not armed.
 
 `T` judges a **sample event** you write. Its pane opens on a minimal event,
 `{"id": "sample-1"}`, and `ctrl+s` runs it through the trigger's real `match:`,
-`if:`, dedupe key and action rendering. The result shows whether the event
-matched and which key missed, what `if:` rendered, the dedupe key and whether
-that event was already delivered, and the request the action would replay. The
-sample has to be a single JSON object. Each trigger keeps its own sample **for
-this session only**: reopening `T` on the same trigger brings the sample back,
+`if:`, dedupe key, action rendering and `overrun:` check. The result shows
+whether the event matched and which key missed, what `if:` rendered, the dedupe
+key and whether that event was already delivered, the request the action would
+replay, and, for a trigger that sets `overrun:`, the group it was judged in and
+which tasks it found unfinished there. The sample has to be a single JSON
+object. Each trigger keeps its own sample **for this session only**: reopening `T` on the same trigger brings the sample back,
 but it is never written to disk, not even to `{data_dir}/tui.json`, because an
 event copied from a vendor can carry text nobody meant to store.
 

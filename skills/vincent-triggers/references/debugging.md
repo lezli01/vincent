@@ -107,6 +107,8 @@ returns rows newest first, 100 by default and up to 1000.
 | `rate_limited` | `limits.max_per_hour` fired deliveries were already reached in the trailing hour | The event was dropped, not queued. It fires later only if the source reports it again |
 | `refused` | The route answered 4xx, or a reaction found no task on the branch | `detail`. Typical causes: a workflow the project lacks; a state the action does not allow, such as cancelling a `done` task or retrying one that is not `blocked`; a clamped task an adapter cannot run restricted; a bad issue or pull number; no task on the rendered branch |
 | `error` | A template did not render, or the route answered 5xx or was unreachable | `detail`. Typical causes: `missingkey=error` on a key the event lacks; a `dedupe_key` or `branch` that renders empty; an `if:` that renders neither `true` nor `false` |
+| `superseded` | `overrun:` dropped the event: `skip` found unfinished work in its group, a newer held event coalesced past it, the group already held this event, a disarm discarded it, or the backlog hit its 100-event cap | `detail` says which. The usual cause is a task nobody finished — under `on_fire: propose` an unadmitted `paused` proposal holds its group, and so do `blocked`, `awaiting_gate` and `awaiting_children`. Only `done`, `aborted` and `archived` release it |
+| `queued` | `queue_coalesce` or `queue_serial` is holding the event until its group empties | Nothing is wrong. It fires — and gets a second row — when the group's last task settles. It is deliberately not "delivered", so a repeat event is queued rather than deduped |
 
 When an event has **no row at all**, check these in turn:
 
@@ -118,6 +120,12 @@ When an event has **no row at all**, check these in turn:
 - a seed event's key did not render, which is logged at warn;
 - an `http` push was refused before judging, for example with a `401`;
 - the command's own filter or cursor never returned the event.
+
+A trigger that fires **once and then never again** is almost always `overrun:
+skip` (or a queue mode) whose group still holds an unfinished task. Look at the
+task the last `fired` row names: if it is `paused`, a human has not admitted the
+proposal. `vincent trigger test` reports the overrun decision before anything is
+written, naming the tasks it found in flight.
 
 `vincent daemon logs` shows what was logged.
 

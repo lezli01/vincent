@@ -119,7 +119,7 @@ func (m *Manager) Ingest(ctx context.Context, id string, header http.Header, bod
 		}
 		ev["id"] = delivery
 	}
-	m.ingestMu.Lock()
-	defer m.ingestMu.Unlock()
+	unlock := m.lockTrigger(d.ID)
+	defer unlock()
 	return fire(ctx, m.deps.Store, m.deps.Handler, d, ev, m.deps.Now())
 }

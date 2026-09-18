@@ -44,9 +44,11 @@ there is no `.vincent/triggers/` in a repository. The daemon writes it on the
 new file or not, because a trigger's argv can carry a secret. Like a workflow
 write, a trigger write carries a version token and a stale one is refused. A
 missing directory means no triggers. A directory the daemon cannot read keeps
-the triggers already loaded. A trigger's cursor, poll status and delivery
-ledger live in `vincent.db`, never beside the file, and deleting the file keeps
-its ledger. [`vincent trigger apply`](cli.md#vincent-trigger-apply) writes it
+the triggers already loaded. A trigger's cursor, poll status, delivery ledger
+and any events an [`overrun:`](../guides/triggers.md#overrun-what-happens-while-the-last-run-is-still-going)
+queue mode is holding live in `vincent.db`, never beside the file. Deleting the
+file keeps its ledger and discards what it held, the same way it drops the
+cursor. [`vincent trigger apply`](cli.md#vincent-trigger-apply) writes it
 too, with the same `0600`, when a `create-trigger` or `update-triggers` task
 installs its proposal.
 

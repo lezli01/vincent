@@ -105,11 +105,20 @@ func (p *TranscriptPruner) once(ctx context.Context) {
 	}
 }
 
-// PruneDeliveries deletes trigger ledger rows older than
-// TriggerDeliveryRetention, returning how many went. now is a parameter so
-// tests can age rows without sleeping.
+// PruneDeliveries deletes trigger ledger rows and held backlog events older
+// than TriggerDeliveryRetention, returning how many went. now is a parameter
+// so tests can age rows without sleeping.
+//
+// The backlog rides the same window (task 122): an event held for a month is
+// one whose group never emptied, and firing it now would act on a month-old
+// state of the world.
 func (p *TranscriptPruner) PruneDeliveries(ctx context.Context, now time.Time) (int64, error) {
-	return p.deps.Store.PruneTriggerDeliveries(ctx, now.Add(-TriggerDeliveryRetention))
+	rows, err := p.deps.Store.PruneTriggerDeliveries(ctx, now.Add(-TriggerDeliveryRetention))
+	if err != nil {
+		return rows, err
+	}
+	held, err := p.deps.Store.PruneTriggerBacklog(ctx, now.Add(-TriggerDeliveryRetention))
+	return rows + held, err
 }
 
 // PruneKeys deletes idempotency keys older than IdempotencyRetention,
