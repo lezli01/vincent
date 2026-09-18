@@ -159,6 +159,10 @@ handler — and two copies of that arithmetic drift.
   No existing
   capture shows a non-default level either: the pane title names a level only
   when it is not the default, and every tape runs at `normal`.
+  *Done 2026-09-18 ([#413](https://github.com/lezli01/vincent/issues/413)):*
+  `tui-chat.png` shows both — the titled `message` box and the prompt bubble
+  this task shaped, and `quiet · 2 turns` in the header, because its tape is the
+  one tape that cycles the level.
 - **No gate.** The level is client-only session state that never crosses the
   wire, and the chrome is client-side layout, so `scripts/m14-gate.sh` is
   unaffected and no new script is warranted.

@@ -324,6 +324,16 @@ func main() {
 	rememberPrompt(prompt)
 
 	emit(map[string]any{"type": "system", "subtype": "init", "model": "fake-1"})
+	if scenario == "chat-reply" {
+		// Answered before the recall line rather than in the switch below.
+		// The recall line is how a test proves `--resume` was passed; this
+		// scenario exists to give `scripts/screenshots.sh` a conversation
+		// worth photographing, and "recalled: …" is plumbing rather than
+		// prose. It reads the same memory the line would have printed, so
+		// the turn it answers is still the session's own.
+		chatReply(prompt, prior)
+		return
+	}
 	if line := recallLine(prior); line != "" {
 		// What a resumed session remembers. A fresh one says nothing here,
 		// so a vincent that dropped --resume fails by omission.
@@ -516,6 +526,87 @@ func claudeSuccess(prompt []byte) {
 		editFile(f)
 	}
 	emitSuccessResult(prompt, 100, 42)
+}
+
+// chatReply answers one chat turn with a markdown document: a heading, prose,
+// a fenced code block and links. It exists for `scripts/screenshots.sh`
+// (issue #413) — the chat workspace's reader actions (task 076) offer "the
+// markdown", "the plain text" and "each code block", and the link picker
+// lists what the prose links to, so a picture of either is only worth taking
+// of an answer that actually has those parts.
+//
+// Which answer comes back is decided by how much the session already
+// remembers: prior holds this conversation's earlier prompts, so turn 1 gets
+// the first document and turn 2 the second. That is the same memory
+// recallLine reads, which means a vincent that dropped `--resume` repeats the
+// first answer instead of moving on — visible in the picture rather than only
+// in a test.
+func chatReply(prompt []byte, prior []string) {
+	emitText("Reading `internal/limits.go` and `internal/server.go`.")
+	emit(map[string]any{"type": "assistant", "message": map[string]any{
+		"content": []any{map[string]any{"type": "tool_use", "name": "Read", "input": map[string]any{}}},
+	}})
+	answer := chatAnswers[min(len(prior), len(chatAnswers)-1)]
+	emitText(answer)
+	emitSuccessResult(prompt, 1_284, 372)
+}
+
+// chatAnswers are the documents chatReply hands back, in order. They are
+// about the repository scripts/screenshots.sh seeds — a rate limiter in an
+// `api` project — so the conversation in the picture is about the code the
+// rest of the seeded board is about.
+var chatAnswers = []string{
+	strings.Join([]string{
+		"## Where the cap actually lives",
+		"",
+		"`internal/limits.go` is the whole of it. `Limit()` returns a constant `100`",
+		"and `internal/server.go` never reads it, so nothing is capped today — the",
+		"number is documentation.",
+		"",
+		"Three things follow from that:",
+		"",
+		"1. The budget would be global rather than per token.",
+		"2. A rejected request carries no `Retry-After`, so a client cannot back off politely.",
+		"3. The counter lives in the process, so two replicas allow twice the traffic.",
+		"",
+		"A per-token bucket is the smallest change that answers all three:",
+		"",
+		"```go",
+		"func Allow(token string, now time.Time) (bool, time.Duration) {",
+		"\tb := buckets.get(token)",
+		"\tif b.take(now) {",
+		"\t\treturn true, 0",
+		"\t}",
+		"\treturn false, b.retryAfter(now)",
+		"}",
+		"```",
+		"",
+		"The status code is specified in [RFC 6585 §4](https://www.rfc-editor.org/rfc/rfc6585#section-4)",
+		"and the header in [RFC 9110 §10.2.3](https://www.rfc-editor.org/rfc/rfc9110#field.retry-after).",
+	}, "\n"),
+	strings.Join([]string{
+		"## What the 429 body should say",
+		"",
+		"Say when to come back, and say it twice — once for the client and once for",
+		"the person reading the log:",
+		"",
+		"```json",
+		"{",
+		"  \"error\": \"rate_limited\",",
+		"  \"retry_after_seconds\": 42,",
+		"  \"limit\": 100,",
+		"  \"window\": \"1m\"",
+		"}",
+		"```",
+		"",
+		"`Retry-After` carries the same number as a header, because that is the one",
+		"a proxy and a generated client both already understand. Keep the body's",
+		"`error` a stable slug rather than prose — the prose belongs in the docs,",
+		"and the slug is what a caller branches on.",
+		"",
+		"[RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) is worth following if",
+		"this grows a second error shape; for one it is more envelope than it earns.",
+	}, "\n"),
 }
 
 // unauthenticatedMessage is the wording an adapter's classifier matches for a

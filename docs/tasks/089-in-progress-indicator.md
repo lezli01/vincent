@@ -180,6 +180,12 @@ on the line this exists to keep clean is worse than a few spaces.
   indicator deliberately does not draw. If a chat tape or an Output-tab tape is
   ever added, it will show one arbitrary spinner frame, which is why the elapsed
   clock beside it is what such a picture would actually prove.
+  *Amended 2026-09-18 ([#413](https://github.com/lezli01/vincent/issues/413)):*
+  both views are now captured, and the split above is what the pictures show.
+  `tui-chats.png` has the view 8 half — a `running` row with the glyph beside
+  the label, seeded on the 15-minute wrapper. The view 9 indicator is still in
+  no image: the chat `tui-chat.png` is taken of is idle, which is what the
+  handoff form and the copy picker over it need it to be.
 - **No gate.** The indicator is client-side rendering over data already on the
   wire: no endpoint, DTO, column or block reason changed, so no gate script has
   anything new to assert.

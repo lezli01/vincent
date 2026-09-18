@@ -24,7 +24,12 @@
 # shell rather than the sh∩pwsh intersection the gates are held to. It is a
 # maintainer tool, run on demand when the UI it photographs has moved.
 #
-# Requirements: bash, go, git, curl, jq, vhs (`brew install vhs`).
+# Requirements: bash, go, git, curl, jq, vhs (`brew install vhs`) — but **not
+# vhs 0.12.0**, which renders nothing at all. It cancels the context its own
+# ffmpeg step then runs under, so `exec.CommandContext` refuses to start the
+# process: every tape exits 0, prints "Creating …", and writes neither the GIF
+# nor the Screenshot. 0.11.0 renders. The `[[ -f … ]]` check after each tape is
+# what turns that silence into a failure instead of an empty success.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -37,6 +42,7 @@ DATA_DIR="$SHOTS/data"
 REPOS="$SHOTS/repos"
 TAPES="$SHOTS/tapes"
 GIFS="$SHOTS/gifs"
+SESSIONS="$SHOTS/sessions"
 OUT="$ROOT/docs/assets"
 
 VINCENT="$BIN/vincent"
@@ -90,6 +96,17 @@ wait_hold() { # wait_hold ID [TIMEOUT_S] — queued on an agent's usage window
     sleep 0.5
   done
   fail "task $id never parked on a usage-limit hold (last: ${reason:-unknown})"
+}
+
+wait_chat() { # wait_chat ID STATE [TIMEOUT_S]
+  local id="$1" want="$2" limit="${3:-90}" state
+  for (( i = 0; i < limit * 2; i++ )); do
+    # GET /v1/chats/{id} answers {chat, turns}: the state is the chat's.
+    state="$(api GET "/chats/$id" | jq -r .chat.state)"
+    [[ "$state" == "$want" ]] && return 0
+    sleep 0.5
+  done
+  fail "chat $id never reached $want (last: ${state:-unknown})"
 }
 
 daemon_up() {
@@ -188,10 +205,16 @@ agent_wrapper() {
   chmod +x "$BIN/$name"
 }
 
-# write_config CLAUDE_WRAPPER — the claude adapter is swapped mid-seed, from
-# the walled CLI that leaves an observed usage window behind to the one that
-# asks a question, because one process-wide FAKEAGENT_SCENARIO cannot be both.
-# The daemon hot-reloads config.yaml (§12.3), so this needs no restart.
+# write_config CLAUDE_WRAPPER — the claude adapter is swapped twice mid-seed,
+# because one process-wide FAKEAGENT_SCENARIO cannot hold a conversation, ask
+# a question and run out of quota at once. The daemon hot-reloads config.yaml
+# (§12.3), so this needs no restart.
+#
+# The order is fixed and one-way: chat, then ask, then walled. An observed
+# usage window is recorded against the **adapter** and outlives the swap (§11,
+# task 026), so anything that needs claude to answer has to be seeded before
+# `agent-walled` has ever run — after it, every claude task parks on the hold
+# and every claude chat turn fails.
 write_config() {
   cat > "$CONFIG_DIR/config.yaml" <<EOF
 # Seeded by scripts/screenshots.sh. Each adapter points at a wrapper around
@@ -217,7 +240,7 @@ do_seed() {
   command -v jq >/dev/null 2>&1 || fail "jq is not on PATH"
 
   do_clean >/dev/null 2>&1 || true
-  mkdir -p "$BIN" "$CONFIG_DIR/workflows" "$CONFIG_DIR/triggers" "$DATA_DIR" "$REPOS" "$TAPES" "$GIFS"
+  mkdir -p "$BIN" "$CONFIG_DIR/workflows" "$CONFIG_DIR/triggers" "$DATA_DIR" "$REPOS" "$TAPES" "$GIFS" "$SESSIONS"
 
   # Built with the release ldflags rather than plain `go build`: the TUI
   # header prints its own version, and an uninjected build prints the module
@@ -232,6 +255,12 @@ do_seed() {
   agent_wrapper agent-slow FAKEAGENT_DIALECT=codex FAKEAGENT_SCENARIO_CODEX=success FAKEAGENT_DELAY_MS=3600000
   agent_wrapper agent-fast FAKEAGENT_DIALECT=cursor FAKEAGENT_SCENARIO_CURSOR=success FAKEAGENT_DELAY_MS=1500
   agent_wrapper agent-ask FAKEAGENT_SCENARIO=ask-question FAKEAGENT_ASK_MULTI=1
+  # A CLI that answers a chat turn with a markdown document — a heading, a
+  # fenced code block, two links — because the chat shots are of prose and of
+  # what the reader actions (task 076) can take out of it. The session store
+  # is what makes turn 2 a different answer from turn 1: the fake CLI resumes
+  # its own conversation exactly as the real one does.
+  agent_wrapper agent-chat FAKEAGENT_SCENARIO=chat-reply "FAKEAGENT_SESSION_DIR=$SESSIONS"
   # A CLI whose account has run out, naming its own reset 90 minutes out. It
   # is what leaves one adapter observed-spent for the board header badge and
   # the daemon view's quota line (task 026) — without it those two shots
@@ -239,7 +268,7 @@ do_seed() {
   agent_wrapper agent-walled FAKEAGENT_SCENARIO=usage-limit FAKEAGENT_USAGE_LIMIT_RESET=5400
 
   say "config"
-  write_config agent-walled
+  write_config agent-chat
 
   say "workflows"
   cat > "$CONFIG_DIR/workflows/feature-pr.yaml" <<'EOF'
@@ -450,18 +479,63 @@ EOF
   api POST "/tasks/$T_DONE/approve" >/dev/null
   wait_state "$T_DONE" done 120
 
-  # The usage window, before claude is swapped back to the asking CLI. The
-  # task parks on the §11 hold task 003 gives it, and the observation task 026
-  # records outlives that hold — which is what the board header badge and the
-  # daemon view's quota line are pictures of. The CLI names a 90-minute reset,
-  # so nothing re-admits this task during a capture run.
-  T_WALLED="$(add "$P_ADAPT" incident-response 'retune the planner prompts' '"agent":"claude"')"
-  wait_hold "$T_WALLED" 120
+  # Chats (task 067, issue #413), seeded while claude still points at the
+  # conversational CLI — the two swaps below are one-way.
+  say "chats"
+  newchat() { # newchat PROJECT AGENT TITLE
+    api POST /chats "{\"project_id\":$1,\"agent\":\"$2\",\"title\":$(jq -Rn --arg t "$3" '$t')}" | jq -r .id
+  }
+  chat_send() { # chat_send ID MESSAGE
+    api POST "/chats/$1/send" "{\"message\":$(jq -Rn --arg m "$2" '$m')}" >/dev/null
+  }
+
+  # The conversation the workspace shots are of. Two finished turns, so a
+  # prompt bubble sits *inside* the history rather than only at the top of it,
+  # and the second answer differs from the first — which is the fake CLI
+  # resuming its own session rather than starting over. Both answers are
+  # markdown with a fenced block and links in them, because the copy picker
+  # and the link picker (task 076) are pictures of what prose contains.
+  C_RATE="$(newchat "$P_API" claude 'where is the rate limit applied?')"
+  chat_send "$C_RATE" 'Where does the rate limiter actually cap traffic? Read internal/limits.go and internal/server.go before you answer.'
+  wait_chat "$C_RATE" idle 120
+  chat_send "$C_RATE" 'What should the 429 body say, and which header carries the wait?'
+  wait_chat "$C_RATE" idle 120
+
+  # A second finished chat, on another adapter and another project, so the
+  # board groups more than one thing.
+  C_WEB="$(newchat "$P_WEB" cursor 'why does the header flicker on first paint?')"
+  chat_send "$C_WEB" 'The header flickers on first paint. Where is it rendered twice?'
+  wait_chat "$C_WEB" idle 120
+
+  # A `running` row: codex is the 15-minute wrapper, so this turn is still
+  # going when the camera arrives, which is what the turning glyph in the
+  # state cell and the counting last-activity cell are pictures of (task 089).
+  C_INFRA="$(newchat "$P_INFRA" codex 'walk me through the eu-west failover')"
+  chat_send "$C_INFRA" 'Walk me through the eu-west failover, one step at a time.'
+  wait_chat "$C_INFRA" running 120
+
   write_config agent-ask
   sleep 3 # the config watcher, then the adapter's binary-identity re-probe
 
   T_ASK="$(add "$P_INFRA" incident-response 'restore the eu-west read replica' '"agent":"claude"')"
   wait_state "$T_ASK" awaiting_input 120
+
+  # A chat waiting on a human: the row the chats board sorts to the top and
+  # the only thing its header badge counts.
+  C_ASK="$(newchat "$P_ADAPT" claude 'should the adapter probe models on every start?')"
+  chat_send "$C_ASK" 'Should the adapter probe its model catalog on every start, or cache it?'
+  wait_chat "$C_ASK" awaiting_input 120
+
+  # The usage window, last of the claude work for the reason write_config
+  # gives: the observation outlives the swap, so nothing that needs an answer
+  # from claude may come after this. The task parks on the §11 hold task 003
+  # gives it, and the observation task 026 records is what the board header
+  # badge and the daemon view's quota line are pictures of. The CLI names a
+  # 90-minute reset, so nothing re-admits this task during a capture run.
+  write_config agent-walled
+  sleep 3
+  T_WALLED="$(add "$P_ADAPT" incident-response 'retune the planner prompts' '"agent":"claude"')"
+  wait_hold "$T_WALLED" 120
 
   # Blocked: a command that fails with retries exhausted. It is its own
   # workflow so nothing the other shots need has to be sabotaged.
@@ -582,7 +656,7 @@ EOF
   [[ "$seeded" == "true" ]] || fail "trigger ci-red never seeded: $got"
 
   sleep 6
-  say "seeded — $(api GET /tasks | jq 'length') tasks across $(api GET /projects | jq 'length') projects"
+  say "seeded — $(api GET /tasks | jq 'length') tasks and $(api GET /chats | jq '.chats | length') chats across $(api GET /projects | jq 'length') projects"
 }
 
 # ---------------------------------------------------------------------------
@@ -813,6 +887,99 @@ Sleep 1s
 Enter
 Sleep 4s
 Screenshot "'"$OUT"'/tui-triggers.png"
+Sleep 2s
+'
+
+  # Chats (task 067): the second board, grouped by project, with the chat
+  # waiting on a human sorted to the top and counted in the header badge, and
+  # a `running` row below it.
+  tape tui-chats 900 '
+Type ":"
+Sleep 1s
+Type "chats"
+Sleep 1s
+Enter
+Sleep 4s
+Screenshot "'"$OUT"'/tui-chats.png"
+Sleep 2s
+'
+
+  # The chat workspace, at `quiet` — the reading level (task 071), which is
+  # where the answer is prose and nothing else. ctrl+r cycles quiet → compact
+  # → normal → verbose and starts at normal, so two presses reach it. The
+  # board'"'"'s filter commits with enter rather than tab: this list types into
+  # its filter field, and a tab would be typed into it.
+  tape tui-chat 1400 '
+Type ":"
+Sleep 1s
+Type "chats"
+Sleep 1s
+Enter
+Sleep 4s
+Type "/"
+Sleep 500ms
+Type "rate limit"
+Sleep 1s
+Enter
+Sleep 1s
+Enter
+Sleep 5s
+Ctrl+R
+Sleep 1s
+Ctrl+R
+Sleep 3s
+Screenshot "'"$OUT"'/tui-chat.png"
+Sleep 2s
+'
+
+  # The handoff form (task 074): the new-task form opened on the chat. It
+  # opens on the title row, three rows above the two that make it a handoff
+  # rather than a new task — the base branch and the branch, marked
+  # `(from the chat)` because they name a worktree that already exists — so
+  # the tape walks down to them.
+  tape tui-chat-handoff 1050 '
+Type ":"
+Sleep 1s
+Type "chats"
+Sleep 1s
+Enter
+Sleep 4s
+Type "/"
+Sleep 500ms
+Type "rate limit"
+Sleep 1s
+Enter
+Sleep 1s
+Enter
+Sleep 5s
+Ctrl+T
+Sleep 4s
+Down 3
+Sleep 2s
+Screenshot "'"$OUT"'/tui-chat-handoff.png"
+Sleep 2s
+'
+
+  # The copy picker (task 076): one row per payload of each assistant message
+  # — the markdown, the plain text, and every fenced block in it.
+  tape tui-chat-copy 1400 '
+Type ":"
+Sleep 1s
+Type "chats"
+Sleep 1s
+Enter
+Sleep 4s
+Type "/"
+Sleep 500ms
+Type "rate limit"
+Sleep 1s
+Enter
+Sleep 1s
+Enter
+Sleep 5s
+Ctrl+Y
+Sleep 3s
+Screenshot "'"$OUT"'/tui-chat-copy.png"
 Sleep 2s
 '
 }
