@@ -30,6 +30,11 @@
     "description": "Author and validate vincent workflow YAML with guidance for agents, commands, gates, checks, retries, conditions, loops, and fan-out."
   },
   {
+    "path": "skills/vincent-triggers/SKILL.md",
+    "seo_title": "vincent trigger authoring skill",
+    "description": "Author, arm, and debug vincent event triggers with guidance for sources, filters, dedupe keys, limits, poll scripts, dry runs, and the delivery ledger."
+  },
+  {
     "path": "docs/README.md",
     "seo_title": "vincent documentation",
     "description": "Install, configure, and operate vincent's local-first workflow orchestrator for AI coding agents."
