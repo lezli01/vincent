@@ -1517,18 +1517,18 @@ triggers:
 
 The global switch for [event triggers](../guides/triggers.md): the files under
 `{config_dir}/triggers/` that start or act on tasks when a command, GitHub or a
-signed push reports an event. **Off by default.**
+signed push reports an event, or when a schedule comes due. **Off by default.**
 
 A trigger is off twice. A file does nothing until its own `enabled: true`
 **and** this key are both on. The second key exists because a trigger has no
 keypress to be the consent: with both on, someone labelling an issue or a CI job
 going red causes agents to run as you.
 
-While it is off, no trigger polls and `POST /v1/triggers/{id}/events` answers
-`409`. The dry runs still work, because they fire nothing. Turning it on arms
-every enabled trigger with a **fresh seed**: the first poll records what the
-source already shows and fires nothing, so a backlog that existed before you
-turned it on never starts work.
+While it is off, no trigger polls or ticks and `POST /v1/triggers/{id}/events`
+answers `409`. The dry runs still work, because they fire nothing. Turning it on
+arms every enabled trigger with a **fresh seed**: the first poll records what the
+source already shows and fires nothing — a schedule anchors its clock instead —
+so a backlog that existed before you turned it on never starts work.
 
 Read per poll and per pushed event, so a [reload](#reload-semantics) reaches the
 next one. `PATCH /v1/config` can set it, but the route is not an MCP tool, so an

@@ -487,10 +487,10 @@ A trigger is a file under `{config_dir}/triggers/` that turns an outside event
 into vincent work, so a labelled issue, a review request, a red CI build or a
 weekday morning can start a task without you opening the TUI. It reads events
 from one of five sources: a command the daemon polls, a project's GitHub
-issues, its pull requests, a signed push to `POST /v1/triggers/{id}/events`, or
-a schedule — a cron expression or a fixed interval, in the zone you name. `match:`, `if:`
-and `allowed_actors` filter them, a `dedupe_key` makes each event fire once, and
-`limits.max_per_hour` caps the rate.
+issues, its pull requests, a signed push to `POST /v1/triggers/{id}/events`,
+or a schedule — a cron expression or a fixed interval, in the zone you name.
+`match:`, `if:` and `allowed_actors` filter them, a `dedupe_key` makes each
+event fire once, and `limits.max_per_hour` caps the rate.
 
 A trigger that fires can create a task, follow up a finished one, retry a
 blocked one, or cancel one, finding the task by its branch. By default it only
@@ -500,10 +500,11 @@ start it with `resume`.
 Triggers are off twice: a file needs its own `enabled: true` and
 `triggers.enabled` in `config.yaml`. Turning one on seeds it, so events that
 already existed never fire — and a schedule anchors its clock then, so the
-first occurrence it fires is one that falls after your keypress. Every event judged is recorded in a delivery
-ledger. `vincent trigger test` and the live poll show what a trigger would do
-without writing anything. The TUI's triggers view, opened from the command
-palette, creates, edits and enables them and shows each one's ledger.
+first occurrence it fires is one that falls after your keypress. Every event
+judged is recorded in a delivery ledger. `vincent trigger test` and the live
+poll show what a trigger would do without writing anything. The TUI's triggers
+view, opened from the command palette, creates, edits and enables them and
+shows each one's ledger.
 
 An agent can write triggers for you, and cannot switch one on. The
 `create-trigger` built-in writes a new trigger for a project, and

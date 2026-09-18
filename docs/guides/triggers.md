@@ -38,15 +38,17 @@ before you turn it on. See the
 [configuration reference](../reference/configuration.md#triggers) for the key
 itself.
 
-A trigger that is enabled, valid and globally switched on is **armed**. Only an
-armed trigger polls or accepts a push. `GET /v1/triggers` lists every file with
-`armed` and, when it is not armed, a `disarmed_reason`: the file does not
-validate, the trigger is disabled, or `triggers.enabled` is off.
+A trigger that is enabled, valid and globally switched on is **armed**. Only
+an armed trigger polls, ticks or accepts a push. `GET /v1/triggers` lists
+every file with `armed` and, when it is not armed, a `disarmed_reason`: the
+file does not validate, the trigger is disabled, or `triggers.enabled` is off.
 
 **Arming seeds.** The first poll after a trigger is armed records what the
 source already shows and **fires nothing**. That applies whether the trigger was
 armed by its own `enabled:` or by the global key. A backlog that existed before
-you turned a trigger on never starts work.
+you turned a trigger on never starts work. A `schedule` has no poll and anchors
+its clock at that moment instead, to the same effect: the first occurrence it
+ever fires is one that falls after the trigger was armed.
 
 The rest of the lifecycle follows from that rule:
 
@@ -91,7 +93,7 @@ limits:
 |---|---|
 | `id` | Required. Lowercase letters, digits, `-`, `_` and `.`, starting with a letter or digit, and equal to the file name without `.yaml`. |
 | `enabled` | The per-trigger switch. Absent means `false`. |
-| `source` | Where events come from: `type` (`command`, `github_issues`, `github_prs` or `http`), `project`, and the keys that type takes. |
+| `source` | Where events come from: `type` (`command`, `github_issues`, `github_prs`, `http` or `schedule`), `project`, and the keys that type takes. |
 | `match` | A cheap prefilter: dotted paths into the event, each with the value it must have. |
 | `if` | A guard over `.Event` that must render `true` or `false`. |
 | `allowed_actors` | GitHub sources only: the issue or pull-request **authors** whose events may pass. |
@@ -473,11 +475,12 @@ action:
 Because `id` is the occurrence, the default `dedupe_key` already makes two
 evaluations of one occurrence fire once — you do not need a template for it.
 
-A schedule has no source to run once, so `POST /v1/triggers/{id}/poll` and
-`vincent trigger poll` refuse it. Use `vincent trigger test` with a synthetic
-event instead. And a scheduled `follow_up` or `retry` whose `branch` renders to
-a branch no unarchived task is on is silent by design: the ledger records
-`refused`, and nothing else happens.
+A schedule has no source to run once, so `POST /v1/triggers/{id}/poll` refuses
+it, and with it the triggers view's `X` and the `trigger_poll` MCP tool. Use
+`vincent trigger test` with a synthetic event instead. And a scheduled
+`follow_up` or `retry` whose `branch` renders to a branch no unarchived task
+is on is silent by design: the ledger records `refused`, and nothing else
+happens.
 
 ## Actions
 
@@ -583,8 +586,9 @@ against, so it judges nothing and `events` comes back empty. The
 answer holds `seed` (a real poll now would only seed), `events` (one judgement
 each), `truncated` (events past the cap of 20), `refused` (command output lines
 that were not events), the `cursor` the command printed, and `error` when the
-command or listing failed. A failing poll still answers `200`. An `http` trigger
-has no poll, and the route answers `400`.
+command or listing failed. A failing poll still answers `200`. A trigger with
+no source to run once — `http`, which is pushed, and `schedule`, which is a
+clock — is a `400`.
 
 The command itself really runs, so whatever it does outside vincent still
 happens.

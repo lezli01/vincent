@@ -1246,11 +1246,11 @@ are **not** here — those come from [`GET /v1/agents`](#daemon).
 | `POST` | `/v1/triggers/{id}/events` | The `type: http` ingress: one signed event → its delivery. See [Pushing an event](#pushing-an-event) |
 
 A trigger is a file, `{config_dir}/triggers/{id}.yaml`, that polls a command or
-GitHub, or accepts a signed push, and creates or acts on a task for each new
-event that passes its filter. There is no project-scope directory. The
-definition is the file; the trigger's cursor, poll health and ledger live in
-the database. A trigger does anything only when it is **armed**: its file
-validates, its own `enabled:` is `true`, and the global
+GitHub, accepts a signed push, or comes due on a schedule, and creates or acts
+on a task for each new event that passes its filter. There is no project-scope
+directory. The definition is the file; the trigger's cursor, poll health and
+ledger live in the database. A trigger does anything only when it is
+**armed**: its file validates, its own `enabled:` is `true`, and the global
 [`triggers.enabled`](configuration.md#triggers) is on. That key is switched over
 [`PATCH /v1/config`](#daemon). With it off, every route here still answers:
 the list shows each trigger disarmed, and both dry runs work.
@@ -1284,6 +1284,9 @@ the list shows each trigger disarmed, and both dry runs work.
   next poll judges events instead of seeding. `ok` and `error` are the last
   poll's result. `last_poll_at` and `last_fire_at` are `null` until each has
   happened. A trigger that has never polled carries the zero values shown above.
+  A `type: schedule` source has no poll: `seeded` says its clock is anchored,
+  and `last_poll_at` is when that anchor was last written, by the arming tick
+  or by a fire.
 
 `GET /v1/triggers/{id}` is the row plus `source`, the file's bytes, and
 `definition`, the parsed document as JSON. A file that does not validate is a
