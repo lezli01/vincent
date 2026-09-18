@@ -54,6 +54,9 @@ scoped to a project, that gets its own worktree and `vincent/{id}-{slug}` branch
 exactly as a task does — so you can ask about a repository, read the answer, and
 ask the next question with the first still in context.
 
+![A chat in the TUI: the prompt as a right-aligned bubble, the agent's answer
+rendered below it, and the composer under them](assets/tui-chat.png)
+
 Continuity is the agent CLI resuming **its own** session, not vincent replaying
 the conversation into the next prompt. That means only an adapter that can
 resume may hold a chat — all three of `claude`, `codex` and `cursor` can, each

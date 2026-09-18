@@ -136,3 +136,8 @@ Closing it is a seeded VHS run on a macOS or Linux workstation
 (VHS, ttyd, ffmpeg; CI does not run it) that first grows a chat tape. Until
 then `docs/guides/tui.md` describes the panel in prose and a key table, and
 nothing here is hand-drawn to stand in for a capture.
+
+*Done 2026-09-18 ([#413](https://github.com/lezli01/vincent/issues/413)):*
+`tui-chat.png` is of this body at `quiet` — the tape presses `ctrl+r` twice
+from the default `normal`, so the level in the header is a level a reader has
+chosen rather than the one every other capture happens to be on.

@@ -223,3 +223,10 @@ panels is a seeded VHS run on a macOS or Linux workstation, and this task
 deliberately does not ship a drawing in the meantime. `docs/guides/tui.md`
 describes both panels in prose and key tables until that run happens (tracked in
 [#413](https://github.com/lezli01/vincent/issues/413), 2026-09-13).
+
+*Done 2026-09-18 ([#413](https://github.com/lezli01/vincent/issues/413)):* the
+run happened. `scripts/screenshots.sh` seeds four chats — one conversation of
+two finished turns, one on a second adapter, one `running` and one waiting on a
+human — and captures both panels: `tui-chats.png` and `tui-chat.png`, with
+`tui-chat-handoff.png` and `tui-chat-copy.png` for the two popups over the
+workspace.

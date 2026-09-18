@@ -292,3 +292,9 @@ the whole palette → replay → effect path.
 - **No new screenshot.** Raw is a display state of an existing panel and the
   picker is a panel no capture shows; the chat views have never been captured at
   all (task 071, "Not done here").
+  *Amended 2026-09-18 ([#413](https://github.com/lezli01/vincent/issues/413)):*
+  the copy picker is now captured — `tui-chat-copy.png`, over a seeded
+  conversation whose answers carry fenced blocks and links so the rows have
+  something to offer. Raw (`ctrl+o`) still has no capture, for the reason above:
+  it is a display state, and the shot would differ from `tui-chat.png` only in
+  the punctuation.

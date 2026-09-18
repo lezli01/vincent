@@ -154,3 +154,7 @@ coordinates and expected no scroll would encode the design decision 1 rejects.
   `scripts/screenshots.sh` has no chat tape and there is no `tui-chat*.png` — so
   the restored hint line appears in no existing image. A chat capture is worth
   adding next time the script is walked, not a reason to block this.
+  *Amended 2026-09-18 ([#413](https://github.com/lezli01/vincent/issues/413)):*
+  the script was walked and the capture added — the restored hint line is the
+  row under the composer in `tui-chat.png`. The wheel itself is still not
+  visible in a still.

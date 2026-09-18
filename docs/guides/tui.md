@@ -1488,6 +1488,10 @@ with an agent, each in its own worktree. Chats are not tasks and never appear on
 the task board, so they get a board of their own: one row per conversation, with
 its id, state, agent, last activity and title, grouped by project.
 
+![The chats board grouped by project: a chat waiting on you sorted to the top
+and counted in the header badge, a running turn with its glyph beside the
+`running` label, and two finished conversations](../assets/tui-chats.png)
+
 Grouping is by project only: `tui.board.group_by`'s workflow levels mean nothing
 for a chat, which runs no workflow, so `g` is not offered here. Folds persist in
 `{data_dir}/tui.json` separately from the task board's, so folding a project
@@ -1599,6 +1603,10 @@ not read as one more row of the conversation. The border comes out of the pane's
 height rather than being added on top of it: the screen is the same height it
 always was, and the hint line is still the last row of it.
 
+![The chat workspace at `quiet`: the second turn's prompt as a right-aligned
+bubble, the answer rendered below it with its fenced block, and the titled
+`message` composer under them](../assets/tui-chat.png)
+
 **While a turn runs, an in-progress indicator sits just above that box** — a
 turning glyph and an elapsed clock, `⠋ working… 14s` — for the whole time the
 turn is in `running`, not only until its first chunk arrives. That is the point
@@ -1640,6 +1648,9 @@ sorts into the board's done band, and it cannot be sent to, archived or handed
 off again. Only an idle chat can be handed off, and a worktree in the middle of
 a merge or rebase is refused with the operation named.
 
+![The handoff form on its Git & priority step, with the base branch and the
+branch both marked `(from the chat)`](../assets/tui-chat-handoff.png)
+
 A chat [opened on a task](#talking-to-an-agent-about-a-task) is the other way
 round: its header reads `on task #N`, the worktree is already that task's, and
 so `ctrl+t` is not offered and declines if pressed. `ctrl+q` ends it instead —
@@ -1663,6 +1674,14 @@ reasoning is truncated to its first lines and the run header appears. At
 model — which sit behind a `… N unrecognized line(s) (ctrl+r)` count at
 `compact` and `normal`, and leave no trace at all at `quiet`, rather than
 filling the screen.
+
+`ctrl+y` and `ctrl+l` are the task pane's
+[reader actions](#seeing-the-source-and-taking-it-away) on this prose — the same
+popups, over the conversation's assistant messages rather than one task's.
+
+![The chat workspace with the copy picker open: a group per assistant message,
+each offering its markdown, its plain text and each fenced block in
+it](../assets/tui-chat-copy.png)
 
 Scrolling away from the end pauses follow; `ctrl+g` jumps back and re-arms it.
 The **mouse wheel** does this too — a line per tick, from anywhere in the view,
