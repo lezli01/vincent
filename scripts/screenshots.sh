@@ -39,6 +39,7 @@ SHOTS="${SHOTS%/}"
 BIN="$SHOTS/bin"
 CONFIG_DIR="$SHOTS/config"
 DATA_DIR="$SHOTS/data"
+HOME_DIR="$SHOTS/home"
 REPOS="$SHOTS/repos"
 TAPES="$SHOTS/tapes"
 GIFS="$SHOTS/gifs"
@@ -114,7 +115,19 @@ daemon_up() {
   # $BIN leads the daemon's PATH so the `gh` it resolves is the wrapper around
   # cmd/fakegh, and no token reaches it: a `gh` that failed to answer would
   # otherwise fall back to a REST call against api.github.com.
-  env -u GITHUB_TOKEN -u GH_TOKEN PATH="$BIN:$PATH" "$VINCENT" daemon start >/dev/null
+  #
+  # $HOME is the seeded one (see seed_home), so the skills the daemon view
+  # reports are the seed's and not the maintainer's. Go's caches are pinned
+  # to the real ones first: the soak step runs `go test` under this HOME, and
+  # a cold build cache would spend the first minute of it compiling the
+  # standard library.
+  local gocache gomodcache gopath
+  gocache="$(go env GOCACHE)"
+  gomodcache="$(go env GOMODCACHE)"
+  gopath="$(go env GOPATH)"
+  env -u GITHUB_TOKEN -u GH_TOKEN HOME="$HOME_DIR" GOCACHE="$gocache" \
+    GOMODCACHE="$gomodcache" GOPATH="$gopath" PATH="$BIN:$PATH" \
+    "$VINCENT" daemon start >/dev/null
   PORT="$(jq -r .port "$DATA_DIR/daemon.json")"
   TOKEN="$(cat "$DATA_DIR/token")"
   BASE="http://127.0.0.1:$PORT/v1"
@@ -192,6 +205,22 @@ GOTEST
   git -C "$dir" push -q origin main
 }
 
+# seed_home — the $HOME the daemon and every tape's TUI run under (issue
+# #415). Two things vincent reads hang off it: the published-skill store the
+# daemon view's skills line reports on (§9.8, task 095), and claude's
+# settings.json, whose status line the same view offers to set up (task 082).
+# Without it those two lines would photograph the maintainer's own machine.
+# One skill is installed a version behind and linked into claude, and the
+# other is not installed at all, so the offer has both kinds of row.
+seed_home() {
+  local store="$HOME_DIR/.agents/skills/vincent-workflows"
+  mkdir -p "$store" "$HOME_DIR/.claude/skills"
+  sed 's/^  version: .*/  version: 1.0.0/' "$ROOT/skills/vincent-workflows/SKILL.md" > "$store/SKILL.md"
+  grep -qx '  version: 1.0.0' "$store/SKILL.md" \
+    || fail "seed_home: skills/vincent-workflows/SKILL.md carries no metadata.version to wind back"
+  ln -s ../../.agents/skills/vincent-workflows "$HOME_DIR/.claude/skills/vincent-workflows"
+}
+
 # agent_wrapper NAME ENV... — the config points each adapter at its own
 # wrapper so one daemon can run three different fake CLIs at once: a slow one
 # whose tasks stay `running` for the camera, a fast one that drives tasks
@@ -258,7 +287,8 @@ do_seed() {
   command -v jq >/dev/null 2>&1 || fail "jq is not on PATH"
 
   do_clean >/dev/null 2>&1 || true
-  mkdir -p "$BIN" "$CONFIG_DIR/workflows" "$CONFIG_DIR/triggers" "$DATA_DIR" "$REPOS" "$TAPES" "$GIFS" "$SESSIONS"
+  mkdir -p "$BIN" "$CONFIG_DIR/workflows" "$CONFIG_DIR/triggers" "$DATA_DIR" "$HOME_DIR" "$REPOS" "$TAPES" "$GIFS" "$SESSIONS"
+  seed_home
 
   # Built with the release ldflags rather than plain `go build`: the TUI
   # header prints its own version, and an uninjected build prints the module
@@ -462,6 +492,140 @@ steps:
     run: git log -1 --oneline
 EOF
 
+  # Declared fields (tasks 022 and 058), for the New task shot of them: one of
+  # every type, a pattern, a required enum with a default, and a `multiple`
+  # one. No task is created from it — the form is the picture.
+  cat > "$CONFIG_DIR/workflows/change-request.yaml" <<'EOF'
+name: change-request
+description: Apply a ticketed production change, canary first, and verify it.
+fields:
+  - name: ticket
+    label: Ticket
+    description: The change ticket, with its project prefix.
+    type: string
+    required: true
+    pattern: '^CHG-[0-9]+$'
+  - name: environment
+    label: Environment
+    description: Where the change lands first.
+    type: enum
+    required: true
+    values: [dev, staging, prod]
+    default: staging
+  - name: regions
+    label: Regions
+    description: Every region the rollout reaches.
+    type: enum
+    multiple: true
+    values: [us-east, us-west, eu-west, ap-south]
+  - name: canary
+    label: Canary percent
+    type: integer
+    default: 5
+  - name: dry-run
+    label: Dry run
+    description: Plan the change without applying it.
+    type: boolean
+    default: true
+defaults:
+  agent: cursor
+steps:
+  - id: plan
+    type: agent
+    prompt: 'Plan {{ index .Task.Fields "ticket" }} for {{ index .Task.Fields "environment" }}: {{.Task.Title}}'
+  - id: apply
+    type: command
+    run: 'git commit -q --allow-empty -m "{{ index .Task.Fields "ticket" }}: {{.Task.Title}}"'
+EOF
+
+  # A loop (§7.8, task 083), for the shot of its rollup and its iteration
+  # tiers: once per service, and the fourth one fails. The task blocks inside
+  # the loop rather than running in it, so it holds no slot and the picture
+  # does not depend on when it is taken — three folded passes above the one
+  # it stopped on, which is the pass a reader arrives to read.
+  cat > "$CONFIG_DIR/workflows/service-migrations.yaml" <<'EOF'
+name: service-migrations
+description: Migrate each service's schema in turn, verifying each before the next.
+defaults:
+  agent: cursor
+  max_retries: 0
+steps:
+  - id: preflight
+    type: command
+    run: git log -1 --oneline
+  - id: services
+    type: loop
+    for_each: [auth, billing, search, ledger, gateway]
+    steps:
+      - id: migrate
+        type: command
+        run: |
+          echo "{{ .Loop.Item }}: applying 0042_add_tenant_id.up.sql"
+          {{ if eq .Loop.Item "ledger" }}echo "ledger: lock timeout after 30s on ledger.entries, held by a reporting job"
+          exit 1{{ end }}
+          echo "{{ .Loop.Item }}: migrated, 3 tables altered"
+      - id: verify
+        type: agent
+        prompt: 'Check every read path of the {{ .Loop.Item }} service against the migrated schema.'
+  - id: sign_off
+    type: manual
+    instructions: Sign off on the migrated services.
+EOF
+
+  # A multi-round fan_out (§7.6, task 084), for the shots of the lane tree,
+  # the lane selector and the per-lane diff: two lanes, and a third that
+  # `needs` both and so is spawned in a second round, cut from a branch that
+  # already has the first two merged into it. It parks at a gate, which holds
+  # no slot, so the parent sits in `awaiting_children` with one round merged
+  # and one waiting on a human.
+  cat > "$CONFIG_DIR/workflows/platform-upgrade.yaml" <<'EOF'
+name: platform-upgrade
+description: Upgrade the storage driver and its client side by side, then switch the handlers over.
+defaults:
+  agent: cursor
+  max_retries: 0
+steps:
+  - id: plan
+    type: command
+    run: |
+      printf '# v2 storage driver\n\n1. storage: open connections through the v2 driver\n2. client: adopt the v2 client\n3. handlers: switch over once both have merged\n' > docs/upgrade-plan.md
+      git add -A && git commit -q -m "plan the v2 storage upgrade"
+  - id: upgrade
+    type: fan_out
+    lanes:
+      - id: storage
+        steps:
+          - {id: storage_impl, type: agent, prompt: 'Open connections through the v2 storage driver.'}
+          - id: storage_commit
+            type: command
+            run: |
+              printf '\n// OpenV2 opens a connection through the v2 driver.\nfunc OpenV2() error { return nil }\n' >> internal/cache.go
+              git add -A && git commit -q -m "storage: open connections through the v2 driver"
+      - id: client
+        steps:
+          - {id: client_impl, type: agent, prompt: 'Adopt the v2 storage client in the request path.'}
+          - id: client_commit
+            type: command
+            run: |
+              printf '\n// Client names the storage client the request path uses.\nfunc Client() string { return "v2" }\n' >> internal/server.go
+              git add -A && git commit -q -m "client: adopt the v2 storage client"
+      - id: handlers
+        needs: [storage, client]
+        steps:
+          - {id: handlers_impl, type: agent, prompt: 'Switch the handlers over to the v2 driver and client.'}
+          - id: handlers_commit
+            type: command
+            run: |
+              printf '\n// LimitV2 is the limit, read through the v2 driver.\nfunc LimitV2() int { return Limit() }\n' >> internal/limits.go
+              git add -A && git commit -q -m "handlers: switch to the v2 driver"
+          - id: handlers_review
+            type: manual
+            instructions: Read the handler diff before the upgrade joins.
+  - id: release
+    type: manual
+    instructions: Approve the v2 storage upgrade.
+EOF
+
   say "repositories"
   local p
   for p in api web docs-portal platform-infra agent-adapters release-tooling security-labs; do
@@ -606,6 +770,21 @@ EOF
   chat_send "$C_ASK" 'Should the adapter probe its model catalog on every start, or cache it?'
   wait_chat "$C_ASK" awaiting_input 120
 
+  # Archived chats (task 092, issue #415): two finished conversations, ended.
+  # cursor rather than claude — claude now points at the wrapper that asks —
+  # and after the chats above, so the live board's chat ids are unchanged.
+  ended_chat() { # ended_chat PROJECT TITLE MESSAGE
+    local id
+    id="$(newchat "$1" cursor "$2")"
+    chat_send "$id" "$3"
+    wait_chat "$id" idle 120
+    api POST "/chats/$id/archive" >/dev/null
+  }
+  ended_chat "$P_REL" 'how are the release notes assembled?' \
+    'Where do the release notes come from, and who edits them before a tag?'
+  ended_chat "$P_API" 'is the retry budget per step or per task?' \
+    'Is max_retries spent per step, or across the whole task?'
+
   # The usage window, last of the claude work for the reason write_config
   # gives: the observation outlives the swap, so nothing that needs an answer
   # from claude may come after this. The task parks on the §11 hold task 003
@@ -647,6 +826,45 @@ EOF
   sleep 2 # the registry watcher
   T_BLOCK="$(add "$P_REL" publish-check 'verify the signed checksums')"
   wait_state "$T_BLOCK" blocked 120
+
+  # Everything from here to the slow lane was added for issue #415, and is
+  # seeded here rather than at the end because it has to run: once the slow
+  # lane below is admitted, every slot is taken for the rest of the run.
+
+  # The loop: three passes that succeed and a fourth that blocks, so the
+  # board's STEP column carries the rollup and the timeline the tiers.
+  T_LOOP="$(add "$P_INFRA" service-migrations 'add tenant_id to every service schema')"
+  wait_state "$T_LOOP" blocked 120
+
+  # The fan-out: round 0's two lanes run, finish and are merged, and the
+  # merge spawns round 1's lane, which parks at its gate.
+  T_FAN="$(add "$P_API" platform-upgrade 'move to the v2 storage driver')"
+  local gated=""
+  for (( i = 0; i < 240; i++ )); do
+    gated="$(api GET "/tasks?parent_id=$T_FAN" | jq -r '[.[] | select(.state == "awaiting_gate")] | length')"
+    [[ "$gated" == "1" ]] && break
+    sleep 0.5
+  done
+  [[ "$gated" == "1" ]] || fail "task $T_FAN never spawned its second round to a gate: $(api GET "/tasks?parent_id=$T_FAN" | jq -c '[.[] | {id, state}]')"
+  wait_state "$T_FAN" awaiting_children 60
+
+  # Archived tasks (task 092): what the archived board lists — one that
+  # finished on its own, one that went through its gate, and one cancelled
+  # before it ever ran.
+  local archived
+  archived="$(add "$P_INFRA" incident-response 'roll back the eu-west DNS change')"
+  wait_state "$archived" done 120
+  api POST "/tasks/$archived/archive" >/dev/null
+  archived="$(add "$P_ADAPT" feature-pr 'drop the codex 0.9 compatibility shim')"
+  wait_state "$archived" awaiting_gate 120
+  api POST "/tasks/$archived/approve" >/dev/null
+  wait_state "$archived" done 120
+  api POST "/tasks/$archived/archive" >/dev/null
+  archived="$(add "$P_DOCS" docs-refresh 'retire the v1 API reference' '"paused":true')"
+  wait_state "$archived" paused 30
+  api POST "/tasks/$archived/cancel" >/dev/null
+  wait_state "$archived" aborted 30
+  api POST "/tasks/$archived/archive" >/dev/null
 
   # A transcript long enough that the output pane has to truncate it. The cap
   # is 5000 records and only *live* chunks trip it (internal/tui/detail.go), so
@@ -700,6 +918,10 @@ EOF
   # two events it already shows as `seeded` ledger rows and fires nothing —
   # the events file is never appended to, so no task comes of it and the board
   # shots are unchanged — beside a disabled GitHub source, which never polls.
+  # The interval is an hour because the first poll is the one that matters:
+  # every later one records the same two events again as a `deduped` pair, and
+  # at 30s a full capture run reached the triggers tape with a ledger of
+  # nothing else.
   say "triggers"
   printf '%s\n' '{"id":"build-4211","branch":"feat/1-add-rate-limiting"}' \
     '{"id":"build-4212","branch":"feat/2-bump-the-design-tokens"}' > "$SHOTS/ci-events.ndjson"
@@ -709,7 +931,7 @@ enabled: true
 source:
   type: command
   project: $P_API
-  poll_interval: 30s
+  poll_interval: 1h
   command: ["$FAKEAGENT", "trigger-poll", "$SHOTS/ci-events.ndjson"]
 action:
   type: create_task
@@ -756,7 +978,9 @@ EOF
 # ---------------------------------------------------------------------------
 
 # tape NAME HEIGHT_PX BODY — writes a tape with the shared frame settings and
-# runs it. Only the launch is hidden — VHS writes no screenshot for a frame
+# runs it. The TUI is started under the seeded $HOME, for the status-line row
+# seed_home explains; VHS itself is not, because its headless browser lives
+# under the real one. Only the launch is hidden — VHS writes no screenshot for a frame
 # reached by keys pressed while hidden, so every tape shows its own driving —
 # and every keystroke is followed by
 # a sleep: VHS types faster than a human, and a key that lands before Bubble
@@ -784,7 +1008,7 @@ Set Theme "TokyoNight"
 Set TypingSpeed 12ms
 
 Hide
-Type "clear && vincent" Enter
+Type "clear && HOME=$HOME_DIR vincent" Enter
 Sleep 5s
 Show
 $body
@@ -803,6 +1027,14 @@ do_capture() {
   command -v vhs >/dev/null 2>&1 || fail "vhs is not on PATH — brew install vhs"
   daemon_attach
   mkdir -p "$TAPES" "$GIFS" "$OUT"
+
+  # The three Workflows tapes open the fan-out workflow by its row, and the
+  # global block is sorted by name — so every workflow the seed or the
+  # built-ins add moves it. The row is looked up rather than counted by hand,
+  # which is how those tapes once photographed docs-refresh instead.
+  local wf_row
+  wf_row="$(api GET /workflows | jq '[.workflows[].name] | sort | index("feature-delivery")')"
+  [[ "$wf_row" =~ ^[0-9]+$ ]] || fail "feature-delivery is not in the global registry"
 
   # The board-only home screen, filtered to one running task.
   tape tui-board 1250 '
@@ -913,14 +1145,15 @@ Type "workflows"
 Sleep 1s
 Enter
 Sleep 3s
-Down 3
+Down '"$wf_row"'
 Sleep 1s
 Type "g"
 Sleep 4s
 Screenshot "'"$OUT"'/tui-workflow-graph.png"
 '
 
-  # The same graph with the step-detail popup open on a node: the prompt in
+  # The same graph with the step-detail popup open on `plan`, the node the
+  # graph opens on: the prompt in
   # full, and the values inherited from the file'"'"'s defaults block marked as
   # inherited. The graph beneath is the shot above and is unchanged, which is
   # why this is a second tape rather than a replacement.
@@ -940,7 +1173,7 @@ Type "workflows"
 Sleep 1s
 Enter
 Sleep 3s
-Down 3
+Down '"$wf_row"'
 Sleep 1s
 Type "i"
 Sleep 4s
@@ -957,12 +1190,10 @@ Type "workflows"
 Sleep 1s
 Enter
 Sleep 3s
-Down 3
+Down '"$wf_row"'
 Sleep 1s
 Type "g"
 Sleep 4s
-Down 1
-Sleep 1s
 Enter
 Sleep 3s
 Screenshot "'"$OUT"'/tui-workflow-step.png"
@@ -1285,6 +1516,206 @@ Sleep 2s
 Type "P"
 Sleep 3s
 Screenshot "'"$OUT"'/tui-create-pr.png"
+Sleep 2s
+'
+
+  # Everything below was added for issue #415, and follows the tapes of #414
+  # for the reason given above them.
+
+  # New task on the workflow that declares fields (tasks 022, 058). The
+  # workflow picker narrows only behind `/` — a letter typed into it is a
+  # key, and the `q` in "request" quits the TUI — so the tape filters, then
+  # commits the filter and the choice with two enters. In Fields the ticket
+  # gets a value, and the `multiple` enum is left open with two regions
+  # ticked: the list is the only way to change one.
+  tape tui-new-task-fields 1250 '
+Type "n"
+Sleep 3s
+Down 1
+Sleep 500ms
+Enter
+Sleep 1s
+Type "/"
+Sleep 500ms
+Type "change"
+Sleep 1s
+Enter
+Sleep 1s
+Enter
+Sleep 1s
+Down 1
+Sleep 500ms
+Enter
+Sleep 500ms
+Type "rotate the eu-west database credentials"
+Sleep 500ms
+Enter
+Sleep 500ms
+Down 2
+Sleep 500ms
+Enter
+Sleep 1s
+Enter
+Sleep 500ms
+Type "CHG-2291"
+Sleep 500ms
+Enter
+Sleep 1s
+Down 2
+Sleep 500ms
+Enter
+Sleep 1s
+Space
+Sleep 500ms
+Down 2
+Sleep 500ms
+Space
+Sleep 2s
+Screenshot "'"$OUT"'/tui-new-task-fields.png"
+Sleep 2s
+'
+
+  # The loop (task 083), on the task blocked in its fourth pass: the rollup
+  # on the header line, and the passes folded shut with the one it stopped on
+  # open. `up` stops on the folded pass above it and `right` opens that one
+  # too, so the picture has a pass that succeeded beside the one that did not.
+  tape tui-loop 1400 '
+Type "/"
+Sleep 500ms
+Type "tenant_id"
+Sleep 1s
+Tab
+Sleep 1s
+Enter
+Sleep 4s
+Up 1
+Sleep 1s
+Right
+Sleep 2s
+Screenshot "'"$OUT"'/tui-loop.png"
+Sleep 2s
+'
+
+  # The fan-out (task 084), parked between its two rounds. On the board, `L`
+  # hangs its three lanes under it.
+  tape tui-lanes 1250 '
+Type "/"
+Sleep 500ms
+Type "v2 storage"
+Sleep 1s
+Tab
+Sleep 1s
+Type "L"
+Sleep 3s
+Screenshot "'"$OUT"'/tui-lanes.png"
+Sleep 2s
+'
+
+  # The Output tab, with `>` moved off the task and onto its first lane.
+  tape tui-lane-output 1250 '
+Type "/"
+Sleep 500ms
+Type "v2 storage"
+Sleep 1s
+Tab
+Sleep 1s
+Enter
+Sleep 3s
+Type "3"
+Sleep 2s
+Type ">"
+Sleep 3s
+Screenshot "'"$OUT"'/tui-lane-output.png"
+Sleep 2s
+'
+
+  # The Diff tab, grouped by lane: `O` opens everything, and `enter` folds
+  # the first lane again so the frame holds all three sections.
+  tape tui-lane-diff 1250 '
+Type "/"
+Sleep 500ms
+Type "v2 storage"
+Sleep 1s
+Tab
+Sleep 1s
+Enter
+Sleep 3s
+Type "4"
+Sleep 4s
+Type "O"
+Sleep 2s
+Enter
+Sleep 2s
+Screenshot "'"$OUT"'/tui-lane-diff.png"
+Sleep 2s
+'
+
+  # The pull requests screen (task 052): the open listing of the one GitHub
+  # project, with #412 claimed by the task the reconciler linked it to.
+  tape tui-pull-requests 1050 '
+Type ":"
+Sleep 1s
+Type "pull requests"
+Sleep 1s
+Enter
+Sleep 5s
+Screenshot "'"$OUT"'/tui-pull-requests.png"
+Sleep 2s
+'
+
+  # The two archived boards (task 092), each opened from the palette.
+  tape tui-archived 1050 '
+Type ":"
+Sleep 1s
+Type "archived tasks"
+Sleep 1s
+Enter
+Sleep 4s
+Screenshot "'"$OUT"'/tui-archived.png"
+Sleep 2s
+'
+
+  tape tui-archived-chats 1050 '
+Type ":"
+Sleep 1s
+Type "archived chats"
+Sleep 1s
+Enter
+Sleep 4s
+Screenshot "'"$OUT"'/tui-archived-chats.png"
+Sleep 2s
+'
+
+  # The daemon view with `tab` on the config list (task 060): every key,
+  # its value, and the default where the two differ, with the adapters and
+  # their usage windows below.
+  tape tui-daemon-config 1400 '
+Type ":"
+Sleep 1s
+Type "daemon"
+Sleep 1s
+Enter
+Sleep 4s
+Tab
+Sleep 1s
+Down 3
+Sleep 2s
+Screenshot "'"$OUT"'/tui-daemon-config.png"
+Sleep 2s
+'
+
+  # The skills offer (`S`, task 095), over the seeded home: one skill a
+  # version behind and linked into claude, one not installed.
+  tape tui-skills 1400 '
+Type ":"
+Sleep 1s
+Type "daemon"
+Sleep 1s
+Enter
+Sleep 4s
+Type "S"
+Sleep 2s
+Screenshot "'"$OUT"'/tui-skills.png"
 Sleep 2s
 '
 }
