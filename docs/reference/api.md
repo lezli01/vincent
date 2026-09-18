@@ -1337,7 +1337,7 @@ when given, is the file stem the document's own `id` must match.
 `{ top_level[], sources[], actions[], limits[], signature[] }`. A field row is
 `{ name, control, values[]?, required?, default?, help?, dangerous[]? }`, and
 a variant is `{ type, fields[], help?, events[]?, trusted[]? }`. The source
-types are `command`, `github_issues`, `github_prs` and `http`. The action types
+types are `command`, `github_issues`, `github_prs`, `http` and `schedule`. The action types
 are `create_task` and the three reactions, `follow_up`, `retry` and `cancel`.
 On a GitHub source, `events[]` names the events it emits, and `trusted[]` the
 ones a trigger may match without naming `allowed_actors`. `control` adds
@@ -1403,7 +1403,9 @@ alone, but the command itself runs with whatever effects it has.
 - `cursor` is the watermark the command printed, which a real poll would store.
 - A command that fails or times out, or a listing that fails, is still a
   `200`: `error` says why, `events[]` is empty and the other fields are zero.
-- A `type: http` trigger has no poll, and is a `400`.
+- A `type: http` trigger is pushed and a `type: schedule` trigger is a clock:
+  neither has a source to run once, so both are a `400`. Judge a supplied event
+  with `/test` instead.
 
 ### The delivery ledger
 

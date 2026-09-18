@@ -18,7 +18,8 @@ import (
 // disarms triggers as the registry and `triggers.enabled` change, polls the
 // armed `type: command` ones on their own goroutines, judges the GitHub ones
 // when the reconciler's tick hands it a listing, accepts pushed events for
-// `type: http`, and answers the two dry runs.
+// `type: http`, strikes the armed `type: schedule` ones on its own
+// wall-clock tick, and answers the two dry runs.
 //
 // The rules it enforces are decision 16's:
 //
@@ -33,11 +34,24 @@ import (
 //     cursor, so re-arming seeds again and an off period never fires; a file
 //     that leaves the registry drops it too, while an invalid file keeps it;
 //   - a restart is neither: the cursor persists, and the next poll is a
-//     capped catch-up (decision 13).
+//     capped catch-up (decision 13), or for a schedule one fire for however
+//     many occurrences were missed (task 121).
 
 // reconcileEvery is how long an arming change can wait when no Wake reaches
 // the manager. Every change the daemon makes wakes it; this is the backstop.
 const reconcileEvery = 5 * time.Second
+
+// scheduleEvery is how often the schedule tick compares every armed
+// schedule's anchor against the wall clock (task 121).
+//
+// A tick rather than a `time.NewTimer(untilNextOccurrence)` per trigger,
+// because Go's timers run on the monotonic clock, which does not advance
+// while a laptop is asleep — a timer would come due hours late on exactly
+// the machine this source is for. Reading the wall clock makes suspend, a
+// daemon restart and a config edit one code path: each is only "the anchor is
+// older than the last due occurrence". One second, because that is what keeps
+// the `every:` floor honest; the five-second reconcile tick would not.
+const scheduleEvery = time.Second
 
 // githubOverlap is how far before its watermark a GitHub listing starts. The
 // gh leg answers through the search index, which lags writes by seconds to
@@ -81,6 +95,10 @@ type Manager struct {
 
 	warnMu sync.Mutex
 	warned map[string]bool
+
+	// schedMu serializes the schedule tick against itself: the tick is one
+	// goroutine, but Stop and a test's manual tick must not overlap it.
+	schedMu sync.Mutex
 
 	// ghMu serializes GitHub judging, and ingestMu pushed events: each keeps
 	// the dedupe lookup and the ledger write of one delivery from
@@ -137,11 +155,15 @@ func NewManager(deps Deps) *Manager {
 // the daemon builds its GitHub client after the manager; call it before Start.
 func (m *Manager) SetGitHubLister(l GitHubLister) { m.deps.GitHub = l }
 
-// Start runs the arming loop until Stop or ctx is done.
+// Start runs the arming loop and the schedule tick until Stop or ctx is done.
 func (m *Manager) Start(ctx context.Context) {
 	ctx, m.cancel = context.WithCancel(ctx)
 	m.done = make(chan struct{})
-	go m.loop(ctx)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); m.loop(ctx) }()
+	go func() { defer wg.Done(); m.scheduleLoop(ctx) }()
+	go func() { wg.Wait(); close(m.done) }()
 }
 
 // Stop ends the loop and every poller, and waits for them.
@@ -162,7 +184,6 @@ func (m *Manager) Wake() {
 }
 
 func (m *Manager) loop(ctx context.Context) {
-	defer close(m.done)
 	ticker := time.NewTicker(reconcileEvery)
 	defer ticker.Stop()
 	m.reconcile(ctx)
@@ -287,6 +308,110 @@ func (m *Manager) startPoller(ctx context.Context, e Entry) *poller {
 		}
 	}()
 	return p
+}
+
+// scheduleLoop is the wall-clock tick task 121 runs on: one goroutine
+// walking every armed schedule, rather than a timer per trigger.
+func (m *Manager) scheduleLoop(ctx context.Context) {
+	ticker := time.NewTicker(scheduleEvery)
+	defer ticker.Stop()
+	for {
+		m.tickSchedules(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+// tickSchedules is one pass over the armed schedules.
+func (m *Manager) tickSchedules(ctx context.Context) {
+	m.schedMu.Lock()
+	defer m.schedMu.Unlock()
+	for _, e := range m.deps.Registry.List() {
+		if ctx.Err() != nil {
+			return
+		}
+		if !m.Armed(&e) || !e.Def.IsSchedule() {
+			continue
+		}
+		m.tickSchedule(ctx, e.Def)
+	}
+}
+
+// tickSchedule compares one armed schedule's stored anchor against the wall
+// clock. It writes the cursor row on exactly two occasions — the seed and a
+// fire — so an idle schedule costs one read a second and no write.
+func (m *Manager) tickSchedule(ctx context.Context, d *Definition) {
+	log := m.log.With("trigger", d.ID)
+	sch, err := ParseSchedule(d.Source)
+	if err != nil {
+		// Unreachable: an armed entry validated, and validateSchedule refuses
+		// everything ParseSchedule does. Recorded rather than ignored.
+		log.Warn("trigger schedule not parsed", "error", err)
+		return
+	}
+	prev, err := m.cursorOf(ctx, d.ID)
+	if err != nil {
+		if ctx.Err() == nil {
+			log.Warn("trigger cursor not read", "error", err)
+		}
+		return
+	}
+	now := m.deps.Now()
+	// Arming seeds the anchor at now and fires nothing (decision 2): the
+	// first occurrence a schedule ever fires is one that falls after the
+	// keypress that armed it. Disarming drops the cursor (decision 16), so a
+	// disable/enable cycle re-seeds and an off period never fires — while a
+	// daemon stop, a suspend or a reboot is none of those and keeps the
+	// anchor, which is the case this source exists for.
+	anchor, seeded := scheduleAnchor(prev)
+	if !seeded {
+		next := carry(d.ID, prev, now)
+		stamp := now.UTC().Format(store.TimeFormat)
+		next.Cursor, next.LastPollOK = &stamp, true
+		log.Info("trigger schedule seeded", "anchor", stamp)
+		m.putCursor(ctx, prev, next)
+		return
+	}
+	due := sch.LastDue(anchor, now)
+	if due.IsZero() {
+		return
+	}
+	// One fire however many occurrences were missed: a weekend of downtime
+	// produces one task, not forty. Decision 13's catch-up cap is not reused
+	// here because fire-once is a strictly stronger bound.
+	del, err := fire(ctx, m.deps.Store, m.deps.Handler, d, sch.Event(due), now)
+	if err != nil {
+		// The anchor stays put, so the occurrence is judged again next tick;
+		// the ledger dedupes it if the row was in fact written.
+		if ctx.Err() == nil {
+			log.Error("trigger delivery not recorded", "error", err)
+		}
+		return
+	}
+	next := carry(d.ID, prev, now)
+	stamp := due.UTC().Format(store.TimeFormat)
+	next.Cursor, next.LastPollOK = &stamp, true
+	if del.Outcome == store.DeliveryFired {
+		next.LastFireAt = &now
+	}
+	m.putCursor(ctx, prev, next)
+}
+
+// scheduleAnchor reads the last handled occurrence out of the cursor column
+// (decision 2). An unparseable value is treated as unseeded, which re-seeds
+// at now and fires nothing — the safe direction.
+func scheduleAnchor(prev *store.TriggerCursor) (time.Time, bool) {
+	if prev == nil || prev.Cursor == nil {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(store.TimeFormat, *prev.Cursor)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
 }
 
 // cursorOf reads a trigger's cursor row, nil when it has none.
@@ -475,8 +600,9 @@ func (m *Manager) Test(ctx context.Context, id string, ev Event) (*Judgement, er
 	return judge(ctx, m.deps.Store, e.Def, ev, m.deps.Now())
 }
 
-// ErrNoPoll is a live-poll dry run against a source that has no poll.
-var ErrNoPoll = errors.New("a type: http trigger has no poll; push a sample to POST /v1/triggers/{id}/test instead")
+// ErrNoPoll is a live-poll dry run against a source that has no poll: `http`
+// is pushed and `schedule` is the clock, so neither has a source to run once.
+var ErrNoPoll = errors.New("this source has no poll; send a sample event to POST /v1/triggers/{id}/test instead")
 
 // DryPoll is what the second dry run found.
 type DryPoll struct {
@@ -512,7 +638,7 @@ func (m *Manager) PollDry(ctx context.Context, id string) (*DryPoll, error) {
 	var events []Event
 	out := &DryPoll{Events: []*Judgement{}}
 	switch {
-	case d.Source.Type == SourceHTTP:
+	case d.Source.Type == SourceHTTP, d.IsSchedule():
 		return nil, ErrNoPoll
 	case d.IsGitHub():
 		snap, seeded := decodeSnapshot(prev)

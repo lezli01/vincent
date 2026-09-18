@@ -29,6 +29,10 @@ const (
 	// SourceHTTP accepts a pushed, signed event on
 	// POST /v1/triggers/{id}/events (096.5, decision 31G).
 	SourceHTTP = "http"
+	// SourceSchedule is the clock: a cron expression or a fixed interval,
+	// evaluated against the wall clock on the manager's one-second tick
+	// (task 121). Nothing downstream of the source knows the difference.
+	SourceSchedule = "schedule"
 )
 
 // Action types.
@@ -122,6 +126,14 @@ type Source struct {
 	Project      int64    `yaml:"project" json:"project"`
 	PollInterval string   `yaml:"poll_interval" json:"poll_interval,omitempty"`
 	Command      []string `yaml:"command" json:"command,omitempty"`
+	// Cron and Every are a `type: schedule` source's position, exactly one
+	// of them set (task 121). Cron is the five-field grammar CronGrammar
+	// states; Every is a duration counted from the anchor arming stored.
+	Cron  string `yaml:"cron" json:"cron,omitempty"`
+	Every string `yaml:"every" json:"every,omitempty"`
+	// Timezone is the IANA zone a cron expression is read in, and the zone
+	// `.Event`'s broken-out parts are in. Absent means the daemon host's.
+	Timezone string `yaml:"timezone" json:"timezone,omitempty"`
 	// Signature is a `type: http` source's verification (decision 31G).
 	Signature *Signature `yaml:"signature" json:"signature,omitempty"`
 }
@@ -188,8 +200,12 @@ func (d *Definition) EffectivePermission() string {
 }
 
 // Polls reports whether the source is one the poller runs on its own
-// interval. GitHub sources ride the reconciler's tick, and `http` has no poll.
+// interval. GitHub sources ride the reconciler's tick, `http` has no poll,
+// and a schedule rides the manager's schedule tick.
 func (d *Definition) Polls() bool { return d.Source.Type == SourceCommand }
+
+// IsSchedule reports whether the source is the clock.
+func (d *Definition) IsSchedule() bool { return d.Source.Type == SourceSchedule }
 
 // IsGitHub reports whether the source is one of the two GitHub state diffs.
 func (d *Definition) IsGitHub() bool {
@@ -321,7 +337,7 @@ func validateSource(d *Definition, add addFunc, refuse refuseFunc) {
 	case "":
 		add("source.type", "is required")
 		return
-	case SourceCommand, SourceGitHubIssues, SourceGitHubPRs, SourceHTTP:
+	case SourceCommand, SourceGitHubIssues, SourceGitHubPRs, SourceHTTP, SourceSchedule:
 	default:
 		add("source.type", "must be one of %s", strings.Join(SourceTypes(), ", "))
 		return
@@ -351,6 +367,12 @@ func validateSource(d *Definition, add addFunc, refuse refuseFunc) {
 			"GitHub sources are judged on the github.poll_interval tick in config.yaml")
 		refuse("source.command", len(s.Command) > 0, "a GitHub source runs no command")
 		refuse("source.signature", s.Signature != nil, "only a type: http source is signed")
+	case SourceSchedule:
+		refuse("source.poll_interval", s.PollInterval != "",
+			"a type: schedule source is due on its own cron or every, never on a poll interval")
+		refuse("source.command", len(s.Command) > 0, "a type: schedule source runs no command")
+		refuse("source.signature", s.Signature != nil, "only a type: http source is signed")
+		validateSchedule(s, add)
 	case SourceHTTP:
 		refuse("source.poll_interval", s.PollInterval != "", "a type: http source is pushed, never polled")
 		refuse("source.command", len(s.Command) > 0, "a type: http source runs no command")
@@ -372,10 +394,62 @@ func validateSource(d *Definition, add addFunc, refuse refuseFunc) {
 			}
 		}
 	}
+	if !d.IsSchedule() {
+		const why = "only a type: schedule source has a clock"
+		refuse("source.cron", s.Cron != "", why)
+		refuse("source.every", s.Every != "", why)
+		refuse("source.timezone", s.Timezone != "", why)
+	}
 	if !d.IsGitHub() {
 		refuse("allowed_actors", len(d.AllowedActors) > 0,
 			"only a GitHub source has an author to match; a command or http event carries no identity vincent can verify")
 	}
+}
+
+// validateSchedule refuses a `type: schedule` source's clock field by field,
+// each at the path a form renders it against. ParseSchedule refuses the same
+// documents with one error; this is the same rules with the paths.
+func validateSchedule(s Source, add addFunc) {
+	cronOK := false
+	switch {
+	case s.Cron != "" && s.Every != "":
+		add("source.every", "cannot be combined with cron: a schedule is one or the other")
+	case s.Cron == "" && s.Every == "":
+		add("source.cron", "is required unless every is set: %s", CronGrammar)
+	case s.Every != "":
+		switch iv, err := time.ParseDuration(s.Every); {
+		case err != nil:
+			add("source.every", "is not a duration: %v", err)
+		case iv < MinPollInterval:
+			add("source.every", "must be at least %s", MinPollInterval)
+		}
+	default:
+		cronOK = parseCronOK(s.Cron, add)
+	}
+	// An unknown zone refuses at load rather than falling back to UTC
+	// silently: a trigger that fires at the wrong hour every day is worse
+	// than one that refuses to load.
+	if s.Timezone != "" {
+		if _, err := time.LoadLocation(s.Timezone); err != nil {
+			add("source.timezone", "is not a known IANA time zone: %v", err)
+			return
+		}
+	}
+	// The fields parse and the whole clock still has to strike: an expression
+	// no calendar satisfies — 31 April — is caught by building it.
+	if cronOK {
+		if _, err := ParseSchedule(s); err != nil {
+			add("source.cron", "%v", err)
+		}
+	}
+}
+
+func parseCronOK(expr string, add addFunc) bool {
+	if _, err := parseCron(expr); err != nil {
+		add("source.cron", "%v", err)
+		return false
+	}
+	return true
 }
 
 // githubEvents are the `action` values each GitHub source synthesizes.
@@ -558,7 +632,7 @@ func scalar(v any) bool {
 
 // SourceTypes are the `source.type` values this build accepts.
 func SourceTypes() []string {
-	return []string{SourceCommand, SourceGitHubIssues, SourceGitHubPRs, SourceHTTP}
+	return []string{SourceCommand, SourceGitHubIssues, SourceGitHubPRs, SourceHTTP, SourceSchedule}
 }
 
 // ActionTypes are the `action.type` values this build accepts.

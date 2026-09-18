@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -708,5 +709,171 @@ func TestManagerDryRunsWriteNothing(t *testing.T) {
 	var ie *InvalidError
 	if _, err := h.m.PollDry(ctx, "bad"); !errors.As(err, &ie) {
 		t.Errorf("PollDry(invalid) = %v, want *InvalidError", err)
+	}
+}
+
+// scheduleDoc is a schedule trigger on project 1 whose clock is the given
+// `cron:` or `every:` line.
+func scheduleDoc(id string, enabled bool, clock string) string {
+	return fmt.Sprintf(`id: %s
+enabled: %t
+source:
+  type: schedule
+  project: 1
+  %s
+action:
+  type: create_task
+  title: 'sweep {{ .Event.date }} {{ .Event.hour }}'
+`, id, enabled, clock)
+}
+
+// TestScheduleSeedsOnArmAndFiresOnce is the whole life of a scheduled
+// trigger (task 121): arming anchors the clock and fires nothing, one tick
+// past an occurrence fires once, a stretch of downtime that missed many
+// occurrences still fires once, and a disable/enable cycle re-anchors.
+func TestScheduleSeedsOnArmAndFiresOnce(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	h.write("sweep", scheduleDoc("sweep", true, `every: 2h`))
+
+	// Arming seeds the anchor at now and fires nothing.
+	h.m.tickSchedules(ctx)
+	c := h.cursor("sweep")
+	if c == nil || c.Cursor == nil || *c.Cursor != ghT0.Format(store.TimeFormat) {
+		t.Fatalf("cursor after arming = %+v, want the anchor %s", c, ghT0.Format(store.TimeFormat))
+	}
+	if rows := h.ledger("sweep"); len(rows) != 0 {
+		t.Fatalf("arming wrote %d ledger rows, want none", len(rows))
+	}
+	// A tick before the first occurrence is not due.
+	h.clock.Set(ghT0.Add(time.Hour))
+	h.m.tickSchedules(ctx)
+	if n := len(h.api.requests()); n != 0 {
+		t.Fatalf("%d replays before the first occurrence", n)
+	}
+
+	// Five hours later two occurrences have passed: one fire, at the last.
+	h.clock.Set(ghT0.Add(5 * time.Hour))
+	h.m.tickSchedules(ctx)
+	rows := h.ledger("sweep")
+	if len(rows) != 1 || rows[0].Outcome != store.DeliveryFired {
+		t.Fatalf("ledger = %+v, want one fired row", rows)
+	}
+	want := ghT0.Add(4 * time.Hour).Format(store.TimeFormat)
+	if rows[0].EventID != want {
+		t.Errorf("fired occurrence %q, want the last one that passed %q", rows[0].EventID, want)
+	}
+	if c := h.cursor("sweep"); c.Cursor == nil || *c.Cursor != want {
+		t.Errorf("anchor = %v, want the occurrence it fired %q", c.Cursor, want)
+	}
+	reqs := h.api.requests()
+	if len(reqs) != 1 || reqs[0].path != createPath || !reqs[0].body.Paused {
+		t.Fatalf("replays = %+v, want one paused create (the propose default)", reqs)
+	}
+	if reqs[0].body.Title == "" || strings.Contains(reqs[0].body.Title, "{{") {
+		t.Errorf("title %q did not render over the schedule's event", reqs[0].body.Title)
+	}
+
+	// The same tick again: the occurrence is behind the anchor, so nothing.
+	h.m.tickSchedules(ctx)
+	if rows := h.ledger("sweep"); len(rows) != 1 {
+		t.Fatalf("a second tick at the same instant produced %d rows", len(rows))
+	}
+
+	// An evaluation of an occurrence the ledger already holds is deduped
+	// rather than fired again, which is what makes `id` the occurrence worth
+	// it: rewind the anchor and tick.
+	rewound := ghT0.Add(2 * time.Hour).Format(store.TimeFormat)
+	if err := h.st.PutTriggerCursor(ctx, &store.TriggerCursor{TriggerID: "sweep", Cursor: &rewound}); err != nil {
+		t.Fatal(err)
+	}
+	h.m.tickSchedules(ctx)
+	rows = h.ledger("sweep")
+	if len(rows) != 2 || rows[1].Outcome != store.DeliveryDeduped || rows[1].EventID != want {
+		t.Fatalf("ledger = %+v, want the re-evaluated occurrence deduped", rows)
+	}
+	if n := len(h.api.requests()); n != 1 {
+		t.Errorf("%d replays, want the deduped occurrence to have replayed nothing", n)
+	}
+
+	// Disabling drops the anchor (decision 16); enabling anchors at the new
+	// now and fires nothing, even though hours of occurrences went by while
+	// it was off.
+	h.write("sweep", scheduleDoc("sweep", false, `every: 2h`))
+	h.m.reconcile(ctx)
+	if c := h.cursor("sweep"); c != nil {
+		t.Fatalf("cursor survived a disarm: %+v", c)
+	}
+	h.clock.Set(ghT0.Add(30 * time.Hour))
+	h.write("sweep", scheduleDoc("sweep", true, `every: 2h`))
+	h.m.tickSchedules(ctx)
+	if c := h.cursor("sweep"); c == nil || c.Cursor == nil || *c.Cursor != h.clock.Now().Format(store.TimeFormat) {
+		t.Errorf("cursor after re-arming = %+v, want a fresh anchor", c)
+	}
+	if rows := h.ledger("sweep"); count(rows, store.DeliveryFired) != 1 {
+		t.Errorf("re-arming fired: %+v", rows)
+	}
+}
+
+// TestScheduleNotArmedDoesNotTick: a disabled schedule, an invalid one and a
+// global switch that is off all leave the clock alone.
+func TestScheduleNotArmedDoesNotTick(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	h.write("off", scheduleDoc("off", false, `every: 1s`))
+	h.write("bad", "id: bad\nenabled: true\nsource:\n  type: schedule\n  project: 1\n")
+	h.write("on", scheduleDoc("on", true, `every: 1s`))
+	h.enabled.Store(false)
+	h.m.tickSchedules(ctx)
+	for _, id := range []string{"off", "bad", "on"} {
+		if c := h.cursor(id); c != nil {
+			t.Errorf("%s anchored while triggers.enabled is off: %+v", id, c)
+		}
+	}
+	h.enabled.Store(true)
+	h.m.tickSchedules(ctx)
+	if h.cursor("on") == nil {
+		t.Error("the armed schedule did not anchor once the global switch came on")
+	}
+	if c := h.cursor("off"); c != nil {
+		t.Errorf("the disabled schedule anchored: %+v", c)
+	}
+	if c := h.cursor("bad"); c != nil {
+		t.Errorf("the invalid schedule anchored: %+v", c)
+	}
+	// A schedule has no source to run once, so the live-poll dry run refuses.
+	if _, err := h.m.PollDry(ctx, "on"); !errors.Is(err, ErrNoPoll) {
+		t.Errorf("PollDry on a schedule = %v, want ErrNoPoll", err)
+	}
+	// The other dry run is unchanged: the author supplies the event.
+	if j, err := h.m.Test(ctx, "on", Event{"id": "x", "date": "2026-09-18", "hour": 9}); err != nil || j.Outcome == "" {
+		t.Errorf("Test on a schedule = %+v, %v", j, err)
+	}
+}
+
+// TestScheduledReactionResolvesByBranch: everything downstream of the source
+// is the same code, so a scheduled `follow_up` resolves its branch and lands
+// paused under the propose default.
+func TestScheduledReactionResolvesByBranch(t *testing.T) {
+	st := openStore(t)
+	api := newFakeAPI(t, st, http.StatusOK, `{}`)
+	id := taskOnBranch(t, st, "release/2026-09-21", false)
+	d := reactionDef(t, ActionFollowUp, func(doc map[string]any) {
+		doc["source"] = map[string]any{"type": SourceSchedule, "project": 1, "cron": "0 9 * * 1-5"}
+		setPath(doc, "action.branch", "release/{{ .Event.date }}", false)
+	})
+	sch, err := ParseSchedule(d.Source)
+	if err != nil {
+		t.Fatalf("ParseSchedule: %v", err)
+	}
+	at := time.Date(2026, time.September, 21, 9, 0, 0, 0, sch.Zone())
+	del, err := fire(t.Context(), st, api, d, sch.Event(at), at)
+	if err != nil || del.Outcome != store.DeliveryFired || del.TaskID == nil || *del.TaskID != id {
+		t.Fatalf("fire = %+v, %v, want a fired follow_up on task %d", del, err, id)
+	}
+	reqs := api.requests()
+	if len(reqs) != 1 || !strings.HasSuffix(reqs[0].path, "/follow_up") ||
+		!strings.Contains(string(reqs[0].raw), `"paused":true`) {
+		t.Errorf("replays = %+v, want one paused follow_up", reqs)
 	}
 }

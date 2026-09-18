@@ -169,14 +169,17 @@ func trigArmed(s apiclient.TriggerSummary) (string, lipgloss.Style) {
 	return firstNonEmpty(s.DisarmedReason, "disarmed"), styleWarn
 }
 
-// trigPollCell is poll health. A pushed source has no poll, and a trigger
-// that has not polled yet has no health to report.
+// trigPollCell is poll health. A pushed source has no poll, a schedule has a
+// clock rather than a poll, and a trigger that has not polled yet has no
+// health to report.
 func trigPollCell(s apiclient.TriggerSummary) (string, lipgloss.Style) {
 	switch {
 	case !s.Valid:
 		return "—", styleDim
 	case s.SourceType == "http":
 		return "push", styleDim
+	case s.SourceType == "schedule":
+		return "clock", styleDim
 	case s.Poll.LastPollAt == nil:
 		return "not yet", styleDim
 	case s.Poll.OK:
@@ -222,6 +225,9 @@ func (v *triggersView) detailLines(width int) []string {
 	}
 	out := []string{workflowFact("file", s.File)}
 	switch {
+	case s.Armed && !s.Poll.Seeded && s.SourceType == "schedule":
+		out = append(out, workflowFact("armed", styleOK.Render("yes")+
+			styleDim.Render(" — the next tick anchors its clock and fires nothing")))
 	case s.Armed && !s.Poll.Seeded && s.SourceType != "http":
 		out = append(out, workflowFact("armed", styleOK.Render("yes")+styleDim.Render(" — its next poll seeds and fires nothing")))
 	case s.Armed:

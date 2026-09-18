@@ -387,6 +387,98 @@ sender on the daemon's machine that can add it:
 The route is not an MCP tool, because an agent that could inject events could
 start agents.
 
+### `schedule`: fire on a clock
+
+```yaml
+source:
+  type: schedule
+  project: 1
+  cron: "0 9 * * 1-5"        # or: every: 6h — exactly one of the two
+  timezone: Europe/Budapest  # optional; default is the daemon host's zone
+```
+
+A `schedule` source is the clock rather than an outside system: it is what to
+use for work no event announces — a nightly dependency sweep, a weekday morning
+report. Everything after the source is the same as every other trigger:
+`match:`, `if:`, `dedupe_key:`, all four actions, the `propose` gate, the
+`restricted` clamp and `limits.max_per_hour`.
+
+Set **exactly one** of `cron:` and `every:`. Both, or neither, is refused when
+the file loads. `poll_interval:`, `command:`, `signature:` and `allowed_actors`
+are refused too: there is nothing to poll, run, sign or attribute.
+
+**The `cron:` grammar** is five space-separated fields and nothing more:
+
+| Field | Range |
+|---|---|
+| minute | `0-59` |
+| hour | `0-23` |
+| day of month | `1-31` |
+| month | `1-12` |
+| day of week | `0-7` — both `0` and `7` are Sunday |
+
+Each field is a `*`, a single value, a range `a-b`, a comma list of either, or
+any of those followed by a `/n` step. There are **no** `@daily`-style
+descriptors, no seconds field and no `L` or `#` extensions — the grammar the
+form's help describes is exactly the grammar the daemon parses. An expression no
+calendar satisfies, such as `0 0 31 4 *`, is refused when the file loads.
+
+```yaml
+cron: "0 9 * * 1-5"       # 09:00, Monday to Friday
+cron: "*/15 9-17 * * *"   # every quarter hour between 09:00 and 17:59
+cron: "0 3 1 * *"         # 03:00 on the first of the month
+cron: "0 9 1 * 1"         # the first of the month AND every Monday — see below
+```
+
+With `*` in one of the two day fields, the other decides. With **both**
+restricted, an occurrence matches *either* — which is what crontab(5) has always
+done, and why the last line above fires on Mondays as well as on the first.
+
+**`every:`** is a duration of at least `1s`, counted from the moment the trigger
+was enabled rather than from a wall-clock boundary. `every: 6h` on a trigger
+enabled at 10:17 fires at 16:17, 22:17, and so on — which is the only honest
+answer for `every: 90m`.
+
+**`timezone:`** is an IANA name. An unknown one is refused when the file loads;
+it never falls back to UTC quietly. Absent, the daemon host's zone is used.
+
+**Arming anchors the clock, and re-arming anchors it again.** Enabling a
+schedule records that moment and fires nothing: the first occurrence it ever
+fires is one that falls after your keypress. Disabling and re-enabling it — or
+turning `triggers.enabled` off and on — anchors afresh, so nothing fires for the
+period it was off. **A daemon stop, a suspend or a reboot is none of those:** the
+anchor survives, so a schedule that came due while the machine was asleep fires
+when the daemon is back.
+
+**An overdue schedule fires once.** A weekend of downtime produces one task, not
+forty: the next tick fires the last occurrence that passed and moves on.
+
+**Daylight saving.** An occurrence inside the hour a spring-forward jump skips
+fires once, at the first real instant after the jump. An occurrence inside the
+hour a fall-back repeats fires once, not twice. `every:` is a duration and is
+affected by neither.
+
+**`.Event`** carries six keys. `id` and `scheduled_at` are the occurrence in
+UTC; `weekday`, `hour`, `minute` and `date` are the same instant in the
+schedule's own zone, because an author who writes `0 9 * * 1-5` means their own
+Monday morning.
+
+```yaml
+action:
+  type: create_task
+  workflow: dependency-sweep
+  title: "Dependency sweep {{ .Event.date }}"
+```
+
+Because `id` is the occurrence, the default `dedupe_key` already makes two
+evaluations of one occurrence fire once — you do not need a template for it.
+
+A schedule has no source to run once, so `POST /v1/triggers/{id}/poll` and
+`vincent trigger poll` refuse it. Use `vincent trigger test` with a synthetic
+event instead. And a scheduled `follow_up` or `retry` whose `branch` renders to
+a branch no unarchived task is on is silent by design: the ledger records
+`refused`, and nothing else happens.
+
 ## Actions
 
 ### `create_task`

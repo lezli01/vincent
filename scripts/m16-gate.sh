@@ -29,6 +29,11 @@
 #      one that enables its trigger and writes nothing, then installs a
 #      disarmed one, removes the staging directory, and the registry lists
 #      the new trigger disabled
+#  11. a `type: schedule` trigger (task 121): born disabled, arming anchors
+#      its clock and fires nothing, the next tick fires one paused task
+#      announced as trigger.fired, a daemon stop past several occurrences
+#      fires exactly once on restart, and the cron grammar is asserted
+#      through POST …/validate rather than waited for
 #
 # Each scenario gets fresh config/data/repo dirs and its own daemon (PR G
 # decision, as m7): scenario 5 flips the global switch, which would disarm
@@ -216,6 +221,10 @@ ledger_size() { api GET "/triggers/$1/deliveries?limit=1000" | jq '.deliveries |
 
 # has_outcome ID OUTCOME EVENT_ID [MIN] — at least MIN (default 1) such rows.
 has_outcome() { [[ "$(outcomes "$1" "$2" "$3")" -ge "${4:-1}" ]]; }
+
+# fired_at_least ID N — a condition for wait_for, which re-runs its argv: a
+# command substitution in the argv would be expanded once, at the call.
+fired_at_least() { [[ "$(outcomes "$1" fired)" -ge "$2" ]]; }
 
 # delivery_field ID OUTCOME EVENT_ID FIELD -> FIELD of the first such row.
 delivery_field() {
@@ -652,6 +661,100 @@ if run_scenario 10; then
   wait_for "the registry to load the applied trigger" 80 trigger_is proposed '.valid and (.enabled | not) and (.armed | not)'
   LISTED="$("$VINCENT" trigger ls --project "$PROJECT_ID" | tr -d '\r')"
   [[ "$LISTED" == *proposed.yaml ]] || fail "trigger ls does not list the applied trigger: $LISTED"
+fi
+
+# ---------------------------------------------------------------------------
+if run_scenario 11; then
+  echo "== 11. a type: schedule trigger anchors on arming, fires once a tick, and fires once when overdue"
+  setup s11
+  # No new route and no new client field (task 121): the starter writes a
+  # command source and one PATCH turns it into a clock, which is the path the
+  # TUI form takes too.
+  CREATED="$(api POST /triggers "$(jq -cn --argjson p "$PROJECT_ID" --arg fa "$FAKEAGENT_HOST" \
+    '{id: "clock", project_id: $p, poll_interval: "1s", command: [$fa, "trigger-poll", "unused"],
+      workflow: "gate-agent", title: "from {{ .Event.id }}"}')")"
+  PATCHED="$(api PATCH /triggers/clock "$(jq -cn --arg v "$(jq -r .version <<<"$CREATED")" \
+    '{version: $v, ops: [
+      {op: "set", path: "source.type", value: "schedule"},
+      {op: "set", path: "source.every", value: "2s"},
+      {op: "remove", path: "source.poll_interval"},
+      {op: "remove", path: "source.command"}]}')")"
+  jq -e '.errors == []' <<<"$PATCHED" >/dev/null || fail "the schedule did not validate: $PATCHED"
+  trigger_is clock '.valid and (.enabled | not) and (.armed | not) and (.poll.seeded | not)' \
+    || fail "a created schedule is not born valid, disabled and unanchored: $(cat "$TMP/body.json")"
+
+  # There is no source to run once, so the live-poll dry run refuses.
+  CODE="$(api_code POST /triggers/clock/poll)"
+  [[ "$CODE" == "400" ]] || fail "POST /triggers/clock/poll on a schedule answered $CODE, want 400"
+  grep -q "no poll" "$TMP/body.json" || fail "the refusal does not say the source has no poll: $(cat "$TMP/body.json")"
+
+  # Arming anchors the clock and fires nothing.
+  api PATCH /triggers/clock "$(jq -cn --arg v "$(jq -r .version <<<"$PATCHED")" \
+    '{version: $v, ops: [{op: "set", path: "enabled", value: "true"}]}')" >/dev/null
+  wait_for "the clock to anchor" 80 trigger_is clock '.armed and .poll.seeded'
+  [[ "$(ledger_size clock)" == "0" ]] || fail "arming a schedule wrote a ledger row"
+  [[ "$(task_count)" == "0" ]] || fail "arming a schedule created a task"
+
+  # The next tick past the first occurrence fires exactly one paused task.
+  wait_for "the first occurrence to fire" 80 fired_at_least clock 1
+  FIRST="$(api GET "/triggers/clock/deliveries?limit=1000" \
+    | jq -r '[.deliveries[] | select(.outcome == "fired")] | sort_by(.event_id) | .[0].task_id')"
+  [[ "$FIRST" =~ ^[0-9]+$ ]] || fail "the fired occurrence names no task: $FIRST"
+  TASK="$(api GET "/tasks/$FIRST")"
+  jq -e '.state == "paused" and .restricted == true and (.title | startswith("from 20"))' <<<"$TASK" >/dev/null \
+    || fail "a scheduled task is not a paused, restricted proposal titled from the occurrence: $TASK"
+  STREAM="$(curl -sS --max-time 3 -H "Authorization: Bearer $TOKEN" \
+    -H "Last-Event-ID: 1" -N "$BASE/events?types=trigger.fired" 2>/dev/null \
+    | tr -d '\r' | head -c 200000 || true)"
+  grep -q '"trigger_id":"clock"' <<<"$STREAM" || fail "trigger.fired does not name the schedule: $STREAM"
+
+  # A daemon stop is not a disarm: the anchor survives it, so the occurrences
+  # that fall while the daemon is down produce exactly one fire when it comes
+  # back — not one per occurrence. Proved from the ledger rather than from a
+  # count read across the stop: each fired row's event_id *is* its occurrence,
+  # so a run that skipped nothing has every gap at one interval, and this one
+  # must have exactly one gap several intervals wide.
+  daemon_down
+  sleep 10
+  "$VINCENT" daemon start >/dev/null
+  PORT="$(jq -r .port "$DATA_DIR/daemon.json")"
+  TOKEN="$(cat "$DATA_DIR/token")"
+  BASE="http://127.0.0.1:$PORT/v1"
+  wait_for "the overdue occurrence to fire" 80 fired_at_least clock 2
+
+  GAPS="$(api GET "/triggers/clock/deliveries?limit=1000" | jq -c \
+    '[.deliveries[] | select(.outcome == "fired") | (.event_id[0:19] + "Z" | fromdateiso8601)]
+     | sort | [range(1; length) as $i | .[$i] - .[$i - 1]]')"
+  BIG="$(jq '[.[] | select(. > 3)] | length' <<<"$GAPS")"
+  WIDEST="$(jq 'max // 0' <<<"$GAPS")"
+  [[ "$BIG" == "1" ]] || fail "$BIG gaps wider than one occurrence in $GAPS: the downtime fired more than once"
+  [[ "$WIDEST" -ge 6 ]] || fail "the widest gap in $GAPS is $WIDEST: the downtime skipped no occurrences"
+
+  # Cron is asserted through the validator, not by waiting: its finest
+  # granularity is a minute, which no gate should sit through.
+  VALID="$(api POST /triggers/validate "$(jq -cn --argjson p "$PROJECT_ID" --arg src \
+    "id: weekdays
+source:
+  type: schedule
+  project: $PROJECT_ID
+  cron: \"0 9 * * 1-5\"
+  timezone: Europe/Budapest
+action:
+  type: create_task
+  title: 'sweep {{ .Event.date }}'
+" '{id: "weekdays", source: $src}')")"
+  jq -e '.valid' <<<"$VALID" >/dev/null || fail "a weekday cron schedule did not validate: $VALID"
+  BAD="$(api POST /triggers/validate "$(jq -cn --argjson p "$PROJECT_ID" --arg src \
+    "id: weekdays
+source:
+  type: schedule
+  project: $PROJECT_ID
+  cron: \"@daily\"
+action:
+  type: create_task
+  title: 'sweep'
+" '{id: "weekdays", source: $src}')")"
+  jq -e '.valid | not' <<<"$BAD" >/dev/null || fail "a cron descriptor the grammar refuses validated: $BAD"
 fi
 
 echo "GATE PASS: m16 (event triggers)"

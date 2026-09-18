@@ -22,6 +22,8 @@ func docFor(source, action string) map[string]any {
 	case SourceGitHubPRs:
 		doc["source"] = map[string]any{"type": source, "project": 1}
 		doc["match"] = map[string]any{"action": "merged"}
+	case SourceSchedule:
+		doc["source"] = map[string]any{"type": source, "project": 1, "cron": "0 9 * * 1-5"}
 	case SourceHTTP:
 		doc["source"] = map[string]any{"type": source, "project": 1, "signature": map[string]any{
 			"scheme": SignatureGitHubHMACSHA256, "secret_env": "HOOK_SECRET",
@@ -122,6 +124,16 @@ func unionNames(vs []SchemaVariant) []string {
 // sample is a valid value for a field of this control, used to prove the
 // validator accepts every field the descriptor offers.
 func sample(f SchemaField) any {
+	// Two fields are strings the validator parses rather than free text, and
+	// the control they render as does not say so: "x" is neither a cron
+	// expression nor a zone name. The grammar itself is walked by
+	// TestParseCron.
+	switch f.Name {
+	case "cron":
+		return "*/15 9-17 * * 1-5"
+	case "timezone":
+		return "UTC"
+	}
 	switch f.Control {
 	case workflow.ControlBool:
 		return false
@@ -233,7 +245,15 @@ func TestTriggerSchemaMatchesValidation(t *testing.T) {
 		if errs := parseDoc(t, docFor(v.Type, ActionCreateTask)); len(errs) > 0 {
 			t.Fatalf("base document for source %s is invalid: %v", v.Type, errs)
 		}
-		walk(t, "source.", v.Fields, func(string) map[string]any { return docFor(v.Type, ActionCreateTask) })
+		walk(t, "source.", v.Fields, func(path string) map[string]any {
+			doc := docFor(v.Type, ActionCreateTask)
+			if path == "source.every" {
+				// Exactly one of cron: and every: may be set, so the one the
+				// base document carries comes out before the other goes in.
+				setPath(doc, "source.cron", nil, true)
+			}
+			return doc
+		})
 	}
 	for _, v := range s.Actions {
 		if errs := parseDoc(t, docFor(SourceCommand, v.Type)); len(errs) > 0 {
@@ -274,6 +294,9 @@ func TestParseRefusals(t *testing.T) {
 		{"match on a map", "match", map[string]any{"a": map[string]any{"b": 1}}, "match.a"},
 		{"negative limit", "limits.max_per_hour", -1, "limits.max_per_hour"},
 		{"issue and pull", "action.github_pull", "1", "action.github_pull"},
+		{"a clock on a command source", "source.cron", "0 9 * * *", "source.cron"},
+		{"an interval on a command source", "source.every", "1h", "source.every"},
+		{"a zone on a command source", "source.timezone", "UTC", "source.timezone"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			doc := validDoc()

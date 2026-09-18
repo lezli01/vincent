@@ -134,6 +134,7 @@ the living engineering specification records implementation contracts.
 | [118](118-user-configurable-tui-keymap.md) | A user-configurable TUI keymap: `tui.keys` rebinds an operation on every surface, held to §15's three clauses | ✅ done (6/6) |
 | [119](119-chat-on-a-step.md) | Chat on a stopped task: a conversation in the task's own worktree, locking the task while it is open | 🔄 in progress (8/10) |
 | [120](120-docs-site-search-and-heading-links.md) | A searchable documentation site, with copyable heading links | ✅ done (6/6) |
+| [121](121-scheduled-triggers.md) | Scheduled triggers: a `type: schedule` source with cron and interval semantics | ✅ done (1/1) |
 
 ## How to add and update a task document
 

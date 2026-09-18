@@ -138,7 +138,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 30 | Archived boards and permanent delete | *Added 2026-09-09 (task 092, issue #350).* **Archived history is a screen, and a permanent delete is a route.** Two TUI views — archived tasks, archived chats — are the live boards *in a second mode* rather than two new models (§15): the archive needs grouping, folding, `/` and the bulk selection, and a copy would drift on the first change to any of the four. They get palette rows and no keys, because task 049 retired `1..6` to stop adding memorized ones and task 067 gave chats the same treatment. `DELETE /v1/tasks/{id}` and `DELETE /v1/chats/{id}` (§13.2) are the only things in vincent that delete a task or chat row — the §17 pruner removes transcript *files* and never a row, and that sentence in the retention table is amended to say so. Delete is **not a §6 action**: `taskstate` has no opinion on it and it never appears in `available_actions`, which is what makes the workspace an archived row opens read-only for free; its precedent is `DELETE /v1/projects/{id}`, likewise no action, and both routes join that route's §13.4 destructive-admin exclusion. It **refuses rather than cascading**, naming the row that is holding on: a live row (`not_archived`), an archived fan-out parent whose lanes still exist (`has_lanes` — `parent_task_id` has no `ON DELETE` clause, so without the guard it is a driver error), a `handed_off` chat (`handed_off` — the task owns the worktree, §5.5), and an archived task such a chat points at (`handoff_target`). §10's standing rule is untouched and its task 008 exception merely widens to "at archive time **and at permanent delete**": a branch carrying any commit past its base is reported `has_commits` and kept whatever was answered, and the remote leg is not offered at all. Two durable events are added, `task.deleted` and `chat.deleted` (§13.3) — PR D's "there is no separate `task.archived` type" does not reach them, because that type was redundant with `task.state_changed` and a delete has no state to change to — while the historical `events` rows are deliberately kept, their id being the `Last-Event-ID` cursor. No migration: `archived_at` has been a column since `0001_init.sql`, chats measure the same window over `updated_at` by task 074 decision 6, and every cascade this needs already exists. There is no bulk endpoint and there is not going to be one (task 011): every sweep, in the TUI and in `vincent task delete --before`, is one `DELETE` per row (§5.5, §6, §10, §13.2, §13.3, §13.4, §15, §17, §20) |
 | 31 | TUI key vocabulary | *Added 2026-09-10 (task 093, issue #353).* **One operation, one key, and the registry is what says so.** The binding registry made the help *accurate* from T3.11 — `?`, the footer and the palette all render from it — which is exactly what let the *vocabulary* drift unseen: it faithfully advertised four different keys for "refresh". §15 now carries the table (refresh `R`, archive `A`, delete-a-persisted-record `D`, remove-a-draft-row `d`, add `a`, `$EDITOR` `e`, free text `t`, browser `o`, open-the-row `enter`, cycle-a-listing `s`, filter `/`, fold, lane `l`, page) and **three clauses, not the one the issue asked for**: a key may be shared only for the same operation; it may mean two things only where the registry can prove the surfaces never co-exist; and a key already carrying a term takes no second meaning. The second clause is task 025's deliberate partition of `R` promoted from an accident to the rule, which is why "exactly one key registry-wide" was not adopted literally. The §6 action letters `p a x r E R s c A F` **do not move**, so they decide the contested cases: `R` won refresh, `A` won archive, and `D`/`d` split on persisted-versus-draft, which is what makes pressing `d` on an archived board safe. Enforcement is three tests in `internal/tui/bindings_test.go` beside `TestEveryPanelKeyIsHandled`, with an allow-list that must carry a reason and must stay non-empty; the disjointness the archived boards rely on is **derived from `taskstate.HumanActionsFrom`**, not listed, so an FSM change that starts offering an action on an archived row fails the test rather than shipping a shadowed key. It closes a live bug rather than only a style one: the task workspace's Pull Request tab intercepted `r` and `c`, so **retry and cancel were unreachable there** while the footer advertised both. Scope is `internal/tui` and the docs — no CLI, API, MCP, store or workflow change, and no user-configurable keymap, which is a larger question this does not answer (§15). *Amended 2026-09-17 (task 118, issue #412):* "no user-configurable keymap" is narrowed to no keymap **outside these rules**. Row 35 adds `tui.keys`, which makes this table the **default** keymap and holds an override to the same three clauses with the same checker, so the question is answered rather than set aside; the §6 letters still do not move as defaults |
 | 32 | The footer fills its width, and says what it hides | *Added 2026-09-10 (task 094, issue #352).* **A cap is not a layout.** The footer's five-key limit was a constant, and a constant is wrong at both 80 and 200 columns: eleven of the twenty-one binding contexts declare more hinted keys than five, so on more than half the surfaces keys were dropped silently while `pad := max(width-lw-pw, 2)` spent the remaining columns on blank space. Width now decides, as a strict prefix of registry priority order, measured exactly rather than iterated: every candidate admission count is costed against the `+N` that count itself implies, so there is no "admitted because +9 shrank to +8" state to detect afterwards. The segments to the right of the hints are measured **first** and come out of the budget — the line truncates from the left, so hints are what a full line loses first, and admitting them against the whole width would let the actions push them straight back off. This **supersedes** the phase 3 refactor decision and the PR R / T3.12 decision in `docs/history/v0-tasks.md` ("max 5, priority-ordered"), and only those: what they were protecting — one line that never wraps, and a pinned `: commands  ? help  q quit` that never truncates — is untouched, and §15 is amended in place to say so. The `+N` counts this surface's palette-reachable rows that the line is not advertising, **not** everything the palette lists: the five global rows and the eight navigation entries are what the pinned segment stands for, and counting them would pin `N` near fourteen and never at zero. Alias rows are **declared** (`binding.aliased`) rather than parsed out of hint text — splitting on `/` and mapping `↑↓←→` back to key names is text parsing over a human-written field that breaks silently the first time a hint is reworded — and a test asserts the declaration against what the hints actually say. `paletteEntries` still lists the board's fold rows where the footer, gated by `shell.liveBindings`, does not; that mismatch is left where it is rather than widened into here. *Amended 2026-09-14 (task 096):* the triggers view is a ninth navigation entry, so the pinned segment stands for nine; the reasoning is unchanged (§15). *Amended 2026-09-14 (issue #372):* the mismatch is gone — `root.openPalette` hands `paletteEntries` the shell's `liveBindings`, so a flat board's palette drops the fold rows the footer drops, and a grouped board's still lists them |
-| 33 | Event triggers | *Added 2026-09-13 (task 096; issues #356, #362, #365).* **A trigger is a robot pressing a key a human could have pressed.** A YAML file under `{config_dir}/triggers/` names a source (`command`, `github_issues`, `github_prs` or `http`), a `match:` prefilter and an §8.4 `if:` guard, an action and a dedupe key. Triggers are global scope only, never `.vincent/`, so that anyone who can merge to a repository cannot start agents on a maintainer's machine. An action **replays an existing route** in-process, the way row 28's MCP does: `create_task` is `POST /v1/tasks`, and the reactions `follow_up`, `retry` and `cancel` are the §6 action routes against the task whose `branch_name` the event names. §13.1's bounds, the validation, the FSM's 409 and `Idempotency-Key` therefore hold by construction, and from the step path down a triggered task is indistinguishable from a hand-created one (`.Event` is never snapshotted, §8.4). Where a route lacked an affordance a trigger needed, the route grew it for every client: `paused` on create, follow-up and retry, and `restricted` and `max_task_cost_usd` on create. **It inverts §16's premise that a human pressed the key**, so its defaults differ from every other default in the product. Triggers are off twice, by `triggers.enabled` and by each file's own `enabled:`. `on_fire: propose` holds every task a trigger creates or re-queues in `paused` for a human, agent steps are clamped `restricted`, untrusted GitHub events are refused without an author allowlist, and each trigger has a rate limit. Runtime state lives in SQLite: a cursor per trigger, and a delivery ledger kept 30 days. The first poll after arming seeds and fires nothing, so neither a cold start nor re-arming floods (§5.3, §6, §8.4, §12.2, §12.3, §13.2, §13.3, §13.4, §14, §15, §16, §17, §20) |
+| 33 | Event triggers | *Added 2026-09-13 (task 096; issues #356, #362, #365).* **A trigger is a robot pressing a key a human could have pressed.** A YAML file under `{config_dir}/triggers/` names a source (`command`, `github_issues`, `github_prs`, `http` or, since 2026-09-18, `schedule`), a `match:` prefilter and an §8.4 `if:` guard, an action and a dedupe key. Triggers are global scope only, never `.vincent/`, so that anyone who can merge to a repository cannot start agents on a maintainer's machine. An action **replays an existing route** in-process, the way row 28's MCP does: `create_task` is `POST /v1/tasks`, and the reactions `follow_up`, `retry` and `cancel` are the §6 action routes against the task whose `branch_name` the event names. §13.1's bounds, the validation, the FSM's 409 and `Idempotency-Key` therefore hold by construction, and from the step path down a triggered task is indistinguishable from a hand-created one (`.Event` is never snapshotted, §8.4). Where a route lacked an affordance a trigger needed, the route grew it for every client: `paused` on create, follow-up and retry, and `restricted` and `max_task_cost_usd` on create. **It inverts §16's premise that a human pressed the key**, so its defaults differ from every other default in the product. Triggers are off twice, by `triggers.enabled` and by each file's own `enabled:`. `on_fire: propose` holds every task a trigger creates or re-queues in `paused` for a human, agent steps are clamped `restricted`, untrusted GitHub events are refused without an author allowlist, and each trigger has a rate limit. Runtime state lives in SQLite: a cursor per trigger, and a delivery ledger kept 30 days. The first poll after arming seeds and fires nothing, so neither a cold start nor re-arming floods. *Amended 2026-09-18 (task 121, issue #480):* the source list takes a fifth member, `schedule` — a hand-written five-field cron expression or an `every:` interval, evaluated against the wall clock on a one-second tick, with its last handled occurrence in `trigger_cursors.cursor`. It is the same robot pressing the same key: everything downstream of the source is reused, arming anchors the clock and fires nothing, and an overdue schedule fires once however many occurrences it missed (§5.3, §6, §8.4, §12.2, §12.3, §13.2, §13.3, §13.4, §14, §15, §16, §17, §20) |
 | 34 | Trigger ingress | *Added 2026-09-13 (task 096 decision 31G).* **A pushed event needs the bearer token and a signature, and no route is exempt from row 4.** `POST /v1/triggers/{id}/events` sits in the same `recover → log → auth` chain as every other route, then verifies the trigger's own `github_hmac_sha256` signature over the raw body, using a secret the daemon reads from its environment (§2). Only a caller on this machine that can read `{data_dir}/token` and holds the secret can deliver, so rows 1 and 4 are untouched. A GitHub.com webhook through a tunnel **cannot** deliver. What works is a sender on the same machine, such as a self-hosted runner, or a relay on the same machine that adds the header. The route is not an MCP tool, because an agent that can inject events can start agents (§13.1, §13.2, §13.4, §16) |
 | 35 | User-configurable TUI keymap | *Added 2026-09-17 (task 118, issue #412).* **An override moves an operation, never a surface's key, and the defaults' own rules hold it.** `tui.keys` in `config.yaml` maps an operation id to one key string in Bubble Tea's key-string form, and `{}` is the shipped keymap. The rebindable set is exactly row 31's vocabulary terms, §6's actions and the global chrome (`palette`, `palette_alt`, `help`, `help_alt`, `next_attention`, `mouse`, `quit`, `new` — the last also the chats board's `n`, one gesture); every surface-local row, multi-key set, `esc`, `ctrl+c`, `ctrl+v`, `tab`, popup confirmation and unregistered alias is fixed and refused by name. One override rebinds its operation on every surface that carries it, and it **replaces** the default rather than aliasing it, so the vacated key is free and two operations may swap in one edit. The registry becomes the TUI's **dispatch** source as well as its rendering source — handlers ask it for an operation's key rather than matching literals — because a keymap the help advertises and a handler ignores is the Pull Request tab bug row 31 closed; a translation layer at the root was beaten because it would be a second source of truth for which context is live. The catalog, the fixed keys, the exceptions and the clause checker live in a new leaf, `internal/keymap`; the registry tests run that checker over the defaults and `internal/config` runs it over the effective keymap at load, on hot reload and on `PATCH /v1/config`, so a bad keymap is refused with the file byte-identical, the `tui.board.group_by` precedent. That is config's second internal import beside `taskstate`, an explicit amendment of task 046 decision 4, and `keymap` is a leaf so the direction stays one-way. A key that already means anything else anywhere is refused, and an exception recorded for a default key does not travel with an operation that moves onto it. `palette_alt` and `help_alt`, and any operation answered where a text field owns the printable keys, refuse a printable key. The daemon still publishes no config event: the TUI applies the keymap on connect, reconnect and the daemon view's config fetch, and after its own editor saves it (§12.3, §13.3, §15) |
 
@@ -5404,6 +5404,69 @@ beside the file.
   script or the trigger file, and a poll script never lives in a repository
   (task 096 decision 8).
 
+*Amended 2026-09-18 (task 121, issue #480).* A fifth `source.type`,
+`schedule`, is the clock:
+
+```yaml
+source:
+  type: schedule
+  project: 1
+  cron: "0 9 * * 1-5"        # or: every: 6h — exactly one of the two
+  timezone: Europe/Budapest  # optional; default is the daemon host's zone
+```
+
+- **Exactly one of `cron:` and `every:`.** Both set is refused at load, and so
+  is neither. `poll_interval:`, `command:`, `signature:` and `allowed_actors`
+  are all refused on a schedule: there is nothing to poll, run, sign or
+  attribute.
+- **The `cron:` grammar is five fields and nothing more** — minute (`0-59`),
+  hour (`0-23`), day of month (`1-31`), month (`1-12`) and day of week
+  (`0-7`, where both `0` and `7` are Sunday) — each a `*`, a single value, a
+  range `a-b`, a comma list of either, or any of those with a `/n` step. There
+  are no `@daily`-style descriptors, no seconds field and no `L` or `#`
+  extensions. The parser is hand-written in `internal/trigger` (task 121
+  decision 1), which narrows task 115 decision 2's "needs a parser dependency"
+  by writing the parser rather than taking one, and makes the accepted grammar
+  *by construction* the grammar the §13.2 descriptor documents. With `*` in
+  one of the two day fields the other decides; with both restricted an
+  occurrence matches **either**, as crontab(5) has always done. An expression
+  no calendar satisfies (`0 0 31 4 *`) is refused at load.
+- **`every:` is counted from the anchor, not from a wall-clock boundary**
+  (task 121 decision 4). It is a duration of at least one second, the same
+  floor `source.poll_interval` has and for the same reason.
+- **An unknown `timezone:` is refused at load**, never quietly UTC. The
+  shipped binary embeds the IANA database (`time/tzdata` in `cmd/vincent`),
+  because `time.LoadLocation` reads no zone database on Windows.
+- **The position is the last handled occurrence, in `trigger_cursors.cursor`**
+  (task 121 decision 2), written in `store.TimeFormat` the way a GitHub source
+  writes its snapshot JSON in the same column. No migration and no new column.
+- **Arming anchors the clock at that moment and fires nothing.** Disarming
+  drops the cursor, as it does for every source, so a disable/enable cycle —
+  or `triggers.enabled` off and on — anchors afresh and fires nothing for the
+  off period. A daemon stop, a suspend or a reboot is none of those: the
+  anchor survives, which is the case this source exists for.
+- **An overdue schedule fires once**, at the last occurrence that passed,
+  however many it missed. A weekend of downtime produces one task, not forty,
+  which is a strictly stronger bound than the catch-up cap a command source
+  gets.
+- **Occurrences are read off the wall clock on a one-second tick**, one
+  goroutine walking every armed schedule, never a `time.Timer` per trigger:
+  Go's timers run on the monotonic clock, which does not advance while a
+  laptop is asleep, so a timer would come due hours late on exactly the
+  machine this source is for.
+- **Daylight saving, written out rather than left to the implementation.** An
+  occurrence inside the hour a spring-forward jump skips fires **once**, at the
+  first real instant after the jump. An occurrence inside the hour a fall-back
+  repeats fires **once**, not twice. `every:` is a duration and is affected by
+  neither.
+- **`.Event` carries six keys** (task 121 decision 3), in the lowercase
+  convention appendix A reserves `id` in: `id` and `scheduled_at` are the
+  occurrence in `store.TimeFormat` (UTC), and `weekday`, `hour`, `minute` and
+  `date` are the same instant broken out in the schedule's own zone, because an
+  author who wrote `0 9 * * 1-5` means their own Monday morning. `id` being
+  the occurrence is what makes the default `dedupe_key` right with no
+  template: two evaluations of one occurrence cannot both fire.
+
 **What a transcript promises, exactly.** *Added 2026-08-24 (#139).* A
 transcript is the complete record of one attempt: agent stream lines verbatim,
 command and check output, and vincent's own `vincent.*` annotations. Three
@@ -7146,7 +7209,10 @@ POST   /v1/triggers/{id}/poll           → { seed, events[], truncated, refused
                                         fire, no cursor advance, no ledger row and no change to
                                         poll health. `seed` says a real poll now would seed. A
                                         failing command or listing is a 200 carrying `error`.
-                                        400 for type: http, which has no poll
+                                        400 for a source that has no poll: type: http, which is
+                                        pushed, and — *amended 2026-09-18 (task 121)* —
+                                        type: schedule, which is a clock. Neither has a source
+                                        to run once; POST …/test still judges a supplied event
 GET    /v1/triggers/{id}/deliveries     ?limit=1..1000 (default 100) → { deliveries[] }, newest
                                         first: { id, trigger_id, event_id, dedupe_key, outcome,
                                         task_id, detail?, created_at }. `outcome` is fired |
@@ -9760,6 +9826,13 @@ stream for the live tail.
    last fire. While `triggers.enabled` is off, a **banner** above the list says
    so, because every row then reads disarmed for a reason no row can fix.
 
+   *Amended 2026-09-18 (task 121, issue #480).* The poll cell reports what the
+   source actually has: `push` for `type: http`, `clock` for `type: schedule`,
+   and poll health for the three that poll. A schedule never polls, so without
+   its own cell it would read "not yet" forever. The armed hint beneath the
+   list is worded per source too — for a schedule, that the next tick anchors
+   its clock and fires nothing.
+
    **Create and edit** use task 065's form, rendered from
    `GET /v1/triggers/schema` rather than from a client copy of the rules.
    - `a` creates: the daemon renders a disabled starter.
@@ -11472,9 +11545,10 @@ the whole of the posture, not a set of tips.
   a stranger's issue from starting work. It does **not** say who applied a label,
   requested a review or closed anything. CODEOWNERS requests reviews on an
   outsider's pull request, which is why `review_requested` is untrusted. The key
-  is refused on `command` and `http` sources, whose events carry no identity
-  vincent can verify: a `command` source's trust is whatever its script
-  filters, and an `http` source's is its signature.
+  is refused on `command`, `http` and `schedule` sources, whose events carry no
+  identity vincent can verify: a `command` source's trust is whatever its
+  script filters, an `http` source's is its signature, and a `schedule`'s is
+  the file itself — nobody outside the machine can make a clock strike.
 - **Prompt injection becomes remote.** An issue body, a pull-request title or a
   CI log reaches a trigger's templates as `.Event`. Whatever the file renders
   into a title, description, field, prompt or branch reaches an agent. The
@@ -12067,12 +12141,16 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
   prompt, check, run and guard at once and invites the expression-language
   argument 015 decision 4 settled, so it earns its own task. The trigger is
   the first `for_each` that cannot filter at its source.
-- **Scheduled and recurring triggers**, as a `type: schedule` trigger source
-  (task 096, *Explicitly not in scope*; recorded 2026-09-13). Task 096
+- ~~**Scheduled and recurring triggers**, as a `type: schedule` trigger source
+  (task 096, *Explicitly not in scope*; recorded 2026-09-13)~~ — **promoted out
+  of future work, 2026-09-18** (§12.2, §13.2, §15; decision record row 33,
+  task 121, issue #480): the reopening condition this entry named came due, and
+  the entry's own prediction held — it is one more `source.type`, not a
+  subsystem. `match:`, `if:`, `dedupe_key:`, all four action types, the
+  `propose` gate, the `restricted` clamp, `limits.max_per_hour`, global scope
+  and the never-arm rule are reused verbatim. Task 096
   designed the `action:` block so that such a source reuses it verbatim, so the
-  day it is built it is one more source type, not a subsystem. The trigger for
-  building it is the first recurring task that a `type: command` source
-  printing one event per period cannot express. Two more pieces are deferred
+  day it is built it is one more source type, not a subsystem. Two more pieces are deferred
   from the same task, each with its named trigger. A real **actor** on GitHub
   events, from the timeline API (task 096 decision 10), waits for the first
   need for a trustworthy actor. **Signature schemes** beyond
@@ -12095,7 +12173,10 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
   transitions, and a signed push from the same machine. Vincent still ships no
   per-vendor adapter and stores no vendor credential (§2). **Task templates and
   recurring tasks stay deferred** (the entry below names the trigger for the
-  recurring half). ~~**Pull requests** — checking, listing or reporting on them
+  recurring half). *Amended 2026-09-18 (task 121, issue #480):* the recurring
+  half is answered, by a `type: schedule` trigger source rather than by a
+  second scheduler beside `internal/scheduler`. **Task templates stay
+  deferred.** ~~**Pull requests** — checking, listing or reporting on them
   — are the intended next piece and are deliberately not built~~ — **promoted
   out of future work, 2026-08-29** (§5.3, §12.3, §13.2, §13.3, §14; decision
   record row 27, task 052): a project's open pull requests are listed, and a

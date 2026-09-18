@@ -1,10 +1,10 @@
 ---
 name: vincent-triggers
-description: Create, edit, review, arm, and debug vincent event triggers, the YAML under {config_dir}/triggers and the poll scripts they run. Use for trigger sources (command, github_issues, github_prs, http), match and if filters, dedupe keys, limits, on_fire, permission, arming, dry runs, the delivery ledger, or trigger validation errors. Do not use for vincent workflows, including the workflow a trigger's action.workflow names (use vincent-workflows), or for GitHub Actions.
+description: Create, edit, review, arm, and debug vincent event triggers, the YAML under {config_dir}/triggers and the poll scripts they run. Use for trigger sources (command, github_issues, github_prs, http, schedule), match and if filters, dedupe keys, limits, on_fire, permission, arming, dry runs, the delivery ledger, or trigger validation errors. Do not use for vincent workflows, including the workflow a trigger's action.workflow names (use vincent-workflows), or for GitHub Actions.
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.0.1
+  version: 1.1.0
 ---
 
 # vincent Triggers
@@ -116,6 +116,22 @@ before changing the design.
   - Prefer a label as the signal to start.
 - **`command`** covers any other system with an API or CLI: a poll script run
   on a `poll_interval` of at least `1s`, in practice minutes.
+- **`schedule`** is the clock, for work no outside event announces: a nightly
+  sweep, a weekday morning report.
+  - Set exactly one of `cron` (five fields: minute, hour, day of month, month,
+    day of week) or `every` (a duration of at least `1s`). Both set, or
+    neither, is refused.
+  - `timezone` is an IANA name such as `Europe/Budapest`; absent means the
+    daemon host's zone. An unknown name is refused, never silently UTC.
+  - `poll_interval`, `command`, `signature` and `allowed_actors` are all
+    refused: there is nothing to poll, run, sign or attribute.
+  - `.Event` carries `id` and `scheduled_at` (the occurrence, UTC), plus
+    `weekday`, `hour`, `minute` and `date` in the schedule's own zone.
+  - **Re-arming resets the clock.** Enabling anchors it at that moment and
+    fires nothing. A daemon restart, a suspend or a reboot keeps the anchor, so
+    an occurrence missed while the machine slept fires **once** on the next
+    tick; but disabling and re-enabling — or toggling `triggers.enabled` off
+    and on — anchors afresh and fires nothing.
 - **`http`** fits a sender on the daemon's machine that can push.
   - It requires `signature.scheme: github_hmac_sha256` and
     `signature.secret_env`, which names a variable in the daemon's
@@ -123,8 +139,8 @@ before changing the design.
   - The sender also needs the daemon's bearer token, so a GitHub.com webhook
     sent through a bare tunnel cannot deliver.
 
-`allowed_actors` is refused on `command` and `http` sources, whose events carry
-no identity vincent can verify.
+`allowed_actors` is refused on `command`, `http` and `schedule` sources, whose
+events carry no identity vincent can verify.
 
 ## Choose the action
 
@@ -228,8 +244,11 @@ A trigger is **armed** when its file validates, it says `enabled: true`, and
 `triggers.enabled` is on.
 
 - **Arming seeds.** The first poll records what the source already shows and
-  fires nothing.
-- **Disarming drops the cursor**, so arming again seeds again.
+  fires nothing. A `schedule` anchors its clock at that moment instead, and
+  the first occurrence it ever fires is one that falls after the keypress.
+- **Disarming drops the cursor**, so arming again seeds again — and a
+  `schedule` anchors afresh, which is why a disable/enable cycle fires nothing
+  even when occurrences went by in between.
 - **A save that does not validate keeps the cursor.**
 
 Humans arm triggers in the TUI's Triggers view, which asks before enabling one,
@@ -245,7 +264,14 @@ When a trigger misbehaves, work in this order:
    `disarmed_reason`, and its poll health.
 2. `trigger_deliveries` shows each event's `outcome` (`seeded`, `fired`,
    `deduped`, `filtered`, `rate_limited`, `refused` or `error`) and `detail`.
-3. Reproduce with `vincent trigger test` or `trigger_poll`.
+3. Reproduce with `vincent trigger test` or `trigger_poll`. A `schedule` and
+   an `http` source have no poll, so `trigger_poll` refuses both: supply a
+   synthetic event to `vincent trigger test` instead.
+
+A scheduled reaction — `follow_up` or `retry` whose `branch` renders from the
+occurrence — is **silent by design** when no unarchived task is on that branch:
+the ledger records `refused` and nothing else happens. Check the deliveries
+before concluding the clock did not strike.
 
 The debugging reference maps each outcome to its causes.
 
