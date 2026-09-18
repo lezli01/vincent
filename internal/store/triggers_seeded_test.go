@@ -104,7 +104,8 @@ func TestMigration0030PreservesDeliveries(t *testing.T) {
 		}
 		return out
 	}()
-	if got := strings.Join(idx, ","); got != "idx_trigger_deliveries_age,idx_trigger_deliveries_created,idx_trigger_deliveries_key" {
+	// 0033 rebuilt the table again and added its group index (task 121).
+	if got := strings.Join(idx, ","); got != "idx_trigger_deliveries_age,idx_trigger_deliveries_created,idx_trigger_deliveries_group,idx_trigger_deliveries_key" {
 		t.Errorf("indexes after rebuild = %s", got)
 	}
 	if _, err := s.RecordTriggerDelivery(ctx, &TriggerDelivery{TriggerID: "t1", Outcome: DeliverySeeded}); err != nil {
