@@ -83,7 +83,7 @@ type triggerDelivery struct {
 	DedupeKey string `json:"dedupe_key"`
 	// ConcurrencyKey is the `overrun:` group this event was judged in, absent
 	// for a trigger that declares none; SupersededTaskID the task a
-	// `cancel_previous` fire replaced (task 121).
+	// `cancel_previous` fire replaced (task 122).
 	ConcurrencyKey   string `json:"concurrency_key,omitempty"`
 	Outcome          string `json:"outcome"`
 	TaskID           *int64 `json:"task_id"`

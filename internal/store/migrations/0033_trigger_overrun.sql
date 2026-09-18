@@ -1,4 +1,4 @@
--- 0033_trigger_overrun: `overrun:` and its backlog (task 121, spec §14).
+-- 0033_trigger_overrun: `overrun:` and its backlog (task 122, spec §14).
 --
 -- Two ledger outcomes and one ledger column, plus the table the two queue
 -- modes hold events in.
@@ -13,7 +13,7 @@
 --     its group empties. Not "delivered": the dedupe lookup keeps counting
 --     `fired` and `seeded` alone, so a second identical event arriving while
 --     one is held reaches the overrun step rather than being swallowed
---     (task 121 decision 8).
+--     (task 122 decision 8).
 --
 -- concurrency_key is the rendered `concurrency_key:` the event was grouped
 -- under, "" for a trigger that declares no `overrun:`. The in-flight group is

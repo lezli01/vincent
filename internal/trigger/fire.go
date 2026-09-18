@@ -31,7 +31,7 @@ type Store interface {
 	CountTriggerFiredSince(ctx context.Context, triggerID string, since time.Time) (int, error)
 	FindTaskForBranch(ctx context.Context, projectID int64, branch string) (*store.Task, error)
 	AppendEvent(ctx context.Context, e *store.Event) error
-	// The overrun group and its backlog (task 121).
+	// The overrun group and its backlog (task 122).
 	TriggerGroupInFlight(ctx context.Context, triggerID, key string) ([]int64, error)
 	TaskInFlight(ctx context.Context, id int64) (bool, error)
 	AppendTriggerBacklog(ctx context.Context, b *store.TriggerBacklogItem) (*store.TriggerBacklogItem, error)
@@ -41,7 +41,7 @@ type Store interface {
 	DeleteTriggerBacklog(ctx context.Context, ids ...int64) error
 }
 
-// MaxBacklogPerTrigger caps held events per trigger (task 121). At the cap
+// MaxBacklogPerTrigger caps held events per trigger (task 122). At the cap
 // the *oldest* pending event is dropped and recorded `superseded`, which is
 // right for queue_coalesce and acceptable for queue_serial: a backlog that
 // deep is one whose group is not draining, and the recorded drop is what makes
@@ -145,7 +145,7 @@ type Judgement struct {
 
 // plan is what a drain knows that a freshly arrived event does not: the event
 // came off the backlog under a group already decided, and the overrun step
-// must not run again on it (task 121 decision 6 — a drained event is
+// must not run again on it (task 122 decision 6 — a drained event is
 // re-judged in full *minus* the overrun step, or it would queue itself
 // forever).
 type plan struct {

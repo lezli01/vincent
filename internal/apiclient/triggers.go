@@ -21,7 +21,7 @@ const (
 	TriggerFiltered    = "filtered"
 	TriggerRateLimited = "rate_limited"
 	// TriggerSuperseded is an event `overrun:` dropped, and TriggerQueued one
-	// it is holding until the group empties (task 121).
+	// it is holding until the group empties (task 122).
 	TriggerSuperseded = "superseded"
 	TriggerQueued     = "queued"
 	TriggerRefused    = "refused"
@@ -170,7 +170,7 @@ type TriggerJudgement struct {
 	WouldDedupe bool   `json:"would_dedupe"`
 	// Overrun is the `overrun:` mode consulted, "" for the parallel default;
 	// ConcurrencyKey the rendered group, InFlight its unsettled tasks, and
-	// the three Would* flags the decision (task 121).
+	// the three Would* flags the decision (task 122).
 	Overrun        string         `json:"overrun,omitempty"`
 	ConcurrencyKey string         `json:"concurrency_key,omitempty"`
 	InFlight       []int64        `json:"in_flight,omitempty"`

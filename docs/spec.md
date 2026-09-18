@@ -6127,7 +6127,7 @@ is not an MCP tool (§13.4), and the TUI's editor asks before changing it (task
 file with `armed: false` and a reason, both dry runs still work, and a pushed
 event is a `409` (§13.2).
 
-*Amended 2026-09-18 (task 121, issue #483).* **`overrun:` and
+*Amended 2026-09-18 (task 122, issue #483).* **`overrun:` and
 `concurrency_key:` say what to do with an event whose group already has
 unfinished work.** Nothing in the pipeline looked at task state before this:
 every event that passed the filter fired, however many of the trigger's tasks
@@ -7274,7 +7274,7 @@ GET    /v1/triggers/{id}/deliveries     ?limit=1..1000 (default 100) → { deliv
                                         seeded | deduped | filtered | rate_limited | refused |
                                         error | superseded | queued, and `task_id` is the task
                                         created or acted on; `superseded_task_id` the task a
-                                        `overrun: cancel_previous` fire replaced (task 121).
+                                        `overrun: cancel_previous` fire replaced (task 122).
                                         Served for an id with no file, because the ledger
                                         outlives the file
 POST   /v1/triggers/{id}/events         the `type: http` ingress (§13.1, decision record row 34).
@@ -8784,7 +8784,7 @@ the table aside, creates it again under the real name, copies every row with
 its id, drops the old table and recreates the three indexes. 0029 is not
 edited.
 
-*Added 2026-09-18 (task 121, migration 0033).* `trigger_deliveries.outcome`
+*Added 2026-09-18 (task 122, migration 0033).* `trigger_deliveries.outcome`
 gains **`superseded`** — an event `overrun:` dropped in favour of work already
 in flight or of a newer event — and **`queued`**, an event held in the new
 `trigger_backlog` table until its group empties. Reusing `deduped` for the
@@ -11628,7 +11628,7 @@ the whole of the posture, not a set of tips.
   where the adapter reports cost. `limits.max_per_hour` caps how many deliveries
   fire, and an event over it is recorded and dropped, never queued.
 - **`overrun: cancel_previous` lets an inbound event destroy in-flight agent
-  work** *(added 2026-09-18, task 121, issue #483)*. Every unfinished task in
+  work** *(added 2026-09-18, task 122, issue #483)*. Every unfinished task in
   the event's concurrency group is cancelled before the new one is created; the
   cancelled tasks keep their branches and worktrees, so nothing is lost from
   disk, but an agent mid-run is killed by something no human pressed. It is one

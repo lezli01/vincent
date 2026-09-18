@@ -104,7 +104,7 @@ func TestMigration0030PreservesDeliveries(t *testing.T) {
 		}
 		return out
 	}()
-	// 0033 rebuilt the table again and added its group index (task 121).
+	// 0033 rebuilt the table again and added its group index (task 122).
 	if got := strings.Join(idx, ","); got != "idx_trigger_deliveries_age,idx_trigger_deliveries_created,idx_trigger_deliveries_group,idx_trigger_deliveries_key" {
 		t.Errorf("indexes after rebuild = %s", got)
 	}

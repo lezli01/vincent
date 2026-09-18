@@ -109,7 +109,7 @@ func (p *TranscriptPruner) once(ctx context.Context) {
 // than TriggerDeliveryRetention, returning how many went. now is a parameter
 // so tests can age rows without sleeping.
 //
-// The backlog rides the same window (task 121): an event held for a month is
+// The backlog rides the same window (task 122): an event held for a month is
 // one whose group never emptied, and firing it now would act on a month-old
 // state of the world.
 func (p *TranscriptPruner) PruneDeliveries(ctx context.Context, now time.Time) (int64, error) {

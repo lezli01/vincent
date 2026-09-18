@@ -104,7 +104,7 @@ type Manager struct {
 
 	// fireMu holds one mutex per trigger, covering every firing path: the
 	// poller goroutine, GitHub judging, a pushed event, the schedule tick and
-	// the backlog drain (task 121 decision 10). It replaces the coarse
+	// the backlog drain (task 122 decision 10). It replaces the coarse
 	// ghMu/ingestMu pair, which did not cover the drain — and the drain can
 	// run for a trigger whose poll is live. Under it, the overrun read, the
 	// backlog write and the ledger write of one delivery never interleave with
@@ -206,7 +206,7 @@ func (m *Manager) loop(ctx context.Context) {
 	defer ticker.Stop()
 	m.reconcile(ctx)
 	// The first drain of a daemon run empties groups whose tasks settled
-	// while it was down (task 121 decision 9).
+	// while it was down (task 122 decision 9).
 	m.drain(ctx)
 	for {
 		select {
@@ -227,7 +227,7 @@ func (m *Manager) loop(ctx context.Context) {
 }
 
 // OnEvent is the broker subscription the daemon wires beside notify's (task
-// 121 decision 9). A task reaching a new state is what empties a group, so it
+// 122 decision 9). A task reaching a new state is what empties a group, so it
 // is what asks for a drain; the reconcileEvery tick is the backstop. It runs
 // on the publishing goroutine, so it does no work of its own.
 func (m *Manager) OnEvent(e *store.Event) {
@@ -542,7 +542,7 @@ func (m *Manager) tickSchedule(ctx context.Context, d *Definition) {
 	// here because fire-once is a strictly stronger bound.
 	//
 	// The tick is a firing path like any other, so it fires under the
-	// trigger's lock (task 121 decision 10): a strike and a backlog drain for
+	// trigger's lock (task 122 decision 10): a strike and a backlog drain for
 	// the same schedule must not interleave their overrun read and ledger
 	// write. schedMu is already held here, and nothing takes it while holding
 	// a trigger's lock, so the ordering stays one-way.

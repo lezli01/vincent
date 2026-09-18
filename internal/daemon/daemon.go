@@ -468,7 +468,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		Logger:   logger,
 	})
 	// A task reaching a new state is what empties a trigger's concurrency
-	// group, so it is what asks the backlog to drain (task 121 decision 9).
+	// group, so it is what asks the backlog to drain (task 122 decision 9).
 	// Wired beside the notifier's subscription, which has this exact shape;
 	// the manager's own 5 s tick is the backstop.
 	broker.OnEvent(triggers.OnEvent)

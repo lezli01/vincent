@@ -277,7 +277,7 @@ func (v *triggersView) ledgerLines(width, height int) []string {
 			task = "#" + strconv.FormatInt(*d.TaskID, 10)
 		}
 		detail := d.Detail
-		// The supersede link a `cancel_previous` fire wrote (task 121): the
+		// The supersede link a `cancel_previous` fire wrote (task 122): the
 		// chain is readable here rather than on the board, which is not asked
 		// to render a relationship only triggers ever set.
 		if d.SupersededTaskID != nil {

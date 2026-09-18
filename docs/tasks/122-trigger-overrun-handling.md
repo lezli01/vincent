@@ -1,4 +1,4 @@
-# 121 — Configurable trigger overrun handling
+# 122 — Configurable trigger overrun handling
 
 **Status:** ✅ done (7/7)
 **Opened:** 2026-09-18
@@ -160,19 +160,19 @@ Found by `scripts/m16-gate.sh`, whose poll source is exactly that shape.
 
 ## Tasks
 
-- [x] 121.1 `overrun:` and `concurrency_key:` on the definition, with the
+- [x] 122.1 `overrun:` and `concurrency_key:` on the definition, with the
       validator clauses and the schema descriptor. ✓ 2026-09-18
-- [x] 121.2 Migration 0033: the widened `CHECK`, `concurrency_key`,
+- [x] 122.2 Migration 0033: the widened `CHECK`, `concurrency_key`,
       `superseded_task_id` and `trigger_backlog`; the group query, the backlog
       CRUD and the prune. ✓ 2026-09-18
-- [x] 121.3 The overrun step in `judge`, the `cancel_previous` replay loop, the
+- [x] 122.3 The overrun step in `judge`, the `cancel_previous` replay loop, the
       backlog write and its cap. ✓ 2026-09-18
-- [x] 121.4 The drain path, `OnEvent`, per-trigger locking and discard on
+- [x] 122.4 The drain path, `OnEvent`, per-trigger locking and discard on
       disarm. ✓ 2026-09-18
-- [x] 121.5 The API, apiclient, TUI and CLI surfaces. ✓ 2026-09-18
-- [x] 121.6 Spec amendments, the skill, both trigger built-ins and the public
+- [x] 122.5 The API, apiclient, TUI and CLI surfaces. ✓ 2026-09-18
+- [x] 122.6 Spec amendments, the skill, both trigger built-ins and the public
       docs. ✓ 2026-09-18
-- [x] 121.7 Tests for the eight acceptance criteria, and an `m16` lane per
+- [x] 122.7 Tests for the eight acceptance criteria, and an `m16` lane per
       mode. ✓ 2026-09-18
 
 ## Verification

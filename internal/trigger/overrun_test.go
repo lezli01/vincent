@@ -9,7 +9,7 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 )
 
-// Task 121: `overrun:` and `concurrency_key:`. Acceptance criteria 1–8 each
+// Task 122: `overrun:` and `concurrency_key:`. Acceptance criteria 1–8 each
 // have a test here, named for what it proves.
 
 // overrunSrc is a `type: command` trigger on project 1 — the project

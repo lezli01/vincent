@@ -792,7 +792,7 @@ if run_scenario 12; then
   GROUP="$(delivery_field hold fired h1 concurrency_key)"
   [[ "$GROUP" == "V-1" ]] || fail "the fired row records no group: $GROUP"
   # on_fire defaults to propose, so the task is paused — and a paused task
-  # holds its group (task 121 decision 3).
+  # holds its group (task 122 decision 3).
   [[ "$(task_field "$FIRST" state)" == "paused" ]] || fail "the first task is not a proposal"
 
   emit "$EVENTS" '{"id":"h2","ticket":"V-1"}'

@@ -40,7 +40,7 @@ const (
 	// answered 5xx or never reached the handler.
 	DeliveryError = "error"
 	// DeliverySuperseded is an event `overrun:` dropped in favour of work
-	// already in flight or of a newer event (task 121): `skip`'s drop, the
+	// already in flight or of a newer event (task 122): `skip`'s drop, the
 	// events a `queue_coalesce` drain discarded, a held event a disarm threw
 	// away, and the oldest held event dropped at the backlog cap. It is not
 	// `deduped` — a suppressed event is a distinct event deliberately
@@ -51,7 +51,7 @@ const (
 	// and fire when its group empties. It is deliberately *not* delivered:
 	// TriggerKeyDelivered still counts `fired` and `seeded` alone, so a second
 	// identical event arriving while one is held reaches the overrun step and
-	// is coalesced or queued rather than swallowed as a duplicate (task 121
+	// is coalesced or queued rather than swallowed as a duplicate (task 122
 	// decision 8).
 	DeliveryQueued = "queued"
 )
@@ -115,7 +115,7 @@ type TriggerDelivery struct {
 	TaskID *int64
 	// SupersededTaskID is the task this delivery's task replaced: the
 	// supersede link `overrun: cancel_previous` writes so a rapid-fire source
-	// is readable after the fact (task 121 decision 4). Nil once that task has
+	// is readable after the fact (task 122 decision 4). Nil once that task has
 	// been deleted, as TaskID is.
 	SupersededTaskID *int64
 	// ConcurrencyKey is the rendered `concurrency_key:` this event was
@@ -131,7 +131,7 @@ type TriggerDelivery struct {
 }
 
 // TriggerBacklogItem is one event held by `overrun: queue_coalesce` or
-// `queue_serial` (task 121). EventJSON is the raw event: a drain runs the
+// `queue_serial` (task 122). EventJSON is the raw event: a drain runs the
 // whole of judge() again over it rather than replaying a frozen verdict
 // (decision 6).
 type TriggerBacklogItem struct {
@@ -379,7 +379,7 @@ func (s *Store) PruneTriggerDeliveries(ctx context.Context, cutoff time.Time) (i
 }
 
 // TriggerGroupInFlight returns the ids of this trigger's tasks in concurrency
-// group key that have not settled — the group `overrun:` asks about (task 121
+// group key that have not settled — the group `overrun:` asks about (task 122
 // decision 3).
 //
 // "In flight" is `!taskstate.Settled`, not "non-terminal" and not "holds a
@@ -567,7 +567,7 @@ func (s *Store) PruneTriggerBacklog(ctx context.Context, cutoff time.Time) (int6
 
 // TaskInFlight reports whether a task exists and has not settled — the same
 // predicate TriggerGroupInFlight applies, for a task reached without the
-// ledger. A reaction's group is its resolved target's own state (task 121
+// ledger. A reaction's group is its resolved target's own state (task 122
 // decision 2): on the first follow-up that task has never appeared in this
 // trigger's ledger, so the ledger cannot answer for it.
 func (s *Store) TaskInFlight(ctx context.Context, id int64) (bool, error) {

@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// Task 121: the widened CHECK, the supersede column and the backlog table.
+// Task 122: the widened CHECK, the supersede column and the backlog table.
 
 func TestMigration0033WidensOutcomesAndKeepsRows(t *testing.T) {
 	s := openTest(t)
@@ -34,7 +34,7 @@ func TestMigration0033WidensOutcomesAndKeepsRows(t *testing.T) {
 		t.Errorf("rows = %+v", rows)
 	}
 	// A queued row is not delivered: a repeat event must reach the overrun
-	// step rather than being deduped away (task 121 decision 8).
+	// step rather than being deduped away (task 122 decision 8).
 	if done, err := s.TriggerKeyDelivered(ctx, "t1", "e1"); err != nil || done {
 		t.Errorf("queued counted as delivered (%v, %v)", done, err)
 	}

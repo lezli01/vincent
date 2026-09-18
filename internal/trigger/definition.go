@@ -62,11 +62,11 @@ const (
 	OnFireCreate  = "create"
 )
 
-// overrun values (task 121): what to do with an event whose concurrency
+// overrun values (task 122): what to do with an event whose concurrency
 // group already has work in flight.
 const (
 	// OverrunParallel is the default and the behaviour every trigger file
-	// written before task 121 has: no check at all, fire regardless.
+	// written before task 122 has: no check at all, fire regardless.
 	OverrunParallel = "parallel"
 	// OverrunSkip records the event `superseded` and drops it. The in-flight
 	// work stands.
@@ -143,7 +143,7 @@ type Definition struct {
 	// (appendix A).
 	DedupeKey string `yaml:"dedupe_key" json:"dedupe_key,omitempty"`
 	// Overrun is what happens to an event whose concurrency group already has
-	// work in flight (task 121); absent means `parallel`, which is no check.
+	// work in flight (task 122); absent means `parallel`, which is no check.
 	Overrun string `yaml:"overrun" json:"overrun,omitempty"`
 	// ConcurrencyKey is a template over `.Event` naming the group, absent
 	// meaning the trigger id for a create_task and the resolved target task
