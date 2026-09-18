@@ -51,6 +51,7 @@ const (
 	Skip      Op = "skip"
 	Cancel    Op = "cancel"
 	FollowUp  Op = "follow_up"
+	Chat      Op = "chat"
 )
 
 // The global chrome.
@@ -139,6 +140,7 @@ var catalog = []Info{
 	{Op: Skip, Default: "s", Meaning: "skip the current step", Kind: KindAction, Surfaces: []Surface{Actions}},
 	{Op: Cancel, Default: "c", Meaning: "cancel the task", Kind: KindAction, Surfaces: []Surface{Actions}},
 	{Op: FollowUp, Default: "F", Meaning: "follow up on a finished task", Kind: KindAction, Surfaces: []Surface{Actions}},
+	{Op: Chat, Default: "T", Meaning: "chat in the task's worktree, or reopen its open chat", Kind: KindAction, Surfaces: []Surface{Actions}},
 
 	{Op: Palette, Default: ":", Meaning: "open the command palette", Kind: KindGlobal, Surfaces: []Surface{Global}},
 	{Op: PaletteAlt, Default: "ctrl+p", Meaning: "open the command palette from a text field", Kind: KindGlobal, Surfaces: []Surface{Global, "chat", "new chat"}, Typing: true},
@@ -229,6 +231,7 @@ var exceptions = []exception{
 	{key: "n", ops: []Op{New}, anyFixed: true, why: "n is the popups' no, and the popups own the keyboard"},
 	{key: "r", ops: []Op{Retry}, anyFixed: true, why: "r retries the connection while disconnected, when no task is on screen"},
 	{key: "enter", ops: []Op{OpenRow}, anyFixed: true, why: "enter activates the focused thing on every surface"},
+	{key: "T", ops: []Op{Chat}, anyFixed: true, why: "task 119: T dry-runs a trigger on the triggers takeover, which offers no available_actions"},
 }
 
 // Keymap is an effective keymap: every operation's key, defaults with

@@ -20,6 +20,9 @@
 #   8. a containerized agent step reaches `step_status` over its per-step MCP
 #      endpoint, through host.docker.internal (task 062.2 decision 1)
 #   9. a daemon killed mid agent step leaves no container behind
+#  10. a chat opened on a blocked containerized task runs its turn inside that
+#      task's container, and a free chat's turn runs on the host (task 119
+#      decision 3)
 #
 # It **skips cleanly** (exit 0, one line saying why) on a host that cannot run
 # the feature. CI runs its assertions on the Linux leg only, and the two skips
@@ -36,7 +39,7 @@
 # That is a real coverage gap and it is stated rather than implied: a gate that
 # has never run on a platform is not known to pass there.
 #
-# No real agent CLI is involved: scenarios 1–5 run `command` steps, and 6–9 run
+# No real agent CLI is involved: scenarios 1–5 run `command` steps, and 6–10 run
 # cmd/fakeagent cross-compiled for the runtime's linux architecture and
 # bind-mounted into the image as `claude`, so the gate is as fast on CI as it is
 # locally. Their `run:` bodies are the one place in this
@@ -517,6 +520,66 @@ GOT_STATUS="$(api GET "/tasks/$MCP_TASK/steps" | jq -r '.[0].status_message // e
 [[ "$GOT_STATUS" == "$GATE_STATUS" ]] \
   || fail "the containerized step's status_message is '$GOT_STATUS', want '$GATE_STATUS'"
 echo "   ok: step_status reached from inside the container"
+
+echo "== scenario 10: a chat opened on a containerized task runs its turn in that task's container"
+# Task 119 decision 3: a linked chat's turn runs where the task's steps do,
+# through the same pid-file wrapper, keyed `chat-<turn id>` instead of
+# `step-<run id>` — so scenario 6's proof carries over with the key changed.
+# `slow` is scenario 3's command-only workflow, which blocks on a timeout and
+# keeps its container: the stopped, containerized task a chat opens on. It is
+# created under agent_config so its container has the image's claude mounted,
+# and the config names no FAKEAGENT_SCENARIO, so both turns run `success`.
+agent_config "mcp:
+  wire_steps: false
+"
+daemon_down
+daemon_up
+
+wait_turn() { # wait_turn CHAT_ID — polls turn 1 until it ends, echoing its state
+  local state=""
+  for _ in $(seq 1 120); do
+    state="$(api GET "/chats/$1" | jq -r '.turns[] | select(.seq == 1) | .state')"
+    [[ -n "$state" && "$state" != running ]] && break
+    sleep 1
+  done
+  printf '%s\n' "$state"
+}
+
+CHAT_TASK="$(create_task "$PROJECT" slow "chat on a contained task")"
+wait_for_state "$CHAT_TASK" blocked 120
+[[ "$(count_containers_for "$CHAT_TASK")" == 1 ]] \
+  || fail "blocked task $CHAT_TASK has no container for its chat to run in"
+OUT="$(api_status POST "/tasks/$CHAT_TASK/chat" '{"agent": "claude"}')"
+STATUS="${OUT%%$'\n'*}"
+BODY="${OUT#*$'\n'}"
+[[ "$STATUS" == 201 ]] || fail "opening a chat on blocked task $CHAT_TASK returned HTTP $STATUS: $BODY"
+LINKED_CHAT="$(jq -r .id <<<"$BODY")"
+api POST "/chats/$LINKED_CHAT/send" '{"message": "m12 gate"}' >/dev/null
+TURN_STATE="$(wait_turn "$LINKED_CHAT")"
+[[ "$TURN_STATE" == done ]] || fail "the linked chat's turn is '$TURN_STATE', want done"
+LINKED_TURN="$(api GET "/chats/$LINKED_CHAT" | jq -r '.turns[] | select(.seq == 1) | .id')"
+"$DOCKER" exec "$(containers_for "$CHAT_TASK")" test -s "/vincent-run/chat-$LINKED_TURN.pid" \
+  || fail "no pid file for turn $LINKED_TURN in task $CHAT_TASK's container: the chat did not run inside"
+[[ "$(count_containers_for "$CHAT_TASK")" == 1 ]] \
+  || fail "the linked chat's turn changed task $CHAT_TASK's container count"
+
+# The other half, scenario 2's and 6's host assertion in a chat's terms: a free
+# chat has no task, so its turn runs on the host and nothing is created for it
+# — no container, and no pid file in the one that is running.
+ALL_BEFORE="$("$DOCKER" ps -aq --filter "label=$LABEL_KEY" | wc -l | tr -d ' ')"
+FREE_CHAT="$(api POST /chats "$(jq -cn --argjson p "$PROJECT" \
+  '{project_id: $p, title: "free chat", agent: "claude"}')" | jq -r .id)"
+api POST "/chats/$FREE_CHAT/send" '{"message": "m12 gate"}' >/dev/null
+TURN_STATE="$(wait_turn "$FREE_CHAT")"
+[[ "$TURN_STATE" == done ]] || fail "the free chat's turn is '$TURN_STATE', want done"
+FREE_TURN="$(api GET "/chats/$FREE_CHAT" | jq -r '.turns[] | select(.seq == 1) | .id')"
+if "$DOCKER" exec "$(containers_for "$CHAT_TASK")" test -e "/vincent-run/chat-$FREE_TURN.pid"; then
+  fail "free chat $FREE_CHAT's turn left a pid file in task $CHAT_TASK's container"
+fi
+ALL_AFTER="$("$DOCKER" ps -aq --filter "label=$LABEL_KEY" | wc -l | tr -d ' ')"
+[[ "$ALL_AFTER" == "$ALL_BEFORE" ]] \
+  || fail "a free chat's turn changed the container count from $ALL_BEFORE to $ALL_AFTER"
+echo "   ok: linked turn ran inside the task's container, free turn on the host"
 
 daemon_down
 echo "GATE PASS: m12 (container step execution)"

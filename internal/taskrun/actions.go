@@ -125,7 +125,18 @@ func AsParkedHold(err error) (*ParkedHoldError, bool) {
 // reaches `aborted` first, so a client that observes the state knows the
 // decision is final even while the process tree is still winding down.
 func (r *Runner) Cancel(ctx context.Context, id int64) (*store.Task, error) {
-	task, err := r.humanAction(ctx, id, taskstate.Cancel, store.TaskChange{})
+	chatID, err := r.deps.Store.OpenLinkedChatID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	var task *store.Task
+	if chatID != 0 {
+		// A locked task (task 119): stop the chat's turn, then close the
+		// chat and abort the task in one transaction.
+		task, err = r.cancelLocked(ctx, id, chatID)
+	} else {
+		task, err = r.humanAction(ctx, id, taskstate.Cancel, store.TaskChange{})
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -414,6 +425,11 @@ func (r *Runner) Skip(ctx context.Context, id int64) (*store.Task, error) {
 	if !taskstate.Can(task.State, taskstate.Skip) {
 		return nil, &InvalidActionError{TaskID: id, Action: taskstate.Skip, State: task.State}
 	}
+	// The decision row is written ahead of the swap, so the lock is
+	// checked ahead of it too (task 119).
+	if err := r.deps.Store.RefuseLocked(ctx, id); err != nil {
+		return nil, err
+	}
 	at, inFollowUp := r.followUpOf(task)
 	if err := r.recordStepDecision(ctx, task, store.StepSkipped, ""); err != nil {
 		return nil, err
@@ -448,6 +464,11 @@ func (r *Runner) Approve(ctx context.Context, id int64) (*store.Task, error) {
 	if !taskstate.Can(task.State, taskstate.Approve) {
 		return nil, &InvalidActionError{TaskID: id, Action: taskstate.Approve, State: task.State}
 	}
+	// The decision row is written ahead of the swap, so the lock is
+	// checked ahead of it too (task 119).
+	if err := r.deps.Store.RefuseLocked(ctx, id); err != nil {
+		return nil, err
+	}
 	at, inFollowUp := r.followUpOf(task)
 	if err := r.recordStepDecision(ctx, task, store.StepApproved, ""); err != nil {
 		return nil, err
@@ -471,6 +492,11 @@ func (r *Runner) Reject(ctx context.Context, id int64) (*store.Task, error) {
 	}
 	if !taskstate.Can(task.State, taskstate.Reject) {
 		return nil, &InvalidActionError{TaskID: id, Action: taskstate.Reject, State: task.State}
+	}
+	// The decision row is written ahead of the swap, so the lock is
+	// checked ahead of it too (task 119).
+	if err := r.deps.Store.RefuseLocked(ctx, id); err != nil {
+		return nil, err
 	}
 	if err := r.recordStepDecision(ctx, task, store.StepRejected, ReasonRejected); err != nil {
 		return nil, err
@@ -501,6 +527,11 @@ func (r *Runner) Archive(
 	if !taskstate.Can(task.State, taskstate.Archive) {
 		return nil, worktree.BranchOutcome{},
 			&InvalidActionError{TaskID: id, Action: taskstate.Archive, State: task.State}
+	}
+	// Archive removes the worktree ahead of the swap, so the lock is checked
+	// ahead of it too (task 119).
+	if err := r.deps.Store.RefuseLocked(ctx, id); err != nil {
+		return nil, worktree.BranchOutcome{}, err
 	}
 	// Archiving a fan-out parent archives its whole subtree, so it refuses
 	// while any lane is still working — pulling a worktree out from under a

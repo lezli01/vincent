@@ -62,7 +62,7 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 			group = "actions on " + selectedNoun(len(target.marked))
 		}
 		for _, b := range registry() {
-			if b.scope != scopeTaskAction || !target.has(b.action) {
+			if b.scope != scopeTaskAction || !target.offers(b.action) {
 				continue
 			}
 			if b.op == keymap.EditRetry && !editable {

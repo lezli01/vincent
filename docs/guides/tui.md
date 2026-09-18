@@ -250,8 +250,9 @@ to its output.
 **Task Details** is the complete task inspector: title, description, declared
 fields, state, project, workflow and its recorded origin, branch and worktree,
 priority, tokens and cost, lifecycle timestamps, queue/block information,
-pending input, fan-out/loop metadata, captured GitHub issue, available actions,
-and the task's workflow-step snapshot. Its left sidebar selects one section at
+pending input, fan-out/loop metadata, the [chats opened on it](#talking-to-an-agent-about-a-task),
+captured GitHub issue, available actions, and the task's workflow-step
+snapshot. Its left sidebar selects one section at
 a time, so unrelated metadata does not compete for the screen. Use `↑`/`↓` or
 the mouse to choose a section and `pgup`/`pgdn` to scroll long section content;
 the inspector never edits anything.
@@ -842,6 +843,7 @@ selected on the board it acts on all of them; see
 | `c` | Cancel the task (asks first — a running step is killed) | most states |
 | `A` | Archive (asks first — the worktree is removed) | `done`, `aborted` |
 | `F` | Follow up — run more work in this finished task's worktree | `done`, `aborted` |
+| `T` | Chat with an agent in this task's worktree, or reopen the chat already open on it | `blocked`, `awaiting_gate`, `done`, `aborted` |
 
 `E` opens the failing step's prompt or command in your editor, and the override
 applies **to this task's snapshot only** — the workflow file is untouched.
@@ -940,6 +942,34 @@ step in the task's snapshot, and a follow-up is deliberately not in it.
 For more than one task at a time, use the command line:
 `vincent task follow-up <id> --run 'git rebase origin/main'`
 ([CLI reference](../reference/cli.md#vincent-task-follow-up)).
+
+## Talking to an agent about a task
+
+`R` and `F` each run one thing and hand the task back. When what a stopped task
+needs is a conversation — why did the check fail, is this gate's diff right,
+what would it take to finish — press `T`. It is offered on a `blocked`,
+`awaiting_gate`, `done` or `aborted` task and opens a
+[chat workspace](#chat-workspace) on a chat that works **in this task's own
+worktree and branch**. Its first message carries the task and what stopped it:
+the failure and the transcript's tail for a blocked task, the gate for one at a
+gate, the last step's summary for a finished one.
+
+While that chat is open **the task is locked**. It stays exactly where it was,
+and every action but `c` cancel is refused — the action bar offers `c` or
+nothing, and names the chat holding the lock as `T chat #N`. `T` on a locked
+task reopens that chat rather than starting a second. Cancelling a locked task
+stops any running turn, closes the chat and aborts the task in one step.
+
+The chat ends with `ctrl+q` in its workspace, which asks first. Closing unlocks
+the task and touches nothing else: the worktree and the branch are the task's,
+and whatever the conversation changed in them is still there for `r`, `a` or
+`A`. A closed chat takes no more messages, but it is not gone — the task's
+**Task Details** tab lists every chat opened on it under **Chats**, closed ones
+included, and the chats board shows each one's task ahead of its title. Pressing
+`T` again later opens a new chat.
+
+A task that never got a worktree — blocked on `branch_exists`, say — has nothing
+to talk about in, and `T` says so on the action bar rather than making one.
 
 ## Answering a question
 
@@ -1464,10 +1494,10 @@ task-only.
 |---|---|
 | `enter` | Open the chat's workspace |
 | `n` | Start a chat in the project you are looking at |
-| `A` | Archive the chat — asks first, and re-offers with the force when the worktree is dirty |
+| `A` | Archive the chat — asks first, and re-offers with the force when the worktree is dirty; declines on a chat opened on a task |
 | `/` | Filter by title, agent or branch |
 | `←` / `→` | Collapse or expand a project group |
-| `s` | Cycle the listing between live, archived and handed-off, and all |
+| `s` | Cycle the listing between live, ended (archived, handed-off or closed), and all |
 | `R` | Reload the board |
 
 The mouse wheel moves the cursor one chat per tick, skipping the project
@@ -1478,13 +1508,18 @@ cursor.
 `s` is a peek at history from the live board; the [Archived](#archived) screen
 is where history is paged, windowed and deleted.
 
-Archived and handed-off chats are **off this board by default**, the way
+Archived, handed-off and closed chats are **off this board by default**, the way
 archived tasks are off the task board. `s` cycles the listing — live, then the
 terminal ones, then both — and the header names the listing whenever it is not
 the default, so an empty board is never mistaken for no chats. A terminal chat's
 last-activity cell shows *when* the chat ended rather than a duration that keeps
 counting; and `A` on such a row declines with a note instead of asking to remove
 a worktree that is already gone, or that a handoff gave to a task.
+
+A chat [opened on a task](#talking-to-an-agent-about-a-task) reads `task #N ·`
+ahead of its title. It works in that task's worktree, so it is never archived:
+`A` is not offered on its row and declines if pressed, and the chat ends by
+being closed from its workspace, landing in `closed` with the other ended chats.
 
 A `running` row moves. Its state cell carries a turning glyph **beside** the
 `running` label rather than instead of it — the cell is a fixed-width column in
@@ -1575,7 +1610,8 @@ periodic repaint.
 | `enter` | Send the message |
 | `ctrl+x` | Stop the running turn — its process tree is killed |
 | `ctrl+r` | How much of the conversation to show: quiet → compact → normal → verbose |
-| `ctrl+t` | Hand the worktree and branch to a new task — the chat ends |
+| `ctrl+t` | Hand the worktree and branch to a new task — the chat ends; not on a chat opened on a task |
+| `ctrl+q` | Close a chat opened on a task — asks first; the task unlocks, its worktree and branch stay |
 | `ctrl+o` | Show the assistant's original Markdown instead of the rendered view |
 | `ctrl+y` | Copy an assistant message, its plain text, or one of its code blocks |
 | `ctrl+l` | List the links in the assistant's messages — open one in a browser or copy it |
@@ -1596,6 +1632,12 @@ The chat is then terminal: its header carries a permanent link to the task, it
 sorts into the board's done band, and it cannot be sent to, archived or handed
 off again. Only an idle chat can be handed off, and a worktree in the middle of
 a merge or rebase is refused with the operation named.
+
+A chat [opened on a task](#talking-to-an-agent-about-a-task) is the other way
+round: its header reads `on task #N`, the worktree is already that task's, and
+so `ctrl+t` is not offered and declines if pressed. `ctrl+q` ends it instead —
+the only chat it works on — after a `y` to confirm, stopping a running turn
+first.
 
 The body is the task workspace's [output pane](#task-detail), same records
 and same marks: `▸` a tool call, the outcome indented under it, `·` reasoning,
@@ -1675,7 +1717,9 @@ Rows are listed **newest-archived first**, which is the only order an archive
 has. A selection deletes one row at a time and reports what happened — how many
 went, how many branches with them, and how many the daemon refused. A refusal
 names what is holding on: a fan-out parent still has its lanes, or a handed-off
-chat still points at the task. Delete those first and try again.
+chat still points at the task. Delete those first and try again. On a closed
+[chat opened on a task](#talking-to-an-agent-about-a-task), `b` is refused
+because the branch is the task's; `y` deletes it.
 
 ### Triggers
 
@@ -2084,7 +2128,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first twelve are the operations screens share, the next nine are the
+The first twelve are the operations screens share, the next ten are the
 [task actions](#the-action-bar), and the last eight are the global keys.
 
 | Operation | Default | Does |
@@ -2110,6 +2154,7 @@ The first twelve are the operations screens share, the next nine are the
 | `skip` | `s` | Skip the current step |
 | `cancel` | `c` | Cancel the task |
 | `follow_up` | `F` | Follow up on a finished task |
+| `chat` | `T` | Chat in the task's worktree, or reopen the chat open on it |
 | `palette` | `:` | Open the command palette |
 | `palette_alt` | `ctrl+p` | Open the command palette, also while a text field has the keyboard |
 | `help` | `?` | Toggle help |

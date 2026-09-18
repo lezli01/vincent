@@ -130,6 +130,11 @@ var Excluded = []Route{
 	// chain — so an agent that could hand a chat off would be creating tasks
 	// outside the bound.
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/handoff"},
+	// A chat linked to a task (task 119) is still a chat: opening one starts
+	// agent processes outside the `created_by_task_id` chain, and closing
+	// one is its lifecycle. 063 decision 2 is extended, not excepted.
+	{Method: http.MethodPost, Path: "/v1/tasks/{id}/chat"},
+	{Method: http.MethodPost, Path: "/v1/chats/{id}/close"},
 	// The chat read routes are excluded under the same rule, not merely
 	// because they are streams. `GET /v1/chats/{id}/events` follows a live
 	// conversation and the transcript route reads its durable record; both

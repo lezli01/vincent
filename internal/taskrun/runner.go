@@ -84,6 +84,10 @@ type Deps struct {
 	// drives it (§16, task 061). Nil means container.New, which is what the
 	// daemon wires; tests substitute a fake so no `go test` needs docker.
 	Containers func(binary string) container.Runtime
+	// ChatTurns stops a linked chat's live turn (task 119). `cancel` on a
+	// task an open chat has locked calls it before closing the chat. Nil
+	// means no chat runner is wired, and the close proceeds without a stop.
+	ChatTurns ChatTurnStopper
 }
 
 // MCPRoute is where an agent step's process reaches the §13.4 per-step

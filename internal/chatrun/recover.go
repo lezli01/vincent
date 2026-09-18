@@ -37,6 +37,17 @@ func (r *Runner) Recover(ctx context.Context) error {
 	}
 	for i := range turns {
 		t := &turns[i]
+		chat, err := r.deps.Store.GetChat(ctx, t.ChatID)
+		if err != nil {
+			return err
+		}
+		// A linked turn on a containerized task ran inside the task's
+		// container, where the host pid is only the runtime client's: the
+		// agent is reached through its pid file (task 119 decision 3, 061
+		// decision 9). The host kill still runs for the client.
+		if chat.Linked() && r.deps.StopOrphan != nil {
+			r.deps.StopOrphan(ctx, *chat.LinkedTaskID, t.ID)
+		}
 		killOrphan(t, r.deps.Logger)
 		now := r.deps.Now()
 		ms := now.Sub(t.StartedAt).Milliseconds()
@@ -44,10 +55,8 @@ func (r *Runner) Recover(ctx context.Context) error {
 		if err := r.deps.Store.UpdateChatTurn(ctx, t); err != nil {
 			return fmt.Errorf("recover chat turn %d: %w", t.ID, err)
 		}
-		chat, err := r.deps.Store.GetChat(ctx, t.ChatID)
-		if err != nil {
-			return err
-		}
+		// The chat returns to idle and stays open, so a task it locked
+		// stays locked with no extra code (task 119).
 		if chatstate.HoldsProcess(chat.State) {
 			if _, err := r.deps.Store.SetChatState(ctx, chat.ID, chatstate.Idle); err != nil {
 				return fmt.Errorf("recover chat %d: %w", chat.ID, err)

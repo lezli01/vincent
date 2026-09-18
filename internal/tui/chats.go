@@ -621,6 +621,13 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, v.create.init()
 	case opKey(keymap.Archive):
 		if c, ok := v.current(); ok {
+			// A chat opened on a task works in the task's worktree, which
+			// the task owns: the daemon refuses its archive (task 119), and
+			// closing it is how it ends.
+			if c.LinkedTaskID != nil {
+				v.note, v.noteBad = linkedChatDecline(c), true
+				return v, nil
+			}
 			// A terminal chat has nothing left to archive and no worktree to
 			// remove, so the prompt would ask a human to confirm removing
 			// something that is already gone — or, for a handed-off chat, one
@@ -689,12 +696,13 @@ var chatScopes = []apiclient.ArchivedScope{
 
 // chatScopeLabel names a listing as the header and the note read it. The wire
 // parameter is spelled `archived` for parity with tasks, but it covers
-// `handed_off` too (§5.5, task 074 decision 5), so the human-readable form
-// says both rather than repeating the parameter's name.
+// `handed_off` (§5.5, task 074 decision 5) and `closed` (task 119) too, so the
+// human-readable form names all three rather than repeating the parameter's
+// name.
 func chatScopeLabel(s apiclient.ArchivedScope) string {
 	switch s {
 	case apiclient.ArchivedOnly:
-		return "archived and handed-off chats"
+		return "archived, handed-off and closed chats"
 	case apiclient.ArchivedAll:
 		return "every chat, terminal ones included"
 	default:
@@ -721,7 +729,23 @@ func chatArchiveDecline(state string) string {
 	if state == string(chatstate.HandedOff) {
 		return "this chat was handed off to a task, which owns its worktree now"
 	}
-	return "this chat is already archived"
+	return "this chat is already " + state
+}
+
+// liveBindings drops `A` while the cursor is on a chat opened on a task (task
+// 119): the key only declines there, and the footer should not offer it.
+func (v *chatsView) liveBindings(rows []binding) []binding {
+	c, ok := v.current()
+	if !ok || c.LinkedTaskID == nil {
+		return rows
+	}
+	out := make([]binding, 0, len(rows))
+	for _, b := range rows {
+		if b.context != ctxChats || b.key != "A" {
+			out = append(out, b)
+		}
+	}
+	return out
 }
 
 func (v *chatsView) updateConfirm(msg tea.KeyPressMsg) tea.Cmd {

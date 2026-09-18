@@ -73,6 +73,8 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 		msg = tea.KeyPressMsg{Code: 't', Mod: tea.ModCtrl}
 	case "ctrl+x":
 		msg = tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl}
+	case "ctrl+q":
+		msg = tea.KeyPressMsg{Code: 'q', Mod: tea.ModCtrl}
 	case "ctrl+y":
 		msg = tea.KeyPressMsg{Code: 'y', Mod: tea.ModCtrl}
 	case "ctrl+l":
@@ -839,6 +841,21 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 			if v.composer.Value() != "" {
 				t.Fatalf("ctrl+t reached the composer: %q", v.composer.Value())
+			}
+		},
+		"ctrl+q": func(t *testing.T) {
+			v := chatViewFixture()
+			v.client = offlineClient()
+			task := int64(9)
+			v.chat.LinkedTaskID = &task
+			if _, cmd := v.updateKey(registryKey(t, "ctrl+q")); cmd != nil || !v.closing {
+				t.Fatal("ctrl+q did not ask before closing the linked chat")
+			}
+			if _, cmd := v.updateKey(keyPress("y")); cmd == nil {
+				t.Fatal("y did not close the linked chat")
+			}
+			if v.composer.Value() != "" {
+				t.Fatalf("the confirmation reached the composer: %q", v.composer.Value())
 			}
 		},
 		"ctrl+r": func(t *testing.T) {

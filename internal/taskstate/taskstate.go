@@ -111,6 +111,18 @@ const (
 	// nothing about the task's verdict (decision 5), which is why there is no
 	// `aborted → done` edge behind it.
 	FollowUp Action = "follow_up"
+	// Chat opens a §5.5 chat linked to the task, working in the task's own
+	// worktree and branch (task 119). It moves nothing — a self-loop from
+	// each of the four states a task stops in with its worktree still there
+	// — and it is an action at all so `available_actions` can gate the
+	// client's key the way every other affordance is gated (§15, task 092).
+	//
+	// While that chat is open the task is locked: every other human action
+	// but `cancel` is refused. The lock is a fact about the chats table,
+	// not a state, so it is enforced in the store's compare-and-swap rather
+	// than here — this table says what a task in a state may do, and the
+	// lock says it may not do it right now.
+	Chat Action = "chat"
 )
 
 // Engine events. They are transitions the daemon performs while running a
@@ -163,7 +175,7 @@ const (
 // humanActions is the set of actions a client may invoke, in the order §6
 // lists them.
 var humanActions = []Action{
-	Cancel, Pause, Resume, Retry, Repair, Skip, Answer, Approve, Reject, Archive, FollowUp,
+	Cancel, Pause, Resume, Retry, Repair, Skip, Answer, Approve, Reject, Archive, FollowUp, Chat,
 }
 
 // Human reports whether a is a human action rather than an engine event.
@@ -223,6 +235,14 @@ var table = map[Action]map[State]Transition{
 	// still there. Both re-queue, so internal/scheduler stays the only
 	// producer of `queued → running` and both §11 caps apply.
 	FollowUp: {Done: {To: Queued}, Aborted: {To: Queued}},
+	// A chat is offered from the states a task stops in with a worktree a
+	// human might want to talk about (task 119): blocked, at a gate, and
+	// the two finished states follow-up already covers. Every row is a
+	// self-loop — opening a chat decides nothing about the task.
+	Chat: {
+		Blocked: {To: Blocked}, AwaitingGate: {To: AwaitingGate},
+		Done: {To: Done}, Aborted: {To: Aborted},
+	},
 
 	Admit:        {Queued: {To: Running}},
 	Gate:         {Running: {To: AwaitingGate}},
@@ -300,6 +320,21 @@ func NextHeld(from State, a Action) (Transition, bool) {
 func CanHold(from State, a Action) bool {
 	_, ok := NextHeld(from, a)
 	return ok
+}
+
+// Lockable reports whether a task in this state can be locked by an open
+// linked chat (task 119): exactly the states `chat` is offered from. It is
+// the set the store's compare-and-swap consults before it looks for a chat.
+func Lockable(s State) bool { return Can(s, Chat) }
+
+// LockedActionsFrom is HumanActionsFrom for a task an open linked chat has
+// locked: `cancel` where it is legal, and nothing else — `chat` included,
+// because a second chat is refused.
+func LockedActionsFrom(s State) []Action {
+	if Can(s, Cancel) {
+		return []Action{Cancel}
+	}
+	return nil
 }
 
 // CanSetPriority reports whether priority may be changed in this state

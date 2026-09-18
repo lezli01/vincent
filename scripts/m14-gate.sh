@@ -18,6 +18,15 @@
 #   9. handoff: a task adopts the chat's worktree and branch (task 074)
 #  10. the listing excludes both terminal states by default and ?archived=
 #      brings them back, an explicit ?state= still winning (task 079)
+#  11. a chat opened on a blocked task (task 119): its turn edits the task's
+#      own worktree, every §6 action but cancel is 409 task_locked_by_chat
+#      while it is open, close lifts the lock and leaves the worktree, and the
+#      retry the chat's edit makes pass runs the task to done
+#
+# Legs 1–10 are one chain rather than separable scenarios — leg 3 reads leg
+# 1's turn, leg 6 answers leg 5's parked chat, leg 10 lists the chats legs 7
+# and 9 ended — so VINCENT_GATE_SCENARIO=N for any N in 1..10 runs that chain,
+# and VINCENT_GATE_SCENARIO=11 runs leg 11 alone, which needs nothing before it.
 #
 # The `agent_cannot_resume` refusal is deliberately *not* here. Since task 070
 # no shipped adapter is refused, so a real daemon has no subject to reach it
@@ -26,9 +35,10 @@
 # daemon's own registry to keep the leg would put a test double in the
 # production registry, which is the §9.1 property the refusal exists to guard.
 #
-# There are no workflow `run:` bodies to spell in the sh∩pwsh intersection —
-# a chat has no workflow — but this script's own bash obeys the two standing
-# rules: `| tr -d '\r'` on any multi-line jq capture, and never `| grep -q`.
+# A chat has no workflow, so leg 11's task is the only `run:` body here, and it
+# is spelled in the sh∩pwsh intersection like every other gate's. This script's
+# own bash obeys the two standing rules: `| tr -d '\r'` on any multi-line jq
+# capture, and never `| grep -q`.
 #
 # Requirements: bash, go, git, curl, jq.
 set -euo pipefail
@@ -51,6 +61,12 @@ cleanup() {
   rm -rf "$TMP"
 }
 trap cleanup EXIT
+
+ONLY="${VINCENT_GATE_SCENARIO:-}"
+case "$ONLY" in
+  "" | [1-9] | 10 | 11) ;;
+  *) fail "unknown VINCENT_GATE_SCENARIO: $ONLY" ;;
+esac
 
 hostpath() {
   if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s\n' "$1"; fi
@@ -143,6 +159,144 @@ wait_turn() {
   done
   fail "turn $seq of chat $id never finished"
 }
+
+# wait_task TASK_ID STATE — poll until the task reaches a state. `aborted` ends
+# the wait early, since a task never comes back from it.
+wait_task() {
+  local id="$1" want="$2" i=0 state
+  while (( i < 300 )); do
+    state="$(api GET "/tasks/$id" | jq -r .state)"
+    if [[ "$state" == "$want" ]]; then return 0; fi
+    if [[ "$state" == "aborted" ]]; then
+      fail "task $id aborted while waiting for $want: $(api GET "/tasks/$id")"
+    fi
+    i=$(( i + 1 ))
+    sleep 1
+  done
+  fail "task $id never reached $want (it is $state)"
+}
+
+# Leg 11 is a function, defined ahead of leg 1, only so that
+# VINCENT_GATE_SCENARIO=11 can run it without walking legs 1–10 first: it
+# brings its own repo, project, workflow and daemon environment. Unselected, it
+# runs last, after leg 10.
+chat_on_a_task() {
+  echo "== 11. a chat on a blocked task works in its worktree and locks it (task 119)"
+  # The step's body is `git commit -a`, which is in the sh∩pwsh intersection and
+  # says pass or fail by its own exit code: 1 on a clean worktree ("nothing to
+  # commit"), 0 once a tracked file changed. So the task blocks on its first
+  # pass, and the only thing that can make its retry pass is an edit to the
+  # task's own worktree — which is what the chat is claimed to make.
+  mkdir -p "$CONFIG_DIR/workflows"
+  cat > "$CONFIG_DIR/workflows/chat-on-a-task.yaml" <<'EOF'
+name: chat-on-a-task
+steps:
+  - id: land
+    type: command
+    max_retries: 0
+    run: git commit -a -m chat-fixed
+EOF
+
+  LINK_REPO="$TMP/linked"
+  mkdir -p "$LINK_REPO"
+  git -C "$LINK_REPO" init -q -b main
+  git -C "$LINK_REPO" config user.email gate@example.com
+  git -C "$LINK_REPO" config user.name "M14 Gate"
+  printf 'the chat appends below\n' > "$LINK_REPO/chat.txt"
+  git -C "$LINK_REPO" add chat.txt
+  git -C "$LINK_REPO" commit -q -m "root"
+
+  # FAKEAGENT_EDIT_FILE appends a line to an existing worktree-relative file,
+  # and only a daemon started with it passes it on. The workflow file above is
+  # written before the start for m12's reason: a task created in the second
+  # the file lands can beat the registry's watcher.
+  "$VINCENT" daemon stop --force >/dev/null 2>&1 || true
+  unset FAKEAGENT_SCENARIO
+  export FAKEAGENT_EDIT_FILE=chat.txt
+  "$VINCENT" daemon start
+  PORT="$(jq -r .port "$DATA_DIR/daemon.json")"
+  TOKEN="$(cat "$DATA_DIR/token")"
+  BASE="http://127.0.0.1:$PORT/v1"
+
+  LINK_PROJECT="$(api POST /projects -d "{\"path\": \"$(hostpath "$LINK_REPO")\"}")" \
+    || fail "registering the linked-chat project failed"
+  LINK_PROJECT_ID="$(printf '%s' "$LINK_PROJECT" | jq -r .id)"
+  LINK_TASK="$(api POST /tasks \
+    -d "{\"project_id\": $LINK_PROJECT_ID, \"workflow\": \"chat-on-a-task\", \"title\": \"land the chat's fix\"}")" \
+    || fail "POST /v1/tasks failed"
+  LINK_TASK_ID="$(printf '%s' "$LINK_TASK" | jq -r .id)"
+  [[ "$LINK_TASK_ID" != "null" && -n "$LINK_TASK_ID" ]] || fail "creating the task failed: $LINK_TASK"
+  wait_task "$LINK_TASK_ID" blocked
+  LINK_TASK="$(api GET "/tasks/$LINK_TASK_ID")"
+  REASON="$(printf '%s' "$LINK_TASK" | jq -r .block_reason)"
+  [[ "$REASON" == "nonzero_exit" ]] || fail "task $LINK_TASK_ID blocked $REASON, want nonzero_exit"
+  LINK_WORKTREE="$(printf '%s' "$LINK_TASK" | jq -r .worktree_path)"
+  [[ -d "$LINK_WORKTREE" ]] || fail "the blocked task has no worktree at $LINK_WORKTREE"
+
+  CODE="$(api_status POST "/tasks/$LINK_TASK_ID/chat" -d '{"agent": "claude"}')"
+  [[ "$CODE" == "201" ]] || fail "opening a chat on a blocked task answered $CODE: $(cat "$TMP/body.json")"
+  LINK_CHAT="$(cat "$TMP/body.json")"
+  LINK_CHAT_ID="$(printf '%s' "$LINK_CHAT" | jq -r .id)"
+  printf '%s' "$LINK_CHAT" | jq -e --argjson t "$LINK_TASK_ID" \
+    '.state == "idle" and .linked_task_id == $t' >/dev/null \
+    || fail "the linked chat is wrong: $LINK_CHAT"
+
+  # Opening moved nothing: the task is still blocked, and says who holds it.
+  LINK_TASK="$(api GET "/tasks/$LINK_TASK_ID")"
+  printf '%s' "$LINK_TASK" | jq -e --argjson c "$LINK_CHAT_ID" \
+    '.state == "blocked" and .open_chat_id == $c and .available_actions == ["cancel"]' >/dev/null \
+    || fail "the task is not locked by chat $LINK_CHAT_ID: $LINK_TASK"
+
+  api POST "/chats/$LINK_CHAT_ID/send" -d '{"message": "make the failing step pass"}' >/dev/null \
+    || fail "the linked send failed"
+  STATE="$(wait_turn "$LINK_CHAT_ID" 1)"
+  [[ "$STATE" == "done" ]] || fail "the linked turn is $STATE, want done"
+  # The fake agent's edit is in the task's worktree, which is where the turn ran.
+  EDITED="$(tr -d '\r' < "$LINK_WORKTREE/chat.txt")"
+  grep -x 'fakeagent was here' <<<"$EDITED" >/dev/null \
+    || fail "the linked turn did not edit task $LINK_TASK_ID's worktree; chat.txt is: $EDITED"
+
+  CODE="$(api_status POST "/tasks/$LINK_TASK_ID/retry" -d '{}')"
+  [[ "$CODE" == "409" ]] || fail "retry on a locked task answered $CODE, want 409"
+  REASON="$(jq -r .error.code < "$TMP/body.json")"
+  [[ "$REASON" == "task_locked_by_chat" ]] || fail "the refusal is $REASON, want task_locked_by_chat"
+  HOLDER="$(jq -r .error.details.chat_id < "$TMP/body.json")"
+  [[ "$HOLDER" == "$LINK_CHAT_ID" ]] || fail "the refusal names chat $HOLDER, want $LINK_CHAT_ID"
+
+  CODE="$(api_status POST "/chats/$LINK_CHAT_ID/close")"
+  [[ "$CODE" == "200" ]] || fail "closing the linked chat answered $CODE: $(cat "$TMP/body.json")"
+  STATE="$(jq -r .state < "$TMP/body.json")"
+  [[ "$STATE" == "closed" ]] || fail "the closed chat is $STATE, want closed"
+  # The worktree is the task's: closing the chat neither removes it nor
+  # discards the edit the retry is about to commit.
+  [[ -d "$LINK_WORKTREE" ]] || fail "closing the chat removed the task's worktree at $LINK_WORKTREE"
+  LINK_TASK="$(api GET "/tasks/$LINK_TASK_ID")"
+  printf '%s' "$LINK_TASK" | jq -e \
+    '.open_chat_id == null and any(.available_actions[]; . == "retry")' >/dev/null \
+    || fail "closing the chat did not lift the lock: $LINK_TASK"
+
+  CODE="$(api_status POST "/tasks/$LINK_TASK_ID/retry" -d '{}')"
+  [[ "$CODE" == 2* ]] || fail "retry after the close answered $CODE: $(cat "$TMP/body.json")"
+  wait_task "$LINK_TASK_ID" done
+  BRANCH="$(api GET "/tasks/$LINK_TASK_ID" | jq -r .branch_name)"
+  LOG="$(git -C "$LINK_REPO" log --format=%s "$BRANCH")"
+  grep -x chat-fixed <<<"$LOG" >/dev/null \
+    || fail "the retry did not commit the chat's edit on $BRANCH: $LOG"
+  [[ -d "$LINK_WORKTREE" ]] || fail "the task's worktree is gone after it finished"
+
+  # The closed chat is terminal, so only ?archived= lists it, and ?task_id=
+  # lists it alone.
+  LISTED="$(api GET "/chats?task_id=$LINK_TASK_ID&archived=all" \
+    | jq -r --argjson id "$LINK_CHAT_ID" '[.chats[] | .id] == [$id]')"
+  [[ "$LISTED" == "true" ]] || fail "GET /v1/chats?task_id=$LINK_TASK_ID does not list chat $LINK_CHAT_ID alone"
+  unset FAKEAGENT_EDIT_FILE
+}
+
+if [[ "$ONLY" == "11" ]]; then
+  chat_on_a_task
+  echo "GATE PASS: m14 (leg 11)"
+  exit 0
+fi
 
 echo "== register the project"
 PROJECT="$(api POST /projects -d "{\"path\": \"$(hostpath "$REPO")\"}")" \
@@ -453,5 +607,9 @@ LIVE_ID="$(printf '%s' "$LIVE" | jq -r .id)"
   || fail "state=archived does not list archived chat $CAP_ID"
 CODE="$(api_status GET "/chats?archived=yes")"
 [[ "$CODE" == "400" ]] || fail "GET /v1/chats?archived=yes is $CODE, want 400"
+
+if [[ -z "$ONLY" ]]; then
+  chat_on_a_task
+fi
 
 echo "GATE PASS: m14"

@@ -338,6 +338,19 @@ func footerRestSegs(bar *actionBar, target taskActions, attention int, retry boo
 		if target.has(apiclient.ActionAnswer) {
 			segs = append(segs, footerSeg{text: styleAsk.Render("enter answer"), key: "enter", counts: true})
 		}
+		// `T` has no actionOrder row because it posts to no §6 endpoint that
+		// hands back the task, and it is on the line anyway: a locked task
+		// offers `c cancel` or nothing, and the chat holding the lock is the
+		// one thing that explains why (task 119).
+		if target.offersChat() {
+			label := "chat"
+			if target.openChatID != 0 {
+				label = fmt.Sprintf("chat #%d", target.openChatID)
+			}
+			segs = append(segs, footerSeg{
+				text: styleKey.Render(opKey(keymap.Chat)) + " " + label, key: opKey(keymap.Chat), counts: true,
+			})
+		}
 	}
 	if attention > 0 {
 		// `!` is a global row, and the pinned segment stands for those: shown

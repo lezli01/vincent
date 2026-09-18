@@ -11,7 +11,7 @@ import (
 // that quietly does something §5.5 does not describe.
 func TestTransitionTable(t *testing.T) {
 	allActions := []Action{
-		Send, Answer, Cancel, Archive, HandOff,
+		Send, Answer, Cancel, Archive, HandOff, Close,
 		TurnStarted, InputRequested, InputClosed, TurnFinished, TurnInterrupted,
 	}
 	// want[state][action] is the state the pair reaches; a missing entry
@@ -38,6 +38,7 @@ func TestTransitionTable(t *testing.T) {
 		},
 		Archived:  {},
 		HandedOff: {},
+		Closed:    {},
 	}
 	for _, s := range All {
 		for _, a := range allActions {
@@ -57,23 +58,86 @@ func TestTransitionTable(t *testing.T) {
 	}
 }
 
-// TestTheTwoTerminalStates pins the shape of the lifecycle: a chat is never
+// TestLinkedTransitionTable walks every (state, action) pair under the table
+// for a chat linked to a task (task 119 decision 2). It differs from the free
+// table in `idle` alone: `close` is the way out, and `archive` and `hand_off`
+// are not in it at all, because the worktree they would remove or transfer is
+// the task's.
+func TestLinkedTransitionTable(t *testing.T) {
+	allActions := []Action{
+		Send, Answer, Cancel, Archive, HandOff, Close,
+		TurnStarted, InputRequested, InputClosed, TurnFinished, TurnInterrupted,
+	}
+	want := map[State]map[Action]State{
+		Idle: {
+			Send:  Running,
+			Close: Closed,
+		},
+		Running: {
+			TurnStarted:     Running,
+			InputRequested:  AwaitingInput,
+			TurnFinished:    Idle,
+			TurnInterrupted: Idle,
+			Cancel:          Idle,
+		},
+		AwaitingInput: {
+			Answer:          Running,
+			InputClosed:     Running,
+			TurnFinished:    Idle,
+			TurnInterrupted: Idle,
+			Cancel:          Idle,
+		},
+		Archived:  {},
+		HandedOff: {},
+		Closed:    {},
+	}
+	for _, s := range All {
+		for _, a := range allActions {
+			next, ok := NextFor(true, s, a)
+			wantNext, wantOK := want[s][a]
+			if ok != wantOK {
+				t.Errorf("NextFor(linked, %s, %s) legal = %v, want %v", s, a, ok, wantOK)
+				continue
+			}
+			if ok && next != wantNext {
+				t.Errorf("NextFor(linked, %s, %s) = %s, want %s", s, a, next, wantNext)
+			}
+			if got := AllowedFor(true, s, a); got != wantOK {
+				t.Errorf("AllowedFor(linked, %s, %s) = %v, want %v", s, a, got, wantOK)
+			}
+		}
+	}
+	if got, want := ActionsFor(true, Idle), []Action{Close, Send}; !reflect.DeepEqual(got, want) {
+		t.Errorf("ActionsFor(linked, idle) = %v, want %v", got, want)
+	}
+}
+
+// TestTheThreeTerminalStates pins the shape of the lifecycle: a chat is never
 // parked — a failed turn leaves it idle and usable, which is the difference
 // from §6 that made a separate FSM worth having — and it ends in exactly one
-// of two ways.
+// of three ways.
 //
-// This replaces TestArchivedIsTheOnlyTerminal, which was 063's lifecycle shape
-// written down and is amended rather than patched: §5.5's "archived is the
-// only terminal state" was amended 2026-09-01 by task 074, because handing a
-// chat off transfers the worktree that archiving would remove.
-func TestTheTwoTerminalStates(t *testing.T) {
-	terminal := map[State]bool{Archived: true, HandedOff: true}
+// This was TestTheTwoTerminalStates, and before that
+// TestArchivedIsTheOnlyTerminal; each is amended rather than patched. §5.5's
+// "archived is the only terminal state" was amended 2026-09-01 by task 074,
+// because handing a chat off transfers the worktree that archiving would
+// remove; its "two terminal states" was amended 2026-09-17 by task 119,
+// because closing a chat linked to a task must leave the task's worktree
+// exactly where archiving would remove it.
+func TestTheThreeTerminalStates(t *testing.T) {
+	terminal := map[State]bool{Archived: true, HandedOff: true, Closed: true}
 	for _, s := range All {
 		if got, want := Terminal(s), terminal[s]; got != want {
 			t.Errorf("Terminal(%s) = %v, want %v", s, got, want)
 		}
-		if len(Actions(s)) == 0 && !terminal[s] {
+		if len(Actions(s)) == 0 && len(ActionsFor(true, s)) == 0 && !terminal[s] {
 			t.Errorf("state %s is a dead end but is not terminal", s)
+		}
+	}
+	// A closed chat accepts nothing under either table.
+	for _, a := range []Action{Send, Answer, Cancel, Archive, HandOff, Close} {
+		if Allowed(Closed, a) || AllowedFor(true, Closed, a) {
+			t.Errorf("closed accepts %s", a)
 		}
 	}
 	// A handed-off chat accepts nothing at all: not another message, not an
@@ -98,6 +162,7 @@ func TestHoldsProcess(t *testing.T) {
 		{AwaitingInput, true},
 		{Archived, false},
 		{HandedOff, false},
+		{Closed, false},
 	} {
 		if got := HoldsProcess(tc.state); got != tc.want {
 			t.Errorf("HoldsProcess(%s) = %v, want %v", tc.state, got, tc.want)

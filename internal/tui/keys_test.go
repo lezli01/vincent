@@ -43,6 +43,7 @@ var reboundKeys = map[string]string{
 	"repair":       "f9",
 	"follow_up":    "f10",
 	"edit_retry":   "f11",
+	"chat":         "alt+t",
 	"help":         "f12",
 	"palette":      "ctrl+a",
 }
@@ -310,6 +311,28 @@ func TestReboundKeyReplacesTheDefault(t *testing.T) {
 	}
 	if action, ok := resolveAction("f6", target); !ok || action != apiclient.ActionArchive {
 		t.Fatalf("f6 resolves to %q, %v; want archive", action, ok)
+	}
+}
+
+// TestReboundChatKeyReplacesT: `chat` is a §6 action like the rest (task 119),
+// so the board's `T` handler, which sits ahead of the action bar rather than
+// behind resolveAction, moves with it too.
+func TestReboundChatKeyReplacesT(t *testing.T) {
+	withKeymap(t, map[string]string{"chat": "alt+t"})
+
+	b := testBoard()
+	open := int64(12)
+	b.updateLoaded(boardLoadedMsg{tasks: []apiclient.Task{task(3, stateBlocked, func(tk *apiclient.Task) {
+		tk.OpenChatID = &open
+	})}})
+	if _, cmd := b.updateKey(registryKey(t, "T")); cmd != nil {
+		if _, ok := drain(cmd).(openChatMsg); ok {
+			t.Fatal("T still opens the task's chat after chat moved to alt+t")
+		}
+	}
+	_, cmd := b.updateKey(synthKey("alt+t"))
+	if msg, ok := drain(cmd).(openChatMsg); !ok || msg.id != open {
+		t.Fatalf("alt+t produced %#v, want openChatMsg for chat #%d", drain(cmd), open)
 	}
 }
 

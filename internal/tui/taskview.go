@@ -97,6 +97,12 @@ type taskView struct {
 	pullMerge   *pullMergeForm
 	pullComment *pullCommentForm
 
+	// chats is every chat opened on this task, closed ones included (task
+	// 119), for the Task Details tab's Chats section. Fetched rather than
+	// derived from the task: the task carries only the open one's id.
+	chats    []apiclient.Chat
+	chatsErr string
+
 	connected bool
 	width     int
 	height    int
@@ -304,16 +310,17 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 		t.pullNote, t.pullNoteBad = "", false
 		t.pullTab = taskPullTab{}
 		t.pullFormPending = msg.openPR
+		t.chats, t.chatsErr = nil, ""
 		t.detail.active = true
 		laneCmd := t.resetLanes()
-		return t, tea.Batch(t.detail.open(msg.id, msg.state), t.pullCmd(), laneCmd, t.lanesCmd())
+		return t, tea.Batch(t.detail.open(msg.id, msg.state), t.pullCmd(), laneCmd, t.lanesCmd(), t.chatsCmd())
 	case viewActivatedMsg:
 		if msg.id != viewTask {
 			return t, nil
 		}
 		t.detail.active = true
 		return t, tea.Batch(t.detail.loadCmd(), t.detail.syncStream(), t.pullCmd(),
-			t.lanesCmd(), t.syncLaneDetail())
+			t.lanesCmd(), t.syncLaneDetail(), t.chatsCmd())
 	case viewDeactivatedMsg:
 		if msg.id != viewTask {
 			return t, nil
@@ -343,6 +350,9 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return t, t.applyPop(msg)
 	case taskPullMsg:
 		t.applyPull(msg)
+		return t, nil
+	case taskChatsMsg:
+		t.applyChats(msg)
 		return t, nil
 	case taskChecksMsg:
 		t.applyChecks(msg)
@@ -384,6 +394,9 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 		// A reconciler tick that linked or unlinked this task's pull request
 		// re-reads the section; the detail sub-model still sees the note.
 		cmd := tea.Batch(t.detail.update(msg), t.laneUpdate(msg))
+		if ev, ok := msg.note.(apiclient.EventNote); ok {
+			cmd = tea.Batch(cmd, t.chatNoteCmd(ev.Event))
+		}
 		if ev, ok := msg.note.(apiclient.EventNote); ok &&
 			ev.Event.Type == eventTaskGitHubPullChanged {
 			cmds := []tea.Cmd{cmd, t.pullCmd()}
@@ -494,6 +507,10 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			t.openPopup()
 		}
 		return cmd
+	case opKey(keymap.Chat):
+		// Ahead of the tabs' own handlers, as R and F are: the key acts on
+		// the task, so it means the same thing on every tab.
+		return t.detail.update(msg)
 	}
 
 	if t.tab == taskTabDetails {
@@ -964,6 +981,7 @@ var taskDetailSectionOrder = []string{
 	"Overview",
 	"Execution",
 	"Relationships",
+	"Chats",
 	"Fields",
 	"Lifecycle",
 	"Warnings",
@@ -1113,6 +1131,12 @@ func (t *taskView) detailLines(width int) []string {
 	}
 	if len(relationships) > 0 {
 		out = appendTaskDetailSection(out, "Relationships", renderTaskDetailFacts(width, relationships))
+	}
+	// Only for a task that has had a chat, the way Relationships appears
+	// only for one that has relations: most tasks never do, and a section
+	// saying so would move every section under it one press further away.
+	if len(t.chats) > 0 || t.chatsErr != "" {
+		out = appendTaskDetailSection(out, "Chats", t.chatsSectionLines())
 	}
 
 	fieldFacts := make([]taskDetailFact, 0, len(task.Fields))

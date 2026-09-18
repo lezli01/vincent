@@ -108,7 +108,7 @@ Project-scoped workflows live in the repository instead, at
   tui.json                                          # TUI-local view state
   logs/daemon.log                                   # rotated, size-capped
   worktrees/{task_id}/                              # one git worktree per task
-  worktrees/chat-{chat_id}/                         # one git worktree per chat
+  worktrees/chat-{chat_id}/                         # one git worktree per chat (none for a chat opened on a task)
   transcripts/{task_id}/{step_index}-{attempt}.jsonl
   transcripts/chat-{chat_id}/{turn_seq}.jsonl
   trigger-proposals/{task_id}/                      # staged trigger files + manifest.json
@@ -159,6 +159,13 @@ keeps living in `worktrees/chat-{chat_id}/` for the rest of its life. The
 handoff transfers the claim, not the name, and nothing derives a task's
 directory from its id — so the one directory it is safe to be surprised by is
 this one.
+
+A chat [opened on a stopped task](cli.md#vincent-task-chat) is the exception to
+"a chat gets one": it has **no worktree directory of its own** and no branch of
+its own. It works in the task's worktree, on the task's branch,
+and the task stays the only claim on both — so `vincent gc` sees nothing stray
+while the chat is open or after it closes, and closing it removes nothing.
+Its transcripts are still its own, under `transcripts/chat-{chat_id}/`.
 
 Two rules worth internalizing:
 
@@ -215,9 +222,10 @@ Transcripts are bounded by `transcript_max_bytes` per attempt and pruned for
 Both of those cover a [chat](cli.md#vincent-chat) too: a turn's transcript is
 capped by `transcript_max_bytes`, and an **ended** chat's directory under
 `transcripts/chat-{chat_id}/` is reclaimed by the same retention pass, measured
-from when it ended — archived or [handed off](cli.md#vincent-chat-handoff), both
-count, and a handed-off chat's transcripts stay under `chat-{chat_id}/`, which
-the task that took its worktree never claims. A chat that has not ended keeps its transcripts however old they
+from when it ended — archived, [handed off](cli.md#vincent-chat-handoff) or
+[closed](cli.md#vincent-chat-close), all three count, and a handed-off chat's
+transcripts stay under `chat-{chat_id}/`, which the task that took its worktree
+never claims. A chat that has not ended keeps its transcripts however old they
 are, exactly as a task does.
 
 **What reclaims a transcript.** Retention, for as long as the task row exists.
@@ -233,7 +241,8 @@ goes first, so a failed unlink cannot resurrect something already reported gone
 is what closes that gap. They are the only thing in vincent that deletes a task
 or a chat row; the retention pass removes files and never a row. Deleting a task
 also removes its `trigger-proposals/{task_id}/` directory, under the same check
-that keeps the delete inside the data directory.
+that keeps the delete inside the data directory, and the closed chats opened on
+it along with their `transcripts/chat-{chat_id}/` directories.
 
 They contain everything the agent did. The **rendered prompt or command** an
 attempt was handed is recorded on the attempt's own row in the database instead —

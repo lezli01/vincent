@@ -7,7 +7,7 @@ import (
 
 // allActions is every action the table may contain, human and engine.
 var allActions = []Action{
-	Cancel, Pause, Resume, Retry, Repair, Skip, Answer, Approve, Reject, Archive, FollowUp,
+	Cancel, Pause, Resume, Retry, Repair, Skip, Answer, Approve, Reject, Archive, FollowUp, Chat,
 	Admit, Gate, RequestInput, Complete, Fail, Interrupt, InputClosed, Park,
 	FanOut, ChildrenSettled, Restore,
 }
@@ -40,6 +40,7 @@ var wantTransitions = map[State]map[Action]State{
 		Skip:    Queued,
 		Approve: Queued,
 		Reject:  Blocked,
+		Chat:    AwaitingGate, // a linked chat moves nothing (task 119)
 	},
 	AwaitingInput: {
 		Cancel:      Aborted,
@@ -69,6 +70,7 @@ var wantTransitions = map[State]map[Action]State{
 		Retry:  Queued,
 		Repair: Queued,
 		Skip:   Queued,
+		Chat:   Blocked,
 	},
 	Paused: {
 		Cancel: Aborted,
@@ -80,10 +82,12 @@ var wantTransitions = map[State]map[Action]State{
 	Done: {
 		Archive:  Archived,
 		FollowUp: Queued,
+		Chat:     Done,
 	},
 	Aborted: {
 		Archive:  Archived,
 		FollowUp: Queued,
+		Chat:     Aborted,
 	},
 	Archived: {},
 }
@@ -172,13 +176,13 @@ func TestHumanActionsFrom(t *testing.T) {
 	tests := map[State][]Action{
 		Queued:           {Cancel, Pause},
 		Running:          {Cancel, Pause},
-		AwaitingGate:     {Approve, Cancel, Reject, Skip},
+		AwaitingGate:     {Approve, Cancel, Chat, Reject, Skip},
 		AwaitingInput:    {Answer, Cancel},
 		AwaitingChildren: {Cancel, Retry},
-		Blocked:          {Cancel, Repair, Retry, Skip},
+		Blocked:          {Cancel, Chat, Repair, Retry, Skip},
 		Paused:           {Cancel, Resume},
-		Done:             {Archive, FollowUp},
-		Aborted:          {Archive, FollowUp},
+		Done:             {Archive, Chat, FollowUp},
+		Aborted:          {Archive, Chat, FollowUp},
 		Archived:         nil,
 	}
 	for state, want := range tests {
@@ -196,7 +200,7 @@ func TestHumanActionsFrom(t *testing.T) {
 // event must never be reachable through the API.
 func TestHumanClassification(t *testing.T) {
 	human := []Action{
-		Cancel, Pause, Resume, Retry, Repair, Skip, Answer, Approve, Reject, Archive, FollowUp,
+		Cancel, Pause, Resume, Retry, Repair, Skip, Answer, Approve, Reject, Archive, FollowUp, Chat,
 	}
 	engine := []Action{
 		Admit, Gate, RequestInput, Complete, Fail, Interrupt, InputClosed, Park,
@@ -361,5 +365,32 @@ func TestValid(t *testing.T) {
 	}
 	if Valid("nonsense") {
 		t.Error(`Valid("nonsense") = true`)
+	}
+}
+
+// TestChatIsOfferedFromExactlyTheFourStoppedStates pins task 119: a chat is
+// opened on a task that has stopped with its worktree still there, every row
+// is a self-loop, and the lock it places leaves `cancel` alone where cancel is
+// legal and nothing anywhere else.
+func TestChatIsOfferedFromExactlyTheFourStoppedStates(t *testing.T) {
+	want := map[State]bool{Blocked: true, AwaitingGate: true, Done: true, Aborted: true}
+	for _, s := range All {
+		if got := Can(s, Chat); got != want[s] {
+			t.Errorf("Can(%s, chat) = %v, want %v", s, got, want[s])
+		}
+		if got := Lockable(s); got != want[s] {
+			t.Errorf("Lockable(%s) = %v, want %v", s, got, want[s])
+		}
+		if tr, ok := Next(s, Chat); ok && tr.To != s {
+			t.Errorf("Next(%s, chat) = %s, want a self-loop", s, tr.To)
+		}
+	}
+	locked := map[State][]Action{
+		Blocked: {Cancel}, AwaitingGate: {Cancel}, Done: nil, Aborted: nil,
+	}
+	for s, wantActions := range locked {
+		if got := LockedActionsFrom(s); !slices.Equal(got, wantActions) {
+			t.Errorf("LockedActionsFrom(%s) = %v, want %v", s, got, wantActions)
+		}
 	}
 }

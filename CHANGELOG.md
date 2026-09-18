@@ -13,6 +13,28 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Chat with a stopped task, in its own worktree.** When a task is `blocked`,
+  waiting at a gate, `done` or `aborted`, you can open a chat on it: a
+  conversation with an agent that works in the task's worktree and on its
+  branch, instead of the one prompt and one run a repair gets. Its first turn
+  starts from what the task knows — the title, description and fields, and the
+  blocked step's failure with the tail of its transcript, the gate's
+  instructions, or the last step's summary. While the chat is open the task is
+  locked: every action but `cancel` is refused with
+  `409 task_locked_by_chat`, so nothing can retry or skip underneath the
+  conversation. Closing the chat changes no file and no branch; `cancel` on the
+  task closes the chat and aborts the task together. A later stop can open a
+  new chat, and closed ones stay listed on the task. On a containerized task
+  the chat's turns run in the task's container. Its cost stays on the chat and
+  does not count toward `max_task_cost_usd`. A task that runs `restricted` gets
+  a restricted chat, and refuses codex for it: `codex exec resume` cannot keep
+  a turn restricted, so codex now refuses a resumed restricted run instead of
+  running it full-auto. New:
+  `POST /v1/tasks/{id}/chat`, `POST /v1/chats/{id}/close`,
+  `GET /v1/chats?task_id=`, `open_chat_id` on a task, `linked_task_id` on a
+  chat, the `chat.closed` event and a third terminal chat state, `closed`;
+  `vincent task chat` and `vincent chat close` (task 119, issue #472).
+
 - **`vincent workflow render` now draws a fan-out's lane graph.** It printed
   one row per step and nothing about a `fan_out` step's lanes: no lane ids, no
   `needs:`, no waves and no `schedule: eager`. The fan-out's own row now carries

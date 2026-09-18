@@ -573,3 +573,50 @@ func assertSlotFree(t *testing.T, h *harness) {
 		t.Fatalf("%d chats still hold a process after the clock fired", n)
 	}
 }
+
+// TestRecoverLeavesALinkedChatOpen is task 119's restart rule: an interrupted
+// linked turn is finalized and never re-run, exactly like a free one, and the
+// chat returns to idle still open — so the task it locked stays locked with no
+// extra code.
+func TestRecoverLeavesALinkedChatOpen(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	task := &store.Task{
+		ProjectID: h.project.ID, Title: "stuck", WorkflowName: "t", WorkflowSnapshot: "steps: []",
+		BaseBranch: "main", BranchName: "vincent/1-stuck", State: store.TaskBlocked,
+		WorktreePath: h.repo,
+	}
+	if err := h.store.CreateTask(ctx, task, nil); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	c := &store.Chat{Title: "why", Agent: "claude", PermissionMode: "full_auto"}
+	if err := h.store.OpenLinkedChat(ctx, task.ID, store.TaskBlocked, c); err != nil {
+		t.Fatalf("OpenLinkedChat: %v", err)
+	}
+	turn, err := h.store.CreateChatTurn(ctx, c.ID, "must not be re-sent")
+	if err != nil {
+		t.Fatalf("CreateChatTurn: %v", err)
+	}
+	var orphanStopped []int64
+	h.runner.deps.StopOrphan = func(_ context.Context, taskID, turnID int64) bool {
+		orphanStopped = append(orphanStopped, taskID, turnID)
+		return false
+	}
+	if err := h.runner.Recover(context.Background()); err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+	got, err := h.store.GetChatTurn(ctx, turn.ID)
+	if err != nil || got.State != chatstate.TurnInterruptedState {
+		t.Fatalf("turn = %v (%v), want interrupted", got, err)
+	}
+	after, err := h.store.GetChat(ctx, c.ID)
+	if err != nil || after.State != chatstate.Idle {
+		t.Fatalf("chat = %v (%v), want idle", after, err)
+	}
+	if id, err := h.store.OpenLinkedChatID(ctx, task.ID); err != nil || id != c.ID {
+		t.Errorf("task lock after recovery = %d (%v), want chat %d", id, err, c.ID)
+	}
+	if len(orphanStopped) != 2 || orphanStopped[0] != task.ID || orphanStopped[1] != turn.ID {
+		t.Errorf("container-aware kill asked for %v, want task %d turn %d", orphanStopped, task.ID, turn.ID)
+	}
+}

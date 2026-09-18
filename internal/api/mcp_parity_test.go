@@ -121,6 +121,11 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		// chain, so an agent that could hand one off would be creating tasks
 		// outside the bound. 063 decision 2 is extended, not excepted.
 		{http.MethodPost, "/v1/chats/{id}/handoff"},
+		// Task 119: a chat linked to a task is still a chat (063 decision 2,
+		// extended): opening one starts agent processes outside the
+		// created_by_task_id chain, and closing one is its lifecycle.
+		{http.MethodPost, "/v1/tasks/{id}/chat"},
+		{http.MethodPost, "/v1/chats/{id}/close"},
 		// Task 082: the reported-quota push. An agent must not be able to
 		// forge a daemon-level fact about the host it runs on — a step
 		// reporting its own adapter at 99% would paint every board and status

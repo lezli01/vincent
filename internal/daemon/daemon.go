@@ -352,10 +352,15 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 			}
 		},
 	}
-	runner := taskrun.New(runnerDeps)
 	// The chat runner (§5.5, task 063). It is wired beside the task runner
 	// and shares nothing with the scheduler: a chat turn is never queued, so
 	// there is no admission loop to join.
+	//
+	// The two runners reach each other through injected functions, never an
+	// import (task 119): a linked chat's turn asks the task runner where it
+	// runs, and `cancel` on a locked task asks the chat runner to stop the
+	// turn. The closures read `runner` at call time, after it is built.
+	var runner *taskrun.Runner
 	chats := chatrun.New(chatrun.Deps{
 		Store:     st,
 		Config:    currentConfig,
@@ -364,7 +369,15 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		DataDir:   dirs.Data,
 		Logger:    logger,
 		Events:    broker,
+		Launchers: func(ctx context.Context, taskID, turnID int64) (agent.Launcher, error) {
+			return runner.ChatLauncher(ctx, taskID, turnID)
+		},
+		StopOrphan: func(ctx context.Context, taskID, turnID int64) bool {
+			return runner.StopChatOrphan(ctx, taskID, turnID)
+		},
 	})
+	runnerDeps.ChatTurns = chats
+	runner = taskrun.New(runnerDeps)
 	// Transcript retention (§17): once at startup and every 24 h after. The
 	// ticker is what makes retention work on a daemon that survives reboots
 	// (T4.1) rather than only on the restarts it no longer has.

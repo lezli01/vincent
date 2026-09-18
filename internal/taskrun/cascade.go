@@ -162,6 +162,12 @@ func (r *Runner) cascadeRetry(ctx context.Context, id int64, held bool) (int, er
 			if _, invalid := AsInvalidAction(err); invalid {
 				continue // it moved between the rollup and the write
 			}
+			if _, locked := store.AsTaskLocked(err); locked {
+				// A lane an open chat has locked is left blocked and
+				// untouched, and not counted (task 119 decision 4). It is
+				// retried by hand once its chat closes.
+				continue
+			}
 			r.deps.Logger.Error("retry: cascade to lane", "task", id, "child", childID, "error", err)
 			continue
 		}

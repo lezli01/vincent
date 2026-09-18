@@ -332,6 +332,16 @@ var bindings = []binding{
 	{op: keymap.Cancel, key: "c", label: "cancel the task (asks first — a running step is killed)", scope: scopeTaskAction, action: apiclient.ActionCancel, priority: 7},
 	{op: keymap.Archive, key: "A", label: "archive the task (asks first — the worktree is removed)", scope: scopeTaskAction, action: apiclient.ActionArchive, priority: 8, term: termArchive},
 	{op: keymap.FollowUp, key: "F", label: "follow up — run an agent prompt, a shell command or a workflow in this finished task's worktree; it returns to the state it came from", scope: scopeTaskAction, action: apiclient.ActionFollowUp, priority: 9},
+	// `T` for talk (task 119). Every letter the word "chat" offers is spoken
+	// for where a task's actions are: `c` is cancel, `C` folds, `h` walks the
+	// Output tab's attempts, and `t` is the vocabulary's free text. `T` is
+	// the triggers takeover's dry run, which clause 2 allows — that screen
+	// offers no available_actions — and keymap records as an exception on the
+	// default key alone. One row covers both halves of the key:
+	// with `open_chat_id` set the daemon offers no `chat`, and the key opens
+	// that chat instead (taskActions.offersChat), so the row is gated there
+	// rather than on the action alone.
+	{op: keymap.Chat, key: "T", label: "chat with an agent in this task's worktree — the task stays locked until the chat is closed; with a chat already open, reopen it", scope: scopeTaskAction, action: apiclient.ActionChat, priority: 10},
 
 	// Task table.
 	{key: "down", label: "move the selection (↑/↓ — the panels follow the cursor)", scope: scopePanel, context: ctxTasks, hint: "↑/↓ select", priority: 3},
@@ -473,7 +483,7 @@ var bindings = []binding{
 	// `s` is the pull-request board's key for the same idea (task 064
 	// decision 9): terminal chats are hidden by default (issue #298), and
 	// this is the way back to them.
-	{op: keymap.Scope, key: "s", label: "cycle the listing between live, archived and handed-off, and all", scope: scopePanel, context: ctxChats, hint: "s listing", priority: 7, term: termScope},
+	{op: keymap.Scope, key: "s", label: "cycle the listing between live, ended (archived, handed-off or closed), and all", scope: scopePanel, context: ctxChats, hint: "s listing", priority: 7, term: termScope},
 	{op: keymap.Refresh, key: "R", label: "reload the board", scope: scopePanel, context: ctxChats, hint: "R reload", priority: 8, term: termRefresh},
 
 	// Chat workspace.
@@ -487,6 +497,13 @@ var bindings = []binding{
 	// ctrl+t rather than `h`, for the reason ctrl+r is a combination: the
 	// composer owns every printable key (task 074).
 	{key: "ctrl+t", label: "hand the worktree and branch to a new task (the chat ends)", scope: scopePanel, context: ctxChat, hint: "ctrl+t hand off", priority: 6},
+	// The linked chat's way out (task 119), and the free chat's hand-off
+	// never shows beside it: chatView.liveBindings keeps exactly one of the
+	// two, because a chat opened on a task can be closed and nothing else,
+	// and a free chat cannot be closed at all. ctrl+q for the reason ctrl+t
+	// is a combination — the composer owns every printable key — and because
+	// the textarea binds ctrl+w, ctrl+d and ctrl+k to editing.
+	{key: chatCloseKey, label: "close this chat — a chat opened on a task; the task's worktree and branch stay, and the task unlocks (asks first)", scope: scopePanel, context: ctxChat, hint: "ctrl+q close", priority: 6},
 	{key: "esc", label: "back to the chats board", scope: scopePanel, context: ctxChat, hint: "esc back", priority: 7},
 	{key: rawToggleKey, label: "show the assistant's original Markdown instead of the rendered view", scope: scopePanel, context: ctxChat, hint: "ctrl+o raw", priority: 8},
 	{key: copyPickKey, label: "copy an assistant message, its plain text, or one of its code blocks", scope: scopePanel, context: ctxChat, hint: "ctrl+y copy", priority: 9},

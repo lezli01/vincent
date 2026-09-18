@@ -181,11 +181,11 @@ func buildArgs(spec agent.RunSpec) []string {
 		// The one option `exec resume` does not take is `-s/--sandbox`; it
 		// carries only --dangerously-bypass-approvals-and-sandbox. So
 		// Restricted has no argv spelling on a resumed run, and such a run is
-		// always full-auto (§9.3, task 072 decision 1). That is guarded
-		// structurally rather than by a run-time check: POST /v1/chats
-		// hardcodes full_auto with no request field to override it, nothing
-		// else in the codebase sets RunSpec.ResumeSessionID, and
-		// TestChatsAreAlwaysFullAuto fails the day either changes.
+		// always full-auto (§9.3, task 072 decision 1). A free chat is always
+		// full-auto anyway, but a chat linked to a restricted task is not
+		// (task 119): SupportsRestrictedResume says so, the API refuses such
+		// a chat on this adapter, and Start refuses the run outright, so the
+		// argv below is only ever reached by a full-auto resume.
 		args = append(args, "--dangerously-bypass-approvals-and-sandbox")
 	case spec.PermissionMode == agent.Restricted:
 		args = append(args, "--sandbox", "workspace-write")
@@ -227,6 +227,12 @@ const MCPTokenEnv = "VINCENT_MCP_TOKEN"
 // argv limit); the process tree is killed when ctx is canceled. The caller
 // must consume Events() until closed; Wait blocks on stream end.
 func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandle, error) {
+	if spec.ResumeSessionID != "" && spec.PermissionMode == agent.Restricted {
+		// Fail closed (task 119): `exec resume` has no sandbox flag, and a
+		// restricted run that silently went full-auto is the one outcome
+		// worse than a refused one.
+		return nil, agent.ErrRestrictedUnsupported
+	}
 	path, err := a.resolvePathWith(spec.Launcher)
 	if err != nil {
 		return nil, err
@@ -472,3 +478,7 @@ func (r *run) Argv() []string { return r.proc.Argv() }
 // halves has a captured fixture under testdata/: the argv in buildArgs, the
 // `thread_id` in stream.go, and the refusal of a dead id in failure.go.
 func (a *Adapter) SupportsResume() bool { return true }
+
+// SupportsRestrictedResume implements agent.RestrictedResumer: `codex exec
+// resume` takes no `-s/--sandbox`, so a resumed run cannot be restricted.
+func (a *Adapter) SupportsRestrictedResume() bool { return false }

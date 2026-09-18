@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,6 +30,12 @@ const (
 	// is archived (task 027). The daemon offers it from `done` and `aborted`
 	// — the two states `archive` is offered from.
 	ActionFollowUp = "follow_up"
+	// ActionChat opens a chat linked to a stopped task, working in its
+	// worktree (task 119). The daemon offers it from `blocked`,
+	// `awaiting_gate`, `done` and `aborted`; while that chat is open the task
+	// carries `open_chat_id` and offers nothing but `cancel`, where cancel is
+	// legal at all.
+	ActionChat = "chat"
 )
 
 // RepairStepID is the reserved step id the daemon records an ad-hoc repair
@@ -203,6 +210,50 @@ func (c *Client) FollowUp(ctx context.Context, id int64, in FollowUpInput) (Task
 type followUpResponse struct {
 	Task
 	Warnings []string `json:"warnings"`
+}
+
+// OpenTaskChatRequest is the body of POST /v1/tasks/{id}/chat (§6, task
+// 119). Every field is optional: the title defaults to the task's, and the
+// triple stands in for the step level of §8.6's chain, as a repair's does —
+// request > task override > the workflow's `defaults:` > the first adapter
+// that can resume a session.
+type OpenTaskChatRequest struct {
+	Title  string `json:"title,omitempty"`
+	Agent  string `json:"agent,omitempty"`
+	Model  string `json:"model,omitempty"`
+	Effort string `json:"effort,omitempty"`
+}
+
+// OpenTaskChat opens a chat linked to a stopped task (§6, task 119). The chat
+// works in the task's own worktree and branch, and the task does not move: it
+// stays in its state, locked against every action but `cancel`, until
+// CloseChat ends the chat.
+//
+// It returns the chat, which names the task in LinkedTaskID. A task already
+// carrying an open chat is a 409 TaskLockedByChat decodes; so are a task that
+// never got a worktree (`task_has_no_worktree`) and one in a state the action
+// is not offered from. An agent that cannot resume its own session is a 400
+// (`agent_cannot_resume`).
+func (c *Client) OpenTaskChat(ctx context.Context, taskID int64, req OpenTaskChatRequest) (*Chat, error) {
+	var out Chat
+	path := fmt.Sprintf("/v1/tasks/%d/%s", taskID, ActionChat)
+	if err := c.post(ctx, path, req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// TaskLockedByChat reports whether err is a task action refused because a
+// chat opened on the task is still open (409 `task_locked_by_chat`, task
+// 119), and if so which chat. The id is the way out — close that chat, or
+// keep talking in it — so a client names it rather than the refusal's prose.
+func TaskLockedByChat(err error) (chatID int64, ok bool) {
+	var e *Error
+	if !errors.As(err, &e) || e.Status != http.StatusConflict || e.Code != "task_locked_by_chat" {
+		return 0, false
+	}
+	chatID, perr := strconv.ParseInt(e.Details["chat_id"], 10, 64)
+	return chatID, perr == nil
 }
 
 // Skip marks the current step skipped and advances (§6).

@@ -208,6 +208,18 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(v.open(msg.id), m.switchTo(viewChat))
 		}
 		return m, nil
+	case taskChatOpenedMsg:
+		// `T` landing (task 119). The bars that said "opening a chat…" hear
+		// the outcome either way, and each refetches its task — the lock is
+		// on it now; a chat that exists is then opened the way enter on the
+		// chats board opens one.
+		cmds := []tea.Cmd{m.broadcast(msg)}
+		if msg.err == nil && msg.chatID != 0 {
+			if v, ok := m.views[viewChat].(*chatView); ok {
+				cmds = append(cmds, v.open(msg.chatID), m.switchTo(viewChat))
+			}
+		}
+		return m, tea.Batch(cmds...)
 	case openConfigKeyMsg:
 		// The triggers view's global-off banner (task 096.6) names a switch
 		// it must not flip itself: the daemon view's editor is where a config
@@ -552,9 +564,18 @@ func (m *root) openPalette() {
 		target = t.target()
 		editable = t.detail.stepEditable()
 		live = t.liveBindings
+	} else if lb, ok := m.views[m.active].(liveBinder); ok {
+		live = lb.liveBindings
 	}
 	m.palette = newPalette(paletteEntries(
 		ctx, target, editable, m.phase == phaseConnected, m.githubAvailable(), live))
+}
+
+// liveBinder is a surface whose registry rows depend on its state: it drops
+// the ones whose keys do nothing right now, so neither the footer nor the
+// palette offers them (issue #372).
+type liveBinder interface {
+	liveBindings(rows []binding) []binding
 }
 
 // panelOwnsKey reports whether the active surface declares key as one of its
@@ -1111,10 +1132,8 @@ func (m *root) footerLine() string {
 		}
 	}
 	rows := withoutGitHub(bindingsFor(ctx), m.githubAvailable())
-	if s, ok := m.views[m.active].(*shell); ok {
-		rows = s.liveBindings(rows)
-	} else if t, ok := m.views[m.active].(*taskView); ok {
-		rows = t.liveBindings(rows)
+	if lb, ok := m.views[m.active].(liveBinder); ok {
+		rows = lb.liveBindings(rows)
 	}
 	retry := m.phase == phaseFailed || m.phase == phaseReconnecting
 	line, hits := buildFooter(m.width, rows, bar, target, attention, retry, m.activeCapturesInput())

@@ -29,9 +29,14 @@ type Chat struct {
 	PendingInput json.RawMessage `json:"pending_input,omitempty"`
 	// HandoffTaskID is the task this chat's worktree and branch were handed
 	// to (task 074). Set exactly in `handed_off`.
-	HandoffTaskID *int64    `json:"handoff_task_id,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	HandoffTaskID *int64 `json:"handoff_task_id,omitempty"`
+	// LinkedTaskID is the task this chat was opened on (task 119). Such a
+	// chat works in that task's worktree and branch rather than its own, and
+	// while it is open the task is locked; it ends in `closed`, never in
+	// `archived` or `handed_off`.
+	LinkedTaskID *int64    `json:"linked_task_id,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // ChatTurn is one exchange in a chat.
@@ -85,11 +90,15 @@ func (c *Client) CreateChat(ctx context.Context, req CreateChatRequest) (*Chat, 
 // more call sites to touch for every parameter after them.
 type ListChatsOptions struct {
 	ProjectID int64
+	// TaskID narrows to the chats opened on one task (task 119) — at most
+	// one of them open, and any number closed. Closed is terminal, so the
+	// closed ones come back only with Archived set, as on any other listing.
+	TaskID int64
 	// Archived selects how terminal chats are treated, and reuses ListTasks'
 	// ArchivedScope because the wire parameter is the same one (§13.2,
 	// amended 2026-09-01). The zero value — ArchivedExclude — leaves the
-	// parameter off and takes the server's default, which is to hide both
-	// `archived` and `handed_off`.
+	// parameter off and takes the server's default, which is to hide every
+	// terminal state: `archived`, `handed_off` and `closed`.
 	Archived ArchivedScope
 	Limit    int
 	Offset   int
@@ -104,6 +113,9 @@ func (o ListChatsOptions) query() string {
 	q := url.Values{}
 	if o.ProjectID > 0 {
 		q.Set("project_id", strconv.FormatInt(o.ProjectID, 10))
+	}
+	if o.TaskID > 0 {
+		q.Set("task_id", strconv.FormatInt(o.TaskID, 10))
 	}
 	if o.Archived != ArchivedExclude {
 		q.Set("archived", string(o.Archived))
@@ -182,6 +194,20 @@ func (c *Client) ArchiveChat(ctx context.Context, id int64, force bool) (*Chat, 
 	}
 	var out Chat
 	if err := c.post(ctx, path, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CloseChat ends a chat opened on a task (task 119): a live turn is cancelled
+// first, the chat moves to `closed`, and the task's lock lifts. The worktree
+// and branch are the task's and are left exactly as they are.
+//
+// It returns the chat as it now stands. A free chat is a 409 — archive is how
+// one of those ends — and so is a chat already closed.
+func (c *Client) CloseChat(ctx context.Context, id int64) (*Chat, error) {
+	var out Chat
+	if err := c.post(ctx, fmt.Sprintf("/v1/chats/%d/close", id), nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

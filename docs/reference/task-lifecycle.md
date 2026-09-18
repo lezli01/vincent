@@ -8,12 +8,15 @@ restates it.
 
 This page is about **tasks**. A [chat](cli.md#vincent-chat) has its own, much
 smaller vocabulary — `idle`, `running`, `awaiting_input`, `archived`,
-`handed_off` — kept deliberately separate so no task query or board legend has
-to decide whether it means chats too. It is documented with the [chat routes](api.md#chats).
+`handed_off`, `closed` — kept deliberately separate so no task query or board
+legend has to decide whether it means chats too. It is documented with the
+[chat routes](api.md#chats). The one place the two meet is
+[chatting with a stopped task](#chatting-with-a-stopped-task), below.
 
 - [The diagram](#the-diagram)
 - [States](#states)
 - [Human actions](#human-actions)
+- [Chatting with a stopped task](#chatting-with-a-stopped-task)
 - [Step outcomes](#step-outcomes)
 - [Failure reasons](#failure-reasons)
 - [Interruption is not failure](#interruption-is-not-failure)
@@ -189,9 +192,10 @@ which it was not before follow-ups existed.
 | `set priority` | queued, paused | Reorders scheduler admission |
 | `archive` | done, aborted | Removes the worktree → `archived`, then deletes the branch **only** if it has no commits past its base. Refuses on a dirty worktree unless forced — uncommitted work would be lost, and a refusal never reaches the branch |
 | `follow_up` | done, aborted | Runs one more piece of work — an agent prompt, a shell command or a registry workflow — in the task's existing worktree and branch → `queued` (→ `paused` when [held](api.md#holding-a-retry-or-a-follow-up)), and back to the state it came from when it ends. Repeatable; it never changes the task's verdict and never spends the workflow's retry budgets |
+| `chat` | blocked, awaiting_gate, done, aborted | Opens a [chat](#chatting-with-a-stopped-task) with an agent in the task's existing worktree and branch. The task does not move, and it is **locked** — every other action but `cancel` is refused — until you close the chat |
 
 In the TUI these are the action bar keys (`a`, `x`, `r`, `R`, `E`, `s`, `p`,
-`c`, `A`, `F`); over the API they are `POST /v1/tasks/{id}/{action}`; from the
+`c`, `A`, `F`, `T`); over the API they are `POST /v1/tasks/{id}/{action}`; from the
 CLI, [`vincent task <action> <id>`](cli.md#vincent-task) — one subcommand each,
 spelled in kebab-case (`follow_up` is `vincent task follow-up`). `set priority`
 is the exception: it is a `PATCH`, and has no subcommand.
@@ -207,6 +211,68 @@ action is re-applied once from the state actually found, provided the table
 above allows it from there: `cancel` on a task the scheduler admits at that
 instant aborts the now-running task rather than reporting a conflict, and
 `pause` becomes the deferred kind that holds at the next step boundary.
+
+## Chatting with a stopped task
+
+`repair` is one prompt and one run. When the fix needs a conversation — look at
+the failure, try something, check, adjust — open a **chat on the task** instead.
+It is offered from `blocked`, `awaiting_gate`, `done` and `aborted`, and it is an
+ordinary [chat](api.md#chats) with one difference: it works in the task's own
+worktree and on its branch, so the agent starts from the files exactly as the
+task left them and its edits are the task's edits.
+
+Its first message is preceded by what the task already knows, put together by
+the daemon: the title, description and fields, and then what the stop is about —
+for `blocked`, the same failure context a repair gets, including the tail of the
+failed attempt's transcript and where to read the rest; for `awaiting_gate`, the
+gate's instructions; for `done` and `aborted`, the last step's summary and the
+abort reason. What you type follows it as written.
+
+**While the chat is open, the task is locked.** Nothing moves it, and no action
+but `cancel` is accepted — `retry`, `skip`, `approve`, `follow_up`, `archive` and
+the rest are all refused with `409 task_locked_by_chat`, naming the chat. A
+retry can never race the conversation, even between two of its turns.
+`available_actions` shows only `cancel`, where cancel is legal, or nothing; the
+task also carries `open_chat_id`, which is how a client finds the conversation.
+The task's state, step, block reason and retry budget are exactly as they were
+when you close the chat. `PATCH /v1/tasks/{id}` and the pull-request actions
+are not actions on this page, and still work.
+
+When you are done, **close the chat**. That ends the conversation and lifts the
+lock; it never touches the worktree or the branch, so you read the diff and then
+choose what the task does next — retry, skip, approve, archive. There is no
+"close and retry" in one step, on purpose. `cancel` on the locked task is the
+other way out: it stops the chat's live turn, closes the chat and aborts the
+task, together.
+
+A task can have at most one open chat. After you close it, the next stop can have
+a new one, and the closed ones stay listed on the task as its history.
+
+A few edges:
+
+- **No worktree, no chat.** A task blocked on `branch_exists` or
+  `base_branch_missing`, or aborted before it ever started, has no worktree, and
+  opening a chat on it is refused with `409 task_has_no_worktree` — vincent does
+  not create a worktree for a conversation. A git operation in progress is **not**
+  a refusal: a half-finished rebase is a fine thing to talk about.
+- **A fan-out lane with an open chat** is skipped by the parent's cascading
+  `retry`: it stays `blocked`, is not counted, and is retried by hand after its
+  chat closes. The parent's `cancel` does to such a lane what `cancel` always
+  does to a locked task.
+- **Cost stays on the chat.** Its turns are the chat's, not step runs, so they
+  do not count toward
+  [`max_task_cost_usd`](configuration.md#max_task_cost_usd).
+- **A daemon restart** during one of its turns marks that turn `interrupted` and
+  does not re-run it, like any chat's. The chat stays open, so the task stays
+  locked.
+- **A task that runs in a [container](configuration.md#container)** has its
+  chat's turns run inside that container too.
+
+Open one with [`vincent task chat`](cli.md#vincent-task-chat) or
+`POST /v1/tasks/{id}/chat`, and close it with
+[`vincent chat close`](cli.md#vincent-chat-close) or
+`POST /v1/chats/{id}/close` — see
+[the API](api.md#a-chat-on-a-stopped-task) for the details.
 
 ## Step outcomes
 
