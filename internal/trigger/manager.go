@@ -97,15 +97,20 @@ type Manager struct {
 	warned map[string]bool
 
 	// schedMu serializes the schedule tick against itself: the tick is one
-	// goroutine, but Stop and a test's manual tick must not overlap it.
+	// goroutine, but Stop and a test's manual tick must not overlap it. It is
+	// not a firing lock — fireBy below is — and it is always taken first, so
+	// the one ordering schedMu -> a trigger's lock is the only one there is.
 	schedMu sync.Mutex
 
-	// ghMu serializes GitHub judging, and ingestMu pushed events: each keeps
-	// the dedupe lookup and the ledger write of one delivery from
-	// interleaving with another's for the same trigger. A command trigger
-	// needs neither — its one poller goroutine is the only firer.
-	ghMu     sync.Mutex
-	ingestMu sync.Mutex
+	// fireMu holds one mutex per trigger, covering every firing path: the
+	// poller goroutine, GitHub judging, a pushed event, the schedule tick and
+	// the backlog drain (task 121 decision 10). It replaces the coarse
+	// ghMu/ingestMu pair, which did not cover the drain — and the drain can
+	// run for a trigger whose poll is live. Under it, the overrun read, the
+	// backlog write and the ledger write of one delivery never interleave with
+	// another's for the same trigger.
+	fireMu sync.Mutex
+	fireBy map[string]*sync.Mutex
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -142,13 +147,26 @@ func NewManager(deps Deps) *Manager {
 	}
 	m := &Manager{
 		deps: deps, log: deps.Logger, wake: make(chan struct{}, 1),
-		pollers: map[string]*poller{}, warned: map[string]bool{},
+		pollers: map[string]*poller{}, warned: map[string]bool{}, fireBy: map[string]*sync.Mutex{},
 	}
 	deps.Registry.OnChange(func(removed []string) {
 		m.dropRemoved(removed)
 		m.Wake()
 	})
 	return m
+}
+
+// lockTrigger takes a trigger's firing lock and returns its release.
+func (m *Manager) lockTrigger(id string) func() {
+	m.fireMu.Lock()
+	mu := m.fireBy[id]
+	if mu == nil {
+		mu = &sync.Mutex{}
+		m.fireBy[id] = mu
+	}
+	m.fireMu.Unlock()
+	mu.Lock()
+	return mu.Unlock
 }
 
 // SetGitHubLister installs the fetch a GitHub dry run uses. It exists because
@@ -187,6 +205,9 @@ func (m *Manager) loop(ctx context.Context) {
 	ticker := time.NewTicker(reconcileEvery)
 	defer ticker.Stop()
 	m.reconcile(ctx)
+	// The first drain of a daemon run empties groups whose tasks settled
+	// while it was down (task 121 decision 9).
+	m.drain(ctx)
 	for {
 		select {
 		case <-ctx.Done():
@@ -201,6 +222,143 @@ func (m *Manager) loop(ctx context.Context) {
 		case <-ticker.C:
 		}
 		m.reconcile(ctx)
+		m.drain(ctx)
+	}
+}
+
+// OnEvent is the broker subscription the daemon wires beside notify's (task
+// 121 decision 9). A task reaching a new state is what empties a group, so it
+// is what asks for a drain; the reconcileEvery tick is the backstop. It runs
+// on the publishing goroutine, so it does no work of its own.
+func (m *Manager) OnEvent(e *store.Event) {
+	if e == nil || e.Type != store.EventTaskStateChanged {
+		return
+	}
+	m.Wake()
+}
+
+// drain fires what the backlog holds for every group whose work has finished,
+// and discards what a disarmed trigger still holds.
+func (m *Manager) drain(ctx context.Context) {
+	groups, err := m.deps.Store.ListTriggerBacklogGroups(ctx)
+	if err != nil {
+		if ctx.Err() == nil {
+			m.log.Warn("trigger backlog not listed", "error", err)
+		}
+		return
+	}
+	discarded := map[string]bool{}
+	for _, g := range groups {
+		if ctx.Err() != nil {
+			return
+		}
+		e, err := m.entry(g.TriggerID)
+		switch {
+		case err != nil:
+			// The file left the registry: the backlog goes with the cursor,
+			// so an off period never fires (decision 5, decision 16's rule).
+			if !discarded[g.TriggerID] {
+				discarded[g.TriggerID] = true
+				m.discardBacklog(ctx, g.TriggerID, "the trigger file is gone")
+			}
+		case !e.Valid() || !m.Armed(e):
+			if !discarded[g.TriggerID] {
+				discarded[g.TriggerID] = true
+				m.discardBacklog(ctx, g.TriggerID, "the trigger was disarmed while the event was held")
+			}
+		case !Queues(e.Def.EffectiveOverrun()):
+			if !discarded[g.TriggerID] {
+				discarded[g.TriggerID] = true
+				m.discardBacklog(ctx, g.TriggerID, "the trigger no longer queues events")
+			}
+		default:
+			m.drainGroup(ctx, e.Def, g.ConcurrencyKey)
+		}
+	}
+}
+
+// discardBacklog drops every event a trigger holds and records each
+// `superseded` with why. Re-arming seeds afresh and fires nothing it held.
+func (m *Manager) discardBacklog(ctx context.Context, id, why string) {
+	unlock := m.lockTrigger(id)
+	defer unlock()
+	items, err := m.deps.Store.ListTriggerBacklogFor(ctx, id)
+	if err != nil {
+		if ctx.Err() == nil {
+			m.log.Warn("trigger backlog not listed", "trigger", id, "error", err)
+		}
+		return
+	}
+	now := m.deps.Now()
+	for _, it := range items {
+		if err := m.deps.Store.DeleteTriggerBacklog(ctx, it.ID); err != nil {
+			m.log.Warn("held trigger event not dropped", "trigger", id, "error", err)
+			return
+		}
+		if _, err := m.deps.Store.RecordTriggerDelivery(ctx, &store.TriggerDelivery{
+			TriggerID: id, EventID: it.EventID, ConcurrencyKey: it.ConcurrencyKey,
+			Outcome: store.DeliverySuperseded, Detail: "dropped: " + why, CreatedAt: now,
+		}); err != nil {
+			m.log.Warn("discarded trigger event not recorded", "trigger", id, "error", err)
+			return
+		}
+	}
+}
+
+// drainGroup fires one held event of a group whose tasks have all settled:
+// the newest under queue_coalesce, discarding the rest, and the oldest under
+// queue_serial, leaving the rest for the next drain — which is what keeps
+// serial serial, since the fire it just made holds the group again.
+func (m *Manager) drainGroup(ctx context.Context, d *Definition, key string) {
+	unlock := m.lockTrigger(d.ID)
+	defer unlock()
+	inFlight, err := m.deps.Store.TriggerGroupInFlight(ctx, d.ID, key)
+	if err != nil {
+		if ctx.Err() == nil {
+			m.log.Warn("trigger group not read", "trigger", d.ID, "error", err)
+		}
+		return
+	}
+	if len(inFlight) > 0 {
+		return
+	}
+	items, err := m.deps.Store.ListTriggerBacklog(ctx, d.ID, key)
+	if err != nil || len(items) == 0 {
+		return
+	}
+	pick, drop := items[0], []store.TriggerBacklogItem(nil)
+	if d.EffectiveOverrun() == OverrunQueueCoalesce {
+		pick, drop = items[len(items)-1], items[:len(items)-1]
+	}
+	now := m.deps.Now()
+	for _, it := range drop {
+		if err := m.deps.Store.DeleteTriggerBacklog(ctx, it.ID); err != nil {
+			m.log.Warn("held trigger event not dropped", "trigger", d.ID, "error", err)
+			return
+		}
+		if _, err := m.deps.Store.RecordTriggerDelivery(ctx, &store.TriggerDelivery{
+			TriggerID: d.ID, EventID: it.EventID, ConcurrencyKey: it.ConcurrencyKey,
+			Outcome: store.DeliverySuperseded, Detail: "coalesced into a newer held event",
+			CreatedAt: now,
+		}); err != nil {
+			m.log.Warn("coalesced trigger event not recorded", "trigger", d.ID, "error", err)
+			return
+		}
+	}
+	// The row goes before the fire: a crash between the two loses the event,
+	// where a crash after a fire whose row is still there would replay it.
+	if err := m.deps.Store.DeleteTriggerBacklog(ctx, pick.ID); err != nil {
+		m.log.Warn("held trigger event not dropped", "trigger", d.ID, "error", err)
+		return
+	}
+	var ev Event
+	if err := json.Unmarshal(pick.EventJSON, &ev); err != nil || ev == nil {
+		m.log.Warn("held trigger event did not decode", "trigger", d.ID, "event", pick.EventID)
+		return
+	}
+	if _, err := firePlan(ctx, m.deps.Store, m.deps.Handler, d, ev, now,
+		plan{drained: true, group: key}); err != nil && ctx.Err() == nil {
+		m.log.Error("held trigger event not delivered", "trigger", d.ID, "error", err)
 	}
 }
 
@@ -382,6 +540,14 @@ func (m *Manager) tickSchedule(ctx context.Context, d *Definition) {
 	// One fire however many occurrences were missed: a weekend of downtime
 	// produces one task, not forty. Decision 13's catch-up cap is not reused
 	// here because fire-once is a strictly stronger bound.
+	//
+	// The tick is a firing path like any other, so it fires under the
+	// trigger's lock (task 121 decision 10): a strike and a backlog drain for
+	// the same schedule must not interleave their overrun read and ledger
+	// write. schedMu is already held here, and nothing takes it while holding
+	// a trigger's lock, so the ordering stays one-way.
+	unlock := m.lockTrigger(d.ID)
+	defer unlock()
 	del, err := fire(ctx, m.deps.Store, m.deps.Handler, d, sch.Event(due), now)
 	if err != nil {
 		// The anchor stays put, so the occurrence is judged again next tick;
@@ -472,6 +638,8 @@ func (m *Manager) pollCommand(ctx context.Context, d *Definition) {
 		return
 	}
 	events := m.capEvents(d.ID, res.Events)
+	unlock := m.lockTrigger(d.ID)
+	defer unlock()
 	for _, ev := range events {
 		del, err := fire(ctx, m.deps.Store, m.deps.Handler, d, ev, now)
 		if err != nil {

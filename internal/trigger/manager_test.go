@@ -140,6 +140,16 @@ func (h *harness) write(id, src string) {
 	h.reg.Reload()
 }
 
+// def is the loaded definition of the `tix` trigger the overrun tests write.
+func (h *harness) def() *Definition {
+	h.t.Helper()
+	e, ok := h.reg.Get("tix")
+	if !ok || !e.Valid() {
+		h.t.Fatalf("trigger tix not loaded: %v", e.Errors)
+	}
+	return e.Def
+}
+
 // jira is the loaded definition of the `jira` command trigger every poller
 // test writes.
 func (h *harness) jira() *Definition {

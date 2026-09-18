@@ -172,8 +172,6 @@ func (m *Manager) GitHubWants(ctx context.Context) map[int64]GitHubWant {
 // JudgeGitHub judges one project's listing for every armed GitHub trigger on
 // it: the reconciler's half of decision 31D.
 func (m *Manager) JudgeGitHub(ctx context.Context, projectID int64, listing GitHubListing) {
-	m.ghMu.Lock()
-	defer m.ghMu.Unlock()
 	for _, e := range m.deps.Registry.List() {
 		if !m.Armed(&e) || !e.Def.IsGitHub() || e.Def.Source.Project != projectID {
 			continue
@@ -181,7 +179,11 @@ func (m *Manager) JudgeGitHub(ctx context.Context, projectID int64, listing GitH
 		if ctx.Err() != nil {
 			return
 		}
-		m.judgeGitHubTrigger(ctx, e.Def, listing)
+		func() {
+			unlock := m.lockTrigger(e.Def.ID)
+			defer unlock()
+			m.judgeGitHubTrigger(ctx, e.Def, listing)
+		}()
 	}
 }
 
