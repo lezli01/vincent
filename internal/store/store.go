@@ -18,10 +18,15 @@ import (
 // ErrNotFound is returned when a requested row does not exist.
 var ErrNotFound = errors.New("not found")
 
-// timeFormat is RFC3339 UTC with a fixed-width nanosecond fraction so that
+// TimeFormat is RFC3339 UTC with a fixed-width nanosecond fraction so that
 // lexicographic TEXT comparison in SQL matches chronological order (plain
 // RFC3339Nano trims trailing zeros, which breaks lexicographic ordering).
-const timeFormat = "2006-01-02T15:04:05.000000000Z07:00"
+//
+// It is exported because a value a caller keeps *in* a TEXT column has to be
+// written in it too: internal/trigger stores a schedule's last handled
+// occurrence in `trigger_cursors.cursor` (task 121 decision 2), and a second
+// copy of the layout is the kind of thing that drifts.
+const TimeFormat = "2006-01-02T15:04:05.000000000Z07:00"
 
 // Store is the daemon's SQLite persistence layer (spec §14). All access goes
 // through a single connection (phase 1 decision), so writes are serialized
@@ -134,7 +139,7 @@ func dsn(path string) string {
 		"?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=1&_synchronous=NORMAL"
 }
 
-func formatTime(t time.Time) string { return t.UTC().Format(timeFormat) }
+func formatTime(t time.Time) string { return t.UTC().Format(TimeFormat) }
 
 func formatTimePtr(t *time.Time) any {
 	if t == nil {
@@ -144,7 +149,7 @@ func formatTimePtr(t *time.Time) any {
 }
 
 func parseTime(s string) (time.Time, error) {
-	t, err := time.Parse(timeFormat, s)
+	t, err := time.Parse(TimeFormat, s)
 	if err != nil {
 		// Tolerate plain RFC3339 variants (hand-edited or legacy rows).
 		if t, err2 := time.Parse(time.RFC3339Nano, s); err2 == nil {

@@ -343,7 +343,7 @@ Tests isolate state via `VINCENT_CONFIG_DIR` / `VINCENT_DATA_DIR` (see
 - **Migrations are append-only.** Add `internal/store/migrations/000N_*.sql`; never
   edit an applied one.
 - **Time in SQLite** is RFC3339 UTC with fixed-width nanoseconds
-  (`store.timeFormat`) so lexicographic TEXT ordering matches chronological order.
+  (`store.TimeFormat`) so lexicographic TEXT ordering matches chronological order.
 - **Git flow:** everything lands via PR to `master`, merged with merge commits (no
   squash — branch history becomes `master`'s history). Conventional Commits
   (`feat`, `fix`, `docs`, `ci`, `chore`, `refactor`, `test`), branches named

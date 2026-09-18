@@ -135,6 +135,48 @@ What an event carries:
 A merged pull request reads `state: closed` with `Merged: true`. The id changes
 on every update, so set `dedupe_key` when you mean once per item.
 
+### `schedule`
+
+```yaml
+source:
+  type: schedule
+  project: 1
+  cron: "0 9 * * 1-5"        # or: every: 6h — exactly one of the two
+  timezone: Europe/Budapest  # optional; default is the daemon host's zone
+```
+
+- **Keys.** Exactly one of `cron` or `every` is required; both set, or neither,
+  is refused. `timezone` is optional.
+- **`cron` grammar.** Five space-separated fields — minute (`0-59`), hour
+  (`0-23`), day of month (`1-31`), month (`1-12`) and day of week (`0-7`,
+  where both `0` and `7` are Sunday). Each field is a `*`, a single value, a
+  range `a-b`, a comma list of either, or any of those with a `/n` step. There
+  are **no** `@daily`-style descriptors, no seconds field and no `L` or `#`
+  extensions. An expression no calendar satisfies (`0 0 31 4 *`) is refused at
+  load.
+- **Both day fields restricted means either.** With `*` in one of `day of
+  month` and `day of week`, the other decides. With both restricted, an
+  occurrence matches *either*, as crontab(5) has always done: `0 9 1 * 1` is
+  the first of the month **and** every Monday.
+- **`every`.** A duration of at least `1s`, counted from the moment the
+  trigger was enabled — not from a wall-clock boundary. `every: 6h` on a
+  trigger enabled at 10:17 fires at 16:17.
+- **Refused.** `poll_interval`, `command`, `signature` and `allowed_actors`.
+- **`.Event`.** `id` and `scheduled_at` are the occurrence in UTC with
+  fixed-width nanoseconds; `weekday` (`"Monday"`), `hour`, `minute` and `date`
+  (`"2026-09-21"`) are the same instant in the schedule's zone. Because `id`
+  is the occurrence, the default `dedupe_key` already makes two evaluations of
+  one occurrence fire once.
+- **Overdue fires once.** A weekend of downtime produces one task, not forty:
+  the tick fires the last occurrence that passed and moves on.
+- **DST.** An occurrence inside the skipped spring-forward hour fires once, at
+  the first real instant after the jump. An occurrence inside the repeated
+  fall-back hour fires once, not twice. `every` is a duration and is affected
+  by neither.
+- **No poll and no seed row.** `POST /v1/triggers/{id}/poll` refuses a
+  schedule: there is no source to run once. Use `vincent trigger test` with a
+  synthetic event.
+
 ### `http`
 
 ```yaml

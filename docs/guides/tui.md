@@ -1745,12 +1745,15 @@ whether the file is enabled, whether it is **armed**, the source and action
 types, the project, `on_fire`, poll health, and when it last polled and last
 fired. The armed column reads `● armed`, or says why not: `disabled`, `✗ invalid`,
 `global off`, or the daemon's own reason. Poll health is `ok`, `failing` or
-`not yet`, and `push` for an `http` source, which never polls. Below the table
-are the facts for the selected trigger that the table has no room for: its file,
-whether it is armed (and, for an armed trigger that has not polled yet, that its
-next poll only seeds and fires nothing), the last poll error, and any findings
-that keep the file from validating. The screen re-reads every five seconds while
-it is open, and also whenever a trigger event or a project change arrives.
+`not yet`, and reports what the source has instead where it has no poll:
+`push` for an `http` source, `clock` for a `schedule`. Below the table are the
+facts for the selected trigger that the table has no room for: its file,
+whether it is armed (and, for an armed trigger that has not polled yet, that
+its next poll only seeds and fires nothing — for a schedule, that its next
+tick anchors its clock and fires nothing), the last poll error, and any
+findings that keep the file from validating. The screen re-reads every five
+seconds while it is open, and also whenever a trigger event or a project
+change arrives.
 
 **While `triggers.enabled` is off**, a banner above the list says so. Every
 trigger is then inert whatever its own `enabled:` says, so every row reads
@@ -1767,7 +1770,7 @@ which asks before it applies a value. The form repeats the warning at its top.
 | `e` | Open the trigger's file in `$EDITOR` |
 | `D` | Delete the trigger's file — its ledger is kept (asks first) |
 | `T` | Dry-run a sample event through the trigger's filter; fires nothing |
-| `X` | Poll the source once and judge what it returns; fires nothing |
+| `X` | Poll the source once and judge what it returns; fires nothing. Refused on `http` and `schedule`, which have no source to run |
 | `tab` | Move between the trigger list and its delivery ledger |
 | `B` | Open `triggers.enabled`, the global switch, in the daemon view's editor |
 | `R` | Re-read the triggers and the ledger |

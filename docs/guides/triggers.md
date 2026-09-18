@@ -38,15 +38,17 @@ before you turn it on. See the
 [configuration reference](../reference/configuration.md#triggers) for the key
 itself.
 
-A trigger that is enabled, valid and globally switched on is **armed**. Only an
-armed trigger polls or accepts a push. `GET /v1/triggers` lists every file with
-`armed` and, when it is not armed, a `disarmed_reason`: the file does not
-validate, the trigger is disabled, or `triggers.enabled` is off.
+A trigger that is enabled, valid and globally switched on is **armed**. Only
+an armed trigger polls, ticks or accepts a push. `GET /v1/triggers` lists
+every file with `armed` and, when it is not armed, a `disarmed_reason`: the
+file does not validate, the trigger is disabled, or `triggers.enabled` is off.
 
 **Arming seeds.** The first poll after a trigger is armed records what the
 source already shows and **fires nothing**. That applies whether the trigger was
 armed by its own `enabled:` or by the global key. A backlog that existed before
-you turned a trigger on never starts work.
+you turned a trigger on never starts work. A `schedule` has no poll and anchors
+its clock at that moment instead, to the same effect: the first occurrence it
+ever fires is one that falls after the trigger was armed.
 
 The rest of the lifecycle follows from that rule:
 
@@ -91,7 +93,7 @@ limits:
 |---|---|
 | `id` | Required. Lowercase letters, digits, `-`, `_` and `.`, starting with a letter or digit, and equal to the file name without `.yaml`. |
 | `enabled` | The per-trigger switch. Absent means `false`. |
-| `source` | Where events come from: `type` (`command`, `github_issues`, `github_prs` or `http`), `project`, and the keys that type takes. |
+| `source` | Where events come from: `type` (`command`, `github_issues`, `github_prs`, `http` or `schedule`), `project`, and the keys that type takes. |
 | `match` | A cheap prefilter: dotted paths into the event, each with the value it must have. |
 | `if` | A guard over `.Event` that must render `true` or `false`. |
 | `allowed_actors` | GitHub sources only: the issue or pull-request **authors** whose events may pass. |
@@ -387,6 +389,99 @@ sender on the daemon's machine that can add it:
 The route is not an MCP tool, because an agent that could inject events could
 start agents.
 
+### `schedule`: fire on a clock
+
+```yaml
+source:
+  type: schedule
+  project: 1
+  cron: "0 9 * * 1-5"        # or: every: 6h — exactly one of the two
+  timezone: Europe/Budapest  # optional; default is the daemon host's zone
+```
+
+A `schedule` source is the clock rather than an outside system: it is what to
+use for work no event announces — a nightly dependency sweep, a weekday morning
+report. Everything after the source is the same as every other trigger:
+`match:`, `if:`, `dedupe_key:`, all four actions, the `propose` gate, the
+`restricted` clamp and `limits.max_per_hour`.
+
+Set **exactly one** of `cron:` and `every:`. Both, or neither, is refused when
+the file loads. `poll_interval:`, `command:`, `signature:` and `allowed_actors`
+are refused too: there is nothing to poll, run, sign or attribute.
+
+**The `cron:` grammar** is five space-separated fields and nothing more:
+
+| Field | Range |
+|---|---|
+| minute | `0-59` |
+| hour | `0-23` |
+| day of month | `1-31` |
+| month | `1-12` |
+| day of week | `0-7` — both `0` and `7` are Sunday |
+
+Each field is a `*`, a single value, a range `a-b`, a comma list of either, or
+any of those followed by a `/n` step. There are **no** `@daily`-style
+descriptors, no seconds field and no `L` or `#` extensions — the grammar the
+form's help describes is exactly the grammar the daemon parses. An expression no
+calendar satisfies, such as `0 0 31 4 *`, is refused when the file loads.
+
+```yaml
+cron: "0 9 * * 1-5"       # 09:00, Monday to Friday
+cron: "*/15 9-17 * * *"   # every quarter hour between 09:00 and 17:59
+cron: "0 3 1 * *"         # 03:00 on the first of the month
+cron: "0 9 1 * 1"         # the first of the month AND every Monday — see below
+```
+
+With `*` in one of the two day fields, the other decides. With **both**
+restricted, an occurrence matches *either* — which is what crontab(5) has always
+done, and why the last line above fires on Mondays as well as on the first.
+
+**`every:`** is a duration of at least `1s`, counted from the moment the trigger
+was enabled rather than from a wall-clock boundary. `every: 6h` on a trigger
+enabled at 10:17 fires at 16:17, 22:17, and so on — which is the only honest
+answer for `every: 90m`.
+
+**`timezone:`** is an IANA name. An unknown one is refused when the file loads;
+it never falls back to UTC quietly. Absent, the daemon host's zone is used.
+
+**Arming anchors the clock, and re-arming anchors it again.** Enabling a
+schedule records that moment and fires nothing: the first occurrence it ever
+fires is one that falls after your keypress. Disabling and re-enabling it — or
+turning `triggers.enabled` off and on — anchors afresh, so nothing fires for the
+period it was off. **A daemon stop, a suspend or a reboot is none of those:** the
+anchor survives, so a schedule that came due while the machine was asleep fires
+when the daemon is back.
+
+**An overdue schedule fires once.** A weekend of downtime produces one task, not
+forty: the next tick fires the last occurrence that passed and moves on.
+
+**Daylight saving.** An occurrence inside the hour a spring-forward jump skips
+fires once, at the first real instant after the jump. An occurrence inside the
+hour a fall-back repeats fires once, not twice. `every:` is a duration and is
+affected by neither.
+
+**`.Event`** carries six keys. `id` and `scheduled_at` are the occurrence in
+UTC; `weekday`, `hour`, `minute` and `date` are the same instant in the
+schedule's own zone, because an author who writes `0 9 * * 1-5` means their own
+Monday morning.
+
+```yaml
+action:
+  type: create_task
+  workflow: dependency-sweep
+  title: "Dependency sweep {{ .Event.date }}"
+```
+
+Because `id` is the occurrence, the default `dedupe_key` already makes two
+evaluations of one occurrence fire once — you do not need a template for it.
+
+A schedule has no source to run once, so `POST /v1/triggers/{id}/poll` refuses
+it, and with it the triggers view's `X` and the `trigger_poll` MCP tool. Use
+`vincent trigger test` with a synthetic event instead. And a scheduled
+`follow_up` or `retry` whose `branch` renders to a branch no unarchived task
+is on is silent by design: the ledger records `refused`, and nothing else
+happens.
+
 ## Actions
 
 ### `create_task`
@@ -491,8 +586,9 @@ against, so it judges nothing and `events` comes back empty. The
 answer holds `seed` (a real poll now would only seed), `events` (one judgement
 each), `truncated` (events past the cap of 20), `refused` (command output lines
 that were not events), the `cursor` the command printed, and `error` when the
-command or listing failed. A failing poll still answers `200`. An `http` trigger
-has no poll, and the route answers `400`.
+command or listing failed. A failing poll still answers `200`. A trigger with
+no source to run once — `http`, which is pushed, and `schedule`, which is a
+clock — is a `400`.
 
 The command itself really runs, so whatever it does outside vincent still
 happens.

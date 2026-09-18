@@ -265,3 +265,94 @@ func TestTriggerReadsAndDryRunsOverTheWire(t *testing.T) {
 		t.Errorf("TriggerDeliveries(limit 1) = %+v, %v", rows, err)
 	}
 }
+
+// TestScheduleTriggerOverTheWire: the fifth source type reaches the wire with
+// no new route and no new client field (task 121). The starter writes a
+// command source, and one PATCH turns it into a clock — which is the path a
+// form takes too, since it renders from the served descriptor.
+func TestScheduleTriggerOverTheWire(t *testing.T) {
+	h := newTriggerClientHarness(t)
+	ctx := t.Context()
+
+	created, err := h.c.CreateTrigger(ctx, apiclient.CreateTriggerRequest{
+		ID: "nightly", ProjectID: h.projectID, PollInterval: "10m",
+		Command: []string{"poll-command"}, Title: "Sweep {{ .Event.scheduled_at }}",
+	})
+	if err != nil {
+		t.Fatalf("CreateTrigger: %v", err)
+	}
+	patched, err := h.c.PatchTrigger(ctx, "nightly", created.Version, []apiclient.WorkflowOp{
+		{Op: "set", Path: "source.type", Value: "schedule"},
+		{Op: "set", Path: "source.every", Value: "2s"},
+		{Op: "remove", Path: "source.poll_interval"},
+		{Op: "remove", Path: "source.command"},
+	})
+	if err != nil {
+		t.Fatalf("PatchTrigger to a schedule: %v", err)
+	}
+	if len(patched.Errors) != 0 {
+		t.Fatalf("the schedule did not validate: %+v", patched.Errors)
+	}
+
+	list, err := h.c.Triggers(ctx)
+	if err != nil {
+		t.Fatalf("Triggers: %v", err)
+	}
+	row := list.Triggers[0]
+	if row.SourceType != "schedule" || !row.Valid || row.Enabled || row.Poll.Seeded || row.OnFire != "propose" {
+		t.Errorf("summary = %+v, want a valid, disabled, unanchored schedule", row)
+	}
+
+	// There is no source to run once, so the live-poll dry run refuses; the
+	// supplied-event dry run is unchanged and still judges.
+	if _, err := h.c.PollTrigger(ctx, "nightly"); err == nil {
+		t.Error("PollTrigger on a schedule succeeded")
+	} else {
+		e := apiStatus(t, err, http.StatusBadRequest)
+		if !strings.Contains(e.Message, "no poll") {
+			t.Errorf("PollTrigger error = %q, want it to say the source has no poll", e.Message)
+		}
+	}
+	j, err := h.c.TestTrigger(ctx, "nightly", map[string]any{
+		"id": "2026-09-21T07:00:00.000000000Z", "scheduled_at": "2026-09-21T07:00:00.000000000Z",
+	})
+	if err != nil {
+		t.Fatalf("TestTrigger: %v", err)
+	}
+	if j.Action == nil || !strings.Contains(string(j.Action.Body), "2026-09-21") {
+		t.Errorf("judgement = %+v, want the title rendered over the occurrence", j)
+	}
+
+	// A cron definition is proven through the validator rather than by
+	// waiting: cron's finest granularity is a minute.
+	v, err := h.c.ValidateTrigger(ctx, fmt.Sprintf(`id: weekdays
+source:
+  type: schedule
+  project: %d
+  cron: "0 9 * * 1-5"
+  timezone: UTC
+action:
+  type: create_task
+  title: 'sweep {{ .Event.date }}'
+`, h.projectID), "weekdays")
+	if err != nil || !v.Valid {
+		t.Fatalf("ValidateTrigger on a cron schedule = %+v, %v", v, err)
+	}
+
+	// The descriptor a form renders carries the variant and its three fields.
+	schema, err := h.c.TriggerSchema(ctx)
+	if err != nil {
+		t.Fatalf("TriggerSchema: %v", err)
+	}
+	var fields []string
+	for _, s := range schema.Sources {
+		if s.Type == "schedule" {
+			for _, f := range s.Fields {
+				fields = append(fields, f.Name)
+			}
+		}
+	}
+	if want := []string{"type", "project", "cron", "every", "timezone"}; !slices.Equal(fields, want) {
+		t.Errorf("schedule variant fields = %v, want %v", fields, want)
+	}
+}

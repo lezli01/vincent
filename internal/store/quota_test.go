@@ -17,7 +17,7 @@ func observation(agent string, observed, resets time.Time, reported bool) *Agent
 }
 
 // TestAgentQuotaRoundTrips proves the 0011 table exists on a store the migrator
-// opened and that both timestamps survive store.timeFormat unchanged — the
+// opened and that both timestamps survive store.TimeFormat unchanged — the
 // nanosecond-width format the whole schema uses, not RFC3339Nano.
 func TestAgentQuotaRoundTrips(t *testing.T) {
 	s := openTest(t)

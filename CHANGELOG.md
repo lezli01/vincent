@@ -13,6 +13,27 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Scheduled triggers: a `type: schedule` source.** A trigger can now be the
+  clock rather than an outside system — a nightly dependency sweep, a weekday
+  morning report — with `cron: "0 9 * * 1-5"` or `every: 6h` (exactly one of
+  the two) and an optional `timezone:`. The cron grammar is five fields with
+  `*`, ranges, lists and `/n` steps, and nothing else: no `@daily`
+  descriptors, no seconds field, no `L` or `#`. Everything after the source is
+  what every other trigger already had — `match:`, `if:`, `dedupe_key:`, all
+  four actions, `on_fire: propose` by default, the `restricted` clamp,
+  `limits.max_per_hour`, and `enabled: false` at birth. **Enabling a schedule
+  anchors its clock at that moment and fires nothing**, and disabling and
+  re-enabling it anchors afresh; a daemon stop, a suspend or a reboot keeps the
+  anchor, so a schedule that came due while the machine slept fires **once**
+  when the daemon is back, however many occurrences it missed. `.Event` carries
+  `id` and `scheduled_at` (the occurrence, UTC) plus `weekday`, `hour`,
+  `minute` and `date` in the schedule's own zone. An unknown zone name is
+  refused when the file loads, never quietly read as UTC, and the shipped
+  binary now embeds the IANA time-zone database so a named zone works on
+  Windows too. `POST /v1/triggers/{id}/poll` refuses a schedule — there is no
+  source to run once — and the TUI's triggers view shows `clock` in its poll
+  column instead of "not yet" forever. No migration, no new route, no new CLI
+  command (task 121, issue #480).
 - **Chat with a stopped task, in its own worktree.** When a task is `blocked`,
   waiting at a gate, `done` or `aborted`, you can open a chat on it: a
   conversation with an agent that works in the task's worktree and on its

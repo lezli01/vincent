@@ -40,6 +40,9 @@ Arming seeds. The first poll after arming records what the source already
 shows and fires nothing. "I turned it on and nothing happened" is therefore
 correct behaviour for events that existed before arming. Disarming drops the
 cursor, so each re-arm seeds again, and events from the off period never fire.
+A `schedule` has no poll: arming anchors its clock at that moment, so the first
+occurrence it fires is one that falls after the keypress, and a disable/enable
+cycle anchors afresh. A daemon restart is not a disarm and keeps the anchor.
 
 ## 2. Is the source healthy?
 
@@ -66,6 +69,12 @@ cursor, so each re-arm seeds again, and events from the off period never fire.
   the project's `origin` is not a github.com repository.
 - **The listing failed.** Authentication or the rate limit are the usual
   causes.
+
+**`schedule`:** A schedule has no poll and so no poll health to read — the TUI's
+cell reads `clock`, and `poll.last_poll_at` is only when its clock was last
+anchored or fired, never a poll. A schedule that never fires is an arming
+question (above) or a filter one (the ledger, below); `trigger_poll` refuses it,
+so reproduce with `vincent trigger test` and a synthetic event.
 
 **`http`:** An `http` source has no poll. Its failures surface as the status a
 push receives:

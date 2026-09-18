@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -280,5 +281,42 @@ func init() {
 	// probes live beside its fixtures.
 	for ctx, probes := range triggerProbes {
 		panelKeyProbes[ctx] = probes
+	}
+}
+
+// TestTriggersScheduleRendersAClock: a schedule never polls, so the poll cell
+// reports a clock rather than sitting on "not yet" forever, and the armed
+// hint says what the next tick actually does (task 121).
+func TestTriggersScheduleRendersAClock(t *testing.T) {
+	v := triggersFixture()
+	v.list.Triggers[0].SourceType = "schedule"
+	v.list.Triggers[0].Enabled = true
+	v.list.Triggers[0].Armed = true
+	cell, _ := trigPollCell(v.list.Triggers[0])
+	if cell != "clock" {
+		t.Errorf("poll cell = %q, want %q", cell, "clock")
+	}
+	body := v.render(120, 24)
+	for _, line := range strings.Split(body, "\n") {
+		if strings.Contains(line, "alpha") && strings.Contains(line, "not yet") {
+			t.Errorf("the schedule's row reported an unpolled source:\n%s", line)
+		}
+	}
+	if !strings.Contains(body, "clock") {
+		t.Errorf("no clock cell in:\n%s", body)
+	}
+	hint := strings.Join(v.detailLines(120), "\n")
+	if !strings.Contains(hint, "anchors its clock") {
+		t.Errorf("armed hint = %q, want the clock wording", hint)
+	}
+	// Once anchored there is no hint to give, and a pushed source keeps its
+	// own cell.
+	v.list.Triggers[0].Poll.Seeded = true
+	if hint := strings.Join(v.detailLines(120), "\n"); strings.Contains(hint, "anchors its clock") {
+		t.Errorf("an anchored schedule still offered the hint: %q", hint)
+	}
+	v.list.Triggers[0].SourceType = "http"
+	if cell, _ := trigPollCell(v.list.Triggers[0]); cell != "push" {
+		t.Errorf("poll cell for a pushed source = %q, want %q", cell, "push")
 	}
 }

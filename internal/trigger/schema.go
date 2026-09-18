@@ -144,6 +144,22 @@ func SchemaDescriptor() Schema {
 				Events: GitHubEvents(SourceGitHubPRs), Trusted: trustedList(SourceGitHubPRs),
 			},
 			{
+				Type: SourceSchedule,
+				Help: "fire on a clock: a cron expression, or a fixed interval counted from the moment the trigger was enabled",
+				Fields: []SchemaField{
+					sourceType, project,
+					{Name: "cron", Control: workflow.ControlString, Help: CronGrammar},
+					{
+						Name: "every", Control: workflow.ControlDuration,
+						Help: "instead of cron: fire this long after being enabled and then every interval; at least " + MinPollInterval.String(),
+					},
+					{
+						Name: "timezone", Control: workflow.ControlString,
+						Help: "IANA zone the cron expression is read in, such as Europe/Budapest; defaults to the daemon host's zone",
+					},
+				},
+			},
+			{
 				Type: SourceHTTP,
 				Help: "accept a signed event on POST /v1/triggers/{id}/events; the caller also needs the daemon's bearer token",
 				Fields: []SchemaField{

@@ -932,6 +932,13 @@ steps:
       13. Nothing relies on .Event in the steps of the workflow action.workflow
           names: .Event exists only in trigger templates. Report such a
           workflow; do not edit it.
+      14. A trigger whose real signal is the clock rather than an outside
+          event is a schedule source: one of cron: or every:, with a timezone:
+          where the hour is somebody's local hour. A poll command that only
+          tests the date, or an every-minute poll script whose work is
+          periodic, is a schedule instead — but a source.type change is a
+          finding to report, not an edit to make, when the trigger is armed
+          and its cursor means something to it.
 
       ## What you may not change
 
