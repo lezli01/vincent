@@ -333,3 +333,225 @@ func TestWatermarkClearsLeavingAwaitingChildren(t *testing.T) {
 		t.Errorf("a barrier park carries a watermark: %d", *barrier.SettledChildrenWatermark)
 	}
 }
+
+// spend writes one finished step run on taskID reporting cost, or reporting no
+// cost at all when cost is nil — the row a codex- or cursor-shaped attempt
+// leaves (§9). Attempts are numbered by the caller; step_runs has no unique
+// key on them, so a test may seed several on one step.
+func spend(t *testing.T, s *Store, taskID int64, attempt int, cost *float64) {
+	t.Helper()
+	run := &StepRun{
+		TaskID: taskID, StepIndex: 0, StepID: "work", StepType: "agent",
+		Attempt: attempt, State: StepSucceeded, CostUSD: cost,
+	}
+	if err := s.CreateStepRun(t.Context(), run); err != nil {
+		t.Fatalf("CreateStepRun(task %d): %v", taskID, err)
+	}
+}
+
+// TestTreeCostIsTheSameFromEveryNode is task 116's shared budget: the tree cap
+// is compared against one figure however deep the task asking sits, so the
+// root, a lane and a grandchild must all climb to the same root and sum the
+// same subtree — a lane's sibling and its sibling's children included, which a
+// walk up the ancestor chain alone would miss. An archived lane still counts:
+// archiving a lane does not refund what it spent. Every cost is a dyadic
+// fraction so the sums compare exactly.
+func TestTreeCostIsTheSameFromEveryNode(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	root := newTask(p.ID, "root", TaskAwaitingChildren)
+	if err := s.CreateTask(ctx, root, nil); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	spend(t, s, root.ID, 1, float64Ptr(0.5))
+	mid := lane(t, s, p.ID, root.ID, "mid", 0, TaskAwaitingChildren)
+	spend(t, s, mid.ID, 1, float64Ptr(0.25))
+	sibling := lane(t, s, p.ID, root.ID, "sibling", 1, TaskRunning)
+	// Two attempts: a retry spends again (§17).
+	spend(t, s, sibling.ID, 1, float64Ptr(1))
+	spend(t, s, sibling.ID, 2, float64Ptr(0.125))
+	archived := lane(t, s, p.ID, root.ID, "archived", 2, TaskArchived)
+	spend(t, s, archived.ID, 1, float64Ptr(2))
+	grandchild := lane(t, s, p.ID, mid.ID, "deep", 0, TaskRunning)
+	spend(t, s, grandchild.ID, 1, float64Ptr(4))
+	// A row that reported nothing adds nothing, and does not hide the rest.
+	spend(t, s, grandchild.ID, 2, nil)
+
+	const want = 0.5 + 0.25 + 1 + 0.125 + 2 + 4
+	for name, id := range map[string]int64{
+		"root": root.ID, "lane": mid.ID, "sibling": sibling.ID,
+		"archived lane": archived.ID, "grandchild": grandchild.ID,
+	} {
+		gotRoot, cost, err := s.TreeCost(ctx, id)
+		if err != nil {
+			t.Fatalf("TreeCost(%s): %v", name, err)
+		}
+		if gotRoot != root.ID {
+			t.Errorf("TreeCost(%s) root = %d, want %d", name, gotRoot, root.ID)
+		}
+		if !cost.HasCost || cost.CostUSD != want {
+			t.Errorf("TreeCost(%s) = %+v, want %v with HasCost", name, cost, want)
+		}
+	}
+}
+
+// TestTreeCostKeepsTreesApart: the budget is per tree, so a second root's spend
+// in the same project must not reach the first tree's figure, nor the other
+// way round. A task on its own is a tree of one and is its own root.
+func TestTreeCostKeepsTreesApart(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	first := newTask(p.ID, "first", TaskAwaitingChildren)
+	if err := s.CreateTask(ctx, first, nil); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	firstLane := lane(t, s, p.ID, first.ID, "first-a", 0, TaskRunning)
+	spend(t, s, firstLane.ID, 1, float64Ptr(1.5))
+
+	second := newTask(p.ID, "second", TaskAwaitingChildren)
+	if err := s.CreateTask(ctx, second, nil); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	spend(t, s, second.ID, 1, float64Ptr(0.25))
+	secondLane := lane(t, s, p.ID, second.ID, "second-a", 0, TaskRunning)
+	spend(t, s, secondLane.ID, 1, float64Ptr(8))
+
+	alone := newTask(p.ID, "alone", TaskRunning)
+	if err := s.CreateTask(ctx, alone, nil); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	spend(t, s, alone.ID, 1, float64Ptr(3))
+
+	for _, c := range []struct {
+		name     string
+		id, root int64
+		want     float64
+	}{
+		{"first tree's lane", firstLane.ID, first.ID, 1.5},
+		{"second tree's lane", secondLane.ID, second.ID, 8.25},
+		{"a task with no parent and no lanes", alone.ID, alone.ID, 3},
+	} {
+		gotRoot, cost, err := s.TreeCost(ctx, c.id)
+		if err != nil {
+			t.Fatalf("TreeCost(%s): %v", c.name, err)
+		}
+		if gotRoot != c.root || !cost.HasCost || cost.CostUSD != c.want {
+			t.Errorf("TreeCost(%s) = root %d, %+v; want root %d, %v with HasCost",
+				c.name, gotRoot, cost, c.root, c.want)
+		}
+	}
+}
+
+// TestTreeCostUnreportedIsNotZero is §17's rule for the tree: a tree whose
+// every step run left cost NULL — codex and cursor report none — and a tree
+// that has run nothing yet both report HasCost false, so the cap stays inert
+// on them instead of reading a confident $0.00.
+func TestTreeCostUnreportedIsNotZero(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+
+	unreported := newTask(p.ID, "unreported", TaskAwaitingChildren)
+	if err := s.CreateTask(ctx, unreported, nil); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	spend(t, s, unreported.ID, 1, nil)
+	codexLane := lane(t, s, p.ID, unreported.ID, "codex", 0, TaskDone)
+	spend(t, s, codexLane.ID, 1, nil)
+	spend(t, s, codexLane.ID, 2, nil)
+
+	fresh := newTask(p.ID, "fresh", TaskAwaitingChildren)
+	if err := s.CreateTask(ctx, fresh, nil); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	freshLane := lane(t, s, p.ID, fresh.ID, "queued", 0, TaskQueued)
+
+	for name, c := range map[string]struct{ id, root int64 }{
+		"every row NULL": {codexLane.ID, unreported.ID},
+		"no step runs":   {freshLane.ID, fresh.ID},
+	} {
+		gotRoot, cost, err := s.TreeCost(ctx, c.id)
+		if err != nil {
+			t.Fatalf("TreeCost(%s): %v", name, err)
+		}
+		if gotRoot != c.root {
+			t.Errorf("TreeCost(%s) root = %d, want %d", name, gotRoot, c.root)
+		}
+		if cost.HasCost || cost.CostUSD != 0 {
+			t.Errorf("TreeCost(%s) = %+v, want no cost reported", name, cost)
+		}
+		desc, err := s.DescendantsCost(ctx, c.root)
+		if err != nil {
+			t.Fatalf("DescendantsCost(%s): %v", name, err)
+		}
+		if desc.HasCost {
+			t.Errorf("DescendantsCost(%s) = %+v, want no cost reported", name, desc)
+		}
+	}
+
+	// A task that does not exist has no root and no cost, rather than an
+	// error: the row may have been deleted between a read and this one.
+	gotRoot, cost, err := s.TreeCost(ctx, 99999)
+	if err != nil || gotRoot != 0 || cost.HasCost {
+		t.Errorf("TreeCost(missing) = %d, %+v, %v; want 0, no cost, nil", gotRoot, cost, err)
+	}
+}
+
+// TestDescendantsCostExcludesTheTaskItself is §13.2's `children.cost_usd`
+// (task 116 decision 5): the descendants at every depth, archived ones
+// included, and never the task's own step runs — the tree total is that plus
+// the task's own `cost_usd`, so counting it here would count it twice. A
+// parent whose lanes reported nothing has no children cost even when the
+// parent itself spent.
+func TestDescendantsCostExcludesTheTaskItself(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	root := newTask(p.ID, "root", TaskAwaitingChildren)
+	if err := s.CreateTask(ctx, root, nil); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	spend(t, s, root.ID, 1, float64Ptr(16))
+	mid := lane(t, s, p.ID, root.ID, "mid", 0, TaskAwaitingChildren)
+	spend(t, s, mid.ID, 1, float64Ptr(0.5))
+	archived := lane(t, s, p.ID, root.ID, "archived", 1, TaskArchived)
+	spend(t, s, archived.ID, 1, float64Ptr(0.25))
+	deep := lane(t, s, p.ID, mid.ID, "deep", 0, TaskRunning)
+	spend(t, s, deep.ID, 1, float64Ptr(2))
+
+	for _, c := range []struct {
+		name    string
+		id      int64
+		want    float64
+		hasCost bool
+	}{
+		{"root", root.ID, 0.5 + 0.25 + 2, true},
+		// From the middle of the tree: only what is below it, not its
+		// siblings and not the root above it.
+		{"mid", mid.ID, 2, true},
+		// A leaf has no descendants, however much it spent itself.
+		{"leaf", deep.ID, 0, false},
+	} {
+		got, err := s.DescendantsCost(ctx, c.id)
+		if err != nil {
+			t.Fatalf("DescendantsCost(%s): %v", c.name, err)
+		}
+		if got.HasCost != c.hasCost || got.CostUSD != c.want {
+			t.Errorf("DescendantsCost(%s) = %+v, want %v (HasCost %v)", c.name, got, c.want, c.hasCost)
+		}
+	}
+
+	// The parent spent, its lanes reported nothing: unreported, not $0.00.
+	solo := newTask(p.ID, "solo", TaskAwaitingChildren)
+	if err := s.CreateTask(ctx, solo, nil); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	spend(t, s, solo.ID, 1, float64Ptr(1))
+	quiet := lane(t, s, p.ID, solo.ID, "cursor", 0, TaskDone)
+	spend(t, s, quiet.ID, 1, nil)
+	if got, err := s.DescendantsCost(ctx, solo.ID); err != nil || got.HasCost {
+		t.Errorf("DescendantsCost(solo) = %+v, %v; want no cost reported", got, err)
+	}
+}

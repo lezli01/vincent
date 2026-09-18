@@ -2073,7 +2073,13 @@ says to block for you instead; and
 [`max_task_cost_usd`](../reference/configuration.md#max_task_cost_usd), off by
 default, which blocks a task with `cost_limit` once its spend across every
 attempt passes a ceiling you set. That last one counts **one task**, so each
-fan-out lane carries its own budget, and it only sees agents that report cost.
+fan-out lane carries its own budget. Its sibling
+[`max_tree_cost_usd`](../reference/configuration.md#max_tree_cost_usd), also off
+by default, is one budget for a whole fan-out tree: the root and every lane
+below it share it, and the task whose attempt crosses it blocks with
+`tree_cost_limit`. Every lane still working finishes one attempt before it
+stops too, so a wide tree overshoots by more than one attempt. Both caps only
+see agents that report cost.
 
 ---
 

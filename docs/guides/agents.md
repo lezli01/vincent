@@ -95,7 +95,10 @@ The most capable adapter, and the only one that can be interrupted mid-step.
 - **Reports token usage and cost.** The board's cost column sums every attempt,
   retries included. The other two adapters report no cost at all — which also
   means [`max_task_cost_usd`](../reference/configuration.md#max_task_cost_usd)
-  can only stop a task that ran on claude.
+  can only stop a task that ran on claude. The same goes for
+  [`max_tree_cost_usd`](../reference/configuration.md#max_tree_cost_usd): a
+  fan-out tree counts only its claude spend, so codex and cursor lanes add
+  nothing to the total.
 - **Recognizes a spent usage quota and a logged-out CLI** in the output of a run
   that failed. A quota stop becomes `usage_limit` — no retry consumed, and by
   default the task waits and re-runs itself, though
@@ -571,8 +574,9 @@ authority there, and you find out at run time.
   the only adapter that can be asked something mid-run; all three can be
   resumed, so all three can hold a chat.
 - **Cost tracking matters** — claude. The other two report none, so the board's
-  cost column stays empty for them and a configured per-task spend cap never
-  fires. Vincent will not estimate money from token counts.
+  cost column stays empty for them and a configured spend cap, per task or per
+  tree, never counts their runs. Vincent will not estimate money from token
+  counts.
 - **Cheap, strictly unattended passes** — codex or cursor are fine; set
   `on_input: deny` and neither will ever try to stop for you anyway.
 - **You want a specific model cursor offers** — cursor, remembering that the

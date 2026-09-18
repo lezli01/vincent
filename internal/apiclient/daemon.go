@@ -146,6 +146,9 @@ type Config struct {
 	// MaxTaskCostUSD caps what one task may spend across every attempt of
 	// every step, in US dollars; 0 is no cap (§12.3, task 033).
 	MaxTaskCostUSD float64 `json:"max_task_cost_usd"`
+	// MaxTreeCostUSD caps what one fan-out tree — a root task and every
+	// descendant — may spend, in US dollars; 0 is no cap (§12.3, task 116).
+	MaxTreeCostUSD float64 `json:"max_tree_cost_usd"`
 	// UsageLimitRecheck is how long a quota-held task waits before the
 	// scheduler tries again, when the agent CLI reported no reset time (§11).
 	UsageLimitRecheck string `json:"usage_limit_recheck_interval"`
@@ -396,6 +399,7 @@ type ConfigPatch struct {
 	TranscriptRetentionDays     *int                    `json:"transcript_retention_days,omitempty"`
 	TranscriptMaxBytes          *int64                  `json:"transcript_max_bytes,omitempty"`
 	MaxTaskCostUSD              *float64                `json:"max_task_cost_usd,omitempty"`
+	MaxTreeCostUSD              *float64                `json:"max_tree_cost_usd,omitempty"`
 	UsageLimitRecheck           *string                 `json:"usage_limit_recheck_interval,omitempty"`
 	UsageLimitAutoContinue      *string                 `json:"usage_limit_auto_continue,omitempty"`
 	LogLevel                    *string                 `json:"log_level,omitempty"`

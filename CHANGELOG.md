@@ -90,6 +90,36 @@ list with the user-facing context a commit subject cannot carry.
   conflict; a refused change leaves `config.yaml` untouched. `GET` and
   `PATCH /v1/config` carry the map as `tui.keys`.
 
+- **A whole fan-out tree's spend can now be capped.** `max_task_cost_usd`
+  caps one task, and every `fan_out` lane is a task of its own, so a
+  twenty-lane tree could spend twenty times the cap before any row tripped.
+  The new top-level `max_tree_cost_usd` is one ceiling for a root task and
+  every lane below it at any depth, summed over every attempt they ever ran:
+  retries, repairs, follow-ups, the lanes a follow-up spawns and archived
+  lanes all count. It is checked at the same attempt boundaries as the
+  per-task cap. The task whose attempt crosses it, usually a lane but
+  sometimes the parent's own step, **blocks** with a new `tree_cost_limit`
+  reason, keeps its step run's own state, and consumes no retry. Each other
+  task still working in the tree finishes one attempt before it blocks too, so
+  a wide tree overshoots by up to one attempt per such task. When both caps are
+  passed at once the reason is `cost_limit`. Raise the key and retry the
+  parent, whose cascade re-admits every blocked lane; without raising it, each
+  lane buys one more attempt per press. `0` is the default and means no cap, a
+  negative value fails the load, and it hot-reloads. It is set with `vincent
+  config set max_tree_cost_usd`, `PATCH /v1/config`, or the daemon view's
+  config editor, which shows it as `max tree cost` (`off` at zero); there is
+  no per-task, trigger or workflow form. Like the per-task cap it counts only
+  what agents reported, so codex and cursor lanes add nothing.
+  ([#409](https://github.com/lezli01/vincent/issues/409))
+
+- **A fan-out parent shows what its lanes spent.** The `children` rollup on
+  `GET /v1/tasks/{id}` gains `cost_usd`: the spend of every descendant at any
+  depth, archived ones included, not counting the task's own, and `null`
+  rather than `0` when no descendant reported a cost. The TUI's **Task
+  Details** shows it as `tree cost` on any task with lanes, adding the task's
+  own spend, and `—` when nothing reported one. Board rows are unchanged.
+  ([#409](https://github.com/lezli01/vincent/issues/409))
+
 - **`f1` opens help anywhere, including in a chat.** A chat's composer, a
   filter and every form take `?` as a character, so help could not be opened
   there at all. `f1` toggles the same overlay everywhere, beside `ctrl+p` for
@@ -624,6 +654,12 @@ list with the user-facing context a commit subject cannot carry.
 - **The projects screen names the delete key it answers.** Its summary line
   said `d remove` while the key that removes a project is `D`; it now shows the
   key in force.
+
+- **Task Details in the TUI shows the task's cost.** The `cost` fact always
+  read `—`, because `GET /v1/tasks/{id}` serves no top-level `cost_usd` and the
+  view read that field alone. It now adds up the attempts the detail does
+  carry, and still reads `—` when none reported a cost.
+  ([#409](https://github.com/lezli01/vincent/issues/409))
 
 - **The `fix-and-test` example no longer accepts a task on Windows that it
   cannot finish.** Its first step's check, `! go test ./...`, is POSIX shell

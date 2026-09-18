@@ -1875,6 +1875,15 @@ does not finish until every lane is merged.
   dirty-worktree rules.
 - **Cost.** N lanes leave N worktrees on disk until someone archives them.
   That is what `vincent gc` and `vincent doctor` are for, and it will be felt.
+- **A tree shares one budget when `max_tree_cost_usd` is set.** *Added
+  2026-09-17 (task 116, issue #409).* A lane is its own task row, so
+  `max_task_cost_usd` gives every lane a budget of its own and a tree may spend
+  lanes × that cap (§12.3). `max_tree_cost_usd` is the tree's shared budget: the
+  root and every descendant at any depth count against one total, and the task
+  whose attempt crosses it blocks `tree_cost_limit` (§18). That is usually a
+  lane, and its `blocked` state holds the join open like any other. The key is
+  off by default. The parent's `children.cost_usd` (§13.2) is what its lanes
+  have spent.
 
 ### 7.7 Conditions between steps
 
@@ -5437,6 +5446,7 @@ fetch_base_branch: true        # refresh base_branch from its upstream before cu
 transcript_retention_days: 90   # transcripts of *archived* tasks older than this are pruned
 transcript_max_bytes: 512MB     # per-run transcript cap (§18); past it the step fails `transcript_limit`
 max_task_cost_usd: 0            # per-task spend ceiling (§17, §18); 0 = no cap
+max_tree_cost_usd: 0            # per-tree spend ceiling: a root and every descendant (§7.6, §17, §18); 0 = no cap
 usage_limit_recheck_interval: 15m  # how long a quota-held task waits when the CLI named no reset (§11)
 usage_limit_auto_continue: always  # what a quota stop does: always | reported_only | never (§7.2)
 parallel:
@@ -5824,9 +5834,13 @@ name. Read per check, so a hot reload reaches a task that is already running.
 It counts **one task**, which is not the same as one *tree*: a `fan_out` lane is
 an ordinary task row (§7.6), so a twenty-lane tree may spend twenty times this
 before any single row trips, and the parent's own rollup never sees a lane's
-spend. A per-tree cap was considered and deferred — it needs a recursive rollup
+spend. ~~A per-tree cap was considered and deferred — it needs a recursive rollup
 over `parent_task_id` and a rule for which task blocks when the total trips — and
-the multiplication is documented here rather than worked around. It is also
+the multiplication is documented here rather than worked around.~~ *Amended
+2026-09-17 (task 116, issue #409):* the tree has its own cap,
+`max_tree_cost_usd` below, which answers both questions. This key still counts
+one task and the multiplication still holds for it; the parent's
+`children.cost_usd` (§13.2) is now where a lane's spend shows. It is also
 inert on the adapters that report no cost: codex (§9.3) and cursor (§9.7) leave
 `cost_usd` unset, and the check is guarded by "some attempt reported a cost"
 rather than by arithmetic, so a cap must never be estimated from token counts.
@@ -5839,6 +5853,42 @@ task cap can tighten the global cap and never lift it: a task that asks for $50
 under a $10 global stops at $10. The task's value is fixed at creation; this key
 stays hot-reloaded. Inert on codex and cursor for the same reason as above
 (task 096 decision 18).
+
+**`max_tree_cost_usd` (task 116, issue #409, added 2026-09-17).** A ceiling, in
+US dollars, on what **one fan-out tree** may spend. A tree is a root task — one
+with no `parent_task_id` — and every descendant at any depth (§7.6); a task that
+never fans out is a tree of one. Its total is the §17 rollup of `cost_usd` over
+every step run of every task in it: retries, repair runs, follow-up rounds and
+the lanes a follow-up round spawns all count, and so do archived descendants,
+the way §13.2's `children` rollup counts them. It is a lifetime total and never
+resets. Past it, the task whose attempt took the tree over goes `blocked` with
+`block_reason = tree_cost_limit` (§18). Zero, the default, is no cap, and a
+negative value fails the load. It sits beside `max_task_cost_usd` for that key's
+reasons and is read per check the same way, so a hot reload reaches running work
+and "raise the cap and retry" stays the remedy.
+
+It is checked at the same attempt boundary as `max_task_cost_usd` and is
+**independent** of it, not folded into that key's lower-of: the two measure
+different quantities. When both are over at one boundary the block is
+`cost_limit`, because the narrower cap is the one raising this key cannot clear.
+Only the task whose attempt crossed the line blocks. That is usually a lane, but
+the parent's own attempts are attempts in the tree too: its steps before the
+fan-out, its steps after the join, and a `merge.on_conflict: agent` run. A parent
+parked in `awaiting_children` makes no attempts, so it never blocks this way
+while parked. Its join stays open because a lane is `blocked`, which §13.2's
+`children.blocked` already shows. Every other task still working in the tree
+learns the total is over at its own next boundary, so the overshoot is **at most
+one attempt per task still working in the tree**, not the one attempt
+`max_task_cost_usd` promises.
+
+It is a config key and nothing else. There is no create-time field on
+`POST /v1/tasks`, no `vincent task add` flag, no trigger `limits:` key and no
+workflow field. A workflow field would reverse "a budget is not something a step
+inherits" above, and a create-time field can be layered on the same check later,
+the way task 096 added one to `max_task_cost_usd`. It is inert on codex and
+cursor by the same guard, now "some step run in the tree reported a cost", and a
+tree mixing them with claude counts only what was reported. That undercount is
+stated, never estimated from token counts (task 116 decisions 1–7).
 
 **`fetch_base_branch` (task 056, added 2026-08-29).** Refreshes a task's base branch
 from its own configured upstream before the worktree is created, and starts the task
@@ -7192,6 +7242,16 @@ GET    /v1/tasks?project_id=&state=&archived=&archived_before=&archived_since=&l
                                         Derived per request from one recursive CTE, never
                                         stored: a counter would be a second truth that
                                         drifts from the rows it counts.
+                                        *Amended 2026-09-17 (task 116, issue #409):* the
+                                        rollup also carries `cost_usd`, the §17 spend of
+                                        the task's descendants at any depth, archived ones
+                                        included. It is **not** the task's own spend, which
+                                        stays in steps[], and it is `null`, never 0, when no
+                                        descendant reported a cost. Beside `blocked` it is
+                                        what tells a parent why a lane blocked
+                                        `tree_cost_limit` (§12.3). Summed by a query of its
+                                        own, so the scheduler's settle check never joins
+                                        step_runs
 POST   /v1/tasks                        { project_id, workflow, title, description?, fields?,
                                           base_branch?, branch_name?, priority?, agent?,
                                           model?, effort?, github_issue?, github_pull?,
@@ -9122,7 +9182,13 @@ stream for the live tail.
      means the `fan_out` row under the cursor, and every other tab means the
      lane the failure is about. `U` is its reciprocal — the `parent task` fact
      in the Task Details inspector becomes an action rather than a bare number.
-     Both work in **every** state the parent is in.
+     Both work in **every** state the parent is in. *Amended 2026-09-17 (task
+     116, issue #409):* beside those facts, a task with children also shows
+     `tree cost`, its own cost plus §13.2's `children.cost_usd`. On a root that
+     is the figure `max_tree_cost_usd` (§12.3) is compared against; on a nested
+     lane it is that lane's subtree. It renders `—`
+     when neither side reported a cost, never `$0.00` (task 033 decision 5).
+     The board rows are unchanged.
    - **The Output pane gains a lane selector.** `<`/`>` cycle the task's own
      output and each lane's, one at a time, and **exactly one** extra live
      subscription exists at a time: it is torn down when the selection moves and
@@ -11473,6 +11539,14 @@ the whole of the posture, not a set of tips.
   so they are **not** in this rollup and do **not** count toward
   `max_task_cost_usd` — the trade the issue's rejected multi-turn repair would
   have avoided, accepted so that a conversation stays a chat.
+  *Amended 2026-09-17 (task 116, issue #409): the figure also rolls
+  up over a tree.* When `max_tree_cost_usd` (§12.3) is set, the engine sums it
+  over the task's whole fan-out tree — the root and every descendant at any
+  depth — at the same boundary and blocks `tree_cost_limit` (§18) once that sum
+  is over. Archived descendants count, and so do the lanes a follow-up round
+  spawned, because they are rows of the tree like any other. §13.2 serves the
+  descendants' part on the parent as `children.cost_usd`, and the TUI's detail
+  view adds the task's own to show a **tree cost** on any task with children.
 - **Daemon log:** structured (slog), rotated; scheduler decisions at debug level.
 - **Retention:** transcripts of archived tasks pruned after
   `transcript_retention_days` (default 90); DB rows kept indefinitely (rows are small,
@@ -11660,7 +11734,8 @@ carries the rest.
 | Step declaring `on_input: require` on an agent that cannot ask | *Added 2026-08-17 (task 013).* A workflow pinning an adapter with no control channel (codex, cursor) fails §8.2 validation outright. Otherwise creation is refused with a `400` naming the step and the agent, and the TUI's picker will not select that agent; `GET /v1/agents` publishes the `input_verdict` the gate uses. A task that reaches the engine anyway — claude upgraded past the §9.3 ceiling, a data directory moved — fails the attempt with `input_unsupported` under the §7.2 budget, before anything is spawned. Only a positive "cannot" refuses: an absent or unprobed binary is unknown, and unknown never blocks (§9.6) |
 | Workflow restricted to platforms this host is not | *Added 2026-08-16 (task 010).* Creation is refused with a `400` naming the restriction and the host (§8.1.1); the entry stays listed and says why, and the TUI's picker will not select it. A task that *already* holds such a snapshot — the data directory moved to another OS, or the workflow narrowed after the task was queued — blocks at admission with `platform_unsupported`, before a worktree or any step. Not `invalid_snapshot`: the snapshot is valid, just not here |
 | Runaway step output (agent or command) | Past `transcript_max_bytes` (§12.3) the process tree is killed and the attempt fails `transcript_limit`, under the retry policy. The line that trips the cap is written **whole** — a truncated line would turn a size failure into a parse failure for every later reader of the JSONL — and the partial transcript is kept with a closing `vincent.transcript_limit` annotation, because the lines that got there are what explain the runaway |
-| A task spends past `max_task_cost_usd` | *Added 2026-08-26 (task 033).* The task goes `blocked` with `block_reason = cost_limit` and nothing further runs. It is a **block, not a step failure**: the finished `step_run` keeps its own state and its own reason, no retry is consumed (§7.2), and a retry that was already due does not run — retrying spends more money to arrive at the same wall, and that pre-empts `retry_backoff` too. The check happens at every **attempt boundary**, including inside a `loop` body and a `parallel` group, so the attempt that crossed the line ran to completion and the overshoot is at most one attempt: cost arrives on an agent run's terminal result line and nowhere else (§9.1), and there is no mid-run usage signal to poll. The remedy is to raise the cap (hot-reloaded, §12.3) and `retry`; a `retry` **without** raising it makes exactly one attempt of progress and blocks here again, which is idempotent and loses no work. `resume` is not the escape hatch — it is valid only from `paused` (§6). The cap counts one task, so each `fan_out` lane carries its own budget, and it is inert on codex and cursor, which report no cost at all (§9.3, §9.7). *Amended 2026-09-11 (task 096):* the cap is the **lower** of config's and the task's own `max_task_cost_usd` (§5.3, §12.3), and the block is `cost_limit` whichever side set it. A task cap cannot lift the global one. The task's value is fixed at creation — no route changes it — so when it is the lower side, raising config's does not move the wall, and `retry` makes one attempt of progress per press as above |
+| A task spends past `max_task_cost_usd` | *Added 2026-08-26 (task 033).* The task goes `blocked` with `block_reason = cost_limit` and nothing further runs. It is a **block, not a step failure**: the finished `step_run` keeps its own state and its own reason, no retry is consumed (§7.2), and a retry that was already due does not run — retrying spends more money to arrive at the same wall, and that pre-empts `retry_backoff` too. The check happens at every **attempt boundary**, including inside a `loop` body and a `parallel` group, so the attempt that crossed the line ran to completion and the overshoot is at most one attempt: cost arrives on an agent run's terminal result line and nowhere else (§9.1), and there is no mid-run usage signal to poll. The remedy is to raise the cap (hot-reloaded, §12.3) and `retry`; a `retry` **without** raising it makes exactly one attempt of progress and blocks here again, which is idempotent and loses no work. `resume` is not the escape hatch — it is valid only from `paused` (§6). The cap counts one task, so each `fan_out` lane carries its own budget (*amended 2026-09-17, task 116:* the tree's shared budget is `max_tree_cost_usd`, the next row), and it is inert on codex and cursor, which report no cost at all (§9.3, §9.7). *Amended 2026-09-11 (task 096):* the cap is the **lower** of config's and the task's own `max_task_cost_usd` (§5.3, §12.3), and the block is `cost_limit` whichever side set it. A task cap cannot lift the global one. The task's value is fixed at creation — no route changes it — so when it is the lower side, raising config's does not move the wall, and `retry` makes one attempt of progress per press as above |
+| A tree spends past `max_tree_cost_usd` | *Added 2026-09-17 (task 116, issue #409).* The task whose attempt took the tree's total over the cap goes `blocked` with `block_reason = tree_cost_limit`. The tree is the root and every descendant at any depth, archived ones included, and the total is the lifetime §17 rollup over all of them (§12.3). Everything the row above says about the boundary holds here: it is a block, not a step failure, the finished `step_run` keeps its own state and reason, no retry is consumed, a due retry and a `retry_backoff` hold are pre-empted, and the check runs inside a `loop` body and a `parallel` group. The blocking task is usually a lane, but can be the parent: its own steps before the fan-out, after the join, or a `merge.on_conflict: agent` run. A parent parked in `awaiting_children` makes no attempts, so it never blocks this way while parked; its join stays open on the `blocked` lane, which `children.blocked` names beside `children.cost_usd` (§13.2). **The overshoot is at most one attempt per task still working in the tree**, not one attempt: a lane running when the total crosses finishes the attempt it is on, a queued one makes one attempt when admitted, and each blocks at its own boundary. The remedy is to raise `max_tree_cost_usd` (hot-reloaded) and `retry`, either the parent, whose cascade (§6, task 090) re-admits every blocked lane in one call, or a single lane. Without raising it, a retry on a lane buys that lane one attempt and re-blocks, and a cascade retry buys **one attempt per blocked lane** per press. When both caps are over at the same boundary the block is `cost_limit`, because the per-task cap is the one raising this key cannot clear. A repair run still ends with the reason the task was blocked with (task 033 decision 3). Inert unless some step run in the tree reported a cost; a tree mixing claude with codex or cursor lanes counts only what was reported, and that undercount is never filled in from token counts (§9.3, §9.7) |
 | A command emits a single line larger than one output record | *Added 2026-08-24 (#139).* Captured, not failed: the line becomes a run of `vincent.output` records marked `partial`, in order, on one stream, preserving phase, stream identity and live offsets. Minified JSON, a base64 blob and a `git diff` of a generated file all reach a megabyte on one line, so this is an ordinary command; failing it would only retry it into the same wall until the task blocked. It was previously a *silent success* — a line-bound reader stopped dead on the first such line, the rest of the stream went to `io.Discard`, and the attempt was judged from exit 0 alone |
 | A transcript write, encode or close fails | *Added 2026-08-24 (#139).* The failure latches on the transcript and the attempt fails `transcript_io_error` under the §7.2 budget — disk full, a revoked permission, a short write, and ENOSPC surfaced at `Close`, which is where a buffered filesystem reports it. Never swallowed by `allow_failure:` (§7.2): vincent failing to record a step is not an outcome the step produced. Only a *success* is overridden — an attempt that already failed keeps the more useful reason. `transcript_max_bytes` is unaffected and stays the only size-based failure (§12.3) |
 | An adapter cannot read its agent's stream to the end | *Added 2026-08-24 (#139).* The adapter latches its reader's error, drains the pipe so the CLI is not left blocked on it until the step timeout, and reports `agent.FailureStreamError`; the engine fails the attempt `agent_protocol_error` under the §7.2 budget. Deliberately not `agent_error`, which means "the CLI reported a failure" and would send a user to inspect a CLI that did nothing wrong — the reader that failed is vincent's. Deliberately not `input_protocol_error` either: that names a control message vincent could not render, and such a message arrived intact |

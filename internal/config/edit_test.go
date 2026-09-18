@@ -187,6 +187,7 @@ func TestApplyOverTheTemplateStillParses(t *testing.T) {
 		{Path: "defaults.agent_timeout", Value: "90m"},
 		{Path: "transcript_max_bytes", Value: RenderString("1GB")},
 		{Path: "max_task_cost_usd", Value: "2.5"},
+		{Path: "max_tree_cost_usd", Value: "12.75"},
 		{Path: "log_level", Value: "warn"},
 		{Path: "debug", Value: "true"},
 		{Path: "environment.unset", Value: RenderList([]string{"MSYSTEM"})},
@@ -211,7 +212,7 @@ func TestApplyOverTheTemplateStillParses(t *testing.T) {
 	}
 	if cfg.Listen != "127.0.0.1:8080" || cfg.MaxParallelTasks != 7 ||
 		cfg.BranchTemplate != "wip/{{.ID}}" || cfg.LogLevel != "warn" || !cfg.Debug ||
-		cfg.TranscriptMaxBytes != 1<<30 || cfg.MaxTaskCostUSD != 2.5 ||
+		cfg.TranscriptMaxBytes != 1<<30 || cfg.MaxTaskCostUSD != 2.5 || cfg.MaxTreeCostUSD != 12.75 ||
 		cfg.Agents.Cursor.Path != "/opt/cursor-agent" || cfg.MCP.WireSteps ||
 		cfg.Include.MaxDepth != 9 || cfg.Loop.MaxIterations != 3 ||
 		cfg.GitHub.PollInterval != 0 || cfg.Update.Check ||

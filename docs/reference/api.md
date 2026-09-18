@@ -2053,7 +2053,8 @@ the task has lanes:
 "children": {
   "total": 4, "settled": 2,
   "by_state": {"done": 2, "blocked": 1, "running": 1},
-  "blocked": [17], "awaiting_gate": []
+  "blocked": [17], "awaiting_gate": [],
+  "cost_usd": 12.84
 }
 ```
 
@@ -2062,6 +2063,15 @@ request from one recursive CTE rather than stored — a counter would be a secon
 truth that drifts from the rows it counts. `blocked` and `awaiting_gate` are
 ids: fetch the ones you decide to show. This is what pays for hiding lanes from
 the list, since a blocked lane would otherwise be invisible.
+
+`cost_usd` is what the subtree has spent: every attempt of every step of every
+descendant, archived ones included. It does **not** include the task's own
+spend, which is in its `steps[]`, so a root's tree total is the two added
+together. That total is what
+[`max_tree_cost_usd`](configuration.md#max_tree_cost_usd) is compared against,
+and it is how you see why a lane in `blocked` carries `tree_cost_limit`.
+`cost_usd` is `null`, never `0`, when no descendant reported a cost, which is
+every lane that ran on codex or cursor.
 
 Both the list and the detail endpoint carry `loop` while a task's **current**
 step is a `loop` (§7.8), and omit it otherwise:

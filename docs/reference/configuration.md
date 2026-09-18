@@ -100,10 +100,18 @@ transcript_max_bytes: 512MB
 # and retry to carry on. 0 disables it, which is the default.
 #
 # It counts one task. Each fan_out lane is its own task and gets its own
-# budget, so a tree of twenty lanes may spend twenty times this. Only agents
-# that report cost are counted — codex and cursor report none, so the cap is
-# inert on them.
+# budget, so a tree of twenty lanes may spend twenty times this; cap the whole
+# tree with max_tree_cost_usd. Only agents that report cost are counted —
+# codex and cursor report none, so the cap is inert on them.
 max_task_cost_usd: 0
+
+# Ceiling on what one fan_out tree may spend, in US dollars: a root task and
+# every lane below it at any depth, summed over every attempt. Past it, the
+# task whose attempt crossed the line blocks with tree_cost_limit. Every task
+# still working in the tree may finish one more attempt before it blocks too.
+# Raise this and retry the parent to carry on. 0 disables it, which is the
+# default. Where both caps are passed at once the block is cost_limit.
+max_tree_cost_usd: 0
 
 # How long a task waits before trying again after its agent reported that the
 # usage quota for the window is spent, when the CLI named no reset time. When
@@ -689,7 +697,8 @@ running total to watch mid-run. An `agent_timeout` still bounds a single run.
 
 **It counts one task.** Every lane of a `fan_out` step is its own task with its
 own budget, so a cap of `$5.00` on a twenty-lane fan-out permits `$100` across
-the tree.
+the tree. To bound the tree as a whole, set
+[`max_tree_cost_usd`](#max_tree_cost_usd) as well.
 
 **It is inert on codex and cursor.** Only claude reports cost. A task run
 entirely on an agent that reports none is never blocked by this, whatever you
@@ -707,6 +716,63 @@ is hot-reloaded, so no restart is needed. Retrying *without* raising it makes
 one more attempt and blocks again. A task's own cap is fixed at creation, so
 when it is the lower of the two, raising this value does not move the wall. See
 [Troubleshooting](../guides/troubleshooting.md).
+
+Must not be negative.
+
+### `max_tree_cost_usd`
+
+```yaml
+max_tree_cost_usd: 20.00
+```
+
+A ceiling, in US dollars, on what **one fan-out tree** may spend. `0` — the
+default — means no cap, so this changes nothing until you set it.
+
+A tree is a task that has no parent, plus every [`fan_out`](../guides/workflows.md)
+lane below it at any depth, lanes of lanes included. A task that never fans out
+is a tree of one, so the cap applies to it too. The figure is the sum of every
+attempt of every step run by every task in the tree: retries, repair runs,
+follow-up runs and the lanes a follow-up run spawns all count, and so do lanes
+that have since been archived. It is a lifetime total and never resets.
+
+When it goes over, the task whose attempt took the tree past the line is
+`blocked` with `tree_cost_limit`. That is usually a lane, but it can be the
+parent: its own steps before the fan-out and after the join, and an agent that
+resolves a merge conflict, are attempts in the tree too. A parent waiting in
+`awaiting_children` makes no attempts, so it does not block while it waits.
+Its join stays open because a lane is blocked, and the parent's detail shows
+which one. Everything else is what [`max_task_cost_usd`](#max_task_cost_usd)
+does: a block rather than a step failure, the finished step run keeping its
+own state and reason, no retry consumed, and a retry that was already due not
+happening.
+
+**You will overshoot by up to one attempt per task still working in the tree.**
+The check runs after each attempt finishes, and each task checks at its own
+boundary. When the total crosses, a lane that is running finishes the attempt it
+is on, and a lane still queued makes one attempt when it starts. Each of them
+blocks after that attempt. A wide tree can therefore pass the cap by several
+attempts, not one.
+
+**It is independent of `max_task_cost_usd`.** The two caps measure different
+things and both are checked at the same point. When both are passed at once the
+task blocks `cost_limit`, because raising this value would not clear that one.
+
+**It only counts what was reported.** Only claude reports cost, so a tree run
+entirely on codex or cursor is never blocked by this. A tree that mixes claude
+with codex or cursor lanes counts claude's spend alone, and the rest is not
+estimated from token counts. See [Agents](../guides/agents.md).
+
+**It is set here and nowhere else.** No create-time field, `vincent task add`
+flag, trigger `limits:` key or workflow field sets it. Change it with
+`vincent config set max_tree_cost_usd`, `PATCH /v1/config`, or the daemon view's
+config editor, where it reads `max tree cost` and shows `off` when it is `0`.
+
+The remedy when a task blocks is to raise this value and press `retry` on the
+**parent**: one retry re-admits every blocked lane beneath it. You can also retry
+a single lane. The file is hot-reloaded, so no restart is needed. Retrying
+*without* raising it buys each re-admitted lane one more attempt, then blocks it
+again, so a parent retry costs one attempt per blocked lane every time you press
+it. See [Troubleshooting](../guides/troubleshooting.md#tree_cost_limit--raise-the-tree-cap-and-retry-the-parent).
 
 Must not be negative.
 

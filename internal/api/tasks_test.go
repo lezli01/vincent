@@ -477,6 +477,79 @@ func TestTaskDetailCarriesProjectName(t *testing.T) {
 	}
 }
 
+// TestTaskDetailChildrenCostIsDescendantsOnly is §13.2's `children.cost_usd`
+// (task 116 decision 5). While no lane has reported a cost it is present and
+// JSON null, never 0 — codex- and cursor-shaped lanes report nothing, and $0.00
+// would claim they were free. Once lanes report, it is their sum over every
+// attempt and never the parent's own step runs, which the tree total adds on
+// top; counting them here would count them twice.
+func TestTaskDetailChildrenCostIsDescendantsOnly(t *testing.T) {
+	h := newActionHarness(t)
+	parent, lanes := parkedParent(t, h, store.TaskRunning, store.TaskBlocked)
+	seed := func(taskID int64, attempt int, cost *float64) {
+		t.Helper()
+		run := &store.StepRun{
+			TaskID: taskID, StepIndex: 0, StepID: "run", StepType: "agent",
+			Attempt: attempt, State: store.StepSucceeded, CostUSD: cost,
+		}
+		if err := h.store.CreateStepRun(t.Context(), run); err != nil {
+			t.Fatalf("CreateStepRun: %v", err)
+		}
+	}
+	children := func() map[string]json.RawMessage {
+		t.Helper()
+		resp, body := h.doJSON(t, http.MethodGet, fmt.Sprintf("/v1/tasks/%d", parent.ID), nil)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("detail: %d %s", resp.StatusCode, body)
+		}
+		var detail struct {
+			Children map[string]json.RawMessage `json:"children"`
+		}
+		if err := json.Unmarshal(body, &detail); err != nil {
+			t.Fatalf("detail body: %v (%s)", err, body)
+		}
+		if detail.Children == nil {
+			t.Fatalf("detail has no children rollup though %d lanes hang off it: %s", len(lanes), body)
+		}
+		return detail.Children
+	}
+
+	// The parent spent and its lanes ran without reporting: still null.
+	parentCost := 16.0
+	seed(parent.ID, 1, &parentCost)
+	seed(lanes[0].ID, 1, nil)
+	raw, ok := children()["cost_usd"]
+	if !ok {
+		t.Fatal("children carries no cost_usd key; a client cannot tell unreported from absent")
+	}
+	if string(raw) != "null" {
+		t.Errorf("children.cost_usd = %s with no lane reporting a cost, want null", raw)
+	}
+
+	// Two lanes report, one of them twice: the retry spent too (§17).
+	for _, c := range []struct {
+		lane    int64
+		attempt int
+		cost    float64
+	}{
+		{lanes[0].ID, 2, 0.5},
+		{lanes[1].ID, 1, 1.25},
+		{lanes[1].ID, 2, 0.25},
+	} {
+		cost := c.cost
+		seed(c.lane, c.attempt, &cost)
+	}
+	var got *float64
+	if err := json.Unmarshal(children()["cost_usd"], &got); err != nil {
+		t.Fatalf("decode children.cost_usd: %v", err)
+	}
+	// Dyadic fractions, so the sum compares exactly; 16 of the parent's own
+	// would make it 18.
+	if got == nil || *got != 2 {
+		t.Errorf("children.cost_usd = %v, want 2 — the lanes' spend without the parent's", got)
+	}
+}
+
 func TestTaskDiffWithoutWorktree(t *testing.T) {
 	h := newTaskHarness(t, 0, false)
 	created := h.createTask(t, map[string]any{"title": "not started"})

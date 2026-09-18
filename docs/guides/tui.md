@@ -819,6 +819,13 @@ the offending line or bound — and the lane's *own* block reason, on the detail
 header and on the `fan_out` step row, with `l` to go there. Only the attempt the
 task is parked on is annotated; an earlier retried one is history.
 
+**Task Details** on a task with lanes also shows `tree cost`: the task's own
+cost plus everything its lanes have spent, at any depth. On a root task that is
+the figure
+[`max_tree_cost_usd`](../reference/configuration.md#max_tree_cost_usd) is
+compared against, so it is where to look when a lane blocks `tree_cost_limit`.
+It reads `—` when nothing in the tree reported a cost, never `$0.00`.
+
 The **Pull Request** tab grows one row per lane beneath the parent's own
 section, with the lane's branch and any linked pull request. Lane rows carry no
 checks — checks stay one call for one task, and `l` opens the lane, whose own

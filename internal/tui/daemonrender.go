@@ -158,6 +158,7 @@ func (d *daemonView) configSummaryLines() []string {
 		field("transcript retention", strconv.Itoa(c.TranscriptRetentionDays)+" days") +
 			styleDim.Render("   cap "+humanBytes(c.TranscriptMaxBytes)+" per run"),
 		field("max task cost", costCapText(c)),
+		field("max tree cost", treeCostCapText(c)),
 		// Both halves of the §10 pair on one line: the remote one is inert
 		// while the local one is off, so showing either alone would describe a
 		// policy that cannot run.
@@ -641,7 +642,7 @@ func onOff(v bool) string {
 	return "off"
 }
 
-// costCapLine renders `max_task_cost_usd`, the ceiling on what one task may
+// costCapText renders `max_task_cost_usd`, the ceiling on what one task may
 // spend before it blocks `cost_limit` (§12.3, task 033).
 //
 // An unset cap reads "off", never "$0.00": $0.00 is what a task run on an
@@ -659,6 +660,19 @@ func costCapText(c apiclient.Config) string {
 	}
 	return "$" + strconv.FormatFloat(c.MaxTaskCostUSD, 'f', -1, 64) +
 		styleDim.Render("   per task; fan-out lanes count separately")
+}
+
+// treeCostCapText renders `max_tree_cost_usd`, the ceiling on what one
+// fan-out tree may spend before the task that crossed it blocks
+// `tree_cost_limit` (§12.3, task 116). "off" and the as-written precision for
+// costCapText's reasons; the suffix says what the figure counts, which is the
+// one thing that tells it apart from the line above.
+func treeCostCapText(c apiclient.Config) string {
+	if c.MaxTreeCostUSD <= 0 {
+		return "off"
+	}
+	return "$" + strconv.FormatFloat(c.MaxTreeCostUSD, 'f', -1, 64) +
+		styleDim.Render("   per tree; a root and every lane below it")
 }
 
 // byteSize renders a measured byte count. It is deliberately not humanBytes:

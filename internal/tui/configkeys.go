@@ -211,6 +211,20 @@ func configKeys() []configKey {
 				return apiclient.ConfigPatch{MaxTaskCostUSD: &f}, nil
 			},
 		},
+		{
+			path: "max_tree_cost_usd", label: "max tree cost", kind: kindFloat,
+			help: "spend ceiling for a whole fan-out tree in US dollars; 0 is no cap",
+			read: func(c apiclient.Config) string { return strconv.FormatFloat(c.MaxTreeCostUSD, 'f', -1, 64) },
+			// task 116: "off" for the same reason as max task cost.
+			show: treeCostCapText,
+			write: func(s string) (apiclient.ConfigPatch, error) {
+				f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+				if err != nil {
+					return apiclient.ConfigPatch{}, fmt.Errorf("want a number, got %q", s)
+				}
+				return apiclient.ConfigPatch{MaxTreeCostUSD: &f}, nil
+			},
+		},
 		durationKey("usage_limit_recheck_interval", "usage limit recheck",
 			"how long a quota-held task waits when the CLI named no reset time",
 			func(c apiclient.Config) string { return c.UsageLimitRecheck },
@@ -612,6 +626,7 @@ func defaultClientConfig() apiclient.Config {
 		TranscriptRetentionDays:     d.TranscriptRetentionDays,
 		TranscriptMaxBytes:          d.TranscriptMaxBytes.Bytes(),
 		MaxTaskCostUSD:              d.MaxTaskCostUSD,
+		MaxTreeCostUSD:              d.MaxTreeCostUSD,
 		UsageLimitRecheck:           d.UsageLimitRecheckInterval.String(),
 		UsageLimitAutoContinue:      d.UsageLimitAutoContinue,
 		LogLevel:                    d.LogLevel,

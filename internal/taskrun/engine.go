@@ -181,7 +181,21 @@ const (
 	// more money to arrive at the same wall. The remedy is to raise the cap
 	// and retry; a retry that does not raise it advances by exactly one
 	// attempt and blocks here again.
-	ReasonCostLimit     = "cost_limit"
+	ReasonCostLimit = "cost_limit"
+	// ReasonTreeCostLimit is a task whose attempt took its whole fan-out
+	// tree's rolled-up spend past `max_tree_cost_usd` (§12.3, §18 — task
+	// 116). The tree is the root and every descendant at any depth, so the
+	// task that blocks is whichever one's attempt crossed the line: usually a
+	// lane, sometimes the parent's own step before the fan-out or after the
+	// join. Everything ReasonCostLimit says about the boundary, the row and
+	// the retry holds here too.
+	//
+	// It is a reason of its own rather than cost_limit because the remedy
+	// differs: a different key to raise, and usually a retry on the parent,
+	// whose cascade re-admits every lane the cap stopped. Where both caps are
+	// over at one boundary the block is cost_limit (decision 2) — the narrower
+	// cap is the one raising this key cannot clear.
+	ReasonTreeCostLimit = "tree_cost_limit"
 	ReasonInternalError = "internal_error"
 )
 
@@ -428,17 +442,22 @@ type stepOutcome struct {
 	// and advancing on it would spend an `allow_failure` step's first failure
 	// as though the budget were gone.
 	backoffUntil *time.Time
-	// costExceeded marks the attempt boundary at which this task's rolled-up
-	// spend passed `max_task_cost_usd` (task 033). The task blocks
-	// `cost_limit` whatever the attempt itself did — a success stops the
-	// workflow here, and a failure with budget left does not get its retry.
+	// costLimit is set at the attempt boundary at which a spend cap was
+	// passed, and it *is* the block reason: ReasonCostLimit for this task's
+	// own rollup against `max_task_cost_usd` (task 033), ReasonTreeCostLimit
+	// for its fan-out tree's against `max_tree_cost_usd` (task 116). Empty is
+	// no cap passed. The task blocks with it whatever the attempt itself did —
+	// a success stops the workflow here, and a failure with budget left does
+	// not get its retry.
 	//
 	// It inherits backoffUntil's standing rule verbatim: **every branch that
 	// turns an outcome into something else must test it first**, in the step
 	// loop, in a group and in a loop body. An `allow_failure` that swallowed
 	// this, or a collector that dropped it, would spend the next attempt's
-	// money to reach the same wall one boundary later.
-	costExceeded bool
+	// money to reach the same wall one boundary later. Carrying the reason
+	// rather than a flag is what makes each of those branches cover both caps
+	// by construction.
+	costLimit string
 }
 
 // execute runs one admission of a task: it walks the snapshot's steps from
@@ -663,8 +682,12 @@ func (r *Runner) runSteps(ctx context.Context, project *store.Project, w *stepWa
 		// this attempt wrote keeps its own state and reason, so the timeline
 		// still says what the step did while block_reason says why nothing
 		// further was tried.
-		if outcome.costExceeded {
-			r.fail(task, ReasonCostLimit, env.log, "task cost limit reached", nil)
+		if outcome.costLimit != "" {
+			msg := "task cost limit reached"
+			if outcome.costLimit == ReasonTreeCostLimit {
+				msg = "tree cost limit reached"
+			}
+			r.fail(task, outcome.costLimit, env.log, msg, nil)
 			return
 		}
 		switch outcome.state {
@@ -932,8 +955,7 @@ func (r *Runner) runStepWithRetries(ctx context.Context, env *stepEnv) stepOutco
 		// written, so the rollup this reads includes the money that attempt
 		// just spent (task 033). Before the failure and retry arms
 		// deliberately — a cost verdict outranks both.
-		if r.overCostCap(ctx, env, last) {
-			last.costExceeded = true
+		if last.costLimit = r.overCostCap(ctx, env, last); last.costLimit != "" {
 			return last
 		}
 		if last.state != store.StepFailed {
@@ -981,14 +1003,16 @@ func (r *Runner) runStepWithRetries(ctx context.Context, env *stepEnv) stepOutco
 	}
 }
 
-// overCostCap reports whether this task has spent past `max_task_cost_usd`
-// (§12.3, §17 — task 033). It is asked once per finished attempt, which is
-// the only boundary cost is known at: an agent run reports it on its terminal
-// result line and nowhere else (§9.1).
+// overCostCap reports which spend cap, if any, this task's finished attempt
+// took it past: ReasonCostLimit for `max_task_cost_usd` (§12.3, §17 — task
+// 033), ReasonTreeCostLimit for `max_tree_cost_usd` (task 116), or "" for
+// neither. It is asked once per finished attempt, which is the only boundary
+// cost is known at: an agent run reports it on its terminal result line and
+// nowhere else (§9.1).
 //
-// The cap is read per check rather than cached, exactly as the transcript cap
-// is read per attempt: config hot-reloads (§12.3), and an operator raising
-// this after a block must see the new value on the retry rather than after a
+// The caps are read per check rather than cached, exactly as the transcript
+// cap is read per attempt: config hot-reloads (§12.3), and an operator raising
+// one after a block must see the new value on the retry rather than after a
 // daemon restart.
 //
 // Three things make it a no-op rather than a coincidence. An unset cap is off
@@ -999,22 +1023,39 @@ func (r *Runner) runStepWithRetries(ctx context.Context, env *stepEnv) stepOutco
 // stop. And HasCost, not arithmetic, is what excludes the adapters that
 // report no cost at all: codex and cursor leave it nil (§9.3, §9.7), so their
 // rollup is "unreported" rather than $0.00 and the cap is inert on them by
-// construction.
+// construction. A tree mixing them with claude counts what was reported.
 //
-// The cap is the lower of config's and the task's own `max_task_cost_usd`
-// (task 096 decision 18), so the block is still `cost_limit` whichever side
-// set it.
-func (r *Runner) overCostCap(ctx context.Context, env *stepEnv, out stepOutcome) bool {
-	limit := effectiveCostCap(r.deps.Config().MaxTaskCostUSD, env.task.MaxTaskCostUSD)
-	if limit <= 0 {
-		return false
+// The per-task cap is asked first and wins when both are over (task 116
+// decision 2): it is the lower of config's and the task's own
+// `max_task_cost_usd` (task 096 decision 18), so the block is still
+// `cost_limit` whichever side set it. The tree cap is independent of it, not
+// folded into that minimum — the two measure different things — and is only
+// read when it is set, so a daemon without one pays no query.
+func (r *Runner) overCostCap(ctx context.Context, env *stepEnv, out stepOutcome) string {
+	cfg := r.deps.Config()
+	limit := effectiveCostCap(cfg.MaxTaskCostUSD, env.task.MaxTaskCostUSD)
+	treeLimit := cfg.MaxTreeCostUSD
+	if limit <= 0 && treeLimit <= 0 {
+		return ""
 	}
 	switch out.state {
 	case store.StepSucceeded, store.StepFailed:
 	case store.StepRunning, store.StepInterrupted, store.StepApproved,
 		store.StepRejected, store.StepSkipped, store.StepStopped:
-		return false
+		return ""
 	}
+	if limit > 0 && r.overTaskCostCap(ctx, env, out, limit) {
+		return ReasonCostLimit
+	}
+	if treeLimit > 0 && r.overTreeCostCap(ctx, env, out, treeLimit) {
+		return ReasonTreeCostLimit
+	}
+	return ""
+}
+
+// overTaskCostCap is overCostCap's per-task half: this task's own rollup
+// against limit.
+func (r *Runner) overTaskCostCap(ctx context.Context, env *stepEnv, out stepOutcome, limit float64) bool {
 	rollups, err := r.deps.Store.TaskRollups(ctx, []int64{env.task.ID})
 	if err != nil {
 		// Fail open, loudly. A read that failed says nothing about what the
@@ -1029,6 +1070,31 @@ func (r *Runner) overCostCap(ctx context.Context, env *stepEnv, out stepOutcome)
 	}
 	env.log.Warn("task cost limit reached",
 		"cost_usd", rollup.CostUSD, "max_task_cost_usd", limit,
+		"step", env.step.ID, "attempt_outcome", string(out.state))
+	return true
+}
+
+// overTreeCostCap is overCostCap's tree half: the spend of the whole fan-out
+// tree this task belongs to — root, every descendant, archived ones too —
+// against limit (task 116). A task that never fanned out is a tree of one, so
+// the cap still means something on it.
+//
+// Only the task whose attempt this is can block here, which is the point
+// (decision 4): its siblings are other goroutines' tasks, and each learns the
+// tree is over at its own next boundary. That is why the overshoot is one
+// attempt per task still working in the tree, not one attempt in all.
+func (r *Runner) overTreeCostCap(ctx context.Context, env *stepEnv, out stepOutcome, limit float64) bool {
+	root, rollup, err := r.deps.Store.TreeCost(ctx, env.task.ID)
+	if err != nil {
+		// Fail open, loudly, for overTaskCostCap's reason.
+		env.log.Error("read tree cost rollup", "error", err)
+		return false
+	}
+	if !rollup.HasCost || rollup.CostUSD <= limit {
+		return false
+	}
+	env.log.Warn("tree cost limit reached",
+		"root_task", root, "tree_cost_usd", rollup.CostUSD, "max_tree_cost_usd", limit,
 		"step", env.step.ID, "attempt_outcome", string(out.state))
 	return true
 }

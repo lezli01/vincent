@@ -610,6 +610,7 @@ The block reason names what happened:
 | `input_unsupported` | A step needs an agent that can answer questions mid-run, and this one cannot (see below) |
 | `transcript_limit` | The attempt's transcript hit `transcript_max_bytes` |
 | `cost_limit` | The task has spent past `max_task_cost_usd` (see below) |
+| `tree_cost_limit` | The task's fan-out tree has spent past `max_tree_cost_usd` (see below) |
 | `transcript_io_error` | The attempt's transcript could not be written or closed (see below) |
 | `agent_protocol_error` | Vincent could not read the agent's stream to the end (see below) |
 | `rejected` | You rejected a manual gate |
@@ -756,7 +757,10 @@ Three things that surprise people:
   finishes, so the attempt that crosses the line has already run. `agent_timeout`
   is what bounds a single run.
 - **The cap counts one task.** Every lane of a `fan_out` step is its own task
-  with its own budget, so a tree can spend a multiple of it.
+  with its own budget, so a tree can spend a multiple of it. To cap the tree as
+  a whole, set
+  [`max_tree_cost_usd`](../reference/configuration.md#max_tree_cost_usd); it
+  blocks with `tree_cost_limit`, below.
 - **The total is the task's whole life and never resets.** A repair run and a
   follow-up run are step runs of that task, so their cost counts too — a
   finished task already over the cap blocks here again on the first attempt of
@@ -766,6 +770,63 @@ Three things that surprise people:
 If a runaway task on codex or cursor sailed past the cap, that is expected:
 neither CLI reports cost, so the cap cannot see them. See
 [Agents](agents.md).
+
+### `tree_cost_limit` — raise the tree cap and retry the parent
+
+The spend of a whole fan-out tree — the root task and every lane below it at
+any depth, every attempt of every step, archived lanes included — has passed
+[`max_tree_cost_usd`](../reference/configuration.md#max_tree_cost_usd). The
+task showing this reason is the one whose attempt crossed the line. That is
+usually a lane. It can also be the parent, when its own step before the fan-out
+or after the join, or an agent resolving a merge conflict, did the crossing.
+
+Like `cost_limit`, it is a policy stop, not a broken step: the step run keeps
+its own state and reason, and it consumed no retry.
+
+A parent waiting on its lanes never blocks this way, because it runs nothing
+while it waits. It stays `awaiting_children`, and its join stays open because a
+lane is blocked. The parent's row reads `awaiting_children (N blocked)`, and
+`GET /v1/tasks/{id}` on it carries `children.blocked` with the lane ids and
+`children.cost_usd` with what the lanes have spent. The TUI's **Task Details**
+adds the parent's own spend to that and shows it as `tree cost`.
+
+What to do:
+
+1. Look at what the money went on. Open the parent and walk its lanes (`l`),
+   or read `children.cost_usd` and each lane's attempts. A tree usually
+   overspends because one lane looped, or because it has more lanes than the
+   budget was sized for.
+2. If the work is worth it, raise `max_tree_cost_usd` in `config.yaml` (it is
+   hot-reloaded), then press `r` on the **parent**, or run
+   `vincent task retry <parent-id>`. One retry re-admits every blocked lane
+   beneath it, at any depth. If the parent itself is the blocked task, the same
+   retry resumes it and re-admits anything blocked below it. You can also retry
+   a single lane.
+3. If it is not, cancel the parent. The cancel reaches every unfinished lane,
+   and their branches and worktrees are kept.
+
+**Retrying without raising the cap costs one attempt per blocked lane, every
+time.** The check runs after each attempt, so every re-admitted lane makes one
+attempt and blocks here again. A retry on the parent re-admits all of them, so
+on a tree with eight blocked lanes each press buys eight attempts.
+
+Three more things that surprise people:
+
+- **You overshoot by more than one attempt.** Each task checks the total at its
+  own boundary, so when the tree crosses the line every lane still running
+  finishes its attempt, and a lane still queued makes one attempt when it
+  starts. Each of them blocks after that attempt. The overshoot is up to one
+  attempt per task still working in the tree.
+- **`cost_limit` wins a tie.** When one attempt takes a task past both its own
+  `max_task_cost_usd` and the tree cap, the reason is `cost_limit`. Raising the
+  tree cap would not have cleared that one.
+- **The total never resets.** A follow-up run on a finished parent, and any
+  lanes it spawns, add to the same tree. A tree already over the cap blocks
+  again on the first attempt of its next follow-up.
+
+The cap sees only what agents reported. Codex and cursor report no cost, so
+their lanes add nothing to the total and a tree that mixes them with claude
+lanes has spent more than the figure says.
 
 ### `transcript_io_error` — check the disk
 

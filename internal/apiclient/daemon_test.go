@@ -106,4 +106,10 @@ func TestConfigCarriesTheSettingsInEffect(t *testing.T) {
 		t.Errorf("UsageLimitAutoContinue = %q, want %q",
 			cfg.UsageLimitAutoContinue, cfgDefault.UsageLimitAutoContinue)
 	}
+	// Both spend caps, each off by default (tasks 033, 115): the daemon view
+	// renders "off" from exactly these zeros.
+	if cfg.MaxTaskCostUSD != cfgDefault.MaxTaskCostUSD || cfg.MaxTreeCostUSD != cfgDefault.MaxTreeCostUSD {
+		t.Errorf("MaxTaskCostUSD, MaxTreeCostUSD = %v, %v; want %v, %v",
+			cfg.MaxTaskCostUSD, cfg.MaxTreeCostUSD, cfgDefault.MaxTaskCostUSD, cfgDefault.MaxTreeCostUSD)
+	}
 }

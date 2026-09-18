@@ -545,8 +545,11 @@ below is the whole posture, not a set of tips.
   [restricted mode](#restricted-mode) unless the file says
   `permission: workflow`, which is itself a dangerous value. The clamp bounds
   what the agent CLI's own permission model bounds, and nothing more.
-  `limits.max_task_cost_usd` caps spend where the adapter reports cost, and
-  `limits.max_per_hour` caps how many deliveries fire. An event over the limit
+  `limits.max_task_cost_usd` caps the created task's spend where the adapter
+  reports cost, and `config.yaml`'s
+  [`max_tree_cost_usd`](reference/configuration.md#max_tree_cost_usd) caps the
+  task and every lane it fans out into, together. `limits.max_per_hour` caps how
+  many deliveries fire. An event over the limit
   is recorded and dropped, never queued.
 - **Untrusted events need an allowlist, and the allowlist is the author.** On
   the GitHub sources, some events are ones an outsider can cause on a public

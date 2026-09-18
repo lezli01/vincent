@@ -107,12 +107,12 @@ func (r *Runner) runGroup(ctx context.Context, env *stepEnv) stepOutcome {
 			// would turn `retry_backoff` off for every allow_failure sub-step
 			// (task 028).
 			//
-			// A sub-step that took the task past its cost cap is excluded
-			// for the stronger reason: `allow_failure` says this failure does
-			// not stop the workflow, and the budget stop is not this
-			// failure's verdict at all (task 033).
+			// A sub-step that took the task or its tree past a cost cap is
+			// excluded for the stronger reason: `allow_failure` says this
+			// failure does not stop the workflow, and the budget stop is not
+			// this failure's verdict at all (tasks 033, 116).
 			if out.state == store.StepFailed && out.backoffUntil == nil &&
-				!out.costExceeded && allowFailure(sub, out.reason) {
+				out.costLimit == "" && allowFailure(sub, out.reason) {
 				subEnv.log.Info("sub-step failed; allowed by allow_failure", "reason", out.reason)
 				out = stepOutcome{state: store.StepSucceeded}
 			}
@@ -242,11 +242,12 @@ func (r *Runner) groupLimit(step workflow.Step) int {
 func collectGroup(outcomes []stepOutcome) stepOutcome {
 	var failure, backoff, cost *stepOutcome
 	for i := range outcomes {
-		// Whatever else the group did, one sub-step took the task past its
-		// budget, and that is the group's verdict (task 033). It is collected
-		// from a succeeded sub-step as readily as from a failed one: the flag
-		// is about the task's spend, not about what the sub-step produced.
-		if outcomes[i].costExceeded && cost == nil {
+		// Whatever else the group did, one sub-step took the task or its tree
+		// past a budget, and that is the group's verdict (tasks 033, 116). It
+		// is collected from a succeeded sub-step as readily as from a failed
+		// one: the reason is about spend, not about what the sub-step
+		// produced. The first in declaration order wins, like a failure's.
+		if outcomes[i].costLimit != "" && cost == nil {
 			cost = &outcomes[i]
 		}
 		switch outcomes[i].state {

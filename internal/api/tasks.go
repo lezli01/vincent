@@ -1078,15 +1078,26 @@ type childrenResponse struct {
 	// human — the cost paid for hiding lanes from the task list.
 	Blocked      []int64 `json:"blocked"`
 	AwaitingGate []int64 `json:"awaiting_gate"`
+	// CostUSD is what the descendants have spent, at any depth and over every
+	// attempt, not counting this task's own step runs (task 116 decision 5).
+	// Null when no descendant reported a cost, for §17's reason: an adapter
+	// that reports nothing must not read as $0.00. It is the figure that says
+	// why a tree blocked `tree_cost_limit`; the tree total is it plus the
+	// task's own `cost_usd`.
+	CostUSD *float64 `json:"cost_usd"`
 }
 
-func toChildrenResponse(r store.ChildrenRollup) *childrenResponse {
+func toChildrenResponse(r store.ChildrenRollup, cost store.CostRollup) *childrenResponse {
 	out := &childrenResponse{
 		Total:        r.Total,
 		Settled:      r.Settled,
 		ByState:      make(map[string]int, len(r.ByState)),
 		Blocked:      r.Blocked,
 		AwaitingGate: r.AwaitingGate,
+	}
+	if cost.HasCost {
+		c := cost.CostUSD
+		out.CostUSD = &c
 	}
 	for state, n := range r.ByState {
 		out.ByState[string(state)] = n
@@ -1376,7 +1387,15 @@ func (s *Server) handleTaskGet(w http.ResponseWriter, r *http.Request) {
 	if rollup, err := s.deps.Store.ChildrenOf(r.Context(), t.ID); err != nil {
 		s.deps.Logger.Error("children rollup", "task", t.ID, "error", err)
 	} else if rollup.Total > 0 {
-		resp.Children = toChildrenResponse(rollup)
+		// A separate read rather than a column on ChildrenOf: that query is
+		// the scheduler's re-queue test and never needs the step_runs join
+		// (task 116). A failed read leaves the cost null — unreported — rather
+		// than dropping the whole rollup.
+		cost, err := s.deps.Store.DescendantsCost(r.Context(), t.ID)
+		if err != nil {
+			s.deps.Logger.Error("children cost rollup", "task", t.ID, "error", err)
+		}
+		resp.Children = toChildrenResponse(rollup, cost)
 	}
 	resp.Steps = make([]stepRunResponse, 0, len(runs))
 	for i := range runs {
