@@ -162,3 +162,13 @@ follow-up (the walkthrough is
 [`docs/gates/088-step-details-tab.md`](../gates/088-step-details-tab.md);
 tracked in [#380](https://github.com/lezli01/vincent/issues/380) and
 [#414](https://github.com/lezli01/vincent/issues/414), 2026-09-13).
+*Amended 2026-09-18 ([#414](https://github.com/lezli01/vincent/issues/414)):*
+the tape landed — `scripts/screenshots.sh`'s `tui-task-step-details`, taken of
+the agent step of a task at its gate, and shown in the TUI guide beside the
+tab's paragraph. The capture also shows the tab reading `not recorded (this
+attempt predates the record)` for the model and the effort of an attempt that
+was recorded in full: a fresh cursor step given neither, whose row carries a
+null value with the source `adapter` beside it. `stepSourced` reads a nil
+value as a missing record without looking at the source, so "the adapter's
+own default" is drawn as "older than this feature". Recorded here, not fixed:
+#414 is a screenshot issue. The run record stays with #380.

@@ -47,6 +47,7 @@ OUT="$ROOT/docs/assets"
 
 VINCENT="$BIN/vincent"
 FAKEAGENT="$BIN/fakeagent"
+FAKEGH="$BIN/fakegh"
 
 export VINCENT_CONFIG_DIR="$CONFIG_DIR"
 export VINCENT_DATA_DIR="$DATA_DIR"
@@ -110,7 +111,10 @@ wait_chat() { # wait_chat ID STATE [TIMEOUT_S]
 }
 
 daemon_up() {
-  "$VINCENT" daemon start >/dev/null
+  # $BIN leads the daemon's PATH so the `gh` it resolves is the wrapper around
+  # cmd/fakegh, and no token reaches it: a `gh` that failed to answer would
+  # otherwise fall back to a REST call against api.github.com.
+  env -u GITHUB_TOKEN -u GH_TOKEN PATH="$BIN:$PATH" "$VINCENT" daemon start >/dev/null
   PORT="$(jq -r .port "$DATA_DIR/daemon.json")"
   TOKEN="$(cat "$DATA_DIR/token")"
   BASE="http://127.0.0.1:$PORT/v1"
@@ -196,21 +200,29 @@ GOTEST
 # one state at a time.
 agent_wrapper() {
   local name="$1"; shift
+  wrap "$FAKEAGENT" "$name" "$@"
+}
+
+# wrap TARGET NAME ENV... — $BIN/NAME runs TARGET with ENV added. Each
+# assignment is single-quoted, so a value may carry spaces.
+wrap() {
+  local target="$1" name="$2"; shift 2
   {
     printf '#!/bin/sh\n'
     printf 'exec env'
-    for kv in "$@"; do printf ' %s' "$kv"; done
-    printf ' "%s" "$@"\n' "$FAKEAGENT"
+    for kv in "$@"; do printf " '%s'" "$kv"; done
+    printf ' "%s" "$@"\n' "$target"
   } > "$BIN/$name"
   chmod +x "$BIN/$name"
 }
 
-# write_config CLAUDE_WRAPPER — the claude adapter is swapped twice mid-seed,
-# because one process-wide FAKEAGENT_SCENARIO cannot hold a conversation, ask
-# a question and run out of quota at once. The daemon hot-reloads config.yaml
-# (§12.3), so this needs no restart.
+# write_config CLAUDE_WRAPPER — the claude adapter is swapped three times
+# mid-seed, because one process-wide FAKEAGENT_SCENARIO cannot hold a
+# conversation, ask two different questions and run out of quota at once. The
+# daemon hot-reloads config.yaml (§12.3), so this needs no restart.
 #
-# The order is fixed and one-way: chat, then ask, then walled. An observed
+# The order is fixed and one-way: chat, then the two that ask (triage for the
+# task, ask for the chat), then walled. An observed
 # usage window is recorded against the **adapter** and outlives the swap (§11,
 # task 026), so anything that needs claude to answer has to be seeded before
 # `agent-walled` has ever run — after it, every claude task parks on the hold
@@ -232,6 +244,12 @@ agents:
 # banner. The seeded triggers only ever seed, so no task comes of it.
 triggers:
   enabled: true
+# The pull-request reconciler on a short tick, so the web project's pull
+# request is linked to its task seconds after the seed pushes the branch
+# rather than on the five-minute default. Every call it makes is to
+# cmd/fakegh (see daemon_up).
+github:
+  poll_interval: 5s
 EOF
 }
 
@@ -250,11 +268,28 @@ do_seed() {
   vtag="$(git -C "$ROOT" describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)"
   (cd "$ROOT" && go build -trimpath \
     -ldflags "-X $vpkg.version=${vtag#v} -X $vpkg.commit=$(git -C "$ROOT" rev-parse --short HEAD) -X $vpkg.date=$(date -u +%Y-%m-%d)" \
-    -o "$BIN/" ./cmd/vincent ./cmd/fakeagent)
+    -o "$BIN/" ./cmd/vincent ./cmd/fakeagent ./cmd/fakegh)
 
   agent_wrapper agent-slow FAKEAGENT_DIALECT=codex FAKEAGENT_SCENARIO_CODEX=success FAKEAGENT_DELAY_MS=3600000
   agent_wrapper agent-fast FAKEAGENT_DIALECT=cursor FAKEAGENT_SCENARIO_CURSOR=success FAKEAGENT_DELAY_MS=1500
   agent_wrapper agent-ask FAKEAGENT_SCENARIO=ask-question FAKEAGENT_ASK_MULTI=1
+  # The question the answer-form shot is of (issue #414), asked in the terms
+  # of the task it parks — a replica restore — rather than the fake's built-in
+  # colours and toppings. One single-choice question and one multi-select, so
+  # the picture has both kinds of row. No apostrophes: wrap single-quotes it.
+  agent_wrapper agent-triage FAKEAGENT_SCENARIO=ask-question "FAKEAGENT_ASK_QUESTIONS=$(jq -cn '[
+    {header: "Restore from",
+     question: "The eu-west replica is 40 minutes behind the primary. What should I rebuild it from?",
+     multiSelect: false,
+     options: [
+       {label: "The 02:00 snapshot", description: "Faster, then replays nine hours of WAL"},
+       {label: "A fresh base backup", description: "Slower, and loads the primary while it runs"}]},
+    {header: "Before cutover",
+     question: "What should happen before it takes read traffic again?",
+     multiSelect: true,
+     options: [
+       {label: "Pause the reporting jobs", description: "They are its heaviest readers"},
+       {label: "Page the on-call DBA", description: "A second pair of eyes on the lag"}]}]')"
   # A CLI that answers a chat turn with a markdown document — a heading, a
   # fenced code block, two links — because the chat shots are of prose and of
   # what the reader actions (task 076) can take out of it. The session store
@@ -266,6 +301,15 @@ do_seed() {
   # the daemon view's quota line (task 026) — without it those two shots
   # photograph a state no seeded daemon is ever in.
   agent_wrapper agent-walled FAKEAGENT_SCENARIO=usage-limit FAKEAGENT_USAGE_LIMIT_RESET=5400
+  # The GitHub half (issue #414): cmd/fakegh as `gh`, which daemon_up puts
+  # first on the daemon's PATH. The web project's origin names acme/web, so the
+  # fake answers as that repository, and its open pull request #412 — with a
+  # check rollup of a failed Actions build, a running test, a passing
+  # third-party check and a legacy commit status — is pointed at the branch
+  # the design-tokens task is given. That task is created second, which is how
+  # its branch can be spelled here before it exists; the seed checks it.
+  wrap "$FAKEGH" gh FAKEGH_SCENARIO=success FAKEGH_REPO=acme/web \
+    FAKEGH_PR_BRANCH=feat/2-bump-the-design-tokens 'FAKEGH_PR_TITLE=Bump the design tokens'
 
   say "config"
   write_config agent-chat
@@ -424,6 +468,16 @@ EOF
     make_repo "$p"
   done
 
+  # web is the one GitHub project: a github.com origin is the whole of what
+  # makes a project one (§13.2), and it is what the Pull Request tab and the
+  # open-a-pull-request popup need. Pushes are rewritten to the local bare
+  # repository, so the workflow's publish step still lands somewhere real;
+  # `git remote get-url` does not apply pushInsteadOf, so the daemon still
+  # reads github.com. Nothing fetches: make_repo pushed main without an
+  # upstream, so a task's base-branch fetch has nothing to ask for.
+  git -C "$REPOS/web" remote set-url origin https://github.com/acme/web.git
+  git -C "$REPOS/web" config "url.$REPOS/web.git.pushInsteadOf" https://github.com/acme/web.git
+
   # A project-scoped copy, so the registry can show real shadowing.
   mkdir -p "$REPOS/api/.vincent/workflows"
   cat > "$REPOS/api/.vincent/workflows/feature-delivery.yaml" <<'EOF'
@@ -479,8 +533,31 @@ EOF
   api POST "/tasks/$T_DONE/approve" >/dev/null
   wait_state "$T_DONE" done 120
 
+  # Its pull request (issue #414): the gh wrapper named this task's branch as
+  # #412's head, and the reconciler links it on its next tick, exactly as it
+  # links one a human opened on GitHub.
+  local branch linked=""
+  branch="$(api GET "/tasks/$T_DONE" | jq -r .branch_name)"
+  [[ "$branch" == "feat/2-bump-the-design-tokens" ]] \
+    || fail "the design-tokens task's branch is $branch, not the head the gh wrapper names"
+  for (( i = 0; i < 60; i++ )); do
+    linked="$(api GET "/tasks/$T_DONE/github/pull" | jq -r .linked)"
+    [[ "$linked" == "true" ]] && break
+    sleep 0.5
+  done
+  [[ "$linked" == "true" ]] || fail "the reconciler never linked #412 to task $T_DONE"
+
+  # Finished and pushed with no pull request: the task the open-a-pull-request
+  # popup is photographed on, since that is exactly what `P` offers to fix.
+  # The description is what the popup guesses the pull request's body from.
+  T_NOPR="$(add "$P_WEB" feature-pr 'tighten the focus ring contrast' \
+    '"description":"The focus ring fails WCAG AA against the dark header. Raise it to 3:1 and keep the 2px offset."')"
+  wait_state "$T_NOPR" awaiting_gate 120
+  api POST "/tasks/$T_NOPR/approve" >/dev/null
+  wait_state "$T_NOPR" done 120
+
   # Chats (task 067, issue #413), seeded while claude still points at the
-  # conversational CLI — the two swaps below are one-way.
+  # conversational CLI — the three swaps below are one-way.
   say "chats"
   newchat() { # newchat PROJECT AGENT TITLE
     api POST /chats "{\"project_id\":$1,\"agent\":\"$2\",\"title\":$(jq -Rn --arg t "$3" '$t')}" | jq -r .id
@@ -514,11 +591,14 @@ EOF
   chat_send "$C_INFRA" 'Walk me through the eu-west failover, one step at a time.'
   wait_chat "$C_INFRA" running 120
 
-  write_config agent-ask
+  write_config agent-triage
   sleep 3 # the config watcher, then the adapter's binary-identity re-probe
 
   T_ASK="$(add "$P_INFRA" incident-response 'restore the eu-west read replica' '"agent":"claude"')"
   wait_state "$T_ASK" awaiting_input 120
+
+  write_config agent-ask
+  sleep 3
 
   # A chat waiting on a human: the row the chats board sorts to the top and
   # the only thing its header badge counts.
@@ -538,19 +618,31 @@ EOF
   wait_hold "$T_WALLED" 120
 
   # Blocked: a command that fails with retries exhausted. It is its own
-  # workflow so nothing the other shots need has to be sabotaged.
+  # workflow so nothing the other shots need has to be sabotaged. It is also
+  # the task the Steps & Attempts shot is of (issue #414), which is why it has
+  # an agent step — a row with tokens and a cost — and why the failing step
+  # prints before it exits and gets one retry: two failed attempts, each with
+  # the tail of its output as its result summary.
   cat > "$CONFIG_DIR/workflows/publish-check.yaml" <<'EOF'
 name: publish-check
 description: Verify the published artifacts are reachable.
 defaults:
-  max_retries: 0
+  max_retries: 1
 steps:
   - id: fetch
     type: command
     run: git log -1 --oneline
+  - id: collect
+    type: agent
+    agent: cursor
+    prompt: 'List the release artifacts for {{.Task.Title}} and the checksum each should carry.'
   - id: verify
     type: command
-    run: exit 1
+    run: |
+      echo "vincent_darwin_arm64.tar.gz: OK"
+      echo "vincent_linux_amd64.tar.gz: FAILED"
+      echo "sha256sum: WARNING: 1 computed checksum did NOT match"
+      exit 1
 EOF
   sleep 2 # the registry watcher
   T_BLOCK="$(add "$P_REL" publish-check 'verify the signed checksums')"
@@ -980,6 +1072,219 @@ Sleep 5s
 Ctrl+Y
 Sleep 3s
 Screenshot "'"$OUT"'/tui-chat-copy.png"
+Sleep 2s
+'
+
+  # Everything below was added for issue #414 and runs last on purpose. A
+  # tape's picture depends on how long after the seed it is taken — the
+  # triggers ledger grows a `deduped` pair on every poll and the board's
+  # clocks keep counting — so new tapes go after the old ones rather than
+  # beside the tab they are of, and the pictures above stay the ones they were.
+
+  # The task workspace's other six tabs (issue #414), each on the task whose
+  # state is what the tab is for. `enter` on a board row opens the workspace
+  # on Steps & Attempts; the digits pick a tab.
+
+  # Steps & Attempts, on the blocked task: a command step and an agent step
+  # that succeeded, then both failed attempts of the step it is blocked on,
+  # each with vincent'"'"'s failure reason and the step'"'"'s result summary.
+  tape tui-task-steps 1250 '
+Type "/"
+Sleep 500ms
+Type "signed checksums"
+Sleep 1s
+Tab
+Sleep 1s
+Enter
+Sleep 4s
+Screenshot "'"$OUT"'/tui-task-steps.png"
+Sleep 2s
+'
+
+  # Task Details, on the task at its gate: the sectioned inspector, one
+  # section down from the description it opens on.
+  tape tui-task-details 1400 '
+Type "/"
+Sleep 500ms
+Type "public API"
+Sleep 1s
+Tab
+Sleep 1s
+Enter
+Sleep 3s
+Type "2"
+Sleep 2s
+Down 1
+Sleep 2s
+Screenshot "'"$OUT"'/tui-task-details.png"
+Sleep 2s
+'
+
+  # Output, on the soak: a real `go test -v` run arriving live.
+  tape tui-task-output 1250 '
+Type "/"
+Sleep 500ms
+Type "harden"
+Sleep 1s
+Tab
+Sleep 1s
+Enter
+Sleep 3s
+Type "3"
+Sleep 5s
+Screenshot "'"$OUT"'/tui-task-output.png"
+Sleep 2s
+'
+
+  # Workflow, on the task at its gate: the graph with the run on it — two
+  # steps done, the gate it is parked at, and the step it never reached.
+  tape tui-task-workflow 1400 '
+Type "/"
+Sleep 500ms
+Type "public API"
+Sleep 1s
+Tab
+Sleep 1s
+Enter
+Sleep 3s
+Type "5"
+Sleep 4s
+Screenshot "'"$OUT"'/tui-task-workflow.png"
+Sleep 2s
+'
+
+  # Step Details, on the same task'"'"'s agent step: the prompt it was
+  # actually handed, and where each resolved value came from. The tab lands
+  # on the gate'"'"'s attempt, the newest; the agent step is two above it.
+  tape tui-task-step-details 1400 '
+Type "/"
+Sleep 500ms
+Type "public API"
+Sleep 1s
+Tab
+Sleep 1s
+Enter
+Sleep 3s
+Type "6"
+Sleep 2s
+Up 2
+Sleep 3s
+Screenshot "'"$OUT"'/tui-task-step-details.png"
+Sleep 2s
+'
+
+  # Pull Request, on the finished task the reconciler linked to #412: its
+  # facts, and one row per check on its head commit. The cursor is moved to
+  # the failed Actions check, the one row `ctrl+r` is offered on.
+  tape tui-task-pull 1250 '
+Type "/"
+Sleep 500ms
+Type "design tokens"
+Sleep 1s
+Tab
+Sleep 1s
+Enter
+Sleep 3s
+Type "7"
+Sleep 4s
+Down 1
+Sleep 2s
+Screenshot "'"$OUT"'/tui-task-pull.png"
+Sleep 2s
+'
+
+  # The four popups (issue #414). None of them is ever submitted: the tape
+  # ends with the popup open, and quitting the TUI discards the draft.
+
+  # Repair (`R`), on the blocked task, with a prompt written and kept —
+  # `ctrl+s` inside the field keeps the text; only a second one would start
+  # the repair.
+  tape tui-repair 1250 '
+Type "/"
+Sleep 500ms
+Type "signed checksums"
+Sleep 1s
+Tab
+Sleep 1s
+Enter
+Sleep 3s
+Type "R"
+Sleep 2s
+Enter
+Sleep 1s
+Type "The verify step exits 1. Find out why the checksum comparison fails and fix it."
+Sleep 1s
+Ctrl+S
+Sleep 2s
+Screenshot "'"$OUT"'/tui-repair.png"
+Sleep 2s
+'
+
+  # Follow-up (`F`), on the finished task, with a prompt written and kept.
+  tape tui-follow-up 1250 '
+Type "/"
+Sleep 500ms
+Type "design tokens"
+Sleep 1s
+Tab
+Sleep 1s
+Enter
+Sleep 3s
+Type "F"
+Sleep 2s
+Down 1
+Sleep 500ms
+Enter
+Sleep 1s
+Type "Rebase the branch onto main and re-run the token snapshot tests."
+Sleep 1s
+Ctrl+S
+Sleep 2s
+Screenshot "'"$OUT"'/tui-follow-up.png"
+Sleep 2s
+'
+
+  # The answer form, on the task whose claude step asked two questions (the
+  # agent-triage wrapper): the single-choice one answered, and one box ticked
+  # on the multi-select one below it — three rows down, past the free-text
+  # row every question ends with. Nothing is submitted.
+  tape tui-answer 1250 '
+Type "/"
+Sleep 500ms
+Type "read replica"
+Sleep 1s
+Tab
+Sleep 1s
+Enter
+Sleep 3s
+Enter
+Sleep 2s
+Space
+Sleep 1s
+Down 3
+Sleep 1s
+Space
+Sleep 2s
+Screenshot "'"$OUT"'/tui-answer.png"
+Sleep 2s
+'
+
+  # Open a pull request (`P`, from Task Details), on the finished task that
+  # has none: the title and body vincent guessed, and the draft toggle.
+  tape tui-create-pr 1250 '
+Type "/"
+Sleep 500ms
+Type "focus ring"
+Sleep 1s
+Tab
+Sleep 1s
+Enter
+Sleep 3s
+Type "2"
+Sleep 2s
+Type "P"
+Sleep 3s
+Screenshot "'"$OUT"'/tui-create-pr.png"
 Sleep 2s
 '
 }

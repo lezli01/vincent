@@ -247,6 +247,11 @@ an attempt chooses what the separate **Output** tab shows; the selection stays
 put while you move between tabs. Press `enter` on an attempt to jump straight
 to its output.
 
+![Steps & Attempts on a blocked task: a command step and an agent step that
+succeeded, the agent's tokens beside its row, then two failed attempts of the
+verify step, each with its failure reason and the tail of its output beneath
+it](../assets/tui-task-steps.png)
+
 **Task Details** is the complete task inspector: title, description, declared
 fields, state, project, workflow and its recorded origin, branch and worktree,
 priority, tokens and cost, lifecycle timestamps, queue/block information,
@@ -256,6 +261,10 @@ snapshot. Its left sidebar selects one section at
 a time, so unrelated metadata does not compete for the screen. Use `↑`/`↓` or
 the mouse to choose a section and `pgup`/`pgdn` to scroll long section content;
 the inspector never edits anything.
+
+![Task Details on a task at its gate: the section sidebar on the left with
+Overview selected, and its state, project, workflow and where that workflow came
+from, branch, base and worktree on the right](../assets/tui-task-details.png)
 
 Its **GitHub pull request** section follows the captured issue and shows one of
 three things: the pull request linked to this task with its live state, the
@@ -269,6 +278,11 @@ open one. Two keys work there:
 
 `P` opens a small popup with the title and body vincent guessed from the task,
 plus a draft toggle — all three editable:
+
+![The open-a-pull-request popup over a finished task: the title and the body
+guessed from the task's title and description, the draft row reading ready for
+review, and the GitHub compare page ctrl+o would open
+instead](../assets/tui-create-pr.png)
 
 | Key | Does |
 |---|---|
@@ -310,6 +324,10 @@ screen that has stopped repainting. It is on Output only, never on Diff, and it
 follows the attempt being *live* rather than its step being an `agent` step: a
 long `command` step's pane goes quiet for exactly the same reason.
 
+![The Output tab on a running command step: the attempt selector naming the
+step and the attempt, and a real go test -v run arriving under
+it](../assets/tui-task-output.png)
+
 **Step Details** answers the question the other tabs cannot: what this attempt
 was actually *given*. Task Details shows the workflow's template; this shows the
 substitution — the rendered prompt an agent step handed its CLI, the rendered
@@ -331,6 +349,11 @@ Two things it says out loud rather than hiding: a record cut at its 64 KiB
 ceiling, and an attempt from before vincent recorded any of this, which reads
 `not recorded` instead of showing an empty prompt.
 
+![Step Details on an agent step: the attempts in the sidebar, then the rendered
+prompt with the task's title and branch substituted in, the rendered check, the
+result summary, and the resolution with the level each value came
+from](../assets/tui-task-step-details.png)
+
 **Pull Request** is the last tab, and the only one that is sometimes not
 there: it appears when the task has a pull request linked and `github.enabled`
 is on. It carries the pull request's facts and one row per check on its head
@@ -343,6 +366,12 @@ select a row, `enter` opens it in a browser, `o` opens the pull request and `u`
 unlinks it from the task; the refusal is sticky, so the reconciler will not
 link it again. Every §6 action key works here too — the tab you happen to be
 reading is not a statement about what you may do to the task.
+
+![The Pull Request tab on a finished task: the pull request's title, state,
+head and base, author, URL and how it was linked, then its checks — one running,
+the failed build selected, two passing — and the keys for opening, unlinking,
+merging, closing, commenting and re-running the failed
+jobs](../assets/tui-task-pull.png)
 
 Four keys on this tab **write to GitHub**, and each asks first. A key is only
 there when its write can apply — the hint line and the footer leave it out
@@ -869,6 +898,10 @@ they re-run a step, rewrite its text, or walk past it. When what is wrong is a
 *file*, press `R` on a `blocked` task and a one-off agent goes and fixes it, in
 this task's worktree, on this task's branch.
 
+![The repair popup over a blocked task: the step and reason it is blocked on,
+a written repair prompt, and the agent, model and effort rows left at their
+defaults](../assets/tui-repair.png)
+
 | Key | Does |
 |---|---|
 | `↑` / `↓` | Move between the prompt and the agent / model / effort rows |
@@ -903,6 +936,10 @@ A `done` or `aborted` task still owns everything it made — its worktree, its
 branch, its commits — until you archive it. `F` is how you do one more thing in
 there without leaving vincent: rebase the branch onto a `main` that moved, add
 the commit a reviewer asked for, drop the stray file the agent left.
+
+![The follow-up popup over a finished task: the run form set to agent, a
+written prompt, the agent, model and effort rows at their defaults, and the
+start row reading when a slot is free](../assets/tui-follow-up.png)
 
 | Key | Does |
 |---|---|
@@ -983,6 +1020,10 @@ to talk about in, and `T` says so on the action bar rather than making one.
 When a claude step asks something mid-run, the task enters `awaiting_input` and
 gets a badge on its row plus a footer hint. Press `enter` on the row to open the
 answer form.
+
+![The answer form over a task waiting on input: a single-choice question with
+one option picked, and a multi-select question below it with one box ticked,
+each ending in a row for typing an answer of your own](../assets/tui-answer.png)
 
 | Key | Does |
 |---|---|
@@ -1416,6 +1457,11 @@ side by side, which branch of a `condition` was taken, or that a task is on the
 second pass of a loop. That is the gap this tab closes, and it bites hardest on
 a task that has been parked for hours: the board says it is `blocked`, and this
 says *where*.
+
+![The Workflow tab on a task at its gate: two steps marked succeeded, the manual
+review step it is waiting at marked running, the publish step and END it has not
+reached, and the selected step's facts beneath the
+graph](../assets/tui-task-workflow.png)
 
 It draws **this task's own workflow**, not the registry's copy — includes
 already spliced flat, and any `edit + retry` rewrite reflected. If someone edits
