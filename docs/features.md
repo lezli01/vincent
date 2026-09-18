@@ -144,6 +144,9 @@ fields whose values are published as a list, so the TUI offers a picker rather
 than a text box. The TUI renders them before the task is submitted, while
 additional ad hoc fields remain available.
 
+![New task on a workflow that declares five fields, with a multiple-choice
+enum's list open](assets/tui-new-task-fields.png)
+
 The [workflow guide](guides/workflows.md) explains the patterns, and the
 [workflow schema](reference/workflow-schema.md) lists every field.
 

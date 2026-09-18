@@ -428,6 +428,12 @@ and opening another task starts fresh. `↑`/`↓` stop **once** on a folded tie
 on its header, so the cursor is always somewhere you can see; the Output tab's
 `←`/`→` still walk every attempt, folded or not.
 
+![Steps & Attempts on a task blocked in the fourth pass of a for_each loop: the
+header reads `step 2/3 · loop 4/5 · ledger · migrate 1/2`, the first two passes
+are folded, the third is opened with `→` to show its migrate and verify
+attempts, and the fourth — the pass it stopped on — holds migrate's failed
+attempt and the end of its output](../assets/tui-loop.png)
+
 A multi-round `fan_out` (§7.6) gets the same tier under a different word: its
 rounds read `round 0`, `round 1`, … — 0-based, because that is the number the
 transcript file and the log line use — and the same keys open and close them.
@@ -795,6 +801,11 @@ reading `+0 -0`, `l` opens the lane whose section the cursor is in, and a task
 that fanned nothing out is the flat file list it has always been — including its
 fold state, which is still keyed by path alone.
 
+![The Diff tab of a fan-out parent between its two rounds: two lanes and three
+files in all, the storage lane folded, the client lane open to its file and
+hunk, and the task's own commits holding the plan it wrote before it fanned
+out](../assets/tui-lane-diff.png)
+
 ### Walking a fan-out
 
 A [`fan_out` step](workflows.md) runs its lanes as **real child tasks**, each
@@ -811,6 +822,10 @@ attention badge, so a board with nothing expanded reads exactly as it did
 before. What is expanded is remembered for the session and not written to disk —
 a task id is not a label, and there is no honest way to restore one archived
 while the TUI was down.
+
+![The board filtered to a fan-out parent in awaiting_children and expanded with
+`L`: its storage and client lanes done, and the handlers lane — spawned in the
+second round, once both had merged — waiting at its gate](../assets/tui-lanes.png)
 
 Inside the workspace:
 
@@ -840,6 +855,10 @@ you can watch a running lane without leaving the parent. Exactly one extra live
 stream is open at a time — interleaving sixty-four would be a lossy render of
 something that looks like a bug, and the transcript file is still the durable
 copy.
+
+![The Output tab of the same parent after one `>`: the lane strip reads `1/3 ·
+storage (task 9) · done`, and the attempt strip and the output under it are that
+lane's](../assets/tui-lane-output.png)
 
 When the join fails, the workspace **says which lane**. A parent blocked on
 `lane_failed`, `merge_conflict`, `fan_out_invalid` or `fan_out_limit` carries
@@ -1103,6 +1122,11 @@ undeclared fields remain valid and are recorded on the task. Values are kept
 when you switch workflows, including fields that the new workflow does not
 declare.
 
+![New task on a workflow that declares five fields: a required ticket with its
+pattern filled in, a required environment enum at its default of staging, the
+multiple-choice regions list open with us-east and eu-west ticked, an integer
+canary percent and a boolean dry run](../assets/tui-new-task-fields.png)
+
 **The GitHub issue row** appears only when this project's issues can be read:
 the [`github` integration](../reference/configuration.md#github) is on, the
 project's `origin` remote is a github.com repository, and vincent has a
@@ -1206,6 +1230,11 @@ title, the head branch, and the task that claims it — with `auto` when the
 daemon's reconciler matched it by head branch and `human` when somebody linked
 it by hand.
 
+![The pull requests screen: one GitHub project's three open pull requests —
+#412 claimed by task 2, which the reconciler matched by its head branch, an
+unclaimed draft, and an unclaimed pull request from a
+fork](../assets/tui-pull-requests.png)
+
 The entry appears in the palette only when at least one project qualifies; with
 none, the screen is unreachable rather than empty. A project whose listing fails
 shows its reason on that group and does not hide the others. A reconciler tick
@@ -1275,7 +1304,7 @@ form on the entry under the cursor: rows, not YAML.
 
 ![The Workflows view with the structured editor open on a global workflow: the
 top-level rows — name, description, platforms, fields, defaults, steps — then
-the workflow's two steps with their types, and the row under the cursor
+the workflow's three steps with their types, and the row under the cursor
 explaining itself](../assets/tui-workflow-editor.png)
 
 Every row comes from the schema the daemon serves, so a field that is not legal
@@ -1435,9 +1464,9 @@ While it is open the popup has the keyboard: `↑`/`↓` and the pager keys scro
 it, `e` and `R` still work, and `esc` closes it back to the graph with the same
 node selected. A second `esc` closes the graph, as it always did.
 
-![The step-detail popup over the graph: the selected command step in full — the
-workflow it belongs to, its id and type, its whole `run:` body, and a timeout
-marked as inherited from defaults](../assets/tui-workflow-step.png)
+![The step-detail popup over the graph: the selected agent step in full — the
+workflow it belongs to, its id and type, its whole prompt, and its agent and
+timeout both marked as inherited from defaults](../assets/tui-workflow-step.png)
 
 Editing is the point of `e` here: save the file and the graph redraws in place,
 with your selected node still selected. A terminal too narrow to draw a node
@@ -1760,6 +1789,13 @@ selection, listing what is archived instead of what is live. There is no key of
 its own for either — the palette is how you get there, which is the pattern
 every takeover but new task follows.
 
+![The archived tasks board over its default window of the last 7 days: three
+archived tasks, grouped by project and workflow like the live
+board](../assets/tui-archived.png)
+
+![The archived chats board: two ended conversations, grouped by
+project](../assets/tui-archived-chats.png)
+
 `enter` opens the row's workspace. It is **read-only for free**: an archived
 task offers no `available_actions`, and every action key is gated on those, so
 there is nothing to withhold and no flag saying so.
@@ -1990,6 +2026,12 @@ row says "differs from the default" rather than "set in the file". A refusal
 renders against the field, with the value that caused it still there to fix, and
 nothing is written.
 
+![The daemon view with `tab` on the config list: each key with the value in
+force and, where they differ, the built-in default — max parallel tasks 4
+against 3, the branch template against an empty one — above the database block
+and the adapters, claude behind an observed usage limit and codex reporting its
+windows](../assets/tui-daemon-config.png)
+
 Six keys ask before they apply: `notify.command`, `environment.*`,
 `agents.*.path`, `listen`, `triggers.enabled` and `backup.dir`. They decide what
 the daemon executes or exposes, and [agents run full-auto by default](../security-model.md)
@@ -2052,6 +2094,10 @@ for your agents, and `S` opens the offer: what is on this machine, and the exact
 so the line stops advertising itself, and `esc` closes without installing
 anything. Once everything is current the line still says so — that is where `S`
 stays discoverable, the same way the status-line line works.
+
+![The skills offer: vincent-triggers not installed, vincent-workflows installed
+at 1.0.0 against the 1.1.1 this build ships and linked into claude, and the
+exact `npx skills add` command each install would run](../assets/tui-skills.png)
 
 Two things differ from `i`. vincent does not write these files itself: it runs
 `npx skills add`, which needs node on `PATH` and, on its first run, the network

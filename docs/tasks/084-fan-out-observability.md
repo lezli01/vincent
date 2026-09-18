@@ -274,6 +274,21 @@ in the child and never appear on this graph.
   they did — and the new states are additive, so nothing on the page is now
   wrong. A person re-runs `scripts/screenshots.sh` to add them (tracked in
   [#415](https://github.com/lezli01/vincent/issues/415), 2026-09-13).
+  *Delivered 2026-09-18 (issue #415):* the seed runs a two-round fan-out that
+  parks between its rounds, and `tui-lanes.png`, `tui-lane-output.png` and
+  `tui-lane-diff.png` are captures of it.
+- **The board never shows what a fan-out's subtree is doing.**
+  `boardStateLabel` renders `awaiting_children (2 blocked)` from
+  `Task.Children`, but only `GET /v1/tasks/{id}` carries `children` — list rows
+  do not — so on the board the label is always the bare state. The guides, the
+  lifecycle reference and spec §15 all describe the parenthetical as what makes
+  a blocked lane visible while lanes are kept off the list (014 decision 13).
+  Found 2026-09-18 capturing `tui-lanes.png` and not yet tracked.
+- **On the Output tab, `←`/`→` move the parent's attempt selection while a
+  lane is selected.** The strip under the lane selector describes the lane's
+  attempts and offers `←/→ select`, but the keys go to the parent's sub-model
+  (`taskView.update`'s Output case), so they move a selection nobody can see.
+  Found 2026-09-18 with the item above and not yet tracked.
 - The **CLI graph renderer** is still deferred from task 080, and
   `workflow.SentinelLane` is still in place for it (tracked in
   [#407](https://github.com/lezli01/vincent/issues/407), 2026-09-13).
