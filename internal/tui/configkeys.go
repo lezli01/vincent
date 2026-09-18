@@ -215,7 +215,7 @@ func configKeys() []configKey {
 			path: "max_tree_cost_usd", label: "max tree cost", kind: kindFloat,
 			help: "spend ceiling for a whole fan-out tree in US dollars; 0 is no cap",
 			read: func(c apiclient.Config) string { return strconv.FormatFloat(c.MaxTreeCostUSD, 'f', -1, 64) },
-			// task 115: "off" for the same reason as max task cost.
+			// task 116: "off" for the same reason as max task cost.
 			show: treeCostCapText,
 			write: func(s string) (apiclient.ConfigPatch, error) {
 				f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)

@@ -664,7 +664,7 @@ func costCapText(c apiclient.Config) string {
 
 // treeCostCapText renders `max_tree_cost_usd`, the ceiling on what one
 // fan-out tree may spend before the task that crossed it blocks
-// `tree_cost_limit` (§12.3, task 115). "off" and the as-written precision for
+// `tree_cost_limit` (§12.3, task 116). "off" and the as-written precision for
 // costCapText's reasons; the suffix says what the figure counts, which is the
 // one thing that tells it apart from the line above.
 func treeCostCapText(c apiclient.Config) string {

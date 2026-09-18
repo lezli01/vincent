@@ -92,7 +92,7 @@ func TestDaemonViewRendersTheTaskCostCap(t *testing.T) {
 	}
 }
 
-// TestDaemonViewRendersTheTreeCostCap is the same for task 115's tree cap, on
+// TestDaemonViewRendersTheTreeCostCap is the same for task 116's tree cap, on
 // its row of the full key list: "off" at zero, and once set the figure as
 // written with the suffix that says it counts a whole tree — the one thing
 // that tells it apart from the per-task row beside it. Asserted per line,

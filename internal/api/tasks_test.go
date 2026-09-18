@@ -478,7 +478,7 @@ func TestTaskDetailCarriesProjectName(t *testing.T) {
 }
 
 // TestTaskDetailChildrenCostIsDescendantsOnly is §13.2's `children.cost_usd`
-// (task 115 decision 5). While no lane has reported a cost it is present and
+// (task 116 decision 5). While no lane has reported a cost it is present and
 // JSON null, never 0 — codex- and cursor-shaped lanes report nothing, and $0.00
 // would claim they were free. Once lanes report, it is their sum over every
 // attempt and never the parent's own step runs, which the tree total adds on

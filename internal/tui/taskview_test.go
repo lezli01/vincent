@@ -661,7 +661,7 @@ func TestOpenLaneFromTheDiffTabUsesTheSectionUnderTheCursor(t *testing.T) {
 	}
 }
 
-// TestTaskDetailRelationshipsShowTreeCost is task 115's "tree cost" fact: the
+// TestTaskDetailRelationshipsShowTreeCost is task 116's "tree cost" fact: the
 // task's own spend plus its descendants', which is the figure the tree cap is
 // compared against when the task is the root. Neither side reporting renders
 // "—" and never "$0.00" (task 033 decision 5); one side reporting is that

@@ -236,7 +236,7 @@ func TestTaskCostCapDefaultsOff(t *testing.T) {
 	}
 }
 
-// TestTreeCostCapDefaultsOff pins the same property for task 115's tree cap:
+// TestTreeCostCapDefaultsOff pins the same property for task 116's tree cap:
 // zero is the default and the documented "no cap", an explicit zero is that
 // value rather than a refusal, and the key is independent of the per-task
 // cap — setting one leaves the other where it was.
@@ -384,7 +384,7 @@ func TestLoadRejectsInvalid(t *testing.T) {
 		// (task 033), so only a budget no run could honour is refused.
 		"negative task cost cap":        "max_task_cost_usd: -1\n",
 		"task cost cap is not a number": "max_task_cost_usd: five dollars\n",
-		// The tree cap has the per-task cap's floor for its reason (task 115).
+		// The tree cap has the per-task cap's floor for its reason (task 116).
 		"negative tree cost cap":        "max_tree_cost_usd: -0.5\n",
 		"tree cost cap is not a number": "max_tree_cost_usd: a lot\n",
 		// Zero would re-admit a quota-held task on the very next tick, which

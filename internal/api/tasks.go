@@ -1079,7 +1079,7 @@ type childrenResponse struct {
 	Blocked      []int64 `json:"blocked"`
 	AwaitingGate []int64 `json:"awaiting_gate"`
 	// CostUSD is what the descendants have spent, at any depth and over every
-	// attempt, not counting this task's own step runs (task 115 decision 5).
+	// attempt, not counting this task's own step runs (task 116 decision 5).
 	// Null when no descendant reported a cost, for §17's reason: an adapter
 	// that reports nothing must not read as $0.00. It is the figure that says
 	// why a tree blocked `tree_cost_limit`; the tree total is it plus the
@@ -1389,7 +1389,7 @@ func (s *Server) handleTaskGet(w http.ResponseWriter, r *http.Request) {
 	} else if rollup.Total > 0 {
 		// A separate read rather than a column on ChildrenOf: that query is
 		// the scheduler's re-queue test and never needs the step_runs join
-		// (task 115). A failed read leaves the cost null — unreported — rather
+		// (task 116). A failed read leaves the cost null — unreported — rather
 		// than dropping the whole rollup.
 		cost, err := s.deps.Store.DescendantsCost(r.Context(), t.ID)
 		if err != nil {

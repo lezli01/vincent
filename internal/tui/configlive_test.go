@@ -418,7 +418,7 @@ func TestConfigKeyUsageLimitAutoContinuePatchesItsOwnField(t *testing.T) {
 	}
 }
 
-// max_tree_cost_usd through the real handlers (task 115): typed, saved,
+// max_tree_cost_usd through the real handlers (task 116): typed, saved,
 // written into the documented key of config.yaml and adopted by the block —
 // and a negative cap is refused against the field without reaching the file,
 // which is config's floor arriving over the wire rather than a client copy of

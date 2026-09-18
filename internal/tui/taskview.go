@@ -1862,7 +1862,7 @@ func taskOwnCost(task apiclient.TaskDetail) *float64 {
 }
 
 // treeCost is the spend of a fan-out tree as seen from its parent: the task's
-// own rollup plus its descendants' (task 115 decision 5), which is the figure
+// own rollup plus its descendants' (task 116 decision 5), which is the figure
 // `max_tree_cost_usd` is compared against when the task is the root. Nil when
 // neither side reported a cost, so formatCost renders "—" rather than $0.00
 // (task 033 decision 5); a side that reported nothing adds nothing.

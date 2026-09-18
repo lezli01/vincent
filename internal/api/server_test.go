@@ -203,7 +203,7 @@ func TestConfigViewServesTheTaskCostCap(t *testing.T) {
 	}
 }
 
-// TestConfigViewServesTheTreeCostCap is the same for task 115's tree cap: it
+// TestConfigViewServesTheTreeCostCap is the same for task 116's tree cap: it
 // arrives beside the per-task cap, each with its own value, and the default
 // zero is served as a number rather than dropped — a client reads it as "off".
 func TestConfigViewServesTheTreeCostCap(t *testing.T) {

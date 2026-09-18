@@ -147,7 +147,7 @@ type Config struct {
 	// every step, in US dollars; 0 is no cap (§12.3, task 033).
 	MaxTaskCostUSD float64 `json:"max_task_cost_usd"`
 	// MaxTreeCostUSD caps what one fan-out tree — a root task and every
-	// descendant — may spend, in US dollars; 0 is no cap (§12.3, task 115).
+	// descendant — may spend, in US dollars; 0 is no cap (§12.3, task 116).
 	MaxTreeCostUSD float64 `json:"max_tree_cost_usd"`
 	// UsageLimitRecheck is how long a quota-held task waits before the
 	// scheduler tries again, when the agent CLI reported no reset time (§11).

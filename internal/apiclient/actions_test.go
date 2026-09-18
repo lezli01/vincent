@@ -319,7 +319,7 @@ func TestRetryOverrideFromParkedParentIsRefused(t *testing.T) {
 	}
 }
 
-// TestDetailChildrenCostCrossesTheWire is task 115's `children.cost_usd`
+// TestDetailChildrenCostCrossesTheWire is task 116's `children.cost_usd`
 // through the real handler: the server DTO is unexported, so only a live
 // round trip notices the key renamed on one side. Null must decode as nil and
 // not as 0 — the TUI renders nil as "—" and 0 as "$0.00", and lanes that

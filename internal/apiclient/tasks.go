@@ -350,7 +350,7 @@ type ChildrenRollup struct {
 	Blocked      []int64        `json:"blocked"`
 	AwaitingGate []int64        `json:"awaiting_gate"`
 	// CostUSD is the descendants' summed spend, not counting the task's own;
-	// nil when no descendant reported a cost (task 115).
+	// nil when no descendant reported a cost (task 116).
 	CostUSD *float64 `json:"cost_usd"`
 }
 

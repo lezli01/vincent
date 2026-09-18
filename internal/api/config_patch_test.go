@@ -504,7 +504,7 @@ func TestConfigPatchRefusesABadKeymap(t *testing.T) {
 }
 
 // max_tree_cost_usd is served, written into config.yaml and put into force
-// (task 115), on all three legs for usage_limit_auto_continue's reason. Zero
+// (task 116), on all three legs for usage_limit_auto_continue's reason. Zero
 // goes through the same path as any other value: it is how a client turns the
 // cap back off, so a patch that treated it as "unset" would strand the cap on.
 func TestConfigPatchRoundTripsTreeCostCap(t *testing.T) {

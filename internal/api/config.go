@@ -58,7 +58,7 @@ type configResponse struct {
 	// configuration from disk (§15).
 	MaxTaskCostUSD float64 `json:"max_task_cost_usd"`
 	// MaxTreeCostUSD is the per-fan-out-tree spend ceiling; 0 is no cap
-	// (task 115).
+	// (task 116).
 	MaxTreeCostUSD    float64 `json:"max_tree_cost_usd"`
 	UsageLimitRecheck string  `json:"usage_limit_recheck_interval"`
 	// UsageLimitAutoContinue is what a recognized quota stop does: hold and

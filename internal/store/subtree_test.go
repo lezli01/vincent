@@ -349,7 +349,7 @@ func spend(t *testing.T, s *Store, taskID int64, attempt int, cost *float64) {
 	}
 }
 
-// TestTreeCostIsTheSameFromEveryNode is task 115's shared budget: the tree cap
+// TestTreeCostIsTheSameFromEveryNode is task 116's shared budget: the tree cap
 // is compared against one figure however deep the task asking sits, so the
 // root, a lane and a grandchild must all climb to the same root and sum the
 // same subtree — a lane's sibling and its sibling's children included, which a
@@ -500,7 +500,7 @@ func TestTreeCostUnreportedIsNotZero(t *testing.T) {
 }
 
 // TestDescendantsCostExcludesTheTaskItself is §13.2's `children.cost_usd`
-// (task 115 decision 5): the descendants at every depth, archived ones
+// (task 116 decision 5): the descendants at every depth, archived ones
 // included, and never the task's own step runs — the tree total is that plus
 // the task's own `cost_usd`, so counting it here would count it twice. A
 // parent whose lanes reported nothing has no children cost even when the
