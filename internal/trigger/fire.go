@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -30,7 +31,22 @@ type Store interface {
 	CountTriggerFiredSince(ctx context.Context, triggerID string, since time.Time) (int, error)
 	FindTaskForBranch(ctx context.Context, projectID int64, branch string) (*store.Task, error)
 	AppendEvent(ctx context.Context, e *store.Event) error
+	// The overrun group and its backlog (task 121).
+	TriggerGroupInFlight(ctx context.Context, triggerID, key string) ([]int64, error)
+	TaskInFlight(ctx context.Context, id int64) (bool, error)
+	AppendTriggerBacklog(ctx context.Context, b *store.TriggerBacklogItem) (*store.TriggerBacklogItem, error)
+	ListTriggerBacklog(ctx context.Context, triggerID, key string) ([]store.TriggerBacklogItem, error)
+	ListTriggerBacklogFor(ctx context.Context, triggerID string) ([]store.TriggerBacklogItem, error)
+	ListTriggerBacklogGroups(ctx context.Context) ([]store.TriggerBacklogGroup, error)
+	DeleteTriggerBacklog(ctx context.Context, ids ...int64) error
 }
+
+// MaxBacklogPerTrigger caps held events per trigger (task 121). At the cap
+// the *oldest* pending event is dropped and recorded `superseded`, which is
+// right for queue_coalesce and acceptable for queue_serial: a backlog that
+// deep is one whose group is not draining, and the recorded drop is what makes
+// that explicable rather than silent.
+const MaxBacklogPerTrigger = 100
 
 // MaxEventsPerPoll caps catch-up (decision 13): at most this many events of
 // one poll are judged, and the rest are dropped with a warning. Twenty, fixed,
@@ -105,6 +121,17 @@ type Judgement struct {
 	// holds a `fired` or `seeded` row for it.
 	DedupeKey   string `json:"dedupe_key,omitempty"`
 	WouldDedupe bool   `json:"would_dedupe"`
+	// Overrun is the mode consulted, "" when the trigger takes the `parallel`
+	// default and no group was looked at; ConcurrencyKey the rendered group;
+	// InFlight the group's unsettled tasks. The three Would* flags are the
+	// decision, and sit beside WouldDedupe for the same reason: a dry run has
+	// to be able to show a skip coming.
+	Overrun        string  `json:"overrun,omitempty"`
+	ConcurrencyKey string  `json:"concurrency_key,omitempty"`
+	InFlight       []int64 `json:"in_flight,omitempty"`
+	WouldSkip      bool    `json:"would_skip,omitempty"`
+	WouldCancel    bool    `json:"would_cancel,omitempty"`
+	WouldQueue     bool    `json:"would_queue,omitempty"`
 	// Action is the rendered request, nil when rendering was not reached or
 	// failed.
 	Action *Replay `json:"action,omitempty"`
@@ -116,10 +143,25 @@ type Judgement struct {
 	Error string `json:"error,omitempty"`
 }
 
-// judge runs steps 1–5 of the pipeline — match, if, dedupe, rate limit,
-// render — and writes nothing. fire and the dry runs all start here, which is
-// what makes a dry run the real pipeline rather than a re-derivation of it.
+// plan is what a drain knows that a freshly arrived event does not: the event
+// came off the backlog under a group already decided, and the overrun step
+// must not run again on it (task 121 decision 6 — a drained event is
+// re-judged in full *minus* the overrun step, or it would queue itself
+// forever).
+type plan struct {
+	drained bool
+	group   string
+}
+
+// judge runs the pipeline's read-only steps — match, if, dedupe, rate limit,
+// render, overrun — and writes nothing. fire and the dry runs all start here,
+// which is what makes a dry run the real pipeline rather than a
+// re-derivation of it.
 func judge(ctx context.Context, st Store, d *Definition, ev Event, now time.Time) (*Judgement, error) {
+	return judgePlan(ctx, st, d, ev, now, plan{})
+}
+
+func judgePlan(ctx context.Context, st Store, d *Definition, ev Event, now time.Time, p plan) (*Judgement, error) {
 	j := &Judgement{EventID: ev.ID()}
 	data := renderData{Event: ev}
 
@@ -195,8 +237,95 @@ func judge(ctx context.Context, st Store, d *Definition, ev Event, now time.Time
 		rp.TaskID = &id
 		rp.Path = strings.Replace(rp.Path, "{id}", strconv.FormatInt(id, 10), 1)
 	}
+	// The overrun check is the last step, after render and after a reaction's
+	// target resolution (decision 7): a reaction cannot know its group before
+	// the target exists, and one position keeps one definition. It reads only,
+	// so POST /v1/triggers/{id}/test reports it exactly as it reports
+	// would_dedupe and writes nothing.
+	if err := applyOverrun(ctx, st, d, j, data, p); err != nil {
+		return nil, err
+	}
+	if j.Outcome != "" {
+		return j, nil
+	}
 	j.Outcome = store.DeliveryFired
 	return j, nil
+}
+
+// applyOverrun is the group-liveness step. It sets j.Outcome only when the
+// event is suppressed or held; a `cancel_previous` that found work leaves the
+// outcome open — it still fires, having cancelled first.
+func applyOverrun(ctx context.Context, st Store, d *Definition, j *Judgement, data renderData, p plan) error {
+	mode := d.EffectiveOverrun()
+	if mode == OverrunParallel {
+		return nil
+	}
+	key := p.group
+	if !p.drained {
+		rendered, err := concurrencyKey(d, j, data)
+		if err != nil {
+			j.Outcome, j.Error = store.DeliveryError, err.Error()
+			return nil
+		}
+		key = rendered
+	}
+	j.Overrun, j.ConcurrencyKey = mode, key
+	if p.drained {
+		// The group was empty when the drain picked this event up, and the
+		// drain is serialized with every other firing path for this trigger.
+		return nil
+	}
+	inFlight, err := st.TriggerGroupInFlight(ctx, d.ID, key)
+	if err != nil {
+		return err
+	}
+	// A reaction's group is its resolved target's own state, ledger or no
+	// ledger (decision 2): on the first follow-up that task has never
+	// appeared in this trigger's ledger, and the ledger cannot answer for it.
+	if j.Action != nil && j.Action.TaskID != nil && !slices.Contains(inFlight, *j.Action.TaskID) {
+		live, err := st.TaskInFlight(ctx, *j.Action.TaskID)
+		if err != nil {
+			return err
+		}
+		if live {
+			inFlight = append([]int64{*j.Action.TaskID}, inFlight...)
+		}
+	}
+	j.InFlight = inFlight
+	if len(inFlight) == 0 {
+		return nil
+	}
+	switch mode {
+	case OverrunSkip:
+		j.WouldSkip, j.Outcome = true, store.DeliverySuperseded
+	case OverrunCancelPrevious:
+		j.WouldCancel = true
+	default:
+		j.WouldQueue, j.Outcome = true, store.DeliveryQueued
+	}
+	return nil
+}
+
+// concurrencyKey renders `concurrency_key:`, or supplies the absent default:
+// the resolved target task for a reaction, the trigger id for a create_task
+// (decision 2). The reaction default is namespaced so it cannot collide with
+// a trigger whose id is a number.
+func concurrencyKey(d *Definition, j *Judgement, data renderData) (string, error) {
+	if d.ConcurrencyKey == "" {
+		if j.Action != nil && j.Action.TaskID != nil {
+			return "task:" + strconv.FormatInt(*j.Action.TaskID, 10), nil
+		}
+		return d.ID, nil
+	}
+	key, err := workflow.RenderWith("concurrency_key", d.ConcurrencyKey, data)
+	if err != nil {
+		return "", err
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "", errors.New("concurrency_key rendered to an empty string")
+	}
+	return key, nil
 }
 
 // actorAllowed matches allowed_actors against the event's author — on a
@@ -425,18 +554,117 @@ type Delivery struct {
 	Judgement
 	DeliveryID int64  `json:"delivery_id"`
 	TaskID     *int64 `json:"task_id,omitempty"`
-	Detail     string `json:"detail,omitempty"`
+	// SupersededTaskID is the task a `cancel_previous` fire replaced.
+	SupersededTaskID *int64 `json:"superseded_task_id,omitempty"`
+	Detail           string `json:"detail,omitempty"`
+}
+
+// hold writes a held event to the backlog and records its `queued` ledger
+// row, dropping the trigger's oldest held event first when the cap is met.
+func hold(ctx context.Context, st Store, d *Definition, ev Event, del *Delivery, now time.Time) (*Delivery, error) {
+	payload, err := json.Marshal(map[string]any(ev))
+	if err != nil {
+		return nil, fmt.Errorf("encode held event: %w", err)
+	}
+	// An event this group already holds is not held twice. Decision 8 keeps a
+	// `queued` row out of the dedupe lookup so a *repeat* event reaches the
+	// overrun step rather than being swallowed — but a source that re-shows
+	// its whole window every poll (one that keeps no cursor, which is the
+	// shape decision 31B's `seeded` rows exist for) would otherwise append the
+	// same event once a second until it hit the cap, and queue_serial would
+	// fire it once per copy.
+	group, err := st.ListTriggerBacklog(ctx, d.ID, del.ConcurrencyKey)
+	if err != nil {
+		return nil, err
+	}
+	for _, it := range group {
+		if it.EventID != "" && it.EventID == del.EventID {
+			del.Outcome, del.Detail = store.DeliverySuperseded, "already held for this group"
+			row, err := st.RecordTriggerDelivery(ctx, &store.TriggerDelivery{
+				TriggerID: d.ID, EventID: del.EventID, DedupeKey: del.DedupeKey,
+				ConcurrencyKey: del.ConcurrencyKey, Outcome: del.Outcome,
+				Detail: del.Detail, CreatedAt: now,
+			})
+			if err != nil {
+				return nil, err
+			}
+			del.DeliveryID = row.ID
+			return del, nil
+		}
+	}
+	held, err := st.ListTriggerBacklogFor(ctx, d.ID)
+	if err != nil {
+		return nil, err
+	}
+	for i := 0; len(held)-i >= MaxBacklogPerTrigger; i++ {
+		old := held[i]
+		if err := st.DeleteTriggerBacklog(ctx, old.ID); err != nil {
+			return nil, err
+		}
+		if _, err := st.RecordTriggerDelivery(ctx, &store.TriggerDelivery{
+			TriggerID: d.ID, EventID: old.EventID, ConcurrencyKey: old.ConcurrencyKey,
+			Outcome:   store.DeliverySuperseded,
+			Detail:    fmt.Sprintf("dropped: the backlog reached its cap of %d held events", MaxBacklogPerTrigger),
+			CreatedAt: now,
+		}); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := st.AppendTriggerBacklog(ctx, &store.TriggerBacklogItem{
+		TriggerID: d.ID, ConcurrencyKey: del.ConcurrencyKey, EventID: del.EventID,
+		EventJSON: payload, CreatedAt: now,
+	}); err != nil {
+		return nil, err
+	}
+	row, err := st.RecordTriggerDelivery(ctx, &store.TriggerDelivery{
+		TriggerID: d.ID, EventID: del.EventID, DedupeKey: del.DedupeKey,
+		ConcurrencyKey: del.ConcurrencyKey, Outcome: store.DeliveryQueued,
+		Detail: del.Detail, CreatedAt: now,
+	})
+	if err != nil {
+		return nil, err
+	}
+	del.DeliveryID = row.ID
+	return del, nil
 }
 
 // fire runs the whole pipeline for one event, records its ledger row and, for
 // a `fired` delivery, publishes trigger.fired post-commit.
 func fire(ctx context.Context, st Store, h http.Handler, d *Definition, ev Event, now time.Time) (*Delivery, error) {
-	j, err := judge(ctx, st, d, ev, now)
+	return firePlan(ctx, st, h, d, ev, now, plan{})
+}
+
+func firePlan(ctx context.Context, st Store, h http.Handler, d *Definition, ev Event, now time.Time, p plan) (*Delivery, error) {
+	j, err := judgePlan(ctx, st, d, ev, now, p)
 	if err != nil {
 		return nil, err
 	}
 	del := &Delivery{Judgement: *j, Detail: j.Error}
-	if j.Outcome == store.DeliveryFired {
+	if j.Outcome == store.DeliveryQueued {
+		return hold(ctx, st, d, ev, del, now)
+	}
+	if j.WouldCancel {
+		// Cancel every task in the group before creating the new one, and
+		// record the newest as the one this delivery superseded (decision 4).
+		// A cancel that the FSM refuses is not this delivery's failure: the
+		// task settled between the group read and here, which is the outcome
+		// the cancel was for.
+		for _, id := range j.InFlight {
+			rp := &Replay{
+				Type: ActionCancel, Method: http.MethodPost,
+				Path: "/v1/tasks/" + strconv.FormatInt(id, 10) + "/cancel",
+			}
+			if _, cerr := replay(ctx, h, "", rp); cerr != nil {
+				del.Outcome, del.Detail = store.DeliveryError, cerr.Error()
+				break
+			}
+		}
+		if del.Outcome == store.DeliveryFired {
+			superseded := j.InFlight[0]
+			del.SupersededTaskID = &superseded
+		}
+	}
+	if j.Outcome == store.DeliveryFired && del.Outcome == store.DeliveryFired {
 		res, rerr := replay(ctx, h, IdempotencyKey(d.ID, j.DedupeKey), j.Action)
 		switch {
 		case rerr != nil:
@@ -467,7 +695,8 @@ func fire(ctx context.Context, st Store, h http.Handler, d *Definition, ev Event
 	}
 	row, err := st.RecordTriggerDelivery(ctx, &store.TriggerDelivery{
 		TriggerID: d.ID, EventID: del.EventID, DedupeKey: del.DedupeKey,
-		Outcome: del.Outcome, TaskID: del.TaskID, Detail: del.Detail, CreatedAt: now,
+		ConcurrencyKey: del.ConcurrencyKey, Outcome: del.Outcome, TaskID: del.TaskID,
+		SupersededTaskID: del.SupersededTaskID, Detail: del.Detail, CreatedAt: now,
 	})
 	if err != nil {
 		return nil, err

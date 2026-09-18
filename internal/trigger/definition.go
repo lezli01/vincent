@@ -62,6 +62,39 @@ const (
 	OnFireCreate  = "create"
 )
 
+// overrun values (task 121): what to do with an event whose concurrency
+// group already has work in flight.
+const (
+	// OverrunParallel is the default and the behaviour every trigger file
+	// written before task 121 has: no check at all, fire regardless.
+	OverrunParallel = "parallel"
+	// OverrunSkip records the event `superseded` and drops it. The in-flight
+	// work stands.
+	OverrunSkip = "skip"
+	// OverrunCancelPrevious replays §6's cancel against every in-flight task
+	// in the group, then fires. The cancelled task keeps its branch and
+	// worktree; the new one gets its own, and the delivery records which task
+	// it superseded.
+	OverrunCancelPrevious = "cancel_previous"
+	// OverrunQueueCoalesce holds the event; when the group empties the
+	// *newest* held event fires and the rest are recorded `superseded`.
+	OverrunQueueCoalesce = "queue_coalesce"
+	// OverrunQueueSerial holds the event; when the group empties the *oldest*
+	// fires, and so on until the backlog drains. Nothing is dropped except at
+	// the cap.
+	OverrunQueueSerial = "queue_serial"
+)
+
+// Overruns are the `overrun:` values this build accepts.
+func Overruns() []string {
+	return []string{OverrunParallel, OverrunSkip, OverrunCancelPrevious, OverrunQueueCoalesce, OverrunQueueSerial}
+}
+
+// Queues reports whether an overrun mode holds events in the backlog.
+func Queues(overrun string) bool {
+	return overrun == OverrunQueueCoalesce || overrun == OverrunQueueSerial
+}
+
 // permission values (decision 17). Absent means restricted.
 const (
 	PermissionRestricted = "restricted"
@@ -109,7 +142,19 @@ type Definition struct {
 	// DedupeKey is a template over `.Event`; absent means the event's `id`
 	// (appendix A).
 	DedupeKey string `yaml:"dedupe_key" json:"dedupe_key,omitempty"`
-	Limits    Limits `yaml:"limits" json:"limits"`
+	// Overrun is what happens to an event whose concurrency group already has
+	// work in flight (task 121); absent means `parallel`, which is no check.
+	Overrun string `yaml:"overrun" json:"overrun,omitempty"`
+	// ConcurrencyKey is a template over `.Event` naming the group, absent
+	// meaning the trigger id for a create_task and the resolved target task
+	// for a reaction. It is deliberately not DedupeKey: for the motivating
+	// case — a ticket saved four times in a minute — the dedupe key is per
+	// modification while the group is the ticket, so collapsing the two would
+	// disarm the feature on exactly the case it exists for. It carries
+	// dedupe_key's standing warning: changing it on a live trigger re-groups
+	// events already in flight.
+	ConcurrencyKey string `yaml:"concurrency_key" json:"concurrency_key,omitempty"`
+	Limits         Limits `yaml:"limits" json:"limits"`
 	// Permission is `restricted` (the default, decision 12) or `workflow`,
 	// which runs the workflow as written (decision 17).
 	Permission string `yaml:"permission" json:"permission,omitempty"`
@@ -189,6 +234,25 @@ func (d *Definition) EffectiveOnFire() string {
 		return OnFirePropose
 	}
 	return d.OnFire
+}
+
+// EffectiveOverrun resolves the absent default.
+func (d *Definition) EffectiveOverrun() string {
+	if d.Overrun == "" {
+		return OverrunParallel
+	}
+	return d.Overrun
+}
+
+// EffectiveConcurrencyKey resolves the absent default for a create_task: the
+// trigger id, so an author who sets only `overrun:` gets one at a time per
+// trigger. A reaction's default is the task its branch resolved to, which is
+// not known here — fire.go supplies it once the target exists (decision 2).
+func (d *Definition) EffectiveConcurrencyKey() string {
+	if d.ConcurrencyKey == "" {
+		return d.ID
+	}
+	return d.ConcurrencyKey
 }
 
 // EffectivePermission resolves the absent default.
@@ -304,6 +368,7 @@ func validate(d *Definition, stem string) workflow.Errors {
 	}
 	checkTemplate("if", d.If)
 	checkTemplate("dedupe_key", d.DedupeKey)
+	checkTemplate("concurrency_key", d.ConcurrencyKey)
 
 	validateAction(d, add, refuse, checkTemplate)
 
@@ -312,6 +377,16 @@ func validate(d *Definition, stem string) workflow.Errors {
 	default:
 		add("on_fire", "must be %q or %q", OnFirePropose, OnFireCreate)
 	}
+	switch d.Overrun {
+	case "", OverrunParallel, OverrunSkip, OverrunCancelPrevious, OverrunQueueCoalesce, OverrunQueueSerial:
+	default:
+		add("overrun", "must be one of %s", strings.Join(Overruns(), ", "))
+	}
+	// A concurrency_key with no overrun names a group nothing consults: a
+	// control that does not control, which refuse() elsewhere already treats
+	// as worse than an error in front of the author.
+	refuse("concurrency_key", d.ConcurrencyKey != "" && d.EffectiveOverrun() == OverrunParallel,
+		"it names a group only overrun: consults; set overrun to something other than "+OverrunParallel)
 	switch d.Permission {
 	case "", PermissionRestricted, PermissionWorkflow:
 	default:

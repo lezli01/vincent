@@ -85,6 +85,8 @@ const (
 		"propose holds each task for you to admit"
 	warnWorkflow = "permission: workflow lifts the restricted clamp: agent steps run as the workflow wrote " +
 		"them, full-auto included"
+	warnCancelPrevious = "overrun: cancel_previous lets an inbound event destroy in-flight agent work: every " +
+		"unfinished task in the group is cancelled before this event fires; name allowed_actors on a GitHub source"
 )
 
 // SchemaDescriptor returns the served descriptor. It is built rather than
@@ -114,6 +116,12 @@ func SchemaDescriptor() Schema {
 				Dangerous: []DangerousValue{{Value: OnFireCreate, Warning: warnCreate}},
 			},
 			{Name: "dedupe_key", Control: workflow.ControlTemplate, Default: "{{ .Event.id }}", Help: "an event whose key already fired is skipped"},
+			{
+				Name: "overrun", Control: workflow.ControlEnum, Values: Overruns(), Default: OverrunParallel,
+				Help:      "what to do when this event's group already has unfinished work; an unreviewed on_fire: propose task holds its group",
+				Dangerous: []DangerousValue{{Value: OverrunCancelPrevious, Warning: warnCancelPrevious}},
+			},
+			{Name: "concurrency_key", Control: workflow.ControlTemplate, Default: "the trigger id, or the target task for a reaction", Help: "overrun only: template over .Event naming the group"},
 			{Name: "limits", Control: ControlLimits, Help: "per-trigger bounds"},
 			{
 				Name: "permission", Control: workflow.ControlEnum, Values: []string{PermissionRestricted, PermissionWorkflow},
