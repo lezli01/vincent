@@ -11,153 +11,16 @@ list with the user-facing context a commit subject cannot carry.
 
 ## [0.9.0](https://github.com/lezli01/vincent/compare/v0.8.0...v0.9.0) (2026-09-18)
 
-
-### Features
-
-* add the backup config block ([1a477b2](https://github.com/lezli01/vincent/commit/1a477b2b23ab0e1a0d6c5b7accf7d13ae4f5f078))
-* add the Step Details tab to the task workspace ([2006955](https://github.com/lezli01/vincent/commit/200695581837bb9911c73f54f4a41b532f970218))
-* add vincent task diff, with per-lane attribution ([2a3da44](https://github.com/lezli01/vincent/commit/2a3da441f6093ebb2c6f32a26c2c154bfc5084de))
-* **agent:** normalize claude subagent task lines ([6584310](https://github.com/lezli01/vincent/commit/658431053368a7eca27fc90016cadfd03aeb7678))
-* **agent:** probe claude's login state with claude auth status ([5c7f203](https://github.com/lezli01/vincent/commit/5c7f203218f6bcccd16a5df5c20288221e74c33b))
-* **agent:** read cursor's run header and result metadata ([ec5a806](https://github.com/lezli01/vincent/commit/ec5a8062e86a8021a71f5ad06b10618d47d2500f))
-* **agent:** report claude edit deltas and carry the hunks as agent.patch ([14878bc](https://github.com/lezli01/vincent/commit/14878bcdc1debce82c47006ae4f88419381ce288))
-* **agent:** resolve and probe a run's binary through its launcher ([f1b7de1](https://github.com/lezli01/vincent/commit/f1b7de1c79b28aa756637f9c31bc22667c69227f))
-* **api,cli:** add POST /v1/tasks/import and vincent task import ([2577c4b](https://github.com/lezli01/vincent/commit/2577c4bb408d308dce3c3aadf9288fa7190b9939))
-* **api:** carry the overrun decision and the supersede link to clients ([982f87b](https://github.com/lezli01/vincent/commit/982f87bb9c7d8bf241763391640f57ccb29aa8ed))
-* **apiclient:** fetch a chat turn's raw transcript ([d2a5ad6](https://github.com/lezli01/vincent/commit/d2a5ad6483a325e548c7a7958071b51a20a74292))
-* **api:** create tasks paused, restricted or with their own cost cap ([4ceb0cf](https://github.com/lezli01/vincent/commit/4ceb0cf7c3ae1efb4aa7242baab3ca5e047d6ee0))
-* **api:** expose usage_limit_auto_continue on every client surface ([b4a36eb](https://github.com/lezli01/vincent/commit/b4a36eb49011952aac9cd293c3542fa3c865ef3f))
-* **api:** report retried_descendants on POST /retry ([c5ebf12](https://github.com/lezli01/vincent/commit/c5ebf1260a021af3ed3f045713e195096b30e0d0))
-* **api:** serve base_sha and base_refresh; chats honor fetch_base_branch ([aa02f24](https://github.com/lezli01/vincent/commit/aa02f2469156a81da23c047d482bdc5704002a67))
-* archived boards for tasks and chats, with a permanent delete ([74e763d](https://github.com/lezli01/vincent/commit/74e763d669ef84ca0f3485bb7b8d0c372262b92e))
-* **backup,store:** stage and insert one task from a backup ([7933250](https://github.com/lezli01/vincent/commit/7933250bc017db6a532706c9c32693d2e037dd65))
-* cap what a whole fan-out tree may spend ([36ddfe9](https://github.com/lezli01/vincent/commit/36ddfe9a6f4aedb3f92ec3247829a3d40e48c7f8))
-* **chat:** open a chat linked to a stopped task ([2c04a55](https://github.com/lezli01/vincent/commit/2c04a559c8e71ddb6cd4a4bf8af798b310feb9eb))
-* **chatrun:** say which turn failures never open a transcript ([152842b](https://github.com/lezli01/vincent/commit/152842b139e3c3d9bd539f5460b525ead6582555))
-* **cli:** add task chat and chat close ([c335000](https://github.com/lezli01/vincent/commit/c335000a1621ee45b37febf3ae878b685ba784de))
-* **cli:** add vincent agents for login state, build verdict and quota ([1ca1d80](https://github.com/lezli01/vincent/commit/1ca1d804d3541763c80ffe13c943878c722b3fc4))
-* **cli:** add vincent chat transcript ([a0ed45e](https://github.com/lezli01/vincent/commit/a0ed45e68e2de92877088f81b419de337c5160b4))
-* **cli:** add vincent github pr link, unlink, show and checks ([ac44e34](https://github.com/lezli01/vincent/commit/ac44e34e12aac79f44406798d9cce79ab7dc1e80))
-* **cli:** add vincent project edit ([106f89b](https://github.com/lezli01/vincent/commit/106f89ba42211fbaaeeb7f4d1880e937c3ddaa4e))
-* **cli:** draw a fan-out's lane graph in workflow render ([9526b0b](https://github.com/lezli01/vincent/commit/9526b0b2a1ef75ffec3ead12d1c372405b5c0830))
-* **clients:** report the cascade count on a parked parent's retry ([0756882](https://github.com/lezli01/vincent/commit/07568824ad68f45976bfb44b1e42594a4c4c944a))
-* **cli:** name tui.hyperlinks in vincent config ([c4b9035](https://github.com/lezli01/vincent/commit/c4b903532843b9dfde10d7aeff776d6366740f16))
-* **cli:** print subagent records on an ASCII rail ([17b2226](https://github.com/lezli01/vincent/commit/17b2226f55d10c073f63d3e8183c9c6c271adf16))
-* **cli:** show holds and recorded step inputs in task show ([d0e0676](https://github.com/lezli01/vincent/commit/d0e06761cc8de2df526a66182f7e0a5668e1715c))
-* **cli:** skip agent.patch in task transcript ([6d765d5](https://github.com/lezli01/vincent/commit/6d765d5527df9076f6569c0c01210aaab01adbe5))
-* **config:** add tui.hyperlinks, off by default ([b33be86](https://github.com/lezli01/vincent/commit/b33be86c6d4c1c1f9bd04c4ff23eb2442946e3c3))
-* **config:** add tui.keys, validated through the keymap checker ([8245671](https://github.com/lezli01/vincent/commit/8245671e524d65da4a58edf63b531b212638e401))
-* **config:** add usage_limit_auto_continue ([6ab2457](https://github.com/lezli01/vincent/commit/6ab24577e4cc8b78815dcca41625c4b9e75b0fb4))
-* **container:** tmpfs home, unwrapped exec, gateway lookup, env by name ([2ba35d3](https://github.com/lezli01/vincent/commit/2ba35d386f6ecee5ff522bb03f6d50d3826f338a))
-* **examples:** add go-checks, ship and split-work ([1c4b814](https://github.com/lezli01/vincent/commit/1c4b81427feb13a4b7f0fdad293286508e65cfe9))
-* fill the footer's width and count the keys it hides ([ba133e1](https://github.com/lezli01/vincent/commit/ba133e168b5d88c30411d67f2817b053c82cdc6f))
-* **github:** merge, close, reopen, comment and re-run from the daemon ([fe083db](https://github.com/lezli01/vincent/commit/fe083dbc2f63169f1ec957ec3eae80b7b0c383c1))
-* **github:** merge, close, reopen, comment and re-run pull request checks from the daemon ([8f9aa3c](https://github.com/lezli01/vincent/commit/8f9aa3c745c86d309bbca713e750390407a7586c))
-* **keymap:** catalog the rebindable TUI operations and their checker ([d5127fd](https://github.com/lezli01/vincent/commit/d5127fd8a712e945385838b373de5b309a367983))
-* **notify:** carry admit_not_before in the envelope ([fdbb19a](https://github.com/lezli01/vincent/commit/fdbb19aaaa16a15fca14597a28c62fe4e735635b))
-* one key per operation in the TUI, enforced by the registry ([02782d0](https://github.com/lezli01/vincent/commit/02782d04d9090202668ff0aacf24112b80519f8d))
-* record an attempt's rendered input and resolution on step_runs ([dcba03d](https://github.com/lezli01/vincent/commit/dcba03db6b34dba0c0c6acf5f33f2ee2f26302df))
-* record each attempt's rendered input as the engine renders it ([0e30e09](https://github.com/lezli01/vincent/commit/0e30e095ec0fa858fb4f98808dff1ef982d00127))
-* report whether the published skills are installed, and install them ([16717ce](https://github.com/lezli01/vincent/commit/16717ceccbd8140ec533f8d9d6d0c98aabea4bcc)), closes [#357](https://github.com/lezli01/vincent/issues/357)
-* search the docs site and copy a link to any heading ([96e6785](https://github.com/lezli01/vincent/commit/96e678510caa69082b2e981ca2215e7d8be73ed7))
-* serve max_tree_cost_usd and children.cost_usd ([40bc777](https://github.com/lezli01/vincent/commit/40bc777e164a878cd11bc469dae1784319d6ec5e))
-* serve the §11 slot counts from the daemon ([c18d1e7](https://github.com/lezli01/vincent/commit/c18d1e7007140eb081834776f8baa9d66ebbfe8a))
-* show a task's base commit and base refresh in the TUI and CLI ([5343a56](https://github.com/lezli01/vincent/commit/5343a5677a786f66e4b2b8f176770afdfc8abdaa))
-* **skills:** publish the vincent-triggers skill ([171fd33](https://github.com/lezli01/vincent/commit/171fd33efaee901689919ed8829f6f3b60ac83dd))
-* **store:** add trigger cursors and delivery ledger ([d6ce088](https://github.com/lezli01/vincent/commit/d6ce0885532367d030e5c4591de86cb9559e84ce))
-* **store:** record base refresh on tasks and chats ([c6bfe1b](https://github.com/lezli01/vincent/commit/c6bfe1b49a31de3b2c8ad3f326147954678afc6e))
-* **store:** the overrun ledger, the supersede link and the backlog table ([4cc91f8](https://github.com/lezli01/vincent/commit/4cc91f8e6b0d6b0003f0a23a2fb3d43692516d26))
-* take daemon backups on a schedule with retention ([405e592](https://github.com/lezli01/vincent/commit/405e59250a367587431965043a0f95e0b37bf319))
-* **taskrun:** block on a quota stop when the mode says so ([fdd8e0a](https://github.com/lezli01/vincent/commit/fdd8e0a13d84829129d73d7194906927c49f4319))
-* **taskrun:** cascade retry from a parked fan-out parent ([081981e](https://github.com/lezli01/vincent/commit/081981eda5caed434d4e9bfee7351476d2874659))
-* **taskrun:** hold an agent spawn on an adapter whose observed window is shut ([76d2c60](https://github.com/lezli01/vincent/commit/76d2c601c69a4c473caba92a18b96e26d0c100fd))
-* **taskrun:** persist base_sha and base_refresh at admission, log fast-forward ([4f28f10](https://github.com/lezli01/vincent/commit/4f28f109b8e92560bef73aa6fb8648cfec12a69b))
-* **taskrun:** prune trigger deliveries after 30 days ([78c40f0](https://github.com/lezli01/vincent/commit/78c40f0140ac85b3ba4e8db4e64ea1adaf74de08))
-* **taskrun:** remove a task's trigger proposal when the task is deleted ([1fea411](https://github.com/lezli01/vincent/commit/1fea41190c38804f5b15a7f749b6cc7944083b69))
-* **taskrun:** run agent steps inside the task's container ([54881f4](https://github.com/lezli01/vincent/commit/54881f409db2bc05a8b1fb7e9cb651820593c240))
-* **trigger:** add a type: schedule source ([d313154](https://github.com/lezli01/vincent/commit/d313154a007b47bbf814502c00df445854d2a67b))
-* **trigger:** add the command source and firing pipeline ([10c4a41](https://github.com/lezli01/vincent/commit/10c4a41728c7488fe9945931215ac1ab3daa5c76))
-* **trigger:** add the trigger file writer ([57bbca2](https://github.com/lezli01/vincent/commit/57bbca25b8e6de3efed3c213c4c7e40624f0c7d1))
-* **trigger:** add trigger definition, validator and schema ([dfab0b0](https://github.com/lezli01/vincent/commit/dfab0b027e9c9025f519d249efa6051e0399309d))
-* **trigger:** add validate, ls and apply verbs that never arm a trigger ([9963741](https://github.com/lezli01/vincent/commit/99637411799cc84a44c713f8900bca7284f16085))
-* **trigger:** drain the backlog, and one firing lock per trigger ([82bd220](https://github.com/lezli01/vincent/commit/82bd22008aa01fce9a8ab59f0281e33f7c8696c1))
-* **trigger:** overrun: and concurrency_key: on the trigger definition ([5b67b4b](https://github.com/lezli01/vincent/commit/5b67b4bfe9d434a6f288376e8d7c5cb1c413f272))
-* **trigger:** wire event triggers into the daemon ([7b7357f](https://github.com/lezli01/vincent/commit/7b7357fd4dca1bb6c40f9c6d8de510572b959d01))
-* **tui:** annotate the running fan_out row with its lane rollup ([cbaa41f](https://github.com/lezli01/vincent/commit/cbaa41f3c2383189a21bb45e8c3b8fc26bb4f41b)), closes [#322](https://github.com/lezli01/vincent/issues/322)
-* **tui:** apply tui.keys and render the effective keys ([bd38cd3](https://github.com/lezli01/vincent/commit/bd38cd3d052c1b706da870ea4e02da92c10d2b76))
-* **tui:** color the task Workflow tab graph by run state ([b049c9a](https://github.com/lezli01/vincent/commit/b049c9ac6af4ed4b58e61a81546ea8263f17b967))
-* **tui:** confirmed pull request writes on the Pull Request tab ([e5e52db](https://github.com/lezli01/vincent/commit/e5e52db8fe97440d3d87daa449fe86200cf07064))
-* **tui:** draw subagent records on a rail ([fd17521](https://github.com/lezli01/vincent/commit/fd17521c5644eb599c41534698c1deee45e13086))
-* **tui:** make the task chat key a rebindable operation ([62b411b](https://github.com/lezli01/vincent/commit/62b411b9d482340ff3eaa2e6863dda46b9917ac7))
-* **tui:** move the cursor with the wheel on the chats and archived boards ([220e098](https://github.com/lezli01/vincent/commit/220e098cf3dc599af5ff2a8be68e5025aaaf538a))
-* **tui:** open and copy links from assistant Markdown ([2dc3935](https://github.com/lezli01/vincent/commit/2dc3935fad46ab3d643732bc8f7e4320c57264ae))
-* **tui:** open help with f1 where a text field has the keyboard ([7e207ed](https://github.com/lezli01/vincent/commit/7e207ed1faa7c4dbd031455fa6d3fa545b261086))
-* **tui:** open, reopen and close chats on a task ([523ec95](https://github.com/lezli01/vincent/commit/523ec95d090f115f72ed5323de80be522bd565b7))
-* **tui:** opt-in OSC 8 hyperlinks for Markdown links ([0e4203c](https://github.com/lezli01/vincent/commit/0e4203ce487e3bf7e3a6aea8b23df1b3eb7b5f99))
-* **tui:** render an edit's patch at verbose ([7fea1d3](https://github.com/lezli01/vincent/commit/7fea1d3dcbbea64b52357df18eabc1ba62aa3313))
-* **tui:** show an in-progress indicator while a turn or attempt runs ([0510873](https://github.com/lezli01/vincent/commit/0510873baca47d0ba5a6dbf858724c7bf94ad3cc))
-* **workflow:** add the create-trigger and update-triggers built-ins ([c1a5c6a](https://github.com/lezli01/vincent/commit/c1a5c6aa56112c18bd7af637d05ab9022a3dccf7))
-* **workflow:** expose .Project.ID to step templates ([7f32627](https://github.com/lezli01/vincent/commit/7f32627ae3991b0bffbcdc5e060a4ca71580724a))
-* **workflows:** add the handle-dependabot workflow ([19c2089](https://github.com/lezli01/vincent/commit/19c20890bd26219b94c99886e56a656e132c6e33))
-* **workflows:** add the handle-dependabot-all sweep workflow ([df0ce22](https://github.com/lezli01/vincent/commit/df0ce220ba960fceaf78143af4cb82673c536146))
-* **workflows:** resolve ci-labeled issues ([9636286](https://github.com/lezli01/vincent/commit/9636286650118390ec8ecdf2cf9615c2ff61b325))
-* **workflows:** resolve documentation-labeled issues ([eb4e5ab](https://github.com/lezli01/vincent/commit/eb4e5abe738d099b834ac619b551b3d42db55f0f))
-* **worktree:** fast-forward the local base after a base fetch ([4964db7](https://github.com/lezli01/vincent/commit/4964db719833a724f8cd23016da6e82d2c0a79fb))
-
-
-### Bug Fixes
-
-* **agent:** never read a quota verdict from a run that succeeded ([bab5f3a](https://github.com/lezli01/vincent/commit/bab5f3a4e2678b098cef441386eba8f8ae62baa7))
-* **agent:** never resume a restricted codex run full-auto ([dd0a097](https://github.com/lezli01/vincent/commit/dd0a097da1d625e6afb26ef49108b62531f70576))
-* an installed skill with no version marker is older, not unreadable ([dd43d98](https://github.com/lezli01/vincent/commit/dd43d9854aeeb2a3fb037b3c65f251558ca31fd4))
-* **api:** bind the new arity of Runner.Retry ([071eecf](https://github.com/lezli01/vincent/commit/071eecfd7b8cfc4d66fd8318153044f954957c0f))
-* **api:** hold a follow-up's named workflow to its declared fields ([4d3d21e](https://github.com/lezli01/vincent/commit/4d3d21e6f2e958974c2087a1bd1472b553fee0ad))
-* **ci:** report failed Go toolchain bump runs ([a7bf8bb](https://github.com/lezli01/vincent/commit/a7bf8bb113171a91caebc9da1587b02b87c6c4a6))
-* **cli:** drop the PatchProject exemption now that project edit landed ([8e780b4](https://github.com/lezli01/vincent/commit/8e780b436965251f68118aaf52c3b4123d908ae8))
-* **cli:** render a derived fan-out's lane template in workflow render ([6277aea](https://github.com/lezli01/vincent/commit/6277aeac365b44f54045633c14c4bdf8211934ca))
-* **cli:** render a derived fan-out's lane template in workflow render ([0b68110](https://github.com/lezli01/vincent/commit/0b681106580ce6f255c5dc68e15beeb41b67e2c9)), closes [#370](https://github.com/lezli01/vincent/issues/370)
-* **cli:** render the run header and result metadata in task transcript ([163b6dd](https://github.com/lezli01/vincent/commit/163b6dd188a24bfbdf378924c9ce2db160e2af17))
-* **cli:** render the run header and result metadata in task transcript ([a2a9059](https://github.com/lezli01/vincent/commit/a2a90594061ee0153f6ad5a82f9cd6e920b55181)), closes [#371](https://github.com/lezli01/vincent/issues/371)
-* **cli:** watch the daemon child and report why the API never came up ([ead316e](https://github.com/lezli01/vincent/commit/ead316e655375ab592aee01bac0a8dd2dcabccb3))
-* **cli:** watch the daemon child and report why the API never came up ([e6c55d8](https://github.com/lezli01/vincent/commit/e6c55d8936ad997da65af96a89f6548904ac0189)), closes [#340](https://github.com/lezli01/vincent/issues/340)
-* **config:** read config.yaml under the applier's lock ([97b9419](https://github.com/lezli01/vincent/commit/97b9419d8d4d9b6f23e9b5326a051dc0586c702d))
-* **container:** stop mounting agent config into task containers by default ([bee3208](https://github.com/lezli01/vincent/commit/bee320872b7c5db2a3b0525c5713e66130e1f1b8)), closes [#366](https://github.com/lezli01/vincent/issues/366)
-* **container:** stop mounting agent credentials into task containers by default ([1ea3231](https://github.com/lezli01/vincent/commit/1ea3231815e6e80996c52703589afc6f68c79f53))
-* count every slot holder in the board header ([e55c6c7](https://github.com/lezli01/vincent/commit/e55c6c7edffb569dcbfde02d30c269ad73240215))
-* count every slot holder in the projects view ([aa1e874](https://github.com/lezli01/vincent/commit/aa1e874241515c9725781c25787363597b7e7c5d))
-* **docs:** renumber this task 121 -&gt; 122, the id [#482](https://github.com/lezli01/vincent/issues/482) took ([caf3e9f](https://github.com/lezli01/vincent/commit/caf3e9ff086fda111dbfd4db743a8c842f6fac1d))
-* **examples:** declare fix-and-test POSIX-only and name the real shells ([e05043f](https://github.com/lezli01/vincent/commit/e05043ffb4c80714aeb6e1b24ae80a9abc0bfa2e))
-* **gate:** isolate m16 from the invoking installation before cleanup ([e68e7ef](https://github.com/lezli01/vincent/commit/e68e7ef7c225f0fcbdf6eebfcb3447a285423571))
-* **github:** fold gh's bot login onto GitHub's own spelling ([9cd6a96](https://github.com/lezli01/vincent/commit/9cd6a966f7a62f154bed0c3a9adcc242c47ac386)), closes [#345](https://github.com/lezli01/vincent/issues/345)
-* give a parked fan_out step a running step_runs row ([#322](https://github.com/lezli01/vincent/issues/322)) ([87ea9ab](https://github.com/lezli01/vincent/commit/87ea9ab3dd1e07cb5e23eda5cd5306716e34b3f8))
-* **mcp:** name the request bodies the handlers actually decode ([0d368b5](https://github.com/lezli01/vincent/commit/0d368b5c8d34b156d3b6a340de7e578895940779))
-* **release:** drop the deprecated cask url.verified stanza ([26aff00](https://github.com/lezli01/vincent/commit/26aff007d65dcca4644de24f28b1e7662dc6e2cf))
-* stop promising a per-version MCP refusal no adapter makes ([4e11e13](https://github.com/lezli01/vincent/commit/4e11e13d77c23e174ea2f90f71189901e56c29af))
-* stop promising a per-version MCP refusal no adapter makes ([90a2b40](https://github.com/lezli01/vincent/commit/90a2b40610635cf6c330959fa8365b0e71a280cf)), closes [#375](https://github.com/lezli01/vincent/issues/375)
-* **store:** create the data directory owner-only ([1b5808e](https://github.com/lezli01/vincent/commit/1b5808eafcf8921d0f8771fdf7127012d818c66b))
-* **taskrun:** bind the new Retry arity in the step-input test ([40ee87a](https://github.com/lezli01/vincent/commit/40ee87aa359908c86e8da76f3106ebf347214e22))
-* **taskrun:** re-evaluate break and condition when a loop resumes ([806fe1a](https://github.com/lezli01/vincent/commit/806fe1a63d6eaafd0a644e8a4a23f37c58c86927))
-* **taskrun:** re-run what follows a re-run body step on resume ([88898d3](https://github.com/lezli01/vincent/commit/88898d354908e648138f8b1e3268e56cce87c18a))
-* teach create-workflow every workflow key ([6a39c56](https://github.com/lezli01/vincent/commit/6a39c56dfe33028f16e938be2d847d63bf847980)), closes [#376](https://github.com/lezli01/vincent/issues/376)
-* **trigger:** publish poll_changed even when the poll is cancelled ([136b225](https://github.com/lezli01/vincent/commit/136b225c255399bb5b71f15d21d085c4106104fe))
-* **tui:** compare max parallel chats against its real default ([bda2ec0](https://github.com/lezli01/vincent/commit/bda2ec09a067502bff148f27b21581ca36a8924b))
-* **tui:** name a loop body step or group member by its own id ([cefe110](https://github.com/lezli01/vincent/commit/cefe110f24c837c4617ae834b8aef334f687bacf))
-* **tui:** stop hinting keys that do nothing on the pull tab and palette ([2e0c0a5](https://github.com/lezli01/vincent/commit/2e0c0a5a83a9074741a481be98a4da5dea1b0de9)), closes [#372](https://github.com/lezli01/vincent/issues/372)
-* **workflow:** name step_status in the containerized-status checklist line ([0701a15](https://github.com/lezli01/vincent/commit/0701a1531b7c0b968e4983a634b7eb1b1f410442))
-* **workflow:** refuse max_retries and retry_backoff on parallel and manual steps ([da37fa4](https://github.com/lezli01/vincent/commit/da37fa47318a732bbf872d9ae86ef457abd9e506))
-* **workflow:** refuse max_retries and retry_backoff on parallel and manual steps ([f15fae7](https://github.com/lezli01/vincent/commit/f15fae762e4c8b3ffab705e343708c3348374faa)), closes [#374](https://github.com/lezli01/vincent/issues/374)
-* **workflows:** anchor issue-resolution ranges at origin/&lt;base&gt; ([6a9b9a5](https://github.com/lezli01/vincent/commit/6a9b9a5c3d2657ddf01e2e29a2d1e33a229b1c79)), closes [#449](https://github.com/lezli01/vincent/issues/449)
-* **workflows:** ask the resolvers for a plain-language PR title ([a2ad70d](https://github.com/lezli01/vincent/commit/a2ad70da2aa18dc59e7c061418c0a5d17828693c)), closes [#450](https://github.com/lezli01/vincent/issues/450)
-* **workflow:** scope the conflict resolver's build to what it staged ([00708e4](https://github.com/lezli01/vincent/commit/00708e4c03437e611833b87329a3705ac204fc04))
-* **workflow:** scope the resolver's build to root files and deletions ([add557f](https://github.com/lezli01/vincent/commit/add557f984701b629e8518dfe1e10d16d2f367c4))
-* **workflows:** match dependabot however the leg spells it ([d42e546](https://github.com/lezli01/vincent/commit/d42e546638d1bfffb86e92e11286364828fe81f2)), closes [#345](https://github.com/lezli01/vincent/issues/345)
-* **workflows:** send failure output to the result agents are given ([cd92471](https://github.com/lezli01/vincent/commit/cd9247139905e11a7605ae51edae2a322ba4e0a9))
-* **workflow:** stop asserting a whole-repo build inside a fan-out lane ([249777c](https://github.com/lezli01/vincent/commit/249777c300aa7b5c54ecde7b95ba7836f240e354))
-* **workflow:** wait out a Windows handle when replacing a workflow file ([d67b6ea](https://github.com/lezli01/vincent/commit/d67b6ea12cb12c7608890b3219e0189a4863900f))
-
-## [Unreleased]
-
 ### Added
+
+- **Three changes the 0.8.0 entry describes first ship in this release.** The
+  Step Details tab (`6` in the task workspace, with the Pull Request tab moved
+  to `7`), the slot count the daemon now serves to the board header and the
+  projects view (`slots` on `GET /v1/info`, `slots_used` on each project), and
+  the running `fan_out` row on the Steps & Attempts timeline are written up
+  under 0.8.0 below, but they merged on 2026-09-05, the day after v0.8.0 was
+  tagged. A 0.8.0 binary has none of them; 0.9.0 is the first release that
+  does, exactly as that entry describes them.
 
 - **Scheduled triggers: a `type: schedule` source.** A trigger can now be the
   clock rather than an outside system — a nightly dependency sweep, a weekday
@@ -411,7 +274,8 @@ list with the user-facing context a commit subject cannot carry.
   longer needs the CLI installed. Transcripts, token and cost records and exit
   codes match a host run, and a timeout or cancel stops the agent while the
   container stays up for the next step. Claude's mid-run questions are judged
-  against the claude in the image. Chats still run on the host. Vincent's own
+  against the claude in the image. A free chat still runs on the host; a chat
+  opened on a containerized task runs in its container (above). Vincent's own
   MCP tools reach a containerized agent at `host.docker.internal`. On Linux with
   Docker Engine, the daemon opens a second listener on the container network's
   gateway for this: it serves only the per-step endpoint, each request needs
@@ -420,7 +284,7 @@ list with the user-facing context a commit subject cannot carry.
   work inside a container; a containerized agent reports progress with the
   `step_status` MCP tool instead (issue #397).
 
-- **vincent now tells you when claude is not logged in.** claude was the one
+- **Vincent now tells you when claude is not logged in.** claude was the one
   agent whose login state always read *unknown*. vincent now asks
   `claude auth status`, so `vincent doctor`, `vincent agents`, `GET /v1/agents`
   and the new-task form show a logged-out claude the way they already showed a
@@ -542,7 +406,7 @@ list with the user-facing context a commit subject cannot carry.
   deletes its staged proposal. `vincent skills install` installs the new skill,
   or run `npx skills add lezli01/vincent --skill vincent-triggers -g`.
 
-- **vincent tells you whether its workflow-authoring skill is installed, and
+- **Vincent tells you whether its workflow-authoring skill is installed, and
   installs it.** vincent publishes an agent skill so that an agent you talk to
   *directly* — outside a vincent run — knows how to write a vincent workflow,
   and until now the only way to get it was to find a command in the README and
@@ -741,31 +605,40 @@ list with the user-facing context a commit subject cannot carry.
   0 when GitHub was read — for `checks`, whatever CI concluded — and 1 when
   there is no link or GitHub could not be read.
 
+- **The documentation site has a search, and every heading has a link.** The
+  header's search button, `/`, or `⌘K`/`Ctrl-K` opens a panel that searches
+  every published page section by section, so a hit on "exit codes" lands on
+  that heading rather than at the top of a 119 KB reference page. The index is
+  built with the site and fetched only when search is first opened; searching
+  makes no third-party request. Every `h2`–`h6` gains a `#` that copies the
+  heading's absolute link.
+
 ### Changed
 
 - **The help overlay now takes the keyboard while it is open.** `?`, `esc` and
   `f1` close it and `ctrl+c` quits; every other key is ignored. Before, the
   arrows, `enter` and `q` still acted on the board behind it.
 
-- **A containerized task mounts your agent credentials by default again.**
-  `container.mount_agent_config` is `true` again, now that the agent runs in
-  the container and needs them. `~/.claude`, `~/.codex` and `~/.cursor` are
-  mounted read-write beneath a vincent home at `/vincent-home`, and every
-  containerized step runs with `HOME=/vincent-home` unless your `environment`
-  policy sets, inherits or unsets `HOME`. The image's own home directory is
-  hidden while the mounts are on. On macOS, claude keeps its login in the
-  Keychain, which a container cannot read, so a containerized claude step on a
-  Mac needs `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` passed through
-  `environment`. This changes the default on existing installations; a
-  `config.yaml` that sets the key keeps its value (issue #397).
+- **A containerized task's agent credentials are mounted under a vincent home.**
+  `container.mount_agent_config` still defaults to `true`, as it did in 0.8.0,
+  and now the agent that needs them runs in the container too. `~/.claude`,
+  `~/.codex` and `~/.cursor` are mounted read-write beneath a vincent home at
+  `/vincent-home`, and every containerized step runs with
+  `HOME=/vincent-home` unless your `environment` policy sets, inherits or
+  unsets `HOME`. The image's own home directory is hidden while the mounts are
+  on. On macOS, claude keeps its login in the Keychain, which a container
+  cannot read, so a containerized claude step on a Mac needs
+  `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` passed through
+  `environment`. A `config.yaml` that sets the key keeps its value (issues
+  #366, #397).
 
-- **`container.network: false` with `mcp.wire_steps: true` is refused again
-  for workflows with agent steps.** A container with no network cannot reach
-  the daemon's MCP endpoint, and agents now run in the container. Creating a
-  task is a `400 validation_failed` when its workflow has an agent step anywhere
-  — at the top level, inside `parallel`, `fan_out` or `loop`, or
-  brought in by an `include`. A workflow of command steps only still runs with
-  no network (issue #397).
+- **`container.network: false` with `mcp.wire_steps: true` is refused only for
+  workflows with agent steps.** A container with no network cannot reach the
+  daemon's MCP endpoint, and agents now run in the container. Creating a task
+  is a `400 validation_failed` when its workflow has an agent step anywhere —
+  at the top level, inside `parallel`, `fan_out` or `loop`, or brought in by
+  an `include`. A workflow of command steps only, which 0.8.0 refused as well,
+  now runs with no network (issue #397).
 
 - **One usage-limit stop now holds every task on that agent.** Before, when
   Claude Code hit its usage limit, only that task waited. Every other task on
@@ -792,8 +665,7 @@ list with the user-facing context a commit subject cannot carry.
   build on. It only ever fast-forwards, runs no merge or checkout hooks, and
   leaves the branch exactly where it is when it is ahead of or has diverged
   from the remote, or when its checkout has any change (untracked files
-  included) or
-  a merge, rebase, cherry-pick, revert or bisect in progress. A skip never
+  included) or a merge, rebase, cherry-pick, revert or bisect in progress. A skip never
   blocks the task, which starts from the fetched commit either way. What
   happened is now visible on the task: `base_sha` and a new `base_refresh`
   record are on the task and chat API responses, the TUI detail view's
@@ -828,7 +700,9 @@ list with the user-facing context a commit subject cannot carry.
   harmless in the direction that matters. The §6 task-action letters
   (`p a x r E R s c A F`) did not move. The new-task form's **Fields** editor
   also joins the registry, so its `a` and `d` finally appear in `?` and in the
-  footer instead of only in an inline hint.
+  footer instead of only in an inline hint, and the projects screen's summary
+  line names the remove key in force.
+
 - **The task Workflow tab's graph is colored by run state.** Nodes take the
   Steps tab's colors — green for succeeded, cyan for running, red for failed —
   and a parked task's board color (bold red for blocked) on the step it is
@@ -838,169 +712,36 @@ list with the user-facing context a commit subject cannot carry.
   `g` graph is not colored. Attempts drawn off-graph below `END` now say their
   state, and the Steps tab now colors `approved` green and `rejected` red.
 
+- **The workflows this repository runs on itself take on more of its own
+  work.** They are not built-ins and nothing installs them — they live in
+  `.vincent/workflows/` and are readable as worked examples. Two new ones take
+  dependabot's pull requests off the maintainer's list: `handle-dependabot`
+  carries one bump from opened to merged on a task created with
+  `--github-pull`, spending no agent session on a patch bump that builds and
+  holding a manual gate before its one irreversible step, and `handle-dependabot-all`
+  surveys every open bump, prints a plan, waits for approval and creates one
+  `handle-dependabot` task per pull request, running no agent of its own.
+  `github-resolve-issue` and `github-resolve-issue-dag` now take
+  `documentation`- and `ci`-labeled issues as well as bugs and enhancements,
+  each on its own path: a documentation issue is surveyed and re-verified
+  against the source before anything is edited, and a `ci` issue freezes the
+  gate scripts and tests that must pass on this host before implementation
+  starts. The DAG resolver runs its fan-out as barrier rounds rather than
+  `schedule: eager`, so a lane starts from the same tree on every re-run; a
+  lane is held to its unit's own check rather than a whole-repository build
+  that two dependent units cannot pass between them, with the build moved to
+  the integration step after the join; and its conflict resolver now builds
+  root-level Go files and packages a resolution only deleted from. The steps
+  that hand a failed command's output to a repair agent now pass its stderr
+  too, which is where `go build`, `git fetch` and a rebase put the reason.
+
+- **The store creates the data directory owner-only by itself.** `{data_dir}`
+  is created `0700` on POSIX however the daemon starts, rather than only
+  because the daemon happened to create `logs/` inside it first. Nothing
+  changes on a normal install: an existing directory's mode is left as it is,
+  and Windows keeps the per-user ACL of `%LOCALAPPDATA%` (issue #367).
+
 ### Fixed
-
-- **The projects screen names the delete key it answers.** Its summary line
-  said `d remove` while the key that removes a project is `D`; it now shows the
-  key in force.
-
-- **Task Details in the TUI shows the task's cost.** The `cost` fact always
-  read `—`, because `GET /v1/tasks/{id}` serves no top-level `cost_usd` and the
-  view read that field alone. It now adds up the attempts the detail does
-  carry, and still reads `—` when none reported a cost.
-  ([#409](https://github.com/lezli01/vincent/issues/409))
-
-- **The `fix-and-test` example no longer accepts a task on Windows that it
-  cannot finish.** Its first step's check, `! go test ./...`, is POSIX shell
-  syntax that pwsh rejects, so on Windows the check always failed and the task
-  blocked once its retries were spent — while the file's comment claimed the
-  syntax was portable. It now declares `platforms: [posix]`: a Windows daemon
-  lists it as `unsupported` and `POST /v1/tasks` refuses it with a `400`. A CI
-  job on a Windows host that creates `fix-and-test` tasks, as the scripting
-  guide's snippets do, needs another workflow there (issue #408).
-
-- **The quickstart no longer says the `docs-update` example runs
-  `restricted`.** It runs full-auto, and its header explains why (issue #408).
-- **The palette and the footer no longer type into a chat's draft.** Running
-  "toggle this help", quit, the mouse toggle, next attention or new task from
-  the palette in a chat — or clicking `? help` or `q quit` in its footer —
-  typed that key into the message instead of doing it.
-
-- **The documentation no longer says every TUI action has a subcommand
-  without exception.** The README, quickstart and scripting guide now
-  point to a list in the CLI reference of the few things only the TUI
-  does: authoring workflows and triggers in place, a task's Workflow tab,
-  the resolve preview, live slot usage, and live streams. A test in
-  `internal/cli` keeps that list and the TUI's API calls in step
-  (issue #395).
-- **The documentation no longer promises agent output from
-  `vincent daemon status`.** The CLI reference gave it a `--json` flag and said
-  it reported which agent CLIs the daemon resolved, and the agent guide repeated
-  the claim; the command has never done either. Both now point to the new
-  `vincent agents`, which is also the command the troubleshooting guide already
-  told readers to run (issue #393).
-- **The shipped issue-resolution workflows no longer judge a task against a
-  stale local base branch.** `github-resolve-issue`, its DAG pair
-  `github-resolve-issue-dag` / `github-resolve-issue-unit` and
-  `handle-dependabot` asked "has this branch committed anything?" and "what did
-  this change touch?" against the bare local base ref. That ref is shared with
-  every other worktree of the repository, so one holding it checked out keeps
-  it behind `origin/<base>` for the whole run, and the range then spans the
-  pull requests that merged while the task ran: `implement`'s commit count
-  passed on a branch with no commits of its own and left the change
-  uncommitted, while `diagnose`'s and the fan-out lanes' guards failed for
-  steps that had committed nothing. All seventeen ranges are now anchored at
-  `origin/<base>`, which the first step of each of the three parent workflows
-  fetches before anything reads it. A fan-out lane needs no fetch of its own:
-  it runs in another worktree of the same repository, and reads the ref its
-  parent already moved (issue #449).
-- **The resolver workflows ask for a plain-language pull request title.**
-  `github-resolve-issue` and `github-resolve-issue-dag` — the workflows this
-  repository runs on itself, readable as worked examples in
-  `.vincent/workflows/` — told their implementing agent to write a Conventional
-  Commits title into `.vincent-issue/pr-title.txt` and handed that file
-  straight to `gh pr create --title`, so every pull request they opened landed
-  red on `.github/workflows/pr-title.yml`, a required check no step in the run
-  can see. Both prompts now ask for a plain-language title and say why (GitHub
-  copies the title into the merge commit body, so a prefix makes Release Please
-  record the change twice), their enumeration of the pull request template's
-  claims regains the plain-language one it had dropped, and each step's `check`
-  rejects the same pattern the required check does — turning an unseen red
-  check into a step failure the existing `max_retries` repairs (issue #450).
-- **The Windows install instructions no longer offer WinGet as working.** The
-  README, the installation guide, the Windows page and the feature guide
-  offered WinGet as a working channel, but Microsoft has not yet merged any of
-  vincent's catalog submissions, so `winget install --id lezli01.Vincent
-  --exact` finds nothing. Scoop is now the documented Windows path, and every
-  place that offers WinGet says the package is submitted and awaiting
-  Microsoft's review (issue #377).
-- **`create-workflow` can author every workflow key.** Its prompt carries the
-  `vincent-workflows` skill, and outside a vincent checkout that skill is all it
-  knows about the schema. The skill never named 20 of the keys a workflow may
-  carry, including `timeout`, `permission_mode`, `env`, `max_parallel`,
-  `max_iterations`, `merge.on_conflict` and `defaults.container`, so the
-  built-in could not write them. The skill (now 1.1.0) gains a compact index of
-  every key with when to use it. `update-workflows`' checklist also gains the
-  14 feature keys it had missed, so it now brings existing workflows up to
-  them. Tests keep both lists in step with the schema (issue #376).
-- **vincent is built with Go 1.26.8.** `go.mod` still pinned go1.26.6: the
-  weekly job that adopts Go patch releases had never managed to open its pull
-  request, so source builds and release binaries went without the standard
-  library fixes in go1.26.7 and go1.26.8. The toolchain is bumped, and the job
-  now opens an issue when it fails instead of failing silently (issue #373).
-- **`parallel` and `manual` steps now refuse `max_retries` and `retry_backoff`
-  instead of ignoring them.** Neither step owns an attempt — a group's retries
-  belong to each sub-step, and a gate is decided once — so both fields were
-  accepted, offered by the workflow editor, and silently did nothing. **This
-  breaks a workflow that sets either field on either type:** validation, the
-  registry and task creation now refuse it until the field is removed (move a
-  group's value onto its sub-steps); the built-in `update-workflows` workflow
-  now does that for you. Tasks created before the change keep running, and an
-  included workflow's retry `defaults:` no longer land on its `parallel` and
-  `manual` steps (issue #374).
-- **TUI hints no longer name keys that do nothing.** The Pull Request tab's
-  hint line still read `c open check` and `r refresh`, though `c` there is
-  cancel and `r` is retry since open-check moved to `enter` and the refresh key
-  was removed; it now reads `enter open check · o open PR · u unlink`, taken
-  from the key registry. And with `tui.board.group_by: []`, the `ctrl+p`
-  palette no longer lists the board's fold keys, which do nothing on a flat
-  board and were already missing from the footer (issue #372).
-- **`vincent workflow render` now renders a derived fan-out's lane.** A
-  `fan_out` with `for_each:` and a `lane:` template rendered only its
-  `for_each` items: the template's inline steps, its `if:`, `id`, `needs` and
-  `fields` were never executed, so a typo such as `{{ .Task.Titel }}` in a
-  derived lane's `run:` printed `ok` and exited `0`. They now render — the
-  template's own fields with `.Item` keys bound to `<item.KEY>` placeholders —
-  and each of its steps is marked as a lane template with the `for_each` it
-  expands over (`derived_lane` in `--json`). With `--project`, a registry
-  workflow reached through an `include` or a named lane also kept its `lane:`,
-  `max_lanes`, `schedule` and lanes' `needs` (issue #370).
-- **`vincent task transcript` now prints a claude run's header and result
-  metadata.** The default text rendering dropped the `agent.run_header` record,
-  so the working directory and the tools the agent was given never appeared,
-  and ended every run on `= done` or `= done ($cost)` though the transcript
-  records how long it took, over how many turns, why it stopped and how many
-  tool calls were denied. A run now opens on `# <dir> - N tools: …` and ends on
-  e.g. `= done (7.3s, 2 turns, 1 denied, $0.0221)` — the output pane's `normal`
-  content; codex and cursor, which report none of it, are unchanged (issue
-  #371).
-- **A follow-up that names a workflow now honors that workflow's declared
-  fields.** `POST /v1/tasks/{id}/follow_up` with `workflow` skipped the field
-  checks `POST /v1/tasks` applies, so it queued a run whose required field the
-  task never carried, accepted a value outside the workflow's enum, and
-  rendered `""` where a required field's `default:` belonged — a step depending
-  on it then did the wrong thing or blocked. Those are now `400`s and the
-  default is filled in. A follow-up can supply the values itself with the new
-  optional `fields` body key (`--field name=value` on `vincent task follow-up`,
-  and in the MCP `task_follow_up` hint); they apply to that run only, and the
-  task keeps the fields it was created with (issue #369).
-- **A containerized task no longer gets your agent credentials by default.**
-  `container.mount_agent_config` defaulted to `true`, so setting only
-  `container.image` bind-mounted `~/.claude`, `~/.codex` and `~/.cursor`
-  read-write into every task container — though only `command` steps and
-  checks run there and the agent itself still runs on the host. The default is
-  now `false` until agent steps move into the container. This changes the
-  default on existing installations; a `config.yaml` that sets the key keeps
-  its value. `container.network: false` with `mcp.wire_steps: true` is no
-  longer refused at task creation either, for the same reason: every agent
-  reaches the MCP endpoint from the host (issue #366).
-- **The MCP tool descriptions told a model to send bodies the handlers
-  reject.** Several `Body: {...}` hints named keys no handler decodes —
-  `step_status` asked for `{status}` where the route reads `{message}`,
-  `workflow_validate` asked for `{source}` where it reads `{yaml}`, and
-  `task_create` never mentioned `fields` at all. JSON decoding is
-  `DisallowUnknownFields` API-wide, so following the description was a 400
-  rather than a silent no-op. The five descriptions issue #368 names are
-  corrected, a new test asserts every named key is a `json` tag on the request
-  struct its handler decodes, and it caught two more than the issue listed.
-
-- **Retry and cancel were unreachable from the task workspace's Pull Request
-  tab.** The tab took `r` for its own refresh and `c` for "open the selected
-  check" before the task's own actions ever saw the press — while the footer,
-  rendered from the same registry, went on offering `r retry` and `c cancel` on
-  that tab. Both keys now reach the daemon: the check moved to `enter`, and the
-  tab has no refresh key at all, because it already re-reads on its own timer
-  while it is open.
 
 - **A fan-out whose lanes blocked is no longer a dead end.** A blocked lane
   never settles, so the join stayed open and the parent sat in
@@ -1019,6 +760,226 @@ list with the user-facing context a commit subject cannot carry.
   (`--prompt`, `--run`, `--branch`) are refused on a parked parent with a `400`,
   and the TUI stops offering `E` there: a `fan_out` step has no text to edit, so
   the edit belongs on the blocked lane.
+
+- **A resumed loop evaluates its guards again, and re-runs what follows a
+  re-run step.** Retrying a task blocked inside a loop kept a `break` or
+  `condition` step's earlier answer, because its row had `succeeded`: a break
+  that had not taken on the first try stayed not-taken even when the probe it
+  tests now said otherwise, and the loop went on to a pass it should never have
+  started. And when the retry re-ran one body step — one that had failed under
+  `allow_failure`, say — the steps after it kept their results from the old
+  pass, so the iteration mixed fresh answers with stale ones. Now `break` and
+  `condition` are always evaluated again on resume, and from the first body
+  step that starts an attempt on this admission, every later body step runs
+  again. A guard that skips its step again does not count as running, so work
+  past it is still kept. The price is that an expensive step after a re-run one
+  runs again. Steps inside a `parallel` group keep their own results as before.
+
+- **A claude run that succeeded is never taken for a usage-limit stop.**
+  vincent recognizes a spent quota from the CLI's wording, and it matched a
+  finished run's own final message as well. A step that merely *wrote about*
+  usage limits was recorded `interrupted` with `usage_limit`, went back to
+  `queued` behind a hold without consuming a retry, produced the same text on
+  the re-run and matched again — spending money on every pass with nothing to
+  end the loop. Only a run that actually failed, with an error result or a
+  nonzero exit, is classified now.
+
+- **A follow-up that names a workflow now honors that workflow's declared
+  fields.** `POST /v1/tasks/{id}/follow_up` with `workflow` skipped the field
+  checks `POST /v1/tasks` applies, so it queued a run whose required field the
+  task never carried, accepted a value outside the workflow's enum, and
+  rendered `""` where a required field's `default:` belonged — a step depending
+  on it then did the wrong thing or blocked. Those are now `400`s and the
+  default is filled in. A follow-up can supply the values itself with the new
+  optional `fields` body key (`--field name=value` on `vincent task follow-up`,
+  and in the MCP `task_follow_up` hint); they apply to that run only, and the
+  task keeps the fields it was created with (issue #369).
+
+- **`parallel` and `manual` steps now refuse `max_retries` and `retry_backoff`
+  instead of ignoring them.** Neither step owns an attempt — a group's retries
+  belong to each sub-step, and a gate is decided once — so both fields were
+  accepted, offered by the workflow editor, and silently did nothing. **This
+  breaks a workflow that sets either field on either type:** validation, the
+  registry and task creation now refuse it until the field is removed (move a
+  group's value onto its sub-steps); the built-in `update-workflows` workflow
+  now does that for you. Tasks created before the change keep running, and an
+  included workflow's retry `defaults:` no longer land on its `parallel` and
+  `manual` steps (issue #374).
+
+- **Retry and cancel were unreachable from the task workspace's Pull Request
+  tab.** The tab took `r` for its own refresh and `c` for "open the selected
+  check" before the task's own actions ever saw the press — while the footer,
+  rendered from the same registry, went on offering `r retry` and `c cancel` on
+  that tab. Both keys now reach the daemon: the check moved to `enter`, and the
+  tab has no refresh key at all, because it already re-reads on its own timer
+  while it is open. The tab's hint line is taken from the key registry and
+  reads `enter open check · o open PR · u unlink`.
+
+- **The palette no longer offers the board's fold keys on a flat board.** With
+  `tui.board.group_by: []` the fold keys do nothing and were already missing
+  from the footer, but `ctrl+p` still listed them (issue #372).
+
+- **The palette and the footer no longer type into a chat's draft.** Running
+  "toggle this help", quit, the mouse toggle, next attention or new task from
+  the palette in a chat — or clicking `? help` or `q quit` in its footer —
+  typed that key into the message instead of doing it.
+
+- **Task Details in the TUI shows the task's cost.** The `cost` fact always
+  read `—`, because `GET /v1/tasks/{id}` serves no top-level `cost_usd` and the
+  view read that field alone. It now adds up the attempts the detail does
+  carry, and still reads `—` when none reported a cost.
+  ([#409](https://github.com/lezli01/vincent/issues/409))
+
+- **Steps inside a loop or a `parallel` group are named by their own id on the
+  step timeline.** The daemon names a step run after the step it sits in, so
+  every member of a loop body or a group was labeled with the loop's or the
+  group's name.
+
+- **The daemon view's config editor compares `max parallel chats` against its
+  real default** when it marks the values that differ from the default.
+
+- **A configuration edit could be undone a moment after it answered.**
+  `PATCH /v1/config` — and so `vincent config set` and the daemon view's
+  editor — writes `config.yaml` and puts it into force before answering, but
+  the watcher that reloads the file on change read it outside the applier's
+  lock. A reload that caught the bytes the edit was replacing applied them
+  after the edit had answered `200`, and the next read returned the old value.
+  The watcher now reads the file under the same lock.
+
+- **Saving a workflow on Windows no longer fails because the daemon is reading
+  the file.** A workflow write replaces the file atomically, and on Windows an
+  open reader blocks the replacement — a reader the daemon supplies itself,
+  because the write makes the registry reload and re-read every file in the
+  directory. A save from the workflow editor or the API could fail with a
+  `500` for a file that was about to become writable. The replacement now
+  waits briefly for such handles, and a file that stays locked is still an
+  error.
+
+- **A bot's pull requests carry GitHub's own login.** `gh` reports dependabot
+  as `app/dependabot`, while GitHub's REST API reports `dependabot[bot]`, and
+  vincent passed on whichever spelling the route it read answered with. A
+  match on a pull request's author or assignee therefore worked through one
+  credential and silently matched nothing through the other. Both routes now
+  report GitHub's spelling (issue #345).
+
+- **`vincent workflow render` now renders a derived fan-out's lane.** A
+  `fan_out` with `for_each:` and a `lane:` template rendered only its
+  `for_each` items: the template's inline steps, its `if:`, `id`, `needs` and
+  `fields` were never executed, so a typo such as `{{ .Task.Titel }}` in a
+  derived lane's `run:` printed `ok` and exited `0`. They now render — the
+  template's own fields with `.Item` keys bound to `<item.KEY>` placeholders —
+  and each of its steps is marked as a lane template with the `for_each` it
+  expands over (`derived_lane` in `--json`). With `--project`, a registry
+  workflow reached through an `include` or a named lane also kept its `lane:`,
+  `max_lanes`, `schedule` and lanes' `needs` (issue #370).
+
+- **`vincent task transcript` now prints a claude run's header and result
+  metadata.** The default text rendering dropped the `agent.run_header` record,
+  so the working directory and the tools the agent was given never appeared,
+  and ended every run on `= done` or `= done ($cost)` though the transcript
+  records how long it took, over how many turns, why it stopped and how many
+  tool calls were denied. A run now opens on `# <dir> - N tools: …` and ends on
+  e.g. `= done (7.3s, 2 turns, 1 denied, $0.0221)` — the output pane's `normal`
+  content; codex and cursor, which report none of it, are unchanged (issue
+  #371).
+
+- **The MCP tool descriptions told a model to send bodies the handlers
+  reject.** Several `Body: {...}` hints named keys no handler decodes —
+  `step_status` asked for `{status}` where the route reads `{message}`,
+  `workflow_validate` asked for `{source}` where it reads `{yaml}`, and
+  `task_create` never mentioned `fields` at all. JSON decoding is
+  `DisallowUnknownFields` API-wide, so following the description was a 400
+  rather than a silent no-op. The five descriptions issue #368 names are
+  corrected, a new test asserts every named key is a `json` tag on the request
+  struct its handler decodes, and it caught two more than the issue listed.
+
+- **`create-workflow` can author every workflow key.** Its prompt carries the
+  `vincent-workflows` skill, and outside a vincent checkout that skill is all it
+  knows about the schema. The skill never named 20 of the keys a workflow may
+  carry, including `timeout`, `permission_mode`, `env`, `max_parallel`,
+  `max_iterations`, `merge.on_conflict` and `defaults.container`, so the
+  built-in could not write them. The skill (now 1.1.0) gains a compact index of
+  every key with when to use it. `update-workflows`' checklist also gains the
+  14 feature keys it had missed, so it now brings existing workflows up to
+  them. Tests keep both lists in step with the schema (issue #376).
+
+- **Vincent is built with Go 1.26.8.** `go.mod` still pinned go1.26.6: the
+  weekly job that adopts Go patch releases had never managed to open its pull
+  request, so source builds and release binaries went without the standard
+  library fixes in go1.26.7 and go1.26.8. The toolchain is bumped, and the job
+  now opens an issue when it fails instead of failing silently (issue #373).
+
+- **The `fix-and-test` example no longer accepts a task on Windows that it
+  cannot finish.** Its first step's check, `! go test ./...`, is POSIX shell
+  syntax that pwsh rejects, so on Windows the check always failed and the task
+  blocked once its retries were spent — while the file's comment claimed the
+  syntax was portable. It now declares `platforms: [posix]`: a Windows daemon
+  lists it as `unsupported` and `POST /v1/tasks` refuses it with a `400`. A CI
+  job on a Windows host that creates `fix-and-test` tasks, as the scripting
+  guide's snippets do, needs another workflow there (issue #408).
+
+- **The Windows install instructions no longer offer WinGet as working.** The
+  README, the installation guide, the Windows page and the feature guide
+  offered WinGet as a working channel, but Microsoft has not yet merged any of
+  vincent's catalog submissions, so `winget install --id lezli01.Vincent
+  --exact` finds nothing. Scoop is now the documented Windows path, and every
+  place that offers WinGet says the package is submitted and awaiting
+  Microsoft's review. The same pass corrected the documented count of routes
+  that are not MCP tools, added the missing `pull_exists` and `bad_request`
+  reasons to the API reference, and named the long forms of `--lines` and
+  `--follow` on the CLI page (issue #377).
+
+- **The documentation no longer says every TUI action has a subcommand
+  without exception.** The README, quickstart and scripting guide now
+  point to a list in the CLI reference of the few things only the TUI
+  does: authoring workflows and triggers in place, a task's Workflow tab,
+  the resolve preview, live slot usage, and live streams. A test in
+  `internal/cli` keeps that list and the TUI's API calls in step
+  (issue #395).
+
+- **The documentation no longer promises agent output from
+  `vincent daemon status`.** The CLI reference gave it a `--json` flag and said
+  it reported which agent CLIs the daemon resolved, and the agent guide repeated
+  the claim; the command has never done either. Both now point to the new
+  `vincent agents`, which is also the command the troubleshooting guide already
+  told readers to run (issue #393).
+
+- **The documentation no longer says an older agent CLI can refuse vincent's
+  MCP server.** No shipped adapter returns `mcp_unsupported`, and vincent does
+  not probe a CLI's version for MCP support; the troubleshooting guide and the
+  spec now say so (issue #375).
+
+- **The quickstart no longer says the `docs-update` example runs
+  `restricted`.** It runs full-auto, and its header explains why (issue #408).
+
+- **The issue-resolution workflows this repository runs on itself no longer
+  judge a task against a stale local base branch.** `github-resolve-issue`,
+  its DAG pair `github-resolve-issue-dag` / `github-resolve-issue-unit` and
+  `handle-dependabot` asked "has this branch committed anything?" and "what did
+  this change touch?" against the bare local base ref. That ref is shared with
+  every other worktree of the repository, so one holding it checked out keeps
+  it behind `origin/<base>` for the whole run, and the range then spans the
+  pull requests that merged while the task ran: `implement`'s commit count
+  passed on a branch with no commits of its own and left the change
+  uncommitted, while `diagnose`'s and the fan-out lanes' guards failed for
+  steps that had committed nothing. All seventeen ranges are now anchored at
+  `origin/<base>`, which the first step of each of the three parent workflows
+  fetches before anything reads it. A fan-out lane needs no fetch of its own:
+  it runs in another worktree of the same repository, and reads the ref its
+  parent already moved (issue #449).
+
+- **The resolver workflows ask for a plain-language pull request title.**
+  `github-resolve-issue` and `github-resolve-issue-dag` told their implementing
+  agent to write a Conventional Commits title into
+  `.vincent-issue/pr-title.txt` and handed that file straight to
+  `gh pr create --title`, so every pull request they opened landed red on
+  `.github/workflows/pr-title.yml`, a required check no step in the run can
+  see. Both prompts now ask for a plain-language title and say why (GitHub
+  copies the title into the merge commit body, so a prefix makes Release Please
+  record the change twice), their enumeration of the pull request template's
+  claims regains the plain-language one it had dropped, and each step's `check`
+  rejects the same pattern the required check does — turning an unseen red
+  check into a step failure the existing `max_retries` repairs (issue #450).
 
 ## [0.8.0](https://github.com/lezli01/vincent/compare/v0.7.0...v0.8.0) (2026-09-04)
 
