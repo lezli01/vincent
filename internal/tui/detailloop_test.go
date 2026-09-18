@@ -82,6 +82,64 @@ func TestDetailTimelineGroupsLoopIterations(t *testing.T) {
 	}
 }
 
+// TestDetailTimelineNamesSubStepsByTheirOwnID: the API serves `step_name` by
+// step index (snapshotSummary.stepName), and every row of a loop body or a
+// `parallel` group carries the index of the step enclosing it — so on the
+// wire each of those rows is named after the loop or the group. The sub-step
+// tier is the one place a body step is named at all, and it printed that
+// enclosing name for every member (`· services`, `· services`) until issue
+// #415's loop capture showed it. The fixtures above set StepName to the
+// sub-step's id, which the daemon never sends; these rows are what it does.
+func TestDetailTimelineNamesSubStepsByTheirOwnID(t *testing.T) {
+	for _, tt := range []struct {
+		kind string
+		rows func() []apiclient.StepRun
+	}{
+		{"loop", func() []apiclient.StepRun {
+			return []apiclient.StepRun{
+				iteration(2, 1, "migrate", "succeeded", "auth"),
+				iteration(3, 1, "verify", "succeeded", "auth"),
+			}
+		}},
+		{"parallel", func() []apiclient.StepRun {
+			return []apiclient.StepRun{
+				attempt(2, 1, 1, "migrate", "succeeded", false),
+				attempt(3, 1, 1, "verify", "succeeded", false),
+			}
+		}},
+	} {
+		t.Run(tt.kind, func(t *testing.T) {
+			d := newTestDetail(t)
+			d.taskID = 12
+			rows := append([]apiclient.StepRun{attempt(1, 0, 1, "preflight", "succeeded", false)}, tt.rows()...)
+			for i := 1; i < len(rows); i++ {
+				rows[i].StepName = "services" // what GET /v1/tasks/{id} serves for a sub-step row
+			}
+			d.applyLoaded(detailLoadedMsg{
+				id: d.taskID,
+				task: apiclient.TaskDetail{
+					Task:  apiclient.Task{ID: d.taskID, Title: "named", State: stateRunning, StepTotal: 2},
+					Steps: rows,
+					WorkflowSteps: []apiclient.WorkflowStep{
+						{Index: 0, ID: "preflight", Type: "command"},
+						{Index: 1, ID: "services", Type: tt.kind},
+					},
+				},
+			})
+
+			got := ansi.Strip(d.timelinePanel(30))
+			for _, want := range []string{"· migrate", "· verify"} {
+				if !strings.Contains(got, want) {
+					t.Errorf("timeline missing the sub-step tier %q:\n%s", want, got)
+				}
+			}
+			if strings.Contains(got, "· services") {
+				t.Errorf("a sub-step tier is named after the %s enclosing it:\n%s", tt.kind, got)
+			}
+		})
+	}
+}
+
 // TestLoopRollupDisplay pins what the board and the detail header render
 // beside k/n. A task with no rollup — every task not currently in a loop —
 // must render nothing at all, or the column would grow a permanent empty

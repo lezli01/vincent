@@ -119,8 +119,30 @@ the code rather than taken on the issue's word:
 
 ## Follow-ups
 
-None open. `scripts/screenshots.sh` seeds no workflow containing a `loop` or a
-multi-round `fan_out`, so no `docs/assets/tui-*.png` capture shows a loop
-rollup or an iteration tier and none needed re-taking. Seeding one is a new
-seed, a new tape and a new asset, and is not what this work was about — it is
-the sub-task to open if the pictures should cover loops.
+None were open when this work closed; the two below the first were found on
+2026-09-18.
+
+- **No capture shows a loop.** `scripts/screenshots.sh` seeds no workflow
+  containing a `loop` or a multi-round `fan_out`, so no `docs/assets/tui-*.png`
+  capture shows a loop rollup or an iteration tier and none needed re-taking.
+  Seeding one is a new seed, a new tape and a new asset, and is not what this
+  work was about — it is the sub-task to open if the pictures should cover
+  loops. *Delivered 2026-09-18 (issue #415):* the seed runs a `for_each` loop
+  that blocks in its fourth pass, and `docs/assets/tui-loop.png` shows its
+  rollup and its tiers.
+
+- **The sub-step tier named every loop body step after the loop** (found
+  2026-09-18 by that capture, and fixed with it). The daemon serves a step
+  run's `step_name` by step index, and a body row carries the loop's index, so
+  on the wire each body row is named after the loop; the tier printed
+  `· services` above both `migrate` and `verify`. The same was true of a
+  `parallel` group's members. The tier now prints the row's `step_id`
+  (`subStepLabel`). The fixtures had hidden it by giving body rows their own id
+  as `step_name`, which the daemon never sends.
+- **The other places a body row is named still say the loop's name**:
+  the Output tab's attempt strip, Step Details and the Workflow tab's attempt
+  list all read `stepLabel`, so a body attempt there reads `step 2 services ·
+  iteration 4`, which does not say which body step it was. Found 2026-09-18
+  with the item above and not yet tracked; the fix is either the same
+  `step_id` preference at each site, or a `step_name` on the wire that names
+  the row's own step.

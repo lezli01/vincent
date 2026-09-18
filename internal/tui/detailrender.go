@@ -468,7 +468,7 @@ func (d *detail) renderTimeline(height int) string {
 			if looped {
 				indent = "      · "
 			}
-			lines = append(lines, styleDim.Render(indent+stepLabel(r)))
+			lines = append(lines, styleDim.Render(indent+subStepLabel(r)))
 			ids = append(ids, 0)
 		}
 		attemptLines := d.attemptLines(r, grouped || looped || repair)
@@ -715,6 +715,19 @@ func stepLabel(r apiclient.StepRun) string {
 		name = r.StepType
 	}
 	return name
+}
+
+// subStepLabel names a loop body step or a `parallel` group member on its
+// own tier. It cannot be stepLabel: the daemon serves `step_name` by step
+// index, and every row inside a loop or a group carries the index of the step
+// enclosing it, so its StepName is the loop's or the group's — the tier would
+// print that one name above every member. The member's id is on the row, and
+// its own `name:` is not.
+func subStepLabel(r apiclient.StepRun) string {
+	if r.StepID != "" {
+		return r.StepID
+	}
+	return stepLabel(r)
 }
 
 // attemptLine is one attempt: what it did, how long it actually worked, and

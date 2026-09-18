@@ -101,6 +101,21 @@ func (h *configLiveHarness) file(t *testing.T) string {
 	return string(b)
 }
 
+// TestConfigDefaultsAreTheOnesTheDaemonServes holds every row's "default"
+// to what a daemon running config.Default() actually serves. The block
+// compares against defaultClientConfig, a hand-written translation of
+// config.Default() into the wire shape, and a field that translation forgets
+// reads as its zero value — which is how max parallel chats came to say
+// `3  default 0` beside the 3 it ships with (issue #415).
+func TestConfigDefaultsAreTheOnesTheDaemonServes(t *testing.T) {
+	h := newConfigLive(t)
+	for _, k := range configKeys() {
+		if got, want := k.def(), k.read(h.view.config); got != want {
+			t.Errorf("%s: the block's default is %q, a default daemon serves %q", k.path, got, want)
+		}
+	}
+}
+
 // The whole loop: select a key, edit it, apply, and the daemon has it.
 func TestConfigEditorWritesThroughTheRealAPI(t *testing.T) {
 	h := newConfigLive(t)
