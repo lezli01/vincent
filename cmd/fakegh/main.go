@@ -47,6 +47,13 @@
 //	FAKEGH_PR_BRANCH when set, the head branch of the first pull request in
 //	                 the corpus, so a gate or a test can point one at the
 //	                 branch a real task was given.
+//	FAKEGH_PR_TITLE  when set, the title of that same pull request, so a
+//	                 picture of it can read like the task it belongs to.
+//	FAKEGH_REPO      when set (`owner/name`), the repository the corpus lives
+//	                 in instead of octo/repo: every URL and every head
+//	                 repository that names octo/repo names this one, the way
+//	                 the real CLI answers for the repository it was asked
+//	                 about. scripts/screenshots.sh sets both of these.
 //	FAKEGH_ARGV_FILE when set, each invocation appends its argv (one
 //	                 space-joined line) to this file, so a test can assert
 //	                 the flags the adapter passed — and, for a disabled
@@ -435,10 +442,14 @@ func pullCorpus() []map[string]any {
 	if branch == "" {
 		branch = "vincent/1-add-a-thing"
 	}
-	return applyStates(append(out, []map[string]any{
+	title := os.Getenv("FAKEGH_PR_TITLE")
+	if title == "" {
+		title = "Add a thing"
+	}
+	return applyStates(rehome(append(out, []map[string]any{
 		{
 			"number":              412,
-			"title":               "Add a thing",
+			"title":               title,
 			"body":                "Adds the thing, and a test for the thing.",
 			"url":                 "https://github.com/octo/repo/pull/412",
 			"state":               "OPEN",
@@ -545,7 +556,49 @@ func pullCorpus() []map[string]any {
 			"updatedAt":           "2026-05-02T08:00:00Z",
 			"mergedAt":            nil,
 		},
-	}...))
+	}...)))
+}
+
+// corpusRepo is the repository the fixed corpora are written against.
+const corpusRepo = "octo/repo"
+
+// rehome moves rows into FAKEGH_REPO: each string naming corpusRepo as a path
+// segment names that repository instead, and a head repository that is
+// corpusRepo becomes it. A fork keeps its own owner and takes the new name,
+// since a fork is named after what it forked. Unset, the rows are untouched,
+// which is what every test and gate reads.
+func rehome(rows []map[string]any) []map[string]any {
+	repo := os.Getenv("FAKEGH_REPO")
+	owner, name, ok := strings.Cut(repo, "/")
+	if !ok || owner == "" || name == "" {
+		return rows
+	}
+	for _, row := range rows {
+		rehomeStrings(row, "/"+corpusRepo+"/", "/"+repo+"/")
+		if head, ok := row["headRepository"].(map[string]any); ok {
+			head["name"] = name
+		}
+		if head, ok := row["headRepositoryOwner"].(map[string]any); ok && head["login"] == "octo" {
+			head["login"] = owner
+		}
+	}
+	return rows
+}
+
+// rehomeStrings replaces from with to in every string under v, in place.
+func rehomeStrings(v map[string]any, from, to string) {
+	for k, x := range v {
+		switch x := x.(type) {
+		case string:
+			v[k] = strings.ReplaceAll(x, from, to)
+		case map[string]any:
+			rehomeStrings(x, from, to)
+		case []map[string]any:
+			for _, row := range x {
+				rehomeStrings(row, from, to)
+			}
+		}
+	}
 }
 
 func emit(v any) {
@@ -562,7 +615,7 @@ func emit(v any) {
 // carrying labels, an assignee and a milestone, one carrying none, so a
 // prefill test can assert both the filled and the empty mapping.
 func corpus() []map[string]any {
-	return []map[string]any{
+	return rehome([]map[string]any{
 		{
 			"number": 200,
 			"title":  "GitHub integration: select a GitHub issue when creating a task",
@@ -592,7 +645,7 @@ func corpus() []map[string]any {
 			"createdAt": "2026-07-01T08:00:00Z",
 			"updatedAt": "2026-07-02T08:00:00Z",
 		},
-	}
+	})
 }
 
 // createdPullNumber is the number `pr create` always reports. It is outside

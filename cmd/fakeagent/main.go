@@ -146,6 +146,12 @@
 //	                      as {"type":"fakeagent.child","pid":N} — lets tests
 //	                      verify tree-kill reaps grandchildren
 //	FAKEAGENT_ASK_MULTI   ask-question: add a second, multi-select question
+//	FAKEAGENT_ASK_QUESTIONS
+//	                      ask-question: a JSON array of questions in
+//	                      AskUserQuestion's own shape, asked instead of the
+//	                      built-in ones — scripts/screenshots.sh sets it so
+//	                      the answer form it photographs asks about the task
+//	                      it is on. Unparseable or empty, it is ignored.
 //	FAKEAGENT_ASK_LONG    ask-question: "1" asks the question as prose well
 //	                      past 256 bytes, the length Claude routinely writes.
 //	                      The answer is keyed by that text verbatim (§7.4), so
@@ -803,6 +809,12 @@ func awaitAnswer(rd *bufio.Reader) string {
 			},
 			"multiSelect": true,
 		})
+	}
+	if raw := os.Getenv("FAKEAGENT_ASK_QUESTIONS"); raw != "" {
+		var custom []any
+		if err := json.Unmarshal([]byte(raw), &custom); err == nil && len(custom) > 0 {
+			questions = custom
+		}
 	}
 	emit(map[string]any{"type": "assistant", "message": map[string]any{
 		"content": []any{map[string]any{"type": "tool_use", "name": "AskUserQuestion", "input": map[string]any{}}},
