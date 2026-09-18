@@ -9,9 +9,18 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
-## [Unreleased]
+## [0.9.0](https://github.com/lezli01/vincent/compare/v0.8.0...v0.9.0) (2026-09-18)
 
 ### Added
+
+- **Three changes the 0.8.0 entry describes first ship in this release.** The
+  Step Details tab (`6` in the task workspace, with the Pull Request tab moved
+  to `7`), the slot count the daemon now serves to the board header and the
+  projects view (`slots` on `GET /v1/info`, `slots_used` on each project), and
+  the running `fan_out` row on the Steps & Attempts timeline are written up
+  under 0.8.0 below, but they merged on 2026-09-05, the day after v0.8.0 was
+  tagged. A 0.8.0 binary has none of them; 0.9.0 is the first release that
+  does, exactly as that entry describes them.
 
 - **Scheduled triggers: a `type: schedule` source.** A trigger can now be the
   clock rather than an outside system — a nightly dependency sweep, a weekday
@@ -265,7 +274,8 @@ list with the user-facing context a commit subject cannot carry.
   longer needs the CLI installed. Transcripts, token and cost records and exit
   codes match a host run, and a timeout or cancel stops the agent while the
   container stays up for the next step. Claude's mid-run questions are judged
-  against the claude in the image. Chats still run on the host. Vincent's own
+  against the claude in the image. A free chat still runs on the host; a chat
+  opened on a containerized task runs in its container (above). Vincent's own
   MCP tools reach a containerized agent at `host.docker.internal`. On Linux with
   Docker Engine, the daemon opens a second listener on the container network's
   gateway for this: it serves only the per-step endpoint, each request needs
@@ -274,7 +284,7 @@ list with the user-facing context a commit subject cannot carry.
   work inside a container; a containerized agent reports progress with the
   `step_status` MCP tool instead (issue #397).
 
-- **vincent now tells you when claude is not logged in.** claude was the one
+- **Vincent now tells you when claude is not logged in.** claude was the one
   agent whose login state always read *unknown*. vincent now asks
   `claude auth status`, so `vincent doctor`, `vincent agents`, `GET /v1/agents`
   and the new-task form show a logged-out claude the way they already showed a
@@ -396,7 +406,7 @@ list with the user-facing context a commit subject cannot carry.
   deletes its staged proposal. `vincent skills install` installs the new skill,
   or run `npx skills add lezli01/vincent --skill vincent-triggers -g`.
 
-- **vincent tells you whether its workflow-authoring skill is installed, and
+- **Vincent tells you whether its workflow-authoring skill is installed, and
   installs it.** vincent publishes an agent skill so that an agent you talk to
   *directly* — outside a vincent run — knows how to write a vincent workflow,
   and until now the only way to get it was to find a command in the README and
@@ -595,31 +605,40 @@ list with the user-facing context a commit subject cannot carry.
   0 when GitHub was read — for `checks`, whatever CI concluded — and 1 when
   there is no link or GitHub could not be read.
 
+- **The documentation site has a search, and every heading has a link.** The
+  header's search button, `/`, or `⌘K`/`Ctrl-K` opens a panel that searches
+  every published page section by section, so a hit on "exit codes" lands on
+  that heading rather than at the top of a 119 KB reference page. The index is
+  built with the site and fetched only when search is first opened; searching
+  makes no third-party request. Every `h2`–`h6` gains a `#` that copies the
+  heading's absolute link.
+
 ### Changed
 
 - **The help overlay now takes the keyboard while it is open.** `?`, `esc` and
   `f1` close it and `ctrl+c` quits; every other key is ignored. Before, the
   arrows, `enter` and `q` still acted on the board behind it.
 
-- **A containerized task mounts your agent credentials by default again.**
-  `container.mount_agent_config` is `true` again, now that the agent runs in
-  the container and needs them. `~/.claude`, `~/.codex` and `~/.cursor` are
-  mounted read-write beneath a vincent home at `/vincent-home`, and every
-  containerized step runs with `HOME=/vincent-home` unless your `environment`
-  policy sets, inherits or unsets `HOME`. The image's own home directory is
-  hidden while the mounts are on. On macOS, claude keeps its login in the
-  Keychain, which a container cannot read, so a containerized claude step on a
-  Mac needs `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` passed through
-  `environment`. This changes the default on existing installations; a
-  `config.yaml` that sets the key keeps its value (issue #397).
+- **A containerized task's agent credentials are mounted under a vincent home.**
+  `container.mount_agent_config` still defaults to `true`, as it did in 0.8.0,
+  and now the agent that needs them runs in the container too. `~/.claude`,
+  `~/.codex` and `~/.cursor` are mounted read-write beneath a vincent home at
+  `/vincent-home`, and every containerized step runs with
+  `HOME=/vincent-home` unless your `environment` policy sets, inherits or
+  unsets `HOME`. The image's own home directory is hidden while the mounts are
+  on. On macOS, claude keeps its login in the Keychain, which a container
+  cannot read, so a containerized claude step on a Mac needs
+  `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` passed through
+  `environment`. A `config.yaml` that sets the key keeps its value (issues
+  #366, #397).
 
-- **`container.network: false` with `mcp.wire_steps: true` is refused again
-  for workflows with agent steps.** A container with no network cannot reach
-  the daemon's MCP endpoint, and agents now run in the container. Creating a
-  task is a `400 validation_failed` when its workflow has an agent step anywhere
-  — at the top level, inside `parallel`, `fan_out` or `loop`, or
-  brought in by an `include`. A workflow of command steps only still runs with
-  no network (issue #397).
+- **`container.network: false` with `mcp.wire_steps: true` is refused only for
+  workflows with agent steps.** A container with no network cannot reach the
+  daemon's MCP endpoint, and agents now run in the container. Creating a task
+  is a `400 validation_failed` when its workflow has an agent step anywhere —
+  at the top level, inside `parallel`, `fan_out` or `loop`, or brought in by
+  an `include`. A workflow of command steps only, which 0.8.0 refused as well,
+  now runs with no network (issue #397).
 
 - **One usage-limit stop now holds every task on that agent.** Before, when
   Claude Code hit its usage limit, only that task waited. Every other task on
@@ -646,8 +665,7 @@ list with the user-facing context a commit subject cannot carry.
   build on. It only ever fast-forwards, runs no merge or checkout hooks, and
   leaves the branch exactly where it is when it is ahead of or has diverged
   from the remote, or when its checkout has any change (untracked files
-  included) or
-  a merge, rebase, cherry-pick, revert or bisect in progress. A skip never
+  included) or a merge, rebase, cherry-pick, revert or bisect in progress. A skip never
   blocks the task, which starts from the fetched commit either way. What
   happened is now visible on the task: `base_sha` and a new `base_refresh`
   record are on the task and chat API responses, the TUI detail view's
@@ -682,7 +700,9 @@ list with the user-facing context a commit subject cannot carry.
   harmless in the direction that matters. The §6 task-action letters
   (`p a x r E R s c A F`) did not move. The new-task form's **Fields** editor
   also joins the registry, so its `a` and `d` finally appear in `?` and in the
-  footer instead of only in an inline hint.
+  footer instead of only in an inline hint, and the projects screen's summary
+  line names the remove key in force.
+
 - **The task Workflow tab's graph is colored by run state.** Nodes take the
   Steps tab's colors — green for succeeded, cyan for running, red for failed —
   and a parked task's board color (bold red for blocked) on the step it is
@@ -692,169 +712,36 @@ list with the user-facing context a commit subject cannot carry.
   `g` graph is not colored. Attempts drawn off-graph below `END` now say their
   state, and the Steps tab now colors `approved` green and `rejected` red.
 
+- **The workflows this repository runs on itself take on more of its own
+  work.** They are not built-ins and nothing installs them — they live in
+  `.vincent/workflows/` and are readable as worked examples. Two new ones take
+  dependabot's pull requests off the maintainer's list: `handle-dependabot`
+  carries one bump from opened to merged on a task created with
+  `--github-pull`, spending no agent session on a patch bump that builds and
+  holding a manual gate before its one irreversible step, and `handle-dependabot-all`
+  surveys every open bump, prints a plan, waits for approval and creates one
+  `handle-dependabot` task per pull request, running no agent of its own.
+  `github-resolve-issue` and `github-resolve-issue-dag` now take
+  `documentation`- and `ci`-labeled issues as well as bugs and enhancements,
+  each on its own path: a documentation issue is surveyed and re-verified
+  against the source before anything is edited, and a `ci` issue freezes the
+  gate scripts and tests that must pass on this host before implementation
+  starts. The DAG resolver runs its fan-out as barrier rounds rather than
+  `schedule: eager`, so a lane starts from the same tree on every re-run; a
+  lane is held to its unit's own check rather than a whole-repository build
+  that two dependent units cannot pass between them, with the build moved to
+  the integration step after the join; and its conflict resolver now builds
+  root-level Go files and packages a resolution only deleted from. The steps
+  that hand a failed command's output to a repair agent now pass its stderr
+  too, which is where `go build`, `git fetch` and a rebase put the reason.
+
+- **The store creates the data directory owner-only by itself.** `{data_dir}`
+  is created `0700` on POSIX however the daemon starts, rather than only
+  because the daemon happened to create `logs/` inside it first. Nothing
+  changes on a normal install: an existing directory's mode is left as it is,
+  and Windows keeps the per-user ACL of `%LOCALAPPDATA%` (issue #367).
+
 ### Fixed
-
-- **The projects screen names the delete key it answers.** Its summary line
-  said `d remove` while the key that removes a project is `D`; it now shows the
-  key in force.
-
-- **Task Details in the TUI shows the task's cost.** The `cost` fact always
-  read `—`, because `GET /v1/tasks/{id}` serves no top-level `cost_usd` and the
-  view read that field alone. It now adds up the attempts the detail does
-  carry, and still reads `—` when none reported a cost.
-  ([#409](https://github.com/lezli01/vincent/issues/409))
-
-- **The `fix-and-test` example no longer accepts a task on Windows that it
-  cannot finish.** Its first step's check, `! go test ./...`, is POSIX shell
-  syntax that pwsh rejects, so on Windows the check always failed and the task
-  blocked once its retries were spent — while the file's comment claimed the
-  syntax was portable. It now declares `platforms: [posix]`: a Windows daemon
-  lists it as `unsupported` and `POST /v1/tasks` refuses it with a `400`. A CI
-  job on a Windows host that creates `fix-and-test` tasks, as the scripting
-  guide's snippets do, needs another workflow there (issue #408).
-
-- **The quickstart no longer says the `docs-update` example runs
-  `restricted`.** It runs full-auto, and its header explains why (issue #408).
-- **The palette and the footer no longer type into a chat's draft.** Running
-  "toggle this help", quit, the mouse toggle, next attention or new task from
-  the palette in a chat — or clicking `? help` or `q quit` in its footer —
-  typed that key into the message instead of doing it.
-
-- **The documentation no longer says every TUI action has a subcommand
-  without exception.** The README, quickstart and scripting guide now
-  point to a list in the CLI reference of the few things only the TUI
-  does: authoring workflows and triggers in place, a task's Workflow tab,
-  the resolve preview, live slot usage, and live streams. A test in
-  `internal/cli` keeps that list and the TUI's API calls in step
-  (issue #395).
-- **The documentation no longer promises agent output from
-  `vincent daemon status`.** The CLI reference gave it a `--json` flag and said
-  it reported which agent CLIs the daemon resolved, and the agent guide repeated
-  the claim; the command has never done either. Both now point to the new
-  `vincent agents`, which is also the command the troubleshooting guide already
-  told readers to run (issue #393).
-- **The shipped issue-resolution workflows no longer judge a task against a
-  stale local base branch.** `github-resolve-issue`, its DAG pair
-  `github-resolve-issue-dag` / `github-resolve-issue-unit` and
-  `handle-dependabot` asked "has this branch committed anything?" and "what did
-  this change touch?" against the bare local base ref. That ref is shared with
-  every other worktree of the repository, so one holding it checked out keeps
-  it behind `origin/<base>` for the whole run, and the range then spans the
-  pull requests that merged while the task ran: `implement`'s commit count
-  passed on a branch with no commits of its own and left the change
-  uncommitted, while `diagnose`'s and the fan-out lanes' guards failed for
-  steps that had committed nothing. All seventeen ranges are now anchored at
-  `origin/<base>`, which the first step of each of the three parent workflows
-  fetches before anything reads it. A fan-out lane needs no fetch of its own:
-  it runs in another worktree of the same repository, and reads the ref its
-  parent already moved (issue #449).
-- **The resolver workflows ask for a plain-language pull request title.**
-  `github-resolve-issue` and `github-resolve-issue-dag` — the workflows this
-  repository runs on itself, readable as worked examples in
-  `.vincent/workflows/` — told their implementing agent to write a Conventional
-  Commits title into `.vincent-issue/pr-title.txt` and handed that file
-  straight to `gh pr create --title`, so every pull request they opened landed
-  red on `.github/workflows/pr-title.yml`, a required check no step in the run
-  can see. Both prompts now ask for a plain-language title and say why (GitHub
-  copies the title into the merge commit body, so a prefix makes Release Please
-  record the change twice), their enumeration of the pull request template's
-  claims regains the plain-language one it had dropped, and each step's `check`
-  rejects the same pattern the required check does — turning an unseen red
-  check into a step failure the existing `max_retries` repairs (issue #450).
-- **The Windows install instructions no longer offer WinGet as working.** The
-  README, the installation guide, the Windows page and the feature guide
-  offered WinGet as a working channel, but Microsoft has not yet merged any of
-  vincent's catalog submissions, so `winget install --id lezli01.Vincent
-  --exact` finds nothing. Scoop is now the documented Windows path, and every
-  place that offers WinGet says the package is submitted and awaiting
-  Microsoft's review (issue #377).
-- **`create-workflow` can author every workflow key.** Its prompt carries the
-  `vincent-workflows` skill, and outside a vincent checkout that skill is all it
-  knows about the schema. The skill never named 20 of the keys a workflow may
-  carry, including `timeout`, `permission_mode`, `env`, `max_parallel`,
-  `max_iterations`, `merge.on_conflict` and `defaults.container`, so the
-  built-in could not write them. The skill (now 1.1.0) gains a compact index of
-  every key with when to use it. `update-workflows`' checklist also gains the
-  14 feature keys it had missed, so it now brings existing workflows up to
-  them. Tests keep both lists in step with the schema (issue #376).
-- **vincent is built with Go 1.26.8.** `go.mod` still pinned go1.26.6: the
-  weekly job that adopts Go patch releases had never managed to open its pull
-  request, so source builds and release binaries went without the standard
-  library fixes in go1.26.7 and go1.26.8. The toolchain is bumped, and the job
-  now opens an issue when it fails instead of failing silently (issue #373).
-- **`parallel` and `manual` steps now refuse `max_retries` and `retry_backoff`
-  instead of ignoring them.** Neither step owns an attempt — a group's retries
-  belong to each sub-step, and a gate is decided once — so both fields were
-  accepted, offered by the workflow editor, and silently did nothing. **This
-  breaks a workflow that sets either field on either type:** validation, the
-  registry and task creation now refuse it until the field is removed (move a
-  group's value onto its sub-steps); the built-in `update-workflows` workflow
-  now does that for you. Tasks created before the change keep running, and an
-  included workflow's retry `defaults:` no longer land on its `parallel` and
-  `manual` steps (issue #374).
-- **TUI hints no longer name keys that do nothing.** The Pull Request tab's
-  hint line still read `c open check` and `r refresh`, though `c` there is
-  cancel and `r` is retry since open-check moved to `enter` and the refresh key
-  was removed; it now reads `enter open check · o open PR · u unlink`, taken
-  from the key registry. And with `tui.board.group_by: []`, the `ctrl+p`
-  palette no longer lists the board's fold keys, which do nothing on a flat
-  board and were already missing from the footer (issue #372).
-- **`vincent workflow render` now renders a derived fan-out's lane.** A
-  `fan_out` with `for_each:` and a `lane:` template rendered only its
-  `for_each` items: the template's inline steps, its `if:`, `id`, `needs` and
-  `fields` were never executed, so a typo such as `{{ .Task.Titel }}` in a
-  derived lane's `run:` printed `ok` and exited `0`. They now render — the
-  template's own fields with `.Item` keys bound to `<item.KEY>` placeholders —
-  and each of its steps is marked as a lane template with the `for_each` it
-  expands over (`derived_lane` in `--json`). With `--project`, a registry
-  workflow reached through an `include` or a named lane also kept its `lane:`,
-  `max_lanes`, `schedule` and lanes' `needs` (issue #370).
-- **`vincent task transcript` now prints a claude run's header and result
-  metadata.** The default text rendering dropped the `agent.run_header` record,
-  so the working directory and the tools the agent was given never appeared,
-  and ended every run on `= done` or `= done ($cost)` though the transcript
-  records how long it took, over how many turns, why it stopped and how many
-  tool calls were denied. A run now opens on `# <dir> - N tools: …` and ends on
-  e.g. `= done (7.3s, 2 turns, 1 denied, $0.0221)` — the output pane's `normal`
-  content; codex and cursor, which report none of it, are unchanged (issue
-  #371).
-- **A follow-up that names a workflow now honors that workflow's declared
-  fields.** `POST /v1/tasks/{id}/follow_up` with `workflow` skipped the field
-  checks `POST /v1/tasks` applies, so it queued a run whose required field the
-  task never carried, accepted a value outside the workflow's enum, and
-  rendered `""` where a required field's `default:` belonged — a step depending
-  on it then did the wrong thing or blocked. Those are now `400`s and the
-  default is filled in. A follow-up can supply the values itself with the new
-  optional `fields` body key (`--field name=value` on `vincent task follow-up`,
-  and in the MCP `task_follow_up` hint); they apply to that run only, and the
-  task keeps the fields it was created with (issue #369).
-- **A containerized task no longer gets your agent credentials by default.**
-  `container.mount_agent_config` defaulted to `true`, so setting only
-  `container.image` bind-mounted `~/.claude`, `~/.codex` and `~/.cursor`
-  read-write into every task container — though only `command` steps and
-  checks run there and the agent itself still runs on the host. The default is
-  now `false` until agent steps move into the container. This changes the
-  default on existing installations; a `config.yaml` that sets the key keeps
-  its value. `container.network: false` with `mcp.wire_steps: true` is no
-  longer refused at task creation either, for the same reason: every agent
-  reaches the MCP endpoint from the host (issue #366).
-- **The MCP tool descriptions told a model to send bodies the handlers
-  reject.** Several `Body: {...}` hints named keys no handler decodes —
-  `step_status` asked for `{status}` where the route reads `{message}`,
-  `workflow_validate` asked for `{source}` where it reads `{yaml}`, and
-  `task_create` never mentioned `fields` at all. JSON decoding is
-  `DisallowUnknownFields` API-wide, so following the description was a 400
-  rather than a silent no-op. The five descriptions issue #368 names are
-  corrected, a new test asserts every named key is a `json` tag on the request
-  struct its handler decodes, and it caught two more than the issue listed.
-
-- **Retry and cancel were unreachable from the task workspace's Pull Request
-  tab.** The tab took `r` for its own refresh and `c` for "open the selected
-  check" before the task's own actions ever saw the press — while the footer,
-  rendered from the same registry, went on offering `r retry` and `c cancel` on
-  that tab. Both keys now reach the daemon: the check moved to `enter`, and the
-  tab has no refresh key at all, because it already re-reads on its own timer
-  while it is open.
 
 - **A fan-out whose lanes blocked is no longer a dead end.** A blocked lane
   never settles, so the join stayed open and the parent sat in
@@ -873,6 +760,226 @@ list with the user-facing context a commit subject cannot carry.
   (`--prompt`, `--run`, `--branch`) are refused on a parked parent with a `400`,
   and the TUI stops offering `E` there: a `fan_out` step has no text to edit, so
   the edit belongs on the blocked lane.
+
+- **A resumed loop evaluates its guards again, and re-runs what follows a
+  re-run step.** Retrying a task blocked inside a loop kept a `break` or
+  `condition` step's earlier answer, because its row had `succeeded`: a break
+  that had not taken on the first try stayed not-taken even when the probe it
+  tests now said otherwise, and the loop went on to a pass it should never have
+  started. And when the retry re-ran one body step — one that had failed under
+  `allow_failure`, say — the steps after it kept their results from the old
+  pass, so the iteration mixed fresh answers with stale ones. Now `break` and
+  `condition` are always evaluated again on resume, and from the first body
+  step that starts an attempt on this admission, every later body step runs
+  again. A guard that skips its step again does not count as running, so work
+  past it is still kept. The price is that an expensive step after a re-run one
+  runs again. Steps inside a `parallel` group keep their own results as before.
+
+- **A claude run that succeeded is never taken for a usage-limit stop.**
+  vincent recognizes a spent quota from the CLI's wording, and it matched a
+  finished run's own final message as well. A step that merely *wrote about*
+  usage limits was recorded `interrupted` with `usage_limit`, went back to
+  `queued` behind a hold without consuming a retry, produced the same text on
+  the re-run and matched again — spending money on every pass with nothing to
+  end the loop. Only a run that actually failed, with an error result or a
+  nonzero exit, is classified now.
+
+- **A follow-up that names a workflow now honors that workflow's declared
+  fields.** `POST /v1/tasks/{id}/follow_up` with `workflow` skipped the field
+  checks `POST /v1/tasks` applies, so it queued a run whose required field the
+  task never carried, accepted a value outside the workflow's enum, and
+  rendered `""` where a required field's `default:` belonged — a step depending
+  on it then did the wrong thing or blocked. Those are now `400`s and the
+  default is filled in. A follow-up can supply the values itself with the new
+  optional `fields` body key (`--field name=value` on `vincent task follow-up`,
+  and in the MCP `task_follow_up` hint); they apply to that run only, and the
+  task keeps the fields it was created with (issue #369).
+
+- **`parallel` and `manual` steps now refuse `max_retries` and `retry_backoff`
+  instead of ignoring them.** Neither step owns an attempt — a group's retries
+  belong to each sub-step, and a gate is decided once — so both fields were
+  accepted, offered by the workflow editor, and silently did nothing. **This
+  breaks a workflow that sets either field on either type:** validation, the
+  registry and task creation now refuse it until the field is removed (move a
+  group's value onto its sub-steps); the built-in `update-workflows` workflow
+  now does that for you. Tasks created before the change keep running, and an
+  included workflow's retry `defaults:` no longer land on its `parallel` and
+  `manual` steps (issue #374).
+
+- **Retry and cancel were unreachable from the task workspace's Pull Request
+  tab.** The tab took `r` for its own refresh and `c` for "open the selected
+  check" before the task's own actions ever saw the press — while the footer,
+  rendered from the same registry, went on offering `r retry` and `c cancel` on
+  that tab. Both keys now reach the daemon: the check moved to `enter`, and the
+  tab has no refresh key at all, because it already re-reads on its own timer
+  while it is open. The tab's hint line is taken from the key registry and
+  reads `enter open check · o open PR · u unlink`.
+
+- **The palette no longer offers the board's fold keys on a flat board.** With
+  `tui.board.group_by: []` the fold keys do nothing and were already missing
+  from the footer, but `ctrl+p` still listed them (issue #372).
+
+- **The palette and the footer no longer type into a chat's draft.** Running
+  "toggle this help", quit, the mouse toggle, next attention or new task from
+  the palette in a chat — or clicking `? help` or `q quit` in its footer —
+  typed that key into the message instead of doing it.
+
+- **Task Details in the TUI shows the task's cost.** The `cost` fact always
+  read `—`, because `GET /v1/tasks/{id}` serves no top-level `cost_usd` and the
+  view read that field alone. It now adds up the attempts the detail does
+  carry, and still reads `—` when none reported a cost.
+  ([#409](https://github.com/lezli01/vincent/issues/409))
+
+- **Steps inside a loop or a `parallel` group are named by their own id on the
+  step timeline.** The daemon names a step run after the step it sits in, so
+  every member of a loop body or a group was labeled with the loop's or the
+  group's name.
+
+- **The daemon view's config editor compares `max parallel chats` against its
+  real default** when it marks the values that differ from the default.
+
+- **A configuration edit could be undone a moment after it answered.**
+  `PATCH /v1/config` — and so `vincent config set` and the daemon view's
+  editor — writes `config.yaml` and puts it into force before answering, but
+  the watcher that reloads the file on change read it outside the applier's
+  lock. A reload that caught the bytes the edit was replacing applied them
+  after the edit had answered `200`, and the next read returned the old value.
+  The watcher now reads the file under the same lock.
+
+- **Saving a workflow on Windows no longer fails because the daemon is reading
+  the file.** A workflow write replaces the file atomically, and on Windows an
+  open reader blocks the replacement — a reader the daemon supplies itself,
+  because the write makes the registry reload and re-read every file in the
+  directory. A save from the workflow editor or the API could fail with a
+  `500` for a file that was about to become writable. The replacement now
+  waits briefly for such handles, and a file that stays locked is still an
+  error.
+
+- **A bot's pull requests carry GitHub's own login.** `gh` reports dependabot
+  as `app/dependabot`, while GitHub's REST API reports `dependabot[bot]`, and
+  vincent passed on whichever spelling the route it read answered with. A
+  match on a pull request's author or assignee therefore worked through one
+  credential and silently matched nothing through the other. Both routes now
+  report GitHub's spelling (issue #345).
+
+- **`vincent workflow render` now renders a derived fan-out's lane.** A
+  `fan_out` with `for_each:` and a `lane:` template rendered only its
+  `for_each` items: the template's inline steps, its `if:`, `id`, `needs` and
+  `fields` were never executed, so a typo such as `{{ .Task.Titel }}` in a
+  derived lane's `run:` printed `ok` and exited `0`. They now render — the
+  template's own fields with `.Item` keys bound to `<item.KEY>` placeholders —
+  and each of its steps is marked as a lane template with the `for_each` it
+  expands over (`derived_lane` in `--json`). With `--project`, a registry
+  workflow reached through an `include` or a named lane also kept its `lane:`,
+  `max_lanes`, `schedule` and lanes' `needs` (issue #370).
+
+- **`vincent task transcript` now prints a claude run's header and result
+  metadata.** The default text rendering dropped the `agent.run_header` record,
+  so the working directory and the tools the agent was given never appeared,
+  and ended every run on `= done` or `= done ($cost)` though the transcript
+  records how long it took, over how many turns, why it stopped and how many
+  tool calls were denied. A run now opens on `# <dir> - N tools: …` and ends on
+  e.g. `= done (7.3s, 2 turns, 1 denied, $0.0221)` — the output pane's `normal`
+  content; codex and cursor, which report none of it, are unchanged (issue
+  #371).
+
+- **The MCP tool descriptions told a model to send bodies the handlers
+  reject.** Several `Body: {...}` hints named keys no handler decodes —
+  `step_status` asked for `{status}` where the route reads `{message}`,
+  `workflow_validate` asked for `{source}` where it reads `{yaml}`, and
+  `task_create` never mentioned `fields` at all. JSON decoding is
+  `DisallowUnknownFields` API-wide, so following the description was a 400
+  rather than a silent no-op. The five descriptions issue #368 names are
+  corrected, a new test asserts every named key is a `json` tag on the request
+  struct its handler decodes, and it caught two more than the issue listed.
+
+- **`create-workflow` can author every workflow key.** Its prompt carries the
+  `vincent-workflows` skill, and outside a vincent checkout that skill is all it
+  knows about the schema. The skill never named 20 of the keys a workflow may
+  carry, including `timeout`, `permission_mode`, `env`, `max_parallel`,
+  `max_iterations`, `merge.on_conflict` and `defaults.container`, so the
+  built-in could not write them. The skill (now 1.1.0) gains a compact index of
+  every key with when to use it. `update-workflows`' checklist also gains the
+  14 feature keys it had missed, so it now brings existing workflows up to
+  them. Tests keep both lists in step with the schema (issue #376).
+
+- **Vincent is built with Go 1.26.8.** `go.mod` still pinned go1.26.6: the
+  weekly job that adopts Go patch releases had never managed to open its pull
+  request, so source builds and release binaries went without the standard
+  library fixes in go1.26.7 and go1.26.8. The toolchain is bumped, and the job
+  now opens an issue when it fails instead of failing silently (issue #373).
+
+- **The `fix-and-test` example no longer accepts a task on Windows that it
+  cannot finish.** Its first step's check, `! go test ./...`, is POSIX shell
+  syntax that pwsh rejects, so on Windows the check always failed and the task
+  blocked once its retries were spent — while the file's comment claimed the
+  syntax was portable. It now declares `platforms: [posix]`: a Windows daemon
+  lists it as `unsupported` and `POST /v1/tasks` refuses it with a `400`. A CI
+  job on a Windows host that creates `fix-and-test` tasks, as the scripting
+  guide's snippets do, needs another workflow there (issue #408).
+
+- **The Windows install instructions no longer offer WinGet as working.** The
+  README, the installation guide, the Windows page and the feature guide
+  offered WinGet as a working channel, but Microsoft has not yet merged any of
+  vincent's catalog submissions, so `winget install --id lezli01.Vincent
+  --exact` finds nothing. Scoop is now the documented Windows path, and every
+  place that offers WinGet says the package is submitted and awaiting
+  Microsoft's review. The same pass corrected the documented count of routes
+  that are not MCP tools, added the missing `pull_exists` and `bad_request`
+  reasons to the API reference, and named the long forms of `--lines` and
+  `--follow` on the CLI page (issue #377).
+
+- **The documentation no longer says every TUI action has a subcommand
+  without exception.** The README, quickstart and scripting guide now
+  point to a list in the CLI reference of the few things only the TUI
+  does: authoring workflows and triggers in place, a task's Workflow tab,
+  the resolve preview, live slot usage, and live streams. A test in
+  `internal/cli` keeps that list and the TUI's API calls in step
+  (issue #395).
+
+- **The documentation no longer promises agent output from
+  `vincent daemon status`.** The CLI reference gave it a `--json` flag and said
+  it reported which agent CLIs the daemon resolved, and the agent guide repeated
+  the claim; the command has never done either. Both now point to the new
+  `vincent agents`, which is also the command the troubleshooting guide already
+  told readers to run (issue #393).
+
+- **The documentation no longer says an older agent CLI can refuse vincent's
+  MCP server.** No shipped adapter returns `mcp_unsupported`, and vincent does
+  not probe a CLI's version for MCP support; the troubleshooting guide and the
+  spec now say so (issue #375).
+
+- **The quickstart no longer says the `docs-update` example runs
+  `restricted`.** It runs full-auto, and its header explains why (issue #408).
+
+- **The issue-resolution workflows this repository runs on itself no longer
+  judge a task against a stale local base branch.** `github-resolve-issue`,
+  its DAG pair `github-resolve-issue-dag` / `github-resolve-issue-unit` and
+  `handle-dependabot` asked "has this branch committed anything?" and "what did
+  this change touch?" against the bare local base ref. That ref is shared with
+  every other worktree of the repository, so one holding it checked out keeps
+  it behind `origin/<base>` for the whole run, and the range then spans the
+  pull requests that merged while the task ran: `implement`'s commit count
+  passed on a branch with no commits of its own and left the change
+  uncommitted, while `diagnose`'s and the fan-out lanes' guards failed for
+  steps that had committed nothing. All seventeen ranges are now anchored at
+  `origin/<base>`, which the first step of each of the three parent workflows
+  fetches before anything reads it. A fan-out lane needs no fetch of its own:
+  it runs in another worktree of the same repository, and reads the ref its
+  parent already moved (issue #449).
+
+- **The resolver workflows ask for a plain-language pull request title.**
+  `github-resolve-issue` and `github-resolve-issue-dag` told their implementing
+  agent to write a Conventional Commits title into
+  `.vincent-issue/pr-title.txt` and handed that file straight to
+  `gh pr create --title`, so every pull request they opened landed red on
+  `.github/workflows/pr-title.yml`, a required check no step in the run can
+  see. Both prompts now ask for a plain-language title and say why (GitHub
+  copies the title into the merge commit body, so a prefix makes Release Please
+  record the change twice), their enumeration of the pull request template's
+  claims regains the plain-language one it had dropped, and each step's `check`
+  rejects the same pattern the required check does — turning an unseen red
+  check into a step failure the existing `max_retries` repairs (issue #450).
 
 ## [0.8.0](https://github.com/lezli01/vincent/compare/v0.7.0...v0.8.0) (2026-09-04)
 
