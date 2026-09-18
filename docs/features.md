@@ -538,6 +538,10 @@ once and carries the two linking actions — link a pull request the head-branch
 rule missed, unlink one it got wrong — and a task's own workspace shows its
 pull request beside its branch, on a **Pull Request** tab that adds one row per
 CI check on its head commit and carries a second copy of unlink.
+
+![A task's Pull Request tab: the linked pull request's facts, and one row per
+check on its head commit, the failed build selected](assets/tui-task-pull.png)
+
 `vincent github prs --project ID` prints one project's open pull requests with
 the task each one belongs to, and `vincent github pr link`, `pr unlink`,
 `pr show` and `pr checks` link, unlink, read and list the checks of one task's

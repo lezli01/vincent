@@ -15,8 +15,9 @@ in `internal/tui/taskstepdetails_test.go` and
 `internal/tui/stepdetailslive_test.go`. A script would re-assert that over
 curl and still not answer the only open question.
 
-The tab's screenshot tape is not part of this walk; it is tracked in
-[#414](https://github.com/lezli01/vincent/issues/414).
+The tab's screenshot tape is not part of this walk; it was tracked in
+[#414](https://github.com/lezli01/vincent/issues/414) and is now
+`scripts/screenshots.sh`'s `tui-task-step-details` (2026-09-18).
 
 ## Setup
 

@@ -186,6 +186,15 @@ on the line this exists to keep clean is worse than a few spaces.
   the label, seeded on the 15-minute wrapper. The view 9 indicator is still in
   no image: the chat `tui-chat.png` is taken of is idle, which is what the
   handoff form and the copy picker over it need it to be.
+  *Amended 2026-09-18 ([#414](https://github.com/lezli01/vincent/issues/414)):*
+  an Output-tab tape now exists — `tui-task-output.png`, a live `command`
+  attempt — and it shows **no** indicator at all, not an arbitrary frame.
+  Decision 5 put it in `detail.outputTitle`, and only the home screen's output
+  panel (`shell.panelTitle`) draws that title; the routed workspace's Output
+  tab draws `renderAttemptSelector` above the pane instead, so the view-7 half
+  of this task never reaches the workspace the guide describes. Recorded here,
+  not fixed: where the indicator belongs on that strip is this task's decision
+  to revisit, not a screenshot's.
 - **No gate.** The indicator is client-side rendering over data already on the
   wire: no endpoint, DTO, column or block reason changed, so no gate script has
   anything new to assert.

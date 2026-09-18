@@ -270,6 +270,10 @@ Taken without asking, because each is conventional or forced by a record:
 The gate, its walkthrough, the re-captured screenshots and the rest of the
 derived documentation are 068.5 (#388). *The screenshots moved to #414 with
 the rest of the task-workspace screenshots (noted 2026-09-16, #388).*
+*Captured 2026-09-18 (#414): `tui-task-pull.png` is the tab on a task the
+reconciler linked, over `cmd/fakegh` answering as the seeded project's
+repository, with the failed Actions check selected so the hint line offers
+`ctrl+r` beside `m`, `X` and `i`. No popup of the write surface is captured.*
 
 ## What 068.1–068.3 changed
 

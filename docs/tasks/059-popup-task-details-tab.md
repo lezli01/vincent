@@ -134,6 +134,10 @@ No re-capture was needed: none of the eight `docs/assets/tui-*.png` shows any of
 the three popups — `tui-multi-select.png` is the board's bulk selection, not the
 answer form's multi-select. A shot of the new tab would need a new tape in
 `scripts/screenshots.sh` and is optional.
+*Amended 2026-09-18 ([#414](https://github.com/lezli01/vincent/issues/414)):*
+all three popups are now captured — `tui-answer.png`, `tui-repair.png` and
+`tui-follow-up.png` — each on its form tab, with the two-tab strip this task
+added along the top. The Task details tab inside a popup is still in no image.
 
 ## Tasks
 
