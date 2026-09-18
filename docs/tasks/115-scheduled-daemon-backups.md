@@ -74,6 +74,19 @@ path rule that the manual command does not have.
 and allows only one run a day. **Beat:** a cron expression, which needs a parser
 dependency for something cron and Task Scheduler already do outside vincent.
 
+*Narrowed 2026-09-18 ([121](121-scheduled-triggers.md) decision 1, issue
+#480).* The cron half of that second **Beat** no longer holds everywhere, and
+the reasoning above is left as it was written. Task 121's `type: schedule`
+trigger source takes a cron expression, because neither ground transfers to it:
+the parser is **written** rather than taken, five fields in
+`internal/trigger/schedule.go` with no addition to `go.mod`, and a crontab line
+calling `vincent task create` is not the thing outside vincent that already
+does the job — it skips the `match:` filter, the dedupe ledger, the propose
+gate, the hourly limit and the delivery ledger, which is the whole of what
+`internal/trigger` is. `backup.interval` is untouched: it stays a
+`config.Duration` counted from the newest archive on disk, and this task's
+everything else stands.
+
 - **"Last success" is the newest timer-written archive name in the directory**,
   not a value in memory. A restart does not reset the clock, and nothing is
   persisted beyond the archives themselves. An install whose newest archive is
