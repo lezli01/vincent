@@ -69,6 +69,11 @@
       </div>
 
       <nav class="top-nav" aria-label="Primary">
+        <button type="button" class="search-trigger" data-search-trigger hidden
+                aria-haspopup="dialog" aria-expanded="false" aria-controls="search-overlay"
+                data-search-index="{{ '/search.json' | relative_url }}">
+          <span aria-hidden="true">&#9906;</span> Search <kbd aria-hidden="true">/</kbd>
+        </button>
         <a href="{{ '/docs/features.html' | relative_url }}">Features</a>
         <a href="{{ '/docs/getting-started/quickstart.html' | relative_url }}">Quickstart</a>
         <a href="https://github.com/lezli01/vincent">GitHub ↗</a>
@@ -118,5 +123,25 @@
       <span>vincent · agentic workload orchestration</span>
     </footer>
   </div>
+
+  <div class="search-overlay" id="search-overlay" hidden>
+    <div class="search-panel framed" role="dialog" aria-modal="true" aria-labelledby="search-heading">
+      <h2 class="visually-hidden" id="search-heading">Search the vincent documentation</h2>
+      <div class="search-field">
+        <span class="search-prompt" aria-hidden="true">&gt;</span>
+        <input id="search-input" type="text" autocomplete="off" autocapitalize="off"
+               spellcheck="false" placeholder="Search the documentation"
+               role="combobox" aria-expanded="false" aria-controls="search-results"
+               aria-autocomplete="list">
+        <button type="button" class="search-dismiss" data-search-close aria-label="Close search">esc</button>
+      </div>
+      <p class="search-status" id="search-status" role="status" aria-live="polite"></p>
+      <ul class="search-results" id="search-results" role="listbox" aria-label="Search results"></ul>
+      <p class="search-hints" aria-hidden="true">&#8593;&#8595; move &middot; &#9166; open &middot; esc close &middot; / or &#8984;K anywhere</p>
+    </div>
+  </div>
+
+  <script src="{{ '/assets/js/search.js' | relative_url }}" defer></script>
+  <script src="{{ '/assets/js/heading-links.js' | relative_url }}" defer></script>
 </body>
 </html>
