@@ -1419,7 +1419,8 @@ a `400`.
 ```json
 { "deliveries": [ {
     "id": 57, "trigger_id": "ci-failures", "event_id": "build-4812",
-    "dedupe_key": "build-4812", "outcome": "fired", "task_id": 142,
+    "dedupe_key": "build-4812", "concurrency_key": "build", "outcome": "fired",
+    "task_id": 142, "superseded_task_id": 140,
     "created_at": "2026-09-13T09:30:00.000000000Z" } ] }
 ```
 
@@ -1432,6 +1433,14 @@ a `400`.
 | `rate_limited` | It was over `limits.max_per_hour`, which counts `fired` rows alone. Dropped, not queued |
 | `refused` | The replayed route answered `4xx`. `detail` keeps that answer's error envelope, and a reaction's `task_id` names the task it targeted. A reaction whose branch matched no unarchived task is `refused` too, with nothing replayed: `detail` names the branch and `task_id` is `null` |
 | `error` | A template or `if:` failed to render, the event had no `id` and the trigger no `dedupe_key`, or the replay answered `5xx` or never reached the route. `detail` says which |
+| `superseded` | `overrun:` dropped it in favour of work already in flight or of a newer event: `skip`'s drop, a `queue_coalesce` drain's discards, an event its group already held, a held event a disarm threw away, or the oldest held event at the 100-per-trigger cap. `detail` says which |
+| `queued` | A queue mode is holding it in the backlog until its group empties. It is deliberately *not* delivered, so a second identical event reaches the overrun step rather than being `deduped`; it gets a second row when it fires |
+
+`concurrency_key` is the `overrun:` group the row was judged in, absent for a
+trigger that declares none. `superseded_task_id` is the task an
+`overrun: cancel_previous` fire replaced — the chain a rapid-fire source leaves
+behind — and, like `task_id`, becomes `null` if that task is permanently
+deleted.
 
 `task_id` is `null` when no task was involved, and becomes `null` if that task
 is later [permanently deleted](#permanent-delete). The ledger outlives the

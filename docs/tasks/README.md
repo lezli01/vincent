@@ -135,6 +135,7 @@ the living engineering specification records implementation contracts.
 | [119](119-chat-on-a-step.md) | Chat on a stopped task: a conversation in the task's own worktree, locking the task while it is open | 🔄 in progress (8/10) |
 | [120](120-docs-site-search-and-heading-links.md) | A searchable documentation site, with copyable heading links | ✅ done (6/6) |
 | [121](121-scheduled-triggers.md) | Scheduled triggers: a `type: schedule` source with cron and interval semantics | ✅ done (1/1) |
+| [122](122-trigger-overrun-handling.md) | `overrun:` and `concurrency_key:`: what a trigger does when its own previous work is still running | ✅ done (7/7) |
 
 ## How to add and update a task document
 

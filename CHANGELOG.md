@@ -34,6 +34,28 @@ list with the user-facing context a commit subject cannot carry.
   source to run once — and the TUI's triggers view shows `clock` in its poll
   column instead of "not yet" forever. No migration, no new route, no new CLI
   command (task 121, issue #480).
+
+- **`overrun:` — what a trigger does when its own previous work is still
+  running.** A trigger used to fire every event that passed its filter, however
+  many of its tasks were mid-flight, which is wrong for a source that emits
+  repeatedly about the same object: a ticket saved four times in a minute
+  started four tasks on four worktrees. A trigger file can now set `overrun:` to
+  `skip` (record the event and drop it), `cancel_previous` (cancel what is
+  running, then fire), `queue_coalesce` (hold events and fire only the newest
+  when the group empties) or `queue_serial` (hold them and fire each in turn).
+  `concurrency_key:`, a template over `.Event`, names the group — the ticket,
+  the pull request, the branch — and defaults to the trigger id, or to the
+  resolved target task for a `follow_up`, `retry` or `cancel`. The default is
+  `parallel`, which is exactly the old behaviour, so every existing trigger file
+  is unaffected. Two ledger outcomes explain what happened: `superseded` for an
+  event overrun dropped, `queued` for one it is holding. `vincent trigger test`
+  reports the decision without writing anything, and held events survive a
+  daemon restart. **A `paused` task holds its group**, and `on_fire: propose`
+  creates every task paused — so under `skip`, one unreviewed proposal stops the
+  trigger for that group until a human admits or archives it. `cancel_previous`
+  lets an inbound event destroy in-flight agent work, and the TUI asks before
+  writing it.
+
 - **Chat with a stopped task, in its own worktree.** When a task is `blocked`,
   waiting at a gate, `done` or `aborted`, you can open a chat on it: a
   conversation with an agent that works in the task's worktree and on its

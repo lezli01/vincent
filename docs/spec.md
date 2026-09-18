@@ -138,7 +138,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 30 | Archived boards and permanent delete | *Added 2026-09-09 (task 092, issue #350).* **Archived history is a screen, and a permanent delete is a route.** Two TUI views — archived tasks, archived chats — are the live boards *in a second mode* rather than two new models (§15): the archive needs grouping, folding, `/` and the bulk selection, and a copy would drift on the first change to any of the four. They get palette rows and no keys, because task 049 retired `1..6` to stop adding memorized ones and task 067 gave chats the same treatment. `DELETE /v1/tasks/{id}` and `DELETE /v1/chats/{id}` (§13.2) are the only things in vincent that delete a task or chat row — the §17 pruner removes transcript *files* and never a row, and that sentence in the retention table is amended to say so. Delete is **not a §6 action**: `taskstate` has no opinion on it and it never appears in `available_actions`, which is what makes the workspace an archived row opens read-only for free; its precedent is `DELETE /v1/projects/{id}`, likewise no action, and both routes join that route's §13.4 destructive-admin exclusion. It **refuses rather than cascading**, naming the row that is holding on: a live row (`not_archived`), an archived fan-out parent whose lanes still exist (`has_lanes` — `parent_task_id` has no `ON DELETE` clause, so without the guard it is a driver error), a `handed_off` chat (`handed_off` — the task owns the worktree, §5.5), and an archived task such a chat points at (`handoff_target`). §10's standing rule is untouched and its task 008 exception merely widens to "at archive time **and at permanent delete**": a branch carrying any commit past its base is reported `has_commits` and kept whatever was answered, and the remote leg is not offered at all. Two durable events are added, `task.deleted` and `chat.deleted` (§13.3) — PR D's "there is no separate `task.archived` type" does not reach them, because that type was redundant with `task.state_changed` and a delete has no state to change to — while the historical `events` rows are deliberately kept, their id being the `Last-Event-ID` cursor. No migration: `archived_at` has been a column since `0001_init.sql`, chats measure the same window over `updated_at` by task 074 decision 6, and every cascade this needs already exists. There is no bulk endpoint and there is not going to be one (task 011): every sweep, in the TUI and in `vincent task delete --before`, is one `DELETE` per row (§5.5, §6, §10, §13.2, §13.3, §13.4, §15, §17, §20) |
 | 31 | TUI key vocabulary | *Added 2026-09-10 (task 093, issue #353).* **One operation, one key, and the registry is what says so.** The binding registry made the help *accurate* from T3.11 — `?`, the footer and the palette all render from it — which is exactly what let the *vocabulary* drift unseen: it faithfully advertised four different keys for "refresh". §15 now carries the table (refresh `R`, archive `A`, delete-a-persisted-record `D`, remove-a-draft-row `d`, add `a`, `$EDITOR` `e`, free text `t`, browser `o`, open-the-row `enter`, cycle-a-listing `s`, filter `/`, fold, lane `l`, page) and **three clauses, not the one the issue asked for**: a key may be shared only for the same operation; it may mean two things only where the registry can prove the surfaces never co-exist; and a key already carrying a term takes no second meaning. The second clause is task 025's deliberate partition of `R` promoted from an accident to the rule, which is why "exactly one key registry-wide" was not adopted literally. The §6 action letters `p a x r E R s c A F` **do not move**, so they decide the contested cases: `R` won refresh, `A` won archive, and `D`/`d` split on persisted-versus-draft, which is what makes pressing `d` on an archived board safe. Enforcement is three tests in `internal/tui/bindings_test.go` beside `TestEveryPanelKeyIsHandled`, with an allow-list that must carry a reason and must stay non-empty; the disjointness the archived boards rely on is **derived from `taskstate.HumanActionsFrom`**, not listed, so an FSM change that starts offering an action on an archived row fails the test rather than shipping a shadowed key. It closes a live bug rather than only a style one: the task workspace's Pull Request tab intercepted `r` and `c`, so **retry and cancel were unreachable there** while the footer advertised both. Scope is `internal/tui` and the docs — no CLI, API, MCP, store or workflow change, and no user-configurable keymap, which is a larger question this does not answer (§15). *Amended 2026-09-17 (task 118, issue #412):* "no user-configurable keymap" is narrowed to no keymap **outside these rules**. Row 35 adds `tui.keys`, which makes this table the **default** keymap and holds an override to the same three clauses with the same checker, so the question is answered rather than set aside; the §6 letters still do not move as defaults |
 | 32 | The footer fills its width, and says what it hides | *Added 2026-09-10 (task 094, issue #352).* **A cap is not a layout.** The footer's five-key limit was a constant, and a constant is wrong at both 80 and 200 columns: eleven of the twenty-one binding contexts declare more hinted keys than five, so on more than half the surfaces keys were dropped silently while `pad := max(width-lw-pw, 2)` spent the remaining columns on blank space. Width now decides, as a strict prefix of registry priority order, measured exactly rather than iterated: every candidate admission count is costed against the `+N` that count itself implies, so there is no "admitted because +9 shrank to +8" state to detect afterwards. The segments to the right of the hints are measured **first** and come out of the budget — the line truncates from the left, so hints are what a full line loses first, and admitting them against the whole width would let the actions push them straight back off. This **supersedes** the phase 3 refactor decision and the PR R / T3.12 decision in `docs/history/v0-tasks.md` ("max 5, priority-ordered"), and only those: what they were protecting — one line that never wraps, and a pinned `: commands  ? help  q quit` that never truncates — is untouched, and §15 is amended in place to say so. The `+N` counts this surface's palette-reachable rows that the line is not advertising, **not** everything the palette lists: the five global rows and the eight navigation entries are what the pinned segment stands for, and counting them would pin `N` near fourteen and never at zero. Alias rows are **declared** (`binding.aliased`) rather than parsed out of hint text — splitting on `/` and mapping `↑↓←→` back to key names is text parsing over a human-written field that breaks silently the first time a hint is reworded — and a test asserts the declaration against what the hints actually say. `paletteEntries` still lists the board's fold rows where the footer, gated by `shell.liveBindings`, does not; that mismatch is left where it is rather than widened into here. *Amended 2026-09-14 (task 096):* the triggers view is a ninth navigation entry, so the pinned segment stands for nine; the reasoning is unchanged (§15). *Amended 2026-09-14 (issue #372):* the mismatch is gone — `root.openPalette` hands `paletteEntries` the shell's `liveBindings`, so a flat board's palette drops the fold rows the footer drops, and a grouped board's still lists them |
-| 33 | Event triggers | *Added 2026-09-13 (task 096; issues #356, #362, #365).* **A trigger is a robot pressing a key a human could have pressed.** A YAML file under `{config_dir}/triggers/` names a source (`command`, `github_issues`, `github_prs`, `http` or, since 2026-09-18, `schedule`), a `match:` prefilter and an §8.4 `if:` guard, an action and a dedupe key. Triggers are global scope only, never `.vincent/`, so that anyone who can merge to a repository cannot start agents on a maintainer's machine. An action **replays an existing route** in-process, the way row 28's MCP does: `create_task` is `POST /v1/tasks`, and the reactions `follow_up`, `retry` and `cancel` are the §6 action routes against the task whose `branch_name` the event names. §13.1's bounds, the validation, the FSM's 409 and `Idempotency-Key` therefore hold by construction, and from the step path down a triggered task is indistinguishable from a hand-created one (`.Event` is never snapshotted, §8.4). Where a route lacked an affordance a trigger needed, the route grew it for every client: `paused` on create, follow-up and retry, and `restricted` and `max_task_cost_usd` on create. **It inverts §16's premise that a human pressed the key**, so its defaults differ from every other default in the product. Triggers are off twice, by `triggers.enabled` and by each file's own `enabled:`. `on_fire: propose` holds every task a trigger creates or re-queues in `paused` for a human, agent steps are clamped `restricted`, untrusted GitHub events are refused without an author allowlist, and each trigger has a rate limit. Runtime state lives in SQLite: a cursor per trigger, and a delivery ledger kept 30 days. The first poll after arming seeds and fires nothing, so neither a cold start nor re-arming floods. *Amended 2026-09-18 (task 121, issue #480):* the source list takes a fifth member, `schedule` — a hand-written five-field cron expression or an `every:` interval, evaluated against the wall clock on a one-second tick, with its last handled occurrence in `trigger_cursors.cursor`. It is the same robot pressing the same key: everything downstream of the source is reused, arming anchors the clock and fires nothing, and an overdue schedule fires once however many occurrences it missed (§5.3, §6, §8.4, §12.2, §12.3, §13.2, §13.3, §13.4, §14, §15, §16, §17, §20) |
+| 33 | Event triggers | *Added 2026-09-13 (task 096; issues #356, #362, #365).* **A trigger is a robot pressing a key a human could have pressed.** A YAML file under `{config_dir}/triggers/` names a source (`command`, `github_issues`, `github_prs`, `http` or, since 2026-09-18, `schedule`), a `match:` prefilter and an §8.4 `if:` guard, an action and a dedupe key. Triggers are global scope only, never `.vincent/`, so that anyone who can merge to a repository cannot start agents on a maintainer's machine. An action **replays an existing route** in-process, the way row 28's MCP does: `create_task` is `POST /v1/tasks`, and the reactions `follow_up`, `retry` and `cancel` are the §6 action routes against the task whose `branch_name` the event names. §13.1's bounds, the validation, the FSM's 409 and `Idempotency-Key` therefore hold by construction, and from the step path down a triggered task is indistinguishable from a hand-created one (`.Event` is never snapshotted, §8.4). Where a route lacked an affordance a trigger needed, the route grew it for every client: `paused` on create, follow-up and retry, and `restricted` and `max_task_cost_usd` on create. **It inverts §16's premise that a human pressed the key**, so its defaults differ from every other default in the product. Triggers are off twice, by `triggers.enabled` and by each file's own `enabled:`. `on_fire: propose` holds every task a trigger creates or re-queues in `paused` for a human, agent steps are clamped `restricted`, untrusted GitHub events are refused without an author allowlist, and each trigger has a rate limit. Runtime state lives in SQLite: a cursor per trigger, and a delivery ledger kept 30 days. The first poll after arming seeds and fires nothing, so neither a cold start nor re-arming floods. *Amended 2026-09-18 (task 121, issue #480):* the source list takes a fifth member, `schedule` — a hand-written five-field cron expression or an `every:` interval, evaluated against the wall clock on a one-second tick, with its last handled occurrence in `trigger_cursors.cursor`. It is the same robot pressing the same key: everything downstream of the source is reused, arming anchors the clock and fires nothing, and an overdue schedule fires once however many occurrences it missed. *Amended 2026-09-18 (task 122, issue #483):* a trigger also says what to do when **its own previous work is still running**. `overrun:` — `parallel` (the default and today's behaviour), `skip`, `cancel_previous`, `queue_coalesce`, `queue_serial` — is consulted as the pipeline's last step against the group `concurrency_key:` names, and "in flight" is §6's `!Settled`, so an unreviewed `on_fire: propose` proposal holds its group. The two queue modes hold events in a durable table so a restart loses none, and a disarm discards that backlog the way it drops the cursor. `cancel_previous` is the one mode that destroys work nobody asked to lose, and is `dangerous` to a client for that reason (§5.3, §6, §8.4, §12.2, §12.3, §13.2, §13.3, §13.4, §14, §15, §16, §17, §20) |
 | 34 | Trigger ingress | *Added 2026-09-13 (task 096 decision 31G).* **A pushed event needs the bearer token and a signature, and no route is exempt from row 4.** `POST /v1/triggers/{id}/events` sits in the same `recover → log → auth` chain as every other route, then verifies the trigger's own `github_hmac_sha256` signature over the raw body, using a secret the daemon reads from its environment (§2). Only a caller on this machine that can read `{data_dir}/token` and holds the secret can deliver, so rows 1 and 4 are untouched. A GitHub.com webhook through a tunnel **cannot** deliver. What works is a sender on the same machine, such as a self-hosted runner, or a relay on the same machine that adds the header. The route is not an MCP tool, because an agent that can inject events can start agents (§13.1, §13.2, §13.4, §16) |
 | 35 | User-configurable TUI keymap | *Added 2026-09-17 (task 118, issue #412).* **An override moves an operation, never a surface's key, and the defaults' own rules hold it.** `tui.keys` in `config.yaml` maps an operation id to one key string in Bubble Tea's key-string form, and `{}` is the shipped keymap. The rebindable set is exactly row 31's vocabulary terms, §6's actions and the global chrome (`palette`, `palette_alt`, `help`, `help_alt`, `next_attention`, `mouse`, `quit`, `new` — the last also the chats board's `n`, one gesture); every surface-local row, multi-key set, `esc`, `ctrl+c`, `ctrl+v`, `tab`, popup confirmation and unregistered alias is fixed and refused by name. One override rebinds its operation on every surface that carries it, and it **replaces** the default rather than aliasing it, so the vacated key is free and two operations may swap in one edit. The registry becomes the TUI's **dispatch** source as well as its rendering source — handlers ask it for an operation's key rather than matching literals — because a keymap the help advertises and a handler ignores is the Pull Request tab bug row 31 closed; a translation layer at the root was beaten because it would be a second source of truth for which context is live. The catalog, the fixed keys, the exceptions and the clause checker live in a new leaf, `internal/keymap`; the registry tests run that checker over the defaults and `internal/config` runs it over the effective keymap at load, on hot reload and on `PATCH /v1/config`, so a bad keymap is refused with the file byte-identical, the `tui.board.group_by` precedent. That is config's second internal import beside `taskstate`, an explicit amendment of task 046 decision 4, and `keymap` is a leaf so the direction stays one-way. A key that already means anything else anywhere is refused, and an exception recorded for a default key does not travel with an operation that moves onto it. `palette_alt` and `help_alt`, and any operation answered where a text field owns the printable keys, refuse a printable key. The daemon still publishes no config event: the TUI applies the keymap on connect, reconnect and the daemon view's config fetch, and after its own editor saves it (§12.3, §13.3, §15) |
 
@@ -6127,6 +6127,58 @@ is not an MCP tool (§13.4), and the TUI's editor asks before changing it (task
 file with `armed: false` and a reason, both dry runs still work, and a pushed
 event is a `409` (§13.2).
 
+*Amended 2026-09-18 (task 121, issue #483).* **`overrun:` and
+`concurrency_key:` say what to do with an event whose group already has
+unfinished work.** Nothing in the pipeline looked at task state before this:
+every event that passed the filter fired, however many of the trigger's tasks
+were mid-flight, which is right for a one-shot event and wrong for a source
+that emits repeatedly about the same object. `dedupe_key` cannot express it —
+it is all-or-nothing and permanent — and `limits.max_per_hour` is wall clock,
+not liveness. `overrun:` is a closed enum, checked as the **last** step of the
+pipeline, after render and after a reaction's target resolution:
+
+| value | behaviour |
+|---|---|
+| `parallel` | the default, and byte-for-byte today's behaviour: no check at all |
+| `skip` | record the event `superseded` and drop it; the in-flight work stands |
+| `cancel_previous` | replay §6's cancel against every in-flight task in the group, then fire, recording which task this delivery superseded |
+| `queue_coalesce` | hold the event; when the group empties, fire the **newest** held event and record the rest `superseded` |
+| `queue_serial` | hold the event; when the group empties, fire the **oldest**, and so on until the backlog drains |
+
+`concurrency_key:` is a `text/template` over `.Event` naming the group. Absent,
+it is the trigger id for a `create_task` — so an author who sets only
+`overrun:` gets one at a time per trigger — and the **resolved target task**
+for a `follow_up`, `retry` or `cancel`, whose group is that task's own state,
+read from `tasks.state` and not through this trigger's ledger: on the first
+follow-up the target has never appeared in it. It is deliberately not
+`dedupe_key` — for the motivating case the dedupe key is per modification while
+the group is the ticket — and it carries `dedupe_key`'s standing warning:
+**changing `concurrency_key` on a live trigger re-groups events already in
+flight.** Setting it without an `overrun:` other than `parallel` is a load
+error, not a silent no-op. In flight is `!taskstate.Settled` (§6, §14).
+
+**An unreviewed `on_fire: propose` proposal holds its group.** That is the
+intended reading — the human has not acted on it, so a second proposal for the
+same object is noise — and with `propose` the default it is the first thing a
+confused author hits: a `skip` trigger whose first proposal is never admitted
+never fires again for that group. `queue_serial` under `propose` drains only as
+fast as a human approves, so a busy object reaches the per-trigger cap of
+**100** held events, where the oldest is dropped and recorded `superseded`
+rather than silently lost. Held events are a table (§14), not a field: they
+survive a restart, and the drain runs when a task reaching a settled state says
+the group emptied, with the manager's 5 s reconcile tick as the backstop. A
+**disarm discards the backlog** and records each held event, exactly as it
+drops the cursor, so an off period never fires; deleting a trigger drops the
+backlog and keeps the ledger. A drained event is **re-judged in full** — its
+dedupe key, `max_per_hour`, render and target resolution all run again on the
+state of the world at drain time — minus the overrun step, which it has already
+passed. An event a group **already holds** is not held twice — it is recorded
+`superseded`, because a source that re-shows its whole window every poll would
+otherwise fill the backlog with copies of one event and `queue_serial` would
+fire it once per copy. `POST /v1/triggers/{id}/test` reports the decision the
+way it reports `would_dedupe`, and writes neither a ledger row nor a backlog
+row.
+
 A `type: command` trigger's argv is executed directly, never through a shell,
 with the previous cursor in `VINCENT_TRIGGER_CURSOR`. That is the only
 `VINCENT_*` variable vincent sets for it; one the daemon itself inherited is
@@ -7196,10 +7248,12 @@ DELETE /v1/triggers/{id}?version=       204. Removes the file. The registry relo
                                         delivered (task 096 decision 21). `version` is required,
                                         and a stale one is 409
 POST   /v1/triggers/{id}/test           { event } → a judgement: { event_id, matched, match_miss?,
-                                        if?, if_rendered?, dedupe_key?, would_dedupe, action?,
+                                        if?, if_rendered?, dedupe_key?, would_dedupe,
+                                        overrun?, concurrency_key?, in_flight?, would_skip?,
+                                        would_cancel?, would_queue?, action?,
                                         outcome, error? }. Runs the supplied event through the real
                                         pipeline (match, allowed_actors, if:, dedupe, rate limit,
-                                        render, reaction target), and `action` is the request it
+                                        render, reaction target, overrun), and `action` is the request it
                                         would replay, unsent. Writes nothing, and works while
                                         the trigger or triggers.enabled is off. `outcome: fired`
                                         here means "would be replayed"
@@ -7214,10 +7268,13 @@ POST   /v1/triggers/{id}/poll           → { seed, events[], truncated, refused
                                         type: schedule, which is a clock. Neither has a source
                                         to run once; POST …/test still judges a supplied event
 GET    /v1/triggers/{id}/deliveries     ?limit=1..1000 (default 100) → { deliveries[] }, newest
-                                        first: { id, trigger_id, event_id, dedupe_key, outcome,
+                                        first: { id, trigger_id, event_id, dedupe_key,
+                                        concurrency_key?, superseded_task_id?, outcome,
                                         task_id, detail?, created_at }. `outcome` is fired |
                                         seeded | deduped | filtered | rate_limited | refused |
-                                        error, and `task_id` is the task created or acted on.
+                                        error | superseded | queued, and `task_id` is the task
+                                        created or acted on; `superseded_task_id` the task a
+                                        `overrun: cancel_previous` fire replaced (task 121).
                                         Served for an id with no file, because the ledger
                                         outlives the file
 POST   /v1/triggers/{id}/events         the `type: http` ingress (§13.1, decision record row 34).
@@ -8650,19 +8707,34 @@ CREATE TABLE trigger_cursors (         -- one row per trigger that has polled
 );
 
 CREATE TABLE trigger_deliveries (      -- the ledger: one row per event judged
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    trigger_id  TEXT NOT NULL,
-    event_id    TEXT NOT NULL DEFAULT '',
-    dedupe_key  TEXT NOT NULL DEFAULT '',
-    outcome     TEXT NOT NULL CHECK (outcome IN
-                  ('fired', 'seeded', 'deduped', 'filtered', 'rate_limited', 'refused', 'error')),
-    task_id     INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
-    detail      TEXT NOT NULL DEFAULT '', -- a `refused` row's §13.1 envelope, an `error` row's text
-    created_at  TEXT NOT NULL
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    trigger_id         TEXT NOT NULL,
+    event_id           TEXT NOT NULL DEFAULT '',
+    dedupe_key         TEXT NOT NULL DEFAULT '',
+    concurrency_key    TEXT NOT NULL DEFAULT '',  -- the `overrun:` group, '' when it declares none
+    outcome            TEXT NOT NULL CHECK (outcome IN
+                         ('fired', 'seeded', 'deduped', 'filtered', 'rate_limited',
+                          'refused', 'error', 'superseded', 'queued')),
+    task_id            INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    superseded_task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    detail             TEXT NOT NULL DEFAULT '', -- a `refused` row's §13.1 envelope, an `error` row's text
+    created_at         TEXT NOT NULL
 );
 CREATE INDEX idx_trigger_deliveries_key ON trigger_deliveries(trigger_id, dedupe_key);
 CREATE INDEX idx_trigger_deliveries_created ON trigger_deliveries(trigger_id, created_at);
 CREATE INDEX idx_trigger_deliveries_age ON trigger_deliveries(created_at);
+CREATE INDEX idx_trigger_deliveries_group ON trigger_deliveries(trigger_id, concurrency_key);
+
+CREATE TABLE trigger_backlog (         -- events a queue mode holds until its group empties
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    trigger_id      TEXT NOT NULL,
+    concurrency_key TEXT NOT NULL,
+    event_id        TEXT NOT NULL DEFAULT '',
+    event_json      TEXT NOT NULL,     -- the raw event, re-judged in full at drain
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX idx_trigger_backlog_group ON trigger_backlog(trigger_id, concurrency_key, id);
+CREATE INDEX idx_trigger_backlog_age ON trigger_backlog(created_at);
 
 CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 ```
@@ -8710,6 +8782,28 @@ backlog on the second poll (task 096 decision 31B). The dedupe lookup treats
 `fired` alone. SQLite cannot alter a CHECK in place, so the migration renames
 the table aside, creates it again under the real name, copies every row with
 its id, drops the old table and recreates the three indexes. 0029 is not
+edited.
+
+*Added 2026-09-18 (task 121, migration 0033).* `trigger_deliveries.outcome`
+gains **`superseded`** — an event `overrun:` dropped in favour of work already
+in flight or of a newer event — and **`queued`**, an event held in the new
+`trigger_backlog` table until its group empties. Reusing `deduped` for the
+first was rejected: a suppressed event is a distinct event deliberately
+dropped, not a duplicate, and the ledger is the one surface an author has when
+a trigger appears to have done nothing. A `queued` row is **not** delivered:
+the dedupe lookup still counts `fired` and `seeded` alone, so a second
+identical event arriving while one is held reaches the overrun step and is
+coalesced or queued rather than swallowed. `concurrency_key` is the rendered
+group the row was judged in; `superseded_task_id` is the task a
+`cancel_previous` fire replaced, `ON DELETE SET NULL` like `task_id`, and the
+chain reads out of the ledger rather than out of `tasks` — the board is not
+asked to render a relationship only triggers ever set. The in-flight predicate
+is **`!taskstate.Settled`** in §6's own vocabulary: everything but `done`,
+`aborted` and `archived` holds its group, which is `paused`, `blocked`,
+`awaiting_gate` and `awaiting_children` included. It is deliberately neither
+"non-terminal" — §6's `Terminal` is `archived` alone — nor "holds a slot",
+which would let unreviewed `propose` proposals stack up, the case the feature
+exists for. The table is rebuilt the way 0030 rebuilt it; 0029 and 0030 are not
 edited.
 
 `trigger_cursors.cursor` stays opaque TEXT and carries two shapes, with no
@@ -11533,6 +11627,19 @@ the whole of the posture, not a set of tips.
   (§9.4, and the task 057 note above). `limits.max_task_cost_usd` caps spend
   where the adapter reports cost. `limits.max_per_hour` caps how many deliveries
   fire, and an event over it is recorded and dropped, never queued.
+- **`overrun: cancel_previous` lets an inbound event destroy in-flight agent
+  work** *(added 2026-09-18, task 121, issue #483)*. Every unfinished task in
+  the event's concurrency group is cancelled before the new one is created; the
+  cancelled tasks keep their branches and worktrees, so nothing is lost from
+  disk, but an agent mid-run is killed by something no human pressed. It is one
+  of the values a client must confirm before writing, beside `enabled: true`,
+  `on_fire: create` and `permission: workflow`. This raises what
+  `allowed_actors` is worth rather than changing what it does: on a GitHub
+  source a trigger that can match an event an outsider authors already has to
+  name the authors it accepts, and with this mode that requirement is what
+  stands between a stranger's comment and a cancelled run. The other four modes
+  create nothing a `parallel` trigger would not have created, and destroy
+  nothing.
 - **Untrusted events need an allowlist, and the allowlist is the author.** On
   `github_issues` and `github_prs`, some events are ones an outsider can cause
   on a public repository: `opened`, `reopened`, `closed`, `ready_for_review` and
@@ -11642,7 +11749,7 @@ the whole of the posture, not a set of tips.
   retention window. *Amended 2026-09-17 (task 119): all three terminal states
   now, `closed` included; a linked chat's transcripts live under `chat-{id}` like
   any chat's, never under the task's directory.* *Amended 2026-09-11 (task 096):* a second row exception —
-  `trigger_deliveries` (§14) rows are pruned after a **fixed 30 days** by the
+  `trigger_deliveries` and `trigger_backlog` (§14) rows are pruned after a **fixed 30 days** by the
   same pass, on the same terms as `idempotency_keys`: no config knob, and
   independent of `transcript_retention_days`. A month answers "why did my
   trigger not fire last week?" while bounding a table that grows with every

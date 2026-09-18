@@ -1799,8 +1799,9 @@ again against what is actually there.
 `tab` moves the arrows to the selected trigger's **ledger**: its newest
 deliveries, one row for every event the trigger judged, whether it fired or not.
 Each row shows when the event was judged, the outcome (`fired`, `seeded`,
-`deduped`, `filtered`, `rate_limited`, `refused` or `error`), the event id, the
-task, and the detail. This is the daemon view's list and log split: `tab`
+`deduped`, `filtered`, `rate_limited`, `refused`, `error`, `superseded` or
+`queued`), the event id, the task, and the detail — which carries
+`superseded #N` when an `overrun: cancel_previous` fire replaced a task. This is the daemon view's list and log split: `tab`
 decides which list the arrows move.
 
 | Key | Does |
