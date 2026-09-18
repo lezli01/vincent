@@ -1,0 +1,70 @@
+---
+layout: null
+permalink: /search.json
+sitemap: false
+---
+{%- comment -%}
+  The docs site search index (task 120).
+
+  GitHub Pages only runs allowlisted plugins, so the index is built here in
+  Liquid at build time and scored in the browser by assets/js/search.js — no
+  gem, no service, no build step outside Jekyll. One record per section: the
+  rendered HTML of each page is split on its heading anchors, so a hit can link
+  to "#vincent-task-list" instead of dumping the reader at the top of a
+  120 KB reference page.
+
+  Record keys are short because every byte ships to the reader:
+  p = page title, t = section title, u = link, x = searchable text.
+{%- endcomment -%}
+{%- assign raw_open = '{' | append: '% raw %' | append: '}' -%}
+{%- assign raw_close = '{' | append: '% endraw %' | append: '}' -%}
+{%- assign sep = '' -%}
+[
+{%- for p in site.html_pages -%}
+  {%- if p.search == false or p.sitemap == false -%}{%- continue -%}{%- endif -%}
+  {%- assign page_url = p.url | relative_url -%}
+  {%- comment -%}
+    Pages escape their Go-template examples for Liquid; markdownify does not run
+    Liquid, so the raw markers would otherwise land in the index as text.
+  {%- endcomment -%}
+  {%- assign source = p.content | replace: raw_open, '' | replace: raw_close, '' -%}
+  {%- assign rendered = source | markdownify -%}
+  {%- assign flat = rendered | replace: '<h3 id="', '<h2 id="' | replace: '<h4 id="', '<h2 id="' | replace: '<h5 id="', '<h2 id="' | replace: '<h6 id="', '<h2 id="' -%}
+  {%- assign chunks = flat | split: '<h2 id="' -%}
+  {%- comment -%}
+    jekyll-titles-from-headings finds no heading on a page that opens with a raw
+    tag, so those pages would be indexed under their filename. The rendered h1
+    is the page's own title in every case.
+  {%- endcomment -%}
+  {%- assign page_title = p.title -%}
+  {%- unless page_title -%}
+    {%- assign h1_parts = rendered | split: '<h1' -%}
+    {%- if h1_parts.size > 1 -%}
+      {%- assign page_title = h1_parts[1] | split: '</h1>' | first | split: '">' | last | strip_html | strip -%}
+    {%- endif -%}
+  {%- endunless -%}
+  {%- comment -%}The home page leads with a logo and has no heading at all.{%- endcomment -%}
+  {%- assign page_title = page_title | default: site.title | strip -%}
+  {%- for chunk in chunks -%}
+    {%- if forloop.first -%}
+      {%- assign heading = page_title -%}
+      {%- assign link = page_url -%}
+      {%- assign body = chunk -%}
+    {%- else -%}
+      {%- assign anchor = chunk | split: '">' | first -%}
+      {%- assign body = chunk | remove_first: anchor | remove_first: '">' -%}
+      {%- if anchor contains ' ' or anchor contains '<' -%}
+        {%- comment -%}A heading carrying extra attributes: index it without a deep link.{%- endcomment -%}
+        {%- assign link = page_url -%}
+      {%- else -%}
+        {%- assign link = page_url | append: '#' | append: anchor -%}
+      {%- endif -%}
+      {%- assign heading = body | split: '</h' | first | strip_html | strip -%}
+    {%- endif -%}
+    {%- assign text = body | strip_html | replace: '&lt;', '<' | replace: '&gt;', '>' | replace: '&quot;', '"' | replace: '&#39;', "'" | replace: '&amp;', '&' | normalize_whitespace | strip -%}
+    {%- if heading == '' and text == '' -%}{%- continue -%}{%- endif -%}
+    {{ sep }}{"p":{{ page_title | jsonify }},"t":{{ heading | jsonify }},"u":{{ link | jsonify }},"x":{{ text | jsonify }}}
+    {%- assign sep = ',' -%}
+  {%- endfor -%}
+{%- endfor -%}
+]
