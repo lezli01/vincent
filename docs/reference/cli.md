@@ -2151,7 +2151,9 @@ vincent trigger test <id> --event FILE [--json]
 Sends one sample event to `POST /v1/triggers/{id}/test` and prints what the
 trigger would do with it. The stages print in pipeline order: the `match:`
 result, the `if:` verdict, the rendered dedupe key and whether the ledger
-already holds it, and the request the action would replay. A stage the event
+already holds it, the request the action would replay, and — for a trigger that
+sets [`overrun:`](../guides/triggers.md#overrun-what-happens-while-the-last-run-is-still-going)
+— the group it named and the tasks it found in flight there. A stage the event
 never reached prints `-`.
 
 ```

@@ -312,7 +312,8 @@ When a trigger misbehaves, work in this order:
 1. `trigger_list` shows whether each trigger is valid, `armed`, its
    `disarmed_reason`, and its poll health.
 2. `trigger_deliveries` shows each event's `outcome` (`seeded`, `fired`,
-   `deduped`, `filtered`, `rate_limited`, `refused` or `error`) and `detail`.
+   `deduped`, `filtered`, `rate_limited`, `refused`, `error`, `superseded` or
+   `queued`) and `detail`.
 3. Reproduce with `vincent trigger test` or `trigger_poll`. A `schedule` and
    an `http` source have no poll, so `trigger_poll` refuses both: supply a
    synthetic event to `vincent trigger test` instead.

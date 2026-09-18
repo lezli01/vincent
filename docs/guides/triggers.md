@@ -100,6 +100,8 @@ limits:
 | `action` | What an event that passes does: `create_task`, `follow_up`, `retry` or `cancel`. |
 | `on_fire` | `propose` (the default) or `create`. |
 | `dedupe_key` | A template over `.Event`. Absent means the event's `id`. |
+| `overrun` | What to do when this event's concurrency group still has unfinished work: `parallel` (the default), `skip`, `cancel_previous`, `queue_coalesce` or `queue_serial`. |
+| `concurrency_key` | A template over `.Event` naming that group. Absent means the trigger id, or a reaction's resolved task. Needs an `overrun`. |
 | `limits` | `max_per_hour`, and `max_task_cost_usd` for a `create_task`. |
 | `permission` | `create_task` only: `restricted` (the default) or `workflow`. |
 
@@ -212,9 +214,9 @@ Anything richer goes in `if:`, which is a Go `text/template` like a workflow's
 `if:`. It must render exactly `true` or `false` once surrounding whitespace is
 trimmed.
 
-Every trigger template (`if`, `dedupe_key` and the action's fields) sees a single
-root, `.Event`, and has the standard template builtins and no extra functions.
-Templates render with `missingkey=error`: a key the event does not carry makes
+Every trigger template (`if`, `dedupe_key`, `concurrency_key` and the action's
+fields) sees a single root, `.Event`, and has the standard template builtins and
+no extra functions. Templates render with `missingkey=error`: a key the event does not carry makes
 the delivery an `error` rather than rendering empty text. Filter sparse events
 with `match:` first. JSON numbers arrive as floats, so write
 `{{ printf "%.0f" .Event.number }}` where a large number must render as digits.
@@ -229,7 +231,10 @@ task. A key that renders empty is an `error`.
 Only `fired` and `seeded` rows count as delivered. An event that was `filtered`,
 `rate_limited`, `refused` or an `error` can still fire later. That covers a
 relabel after you change the filter, the same event an hour later under the
-limit, or a retry after the refusal's cause is fixed. Ledger rows are pruned
+limit, or a retry after the refusal's cause is fixed. A `superseded` or
+`queued` row is not delivered either: a `queued` event fires when its group
+empties, and a `superseded` one fires if the source shows it again once the
+group is free. Ledger rows, and any events a queue mode still holds, are pruned
 after a fixed 30 days.
 
 A `create_task` replay also carries an `Idempotency-Key` derived from the
@@ -842,9 +847,11 @@ npx skills add lezli01/vincent --skill vincent-triggers -g
 ```
 
 The skill writes every trigger disarmed. It sets `enabled: false`, leaves out
-`on_fire` and `permission`, and always sets a `dedupe_key` and `limits`. It
-changes a switch only when you ask for that exact change. For the workflow a
-trigger's `action.workflow` names, it defers to `vincent-workflows`.
+`on_fire` and `permission`, and always sets a `dedupe_key` and `limits`. On a
+source that can emit twice about one object it sets `overrun:` and a
+`concurrency_key:` naming that object, never `cancel_previous`, which destroys
+work. It changes a switch only when you ask for that exact change. For the
+workflow a trigger's `action.workflow` names, it defers to `vincent-workflows`.
 
 ### The `create-trigger` and `update-triggers` built-ins
 
@@ -861,7 +868,8 @@ Two built-in workflows use the skill against the task's own project:
   `vincent trigger apply`. Rejecting leaves every trigger untouched. The pass
   never changes a trigger's `id`, file name, `source.project`, `enabled`,
   `on_fire` or `permission`, deletes no file, and never changes what a
-  `dedupe_key` renders for events already delivered.
+  `dedupe_key` renders for events already delivered or what a
+  `concurrency_key` renders while its group has work in flight.
 
 Neither built-in can produce a `cancel` trigger, because a cancel loads only
 with `on_fire: create`. Write one by hand.

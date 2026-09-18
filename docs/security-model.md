@@ -551,6 +551,16 @@ below is the whole posture, not a set of tips.
   task and every lane it fans out into, together. `limits.max_per_hour` caps how
   many deliveries fire. An event over the limit
   is recorded and dropped, never queued.
+- **`overrun: cancel_previous` lets an inbound event destroy work in flight.**
+  Every unfinished task in the event's
+  [concurrency group](guides/triggers.md#overrun-what-happens-while-the-last-run-is-still-going)
+  is cancelled before the new one is created. Nothing on disk is lost — each
+  cancelled task keeps its branch and worktree — but an agent mid-run is killed
+  by something no human pressed, and nothing un-cancels it. It is a dangerous
+  value, so the TUI asks before writing it, and on a GitHub source
+  `allowed_actors` is what stands between a stranger's event and a cancelled
+  run. The other four modes create nothing a trigger without `overrun:` would
+  not have created, and destroy nothing.
 - **Untrusted events need an allowlist, and the allowlist is the author.** On
   the GitHub sources, some events are ones an outsider can cause on a public
   repository: `opened`, `reopened`, `closed`, `ready_for_review` and

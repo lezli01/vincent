@@ -490,7 +490,10 @@ from one of five sources: a command the daemon polls, a project's GitHub
 issues, its pull requests, a signed push to `POST /v1/triggers/{id}/events`,
 or a schedule — a cron expression or a fixed interval, in the zone you name.
 `match:`, `if:` and `allowed_actors` filter them, a `dedupe_key` makes each
-event fire once, and `limits.max_per_hour` caps the rate.
+event fire once, and `limits.max_per_hour` caps the rate. `overrun:` decides
+what happens when the group a `concurrency_key:` names still has unfinished
+work: fire anyway, skip the event, cancel what is running, or hold it until
+the group empties.
 
 A trigger that fires can create a task, follow up a finished one, retry a
 blocked one, or cancel one, finding the task by its branch. By default it only
