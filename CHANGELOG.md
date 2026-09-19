@@ -57,8 +57,10 @@ list with the user-facing context a commit subject cannot carry.
   level, `quiet` included, and `(forked)` marks one that ran as its own
   sub-run. A skill the agent loaded itself appears from `compact` up on its
   `Skill` call's line, with the `Launching skill` outcome under it, instead of
-  as a second line. A refused skill reads `▸ skill <name> failed: <error>` at
-  every level. `vincent task transcript` and `vincent chat transcript` print
+  as a second line. A load that carries the agent CLI's refusal reads
+  `▸ skill <name> failed: <error>` at every level; a `Skill` call claude
+  refuses loads nothing, and still shows as the call with its `✗` outcome.
+  `vincent task transcript` and `vincent chat transcript` print
   the same as `> skill …` and `! skill … failed: …`; under `-f`, a load whose
   call printed in an earlier poll prints nothing more. The skill's `SKILL.md`
   text is never drawn; `e` and `--raw` still have it.

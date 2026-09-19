@@ -640,8 +640,10 @@ load is one of its tool calls and appears from `compact` up, on its `Skill`
 call's line: `▸ skill echo-probe zebra` with the `✓ Launching skill` outcome
 under it, rather than the call and the load as two lines. While a run is live
 that line reads `▸ Skill echo-probe` for the moment before the load arrives. A
-skill the agent CLI refused shows at every level as
-`▸ skill <name> failed: <error>`. The skill's own text — the `SKILL.md` that
+load that carries the agent CLI's refusal shows at every level as
+`▸ skill <name> failed: <error>`. A `Skill` call Claude Code refuses loads
+nothing, so it stays `▸ Skill <name>` with the refusal as the `✗` outcome
+under it. The skill's own text — the `SKILL.md` that
 was loaded — is never drawn at any level; `e` opens the whole transcript,
 which has it.
 

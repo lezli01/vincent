@@ -875,8 +875,8 @@ with no tools, and its result line carries the elapsed time, as in
 
 A **subagent's** work prints nested, in the order it arrived, at the pane's
 [`normal` content](../guides/tui.md#when-the-agent-runs-subagents): its prose,
-tool calls, outcomes and errors, each behind a `| ` rail, and never its
-reasoning or plan. A `| -> <description>` line names the subagent whenever the
+tool calls, outcomes, skill loads and errors, each behind a `| ` rail, and
+never its reasoning or plan. A `| -> <description>` line names the subagent whenever the
 output moves into one or from one to another, and the next line from the agent
 itself ends the rail. When a subagent ends, one line on the rail says how:
 
@@ -897,9 +897,11 @@ summary when that is all there is. Only
 [Claude Code](../guides/agents.md#claude-code) reports subagents.
 
 A **skill** that ran prints as `> skill <name> <args>`, with ` (forked)` for a
-skill that ran as its own sub-run, and a skill the agent CLI refused prints as
-`! skill <name> failed: <error>` (`invocation` in place of a name it did not
-give). The skill's own text — the `SKILL.md` it loaded — is never printed;
+skill that ran as its own sub-run, and a load that carries the agent CLI's
+refusal prints as `! skill <name> failed: <error>` (`invocation` in place of a
+name it did not give). A `Skill` call Claude Code refuses loads nothing, so it
+prints as `> Skill <name>` with the refusal on the `! ` outcome line under it.
+The skill's own text — the `SKILL.md` it loaded — is never printed;
 `--raw` has it. A skill the agent loaded itself comes from a `Skill` tool call,
 and prints on that call's line in place of `> Skill <name>`, so its outcome
 stays directly under it:
