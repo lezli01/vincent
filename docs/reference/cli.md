@@ -1602,18 +1602,30 @@ the log as prompt context.
 
 ```sh
 vincent chat start TITLE --project ID [--agent NAME] [--model M] [--effort E]
-                  [--base BRANCH] [--message TEXT] [--json]
+                  [--base BRANCH] [--message TEXT | --message-file PATH|-] [--json]
 ```
 
 Starts a chat and prints its id, agent and branch. `--agent` defaults to the
 first installed adapter that can resume a session. `--message` sends a first
 turn straight away and waits for it, which is `start` plus `send` in one call.
+`--message-file` does the same with a message read from a file, or from stdin
+when the argument is `-`, exactly as [`chat send`](#vincent-chat-send) reads
+one; the two flags are mutually exclusive. With neither, the chat is created
+and no message is sent.
+
+The file is read before the chat is created, so a missing file or input
+`--message-file` refuses (below) creates no chat. A message the daemon refuses
+after creation — one over the send route's body bound, say — leaves the chat
+created and `idle`, as `--message` does.
 
 ### `vincent chat send`
 
 ```sh
-vincent chat send CHAT_ID MESSAGE [--json]
+vincent chat send CHAT_ID [MESSAGE] [--message-file PATH|-] [--json]
 ```
+
+The message is the second argument or the content of `--message-file`, and
+exactly one of the two: giving both, or neither, is refused and exits 1.
 
 Sends a message and blocks until the turn ends, then prints the agent's answer
 on stdout. A failed turn prints its reason on stderr and exits 1 — including
@@ -1649,6 +1661,51 @@ ends it.
 
 Exits 1 with `chat_cap_reached` when `max_parallel_chats` chats already hold a
 live agent process. The send is refused, never queued.
+
+#### `--message-file`
+
+`--message-file PATH` reads the message from a file, and `--message-file -`
+from stdin. The message never passes through the shell's argv, so nothing
+rewrites it on the way, and vincent sends the bytes it read unchanged:
+
+- **Nothing is trimmed.** A trailing newline from `echo`, a heredoc or an
+  editor is part of the message. `printf` adds none:
+
+  ```sh
+  printf '%s' '/review the auth change' | vincent chat send 12 --message-file -
+  ```
+
+- **Empty input is refused**, before any request. Whitespace alone is not
+  empty and is sent as it is.
+- **Input that is not valid UTF-8 is refused**, before any request, and the
+  error never quotes it. A message travels as a JSON string, where an invalid
+  byte would silently become U+FFFD. A leading UTF-8 byte-order mark is valid
+  UTF-8 and is sent unchanged — and a BOM in front of `/name` stops the agent
+  seeing an invocation. Windows PowerShell 5.1's `Out-File -Encoding utf8`
+  writes one.
+- **The read is capped at 4 MiB**, so an unbounded pipe cannot be buffered
+  whole, and one byte more is refused with the limit named. That is the
+  CLI's bound, not the message limit: the send route takes a request body of
+  at most 64 KiB ([API](api.md#request-bodies)), so a longer message is still refused by the
+  daemon with `payload_too_large`, and its message is printed.
+
+Every one of those refusals exits 1. So does a missing file.
+
+#### Quoting a skill invocation
+
+A message that invokes an agent's skill — `/review`, or codex's `$review` —
+starts with a character a shell treats specially, and a shell that changes it
+says nothing. vincent sends what it receives and never repairs a message, so
+what the agent gets is whatever the shell left:
+
+- **bash, zsh and pwsh** expand `$name` inside double quotes. Single-quote it:
+  `vincent chat send 12 '$review the auth change'`.
+- **pwsh** passes `/name` through literally.
+- **Git Bash** (MSYS2) rewrites an argument beginning with `/name` into a
+  Windows path, so the agent receives `C:/Program Files/Git/review`. Set
+  `MSYS_NO_PATHCONV=1` for the command, or use `--message-file`, which is
+  never an argument. See
+  [troubleshooting](../guides/troubleshooting.md#the-agent-received-cprogram-filesgitreview-instead-of-review).
 
 ### `vincent chat answer`
 
