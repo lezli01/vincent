@@ -381,7 +381,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 			return runner.StopChatOrphan(ctx, taskID, turnID)
 		},
 		// Where a linked chat's skills would be listed is decided from the
-		// task's settings alone (task 124 decision C), through the same
+		// task's settings alone (task 124 decision 39), through the same
 		// injected-closure seam as Launchers.
 		InContainer: func(ctx context.Context, taskID int64) (bool, error) {
 			return runner.ChatInContainer(ctx, taskID)
