@@ -99,7 +99,7 @@ func TestLiveSkillLoadMatchesItsRefetch(t *testing.T) {
 	for _, line := range cold {
 		parse([]byte(line))
 	}
-	for _, line := range hot {
+	feed := func(line string) {
 		offset := appendRawLine(t, run.TranscriptPath, line)
 		for _, c := range agent.LiveChunks(parse([]byte(line))) {
 			payload := map[string]any{"run_id": run.ID, "offset": offset}
@@ -108,6 +108,20 @@ func TestLiveSkillLoadMatchesItsRefetch(t *testing.T) {
 			}
 			h.broker.PublishOutput(run.TaskID, events.Chunk{Type: c.Type, Payload: payload})
 		}
+	}
+	// The subscription's ConnectedNote re-reads the transcript (§13.3), and a
+	// re-read landing after the result is on disk hands the pane the whole
+	// run, agent.result included, without the stream building any of it. The
+	// note is the first on the per-task stream, so the outcome reaches the
+	// screen through that re-read or through a chunk queued behind it; once it
+	// is there with no fetch in flight, the re-read has landed and the load,
+	// the reply and the result can only stream.
+	feed(hot[0])
+	h.p.until(20*time.Second, "the connect re-read to land", func() bool {
+		return strings.Contains(plainContent(h.m), "Launching skill: echo-probe") && !d.fetching
+	})
+	for _, line := range hot[1:] {
+		feed(line)
 	}
 	h.p.until(20*time.Second, "the load to redraw its call", func() bool {
 		got := plainContent(h.m)
