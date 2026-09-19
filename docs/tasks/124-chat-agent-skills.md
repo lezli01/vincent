@@ -287,6 +287,40 @@ breakdown"). 13–19 were settled with the author, or taken in evaluation, when
     compact and normal, whole at verbose, no trace at quiet. *Beaten:*
     showing the body at verbose, which would put it on the wire and reverse
     T4.16 and #498's design; that needs its own item.
+40. **2026-09-19 — The claude listing floor is 2.1.277, inside the input
+    family.** The probe runs only on a build in `[2.1.277, 3.0.0)`: it needs
+    `supportsInput`'s family for the control channel, and 2.1.277 is the
+    first build with `builtin`, which decision 7's filter depends on — and
+    the only build captured. Any other build, below the floor or a 3.x alike,
+    answers an error wrapping `ErrSkillsUnsupported` that names the version
+    and the floor, the way `InputVerdict` reads a build outside the verified
+    family. The floor moves only with re-captured fixtures. Closes open
+    question 3. *Beaten:* listing across the whole `[2.1.0, 3.0.0)` family,
+    which would advertise `/clear` below 2.1.277; and detecting `builtin` per
+    reply, which would wrongly refuse a future build that stopped listing
+    built-ins at all.
+41. **2026-09-19 — The listing probe suppresses hooks and MCP servers.** It
+    passes `--settings {"disableAllHooks":true}` and `--strict-mcp-config`
+    with no `--mcp-config`. The measured list was identical (112/112), and the
+    probe runs no user code and spawns no user MCP server. What it loses,
+    stated in §9.2, is a skill only a SessionStart hook installs; MCP prompts
+    are not skills, so they are out either way. Closes open question 4.
+    *Beaten:* keeping hooks, or hooks and MCP both, for fidelity.
+42. **2026-09-19 — claude's `builtin: true` rows are omitted**, every one of
+    them: decision 7, implemented by 124.7. Bundled skills come back in
+    124.16 (#512). Closes open question 2.
+43. **2026-09-19 — Only a positive no is `ErrSkillsUnsupported`** (decision
+    16), for claude's lister too. A binary that cannot be resolved, a failed
+    `--version`, a timeout, `subtype: "error"`, malformed JSON, a reply
+    without `commands` (or with `null`) and an exit before the reply are all
+    ordinary errors, so 124.9 maps them to `unknown`; each carries the
+    stderr tail. This follows `InputVerdictWith`'s rule that a binary which
+    cannot be found or probed is unknown.
+44. **2026-09-19 — The fake's cwd-derived default list is not built in
+    124.7.** `cmd/fakeagent` answers `initialize` from
+    `FAKEAGENT_CLAUDE_COMMANDS` or a small fixed default; a list read from the
+    cwd's `.claude/skills/*/SKILL.md` belongs to 124.15 (#511), which decides
+    whether the m14 leg needs it.
 
 ## Open questions
 
@@ -296,9 +330,9 @@ answer it, so none is lost:
 | #496 open question | Owner |
 |---|---|
 | 1 — Restricted posture: accept that a human-invoked skill's `allowed-tools` widens a restricted claude turn, or pass `--disable-slash-commands` in restricted mode | 124.6 (#502) |
-| 2 — Built-in rows: omit every `builtin: true` row, or list them flagged | 124.7 (#503) |
-| 3 — claude listing floor: 2.1.277 only, or the whole `[2.1.0, 3.0.0)` input family | 124.7 (#503) |
-| 4 — Hooks in the probe: suppress SessionStart hooks and MCP servers, at the cost of missing hook-installed skills | 124.7 (#503) |
+| 2 — Built-in rows: omit every `builtin: true` row, or list them flagged | closed by 124.7 (#503): decision 42 |
+| 3 — claude listing floor: 2.1.277 only, or the whole `[2.1.0, 3.0.0)` input family | closed by 124.7 (#503): decision 40 |
+| 4 — Hooks in the probe: suppress SessionStart hooks and MCP servers, at the cost of missing hook-installed skills | closed by 124.7 (#503): decision 41 |
 | 5 — The skills key: `tab` over `f2` | 124.13 (#509) |
 | 6 — The `quiet` level: does a human-invoked skill show there | 124.12 (#508); settled by decision 37 |
 | 7 — Cache TTLs: 5 min for a clean list and 1 min for a failed one | 124.9 (#505) |
@@ -341,7 +375,14 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
   Git Bash's `/name` rewrite, and the quoting rules documented.
 - [ ] 124.6 (#502) Amend §5.5, §9.4 and §16 on pass-through and restricted
   skills, and record the owner's posture decision.
-- [ ] 124.7 (#503) claude lists through `initialize`. Depends: 124.1.
+- [x] 124.7 (#503) claude lists through `initialize`. `claude.Adapter`
+  implements `agent.SkillLister`: one `initialize` control request, only
+  `commands` decoded, `builtin` rows dropped, on builds in
+  `[2.1.277, 3.0.0)`; hooks and MCP servers suppressed. `cmd/fakeagent`
+  answers `initialize` (`FAKEAGENT_CLAUDE_COMMANDS`,
+  `FAKEAGENT_CLAUDE_INITIALIZE`, `FAKEAGENT_SKILLS_ECHO_CWD`). Fixtures
+  `initialize_2.1.277.jsonl` and `initialize_loggedout_2.1.277.jsonl`; spec
+  §9.1, §9.2 and §9.6 amended. Decisions 40–44. ✓ 2026-09-19
 - [x] 124.8 (#504) codex lists through `skills/list`. Depends: 124.1.
   The app-server exchange generalized to "handshake, then one request" on
   `agent.Launch`; `codex.Adapter` implements `SkillLister`; `Invocation`
@@ -418,6 +459,23 @@ and 124.15 have landed. 124.16, 124.17 and 124.18 widen coverage after that.
   `TestUserMessageLineKeepsTheMessageLast` pins the line itself,
   `TestFixtureContextBlockStream` parses the 2.1.277 capture, and
   `TestEchoPromptKeepsBlocksApart` the fake CLI's record of the blocks.
+- 124.7: `TestInitializeFixtures` decodes both 2.1.277 captures — the
+  non-`builtin` rows in the CLI's order, labels, argument hints and aliases
+  kept, `Scope`, `Plugin` and `Path` empty, no `account` or `models` text in
+  the value. `TestReadInitialize` pins the skipped lines, a hostile `account`,
+  kept duplicates, `[]` against a missing or `null` `commands`, and each
+  error reply; `TestReadInitializeTakesALongLine` the raised scanner.
+  `TestListSkillsAgainstTheFake` pins the argv through `FAKEAGENT_ARGV_FILE`,
+  `TestListSkillsRunsInTheWorkDir` the directory,
+  `TestListSkillsGoesThroughTheLauncher` the launcher's resolve, probe and
+  `Launch`. `TestSupportsSkillListingEdges` and
+  `TestListSkillsBelowOrPastTheFloor` hold decision 40, the latter with no
+  `initialize` sent; `TestListSkillsFailuresAreUnknown`,
+  `TestListSkillsHonorsCancel` and `TestListSkillsUnprobeableBinary` hold
+  decision 43; `TestListSkillsKeepsAnAnswerFromALingeringCLI` the reply
+  outranking a late exit. `TestClaudeListsSkills` pins
+  `CanListSkills(claude)`, and `TestAgentsReportSkillCapabilities` claude's
+  `supports_skill_listing: true`.
 - 124.8: `TestCodexCanListSkills` flips codex's capability.
   `TestParseSkillsList` holds the 0.154.0 capture: the enabled rows in
   codex's order with name, description, scope and path verbatim against the

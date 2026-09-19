@@ -6,6 +6,15 @@ import (
 	"github.com/lezli01/vincent/internal/agent"
 )
 
+// TestClaudeListsSkills pins decision 13's static bool for claude: it
+// implements SkillLister (task 124.7), so GET /v1/agents reports
+// `supports_skill_listing: true` whatever build is installed.
+func TestClaudeListsSkills(t *testing.T) {
+	if !agent.CanListSkills(New(nil)) {
+		t.Error("CanListSkills(claude) = false, want true")
+	}
+}
+
 // TestSkillSyntax pins §9.2's invocation syntax (task 124 decision 18): the
 // sigil and position published as `skill_sigil` and `skill_position` on
 // GET /v1/agents, and the text a client inserts for a plain and a plugin
