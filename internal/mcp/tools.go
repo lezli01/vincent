@@ -141,8 +141,15 @@ var Excluded = []Route{
 	// are the surface a human drives a chat through, and neither is
 	// something an agent needs, since an agent calling one already has a
 	// session of its own (task 063 decision 2, task 067 decision 2).
+	//
+	// `GET /v1/chats/{id}/skills` is a chat read too, and joins them under
+	// the same rule rather than becoming the family's first tool (task 124
+	// decision 6, extending 063 decision 2): the list is what a human's
+	// composer offers, and an agent calling it already has a session, and
+	// skills, of its own.
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/events"},
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/turns/{seq}/transcript"},
+	{Method: http.MethodGet, Path: "/v1/chats/{id}/skills"},
 }
 
 // Streaming lists the §13.3 SSE routes. They are not tools because a tool call
