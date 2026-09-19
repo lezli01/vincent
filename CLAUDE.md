@@ -68,7 +68,10 @@ block scalar, so it may contain anything — but each built-in's standing
 corrections to its skill live in that built-in's own header, never in the
 skill: what asking costs, destination, missing `references/` for
 `create-workflow`; that the deliverable is an edit to existing files, that
-asking is denied, missing `references/` for `update-workflows`; what asking
+asking is denied, missing `references/` for `update-workflows` — and, in its
+`global: true` branch (task 123), that the deliverable is a staged proposal
+rather than an edit, that the global files have no git history to consult,
+and that the agent never writes `{config_dir}/workflows` itself; what asking
 costs, staging then `vincent trigger apply`, missing `references/` for
 `create-trigger`; that asking is denied, that the deliverable is a staged
 proposal, missing `references/` for `update-triggers`. Both trigger headers
@@ -126,6 +129,7 @@ against the fake agent; CI runs every one of them on Linux, macOS and Windows:
 ./scripts/m14-gate.sh                           # chats end to end (task 067)
 ./scripts/m15-gate.sh                           # archived boards and permanent delete (task 092)
 ./scripts/m16-gate.sh                           # event triggers (task 096)
+./scripts/123-gate.sh                           # global update-workflows (task 123)
 ./scripts/064-gate.sh                           # a task from a pull request (task 064)
 ./scripts/052-gate.sh                           # GitHub pull requests (task 052)
 ./scripts/069-gate.sh                           # opening a pull request from vincent (task 069)
@@ -135,8 +139,8 @@ VINCENT_GATE_AGENT=claude ./scripts/m2-gate.sh  # manual run against the real CL
 VINCENT_GATE_AGENT=cursor ./scripts/m5-gate.sh  # ditto, for cursor-agent
 ```
 
-All seventeen of those run in `ci.yml`'s `gates` job on all three platforms. `m12`
-is the eighteenth and the exception: it needs a real container runtime, so it runs
+All eighteen of those run in `ci.yml`'s `gates` job on all three platforms. `m12`
+is the nineteenth and the exception: it needs a real container runtime, so it runs
 its assertions on the Linux leg only and skips itself (exit 0, one line saying
 why) on the other two — but for two different reasons, and only one of them is
 "no docker". The macOS runner has no daemon. The **Windows runner does**, in

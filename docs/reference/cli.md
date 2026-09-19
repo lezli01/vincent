@@ -32,7 +32,7 @@ localhost API.
 | Code | Meaning |
 |---|---|
 | `0` | Success |
-| `1` | The request was rejected — the daemon answered no (bad id, invalid state transition), a daemon-free command refused it (`workflow validate` on an invalid file, `workflow render` on a template that does not execute, `workflow init` on a name already taken, `trigger validate` on an invalid file, `trigger ls` that matched no file, `trigger apply` on a proposal it refuses), or the client refused the input before sending anything (a `--fields-file` that is not one JSON object of strings, a `trigger test --event` file that is not one JSON object, a `github pr link` number that is not a positive integer, a `github pr unlink` on a task with no live link, a `project edit` that names no field or whose `--max-parallel` is not a whole number) |
+| `1` | The request was rejected — the daemon answered no (bad id, invalid state transition), a daemon-free command refused it (`workflow validate` on an invalid file, `workflow render` on a template that does not execute, `workflow init` on a name already taken, `trigger validate` on an invalid file, `trigger ls` that matched no file, `trigger apply` on a proposal it refuses, `workflow ls --global` that found no file, `workflow apply` on a proposal it refuses), or the client refused the input before sending anything (a `--fields-file` that is not one JSON object of strings, a `trigger test --event` file that is not one JSON object, a `github pr link` number that is not a positive integer, a `github pr unlink` on a task with no live link, a `project edit` that names no field or whose `--max-parallel` is not a whole number) |
 | `2` | No daemon answered |
 
 `vincent daemon status` overloads them usefully: `0` healthy, `1` not running,
@@ -1892,6 +1892,7 @@ for `create-workflow` when you would rather describe the outcome.
 
 ```sh
 vincent workflow ls [--project ID] [--json]
+vincent workflow ls --global [--json]
 ```
 
 Lists the merged registry — built-in plus global, with scope badges and
@@ -1905,6 +1906,70 @@ means this host is not in it, so the workflow is listed but cannot back a task
 here.
 
 Needs a daemon: only the daemon knows which projects exist.
+
+**`--global` reads `{config_dir}/workflows/` directly and needs no daemon.** It
+prints one absolute path per line and exits `1` when there are no global
+workflow files, including when the directory does not exist. It is the
+inventory of a global [`update-workflows`](../guides/workflows.md) run. With
+`--json` it prints each file's `file`, `name`, `version` (the token
+`GET /v1/workflows` reports and a PATCH checks), `valid` and `errors`, which
+is what a proposal's manifest records for
+[`vincent workflow apply`](#vincent-workflow-apply). A file that does not
+parse is still listed, so it can be repaired. A file that is not a regular
+file, or is over 1 MiB, is reported on stderr and left out. `--global` with
+`--project` is a usage error.
+
+### `vincent workflow apply`
+
+```sh
+vincent workflow apply --proposal <task_id> [--check]
+```
+
+Installs a proposal to change the global workflows into
+`{config_dir}/workflows/`. A global `update-workflows` run stages the proposal
+and ends with this command, after a person approves it at the run's manual
+gate. It needs no daemon. The registry reloads the global scope when a file is
+written, and the change reaches every project at once.
+
+A proposal is a directory, `{data_dir}/workflow-proposals/<task_id>/`, holding
+the whole proposed `*.yaml`/`*.yml` files, each named by the live file's base
+name, and a `manifest.json`. The manifest maps each staged file's base name to
+the `version` that `vincent workflow ls --global --json` reported for it, or
+to `"absent"` for a new file:
+
+```json
+{ "feature-pr.yaml": "<version from ls --global --json>", "shared-checks.yaml": "absent" }
+```
+
+Apply refuses the whole proposal, writes nothing, and names every offending
+file, when:
+
+- a staged file does not validate (the same verdict as
+  [`vincent workflow validate`](#vincent-workflow-validate));
+- a staged file has no manifest entry, a manifest entry has no staged file, or
+  the directory holds anything else;
+- a file changed since its version was recorded, a file recorded `"absent"`
+  now exists, or a recorded file is gone;
+- a staged name is not a bare file name, or a new file is not named
+  `<name>.yaml` after its `name:`;
+- a staged file **renames** its workflow: its `name:` differs from the live
+  file's. A rename would break every task, `include` and trigger that names the
+  workflow;
+- a staged `name:` is already declared by another global file the proposal
+  does not replace, or by another staged file.
+
+Every check runs before any write. Each file is written atomically; an
+existing file keeps its mode and a new one is created `0644`. `wrote <path>`
+is printed per file, then the staging directory is removed. A failure part-way
+through is reported with what was written and is not rolled back. An empty
+manifest installs nothing and succeeds.
+
+`--check` runs every check, writes and removes nothing, and prints the staged
+files' absolute paths, one per line, sorted. It is the global run's relist, so
+a stale or malformed proposal blocks before anyone is asked to approve it.
+
+Exit `0` when the proposal was installed or checked; `1` when it was refused,
+nothing is staged at that path, or a write failed.
 
 ### `vincent workflow validate`
 

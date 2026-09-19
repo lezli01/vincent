@@ -193,9 +193,23 @@ Details that matter in practice:
   deliverable **is** the task's diff — these files are versioned by the
   repository, so you review the rewrite on the task's branch and merging it is
   what makes the new versions live. A workflow file you have never committed is
-  not in the worktree and is not touched; the global registry is out of scope.
-  It takes no task fields, never asks you anything (`on_input: deny`), and
-  finishes with nothing to do on a project that has no workflows of its own.
+  not in the worktree and is not touched. It never asks you anything
+  (`on_input: deny`), and finishes with nothing to do on a project that has no
+  workflows of its own.
+
+  **Set its `global` field to `true` to update the global workflows instead.**
+  One run updates one registry, never both. No repository versions
+  `{config_dir}/workflows`, so there is no diff to merge: the agent stages
+  whole rewritten files in `{data_dir}/workflow-proposals/<task_id>/`, the
+  run checks them with
+  [`vincent workflow apply --check`](../reference/cli.md#vincent-workflow-apply)
+  and validates each one, and then stops at an **approve** gate. Diff each
+  staged file against the live file of the same name before you approve —
+  an approved change is live in **every** project the moment it is written.
+  Approving runs `vincent workflow apply`, which installs the whole proposal
+  or, if anything changed since it was staged, nothing. Rejecting leaves the
+  global workflows untouched. The task's own worktree is never changed. A
+  global run with no global workflows finishes without starting an agent.
 - **`create-trigger` and `update-triggers` do the same for event triggers.**
   The first writes a new trigger for the task's project, and the second
   proposes improvements to the project's existing triggers behind an approval

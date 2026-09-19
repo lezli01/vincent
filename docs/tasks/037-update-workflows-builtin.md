@@ -46,6 +46,14 @@ also audits them (decision 5).
    and invisible to review — the exact property decision 1 exists to keep. It
    also falls out of decision 1 for free: what is not in the repository is not
    in the worktree.
+   *Amended 2026-09-19 (task 123, reopened on purpose):* the global registry
+   is now reachable, but not by editing it from the worktree. A `global: true`
+   run stages whole files outside every repository, stops at a manual gate,
+   and `vincent workflow apply` installs the approved proposal — so the effect
+   outside the diff is reviewed after all, at the gate, which is the property
+   this decision was protecting. A run is still one scope; a project run is
+   unchanged and decision 1 still governs it. See
+   [123](123-update-global-workflows.md) decisions 1, 2 and 5.
 3. **2026-08-27 — Verify with a `for_each` loop, not a `check:`.** A prompt's
    claim that it validated is not verification, but `vincent workflow validate`
    takes exactly one file and the step-body shell is the §8.3 intersection of
@@ -102,6 +110,10 @@ also audits them (decision 5).
    would save, and the workflows in one project routinely `include` each other
    — subsetting them hides the duplication item 2 of the checklist exists to
    find.
+   *Amended 2026-09-19 (task 123, narrowed):* one field now exists, the
+   optional boolean `global`, which picks the scope and nothing else. The
+   `only:` field this decision rejected stays rejected, for the reasons above.
+   See [123](123-update-global-workflows.md) decision 2.
 7. **2026-08-27 — `max_retries: 1` on the agent step, against both other
    built-ins' `0`.** §8.4's rule is that replay must be provably safe. Here it
    is: the edits are in a private worktree with no external effect, a second
