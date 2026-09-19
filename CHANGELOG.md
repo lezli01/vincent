@@ -9,6 +9,31 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [0.10.0](https://github.com/lezli01/vincent/compare/v0.9.0...v0.10.0) (2026-09-19)
+
+
+### Features
+
+* **agent:** add skill listing and invocation capabilities ([9701c2e](https://github.com/lezli01/vincent/commit/9701c2e425624293c59e54dd7d7287e975a2b81b))
+* **agent:** model skill loads and cursor's prompt echo ([48037f4](https://github.com/lezli01/vincent/commit/48037f434fb30e02179236669385ff0384519ef5))
+* **api:** add agent.skill and agent.input_echo transcript records ([f878dda](https://github.com/lezli01/vincent/commit/f878dda783c1dd5a7df1ee4193f96a53e1c39c21))
+* **api:** publish skill capabilities on GET /v1/agents ([a3bd75f](https://github.com/lezli01/vincent/commit/a3bd75fc88ed5d4869a0037ff3c76a490d28d702))
+* **codex:** list skills through app-server skills/list ([ed8826d](https://github.com/lezli01/vincent/commit/ed8826d2d994d3fa988574db3b8a0a2ac45fcce0))
+* **tui:** draw agent.skill in the pane, the chat and the CLI transcript ([4dbd860](https://github.com/lezli01/vincent/commit/4dbd86094b851a723654335607488d2e056bacd0))
+* **workflow:** add ls --global and apply for global workflow proposals ([07d7377](https://github.com/lezli01/vincent/commit/07d7377675af47038cdcf90a09de8f6fa4bd63ad))
+* **workflow:** let update-workflows update global workflows ([37473f0](https://github.com/lezli01/vincent/commit/37473f06de663f855b9e555742ac10a09ac91021))
+* **workflows:** add the github-resolve-issue-multiple sweep workflow ([c0b00de](https://github.com/lezli01/vincent/commit/c0b00decd8e9e0f2f68da349233b656000742cb5))
+
+
+### Bug Fixes
+
+* **agent:** drop a Skill call's arguments at its result ([ef806aa](https://github.com/lezli01/vincent/commit/ef806aadbf4dd9bcc7b00a6313985eef24071a9b))
+* **chatrun:** send a linked chat's opening context as its own block ([3e69503](https://github.com/lezli01/vincent/commit/3e69503bfe03a542e217e2eb96385366fab3716c)), closes [#499](https://github.com/lezli01/vincent/issues/499)
+* **skill:** pass --agent slugs as separate argv ([e73aea7](https://github.com/lezli01/vincent/commit/e73aea73e547a7d8af834c79141bbb1aefc532c8))
+* **tui:** keep an input echo from splitting the unrecognized count ([47de673](https://github.com/lezli01/vincent/commit/47de6732041409281cb2461ece2c48d3226b2ec3))
+* **tui:** route chat newlines through the textarea's own binding ([40612a5](https://github.com/lezli01/vincent/commit/40612a5abce5798de946e72d4b1a6f2e18798336))
+* **tui:** support multiline chat drafts ([ed952ee](https://github.com/lezli01/vincent/commit/ed952eeb80dd05e2e33ddeac8dc128e13c95d5a3))
+
 ## [Unreleased]
 
 ### Added
