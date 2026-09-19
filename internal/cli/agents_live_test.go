@@ -138,8 +138,8 @@ func TestAgentsCommandAgainstTheRealAPI(t *testing.T) {
 	// The skill fields (task 124) come from the adapter registry rather than
 	// a probe, so they are the ones a harness without one would lose: each
 	// must arrive set, and the NOTES cell must agree with what arrived. The
-	// listing bit is read, not pinned — no shipped adapter lists yet, and a
-	// literal false here would invert the day one does.
+	// listing bit is read, not pinned — claude and cursor do not list yet, and
+	// a literal false for either would invert the day it does.
 	t.Run("the skill capabilities cross the wire", func(t *testing.T) {
 		out, errOut, code := runCLI(t, "agents")
 		if code != 0 {

@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
 // The `app-server` dialect: codex's JSON-RPC-over-stdio server, as much of it
-// as the §9.6 quota reader touches (task 082).
+// as the §9.6 quota reader (task 082) and the §9.3 skill lister (task 124.8)
+// touch.
 //
 // It exists so no test and no gate ever calls the real codex to read a real
 // account's rate limits. Selection is argv shape like every other dialect
@@ -17,7 +20,16 @@ import (
 // so argv stays faithful to the CLI:
 //
 //	FAKEAGENT_CODEX_APP_SERVER  healthy (default) | malformed |
-//	                            unauthenticated | hang
+//	                            unauthenticated | error | hang
+//	FAKEAGENT_CODEX_SKILLS      a JSON array of `SkillMetadata` objects
+//	                            `skills/list` answers with, verbatim
+//
+// `malformed` and `hang` apply to both requests. `unauthenticated` refuses
+// only `account/rateLimits/read`, because real codex lists its skills without
+// a login; `error` refuses only `skills/list`. Without FAKEAGENT_CODEX_SKILLS
+// the list is derived from the requested cwd's `.agents/skills/*/SKILL.md`
+// front matter (task 124 decision 35) — this binary standing in for the CLI,
+// not vincent scanning.
 //
 // It is a FAKEAGENT_CODEX_* variable rather than a FAKEAGENT_SCENARIO value
 // for the same reason `login status` has its own: a run scenario and a probe
@@ -82,8 +94,9 @@ func appServerMain() {
 	in.Buffer(make([]byte, 0, 64*1024), 1<<20)
 	for in.Scan() {
 		var msg struct {
-			ID     *int   `json:"id"`
-			Method string `json:"method"`
+			ID     *int            `json:"id"`
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
 		}
 		if json.Unmarshal(in.Bytes(), &msg) != nil {
 			continue
@@ -121,12 +134,111 @@ func appServerMain() {
 			default:
 				appServerReply(out, *msg.ID, appServerRateLimits(), nil)
 			}
+		case "skills/list":
+			switch mode {
+			case "error":
+				appServerReply(out, *msg.ID, nil, map[string]any{
+					"code": -32603, "message": "failed to list skills",
+				})
+			case "malformed":
+				appServerReply(out, *msg.ID, map[string]any{"data": "nonsense"}, nil)
+			default:
+				appServerReply(out, *msg.ID, appServerSkills(msg.Params), nil)
+			}
 		default:
 			appServerReply(out, *msg.ID, nil, map[string]any{
 				"code": -32601, "message": "method not found: " + msg.Method,
 			})
 		}
 	}
+}
+
+// appServerSkills answers `skills/list` with one entry echoing the first
+// requested cwd, as codex does for a one-cwd request.
+func appServerSkills(params json.RawMessage) map[string]any {
+	var p struct {
+		Cwds []string `json:"cwds"`
+	}
+	_ = json.Unmarshal(params, &p)
+	cwd := ""
+	if len(p.Cwds) > 0 {
+		cwd = p.Cwds[0]
+	}
+	var skills any = []any{}
+	if raw := os.Getenv("FAKEAGENT_CODEX_SKILLS"); raw != "" {
+		var verbatim []any
+		if json.Unmarshal([]byte(raw), &verbatim) == nil {
+			skills = verbatim
+		}
+	} else if cwd != "" {
+		skills = repoSkills(cwd)
+	}
+	return map[string]any{"data": []any{map[string]any{
+		"cwd":    cwd,
+		"skills": skills,
+		"errors": []any{},
+	}}}
+}
+
+// repoSkills is the default list: every `.agents/skills/*/SKILL.md` under
+// cwd, named and described by its front matter, in directory order.
+func repoSkills(cwd string) []any {
+	root := filepath.Join(cwd, ".agents", "skills")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return []any{}
+	}
+	skills := []any{}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		path := filepath.Join(root, e.Name(), "SKILL.md")
+		b, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		name, description := frontMatter(string(b))
+		if name == "" {
+			continue
+		}
+		skills = append(skills, map[string]any{
+			"name":        name,
+			"description": description,
+			"path":        path,
+			"scope":       "repo",
+			"enabled":     true,
+			"pluginId":    nil,
+		})
+	}
+	return skills
+}
+
+// frontMatter reads `name` and `description` out of a SKILL.md's leading
+// `---` block. It is as much YAML as the fake's own seeds need: one scalar
+// per line, optionally quoted.
+func frontMatter(doc string) (name, description string) {
+	lines := strings.Split(strings.ReplaceAll(doc, "\r\n", "\n"), "\n")
+	if strings.TrimSpace(lines[0]) != "---" {
+		return "", ""
+	}
+	for _, line := range lines[1:] {
+		if strings.TrimSpace(line) == "---" {
+			break
+		}
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		value = strings.Trim(strings.TrimSpace(value), `"'`)
+		switch strings.TrimSpace(key) {
+		case "name":
+			name = value
+		case "description":
+			description = value
+		}
+	}
+	return name, description
 }
 
 func appServerReply(out *bufio.Writer, id int, result, rpcErr map[string]any) {
