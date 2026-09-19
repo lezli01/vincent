@@ -72,6 +72,19 @@ type controlPayload struct {
 	Description string          `json:"description"`
 }
 
+// skillTool is the tool claude loads a skill through. Its can_use_tool
+// request's §7.4 summary is the skill's name rather than the description.
+const skillTool = "Skill"
+
+// skillInput is the Skill tool's input, on its call and on a can_use_tool
+// request alike: the skill's name and, when the model passed any, its
+// arguments. Args stays raw so that an unexpected shape there cannot cost
+// the name; skillArgs reads it.
+type skillInput struct {
+	Skill string          `json:"skill"`
+	Args  json.RawMessage `json:"args"`
+}
+
 // askInput is the AskUserQuestion tool input inside a can_use_tool request.
 type askInput struct {
 	Questions []askQuestion `json:"questions"`
@@ -142,6 +155,15 @@ func parseControlRequest(raw []byte) (agent.Event, *pendingRequest) {
 		req.Kind = "permission"
 		pend.kind = req.Kind
 		summary := line.Request.Description
+		if line.Request.ToolName == skillTool {
+			// For a skill, claude's description is the skill's own blurb, and
+			// "Skill wants to run: <blurb>" never says which skill (task 124
+			// decision 26). The name is in the input, as it is on the call.
+			var in skillInput
+			if err := json.Unmarshal(line.Request.Input, &in); err == nil && in.Skill != "" {
+				summary = in.Skill
+			}
+		}
 		if summary == "" {
 			summary = line.Request.ToolName
 		}

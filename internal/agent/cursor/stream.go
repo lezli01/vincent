@@ -112,6 +112,14 @@ func (s *stream) parse(raw []byte) agent.Event {
 				Raw:    raw,
 			}
 		}
+	case "user":
+		// cursor echoes the prompt vincent piped to it, once per run, right
+		// after init (task 124.2). The text is already on screen, so the line
+		// is modeled only to stop it counting as unrecognized; it carries
+		// nothing. cursor says nothing on it, or anywhere else in the stream,
+		// about a skill a `/name` in that prompt expanded, so this adapter
+		// never produces EventSkill (§9.7).
+		return agent.Event{Type: agent.EventInputEcho, Raw: raw}
 	case "assistant":
 		// Assistant messages arrive whole (content blocks), not as deltas.
 		if text := assistantText(line); text != "" {
@@ -179,10 +187,9 @@ func (s *stream) parse(raw []byte) agent.Event {
 		// nothing emulates one.
 		return agent.Event{Type: agent.EventResult, Result: &res, Raw: raw}
 	}
-	// user and every system subtype but init fall through here on purpose, as
-	// do the thinking `delta` lines parseThinking swallowed — they are
-	// genuinely unmodeled lines and a client that asks to see raw lines should
-	// see them.
+	// Every system subtype but init falls through here on purpose, as do the
+	// thinking `delta` lines parseThinking swallowed — they are genuinely
+	// unmodeled lines and a client that asks to see raw lines should see them.
 	return agent.Event{Type: agent.EventUnknown, Raw: raw}
 }
 

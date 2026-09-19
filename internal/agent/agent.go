@@ -286,9 +286,11 @@ const (
 	EventUsage    EventType = "usage"
 	// EventRunHeader is what the CLI announced about the run *before* any
 	// work happened — its working directory and the tool set it was given
-	// (task 066). It is emitted at most once, from the first line of the
-	// stream, and it is the one event that describes the run rather than
-	// something that occurred inside it.
+	// (task 066). It is emitted at most once, from the CLI's init line, and it
+	// is the one event that describes the run rather than something that
+	// occurred inside it. The init line is not always the stream's first:
+	// claude writes hook lines before it, and a forked skill's kickoff (task
+	// 124.2), so nothing may assume the header opens the stream.
 	//
 	// claude reports one (§9.2), and so does cursor, from its init line's
 	// `cwd` with no tool list (task 108, §9.7). codex emits no equivalent line
@@ -326,6 +328,27 @@ const (
 	EventSubagentStarted  EventType = "subagent_started"
 	EventSubagentProgress EventType = "subagent_progress"
 	EventSubagentFinished EventType = "subagent_finished"
+	// EventSkill reports that a skill's content entered the conversation —
+	// the CLI loaded one the agent asked for, or expanded one the human's
+	// message named (task 124.2). It is emitted at most once per load and
+	// always carries a Skill. The skill's rendered body never rides on it: an
+	// outcome record carries no body (T4.16), and the transcript holds the
+	// line verbatim.
+	//
+	// Only claude reports one, from the `isSynthetic` line that follows a
+	// `Skill` result and from a forked skill's kickoff (§9.2). codex and
+	// cursor never produce this event: codex's stream has no skill item and
+	// cursor's says nothing about a skill it expanded (§9.3, §9.7). Nothing
+	// synthesizes one from a tool call.
+	EventSkill EventType = "skill"
+	// EventInputEcho is a line on which the CLI echoed back the prompt vincent
+	// wrote to its stdin (task 124.2). It carries nothing a client renders —
+	// the text is already on screen, as a chat's human message or a step's
+	// rendered prompt — and exists so the line stops counting as unrecognized.
+	//
+	// Only cursor produces one, from its `user` line (§9.7). claude and codex
+	// echo nothing vincent parses.
+	EventInputEcho EventType = "input_echo"
 	// EventInputRequest carries a mid-run input request (spec §7.4). A nil
 	// Request means the adapter received a control message it could not
 	// parse or that violates the serial-request contract — the engine fails
@@ -373,7 +396,9 @@ type Event struct {
 	Patch *Patch
 	// Subagent rides on the three EventSubagent* events.
 	Subagent *Subagent
-	Message  string // EventError: what went wrong
+	// Skill rides on EventSkill.
+	Skill   *SkillInvocation
+	Message string // EventError: what went wrong
 	// ParentCallID attributes this event to the tool call that spawned the
 	// sub-run it came from — claude's `parent_tool_use_id`, which is stamped
 	// on every line a subagent produces (task 066). Empty is the main loop,
@@ -434,6 +459,31 @@ type Subagent struct {
 	TotalTokens int64
 	Duration    time.Duration
 	LastTool    string
+}
+
+// SkillInvocation is one skill load a CLI reported (task 124.2, §9.2). It is
+// named apart from Skill, which is an entry of a listing: this is a load that
+// happened. Every field is the CLI's own report, and "" means the CLI did not
+// report it (task 124 decision 17) — which fields a load fills depends on how
+// the dialect announced it, and nothing synthesizes the rest.
+type SkillInvocation struct {
+	// Name is the skill as the CLI resolved it, namespace included. It is
+	// empty only on a refusal that names no skill.
+	Name string
+	// Args are the arguments the skill was invoked with, flattened to one
+	// capped line.
+	Args string
+	// By is who invoked the skill: "human" for one the human's message named,
+	// "agent" for one the model asked for.
+	By string
+	// CallID is the `Skill` tool call of an agent's invocation, so the load
+	// pairs with that call's agent.tool_use and agent.tool_result.
+	CallID string
+	// Forked is a skill that ran as its own sub-run (claude's `context: fork`).
+	Forked bool
+	// Error is the CLI's refusal to load the skill, one capped line, when the
+	// CLI reported the refusal on a line of its own.
+	Error string
 }
 
 // Plan is the agent's running to-do list (task 070, §9.3): every item it

@@ -27,6 +27,13 @@ func TestDetectVersionVerdict(t *testing.T) {
 			want:    agent.VersionTested,
 		},
 		{
+			// Task 124.2's capture build: the prompt echo and a `/name`
+			// skill turn were read off it (task 124 decision 27).
+			name:    "the 2026.09.18 capture build is tested",
+			version: "2026.09.18-9a7762b",
+			want:    agent.VersionTested,
+		},
+		{
 			name:    "same calver, different sha is untested",
 			version: "2026.08.04-ffffff0",
 			want:    agent.VersionUntested,

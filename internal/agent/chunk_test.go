@@ -250,3 +250,60 @@ func TestSubagentChunkShape(t *testing.T) {
 		t.Errorf("a subagent event with no payload published %+v", chunks)
 	}
 }
+
+// TestSkillChunkShape pins agent.skill (task 124.2): exactly the keys a load
+// reported, `forked` only when set, and parent_call_id as on every chunk.
+// Every field is exercised through a constructed event, because no parser
+// fills Error yet (task 124 decision 24).
+func TestSkillChunkShape(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		ev   Event
+		want string
+	}{
+		{
+			"an agent's load",
+			Event{Type: EventSkill, Skill: &SkillInvocation{
+				Name: "echo-probe", Args: "zebra", By: "agent", CallID: "toolu_1",
+			}},
+			`{"args":"zebra","by":"agent","call_id":"toolu_1","name":"echo-probe"}`,
+		},
+		{
+			"a forked human invocation inside a subagent",
+			Event{Type: EventSkill, ParentCallID: "toolu_0", Skill: &SkillInvocation{
+				Name: "fork-probe", By: "human", Forked: true,
+			}},
+			`{"by":"human","forked":true,"name":"fork-probe","parent_call_id":"toolu_0"}`,
+		},
+		{
+			"a refusal",
+			Event{Type: EventSkill, Skill: &SkillInvocation{By: "human", Error: "Unknown skill: nope"}},
+			`{"by":"human","error":"Unknown skill: nope"}`,
+		},
+	} {
+		chunks := LiveChunks(tc.ev)
+		if len(chunks) != 1 || chunks[0].Type != "agent.skill" {
+			t.Fatalf("%s: chunks = %+v, want one agent.skill", tc.name, chunks)
+		}
+		if got := marshal(t, chunks[0].Payload); got != tc.want {
+			t.Errorf("%s chunk =\n%s\nwant\n%s", tc.name, got, tc.want)
+		}
+	}
+	if chunks := LiveChunks(Event{Type: EventSkill}); chunks != nil {
+		t.Errorf("a skill event with no payload published %+v", chunks)
+	}
+}
+
+// TestInputEchoPublishesNothing is task 124 decision 25: the echo is modeled,
+// so it is not agent.raw, and its record has no live chunk.
+func TestInputEchoPublishesNothing(t *testing.T) {
+	ev := Event{Type: EventInputEcho, Raw: []byte(`{"type":"user"}`)}
+	if chunks := LiveChunks(ev); chunks != nil {
+		t.Errorf("input echo published %+v", chunks)
+	}
+	for _, typ := range []EventType{EventInputEcho, EventSkill} {
+		if UnmodeledLine(Event{Type: typ}) {
+			t.Errorf("%s counts as unmodeled", typ)
+		}
+	}
+}
