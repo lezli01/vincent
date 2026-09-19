@@ -215,19 +215,20 @@ func (a *Adapter) NewLineParser() agent.LineParser { return new(streamParser).pa
 // in that scope claims the load if it is an `isSynthetic` `user` line and
 // disarms it otherwise; a line from another scope — an async subagent's,
 // interleaving — does neither (task 124 decision 22). The arguments are
-// remembered from the call by its id and dropped when the load claims them,
-// which keeps that memory bounded. It costs what the subagent memory costs,
+// remembered from the call by its id until its result arrives, which either
+// arms the scope with them or drops them, so that memory holds only the calls
+// still awaiting a result. It costs what the subagent memory costs,
 // stated the same way: a transcript range that opens after a `Skill` call
 // yields that skill's load with no Args (decision 21).
 //
 // The zero value is ready to use. A parser belongs to one stream.
 type streamParser struct {
 	subagents map[string]bool
-	// armed is the skill each scope's last line launched, keyed by
-	// `parent_tool_use_id` ("" is the main loop).
+	// armed is the skill each scope's last line launched, with its call's
+	// arguments, keyed by `parent_tool_use_id` ("" is the main loop).
 	armed map[string]agent.SkillInvocation
 	// skillArgs is each `Skill` call's arguments, by call id, until the
-	// call's load claims them.
+	// call's result arrives.
 	skillArgs map[string]string
 }
 
@@ -275,8 +276,6 @@ func (p *streamParser) claim(line *streamLine) (agent.SkillInvocation, bool) {
 	if line.Type != "user" || !line.IsSynthetic {
 		return agent.SkillInvocation{}, false
 	}
-	load.Args = p.skillArgs[load.CallID]
-	delete(p.skillArgs, load.CallID)
 	return load, true
 }
 
@@ -300,7 +299,20 @@ func (p *streamParser) watchSkills(line *streamLine, ev *agent.Event) {
 		}
 		return
 	}
-	if ev.Type != agent.EventToolResult || len(ev.Results) != 1 || ev.Results[0].IsError {
+	if ev.Type != agent.EventToolResult {
+		return
+	}
+	// A call's arguments are wanted only until its result, whatever that
+	// result is: a refused call is never loaded, and a launched one carries
+	// them into the armed load from here.
+	var args string
+	if len(ev.Results) == 1 {
+		args = p.skillArgs[ev.Results[0].CallID]
+	}
+	for _, r := range ev.Results {
+		delete(p.skillArgs, r.CallID)
+	}
+	if len(ev.Results) != 1 || ev.Results[0].IsError {
 		return
 	}
 	// commandName belongs to the line, not to a block, so it is attributed
@@ -313,7 +325,7 @@ func (p *streamParser) watchSkills(line *streamLine, ev *agent.Event) {
 		p.armed = map[string]agent.SkillInvocation{}
 	}
 	p.armed[line.ParentToolUseID] = agent.SkillInvocation{
-		Name: res.CommandName, By: "agent", CallID: ev.Results[0].CallID,
+		Name: res.CommandName, Args: args, By: "agent", CallID: ev.Results[0].CallID,
 	}
 }
 

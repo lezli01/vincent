@@ -243,6 +243,19 @@ func TestSkillArgsNeedTheCall(t *testing.T) {
 // is already that call's agent.tool_result.
 func TestRefusedSkillCallIsNoLoad(t *testing.T) {
 	lines := fixtureLines(t, skillModelFixture)
+	events := parseAll(lines[modelCallLine], refusedSkillResult(t, lines), lines[modelBodyLine])
+	if ev := events[1]; ev.Type != agent.EventToolResult || !ev.Results[0].IsError {
+		t.Errorf("refusal = %q %+v, want an error tool_result", ev.Type, ev.Results)
+	}
+	if ev := events[2]; ev.Type != agent.EventUnknown {
+		t.Errorf("body after a refusal = %q, want unknown", ev.Type)
+	}
+}
+
+// refusedSkillResult is skillModelFixture's `Skill` result as claude writes a
+// refusal: the same line, its tool_result flagged as an error.
+func refusedSkillResult(t *testing.T, lines [][]byte) []byte {
+	t.Helper()
 	var obj map[string]any
 	if err := json.Unmarshal(lines[modelResultLine], &obj); err != nil {
 		t.Fatal(err)
@@ -252,12 +265,27 @@ func TestRefusedSkillCallIsNoLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	events := parseAll(lines[modelCallLine], refused, lines[modelBodyLine])
-	if ev := events[1]; ev.Type != agent.EventToolResult || !ev.Results[0].IsError {
-		t.Errorf("refusal = %q %+v, want an error tool_result", ev.Type, ev.Results)
-	}
-	if ev := events[2]; ev.Type != agent.EventUnknown {
-		t.Errorf("body after a refusal = %q, want unknown", ev.Type)
+	return refused
+}
+
+// TestSkillMemoryEndsAtTheResult: a `Skill` call's arguments are held only
+// until its result, so a load that never happens — a refusal, or a launch
+// whose body never follows — leaves nothing behind in a long stream.
+func TestSkillMemoryEndsAtTheResult(t *testing.T) {
+	lines := fixtureLines(t, skillModelFixture)
+	reply := []byte(`{"type":"assistant","message":{"content":[{"type":"text","text":"done"}]}}`)
+	for name, run := range map[string][][]byte{
+		"refused":  {lines[modelCallLine], refusedSkillResult(t, lines)},
+		"no body":  {lines[modelCallLine], lines[modelResultLine], reply},
+		"launched": {lines[modelCallLine], lines[modelResultLine], lines[modelBodyLine]},
+	} {
+		p := new(streamParser)
+		for _, l := range run {
+			p.parse(l)
+		}
+		if len(p.skillArgs) != 0 || len(p.armed) != 0 {
+			t.Errorf("%s: args %v, armed %v, want both empty", name, p.skillArgs, p.armed)
+		}
 	}
 }
 
