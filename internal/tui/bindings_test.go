@@ -817,6 +817,15 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("the composer still holds %q after a send", v.composer.Value())
 			}
 		},
+		"ctrl+j": func(t *testing.T) {
+			v := chatViewFixture()
+			v.client = offlineClient()
+			v.composer.SetValue("hello")
+			v.updateKey(registryKey(t, "ctrl+j"))
+			if got := v.composer.Value(); got != "hello\n" {
+				t.Fatalf("ctrl+j left the draft %q, want a newline after it and nothing sent", got)
+			}
+		},
 		"ctrl+x": func(t *testing.T) {
 			v := chatViewFixture()
 			v.client = offlineClient()
