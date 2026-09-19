@@ -1698,6 +1698,7 @@ periodic repaint.
 | Key | Does |
 |---|---|
 | `enter` | Send the message |
+| `ctrl+j`, `shift+enter`, `alt+enter` | Insert a newline in the draft (`ctrl+j` works in legacy terminals) |
 | `ctrl+x` | Stop the running turn — its process tree is killed |
 | `ctrl+r` | How much of the conversation to show: quiet → compact → normal → verbose |
 | `ctrl+t` | Hand the worktree and branch to a new task — the chat ends; not on a chat opened on a task |

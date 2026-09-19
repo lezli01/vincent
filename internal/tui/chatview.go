@@ -164,7 +164,7 @@ type chatView struct {
 
 func newChatView(level *levelHolder, raw *rawHolder, links *hyperlinkHolder) *chatView {
 	ta := textarea.New()
-	ta.Placeholder = "message… (enter sends, shift+enter for a newline)"
+	ta.Placeholder = "message… (enter sends, ctrl+j / shift+enter / alt+enter for a newline)"
 	ta.SetHeight(3)
 	return &chatView{
 		now:         time.Now,
@@ -731,6 +731,9 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, nil
 	case chatCloseKey:
 		v.askClose()
+		return v, nil
+	case "ctrl+j", "shift+enter", "alt+enter":
+		v.composer.InsertString("\n")
 		return v, nil
 	case "enter":
 		return v, v.sendCmd()

@@ -29,6 +29,11 @@ list with the user-facing context a commit subject cannot carry.
   was staged, renames its workflow, or takes a name another global workflow
   already has. `--check` runs the same checks without writing anything.
 
+### Fixed
+
+- **Chat drafts can now contain newlines.** Use `ctrl+j`, `shift+enter` or
+  `alt+enter`; `enter` continues to send the message.
+
 ## [0.9.0](https://github.com/lezli01/vincent/compare/v0.8.0...v0.9.0) (2026-09-18)
 
 ### Added
