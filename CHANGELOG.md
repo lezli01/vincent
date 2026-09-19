@@ -43,6 +43,16 @@ list with the user-facing context a commit subject cannot carry.
   it came from, instead of the rendered `SKILL.md` as one raw JSON line. Nothing
   draws the record yet. codex and cursor report no skill loads. claude
   `2.1.277` and cursor-agent `2026.09.18-9a7762b` are now tested builds.
+- **`vincent chat send` and `chat start` take `--message-file <path|->`.** The
+  message is read from a file, or from stdin with `-`, and sent byte for byte,
+  so a skill invocation survives the shell: Git Bash no longer turns
+  `/review` into `C:/Program Files/Git/review`, and `$name` is never expanded.
+  Nothing is trimmed, so a trailing newline is part of the message. Empty
+  input, input that is not valid UTF-8 and input over 4 MiB are refused before
+  any request, so `chat start` creates no chat for them. `chat send`'s message
+  argument is now optional, and exactly one of it and `--message-file` is
+  required. The CLI reference explains quoting `/name` and `$name` in each
+  shell, and troubleshooting has the Git Bash symptom.
 
 ### Fixed
 

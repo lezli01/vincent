@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -51,12 +52,21 @@ func newChatStartCmd() *cobra.Command {
 		effort     string
 		baseBranch string
 		message    string
+		msgFile    string
 	)
 	cmd := &cobra.Command{
 		Use:   "start <title>",
 		Short: "Start a chat",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Read before any request (task 124 decision 34): a missing file
+			// or refused input must not leave a chat behind with no message.
+			if cmd.Flags().Changed("message-file") {
+				var err error
+				if message, err = readMessageFile(msgFile, cmd.InOrStdin()); err != nil {
+					return err
+				}
+			}
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
 				chat, err := c.CreateChat(ctx, apiclient.CreateChatRequest{
 					ProjectID: projectID, Title: args[0], Agent: agentName,
@@ -83,28 +93,88 @@ func newChatStartCmd() *cobra.Command {
 	cmd.Flags().StringVar(&effort, "effort", "", "effort override")
 	cmd.Flags().StringVar(&baseBranch, "base", "", "base branch; default is the project's")
 	cmd.Flags().StringVar(&message, "message", "", "send this first message straight away")
+	cmd.Flags().StringVar(&msgFile, "message-file", "",
+		"send the first message read from this file (- for stdin), byte for byte")
+	cmd.MarkFlagsMutuallyExclusive("message", "message-file")
 	_ = cmd.MarkFlagRequired("project")
 	jsonFlag(cmd)
 	return cmd
 }
 
+// newChatSendCmd is `vincent chat send`. The message is the second argument
+// or the content of --message-file, exactly one of the two (task 124
+// decision 30).
+//
+// The file form exists because a shell can change an argument before vincent
+// ever sees it, and says nothing when it does (task 124.5, issue #501): Git
+// Bash rewrites a leading `/name` into a Windows path, and bash and pwsh
+// expand `$name` inside double quotes. A message read from a file or stdin
+// never passes through argv at all.
 func newChatSendCmd() *cobra.Command {
+	var msgFile string
 	cmd := &cobra.Command{
-		Use:   "send <chat-id> <message>",
+		Use:   "send <chat-id> [<message>]",
 		Short: "Send a message and wait for the answer",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := strconv.ParseInt(args[0], 10, 64)
 			if err != nil {
 				return fmt.Errorf("chat id: %w", err)
 			}
+			fromFile := cmd.Flags().Changed("message-file")
+			var message string
+			switch {
+			case len(args) == 2 && fromFile:
+				return errors.New("give the message as an argument or with --message-file, not both")
+			case len(args) == 2:
+				message = args[1]
+			case fromFile:
+				if message, err = readMessageFile(msgFile, cmd.InOrStdin()); err != nil {
+					return err
+				}
+			default:
+				return errors.New("a message is required: give it as an argument or with --message-file")
+			}
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
-				return runChatTurn(ctx, cmd, c, id, args[1])
+				return runChatTurn(ctx, cmd, c, id, message)
 			})
 		},
 	}
+	cmd.Flags().StringVar(&msgFile, "message-file", "",
+		"read the message from this file (- for stdin) and send it byte for byte")
 	jsonFlag(cmd)
 	return cmd
+}
+
+// readMessageFile reads a chat message for --message-file, from path or from
+// in when path is "-", and returns it byte for byte: nothing is trimmed, so a
+// trailing newline from echo, a heredoc or an editor is part of the message
+// (task 124 decision 29).
+//
+// Two refusals are local, before any request (task 124 decisions 32–33):
+//
+//   - Empty input, which the daemon would refuse anyway, and which on `chat
+//     start` would otherwise create a chat whose first send then fails.
+//     Whitespace alone is not empty and is sent as it is.
+//   - Input that is not valid UTF-8. The message travels as a JSON string,
+//     and encoding/json replaces an invalid byte with U+FFFD rather than
+//     failing, so sending it would quietly break the byte-for-byte promise.
+//     A leading BOM is valid UTF-8 and passes through unchanged.
+//
+// Neither error quotes the content, for readInputFile's reason.
+func readMessageFile(path string, in io.Reader) (string, error) {
+	data, err := readInputFile("--message-file", path, in)
+	if err != nil {
+		return "", err
+	}
+	src := "--message-file " + path
+	if len(data) == 0 {
+		return "", fmt.Errorf("%s is empty: there is no message to send", src)
+	}
+	if !utf8.Valid(data) {
+		return "", fmt.Errorf("%s is not valid UTF-8, so it cannot be sent byte for byte", src)
+	}
+	return string(data), nil
 }
 
 // chatPollInterval is how often `vincent chat send` asks whether the turn has
