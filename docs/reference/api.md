@@ -219,8 +219,8 @@ may be filtered out on either. It rides this route only.
 
 `supports_skill_listing`, `skill_sigil` and `skill_position` describe the
 adapter's skills. `supports_skill_listing` is whether the adapter can list the
-skills its CLI would load at all — `true` for codex and `false` for claude
-and cursor today. It is a fact about the adapter, not about the installed build: `true`
+skills its CLI would load at all — `true` for claude and codex, `false` for
+cursor today. It is a fact about the adapter, not about the installed build: `true`
 does not promise that the build you have will list, and a build that cannot is
 found out only when a chat's skills are read. `skill_sigil` (`/` or `$`) and
 `skill_position` (`leading`: only at the start of the message; `anywhere`) are
