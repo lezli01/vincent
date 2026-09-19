@@ -41,7 +41,8 @@ list with the user-facing context a commit subject cannot carry.
   the skill's name, its arguments on one line, who invoked it (`agent`, or
   `human` for a `context: fork` skill your message named) and the `Skill` call
   it came from, instead of the rendered `SKILL.md` as one raw JSON line. Nothing
-  draws the record yet. codex and cursor report no skill loads.
+  draws the record yet. codex and cursor report no skill loads. claude
+  `2.1.277` and cursor-agent `2026.09.18-9a7762b` are now tested builds.
 
 ### Fixed
 

@@ -159,7 +159,7 @@ are long-lived by contract and no write deadline is set.
     "supports_input": true, "input_verdict": "supported", "logged_in": true,
     "supports_resume": true,
     "supports_skill_listing": false, "skill_sigil": "/", "skill_position": "leading",
-    "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226, 2.1.268",
+    "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226, 2.1.268, 2.1.277",
     "restricted_verdict": "supported",
     "models":  [ { "value": "sonnet", "source": "cli" } ],
     "efforts": [ { "value": "max",    "source": "cli" } ],
@@ -2548,9 +2548,10 @@ The transcript is the attempt's JSONL file, ranged:
   boundary — never mid-record, so a follow-up fetch on a file still being
   appended to resumes cleanly.
 - `format=normalized` maps every line through the owning adapter's parser into
-  the live-output shapes plus `agent.result`, `agent.error`, the `vincent.*`
-  kinds, and `agent.raw` for anything unrecognized. That is one render path for
-  live tail and scrollback alike. Absent, you get the raw file byte for byte.
+  the live-output shapes plus `agent.result`, `agent.error`, `agent.input_echo`,
+  the `vincent.*` kinds, and `agent.raw` for anything unrecognized. That is one
+  render path for live tail and scrollback alike. Absent, you get the raw file
+  byte for byte.
 - `agent.run_header` carries `work_dir` and `available_tools` — what the CLI
   announced about the run before starting it. `agent.result` additionally
   carries `duration_ms`, `api_duration_ms`, `num_turns`, `stop_reason`,
@@ -2784,8 +2785,9 @@ they need.
 `agent.subagent_started`, `agent.subagent_progress`, `agent.subagent_finished`,
 `agent.skill`, `agent.usage` and `command.output` chunks stream on the
 **per-task** stream only and are **not** written to the events table. Their
-durable copy is the transcript file. `agent.input_echo` is the one transcript record that
-never streams: its text is already on screen.
+durable copy is the transcript file. `agent.input_echo`, like `agent.result`
+and `agent.error`, is a transcript record that never streams: its text is
+already on screen.
 
 Each chunk is one SSE event, flushed on a ~100 ms coalescing timer, and carries:
 

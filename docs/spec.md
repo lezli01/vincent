@@ -4040,7 +4040,7 @@ defaults:
     "supports_input": true, "input_verdict": "supported", "logged_in": true,
     "supports_resume": true,
     "supports_skill_listing": false, "skill_sigil": "/", "skill_position": "leading",
-    "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226, 2.1.268",
+    "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226, 2.1.268, 2.1.277",
     "restricted_verdict": "supported",
     "models":  [ { "value": "sonnet", "source": "cli" }, { "value": "opus", "source": "cli" } ],
     "efforts": [ { "value": "low", "source": "cli" }, { "value": "max", "source": "cli" } ],
@@ -8337,8 +8337,9 @@ Two kinds of streams:
    published after the `agent.tool_result` chunk its line also produces, in the
    order task 070 set for command output),
    `agent.skill` (task 124.2, 2026-09-19 — §13.2's record under the same keys;
-   `agent.input_echo` is the one §13.2 record **never published**, because its
-   text is already on screen, and it is not `agent.raw` either, on a chat's
+   `agent.input_echo` is a §13.2 record **never published**, like `agent.result`
+   and `agent.error`, because its text is already on screen, and it is not
+   `agent.raw` either, on a chat's
    stream or anywhere else),
    `agent.usage`, `command.output` chunks are streamed on the **per-task** stream only
    and are *not* written to the events table (they are durable in transcript files;
