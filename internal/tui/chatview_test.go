@@ -18,6 +18,11 @@ func chatViewFixture() *chatView {
 	return v
 }
 
+// TestChatViewNewlineKeys holds issue #500: ctrl+j, shift+enter and alt+enter
+// put a newline in the draft, where the placeholder once promised one and no
+// key delivered it. Each press is checked against its spelling first, because
+// the composer matches on the spelling: a press that stringified differently
+// would pass here and miss in a real terminal.
 func TestChatViewNewlineKeys(t *testing.T) {
 	cases := []struct {
 		name string
@@ -39,6 +44,56 @@ func TestChatViewNewlineKeys(t *testing.T) {
 				t.Fatalf("composer value = %q, want %q", got, want)
 			}
 		})
+	}
+}
+
+// TestChatViewNewlineKeepsTheCursorInView: a newline on the composer's last
+// visible row scrolls the draft with it. The composer is three rows high, so
+// a fourth line is the first that has to scroll, and a newline inserted
+// around the textarea's own handling leaves the cursor on a row nobody can
+// see until the next key.
+func TestChatViewNewlineKeepsTheCursorInView(t *testing.T) {
+	v := chatViewFixture()
+	v.composer.SetValue("one\ntwo\nthree")
+	v.updateKey(registryKey(t, "ctrl+j"))
+	row, top, height := v.composer.Line(), v.composer.ScrollYOffset(), v.composer.Height()
+	if row != 3 {
+		t.Fatalf("the cursor is on line %d, want the new fourth line (3)", row)
+	}
+	if row < top || row >= top+height {
+		t.Fatalf("the cursor is on line %d and the composer shows lines %d–%d", row, top, top+height-1)
+	}
+}
+
+// TestChatViewTypedDraftEditsAndSends is task 071 decision 4 reached the way
+// issue #500 meant: a draft whose lines were typed rather than pasted, ↑/↓
+// moving between those lines without disturbing them, and enter sending the
+// whole draft — moving the newline off enter did not move sending with it.
+func TestChatViewTypedDraftEditsAndSends(t *testing.T) {
+	v := chatViewFixture()
+	v.client = offlineClient()
+	for _, key := range []string{"o", "n", "e", "ctrl+j", "t", "w", "o"} {
+		v.updateKey(registryKey(t, key))
+	}
+	if got := v.composer.Value(); got != "one\ntwo" {
+		t.Fatalf("the typed draft is %q, want %q", got, "one\ntwo")
+	}
+	v.updateKey(registryKey(t, "up"))
+	if got := v.composer.Line(); got != 0 {
+		t.Fatalf("↑ left the cursor on line %d, want the first line", got)
+	}
+	v.updateKey(registryKey(t, "down"))
+	if got := v.composer.Line(); got != 1 {
+		t.Fatalf("↓ left the cursor on line %d, want the second line", got)
+	}
+	if got := v.composer.Value(); got != "one\ntwo" {
+		t.Fatalf("an arrow key changed the draft to %q", got)
+	}
+	if _, cmd := v.updateKey(registryKey(t, "enter")); cmd == nil {
+		t.Fatal("enter did not send the multi-line draft")
+	}
+	if got := v.composer.Value(); got != "" {
+		t.Fatalf("the composer still holds %q after a send", got)
 	}
 }
 
