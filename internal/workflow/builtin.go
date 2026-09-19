@@ -225,7 +225,52 @@ var CreateWorkflowSource = createWorkflowHeader +
 // which is the one thing that distinguishes it from create-workflow: those
 // files are versioned by the repository, so the reviewed diff — not a write
 // into a live registry — is how a change to them lands (decision 1).
+//
+// Its `global` field (task 123, reopening 037 decision 2) points the same pass
+// at {config_dir}/workflows instead. No repository versions those files, so
+// there is no diff to review: that run stages a proposal the way
+// update-triggers does, stops at a manual gate, and `vincent workflow apply`
+// installs it. One run is one scope (123 decision 1).
 const UpdateWorkflowsName = "update-workflows"
+
+// updateWorkflowsGlobal is the guard every branch of update-workflows tests.
+// An unset field renders as "" through index, so an omitted field is a
+// project run, exactly as create-workflow's destination reads it.
+const updateWorkflowsGlobal = `eq (index .Task.Fields "global") "true"`
+
+// workflowStaging is where a global update-workflows run puts its
+// deliverable (task 123 decision 4, after task 098 decision 5): outside every
+// repository and outside the watched registry directory, so nothing is live
+// until apply has checked it. The agent clears the directory first, which is
+// what keeps modernize's one retry safe in this mode too.
+const workflowStaging = `Run "vincent doctor --json" and read paths.data_dir and paths.config_dir from
+its output. Ignore doctor's exit code: a non-zero exit reports unrelated
+findings, and the paths are printed either way.
+
+Your staging directory is paths.data_dir joined with workflow-proposals and
+{{.Task.ID}}. Before you write anything, remove it if it exists — an earlier
+attempt left it — and start again. Create it owner-only (on POSIX, umask 077
+first). It holds exactly these, and "vincent workflow apply" refuses anything
+else in it:
+
+- one file per workflow you change, named exactly as the live file is named
+  (its base name, with its .yaml or .yml extension as it is), holding the
+  whole file as it should be installed — never a fragment or a patch;
+- manifest.json, a JSON object mapping each staged file's base name to the
+  "version" "vincent workflow ls --global --json" reports for that file.
+  Record the version from the listing you read the file from. Apply refuses
+  a file that changed after you recorded it.
+
+A file with no live counterpart — an include you extract out of two
+workflows — is named after its name: field plus .yaml, and recorded as the
+string "absent". Stage only the workflows you change: one that is already
+right is left byte for byte and is not staged. When none needs a change,
+write manifest.json as {} and stage nothing else; apply installs nothing and
+succeeds, which is a correct outcome.
+
+Never write into paths.config_dir joined with workflows yourself. That is the
+live global registry, every project runs from it, and a later step of this
+task installs what you stage once a person approves it.`
 
 // updateWorkflowsHeader is everything before the embedded skill: the framing,
 // the file list, the compatibility probe, this file's own review checklist,
@@ -246,9 +291,21 @@ const UpdateWorkflowsName = "update-workflows"
 // history — and its output is reviewed before it can affect anything. Parking
 // a maintenance pass in `awaiting_input` costs a held slot for a question the
 // repository already answers.
+//
+// The global mode (task 123) is branches inside the same steps rather than a
+// second step list, because a step list is static and an include cannot be
+// picked by a field (decision 2). A project run renders every step it had
+// before 123 byte for byte — TestUpdateWorkflowsProjectRunRendersAsBefore
+// holds that against goldens — and its only new row is the trailing
+// global-only condition, recorded stopped. The global branch keeps the skill,
+// "The bar" and "What you may not change", and replaces what a global file
+// changes: the deliverable is a staged proposal, and the only evidence is the
+// files themselves, since no repository versions them.
 var updateWorkflowsHeader = `# Built into vincent: updates the workflows a project already versions so they
-# use the current schema and follow the authoring skill (task 037). Shadowed by
-# a global or project workflow named "update-workflows".
+# use the current schema and follow the authoring skill (task 037), or, with
+# the global field set, proposes the same update to the global workflows and
+# installs it once a person approves (task 123). Shadowed by a global or
+# project workflow named "update-workflows".
 #
 # The design rules below the "How to design them" heading are
 # skills/vincent-workflows/SKILL.md, embedded at build time — edit the skill,
@@ -256,22 +313,32 @@ var updateWorkflowsHeader = `# Built into vincent: updates the workflows a proje
 # the feature set on purpose: a workflow feature that ships without a line there
 # is one this workflow will never propagate.
 name: update-workflows
-description: Update this project's workflows to the current feature set and authoring practices
+description: Update this project's workflows, or the global ones, to the current feature set and authoring practices
 defaults:
   agent: claude
+fields:
+  - name: global
+    label: Update global workflows
+    type: boolean
+    description: >-
+      true updates the global workflows in {config_dir}/workflows through a
+      proposal a person approves before anything is installed. false, or left
+      unset, is the project pass: it edits this project's .vincent/workflows
+      on the task's branch.
 steps:
   # The probe and the file list in one command: --error-unmatch turns "this
   # project versions no workflows" into a nonzero exit the next step reads,
   # and the stdout it prints on success is the list the agent works from and
   # the loop below iterates. git is one of the few executables spelled the
   # same under /bin/sh and pwsh (§8.3), which is what every run: body here is
-  # held to.
+  # held to. The global probe has the same shape: ls --global exits 1 when
+  # there is no global workflow, and prints absolute paths when there is.
   - id: inventory
     name: List the workflows this project versions
     type: command
     max_retries: 0
     allow_failure: true
-    run: 'git ls-files --error-unmatch -- ".vincent/workflows/*.y*ml"'
+    run: '{{ if ` + updateWorkflowsGlobal + ` }}vincent workflow ls --global{{ else }}git ls-files --error-unmatch -- ".vincent/workflows/*.y*ml"{{ end }}'
   # A project with no workflows of its own is not a failure — there is simply
   # nothing to update, and the task is done.
   - id: has-workflows
@@ -285,10 +352,20 @@ steps:
     # private worktree with no external effect, a second session sees the
     # first one's partial work as ordinary uncommitted changes, and the pass
     # is convergent — every item below asks the file to conform, not to change
-    # again.
+    # again. A global run keeps the retry for update-triggers' reason: the
+    # agent clears its own staging directory first and writes nothing live.
     max_retries: 1
     on_input: deny
     prompt: |
+      {{ if ` + updateWorkflowsGlobal + ` -}}
+      You are running unattended in a dedicated git worktree created for this
+      task; the current working directory is that worktree, and nothing you do
+      belongs in it. Your deliverable is a proposal: whole rewritten copies of
+      the global workflow files in the config directory, staged outside every
+      repository. A person reviews it at a later step, and only after they
+      approve does "vincent workflow apply" install it. Nothing you do here
+      changes what the daemon is running.
+      {{- else -}}
       You are running unattended in a dedicated git worktree created for this
       task; the current working directory is that worktree. Your deliverable is
       an edit to the workflow files this repository already versions under
@@ -296,6 +373,7 @@ steps:
       the result as a diff and merges it, and merging is what makes the
       rewritten workflows live — nothing you do here changes what the daemon is
       running right now.
+      {{- end }}
 
       Task: {{.Task.Title}}
 
@@ -303,6 +381,35 @@ steps:
 
       ## The files
 
+      {{ if ` + updateWorkflowsGlobal + ` -}}
+      A previous step listed every global workflow file, the ones in the config
+      directory that every project can run:
+
+      {{ (index .Steps "inventory").Result }}
+
+      Those are the whole job. This project's own .vincent/workflows is out of
+      scope — a separate run without the global field updates it — and so is
+      every file outside that list. Read the files where they are and write
+      nothing next to them. A document or a project workflow that needs a
+      change is a finding for your final message.
+
+      These files have no git history, and this task's repository says nothing
+      about how they are used: the only evidence you have is the files, their
+      comments and the validator. Where checklist item 2 below says "two of
+      this project's workflows", read it as two of the global workflows listed
+      here.
+
+      ## Staging
+
+` + indentBlock(workflowStaging) + `
+
+      ## Nobody is watching
+
+      This step runs under on_input: deny. A question you ask is answered "no
+      user is available" and you carry on alone, so asking buys you nothing.
+      Where you are unsure, propose the conservative change or none, and say
+      which in your final message. The proposal is the conversation.
+      {{- else -}}
       A previous step listed every workflow file this repository has committed:
 
       {{ (index .Steps "inventory").Result }}
@@ -319,6 +426,7 @@ steps:
       user is available" and you carry on alone, so asking buys you nothing.
       Where you are unsure, make the conservative change or make none, and say
       which in your final message. The diff is the conversation.
+      {{- end }}
 
       ## While you work
 
@@ -487,6 +595,18 @@ steps:
       corrections it cannot make for itself — where they disagree with it, they
       win:
 
+      {{ if ` + updateWorkflowsGlobal + ` -}}
+      1. The deliverable is the staged proposal above: whole rewritten copies
+         of the global files listed above, in the staging directory — never an
+         edit in the live registry directory, and not the .vincent/workflows
+         path its authoring step names.
+      2. You cannot ask, per "Nobody is watching" above. Every question its
+         "Gather only decisions that matter" section raises is one you answer
+         from the global files themselves, their comments and the validator —
+         or one you leave the current behavior alone over. They have no git
+         history, and the repository this task runs in is not evidence of how
+         they are used.
+      {{- else -}}
       1. The deliverable is an edit to the existing files listed above, in this
          worktree — not a new file written into a live registry directory. The
          path its authoring step names is right; the copy you edit is this
@@ -496,6 +616,7 @@ steps:
          from the repository, its agent instructions, the workflow's own
          comments and its git history — or one you leave the current behavior
          alone over.
+      {{- end }}
       3. The skill's own references/ files are not on disk here. Read
          docs/reference/workflow-schema.md from the repository if this is a
          vincent checkout, which the skill already prefers; otherwise work from
@@ -515,9 +636,37 @@ steps:
 // A file that fails there blocks the task with that step's own reason, which
 // is the right outcome: an invalid workflow must not reach a reviewer as a
 // merge candidate.
+//
+// In a global run the relist is `vincent workflow apply --check`, which prints
+// the staged files and runs every refusal apply will, so a stale or malformed
+// proposal blocks before a person spends time at the gate (task 123 decision
+// 5). The steps after `changes` are that run's review and install; the
+// global-only condition in front of them is what ends a project run, as one
+// stopped row rather than three skipped ones (decision 2).
 const updateWorkflowsFooter = `
       ## When you are done
 
+      {{ if ` + updateWorkflowsGlobal + ` -}}
+      Your final message is what the person at the approval step reads before
+      anything is installed:
+
+      - the exact "vincent version" output;
+      - one entry per global workflow file: changed or untouched, a
+        before/after diff of every change, which numbered items from "The bar"
+        applied, and what you deliberately left alone;
+      - for every workflow you changed, the maximum number of automatic agent
+        sessions it can spend, before and after, computed the way the skill's
+        cost rules say;
+      - anything that needs a human decision, and anything you would have asked
+        if asking were possible;
+      - the validator's and the renderer's verdict for every staged file.
+
+      Every staged file must pass "vincent workflow validate" and
+      "vincent workflow render" before you finish. A later step checks the
+      whole proposal the way apply will and runs both over every staged file
+      again, and one that fails there blocks the task before anyone is asked
+      to approve it. An approved change goes live in every project at once.
+      {{- else -}}
       Your final message is the report an engineer reads before the diff:
 
       - the exact "vincent version" output;
@@ -535,11 +684,12 @@ const updateWorkflowsFooter = `
       all of them again, and one that fails there blocks the task. Render is
       the one that catches a template that parses and then does not execute,
       which is a class of bug validation cannot see.
+      {{- end }}
   - id: relist
     name: Relist the workflow files
     type: command
     max_retries: 0
-    run: 'git ls-files --cached --others --exclude-standard -- ".vincent/workflows/*.y*ml"'
+    run: '{{ if ` + updateWorkflowsGlobal + ` }}vincent workflow apply --proposal {{.Task.ID}} --check{{ else }}git ls-files --cached --others --exclude-standard -- ".vincent/workflows/*.y*ml"{{ end }}'
   - id: validate
     name: Validate every workflow file
     type: loop
@@ -568,11 +718,57 @@ const updateWorkflowsFooter = `
     run: |
       vincent status "summarizing the workflow diff"
       git --no-pager diff --stat {{.Task.BaseBranch}}
+  # Everything above is the pass both scopes share. A project run ends here,
+  # done, with this one row stopped; a global run goes on to the gate. In a
+  # global run the diff above is empty, which is the record that the
+  # worktree was left alone.
+  - id: global-only
+    name: Stop here unless this run is global
+    type: condition
+    if: '{{ ` + updateWorkflowsGlobal + ` }}'
+  # Immediately before apply, the effect it authorizes. The gate stands even
+  # for an empty proposal, as update-triggers' does: apply then installs
+  # nothing and removes the staging directory.
+  - id: approve
+    name: Approve the global workflow proposal
+    type: manual
+    instructions: |
+      Nothing has been installed yet. The full proposed workflow files and
+      their manifest.json are staged in
+      {data_dir}/workflow-proposals/{{.Task.ID}}/ ("vincent doctor" prints the
+      data dir). Diff each staged file against the live file of the same name
+      under {config_dir}/workflows/; a staged file with no live counterpart is
+      a new one.
+
+      Approving runs "vincent workflow apply", which installs every staged
+      file at once, and refuses the whole proposal, writing nothing, when a
+      file does not validate, changed since it was read, renames a workflow,
+      or declares a name another global workflow already has. An approved
+      change goes live in every project the moment it is written: a global
+      workflow is one every project runs. Rejecting ends the task with the
+      global registry untouched.
+
+      The proposal:
+
+      {{ (index .Steps "modernize").Result }}
+  - id: apply
+    name: Install the approved proposal
+    type: command
+    # A replay would find the files already written and the staging
+    # directory gone, so no retry.
+    max_retries: 0
+    run: 'vincent workflow apply --proposal {{.Task.ID}}'
+  - id: result
+    name: List the global workflows after the pass
+    type: command
+    max_retries: 0
+    run: 'vincent workflow ls --global'
 `
 
 // UpdateWorkflowsSource is the built-in maintenance pass over a project's own
 // workflows: a probe, an agent rewrite carrying the same `vincent-workflows`
-// skill create-workflow carries, and a per-file validation loop.
+// skill create-workflow carries, and a per-file validation loop — then, for a
+// global run only, a manual gate and the apply that installs the proposal.
 //
 // It is a var for the same reason CreateWorkflowSource is: the skill is
 // spliced in at init. Nothing may reassign it.

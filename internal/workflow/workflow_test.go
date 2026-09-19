@@ -825,14 +825,20 @@ func TestBuiltinUpdateWorkflowsIsValid(t *testing.T) {
 	if e.Scope != ScopeBuiltin || e.File != "" {
 		t.Errorf("scope = %q, file = %q; want builtin scope and no file", e.Scope, e.File)
 	}
-	// It needs nothing typed at creation: the project decides what there is
-	// to update, not the person filing the task.
-	if len(e.Workflow.Fields) != 0 {
-		t.Errorf("fields = %+v, want none", e.Workflow.Fields)
+	// One optional boolean picks the scope (task 123 decisions 1 and 2, which
+	// narrowed 037 decision 6): the project decides what there is to update,
+	// and the only thing the person filing the task chooses is which registry.
+	fields := e.Workflow.Fields
+	if len(fields) != 1 || fields[0].Name != "global" || fields[0].Type != FieldBoolean ||
+		fields[0].Required || fields[0].Label == "" {
+		t.Errorf("fields = %+v, want one optional, labelled boolean named global", fields)
 	}
 
 	steps := e.Workflow.Steps
-	wantIDs := []string{"inventory", "has-workflows", "modernize", "relist", "validate", "changes"}
+	wantIDs := []string{
+		"inventory", "has-workflows", "modernize", "relist", "validate", "changes",
+		"global-only", "approve", "apply", "result",
+	}
 	if len(steps) != len(wantIDs) {
 		t.Fatalf("steps = %d, want %d (%v)", len(steps), len(wantIDs), wantIDs)
 	}
@@ -885,6 +891,26 @@ func TestBuiltinUpdateWorkflowsIsValid(t *testing.T) {
 		if body := loop.Steps[i]; body.Type != StepCommand || !strings.Contains(body.Run, want) {
 			t.Errorf("loop body %d = %+v, want a command step running %q", i, body, want)
 		}
+	}
+
+	// The global path (task 123 decision 2): one condition ends a project run
+	// as a single stopped row, and the gate sits immediately before the
+	// effect it authorizes.
+	if guard := steps[6]; guard.Type != StepCondition || guard.If != `{{ eq (index .Task.Fields "global") "true" }}` {
+		t.Errorf("global-only = %+v, want a condition on the global field", guard)
+	}
+	if steps[7].Type != StepManual || steps[7].Instructions == "" {
+		t.Errorf("approve = %+v, want a manual step with instructions", steps[7])
+	}
+	apply := steps[8]
+	if apply.Type != StepCommand || !strings.Contains(apply.Run, "vincent workflow apply --proposal") {
+		t.Errorf("apply = %+v, want a command step running vincent workflow apply", apply)
+	}
+	if mr := apply.MaxRetries; mr == nil || *mr != 0 {
+		t.Errorf("apply max_retries = %v, want 0 (a replay finds the proposal gone)", mr)
+	}
+	if steps[9].Type != StepCommand || steps[9].Run != "vincent workflow ls --global" {
+		t.Errorf("result = %+v, want the global listing", steps[9])
 	}
 }
 
