@@ -39,6 +39,57 @@ type Chat struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+// ChatSkills is GET /v1/chats/{id}/skills: the skills the chat's agent CLI
+// would load in the chat's directory, and how a message invokes one (§5.5,
+// §13.2, task 124.9). Listing and invoking are separate verdicts, each
+// "supported", "unsupported" or "unknown" with agent.InputVerdict's meaning;
+// an empty Skills is "none" only when ListVerdict is "supported".
+type ChatSkills struct {
+	ChatID int64  `json:"chat_id"`
+	Agent  string `json:"agent"`
+	// WorkDir is the directory the chat's next turn would start in — its own
+	// worktree, or its linked task's — and so the one the list is about.
+	WorkDir     string `json:"work_dir"`
+	ListVerdict string `json:"list_verdict"`
+	// UnavailableReason says why there is no list; "" when there is one or
+	// the answer is only unknown.
+	UnavailableReason string `json:"unavailable_reason"`
+	// ProbeError is the latest probe's failure; nil when it answered. Beside
+	// a "supported" list it means the list is an earlier one the daemon kept.
+	ProbeError *string `json:"probe_error"`
+	// ProbedAt is when the served list was obtained; nil when there is none.
+	ProbedAt       *time.Time `json:"probed_at"`
+	InvokeVerdict  string     `json:"invoke_verdict"`
+	InvokeSigil    string     `json:"invoke_sigil"`
+	InvokePosition string     `json:"invoke_position"`
+	// Skills is in the CLI's order, and names may repeat: key nothing by
+	// name.
+	Skills   []ChatSkill        `json:"skills"`
+	Problems []ChatSkillProblem `json:"problems"`
+}
+
+// ChatSkill is one skill as the chat's agent CLI reported it. Every field is
+// the CLI's own word, "" where it said nothing (task 124 decision 8).
+type ChatSkill struct {
+	Name string `json:"name"`
+	// Invocation is the exact text to insert to invoke this skill, built by
+	// the daemon's adapter; a client never builds its own. "" when the
+	// adapter cannot invoke skills.
+	Invocation   string   `json:"invocation"`
+	Description  string   `json:"description"`
+	ArgumentHint string   `json:"argument_hint"`
+	Aliases      []string `json:"aliases"`
+	Scope        string   `json:"scope"`
+	Plugin       string   `json:"plugin"`
+	Path         string   `json:"path"`
+}
+
+// ChatSkillProblem is an entry the chat's agent CLI found and could not load.
+type ChatSkillProblem struct {
+	Path    string `json:"path"`
+	Message string `json:"message"`
+}
+
 // ChatTurn is one exchange in a chat.
 type ChatTurn struct {
 	ID           int64      `json:"id"`
@@ -161,6 +212,24 @@ func (c *Client) GetChat(ctx context.Context, id int64) (*Chat, []ChatTurn, erro
 		return nil, nil, err
 	}
 	return &out.Chat, out.Turns, nil
+}
+
+// ChatSkills fetches the skills a chat's agent CLI would load in the chat's
+// directory (task 124.9). refresh asks the daemon to probe again rather than
+// answer from its cache.
+//
+// Every call is held to the probe deadline, refresh or not: a cold cache
+// spawns the agent CLI to answer, which is not loopback-fast.
+func (c *Client) ChatSkills(ctx context.Context, id int64, refresh bool) (*ChatSkills, error) {
+	path := fmt.Sprintf("/v1/chats/%d/skills", id)
+	if refresh {
+		path += "?refresh=true"
+	}
+	var out ChatSkills
+	if err := c.getVia(ctx, c.probeClient(true), path, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // SendChat starts a turn. A 409 with code `chat_cap_reached` means
