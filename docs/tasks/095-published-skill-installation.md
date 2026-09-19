@@ -32,10 +32,12 @@ carried no version marker of any kind.
 
 1. **Install shells out to `npx skills add`, with `-a` and `-y` added**
    (2026-09-10). vincent runs `npx skills add lezli01/vincent --skill <name>
-   --agent <slugs> --yes --global`, not the published command verbatim, because
+   --agent <slug>… --yes --global`, not the published command verbatim, because
    the published command opens an interactive agent multi-select and there is
    nothing to pick with from a TUI takeover or a non-TTY CLI. The agent list is
-   mapped through the slug table in §9.8.
+   mapped through the slug table in §9.8. `--agent` is variadic on the skills
+   CLI (it consumes arguments until the next flag), so each slug is its own
+   argv element; a comma-joined string is one invalid agent name.
 
    *Settled in the diff (2026-09-10): the two surfaces answer the picker
    differently.* The plan said "defaults to the adapters detected on the box"

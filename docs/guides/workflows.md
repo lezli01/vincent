@@ -59,7 +59,7 @@ vincent skills install
 ```
 
 That shells out to `npx skills add lezli01/vincent --skill vincent-workflows
---agent claude-code,codex,cursor --yes --global`, which is the published command
+--agent claude-code codex cursor --yes --global`, which is the published command
 with the interactive agent picker answered. `--agent` narrows the selection to
 some of `claude`, `codex`, `cursor`; the TUI's `S` offer answers it with the
 adapters vincent actually detected instead. Running it by hand works too:
