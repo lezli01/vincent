@@ -1,6 +1,6 @@
 # 124 — Let a chat's human see the agent's skills and invoke one from a message
 
-**Status:** 🔄 in progress (4/19)
+**Status:** 🔄 in progress (5/19)
 **Opened:** 2026-09-19
 **Issue:** #496 (parent), #497–#515 (one per item)
 **Spec:** §9.1 (`SkillLister`, `SkillInvoker`), §9.6 (`supports_skill_listing`,
@@ -41,8 +41,8 @@ cite.
 
 Decisions 1–12 are the parent issue's (#496, "Decisions taken in this
 breakdown"). 13–19 were settled with the author, or taken in evaluation, when
-124.1 was built, 20–27 when 124.2 was, 28 in its follow-up, and 29–36 when
-124.8 was.
+124.1 was built, 20–27 when 124.2 was, 28 in its follow-up, 29–36 when
+124.8 was, and 37–42 when 124.9 was.
 
 1. **2026-09-19 — Each CLI's own listing, never a scan.** claude answers a
    stream-json `initialize` control request (`commands`), codex answers
@@ -256,6 +256,47 @@ breakdown"). 13–19 were settled with the author, or taken in evaluation, when
     `supports_skill_listing`, which flips in this change. The prose beside it
     says that no chat surface shows the list until the chat skills route
     (124.9) lands, so the page stays true in the meantime.
+37. **2026-09-19 — The skill cache's TTLs are 5 min for a clean answer and
+    1 min for a failed probe, both fixed** (open question 7). They are
+    unexported constants beside `failureTTL`, `authTTL` and `quotaTTL`, on
+    the same argument: a burst of requests costs one probe, and a human who
+    changes something and looks again is told the truth. No config key,
+    because no other §9.6 TTL has one. `?refresh=true`, and a finished turn in
+    the same directory, bypass them. Settled with the author. *Beaten:* a
+    config key; one TTL for both outcomes.
+38. **2026-09-19 — The cache holds 64 keys, least recently used evicted
+    first, fixed.** Far above realistic open chats × adapters, and it stops
+    churned worktrees piling up. Not coupled to `max_parallel_chats`: a probe
+    holds no slot. Settled with the author. *Beaten:* an unbounded map; a
+    bound derived from the chat cap.
+39. **2026-09-19 — `chatrun.Runner.Workspace` reads container placement from
+    settings and never asks the runtime.** The route must spawn nothing for a
+    container-run chat, and `ChatLauncher` runs `rt.Lookup` (a docker
+    subprocess) keyed by a turn id the route does not have. So
+    `chatrun.Deps.InContainer` is an injected function the daemon wires to
+    `taskrun.Runner.ChatInContainer`, which reads the task's workflow snapshot
+    through the one helper `chatContainer` also uses, so the two cannot
+    disagree. `turnPlace` is `Workspace` then `Launchers`; a configured
+    container that is gone still answers `unknown` on the route and still
+    fails the turn with `ErrTaskContainerMissing`. The runners still reach
+    each other only through injected closures (task 119). *Beaten:* reusing
+    `ChatLauncher`.
+40. **2026-09-19 — The route writes the "cannot list" reason itself** for an
+    adapter without `SkillLister`: `"<agent> does not report the skills it
+    loads"`. An adapter that cannot answer has no method to state a reason
+    through, and `skills.go` records why none is added. For
+    `ErrSkillsUnsupported` the wrapped error text is the reason. *Beaten:* a
+    reason method on every adapter.
+41. **2026-09-19 — A chat whose adapter is not registered answers
+    `list_verdict: unknown`** with a `probe_error`, and `invoke_verdict:
+    unknown`: nobody can say, as `RestrictedUnknown` answers for an
+    unregistered adapter. Never `unsupported`. *Beaten:* `unsupported`, a
+    positive no nobody gave.
+42. **2026-09-19 — The route and the cache spawn nothing of their own.** "Probes
+    run through the `CREATE_NO_WINDOW` runner" is carried by the listers,
+    which spawn through `procx` and `agent.Launch` already; the cache only
+    calls `ListSkills`, on the host with the daemon's environment. Here that
+    criterion is Windows CI green on the new tests.
 
 ## Open questions
 
@@ -270,11 +311,11 @@ answer it, so none is lost:
 | 4 — Hooks in the probe: suppress SessionStart hooks and MCP servers, at the cost of missing hook-installed skills | 124.7 (#503) |
 | 5 — The skills key: `tab` over `f2` | 124.13 (#509) |
 | 6 — The `quiet` level: does a human-invoked skill show there | 124.12 (#508) |
-| 7 — Cache TTLs: 5 min for a clean list and 1 min for a failed one | 124.9 (#505) |
 | 9 — `/clear` under pass-through: should a conversation reset become a visible record | 124.6 (#502) |
 | 10 — Containers: should `container.mount_agent_config` also mount `~/.agents` | no owner; out of scope |
 
-Open question 8 is settled by decision 14.
+Open question 8 is settled by decision 14, and open question 7 by
+decision 37.
 
 ## Work
 
@@ -318,9 +359,15 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
   `skills/list` (`FAKEAGENT_CODEX_SKILLS`, the `.agents/skills` default, the
   `error` mode); fixture `app_server_skills_0.154.0.json`, 0.154.0 now a
   tested build; spec §9.1, §9.3 and §9.6 amended. ✓ 2026-09-19
-- [ ] 124.9 (#505) The skill cache, `chatrun.Workspace`,
+- [x] 124.9 (#505) The skill cache, `chatrun.Workspace`,
   `GET /v1/chats/{id}/skills`, the `apiclient` types and the MCP exclusion.
-  Depends: 124.1.
+  Depends: 124.1. `agent.SkillCache` (key, TTLs, single flight, 64-key LRU,
+  `Invalidate`); `chatrun.Runner.Workspace`, `Deps.InContainer` and
+  `Deps.InvalidateSkills`, invalidated at every turn ending past placement
+  and before the ending is recorded; `taskrun.Runner.ChatInContainer`; the
+  route, `apiclient.ChatSkills`, the `mcp.Excluded` row and the daemon
+  wiring. No migration and no event were needed. Spec §5.5, §9.1, §9.6, §11,
+  §13.2, §13.3, §13.4 and §16 amended. ✓ 2026-09-19
 - [ ] 124.10 (#506) `--replay-user-messages` on claude chat turns, so a
   human-invoked skill shows as `agent.skill{by:"human"}`. Depends: 124.2.
 - [ ] 124.11 (#507) `vincent chat skills <chat-id>`. Depends: 124.9.
@@ -400,3 +447,33 @@ and 124.15 have landed. 124.16, 124.17 and 124.18 widen coverage after that.
   The rate-limit tests in `appserver_test.go` pass unmodified on the shared
   exchange, and `TestAgentsReportSkillCapabilities` pins codex's
   `supports_skill_listing: true`.
+- 124.9: the cache is proven in `internal/agent` against `agenttest.StubSkills`
+  with an injected clock. `TestSkillCacheTrustsACleanListForItsTTL` and
+  `TestSkillCacheFailureWithNoListIsUnknown` hold decision 37's two TTLs;
+  `TestSkillCacheRefreshIsSingleFlight` N concurrent refreshes to one probe
+  under `-race`, and `TestSkillCacheReaderNeverWaitsBehindAProbe` the
+  lock split; `TestSkillCacheFailureKeepsThePreviousList` T4.22;
+  `TestSkillCacheUnsupportedIsACleanNo` decision 16 through wrapping;
+  `TestSkillCacheCallerCancellationIsNotStored` a hung-up caller;
+  `TestSkillCacheEvictsTheLeastRecentlyUsed` decision 38;
+  `TestSkillCacheInvalidateDropsOneDirectory` and
+  `TestSkillCacheInvalidateOutlivesAProbeInFlight` invalidation;
+  `TestSkillCacheNewBinaryIsAMiss` the binary-identity key. In `chatrun`,
+  `TestWorkspace*` pin the free chat, the linked task read fresh,
+  `ErrLinkedTaskNoWorktree` and the `InContainer` bit;
+  `TestTurnEndingInvalidatesItsDirectory`,
+  `TestLinkedTurnInvalidatesTheTasksWorktree` and
+  `TestStartFailureInvalidatesToo` run real fakeagent turns and see the
+  invalidation land before the ending is stored;
+  `TestPlacementFailureInvalidatesNothing` and
+  `TestNilInvalidateSkillsIsTolerated` the edges. In `taskrun`,
+  `TestChatInContainerReadsSettingsOnly` holds decision 39 with a fake
+  runtime that records zero lookups. The route's `TestChatSkills*` walk §5.5's
+  table row by row — the stub's recorded `WorkDir` for a free and a linked
+  chat before any turn, the three terminal states with zero probes even
+  under `refresh`, `task_has_no_worktree`, decisions 40 and 41, every probe
+  outcome, a container-run chat with zero probes, a non-default sigil's
+  `invocation`, order, duplicates and `[]` never `null`, the TTL and
+  `refresh`, and a real turn's ending forcing the next probe.
+  `TestChatSkillsLive*` decode every field over the real handlers, and
+  `TestMCPExcludesDestructiveAdminByName` carries the new row.
