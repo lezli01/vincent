@@ -49,7 +49,20 @@ list with the user-facing context a commit subject cannot carry.
   adapter asks claude which skills it would load, without spending a turn,
   leaving out its own built-in commands and bundled skills.
   `supports_skill_listing` is now `true` for claude, and `vincent agents`
-  drops its `no skill listing` note. Nothing shows either adapter's list yet.
+  drops its `no skill listing` note.
+- **`GET /v1/chats/{id}/skills` lists the skills a chat's agent would load.**
+  It answers for the directory the chat's next turn runs in — the chat's own
+  worktree, or its linked task's — from the moment the chat is created, before
+  any message, and gives the exact text to type to invoke each skill.
+  `list_verdict` is `supported`, `unsupported` (the agent cannot list, as
+  cursor cannot yet) or `unknown` (the probe failed, or the chat's task runs
+  in a container, which is not listed yet). The answer is cached for
+  five minutes, a failed probe for one; `?refresh=true` asks again, and every
+  finished turn clears the chat's directory, so a skill the agent just wrote
+  shows up on the next request. A failed probe keeps the last good list and
+  reports the error beside it. Listing starts the agent CLI in the chat's
+  directory. The route is not an MCP tool, and nothing in the TUI or CLI
+  calls it yet.
 - **Transcripts report skill loads as `agent.skill`.** When claude loads a
   skill, the transcript and the live stream carry an `agent.skill` record with
   the skill's name, its arguments on one line, who invoked it (`agent`, or

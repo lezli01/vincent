@@ -46,13 +46,14 @@ A skill is invoked in the CLI's own syntax, typed into your chat message;
 vincent passes the message through unchanged and does not check the name. The
 two skill rows are also on `GET /v1/agents`, as `supports_skill_listing`,
 `skill_sigil` and `skill_position`. claude and codex can list the skills they
-would load in a worktree, which is all the listing row says: no chat surface
-shows that list yet. The chat route, `vincent chat skills` and the TUI's picker
-that will are still to come, so today `supports_skill_listing` is the only
-place the capability is visible. claude lists without spending a turn, on
-2.1.277 or a later 2.x build, and leaves out its own built-in commands and
-bundled skills. When two codex skills share a name, `$name` selects neither;
-name one with codex's linked form, `[$name](path)`. In a chat
+would load in a worktree, which is what the listing row says. A chat's list,
+with the exact invocation for each skill, is at
+[`GET /v1/chats/{id}/skills`](../reference/api.md#skills); neither the TUI nor
+`vincent chat` shows it yet. claude lists without spending a turn, on 2.1.277
+or a later 2.x build, and leaves out its own built-in commands and bundled
+skills. When two codex skills share a name, `$name` selects neither; name one
+with codex's linked form, `[$name](path)`, which is the invocation that route
+gives for it. In a chat
 opened on a task, the task's context reaches claude as a separate block ahead
 of your **first** message, so a `/name` there still starts the message and
 runs. The exception is a claude build outside the verified input family (see
