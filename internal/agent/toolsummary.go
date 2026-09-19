@@ -31,21 +31,26 @@ var toolSummaryKeys = []string{
 	"path",        // cursor editToolCall
 	"url",         // claude WebFetch
 	"query",       // claude WebSearch, codex web_search
+	"skill",       // claude Skill
 	"prompt",      // claude Task, and MCP tools that take one
 	"description", // last resort: a sentence about the call, not the call
 }
 
-// toolSummaryMax caps a summary in runes. Generous enough for a real command
+// ToolSummaryMax caps a summary in runes. Generous enough for a real command
 // line, small enough that a pathological argument cannot push a transcript
 // record into the megabytes — the cap is here rather than in the TUI because
 // every client would otherwise need the same guard.
-const toolSummaryMax = 200
+//
+// It is exported for the one-line fields that are not a tool call's summary
+// but sit beside one — a skill load's arguments (task 124) — so an adapter
+// caps them with OneLine at this value rather than keeping a second cap.
+const ToolSummaryMax = 200
 
 // CommandOutputMax caps a CommandOutput in runes. Two orders of magnitude
-// above toolSummaryMax because this *is* the output body and a truncated one
+// above ToolSummaryMax because this *is* the output body and a truncated one
 // is worth little, and still bounded because a step that runs `go test ./...`
 // must not be able to push a single record into the megabytes. The cap is
-// here rather than in each client for toolSummaryMax's reason: every one of
+// here rather than in each client for ToolSummaryMax's reason: every one of
 // them would otherwise need the same guard, and they would not agree.
 const CommandOutputMax = 8000
 
@@ -94,7 +99,7 @@ func ToolSummary(raw json.RawMessage) string {
 		if !ok {
 			continue
 		}
-		if line := OneLine(s, toolSummaryMax); line != "" {
+		if line := OneLine(s, ToolSummaryMax); line != "" {
 			return line
 		}
 	}

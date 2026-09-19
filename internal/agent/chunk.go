@@ -23,9 +23,10 @@ type Chunk struct {
 
 // LiveChunks maps a normalized stream event onto the §13.3 chunks it
 // publishes. It returns none for the events that carry nothing a client
-// renders as a line: input requests surface as a state change, and results,
-// errors and unmodeled lines surface as the run's own outcome or as
-// `agent.raw` from the transcript route.
+// renders as a line: input requests surface as a state change, results and
+// errors as the run's own outcome, an input echo as nothing at all (the
+// prompt is already on screen), and unmodeled lines as `agent.raw` from the
+// transcript route.
 //
 // One event can become more than one chunk. A codex tool result arrives with
 // the body the command printed on the same line, and a claude edit's with its
@@ -108,11 +109,19 @@ func liveChunkBody(ev Event) []Chunk {
 			return nil
 		}
 		return one("agent."+string(ev.Type), subagentChunk(ev.Subagent))
+	case EventSkill:
+		// A skill load goes live like a tool call (task 124): it is the
+		// record a reader looks for when a run starts doing something the
+		// prompt never asked for.
+		if ev.Skill == nil {
+			return nil
+		}
+		return one("agent.skill", skillChunk(ev.Skill))
 	case EventUsage:
 		// Usage payloads are adapter-native; the raw line is the honest shape.
 		return one("agent.usage", map[string]any{"raw": string(ev.Raw)})
 	case EventInputRequest, EventInputCanceled,
-		EventResult, EventError, EventUnknown:
+		EventResult, EventError, EventInputEcho, EventUnknown:
 		return nil
 	}
 	return nil
@@ -157,6 +166,24 @@ func subagentChunk(s *Subagent) map[string]any {
 	}
 	if ms := s.Duration.Milliseconds(); ms != 0 {
 		chunk["duration_ms"] = ms
+	}
+	return chunk
+}
+
+// skillChunk maps a skill load onto the §13.3 live-chunk shape, matching
+// what api.normalizeLine writes for the same event. Every key is omitted when
+// unreported, so an unset field costs nothing on the wire (task 124).
+func skillChunk(s *SkillInvocation) map[string]any {
+	chunk := map[string]any{}
+	for k, v := range map[string]string{
+		"name": s.Name, "args": s.Args, "by": s.By, "call_id": s.CallID, "error": s.Error,
+	} {
+		if v != "" {
+			chunk[k] = v
+		}
+	}
+	if s.Forked {
+		chunk["forked"] = true
 	}
 	return chunk
 }
@@ -264,10 +291,10 @@ func resultChunks(results []ToolResult) []map[string]any {
 // publishes a raw chunk for these and nothing else agrees line for line with
 // what the transcript route hands back (task 071).
 //
-// EventResult and EventError are deliberately not here: they do normalize —
-// to agent.result and agent.error — and a runner that has no line to publish
-// for them simply publishes none, rather than publishing a shape the
-// transcript would contradict.
+// EventResult, EventError and EventInputEcho are deliberately not here: they
+// do normalize — to agent.result, agent.error and agent.input_echo — and a
+// runner that has no line to publish for them simply publishes none, rather
+// than publishing a shape the transcript would contradict.
 func UnmodeledLine(ev Event) bool {
 	switch ev.Type { //nolint:exhaustive // every other type has a normalized shape
 	case EventInputRequest, EventInputCanceled, EventUnknown:

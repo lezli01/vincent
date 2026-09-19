@@ -1,0 +1,12 @@
+{"type":"system","subtype":"init","apiKeySource":"login","cwd":"/tmp/wt","session_id":"SESSION","model":"Auto","permissionMode":"default"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"/echo-probe zebra"}]},"session_id":"SESSION"}
+{"type":"thinking","subtype":"delta","text":"The user invoked the","session_id":"SESSION","timestamp_ms":1789826291359}
+{"type":"thinking","subtype":"delta","text":" echo-probe skill with","session_id":"SESSION","timestamp_ms":1789826291410}
+{"type":"thinking","subtype":"delta","text":" the argument \"zebra\".","session_id":"SESSION","timestamp_ms":1789826291410}
+{"type":"thinking","subtype":"delta","text":"\n\nThe echo-probe skill","session_id":"SESSION","timestamp_ms":1789826291410}
+{"type":"thinking","subtype":"delta","text":" returns exactly one","session_id":"SESSION","timestamp_ms":1789826291410}
+{"type":"thinking","subtype":"delta","text":" line: `ECHO-PROBE-OK","session_id":"SESSION","timestamp_ms":1789826291410}
+{"type":"thinking","subtype":"delta","text":" zebra`.","session_id":"SESSION","timestamp_ms":1789826291410}
+{"type":"thinking","subtype":"completed","session_id":"SESSION","timestamp_ms":1789826291411}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"ECHO-PROBE-OK zebra"}]},"session_id":"SESSION"}
+{"type":"result","subtype":"success","duration_ms":3419,"duration_api_ms":3419,"is_error":false,"result":"ECHO-PROBE-OK zebra","session_id":"SESSION","request_id":"REQ","usage":{"inputTokens":16353,"outputTokens":77,"cacheReadTokens":3840,"cacheWriteTokens":0}}

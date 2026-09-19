@@ -65,6 +65,11 @@ type streamLine struct {
 	// same two-shapes problem resultSummary already has.
 	ToolUseResult  json.RawMessage        `json:"tool_use_result"`
 	ToolResultMeta []streamToolResultMeta `json:"tool_result_meta"`
+	// IsSynthetic marks a `user` line claude wrote into the conversation
+	// itself rather than one the human sent. The one kind modeled is a
+	// skill's rendered body, which follows the `Skill` call's result (task
+	// 124); every other synthetic line stays unknown.
+	IsSynthetic bool `json:"isSynthetic"`
 }
 
 // streamModelUsage is one entry of the result line's `modelUsage` map, whose
@@ -97,9 +102,10 @@ type streamToolResultMeta struct {
 }
 
 // streamToolUseResult is the object shape of a `user` line's
-// `tool_use_result`. Only `type`, `status` and `structuredPatch` are read:
-// the first two are the verb, and the patch is an edit's delta and its
-// hunks. Everything else in the payload is the tool's body — an edit's
+// `tool_use_result`. Only `type`, `status`, `structuredPatch` and
+// `commandName` are read: the first two are the verb, the patch is an edit's
+// delta and its hunks, and the command name is the skill a `Skill` call
+// loaded. Everything else in the payload is the tool's body — an edit's
 // `originalFile`, `oldString` and `newString`, a write's `content` — and
 // never enters the normalized stream (T4.16).
 type streamToolUseResult struct {
@@ -112,6 +118,10 @@ type streamToolUseResult struct {
 	// changed (task 110). An `Edit`'s payload carries no `type` at all, and a
 	// `Write` of type `create` always sends this empty.
 	StructuredPatch []streamHunk `json:"structuredPatch"`
+	// CommandName is the skill a `Skill` call loaded, as the CLI resolved it
+	// — possibly namespaced, and not necessarily what the model wrote in
+	// `input.skill` (task 124).
+	CommandName string `json:"commandName"`
 }
 
 // streamHunk is one hunk of a `structuredPatch`. Every entry of Lines starts
@@ -194,14 +204,31 @@ func (a *Adapter) NewLineParser() agent.LineParser { return new(streamParser).pa
 // a `local_agent` start, a progress line, or a child line's
 // `parent_tool_use_id` — and recognizes a notification by its call.
 //
+// A skill the model loads needs memory too (task 124). claude reports the
+// load on two lines: the `Skill` call's result, whose `tool_use_result`
+// names the skill, and then a synthetic `user` line holding the skill's
+// rendered body, which names nothing. The parser remembers each `Skill`
+// call's arguments, arms a pending load when a result qualifies, and turns
+// the next line of the same parent into agent.skill if it is the body.
+//
 // The memory costs one thing, and it is stated rather than hidden: a
 // transcript range that opens after every earlier line of a subagent can
 // leave that subagent's failed notification as agent.raw. A completed one is
-// still recognized by its usage.
+// still recognized by its usage. The same holds for a skill: a range that
+// opens between a `Skill` result and its body leaves the body as agent.raw,
+// and one that opens after the call leaves the load without its Args.
 //
 // The zero value is ready to use. A parser belongs to one stream.
 type streamParser struct {
 	subagents map[string]bool
+	// skillArgs is each `Skill` call's arguments, one line and capped, keyed
+	// by the call's id, until its result arrives.
+	skillArgs map[string]string
+	// pendingSkills is a load whose result has arrived and whose body has
+	// not, keyed by the parent the two lines share ("" is the main loop).
+	// Keying by parent is what keeps a subagent's line, interleaved between
+	// the two, from clearing a main-loop load.
+	pendingSkills map[string]*agent.SkillInvocation
 }
 
 // parse normalizes one verbatim stream-json line into an agent.Event. The raw
@@ -212,16 +239,125 @@ func (p *streamParser) parse(raw []byte) agent.Event {
 		return agent.Event{Type: agent.EventUnknown, Raw: raw}
 	}
 	p.remember(line.ParentToolUseID)
+	pending := p.takePendingSkill(&line)
 	var ev agent.Event
-	if line.Type == "system" && strings.HasPrefix(line.Subtype, "task_") {
+	switch {
+	case line.Type == "system" && strings.HasPrefix(line.Subtype, "task_"):
 		ev = p.parseTask(&line, raw)
-	} else {
+	case pending != nil && isSkillBody(&line):
+		// The body itself is never carried (T4.16): the raw line holds it.
+		ev = agent.Event{Type: agent.EventSkill, Skill: pending, Raw: raw}
+	default:
 		ev = parseTyped(&line, raw)
 	}
+	p.observeSkill(&line, &ev)
 	// Every line carries it, so it is attached once here rather than in each
 	// of the four arms (task 066).
 	ev.ParentCallID = line.ParentToolUseID
 	return ev
+}
+
+// takePendingSkill consumes the load armed for this line's parent, if any
+// (task 124 decision 25). The next line of the same parent consumes it
+// whatever that line is, so a body that does not directly follow its result
+// is not attributed to it.
+//
+// The control lines are the exception, because the live stream never shows
+// them to this parser: the run's read loop answers them itself. Letting one
+// consume a load here would make a refetched transcript disagree with the
+// live tail over the same line (task 071 decision 1).
+func (p *streamParser) takePendingSkill(line *streamLine) *agent.SkillInvocation {
+	if line.Type == "control_request" || line.Type == "control_cancel_request" {
+		return nil
+	}
+	pending, ok := p.pendingSkills[line.ParentToolUseID]
+	if !ok {
+		return nil
+	}
+	delete(p.pendingSkills, line.ParentToolUseID)
+	return pending
+}
+
+// isSkillBody reports whether a line is a skill's rendered body: a synthetic
+// `user` line that carries no tool result.
+func isSkillBody(line *streamLine) bool {
+	if line.Type != "user" || !line.IsSynthetic {
+		return false
+	}
+	if line.Message != nil {
+		for _, b := range line.Message.Content {
+			if b.Type == "tool_result" {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// skillTool is the tool claude loads a skill through.
+const skillTool = "Skill"
+
+// observeSkill updates the skill memory from a line already normalized to ev:
+// it remembers a `Skill` call's arguments, and arms a pending load when a
+// result qualifies (task 124 decision 25). A result qualifies when its line
+// holds exactly one tool result, that result did not fail, and the line's
+// `tool_use_result` names a command — task 110's rule for attributing a
+// line-level `tool_use_result`, which is not guessed onto one of several.
+func (p *streamParser) observeSkill(line *streamLine, ev *agent.Event) {
+	// Read off the line rather than the event: an assistant line carrying text
+	// and a call at once normalizes as output, and its call still counts.
+	if line.Type == "assistant" && line.Message != nil {
+		p.rememberSkillArgs(line.Message.Content)
+	}
+	if ev.Type != agent.EventToolResult {
+		return
+	}
+	// A call's arguments are needed only until its result, whatever that
+	// result turns out to be.
+	if len(ev.Results) != 1 || ev.Results[0].IsError {
+		for _, r := range ev.Results {
+			delete(p.skillArgs, r.CallID)
+		}
+		return
+	}
+	callID := ev.Results[0].CallID
+	args := p.skillArgs[callID]
+	delete(p.skillArgs, callID)
+	res := decodeToolUseResult(line.ToolUseResult)
+	if res == nil || res.CommandName == "" {
+		return
+	}
+	if p.pendingSkills == nil {
+		p.pendingSkills = map[string]*agent.SkillInvocation{}
+	}
+	p.pendingSkills[line.ParentToolUseID] = &agent.SkillInvocation{
+		Name:   res.CommandName,
+		Args:   args,
+		By:     "agent",
+		CallID: callID,
+	}
+}
+
+// rememberSkillArgs keeps each `Skill` call's `input.args`, one line and
+// capped, until the call's result arrives.
+func (p *streamParser) rememberSkillArgs(blocks []streamBlock) {
+	for _, b := range blocks {
+		if b.Type != "tool_use" || b.Name != skillTool || b.ID == "" {
+			continue
+		}
+		var in struct {
+			Args string `json:"args"`
+		}
+		if json.Unmarshal(b.Input, &in) != nil {
+			continue
+		}
+		if args := agent.OneLine(in.Args, agent.ToolSummaryMax); args != "" {
+			if p.skillArgs == nil {
+				p.skillArgs = map[string]string{}
+			}
+			p.skillArgs[b.ID] = args
+		}
+	}
 }
 
 func (p *streamParser) remember(callID string) {

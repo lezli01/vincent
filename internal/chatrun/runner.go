@@ -564,7 +564,7 @@ func (r *Runner) consume(
 				agent.EventToolResult, agent.EventThinking, agent.EventRunHeader,
 				agent.EventPlan, agent.EventCommandOutput,
 				agent.EventSubagentStarted, agent.EventSubagentProgress, agent.EventSubagentFinished,
-				agent.EventError, agent.EventUnknown:
+				agent.EventSkill, agent.EventInputEcho, agent.EventError, agent.EventUnknown:
 				// Rendering is the client's job: every one of these is already
 				// in the transcript and on the stream, and internal/tui's
 				// outputlines.go decides what a verbosity level shows.
@@ -636,7 +636,9 @@ func (r *Runner) record(chat *store.Chat, turn *store.ChatTurn, tr *transcript.W
 		// A result or an error: the turn's own outcome carries it, and the
 		// finished turn's transcript is where it renders (task 071
 		// decision 6). Publishing a chunk here would put a line on screen
-		// that the refetch then disagrees with.
+		// that the refetch then disagrees with. Or the CLI's echo of the
+		// prompt this turn wrote to its stdin, which the transcript records as
+		// agent.input_echo and nothing draws (task 124).
 		return
 	}
 	for _, c := range chunks {

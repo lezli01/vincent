@@ -326,6 +326,25 @@ const (
 	EventSubagentStarted  EventType = "subagent_started"
 	EventSubagentProgress EventType = "subagent_progress"
 	EventSubagentFinished EventType = "subagent_finished"
+	// EventSkill reports that a skill's content entered the conversation —
+	// the CLI loaded one the agent asked for, or expanded one the human's
+	// message named (task 124). It carries a SkillInvocation and is emitted at
+	// most once per load. The skill's body is never on it: the transcript
+	// holds that (T4.16).
+	//
+	// Only claude reports one today, for a skill the model loaded (§9.2).
+	// codex and cursor leave no stream line to read one from and never
+	// produce this event (§9.3, §9.7), and nothing synthesizes one from a
+	// tool call.
+	EventSkill EventType = "skill"
+	// EventInputEcho is a line the CLI echoed back from vincent's own stdin
+	// (task 124). It carries nothing a client renders — the prompt is already
+	// on screen as the chat's bubble or the step's prompt — and exists so these
+	// lines stop counting as unrecognized.
+	//
+	// Only cursor reports one today, for the `user` line it writes on every
+	// turn (§9.7). Nothing synthesizes one.
+	EventInputEcho EventType = "input_echo"
 	// EventInputRequest carries a mid-run input request (spec §7.4). A nil
 	// Request means the adapter received a control message it could not
 	// parse or that violates the serial-request contract — the engine fails
@@ -373,7 +392,9 @@ type Event struct {
 	Patch *Patch
 	// Subagent rides on the three EventSubagent* events.
 	Subagent *Subagent
-	Message  string // EventError: what went wrong
+	// Skill rides on EventSkill.
+	Skill   *SkillInvocation
+	Message string // EventError: what went wrong
 	// ParentCallID attributes this event to the tool call that spawned the
 	// sub-run it came from — claude's `parent_tool_use_id`, which is stamped
 	// on every line a subagent produces (task 066). Empty is the main loop,
@@ -434,6 +455,32 @@ type Subagent struct {
 	TotalTokens int64
 	Duration    time.Duration
 	LastTool    string
+}
+
+// SkillInvocation is one skill load, as the CLI reported it (task 124,
+// §9.1). It is named apart from Skill, which is a skill the adapter *lists*
+// rather than one that ran. At most one is reported per load, and every field
+// is empty when unreported: this item sets Name, Args, By and CallID, and the
+// rest are defined now so a client can draw them before anything sets them.
+type SkillInvocation struct {
+	// Name is the skill as the CLI resolved it — possibly namespaced — rather
+	// than as the model spelled it. Empty only on a refusal that names none.
+	Name string
+	// Args is what the skill was invoked with, flattened to one line and
+	// capped at ToolSummaryMax runes. It is empty when a transcript range
+	// opened after the call that carried it.
+	Args string
+	// By is who invoked the skill: "human" for one the human's message named,
+	// "agent" for one the model loaded.
+	By string
+	// CallID is the Skill tool call that loaded the skill, when By is
+	// "agent": the id the call's agent.tool_use and agent.tool_result carry.
+	CallID string
+	// Forked is a skill that ran as its own sub-run (claude's `context:
+	// fork`).
+	Forked bool
+	// Error is why the CLI refused to load the skill, on one capped line.
+	Error string
 }
 
 // Plan is the agent's running to-do list (task 070, §9.3): every item it

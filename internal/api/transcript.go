@@ -159,6 +159,15 @@ type normalizedLine struct {
 	// dialect named it on the outcome.
 	CallID string `json:"call_id,omitempty"`
 	Name   string `json:"name,omitempty"`
+	// Args, By, Forked and Error are the agent.skill record (task 124), whose
+	// Name is the skill as the CLI resolved it and whose CallID is the
+	// `Skill` call that loaded it. Args is one capped line, By is "human" or
+	// "agent", and Error is why the CLI refused the load. The skill's body is
+	// never here: the transcript holds it (T4.16).
+	Args   string `json:"args,omitempty"`
+	By     string `json:"by,omitempty"`
+	Forked bool   `json:"forked,omitempty"`
+	Error  string `json:"error,omitempty"`
 }
 
 // planItemLine is one entry of an agent.plan record (§13.2, task 070).
@@ -393,6 +402,22 @@ func normalizedRecord(ev agent.Event, raw []byte) normalizedLine {
 			out.LastTool = s.LastTool
 		}
 		return out
+	case agent.EventSkill:
+		out := normalizedLine{Type: "agent.skill"}
+		if s := ev.Skill; s != nil {
+			out.Name = s.Name
+			out.Args = s.Args
+			out.By = s.By
+			out.CallID = s.CallID
+			out.Forked = s.Forked
+			out.Error = s.Error
+		}
+		return out
+	case agent.EventInputEcho:
+		// An echo of vincent's own stdin carries nothing: the prompt is
+		// already on screen as the chat's bubble or the step's prompt. The
+		// record exists so the line is not counted as unrecognized (task 124).
+		return normalizedLine{Type: "agent.input_echo"}
 	case agent.EventError:
 		return normalizedLine{Type: "agent.error", Message: ev.Message}
 	case agent.EventResult:

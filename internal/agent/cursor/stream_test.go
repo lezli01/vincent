@@ -68,13 +68,17 @@ func TestParseSuccessFixture(t *testing.T) {
 	if counts[agent.EventOutput] != 1 {
 		t.Errorf("output events = %d, want 1 (the single assistant message)", counts[agent.EventOutput])
 	}
-	// user and the three thinking deltas stay unknown — the deltas are
-	// swallowed into the buffer and are still unmodeled lines, which is what a
-	// reader asking for raw lines should see (§9.7, amended by T4.16). The
-	// system/init line is the run header since task 108.
-	if counts[agent.EventUnknown] != 4 {
-		t.Errorf("unknown events = %d, want 4 (user, 3 thinking deltas)",
+	// The three thinking deltas stay unknown — they are swallowed into the
+	// buffer and are still unmodeled lines, which is what a reader asking for
+	// raw lines should see (§9.7, amended by T4.16). The system/init line is
+	// the run header since task 108, and the echoed `user` line an input echo
+	// since task 124: it was the fourth unknown line before that.
+	if counts[agent.EventUnknown] != 3 {
+		t.Errorf("unknown events = %d, want 3 (the thinking deltas)",
 			counts[agent.EventUnknown])
+	}
+	if counts[agent.EventInputEcho] != 1 {
+		t.Errorf("input echo events = %d, want 1 (the echoed user line)", counts[agent.EventInputEcho])
 	}
 	if counts[agent.EventRunHeader] != 1 {
 		t.Errorf("run header events = %d, want 1 (the system/init line)", counts[agent.EventRunHeader])

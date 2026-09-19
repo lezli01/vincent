@@ -141,13 +141,32 @@ func parseControlRequest(raw []byte) (agent.Event, *pendingRequest) {
 	} else {
 		req.Kind = "permission"
 		pend.kind = req.Kind
-		summary := line.Request.Description
-		if summary == "" {
-			summary = line.Request.ToolName
+		req.Permission = &agent.PermissionReq{
+			Tool:    line.Request.ToolName,
+			Summary: permissionSummary(line.Request),
 		}
-		req.Permission = &agent.PermissionReq{Tool: line.Request.ToolName, Summary: summary}
 	}
 	return agent.Event{Type: agent.EventInputRequest, Request: req, Raw: raw}, pend
+}
+
+// permissionSummary is the §7.4 line a permission request is shown under:
+// the request's own description, else the tool's name. A `Skill` request is
+// the exception (task 124): its description is the skill's, copied from its
+// frontmatter, and "load bash-probe" is the question a human is answering —
+// so it names the skill, falling back the same way when it names none.
+func permissionSummary(req *controlPayload) string {
+	if req.ToolName == skillTool {
+		var in struct {
+			Skill string `json:"skill"`
+		}
+		if json.Unmarshal(req.Input, &in) == nil && in.Skill != "" {
+			return in.Skill
+		}
+	}
+	if req.Description != "" {
+		return req.Description
+	}
+	return req.ToolName
 }
 
 // buildControlResponse translates an InputResponse into the control_response

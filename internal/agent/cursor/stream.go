@@ -147,6 +147,13 @@ func (s *stream) parse(raw []byte) agent.Event {
 				}
 			}
 		}
+	case "user":
+		// cursor echoes the prompt vincent wrote to its stdin as a `user`
+		// line on every turn (task 124). It is modeled so it stops counting
+		// as unrecognized, and carries nothing: the prompt is already on
+		// screen. A turn that names a skill (`/name …`) leaves nothing but
+		// this echo either — cursor reports no skill load (§9.7).
+		return agent.Event{Type: agent.EventInputEcho, Raw: raw}
 	case "result":
 		res := agent.RunResult{
 			// Cursor's result text is every assistant message of the turn
@@ -179,10 +186,10 @@ func (s *stream) parse(raw []byte) agent.Event {
 		// nothing emulates one.
 		return agent.Event{Type: agent.EventResult, Result: &res, Raw: raw}
 	}
-	// user and every system subtype but init fall through here on purpose, as
-	// do the thinking `delta` lines parseThinking swallowed — they are
-	// genuinely unmodeled lines and a client that asks to see raw lines should
-	// see them.
+	// Every system subtype but init falls through here on purpose, as do the
+	// thinking `delta` lines parseThinking swallowed — they are genuinely
+	// unmodeled lines and a client that asks to see raw lines should see
+	// them.
 	return agent.Event{Type: agent.EventUnknown, Raw: raw}
 }
 

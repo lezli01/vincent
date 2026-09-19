@@ -38,6 +38,9 @@
 //	                      proposal through the real `vincent workflow ls
 //	                      --global --json` — task 123, workflowproposal.go;
 //	                      claude dialect) |
+//	                      skill-model (the model loads a skill: the `Skill`
+//	                      call, its result naming the skill, the synthetic
+//	                      body line, a reply — task 124, claude dialect) |
 //	                      sleep (internal: silent child)
 //	FAKEAGENT_PROMPT_FILE echo-prompt: file each invocation appends its prompt
 //	                      to, one JSON string per line. JSON rather than the
@@ -447,6 +450,8 @@ func main() {
 		}
 		emitText(report)
 		emitSuccessResult([]byte(report), 1, 1)
+	case "skill-model":
+		skillModel(prompt)
 	case "flood":
 		// An agent that will not stop talking: emits until something kills
 		// it, which is exactly what the §12.3 transcript cap must do.
@@ -491,6 +496,36 @@ func main() {
 	default: // success
 		claudeSuccess(prompt)
 	}
+}
+
+// skillModel is a turn in which the model loads a skill, in the order claude
+// 2.1.277 writes one (task 124, stream_skill_model_2.1.277.jsonl): the `Skill`
+// call, its result with `tool_use_result.commandName`, the synthetic `user`
+// line holding the rendered body, then the reply.
+func skillModel(prompt []byte) {
+	const callID = "toolu_fake_skill_1"
+	emit(map[string]any{"type": "assistant", "message": map[string]any{
+		"content": []any{map[string]any{
+			"type": "tool_use", "id": callID, "name": "Skill",
+			"input": map[string]any{"skill": "probe", "args": "x"},
+		}},
+	}})
+	emit(map[string]any{
+		"type": "user",
+		"message": map[string]any{"role": "user", "content": []any{map[string]any{
+			"type": "tool_result", "tool_use_id": callID, "content": "Launching skill: probe",
+		}}},
+		"tool_use_result": map[string]any{"success": true, "commandName": "probe"},
+	})
+	emit(map[string]any{
+		"type": "user", "isSynthetic": true,
+		"message": map[string]any{"role": "user", "content": []any{map[string]any{
+			"type": "text",
+			"text": "Base directory for this skill: /work/repo/.claude/skills/probe\n\n# Probe\n\nReply with PROBE-OK x.",
+		}}},
+	})
+	emitText("PROBE-OK x")
+	emitSuccessResult(prompt, 100, 42)
 }
 
 // echoPrompt appends one invocation's prompt to FAKEAGENT_PROMPT_FILE as a

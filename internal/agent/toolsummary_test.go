@@ -18,6 +18,9 @@ func TestToolSummary(t *testing.T) {
 		{"claude write", `{"file_path":"/repo/hello.txt","content":"hi"}`, "/repo/hello.txt"},
 		{"claude grep", `{"pattern":"TODO","path":"internal"}`, "TODO"},
 		{"claude fetch", `{"url":"https://example.test/x","prompt":"summarize"}`, "https://example.test/x"},
+		// The skill is the subject of a Skill call, not what it was handed
+		// (task 124): the load's own record carries the arguments.
+		{"claude skill", `{"skill":"echo-probe","args":"zebra"}`, "echo-probe"},
 		{"cursor edit args", `{"path":"/tmp/wt/hi.txt","streamContent":"hello\n"}`, "/tmp/wt/hi.txt"},
 		{
 			"codex command item", `{"type":"command_execution","command":"pwsh -Command 'echo x'"}`,
@@ -56,13 +59,13 @@ func TestToolSummary(t *testing.T) {
 // TestToolSummaryTruncates pins the cap at the producing end: every client
 // would otherwise need the same guard against a pathological argument.
 func TestToolSummaryTruncates(t *testing.T) {
-	long, err := json.Marshal(map[string]string{"command": strings.Repeat("x", toolSummaryMax+50)})
+	long, err := json.Marshal(map[string]string{"command": strings.Repeat("x", ToolSummaryMax+50)})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
 	got := ToolSummary(long)
-	if n := len([]rune(got)); n != toolSummaryMax+1 {
-		t.Errorf("summary length = %d runes, want %d plus the ellipsis", n, toolSummaryMax)
+	if n := len([]rune(got)); n != ToolSummaryMax+1 {
+		t.Errorf("summary length = %d runes, want %d plus the ellipsis", n, ToolSummaryMax)
 	}
 	if !strings.HasSuffix(got, "…") {
 		t.Errorf("summary = %q, want a trailing ellipsis so truncation is visible", got)

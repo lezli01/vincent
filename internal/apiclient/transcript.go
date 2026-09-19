@@ -100,10 +100,19 @@ type TranscriptRecord struct {
 	// command output.
 	Patch string `json:"patch"`
 	// CallID correlates an agent.command_output or agent.patch with the
-	// agent.tool_use that produced it, and names the spawning call on an
-	// agent.subagent_* record.
+	// agent.tool_use that produced it, names the spawning call on an
+	// agent.subagent_* record, and the `Skill` call that loaded a skill on an
+	// agent.skill record, whose Name is the skill.
 	CallID string `json:"call_id"`
 	Name   string `json:"name"`
+	// Args, By, Forked and Error are the agent.skill record: the arguments
+	// the skill was invoked with (one line), who invoked it ("human" or
+	// "agent"), whether it ran as its own sub-run, and why the CLI refused to
+	// load it.
+	Args   string `json:"args"`
+	By     string `json:"by"`
+	Forked bool   `json:"forked"`
+	Error  string `json:"error"`
 	// Raw is the whole record, for the annotation fields this struct does not
 	// name.
 	Raw json.RawMessage `json:"-"`

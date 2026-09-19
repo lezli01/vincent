@@ -250,3 +250,64 @@ func TestSubagentChunkShape(t *testing.T) {
 		t.Errorf("a subagent event with no payload published %+v", chunks)
 	}
 }
+
+// TestSkillChunkShape pins agent.skill's live shape (task 124): every key is
+// omitted when unset, so a load carrying only what this item sets costs
+// nothing for the fields it leaves empty, and parent_call_id rides on it as it
+// does on every chunk.
+func TestSkillChunkShape(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		ev   Event
+		want string
+	}{
+		{
+			"a model load",
+			Event{Type: EventSkill, Skill: &SkillInvocation{
+				Name: "echo-probe", Args: "zebra", By: "agent", CallID: "toolu_1",
+			}},
+			`{"args":"zebra","by":"agent","call_id":"toolu_1","name":"echo-probe"}`,
+		},
+		{
+			"every field",
+			Event{Type: EventSkill, Skill: &SkillInvocation{
+				Name: "plugin:fork-probe", By: "human", Forked: true, Error: "unknown skill",
+			}},
+			`{"by":"human","error":"unknown skill","forked":true,"name":"plugin:fork-probe"}`,
+		},
+		{
+			"inside a subagent",
+			Event{Type: EventSkill, ParentCallID: "toolu_sub", Skill: &SkillInvocation{Name: "echo-probe", By: "agent"}},
+			`{"by":"agent","name":"echo-probe","parent_call_id":"toolu_sub"}`,
+		},
+		{"nothing set", Event{Type: EventSkill, Skill: &SkillInvocation{}}, `{}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			chunks := LiveChunks(tc.ev)
+			if len(chunks) != 1 || chunks[0].Type != "agent.skill" {
+				t.Fatalf("chunks = %+v, want one agent.skill", chunks)
+			}
+			if got := marshal(t, chunks[0].Payload); got != tc.want {
+				t.Errorf("skill chunk =\n%s\nwant\n%s", got, tc.want)
+			}
+		})
+	}
+	if chunks := LiveChunks(Event{Type: EventSkill}); chunks != nil {
+		t.Errorf("a skill event with no payload published %+v", chunks)
+	}
+}
+
+// TestSkillAndInputEchoAreModeled: neither new type is unmodeled, so neither
+// reaches a chat's tail as agent.raw — and an input echo publishes nothing at
+// all, after agent.result's precedent (task 124 decision 24).
+func TestSkillAndInputEchoAreModeled(t *testing.T) {
+	echo := Event{Type: EventInputEcho, ParentCallID: "toolu_sub", Raw: []byte(`{"type":"user"}`)}
+	if chunks := LiveChunks(echo); chunks != nil {
+		t.Errorf("an input echo published %+v, want nothing", chunks)
+	}
+	for _, ev := range []Event{echo, {Type: EventSkill, Skill: &SkillInvocation{Name: "x"}}} {
+		if UnmodeledLine(ev) {
+			t.Errorf("%s counts as unmodeled", ev.Type)
+		}
+	}
+}
