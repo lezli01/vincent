@@ -28,6 +28,14 @@ list with the user-facing context a commit subject cannot carry.
   refuses the whole proposal when a file does not validate, changed since it
   was staged, renames its workflow, or takes a name another global workflow
   already has. `--check` runs the same checks without writing anything.
+- **`GET /v1/agents` says what each agent can do with skills.** Three new
+  fields sit beside `supports_resume`: `supports_skill_listing` says whether
+  the adapter can list the skills its CLI would load, and `skill_sigil` and
+  `skill_position` say how a chat message invokes one — claude `/name` at the
+  start of the message, codex `$name` anywhere, cursor `/name` anywhere. No
+  adapter lists its skills yet, so `vincent agents` now notes
+  `no skill listing` on all three rows. The agents guide's capability table
+  gains the same two rows.
 
 ## [0.9.0](https://github.com/lezli01/vincent/compare/v0.8.0...v0.9.0) (2026-09-18)
 
