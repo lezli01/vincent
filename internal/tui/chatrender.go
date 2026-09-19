@@ -295,7 +295,7 @@ func (v *chatView) footerLines(width int) []string {
 	} else {
 		out = append(out, strings.Split(box, "\n")...)
 	}
-	hint := " enter send · ctrl+x stop the turn · ctrl+r detail · "
+	hint := " enter send · ctrl+j newline · ctrl+x stop the turn · ctrl+r detail · "
 	if v.chat != nil && v.chat.LinkedTaskID != nil {
 		// Ahead of the reader keys: it is the only way this chat's task
 		// unlocks, and the line truncates from the right.

@@ -488,6 +488,11 @@ var bindings = []binding{
 
 	// Chat workspace.
 	{key: "enter", label: "send the message", scope: scopePanel, context: ctxChat, hint: "enter send", priority: 1},
+	// ctrl+j is the key the row names (issue #500) because a legacy terminal
+	// can always send it: there shift+enter arrives as a bare CR, which is
+	// enter, which sends. All three are the textarea's own newline binding,
+	// set in newChatView; keymap.fixed records the other two as aliases.
+	{key: "ctrl+j", label: "insert a newline in the message (shift+enter and alt+enter too, where the terminal sends them)", scope: scopePanel, context: ctxChat, hint: "ctrl+j newline", priority: 11},
 	{key: "ctrl+x", label: "stop the running turn (its process tree is killed)", scope: scopePanel, context: ctxChat, hint: "ctrl+x stop", priority: 2},
 	// ctrl+r rather than `v` (task 071 decision 4): the composer owns every
 	// printable key, so a letter would be typed into the message.

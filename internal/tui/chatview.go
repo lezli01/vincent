@@ -164,7 +164,15 @@ type chatView struct {
 
 func newChatView(level *levelHolder, raw *rawHolder, links *hyperlinkHolder) *chatView {
 	ta := textarea.New()
-	ta.Placeholder = "message… (enter sends, ctrl+j / shift+enter / alt+enter for a newline)"
+	ta.Placeholder = "message… (enter sends, ctrl+j or shift+enter for a newline)"
+	// enter sends — updateKey takes it before the composer sees it — so the
+	// textarea's newline moves to the keys issue #500 names. Rebound here
+	// rather than matched in updateKey and handed to InsertString, because
+	// the textarea's own newline replaces a selection and scrolls the cursor
+	// into view, and InsertString does neither. ctrl+j leads the placeholder
+	// because a legacy terminal can always send it: there shift+enter arrives
+	// as a bare CR, which is enter, which sends.
+	ta.KeyMap.InsertNewline.SetKeys("ctrl+j", "shift+enter", "alt+enter")
 	ta.SetHeight(3)
 	return &chatView{
 		now:         time.Now,
@@ -731,9 +739,6 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, nil
 	case chatCloseKey:
 		v.askClose()
-		return v, nil
-	case "ctrl+j", "shift+enter", "alt+enter":
-		v.composer.InsertString("\n")
 		return v, nil
 	case "enter":
 		return v, v.sendCmd()
