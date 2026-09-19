@@ -1294,6 +1294,15 @@ steps:
     # check re-runs. Reading it back from `red-test.txt` there would let the
     # implement step move its own goalposts by rewriting the file; the copy
     # taken here was taken while the bug was still present.
+    #
+    # The red run's `2>&1` is there because `gate` quotes this step's
+    # `.Result`, which is stdout alone (§8.4), and asks the person approving
+    # whether the test fails for the reported reason. `go test` prints an
+    # assertion failure on stdout but sends a compile error — the reason
+    # behind its `FAIL ... [build failed]` line — to stderr, so without it the
+    # gate shows that the test failed and not why. Only that one command is
+    # redirected: the refusals below stay on stderr, where the step summary
+    # carries them for a run that blocks.
     run: |
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
@@ -1322,7 +1331,7 @@ steps:
       printf '%s\n' "$cmd" > .vincent-issue/green.sh
       echo "--- red run: $cmd ---"
       say "running the regression test against the unfixed code"
-      if sh .vincent-issue/green.sh; then
+      if sh .vincent-issue/green.sh 2>&1; then
         say "the regression test passes unfixed: it does not capture the bug"
         echo "the reproduction command passed against the unfixed code:" >&2
         echo "  $cmd" >&2
