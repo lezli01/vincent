@@ -38,6 +38,10 @@
 //	                      proposal through the real `vincent workflow ls
 //	                      --global --json` — task 123, workflowproposal.go;
 //	                      claude dialect) |
+//	                      skill-model (the model loads a skill: the Skill
+//	                      call, its commandName result and the isSynthetic
+//	                      body, as claude 2.1.277 writes them — task 124.2;
+//	                      claude dialect) |
 //	                      sleep (internal: silent child)
 //	FAKEAGENT_PROMPT_FILE echo-prompt: file each invocation appends its prompt
 //	                      to, one JSON string per line. JSON rather than the
@@ -447,6 +451,8 @@ func main() {
 		}
 		emitText(report)
 		emitSuccessResult([]byte(report), 1, 1)
+	case "skill-model":
+		skillModel(prompt)
 	case "flood":
 		// An agent that will not stop talking: emits until something kills
 		// it, which is exactly what the §12.3 transcript cap must do.
@@ -553,6 +559,45 @@ func claudeSuccess(prompt []byte) {
 	if f := os.Getenv("FAKEAGENT_EDIT_FILE"); f != "" {
 		editFile(f)
 	}
+	emitSuccessResult(prompt, 100, 42)
+}
+
+// fakeSkill is the skill skill-model loads, and fakeSkillCall its call.
+const (
+	fakeSkill     = "echo-probe"
+	fakeSkillArgs = "zebra"
+	fakeSkillCall = "toolu_fake_skill_1"
+)
+
+// skillModel is the model loading a skill (task 124.2), in the three lines
+// claude 2.1.277 writes for it: the `Skill` call with its arguments, the
+// "Launching skill" result carrying `tool_use_result.commandName`, and the
+// rendered SKILL.md on an `isSynthetic` user line — then a reply and a result.
+// The body opens with the marker every real one does, so a test can prove no
+// normalized record carries it.
+func skillModel(prompt []byte) {
+	emit(map[string]any{"type": "assistant", "parent_tool_use_id": nil, "message": map[string]any{
+		"content": []any{map[string]any{
+			"type": "tool_use", "id": fakeSkillCall, "name": "Skill",
+			"input": map[string]any{"skill": fakeSkill, "args": fakeSkillArgs},
+		}},
+	}})
+	emit(map[string]any{
+		"type": "user", "parent_tool_use_id": nil,
+		"message": map[string]any{"role": "user", "content": []any{map[string]any{
+			"type": "tool_result", "tool_use_id": fakeSkillCall, "content": "Launching skill: " + fakeSkill,
+		}}},
+		"tool_use_result": map[string]any{"success": true, "commandName": fakeSkill},
+	})
+	emit(map[string]any{
+		"type": "user", "parent_tool_use_id": nil, "isSynthetic": true,
+		"message": map[string]any{"role": "user", "content": []any{map[string]any{
+			"type": "text",
+			"text": "Base directory for this skill: /fake/.claude/skills/" + fakeSkill +
+				"\n\nReply with ECHO-PROBE and the arguments: " + fakeSkillArgs + "\n",
+		}}},
+	})
+	emitText("ECHO-PROBE " + fakeSkillArgs)
 	emitSuccessResult(prompt, 100, 42)
 }
 

@@ -36,6 +36,23 @@ list with the user-facing context a commit subject cannot carry.
   adapter lists its skills yet, so `vincent agents` now notes
   `no skill listing` on all three rows. The agents guide's capability table
   gains the same two rows.
+- **Transcripts report skill loads as `agent.skill`.** When claude loads a
+  skill, the transcript and the live stream carry an `agent.skill` record with
+  the skill's name, its arguments on one line, who invoked it (`agent`, or
+  `human` for a `context: fork` skill your message named) and the `Skill` call
+  it came from, instead of the rendered `SKILL.md` as one raw JSON line. Nothing
+  draws the record yet. codex and cursor report no skill loads. claude
+  `2.1.277` and cursor-agent `2026.09.18-9a7762b` are now tested builds.
+
+### Fixed
+
+- **cursor's echo of your prompt is no longer an unrecognized line.** Every
+  cursor turn and step used to show "1 unrecognized line" for it; it is now an
+  `agent.input_echo` transcript record with no live chunk.
+- **A claude `Skill` call names its skill.** The tool line reads
+  `Skill echo-probe` rather than a bare `Skill`, and a restricted run's
+  permission prompt for it reads "Skill wants to run: echo-probe" rather than
+  quoting the skill's description.
 
 ## [0.9.0](https://github.com/lezli01/vincent/compare/v0.8.0...v0.9.0) (2026-09-18)
 

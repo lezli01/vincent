@@ -255,12 +255,16 @@ func TestRunSuccess(t *testing.T) {
 		counts[agent.EventResult] != 1 {
 		t.Errorf("event mix %v, want output + exactly 1 tool_use (started only) + 1 result", counts)
 	}
-	// system, user, the thinking deltas and the fake_marker stay
+	// The thinking deltas and the fake_marker stay
 	// transcripted-but-unnormalized; `completed` lines now normalize —
-	// thinking to one coalesced block, tool_call to a result (T4.16).
-	if counts[agent.EventUnknown] < 3 {
-		t.Errorf("unknown events = %d, want the system/user/marker lines preserved",
+	// thinking to one coalesced block, tool_call to a result (T4.16) — and
+	// the `user` line is the prompt's echo since task 124.2.
+	if counts[agent.EventUnknown] < 2 {
+		t.Errorf("unknown events = %d, want the delta/marker lines preserved",
 			counts[agent.EventUnknown])
+	}
+	if counts[agent.EventInputEcho] != 1 {
+		t.Errorf("input echo events = %d, want the one user line", counts[agent.EventInputEcho])
 	}
 }
 

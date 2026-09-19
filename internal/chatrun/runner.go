@@ -637,6 +637,11 @@ func (r *Runner) record(chat *store.Chat, turn *store.ChatTurn, tr *transcript.W
 		// finished turn's transcript is where it renders (task 071
 		// decision 6). Publishing a chunk here would put a line on screen
 		// that the refetch then disagrees with.
+		//
+		// Or an input echo — cursor repeating this turn's message (task
+		// 124.2). The message is already on screen as the human's own, and
+		// the refetch gives the line back as agent.input_echo, which no
+		// client draws, so a chunk here would draw it twice.
 		return
 	}
 	for _, c := range chunks {

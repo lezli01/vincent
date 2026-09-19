@@ -65,6 +65,10 @@ type streamLine struct {
 	// same two-shapes problem resultSummary already has.
 	ToolUseResult  json.RawMessage        `json:"tool_use_result"`
 	ToolResultMeta []streamToolResultMeta `json:"tool_result_meta"`
+	// IsSynthetic marks a `user` line claude wrote into the conversation
+	// itself rather than one replaying a tool result — a loaded skill's
+	// rendered `SKILL.md` among them (task 124.2).
+	IsSynthetic bool `json:"isSynthetic"`
 }
 
 // streamModelUsage is one entry of the result line's `modelUsage` map, whose
@@ -108,6 +112,10 @@ type streamToolUseResult struct {
 	// for one that went to the background, `completed` for one the main
 	// loop waited on.
 	Status string `json:"status"`
+	// CommandName is the skill a `Skill` call launched (task 124.2). It is
+	// what arms the parser for the skill's body on the next line; the tool's
+	// name is never consulted.
+	CommandName string `json:"commandName"`
 	// StructuredPatch is what an `Edit`, or a `Write` of type `update`,
 	// changed (task 110). An `Edit`'s payload carries no `type` at all, and a
 	// `Write` of type `create` always sends this empty.
@@ -199,9 +207,28 @@ func (a *Adapter) NewLineParser() agent.LineParser { return new(streamParser).pa
 // leave that subagent's failed notification as agent.raw. A completed one is
 // still recognized by its usage.
 //
+// A skill the model loads is the second thing that spans lines (task 124.2).
+// The `Skill` call names the skill and its arguments, its result carries
+// `tool_use_result.commandName`, and the rendered `SKILL.md` follows on an
+// `isSynthetic` line that says nothing about which skill it is. So a result
+// with a commandName arms its `parent_tool_use_id` scope, and the next line
+// in that scope claims the load if it is an `isSynthetic` `user` line and
+// disarms it otherwise; a line from another scope — an async subagent's,
+// interleaving — does neither (task 124 decision 22). The arguments are
+// remembered from the call by its id and dropped when the load claims them,
+// which keeps that memory bounded. It costs what the subagent memory costs,
+// stated the same way: a transcript range that opens after a `Skill` call
+// yields that skill's load with no Args (decision 21).
+//
 // The zero value is ready to use. A parser belongs to one stream.
 type streamParser struct {
 	subagents map[string]bool
+	// armed is the skill each scope's last line launched, keyed by
+	// `parent_tool_use_id` ("" is the main loop).
+	armed map[string]agent.SkillInvocation
+	// skillArgs is each `Skill` call's arguments, by call id, until the
+	// call's load claims them.
+	skillArgs map[string]string
 }
 
 // parse normalizes one verbatim stream-json line into an agent.Event. The raw
@@ -213,15 +240,95 @@ func (p *streamParser) parse(raw []byte) agent.Event {
 	}
 	p.remember(line.ParentToolUseID)
 	var ev agent.Event
-	if line.Type == "system" && strings.HasPrefix(line.Subtype, "task_") {
+	switch load, ok := p.claim(&line); {
+	case ok:
+		ev = agent.Event{Type: agent.EventSkill, Skill: &load, Raw: raw}
+	case line.Type == "system" && strings.HasPrefix(line.Subtype, "task_"):
 		ev = p.parseTask(&line, raw)
-	} else {
+	default:
 		ev = parseTyped(&line, raw)
+		p.watchSkills(&line, &ev)
 	}
 	// Every line carries it, so it is attached once here rather than in each
 	// of the four arms (task 066).
 	ev.ParentCallID = line.ParentToolUseID
 	return ev
+}
+
+// claim disarms the line's scope and reports the skill load the line is, if
+// the scope was armed and the line is the skill's `isSynthetic` body. The
+// body itself is never read: it is the rendered `SKILL.md`, and an outcome
+// record carries no body (T4.16).
+//
+// The §7.4 control lines are not part of any scope. The live run answers them
+// before this parser sees anything, while the transcript route hands them to
+// it, and a load must normalize the same way on both paths (task 071).
+func (p *streamParser) claim(line *streamLine) (agent.SkillInvocation, bool) {
+	if line.Type == "control_request" || line.Type == "control_cancel_request" {
+		return agent.SkillInvocation{}, false
+	}
+	load, armed := p.armed[line.ParentToolUseID]
+	if !armed {
+		return agent.SkillInvocation{}, false
+	}
+	delete(p.armed, line.ParentToolUseID)
+	if line.Type != "user" || !line.IsSynthetic {
+		return agent.SkillInvocation{}, false
+	}
+	load.Args = p.skillArgs[load.CallID]
+	delete(p.skillArgs, load.CallID)
+	return load, true
+}
+
+// watchSkills remembers what a line says about a skill the model is loading:
+// a `Skill` call's arguments, and a result that launched one, which arms the
+// line's scope for the body that follows. A result claude flagged as an
+// error arms nothing — the refusal is already the call's agent.tool_result
+// (task 124 decision 23).
+func (p *streamParser) watchSkills(line *streamLine, ev *agent.Event) {
+	if line.Type == "assistant" && line.Message != nil {
+		for _, b := range line.Message.Content {
+			if b.Type != "tool_use" || b.Name != skillTool || b.ID == "" {
+				continue
+			}
+			if args := skillArgs(b.Input); args != "" {
+				if p.skillArgs == nil {
+					p.skillArgs = map[string]string{}
+				}
+				p.skillArgs[b.ID] = args
+			}
+		}
+		return
+	}
+	if ev.Type != agent.EventToolResult || len(ev.Results) != 1 || ev.Results[0].IsError {
+		return
+	}
+	// commandName belongs to the line, not to a block, so it is attributed
+	// only to a line reporting exactly one result, as a patch is.
+	res := decodeToolUseResult(line.ToolUseResult)
+	if res == nil || res.CommandName == "" {
+		return
+	}
+	if p.armed == nil {
+		p.armed = map[string]agent.SkillInvocation{}
+	}
+	p.armed[line.ParentToolUseID] = agent.SkillInvocation{
+		Name: res.CommandName, By: "agent", CallID: ev.Results[0].CallID,
+	}
+}
+
+// skillArgs reads a `Skill` call's arguments as one capped line. They are a
+// string in every capture; any other shape yields none rather than a guess.
+func skillArgs(input json.RawMessage) string {
+	var in skillInput
+	if err := json.Unmarshal(input, &in); err != nil || len(in.Args) == 0 {
+		return ""
+	}
+	var args string
+	if err := json.Unmarshal(in.Args, &args); err != nil {
+		return ""
+	}
+	return agent.OneLine(args, agent.ToolSummaryMax)
 }
 
 func (p *streamParser) remember(callID string) {
@@ -234,13 +341,17 @@ func (p *streamParser) remember(callID string) {
 	p.subagents[callID] = true
 }
 
-// parseTask normalizes the task lines of a subagent (task 109). A background
-// shell's (`local_bash`) and every subtype not named here stay unknown, which
-// is the phase 1 tolerant-parsing rule: nobody asked for background shells,
-// and `task_updated` carries a patch rather than a state.
+// parseTask normalizes the task lines of a subagent (task 109), and the
+// kickoff of a forked skill, which is a subagent start no call spawned (task
+// 124.2). A background shell's (`local_bash`) and every subtype not named here
+// stay unknown, which is the phase 1 tolerant-parsing rule: nobody asked for
+// background shells, and `task_updated` carries a patch rather than a state.
 func (p *streamParser) parseTask(line *streamLine, raw []byte) agent.Event {
 	unknown := agent.Event{Type: agent.EventUnknown, Raw: raw}
 	if line.ToolUseID == "" {
+		if load, ok := forkedSkill(line); ok {
+			return agent.Event{Type: agent.EventSkill, Skill: &load, Raw: raw}
+		}
 		return unknown
 	}
 	sub := &agent.Subagent{CallID: line.ToolUseID}
@@ -282,6 +393,27 @@ func (p *streamParser) parseTask(line *streamLine, raw []byte) agent.Event {
 	return unknown
 }
 
+// forkedSkill recognizes the kickoff of a `context: fork` skill the human's
+// message invoked (task 124 decision 20): a `local_agent` start that no tool
+// call spawned, titled with the invocation. The name is the title's first
+// word. Args stays empty: the title is `/name` alone on 2.1.277 even when the
+// message passed arguments, which appear only substituted into the rendered
+// body under `prompt` — and that body is never read (T4.16). The kickoff
+// arrives before the run's init line.
+//
+// Any other start without a tool_use_id stays unknown.
+func forkedSkill(line *streamLine) (agent.SkillInvocation, bool) {
+	if line.Subtype != "task_started" || line.TaskType != "local_agent" ||
+		!strings.HasPrefix(line.Description, "/") {
+		return agent.SkillInvocation{}, false
+	}
+	name, _, _ := strings.Cut(strings.TrimPrefix(line.Description, "/"), " ")
+	if name == "" {
+		return agent.SkillInvocation{}, false
+	}
+	return agent.SkillInvocation{Name: name, By: "human", Forked: true}, true
+}
+
 func parseTyped(line *streamLine, raw []byte) agent.Event {
 	switch line.Type {
 	case "assistant":
@@ -306,8 +438,10 @@ func parseTyped(line *streamLine, raw []byte) agent.Event {
 	}
 }
 
-// parseInit normalizes the `system`/`init` line claude opens every stream
-// with: the directory it is working in and the tools it was given (task 066).
+// parseInit normalizes the `system`/`init` line claude writes before any of
+// the model's work: the directory it is working in and the tools it was given
+// (task 066). Hook lines and a forked skill's kickoff can precede it (task
+// 124.2).
 func parseInit(line *streamLine, raw []byte) agent.Event {
 	return agent.Event{
 		Type: agent.EventRunHeader,
@@ -363,8 +497,9 @@ func parseAssistant(line *streamLine, raw []byte) agent.Event {
 }
 
 // parseToolResults normalizes the tool_result blocks of a `user` line. A line
-// with none — claude also replays the original prompt this way — stays
-// unknown rather than becoming an empty result event.
+// with none — claude also replays the original prompt this way, and writes a
+// loaded skill's body so — stays unknown rather than becoming an empty result
+// event; streamParser.claim is what recognizes the skill body (task 124.2).
 func parseToolResults(line *streamLine, raw []byte) agent.Event {
 	ev := agent.Event{Type: agent.EventUnknown, Raw: raw}
 	if line.Message == nil {

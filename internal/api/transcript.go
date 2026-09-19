@@ -159,6 +159,13 @@ type normalizedLine struct {
 	// dialect named it on the outcome.
 	CallID string `json:"call_id,omitempty"`
 	Name   string `json:"name,omitempty"`
+	// Args, By, Forked and Error are the agent.skill record (task 124.2),
+	// whose Name is the skill and whose CallID is the `Skill` call an agent's
+	// load came from. The skill's body is never on it (T4.16).
+	Args   string `json:"args,omitempty"`
+	By     string `json:"by,omitempty"`
+	Forked bool   `json:"forked,omitempty"`
+	Error  string `json:"error,omitempty"`
 }
 
 // planItemLine is one entry of an agent.plan record (§13.2, task 070).
@@ -393,6 +400,22 @@ func normalizedRecord(ev agent.Event, raw []byte) normalizedLine {
 			out.LastTool = s.LastTool
 		}
 		return out
+	case agent.EventSkill:
+		out := normalizedLine{Type: "agent.skill"}
+		if s := ev.Skill; s != nil {
+			out.Name = s.Name
+			out.Args = s.Args
+			out.By = s.By
+			out.CallID = s.CallID
+			out.Forked = s.Forked
+			out.Error = s.Error
+		}
+		return out
+	case agent.EventInputEcho:
+		// The CLI's echo of vincent's own stdin (task 124.2): a record with no
+		// payload, so the line stops reading as unrecognized. The echoed text
+		// is still in format=raw.
+		return normalizedLine{Type: "agent.input_echo"}
 	case agent.EventError:
 		return normalizedLine{Type: "agent.error", Message: ev.Message}
 	case agent.EventResult:

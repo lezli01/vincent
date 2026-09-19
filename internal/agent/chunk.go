@@ -23,9 +23,10 @@ type Chunk struct {
 
 // LiveChunks maps a normalized stream event onto the §13.3 chunks it
 // publishes. It returns none for the events that carry nothing a client
-// renders as a line: input requests surface as a state change, and results,
+// renders as a line: input requests surface as a state change, results,
 // errors and unmodeled lines surface as the run's own outcome or as
-// `agent.raw` from the transcript route.
+// `agent.raw` from the transcript route, and an input echo repeats a prompt
+// that is already on screen (task 124.2).
 //
 // One event can become more than one chunk. A codex tool result arrives with
 // the body the command printed on the same line, and a claude edit's with its
@@ -56,10 +57,10 @@ func liveChunkBody(ev Event) []Chunk {
 		}
 		return one("agent.output", map[string]any{"text": ev.Text})
 	case EventRunHeader:
-		// The run header goes live like the rest (task 066): it is the first
-		// line of the stream, so a reader who opens the pane on a running
-		// step sees the run's frame before its first word, and does not have
-		// to wait for the step to finish to learn what the agent could reach.
+		// The run header goes live like the rest (task 066): it arrives before
+		// the run's first word, so a reader who opens the pane on a running
+		// step sees the run's frame early, and does not have to wait for the
+		// step to finish to learn what the agent could reach.
 		if ev.Header == nil {
 			return nil
 		}
@@ -108,14 +109,45 @@ func liveChunkBody(ev Event) []Chunk {
 			return nil
 		}
 		return one("agent."+string(ev.Type), subagentChunk(ev.Subagent))
+	case EventSkill:
+		// A skill load goes live (task 124.2): it is what replaces the raw
+		// `SKILL.md` line a live tail used to show.
+		if ev.Skill == nil {
+			return nil
+		}
+		return one("agent.skill", skillChunk(ev.Skill))
 	case EventUsage:
 		// Usage payloads are adapter-native; the raw line is the honest shape.
 		return one("agent.usage", map[string]any{"raw": string(ev.Raw)})
 	case EventInputRequest, EventInputCanceled,
 		EventResult, EventError, EventUnknown:
 		return nil
+	case EventInputEcho:
+		// The echoed prompt is already on screen — a chat's human message, a
+		// step's rendered prompt — so its record goes out with no chunk
+		// (task 124 decision 25). It is modeled, so it is not agent.raw either.
+		return nil
 	}
 	return nil
+}
+
+// skillChunk maps a skill load onto the §13.3 live-chunk shape, matching what
+// api.normalizeLine writes for the same event. Every key is omitted when
+// unreported, which is what "" means on a SkillInvocation (task 124 decision
+// 17).
+func skillChunk(s *SkillInvocation) map[string]any {
+	chunk := map[string]any{}
+	for k, v := range map[string]string{
+		"name": s.Name, "args": s.Args, "by": s.By, "call_id": s.CallID, "error": s.Error,
+	} {
+		if v != "" {
+			chunk[k] = v
+		}
+	}
+	if s.Forked {
+		chunk["forked"] = true
+	}
+	return chunk
 }
 
 // headerChunk maps a run header onto the §13.3 live-chunk shape, matching
@@ -267,7 +299,10 @@ func resultChunks(results []ToolResult) []map[string]any {
 // EventResult and EventError are deliberately not here: they do normalize —
 // to agent.result and agent.error — and a runner that has no line to publish
 // for them simply publishes none, rather than publishing a shape the
-// transcript would contradict.
+// transcript would contradict. EventInputEcho is absent for the same reason
+// (task 124.2): it normalizes to agent.input_echo, a record with no live
+// chunk, and a raw chunk for it would count cursor's prompt echo as an
+// unrecognized line on every turn.
 func UnmodeledLine(ev Event) bool {
 	switch ev.Type { //nolint:exhaustive // every other type has a normalized shape
 	case EventInputRequest, EventInputCanceled, EventUnknown:

@@ -1,6 +1,6 @@
 # 124 — Let a chat's human see the agent's skills and invoke one from a message
 
-**Status:** 🔄 in progress (1/19)
+**Status:** 🔄 in progress (2/19)
 **Opened:** 2026-09-19
 **Issue:** #496 (parent), #497–#515 (one per item)
 **Spec:** §9.1 (`SkillLister`, `SkillInvoker`), §9.6 (`supports_skill_listing`,
@@ -41,7 +41,7 @@ cite.
 
 Decisions 1–12 are the parent issue's (#496, "Decisions taken in this
 breakdown"). 13–19 were settled with the author, or taken in evaluation, when
-124.1 was built.
+124.1 was built, and 20–27 when 124.2 was.
 
 1. **2026-09-19 — Each CLI's own listing, never a scan.** claude answers a
    stream-json `initialize` control request (`commands`), codex answers
@@ -160,6 +160,50 @@ breakdown"). 13–19 were settled with the author, or taken in evaluation, when
     older daemon, or one with no registry, adds nothing. Until 124.7 and 124.8
     land, all three adapters carry the note, which is today's truth.
     Invocation gets no note: every shipped adapter can invoke.
+20. **2026-09-19 — The forked kickoff is mapped in 124.2, on a second
+    capture.** A `local_agent` `task_started` with no `tool_use_id` and a
+    `/`-prefixed description becomes `agent.skill{by:"human", forked:true}`.
+    The re-capture on claude 2.1.277 matched the issue's c24: description
+    `/fork-probe` with no arguments even though the message passed `zebra`,
+    the rendered body under `prompt`, no `tool_use_id`, before `system/init`.
+    So `args` is empty. Settled with the author. *Beaten:* moving the kickoff
+    to 124.10 (#506), and leaving it unowned until a later build. Either
+    would keep the forked skill's body on screen as `agent.raw`, which is the
+    defect this item exists to remove.
+21. **2026-09-19 — An agent-loaded skill carries its args.** The parser
+    remembers each `Skill` tool_use's `input.args` by call id and puts them on
+    the matching `agent.skill`, capped to one line. When a transcript range
+    starts after the tool_use, the args are empty, a cost stated like task
+    109's. Settled with the author. *Beaten:* leaving `args` empty for
+    `by: "agent"`. The `Skill` summary reads only `input.skill`, so the args
+    would be on no normalized record at all.
+22. **2026-09-19 — The pairing is structural and scoped by parent.** A result
+    that carries `tool_use_result.commandName` arms a pending skill in its
+    `parent_tool_use_id` scope. The next line in that scope claims it if it
+    is an `isSynthetic` `user` line and clears it otherwise. The §7.4 control
+    lines belong to no scope: the live run answers them before the parser
+    sees them and the transcript route does not, and the two paths must
+    agree. *Beaten:* strict adjacency in the raw stream, which an
+    interleaving async subagent breaks.
+23. **2026-09-19 — An agent's refused `Skill` call produces no
+    `agent.skill`.** Its `agent.tool_result` (`is_error`) reports the refusal
+    and pairs by `call_id`. `Error` is filled only where the CLI reports a
+    refusal on a line of its own, which is 124.10's.
+24. **2026-09-19 — The whole `SkillInvocation` shape lands now.** 124.12
+    draws human invocations and refusals and depends only on 124.2, so the
+    wire fields exist before any parser fills them. The mapping of every
+    field is tested with constructed events.
+25. **2026-09-19 — `agent.input_echo` is a record with no payload and no live
+    chunk.** The echoed text is already on screen, as the human's message in
+    a chat and as the step's stored rendered prompt in a task. The verbatim
+    line is still in `format=raw`. This does not reverse §9.7's raw-lines
+    rule, which covers unmodeled lines only.
+26. **2026-09-19 — The `Skill` permission summary is the skill's name.** It
+    comes from `input.skill`, keyed on the tool name the way
+    `AskUserQuestion` is, and falls back to `description`.
+27. **2026-09-19 — The fresh captures make both builds tested.** claude
+    2.1.277 and cursor 2026.09.18-9a7762b join `testedVersions`, after task
+    108 decision 1.
 
 ## Open questions
 
@@ -192,9 +236,14 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
   `skill_sigil` and `skill_position` on `GET /v1/agents`, the `apiclient`
   fields and `CannotListSkills`, and the `vincent agents` note; spec §9.1,
   §9.6, §9.7 and §9.8. ✓ 2026-09-19
-- [ ] 124.2 (#498) `agent.skill` and `agent.input_echo`: claude's
+- [x] 124.2 (#498) `agent.skill` and `agent.input_echo`: claude's
   model-loaded skills stop showing as raw `SKILL.md` JSON, and cursor's prompt
-  echo stops counting as unrecognized.
+  echo stops counting as unrecognized. `EventSkill`, `SkillInvocation`,
+  `EventInputEcho`; the claude and cursor mappings; the `Skill` tool summary
+  and §7.4 permission summary; the `agent.skill` chunk and record; the
+  `skill-model` fakeagent scenario; fixtures from claude 2.1.277 and
+  cursor-agent 2026.09.18-9a7762b, both now tested builds; spec §9.1, §9.2,
+  §9.3, §9.7, §13.2 and §13.3. ✓ 2026-09-19
 - [ ] 124.3 (#499) Send claude's linked turn 1 as two text blocks, so a
   leading `/name` expands.
 - [~] 124.4 (#500) Fix the chat composer's newline keys, a pre-existing bug.
@@ -241,3 +290,20 @@ and 124.15 have landed. 124.16, 124.17 and 124.18 widen coverage after that.
   literally per adapter, both ways through the stubs, and `null` with no
   registry. `TestAgentsCommandAgainstTheRealAPI` decodes them over the real
   handlers, and `TestAgentRowNotesAreBadNewsOnly` holds decision 19.
+- 124.2: `TestModelLoadedSkill` pins the claude capture's three lines — the
+  `Skill` call summarized `echo-probe`, the result still a result, the body the
+  one `agent.skill{by:"agent"}` with name, call and args — and that no event
+  field holds the `SKILL.md` body. `TestSkillBodyNeedsItsResult`,
+  `TestSkillPairingIsScopedByParent`, `TestSkillArgsNeedTheCall` and
+  `TestRefusedSkillCallIsNoLoad` hold decisions 22, 21 and 23;
+  `TestSkillPermissionNamesTheSkill` decision 26; `TestForkedSkillKickoff`
+  decision 20; `TestSkillLoadsTheSameOnBothPaths` the control-line rule. Each
+  adapter's `TestFixtureEventTypesArePinned` pins every capture's per-line
+  event types — the pre-existing claude captures unchanged, the cursor ones
+  changed only in their `user` line — and cursor's `TestUserLineIsTheInputEcho`
+  and `TestNoSkillEvents` state its side positively. `TestSkillChunkShape`,
+  `TestInputEchoPublishesNothing`, `TestNormalizeSkillRecordFields` and
+  `TestSkillRecordsMatchTheirLiveChunks` pin the wire both ways, and
+  `TestSkillChunkMatchesItsRecord` and `TestCursorEchoIsNotRaw` run real chat
+  turns on fakeagent over the real handlers, comparing the SSE chunk with the
+  refetched record. `TestSkillModelScenario` ties the fake to the real parser.

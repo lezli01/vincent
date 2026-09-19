@@ -20,6 +20,8 @@ func TestDetectVersionVerdict(t *testing.T) {
 	}{
 		{name: "fixture build is tested", want: agent.VersionTested},
 		{name: "auth status fixture build is tested", version: "2.1.268", want: agent.VersionTested},
+		// Task 124 decision 27: the skill captures make their build tested.
+		{name: "skill fixture build is tested", version: "2.1.277", want: agent.VersionTested},
 		{name: "newer build is untested", version: "9.9.9", want: agent.VersionUntested},
 		{
 			name:         "known-bad build is incompatible",
