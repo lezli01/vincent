@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -208,7 +209,17 @@ type Availability struct {
 
 // RunSpec describes one agent run (spec §9.1).
 type RunSpec struct {
-	Prompt         string // written to stdin, never argv (Windows 8 KB argv limit)
+	Prompt string // written to stdin, never argv (Windows 8 KB argv limit)
+	// Preamble is context for the model that rides ahead of Prompt, and is
+	// never part of the human's message: a linked chat's opening context on
+	// its first turn (§5.5, task 119). Empty is every other run.
+	//
+	// It is its own field because claude expands a leading `/name` only when
+	// it starts the message's last text block (issue #499, captured against
+	// 2.1.277), so claude's input mode sends it as a separate block ahead of
+	// Prompt. Every path that takes the prompt as one string sends
+	// JoinedPrompt instead.
+	Preamble       string
 	WorkDir        string // the task worktree
 	Model          string // resolved per §8.6; "" = CLI default
 	Effort         string // resolved per §8.6; adapter-native; "" = CLI default
@@ -237,6 +248,20 @@ type RunSpec struct {
 	// builds the Command; the launcher decides where it runs, and Start
 	// resolves the binary through it too (task 062.2 decision 2).
 	Launcher Launcher
+}
+
+// JoinedPrompt is the run's prompt as the one string a single-block path
+// sends: Prompt alone with no Preamble, and otherwise the preamble followed
+// by the message in `<message>` tags. The message stays verbatim inside the
+// tags, never a template (025 decision 5). It is the one place that framing
+// is spelled, so claude below the input gate, codex and cursor send the same
+// bytes a linked first turn always sent.
+func (s RunSpec) JoinedPrompt() string {
+	if s.Preamble == "" {
+		return s.Prompt
+	}
+	return strings.TrimSuffix(s.Preamble, "\n") + "\n\n<message>\n" +
+		strings.TrimSuffix(s.Prompt, "\n") + "\n</message>\n"
 }
 
 // RunHandle is a live agent run (spec §9.1).

@@ -100,7 +100,7 @@ func TestStartHandsTheLauncherItsSpawn(t *testing.T) {
 			}
 			wantStdin := []byte(spec.Prompt)
 			if tt.inputMode {
-				if wantStdin, err = userMessageLine(spec.Prompt); err != nil {
+				if wantStdin, err = userMessageLine(spec.Preamble, spec.Prompt); err != nil {
 					t.Fatalf("userMessageLine: %v", err)
 				}
 			}

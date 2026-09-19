@@ -738,6 +738,17 @@ differs is where it works and how it ends.
   `aborted`, the last step run's summary and, for `aborted`, its reason. The
   human's own message follows it verbatim, never as a template (task 025
   decision 5). Later turns carry no context: the session already has it.
+  *Amended 2026-09-19 (task 124.3, issue #499):* the context reaches the
+  adapter apart from the message (`RunSpec.Preamble`), never fused into it.
+  On claude's input path (§9.2) the two ride as two text blocks of one user
+  message, context first and the message last, byte for byte — claude
+  expands a `/name` invocation only when it starts the last block, so a skill
+  typed on the first turn now runs as it would on any other. Every path that
+  takes one string — claude outside the input gate, codex, cursor — still
+  receives the context, a blank line, and the message in `<message>` tags,
+  the bytes a first turn always sent; codex and cursor find an invocation
+  anywhere, and a claude outside the gate leaves `/name` to the model. The
+  stored `opening_context` and turn prompt are unchanged.
 - **It locks the task while it is open** — every §6 action but `cancel` is
   refused (§6). There is at most one open linked chat per task; a second open is
   refused, and after a close a new one can be opened. Closed chats stay listed
@@ -2806,6 +2817,10 @@ type AgentAdapter interface {
 
 type RunSpec struct {
     Prompt         string
+    Preamble       string            // context ahead of Prompt, never part of the human's message: a linked
+                                     // chat's first turn (§5.5; task 124.3, added 2026-09-19). claude's input
+                                     // mode sends it as its own text block (§9.2); every path that takes one
+                                     // string sends JoinedPrompt(). "" is every other run
     WorkDir        string            // the task worktree
     Model          string            // resolved per §8.6; "" = CLI default
     Effort         string            // resolved per §8.6; adapter-native; "" = CLI default
@@ -3406,7 +3421,15 @@ records no date for `--approve-mcps`).
   and runs exactly as before (no input flags, raw-text prompt). A control request
   the adapter cannot parse fails the attempt with `input_protocol_error`, never
   hangs; an inbound `control_cancel_request` withdrawing the pending request
-  resumes the run (`input_closed`).
+  resumes the run (`input_closed`). *Amended 2026-09-19 (task 124.3, issue
+  #499):* the line is still one user message, but a run with a preamble (a
+  linked chat's first turn, §5.5) carries it as its own text block ahead of
+  the prompt's: `"content":[{"type":"text","text":<preamble>},
+  {"type":"text","text":<prompt>}]`. Captured against claude 2.1.277
+  (`testdata/stream_blocks_context_2.1.277.jsonl`): a `/name` that starts
+  the last block expands natively with the earlier block kept in context,
+  while the same bytes fused into one block, or the message block placed
+  first, do not expand. One message is still one model turn and one result.
 - **No non-interactive quota surface** (*added 2026-08-24, task 026*). Against
   claude 2.1.241 the subcommands are `agents auth auto-mode doctor gateway
   import install mcp plugin project setup-token ultrareview update` — there is

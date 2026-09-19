@@ -1,6 +1,6 @@
 # 124 — Let a chat's human see the agent's skills and invoke one from a message
 
-**Status:** 🔄 in progress (2/19)
+**Status:** 🔄 in progress (3/19)
 **Opened:** 2026-09-19
 **Issue:** #496 (parent), #497–#515 (one per item)
 **Spec:** §9.1 (`SkillLister`, `SkillInvoker`), §9.6 (`supports_skill_listing`,
@@ -244,8 +244,14 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
   `skill-model` fakeagent scenario; fixtures from claude 2.1.277 and
   cursor-agent 2026.09.18-9a7762b, both now tested builds; spec §9.1, §9.2,
   §9.3, §9.7, §13.2 and §13.3. ✓ 2026-09-19
-- [ ] 124.3 (#499) Send claude's linked turn 1 as two text blocks, so a
-  leading `/name` expands.
+- [x] 124.3 (#499) Send claude's linked turn 1 as two text blocks, so a
+  leading `/name` expands. `agent.RunSpec.Preamble` carries a linked chat's
+  opening context apart from the message; claude's input line sends it as
+  its own text block ahead of the message's, and `RunSpec.JoinedPrompt` is
+  the one spelling of the `<message>`-wrapped string every other path sends,
+  byte-identical to before. `cmd/fakeagent`'s `echo-prompt` records several
+  blocks as an array. Fixture `stream_blocks_context_2.1.277.jsonl`; spec
+  §5.5 and §9.2 amended. ✓ 2026-09-19
 - [~] 124.4 (#500) Fix the chat composer's newline keys, a pre-existing bug.
   In review as #516.
 - [ ] 124.5 (#501) `--message-file` on `chat send` and `chat start`, fixing
@@ -307,3 +313,11 @@ and 124.15 have landed. 124.16, 124.17 and 124.18 widen coverage after that.
   `TestSkillChunkMatchesItsRecord` and `TestCursorEchoIsNotRaw` run real chat
   turns on fakeagent over the real handlers, comparing the SSE chunk with the
   refetched record. `TestSkillModelScenario` ties the fake to the real parser.
+- 124.3: `TestLinkedFirstTurnKeepsASkillInvocationLeading` reads claude's
+  real stdin on a linked chat through the launcher seam: turn 1 is two text
+  blocks, the context then the message byte for byte, and turn 2 is the
+  message alone. `TestLinkedFirstTurnStdinOffClaudeInputMode` holds claude
+  below the input gate, codex and cursor to the old wrapped bytes.
+  `TestUserMessageLineKeepsTheMessageLast` pins the line itself,
+  `TestFixtureContextBlockStream` parses the 2.1.277 capture, and
+  `TestEchoPromptKeepsBlocksApart` the fake CLI's record of the blocks.

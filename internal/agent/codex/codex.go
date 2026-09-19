@@ -253,7 +253,7 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 		Args:   buildArgs(spec),
 		Dir:    spec.WorkDir,
 		Env:    env,
-		Stdin:  strings.NewReader(spec.Prompt),
+		Stdin:  strings.NewReader(spec.JoinedPrompt()),
 		Stderr: stderr,
 	})
 	if err != nil {
