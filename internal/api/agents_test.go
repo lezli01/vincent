@@ -296,33 +296,8 @@ func TestAgentsReportSupportsResume(t *testing.T) {
 	}
 	probe := func(t *testing.T, withRegistry bool) map[string]*bool {
 		t.Helper()
-		reg := newReg()
-		deps := Deps{
-			Token:       testToken,
-			Config:      config.Default,
-			StartedAt:   time.Now(),
-			ListenAddr:  "127.0.0.1:0",
-			RequestStop: func() {},
-			Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
-			Catalog:     agent.NewCatalogCache(reg),
-		}
-		if withRegistry {
-			deps.Agents = reg
-		}
-		ts := httptest.NewServer(New(deps).Handler())
-		t.Cleanup(ts.Close)
-		resp, body := doRequest(t, ts, http.MethodGet, "/v1/agents", testToken)
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("agents: %d %s", resp.StatusCode, body)
-		}
-		var out struct {
-			Agents []agentResponse `json:"agents"`
-		}
-		if err := json.Unmarshal(body, &out); err != nil {
-			t.Fatalf("agents body: %v", err)
-		}
 		got := map[string]*bool{}
-		for _, a := range out.Agents {
+		for _, a := range servedAgents(t, newReg(), withRegistry) {
 			got[a.Name] = a.SupportsResume
 		}
 		return got
@@ -347,6 +322,113 @@ func TestAgentsReportSupportsResume(t *testing.T) {
 	for name, v := range probe(t, false) {
 		if v != nil {
 			t.Errorf("%s supports_resume = %v with no registry to ask, want null", name, *v)
+		}
+	}
+}
+
+// servedAgents is GET /v1/agents' body from a server whose catalog probes reg,
+// and whose adapter registry is reg too when withRegistry is set — the
+// capability fields' only source.
+func servedAgents(t *testing.T, reg *agent.Registry, withRegistry bool) []agentResponse {
+	t.Helper()
+	deps := Deps{
+		Token:       testToken,
+		Config:      config.Default,
+		StartedAt:   time.Now(),
+		ListenAddr:  "127.0.0.1:0",
+		RequestStop: func() {},
+		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Catalog:     agent.NewCatalogCache(reg),
+	}
+	if withRegistry {
+		deps.Agents = reg
+	}
+	ts := httptest.NewServer(New(deps).Handler())
+	t.Cleanup(ts.Close)
+	resp, body := doRequest(t, ts, http.MethodGet, "/v1/agents", testToken)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("agents: %d %s", resp.StatusCode, body)
+	}
+	var out struct {
+		Agents []agentResponse `json:"agents"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("agents body: %v", err)
+	}
+	return out.Agents
+}
+
+// TestAgentsReportSkillCapabilities pins §9.6's three skill fields (task
+// 124): `supports_skill_listing` from `agent.CanListSkills`, and
+// `skill_sigil` and `skill_position` from the adapter's `SkillSyntax`.
+//
+// The sigils and positions are pinned literally, since a client inserts
+// them verbatim. The listing bit is proven both ways against the agenttest
+// stubs, never against a shipped adapter: no shipped adapter lists yet, and
+// a test asserting that of one would invert itself the day #503 or #504
+// lands. A registered adapter that cannot invoke answers "" for both syntax
+// fields; no registry at all answers null for all three.
+func TestAgentsReportSkillCapabilities(t *testing.T) {
+	fake := agenttest.BuildFakeAgent(t)
+	newReg := func() *agent.Registry {
+		return agent.NewRegistry(
+			claude.New(func() string { return fake }),
+			codex.New(func() string { return "/nonexistent/codex-not-here" }),
+			cursor.New(func() string { return "/nonexistent/cursor-agent-not-here" }),
+			agenttest.StubNoSkills{},
+			&agenttest.StubSkills{Syntax: agent.SkillSyntax{Sigil: "$", Position: agent.SkillLeading}},
+		)
+	}
+	str := func(p *string) string {
+		if p == nil {
+			return "<null>"
+		}
+		return *p
+	}
+
+	served := servedAgents(t, newReg(), true)
+	got := map[string]agentResponse{}
+	for _, a := range served {
+		got[a.Name] = a
+	}
+	for name, want := range map[string][2]string{
+		"claude":               {"/", "leading"},
+		"codex":                {"$", "anywhere"},
+		"cursor":               {"/", "anywhere"},
+		agenttest.NoSkillsName: {"", ""},
+		agenttest.SkillsName:   {"$", "leading"},
+	} {
+		a, ok := got[name]
+		if !ok {
+			t.Errorf("%s is not served", name)
+			continue
+		}
+		if s, p := str(a.SkillSigil), str(a.SkillPosition); s != want[0] || p != want[1] {
+			t.Errorf("%s skill_sigil, skill_position = %q, %q, want %q, %q (task 124 decision 18)",
+				name, s, p, want[0], want[1])
+		}
+	}
+	for name, want := range map[string]bool{
+		agenttest.NoSkillsName: false,
+		agenttest.SkillsName:   true,
+	} {
+		switch v := got[name].SupportsSkillListing; {
+		case v == nil:
+			t.Errorf("%s supports_skill_listing = null, want %v — the registry was asked", name, want)
+		case *v != want:
+			t.Errorf("%s supports_skill_listing = %v, want %v", name, *v, want)
+		}
+	}
+	for _, name := range []string{"claude", "codex", "cursor"} {
+		if got[name].SupportsSkillListing == nil {
+			t.Errorf("%s supports_skill_listing = null — the registry was asked", name)
+		}
+	}
+
+	for _, a := range servedAgents(t, newReg(), false) {
+		if a.SupportsSkillListing != nil || a.SkillSigil != nil || a.SkillPosition != nil {
+			t.Errorf("%s answered listing set=%v, sigil %s, position %s with no registry to ask, want null for all three",
+				a.Name, a.SupportsSkillListing != nil, str(a.SkillSigil), str(a.SkillPosition))
 		}
 	}
 }

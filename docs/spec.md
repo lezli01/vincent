@@ -2871,6 +2871,44 @@ type Resumer interface {
     SupportsResume() bool
 }
 
+// SkillLister and SkillInvoker are optional too (task 124, added 2026-09-19);
+// see "Skills" below. CanListSkills and CanInvokeSkills report whether an
+// adapter implements each, and nothing more.
+type SkillLister interface {
+    // The skills a run started in q.WorkDir would load, without starting a
+    // conversation. ErrSkillsUnsupported = this adapter or build can never list.
+    ListSkills(ctx context.Context, q SkillQuery) (SkillList, error)
+}
+
+type SkillQuery struct {
+    WorkDir  string   // the directory the next run starts in
+    Launcher Launcher // nil = the host, as RunSpec.Launcher
+    Env      []string // nil = the daemon's, as RunSpec.Env
+}
+
+type SkillList struct {
+    Skills   []Skill        // the CLI's order; names may repeat
+    Problems []SkillProblem // entries the CLI could not load (codex's errors[])
+}
+
+type Skill struct {                // the CLI's own words; "" = unreported
+    Name, Description, ArgumentHint string
+    Aliases                         []string
+    Scope, Plugin, Path             string // Scope is never normalized
+}
+
+type SkillProblem struct{ Path, Message string }
+
+type SkillInvoker interface {
+    SkillSyntax() SkillSyntax                 // static per adapter
+    Invocation(s Skill, among []Skill) string // the exact text a client inserts
+}
+
+type SkillSyntax struct {
+    Sigil    string        // "/" | "$"
+    Position SkillPosition // "leading" | "anywhere"
+}
+
 type RunHandle interface {
     Events() <-chan AgentEvent  // normalized stream: Output, ToolUse, Usage, InputRequest, InputCanceled, Result, Error
     Respond(resp InputResponse) error // answer the pending InputRequest (§7.4); error if none pending
@@ -2993,6 +3031,41 @@ type Option struct {
 
 The daemon consumes only this interface; adding an agent (Gemini CLI, etc.) is one new
 adapter with zero core changes.
+
+**Skills (task 124, added 2026-09-19, issue #497).** Two optional capabilities
+let the daemon ask an adapter which skills its CLI would load in a given
+directory (`SkillLister`) and how a message names one (`SkillInvoker`). They are
+optional interfaces for the reason `Resumer` and §9.6's `QuotaReporter` are: an
+adapter that cannot answer says so by not implementing one, and grows no stub
+saying it cannot. `CanListSkills` is a fact about the adapter, not about the
+installed build (task 124 decision 13); both capabilities' false legs are proven
+against `agenttest` stubs, never against whichever shipped CLI lacks the
+capability today.
+
+- **Nothing is synthesized** (task 124 decisions 8 and 17). Every `Skill` field is the
+  CLI's own words and `""` is unreported. There is no normalized scope and no
+  kind: `Scope` carries codex's own `user|repo|system|admin` and stays empty for
+  claude, whose scope appears only as a display label inside its description,
+  which is never parsed. `Skills` keeps the CLI's order, and a name may repeat —
+  both CLIs document same-name entries they do not merge, and vincent does not
+  merge them either. `Problems` carries codex's `errors[]`.
+- **A refusal is not a failure** (task 124 decision 16). `ErrSkillsUnsupported`
+  means this adapter, or this installed build, can never list — the positive no
+  of `InputVerdict`'s `unsupported`. A probe that timed out, crashed or answered
+  something unparseable is an ordinary error — `unknown`, nobody can say. Callers
+  tell the two apart with `errors.Is`.
+- **Invocation syntax is static per adapter**, and a client writes it into the
+  message; the daemon passes the message through verbatim and neither validates
+  nor rewrites an invocation:
+
+  | adapter | sigil | position | `Invocation` | lists (`SkillLister`) |
+  |---|---|---|---|---|
+  | claude | `/` | `leading` — expanded only at the start of the message (under stream-json input, its last text block) | `/name` | not yet (#503) |
+  | codex | `$` | `anywhere` | `$name`; the linked `[$name](path)` for a name two skills share is #504's | not yet (#504) |
+  | cursor | `/` | `anywhere`, as a token | `/name` | never in v1 (§9.7) |
+
+  Observed on claude 2.1.277, codex-cli 0.154.0 and cursor-agent 2026.09.18.
+  The rows state the adapters as shipped; §9.2 and §9.3 add nothing to them.
 
 **The launch seam (task 062.1, added 2026-09-16).** An adapter builds its run's
 argv and hands it over; it never spawns the process itself. `Start` resolves the
@@ -3870,6 +3943,7 @@ defaults:
     "name": "claude", "available": true, "path": "…", "version": "2.1.224",
     "supports_input": true, "input_verdict": "supported", "logged_in": true,
     "supports_resume": true,
+    "supports_skill_listing": false, "skill_sigil": "/", "skill_position": "leading",
     "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226, 2.1.268",
     "restricted_verdict": "supported",
     "models":  [ { "value": "sonnet", "source": "cli" }, { "value": "opus", "source": "cli" } ],
@@ -3908,6 +3982,31 @@ defaults:
   and only the second may filter anything out. It rides `GET /v1/agents`
   alone; `/v1/info` and `/v1/doctor` are health surfaces and a chat is not a
   health question.
+
+- **`supports_skill_listing`, `skill_sigil`, `skill_position`** (*added
+  2026-09-19, task 124, issue #497*) are the §9.1 skill capabilities, flat
+  siblings of `supports_resume` by task 041's rule. `supports_skill_listing` is
+  `agent.CanListSkills`: whether the adapter implements `SkillLister` at all.
+  It answers "can this agent list at all", **not** "will the installed build
+  list" — it is a fact about the adapter, like `supports_resume`, and a build
+  too old to list surfaces only at list time, as `ErrSkillsUnsupported` (task
+  124 decision 13; a tri-state `skill_list_verdict` modelled on
+  `input_verdict` was the alternative it beat). `skill_sigil` (`/` or `$`)
+  and `skill_position` (`leading` or `anywhere`) are the adapter's
+  `SkillSyntax`, verbatim, and both are `""` for a registered adapter that
+  cannot invoke. All three are `null` when there is no adapter registry to
+  ask, or the registry does not know the name, and come from the same
+  registry lookup as `supports_resume`, so the four cannot disagree about the
+  adapter they asked. They spawn nothing, so the MCP `agent_list` tool carries
+  them unchanged. Whether an adapter's stream *reports* a skill load is not a
+  field (task 124 decision 14): it is stated in the agents guide only.
+
+  **The skill list itself is not on this endpoint.** Everything here is cached
+  by binary identity because help output is a pure function of the installed
+  binary; a skill list is also a function of the directory a run starts in —
+  the project's skills live in its worktree — so no key this cache has would
+  be exact for it. The list is read per chat instead, from a chat-scoped route
+  that knows the directory its next turn runs in (task 124 decision 3).
 
 - **Always dynamic, never slow:** probes run on demand and results are cached
   keyed by *binary identity* (resolved path + mtime + version). Help output is
@@ -4340,6 +4439,19 @@ would invalidate every one of them.
   on, so the creation-time gate (§9.4) and the run cannot disagree. It needs no
   installed binary: cursor cannot restrict on Windows whether or not
   `cursor-agent` is there, which is what makes refusing at creation safe.
+- **Skills: invoked, never listed** (*added 2026-09-19, task 124, issue
+  #497*). The `-p` dialect vincent drives has no way to list the skills a run
+  would load, so cursor does not implement §9.1's `SkillLister`,
+  `supports_skill_listing` is `false` for it, and it grows no stub saying so.
+  ACP's `available_commands_update` does carry a list, but it is not adopted:
+  it took about 4 s, needs a login and the network, and disagrees with what a
+  `-p` turn loads — it misses claude plugin skills a `-p` turn does load
+  (observed on cursor-agent 2026.09.18). Serving it would list skills the
+  chat's agent will not actually load, which is emulation by another name;
+  whether to adopt it is issue #514's decision (task 124 decision 2).
+  Invocation needs no listing: cursor recognizes `/name` **anywhere** in a
+  message, as a token (<https://cursor.com/docs/skills.md>), so it implements
+  `SkillInvoker` with sigil `/` and position `anywhere`.
 
 *Added 2026-08-29 (task 057).* Cursor has **no per-run MCP flag at all**:
 `cursor-agent mcp` reads only `.cursor/mcp.json` in the workspace or
@@ -4469,14 +4581,23 @@ does — identical results, because vincent's daemon is localhost and runs as th
 invoking user.
 
 **Adapter differences, stated rather than emulated.** The directory table above
-is the `skills` CLI's, and it says where that CLI *writes*. Whether **codex**
-and **cursor** read `~/.codex/skills/` and `~/.cursor/skills/` is not confirmed
-by this repository, and vincent does not claim it: the skill ships
-`agents/openai.yaml` for codex-side packaging, and beyond that vincent reports
-what is on disk and nothing about what each agent does with it. A user who
-finds the skill unused by one of them is looking at that agent's own support,
-not at a vincent fault. This is §9's standing rule applied to skills — a
-capability an adapter lacks is documented and ignored, never emulated.
+is the `skills` CLI's, and it says where that CLI *writes*. *Amended 2026-09-19
+(task 124, issue #497): this said that whether codex and cursor read
+`~/.codex/skills/` and `~/.cursor/skills/` "is not confirmed by this
+repository". Both are now confirmed, each from its own source.* **codex**
+reads `~/.codex/skills/`: codex-cli 0.154.0 was observed answering its
+app-server `skills/list` with a skill from there, reported as `scope: user`.
+**cursor** reads `~/.cursor/skills/`: cursor's skills documentation
+(<https://cursor.com/docs/context/skills>, read 2026-09-19, when cursor-agent
+2026.09.18 was current) lists it as the user-level location, and adds that
+"Cursor also loads skills from Claude and Codex directories" —
+`~/.claude/skills/` and `~/.codex/skills/`, and their project-level
+counterparts. Beyond those two statements vincent still reports what is on disk
+and nothing about what each agent does with it; the skill also ships
+`agents/openai.yaml` for codex-side packaging. A user who finds the skill
+unused by one of them is looking at that agent's own support, not at a vincent
+fault. This is §9's standing rule applied to skills — a capability an adapter
+lacks is documented and ignored, never emulated.
 
 **vincent will disagree with `npx skills list -g`.** That command's agent
 column is the CLI's remembered selection (`lastSelectedAgents` in
@@ -5046,7 +5167,7 @@ One Go binary, `vincent`:
 | `vincent config get [key] / set <key> <value>` | *Added 2026-08-30 (task 060).* Reads and writes `config.yaml` through `GET`/`PATCH /v1/config` (§12.3) — a thin API client like the rest, never a second editor, so the CLI and the TUI's editor are one operation with one validation. `get` with no key prints every key as `path = value` in the file's own order; with one, that key's value alone. Keys are the dotted paths the file carries. Lists and argv are whitespace-separated inside a single argument (`notify.on "blocked awaiting_gate"`), which is also why an argv element containing a space has to be edited in the file. A `set` is in force when it answers; `listen` is the exception the command says out loud. Exit 0 · 1 the daemon refused it, with the file byte-identical · 2 no daemon answered |
 | `vincent github issues / prs / pr create / status --project <id>` | *Added 2026-08-26 (task 035).* Read-only GitHub views: the project's issues newest first, and whether they can be read at all. Thin API clients like the rest — the daemon makes every GitHub call. Nothing under this command writes to GitHub. *Amended 2026-08-31 (task 069, issue #273):* the last clause stops being true for **one** subcommand. `vincent github pr create --task <id> --title <t> [--body <text>] [--draft]` drives §13.2's create route: it pushes the task's branch and opens its pull request, and it is the one thing under `vincent github` that writes to GitHub — `issues`, `prs` and `status` still write nothing. It exists for the reason every other subcommand does (the TUI holds no action the daemon does not) and because a gate script has to be able to drive that route without driving a terminal. `--body` is optional: a pull request with no description is a legal one. The fallback is **not** an error — a push that succeeded and a create that did not prints the compare URL and exits 0. *Amended 2026-09-15 (task 068.4, issue #386):* `pr create` is no longer the one writer. `vincent github pr merge --task <id> --method merge\|squash\|rebase --head-sha <sha>`, `pr close --task <id>`, `pr reopen --task <id>`, `pr comment --task <id> (--body <text> \| --body-file <path>)` and `pr rerun --task <id> --run-id <id>` drive §13.2's five write routes on the task's linked pull request. `merge` requires both flags because the CLI has no confirmation popup: they are where the human names exactly what is sent (task 068 decision 4). `--body-file -` reads stdin. `issues`, `prs` and `status` still write nothing. *Amended 2026-09-15 (task 102, issue #391):* four more subcommands under `pr` drive §13.2's existing task pull-request routes, all taking the task as `--task <id>` like `pr create`: `vincent github pr link <number> --task <id>` (POST), `pr unlink --task <id>` (DELETE), `pr show --task <id>` (GET the live row) and `pr checks --task <id>` (GET the live rollup). `link` and `unlink` write **only vincent's own link column** — no request reaches GitHub from either, and `link` does not check that the number exists — so the only commands under `vincent github` that write to GitHub stay `pr create` and task 068.4's five, and `show` and `checks` write nothing anywhere. `unlink` refuses with exit 1 and sends nothing when the task has no live link (never linked, or already suppressed): a DELETE there would record a suppressed number-0 link that stops the reconciler ever auto-linking the task. That is a client-side fast failure; the route is unchanged. Both GET routes answer 200 whatever they found, so `show` and `checks` set their own exit code: 0 when the pull request or rollup was read — for `checks`, **whatever CI concluded**, the verdict being `--json`'s `.state` — 1 when there is no live link or a named `reason` stopped the read (printed as `github.Message(reason)`), 2 when no daemon answered. `--json` emits each route's body unchanged under the same exit rule |
 | `vincent doctor` | One diagnostic report: paths, daemon, log tail, database, agents, storage, task counts (§17). `--json` for scripting and bug reports; `--fix` (`--force`) reclaims orphaned worktrees and compacts the database. Exit 0 healthy · 1 problems found · 2 no daemon answered. *Amended 2026-08-26 (task 035):* it also reports the GitHub integration — the `github.enabled` toggle, `gh`'s presence, version and login state, whether a token variable is set (its **name**, never its value), and whether issues are readable. It is a **row, not a problem**: every "no" it can report leaves task creation without an issue working exactly as before, so none of it changes the exit code. *Amended 2026-08-29 (task 055):* it also reports the release check (§12.3) — whether `update.check` is on, the latest stable release and when it was last seen, this binary's version, and whether the running daemon is older than it. Rows, not problems, for the same reason: a newer release and a daemon still running the previous build both leave everything working. *Amended 2026-09-10 (task 095):* it also reports the published skills of §9.8 — one row per skill with the version this binary ships, the version installed in the global store and the agents it is linked into. A row and not a problem, on the same precedent: the built-in workflows carry the skill's text in their own prompts, so nothing a skill row can say stops a task from running, and `vincent doctor` still exits 0. *Amended 2026-09-17 (task 115):* it also reports scheduled backups (§12.3) in a `BACKUP` group: whether `backup.interval` turns them on, the directory, interval and keep, the last success and last attempt, when the next run is due, the last archive's size, how many scheduled archives are kept, and the last error. Unlike the rows above, **a failed attempt is a problem** and exits 1 (§17, task 115 decision 4). A backup that is merely overdue is not |
-| `vincent agents [--json] [--refresh]` | *Added 2026-09-16 (task 104, issue #393).* A thin client of `GET /v1/agents` (§9.6, §13.2) that, like every data subcommand, **never auto-starts a daemon**. It prints one row per adapter in registration order — `AGENT`, `VERSION`, `BUILD` (the task 041 `version_verdict`), `LOGIN` (§9.5's tri-state in `vincent doctor`'s words, `-` for an adapter not installed) and `QUOTA` — then a `NOTES` cell holding only bad news: `not found`, `no mid-run input`, `no restricted mode on <os>`, `option probe failed (curated catalog)`. `QUOTA` renders the **one merged block** the endpoint serves, labelled by its `source` (a reading wins, an observation is the fallback, task 082), and merges nothing client-side: `unknown` for a null block; a reading's windows with `read <observed_at>`; `spent → <reset>` for a reset the CLI stated and `spent ≈ <reset>` for one vincent estimated (task 026 decision 2); `ok · last spent <observed_at>` for a lapsed observation. Times are local RFC3339. By default it answers from the catalog cache; `--refresh` sends `?refresh=true`. `--json` emits the endpoint's `agents` array unchanged. Exit 0 whenever the daemon answered, whatever the adapters' health (task 041 decision 4) · 1 the API returned an error · 2 no daemon answered. No wire change |
+| `vincent agents [--json] [--refresh]` | *Added 2026-09-16 (task 104, issue #393).* A thin client of `GET /v1/agents` (§9.6, §13.2) that, like every data subcommand, **never auto-starts a daemon**. It prints one row per adapter in registration order — `AGENT`, `VERSION`, `BUILD` (the task 041 `version_verdict`), `LOGIN` (§9.5's tri-state in `vincent doctor`'s words, `-` for an adapter not installed) and `QUOTA` — then a `NOTES` cell holding only bad news: `not found`, `no mid-run input`, `no restricted mode on <os>`, `no skill listing` (*added 2026-09-19, task 124*: a `false` `supports_skill_listing`; a `null` adds nothing), `option probe failed (curated catalog)`. `QUOTA` renders the **one merged block** the endpoint serves, labelled by its `source` (a reading wins, an observation is the fallback, task 082), and merges nothing client-side: `unknown` for a null block; a reading's windows with `read <observed_at>`; `spent → <reset>` for a reset the CLI stated and `spent ≈ <reset>` for one vincent estimated (task 026 decision 2); `ok · last spent <observed_at>` for a lapsed observation. Times are local RFC3339. By default it answers from the catalog cache; `--refresh` sends `?refresh=true`. `--json` emits the endpoint's `agents` array unchanged. Exit 0 whenever the daemon answered, whatever the adapters' health (task 041 decision 4) · 1 the API returned an error · 2 no daemon answered. No wire change |
 | `vincent update [--check] [--dry-run] [--require-signature] [--json]` | *Added 2026-08-29 (task 055).* Asks GitHub for the latest **stable** release and, unless `--check` is given, installs it over this binary. It queries the feed **itself** rather than through the daemon, so it works with no daemon and before the daemon's own check has polled — and so `update.check: false` (§12.3) stays a literal promise. A binary a package manager owns is never modified: the channel is detected from the resolved `os.Executable()` path and its upgrade command is printed. A binary vincent owns is verified before anything runs (§16) and swapped in place; on any failure nothing is replaced. `--check`: exit 0 up to date · 1 the check failed · 2 an update is available. Otherwise: 0 nothing to do or swapped · 1 verification or the swap failed and the binary is untouched · 2 an update exists but this install is package-managed. `--json` carries `swapped`, which separates the two 0s |
 | `vincent skills ls / install [name...]` | *Added 2026-09-10 (task 095).* Lists the agent skills this repository publishes with the version shipped, the version installed in the global skills store and the agents each is linked into, and installs them (§9.8). **It never talks to the daemon**, so it cannot exit 2: detection is a filesystem read that works with no node on the machine, and the install writes into the invoking user's own agent directories — nothing daemon-owned, which is why the write is here and not behind `doctor --fix`. `install` shells out to `npx skills add … --agent <slug>… --yes --global`; with no name it installs everything not already current, `--agent` narrows the selection. Both carry `--json`. Exit 0 fine · 1 an install failed, `npx` missing included |
 | `vincent version` | Build info |

@@ -30,6 +30,8 @@ silently drops.
 | Mid-run questions (`awaiting_input`) | ✅ | — | — |
 | Resumes its own session ([chats](../reference/cli.md#vincent-chat)) | ✅ `--resume` | ✅ `exec resume` | ✅ `--resume` |
 | Reports a session it can no longer resume | ✅ `session_lost` | ✅ `session_lost` | **—** (it adopts the id and answers) |
+| Lists its skills in a chat | — | — | **—** (its `-p` mode has no listing) |
+| Invokes a skill from a chat message | ✅ `/name` at the **start** | ✅ `$name` anywhere | ✅ `/name` anywhere |
 | Reports cost | ✅ | — | — |
 | `model:` | ✅ | ✅ (free text) | ✅ (~180 enumerated) |
 | `effort:` | ✅ | ✅ | **—** (it lives in the model id) |
@@ -39,6 +41,15 @@ silently drops.
 | Reports whether you are logged in | ✅ from 2.1.41 | ✅ | ✅ |
 | Recognizes a usage limit / auth failure in a run | ✅ | — | — |
 | Reports **remaining** quota without running | **push only** (its status line) | ✅ `app-server --stdio` | **—** (no usage surface) |
+
+A skill is invoked in the CLI's own syntax, typed into your chat message;
+vincent passes the message through unchanged and does not check the name. The
+two skill rows are also on `GET /v1/agents`, as `supports_skill_listing`,
+`skill_sigil` and `skill_position`. Two things to know today: no adapter lists
+its skills yet, and in a chat opened on a task claude does not expand a `/name`
+in your **first** message, because the task's context arrives in front of it
+([#499](https://github.com/lezli01/vincent/issues/499)). From the second
+message on it does.
 
 [`vincent agents`](../reference/cli.md#vincent-agents), the TUI's daemon view,
 and `GET /v1/agents` all report what vincent actually resolved on your machine — path, version, the model and

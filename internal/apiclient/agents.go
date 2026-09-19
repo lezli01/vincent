@@ -35,6 +35,18 @@ type Agent struct {
 	// predates the field, or one with no adapter registry to ask — and
 	// nothing may be refused on the strength of a field that was never sent.
 	SupportsResume *bool `json:"supports_resume"`
+	// SupportsSkillListing is whether this adapter can list the skills its
+	// CLI would load at all (§9.1, §9.6, task 124). It is a fact about the
+	// adapter, not the installed build: a build that cannot list is found out
+	// only when a chat's skills are read. nil is no judgement, as for
+	// SupportsResume.
+	SupportsSkillListing *bool `json:"supports_skill_listing"`
+	// SkillSigil and SkillPosition are how a message names one of this
+	// adapter's skills (task 124): "/" or "$", and "leading" (only at the
+	// start of the message) or "anywhere". "" is an adapter that cannot
+	// invoke skills; nil is no judgement.
+	SkillSigil    *string `json:"skill_sigil"`
+	SkillPosition *string `json:"skill_position"`
 	// InputVerdict is the daemon's verdict on backing an `on_input: require`
 	// step (§7.4, task 013): "supported", "unsupported" or "unknown". Empty
 	// means the daemon predates the field, which is treated as unknown —
@@ -220,6 +232,14 @@ func (a Agent) CannotTakeInput() bool { return a.InputVerdict == InputVerdictUns
 // older daemon, or one that cannot say — answers false, exactly as the
 // input and restricted verdicts do.
 func (a Agent) CannotResume() bool { return a.SupportsResume != nil && !*a.SupportsResume }
+
+// CannotListSkills reports an adapter that can never list its skills (task
+// 124). Only a positive no counts: a nil SupportsSkillListing — an older
+// daemon, or one that cannot say — answers false, exactly as CannotResume
+// does.
+func (a Agent) CannotListSkills() bool {
+	return a.SupportsSkillListing != nil && !*a.SupportsSkillListing
+}
 
 // VersionVerdict values as GET /v1/agents reports them (task 041).
 const (

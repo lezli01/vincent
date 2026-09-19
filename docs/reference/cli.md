@@ -249,9 +249,9 @@ of [`GET /v1/agents`](api.md#daemon) and needs a running daemon — with none it
 
 ```
 AGENT   VERSION             BUILD     LOGIN          QUOTA                                                                                                NOTES
-claude  2.1.226             tested    ok             claude status line · 5h 28.5% → 2026-09-16T14:40:00+02:00 · 7d 62% · read 2026-09-16T11:40:02+02:00
-codex   -                   -         -              spent → 2026-09-16T13:40:00+02:00                                                                    not found: …; no mid-run input
-cursor  2026.09.02-1c4f7a0  untested  NOT LOGGED IN  unknown                                                                                              no mid-run input
+claude  2.1.226             tested    ok             claude status line · 5h 28.5% → 2026-09-16T14:40:00+02:00 · 7d 62% · read 2026-09-16T11:40:02+02:00  no skill listing
+codex   -                   -         -              spent → 2026-09-16T13:40:00+02:00                                                                    not found: …; no mid-run input; no skill listing
+cursor  2026.09.02-1c4f7a0  untested  NOT LOGGED IN  unknown                                                                                              no mid-run input; no skill listing
 ```
 
 | Column | Shows |
@@ -260,7 +260,7 @@ cursor  2026.09.02-1c4f7a0  untested  NOT LOGGED IN  unknown                    
 | `BUILD` | `tested`, `untested` or `incompatible` — whether vincent has been tested against this build. `-` when there is nothing installed to judge |
 | `LOGIN` | `ok`, `NOT LOGGED IN` or `unknown`, the words [`vincent doctor`](#vincent-doctor) uses. `unknown` is a probe that could not tell — it timed out, or the CLI predates the command — never a no. `-` for an adapter that is not installed |
 | `QUOTA` | The adapter's usage window, below |
-| `NOTES` | Bad news only: `not found: <why>`, `no mid-run input` (an `on_input: require` step cannot use it), `no restricted mode on <os>`, `option probe failed (curated catalog)`. A healthy adapter's cell is empty |
+| `NOTES` | Bad news only: `not found: <why>`, `no mid-run input` (an `on_input: require` step cannot use it), `no restricted mode on <os>`, `no skill listing` (the adapter cannot list the skills its CLI would load; a daemon that predates the field adds nothing), `option probe failed (curated catalog)`. A healthy adapter's cell is empty |
 
 `QUOTA` is the one block the daemon serves, labelled by where it came from.
 Nothing is merged on the client: when a source has reported a reading, that is
@@ -288,8 +288,9 @@ adapter on its own when its binary changes. `--refresh` forces a fresh probe of
 every adapter first — the TUI new-task view's `R` — and waits for it.
 
 `--json` emits the endpoint's `agents` array unchanged, with every field the
-table leaves out: models and efforts, `supports_resume`, the tested builds and
-the raw verdicts.
+table leaves out: models and efforts, `supports_resume`, the skill fields
+(`supports_skill_listing`, `skill_sigil`, `skill_position`), the tested builds
+and the raw verdicts.
 
 ```sh
 vincent agents --json | jq -r '.[] | select(.input_verdict == "supported") | .name'

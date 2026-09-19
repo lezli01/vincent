@@ -158,6 +158,7 @@ are long-lived by contract and no write deadline is set.
     "name": "claude", "available": true, "path": "…", "version": "2.1.224",
     "supports_input": true, "input_verdict": "supported", "logged_in": true,
     "supports_resume": true,
+    "supports_skill_listing": false, "skill_sigil": "/", "skill_position": "leading",
     "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226, 2.1.268",
     "restricted_verdict": "supported",
     "models":  [ { "value": "sonnet", "source": "cli" } ],
@@ -215,6 +216,20 @@ like `restricted_verdict` it is answered for a CLI that is missing. It is
 `null` — never `false` — when the daemon has no adapter registry to ask, and a
 daemon that predates the field omits it: both mean "no judgement", and nothing
 may be filtered out on either. It rides this route only.
+
+`supports_skill_listing`, `skill_sigil` and `skill_position` describe the
+adapter's skills. `supports_skill_listing` is whether the adapter can list the
+skills its CLI would load at all — `false` for all three shipped adapters
+today. It is a fact about the adapter, not about the installed build: `true`
+does not promise that the build you have will list, and a build that cannot is
+found out only when a chat's skills are read. `skill_sigil` (`/` or `$`) and
+`skill_position` (`leading`: only at the start of the message; `anywhere`) are
+how a chat message names a skill — claude `/` `leading`, codex `$` `anywhere`,
+cursor `/` `anywhere` — and both are `""` for an adapter that cannot invoke
+skills. All three are `null` when the daemon has no adapter registry to ask, as
+`supports_resume` is, and ride this route only. The per-directory skill list is
+not here: this answer is cached by binary identity, and a skill list also
+depends on the directory the agent runs in.
 
 ### Backup
 
