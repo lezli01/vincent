@@ -3460,6 +3460,9 @@ from whether vincent has ever seen this build.
 `auth status` fixtures were captured from (§9.5). The `auth status` gate
 `[2.1.41, 3.0.0)` is, like the input gate, a family range rather than this
 list, and for the same reason.
+*Amended 2026-09-19 (task 124.2):* `2.1.277` joins the list — the build
+`stream_skill_permission_2.1.277.jsonl` pins the §7.4 control protocol at for
+a `Skill` request (above).
 
 *Amended 2026-08-31 (task 066).* The parser reads more of the dialect it was
 already recording. Four groups, all of them present in the `2.1.226` fixtures
@@ -4039,7 +4042,7 @@ defaults:
     "supports_input": true, "input_verdict": "supported", "logged_in": true,
     "supports_resume": true,
     "supports_skill_listing": false, "skill_sigil": "/", "skill_position": "leading",
-    "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226, 2.1.268",
+    "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226, 2.1.268, 2.1.277",
     "restricted_verdict": "supported",
     "models":  [ { "value": "sonnet", "source": "cli" }, { "value": "opus", "source": "cli" } ],
     "efforts": [ { "value": "low", "source": "cli" }, { "value": "max", "source": "cli" } ],

@@ -231,7 +231,9 @@ Decisions 20–28 are 124.2's (#498). 20–22 were settled with the author, and
     that build, which is the reason the list gives for 2.1.226.
 27. **2026-09-19 — `docs/guides/agents.md` is not touched.** Decision 14 writes
     nothing there before both 124.2 and 124.10 make "the transcript shows a
-    skill ran" true for claude; 124.10 adds that row.
+    skill ran" true for claude; 124.10 adds that row. The tested-build row is
+    not a skill fact but `testedVersions` restated, so it gains `2.1.277`
+    with decision 26 in the same PR (documentation audit, 2026-09-19).
 28. **2026-09-19 — Fixture provenance goes where the repo already keeps it.**
     `internal/agent/*/testdata/` has no README. The argv and the probe skill
     are recorded in the doc comment of the test that loads each fixture, and
@@ -292,7 +294,8 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
 - [ ] 124.10 (#506) `--replay-user-messages` on claude chat turns, so a
   human-invoked skill shows as `agent.skill{by:"human"}`. Depends: 124.2.
 - [ ] 124.11 (#507) `vincent chat skills <chat-id>`. Depends: 124.9.
-- [ ] 124.12 (#508) Draw `agent.skill` at each verbosity level. Depends: 124.2.
+- [ ] 124.12 (#508) Draw `agent.skill` at each verbosity level, and in
+  `vincent task|chat transcript` (decision 22). Depends: 124.2.
 - [ ] 124.13 (#509) The skill list above the composer, opened with `tab`,
   inserting the picked invocation. Depends: 124.11, 124.7.
 - [ ] 124.14 (#510) The same list, opened inline as the human types the

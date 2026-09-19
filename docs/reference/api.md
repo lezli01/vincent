@@ -159,7 +159,7 @@ are long-lived by contract and no write deadline is set.
     "supports_input": true, "input_verdict": "supported", "logged_in": true,
     "supports_resume": true,
     "supports_skill_listing": false, "skill_sigil": "/", "skill_position": "leading",
-    "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226, 2.1.268",
+    "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226, 2.1.268, 2.1.277",
     "restricted_verdict": "supported",
     "models":  [ { "value": "sonnet", "source": "cli" } ],
     "efforts": [ { "value": "max",    "source": "cli" } ],
