@@ -206,6 +206,33 @@ func TestRawLinesReachableAtVerbose(t *testing.T) {
 	}
 }
 
+// TestInputEchoIsNeverALine: cursor's echo of the prompt was an unrecognized
+// line until task 124.2 modeled it, and a modeled record that draws nothing
+// must not split the run of unrecognized lines it sits in — one count of two,
+// not two counts of one — nor add a line at verbose.
+func TestInputEchoIsNeverALine(t *testing.T) {
+	d := newTestDetail(t)
+	d.width = 80
+	before := apiclient.TranscriptRecord{Type: "agent.raw", Line: `{"type":"system","subtype":"compact_boundary"}`}
+	after := apiclient.TranscriptRecord{Type: "agent.raw", Line: `{"type":"thinking","subtype":"delta"}`}
+	echo := apiclient.TranscriptRecord{Type: "agent.input_echo", Raw: json.RawMessage(`{"type":"agent.input_echo"}`)}
+
+	d.records = []apiclient.TranscriptRecord{before, echo, after}
+	d.level.set(levelNormal)
+	normal := strings.Join(plainLines(d.outputLines()), "\n")
+	if !strings.Contains(normal, "… 2 unrecognized line(s) (v)") || strings.Contains(normal, "1 unrecognized") {
+		t.Errorf("normal = %q, want one count of both raw lines", normal)
+	}
+
+	d.level.set(levelVerbose)
+	withEcho := strings.Join(plainLines(d.outputLines()), "\n")
+	d.records = []apiclient.TranscriptRecord{before, after}
+	withoutEcho := strings.Join(plainLines(d.outputLines()), "\n")
+	if withEcho != withoutEcho {
+		t.Errorf("verbose drew the echo:\n%s\nwant\n%s", withEcho, withoutEcho)
+	}
+}
+
 // TestUsageOnlyAtVerbose: the timeline row already carries the numbers, so
 // usage stays out of the tail until the level means "show me the machine".
 func TestUsageOnlyAtVerbose(t *testing.T) {
