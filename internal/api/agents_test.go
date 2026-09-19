@@ -364,11 +364,11 @@ func servedAgents(t *testing.T, reg *agent.Registry, withRegistry bool) []agentR
 //
 // The sigils and positions are pinned literally, since a client inserts
 // them verbatim. The listing bit is proven both ways against the agenttest
-// stubs; of the shipped adapters only codex's positive answer is pinned
-// (task 124.8). A refusal is never pinned to claude or cursor: a test
-// asserting that of one would invert itself the day #503 or #514 lands. A
-// registered adapter that cannot invoke answers "" for both syntax fields; no
-// registry at all answers null for all three.
+// stubs; of the shipped adapters only positive answers are pinned — codex's
+// (task 124.8) and claude's (task 124.7). A refusal is never pinned to
+// cursor: a test asserting that of it would invert itself the day #514
+// lands. A registered adapter that cannot invoke answers "" for both syntax
+// fields; no registry at all answers null for all three.
 func TestAgentsReportSkillCapabilities(t *testing.T) {
 	fake := agenttest.BuildFakeAgent(t)
 	newReg := func() *agent.Registry {
@@ -410,6 +410,7 @@ func TestAgentsReportSkillCapabilities(t *testing.T) {
 		}
 	}
 	for name, want := range map[string]bool{
+		"claude":               true,
 		"codex":                true,
 		agenttest.NoSkillsName: false,
 		agenttest.SkillsName:   true,

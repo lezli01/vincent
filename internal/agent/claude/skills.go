@@ -2,9 +2,10 @@ package claude
 
 import "github.com/lezli01/vincent/internal/agent"
 
-// claude invokes skills but does not list them yet: listing through the
-// stream-json `initialize` request is task 124's claude item (#503). Until
-// then CanListSkills answers false for it, which is today's truth.
+// claude both invokes and lists its skills: listing is the stream-json
+// `initialize` request (list.go, §9.2, task 124.7), so CanListSkills answers
+// true for it. A build below the listing floor answers ErrSkillsUnsupported
+// at list time (task 124 decision 13).
 var _ agent.SkillInvoker = (*Adapter)(nil)
 
 // SkillSyntax implements agent.SkillInvoker (§9.1, §9.2, task 124 decision
