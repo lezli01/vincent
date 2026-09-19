@@ -4417,13 +4417,18 @@ row says `differs` and prints both versions; it never guesses a direction.
 flags, and the difference is required: `skills add` with no agent selection
 opens an interactive multi-select, which cannot be driven from a TUI takeover
 or a non-TTY CLI. `--agent` is variadic on the skills CLI, so each slug is its
-own argv element rather than a comma-joined string. The agent list is mapped through the table above, and the two
-surfaces answer the picker differently on purpose: the **CLI** defaults to all
-three adapters, because a person who typed the command means "put it where my
-agents look" and `--agent` is right there to narrow it, while the **TUI**
-answers with the adapters the daemon actually detected, because that offer is
-one keypress on a screen already showing which ones those are. `npx` is a runtime dependency of the
-**install action only**; its absence is a reported outcome naming the
+own argv element rather than a comma-joined string. *Corrected 2026-09-19
+(issue #489): this said `--agent <slugs>`, and what shipped joined them with
+commas into one element, which the skills CLI reads as a single unknown agent
+name and rejects — every install with more than one adapter selected failed.
+It splits nothing; it consumes each following argument until the next flag.*
+The agent list is mapped through the table above, and the two surfaces answer
+the picker differently on purpose: the **CLI** defaults to all three adapters,
+because a person who typed the command means "put it where my agents look" and
+`--agent` is right there to narrow it, while the **TUI** answers with the
+adapters the daemon actually detected, because that offer is one keypress on a
+screen already showing which ones those are. `npx` is a runtime dependency of
+the **install action only**; its absence is a reported outcome naming the
 dependency and printing the command to run once node is available, never a
 crash. The first run downloads the package, so an install is slow and needs
 network.
