@@ -761,6 +761,39 @@ differs is where it works and how it ends.
 - **On a task that runs in a container, its turns run in that container**
   (§16). A free chat still runs on the host.
 
+#### Skills available to a chat (added 2026-09-19, task 124.9, issue #505)
+
+`GET /v1/chats/{id}/skills` (§13.2) answers which skills the chat's agent CLI
+would load for its **next** turn, and how a message invokes one. It asks
+nothing of the chat but its directory, so it answers from `POST /v1/chats` on,
+before the first message (task 124 decision 3). The directory is the turn's
+own placement, `chatrun.Runner.Workspace`: a free chat's `worktree_path`, or
+its linked task's, read fresh on every call because the task owns that claim.
+`turnPlace` resolves a turn's directory through the same method, so the list
+and the turn cannot disagree about where the CLI starts. Whether a linked
+chat's task runs in a container is read from the task's workflow snapshot and
+container settings alone, never from the runtime, so asking spawns no
+`docker inspect` (task 124 decision 39).
+
+It answers `200` with verdicts and refuses only on state (task 124
+decision 4):
+
+| chat | answer |
+|---|---|
+| `archived`, `handed_off`, `closed` | `409 invalid_state`, `details: {state, action: "skills"}`; checked before `refresh`, so a terminal chat never costs a probe |
+| linked, task has no worktree | `409 task_has_no_worktree`, `details.task_id` |
+| linked, task's workflow runs in a container | `list_verdict: unknown` with `unavailable_reason`; nothing spawned, the cache not asked, never a host listing (decision 11) — including a configured container that is gone |
+| adapter not registered | `list_verdict: unknown`, `probe_error` set, `invoke_verdict: unknown` — never `unsupported` (decision 41) |
+| adapter without `SkillLister` | `list_verdict: unsupported`; the route writes `unavailable_reason` itself (decision 40) |
+| `ErrSkillsUnsupported` from the probe | `list_verdict: unsupported`, its wrapped text as `unavailable_reason` |
+| probe failed, an earlier list cached | `list_verdict: supported`, the earlier list, `probe_error` set |
+| probe failed, nothing earlier | `list_verdict: unknown`, `probe_error` set |
+| otherwise | `list_verdict: supported`, the list for that directory |
+
+A chat that is `idle`, `running` or `awaiting_input` is listed alike: a probe
+is not a turn and holds no `max_parallel_chats` slot (§11). The list is served
+from §9.6's skill cache, which a turn's ending invalidates for its directory.
+
 #### Handoff (added 2026-09-01, task 074, issue #288)
 
 `hand_off` creates a task in the chat's project that **adopts** the chat's
@@ -3093,6 +3126,15 @@ capability today.
   The rows state the adapters as shipped; §9.2 and §9.3 add nothing to them.
   *Amended 2026-09-19 (task 124.8, issue #504):* §9.2 still adds nothing;
   §9.3 now specifies codex's listing and when its `Invocation` links.
+- **The daemon lists only through the skill cache** (*added 2026-09-19, task
+  124.9, issue #505*). `ListSkills` is called by §9.6's skill cache and by
+  nothing else, and only `GET /v1/chats/{id}/skills` asks the cache (§5.5,
+  §13.2). The route reads `SkillInvoker` directly — its syntax and
+  `Invocation` are static and spawn nothing — and writes every skill's
+  `invocation` from it, so no client builds one. The cache spawns nothing of
+  its own: a probe is the adapter's `ListSkills` on the host, and whatever it
+  spawns goes through the adapter's own path, `CREATE_NO_WINDOW` included
+  (task 124 decision 42).
 
 **The launch seam (task 062.1, added 2026-09-16).** An adapter builds its run's
 argv and hands it over; it never spawns the process itself. `Start` resolves the
@@ -4196,6 +4238,46 @@ defaults:
   the project's skills live in its worktree — so no key this cache has would
   be exact for it. The list is read per chat instead, from a chat-scoped route
   that knows the directory its next turn runs in (task 124 decision 3).
+
+  *Amended 2026-09-19 (task 124.9, issue #505): that route exists,
+  `GET /v1/chats/{id}/skills` (§5.5, §13.2), and it is served from the
+  **skill cache**, this cache's sibling for the one answer it cannot key.*
+  `agent.SkillCache` is in memory only, with no table and no event (task 124
+  decision 5), and follows this section's rules wherever they apply:
+
+  - **Key:** the adapter's name, its binary identity (the same resolved path
+    plus mtime, found without spawning) and the cleaned directory. An
+    upgraded CLI is a new key, so it is asked at once rather than after a TTL.
+  - **`skillTTL` = 5 minutes for a clean answer, `skillFailureTTL` = 1 minute
+    for a failed probe** (task 124 decision 37). A listing is not a pure
+    function of the binary — a person adds a skill or installs a plugin and
+    nothing about the CLI changes — so a TTL expires it, on `authTTL`'s
+    argument and at `authTTL`'s number: any number of clients asking in
+    the same second cost one probe, and a human who changes something and
+    looks again is told the truth. The failure minute is `failureTTL`'s, for
+    T4.22's reason. Neither has a config key, because no
+    other TTL here has one. `?refresh=true` bypasses both.
+  - **A turn's ending invalidates its directory**, across every adapter and
+    binary identity: a turn is the one event vincent observes that can have
+    written a `SKILL.md` or installed a plugin. The chat runner does it once
+    the process is gone and **before** it records the ending, because the
+    ending's `chat.turn_changed` (§13.3) is the cue a client refetches on. A
+    probe already in flight across an invalidation answers its own callers
+    but stores nothing a later request can see.
+  - **Single flight per key.** Probes are serialized per key, a reader that
+    finds a fresh answer never waits behind one, and a request queued behind a
+    probe that finished after it arrived is served that probe's answer —
+    `refresh` or not — so N concurrent refreshes cost one subprocess.
+  - **A failed probe keeps the previous answer** (T4.22). Its error is
+    recorded beside the last clean list, whose `probed_at` it keeps; with no
+    earlier list the answer is `unknown`. Only `ErrSkillsUnsupported`, wrapped
+    or not, is a no, and it is a clean answer about that build, trusted as
+    long as a list. A failure whose caller hung up is not stored.
+  - **Bounded at 64 keys, least recently used evicted first** (task 124
+    decision 38). The directory is in the key and worktrees churn, so an
+    unbounded cache would grow with every chat ever listed. It is not coupled
+    to `max_parallel_chats`: a probe is not a turn and holds no slot (§11).
+    There is no config key.
 
 - **Always dynamic, never slow:** probes run on demand and results are cached
   keyed by *binary identity* (resolved path + mtime + version). Help output is
@@ -5337,6 +5419,13 @@ succeed. The two clocks are §7.2's and §7.4's numbers verbatim — no
 is counted here exactly as a free one is, and its task consumes no slot while
 the chat talks in its worktree: the task is stopped, and the lock (§6) moves
 nothing.
+
+*Amended 2026-09-19 (task 124.9, issue #505).* Listing a chat's skills
+(`GET /v1/chats/{id}/skills`, §5.5) is **not a turn and holds no slot**. Its
+probe is a short-lived CLI invocation bounded by the adapter's own deadline,
+not a conversation, so it is neither counted here nor refused at the cap, and
+it runs while the chat's own turn is `running` or `awaiting_input`. It touches
+no chat or turn row.
 
 The two caps are independent by design: a running chat consumes no
 `max_parallel_tasks` or per-project slot, and does not delay an admissible task.
@@ -7512,6 +7601,37 @@ POST   /v1/chats/{id}/close             *Added 2026-09-17 (task 119, issue #472)
                                         free chat (archive it instead) and on a chat already
                                         terminal, with `details.state`. It is **not** an MCP
                                         tool (§13.4)
+GET    /v1/chats/{id}/skills            *Added 2026-09-19 (task 124.9, issue #505).* The skills
+       ?refresh=                        the chat's agent CLI would load for its next turn, and how
+                                        a message invokes one, from §9.6's skill cache;
+                                        `?refresh=true` probes again. Resolution is §5.5's table.
+                                        `200` with flat siblings (§9.6's rule):
+                                        { chat_id, agent, work_dir, list_verdict,
+                                          unavailable_reason, probe_error, probed_at,
+                                          invoke_verdict, invoke_sigil, invoke_position,
+                                          skills[], problems[] }
+                                        `list_verdict` and `invoke_verdict` are `supported`,
+                                        `unsupported` or `unknown` with `agent.InputVerdict`'s
+                                        meaning; `invoke_verdict` is `unknown` only for an
+                                        unregistered adapter. `unavailable_reason` is `""` for
+                                        none; `probe_error` and `probed_at` (RFC3339 UTC, when
+                                        the served list was obtained) are `null` for none. A
+                                        `probe_error` beside a `supported` list means the list
+                                        is the earlier one the cache kept. `invoke_sigil` and
+                                        `invoke_position` are `""` when the adapter cannot
+                                        invoke. Each skill is { name, invocation, description,
+                                        argument_hint, aliases[], scope, plugin, path }, every
+                                        field the CLI's own word; `invocation` is the adapter's
+                                        `SkillInvoker.Invocation`, `""` when it cannot invoke,
+                                        so no client builds one. Each problem is { path, message }.
+                                        `skills`, `problems` and `aliases` are always arrays;
+                                        order and duplicate names are the CLI's; there is no
+                                        `kind` and no inferred scope; an empty `skills` means
+                                        "none" only under `supported`. `409 invalid_state` for
+                                        a terminal chat (`details.state`, `details.action:
+                                        "skills"`), `409 task_has_no_worktree` for a linked
+                                        chat whose task has none (`details.task_id`). No event
+                                        and no row. It is **not** an MCP tool (§13.4)
 GET    /v1/chats/{id}/events            *Added 2026-08-31 (task 067).* SSE: this chat's durable
                                         `chat.*` events interleaved with its live output, the
                                         per-task stream's shape for a chat. The filter is the
@@ -8463,6 +8583,13 @@ coalescing and the same drop-the-slow-subscriber rule, because the turn's
 transcript file is the durable copy. `Last-Event-ID` resumes the durable chat
 events and not the output, for the reason it does not resume a step's.
 
+*Amended 2026-09-19 (task 124.9, issue #505).* A chat's skill list
+(`GET /v1/chats/{id}/skills`, §13.2) has **no event of its own**. It is a
+cached read, not a durable fact: a client refetches it on
+`chat.turn_changed`, because a turn's ending is the one change the daemon
+observes and it invalidates the cache before that event is recorded (§9.6),
+and on an explicit `?refresh=true`.
+
 *Amended 2026-09-17 (task 119, issue #472).* One more durable kind,
 **`chat.closed`**, for a linked chat reaching `closed` — by
 `POST /v1/chats/{id}/close` or by `cancel` on the task it locked, where it is
@@ -8700,6 +8827,18 @@ excepted**, as task 074 extended it for `handoff`. The lock, by contrast, does
 reach the tool surface: the `task_*` action tools replay through the same
 handlers, so an agent acting on a locked task gets the same
 `409 task_locked_by_chat` a human does.
+
+*Amended 2026-09-19 (task 124.9, issue #505).* One more, **thirty-five** in
+all:
+
+    GET    /v1/chats/{id}/skills
+
+It is a chat read, and it joins the family's other two reads under the one
+rule rather than becoming the family's first tool (task 124 decision 6,
+extending task 063 decision 2): the list is what a human's composer offers,
+and an agent calling it already has a session, and skills, of its own. The
+agent-level facts — whether an adapter can list or invoke at all, and its
+sigil — stay on `agent_list` (§9.6).
 
 The task 057 property that the tool surface **equals** `Routes()` minus the
 exclusions is unchanged, and is still asserted by a test — the exclusion list it
@@ -11914,6 +12053,18 @@ currently true to show (§15 view 6).
   `--dangerously-skip-permissions` (claude),
   `--dangerously-bypass-approvals-and-sandbox` (codex), `--force` (cursor).
   Cursor's reads mildest and is not; the first-run notice covers all three.
+- **Listing a chat's skills starts the chat's agent CLI before the human has
+  sent anything** (*added 2026-09-19, task 124.9, issue #505*).
+  `GET /v1/chats/{id}/skills` (§5.5) spawns the adapter's listing probe on the
+  host, in the chat's directory, as the invoking user, whenever the cache has
+  no fresh answer — on opening a chat, before any turn. The probe runs no
+  prompt and asks for no model output, but the CLI starts in a worktree whose
+  contents the human may not have read, and it reads that directory's own
+  configuration the way a turn would. For claude the probe suppresses hooks
+  and MCP servers so that listing runs none of a project's code (124.7 owns
+  that suppression; this is the posture it is held to). codex's
+  `skills/list` loads its skills without running one (§9.3). A
+  container-run linked chat is never probed on the host.
 - **`notify.command` is arbitrary code the daemon runs as the invoking user.**
   *Added 2026-08-28 (task 046, issue #90).* It is spawned by the daemon, not by
   an agent or a task, and nothing from a task, an agent or the API reaches its
