@@ -54,6 +54,11 @@ list with the user-facing context a commit subject cannot carry.
   permission prompt for it reads "Skill wants to run: echo-probe" rather than
   quoting the skill's description.
 
+### Fixed
+
+- **Chat drafts can now contain newlines.** Use `ctrl+j`, `shift+enter` or
+  `alt+enter`; `enter` continues to send the message.
+
 ## [0.9.0](https://github.com/lezli01/vincent/compare/v0.8.0...v0.9.0) (2026-09-18)
 
 ### Added

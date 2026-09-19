@@ -78,6 +78,10 @@ unrecognized lines — so a reconnect changed what was on screen.
    is true whenever the composer is focused. `ctrl+r` was unbound in every
    context.
 
+   *Amended 2026-09-19 (issue #500).* `ctrl+j`, `shift+enter` and `alt+enter`
+   insert a newline while `enter` sends. `ctrl+j` remains available on legacy
+   terminals, making the arrow-key editing above reachable without pasting.
+
 5. **The chat body gets a viewport.** At verbose the body grows several-fold, and
    a bottom-anchored window with no way to scroll would put the newly revealed
    content out of reach as fast as it appears. The chat takes the output pane's

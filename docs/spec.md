@@ -10076,6 +10076,11 @@ stream for the live tail.
    letter would be typed into the draft. The composer keeps `↑`/`↓` for
    editing a multi-line message.
 
+   *Amended 2026-09-19 (issue #500).* `ctrl+j`, `shift+enter` and `alt+enter`
+   insert a newline in the draft; `enter` still sends it. `ctrl+j` is the
+   fallback for legacy terminals. This makes the multi-line editing above
+   reachable without pasting.
+
    The conversation body is **the output pane's line model** at the level
    below, not a renderer of its own: every turn's records go through the same
    two-column gutter scheme, so an `agent.tool_use` reads the same in a chat as

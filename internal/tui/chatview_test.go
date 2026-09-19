@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
@@ -15,6 +16,30 @@ func chatViewFixture() *chatView {
 	v.chat = &apiclient.Chat{ID: 1, ProjectID: 7, Title: "a chat", State: "idle", Agent: "claude"}
 	v.composer.Focus()
 	return v
+}
+
+func TestChatViewNewlineKeys(t *testing.T) {
+	cases := []struct {
+		name string
+		msg  tea.KeyPressMsg
+	}{
+		{"ctrl+j", tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl}},
+		{"shift+enter", tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift}},
+		{"alt+enter", tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModAlt}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.msg.String(); got != tc.name {
+				t.Fatalf("test key serializes as %q, want %q", got, tc.name)
+			}
+			v := chatViewFixture()
+			v.composer.SetValue("/re")
+			v.updateKey(tc.msg)
+			if got, want := v.composer.Value(), "/re\n"; got != want {
+				t.Fatalf("composer value = %q, want %q", got, want)
+			}
+		})
+	}
 }
 
 // TestChatViewRefusesCapReached holds §11's refusal: a 409 renders as a
