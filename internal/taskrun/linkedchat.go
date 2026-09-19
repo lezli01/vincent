@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/lezli01/vincent/internal/agent"
+	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/container"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskstate"
@@ -132,18 +133,46 @@ func (r *Runner) StopChatOrphan(ctx context.Context, taskID, turnID int64) bool 
 	return true
 }
 
-// chatContainer finds the container a task's workflow runs in, the way a later
-// admission finds it again: by name. A zero value means the host.
-func (r *Runner) chatContainer(ctx context.Context, taskID int64) (taskContainer, error) {
+// ChatInContainer reports whether taskID's workflow runs in a container,
+// from the task's workflow snapshot and container settings alone. It never
+// calls the runtime, so a configured container that is gone still reports
+// true (task 124 decision C).
+//
+// It is what GET /v1/chats/{id}/skills asks before listing a directory (task
+// 124.9, §13.2): a question a client can repeat at will must not spawn
+// `docker inspect` each time, and a missing container is the turn's failure to
+// report, through ChatLauncher, not this bit's.
+func (r *Runner) ChatInContainer(ctx context.Context, taskID int64) (bool, error) {
+	c, err := r.chatContainerSettings(ctx, taskID)
+	if err != nil {
+		return false, err
+	}
+	return c.Enabled(), nil
+}
+
+// chatContainerSettings resolves a task's container settings from its workflow
+// snapshot. It is the one place both ChatLauncher and ChatInContainer read
+// them from, so where a turn runs and where the skills route says it runs can
+// never disagree.
+func (r *Runner) chatContainerSettings(ctx context.Context, taskID int64) (config.Container, error) {
 	task, err := r.deps.Store.GetTask(ctx, taskID)
 	if err != nil {
-		return taskContainer{}, err
+		return config.Container{}, err
 	}
 	wf, _, err := workflow.Parse([]byte(task.WorkflowSnapshot), workflow.Options{})
 	if err != nil {
-		return taskContainer{}, fmt.Errorf("parse workflow snapshot: %w", err)
+		return config.Container{}, fmt.Errorf("parse workflow snapshot: %w", err)
 	}
-	c := r.containerSettings(wf)
+	return r.containerSettings(wf), nil
+}
+
+// chatContainer finds the container a task's workflow runs in, the way a later
+// admission finds it again: by name. A zero value means the host.
+func (r *Runner) chatContainer(ctx context.Context, taskID int64) (taskContainer, error) {
+	c, err := r.chatContainerSettings(ctx, taskID)
+	if err != nil {
+		return taskContainer{}, err
+	}
 	if !c.Enabled() {
 		return taskContainer{}, nil
 	}
