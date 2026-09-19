@@ -4,7 +4,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/agenttest"
+	"github.com/lezli01/vincent/internal/agent/claude"
+	"github.com/lezli01/vincent/internal/agent/cursor"
 )
 
 // TestCodexScenarioOverride pins the dialect-scoped scenario knob. The M3
@@ -37,5 +40,53 @@ func TestCodexScenarioOverride(t *testing.T) {
 	shared := runAgent(t, bin, []string{"exec", "--json"}, "FAKEAGENT_SCENARIO=big-usage")
 	if !strings.Contains(shared, "burning tokens") {
 		t.Errorf("codex ignored FAKEAGENT_SCENARIO with no override set:\n%s", shared)
+	}
+}
+
+// TestSkillModelScenario pins the fake's skill load to what the real claude
+// parser makes of it (task 124.2): the call reads as `Skill echo-probe`, and
+// the isSynthetic body becomes the one agent.skill, carrying the name, the
+// call and the arguments and none of the body. The fake cursor's prompt echo
+// is its input echo, as a real cursor's is.
+func TestSkillModelScenario(t *testing.T) {
+	t.Parallel()
+	bin := agenttest.BuildFakeAgent(t)
+
+	out := runAgent(t, bin, []string{"-p", "--output-format", "stream-json", "--verbose"},
+		"FAKEAGENT_SCENARIO=skill-model")
+	parse := claude.New(func() string { return "" }).NewLineParser()
+	var loads []agent.SkillInvocation
+	var summary string
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		ev := parse([]byte(strings.TrimRight(line, "\r")))
+		switch ev.Type { //nolint:exhaustive // only the skill's two lines matter here
+		case agent.EventToolUse:
+			summary = ev.Tools[0].Summary
+		case agent.EventSkill:
+			loads = append(loads, *ev.Skill)
+		case agent.EventUnknown:
+			if strings.Contains(line, "isSynthetic") {
+				t.Errorf("the skill body stayed raw: %s", line)
+			}
+		}
+	}
+	want := agent.SkillInvocation{Name: "echo-probe", Args: "zebra", By: "agent", CallID: "toolu_fake_skill_1"}
+	if len(loads) != 1 || loads[0] != want {
+		t.Errorf("loads = %+v, want [%+v]", loads, want)
+	}
+	if summary != "echo-probe" {
+		t.Errorf("Skill call summary = %q, want echo-probe", summary)
+	}
+
+	cur := runAgent(t, bin, []string{"-p", "--output-format", "stream-json", "--trust", "--force"})
+	parseCursor := cursor.New(func() string { return "" }).NewLineParser()
+	var echoes int
+	for _, line := range strings.Split(strings.TrimSpace(cur), "\n") {
+		if parseCursor([]byte(strings.TrimRight(line, "\r"))).Type == agent.EventInputEcho {
+			echoes++
+		}
+	}
+	if echoes != 1 {
+		t.Errorf("fake cursor echoes = %d, want its one user line", echoes)
 	}
 }

@@ -104,6 +104,15 @@ type TranscriptRecord struct {
 	// agent.subagent_* record.
 	CallID string `json:"call_id"`
 	Name   string `json:"name"`
+	// Args, By, Forked and Error are the agent.skill record: a skill's
+	// arguments on one line, who invoked it ("human" or "agent"), whether it
+	// ran as its own sub-run, and the CLI's refusal. Its Name is the skill and
+	// its CallID the `Skill` call an agent's load came from. Empty is
+	// unreported.
+	Args   string `json:"args"`
+	By     string `json:"by"`
+	Forked bool   `json:"forked"`
+	Error  string `json:"error"`
 	// Raw is the whole record, for the annotation fields this struct does not
 	// name.
 	Raw json.RawMessage `json:"-"`
