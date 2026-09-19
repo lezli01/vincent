@@ -37,6 +37,19 @@ carried no version marker of any kind.
    nothing to pick with from a TUI takeover or a non-TTY CLI. The agent list is
    mapped through the slug table in §9.8.
 
+   *Corrected 2026-09-19 (issue #489):* `<slugs>` shipped as one argv element,
+   the slugs joined with commas, and the skills CLI read
+   `claude-code,codex,cursor` as a single agent name and rejected it — every
+   install with more than one adapter selected failed. `--agent` is variadic
+   there (`-a, --agent <agents...>`): it consumes each following argument until
+   the next flag and splits nothing. Each slug is now its own argv element,
+   `--agent claude-code codex cursor`. The tests pinned the broken spelling
+   because their stub `npx` records argv and parses none of it;
+   `TestInstallArgs` now also refuses a comma in any element. Beat: one
+   `--agent` per slug, which the CLI accepts too because the option
+   accumulates — equivalent, and the single variadic flag is the syntax its
+   option table documents.
+
    *Settled in the diff (2026-09-10): the two surfaces answer the picker
    differently.* The plan said "defaults to the adapters detected on the box"
    for both; what shipped is the **CLI** defaulting to all three, with `--agent`

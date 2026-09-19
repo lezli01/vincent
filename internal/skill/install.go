@@ -96,17 +96,22 @@ func Slugs(adapters []string) []string {
 // non-TTY CLI. `-g` is spelled `--global` for the same reason the rest is
 // spelled out — this argv is asserted by a test, and a test that pins short
 // flags pins nothing a reader can check against the documentation.
+//
+// `--agent` is variadic on the skills CLI: it consumes every following
+// argument until the next flag. Joining slugs with commas made one fake
+// agent name (`claude-code,codex,cursor`) that the CLI rejects. Each slug
+// is its own argv element so the published parser sees three agents.
 func InstallArgs(name string, slugs []string) []string {
 	if len(slugs) == 0 {
 		slugs = Slugs(nil)
 	}
-	return []string{
+	args := []string{
 		"skills", "add", Repo,
 		"--skill", name,
-		"--agent", strings.Join(slugs, ","),
-		"--yes",
-		"--global",
+		"--agent",
 	}
+	args = append(args, slugs...)
+	return append(args, "--yes", "--global")
 }
 
 // Command is InstallArgs as a line a human can paste. It is what the

@@ -320,12 +320,18 @@ func TestSlugs(t *testing.T) {
 // docs/guides/workflows.md print the interactive spelling of this line.
 func TestInstallArgs(t *testing.T) {
 	want := "npx skills add lezli01/vincent --skill vincent-workflows " +
-		"--agent claude-code,codex,cursor --yes --global"
+		"--agent claude-code codex cursor --yes --global"
 	if got := Command("vincent-workflows", nil); got != want {
 		t.Errorf("Command() = %q, want %q", got, want)
 	}
 	if got := Command("vincent-workflows", Slugs([]string{"codex"})); !strings.Contains(got, "--agent codex ") {
 		t.Errorf("a narrowed selection did not reach the argv: %q", got)
+	}
+	got := InstallArgs("vincent-workflows", nil)
+	for _, a := range got {
+		if strings.Contains(a, ",") {
+			t.Errorf("InstallArgs joined slugs into one element %q; skills --agent is variadic", a)
+		}
 	}
 }
 
