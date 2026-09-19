@@ -1,6 +1,6 @@
 # 124 — Let a chat's human see the agent's skills and invoke one from a message
 
-**Status:** 🔄 in progress (5/19)
+**Status:** 🔄 in progress (7/19)
 **Opened:** 2026-09-19
 **Issue:** #496 (parent), #497–#515 (one per item)
 **Spec:** §9.1 (`SkillLister`, `SkillInvoker`), §9.6 (`supports_skill_listing`,
@@ -42,7 +42,8 @@ cite.
 Decisions 1–12 are the parent issue's (#496, "Decisions taken in this
 breakdown"). 13–19 were settled with the author, or taken in evaluation, when
 124.1 was built, 20–27 when 124.2 was, 28 in its follow-up, 29–36 when
-124.8 was, and 37–39 when 124.12 was.
+124.8 was, 37–39 when 124.12 was, 40–44 when 124.7 was, and 45–53 when
+124.5 was.
 
 1. **2026-09-19 — Each CLI's own listing, never a scan.** claude answers a
    stream-json `initialize` control request (`commands`), codex answers
@@ -321,6 +322,55 @@ breakdown"). 13–19 were settled with the author, or taken in evaluation, when
     `FAKEAGENT_CLAUDE_COMMANDS` or a small fixed default; a list read from the
     cwd's `.claude/skills/*/SKILL.md` belongs to 124.15 (#511), which decides
     whether the m14 leg needs it.
+45. **2026-09-19 — `--message-file` on both `chat send` and `chat start`,
+    byte for byte.** `-` means stdin. Nothing is trimmed, so a trailing
+    newline from `echo`, a heredoc or an editor is part of the message; the
+    docs show `printf '%s' '...' | vincent chat send N --message-file -` as
+    the form that adds none.
+46. **2026-09-19 — Exactly one source of the message.** `chat send` is
+    `send <chat-id> [<message>]` (`cobra.RangeArgs(1, 2)`), and `RunE`
+    refuses both a positional message and the flag, and neither. `chat
+    start` marks `--message` and `--message-file` mutually exclusive; with
+    neither it creates the chat and sends nothing, as before.
+47. **2026-09-19 — The bound is 4 MiB, `--fields-file`'s.** Chosen by the
+    author knowing the send route decodes under §13.1's ordinary 64 KiB tier,
+    so the CLI bound guards against an unbounded pipe and is **not** the
+    message limit: a longer body is still the daemon's `413
+    payload_too_large`, whose message `runChatTurn` prints, and the docs say
+    so. The read is `readFieldsFile`'s, one byte past the bound. *Beaten:*
+    bounding at the route's own 64 KiB, which applies task 045 decision 6's
+    reasoning rather than its number. *Beaten:* moving the send route to the
+    4 MiB tier with a per-field bound, an API and §13.1 change out of scope
+    here.
+48. **2026-09-19 — Input that is not valid UTF-8 is refused locally**, before
+    any request, exit 1, with an error naming the flag and never quoting the
+    content. `encoding/json` replaces an invalid byte with U+FFFD, so refusing
+    is the only way to keep decision 45. A leading BOM is valid UTF-8 and
+    passes unchanged; the docs note that it defeats a `/name` behind it and
+    that Windows PowerShell 5.1's `Out-File -Encoding utf8` writes one.
+    *Beaten:* also refusing a BOM, and sending whatever arrives.
+49. **2026-09-19 — Empty input is refused locally.** The daemon's `400
+    message is required` says the same later, but on `chat start` a chat
+    would already exist. Whitespace alone (`"\n"`) is not empty and is sent.
+50. **2026-09-19 — The file is read before any request, in both commands.** A
+    missing file, input over the bound, invalid UTF-8 or empty input creates
+    no chat. A message the daemon refuses after creation — a 413 between
+    64 KiB and 4 MiB — leaves the chat created and `idle`, exactly what
+    `--message` does.
+51. **2026-09-19 — A local input error exits 1 as a plain `error` from
+    `RunE`**, after task 045 decision 5. Exit 2 keeps its one meaning: no
+    daemon answered.
+52. **2026-09-19 — §12.1 gets a new row, not a note on an existing one.** The
+    issue's citation of "the `vincent chat` row" was stale: the table's only
+    chat row was `vincent chat transcript`, which defers the rest of the
+    family to `docs/reference/cli.md`. The new row is dated in task 103's
+    style.
+53. **2026-09-19 — One bounded-read implementation.** `readInputFile`
+    (`internal/cli/inputfile.go`) is the "path or `-`, `LimitReader` plus one
+    byte, refuse over the bound" half of `readFieldsFile`, which now calls it
+    as `readMessageFile` does. The constant is shared as `maxInputFileBytes`,
+    its comment saying what it bounds for each flag; `readFieldsFile`'s
+    messages are unchanged.
 
 ## Open questions
 
@@ -371,8 +421,12 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
   §5.5 and §9.2 amended. ✓ 2026-09-19
 - [~] 124.4 (#500) Fix the chat composer's newline keys, a pre-existing bug.
   In review as #516.
-- [ ] 124.5 (#501) `--message-file` on `chat send` and `chat start`, fixing
-  Git Bash's `/name` rewrite, and the quoting rules documented.
+- [x] 124.5 (#501) `--message-file` on `chat send` and `chat start`, fixing
+  Git Bash's `/name` rewrite, and the quoting rules documented. The shared
+  `readInputFile` bounded read (decision 37); `chat send`'s message argument
+  made optional; the CLI reference's `--message-file` and quoting passages, a
+  troubleshooting entry for the Git Bash symptom, and a §12.1 row. No wire
+  change. ✓ 2026-09-19
 - [ ] 124.6 (#502) Amend §5.5, §9.4 and §16 on pass-through and restricted
   skills, and record the owner's posture decision.
 - [x] 124.7 (#503) claude lists through `initialize`. `claude.Adapter`
@@ -459,6 +513,17 @@ and 124.15 have landed. 124.16, 124.17 and 124.18 widen coverage after that.
   `TestUserMessageLineKeepsTheMessageLast` pins the line itself,
   `TestFixtureContextBlockStream` parses the 2.1.277 capture, and
   `TestEchoPromptKeepsBlocksApart` the fake CLI's record of the blocks.
+- 124.5: `TestChatMessageFileReachesTheStoredPrompt` runs the real binary, a
+  real daemon and fakeagent turns: `/x hi` on stdin and a file holding a
+  leading `/`, a `$name`, a double quote, an embedded newline and a trailing
+  `\n` are each the turn's stored `prompt` exactly. Against a recording stub,
+  `TestChatSendMessageFileIsSentByteForByte` and
+  `TestChatStartMessageFileSendsTheFirstMessage` decode the body the CLI
+  POSTed — a BOM and a lone `\n` included; `TestChatMessageSourceIsExactlyOne`
+  holds decision 46, `TestChatMessageFileRefusals` decisions 48–50 on both
+  commands with no request and no chat, and `TestChatMessageFileBound`
+  decision 47 at exactly the bound and one byte over. `TestReadFieldsFileBound`
+  is unchanged against the shared helper.
 - 124.7: `TestInitializeFixtures` decodes both 2.1.277 captures — the
   non-`builtin` rows in the CLI's order, labels, argument hints and aliases
   kept, `Scope`, `Plugin` and `Path` empty, no `account` or `models` text in
