@@ -78,9 +78,17 @@ unrecognized lines — so a reconnect changed what was on screen.
    is true whenever the composer is focused. `ctrl+r` was unbound in every
    context.
 
-   *Amended 2026-09-19 (issue #500).* `ctrl+j`, `shift+enter` and `alt+enter`
-   insert a newline while `enter` sends. `ctrl+j` remains available on legacy
-   terminals, making the arrow-key editing above reachable without pasting.
+   *Amended 2026-09-19 (issue #500).* The multi-line draft above was reachable
+   only by pasting: the placeholder promised `shift+enter`, but the textarea's
+   newline was bound to `enter`, which the chat takes to send. `ctrl+j`,
+   `shift+enter` and `alt+enter` now insert a newline and `enter` still sends.
+   They are the textarea's own `InsertNewline` binding, rebound in
+   `newChatView`. That beat matching the three keys in `updateKey` and calling
+   `InsertString("\n")`: the textarea's newline replaces a selection and
+   scrolls the cursor into view, and `InsertString` does neither, so a newline
+   on the composer's third row left the cursor on a row nobody could see.
+   `ctrl+j` is the key the registry row names because a legacy terminal can
+   always send it; there `shift+enter` arrives as a bare `enter`.
 
 5. **The chat body gets a viewport.** At verbose the body grows several-fold, and
    a bottom-anchored window with no way to scroll would put the newly revealed
