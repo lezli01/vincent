@@ -10,21 +10,27 @@ import (
 	"strconv"
 
 	"github.com/lezli01/vincent/internal/trigger"
+	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
 )
 
-// RemoveProposalDir removes a task's trigger proposal staging directory,
-// {data_dir}/trigger-proposals/{id} (task 098 decision 5), with the same
-// containment and best-effort logging as RemoveTranscriptDir: the path is the
+// RemoveProposalDir removes a task's proposal staging directories,
+// {data_dir}/trigger-proposals/{id} (task 098 decision 5) and
+// {data_dir}/workflow-proposals/{id} (task 123 decision 4), with the same
+// containment and best-effort logging as RemoveTranscriptDir: each path is the
 // data dir joined with a fixed root and a formatted id, never a caller's
 // string. Most tasks never staged a proposal, so already gone is silent.
 func RemoveProposalDir(dataDir string, id int64, log *slog.Logger) {
 	if dataDir == "" || id <= 0 {
 		return
 	}
-	dir := trigger.ProposalDir(dataDir, id)
-	if err := os.RemoveAll(dir); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		log.Warn("delete: trigger proposal directory kept", "task", id, "error", err)
+	for kind, dir := range map[string]string{
+		"trigger":  trigger.ProposalDir(dataDir, id),
+		"workflow": workflow.ProposalDir(dataDir, id),
+	} {
+		if err := os.RemoveAll(dir); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			log.Warn("delete: "+kind+" proposal directory kept", "task", id, "error", err)
+		}
 	}
 }
 
