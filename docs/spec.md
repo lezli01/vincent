@@ -3086,7 +3086,7 @@ capability today.
   | adapter | sigil | position | `Invocation` | lists (`SkillLister`) |
   |---|---|---|---|---|
   | claude | `/` | `leading` — expanded only at the start of the message (under stream-json input, its last text block) | `/name` | not yet (#503) |
-  | codex | `$` | `anywhere` | `$name`; the linked `[$name](path)` for a name two skills share is #504's | not yet (#504) |
+  | codex | `$` | `anywhere` | `$name`; the linked `[$name](path)` when the exact name occurs more than once among the listed skills, or `$name` if the skill has no path | yes, `skills/list` (§9.3) |
   | cursor | `/` | `anywhere`, as a token | `/name` | never in v1 (§9.7) |
 
   Observed on claude 2.1.277, codex-cli 0.154.0 and cursor-agent 2026.09.18.
@@ -3124,6 +3124,13 @@ as the adapters did: the configured `agents.*.path`, else a `PATH` lookup, and
 the shared probe. Everything else 062.1 decision 2 kept on the host stays
 there: `Detect`, `Options`, the catalog, codex's `app-server` quota exchange
 and the usage-limit holds keep describing the **host's** CLI and account.
+
+*Amended 2026-09-19 (task 124.8, issue #504):* codex's `app-server` exchange
+is now spawned through `agent.Launch` rather than beside it, because it has a
+second caller. The quota read passes a nil launcher, so it is the host spawn
+above byte for byte and still describes the host's account; the skill listing
+(§9.3) passes its query's launcher, which today is always nil too (task 124
+decision 34).
 
 The engine's one helper picks the launcher. A task with an active container
 gets the container launcher; any other task gets `HostLauncher` byte for byte,
@@ -3834,6 +3841,61 @@ transcript is something people paste into issues.
   `individualLimit` and `rateLimitReachedType` are read by nothing — this
   reports a usage window, and a plan tier is exactly what §9.7 declined to call
   a quota.
+- **Skills are listed by the app-server** (*amended 2026-09-19, task 124.8,
+  issue #504*). codex implements §9.1's `SkillLister` over the same exchange
+  as the quota reader: `initialize`, the `initialized` notification, then
+  `skills/list` with `{"cwds":[<worktree>],"forceReload":true}`, spawned
+  through the query's launcher in the worktree with the query's environment.
+  The docs allow the server to reuse a cached result per cwd; a freshly spawned
+  server has none, so `forceReload` costs nothing and keeps the answer honest.
+  **No login is needed** — with an empty `CODEX_HOME` and no API key the request
+  still answers. Exactly one `data` entry is expected for the one cwd sent, and
+  it is taken without comparing its echoed `cwd`, which codex may normalize
+  (task 124 decision 33); zero or several entries are malformed.
+  - **Mapping.** `name`, `description`, `scope` (codex's own
+    `user|repo|system|admin`, verbatim), `path` and `pluginId` (as `Plugin`,
+    `null` → `""`) become a `Skill`; `shortDescription`, `interface` and
+    `dependencies` are not read. **No argument hint exists in codex's format**,
+    so `ArgumentHint` and `Aliases` stay empty. Each `errors[]` item becomes a
+    `Problem` with its path and message verbatim. Rows codex reports
+    `enabled: false` are **dropped**: codex will not load them and its own name
+    counting (`name_counts.rs`) excludes them (task 124 decision 32). A skill
+    with `allow_implicit_invocation: false` in `agents/openai.yaml` **stays
+    listed** — it is kept out of the model's context but is still explicitly
+    invocable, and the list is the human-invocable set.
+  - **Scopes.** codex documents `.agents/skills` from the cwd up to the
+    repository root (`repo`), `$HOME/.agents/skills` (`user`),
+    `/etc/codex/skills` (`admin`) and its bundled skills (`system`). Observed on
+    0.154.0 but **not documented**: `.codex/skills` in the repository (`repo`),
+    `~/.codex/skills` (`user`), `~/.codex/skills/.system` (`system`), and plugin
+    skills under `~/.codex/plugins/cache`, reported with their `pluginId`. codex
+    reads neither `.claude/skills` nor `.cursor/skills`.
+  - **Invocation.** A plain `$name` selects a skill only when exactly one
+    enabled skill carries that exact name (`selection.rs`), so `Invocation`
+    returns the linked form `[$name](path)` when the name occurs more than once
+    among the listed skills — compared exactly and case-sensitively, as codex
+    counts — and `$name` otherwise, or when the skill has no path. codex reads
+    the link's path up to the first `)`, trims it and normalizes backslashes
+    (`mentions.rs`), so a worktree under `Application Support` and a Windows
+    path both pass verbatim. **Known gap** (task 124 decision 30): codex also
+    refuses a plain `$name` whose lowercased form equals an enabled app
+    connector's slug, and `skills/list` cannot reveal connectors, so in that
+    case `$name` selects nothing. It is documented here rather than worked
+    around by linking every invocation.
+  - **Failures.** A missing binary, a spawn failure, the 10 s timeout, a
+    JSON-RPC error reply, an unparseable result and a wrong entry count are
+    each an ordinary error — `list_verdict: unknown` — never
+    `ErrSkillsUnsupported`. There is **no listing floor** (task 124 decision
+    29): no old build's refusal has been captured, so neither a version table
+    nor the app-server's `-32600 "Invalid request: unknown variant …"` wording
+    may claim a positive no.
+  - **Versions.** `skills/list` arrived in openai/codex#7914 (`rust-v0.73.0`),
+    the enable flag in #9328 and extra roots in #10835; every verified build
+    postdates all three. The response is captured on **0.154.0** as
+    `internal/agent/codex/testdata/app_server_skills_0.154.0.json`, home paths
+    scrubbed. The capture ran in an isolated `CODEX_HOME`, where no plugin
+    loads, so the plugin leg is proven by derived rows rather than captured
+    ones.
 
 *Amended 2026-08-28 (task 041).* Verified builds: `0.142.5` (the invocation
 pinned above) and `0.147.0` (the reasoning capture, T4.17). `Detect` reports
@@ -3842,6 +3904,8 @@ pinned above) and `0.147.0` (the reasoning capture, T4.17). `Detect` reports
 capture above, which pins the resumed argv, `thread.started` and the refusal of
 an unknown thread id. Three entries, one per capture, because the list is what
 `tested_versions` publishes and a build vincent has fixtures for belongs in it.
+*Amended 2026-09-19 (task 124.8, issue #504):* `0.154.0` joins them — the
+`skills/list` capture above (task 124 decision 31).
 
 *Added 2026-08-29 (task 057).* codex has no `--mcp-config`, but `codex exec`
 takes `-c key=value` dotted TOML overrides and (verified against 0.150.1)
