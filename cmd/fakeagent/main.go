@@ -11,7 +11,7 @@
 // claude-shaped. `models` and `status` as argv[1] answer cursor's option and
 // login probes (§9.7), `login status` codex's (task 005), `auth status`
 // claude's (task 107, claude_auth.go), and `app-server` answers codex's quota
-// reader (§9.6).
+// reader (§9.6) and skill lister (§9.3).
 // `trigger-poll` and `hmac` are not agent probes at all: they are the m16
 // gate's trigger poll command and webhook signer (task 096, trigger.go).
 // Scenario selection is environment-driven so argv stays
@@ -125,12 +125,19 @@
 //	                      line, so a test can assert a probe was never spawned
 //	FAKEAGENT_CODEX_APP_SERVER
 //	                      picks what `app-server --stdio` answers the §9.6
-//	                      quota reader with (task 082): healthy (default) |
-//	                      malformed | unauthenticated | hang. Its own
+//	                      quota reader and the §9.3 skill lister with (tasks
+//	                      082, 124.8): healthy (default) | malformed |
+//	                      unauthenticated (rate limits only) | error
+//	                      (`skills/list` only) | hang. Its own
 //	                      variable rather than a FAKEAGENT_SCENARIO value
 //	                      because a probe answer and a run scenario are set
 //	                      independently — the m2 gate reads a quota while
 //	                      FAKEAGENT_SCENARIO is pinned to `usage-limit`
+//	FAKEAGENT_CODEX_SKILLS
+//	                      a JSON array of codex `SkillMetadata` objects
+//	                      `skills/list` answers with verbatim; unset, the
+//	                      list comes from the requested cwd's
+//	                      `.agents/skills/*/SKILL.md` front matter (task 124.8)
 //	FAKEAGENT_DIALECT     "codex" makes --version print codex-cli style,
 //	                      "cursor" the calver+sha style (run dialect is
 //	                      argv-driven; this only affects the version probe,

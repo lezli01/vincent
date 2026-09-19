@@ -1,6 +1,6 @@
 # 124 — Let a chat's human see the agent's skills and invoke one from a message
 
-**Status:** 🔄 in progress (3/19)
+**Status:** 🔄 in progress (4/19)
 **Opened:** 2026-09-19
 **Issue:** #496 (parent), #497–#515 (one per item)
 **Spec:** §9.1 (`SkillLister`, `SkillInvoker`), §9.6 (`supports_skill_listing`,
@@ -41,7 +41,8 @@ cite.
 
 Decisions 1–12 are the parent issue's (#496, "Decisions taken in this
 breakdown"). 13–19 were settled with the author, or taken in evaluation, when
-124.1 was built, 20–27 when 124.2 was, and 28 in its follow-up.
+124.1 was built, 20–27 when 124.2 was, 28 in its follow-up, and 29–36 when
+124.8 was.
 
 1. **2026-09-19 — Each CLI's own listing, never a scan.** claude answers a
    stream-json `initialize` control request (`commands`), codex answers
@@ -157,8 +158,9 @@ breakdown"). 13–19 were settled with the author, or taken in evaluation, when
     version-gated syntax, which no captured build calls for.
 19. **2026-09-19 — `vincent agents` notes "no skill listing" only as a
     positive no**, after `TestAgentRowNotesAreBadNewsOnly`. A `null` from an
-    older daemon, or one with no registry, adds nothing. Until 124.7 and 124.8
-    land, all three adapters carry the note, which is today's truth.
+    older daemon, or one with no registry, adds nothing. Until 124.7 lands,
+    claude and cursor carry the note, which is today's truth; codex lost it
+    with 124.8.
     Invocation gets no note: every shipped adapter can invoke.
 20. **2026-09-19 — The forked kickoff is mapped in 124.2, on a second
     capture.** A `local_agent` `task_started` with no `tool_use_id` and a
@@ -210,6 +212,50 @@ breakdown"). 13–19 were settled with the author, or taken in evaluation, when
     in the pane until 124.12 (#508) draws it. The printer has no levels; for
     the run header and a subagent's records it prints the pane's `normal`
     content (§15), and 124.12 settles whether a skill load follows suit.
+29. **2026-09-19 — codex has no listing floor.** A build that cannot answer
+    `skills/list` fails like any probe: an ordinary error, `list_verdict:
+    unknown`. The method arrived in 0.73.0, and every verified build postdates
+    it. No old build's refusal has been captured, so neither a version table
+    nor matching the `-32600 "unknown variant"` wording may claim a positive
+    no. Settled with the author. *Beaten:* mapping the app-server's method
+    refusal to `ErrSkillsUnsupported`; a 0.73.0 floor from a `--version`
+    probe.
+30. **2026-09-19 — The linked form only for an exact-name duplicate among the
+    listed, enabled skills.** codex also refuses a plain `$name` whose
+    lowercased form equals an enabled app connector's slug (`selection.rs`),
+    and `skills/list` cannot reveal connectors. §9.3 documents that as a known
+    case where `$name` selects nothing, rather than making every invocation
+    carry a path. Settled with the author. *Beaten:* always emitting
+    `[$name](path)`.
+31. **2026-09-19 — The fixture is captured on 0.154.0, the owner's installed
+    build, and `0.154.0` joins `testedVersions`.** This follows task 108
+    decision 1 and decision 27: a fresh capture makes its build tested.
+    *Beaten:* installing 0.150.1 to capture on an already verified build. The
+    undocumented scopes were observed on 0.154.0, and re-observing them on an
+    older build is work that proves less.
+32. **2026-09-19 — Disabled rows are dropped.** codex's own name counting
+    excludes disabled skills (`name_counts.rs`), so dropping them keeps
+    `among` counting the same set codex does. This is not a relaxation of
+    decision 17, which forbade dropping load *errors*, and those still become
+    `Problems`.
+33. **2026-09-19 — The one `data` entry is taken, not matched by cwd.** One
+    cwd is sent, so one entry is expected, and its echoed `cwd` is never
+    compared, because paths may be normalized, especially on Windows. Any
+    other count is malformed.
+34. **2026-09-19 — One spawn path for both app-server requests.** Rate limits
+    and skills both go through `agent.Launch`. Rate limits pass the host
+    launcher, which is a fact about the account and not the directory.
+    Skills pass `q.Launcher`. The host launcher is today's spawn exactly,
+    including `CREATE_NO_WINDOW`.
+35. **2026-09-19 — The fake app-server's default list comes from the
+    requested cwd's `.agents/skills`**, which #511 step 4 relies on.
+    `FAKEAGENT_CODEX_SKILLS` overrides it verbatim. `unauthenticated` still
+    refuses only rate limits, because codex lists without a login, and a new
+    `error` mode refuses `skills/list`.
+36. **2026-09-19 — The guide's codex cell becomes ✅ now.** The row mirrors
+    `supports_skill_listing`, which flips in this change. The prose beside it
+    says that no chat surface shows the list until the chat skills route
+    (124.9) lands, so the page stays true in the meantime.
 
 ## Open questions
 
@@ -265,7 +311,13 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
 - [ ] 124.6 (#502) Amend §5.5, §9.4 and §16 on pass-through and restricted
   skills, and record the owner's posture decision.
 - [ ] 124.7 (#503) claude lists through `initialize`. Depends: 124.1.
-- [ ] 124.8 (#504) codex lists through `skills/list`. Depends: 124.1.
+- [x] 124.8 (#504) codex lists through `skills/list`. Depends: 124.1.
+  The app-server exchange generalized to "handshake, then one request" on
+  `agent.Launch`; `codex.Adapter` implements `SkillLister`; `Invocation`
+  emits `[$name](path)` for a duplicated name; `cmd/fakeagent` answers
+  `skills/list` (`FAKEAGENT_CODEX_SKILLS`, the `.agents/skills` default, the
+  `error` mode); fixture `app_server_skills_0.154.0.json`, 0.154.0 now a
+  tested build; spec §9.1, §9.3 and §9.6 amended. ✓ 2026-09-19
 - [ ] 124.9 (#505) The skill cache, `chatrun.Workspace`,
   `GET /v1/chats/{id}/skills`, the `apiclient` types and the MCP exclusion.
   Depends: 124.1.
@@ -328,3 +380,23 @@ and 124.15 have landed. 124.16, 124.17 and 124.18 widen coverage after that.
   `TestUserMessageLineKeepsTheMessageLast` pins the line itself,
   `TestFixtureContextBlockStream` parses the 2.1.277 capture, and
   `TestEchoPromptKeepsBlocksApart` the fake CLI's record of the blocks.
+- 124.8: `TestCodexCanListSkills` flips codex's capability.
+  `TestParseSkillsList` holds the 0.154.0 capture: the enabled rows in
+  codex's order with name, description, scope and path verbatim against the
+  raw bytes, the `skills.config`-disabled row gone, and the broken
+  `SKILL.md` as the one `Problem`; `TestParseSkillsListPluginAndEmpty` the
+  `pluginId` leg (derived from the capture, where no plugin loads) and an
+  empty list; `TestParseSkillsListMalformed` zero, two, non-object and
+  non-list answers, none of them `ErrSkillsUnsupported`.
+  `TestListSkillsHandsTheLauncherItsSpawn` reads the one `app-server --stdio`
+  Command a `RecordingLauncher` saw — `Dir`, `Env`, `StdinPipe` — and its
+  stdin: `initialize`, `initialized`, then `skills/list` with
+  `cwds == [WorkDir]` and `forceReload: true`. `TestListSkillsAgainstFakeAgent`
+  runs a nil launcher on the host over the `.agents/skills` default,
+  `FAKEAGENT_CODEX_SKILLS`, `unauthenticated`, and the `error`, `malformed`,
+  `hang` (a one-second deadline) and missing-binary failures, each an
+  ordinary error with no listing. `TestInvocation` pins the linked form, case
+  sensitivity, a path with a space, a Windows path and the no-path fallback.
+  The rate-limit tests in `appserver_test.go` pass unmodified on the shared
+  exchange, and `TestAgentsReportSkillCapabilities` pins codex's
+  `supports_skill_listing: true`.

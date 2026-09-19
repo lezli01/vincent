@@ -219,8 +219,8 @@ may be filtered out on either. It rides this route only.
 
 `supports_skill_listing`, `skill_sigil` and `skill_position` describe the
 adapter's skills. `supports_skill_listing` is whether the adapter can list the
-skills its CLI would load at all — `false` for all three shipped adapters
-today. It is a fact about the adapter, not about the installed build: `true`
+skills its CLI would load at all — `true` for codex and `false` for claude
+and cursor today. It is a fact about the adapter, not about the installed build: `true`
 does not promise that the build you have will list, and a build that cannot is
 found out only when a chat's skills are read. `skill_sigil` (`/` or `$`) and
 `skill_position` (`leading`: only at the start of the message; `anywhere`) are
@@ -415,7 +415,7 @@ daemon running.
   "agents":   [ { "name": "codex", "available": true, "path": "…",
                   "version": "0.147.0", "logged_in": true,
                   "supports_input": false, "version_verdict": "tested",
-                  "tested_versions": "0.142.5, 0.147.0, 0.150.1",
+                  "tested_versions": "0.142.5, 0.147.0, 0.150.1, 0.154.0",
                   "restricted_verdict": "supported" } ],
   "skills":   [ { "name": "vincent-workflows",
                   "description": "Create, edit, review, and validate vincent workflow YAML…",

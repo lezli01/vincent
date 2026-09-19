@@ -7,11 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
 	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
-	"github.com/lezli01/vincent/internal/procx"
 	"github.com/lezli01/vincent/internal/version"
 )
 
@@ -36,6 +34,10 @@ import (
 // reports a *usage window*, and a plan tier is exactly the thing §9.7 already
 // declined to call a quota — reading it here would put a billing fact on a
 // board that says it is showing capacity.
+//
+// The exchange itself is not rate-limit specific: callAppServer is
+// "handshake, then one request", and skilllist.go asks the same server
+// `skills/list` through it (task 124.8).
 
 // appServerTimeout bounds the whole app-server exchange: spawn, handshake,
 // one request, one answer.
@@ -49,10 +51,11 @@ import (
 // that a hung app-server is a pause rather than a stall.
 const appServerTimeout = 10 * time.Second
 
-// JSON-RPC ids for the two requests this makes. Notifications carry none.
+// JSON-RPC ids for the two requests an exchange makes: the handshake and the
+// one request it exists for. Notifications carry none.
 const (
 	idInitialize = 1
-	idRateLimits = 2
+	idRequest    = 2
 )
 
 // rateLimitsMethod is the request that answers with the usage windows.
@@ -93,37 +96,50 @@ func (a *Adapter) Quota(ctx context.Context) (*agent.ReportedQuota, error) {
 	return parseRateLimits(result, time.Now())
 }
 
-// readRateLimits runs one app-server exchange and returns the raw `result` of
-// the rate-limits response.
+// readRateLimits runs one app-server exchange on the host and returns the raw
+// `result` of the rate-limits response.
 //
-// The subprocess is spawned exactly as Start spawns a run (§9.5, §9.6):
-// through procx, so the kill is a tree kill and Windows gets CREATE_NO_WINDOW
-// rather than a console flashing on a board refresh. It is killed
-// unconditionally on the way out — the app-server is a long-lived server
-// process that has no reason to exit just because its one client is done, so
-// waiting for it to finish would be waiting for the timeout every time.
+// The host, not a run's launcher, because a rate limit is a fact about the
+// account and not about any directory (task 124 decision 34): the daemon's
+// own working directory and environment are as good a place to ask as any.
 func readRateLimits(ctx context.Context, path string) (json.RawMessage, error) {
+	return callAppServer(ctx, nil, agent.Command{Path: path}, rateLimitsMethod, json.RawMessage(`{}`))
+}
+
+// callAppServer runs one app-server exchange — spawn, handshake, one request —
+// and returns that request's raw `result`. It is the one spawn path both
+// app-server requests share (task 124 decision 34): rate limits pass a nil
+// launcher, skills pass the query's.
+//
+// base carries the resolved binary and, for a listing, the directory and
+// environment; the argv and the stdio wiring are this function's. A nil l is
+// the host launcher, which is exactly the spawn Start performs for a run
+// (§9.5, §9.6): through procx, so the kill is a tree kill and Windows gets
+// CREATE_NO_WINDOW rather than a console flashing on a board refresh. The
+// child is killed unconditionally on the way out — the app-server is a
+// long-lived server process that has no reason to exit just because its one
+// client is done, so waiting for it to finish would be waiting for the
+// timeout every time.
+func callAppServer(
+	ctx context.Context, l agent.Launcher, base agent.Command, method string, params json.RawMessage,
+) (json.RawMessage, error) {
 	ctx, cancel := context.WithTimeout(ctx, appServerTimeout)
 	defer cancel()
 
-	cmd := exec.Command(path, "app-server", "--stdio")
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, fmt.Errorf("codex app-server stdin pipe: %w", err)
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("codex app-server stdout pipe: %w", err)
-	}
 	stderr := &tailWriter{max: 8 * 1024}
+	cmd := base
+	cmd.Args = []string{"app-server", "--stdio"}
+	cmd.Stdin = nil
+	cmd.StdinPipe = true
 	cmd.Stderr = stderr
-	proc, err := procx.Start(cmd)
+	proc, err := agent.Launch(l, cmd)
 	if err != nil {
 		return nil, fmt.Errorf("start codex app-server: %w", err)
 	}
 	defer func() {
 		_ = proc.Kill()
-		_ = cmd.Wait()
+		_, _ = proc.Wait()
+		proc.Release()
 	}()
 
 	type outcome struct {
@@ -132,7 +148,7 @@ func readRateLimits(ctx context.Context, path string) (json.RawMessage, error) {
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		result, err := exchange(stdin, newLineScanner(stdout))
+		result, err := exchange(proc.Stdin(), newLineScanner(proc.Stdout()), method, params)
 		done <- outcome{result, err}
 	}()
 
@@ -153,13 +169,13 @@ func readRateLimits(ctx context.Context, path string) (json.RawMessage, error) {
 	}
 }
 
-// exchange writes the handshake and the rate-limits request, and returns the
-// raw `result` of the latter.
+// exchange writes the handshake and then one request, and returns the raw
+// `result` of the latter.
 //
 // The order is the protocol's, not a preference: `initialize`, then the
 // `initialized` notification, then the request. An app-server that has not
 // been told the client is ready does not answer.
-func exchange(w io.Writer, r *bufio.Scanner) (json.RawMessage, error) {
+func exchange(w io.Writer, r *bufio.Scanner, method string, params json.RawMessage) (json.RawMessage, error) {
 	id := idInitialize
 	if err := writeMessage(w, rpcMessage{JSONRPC: "2.0", ID: &id, Method: "initialize", Params: initializeParams()}); err != nil {
 		return nil, err
@@ -170,11 +186,11 @@ func exchange(w io.Writer, r *bufio.Scanner) (json.RawMessage, error) {
 	if err := writeMessage(w, rpcMessage{JSONRPC: "2.0", Method: "initialized", Params: json.RawMessage(`{}`)}); err != nil {
 		return nil, err
 	}
-	id2 := idRateLimits
-	if err := writeMessage(w, rpcMessage{JSONRPC: "2.0", ID: &id2, Method: rateLimitsMethod, Params: json.RawMessage(`{}`)}); err != nil {
+	id2 := idRequest
+	if err := writeMessage(w, rpcMessage{JSONRPC: "2.0", ID: &id2, Method: method, Params: params}); err != nil {
 		return nil, err
 	}
-	return readResult(r, idRateLimits)
+	return readResult(r, idRequest)
 }
 
 // initializeParams is the client identity the app-server echoes back in its

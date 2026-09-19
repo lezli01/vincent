@@ -6,11 +6,13 @@ import "github.com/lezli01/vincent/internal/agent"
 
 // testedVersions are the builds vincent's parsers were captured against:
 // 0.142.5 is the fresh invocation pinned in §9.3, reasoning_0.147.0.jsonl
-// pins the reasoning dialect, and 0.150.1 pins `exec resume` — its argv, its
-// `thread.started`, and its refusal of an unknown id (task 070). A build outside this list is `untested`, which is
-// the normal state for a user on a current CLI and changes nothing about how
-// a step runs.
-var testedVersions = []string{"0.142.5", "0.147.0", "0.150.1"}
+// pins the reasoning dialect, 0.150.1 pins `exec resume` — its argv, its
+// `thread.started`, and its refusal of an unknown id (task 070) — and
+// 0.154.0 pins the app-server's `skills/list` (task 124.8,
+// app_server_skills_0.154.0.json). A build outside this list is `untested`,
+// which is the normal state for a user on a current CLI and changes nothing
+// about how a step runs.
+var testedVersions = []string{"0.142.5", "0.147.0", "0.150.1", "0.154.0"}
 
 // incompatibleVersions are builds vincent knows break. It ships empty: no
 // codex release has been observed to break these parsers. Tests inject one
