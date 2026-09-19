@@ -3091,6 +3091,8 @@ capability today.
 
   Observed on claude 2.1.277, codex-cli 0.154.0 and cursor-agent 2026.09.18.
   The rows state the adapters as shipped; §9.2 and §9.3 add nothing to them.
+  *Amended 2026-09-19 (task 124.8, issue #504):* §9.2 still adds nothing;
+  §9.3 now specifies codex's listing and when its `Invocation` links.
 
 **The launch seam (task 062.1, added 2026-09-16).** An adapter builds its run's
 argv and hands it over; it never spawns the process itself. `Start` resolves the
@@ -4174,7 +4176,11 @@ defaults:
   list" — it is a fact about the adapter, like `supports_resume`, and a build
   too old to list surfaces only at list time, as `ErrSkillsUnsupported` (task
   124 decision 13; a tri-state `skill_list_verdict` modelled on
-  `input_verdict` was the alternative it beat). `skill_sigil` (`/` or `$`)
+  `input_verdict` was the alternative it beat). *Amended 2026-09-19 (task
+  124.8, issue #504):* codex, the one adapter that lists today, has no listing
+  floor, so a codex build too old to answer `skills/list` also surfaces only
+  at list time, but as an ordinary error — `unknown`, not a positive no (§9.3,
+  task 124 decision 29). `skill_sigil` (`/` or `$`)
   and `skill_position` (`leading` or `anywhere`) are the adapter's
   `SkillSyntax`, verbatim, and both are `""` for a registered adapter that
   cannot invoke. All three are `null` when there is no adapter registry to

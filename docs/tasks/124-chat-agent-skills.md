@@ -41,7 +41,8 @@ cite.
 
 Decisions 1–12 are the parent issue's (#496, "Decisions taken in this
 breakdown"). 13–19 were settled with the author, or taken in evaluation, when
-124.1 was built, 20–27 when 124.2 was, and 28 in its follow-up.
+124.1 was built, 20–27 when 124.2 was, 28 in its follow-up, and 29–36 when
+124.8 was.
 
 1. **2026-09-19 — Each CLI's own listing, never a scan.** claude answers a
    stream-json `initialize` control request (`commands`), codex answers
@@ -316,7 +317,7 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
   emits `[$name](path)` for a duplicated name; `cmd/fakeagent` answers
   `skills/list` (`FAKEAGENT_CODEX_SKILLS`, the `.agents/skills` default, the
   `error` mode); fixture `app_server_skills_0.154.0.json`, 0.154.0 now a
-  tested build; spec §9.1 and §9.3 amended. ✓ 2026-09-19
+  tested build; spec §9.1, §9.3 and §9.6 amended. ✓ 2026-09-19
 - [ ] 124.9 (#505) The skill cache, `chatrun.Workspace`,
   `GET /v1/chats/{id}/skills`, the `apiclient` types and the MCP exclusion.
   Depends: 124.1.
