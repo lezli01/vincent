@@ -839,17 +839,32 @@ steps:
         type: agent
         # `none` means "touch no Go code": the sweep still reports, and
         # `vuln-clear` still blocks on a finding, but nothing is edited.
-        if: '{{ ne (index .Task.Fields "dependencies") "none" }}'
+        #
+        # And never on the last pass. `vuln-clear` reads the verdict the last
+        # *sweep* recorded, so a repair after it is one nothing re-probes: even
+        # when its own check passes, the task blocks at `vuln-clear` on the
+        # sweep it followed, having paid a whole session to get there. The
+        # second pass is this repair's re-probe, which is the "agent session
+        # between them" the loop's own comment budgets for.
+        if: '{{ and (ne (index .Task.Fields "dependencies") "none") (not .Loop.IsLast) }}'
         timeout: 45m
-        # The loop is the retry. A step-level retry here would be a second
-        # fresh session on the same failure inside the same iteration, for
-        # double the tokens and no new information.
+        # The second sweep is the judge, not a second session. A step-level
+        # retry here would be a second fresh session on the same failure
+        # inside the same iteration, for double the tokens and no new
+        # information.
         max_retries: 0
         check: go build ./... && go run mage.go test && go run mage.go vuln
+        # The check is the sweep's own three legs, which `sweep` is given 40
+        # minutes for. Left unset it would inherit the daemon's command
+        # timeout (15m by default) rather than this step's `timeout`, and a
+        # suite plus a three-platform govulncheck cut off there blocks a
+        # repair whose work was sound.
+        check_timeout: 40m
         prompt: |
           This repository is being prepared for a release and a pre-release
-          sweep failed. You are fixing it. This is pass {{.Loop.Index}} of at
-          most 2.
+          sweep failed. You are fixing it. You get one pass: when you finish,
+          the sweep runs again against your changes, and that run is the
+          verdict this task acts on.
 
           What the sweep ran, in order, stopping at the first failure:
 
@@ -1300,8 +1315,11 @@ steps:
     type: manual
     if: '{{ ne (index .Steps "changes").ExitCode 0 }}'
     instructions: |
-      This run changed the tree and opened a pull request, which is now green
-      and up to date with `{{.Task.BaseBranch}}`:
+      This run changed the tree and opened a pull request:
+
+      {{(index .Steps "prep-pr").Result}}
+
+      It is now green and up to date with `{{.Task.BaseBranch}}`:
 
       {{(index .Steps "prep-green").Result}}
 
