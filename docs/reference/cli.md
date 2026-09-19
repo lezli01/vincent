@@ -249,7 +249,7 @@ of [`GET /v1/agents`](api.md#daemon) and needs a running daemon — with none it
 
 ```
 AGENT   VERSION             BUILD     LOGIN          QUOTA                                                                                                NOTES
-claude  2.1.226             tested    ok             claude status line · 5h 28.5% → 2026-09-16T14:40:00+02:00 · 7d 62% · read 2026-09-16T11:40:02+02:00  no skill listing
+claude  2.1.226             tested    ok             claude status line · 5h 28.5% → 2026-09-16T14:40:00+02:00 · 7d 62% · read 2026-09-16T11:40:02+02:00
 codex   -                   -         -              spent → 2026-09-16T13:40:00+02:00                                                                    not found: …; no mid-run input
 cursor  2026.09.02-1c4f7a0  untested  NOT LOGGED IN  unknown                                                                                              no mid-run input; no skill listing
 ```
