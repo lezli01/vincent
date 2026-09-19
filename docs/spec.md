@@ -2975,6 +2975,16 @@ type Subagent struct {               // task 109, added 2026-09-17
     LastTool    string        // the tool it most recently used
 }
 
+type SkillInvocation struct {        // task 124.2, added 2026-09-19; rides on Event.Skill
+    Name   string // as the CLI resolved it, namespace included; "" only on a
+                  // refusal that names no skill
+    Args   string // one line, capped at agent.ToolSummaryMax
+    By     string // "human" | "agent"
+    CallID string // By=="agent": the Skill tool call the load came from
+    Forked bool   // ran as its own sub-run (claude `context: fork`)
+    Error  string // the CLI refused to load it, when it said so on a line of its own
+}                                    // every field is the CLI's; "" = unreported
+
 type Patch struct {                  // task 110, added 2026-09-17; rides on Event.Patch
     CallID    string // the ToolUse whose edit this is
     Name      string // that tool, when the dialect names it on the outcome; "" for claude
@@ -3201,6 +3211,27 @@ Only claude produces them. codex and cursor never do, which §9.3 and §9.7 stat
 positively, and nothing synthesizes one from tool calls. Nothing keys on the
 spawning tool's name.
 
+*Amended 2026-09-19 (task 124.2, issue #498).* Two more event types join the
+normalized stream. **`EventSkill`** (`skill`) reports that a skill's content
+entered the conversation — the CLI loaded one the agent asked for, or expanded
+one the human's message named — at most once per load, carrying a
+`SkillInvocation` on `Event.Skill`. The skill's rendered body never rides on it
+(T4.16): the verbatim line is in the transcript. Only claude produces it
+(§9.2); codex's stream has no skill item and cursor's says nothing about a skill
+it expanded, so neither ever produces it (§9.3, §9.7), and nothing synthesizes
+one from a tool call. **`EventInputEcho`** (`input_echo`) is a line on which the
+CLI echoed back the prompt vincent wrote to its stdin. It carries nothing: the
+text is already on screen, as a chat's human message or a step's rendered
+prompt, and the event exists so the line stops counting as unrecognized. Only
+cursor produces it (§9.7). Neither is an unmodeled line. §9.7's "genuinely
+unmodeled lines stay `unknown`" still governs every line these two do not claim
+(task 124 decision 25).
+
+The run header is emitted from the CLI's init line, which is **not** always the
+stream's first line: claude writes SessionStart hook lines before it, and a
+forked skill's kickoff (§9.2). Nothing in a client relies on the header opening
+the stream.
+
 Both are stated positively where an adapter lacks them (§9.3, §9.7) and neither
 is ever emulated. Nothing is persisted: `step_runs` keeps vincent's own timing
 and token columns, and a claude-only duration there would be a second duration
@@ -3422,6 +3453,8 @@ from whether vincent has ever seen this build.
 `auth status` fixtures were captured from (§9.5). The `auth status` gate
 `[2.1.41, 3.0.0)` is, like the input gate, a family range rather than this
 list, and for the same reason.
+*Amended 2026-09-19 (task 124.2):* `2.1.277` joins it, the build the skill
+captures below were recorded on.
 
 *Amended 2026-08-31 (task 066).* The parser reads more of the dialect it was
 already recording. Four groups, all of them present in the `2.1.226` fixtures
@@ -3544,6 +3577,63 @@ recorded runs from 2.1.251 to 2.1.268, trimmed into
   Background shells are out of scope; the phase 1 tolerant-parsing rule covers
   the rest.
 
+*Amended 2026-09-19 (task 124.2, issue #498).* **Skill loads.** Pinned against
+claude 2.1.277 with this section's own input-mode argv, trimmed into
+`testdata/stream_skill_model_2.1.277.jsonl`,
+`stream_skill_permission_2.1.277.jsonl` and `stream_skill_fork_2.1.277.jsonl`.
+`2.1.277` joins the tested list (task 124 decision 27).
+
+- **The `Skill` call reads as its skill.** Its input is
+  `{"skill":"echo-probe","args":"zebra"}`; `skill` joins T4.14's argument
+  preference ahead of `prompt` and `description`, so the tool_use's summary is
+  `echo-probe`, the way `Bash`'s is its command.
+- **A model-loaded skill is three lines,** and the third is its load. The call;
+  a `user` `tool_result` whose content is `Launching skill: echo-probe`, beside a
+  line-level `tool_use_result: {"success":true,"commandName":"echo-probe"}`,
+  which stays `EventToolResult`; and a `user` line flagged `isSynthetic: true`
+  whose text **is the rendered `SKILL.md`**, opening `Base directory for this
+  skill:`. That third line becomes `EventSkill{By: "agent", Name, CallID,
+  Args}`, with `Name` the result's `commandName` and `CallID` its
+  `tool_use_id`. The body is never carried (T4.16); the line stays verbatim in
+  the transcript.
+- **The pairing is structural and scoped by parent** (task 124 decision 22). A
+  non-error result that is its line's only one and carries `commandName` arms
+  its `parent_tool_use_id` scope; the next line in that scope claims the load
+  if it is an `isSynthetic` `user` line and disarms it otherwise. A line from
+  another scope — an async subagent's, interleaving — does neither, and the
+  §7.4 control lines are in no scope, because the live run answers them before
+  the parser sees them and the transcript route does not. The rule reads
+  `commandName`, never the tool's name. An `isSynthetic` line with nothing armed
+  in its scope stays `EventUnknown`.
+- **Args come from the call** (task 124 decision 21). The parser remembers each
+  `Skill` call's `input.args` by call id, and the load claims and drops them,
+  flattened to one line of `agent.ToolSummaryMax` runes. The cost is stated as
+  the subagent memory's is: a range that opens after the call yields the load
+  with no `args`.
+- **A refused call is no load** (task 124 decision 23). A `Skill` call whose
+  result is `is_error` arms nothing; its `agent.tool_result` already reports
+  the refusal and pairs with the call by `call_id`.
+- **A forked skill's kickoff is a load** (task 124 decision 20). A
+  `context: fork` skill the human's message invoked starts with a `system`
+  `task_started` line whose `task_type` is `local_agent`, with **no**
+  `tool_use_id`, a `description` of `/fork-probe`, and the rendered body under
+  `prompt`. It arrives before `system`/`init`. It becomes `EventSkill{By:
+  "human", Forked: true, Name}`, `Name` being the description's first word
+  without the `/`. 2.1.277 puts no arguments in the description even when the
+  message passed some — they are substituted into the body, which is never read
+  — so `Args` is empty. Any other `task_started` without a `tool_use_id` stays
+  unknown, and so does the fork's `task_notification`, which carries none
+  either.
+- **A `Skill` permission request names the skill** (task 124 decision 26). In
+  restricted mode a skill the model loads raises `can_use_tool` with
+  `tool_name: "Skill"`, `input: {"skill":"bash-probe"}` and the skill's own
+  description in `description`. The §7.4 summary is `input.skill`, falling back
+  to the description when it is empty, keyed on the tool name as the
+  `AskUserQuestion` branch beside it is.
+- **Out of scope:** a skill the human invoked inline, which claude writes to
+  the stream only under `--replay-user-messages` (task 124.10), and the
+  `local_command_run` and `conversation_reset` lines.
+
 *Added 2026-08-29 (task 057).* The §13.4 MCP server rides on
 `--mcp-config <inline JSON>` with `--strict-mcp-config` beside it, so the
 user's own `.mcp.json` and global servers never leak into a vincent step.
@@ -3585,6 +3675,12 @@ transcript is something people paste into issues.
   capture has a subagent in it, so this adapter produces none of §9.1's three
   `EventSubagent*` events, which is asserted over every codex fixture, and
   nothing emulates one from its tool items.
+  *Amended 2026-09-19 (task 124.2):* likewise **no `EventSkill` and no
+  `EventInputEcho`**. `exec --json` has no skill item (`exec_events.rs` at
+  `rust-v0.154.0`) — a model reading a `SKILL.md` is an ordinary
+  `command_execution` and normalizes as one — and echoes no prompt, so this
+  adapter produces neither event, and nothing synthesizes a skill load from a
+  command's output.
 - **Resumes its own thread** (*replaces "Cannot resume (stated positively,
   2026-08-30, task 063)", 2026-08-31, task 070*). `agent.CanResume` is **true**
   for codex, and a chat on it is created like a claude one. The precondition
@@ -4264,6 +4360,12 @@ would invalidate every one of them.
   capture has a subagent in it, so this adapter produces none of §9.1's three
   `EventSubagent*` events, which is asserted over every cursor fixture, and
   nothing emulates one from its tool calls.
+  *Amended 2026-09-19 (task 124.2):* likewise **no `EventSkill`**. Piped
+  `/echo-probe zebra`, cursor-agent 2026.09.18-9a7762b ran the skill — its
+  reply was the skill's output — and wrote nothing in the stream saying so
+  (`testdata/skill_slash_2026.09.18.jsonl`). This adapter produces no skill
+  event, which is asserted over every cursor fixture, and nothing infers one
+  from a `/name` in the prompt or from the reply.
 - **Resume (pinned against cursor-agent 2026.08.11-e8db854, 2026-08-31, task
   072).** `agent.CanResume` is true for cursor, so a chat may run on it (§5.5,
   §13.2), replacing task 063's "cannot resume" on that decision's own deferral
@@ -4313,6 +4415,13 @@ would invalidate every one of them.
   is not claude's, and is parsed by its own package:
   `system/init` → `user` → `thinking/{delta,completed}` →
   `assistant` → `tool_call/{started,completed}` → `result/{success,error}`.
+  - *Amended 2026-09-19 (task 124.2, issue #498).* The `user` line is cursor's
+    echo of the piped prompt, once per run, and normalizes to
+    `EventInputEcho`: a record with no payload and no live chunk (§13.2,
+    §13.3), because its text is already on screen as a chat's message or a
+    step's rendered prompt. It used to fall through to `unknown`, which made
+    every cursor turn carry one "unrecognized line". It is modeled now, so it
+    is not one; the verbatim line is still in `format=raw`.
   - `assistant` messages arrive whole (content blocks), not as deltas, and
     normalize to `output`.
   - ~~`thinking` events normalize to `unknown` — transcripted verbatim, never
@@ -4334,7 +4443,9 @@ would invalidate every one of them.
     closing line is the one just written. And a run killed mid-block loses the
     buffer, which is the right trade for reasoning text. The swallowed delta
     lines still normalize to `unknown`: they are genuinely unmodeled lines,
-    and a reader who asks to see raw lines should see them.
+    and a reader who asks to see raw lines should see them. *Amended
+    2026-09-19 (task 124.2):* so do every `system` subtype but `init`; the
+    `user` line no longer does (above).
   - `tool_call` carries the tool as the **object key** (`editToolCall`,
     `shellToolCall`), not a `name` field; the `ToolCall` suffix is stripped
     for the normalized name (`edit`, `shell`). `started` is the tool_use
@@ -4428,7 +4539,9 @@ would invalidate every one of them.
 - **Version verdict compares whole strings** (*added 2026-08-28, task 041*).
   The verified builds are `2026.08.04-aaa8809`, `2026.08.11-e8db854` and
   `2026.08.25-3e8eec8` (*added 2026-09-17, task 108*, the capture build for the
-  run header and the result metadata), and the
+  run header and the result metadata) and `2026.09.18-9a7762b` (*added
+  2026-09-19, task 124.2*, the capture build for the prompt echo and a skill
+  turn), and the
   comparison is exact string equality — calver plus a commit sha has no ordering
   to range over, and the sha is part of the binary's identity, not decoration.
   Rather than let one adapter answer a version question differently from the
@@ -8009,6 +8122,29 @@ GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
                                         their adapters' tests state positively. On-read
                                         normalization means every claude run already on
                                         disk renders deltas and patches.
+                                        **v0 wire change (task 124.2, 2026-09-19):** two
+                                        more record types in the shared vocabulary.
+                                        `agent.skill` (`name`, `args`, `by` — `human` or
+                                        `agent` — `call_id`, `forked`, `error`, and
+                                        `parent_call_id` when set) reports that a skill's
+                                        content entered the conversation: `call_id` is
+                                        the `Skill` call an agent's load came from, and
+                                        pairs it with that call's `agent.tool_use` and
+                                        `agent.tool_result`; `args` is one line; `forked`
+                                        appears only when true. Every key is omitted when
+                                        unreported, and the skill's rendered body is never
+                                        on it. `agent.input_echo` (`type` alone, and
+                                        `parent_call_id` when set) is a line on which the
+                                        CLI echoed vincent's own stdin back; the text is
+                                        in `format=raw`. Both replace an `agent.raw` the
+                                        same line used to yield: claude's `isSynthetic`
+                                        skill body and forked-skill kickoff, and cursor's
+                                        `user` line. claude fills `agent.skill` and codex
+                                        and cursor never do; only cursor writes
+                                        `agent.input_echo` (§9.2, §9.3, §9.7). On-read
+                                        normalization means runs already on disk — task
+                                        steps as well as chat turns, because the parser is
+                                        shared — lose those raw lines too.
 GET    /v1/tasks/{id}/diff              unified diff of worktree vs merge-base with base branch
                                         (includes uncommitted changes)
                                         ?by=lane -> JSON {sections:[...]} instead: one section per
@@ -8186,9 +8322,10 @@ Two kinds of streams:
 
 2. **Live output** — ephemeral, high-volume. `agent.output`, `agent.tool_use`,
    `agent.tool_result`, `agent.thinking` (T4.16), `agent.run_header` (task 066 —
-   it is the *first* line of the stream, so a reader who opens the pane on a
-   running step sees the run's frame before its first word rather than only once
-   the step has finished),
+   it arrives before the run's first word, so a reader who opens the pane on a
+   running step sees the run's frame early rather than only once the step has
+   finished; *amended 2026-09-19, task 124.2:* it is not necessarily the stream's
+   first line — claude's hook lines and a forked skill's kickoff precede it),
    `agent.plan` and `agent.command_output` (task 070 — the same two records
    §13.2 adds, published as chunks with the same keys, because a client renders
    the live tail and the fetched scrollback through one path),
@@ -8199,6 +8336,10 @@ Two kinds of streams:
    `agent.patch` (task 110, 2026-09-17 — §13.2's record under the same keys,
    published after the `agent.tool_result` chunk its line also produces, in the
    order task 070 set for command output),
+   `agent.skill` (task 124.2, 2026-09-19 — §13.2's record under the same keys;
+   `agent.input_echo` is the one §13.2 record **never published**, because its
+   text is already on screen, and it is not `agent.raw` either, on a chat's
+   stream or anywhere else),
    `agent.usage`, `command.output` chunks are streamed on the **per-task** stream only
    and are *not* written to the events table (they are durable in transcript files;
    catch-up = fetch the transcript, then follow live). Chunks are one SSE event each,

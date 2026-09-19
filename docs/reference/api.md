@@ -2447,15 +2447,17 @@ up by re-fetching the running turn's transcript and discarding every chunk whose
 under the same type names (`agent.output`, `agent.tool_use`, `agent.tool_result`,
 `agent.run_header`, `agent.thinking`, `agent.plan`, `agent.command_output`,
 `agent.patch`, `agent.subagent_started`, `agent.subagent_progress`,
-`agent.subagent_finished`, `agent.usage`), **and** the agent's own `raw` line
-beside them.
+`agent.subagent_finished`, `agent.skill`, `agent.usage`), **and** the agent's
+own `raw` line beside them.
 
 A chat's stream carries one type a task's does not: **`agent.raw`**, for a line
 vincent's parsers do not model. A task leaves those to its transcript, but a
 chat has no timeline of steps beside its output, so a turn whose stream is all
 unmodeled lines would show nothing at all while it runs. `agent.result` and
 `agent.error` are not published live on either: they reach you as the turn's
-own state and in its transcript.
+own state and in its transcript. Nor is `agent.input_echo`: a Cursor turn's echo
+of your message is already on screen as the message, so it publishes no chunk,
+neither as itself nor as `agent.raw`.
 
 Two failure reasons are worth knowing:
 
@@ -2600,6 +2602,30 @@ The transcript is the attempt's JSONL file, ranged:
   `summary` is the line delta `+N −M` (and whose `verb` is `updated` for a
   `Write` that overwrote a file). Only [Claude Code](../guides/agents.md#claude-code)
   fills it, and not for a subagent's edits, whose results carry no patch.
+- `agent.skill` reports that a skill's content entered the conversation:
+
+  | Field | Meaning |
+  |---|---|
+  | `name` | the skill as the CLI resolved it, namespace included |
+  | `args` | the arguments it was invoked with, on one line |
+  | `by` | `agent` for one the model loaded, `human` for one your message invoked |
+  | `call_id` | the `Skill` tool call an agent's load came from — the same `call_id` as its `agent.tool_use` and `agent.tool_result` |
+  | `forked` | `true` for a skill that ran as its own sub-run (Claude Code's `context: fork`); absent otherwise |
+  | `error` | the CLI's refusal to load it, when it reported one on a line of its own |
+
+  Every key is omitted when unreported, and the skill's rendered `SKILL.md` is
+  never on the record — it is in the raw transcript. Only
+  [Claude Code](../guides/agents.md#claude-code) produces it: a skill the model
+  loads (`by: "agent"`, with `call_id` and `args`), and a `context: fork` skill
+  your message invoked (`by: "human"`, `forked: true`, no `args`). A claude
+  range fetched with `tail=` or `offset=` that starts after the `Skill` call
+  returns that load without `args`. A `Skill` call Claude Code refused yields
+  no `agent.skill`; its `agent.tool_result` reports the refusal. Codex and
+  Cursor report no skill loads, even when a skill ran.
+- `agent.input_echo` is a line on which the agent CLI echoed back the prompt
+  vincent wrote to it — Cursor does, once per run. It carries only `type` (and
+  `parent_call_id` when set) and has no live chunk; the echoed text is in the
+  raw transcript. It is not `agent.raw`, so it is not counted as unrecognized.
 - One stream line can produce **two** records: codex reports a command's outcome
   and the body it printed on a single event, and claude an edit's outcome and
   its hunks, and they are separate records
@@ -2756,9 +2782,10 @@ they need.
 `agent.output`, `agent.tool_use`, `agent.tool_result`, `agent.thinking`,
 `agent.run_header`, `agent.plan`, `agent.command_output`, `agent.patch`,
 `agent.subagent_started`, `agent.subagent_progress`, `agent.subagent_finished`,
-`agent.usage` and `command.output` chunks stream on the
+`agent.skill`, `agent.usage` and `command.output` chunks stream on the
 **per-task** stream only and are **not** written to the events table. Their
-durable copy is the transcript file.
+durable copy is the transcript file. `agent.input_echo` is the one transcript record that
+never streams: its text is already on screen.
 
 Each chunk is one SSE event, flushed on a ~100 ms coalescing timer, and carries:
 
