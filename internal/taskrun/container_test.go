@@ -398,7 +398,7 @@ func TestArchiveHonoursTheWorkflowsOwnImage(t *testing.T) {
 	}
 }
 
-// TestChatInContainerReadsSettingsOnly is task 124 decision C: the bit
+// TestChatInContainerReadsSettingsOnly is task 124 decision 39: the bit
 // GET /v1/chats/{id}/skills picks a directory by is read from the task's
 // snapshot and settings, and never from the runtime — a client may ask it on
 // every refetch, and each ask spawning `docker inspect` is the cost the

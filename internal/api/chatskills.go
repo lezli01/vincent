@@ -151,13 +151,13 @@ func (s *Server) handleChatSkills(w http.ResponseWriter, r *http.Request) {
 		body.UnavailableReason = containerSkillsReason
 	case !registered:
 		// A chat whose adapter is no longer registered is "nobody can say",
-		// never a no (task 124 decision E): the name may come back.
+		// never a no (task 124 decision 41): the name may come back.
 		body.ListVerdict = string(agent.InputUnknown)
 		pe := fmt.Sprintf("no adapter named %q", chat.Agent)
 		body.ProbeError = &pe
 	case !agent.CanListSkills(a):
 		// A fact about the adapter, so the route words it and asks nothing
-		// (task 124 decision D).
+		// (task 124 decision 40).
 		body.ListVerdict = string(agent.InputUnsupported)
 		body.UnavailableReason = fmt.Sprintf("%s does not report the skills it loads", chat.Agent)
 	default:
