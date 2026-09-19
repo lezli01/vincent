@@ -266,6 +266,11 @@ const (
 	recSubagentFinished = "agent.subagent_finished"
 )
 
+// recInputEcho is the CLI's echo of the prompt vincent wrote to its stdin
+// (task 124.2). It carries nothing: the prompt is already on screen as the
+// chat's own message or the step's prompt.
+const recInputEcho = "agent.input_echo"
+
 // wrapLine lays a paneLine out across a pane of the given width, styling each
 // produced line's pieces separately so an escape sequence is never split by a
 // break. Words longer than the available width are hard-split rather than
@@ -918,9 +923,10 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 			// internals are neither, one level down.
 			continue
 		}
-		if rec.Type == recSubagentStarted || rec.Type == recSubagentProgress {
+		if rec.Type == recSubagentStarted || rec.Type == recSubagentProgress || rec.Type == recInputEcho {
 			// Never a line, and not a break in a run of unrecognized lines
-			// either: these were such lines until task 109 modeled them.
+			// either: these were such lines until tasks 109 and 124.2
+			// modeled them.
 			continue
 		}
 		if rec.Type == "agent.raw" {

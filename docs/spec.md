@@ -4444,7 +4444,10 @@ would invalidate every one of them.
     §13.3), because its text is already on screen as a chat's message or a
     step's rendered prompt. It used to fall through to `unknown`, which made
     every cursor turn carry one "unrecognized line". It is modeled now, so it
-    is not one; the verbatim line is still in `format=raw`.
+    is not one; the verbatim line is still in `format=raw`. Nor does it split
+    a run of them: the pane skips it the way it skips
+    `agent.subagent_progress` (§15), so unrecognized lines on either side of
+    it are one count.
   - `assistant` messages arrive whole (content blocks), not as deltas, and
     normalize to `output`.
   - ~~`thinking` events normalize to `unknown` — transcripted verbatim, never
