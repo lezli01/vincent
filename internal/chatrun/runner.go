@@ -110,7 +110,7 @@ type Deps struct {
 	StopOrphan func(ctx context.Context, taskID, turnID int64) bool
 	// InContainer reports whether a linked chat's task runs its workflow in a
 	// container, from settings alone. It never asks the container runtime
-	// (task 124 decision 39). internal/taskrun implements it and the daemon
+	// (task 124 decision 56). internal/taskrun implements it and the daemon
 	// wires it, so this package never imports taskrun (task 119). Nil means
 	// the host.
 	InContainer func(ctx context.Context, taskID int64) (bool, error)
@@ -453,7 +453,7 @@ func (r *Runner) runTurn(
 // that claim (task 119 decision 1).
 //
 // inContainer comes from the task's settings alone and never from the
-// container runtime (task 124 decision 39), so asking costs no process: it is
+// container runtime (task 124 decision 56), so asking costs no process: it is
 // what lets GET /v1/chats/{id}/skills answer `unknown` for a container-run
 // chat rather than listing a host directory the agent never reads (task
 // 124.9, §13.2). It is a statement about configuration, not about a live

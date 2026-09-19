@@ -773,7 +773,7 @@ its linked task's, read fresh on every call because the task owns that claim.
 and the turn cannot disagree about where the CLI starts. Whether a linked
 chat's task runs in a container is read from the task's workflow snapshot and
 container settings alone, never from the runtime, so asking spawns no
-`docker inspect` (task 124 decision 39).
+`docker inspect` (task 124 decision 56).
 
 It answers `200` with verdicts and refuses only on state (task 124
 decision 4):
@@ -783,8 +783,8 @@ decision 4):
 | `archived`, `handed_off`, `closed` | `409 invalid_state`, `details: {state, action: "skills"}`; checked before `refresh`, so a terminal chat never costs a probe |
 | linked, task has no worktree | `409 task_has_no_worktree`, `details.task_id` |
 | linked, task's workflow runs in a container | `list_verdict: unknown` with `unavailable_reason`; nothing spawned, the cache not asked, never a host listing (decision 11) — including a configured container that is gone |
-| adapter not registered | `list_verdict: unknown`, `probe_error` set, `invoke_verdict: unknown` — never `unsupported` (decision 41) |
-| adapter without `SkillLister` | `list_verdict: unsupported`; the route writes `unavailable_reason` itself (decision 40) |
+| adapter not registered | `list_verdict: unknown`, `probe_error` set, `invoke_verdict: unknown` — never `unsupported` (decision 58) |
+| adapter without `SkillLister` | `list_verdict: unsupported`; the route writes `unavailable_reason` itself (decision 57) |
 | `ErrSkillsUnsupported` from the probe | `list_verdict: unsupported`, its wrapped text as `unavailable_reason` |
 | probe failed, an earlier list cached | `list_verdict: supported`, the earlier list, `probe_error` set |
 | probe failed, nothing earlier | `list_verdict: unknown`, `probe_error` set |
@@ -3136,7 +3136,7 @@ capability today.
   `invocation` from it, so no client builds one. The cache spawns nothing of
   its own: a probe is the adapter's `ListSkills` on the host, and whatever it
   spawns goes through the adapter's own path, `CREATE_NO_WINDOW` included
-  (task 124 decision 42).
+  (task 124 decision 59).
 
 **The launch seam (task 062.1, added 2026-09-16).** An adapter builds its run's
 argv and hands it over; it never spawns the process itself. `Start` resolves the
@@ -4329,7 +4329,7 @@ defaults:
     plus mtime, found without spawning) and the cleaned directory. An
     upgraded CLI is a new key, so it is asked at once rather than after a TTL.
   - **`skillTTL` = 5 minutes for a clean answer, `skillFailureTTL` = 1 minute
-    for a failed probe** (task 124 decision 37). A listing is not a pure
+    for a failed probe** (task 124 decision 54). A listing is not a pure
     function of the binary — a person adds a skill or installs a plugin and
     nothing about the CLI changes — so a TTL expires it, on `authTTL`'s
     argument and at `authTTL`'s number: any number of clients asking in
@@ -4354,7 +4354,7 @@ defaults:
     or not, is a no, and it is a clean answer about that build, trusted as
     long as a list. A failure whose caller hung up is not stored.
   - **Bounded at 64 keys, least recently used evicted first** (task 124
-    decision 38). The directory is in the key and worktrees churn, so an
+    decision 55). The directory is in the key and worktrees churn, so an
     unbounded cache would grow with every chat ever listed. It is not coupled
     to `max_parallel_chats`: a probe is not a turn and holds no slot (§11).
     There is no config key.

@@ -278,7 +278,7 @@ func TestChatSkillsLinkedTaskWithNoWorktree(t *testing.T) {
 	h.wantCalls(t, 0, "with no worktree")
 }
 
-// TestChatSkillsAdapterThatCannotListOrInvoke is task 124 decision 40, proven
+// TestChatSkillsAdapterThatCannotListOrInvoke is task 124 decision 57, proven
 // against StubNoSkills and never against cursor: the route words the refusal
 // itself, both verdicts are a positive no, and the syntax is empty.
 func TestChatSkillsAdapterThatCannotListOrInvoke(t *testing.T) {
@@ -375,7 +375,7 @@ func TestChatSkillsContainerRunChatSpawnsNothing(t *testing.T) {
 	h.wantCalls(t, 0, "for a container-run chat")
 }
 
-// TestChatSkillsUnregisteredAdapter is task 124 decision 41: an adapter the
+// TestChatSkillsUnregisteredAdapter is task 124 decision 58: an adapter the
 // daemon no longer has is "nobody can say" on both halves, never a no.
 func TestChatSkillsUnregisteredAdapter(t *testing.T) {
 	h := newSkillsHarness(t)

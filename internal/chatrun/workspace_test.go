@@ -107,7 +107,7 @@ func TestWorkspaceMissingLinkedTaskIsAnError(t *testing.T) {
 }
 
 // TestWorkspaceReportsTheContainerBit is the bit the skills route answers
-// `unknown` on (task 124 decision 39). Nil means the host; a wired InContainer
+// `unknown` on (task 124 decision 56). Nil means the host; a wired InContainer
 // is asked about the linked task and its answer, or its error, is returned.
 func TestWorkspaceReportsTheContainerBit(t *testing.T) {
 	h := newHarness(t)

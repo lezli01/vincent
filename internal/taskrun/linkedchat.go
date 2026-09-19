@@ -136,7 +136,7 @@ func (r *Runner) StopChatOrphan(ctx context.Context, taskID, turnID int64) bool 
 // ChatInContainer reports whether taskID's workflow runs in a container,
 // from the task's workflow snapshot and container settings alone. It never
 // calls the runtime, so a configured container that is gone still reports
-// true (task 124 decision 39).
+// true (task 124 decision 56).
 //
 // It is what GET /v1/chats/{id}/skills asks before listing a directory (task
 // 124.9, §13.2): a question a client can repeat at will must not spawn
