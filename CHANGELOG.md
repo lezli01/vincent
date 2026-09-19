@@ -45,6 +45,19 @@ list with the user-facing context a commit subject cannot carry.
   skills share a name, the invocation is codex's linked form,
   `[$name](path)`, because a plain `$name` selects neither. codex-cli 0.154.0
   is now a tested build.
+- **`GET /v1/chats/{id}/skills` lists the skills a chat's agent would load.**
+  It answers for the directory the chat's next turn runs in — the chat's own
+  worktree, or its linked task's — from the moment the chat is created, before
+  any message, and gives the exact text to type to invoke each skill.
+  `list_verdict` is `supported`, `unsupported` (the agent cannot list, as
+  claude and cursor cannot yet) or `unknown` (the probe failed, or the chat's
+  task runs in a container, which is not listed yet). The answer is cached for
+  five minutes, a failed probe for one; `?refresh=true` asks again, and every
+  finished turn clears the chat's directory, so a skill the agent just wrote
+  shows up on the next request. A failed probe keeps the last good list and
+  reports the error beside it. Listing starts the agent CLI in the chat's
+  directory. The route is not an MCP tool, and nothing in the TUI or CLI
+  calls it yet.
 - **Transcripts report skill loads as `agent.skill`.** When claude loads a
   skill, the transcript and the live stream carry an `agent.skill` record with
   the skill's name, its arguments on one line, who invoked it (`agent`, or
