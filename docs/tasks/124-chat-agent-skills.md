@@ -1,6 +1,6 @@
 # 124 — Let a chat's human see the agent's skills and invoke one from a message
 
-**Status:** 🔄 in progress (1/19)
+**Status:** 🔄 in progress (2/19)
 **Opened:** 2026-09-19
 **Issue:** #496 (parent), #497–#515 (one per item)
 **Spec:** §9.1 (`SkillLister`, `SkillInvoker`), §9.6 (`supports_skill_listing`,
@@ -161,6 +161,82 @@ breakdown"). 13–19 were settled with the author, or taken in evaluation, when
     land, all three adapters carry the note, which is today's truth.
     Invocation gets no note: every shipped adapter can invoke.
 
+Decisions 20–28 are 124.2's (#498). 20–22 were settled with the author, and
+23–28 were taken in evaluation.
+
+20. **2026-09-19 — The forked-skill kickoff is left out, and handed to 124.10
+    (#506).** claude's `system/task_started` with `task_type: "local_agent"`,
+    no `tool_use_id` and a `/`-prefixed `description` stays `agent.raw`. It
+    rests on one capture, taken without `--replay-user-messages`; once 124.10
+    turns that flag on, the same forked load may also replay a command-tag
+    line, which would produce two `agent.skill` records for one load. 124.10
+    maps it, if at all, from one capture showing both lines, and no fork
+    fixture is committed here. `Forked` is still defined (decision 23),
+    because 124.12 draws `(forked)`, but nothing sets it yet. *Beaten:*
+    mapping it now, pinned by the single capture.
+21. **2026-09-19 — A model-loaded skill's record carries its arguments.** The
+    parser remembers each `Skill` tool_use's `input.args`, keyed by the call's
+    id, and puts it on the `agent.skill` record as `Args`, cut to one line and
+    capped at `agent.ToolSummaryMax`. 124.12 hides the `▸ Skill` tool_use when
+    an `agent.skill` shares its `call_id`, and the tool_use summary is the name
+    only, so without `Args` the arguments would appear nowhere in the pane.
+    `Args` is empty when the transcript range opened after the tool_use, the
+    same stated cost the subagent memory carries. *Beaten:* `name` and
+    `call_id` only, as the issue first wrote it.
+22. **2026-09-19 — The CLI transcript printer is unchanged, and 124.12 (#508)
+    is widened to cover it.** `vincent task transcript` and
+    `vincent chat transcript` (`renderTranscriptRecord`) print nothing for
+    `agent.skill` or `agent.input_echo`; `--json` prints the records as
+    before. A model-loaded skill still prints, as `> Skill echo-probe`, through
+    the new tool_use summary. The CLI's `agent.skill` line needs the same
+    don't-draw-twice rule against the `Skill` tool_use that the pane gets, so
+    it belongs with the drawing work. **Action for the author:** widen #508 on
+    GitHub to include `internal/cli/transcript.go`. *Beaten:* adding the arm
+    here, or filing a separate item.
+23. **2026-09-19 — All six `SkillInvocation` fields are defined now,** although
+    124.2 sets only `Name`, `Args`, `By` and `CallID`. 124.12 depends only on
+    124.2 and draws `error` and `(forked)`, so the fields must exist first.
+    `Error` is first set by 124.10's stderr replay. A model calling an unknown
+    skill is already an `is_error` `agent.tool_result` that pairs with its
+    tool_use, and produces no `agent.skill`. Every key is omitted on the wire
+    when empty, so an unset field costs nothing.
+24. **2026-09-19 — `agent.input_echo` is a transcript record with no live
+    chunk,** after `agent.result`'s precedent. The transcript route writes
+    `{"type":"agent.input_echo"}`, plus `parent_call_id` when set, and no body.
+    `LiveChunks` returns none for it and `UnmodeledLine` stays false, so the
+    chat runner publishes nothing, which keeps `UnmodeledLine` exactly the
+    complement of what the transcript route calls raw. The TUI treats the
+    record like `agent.subagent_started`/`_progress`: it never draws a line and
+    does not break a run of unrecognized lines. It carries no `text`, because
+    the prompt is already on screen as the chat's bubble or the step's prompt.
+25. **2026-09-19 — How a model-loaded skill is recognized.** A `user` line
+    qualifies as a `Skill` result when it holds exactly one `tool_result`, that
+    result is not `is_error`, and the line's `tool_use_result.commandName` is
+    non-empty — task 110's attribution rule for a line-level
+    `tool_use_result`. The line still normalizes as the `agent.tool_result` it
+    was. Qualifying arms a pending load keyed by the line's
+    `parent_tool_use_id` (`""` is the main loop), holding the call's id,
+    `commandName` and the remembered args. The next line with the same parent
+    consumes it, whatever that line is: a synthetic `user` line with no
+    `tool_result` block becomes `EventSkill{By: "agent"}`, and any other
+    synthetic line stays `EventUnknown`. Keying by parent means a subagent's
+    line interleaved between the two does not clear a main-loop load. `Name`
+    is `commandName` — what the CLI resolved, possibly namespaced — not the
+    model's `input.skill`. The body is never carried (T4.16). The control lines
+    never consume a load, because the live read loop answers them before the
+    parser sees them and a refetch must agree with the live tail (task 071
+    decision 1).
+26. **2026-09-19 — 2.1.277 joins claude's `testedVersions`.** The committed
+    `stream_skill_permission_2.1.277.jsonl` pins the §7.4 control protocol at
+    that build, which is the reason the list gives for 2.1.226.
+27. **2026-09-19 — `docs/guides/agents.md` is not touched.** Decision 14 writes
+    nothing there before both 124.2 and 124.10 make "the transcript shows a
+    skill ran" true for claude; 124.10 adds that row.
+28. **2026-09-19 — Fixture provenance goes where the repo already keeps it.**
+    `internal/agent/*/testdata/` has no README. The argv and the probe skill
+    are recorded in the doc comment of the test that loads each fixture, and
+    in §9.2's and §9.7's dated notes; the file names carry the CLI version.
+
 ## Open questions
 
 Each of the parent's remaining open questions belongs to the item that has to
@@ -192,9 +268,14 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
   `skill_sigil` and `skill_position` on `GET /v1/agents`, the `apiclient`
   fields and `CannotListSkills`, and the `vincent agents` note; spec §9.1,
   §9.6, §9.7 and §9.8. ✓ 2026-09-19
-- [ ] 124.2 (#498) `agent.skill` and `agent.input_echo`: claude's
+- [x] 124.2 (#498) `agent.skill` and `agent.input_echo`: claude's
   model-loaded skills stop showing as raw `SKILL.md` JSON, and cursor's prompt
-  echo stops counting as unrecognized.
+  echo stops counting as unrecognized. `EventSkill`, `EventInputEcho` and
+  `SkillInvocation`; claude's skill memory, the `skill` summary key and the
+  `Skill` permission summary; cursor's echo; both records on the transcript
+  route, the live chunk and `apiclient`; the TUI skipping the echo; the
+  fakeagent `skill-model` scenario; 2.1.277 tested; spec §9.1, §9.2, §9.3,
+  §9.7, §13.2 and §13.3. ✓ 2026-09-19
 - [ ] 124.3 (#499) Send claude's linked turn 1 as two text blocks, so a
   leading `/name` expands.
 - [~] 124.4 (#500) Fix the chat composer's newline keys, a pre-existing bug.
@@ -241,3 +322,24 @@ and 124.15 have landed. 124.16, 124.17 and 124.18 widen coverage after that.
   literally per adapter, both ways through the stubs, and `null` with no
   registry. `TestAgentsCommandAgainstTheRealAPI` decodes them over the real
   handlers, and `TestAgentRowNotesAreBadNewsOnly` holds decision 19.
+- 124.2: `TestModelLoadedSkill` is decision 25, table-driven over
+  `stream_skill_model_2.1.277.jsonl`: the capture yields
+  `EventSkill{By: "agent", Name: "echo-probe", Args: "zebra", CallID}`; a
+  body with no `Skill` result, one separated from it by a line of the same
+  parent, one after an `is_error` result and one after a two-result line stay
+  unknown; a subagent's line in between does not clear the load.
+  `TestSkillLoadedOnceAndStillAToolCall` pins the call's `Skill echo-probe`
+  summary and one load per load, `TestSkillBodyIsNeverNormalized` T4.16, and
+  `TestSkillPermissionFixture` the §7.4 summary over
+  `stream_skill_permission_2.1.277.jsonl`, live and refetched alike. Each of
+  claude's and cursor's `TestOldFixturesParseAsBefore` compares every earlier
+  capture line by line against the classification at 95783734, allowing only
+  cursor's `user` line to move from unknown to input_echo; cursor's
+  `TestUserLinesAreInputEchoes` and `TestNoSkill` and codex's
+  `TestNoSkillAndNoInputEcho` state the rest positively.
+  `TestSkillChunkShape` and `TestSkillAndInputEchoAreModeled` pin the live
+  side, `TestSkillRecordsMatchTheirLiveChunks`, `TestNormalizeSkillRecord` and
+  `TestNormalizeInputEchoRecord` the transcript side, and
+  `TestSkillChunkMatchesItsRefetchedRecord` and
+  `TestInputEchoPublishesNothingLive` both over a real chat turn behind the
+  real handlers. `TestInputEchoIsNeverALine` holds decision 24 in the pane.

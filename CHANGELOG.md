@@ -36,6 +36,24 @@ list with the user-facing context a commit subject cannot carry.
   adapter lists its skills yet, so `vincent agents` now notes
   `no skill listing` on all three rows. The agents guide's capability table
   gains the same two rows.
+- **Transcripts record a skill claude loaded.** When the model loads a skill,
+  the normalized transcript and the live stream carry an `agent.skill` record
+  with the skill's name, its arguments, who invoked it and the `Skill` call
+  that loaded it. The rendered `SKILL.md` no longer reaches a verbose pane as
+  one raw JSON line; it stays in the raw transcript. The `Skill` call itself
+  reads `Skill <name>` instead of a bare `Skill`, and a restricted run's
+  permission prompt for a skill names the skill instead of quoting its
+  description. The pane and `vincent … transcript` do not draw `agent.skill`
+  yet. Task-step transcripts change as well as chats, and transcripts already
+  on disk re-normalize the same way.
+
+### Fixed
+
+- **cursor's echo of the prompt no longer counts as an unrecognized line.**
+  Every cursor turn and step echoed its prompt back as one line vincent did not
+  model, so the output pane always showed at least one `… unrecognized line(s)`
+  and a chat's live tail carried it as `agent.raw`. The line is now an
+  `agent.input_echo` record that nothing draws.
 
 ## [0.9.0](https://github.com/lezli01/vincent/compare/v0.8.0...v0.9.0) (2026-09-18)
 

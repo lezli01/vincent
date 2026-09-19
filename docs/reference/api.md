@@ -2446,7 +2446,7 @@ up by re-fetching the running turn's transcript and discarding every chunk whose
 `chat_id`, `turn_id`, `offset`, the same normalized fields a task's chunks carry
 under the same type names (`agent.output`, `agent.tool_use`, `agent.tool_result`,
 `agent.run_header`, `agent.thinking`, `agent.plan`, `agent.command_output`,
-`agent.patch`, `agent.subagent_started`, `agent.subagent_progress`,
+`agent.patch`, `agent.skill`, `agent.subagent_started`, `agent.subagent_progress`,
 `agent.subagent_finished`, `agent.usage`), **and** the agent's own `raw` line
 beside them.
 
@@ -2455,7 +2455,8 @@ vincent's parsers do not model. A task leaves those to its transcript, but a
 chat has no timeline of steps beside its output, so a turn whose stream is all
 unmodeled lines would show nothing at all while it runs. `agent.result` and
 `agent.error` are not published live on either: they reach you as the turn's
-own state and in its transcript.
+own state and in its transcript. Neither is `agent.input_echo`, the agent's echo
+of the prompt it was sent, which has nothing to draw.
 
 Two failure reasons are worth knowing:
 
@@ -2546,8 +2547,9 @@ The transcript is the attempt's JSONL file, ranged:
   boundary — never mid-record, so a follow-up fetch on a file still being
   appended to resumes cleanly.
 - `format=normalized` maps every line through the owning adapter's parser into
-  the live-output shapes plus `agent.result`, `agent.error`, the `vincent.*`
-  kinds, and `agent.raw` for anything unrecognized. That is one render path for
+  the live-output shapes plus `agent.result`, `agent.error`,
+  `agent.input_echo`, the `vincent.*` kinds, and `agent.raw` for anything
+  unrecognized. That is one render path for
   live tail and scrollback alike. Absent, you get the raw file byte for byte.
 - `agent.run_header` carries `work_dir` and `available_tools` — what the CLI
   announced about the run before starting it. `agent.result` additionally
@@ -2600,6 +2602,32 @@ The transcript is the attempt's JSONL file, ranged:
   `summary` is the line delta `+N −M` (and whose `verb` is `updated` for a
   `Write` that overwrote a file). Only [Claude Code](../guides/agents.md#claude-code)
   fills it, and not for a subagent's edits, whose results carry no patch.
+- `agent.skill` reports that a skill's content entered the conversation, once
+  per load:
+
+  | Field | Meaning |
+  |---|---|
+  | `name` | The skill as the agent CLI resolved it, possibly namespaced |
+  | `args` | What it was invoked with, on one capped line |
+  | `by` | `agent` for a skill the model loaded, `human` for one the message named |
+  | `call_id` | For `by: "agent"`, the `Skill` tool call that loaded it: its `agent.tool_use` and `agent.tool_result` carry the same id |
+  | `forked` | `true` for a skill that ran as its own sub-run |
+  | `error` | Why the agent CLI refused to load it |
+
+  Every key is omitted when unset, and `parent_call_id` rides on it when the
+  load happened inside a subagent. The skill's own text is on no record; the
+  raw transcript keeps it. Only [Claude Code](../guides/agents.md#claude-code)
+  produces one today, for a skill the model loaded, with `name`, `args`, `by`
+  and `call_id`. The `Skill` call's `agent.tool_use` entry names the skill as
+  its `summary`. A claude range fetched with `tail=` or `offset=` that starts
+  between the call's result and the skill's text returns that text as
+  `agent.raw`, and one that starts after the call returns the load without
+  `args`.
+- `agent.input_echo` carries only `type` (and `parent_call_id` when set): a line
+  the agent CLI echoed back from the prompt vincent sent it.
+  [Cursor](../guides/agents.md#cursor) writes one on every turn. It holds no
+  text, because the prompt is already the task's or the chat's own, and it is
+  not published live.
 - One stream line can produce **two** records: codex reports a command's outcome
   and the body it printed on a single event, and claude an edit's outcome and
   its hunks, and they are separate records
@@ -2755,8 +2783,8 @@ they need.
 
 `agent.output`, `agent.tool_use`, `agent.tool_result`, `agent.thinking`,
 `agent.run_header`, `agent.plan`, `agent.command_output`, `agent.patch`,
-`agent.subagent_started`, `agent.subagent_progress`, `agent.subagent_finished`,
-`agent.usage` and `command.output` chunks stream on the
+`agent.skill`, `agent.subagent_started`, `agent.subagent_progress`,
+`agent.subagent_finished`, `agent.usage` and `command.output` chunks stream on the
 **per-task** stream only and are **not** written to the events table. Their
 durable copy is the transcript file.
 
