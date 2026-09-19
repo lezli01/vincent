@@ -47,7 +47,9 @@
 //	                      to, one JSON string per line. JSON rather than the
 //	                      raw bytes because a prompt spans lines and the point
 //	                      of the scenario is that a test can compare what the
-//	                      CLI received byte for byte
+//	                      CLI received byte for byte. A claude input-mode
+//	                      prompt of several text blocks is written as a JSON
+//	                      array of them instead (issue #499)
 //	FAKEAGENT_PROMPT_FAIL_FIRST
 //	                      echo-prompt: "1" makes the *first* invocation exit
 //	                      nonzero, so the step retries and the file ends up
@@ -331,7 +333,7 @@ func main() {
 		return
 	}
 
-	prompt, stdin := readPrompt(hasFlag("--input-format"))
+	prompt, blocks, stdin := readPrompt(hasFlag("--input-format"))
 
 	// The conversation is resolved before a single stream line is emitted
 	// (task 063): a `--resume` of an id the store does not hold ends here,
@@ -407,7 +409,7 @@ func main() {
 		// can read it back exactly (issue #323). It goes to a file rather
 		// than into the stream because the transcript is capped, chunked and
 		// tagged — a record of the prompt, where this has to *be* it.
-		if echoPrompt(prompt) == 1 && os.Getenv("FAKEAGENT_PROMPT_FAIL_FIRST") == "1" {
+		if echoPrompt(blocks) == 1 && os.Getenv("FAKEAGENT_PROMPT_FAIL_FIRST") == "1" {
 			emitText("failing on purpose so there is a retry to compare against")
 			emitSuccessResult(prompt, 100, 42)
 			os.Exit(3)
@@ -505,15 +507,24 @@ func main() {
 // either byte for byte. It reports 0 when no file was named, which is every
 // caller that did not ask.
 //
+// A prompt that arrived as several text blocks is written as a JSON array of
+// them instead (issue #499), because joining them would record a message
+// the adapter never sent: a context block ahead of the message reads the
+// same as the two fused into one.
+//
 // O_APPEND with one Write call: the retries of one step are sequential, but a
 // `parallel` group's are not, and a torn line would read as a prompt the
 // adapter never sent.
-func echoPrompt(prompt []byte) int {
+func echoPrompt(blocks []string) int {
 	path := os.Getenv("FAKEAGENT_PROMPT_FILE")
 	if path == "" {
 		return 0
 	}
-	line, err := json.Marshal(string(prompt))
+	var record any = blocks
+	if len(blocks) == 1 {
+		record = blocks[0]
+	}
+	line, err := json.Marshal(record)
 	count := 0
 	if err == nil {
 		var f *os.File
@@ -767,12 +778,18 @@ func hasFlag(flag string) bool {
 // readPrompt reads the prompt: stdin-until-EOF normally, or one
 // {"type":"user",…} JSONL line in input mode, returning the still-open
 // reader for control traffic.
-func readPrompt(inputMode bool) ([]byte, *bufio.Reader) {
+//
+// blocks is that line's text blocks, kept apart: a linked chat's first turn
+// sends its context and the human's message as two (issue #499), and which
+// block a `/name` starts is the difference claude acts on. prompt joins them
+// with "\n", which is only how every other scenario reads one prompt.
+// Outside input mode blocks is the one prompt.
+func readPrompt(inputMode bool) (prompt []byte, blocks []string, rd *bufio.Reader) {
 	if !inputMode {
-		prompt, _ := io.ReadAll(os.Stdin)
-		return prompt, nil
+		prompt, _ = io.ReadAll(os.Stdin)
+		return prompt, []string{string(prompt)}, nil
 	}
-	rd := bufio.NewReader(os.Stdin)
+	rd = bufio.NewReader(os.Stdin)
 	line, _ := rd.ReadString('\n')
 	var msg struct {
 		Message struct {
@@ -782,13 +799,12 @@ func readPrompt(inputMode bool) ([]byte, *bufio.Reader) {
 		} `json:"message"`
 	}
 	if err := json.Unmarshal([]byte(line), &msg); err != nil {
-		return []byte(line), rd
+		return []byte(line), []string{line}, rd
 	}
-	var texts []string
 	for _, c := range msg.Message.Content {
-		texts = append(texts, c.Text)
+		blocks = append(blocks, c.Text)
 	}
-	return []byte(strings.Join(texts, "\n")), rd
+	return []byte(strings.Join(blocks, "\n")), blocks, rd
 }
 
 // controlResponse is the inbound answer shape (captured from 2.1.226).

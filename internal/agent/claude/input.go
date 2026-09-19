@@ -44,12 +44,25 @@ func supportsInput(version string) bool {
 
 // userMessageLine wraps the prompt as the stream-json user message input
 // mode requires in place of raw stdin text.
-func userMessageLine(prompt string) ([]byte, error) {
+//
+// A preamble rides as its own text block ahead of the prompt's, in the same
+// one user message (issue #499). claude expands a `/name` invocation only
+// when it starts the message's *last* text block — captured against 2.1.277:
+// `[context, "/name …"]` expands with the context kept, the two fused into
+// one block does not, and `["/name …", context]` does not either — so the
+// prompt block is last and is the human's bytes and nothing else. One
+// message is still one model turn and one result.
+func userMessageLine(preamble, prompt string) ([]byte, error) {
+	var content []any
+	if preamble != "" {
+		content = append(content, map[string]any{"type": "text", "text": preamble})
+	}
+	content = append(content, map[string]any{"type": "text", "text": prompt})
 	line, err := json.Marshal(map[string]any{
 		"type": "user",
 		"message": map[string]any{
 			"role":    "user",
-			"content": []any{map[string]any{"type": "text", "text": prompt}},
+			"content": content,
 		},
 	})
 	if err != nil {

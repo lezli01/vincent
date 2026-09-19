@@ -243,13 +243,13 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 	}
 	var promptLine []byte
 	if inputMode {
-		promptLine, err = userMessageLine(spec.Prompt)
+		promptLine, err = userMessageLine(spec.Preamble, spec.Prompt)
 		if err != nil {
 			return nil, err
 		}
 		command.StdinPipe = true
 	} else {
-		command.Stdin = strings.NewReader(spec.Prompt)
+		command.Stdin = strings.NewReader(spec.JoinedPrompt())
 	}
 	proc, err := agent.Launch(spec.Launcher, command)
 	if err != nil {

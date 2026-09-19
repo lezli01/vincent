@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -361,7 +360,8 @@ func (r *Runner) runTurn(
 		return
 	}
 	spec := agent.RunSpec{
-		Prompt:          turnPrompt(chat, turn),
+		Prompt:          turn.Prompt,
+		Preamble:        turnPreamble(chat, turn),
 		WorkDir:         workDir,
 		Launcher:        launcher,
 		Model:           chat.Model,
@@ -454,15 +454,18 @@ func (r *Runner) turnPlace(
 	return task.WorktreePath, l, nil
 }
 
-// turnPrompt is what the agent is sent: the human's message, verbatim, with a
-// linked chat's opening context ahead of it on the first turn and on no later
-// one (task 119). The message is literal, never a template (025 decision 5).
-func turnPrompt(chat *store.Chat, turn *store.ChatTurn) string {
-	if turn.Seq != 1 || chat.OpeningContext == "" {
-		return turn.Prompt
+// turnPreamble is what rides ahead of the human's message: a linked chat's
+// opening context on the first turn and on no later one (task 119). It is
+// handed to the adapter apart from the message rather than fused with it,
+// because claude expands a leading `/name` only when it starts its own text
+// block (issue #499); agent.RunSpec.JoinedPrompt is the fused form for every
+// path that takes one string. The message is literal, never a template (025
+// decision 5).
+func turnPreamble(chat *store.Chat, turn *store.ChatTurn) string {
+	if turn.Seq != 1 {
+		return ""
 	}
-	return strings.TrimSuffix(chat.OpeningContext, "\n") + "\n\n<message>\n" +
-		strings.TrimSuffix(turn.Prompt, "\n") + "\n</message>\n"
+	return chat.OpeningContext
 }
 
 // consume drains the run's normalized events into the transcript and the live
