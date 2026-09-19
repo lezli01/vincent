@@ -18,10 +18,7 @@ import (
 // stub mangles its own argv quoting, and the argv is the entire assertion.
 func stubNpx(t *testing.T) (record string) {
 	t.Helper()
-	dir := t.TempDir()
-	record = filepath.Join(dir, "argv.txt")
-	src := filepath.Join(dir, "main.go")
-	prog := `package main
+	return buildNpx(t, `package main
 
 import (
 	"os"
@@ -31,7 +28,69 @@ import (
 func main() {
 	_ = os.WriteFile(os.Getenv("VINCENT_TEST_ARGV"), []byte(strings.Join(os.Args[1:], "\n")), 0o644)
 }
+`)
+}
+
+// skillsCLIStub is an `npx` that reads `--agent` the way the published
+// `skills` CLI does, rather than recording argv for a test to compare against
+// a spelling it chose itself. `parseAddOptions` in skills 1.5.15 and 1.7.0
+// (dist/cli.mjs) treats `-a`/`--agent` as variadic: every following argument
+// up to the next one starting with `-` is one agent name, repeated flags
+// accumulate, and nothing splits on commas. Each name must then be a key of
+// its agent registry exactly, or it prints `Invalid agents: …` and exits 1.
+// valid is the part of that registry this package can name — vincent's three
+// slugs and one agent it does not drive.
+const skillsCLIStub = `package main
+
+import (
+	"fmt"
+	"os"
+	"strings"
+)
+
+var valid = map[string]bool{"claude-code": true, "codex": true, "cursor": true, "cline": true}
+
+func main() {
+	args := os.Args[1:]
+	if len(args) < 2 || args[0] != "skills" || args[1] != "add" {
+		fmt.Println("not a skills add invocation:", args)
+		os.Exit(2)
+	}
+	var agents []string
+	for i := 2; i < len(args); i++ {
+		if args[i] != "-a" && args[i] != "--agent" {
+			continue
+		}
+		for i+1 < len(args) && args[i+1] != "" && !strings.HasPrefix(args[i+1], "-") {
+			i++
+			agents = append(agents, args[i])
+		}
+	}
+	if len(agents) == 0 {
+		fmt.Println("no --agent selection: the CLI would open its interactive picker")
+		os.Exit(1)
+	}
+	var invalid []string
+	for _, a := range agents {
+		if !valid[a] {
+			invalid = append(invalid, a)
+		}
+	}
+	if len(invalid) > 0 {
+		fmt.Println("Invalid agents: " + strings.Join(invalid, ", "))
+		os.Exit(1)
+	}
+	_ = os.WriteFile(os.Getenv("VINCENT_TEST_ARGV"), []byte(strings.Join(agents, "\n")), 0o644)
+}
 `
+
+// buildNpx compiles prog as `npx` onto a fresh directory, puts that directory
+// first on PATH, and returns the file the stub writes its record to.
+func buildNpx(t *testing.T, prog string) (record string) {
+	t.Helper()
+	dir := t.TempDir()
+	record = filepath.Join(dir, "argv.txt")
+	src := filepath.Join(dir, "main.go")
 	if err := os.WriteFile(src, []byte(prog), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -70,6 +129,40 @@ func TestInstallArgvReachesTheProcess(t *testing.T) {
 	}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("argv =\n  %v\nwant\n  %v", got, want)
+	}
+}
+
+// TestInstallAgentsParseAsTheSkillsCLIDoes is the check the two argv tests
+// above cannot make (issue #489): they pin a spelling vincent chose, and a
+// comma-joined `--agent claude-code,codex,cursor` satisfied them while the
+// real CLI read it as one agent of that name and refused it. Here the child
+// parses the argv the way `skills add` does, so every selection must arrive
+// as the slugs it was built from — one of them, two, or the CLI default of
+// all three.
+func TestInstallAgentsParseAsTheSkillsCLIDoes(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		adapters []string
+		want     []string
+	}{
+		{name: "one adapter", adapters: []string{"cursor"}, want: []string{"cursor"}},
+		{name: "two adapters", adapters: []string{"codex", "claude"}, want: []string{"claude-code", "codex"}},
+		{name: "cli default", adapters: nil, want: []string{"claude-code", "codex", "cursor"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			record := buildNpx(t, skillsCLIStub)
+			var out bytes.Buffer
+			if err := Install(context.Background(), "vincent-triggers", Slugs(tc.adapters), &out); err != nil {
+				t.Fatalf("install: %v\n%s", err, out.String())
+			}
+			b, err := os.ReadFile(record)
+			if err != nil {
+				t.Fatalf("the stub recorded no agents: %v", err)
+			}
+			if got := strings.Split(string(b), "\n"); strings.Join(got, " ") != strings.Join(tc.want, " ") {
+				t.Errorf("skills add selected agents %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
