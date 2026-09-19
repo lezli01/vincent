@@ -1564,7 +1564,7 @@ Installs the named skills, or — with no name — every published skill that is
 already current. It runs, once per skill:
 
 ```sh
-npx skills add lezli01/vincent --skill NAME --agent claude-code,codex,cursor --yes --global
+npx skills add lezli01/vincent --skill NAME --agent claude-code --agent codex --agent cursor --yes --global
 ```
 
 That is the published command with the interactive agent picker answered.

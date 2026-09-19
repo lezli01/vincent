@@ -124,7 +124,7 @@ func TestInstallArgvReachesTheProcess(t *testing.T) {
 	want := []string{
 		"skills", "add", "lezli01/vincent",
 		"--skill", "vincent-workflows",
-		"--agent", "claude-code,codex,cursor",
+		"--agent", "claude-code", "--agent", "codex", "--agent", "cursor",
 		"--yes", "--global",
 	}
 	if strings.Join(got, " ") != strings.Join(want, " ") {

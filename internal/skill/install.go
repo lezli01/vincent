@@ -96,17 +96,23 @@ func Slugs(adapters []string) []string {
 // non-TTY CLI. `-g` is spelled `--global` for the same reason the rest is
 // spelled out — this argv is asserted by a test, and a test that pins short
 // flags pins nothing a reader can check against the documentation.
+//
+// The selection is one `--agent <slug>` pair per agent, never a comma-joined
+// list: `skills add` reads `--agent` as variadic and accumulating, does not
+// split on commas, and matches each name exactly against its registry, so
+// `claude-code,codex` is one agent of that name and the CLI refuses it
+// (issue #489). The repeated form is the one its README uses, and it binds
+// each value to its own flag, so it survives the CLI narrowing `--agent` to a
+// single value and never lets a variadic run swallow a later argument.
 func InstallArgs(name string, slugs []string) []string {
 	if len(slugs) == 0 {
 		slugs = Slugs(nil)
 	}
-	return []string{
-		"skills", "add", Repo,
-		"--skill", name,
-		"--agent", strings.Join(slugs, ","),
-		"--yes",
-		"--global",
+	args := []string{"skills", "add", Repo, "--skill", name}
+	for _, s := range slugs {
+		args = append(args, "--agent", s)
 	}
+	return append(args, "--yes", "--global")
 }
 
 // Command is InstallArgs as a line a human can paste. It is what the

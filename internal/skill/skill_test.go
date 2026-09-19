@@ -320,7 +320,7 @@ func TestSlugs(t *testing.T) {
 // docs/guides/workflows.md print the interactive spelling of this line.
 func TestInstallArgs(t *testing.T) {
 	want := "npx skills add lezli01/vincent --skill vincent-workflows " +
-		"--agent claude-code,codex,cursor --yes --global"
+		"--agent claude-code --agent codex --agent cursor --yes --global"
 	if got := Command("vincent-workflows", nil); got != want {
 		t.Errorf("Command() = %q, want %q", got, want)
 	}

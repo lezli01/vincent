@@ -32,10 +32,26 @@ carried no version marker of any kind.
 
 1. **Install shells out to `npx skills add`, with `-a` and `-y` added**
    (2026-09-10). vincent runs `npx skills add lezli01/vincent --skill <name>
-   --agent <slugs> --yes --global`, not the published command verbatim, because
-   the published command opens an interactive agent multi-select and there is
-   nothing to pick with from a TUI takeover or a non-TTY CLI. The agent list is
-   mapped through the slug table in §9.8.
+   --agent <slug> [--agent <slug>…] --yes --global`, not the published command
+   verbatim, because the published command opens an interactive agent
+   multi-select and there is nothing to pick with from a TUI takeover or a
+   non-TTY CLI. The agent list is mapped through the slug table in §9.8.
+
+   *Corrected 2026-09-19 (issue #489): one `--agent` per agent.* What shipped
+   in v0.9.0 comma-joined the slugs into one value,
+   `--agent claude-code,codex,cursor`. `skills add` reads `--agent` as
+   variadic and accumulating, does not split on commas, and matches each name
+   exactly, so that was one unknown agent: every selection of more than one
+   adapter failed with `Invalid agents` and installed nothing. The argv is now
+   one `--agent <slug>` pair per agent, the spelling the CLI's own README uses.
+   The decision itself stands — shell out, answer the picker with an explicit
+   selection plus `--yes`, split the defaults between CLI and TUI — only its
+   spelling changed. The drift guard this decision relied on, `TestInstallArgs`
+   and `TestInstallArgvReachesTheProcess`, pinned the spelling vincent chose
+   rather than the way the other tool parses it, which is how the comma form
+   passed both. `TestInstallAgentsParseAsTheSkillsCLIDoes` closes that gap: it
+   runs `Install` against a stub `npx` that parses `--agent` the way
+   `skills add` does and rejects an unknown name the same way.
 
    *Settled in the diff (2026-09-10): the two surfaces answer the picker
    differently.* The plan said "defaults to the adapters detected on the box"
