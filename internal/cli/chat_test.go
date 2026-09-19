@@ -3,12 +3,15 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -32,13 +35,59 @@ import (
 // real poll interval in the window the indicator would draw in.
 func chatSendStub(t *testing.T, state, result string) http.HandlerFunc {
 	t.Helper()
+	h, _ := recordingChatStub(t, state, result)
+	return h
+}
+
+// chatStubLog is what a recordingChatStub was asked (task 124.5): every
+// request that reached it, the message of each send decoded from the body the
+// CLI POSTed, and how many chats were created. It is the body, not the
+// command's argument, that --message-file's byte-for-byte promise is about.
+type chatStubLog struct {
+	mu       sync.Mutex
+	requests int
+	created  int
+	sent     []string
+}
+
+func (l *chatStubLog) snapshot() (requests, created int, sent []string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.requests, l.created, append([]string(nil), l.sent...)
+}
+
+// recordingChatStub is chatSendStub that also answers `POST /v1/chats` for
+// `chat start`, as chat 3, and keeps a log of what it was asked.
+func recordingChatStub(t *testing.T, state, result string) (http.HandlerFunc, *chatStubLog) {
+	t.Helper()
 	var polls atomic.Int32
+	log := &chatStubLog{}
 	return func(w http.ResponseWriter, r *http.Request) {
+		log.mu.Lock()
+		log.requests++
+		log.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.URL.Path == "/v1/health":
 			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case r.URL.Path == "/v1/chats" && r.Method == http.MethodPost:
+			log.mu.Lock()
+			log.created++
+			log.mu.Unlock()
+			_, _ = w.Write([]byte(`{"id":3,"title":"talk","agent":"claude","state":"idle",
+				"branch":"vincent/3-talk"}`))
 		case r.URL.Path == "/v1/chats/3/send" && r.Method == http.MethodPost:
+			var body struct {
+				Message *string `json:"message"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Message == nil {
+				t.Errorf("send body does not carry a message: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			log.mu.Lock()
+			log.sent = append(log.sent, *body.Message)
+			log.mu.Unlock()
 			_, _ = w.Write([]byte(`{"id":11,"chat_id":3,"seq":1,"state":"running",
 				"started_at":"2026-09-05T10:00:00Z"}`))
 		case r.URL.Path == "/v1/chats/3" && r.Method == http.MethodGet:
@@ -54,12 +103,18 @@ func chatSendStub(t *testing.T, state, result string) http.HandlerFunc {
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
-	}
+	}, log
 }
 
 // runChatSend runs the command against a stub daemon with stdout and stderr
 // kept apart, which is the whole question here.
 func runChatSend(t *testing.T, h http.HandlerFunc, args ...string) (stdout, stderr string, code int) {
+	t.Helper()
+	return runChatSendStdin(t, h, "", args...)
+}
+
+// runChatSendStdin is runChatSend with stdin, for `--message-file -`.
+func runChatSendStdin(t *testing.T, h http.HandlerFunc, stdin string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
 	dataDir := t.TempDir()
 	t.Setenv(config.EnvDataDir, dataDir)
@@ -88,7 +143,7 @@ func runChatSend(t *testing.T, h http.HandlerFunc, args ...string) (stdout, stde
 	root := newRootCmd()
 	root.SetOut(&out)
 	root.SetErr(&errb)
-	root.SetIn(strings.NewReader(""))
+	root.SetIn(strings.NewReader(stdin))
 	root.SetArgs(args)
 	code = asExitCode(root.ExecuteContext(context.Background()))
 	return out.String(), errb.String(), code
@@ -246,5 +301,187 @@ func TestChatSendPollAndFrameCadences(t *testing.T) {
 	if chatPollInterval/tui.SpinnerTick < 3 {
 		t.Fatalf("only %d frames per poll window; the indicator would read as static",
 			chatPollInterval/tui.SpinnerTick)
+	}
+}
+
+// The --message-file tests (task 124.5, issue #501). The flag exists because
+// a shell rewrites `/name` and expands `$name` in argv without a word, so what
+// is asserted is the body the stub decoded: the bytes that reach the daemon,
+// not the bytes the test handed the command.
+
+// messageFileProbe is content no argv would carry intact through every shell:
+// a leading `/` (Git Bash), a `$name` (bash, zsh and pwsh in double quotes), a
+// double quote and an embedded newline — and it ends in "\n", which must
+// arrive as well, because nothing is trimmed (task 124 decision 29).
+const messageFileProbe = "/review $name \"quoted\"\nsecond line\n"
+
+// TestChatSendMessageFileIsSentByteForByte: through a path and through `-`,
+// the message the daemon receives is the input exactly, trailing newline and
+// all. A leading BOM is valid UTF-8 and is not stripped (decision 32).
+func TestChatSendMessageFileIsSentByteForByte(t *testing.T) {
+	dir := t.TempDir()
+	for _, tc := range []struct {
+		name, content string
+		viaStdin      bool
+	}{
+		{"file", messageFileProbe, false},
+		{"stdin", messageFileProbe, true},
+		{"bom", "\uFEFF/x hi", false},
+		{"whitespace only", "\n", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, log := recordingChatStub(t, "done", "the answer")
+			path, stdin := "-", tc.content
+			if !tc.viaStdin {
+				path, stdin = filepath.Join(dir, strings.ReplaceAll(tc.name, " ", "-")+".txt"), ""
+				if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
+					t.Fatalf("write message file: %v", err)
+				}
+			}
+			stdout, stderr, code := runChatSendStdin(t, h, stdin,
+				"chat", "send", "3", "--message-file", path)
+			if code != 0 {
+				t.Fatalf("exit code %d, want 0 (stderr %q)", code, stderr)
+			}
+			if stdout != "the answer\n" {
+				t.Errorf("stdout = %q, want the answer alone", stdout)
+			}
+			_, _, sent := log.snapshot()
+			if len(sent) != 1 || sent[0] != tc.content {
+				t.Fatalf("the daemon received %q, want exactly %q", sent, tc.content)
+			}
+		})
+	}
+}
+
+// TestChatStartMessageFileSendsTheFirstMessage: `chat start --message-file`
+// creates the chat and sends the file's bytes as its first message, the way
+// --message sends its value.
+func TestChatStartMessageFileSendsTheFirstMessage(t *testing.T) {
+	h, log := recordingChatStub(t, "done", "the answer")
+	stdout, stderr, code := runChatSendStdin(t, h, messageFileProbe,
+		"chat", "start", "talk", "--project", "1", "--message-file", "-")
+	if code != 0 {
+		t.Fatalf("exit code %d, want 0 (stderr %q)", code, stderr)
+	}
+	if !strings.Contains(stdout, "chat 3  talk") || !strings.HasSuffix(stdout, "the answer\n") {
+		t.Errorf("stdout = %q, want the chat line then the answer", stdout)
+	}
+	_, created, sent := log.snapshot()
+	if created != 1 {
+		t.Errorf("chats created = %d, want 1", created)
+	}
+	if len(sent) != 1 || sent[0] != messageFileProbe {
+		t.Fatalf("the daemon received %q, want exactly %q", sent, messageFileProbe)
+	}
+}
+
+// TestChatMessageSourceIsExactlyOne holds decision 30: send takes the
+// argument or the file and refuses both and neither; start's two flags are
+// mutually exclusive. Every refusal is local, exits 1 and makes no request —
+// on start, that means no chat.
+func TestChatMessageSourceIsExactlyOne(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "message.txt")
+	if err := os.WriteFile(path, []byte("hello"), 0o600); err != nil {
+		t.Fatalf("write message file: %v", err)
+	}
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"send with both", []string{"chat", "send", "3", "hello", "--message-file", path}, "not both"},
+		{"send with neither", []string{"chat", "send", "3"}, "a message is required"},
+		{
+			"start with both",
+			[]string{"chat", "start", "talk", "--project", "1", "--message", "hi", "--message-file", path},
+			"[message message-file] were all set",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, log := recordingChatStub(t, "done", "the answer")
+			_, stderr, code := runChatSend(t, h, tc.args...)
+			if code != 1 {
+				t.Errorf("exit code %d, want 1 (stderr %q)", code, stderr)
+			}
+			if !strings.Contains(stderr, tc.want) {
+				t.Errorf("stderr = %q, want it to say %q", stderr, tc.want)
+			}
+			if requests, _, _ := log.snapshot(); requests != 0 {
+				t.Errorf("%d requests reached the daemon, want none", requests)
+			}
+		})
+	}
+}
+
+// TestChatMessageFileRefusals: input the CLI cannot send byte for byte, or
+// has no message in it, is refused before any request on both commands
+// (decisions 32–34), so a refused `chat start` leaves no chat behind. No
+// error quotes the content.
+func TestChatMessageFileRefusals(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "no-such-message.txt")
+	for _, tc := range []struct {
+		name, path, stdin, want string
+	}{
+		{"invalid UTF-8", "-", "secret\xff\xfe tail", "not valid UTF-8"},
+		{"empty", "-", "", "is empty"},
+		{"missing file", missing, "", "no-such-message.txt"},
+	} {
+		for _, verb := range []string{"send", "start"} {
+			t.Run(verb+" "+tc.name, func(t *testing.T) {
+				args := []string{"chat", "send", "3", "--message-file", tc.path}
+				if verb == "start" {
+					args = []string{"chat", "start", "talk", "--project", "1", "--message-file", tc.path}
+				}
+				h, log := recordingChatStub(t, "done", "the answer")
+				_, stderr, code := runChatSendStdin(t, h, tc.stdin, args...)
+				if code != 1 {
+					t.Errorf("exit code %d, want 1 (stderr %q)", code, stderr)
+				}
+				if !strings.Contains(stderr, "--message-file") || !strings.Contains(stderr, tc.want) {
+					t.Errorf("stderr = %q, want the flag named and %q", stderr, tc.want)
+				}
+				if strings.Contains(stderr, "secret") {
+					t.Errorf("the error echoes the content: %q", stderr)
+				}
+				if requests, created, _ := log.snapshot(); requests != 0 || created != 0 {
+					t.Errorf("%d requests and %d chats created, want none", requests, created)
+				}
+			})
+		}
+	}
+}
+
+// TestChatMessageFileBound: the read is capped at maxInputFileBytes, the same
+// bound and the same shape as --fields-file's (decisions 31 and 37). Exactly
+// the bound is read and sent — the send route's own 64 KiB tier is the
+// daemon's to enforce, and this stub has none — and one byte more is refused
+// with the limit named and no request made.
+func TestChatMessageFileBound(t *testing.T) {
+	h, log := recordingChatStub(t, "done", "the answer")
+	fit := strings.Repeat("x", maxInputFileBytes)
+	if _, stderr, code := runChatSendStdin(t, h, fit,
+		"chat", "send", "3", "--message-file", "-"); code != 0 {
+		t.Fatalf("a message exactly at the bound: exit code %d (stderr %q)", code, stderr)
+	}
+	if _, _, sent := log.snapshot(); len(sent) != 1 || len(sent[0]) != maxInputFileBytes {
+		t.Fatalf("a message exactly at the bound did not arrive whole")
+	}
+
+	h, log = recordingChatStub(t, "done", "the answer")
+	_, stderr, code := runChatSendStdin(t, h, fit+"x",
+		"chat", "send", "3", "--message-file", "-")
+	if code != 1 {
+		t.Errorf("one byte over the bound: exit code %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "--message-file") ||
+		!strings.Contains(stderr, strconv.Itoa(maxInputFileBytes)) {
+		t.Errorf("stderr = %q, want the flag and the limit named", stderr)
+	}
+	if strings.Contains(stderr, "xxxx") {
+		t.Errorf("the error echoes the content")
+	}
+	if requests, _, _ := log.snapshot(); requests != 0 {
+		t.Errorf("%d requests reached the daemon, want none", requests)
 	}
 }
