@@ -2429,13 +2429,15 @@ message, and while a turn is running.
 - **`unsupported`** — the agent cannot list its skills, with the reason in
   `unavailable_reason`. Today claude and cursor answer this.
 - **`unknown`** — nobody can say: the probe failed with no earlier list
-  (`probe_error`), the chat's agent is no longer configured, or the chat's task
+  (`probe_error`), the chat's `agent` names no adapter this daemon has
+  (`probe_error`), or the chat's task
   runs in a [container](configuration.md#container), where listing is not
   supported yet (`unavailable_reason`). Treat it as unknown, never as "none".
 
 Type the `invocation` as it is; never build one from the name and the sigil,
 because codex writes `[$name](path)` for a name two skills share.
-`invoke_verdict` is `unsupported` for an agent that cannot invoke skills, with
+`invoke_verdict` is `unsupported` for an agent that cannot invoke skills, and
+`unknown` for an `agent` with no adapter, with
 `invocation`, `invoke_sigil` and `invoke_position` then `""`. `invoke_position`
 is `leading` when the invocation only works at the start of the message
 (claude) and `anywhere` otherwise. `scope`, `plugin`, `description` and
