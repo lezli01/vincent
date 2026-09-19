@@ -60,6 +60,14 @@ list with the user-facing context a commit subject cannot carry.
   `alt+enter`; `enter` continues to send the message. `ctrl+j` works in every
   terminal, and the chat's footer and help now name it. The composer's
   placeholder had promised `shift+enter` while no key inserted a newline.
+- **A claude skill typed as the first message of a chat on a task now runs.**
+  The first turn of a chat opened on a blocked or finished task used to send
+  the task's context and your message to claude as one piece of text, so a
+  message starting with `/name` no longer started it, and claude did not
+  expand the skill: the model was left to guess, and a skill marked
+  `disable-model-invocation` came back as unknown. The context now goes as
+  its own block ahead of your message. codex, cursor and claude builds
+  outside the stream-json input family receive exactly what they did before.
 
 ## [0.9.0](https://github.com/lezli01/vincent/compare/v0.8.0...v0.9.0) (2026-09-18)
 
