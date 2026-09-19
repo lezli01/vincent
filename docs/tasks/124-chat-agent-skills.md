@@ -41,7 +41,7 @@ cite.
 
 Decisions 1–12 are the parent issue's (#496, "Decisions taken in this
 breakdown"). 13–19 were settled with the author, or taken in evaluation, when
-124.1 was built, and 20–27 when 124.2 was.
+124.1 was built, 20–27 when 124.2 was, and 28 in its follow-up.
 
 1. **2026-09-19 — Each CLI's own listing, never a scan.** claude answers a
    stream-json `initialize` control request (`commands`), codex answers
@@ -204,6 +204,12 @@ breakdown"). 13–19 were settled with the author, or taken in evaluation, when
 27. **2026-09-19 — The fresh captures make both builds tested.** claude
     2.1.277 and cursor 2026.09.18-9a7762b join `testedVersions`, after task
     108 decision 1.
+28. **2026-09-19 — 124.12 draws `agent.skill` in the CLI transcript too.**
+    `vincent task transcript` and `vincent chat transcript` print nothing for
+    a record type they do not name, so a skill load is as invisible there as
+    in the pane until 124.12 (#508) draws it. The printer has no levels; for
+    the run header and a subagent's records it prints the pane's `normal`
+    content (§15), and 124.12 settles whether a skill load follows suit.
 
 ## Open questions
 
@@ -266,7 +272,8 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
 - [ ] 124.10 (#506) `--replay-user-messages` on claude chat turns, so a
   human-invoked skill shows as `agent.skill{by:"human"}`. Depends: 124.2.
 - [ ] 124.11 (#507) `vincent chat skills <chat-id>`. Depends: 124.9.
-- [ ] 124.12 (#508) Draw `agent.skill` at each verbosity level. Depends: 124.2.
+- [ ] 124.12 (#508) Draw `agent.skill` at each verbosity level, and in
+  `vincent task|chat transcript` (decision 28). Depends: 124.2.
 - [ ] 124.13 (#509) The skill list above the composer, opened with `tab`,
   inserting the picked invocation. Depends: 124.11, 124.7.
 - [ ] 124.14 (#510) The same list, opened inline as the human types the
