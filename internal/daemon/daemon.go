@@ -215,6 +215,11 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	catalog := agent.NewCatalogCache(agents)
 	stopCatalogPrime := startAgentCatalogPrime(ctx, logger, catalog)
 	defer stopCatalogPrime()
+	// The chat skill cache (§9.6, task 124.9, #505) sits beside the catalog
+	// and is never primed: a listing is per directory, and nobody has asked
+	// about one yet. GET /v1/chats/{id}/skills reads it, and the chat runner
+	// drops a directory from it whenever a turn ends there.
+	skills := agent.NewSkillCache()
 
 	// Workflow registry: global scope from {config_dir}/workflows, project
 	// scopes from every registered repo's .vincent/workflows (§5.2). Both
@@ -375,6 +380,13 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		StopOrphan: func(ctx context.Context, taskID, turnID int64) bool {
 			return runner.StopChatOrphan(ctx, taskID, turnID)
 		},
+		// Where a linked chat's skills would be listed is decided from the
+		// task's settings alone (task 124 decision C), through the same
+		// injected-closure seam as Launchers.
+		InContainer: func(ctx context.Context, taskID int64) (bool, error) {
+			return runner.ChatInContainer(ctx, taskID)
+		},
+		InvalidateSkills: skills.Invalidate,
 	})
 	runnerDeps.ChatTurns = chats
 	runner = taskrun.New(runnerDeps)
@@ -608,6 +620,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		Worktrees:       worktrees,
 		Agents:          agents,
 		Catalog:         catalog,
+		Skills:          skills,
 		Workflows:       workflows,
 		Runner:          runner,
 		Chats:           chats,
