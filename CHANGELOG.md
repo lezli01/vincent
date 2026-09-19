@@ -45,8 +45,9 @@ list with the user-facing context a commit subject cannot carry.
   `2.1.277` and cursor-agent `2026.09.18-9a7762b` are now tested builds.
 - **`vincent chat send` and `chat start` take `--message-file <path|->`.** The
   message is read from a file, or from stdin with `-`, and sent byte for byte,
-  so a skill invocation survives the shell: Git Bash no longer turns
+  so a skill invocation sent this way survives the shell: Git Bash cannot turn
   `/review` into `C:/Program Files/Git/review`, and `$name` is never expanded.
+  A message given as an argument is still whatever the shell left of it.
   Nothing is trimmed, so a trailing newline is part of the message. Empty
   input, input that is not valid UTF-8 and input over 4 MiB are refused before
   any request, so `chat start` creates no chat for them. `chat send`'s message

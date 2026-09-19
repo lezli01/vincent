@@ -5,8 +5,8 @@
 **Issue:** #496 (parent), #497–#515 (one per item)
 **Spec:** §9.1 (`SkillLister`, `SkillInvoker`), §9.6 (`supports_skill_listing`,
 `skill_sigil`, `skill_position`), §9.7 (cursor invokes, never lists), §9.8
-(where codex and cursor read skills from); later items amend §5.5, §9.4, §13.2,
-§15 and §16
+(where codex and cursor read skills from); later items amend §5.5, §9.4, §12.1,
+§13.2, §15 and §16
 
 ## Problem
 
