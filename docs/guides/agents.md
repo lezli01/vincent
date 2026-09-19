@@ -30,14 +30,14 @@ silently drops.
 | Mid-run questions (`awaiting_input`) | ✅ | — | — |
 | Resumes its own session ([chats](../reference/cli.md#vincent-chat)) | ✅ `--resume` | ✅ `exec resume` | ✅ `--resume` |
 | Reports a session it can no longer resume | ✅ `session_lost` | ✅ `session_lost` | **—** (it adopts the id and answers) |
-| Lists its skills in a chat | — | — | **—** (its `-p` mode has no listing) |
+| Lists its skills in a chat | — | ✅ `skills/list` | **—** (its `-p` mode has no listing) |
 | Invokes a skill from a chat message | ✅ `/name` at the **start** | ✅ `$name` anywhere | ✅ `/name` anywhere |
 | Reports cost | ✅ | — | — |
 | `model:` | ✅ | ✅ (free text) | ✅ (~180 enumerated) |
 | `effort:` | ✅ | ✅ | **—** (it lives in the model id) |
 | `restricted` mode | ✅ | ✅ | ✅ on macOS/Linux, **refused on Windows** |
 | Carries [vincent's MCP server](mcp.md) for one run | ✅ `--mcp-config` | ✅ `-c mcp_servers.…` | ✅ `.cursor/mcp.json` **in the worktree** |
-| Tested-build list | `2.1.224`, `2.1.226`, `2.1.268`, `2.1.277` | `0.142.5`, `0.147.0`, `0.150.1` | `2026.08.04-aaa8809`, `2026.08.11-e8db854`, `2026.08.25-3e8eec8`, `2026.09.18-9a7762b` |
+| Tested-build list | `2.1.224`, `2.1.226`, `2.1.268`, `2.1.277` | `0.142.5`, `0.147.0`, `0.150.1`, `0.154.0` | `2026.08.04-aaa8809`, `2026.08.11-e8db854`, `2026.08.25-3e8eec8`, `2026.09.18-9a7762b` |
 | Reports whether you are logged in | ✅ from 2.1.41 | ✅ | ✅ |
 | Recognizes a usage limit / auth failure in a run | ✅ | — | — |
 | Reports **remaining** quota without running | **push only** (its status line) | ✅ `app-server --stdio` | **—** (no usage surface) |
@@ -45,7 +45,10 @@ silently drops.
 A skill is invoked in the CLI's own syntax, typed into your chat message;
 vincent passes the message through unchanged and does not check the name. The
 two skill rows are also on `GET /v1/agents`, as `supports_skill_listing`,
-`skill_sigil` and `skill_position`. No adapter lists its skills yet. In a chat
+`skill_sigil` and `skill_position`. codex can list the skills it would load
+in a worktree, which is all the listing row says: no chat surface shows that
+list yet. When two codex skills share a name, `$name` selects neither; name
+one with codex's linked form, `[$name](path)`. In a chat
 opened on a task, the task's context reaches claude as a separate block ahead
 of your **first** message, so a `/name` there still starts the message and
 runs. The exception is a claude build outside the verified input family (see

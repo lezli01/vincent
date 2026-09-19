@@ -32,10 +32,19 @@ list with the user-facing context a commit subject cannot carry.
   fields sit beside `supports_resume`: `supports_skill_listing` says whether
   the adapter can list the skills its CLI would load, and `skill_sigil` and
   `skill_position` say how a chat message invokes one — claude `/name` at the
-  start of the message, codex `$name` anywhere, cursor `/name` anywhere. No
-  adapter lists its skills yet, so `vincent agents` now notes
-  `no skill listing` on all three rows. The agents guide's capability table
-  gains the same two rows.
+  start of the message, codex `$name` anywhere, cursor `/name` anywhere.
+  claude and cursor do not list their skills yet, so `vincent agents` notes
+  `no skill listing` on their rows. The agents guide's capability table gains
+  the same two rows.
+- **codex can list its skills.** The codex adapter asks `codex app-server`'s
+  `skills/list` which skills it would load in a worktree — repository, user,
+  system and plugin skills, with codex's own scope, path and plugin id, and
+  any `SKILL.md` it could not load. Skills disabled in codex's config are left
+  out. No login is needed. `supports_skill_listing` is now `true` for codex,
+  and `vincent agents` drops its `no skill listing` note. When two codex
+  skills share a name, the invocation is codex's linked form,
+  `[$name](path)`, because a plain `$name` selects neither. codex-cli 0.154.0
+  is now a tested build.
 - **Transcripts report skill loads as `agent.skill`.** When claude loads a
   skill, the transcript and the live stream carry an `agent.skill` record with
   the skill's name, its arguments on one line, who invoked it (`agent`, or
