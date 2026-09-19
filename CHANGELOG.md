@@ -57,7 +57,9 @@ list with the user-facing context a commit subject cannot carry.
 ### Fixed
 
 - **Chat drafts can now contain newlines.** Use `ctrl+j`, `shift+enter` or
-  `alt+enter`; `enter` continues to send the message.
+  `alt+enter`; `enter` continues to send the message. `ctrl+j` works in every
+  terminal, and the chat's footer and help now name it. The composer's
+  placeholder had promised `shift+enter` while no key inserted a newline.
 
 ## [0.9.0](https://github.com/lezli01/vincent/compare/v0.8.0...v0.9.0) (2026-09-18)
 

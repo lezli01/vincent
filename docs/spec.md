@@ -10077,9 +10077,11 @@ stream for the live tail.
    editing a multi-line message.
 
    *Amended 2026-09-19 (issue #500).* `ctrl+j`, `shift+enter` and `alt+enter`
-   insert a newline in the draft; `enter` still sends it. `ctrl+j` is the
-   fallback for legacy terminals. This makes the multi-line editing above
-   reachable without pasting.
+   insert a newline in the draft; `enter` still sends it. This makes the
+   multi-line editing above reachable without pasting. `ctrl+j` is the one the
+   registry row, the footer and the placeholder name, because a legacy
+   terminal can always send it: there `shift+enter` arrives as a bare `enter`,
+   which sends.
 
    The conversation body is **the output pane's line model** at the level
    below, not a renderer of its own: every turn's records go through the same
@@ -11368,7 +11370,8 @@ board**: `enter` opens the workspace, `n` starts a chat, `A` archives, `/`
 filters, `←`/`→` fold a project group and `R` re-lists. *(Amended 2026-09-10,
 task 093: archive was `a` and the re-list was `r`; both moved to the vocabulary
 key below.)* In the **chat
-workspace**: `enter` sends, `ctrl+x` stops the live turn, `ctrl+t` hands the
+workspace**: `enter` sends, `ctrl+j` inserts a newline in the draft *(added
+2026-09-19, issue #500)*, `ctrl+x` stops the live turn, `ctrl+t` hands the
 worktree and branch to a task *(added 2026-09-01, task 074)*, `esc` returns to
 the board. In the **new-chat form**: `ctrl+s` creates, `tab`/`shift+tab` move
 between fields, `enter` opens the focused field's list, `←`/`→` step the
