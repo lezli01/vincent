@@ -106,7 +106,8 @@ decision 6) to do so. Both are amended in place.
   `scripts/123-gate.sh`, wired into `ci.yml`'s gates job on all three
   platforms.
 - [x] 123.6 Spec §5.2, §12.1, §12.2 and §13.2, 037's decisions 2 and 6, the
-  CLI reference, the workflows guide, the FAQ, CLAUDE.md and the changelog.
+  CLI, files and API references, the workflows and scripting guides, the FAQ,
+  CLAUDE.md and the changelog.
 
 ## Verification
 

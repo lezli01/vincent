@@ -5425,6 +5425,15 @@ beside the file.
   apply` (§12.1) removes it after a successful install. Otherwise it stays until
   the task is deleted, and `DELETE /v1/tasks/{id}` (§13.2) removes it with the
   transcripts.
+- **`{config_dir}/trigger-scripts/`** is where a `type: command` trigger's poll
+  script lives. It is a documented convention, not a path the daemon enforces
+  or watches. It sits beside `triggers/` rather than inside it, so a script
+  never shares a directory with the files the registry reads. On POSIX the
+  directory and each script are `0700`. The argv runs with no shell, so on
+  Windows it is `[pwsh, -NoProfile, -File, <absolute path>.ps1]`. Credentials
+  come from the daemon's inherited environment (§2, §12.3) and never go in the
+  script or the trigger file, and a poll script never lives in a repository
+  (task 096 decision 8).
 
 *Amended 2026-09-19 (task 123 decision 4).* **`{data_dir}/workflow-proposals/{task_id}/`**
 holds the proposal a global `update-workflows` run stages (§5.2): the whole
@@ -5435,15 +5444,6 @@ the watched `{config_dir}/workflows`, so nothing is live until `vincent
 workflow apply` (§12.1) has checked it. Apply removes it after a successful
 install; a rejected run's directory stays until the task is deleted, and
 `DELETE /v1/tasks/{id}` (§13.2) removes it too.
-- **`{config_dir}/trigger-scripts/`** is where a `type: command` trigger's poll
-  script lives. It is a documented convention, not a path the daemon enforces
-  or watches. It sits beside `triggers/` rather than inside it, so a script
-  never shares a directory with the files the registry reads. On POSIX the
-  directory and each script are `0700`. The argv runs with no shell, so on
-  Windows it is `[pwsh, -NoProfile, -File, <absolute path>.ps1]`. Credentials
-  come from the daemon's inherited environment (§2, §12.3) and never go in the
-  script or the trigger file, and a poll script never lives in a repository
-  (task 096 decision 8).
 
 *Amended 2026-09-18 (task 121, issue #480).* A fifth `source.type`,
 `schedule`, is the clock:
