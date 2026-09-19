@@ -69,6 +69,16 @@ list with the user-facing context a commit subject cannot carry.
   the same as `> skill …` and `! skill … failed: …`; under `-f`, a load whose
   call printed in an earlier poll prints nothing more. The skill's `SKILL.md`
   text is never drawn; `e` and `--raw` still have it.
+- **`vincent chat send` and `chat start` take `--message-file <path|->`.** The
+  message is read from a file, or from stdin with `-`, and sent byte for byte,
+  so a skill invocation survives the shell: Git Bash no longer turns
+  `/review` into `C:/Program Files/Git/review`, and `$name` is never expanded.
+  Nothing is trimmed, so a trailing newline is part of the message. Empty
+  input, input that is not valid UTF-8 and input over 4 MiB are refused before
+  any request, so `chat start` creates no chat for them. `chat send`'s message
+  argument is now optional, and exactly one of it and `--message-file` is
+  required. The CLI reference explains quoting `/name` and `$name` in each
+  shell, and troubleshooting has the Git Bash symptom.
 
 ### Fixed
 
