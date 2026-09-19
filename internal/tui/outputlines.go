@@ -271,6 +271,11 @@ const (
 // chat's own message or the step's prompt.
 const recInputEcho = "agent.input_echo"
 
+// recSkill is a skill load (task 124.12): a skill the human's message named or
+// one the model asked for, and never the skill's body — no record carries
+// that (task 124 decision 39).
+const recSkill = "agent.skill"
+
 // wrapLine lays a paneLine out across a pane of the given width, styling each
 // produced line's pieces separately so an escape sequence is never split by a
 // break. Words longer than the available width are hard-split rather than
@@ -673,6 +678,94 @@ func toolResultLine(r apiclient.TranscriptToolResult) paneLine {
 	}
 }
 
+// skillLine renders a skill load drawn at its own position (task 124.12): one
+// the human invoked, or a model's load whose `Skill` call is not in the
+// window.
+func skillLine(rec apiclient.TranscriptRecord) paneLine {
+	style := styleTool
+	if rec.Error != "" {
+		style = styleBad
+	}
+	return paneLine{gutter: gutterTool, gutterStyle: style, segs: skillSegs(rec)}
+}
+
+// skillSegs is a load as `skill <name> <args>`, or its failure. The word
+// `skill` is lowercase where the tool's own name, `Skill`, is not, and it is
+// the words rather than a new glyph or a colour that say a skill ran, so the
+// line reads the same under NO_COLOR (task 124.12). A failure is one styleBad
+// run whatever the level, because a display level may not hide one.
+func skillSegs(rec apiclient.TranscriptRecord) []segment {
+	if rec.Error != "" {
+		return []segment{{
+			text:  "skill " + firstNonEmpty(rec.Name, "invocation") + " failed: " + rec.Error,
+			style: styleBad,
+		}}
+	}
+	segs := []segment{{text: "skill", style: styleTool}}
+	for _, part := range []string{rec.Name, rec.Args} {
+		if part != "" {
+			segs = append(segs, segment{text: " " + part, style: styleDim})
+		}
+	}
+	if rec.Forked {
+		segs = append(segs, segment{text: " (forked)", style: styleDim})
+	}
+	return segs
+}
+
+// skillLoadsAtCalls maps a `Skill` call to the model's load that came from it
+// (task 124.12), for every load whose call is earlier in the window. That
+// call draws as the load, so the stream's order — call, outcome, load — reads
+// as one skill line with its outcome directly under it, and the load draws
+// nothing at its own position. The pairing is by call id and never by the
+// tool's name. A load whose call is not in the window — pruned, or before the
+// tail the pane opened on — is absent here and draws where it arrived.
+func skillLoadsAtCalls(records []apiclient.TranscriptRecord) map[string]apiclient.TranscriptRecord {
+	var calls map[string]bool
+	var out map[string]apiclient.TranscriptRecord
+	for _, rec := range records {
+		switch rec.Type {
+		case "agent.tool_use":
+			for _, t := range rec.Tools {
+				if t.CallID == "" {
+					continue
+				}
+				if calls == nil {
+					calls = map[string]bool{}
+				}
+				calls[t.CallID] = true
+			}
+		case recSkill:
+			if !isModelLoad(rec) || !calls[rec.CallID] {
+				continue
+			}
+			if _, seen := out[rec.CallID]; seen {
+				continue
+			}
+			if out == nil {
+				out = map[string]apiclient.TranscriptRecord{}
+			}
+			out[rec.CallID] = rec
+		}
+	}
+	return out
+}
+
+// isModelLoad is a load the model asked for through a call, which is the only
+// kind that has a call to be drawn at.
+func isModelLoad(rec apiclient.TranscriptRecord) bool {
+	return rec.By == "agent" && rec.CallID != ""
+}
+
+// drawnAtCall reports a load that skillLoadsAtCalls placed on its call's line.
+func drawnAtCall(rec apiclient.TranscriptRecord, skills map[string]apiclient.TranscriptRecord) bool {
+	if rec.Type != recSkill || !isModelLoad(rec) {
+		return false
+	}
+	_, ok := skills[rec.CallID]
+	return ok
+}
+
 // subagentLabels maps every spawning call in a record window to the name its
 // rail label shows (task 109): the description the subagent's start gave,
 // else the spawning call's own subject. Nothing here reads a tool's name —
@@ -915,6 +1008,7 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 	for i, doc := range docs {
 		docAt[doc.first] = i
 	}
+	skills := skillLoadsAtCalls(records)
 	for i := 0; i < len(records); i++ {
 		rec := records[i]
 		parent := rec.ParentCallID
@@ -923,10 +1017,12 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 			// internals are neither, one level down.
 			continue
 		}
-		if rec.Type == recSubagentStarted || rec.Type == recSubagentProgress || rec.Type == recInputEcho {
+		if rec.Type == recSubagentStarted || rec.Type == recSubagentProgress || rec.Type == recInputEcho ||
+			drawnAtCall(rec, skills) {
 			// Never a line, and not a break in a run of unrecognized lines
 			// either: these were such lines until tasks 109 and 124.2
-			// modeled them.
+			// modeled them. A skill load drawn at its call already has its
+			// line there (task 124.12).
 			continue
 		}
 		if rec.Type == "agent.raw" {
@@ -1019,7 +1115,7 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 			}
 			continue
 		}
-		pl, ok := renderRecord(rec, sawOutput, recLevel)
+		pl, ok := renderRecord(rec, sawOutput, recLevel, skills)
 		if !ok {
 			continue
 		}
@@ -1067,16 +1163,29 @@ func assistantBlockLines(text string, width int, raw, links bool) ([]string, []i
 // point of that rule, since the timeline row already carries its numbers —
 // though levelVerbose does show it, adapter-native payload and all, because
 // that level means "show me the machine".
-func renderRecord(rec apiclient.TranscriptRecord, sawOutput bool, level outputLevel) (paneLine, bool) {
+//
+// skills is skillLoadsAtCalls over the window: the model's skill loads, by the
+// call each is drawn at.
+func renderRecord(
+	rec apiclient.TranscriptRecord, sawOutput bool, level outputLevel, skills map[string]apiclient.TranscriptRecord,
+) (paneLine, bool) {
 	switch rec.Type {
 	case "agent.tool_use":
-		// levelQuiet is "what the agent said, and what went wrong". A tool
-		// call is what it *did*, which is exactly the half compact keeps
-		// and quiet drops.
-		if level == levelQuiet || len(rec.Tools) == 0 {
+		if len(rec.Tools) == 0 {
 			return paneLine{}, false
 		}
-		return toolUsePane(rec.Tools), true
+		if level == levelQuiet {
+			// levelQuiet is "what the agent said, and what went wrong". A
+			// tool call is what it *did*, which is exactly the half compact
+			// keeps and quiet drops — except a skill load that failed, which
+			// is drawn in its call's place and is something that went wrong.
+			failed := failedSkillCalls(rec.Tools, skills)
+			if len(failed) == 0 {
+				return paneLine{}, false
+			}
+			return toolUsePane(failed, skills), true
+		}
+		return toolUsePane(rec.Tools, skills), true
 	case "agent.tool_result":
 		if level == levelQuiet || len(rec.Results) == 0 {
 			return paneLine{}, false
@@ -1125,6 +1234,15 @@ func renderRecord(rec apiclient.TranscriptRecord, sawOutput bool, level outputLe
 		return plain(string(rec.Raw), styleDim, false), len(rec.Raw) > 0
 	case "agent.error":
 		return marked("✗ ", rec.Message, styleBad), true
+	case recSkill:
+		// A skill the human invoked shows at every level: quiet shows an
+		// acknowledgement of what the human did, as it shows an answered
+		// question (task 124 decision 37). The model's own load is a tool
+		// call and is hidden at quiet like one. A failure shows everywhere.
+		if level == levelQuiet && rec.By != "human" && rec.Error == "" {
+			return paneLine{}, false
+		}
+		return skillLine(rec), true
 	case "agent.result":
 		// The only arm that decides for itself whether it has a line: quiet
 		// suppresses the success outcome and keeps the other two forms, so

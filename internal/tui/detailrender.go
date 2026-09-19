@@ -1212,11 +1212,25 @@ func marked(glyph, text string, style lipgloss.Style) paneLine {
 // what it ran it on and is dimmed, so a column of tool calls scans by name
 // while still saying what each one touched. A tool whose arguments yielded no
 // subject renders exactly as it did before T4.14 — its bare name.
-func toolUsePane(tools []apiclient.TranscriptTool) paneLine {
+//
+// skills is the window's skillLoadsAtCalls (task 124.12). A tool whose call
+// loaded a skill draws as that load — `skill <name> <args>` in place of
+// `Skill <name>` — and in a record of several calls only its own part
+// changes. A failed load turns the gutter too, so the line reads as a failure
+// from its first cell.
+func toolUsePane(tools []apiclient.TranscriptTool, skills map[string]apiclient.TranscriptRecord) paneLine {
 	segs := make([]segment, 0, len(tools)*3)
+	gutterStyle := styleTool
 	for i, t := range tools {
 		if i > 0 {
 			segs = append(segs, segment{text: ", ", style: styleDim})
+		}
+		if load, ok := skillAtCall(t, skills); ok {
+			segs = append(segs, skillSegs(load)...)
+			if load.Error != "" {
+				gutterStyle = styleBad
+			}
+			continue
 		}
 		segs = append(segs, segment{text: t.Name, style: styleTool})
 		if t.Summary != "" {
@@ -1225,9 +1239,30 @@ func toolUsePane(tools []apiclient.TranscriptTool) paneLine {
 	}
 	return paneLine{
 		gutter:      gutterTool,
-		gutterStyle: styleTool,
+		gutterStyle: gutterStyle,
 		segs:        segs,
 	}
+}
+
+// skillAtCall is the skill load drawn at a tool's call, if one is.
+func skillAtCall(t apiclient.TranscriptTool, skills map[string]apiclient.TranscriptRecord) (apiclient.TranscriptRecord, bool) {
+	if t.CallID == "" {
+		return apiclient.TranscriptRecord{}, false
+	}
+	load, ok := skills[t.CallID]
+	return load, ok
+}
+
+// failedSkillCalls is what quiet keeps of a tool_use record: the calls whose
+// skill load failed, which are drawn as that failure.
+func failedSkillCalls(tools []apiclient.TranscriptTool, skills map[string]apiclient.TranscriptRecord) []apiclient.TranscriptTool {
+	var out []apiclient.TranscriptTool
+	for _, t := range tools {
+		if load, ok := skillAtCall(t, skills); ok && load.Error != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // renderResult renders the terminal record, reporting whether it produced a
