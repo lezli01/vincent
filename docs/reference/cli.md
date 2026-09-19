@@ -857,7 +857,7 @@ task has parallel steps or fan-out lanes).
 
 | Output | What it is |
 |---|---|
-| default | The records rendered as text, the vocabulary the TUI's output pane renders: the run header (working directory and the tools the agent was given) as a first `# ` line, assistant output, tool calls and their outcomes, a subagent's work behind a `| ` rail, command output, the agent's running to-do list as a `# plan:` line, vincent's own annotations, and a closing `= done` line carrying whatever the agent reported about the run — elapsed time, turns, an unusual stop or terminal reason, permission denials, cost. Token usage is dropped — `task show` carries it |
+| default | The records rendered as text, the vocabulary the TUI's output pane renders: the run header (working directory and the tools the agent was given) as a first `# ` line, assistant output, tool calls and their outcomes, the skills that ran as `> skill <name> <args>` lines, a subagent's work behind a `| ` rail, command output, the agent's running to-do list as a `# plan:` line, vincent's own annotations, and a closing `= done` line carrying whatever the agent reported about the run — elapsed time, turns, an unusual stop or terminal reason, permission denials, cost. Token usage is dropped — `task show` carries it |
 | `--json` | The normalized records as NDJSON, one JSON object per line, in vincent's vocabulary including its `vincent.*` annotations. This is the `jq` route |
 | `--raw` | The agent's own JSONL, byte for byte, exactly as it was recorded |
 
@@ -875,8 +875,8 @@ with no tools, and its result line carries the elapsed time, as in
 
 A **subagent's** work prints nested, in the order it arrived, at the pane's
 [`normal` content](../guides/tui.md#when-the-agent-runs-subagents): its prose,
-tool calls, outcomes and errors, each behind a `| ` rail, and never its
-reasoning or plan. A `| -> <description>` line names the subagent whenever the
+tool calls, outcomes, skill loads and errors, each behind a `| ` rail, and
+never its reasoning or plan. A `| -> <description>` line names the subagent whenever the
 output moves into one or from one to another, and the next line from the agent
 itself ends the rail. When a subagent ends, one line on the rail says how:
 
@@ -895,6 +895,30 @@ that launched a subagent without waiting for it. The label names the
 subagent by the description it was started with, or by the spawning call's
 summary when that is all there is. Only
 [Claude Code](../guides/agents.md#claude-code) reports subagents.
+
+A **skill** that ran prints as `> skill <name> <args>`, with ` (forked)` for a
+skill that ran as its own sub-run, and a load that carries the agent CLI's
+refusal prints as `! skill <name> failed: <error>` (`invocation` in place of a
+name it did not give). A `Skill` call Claude Code refuses loads nothing, so it
+prints as `> Skill <name>` with the refusal on the `! ` outcome line under it.
+The skill's own text — the `SKILL.md` it loaded — is never printed;
+`--raw` has it. A skill the agent loaded itself comes from a `Skill` tool call,
+and prints on that call's line in place of `> Skill <name>`, so its outcome
+stays directly under it:
+
+```text
+> skill echo-probe zebra
+< Launching skill: echo-probe
+ECHO-PROBE zebra
+```
+
+That pairing needs the call and the load in the same fetch. Without `-f` they
+always are. Under `-f` a poll can land between the two: the call has then
+already printed as `> Skill echo-probe`, and the load prints nothing rather
+than read as a second call — the one case where the skill's arguments are not
+shown. A load whose call is before the range the command opened on prints
+where it is. Only [Claude Code](../guides/agents.md#claude-code) reports skill
+loads.
 
 Everything a reader reads goes to **stdout**, including a command step's stderr,
 which is tagged `[stderr]` rather than split onto the other file descriptor: a
@@ -1720,7 +1744,7 @@ turn number the chat does not have exits `1` with
 
 | Output | What it is |
 |---|---|
-| default | The records rendered as text, exactly as `task transcript` renders an attempt: the run header as a first `# ` line, assistant output, tool calls and their outcomes, a subagent's work behind a `| ` rail, the agent's running to-do list as a `# plan:` line, vincent's own annotations, and a closing `= done` line carrying whatever the agent reported about the turn |
+| default | The records rendered as text, exactly as `task transcript` renders an attempt: the run header as a first `# ` line, assistant output, tool calls and their outcomes, the skills that ran as `> skill <name> <args>` lines, a subagent's work behind a `| ` rail, the agent's running to-do list as a `# plan:` line, vincent's own annotations, and a closing `= done` line carrying whatever the agent reported about the turn |
 | `--json` | The normalized records as NDJSON, one JSON object per line, in vincent's vocabulary including its `vincent.*` annotations. This is the `jq` route |
 | `--raw` | The agent's own JSONL, byte for byte, exactly as it was recorded |
 

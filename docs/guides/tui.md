@@ -632,6 +632,21 @@ which would otherwise leave a turn header with nothing under it. A command
 step's pane is identical at `quiet` and `compact`: `quiet` is a rule about what
 the *agent* narrated, and a command step narrates nothing.
 
+`quiet` also keeps what **you** did. An answered question shows as
+`✓ answered`, and a skill your message invoked shows as `▸ skill <name> <args>`
+— `(forked)` after it for a skill that ran as its own sub-run — so a `/tdd`
+you sent visibly ran even at the quietest level. A skill the agent chose to
+load is one of its tool calls and appears from `compact` up, on its `Skill`
+call's line: `▸ skill echo-probe zebra` with the `✓ Launching skill` outcome
+under it, rather than the call and the load as two lines. While a run is live
+that line reads `▸ Skill echo-probe` for the moment before the load arrives. A
+load that carries the agent CLI's refusal shows at every level as
+`▸ skill <name> failed: <error>`. A `Skill` call Claude Code refuses loads
+nothing, so it stays `▸ Skill <name>` with the refusal as the `✗` outcome
+under it. The skill's own text — the `SKILL.md` that
+was loaded — is never drawn at any level; `e` opens the whole transcript,
+which has it.
+
 `compact` is what the agent **said and did**, and nothing else. Reasoning is
 hidden, and so is everything about the run itself.
 
@@ -1742,9 +1757,12 @@ completion line. `ctrl+r` cycles the same four levels
 other is on it too. `ctrl+r` rather than `v` because the composer owns every
 printable key: a letter would be typed into your draft.
 
-At `quiet` you get the agent's prose and anything that went wrong, with the
-tool calls, the closing outcome line and the unrecognized-line count all gone.
-At `compact` you get what the agent said and did and nothing else. At `normal`
+At `quiet` you get the agent's prose, anything that went wrong, and what you
+did — an answered question, a skill your message invoked as
+`▸ skill <name> <args>` — with the tool calls, the closing outcome line and the
+unrecognized-line count all gone. At `compact` you get what the agent said and
+did and nothing else, including a skill it loaded itself, drawn on its `Skill`
+call's line as [in the task pane](#what-v-adds). At `normal`
 reasoning is truncated to its first lines and the run header appears. At
 `verbose` you get everything, including the dialect lines vincent does not
 model — which sit behind a `… N unrecognized line(s) (ctrl+r)` count at

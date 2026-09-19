@@ -183,6 +183,17 @@ type transcriptPrinter struct {
 	// Both are carried across fetches for sawOutput's reason.
 	rail   string
 	labels map[string]string
+	// skills is the fetch being printed's model skill loads, by the `Skill`
+	// call each prints at (task 124 decision 38). It is per fetch: a load is
+	// drawn on its call's line only when both are in the range that is being
+	// printed, because by the next fetch that line has already gone out.
+	skills map[string]apiclient.TranscriptRecord
+	// called is every call id already printed on a `>` line, carried across
+	// fetches. A model load whose call is in it prints nothing: either its
+	// line was the call's, or a `-f` poll split the two and the call's line
+	// went out as `> Skill <name>` — printing the load then would read as a
+	// second call.
+	called map[string]bool
 }
 
 // transcriptSource is the subject a printer reads: a task's step run or a
@@ -255,6 +266,7 @@ func (p *transcriptPrinter) printFrom(
 	if err != nil {
 		return 0, err
 	}
+	p.skills = transcriptSkillsAtCalls(records)
 	for _, rec := range records {
 		if err := p.write(rec); err != nil {
 			return next, err
@@ -289,13 +301,18 @@ func (p *transcriptPrinter) write(rec apiclient.TranscriptRecord) error {
 		return err
 	case parent != "" && !transcriptChildShown(rec.Type):
 		return nil
+	case rec.Type == "agent.skill" && isModelSkillLoad(rec) && p.called[rec.CallID]:
+		return nil
 	}
-	text, ok := renderTranscriptRecord(rec, p.sawOutput)
+	text, ok := renderTranscriptRecord(rec, p.sawOutput, p.skills)
 	if rec.Type == "agent.output" && rec.Text != "" && parent == "" {
 		p.sawOutput = true
 	}
 	if !ok {
 		return nil
+	}
+	if rec.Type == "agent.tool_use" {
+		p.noteCalls(rec.Tools)
 	}
 	if parent == "" {
 		p.rail = ""
@@ -320,13 +337,57 @@ const transcriptRail = "| "
 
 // transcriptChildShown is what this command prints of a subagent. It has no
 // levels and prints the pane's `normal`, where a subagent — one level quieter
-// — shows its prose, its tool calls and their outcomes, and its errors.
+// — shows its prose, its tool calls and their outcomes, its skill loads, and
+// its errors.
 func transcriptChildShown(recType string) bool {
 	switch recType {
-	case "agent.output", "agent.tool_use", "agent.tool_result", "agent.error":
+	case "agent.output", "agent.tool_use", "agent.tool_result", "agent.skill", "agent.error":
 		return true
 	}
 	return false
+}
+
+// noteCalls remembers the call ids a printed `>` line carried.
+func (p *transcriptPrinter) noteCalls(tools []apiclient.TranscriptTool) {
+	for _, t := range tools {
+		if t.CallID == "" {
+			continue
+		}
+		if p.called == nil {
+			p.called = map[string]bool{}
+		}
+		p.called[t.CallID] = true
+	}
+}
+
+// transcriptSkillsAtCalls maps a `Skill` call to the model's load that came
+// from it, for every load in records whose call comes earlier in them — the
+// pane's pairing (task 124.12), keyed on the call id and never on the tool's
+// name.
+func transcriptSkillsAtCalls(records []apiclient.TranscriptRecord) map[string]apiclient.TranscriptRecord {
+	calls := map[string]bool{}
+	out := map[string]apiclient.TranscriptRecord{}
+	for _, rec := range records {
+		switch rec.Type {
+		case "agent.tool_use":
+			for _, t := range rec.Tools {
+				if t.CallID != "" {
+					calls[t.CallID] = true
+				}
+			}
+		case "agent.skill":
+			if _, seen := out[rec.CallID]; isModelSkillLoad(rec) && calls[rec.CallID] && !seen {
+				out[rec.CallID] = rec
+			}
+		}
+	}
+	return out
+}
+
+// isModelSkillLoad is a load the model asked for through a call, which is the
+// only kind that has a call line to print on.
+func isModelSkillLoad(rec apiclient.TranscriptRecord) bool {
+	return rec.By == "agent" && rec.CallID != ""
 }
 
 // learnLabel records the name a spawning call's rail label shows: the
@@ -440,7 +501,12 @@ func (p *transcriptPrinter) followFrom(
 //
 // A record with nothing a reader wants reports false. agent.usage is the
 // point of that rule — `vincent task show` already carries those numbers.
-func renderTranscriptRecord(rec apiclient.TranscriptRecord, sawOutput bool) (string, bool) {
+//
+// skills is transcriptSkillsAtCalls over the fetch: a call there prints as
+// its skill load rather than as `Skill <name>` (task 124 decision 38).
+func renderTranscriptRecord(
+	rec apiclient.TranscriptRecord, sawOutput bool, skills map[string]apiclient.TranscriptRecord,
+) (string, bool) {
 	switch rec.Type {
 	case "agent.run_header":
 		return renderTranscriptRunHeader(rec)
@@ -450,11 +516,26 @@ func renderTranscriptRecord(rec apiclient.TranscriptRecord, sawOutput bool) (str
 		if len(rec.Tools) == 0 {
 			return "", false
 		}
+		mark := "> "
 		parts := make([]string, 0, len(rec.Tools))
 		for _, tool := range rec.Tools {
+			if load, ok := skills[tool.CallID]; ok && tool.CallID != "" {
+				parts = append(parts, transcriptSkill(load))
+				if load.Error != "" {
+					mark = "! "
+				}
+				continue
+			}
 			parts = append(parts, strings.TrimSpace(tool.Name+" "+tool.Summary))
 		}
-		return "> " + strings.Join(parts, ", "), true
+		return mark + strings.Join(parts, ", "), true
+	case "agent.skill":
+		// A skill the human invoked, or a model's load whose call is not in
+		// the range printed: its own line, where it arrived.
+		if rec.Error != "" {
+			return "! " + transcriptSkill(rec), true
+		}
+		return "> " + transcriptSkill(rec), true
 	case "agent.tool_result":
 		if len(rec.Results) == 0 {
 			return "", false
@@ -524,6 +605,27 @@ func renderTranscriptRecord(rec apiclient.TranscriptRecord, sawOutput bool) (str
 		}
 		return "", false
 	}
+}
+
+// transcriptSkill is a skill load after its marker: `skill <name> <args>`,
+// `(forked)` for one that ran as its own sub-run, or the refusal. The pane's
+// words, so the two read alike; the lowercase `skill` is what tells it from
+// the `Skill` tool's own call line. The skill's body is never here — no
+// record carries it (task 124 decision 39).
+func transcriptSkill(rec apiclient.TranscriptRecord) string {
+	if rec.Error != "" {
+		return "skill " + firstNonEmpty(rec.Name, "invocation") + " failed: " + rec.Error
+	}
+	parts := []string{"skill"}
+	for _, part := range []string{rec.Name, rec.Args} {
+		if part != "" {
+			parts = append(parts, part)
+		}
+	}
+	if rec.Forked {
+		parts = append(parts, "(forked)")
+	}
+	return strings.Join(parts, " ")
 }
 
 // renderTranscriptRunHeader renders what the agent CLI announced before the

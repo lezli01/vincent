@@ -1,6 +1,6 @@
 # 124 — Let a chat's human see the agent's skills and invoke one from a message
 
-**Status:** 🔄 in progress (4/19)
+**Status:** 🔄 in progress (5/19)
 **Opened:** 2026-09-19
 **Issue:** #496 (parent), #497–#515 (one per item)
 **Spec:** §9.1 (`SkillLister`, `SkillInvoker`), §9.6 (`supports_skill_listing`,
@@ -41,8 +41,8 @@ cite.
 
 Decisions 1–12 are the parent issue's (#496, "Decisions taken in this
 breakdown"). 13–19 were settled with the author, or taken in evaluation, when
-124.1 was built, 20–27 when 124.2 was, 28 in its follow-up, and 29–36 when
-124.8 was.
+124.1 was built, 20–27 when 124.2 was, 28 in its follow-up, 29–36 when
+124.8 was, and 37–39 when 124.12 was.
 
 1. **2026-09-19 — Each CLI's own listing, never a scan.** claude answers a
    stream-json `initialize` control request (`commands`), codex answers
@@ -256,6 +256,37 @@ breakdown"). 13–19 were settled with the author, or taken in evaluation, when
     `supports_skill_listing`, which flips in this change. The prose beside it
     says that no chat surface shows the list until the chat skills route
     (124.9) lands, so the page stays true in the meantime.
+37. **2026-09-19 — A skill the human invoked shows at `quiet`.** `by:
+    "human"` draws one line at every level, quiet included, after the
+    `vincent.input_request` / `vincent.input_response` precedent: an
+    acknowledgement of what the human did is visible at quiet. §15's
+    definition of quiet gains that third category in a dated note. A skill
+    the model loaded (`by: "agent"`) stays hidden at quiet, like every tool
+    call, and a load that failed shows at every level. This settles #496's
+    open question 6. *Beaten:* hiding it, which would leave a human reading
+    at quiet unable to see that their `/tdd` ran.
+38. **2026-09-19 — The CLI printer follows the pane within each fetch.** In
+    `vincent task transcript` and `vincent chat transcript`, a model-loaded
+    skill prints on its call's line as `> skill <name> <args>` whenever the
+    call and the load are in the same fetched range, and then prints nothing
+    at its own position. Without `-f` that is always the case: the command
+    fetches one range. Under `-f` a poll can split the call from its load;
+    the `> Skill <name>` line that already printed stays, and the load does
+    not print a second time. That split is the only case where a model
+    load's args are missing. A load whose call lies outside the fetched range
+    prints at its own position. *Beaten:* printing both lines in order, which
+    reads as a second call and is the double draw the pane avoids; and
+    printing only the call line, which never shows a model load's args.
+39. **2026-09-19 — The skill's body is never on screen.** #508's criterion
+    "folded into the unrecognized count at compact/normal, raw at verbose"
+    predates #498. Since #498 the `isSynthetic` body line *is* the
+    `agent.skill` record, and no record carries the body (T4.16; 124.2), so
+    no level draws it. It stays reachable through `e`, `--raw` and
+    `format=raw`. The lines the parser still leaves unmodeled — the forked
+    capture's two leftovers, for one — keep the `agent.raw` rules: a count at
+    compact and normal, whole at verbose, no trace at quiet. *Beaten:*
+    showing the body at verbose, which would put it on the wire and reverse
+    T4.16 and #498's design; that needs its own item.
 
 ## Open questions
 
@@ -269,7 +300,7 @@ answer it, so none is lost:
 | 3 — claude listing floor: 2.1.277 only, or the whole `[2.1.0, 3.0.0)` input family | 124.7 (#503) |
 | 4 — Hooks in the probe: suppress SessionStart hooks and MCP servers, at the cost of missing hook-installed skills | 124.7 (#503) |
 | 5 — The skills key: `tab` over `f2` | 124.13 (#509) |
-| 6 — The `quiet` level: does a human-invoked skill show there | 124.12 (#508) |
+| 6 — The `quiet` level: does a human-invoked skill show there | 124.12 (#508); settled by decision 37 |
 | 7 — Cache TTLs: 5 min for a clean list and 1 min for a failed one | 124.9 (#505) |
 | 9 — `/clear` under pass-through: should a conversation reset become a visible record | 124.6 (#502) |
 | 10 — Containers: should `container.mount_agent_config` also mount `~/.agents` | no owner; out of scope |
@@ -324,8 +355,15 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
 - [ ] 124.10 (#506) `--replay-user-messages` on claude chat turns, so a
   human-invoked skill shows as `agent.skill{by:"human"}`. Depends: 124.2.
 - [ ] 124.11 (#507) `vincent chat skills <chat-id>`. Depends: 124.9.
-- [ ] 124.12 (#508) Draw `agent.skill` at each verbosity level, and in
-  `vincent task|chat transcript` (decision 28). Depends: 124.2.
+- [x] 124.12 (#508) Draw `agent.skill` at each verbosity level, and in
+  `vincent task|chat transcript` (decision 28). The pane and the chat body
+  draw `▸ skill <name> <args>`, `(forked)` for a forked skill and
+  `▸ skill <name> failed: <error>` for a refusal; a model's load is drawn in
+  its `Skill` call's place, paired by `call_id`, and no longer splits an
+  unrecognized-line count. The printer prints `> skill …` and
+  `! skill … failed: …` on the same pairing within each fetch. Decisions
+  37–39; spec §15, `docs/guides/tui.md` and `docs/reference/cli.md`
+  amended. ✓ 2026-09-19
 - [ ] 124.13 (#509) The skill list above the composer, opened with `tab`,
   inserting the picked invocation. Depends: 124.11, 124.7.
 - [ ] 124.14 (#510) The same list, opened inline as the human types the
@@ -400,3 +438,21 @@ and 124.15 have landed. 124.16, 124.17 and 124.18 widen coverage after that.
   The rate-limit tests in `appserver_test.go` pass unmodified on the shared
   exchange, and `TestAgentsReportSkillCapabilities` pins codex's
   `supports_skill_listing: true`.
+- 124.12: `TestSkillLevelTable` holds decision 37's table at all four levels
+  for a human load, a model load with and without its call, a forked one,
+  failures of each kind with and without a name, and a subagent's loads one
+  level quieter. `TestSkillLoadDrawnAtItsCall` proves one `skill` line, no
+  `Skill` line and the outcome directly under it, the multi-call and quiet
+  cases, and a load with no call in the window drawn on its own.
+  `TestSkillLoadDoesNotSplitAnUnrecognizedRun` is the one count.
+  `TestSkillLiveAndRefetchedAgree` is the `chatverbosity_test.go`
+  equivalence, and `TestLiveSkillLoadMatchesItsRefetch` runs fakeagent's
+  `skill-model` over the real handlers, comparing the SSE-built frame with
+  the refetched one. `TestLiveSkillCapturesNeverShowTheBody` holds decision
+  39 over the claude model and fork captures, the copy picker included.
+  `TestSkillLineWithoutColour` covers NO_COLOR and escapes in a name, args
+  and an error; `TestChatBodyDrawsTheHumansSkill` the chat body at quiet.
+  `TestRenderTranscriptSkillForms`, `TestTranscriptPrintsASkillLoadOnce`
+  (one fetch, the `-f` split, no call in range, the rail) and
+  `TestTranscriptSkillCaptures` (both commands identical over the captures)
+  hold decision 38.

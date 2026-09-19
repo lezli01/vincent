@@ -49,9 +49,21 @@ list with the user-facing context a commit subject cannot carry.
   skill, the transcript and the live stream carry an `agent.skill` record with
   the skill's name, its arguments on one line, who invoked it (`agent`, or
   `human` for a `context: fork` skill your message named) and the `Skill` call
-  it came from, instead of the rendered `SKILL.md` as one raw JSON line. Nothing
-  draws the record yet. codex and cursor report no skill loads. claude
-  `2.1.277` and cursor-agent `2026.09.18-9a7762b` are now tested builds.
+  it came from, instead of the rendered `SKILL.md` as one raw JSON line. codex
+  and cursor report no skill loads. claude `2.1.277` and cursor-agent
+  `2026.09.18-9a7762b` are now tested builds.
+- **The output pane, the chat and the transcript commands show the skills that
+  ran.** A skill your message invoked reads `▸ skill <name> <args>` at every
+  level, `quiet` included, and `(forked)` marks one that ran as its own
+  sub-run. A skill the agent loaded itself appears from `compact` up on its
+  `Skill` call's line, with the `Launching skill` outcome under it, instead of
+  as a second line. A load that carries the agent CLI's refusal reads
+  `▸ skill <name> failed: <error>` at every level; a `Skill` call claude
+  refuses loads nothing, and still shows as the call with its `✗` outcome.
+  `vincent task transcript` and `vincent chat transcript` print
+  the same as `> skill …` and `! skill … failed: …`; under `-f`, a load whose
+  call printed in an earlier poll prints nothing more. The skill's `SKILL.md`
+  text is never drawn; `e` and `--raw` still have it.
 
 ### Fixed
 

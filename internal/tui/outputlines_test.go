@@ -104,7 +104,7 @@ func TestWrapLineKeepsMultiByteRunesWhole(t *testing.T) {
 func TestWrapLineJoinsGutterToFirstWord(t *testing.T) {
 	rendered := wrapLine(toolUsePane([]apiclient.TranscriptTool{
 		{Name: "Edit", Summary: "internal/auth/token.go"},
-	}), 80)
+	}, nil), 80)
 	if len(rendered) != 1 {
 		t.Fatalf("lines = %q, want one", rendered)
 	}

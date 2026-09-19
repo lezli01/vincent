@@ -10862,7 +10862,17 @@ two-column prefix in front of the gutter. Everything else in the model stands.
   completion line is `| = completed - <description> - 14 tool uses - 5m00s`,
   `| ! failed - …`, `| ~ stopped - …` or `| - <status> - …`, and a tool outcome
   with no summary prints its verb (`< started in background`). `--json` and
-  `--raw` are unchanged.
+  `--raw` are unchanged. *Amended 2026-09-19 (task 124.12, task 124 decision
+  38):* both commands print `agent.skill` — a child's on the rail, since the
+  pane's `normal` shows a child's load — as `> skill <name> <args>`, with
+  ` (forked)` for a forked skill, or `! skill <name|invocation> failed:
+  <error>`. A model's load prints on its call's line, in place of
+  `> Skill <name>`, whenever the call and the load are in the same fetched
+  range, and then prints nothing at its own position. Without `-f` that is
+  always the case. Under `-f` a poll can split the two: the `> Skill <name>`
+  line already printed stays, and the load does not print a second time, so
+  that split is the one case where a model load's args are missing. A load
+  whose call lies outside the fetched range prints where it is.
 
 *Amended 2026-09-01 (task 073).* Assistant prose is rendered as **Markdown**;
 every other record stays literal.
@@ -11458,6 +11468,40 @@ level is still one value for the session shared by both panes, still persisted
 nowhere, the default is still `normal`, and the pane title still names any level
 but the default — which matters most for this one, since it is the level whose
 effect can be to hide the only thing a turn produced.
+
+*Amended 2026-09-19 (task 124.12, issue #508; task 124 decisions 37–39).*
+`quiet` shows a **third** thing besides what the agent said and what went
+wrong: an acknowledgement of what the **human** did. That was already true of
+`vincent.input_request` and `vincent.input_response`, and it is now stated
+because `agent.skill` joins them. The record draws as `▸ skill <name> <args>`
+— the gutter and the word `skill` in the tool style, the name and args dim —
+with ` (forked)` appended for a forked skill, and a refusal draws
+`▸ skill <name, or "invocation"> failed: <error>` in the failure style. The
+words carry the meaning under `NO_COLOR`; the glyph set does not grow.
+
+| Level | `by: "human"` | `by: "agent"` | `error` set |
+|---|---|---|---|
+| quiet | shown | hidden | shown |
+| compact | shown | shown, in its call's place | shown |
+| normal | shown | shown, in its call's place | shown |
+| verbose | shown | shown, in its call's place | shown |
+
+A model's load follows its `Skill` call in the stream — call, outcome, load —
+so the pane pairs them by `call_id`, never by the tool's name: the call's
+`agent.tool_use` draws the load's line in place of `▸ Skill <name>` (in a
+record of several calls, only that call's part), its outcome stays directly
+under it, and the load draws nothing at its own position, where it does not
+split a run of unrecognized lines either. On a live tail the call reads as
+`▸ Skill <name>` until the load lands and then redraws; a refetch builds the
+same frame. A load whose call is not in the pane's window draws where it
+arrived. A load that failed is drawn in its call's place at `quiet` too, where
+the call itself would be hidden. A subagent's loads follow the one-level-
+quieter rule, and quiet still shows nothing of a subagent, a failure included.
+The skill's **body** is drawn at no level: no record carries it (T4.16, task
+124.2), and it stays reachable through `e`, `--raw` and `format=raw`. What the
+parser still leaves unmodeled around a skill keeps the `agent.raw` rules
+above. The copy picker offers assistant prose only, so it never offers a skill
+load.
 
 *Amended 2026-08-31 (task 067).* The chats board and the chat workspace carry
 their own rows in the registry (`internal/tui/bindings.go`), which is what the
