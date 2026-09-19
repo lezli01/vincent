@@ -135,6 +135,37 @@ func TestAgentsCommandAgainstTheRealAPI(t *testing.T) {
 		}
 	})
 
+	// The skill fields (task 124) come from the adapter registry rather than
+	// a probe, so they are the ones a harness without one would lose: each
+	// must arrive set, and the NOTES cell must agree with what arrived. The
+	// listing bit is read, not pinned — no shipped adapter lists yet, and a
+	// literal false here would invert the day one does.
+	t.Run("the skill capabilities cross the wire", func(t *testing.T) {
+		out, errOut, code := runCLI(t, "agents")
+		if code != 0 {
+			t.Fatalf("agents: code %d, stderr %q", code, errOut)
+		}
+		for name, syntax := range map[string][2]string{
+			"claude": {"/", "leading"}, "codex": {"$", "anywhere"}, "cursor": {"/", "anywhere"},
+		} {
+			a, ok := want.Find(name)
+			if !ok {
+				t.Fatalf("GET /v1/agents does not list %s", name)
+			}
+			if a.SupportsSkillListing == nil || a.SkillSigil == nil || a.SkillPosition == nil {
+				t.Errorf("%s: a skill field arrived null with a registry wired: %+v", name, a)
+				continue
+			}
+			if got := [2]string{*a.SkillSigil, *a.SkillPosition}; got != syntax {
+				t.Errorf("%s: skill_sigil, skill_position = %q, want %q", name, got, syntax)
+			}
+			if noted := strings.Contains(agentsTableRow(t, out, name), "no skill listing"); noted != a.CannotListSkills() {
+				t.Errorf("%s: row notes no skill listing = %v, but supports_skill_listing = %v",
+					name, noted, *a.SupportsSkillListing)
+			}
+		}
+	})
+
 	t.Run("--refresh reaches the handler", func(t *testing.T) {
 		refreshes, cached := h.agentsRefreshes.Load(), h.agentsCached.Load()
 		if _, errOut, code := runCLI(t, "agents"); code != 0 {

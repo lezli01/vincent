@@ -148,7 +148,7 @@ func TestAgentLoginCell(t *testing.T) {
 
 func TestAgentRowNotesAreBadNewsOnly(t *testing.T) {
 	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
-	yes := true
+	yes, no := true, false
 	healthy := apiclient.Agent{
 		Name: "claude", Available: true, Version: "2.1.3", LoggedIn: &yes,
 		InputVerdict:      apiclient.InputVerdictSupported,
@@ -183,6 +183,11 @@ func TestAgentRowNotesAreBadNewsOnly(t *testing.T) {
 			5, "no restricted mode on " + runtime.GOOS,
 		},
 		{"option probe failed", func(a *apiclient.Agent) { a.ProbeError = &probeErr }, 5, "option probe failed (curated catalog)"},
+		// Listing is a fact about the adapter (task 124 decision 13): a
+		// positive no is a note, a yes adds nothing, and a daemon that
+		// predates the field says nothing either — healthy's nil above.
+		{"no skill listing", func(a *apiclient.Agent) { a.SupportsSkillListing = &no }, 5, "no skill listing"},
+		{"skill listing", func(a *apiclient.Agent) { a.SupportsSkillListing = &yes }, 5, ""},
 		{
 			"not found",
 			func(a *apiclient.Agent) {
@@ -195,9 +200,10 @@ func TestAgentRowNotesAreBadNewsOnly(t *testing.T) {
 			func(a *apiclient.Agent) {
 				a.Available, a.InputVerdict = false, apiclient.InputVerdictUnsupported
 				a.RestrictedVerdict, a.ProbeError = apiclient.RestrictedVerdictUnsupported, &probeErr
+				a.SupportsSkillListing = &no
 			},
 			5, "not found; no mid-run input; no restricted mode on " + runtime.GOOS +
-				"; option probe failed (curated catalog)",
+				"; no skill listing; option probe failed (curated catalog)",
 		},
 	}
 	for _, tc := range cases {

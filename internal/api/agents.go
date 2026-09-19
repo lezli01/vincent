@@ -26,6 +26,18 @@ type agentResponse struct {
 	// registry to ask, because "nobody can say" and "no" are different
 	// answers and only the second may filter anything out.
 	SupportsResume *bool `json:"supports_resume"`
+	// SupportsSkillListing is whether this adapter implements skill listing
+	// at all (§9.1, §9.6, task 124): `agent.CanListSkills`. It is a fact
+	// about the adapter, not about the installed build — a build too old to
+	// list is found out when a chat's skills are read, never here (task 124
+	// decision 13). Null for the reason supports_resume is: no registry.
+	SupportsSkillListing *bool `json:"supports_skill_listing"`
+	// SkillSigil and SkillPosition are how a message names one of this
+	// adapter's skills (§9.1, task 124 decision 18): "/" or "$", and
+	// "leading" or "anywhere". Both are "" for a registered adapter that
+	// cannot invoke skills, and null with no registry to ask.
+	SkillSigil    *string `json:"skill_sigil"`
+	SkillPosition *string `json:"skill_position"`
 	// InputVerdict is the daemon's answer to whether this adapter may back a
 	// step declaring `on_input: require` (§7.4, task 013): supported,
 	// unsupported, or unknown. It is not derivable from supports_input alone —
@@ -86,25 +98,29 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 	out := make([]agentResponse, 0, len(entries))
 	for _, ce := range entries {
 		name, e := ce.name, ce.entry
+		caps := s.adapterCapabilities(name)
 		resp := agentResponse{
-			Name:              name,
-			Available:         e.Availability.Found,
-			Path:              e.Availability.Path,
-			Version:           e.Availability.Version,
-			SupportsInput:     e.Availability.SupportsInput,
-			SupportsResume:    s.resumeSupport(name),
-			InputVerdict:      string(e.InputVerdict()),
-			VersionVerdict:    string(e.Availability.VersionVerdict),
-			TestedVersions:    e.Availability.TestedVersions,
-			RestrictedVerdict: string(e.RestrictedVerdict()),
-			LoggedIn:          e.Availability.LoggedIn,
-			Error:             e.Availability.Error,
-			Models:            e.Options.Models,
-			Efforts:           e.Options.Efforts,
-			DefaultModel:      e.Options.DefaultModel,
-			DefaultEffort:     e.Options.DefaultEffort,
-			ProbedAt:          e.ProbedAt.UTC().Format(time.RFC3339),
-			Quota:             quotas[name],
+			Name:                 name,
+			Available:            e.Availability.Found,
+			Path:                 e.Availability.Path,
+			Version:              e.Availability.Version,
+			SupportsInput:        e.Availability.SupportsInput,
+			SupportsResume:       caps.resume,
+			SupportsSkillListing: caps.skillListing,
+			SkillSigil:           caps.skillSigil,
+			SkillPosition:        caps.skillPosition,
+			InputVerdict:         string(e.InputVerdict()),
+			VersionVerdict:       string(e.Availability.VersionVerdict),
+			TestedVersions:       e.Availability.TestedVersions,
+			RestrictedVerdict:    string(e.RestrictedVerdict()),
+			LoggedIn:             e.Availability.LoggedIn,
+			Error:                e.Availability.Error,
+			Models:               e.Options.Models,
+			Efforts:              e.Options.Efforts,
+			DefaultModel:         e.Options.DefaultModel,
+			DefaultEffort:        e.Options.DefaultEffort,
+			ProbedAt:             e.ProbedAt.UTC().Format(time.RFC3339),
+			Quota:                quotas[name],
 		}
 		if resp.Models == nil {
 			resp.Models = []agent.Option{}
@@ -121,16 +137,38 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"agents": out})
 }
 
-// resumeSupport answers `supports_resume` for one adapter, or nil when there
-// is no registry to ask.
-func (s *Server) resumeSupport(name string) *bool {
+// adapterCapabilities is the static half of one adapter's row: the facts
+// that come from the adapter itself rather than from a probe of its binary.
+// Every field is nil when there is no registry to ask, or the registry does
+// not know the name — "nobody can say", which no client may filter on.
+type adapterCapabilities struct {
+	resume        *bool
+	skillListing  *bool
+	skillSigil    *string
+	skillPosition *string
+}
+
+// adapterCapabilities answers `supports_resume`, `supports_skill_listing`,
+// `skill_sigil` and `skill_position` from one registry lookup, so the four
+// cannot disagree about which adapter they asked (§9.6, task 124).
+func (s *Server) adapterCapabilities(name string) adapterCapabilities {
 	if s.deps.Agents == nil {
-		return nil
+		return adapterCapabilities{}
 	}
 	a, ok := s.deps.Agents.Get(name)
 	if !ok {
-		return nil
+		return adapterCapabilities{}
 	}
-	can := agent.CanResume(a)
-	return &can
+	resume, listing := agent.CanResume(a), agent.CanListSkills(a)
+	var syntax agent.SkillSyntax
+	if inv, ok := a.(agent.SkillInvoker); ok {
+		syntax = inv.SkillSyntax()
+	}
+	sigil, position := syntax.Sigil, string(syntax.Position)
+	return adapterCapabilities{
+		resume:        &resume,
+		skillListing:  &listing,
+		skillSigil:    &sigil,
+		skillPosition: &position,
+	}
 }
