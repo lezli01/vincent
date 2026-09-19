@@ -45,11 +45,12 @@ silently drops.
 A skill is invoked in the CLI's own syntax, typed into your chat message;
 vincent passes the message through unchanged and does not check the name. The
 two skill rows are also on `GET /v1/agents`, as `supports_skill_listing`,
-`skill_sigil` and `skill_position`. Two things to know today: no adapter lists
-its skills yet, and in a chat opened on a task claude does not expand a `/name`
-in your **first** message, because the task's context arrives in front of it
-([#499](https://github.com/lezli01/vincent/issues/499)). From the second
-message on it does.
+`skill_sigil` and `skill_position`. No adapter lists its skills yet. In a chat
+opened on a task, the task's context reaches claude as a separate block ahead
+of your **first** message, so a `/name` there still starts the message and
+runs. The exception is a claude build outside the verified input family (see
+[Claude Code](#claude-code)): it receives the context and your message as one
+piece of text, and leaves a first-message `/name` to the model.
 
 [`vincent agents`](../reference/cli.md#vincent-agents), the TUI's daemon view,
 and `GET /v1/agents` all report what vincent actually resolved on your machine — path, version, the model and

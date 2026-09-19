@@ -2817,6 +2817,10 @@ type AgentAdapter interface {
 
 type RunSpec struct {
     Prompt         string
+    Preamble       string            // context ahead of Prompt, never part of the human's message: a linked
+                                     // chat's first turn (§5.5; task 124.3, added 2026-09-19). claude's input
+                                     // mode sends it as its own text block (§9.2); every path that takes one
+                                     // string sends JoinedPrompt(). "" is every other run
     WorkDir        string            // the task worktree
     Model          string            // resolved per §8.6; "" = CLI default
     Effort         string            // resolved per §8.6; adapter-native; "" = CLI default
