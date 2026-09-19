@@ -128,7 +128,9 @@ that needs it: describe the workflow in the task, name it in the required
 Later, when vincent has grown features your files predate, the built-in
 `update-workflows` rewrites the workflows a project versions against the
 current schema and hands you the result as a reviewable diff. It changes how
-they are written, not what they do.
+they are written, not what they do. Set its `global` field to `true` to do the
+same for `{config_dir}/workflows`: the rewrite is then staged as a proposal
+that you approve before anything is installed.
 
 ### How do I make a workflow only apply to one repository?
 

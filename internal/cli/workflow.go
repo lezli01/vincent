@@ -25,17 +25,32 @@ func newWorkflowCmd() *cobra.Command {
 		Short:   "Create, list, validate and render workflows",
 	}
 	cmd.AddCommand(newWorkflowLsCmd(), newWorkflowValidateCmd(),
-		newWorkflowRenderCmd(), newWorkflowInitCmd())
+		newWorkflowRenderCmd(), newWorkflowInitCmd(), newWorkflowApplyCmd())
 	return cmd
 }
 
 func newWorkflowLsCmd() *cobra.Command {
-	var projectID int64
+	var (
+		projectID int64
+		global    bool
+	)
 	cmd := &cobra.Command{
 		Use:   "ls",
 		Short: "List the merged workflow registry",
-		Args:  cobra.NoArgs,
+		Long: "List the merged workflow registry the daemon serves: built-in, global and,\n" +
+			"with --project, that project's workflows, with shadowing applied.\n\n" +
+			"--global instead reads {config_dir}/workflows directly and needs no daemon.\n" +
+			"It prints one absolute path per line — or, with --json, each file's name,\n" +
+			"version token, validity and errors, which is what a proposal's manifest\n" +
+			"records for `vincent workflow apply`. A file that does not parse is still\n" +
+			"listed; one that is not a regular file or is over 1 MiB is reported on\n" +
+			"stderr. It exits 1 when there is no global workflow, the same probe shape\n" +
+			"as `git ls-files --error-unmatch`.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if global {
+				return runWorkflowLsGlobal(cmd)
+			}
 			// Unlike validate, this needs a daemon: the merged registry is
 			// global + project scope with shadowing, and only the daemon
 			// knows which projects exist (PR U decision).
@@ -75,6 +90,8 @@ func newWorkflowLsCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().Int64Var(&projectID, "project", 0, "Include this project's scoped workflows")
+	cmd.Flags().BoolVar(&global, "global", false, "List the global workflow files directly (no daemon required)")
+	cmd.MarkFlagsMutuallyExclusive("global", "project")
 	jsonFlag(cmd)
 	return cmd
 }

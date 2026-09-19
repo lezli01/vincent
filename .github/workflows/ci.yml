@@ -220,6 +220,17 @@ jobs:
         shell: bash
         run: ./scripts/m16-gate.sh
 
+      # 123: the update-workflows built-in's global mode (task 123; §5.2,
+      # §12.1, §12.2), run for real against the fake agent. The matrix
+      # matters because every command step is `vincent ...` found on the
+      # daemon's PATH and run under pwsh on Windows, the staged paths `apply
+      # --check` prints are the host's own and are fed back to `vincent
+      # workflow validate` by a loop, and "the global file was rewritten" is
+      # an atomic rename over a file the registry watcher is watching.
+      - name: 123 gate (global update-workflows)
+        shell: bash
+        run: ./scripts/123-gate.sh
+
       # 064: a task from a pull request, on the pull request's own head
       # branch (task 064; §10, §13.2), against a local bare repository and
       # the fake `gh`. The matrix earns its place because the whole feature is

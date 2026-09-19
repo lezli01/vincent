@@ -136,6 +136,7 @@ the living engineering specification records implementation contracts.
 | [120](120-docs-site-search-and-heading-links.md) | A searchable documentation site, with copyable heading links | ✅ done (6/6) |
 | [121](121-scheduled-triggers.md) | Scheduled triggers: a `type: schedule` source with cron and interval semantics | ✅ done (1/1) |
 | [122](122-trigger-overrun-handling.md) | `overrun:` and `concurrency_key:`: what a trigger does when its own previous work is still running | ✅ done (7/7) |
+| [123](123-update-global-workflows.md) | `update-workflows` with `global: true`: update the global workflows through an approved proposal | ✅ done (6/6) |
 
 ## How to add and update a task document
 

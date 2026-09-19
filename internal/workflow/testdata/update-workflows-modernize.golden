@@ -1,0 +1,240 @@
+You are running unattended in a dedicated git worktree created for this
+task; the current working directory is that worktree. Your deliverable is
+an edit to the workflow files this repository already versions under
+.vincent/workflows, made here, on this task's branch. An engineer reads
+the result as a diff and merges it, and merging is what makes the
+rewritten workflows live — nothing you do here changes what the daemon is
+running right now.
+
+Task: modernize the workflows
+
+Bring them up to date.
+
+## The files
+
+A previous step listed every workflow file this repository has committed:
+
+.vincent/workflows/feature-pr.yaml
+
+Those are the whole job. A workflow the project keeps but has never
+committed is not in this worktree and is out of scope, and so is the
+global registry, which no repository versions. Change nothing outside
+.vincent/workflows: if a document elsewhere in the repository describes a
+workflow you changed, say so in your final message instead of editing it.
+
+## Nobody is watching
+
+This step runs under on_input: deny. A question you ask is answered "no
+user is available" and you carry on alone, so asking buys you nothing.
+Where you are unsure, make the conservative change or make none, and say
+which in your final message. The diff is the conversation.
+
+## While you work
+
+Say what you are doing as you go. Before each significant phase of the work, run:
+
+  vincent status "<one short line about what you are doing now>"
+
+Keep it under ten words. If something fails or you get stuck, set it to what is
+actually wrong — "3 tests red in internal/store", not "working on it". It is
+free, it is what someone watching the board sees, and the last line you set
+stays on the finished attempt.
+
+## Find out what this vincent can actually do
+
+The feature set that matters is the installed binary's, not the one you
+remember:
+
+- Run "vincent version" first and keep its exact output for your final
+  message.
+- "vincent workflow validate <file>" is the verdict on every file you
+  touch. It needs no daemon and no network, and unknown keys are errors
+  rather than ignored settings — which makes it the way to ask whether
+  this version has a feature at all: write a candidate to a temporary
+  path outside this worktree, validate it there, and never leave a probe
+  file in the repository.
+- "vincent workflow render <file>" is the other half of that verdict, and
+  also needs no daemon. Validation only checks that a template parses;
+  render executes every one of them, which is the only way a typo'd
+  "{{.Task.Titel}}" or a ".Task.Fields" key nothing supplies is
+  caught before someone creates a task. Run it on every file you write,
+  and read the rendered prompts — they are what an agent will actually be
+  sent, with placeholders such as <worktree> standing in for what a run
+  discovers.
+- If this repository is a vincent checkout, its own
+  docs/reference/workflow-schema.md is the exact reference for the
+  version it builds. Read it before you rely on anything below.
+- Do not run "vincent workflow init". It writes into a live registry.
+
+## The bar
+
+A file you leave behind must be one you would defend under the authoring
+skill reproduced below. Work through this list for every workflow, and
+report per workflow which items applied:
+
+1. Cheapest correct primitive. An agent step whose work is a known
+   command — a build, a test suite, a formatter, a git operation, a
+   structured query, an API call — becomes a command step. Every agent
+   step that survives passes the skill's own test: it needs an agent
+   because something in it cannot be decided reliably without one.
+2. Native control flow, never an agent asked to simulate it. A prompt
+   that says "if X, do Y" is an if: guard or a condition step. "Keep
+   going until it passes" is a loop with a break, not a retry budget used
+   as iteration. "Do these independently" is parallel, or fan_out when
+   they need separate branches. A step sequence duplicated across two of
+   this project's workflows is an include. Fan-out lanes that must land in
+   a fixed order carry needs:, naming the lanes they depend on — the
+   engine derives the waves, so a fan-out split into "phase 1" and
+   "phase 2" steps, or a lane whose prompt says "wait for the API lane",
+   collapses into one step with edges. Such a step gets schedule: eager
+   only where its lanes touch disjoint files and the round barrier is
+   costing real wall-clock time: eager makes a lane's starting tree
+   timing-dependent, so barrier stays the default and a flat lane list
+   is a barrier whatever the field says. A fan-out whose lane count is
+   genuinely decided by a run — a planning step emitting one JSON object
+   per work unit — becomes for_each: plus a single lane: template with a
+   max_lanes: ceiling, in place of a hand-guessed list of guarded lanes.
+   A parallel group that starts more processes than the machine should
+   run at once carries max_parallel, and a loop whose real bound is not
+   the default of ten says so in max_iterations; both are what the
+   session envelope counts. A lane that needs another capability, or
+   must be admitted ahead of its siblings, overrides model, effort or
+   priority on the lane rather than in a copied workflow. A fan-out whose
+   conflicts people keep resolving the same mechanical way may carry
+   merge: with on_conflict: agent and a checked resolver, counted in the
+   envelope; everywhere else merge stays at block.
+3. Verification. A step that changes state a command can check carries a
+   check:, and check_timeout where that check can outlast the daemon's
+   command timeout — it never inherits the step's own timeout. An
+   agent's claim that it worked is not verification.
+4. Typed inputs. A value the prompt tells a human to bury in the task
+   description becomes a declared field under fields:, with a type, a
+   pattern where one exists, and a label where its name is a slug a
+   person would not read easily. A workflow that digs an issue number out
+   of the task title reads .Issue instead.
+5. Closed sets and defaults. A field whose legal values are a fixed list
+   is type: enum with values:, not a string with a pattern spelling the
+   same alternation and not a set restated in prose — only a list can be
+   published, and only a published list becomes a picker. multiple: true
+   where more than one may be chosen. A field with an obvious value
+   carries default:, which is what stops a scripted caller from having to
+   restate it.
+6. Failure policy, per step. max_retries: 0 on a probe and on anything
+   whose replay is not provably safe; allow_failure: true where a red
+   result is data a later guard reads; retry_backoff where retrying
+   immediately cannot help. timeout on a step whose hang is likelier
+   than its slow work, rather than the daemon's default; input_timeout
+   on a step that can wait on a question nobody may be there to answer,
+   since the wait holds the task's slot.
+7. Human mechanism, deliberately chosen. A manual gate sits immediately
+   before the effect it authorizes and names what to inspect.
+   on_input: require only where the conversation genuinely is part of the
+   run, and never on a step that resolves to an adapter with no control
+   channel. on_input: deny on a step meant to run untended.
+   permission_mode: restricted on an agent step that needs no writes — a
+   review, a plan — where its adapter can restrict on the host; never
+   the reverse.
+8. Visibility. A step that runs for minutes, or that someone waits on,
+   reports through vincent status — in the script for a command step, in
+   the prompt for an agent step, in the wording used above.
+9. Portability. A run: body is handed to /bin/sh on POSIX and to pwsh on
+   Windows, and vincent translates nothing. A body outside the
+   intersection of the two is either rewritten into it, or the workflow
+   declares platforms:, or the step carries a .Host.OS guard. A workflow
+   that already pins defaults.container.image inverts the first half: its
+   run: bodies execute under the image's /bin/sh whatever the host is, a
+   step pinning shell: pwsh or shell: cmd is refused at load, and
+   platforms: still gates on the daemon's host rather than on the image.
+   Its agent steps run in the image too, where there is no vincent
+   binary: a prompt there reports through the step_status tool, not
+   vincent status.
+   Do not add a container: block to a workflow that has none — which
+   image a project runs in is a deployment decision, not one this pass
+   gets to make.
+10. Defensive templates. Rendering uses missingkey=error, so an optional
+    field is read as {{with index .Task.Fields "x"}}…{{end}}
+    and never bare. A required field may be read directly.
+11. Secrets. Nothing in a prompt, a field, an instruction, a run: body or
+    an env: map that you would not want sitting in a transcript.
+12. Streams, in a command step whose output something reads. A command
+    step's .Steps.<id>.Result is its stdout alone, never its stderr. Two
+    things follow, and both need checking rather than assuming. A
+    producer feeding a for_each: needs no workaround for a header or a
+    count — those belong on stderr, which the transcript and the step's
+    summary still carry — so delete any that survives from before. And a
+    step whose .Result a later prompt quotes must print what that prompt
+    needs on stdout: git, go and most tools write their diagnostics to
+    stderr, so a repair prompt reading a failed probe's output is one
+    that renders empty unless the body sends them to stdout, which
+    "exec 2>&1" on its first line does for a body that is all
+    diagnostics.
+13. Retry fields where there is an attempt. max_retries and
+    retry_backoff on a parallel or a manual step are refused at load: a
+    group's retries belong to each sub-step, and a gate is decided once.
+    Remove them from the group or gate; where a group carried them, move
+    the value onto the sub-steps it was meant for, and say so.
+
+## What you may not change
+
+Each of these workflows encodes a decision somebody made. You are
+modernizing how it is expressed, not redesigning what it does:
+
+- A workflow keeps its name, its file keeps its path, and no file is
+  deleted.
+- A declared field keeps its name and its meaning. Adding one is fine;
+  renaming or repurposing one breaks every task that names it.
+- A manual gate stays, and stays in front of the effect it guards. Never
+  turn a gated external effect into an unattended one, never widen a
+  permission_mode, and never raise max_retries on a step that publishes,
+  deploys, pushes, deletes or spends money.
+- A workflow that is already right is left byte for byte alone. An empty
+  diff for it is a correct outcome, and you say so.
+- A comment that is still true is kept; a comment your edit made false is
+  corrected. The next person reads the comments.
+- A workflow that is wrong in a way you cannot fix conservatively is left
+  alone and reported. A run that changed three workflows and explained
+  why it did not touch the fourth is a good run.
+
+## How to design them
+
+What follows is the vincent-workflows skill, reproduced verbatim. It is
+written for designing a new workflow from an outcome; here the outcome is
+already encoded in the file in front of you. Follow it, with three
+corrections it cannot make for itself — where they disagree with it, they
+win:
+
+1. The deliverable is an edit to the existing files listed above, in this
+   worktree — not a new file written into a live registry directory. The
+   path its authoring step names is right; the copy you edit is this
+   worktree's.
+2. You cannot ask, per "Nobody is watching" above. Every question its
+   "Gather only decisions that matter" section raises is one you answer
+   from the repository, its agent instructions, the workflow's own
+   comments and its git history — or one you leave the current behavior
+   alone over.
+3. The skill's own references/ files are not on disk here. Read
+   docs/reference/workflow-schema.md from the repository if this is a
+   vincent checkout, which the skill already prefers; otherwise work from
+   what the skill states directly and from the validator.
+
+<<the vincent-workflows skill>>
+
+## When you are done
+
+Your final message is the report an engineer reads before the diff:
+
+- the exact "vincent version" output;
+- one entry per workflow file: changed or untouched, which numbered items
+  from "The bar" applied, and what you deliberately left alone;
+- for every workflow you changed, the maximum number of automatic agent
+  sessions it can spend, before and after, computed the way the skill's
+  cost rules say;
+- anything that needs a human decision, and anything you would have asked
+  if asking were possible;
+- the validator's verdict for every file you touched.
+
+Every workflow file must pass "vincent workflow validate" and
+"vincent workflow render" before you finish. A later step runs both over
+all of them again, and one that fails there blocks the task. Render is
+the one that catches a template that parses and then does not execute,
+which is a class of bug validation cannot see.

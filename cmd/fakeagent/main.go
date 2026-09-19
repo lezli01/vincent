@@ -34,6 +34,10 @@
 //	                      057.9, mcp.go; every dialect) |
 //	                      echo-prompt (appends the prompt it was handed,
 //	                      verbatim, to FAKEAGENT_PROMPT_FILE — issue #323) |
+//	                      stage-workflows (stages a global update-workflows
+//	                      proposal through the real `vincent workflow ls
+//	                      --global --json` — task 123, workflowproposal.go;
+//	                      claude dialect) |
 //	                      sleep (internal: silent child)
 //	FAKEAGENT_PROMPT_FILE echo-prompt: file each invocation appends its prompt
 //	                      to, one JSON string per line. JSON rather than the
@@ -48,6 +52,9 @@
 //	                      usage-limit marker the state is the fake CLI's own,
 //	                      counted from the file it just wrote
 //	FAKEAGENT_REPORT_ENV  comma-separated variable names for report-env
+//	FAKEAGENT_PROPOSAL_LINE
+//	                      stage-workflows: a line appended to every staged
+//	                      global workflow; unset stages an empty proposal
 //	FAKEAGENT_VINCENT_BIN set-status: path to the vincent binary to invoke.
 //	                      A fake agent has no other way to find one
 //	FAKEAGENT_STATUS      set-status: the message to report while running
@@ -425,6 +432,21 @@ func main() {
 	case "mcp-callback":
 		mcpCallback(dialectClaude, stdin)
 		claudeSuccess(prompt)
+	case "stage-workflows":
+		// A global update-workflows agent (task 123): workflowproposal.go.
+		// It stages only when the prompt asks for a proposal, so a project
+		// run of the same built-in on the same daemon behaves like success.
+		if !strings.Contains(string(prompt), "workflow-proposals") {
+			claudeSuccess(prompt)
+			break
+		}
+		report, err := stageWorkflows()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "fakeagent: stage-workflows:", err)
+			os.Exit(1)
+		}
+		emitText(report)
+		emitSuccessResult([]byte(report), 1, 1)
 	case "flood":
 		// An agent that will not stop talking: emits until something kills
 		// it, which is exactly what the §12.3 transcript cap must do.

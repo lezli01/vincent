@@ -81,7 +81,8 @@ Five built-in workflows are always present: `adhoc`, a single agent step;
 one of the two registries;
 [`update-workflows`](../guides/workflows.md#12-where-workflow-files-live),
 which rewrites the workflows a project already versions against everything on
-this page and validates each one; and
+this page and validates each one — or, with `global: true`, proposes the same
+rewrite of the global workflows and installs it once you approve; and
 [`create-trigger` and `update-triggers`](../guides/triggers.md#letting-an-agent-write-triggers),
 which write a new event trigger for the task's project and propose improvements
 to its existing ones, and never arm a trigger.

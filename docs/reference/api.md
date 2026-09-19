@@ -1527,7 +1527,9 @@ time.
 `DELETE /v1/tasks/{id}` and `DELETE /v1/chats/{id}` remove an **archived** row
 for good: the row, its step attempts (or its turns) and its transcript
 directory under `{data_dir}/transcripts/`. A task's staged trigger proposal
-under `{data_dir}/trigger-proposals/` goes with it. They are the only routes that delete
+under `{data_dir}/trigger-proposals/` goes with it, and so does its staged
+global workflow proposal under `{data_dir}/workflow-proposals/`. They are the
+only routes that delete
 a task or chat row — [retention](files.md#transcripts) removes transcript
 *files* and never a row.
 

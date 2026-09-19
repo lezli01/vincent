@@ -249,6 +249,29 @@ DB; the daemon maintains a registry of parsed workflows from three scopes:
     worktree and branch**, reviewed and merged like any other diff — these
     files are versioned by the repository, and merging is what makes a
     rewritten workflow live.
+    *Amended 2026-09-19 (task 123, reopening task 037 decision 2 and narrowing
+    decision 6).* It declares one optional boolean task field, `global`, and
+    has ten steps. False or unset is the project pass above, unchanged: every
+    step it had renders byte for byte as before, and its only new row is a
+    trailing `condition`, `global-only`, recorded `stopped`. `true` points the
+    same pass at `{config_dir}/workflows`, and one run is one scope, never
+    both. The shared steps branch by template: `inventory` runs `vincent
+    workflow ls --global` (§12.1), the agent step's prompt says the
+    deliverable is a proposal staged in `{data_dir}/workflow-proposals/{task
+    id}/` (§12.2) — whole files plus a `manifest.json` of version tokens, the
+    staging directory cleared first so its one retry stays safe — that the
+    files have no git history and the task's repository is no evidence of how
+    they are used, and it keeps the same skill, checklist and "may not change"
+    rules. `relist` runs `vincent workflow apply --proposal {{.Task.ID}}
+    --check`, so the validation loop iterates the staged files and a stale or
+    malformed proposal blocks before the gate; `changes` records the empty
+    diff that shows the worktree was left alone. After `global-only` come a
+    `manual` step, `approve`, immediately before `apply` (`vincent workflow
+    apply --proposal {{.Task.ID}}`, `max_retries: 0`), and a final `vincent
+    workflow ls --global` for the record. The gate stands even for an empty
+    proposal, as `update-triggers`' does. An approved change is live in every
+    project the moment it is written; rejecting leaves the global registry
+    untouched.
   - `create-trigger` — *added 2026-09-14 (task 098).* Writes one event-trigger
     file (§12.2, task 096) for the task's own project, **disarmed**. It declares
     one task field, `trigger_id`: required, held to `^[a-z0-9][a-z0-9._-]*$`,
@@ -5016,6 +5039,7 @@ One Go binary, `vincent`:
 | `vincent trigger test <id> --event <file\|->` | *Added 2026-09-14 (task 096 decision 29).* The one trigger command: a dry run through `POST /v1/triggers/{id}/test` (§13.2) of the JSON event in `--event`, which is required, `-` reading stdin. It prints each pipeline stage and the outcome the event would get, or the route's body with `--json`, fires nothing and writes nothing, and exits `1` when that outcome is `error`. Every other trigger operation is the TUI's view 11 or the API. *Amended 2026-09-14 (task 098):* no longer the one trigger command. The three rows below add two offline reads and the verb the trigger built-ins install through |
 | `vincent trigger validate <file> [--json]` | *Added 2026-09-14 (task 098 decision 3).* Validates one trigger file **with no daemon**: `trigger.Parse` with the file's stem as the expected id, so the verdict is `POST /v1/triggers/validate`'s (§13.2) plus the check that `id:` equals the file name and that the name ends in `.yaml`. Text output is `<file>: ok — trigger <id>`, or one `  error: line <line>: <path>: <message>` line per error on stderr followed by `<file>: invalid (<n> error(s))`; `--json` is `{file, id, valid, errors: [{path, line, message}]}`, `id` present only when the file is valid. Exit 0 valid · 1 invalid or unreadable, mirroring `vincent workflow validate` |
 | `vincent trigger ls --project <id> [--json]` | *Added 2026-09-14 (task 098 decision 4).* Reads `{config_dir}/triggers/*.yaml` **with no daemon** and prints, one per line, the path of every file whose `source.project` is `<id>`. A file that does not parse is still listed when its `source.project` can be read leniently, so a broken trigger can be found and repaired; a file whose project cannot be read at all is reported on stderr and left out. `--json` is an array of `{file, id, project, version, valid, enabled, on_fire, permission, errors}`, with `on_fire` and `permission` `""` when the file leaves them out and `version` the token `apply` compares. Exit 0 at least one file matched · 1 none did, with `--json` too — the probe shape of `git ls-files --error-unmatch` |
+| `vincent workflow ls --global [--json]` · `vincent workflow apply --proposal <task_id> [--check]` | *Added 2026-09-19 (task 123 decisions 3 and 5).* Both need no daemon. `ls --global` reads `{config_dir}/workflows/*.y*ml` directly, under §5.2's regular-file and 1 MiB bounds, and prints one absolute path per line; it exits 1 when there is none, including when the directory is missing. `--json` prints each file's `file`, `name`, `version` (the `workflow.Version` token `GET /v1/workflows` reports and PATCH checks), `valid` and `errors`; a file that does not parse is still listed. Without `--global`, `ls` stays daemon-backed; `--global` with `--project` is a usage error. `apply` installs the proposal staged in `{data_dir}/workflow-proposals/<task_id>/` (§12.2) into `{config_dir}/workflows/`. The directory holds whole `*.yaml`/`*.yml` files named by their live base name and `manifest.json`, mapping each to the version `ls --global --json` reported or to `"absent"`. It runs every check before any write and refuses, writing nothing, when a staged file fails `Parse` (the verdict `validate` gives); files and manifest entries do not pair one for one, or anything else is in the directory; a version no longer matches, a file recorded `absent` now exists, or a recorded file is gone; a staged name is not a bare base name, or a new file is not `FileName(name:)`; a staged `name:` differs from the live file's (a rename — skipped when the live file has no readable name); or a staged `name:` is declared by another global file the proposal does not replace, or by two staged files (§5.2's duplicate). Each file is written with the atomic workflow writer, an existing file keeping its mode and a new one `0644`, `wrote <path>` per file, then the staging directory is removed. A failure part-way is reported, not rolled back. An empty manifest installs nothing and succeeds. `--check` runs every check, writes and removes nothing, and prints the staged absolute paths, sorted. Exit 0 installed or checked · 1 refused, nothing staged at that path, or a write failed |
 | `vincent trigger apply --proposal <task_id> --project <id>` | *Added 2026-09-14 (task 098 decisions 3 and 5).* Installs the staged proposal in `{data_dir}/trigger-proposals/<task_id>/` (§12.2) into `{config_dir}/triggers/`, **without arming anything**. The directory holds full proposed `<id>.yaml` files and `manifest.json`, an object mapping each trigger id to the version token `ls --json` reported or to `"absent"` for a new file. It refuses, writes nothing and names every offending file and key when any staged file fails `Parse`; a staged file's `source.project` is not `--project`; a staged file has no manifest entry or an entry has no staged file; an existing file's version no longer matches, a file recorded `absent` now exists, or a recorded file is gone; or any file **arms** relative to the file on disk, a new file comparing against absent: `enabled` from false or absent to `true`, `on_fire` from absent or `propose` to `create`, `permission` from absent or `restricted` to `workflow`. An already-armed value may be kept and disarming is always allowed; there is no override flag (§16). Each file is written `0600` through `internal/trigger`'s version-guarded whole-file replace, `wrote <path>` is printed per file, and the staging directory is removed once every file is written, printing `removed <dir>`. A proposal with an empty manifest and no staged file installs nothing and is removed the same way — `update-triggers` finding every trigger already right. It never touches `triggers.enabled` in `config.yaml`. Exit 0 installed · 1 refused, nothing staged at that path, or a write failed |
 | `vincent status <message>` | *Added 2026-08-26 (task 036).* Records what the current step is doing, in its own words (§5.4). Runs **from inside a step**: it addresses itself with §8.5's `VINCENT_TASK_ID` and `VINCENT_STEP_ID`, takes no id argument, and errors naming those variables when they are unset. Silent on success — its stdout is the step's transcript. *Amended 2026-09-17 (task 062.2 decision 4): not from inside a container — the image carries no vincent binary and `127.0.0.1` there is not the daemon; a containerized agent uses the `step_status` MCP tool (§13.4)* |
 | `vincent gc [--dry-run] [--force] [--json]` | Reclaims data-root directories no task claims (§10); a thin API client like the rest |
@@ -5330,6 +5354,7 @@ platform the standing answer to an agent that will not resolve is the §12.3
   transcripts/{task_id}/{step_index}-{step_id}-{attempt}.jsonl  # sub-step of a parallel group (§7.5)
   transcripts/{task_id}/{step_index}-i{iteration}-{step_id}-{attempt}.jsonl  # loop body step (§7.8)
   trigger-proposals/{task_id}/  # staged trigger files + manifest.json, 0700/0600 (task 098)
+  workflow-proposals/{task_id}/ # staged global workflow files + manifest.json, 0700/0600 (task 123)
   backups/                   # scheduled backups when backup.dir is "", created 0700 (§12.3, task 115)
     vincent-backup-{YYYYMMDDTHHMMSSZ}.tar.gz  # one timer-written archive, 0600
   logs/daemon.log            # rotated, size-capped
@@ -5409,6 +5434,16 @@ beside the file.
   come from the daemon's inherited environment (§2, §12.3) and never go in the
   script or the trigger file, and a poll script never lives in a repository
   (task 096 decision 8).
+
+*Amended 2026-09-19 (task 123 decision 4).* **`{data_dir}/workflow-proposals/{task_id}/`**
+holds the proposal a global `update-workflows` run stages (§5.2): the whole
+proposed global workflow files, named by the live file's base name, and a
+`manifest.json` recording each file's version token or `"absent"`. The
+directory is `0700` and its files `0600`, outside every repository and outside
+the watched `{config_dir}/workflows`, so nothing is live until `vincent
+workflow apply` (§12.1) has checked it. Apply removes it after a successful
+install; a rejected run's directory stays until the task is deleted, and
+`DELETE /v1/tasks/{id}` (§13.2) removes it too.
 
 *Amended 2026-09-18 (task 121, issue #480).* A fifth `source.type`,
 `schedule`, is the clock:
@@ -7493,6 +7528,9 @@ DELETE /v1/tasks/{id}                   *Added 2026-09-09 (task 092, issue #350)
                                         staged trigger proposal (§12.2), under the same
                                         data-root containment check as the transcripts, so
                                         nothing outside the data directory is touched.
+                                        *Amended 2026-09-19 (task 123):* and its
+                                        `{data_dir}/workflow-proposals/{id}` directory, a
+                                        staged global workflow proposal, under the same check.
                                         `?delete_branch=true` or `{ delete_branch }` also applies
                                         §10's empty-branch judgement to its branch — never to a
                                         branch with commits, and never to a remote.

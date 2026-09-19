@@ -77,6 +77,9 @@ mode. Edits are applied to the file's own bytes, so your comments and key order
 survive. Unlike `config.yaml`, a workflow write is **not** last-writer-wins: a
 read hands back a version token and a write carrying a stale one is refused, so
 a hand-edit made since the client read the file cannot be silently overwritten.
+[`vincent workflow apply`](cli.md#vincent-workflow-apply) writes it too, with
+the same modes and the same version check, when a global `update-workflows`
+task installs the proposal you approved.
 
 **The directory and `config.yaml` are owner-only**, because
 [`environment.set`](configuration.md#environment) values are literal and people
@@ -93,8 +96,8 @@ machines, or hand-edit — with one caveat from the modes above: a literal
 [`environment.set`](configuration.md#environment) value travels with the file,
 so prefer inheriting the name. Nothing in this directory changes behind your
 back: a later start touches the modes above and no content, and the only other
-writes are the ones above, which happen when a client asks for them or a trigger
-built-in's task runs `vincent trigger apply`.
+writes are the ones above, which happen when a client asks for them or a
+built-in's task runs `vincent trigger apply` or `vincent workflow apply`.
 
 Project-scoped workflows live in the repository instead, at
 `.vincent/workflows/*.yaml`, and shadow a global file of the same name.
@@ -114,6 +117,7 @@ Project-scoped workflows live in the repository instead, at
   transcripts/{task_id}/{step_index}-{attempt}.jsonl
   transcripts/chat-{chat_id}/{turn_seq}.jsonl
   trigger-proposals/{task_id}/                      # staged trigger files + manifest.json
+  workflow-proposals/{task_id}/                     # staged global workflow files + manifest.json
   backups/vincent-backup-{timestamp}.tar.gz         # scheduled backups, when backup.dir is ""
 ```
 
@@ -130,6 +134,7 @@ mode of a data directory that already exists.
 | `tui.json` | TUI-local view state: the first-run full-auto acknowledgment, the board's collapsed groups, and whether the offer to make vincent [claude's status line](cli.md#vincent-statusline) was declined. Written by the TUI, never read by the daemon; deleting it re-shows the full-auto notice, opens every group and lets the status-line offer come back |
 | `logs/daemon.log` | The daemon log, rotated and size-capped. Read by `vincent daemon logs` and the TUI's daemon view — from disk in both cases, so it still works when the daemon is what died |
 | `trigger-proposals/{task_id}/` | A trigger proposal a `create-trigger` or `update-triggers` task staged: the full proposed `{id}.yaml` files and `manifest.json`. The directory is `0700` and the files `0600`, because a trigger's argv can carry a token. [`vincent trigger apply`](cli.md#vincent-trigger-apply) removes it once every file is installed; a proposal that was rejected at its approval step stays until the task is deleted |
+| `workflow-proposals/{task_id}/` | A proposal to change the global workflows, staged owner-only by an `update-workflows` task run with `global: true`: the whole proposed files, named as the live files are, and `manifest.json`. It sits outside `{config_dir}/workflows`, so nothing in it is live. [`vincent workflow apply`](cli.md#vincent-workflow-apply) removes it once every file is installed; a proposal that was rejected at its approval step stays until the task is deleted |
 | `backups/` | Where [scheduled backups](#scheduled-backups) go when [`backup.dir`](configuration.md#backup) is `""`. Created `0700` the first time a scheduled backup runs, so it does not exist until you turn them on. Each archive is `0600` |
 
 ## Worktrees and branches
@@ -242,7 +247,8 @@ goes first, so a failed unlink cannot resurrect something already reported gone
 — and `vincent gc` treats a transcript directory with no row as its own, which
 is what closes that gap. They are the only thing in vincent that deletes a task
 or a chat row; the retention pass removes files and never a row. Deleting a task
-also removes its `trigger-proposals/{task_id}/` directory, under the same check
+also removes its `trigger-proposals/{task_id}/` and
+`workflow-proposals/{task_id}/` directories, under the same check
 that keeps the delete inside the data directory, and the closed chats opened on
 it along with their `transcripts/chat-{chat_id}/` directories.
 
@@ -282,6 +288,7 @@ vincent daemon --config-dir /srv/v-cfg --data-dir /srv/v-data
 | `logs/daemon.log` | Nothing; it is recreated |
 | `transcripts/{task_id}/`, `transcripts/chat-{chat_id}/` | That task's or chat's output history is gone; the record and its metrics stay |
 | `trigger-proposals/{task_id}/` | That task's staged trigger proposal is gone, so its `apply` step has nothing to install |
+| `workflow-proposals/{task_id}/` | That task's staged global workflow proposal is gone, so its `apply` step has nothing to install |
 | `backups/vincent-backup-*.tar.gz` | That backup is gone. The next scheduled run is counted from the newest archive left, so deleting the newest one makes a run due sooner |
 | `worktrees/{task_id}/` | Effectively an unregistered archive — prefer archiving the task, which does it properly. For a directory whose task no longer exists, prefer `vincent gc`, which checks it is not somebody's live worktree first |
 | `daemon.json`, `daemon.lock` | Only safe while the daemon is stopped; both are recreated |

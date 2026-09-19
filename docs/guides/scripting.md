@@ -634,10 +634,12 @@ the states are the same, the latency is not.
 - **Nothing pushes unless a step pushes.** A script that creates tasks is not a
   script that publishes anything; that is still whatever your workflow's
   `command` steps do, after whatever gates you put in front of them.
-- **Three commands work with no daemon: `vincent workflow validate`,
-  `vincent workflow init` and `vincent daemon restore`.** Everything else exits
-  2. Validate never wants one; `init` wants one only for `--project`, to resolve
-  the id to a repository; restore *requires* the daemon to be stopped, since it
+- **The commands that work on files need no daemon.** `vincent workflow
+  validate`, `render`, `init`, `ls --global` and `apply`, `vincent trigger
+  validate`, `ls` and `apply`, and `vincent daemon logs` and `restore` read or
+  write the files directly; a command that has to ask the daemon exits 2 when
+  none answers. `render` and `init` want one only for `--task`/`--project`, to
+  resolve the id; restore *requires* the daemon to be stopped, since it
   replaces the files a running daemon has open.
 - **The API is versioned by path** (`/v1`) and changes additively within a
   version, so a client written against it keeps working.

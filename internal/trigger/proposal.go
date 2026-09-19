@@ -33,11 +33,12 @@ const ProposalsDir = "trigger-proposals"
 
 // ManifestName is the staging directory's manifest: a JSON object mapping each
 // staged trigger id to the version token `vincent trigger ls --json` reported
-// for its file, or Absent for a trigger that has no file yet.
-const ManifestName = "manifest.json"
+// for its file, or Absent for a trigger that has no file yet. It is the name a
+// global update-workflows proposal uses too (task 123).
+const ManifestName = workflow.ProposalManifest
 
 // Absent is the manifest's version for a new trigger.
-const Absent = "absent"
+const Absent = workflow.ProposalAbsent
 
 // ProposalDir is one task's staging directory.
 func ProposalDir(dataDir string, taskID int64) string {

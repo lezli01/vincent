@@ -9,6 +9,26 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [Unreleased]
+
+### Added
+
+- **`update-workflows` can update your global workflows.** Set the built-in's
+  new `global` field to `true` and it brings `{config_dir}/workflows` up to the
+  current feature set instead of the project's `.vincent/workflows`. Nothing
+  versions those files, so the rewrite is staged as a proposal under
+  `{data_dir}/workflow-proposals/<task_id>/` and the run stops at an approve
+  gate; approving installs it, rejecting leaves every global workflow
+  untouched. A project run, with the field false or unset, is the pass it was,
+  plus one trailing `global-only` step recorded `stopped`.
+- **`vincent workflow ls --global` and `vincent workflow apply`.** Both work
+  without a daemon. `ls --global` lists the global workflow files, with each
+  file's version token under `--json`, and exits 1 when there are none.
+  `apply --proposal <task_id>` installs a staged proposal all or nothing: it
+  refuses the whole proposal when a file does not validate, changed since it
+  was staged, renames its workflow, or takes a name another global workflow
+  already has. `--check` runs the same checks without writing anything.
+
 ## [0.9.0](https://github.com/lezli01/vincent/compare/v0.8.0...v0.9.0) (2026-09-18)
 
 ### Added

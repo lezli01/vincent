@@ -1,0 +1,1 @@
+git ls-files --error-unmatch -- ".vincent/workflows/*.y*ml"
