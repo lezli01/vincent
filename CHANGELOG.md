@@ -22,7 +22,10 @@ list with the user-facing context a commit subject cannot carry.
   leaves your message byte for byte as you wrote it, and `enter` with no row
   highlighted still sends it as typed. An agent that cannot report its skills
   says so on the note line instead, and one that cannot be told to run one
-  opens the list read-only.
+  opens the list read-only. Both keys are fixed, so `f2` now means something
+  in the TUI: a [`tui.keys`](docs/reference/configuration.md#tuikeys) map that
+  bound an operation to it is refused, naming what the key already means, and
+  another function key takes it.
 
 - **A skill you invoke in a claude chat now shows in the transcript.** Until
   now `/name` in a chat message left no trace on the CLI's output at all: the

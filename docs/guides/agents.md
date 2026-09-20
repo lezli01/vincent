@@ -55,9 +55,10 @@ this, on any agent. The first two skill rows are also on `GET /v1/agents`, as
 can list the skills they would load in a worktree, which is what the listing
 row says. A chat's list,
 with the exact invocation for each skill, is at
-[`GET /v1/chats/{id}/skills`](../reference/api.md#skills) and from
-[`vincent chat skills`](../reference/cli.md#vincent-chat-skills); the TUI does
-not show it yet. claude lists without spending a turn, on 2.1.277
+[`GET /v1/chats/{id}/skills`](../reference/api.md#skills), from
+[`vincent chat skills`](../reference/cli.md#vincent-chat-skills), and on `tab`
+in the TUI's [chat workspace](tui.md#chat-workspace), which writes the row you
+take into your message. claude lists without spending a turn, on 2.1.277
 or a later 2.x build, and leaves out its own built-in commands and bundled
 skills. When two codex skills share a name, `$name` selects neither; name one
 with codex's linked form, `[$name](path)`, which is the invocation that route
