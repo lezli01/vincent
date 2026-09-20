@@ -40,6 +40,21 @@ list with the user-facing context a commit subject cannot carry.
   bound an operation to it is refused, naming what the key already means, and
   another function key takes it.
 
+- **That same list now opens by itself as you type the agent's invocation
+  sigil** — `/name` at the start of a message under claude, `$name` anywhere
+  in one under codex — so typing the native syntax and picking from a list
+  are one gesture. It is an aid to typing rather than a layer over it: every
+  printable key and `backspace` still go into your draft, and with nothing
+  highlighted `enter` still sends the message exactly as typed. While it is
+  up, `↑`/`↓` walk the matches and `esc` gives them back to editing a
+  multi-line draft; `tab` completes the token you are typing, replacing it
+  with the match rather than inserting into it. It hides itself when nothing
+  matches, so a path such as `/tmp/notes.md` never keeps one open, and a
+  sigil you type never puts a spinner or an error on the note line — press
+  `tab` if you want to be told why a listing failed. A leading name the agent
+  did not report earns a dim note saying it is sent as typed, which is a
+  hint and never a refusal.
+
 - **A skill you invoke in a claude chat now shows in the transcript.** Until
   now `/name` in a chat message left no trace on the CLI's output at all: the
   turn ran the skill and the transcript said nothing about it. A chat turn now

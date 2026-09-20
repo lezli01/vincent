@@ -1714,7 +1714,7 @@ periodic repaint.
 |---|---|
 | `enter` | Send the message |
 | `ctrl+j` | Insert a newline in the draft. `shift+enter` and `alt+enter` do too where the terminal sends them; `ctrl+j` works in every terminal, and `alt+enter` on macOS needs the terminal's "Option as Meta" setting |
-| `tab` | The skills this chat's agent can run — type to filter, `enter` or `tab` inserts one. `f2` does the same, where the terminal swallows `tab` |
+| `tab` | The skills this chat's agent can run — type to filter, `enter` or `tab` inserts one. `f2` does the same, where the terminal swallows `tab`. The same list opens by itself when you type the agent's invocation sigil |
 | `ctrl+x` | Stop the running turn — its process tree is killed |
 | `ctrl+r` | How much of the conversation to show: quiet → compact → normal → verbose |
 | `ctrl+t` | Hand the worktree and branch to a new task — the chat ends; not on a chat opened on a task |
@@ -1754,6 +1754,38 @@ neither blocks typing or sending. An agent that can list but cannot be told
 to run a skill opens the list read-only. There is no refresh key here: the
 daemon re-asks when a turn ends, and `vincent chat skills --refresh` forces
 it. A chat that has ended refuses locally and asks the daemon nothing.
+
+**The same list also opens by itself, as you type the agent's own syntax.**
+Start a message with `/` under claude, or write `$name` anywhere in one under
+codex, and the matches appear above the composer filtered by what you have
+typed — the sigil and where it counts are the agent's, not vincent's. Nothing
+is highlighted, so `enter` still sends the message exactly as you wrote it.
+
+This list is an aid to typing rather than a layer over it, so the composer
+keeps the keyboard: every printable key, `backspace` and `ctrl+j` go into the
+draft and the list re-ranks from it. Five keys are the list's while it is up.
+`↑` and `↓` walk the matches — that is the one place they stop moving around
+a multi-line draft, and `esc` gives them straight back. `tab` completes the
+token you are typing with the highlighted match, or the top one; `enter`
+takes the highlighted match, and sends as typed when there is none. `esc`
+closes the list and keeps it closed for that token until you change it.
+
+It gets out of the way on its own. Nothing matching hides it, so
+`/tmp/notes.md` never keeps a list open. Typing an invocation out in full and
+then a space hides it, because what follows is the skill's arguments. A bare
+`/` at the start of a message shows everything, which is almost always what
+it means; a bare `$` in the middle of one shows nothing, because it is much
+more often a shell variable.
+
+A sigil you type may make vincent ask the agent for its skills, but it never
+says so and never complains: no spinner, and nothing on the note line if the
+agent cannot answer — you did not ask for that, and the question costs a run
+of the agent CLI. Press `tab` if you want to be told. The one thing a typed
+sigil does say is when a *leading* name matches nothing the agent reported:
+`/foo is not a skill claude reported for this chat — it is sent as typed`.
+That is a note, not a refusal — vincent sends your message verbatim either
+way — and a path under the sigil is never nagged about. After you take a
+match, the note line shows what that skill takes until you edit it away.
 
 `ctrl+t` opens the new-task form in **handoff mode**: the project, the base
 branch and the branch are the chat's, shown but marked `(from the chat)` and

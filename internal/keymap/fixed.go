@@ -88,6 +88,15 @@ var fixed = []Fixed{
 	{"chat skills", "enter", "insert the highlighted skill, else send the message as typed"},
 	{"chat skills", "backspace", "shorten the filter, and close the list when it is empty"},
 	{"chat skills", "esc", "close the list and keep the draft"},
+	// The same list opened inline by the draft's sigil token (task 124.14).
+	// No new key literal: the composer keeps `backspace` and every printable
+	// key here, so only the five the list answers are recorded.
+	{"chat skills inline", "up", "move the highlight"},
+	{"chat skills inline", "down", "move the highlight"},
+	{"chat skills inline", "tab", "complete the token with the highlighted skill, or the top match"},
+	{"chat skills inline", "f2", "complete the token with the highlighted skill, or the top match"},
+	{"chat skills inline", "enter", "accept the highlighted skill, else send the message as typed"},
+	{"chat skills inline", "esc", "close the list and give the arrows back to the draft"},
 	{"new chat", "ctrl+s", "create the chat and open it"},
 	{"new chat", "enter", "open the focused field's list, or move on from a text field"},
 	{"new chat", "tab", "next field"},

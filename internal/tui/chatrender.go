@@ -240,14 +240,21 @@ func chatComposerWidth(pane int) int { return max(pane-2, 10) }
 
 func (v *chatView) footerLines(width, height int) []string {
 	out := []string{""}
-	if v.closing && v.chat != nil {
+	switch {
+	case v.closing && v.chat != nil:
 		out = append(out, " "+styleWarn.Render(v.closePrompt()))
-	} else if v.note != "" {
+	case v.note != "":
 		style := styleDim
 		if v.noteBad {
 			style = styleBad
 		}
 		out = append(out, " "+style.Render(v.note))
+	case v.skills.inlineNote != "":
+		// The inline skill list's own line (task 124.14): a sigil token the
+		// agent did not report, or what the skill just accepted takes. Dim,
+		// and below the workspace's own note rather than over it — this one
+		// is a hint about a draft, never a refusal.
+		out = append(out, " "+styleDim.Render(v.skills.inlineNote))
 	}
 	// The in-progress indicator (task 089), here and not inline at the end of
 	// the running turn's body: the body scrolls, and a reader who has scrolled

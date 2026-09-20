@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -571,5 +572,489 @@ func TestChatSkillsLateAnswerIsDropped(t *testing.T) {
 	v.applySkills(chatSkillsMsg{chatID: v.chatID + 1, skills: claudeSkills()})
 	if v.skills.data != nil {
 		t.Fatal("an answer for another chat was applied")
+	}
+}
+
+// Task 124.14 (issue #510): the same list, opened by the draft itself. The
+// composer keeps the keyboard here — these probes press real keys into
+// updateKey and never poke the struct, because the trigger *is* what the
+// composer holds after a press.
+
+// typeIntoChat presses each rune of text through the view's key handler, the
+// way a human reaches the inline list. `\n` is the composer's own newline
+// key (ctrl+j, issue #500) rather than a rune, because that is what makes a
+// multi-line draft today.
+func typeIntoChat(t *testing.T, v *chatView, text string) {
+	t.Helper()
+	for _, r := range text {
+		var msg tea.KeyPressMsg
+		switch r {
+		case '\n':
+			msg = tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl}
+		case ' ':
+			msg = tea.KeyPressMsg{Code: ' ', Text: " "}
+		default:
+			msg = tea.KeyPressMsg{Code: r, Text: string(r)}
+		}
+		v.updateKey(msg)
+	}
+}
+
+// pressChat presses one registry key.
+func pressChat(t *testing.T, v *chatView, key string, times int) {
+	t.Helper()
+	for range times {
+		v.updateKey(registryKey(t, key))
+	}
+}
+
+// runChatCmds runs cmd — unwrapping tea.Batch, which updateKey now returns —
+// and feeds every message it produces back into the view, so a test can
+// watch a fetch out and its answer back in.
+func runChatCmds(v *chatView, cmd tea.Cmd) {
+	for _, msg := range chatCmdMsgs(cmd) {
+		v.update(msg)
+	}
+}
+
+func chatCmdMsgs(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		var out []tea.Msg
+		for _, c := range batch {
+			out = append(out, chatCmdMsgs(c)...)
+		}
+		return out
+	}
+	if msg == nil {
+		return nil
+	}
+	return []tea.Msg{msg}
+}
+
+// TestChatSkillsInlineOpensOnTheTypedSigil is the trigger: the token under
+// the cursor carries the wire's sigil, so the list opens filtered by what
+// follows it, with nothing highlighted and the draft exactly as typed. The
+// plugin skill is found by its bare name, as it is under `tab`.
+func TestChatSkillsInlineOpensOnTheTypedSigil(t *testing.T) {
+	v := chatSkillsFixture(claudeSkills())
+	typeIntoChat(t, v, "/deploy")
+	if !v.skills.open || v.skills.mode != skillModeInline {
+		t.Fatalf("typing the sigil left the list open=%v mode=%v", v.skills.open, v.skills.mode)
+	}
+	if v.skills.filter != "deploy" {
+		t.Fatalf("the inline filter is %q, want the token minus the sigil", v.skills.filter)
+	}
+	want := []string{"/myplugin:deploy-app", "/notes"}
+	if got := skillRowNames(v); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("the inline list holds %v, want %v", got, want)
+	}
+	if v.skills.cursor != -1 {
+		t.Fatalf("the inline list opened on row %d, want nothing highlighted", v.skills.cursor)
+	}
+	if got := v.composer.Value(); got != "/deploy" {
+		t.Fatalf("the draft is %q — the list writes nothing until a row is accepted", got)
+	}
+	if got := v.bindingContext(); got != ctxChatSkillsInline {
+		t.Fatalf("the binding context is %q, want %q", got, ctxChatSkillsInline)
+	}
+}
+
+// TestChatSkillsInlinePosition holds each adapter's own rule: claude honours
+// `/name` only as the first token of the message, codex honours `$name`
+// anywhere in it.
+func TestChatSkillsInlinePosition(t *testing.T) {
+	t.Run("leading refuses a token that is not the first", func(t *testing.T) {
+		v := chatSkillsFixture(claudeSkills())
+		typeIntoChat(t, v, "hello /deploy")
+		if v.skills.open {
+			t.Fatalf("a mid-message /deploy opened the list under `leading`")
+		}
+	})
+	t.Run("leading refuses a cursor outside the first token", func(t *testing.T) {
+		v := chatSkillsFixture(claudeSkills())
+		typeIntoChat(t, v, "/deploy hello")
+		if v.skills.open {
+			t.Fatal("the cursor sits in `hello`, and the list opened anyway")
+		}
+	})
+	t.Run("anywhere takes a token on the third line", func(t *testing.T) {
+		v := chatSkillsFixture(codexSkills())
+		typeIntoChat(t, v, "one\ntwo\nplease $rev")
+		if !v.skills.open || v.skills.mode != skillModeInline {
+			t.Fatalf("a $rev on line 2 left the list open=%v", v.skills.open)
+		}
+		if got := v.composer.Line(); got != 2 {
+			t.Fatalf("the cursor is on line %d, want the third line", got)
+		}
+		if v.skills.filter != "rev" {
+			t.Fatalf("the inline filter is %q, want %q", v.skills.filter, "rev")
+		}
+	})
+}
+
+// TestChatSkillsInlineBareSigil is decision 93 in both directions: a bare
+// `/` under `leading` means the whole list, a bare `$` mid-prose is a shell
+// variable and means nothing.
+func TestChatSkillsInlineBareSigil(t *testing.T) {
+	t.Run("leading opens every row", func(t *testing.T) {
+		v := chatSkillsFixture(claudeSkills())
+		typeIntoChat(t, v, "/")
+		if !v.skills.open {
+			t.Fatal("a bare / under `leading` opened nothing")
+		}
+		if got := len(v.skills.rows); got != 3 {
+			t.Fatalf("a bare / showed %d rows, want every one", got)
+		}
+	})
+	t.Run("anywhere waits for a character", func(t *testing.T) {
+		v := chatSkillsFixture(codexSkills())
+		typeIntoChat(t, v, "echo $")
+		if v.skills.open {
+			t.Fatal("a bare $ mid-prose opened the list")
+		}
+		typeIntoChat(t, v, "r")
+		if !v.skills.open {
+			t.Fatal("$r did not open the list")
+		}
+	})
+}
+
+// TestChatSkillsInlinePathIsSilent is decision 92: a path under the sigil
+// neither keeps a list open nor earns a hint, and a name-shaped token that
+// matches nothing earns one — which never blocks the send.
+func TestChatSkillsInlinePathIsSilent(t *testing.T) {
+	t.Run("a path says nothing", func(t *testing.T) {
+		v := chatSkillsFixture(claudeSkills())
+		typeIntoChat(t, v, "/tmp/notes.md")
+		if v.skills.open {
+			t.Fatal("a file path kept the list open")
+		}
+		if v.skills.inlineNote != "" || v.note != "" {
+			t.Fatalf("a file path was nagged about: %q / %q", v.skills.inlineNote, v.note)
+		}
+	})
+	t.Run("a name is hinted and still sends", func(t *testing.T) {
+		v := chatSkillsFixture(claudeSkills())
+		typeIntoChat(t, v, "/tdds")
+		if v.skills.open {
+			t.Fatal("an unmatched token kept the list open")
+		}
+		want := "/tdds is not a skill claude reported for this chat — it is sent as typed"
+		if v.skills.inlineNote != want {
+			t.Fatalf("the hint is %q, want %q", v.skills.inlineNote, want)
+		}
+		if frame := ansi.Strip(v.render(100, 30)); !strings.Contains(frame, want) {
+			t.Fatalf("the hint is not drawn:\n%s", frame)
+		}
+		_, cmd := v.updateKey(registryKey(t, "enter"))
+		if cmd == nil {
+			t.Fatal("the hint blocked the send — it is a hint, never a block")
+		}
+	})
+	t.Run("anywhere is never hinted", func(t *testing.T) {
+		v := chatSkillsFixture(codexSkills())
+		typeIntoChat(t, v, "cost $zzz")
+		if v.skills.open || v.skills.inlineNote != "" {
+			t.Fatalf("an `anywhere` sigil was hinted: %q", v.skills.inlineNote)
+		}
+	})
+}
+
+// TestChatSkillsInlineExactMatchThenSpaceHides: the invocation is typed out
+// in full and a space follows it, so what comes next is its arguments.
+func TestChatSkillsInlineExactMatchThenSpaceHides(t *testing.T) {
+	v := chatSkillsFixture(claudeSkills())
+	typeIntoChat(t, v, "/tdd")
+	if !v.skills.open {
+		t.Fatal("/tdd did not open the list")
+	}
+	typeIntoChat(t, v, " ")
+	if v.skills.open {
+		t.Fatal("a space after the exact invocation left the list open")
+	}
+	// And with the cursor walked back into the finished token it stays shut.
+	pressChat(t, v, "left", 1)
+	if v.skills.open {
+		t.Fatal("the cursor back inside a completed invocation reopened the list")
+	}
+}
+
+// TestChatSkillsInlineEscSuppressesAndReturnsTheArrows is decision 90's cost
+// and the way out of it: while the list is up both arrows walk the matches
+// and the draft does not move, and after `esc` both edit the draft again and
+// the list stays shut until the token changes.
+func TestChatSkillsInlineEscSuppressesAndReturnsTheArrows(t *testing.T) {
+	v := chatSkillsFixture(codexSkills())
+	typeIntoChat(t, v, "one\n$rev")
+	if !v.skills.open {
+		t.Fatal("$rev on the second line did not open the list")
+	}
+	pressChat(t, v, "down", 1)
+	if v.skills.cursor != 0 {
+		t.Fatalf("down left the highlight on %d, want the first row", v.skills.cursor)
+	}
+	pressChat(t, v, "down", 1)
+	if v.skills.cursor != 1 {
+		t.Fatalf("a second down left the highlight on %d", v.skills.cursor)
+	}
+	pressChat(t, v, "up", 1)
+	if v.skills.cursor != 0 {
+		t.Fatalf("up left the highlight on %d, want back on the first row", v.skills.cursor)
+	}
+	if got := v.composer.Line(); got != 1 {
+		t.Fatalf("the arrows moved the draft's cursor to line %d while the list was up", got)
+	}
+
+	v.updateKey(registryKey(t, "esc"))
+	if v.skills.open {
+		t.Fatal("esc left the inline list open")
+	}
+	if got := v.composer.Value(); got != "one\n$rev" {
+		t.Fatalf("esc changed the draft to %q", got)
+	}
+	// Walking the cursor about inside the same token keeps it suppressed;
+	// one more character makes it a different token, and the list is
+	// offered again.
+	pressChat(t, v, "left", 1)
+	pressChat(t, v, "right", 1)
+	if v.skills.open {
+		t.Fatal("a cursor move inside the suppressed token reopened the list")
+	}
+	typeIntoChat(t, v, "i")
+	if !v.skills.open {
+		t.Fatal("a changed token did not lift the suppression")
+	}
+
+	// And with the list shut again, the arrows edit the draft.
+	v.updateKey(registryKey(t, "esc"))
+	pressChat(t, v, "up", 1)
+	if got := v.composer.Line(); got != 0 {
+		t.Fatalf("after esc, up left the draft's cursor on line %d — the arrows are the draft's again", got)
+	}
+}
+
+// TestChatSkillsInlineTabReplacesTheToken is decision 95: the token the
+// human typed is what the invocation stands in for, so `/dep` + the top
+// match is `/myplugin:deploy-app`, never `/dep/myplugin:deploy-app`. The
+// cursor lands after the space and the rest of the draft is byte-identical.
+func TestChatSkillsInlineTabReplacesTheToken(t *testing.T) {
+	v := chatSkillsFixture(claudeSkills())
+	typeIntoChat(t, v, " fix the bug")
+	pressChat(t, v, "left", len(" fix the bug"))
+	typeIntoChat(t, v, "/dep")
+	if !v.skills.open {
+		t.Fatal("/dep at the head of the draft did not open the list")
+	}
+	v.updateKey(registryKey(t, "tab"))
+	// The accepted invocation always brings its own trailing space, so the
+	// space that was already there stays where it was.
+	if got, want := v.composer.Value(), "/myplugin:deploy-app  fix the bug"; got != want {
+		t.Fatalf("the draft is %q, want %q", got, want)
+	}
+	if got := v.composer.Column(); got != len("/myplugin:deploy-app ") {
+		t.Fatalf("the cursor is at column %d, want just past the space", got)
+	}
+	typeIntoChat(t, v, "x")
+	if got, want := v.composer.Value(), "/myplugin:deploy-app x fix the bug"; got != want {
+		t.Fatalf("the next key landed wrong: %q, want %q", got, want)
+	}
+	if v.skills.open {
+		t.Fatal("accepting left the inline list open")
+	}
+}
+
+// TestChatSkillsInlineEnter: with nothing highlighted `enter` still sends
+// the message as typed; with a row highlighted it accepts that row.
+func TestChatSkillsInlineEnter(t *testing.T) {
+	t.Run("no highlight sends", func(t *testing.T) {
+		v := chatSkillsFixture(claudeSkills())
+		typeIntoChat(t, v, "/dep")
+		_, cmd := v.updateKey(registryKey(t, "enter"))
+		if cmd == nil {
+			t.Fatal("enter with nothing highlighted did not send")
+		}
+		if got := v.composer.Value(); got != "" {
+			t.Fatalf("the composer still holds %q after the send", got)
+		}
+		if v.skills.open {
+			t.Fatal("the list stayed open over the send")
+		}
+	})
+	t.Run("a highlight accepts", func(t *testing.T) {
+		v := chatSkillsFixture(claudeSkills())
+		typeIntoChat(t, v, "/dep")
+		pressChat(t, v, "down", 2)
+		_, cmd := v.updateKey(registryKey(t, "enter"))
+		if cmd != nil {
+			t.Fatal("enter on a highlighted row sent the message as well as accepting it")
+		}
+		if got, want := v.composer.Value(), "/notes "; got != want {
+			t.Fatalf("the draft is %q, want %q", got, want)
+		}
+	})
+}
+
+// TestChatSkillsInlineAcceptNote is issue #510's item 3: what the skill
+// takes, dimmed under the composer until the invocation leaves the draft.
+func TestChatSkillsInlineAcceptNote(t *testing.T) {
+	v := chatSkillsFixture(claudeSkills())
+	typeIntoChat(t, v, "/td")
+	v.updateKey(registryKey(t, "tab"))
+	want := "/tdd [target] — Test-driven development"
+	if v.skills.inlineNote != want {
+		t.Fatalf("the accept note is %q, want %q", v.skills.inlineNote, want)
+	}
+	if frame := ansi.Strip(v.render(100, 30)); !strings.Contains(frame, want) {
+		t.Fatalf("the accept note is not drawn:\n%s", frame)
+	}
+	// Typing the skill's arguments keeps it; editing the invocation itself
+	// is what takes it away.
+	typeIntoChat(t, v, "auth")
+	if v.skills.inlineNote != want {
+		t.Fatalf("typing the arguments cleared the note: %q", v.skills.inlineNote)
+	}
+	v.composer.SetValue("/td")
+	v.updateKey(tea.KeyPressMsg{Code: 'd', Text: "d"})
+	if v.skills.inlineNote != "" {
+		t.Fatalf("the note outlived its invocation: %q", v.skills.inlineNote)
+	}
+}
+
+// TestChatSkillsInlinePasteOpensTheList: the list is derived from the draft,
+// not from the keys that made it.
+func TestChatSkillsInlinePasteOpensTheList(t *testing.T) {
+	v := chatSkillsFixture(claudeSkills())
+	v.paste("/dep")
+	if !v.skills.open || v.skills.mode != skillModeInline {
+		t.Fatalf("a pasted /dep left the list open=%v", v.skills.open)
+	}
+	if v.skills.filter != "dep" {
+		t.Fatalf("the pasted token filtered to %q", v.skills.filter)
+	}
+}
+
+// TestChatSkillsInlineNeverOpensUnder holds every state a typed sigil must
+// stay out of: the §7.4 popup, the close confirmation, a terminal chat and
+// an adapter whose verdicts do not allow it.
+func TestChatSkillsInlineNeverOpensUnder(t *testing.T) {
+	t.Run("the answer popup", func(t *testing.T) {
+		v := chatSkillsFixture(claudeSkills())
+		v.form = newAnswerForm(questionRequest())
+		typeIntoChat(t, v, "/dep")
+		if v.skills.open {
+			t.Fatal("a typed sigil opened the list under the §7.4 popup")
+		}
+	})
+	t.Run("the close confirmation", func(t *testing.T) {
+		v := chatSkillsFixture(claudeSkills())
+		task := int64(9)
+		v.chat.LinkedTaskID = &task
+		typeIntoChat(t, v, "/dep")
+		if !v.skills.open {
+			t.Fatal("the fixture never opened the list")
+		}
+		v.askClose()
+		if !v.closing || v.skills.open {
+			t.Fatalf("the confirmation left the list open=%v", v.skills.open)
+		}
+	})
+	t.Run("a terminal chat", func(t *testing.T) {
+		v := chatSkillsFixture(claudeSkills())
+		v.chat.State = "archived"
+		typeIntoChat(t, v, "/dep")
+		if v.skills.open {
+			t.Fatal("a typed sigil opened the list on a terminal chat")
+		}
+	})
+	t.Run("an unsupported listing", func(t *testing.T) {
+		data := claudeSkills()
+		data.ListVerdict = "unsupported"
+		v := chatSkillsFixture(data)
+		typeIntoChat(t, v, "/dep")
+		if v.skills.open || v.skills.inlineNote != "" || v.note != "" {
+			t.Fatalf("an unsupported listing spoke up: open=%v note=%q/%q",
+				v.skills.open, v.skills.inlineNote, v.note)
+		}
+	})
+	t.Run("an adapter that cannot invoke", func(t *testing.T) {
+		data := claudeSkills()
+		data.InvokeVerdict, data.InvokeSigil = "unsupported", ""
+		v := chatSkillsFixture(data)
+		typeIntoChat(t, v, "/dep")
+		if v.skills.open {
+			t.Fatal("a typed sigil opened the list for an adapter that cannot invoke")
+		}
+	})
+}
+
+// TestChatSkillsInlineFetchIsSilentAndLatched is decision 91: the first
+// inline open may ask the daemon, a failure writes nothing and is not
+// re-fired on the next keystroke, and `tab` on the same view still explains
+// why.
+func TestChatSkillsInlineFetchIsSilentAndLatched(t *testing.T) {
+	var calls atomic.Int64
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+
+	v := chatViewFixture()
+	v.client = apiclient.New(ts.URL, "token")
+	for _, r := range "/dep" {
+		_, cmd := v.updateKey(tea.KeyPressMsg{Code: r, Text: string(r)})
+		runChatCmds(v, cmd)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("the typed sigil made %d requests, want exactly one", n)
+	}
+	if v.skills.open || v.skills.inlineNote != "" || v.note != "" {
+		t.Fatalf("a failed inline probe spoke up: open=%v note=%q/%q",
+			v.skills.open, v.skills.inlineNote, v.note)
+	}
+	if !v.skills.probeFailed {
+		t.Fatal("the failed probe was not latched off")
+	}
+	for _, r := range "loy" {
+		_, cmd := v.updateKey(tea.KeyPressMsg{Code: r, Text: string(r)})
+		runChatCmds(v, cmd)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("more keystrokes re-fired the probe: %d requests", n)
+	}
+
+	// `tab` is the human asking, so it asks again and says what happened.
+	_, cmd := v.updateKey(registryKey(t, "tab"))
+	runChatCmds(v, cmd)
+	if n := calls.Load(); n != 2 {
+		t.Fatalf("tab made %d requests in total, want a second one", n)
+	}
+	if !v.noteBad || !strings.HasPrefix(v.note, "could not list skills: ") {
+		t.Fatalf("tab said %q (bad=%v), want the explaining note", v.note, v.noteBad)
+	}
+}
+
+// TestChatSkillsInlineHelpIsItsOwnSurface is decision 94: `backspace` edits
+// the draft here, so the `?` pane must not promise browse's filter row.
+func TestChatSkillsInlineHelpIsItsOwnSurface(t *testing.T) {
+	v := chatSkillsFixture(claudeSkills())
+	typeIntoChat(t, v, "/dep")
+	inline := ansi.Strip(helpText(v.bindingContext(), true))
+	if !strings.Contains(inline, "give ↑/↓ back to editing the draft") {
+		t.Fatalf("the inline help does not carry its own rows:\n%s", inline)
+	}
+	if strings.Contains(inline, "shorten the filter") {
+		t.Fatalf("the inline help promises browse's backspace:\n%s", inline)
+	}
+
+	b := chatSkillsFixture(claudeSkills())
+	openChatSkills(t, b, "tab")
+	browse := ansi.Strip(helpText(b.bindingContext(), true))
+	if !strings.Contains(browse, "shorten the filter") {
+		t.Fatalf("the browse help lost its backspace row:\n%s", browse)
 	}
 }

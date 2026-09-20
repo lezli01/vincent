@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
+	"charm.land/bubbles/v2/textarea"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/agent"
@@ -36,11 +38,28 @@ import (
 // conversation under the reader.
 const chatSkillsDescLines = 3
 
+// chatSkillMode is which of the list's two openers put it on screen
+// (task 124 decision 94). The rows, the ranking, the hostile-row guard, the
+// window arithmetic and the renderer are shared; what differs is who owns
+// the keyboard and where the filter comes from.
+type chatSkillMode uint8
+
+const (
+	// skillModeBrowse is `tab`'s list: it owns the keyboard and types into
+	// its own filter buffer (decision 70).
+	skillModeBrowse chatSkillMode = iota
+	// skillModeInline is the draft's list: the composer keeps the keyboard
+	// and the filter is the draft's own sigil token, minus the sigil.
+	skillModeInline
+)
+
 // chatSkillList is the list's whole state. The zero value is a closed list
 // that has asked for nothing.
 type chatSkillList struct {
-	// open is whether the list is on screen and owns the keyboard.
+	// open is whether the list is on screen.
 	open bool
+	// mode is which opener it is on screen for.
+	mode chatSkillMode
 	// loading is a request in flight with nothing to draw yet.
 	loading bool
 	// data is the last answer for chatID; nil until one arrives. It is kept
@@ -60,6 +79,27 @@ type chatSkillList struct {
 	// the list.
 	cursor int
 	rows   []chatSkillRow
+
+	// suppressed is the draft token an inline `esc` closed the list on. It
+	// stays shut until the token changes, which is also what gives `↑`/`↓`
+	// back to editing the draft (decision 90).
+	suppressed string
+	// probeFailed latches the inline opener off for this chat (decision 91):
+	// the human never asked for that probe, so a fetch that failed — or one
+	// that answered a `list_verdict` other than `supported` — writes nothing
+	// and is not re-fired on the next keystroke. forget() clears it when a
+	// `chat.*` event drops the cached answer, and `tab` clears it because
+	// then the human *did* ask.
+	probeFailed bool
+	// inlineNote is the inline opener's dim line under the composer: the
+	// unmatched-name hint (decision 92) or what an accepted skill takes
+	// (issue #510 item 3). Never a refusal — vincent sends the message as
+	// typed (task 025 decision 5).
+	inlineNote string
+	// noteFor is the invocation inlineNote is about when it is an
+	// after-accept note, "" when it is the transient hint. The note lives
+	// until that invocation leaves the draft.
+	noteFor string
 }
 
 // chatSkillRow is one drawn row: the flattened, sanitized text and whether it
@@ -114,11 +154,14 @@ func (l *chatSkillList) reset() {
 	l.cursor = -1
 }
 
-// forget drops the cached answer. The next open asks again.
+// forget drops the cached answer. The next open asks again, and the inline
+// opener's latch goes with it (decision 91): the answer this chat was told
+// not to ask about again is the one that has just been thrown away.
 func (l *chatSkillList) forget() {
 	l.data = nil
 	l.err = ""
 	l.loading = false
+	l.probeFailed = false
 }
 
 // canList reports an answer that has rows to draw — "supported" is the only
@@ -251,6 +294,18 @@ func chatSkillTier(s apiclient.ChatSkill, q string) int {
 	return -1
 }
 
+// exact reports a row whose invocation is tok byte for byte — the test
+// behind the inline opener's "the invocation is typed out and a space
+// follows it" hide rule.
+func (l *chatSkillList) exact(tok string) bool {
+	for _, r := range l.rows {
+		if r.invocation == tok {
+			return true
+		}
+	}
+	return false
+}
+
 // move walks the highlight. From "nothing highlighted", `↓` lands on the
 // first row and `↑` on the last.
 func (l *chatSkillList) move(delta int) {
@@ -373,14 +428,21 @@ func (l *chatSkillList) render(width, paneHeight int, now time.Time) []string {
 func (l *chatSkillList) titleLine(now time.Time) string {
 	title := styleTitle.Render("skills")
 	tail := make([]string, 0, 3)
-	if l.filter != "" {
+	// Only browse draws its filter: the inline list's filter is the token
+	// the human can see in the draft, and printing it twice would read as
+	// two buffers rather than one.
+	if l.mode == skillModeBrowse && l.filter != "" {
 		tail = append(tail, l.filter)
 	}
 	if l.data != nil && l.data.ProbedAt != nil {
 		tail = append(tail, "probed "+formatElapsed(max(now.Sub(*l.data.ProbedAt), 0).Truncate(time.Second))+" ago")
 	}
 	if len(l.rows) > 0 {
-		tail = append(tail, "tab insert · ↑/↓ pick · esc close")
+		if l.mode == skillModeInline {
+			tail = append(tail, "tab complete · ↑/↓ pick · esc back to the draft")
+		} else {
+			tail = append(tail, "tab insert · ↑/↓ pick · esc close")
+		}
 	}
 	if len(tail) > 0 {
 		title += styleDim.Render("  ·  " + strings.Join(tail, "  ·  "))
@@ -394,6 +456,163 @@ func (l *chatSkillList) agentName() string {
 		return l.data.Agent
 	}
 	return "the agent"
+}
+
+// refreshNote expires the after-accept note. It lives until the invocation
+// it describes leaves the draft, or until the inline list opens again on a
+// token of its own — either way what it is about is gone. The transient
+// hint carries no noteFor and is recomputed from scratch on every sync.
+func (l *chatSkillList) refreshNote(draft string, opened bool) {
+	if l.noteFor == "" {
+		return
+	}
+	if opened || !strings.Contains(draft, l.noteFor) {
+		l.inlineNote, l.noteFor = "", ""
+	}
+}
+
+// chatDraftToken is the whitespace-delimited token under the composer's
+// cursor, and where it sits in the draft.
+type chatDraftToken struct {
+	// text is the whole token, runes to the *right* of the cursor included.
+	text string
+	// line is its 0-indexed hard row, start its first rune's index in that
+	// row.
+	line, start int
+	// first is true when nothing but whitespace precedes it on its row.
+	first bool
+	// spaceAfter is true when a whitespace rune follows it on its row.
+	spaceAfter bool
+}
+
+// end is one past the token's last rune, in its row.
+func (t chatDraftToken) end() int { return t.start + len([]rune(t.text)) }
+
+// chatDraftTokenAt reads the token under ta's cursor.
+//
+// The text is the textarea's own Word(), which returns the whole word the
+// cursor is in — runes to the right of it included — and "" when the cursor
+// sits at the start of a row or on the rune just after a space
+// (charm.land/bubbles/v2@v2.2.1 textarea/textarea.go:824). That second half
+// is what gives the inline list its "a space follows the invocation" hide
+// rule almost for free, and the first is the behaviour to spec rather than
+// to work around: a cursor parked mid-token filters on the whole token.
+//
+// Word() reports no position, so the start is scanned here from the rune
+// Word() itself starts at — the one to the *left* of the cursor.
+func chatDraftTokenAt(ta *textarea.Model) (chatDraftToken, bool) {
+	word := ta.Word()
+	if word == "" {
+		return chatDraftToken{}, false
+	}
+	row, col := ta.Line(), ta.Column()
+	// Value() joins the textarea's hard rows with "\n" and Line() indexes
+	// those same rows, so this is the row the cursor is on — soft wrapping
+	// does not enter into it.
+	rows := strings.Split(ta.Value(), "\n")
+	if row < 0 || row >= len(rows) {
+		return chatDraftToken{}, false
+	}
+	runes := []rune(rows[row])
+	at := col - 1
+	if at < 0 || at >= len(runes) {
+		return chatDraftToken{}, false
+	}
+	tok := chatDraftToken{text: word, line: row}
+	tok.start = at
+	for tok.start > 0 && !unicode.IsSpace(runes[tok.start-1]) {
+		tok.start--
+	}
+	tok.first = strings.TrimSpace(string(runes[:tok.start])) == ""
+	if end := tok.end(); end < len(runes) {
+		tok.spaceAfter = unicode.IsSpace(runes[end])
+	}
+	return tok, true
+}
+
+// inlineFilter reports the filter an inline list would rank against for tok,
+// and whether the draft asks for one at all. The sigil and its position are
+// the wire's; nothing here knows which adapter it is talking about.
+func (l *chatSkillList) inlineFilter(tok chatDraftToken) (string, bool) {
+	// InvokeSigil is "" whenever the invoke verdict is not `supported`
+	// (internal/api/chatskills.go), so this gates inline off for an adapter
+	// that cannot invoke — tested for itself rather than left to that
+	// coupling.
+	if l.data == nil || !l.canList() || l.data.InvokeSigil == "" {
+		return "", false
+	}
+	rest, ok := strings.CutPrefix(tok.text, l.data.InvokeSigil)
+	if !ok {
+		return "", false
+	}
+	switch l.data.InvokePosition {
+	case "leading":
+		// claude expands `/name` only at the very start of the message, and
+		// the composer trims leading whitespace on send, so the position is
+		// "the first token on row 0" rather than "column 0". A bare sigil
+		// opens every row here, which is Claude Code's own behaviour and
+		// almost always what it means (decision 93).
+		if tok.line != 0 || !tok.first {
+			return "", false
+		}
+	case "anywhere":
+		// A bare `$` mid-prose is a shell variable far more often than the
+		// start of an invocation, and an empty filter matches every row, so
+		// the hide-on-no-match rule could not quiet it (decision 93). One
+		// character after the sigil opens the list.
+		if rest == "" {
+			return "", false
+		}
+	default:
+		return "", false
+	}
+	return rest, true
+}
+
+// chatSkillSigilShaped reports a token that could be an invocation under
+// *some* adapter's sigil: one non-alphanumeric rune and then a name.
+//
+// It is the only thing the *first* inline fetch can be spent on
+// (decision 91). The real sigil comes off the wire and is hard-coded
+// nowhere, so before an answer is in hand there is nothing to test a token
+// against but its shape; every keystroke after that is filtered by the
+// answer's own sigil. A token this accepts that no adapter honours costs one
+// silent probe, which chatSkillList.probeFailed latches off so a keystroke
+// cannot re-fire it — and a lone sigil is deliberately not enough, because
+// one punctuation rune says nothing about whose sigil it is.
+func chatSkillSigilShaped(tok string) bool {
+	runes := []rune(tok)
+	if len(runes) < 2 || unicode.IsLetter(runes[0]) || unicode.IsDigit(runes[0]) || runes[0] == '_' {
+		return false
+	}
+	for _, r := range runes[1:] {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '-' && r != '_' && r != ':' {
+			return false
+		}
+	}
+	return true
+}
+
+// chatSkillNameShaped reports the text after a sigil that is a skill name
+// rather than a path, which is the whole of decision 92: `/tmp/notes.md` and
+// `/Users/x` are silent, `/tdds` is hinted.
+//
+// Both separators are tested on every platform, not `\` on Windows alone: a
+// draft is prose a human may write about any machine, and a rule that
+// differed per host would make the same message say two things — and a test
+// of it pass on one CI leg and fail on another.
+func chatSkillNameShaped(rest string) bool {
+	return rest != "" && !strings.ContainsAny(rest, `/\`)
+}
+
+// chatSkillAcceptNote is what an accepted skill takes, for the note line:
+// the invocation, its argument hint and its description (issue #510 item 3).
+func chatSkillAcceptNote(r chatSkillRow) string {
+	head := strings.TrimSpace(r.display + " " + r.hint)
+	if r.description == "" {
+		return head
+	}
+	return head + " — " + r.description
 }
 
 // chatSkillRowLine draws one row. The selection is a `› ` marker as well as a

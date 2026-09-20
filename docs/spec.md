@@ -10684,6 +10684,71 @@ stream for the live tail.
    "back to view 8", takes the wheel out of the conversation while it is up,
    and never opens under the §7.4 popup or the close confirmation.
 
+   *Amended 2026-09-20 (task 124.14, issue #510).* **The draft opens the
+   same list.** After every composer update — a typed key, a paste, a cursor
+   move — the workspace reads the whitespace-delimited token under the
+   cursor. When it begins with the answer's `invoke_sigil` at a position its
+   `invoke_position` honours, the list opens **inline**: the same rows, the
+   same ranking and the same renderer as `tab`'s, filtered by the token minus
+   the sigil, with nothing highlighted so `enter` still sends the message as
+   typed. `leading` honours the first token of row 0 only, with the cursor
+   inside it — the composer trims leading whitespace on send, so that, and
+   not column 0, is the position. `anywhere` honours any token on any row.
+   Nothing is matched as a *key*: `/` and `$` are never `case` labels, so the
+   `filter` operation's default key is irrelevant here.
+
+   Inline differs from browse in one structural way, and the rest follows
+   from it: **the composer keeps the keyboard.** Browse is a layer that
+   answers every press; inline is an aid to typing, so printable keys,
+   `backspace`, `ctrl+j` and the rest reach the draft and the list recomputes
+   from it. Only five presses are the list's: `↑`/`↓` walk the matches,
+   `tab` (and `f2`) completes, `enter` accepts a highlighted row, and `esc`
+   closes it. Accepting **replaces the token** the human typed — the
+   invocation plus one space, cursor after the space — rather than inserting
+   at it, which is what keeps `/co` plus `/code-review` from reading
+   `/co/code-review`; browse's insert-at-the-cursor accept above is
+   unchanged, having no token to stand in for. Afterwards the note line
+   carries `<invocation> <argument_hint> — <description>`, dimmed, until that
+   invocation leaves the draft.
+
+   The list **hides** while nothing matches, so `/tmp/notes.md` never keeps
+   one open; **hides** when the token is one entry's invocation in full and a
+   space follows it, because what comes next is its arguments; and **stays
+   hidden** for the current token after `esc`, until the token changes. It
+   never opens under the §7.4 popup or the close confirmation, on a terminal
+   chat, or while the listing verdict is anything but `supported`. A **bare
+   sigil** opens every row under `leading` — Claude Code's own behaviour, and
+   almost always what it means — and nothing under `anywhere`, where a lone
+   `$` is a shell variable far more often than the start of an invocation and
+   an empty filter would match every row.
+
+   A typed sigil **may ask the daemon and never speaks up.** The first inline
+   open in a workspace fetches through `GET /v1/chats/{id}/skills` exactly as
+   `tab` does, on the same deadline, but draws no loading row and writes
+   nothing on the note line if it fails or answers a verdict it cannot list
+   from: the human did not ask for that probe, a cold cache spawns the agent
+   CLI to answer it, and under codex's `$`/`anywhere` a `$HOME` in prose
+   would otherwise turn the note line red. Such a probe is latched off for
+   the chat until a `chat.*` event drops the cached answer or the human
+   presses `tab`, so it cannot be re-fired on every keystroke. `tab` keeps
+   its explaining note unchanged. Where a **leading** token carries the sigil
+   and matches nothing the agent reported, and the text after the sigil holds
+   no path separator, a dim note says so — `/foo is not a skill claude
+   reported for this chat — it is sent as typed`. It is a hint and never a
+   block: vincent sends the message verbatim.
+
+   **This amends the 2026-08-31 paragraph above** ("The composer keeps
+   `↑`/`↓` for editing a multi-line message", task 071 decision 4) for
+   exactly one state and no other: while an inline list is up, both arrows
+   walk the matches and neither moves the draft's cursor; `esc` gives them
+   back. That cost is taken knowingly, and in both directions rather than
+   `↓` alone, because a highlight walkable one way only has no way back past
+   a match without `esc` and retyping, and because under `leading` the list
+   is visible only on row 0 inside the first token, where `↑` does nothing in
+   a textarea anyway — so the asymmetry buys almost nothing there and is
+   confusing under `anywhere`. With no list up, and after `esc`, the arrows
+   edit the draft as they always did.
+
    The conversation body is **the output pane's line model** at the level
    below, not a renderer of its own: every turn's records go through the same
    two-column gutter scheme, so an `agent.tool_use` reads the same in a chat as
@@ -12017,7 +12082,9 @@ task 093: archive was `a` and the re-list was `r`; both moved to the vocabulary
 key below.)* In the **chat
 workspace**: `enter` sends, `ctrl+j` inserts a newline in the draft *(added
 2026-09-19, issue #500)*, `tab` opens the skill list *(added 2026-09-20, task
-124.13, issue #509)*, `ctrl+x` stops the live turn, `ctrl+t` hands the
+124.13, issue #509)* — which also opens by itself when the draft types the
+agent's invocation sigil, where `↑`/`↓` then walk it until `esc` *(added
+2026-09-20, task 124.14, issue #510)* — `ctrl+x` stops the live turn, `ctrl+t` hands the
 worktree and branch to a task *(added 2026-09-01, task 074)*, `esc` returns to
 the board. In the **new-chat form**: `ctrl+s` creates, `tab`/`shift+tab` move
 between fields, `enter` opens the focused field's list, `←`/`→` step the
@@ -12264,6 +12331,17 @@ and `esc`. None of them is nameable in `tui.keys`: `tab` and `shift+tab` move
 focus everywhere, and a surface-local row is fixed (task 118 decision 1).
 `/` is never matched as a key here — it is the `filter` operation's default,
 and the sigil is read from the response.
+
+*Amended 2026-09-20 (task 124.14, issue #510).* The inline list is a **second
+fixed surface** — `chat skills inline` — carrying `↑`/`↓`, `tab`, `f2`,
+`enter` and `esc`, and no `backspace`: there the composer keeps it, and a `?`
+pane promising browse's "shorten the filter, and close the list when it is
+already empty" while the draft is what is being shortened would be a lie.
+That is why it is its own surface rather than more `chat skills` rows. It
+introduces no new key literal, so `keymap.fixed` gains rows and the catalog
+gains nothing; none of the five is nameable in `tui.keys`, for the reasons
+above. `/` and `$` are still never matched as keys: the draft is inspected
+after each composer update.
 
 *Amended 2026-09-17 (task 119, issue #472).* `chat` is a §6 action, so it is an
 operation like the rest: `T` by default, moved by `tui.keys` on every surface

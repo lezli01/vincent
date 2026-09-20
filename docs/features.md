@@ -116,7 +116,9 @@ workspace it is a key away: **`tab` opens the list above the composer**, type
 to filter it, and the row you take is written into your message as the exact
 invocation the agent named — with whatever you had already typed becoming its
 arguments. Browsing never touches the draft, so `esc` leaves your message
-exactly as you wrote it.
+exactly as you wrote it. **The same list opens by itself** when your message
+starts typing the agent's own invocation syntax, so writing `/name` and
+picking from a list are one gesture rather than two.
 
 Drive one from the TUI's own **chats board and chat workspace**
 ([guide](guides/tui.md#chats)), from

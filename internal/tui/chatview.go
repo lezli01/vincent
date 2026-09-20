@@ -168,8 +168,10 @@ type chatView struct {
 	// on declining, so a draft is never typed into by the answer.
 	closing bool
 
-	// skills is the composer's skill list (task 124.13). While it is open it
-	// owns the keyboard, which is what makes `esc` a real layer here.
+	// skills is the composer's skill list (task 124.13), in either of its
+	// two modes: browse, which owns the keyboard and makes `esc` a real
+	// layer here, and inline (task 124.14), which the draft's own sigil
+	// token opens and which leaves the keyboard to the composer.
 	skills chatSkillList
 
 	width, height int
@@ -232,13 +234,17 @@ func (v *chatView) paste(text string) tea.Cmd {
 	}
 	var cmd tea.Cmd
 	v.composer, cmd = v.composer.Update(tea.PasteMsg{Content: text})
-	return cmd
+	// A pasted `/co` opens the inline list exactly as a typed one does: the
+	// list is derived from the draft, not from the keys that made it.
+	return tea.Batch(cmd, v.syncInlineSkills())
 }
 
 func (v *chatView) bindingContext() bindingContext {
 	switch {
 	case v.form != nil:
 		return ctxForm
+	case v.skills.open && v.skills.mode == skillModeInline:
+		return ctxChatSkillsInline
 	case v.skills.open:
 		return ctxChatSkills
 	}
@@ -464,6 +470,9 @@ func (v *chatView) syncForm() {
 		return
 	}
 	v.form = newAnswerForm(req)
+	// The popup owns the keyboard and the screen; an inline list drawn under
+	// it would be an aid to typing on a surface nobody can type into.
+	v.hideInline("")
 }
 
 // runningTurn is the turn currently producing output, if any.
@@ -762,11 +771,19 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.note, v.noteBad = "the chat stays open", false
 		return v, nil
 	}
-	if v.skills.open {
-		// While the list is up it owns the keyboard, which is how every
-		// other vincent popup behaves and what makes `esc` a real layer
-		// here (task 124 decision 70).
+	if v.skills.open && v.skills.mode == skillModeBrowse {
+		// While the browse list is up it owns the keyboard, which is how
+		// every other vincent popup behaves and what makes `esc` a real
+		// layer here (task 124 decision 70).
 		return v, v.updateSkillsKey(msg)
+	}
+	if v.skills.open {
+		// The inline list takes only the keys it means something for
+		// (decision 94): everything else — a printable rune, `backspace`,
+		// `ctrl+j` — is the draft's, and the list recomputes from it.
+		if cmd, taken := v.updateInlineSkillsKey(msg); taken {
+			return v, cmd
+		}
 	}
 	switch msg.String() {
 	case "esc":
@@ -818,10 +835,10 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	v.composer, cmd = v.composer.Update(msg)
-	return v, cmd
+	return v, tea.Batch(cmd, v.syncInlineSkills())
 }
 
-// updateSkillsKey is the open list's keyboard (task 124.13). It answers
+// updateSkillsKey is the browse list's keyboard (task 124.13). It answers
 // every key: a press the list has no meaning for is spent here rather than
 // falling through to the composer, which is what "the list owns the
 // keyboard" means and what makes `esc` close one layer rather than two.
@@ -860,9 +877,11 @@ func (v *chatView) updateSkillsKey(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 // hideSkills closes the list and forgets the filter. The draft is untouched,
-// because nothing here ever wrote to it.
+// because nothing here ever wrote to it. The mode goes back to browse: it
+// only means anything while the list is up, and `tab` is what opens it next.
 func (v *chatView) hideSkills() {
 	v.skills.open = false
+	v.skills.mode = skillModeBrowse
 	v.skills.reset()
 	v.skills.build()
 }
@@ -882,7 +901,12 @@ func (v *chatView) openSkills() tea.Cmd {
 		v.note, v.noteBad = "this chat has ended — no turn will run here", true
 		return nil
 	}
+	v.skills.mode = skillModeBrowse
 	v.skills.reset()
+	// `tab` is the human asking, so decision 91's latch — which exists only
+	// to stop an *unasked* probe firing on every keystroke — is lifted, and
+	// this path keeps 124.13's explaining note verbatim.
+	v.skills.probeFailed = false
 	if v.skills.data != nil {
 		v.showSkills()
 		return nil
@@ -908,7 +932,14 @@ func (v *chatView) openSkills() tea.Cmd {
 // applySkills folds one answer in. A result for another chat, or one that
 // arrived after the list was hidden, changes nothing (decision 76).
 func (v *chatView) applySkills(msg chatSkillsMsg) {
-	if msg.chatID != v.chatID || !v.skills.open {
+	if msg.chatID != v.chatID {
+		return
+	}
+	if v.skills.mode == skillModeInline {
+		v.applyInlineSkills(msg)
+		return
+	}
+	if !v.skills.open {
 		return
 	}
 	v.skills.loading = false
@@ -968,9 +999,14 @@ func chatSkillsUnknownWhy(d *apiclient.ChatSkills) string {
 }
 
 // acceptSkill writes the picked row's invocation into the draft — once, and
-// the adapter's own bytes: the invocation plus one space, at the start of
-// the draft for `leading` and at the cursor for `anywhere`, with the cursor
+// the adapter's own bytes: the invocation plus one space, with the cursor
 // left after the space so the existing draft becomes the arguments.
+//
+// Where it goes depends on which opener is up. Browse inserts: at the start
+// of the draft for `leading` and at the cursor for `anywhere`, because it
+// has no token to stand in for. Inline *replaces* the token the human typed
+// (decision 95) — without that, `/co` plus `/code-review` would read
+// `/co/code-review`.
 func (v *chatView) acceptSkill() tea.Cmd {
 	row, ok := v.skills.pick()
 	if !ok {
@@ -980,12 +1016,229 @@ func (v *chatView) acceptSkill() tea.Cmd {
 		v.note, v.noteBad = row.reason, true
 		return nil
 	}
-	if v.skills.data != nil && v.skills.data.InvokePosition == "leading" {
+	inline := v.skills.mode == skillModeInline
+	switch {
+	case inline:
+		v.replaceDraftToken(row.invocation + " ")
+	case v.skills.data != nil && v.skills.data.InvokePosition == "leading":
 		v.composer.MoveToBegin()
+		v.composer.InsertString(row.invocation + " ")
+	default:
+		v.composer.InsertString(row.invocation + " ")
 	}
-	v.composer.InsertString(row.invocation + " ")
+	note := chatSkillAcceptNote(row)
 	v.hideSkills()
+	if inline {
+		// What the skill takes, dimmed under the composer until the
+		// invocation leaves the draft (issue #510 item 3). The token the
+		// list was suppressed on is gone, so the suppression goes with it.
+		v.skills.inlineNote, v.skills.noteFor = note, row.invocation
+		v.skills.suppressed = ""
+	}
 	return nil
+}
+
+// ---- the inline opener (task 124.14, issue #510) ----
+
+// syncInlineSkills re-reads the draft after every composer update and opens,
+// refilters or hides the inline list. It is the whole trigger: `/` and `$`
+// are never matched as keys, so a rebound `filter` operation is irrelevant
+// here and TestEveryMatchedKeyIsRegistered has nothing to catch.
+//
+// A browse list is left alone — it owns the keyboard and its own buffer.
+func (v *chatView) syncInlineSkills() tea.Cmd {
+	if v.skills.open && v.skills.mode == skillModeBrowse {
+		return nil
+	}
+	tok, ok := chatDraftTokenAt(&v.composer)
+	if !ok || tok.text != v.skills.suppressed {
+		v.skills.suppressed = ""
+	}
+	// The layers the list must never open under, and the chat it must never
+	// ask about: the §7.4 popup and the close confirmation own the keyboard,
+	// and no turn will run in a terminal chat. Ordering in updateKey already
+	// returns before this for the first two; this is the same refusal for
+	// the paths that do not go through a key at all.
+	if !ok || v.form != nil || v.closing || v.chat == nil ||
+		chatstate.Terminal(chatstate.State(v.chat.State)) ||
+		tok.text == v.skills.suppressed {
+		v.hideInline("")
+		return nil
+	}
+	if v.skills.data == nil {
+		v.hideInline("")
+		return v.fetchInlineSkills(tok)
+	}
+	filter, want := v.skills.inlineFilter(tok)
+	if !want {
+		v.hideInline("")
+		return nil
+	}
+	v.skills.mode, v.skills.filter, v.skills.cursor = skillModeInline, filter, -1
+	v.skills.build()
+	switch {
+	case len(v.skills.rows) == 0:
+		// Nothing matches, so nothing is drawn: `/tmp/notes.md` never keeps
+		// a list open. A name-shaped token earns the dim hint instead.
+		v.hideInline(v.unmatchedInlineHint(tok, filter))
+	case tok.spaceAfter && v.skills.exact(tok.text):
+		// The invocation is typed out in full and a space follows it, so
+		// what comes next is its arguments, not more of its name.
+		v.hideInline("")
+	default:
+		v.skills.open = true
+		v.setInlineNote("", true)
+	}
+	return nil
+}
+
+// hideInline takes the inline list off the screen — leaving a browse one
+// alone — and leaves hint, usually none, under the composer.
+func (v *chatView) hideInline(hint string) {
+	if v.skills.mode == skillModeInline {
+		v.skills.open = false
+		v.skills.mode = skillModeBrowse
+		v.skills.reset()
+		v.skills.build()
+	}
+	v.setInlineNote(hint, false)
+}
+
+// setInlineNote settles what the note line carries under the composer. The
+// after-accept note wins while it is still about something in the draft;
+// the transient hint is recomputed from scratch every time, so a token that
+// has stopped earning one stops showing one — `/tmp` earns the hint on its
+// way to `/tmp/notes.md`, which does not.
+func (v *chatView) setInlineNote(hint string, opened bool) {
+	v.skills.refreshNote(v.composer.Value(), opened)
+	if v.skills.noteFor == "" {
+		v.skills.inlineNote = hint
+	}
+}
+
+// unmatchedInlineHint is decision 92's dim note for a leading token that
+// carries the sigil and matches nothing the agent reported.
+//
+// It is only for name-shaped text: a path under the sigil — `/tmp/notes.md`,
+// `/Users/you` — is ordinary prose, and nagging about it is exactly what
+// Claude Code is quiet about. It is not shown under `anywhere` either, where
+// a sigil is ordinary text more often still. It stays a hint and never a
+// block (task 124 decision 9, task 025 decision 5).
+func (v *chatView) unmatchedInlineHint(tok chatDraftToken, filter string) string {
+	if v.skills.data == nil || v.skills.data.InvokePosition != "leading" ||
+		!chatSkillNameShaped(filter) {
+		return ""
+	}
+	return chatSkillFlatten(tok.text) + " is not a skill " + v.skills.agentName() +
+		" reported for this chat — it is sent as typed"
+}
+
+// fetchInlineSkills is the first inline open's probe (decision 91): the same
+// call, on the same deadline, as the `tab` path's.
+//
+// It is silent in both directions. It draws no loading row, because the
+// sigil is not known yet and a row saying "asking claude which skills it
+// has…" over a token that may be a shell variable is noise the human did not
+// ask for; and applyInlineSkills writes nothing when it fails. `tab` still
+// opens with the loading row and still explains a failure.
+func (v *chatView) fetchInlineSkills(tok chatDraftToken) tea.Cmd {
+	if v.skills.probeFailed || v.skills.loading || !chatSkillSigilShaped(tok.text) {
+		return nil
+	}
+	client, id := v.client, v.chatID
+	if client == nil {
+		return nil
+	}
+	v.skills.mode, v.skills.loading = skillModeInline, true
+	return func() tea.Msg {
+		// Not loadTimeout, for the reason openSkills is not: a cold cache
+		// spawns the agent CLI to answer.
+		ctx, cancel := context.WithTimeout(context.Background(), chatSkillsTimeout)
+		defer cancel()
+		skills, err := client.ChatSkills(ctx, id, false)
+		return chatSkillsMsg{chatID: id, skills: skills, err: err}
+	}
+}
+
+// applyInlineSkills folds one silent probe's answer in. A failure, and a
+// verdict the list cannot be drawn from, latch the inline opener off for
+// this chat and say nothing (decision 91) — the latch being what stops a
+// failing probe being re-fired on every keystroke.
+func (v *chatView) applyInlineSkills(msg chatSkillsMsg) {
+	v.skills.loading = false
+	if msg.err != nil || msg.skills == nil {
+		v.skills.probeFailed = true
+		v.skills.mode = skillModeBrowse
+		return
+	}
+	v.skills.data = msg.skills
+	if !v.skills.canList() {
+		v.skills.probeFailed = true
+		v.skills.mode = skillModeBrowse
+		return
+	}
+	v.syncInlineSkills()
+}
+
+// updateInlineSkillsKey is the inline list's keyboard. Unlike the browse
+// list's it answers only the keys the list itself means something for, and
+// reports whether it took the press: the composer keeps everything else,
+// which is the one structural difference between the two modes and the
+// reason inline is its own binding context (decision 94).
+func (v *chatView) updateInlineSkillsKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
+	switch msg.String() {
+	case "esc":
+		// Nothing to undo — the list never wrote into the draft — and the
+		// arrows go back to editing it (decision 90). The list stays shut
+		// for this token until the token changes.
+		if tok, ok := chatDraftTokenAt(&v.composer); ok {
+			v.skills.suppressed = tok.text
+		}
+		v.hideInline("")
+		return nil, true
+	case "up":
+		v.skills.move(-1)
+		return nil, true
+	case "down":
+		v.skills.move(1)
+		return nil, true
+	case "tab", "f2":
+		return v.acceptSkill(), true
+	case "enter":
+		if v.skills.cursor < 0 {
+			// Nothing is highlighted until the human walks into the list,
+			// so `enter` still means what it meant before it opened.
+			v.hideInline("")
+			return v.sendCmd(), true
+		}
+		return v.acceptSkill(), true
+	}
+	return nil, false
+}
+
+// replaceDraftToken swaps the token under the cursor for text, leaving the
+// cursor after it — decision 95's half of the inline accept.
+//
+// It goes through the composer's own key handling because the textarea
+// exports neither a delete-word nor a way to put the cursor on a row:
+// SetValue resets the widget and parks the cursor at the very end of the new
+// value, and CursorUp walks *wrapped* lines, so counting rows back to the
+// token's would land somewhere else entirely on a draft that wraps.
+// Synthetic backspaces cannot disagree with the widget about where the
+// cursor is.
+func (v *chatView) replaceDraftToken(text string) {
+	tok, ok := chatDraftTokenAt(&v.composer)
+	if !ok {
+		v.composer.InsertString(text)
+		return
+	}
+	v.composer.SetCursorColumn(tok.end())
+	for range tok.end() - tok.start {
+		// The command a press returns is dropped on purpose: this is not a
+		// key a human pressed, and the composer's cursor does not blink.
+		v.composer, _ = v.composer.Update(synthKey("backspace"))
+	}
+	v.composer.InsertString(text)
 }
 
 // chatSkillsTimeout bounds one skill listing from this view. The client
@@ -1038,6 +1291,9 @@ func (v *chatView) askClose() {
 	default:
 		v.closing = true
 		v.note = ""
+		// The confirmation owns the next key, so an inline list under it
+		// would be offering keys it will never get.
+		v.hideInline("")
 	}
 }
 
@@ -1105,6 +1361,8 @@ func (v *chatView) sendCmd() tea.Cmd {
 		return nil
 	}
 	v.composer.SetValue("")
+	// The draft the inline hints were about is gone with it (task 124.14).
+	v.skills.inlineNote, v.skills.noteFor = "", ""
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()

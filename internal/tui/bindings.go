@@ -149,8 +149,16 @@ const (
 	// `enter` and `esc` all mean something else the moment it closes. Not
 	// ctxSkills, which is the daemon view's published-skill offer below.
 	ctxChatSkills bindingContext = "chat skills"
-	ctxNewChat    bindingContext = "new chat"
-	ctxDaemon     bindingContext = "daemon"
+	// ctxChatSkillsInline is the same list opened by the draft's own sigil
+	// token (task 124.14). Its own context because the composer keeps the
+	// keyboard here: `backspace` means "shorten the filter, and close the
+	// list when it is already empty" in browse and "edit the draft" in
+	// inline, and a `?` pane saying the first while the second is true is a
+	// lie (decision 94).
+	ctxChatSkillsInline bindingContext = "chat skills inline"
+
+	ctxNewChat bindingContext = "new chat"
+	ctxDaemon  bindingContext = "daemon"
 	// ctxSkills is the daemon view's published-skill offer (§9.8, task 095).
 	// Its own context rather than more ctxDaemon rows for the reason the
 	// config editor's keys are their own: while it is open it owns the
@@ -533,6 +541,15 @@ var bindings = []binding{
 	{key: "enter", label: "insert the highlighted skill; with none highlighted, send the message as typed", scope: scopePanel, context: ctxChatSkills, noPalette: true},
 	{key: "backspace", label: "shorten the filter, and close the list when it is already empty", scope: scopePanel, context: ctxChatSkills, noPalette: true},
 	{key: "esc", label: "close the list and keep the draft exactly as it was", scope: scopePanel, context: ctxChatSkills, noPalette: true},
+
+	// The same list, opened inline by the draft's own sigil token (task
+	// 124.14). No backspace row: here it edits the draft and the list
+	// recomputes from it, which is the whole of decision 94. noPalette for
+	// the reason the browse rows are.
+	{key: "down", label: "move the highlight (↑/↓) through the matches; nothing is highlighted until the first press", scope: scopePanel, context: ctxChatSkillsInline, noPalette: true},
+	{key: "tab", label: "complete the token you are typing with the highlighted skill, or the top match (f2 too)", scope: scopePanel, context: ctxChatSkillsInline, noPalette: true},
+	{key: "enter", label: "accept the highlighted skill; with none highlighted, send the message as typed", scope: scopePanel, context: ctxChatSkillsInline, noPalette: true},
+	{key: "esc", label: "close the list, and give ↑/↓ back to editing the draft", scope: scopePanel, context: ctxChatSkillsInline, noPalette: true},
 
 	// New chat.
 	{key: "ctrl+s", label: "create the chat and open it", scope: scopePanel, context: ctxNewChat, hint: "ctrl+s create", priority: 1},
