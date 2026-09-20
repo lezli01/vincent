@@ -229,15 +229,6 @@ func parseFieldFlags(values []string) (map[string]string, error) {
 	return fields, nil
 }
 
-// maxFieldsFileBytes bounds what --fields-file reads, at the same 4 MiB the
-// API bounds a large request body at (§13.1). Stdin can be an unbounded pipe,
-// so the read is capped rather than slurped: refusing here gives the caller
-// the answer the daemon would have given them, sooner, and without buffering
-// an arbitrary file first. Nothing is re-checked client-side beyond this —
-// the per-field bounds and the workflow's declared field contract stay
-// daemon-authoritative (§8.1.2), because the CLI is not the only client.
-const maxFieldsFileBytes = 4 << 20
-
 // readFieldsFile reads one JSON object of string values from path, or from in
 // when path is "-".
 //
@@ -253,24 +244,10 @@ const maxFieldsFileBytes = 4 << 20
 // rule --field already follows.
 func readFieldsFile(path string, in io.Reader) (map[string]string, error) {
 	src := "--fields-file " + path
-	r := in
-	if path != "-" {
-		// G304: the path this command's own operator typed after --fields-file.
-		f, err := os.Open(path) //nolint:gosec // G304: see above
-		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", src, err)
-		}
-		defer func() { _ = f.Close() }()
-		r = f
-	}
-	// One byte past the bound, so a document that exactly fills it still
-	// parses and one byte more is caught rather than silently truncated.
-	data, err := io.ReadAll(io.LimitReader(r, maxFieldsFileBytes+1))
+	// Bounded at maxInputFileBytes, the tier `POST /v1/tasks` decodes under.
+	data, err := readInputFile("--fields-file", path, in)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", src, err)
-	}
-	if len(data) > maxFieldsFileBytes {
-		return nil, fmt.Errorf("%s must be at most %d bytes", src, maxFieldsFileBytes)
+		return nil, err
 	}
 
 	dec := json.NewDecoder(bytes.NewReader(data))

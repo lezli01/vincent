@@ -308,6 +308,27 @@ environment:
 A daemon started by `vincent service install` (a Scheduled Task in your logon
 session) never had `MSYSTEM` in the first place.
 
+### The agent received `C:/Program Files/Git/review` instead of `/review`
+
+You sent a skill invocation from **Git Bash** — `vincent chat send 12 /review`
+— and the agent got your Git install root with the skill's name on the end.
+The MSYS2 runtime converts any argument that looks like a POSIX path into a
+Windows one before `vincent` starts, and says nothing when it does; vincent
+sends what it was given, and cannot tell it was ever `/review`. A
+`/plugin:skill` name is left alone, which is why only some invocations break.
+
+Either fix works:
+
+```sh
+MSYS_NO_PATHCONV=1 vincent chat send 12 '/review the auth change'
+printf '%s' '/review the auth change' | vincent chat send 12 --message-file -
+```
+
+`--message-file` takes the message out of argv entirely, so it works in every
+shell — and it is the fix for the other silent rewrite too, a `$name` inside
+double quotes that bash, zsh and pwsh expand. See
+[quoting a skill invocation](../reference/cli.md#quoting-a-skill-invocation).
+
 ### A restricted codex step cannot commit
 
 In a linked worktree the real git directory lives under the main repository,

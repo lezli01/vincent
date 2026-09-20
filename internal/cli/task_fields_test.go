@@ -127,12 +127,12 @@ func TestReadFieldsFileRejections(t *testing.T) {
 // capped at the API's own large-body bound and the message says which.
 func TestReadFieldsFileBound(t *testing.T) {
 	// One byte past the bound: an object whose single value fills the rest.
-	value := strings.Repeat("x", maxFieldsFileBytes)
+	value := strings.Repeat("x", maxInputFileBytes)
 	_, err := readFieldsFile("-", strings.NewReader(`{"big":"`+value+`"}`))
 	if err == nil {
 		t.Fatal("an over-bound document was accepted")
 	}
-	if !strings.Contains(err.Error(), strconv.Itoa(maxFieldsFileBytes)) {
+	if !strings.Contains(err.Error(), strconv.Itoa(maxInputFileBytes)) {
 		t.Errorf("error does not name the limit: %v", err)
 	}
 	if strings.Contains(err.Error(), "xxxx") {
@@ -140,9 +140,9 @@ func TestReadFieldsFileBound(t *testing.T) {
 	}
 
 	// Exactly at the bound still parses: the cap is inclusive.
-	fit := `{"big":"` + strings.Repeat("x", maxFieldsFileBytes-10) + `"}`
-	if len(fit) != maxFieldsFileBytes {
-		t.Fatalf("fixture is %d bytes, want exactly %d", len(fit), maxFieldsFileBytes)
+	fit := `{"big":"` + strings.Repeat("x", maxInputFileBytes-10) + `"}`
+	if len(fit) != maxInputFileBytes {
+		t.Fatalf("fixture is %d bytes, want exactly %d", len(fit), maxInputFileBytes)
 	}
 	if _, err := readFieldsFile("-", strings.NewReader(fit)); err != nil {
 		t.Errorf("a document exactly at the bound was rejected: %v", err)
