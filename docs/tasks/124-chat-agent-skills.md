@@ -43,7 +43,8 @@ Decisions 1–12 are the parent issue's (#496, "Decisions taken in this
 breakdown"). 13–19 were settled with the author, or taken in evaluation, when
 124.1 was built, 20–27 when 124.2 was, 28 in its follow-up, 29–36 when
 124.8 was, 37–39 when 124.12 was, 40–44 when 124.7 was, 45–53 when
-124.5 was, 54–59 when 124.9 was, and 60–63 when 124.11 was.
+124.5 was, 54–59 when 124.9 was, 60–63 when 124.11 was, and
+64–68 when 124.10 was.
 
 1. **2026-09-19 — Each CLI's own listing, never a scan.** claude answers a
    stream-json `initialize` control request (`commands`), codex answers
@@ -447,6 +448,52 @@ breakdown"). 13–19 were settled with the author, or taken in evaluation, when
     exit 0. Under a non-`supported` list verdict no table is printed at all: a
     lone header would read as "none". Settled with the author. *Beaten:* the
     verdict on stdout in the table's place.
+64. **2026-09-20 — An unresolved `/name` is an `agent.input_echo`, not a
+    failed skill.** claude's string-vs-array content shape does say it tried
+    to expand a command, but nothing on the line names a failure, and filling
+    `SkillInvocation.Error` with a phrase vincent wrote would break that
+    field's contract — it holds the CLI's own refusal, reported on a line of
+    its own (§9.1, decision 23). Recognizing a leading `/` on an echoed string
+    is also the guess T4.17 refuses. *Beaten:* `agent.skill{by:"human", name,
+    error:"not expanded"}`, which would give the human a visible row; the cost
+    accepted is that the human sees only the assistant's prose reply.
+65. **2026-09-20 — A refusal line is paired with the turn's last replayed
+    name.** The `<local-command-stderr>` replay names no skill, so the parser
+    remembers the last `<command-name>` it replayed in the stream and puts it
+    on the refusal's `EventSkill{By:"human", Name, Error}`, falling back to a
+    nameless one when nothing preceded it. *Beaten:* the issue's
+    always-nameless record, which renders two invocations' failures
+    identically; and `agent.input_echo`, which would show the human nothing
+    where an injected command was refused. The memory is per stream and per
+    turn, in the style of the armed-skill memory, and it is not scoped by
+    `parent_tool_use_id`: a replay belongs to no scope. The capture this
+    landed with exercises the fallback rather than the pairing — 2.1.277
+    replays the refusal *instead of* the invocation when the injected command
+    is refused, not after it — so both halves are tested, the fallback over
+    the fixture and the pairing over the two captures composed.
+66. **2026-09-20 — The flag rides on every chat turn**, not only on turns
+    whose message starts with the sigil. One rule, and vincent never inspects
+    the human's message to decide an argv flag. The accepted cost is that
+    every chat turn's transcript also holds its own prompt echo, a linked
+    first turn's preamble among it, and its §7.4 answers, all as
+    `agent.input_echo` records no client draws; chat transcripts are capped by
+    `transcript_max_bytes`, which `runTurn` already applies per turn.
+67. **2026-09-20 — `<command-args>` is taken verbatim; only
+    `<local-command-stderr>` is unescaped.** Captured: a typed `<there> & co`
+    comes back byte for byte, while the stderr body carries `&amp;&amp;`. So
+    the issue's "XML-unescaped" is right for the stderr body and wrong for the
+    arguments — unescaping those would corrupt a message that typed a literal
+    `&amp;`. Both are flattened to one line and capped with
+    `agent.OneLine(…, agent.ToolSummaryMax)`, as decision 21 caps an agent
+    invocation's args.
+68. **2026-09-20 — A replayed line and an echoed `control_response` belong to
+    no scope.** `streamParser.claim` already refuses to let `control_request`
+    and `control_cancel_request` claim or disarm an armed model-skill scope
+    (decision 22); `isReplay` `user` lines and `control_response` lines join
+    that guard. An `isReplay` line is a `user` line that is not `isSynthetic`,
+    so without it one interleaving between a `Skill` result and its body would
+    silently disarm the scope and turn a model's skill load back into
+    `agent.raw`.
 
 ## Open questions
 
@@ -529,8 +576,15 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
   route, `apiclient.ChatSkills`, the `mcp.Excluded` row and the daemon
   wiring. No migration and no event were needed. Spec §5.5, §9.1, §9.6, §11,
   §13.2, §13.3, §13.4 and §16 amended. ✓ 2026-09-19
-- [ ] 124.10 (#506) `--replay-user-messages` on claude chat turns, so a
+- [x] 124.10 (#506) `--replay-user-messages` on claude chat turns, so a
   human-invoked skill shows as `agent.skill{by:"human"}`. Depends: 124.2.
+  `RunSpec.ReportInvocations`, the flag in `claude.buildArgs` under input
+  mode, the four replay mappings and the widened `claim` guard in
+  `claude/stream.go`, `chatrun.runTurn` setting the field, and the
+  `skill-human` and `skill-inject-denied` fakeagent scenarios. Four scrubbed
+  2.1.277 captures committed. No migration, no new event type, no API, DTO or
+  MCP change, and no change to any task step's behaviour. Spec §9.2 amended.
+  ✓ 2026-09-20
 - [x] 124.11 (#507) `vincent chat skills <chat-id>`. Depends: 124.9.
   `newChatSkillsCmd` in `internal/cli/chatskills.go`, registered on the chat
   tree, with `--refresh` and `--json`: the `SKILL`/`INVOKE`/`ARGS`/`DESCRIPTION`
@@ -697,6 +751,24 @@ and 124.15 have landed. 124.16, 124.17 and 124.18 widen coverage after that.
   `refresh`, and a real turn's ending forcing the next probe.
   `TestChatSkillsLive*` decode every field over the real handlers, and
   `TestMCPExcludesDestructiveAdminByName` carries the new row.
+- 124.10: `TestBuildArgs` carries the three argv cases — set plus input mode,
+  set without it, and the case that matters, an input-mode run that sets
+  nothing and keeps a task step's argv — and `TestLaunchSeamCarriesTheRun` a
+  fourth launching one. `TestHumanInvokedSkill`,
+  `TestHumanInvocationArgumentsAreVerbatim`, `TestRefusedInjectedCommand` and
+  `TestRefusalTakesTheLastReplayedName` hold decisions 65 and 67 over the
+  committed captures; `TestEchoesAreNotSkills` decision 64 and the
+  `control_response` mapping, asserting no replayed line stays
+  `EventUnknown`; `TestReplaysAreInNoSkillScope` decision 68 against an
+  interleaved model load; `TestMalformedReplayIsAnEcho` T4.17;
+  `TestReplaysCarryNoBody` T4.16. `TestFixtureEventTypesArePinned` pins all
+  four new captures. `TestSkillHumanScenario` and
+  `TestSkillInjectDeniedScenario` tie the fake to the flag rather than to the
+  scenario. In `chatrun`, `TestHumanSkillReachesTheChat`,
+  `TestPlainMessageEchoIsNotRaw` and `TestAnsweredQuestionEchoIsNotRaw` run
+  real turns and read the published chunks and the transcript;
+  `TestHumanSkillChunkMatchesItsRecord` compares the SSE chunk with the
+  refetched record over the real handlers.
 - 124.11: `internal/cli/chatskills_live_test.go` drives the command against
   the real handlers over `httptest`, with a real `agent.SkillCache` over the
   `agenttest` stubs. `TestChatSkillsCommandPrintsTheList` holds decisions 60

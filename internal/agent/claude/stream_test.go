@@ -123,10 +123,21 @@ func TestParseLine(t *testing.T) {
 		},
 		{
 			name: "unmodelled type is tolerated",
-			line: `{"type":"control_response","request_id":"r1"}`,
+			line: `{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"}}`,
 			want: func(t *testing.T, ev agent.Event) {
 				if ev.Type != agent.EventUnknown {
 					t.Errorf("got %q, want unknown", ev.Type)
+				}
+			},
+		},
+		{
+			// vincent's own answer, handed back on stdout by a run that
+			// asked for its messages to be replayed (task 124.10).
+			name: "an echoed control_response is an input echo",
+			line: `{"type":"control_response","response":{"subtype":"success","request_id":"r1"}}`,
+			want: func(t *testing.T, ev agent.Event) {
+				if ev.Type != agent.EventInputEcho {
+					t.Errorf("got %q, want input_echo", ev.Type)
 				}
 			},
 		},

@@ -158,6 +158,15 @@ func buildArgs(spec agent.RunSpec, inputMode bool) ([]string, error) {
 	}
 	if inputMode {
 		args = append(args, "--input-format", "stream-json", "--permission-prompt-tool", "stdio")
+		// --replay-user-messages makes claude echo each user message it
+		// received, with a resolved `/name` expanded into command tags — the
+		// only place it says anything at all about a skill the human invoked
+		// (task 124.10, §9.2). It rides with input mode because outside it
+		// there is no user message to replay, so a run without the control
+		// protocol keeps the argv it always had.
+		if spec.ReportInvocations {
+			args = append(args, "--replay-user-messages")
+		}
 	}
 	// --resume takes the session id claude itself reported on a previous run
 	// (§9.2, task 063). It is the whole of chat continuity: the CLI reloads

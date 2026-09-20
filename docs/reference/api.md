@@ -2513,8 +2513,8 @@ vincent's parsers do not model. A task leaves those to its transcript, but a
 chat has no timeline of steps beside its output, so a turn whose stream is all
 unmodeled lines would show nothing at all while it runs. `agent.result` and
 `agent.error` are not published live on either: they reach you as the turn's
-own state and in its transcript. Nor is `agent.input_echo`: a Cursor turn's echo
-of your message is already on screen as the message, so it publishes no chunk,
+own state and in its transcript. Nor is `agent.input_echo`: a turn's echo of
+your message is already on screen as the message, so it publishes no chunk,
 neither as itself nor as `agent.raw`.
 
 Two failure reasons are worth knowing:
@@ -2670,21 +2670,25 @@ The transcript is the attempt's JSONL file, ranged:
   | `by` | `agent` for one the model loaded, `human` for one your message invoked |
   | `call_id` | the `Skill` tool call an agent's load came from — the same `call_id` as its `agent.tool_use` and `agent.tool_result` |
   | `forked` | `true` for a skill that ran as its own sub-run (Claude Code's `context: fork`); absent otherwise |
-  | `error` | the CLI's refusal to load it, when it reported one on a line of its own |
+  | `error` | the CLI's own refusal, when it reported one on a line of its own — to load the skill, or of a command the skill ran |
 
   Every key is omitted when unreported, and the skill's rendered `SKILL.md` is
   never on the record — it is in the raw transcript. Only
   [Claude Code](../guides/agents.md#claude-code) produces it: a skill the model
-  loads (`by: "agent"`, with `call_id` and `args`), and a `context: fork` skill
-  your message invoked (`by: "human"`, `forked: true`, no `args`). A claude
+  loads (`by: "agent"`, with `call_id` and `args`), and a skill your own message
+  invoked (`by: "human"`, with the arguments you typed — or `forked: true` and
+  no `args` for one that ran as its own sub-run). Only a **chat** turn reports
+  the first of those two: asking claude to report what it expanded from your
+  message is a chat turn's argv alone, never a task step's. A claude
   range fetched with `tail=` or `offset=` that starts after the `Skill` call
   returns that load without `args`. A `Skill` call Claude Code refused yields
   no `agent.skill`; its `agent.tool_result` reports the refusal. Codex and
   Cursor report no skill loads, even when a skill ran.
 - `agent.input_echo` is a line on which the agent CLI echoed back the prompt
-  vincent wrote to it — Cursor does, once per run. It carries only `type` (and
-  `parent_call_id` when set) and has no live chunk; the echoed text is in the
-  raw transcript. It is not `agent.raw`, so it is not counted as unrecognized.
+  vincent wrote to it — Cursor does, once per run, and Claude Code on every
+  chat turn, where the echo also covers your answers to its own questions and a
+  `/name` it could not resolve. It carries only `type` (and `parent_call_id`
+  when set) and has no live chunk; the echoed text is in the raw transcript. It is not `agent.raw`, so it is not counted as unrecognized.
 - One stream line can produce **two** records: codex reports a command's outcome
   and the body it printed on a single event, and claude an edit's outcome and
   its hunks, and they are separate records

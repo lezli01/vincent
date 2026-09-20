@@ -69,6 +69,12 @@ type streamLine struct {
 	// itself rather than one replaying a tool result — a loaded skill's
 	// rendered `SKILL.md` among them (task 124.2).
 	IsSynthetic bool `json:"isSynthetic"`
+	// IsReplay marks a `user` line claude wrote only because the run asked
+	// for `--replay-user-messages`: the message vincent sent it, as claude
+	// received it, with a resolved `/name` expanded into command tags (task
+	// 124.10). Only a chat turn's argv carries the flag, so no other run
+	// ever sees one of these.
+	IsReplay bool `json:"isReplay"`
 }
 
 // streamModelUsage is one entry of the result line's `modelUsage` map, whose
@@ -132,8 +138,39 @@ type streamHunk struct {
 	Lines    []string `json:"lines"`
 }
 
+// streamMessage is a line's `message`. Its `content` is either an array of
+// blocks or a bare string — a replayed message carries the string shape, and
+// so does the rendered command an expanded `/name` becomes (task 124.10) —
+// so the two are decoded into separate fields rather than one of them
+// failing the whole line's unmarshal.
 type streamMessage struct {
-	Content []streamBlock `json:"content"`
+	Content []streamBlock
+	// Text is `content` when it arrived as a string. Every reader of one
+	// shape sees nothing in the other, which is what keeps the block readers
+	// below unchanged.
+	Text string
+}
+
+// UnmarshalJSON decodes `content` in whichever of its two shapes it arrived.
+// A third shape is neither, and leaves both fields empty rather than failing:
+// the line then falls through to EventUnknown, which is the tolerant-parsing
+// rule (phase 1 decision).
+func (m *streamMessage) UnmarshalJSON(b []byte) error {
+	var raw struct {
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	switch {
+	case len(raw.Content) == 0:
+		return nil
+	case raw.Content[0] == '"':
+		return json.Unmarshal(raw.Content, &m.Text)
+	case raw.Content[0] == '[':
+		return json.Unmarshal(raw.Content, &m.Content)
+	}
+	return nil
 }
 
 type streamBlock struct {
@@ -221,6 +258,15 @@ func (a *Adapter) NewLineParser() agent.LineParser { return new(streamParser).pa
 // stated the same way: a transcript range that opens after a `Skill` call
 // yields that skill's load with no Args (decision 21).
 //
+// A skill the *human* invoked is the third (task 124.10). Under
+// `--replay-user-messages` claude echoes the message it received, and an
+// expanded `/name` arrives as command tags on that echo. A refusal of a
+// command the skill injected arrives as a second replay, `<local-command-stderr>`,
+// which names no skill at all — so the parser remembers the last name it
+// replayed and pairs the refusal with it, nameless when nothing preceded it
+// (decision 65). The memory is per stream and per turn, and it is not scoped
+// by `parent_tool_use_id`: a replay belongs to no scope.
+//
 // The zero value is ready to use. A parser belongs to one stream.
 type streamParser struct {
 	subagents map[string]bool
@@ -230,6 +276,9 @@ type streamParser struct {
 	// skillArgs is each `Skill` call's arguments, by call id, until the
 	// call's result arrives.
 	skillArgs map[string]string
+	// replayed is the last `<command-name>` this stream replayed, which is
+	// the skill a `<local-command-stderr>` refusal belongs to.
+	replayed string
 }
 
 // parse normalizes one verbatim stream-json line into an agent.Event. The raw
@@ -244,6 +293,13 @@ func (p *streamParser) parse(raw []byte) agent.Event {
 	switch load, ok := p.claim(&line); {
 	case ok:
 		ev = agent.Event{Type: agent.EventSkill, Skill: &load, Raw: raw}
+	case line.Type == "control_response":
+		// The answer vincent itself wrote, handed back on stdout because the
+		// run asked for its messages to be replayed (task 124.10). Nothing
+		// on it is news, and the client already drew the question.
+		ev = agent.Event{Type: agent.EventInputEcho, Raw: raw}
+	case line.Type == "user" && line.IsReplay:
+		ev = p.parseReplay(&line, raw)
 	case line.Type == "system" && strings.HasPrefix(line.Subtype, "task_"):
 		ev = p.parseTask(&line, raw)
 	default:
@@ -263,9 +319,15 @@ func (p *streamParser) parse(raw []byte) agent.Event {
 //
 // The §7.4 control lines are not part of any scope. The live run answers them
 // before this parser sees anything, while the transcript route hands them to
-// it, and a load must normalize the same way on both paths (task 071).
+// it, and a load must normalize the same way on both paths (task 071). An
+// echoed `control_response` and a replayed message join them (task 124.10
+// decision 68): a replay is a `user` line that is not `isSynthetic`, so
+// without this one interleaved between a `Skill` result and its body would
+// silently disarm the scope and turn a model's load back into agent.raw.
 func (p *streamParser) claim(line *streamLine) (agent.SkillInvocation, bool) {
-	if line.Type == "control_request" || line.Type == "control_cancel_request" {
+	switch {
+	case line.Type == "control_request" || line.Type == "control_cancel_request",
+		line.Type == "control_response", line.IsReplay:
 		return agent.SkillInvocation{}, false
 	}
 	load, armed := p.armed[line.ParentToolUseID]
@@ -425,6 +487,92 @@ func forkedSkill(line *streamLine) (agent.SkillInvocation, bool) {
 	}
 	return agent.SkillInvocation{Name: name, By: "human", Forked: true}, true
 }
+
+// The elements claude renders into a replayed message. A resolved `/name`
+// becomes `<command-name>` with the arguments beside it in `<command-args>`;
+// a command the skill injected and that the permission check refused becomes
+// `<local-command-stderr>` on a replay of its own. They are the whole of what
+// a replay says about a skill — the expanded body never reaches stdout.
+const (
+	commandNameTag   = "command-name"
+	commandArgsTag   = "command-args"
+	commandStderrTag = "local-command-stderr"
+)
+
+// parseReplay normalizes one `isReplay` `user` line — the message vincent
+// sent, handed back because the run asked for it (task 124.10, §9.2).
+// Captured against 2.1.277 in four shapes, and every one of them is mapped:
+//
+//   - a resolved `/name`, as a string holding the command elements, is the
+//     human's skill invocation;
+//   - a refused injected command, as a string holding
+//     `<local-command-stderr>`, is that invocation's failure, named from the
+//     last replay (decision 65);
+//   - an ordinary message, echoed as a block array, and a `/name` claude
+//     could not resolve, echoed as a string with no elements at all, are
+//     both agent.input_echo. The second is deliberately not a failed skill:
+//     nothing on the line names a failure, and filling Error with a phrase
+//     vincent wrote would break that field's contract — it holds the CLI's
+//     own refusal (decision 64, §9.1).
+//
+// A forked skill produces no replay at all: it is reported by its
+// `task_started` kickoff alone (decision 20), so the two mappings never
+// report one invocation twice.
+func (p *streamParser) parseReplay(line *streamLine, raw []byte) agent.Event {
+	echo := agent.Event{Type: agent.EventInputEcho, Raw: raw}
+	if line.Message == nil || line.Message.Text == "" {
+		return echo
+	}
+	text := line.Message.Text
+	if name, ok := tagged(text, commandNameTag); ok {
+		name = strings.TrimPrefix(strings.TrimSpace(name), "/")
+		if name == "" {
+			return echo
+		}
+		p.replayed = name
+		// The arguments are taken verbatim: they are *not* escaped on the
+		// wire, so unescaping them would corrupt a message that typed a
+		// literal `&amp;` (decision 67). Capped as decision 21 caps an
+		// agent invocation's.
+		args, _ := tagged(text, commandArgsTag)
+		return agent.Event{Type: agent.EventSkill, Raw: raw, Skill: &agent.SkillInvocation{
+			By: "human", Name: name, Args: agent.OneLine(args, agent.ToolSummaryMax),
+		}}
+	}
+	if body, ok := tagged(text, commandStderrTag); ok {
+		return agent.Event{Type: agent.EventSkill, Raw: raw, Skill: &agent.SkillInvocation{
+			By: "human", Name: p.replayed,
+			Error: agent.OneLine(xmlUnescaper.Replace(body), agent.ToolSummaryMax),
+		}}
+	}
+	return echo
+}
+
+// tagged reads the body of one `<name>…</name>` element out of a replayed
+// message. The closing delimiter is matched from the end because a body is
+// verbatim: `<command-args>` holds whatever the human typed, delimiters
+// included.
+func tagged(text, name string) (string, bool) {
+	openTag, closeTag := "<"+name+">", "</"+name+">"
+	i := strings.Index(text, openTag)
+	if i < 0 {
+		return "", false
+	}
+	rest := text[i+len(openTag):]
+	j := strings.LastIndex(rest, closeTag)
+	if j < 0 {
+		return "", false
+	}
+	return rest[:j], true
+}
+
+// xmlUnescaper reverses the escaping claude applies to a
+// `<local-command-stderr>` body, which quotes the refused command — and to
+// nothing else on a replay, for the reason parseReplay states. One pass, so
+// an escape whose text decodes into another is not decoded twice.
+var xmlUnescaper = strings.NewReplacer(
+	"&lt;", "<", "&gt;", ">", "&quot;", `"`, "&apos;", "'", "&amp;", "&",
+)
 
 func parseTyped(line *streamLine, raw []byte) agent.Event {
 	switch line.Type {
