@@ -69,13 +69,14 @@ runs. The exception is a claude build outside the verified input family (see
 [Claude Code](#claude-code)): it receives the context and your message as one
 piece of text, and leaves a first-message `/name` to the model.
 
-In a chat that runs `restricted` — one opened on a restricted task — a skill
-you invoke can carry its own tool grant: claude's `allowed-tools` frontmatter
-applies for the turn that invokes the skill, so it may use tools the restricted
-mode otherwise withholds. It takes an act of yours, either typing the name or
-approving the request the agent raises when *it* wants the skill, and a command
-the skill injects is still checked, with a refusal ending the invocation before
-the agent runs. codex and cursor have no such field. The
+In a chat that runs `restricted` — one opened on a task whose agent steps run
+restricted, whether the task was created that way or its workflow says so — a
+skill you invoke can carry its own tool grant: claude's `allowed-tools`
+frontmatter applies for the turn that invokes the skill, so it may use tools
+the restricted mode otherwise withholds. It takes an act of yours, either
+typing the name or approving the request the agent raises when *it* wants the
+skill, and a command the skill injects is still checked, with a refusal ending
+the invocation before the agent runs. codex and cursor have no such field. The
 [Security model](../security-model.md#restricted-mode) has the whole picture.
 
 A CLI's **built-in** commands pass through the same way, and `/clear` is the

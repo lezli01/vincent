@@ -803,7 +803,7 @@ translated between adapters (task 124 decision 9, after task 025 decision 5 —
 the human's own message reaches the agent as it was typed, never as a
 template). Three reasons, all still standing: a leading `/` is ordinary prose
 too, the list can be stale by the time the message is sent, and no list
-reproduces a CLI's own expansion rules. `POST /v1/chats/{id}/messages` takes
+reproduces a CLI's own expansion rules. `POST /v1/chats/{id}/send` takes
 `message` as it arrives and rejects only the empty string (§13.2);
 `--message-file` sends the file's bytes untrimmed (§12.1); the TUI composer is
 the one path that trims, and it trims before it sends. The bytes a client sends
@@ -829,8 +829,10 @@ builds that table already names:
   on 2.1.277, whatever the vendor documentation says.
 - **A skill that asks the human** is an ordinary §7.4 request on claude: its
   `AskUserQuestion` becomes an `input` request and the chat goes to
-  `awaiting_input`, subject to `on_input`. codex and cursor have no mid-run
-  input (§9.3, §9.7), so a skill cannot ask there at all.
+  `awaiting_input`, where the human answers it: `on_input` is a step's setting
+  and a chat turn always waits, bounded by `input_timeout` as any other wait
+  is. codex and cursor have no mid-run input (§9.3, §9.7), so a skill cannot
+  ask there at all.
 - **Built-in commands pass through too**, `/clear` among them. claude resets
   its own conversation and stamps a new session id, which vincent stores
   last-wins (§9.2), so the **next turn resumes an empty conversation while the
@@ -4230,9 +4232,11 @@ they are why the posture is defensible:
   reports the failed check and the run ends as an empty `success` with
   `num_turns: 0`. The same skill in `full-auto` runs the command.
 - **A model's load of such a skill raises a §7.4 `permission` request** named
-  for the skill (task 124 decision 26), so under `on_input: deny` it is denied
-  automatically. That leg governs a restricted **task step** as much as a chat:
-  a step never widens itself unattended.
+  for the skill (task 124 decision 26). That leg governs a restricted **task
+  step** as much as a chat, and the two answer it differently: a step under
+  `on_input: deny` denies it automatically, so a step never widens itself
+  unattended, while a chat turn always waits for its human (`on_input` is a
+  step's setting; a chat turn is started `wait`, §5.5).
 - **`Skill` stays out of `restrictedTools`**, deliberately. Skills without
   `allowed-tools` already load without it, so the entry would buy nothing
   there; the only loads that prompt are exactly the ones that widen, and

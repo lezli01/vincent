@@ -227,8 +227,9 @@ invokes the skill even under `restricted`: a skill asking for `Bash` gets
 `Bash` there, outside the allowlist in the table above. Getting there takes an
 act of yours — you type the skill's name into your message, which the CLI
 expands before the agent is asked anything, or you approve the permission
-request the agent raises when *it* wants such a skill, which `on_input: deny`
-denies for you. What the skill *injects* — a shell command written inside its
+request the agent raises when *it* wants such a skill. In a chat that request
+always reaches you; in a step left to run unattended, `on_input: deny` refuses
+it for you. What the skill *injects* — a shell command written inside its
 own text — is still checked against the allowlist, and a refusal ends the
 invocation before the agent runs. codex and cursor have no such field. Vincent
 documents this rather than switching skills off in restricted chats, which are
