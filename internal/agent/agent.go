@@ -467,6 +467,17 @@ type RunHeader struct {
 	// it. "What could this agent actually reach" has no other answer in a
 	// transcript.
 	Tools []string
+	// Skills are the names of the skills the run's process actually loaded,
+	// in the CLI's order (task 124.16, #512). It is claude's alone: codex
+	// emits no init line at all (§9.3) and cursor's carries no skill list
+	// (§9.7), so neither ever fills it and nothing synthesizes one.
+	//
+	// Names only — no descriptions, no hints — so it is never the list a
+	// client is served. It is a classifier: claude's `builtin` flag marks a
+	// bundled skill and a built-in command alike, and this array holds the
+	// bundled half and not the commands, which is the one machine signal
+	// that separates the two (§9.6, SkillCache.ReportBundled).
+	Skills []string
 }
 
 // Subagent is what the main loop reported about one subagent it spawned

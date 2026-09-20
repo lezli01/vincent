@@ -122,28 +122,33 @@ func TestInitializeFixtures(t *testing.T) {
 				if c["builtin"] == true {
 					builtins = append(builtins, name)
 					sawBuiltinAlias = sawBuiltinAlias || aliased
-					continue
+				} else {
+					sawPluginAlias = sawPluginAlias || (aliased && strings.Contains(name, ":"))
 				}
-				sawPluginAlias = sawPluginAlias || (aliased && strings.Contains(name, ":"))
 				wantNames = append(wantNames, name)
 			}
 			if len(builtins) == 0 || !sawBuiltinAlias || !sawPluginAlias {
 				t.Fatalf("the capture no longer holds a builtin row, an aliased builtin and an aliased plugin row (%d builtins)", len(builtins))
 			}
-			var gotNames []string
+			var gotNames, gotBuiltins []string
 			for _, s := range got.Skills {
 				gotNames = append(gotNames, s.Name)
+				if s.Builtin {
+					gotBuiltins = append(gotBuiltins, s.Name)
+				}
 				if s.Scope != "" || s.Plugin != "" || s.Path != "" {
 					t.Errorf("%s: Scope %q, Plugin %q, Path %q, want all empty (nothing synthesized)", s.Name, s.Scope, s.Plugin, s.Path)
 				}
 			}
+			// Every row, builtin ones included, in the CLI's order: the
+			// adapter stopped dropping them at task 124.16, and the skill
+			// cache is what withholds them until a turn says which are
+			// bundled skills rather than built-in commands (#512).
 			if !slices.Equal(gotNames, wantNames) {
-				t.Errorf("names = %q\nwant the capture's non-builtin rows in order: %q", gotNames, wantNames)
+				t.Errorf("names = %q\nwant the capture's rows in order: %q", gotNames, wantNames)
 			}
-			for _, b := range builtins {
-				if slices.Contains(gotNames, b) {
-					t.Errorf("builtin %q was listed (task 124 decision 7)", b)
-				}
+			if !slices.Equal(gotBuiltins, builtins) {
+				t.Errorf("Builtin rows = %q\nwant the capture's own, in order: %q", gotBuiltins, builtins)
 			}
 			for _, w := range tc.want {
 				i := slices.IndexFunc(got.Skills, func(s agent.Skill) bool { return s.Name == w.Name })
@@ -308,7 +313,8 @@ func argvLines(t *testing.T, file string) []string {
 
 // TestListSkillsAgainstTheFake is the whole exchange against a real process:
 // the version probe, then one spawn carrying exactly listSkillsArgs, whose
-// reply loses its built-in row and keeps the rest verbatim.
+// reply is kept verbatim — its built-in row flagged rather than dropped
+// (task 124.16).
 func TestListSkillsAgainstTheFake(t *testing.T) {
 	a, argvFile := fakeListing(t, "2.1.277")
 	if !agent.CanListSkills(a) {
@@ -319,6 +325,11 @@ func TestListSkillsAgainstTheFake(t *testing.T) {
 		t.Fatalf("ListSkills: %v", err)
 	}
 	want := agent.SkillList{Skills: []agent.Skill{
+		{
+			Name: "compact", Builtin: true,
+			Description:  "Free up context by summarizing the conversation so far",
+			ArgumentHint: "<optional custom summarization instructions>",
+		},
 		{Name: "fake-skill", Description: "A fake project skill. (project)", ArgumentHint: "[target]"},
 		{Name: "fake:tool", Description: "(fake) A fake plugin skill.", Aliases: []string{"tool"}},
 	}}
@@ -400,8 +411,8 @@ func TestListSkillsGoesThroughTheLauncher(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListSkills: %v", err)
 	}
-	if len(got.Skills) != 2 {
-		t.Errorf("ListSkills = %+v, want the fake's two non-builtin rows", got)
+	if len(got.Skills) != 3 {
+		t.Errorf("ListSkills = %+v, want the fake's three rows", got)
 	}
 	if probes := rec.Probes(); !reflect.DeepEqual(probes, [][]string{{fake, "--version"}}) {
 		t.Errorf("probes = %q, want one --version of the launcher-resolved binary", probes)
@@ -507,8 +518,8 @@ func TestListSkillsKeepsAnAnswerFromALingeringCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListSkills: %v", err)
 	}
-	if len(got.Skills) != 2 {
-		t.Errorf("ListSkills = %+v, want the fake's two non-builtin rows", got)
+	if len(got.Skills) != 3 {
+		t.Errorf("ListSkills = %+v, want the fake's three rows", got)
 	}
 }
 

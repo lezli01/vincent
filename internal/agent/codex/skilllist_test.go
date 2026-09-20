@@ -379,6 +379,14 @@ func TestListSkillsAgainstFakeAgent(t *testing.T) {
 		if !reflect.DeepEqual(got.Skills, want) {
 			t.Errorf("skills = %+v, want %+v", got.Skills, want)
 		}
+		// `skills/list` has no `builtin` field and nothing synthesizes one
+		// (task 124.16): every row codex reports is an ordinary skill, which
+		// is why a codex chat is never told about bundled ones.
+		for _, s := range got.Skills {
+			if s.Builtin {
+				t.Errorf("%s came back Builtin; codex has no such concept", s.Name)
+			}
+		}
 	})
 
 	for _, tc := range []struct {

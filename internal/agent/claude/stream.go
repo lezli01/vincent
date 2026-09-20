@@ -44,10 +44,19 @@ type streamLine struct {
 	Status       string `json:"status"`
 	Summary      string `json:"summary"`
 	LastToolName string `json:"last_tool_name"`
-	// CWD and Tools are the `system`/`init` line's payload — the run header
-	// (task 066). They appear on no other line type.
-	CWD   string   `json:"cwd"`
-	Tools []string `json:"tools"`
+	// CWD, Tools and Skills are the `system`/`init` line's payload — the run
+	// header (tasks 066, 124.16). They appear on no other line type.
+	//
+	// Skills names the skills that turn's process loaded, bundled ones
+	// included and built-in commands excluded (#512). The line also carries
+	// `slash_commands`, `terminal_slash_commands`, `agents` and `plugins`,
+	// and those are deliberately left undecoded: nothing reads them, and
+	// `slash_commands` in particular mixes the built-in commands back in,
+	// which is exactly what Skills is here to keep out. A build that sends
+	// none of them — every 2.1.226 capture — leaves this nil.
+	CWD    string   `json:"cwd"`
+	Tools  []string `json:"tools"`
+	Skills []string `json:"skills"`
 	// The rest are the `result` line's account of the run. claude sends ~20
 	// fields there; these are the ones that answer a question the pane could
 	// not previously answer at any level.
@@ -589,6 +598,13 @@ func parseTyped(line *streamLine, raw []byte) agent.Event {
 		// `init` is the run header; claude sends other subtypes here
 		// (compact boundaries among them) and an unmodelled one stays raw,
 		// which is the phase 1 tolerant-parsing rule (task 066).
+		//
+		// `commands_changed` is one of those, and deliberately so (task
+		// 124.16, #512): it re-sends the full list when claude discovers
+		// skills mid-turn, but a turn's ending already invalidates its
+		// directory unconditionally (task 124.9), and a *bundled* skill is
+		// shipped with the binary and never appears part-way through a
+		// session. There is nothing left for it to signal.
 		if line.Subtype == "init" {
 			return parseInit(line, raw)
 		}
@@ -599,15 +615,16 @@ func parseTyped(line *streamLine, raw []byte) agent.Event {
 }
 
 // parseInit normalizes the `system`/`init` line claude writes before any of
-// the model's work: the directory it is working in and the tools it was given
-// (task 066). Hook lines and a forked skill's kickoff can precede it (task
-// 124.2).
+// the model's work: the directory it is working in, the tools it was given
+// (task 066) and the skills its process loaded (task 124.16). Hook lines and
+// a forked skill's kickoff can precede it (task 124.2).
 func parseInit(line *streamLine, raw []byte) agent.Event {
 	return agent.Event{
 		Type: agent.EventRunHeader,
 		Header: &agent.RunHeader{
 			WorkDir: line.CWD,
 			Tools:   line.Tools,
+			Skills:  line.Skills,
 		},
 		Raw: raw,
 	}

@@ -66,6 +66,10 @@ func TestHeaderChunkShape(t *testing.T) {
 	got := marshal(t, headerChunk(&RunHeader{
 		WorkDir: `C:\work\repo`,
 		Tools:   []string{"Task", "Bash"},
+		// Read since task 124.16 and deliberately not published: the cache
+		// classifies `builtin` rows against these names, and no client has
+		// ever had a use for the names themselves.
+		Skills: []string{"simplify", "loop"},
 	}))
 	want := `{"available_tools":["Task","Bash"],"work_dir":"C:\\work\\repo"}`
 	if got != want {
