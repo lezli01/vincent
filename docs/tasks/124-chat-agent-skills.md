@@ -43,7 +43,7 @@ Decisions 1–12 are the parent issue's (#496, "Decisions taken in this
 breakdown"). 13–19 were settled with the author, or taken in evaluation, when
 124.1 was built, 20–27 when 124.2 was, 28 in its follow-up, 29–36 when
 124.8 was, 37–39 when 124.12 was, 40–44 when 124.7 was, 45–53 when
-124.5 was, and 54–59 when 124.9 was.
+124.5 was, 54–59 when 124.9 was, and 60–63 when 124.11 was.
 
 1. **2026-09-19 — Each CLI's own listing, never a scan.** claude answers a
    stream-json `initialize` control request (`commands`), codex answers
@@ -412,6 +412,41 @@ breakdown"). 13–19 were settled with the author, or taken in evaluation, when
     which spawn through `procx` and `agent.Launch` already; the cache only
     calls `ListSkills`, on the host with the daemon's environment. Here that
     criterion is Windows CI green on the new tests.
+60. **2026-09-20 — `vincent chat skills`' table is `SKILL`, `INVOKE`, `ARGS`,
+    `DESCRIPTION`.** `INVOKE` carries each row's `invocation` verbatim,
+    because it is the only string that survives codex's `[$name](path)`
+    disambiguation for a duplicated name: a `SKILL` column alone would print
+    two identical rows for two different skills. `SCOPE` earns no column —
+    decision 8 records that claude never reports one, so the cell would be
+    blank for every claude chat — and `scope`, `plugin`, `path` and `aliases`
+    stay in `--json`. Cells are blank, never `-`, where the CLI said nothing.
+    Settled with the author. *Beaten:* the issue's `SKILL`, `ARGS`, `SCOPE`,
+    `DESCRIPTION`.
+61. **2026-09-20 — One generic, sigil-keyed invocation line, always
+    single-quoted.** It is built from `invoke_sigil` and `invoke_position`,
+    not from a row, so it prints whenever `invoke_verdict` is `supported` —
+    including with an empty list and under an `unsupported` or `unknown` list
+    verdict, which is the case decision 2 exists for (cursor invokes but
+    cannot list). The quoting note keys off the **sigil, not the agent name**:
+    `$` gets the expansion warning, `/` the Git Bash `MSYS_NO_PATHCONV=1` /
+    `--message-file` note. Settled with the author. *Beaten:* the issue's
+    codex-name-keyed `$` note, which hard-codes an adapter name the response
+    already describes structurally and leaves the `/` adapters' Git Bash
+    hazard unsaid.
+62. **2026-09-20 — No truncation.** The `DESCRIPTION` cell goes through
+    `table()` like every other subcommand's. Settled with the author.
+    *Beaten:* the issue's "truncated to the terminal width": nothing in
+    `internal/cli` measures a terminal today, `vincent agents` lets an equally
+    long `NOTES` cell run, and a width-dependent table is non-deterministic
+    under a pipe and in tests.
+63. **2026-09-20 — stdout is the table and nothing else.** The `unsupported` /
+    `unknown` verdict with its `unavailable_reason` or `probe_error`, the
+    invocation line, and the `problems[]` rows all go to stderr, at exit 0 —
+    following `vincent chat handoff`'s `warning: …` lines and `vincent chat
+    transcript`'s "this turn has no transcript" notice, both already stderr at
+    exit 0. Under a non-`supported` list verdict no table is printed at all: a
+    lone header would read as "none". Settled with the author. *Beaten:* the
+    verdict on stdout in the table's place.
 
 ## Open questions
 
@@ -496,7 +531,13 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
   §13.2, §13.3, §13.4 and §16 amended. ✓ 2026-09-19
 - [ ] 124.10 (#506) `--replay-user-messages` on claude chat turns, so a
   human-invoked skill shows as `agent.skill{by:"human"}`. Depends: 124.2.
-- [ ] 124.11 (#507) `vincent chat skills <chat-id>`. Depends: 124.9.
+- [x] 124.11 (#507) `vincent chat skills <chat-id>`. Depends: 124.9.
+  `newChatSkillsCmd` in `internal/cli/chatskills.go`, registered on the chat
+  tree, with `--refresh` and `--json`: the `SKILL`/`INVOKE`/`ARGS`/`DESCRIPTION`
+  table on stdout and every verdict, problem and invocation line on stderr at
+  exit 0. Decisions 60–63; the reverse pointer on `vincent skills`; spec §12.1,
+  `docs/reference/cli.md`, `docs/features.md` and `docs/guides/agents.md`
+  amended. No wire change. ✓ 2026-09-20
 - [x] 124.12 (#508) Draw `agent.skill` at each verbosity level, and in
   `vincent task|chat transcript` (decision 28). The pane and the chat body
   draw `▸ skill <name> <args>`, `(forked)` for a forked skill and
@@ -656,3 +697,21 @@ and 124.15 have landed. 124.16, 124.17 and 124.18 widen coverage after that.
   `refresh`, and a real turn's ending forcing the next probe.
   `TestChatSkillsLive*` decode every field over the real handlers, and
   `TestMCPExcludesDestructiveAdminByName` carries the new row.
+- 124.11: `internal/cli/chatskills_live_test.go` drives the command against
+  the real handlers over `httptest`, with a real `agent.SkillCache` over the
+  `agenttest` stubs. `TestChatSkillsCommandPrintsTheList` holds decisions 60
+  and 63 — the API's order, a duplicated name whose two rows differ only by
+  `INVOKE`, a blank cell rather than a `-`, and stdout carrying neither the
+  invocation line nor a warning; `TestChatSkillsCommandUnsupportedExitsZero`
+  and `TestChatSkillsCommandUnknownPrintsTheProbeError` the two non-`supported`
+  verdicts on stderr at exit 0 with no table;
+  `TestChatSkillsCommandInvokesWhatItCannotList` decision 2's shape;
+  `TestChatSkillsCommandInvokeLineKeysOffTheSigil` decision 61 over `$`/anywhere
+  and `/`/leading, asserting the adapter is never named;
+  `TestChatSkillsCommandJSON` every field and `[]` never `null`;
+  `TestChatSkillsCommandRefreshReachesTheDaemon` counts `?refresh=true` on the
+  wire; `TestChatSkillsCommandRefusalsExitOne` the 404, the terminal chat and
+  the linked task with no worktree, and
+  `TestChatSkillsCommandWithNoDaemonExitsTwo` the shared `withClient` path.
+  `TestDocsClaimsEveryCommandIsOnTheCLIPage` and `…EveryFlagIsOnTheCLIPage`
+  force the command and both flags onto `docs/reference/cli.md`.

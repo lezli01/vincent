@@ -29,6 +29,9 @@ func newSkillsCmd() *cobra.Command {
 			"outside a vincent run — knows how to author a vincent workflow. The " +
 			"built-in create-workflow and update-workflows workflows do not need this: " +
 			"they carry the skill's text inside their own prompts.\n\n" +
+			"These are the skills vincent publishes, not the ones an agent loads. For " +
+			"the skills a chat's own agent CLI would load in its directory, and the " +
+			"exact text that invokes one, use `vincent chat skills <chat-id>`.\n\n" +
 			"Nothing here needs a running daemon. Detection is a filesystem read and " +
 			"works on a machine with no node installed; only `install` shells out, to " +
 			"`npx skills add`.",
