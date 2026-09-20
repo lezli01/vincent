@@ -189,7 +189,7 @@ one of its agent steps this way, including a step its workflow writes
 `full-auto`. It only ever tightens, and the refusal below applies to it
 unchanged.
 
-Two properties matter more than the mechanism:
+These properties matter more than the mechanism:
 
 **An adapter that cannot restrict on your platform never runs the step.** It
 never downgrades. Vincent refuses to create a task whose restricted step
@@ -220,6 +220,20 @@ whole vincent tool list and denied every call, which is a tool list that lies.
 If you want a step that cannot reach vincent either, turn the wiring off with
 [`mcp.wire_steps: false`](reference/configuration.md#mcp) — per daemon, not per
 step.
+
+**A skill you invoke can widen one turn.** Claude's Agent Skills may declare
+`allowed-tools` in their frontmatter, and that grant applies for the turn that
+invokes the skill even under `restricted`: a skill asking for `Bash` gets
+`Bash` there, outside the allowlist in the table above. Getting there takes an
+act of yours — you type the skill's name into your message, which the CLI
+expands before the agent is asked anything, or you approve the permission
+request the agent raises when *it* wants such a skill, which `on_input: deny`
+denies for you. What the skill *injects* — a shell command written inside its
+own text — is still checked against the allowlist, and a refusal ends the
+invocation before the agent runs. codex and cursor have no such field. Vincent
+documents this rather than switching skills off in restricted chats, which are
+exactly the chats a reviewer opens on a blocked task; see
+[Agent CLIs](guides/agents.md).
 
 Use `restricted` for steps that have no business running commands: a docs pass, a
 review, a summarization step. See

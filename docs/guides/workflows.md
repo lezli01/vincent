@@ -1877,7 +1877,10 @@ no business running commands — a docs pass, a review. Three things to know:
   and archive tasks. Offering the tool list and denying every call would be
   worse; if a step should not reach vincent either, that is
   [`mcp.wire_steps: false`](../reference/configuration.md#mcp), which is a daemon
-  setting rather than a step one.
+  setting rather than a step one. A restricted step whose agent loads a skill
+  that declares its own `allowed-tools` raises a permission request for the
+  load, which `on_input: deny` denies — so a step never widens itself
+  unattended.
 
 ### 9.4 Mid-run questions (`on_input`)
 
