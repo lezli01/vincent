@@ -10731,7 +10731,14 @@ stream for the live tail.
    would otherwise turn the note line red. Such a probe is latched off for
    the chat until a `chat.*` event drops the cached answer or the human
    presses `tab`, so it cannot be re-fired on every keystroke. `tab` keeps
-   its explaining note unchanged. Where a **leading** token carries the sigil
+   its explaining note unchanged. Before an answer is in hand there is no
+   sigil to test a token against — it comes off the wire and is hard-coded
+   nowhere — so that first probe is spent only on a token *shaped* like an
+   invocation, one non-alphanumeric rune and then a name, and never on a
+   lone sigil, which says nothing about whose sigil it is. A bare sigil
+   therefore opens nothing until an answer has arrived, by that route or by
+   `tab`; every keystroke after it is filtered by the answer's own sigil.
+   Where a **leading** token carries the sigil
    and matches nothing the agent reported, and the text after the sigil holds
    no path separator, a dim note says so — `/foo is not a skill claude
    reported for this chat — it is sent as typed`. It is a hint and never a

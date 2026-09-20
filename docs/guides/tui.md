@@ -1780,7 +1780,11 @@ more often a shell variable.
 A sigil you type may make vincent ask the agent for its skills, but it never
 says so and never complains: no spinner, and nothing on the note line if the
 agent cannot answer — you did not ask for that, and the question costs a run
-of the agent CLI. Press `tab` if you want to be told. The one thing a typed
+of the agent CLI. Press `tab` if you want to be told. That question is never
+spent on a lone `/` or `$`, which says nothing about whose sigil it is, so in
+a chat you have not opened the list in yet it is the first letter after the
+sigil that brings it up; once the agent has answered, a bare sigil shows
+everything as above. The one thing a typed
 sigil does say is when a *leading* name matches nothing the agent reported:
 `/foo is not a skill claude reported for this chat — it is sent as typed`.
 That is a note, not a refusal — vincent sends your message verbatim either

@@ -954,7 +954,9 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
   leaving a transcript the agent no longer shares (decision 78). Depends: none.
 
 The requirement's two done criteria are met once 124.14, 124.11, 124.10, 124.3
-and 124.15 have landed. 124.16, 124.17 and 124.18 widen coverage after that.
+and 124.15 have landed — all five of which have, 124.14 last, on 2026-09-20.
+124.16, 124.17 and 124.18 widen coverage after that, and 124.19 and 124.20
+remain.
 
 ## Verification
 
