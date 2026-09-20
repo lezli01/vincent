@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -198,4 +199,52 @@ func decoyAccount() map[string]any {
 		"subscriptionType": "Claude Max",
 		"apiProvider":      "firstParty",
 	}
+}
+
+// claudeInitLine is the `system`/`init` line a claude-dialect run opens with
+// (task 124.16). Beside the model it carries `skills`: the names the run's
+// process "loaded", which is what vincent reads to tell claude's bundled
+// skills from its built-in commands.
+//
+// The names come from the same source `initialize` answers with — the
+// configured or default commands, plus the working directory's own
+// `.claude/skills` (decision 44) — so a test that makes a row `builtin` and
+// wants the init line to claim it need do nothing, and one that wants it
+// disclaimed sets FAKEAGENT_CLAUDE_INIT_SKILLS. The real CLI's array leaves
+// its built-in commands out; which of its own rows are commands is a fact
+// only the real CLI has, so here the choice is the test's.
+//
+//	FAKEAGENT_CLAUDE_INIT_SKILLS  a comma-separated list of names to claim in
+//	                              place of the derived ones. "none" claims
+//	                              nothing and omits the key entirely, which is
+//	                              what a pre-2.1.263 build does
+func claudeInitLine() map[string]any {
+	line := map[string]any{"type": "system", "subtype": "init", "model": "fake-1"}
+	switch override, set := os.LookupEnv("FAKEAGENT_CLAUDE_INIT_SKILLS"); {
+	case set && (override == "none" || override == ""):
+		return line
+	case set:
+		line["skills"] = strings.Split(override, ",")
+		return line
+	}
+	// A listing this binary could not build is no reason to fail a run that
+	// never asked about skills: the key is simply left out, the same as a
+	// build too old to send it.
+	commands, err := claudeCommands()
+	if err != nil {
+		return line
+	}
+	names := make([]string, 0, len(commands))
+	for _, c := range commands {
+		var row struct {
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(c, &row) == nil && row.Name != "" {
+			names = append(names, row.Name)
+		}
+	}
+	if len(names) > 0 {
+		line["skills"] = names
+	}
+	return line
 }
