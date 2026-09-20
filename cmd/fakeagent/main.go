@@ -147,7 +147,16 @@
 //	FAKEAGENT_SKILLS_ECHO_CWD
 //	                      "1" adds one `initialize` entry whose description
 //	                      is the working directory, so a test can see where
-//	                      the listing ran
+//	                      the listing ran. Whatever it and
+//	                      FAKEAGENT_CLAUDE_COMMANDS supply, the working
+//	                      directory's own `.claude/skills/*/SKILL.md` entries
+//	                      are appended after them — `name`, `description` and
+//	                      `argument-hint` — the way `skills/list` derives
+//	                      codex's from `.agents/skills`, so a caller can prove
+//	                      a name appears because a file is in the directory
+//	                      the listing ran in (task 124 decision 44, m14 leg
+//	                      12). A directory that is absent or unreadable adds
+//	                      nothing
 //	FAKEAGENT_ARGV_FILE  each invocation appends its argv, one space-joined
 //	                      line, so a test can assert a probe was never spawned
 //	FAKEAGENT_CODEX_APP_SERVER

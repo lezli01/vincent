@@ -22,11 +22,20 @@
 #      own worktree, every §6 action but cancel is 409 task_locked_by_chat
 #      while it is open, close lifts the lock and leaves the worktree, and the
 #      retry the chat's edit makes pass runs the task to done
+#  12. the skills a chat's agent CLI loads, and invoking one (task 124.15):
+#      each adapter's own listing mechanism against the fake, the directory
+#      the list is about — a linked chat's is its task's worktree — the
+#      per-directory cache and ?refresh=, a `/name` invocation reported back
+#      as one agent.skill by the human, a `$name` that reaches codex
+#      verbatim, 409 invalid_state on a terminal chat, and `vincent chat
+#      send --message-file -` delivering a leading `/` byte for byte, which
+#      is the assertion the Windows leg exists for
 #
 # Legs 1–10 are one chain rather than separable scenarios — leg 3 reads leg
 # 1's turn, leg 6 answers leg 5's parked chat, leg 10 lists the chats legs 7
-# and 9 ended — so VINCENT_GATE_SCENARIO=N for any N in 1..10 runs that chain,
-# and VINCENT_GATE_SCENARIO=11 runs leg 11 alone, which needs nothing before it.
+# and 9 ended — so VINCENT_GATE_SCENARIO=N for any N in 1..10 runs that chain.
+# Legs 11 and 12 each stand alone, needing nothing before them, so
+# VINCENT_GATE_SCENARIO=11 and =12 run one of them on its own.
 #
 # The `agent_cannot_resume` refusal is deliberately *not* here. Since task 070
 # no shipped adapter is refused, so a real daemon has no subject to reach it
@@ -35,10 +44,11 @@
 # daemon's own registry to keep the leg would put a test double in the
 # production registry, which is the §9.1 property the refusal exists to guard.
 #
-# A chat has no workflow, so leg 11's task is the only `run:` body here, and it
-# is spelled in the sh∩pwsh intersection like every other gate's. This script's
-# own bash obeys the two standing rules: `| tr -d '\r'` on any multi-line jq
-# capture, and never `| grep -q`.
+# A chat has no workflow, so the tasks legs 11 and 12 park a chat on carry the
+# only `run:` bodies here, and both are the same `git commit -a` spelled in the
+# sh∩pwsh intersection like every other gate's. This script's own bash obeys
+# the two standing rules: `| tr -d '\r'` on any multi-line jq capture, and
+# never `| grep -q`.
 #
 # Requirements: bash, go, git, curl, jq.
 set -euo pipefail
@@ -64,7 +74,7 @@ trap cleanup EXIT
 
 ONLY="${VINCENT_GATE_SCENARIO:-}"
 case "$ONLY" in
-  "" | [1-9] | 10 | 11) ;;
+  "" | [1-9] | 10 | 11 | 12) ;;
   *) fail "unknown VINCENT_GATE_SCENARIO: $ONLY" ;;
 esac
 
@@ -292,9 +302,289 @@ EOF
   unset FAKEAGENT_EDIT_FILE
 }
 
+# Leg 12 is a function for leg 11's reason: it brings its own repos, project,
+# workflow and daemon environment, so VINCENT_GATE_SCENARIO=12 runs it without
+# walking anything before it. Unselected, it runs last, after leg 11.
+chat_skills() {
+  echo "== 12. the skills a chat's agent loads, listed and invoked (task 124.15)"
+  # One daemon for the whole leg. FAKEAGENT_SCENARIO=skill-human is the claude
+  # scenario that replays a `/name` invocation the way claude 2.1.277 does
+  # under --replay-user-messages; the codex and cursor dialects do not know
+  # the name and fall through to their success scenarios, and the claude
+  # listing probe answers `initialize` ahead of any scenario at all.
+  #
+  # FAKEAGENT_VERSION is the listing floor: the fake reports 2.1.224 by
+  # default, below the 2.1.277 from which claude marks its own rows `builtin`,
+  # and below it the adapter answers a positive no. Without it every claude
+  # assertion here would be about that refusal rather than about the daemon.
+  # No shipped adapter has a version floor of its own, so one value serves all
+  # three dialects.
+  #
+  # The workflow file is written before the start for m12's reason: a task
+  # created in the second the file lands can beat the registry's watcher.
+  mkdir -p "$CONFIG_DIR/workflows"
+  cat > "$CONFIG_DIR/workflows/chat-skills-task.yaml" <<'EOF'
+name: chat-skills-task
+steps:
+  - id: land
+    type: command
+    max_retries: 0
+    run: git commit -a -m skills-gate
+EOF
+
+  # The listing repo: the same skill under both layouts, because claude reads
+  # `.claude/skills` and codex `.agents/skills`, and the leg lists the one
+  # name through both mechanisms. The front matter is the fake CLIs' own
+  # source for the name, description and argument hint.
+  SKILL_REPO="$TMP/skillrepo"
+  mkdir -p "$SKILL_REPO/.claude/skills/gate-skill" "$SKILL_REPO/.agents/skills/gate-skill"
+  cat > "$SKILL_REPO/.claude/skills/gate-skill/SKILL.md" <<'EOF'
+---
+name: gate-skill
+description: A skill the gate committed.
+argument-hint: "[target]"
+---
+
+Reply with GATE-SKILL.
+EOF
+  cp "$SKILL_REPO/.claude/skills/gate-skill/SKILL.md" "$SKILL_REPO/.agents/skills/gate-skill/SKILL.md"
+  git -C "$SKILL_REPO" init -q -b main
+  git -C "$SKILL_REPO" config user.email gate@example.com
+  git -C "$SKILL_REPO" config user.name "M14 Gate"
+  git -C "$SKILL_REPO" add .
+  git -C "$SKILL_REPO" commit -q -m "root"
+
+  # The linked-chat repo: a different skill, on the branch the task's worktree
+  # is cut from, so the name can only appear because the list was taken in
+  # that worktree.
+  SKILL_TASK_REPO="$TMP/skilltaskrepo"
+  mkdir -p "$SKILL_TASK_REPO/.claude/skills/task-skill"
+  cat > "$SKILL_TASK_REPO/.claude/skills/task-skill/SKILL.md" <<'EOF'
+---
+name: task-skill
+description: A skill only the task's branch carries.
+argument-hint: "[what]"
+---
+
+Reply with TASK-SKILL.
+EOF
+  git -C "$SKILL_TASK_REPO" init -q -b main
+  git -C "$SKILL_TASK_REPO" config user.email gate@example.com
+  git -C "$SKILL_TASK_REPO" config user.name "M14 Gate"
+  git -C "$SKILL_TASK_REPO" add .
+  git -C "$SKILL_TASK_REPO" commit -q -m "root"
+
+  "$VINCENT" daemon stop --force >/dev/null 2>&1 || true
+  export FAKEAGENT_SCENARIO=skill-human
+  export FAKEAGENT_VERSION=2.1.277
+  "$VINCENT" daemon start
+  PORT="$(jq -r .port "$DATA_DIR/daemon.json")"
+  TOKEN="$(cat "$DATA_DIR/token")"
+  BASE="http://127.0.0.1:$PORT/v1"
+
+  SKILL_PROJECT_ID="$(api POST /projects \
+    -d "{\"path\": \"$(hostpath "$SKILL_REPO")\"}" | jq -r .id)"
+  [[ -n "$SKILL_PROJECT_ID" && "$SKILL_PROJECT_ID" != "null" ]] \
+    || fail "registering the skills project failed"
+
+  echo "== 12a. claude lists the chat's own worktree, before any turn"
+  SKILL_CHAT="$(api POST /chats \
+    -d "{\"project_id\": $SKILL_PROJECT_ID, \"title\": \"skills\", \"agent\": \"claude\"}")" \
+    || fail "creating the claude skills chat failed"
+  SKILL_CHAT_ID="$(printf '%s' "$SKILL_CHAT" | jq -r .id)"
+  SKILL_WORKTREE="$(printf '%s' "$SKILL_CHAT" | jq -r .worktree_path)"
+  [[ -d "$SKILL_WORKTREE" ]] || fail "the skills chat has no worktree at $SKILL_WORKTREE"
+  LISTING="$(api GET "/chats/$SKILL_CHAT_ID/skills")" || fail "GET /v1/chats/{id}/skills failed"
+  printf '%s' "$LISTING" | jq -e --arg dir "$SKILL_WORKTREE" '
+    .list_verdict == "supported" and .invoke_verdict == "supported"
+      and .invoke_sigil == "/" and .invoke_position == "leading"
+      and .work_dir == $dir' >/dev/null \
+    || fail "the claude chat's verdicts or directory are wrong: $LISTING"
+  # Every cell is the CLI's own word, and the invocation is the adapter's.
+  printf '%s' "$LISTING" | jq -e 'any(.skills[];
+    .name == "gate-skill" and .invocation == "/gate-skill"
+      and .description == "A skill the gate committed."
+      and .argument_hint == "[target]")' >/dev/null \
+    || fail "the committed skill is not listed as the CLI reported it: $LISTING"
+
+  echo "== 12b. the per-directory cache, and ?refresh="
+  mkdir -p "$SKILL_WORKTREE/.claude/skills/fresh-skill"
+  cat > "$SKILL_WORKTREE/.claude/skills/fresh-skill/SKILL.md" <<'EOF'
+---
+name: fresh-skill
+description: Written after the first listing.
+---
+
+Reply with FRESH-SKILL.
+EOF
+  # probed_at is RFC3339 to the second, so a refresh landing in the same
+  # second as the first probe would report the same instant and prove
+  # nothing. A whole second of sleep is not a guess at a cause: the second
+  # probe then starts at least a second after the first one answered, so its
+  # timestamp cannot be the same one.
+  sleep 1
+  CACHED="$(api GET "/chats/$SKILL_CHAT_ID/skills")"
+  printf '%s' "$CACHED" | jq -e 'any(.skills[]; .name == "fresh-skill") | not' >/dev/null \
+    || fail "a plain GET re-probed rather than serving the cached list: $CACHED"
+  REFRESHED="$(api GET "/chats/$SKILL_CHAT_ID/skills?refresh=true")"
+  printf '%s' "$REFRESHED" | jq -e 'any(.skills[]; .name == "fresh-skill")' >/dev/null \
+    || fail "?refresh=true did not pick up the new skill: $REFRESHED"
+  BEFORE="$(printf '%s' "$CACHED" | jq -r .probed_at)"
+  AFTER="$(printf '%s' "$REFRESHED" | jq -r .probed_at)"
+  [[ "$AFTER" > "$BEFORE" ]] \
+    || fail "probed_at did not move: $BEFORE then $AFTER"
+
+  echo "== 12c. a /name invocation is reported back as one agent.skill"
+  api POST "/chats/$SKILL_CHAT_ID/send" -d '{"message": "/gate-skill hello"}' >/dev/null \
+    || fail "the invoking send failed"
+  STATE="$(wait_turn "$SKILL_CHAT_ID" 1)"
+  [[ "$STATE" == "done" ]] || fail "the invoking turn is $STATE, want done"
+  NORMALIZED="$TMP/skill-claude-1.ndjson"
+  curl -sS -o "$NORMALIZED" -H "Authorization: Bearer $TOKEN" \
+    "$BASE/chats/$SKILL_CHAT_ID/turns/1/transcript?format=normalized" \
+    || fail "the normalized transcript failed"
+  # One jq over the whole file rather than a capture, so there is no
+  # multi-line output to strip CRs from and nothing an early-exiting consumer
+  # could read. agent.raw is the type an unrecognized line takes: the replay
+  # must be recognized, not merely carried.
+  jq -s -e '[.[] | select(.type == "agent.skill")] as $s
+    | ($s | length) == 1
+      and $s[0].name == "gate-skill" and $s[0].args == "hello" and $s[0].by == "human"
+      and (any(.[]; .type == "agent.raw") | not)' < "$NORMALIZED" >/dev/null \
+    || fail "the claude turn's records are wrong: $(jq -r .type < "$NORMALIZED" | sort | uniq -c)"
+
+  echo "== 12d. codex lists through the app-server, and takes its message verbatim"
+  CODEX_CHAT="$(api POST /chats \
+    -d "{\"project_id\": $SKILL_PROJECT_ID, \"title\": \"codex skills\", \"agent\": \"codex\"}")" \
+    || fail "creating the codex skills chat failed"
+  CODEX_CHAT_ID="$(printf '%s' "$CODEX_CHAT" | jq -r .id)"
+  LISTING="$(api GET "/chats/$CODEX_CHAT_ID/skills")"
+  # "$gate-skill" is a jq string literal, not a jq variable: jq interpolates
+  # only through \(...).
+  printf '%s' "$LISTING" | jq -e '
+    .list_verdict == "supported" and .invoke_sigil == "$" and .invoke_position == "anywhere"
+      and any(.skills[]; .name == "gate-skill" and .invocation == "$gate-skill")' >/dev/null \
+    || fail "codex did not list the skill through the app-server: $LISTING"
+  # Single-quoted in this bash, so the shell leaves it alone and the daemon is
+  # asked to deliver exactly what codex recognizes.
+  api POST "/chats/$CODEX_CHAT_ID/send" -d '{"message": "$gate-skill"}' >/dev/null \
+    || fail "the codex send failed"
+  STATE="$(wait_turn "$CODEX_CHAT_ID" 1)"
+  [[ "$STATE" == "done" ]] || fail "the codex turn is $STATE, want done"
+  WANT_VERBATIM='$gate-skill'
+  RAW="$(curl -sS -H "Authorization: Bearer $TOKEN" \
+    "$BASE/chats/$CODEX_CHAT_ID/turns/1/transcript" | tr -d '\r')"
+  case "$RAW" in
+    *"$WANT_VERBATIM"*) ;;
+    *) fail "codex did not receive $WANT_VERBATIM verbatim; transcript: $RAW" ;;
+  esac
+  curl -sS -o "$TMP/skill-codex-1.ndjson" -H "Authorization: Bearer $TOKEN" \
+    "$BASE/chats/$CODEX_CHAT_ID/turns/1/transcript?format=normalized" \
+    || fail "the codex normalized transcript failed"
+  # codex reports no invocation, and vincent never invents one from the text.
+  jq -s -e 'any(.[]; .type == "agent.skill") | not' < "$TMP/skill-codex-1.ndjson" >/dev/null \
+    || fail "a codex turn produced an agent.skill record"
+
+  echo "== 12e. cursor invokes without listing"
+  CURSOR_CHAT="$(api POST /chats \
+    -d "{\"project_id\": $SKILL_PROJECT_ID, \"title\": \"cursor skills\", \"agent\": \"cursor\"}")" \
+    || fail "creating the cursor skills chat failed"
+  CURSOR_CHAT_ID="$(printf '%s' "$CURSOR_CHAT" | jq -r .id)"
+  LISTING="$(api GET "/chats/$CURSOR_CHAT_ID/skills")"
+  printf '%s' "$LISTING" | jq -e '
+    .list_verdict == "unsupported" and (.unavailable_reason | length) > 0
+      and .skills == [] and .invoke_verdict == "supported"
+      and .invoke_sigil == "/" and .invoke_position == "anywhere"' >/dev/null \
+    || fail "cursor's verdicts are wrong: $LISTING"
+
+  echo "== 12f. a linked chat lists its task's worktree, and invokes on its first turn"
+  SKILL_TASK_PROJECT_ID="$(api POST /projects \
+    -d "{\"path\": \"$(hostpath "$SKILL_TASK_REPO")\"}" | jq -r .id)"
+  [[ -n "$SKILL_TASK_PROJECT_ID" && "$SKILL_TASK_PROJECT_ID" != "null" ]] \
+    || fail "registering the linked-skills project failed"
+  # `git commit -a` exits 1 on a clean worktree, so the task blocks on its
+  # first pass and keeps the worktree a chat can be opened on.
+  SKILL_TASK_ID="$(api POST /tasks \
+    -d "{\"project_id\": $SKILL_TASK_PROJECT_ID, \"workflow\": \"chat-skills-task\", \"title\": \"hold a worktree\"}" \
+    | jq -r .id)"
+  [[ -n "$SKILL_TASK_ID" && "$SKILL_TASK_ID" != "null" ]] || fail "creating the skills task failed"
+  wait_task "$SKILL_TASK_ID" blocked
+  SKILL_TASK_WORKTREE="$(api GET "/tasks/$SKILL_TASK_ID" | jq -r .worktree_path)"
+  [[ -d "$SKILL_TASK_WORKTREE" ]] || fail "the blocked task has no worktree at $SKILL_TASK_WORKTREE"
+
+  CODE="$(api_status POST "/tasks/$SKILL_TASK_ID/chat" -d '{"agent": "claude"}')"
+  [[ "$CODE" == "201" ]] || fail "opening the linked chat answered $CODE: $(cat "$TMP/body.json")"
+  LINKED_CHAT_ID="$(jq -r .id < "$TMP/body.json")"
+  LISTING="$(api GET "/chats/$LINKED_CHAT_ID/skills")"
+  printf '%s' "$LISTING" | jq -e --arg dir "$SKILL_TASK_WORKTREE" '
+    .work_dir == $dir and any(.skills[];
+      .name == "task-skill" and .invocation == "/task-skill"
+        and .argument_hint == "[what]")' >/dev/null \
+    || fail "the linked chat did not list its task's worktree: $LISTING"
+  # The other project's free chat is the control: same daemon, same adapter,
+  # a different directory and so a different list.
+  api GET "/chats/$SKILL_CHAT_ID/skills" \
+    | jq -e 'any(.skills[]; .name == "task-skill") | not' >/dev/null \
+    || fail "a free chat on the other project lists the task's skill"
+
+  # The first turn is the one that matters: a linked chat's opening context
+  # rides ahead of the message as its own block, so the invocation is leading
+  # only if the two arrived in that order.
+  api POST "/chats/$LINKED_CHAT_ID/send" -d '{"message": "/task-skill hi"}' >/dev/null \
+    || fail "the linked send failed"
+  STATE="$(wait_turn "$LINKED_CHAT_ID" 1)"
+  [[ "$STATE" == "done" ]] || fail "the linked turn is $STATE, want done"
+  curl -sS -o "$TMP/skill-linked-1.ndjson" -H "Authorization: Bearer $TOKEN" \
+    "$BASE/chats/$LINKED_CHAT_ID/turns/1/transcript?format=normalized" \
+    || fail "the linked normalized transcript failed"
+  jq -s -e 'any(.[]; .type == "agent.skill" and .name == "task-skill" and .by == "human")' \
+    < "$TMP/skill-linked-1.ndjson" >/dev/null \
+    || fail "the linked first turn reported no human invocation of task-skill: $(
+      jq -r .type < "$TMP/skill-linked-1.ndjson" | sort | uniq -c)"
+
+  echo "== 12g. a terminal chat has no next turn to list for"
+  CODE="$(api_status POST "/chats/$LINKED_CHAT_ID/close")"
+  [[ "$CODE" == "200" ]] || fail "closing the linked chat answered $CODE: $(cat "$TMP/body.json")"
+  CODE="$(api_status GET "/chats/$LINKED_CHAT_ID/skills")"
+  [[ "$CODE" == "409" ]] || fail "skills on a closed chat answered $CODE, want 409"
+  REASON="$(jq -r .error.code < "$TMP/body.json")"
+  [[ "$REASON" == "invalid_state" ]] || fail "the refusal is $REASON, want invalid_state"
+  api POST "/chats/$CURSOR_CHAT_ID/archive" >/dev/null || fail "archiving the cursor chat failed"
+  wait_chat "$CURSOR_CHAT_ID" archived
+  CODE="$(api_status GET "/chats/$CURSOR_CHAT_ID/skills")"
+  [[ "$CODE" == "409" ]] || fail "skills on an archived chat answered $CODE, want 409"
+  REASON="$(jq -r .error.code < "$TMP/body.json")"
+  [[ "$REASON" == "invalid_state" ]] || fail "the archived refusal is $REASON, want invalid_state"
+
+  echo "== 12h. the CLI: the same names, and a leading / delivered byte for byte"
+  CLI_NAMES="$("$VINCENT" chat skills "$SKILL_CHAT_ID" --json | jq -r '[.skills[].name] | join(",")')" \
+    || fail "vincent chat skills failed"
+  API_NAMES="$(api GET "/chats/$SKILL_CHAT_ID/skills" | jq -r '[.skills[].name] | join(",")')"
+  [[ "$CLI_NAMES" == "$API_NAMES" ]] \
+    || fail "the CLI lists [$CLI_NAMES], the API [$API_NAMES]"
+  # The whole reason --message-file exists (task 124.5, issue #501): under Git
+  # Bash MSYS rewrites an argv beginning with /name into a Windows path before
+  # a native .exe sees it. A message read from stdin never passes through argv
+  # at all, and this is the assertion the Windows leg of the matrix carries.
+  printf '/gate-skill hi' | "$VINCENT" chat send "$SKILL_CHAT_ID" --message-file - >/dev/null \
+    || fail "chat send --message-file - failed"
+  PROMPT="$(api GET "/chats/$SKILL_CHAT_ID" | jq -r '.turns[] | select(.seq == 2) | .prompt')"
+  [[ "$PROMPT" == "/gate-skill hi" ]] \
+    || fail "the stored prompt is [$PROMPT], want [/gate-skill hi]"
+
+  unset FAKEAGENT_SCENARIO
+  unset FAKEAGENT_VERSION
+}
+
 if [[ "$ONLY" == "11" ]]; then
   chat_on_a_task
   echo "GATE PASS: m14 (leg 11)"
+  exit 0
+fi
+
+if [[ "$ONLY" == "12" ]]; then
+  chat_skills
+  echo "GATE PASS: m14 (leg 12)"
   exit 0
 fi
 
@@ -610,6 +900,7 @@ CODE="$(api_status GET "/chats?archived=yes")"
 
 if [[ -z "$ONLY" ]]; then
   chat_on_a_task
+  chat_skills
 fi
 
 echo "GATE PASS: m14"

@@ -198,13 +198,13 @@ func repoSkills(cwd string) []any {
 		if err != nil {
 			continue
 		}
-		name, description := frontMatter(string(b))
-		if name == "" {
+		fm := frontMatter(string(b))
+		if fm["name"] == "" {
 			continue
 		}
 		skills = append(skills, map[string]any{
-			"name":        name,
-			"description": description,
+			"name":        fm["name"],
+			"description": fm["description"],
 			"path":        path,
 			"scope":       "repo",
 			"enabled":     true,
@@ -214,13 +214,16 @@ func repoSkills(cwd string) []any {
 	return skills
 }
 
-// frontMatter reads `name` and `description` out of a SKILL.md's leading
-// `---` block. It is as much YAML as the fake's own seeds need: one scalar
-// per line, optionally quoted.
-func frontMatter(doc string) (name, description string) {
+// frontMatter reads the scalars out of a SKILL.md's leading `---` block, by
+// key: `name` and `description` for codex's rows, `argument-hint` as well for
+// claude's (claude_skills.go). It is as much YAML as the fake's own seeds
+// need: one scalar per line, optionally quoted. A document with no leading
+// `---` has no fields at all, which is how a caller skips it.
+func frontMatter(doc string) map[string]string {
+	fields := map[string]string{}
 	lines := strings.Split(strings.ReplaceAll(doc, "\r\n", "\n"), "\n")
 	if strings.TrimSpace(lines[0]) != "---" {
-		return "", ""
+		return fields
 	}
 	for _, line := range lines[1:] {
 		if strings.TrimSpace(line) == "---" {
@@ -230,15 +233,9 @@ func frontMatter(doc string) (name, description string) {
 		if !ok {
 			continue
 		}
-		value = strings.Trim(strings.TrimSpace(value), `"'`)
-		switch strings.TrimSpace(key) {
-		case "name":
-			name = value
-		case "description":
-			description = value
-		}
+		fields[strings.TrimSpace(key)] = strings.Trim(strings.TrimSpace(value), `"'`)
 	}
-	return name, description
+	return fields
 }
 
 func appServerReply(out *bufio.Writer, id int, result, rpcErr map[string]any) {

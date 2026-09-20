@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -27,6 +28,10 @@ import (
 //	                             stdin EOF until killed). Unset answers
 //	FAKEAGENT_SKILLS_ECHO_CWD    "1" appends one entry whose description is
 //	                             the process's working directory
+//
+// Whatever those supply, the working directory's own
+// `.claude/skills/*/SKILL.md` entries are appended after it — this binary
+// standing in for the CLI's own resolution, never vincent scanning.
 //
 // The reply carries a decoy `account`, as the real one carries the user's
 // email and organization, so a test can prove the adapter never decodes it.
@@ -108,8 +113,9 @@ func answerInitialize(id string, rd *bufio.Reader) {
 	os.Exit(0)
 }
 
-// claudeCommands is the reply's `commands`, with the working directory
-// appended as one entry's description under FAKEAGENT_SKILLS_ECHO_CWD.
+// claudeCommands is the reply's `commands`: the configured or default rows,
+// the working directory appended as one entry's description under
+// FAKEAGENT_SKILLS_ECHO_CWD, and then the directory's own skills.
 func claudeCommands() ([]json.RawMessage, error) {
 	raw := os.Getenv("FAKEAGENT_CLAUDE_COMMANDS")
 	if raw == "" {
@@ -119,10 +125,10 @@ func claudeCommands() ([]json.RawMessage, error) {
 	if err := json.Unmarshal([]byte(raw), &commands); err != nil {
 		return nil, err
 	}
+	wd, wdErr := os.Getwd()
 	if os.Getenv("FAKEAGENT_SKILLS_ECHO_CWD") == "1" {
-		wd, err := os.Getwd()
-		if err != nil {
-			return nil, err
+		if wdErr != nil {
+			return nil, wdErr
 		}
 		entry, err := json.Marshal(map[string]any{"name": "fake-cwd", "description": wd, "argumentHint": ""})
 		if err != nil {
@@ -130,7 +136,58 @@ func claudeCommands() ([]json.RawMessage, error) {
 		}
 		commands = append(commands, entry)
 	}
-	return commands, nil
+	// Last, and a cwd that cannot be resolved adds nothing — claudeRepoSkills'
+	// own rule for a directory it cannot read. So a run anywhere without a
+	// `.claude/skills` answers with exactly the rows above, which is every
+	// existing caller.
+	if wdErr != nil {
+		return commands, nil
+	}
+	return append(commands, claudeRepoSkills(wd)...), nil
+}
+
+// claudeRepoSkills is every `.claude/skills/*/SKILL.md` under cwd as one
+// `initialize` command row, named, described and hinted by its front matter,
+// in directory order (task 124 decision 44). It is the claude dialect's
+// repoSkills: this binary standing in for the CLI's own resolution, so a
+// caller can prove a name appears because a file is in the directory the
+// listing ran in.
+//
+// A missing or unreadable directory, and an entry whose front matter names
+// nothing, are no-ops rather than errors — a stand-in that refused to start
+// over a seed it could not read would fail a run that never asked about
+// skills at all.
+func claudeRepoSkills(cwd string) []json.RawMessage {
+	entries, err := os.ReadDir(filepath.Join(cwd, ".claude", "skills"))
+	if err != nil {
+		return nil
+	}
+	var commands []json.RawMessage
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(cwd, ".claude", "skills", e.Name(), "SKILL.md"))
+		if err != nil {
+			continue
+		}
+		fm := frontMatter(string(b))
+		if fm["name"] == "" {
+			continue
+		}
+		// `argument-hint` is read because the m14 leg asserts the hint
+		// reaches the wire; the SDK spells it `argumentHint`.
+		row, err := json.Marshal(map[string]any{
+			"name":         fm["name"],
+			"description":  fm["description"],
+			"argumentHint": fm["argument-hint"],
+		})
+		if err != nil {
+			continue
+		}
+		commands = append(commands, row)
+	}
+	return commands
 }
 
 // decoyAccount is the reply's `account`: placeholders in the real one's shape.
