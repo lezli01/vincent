@@ -2413,10 +2413,12 @@ message, and while a turn is running.
   "list_verdict": "supported", "unavailable_reason": "",
   "probe_error": null, "probed_at": "2026-09-19T10:04:00Z",
   "invoke_verdict": "supported", "invoke_sigil": "$", "invoke_position": "anywhere",
+  "builtin_skills": "",
   "skills": [ { "name": "release-notes", "invocation": "$release-notes",
                 "description": "Draft release notes from the changelog",
                 "argument_hint": "", "aliases": [], "scope": "repo", "plugin": "",
-                "path": "/home/me/.local/share/vincent/worktrees/3/.agents/skills/release-notes/SKILL.md" } ],
+                "path": "/home/me/.local/share/vincent/worktrees/3/.agents/skills/release-notes/SKILL.md",
+                "builtin": false } ],
   "problems": [] }
 ```
 
@@ -2443,6 +2445,20 @@ is `leading` when the invocation only works at the start of the message
 (claude) and `anywhere` otherwise. `scope`, `plugin`, `description` and
 `argument_hint` are the CLI's own words, `""` when it said nothing. `problems`
 lists `SKILL.md` files the CLI found and could not load, as `{path, message}`.
+
+`builtin` on a row marks a skill the agent CLI ships itself — claude's
+`simplify`, `loop` and `run`. `builtin_skills` says whether you are seeing
+them:
+
+- **`listed`** — you are. A turn has run on this agent's installed binary and
+  reported the skills it loaded, so the bundled ones are in `skills`, flagged.
+- **`after_first_turn`** — not yet. claude marks its bundled skills and its
+  built-in commands (`/clear`, `/compact`) the same way, and only a turn's own
+  report tells them apart, so until then all of them are left out. The first
+  turn on that CLI brings them back in every chat and every directory, not just
+  the one that ran it — vincent never lists a built-in command, before or after.
+- **`""`** — the question does not arise: there is no list, or this CLI marks
+  nothing as its own, which is every codex and cursor chat.
 
 The answer is cached for five minutes, and a failed probe for one.
 `?refresh=true` asks the CLI again. Every finished turn clears the cache for

@@ -33,6 +33,7 @@ type chatSkillsHarness struct {
 	client    *apiclient.Client
 	store     *store.Store
 	stub      *agenttest.StubSkills
+	cache     *agent.SkillCache
 	projectID int64
 }
 
@@ -54,7 +55,8 @@ func newChatSkillsHarness(t *testing.T) *chatSkillsHarness {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	chats := chatrun.New(chatrun.Deps{
 		Store: st, Config: config.Default, Agents: reg, DataDir: dataDir, Logger: log,
-		InvalidateSkills: cache.Invalidate,
+		InvalidateSkills:    cache.Invalidate,
+		ReportBundledSkills: cache.ReportBundled,
 	})
 	chats.Start(t.Context())
 	t.Cleanup(chats.Stop)
@@ -67,7 +69,8 @@ func newChatSkillsHarness(t *testing.T) *chatSkillsHarness {
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	return &chatSkillsHarness{
-		client: apiclient.New(ts.URL, testToken), store: st, stub: stub, projectID: project.ID,
+		client: apiclient.New(ts.URL, testToken), store: st, stub: stub,
+		cache: cache, projectID: project.ID,
 	}
 }
 
@@ -197,5 +200,74 @@ func TestChatSkillsLiveTerminalChatIsATypedConflict(t *testing.T) {
 	}
 	if n := h.stub.Calls(); n != 0 {
 		t.Errorf("stub listed %d time(s) for an archived chat", n)
+	}
+}
+
+// TestChatSkillsLiveDecodesBundledSkills is task 124.16's wire half (#512):
+// `builtin` on a row and `builtin_skills` on the body, decoded by the client
+// in both states — before any turn has said which of the CLI's own rows are
+// bundled skills, and after one has.
+func TestChatSkillsLiveDecodesBundledSkills(t *testing.T) {
+	h := newChatSkillsHarness(t)
+	h.stub.Script(agent.SkillList{Skills: []agent.Skill{
+		{Name: "deploy", Description: "Ship it (project)"},
+		{Name: "simplify", Description: "Tidy the diff", Builtin: true},
+		{Name: "clear", Description: "Clear the conversation", Builtin: true},
+	}}, nil)
+	c := h.chat(t, agenttest.SkillsName, chatstate.Idle)
+
+	before, err := h.client.ChatSkills(t.Context(), c.ID, false)
+	if err != nil {
+		t.Fatalf("ChatSkills: %v", err)
+	}
+	if before.BuiltinSkills != "after_first_turn" {
+		t.Errorf("builtin_skills = %q, want after_first_turn", before.BuiltinSkills)
+	}
+	if len(before.Skills) != 1 || before.Skills[0].Name != "deploy" || before.Skills[0].Builtin {
+		t.Fatalf("skills before a turn = %+v, want the non-builtin row alone", before.Skills)
+	}
+
+	// What a claude turn's init line names: the bundled skill, never `/clear`.
+	h.cache.ReportBundled(h.stub, []string{"deploy", "simplify"})
+
+	after, err := h.client.ChatSkills(t.Context(), c.ID, false)
+	if err != nil {
+		t.Fatalf("ChatSkills: %v", err)
+	}
+	if after.BuiltinSkills != "listed" {
+		t.Errorf("builtin_skills = %q, want listed", after.BuiltinSkills)
+	}
+	want := []apiclient.ChatSkill{
+		{Name: "deploy", Invocation: "$deploy", Description: "Ship it (project)", Aliases: []string{}},
+		{
+			Name: "simplify", Invocation: "$simplify", Description: "Tidy the diff",
+			Aliases: []string{}, Builtin: true,
+		},
+	}
+	if !reflect.DeepEqual(after.Skills, want) {
+		t.Errorf("skills =\n%+v\nwant\n%+v", after.Skills, want)
+	}
+}
+
+// TestChatSkillsLiveLeavesBundledEmptyWhereItCannotArise: an adapter whose
+// listing marks nothing — every codex and cursor chat — and an answer that is
+// no list at all. The field is a "" a client can read as "do not ask".
+func TestChatSkillsLiveLeavesBundledEmptyWhereItCannotArise(t *testing.T) {
+	h := newChatSkillsHarness(t)
+	h.stub.Script(agent.SkillList{Skills: []agent.Skill{{Name: "deploy"}}}, nil)
+	plain, err := h.client.ChatSkills(t.Context(), h.chat(t, agenttest.SkillsName, chatstate.Idle).ID, false)
+	if err != nil {
+		t.Fatalf("ChatSkills: %v", err)
+	}
+	if plain.BuiltinSkills != "" {
+		t.Errorf("builtin_skills = %q on a listing with no builtin row, want empty", plain.BuiltinSkills)
+	}
+
+	no, err := h.client.ChatSkills(t.Context(), h.chat(t, agenttest.NoSkillsName, chatstate.Idle).ID, false)
+	if err != nil {
+		t.Fatalf("ChatSkills on %s: %v", agenttest.NoSkillsName, err)
+	}
+	if no.BuiltinSkills != "" {
+		t.Errorf("builtin_skills = %q on an adapter that cannot list, want empty", no.BuiltinSkills)
 	}
 }

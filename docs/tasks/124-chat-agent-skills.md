@@ -93,6 +93,12 @@ breakdown"). 13–19 were settled with the author, or taken in evaluation, when
    claude's conversation while vincent still shows the history. 124.16 (#512)
    restores the bundled skills once a turn's init line has classified them.
    *Beaten:* listing them flagged and letting the TUI group them.
+   *Amended 2026-09-20 by 124.16:* that restoration landed. The adapter now
+   keeps every `builtin` row and flags it (decision 86), and the skill cache
+   serves one only when a turn on that binary named it (decision 84), so
+   `/clear` is still never listed and the route says which of the two
+   situations a caller is in. The beaten alternative is not revived: the TUI
+   is unchanged (decision 88).
 8. **2026-09-19 — No scope parsing, and no `kind`.** claude's scope exists only
    as a display label inside a description, such as `(project)`. `Skill.Scope`
    carries the CLI's own word (codex's `user|repo|system|admin`) or nothing,
@@ -311,6 +317,11 @@ breakdown"). 13–19 were settled with the author, or taken in evaluation, when
 42. **2026-09-19 — claude's `builtin: true` rows are omitted**, every one of
     them: decision 7, implemented by 124.7. Bundled skills come back in
     124.16 (#512). Closes open question 2.
+    *Amended 2026-09-20 by 124.16:* the adapter no longer omits them. It
+    returns every row with `Skill.Builtin` set from the reply, and the cache
+    drops the ones no turn has named (decisions 84 and 86) — so what reaches
+    a client is unchanged until a turn has run, and gains the bundled rows
+    after one.
 43. **2026-09-19 — Only a positive no is `ErrSkillsUnsupported`** (decision
     16), for claude's lister too. A binary that cannot be resolved, a failed
     `--version`, a timeout, `subtype: "error"`, malformed JSON, a reply
@@ -630,6 +641,59 @@ breakdown"). 13–19 were settled with the author, or taken in evaluation, when
     list is not touched: its one-line description of `m14` ("chats end to
     end (task 067)") still describes the script, and the acceptance
     criterion only asks for a mention if that line changes.
+83. **2026-09-20 — The init line is a classifier, never a change detector**
+    (124.16). #512's step 3 — compare the turn's init `skills` against the
+    cache and keep the entry when they match — is dropped, and 124.9's
+    unconditional invalidation stands untouched, so #512's second acceptance
+    criterion is withdrawn with it. The line describes the state at the turn's
+    *start*, so a turn that writes `.claude/skills/foo/SKILL.md` reports a set
+    identical to the cache's; keeping the entry on that basis would hide `foo`
+    until the next turn or the five-minute `skillTTL`, which is the exact case
+    the invalidation exists for. One `claude` subprocess per turn-then-look
+    does not buy that back. *Beaten:* relaxing invalidation for claude only.
+84. **2026-09-20 — The bundled set is keyed by the binary, not the
+    directory.** A *listing* is per directory, which is why `skillKey` carries
+    one, but what a CLI *bundles* is a property of the installed build. Storing
+    the classification against the binary identity alone means the first turn
+    on that claude — in any directory, in any chat — restores the bundled rows
+    everywhere, so a freshly created chat is not penalised for being new. This
+    largely answers #512's own open question: bundled skills still need one
+    turn to appear, but not one turn *per directory*. *Beaten:* a per-directory
+    set, keyed like the listing it filters.
+85. **2026-09-20 — The names stay off the wire.** `RunHeader` gains
+    `Skills []string` and nothing else; `Commands` is not added, because after
+    decision 83 nothing would read it. `headerChunk` and the normalized
+    transcript record keep emitting `work_dir` and `available_tools` alone.
+    Putting 84 skill and 118 command names on every `agent.run_header` chunk
+    and every normalized transcript line would add kilobytes per turn for no
+    reader, and the verbatim line is already in the transcript, which is the
+    lossless copy. *Beaten:* publishing the arrays "for clients to group".
+86. **2026-09-20 — The filter moves from the adapter to the cache.**
+    `skillsFrom` keeps every `builtin` row and carries the CLI's flag onto
+    `Skill.Builtin` (decision 17's rule for every field); `SkillCache.Lookup`
+    is what withholds one. Filtering at probe time instead would freeze a
+    directory probed before the first turn into its unclassified answer for a
+    whole `skillTTL`, with nothing left to reclassify. *Beaten:* a second probe
+    once a turn has reported.
+87. **2026-09-20 — `system/commands_changed` is not normalized.** It is seen
+    and deliberately left as `EventUnknown` under §9.2's tolerant-parsing rule:
+    with invalidation unconditional there is nothing for it to signal, and a
+    bundled skill ships with the binary and is never discovered mid-session.
+    §9.2 records this rather than leaving it to be rediscovered. *Beaten:*
+    normalizing it as a second invalidation signal.
+88. **2026-09-20 — Clients are not changed.** The wire gains `builtin` on a row
+    and `builtin_skills` on the body, which is all #512 asked for — a client
+    *can* group. The TUI skill panel (124.13) and `vincent chat skills`
+    (124.11) keep their current shape. This does not revive decision 7's
+    beaten alternative: only the bundled rows are restored, and only after a
+    turn has proven them bundled. *Beaten:* a `BUILTIN` column and a grouped
+    panel in the same piece of work.
+89. **2026-09-20 — Task runs are not wired to the cache.** The classification
+    is per binary, so a chat turn supplies it for every directory; wiring
+    `internal/taskrun` to the cache would be a new dependency for no new
+    coverage. The chat runner reports through a nil-tolerated dep beside
+    `InvalidateSkills`, so `internal/chatrun` still never imports the cache.
+    *Beaten:* reporting from the task engine too.
 
 ## Open questions
 
@@ -770,8 +834,19 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
   leading `/` byte for byte. The fake claude gained the cwd-derived listing
   decision 44 parked here. Decisions 79–82; no wire, CLI or spec change.
   ✓ 2026-09-20
-- [ ] 124.16 (#512) Use the claude init line's `skills` to invalidate stale
-  lists and restore bundled skills. Depends: 124.9, 124.7.
+- [x] 124.16 (#512) Read the claude init line's `skills` into the run header
+  and restore the bundled skills from it. `RunHeader.Skills` and
+  `Skill.Builtin` carry the two CLI facts; `skillsFrom` stops dropping
+  `builtin` rows; the skill cache gains a per-binary bundled registry, a
+  `ReportBundled` the chat runner calls with a turn's init names, and
+  serve-time filtering; the route gains `builtin` on a row and
+  `builtin_skills` on the body. The invalidation of 124.9 is untouched — the
+  init line classifies, it does not detect change — and `commands_changed`
+  stays `EventUnknown`. Decisions 83–89, with 7 and 42 amended; spec §5.5,
+  §9.1, §9.2, §9.6 and §13.2 and `docs/reference/api.md` amended. `m14` is not
+  extended: leg 12 already drives listing and invocation end to end, and this
+  is a function of the cache and the route, provable over the real handlers.
+  ✓ 2026-09-20
 - [ ] 124.17 (#513) Probe through the task's container instead of answering
   `unknown`. Depends: 124.9, 124.7.
 - [ ] 124.18 (#514) Investigate whether ACP should become cursor's listing,
@@ -953,6 +1028,42 @@ and 124.15 have landed. 124.16, 124.17 and 124.18 widen coverage after that.
   `TestChatSkillsCommandWithNoDaemonExitsTwo` the shared `withClient` path.
   `TestDocsClaimsEveryCommandIsOnTheCLIPage` and `…EveryFlagIsOnTheCLIPage`
   force the command and both flags onto `docs/reference/cli.md`.
+- 124.16: `TestParseInitReadsSkills` fills `Skills` from the `2.1.263` and
+  `2.1.268` captures — their length, their opening name and the whole array in
+  the CLI's order — proves each holds `simplify`, `loop` and `run` and neither
+  `clear` nor `compact` while `slash_commands` holds both, and leaves it empty
+  for the `2.1.226` captures; `TestInitLineDecodesNothingElse` proves no
+  command name can reach the header from any of the four arrays that stay
+  undecoded. `TestHeaderChunkShape` carries a header with skills and still
+  marshals to `work_dir` plus `available_tools`, and
+  `TestNormalizeRunHeaderAndResultMetadata` asserts the normalized line holds
+  neither name nor key — decision 85 on both wires.
+  `TestInitializeFixtures`'s "builtin was listed" assertion is inverted: every
+  `builtin` row of both 2.1.277 captures comes back, flagged, in the CLI's
+  order beside the non-builtin rows it already pinned, and
+  `TestListSkillsAgainstTheFake` pins the fake's `compact` row with its flag.
+  The cache is `internal/agent/skillbundled_test.go`:
+  `TestBundledRowsAreWithheldUntilATurnNamesThem` walks both states over one
+  stored listing with no second probe;
+  `TestBundledSetIsKeyedByTheBinaryNotTheDirectory` serves a second directory
+  the restored rows with no turn of its own and lets another binary identity
+  inherit nothing (decision 84);
+  `TestBundledStateIsEmptyWhenTheQuestionDoesNotArise` covers a listing with no
+  `builtin` row and an unsupported build;
+  `TestReportBundledIsToleratedWhereItCannotAct` the nil receiver, the nil
+  adapter and the empty report; `TestBundledRegistryIsBounded` the bound and
+  its eviction order; and `TestBundledFilteringNeverMutatesTheCachedList` that
+  serve never shortens the shared slice. In `internal/chatrun`,
+  `TestClaudeTurnReportsItsInitSkills` is the one report per turn with its
+  adapter and order, `TestATurnWithNoInitSkillsReportsNothing` the claude build
+  that sends no array and the codex and cursor turns that never could,
+  `TestNilReportBundledSkillsIsTolerated` the missing dep, and
+  `TestReportingDoesNotRelaxInvalidation` is decision 83's guard — a turn
+  reporting exactly the cached names still invalidates its directory.
+  `TestChatSkillsLiveDecodesBundledSkills` and
+  `…LeavesBundledEmptyWhereItCannotArise` decode both fields over the real
+  handlers, and codex's `TestListSkillsAgainstFakeAgent` asserts no row of its
+  listing ever comes back `Builtin`.
 - 124.15: `scripts/m14-gate.sh`'s leg 12 is the proof, and
   `VINCENT_GATE_SCENARIO=12` runs it alone. Against one daemon it asserts
   claude's verdicts, sigil, position and `work_dir` before any turn with the

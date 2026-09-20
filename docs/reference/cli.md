@@ -1850,9 +1850,12 @@ agent's own, discovered by asking its CLI.
 | `DESCRIPTION` | The CLI's own description, blank when it gave none |
 
 Every cell is the agent CLI's own word. vincent normalizes nothing, invents no
-scope, and puts no `-` in a cell the CLI left empty. `scope`, `plugin`, `path`
-and `aliases` are carried by `--json` only — claude reports no scope at all, so
-a column for it would be blank for every claude chat.
+scope, and puts no `-` in a cell the CLI left empty. `scope`, `plugin`, `path`,
+`aliases` and `builtin` are carried by `--json` only — claude reports no scope
+at all, so a column for it would be blank for every claude chat, and `builtin`
+marks a skill the CLI ships itself, which claude's list gains once one turn has
+run on that binary ([`builtin_skills`](api.md#skills) says which of the two
+states you are in).
 
 **stdout is the table and nothing else.** Everything else goes to stderr, so
 `vincent chat skills 12 | wc -l` counts skills:

@@ -794,6 +794,26 @@ A chat that is `idle`, `running` or `awaiting_input` is listed alike: a probe
 is not a turn and holds no `max_parallel_chats` slot (§11). The list is served
 from §9.6's skill cache, which a turn's ending invalidates for its directory.
 
+*Amended 2026-09-20 (task 124.16, issue #512).* The response carries the CLI's
+own `builtin` rows and one indicative field saying what became of them:
+
+| `builtin_skills` | meaning |
+|---|---|
+| `listed` | a turn on this agent's installed binary has named the skills it loaded, so the `builtin` rows it named are served, each with `builtin: true` on the row, and its built-in commands are still dropped |
+| `after_first_turn` | the listing holds `builtin` rows and no turn has classified them yet, so **all** of them are withheld — the first turn on that binary restores them, in any directory and any chat, because what is bundled is a property of the CLI and not of a place |
+| `""` | the question does not arise: `list_verdict` is not `supported`, or the listing holds no `builtin` row, which is every codex and cursor chat |
+
+A row's `builtin: true` therefore means "a skill the CLI ships", never "a
+built-in command": `/clear` and `/compact` are never served, before or after a
+turn, because advertising a command that resets the conversation while vincent
+still shows its history is harmful (task 124 decision 7). **The turn's ending
+still invalidates the directory unconditionally.** The init line describes the
+turn's *start*, so a turn that wrote a skill reports a set identical to the
+cached one; comparing the two and keeping the entry would hide that skill until
+the next turn or the five-minute TTL, which is the case the unconditional
+invalidation exists for. The init line is a classifier, never a change
+detector.
+
 #### Skills in a chat's message (added 2026-09-20, task 124.6, issue #502)
 
 **vincent passes the message through verbatim.** An invocation typed into a
@@ -2991,6 +3011,7 @@ type Skill struct {                // the CLI's own words; "" = unreported
     Name, Description, ArgumentHint string
     Aliases                         []string
     Scope, Plugin, Path             string // Scope is never normalized
+    Builtin                         bool   // claude's own `builtin`, verbatim
 }
 
 type SkillProblem struct{ Path, Message string }
@@ -3056,6 +3077,11 @@ type ToolResult struct {             // T4.16
 type RunHeader struct {              // task 066, added 2026-08-31
     WorkDir string   // where the CLI said it was running
     Tools   []string // the tool set the run was given, in the CLI's order
+    Skills  []string // task 124.16, added 2026-09-20: the names of the skills
+                     // this turn's process loaded, in the CLI's order. claude
+                     // only — §9.3 emits no init line and §9.7's carries no
+                     // skills — and never on the wire: it is the classifier
+                     // §9.6's cache reads, not a list a client is served
 }
 
 type Subagent struct {               // task 109, added 2026-09-17
@@ -3155,6 +3181,13 @@ capability today.
   which is never parsed. `Skills` keeps the CLI's order, and a name may repeat —
   both CLIs document same-name entries they do not merge, and vincent does not
   merge them either. `Problems` carries codex's `errors[]`.
+
+  *Amended 2026-09-20 (task 124.16, #512).* `Builtin` joins the fields that are
+  the CLI's own word: claude's `builtin`, carried through verbatim, which marks
+  a bundled skill and a built-in command alike because that is all the CLI
+  says. It is always `false` for codex, whose `skills/list` has no such
+  concept, and nothing sets it from a name or a description. Telling the two
+  kinds apart is §9.6's, from a turn's init line.
 - **A refusal is not a failure** (task 124 decision 16). `ErrSkillsUnsupported`
   means this adapter, or this installed build, can never list — the positive no
   of `InputVerdict`'s `unsupported`. A probe that timed out, crashed or answered
@@ -3592,6 +3625,28 @@ since they were captured:
   `tools` — instead of falling through to `EventUnknown`. Any other `system`
   subtype still does fall through, which is the phase 1 tolerant-parsing rule
   and is asserted rather than assumed.
+
+  *Amended 2026-09-20 (task 124.16, #512).* The line's `skills` array is read
+  too, onto `RunHeader.Skills`: the names of the skills that turn's process
+  loaded, bundled ones included and built-in commands excluded, which is the
+  one machine signal separating the two halves of claude's `builtin` flag
+  (§9.6). Builds from 2.1.263 on carry it — 60 names in the `2.1.263`
+  capture, 84 in the `2.1.268` one — and the `2.1.226` captures do not, which
+  leaves it empty. The line's four other arrays are **not** decoded:
+  `slash_commands` mixes the built-in commands back in and would undo the
+  distinction, and nothing reads `terminal_slash_commands`, `agents` or
+  `plugins`. None of the names reaches the wire — neither the §13.3
+  `agent.run_header` chunk nor the normalized transcript line gains a key, both
+  of which still carry `work_dir` and `available_tools` alone — because 84
+  skill names per turn would cost kilobytes for no reader, and the verbatim
+  line is already in the transcript, which is the lossless copy.
+
+  `system/commands_changed` is seen and deliberately left as `EventUnknown`
+  under the same tolerant-parsing rule (task 124.16). claude re-sends the full
+  list on it when it discovers skills mid-turn, but a turn's ending already
+  invalidates its directory unconditionally (§9.6), and a *bundled* skill ships
+  with the binary and never appears part-way through a session — so there is
+  nothing left for it to signal.
 - **The `result` line's metadata:** `duration_ms`, `duration_api_ms`,
   `num_turns`, `stop_reason`, `terminal_reason`, `permission_denials[]`,
   `usage.cache_read_input_tokens` / `usage.cache_creation_input_tokens`, and the
@@ -3863,10 +3918,16 @@ by name, with their descriptions and argument hints. Pinned against 2.1.277 in
   either way (112 against 112). What it loses is a skill that only a
   SessionStart hook installs. MCP prompts are not skills, so they are out
   either way.
-- **`builtin` rows are omitted** (task 124 decision 7). 2.1.277 marks claude's
-  own commands (`compact`, `clear`, `init`) and its bundled skills
-  (`simplify`, `loop`, `run`) alike with `builtin: true`, and every such row is
-  dropped; restoring the bundled skills is task 124.16's.
+- **`builtin` rows are kept and flagged** (task 124 decision 7, amended
+  2026-09-20 by task 124.16, #512). 2.1.277 marks claude's own commands
+  (`compact`, `clear`, `init`) and its bundled skills (`simplify`, `loop`,
+  `run`) alike with `builtin: true`. The adapter used to drop every such row;
+  it now carries the flag through on `Skill.Builtin` (§9.1) and the **cache**
+  decides, serving a `builtin` row only once a turn's init line has named it
+  and dropping the rest exactly as before (§9.6). Filtering at the adapter
+  instead would freeze a directory probed before the first turn into its
+  unclassified answer for a whole `skillTTL`, with nothing left to
+  reclassify.
 - **The floor is `[2.1.277, 3.0.0)`** (task 124 decision 40): the §7.4 input
   family, for the control channel, from the first build that carries
   `builtin`, below which only description text tells a built-in from a skill.
@@ -4516,6 +4577,22 @@ defaults:
     unbounded cache would grow with every chat ever listed. It is not coupled
     to `max_parallel_chats`: a probe is not a turn and holds no slot (§11).
     There is no config key.
+  - **A per-binary bundled-skill registry** (*added 2026-09-20, task 124.16,
+    issue #512*), beside the listings and on a key of its own: the skill names
+    a turn's `RunHeader.Skills` reported (§9.1), against that agent's **binary
+    identity alone** — no directory, no adapter name. A listing is per
+    directory, but what a CLI *bundles* is a property of the installed build,
+    so the first turn anywhere restores the rows in every directory and every
+    chat, and a chat created a moment ago is not penalised for being new. A
+    `builtin` row is served only when the set names it; every other one is
+    dropped, which is what keeps `/clear` off every list (§5.5, task 124
+    decision 7). The filtering happens at **serve** time, not probe time, so a
+    directory probed before the first turn is not frozen into its
+    unclassified answer for a whole `skillTTL`. Reporting is nil-tolerated the
+    way invalidation is, an empty report is ignored rather than read as "this
+    CLI bundles nothing", and the registry is in memory like the rest,
+    bounded at 64 sets — a set is added only when a CLI is installed or
+    upgraded — with nothing persisted and nothing published.
 
 - **Always dynamic, never slow:** probes run on demand and results are cached
   keyed by *binary identity* (resolved path + mtime + version). Help output is
@@ -7849,7 +7926,7 @@ GET    /v1/chats/{id}/skills            *Added 2026-09-19 (task 124.9, issue #50
                                         { chat_id, agent, work_dir, list_verdict,
                                           unavailable_reason, probe_error, probed_at,
                                           invoke_verdict, invoke_sigil, invoke_position,
-                                          skills[], problems[] }
+                                          builtin_skills, skills[], problems[] }
                                         `list_verdict` and `invoke_verdict` are `supported`,
                                         `unsupported` or `unknown` with `agent.InputVerdict`'s
                                         meaning; `invoke_verdict` is `unknown` only for an
@@ -7860,10 +7937,16 @@ GET    /v1/chats/{id}/skills            *Added 2026-09-19 (task 124.9, issue #50
                                         is the earlier one the cache kept. `invoke_sigil` and
                                         `invoke_position` are `""` when the adapter cannot
                                         invoke. Each skill is { name, invocation, description,
-                                        argument_hint, aliases[], scope, plugin, path }, every
-                                        field the CLI's own word; `invocation` is the adapter's
-                                        `SkillInvoker.Invocation`, `""` when it cannot invoke,
-                                        so no client builds one. Each problem is { path, message }.
+                                        argument_hint, aliases[], scope, plugin, path, builtin },
+                                        every field the CLI's own word; `invocation` is the
+                                        adapter's `SkillInvoker.Invocation`, `""` when it cannot
+                                        invoke, so no client builds one.
+                                        *Amended 2026-09-20 (task 124.16, issue #512):*
+                                        `builtin_skills` is `listed`, `after_first_turn` or `""`
+                                        and a row's `builtin` is true for a skill the CLI ships
+                                        itself; §5.5's table is what each means, and a built-in
+                                        command is never served under either.
+                                        Each problem is { path, message }.
                                         `skills`, `problems` and `aliases` are always arrays;
                                         order and duplicate names are the CLI's; there is no
                                         `kind` and no inferred scope; an empty `skills` means

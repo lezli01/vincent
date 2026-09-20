@@ -29,6 +29,10 @@ var _ agent.SkillLister = (*Adapter)(nil)
 // tells a built-in command from a skill, and decision 7 forbids listing
 // `/clear` as one. It is also the only build captured; like supportsInput's
 // family, it moves only with re-captured fixtures.
+//
+// The flag is load-bearing in a second way since task 124.16: it is what
+// marks the rows the skill cache then classifies against a turn's init line,
+// so a build below the floor could not restore a bundled skill either.
 const skillListingFloor = "2.1.277"
 
 // skillListTimeout bounds the whole initialize exchange: spawn, reply and
@@ -101,8 +105,8 @@ type slashCommand struct {
 
 // ListSkills implements agent.SkillLister (§9.1, §9.2, task 124.7). It spawns
 // the CLI in q.WorkDir through q.Launcher, asks `initialize`, and returns the
-// reply's commands in the CLI's order with every `builtin` row dropped (task
-// 124 decision 7). Nothing is synthesized: a description keeps its display
+// reply's commands in the CLI's order, each carrying the reply's own `builtin`
+// flag (task 124.16). Nothing is synthesized: a description keeps its display
 // label, a repeated name stays repeated, and Scope, Plugin and Path stay "".
 //
 // A build outside [2.1.277, 3.0.0) answers agent.ErrSkillsUnsupported. Every
@@ -129,21 +133,27 @@ func (a *Adapter) ListSkills(ctx context.Context, q agent.SkillQuery) (agent.Ski
 	return skillsFrom(commands), nil
 }
 
-// skillsFrom maps the reply's commands onto a SkillList, in order, dropping
-// every `builtin` row: claude marks its own commands and its bundled skills
-// alike, and decision 7 lists neither. Scope, Plugin and Path stay "" —
-// claude reports scope only inside the description, which is never parsed.
+// skillsFrom maps the reply's commands onto a SkillList, in order, every row
+// carrying the reply's own `builtin` flag (task 124.16, #512). Scope, Plugin
+// and Path stay "" — claude reports scope only inside the description, which
+// is never parsed.
+//
+// The `builtin` rows used to be dropped here, because claude marks its own
+// commands and its bundled skills alike and decision 7 lists neither. They
+// are now kept and flagged, and the filtering is the skill cache's: only
+// there is a turn's init line known, and only that says which `builtin` row
+// is a bundled skill rather than `/clear`. Dropping them at probe time would
+// freeze a directory probed before the first turn into its unclassified
+// answer for a whole skillTTL, with nothing left to reclassify.
 func skillsFrom(commands []slashCommand) agent.SkillList {
 	list := agent.SkillList{Skills: make([]agent.Skill, 0, len(commands))}
 	for _, c := range commands {
-		if c.Builtin {
-			continue
-		}
 		list.Skills = append(list.Skills, agent.Skill{
 			Name:         c.Name,
 			Description:  c.Description,
 			ArgumentHint: c.ArgumentHint,
 			Aliases:      c.Aliases,
+			Builtin:      c.Builtin,
 		})
 	}
 	return list

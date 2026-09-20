@@ -55,10 +55,11 @@ func TestClaudeListsTheWorkingDirectorysSkills(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListSkills: %v", err)
 	}
-	// The default rows first, minus the built-in the lister drops, then the
-	// directory's in directory order — which is what "appended" has to mean
-	// for the existing callers to keep the rows they pin.
-	want := []string{"fake-skill", "fake:tool", "gate-skill", "second"}
+	// The default rows first — the built-in among them, flagged rather than
+	// dropped since task 124.16 — then the directory's in directory order,
+	// which is what "appended" has to mean for the existing callers to keep
+	// the rows they pin.
+	want := []string{"compact", "fake-skill", "fake:tool", "gate-skill", "second"}
 	got := listNames(list)
 	if len(got) != len(want) {
 		t.Fatalf("names = %v, want %v", got, want)
@@ -68,7 +69,10 @@ func TestClaudeListsTheWorkingDirectorysSkills(t *testing.T) {
 			t.Fatalf("names = %v, want %v", got, want)
 		}
 	}
-	seeded := list.Skills[2]
+	if !list.Skills[0].Builtin {
+		t.Errorf("%s came back unflagged, want the reply's own builtin", list.Skills[0].Name)
+	}
+	seeded := list.Skills[3]
 	if seeded.Description != "The gate's own skill." || seeded.ArgumentHint != "[target]" {
 		t.Errorf("gate-skill = %+v, want its description and its [target] hint", seeded)
 	}
@@ -79,7 +83,7 @@ func TestClaudeListsTheWorkingDirectorysSkills(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListSkills in a bare directory: %v", err)
 	}
-	if names := listNames(bare); len(names) != 2 || names[0] != "fake-skill" || names[1] != "fake:tool" {
+	if names := listNames(bare); len(names) != 3 || names[1] != "fake-skill" || names[2] != "fake:tool" {
 		t.Errorf("a bare directory listed %v, want only the default rows", names)
 	}
 }

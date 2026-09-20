@@ -138,6 +138,12 @@
 //	                      answers a built-in, a skill with an argument hint
 //	                      and a plugin skill with aliases (task 124.7,
 //	                      claude_skills.go)
+//	FAKEAGENT_CLAUDE_INIT_SKILLS
+//	                      the `skills` the claude `system`/`init` line claims
+//	                      the turn loaded, comma-separated. Unset claims every
+//	                      name `initialize` would answer with; "none" claims
+//	                      nothing and omits the key, as a build too old to
+//	                      send it does (task 124.16, claude_skills.go)
 //	FAKEAGENT_CLAUDE_INITIALIZE
 //	                      how that request is answered: hang | error |
 //	                      malformed | exit (non-zero, after a stderr line,
@@ -385,7 +391,7 @@ func main() {
 	prior := openSession(dialectClaude)
 	rememberPrompt(prompt)
 
-	emit(map[string]any{"type": "system", "subtype": "init", "model": "fake-1"})
+	emit(claudeInitLine())
 	if scenario == "chat-reply" {
 		// Answered before the recall line rather than in the switch below.
 		// The recall line is how a test proves `--resume` was passed; this

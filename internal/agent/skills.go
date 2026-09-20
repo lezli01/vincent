@@ -97,6 +97,15 @@ type Skill struct {
 	Plugin string
 	// Path is the skill's location on disk, when the CLI reported it.
 	Path string
+	// Builtin is claude's own `builtin` flag, carried verbatim like every
+	// other field (task 124.16, #512). It marks a row claude ships itself,
+	// which is a bundled skill (`simplify`, `loop`, `run`) and a built-in
+	// command (`clear`, `compact`) alike — the CLI draws no distinction, and
+	// neither does this field. Telling the two apart is the skill cache's
+	// job, from a turn's init line (§9.6).
+	//
+	// It is always false for codex, whose `skills/list` has no such concept.
+	Builtin bool
 }
 
 // SkillProblem is one entry the CLI could not load: codex's `errors[]` item,

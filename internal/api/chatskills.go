@@ -50,11 +50,19 @@ type chatSkillsBody struct {
 	ProbedAt *string `json:"probed_at"`
 	// InvokeVerdict is agent.CanInvokeSkills as a verdict: "unknown" only
 	// when the chat's adapter is not registered.
-	InvokeVerdict  string            `json:"invoke_verdict"`
-	InvokeSigil    string            `json:"invoke_sigil"`
-	InvokePosition string            `json:"invoke_position"`
-	Skills         []chatSkillBody   `json:"skills"`
-	Problems       []chatProblemBody `json:"problems"`
+	InvokeVerdict  string `json:"invoke_verdict"`
+	InvokeSigil    string `json:"invoke_sigil"`
+	InvokePosition string `json:"invoke_position"`
+	// BuiltinSkills says what became of the rows the CLI marked `builtin`
+	// (task 124.16, #512): "listed" when a turn on this binary has named the
+	// skills it bundles, so those rows are served and its built-in commands
+	// are still dropped; "after_first_turn" when the listing held such rows
+	// and no turn has classified them yet; and "" when the question does not
+	// arise — the verdict is not "supported", or the CLI marks nothing, which
+	// is every codex and cursor chat.
+	BuiltinSkills string            `json:"builtin_skills"`
+	Skills        []chatSkillBody   `json:"skills"`
+	Problems      []chatProblemBody `json:"problems"`
 }
 
 // chatSkillBody is one agent.Skill on the wire. Every field is the CLI's own
@@ -70,6 +78,11 @@ type chatSkillBody struct {
 	Scope        string   `json:"scope"`
 	Plugin       string   `json:"plugin"`
 	Path         string   `json:"path"`
+	// Builtin is a row the CLI ships itself — one of claude's bundled skills
+	// (task 124.16, #512). It is true only for a restored bundled row: a
+	// built-in command marked the same way by the CLI is never served at all,
+	// so a client can group these rather than having to filter them.
+	Builtin bool `json:"builtin"`
 }
 
 // chatProblemBody is one agent.SkillProblem: an entry the CLI found and could
@@ -171,6 +184,7 @@ func (s *Server) handleChatSkills(w http.ResponseWriter, r *http.Request) {
 // null, so "none" has one spelling on the wire.
 func renderSkillAnswer(body *chatSkillsBody, ans agent.SkillAnswer, invoker agent.SkillInvoker) {
 	body.ListVerdict = string(ans.Verdict)
+	body.BuiltinSkills = string(ans.Bundled)
 	if ans.Verdict == agent.InputUnsupported {
 		body.UnavailableReason = ans.Reason
 	}
@@ -186,6 +200,7 @@ func renderSkillAnswer(body *chatSkillsBody, ans agent.SkillAnswer, invoker agen
 		row := chatSkillBody{
 			Name: sk.Name, Description: sk.Description, ArgumentHint: sk.ArgumentHint,
 			Aliases: sk.Aliases, Scope: sk.Scope, Plugin: sk.Plugin, Path: sk.Path,
+			Builtin: sk.Builtin,
 		}
 		if row.Aliases == nil {
 			row.Aliases = []string{}
