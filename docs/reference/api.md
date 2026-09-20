@@ -74,7 +74,7 @@ client does something different for each:
 | `chat_cap_reached` | A chat turn was refused because `max_parallel_chats` chats already hold a live process ([Sending a turn](#sending-a-turn)) | `state` |
 | `repo_operation_in_progress` | A chat hand-off was refused because its worktree is partway through a git operation | `operation` |
 | `task_locked_by_chat` | A task action was refused because a [chat linked to the task](#a-chat-on-a-stopped-task) is open. Close that chat, or `cancel` the task | `chat_id` |
-| `task_has_no_worktree` | A chat cannot be opened on this task: it never got a worktree, and vincent does not create one for a chat | `state`, `action` |
+| `task_has_no_worktree` | A chat cannot be opened on this task: it never got a worktree, and vincent does not create one for a chat. Also a chat on a task that has lost its worktree, asked for its [skills](#skills) | `state`, `action`; `task_id` from the skills route |
 | `chat_linked_to_task` | Archive, hand-off, or a delete with `delete_branch=true` on a chat linked to a task. The worktree and branch are that task's | `task_id`, `state`, `action` |
 
 ## Request bodies
@@ -2237,10 +2237,11 @@ DELETE /v1/chats/{id}                 permanent delete of an archived or closed 
 GET    /v1/chats/{id}/events          SSE: this chat's events plus its live output
 GET    /v1/chats/{id}/turns/{seq}/transcript
                                       one turn's transcript, with ?offset= / ?tail=
+GET    /v1/chats/{id}/skills?refresh= the skills the chat's agent would load — see Skills
 ```
 
 None of these is an [MCP tool](#the-mcp-endpoint) — the whole family is
-excluded, the stream and the transcript included, and so is
+excluded, the stream, the transcript and the skill list included, and so is
 `POST /v1/tasks/{id}/chat`, which lives under `/v1/tasks` but starts a chat.
 `handoff` is on that list for a reason worth stating: it creates a task, and
 `task_create`'s bounds (`mcp.max_depth`, `mcp.max_tasks`) are walked over
@@ -2394,6 +2395,63 @@ Three more things to know:
   chat's turns run in that container too. If the container is gone, the turn
   fails rather than running on your host. A turn interrupted by a daemon restart
   is not re-run; the chat stays open, and the task stays locked.
+
+### Skills
+
+```bash
+curl -sS http://127.0.0.1:PORT/v1/chats/3/skills -H "Authorization: Bearer $TOKEN"
+```
+
+The skills the chat's agent CLI would load for its **next** turn, in the
+directory that turn runs in — the chat's own worktree, or its task's for a
+[chat on a task](#a-chat-on-a-stopped-task) — and the exact text a message uses
+to invoke each one. It answers from the moment the chat exists, before any
+message, and while a turn is running.
+
+```json
+{ "chat_id": 3, "agent": "codex", "work_dir": "/home/me/.local/share/vincent/worktrees/3",
+  "list_verdict": "supported", "unavailable_reason": "",
+  "probe_error": null, "probed_at": "2026-09-19T10:04:00Z",
+  "invoke_verdict": "supported", "invoke_sigil": "$", "invoke_position": "anywhere",
+  "skills": [ { "name": "release-notes", "invocation": "$release-notes",
+                "description": "Draft release notes from the changelog",
+                "argument_hint": "", "aliases": [], "scope": "repo", "plugin": "",
+                "path": "/home/me/.local/share/vincent/worktrees/3/.agents/skills/release-notes/SKILL.md" } ],
+  "problems": [] }
+```
+
+`list_verdict` says what `skills` means:
+
+- **`supported`** — `skills` is the list, in the CLI's own order; a name can
+  appear twice, because the CLIs do not merge same-name skills. An empty list
+  means there are none. A `probe_error` beside it means the latest probe failed
+  and this is the last list that succeeded, obtained at `probed_at`.
+- **`unsupported`** — the agent cannot list its skills, with the reason in
+  `unavailable_reason`. Today cursor answers this.
+- **`unknown`** — nobody can say: the probe failed with no earlier list
+  (`probe_error`), the chat's `agent` names no adapter this daemon has
+  (`probe_error`), or the chat's task
+  runs in a [container](configuration.md#container), where listing is not
+  supported yet (`unavailable_reason`). Treat it as unknown, never as "none".
+
+Type the `invocation` as it is; never build one from the name and the sigil,
+because codex writes `[$name](path)` for a name two skills share.
+`invoke_verdict` is `unsupported` for an agent that cannot invoke skills, and
+`unknown` for an `agent` with no adapter, with
+`invocation`, `invoke_sigil` and `invoke_position` then `""`. `invoke_position`
+is `leading` when the invocation only works at the start of the message
+(claude) and `anywhere` otherwise. `scope`, `plugin`, `description` and
+`argument_hint` are the CLI's own words, `""` when it said nothing. `problems`
+lists `SKILL.md` files the CLI found and could not load, as `{path, message}`.
+
+The answer is cached for five minutes, and a failed probe for one.
+`?refresh=true` asks the CLI again. Every finished turn clears the cache for
+its directory, so refetch on `chat.turn_changed` and a skill the agent just
+wrote shows up. Listing starts the agent CLI in that directory on your
+machine, without a prompt. A chat that is archived, handed off or closed is
+refused with `409 invalid_state` (`details.state`, `details.action:
+"skills"`), and a chat on a task that has lost its worktree with
+`409 task_has_no_worktree` (`details.task_id`).
 
 ### Sending a turn
 

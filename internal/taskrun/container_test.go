@@ -2,6 +2,7 @@ package taskrun
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -394,5 +395,75 @@ func TestArchiveHonoursTheWorkflowsOwnImage(t *testing.T) {
 
 	if got := rt.removals(); len(got) != 1 || got[0] != name {
 		t.Errorf("removed = %v, want [%s]", got, name)
+	}
+}
+
+// TestChatInContainerReadsSettingsOnly is task 124 decision 56: the bit
+// GET /v1/chats/{id}/skills picks a directory by is read from the task's
+// snapshot and settings, and never from the runtime — a client may ask it on
+// every refetch, and each ask spawning `docker inspect` is the cost the
+// archive guard above was written to remove. The containerized cases have no
+// container at all, so a true here is also "configured but gone": the turn,
+// not this bit, is what reports a missing container.
+func TestChatInContainerReadsSettingsOnly(t *testing.T) {
+	cases := []struct {
+		name     string
+		image    string // the daemon's own container.image
+		snapshot string
+		want     bool
+	}{
+		{"host workflow", "", hostSnapshot, false},
+		{"workflow names an image", "", imageSnapshot, true},
+		{"daemon names an image", "alpine:3", hostSnapshot, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			st, projectID := recoverStore(t)
+			task := &store.Task{
+				ProjectID: projectID, Title: "linked", WorkflowName: "adhoc",
+				WorkflowSnapshot: tc.snapshot, BaseBranch: "main", BranchName: "vincent/1-linked",
+				State: store.TaskBlocked,
+			}
+			if err := st.CreateTask(context.Background(), task, nil); err != nil {
+				t.Fatalf("CreateTask: %v", err)
+			}
+			rt := newFakeRuntime()
+			r := containerRunner(tc.image, rt)
+			r.deps.Store = st
+
+			got, err := r.ChatInContainer(context.Background(), task.ID)
+			if err != nil {
+				t.Fatalf("ChatInContainer: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("ChatInContainer = %v, want %v", got, tc.want)
+			}
+			if n := rt.calls(); n != 0 {
+				t.Errorf("ChatInContainer reached the runtime %d time(s)", n)
+			}
+			// The launcher reads the same settings, so the two agree: a
+			// containerized task whose container is gone fails the turn
+			// rather than running it on the host (task 119 decision 3).
+			_, err = r.ChatLauncher(context.Background(), task.ID, 1)
+			if gone := errors.Is(err, ErrTaskContainerMissing); gone != tc.want {
+				t.Errorf("ChatLauncher error = %v, want container missing = %v", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestChatInContainerPropagatesAMissingTask keeps a store error an error: a
+// task that cannot be read is not a task that runs on the host.
+func TestChatInContainerPropagatesAMissingTask(t *testing.T) {
+	st, _ := recoverStore(t)
+	rt := newFakeRuntime()
+	r := containerRunner("", rt)
+	r.deps.Store = st
+
+	if _, err := r.ChatInContainer(context.Background(), 999); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("ChatInContainer on a missing task = %v, want ErrNotFound", err)
+	}
+	if n := rt.calls(); n != 0 {
+		t.Errorf("ChatInContainer reached the runtime %d time(s)", n)
 	}
 }

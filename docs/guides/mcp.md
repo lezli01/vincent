@@ -114,9 +114,10 @@ lands in the model's context and in the step's transcript. Nothing else is
 changed — see the [security model](../security-model.md).
 
 **Nor is any `/v1/chats` route** — the whole
-[chat](../reference/api.md#chats) family, reads included. A chat turn starts an
-agent CLI without going through admission, so a tool that could send one would
-let an agent start unqueued agent processes, which is the exact thing
+[chat](../reference/api.md#chats) family, reads included, a chat's skill list
+among them. A chat turn starts an agent CLI without going through admission,
+so a tool that could send one would let an agent start unqueued agent
+processes, which is the exact thing
 `max_tasks` below bounds. The recursion bounds cannot help either: they walk
 `created_by_task_id`, and a chat is not in that chain. Nothing is lost — an
 agent calling these tools already has a session of its own. The same goes for

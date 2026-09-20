@@ -89,6 +89,12 @@ type Deps struct {
 	// request. Nil is tolerated (tests without adapters) — /v1/info then
 	// reports no agents and /v1/agents answers 500.
 	Catalog *agent.CatalogCache
+	// Skills serves GET /v1/chats/{id}/skills from the §9.6 per-directory
+	// skill cache (task 124.9, #505): TTLs, single flight and the kept list
+	// on a failed probe are the cache's, and the route only maps its answer.
+	// The chat runner invalidates the same cache when a turn ends. Nil is
+	// tolerated (tests without one) — the route then answers 500.
+	Skills *agent.SkillCache
 	// WakeRunner nudges task admission after a task is created; it must not
 	// block. Nil is tolerated (tests without a runner).
 	WakeRunner func()
@@ -391,6 +397,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodPost, "/v1/chats/{id}/handoff", s.handleChatHandoff)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/close", s.handleChatClose)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/turns/{seq}/transcript", s.handleChatTurnTranscript)
+	rt.handle(http.MethodGet, "/v1/chats/{id}/skills", s.handleChatSkills)
 	rt.handle(http.MethodGet, "/v1/events", s.handleEvents)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/events", s.handleTaskEvents)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/events", s.handleChatEvents)

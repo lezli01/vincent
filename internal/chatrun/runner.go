@@ -108,6 +108,16 @@ type Deps struct {
 	// daemon left running (061 decision 9's pid file). It reports whether
 	// the task runs in a container at all. Nil means no container kill.
 	StopOrphan func(ctx context.Context, taskID, turnID int64) bool
+	// InContainer reports whether a linked chat's task runs its workflow in a
+	// container, from settings alone. It never asks the container runtime
+	// (task 124 decision 56). internal/taskrun implements it and the daemon
+	// wires it, so this package never imports taskrun (task 119). Nil means
+	// the host.
+	InContainer func(ctx context.Context, taskID int64) (bool, error)
+	// InvalidateSkills drops the skill cache's entries for a directory a turn
+	// just ran in (task 124.9): a turn is the one event vincent observes that
+	// can have written a skill or installed a plugin. Nil means no cache.
+	InvalidateSkills func(workDir string)
 }
 
 // ErrLinkedTaskNoWorktree is a linked-chat turn whose task no longer names a
@@ -376,6 +386,11 @@ func (r *Runner) runTurn(
 		if errors.Is(err, agent.ErrResumeUnsupported) {
 			reason = ReasonSessionLost
 		}
+		// Start can fail after the CLI is already spawned — claude's prompt
+		// is written to a live process's stdin — so this ending invalidates
+		// like every other one past placement, and ahead of finish for the
+		// reason given below.
+		r.invalidateSkills(workDir)
 		r.finish(turn, chatstate.TurnFailed, reason, err.Error(), nil)
 		return
 	}
@@ -396,6 +411,12 @@ func (r *Runner) runTurn(
 	if res.SessionID != "" {
 		turn.SessionID = res.SessionID
 	}
+	// The process is gone, so nothing later in this turn can write a skill.
+	// This is ahead of every ending below rather than deferred: finish's
+	// chat.turn_changed is the cue a client refetches the skill list on, and
+	// a refetch racing an invalidation that had not happened yet would
+	// re-cache the pre-turn list (task 124.9, §9.6).
+	r.invalidateSkills(workDir)
 	switch cause := context.Cause(ctx); {
 	case ctx.Err() != nil && r.base.Err() != nil:
 		// The daemon is going away under a live turn. It is interrupted, not
@@ -426,32 +447,67 @@ func (r *Runner) runTurn(
 	}
 }
 
-// turnPlace resolves where a turn runs. A free chat runs in its own worktree
-// on the host. A linked chat runs in its task's worktree, read through the
-// store at the start of every turn because the task owns that claim (task 119
-// decision 1), and through whatever launcher the task's container settings
-// call for (decision 3).
-func (r *Runner) turnPlace(
-	ctx context.Context, chat *store.Chat, turn *store.ChatTurn,
-) (string, agent.Launcher, error) {
+// Workspace resolves where chat's next turn would run, without starting one.
+// A free chat runs in its own worktree on the host. A linked chat runs in its
+// task's worktree, read through the store on every call because the task owns
+// that claim (task 119 decision 1).
+//
+// inContainer comes from the task's settings alone and never from the
+// container runtime (task 124 decision 56), so asking costs no process: it is
+// what lets GET /v1/chats/{id}/skills answer `unknown` for a container-run
+// chat rather than listing a host directory the agent never reads (task
+// 124.9, §13.2). It is a statement about configuration, not about a live
+// container — a turn still learns the container is gone from Launchers.
+func (r *Runner) Workspace(ctx context.Context, chat *store.Chat) (dir string, inContainer bool, err error) {
 	if !chat.Linked() {
-		return chat.WorktreePath, nil, nil
+		return chat.WorktreePath, false, nil
 	}
 	task, err := r.deps.Store.GetTask(ctx, *chat.LinkedTaskID)
 	if err != nil {
-		return "", nil, err
+		return "", false, err
 	}
 	if task.WorktreePath == "" {
-		return "", nil, fmt.Errorf("task %d: %w", task.ID, ErrLinkedTaskNoWorktree)
+		return "", false, fmt.Errorf("task %d: %w", task.ID, ErrLinkedTaskNoWorktree)
 	}
-	if r.deps.Launchers == nil {
-		return task.WorktreePath, nil, nil
+	if r.deps.InContainer == nil {
+		return task.WorktreePath, false, nil
 	}
-	l, err := r.deps.Launchers(ctx, task.ID, turn.ID)
+	in, err := r.deps.InContainer(ctx, task.ID)
+	if err != nil {
+		return "", false, err
+	}
+	return task.WorktreePath, in, nil
+}
+
+// turnPlace resolves where a turn runs: Workspace's directory, and for a
+// linked chat whatever launcher the task's container settings call for (task
+// 119 decision 3). The launcher, not Workspace's bit, is the turn's source of
+// truth: a configured container that has gone away fails the turn there
+// rather than running it on the host.
+func (r *Runner) turnPlace(
+	ctx context.Context, chat *store.Chat, turn *store.ChatTurn,
+) (string, agent.Launcher, error) {
+	dir, _, err := r.Workspace(ctx, chat)
 	if err != nil {
 		return "", nil, err
 	}
-	return task.WorktreePath, l, nil
+	if !chat.Linked() || r.deps.Launchers == nil {
+		return dir, nil, nil
+	}
+	l, err := r.deps.Launchers(ctx, *chat.LinkedTaskID, turn.ID)
+	if err != nil {
+		return "", nil, err
+	}
+	return dir, l, nil
+}
+
+// invalidateSkills drops the skill cache's entries for dir, the directory a
+// turn just ran in (task 124.9). Callers run it before finish, never after:
+// see runTurn.
+func (r *Runner) invalidateSkills(dir string) {
+	if r.deps.InvalidateSkills != nil {
+		r.deps.InvalidateSkills(dir)
+	}
 }
 
 // turnPreamble is what rides ahead of the human's message: a linked chat's
