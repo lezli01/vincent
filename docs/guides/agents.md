@@ -69,6 +69,23 @@ runs. The exception is a claude build outside the verified input family (see
 [Claude Code](#claude-code)): it receives the context and your message as one
 piece of text, and leaves a first-message `/name` to the model.
 
+In a chat that runs `restricted` — one opened on a task whose agent steps run
+restricted, whether the task was created that way or its workflow says so — a
+skill you invoke can carry its own tool grant: claude's `allowed-tools`
+frontmatter applies for the turn that invokes the skill, so it may use tools
+the restricted mode otherwise withholds. It takes an act of yours, either
+typing the name or approving the request the agent raises when *it* wants the
+skill, and a command the skill injects is still checked, with a refusal ending
+the invocation before the agent runs. codex and cursor have no such field. The
+[Security model](../security-model.md#restricted-mode) has the whole picture.
+
+A CLI's **built-in** commands pass through the same way, and `/clear` is the
+one worth knowing about. claude clears its own conversation and reports a new
+session, which vincent uses for the next turn — so the agent starts empty while
+the chat still shows every turn you already had, and nothing in the transcript
+marks where that happened. If you want a fresh conversation with a record of
+it, close the chat and open another.
+
 [`vincent agents`](../reference/cli.md#vincent-agents), the TUI's daemon view,
 and `GET /v1/agents` all report what vincent actually resolved on your machine — path, version, the model and
 effort options it discovered, and the health verdicts below: whether the build

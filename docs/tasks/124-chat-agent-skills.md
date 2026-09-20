@@ -1,6 +1,6 @@
 # 124 — Let a chat's human see the agent's skills and invoke one from a message
 
-**Status:** 🔄 in progress (12/19)
+**Status:** 🔄 in progress (13/20)
 **Opened:** 2026-09-19
 **Issue:** #496 (parent), #497–#515 (one per item)
 **Spec:** §9.1 (`SkillLister`, `SkillInvoker`), §9.6 (`supports_skill_listing`,
@@ -555,6 +555,44 @@ breakdown"). 13–19 were settled with the author, or taken in evaluation, when
     result arriving after the list was hidden, or for a different chat,
     updates nothing. `ChatSkills` goes through `probeClient`, so this is the
     ordinary case rather than an edge.
+77. **2026-09-20 — Posture (a): a human-invoked skill may widen a restricted
+    claude turn, and vincent documents that rather than disabling skills.**
+    Claude's `allowed-tools` frontmatter grants the listed tools for the turn
+    that invokes the skill, under vincent's restricted argv as much as anywhere
+    and with no control request (#496's capture against 2.1.277, and the vendor
+    documentation at <https://code.claude.com/docs/en/skills>). No argv change:
+    `restrictedTools` is untouched and `Skill` stays out of it, because skills
+    without `allowed-tools` already load without it and pre-approving it would
+    let the *model* widen a turn with no human act at all. The widening always
+    costs a human act — the human types `/name`, which the CLI expands before
+    the model is asked anything, or approves the §7.4 request a model's load
+    raises (decision 26) — and the skill is repository or user content the
+    human chose to chat inside. What a skill *injects* is still checked against
+    the allow-list, and a refusal aborts the invocation before the model runs
+    (`stream_skill_inject_denied_2.1.277.jsonl`). **Beaten:**
+    `--disable-slash-commands` in restricted mode, which is not the one-line
+    argv change the issue estimated. The flag is absent from the pinned
+    `help_2.1.224.txt` capture while chat turns run under the whole
+    `[2.1.0, 3.0.0)` input family (`internal/agent/claude/input.go`) and
+    `buildArgs` adds its input-mode flags unconditionally, so it would need a
+    version floor of its own or it would break restricted chats on tested
+    builds; and it would contradict 124.9 and 124.11 by leaving
+    `GET /v1/chats/{id}/skills` listing skills a restricted chat cannot invoke,
+    unless that route grew an `invoke_verdict: unsupported` leg. Written into
+    §9.4, §16, `docs/security-model.md`, `docs/guides/agents.md` and
+    `docs/guides/workflows.md`; closes the parent's open question 1.
+78. **2026-09-20 — A conversation reset is documented here and recorded
+    later.** `/clear` passes through like any other message: claude resets its
+    own conversation and stamps a new session id, which vincent stores
+    last-wins, so the next turn resumes an empty conversation while the chat's
+    transcript still shows every turn before it. 124.2 put
+    `conversation_reset` explicitly out of scope and nothing maps the line
+    today, so the transcript carries no mark at the point the agent's memory
+    restarted. This item states that consequence in §5.5 and in
+    `docs/guides/agents.md` and stops there: making the reset a *visible
+    record* needs a record shape, a mapping and a drawing, so it is appended as
+    124.20 rather than smuggled into a documentation item. Closes the parent's
+    open question 9.
 
 ## Open questions
 
@@ -563,14 +601,14 @@ answer it, so none is lost:
 
 | #496 open question | Owner |
 |---|---|
-| 1 — Restricted posture: accept that a human-invoked skill's `allowed-tools` widens a restricted claude turn, or pass `--disable-slash-commands` in restricted mode | 124.6 (#502) |
+| 1 — Restricted posture: accept that a human-invoked skill's `allowed-tools` widens a restricted claude turn, or pass `--disable-slash-commands` in restricted mode | closed by 124.6 (#502): decision 77 |
 | 2 — Built-in rows: omit every `builtin: true` row, or list them flagged | closed by 124.7 (#503): decision 42 |
 | 3 — claude listing floor: 2.1.277 only, or the whole `[2.1.0, 3.0.0)` input family | closed by 124.7 (#503): decision 40 |
 | 4 — Hooks in the probe: suppress SessionStart hooks and MCP servers, at the cost of missing hook-installed skills | closed by 124.7 (#503): decision 41 |
 | 5 — The skills key: `tab` over `f2` | closed by 124.13 (#509): decision 69 — `tab`, with `f2` as its alias |
 | 6 — The `quiet` level: does a human-invoked skill show there | 124.12 (#508); settled by decision 37 |
 | 7 — Cache TTLs: 5 min for a clean list and 1 min for a failed one | closed by 124.9 (#505): decision 54 |
-| 9 — `/clear` under pass-through: should a conversation reset become a visible record | 124.6 (#502) |
+| 9 — `/clear` under pass-through: should a conversation reset become a visible record | closed by 124.6 (#502): decision 78; the record itself is 124.20 |
 | 10 — Containers: should `container.mount_agent_config` also mount `~/.agents` | no owner; out of scope |
 
 Open question 8 is settled by decision 14.
@@ -611,8 +649,16 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
   made optional; the CLI reference's `--message-file` and quoting passages, a
   troubleshooting entry for the Git Bash symptom, and a §12.1 row. No wire
   change. ✓ 2026-09-19
-- [ ] 124.6 (#502) Amend §5.5, §9.4 and §16 on pass-through and restricted
-  skills, and record the owner's posture decision.
+- [x] 124.6 (#502) Amend §5.5, §9.4 and §16 on pass-through and restricted
+  skills, and record the owner's posture decision. §5.5's
+  "Skills in a chat's message" block — verbatim pass-through, unknown names,
+  `user-invocable: false`, leading whitespace, position and stacking, a skill
+  that asks, and `/clear`'s consequence; §9.4's and §16's dated notes on what
+  `allowed-tools` does to `restricted` and why `Skill` stays out of the
+  allow-list; the same property in prose in `docs/security-model.md`,
+  `docs/guides/agents.md` and `docs/guides/workflows.md`. Decisions 69 and 70,
+  closing the parent's open questions 1 and 9. Documentation only: no argv
+  change, no new capture. ✓ 2026-09-20
 - [x] 124.7 (#503) claude lists through `initialize`. `claude.Adapter`
   implements `agent.SkillLister`: one `initialize` control request, only
   `commands` decoded, `builtin` rows dropped, on builds in
@@ -686,6 +732,9 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
 - [ ] 124.18 (#514) Investigate whether ACP should become cursor's listing,
   and record a decision. Depends: 124.1.
 - [ ] 124.19 (#515) The `tui-chat-skills.png` tape. Depends: 124.14.
+- [ ] 124.20 (no issue yet) Surface claude's `conversation_reset` as a visible
+  chat record, so a `/clear` in a chat is marked where it happened rather than
+  leaving a transcript the agent no longer shares (decision 78). Depends: none.
 
 The requirement's two done criteria are met once 124.14, 124.11, 124.10, 124.3
 and 124.15 have landed. 124.16, 124.17 and 124.18 widen coverage after that.

@@ -794,6 +794,54 @@ A chat that is `idle`, `running` or `awaiting_input` is listed alike: a probe
 is not a turn and holds no `max_parallel_chats` slot (§11). The list is served
 from §9.6's skill cache, which a turn's ending invalidates for its directory.
 
+#### Skills in a chat's message (added 2026-09-20, task 124.6, issue #502)
+
+**vincent passes the message through verbatim.** An invocation typed into a
+chat message is ordinary text to vincent: it is never validated against the
+list above, never refused for an unknown name, never rewritten, and never
+translated between adapters (task 124 decision 9, after task 025 decision 5 —
+the human's own message reaches the agent as it was typed, never as a
+template). Three reasons, all still standing: a leading `/` is ordinary prose
+too, the list can be stale by the time the message is sent, and no list
+reproduces a CLI's own expansion rules. `POST /v1/chats/{id}/send` takes
+`message` as it arrives and rejects only the empty string (§13.2);
+`--message-file` sends the file's bytes untrimmed (§12.1); the TUI composer is
+the one path that trims, and it trims before it sends. The bytes a client sends
+are the bytes the CLI sees.
+
+Which sigil a CLI takes, and where in the message it may sit, is §9.1's adapter
+table and is not restated here. What each CLI does with an invocation is this,
+observed on claude 2.1.277, codex-cli 0.154.0 and cursor-agent 2026.09.18 — the
+builds that table already names:
+
+- **An unknown name** is sent on as text. claude adds a note of its own and the
+  model answers; vincent reports that turn's echo as `agent.input_echo`, never
+  as a failed skill (§9.2, task 124.10). codex and cursor treat it as plain
+  text.
+- **A skill with `user-invocable: false`** ends a claude run **silently** — an
+  empty `success` result with `num_turns: 0` and no reply at all.
+- **Leading whitespace defeats claude's expansion.** A message beginning with a
+  space and then `/name` is sent as prose. The TUI composer trims and so never
+  produces one; the API and `vincent chat` do not trim, by design.
+- **A claude invocation that is not at the start** is not expanded, and what
+  the model does with the text — including calling its own `Skill` tool — is
+  the model's business. **Stacking** two of them (`/a /b x`) expanded only `/a`
+  on 2.1.277, whatever the vendor documentation says.
+- **A skill that asks the human** is an ordinary §7.4 request on claude: its
+  `AskUserQuestion` becomes an `input` request and the chat goes to
+  `awaiting_input`, where the human answers it: `on_input` is a step's setting
+  and a chat turn always waits, bounded by `input_timeout` as any other wait
+  is. codex and cursor have no mid-run input (§9.3, §9.7), so a skill cannot
+  ask there at all.
+- **Built-in commands pass through too**, `/clear` among them. claude resets
+  its own conversation and stamps a new session id, which vincent stores
+  last-wins (§9.2), so the **next turn resumes an empty conversation while the
+  chat's transcript still holds and still shows every turn before it** — the
+  history on screen is no longer the history the agent has. claude's
+  `conversation_reset` line maps to no vincent record today (task 124.2 put it
+  explicitly out of scope, §9.2), so nothing marks the point in the transcript
+  where the agent's memory restarted. Task 124.20 owns making it visible.
+
 #### Handoff (added 2026-09-01, task 074, issue #288)
 
 `hand_off` creates a task in the chat's project that **adopts** the chat's
@@ -4166,6 +4214,59 @@ container's reach rather than the host's (§16). There is no `contained` mode,
 and neither axis implies the other. Cursor's "cannot restrict" rule keeps being
 judged against the **host** platform, which for a containerized task is already
 settled: a Windows daemon refuses the task at creation (task 061 decision 2).
+
+*Added 2026-09-20 (task 124.6, issue #502).* **A skill the human invokes can
+widen a `restricted` claude turn, and vincent accepts that rather than
+disabling skills** (task 124 decision 77). Claude's Agent Skills carry an
+optional `allowed-tools` frontmatter field, and it grants the listed tools for
+the turn that invokes the skill — under vincent's restricted argv as much as
+anywhere, with no control request: a skill declaring `Bash` ran a shell command
+the allow-list above does not carry. Four properties bound that, and together
+they are why the posture is defensible:
+
+- **A human's `/name` is not gated by claude's `Skill` permission.** The CLI
+  expands the invocation before the model is asked anything, so no allow-list
+  entry could catch it and adding one gains nothing.
+- **A command the skill *injects* is still checked** against the allow-list,
+  and a refusal aborts the invocation before the model runs at all: the CLI
+  reports the failed check and the run ends as an empty `success` with
+  `num_turns: 0`. The same skill in `full-auto` runs the command.
+- **A model's load of such a skill raises a §7.4 `permission` request** named
+  for the skill (task 124 decision 26). That leg governs a restricted **task
+  step** as much as a chat, and the two answer it differently: a step under
+  `on_input: deny` denies it automatically, so a step never widens itself
+  unattended, while a chat turn always waits for its human (`on_input` is a
+  step's setting; a chat turn is started `wait`, §5.5).
+- **`Skill` stays out of `restrictedTools`**, deliberately. Skills without
+  `allowed-tools` already load without it, so the entry would buy nothing
+  there; the only loads that prompt are exactly the ones that widen, and
+  pre-approving `Skill` would let the model widen a turn with no human act at
+  all — past this section's own promise that `restricted` bounds the filesystem
+  and the shell.
+
+The widening therefore always costs a human act — typing `/name`, or approving
+the §7.4 request — and the skill is repository or user content the human chose
+to chat inside. **Beaten:** passing `--disable-slash-commands` (claude 2.1.277's
+"Disable all skills") in restricted mode. It is not the one-line argv change it
+looks like: the flag is absent from the pinned `2.1.224` help capture while
+chat turns run under the whole `[2.1.0, 3.0.0)` input family (§9.2), so it would
+need a version floor of its own or it would break restricted chats on tested
+builds; and it would leave `GET /v1/chats/{id}/skills` (§5.5) listing skills a
+restricted chat cannot invoke, so that route would need an `invoke_verdict` leg
+of its own. **codex and cursor have no per-skill tool grant** at all — codex's
+skill frontmatter carries interface, policy and dependencies only, and a
+restricted *resumed* codex chat cannot be opened in the first place (§5.5);
+cursor's has no such field, and `--sandbox enabled` still applies to whatever a
+skill does. Stated here and in §16 because it is only defensible written down.
+
+Observed on claude 2.1.277, codex-cli 0.154.0 and cursor-agent 2026.09.18. Two
+of the three claude legs are held by committed fixtures — a model's load
+raising `can_use_tool` for `Skill`
+(`internal/agent/claude/testdata/stream_skill_permission_2.1.277.jsonl`) and an
+injected command's refusal aborting the invocation
+(`stream_skill_inject_denied_2.1.277.jsonl`), both captured under the restricted
+argv. The human-invoked widening is issue #496's observation against 2.1.277
+plus the vendor documentation, not a fixture, and is cited as such.
 
 ### 9.5 Detection
 
@@ -12381,7 +12482,18 @@ specifics:
 - **`restricted` does not restrict what a step does to vincent** (§9.4). The
   allow-list carries `mcp__vincent__*` in full, so a restricted step can create
   and cancel tasks. It bounds the filesystem and the shell, and that is all it
-  claims to bound.
+  claims to bound. *Amended 2026-09-20 (task 124.6, issue #502): what a
+  human invokes can widen one turn.* A claude skill carrying `allowed-tools`
+  grants those tools for the turn that invokes it, under `restricted` too and
+  without a control request — beyond the allow-list, though still only over the
+  filesystem and the shell. It always costs a human act: the human types the
+  name, which the CLI expands before the model is asked anything, or approves
+  the §7.4 request a *model's* load of such a skill raises, which `on_input:
+  deny` denies automatically. What the skill *injects* is still checked against
+  the allow-list, and a refusal aborts the invocation before the model runs.
+  `Skill` is deliberately not in the allow-list, because pre-approving it would
+  let a model widen a turn with no human act at all. codex and cursor have no
+  per-skill grant (§9.4).
 - **The per-step endpoint is not a security boundary.** `/mcp/step/{run_id}`
   carries a secret minted for one step run, and it exists to make `task_wait`'s
   deadlock refusal correct and to attribute provenance — not to confine the
