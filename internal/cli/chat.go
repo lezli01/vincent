@@ -20,7 +20,7 @@ import (
 // free chat, so the feature is not TUI-only.
 //
 // The verbs are the §5.5 actions plus the reads: start, send, answer, cancel,
-// list, show, transcript, archive, handoff, close. `send` blocks until the turn ends and prints the
+// list, show, transcript, skills, archive, handoff, close. `send` blocks until the turn ends and prints the
 // answer, which is what a conversation in a terminal has to do — a
 // fire-and-forget send would leave the human polling `show`.
 //
@@ -40,7 +40,8 @@ func newChatCmd() *cobra.Command {
 	}
 	cmd.AddCommand(newChatStartCmd(), newChatSendCmd(), newChatAnswerCmd(),
 		newChatCancelCmd(), newChatListCmd(), newChatShowCmd(), newChatTranscriptCmd(),
-		newChatArchiveCmd(), newChatHandoffCmd(), newChatCloseCmd(), newChatDeleteCmd())
+		newChatSkillsCmd(), newChatArchiveCmd(), newChatHandoffCmd(), newChatCloseCmd(),
+		newChatDeleteCmd())
 	return cmd
 }
 

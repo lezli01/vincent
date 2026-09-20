@@ -1552,6 +1552,11 @@ Neither subcommand talks to the daemon, so **neither can exit 2**. Detection is
 a filesystem read and works on a machine with no node installed; only `install`
 shells out.
 
+These are the skills vincent publishes, not the ones an agent loads. For the
+skills a chat's own agent CLI would load in its directory, and the exact text
+that invokes one, see
+[`vincent chat skills`](#vincent-chat-skills).
+
 ### `vincent skills ls`
 
 ```sh
@@ -1717,6 +1722,10 @@ Every one of those refusals exits 1. So does a missing file.
 
 #### Quoting a skill invocation
 
+[`vincent chat skills`](#vincent-chat-skills) prints the exact text that
+invokes each of the chat's skills, and repeats the rule below for that chat's
+own sigil.
+
 A message that invokes an agent's skill — `/review`, or codex's `$review` —
 starts with a character a shell treats specially, and a shell that changes it
 says nothing. vincent sends what it receives and never repairs a message, so
@@ -1820,6 +1829,59 @@ A turn that failed before its transcript was opened — `agent_unavailable` or
 `transcript_io_error` — prints `turn N (REASON) has no transcript` on stderr and
 exits `0`; the reason is the whole answer. A transcript whose file is gone
 (pruned by `transcript_retention_days`, or deleted) exits `1`.
+
+### `vincent chat skills`
+
+```sh
+vincent chat skills CHAT_ID [--refresh] [--json]
+```
+
+The skills the chat's **agent CLI** would load in the chat's directory — its
+own worktree, or its linked task's — and the exact text that invokes one. Not
+to be confused with [`vincent skills`](#vincent-skills), which is about the
+skills *vincent publishes* for you to install into your agents; these are the
+agent's own, discovered by asking its CLI.
+
+| Column | What it is |
+|---|---|
+| `SKILL` | The name the CLI reported, verbatim. Names may repeat: two skills can share one |
+| `INVOKE` | The exact text to put in a message, built by the daemon's adapter. This is why it is a column and not something you assemble — codex disambiguates a duplicated name as `[$name](path)`, so two rows with one name differ only here |
+| `ARGS` | The CLI's own argument hint, blank when it gave none |
+| `DESCRIPTION` | The CLI's own description, blank when it gave none |
+
+Every cell is the agent CLI's own word. vincent normalizes nothing, invents no
+scope, and puts no `-` in a cell the CLI left empty. `scope`, `plugin`, `path`
+and `aliases` are carried by `--json` only — claude reports no scope at all, so
+a column for it would be blank for every claude chat.
+
+**stdout is the table and nothing else.** Everything else goes to stderr, so
+`vincent chat skills 12 | wc -l` counts skills:
+
+- The invocation line, for example
+  `invoke: vincent chat send 12 '$NAME your message'`, followed by its quoting
+  note. Both are built from the sigil and position the daemon reported, not
+  from the agent's name, and it prints whenever the agent can invoke a skill —
+  including for an agent that can invoke one but cannot list them, and for an
+  empty list. See [Quoting a skill invocation](#quoting-a-skill-invocation).
+- `no skill list: REASON` when the agent cannot list them, and
+  `skill list unknown: REASON` when nobody can say — a probe that failed, an
+  adapter that is no longer registered, or a chat whose task runs in a
+  container. Under either there is no table at all.
+- `warning: this list is an earlier one; the latest probe failed: REASON` when a
+  table *is* printed but the newest probe did not answer: the daemon kept the
+  last list that did, and `probed_at` in `--json` says when it was obtained.
+- `warning: PATH: MESSAGE` for each entry the CLI found and could not load.
+
+The answer comes from the daemon's per-directory cache; `--refresh` asks the
+CLI again first. `--json` emits the response object unchanged, with `skills`
+and `problems` always arrays.
+
+Exit `0` whenever the daemon answered, whatever the verdicts say — an agent
+that cannot list its skills is the normal state of a healthy machine, and an
+exit code that fires on the normal state is no use in a script. Exit `1` on an
+unknown chat, a terminal one (it has no next turn, so no directory to list
+for), or a linked chat whose task no longer has a worktree. Exit `2` with no
+daemon.
 
 ### `vincent chat archive`
 

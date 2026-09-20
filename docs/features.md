@@ -107,6 +107,12 @@ starts the moment you send it, bounded only by its own
 that it is refused immediately rather than queued behind batch work, which is
 the wait a chat exists to avoid.
 
+A chat can also tell you **which skills its agent would load** in its own
+worktree, and the exact text that invokes one —
+[`vincent chat skills`](reference/cli.md#vincent-chat-skills) or
+`GET /v1/chats/{id}/skills`. The list is the agent CLI's own, asked for rather
+than guessed at: an agent that cannot report one says so instead.
+
 Drive one from the TUI's own **chats board and chat workspace**
 ([guide](guides/tui.md#chats)), from
 [`vincent chat`](reference/cli.md#vincent-chat), or over the

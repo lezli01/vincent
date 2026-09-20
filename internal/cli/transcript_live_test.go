@@ -77,6 +77,11 @@ type liveHarness struct {
 	// request asked for `?refresh=true` (agents_live_test.go).
 	agentsRefreshes atomic.Int64
 	agentsCached    atomic.Int64
+	// chatSkillsRefreshes and chatSkillsCached do the same for
+	// GET /v1/chats/{id}/skills (chatskills_live_test.go), so `--refresh` is
+	// counted on the wire rather than assumed from the flag.
+	chatSkillsRefreshes atomic.Int64
+	chatSkillsCached    atomic.Int64
 }
 
 // liveOption adjusts what newLiveHarness wires.
@@ -85,6 +90,7 @@ type liveOption func(*liveOptions)
 type liveOptions struct {
 	agents  *agent.Registry
 	catalog bool
+	skills  bool
 }
 
 // withAgentCatalog serves the harness from reg and puts an agent catalog over
@@ -92,6 +98,13 @@ type liveOptions struct {
 // registry resolves no binary and the endpoint answers 500.
 func withAgentCatalog(reg *agent.Registry) liveOption {
 	return func(o *liveOptions) { o.agents, o.catalog = reg, true }
+}
+
+// withSkillCache serves the harness from reg and wires a real agent.SkillCache
+// over it, which is what GET /v1/chats/{id}/skills needs to answer at all: a
+// server built without one answers 500 rather than guessing at a list.
+func withSkillCache(reg *agent.Registry) liveOption {
+	return func(o *liveOptions) { o.agents, o.skills = reg, true }
 }
 
 func newLiveHarness(t *testing.T, opts ...liveOption) *liveHarness {
@@ -138,6 +151,10 @@ func newLiveHarness(t *testing.T, opts ...liveOption) *liveHarness {
 	if o.catalog {
 		catalog = agent.NewCatalogCache(agents)
 	}
+	var skills *agent.SkillCache
+	if o.skills {
+		skills = agent.NewSkillCache()
+	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	// The runner is never started: nothing here admits a task, and the rows
 	// under test are written directly.
@@ -160,7 +177,7 @@ func newLiveHarness(t *testing.T, opts ...liveOption) *liveHarness {
 		Chats: chats,
 		// The registry is what lets the endpoint normalize a recorded run
 		// with the parser that read it live.
-		Agents: agents, Catalog: catalog,
+		Agents: agents, Catalog: catalog, Skills: skills,
 		// The chat-turn route derives its file from the data dir rather than
 		// from a stored path (chattranscript_live_test.go).
 		Dirs: config.Dirs{Data: dataDir},
@@ -178,6 +195,13 @@ func newLiveHarness(t *testing.T, opts ...liveOption) *liveHarness {
 				h.agentsRefreshes.Add(1)
 			} else {
 				h.agentsCached.Add(1)
+			}
+		}
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/skills") {
+			if r.URL.Query().Get("refresh") == "true" {
+				h.chatSkillsRefreshes.Add(1)
+			} else {
+				h.chatSkillsCached.Add(1)
 			}
 		}
 		handler.ServeHTTP(w, r)

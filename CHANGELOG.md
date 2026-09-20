@@ -13,6 +13,18 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **`vincent chat skills <chat-id>`.** Lists the skills a chat's agent CLI
+  would load in the chat's directory, with the exact text that invokes each
+  one — paste it into `vincent chat send`. Two skills can share a name, so the
+  invocation is its own column rather than something you assemble. Every cell
+  is the agent's own word: vincent normalizes nothing and fills nothing in.
+  stdout is the table and nothing else, so it pipes; the verdict when an agent
+  cannot report a list, the entries it could not load, and the quoting rule for
+  that agent's sigil all go to stderr, and the command still exits 0 — an agent
+  that cannot list its skills is information, not failure. `--refresh` asks the
+  CLI again instead of reading the daemon's cache, and `--json` carries the
+  fields the table leaves out.
+
 - **`update-workflows` can update your global workflows.** Set the built-in's
   new `global` field to `true` and it brings `{config_dir}/workflows` up to the
   current feature set instead of the project's `.vincent/workflows`. Nothing
