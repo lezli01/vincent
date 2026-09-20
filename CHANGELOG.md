@@ -13,6 +13,19 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **claude's own bundled skills are listed again, once a chat has had one
+  turn.** `simplify`, `loop` and `run` ship with claude, and claude marks them
+  with the same flag it marks `/clear` and `/compact` with, so vincent left
+  every one of them out rather than offer you a command that resets the
+  conversation behind its back. Each turn now tells vincent which of them are
+  really skills, and from then on they appear in the chat's skill list — in
+  every chat and every directory on that claude, not just the one that ran the
+  turn — marked `builtin` so a client can group them. `/clear` and `/compact`
+  are still never listed. The chat skills response says which of the two
+  situations you are in: `builtin_skills` is `"listed"` once a turn has
+  reported, `"after_first_turn"` until then, and `""` for an agent that marks
+  nothing, which is every codex and cursor chat.
+
 - **`tab` in the TUI's chat workspace lists the agent's skills above the
   composer.** Type to filter it — a name prefix ranks over a plugin's bare
   name or an alias, which ranks over a description match — and `enter` or
