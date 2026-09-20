@@ -59,8 +59,13 @@ with the exact invocation for each skill, is at
 [`vincent chat skills`](../reference/cli.md#vincent-chat-skills), and on `tab`
 in the TUI's [chat workspace](tui.md#chat-workspace), which writes the row you
 take into your message. claude lists without spending a turn, on 2.1.277
-or a later 2.x build, and leaves out its own built-in commands and bundled
-skills. When two codex skills share a name, `$name` selects neither; name one
+or a later 2.x build. Its own built-in commands are never listed; its bundled
+skills — `simplify`, `loop` and `run`, which it marks exactly the way it marks
+those commands — are listed once one turn has run on that claude, a turn's own
+report of what it loaded being the only thing that tells the two apart. That
+first turn brings them back in every chat and every directory, not just the one
+that ran it, and each arrives marked `builtin`.
+When two codex skills share a name, `$name` selects neither; name one
 with codex's linked form, `[$name](path)`, which is the invocation that route
 gives for it. In a chat
 opened on a task, the task's context reaches claude as a separate block ahead
