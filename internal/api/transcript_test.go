@@ -451,7 +451,7 @@ func TestNormalizeThinkingAndToolResults(t *testing.T) {
 func TestNormalizeRunHeaderAndResultMetadata(t *testing.T) {
 	lines := []string{
 		`{"type":"system","subtype":"init","session_id":"s1","cwd":"C:\\work\\repo",` +
-			`"tools":["Task","Bash","Write"]}`,
+			`"tools":["Task","Bash","Write"],"skills":["simplify"],"slash_commands":["clear"]}`,
 		`{"type":"user","parent_tool_use_id":"toolu_parent","message":{"content":[` +
 			`{"type":"tool_result","tool_use_id":"toolu_01","content":"File created"}]},` +
 			`"tool_use_result":{"type":"create","filePath":"hello.txt"}}`,
@@ -486,6 +486,15 @@ func TestNormalizeRunHeaderAndResultMetadata(t *testing.T) {
 	} {
 		if !strings.Contains(out[0], want) {
 			t.Errorf("run header missing %s: %s", want, out[0])
+		}
+	}
+	// The init line's skill and command names are read (task 124.16) and stay
+	// off the wire: eighty-odd names on every normalized header would cost
+	// kilobytes a turn for no reader, and the verbatim line is already in the
+	// transcript, which is the lossless copy.
+	for _, leak := range []string{"simplify", "clear", "skills", "slash_commands"} {
+		if strings.Contains(out[0], leak) {
+			t.Errorf("normalized run header carries %q: %s", leak, out[0])
 		}
 	}
 

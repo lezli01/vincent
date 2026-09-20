@@ -62,6 +62,12 @@ type ChatSkills struct {
 	InvokeVerdict  string     `json:"invoke_verdict"`
 	InvokeSigil    string     `json:"invoke_sigil"`
 	InvokePosition string     `json:"invoke_position"`
+	// BuiltinSkills says what became of the rows the CLI marks as its own
+	// (task 124.16): "listed" when the skills it bundles are among Skills,
+	// flagged Builtin; "after_first_turn" when it has such rows and no turn
+	// has yet said which of them are skills rather than built-in commands, so
+	// they are all withheld; "" when the question does not arise.
+	BuiltinSkills string `json:"builtin_skills"`
 	// Skills is in the CLI's order, and names may repeat: key nothing by
 	// name.
 	Skills   []ChatSkill        `json:"skills"`
@@ -82,6 +88,9 @@ type ChatSkill struct {
 	Scope        string   `json:"scope"`
 	Plugin       string   `json:"plugin"`
 	Path         string   `json:"path"`
+	// Builtin is a skill the CLI ships itself, served only once a turn has
+	// proven it is a skill and not a built-in command (task 124.16).
+	Builtin bool `json:"builtin"`
 }
 
 // ChatSkillProblem is an entry the chat's agent CLI found and could not load.
