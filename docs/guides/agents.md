@@ -50,10 +50,10 @@ you named — and a command inside it that a permission rule refused — shows u
 in the turn's transcript as its own row. codex and cursor report no skill load
 at all, which is what the third row says: there, the `$name` or `/name` in
 your own message is the only evidence it ran. A task step asks for none of
-this, on any agent. The
-two skill rows are also on `GET /v1/agents`, as `supports_skill_listing`,
-`skill_sigil` and `skill_position`. claude and codex can list the skills they
-would load in a worktree, which is what the listing row says. A chat's list,
+this, on any agent. The first two skill rows are also on `GET /v1/agents`, as
+`supports_skill_listing`, `skill_sigil` and `skill_position`. claude and codex
+can list the skills they would load in a worktree, which is what the listing
+row says. A chat's list,
 with the exact invocation for each skill, is at
 [`GET /v1/chats/{id}/skills`](../reference/api.md#skills) and from
 [`vincent chat skills`](../reference/cli.md#vincent-chat-skills); the TUI does

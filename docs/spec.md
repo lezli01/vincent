@@ -3291,9 +3291,13 @@ one from a tool call. **`EventInputEcho`** (`input_echo`) is a line on which the
 CLI echoed back the prompt vincent wrote to its stdin. It carries nothing: the
 text is already on screen, as a chat's human message or a step's rendered
 prompt, and the event exists so the line stops counting as unrecognized. Only
-cursor produces it (§9.7). Neither is an unmodeled line. §9.7's "genuinely
-unmodeled lines stay `unknown`" still governs every line these two do not claim
-(task 124 decision 25).
+cursor produces it (§9.7). *Amended 2026-09-20 (task 124.10, issue #506):
+claude produces it too, on a chat turn. Asked to replay the messages it
+received, it echoes each one back, and a `control_response` vincent itself
+wrote with them — an ordinary message, a `/name` it could not resolve and an
+echoed answer are all this event (§9.2). Cursor is no longer the only source.*
+Neither is an unmodeled line. §9.7's "genuinely unmodeled lines stay `unknown`"
+still governs every line these two do not claim (task 124 decision 25).
 
 The run header is emitted from the CLI's init line, which is **not** always the
 stream's first line: claude writes SessionStart hook lines before it, and a
@@ -8496,6 +8500,14 @@ GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
                                         normalization means runs already on disk — task
                                         steps as well as chat turns, because the parser is
                                         shared — lose those raw lines too.
+                                        **Amended 2026-09-20 (task 124.10):** claude
+                                        writes `agent.input_echo` too, on a chat turn, so
+                                        cursor is no longer its only source; and a chat's
+                                        `agent.skill` carries `by: "human"` for a plain
+                                        `/name` as well as a forked one, with the `args`
+                                        typed and `error` for a command the skill ran that
+                                        the permission check refused (§9.2). No new type
+                                        and no new key: not a wire change.
 GET    /v1/tasks/{id}/diff              unified diff of worktree vs merge-base with base branch
                                         (includes uncommitted changes)
                                         ?by=lane -> JSON {sections:[...]} instead: one section per
