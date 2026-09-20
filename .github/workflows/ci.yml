@@ -196,6 +196,16 @@ jobs:
       # premise is an agent CLI resuming a session it wrote to disk, and the
       # per-chat SSE stream and the transcript route are read back with the
       # platform's own line endings.
+      #
+      # Leg 12 (task 124.15, §9.1–§9.3, §9.7) gives the Windows leg an
+      # assertion of its own: under Git Bash, MSYS rewrites an argv beginning
+      # with `/name` into a Windows path before a native .exe sees it, so
+      # `printf '/gate-skill hi' | vincent chat send --message-file -` has to
+      # store the prompt byte for byte — which is the guarantee
+      # `--message-file` exists to give, and only this runner can disprove it.
+      # Linux and macOS carry the rest of the leg: each adapter's own skill
+      # listing against the fake, the directory the list is about, and the
+      # invocation a claude turn reports back.
       - name: M14 gate (chats end to end)
         shell: bash
         run: ./scripts/m14-gate.sh
