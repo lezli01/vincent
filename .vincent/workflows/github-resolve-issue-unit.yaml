@@ -84,17 +84,37 @@
 # is "commits in HEAD and not in A", which is still this lane's own commits
 # after A has moved.
 #
-# `A` is `origin/{{.Task.BaseBranch}}` and not the bare local base, because
-# three dots survive a base that has moved *ahead* but not one that is
-# *behind*: the merge base of a stale base and HEAD is that stale commit, so
-# both clauses would read the pull requests that merged while this task ran as
-# this lane's own work (#449). Spec §5.3 says why the local ref goes stale —
-# the branch was cut from the *fetched* base tip (§10), and the local base is a
-# ref every worktree of the repository shares, so one holding it checked out
-# cannot fast-forward it. This file needs no fetch of its own: a lane runs in
-# another worktree of the **same** repository and `refs/remotes/*` lives in the
-# shared common git directory, so the parent's `fetch` step has already moved
-# the ref these clauses read.
+# `A` is whichever of `origin/{{.Task.BaseBranch}}` and the bare local base is
+# further ahead, resolved by the check's own `base=` prologue. Neither one is
+# right on its own.
+#
+# It is not always the local base, because three dots survive a base that has
+# moved *ahead* but not one that is *behind*: the merge base of a stale base
+# and HEAD is that stale commit, so both clauses would read the pull requests
+# that merged while this task ran as this lane's own work (#449). Spec §5.3
+# says why the local ref goes stale — the branch was cut from the *fetched*
+# base tip (§10), and the local base is a ref every worktree of the repository
+# shares, so one holding it checked out cannot fast-forward it. This file needs
+# no fetch of its own: a lane runs in another worktree of the **same**
+# repository and `refs/remotes/*` lives in the shared common git directory, so
+# the parent's `fetch` step has already moved the remote-tracking ref.
+#
+# It is not always `origin/` either, and assuming so is what #449's fix got
+# wrong. That assumption holds only when the base is a branch that exists on
+# origin. A lane's base is the **dag parent's own branch**, which the parent
+# pushes at PR time and never before, so for every round of every dag run
+# `origin/vincent/{parent}-…` does not exist and every clause below dies with
+# "ambiguous argument … unknown revision" — a `check_failed` on a lane whose
+# unit is committed and whose `unit-check.sh` is green (#529; task 349's lanes
+# 353, 354 and 355 burned nine attempts on it). Nor is pushing the parent first a
+# fix: the parent merges each round locally, so a later round's lanes would
+# diff against a stale `origin/{parent}` and flag the earlier rounds' files as
+# stray — #449 again, one level down.
+#
+# "Further ahead" is decided by ancestry, not by date: the local base is used
+# when `origin/<base>` is missing or is an ancestor of it (a lane; a parent
+# whose rounds have landed locally), and `origin/<base>` otherwise (the stale
+# local `master` #449 was about).
 #
 # ## Defaults
 #
@@ -382,10 +402,18 @@ steps:
     # hands the retry the check's *output* — an agent told only "check failed"
     # would have to guess which file it left behind.
     #
-    # Three-dot on the diff, two-dot on the rev-list and `origin/` on both,
-    # deliberately: see the header. The parent's `schedule: barrier` holds the
-    # base branch still while this lane runs; three-dot is what keeps the
-    # ownership clause honest if it ever does move.
+    # Three-dot on the diff, two-dot on the rev-list, and `$base` — the further
+    # ahead of `origin/<base>` and the local base — on both, deliberately: see
+    # the header. The parent's `schedule: barrier` holds the base branch still
+    # while this lane runs; three-dot is what keeps the ownership clause honest
+    # if it ever does move.
+    #
+    # The `base=` prologue is the whole point of the header's third paragraph.
+    # It is an `if`, not a `&&`/`||` chain, because the two ways of choosing the
+    # local base — `origin/<base>` missing, and `origin/<base>` already merged
+    # into it — have to reach the same assignment without a failed `rev-parse`
+    # taking the check's exit code with them. `rev-parse -q --verify` still
+    # prints the sha it verified, hence the redirect.
     #
     # The mode clause is the parent's `integrate` check brought forward: a
     # script under `scripts/` committed without its executable bit passes on
@@ -393,11 +421,13 @@ steps:
     # that wrote it is the cheapest place to catch that — its retry can still
     # fix it.
     check: >
+      base=origin/{{.Task.BaseBranch}};
+      if ! git rev-parse -q --verify "$base" >/dev/null || git merge-base --is-ancestor "$base" {{.Task.BaseBranch}}; then base={{.Task.BaseBranch}}; fi;
       test -z "$(git ls-files .vincent-issue)" &&
       git diff --quiet &&
       git diff --cached --quiet &&
-      test "$(git rev-list --count origin/{{.Task.BaseBranch}}..HEAD)" -gt 0 &&
-      { stray=$(git diff --name-only origin/{{.Task.BaseBranch}}...HEAD | grep -vEf .vincent-issue/unit-files.re || true); test -z "$stray" || { echo 'this unit committed paths the plan did not give it:' >&2; echo "$stray" >&2; echo 'owned paths (ERE):' >&2; cat .vincent-issue/unit-files.re >&2; false; }; } &&
+      test "$(git rev-list --count "$base"..HEAD)" -gt 0 &&
+      { stray=$(git diff --name-only "$base"...HEAD | grep -vEf .vincent-issue/unit-files.re || true); test -z "$stray" || { echo 'this unit committed paths the plan did not give it:' >&2; echo "$stray" >&2; echo 'owned paths (ERE):' >&2; cat .vincent-issue/unit-files.re >&2; false; }; } &&
       { noexec=$(git ls-files -s -- 'scripts/*.sh' | awk '$1 != "100755" { print $4 }'); test -z "$noexec" || { echo 'scripts not committed executable (git update-index --chmod=+x):' >&2; echo "$noexec" >&2; false; }; } &&
       sh .vincent-issue/unit-check.sh
     check_timeout: 15m
