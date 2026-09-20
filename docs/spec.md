@@ -3085,7 +3085,7 @@ capability today.
 
   | adapter | sigil | position | `Invocation` | lists (`SkillLister`) |
   |---|---|---|---|---|
-  | claude | `/` | `leading` — expanded only at the start of the message (under stream-json input, its last text block) | `/name` | not yet (#503) |
+  | claude | `/` | `leading` — expanded only at the start of the message (under stream-json input, its last text block) | `/name` | the stream-json `initialize` request, `builtin` rows omitted, on builds in `[2.1.277, 3.0.0)` (§9.2, task 124.7) |
   | codex | `$` | `anywhere` | `$name`; the linked `[$name](path)` when the exact name occurs more than once among the listed skills, or `$name` if the skill has no path | yes, `skills/list` (§9.3) |
   | cursor | `/` | `anywhere`, as a token | `/name` | never in v1 (§9.7) |
 
@@ -3093,6 +3093,8 @@ capability today.
   The rows state the adapters as shipped; §9.2 and §9.3 add nothing to them.
   *Amended 2026-09-19 (task 124.8, issue #504):* §9.2 still adds nothing;
   §9.3 now specifies codex's listing and when its `Invocation` links.
+  *Amended 2026-09-19 (task 124.7, issue #503):* §9.2 now specifies
+  claude's listing and its floor.
 
 **The launch seam (task 062.1, added 2026-09-16).** An adapter builds its run's
 argv and hands it over; it never spawns the process itself. `Start` resolves the
@@ -3677,6 +3679,81 @@ do, §9.7), and the token is a per-step secret against a loopback listener that
 dies when the step ends. The §12.3 `debug` record redacts it, because that
 transcript is something people paste into issues.
 
+*Amended 2026-09-19 (task 124.7, issue #503).* **Skill listing.** claude
+implements §9.1's `SkillLister` through the stream-json `initialize` control
+request, its one pre-turn, zero-token source of the entries a person can invoke
+by name, with their descriptions and argument hints. Pinned against 2.1.277 in
+`testdata/initialize_2.1.277.jsonl` (logged in, a full user config) and
+`initialize_loggedout_2.1.277.jsonl` (an empty `CLAUDE_CONFIG_DIR`).
+
+- **The exchange.** `ListSkills` resolves and probes the binary through the
+  query's launcher, as `Start` does, then spawns exactly
+  `claude -p --input-format stream-json --output-format stream-json --verbose --strict-mcp-config --settings {"disableAllHooks":true}`
+  in the query's directory, with a retained stdin. It writes one line,
+  `{"type":"control_request","request_id":…,"request":{"subtype":"initialize"}}`,
+  and reads stdout until the `control_response` with that `request_id`,
+  skipping every other line, `system/hook_*` included. It then closes stdin,
+  and the CLI exits 0 with no further stream. One 20 s bound (the version
+  probe's) covers the whole exchange, and the caller's context is honoured; on
+  either the process is killed. The reply is the answer: a CLI that outlives
+  the bound after replying is killed and the list stands, as it does after a
+  non-zero exit that follows the reply. The reply is one line of tens of
+  kilobytes, read with the stream's 16 MiB line bound. On Windows the inline
+  `--settings` JSON rides argv the way task 057's `--mcp-config` already does.
+- **It costs no API call and no credentials** — with none at all the reply
+  still comes, its account reading `tokenSource: "none"` — and without
+  `--resume` it writes no transcript under `~/.claude/projects/`. The reply
+  came 0.2–0.7 s after spawn on the capturing machine.
+- **`--resume` and `--bare` are never passed.** `--resume` appends `mode` and
+  `cost-state` lines to that session's `.jsonl`, and the list does not depend
+  on the session. `--bare` drops user and plugin skills (112 entries to 49 on
+  the capturing machine). No model, effort or permission flag rides either;
+  none changes the list.
+- **Hooks and MCP servers are suppressed** (task 124 decision 41):
+  `disableAllHooks` stops the user's SessionStart hooks running and
+  `--strict-mcp-config` with no `--mcp-config` stops their stdio MCP servers
+  spawning, so listing runs no user code. The measured list was identical
+  either way (112 against 112). What it loses is a skill that only a
+  SessionStart hook installs. MCP prompts are not skills, so they are out
+  either way.
+- **`builtin` rows are omitted** (task 124 decision 7). 2.1.277 marks claude's
+  own commands (`compact`, `clear`, `init`) and its bundled skills
+  (`simplify`, `loop`, `run`) alike with `builtin: true`, and every such row is
+  dropped; restoring the bundled skills is task 124.16's.
+- **The floor is `[2.1.277, 3.0.0)`** (task 124 decision 40): the §7.4 input
+  family, for the control channel, from the first build that carries
+  `builtin`, below which only description text tells a built-in from a skill.
+  Any other build — older or a new major — answers `ErrSkillsUnsupported`,
+  naming its version and the floor, and is never asked. Like the input gate,
+  the floor moves only with re-captured fixtures. Every other failure — a
+  binary that cannot be resolved or version-probed, the timeout,
+  `subtype: "error"`, a line that is not JSON, a reply without `commands` (or
+  with `null`, where `[]` is a legitimate empty list), an exit before the
+  reply — is an ordinary error, `unknown`, and carries the CLI's stderr tail.
+- **What the list holds.** The same name set the per-turn `system/init` line's
+  `slash_commands` carries: legacy `.claude/commands/` files, plugin skills
+  as `plugin:skill` with the bare name in `aliases`, and user, project and
+  claude.ai-synced skills. Descriptions keep their display labels verbatim —
+  `(user)`, `(project)`, `(claude.ai sync)`, a `(<plugin>)` prefix — and scope
+  is never parsed out of them (§9.1). `argumentHint` and `aliases` map
+  through; `Scope`, `Plugin` and `Path` stay empty. A `user-invocable: false`
+  skill is absent and a `disable-model-invocation` one is present, which is
+  right for a list a human picks from.
+- **Only `commands` is decoded.** The reply also carries `models`, `agents`,
+  output styles and an `account` holding the user's email and organization;
+  the decode names nothing but `subtype`, `request_id`, `error` and the
+  commands' five fields, so none of it reaches a Go value.
+- **`reload_skills` is not used.** It returns the model-invocable set — it
+  includes a `user-invocable: false` skill and omits a
+  `disable-model-invocation` one — which is the wrong list for a human.
+- **Its standing.** The `control_request` framing and `SlashCommand` shape are
+  documented by the Agent SDK (`SDKControlInitializeResponse`, backing its
+  `supportedCommands()`), not by the CLI — the same standing as the §7.4
+  channel, and gated the same way.
+
+Nothing in the daemon calls `ListSkills` yet; serving and caching the list is
+task 124.9 (#505).
+
 ### 9.3 Codex adapter
 
 - Invocation (pinned against codex-cli 0.142.5): `codex exec --json`, cwd =
@@ -4128,7 +4205,7 @@ defaults:
     "name": "claude", "available": true, "path": "…", "version": "2.1.224",
     "supports_input": true, "input_verdict": "supported", "logged_in": true,
     "supports_resume": true,
-    "supports_skill_listing": false, "skill_sigil": "/", "skill_position": "leading",
+    "supports_skill_listing": true, "skill_sigil": "/", "skill_position": "leading",
     "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226, 2.1.268, 2.1.277",
     "restricted_verdict": "supported",
     "models":  [ { "value": "sonnet", "source": "cli" }, { "value": "opus", "source": "cli" } ],
@@ -4177,10 +4254,13 @@ defaults:
   too old to list surfaces only at list time, as `ErrSkillsUnsupported` (task
   124 decision 13; a tri-state `skill_list_verdict` modelled on
   `input_verdict` was the alternative it beat). *Amended 2026-09-19 (task
-  124.8, issue #504):* codex, the one adapter that lists today, has no listing
-  floor, so a codex build too old to answer `skills/list` also surfaces only
-  at list time, but as an ordinary error — `unknown`, not a positive no (§9.3,
-  task 124 decision 29). `skill_sigil` (`/` or `$`)
+  124.8, issue #504):* codex has no listing floor, so a codex build too old
+  to answer `skills/list` also surfaces only at list time, but as an ordinary
+  error — `unknown`, not a positive no (§9.3, task 124 decision 29).
+  *Amended 2026-09-19 (task 124.7, issue #503):* claude lists too, and its
+  floor is a positive no: a claude build outside `[2.1.277, 3.0.0)` surfaces at
+  list time as `ErrSkillsUnsupported` (§9.2, task 124 decision 40).
+  `skill_sigil` (`/` or `$`)
   and `skill_position` (`leading` or `anywhere`) are the adapter's
   `SkillSyntax`, verbatim, and both are `""` for a registered adapter that
   cannot invoke. All three are `null` when there is no adapter registry to

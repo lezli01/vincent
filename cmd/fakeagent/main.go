@@ -121,7 +121,24 @@
 //	                      claude only the JSON field decides
 //	FAKEAGENT_CLAUDE_AUTH_HANG
 //	                      "1" makes `auth status` never answer (T4.22)
-//	FAKEAGENT_ARGV_FILE   each invocation appends its argv, one space-joined
+//	FAKEAGENT_CLAUDE_COMMANDS
+//	                      claude input mode: the `commands` a first-line
+//	                      `initialize` control_request is answered with, a
+//	                      JSON array of the SDK's SlashCommand rows. Unset
+//	                      answers a built-in, a skill with an argument hint
+//	                      and a plugin skill with aliases (task 124.7,
+//	                      claude_skills.go)
+//	FAKEAGENT_CLAUDE_INITIALIZE
+//	                      how that request is answered: hang | error |
+//	                      malformed | exit (non-zero, after a stderr line,
+//	                      before any reply) | nocommands | linger (answers,
+//	                      then outlives stdin EOF). Unset answers and exits 0
+//	                      on stdin EOF
+//	FAKEAGENT_SKILLS_ECHO_CWD
+//	                      "1" adds one `initialize` entry whose description
+//	                      is the working directory, so a test can see where
+//	                      the listing ran
+//	FAKEAGENT_ARGV_FILE  each invocation appends its argv, one space-joined
 //	                      line, so a test can assert a probe was never spawned
 //	FAKEAGENT_CODEX_APP_SERVER
 //	                      picks what `app-server --stdio` answers the §9.6
@@ -798,6 +815,11 @@ func readPrompt(inputMode bool) (prompt []byte, blocks []string, rd *bufio.Reade
 	}
 	rd = bufio.NewReader(os.Stdin)
 	line, _ := rd.ReadString('\n')
+	if id, ok := initializeRequestID(line); ok {
+		// A skill listing, not a run (task 124.7, claude_skills.go): the
+		// first line is the whole question, and no run stream follows.
+		answerInitialize(id, rd)
+	}
 	var msg struct {
 		Message struct {
 			Content []struct {

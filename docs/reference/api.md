@@ -158,7 +158,7 @@ are long-lived by contract and no write deadline is set.
     "name": "claude", "available": true, "path": "…", "version": "2.1.224",
     "supports_input": true, "input_verdict": "supported", "logged_in": true,
     "supports_resume": true,
-    "supports_skill_listing": false, "skill_sigil": "/", "skill_position": "leading",
+    "supports_skill_listing": true, "skill_sigil": "/", "skill_position": "leading",
     "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226, 2.1.268, 2.1.277",
     "restricted_verdict": "supported",
     "models":  [ { "value": "sonnet", "source": "cli" } ],
@@ -219,8 +219,8 @@ may be filtered out on either. It rides this route only.
 
 `supports_skill_listing`, `skill_sigil` and `skill_position` describe the
 adapter's skills. `supports_skill_listing` is whether the adapter can list the
-skills its CLI would load at all — `true` for codex and `false` for claude
-and cursor today. It is a fact about the adapter, not about the installed build: `true`
+skills its CLI would load at all — `true` for claude and codex, `false` for
+cursor today. It is a fact about the adapter, not about the installed build: `true`
 does not promise that the build you have will list, and a build that cannot is
 found out only when a chat's skills are read. `skill_sigil` (`/` or `$`) and
 `skill_position` (`leading`: only at the start of the message; `anywhere`) are
