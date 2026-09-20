@@ -379,6 +379,13 @@ func (r *Runner) runTurn(
 		PermissionMode:  agent.PermissionMode(chat.PermissionMode),
 		OnInput:         agent.InputWait,
 		ResumeSessionID: chat.SessionID,
+		// Every turn, not only one whose message opens with the sigil (task
+		// 124.10 decision 66): one rule, and vincent never reads the human's
+		// message to decide an argv flag. The cost is that the turn's own
+		// prompt echo — a linked first turn's preamble among it — and its
+		// §7.4 answers are in the transcript too, as agent.input_echo
+		// records no client draws, under the per-turn cap set above.
+		ReportInvocations: true,
 	}
 	handle, err := adapter.Start(ctx, spec)
 	if err != nil {

@@ -89,6 +89,15 @@ func newChatTurnHarness(t *testing.T) *chatTurnHarness {
 // chunk the chat's stream delivered, and the turn's refetched transcript.
 func (h *chatTurnHarness) turn(t *testing.T, agentName string) ([]apiclient.OutputNote, []apiclient.TranscriptRecord) {
 	t.Helper()
+	return h.turnSaying(t, agentName, "load the echo probe")
+}
+
+// turnSaying is turn, with the message the human sent — which for task
+// 124.10 is the whole input: a leading `/name` is what the CLI expands.
+func (h *chatTurnHarness) turnSaying(
+	t *testing.T, agentName, message string,
+) ([]apiclient.OutputNote, []apiclient.TranscriptRecord) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	chat, err := h.client.CreateChat(ctx, apiclient.CreateChatRequest{
@@ -118,7 +127,7 @@ func (h *chatTurnHarness) turn(t *testing.T, agentName string) ([]apiclient.Outp
 		}
 	}()
 
-	sent, err := h.client.SendChat(ctx, chat.ID, "load the echo probe")
+	sent, err := h.client.SendChat(ctx, chat.ID, message)
 	if err != nil {
 		t.Fatalf("SendChat: %v", err)
 	}
@@ -194,6 +203,48 @@ func TestSkillChunkMatchesItsRecord(t *testing.T) {
 	}
 	want := apiclient.TranscriptRecord{
 		Type: "agent.skill", Name: "echo-probe", Args: "zebra", By: "agent", CallID: "toolu_fake_skill_1",
+	}
+	if !reflect.DeepEqual(live[0], want) {
+		t.Errorf("record = %+v, want %+v", live[0], want)
+	}
+}
+
+// TestHumanSkillChunkMatchesItsRecord is task 124.10's half of the same
+// agreement: the agent.skill a turn publishes for a skill the *human*
+// invoked is the record the transcript route hands back for that line, and
+// neither the invocation nor any other replayed line comes back as agent.raw.
+func TestHumanSkillChunkMatchesItsRecord(t *testing.T) {
+	t.Setenv("FAKEAGENT_SCENARIO", "skill-human")
+	h := newChatTurnHarness(t)
+	chunks, records := h.turnSaying(t, "claude", "/echo-probe zebra")
+
+	var live []apiclient.TranscriptRecord
+	for _, c := range chunks {
+		if c.Type != "agent.skill" {
+			continue
+		}
+		var rec apiclient.TranscriptRecord
+		if err := json.Unmarshal(c.Payload, &rec); err != nil {
+			t.Fatalf("decode chunk: %v", err)
+		}
+		rec.Type = c.Type
+		live = append(live, rec)
+	}
+	var stored []apiclient.TranscriptRecord
+	for _, rec := range records {
+		if rec.Type == "agent.skill" {
+			rec.Raw = nil
+			stored = append(stored, rec)
+		}
+		if rec.Type == "agent.raw" && strings.Contains(rec.Line, `"isReplay"`) {
+			t.Errorf("a replayed line came back as agent.raw: %s", rec.Line)
+		}
+	}
+	if len(live) != 1 || !reflect.DeepEqual(live, stored) {
+		t.Fatalf("live %+v, stored %+v: want the one invocation, identical", live, stored)
+	}
+	want := apiclient.TranscriptRecord{
+		Type: "agent.skill", Name: "echo-probe", Args: "zebra", By: "human",
 	}
 	if !reflect.DeepEqual(live[0], want) {
 		t.Errorf("record = %+v, want %+v", live[0], want)

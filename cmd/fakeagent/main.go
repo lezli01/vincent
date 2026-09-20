@@ -42,6 +42,16 @@
 //	                      call, its commandName result and the isSynthetic
 //	                      body, as claude 2.1.277 writes them — task 124.2;
 //	                      claude dialect) |
+//	                      skill-human (the human invoked one: the isReplay
+//	                      echo of the message, with a leading `/name` in its
+//	                      last block rendered into command elements — only
+//	                      when --replay-user-messages is on the argv, as the
+//	                      real CLI only replays then; task 124.10, claude
+//	                      dialect) |
+//	                      skill-inject-denied (a command the skill injected,
+//	                      refused: the `<local-command-stderr>` replay under
+//	                      the same flag, then an empty success reporting
+//	                      num_turns 0 — task 124.10, claude dialect) |
 //	                      sleep (internal: silent child)
 //	FAKEAGENT_PROMPT_FILE echo-prompt: file each invocation appends its prompt
 //	                      to, one JSON string per line. JSON rather than the
@@ -479,6 +489,10 @@ func main() {
 		emitSuccessResult([]byte(report), 1, 1)
 	case "skill-model":
 		skillModel(prompt)
+	case "skill-human":
+		skillHuman(prompt, blocks)
+	case "skill-inject-denied":
+		skillInjectDenied()
 	case "flood":
 		// An agent that will not stop talking: emits until something kills
 		// it, which is exactly what the §12.3 transcript cap must do.
@@ -634,6 +648,70 @@ func skillModel(prompt []byte) {
 	})
 	emitText("ECHO-PROBE " + fakeSkillArgs)
 	emitSuccessResult(prompt, 100, 42)
+}
+
+// skillHuman is a skill the *human* invoked (task 124.10), in the one line
+// claude 2.1.277 writes for it under --replay-user-messages: the message it
+// received, replayed, with the resolved command rendered into elements. The
+// flag is the whole point, so the replay is emitted only when the argv asked
+// for it — a fake that replayed regardless would keep passing if vincent
+// stopped passing the flag.
+//
+// The name and arguments come from the message's last block, which is where
+// claude expands a leading `/name` (issue #499): `/probe x` replays as
+// probe with `x`. A message with no leading sigil replays as itself.
+func skillHuman(prompt []byte, blocks []string) {
+	if hasFlag("--replay-user-messages") {
+		emit(map[string]any{
+			"type": "user", "parent_tool_use_id": nil, "isReplay": true,
+			"message": map[string]any{"role": "user", "content": replayContent(blocks)},
+		})
+	}
+	emitText("answered the human's invocation")
+	emitSuccessResult(prompt, 100, 42)
+}
+
+// replayContent renders the message's blocks the way claude replays them: a
+// resolved command as the string of elements, anything else as the blocks
+// themselves.
+func replayContent(blocks []string) any {
+	last := ""
+	if len(blocks) > 0 {
+		last = blocks[len(blocks)-1]
+	}
+	if !strings.HasPrefix(last, "/") {
+		echoed := make([]any, 0, len(blocks))
+		for _, b := range blocks {
+			echoed = append(echoed, map[string]any{"type": "text", "text": b})
+		}
+		return echoed
+	}
+	name, args, _ := strings.Cut(strings.TrimPrefix(last, "/"), " ")
+	return "<command-message>" + name + "</command-message>\n" +
+		"<command-name>/" + name + "</command-name>\n" +
+		"<command-args>" + args + "</command-args>"
+}
+
+// skillInjectDenied is a command a skill injected and that the permission
+// check refused (task 124.10): the `<local-command-stderr>` replay, whose
+// body is the only place the refusal appears and which names no skill, then
+// the empty success with `num_turns: 0` that the real CLI ends such a run
+// with. The body carries the escaping the real one does.
+func skillInjectDenied() {
+	if hasFlag("--replay-user-messages") {
+		emit(map[string]any{
+			"type": "user", "parent_tool_use_id": nil, "isReplay": true,
+			"message": map[string]any{"role": "user", "content": "<local-command-stderr>" +
+				"Shell command permission check failed for pattern " +
+				"\"!`mkdir -p probe-made-dir &amp;&amp; echo made`\"." +
+				"</local-command-stderr>"},
+		})
+	}
+	emit(map[string]any{
+		"type": "result", "subtype": "success", "is_error": false,
+		"result": "", "num_turns": 0,
+		"usage": map[string]int64{"input_tokens": 3, "output_tokens": 0},
+	})
 }
 
 // chatReply answers one chat turn with a markdown document: a heading, prose,
@@ -857,12 +935,19 @@ func awaitControlResponse(rd *bufio.Reader, requestID string) (controlResponse, 
 	if rd == nil { // no input mode, nothing will ever arrive
 		block()
 	}
+	replay := hasFlag("--replay-user-messages")
 	for {
 		line, err := rd.ReadString('\n')
 		if line != "" {
 			var resp controlResponse
 			if json.Unmarshal([]byte(line), &resp) == nil &&
 				resp.Type == "control_response" && resp.Response.RequestID == requestID {
+				if replay {
+					// A run that asked for its messages to be replayed gets
+					// its own answers back on stdout too, as the real CLI
+					// does under --replay-user-messages (task 124.10).
+					fmt.Println(strings.TrimRight(line, "\r\n"))
+				}
 				return resp, true
 			}
 		}

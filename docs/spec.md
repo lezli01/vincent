@@ -3706,9 +3706,62 @@ claude 2.1.277 with this section's own input-mode argv, trimmed into
   description in `description`. The §7.4 summary is `input.skill`, falling back
   to the description when it is empty, keyed on the tool name as the
   `AskUserQuestion` branch beside it is.
-- **Out of scope:** a skill the human invoked inline, which claude writes to
-  the stream only under `--replay-user-messages` (task 124.10), and the
-  `local_command_run` and `conversation_reset` lines.
+- **Out of scope:** the `local_command_run` and `conversation_reset` lines.
+
+*Amended 2026-09-20 (task 124.10, issue #506).* A skill the human invoked
+inline was the remaining gap in the bullet above, and this closes it. claude
+reports such an invocation nowhere on stdout unless it is asked to;
+`--replay-user-messages` — present since 1.0.86, `isReplay` since 2.0.5, so
+across the whole `[2.1.0, 3.0.0)` input gate — makes it echo each user message
+it received, with a resolved command expanded into elements. Verified against
+2.1.277 on 2026-09-20.
+
+- **The flag is set for chat turns only, and only in input mode.**
+  `RunSpec.ReportInvocations` is the opt-in, ignorable by an adapter that
+  cannot honour it the way `OnInput` is; `internal/chatrun` sets it on every
+  turn, and no task step ever does. A step's transcript would otherwise echo
+  its rendered prompt — a 200-line failure block among it — and every §7.4
+  answer, for a feature tasks do not have. Outside input mode there is no user
+  message to replay, so the argv is unchanged there too.
+- **A resolved `/name` is the human's invocation.** The replay is a `user`
+  line with `isReplay: true` whose `message.content` is a **string**, not a
+  block array, holding `<command-message>`, `<command-name>/echo-probe</command-name>`
+  and `<command-args>`. It becomes `EventSkill{By: "human", Name, Args}`,
+  `Name` being the element without the `/`. `<command-args>` arrives
+  **unescaped** — a typed `<there> & co` comes back verbatim — so it is taken
+  as it is; unescaping it would corrupt a message that typed a literal
+  `&amp;`. Flattened and capped at `agent.ToolSummaryMax` runes, as decision
+  21 caps an agent invocation's.
+- **A refused injected command is that invocation's failure.** A command a
+  skill injected and that the permission check refused is replayed as a string
+  holding `<local-command-stderr>`, whose body **is** escaped (`&amp;&amp;`
+  for `&&`) and is therefore the one thing unescaped here, then capped. The
+  line names no skill, so the parser pairs it with the last `<command-name>`
+  it replayed in the same stream, and reports it nameless when nothing
+  preceded it. The run then ends with an empty `success` reporting
+  `num_turns: 0`.
+- **Everything else replayed is an `EventInputEcho`.** An ordinary message,
+  echoed as a block array; a `/name` claude could not resolve, echoed as a
+  string with no elements at all; and a `control_response` vincent itself
+  wrote, which the flag hands back on stdout as a top-level line. The
+  unresolved name is deliberately **not** a failed skill: nothing on the line
+  names a failure, and filling `Error` with a phrase vincent wrote would break
+  that field's contract — it holds the CLI's own refusal (§9.1, task 124
+  decision 23) — while recognizing a leading `/` on an echoed string is the
+  guess T4.17 refuses. The human sees the assistant's prose reply instead.
+- **A replay and an echoed `control_response` are in no skill scope.** They
+  join the §7.4 control lines in the pairing rule above: a replay is a `user`
+  line that is not `isSynthetic`, so without the guard one interleaved between
+  a `Skill` result and its body would disarm the scope and turn a model's load
+  back into `agent.raw`.
+- **A forked human invocation produces no replay at all,** even with the flag
+  on: it is reported by its `task_started` kickoff alone (decision 20). The
+  two mappings therefore coexist without either suppressing the other, and no
+  invocation is reported twice.
+- **Below the input gate there is no replay and so no report,** because there
+  is no input mode to carry the flag. codex and cursor report no skill load at
+  all (§9.3, §9.7), and for them the human's own `/name` or `$name` in the
+  message stays the only evidence.
 
 *Added 2026-08-29 (task 057).* The §13.4 MCP server rides on
 `--mcp-config <inline JSON>` with `--strict-mcp-config` beside it, so the

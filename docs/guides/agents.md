@@ -32,6 +32,7 @@ silently drops.
 | Reports a session it can no longer resume | ✅ `session_lost` | ✅ `session_lost` | **—** (it adopts the id and answers) |
 | Lists its skills in a chat | ✅ from 2.1.277 | ✅ `skills/list` | **—** (its `-p` mode has no listing) |
 | Invokes a skill from a chat message | ✅ `/name` at the **start** | ✅ `$name` anywhere | ✅ `/name` anywhere |
+| Transcript shows a skill you invoked | ✅ in chats | **—** | **—** |
 | Reports cost | ✅ | — | — |
 | `model:` | ✅ | ✅ (free text) | ✅ (~180 enumerated) |
 | `effort:` | ✅ | ✅ | **—** (it lives in the model id) |
@@ -43,7 +44,13 @@ silently drops.
 | Reports **remaining** quota without running | **push only** (its status line) | ✅ `app-server --stdio` | **—** (no usage surface) |
 
 A skill is invoked in the CLI's own syntax, typed into your chat message;
-vincent passes the message through unchanged and does not check the name. The
+vincent passes the message through unchanged and does not check the name. A
+chat turn on claude asks it to report the commands it expanded, so the skill
+you named — and a command inside it that a permission rule refused — shows up
+in the turn's transcript as its own row. codex and cursor report no skill load
+at all, which is what the third row says: there, the `$name` or `/name` in
+your own message is the only evidence it ran. A task step asks for none of
+this, on any agent. The
 two skill rows are also on `GET /v1/agents`, as `supports_skill_listing`,
 `skill_sigil` and `skill_position`. claude and codex can list the skills they
 would load in a worktree, which is what the listing row says. A chat's list,

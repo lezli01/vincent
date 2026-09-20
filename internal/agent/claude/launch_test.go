@@ -44,6 +44,13 @@ func TestStartHandsTheLauncherItsSpawn(t *testing.T) {
 			version: "1.0.0",
 			spec:    agent.RunSpec{PermissionMode: agent.FullAuto, Env: env},
 		},
+		{
+			// A chat turn: the launched command must carry the replay flag
+			// too, not only buildArgs' answer (task 124.10).
+			name:      "input mode reporting its invocations",
+			inputMode: true,
+			spec:      agent.RunSpec{PermissionMode: agent.FullAuto, ReportInvocations: true, Env: env},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

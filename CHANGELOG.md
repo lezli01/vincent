@@ -13,6 +13,18 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **A skill you invoke in a claude chat now shows in the transcript.** Until
+  now `/name` in a chat message left no trace on the CLI's output at all: the
+  turn ran the skill and the transcript said nothing about it. A chat turn now
+  asks claude to report the commands it expanded, so the invocation appears as
+  its own row with the name and the arguments you typed, and a command inside
+  the skill that a permission rule refused appears as that invocation's
+  failure. Everything else the flag adds — the echo of your own message, and
+  your answers to the agent's questions — is recorded but drawn by nothing.
+  Task steps are unaffected: their output is exactly what it was. codex and
+  cursor report no skill load at all, which the agents guide's capability
+  table now states.
+
 - **`vincent chat skills <chat-id>`.** Lists the skills a chat's agent CLI
   would load in the chat's directory, with the exact text that invokes each
   one — paste it into `vincent chat send`. Two skills can share a name, so the

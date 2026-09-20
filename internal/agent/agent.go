@@ -225,6 +225,17 @@ type RunSpec struct {
 	Effort         string // resolved per §8.6; adapter-native; "" = CLI default
 	PermissionMode PermissionMode
 	OnInput        InputPolicy // ignored when the adapter lacks input support
+	// ReportInvocations asks the CLI to report the commands it expanded from
+	// the prompt, so a skill the human named with a leading `/name` reaches
+	// the stream as an EventSkill instead of leaving no trace at all (task
+	// 124.10, §9.2). It is opt-in and ignorable, like OnInput: an adapter
+	// that cannot ask for it runs exactly as it would without it.
+	//
+	// Only a chat turn sets it. A task step never does: what the CLI adds is
+	// an echo of everything vincent wrote to its stdin, which for a step is
+	// its rendered prompt — a 200-line failure block among it — and every
+	// §7.4 answer, for a feature tasks do not have.
+	ReportInvocations bool
 	// MCP is the vincent MCP server this run is wired to (§13.4, task 057).
 	// nil is a run with no vincent tools. An adapter that cannot carry one
 	// returns ErrMCPUnsupported from Start rather than starting without it.

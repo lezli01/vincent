@@ -89,6 +89,38 @@ func TestBuildArgs(t *testing.T) {
 				"--input-format", "stream-json", "--permission-prompt-tool", "stdio",
 			},
 		},
+		{
+			// A chat turn (task 124.10): the flag is what makes a skill the
+			// human invoked reach the stream at all.
+			name:      "reported invocations add the replay flag in input mode",
+			spec:      agent.RunSpec{PermissionMode: agent.FullAuto, ReportInvocations: true},
+			inputMode: true,
+			want: []string{
+				"-p", "--output-format", "stream-json", "--verbose",
+				"--dangerously-skip-permissions",
+				"--input-format", "stream-json", "--permission-prompt-tool", "stdio",
+				"--replay-user-messages",
+			},
+		},
+		{
+			// Outside input mode there is no user message to replay, so the
+			// argv is the one it always was.
+			name: "reported invocations are ignored without input mode",
+			spec: agent.RunSpec{PermissionMode: agent.FullAuto, ReportInvocations: true},
+			want: []string{"-p", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"},
+		},
+		{
+			// The case that proves a task step's argv is unchanged: a step
+			// runs in input mode and never sets the field.
+			name:      "an input-mode run that reports nothing keeps its argv",
+			spec:      agent.RunSpec{PermissionMode: agent.FullAuto},
+			inputMode: true,
+			want: []string{
+				"-p", "--output-format", "stream-json", "--verbose",
+				"--dangerously-skip-permissions",
+				"--input-format", "stream-json", "--permission-prompt-tool", "stdio",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

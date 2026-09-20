@@ -396,6 +396,10 @@ func TestFixtureEventTypesArePinned(t *testing.T) {
 			"subagent_progress tool_use tool_result tool_result unknown unknown unknown tool_result unknown subagent_finished " +
 			"tool_result output result",
 		skillForkFixture:       "skill unknown unknown run_header output result",
+		replayHumanFixture:     "run_header skill output unknown result",
+		replayDeniedFixture:    "run_header skill result",
+		replayControlFixture:   "run_header input_echo tool_use unknown input_echo unknown tool_result output result",
+		replayUnknownFixture:   "run_header input_echo output unknown result",
 		skillModelFixture:      "run_header tool_use unknown tool_result skill output unknown result",
 		skillPermissionFixture: "run_header tool_use unknown unknown tool_result skill tool_use tool_result output unknown result",
 		contextBlocksFixture:   "run_header unknown unknown unknown output unknown result",
