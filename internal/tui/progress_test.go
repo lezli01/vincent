@@ -77,14 +77,14 @@ func TestChatViewIndicatorSurvivesQuietAndScroll(t *testing.T) {
 	if body := plainLines(v.bodyLines(80)); strings.Contains(strings.Join(body, "\n"), "working…") {
 		t.Fatalf("the indicator leaked into the scrolling body:\n%s", strings.Join(body, "\n"))
 	}
-	foot := strings.Join(plainLines(v.footerLines(80)), "\n")
+	foot := strings.Join(plainLines(v.footerLines(80, 40)), "\n")
 	if !strings.Contains(foot, "working… 14s") {
 		t.Fatalf("a running turn with no records shows no indicator:\n%s", foot)
 	}
 
 	// Follow off — the reader has scrolled up — must change nothing.
 	v.following = false
-	if foot := strings.Join(plainLines(v.footerLines(80)), "\n"); !strings.Contains(foot, "working…") {
+	if foot := strings.Join(plainLines(v.footerLines(80, 40)), "\n"); !strings.Contains(foot, "working…") {
 		t.Fatalf("the indicator vanished with follow off:\n%s", foot)
 	}
 }
@@ -98,7 +98,7 @@ func TestChatViewIndicatorOnlyWhileRunning(t *testing.T) {
 		turn := runningTurnAt(v, time.Minute)
 		turn.State = state
 		v.turns = []apiclient.ChatTurn{turn}
-		if foot := strings.Join(plainLines(v.footerLines(80)), "\n"); strings.Contains(foot, "working…") {
+		if foot := strings.Join(plainLines(v.footerLines(80, 40)), "\n"); strings.Contains(foot, "working…") {
 			t.Errorf("a %s turn still animates:\n%s", state, foot)
 		}
 	}

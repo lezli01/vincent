@@ -111,7 +111,12 @@ A chat can also tell you **which skills its agent would load** in its own
 worktree, and the exact text that invokes one —
 [`vincent chat skills`](reference/cli.md#vincent-chat-skills) or
 `GET /v1/chats/{id}/skills`. The list is the agent CLI's own, asked for rather
-than guessed at: an agent that cannot report one says so instead.
+than guessed at: an agent that cannot report one says so instead. In the chat
+workspace it is a key away: **`tab` opens the list above the composer**, type
+to filter it, and the row you take is written into your message as the exact
+invocation the agent named — with whatever you had already typed becoming its
+arguments. Browsing never touches the draft, so `esc` leaves your message
+exactly as you wrote it.
 
 Drive one from the TUI's own **chats board and chat workspace**
 ([guide](guides/tui.md#chats)), from

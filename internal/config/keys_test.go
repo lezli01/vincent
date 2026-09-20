@@ -45,16 +45,16 @@ func TestTUIKeysDefaultIsTheShippedKeymap(t *testing.T) {
 // swap of two operations in one file is one edit (decision 6).
 func TestTUIKeysLoads(t *testing.T) {
 	for name, content := range map[string]string{
-		"flow":  "tui:\n  keys: {refresh: ctrl+e, help: f2}\n",
-		"block": "tui:\n  keys:\n    refresh: ctrl+e\n    help: f2\n",
+		"flow":  "tui:\n  keys: {refresh: ctrl+e, help: f3}\n",
+		"block": "tui:\n  keys:\n    refresh: ctrl+e\n    help: f3\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			cfg, err := Load(writeConfig(t, content))
 			if err != nil {
 				t.Fatalf("Load: %v", err)
 			}
-			if cfg.TUI.Keys["refresh"] != "ctrl+e" || cfg.TUI.Keys["help"] != "f2" || len(cfg.TUI.Keys) != 2 {
-				t.Errorf("tui.keys = %v, want refresh: ctrl+e and help: f2", cfg.TUI.Keys)
+			if cfg.TUI.Keys["refresh"] != "ctrl+e" || cfg.TUI.Keys["help"] != "f3" || len(cfg.TUI.Keys) != 2 {
+				t.Errorf("tui.keys = %v, want refresh: ctrl+e and help: f3", cfg.TUI.Keys)
 			}
 		})
 	}

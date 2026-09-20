@@ -74,14 +74,14 @@ func TestConfigSetTUIKeysAgainstTheRealHandler(t *testing.T) {
 	if out, code := run("get", "tui.keys"); code != 0 || strings.TrimSpace(out) != "" {
 		t.Errorf("get tui.keys by default: code %d, out %q; want the empty shipped keymap", code, out)
 	}
-	if out, code := run("set", "tui.keys", "refresh=ctrl+e help=f2"); code != 0 ||
-		!strings.Contains(out, "tui.keys = help=f2 refresh=ctrl+e") {
+	if out, code := run("set", "tui.keys", "refresh=ctrl+e help=f3"); code != 0 ||
+		!strings.Contains(out, "tui.keys = help=f3 refresh=ctrl+e") {
 		t.Fatalf("set tui.keys: code %d, out %q", code, out)
 	}
-	if out, code := run("get", "tui.keys"); code != 0 || strings.TrimSpace(out) != "help=f2 refresh=ctrl+e" {
+	if out, code := run("get", "tui.keys"); code != 0 || strings.TrimSpace(out) != "help=f3 refresh=ctrl+e" {
 		t.Errorf("get tui.keys after set: code %d, out %q", code, out)
 	}
-	if got := cur.Load().TUI.Keys; got["refresh"] != "ctrl+e" || got["help"] != "f2" {
+	if got := cur.Load().TUI.Keys; got["refresh"] != "ctrl+e" || got["help"] != "f3" {
 		t.Errorf("the keymap in force is %v", got)
 	}
 

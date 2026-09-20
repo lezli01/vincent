@@ -76,6 +76,18 @@ var fixed = []Fixed{
 	{"chat", "ctrl+o", "show the assistant's original Markdown instead of the rendered view"},
 	{"chat", "ctrl+y", "copy an assistant message, its plain text, or one of its code blocks"},
 	{"chat", "ctrl+l", "list the links in the assistant's messages"},
+	{"chat", "tab", "the skills this chat's agent can run"},
+	// The alias, recorded the way ctrl+j's shift+enter and alt+enter are: a
+	// row of its own, so internal/tui's tests see both literals a handler
+	// matches (task 124 decision 69).
+	{"chat", "f2", "the skills this chat's agent can run, where the terminal swallows tab"},
+	{"chat skills", "up", "move the highlight"},
+	{"chat skills", "down", "move the highlight"},
+	{"chat skills", "tab", "insert the highlighted skill, or the top match"},
+	{"chat skills", "f2", "insert the highlighted skill, or the top match"},
+	{"chat skills", "enter", "insert the highlighted skill, else send the message as typed"},
+	{"chat skills", "backspace", "shorten the filter, and close the list when it is empty"},
+	{"chat skills", "esc", "close the list and keep the draft"},
 	{"new chat", "ctrl+s", "create the chat and open it"},
 	{"new chat", "enter", "open the focused field's list, or move on from a text field"},
 	{"new chat", "tab", "next field"},

@@ -66,6 +66,15 @@ type (
 		chat   *apiclient.Chat
 		err    error
 	}
+	// chatSkillsMsg is GET /v1/chats/{id}/skills for the composer's skill
+	// list (task 124.13). A result for another chat, or one that arrived
+	// after the list was hidden, updates nothing: the probe is not
+	// loopback-fast, so a late answer is the ordinary case (decision 76).
+	chatSkillsMsg struct {
+		chatID int64
+		skills *apiclient.ChatSkills
+		err    error
+	}
 	// chatTickMsg advances the in-progress indicator's frame (task 089). It
 	// asks the daemon nothing: the footer redraws, the body does not.
 	chatTickMsg time.Time
@@ -159,6 +168,10 @@ type chatView struct {
 	// on declining, so a draft is never typed into by the answer.
 	closing bool
 
+	// skills is the composer's skill list (task 124.13). While it is open it
+	// owns the keyboard, which is what makes `esc` a real layer here.
+	skills chatSkillList
+
 	width, height int
 }
 
@@ -223,8 +236,11 @@ func (v *chatView) paste(text string) tea.Cmd {
 }
 
 func (v *chatView) bindingContext() bindingContext {
-	if v.form != nil {
+	switch {
+	case v.form != nil:
 		return ctxForm
+	case v.skills.open:
+		return ctxChatSkills
 	}
 	return ctxChat
 }
@@ -248,6 +264,7 @@ func (v *chatView) open(id int64) tea.Cmd {
 	v.resetRecords()
 	v.note, v.loadErr = "", ""
 	v.closing = false
+	v.skills = chatSkillList{}
 	v.composer.SetValue("")
 	v.composer.Focus()
 	return tea.Batch(v.loadCmd(), v.streamCmd())
@@ -363,6 +380,9 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		return v, v.applyCanceled(msg)
 	case chatClosedMsg:
 		return v, v.applyClosed(msg)
+	case chatSkillsMsg:
+		v.applySkills(msg)
+		return v, nil
 	case chatTickMsg:
 		// Render-only, and a no-op for a stray tick: clearing the guard is
 		// all this does, and update's armTick re-arms only while a turn is
@@ -393,7 +413,11 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 // The §7.4 popup takes the wheel out of the conversation behind it, the way
 // updateKey and taskView.updateClick already take the keyboard and clicks.
 func (v *chatView) updateWheel(msg tea.MouseWheelMsg) tea.Cmd {
-	if v.form != nil {
+	// The skill list takes the wheel out of the conversation for the reason
+	// the §7.4 popup does: "popups stay keyboard" (§15 Mouse), and a list
+	// that scrolled the page behind it would move the rows out from under
+	// the reader's eye. It scrolls again the moment the list closes.
+	if v.form != nil || v.skills.open {
 		return nil
 	}
 	if msg.Button == tea.MouseWheelUp {
@@ -626,6 +650,12 @@ func (v *chatView) applyChatNote(msg chatNoteMsg) tea.Cmd {
 	switch note := msg.note.(type) {
 	case apiclient.EventNote:
 		if strings.HasPrefix(note.Event.Type, "chat.") {
+			// The daemon invalidates a chat's skill listing when a turn ends
+			// (task 124.9), so the cached answer goes with the reload — but
+			// never out from under a list that is on screen.
+			if !v.skills.open {
+				v.skills.forget()
+			}
 			return tea.Batch(next, v.loadCmd())
 		}
 	case apiclient.OutputNote:
@@ -732,11 +762,22 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.note, v.noteBad = "the chat stays open", false
 		return v, nil
 	}
+	if v.skills.open {
+		// While the list is up it owns the keyboard, which is how every
+		// other vincent popup behaves and what makes `esc` a real layer
+		// here (task 124 decision 70).
+		return v, v.updateSkillsKey(msg)
+	}
 	switch msg.String() {
 	case "esc":
 		return v, func() tea.Msg { return selectViewMsg{id: viewChats} }
 	case "ctrl+c":
 		return v, nil
+	// `tab` is the taught key and `f2` the alias for a terminal that
+	// swallows it (task 124 decision 69). Both are literals rather than
+	// constants so TestEveryMatchedKeyIsRegistered sees them.
+	case "tab", "f2":
+		return v, v.openSkills()
 	case chatCloseKey:
 		v.askClose()
 		return v, nil
@@ -779,6 +820,179 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	v.composer, cmd = v.composer.Update(msg)
 	return v, cmd
 }
+
+// updateSkillsKey is the open list's keyboard (task 124.13). It answers
+// every key: a press the list has no meaning for is spent here rather than
+// falling through to the composer, which is what "the list owns the
+// keyboard" means and what makes `esc` close one layer rather than two.
+func (v *chatView) updateSkillsKey(msg tea.KeyPressMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc":
+		// Nothing to undo: the list never wrote into the draft.
+		v.hideSkills()
+		return nil
+	case "up":
+		v.skills.move(-1)
+		return nil
+	case "down":
+		v.skills.move(1)
+		return nil
+	case "tab", "f2":
+		return v.acceptSkill()
+	case "enter":
+		if v.skills.cursor < 0 {
+			// The human never moved into the list, so `enter` still means
+			// what it meant before it opened: send the message as typed.
+			v.hideSkills()
+			return v.sendCmd()
+		}
+		return v.acceptSkill()
+	case "backspace":
+		if v.skills.backspace() {
+			v.hideSkills()
+		}
+		return nil
+	}
+	// A printable key extends the filter. The press's own Text is what is
+	// read, so no ctrl, alt or named key can reach the buffer.
+	v.skills.typeText(msg.Text)
+	return nil
+}
+
+// hideSkills closes the list and forgets the filter. The draft is untouched,
+// because nothing here ever wrote to it.
+func (v *chatView) hideSkills() {
+	v.skills.open = false
+	v.skills.reset()
+	v.skills.build()
+}
+
+// openSkills raises the list, from the answer already in hand or by asking
+// for one.
+//
+// A terminal chat is refused locally and asks the daemon nothing, the way
+// close and hand-off already refuse: no turn will run here, so there is
+// nothing to type a skill into.
+func (v *chatView) openSkills() tea.Cmd {
+	chat := v.chat
+	if chat == nil {
+		return nil
+	}
+	if chatstate.Terminal(chatstate.State(chat.State)) {
+		v.note, v.noteBad = "this chat has ended — no turn will run here", true
+		return nil
+	}
+	v.skills.reset()
+	if v.skills.data != nil {
+		v.showSkills()
+		return nil
+	}
+	client, id := v.client, v.chatID
+	if client == nil {
+		v.note, v.noteBad = "not connected", true
+		return nil
+	}
+	v.skills.open, v.skills.loading = true, true
+	v.note, v.noteBad = "", false
+	return func() tea.Msg {
+		// Not loadTimeout: a cold cache spawns the agent CLI to answer, so
+		// this call is held to the client's probe deadline rather than to a
+		// loopback one (task 124.9).
+		ctx, cancel := context.WithTimeout(context.Background(), chatSkillsTimeout)
+		defer cancel()
+		skills, err := client.ChatSkills(ctx, id, false)
+		return chatSkillsMsg{chatID: id, skills: skills, err: err}
+	}
+}
+
+// applySkills folds one answer in. A result for another chat, or one that
+// arrived after the list was hidden, changes nothing (decision 76).
+func (v *chatView) applySkills(msg chatSkillsMsg) {
+	if msg.chatID != v.chatID || !v.skills.open {
+		return
+	}
+	v.skills.loading = false
+	if msg.err != nil {
+		v.skills.open = false
+		v.skills.err = errString(msg.err)
+		v.note, v.noteBad = "could not list skills: "+v.skills.err, true
+		return
+	}
+	v.skills.data = msg.skills
+	v.showSkills()
+}
+
+// showSkills opens the list on the answer in hand, or says on the note line
+// why there is none. Typing and sending are never blocked by any of it.
+func (v *chatView) showSkills() {
+	d := v.skills.data
+	switch {
+	case d == nil:
+		return
+	case d.ListVerdict == "supported":
+		v.skills.open = true
+		v.skills.build()
+		v.note, v.noteBad = "", false
+	case d.ListVerdict == "unsupported":
+		v.skills.open = false
+		v.note, v.noteBad = chatSkillsUnsupportedNote(d), false
+	default:
+		v.skills.open = false
+		v.note, v.noteBad = "could not list skills: "+chatSkillsUnknownWhy(d), true
+	}
+}
+
+// chatSkillsUnsupportedNote is the sentence for an adapter that does not
+// list skills, plus how to invoke one by hand where it can still do that.
+func chatSkillsUnsupportedNote(d *apiclient.ChatSkills) string {
+	note := chatSkillFlatten(d.UnavailableReason)
+	if note == "" {
+		note = d.Agent + " does not report its skills — vincent does not guess them"
+	}
+	if d.InvokeVerdict == "supported" && d.InvokeSigil != "" {
+		note += " — type " + d.InvokeSigil + "name to invoke one"
+	}
+	return note
+}
+
+// chatSkillsUnknownWhy is the best word available for a probe that neither
+// answered nor said no.
+func chatSkillsUnknownWhy(d *apiclient.ChatSkills) string {
+	if d.ProbeError != nil && *d.ProbeError != "" {
+		return chatSkillFlatten(*d.ProbeError)
+	}
+	if d.UnavailableReason != "" {
+		return chatSkillFlatten(d.UnavailableReason)
+	}
+	return "the " + d.Agent + " CLI did not answer"
+}
+
+// acceptSkill writes the picked row's invocation into the draft — once, and
+// the adapter's own bytes: the invocation plus one space, at the start of
+// the draft for `leading` and at the cursor for `anywhere`, with the cursor
+// left after the space so the existing draft becomes the arguments.
+func (v *chatView) acceptSkill() tea.Cmd {
+	row, ok := v.skills.pick()
+	if !ok {
+		return nil
+	}
+	if row.disabled {
+		v.note, v.noteBad = row.reason, true
+		return nil
+	}
+	if v.skills.data != nil && v.skills.data.InvokePosition == "leading" {
+		v.composer.MoveToBegin()
+	}
+	v.composer.InsertString(row.invocation + " ")
+	v.hideSkills()
+	return nil
+}
+
+// chatSkillsTimeout bounds one skill listing from this view. The client
+// already holds GET /v1/chats/{id}/skills to its own three-minute probe
+// deadline; this is the shorter one a human waiting at a composer will sit
+// through before the note line says the probe failed.
+const chatSkillsTimeout = 30 * time.Second
 
 // chatHandoffKey opens the handoff form (task 074). It is a ctrl combination
 // for the reason ctrl+r is: the composer owns every printable key, so a plain

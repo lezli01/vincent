@@ -54,8 +54,9 @@ func (v *chatView) render(width, height int) string {
 	if width > 0 {
 		v.width = width
 	}
+	v.height = height
 	head := []string{v.headerLine(width), ""}
-	foot := v.footerLines(width)
+	foot := v.footerLines(width, height)
 	// The form is part of the budget, not something added after it (issue
 	// #299): appended past the join it pushed the same number of lines off the
 	// bottom of the terminal that the unsplit composer did.
@@ -237,7 +238,7 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 // handler in chatview.go — and two copies of the arithmetic drift.
 func chatComposerWidth(pane int) int { return max(pane-2, 10) }
 
-func (v *chatView) footerLines(width int) []string {
+func (v *chatView) footerLines(width, height int) []string {
 	out := []string{""}
 	if v.closing && v.chat != nil {
 		out = append(out, " "+styleWarn.Render(v.closePrompt()))
@@ -265,6 +266,11 @@ func (v *chatView) footerLines(width int) []string {
 	if turn := v.runningTurn(); turn != nil {
 		out = append(out, " "+styleDim.Render(ProgressLabel(v.frame, v.now().Sub(turn.StartedAt))))
 	}
+	// The skill list sits between the note line and the composer (task
+	// 124.13), one slice element per rendered line and its height spent out
+	// of the body's budget — a list that opened is a body that shrank, not a
+	// frame that overflowed (#299).
+	out = append(out, v.skills.render(width, height, v.now())...)
 	// One element per rendered line, not one per widget (issue #299): the
 	// composer is SetHeight(3) and bubbles' viewport pads its View to that
 	// height, and the border around it adds two more, so a joined string would
@@ -295,7 +301,7 @@ func (v *chatView) footerLines(width int) []string {
 	} else {
 		out = append(out, strings.Split(box, "\n")...)
 	}
-	hint := " enter send · ctrl+j newline · ctrl+x stop the turn · ctrl+r detail · "
+	hint := " enter send · ctrl+j newline · tab skills · ctrl+x stop the turn · ctrl+r detail · "
 	if v.chat != nil && v.chat.LinkedTaskID != nil {
 		// Ahead of the reader keys: it is the only way this chat's task
 		// unlocks, and the line truncates from the right.
