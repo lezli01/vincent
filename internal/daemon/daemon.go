@@ -386,7 +386,8 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		InContainer: func(ctx context.Context, taskID int64) (bool, error) {
 			return runner.ChatInContainer(ctx, taskID)
 		},
-		InvalidateSkills: skills.Invalidate,
+		InvalidateSkills:    skills.Invalidate,
+		ReportBundledSkills: skills.ReportBundled,
 	})
 	runnerDeps.ChatTurns = chats
 	runner = taskrun.New(runnerDeps)

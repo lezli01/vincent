@@ -118,6 +118,16 @@ type Deps struct {
 	// just ran in (task 124.9): a turn is the one event vincent observes that
 	// can have written a skill or installed a plugin. Nil means no cache.
 	InvalidateSkills func(workDir string)
+	// ReportBundledSkills hands the skill cache the names a turn's run header
+	// reported (task 124.16): claude's init line names the skills that turn
+	// loaded, which is what tells its bundled skills from its built-in
+	// commands. It is called with the turn's own adapter, because what is
+	// bundled is a property of the installed CLI.
+	//
+	// Nil means no cache. It is only ever called with names, so a codex or
+	// cursor turn — neither CLI reporting any — calls nothing. A closure
+	// rather than the cache itself, so this package never imports it.
+	ReportBundledSkills func(a agent.Adapter, names []string)
 }
 
 // ErrLinkedTaskNoWorktree is a linked-chat turn whose task no longer names a
@@ -409,7 +419,7 @@ func (r *Runner) runTurn(
 	defer r.untrack(chat.ID)
 	r.journal(turn, handle)
 
-	r.consume(ctx, cancelCause, live, chat, turn, handle, tr)
+	r.consume(ctx, cancelCause, live, chat, turn, adapter, handle, tr)
 
 	res, waitErr := handle.Wait()
 	turn.ExitCode = &res.ExitCode
@@ -517,6 +527,17 @@ func (r *Runner) invalidateSkills(dir string) {
 	}
 }
 
+// reportBundledSkills hands the skill cache the names this turn's run header
+// reported (task 124.16). It does not relax invalidateSkills: the header
+// describes the turn's *start*, so a turn that wrote a skill reports a set
+// identical to the cached one, and reading the two as "nothing changed" would
+// hide that skill until the next turn.
+func (r *Runner) reportBundledSkills(a agent.Adapter, names []string) {
+	if r.deps.ReportBundledSkills != nil {
+		r.deps.ReportBundledSkills(a, names)
+	}
+}
+
 // turnPreamble is what rides ahead of the human's message: a linked chat's
 // opening context on the first turn and on no later one (task 119). It is
 // handed to the adapter apart from the message rather than fused with it,
@@ -552,7 +573,8 @@ func turnPreamble(chat *store.Chat, turn *store.ChatTurn) string {
 // simply return — see drain.
 func (r *Runner) consume(
 	ctx context.Context, cancelCause context.CancelCauseFunc, live *liveTurn,
-	chat *store.Chat, turn *store.ChatTurn, handle agent.RunHandle, tr *transcript.Writer,
+	chat *store.Chat, turn *store.ChatTurn, adapter agent.Adapter,
+	handle agent.RunHandle, tr *transcript.Writer,
 ) {
 	events := handle.Events()
 	work := time.NewTimer(r.agentTimeout())
@@ -626,8 +648,17 @@ func (r *Runner) consume(
 					stopTimer(wait)
 					resetTimer(work, r.agentTimeout())
 				}
+			case agent.EventRunHeader:
+				// The one thing a header is read for rather than only
+				// rendered (task 124.16): claude names the skills this turn
+				// loaded, which is what the skill cache classifies its
+				// `builtin` rows against. An adapter that reports none — and
+				// a claude build too old to — hands over nothing.
+				if ev.Header != nil && len(ev.Header.Skills) > 0 {
+					r.reportBundledSkills(adapter, ev.Header.Skills)
+				}
 			case agent.EventUsage, agent.EventResult, agent.EventOutput, agent.EventToolUse,
-				agent.EventToolResult, agent.EventThinking, agent.EventRunHeader,
+				agent.EventToolResult, agent.EventThinking,
 				agent.EventPlan, agent.EventCommandOutput,
 				agent.EventSubagentStarted, agent.EventSubagentProgress, agent.EventSubagentFinished,
 				agent.EventError, agent.EventUnknown:
