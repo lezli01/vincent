@@ -570,7 +570,7 @@ func TestReaderHintsNameTheCtrlKeys(t *testing.T) {
 	// The chat's own footer line is hand-written rather than derived, so it
 	// has to be checked against the registry by hand.
 	v := chatViewFixture()
-	foot := ansi.Strip(strings.Join(v.footerLines(200), "\n"))
+	foot := ansi.Strip(strings.Join(v.footerLines(200, 40), "\n"))
 	for _, k := range []string{rawToggleKey, copyPickKey, linkPickKey} {
 		if !strings.Contains(foot, k) {
 			t.Fatalf("the chat footer does not name %s:\n%s", k, foot)

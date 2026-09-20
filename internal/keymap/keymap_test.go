@@ -72,7 +72,9 @@ func TestBuildAccepts(t *testing.T) {
 		// Replace, not alias (decision 6): the vacated key is free for the
 		// other operation in the same edit.
 		{"a swap", map[string]string{"pause": "x", "reject": "p"}, map[Op]string{Pause: "x", Reject: "p"}},
-		{"text-field hatch on a function key", map[string]string{"palette_alt": "f2", "help_alt": "alt+h"}, map[Op]string{PaletteAlt: "f2", HelpAlt: "alt+h"}},
+		// f3 rather than f2: f2 is the chat workspace's fixed alias for the
+		// skill list (task 124.13), and one key means one thing (§15).
+		{"text-field hatch on a function key", map[string]string{"palette_alt": "f3", "help_alt": "alt+h"}, map[Op]string{PaletteAlt: "f3", HelpAlt: "alt+h"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

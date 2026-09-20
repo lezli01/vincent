@@ -1,6 +1,6 @@
 # 124 — Let a chat's human see the agent's skills and invoke one from a message
 
-**Status:** 🔄 in progress (8/19)
+**Status:** 🔄 in progress (12/19)
 **Opened:** 2026-09-19
 **Issue:** #496 (parent), #497–#515 (one per item)
 **Spec:** §9.1 (`SkillLister`, `SkillInvoker`), §9.6 (`supports_skill_listing`,
@@ -494,6 +494,67 @@ breakdown"). 13–19 were settled with the author, or taken in evaluation, when
     so without it one interleaving between a `Skill` result and its body would
     silently disarm the scope and turn a model's skill load back into
     `agent.raw`.
+69. **2026-09-20 — The skills key is `tab`, with `f2` as its alias.** This
+    closes open question 5 rather than answering it with `tab` alone. `tab`
+    is the taught key — the registry row's `key`, the hint line's word and
+    what the guide's table names — and it is safe on this surface: bubbles
+    v2.2.1's textarea binds no tab, `chatView.updateKey` matched none, and
+    `root.updateKey`'s capture gate hands every key but `ctrl+c` to a
+    capturing view, so `global tab` and the new-chat form's `tab` are
+    untouched. `f2` is the alias for a terminal that swallows `tab`,
+    recorded the way `ctrl+j`'s row already records `shift+enter` and
+    `alt+enter` — named inside the row's label, and carried as its own
+    `keymap.fixed` row so `TestEveryMatchedKeyIsRegistered` sees both
+    literals. Decision 12 stands unchanged in substance. The test keymaps
+    that used `f2` as a free function key moved: `internal/tui`'s
+    `reboundKeys` to `f13`, and `internal/config`'s and `internal/cli`'s
+    `help` examples to `f3`.
+70. **2026-09-20 — The list never touches the draft until a row is
+    accepted.** #509's open-by-inserting-the-sigil design is dropped: with
+    `invoke_position: leading` and a draft of `fix the bug`, inserting `/`
+    at the start makes the token `/fix`, so browse mode is filtered rather
+    than full, accepting `/tdd` eats the word `fix`, and `enter` with no
+    highlight would send a message beginning with a `/` nobody typed.
+    Instead the list owns its own filter buffer, drawn on its title line;
+    `esc` has nothing to undo. While it is up it owns the keyboard, which is
+    how every other vincent popup behaves and what makes `esc` a real layer.
+    124.14 (#510) is not blocked by this: it filters from the draft's own
+    sigil token because the human typed that token, and the two openers
+    share the ranking function and the row renderer, not the buffer.
+71. **2026-09-20 — The hostile-row guard is controls and escapes, not
+    whitespace.** A row is drawn disabled, and cannot be accepted, when its
+    `invocation` carries a C0/C1 control — a newline among them — or an
+    ANSI escape. Whitespace is allowed: #509's whitespace ban would have
+    disabled codex's linked form for a duplicated name, which is exactly
+    what decision 30 requires, and on macOS a chat worktree's path always
+    has a space in it. `sanitizeText` alone is not enough for the drawn
+    text — it deliberately keeps `\n` and `\t` — so every name,
+    description, argument hint, scope and plugin is flattened with
+    `agent.OneLine` and then sanitized before it is measured or drawn,
+    because a multi-line string would trip the #299 hazard where `render`'s
+    per-line `ansi.Truncate` measures a joined string as the sum of its
+    rows.
+72. **2026-09-20 — `invoke_verdict: unknown` behaves as `unsupported` for
+    accepting.** The list opens read-only and the accept is refused with the
+    reason, the way the cannot-invoke state does. Decision 58 gives an
+    unregistered adapter `unknown` on both verdicts, and a client must not
+    insert an invocation nobody said would work.
+73. **2026-09-20 — No refresh key.** The open list has none, and `ctrl+r`
+    keeps its one meaning. The daemon invalidates a chat's list when a turn
+    ends (124.9) and the clean-list TTL is five minutes (decision 54); a
+    human who adds a skill by hand mid-chat waits for one of those or runs
+    `vincent chat skills --refresh`. This closes #509's second open
+    question.
+74. **2026-09-20 — Accepting closes the list.** #509 did not say. Reopening
+    as the sigil is typed is 124.14's.
+75. **2026-09-20 — The highlighted row's wrapped description keeps a fixed
+    reserve.** The three lines are reserved whenever the list is open, not
+    added when a row is highlighted, so arrowing through the rows does not
+    change the body's budget and scroll the conversation under the reader.
+76. **2026-09-20 — A late response is dropped.** The fetch is a `tea.Cmd`; a
+    result arriving after the list was hidden, or for a different chat,
+    updates nothing. `ChatSkills` goes through `probeClient`, so this is the
+    ordinary case rather than an edge.
 
 ## Open questions
 
@@ -506,7 +567,7 @@ answer it, so none is lost:
 | 2 — Built-in rows: omit every `builtin: true` row, or list them flagged | closed by 124.7 (#503): decision 42 |
 | 3 — claude listing floor: 2.1.277 only, or the whole `[2.1.0, 3.0.0)` input family | closed by 124.7 (#503): decision 40 |
 | 4 — Hooks in the probe: suppress SessionStart hooks and MCP servers, at the cost of missing hook-installed skills | closed by 124.7 (#503): decision 41 |
-| 5 — The skills key: `tab` over `f2` | 124.13 (#509) |
+| 5 — The skills key: `tab` over `f2` | closed by 124.13 (#509): decision 69 — `tab`, with `f2` as its alias |
 | 6 — The `quiet` level: does a human-invoked skill show there | 124.12 (#508); settled by decision 37 |
 | 7 — Cache TTLs: 5 min for a clean list and 1 min for a failed one | closed by 124.9 (#505): decision 54 |
 | 9 — `/clear` under pass-through: should a conversation reset become a visible record | 124.6 (#502) |
@@ -542,8 +603,8 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
   byte-identical to before. `cmd/fakeagent`'s `echo-prompt` records several
   blocks as an array. Fixture `stream_blocks_context_2.1.277.jsonl`; spec
   §5.5 and §9.2 amended. ✓ 2026-09-19
-- [~] 124.4 (#500) Fix the chat composer's newline keys, a pre-existing bug.
-  In review as #516.
+- [x] 124.4 (#500) Fix the chat composer's newline keys, a pre-existing bug.
+  Merged as #519. ✓ 2026-09-19
 - [x] 124.5 (#501) `--message-file` on `chat send` and `chat start`, fixing
   Git Bash's `/name` rewrite, and the quoting rules documented. The shared
   `readInputFile` bounded read (decision 37); `chat send`'s message argument
@@ -601,8 +662,19 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
   `! skill … failed: …` on the same pairing within each fetch. Decisions
   37–39; spec §15, `docs/guides/tui.md` and `docs/reference/cli.md`
   amended. ✓ 2026-09-19
-- [ ] 124.13 (#509) The skill list above the composer, opened with `tab`,
+- [x] 124.13 (#509) The skill list above the composer, opened with `tab`,
   inserting the picked invocation. Depends: 124.11, 124.7.
+  `internal/tui/chatskills.go` (the rows, the filter buffer, the ranking, the
+  window, the accept and the rendering, reusing `pickerWindow`, `window()`
+  and `readerPicker`'s `› ` marker); `chatSkillList` on `chatView` with the
+  `tab`/`f2` cases, the load command, the terminal-chat pre-check, the wheel
+  no-op and the ordering that keeps it shut under the §7.4 popup and the
+  close confirmation; the list's lines in `footerLines` and `tab skills` in
+  the in-view hint; a `ctxChat` row and the new `ctxChatSkills` context;
+  `keymap.fixed` rows for the surface and the `f2` alias. No handler contains
+  `case "/"`. No daemon, store, API, MCP, migration or wire change. Decisions
+  69–76; spec §15 view 9 and §15 Keys, `docs/guides/tui.md` and
+  `docs/features.md` amended. ✓ 2026-09-20
 - [ ] 124.14 (#510) The same list, opened inline as the human types the
   adapter's sigil. Depends: 124.13.
 - [ ] 124.15 (#511) `m14` leg 12, end to end on all three operating systems.

@@ -13,6 +13,20 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **`tab` in the TUI's chat workspace lists the agent's skills above the
+  composer.** Type to filter it — a name prefix ranks over a plugin's bare
+  name or an alias, which ranks over a description match — and `enter` or
+  `tab` writes the agent's own invocation into your message, with whatever
+  you had already typed becoming its arguments. `f2` opens it too, for a
+  terminal that swallows `tab`. Browsing never touches the draft: `esc`
+  leaves your message byte for byte as you wrote it, and `enter` with no row
+  highlighted still sends it as typed. An agent that cannot report its skills
+  says so on the note line instead, and one that cannot be told to run one
+  opens the list read-only. Both keys are fixed, so `f2` now means something
+  in the TUI: a [`tui.keys`](docs/reference/configuration.md#tuikeys) map that
+  bound an operation to it is refused, naming what the key already means, and
+  another function key takes it.
+
 - **A skill you invoke in a claude chat now shows in the transcript.** Until
   now `/name` in a chat message left no trace on the CLI's output at all: the
   turn ran the skill and the transcript said nothing about it. A chat turn now

@@ -10465,6 +10465,41 @@ stream for the live tail.
    terminal can always send it: there `shift+enter` arrives as a bare `enter`,
    which sends.
 
+   *Amended 2026-09-20 (task 124.13, issue #509).* **`tab` opens the skill
+   list**, drawn between the note line and the composer: the skills this
+   chat's agent CLI would load in the chat's directory
+   (`GET /v1/chats/{id}/skills`, §13.2), one line each — the invocation, the
+   argument hint, the description and a dim scope and plugin — with the
+   highlighted row's description wrapped into a fixed three-line reserve
+   below. `f2` does the same, for a terminal that swallows `tab`. The list's
+   height is spent out of the body's budget, never added to the frame (§15's
+   #299 amendment).
+
+   The list owns its **own** filter buffer and never touches the draft until
+   a row is accepted: a printable key extends the buffer and re-ranks,
+   `backspace` shortens it and closes the list when it is already empty,
+   `↑`/`↓` move the highlight, and `esc` hides the list with the draft
+   unchanged byte for byte. `enter` with nothing highlighted still **sends
+   the message as typed**, because nothing else ever wrote there. Accepting
+   writes once — the adapter's own `invocation` plus one space, at the start
+   of the draft for `invoke_position: leading` and at the cursor for
+   `anywhere`, cursor after the space, the existing draft becoming the
+   arguments — and then hides the list.
+
+   Nothing here builds an invocation: the sigil, its position and each row's
+   text come off the wire (§9.2). An adapter that cannot list gets no list,
+   only the note line's reason; one that can list and cannot invoke — or
+   whose invoke verdict is `unknown` — opens the list read-only and refuses
+   the accept with that reason. A row whose invocation carries a C0/C1
+   control or an ANSI escape is drawn disabled and cannot be accepted;
+   whitespace is allowed, because codex's linked form for a duplicated name
+   is a path that may contain spaces (§9.3). A terminal chat refuses locally
+   and asks the daemon nothing. There is no refresh key: the daemon
+   invalidates the listing when a turn ends, and `vincent chat skills
+   --refresh` is the way to force one. The list is one `esc` layer below
+   "back to view 8", takes the wheel out of the conversation while it is up,
+   and never opens under the §7.4 popup or the close confirmation.
+
    The conversation body is **the output pane's line model** at the level
    below, not a renderer of its own: every turn's records go through the same
    two-column gutter scheme, so an `agent.tool_use` reads the same in a chat as
@@ -11797,7 +11832,8 @@ filters, `←`/`→` fold a project group and `R` re-lists. *(Amended 2026-09-10
 task 093: archive was `a` and the re-list was `r`; both moved to the vocabulary
 key below.)* In the **chat
 workspace**: `enter` sends, `ctrl+j` inserts a newline in the draft *(added
-2026-09-19, issue #500)*, `ctrl+x` stops the live turn, `ctrl+t` hands the
+2026-09-19, issue #500)*, `tab` opens the skill list *(added 2026-09-20, task
+124.13, issue #509)*, `ctrl+x` stops the live turn, `ctrl+t` hands the
 worktree and branch to a task *(added 2026-09-01, task 074)*, `esc` returns to
 the board. In the **new-chat form**: `ctrl+s` creates, `tab`/`shift+tab` move
 between fields, `enter` opens the focused field's list, `←`/`→` step the
@@ -12031,6 +12067,19 @@ prints; and the keys the handlers answer beside the registry — the vim aliases
 `h j k l f b u G`, the output tab's `d` and `r` as retry-connecting. The daemon
 publishes no config event, so a keymap edited outside the TUI's own
 config editor takes effect at the TUI's next configuration read (§12.3).
+
+*Amended 2026-09-20 (task 124.13, issue #509).* `tab` carries a **second
+fixed meaning on one capturing surface**: everywhere else it moves focus, and
+in the chat workspace it also opens the skill list, because nothing there
+matched it and bubbles' textarea binds none. `f2` is its alias, recorded as
+its own row in `keymap.fixed` the way `ctrl+j`'s `shift+enter` and
+`alt+enter` are, so both literals a handler matches are held against the
+catalog. The open list is a fixed surface of its own — `chat skills`, not the
+daemon view's `agent skills` — carrying `↑`/`↓`, `tab`, `enter`, `backspace`
+and `esc`. None of them is nameable in `tui.keys`: `tab` and `shift+tab` move
+focus everywhere, and a surface-local row is fixed (task 118 decision 1).
+`/` is never matched as a key here — it is the `filter` operation's default,
+and the sigil is read from the response.
 
 *Amended 2026-09-17 (task 119, issue #472).* `chat` is a §6 action, so it is an
 operation like the rest: `T` by default, moved by `tui.keys` on every surface

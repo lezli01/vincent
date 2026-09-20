@@ -1714,6 +1714,7 @@ periodic repaint.
 |---|---|
 | `enter` | Send the message |
 | `ctrl+j` | Insert a newline in the draft. `shift+enter` and `alt+enter` do too where the terminal sends them; `ctrl+j` works in every terminal, and `alt+enter` on macOS needs the terminal's "Option as Meta" setting |
+| `tab` | The skills this chat's agent can run — type to filter, `enter` or `tab` inserts one. `f2` does the same, where the terminal swallows `tab` |
 | `ctrl+x` | Stop the running turn — its process tree is killed |
 | `ctrl+r` | How much of the conversation to show: quiet → compact → normal → verbose |
 | `ctrl+t` | Hand the worktree and branch to a new task — the chat ends; not on a chat opened on a task |
@@ -1726,6 +1727,33 @@ periodic repaint.
 | `ctrl+p` | Command palette — `:` is a character here |
 | `f1` | Help — `?` is a character here |
 | `esc` | Back to the chats board |
+
+**`tab` lists the skills this chat's agent can run.** The list is drawn just
+above the composer — one line per skill: how to invoke it, its argument hint,
+its description, and its scope and plugin where the CLI named them. The
+highlighted row's description is wrapped in full underneath. The rows are the
+agent's own answer about *this chat's directory*, asked of the CLI itself, so
+a skill you added to the worktree an hour ago is in it and one vincent
+invented is not.
+
+Nothing is typed into your message while you browse. Type to filter — the
+letters go into the list, not the draft, and the ranking is a name prefix
+first, then a plugin's bare name or an alias (so `deploy` finds
+`myplugin:deploy-app`), then a description match. `↑`/`↓` move the highlight,
+`backspace` shortens the filter and closes the list once it is empty, and
+`esc` closes it with your draft exactly as you left it. With nothing
+highlighted `enter` still sends the message as typed; `tab` takes the top
+match. Accepting writes the invocation and one space — at the start of the
+message for an agent that wants its skills there, at the cursor for one that
+takes them anywhere — and leaves the cursor after the space, so whatever you
+had already typed becomes the skill's arguments.
+
+Not every agent answers. cursor does not report its skills, and the note line
+says so rather than guessing them; a probe that failed says that instead, and
+neither blocks typing or sending. An agent that can list but cannot be told
+to run a skill opens the list read-only. There is no refresh key here: the
+daemon re-asks when a turn ends, and `vincent chat skills --refresh` forces
+it. A chat that has ended refuses locally and asks the daemon nothing.
 
 `ctrl+t` opens the new-task form in **handoff mode**: the project, the base
 branch and the branch are the chat's, shown but marked `(from the chat)` and
@@ -2321,7 +2349,10 @@ to anything else:
   (`<`/`>`), moving (`↑`/`↓`, `K`/`J`) and the task tabs (`[`/`]`).
 - **`esc`**, because it closes one layer at a time on every screen; **`ctrl+c`**,
   because it must always be able to quit; **`ctrl+v`**, the paste fallback; and
-  **`tab`/`shift+tab`**, which move focus everywhere.
+  **`tab`/`shift+tab`**, which move focus everywhere — and, in the chat
+  workspace only, `tab` also opens the skill list, which is a fixed surface
+  key like the rest of that screen's and is not nameable in `tui.keys`
+  either.
 - **A popup's `y` and `n`**, which answer the question the popup is asking.
 - **The aliases**: the vim-style `h j k l f b u G`, the output tab's `d`, and
   `r` for retrying the connection while the daemon is unreachable.

@@ -144,8 +144,13 @@ const (
 	ctxArchivedChats bindingContext = "archived chats"
 	ctxChats         bindingContext = "chats"
 	ctxChat          bindingContext = "chat"
-	ctxNewChat       bindingContext = "new chat"
-	ctxDaemon        bindingContext = "daemon"
+	// ctxChatSkills is the chat workspace's skill list (task 124.13). Its
+	// own context because while it is open it owns the keyboard, and `tab`,
+	// `enter` and `esc` all mean something else the moment it closes. Not
+	// ctxSkills, which is the daemon view's published-skill offer below.
+	ctxChatSkills bindingContext = "chat skills"
+	ctxNewChat    bindingContext = "new chat"
+	ctxDaemon     bindingContext = "daemon"
 	// ctxSkills is the daemon view's published-skill offer (§9.8, task 095).
 	// Its own context rather than more ctxDaemon rows for the reason the
 	// config editor's keys are their own: while it is open it owns the
@@ -513,6 +518,21 @@ var bindings = []binding{
 	{key: rawToggleKey, label: "show the assistant's original Markdown instead of the rendered view", scope: scopePanel, context: ctxChat, hint: "ctrl+o raw", priority: 8},
 	{key: copyPickKey, label: "copy an assistant message, its plain text, or one of its code blocks", scope: scopePanel, context: ctxChat, hint: "ctrl+y copy", priority: 9},
 	{key: linkPickKey, label: "list the links in the assistant's messages — open one in a browser or copy it", scope: scopePanel, context: ctxChat, hint: "ctrl+l links", priority: 10},
+	// tab is free in the composer — bubbles' textarea binds no tab, and this
+	// view matched none until now — so it is the taught key, the way every
+	// terminal spells completion (task 124 decision 69). f2 rides in the
+	// label as the alias for a terminal that swallows tab, the way ctrl+j's
+	// row already names shift+enter and alt+enter; keymap.fixed records it.
+	{key: "tab", label: "the skills this chat's agent can run — type to filter, enter or tab inserts one (f2 too, where the terminal swallows tab)", scope: scopePanel, context: ctxChat, hint: "tab skills", priority: 12},
+
+	// The chat workspace's skill list, while it is open. noPalette for the
+	// reason the daemon view's skill offer's rows are: a key that only
+	// exists inside a popup cannot be replayed into one that is shut.
+	{key: "down", label: "move the highlight (↑/↓); nothing is highlighted until the first press", scope: scopePanel, context: ctxChatSkills, noPalette: true},
+	{key: "tab", label: "insert the highlighted skill, or the top match when none is highlighted (f2 too)", scope: scopePanel, context: ctxChatSkills, noPalette: true},
+	{key: "enter", label: "insert the highlighted skill; with none highlighted, send the message as typed", scope: scopePanel, context: ctxChatSkills, noPalette: true},
+	{key: "backspace", label: "shorten the filter, and close the list when it is already empty", scope: scopePanel, context: ctxChatSkills, noPalette: true},
+	{key: "esc", label: "close the list and keep the draft exactly as it was", scope: scopePanel, context: ctxChatSkills, noPalette: true},
 
 	// New chat.
 	{key: "ctrl+s", label: "create the chat and open it", scope: scopePanel, context: ctxNewChat, hint: "ctrl+s create", priority: 1},

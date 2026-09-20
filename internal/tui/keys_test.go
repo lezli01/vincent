@@ -35,17 +35,19 @@ var reboundKeys = map[string]string{
 	"editor":       "ctrl+e",
 	"free_text":    "ctrl+w",
 	"browser":      "ctrl+b",
-	"open_row":     "f2",
-	"scope":        "f3",
-	"filter":       "ctrl+f",
-	"lane":         "f4",
-	"new":          "f8",
-	"repair":       "f9",
-	"follow_up":    "f10",
-	"edit_retry":   "f11",
-	"chat":         "alt+t",
-	"help":         "f12",
-	"palette":      "ctrl+a",
+	// f13 rather than f2: f2 is the chat workspace's fixed alias for the
+	// skill list (task 124.13), and this map must pass keymap.Build.
+	"open_row":   "f13",
+	"scope":      "f3",
+	"filter":     "ctrl+f",
+	"lane":       "f4",
+	"new":        "f8",
+	"repair":     "f9",
+	"follow_up":  "f10",
+	"edit_retry": "f11",
+	"chat":       "alt+t",
+	"help":       "f12",
+	"palette":    "ctrl+a",
 }
 
 // withKeymap installs overrides for one test and restores the defaults after.

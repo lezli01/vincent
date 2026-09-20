@@ -83,6 +83,8 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 		msg = tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl}
 	case "ctrl+g":
 		msg = tea.KeyPressMsg{Code: 'g', Mod: tea.ModCtrl}
+	case "backspace":
+		msg = tea.KeyPressMsg{Code: tea.KeyBackspace}
 	case "pgup":
 		msg = tea.KeyPressMsg{Code: tea.KeyPgUp}
 	case "pgdown":
@@ -865,6 +867,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 			if v.composer.Value() != "" {
 				t.Fatalf("the confirmation reached the composer: %q", v.composer.Value())
+			}
+		},
+		"tab": func(t *testing.T) {
+			v := chatSkillsFixture(claudeSkills())
+			v.composer.SetValue("fix the bug")
+			openChatSkills(t, v, "tab")
+			if got := v.composer.Value(); got != "fix the bug" {
+				t.Fatalf("tab reached the composer: %q", got)
 			}
 		},
 		"ctrl+r": func(t *testing.T) {
@@ -2191,6 +2201,55 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 		},
 		"ctrl+t": popupTabProbe(func(d *detail) { d.form = newAnswerForm(questionRequest()) }),
+	},
+
+	// The chat workspace's skill list, open (task 124.13).
+	ctxChatSkills: {
+		"down": func(t *testing.T) {
+			v := chatSkillsFixture(claudeSkills())
+			openChatSkills(t, v, "tab")
+			v.updateKey(registryKey(t, "down"))
+			if v.skills.cursor != 0 {
+				t.Fatalf("down left the highlight on %d, want the first row", v.skills.cursor)
+			}
+		},
+		"tab": func(t *testing.T) {
+			v := chatSkillsFixture(claudeSkills())
+			openChatSkills(t, v, "tab")
+			v.updateKey(registryKey(t, "tab"))
+			if got := v.composer.Value(); got != "/tdd " {
+				t.Fatalf("tab left the draft %q, want the top match inserted", got)
+			}
+		},
+		"enter": func(t *testing.T) {
+			v := chatSkillsFixture(claudeSkills())
+			openChatSkills(t, v, "tab")
+			v.updateKey(registryKey(t, "down"))
+			v.updateKey(registryKey(t, "enter"))
+			if got := v.composer.Value(); got != "/tdd " {
+				t.Fatalf("enter left the draft %q, want the highlighted row inserted", got)
+			}
+		},
+		"backspace": func(t *testing.T) {
+			v := chatSkillsFixture(claudeSkills())
+			openChatSkills(t, v, "tab")
+			v.updateKey(registryKey(t, "backspace"))
+			if v.skills.open {
+				t.Fatal("backspace on an empty filter left the list open")
+			}
+		},
+		"esc": func(t *testing.T) {
+			v := chatSkillsFixture(claudeSkills())
+			v.composer.SetValue("hi")
+			openChatSkills(t, v, "tab")
+			v.updateKey(registryKey(t, "esc"))
+			if v.skills.open {
+				t.Fatal("esc left the list open")
+			}
+			if got := v.composer.Value(); got != "hi" {
+				t.Fatalf("esc changed the draft to %q", got)
+			}
+		},
 	},
 
 	ctxCreatePR: {
