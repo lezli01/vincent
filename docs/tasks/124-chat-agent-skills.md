@@ -1,6 +1,6 @@
 # 124 — Let a chat's human see the agent's skills and invoke one from a message
 
-**Status:** 🔄 in progress (13/20)
+**Status:** 🔄 in progress (14/20)
 **Opened:** 2026-09-19
 **Issue:** #496 (parent), #497–#515 (one per item)
 **Spec:** §9.1 (`SkillLister`, `SkillInvoker`), §9.6 (`supports_skill_listing`,
@@ -593,6 +593,43 @@ breakdown"). 13–19 were settled with the author, or taken in evaluation, when
     record* needs a record shape, a mapping and a drawing, so it is appended as
     124.20 rather than smuggled into a documentation item. Closes the parent's
     open question 9.
+79. **2026-09-20 — The fake claude derives its `initialize` list from the
+    working directory**, the way its app-server dialect already derives
+    codex's from `.agents/skills` (`claudeRepoSkills`, closing decision 44's
+    open call: the m14 leg does need it). `m14`'s freshness assertion and its
+    linked-chat assertion are both about a *name* appearing because a file is
+    in a particular directory, which neither a fixed `FAKEAGENT_CLAUDE_COMMANDS`
+    nor `FAKEAGENT_SKILLS_ECHO_CWD` can express. The derived rows are
+    **appended** to whatever those supply, and a missing or unreadable
+    directory — or an entry whose front matter names nothing — is a no-op, so
+    every existing test keeps the exact rows it pins. The front matter read
+    takes `argument-hint` beside `name` and `description`, because the leg
+    asserts the hint reaches the wire; `frontMatter` became a key/value read
+    shared with `repoSkills` rather than a second parser. *Beaten:* a second
+    `FAKEAGENT_*` variable listing the names, which would have made the
+    directory incidental to the assertion.
+80. **2026-09-20 — The leg does not pin MSYS's argv rewriting.** It asserts
+    only that `--message-file -` delivers `/gate-skill hi` byte for byte,
+    which is the guarantee #501 exists to give and the one that must hold on
+    all three platforms. Asserting that the *positional* form is mangled
+    under Git Bash would pin the behaviour of a runtime this repository does
+    not own, and would have to assert opposite outcomes per platform.
+81. **2026-09-20 — One daemon for the whole leg**, under
+    `FAKEAGENT_SCENARIO=skill-human` and `FAKEAGENT_VERSION=2.1.277`. The
+    fake's codex dialect falls through to `codexSuccess` for a scenario name
+    it does not know, and the claude listing probe answers `initialize` ahead
+    of any scenario dispatch, so the claude invocation legs, the codex
+    verbatim leg and every listing share one start. The version is pinned
+    because the fake reports 2.1.224 by default, below decision 40's floor:
+    without it every claude assertion in the leg would be about the
+    adapter's positive no rather than about the daemon. No shipped adapter
+    has a version floor of its own, so one value serves all three dialects.
+82. **2026-09-20 — Leg 12 is standalone and selectable**, a function beside
+    `chat_on_a_task` with a `12` arm in the selector, run last when nothing
+    is selected — leg 11's shape, for leg 11's reason. `CLAUDE.md`'s gate
+    list is not touched: its one-line description of `m14` ("chats end to
+    end (task 067)") still describes the script, and the acceptance
+    criterion only asks for a mention if that line changes.
 
 ## Open questions
 
@@ -723,8 +760,16 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
   `docs/features.md` amended. ✓ 2026-09-20
 - [ ] 124.14 (#510) The same list, opened inline as the human types the
   adapter's sigil. Depends: 124.13.
-- [ ] 124.15 (#511) `m14` leg 12, end to end on all three operating systems.
-  Depends: 124.11, 124.5, 124.7, 124.8, 124.10, 124.3.
+- [x] 124.15 (#511) `m14` leg 12, end to end on all three operating systems.
+  Each adapter's own listing mechanism against the fake; the directory the
+  list is about, a linked chat's being its task's worktree; the per-directory
+  cache and `?refresh=`; a `/name` reported back as one `agent.skill` by the
+  human, on a linked chat's first turn too; a `$name` that reaches codex
+  verbatim and produces none; `409 invalid_state` on a closed and on an
+  archived chat; and `vincent chat send --message-file -` delivering a
+  leading `/` byte for byte. The fake claude gained the cwd-derived listing
+  decision 44 parked here. Decisions 79–82; no wire, CLI or spec change.
+  ✓ 2026-09-20
 - [ ] 124.16 (#512) Use the claude init line's `skills` to invalidate stale
   lists and restore bundled skills. Depends: 124.9, 124.7.
 - [ ] 124.17 (#513) Probe through the task's container instead of answering
@@ -908,3 +953,23 @@ and 124.15 have landed. 124.16, 124.17 and 124.18 widen coverage after that.
   `TestChatSkillsCommandWithNoDaemonExitsTwo` the shared `withClient` path.
   `TestDocsClaimsEveryCommandIsOnTheCLIPage` and `…EveryFlagIsOnTheCLIPage`
   force the command and both flags onto `docs/reference/cli.md`.
+- 124.15: `scripts/m14-gate.sh`'s leg 12 is the proof, and
+  `VINCENT_GATE_SCENARIO=12` runs it alone. Against one daemon it asserts
+  claude's verdicts, sigil, position and `work_dir` before any turn with the
+  committed skill's description, hint and `/gate-skill` invocation; that a
+  plain `GET` serves the cached list while `?refresh=true` picks up a skill
+  written into the worktree and reports a later `probed_at`; that
+  `/gate-skill hello` finishes `done` and normalizes to exactly one
+  `agent.skill{name, args, by:"human"}` with no `agent.raw`; codex's
+  `$gate-skill` listed through the app-server, reaching the fake verbatim and
+  producing no `agent.skill`; cursor `unsupported` with a reason, `[]` and
+  `/`/anywhere; a linked chat listing `task-skill` from its *task's* worktree
+  while the other project's free chat does not, and invoking it on its first
+  turn, which is 124.3's block ordering end to end; `409 invalid_state` after
+  `close` and after `archive`; and `vincent chat skills --json` agreeing with
+  the API while `printf '/gate-skill hi' | vincent chat send --message-file -`
+  stores the prompt byte for byte — the Windows leg's own assertion.
+  `TestClaudeListsTheWorkingDirectorysSkills` is the fake's half of decision
+  69, through the real claude lister: the seeded rows appended in directory
+  order with their hints, an entry with no front matter skipped, and a
+  directory without `.claude/skills` listing exactly what it always did.
