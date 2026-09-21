@@ -791,6 +791,16 @@ func (r *Runner) ensureWorktree(ctx context.Context, task *store.Task, project *
 	// existing — a human may link any task to any pull request, and that must
 	// not change how the task's branch was made (decision 8).
 	fromPull := task.GitHubPull.FromPull()
+	// The third creation mode (§10, task 125): a task created on an existing
+	// branch adopts it rather than cutting one, and runs in the project's
+	// main checkout when that is where the branch already is. It is selected
+	// by the column the create call wrote, never inferred from the branch
+	// existing (decision 1) — inference would silently put a second task on
+	// the first one's branch whenever a template has no discriminator.
+	//
+	// A task cannot be both: POST /v1/tasks refuses `existing_branch` next to
+	// `github_pull`, so the order of these two branches is a formality.
+	adopt := task.AdoptedBranch && !fromPull
 	// refreshOf is what the claim records about the base refresh (§10, task
 	// 099), so a human can later tell a stale base from an old task without
 	// reading the daemon log. A pull-request task records none: the fetch it
@@ -798,7 +808,11 @@ func (r *Runner) ensureWorktree(ctx context.Context, task *store.Task, project *
 	// attempted on that path — a record of either would claim something that
 	// did not happen, and NULL is the honest "this admission refreshed no base".
 	refreshOf := func(c worktree.Created) *store.BaseRefresh {
-		if fromPull {
+		// An adopted task records none for the same reason a pull-request
+		// task does (task 125 decision 7): the fetch it ran was the *adopted
+		// branch's*, not the base's, and no base fast-forward is attempted.
+		// NULL is the honest "this admission refreshed no base".
+		if fromPull || adopt {
 			return nil
 		}
 		return &store.BaseRefresh{Fetch: store.BaseFetch(c.Fetch), FastForward: store.BaseFastForward(c.FastForward)}
@@ -817,11 +831,16 @@ func (r *Runner) ensureWorktree(ctx context.Context, task *store.Task, project *
 	}
 	var created worktree.Created
 	var err error
-	if fromPull {
+	switch {
+	case fromPull:
 		created, err = r.deps.Worktrees.CreatePullAndClaim(ctx, project.Path, worktree.TaskOwner(task.ID),
 			task.BaseBranch, pullSpecFor(task), claim)
 		logPullFetch(log, task, created.Fetch)
-	} else {
+	case adopt:
+		created, err = r.deps.Worktrees.CreateAdoptAndClaim(ctx, project.Path, worktree.TaskOwner(task.ID),
+			task.BranchName, claim)
+		logAdopt(log, task, project, created)
+	default:
 		created, err = r.deps.Worktrees.CreateAndClaim(ctx, project.Path, worktree.TaskOwner(task.ID),
 			task.BranchName, task.BaseBranch, fetch, claim)
 		logBaseRefresh(log, task.BaseBranch, created.Fetch, created.FastForward)
@@ -865,6 +884,34 @@ func pullSpecFor(task *store.Task) worktree.PullSpec {
 		spec.Ref = fmt.Sprintf("refs/pull/%d/head", spec.Number)
 	}
 	return spec
+}
+
+// logAdopt reports what adopting an existing branch did (§10, task 125).
+//
+// The line worth having is *where the task is running*: a task whose working
+// directory is the project path shares that directory with the human, and
+// that is not something a reader should have to infer from two paths being
+// equal. The fetch half is Debug in the ordinary case and a Warn only when it
+// failed — an adopted branch with no upstream is the supported local-first
+// case decision 5 keeps local on purpose.
+func logAdopt(log *slog.Logger, task *store.Task, project *store.Project, c worktree.Created) {
+	if c.Path == project.Path {
+		log.Info("adopted a branch already checked out in the project's main checkout; "+
+			"running there rather than in a worktree",
+			"branch", task.BranchName, "dir", project.Path)
+		return
+	}
+	switch c.Fetch.Result {
+	case worktree.FetchDone:
+		log.Debug("fetched the adopted branch from its own upstream",
+			"branch", task.BranchName, "remote", c.Fetch.Remote, "ref", c.Fetch.Ref)
+	case worktree.FetchFailed:
+		log.Warn("adopted branch fetch failed; running on the local ref, which may be stale",
+			"branch", task.BranchName, "remote", c.Fetch.Remote, "error", c.Fetch.Error)
+	default:
+		log.Debug("adopted branch has no upstream; running on the local ref as it is",
+			"branch", task.BranchName)
+	}
 }
 
 // logPullFetch reports what the pull-request head fetch did. Unlike the base

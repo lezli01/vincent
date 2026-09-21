@@ -92,7 +92,7 @@ func (r *Runner) Delete(
 	// Whether the branch is ours to delete at all (task 064 decision 3): a
 	// task created from a pull request runs on the contributor's head branch,
 	// and this must not touch it. Same answer archive gives.
-	ours := !task.GitHubPull.FromPull()
+	ours := !task.GitHubPull.FromPull() && !task.AdoptedBranch
 	out, err := r.deps.Worktrees.DeleteEmptyBranch(ctx, projectPath,
 		task.BaseBranch, task.BaseSHA, task.BranchName, false, &ours)
 	if err != nil {

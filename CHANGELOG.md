@@ -13,6 +13,25 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Run a task or chat on a branch that already exists — including one you have
+  checked out yourself.** `vincent task add --branch NAME --existing-branch`
+  (and `vincent chat start --branch NAME --existing-branch`) runs on that
+  branch instead of cutting a new one: no more `branch_exists`, no more
+  "vincent never reuses a branch" at creation. The branch is fast-forwarded
+  from its own upstream if it is behind, left alone if it is ahead, and a
+  diverged one blocks with `adopt_branch_diverged` having moved nothing. A
+  branch with no upstream keeps none — nothing is written into your repository
+  for a branch you kept local. If the branch is **already checked out in the
+  project itself**, the task runs right there, in your own working copy, rather
+  than refusing until you move off it; archiving such a task removes nothing
+  and keeps the branch, because vincent deletes only branches it cut. At most
+  one task or chat works in one directory: a second task is created and waits
+  queued until the first is archived, and a chat, which cannot wait, gets a
+  `409`. Adoption is always something you ask for, never inferred from a branch
+  happening to exist. `GET /v1/projects/{id}/branches` (MCP:
+  `project_branches`) lists a project's local branches and says which working
+  tree holds each. Spec §10, §5.3, §18; issue #538.
+
 - **A chat on a containerized task now lists the skills of the container, not
   of your host.** Such a chat runs its turns inside the task's container, so
   its skills were never your machine's; until now vincent said so and listed
@@ -24,7 +43,6 @@ list with the user-facing context a commit subject cannot carry.
   saying so and nothing is probed: a list taken from your host would name
   skills the agent never loads. Listing such a chat costs one container
   lookup per request; every other chat asks nothing extra.
-
 - **claude's own bundled skills are listed again, once a chat has had one
   turn.** `simplify`, `loop` and `run` ship with claude, and claude marks them
   with the same flag it marks `/clear` and `/compact` with, so vincent left

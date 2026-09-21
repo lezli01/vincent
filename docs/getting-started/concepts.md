@@ -118,8 +118,10 @@ see [Configuration](../reference/configuration.md). That is where the agent
 runs and where commands execute.
 
 What this **does** buy you: two tasks in the same repository never collide, no task
-ever works in your own checkout, and the diff of a task is a real git diff you can
-read before anything is pushed.
+works in your own checkout unless you ask for one that does
+([`--existing-branch`](../reference/cli.md#running-a-task-on-a-branch-that-already-exists)
+on a branch you have checked out runs there and makes no worktree), and the diff
+of a task is a real git diff you can read before anything is pushed.
 
 What it **does not** buy you: privilege isolation. A full-auto agent runs as
 you, with your credentials and your network. See the

@@ -67,8 +67,14 @@ pointing it at anything sensitive.
 
 ### Does it touch my working copy?
 
-No task works in it. Each task gets its own `git worktree` on its own branch —
-`vincent/{id}-{slug}` unless you configure a different convention.
+Not unless you ask it to. Each task gets its own `git worktree` on its own
+branch — `vincent/{id}-{slug}` unless you configure a different convention.
+
+The exception is one you opt into per task:
+[`--existing-branch`](reference/cli.md#running-a-task-on-a-branch-that-already-exists)
+on a branch **you have checked out** runs the task in that checkout instead of
+making you move off it, and no worktree is created. The agent is then working in
+your working copy, uncommitted changes and all.
 
 The one change vincent makes there is a fast-forward. Before a task's worktree is
 created, its base branch is fetched from its remote, and a local base branch that

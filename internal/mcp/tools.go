@@ -182,6 +182,7 @@ var routes = []Route{
 	{http.MethodGet, "/v1/projects/{id}/github", "project_github", "Whether this project's origin is a reachable GitHub repository (§12.3)."},
 	{http.MethodGet, "/v1/projects/{id}/github/issues", "project_github_issues", "Open GitHub issues for this project's origin repository."},
 	{http.MethodGet, "/v1/projects/{id}/github/pulls", "project_github_pulls", "Open GitHub pull requests for this project's origin repository."},
+	{http.MethodGet, "/v1/projects/{id}/branches", "project_branches", "This project's local git branches, each with the working tree holding it. A branch here can be run on directly with task_create's existing_branch."},
 	{http.MethodGet, "/v1/workflows", "workflow_list", "The workflow registry (§5.2): built-in, global and project workflows after shadowing."},
 	{http.MethodGet, "/v1/workflows/schema", "workflow_schema", "The §8.2 workflow schema as data: which fields are legal on which step type, and where each type may be nested. Read-only."},
 	{http.MethodPost, "/v1/workflows/validate", "workflow_validate", "Validate workflow YAML without running it (§8.2). Body: {yaml}."},

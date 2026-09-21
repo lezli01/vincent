@@ -124,11 +124,13 @@ func (s *Server) handleChatDelete(w http.ResponseWriter, r *http.Request) {
 	taskrun.RemoveTranscriptDir(s.deps.Dirs.Data, worktree.ChatOwner(chat.ID).Dir(), s.deps.Logger)
 	var out worktree.BranchOutcome
 	if projectPath != "" {
-		// ours is nil: a chat's branch is always one vincent cut, so there is
-		// no pull-request head to protect and nothing to say (task 064).
+		// A chat has no pull-request head to protect (task 064), but since
+		// task 125 it may run on a branch the user named, and vincent deletes
+		// only branches it cut.
+		ours := !chat.AdoptedBranch
 		var err error
 		out, err = s.deps.Worktrees.DeleteEmptyBranch(r.Context(), projectPath,
-			chat.BaseBranch, chat.BaseSHA, chat.Branch, false, nil)
+			chat.BaseBranch, chat.BaseSHA, chat.Branch, false, &ours)
 		if err != nil {
 			s.deps.Logger.Warn("delete: branch kept",
 				"chat", chat.ID, "branch", chat.Branch, "result", out.Result, "error", err)

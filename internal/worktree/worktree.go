@@ -495,6 +495,19 @@ func (m *Manager) IsDirty(ctx context.Context, worktreePath string) (bool, error
 // after this returns (spec §10). Ordering matters — the branch is checked out
 // in the worktree until the worktree is gone.
 func (m *Manager) Remove(ctx context.Context, projectPath, worktreePath string, force bool) error {
+	// The main checkout is not a worktree vincent made, so there is nothing
+	// to remove and nothing to prune (§10, task 125): an adopted branch that
+	// was already checked out there runs in the project path itself. This is
+	// an explicit skip rather than a reliance on removeDirect's containment
+	// check — archive must decline on purpose, not survive by erroring — and
+	// `git worktree remove` refuses a main working tree anyway.
+	//
+	// Because nothing is removed, ReasonWorktreeDirty cannot apply to such an
+	// owner and `force` never has to be passed for one: the uncommitted work
+	// in that directory is the human's, and it stays.
+	if sameDir(worktreePath, projectPath) {
+		return nil
+	}
 	// Same repository bookkeeping as create, from the other side: an archive
 	// prunes the project repo while an admission may be adding to it (#126).
 	unlock := m.lockRepo(projectPath)

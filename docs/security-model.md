@@ -79,7 +79,8 @@ itself because a parse failed has failed in the wrong direction.
 
 ## What the worktree does and does not isolate
 
-Every task runs in its own `git worktree` on its own branch.
+Every task runs in its own `git worktree` on its own branch, unless you
+deliberately point it at a branch your own checkout already holds.
 
 **Does:** keep two tasks in the same repository from colliding; keep every task
 out of your own checkout, which vincent itself changes only by fast-forwarding a
@@ -90,6 +91,14 @@ is pushed.
 
 **Does not:** confine the process. The worktree is a directory, not a sandbox. A
 full-auto agent's cwd is the worktree; its *reach* is your whole account.
+
+**The one exception, and you have to ask for it.** A task or chat created with
+[`--existing-branch`](reference/cli.md#running-a-task-on-a-branch-that-already-exists)
+on a branch your own checkout holds runs *in that checkout*: no worktree is made,
+and the agent's cwd is your working copy with whatever uncommitted work is in it.
+Nothing is fetched and no ref is moved there — that is why the mode is allowed
+at all — but the first guarantee above is the one it trades away. vincent never
+infers this from a branch happening to exist; it is selected per task.
 
 Command steps and checks are the same story: they execute user-authored workflow
 content at the same trust level as your own shell. No additional sandboxing is

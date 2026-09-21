@@ -539,7 +539,7 @@ whatever wraps this.
 ```sh
 vincent task add --project ID (--title TITLE | --github-issue N | --github-pull N)
                  [--workflow NAME] [--description TEXT] [--base-branch BRANCH]
-                 [--branch NAME] [--priority N] [--agent NAME] [--model M]
+                 [--branch NAME] [--existing-branch] [--priority N] [--agent NAME] [--model M]
                  [--effort E] [--field NAME=VALUE]... [--fields-file PATH]
                  [--paused] [--restricted] [--max-task-cost-usd USD]
                  [--json]
@@ -556,6 +556,7 @@ is no separate draft state.
 | `--workflow` | Defaults to the project's default workflow |
 | `--base-branch` | What the task branches **from**. Defaults to the project's default branch |
 | `--branch` | What the task's branch is **called**. Used verbatim and wins over any template; defaults to the project's or the global [`branch_template`](configuration.md#branch_template) |
+| `--existing-branch` | Run on a branch that **already exists** instead of cutting one. The branch is refreshed from its own upstream where it has one, and a task on a branch you already have checked out runs **in your checkout** rather than in a worktree. See below |
 | `--priority` | Higher runs first; default 0 |
 | `--field name=value` | Task field; repeat for more. Everything after the first `=` is the value, and a repeated name uses the last value |
 | `--fields-file PATH` | Read fields from a JSON object of string values; `-` reads it from stdin. Combines with `--field`, which wins for a name both supply |
@@ -665,6 +666,53 @@ does not change what a later step renders. It needs the
 [`github` integration](configuration.md#github) on, a github.com `origin`, and a
 credential — run [`vincent github status`](#vincent-github-status) or
 [`vincent doctor`](#vincent-doctor) if the daemon refuses.
+
+#### Running a task on a branch that already exists
+
+```sh
+vincent task add --project 1 --title "Finish the migration" \
+  --branch feat/OPS-412-migration --existing-branch
+```
+
+Without `--existing-branch`, naming a branch that already exists is a `400` —
+vincent never reuses a branch. With it, the task runs **on** that branch: no new
+branch is cut, the branch is fetched from its own upstream where it has one, and
+the commits your steps make land on it.
+
+Adoption is something you ask for, never something vincent infers from the
+branch happening to exist. That is what keeps a branch template without a
+discriminator from silently putting a second task on the first one's branch.
+
+What the flag does to the branch:
+
+- **Behind its upstream:** fast-forwarded before the task starts.
+- **Ahead of it:** left exactly where it is — those commits are yours, and a
+  push is what reconciles them.
+- **Diverged:** the task blocks with `adopt_branch_diverged` and **nothing
+  moves**. Merge or rebase, then retry.
+- **No upstream:** nothing is fetched and none is configured. A branch you kept
+  local stays local; a workflow's push on it will fail loudly rather than
+  inventing a remote branch.
+
+**If the branch is already checked out in the project itself**, the task runs
+*there* — its working directory is the project path, and no worktree is made.
+That is the case this flag exists for: you do not have to move your own checkout
+off a branch before vincent will work on it. Two consequences worth knowing:
+
+- Archiving such a task removes nothing. The directory is yours, its branch is
+  kept (vincent deletes only branches it cut), and `worktree_dirty` never
+  applies.
+- `vincent task diff` shows the working directory's diff, so uncommitted work
+  you already had when the task started reads as part of the task's diff.
+
+At most one task or chat works in one directory at a time. A second task on the
+same branch is **created and waits queued** until the first is archived — it is
+not blocked, so nobody has to retry it. A chat cannot wait, so
+`vincent chat start --branch ... --existing-branch` against a claimed branch
+fails with a `409`.
+
+`--existing-branch` and `--github-pull` cannot be combined: a pull-request task
+already runs on the pull request's head branch.
 
 #### Creating a task from a pull request
 
@@ -1631,11 +1679,16 @@ the log as prompt context.
 
 ```sh
 vincent chat start TITLE --project ID [--agent NAME] [--model M] [--effort E]
-                  [--base BRANCH] [--message TEXT | --message-file PATH|-] [--json]
+                  [--base BRANCH] [--branch NAME --existing-branch]
+                  [--message TEXT | --message-file PATH|-] [--json]
 ```
 
 Starts a chat and prints its id, agent and branch. `--agent` defaults to the
-first installed adapter that can resume a session. `--message` sends a first
+first installed adapter that can resume a session. `--branch` with
+`--existing-branch` runs the chat on a branch that already exists, under the
+same rules `vincent task add --existing-branch` follows; neither flag means
+anything without the other, and a branch another task or chat is already
+working in is refused (`409`) rather than queued — a chat has nowhere to wait. `--message` sends a first
 turn straight away and waits for it, which is `start` plus `send` in one call.
 `--message-file` does the same with a message read from a file, or from stdin
 when the argument is `-`, exactly as [`chat send`](#vincent-chat-send) reads

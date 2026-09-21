@@ -512,7 +512,7 @@ Four refusals are deliberate, and all of them keep the branch:
 | Situation | What happens |
 |---|---|
 | The branch has commits | Kept, reported `has_commits` |
-| Vincent did not cut the branch — the task was created from a pull request | Kept, reported `not_ours` |
+| Vincent did not cut the branch — the task came from a pull request, or was created on an existing branch | Kept, reported `not_ours` |
 | git cannot judge it — base branch renamed or deleted, repository gone | Kept, reported `unknown`, logged |
 | The delete itself fails — the branch is checked out in another worktree | Kept, reported `error`, logged |
 
@@ -520,7 +520,10 @@ Four refusals are deliberate, and all of them keep the branch:
 from a pull request runs on that pull request's head branch, and a task made from
 a **merged** pull request is by definition "no commits past its base" — precisely
 the case this key fires on. Deleting there would delete a contributor's branch, so
-neither leg runs on such a task.
+neither leg runs on such a task. A task or chat created on an existing branch
+([`--existing-branch`](cli.md#running-a-task-on-a-branch-that-already-exists)) is
+the same policy for the same reason: you named that branch, and vincent deletes
+only the branches it cut.
 
 A branch problem never fails an archive: the task reaches `archived` either way,
 and the branch simply survives, which is what always used to happen.

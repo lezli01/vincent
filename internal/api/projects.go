@@ -401,7 +401,7 @@ func (s *Server) deleteEmptyBranches(ctx context.Context, p *store.Project, task
 		if t.BranchName == "" {
 			continue
 		}
-		ours := !t.GitHubPull.FromPull()
+		ours := !t.GitHubPull.FromPull() && !t.AdoptedBranch
 		out, err := s.deps.Worktrees.DeleteEmptyBranch(ctx, p.Path, t.BaseBranch, t.BaseSHA, t.BranchName, false, &ours)
 		if err != nil {
 			s.deps.Logger.Warn("project delete: branch kept",

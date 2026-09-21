@@ -41,6 +41,7 @@ func newTaskAddCmd() *cobra.Command {
 		baseBranch  string
 		priority    int
 		branch      string
+		existing    bool
 		agent       string
 		model       string
 		effort      string
@@ -70,6 +71,9 @@ func newTaskAddCmd() *cobra.Command {
 			fieldMap := mergeTaskFields(fileFields, flagFields)
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
 				req := apiclient.CreateTaskRequest{ProjectID: projectID, Title: title, Fields: fieldMap}
+				if cmd.Flags().Changed("existing-branch") {
+					req.ExistingBranch = &existing
+				}
 				for _, f := range []struct {
 					name string
 					dst  **string
@@ -178,6 +182,9 @@ func newTaskAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&baseBranch, "base-branch", "", "Base branch (default: the project's)")
 	cmd.Flags().StringVar(&branch, "branch", "",
 		"Name for the task's branch, used verbatim (default: the project or config template)")
+	cmd.Flags().BoolVar(&existing, "existing-branch", false,
+		"Run on a branch that already exists instead of cutting one; "+
+			"if it is checked out in the project itself, the task runs there rather than in a worktree")
 	cmd.Flags().IntVar(&priority, "priority", 0, "Scheduling priority; higher runs first")
 	cmd.Flags().StringVar(&agent, "agent", "", "Agent override (§8.6 level 2)")
 	cmd.Flags().StringVar(&model, "model", "", "Model override (§8.6 level 2)")
@@ -202,6 +209,10 @@ func newTaskAddCmd() *cobra.Command {
 	// Both would prefill the same title and description from different
 	// sources, and there is no defensible order; the daemon refuses it too.
 	cmd.MarkFlagsMutuallyExclusive("github-issue", "github-pull")
+	// A pull-request task already runs on the pull request's head branch, so
+	// asking for the adopt mode on top of it asks which of two answers to one
+	// question wins; the daemon refuses it too.
+	cmd.MarkFlagsMutuallyExclusive("existing-branch", "github-pull")
 	// One of the two, not --title alone: an issue supplies the title, which is
 	// the whole point of naming one (task 035). Requiring both would make
 	// `--github-issue` a decoration on a title the user had to retype.

@@ -124,3 +124,36 @@ func (c *Client) DeleteProject(ctx context.Context, id int64, force bool) error 
 	}
 	return c.send(ctx, http.MethodDelete, path, nil, nil)
 }
+
+// Branch is one local branch of a project, as GET
+// /v1/projects/{id}/branches reports it (task 125).
+type Branch struct {
+	Name string `json:"name"`
+	// CheckedOutIn is the working tree holding the branch, or "" when none
+	// does.
+	CheckedOutIn string `json:"checked_out_in,omitempty"`
+	// MainCheckout says CheckedOutIn is the project's own path, so a task or
+	// chat adopting this branch runs *there* rather than in a worktree (§10,
+	// task 125 decision 3). The daemon computes it: git and the project
+	// record may spell one directory two ways.
+	MainCheckout bool `json:"main_checkout,omitempty"`
+	// Current marks the branch the project's main checkout has at HEAD.
+	Current bool `json:"current,omitempty"`
+}
+
+type branchListResponse struct {
+	Branches []Branch `json:"branches"`
+}
+
+// ListBranches returns the project's local branches, which is what the
+// new-task and new-chat forms offer as a picker (task 125). Free text is
+// still accepted on both: a name that is not in this list is the ordinary
+// cut-a-new-branch mode.
+func (c *Client) ListBranches(ctx context.Context, projectID int64) ([]Branch, error) {
+	var out branchListResponse
+	path := "/v1/projects/" + strconv.FormatInt(projectID, 10) + "/branches"
+	if err := c.get(ctx, path, &out); err != nil {
+		return nil, err
+	}
+	return out.Branches, nil
+}

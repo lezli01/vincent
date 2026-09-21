@@ -241,6 +241,17 @@ jobs:
         shell: bash
         run: ./scripts/123-gate.sh
 
+      # 125: a task or chat on a branch that already exists, and in the
+      # project's own checkout when that is where the branch is (task 125;
+      # §10, §5.3, §18). The matrix earns its place because the whole feature
+      # is git on the host: "the working directory *is* the project path" is a
+      # path comparison against what git prints, which is `C:/…` on Windows
+      # and `/private/var/…` on macOS, and the diverged case asserts a ref did
+      # not move in a repository three git processes share.
+      - name: 125 gate (run on an existing branch)
+        shell: bash
+        run: ./scripts/125-gate.sh
+
       # 064: a task from a pull request, on the pull request's own head
       # branch (task 064; §10, §13.2), against a local bare repository and
       # the fake `gh`. The matrix earns its place because the whole feature is

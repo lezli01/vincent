@@ -36,6 +36,10 @@ type Task struct {
 	// cleanup guidance sends a reader to `vincent task ls --archived` for
 	// them. GET /v1/tasks has always served it; only this struct dropped it.
 	BranchName string `json:"branch_name"`
+	// AdoptedBranch says the task runs on a branch vincent did not cut (task
+	// 125), so archive will never delete it and a worktree path equal to the
+	// project path means the task ran in the human's own checkout.
+	AdoptedBranch bool `json:"adopted_branch"`
 
 	// CurrentStep is zero-based; StepTotal is the snapshot's step count.
 	// A board renders them as k/n with k = CurrentStep+1, clamped, because
@@ -603,10 +607,15 @@ type CreateTaskRequest struct {
 	// BranchName names this task's branch outright, overriding the project and
 	// config templates (task 001). Used verbatim, never rendered.
 	BranchName *string `json:"branch_name,omitempty"`
-	Priority   *int    `json:"priority,omitempty"`
-	Agent      *string `json:"agent,omitempty"`
-	Model      *string `json:"model,omitempty"`
-	Effort     *string `json:"effort,omitempty"`
+	// ExistingBranch runs the task on a branch that already exists instead of
+	// cutting one, and in the project's main checkout when the branch is
+	// checked out there (§10, task 125). It is explicit, never inferred from
+	// the branch existing.
+	ExistingBranch *bool   `json:"existing_branch,omitempty"`
+	Priority       *int    `json:"priority,omitempty"`
+	Agent          *string `json:"agent,omitempty"`
+	Model          *string `json:"model,omitempty"`
+	Effort         *string `json:"effort,omitempty"`
 	// GitHubIssue creates the task from a GitHub issue (task 035). The daemon
 	// fetches it, prefills whatever this request left unset, and persists the
 	// snapshot; anything set here wins over the issue-derived value.
