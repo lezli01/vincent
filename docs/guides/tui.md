@@ -1109,8 +1109,42 @@ key.
 
 Opens for the project you are looking at. A guided form: project → workflow
 (with its description and step list, flagging steps whose agent is unavailable)
-→ *(GitHub issue)* → title → description → fields → base branch → priority →
-start → optional agent/model/effort override.
+→ *(GitHub issue)* → title → description → fields → base branch → branch →
+priority → start → optional agent/model/effort override.
+
+**The two branch rows are lists** over the project's own local branches, served
+by [`GET /v1/projects/{id}/branches`](../reference/api.md). `enter` opens one,
+`/` narrows it and `t` types a name it does not offer, exactly as the override
+lists work. The **base branch** row names what a new branch is cut from. The
+**branch** row is the task's own, and which row of the list you commit decides
+what vincent does with the name:
+
+- a branch **from the list** is [run on as it stands](features.md) — the third
+  worktree creation mode, `existing_branch` on the wire: vincent adds a worktree
+  on the branch that is already there instead of cutting one, and archiving the
+  task never deletes it;
+- the **free-text row** cuts a new branch under the name you typed, which is
+  what this row has always done;
+- **empty** leaves the name to the project and config templates.
+
+Adoption is therefore something you choose, never something vincent infers from
+a name that happens to exist — typing a name the list already carries still cuts
+a branch, and still gets the ordinary "that branch exists" refusal. The row says
+which of the two it is holding, in the Review stage as well as on the form.
+
+Rows the list marks are the ones worth reading. A branch **checked out in the
+project's own directory** says so, and choosing it puts a second line on the row
+and in the Review stage: the task will run *in that checkout* rather than in a
+worktree, so whatever is uncommitted there is part of the task's diff and
+archiving removes nothing. A branch another vincent worktree is holding says
+"would block" — it is still selectable, because the worktree may be gone by the
+time the task is admitted, and the daemon is the authority on that, not the
+form. Filtering on `checkout` narrows the list to exactly these.
+
+A draft [seeded from a pull request](#pull-requests) offers nothing to adopt:
+the task already runs on the pull request's head branch, and the two cannot be
+combined. A [handoff from a chat](#talking-to-an-agent-about-a-task) shows both
+branch rows read-only — the worktree they name already exists.
 
 **The start row** decides whether the task runs as soon as a slot is free — the
 default — or is created **paused**: `enter` toggles between the two. A paused
@@ -1180,9 +1214,9 @@ Review gathers the complete request beside the Create action. The rail follows
 the ordinary field cursor — there is no separate Next button or second set of
 navigation keys.
 
-![New task at its Review stage: the six stages in the left rail, and on the
-right the whole request — project, workflow, title, description, base branch,
-branch name, priority and agent — above the create action](../assets/tui-new-task.png)
+![New task at its Execution stage: the six stages in the left rail, each with
+what has been decided so far, and on the right the model override's list open
+over the agent/model/effort rows](../assets/tui-new-task.png)
 
 | Key | Does |
 |---|---|
@@ -1632,12 +1666,13 @@ did before.
 
 `n` is the one key whose meaning depends on where you are: on this board it
 starts a chat, everywhere else it opens the new-task form. The create form takes
-project, title, agent, model, effort and base branch; `ctrl+s` creates and drops
-you straight into the workspace. With no project registered, `n` says so on the
-board instead of opening a form you could not submit — add a repository in the
-Projects view (`4`) first.
+project, title, agent, model, effort, base branch and branch; `ctrl+s` creates
+and drops you straight into the workspace. With no project registered, `n` says
+so on the board instead of opening a form you could not submit — add a
+repository in the Projects view (`4`) first.
 
-Four of the six rows are lists — project, agent, model and effort — and they are
+Five of the seven rows are lists — project, agent, model, effort and branch —
+and they are
 the same list the new-task and follow-up forms use: `enter` opens one, `/`
 filters it as you type, `↑`/`↓` walk it and `enter` picks. The model and effort
 lists are the selected agent's own catalog, tagged `cli` where the CLI itself
@@ -1656,6 +1691,18 @@ Title and base branch are typed. The base row's placeholder names the selected
 project's actual default branch and follows the project row; leave it empty and
 the daemon resolves that default at creation.
 
+The **branch** row is a list of the project's local branches, and it has exactly
+one meaning: run this chat on a branch that already exists. Leave it empty — the
+ordinary case — and vincent cuts `vincent/{id}-{slug}` from the base as it
+always has; a chat cannot cut a branch under a name you chose, so there is no
+third shape here the way there is on the new-task form. The rows carry the same
+notes: a branch the project's own checkout has out says so, because the chat
+will then work *in that directory* rather than in a worktree, and one another
+worktree holds says "would block". If the branch's working directory already has
+an owner the daemon refuses with a 409 — a chat is created there and then and
+has nowhere to wait — and the reason lands on this row, where you can pick
+another.
+
 Only an agent that can resume its own session can hold a chat, so the agent
 picker offers only those — which today is all three of them. The daemon refuses
 anything else at creation with that reason rather than a generic failure, and
@@ -1670,6 +1717,7 @@ the draft alone; a second press discards the draft and returns you to the board.
 |---|---|
 | `tab` / `shift+tab` | Next / previous field |
 | `enter` | Open the focused field's list, or move on from a text field |
+| `t` | In an open list, type a value it does not offer |
 | `←` / `→` | Step the project and agent fields in place |
 | `ctrl+s` | Create the chat and open it |
 | `esc` | Close an open list, else discard the draft |

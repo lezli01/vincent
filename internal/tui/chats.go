@@ -295,7 +295,14 @@ func (v *chatsView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		// discarded before its fetch landed must not be resurrected by it,
 		// so a closed form drops the message rather than reopening.
 		if v.create != nil {
-			v.create.applyFields(msg)
+			return v, v.create.applyFields(msg)
+		}
+		return v, nil
+	case newChatBranchesMsg:
+		// The branch listing landing, dropped by a closed form for the same
+		// reason: a discarded draft must not be resurrected by its own fetch.
+		if v.create != nil {
+			v.create.applyBranches(msg)
 		}
 		return v, nil
 	case chatArchivedMsg:

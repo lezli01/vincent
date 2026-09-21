@@ -10488,7 +10488,7 @@ stream for the live tail.
 3. **New task.** Project picker → workflow picker (shows description + step list;
    flags steps whose agent is unavailable) → *(GitHub issue, conditional)* →
    title → description (inline or
-   `$EDITOR`) → fields → base branch (default prefilled) →
+   `$EDITOR`) → fields → base branch (default prefilled) → branch →
    priority → start (now or paused) → optional agent/model/effort override (pickers fed by
    `GET /v1/agents` with provenance-tagged options and free-text entry;
    replaces workflow defaults, never explicit step fields, §8.6) → create.
@@ -10498,6 +10498,30 @@ stream for the live tail.
    locked but their values remain editable; additional custom key/value rows can
    still be added and deleted. Values survive workflow switches, and local
    feedback mirrors the daemon's authoritative create-time validation.
+   **The two branch rows are pickers (task 125.9, added 2026-09-21):** both
+   are lists over `GET /v1/projects/{id}/branches` (§13.2) with free text, not
+   text fields, and the row the human commits decides the §10 creation mode
+   the request asks for. A branch chosen **from the list** sends
+   `branch_name` + `existing_branch: true` — §10's third mode, run on a branch
+   that already exists; the picker's **free-text row** sends `branch_name`
+   alone and cuts a new branch under that name, exactly as this row always
+   did; an empty row leaves the name to the §5.3 chain. Adoption therefore
+   stays *chosen* and is never inferred from a name that happens to exist
+   (task 125 decision 1) — a listed name typed into the free row still cuts,
+   and still meets §10's creation-time refusal. The row renders which of the
+   two shapes it holds, on the form and in the Review stage. The listing is a
+   listing and never a validator: no row is disabled, because the worktree
+   holding a branch can be removed between the pick and admission. Rows carry
+   the consequence as a note — the project's own checkout ("runs in your
+   checkout, not a worktree"), another worktree ("would block") — and
+   adopting a `main_checkout` branch puts that consequence on the row and in
+   the Review stage *before* submit, rather than leaving it to the §18
+   `adopt_branch_checked_out` block reason. The **base branch** row reads the
+   same listing but never adopts: the base is a fork point, and §10's mode is
+   a statement about the task's own branch. A draft seeded from a pull request
+   offers nothing to adopt (`existing_branch` with `github_pull` is a 400,
+   §13.2), and a handoff draft opens no picker on either row — both are
+   read-only there, as task 074 left them.
    **Pickers are windowed and type-filterable (M5, §9.7):** through v1 every
    catalog fit on a screen (claude: 3 models, 5 efforts; codex: efforts only),
    so the picker rendered all options unconditionally. Cursor's ~180-model
@@ -12357,6 +12381,26 @@ or moves on from a text one, uniformly: `ctrl+s` is the sole create key.
 `←`/`→` survive on the project and agent rows as a fast in-place step — the
 enum-row idiom from the new-task fields editor — and are not offered on the
 two catalog rows, where "next" answers nothing.
+
+*Amended 2026-09-21 (task 125.9, issue #542).* The new-chat form has a
+**seventh row, `branch`**, after the base row so the two branch rows are
+adjacent and the tab order of the five above is untouched. It is the same
+`picker` with free text, over the same `GET /v1/projects/{id}/branches` the
+new-task form reads, and it has exactly **one** meaning: run this chat on a
+branch that already exists. It submits `branch_name` + `existing_branch`
+together or neither, because either half alone is a 400 on `POST /v1/chats`
+(§13.2) — a chat that cuts its own branch is named from its id, so the
+new-task form's "free text cuts a new branch under this name" shape does not
+exist here and the row is adopt-only. Left empty — the ordinary case — vincent
+cuts `vincent/{id}-{slug}` from the base as before. The rows carry the same
+notes, and the 409 for a working directory that already has an owner (task 125
+decision 2: a chat is created synchronously and has nowhere to wait) is parked
+**on this row** rather than on the form-wide error line, because the row that
+chose the branch is where it can be changed. The form's free-text key `t` is
+registered for the first time with it: it has been reachable inside this
+form's lists since issue #281, and it is recorded as a list-layer key because
+the blanket "this surface captures text" rule below is a statement about the
+form's own rows, not about a list drawn over them.
 
 An **open new-chat draft captures input on every row**, not only on the two
 text ones. This is a deliberate, scoped exception to the rule above that the

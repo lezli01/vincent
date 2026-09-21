@@ -246,6 +246,11 @@ func (n *newTask) renderReview(lines []string) ([]string, int) {
 		section("Git & execution"),
 		n.reviewLine("base branch", n.rowValue(ntBranch)),
 		n.reviewLine("branch", n.rowValue(ntBranchName)),
+	)
+	if note := n.mainCheckoutConsequence(); note != "" {
+		lines = append(lines, n.reviewLine("", styleWarn.Render(note)))
+	}
+	lines = append(lines,
 		n.reviewLine("priority", n.rowValue(ntPriority)),
 		n.reviewLine("start", n.rowValue(ntPaused)),
 		n.reviewLine("execution", strings.Join([]string{
@@ -306,6 +311,11 @@ func (n *newTask) renderRow(row ntRow) string {
 	if msg, bad := n.rowErr[row]; bad {
 		line += "  " + styleBad.Render("⚠ "+msg)
 	}
+	if row == ntBranchName {
+		if note := n.mainCheckoutConsequence(); note != "" {
+			line += "\n" + strings.Repeat(" ", ntRowIndent) + styleWarn.Render(note)
+		}
+	}
 	return line
 }
 
@@ -357,14 +367,8 @@ func (n *newTask) rowValue(row ntRow) string {
 		}
 		return strings.Join(parts, "  ")
 	case ntBranch:
-		if n.mode == ntEditing && n.cursor == ntBranch {
-			return n.branch.View()
-		}
 		return firstNonEmpty(strings.TrimSpace(n.branch.Value()), styleDim.Render("(project default)"))
 	case ntBranchName:
-		if n.mode == ntEditing && n.cursor == ntBranchName {
-			return n.branchName.View()
-		}
 		return n.branchNameValue()
 	case ntPriority:
 		if n.mode == ntEditing && n.cursor == ntPriority {
@@ -577,6 +581,9 @@ func (n *newTask) renderPicker() []string {
 	case ntAgent, ntModel, ntEffort:
 		out = append(out, styleDim.Render(
 			"    replaces the workflow's defaults; steps that pin their own keep them (§8.6)"))
+	case ntBranchName:
+		out = append(out, styleDim.Render(
+			"    a listed branch is run on as it stands; the free-text row cuts a new one under that name"))
 	case ntProject, ntWorkflow, ntTitle, ntDescription, ntFields, ntBranch, ntPriority, ntPaused, ntCreate, ntRowCount:
 	}
 	hint := "    enter select · esc cancel"
@@ -762,6 +769,18 @@ func (n *newTask) priorityValue() int {
 // implementation to keep in step with the daemon's forever.
 func (n *newTask) branchNameValue() string {
 	typed := strings.TrimSpace(n.branchName.Value())
+	if n.handoff != nil {
+		// The chat's branch: a worktree that already exists, so neither shape
+		// below describes it. renderRow marks where it came from.
+		return typed
+	}
+	if n.branchAdopt && typed != "" {
+		// The shape the row holds, said on the row: the picker that decided
+		// it has closed by the time anyone reads this, and "adopts" and
+		// "cuts" are two different things to do to the same name (task 125.9
+		// decision 1).
+		return typed + "  " + styleDim.Render("(adopts this existing branch)")
+	}
 	res, ok := n.resolved()
 	if !ok || res.Branch == nil {
 		// No resolution yet. Show what was typed, or say nothing rather than
@@ -769,5 +788,36 @@ func (n *newTask) branchNameValue() string {
 		return firstNonEmpty(typed, styleDim.Render("(from the project template)"))
 	}
 	b := res.Branch
-	return b.Value + "  " + styleDim.Render("("+b.Explain()+")")
+	return b.Value + "  " + styleDim.Render("(a new branch · "+b.Explain()+")")
+}
+
+// adoptedBranch is the listed branch the branch row holds, when it holds one.
+// A name the listing does not carry is free text and cuts a branch, so it is
+// not one.
+func (n *newTask) adoptedBranch() (apiclient.Branch, bool) {
+	if !n.branchAdopt || n.pull != nil || n.handoff != nil {
+		return apiclient.Branch{}, false
+	}
+	name := strings.TrimSpace(n.branchName.Value())
+	for _, b := range n.branches {
+		if b.Name == name {
+			return b, true
+		}
+	}
+	return apiclient.Branch{}, false
+}
+
+// mainCheckoutConsequence is what adopting a branch the project's own checkout
+// has out would mean, said before submit rather than arriving afterwards as an
+// `adopt_branch_checked_out` block reason (§18): the task runs in that
+// directory instead of a worktree, so whatever is uncommitted there is part of
+// its diff (task 125 decision 4), and archiving it removes nothing.
+func (n *newTask) mainCheckoutConsequence() string {
+	b, ok := n.adoptedBranch()
+	if !ok || !b.MainCheckout {
+		return ""
+	}
+	return "⚠ runs in " + firstNonEmpty(b.CheckedOutIn, "the project's own checkout") +
+		", not a worktree — uncommitted work there is part of this task's diff, " +
+		"and archiving removes nothing"
 }

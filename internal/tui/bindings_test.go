@@ -1023,6 +1023,23 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("left opened the project list; it steps in place")
 			}
 		},
+		"t": func(t *testing.T) {
+			// Reachable only from an open list, which is why the catalog
+			// records it as a list-layer key on a surface whose own rows
+			// capture text (keymap.listLayer).
+			v := chatsFixture()
+			v.create = newNewChatForm(nil, 0)
+			v.create.applyFields(newChatFieldsMsg{projects: []apiclient.Project{{ID: 1, Name: "one"}}})
+			v.create.focus = ncBranch
+			v.create.openRow()
+			if v.create.pick == nil {
+				t.Fatal("enter on the branch row opened no list")
+			}
+			v.updateKey(registryKey(t, "t"))
+			if v.create.pick == nil || !v.create.pick.editing {
+				t.Fatal("t in the branch list did not start free-text entry")
+			}
+		},
 		"esc": func(t *testing.T) {
 			v := chatsFixture()
 			v.create = newNewChatForm(nil, 7)

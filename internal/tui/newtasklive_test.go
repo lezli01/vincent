@@ -63,6 +63,9 @@ type newTaskLiveHarness struct {
 	m         *root
 	p         *pump
 	projectID int64
+	// repo is the project's working tree, so a test that needs a second
+	// branch to pick can cut one.
+	repo string
 }
 
 // liveOptions are the seams a test varies. The zero value is the harness
@@ -215,7 +218,7 @@ func newNewTaskLiveHarnessWith(t *testing.T, opts liveOptions) *newTaskLiveHarne
 	if err := st.CreateProject(context.Background(), proj); err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	return &newTaskLiveHarness{st: st, m: m, p: p, projectID: proj.ID}
+	return &newTaskLiveHarness{st: st, m: m, p: p, projectID: proj.ID, repo: repo}
 }
 
 func addLiveRemote(t *testing.T, repo, remote string) {

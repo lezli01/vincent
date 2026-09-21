@@ -533,10 +533,10 @@ func TestNewTaskRefusesAWorkflowThatDoesNotRunHere(t *testing.T) {
 
 func TestNewTaskAgentSwitchResetsModelAndEffort(t *testing.T) {
 	n := loadedForm(t)
-	n.applyPick(ntAgent, "claude")
-	n.applyPick(ntModel, "sonnet")
-	n.applyPick(ntEffort, "high")
-	n.applyPick(ntAgent, "codex")
+	n.applyPick(ntAgent, "claude", false)
+	n.applyPick(ntModel, "sonnet", false)
+	n.applyPick(ntEffort, "high", false)
+	n.applyPick(ntAgent, "codex", false)
 	if n.model != "" || n.effort != "" {
 		t.Errorf("model/effort = %q/%q after switching agent; §8.6 forbids the carry-over",
 			n.model, n.effort)
@@ -554,7 +554,7 @@ func TestNewTaskAgentSwitchResetsModelAndEffort(t *testing.T) {
 
 func TestNewTaskModelPickerTakesFreeText(t *testing.T) {
 	n := loadedForm(t)
-	n.applyPick(ntAgent, "claude")
+	n.applyPick(ntAgent, "claude", false)
 	moveTo(n, ntModel)
 	press(n, "enter")
 	if !n.pick.allowFree {
@@ -570,7 +570,7 @@ func TestNewTaskModelPickerTakesFreeText(t *testing.T) {
 
 func TestNewTaskRequestOmitsWhatWasNeverTouched(t *testing.T) {
 	n := loadedForm(t)
-	n.applyPick(ntProject, "1")
+	n.applyPick(ntProject, "1", false)
 	moveTo(n, ntTitle)
 	press(n, "enter")
 	typeText(n, "ship it")
@@ -617,7 +617,7 @@ func TestNewTaskBlocksCreateOnWhatItCanDecideAlone(t *testing.T) {
 	}
 	// A base branch that does not exist is *not* blocked here: only the
 	// daemon can know, and a second implementation would drift from it.
-	n.applyPick(ntProject, "1")
+	n.applyPick(ntProject, "1", false)
 	moveTo(n, ntTitle)
 	press(n, "enter")
 	typeText(n, "t")

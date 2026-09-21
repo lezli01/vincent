@@ -184,14 +184,14 @@ func TestNewChatFormPickersPopulateThroughRoot(t *testing.T) {
 			"newChatFieldsMsg is produced by newChatForm.init and consumed by nothing", got)
 	}
 
-	// The form opens on the title and the six fields wrap, so five tabs land
+	// The form opens on the title and the seven fields wrap, so six tabs land
 	// the cursor on the project row.
-	for range 5 {
+	for range 6 {
 		m.Update(registryKey(t, "tab"))
 	}
 	f = chatsForm(t, m)
 	if f.focus != 0 {
-		t.Fatalf("five tabs left the cursor on field %d, want the project row", f.focus)
+		t.Fatalf("six tabs left the cursor on field %d, want the project row", f.focus)
 	}
 
 	before := f.projectID

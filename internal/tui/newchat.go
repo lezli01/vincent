@@ -17,10 +17,10 @@ import (
 //
 // It is deliberately smaller than the new-task form. A chat has no workflow,
 // no fields, no github issue and no scheduling, so the whole form is project,
-// title, agent, model, effort and base branch — and only the first two are
-// required.
+// title, agent, model, effort, base branch and branch — and only the first two
+// are required.
 //
-// Four of those six rows are lists, drawn by the same `picker` the new-task,
+// Five of those seven rows are lists, drawn by the same `picker` the new-task,
 // follow-up and repair forms use (issue #281): one component means one set of
 // idioms for "choose one of a list" — incremental filtering, a bounded
 // window, the `cli`/`curated` provenance note, and free text where a catalog
@@ -36,6 +36,13 @@ const (
 	ncModel
 	ncEffort
 	ncBase
+	// ncBranch adopts a branch that already exists (§10, task 125), and that
+	// is the only thing it can mean: `branch_name` without `existing_branch`
+	// is a 400 on POST /v1/chats, because a chat that cuts its own branch is
+	// named from its id. Left empty, vincent cuts `vincent/{id}-{slug}` as it
+	// always has. It sits next to ncBase so the two branch rows are adjacent,
+	// which leaves the tab order of the five rows above untouched.
+	ncBranch
 	ncRowCount
 )
 
@@ -53,6 +60,16 @@ type newChatFieldsMsg struct {
 	err      error
 }
 
+// newChatBranchesMsg carries a project's local branch listing, which is what
+// the branch row offers. The project travels with it so a reply for one the
+// user has since left is dropped rather than applied — the new-task form's
+// ntBranchesMsg for the same reason.
+type newChatBranchesMsg struct {
+	projectID int64
+	branches  []apiclient.Branch
+	err       error
+}
+
 // newChatForm is the create form.
 type newChatForm struct {
 	client *apiclient.Client
@@ -68,6 +85,18 @@ type newChatForm struct {
 
 	title textField
 	base  textField
+	// branch holds the adopted branch name. It is storage for the picker the
+	// row opens, not a text row: a chat's branch row has exactly one meaning,
+	// and typing one is done in the picker's free-text row.
+	branch textField
+
+	// branches is the project's local branch listing, branchesFor the project
+	// it describes and branchesErr why there is none — drawn above the
+	// picker's free row, so a repository the daemon cannot read still leaves
+	// a branch name typeable.
+	branches    []apiclient.Branch
+	branchesFor int64
+	branchesErr string
 
 	// pick is the list the focused row expands into, nil while navigating.
 	pick *picker
@@ -75,7 +104,12 @@ type newChatForm struct {
 	// focus is the row the cursor is on.
 	focus ncRow
 
-	err        string
+	err string
+	// branchErr is the daemon's complaint about the branch row, parked there
+	// rather than on the form-wide line: the 409 for a working directory
+	// another task or chat already owns names a branch, and the row that
+	// chose it is where it can be changed (task 125 decision 2).
+	branchErr  string
 	submitting bool
 }
 
@@ -85,6 +119,7 @@ func newNewChatForm(client *apiclient.Client, hintProject int64) *newChatForm {
 	f.title.SetPlaceholder("what is this conversation about")
 	f.base = newTextField()
 	f.base.SetPlaceholder(f.baseHint())
+	f.branch = newTextField()
 	f.focus = ncTitle
 	f.title.Focus()
 	return f
@@ -106,6 +141,33 @@ func (f *newChatForm) init() tea.Cmd {
 		agents, _ := client.ListAgents(ctx, false)
 		return newChatFieldsMsg{projects: projects, agents: agents}
 	}
+}
+
+// branchesCmd fetches the project's local branches for the branch row.
+func (f *newChatForm) branchesCmd(projectID int64) tea.Cmd {
+	client := f.client
+	if client == nil || projectID == 0 {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
+		defer cancel()
+		branches, err := client.ListBranches(ctx, projectID)
+		return newChatBranchesMsg{projectID: projectID, branches: branches, err: err}
+	}
+}
+
+// applyBranches takes a listing only when it describes the project on screen.
+func (f *newChatForm) applyBranches(msg newChatBranchesMsg) {
+	if msg.projectID == 0 || msg.projectID != f.projectID {
+		return
+	}
+	f.branchesFor = msg.projectID
+	if msg.err != nil {
+		f.branches, f.branchesErr = nil, "could not list branches: "+errString(msg.err)
+		return
+	}
+	f.branches, f.branchesErr = msg.branches, ""
 }
 
 // capturesInput is true for every row of an open draft, not only the two text
@@ -134,7 +196,7 @@ func (f *newChatForm) paste(text string) tea.Cmd {
 		f.title, cmd = f.title.Update(tea.PasteMsg{Content: text})
 	case ncBase:
 		f.base, cmd = f.base.Update(tea.PasteMsg{Content: text})
-	case ncProject, ncAgent, ncModel, ncEffort, ncRowCount:
+	case ncProject, ncAgent, ncModel, ncEffort, ncBranch, ncRowCount:
 	}
 	return cmd
 }
@@ -142,16 +204,19 @@ func (f *newChatForm) paste(text string) tea.Cmd {
 // applyFields records the pickers' contents, defaulting the project to the
 // hint and the agent to the first adapter that can resume — which is the
 // daemon's own default, so the form and the API agree before anyone types.
-func (f *newChatForm) applyFields(msg newChatFieldsMsg) {
+func (f *newChatForm) applyFields(msg newChatFieldsMsg) tea.Cmd {
 	if msg.err != nil {
 		f.err = errString(msg.err)
-		return
+		return nil
 	}
 	f.projects, f.agents = msg.projects, resumableAgents(msg.agents)
 	if f.projectID == 0 && len(f.projects) > 0 {
 		f.projectID = f.projects[0].ID
 	}
 	f.base.SetPlaceholder(f.baseHint())
+	// The branch listing is project-scoped, so it is asked for once the
+	// project row has settled rather than alongside the two catalogs above.
+	return f.branchesCmd(f.projectID)
 }
 
 // resumableAgents is the agent picker's contents: only adapters that can hold
@@ -191,7 +256,17 @@ func (f *newChatForm) applyFailure(err error) {
 			"conversation — pick one that can"
 		return
 	}
-	f.err = errString(err)
+	msg := errString(err)
+	// Everything the daemon refuses about an adopted branch names the branch:
+	// the 400s for a name it cannot find and the 409 for a working directory
+	// that already has an owner. Both belong on the row that chose it — the
+	// new-task form's applyFailure reads the daemon's words the same way.
+	if strings.Contains(msg, "branch") {
+		f.branchErr = msg
+		f.moveFocusTo(ncBranch)
+		return
+	}
+	f.err = msg
 }
 
 // update runs the form's keyboard. done reports that the layer should close.
@@ -202,13 +277,14 @@ func (f *newChatForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cmd
 	// draft — one esc, one layer.
 	if f.pick != nil {
 		res := f.pick.update(msg)
+		cmds := []tea.Cmd{res.cmd}
 		if res.chosen {
-			f.setRow(ncRow(f.pick.row), res.value)
+			cmds = append(cmds, f.setRow(ncRow(f.pick.row), res.value))
 		}
 		if res.closed {
 			f.pick = nil
 		}
-		return res.cmd, false
+		return tea.Batch(cmds...), false
 	}
 	switch msg.String() {
 	case "esc":
@@ -220,11 +296,9 @@ func (f *newChatForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cmd
 		f.moveFocus(-1)
 		return nil, false
 	case "left":
-		f.cycle(-1)
-		return nil, false
+		return f.cycle(-1), false
 	case "right":
-		f.cycle(1)
-		return nil, false
+		return f.cycle(1), false
 	case "ctrl+s":
 		return f.submit(), false
 	case "enter":
@@ -239,7 +313,7 @@ func (f *newChatForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cmd
 		f.title, cmd = f.title.Update(msg)
 	case ncBase:
 		f.base, cmd = f.base.Update(msg)
-	case ncProject, ncAgent, ncModel, ncEffort, ncRowCount:
+	case ncProject, ncAgent, ncModel, ncEffort, ncBranch, ncRowCount:
 	}
 	return cmd, false
 }
@@ -260,17 +334,36 @@ func (f *newChatForm) openRow() {
 	case ncEffort:
 		f.pick = newPicker(int(ncEffort), "effort", f.catalogOptions(f.efforts(), f.defaultEffort()),
 			true, f.effort)
+	case ncBranch:
+		f.branchErr = ""
+		f.pick = newPicker(int(ncBranch), "existing branch", f.branchOptions(), true,
+			strings.TrimSpace(f.branch.Value()))
+		f.pick.err = f.branchesErr
 	case ncTitle, ncBase, ncRowCount:
 		f.moveFocus(1)
 	}
 }
 
+// branchOptions is the project's local branches, led by the row that clears
+// the field. It is a listing and not a validator, so no row is disabled: the
+// worktree holding a branch can be removed between choosing it and creating
+// the chat, and the free-text row can name such a branch anyway (task 125.9
+// decision 3).
+func (f *newChatForm) branchOptions() []pickerOption {
+	out := make([]pickerOption, 0, len(f.branches)+1)
+	out = append(out, pickerOption{value: "", label: "(vincent cuts one)"})
+	for _, b := range f.branches {
+		out = append(out, pickerOption{value: b.Name, label: b.Name, note: branchNote(b)})
+	}
+	return out
+}
+
 // setRow commits a chosen value.
-func (f *newChatForm) setRow(row ncRow, value string) {
+func (f *newChatForm) setRow(row ncRow, value string) tea.Cmd {
 	switch row {
 	case ncProject:
 		if id, err := strconv.ParseInt(value, 10, 64); err == nil {
-			f.setProject(id)
+			return f.setProject(id)
 		}
 	case ncAgent:
 		f.setAgent(value)
@@ -278,15 +371,28 @@ func (f *newChatForm) setRow(row ncRow, value string) {
 		f.model = value
 	case ncEffort:
 		f.effort = value
+	case ncBranch:
+		f.branch.SetValue(value)
+		f.branchErr = ""
 	case ncTitle, ncBase, ncRowCount:
 	}
+	return nil
 }
 
-// setProject re-derives whatever depends on the project, which is the base
-// row's hint: it names that project's real default branch.
-func (f *newChatForm) setProject(id int64) {
+// setProject re-derives whatever depends on the project: the base row's hint,
+// which names that project's real default branch, and the branch listing,
+// which is another repository's now. A branch already chosen goes with it — a
+// name from the old project is not a branch this one can adopt.
+func (f *newChatForm) setProject(id int64) tea.Cmd {
+	if id == f.projectID {
+		return nil
+	}
 	f.projectID = id
 	f.base.SetPlaceholder(f.baseHint())
+	f.branch.SetValue("")
+	f.branchErr = ""
+	f.branches, f.branchesFor, f.branchesErr = nil, 0, ""
+	return f.branchesCmd(id)
 }
 
 // setAgent selects an adapter by name and drops the model and effort chosen
@@ -310,7 +416,11 @@ func (f *newChatForm) setAgentIdx(i int) {
 }
 
 func (f *newChatForm) moveFocus(delta int) {
-	f.focus = (f.focus + ncRow(delta) + ncRowCount) % ncRowCount
+	f.moveFocusTo((f.focus + ncRow(delta) + ncRowCount) % ncRowCount)
+}
+
+func (f *newChatForm) moveFocusTo(row ncRow) {
+	f.focus = row
 	f.title.Blur()
 	f.base.Blur()
 	switch f.focus {
@@ -318,7 +428,7 @@ func (f *newChatForm) moveFocus(delta int) {
 		f.title.Focus()
 	case ncBase:
 		f.base.Focus()
-	case ncProject, ncAgent, ncModel, ncEffort, ncRowCount:
+	case ncProject, ncAgent, ncModel, ncEffort, ncBranch, ncRowCount:
 	}
 }
 
@@ -331,11 +441,11 @@ func (f *newChatForm) moveFocus(delta int) {
 // The model and effort rows are not stepped: they are catalogs of a hundred
 // and more (§9.7), where "next" is not a cheap answer to anything. The text
 // rows ignore it — left and right are cursor movement there.
-func (f *newChatForm) cycle(delta int) {
+func (f *newChatForm) cycle(delta int) tea.Cmd {
 	switch f.focus {
 	case ncProject:
 		if len(f.projects) == 0 {
-			return
+			return nil
 		}
 		i := 0
 		for j, p := range f.projects {
@@ -344,14 +454,15 @@ func (f *newChatForm) cycle(delta int) {
 				break
 			}
 		}
-		f.setProject(f.projects[(i+delta+len(f.projects))%len(f.projects)].ID)
+		return f.setProject(f.projects[(i+delta+len(f.projects))%len(f.projects)].ID)
 	case ncAgent:
 		if len(f.agents) == 0 {
-			return
+			return nil
 		}
 		f.setAgentIdx((f.agentIdx + delta + len(f.agents)) % len(f.agents))
-	case ncTitle, ncModel, ncEffort, ncBase, ncRowCount:
+	case ncTitle, ncModel, ncEffort, ncBase, ncBranch, ncRowCount:
 	}
+	return nil
 }
 
 func (f *newChatForm) agentName() string {
@@ -468,7 +579,7 @@ func (f *newChatForm) baseHint() string {
 // resolves the project's default branch — the placeholder only says which one
 // that is.
 func (f *newChatForm) request() apiclient.CreateChatRequest {
-	return apiclient.CreateChatRequest{
+	req := apiclient.CreateChatRequest{
 		ProjectID:  f.projectID,
 		Title:      strings.TrimSpace(f.title.Value()),
 		Agent:      f.agentName(),
@@ -476,6 +587,13 @@ func (f *newChatForm) request() apiclient.CreateChatRequest {
 		Effort:     f.effort,
 		BaseBranch: strings.TrimSpace(f.base.Value()),
 	}
+	// The pair travels together or not at all: either half alone is a 400,
+	// and the row has no second meaning that would send one without the
+	// other (§13.2, task 125).
+	if b := strings.TrimSpace(f.branch.Value()); b != "" {
+		req.BranchName, req.ExistingBranch = b, true
+	}
+	return req
 }
 
 func (f *newChatForm) submit() tea.Cmd {
@@ -492,7 +610,7 @@ func (f *newChatForm) submit() tea.Cmd {
 		f.err = "not connected"
 		return nil
 	}
-	f.err = ""
+	f.err, f.branchErr = "", ""
 	f.submitting = true
 	req := f.request()
 	return func() tea.Msg {
@@ -532,6 +650,7 @@ func (f *newChatForm) render(width, height int) string {
 		{ncModel, "model", []string{f.overrideValue(f.model, f.defaultModel())}},
 		{ncEffort, "effort", []string{f.overrideValue(f.effort, f.defaultEffort())}},
 		{ncBase, "base", f.base.rows()},
+		{ncBranch, "branch", []string{f.branchValue()}},
 	}
 	lines := []string{" " + styleTitle.Render("new chat"), ""}
 	for _, r := range rows {
@@ -540,6 +659,9 @@ func (f *newChatForm) render(width, height int) string {
 			marker = "▸ "
 		}
 		lines = append(lines, indentRows(marker+padRight(r.label, 9), r.value)...)
+		if r.row == ncBranch && f.branchErr != "" {
+			lines = append(lines, "  "+styleBad.Render("⚠ "+f.branchErr))
+		}
 	}
 	if f.pick != nil {
 		f.pick.setWidth(width)
@@ -563,6 +685,25 @@ func (f *newChatForm) render(width, height int) string {
 		lines = window(lines, int(f.focus)+2, height)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// branchValue is the branch row's summary. Empty is the ordinary chat: vincent
+// cuts `vincent/{id}-{slug}` from the base. A name is §10's adopt mode, which
+// is the row's only other meaning, so the row says so rather than leaving the
+// consequence to the block reason (§18).
+func (f *newChatForm) branchValue() string {
+	name := strings.TrimSpace(f.branch.Value())
+	if name == "" {
+		return styleDim.Render("(vincent cuts one)   enter list")
+	}
+	out := name + "  " + styleDim.Render("(runs on this existing branch)")
+	for _, b := range f.branches {
+		if b.Name == name && b.MainCheckout {
+			out += "  " + styleWarn.Render("⚠ runs in "+
+				firstNonEmpty(b.CheckedOutIn, "your own checkout")+", not a worktree")
+		}
+	}
+	return out
 }
 
 // stepHint is the dim suffix on the two rows `←`/`→` still step in place.

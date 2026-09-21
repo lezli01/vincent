@@ -138,7 +138,7 @@ the living engineering specification records implementation contracts.
 | [122](122-trigger-overrun-handling.md) | `overrun:` and `concurrency_key:`: what a trigger does when its own previous work is still running | ✅ done (7/7) |
 | [123](123-update-global-workflows.md) | `update-workflows` with `global: true`: update the global workflows through an approved proposal | ✅ done (6/6) |
 | [124](124-chat-agent-skills.md) | Chat skills: see the skills a chat's agent loads, and invoke one from a message | 🔄 in progress (18/20) |
-| [125](125-run-on-an-existing-branch.md) | Run a task or chat on an existing branch, in the main checkout when that branch is already checked out | 🔄 in progress (8/9) |
+| [125](125-run-on-an-existing-branch.md) | Run a task or chat on an existing branch, in the main checkout when that branch is already checked out | ✅ done (9/9) |
 
 ## How to add and update a task document
 
