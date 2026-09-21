@@ -147,9 +147,15 @@ var Excluded = []Route{
 	// decision 6, extending 063 decision 2): the list is what a human's
 	// composer offers, and an agent calling it already has a session, and
 	// skills, of its own.
+	//
+	// `GET /v1/chats/{id}/files` joins them under that same rule, only more
+	// so (task 126 decision 3's neighbourhood, #550): the list is what a
+	// human's composer offers behind `@`, and an agent already sitting in
+	// that worktree can run `ls`.
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/events"},
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/turns/{seq}/transcript"},
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/skills"},
+	{Method: http.MethodGet, Path: "/v1/chats/{id}/files"},
 }
 
 // Streaming lists the §13.3 SSE routes. They are not tools because a tool call

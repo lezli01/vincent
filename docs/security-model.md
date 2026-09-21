@@ -245,6 +245,16 @@ documents this rather than switching skills off in restricted chats, which are
 exactly the chats a reviewer opens on a blocked task; see
 [Agent CLIs](guides/agents.md).
 
+**A chat's file listing does not second-guess git.**
+[`GET /v1/chats/{id}/files`](reference/api.md#files), the listing a composer
+offers behind `@`, serves only workspace-relative paths from inside the
+chat's own directory, and it honours `.gitignore` — so an ignored `.env`
+never appears. A **committed** secret does: it is in the repository, the agent
+can already read it, and a picker that filtered it would be inventing a rule
+the repository's owner did not write. Pointing an agent at a path outside the
+workspace is still possible by typing one, which is your own text passing
+through verbatim, exactly as the rest of a message does.
+
 Use `restricted` for steps that have no business running commands: a docs pass, a
 review, a summarization step. See
 [Writing workflows](guides/workflows.md#93-permission-modes).
