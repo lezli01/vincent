@@ -206,6 +206,16 @@ list with the user-facing context a commit subject cannot carry.
   argument is now optional, and exactly one of it and `--message-file` is
   required. The CLI reference explains quoting `/name` and `$name` in each
   shell, and troubleshooting has the Git Bash symptom.
+- **`GET /v1/agents` says what each agent does with an `@path` file mention.**
+  Four new fields sit beside the skill ones: `supports_file_mentions` says
+  whether the agent recognizes a mention at all, `file_mention_sigil` and
+  `file_mention_position` say how to write one (`@`, anywhere in the message,
+  on all three), and `file_mention_expands` says whether the CLI puts the
+  mentioned file in front of the model itself. That last one is the one that
+  differs — claude expands, codex and cursor leave the model to read the path
+  with a tool — so `vincent agents` notes `no @ file expansion` on their rows
+  and nothing on claude's. A daemon with no adapter registry to ask answers
+  `null` for all four, never `false`.
 
 ### Fixed
 

@@ -361,6 +361,52 @@ and the core has none.
     than left to rot. *Beaten:* writing a §15 note about a type a reader of the
     TUI cannot see.
 
+Decisions 33–35 were settled with the author on 2026-09-21 in 126.4 (#548),
+which publishes the capability decision 1 defined. They are numbered 1–3 in
+that issue's brief and the code cites them in this document's numbering.
+Nothing above is reopened.
+
+33. **2026-09-21 — Four wire fields, not the issue's three** (#548 decision
+    1). `supports_file_mentions`, `file_mention_sigil` and
+    `file_mention_position` cannot carry the capability split the issue
+    itself cites: 126.3 landed with all three shipped adapters implementing
+    `FileMentioner`, so `agent.CanMentionFiles` is `true` for every one of
+    them and §9.1 states outright that `Expands` is the honest capability
+    statement, not the interface. `file_mention_expands` therefore joins the
+    trio — it is the field that differs per adapter, and task 124 decision
+    19's "invocation gets no note: every shipped adapter can invoke" is the
+    same reasoning one capability family over. `supports_file_mentions` is
+    kept rather than derived from a `""` sigil, even though one interface
+    supplies both: it carries no note today, exactly as `supports_resume`
+    does, and exists so a client can tell "cannot mention" from "nobody can
+    say" the day a fourth adapter lacks the interface. *Beaten:* three fields
+    keyed on `file_mention_sigil != ""`, and the issue's trio with no
+    `expands` at all.
+
+34. **2026-09-21 — The `vincent agents` note reads `no @ file expansion`**
+    (#548 decision 2). Pure negative, matching the cell's existing shape
+    (`no mid-run input`, `no restricted mode on <os>`, `no skill listing`) and
+    task 124 decision 19's bad-news-only rule to the letter. It is keyed on
+    `file_mention_expands == false` — nothing for claude, a note for codex and
+    cursor — and a `null` from an older daemon or an absent registry adds
+    nothing, as `CannotListSkills` already behaves. `supports_file_mentions`
+    gets no note, by decision 33. *Beaten:* naming the consequence in the cell
+    ("`@` paths are prose, not context"), which would be the first note there
+    to say what *does* happen; and deferring the note to 126.11 (#555).
+
+35. **2026-09-21 — The spec is amended in 126.4, not only
+    `docs/reference/api.md`** (#548 decision 3). The issue said "nowhere
+    else", with the spec out of scope as 126.1's job; but 126.1's records are
+    §5.5 and §9.1 — the CLI *behaviour* — and this work makes a **wire** fact
+    true. Task 124's precedent for these exact siblings amended §9.6's
+    row-field list and §13.2's `vincent agents` row, and CLAUDE.md requires
+    the amendment in the same pull request as the code. §9.1's "nothing
+    consumes this yet" is amended in the same breath, because it names this
+    subtask as the thing that had not happened. The CLI reference moves with
+    §13.2 for the same reason: the `NOTES` vocabulary is what changed.
+    *Beaten:* `api.md` alone, which would leave §9.6's field list stale
+    against the route it describes.
+
 ## Citations corrected
 
 #544 and #545 both carry citations that do not resolve at HEAD. The decisions
@@ -455,8 +501,19 @@ attributes task 124.6's.
       and its **File mentions** record. Nothing is served or consumed:
       `GET /v1/agents` is 126.4, the `mention` field 126.6, the picker
       126.11. Decisions 22–25. ✓ 2026-09-21
-- [ ] 126.4 (#548) Report the capability on `GET /v1/agents` and in
-      `internal/apiclient`. Depends: 126.3.
+- [x] 126.4 (#548) Report the capability on `GET /v1/agents` and in
+      `internal/apiclient`. Four fields, not the issue's three:
+      `supports_file_mentions` from `agent.CanMentionFiles`, plus
+      `file_mention_sigil`, `file_mention_position` and — the one that
+      separates the shipped adapters, since all three implement
+      `FileMentioner` — `file_mention_expands`. Filled from the same single
+      registry lookup as `supports_resume` and the skill trio, `null` for an
+      adapter the registry does not know and for a daemon with none.
+      `apiclient.Agent` mirrors them with `CannotExpandMentions()`, and
+      `vincent agents` notes `no @ file expansion` — the negative only,
+      decision 19's rule. §9.6, §13.2 and §9.1's "nothing consumes this yet"
+      are amended, with `docs/reference/api.md` and the CLI page. Nothing in
+      the TUI reads a mention field until 126.11. ✓ 2026-09-21
 - [x] 126.5 (#549) A raw-output git runner, and enumerating a chat's workspace
       on the host (decision 3). `gitx.RunRaw` and the `run`/`runRaw` refactor;
       `worktree.Manager.ListFiles` and `ReasonWorkspacePathMissing`; their

@@ -166,6 +166,41 @@ func TestAgentsCommandAgainstTheRealAPI(t *testing.T) {
 		}
 	})
 
+	// The four mention fields (task 126.4) come from the same registry
+	// lookup, and are the ones a harness without one would lose. The sigil
+	// and position are pinned — a client inserts the sigil verbatim — while
+	// expansion is read and cross-checked against the NOTES cell, the way
+	// the listing bit above is: the API test is where the per-adapter answer
+	// is pinned.
+	t.Run("the file-mention capabilities cross the wire", func(t *testing.T) {
+		out, errOut, code := runCLI(t, "agents")
+		if code != 0 {
+			t.Fatalf("agents: code %d, stderr %q", code, errOut)
+		}
+		for _, name := range []string{"claude", "codex", "cursor"} {
+			a, ok := want.Find(name)
+			if !ok {
+				t.Fatalf("GET /v1/agents does not list %s", name)
+			}
+			if a.SupportsFileMentions == nil || a.FileMentionSigil == nil ||
+				a.FileMentionPosition == nil || a.FileMentionExpands == nil {
+				t.Errorf("%s: a mention field arrived null with a registry wired: %+v", name, a)
+				continue
+			}
+			if !*a.SupportsFileMentions {
+				t.Errorf("%s: supports_file_mentions = false, want true — all three shipped adapters mention (§9.1)", name)
+			}
+			if got := [2]string{*a.FileMentionSigil, *a.FileMentionPosition}; got != [2]string{"@", "anywhere"} {
+				t.Errorf("%s: file_mention_sigil, file_mention_position = %q, want [@ anywhere]", name, got)
+			}
+			noted := strings.Contains(agentsTableRow(t, out, name), "no @ file expansion")
+			if noted != a.CannotExpandMentions() {
+				t.Errorf("%s: row notes no @ file expansion = %v, but file_mention_expands = %v",
+					name, noted, *a.FileMentionExpands)
+			}
+		}
+	})
+
 	t.Run("--refresh reaches the handler", func(t *testing.T) {
 		refreshes, cached := h.agentsRefreshes.Load(), h.agentsCached.Load()
 		if _, errOut, code := runCLI(t, "agents"); code != 0 {

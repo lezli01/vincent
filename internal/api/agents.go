@@ -38,6 +38,32 @@ type agentResponse struct {
 	// cannot invoke skills, and null with no registry to ask.
 	SkillSigil    *string `json:"skill_sigil"`
 	SkillPosition *string `json:"skill_position"`
+	// SupportsFileMentions is whether this adapter implements file mentions
+	// at all (§9.1, §9.6, task 126): `agent.CanMentionFiles`. It is `true`
+	// on all three shipped adapters and so separates none of them — it is
+	// here so a client can tell "cannot mention" from "nobody can say" the
+	// day a fourth adapter lacks the interface, exactly as supports_resume
+	// carries a fact every adapter agrees on today. Null for the reason
+	// supports_resume is: no registry.
+	SupportsFileMentions *bool `json:"supports_file_mentions"`
+	// FileMentionSigil, FileMentionPosition and FileMentionExpands are how a
+	// message names a workspace file (§9.1, task 126 decision 22): "@",
+	// "leading" or "anywhere", and whether the CLI itself puts the file in
+	// front of the model rather than leaving the model to read the path with
+	// a tool. Expands is the honest capability statement, not the interface
+	// (§9.1), and it is the one of these four that differs per adapter.
+	// Sigil and position are "" for a registered adapter that cannot
+	// mention.
+	//
+	// They serve the **pre-chat** case, the one skill_sigil and
+	// skill_position serve: `vincent agents`, and any client choosing an
+	// adapter before it has a chat to ask. Task 126.6's chat-scoped files
+	// route reports the same facts for the chat's own agent, so a picker
+	// that already has a chat needs exactly one call — the overlap is a
+	// decision, not duplication.
+	FileMentionSigil    *string `json:"file_mention_sigil"`
+	FileMentionPosition *string `json:"file_mention_position"`
+	FileMentionExpands  *bool   `json:"file_mention_expands"`
 	// InputVerdict is the daemon's answer to whether this adapter may back a
 	// step declaring `on_input: require` (§7.4, task 013): supported,
 	// unsupported, or unknown. It is not derivable from supports_input alone —
@@ -109,6 +135,10 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 			SupportsSkillListing: caps.skillListing,
 			SkillSigil:           caps.skillSigil,
 			SkillPosition:        caps.skillPosition,
+			SupportsFileMentions: caps.fileMentions,
+			FileMentionSigil:     caps.mentionSigil,
+			FileMentionPosition:  caps.mentionPosition,
+			FileMentionExpands:   caps.mentionExpands,
 			InputVerdict:         string(e.InputVerdict()),
 			VersionVerdict:       string(e.Availability.VersionVerdict),
 			TestedVersions:       e.Availability.TestedVersions,
@@ -142,15 +172,19 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 // Every field is nil when there is no registry to ask, or the registry does
 // not know the name — "nobody can say", which no client may filter on.
 type adapterCapabilities struct {
-	resume        *bool
-	skillListing  *bool
-	skillSigil    *string
-	skillPosition *string
+	resume          *bool
+	skillListing    *bool
+	skillSigil      *string
+	skillPosition   *string
+	fileMentions    *bool
+	mentionSigil    *string
+	mentionPosition *string
+	mentionExpands  *bool
 }
 
-// adapterCapabilities answers `supports_resume`, `supports_skill_listing`,
-// `skill_sigil` and `skill_position` from one registry lookup, so the four
-// cannot disagree about which adapter they asked (§9.6, task 124).
+// adapterCapabilities answers `supports_resume`, the three skill fields and
+// the four file-mention fields from one registry lookup, so the eight cannot
+// disagree about which adapter they asked (§9.6, task 124, task 126).
 func (s *Server) adapterCapabilities(name string) adapterCapabilities {
 	if s.deps.Agents == nil {
 		return adapterCapabilities{}
@@ -160,15 +194,25 @@ func (s *Server) adapterCapabilities(name string) adapterCapabilities {
 		return adapterCapabilities{}
 	}
 	resume, listing := agent.CanResume(a), agent.CanListSkills(a)
+	mentions := agent.CanMentionFiles(a)
 	var syntax agent.SkillSyntax
 	if inv, ok := a.(agent.SkillInvoker); ok {
 		syntax = inv.SkillSyntax()
 	}
+	var mention agent.FileMentionSyntax
+	if m, ok := a.(agent.FileMentioner); ok {
+		mention = m.FileMentionSyntax()
+	}
 	sigil, position := syntax.Sigil, string(syntax.Position)
+	mentionSigil, mentionPosition, expands := mention.Sigil, string(mention.Position), mention.Expands
 	return adapterCapabilities{
-		resume:        &resume,
-		skillListing:  &listing,
-		skillSigil:    &sigil,
-		skillPosition: &position,
+		resume:          &resume,
+		skillListing:    &listing,
+		skillSigil:      &sigil,
+		skillPosition:   &position,
+		fileMentions:    &mentions,
+		mentionSigil:    &mentionSigil,
+		mentionPosition: &mentionPosition,
+		mentionExpands:  &expands,
 	}
 }

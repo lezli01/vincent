@@ -159,6 +159,8 @@ are long-lived by contract and no write deadline is set.
     "supports_input": true, "input_verdict": "supported", "logged_in": true,
     "supports_resume": true,
     "supports_skill_listing": true, "skill_sigil": "/", "skill_position": "leading",
+    "supports_file_mentions": true, "file_mention_sigil": "@",
+    "file_mention_position": "anywhere", "file_mention_expands": true,
     "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226, 2.1.268, 2.1.277",
     "restricted_verdict": "supported",
     "models":  [ { "value": "sonnet", "source": "cli" } ],
@@ -230,6 +232,23 @@ skills. All three are `null` when the daemon has no adapter registry to ask, as
 `supports_resume` is, and ride this route only. The per-directory skill list is
 not here: this answer is cached by binary identity, and a skill list also
 depends on the directory the agent runs in.
+
+`supports_file_mentions`, `file_mention_sigil`, `file_mention_position` and
+`file_mention_expands` describe how a message names a workspace file.
+`supports_file_mentions` is whether the adapter can do it at all — `true` for
+all three shipped adapters, so it tells them apart from nothing; it is here so
+a client can tell "cannot mention" from "nobody can say". **The one that
+differs is `file_mention_expands`**: `true` means the CLI itself puts the
+mentioned file in front of the model, `false` means the path arrives as prose
+and the model reads it with a tool — a hint rather than guaranteed context.
+claude expands, codex and cursor do not, which is what `vincent agents` notes
+as `no @ file expansion`. `file_mention_sigil` (`@`) and
+`file_mention_position` (`leading`: only at the start of the message;
+`anywhere`) are the syntax, and both are `""` for an adapter that cannot
+mention. All four are `null` when the daemon has no adapter registry to ask,
+as `supports_resume` is. They are the answer for a client that has **no chat
+yet** — `vincent agents`, and any agent picker; a client that already has a
+chat reads the same facts from that chat, so it needs only one call.
 
 ### Backup
 

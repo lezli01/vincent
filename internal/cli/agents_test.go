@@ -188,6 +188,18 @@ func TestAgentRowNotesAreBadNewsOnly(t *testing.T) {
 		// predates the field says nothing either — healthy's nil above.
 		{"no skill listing", func(a *apiclient.Agent) { a.SupportsSkillListing = &no }, 5, "no skill listing"},
 		{"skill listing", func(a *apiclient.Agent) { a.SupportsSkillListing = &yes }, 5, ""},
+		// Expansion is the mention family's bad news (§9.1, task 126.4):
+		// every shipped adapter mentions, so supports_file_mentions notes
+		// nothing, and a daemon that predates the field says nothing either
+		// — healthy's nil above.
+		{"no @ file expansion", func(a *apiclient.Agent) { a.FileMentionExpands = &no }, 5, "no @ file expansion"},
+		{"@ file expansion", func(a *apiclient.Agent) { a.FileMentionExpands = &yes }, 5, ""},
+		{"mentions but does not expand", func(a *apiclient.Agent) {
+			a.SupportsFileMentions, a.FileMentionExpands = &yes, &no
+		}, 5, "no @ file expansion"},
+		{"mentions and expands", func(a *apiclient.Agent) {
+			a.SupportsFileMentions, a.FileMentionExpands = &yes, &yes
+		}, 5, ""},
 		{
 			"not found",
 			func(a *apiclient.Agent) {
@@ -200,10 +212,10 @@ func TestAgentRowNotesAreBadNewsOnly(t *testing.T) {
 			func(a *apiclient.Agent) {
 				a.Available, a.InputVerdict = false, apiclient.InputVerdictUnsupported
 				a.RestrictedVerdict, a.ProbeError = apiclient.RestrictedVerdictUnsupported, &probeErr
-				a.SupportsSkillListing = &no
+				a.SupportsSkillListing, a.FileMentionExpands = &no, &no
 			},
 			5, "not found; no mid-run input; no restricted mode on " + runtime.GOOS +
-				"; no skill listing; option probe failed (curated catalog)",
+				"; no skill listing; no @ file expansion; option probe failed (curated catalog)",
 		},
 	}
 	for _, tc := range cases {
