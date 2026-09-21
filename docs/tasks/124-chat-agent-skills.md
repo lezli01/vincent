@@ -1,6 +1,6 @@
 # 124 — Let a chat's human see the agent's skills and invoke one from a message
 
-**Status:** 🔄 in progress (15/20)
+**Status:** 🔄 in progress (17/20)
 **Opened:** 2026-09-19
 **Issue:** #496 (parent), #497–#515 (one per item)
 **Spec:** §9.1 (`SkillLister`, `SkillInvoker`), §9.6 (`supports_skill_listing`,
@@ -946,17 +946,39 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
   `unknown`. Depends: 124.9, 124.7.
 - [ ] 124.18 (#514) Investigate whether ACP should become cursor's listing,
   and record a decision. Depends: 124.1.
-- [ ] 124.19 (#515) The `tui-chat-skills.png` tape — the list now has two
+- [x] 124.19 (#515) The `tui-chat-skills.png` tape — the list now has two
   ways in, so the tape shows both: `tab`'s browse list and the inline one a
-  typed sigil opens (124.14). Depends: 124.14.
+  typed sigil opens (124.14). Depends: 124.14. One tape,
+  `tape tui-chat-skills 1400` in `scripts/screenshots.sh`, on the same seeded
+  "rate limit" conversation `tui-chat` is of, producing
+  `docs/assets/tui-chat-skills.png` (browse, opened with `tab`) and
+  `docs/assets/tui-chat-skills-inline.png` (a typed `/re`), each preceded by
+  a `Down` because both openers start with nothing highlighted and the
+  reserved description lines stay blank until a row is picked. Browse is
+  photographed first: it is the frame that pays for the probe, so the inline
+  one is not racing a spawn of the CLI. The seed's listing environment —
+  `FAKEAGENT_VERSION=2.1.277` and a ten-skill `FAKEAGENT_CLAUDE_COMMANDS` —
+  goes on the **`agent-walled`** wrapper rather than `agent-chat`, because the
+  claude swaps are one-way and `agent-walled` is what `write_config` wrote
+  last, so it is the binary a probe at capture time actually runs; a listing
+  warmed during the seed is long past `skillTTL` by then. The version is not
+  optional: `claude.skillListingFloor` is 2.1.277 and the fake reports 2.1.224
+  by default, which lists as a positive no with no rows at all. Neither
+  variable disturbs the §11 hold, `initialize` being answered ahead of
+  scenario dispatch. The list's one `builtin` row is absent from both
+  pictures, no chat turn having run on that binary to classify it (124.16).
+  Accepted drift: `docs/assets/tui-daemon-config.png` was not re-shot, so its
+  adapters line still reads claude 2.1.224 — `VINCENT_SHOTS_ONLY` captured
+  only the new tape and every other PNG is byte-identical. `docs/guides/tui.md`
+  carries both pictures, one per opener. ✓ 2026-09-21
 - [ ] 124.20 (no issue yet) Surface claude's `conversation_reset` as a visible
   chat record, so a `/clear` in a chat is marked where it happened rather than
   leaving a transcript the agent no longer shares (decision 78). Depends: none.
 
 The requirement's two done criteria are met once 124.14, 124.11, 124.10, 124.3
 and 124.15 have landed — all five of which have, 124.14 last, on 2026-09-20.
-124.16, 124.17 and 124.18 widen coverage after that, and 124.19 and 124.20
-remain.
+124.16, 124.17 and 124.18 widen coverage after that, 124.19 photographed both
+openers on 2026-09-21, and 124.20 remains.
 
 ## Verification
 
@@ -1208,3 +1230,16 @@ remain.
   69, through the real claude lister: the seeded rows appended in directory
   order with their hints, an entry with no front matter skipped, and a
   directory without `.claude/skills` listing exactly what it always did.
+- 124.19: no test — a picture is what is judged, as for 017 and M3, and
+  `scripts/screenshots.sh` is not run by CI. The proof is the run: on
+  2026-09-21 `./scripts/screenshots.sh seed` then
+  `VINCENT_SHOTS_ONLY=tui-chat-skills ./scripts/screenshots.sh capture` under
+  vhs 0.11.0 wrote both PNGs — the script's own `[[ -f ]]` check is what makes
+  a tape that recorded nothing an error — and `git status` afterwards showed
+  the two new files and no change to any existing `docs/assets/tui-*.png`.
+  Both frames were read before they were committed: the browse one shows the
+  `skills` line with its probe age and `tab insert`, seven of the ten rows,
+  and the highlighted row's wrapped description; the inline one shows `/re` in
+  the draft, `tab complete` in the title, and the four rows that match it —
+  three by name prefix and `vincent-workflows:review-pr` by its bare name.
+  Neither shows the `builtin` row.
