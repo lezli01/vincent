@@ -1058,3 +1058,70 @@ func TestChatSkillsInlineHelpIsItsOwnSurface(t *testing.T) {
 		t.Fatalf("the browse help lost its backspace row:\n%s", browse)
 	}
 }
+
+// TestChatSkillsInlineNeverProbesOnAFileMention is issue #552. `@src` is a
+// file mention, not an invocation: no shipped adapter takes `@` as its sigil
+// (task 124 decision 18), so the token can never become one, and spending
+// decision 91's one silent probe on it costs an agent CLI spawn the human
+// did not ask for and then latches inline skills off for the whole chat.
+//
+// The counter is the pattern of TestChatSkillsInlineFetchIsSilentAndLatched:
+// what is asserted is requests made, because the cost being avoided is the
+// round trip and the process behind it, not what comes back.
+func TestChatSkillsInlineNeverProbesOnAFileMention(t *testing.T) {
+	// probeCounter is a daemon that answers every skills probe with a
+	// failure — the shape decision 91 latches on — and counts the asks.
+	probeCounter := func(t *testing.T) (*chatView, *atomic.Int64) {
+		t.Helper()
+		var calls atomic.Int64
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			calls.Add(1)
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		t.Cleanup(ts.Close)
+		v := chatViewFixture()
+		v.client = apiclient.New(ts.URL, "token")
+		return v, &calls
+	}
+
+	t.Run("an @ mention asks nothing", func(t *testing.T) {
+		v, calls := probeCounter(t)
+		for _, r := range "@src" {
+			_, cmd := v.updateKey(tea.KeyPressMsg{Code: r, Text: string(r)})
+			runChatCmds(v, cmd)
+		}
+		if n := calls.Load(); n != 0 {
+			t.Fatalf("an @ mention made %d requests, want none", n)
+		}
+		if v.skills.probeFailed {
+			t.Fatal("an @ mention latched the chat's inline skills off")
+		}
+	})
+
+	t.Run("a sigil-shaped token still asks once", func(t *testing.T) {
+		v, calls := probeCounter(t)
+		for _, r := range "/dep" {
+			_, cmd := v.updateKey(tea.KeyPressMsg{Code: r, Text: string(r)})
+			runChatCmds(v, cmd)
+		}
+		if n := calls.Load(); n != 1 {
+			t.Fatalf("the typed sigil made %d requests, want exactly one", n)
+		}
+	})
+
+	t.Run("an adapter whose own sigil is @", func(t *testing.T) {
+		// The exclusion is about a token no answer can vouch for. Once one
+		// is in hand the wire's sigil wins, so an adapter that reported `@`
+		// still opens the list on it.
+		data := claudeSkills()
+		data.InvokeSigil = "@"
+		for i := range data.Skills {
+			data.Skills[i].Invocation = "@" + data.Skills[i].Name
+		}
+		v := chatSkillsFixture(data)
+		typeIntoChat(t, v, "@td")
+		if !v.skills.open {
+			t.Fatalf("an @ sigil off the wire did not open the list (note %q)", v.skills.inlineNote)
+		}
+	})
+}

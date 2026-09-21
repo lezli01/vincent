@@ -569,20 +569,41 @@ func (l *chatSkillList) inlineFilter(tok chatDraftToken) (string, bool) {
 	return rest, true
 }
 
+// chatFileMentionSigil is the rune a human writes a file with, not a skill.
+// It is the one sigil chatSkillSigilShaped refuses; see there for why.
+const chatFileMentionSigil = '@'
+
 // chatSkillSigilShaped reports a token that could be an invocation under
-// *some* adapter's sigil: one non-alphanumeric rune and then a name.
+// *some* adapter's sigil: one non-alphanumeric rune that is not
+// chatFileMentionSigil, and then a name.
 //
 // It is the only thing the *first* inline fetch can be spent on
-// (decision 91). The real sigil comes off the wire and is hard-coded
-// nowhere, so before an answer is in hand there is nothing to test a token
-// against but its shape; every keystroke after that is filtered by the
-// answer's own sigil. A token this accepts that no adapter honours costs one
-// silent probe, which chatSkillList.probeFailed latches off so a keystroke
-// cannot re-fire it — and a lone sigil is deliberately not enough, because
-// one punctuation rune says nothing about whose sigil it is.
+// (decision 91, narrowed by issue #552). The real sigil comes off the wire
+// and is hard-coded nowhere, so before an answer is in hand there is nothing
+// to test a token against but its shape; every keystroke after that is
+// filtered by the answer's own sigil. A token this accepts that no adapter
+// honours costs one silent probe, which chatSkillList.probeFailed latches off
+// so a keystroke cannot re-fire it — and a lone sigil is deliberately not
+// enough, because one punctuation rune says nothing about whose sigil it is.
+//
+// `@` is excluded because it is the one shape that can never pay off: no
+// shipped adapter reports it (§9.1 — claude and cursor `/`, codex `$`), while
+// `@name` is exactly what a human types to mean a file. Spending the chat's
+// one probe there buys an agent CLI spawn and, when it fails, inline skills
+// off for the rest of the chat. Only the bare short form reaches here anyway:
+// `@README.md` and `@src/main.go` already fail the name loop below.
+//
+// The exclusion is unconditional because at probe time there is no wire sigil
+// to consult. An adapter that reported `invoke_sigil: "@"` would simply not
+// self-start its inline list from a typed `@` — it needs `tab`, or an answer
+// already cached. Once an answer *is* in hand the wire's sigil wins unchanged:
+// filtering runs through chatSkillList.inlineFilter, which never comes here.
 func chatSkillSigilShaped(tok string) bool {
 	runes := []rune(tok)
 	if len(runes) < 2 || unicode.IsLetter(runes[0]) || unicode.IsDigit(runes[0]) || runes[0] == '_' {
+		return false
+	}
+	if runes[0] == chatFileMentionSigil {
 		return false
 	}
 	for _, r := range runes[1:] {

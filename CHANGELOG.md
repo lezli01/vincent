@@ -209,6 +209,16 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **Typing `@something` in a chat no longer costs you the chat's skill
+  completion.** The composer asks the agent which skills it has at most once
+  per chat, silently, the first time you type something shaped like an
+  invocation — and `@src` was that shape, even though no agent takes `@` as
+  its skill prefix. So a bare `@word` spawned the agent CLI for an answer that
+  could never be used, and if that ask failed it switched inline skill
+  completion off for the rest of the chat. A token beginning `@` is now never
+  what that one ask is spent on. Typing `/` or `$` still opens the list
+  exactly as before.
+
 - **A chat on a containerized task now reads the agent configuration mounted
   for it.** Its turns ran inside the task's container with no environment of
   their own, so the CLI started under the image's `HOME` and never saw the
