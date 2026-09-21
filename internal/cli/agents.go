@@ -31,8 +31,8 @@ func newAgentsCmd() *cobra.Command {
 		Long: "List every agent adapter the daemon knows, in its registration order: the\n" +
 			"installed version, whether that build is tested, the login state, and the\n" +
 			"usage window. NOTES carries bad news only — a missing CLI, no mid-run input,\n" +
-			"no restricted mode on this host, no skill listing, an option probe that fell\n" +
-			"back to the curated catalog.\n\n" +
+			"no restricted mode on this host, no skill listing, no @ file expansion, an\n" +
+			"option probe that fell back to the curated catalog.\n\n" +
 			"QUOTA is the one block the daemon serves: a reading a source reported, or\n" +
 			"failing that the last usage-limit stop it watched. `→` is a reset the CLI\n" +
 			"stated, `≈` one vincent estimated. `unknown` means neither exists.\n\n" +
@@ -119,6 +119,13 @@ func agentNotes(a apiclient.Agent) []string {
 	}
 	if a.CannotListSkills() {
 		notes = append(notes, "no skill listing")
+	}
+	// The mention capability's bad news is expansion, never the interface
+	// (§9.1, task 126): all three shipped adapters mention, and only some
+	// put the file in front of the model themselves. supports_file_mentions
+	// gets no note for the reason a resuming adapter gets none.
+	if a.CannotExpandMentions() {
+		notes = append(notes, "no @ file expansion")
 	}
 	if a.ProbeError != nil {
 		notes = append(notes, "option probe failed (curated catalog)")

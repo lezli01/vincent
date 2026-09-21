@@ -33,6 +33,7 @@ silently drops.
 | Lists its skills in a chat | ✅ from 2.1.277 | ✅ `skills/list` | **—** (its `-p` mode has no listing) |
 | Invokes a skill from a chat message | ✅ `/name` at the **start** | ✅ `$name` anywhere | ✅ `/name` anywhere |
 | Transcript shows a skill you invoked | ✅ in chats | **—** | **—** |
+| Expands an `@path` file mention | ✅ it reads the file for you | **—** (the path stays prose) | **—** (the path stays prose) |
 | Reports cost | ✅ | — | — |
 | `model:` | ✅ | ✅ (free text) | ✅ (~180 enumerated) |
 | `effort:` | ✅ | ✅ | **—** (it lives in the model id) |
@@ -87,6 +88,20 @@ typing the name or approving the request the agent raises when *it* wants the
 skill, and a command the skill injects is still checked, with a refusal ending
 the invocation before the agent runs. codex and cursor have no such field. The
 [Security model](../security-model.md#restricted-mode) has the whole picture.
+
+An `@path` **file mention** passes through the same way, and all three
+adapters recognize one anywhere in a message — but only claude acts on it.
+claude reads the mentioned file and puts it in front of the model before the
+model sees your message; codex and cursor leave the path as prose, and the
+model reads it with a tool if it has one, so a mention there is a hint rather
+than guaranteed context. That is the expansion row above, and it is on
+`GET /v1/agents` as `supports_file_mentions`, `file_mention_sigil`,
+`file_mention_position` and `file_mention_expands`, of which only the last
+tells the three apart — which is why
+[`vincent agents`](../reference/cli.md#vincent-agents) notes `no @ file
+expansion` on codex and cursor and nothing on claude. Vincent writes no
+mention for you and checks no path: what you type is what the CLI gets, in a
+chat turn and in a workflow agent step alike.
 
 A CLI's **built-in** commands pass through the same way, and `/clear` is the
 one worth knowing about. claude clears its own conversation and reports a new

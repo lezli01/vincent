@@ -47,6 +47,26 @@ type Agent struct {
 	// invoke skills; nil is no judgement.
 	SkillSigil    *string `json:"skill_sigil"`
 	SkillPosition *string `json:"skill_position"`
+	// SupportsFileMentions is whether this adapter can name a workspace file
+	// in a message at all (§9.1, §9.6, task 126). It is `true` on all three
+	// shipped adapters, so it separates none of them — FileMentionExpands is
+	// what differs. It exists so a client can tell "cannot mention" from
+	// "nobody can say"; nil is no judgement, as for SupportsResume.
+	SupportsFileMentions *bool `json:"supports_file_mentions"`
+	// FileMentionSigil, FileMentionPosition and FileMentionExpands are how a
+	// message names a workspace file (task 126): "@", "leading" (only at the
+	// start of the message) or "anywhere", and whether the CLI itself puts
+	// the file in front of the model rather than leaving the model to read
+	// the path with a tool. "" is an adapter that cannot mention; nil is no
+	// judgement.
+	//
+	// They are the pre-chat answer — `vincent agents`, and any client
+	// choosing an adapter before it has a chat to ask. A client that already
+	// has a chat reads the same facts from the chat's own files route
+	// (task 126.6) rather than joining two calls.
+	FileMentionSigil    *string `json:"file_mention_sigil"`
+	FileMentionPosition *string `json:"file_mention_position"`
+	FileMentionExpands  *bool   `json:"file_mention_expands"`
 	// InputVerdict is the daemon's verdict on backing an `on_input: require`
 	// step (§7.4, task 013): "supported", "unsupported" or "unknown". Empty
 	// means the daemon predates the field, which is treated as unknown —
@@ -239,6 +259,18 @@ func (a Agent) CannotResume() bool { return a.SupportsResume != nil && !*a.Suppo
 // does.
 func (a Agent) CannotListSkills() bool {
 	return a.SupportsSkillListing != nil && !*a.SupportsSkillListing
+}
+
+// CannotExpandMentions reports an adapter whose CLI will not put a mentioned
+// file in front of the model by itself (§9.1, task 126). It is the one
+// mention fact that is bad news: the model is left to read the path with a
+// tool, so a mention is a hint rather than guaranteed context.
+//
+// Only a positive no counts: a nil FileMentionExpands — an older daemon, or
+// one with no registry to ask — answers false, exactly as CannotListSkills
+// does. It refuses nothing; nothing in vincent is gated on it.
+func (a Agent) CannotExpandMentions() bool {
+	return a.FileMentionExpands != nil && !*a.FileMentionExpands
 }
 
 // VersionVerdict values as GET /v1/agents reports them (task 041).

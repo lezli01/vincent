@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -331,6 +332,20 @@ func TestAgentsReportSupportsResume(t *testing.T) {
 // capability fields' only source.
 func servedAgents(t *testing.T, reg *agent.Registry, withRegistry bool) []agentResponse {
 	t.Helper()
+	agents := reg
+	if !withRegistry {
+		agents = nil
+	}
+	return servedAgentsFrom(t, reg, agents)
+}
+
+// servedAgentsFrom is servedAgents with the two registries split: catalog
+// probes the adapters that become rows, agents is the one the capability
+// fields are looked up in — nil for a daemon with none. An adapter in the
+// first and not the second is the "the registry does not know the name"
+// case, which must answer null rather than a false.
+func servedAgentsFrom(t *testing.T, catalog, agents *agent.Registry) []agentResponse {
+	t.Helper()
 	deps := Deps{
 		Token:       testToken,
 		Config:      config.Default,
@@ -338,10 +353,8 @@ func servedAgents(t *testing.T, reg *agent.Registry, withRegistry bool) []agentR
 		ListenAddr:  "127.0.0.1:0",
 		RequestStop: func() {},
 		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Catalog:     agent.NewCatalogCache(reg),
-	}
-	if withRegistry {
-		deps.Agents = reg
+		Catalog:     agent.NewCatalogCache(catalog),
+		Agents:      agents,
 	}
 	ts := httptest.NewServer(New(deps).Handler())
 	t.Cleanup(ts.Close)
@@ -433,5 +446,114 @@ func TestAgentsReportSkillCapabilities(t *testing.T) {
 			t.Errorf("%s answered listing set=%v, sigil %s, position %s with no registry to ask, want null for all three",
 				a.Name, a.SupportsSkillListing != nil, str(a.SkillSigil), str(a.SkillPosition))
 		}
+	}
+}
+
+// TestAgentsReportFileMentionCapabilities pins §9.6's four file-mention
+// fields (task 126.4): `supports_file_mentions` from
+// `agent.CanMentionFiles`, and `file_mention_sigil`,
+// `file_mention_position` and `file_mention_expands` from the adapter's
+// `FileMentionSyntax`.
+//
+// The point of the table is that the boolean does **not** separate the
+// shipped adapters and `expands` does: all three implement `FileMentioner`
+// since task 126.3, and §9.1 states that expansion, not the interface, is
+// the honest capability statement. The sigil and position are pinned
+// literally, since a client inserts the sigil verbatim. The false legs are
+// `agenttest.StubNoMentions`, never a shipped adapter — a refusal pinned to
+// a real CLI inverts itself the day that CLI changes.
+//
+// An adapter the registry does not know answers null for all four, as does a
+// server with no registry at all: "nobody can say" is not "no".
+func TestAgentsReportFileMentionCapabilities(t *testing.T) {
+	fake := agenttest.BuildFakeAgent(t)
+	newReg := func() *agent.Registry {
+		return agent.NewRegistry(
+			claude.New(func() string { return fake }),
+			codex.New(func() string { return "/nonexistent/codex-not-here" }),
+			cursor.New(func() string { return "/nonexistent/cursor-agent-not-here" }),
+			agenttest.StubNoMentions{},
+		)
+	}
+	str := func(p *string) string {
+		if p == nil {
+			return "<null>"
+		}
+		return *p
+	}
+	boolean := func(p *bool) string {
+		if p == nil {
+			return "<null>"
+		}
+		return strconv.FormatBool(*p)
+	}
+
+	got := map[string]agentResponse{}
+	for _, a := range servedAgents(t, newReg(), true) {
+		got[a.Name] = a
+	}
+	type mention struct {
+		mentions bool
+		sigil    string
+		position string
+		expands  bool
+	}
+	// claude expands an `@path` in the argv vincent builds; codex and cursor
+	// leave the model to read the path with a tool (§5.5, §9.2, §9.3, §9.7).
+	for name, want := range map[string]mention{
+		"claude":                 {true, "@", "anywhere", true},
+		"codex":                  {true, "@", "anywhere", false},
+		"cursor":                 {true, "@", "anywhere", false},
+		agenttest.NoMentionsName: {false, "", "", false},
+	} {
+		a, ok := got[name]
+		if !ok {
+			t.Errorf("%s is not served", name)
+			continue
+		}
+		if a.SupportsFileMentions == nil || a.FileMentionSigil == nil ||
+			a.FileMentionPosition == nil || a.FileMentionExpands == nil {
+			t.Errorf("%s: a mention field arrived null with a registry to ask: mentions %s, sigil %s, position %s, expands %s",
+				name, boolean(a.SupportsFileMentions), str(a.FileMentionSigil),
+				str(a.FileMentionPosition), boolean(a.FileMentionExpands))
+			continue
+		}
+		have := mention{
+			*a.SupportsFileMentions, *a.FileMentionSigil,
+			*a.FileMentionPosition, *a.FileMentionExpands,
+		}
+		if have != want {
+			t.Errorf("%s supports_file_mentions, file_mention_sigil, file_mention_position, file_mention_expands = %+v, want %+v (§9.1, task 126 decision 22)",
+				name, have, want)
+		}
+	}
+
+	// A row the registry cannot answer for: the catalog probes all four
+	// adapters, the registry knows only claude.
+	known := agent.NewRegistry(claude.New(func() string { return fake }))
+	for _, a := range servedAgentsFrom(t, newReg(), known) {
+		if a.Name == "claude" {
+			if a.SupportsFileMentions == nil || a.FileMentionExpands == nil {
+				t.Errorf("claude answered null though the registry knows it: %+v", a)
+			}
+			continue
+		}
+		assertNoMentionJudgement(t, a, "the registry does not know the name")
+	}
+
+	for _, a := range servedAgentsFrom(t, newReg(), nil) {
+		assertNoMentionJudgement(t, a, "no registry to ask")
+	}
+}
+
+// assertNoMentionJudgement fails unless every mention field is null, which is
+// the one answer a client may not filter on.
+func assertNoMentionJudgement(t *testing.T, a agentResponse, why string) {
+	t.Helper()
+	if a.SupportsFileMentions != nil || a.FileMentionSigil != nil ||
+		a.FileMentionPosition != nil || a.FileMentionExpands != nil {
+		t.Errorf("%s answered mentions set=%v, sigil set=%v, position set=%v, expands set=%v with %s, want null for all four",
+			a.Name, a.SupportsFileMentions != nil, a.FileMentionSigil != nil,
+			a.FileMentionPosition != nil, a.FileMentionExpands != nil, why)
 	}
 }
