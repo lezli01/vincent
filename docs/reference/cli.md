@@ -1868,8 +1868,8 @@ states you are in).
   empty list. See [Quoting a skill invocation](#quoting-a-skill-invocation).
 - `no skill list: REASON` when the agent cannot list them, and
   `skill list unknown: REASON` when nobody can say — a probe that failed, an
-  adapter that is no longer registered, or a chat whose task runs in a
-  container. Under either there is no table at all.
+  adapter that is no longer registered, or a chat whose task is configured to
+  run in a container that is gone. Under either there is no table at all.
 - `warning: this list is an earlier one; the latest probe failed: REASON` when a
   table *is* printed but the newest probe did not answer: the daemon kept the
   last list that did, and `probed_at` in `--json` says when it was obtained.

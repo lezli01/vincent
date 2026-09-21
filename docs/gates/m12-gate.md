@@ -5,13 +5,19 @@ task 062.2 — run inside one container on an image the user supplies, and the
 container is created, kept and removed at the moments the spec says.
 
 Almost all of this gate is scripted. [`scripts/m12-gate.sh`](../../scripts/m12-gate.sh)
-drives a real daemon against a real docker runtime; its header lists the ten
+drives a real daemon against a real docker runtime; its header lists the
 scenarios, and CI runs them on the Linux leg (the macOS and Windows skips are
 explained there and in [task 061](../tasks/061-container-step-execution.md)).
-Scenarios 6–10 run `cmd/fakeagent`, cross-compiled for linux and bind-mounted
+Scenarios 6–11 run `cmd/fakeagent`, cross-compiled for linux and bind-mounted
 into the image as `claude`, so no real agent CLI is involved. Scenario 10 is
 task 119's: a chat opened on a blocked containerized task runs its turn inside
-that task's container, and a free chat's turn runs on the host.
+that task's container, and a free chat's turn runs on the host. Scenario 11 is
+task 124.17's, on the same two chats: the linked chat's skill list is the
+image's and the free chat's is the host's — told apart by a
+`FAKEAGENT_CLAUDE_COMMANDS` the image carries and the host copy does not — and
+with the task's container removed the linked chat answers `unknown` with a
+container reason, an empty list and an empty `work_dir`, having probed
+nothing.
 
 ```sh
 ./scripts/m12-gate.sh    # every scenario; there is no single-scenario switch

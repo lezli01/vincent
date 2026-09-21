@@ -833,6 +833,15 @@ own `builtin` rows and one indicative field saying what became of them:
 | `after_first_turn` | the listing holds `builtin` rows and no turn has classified them yet, so **all** of them are withheld — the first turn on that binary restores them, in any directory and any chat, because what is bundled is a property of the CLI and not of a place |
 | `""` | the question does not arise: `list_verdict` is not `supported`, or the listing holds no `builtin` row, which is every codex and cursor chat |
 
+*Amended 2026-09-21 (task 124.17, issue #513).* "Not of a place" is narrowed
+to *within* one place. The classifier's set is keyed by the binary identity
+**and the place** (§9.6), because a turn inside a task's container describes
+the image's CLI and a host turn the host's, and either classifying the other's
+listing is the hole task 124 decision 84 left open. Within a place nothing
+changes: the first turn there restores the rows in every directory and every
+chat of that place, what is bundled still being a property of the CLI and not
+of a directory.
+
 A row's `builtin: true` therefore means "a skill the CLI ships", never "a
 built-in command": `/clear` and `/compact` are never served, before or after a
 turn, because advertising a command that resets the conversation while vincent
@@ -3247,7 +3256,13 @@ capability today.
   `invocation` from it, so no client builds one. The cache spawns nothing of
   its own: a probe is the adapter's `ListSkills` on the host, and whatever it
   spawns goes through the adapter's own path, `CREATE_NO_WINDOW` included
-  (task 124 decision 59).
+  (task 124 decision 59). *Amended 2026-09-21 (task 124.17, issue #513): "on
+  the host" is now "wherever the chat's next turn would run" — the probe
+  takes the placement's launcher, which is the host's for every chat but one
+  and the task's container for a linked chat on a containerized task (§5.5,
+  §16). The cache still spawns nothing of its own; the launcher is the one
+  the turn would use, and `CREATE_NO_WINDOW` still comes from the adapter's
+  own path.*
 
 **The launch seam (task 062.1, added 2026-09-16).** An adapter builds its run's
 argv and hands it over; it never spawns the process itself. `Start` resolves the
@@ -3325,6 +3340,17 @@ on the host. The container launcher:
 
 A command step's spawn is still 061's own path and does not go through this
 launcher.
+
+*Amended 2026-09-21 (task 124.17, issue #513).* "Chats keep a nil launcher and
+run on the host" holds for a **free** chat. A chat linked to a task that runs
+in a container has had its turns launched into that container since task 119
+(§5.5), which this paragraph had not recorded, and as of this amendment its
+**skill probe** is launched there too — through the same launcher, under a pid
+file of its own (`skills-<chat id>`, §16), and with the task's container
+environment. The skill listing's launcher is therefore no longer "always nil"
+as task 124 decision 34 left it above: `GET /v1/chats/{id}/skills` passes the
+placement's launcher and environment, and §9.6's cache keys the answer by
+where it ran.
 
 **Tool subjects (T4.14).** `ToolUse` carried only a name through M4, so the
 output pane rendered `▸ Bash` — a keyword, not an event. Every dialect has the
@@ -7244,6 +7270,24 @@ the chat's state, and `idle` is not terminal. When the task runs in a container
 client's, so recovery first stops the agent through its pid file in the task's
 container (task 061 decision 9, keyed by the turn) and then runs the host kill
 above for the client.
+
+*Amended 2026-09-21 (task 124.17, issue #513).* Recovery also sweeps the
+**skill probes** (§5.5) a dead daemon may have left running inside a task's
+container. A probe writes no row, so the walk over `running` turns — which is
+how a turn's orphan is found — cannot find one; what it can leave behind is a
+pid file named after its chat, in a container that outlives the daemon (task
+061 decision 9). The sweep is therefore over the set that could have left one,
+which the store can enumerate: the **open chats linked to a task**, signalling
+`skills-<chat id>` in each such task's container and doing nothing for a task
+that runs on the host, where the dead daemon's own child died with it.
+Signalling a chat that had no probe running is a pid file that is not there,
+which the runtime reports and the kill logs; the alternative is the row this
+deliberately does not write. The probe's grace between `TERM` and `KILL` is
+**two seconds**, not the fifteen a step or a turn gets: it holds no worktree
+state and no transcript, and because the sweep is blind, fifteen would be paid
+on every daemon start by chats that had no probe. This is the one place
+recovery reconciles a process with no row of its own; the "rows and processes,
+not directories" rule above is otherwise untouched.
 
 *Amended 2026-08-25 (issue #142).* Recovery is **fail-closed and atomic per
 task**. Finalizing a task's `running` StepRuns and re-queueing the task are one

@@ -569,11 +569,13 @@ session the mounted agent configuration keeps between turns.
 
 Everything on this page that vincent *probes* still describes the host's CLI —
 `vincent agents`, `vincent doctor`, `GET /v1/agents`, the model and effort
-catalog, login state, codex's quota reading and the usage-limit holds. The one
-exception is claude's
+catalog, login state, codex's quota reading and the usage-limit holds. Two
+things are asked of the image instead. claude's
 [mid-run questions](#mid-run-questions): whether a containerized claude can take
 an answer is decided by running `claude --version` **in the image**, so
-`on_input: require` is judged against the claude that will actually run.
+`on_input: require` is judged against the claude that will actually run. And
+the skill list of a chat opened on such a task, which is read by the image's
+CLI inside the container, as above.
 
 **Logging in.** [`mount_agent_config`](../reference/configuration.md#container),
 on by default, mounts your `~/.claude`, `~/.codex` and `~/.cursor` read-write
