@@ -2327,8 +2327,8 @@ GET    /v1/chats/{id}/files?limit=    the files of the chat's workspace — see 
 
 None of these is an [MCP tool](#the-mcp-endpoint) — the whole family is
 excluded, the stream, the transcript, the skill list and the file list
-included, and so is
-`POST /v1/tasks/{id}/chat`, which lives under `/v1/tasks` but starts a chat.
+included, and so is `POST /v1/tasks/{id}/chat`, which lives under `/v1/tasks`
+but starts a chat.
 `handoff` is on that list for a reason worth stating: it creates a task, and
 `task_create`'s bounds (`mcp.max_depth`, `mcp.max_tasks`) are walked over
 `created_by_task_id`, which a chat is not in.
