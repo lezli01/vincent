@@ -138,6 +138,90 @@ own citations are wrong; they are corrected below rather than copied.
     strings so the field can be added later without a breaking change.
     *Beaten:* shipping it in v1 before anything filters on it.
 
+Decisions 15–21 were settled with the author on 2026-09-21 in 126.5 (#549),
+which is where the enumeration underneath decisions 3 and 11 is actually
+written. They are implementation choices inside that subtask; nothing above is
+reopened.
+
+15. **The enumeration lives in `internal/worktree`, not `internal/gitx`.** It
+    is `ListBranches`' sibling in every respect that matters: `Manager` already
+    holds the `*gitx.Git` runner, the API already has `s.deps.Worktrees` wired,
+    and — decisively — `worktree` owns the `*worktree.Error` / `ReasonOf`
+    reason vocabulary, so 126.6's "a missing workspace is 400
+    `validation_failed`" is the mapping `handleProjectBranches` already
+    performs, not a new error taxonomy. `gitx` stays the thin single door phase
+    1 made it and gains only the runner. *Beaten:* a second enumerator in
+    `gitx`, with its own reasons.
+
+16. **A raw-output runner, rather than changing `Run`.** `gitx.Run` returns
+    `strings.TrimSpace(stdout.String())` and every existing caller depends on
+    that — a SHA with a newline after it is not a SHA. A `-z` listing does not
+    survive it: NUL is not whitespace, so the trailing separator is left alone
+    and the split still works, but a file named ` leading.txt` comes back as
+    `leading.txt`, a path that does not exist. `RunRaw` is therefore the opt-in
+    and the trim stays the default, with `run` refactored to trim `runRaw`'s
+    output so both keep one code path and one `*Error` construction.
+    *Beaten:* relaxing `Run`'s trim.
+
+17. **No `--deduplicate` flag; dedupe in Go.** #549 proposed sending the flag
+    *and* deduping in Go, on the reasoning that the Go pass makes the coupling
+    to git 2.31 disappear. It does not. git rejects an unknown long option
+    outright — exit 129, usage on stderr, no listing at all — so on git 2.30
+    the flag turns a degraded result (a conflicted path printed once per index
+    stage) into a dead picker. vincent's floor is a startup *warning*, not a
+    refusal (phase 1 decision), so 2.30 daemons are a supported configuration.
+    The Go pass alone is sufficient and complete: the multi-stage rows are the
+    identical path repeated, and the enumerator emits paths only, never stages.
+    The three-way-conflict test still gets written — it now proves the Go path.
+    *Beaten:* sending the flag as well.
+
+18. **The dropped-row count is returned, and logged by the caller.** The
+    enumerator returns `(paths, dropped, err)` and logs nothing itself;
+    `worktree`'s methods take no logger and its siblings do not log. Whether
+    the count reaches the wire and where the daemon-log line goes is 126.6's
+    call, as is the shape of any `details` it might carry. One aggregate count,
+    not a per-reason breakdown. *Beaten:* logging inside `worktree`.
+
+19. **A missing directory is a typed error from an `os.Stat` pre-check, not
+    from git's exit code.** #549's stated mechanism — "`git ls-files` exits 128
+    with `fatal: cannot change to '…'`" — is what happens under
+    `git -C <missing>`, not under what vincent does. `gitx` sets `cmd.Dir`, and
+    Go's own `fork/exec` fails the chdir before git is ever reached: verified,
+    the error is `chdir …: no such file or directory`, **not** an
+    `*exec.ExitError`, so it arrives as `*gitx.Error` with `ExitCode: -1`,
+    empty stderr and no exit 128 to match on. The enumerator therefore guards
+    with `os.Stat` the way `requireProjectPath` does and returns
+    `ReasonWorkspacePathMissing`. A new reason constant rather than
+    `ReasonProjectPathMissing`: the directory here is usually a worktree and
+    only sometimes the project checkout, and a reason that lies about which is
+    worse than one more entry in a vocabulary that already has eleven. Any
+    other git failure — a directory that exists but is not a repository, say —
+    stays `ReasonGitError`, which 126.6 maps to 500.
+
+20. **Hostile rows are dropped where they are read.** This is decision 11's
+    mechanism: the predicate is the server-side twin of `chatSkillHostile`
+    (`internal/tui/chatskills.go`), duplicated rather than shared because
+    `worktree` cannot import `internal/tui` and the client guard stays as
+    defence in depth. Whitespace is *not* hostile — task 124 decision 71's
+    reasoning applies unchanged, and here a leading space is part of the file's
+    own name. *Beaten:* filtering at the route, which would leave the
+    enumerator's own callers unguarded.
+
+21. **Paths are returned exactly as git printed them.** Forward slashes on
+    every platform, workspace-relative, in git's own order, with no sort, no
+    case folding and no `filepath.FromSlash`. Converting would produce a
+    backslash path the listing never observed, and folding case would serve a
+    path that differs from the file's name. Every flag of
+    `git ls-files -z --cached --others --exclude-standard` is load-bearing:
+    `--others --exclude-standard` is what "the files of the project" means to a
+    human typing `@`, and `-z` is the only form in which git does not C-quote
+    an unusual byte (`core.quotePath=false` unquotes the high-bit path and
+    still quotes the ones carrying control characters) and the only form in
+    which a newline inside a filename cannot corrupt the split. No
+    `--full-name` (a worktree target and a project path are both toplevels) and
+    no `--recurse-submodules` (a submodule is one gitlink row). *Beaten:*
+    normalizing for the client.
+
 ## Citations corrected
 
 #544 and #545 both carry citations that do not resolve at HEAD. The decisions
@@ -226,8 +310,15 @@ attributes task 124.6's.
       126.1.
 - [ ] 126.4 (#548) Report the capability on `GET /v1/agents` and in
       `internal/apiclient`. Depends: 126.3.
-- [ ] 126.5 (#549) A raw-output git runner, and enumerating a chat's workspace
-      on the host (decision 3). Depends: none.
+- [x] 126.5 (#549) A raw-output git runner, and enumerating a chat's workspace
+      on the host (decision 3). `gitx.RunRaw` and the `run`/`runRaw` refactor;
+      `worktree.Manager.ListFiles` and `ReasonWorkspacePathMissing`; their
+      tests — tracked, untracked and ignored; a three-way conflict listed once;
+      ` leading.txt` and `trailing .txt` byte for byte; three symlinks never
+      followed; a newline path and an invalid-UTF-8 path dropped and counted; a
+      missing directory carrying the reason. Package-internal: nothing is
+      served, cached, persisted or shown, so no spec amendment lands here —
+      §5.5 and §13.2 are amended by 126.6. Decisions 15–21. ✓ 2026-09-21
 - [ ] 126.6 (#550) `GET /v1/chats/{id}/files`, with `limit` and `truncated`
       (decisions 4, 5, 11), and §13.2 plus `docs/reference/api.md`. Depends:
       126.4, 126.5.
