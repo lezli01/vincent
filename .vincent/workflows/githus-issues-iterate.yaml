@@ -1,0 +1,494 @@
+# githus-issues-iterate — put at most N ready GitHub issues on the board
+# through `github-resolve-issue-multiple`, then drive every task it created all
+# the way to merged: approve each pull request as it is offered, approve the
+# merges one at a time, and finish when they are all done.
+#
+#     vincent task add --project N --workflow githus-issues-iterate --title "iterate"
+#
+# ## What it is
+#
+# `github-resolve-issue-multiple` finds the work, asks a person to approve the
+# plan, creates the tasks and finishes — it deliberately never waits for them
+# and never reports on their outcome. This workflow is that file plus the
+# waiting: it `include`s it whole, then watches the tasks it created and clicks
+# their two gates for them.
+#
+# The include is spliced away when the task is created (§7.9), so this task
+# runs `github-resolve-issue-multiple`'s own steps — `preflight`, `survey`,
+# `has-candidates`, `any-candidates`, `select`, `emit`, `has-plan`, `any-plan`,
+# `gate`, `spawn` — in this task's worktree, under that workflow's own
+# `defaults:`. Two consequences follow, and both are wanted:
+#
+#   - its `max_tasks` field is read from **this** workflow's `fields:`, which is
+#     why `max_tasks` below is spelled exactly as it is. Renaming it breaks the
+#     spliced steps' templates at render time;
+#   - its `any-candidates` and `any-plan` `condition` steps finish the **whole**
+#     task when nothing is ready or the triage planned nothing. There is no
+#     include boundary for a condition to stop at, and that is the right
+#     answer here: no task was created, so there is nothing to watch.
+#
+# It also reads one of that workflow's files directly. `spawn` writes the tasks
+# it created to `$(git rev-parse --git-path vincent-issues)/created`, one
+# `id<TAB>issue<TAB>workflow<TAB>title` per line, and never removes it; `track`
+# below reads it. That is a coupling to a sibling's internals, and it is the
+# narrowest one available: the alternative is scraping `spawn`'s prose stdout.
+#
+# ## What it clicks, and what it does not
+#
+# Both resolve workflows stop twice: `gate` ("Approve the pull request", before
+# the branch is pushed and the PR opened) and `gate-merge` ("Approve the
+# merge", before the rebase-verify-merge tail). This workflow approves both:
+#
+#   - **every** `gate`, as soon as it is offered. Pull requests are independent
+#     — separate branches, separate reviews — so there is no reason to serialize
+#     them;
+#   - **one** `gate-merge` at a time. A merge rebases onto the base branch and
+#     waits for required checks; two at once means the second rebases onto a
+#     branch the first is still moving. A merge is "in flight" while its task's
+#     step cursor is past `gate-merge` and the task is neither settled nor
+#     blocked — a blocked task does not hold the lane, because a human has to
+#     come anyway and the other pull requests should not queue behind it.
+#
+# It does **not** click:
+#
+#   - `plan-gate` ("Approve the graph"), a `github-resolve-issue-dag` task's
+#     third gate. It authorizes no external effect, only spend — up to 41 agent
+#     sessions and six worktrees — and it was not one of the two gates this
+#     workflow was asked to take over. A dag task parks there until a person
+#     clicks, and the watch names it;
+#   - a question an agent asks its author (`awaiting_input`), or a task that
+#     blocked. Both are reported, neither is answered.
+#
+# ## Why it cannot hold every slot
+#
+# A watching task is a *running* task: `taskstate.HoldsSlot` is true of
+# `running`, so this task occupies one concurrency slot for the whole watch.
+# `headroom` refuses to start when the effective cap is 1, because the tasks
+# this run creates would then queue behind their own watcher forever, and it
+# says so on stderr when `max_tasks` exceeds the room left beside it — that
+# case is slower, not broken.
+#
+# Two bounds keep a held slot from being held for nothing:
+#
+#   - **24 hours** in total: 48 iterations of a 30-minute pass. Exceeding it
+#     blocks the task with `loop_limit`;
+#   - **2 hours** with nothing queued or running. If no tracked task can move
+#     without a person, the watch gives the slot back rather than spend the
+#     other 22 hours polling. Retrying the step starts that clock again.
+#
+# ## Cost
+#
+# No agent step of its own: zero automatic agent sessions on top of whatever
+# the tasks it creates spend. `emit` prints that ceiling before the plan gate —
+# 21 agent sessions per `github-resolve-issue` task, 41 per
+# `github-resolve-issue-dag` task — and `autopilot` repeats what approving it
+# authorizes.
+name: githus-issues-iterate
+description: >-
+  Put at most N ready GitHub issues on the board through
+  github-resolve-issue-multiple, then watch those tasks: approve each pull
+  request as it is offered, approve the merges one at a time, and finish when
+  they are all done.
+platforms: [posix]
+fields:
+  - name: max_tasks
+    label: Most tasks to create
+    description: >-
+      The most tasks this run may create, however many issues are ready — and
+      so the most pull requests it will open and merge without anyone reading a
+      diff. Every task created can spend up to 21 agent sessions (41 on the dag
+      workflow). This task watches them all, holding one concurrency slot of
+      its own, so leave room for it: with a cap of 6, 5 is the most that runs
+      without queueing.
+    type: integer
+    required: true
+    default: 3
+defaults:
+  timeout: 15m
+  max_retries: 0
+steps:
+  - id: headroom
+    name: Check there is room to watch and work at once
+    type: command
+    shell: sh
+    timeout: 5m
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      say "checking there is room to watch and work at once"
+      for tool in vincent jq git; do
+        command -v "$tool" >/dev/null 2>&1 || {
+          say "$tool is not installed"
+          echo "$tool is required" >&2; exit 1; }
+      done
+
+      scratch=$(git rev-parse --git-path vincent-iterate)
+      rm -rf "$scratch"
+      mkdir -p "$scratch"
+
+      max='{{ index .Task.Fields "max_tasks" }}'
+      [ "$max" -ge 1 ] 2>/dev/null || {
+        say "max_tasks must be at least 1"
+        echo "max_tasks is '$max'; it must be a whole number of at least 1" >&2
+        exit 1; }
+
+      vincent config get --json > "$scratch/config.json" 2>"$scratch/config.err" || {
+        say "cannot reach the daemon"
+        echo "vincent config get failed:" >&2; cat "$scratch/config.err" >&2; exit 1; }
+      vincent project ls --json > "$scratch/projects.json" 2>"$scratch/projects.err" || {
+        say "cannot list the projects"
+        echo "vincent project ls failed:" >&2; cat "$scratch/projects.err" >&2; exit 1; }
+
+      # The effective cap is the smaller of the daemon's and this project's own
+      # (spec §11): every task this run creates lands in this project.
+      global=$(jq -r '.max_parallel_tasks' "$scratch/config.json")
+      own=$(jq -r --argjson p {{ .Project.ID }} \
+        '.[] | select(.id == $p) | .max_parallel_tasks // empty' "$scratch/projects.json")
+      cap=$global
+      if [ -n "$own" ] && [ "$own" -lt "$cap" ]; then cap=$own; fi
+
+      echo "project:         {{ .Project.ID }} ({{ .Project.Name }})"
+      echo "max tasks:       $max"
+      echo "concurrency cap: $cap at once (daemon $global${own:+, project $own})"
+
+      if [ "$cap" -lt 2 ]; then
+        say "the cap is $cap: this watch would be the only task that can run"
+        echo "this task holds one concurrency slot for the whole watch, so a cap of $cap" >&2
+        echo "leaves nothing for the tasks it creates: they would queue behind their own" >&2
+        echo "watcher until it gave up. raise max_parallel_tasks to at least 2 (ideally" >&2
+        echo "$((max + 1))) and run this again." >&2
+        exit 1
+      fi
+
+      if [ "$max" -gt $((cap - 1)) ]; then
+        echo "note: with $max task(s) and a cap of $cap, at most $((cap - 1)) of them run" >&2
+        echo "      at a time while this task watches; the rest queue. slower, not broken." >&2
+      fi
+      say "room for $((cap - 1)) task(s) beside this watch"
+
+  # Splices in github-resolve-issue-multiple whole: survey, triage, the plan
+  # gate, and the step that creates the tasks. See the header — its two
+  # `condition` steps end this task when there is nothing to create.
+  - id: iterate
+    name: Survey, triage and create the tasks
+    type: include
+    workflow: github-resolve-issue-multiple
+
+  - id: track
+    name: Read back what was created
+    type: command
+    shell: sh
+    timeout: 10m
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      scratch=$(git rev-parse --git-path vincent-iterate)
+      issues=$(git rev-parse --git-path vincent-issues)
+
+      [ -f "$issues/created" ] || {
+        say "the spawn step left no record of what it created"
+        echo "$issues/created is missing. github-resolve-issue-multiple's 'spawn' step" >&2
+        echo "writes it and this workflow reads it; without it there is nothing to watch." >&2
+        exit 1; }
+
+      say "reading back the tasks that were created"
+      : > "$scratch/tasks.tsv"
+      n=0
+      while IFS="$(printf '\t')" read -r id issue wf title; do
+        [ -n "$id" ] || continue
+        vincent task show "$id" --json </dev/null > "$scratch/task.json" 2>"$scratch/task.err" || {
+          say "cannot read task $id"
+          echo "vincent task show $id failed:" >&2; cat "$scratch/task.err" >&2; exit 1; }
+        # The snapshot is fixed at creation, so both indices are read once here
+        # and compared against `current_step` on every pass afterwards.
+        gidx=$(jq -r '.workflow_steps[] | select(.id == "gate" and .type == "manual") | .index' "$scratch/task.json")
+        midx=$(jq -r '.workflow_steps[] | select(.id == "gate-merge" and .type == "manual") | .index' "$scratch/task.json")
+        if [ -z "$gidx" ] || [ -z "$midx" ]; then
+          say "task $id has no gate this watch can approve"
+          echo "task $id runs '$wf', which has no manual 'gate' and 'gate-merge' step." >&2
+          echo "this workflow only knows how to drive github-resolve-issue and" >&2
+          echo "github-resolve-issue-dag. it will not guess at another workflow's gates." >&2
+          exit 1
+        fi
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$issue" "$wf" "$gidx" "$midx" "$title" >> "$scratch/tasks.tsv"
+        n=$((n + 1))
+      done < "$issues/created"
+
+      printf '%s\n' "$n" > "$scratch/tracked"
+      rm -f "$scratch/stall-since" "$scratch/settled"
+
+      if [ "$n" -eq 0 ]; then
+        echo "no task was created, so there is nothing to watch."
+        say "nothing was created"
+        exit 0
+      fi
+
+      echo "watching $n task(s), in the order their merges will be approved:"
+      awk -F'\t' '{ printf "  task %s  #%s  %s\n        %s\n", $1, $2, $3, $6 }' "$scratch/tasks.tsv"
+      say "watching $n task(s)"
+    check: |
+      s=$(git rev-parse --git-path vincent-iterate)
+      i=$(git rev-parse --git-path vincent-issues)
+      created=$(grep -c . "$i/created" || true)
+      tracked=$(grep -c . "$s/tasks.tsv" || true)
+      [ "$created" = "$tracked" ] || {
+        echo "spawn created $created task(s) but only $tracked reached the watch list" >&2
+        exit 1; }
+    check_timeout: 2m
+
+  - id: has-tracked
+    name: Is there anything to watch
+    type: command
+    shell: sh
+    timeout: 1m
+    allow_failure: true
+    run: |
+      [ "$(cat "$(git rev-parse --git-path vincent-iterate)/tracked")" -gt 0 ]
+
+  - id: any-tracked
+    name: Stop here when nothing was created
+    type: condition
+    if: '{{ eq (index .Steps "has-tracked").ExitCode 0 }}'
+
+  - id: autopilot
+    name: Approve running these tasks to merged
+    type: manual
+    instructions: |
+      Run these task(s) all the way to merged, without stopping for you again?
+
+      {{ (index .Steps "track").Result }}
+
+      From here this task watches the board and clicks for them:
+
+      - when a task offers **Approve the pull request**, this task approves it.
+        Its branch is pushed to `origin` and a public pull request is opened
+        against {{ .Project.DefaultBranch }}, with nobody having read the diff.
+      - when a task offers **Approve the merge**, this task approves it — one
+        at a time, never a second while another is rebasing, waiting for its
+        required checks or merging. They land in the order listed above.
+      - a merged pull request changes {{ .Project.DefaultBranch }}. That is the
+        part that does not come back: closing a pull request afterwards does
+        not unsend what it notified, and reverting a merge is a new commit
+        rather than an undo.
+
+      The gate you passed a moment ago said every task stops at its own diff
+      gate before it opens a pull request, and at its own merge gate before it
+      merges. Under this workflow they do not — this gate is those gates,
+      brought forward into one decision. That is what it is for.
+
+      What it will **not** click:
+
+      - **Approve the graph** — a `github-resolve-issue-dag` task's plan gate.
+        That one waits for you, and the watch names it while it does.
+      - a question an agent asks you, and a task that blocked. Both are
+        reported; neither is answered.
+
+      Two bounds on the watch itself: it gives up after 24 hours, and after 2
+      hours in which nothing was queued or running — every task left needing
+      you — rather than hold a concurrency slot for nothing.
+
+      Rejecting blocks this task and clicks nothing. The tasks above keep
+      running and stop at their own gates, exactly as they would have without
+      this one.
+
+  - id: watch
+    name: Drive the tasks to merged
+    type: loop
+    count: 48
+    max_iterations: 48
+    # 48 passes of 30 minutes. The group timeout has to cover the worst case —
+    # 48 attempts of the 35-minute step below — or `defaults.timeout` would
+    # bound the whole loop at 15 minutes.
+    timeout: 30h
+    steps:
+      - id: watch-pass
+        name: Approve what is waiting, for half an hour
+        type: command
+        shell: sh
+        timeout: 35m
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+          scratch=$(git rev-parse --git-path vincent-iterate)
+          project={{ .Project.ID }}
+          pass_seconds=1800
+          stall_limit=7200
+          nap=20
+
+          total=$(cat "$scratch/tracked")
+          now=$(date +%s)
+          deadline=$((now + pass_seconds))
+          [ -f "$scratch/stall-since" ] || printf '%s\n' "$now" > "$scratch/stall-since"
+          printf '%s\n' 0 > "$scratch/settled"
+
+          while :; do
+            vincent task ls --project "$project" --limit 1000 --json \
+              > "$scratch/board.json" 2>"$scratch/board.err" || {
+                say "cannot read the board"
+                echo "vincent task ls failed:" >&2; cat "$scratch/board.err" >&2; exit 1; }
+
+            settled=0; busy=0; waiting=0; inflight=0
+            : > "$scratch/merge-queue"
+            : > "$scratch/needs-you"
+
+            while IFS="$(printf '\t')" read -r id issue wf gidx midx title; do
+              [ -n "$id" ] || continue
+              row=$(jq -c --argjson i "$id" 'map(select(.id == $i)) | .[0] // empty' "$scratch/board.json")
+              if [ -z "$row" ]; then
+                # `task ls` hides archived tasks, and archived is settled.
+                settled=$((settled + 1))
+                continue
+              fi
+              state=$(printf '%s' "$row" | jq -r '.state')
+              cur=$(printf '%s' "$row" | jq -r '.current_step')
+
+              case "$state" in
+                done|aborted|archived)
+                  settled=$((settled + 1))
+                  continue ;;
+                queued|running)
+                  busy=$((busy + 1)) ;;
+                *)
+                  waiting=$((waiting + 1)) ;;
+              esac
+
+              # Past its merge gate and still able to move: the merge lane is
+              # taken. A blocked task does not take it — a person has to come
+              # for it either way, and the others should not queue behind that.
+              if [ "$state" != blocked ] && [ "$cur" -gt "$midx" ]; then
+                inflight=$((inflight + 1))
+              fi
+
+              if [ "$state" = awaiting_gate ]; then
+                # `current_step` is the index into the task's own snapshot, so
+                # this names the gate exactly rather than trusting the index to
+                # mean the same thing in both resolve workflows.
+                pending=$(vincent task show "$id" --json </dev/null \
+                  | jq -r --argjson i "$cur" '.workflow_steps[] | select(.index == $i) | .id')
+                case "$pending" in
+                  gate)
+                    say "approving the pull request of task $id (#$issue)"
+                    if vincent task approve "$id" </dev/null >/dev/null 2>"$scratch/approve.err"; then
+                      echo "task $id  #$issue  approved the pull request"
+                    else
+                      echo "task $id  #$issue  could not approve the pull request: $(tr '\n' ' ' < "$scratch/approve.err")" >&2
+                    fi ;;
+                  gate-merge)
+                    printf '%s\t%s\n' "$id" "$issue" >> "$scratch/merge-queue" ;;
+                  *)
+                    printf '%s\t%s\t%s\n' "$id" "$issue" "gate '${pending:-unknown}'" >> "$scratch/needs-you" ;;
+                esac
+              elif [ "$state" = awaiting_input ] || [ "$state" = blocked ] || [ "$state" = paused ]; then
+                printf '%s\t%s\t%s\n' "$id" "$issue" "$state" >> "$scratch/needs-you"
+              fi
+            done < "$scratch/tasks.tsv"
+
+            # One merge at a time, in the order the triage ranked the issues.
+            if [ "$inflight" -eq 0 ] && [ -s "$scratch/merge-queue" ]; then
+              first=$(head -n 1 "$scratch/merge-queue")
+              mid=$(printf '%s' "$first" | cut -f1)
+              miss=$(printf '%s' "$first" | cut -f2)
+              say "approving the merge of task $mid (#$miss)"
+              if vincent task approve "$mid" </dev/null >/dev/null 2>"$scratch/approve.err"; then
+                echo "task $mid  #$miss  approved the merge"
+              else
+                echo "task $mid  #$miss  could not approve the merge: $(tr '\n' ' ' < "$scratch/approve.err")" >&2
+              fi
+            fi
+
+            if [ "$settled" -ge "$total" ]; then
+              printf '%s\n' 1 > "$scratch/settled"
+              say "all $total task(s) finished"
+              echo "all $total task(s) have finished."
+              exit 0
+            fi
+
+            if [ "$busy" -gt 0 ]; then
+              printf '%s\n' "$(date +%s)" > "$scratch/stall-since"
+            fi
+            stalled=$(( $(date +%s) - $(cat "$scratch/stall-since") ))
+            if [ "$busy" -eq 0 ] && [ "$stalled" -ge "$stall_limit" ]; then
+              # Give the slot back: nothing here moves without a person.
+              rm -f "$scratch/stall-since"
+              say "nothing has run for $((stalled / 60))m; every task left needs you"
+              echo "no tracked task has been queued or running for $((stalled / 60)) minute(s)." >&2
+              echo "the watch cannot clear any of these by itself:" >&2
+              if [ -s "$scratch/needs-you" ]; then
+                awk -F'\t' '{ printf "  task %s  #%s  %s\n", $1, $2, $3 }' "$scratch/needs-you" >&2
+              else
+                echo "  (nothing is waiting either — read the board)" >&2
+              fi
+              echo "resolve them, then retry this step: the two-hour clock starts again." >&2
+              exit 1
+            fi
+
+            say "$settled/$total done, $busy running, $waiting waiting on you"
+            [ "$(date +%s)" -lt "$deadline" ] || break
+            sleep "$nap"
+          done
+
+          echo "$settled of $total task(s) have finished so far."
+
+      - id: watch-settled
+        name: Have they all finished
+        type: command
+        shell: sh
+        timeout: 2m
+        allow_failure: true
+        run: |
+          [ "$(cat "$(git rev-parse --git-path vincent-iterate)/settled")" = 1 ]
+
+      - id: watch-done
+        name: Stop watching once they have
+        type: break
+        if: '{{ eq (index .Steps "watch-settled").ExitCode 0 }}'
+
+  - id: outcome
+    name: Report how every task ended
+    type: command
+    shell: sh
+    timeout: 10m
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      scratch=$(git rev-parse --git-path vincent-iterate)
+      say "reading the final state of every task"
+
+      : > "$scratch/final.tsv"
+      while IFS="$(printf '\t')" read -r id issue wf gidx midx title; do
+        [ -n "$id" ] || continue
+        # Read each task by id rather than listing the board: an archived task
+        # is hidden from `task ls` and is exactly the one this has to report.
+        if vincent task show "$id" --json </dev/null > "$scratch/task.json" 2>"$scratch/task.err"; then
+          state=$(jq -r '.state' "$scratch/task.json")
+          pr=$(jq -r '.github_pull.number // empty' "$scratch/task.json")
+        else
+          state=unreadable
+          pr=
+        fi
+        printf '%s\t%s\t%s\t%s\t%s\n' "$id" "$issue" "$state" "${pr:-none}" "$title" >> "$scratch/final.tsv"
+      done < "$scratch/tasks.tsv"
+
+      total=$(cat "$scratch/tracked")
+      # `archived` counts: it is reachable only from done or aborted, and a
+      # person who archived one of these while the watch ran had read it.
+      finished=$(awk -F'\t' '$3 == "done" || $3 == "archived" { n++ } END { print n + 0 }' "$scratch/final.tsv")
+
+      echo "$finished of $total task(s) finished:"
+      awk -F'\t' '{ printf "  task %s  #%s  %s  pr %s\n        %s\n", $1, $2, $3, $4, $5 }' "$scratch/final.tsv"
+
+      if [ "$finished" -lt "$total" ]; then
+        say "$finished of $total finished; the rest did not"
+        echo "these task(s) did not finish:" >&2
+        awk -F'\t' '$3 != "done" && $3 != "archived" { printf "  task %s  #%s  %s\n", $1, $2, $3 }' \
+          "$scratch/final.tsv" >&2
+        echo "the watch list is left in place, so retrying this step re-reads them." >&2
+        exit 1
+      fi
+
+      rm -rf "$scratch"
+      say "all $total task(s) merged and done"
