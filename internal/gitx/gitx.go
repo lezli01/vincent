@@ -77,7 +77,33 @@ func (g *Git) Run(ctx context.Context, dir string, args ...string) (string, erro
 	return g.run(ctx, dir, nil, args...)
 }
 
+// RunRaw is Run without the trim: stdout is returned byte for byte, and a
+// failure is the same *Error Run would have returned.
+//
+// It exists because a `-z` listing does not survive strings.TrimSpace
+// (task 126). NUL is not whitespace, so the trailing separator is left alone
+// and the split still works — but a file named " leading.txt" comes back as
+// "leading.txt", a path that does not exist, and a file named "trailing .txt"
+// loses its space when its row happens to be the last one. Renaming somebody's
+// file in the process of listing it is not a rounding error, and there is no
+// way to distinguish the space git printed from one Run removed.
+//
+// The trim stays the default because every other caller depends on it — a SHA
+// with a newline after it is not a SHA — so the raw form is the opt-in, and
+// both go through one code path and one *Error construction.
+func (g *Git) RunRaw(ctx context.Context, dir string, args ...string) ([]byte, error) {
+	return g.runRaw(ctx, dir, nil, args...)
+}
+
 func (g *Git) run(ctx context.Context, dir string, env []string, args ...string) (string, error) {
+	out, err := g.runRaw(ctx, dir, env, args...)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func (g *Git) runRaw(ctx context.Context, dir string, env []string, args ...string) ([]byte, error) {
 	// G204: g.path is "git" (or a test's stand-in) and args is an argument
 	// slice assembled by callers in this repository — no shell, so no quoting
 	// or metacharacter question arises for the branch and path values in it.
@@ -101,9 +127,9 @@ func (g *Git) run(ctx context.Context, dir string, env []string, args ...string)
 		if ctx.Err() != nil {
 			e.Err = ctx.Err()
 		}
-		return "", e
+		return nil, e
 	}
-	return strings.TrimSpace(stdout.String()), nil
+	return stdout.Bytes(), nil
 }
 
 // CheckRefFormat reports whether name is usable as a branch name, returning a
