@@ -3200,6 +3200,26 @@ type SkillSyntax struct {
     Position SkillPosition // "leading" | "anywhere"
 }
 
+// FileMentioner is optional too (task 126.3, added 2026-09-21); see "File
+// mentions" below. CanMentionFiles reports whether an adapter implements it,
+// and nothing more. relPath is workspace-relative and forward-slash, git's
+// own bytes; nothing validates, cleans or translates it.
+type FileMentioner interface {
+    FileMentionSyntax() FileMentionSyntax // static per adapter
+    FileMention(relPath string) string    // the exact text a client inserts
+}
+
+type FileMentionSyntax struct {
+    Sigil    string          // "@" on all three shipped adapters
+    Position MentionPosition // "leading" | "anywhere"
+    Expands  bool            // the CLI itself puts the file in front of the model
+}
+
+// Its own type, never a reuse of SkillPosition: §5.5 records that `@` and `/`
+// do not share a positional rule on claude, so a shared type would invite a
+// reader to assume the two move together (task 126 decision 22).
+type MentionPosition string // "leading" | "anywhere"
+
 type RunHandle interface {
     Events() <-chan AgentEvent  // normalized stream: Output, ToolUse, Usage, InputRequest, InputCanceled, Result, Error
     Respond(resp InputResponse) error // answer the pending InputRequest (§7.4); error if none pending
@@ -3398,6 +3418,68 @@ capability today.
   §16). The cache still spawns nothing of its own; the launcher is the one
   the turn would use, and `CREATE_NO_WINDOW` still comes from the adapter's
   own path.*
+
+**File mentions (added 2026-09-21, task 126.3, issue #547).** One optional
+capability, `FileMentioner`, lets the daemon ask an adapter how a message
+names a workspace file. It is `SkillInvoker`'s twin and deliberately so (task
+126 decision 1): the quoting rule must have exactly one definition, and it
+belongs in the adapter, the way a skill row's `invocation` already comes from
+`SkillInvoker.Invocation` rather than from each client. `CanMentionFiles`
+reports interface satisfaction and nothing more; its false leg is proven
+against `agenttest.StubNoMentions`, never against a shipped adapter, since all
+three implement it today.
+
+- **Pass-through only** (task 124 decision 9, carried by task 126 decision 1).
+  The returned string is the adapter's own word: no later stage validates that
+  the path exists, cleans it, or translates it between adapters. `relPath` is
+  **workspace-relative and forward-slash** — git's own bytes exactly as
+  `worktree.Manager.ListFiles` returned them (task 126 decisions 2 and 21) —
+  and nothing in `internal/agent` calls `filepath.FromSlash`. An empty path
+  yields the bare sigil; a guard returning `""` would be the daemon judging a
+  path.
+- **`MentionPosition` is its own type**, not a reuse of `SkillPosition` (task
+  126 decision 22). §5.5 records that `@` and `/` do not share a positional
+  rule on claude — the mention is anywhere, the skill invocation is leading —
+  so the two vocabularies stay separate, and task 126 decision 8 keys the
+  picker's open rule on `@` being positionally anywhere.
+- **`Expands` is the honest capability statement, not the interface.** All
+  three adapters implement `FileMentioner`; what differs is whether the CLI
+  itself puts the file in front of the model. §5.5 records that with tools
+  allowed `codex exec` and `cursor-agent -p` each read a mentioned path in one
+  tool call, so a mention is worth sending on all three — guaranteed context
+  against a hint — and task 126 decision 6 gates the note on the verdict and
+  never the picker. It is a static per-adapter fact with no `unknown` leg,
+  which is why it is a `bool` (task 126 decision 23).
+- **Mention syntax is static per adapter**, with no probe and no version gate
+  (task 124 decision 18):
+
+  | adapter | sigil | position | `Expands` | `FileMention` |
+  |---|---|---|---|---|
+  | claude | `@` | `anywhere` | `true` — expanded before the model sees the message, without a tool call | `@path`, or `@"path"` when the path contains a space |
+  | codex | `@` | `anywhere` | `false` — prose through `codex exec`; the model reads the path itself | `@path`, never quoted |
+  | cursor | `@` | `anywhere` | `false` — prose through `-p`; the model reads the path itself | `@path`, never quoted |
+
+  Observed on claude **2.1.278**, codex-cli **0.154.0** and cursor-agent
+  **2026.09.18**. The claude build is one patch newer than the 2.1.277 the
+  skills table above names, and that pin is not widened. The behaviour, the
+  path-form table and the failure modes are §5.5's "File mentions in a chat's
+  message"; §9.2, §9.3 and §9.7 add their per-adapter paragraphs. They are
+  cited here, not restated.
+- **The quoting rule is claude's alone, and it stops where the observation
+  does.** §5.5's path-form table has `@"dir with space/q.txt"` expanding while
+  the bare and the backslash-escaped spellings did not, so a space and only a
+  space earns the quotes. A double quote inside a filename is left unquoted
+  unless the path also carries a space (task 126 decision 24): claude was
+  never probed with one, and `\"` would be a rule invented ahead of the
+  observation — backslash escaping is exactly what §5.5 records as not
+  working. A path carrying both yields `@"a "b".txt"`, which claude will very
+  likely mis-parse; that is the rule's consequence, pinned in the adapter's
+  test table, not a guarantee. Nothing is claimed about a backslash separator
+  or a drive letter: Windows is unobserved and #557 settles it before any
+  separator handling is written.
+- **Nothing consumes this yet.** Reporting the capability on
+  `GET /v1/agents` is task 126.4 (#548), the per-row `mention` field is 126.6
+  (#550), and the composer's picker is 126.11 (#555).
 
 **The launch seam (task 062.1, added 2026-09-16).** An adapter builds its run's
 argv and hands it over; it never spawns the process itself. `Start` resolves the
