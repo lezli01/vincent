@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -1124,4 +1126,162 @@ func TestChatSkillsInlineNeverProbesOnAFileMention(t *testing.T) {
 			t.Fatalf("an @ sigil off the wire did not open the list (note %q)", v.skills.inlineNote)
 		}
 	})
+}
+
+// Issue #553: the list windows its rows *before* it styles them, and a build
+// may be capped. The property under test in the first two is that render's
+// cost is flat in the row count and that the frame it draws did not change.
+
+// manySkills is a catalog of n rows, for the tests that care about the row
+// count rather than about any row's content.
+func manySkills(n int) *apiclient.ChatSkills {
+	probed := time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)
+	d := &apiclient.ChatSkills{
+		ChatID: 1, Agent: "claude", ListVerdict: "supported", ProbedAt: &probed,
+		InvokeVerdict: "supported", InvokeSigil: "/", InvokePosition: "leading",
+		Skills: make([]apiclient.ChatSkill, n),
+	}
+	for i := range n {
+		name := fmt.Sprintf("skill-%06d", i)
+		d.Skills[i] = apiclient.ChatSkill{
+			Name: name, Invocation: "/" + name, Description: "row " + name,
+		}
+	}
+	return d
+}
+
+// rankedSkills is a catalog whose only tier-0 match for `deploy` is its last
+// row, so a cap of 1 says whether the cap sliced before or after the ranking.
+func rankedSkills() *apiclient.ChatSkills {
+	probed := time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)
+	return &apiclient.ChatSkills{
+		ChatID: 1, Agent: "claude", ListVerdict: "supported", ProbedAt: &probed,
+		InvokeVerdict: "supported", InvokeSigil: "/", InvokePosition: "leading",
+		Skills: []apiclient.ChatSkill{
+			{Name: "notes", Invocation: "/notes", Description: "Write deploy notes"},
+			{Name: "other", Invocation: "/other", Description: "Something about deploy"},
+			{Name: "deploy", Invocation: "/deploy", Description: "Ship it"},
+		},
+	}
+}
+
+// TestChatSkillsRenderOnlyStylesTheVisibleRows is issue #553's actual
+// property: a frame costs the window, not the row set. It is asserted by
+// counting the row renderer's calls through the seam, which is deterministic
+// — internal/tui asserts no wall-clock bound today, and Windows `-race`
+// produces enough timing flakes without one.
+//
+// Each cursor position is exercised because windowStart clamps differently at
+// the ends than in the middle.
+func TestChatSkillsRenderOnlyStylesTheVisibleRows(t *testing.T) {
+	const rows, paneHeight, width = 100_000, 30, 100
+	now := time.Date(2026, 9, 21, 12, 1, 0, 0, time.UTC)
+	calls := 0
+	l := &chatSkillList{open: true, data: manySkills(rows)}
+	l.rowLine = func(r chatSkillRow, selected bool, w int) string {
+		calls++
+		return chatSkillRowLine(r, selected, w)
+	}
+	l.build()
+	if len(l.rows) != rows {
+		t.Fatalf("the list built %d rows, want %d", len(l.rows), rows)
+	}
+	win := l.window(paneHeight)
+	for _, cursor := range []int{-1, 0, rows / 2, rows - 1} {
+		l.cursor, calls = cursor, 0
+		got := l.render(width, paneHeight, now)
+		// Exactly the window, at every clamp: more is the old
+		// style-everything path, fewer would be an under-draw.
+		if calls != win {
+			t.Fatalf("cursor %d styled %d rows out of %d, want the window's %d", cursor, calls, rows, win)
+		}
+		if want := l.height(paneHeight); len(got) != want {
+			t.Fatalf("cursor %d rendered %d lines, want %d", cursor, len(got), want)
+		}
+	}
+}
+
+// TestChatSkillsWindowedRowsMatchRenderingEveryRow is the regression guard for
+// the scroll behaviour: over a matrix of row counts and cursor positions, the
+// rows visibleRows styles are byte for byte the rows the old
+// build-all-then-window path produced.
+func TestChatSkillsWindowedRowsMatchRenderingEveryRow(t *testing.T) {
+	const paneHeight, width = 30, 100
+	probe := &chatSkillList{open: true, data: manySkills(100)}
+	probe.build()
+	win := probe.window(paneHeight)
+	for _, count := range []int{0, 1, win - 1, win, win + 1, 100} {
+		for _, cursor := range []int{-1, 0, count / 2, count - 1} {
+			l := &chatSkillList{open: true, data: manySkills(count)}
+			l.build()
+			l.cursor = cursor
+			// The pre-#553 path, verbatim: style every row, window after.
+			lines := make([]string, 0, len(l.rows))
+			for i, r := range l.rows {
+				lines = append(lines, chatSkillRowLine(r, i == l.cursor, width))
+			}
+			want := window(lines, max(l.cursor, 0), l.window(paneHeight))
+			got := l.visibleRows(width, l.window(paneHeight))
+			if !slices.Equal(got, want) {
+				t.Fatalf("%d rows, cursor %d: windowing before styling drew\n%v\nwant\n%v",
+					count, cursor, got, want)
+			}
+		}
+	}
+}
+
+// TestChatSkillsCappedBuildReadsDifferentlyFromAnEmptyOne holds issue #553
+// decision 2: "your row is not listed" and "your row does not match" must not
+// look the same, and a cap that does not bind changes nothing.
+func TestChatSkillsCappedBuildReadsDifferentlyFromAnEmptyOne(t *testing.T) {
+	now := time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)
+	capped := &chatSkillList{open: true, mode: skillModeBrowse, data: manySkills(20), cap: 3}
+	capped.build()
+	if len(capped.rows) != 3 {
+		t.Fatalf("a cap of 3 built %d rows", len(capped.rows))
+	}
+	if title := ansi.Strip(capped.titleLine(now)); !strings.Contains(title, "3 of 20") {
+		t.Fatalf("a capped title line reads %q, want the count", title)
+	}
+	plain := ansi.Strip(strings.Join(capped.render(100, 30, now), "\n"))
+	if strings.Contains(plain, "nothing matches") {
+		t.Fatalf("a capped build drew the empty line:\n%s", plain)
+	}
+	if !strings.Contains(plain, "/skill-000000") {
+		t.Fatalf("a capped build drew no rows:\n%s", plain)
+	}
+
+	empty := &chatSkillList{open: true, mode: skillModeBrowse, data: manySkills(20), cap: 3, filter: "zzz"}
+	empty.build()
+	if title := ansi.Strip(empty.titleLine(now)); strings.Contains(title, " of ") {
+		t.Fatalf("a build that matched nothing counted itself: %q", title)
+	}
+	if plain := ansi.Strip(strings.Join(empty.render(100, 30, now), "\n")); !strings.Contains(plain, "nothing matches") {
+		t.Fatalf("a filter matching nothing drew:\n%s", plain)
+	}
+
+	uncapped := &chatSkillList{open: true, mode: skillModeBrowse, data: manySkills(20)}
+	uncapped.build()
+	slack := &chatSkillList{open: true, mode: skillModeBrowse, data: manySkills(20), cap: 20}
+	slack.build()
+	if uncapped.titleLine(now) != slack.titleLine(now) {
+		t.Fatalf("a cap that does not bind changed the title line to %q", slack.titleLine(now))
+	}
+	if title := ansi.Strip(uncapped.titleLine(now)); strings.Contains(title, " of ") {
+		t.Fatalf("an uncapped title line counted itself: %q", title)
+	}
+}
+
+// TestChatSkillsCapKeepsTheBestMatches: the cap slices after rankChatSkills,
+// so what survives is the top of the ranking and never a prefix of the
+// catalog.
+func TestChatSkillsCapKeepsTheBestMatches(t *testing.T) {
+	l := &chatSkillList{open: true, mode: skillModeBrowse, data: rankedSkills(), cap: 1, filter: "deploy"}
+	l.build()
+	if len(l.rows) != 1 || l.rows[0].invocation != "/deploy" {
+		t.Fatalf("a cap of 1 kept %v, want the top-ranked row /deploy", l.rows)
+	}
+	if l.matched != 3 {
+		t.Fatalf("the list matched %d rows, want all 3", l.matched)
+	}
 }
