@@ -10985,6 +10985,16 @@ stream for the live tail.
    lone sigil, which says nothing about whose sigil it is. A bare sigil
    therefore opens nothing until an answer has arrived, by that route or by
    `tab`; every keystroke after it is filtered by the answer's own sigil.
+   *(Amended 2026-09-21, task 126, issue #552.* That shape test excludes one
+   rune: a token beginning `@` never spends the probe. `@name` is how a human
+   writes a file, and no adapter reports `@` as its sigil (§9.1), so the token
+   could not have become an invocation — while the probe it burned spawns the
+   agent CLI and, on failure, latches inline skills off for the whole chat.
+   The exclusion is unconditional at probe time, there being no wire sigil to
+   consult yet: an adapter reporting `invoke_sigil: "@"` would not self-start
+   its inline list from a typed `@`, needing `tab` or an answer already
+   cached. Once an answer is in hand the wire's sigil wins unchanged, because
+   filtering never consults the shape test.*)
    Where a **leading** token carries the sigil
    and matches nothing the agent reported, and the text after the sigil holds
    no path separator, a dim note says so — `/foo is not a skill claude

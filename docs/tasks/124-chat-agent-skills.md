@@ -753,6 +753,25 @@ documentation landed, 79–82 when 124.15 was, and 83–88 when 124.14 was.
     is. Every keystroke after the answer arrives is filtered by the answer's
     own sigil, and a shape this accepts that no adapter honours costs exactly
     one silent probe.
+
+    *Amended 2026-09-21 (task 126, issue #552) — the shape test excludes `@`.*
+    This narrows the trigger and nothing else: a typed sigil may still ask the
+    daemon, still silently, still exactly once, and `probeFailed` keeps its
+    meaning for a genuine probe failure. What changes is the set of tokens the
+    probe may be spent on. `@name` is a file mention, and no shipped adapter
+    reports `@` (decision 18), so that token can never become an invocation —
+    spending the chat's one probe on it bought an agent CLI spawn nobody asked
+    for and then latched inline skills off for the rest of the chat. Only the
+    bare short form ever reached the fetch: `@README.md` and `@src/main.go`
+    already failed the name loop on `.` and `/`, which is precisely the first
+    keystrokes of every mention. The exclusion lives in
+    `chatSkillSigilShaped`, so it is the one place the picker's collision rule
+    is written, and it is **unconditional at probe time** — there is no wire
+    sigil to consult yet. An adapter that reported `invoke_sigil: "@"` would
+    therefore not self-start its inline list from a typed `@`; it would need
+    `tab`, or an answer already cached. Once an answer *is* in hand the wire's
+    sigil wins unchanged, because filtering runs through
+    `chatSkillList.inlineFilter`, which never consults the shape test.
 92. **2026-09-20 — The unmatched-leading hint is only for name-shaped
     tokens.** The dim note — `/foo is not a skill claude reported for this
     chat — it is sent as typed` — appears only where the text after the sigil
