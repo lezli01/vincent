@@ -432,6 +432,34 @@ hatch above does not apply: renaming its branch would detach it from the pull
 request it was created for, and every later commit would go somewhere that pull
 request never sees.
 
+### `adopt_branch_missing` / `adopt_branch_diverged` / `adopt_branch_checked_out`
+
+These three belong to a task or chat created on a branch that already exists
+(`--existing-branch`, `existing_branch`), which runs on that branch instead of
+cutting one.
+
+`adopt_branch_missing` means the branch is gone. Creation checks that it is
+there, but a task can sit queued while you delete it; recreate the branch, or
+retry with `branch_override` pointing at one that exists.
+
+`adopt_branch_diverged` means the branch and its own upstream have each moved.
+Nothing was moved — your commits and the remote's are both still there. Merge or
+rebase, then retry. A branch merely *behind* its upstream is fast-forwarded, and
+one *ahead* is left exactly where it is, because those commits are yours to
+push.
+
+`adopt_branch_checked_out` means the branch is checked out in one of vincent's
+own worktrees, so another task or chat is working on it; wait for that one and
+retry. Your **own** main checkout is deliberately not this case: a task adopting
+a branch you have checked out runs **in that checkout**, alongside you.
+`vincent task show` prints the working directory, and it is the project path
+when that happens.
+
+Two things follow from running there. Vincent removes nothing when such a task
+is archived — the directory is yours — so `worktree_dirty` never applies to it.
+And the diff tab shows the working directory's diff, so uncommitted work you
+already had when the task started reads as part of the task's diff.
+
 ## Workflows
 
 ### A workflow file does not show up

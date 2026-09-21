@@ -73,14 +73,20 @@ type taskResponse struct {
 	// decision 4, which kept base_sha off the wire: without it a human cannot
 	// tell a task that started from a fresh upstream tip from one that started
 	// from a stale local branch. BaseRefresh is null, not omitted, when absent.
-	BaseSHA        string           `json:"base_sha,omitempty"`
-	BaseRefresh    *baseRefreshBody `json:"base_refresh"`
-	BranchName     string           `json:"branch_name"`
-	WorktreePath   *string          `json:"worktree_path"`
-	Priority       int              `json:"priority"`
-	AgentOverride  *string          `json:"agent_override"`
-	ModelOverride  *string          `json:"model_override"`
-	EffortOverride *string          `json:"effort_override"`
+	BaseSHA     string           `json:"base_sha,omitempty"`
+	BaseRefresh *baseRefreshBody `json:"base_refresh"`
+	BranchName  string           `json:"branch_name"`
+	// AdoptedBranch says the task runs on a branch vincent did not cut (§10,
+	// task 125). It is served because two things a client shows depend on it
+	// and cannot be derived: archive will never delete this branch, and a
+	// task whose worktree_path is the project path is running in the human's
+	// own checkout.
+	AdoptedBranch  bool    `json:"adopted_branch"`
+	WorktreePath   *string `json:"worktree_path"`
+	Priority       int     `json:"priority"`
+	AgentOverride  *string `json:"agent_override"`
+	ModelOverride  *string `json:"model_override"`
+	EffortOverride *string `json:"effort_override"`
 	// Restricted and MaxTaskCostUSD are the create-time limits (task 096
 	// decisions 17, 18), served so a client can show why a task runs
 	// restricted or blocked `cost_limit` under a generous global cap.
@@ -223,6 +229,7 @@ func toTaskResponse(t *store.Task, summary snapshotSummary) taskResponse {
 		BaseSHA:          t.BaseSHA,
 		BaseRefresh:      renderBaseRefresh(t.BaseRefresh),
 		BranchName:       t.BranchName,
+		AdoptedBranch:    t.AdoptedBranch,
 		WorktreePath:     nilIfEmpty(t.WorktreePath),
 		Priority:         t.Priority,
 		AgentOverride:    nilIfEmpty(t.AgentOverride),
@@ -456,10 +463,26 @@ type taskCreateRequest struct {
 	// it is a name the user typed for one task, so a stray brace belongs to the
 	// name rather than being a template error.
 	BranchName *string `json:"branch_name"`
-	Priority   *int    `json:"priority"`
-	Agent      *string `json:"agent"`
-	Model      *string `json:"model"`
-	Effort     *string `json:"effort"`
+	// ExistingBranch selects the third worktree-creation mode (§10, task 125):
+	// the resolved branch name is a branch that **already exists**, and the
+	// task adopts it instead of cutting a new one — running in the project's
+	// own main checkout when that is where the branch already is.
+	//
+	// It is an explicit field rather than an inference from the branch
+	// existing (decision 1). Inference would reopen task 001's binding
+	// decision: a template with no discriminator — `feat/{{ index .Fields
+	// "ticket" }}` — collides on the second task for the same input, and that
+	// second task would then silently run on the first one's branch. Without
+	// this field every existing behaviour is exactly what it was:
+	// `checkBranchCollision` still 400s and `branch_exists` still blocks.
+	//
+	// `omitempty` for task 040's digest, like the three fields below it: a
+	// body that does not name it digests exactly as it did before it existed.
+	ExistingBranch *bool   `json:"existing_branch,omitempty"`
+	Priority       *int    `json:"priority"`
+	Agent          *string `json:"agent"`
+	Model          *string `json:"model"`
+	Effort         *string `json:"effort"`
 	// GitHubIssue creates this task from a GitHub issue (§13.2, task 035).
 	// The daemon fetches it, prefills the task from it and persists the
 	// snapshot on the row; **any value the request supplies explicitly wins**
@@ -852,6 +875,20 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Two modes, one branch, refused before anything is fetched: a
+	// pull-request task already runs on the head branch, so asking for the
+	// adopt mode on top of it asks which of two answers to the same question
+	// wins, and there is no defensible order — the same reason `github_issue`
+	// and `github_pull` together are refused. It sits above prepareTaskCreate
+	// so the answer is a validation 400 rather than whatever the GitHub
+	// resolution says first.
+	adopt := req.ExistingBranch != nil && *req.ExistingBranch
+	if adopt && req.GitHubPull != nil && *req.GitHubPull > 0 {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			"existing_branch and github_pull cannot be combined: "+
+				"a pull-request task already runs on the pull request's head branch")
+		return
+	}
 	ctx := r.Context()
 	prep, ok := s.prepareTaskCreate(ctx, w, &req, "")
 	if !ok {
@@ -883,6 +920,9 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
 		return
 	}
+	// Recorded on the row, in the creating transaction: "adopted" is not
+	// derivable afterwards, and archive has to know (decision 6).
+	t.AdoptedBranch = adopt
 	var resolveBranch func(int64) (string, error)
 	if preview.NeedsID {
 		// The name needs the id, so it is produced inside the insert transaction.
@@ -896,7 +936,19 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		// unusable for anyone who has already looked at the pull request
 		// (decision 2). The in-transaction claim check below still runs, so
 		// two live vincent tasks on one head branch remain a 400.
-		if pull == nil {
+		switch {
+		case pull != nil:
+		case adopt:
+			// The mirror of the collision check: this mode needs the branch to
+			// be there, so its absence is the 400. Like the collision check it
+			// is a courtesy — the branch can be deleted between here and
+			// admission — and `adopt_branch_missing` at admission remains the
+			// authority.
+			if msg := s.checkBranchPresent(ctx, project.Path, preview.Name); msg != "" {
+				writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
+				return
+			}
+		default:
 			if msg := s.checkBranchCollision(ctx, project.Path, preview.Name); msg != "" {
 				writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
 				return

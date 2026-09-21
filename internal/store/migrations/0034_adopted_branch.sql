@@ -1,0 +1,22 @@
+-- 0034_adopted_branch: the marker for the third worktree-creation mode, a task
+-- or chat that runs on a branch it did not cut (task 125, spec §10).
+--
+-- Task 064 decision 3 is the whole reason this has to be persisted: vincent
+-- deletes only branches it cut, so `DeleteEmptyBranch` and archive's
+-- `push --delete` leg must both read `not_ours` on an adopted branch. Nothing
+-- else on the row can answer that after the fact — the branch name says
+-- nothing (an adopted branch may be called anything, including
+-- `vincent/{id}-{slug}`), and `worktree_path = project.path` only covers the
+-- main-checkout half of the mode, not a free branch adopted into a worktree
+-- of its own.
+--
+-- 0 for every existing row, which is the truth: before this migration every
+-- branch vincent ran on was one vincent cut, or a pull request's head, and
+-- the latter is already answered by `github_pull_json`.
+--
+-- Written in the creating transaction rather than at admission: the mode is
+-- chosen by the create request (decision 1) and a crash between the insert and
+-- a second write would leave a task whose branch is adopted and whose row says
+-- it is ours to delete.
+ALTER TABLE tasks ADD COLUMN adopted_branch INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE chats ADD COLUMN adopted_branch INTEGER NOT NULL DEFAULT 0;

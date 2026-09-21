@@ -54,6 +54,8 @@ func newChatStartCmd() *cobra.Command {
 		baseBranch string
 		message    string
 		msgFile    string
+		branch     string
+		existing   bool
 	)
 	cmd := &cobra.Command{
 		Use:   "start <title>",
@@ -72,6 +74,7 @@ func newChatStartCmd() *cobra.Command {
 				chat, err := c.CreateChat(ctx, apiclient.CreateChatRequest{
 					ProjectID: projectID, Title: args[0], Agent: agentName,
 					Model: model, Effort: effort, BaseBranch: baseBranch,
+					BranchName: branch, ExistingBranch: existing,
 				})
 				if err != nil {
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
@@ -93,6 +96,11 @@ func newChatStartCmd() *cobra.Command {
 	cmd.Flags().StringVar(&model, "model", "", "model override")
 	cmd.Flags().StringVar(&effort, "effort", "", "effort override")
 	cmd.Flags().StringVar(&baseBranch, "base", "", "base branch; default is the project's")
+	cmd.Flags().StringVar(&branch, "branch", "",
+		"run the chat on this existing branch instead of cutting one; needs --existing-branch")
+	cmd.Flags().BoolVar(&existing, "existing-branch", false,
+		"the --branch given already exists and is adopted; "+
+			"if it is checked out in the project itself, the chat runs there rather than in a worktree")
 	cmd.Flags().StringVar(&message, "message", "", "send this first message straight away")
 	cmd.Flags().StringVar(&msgFile, "message-file", "",
 		"send the first message read from this file (- for stdin), byte for byte")

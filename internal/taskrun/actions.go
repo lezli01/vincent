@@ -599,7 +599,9 @@ func (r *Runner) deleteArchivedBranch(
 	// Whether the branch is ours to delete at all (task 064 decision 3): a
 	// task created from a pull request runs on the contributor's head branch,
 	// and neither leg may touch it.
-	ours := !task.GitHubPull.FromPull()
+	// ...and a branch the user pointed the task at is not ours either (task
+	// 125 decision 6): vincent did not cut it, so neither leg may touch it.
+	ours := !task.GitHubPull.FromPull() && !task.AdoptedBranch
 	out, err := r.deps.Worktrees.DeleteEmptyBranch(ctx, projectPath,
 		task.BaseBranch, task.BaseSHA, task.BranchName, cfg.DeleteRemoteBranchOnArchive, &ours)
 	if err != nil {

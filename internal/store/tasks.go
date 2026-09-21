@@ -14,7 +14,7 @@ import (
 )
 
 const taskColumns = `id, project_id, title, description, fields_json, workflow_name, workflow_snapshot,
-	base_branch, branch_name, worktree_path, base_sha, base_refresh, priority, agent_override, model_override, effort_override,
+	base_branch, branch_name, adopted_branch, worktree_path, base_sha, base_refresh, priority, agent_override, model_override, effort_override,
 	restricted, max_task_cost_usd,
 	state, current_step, block_reason, pause_requested, retry_cursor_at, pending_override_json,
 	pending_repair_json, pending_follow_up_json, pending_input_json, admit_not_before, queued_reason,
@@ -189,15 +189,15 @@ func insertTaskTx(
 	}
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO tasks (project_id, title, description, fields_json, workflow_name, workflow_snapshot,
-			base_branch, branch_name, worktree_path, base_sha, base_refresh, priority, agent_override, model_override, effort_override,
+			base_branch, branch_name, adopted_branch, worktree_path, base_sha, base_refresh, priority, agent_override, model_override, effort_override,
 			restricted, max_task_cost_usd,
 			state, current_step, block_reason, admit_not_before, queued_reason,
 			parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json,
 			github_pull_json, workflow_origin_json, created_by_task_id,
 			created_at, updated_at, started_at, finished_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ProjectID, t.Title, t.Description, fields, t.WorkflowName, t.WorkflowSnapshot,
-		t.BaseBranch, t.BranchName, nullString(t.WorktreePath), nullString(t.BaseSHA), refreshJSON, t.Priority,
+		t.BaseBranch, t.BranchName, t.AdoptedBranch, nullString(t.WorktreePath), nullString(t.BaseSHA), refreshJSON, t.Priority,
 		nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
 		t.Restricted, t.MaxTaskCostUSD,
 		string(t.State), t.CurrentStep, nullString(t.BlockReason),
@@ -232,8 +232,17 @@ func insertTaskTx(
 		}
 		t.BranchName = branch
 	}
-	if err := claimBranchTx(ctx, tx, t.ProjectID, t.BranchName, id); err != nil {
-		return nil, err
+	// An adopted branch is deliberately outside the claim (task 125 decision
+	// 2): two tasks may be *created* on one existing branch, and the second
+	// waits in the queue until the first releases the directory, rather than
+	// being refused at creation. Refusing here instead was rejected for the
+	// reason task 001 made admission the authority for `branch_exists` — the
+	// creation check is racy, and two drafts confirmed together would both
+	// reach git with one dying of a bare `git_error`.
+	if !t.AdoptedBranch {
+		if err := claimBranchTx(ctx, tx, t.ProjectID, t.BranchName, id); err != nil {
+			return nil, err
+		}
 	}
 	// `workflow_origin` rides beside `workflow` (task 043): the name alone
 	// cannot tell a shadowed `adhoc` from the built-in, and an event consumer
@@ -289,6 +298,51 @@ func claimBranchTx(ctx context.Context, tx *sql.Tx, projectID int64, branch stri
 		return fmt.Errorf("check branch claim: %w", err)
 	default:
 		return &BranchClaimedError{Branch: branch, TaskID: other}
+	}
+}
+
+// WorkingDirClaim names the owner already working in the directory an adopted
+// branch resolves to, or "" when the branch is free (§10, task 125
+// decision 2).
+//
+// The question it answers is "is a working directory taken", and the branch is
+// what it asks about: git cannot put one branch in two working trees, so one
+// branch and one directory are the same claim. It spans both tables because
+// the answer does — a chat holds a worktree exactly as a task does, and before
+// this a chat's branch was outside the claim set entirely.
+//
+// The claim is the *directory*, so it is held by a `worktree_path`, not by a
+// state: a done-but-unarchived task still has the branch checked out in its
+// worktree, and archive is what releases it. A chat linked to excludeTaskID is
+// not a claimant of that task's own branch — it works in that task's worktree
+// on purpose (task 119).
+func (s *Store) WorkingDirClaim(
+	ctx context.Context, projectID int64, branch string, excludeTaskID int64,
+) (string, error) {
+	var kind string
+	var id int64
+	q := `
+		SELECT 'task', id FROM tasks
+		 WHERE project_id = ? AND branch_name = ? AND id <> ? AND archived_at IS NULL
+		   AND ((worktree_path IS NOT NULL AND worktree_path <> '')
+		        OR state IN ` + slotPlaceholders + `)
+		UNION ALL
+		SELECT 'chat', id FROM chats
+		 WHERE project_id = ? AND branch = ?
+		   AND (linked_task_id IS NULL OR linked_task_id <> ?)
+		   AND worktree_path IS NOT NULL AND worktree_path <> ''
+		LIMIT 1`
+	args := []any{projectID, branch, excludeTaskID}
+	args = append(args, slotStates...)
+	args = append(args, projectID, branch, excludeTaskID)
+	err := s.db.QueryRowContext(ctx, q, args...).Scan(&kind, &id)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return "", nil
+	case err != nil:
+		return "", fmt.Errorf("check working directory claim: %w", err)
+	default:
+		return fmt.Sprintf("%s %d", kind, id), nil
 	}
 }
 
@@ -568,12 +622,22 @@ func (s *Store) ListAdmissible(ctx context.Context) ([]Candidate, error) {
 			  WHERE o.project_id = t.project_id AND o.state IN ` + slotPlaceholders + `),
 			p.max_parallel_tasks,
 			(SELECT COUNT(*) FROM step_runs r
-			  WHERE r.task_id = t.id AND r.state = ? AND r.step_type <> ?)
+			  WHERE r.task_id = t.id AND r.state = ? AND r.step_type <> ?),
+			(SELECT COUNT(*) FROM tasks o
+			  WHERE o.project_id = t.project_id AND o.branch_name = t.branch_name
+			    AND o.id <> t.id AND o.archived_at IS NULL
+			    AND ((o.worktree_path IS NOT NULL AND o.worktree_path <> '')
+			         OR o.state IN ` + slotPlaceholders + `))
+			+ (SELECT COUNT(*) FROM chats c
+			  WHERE c.project_id = t.project_id AND c.branch = t.branch_name
+			    AND (c.linked_task_id IS NULL OR c.linked_task_id <> t.id)
+			    AND c.worktree_path IS NOT NULL AND c.worktree_path <> '')
 		FROM tasks t JOIN projects p ON p.id = t.project_id
 		WHERE t.state = ?
 		ORDER BY t.priority DESC, t.created_at ASC, t.id ASC`
-	args := append(append([]any{}, slotStates...),
-		string(StepRunning), StepTypeFanOut, string(TaskQueued))
+	args := append(append([]any{}, slotStates...), string(StepRunning), StepTypeFanOut)
+	args = append(args, slotStates...)
+	args = append(args, string(TaskQueued))
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list admissible: %w", err)
@@ -585,7 +649,7 @@ func (s *Store) ListAdmissible(ctx context.Context) ([]Candidate, error) {
 			c     Candidate
 			limit sql.NullInt64
 		)
-		t, err := scanTask(scannerWithTail(rows, &c.ProjectSlots, &limit, &c.OpenStepRuns))
+		t, err := scanTask(scannerWithTail(rows, &c.ProjectSlots, &limit, &c.OpenStepRuns, &c.DirClaimants))
 		if err != nil {
 			return nil, fmt.Errorf("scan admissible: %w", err)
 		}
@@ -983,7 +1047,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		started, finished, archived    sql.NullString
 	)
 	if err := r.Scan(&t.ID, &t.ProjectID, &t.Title, &t.Description, &fields, &t.WorkflowName,
-		&t.WorkflowSnapshot, &t.BaseBranch, &t.BranchName, &worktree, &baseSHA, &baseRefresh, &t.Priority,
+		&t.WorkflowSnapshot, &t.BaseBranch, &t.BranchName, &t.AdoptedBranch, &worktree, &baseSHA, &baseRefresh, &t.Priority,
 		&agentOv, &modelOv, &effortOv,
 		&t.Restricted, &t.MaxTaskCostUSD,
 		(*string)(&t.State), &t.CurrentStep, &blockReason,

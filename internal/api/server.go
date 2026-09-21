@@ -320,6 +320,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/projects/{id}", s.handleProjectGet)
 	rt.handle(http.MethodPatch, "/v1/projects/{id}", s.handleProjectPatch)
 	rt.handle(http.MethodDelete, "/v1/projects/{id}", s.handleProjectDelete)
+	rt.handle(http.MethodGet, "/v1/projects/{id}/branches", s.handleProjectBranches)
 	rt.handle(http.MethodGet, "/v1/projects/{id}/github", s.handleProjectGitHub)
 	rt.handle(http.MethodGet, "/v1/projects/{id}/github/issues", s.handleProjectGitHubIssues)
 	rt.handle(http.MethodGet, "/v1/projects/{id}/github/pulls", s.handleProjectGitHubPulls)

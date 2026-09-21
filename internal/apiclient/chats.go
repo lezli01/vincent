@@ -13,20 +13,23 @@ import (
 // the one client both the TUI and the CLI consume, so client and server
 // cannot drift without a *live_test.go noticing.
 type Chat struct {
-	ID           int64           `json:"id"`
-	ProjectID    int64           `json:"project_id"`
-	Title        string          `json:"title"`
-	State        string          `json:"state"`
-	Agent        string          `json:"agent"`
-	Model        string          `json:"model,omitempty"`
-	Effort       string          `json:"effort,omitempty"`
-	Branch       string          `json:"branch"`
-	BaseBranch   string          `json:"base_branch"`
-	BaseSHA      string          `json:"base_sha,omitempty"`
-	BaseRefresh  *BaseRefresh    `json:"base_refresh"`
-	WorktreePath string          `json:"worktree_path,omitempty"`
-	SessionID    string          `json:"session_id,omitempty"`
-	PendingInput json.RawMessage `json:"pending_input,omitempty"`
+	ID        int64  `json:"id"`
+	ProjectID int64  `json:"project_id"`
+	Title     string `json:"title"`
+	State     string `json:"state"`
+	Agent     string `json:"agent"`
+	Model     string `json:"model,omitempty"`
+	Effort    string `json:"effort,omitempty"`
+	Branch    string `json:"branch"`
+	// AdoptedBranch says the chat runs on a branch vincent did not cut
+	// (task 125).
+	AdoptedBranch bool            `json:"adopted_branch"`
+	BaseBranch    string          `json:"base_branch"`
+	BaseSHA       string          `json:"base_sha,omitempty"`
+	BaseRefresh   *BaseRefresh    `json:"base_refresh"`
+	WorktreePath  string          `json:"worktree_path,omitempty"`
+	SessionID     string          `json:"session_id,omitempty"`
+	PendingInput  json.RawMessage `json:"pending_input,omitempty"`
 	// HandoffTaskID is the task this chat's worktree and branch were handed
 	// to (task 074). Set exactly in `handed_off`.
 	HandoffTaskID *int64 `json:"handoff_task_id,omitempty"`
@@ -129,6 +132,11 @@ type CreateChatRequest struct {
 	Model      string `json:"model,omitempty"`
 	Effort     string `json:"effort,omitempty"`
 	BaseBranch string `json:"base_branch,omitempty"`
+	// BranchName and ExistingBranch run the chat on a branch that already
+	// exists instead of cutting one (§10, task 125). Neither is meaningful
+	// without the other.
+	BranchName     string `json:"branch_name,omitempty"`
+	ExistingBranch bool   `json:"existing_branch,omitempty"`
 }
 
 // CreateChat starts a chat: a title, a project, an agent, and a worktree and

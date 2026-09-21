@@ -192,6 +192,22 @@ func (s *Scheduler) admit(ctx context.Context) {
 		if c.ProjectCap != nil && c.ProjectSlots+admitted[c.Task.ProjectID] >= *c.ProjectCap {
 			continue
 		}
+		// The working-directory claim of the adopt mode (§10, task 125
+		// decision 2). Two tasks may be created on one existing branch, and
+		// git can put that branch in only one working tree, so the second one
+		// waits — skipped here and reconsidered on the next walk, exactly the
+		// way a project at its cap is. It is deliberately not a block: the
+		// condition clears on its own when the claimant is archived, and a
+		// `blocked` state would cost a human a retry for nothing.
+		//
+		// It is a predicate in the walk rather than a clause in
+		// ListAdmissible's SQL because the claim is a path, not a tally, and
+		// it is gated on AdoptedBranch because no other task can share a
+		// branch with a live owner: claimBranchTx keeps every cut name unique
+		// among unarchived tasks.
+		if c.Task.AdoptedBranch && c.DirClaimants > 0 {
+			continue
+		}
 		if !s.start(ctx, &c.Task, log) {
 			continue
 		}

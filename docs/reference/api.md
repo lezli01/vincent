@@ -628,6 +628,7 @@ See [`vincent gc`](cli.md#vincent-gc) for the command over these endpoints.
 | `GET` | `/v1/projects/{id}` | |
 | `PATCH` | `/v1/projects/{id}` | Any mutable field, including re-pointing `path` |
 | `DELETE` | `/v1/projects/{id}` | Hard-deletes the project and its task rows |
+| `GET` | `/v1/projects/{id}/branches` | Its local git branches, each with the working tree holding it |
 | `GET` | `/v1/projects/{id}/github` | Can this project's GitHub issues be read? |
 | `GET` | `/v1/projects/{id}/github/issues` | Its issues, newest first — `?state=`, `?limit=`, `?workflow=` |
 | `GET` | `/v1/projects/{id}/github/pulls` | Its pull requests, newest first — `?state=`, `?limit=`, `?workflow=` |

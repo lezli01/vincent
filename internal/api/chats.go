@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
@@ -37,16 +38,19 @@ const CodeRepoOperationInProgress = worktree.ReasonRepoOperationInProgress
 
 // chatBody is a chat as the API renders it (§5.5, §13.2).
 type chatBody struct {
-	ID         int64  `json:"id"`
-	ProjectID  int64  `json:"project_id"`
-	Title      string `json:"title"`
-	State      string `json:"state"`
-	Agent      string `json:"agent"`
-	Model      string `json:"model,omitempty"`
-	Effort     string `json:"effort,omitempty"`
-	Branch     string `json:"branch"`
-	BaseBranch string `json:"base_branch"`
-	BaseSHA    string `json:"base_sha,omitempty"`
+	ID        int64  `json:"id"`
+	ProjectID int64  `json:"project_id"`
+	Title     string `json:"title"`
+	State     string `json:"state"`
+	Agent     string `json:"agent"`
+	Model     string `json:"model,omitempty"`
+	Effort    string `json:"effort,omitempty"`
+	Branch    string `json:"branch"`
+	// AdoptedBranch says the chat runs on a branch vincent did not cut (§10,
+	// task 125), exactly as a task's field does.
+	AdoptedBranch bool   `json:"adopted_branch"`
+	BaseBranch    string `json:"base_branch"`
+	BaseSHA       string `json:"base_sha,omitempty"`
 	// BaseRefresh is what the base fetch and the local base's fast-forward did
 	// when the chat's worktree was created (§10, §13.2, task 099); null, not
 	// omitted, when nothing was recorded.
@@ -89,7 +93,7 @@ func renderChat(c *store.Chat) chatBody {
 	return chatBody{
 		ID: c.ID, ProjectID: c.ProjectID, Title: c.Title, State: string(c.State),
 		Agent: c.Agent, Model: c.Model, Effort: c.Effort, Branch: c.Branch,
-		BaseBranch: c.BaseBranch, BaseSHA: c.BaseSHA, BaseRefresh: renderBaseRefresh(c.BaseRefresh),
+		AdoptedBranch: c.AdoptedBranch, BaseBranch: c.BaseBranch, BaseSHA: c.BaseSHA, BaseRefresh: renderBaseRefresh(c.BaseRefresh),
 		WorktreePath: c.WorktreePath, SessionID: c.SessionID, PendingInput: c.PendingInput,
 		HandoffTaskID: c.HandoffTaskID, LinkedTaskID: c.LinkedTaskID,
 		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
@@ -113,6 +117,14 @@ type createChatRequest struct {
 	Model      string `json:"model"`
 	Effort     string `json:"effort"`
 	BaseBranch string `json:"base_branch"`
+	// BranchName names the branch this chat runs on outright. It is only
+	// meaningful with ExistingBranch: a chat that cuts its own branch names it
+	// `vincent/{id}-{slug}` and the id does not exist until the row does.
+	BranchName string `json:"branch_name"`
+	// ExistingBranch selects the adopt mode (§10, task 125), exactly as it
+	// does on POST /v1/tasks: BranchName must already exist, and the chat runs
+	// in the project's main checkout when the branch is checked out there.
+	ExistingBranch bool `json:"existing_branch"`
 }
 
 // handleChatCreate creates a chat, allocating its worktree and
@@ -169,18 +181,55 @@ func (s *Server) handleChatCreate(w http.ResponseWriter, r *http.Request) {
 	if base == "" {
 		base = project.DefaultBranch
 	}
+	branch := strings.TrimSpace(req.BranchName)
+	if req.ExistingBranch {
+		if branch == "" {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed,
+				"existing_branch needs branch_name: there is no branch to adopt otherwise")
+			return
+		}
+		if msg := s.checkBranchPresent(r.Context(), project.Path, branch); msg != "" {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
+			return
+		}
+		// The working-directory claim (task 125 decision 2). A task whose
+		// directory is taken waits in the queue; a chat is created
+		// synchronously and has nowhere to wait, so it is refused — with a
+		// 409, because nothing about the request is wrong and the same request
+		// will succeed once the claimant is archived.
+		claimant, err := s.deps.Store.WorkingDirClaim(r.Context(), project.ID, branch, 0)
+		if err != nil {
+			s.internalError(w, "check working directory claim", err)
+			return
+		}
+		if claimant != "" {
+			writeConflict(w,
+				fmt.Sprintf("branch %q is already being worked on by %s; one working directory has at most one owner",
+					branch, claimant),
+				map[string]string{"branch": branch, "claimed_by": claimant})
+			return
+		}
+	} else if branch != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			"branch_name needs existing_branch: a chat that cuts its own branch is named from its id")
+		return
+	}
 	chat := &store.Chat{
 		ProjectID: project.ID, Title: req.Title, State: chatstate.Idle, Agent: name,
 		Model: req.Model, Effort: req.Effort, PermissionMode: string(agent.FullAuto),
-		BaseBranch: base,
+		BaseBranch: base, AdoptedBranch: req.ExistingBranch,
 	}
 	if err := s.deps.Store.CreateChat(r.Context(), chat); err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return
 	}
 	// The branch name needs the id, and the id needs the row: the chat is
-	// written first and named second, exactly as a task is.
+	// written first and named second, exactly as a task is. An adopted branch
+	// is the one name that does not need the id — the user typed it.
 	chat.Branch = worktree.BranchName(chat.ID, chat.Title)
+	if req.ExistingBranch {
+		chat.Branch = branch
+	}
 	if err := s.deps.Store.SetChatBranch(r.Context(), chat.ID, chat.Branch); err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return
@@ -192,16 +241,27 @@ func (s *Server) handleChatCreate(w http.ResponseWriter, r *http.Request) {
 	// base_sha is recorded, and the record says disabled / not_attempted.
 	fetch := s.deps.Config().FetchBaseBranch
 	var refresh *store.BaseRefresh
-	created, err := s.deps.Worktrees.CreateAndClaim(
-		r.Context(), project.Path, worktree.ChatOwner(chat.ID), chat.Branch, base, fetch,
-		func(c worktree.Created) error {
+	claim := func(c worktree.Created) error {
+		if !req.ExistingBranch {
+			// An adopted chat records none, for the reason an adopted task
+			// does (decision 7): the fetch it ran was the adopted branch's,
+			// not the base's, and no base fast-forward was attempted.
 			refresh = &store.BaseRefresh{
 				Fetch:       store.BaseFetch(c.Fetch),
 				FastForward: store.BaseFastForward(c.FastForward),
 			}
-			_, err := s.deps.Store.ClaimChatWorktree(r.Context(), chat.ID, c.Path, c.BaseSHA, refresh)
-			return err
-		})
+		}
+		_, err := s.deps.Store.ClaimChatWorktree(r.Context(), chat.ID, c.Path, c.BaseSHA, refresh)
+		return err
+	}
+	var created worktree.Created
+	if req.ExistingBranch {
+		created, err = s.deps.Worktrees.CreateAdoptAndClaim(
+			r.Context(), project.Path, worktree.ChatOwner(chat.ID), chat.Branch, claim)
+	} else {
+		created, err = s.deps.Worktrees.CreateAndClaim(
+			r.Context(), project.Path, worktree.ChatOwner(chat.ID), chat.Branch, base, fetch, claim)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return

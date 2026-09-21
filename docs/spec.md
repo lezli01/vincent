@@ -383,9 +383,9 @@ A unit of work delivered by running a workflow against a project.
 | `workflow_name` | name as resolved at creation time |
 | `workflow_snapshot` | full YAML content captured at creation; **execution always uses the snapshot**, so later edits to workflow files never mutate in-flight or historical tasks |
 | `base_branch` | defaults to project `default_branch` |
-| `branch_name` | `vincent/{id}-{slug}` by default (slug: lowercase title, `[a-z0-9-]`, max 40 chars). *Amended 2026-08-13 (task 001):* configurable through the chain `built-in < config.yaml < project < per-task literal`. Resolved and persisted inside the task's insert transaction, so no committed task carries an empty one. *Amended 2026-08-30 (task 064):* the chain gains a level above the literal — a task created from a pull request (`github_pull`, §13.2) runs on that pull request's **head branch**, which nothing else may override |
+| `branch_name` | `vincent/{id}-{slug}` by default (slug: lowercase title, `[a-z0-9-]`, max 40 chars). *Amended 2026-08-13 (task 001):* configurable through the chain `built-in < config.yaml < project < per-task literal`. Resolved and persisted inside the task's insert transaction, so no committed task carries an empty one. *Amended 2026-08-30 (task 064):* the chain gains a level above the literal — a task created from a pull request (`github_pull`, §13.2) runs on that pull request's **head branch**, which nothing else may override *Amended 2026-09-21 (task 125):* `existing_branch` adds no level. It selects a worktree-creation **mode** (§10) for whatever name the chain already produced, which is why a literal, a project template and a config template all work with it unchanged |
 | `worktree_path` | assigned when the worktree is created |
-| `base_sha` | *Added 2026-08-29 (task 056).* The commit `branch_name` was actually cut from, written beside `worktree_path` when creation fetched `base_branch` from its upstream (§10). NULL means `base_branch` itself still names the fork point — every task predating this and every task created with `fetch_base_branch: false`. It exists because once a task branch starts at a fetched remote tip, `base_branch` names a moving ref that is no longer where the task began, and the two places that read it as the fork point — `GET /v1/tasks/{id}/diff`'s merge-base (§13.2) and archive's empty-branch check (§10) — would otherwise both answer against the stale local commit. *Amended 2026-08-30 (task 064):* on a task created from a pull request it is the **head commit as it stood at admission**, so the diff tab answers "what did this task change" rather than re-rendering the pull request's own diff. *Amended 2026-09-14 (task 099, issue #430):* now served on every task representation (§13.2), reversing 056 decision 4 — without it a human cannot tell a task cut from a fresh upstream tip from one cut from a stale local branch |
+| `base_sha` | *Added 2026-08-29 (task 056).* The commit `branch_name` was actually cut from, written beside `worktree_path` when creation fetched `base_branch` from its upstream (§10). NULL means `base_branch` itself still names the fork point — every task predating this and every task created with `fetch_base_branch: false`. It exists because once a task branch starts at a fetched remote tip, `base_branch` names a moving ref that is no longer where the task began, and the two places that read it as the fork point — `GET /v1/tasks/{id}/diff`'s merge-base (§13.2) and archive's empty-branch check (§10) — would otherwise both answer against the stale local commit. *Amended 2026-08-30 (task 064):* on a task created from a pull request it is the **head commit as it stood at admission**, so the diff tab answers "what did this task change" rather than re-rendering the pull request's own diff. *Amended 2026-09-21 (task 125):* on a task created on an **existing branch** (`existing_branch`, §13.2) it is that branch's tip at admission, for the same reason and with the same effect — the diff answers what this task changed, not what the branch already carried. Such a task records **no** `base_refresh`: the fetch it ran was the adopted branch's own, and no base fast-forward was attempted, so NULL is the honest "this admission refreshed no base". *Amended 2026-09-14 (task 099, issue #430):* now served on every task representation (§13.2), reversing 056 decision 4 — without it a human cannot tell a task cut from a fresh upstream tip from one cut from a stale local branch |
 | `base_refresh` | *Added 2026-09-14 (task 099, issue #430).* JSON: what worktree creation's base fetch and the fast-forward of the local base that follows it did (§10) — `{fetch: {result: fetched\|no_upstream\|error\|disabled, remote?, ref?, error?}, fast_forward: {result: advanced\|up_to_date\|skipped\|not_attempted, reason?: diverged\|local_ahead\|checkout_dirty\|checkout_busy\|error, worktree?, error?}}`. Written in the same claim write as `worktree_path` and `base_sha`, so a worktree that already existed is never re-recorded. NULL means no worktree was created since migration 0031, or the task came from a pull request, which refreshes no base; `disabled` is recorded, so "key off" and "not recorded" stay apart. A chat handoff copies the chat's (§5.5). Display-only: nothing reads it to decide anything, so a malformed value reads as NULL rather than making the row unreadable |
 | `priority` | integer, default 0; higher runs first |
 | `agent_override` / `model_override` / `effort_override` | optional, chosen at creation (§13.2); replace the workflow's `defaults` but never an explicit step field (§8.6) |
@@ -5409,6 +5409,70 @@ precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
     re-rendering the pull request's own diff.
   - **`POST /v1/tasks` is still entirely offline.** It resolves the pull request over
     GitHub for the prefill, exactly as `github_issue` does, and runs no git.
+
+  *Amended 2026-09-21 (task 125).* There is now a **third creation mode**, for a
+  task or chat created on a branch that already exists (`existing_branch`,
+  §13.2). It is modelled on the second rather than on the first, because it
+  inverts the same two halves — but it differs from the second in the two
+  places where a pull request is an authority and an adopted branch is not.
+
+  - **Explicit, never inferred.** The request field selects the mode. Without
+    it, the creation-time collision `400` and the admission-time
+    `branch_exists` block are exactly what task 001 made them. Inferring
+    adoption from the branch existing would reopen task 001's decision: a
+    template with no discriminator collides on the second task for the same
+    input, and that second task would silently run on the first one's branch.
+    Adoption chooses a *mode*; it does not add a level above the per-task
+    literal the way `pull` does.
+  - **No `-b`, no `branch_exists` refusal.** `git worktree add
+    {worktree_path} {branch}`, with the branch the user named.
+  - **The fetch is silent, unlike the pull-request mode's.** The adopted
+    branch's *own* upstream is read (`branch.{name}.remote` + `.merge`, never
+    assuming `origin`); a branch with none is not fetched and gets none
+    written for it. A failed fetch leaves the local ref where it is and the
+    task runs on it, because — unlike a pull request's head — the branch is
+    already on the machine. A branch **behind** its upstream is
+    fast-forwarded, one **ahead** is left exactly where it is, and a
+    **diverged** one blocks with `adopt_branch_diverged` and no ref moved.
+  - **A branch checked out in the project's own main checkout is not a
+    refusal.** The task's working directory becomes the project path itself:
+    `worktree_path == project.path`, no worktree created, no `git worktree
+    add`. Archive removes nothing there — `Manager.Remove` returns early on
+    purpose rather than relying on its containment check failing safe — so
+    `worktree_dirty` cannot apply to such a task and `--force` is never needed
+    for one. A branch held by one of **vincent's own** worktrees is still a
+    refusal, `adopt_branch_checked_out`: that directory belongs to another
+    owner.
+  - **The pull-request mode keeps `pull_branch_checked_out` deliberately.**
+    The two modes answer one situation differently because they do different
+    things to the ref: a pull-request task *fast-forwards* the head onto
+    whatever holds it, which would move the human's working tree under them,
+    while an adopted branch that is ahead is left where it is and has nothing
+    to push into their tree.
+  - **At most one unarchived owner per working directory.** git cannot put one
+    branch in two working trees, so the branch identifies the claim. A queued
+    task whose directory is taken is **skipped by the scheduler and
+    reconsidered on the next walk**, the way a project at its cap is — not
+    blocked, because the condition clears on its own and a `blocked` state
+    would cost a human a retry for nothing. A chat is created synchronously
+    and cannot wait, so `POST /v1/chats` answers `409`. The claim is held from
+    the moment a task holds a slot until its row stops naming the directory.
+  - **`base_sha` is the adopted branch's tip at admission** (§5.3), and no
+    base refresh is recorded: the fetch that ran was the branch's, not the
+    base's. `base_branch` stays on the row for the fields that read it.
+  - **Vincent never deletes an adopted branch.** The row carries the marker
+    (`adopted_branch`), and both archive legs — the empty-branch delete and
+    the opt-in `push --delete` — report `not_ours`, exactly as they do for a
+    pull request's head (task 064 decision 3).
+  - **The diff of a main-checkout task is the working directory's diff**, so
+    uncommitted work the human already had at admission reads as part of the
+    task's diff (§18's tab included). Recording a dirty-at-admission baseline
+    was rejected: it is a migration, a write into the user's object store, and
+    an unanswered question about a file both authors touched.
+  - **Vincent holds no lock on the human's checkout.** Switching branches or
+    starting a rebase there while a task is running in it is an accepted
+    hazard of the mode, documented rather than solved — the same shape as
+    §10's isolation caveat.
 - **Branch naming:** `vincent/{task_id}-{slug}` by default. A pre-existing branch of
   the same name fails the task with a clear error rather than reusing it.
 
@@ -13122,6 +13186,9 @@ carries the rest.
 | A branch push failed for any other reason | *Added 2026-08-31 (task 069).* `push_failed`. Unreachable host, refused connection, or no answer inside `gitx.RemoteTimeout` |
 | A local branch of a pull request's head has diverged | *Added 2026-08-30 (task 064).* Blocked with `pull_branch_diverged`. Never `reset --hard`: the local copy may hold commits nobody has pushed, and discarding them silently is the same dishonesty §10 refuses for branch names. A branch merely *behind* the head is fast-forwarded and the task proceeds; one already *containing* it is left alone |
 | A pull request's head branch is checked out elsewhere | *Added 2026-08-30 (task 064).* Blocked with `pull_branch_checked_out`, naming the worktree that holds it — vincent's or the human's own main checkout. git cannot put one branch in two worktrees, and this is the honest way to say so rather than letting git's own message surface. Within vincent a second task for the same branch is already a `400` from task 001's in-transaction claim check |
+| A local adopted branch has diverged from its upstream | *Added 2026-09-21 (task 125).* Blocked with `adopt_branch_diverged`, and **no ref moved** — the point of the refusal is that no commit can be lost. A branch merely *behind* its upstream is fast-forwarded and the task proceeds; one *ahead* is left exactly where it is, because those commits are the user's and a push is what reconciles them |
+| A branch to be adopted is checked out in a vincent worktree | *Added 2026-09-21 (task 125).* Blocked with `adopt_branch_checked_out`, naming the worktree. The project's **own main checkout** is deliberately not this case: the task runs *there* instead (§10), because the adopt mode moves no ref and so has nothing to push into the human's working tree — which is exactly what `pull_branch_checked_out` protects against for the other mode |
+| A branch to be adopted no longer exists | *Added 2026-09-21 (task 125).* Blocked with `adopt_branch_missing`. `POST /v1/tasks` checks it and answers `400`, but a task can sit queued for as long as the caps say and the branch can be deleted in between, so admission is the authority — the same division `branch_exists` has |
 | `branch_override` on a task created from a pull request | *Added 2026-08-30 (task 064).* `409`. Renaming the branch would detach the task from the pull request it was created for, so every later commit would go somewhere that pull request never sees. Such a task cannot have a `branch_exists` block in the first place — its creation mode does not refuse a pre-existing branch (§10) |
 | Configured branch name is not a legal git ref | `400` with `branch_name_invalid`, quoting git's own rules. Never sanitized into something legal — a branch the user did not ask for is worse than a rejection (task 001) |
 | Branch template references a field the task does not set | `400` at creation. Note that `{{.Fields.x}}` errors while `{{ index .Fields "x" }}` renders empty by design (§8.4's `missingkey=error` covers map *field* access only), and `feat/-slug` is a legal ref — so the loud form is the documented default for branch templates |

@@ -40,7 +40,7 @@ func IsChatEvent(t string) bool {
 }
 
 const chatColumns = `id, project_id, title, state, agent, model, effort, permission_mode,
-	branch, base_branch, base_sha, base_refresh, worktree_path, session_id, pending_input, handoff_task_id,
+	branch, adopted_branch, base_branch, base_sha, base_refresh, worktree_path, session_id, pending_input, handoff_task_id,
 	linked_task_id, opening_context, created_at, updated_at`
 
 const chatTurnColumns = `id, chat_id, seq, prompt, state, fail_reason, error_message, result_text,
@@ -70,11 +70,11 @@ func (s *Store) CreateChat(ctx context.Context, c *Chat) error {
 	err = s.withTx(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `
 			INSERT INTO chats (project_id, title, state, agent, model, effort, permission_mode,
-				branch, base_branch, base_sha, base_refresh, worktree_path, session_id, pending_input,
+				branch, adopted_branch, base_branch, base_sha, base_refresh, worktree_path, session_id, pending_input,
 				created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			c.ProjectID, c.Title, string(c.State), c.Agent, nullString(c.Model), nullString(c.Effort),
-			c.PermissionMode, c.Branch, c.BaseBranch, nullString(c.BaseSHA), refreshJSON, nullString(c.WorktreePath),
+			c.PermissionMode, c.Branch, c.AdoptedBranch, c.BaseBranch, nullString(c.BaseSHA), refreshJSON, nullString(c.WorktreePath),
 			nullString(c.SessionID), nullString(string(c.PendingInput)),
 			formatTime(c.CreatedAt), formatTime(c.UpdatedAt))
 		if err != nil {
@@ -594,7 +594,7 @@ func scanChat(r rowScanner) (*Chat, error) {
 	var openingContext sql.NullString
 	var createdAt, updatedAt string
 	if err := r.Scan(&c.ID, &c.ProjectID, &c.Title, (*string)(&c.State), &c.Agent, &model, &effort,
-		&c.PermissionMode, &c.Branch, &c.BaseBranch, &baseSHA, &baseRefresh, &worktreePath, &sessionID, &pending,
+		&c.PermissionMode, &c.Branch, &c.AdoptedBranch, &c.BaseBranch, &baseSHA, &baseRefresh, &worktreePath, &sessionID, &pending,
 		&handoffTaskID, &linkedTaskID, &openingContext, &createdAt, &updatedAt); err != nil {
 		return nil, err
 	}

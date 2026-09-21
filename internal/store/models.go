@@ -85,7 +85,15 @@ type Task struct {
 	WorkflowSnapshot string
 	BaseBranch       string
 	BranchName       string
-	WorktreePath     string // "" until the worktree is created
+	// AdoptedBranch marks a task running on a branch vincent did **not** cut
+	// (§10, task 125): the user named an existing branch and the third
+	// worktree-creation mode adopted it. It decides two things nothing else
+	// on the row can answer — that archive may never delete the branch (task
+	// 064 decision 3) and that admission takes the adopt path — and it is
+	// written in the creating transaction, never inferred from the branch
+	// existing (decision 1).
+	AdoptedBranch bool
+	WorktreePath  string // "" until the worktree is created
 	// BaseSHA is the commit BranchName was actually cut from, recorded when
 	// the worktree path fetched BaseBranch from its upstream (§5.3, §10 —
 	// task 056). "" means BaseBranch itself still names the fork point, which
@@ -548,6 +556,18 @@ type Candidate struct {
 	// the task was never reconciled, and admitting it would start a second
 	// attempt against a first one the database still calls live (issue #142).
 	OpenStepRuns int
+	// DirClaimants is how many *other* unarchived owners — tasks and chats
+	// both — already hold a working directory on this task's branch in this
+	// project (task 125 decision 2). It is only ever non-zero for a task that
+	// adopted its branch: every other branch name is unique among unarchived
+	// tasks by claimBranchTx, and git cannot put one branch in two working
+	// trees anyway.
+	//
+	// The scheduler skips such a candidate and reconsiders it on the next
+	// walk, the way it skips a project at its cap: the condition clears on
+	// its own when the claimant is archived, and burning a `blocked` state on
+	// it would cost a human a retry for nothing.
+	DirClaimants int
 }
 
 // Unreconciled is one task whose state and its step runs contradict each
@@ -590,8 +610,11 @@ type Chat struct {
 	Effort         string
 	PermissionMode string
 	Branch         string
-	BaseBranch     string
-	BaseSHA        string
+	// AdoptedBranch marks a chat running on a branch vincent did not cut
+	// (§10, task 125), exactly as a task's does.
+	AdoptedBranch bool
+	BaseBranch    string
+	BaseSHA       string
 	// BaseRefresh is the chat's worktree-creation record, exactly as a
 	// task's is (§10, task 099). It stays on the row after a handoff, as
 	// history, the way BaseSHA does.

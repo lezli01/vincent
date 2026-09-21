@@ -396,6 +396,9 @@ the pull request's head rather than one vincent cut:
 | `pull_fetch_failed` | The pull request's head could not be fetched. There is nothing to fall back to — the fetched commit is where the branch has to be — so unlike the base-branch fetch this blocks rather than degrading quietly |
 | `pull_branch_diverged` | You have a local branch of that name carrying commits the pull request's head does not. Vincent will not discard them; merge or rebase yours, or delete it if it is stale, then retry |
 | `pull_branch_checked_out` | That branch is already checked out in another worktree — vincent's or your own main checkout. Git cannot put one branch in two worktrees. Switch that checkout to another branch, then retry |
+| `adopt_branch_missing` | The task was created on an existing branch (`existing_branch`) and that branch is gone. Recreate it, or retry the task with `branch_override` pointing at a branch that is there |
+| `adopt_branch_diverged` | The branch you asked the task to run on and its own upstream have each moved. Nothing was moved: merge or rebase, then retry |
+| `adopt_branch_checked_out` | That branch is checked out in one of vincent's own worktrees, so another task or chat is working on it. Wait for that one and retry. Your **own** main checkout is not this case — a task adopting a branch you have checked out runs in that checkout |
 
 `branch_override` is **refused** on such a task: renaming its branch would
 detach it from the pull request it was created for.

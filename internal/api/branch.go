@@ -119,6 +119,33 @@ func (s *Server) checkBranchCollision(ctx context.Context, repo, branch string) 
 	}
 }
 
+// checkBranchPresent is checkBranchCollision's mirror for the adopt mode
+// (task 125): it rejects a name no local branch holds, returning the message
+// for a 400 (empty means the branch is there).
+//
+// A name under which the branch exists only as a *prefix* — `feat/foo/bar`
+// present, `feat/foo` asked for — is not the branch, and saying so is more
+// use than letting admission report adopt_branch_missing an hour later.
+//
+// Like checkBranchCollision it shells out to git, so it runs outside any
+// transaction, and like it, it is a courtesy rather than a guarantee: the
+// branch can be deleted between here and admission, which is why admission
+// still refuses a missing one and remains the authority.
+func (s *Server) checkBranchPresent(ctx context.Context, repo, branch string) string {
+	conflict, err := s.deps.Worktrees.BranchConflict(ctx, repo, branch)
+	if err != nil {
+		// A git failure here is not the caller's fault. Let the task be
+		// created and let admission, the authority, report it.
+		s.deps.Logger.Warn("branch presence pre-check failed", "branch", branch, "error", err)
+		return ""
+	}
+	if conflict == branch {
+		return ""
+	}
+	return fmt.Sprintf("branch %q does not exist in %s; existing_branch asks vincent to run on a branch that is already there",
+		branch, repo)
+}
+
 // renameBranchForRetry applies a retry's branch_override, writing the response
 // itself and reporting whether the retry should proceed.
 //
