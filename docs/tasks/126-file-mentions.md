@@ -222,6 +222,56 @@ reopened.
     no `--recurse-submodules` (a submodule is one gitlink row). *Beaten:*
     normalizing for the client.
 
+Decisions 22–25 were settled with the author on 2026-09-21 in 126.3 (#547),
+which writes the adapter capability decision 1 depends on. They are
+implementation choices inside that subtask; nothing above is reopened.
+
+22. **`MentionPosition` is its own type**, not a reuse of `SkillPosition`.
+    §5.5 records that `@` and `/` do not share a positional rule on claude —
+    the mention is `anywhere`, the skill invocation is `leading` — so a shared
+    type would invite a reader to assume the two move together, and 126.4
+    (#548) gets its own `mention_position` wire vocabulary. *Beaten:* reusing
+    `SkillPosition` with a comment, and dropping `Position` altogether on the
+    grounds that all three adapters answer the same value. The field is kept
+    because decision 8 keys the picker's open rule on `@` being positionally
+    anywhere, and the adapter is where that fact belongs.
+
+23. **`Expands bool` keeps its name.** It matches §5.5's own verb ("claude
+    expands a mention; codex and cursor do not"), and a boolean is the honest
+    shape: this is a static per-adapter fact, not a verdict with an `unknown`
+    leg. *Beaten:* `ExpandsMention`, and a string enum
+    (`"expanded" | "prose"`), which would add a second wire vocabulary and
+    invite an `unknown` value the fact never has.
+
+24. **A double quote inside a filename is left unquoted unless the path also
+    contains a space**, and the gap is recorded in the test table rather than
+    papered over. claude was never probed with one; §5.5 records that
+    backslash escaping is exactly what does *not* work after claude's `@`, so
+    `\"` would be a rule invented ahead of the observation. A path carrying
+    both a space and a quote yields `@"a "b".txt"`, which claude will very
+    likely mis-parse — the test pins that as the observed behaviour of the
+    rule, not as a guarantee, and 126.2 (#557) does not settle it either: it
+    is a claude parsing question, not a Windows one. *Beaten:* escaping
+    embedded quotes, and returning `""` so the row is omitted, which is
+    daemon-side validation of a path and contradicts task 124 decision 9.
+
+25. **The false leg of `CanMentionFiles` gets its own stub**,
+    `agenttest.StubNoMentions`, rather than a third refusal hung on
+    `StubNoSkills`. That is task 124 decision 15's recorded reasoning applied
+    unchanged: a stub carrying refusals from two unrelated capability families
+    blurs which refusal a failing test was proving, and `StubNoSkills`' own
+    comment ("implements neither ... and does nothing else at all") stays
+    true. *Beaten:* a third refusal on `StubNoSkills`.
+
+    Two smaller calls follow recorded reasoning rather than a new decision.
+    `FileMention("")` returns `"@"`, because pass-through with no validation
+    is task 124 decision 9 and a guard returning `""` would be the daemon
+    judging a path — the empty row exists in the table to pin that, not to
+    specify a refusal. And the *true* leg's stub lives in
+    `internal/agent/mentions_test.go` rather than in `agenttest`: the
+    capability is static and spawns nothing, so a consumer testing against a
+    shared stub would be testing a constant.
+
 ## Citations corrected
 
 #544 and #545 both carry citations that do not resolve at HEAD. The decisions
@@ -305,9 +355,17 @@ attributes task 124.6's.
       document with its index row. No code. ✓ 2026-09-21
 - [ ] 126.2 (#557) Observe `@path` on a Windows claude and record the answer.
       Needs a Windows host and a real claude session. Depends: none.
-- [ ] 126.3 (#547) `agent.FileMentioner` in claude, codex and cursor — the
-      capability and the mention string, quoting per decision 1. Depends:
-      126.1.
+- [x] 126.3 (#547) `agent.FileMentioner` in claude, codex and cursor — the
+      capability and the mention string, quoting per decision 1.
+      `internal/agent/mentions.go` with `FileMentionSyntax`,
+      `MentionPosition` and `CanMentionFiles`; a `mentions.go` beside each
+      adapter's `skills.go`, each naming the build it was observed on;
+      `agenttest.StubNoMentions` for the false leg; one shared seven-row input
+      table run against all three adapters, the unprobed quote-and-space row
+      commented as the gap it is. §9.1 gains its `FileMentioner` declarations
+      and its **File mentions** record. Nothing is served or consumed:
+      `GET /v1/agents` is 126.4, the `mention` field 126.6, the picker
+      126.11. Decisions 22–25. ✓ 2026-09-21
 - [ ] 126.4 (#548) Report the capability on `GET /v1/agents` and in
       `internal/apiclient`. Depends: 126.3.
 - [x] 126.5 (#549) A raw-output git runner, and enumerating a chat's workspace
