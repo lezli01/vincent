@@ -650,6 +650,29 @@ renders `slots_used / max_parallel_tasks` without counting rows itself. A
 project holding none reads `0`, never absent, and a project created a moment ago
 reads `0` because it owns no task yet.
 
+`GET /v1/projects/{id}/branches` lists the project's **local** branches, so a
+client can offer them where a branch name is asked for instead of making a user
+remember one:
+
+```json
+{ "branches": [
+  { "name": "main", "checked_out_in": "/home/me/code/app",
+    "main_checkout": true, "current": true },
+  { "name": "feat/OPS-412", "checked_out_in": "/home/me/.local/share/vincent/worktrees/12" },
+  { "name": "spike/parser" }
+] }
+```
+
+`checked_out_in` is the working tree holding the branch and is absent when none
+does; `main_checkout` says that tree is the project itself, computed server-side
+so a client never compares two paths git and the project record may spell
+differently; `current` marks the branch the project's own checkout has at HEAD.
+Remote-tracking refs are deliberately not listed — `git worktree add` cannot
+adopt one. It is a listing, not a validator: free text is still accepted
+wherever a branch is named, and a name not in this list is the ordinary
+cut-a-new-branch mode. A project path that has gone missing is a
+`400 validation_failed`.
+
 ### GitHub issues
 
 `GET /v1/projects/{id}/github` is the capability probe. It is a separate call
@@ -1529,7 +1552,7 @@ time.
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/v1/tasks?project_id=&state=&archived=&archived_before=&archived_since=&limit=&offset=&parent_id=&include_children=` | List. Fan-out lanes are **excluded** by default — `parent_id` lists one parent's lanes in merge order, `include_children=true` the flat everything |
-| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, priority?, agent?, model?, effort?, github_issue?, github_pull?, paused?, restricted?, max_task_cost_usd? }` — `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head. `paused`, `restricted` and `max_task_cost_usd` are the [create-time limits](#paused-restricted-and-capped-tasks). Accepts an optional `Idempotency-Key` header |
+| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, existing_branch?, priority?, agent?, model?, effort?, github_issue?, github_pull?, paused?, restricted?, max_task_cost_usd? }` — `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head. `existing_branch` runs the task on a branch that already exists — see [Running on an existing branch](#running-on-an-existing-branch). `paused`, `restricted` and `max_task_cost_usd` are the [create-time limits](#paused-restricted-and-capped-tasks). Accepts an optional `Idempotency-Key` header |
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
 | `DELETE` | `/v1/tasks/{id}` | Permanent delete of an **archived** task. `?delete_branch=true` (or `{ "delete_branch": true }`) → `{ deleted: true, branch? }`. See [Permanent delete](#permanent-delete) |
@@ -1537,6 +1560,44 @@ time.
 | `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt, in position order. `state` may be `stopped` (a `condition` step ended the run, or a `break` ended its loop), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did. A row inside a `loop` (§7.8) carries `iteration` (1-based) and, for `for_each`, `loop_item` — a loop's body steps share the loop's `step_index`, so those are what tell two of them apart — plus `loop_total`, how many iterations the admission that wrote the row planned to run (the `count:`, or the resolved `for_each` list's length; `0` outside a loop and on a row written before the daemon recorded it). A `fan_out` step with `needs:` between its lanes puts its rounds on the same `iteration` column (0-based, so a flat lane list still reads `0`), which is the one other place a non-zero `iteration` appears — under `schedule: eager` that number is a monotonic merge counter rather than the lane's wave, and the step may write up to one merge row per lane; the two cannot be confused because a `fan_out` is not valid inside a loop body. A `fan_out` row appears when its round's lanes are **spawned**, not when they merge: the park opens the row `running` and that round's merge admission finalizes the same one (§7.6), so a parent whose lanes are working is on the timeline rather than missing from it. Each row also carries **what the attempt was given**: `rendered_prompt`, `rendered_run`, `rendered_check` and `rendered_if` are the substituted text the adapter, the shell and the guard actually saw — the full bytes, unlike `prompt_override`/`run_override`, which are booleans here — with `rendered_for_each` the resolved list an iteration drew its `loop_item` from, carried as a **string holding a JSON array** rather than as an array field, and `input_truncated` saying a field was cut at its 64 KiB ceiling. Beside them the resolution the attempt ran under: `agent_source`, `model_source` and `effort_source` name which level supplied each part (`step`, `task`, `workflow`, `adapter`), and `permission_mode`, `timeout_ms`, `check_timeout_ms`, `shell` and `work_dir` are the values that were in force, recorded rather than re-resolved, so they still describe the attempt after a config reload or a task patch. `null` (or `0`, or `""`) means nothing was recorded — an attempt from before the daemon recorded any of this, and every field the step type has no input for — while an empty string on a rendered field is a render that produced nothing. `rendered_if` is evidence, not a decision: a guard is re-evaluated every time it is reached |
 | `POST` | `/v1/tasks/{id}/steps/{step_id}/status` | `{ message }` → `{ message }` as stored. What the **running** step is doing, in its own words. Called by that step's own process — see [Step status](#step-status) |
 | `GET` | `/v1/tasks/{id}/workflow` | This task's own workflow **snapshot** as a full definition — what ran, not what the registry says now. See [The task's workflow](#the-tasks-workflow) |
+
+### Running on an existing branch
+
+`existing_branch: true` on `POST /v1/tasks` (and on `POST /v1/chats`, which
+takes `branch_name` with it) runs the task on the branch `branch_name` resolves
+to **instead of cutting it**. Without the field nothing changes: a branch that
+already exists is still the creation-time `400` and the admission-time
+`branch_exists` block. Adoption is asked for, never inferred from a branch
+happening to exist.
+
+The branch is refreshed from its **own** upstream, never an assumed `origin`:
+behind is fast-forwarded, ahead is left exactly where it is, diverged blocks
+[`adopt_branch_diverged`](task-lifecycle.md#failure-reasons) with no
+ref moved, and a branch with no upstream is neither fetched nor given one. If
+the branch is already checked out **in the project itself**, the task runs
+there — `worktree_path` is the project path, no worktree is created, archiving
+removes nothing, and `GET /v1/tasks/{id}/diff` is that directory's diff, so
+uncommitted work the human already had reads as part of it. A branch held by
+one of vincent's own worktrees is refused at admission
+(`adopt_branch_checked_out`) instead.
+
+Every task and chat representation carries `adopted_branch`, because two things
+a client shows follow from it and cannot be derived: archive will never delete
+this branch (both legs report `not_ours`), and a task whose `worktree_path` is
+the project path is running in the human's own checkout.
+
+| Status | When |
+|---|---|
+| `400` | `existing_branch` with no such local branch — a courtesy check, with admission still the authority |
+| `400` | `existing_branch` together with `github_pull`: a pull-request task already runs on the pull request's head branch |
+| `400` | On `POST /v1/chats`: `branch_name` without `existing_branch`, or `existing_branch` without `branch_name` |
+| `409` | On `POST /v1/chats`: that branch is already being worked on. `details` carries `branch` and `claimed_by` |
+
+At most one unarchived owner works in one directory. A **task** whose directory
+is taken is created and **waits queued** — the scheduler skips it and
+reconsiders on the next walk, the way it skips a project at its cap, so nobody
+has to retry it. A chat is created synchronously and has nowhere to wait, which
+is what the `409` is.
 
 ### Permanent delete
 
@@ -2059,8 +2120,9 @@ at the branch, it adds a `branch` object beside the task fields:
 ```
 
 `result` is `deleted` (no commits past its base), `has_commits` (kept),
-`not_ours` (kept — the branch came from a pull request, so vincent did not cut it
-and never deletes it, and the remote leg does not run either), `unknown` (git
+`not_ours` (kept — vincent did not cut the branch, because the task came from a
+pull request or was created on an existing branch, so it never deletes it and the
+remote leg does not run either), `unknown` (git
 could not judge it — base branch renamed away, repository gone) or `error` (the
 delete itself failed), with git's message in `error` for the last two. The
 `remote` object appears only when
@@ -2215,7 +2277,8 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/tasks" \
 
 A **chat** is a titled conversation with an agent, scoped to a project, running
 in its own git worktree and `vincent/{id}-{slug}` branch — or, when it was
-[opened on a task](#a-chat-on-a-stopped-task), in that task's. Each turn resumes
+[opened on a task](#a-chat-on-a-stopped-task), in that task's, or, with
+`existing_branch`, on a branch that already exists. Each turn resumes
 the agent CLI's own session, so turn N has turns 1..N-1 in context. Chats are a
 separate family from tasks: they never appear in `GET /v1/tasks` or on the
 board, and tasks never appear here.
@@ -2224,7 +2287,8 @@ board, and tasks never appear here.
 GET    /v1/chats?project_id=&task_id=&state=&archived=&archived_before=
                 &archived_since=&limit=&offset=
                                       newest first; state may repeat
-POST   /v1/chats                      create, with a worktree and a branch
+POST   /v1/chats                      create, with a worktree and a branch — or, with
+                                      existing_branch, on a branch that is already there
 POST   /v1/tasks/{id}/chat            open a chat on a stopped task, in its worktree
 GET    /v1/chats/{id}                 { chat, turns[] } — the whole conversation
 POST   /v1/chats/{id}/send            start a turn
@@ -2284,6 +2348,14 @@ is refused `chat_linked_to_task`, naming the task.
 ```bash
 curl -sS -X POST http://127.0.0.1:PORT/v1/chats   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json'   -d '{"project_id": 1, "title": "poke at the parser"}'
 ```
+
+`branch_name` is accepted only with `existing_branch: true`, which runs the chat
+on a branch that already exists under the rules
+[above](#running-on-an-existing-branch) — a chat that cuts its own branch is
+named from its id, so there is nothing to name. Either field without the other
+is a `400`, and a branch another task or chat is already working in is a `409`
+carrying `branch` and `claimed_by`: a chat runs as soon as it is created and has
+nowhere to wait.
 
 `agent` is optional and defaults to the first registered adapter that **can
 resume** — there is no `defaults.agent` key, and a chat's whole premise is

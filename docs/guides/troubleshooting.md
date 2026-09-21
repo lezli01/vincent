@@ -452,8 +452,8 @@ push.
 own worktrees, so another task or chat is working on it; wait for that one and
 retry. Your **own** main checkout is deliberately not this case: a task adopting
 a branch you have checked out runs **in that checkout**, alongside you.
-`vincent task show` prints the working directory, and it is the project path
-when that happens.
+The detail view's **worktree** row — `worktree_path` on the task over the API —
+is the project path itself when that happens.
 
 Two things follow from running there. Vincent removes nothing when such a task
 is archived — the directory is yours — so `worktree_dirty` never applies to it.

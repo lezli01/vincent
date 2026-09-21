@@ -383,10 +383,11 @@ A unit of work delivered by running a workflow against a project.
 | `workflow_name` | name as resolved at creation time |
 | `workflow_snapshot` | full YAML content captured at creation; **execution always uses the snapshot**, so later edits to workflow files never mutate in-flight or historical tasks |
 | `base_branch` | defaults to project `default_branch` |
-| `branch_name` | `vincent/{id}-{slug}` by default (slug: lowercase title, `[a-z0-9-]`, max 40 chars). *Amended 2026-08-13 (task 001):* configurable through the chain `built-in < config.yaml < project < per-task literal`. Resolved and persisted inside the task's insert transaction, so no committed task carries an empty one. *Amended 2026-08-30 (task 064):* the chain gains a level above the literal — a task created from a pull request (`github_pull`, §13.2) runs on that pull request's **head branch**, which nothing else may override *Amended 2026-09-21 (task 125):* `existing_branch` adds no level. It selects a worktree-creation **mode** (§10) for whatever name the chain already produced, which is why a literal, a project template and a config template all work with it unchanged |
+| `branch_name` | `vincent/{id}-{slug}` by default (slug: lowercase title, `[a-z0-9-]`, max 40 chars). *Amended 2026-08-13 (task 001):* configurable through the chain `built-in < config.yaml < project < per-task literal`. Resolved and persisted inside the task's insert transaction, so no committed task carries an empty one. *Amended 2026-08-30 (task 064):* the chain gains a level above the literal — a task created from a pull request (`github_pull`, §13.2) runs on that pull request's **head branch**, which nothing else may override. *Amended 2026-09-21 (task 125):* `existing_branch` adds no level. It selects a worktree-creation **mode** (§10) for whatever name the chain already produced, which is why a literal, a project template and a config template all work with it unchanged |
 | `worktree_path` | assigned when the worktree is created |
-| `base_sha` | *Added 2026-08-29 (task 056).* The commit `branch_name` was actually cut from, written beside `worktree_path` when creation fetched `base_branch` from its upstream (§10). NULL means `base_branch` itself still names the fork point — every task predating this and every task created with `fetch_base_branch: false`. It exists because once a task branch starts at a fetched remote tip, `base_branch` names a moving ref that is no longer where the task began, and the two places that read it as the fork point — `GET /v1/tasks/{id}/diff`'s merge-base (§13.2) and archive's empty-branch check (§10) — would otherwise both answer against the stale local commit. *Amended 2026-08-30 (task 064):* on a task created from a pull request it is the **head commit as it stood at admission**, so the diff tab answers "what did this task change" rather than re-rendering the pull request's own diff. *Amended 2026-09-21 (task 125):* on a task created on an **existing branch** (`existing_branch`, §13.2) it is that branch's tip at admission, for the same reason and with the same effect — the diff answers what this task changed, not what the branch already carried. Such a task records **no** `base_refresh`: the fetch it ran was the adopted branch's own, and no base fast-forward was attempted, so NULL is the honest "this admission refreshed no base". *Amended 2026-09-14 (task 099, issue #430):* now served on every task representation (§13.2), reversing 056 decision 4 — without it a human cannot tell a task cut from a fresh upstream tip from one cut from a stale local branch |
+| `base_sha` | *Added 2026-08-29 (task 056).* The commit `branch_name` was actually cut from, written beside `worktree_path` when creation fetched `base_branch` from its upstream (§10). NULL means `base_branch` itself still names the fork point — every task predating this and every task created with `fetch_base_branch: false`. It exists because once a task branch starts at a fetched remote tip, `base_branch` names a moving ref that is no longer where the task began, and the two places that read it as the fork point — `GET /v1/tasks/{id}/diff`'s merge-base (§13.2) and archive's empty-branch check (§10) — would otherwise both answer against the stale local commit. *Amended 2026-08-30 (task 064):* on a task created from a pull request it is the **head commit as it stood at admission**, so the diff tab answers "what did this task change" rather than re-rendering the pull request's own diff. *Amended 2026-09-14 (task 099, issue #430):* now served on every task representation (§13.2), reversing 056 decision 4 — without it a human cannot tell a task cut from a fresh upstream tip from one cut from a stale local branch *Amended 2026-09-21 (task 125):* on a task created on an **existing branch** (`existing_branch`, §13.2) it is that branch's tip at admission, for the same reason and with the same effect — the diff answers what this task changed, not what the branch already carried. Such a task records **no** `base_refresh`: the fetch it ran was the adopted branch's own, and no base fast-forward was attempted, so NULL is the honest "this admission refreshed no base". |
 | `base_refresh` | *Added 2026-09-14 (task 099, issue #430).* JSON: what worktree creation's base fetch and the fast-forward of the local base that follows it did (§10) — `{fetch: {result: fetched\|no_upstream\|error\|disabled, remote?, ref?, error?}, fast_forward: {result: advanced\|up_to_date\|skipped\|not_attempted, reason?: diverged\|local_ahead\|checkout_dirty\|checkout_busy\|error, worktree?, error?}}`. Written in the same claim write as `worktree_path` and `base_sha`, so a worktree that already existed is never re-recorded. NULL means no worktree was created since migration 0031, or the task came from a pull request, which refreshes no base; `disabled` is recorded, so "key off" and "not recorded" stay apart. A chat handoff copies the chat's (§5.5). Display-only: nothing reads it to decide anything, so a malformed value reads as NULL rather than making the row unreadable |
+| `adopted_branch` | *Added 2026-09-21 (task 125).* True when the task runs on a branch that already existed rather than one vincent cut — §10's third creation mode, selected by `existing_branch` at creation (§13.2). Written in the insert transaction, because it is not derivable from the row afterwards: an adopted branch may be called anything, `vincent/{id}-{slug}` included, and `worktree_path == project.path` covers only the main-checkout half of the mode. Archive is what needs it — both branch-delete legs report `not_ours` for it, extending task 064 decision 3 to every branch vincent did not cut. False for every task created without the field, which is the truth for every row predating migration 0034 |
 | `priority` | integer, default 0; higher runs first |
 | `agent_override` / `model_override` / `effort_override` | optional, chosen at creation (§13.2); replace the workflow's `defaults` but never an explicit step field (§8.6) |
 | `restricted` | *Added 2026-09-11 (task 096).* A one-way permission clamp, chosen at creation (§13.2) and snapshotted: when set, every agent step runs `restricted`, including one whose own field says `full-auto` (§9.4). False for every task created without it, which runs the workflow as written |
@@ -643,6 +644,16 @@ talking to can edit files and make commits without colliding with any task.
 the task's branch, and the task stays their sole owner. Everything else in this
 section applies to both kinds.
 
+*Amended 2026-09-21 (task 125).* A free chat may also be created on a branch
+that **already exists** (`existing_branch` with `branch_name`, §13.2): §10's
+third creation mode, exactly a task's, including running in the project's own
+main checkout when that is where the branch is. The branch is then the name the
+user gave rather than `vincent/{id}-{slug}`, `adopted_branch` records it, and
+archive deletes neither the branch nor — in the main-checkout case — anything at
+all. The one difference from a task is the wait: a chat runs as soon as it is
+created, so a branch another unarchived owner is working in is a `409` at
+creation rather than a queued row (decision 2).
+
 | Field | Notes |
 |---|---|
 | `id`, `project_id`, `title` | as a task's |
@@ -650,6 +661,7 @@ section applies to both kinds.
 | `agent` | fixed at creation, and must be an adapter that can resume (§9.1) |
 | `model`, `effort`, `permission_mode` | resolved once at creation, not per turn |
 | `branch`, `base_branch`, `base_sha`, `base_refresh`, `worktree_path` | §10, exactly a task's. *Amended 2026-09-14 (task 099):* `base_refresh` added (§5.3), and creating a chat now honours `fetch_base_branch` rather than always fetching. *Amended 2026-09-17 (task 119):* on a linked chat `branch`, `base_branch` and `base_sha` are copies of the task's, taken at open as display history the way a `handed_off` chat keeps its own, and never trusted for a delete; `worktree_path` is always empty, because the task holds the §10 claim and the chat runner reads the task's path at the start of every turn |
+| `adopted_branch` | *Added 2026-09-21 (task 125).* A task's column, on a chat and for the same reason (§5.3): the chat runs on a branch it did not cut, so archive and `DELETE /v1/chats/{id}?delete_branch=true` both report `not_ours` for it. Always false on a linked chat, which owns no branch at all |
 | `session_id` | **the agent CLI's own conversation id** — the whole of §7.3's chat-only amendment. Empty before the first turn finishes |
 | `pending_input` | the §7.4 request being awaited; non-null exactly in `awaiting_input` |
 | *(permanent delete)* | *Added 2026-09-09 (task 092, issue #350):* `DELETE /v1/chats/{id}` is legal from **`archived` alone**, and is refused from `handed_off` for the reason `archive` is: the task named by `handoff_task_id` owns the worktree and the branch, and a deleted row cannot say that. It is not a §5.5 transition — it removes the row rather than moving it — so the state machine above is unchanged. Its task mirror is refused too: an archived task a `handed_off` chat points at cannot be deleted while that chat exists, because `handoff_task_id` is `ON DELETE SET NULL` and the chat would be left pointing at nothing. *Amended 2026-09-17 (task 119):* legal from `closed` too, and `delete_branch=true` on a linked chat is refused `409 chat_linked_to_task` naming the task — the branch is the task's. Permanently deleting a task takes its linked chats with it (`linked_task_id` is `ON DELETE CASCADE`), which needs no refusal: a task can only reach `archived` once its chat is closed |
@@ -7779,6 +7791,19 @@ DELETE /v1/projects/{id}                hard-deletes the project and its task hi
                                         archived ones too — loses its branch if that branch has
                                         no commits past its base (§10, task 008); best-effort,
                                         local only, never a remote
+GET    /v1/projects/{id}/branches       *Added 2026-09-21 (task 125).* { branches: [{ name,
+                                        checked_out_in?, main_checkout?, current? }] } — the
+                                        project's **local** branches, so a client filling in a
+                                        branch name can offer them (§15). `checked_out_in` is
+                                        the working tree holding the branch, absent when none
+                                        does; `main_checkout` says that tree is the project
+                                        itself, computed here so no client compares two paths
+                                        git and the project record may spell differently.
+                                        Remote-tracking refs are not listed: `git worktree add`
+                                        cannot adopt one. A listing, never a validator — free
+                                        text stays accepted wherever a branch is named, and a
+                                        name not in it is the ordinary cut-a-new-branch mode.
+                                        400 when the project path has gone missing
 GET    /v1/projects/{id}/github         *Added 2026-08-26 (task 035).* The capability probe:
                                         { enabled, repo?, available, reason?, message?, via? }.
                                         `enabled` is the §12.3 toggle; `repo` is `owner/name`
@@ -7988,8 +8013,9 @@ GET    /v1/chats                        *Amended 2026-09-09 (task 092, issue #35
                                         representation carries `linked_task_id` (omitted on a
                                         free chat)
 POST   /v1/chats                        { project_id, title, agent?, model?, effort?,
-                                          base_branch? } → 201 with the chat, its
-                                        `vincent/{id}-{slug}` branch and its worktree (§10).
+                                          base_branch?, branch_name?, existing_branch? }
+                                        → 201 with the chat, its `vincent/{id}-{slug}` branch
+                                        and its worktree (§10).
                                         An omitted `agent` resolves to the first registered
                                         adapter that can resume — there is no `defaults.agent`
                                         key, and a chat's premise is continuity. An adapter that
@@ -8000,6 +8026,20 @@ POST   /v1/chats                        { project_id, title, agent?, model?, eff
                                         under `fetch_base_branch` (§12.3), read per request as a
                                         task's admission reads it, and every chat representation
                                         carries `base_sha` and `base_refresh` (§5.5)
+                                        *Amended 2026-09-21 (task 125):* `existing_branch`
+                                        with `branch_name` runs the chat on a branch that
+                                        already exists, §10's third mode exactly as a task
+                                        takes it, main checkout included; the chat's
+                                        branch is then the name given rather than
+                                        `vincent/{id}-{slug}`. Either field without the
+                                        other is a **400** — a chat that cuts its own
+                                        branch is named from an id that does not exist
+                                        until the row does. A branch another unarchived
+                                        owner is working in is a **409** carrying `branch`
+                                        and `claimed_by`: a chat is created synchronously
+                                        and has nowhere to wait, which is where it parts
+                                        from a task's queued row (§10). Every chat
+                                        representation carries `adopted_branch` (§5.5)
 DELETE /v1/chats/{id}                   *Added 2026-09-09 (task 092, issue #350).* Permanent
                                         delete of an **archived** chat: the row, its chat_turns
                                         (through the schema's cascade) and its
@@ -8345,8 +8385,9 @@ GET    /v1/tasks?project_id=&state=&archived=&archived_before=&archived_since=&l
                                         own, so the scheduler's settle check never joins
                                         step_runs
 POST   /v1/tasks                        { project_id, workflow, title, description?, fields?,
-                                          base_branch?, branch_name?, priority?, agent?,
-                                          model?, effort?, github_issue?, github_pull?,
+                                          base_branch?, branch_name?, existing_branch?,
+                                          priority?, agent?, model?, effort?,
+                                          github_issue?, github_pull?,
                                           paused?, restricted?, max_task_cost_usd? }
                                         branch_name is used verbatim and wins over every
                                         template (§10, task 001)
@@ -8411,6 +8452,27 @@ POST   /v1/tasks                        { project_id, workflow, title, descripti
                                         absent, so a body that names none digests as before.
                                         Every task representation carries `restricted` and
                                         `max_task_cost_usd` (null when the task set none)
+                                        *Added 2026-09-21 (task 125):* `existing_branch:
+                                        true` selects §10's **third creation mode** for
+                                        whatever name the §5.3 chain already produced: the
+                                        branch must already be there and is adopted rather
+                                        than cut, and when it is checked out in the project
+                                        itself the task runs **there**. A name no local
+                                        branch holds is a **400** — a courtesy, like task
+                                        001's collision check, with admission (§18) still
+                                        the authority, since the branch can be deleted
+                                        while the task sits queued. `existing_branch` with
+                                        `github_pull` is a **400**: that task already runs
+                                        on the pull request's head, and there is no
+                                        defensible order between two answers to one
+                                        question. It adds no level to the naming chain and
+                                        is never inferred from a branch existing (§10). It
+                                        enters the idempotency digest only when present,
+                                        so a body that omits it digests as before. Every
+                                        task representation carries `adopted_branch`
+                                        (§5.3): archive will never delete that branch, and
+                                        a task whose `worktree_path` is the project path
+                                        is running in the human's own checkout
 GET    /v1/tasks/{id}                   full task incl. step runs summary and pending_input (§7.4).
                                         Every task representation carries `available_actions`
                                         (the §6 human actions valid right now) and
