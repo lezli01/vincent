@@ -913,6 +913,127 @@ builds that table already names:
   explicitly out of scope, §9.2), so nothing marks the point in the transcript
   where the agent's memory restarted. Task 124.20 owns making it visible.
 
+#### File mentions in a chat's message (added 2026-09-21, task 126.1, issue #545)
+
+**The pass-through rule above is unchanged.** It covers `@` exactly as it
+covers `/`, for the same three reasons: a bare `@` is ordinary prose too, any
+list of paths can be stale by the time the message is sent, and no list
+reproduces a CLI's own expansion rules. A mention is never validated, never
+rewritten and never translated between adapters (task 124 decision 9, after
+task 025 decision 5); it is text in `chat_turns.prompt` and nothing else. What
+follows records what the **agent CLI** does with that text once vincent has
+handed it over — a property of the CLI, which vincent neither creates nor can
+suppress.
+
+Observed on **claude 2.1.278**, **codex-cli 0.154.0** and **cursor-agent
+2026.09.18**. The claude build is one patch newer than the 2.1.277 named by
+§9.1's table and by the skills subsection above; neither of those pins is
+widened by this record. Each probe ran in a throwaway git repository with the
+adapter's own argv, the prompt on stdin as all three adapters send it
+(`internal/agent/claude/claude.go`, `internal/agent/codex/codex.go` and
+`internal/agent/cursor/cursor.go` each build `Stdin` from
+`RunSpec.JoinedPrompt`), a nonce inside the target file and an instruction to
+use no tools at all — so an answer carrying the nonce proves the CLI itself put
+the file in front of the model.
+
+- **claude expands a mention; codex and cursor do not.** claude answered with
+  the nonce in a single turn and zero `tool_use` blocks. codex answered
+  `CX=NOFILE` and cursor `CU=NOFILE`, cursor's thinking deltas saying it could
+  not access the path without tools.
+- **Expansion is independent of input mode.** It reached claude under the chat
+  turn's stream-json input argv and under a workflow agent step's argv alike.
+  The prompt is on stdin in both and never on argv, so the expansion is the
+  CLI's own prompt preprocessing rather than a property of the stream-json
+  input path: it reaches a workflow agent step and `vincent chat send` exactly
+  as it reaches a TUI chat turn.
+- **Position is anywhere.** Every probe put the mention mid-sentence and it
+  expanded — unlike claude's *skill* invocation, which is leading-only (§9.1's
+  table, `internal/agent/claude/skills.go`). The two sigils do not share a
+  rule, and neither is evidence about the other.
+- **Several mentions in one message are honoured**, each expanded.
+- **A missing path is silent prose.** `@missing-file.txt` reaches the model as
+  text, the model reports that it has no such file, the run succeeds and no
+  error line is emitted anywhere.
+- **A directory expands to a listing**, not to the contents of the files under
+  it.
+- **A large file expands to nothing, silently.** A 16 KB and a 63 KB file
+  expanded; a 247 KB and a 441 KB file did not, each producing `NOFILE` with
+  the turn's total input under 27k tokens — so the cap is claude's own, not a
+  context limit. The threshold was not bisected, and no single number is
+  recorded here: what is recorded is that bracket and the shape of the
+  failure, which is silence.
+- **The expansion leaves no record in the normalized stream.** No `tool_use`,
+  no `tool_result`, no hint on the init line; `--replay-user-messages` echoes
+  the user's message with the mention still unexpanded, so `agent.input_echo`
+  (§9.2, task 124.10) does not show what was pulled in. Only §17's input-token
+  count moves. **claude's expansion is therefore unattributable in a vincent
+  transcript** — a reader sees a turn whose input jumped and no record of why.
+  That is the CLI's behaviour recorded, not a vincent bug; task 124.20's
+  unmarked `conversation_reset` is the adjacent precedent for a thing no record
+  marks.
+- **`restricted` changes nothing.** Probed with vincent's restricted argv,
+  whose `--allowedTools` value is `restrictedTools`
+  (`internal/agent/claude/claude.go`): the mention expanded and no permission
+  request was made.
+- **`@` is not confined to the workspace.** In that same restricted run
+  `@../outside.txt` expanded. Not an escalation — the restricted allowlist
+  already grants an unconstrained `Read`, and §16 says agents run full-auto —
+  but it is why a listing vincent offers a human must never put such a path in
+  front of them.
+- **The fallback is real.** With tools allowed and no instruction to avoid
+  them, `codex exec` and `cursor-agent -p` each read the mentioned path
+  themselves in one tool call and then answered with the nonce. A mention is
+  therefore worth something on all three adapters; what differs is guaranteed
+  context against a hint.
+
+Which spellings expand is a per-build fact, and every row below was probed **in
+isolation** — a first pass that put six spellings into one message reported a
+false positive through contamination:
+
+| spelling | claude 2.1.278 |
+|---|---|
+| `@notes.txt` (relative) | expanded |
+| `@sub/deep.txt` (relative, nested) | expanded |
+| `@/abs/path/abs.txt` (absolute) | expanded |
+| `@"dir with space/q.txt"` (double-quoted after the sigil) | expanded |
+| `@dir with space/unq.txt` (bare space) | not expanded |
+| `@dir\ with\ space/bs.txt` (backslash-escaped) | not expanded |
+
+Two facts the table does not carry. **A token boundary is required:** with a
+real file named `gmail.com` in the workspace, `someone@gmail.com` was not
+expanded, and the model echoed the literal text without ever seeing the
+nonce. And **a relative path resolves against the process cwd, not the git
+root:** with cwd `repo/sub`, `@deep.txt` expanded and `@sub/deep.txt` did not.
+The second never bites in vincent, because `Command.Dir` is `RunSpec.WorkDir`
+(`internal/agent/claude/claude.go`) and for a chat that is
+`chatrun.Runner.Workspace`, always a repository toplevel — but it is the reason
+a mention vincent builds is recorded as **workspace-relative** rather than
+cwd-relative.
+
+**Vendor documentation is weaker than the observation here, and in one place
+contradicts it.** <https://code.claude.com/docs/en/interactive-mode.md> lists
+`@` as an *interactive* keyboard affordance,
+<https://code.claude.com/docs/en/headless.md> says nothing about `@` at all,
+and <https://code.claude.com/docs/en/common-workflows.md> says "Use @ to
+quickly include files or directories without waiting for Claude to read them"
+with no mode scoping — while the observation above has it reaching `-p`. Where
+the two disagree the observation wins, the way the skills subsection above
+already records that stacking expanded only `/a` "whatever the vendor
+documentation says", and §9.7 records what a `-p` turn actually loads rather
+than what a listing claims. One claim here is **vendor documentation, not
+observed**: those docs say an `@` file reference also adds `CLAUDE.md` from the
+file's directory and its parent directories to the context, which changes what
+a mention costs in a repository with many nested `CLAUDE.md` files. It is
+recorded as documentation and needs its own probe before it is recorded as
+fact.
+
+**Every claim above was observed on darwin; Windows is unobserved** — not
+assumed to match, in the sense §9 already uses the word, because a
+documented-but-unobserved shape fails silently if it is wrong. Nothing is
+claimed here about backslash separators, drive letters or quoting on a Windows
+claude. Issue #557 settles it, and settles it before any separator handling is
+written.
+
 #### Handoff (added 2026-09-01, task 074, issue #288)
 
 `hand_off` creates a task in the chat's project that **adopts** the chat's
@@ -4030,6 +4151,16 @@ by name, with their descriptions and argument hints. Pinned against 2.1.277 in
 Nothing in the daemon calls `ListSkills` yet; serving and caching the list is
 task 124.9 (#505).
 
+*Added 2026-09-21 (task 126.1, issue #545).* **claude expands an `@path`
+mention** in a message, before the model sees it and without a tool call. The
+behaviour, the path-form table and the failure modes are §5.5's "File mentions
+in a chat's message" and §9.2 adds nothing to them. The one fact that is this
+section's is why a mention reaches claude here at all: the prompt goes on
+**stdin**, never on argv, in the input-mode argv a chat turn uses and in a
+workflow agent step's argv alike — so the expansion is the CLI's own prompt
+preprocessing rather than anything the stream-json input path does, and it
+applies to agent steps exactly as it applies to chats.
+
 ### 9.3 Codex adapter
 
 - Invocation (pinned against codex-cli 0.142.5): `codex exec --json`, cwd =
@@ -4261,6 +4392,18 @@ an unknown thread id. Three entries, one per capture, because the list is what
 `tested_versions` publishes and a build vincent has fixtures for belongs in it.
 *Amended 2026-09-19 (task 124.8, issue #504):* `0.154.0` joins them — the
 `skills/list` capture above (task 124 decision 31).
+
+*Added 2026-09-21 (task 126.1, issue #545).* **codex does not expand an `@path`
+mention** — observed on 0.154.0 (§5.5). `@` is `codex-rs/tui`'s interactive
+affordance: at `rust-v0.154.0` the mention machinery lives entirely in the TUI
+crate (`codex-rs/tui/src/file_search.rs`, `codex-rs/tui/src/mention_codec.rs`
+whose types are `pub(crate)`, and `codex-rs/tui/src/bottom_pane/`), while
+`codex-rs/core/src/mention_syntax.rs` re-exports only the plugin and tool
+sigils and `codex-rs/exec/src/cli.rs` carries no file-reference flag. Through
+`codex exec` a mention therefore arrives as prose. With tools allowed the model
+reads the path itself in one tool call, so a mention is still worth sending;
+the difference from claude is guaranteed context against a hint, and that
+difference is stated, never emulated.
 
 *Added 2026-08-29 (task 057).* codex has no `--mcp-config`, but `codex exec`
 takes `-c key=value` dotted TOML overrides and (verified against 0.150.1)
@@ -5143,6 +5286,15 @@ would invalidate every one of them.
   Invocation needs no listing: cursor recognizes `/name` **anywhere** in a
   message, as a token (<https://cursor.com/docs/skills.md>), so it implements
   `SkillInvoker` with sigil `/` and position `anywhere`.
+
+*Added 2026-09-21 (task 126.1, issue #545).* **cursor does not expand an
+`@path` mention** — observed on cursor-agent 2026.09.18 (§5.5). `@` is
+documented for the interactive session alone, under "Selecting context" in
+<https://cursor.com/docs/cli/using.md>, and `cli/reference/parameters.md` does
+not mention it; through `-p` it arrives as prose. With tools allowed the model
+reads the path itself in one tool call, so a mention is still worth sending;
+the difference from claude is guaranteed context against a hint, and that
+difference is stated, never emulated.
 
 *Added 2026-08-29 (task 057).* Cursor has **no per-run MCP flag at all**:
 `cursor-agent mcp` reads only `.cursor/mcp.json` in the workspace or
