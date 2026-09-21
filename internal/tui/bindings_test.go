@@ -2252,6 +2252,48 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 
+	// The same list, opened inline by the draft's own sigil token (task
+	// 124.14). Every probe types the token in rather than opening the list
+	// by hand: the draft is the trigger.
+	ctxChatSkillsInline: {
+		"down": func(t *testing.T) {
+			v := chatSkillsFixture(claudeSkills())
+			typeIntoChat(t, v, "/dep")
+			v.updateKey(registryKey(t, "down"))
+			if v.skills.cursor != 0 {
+				t.Fatalf("down left the highlight on %d, want the first match", v.skills.cursor)
+			}
+		},
+		"tab": func(t *testing.T) {
+			v := chatSkillsFixture(claudeSkills())
+			typeIntoChat(t, v, "/dep")
+			v.updateKey(registryKey(t, "tab"))
+			if got := v.composer.Value(); got != "/myplugin:deploy-app " {
+				t.Fatalf("tab left the draft %q, want the token replaced by the top match", got)
+			}
+		},
+		"enter": func(t *testing.T) {
+			v := chatSkillsFixture(claudeSkills())
+			typeIntoChat(t, v, "/dep")
+			v.updateKey(registryKey(t, "down"))
+			v.updateKey(registryKey(t, "enter"))
+			if got := v.composer.Value(); got != "/myplugin:deploy-app " {
+				t.Fatalf("enter left the draft %q, want the highlighted row", got)
+			}
+		},
+		"esc": func(t *testing.T) {
+			v := chatSkillsFixture(claudeSkills())
+			typeIntoChat(t, v, "/dep")
+			v.updateKey(registryKey(t, "esc"))
+			if v.skills.open {
+				t.Fatal("esc left the inline list open")
+			}
+			if got := v.composer.Value(); got != "/dep" {
+				t.Fatalf("esc changed the draft to %q", got)
+			}
+		},
+	},
+
 	ctxCreatePR: {
 		"enter": func(t *testing.T) {
 			f := createPRFixture(t)

@@ -1,6 +1,6 @@
 # 124 — Let a chat's human see the agent's skills and invoke one from a message
 
-**Status:** 🔄 in progress (14/20)
+**Status:** 🔄 in progress (15/20)
 **Opened:** 2026-09-19
 **Issue:** #496 (parent), #497–#515 (one per item)
 **Spec:** §9.1 (`SkillLister`, `SkillInvoker`), §9.6 (`supports_skill_listing`,
@@ -43,8 +43,9 @@ Decisions 1–12 are the parent issue's (#496, "Decisions taken in this
 breakdown"). 13–19 were settled with the author, or taken in evaluation, when
 124.1 was built, 20–27 when 124.2 was, 28 in its follow-up, 29–36 when
 124.8 was, 37–39 when 124.12 was, 40–44 when 124.7 was, 45–53 when
-124.5 was, 54–59 when 124.9 was, 60–63 when 124.11 was, and
-64–68 when 124.10 was.
+124.5 was, 54–59 when 124.9 was, 60–63 when 124.11 was,
+64–68 when 124.10 was, 69–76 when 124.13 was, 77–78 when 124.12's
+documentation landed, 79–82 when 124.15 was, and 83–88 when 124.14 was.
 
 1. **2026-09-19 — Each CLI's own listing, never a scan.** claude answers a
    stream-json `initialize` control request (`commands`), codex answers
@@ -695,6 +696,89 @@ breakdown"). 13–19 were settled with the author, or taken in evaluation, when
     `InvalidateSkills`, so `internal/chatrun` still never imports the cache.
     *Beaten:* reporting from the task engine too.
 
+90. **2026-09-20 — Inline takes both `↑` and `↓`.** While an inline list is
+    up both arrows walk the matches and neither moves the draft's cursor;
+    `esc` gives them back. This is Claude Code's own gesture and the keys
+    124.13's browse list already uses, so one pair of arrows means one thing
+    wherever the list is drawn. It amends **task 071 decision 4** ("The
+    composer keeps `↑`/`↓` for editing a multi-line message") for exactly
+    that state and for no other: with no list up, and after `esc`, the arrows
+    edit. *Beaten:* #510's `↓`-only proposal, which leaves the highlight
+    walkable in one direction only — past a match there is no way back
+    without `esc` and retyping — and which buys almost nothing under
+    `leading`, where the list is visible only on row 0 inside the first token
+    and `↑` does nothing in a textarea anyway, while being confusing under
+    `anywhere`. #500 landing made the cost real rather than paste-only, which
+    is why both costs are written into §15 view 9 and the 071 amendment is
+    spelled out there rather than left implicit.
+91. **2026-09-20 — A typed sigil may ask the daemon, but never speaks up.**
+    The first inline open in a view fetches through `apiclient.ChatSkills`
+    exactly as the `tab` path does, on the same `chatSkillsTimeout`, but
+    draws no loading row; a fetch that fails, or that answers a
+    `list_verdict` other than `supported`, writes **nothing** to the note
+    line and latches inline off for the chat until `forget()` drops the
+    cached answer or the human presses `tab`. The human did not ask for that
+    probe — a cold cache spawns the agent CLI, and under codex's
+    `$`/`anywhere` a `$HOME` in prose would otherwise turn the note line red.
+    The latch is also what stops a failing probe being re-fired on every
+    keystroke. `tab` keeps 124.13's explaining note verbatim.
+
+    The probe's *trigger* falls out of the same rule: the sigil comes off the
+    wire and is hard-coded nowhere, so before an answer is in hand there is
+    nothing to test a token against but its shape — one non-alphanumeric rune
+    and then a name (`chatSkillSigilShaped`). A lone sigil is deliberately not
+    enough, because one punctuation rune says nothing about whose sigil it
+    is. Every keystroke after the answer arrives is filtered by the answer's
+    own sigil, and a shape this accepts that no adapter honours costs exactly
+    one silent probe.
+92. **2026-09-20 — The unmatched-leading hint is only for name-shaped
+    tokens.** The dim note — `/foo is not a skill claude reported for this
+    chat — it is sent as typed` — appears only where the text after the sigil
+    carries no path separator. `/tmp/notes.md` and `/Users/x` are silent,
+    `/tdds` is hinted. As #510 wrote it, vincent would nag about exactly the
+    case it cites Claude Code for keeping quiet about. It stays a hint and
+    never a block (decision 9, task 025 decision 5), and it is still not
+    shown under `anywhere`, where a sigil is ordinary text more often. Both
+    `/` and `\` count as separators on **every** platform rather than `\` on
+    Windows alone: a draft is prose a human may write about any machine, and
+    a per-host rule would make the same message say two things — and a test
+    of it pass on one CI leg and fail on another.
+93. **2026-09-20 — A bare sigil opens the full list under `leading` and not
+    under `anywhere`.** `/` on an otherwise empty first token opens every
+    row, which is Claude Code's behaviour and almost always what it means. A
+    bare `$` mid-prose does not: it is a shell variable far more often than
+    the start of an invocation, and an empty filter matches every row, so the
+    hide-on-no-match rule could not quiet it. Under `anywhere` the list opens
+    once one character follows the sigil.
+94. **2026-09-20 — Inline is a mode of the same list, with its own binding
+    context.** `chatSkillList` gains a mode; the rows, the ranking, the
+    hostile-row guard, the window arithmetic and the renderer are shared
+    unchanged, and only the title line's tail differs. `bindingContext`
+    returns `ctxChatSkills` for browse and a new `ctxChatSkillsInline` while
+    inline is up, because `backspace` means "shorten the filter, and close
+    the list when it is already empty" in the one and "edit the draft" in the
+    other, and a `?` pane that says the first while the second is true is a
+    lie. That is the reason `ctxChatSkills` is its own context in the first
+    place. The structural difference underneath it is that **the composer
+    keeps the keyboard**: `updateInlineSkillsKey` reports whether it took the
+    press, and everything it did not take reaches the draft, after which
+    `syncInlineSkills` recomputes the list. `/` and `$` are therefore never
+    `case` labels, which is also what keeps a rebound `filter` operation
+    irrelevant here and `TestEveryMatchedKeyIsRegistered` green.
+95. **2026-09-20 — Accepting inline replaces the token under the cursor**,
+    rather than inserting at it: the invocation plus one space, cursor after
+    the space. Without it, `/co` + accept would yield `/co/code-review`.
+    Browse's insert-at-the-cursor accept (§15 view 9) is unchanged — it has
+    no token to stand in for. The replacement goes through the composer's own
+    key handling, as synthetic `backspace` presses after a `SetCursorColumn`:
+    the textarea exports neither a delete-word nor a way to put the cursor on
+    a row, `SetValue` resets the widget and parks the cursor at the very end
+    of the new value, and `CursorUp` walks *wrapped* lines, so counting rows
+    back to the token's would land elsewhere entirely on a draft that wraps.
+    The trailing space is unconditional, so a token that already had a space
+    after it ends up with two; that is predictable, and the alternative is a
+    rule about the draft's punctuation that the accept would have to guess.
+
 ## Open questions
 
 Each of the parent's remaining open questions belongs to the item that has to
@@ -822,8 +906,19 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
   `case "/"`. No daemon, store, API, MCP, migration or wire change. Decisions
   69–76; spec §15 view 9 and §15 Keys, `docs/guides/tui.md` and
   `docs/features.md` amended. ✓ 2026-09-20
-- [ ] 124.14 (#510) The same list, opened inline as the human types the
-  adapter's sigil. Depends: 124.13.
+- [x] 124.14 (#510) The same list, opened inline as the human types the
+  adapter's sigil. `internal/tui` and documentation only: the mode flag, the
+  token reader off the composer's `Word()`/`Line()`/`Column()`, the position
+  and bare-sigil rules, the name-shaped test behind the hint, the `esc` and
+  failed-probe suppressions, the mode-aware title line; `syncInlineSkills`
+  after every composer update and inside `paste`, the inline key arm, the
+  replace-the-token accept and the after-accept note, and the note line's
+  third arm in `footerLines`; a `ctxChatSkillsInline` context with four rows
+  and its six `keymap.fixed` rows. No new key literal, no `case "/"` and no
+  `case "$"`. No daemon, store, API, MCP, migration, wire or CLI change.
+  Decisions 90–95; spec §15 view 9 (amending task 071 decision 4 for the
+  list-up state) and §15 Keys, `docs/guides/tui.md` and `docs/features.md`
+  amended. ✓ 2026-09-20
 - [x] 124.15 (#511) `m14` leg 12, end to end on all three operating systems.
   Each adapter's own listing mechanism against the fake; the directory the
   list is about, a linked chat's being its task's worktree; the per-directory
@@ -851,13 +946,17 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
   `unknown`. Depends: 124.9, 124.7.
 - [ ] 124.18 (#514) Investigate whether ACP should become cursor's listing,
   and record a decision. Depends: 124.1.
-- [ ] 124.19 (#515) The `tui-chat-skills.png` tape. Depends: 124.14.
+- [ ] 124.19 (#515) The `tui-chat-skills.png` tape — the list now has two
+  ways in, so the tape shows both: `tab`'s browse list and the inline one a
+  typed sigil opens (124.14). Depends: 124.14.
 - [ ] 124.20 (no issue yet) Surface claude's `conversation_reset` as a visible
   chat record, so a `/clear` in a chat is marked where it happened rather than
   leaving a transcript the agent no longer shares (decision 78). Depends: none.
 
 The requirement's two done criteria are met once 124.14, 124.11, 124.10, 124.3
-and 124.15 have landed. 124.16, 124.17 and 124.18 widen coverage after that.
+and 124.15 have landed — all five of which have, 124.14 last, on 2026-09-20.
+124.16, 124.17 and 124.18 widen coverage after that, and 124.19 and 124.20
+remain.
 
 ## Verification
 
@@ -1064,6 +1163,31 @@ and 124.15 have landed. 124.16, 124.17 and 124.18 widen coverage after that.
   `…LeavesBundledEmptyWhereItCannotArise` decode both fields over the real
   handlers, and codex's `TestListSkillsAgainstFakeAgent` asserts no row of its
   listing ever comes back `Builtin`.
+- 124.14: `internal/tui/chatskills_test.go`'s inline block drives the
+  composer with real key presses rather than poking the struct, because the
+  draft *is* the trigger. `TestChatSkillsInlineOpensOnTheTypedSigil` holds
+  the open, the filter, the tier-1 plugin bare-name match, the untouched
+  draft, the empty highlight and the binding context;
+  `TestChatSkillsInlinePosition` each adapter's own rule, including a `$rev`
+  on the third line of a multi-line draft;
+  `TestChatSkillsInlineBareSigil` decision 93 both ways;
+  `TestChatSkillsInlinePathIsSilent` decision 92's three cases and that the
+  hint never blocks `enter`;
+  `TestChatSkillsInlineExactMatchThenSpaceHides` the second hide rule;
+  `TestChatSkillsInlineEscSuppressesAndReturnsTheArrows` decision 90 in both
+  directions and the suppression's lifetime;
+  `TestChatSkillsInlineTabReplacesTheToken` decision 95, the cursor's column
+  and the rest of the draft byte for byte; `TestChatSkillsInlineEnter` both
+  `enter`s; `TestChatSkillsInlineAcceptNote` the after-accept line and its
+  expiry; `TestChatSkillsInlinePasteOpensTheList` the paste path;
+  `TestChatSkillsInlineNeverOpensUnder` the five states it must stay out of;
+  `TestChatSkillsInlineFetchIsSilentAndLatched` decision 91, counting
+  requests on a server that only 500s; and
+  `TestChatSkillsInlineHelpIsItsOwnSurface` decision 94 from the `?` pane.
+  `TestEveryPanelKeyIsHandled` gains the four `ctxChatSkillsInline` probes,
+  `TestEveryMatchedKeyIsRegistered` and the 124.13 and task 071 decision 4
+  tests pass unchanged. No gate change: `m14` leg 12 is the daemon-side
+  proof and the TUI is not gated.
 - 124.15: `scripts/m14-gate.sh`'s leg 12 is the proof, and
   `VINCENT_GATE_SCENARIO=12` runs it alone. Against one daemon it asserts
   claude's verdicts, sigil, position and `work_dir` before any turn with the
