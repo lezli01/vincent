@@ -44,8 +44,9 @@ lift it. `vincent task add` takes all three; the new-task form offers the held
 create.
 
 Each task runs in a dedicated git worktree on its own branch. Parallel tasks do
-not collide with one another, and vincent never changes your active checkout.
-The branch convention is configurable globally, per project, or for one task.
+not collide with one another, and vincent leaves your own checkout alone unless
+you point a task at the branch it holds. The branch convention is configurable
+globally, per project, or for one task.
 
 Work on a branch you already have, too. `vincent task add --branch NAME
 --existing-branch` (and `vincent chat start --branch NAME --existing-branch`)
@@ -53,9 +54,9 @@ runs on an **existing** branch instead of cutting one: it is fast-forwarded from
 its own upstream if it is behind, left where it is if it is ahead, and refuses
 without moving anything if it has diverged. If that branch is the one **you have
 checked out**, the task runs right there in your own working copy rather than
-making you move off it — and archiving it removes nothing and keeps the branch,
-because vincent deletes only branches it cut. One directory has at most one
-owner: a second task waits queued until the first is archived. See
+making you move off it — and archiving it removes nothing, because vincent
+deletes only a branch it cut itself. One directory has at most one owner: a
+second task waits queued until the first is archived. See
 [running a task on a branch that already exists](reference/cli.md#running-a-task-on-a-branch-that-already-exists).
 
 ## Talk to an agent without a workflow

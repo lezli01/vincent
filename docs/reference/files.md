@@ -192,11 +192,15 @@ Two rules worth internalizing:
   git worktree list
   ```
 
-No task works in your own checkout: vincent reads the repository to create
-worktrees, and the only change it makes there is fast-forwarding a base branch
-that is behind its remote, with its checkout when that is clean — see
-[`fetch_base_branch`](configuration.md#fetch_base_branch). A checkout with any
-change in it, and your stash, are never modified.
+No task works in your own checkout unless you ask for one that does: vincent
+reads the repository to create worktrees, and the only change it makes there is
+fast-forwarding a base branch that is behind its remote, with its checkout when
+that is clean — see [`fetch_base_branch`](configuration.md#fetch_base_branch). A
+checkout with any change in it, and your stash, are never modified. A task
+created with
+[`--existing-branch`](cli.md#running-a-task-on-a-branch-that-already-exists) on a
+branch that checkout holds is the exception: it runs there, with no worktree of
+its own and no ref moved.
 
 **What reclaims a worktree.** Archiving the task, normally. A worktree whose task
 row is gone — a deleted project whose removal failed, a crash before the path was

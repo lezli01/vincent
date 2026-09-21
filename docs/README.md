@@ -39,8 +39,8 @@ heading to copy a link straight to that section.
   scheduling, running, and recording tasks.
 - **Workflows are more than prompts.** Mix agents with commands, approval gates,
   parallel groups, fan-out, conditions, loops, and reusable includes.
-- **Every task is isolated.** A dedicated git worktree and branch protect your
-  checkout and let multiple changes run at once.
+- **Every task is isolated by default.** A dedicated git worktree and branch
+  protect your checkout and let multiple changes run at once.
 - **Success is verified.** Checks, retries, timeouts, blocked-step recovery, and
   durable transcripts make outcomes inspectable instead of aspirational.
 - **People retain control.** Review diffs, approve gates, answer supported agents,
