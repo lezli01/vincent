@@ -867,12 +867,18 @@ func (v *chatView) updateSkillsKey(msg tea.KeyPressMsg) tea.Cmd {
 	case "backspace":
 		if v.skills.backspace() {
 			v.hideSkills()
+		} else {
+			// The core moves the filter and says so; re-ranking the rows is
+			// the list that owns the data's job (issue #554 decision 1).
+			v.skills.build()
 		}
 		return nil
 	}
 	// A printable key extends the filter. The press's own Text is what is
 	// read, so no ctrl, alt or named key can reach the buffer.
-	v.skills.typeText(msg.Text)
+	if v.skills.typeText(msg.Text) {
+		v.skills.build()
+	}
 	return nil
 }
 
@@ -1019,12 +1025,12 @@ func (v *chatView) acceptSkill() tea.Cmd {
 	inline := v.skills.mode == skillModeInline
 	switch {
 	case inline:
-		v.replaceDraftToken(row.invocation + " ")
+		v.replaceDraftToken(row.insert + " ")
 	case v.skills.data != nil && v.skills.data.InvokePosition == "leading":
 		v.composer.MoveToBegin()
-		v.composer.InsertString(row.invocation + " ")
+		v.composer.InsertString(row.insert + " ")
 	default:
-		v.composer.InsertString(row.invocation + " ")
+		v.composer.InsertString(row.insert + " ")
 	}
 	note := chatSkillAcceptNote(row)
 	v.hideSkills()
@@ -1032,7 +1038,7 @@ func (v *chatView) acceptSkill() tea.Cmd {
 		// What the skill takes, dimmed under the composer until the
 		// invocation leaves the draft (issue #510 item 3). The token the
 		// list was suppressed on is gone, so the suppression goes with it.
-		v.skills.inlineNote, v.skills.noteFor = note, row.invocation
+		v.skills.inlineNote, v.skills.noteFor = note, row.insert
 		v.skills.suppressed = ""
 	}
 	return nil
@@ -1226,6 +1232,10 @@ func (v *chatView) updateInlineSkillsKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 // token's would land somewhere else entirely on a draft that wraps.
 // Synthetic backspaces cannot disagree with the widget about where the
 // cursor is.
+//
+// It is shared by every inline picker the composer draws, not the skills one
+// alone (issue #554 decision 3): it stays a chatView method because the
+// composer is the view's, while the token reader it calls is the core's.
 func (v *chatView) replaceDraftToken(text string) {
 	tok, ok := chatDraftTokenAt(&v.composer)
 	if !ok {

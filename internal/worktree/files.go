@@ -108,8 +108,9 @@ func (m *Manager) ListFiles(ctx context.Context, dir string) (paths []string, dr
 // and an ANSI escape's introducer too.
 //
 // It is the server-side twin of the TUI's chatSkillHostile
-// (internal/tui/chatskills.go), duplicated rather than shared because worktree
-// cannot import internal/tui and the client guard stays as defence in depth.
+// (internal/tui/chatinlinelist.go), duplicated rather than shared because
+// worktree cannot import internal/tui and the client guard stays as defence
+// in depth.
 //
 // The drop happens here rather than downstream because encoding/json replaces
 // invalid UTF-8 with U+FFFD and returns *no error*: "caf\xe9.txt" marshals to a

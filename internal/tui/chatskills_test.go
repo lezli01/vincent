@@ -82,7 +82,7 @@ func openChatSkills(t *testing.T, v *chatView, key string) {
 func skillRowNames(v *chatView) []string {
 	out := make([]string, 0, len(v.skills.rows))
 	for _, r := range v.skills.rows {
-		out = append(out, r.invocation)
+		out = append(out, r.insert)
 	}
 	return out
 }
@@ -1177,8 +1177,8 @@ func TestChatSkillsRenderOnlyStylesTheVisibleRows(t *testing.T) {
 	const rows, paneHeight, width = 100_000, 30, 100
 	now := time.Date(2026, 9, 21, 12, 1, 0, 0, time.UTC)
 	calls := 0
-	l := &chatSkillList{open: true, data: manySkills(rows)}
-	l.rowLine = func(r chatSkillRow, selected bool, w int) string {
+	l := &chatSkillList{chatInlineList: chatInlineList{open: true}, data: manySkills(rows)}
+	l.rowLine = func(r chatInlineRow, selected bool, w int) string {
 		calls++
 		return chatSkillRowLine(r, selected, w)
 	}
@@ -1207,12 +1207,12 @@ func TestChatSkillsRenderOnlyStylesTheVisibleRows(t *testing.T) {
 // build-all-then-window path produced.
 func TestChatSkillsWindowedRowsMatchRenderingEveryRow(t *testing.T) {
 	const paneHeight, width = 30, 100
-	probe := &chatSkillList{open: true, data: manySkills(100)}
+	probe := &chatSkillList{chatInlineList: chatInlineList{open: true}, data: manySkills(100)}
 	probe.build()
 	win := probe.window(paneHeight)
 	for _, count := range []int{0, 1, win - 1, win, win + 1, 100} {
 		for _, cursor := range []int{-1, 0, count / 2, count - 1} {
-			l := &chatSkillList{open: true, data: manySkills(count)}
+			l := &chatSkillList{chatInlineList: chatInlineList{open: true}, data: manySkills(count)}
 			l.build()
 			l.cursor = cursor
 			// The pre-#553 path, verbatim: style every row, window after.
@@ -1235,7 +1235,7 @@ func TestChatSkillsWindowedRowsMatchRenderingEveryRow(t *testing.T) {
 // look the same, and a cap that does not bind changes nothing.
 func TestChatSkillsCappedBuildReadsDifferentlyFromAnEmptyOne(t *testing.T) {
 	now := time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)
-	capped := &chatSkillList{open: true, mode: skillModeBrowse, data: manySkills(20), cap: 3}
+	capped := &chatSkillList{chatInlineList: chatInlineList{open: true, cap: 3}, mode: skillModeBrowse, data: manySkills(20)}
 	capped.build()
 	if len(capped.rows) != 3 {
 		t.Fatalf("a cap of 3 built %d rows", len(capped.rows))
@@ -1251,7 +1251,7 @@ func TestChatSkillsCappedBuildReadsDifferentlyFromAnEmptyOne(t *testing.T) {
 		t.Fatalf("a capped build drew no rows:\n%s", plain)
 	}
 
-	empty := &chatSkillList{open: true, mode: skillModeBrowse, data: manySkills(20), cap: 3, filter: "zzz"}
+	empty := &chatSkillList{chatInlineList: chatInlineList{open: true, cap: 3, filter: "zzz"}, mode: skillModeBrowse, data: manySkills(20)}
 	empty.build()
 	if title := ansi.Strip(empty.titleLine(now)); strings.Contains(title, " of ") {
 		t.Fatalf("a build that matched nothing counted itself: %q", title)
@@ -1260,9 +1260,9 @@ func TestChatSkillsCappedBuildReadsDifferentlyFromAnEmptyOne(t *testing.T) {
 		t.Fatalf("a filter matching nothing drew:\n%s", plain)
 	}
 
-	uncapped := &chatSkillList{open: true, mode: skillModeBrowse, data: manySkills(20)}
+	uncapped := &chatSkillList{chatInlineList: chatInlineList{open: true}, mode: skillModeBrowse, data: manySkills(20)}
 	uncapped.build()
-	slack := &chatSkillList{open: true, mode: skillModeBrowse, data: manySkills(20), cap: 20}
+	slack := &chatSkillList{chatInlineList: chatInlineList{open: true, cap: 20}, mode: skillModeBrowse, data: manySkills(20)}
 	slack.build()
 	if uncapped.titleLine(now) != slack.titleLine(now) {
 		t.Fatalf("a cap that does not bind changed the title line to %q", slack.titleLine(now))
@@ -1276,12 +1276,47 @@ func TestChatSkillsCappedBuildReadsDifferentlyFromAnEmptyOne(t *testing.T) {
 // so what survives is the top of the ranking and never a prefix of the
 // catalog.
 func TestChatSkillsCapKeepsTheBestMatches(t *testing.T) {
-	l := &chatSkillList{open: true, mode: skillModeBrowse, data: rankedSkills(), cap: 1, filter: "deploy"}
+	l := &chatSkillList{chatInlineList: chatInlineList{open: true, cap: 1, filter: "deploy"}, mode: skillModeBrowse, data: rankedSkills()}
 	l.build()
-	if len(l.rows) != 1 || l.rows[0].invocation != "/deploy" {
+	if len(l.rows) != 1 || l.rows[0].insert != "/deploy" {
 		t.Fatalf("a cap of 1 kept %v, want the top-ranked row /deploy", l.rows)
 	}
 	if l.matched != 3 {
 		t.Fatalf("the list matched %d rows, want all 3", l.matched)
+	}
+}
+
+// TestChatSkillsZeroValueStillReservesItsLines holds issue #554 decision 5:
+// the reserve is a field of the data-neutral core that the skills wrapper
+// sets on every call, never at construction.
+//
+// Nothing constructs a chatSkillList — chatview.go assigns a bare literal and
+// hideSkills re-zeroes the filter — so a reserve wired by a constructor would
+// be silently zero here: the list would claim its title and its rows alone,
+// three lines short of what §15 view 9 draws, and nothing would fail to
+// compile.
+func TestChatSkillsZeroValueStillReservesItsLines(t *testing.T) {
+	const paneHeight, width = 30, 100
+	now := time.Date(2026, 9, 21, 12, 1, 0, 0, time.UTC)
+	var l chatSkillList
+	l.open, l.data = true, manySkills(2)
+	l.build()
+	if l.reserve != 0 {
+		t.Fatalf("the bare literal already carried a reserve of %d", l.reserve)
+	}
+
+	got := l.render(width, paneHeight, now)
+	if want := 1 + l.window(paneHeight) + 3; len(got) != want {
+		t.Fatalf("a zero-valued list rendered %d lines, want %d", len(got), want)
+	}
+	if h := l.height(paneHeight); h != len(got) {
+		t.Fatalf("height claims %d lines, render drew %d", h, len(got))
+	}
+	// The reserve is what the highlighted row's description is drawn into,
+	// so a zero one would swallow it as well as the budget.
+	l.cursor = 0
+	plain := ansi.Strip(strings.Join(l.render(width, paneHeight, now), "\n"))
+	if !strings.Contains(plain, "row skill-000000") {
+		t.Fatalf("the highlighted row's description was not drawn:\n%s", plain)
 	}
 }
