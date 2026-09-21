@@ -101,6 +101,10 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		// Task 124 decision 6: a chat's skill list is a chat read like the
 		// two above, and the family stays off the tool surface whole.
 		{http.MethodGet, "/v1/chats/{id}/skills"},
+		// Task 126.6, under the same rule: a chat's file list is what a
+		// human's composer offers behind `@`, and an agent in that worktree
+		// can run `ls`.
+		{http.MethodGet, "/v1/chats/{id}/files"},
 		// Task 065 decision 5, under the same wording: a workflow file is
 		// what the daemon runs, so an agent editing one is an agent
 		// rewriting the rules it runs under.

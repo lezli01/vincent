@@ -1036,6 +1036,52 @@ claimed here about backslash separators, drive letters or quoting on a Windows
 claude. Issue #557 settles it, and settles it before any separator handling is
 written.
 
+*Amended 2026-09-21 (task 126.6, issue #550).* `GET /v1/chats/{id}/files`
+(§13.2) is the listing a client offers behind `@`. It answers the files of the
+directory the chat's **next** turn would start in — the turn's own resolver,
+`chatrun.Runner.Workspace`, so the list and the turn cannot disagree about
+what a relative mention is relative to — enumerated with
+`git ls-files -z --cached --others --exclude-standard`. Untracked files are in
+it, because a file created a minute ago is exactly the file someone wants to
+point an agent at, and `.gitignore` is honoured, so `node_modules/` stays out.
+Each row carries the adapter's own `FileMentioner.FileMention` text (§9.1), so
+the quoting rule in the table above has one definition and no client rebuilds
+it. Rows are git's own bytes in git's own order: workspace-relative,
+forward-slash on every platform, unsorted, uncased. A path that cannot cross
+a JSON wire honestly — invalid UTF-8, or a control character — is dropped, and
+the count of dropped rows goes to the daemon log rather than to the body.
+
+**A containerized task is listed on the host** (task 126 decision 3), and that
+is a scoped departure from the rule the skills subsection above records, not a
+hole in it. That rule is about the CLI's own skill directories, which live in
+the image: listing those on the host would name the skills of a machine the
+agent never runs on, which §9 forbids. Files do not transfer. §16's
+`containerMounts` bind-mounts the project repository and the task's worktree
+each at its own absolute host path, so a host `git ls-files` reads the
+identical directory the agent reads at the identical path the agent would have
+to type — there is nothing to emulate — and enumerating inside would need
+`git` on the image's PATH, which §16 requires of no image. The consequence is
+stated rather than hidden: this route's `work_dir` is a **host** path where
+the skills route's is a container path in that same case, and the two agree by
+construction rather than by contract. If the bind-mount invariant ever changes
+— a remote container runtime, say — these paths break with nothing failing at
+compile time.
+
+Listing files is **not a turn and holds no slot** (§11), takes no §16
+permission and is refused only on state: a terminal chat has no next turn, so
+`409 invalid_state` comes before any git runs, and a linked chat whose task
+has no worktree is `409 task_has_no_worktree`. A workspace that has gone
+missing under the daemon is `400 validation_failed`
+(`worktree.ReasonWorkspacePathMissing`) and any other git failure is `500`.
+The daemon caps the listing at 50,000 rows with `truncated` saying so;
+`?limit=` may lower that ceiling and never raise it. There is no server cache
+— one `git ls-files` is not an agent-CLI probe — and therefore no `?refresh=`.
+
+The listing offers only workspace-relative paths, which is why `@` not being
+confined to the workspace is a property of the *human's own typing* and not of
+anything vincent hands them. It does not second-guess git: a committed `.env`
+is in the repository and is listed.
+
 #### Handoff (added 2026-09-01, task 074, issue #288)
 
 `hand_off` creates a task in the chat's project that **adopts** the chat's
@@ -6168,6 +6214,12 @@ not a conversation, so it is neither counted here nor refused at the cap, and
 it runs while the chat's own turn is `running` or `awaiting_input`. It touches
 no chat or turn row.
 
+*Amended 2026-09-21 (task 126.6, issue #550).* Listing a chat's **files**
+(`GET /v1/chats/{id}/files`, §5.5) holds no slot either, and earns it more
+cheaply: one short-lived `git ls-files` on the host, no adapter deadline and
+no agent process at all. It is not a turn, is not counted here, is not
+refused at the cap, and touches no chat or turn row.
+
 The two caps are independent by design: a running chat consumes no
 `max_parallel_tasks` or per-project slot, and does not delay an admissible task.
 The combined ceiling on live agent processes is therefore
@@ -8433,6 +8485,40 @@ GET    /v1/chats/{id}/skills            *Added 2026-09-19 (task 124.9, issue #50
                                         "skills"`), `409 task_has_no_worktree` for a linked
                                         chat whose task has none (`details.task_id`). No event
                                         and no row. It is **not** an MCP tool (§13.4)
+GET    /v1/chats/{id}/files             *Added 2026-09-21 (task 126.6, issue #550).* The files
+       ?limit=                          of the directory the chat's next turn would start in
+                                        (`chatrun.Runner.Workspace`), each with the exact text
+                                        that mentions it. `?limit=N` is a positive integer that
+                                        may only **lower** the daemon's 50,000-row ceiling.
+                                        `200` with flat siblings (§9.6's rule, as the skills row
+                                        above):
+                                        { chat_id, agent, work_dir, mention_sigil,
+                                          mention_position, mention_expands, files[], truncated }
+                                        `work_dir` is a **host** path, including for a linked
+                                        chat on a containerized task, which is listed on the
+                                        host (§5.5); the skills row's `work_dir` is a container
+                                        path in that same case and the two agree only because
+                                        the worktree is bind-mounted at its own path (§16).
+                                        `mention_sigil` and `mention_position` are the adapter's
+                                        `FileMentionSyntax` (§9.1) and `mention_expands` whether
+                                        its CLI puts the file in front of the model itself; all
+                                        three are `""`/`false` when the adapter cannot mention
+                                        files, which is the signal not to offer a picker — the
+                                        paths are served either way. Each file is
+                                        { path, mention }: `path` is git's own bytes,
+                                        workspace-relative and forward-slash on every platform,
+                                        in git's order, and `mention` is the adapter's
+                                        `FileMentioner.FileMention`, `""` when it cannot mention,
+                                        so no client builds one. `files` is always an array;
+                                        `truncated` is true whenever rows were cut. There is no
+                                        server cache and therefore no `?refresh=`. `409
+                                        invalid_state` for a terminal chat (`details.state`,
+                                        `details.action: "files"`), refused before any git runs;
+                                        `409 task_has_no_worktree` for a linked chat whose task
+                                        has none (`details.task_id`); `400 validation_failed`
+                                        for a workspace that is gone or a `limit` that is not a
+                                        positive integer; `500` for any other git failure. No
+                                        event and no row. It is **not** an MCP tool (§13.4)
 GET    /v1/chats/{id}/events            *Added 2026-08-31 (task 067).* SSE: this chat's durable
                                         `chat.*` events interleaved with its live output, the
                                         per-task stream's shape for a chat. The filter is the
@@ -9670,6 +9756,15 @@ extending task 063 decision 2): the list is what a human's composer offers,
 and an agent calling it already has a session, and skills, of its own. The
 agent-level facts — whether an adapter can list or invoke at all, and its
 sigil — stay on `agent_list` (§9.6).
+
+*Amended 2026-09-21 (task 126.6, issue #550).* One more, **thirty-six** in
+all:
+
+    GET    /v1/chats/{id}/files
+
+The same rule again, and more plainly: the list is what a human's composer
+offers behind `@`, and an agent already sitting in that worktree can run
+`ls`.
 
 The task 057 property that the tool surface **equals** `Routes()` minus the
 exclusions is unchanged, and is still asserted by a test — the exclusion list it

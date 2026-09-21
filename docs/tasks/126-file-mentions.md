@@ -407,6 +407,89 @@ Nothing above is reopened.
     *Beaten:* `api.md` alone, which would leave §9.6's field list stale
     against the route it describes.
 
+Decisions 36–40 were settled with the author on 2026-09-21 in 126.6 (#550),
+the subtask that puts the listing on the wire. Nothing above is reopened:
+decision 3's "enumerate on the host, even for a containerized task" is
+implemented here, not reconsidered, and decisions 1, 2 and 21 supply the
+mention string, its input contract and the path form unchanged.
+
+36. **2026-09-21 — The cap is 50,000, and `limit` may only lower it.**
+    `?limit=N` is validated as a positive integer and then clamped to
+    `min(N, 50000)`; a client can ask for less and never for more, and
+    `truncated` is true whenever rows were cut by either bound. This is
+    `MaxSourceBytes`' reasoning (`internal/workflow/registry.go`) applied to a
+    listing: a bound the daemon chose beats an allocation it did not, and a
+    `limit` that could raise the ceiling would hand that choice back to the
+    caller. The number is a judgement — "larger than any repository worth
+    calling normal", about 3 MB of JSON by #550's own measurement — and
+    `truncated` is what makes a wrong guess visible rather than silent.
+    *Beaten:* a 10,000 bound, and a `limit` that overrides freely.
+
+37. **2026-09-21 — The mention facts are flat siblings, never a nested
+    object.** The body carries `mention_sigil`, `mention_position` and
+    `mention_expands` at the top level, the way `invoke_sigil` and
+    `invoke_position` already sit on `chatSkillsBody`. §9.6's rule is flat
+    siblings — recorded on that type and quoted verbatim in §13.2's skills row
+    — and task 041's reasoning against nesting one facet while its siblings
+    stay flat applies unchanged. It also leaves the key `mention` meaning
+    exactly one thing on this route: a row's ready-to-insert text. It is the
+    same vocabulary 126.4 (#548) carries on `GET /v1/agents`, which landed
+    first, under decision 33 and with the `file_mention_` prefix a row of
+    adapters needs; neither subtask waited on the other and the two agree.
+    *Beaten:* #550's own nested `{"sigil", "position", "expands"}`, which would
+    need its own departure decision and would give `mention` two meanings in
+    one body; and renaming the row field to `insert`.
+
+38. **2026-09-21 — An adapter that cannot mention files is an empty sigil, not
+    a refusal.** When the chat's adapter is unregistered, or is registered and
+    does not implement `FileMentioner`, the route still answers `200` with the
+    paths: they are true regardless of who reads them. `mention_sigil` and
+    `mention_position` are `""` — the skills route's own spelling for "this
+    adapter cannot" — `mention_expands` is `false`, and every row's `mention`
+    is `""`, which is the rule `chatSkillBody.Invocation` already follows. An
+    empty sigil is the client's signal not to offer the picker. No verdict
+    vocabulary is imported: a file listing has no axis on which nobody can
+    say, because git either answered or errored. *Beaten:* three nullable
+    fields distinguishing "no" from "nobody can say", and refusing the route
+    outright, which would make an adapter capability into a refused read
+    against task 124 decision 4.
+
+39. **2026-09-21 — The dropped-row count reaches the daemon log and not the
+    wire.** This closes decision 18's explicit deferral. `ListFiles` returns
+    `(paths, dropped, err)`; the handler logs one line when `dropped > 0` and
+    the body gains no field. The rows are undrawable by definition, so a
+    client can do nothing with the number, and the operator still has the
+    record when a path is missing from a picker. The route's test asserts the
+    body's whole key set, so a `dropped` field cannot appear without that
+    failing. *Beaten:* a `dropped` integer beside `truncated`, and discarding
+    the count.
+
+40. **2026-09-21 — `work_dir` on this route is a host path, and that is a
+    stated consequence.** It happens to equal the container path for a linked
+    chat on a containerized task, because `containerMounts`
+    (`internal/taskrun/container.go`) bind-mounts the worktree at its own
+    absolute host path so the repository resolves with zero translation (task
+    061 decision 2). `chatSkillsBody.WorkDir` is a *container* path in that
+    same case. The two agree by construction, not by contract: if the
+    bind-mount invariant ever changes — a remote container runtime, say, since
+    `container.Runtime` shells out and holds no daemon connection — this
+    route's paths break silently, with nothing failing at compile time. Said
+    out loud in §5.5, in §13.2's row and in the handler's doc comment.
+
+    Two smaller calls follow recorded reasoning rather than a new decision.
+    The placement is `chatrun.Runner.Workspace` and not `SkillPlace`, which is
+    the whole of decision 3 in code: `Workspace` answers the directory alone
+    and never asks the container runtime, so there is no
+    `taskrun.ErrTaskContainerMissing` leg and no `missingContainerSkillsReason`
+    twin. And `(*Client).ChatFiles` uses the plain `rest` client rather than
+    `probeClient(true)`: the probe deadline is three minutes because a cold
+    skills cache spawns an agent CLI, which a 30 ms git call is not. That
+    leaves the pre-existing `requestTimeout`/`gitx.QueryTimeout` mismatch
+    standing, which binds only for a worktree on a cold network filesystem;
+    closing it by borrowing the probe deadline would mean a picker that hangs
+    for three minutes. It is stated in the client method's doc comment so it
+    is a known gap rather than a surprise.
+
 ## Citations corrected
 
 #544 and #545 both carry citations that do not resolve at HEAD. The decisions
@@ -523,9 +606,18 @@ attributes task 124.6's.
       missing directory carrying the reason. Package-internal: nothing is
       served, cached, persisted or shown, so no spec amendment lands here —
       §5.5 and §13.2 are amended by 126.6. Decisions 15–21. ✓ 2026-09-21
-- [ ] 126.6 (#550) `GET /v1/chats/{id}/files`, with `limit` and `truncated`
-      (decisions 4, 5, 11), and §13.2 plus `docs/reference/api.md`. Depends:
-      126.4, 126.5.
+- [x] 126.6 (#550) `GET /v1/chats/{id}/files`, with `limit` and `truncated`
+      (decisions 4, 5, 11), and §13.2 plus `docs/reference/api.md`.
+      `internal/api/chatfiles.go` — the route over `chatrun.Runner.Workspace`
+      and `worktree.Manager.ListFiles`, its two 409s, the missing workspace's
+      400 and the clamped `limit`; the exclusion in `internal/mcp/tools.go`
+      and its parity row; `ChatFiles`/`ChatFile` and `(*Client).ChatFiles` in
+      `internal/apiclient`; `chatfiles_test.go` and
+      `chatfiles_live_test.go`. §5.5, §11, §13.2 and §13.4 amended,
+      `docs/reference/api.md` and `docs/security-model.md` with them.
+      Decisions 36–40. It did not wait for 126.4, which landed first: the
+      two settled the same flat-sibling vocabulary independently, on their
+      own routes (decision 37). ✓ 2026-09-21
 - [ ] 126.7 (#551) `vincent chat files`, and a files leg in the chat gate.
       Depends: 126.6.
 - [x] 126.8 (#552) Stop an `@` token spending the chat's one silent skills

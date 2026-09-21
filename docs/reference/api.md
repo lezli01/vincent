@@ -2322,11 +2322,13 @@ GET    /v1/chats/{id}/events          SSE: this chat's events plus its live outp
 GET    /v1/chats/{id}/turns/{seq}/transcript
                                       one turn's transcript, with ?offset= / ?tail=
 GET    /v1/chats/{id}/skills?refresh= the skills the chat's agent would load — see Skills
+GET    /v1/chats/{id}/files?limit=    the files of the chat's workspace — see Files
 ```
 
 None of these is an [MCP tool](#the-mcp-endpoint) — the whole family is
-excluded, the stream, the transcript and the skill list included, and so is
-`POST /v1/tasks/{id}/chat`, which lives under `/v1/tasks` but starts a chat.
+excluded, the stream, the transcript, the skill list and the file list
+included, and so is `POST /v1/tasks/{id}/chat`, which lives under `/v1/tasks`
+but starts a chat.
 `handoff` is on that list for a reason worth stating: it creates a task, and
 `task_create`'s bounds (`mcp.max_depth`, `mcp.max_tasks`) are walked over
 `created_by_task_id`, which a chat is not in.
@@ -2572,6 +2574,74 @@ containerized task. A chat that is archived, handed off or closed is
 refused with `409 invalid_state` (`details.state`, `details.action:
 "skills"`), and a chat on a task that has lost its worktree with
 `409 task_has_no_worktree` (`details.task_id`).
+
+### Files
+
+```bash
+curl -sS http://127.0.0.1:PORT/v1/chats/3/files -H "Authorization: Bearer $TOKEN"
+```
+
+The files of the directory the chat's **next** turn would start in — the chat's
+own worktree, or its task's for a [chat on a task](#a-chat-on-a-stopped-task) —
+each with the exact text a message uses to mention it. It is what a composer
+offers behind `@`, and it answers from the moment the chat exists.
+
+```json
+{ "chat_id": 3, "agent": "claude",
+  "work_dir": "/home/me/.local/share/vincent/worktrees/3",
+  "mention_sigil": "@", "mention_position": "anywhere", "mention_expands": true,
+  "files": [ { "path": "internal/api/server.go", "mention": "@internal/api/server.go" },
+             { "path": "dir with space/q.txt", "mention": "@\"dir with space/q.txt\"" } ],
+  "truncated": false }
+```
+
+Type each row's `mention` as it is; never build one from the path and the
+sigil, because claude needs the path double-quoted after the sigil when it
+contains a space and the rule is the adapter's, not yours. `mention_sigil` and
+`mention_position` are the agent's mention syntax — `anywhere` when the CLI
+recognizes a mention as a token anywhere in the message, `leading` when only at
+the start — and `mention_expands` says whether the CLI itself puts the file in
+front of the model (claude) rather than leaving the model to read it with a
+tool (codex, cursor). An agent that cannot mention files at all, or an `agent`
+with no adapter on this daemon, answers `""` for both strings, `false` for
+`mention_expands`, and `""` for every row's `mention`: the paths are still
+listed, and the empty sigil is the signal not to offer a picker.
+
+What the listing contains is `git ls-files --cached --others
+--exclude-standard` in that directory:
+
+- **Untracked files are in it.** A file created a minute ago and never
+  `git add`ed is usually exactly the file you want to point an agent at.
+- **`.gitignore` is honoured**, so `node_modules/` and a local `.env` stay out
+  — and a **committed** secret is listed, because it is in the repository and
+  the agent can already read it. See the
+  [security model](../security-model.md).
+- **Directories are not rows**, and neither are submodule contents.
+- Paths are git's own: workspace-relative, forward-slash on every platform
+  (Windows included), in git's order, not sorted and not case-folded. A path
+  that cannot travel as JSON — invalid UTF-8, or a control character — is left
+  out.
+
+A chat on a task that runs in a [container](configuration.md#container) is
+listed **on your host**, unlike its [skills](#skills). The task's worktree is
+bind-mounted into the container at its own path, so the host reads the same
+directory the agent reads at the same path the agent would type. One
+consequence: `work_dir` here is a host path, where the skills route's is a
+container path for that same chat.
+
+The daemon serves at most 50,000 rows and sets `truncated` when it cut any.
+`?limit=N` takes a positive integer and may only **lower** that ceiling, never
+raise it; `files` is always an array, never `null`. There is no cache and no
+`?refresh=`: the listing is one short-lived `git ls-files`, so fetch it again
+whenever you need it fresh — when the picker opens, for instance, since a task
+step writing in a linked chat's worktree emits no chat event.
+
+A chat that is archived, handed off or closed is refused with
+`409 invalid_state` (`details.state`, `details.action: "files"`), before any
+git runs, and a chat on a task that has lost its worktree with
+`409 task_has_no_worktree` (`details.task_id`). A workspace that has been
+deleted under the daemon, and a `limit` that is not a positive integer, are
+each `400 validation_failed`; any other git failure is a `500`.
 
 ### Sending a turn
 

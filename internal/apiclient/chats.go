@@ -102,6 +102,51 @@ type ChatSkillProblem struct {
 	Message string `json:"message"`
 }
 
+// ChatFiles is GET /v1/chats/{id}/files: the files of the directory the
+// chat's next turn would start in, each with the exact text that mentions it
+// (§5.5, §13.2, task 126.6).
+//
+// The mention facts are flat siblings rather than a nested object, the way
+// ChatSkills carries InvokeSigil and InvokePosition (§9.6's rule, task 126
+// decision 37), which leaves `Mention` on a row meaning one thing: its
+// ready-to-insert text.
+type ChatFiles struct {
+	ChatID int64  `json:"chat_id"`
+	Agent  string `json:"agent"`
+	// WorkDir is the directory the listing is about — the chat's own
+	// worktree, or its linked task's. It is a host path even when the task
+	// runs in a container, where ChatSkills.WorkDir is a container path; the
+	// two agree only because the worktree is bind-mounted at its own path
+	// (task 126 decision 40).
+	WorkDir string `json:"work_dir"`
+	// MentionSigil and MentionPosition are the chat adapter's static mention
+	// syntax, and MentionExpands whether its CLI puts the file in front of
+	// the model itself rather than leaving the model to read it with a tool.
+	//
+	// An empty MentionSigil means this adapter cannot mention files, and is
+	// the signal not to offer a picker: the paths are still served, because
+	// they are true regardless of who reads them (task 126 decision 38).
+	MentionSigil    string `json:"mention_sigil"`
+	MentionPosition string `json:"mention_position"`
+	MentionExpands  bool   `json:"mention_expands"`
+	// Files is git's own order — workspace-relative, forward-slash on every
+	// platform, unsorted — and is an array even when empty, never null.
+	Files []ChatFile `json:"files"`
+	// Truncated says rows were cut, by the daemon's ceiling or by a lower
+	// limit the caller asked for.
+	Truncated bool `json:"truncated"`
+}
+
+// ChatFile is one file of the chat's workspace.
+type ChatFile struct {
+	Path string `json:"path"`
+	// Mention is the exact text to insert to mention this path, built by the
+	// daemon's adapter; a client never builds its own, because the quoting
+	// rule has one definition and it lives there. "" when the adapter cannot
+	// mention files.
+	Mention string `json:"mention"`
+}
+
 // ChatTurn is one exchange in a chat.
 type ChatTurn struct {
 	ID           int64      `json:"id"`
@@ -244,6 +289,30 @@ func (c *Client) ChatSkills(ctx context.Context, id int64, refresh bool) (*ChatS
 	}
 	var out ChatSkills
 	if err := c.getVia(ctx, c.probeClient(true), path, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ChatFiles fetches the files of the directory the chat's next turn would
+// start in, each with its ready-to-insert mention (task 126.6). A limit above
+// zero lowers the daemon's own ceiling; it can never raise it, and zero or
+// less means "the daemon's ceiling", which is what an unset limit sends.
+//
+// It uses the plain REST client and not the probe deadline ChatSkills takes:
+// nothing here spawns an agent CLI, only one short-lived `git ls-files`.
+// That leaves a known gap standing — requestTimeout is 10s while the
+// server-side query is bounded at gitx.QueryTimeout, 30s — so a worktree on a
+// cold network filesystem would have this client give up first. Borrowing the
+// probe's three minutes to close it would mean a picker that can hang for
+// three minutes, which is worse.
+func (c *Client) ChatFiles(ctx context.Context, id int64, limit int) (*ChatFiles, error) {
+	path := fmt.Sprintf("/v1/chats/%d/files", id)
+	if limit > 0 {
+		path += fmt.Sprintf("?limit=%d", limit)
+	}
+	var out ChatFiles
+	if err := c.get(ctx, path, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

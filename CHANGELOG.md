@@ -73,6 +73,24 @@ list with the user-facing context a commit subject cannot carry.
   reported, `"after_first_turn"` until then, and `""` for an agent that marks
   nothing, which is every codex and cursor chat.
 
+- **A chat can now be asked what files it could point its agent at.**
+  `GET /v1/chats/{id}/files` lists the files of the directory the chat's next
+  turn would start in — its own worktree, or its task's — each with the exact
+  text that mentions it, so nothing has to rebuild claude's rule that a path
+  containing a space is double-quoted after the `@`. The listing is
+  `git ls-files --cached --others --exclude-standard`: a file you created a
+  minute ago and never added is in it, `.gitignore` is honoured, and paths are
+  git's own — workspace-relative, forward slashes on Windows too. The body
+  also carries the agent's mention syntax, so a client knows whether to offer
+  a picker at all and whether the CLI expands a mention itself (claude) or
+  leaves the model to read the file with a tool (codex, cursor). A chat on a
+  containerized task is listed on your host, unlike its skills: the task's
+  worktree is mounted into the container at its own path, so the two are the
+  same directory at the same path. At most 50,000 rows, with `truncated`
+  saying when that bit; `?limit=` can ask for fewer. It is not an MCP tool —
+  an agent already sitting in that worktree can run `ls`. Spec §5.5, §13.2;
+  issue #550.
+
 - **`tab` in the TUI's chat workspace lists the agent's skills above the
   composer.** Type to filter it — a name prefix ranks over a plugin's bare
   name or an alias, which ranks over a description match — and `enter` or
