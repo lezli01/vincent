@@ -330,7 +330,51 @@ do_seed() {
   # is what leaves one adapter observed-spent for the board header badge and
   # the daemon view's quota line (task 026) — without it those two shots
   # photograph a state no seeded daemon is ever in.
-  agent_wrapper agent-walled FAKEAGENT_SCENARIO=usage-limit FAKEAGENT_USAGE_LIMIT_RESET=5400
+  #
+  # It also carries the skill listing the chat-skills shots are of (task
+  # 124.19), because this — not agent-chat — is where `claude` points when
+  # do_capture runs: the swaps below are one-way, so agent-walled is the last
+  # thing write_config wrote, and a listing probe is a fresh run of the
+  # *configured* binary rather than anything the seed warmed (skillTTL is five
+  # minutes and the chat tapes are taken half an hour later). The version goes
+  # with it because claude.skillListingFloor is 2.1.277 and cmd/fakeagent
+  # reports 2.1.224 by default, which lists as a positive no with no rows at
+  # all — the trap scripts/m14-gate.sh pins the same version against. Neither
+  # variable disturbs the quota: `initialize` is answered ahead of any
+  # scenario dispatch, so this wrapper still walls every task it is given.
+  #
+  # Ten skills in the seeded repositories' own terms, one of each kind the row
+  # line draws differently — a project skill with an argument hint, a user
+  # skill, a long namespaced plugin skill — with each scope written into the
+  # description text, since claude reports scope nowhere else. Three names
+  # share the `re` prefix the inline shot types, and `review-pr` is found
+  # under it by its bare name. The one `builtin` row does not appear: no chat
+  # turn runs on this binary, so the cache withholds it until one does (§9.6,
+  # task 124.16). No apostrophes: wrap single-quotes every assignment.
+  agent_wrapper agent-walled FAKEAGENT_SCENARIO=usage-limit FAKEAGENT_USAGE_LIMIT_RESET=5400 \
+    FAKEAGENT_VERSION=2.1.277 "FAKEAGENT_CLAUDE_COMMANDS=$(jq -cn '[
+    {name: "replay-request", argumentHint: "[capture-file]",
+     description: "Replay a captured HTTP call against a local build. (project)"},
+    {name: "rehearse-limits", argumentHint: "",
+     description: "Dry run a bucket change over last week traffic. (user)"},
+    {name: "retune-buckets", argumentHint: "[plan]",
+     description: "Propose per-plan token bucket sizes from the hit rate. (project)"},
+    {name: "vincent-workflows:review-pr", argumentHint: "[number]",
+     description: "Walk a pull request and leave one comment per finding. (plugin vincent-workflows)"},
+    {name: "rate-limit-audit", argumentHint: "",
+     description: "Find every path that skips the token bucket. (project)"},
+    {name: "bump-quota", argumentHint: "[account]",
+     description: "Lift a customer plan limit and log who did it. (project)"},
+    {name: "trace-call", argumentHint: "",
+     description: "Follow one API call through all of its hops. (user)"},
+    {name: "bench-buckets", argumentHint: "",
+     description: "Time the limiter hot path at 10k calls a second. (project)"},
+    {name: "docs-sync", argumentHint: "[page]",
+     description: "Align the API guide with the handler it talks about. (user)"},
+    {name: "tidy-imports", argumentHint: "[package]",
+     description: "Sort and group Go imports in a package. (project)"},
+    {name: "compact", argumentHint: "", builtin: true,
+     description: "Free up context by summarizing the conversation so far"}]')"
   # The GitHub half (issue #414): cmd/fakegh as `gh`, which daemon_up puts
   # first on the daemon's PATH. The web project's origin names acme/web, so the
   # fake answers as that repository, and its open pull request #412 — with a
@@ -1716,6 +1760,45 @@ Sleep 4s
 Type "S"
 Sleep 2s
 Screenshot "'"$OUT"'/tui-skills.png"
+Sleep 2s
+'
+
+  # The chat skill list (task 124.19), on the same seeded conversation
+  # tui-chat is of. One tape, two pictures, because the list has two ways in:
+  # `tab` browses it, and typing the sigil the agent itself uses opens it
+  # filtered. Browse goes first — it is what pays for the probe, so
+  # the inline frame is not racing a spawn of the CLI. A `Down` precedes each
+  # Screenshot: both openers start with nothing highlighted, so that `enter`
+  # still sends the draft as typed, and the three reserved description lines
+  # are blank until a row is picked.
+  tape tui-chat-skills 1400 '
+Type ":"
+Sleep 1s
+Type "chats"
+Sleep 1s
+Enter
+Sleep 4s
+Type "/"
+Sleep 500ms
+Type "rate limit"
+Sleep 1s
+Enter
+Sleep 1s
+Enter
+Sleep 5s
+Tab
+Sleep 4s
+Down
+Sleep 2s
+Screenshot "'"$OUT"'/tui-chat-skills.png"
+Sleep 2s
+Escape
+Sleep 1s
+Type "/re"
+Sleep 3s
+Down
+Sleep 2s
+Screenshot "'"$OUT"'/tui-chat-skills-inline.png"
 Sleep 2s
 '
 }

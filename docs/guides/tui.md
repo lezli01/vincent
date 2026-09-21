@@ -1743,7 +1743,14 @@ first, then a plugin's bare name or an alias (so `deploy` finds
 `backspace` shortens the filter and closes the list once it is empty, and
 `esc` closes it with your draft exactly as you left it. With nothing
 highlighted `enter` still sends the message as typed; `tab` takes the top
-match. Accepting writes the invocation and one space — at the start of the
+match.
+
+![The skill list open above the chat composer: a `skills` line carrying how
+long ago the agent was asked and what the keys do, one row per skill with its
+invocation, argument hint and description, and the highlighted row's
+description wrapped underneath](../assets/tui-chat-skills.png)
+
+Accepting writes the invocation and one space — at the start of the
 message for an agent that wants its skills there, at the cursor for one that
 takes them anywhere — and leaves the cursor after the space, so whatever you
 had already typed becomes the skill's arguments.
@@ -1760,6 +1767,10 @@ Start a message with `/` under claude, or write `$name` anywhere in one under
 codex, and the matches appear above the composer filtered by what you have
 typed — the sigil and where it counts are the agent's, not vincent's. Nothing
 is highlighted, so `enter` still sends the message exactly as you wrote it.
+
+![The same list opened by a typed `/re` in the composer, narrowed to the
+skills whose names start with it and the plugin skill found under its bare
+name, with the draft still reading `/re`](../assets/tui-chat-skills-inline.png)
 
 This list is an aid to typing rather than a layer over it, so the composer
 keeps the keyboard: every printable key, `backspace` and `ctrl+j` go into the
