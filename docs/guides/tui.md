@@ -2476,7 +2476,9 @@ refusals below, which are again reported all at once:
   two exist to work while a chat's composer, a filter or a form has the
   keyboard, where a letter would be typed instead, so bind them to a `ctrl`,
   `alt` or function key. The same holds for any operation answered in the chat
-  workspace or the new-chat form, whose text fields take every printable key.
+  workspace or the new-chat form, whose text fields take every printable key —
+  with one exception, `free_text` on the new-chat form, which is offered only
+  inside a list drawn *over* those rows, where nothing is being typed into.
 
 Each message names the operation, the key and what the key already means — for
 example `refresh: "q" already means quit (quit the TUI)`. A refused

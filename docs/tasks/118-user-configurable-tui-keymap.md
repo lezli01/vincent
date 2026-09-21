@@ -168,6 +168,20 @@ owns every printable key for as long as they are up — and refuses a printable
 key for any other operation answered there. None is today, so that half of the
 rule guards the next operation to be given a key on those surfaces.
 
+*Amended 2026-09-21 ([125](125-run-on-an-existing-branch.md).9, issue #542).*
+The next operation arrived, and it is the exception rather than the case the
+clause was guarding: `free_text` (`t`) is registered on the new-chat surface,
+where it had been reachable and unregistered since issue #281. The clause is a
+statement about a **form's own rows**; `t` is offered only while a list drawn
+*over* those rows has the keyboard, and that list is navigating, not typing —
+its filter and its free-text entry are the two states that type, and both are
+entered from it. `internal/keymap`'s `listLayer` records that narrow exception,
+keyed by operation **and** surface with its reason, so moving the operation to
+a surface whose rows really do swallow it is not covered, and the clause is
+untouched for every other operation and for the chat workspace. Decision 5 is
+otherwise unchanged: the two escape hatches' `Typing` mark still refuses a
+printable key wherever they are answered.
+
 ### 6 (2026-09-17). An override replaces the default; it is not an alias
 
 The vacated default key stops working for that operation and is free for
