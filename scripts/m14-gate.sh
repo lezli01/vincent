@@ -30,12 +30,18 @@
 #      verbatim, 409 invalid_state on a terminal chat, and `vincent chat
 #      send --message-file -` delivering a leading `/` byte for byte, which
 #      is the assertion the Windows leg exists for
+#  13. the bytes a client sends are the bytes the CLI's stdin carries (spec
+#      §5.5, task 124 decision 9): one message holding `@a.txt`, a quoted
+#      `@"dir with space/b.txt"` and a bare `user@example.com` reaches claude
+#      unchanged over both the API send and `vincent chat send
+#      --message-file -`, is stored unchanged, and reaches codex and cursor
+#      unchanged on their own stdin paths
 #
 # Legs 1–10 are one chain rather than separable scenarios — leg 3 reads leg
 # 1's turn, leg 6 answers leg 5's parked chat, leg 10 lists the chats legs 7
 # and 9 ended — so VINCENT_GATE_SCENARIO=N for any N in 1..10 runs that chain.
-# Legs 11 and 12 each stand alone, needing nothing before them, so
-# VINCENT_GATE_SCENARIO=11 and =12 run one of them on its own.
+# Legs 11, 12 and 13 each stand alone, needing nothing before them, so
+# VINCENT_GATE_SCENARIO=11, =12 and =13 run one of them on its own.
 #
 # The `agent_cannot_resume` refusal is deliberately *not* here. Since task 070
 # no shipped adapter is refused, so a real daemon has no subject to reach it
@@ -74,7 +80,7 @@ trap cleanup EXIT
 
 ONLY="${VINCENT_GATE_SCENARIO:-}"
 case "$ONLY" in
-  "" | [1-9] | 10 | 11 | 12) ;;
+  "" | [1-9] | 10 | 11 | 12 | 13) ;;
   *) fail "unknown VINCENT_GATE_SCENARIO: $ONLY" ;;
 esac
 
@@ -576,6 +582,152 @@ EOF
   unset FAKEAGENT_VERSION
 }
 
+# Leg 13 is a function for legs 11 and 12's reason: it brings its own repo,
+# project and daemon environment, so VINCENT_GATE_SCENARIO=13 runs it without
+# walking anything before it. Unselected, it runs last, after leg 12.
+chat_mention_passthrough() {
+  echo "== 13. an @-mention message reaches every CLI byte for byte (spec §5.5)"
+  # Spec §5.5's pass-through rule, and task 124 decision 9 after task 025
+  # decision 5: the bytes a client sends are the bytes the CLI sees. Nothing
+  # asserted here is new — this leg asserts today's behaviour so that a
+  # rewrite anywhere between a client and an agent's stdin fails loudly.
+  #
+  # One single-line message carries all three observed claude forms at once:
+  # `@a.txt` is the plain spelling, `@"dir with space/b.txt"` the only spaced
+  # one claude honours, and `user@example.com` the token-boundary negative — a
+  # string nothing in vincent may ever treat as a mention needing escaping.
+  MSG='look at @a.txt and @"dir with space/b.txt" and mail user@example.com'
+
+  # The `echo-prompt` scenario appends the prompt it was handed to
+  # FAKEAGENT_PROMPT_FILE, one JSON line per run. The agent child inherits the
+  # daemon's environment, so both variables have to be exported before the
+  # daemon starts — chat_skills' pattern exactly. No FAKEAGENT_VERSION floor
+  # is needed: the fake reports 2.1.224, which already clears claude's §7.4
+  # input-mode floor, and either mode records a free chat's turn as one block.
+  MENTION_PROMPTS="$TMP/mention-prompts.jsonl"
+  "$VINCENT" daemon stop --force >/dev/null 2>&1 || true
+  export FAKEAGENT_SCENARIO=echo-prompt
+  export FAKEAGENT_PROMPT_FILE
+  FAKEAGENT_PROMPT_FILE="$(hostpath "$MENTION_PROMPTS")"
+  "$VINCENT" daemon start
+  PORT="$(jq -r .port "$DATA_DIR/daemon.json")"
+  TOKEN="$(cat "$DATA_DIR/token")"
+  BASE="http://127.0.0.1:$PORT/v1"
+
+  MENTION_REPO="$TMP/mentionrepo"
+  mkdir -p "$MENTION_REPO"
+  git -C "$MENTION_REPO" init -q -b main
+  git -C "$MENTION_REPO" config user.email gate@example.com
+  git -C "$MENTION_REPO" config user.name "M14 Gate"
+  git -C "$MENTION_REPO" commit -q --allow-empty -m "root"
+  MENTION_PROJECT_ID="$(api POST /projects \
+    -d "{\"path\": \"$(hostpath "$MENTION_REPO")\"}" | jq -r .id)"
+  [[ -n "$MENTION_PROJECT_ID" && "$MENTION_PROJECT_ID" != "null" ]] \
+    || fail "registering the mentions project failed"
+
+  # The message as a JSON string, built by jq rather than by hand so this bash
+  # never escapes the payload's own quotes. It is both what the request body
+  # carries and — because the fake records a single text block as a JSON
+  # string, not an array — the exact line echo-prompt writes, so comparing the
+  # two is byte-identity of what claude's stdin received.
+  WANT_LINE="$(jq -n --arg m "$MSG" '$m')"
+
+  echo "== 13a. the API send: claude's stdin carries the message byte for byte"
+  MENTION_CHAT_ID="$(api POST /chats \
+    -d "{\"project_id\": $MENTION_PROJECT_ID, \"title\": \"mentions\", \"agent\": \"claude\"}" \
+    | jq -r .id)"
+  [[ -n "$MENTION_CHAT_ID" && "$MENTION_CHAT_ID" != "null" ]] \
+    || fail "creating the mentions chat failed"
+  api POST "/chats/$MENTION_CHAT_ID/send" \
+    -d "$(jq -n --arg m "$MSG" '{message: $m}')" >/dev/null \
+    || fail "the mention send failed"
+  STATE="$(wait_turn "$MENTION_CHAT_ID" 1)"
+  [[ "$STATE" == "done" ]] || fail "the mention turn is $STATE, want done"
+  # sed is handed the file and reads it to the end, so there is no pipe, no
+  # producer to lose to SIGPIPE, and no early-exiting consumer.
+  GOT_LINE="$(sed -n '1p' "$MENTION_PROMPTS")"
+  [[ "$GOT_LINE" == "$WANT_LINE" ]] \
+    || fail "claude's stdin carried $GOT_LINE, want $WANT_LINE"
+
+  echo "== 13b. the stored turn prompt is those same bytes"
+  PROMPT="$(api GET "/chats/$MENTION_CHAT_ID" \
+    | jq -r '.turns[] | select(.seq == 1) | .prompt')"
+  [[ "$PROMPT" == "$MSG" ]] || fail "the stored prompt is [$PROMPT], want [$MSG]"
+
+  echo "== 13c. vincent chat send --message-file - carries it too"
+  # `printf '%s'` writes no trailing newline on purpose: --message-file sends
+  # the file's bytes untrimmed (§12.1), so a newline would be part of the
+  # message and 13c would be comparing a different payload than 13a's.
+  printf '%s' "$MSG" | "$VINCENT" chat send "$MENTION_CHAT_ID" --message-file - >/dev/null \
+    || fail "chat send --message-file - failed"
+  STATE="$(wait_turn "$MENTION_CHAT_ID" 2)"
+  [[ "$STATE" == "done" ]] || fail "the --message-file turn is $STATE, want done"
+  GOT_LINE="$(sed -n '2p' "$MENTION_PROMPTS")"
+  [[ "$GOT_LINE" == "$WANT_LINE" ]] \
+    || fail "--message-file delivered $GOT_LINE, want $WANT_LINE"
+
+  echo "== 13d. codex receives the same payload on its own stdin"
+  # `echo-prompt` is a claude-dialect scenario: the codex and cursor dialects
+  # have no such case and fall through to their success bodies, so neither
+  # writes the prompt file. The decoded transcript is the route leg 12d
+  # already takes for the same reason, and it covers the other two stdin paths
+  # without a new fakeagent scenario.
+  #
+  # codex answers `done: ` plus the prompt with its whitespace flattened —
+  # strings.Fields joined by single spaces — which is identity for this
+  # single-line, single-spaced payload and for nothing else. A future payload
+  # carrying a newline or a double space fails here rather than passing by
+  # accident.
+  CODEX_MENTION_ID="$(api POST /chats \
+    -d "{\"project_id\": $MENTION_PROJECT_ID, \"title\": \"codex mentions\", \"agent\": \"codex\"}" \
+    | jq -r .id)"
+  [[ -n "$CODEX_MENTION_ID" && "$CODEX_MENTION_ID" != "null" ]] \
+    || fail "creating the codex mentions chat failed"
+  api POST "/chats/$CODEX_MENTION_ID/send" \
+    -d "$(jq -n --arg m "$MSG" '{message: $m}')" >/dev/null \
+    || fail "the codex mention send failed"
+  STATE="$(wait_turn "$CODEX_MENTION_ID" 1)"
+  [[ "$STATE" == "done" ]] || fail "the codex mention turn is $STATE, want done"
+  curl -sS -o "$TMP/mention-codex-1.jsonl" -H "Authorization: Bearer $TOKEN" \
+    "$BASE/chats/$CODEX_MENTION_ID/turns/1/transcript" \
+    || fail "the codex raw transcript failed"
+  # One jq over the whole file rather than a capture: nothing multi-line
+  # reaches bash, so there are no CRs to strip and no pipe to break.
+  jq -s -e --arg want "done: $MSG" '
+    any(.[]; .item.type == "agent_message" and .item.text == $want)' \
+    < "$TMP/mention-codex-1.jsonl" >/dev/null \
+    || fail "codex did not receive the message unchanged: $(
+      jq -s -r '[.[] | select(.item.type == "agent_message") | .item.text] | join(" | ")' \
+        < "$TMP/mention-codex-1.jsonl")"
+
+  echo "== 13e. cursor receives the same payload on its own stdin"
+  # The cursor dialect echoes the whole prompt back as its own `user` line
+  # (task 124.2's input echo), so this assertion is exact rather than
+  # flattened.
+  CURSOR_MENTION_ID="$(api POST /chats \
+    -d "{\"project_id\": $MENTION_PROJECT_ID, \"title\": \"cursor mentions\", \"agent\": \"cursor\"}" \
+    | jq -r .id)"
+  [[ -n "$CURSOR_MENTION_ID" && "$CURSOR_MENTION_ID" != "null" ]] \
+    || fail "creating the cursor mentions chat failed"
+  api POST "/chats/$CURSOR_MENTION_ID/send" \
+    -d "$(jq -n --arg m "$MSG" '{message: $m}')" >/dev/null \
+    || fail "the cursor mention send failed"
+  STATE="$(wait_turn "$CURSOR_MENTION_ID" 1)"
+  [[ "$STATE" == "done" ]] || fail "the cursor mention turn is $STATE, want done"
+  curl -sS -o "$TMP/mention-cursor-1.jsonl" -H "Authorization: Bearer $TOKEN" \
+    "$BASE/chats/$CURSOR_MENTION_ID/turns/1/transcript" \
+    || fail "the cursor raw transcript failed"
+  jq -s -e --arg want "$MSG" '
+    any(.[]; .type == "user" and .message.content[0].text == $want)' \
+    < "$TMP/mention-cursor-1.jsonl" >/dev/null \
+    || fail "cursor did not receive the message unchanged: $(
+      jq -s -r '[.[] | select(.type == "user") | .message.content[0].text] | join(" | ")' \
+        < "$TMP/mention-cursor-1.jsonl")"
+
+  unset FAKEAGENT_SCENARIO
+  unset FAKEAGENT_PROMPT_FILE
+}
+
 if [[ "$ONLY" == "11" ]]; then
   chat_on_a_task
   echo "GATE PASS: m14 (leg 11)"
@@ -585,6 +737,12 @@ fi
 if [[ "$ONLY" == "12" ]]; then
   chat_skills
   echo "GATE PASS: m14 (leg 12)"
+  exit 0
+fi
+
+if [[ "$ONLY" == "13" ]]; then
+  chat_mention_passthrough
+  echo "GATE PASS: m14 (leg 13)"
   exit 0
 fi
 
@@ -901,6 +1059,7 @@ CODE="$(api_status GET "/chats?archived=yes")"
 if [[ -z "$ONLY" ]]; then
   chat_on_a_task
   chat_skills
+  chat_mention_passthrough
 fi
 
 echo "GATE PASS: m14"
