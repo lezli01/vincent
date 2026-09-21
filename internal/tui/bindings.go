@@ -557,6 +557,7 @@ var bindings = []binding{
 	{key: "tab", label: "next field (shift+tab goes back)", scope: scopePanel, context: ctxNewChat, hint: "tab next", priority: 3},
 	{key: "left", label: "step the project and agent fields in place (← →); enter opens their list", scope: scopePanel, context: ctxNewChat, hint: "← →  step", priority: 4},
 	{key: "esc", label: "close an open list, else discard the draft", scope: scopePanel, context: ctxNewChat, hint: "esc cancel", priority: 5},
+	{op: keymap.FreeText, key: "t", label: "in an open list: type a value it does not offer", scope: scopePanel, context: ctxNewChat, priority: 6, term: termFreeText},
 
 	// Projects.
 	{op: keymap.Add, key: "a", label: "register a repository", scope: scopePanel, context: ctxProjects, hint: "a add", priority: 1, term: termAdd},

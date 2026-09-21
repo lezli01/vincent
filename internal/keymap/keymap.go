@@ -113,7 +113,7 @@ var catalog = []Info{
 		"repair form", "follow-up form", "open a pull request", "comment on a pull request",
 	}},
 	{Op: FreeText, Default: "t", Meaning: "type free text instead of picking", Kind: KindTerm, Surfaces: []Surface{
-		"new task", "workflow editor", "answer form", "repair form", "follow-up form",
+		"new task", "new chat", "workflow editor", "answer form", "repair form", "follow-up form",
 	}},
 	{Op: Browser, Default: "o", Meaning: "open in a browser", Kind: KindTerm, Surfaces: []Surface{
 		"task details", "task pull request", "pull requests",
@@ -191,6 +191,27 @@ var capturesText = map[Surface]bool{"chat": true, "new chat": true}
 
 // CapturesText reports whether a text field owns the printable keys on s.
 func CapturesText(s Surface) bool { return capturesText[s] }
+
+// listLayer records the operations a capturesText surface answers from a list
+// drawn *over* its rows rather than from the rows themselves.
+//
+// capturesText is a statement about a form's own rows: on the new-chat form
+// every printable key reaches a text field (task 067 decision 8), which is why
+// the clause below refuses to bind a printable key to anything offered there.
+// An open picker is a layer above those rows and is navigating, not typing —
+// its filter and its free-text entry are the two states that type, and both
+// are entered from it. `t` is offered only while that list has the keyboard,
+// so the blanket clause would refuse a row that is in fact reachable, which is
+// how the new-chat form's free-text key went unregistered from issue #281
+// until task 125.9.
+//
+// Keyed by operation and surface together: moving the operation to a surface
+// whose rows really do swallow it is not covered.
+var listLayer = map[string]bool{
+	listLayerKey(FreeText, "new chat"): true,
+}
+
+func listLayerKey(op Op, s Surface) string { return string(op) + "\x00" + string(s) }
 
 // Fixed is a key the TUI answers that no operation owns: a surface-local row,
 // a member of a multi-key set, a popup's own key, or an unregistered alias.
@@ -365,7 +386,7 @@ func Check(k Keymap) error {
 					info.Op, key))
 			}
 			for _, s := range info.Surfaces {
-				if CapturesText(s) && !info.Typing {
+				if CapturesText(s) && !info.Typing && !listLayer[listLayerKey(info.Op, s)] {
 					errs = append(errs, fmt.Sprintf(
 						"%s: %q would be typed into the text field on %s; bind it to a ctrl, alt or function key",
 						info.Op, key, s))

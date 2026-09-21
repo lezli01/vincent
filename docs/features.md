@@ -56,8 +56,13 @@ without moving anything if it has diverged. If that branch is the one **you have
 checked out**, the task runs right there in your own working copy rather than
 making you move off it — and archiving it removes nothing, because vincent
 deletes only a branch it cut itself. One directory has at most one owner: a
-second task waits queued until the first is archived. See
-[running a task on a branch that already exists](reference/cli.md#running-a-task-on-a-branch-that-already-exists).
+second task waits queued until the first is archived. In the TUI the same
+choice is a list: the new-task and new-chat forms' branch rows offer the
+repository's own branches, marked with the ones your checkout or another
+worktree already holds; on the new-task form, typing a name the list does not
+carry still cuts a new branch under it. See
+[running a task on a branch that already exists](reference/cli.md#running-a-task-on-a-branch-that-already-exists)
+and [the new-task form](guides/tui.md#new-task--n).
 
 ## Talk to an agent without a workflow
 

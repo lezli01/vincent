@@ -116,6 +116,19 @@ type (
 		status    apiclient.GitHubStatus
 		err       error
 	}
+	// ntBranchesMsg carries a project's local branch listing, which is what
+	// the two branch rows offer (task 125). The project travels with it for
+	// the reason ntGitHubMsg's does: the user may have switched projects
+	// while it was in flight, and a reply about another project is not an
+	// answer about this one.
+	//
+	// It is not folded into ntLoadedMsg: those three catalogs are fetched
+	// before a project is chosen, and this listing is project-scoped.
+	ntBranchesMsg struct {
+		projectID int64
+		branches  []apiclient.Branch
+		err       error
+	}
 	// ntIssuesMsg carries a project's issue listing, with the prefill the
 	// daemon computed for the workflow that was selected when it was asked.
 	// The key travels with it for the same reason.
@@ -210,6 +223,21 @@ type newTask struct {
 	issues    []apiclient.GitHubIssue
 	issuesFor issuesKey
 	issuesErr string
+	// branches is the project's local branch listing the two branch pickers
+	// offer, branchesFor the project it describes, and branchesErr why there
+	// is none. A failed listing does not close the rows: the picker draws the
+	// error above a free-text row, so a repository the daemon cannot read
+	// leaves the form typeable.
+	branches    []apiclient.Branch
+	branchesFor int64
+	branchesErr string
+	// branchAdopt records that the branch row holds a branch chosen off that
+	// listing rather than a name typed into the picker's free row — §10's
+	// adopt mode rather than the ordinary cut-a-new-branch one. It is what
+	// puts `existing_branch` on the request, and it is set by the choice, so
+	// adoption stays chosen and is never inferred from a name that happens to
+	// exist (task 125 decision 1).
+	branchAdopt bool
 	// issue is the issue this draft is linked to, nil when none. It is what
 	// `github_issue` on the create request carries.
 	issue *apiclient.GitHubIssue
@@ -351,15 +379,15 @@ func (n *newTask) paste(text string) tea.Cmd {
 		switch n.cursor {
 		case ntTitle:
 			n.titleIn, cmd = n.titleIn.Update(tea.PasteMsg{Content: text})
-		case ntBranch:
-			n.branch, cmd = n.branch.Update(tea.PasteMsg{Content: text})
-		case ntBranchName:
-			n.branchName, cmd = n.branchName.Update(tea.PasteMsg{Content: text})
 		case ntPriority:
 			n.priority, cmd = n.priority.Update(tea.PasteMsg{Content: text})
 		case ntDescription:
 			n.desc, cmd = n.desc.Update(tea.PasteMsg{Content: text})
-		case ntProject, ntWorkflow, ntIssue, ntFields, ntPaused, ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
+		case ntProject, ntWorkflow, ntIssue, ntFields, ntBranch, ntBranchName, ntPaused,
+			ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
+			// The two branch rows are pickers now; a branch name is pasted
+			// into the picker's free-text row, which the ntPicking arm below
+			// hands to it.
 			return nil
 		}
 		delete(n.rowErr, n.cursor)
@@ -525,6 +553,36 @@ func (n *newTask) workflowsCmd(projectID int64) tea.Cmd {
 	}
 }
 
+// branchesCmd fetches the project's local branches for the two branch rows.
+func (n *newTask) branchesCmd(projectID int64) tea.Cmd {
+	client := n.client
+	if client == nil || projectID == 0 {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
+		defer cancel()
+		branches, err := client.ListBranches(ctx, projectID)
+		return ntBranchesMsg{projectID: projectID, branches: branches, err: err}
+	}
+}
+
+// applyBranches takes a listing only when it describes the project on screen.
+// A failure is kept as a sentence rather than as an empty list: "this
+// repository could not be read" and "this repository has one branch" are
+// different things to say above a free-text row.
+func (n *newTask) applyBranches(msg ntBranchesMsg) {
+	if msg.projectID == 0 || msg.projectID != n.projectID {
+		return
+	}
+	n.branchesFor = msg.projectID
+	if msg.err != nil {
+		n.branches, n.branchesErr = nil, "could not list branches: "+errString(msg.err)
+		return
+	}
+	n.branches, n.branchesErr = msg.branches, ""
+}
+
 func (n *newTask) update(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -567,6 +625,9 @@ func (n *newTask) update(msg tea.Msg) (panel, tea.Cmd) {
 	case ntPullPrefillMsg:
 		n.applyPullPrefill(msg)
 		return n, nil
+	case ntBranchesMsg:
+		n.applyBranches(msg)
+		return n, nil
 	case ntIssuesMsg:
 		n.applyIssues(msg)
 		return n, nil
@@ -596,6 +657,11 @@ func (n *newTask) reset() {
 	n.titleIn.SetValue("")
 	n.desc.SetValue("")
 	n.branch.SetValue("")
+	// Cleared here as well as seeded by a handoff: a form reopened after one
+	// would otherwise still be holding the chat's branch name.
+	n.branchName.SetValue("")
+	n.branchAdopt = false
+	n.branches, n.branchesFor, n.branchesErr = nil, 0, ""
 	n.priority.SetValue("0")
 	n.fields = nil
 	n.agent, n.model, n.effort = "", "", ""
@@ -624,7 +690,7 @@ func (n *newTask) applyLoaded(msg ntLoadedMsg) tea.Cmd {
 	// The project the picker settled on may not be the one the workflow list
 	// was fetched for.
 	if p, ok := n.project(); ok {
-		return tea.Batch(n.workflowsCmd(p.ID), n.githubCmd(p.ID))
+		return tea.Batch(n.workflowsCmd(p.ID), n.githubCmd(p.ID), n.branchesCmd(p.ID))
 	}
 	return n.resolveCmd()
 }
@@ -869,9 +935,9 @@ func (n *newTask) activate() tea.Cmd {
 		return nil
 	}
 	switch n.cursor {
-	case ntProject, ntWorkflow, ntIssue, ntAgent, ntModel, ntEffort:
+	case ntProject, ntWorkflow, ntIssue, ntAgent, ntModel, ntEffort, ntBranch, ntBranchName:
 		n.openPicker(n.cursor)
-	case ntTitle, ntBranch, ntBranchName, ntPriority, ntDescription:
+	case ntTitle, ntPriority, ntDescription:
 		n.startEditing()
 	case ntFields:
 		n.fieldsEd = newFieldsEditor(n.fields)
@@ -892,21 +958,18 @@ func (n *newTask) startEditing() {
 	switch n.cursor {
 	case ntTitle:
 		n.titleIn.Focus()
-	case ntBranch:
-		n.branch.Focus()
 	case ntPriority:
 		n.priority.Focus()
 	case ntDescription:
 		n.desc.Focus()
-	case ntProject, ntWorkflow, ntIssue, ntFields, ntPaused, ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
+	case ntProject, ntWorkflow, ntIssue, ntFields, ntBranch, ntBranchName, ntPaused,
+		ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
 	}
 }
 
 func (n *newTask) stopEditing() {
 	n.mode = ntNavigating
 	n.titleIn.Blur()
-	n.branch.Blur()
-	n.branchName.Blur()
 	n.priority.Blur()
 	n.desc.Blur()
 }
@@ -928,15 +991,12 @@ func (n *newTask) updateEditing(msg tea.KeyPressMsg) tea.Cmd {
 	switch n.cursor {
 	case ntTitle:
 		n.titleIn, cmd = n.titleIn.Update(msg)
-	case ntBranch:
-		n.branch, cmd = n.branch.Update(msg)
-	case ntBranchName:
-		n.branchName, cmd = n.branchName.Update(msg)
 	case ntPriority:
 		n.priority, cmd = n.priority.Update(msg)
 	case ntDescription:
 		n.desc, cmd = n.desc.Update(msg)
-	case ntProject, ntWorkflow, ntIssue, ntFields, ntPaused, ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
+	case ntProject, ntWorkflow, ntIssue, ntFields, ntBranch, ntBranchName, ntPaused,
+		ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
 	}
 	delete(n.rowErr, n.cursor)
 	return cmd
@@ -1124,6 +1184,14 @@ func (n *newTask) request() apiclient.CreateTaskRequest {
 	}
 	if b := strings.TrimSpace(n.branchName.Value()); b != "" {
 		req.BranchName = ptr(b)
+		// A branch chosen off the listing is §10's adopt mode; a name typed
+		// into the picker's free row is the ordinary cut-a-new-branch one,
+		// exactly as this row has always been (task 125.9 decision 1).
+		// Suppressed on a pull-seeded draft because `existing_branch` with
+		// `github_pull` is a 400 — the shape is not offered there either.
+		if n.branchAdopt && n.pull == nil {
+			req.ExistingBranch = ptr(true)
+		}
 	}
 	if p, err := strconv.Atoi(strings.TrimSpace(n.priority.Value())); err == nil && p != 0 {
 		req.Priority = ptr(p)

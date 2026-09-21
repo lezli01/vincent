@@ -32,6 +32,23 @@ list with the user-facing context a commit subject cannot carry.
   `project_branches`) lists a project's local branches and says which working
   tree holds each. Spec §10, §5.3, §18; issue #538.
 
+  **In the TUI, too.** *(Issue #542.)* The new-task form's two branch rows are
+  now lists of the project's own branches rather than free-text fields — `/`
+  narrows one, `t` still types a name it does not offer. Which row you commit
+  decides what happens: a branch **from the list** is run on as it stands, the
+  **free-text row** cuts a new branch under that name exactly as before, and an
+  empty row leaves the name to your templates. The row says which of the two it
+  is holding, on the form and in the Review stage, so adoption stays something
+  you chose. Branches the list marks are the ones that matter: one your own
+  checkout has out warns, on the row and before you submit, that the task will
+  run *there* rather than in a worktree — uncommitted work included in its
+  diff, and archiving removing nothing — and one another vincent worktree holds
+  says it would block, while staying selectable, because that worktree may be
+  gone by the time the task is admitted. The new-chat form gains a `branch` row
+  of its own, adopt-only (a chat cannot cut a branch under a name you chose),
+  with the same list and the same notes; if the branch's directory already has
+  an owner, the refusal lands on that row rather than on a form-wide line.
+
 - **A chat on a containerized task now lists the skills of the container, not
   of your host.** Such a chat runs its turns inside the task's container, so
   its skills were never your machine's; until now vincent said so and listed
@@ -210,6 +227,11 @@ list with the user-facing context a commit subject cannot carry.
   quoting the skill's description.
 
 ### Fixed
+
+- **The new-task form no longer reopens holding the branch name of the chat it
+  last handed off.** Handing a chat to a task seeds the branch row from the
+  chat; reopening the form afterwards cleared every other row but that one, so
+  the next task was created with the chat's branch name unless you noticed.
 
 - **Chat drafts can now contain newlines.** Use `ctrl+j`, `shift+enter` or
   `alt+enter`; `enter` continues to send the message. `ctrl+j` works in every

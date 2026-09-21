@@ -145,6 +145,12 @@ func (p *picker) current() (pickerOption, bool) {
 type pickerResult struct {
 	value  string
 	chosen bool
+	// free says the value was typed into the free-text row rather than chosen
+	// from the list. A caller that treats "in the catalog" and "not in it" as
+	// two different requests needs it — the new-task branch row sends §10's
+	// adopt mode for a listed branch and the ordinary cut-a-new-branch mode
+	// for free text (task 125 decision 1).
+	free   bool
 	closed bool
 	cmd    tea.Cmd
 }
@@ -169,7 +175,7 @@ func (p *picker) update(msg tea.KeyPressMsg) pickerResult {
 			if v == "" {
 				return pickerResult{}
 			}
-			return pickerResult{value: v, chosen: true, closed: true}
+			return pickerResult{value: v, chosen: true, free: true, closed: true}
 		case "esc":
 			p.editing = false
 			p.input.Blur()
@@ -340,10 +346,72 @@ func (n *newTask) openPicker(row ntRow) {
 		n.pick = newPicker(int(row), "model override", n.optionRows(n.effectiveAgentModels()), true, n.model)
 	case ntEffort:
 		n.pick = newPicker(int(row), "effort override", n.optionRows(n.effectiveAgentEfforts()), true, n.effort)
-	case ntTitle, ntDescription, ntFields, ntBranch, ntBranchName, ntPriority, ntPaused, ntCreate, ntRowCount:
+	case ntBranch:
+		n.pick = newPicker(int(row), "base branch", n.branchOptions(false, "(the project default)"),
+			true, strings.TrimSpace(n.branch.Value()))
+		n.pick.err = n.branchesErr
+	case ntBranchName:
+		n.pick = newPicker(int(row), "branch", n.branchNameOptions(),
+			true, strings.TrimSpace(n.branchName.Value()))
+		n.pick.err = n.branchesErr
+	case ntTitle, ntDescription, ntFields, ntPriority, ntPaused, ntCreate, ntRowCount:
 		return
 	}
 	n.mode = ntPicking
+}
+
+// branchOptions is the project's local branches as picker rows, led by the row
+// that clears the field — a picker row cannot be emptied by deleting text the
+// way the text field it replaced could.
+//
+// It is a listing and never a validator (`branchListResponse`'s own comment):
+// no row is disabled, because the worktree holding a branch can be removed
+// between picking it and admitting the task, and free text can name such a
+// branch anyway (task 125.9 decision 3). adopt says these rows are the task's
+// own branch, where choosing one is §10's adopt mode and where a checkout is a
+// consequence; on the base row a branch is only a fork point, so the same
+// facts would be noise.
+func (n *newTask) branchOptions(adopt bool, none string) []pickerOption {
+	out := make([]pickerOption, 0, len(n.branches)+1)
+	out = append(out, pickerOption{value: "", label: none})
+	for _, b := range n.branches {
+		opt := pickerOption{value: b.Name, label: b.Name}
+		if adopt {
+			opt.note = branchNote(b)
+		} else if b.Current {
+			opt.note = "current"
+		}
+		out = append(out, opt)
+	}
+	return out
+}
+
+// branchNote says what adopting this branch would mean. The notes are prose
+// because the picker's filter matches them as well as the label, so "checkout"
+// narrows the list to the consequential rows without a second control.
+func branchNote(b apiclient.Branch) string {
+	parts := make([]string, 0, 2)
+	if b.Current {
+		parts = append(parts, "current")
+	}
+	switch {
+	case b.MainCheckout:
+		parts = append(parts, "checked out here — runs in your checkout, not a worktree")
+	case b.CheckedOutIn != "":
+		parts = append(parts, "in "+b.CheckedOutIn+" — would block")
+	}
+	return strings.Join(parts, " · ")
+}
+
+// branchNameOptions is the branch row's list. A draft seeded from a pull
+// request offers no branch to adopt at all: `existing_branch` with
+// `github_pull` is a 400, and a form that offered the shape would be offering
+// a request the daemon refuses (internal/api/tasks.go).
+func (n *newTask) branchNameOptions() []pickerOption {
+	if n.pull != nil {
+		return []pickerOption{{value: "", label: "(from the project template)"}}
+	}
+	return n.branchOptions(true, "(from the project template)")
 }
 
 // openFieldPicker opens the value list for the focused declared enum row. It
@@ -444,7 +512,7 @@ func (n *newTask) updatePicking(msg tea.KeyPressMsg) tea.Cmd {
 	res := n.pick.update(msg)
 	cmds := []tea.Cmd{res.cmd}
 	if res.chosen {
-		cmds = append(cmds, n.applyPick(ntRow(n.pick.row), res.value))
+		cmds = append(cmds, n.applyPick(ntRow(n.pick.row), res.value, res.free))
 	}
 	if res.closed {
 		n.pick = nil
@@ -455,7 +523,11 @@ func (n *newTask) updatePicking(msg tea.KeyPressMsg) tea.Cmd {
 
 // applyPick commits a chosen value and repairs whatever it invalidated. It
 // returns a command when the choice invalidated data the form is holding.
-func (n *newTask) applyPick(row ntRow, value string) tea.Cmd {
+//
+// free distinguishes a value typed into the picker's free-text row from one
+// chosen off the list. Only the branch row reads it, and it is the whole of
+// task 125.9 decision 1: the shape the picker took decides the request.
+func (n *newTask) applyPick(row ntRow, value string, free bool) tea.Cmd {
 	n.touched = true
 	delete(n.rowErr, row)
 	switch row {
@@ -478,7 +550,13 @@ func (n *newTask) applyPick(row ntRow, value string) tea.Cmd {
 		n.workflowPicked = false
 		n.github, n.githubProject = apiclient.GitHubStatus{}, 0
 		n.issues, n.issuesFor, n.issuesErr, n.issue = nil, issuesKey{}, "", nil
-		return tea.Batch(n.workflowsCmd(id), n.githubCmd(id))
+		// So are the branches, and so is a branch adopted from the listing
+		// the old project had: a name from another repository is not a branch
+		// this one can run on.
+		n.branches, n.branchesFor, n.branchesErr = nil, 0, ""
+		n.branchName.SetValue("")
+		n.branchAdopt = false
+		return tea.Batch(n.workflowsCmd(id), n.githubCmd(id), n.branchesCmd(id))
 	case ntWorkflow:
 		n.setWorkflow(value)
 		n.workflowPicked = true
@@ -504,7 +582,17 @@ func (n *newTask) applyPick(row ntRow, value string) tea.Cmd {
 		n.model = value
 	case ntEffort:
 		n.effort = value
-	case ntTitle, ntDescription, ntFields, ntBranch, ntBranchName, ntPriority, ntPaused, ntCreate, ntRowCount:
+	case ntBranch:
+		// The base is a fork point, never adopted: §10's adopt mode is a
+		// statement about the task's own branch, one row down.
+		n.branch.SetValue(value)
+	case ntBranchName:
+		n.branchName.SetValue(value)
+		// The shape the row now holds. A listed branch adopts it, free text
+		// cuts one under that name as it always did, and an empty row hands
+		// the name back to the §5.3 chain.
+		n.branchAdopt = !free && value != ""
+	case ntTitle, ntDescription, ntFields, ntPriority, ntPaused, ntCreate, ntRowCount:
 		return nil
 	}
 	// Every row that falls through here is a §8.6 input, so what the draft

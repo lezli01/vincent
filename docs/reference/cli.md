@@ -86,6 +86,7 @@ neither a subcommand nor on this list:
 | The triggers view: its list, a trigger's delivery ledger, a dry poll, and creating, editing, arming or deleting a trigger | `vincent trigger ls`, `validate`, `test` and `apply`. Arming is done in the TUI or in `$EDITOR`, never by `apply` |
 | The agent / model / effort preview in the new-task form and the workflows view, and the new-task form's branch-name preview | `vincent workflow render`, which resolves the same triple the same way. No subcommand previews the branch name a task would get; `vincent task show` prints it once the task exists |
 | The daemon summary on the board header and daemon view | `vincent daemon status`, `vincent agents`, `vincent doctor` and `vincent config get` between them. The daemon-wide count of slots in use right now, with its lanes and on-input breakdown, is shown only in the TUI; `vincent project ls --json` carries each project's `slots_used` |
+| Listing a project's local branches in the new-task and new-chat branch pickers | No subcommand: `vincent task add --branch <name> --existing-branch` and `vincent chat start --branch <name> --existing-branch` take the name, and a shell standing in the repository already has `git branch` |
 | Live updates as they happen | Subcommands poll: `vincent task transcript -f`, `vincent chat transcript -f`, and `vincent chat send` waits for the answer |
 
 ## `vincent version`

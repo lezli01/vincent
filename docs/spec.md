@@ -140,7 +140,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 32 | The footer fills its width, and says what it hides | *Added 2026-09-10 (task 094, issue #352).* **A cap is not a layout.** The footer's five-key limit was a constant, and a constant is wrong at both 80 and 200 columns: eleven of the twenty-one binding contexts declare more hinted keys than five, so on more than half the surfaces keys were dropped silently while `pad := max(width-lw-pw, 2)` spent the remaining columns on blank space. Width now decides, as a strict prefix of registry priority order, measured exactly rather than iterated: every candidate admission count is costed against the `+N` that count itself implies, so there is no "admitted because +9 shrank to +8" state to detect afterwards. The segments to the right of the hints are measured **first** and come out of the budget — the line truncates from the left, so hints are what a full line loses first, and admitting them against the whole width would let the actions push them straight back off. This **supersedes** the phase 3 refactor decision and the PR R / T3.12 decision in `docs/history/v0-tasks.md` ("max 5, priority-ordered"), and only those: what they were protecting — one line that never wraps, and a pinned `: commands  ? help  q quit` that never truncates — is untouched, and §15 is amended in place to say so. The `+N` counts this surface's palette-reachable rows that the line is not advertising, **not** everything the palette lists: the five global rows and the eight navigation entries are what the pinned segment stands for, and counting them would pin `N` near fourteen and never at zero. Alias rows are **declared** (`binding.aliased`) rather than parsed out of hint text — splitting on `/` and mapping `↑↓←→` back to key names is text parsing over a human-written field that breaks silently the first time a hint is reworded — and a test asserts the declaration against what the hints actually say. `paletteEntries` still lists the board's fold rows where the footer, gated by `shell.liveBindings`, does not; that mismatch is left where it is rather than widened into here. *Amended 2026-09-14 (task 096):* the triggers view is a ninth navigation entry, so the pinned segment stands for nine; the reasoning is unchanged (§15). *Amended 2026-09-14 (issue #372):* the mismatch is gone — `root.openPalette` hands `paletteEntries` the shell's `liveBindings`, so a flat board's palette drops the fold rows the footer drops, and a grouped board's still lists them |
 | 33 | Event triggers | *Added 2026-09-13 (task 096; issues #356, #362, #365).* **A trigger is a robot pressing a key a human could have pressed.** A YAML file under `{config_dir}/triggers/` names a source (`command`, `github_issues`, `github_prs`, `http` or, since 2026-09-18, `schedule`), a `match:` prefilter and an §8.4 `if:` guard, an action and a dedupe key. Triggers are global scope only, never `.vincent/`, so that anyone who can merge to a repository cannot start agents on a maintainer's machine. An action **replays an existing route** in-process, the way row 28's MCP does: `create_task` is `POST /v1/tasks`, and the reactions `follow_up`, `retry` and `cancel` are the §6 action routes against the task whose `branch_name` the event names. §13.1's bounds, the validation, the FSM's 409 and `Idempotency-Key` therefore hold by construction, and from the step path down a triggered task is indistinguishable from a hand-created one (`.Event` is never snapshotted, §8.4). Where a route lacked an affordance a trigger needed, the route grew it for every client: `paused` on create, follow-up and retry, and `restricted` and `max_task_cost_usd` on create. **It inverts §16's premise that a human pressed the key**, so its defaults differ from every other default in the product. Triggers are off twice, by `triggers.enabled` and by each file's own `enabled:`. `on_fire: propose` holds every task a trigger creates or re-queues in `paused` for a human, agent steps are clamped `restricted`, untrusted GitHub events are refused without an author allowlist, and each trigger has a rate limit. Runtime state lives in SQLite: a cursor per trigger, and a delivery ledger kept 30 days. The first poll after arming seeds and fires nothing, so neither a cold start nor re-arming floods. *Amended 2026-09-18 (task 121, issue #480):* the source list takes a fifth member, `schedule` — a hand-written five-field cron expression or an `every:` interval, evaluated against the wall clock on a one-second tick, with its last handled occurrence in `trigger_cursors.cursor`. It is the same robot pressing the same key: everything downstream of the source is reused, arming anchors the clock and fires nothing, and an overdue schedule fires once however many occurrences it missed. *Amended 2026-09-18 (task 122, issue #483):* a trigger also says what to do when **its own previous work is still running**. `overrun:` — `parallel` (the default and today's behaviour), `skip`, `cancel_previous`, `queue_coalesce`, `queue_serial` — is consulted as the pipeline's last step against the group `concurrency_key:` names, and "in flight" is §6's `!Settled`, so an unreviewed `on_fire: propose` proposal holds its group. The two queue modes hold events in a durable table so a restart loses none, and a disarm discards that backlog the way it drops the cursor. `cancel_previous` is the one mode that destroys work nobody asked to lose, and is `dangerous` to a client for that reason (§5.3, §6, §8.4, §12.2, §12.3, §13.2, §13.3, §13.4, §14, §15, §16, §17, §20) |
 | 34 | Trigger ingress | *Added 2026-09-13 (task 096 decision 31G).* **A pushed event needs the bearer token and a signature, and no route is exempt from row 4.** `POST /v1/triggers/{id}/events` sits in the same `recover → log → auth` chain as every other route, then verifies the trigger's own `github_hmac_sha256` signature over the raw body, using a secret the daemon reads from its environment (§2). Only a caller on this machine that can read `{data_dir}/token` and holds the secret can deliver, so rows 1 and 4 are untouched. A GitHub.com webhook through a tunnel **cannot** deliver. What works is a sender on the same machine, such as a self-hosted runner, or a relay on the same machine that adds the header. The route is not an MCP tool, because an agent that can inject events can start agents (§13.1, §13.2, §13.4, §16) |
-| 35 | User-configurable TUI keymap | *Added 2026-09-17 (task 118, issue #412).* **An override moves an operation, never a surface's key, and the defaults' own rules hold it.** `tui.keys` in `config.yaml` maps an operation id to one key string in Bubble Tea's key-string form, and `{}` is the shipped keymap. The rebindable set is exactly row 31's vocabulary terms, §6's actions and the global chrome (`palette`, `palette_alt`, `help`, `help_alt`, `next_attention`, `mouse`, `quit`, `new` — the last also the chats board's `n`, one gesture); every surface-local row, multi-key set, `esc`, `ctrl+c`, `ctrl+v`, `tab`, popup confirmation and unregistered alias is fixed and refused by name. One override rebinds its operation on every surface that carries it, and it **replaces** the default rather than aliasing it, so the vacated key is free and two operations may swap in one edit. The registry becomes the TUI's **dispatch** source as well as its rendering source — handlers ask it for an operation's key rather than matching literals — because a keymap the help advertises and a handler ignores is the Pull Request tab bug row 31 closed; a translation layer at the root was beaten because it would be a second source of truth for which context is live. The catalog, the fixed keys, the exceptions and the clause checker live in a new leaf, `internal/keymap`; the registry tests run that checker over the defaults and `internal/config` runs it over the effective keymap at load, on hot reload and on `PATCH /v1/config`, so a bad keymap is refused with the file byte-identical, the `tui.board.group_by` precedent. That is config's second internal import beside `taskstate`, an explicit amendment of task 046 decision 4, and `keymap` is a leaf so the direction stays one-way. A key that already means anything else anywhere is refused, and an exception recorded for a default key does not travel with an operation that moves onto it. `palette_alt` and `help_alt`, and any operation answered where a text field owns the printable keys, refuse a printable key. The daemon still publishes no config event: the TUI applies the keymap on connect, reconnect and the daemon view's config fetch, and after its own editor saves it (§12.3, §13.3, §15) |
+| 35 | User-configurable TUI keymap | *Added 2026-09-17 (task 118, issue #412).* **An override moves an operation, never a surface's key, and the defaults' own rules hold it.** `tui.keys` in `config.yaml` maps an operation id to one key string in Bubble Tea's key-string form, and `{}` is the shipped keymap. The rebindable set is exactly row 31's vocabulary terms, §6's actions and the global chrome (`palette`, `palette_alt`, `help`, `help_alt`, `next_attention`, `mouse`, `quit`, `new` — the last also the chats board's `n`, one gesture); every surface-local row, multi-key set, `esc`, `ctrl+c`, `ctrl+v`, `tab`, popup confirmation and unregistered alias is fixed and refused by name. One override rebinds its operation on every surface that carries it, and it **replaces** the default rather than aliasing it, so the vacated key is free and two operations may swap in one edit. The registry becomes the TUI's **dispatch** source as well as its rendering source — handlers ask it for an operation's key rather than matching literals — because a keymap the help advertises and a handler ignores is the Pull Request tab bug row 31 closed; a translation layer at the root was beaten because it would be a second source of truth for which context is live. The catalog, the fixed keys, the exceptions and the clause checker live in a new leaf, `internal/keymap`; the registry tests run that checker over the defaults and `internal/config` runs it over the effective keymap at load, on hot reload and on `PATCH /v1/config`, so a bad keymap is refused with the file byte-identical, the `tui.board.group_by` precedent. That is config's second internal import beside `taskstate`, an explicit amendment of task 046 decision 4, and `keymap` is a leaf so the direction stays one-way. A key that already means anything else anywhere is refused, and an exception recorded for a default key does not travel with an operation that moves onto it. `palette_alt` and `help_alt`, and any operation answered where a text field owns the printable keys, refuse a printable key. *Amended 2026-09-21 (task 125.9, issue #542): unless the operation is answered there from a list drawn over the form's rows rather than from the rows themselves — `keymap.listLayer`, keyed by operation and surface, whose one entry is `free_text` on the new-chat form (§12.3, §15).* The daemon still publishes no config event: the TUI applies the keymap on connect, reconnect and the daemon view's config fetch, and after its own editor saves it (§12.3, §13.3, §15) |
 
 ## 4. Architecture
 
@@ -7160,7 +7160,13 @@ key that already means anything else — an operation or a fixed key, on any
 surface — unless a recorded exception on that exact default key covers both
 meanings, which does not travel with an operation that moves; and a printable
 key for `palette_alt`, `help_alt` or any operation answered where a text field
-owns the printable keys. Problems are joined with `; ` under a `tui.keys: `
+owns the printable keys — *amended 2026-09-21 (task 125.9, issue #542):* unless
+that operation is answered there from a **list drawn over** the form's rows
+rather than from the rows themselves, which `internal/keymap`'s `listLayer`
+records by operation *and* surface, with its reason. `free_text` on the
+new-chat form is the one entry: the clause is a statement about a form's own
+rows, and `t` is offered only while an open list has the keyboard, where
+nothing is being typed into (§15). Problems are joined with `; ` under a `tui.keys: `
 prefix, each naming the operation, the key and what the key already means, in
 two passes: every unknown id, fixed name and malformed key string at once, and
 only when there are none, every collision and printable-key refusal at once —
@@ -10488,7 +10494,7 @@ stream for the live tail.
 3. **New task.** Project picker → workflow picker (shows description + step list;
    flags steps whose agent is unavailable) → *(GitHub issue, conditional)* →
    title → description (inline or
-   `$EDITOR`) → fields → base branch (default prefilled) →
+   `$EDITOR`) → fields → base branch (default prefilled) → branch →
    priority → start (now or paused) → optional agent/model/effort override (pickers fed by
    `GET /v1/agents` with provenance-tagged options and free-text entry;
    replaces workflow defaults, never explicit step fields, §8.6) → create.
@@ -10498,6 +10504,30 @@ stream for the live tail.
    locked but their values remain editable; additional custom key/value rows can
    still be added and deleted. Values survive workflow switches, and local
    feedback mirrors the daemon's authoritative create-time validation.
+   **The two branch rows are pickers (task 125.9, added 2026-09-21):** both
+   are lists over `GET /v1/projects/{id}/branches` (§13.2) with free text, not
+   text fields, and the row the human commits decides the §10 creation mode
+   the request asks for. A branch chosen **from the list** sends
+   `branch_name` + `existing_branch: true` — §10's third mode, run on a branch
+   that already exists; the picker's **free-text row** sends `branch_name`
+   alone and cuts a new branch under that name, exactly as this row always
+   did; an empty row leaves the name to the §5.3 chain. Adoption therefore
+   stays *chosen* and is never inferred from a name that happens to exist
+   (task 125 decision 1) — a listed name typed into the free row still cuts,
+   and still meets §10's creation-time refusal. The row renders which of the
+   two shapes it holds, on the form and in the Review stage. The listing is a
+   listing and never a validator: no row is disabled, because the worktree
+   holding a branch can be removed between the pick and admission. Rows carry
+   the consequence as a note — the project's own checkout ("runs in your
+   checkout, not a worktree"), another worktree ("would block") — and
+   adopting a `main_checkout` branch puts that consequence on the row and in
+   the Review stage *before* submit, rather than leaving it to the §18
+   `adopt_branch_checked_out` block reason. The **base branch** row reads the
+   same listing but never adopts: the base is a fork point, and §10's mode is
+   a statement about the task's own branch. A draft seeded from a pull request
+   offers nothing to adopt (`existing_branch` with `github_pull` is a 400,
+   §13.2), and a handoff draft opens no picker on either row — both are
+   read-only there, as task 074 left them.
    **Pickers are windowed and type-filterable (M5, §9.7):** through v1 every
    catalog fit on a screen (claude: 3 models, 5 efforts; codex: efforts only),
    so the picker rendered all options unconditionally. Cursor's ~180-model
@@ -12357,6 +12387,26 @@ or moves on from a text one, uniformly: `ctrl+s` is the sole create key.
 `←`/`→` survive on the project and agent rows as a fast in-place step — the
 enum-row idiom from the new-task fields editor — and are not offered on the
 two catalog rows, where "next" answers nothing.
+
+*Amended 2026-09-21 (task 125.9, issue #542).* The new-chat form has a
+**seventh row, `branch`**, after the base row so the two branch rows are
+adjacent and the tab order of the five above is untouched. It is the same
+`picker` with free text, over the same `GET /v1/projects/{id}/branches` the
+new-task form reads, and it has exactly **one** meaning: run this chat on a
+branch that already exists. It submits `branch_name` + `existing_branch`
+together or neither, because either half alone is a 400 on `POST /v1/chats`
+(§13.2) — a chat that cuts its own branch is named from its id, so the
+new-task form's "free text cuts a new branch under this name" shape does not
+exist here and the row is adopt-only. Left empty — the ordinary case — vincent
+cuts `vincent/{id}-{slug}` from the base as before. The rows carry the same
+notes, and the 409 for a working directory that already has an owner (task 125
+decision 2: a chat is created synchronously and has nowhere to wait) is parked
+**on this row** rather than on the form-wide error line, because the row that
+chose the branch is where it can be changed. The form's free-text key `t` is
+registered for the first time with it: it has been reachable inside this
+form's lists since issue #281, and it is recorded as a list-layer key because
+the blanket "this surface captures text" rule below is a statement about the
+form's own rows, not about a list drawn over them.
 
 An **open new-chat draft captures input on every row**, not only on the two
 text ones. This is a deliberate, scoped exception to the rule above that the

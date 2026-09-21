@@ -203,6 +203,8 @@ var tuiOnlyClientCalls = map[string]string{
 	"CreateTrigger":     "trigger authoring and arming; 098 decision 3 — humans arm in the TUI or `$EDITOR`, and `trigger apply` never arms",
 	"PatchTrigger":      "trigger authoring and arming; 098 decision 3 — humans arm in the TUI or `$EDITOR`, and `trigger apply` never arms",
 	"DeleteTrigger":     "trigger authoring and arming; 098 decision 3 — humans arm in the TUI or `$EDITOR`, and `trigger apply` never arms",
+	// The branch pickers on the two creation forms.
+	"ListBranches": "the new-task and new-chat branch pickers; `--existing-branch` takes the name, and a shell already has `git branch`",
 	// Previews and summaries.
 	"Resolve": "the new-task and workflows preview; `vincent workflow render` prints the same §8.6 triple from the same resolver",
 	"Info":    "the daemon summary; its fields are `daemon status`, `agents`, `doctor` and `config get`, and live slot usage stays TUI-only",

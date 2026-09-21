@@ -91,6 +91,43 @@ Settled with the author on 2026-09-21, each with the alternative it beat.
    task change" rather than re-rendering the branch's history. `base_branch`
    stays on the row for the fields that already read it.
 
+8. **The picker's shape decides the request, and the row says which shape it
+   holds.** *(2026-09-21, 125.9, issue #542.)* On the new-task form a branch
+   chosen off the listing commits `branch_name` + `existing_branch: true`; the
+   picker's free-text row commits `branch_name` alone, as it always did. No new
+   row, no new key, nothing extra to set. It is lossless because the one shape
+   it takes away — cut a new branch under a name that already exists — is the
+   shape §10 refuses anyway. It does not reopen decision 1: that is about the
+   *daemon* never inferring the mode from a branch existing, and a client
+   offering two named shapes to choose between leaves the wire contract exactly
+   as decision 1 left it. The rejected alternative was a separate
+   enter-toggled `existing branch` row modelled on the start row: more literal,
+   but it adds a row to §15's order, lets a draft hold the toggle on against a
+   name no branch has, and breaks the `Down N` counts in
+   `scripts/screenshots.sh`'s `tui-new-task` tape for no behavioural gain.
+
+9. **The new-chat form's branch row is adopt-only.** *(2026-09-21, 125.9.)* A
+   chat cannot cut a branch under a name you chose — `branch_name` without
+   `existing_branch` is a 400 (§13.2) — so the row has exactly one meaning and
+   empty leaves today's behaviour untouched. This matches
+   `vincent chat start --branch --existing-branch`, where `--branch` alone is
+   refused. Widening the chat API so `branch_name` alone names a cut branch was
+   rejected as a daemon-and-spec change well outside 125.
+
+10. **A branch one of vincent's own worktrees holds is listed, noted and still
+    selectable.** *(2026-09-21, 125.9.)* `branchListResponse`'s own comment says
+    the listing is a listing and not a validator; the worktree can be removed
+    between picking and admission, and free text can name such a branch anyway.
+    The row carries a note saying it would block. `pickerOption.disabled` was
+    rejected: it makes the client a validator over state that changes
+    underneath it.
+
+11. **Scope is the two creation forms.** *(2026-09-21, 125.9.)* `adopted_branch`
+    is served on every task and chat representation and is rendered nowhere in
+    the TUI; badging the task detail and the chat workspace header ("running in
+    your checkout") is real, but it is past what 125.9 says and belongs to its
+    own issue.
+
 ## Accepted hazard
 
 Nothing here can stop the human switching the main checkout to another branch,
@@ -117,7 +154,7 @@ task rather than a default anyone can fall into.
 - [x] 125.7 `scripts/125-gate.sh`, on all three platforms.
 - [x] 125.8 Spec §10, §5.3 and §18; `docs/reference/api.md`, `cli.md`,
       `task-lifecycle.md` and `guides/troubleshooting.md`.
-- [ ] 125.9 The TUI branch picker on the new-task and new-chat forms, over the
+- [x] 125.9 The TUI branch picker on the new-task and new-chat forms, over the
       listing, with `allowFree` true and a `note` on rows that are checked out.
       Not in the first pull request — the daemon, the API, the CLI and the gate
       land first, and the picker is a form change with no behaviour behind it
