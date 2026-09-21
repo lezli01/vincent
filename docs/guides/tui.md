@@ -1770,7 +1770,8 @@ is highlighted, so `enter` still sends the message exactly as you wrote it.
 
 ![The same list opened by a typed `/re` in the composer, narrowed to the
 skills whose names start with it and the plugin skill found under its bare
-name, with the draft still reading `/re`](../assets/tui-chat-skills-inline.png)
+name, one row picked with `↓` and its description wrapped underneath,
+and the draft still reading `/re`](../assets/tui-chat-skills-inline.png)
 
 This list is an aid to typing rather than a layer over it, so the composer
 keeps the keyboard: every printable key, `backspace` and `ctrl+j` go into the
