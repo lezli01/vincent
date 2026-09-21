@@ -79,6 +79,23 @@ type chatSkillList struct {
 	// the list.
 	cursor int
 	rows   []chatSkillRow
+	// cap is the most rows build() keeps, out of however many matched.
+	// Zero is no cap, which is what the skills list uses: a catalog is
+	// dozens of rows and a cap there would be theatre (issue #553
+	// decision 1). It is a field rather than a package constant because
+	// the lists that share this renderer want different numbers — the
+	// zero value stays a closed list that has asked for nothing.
+	cap int
+	// matched is how many rows matched the filter *before* cap truncated
+	// them. It is the half of `3 of 20` that tells a reader their row
+	// may exist and simply not be listed (decision 2), and it is free:
+	// rankChatSkills already returns every matching index.
+	matched int
+	// rowLine draws one row, chatSkillRowLine unless a test replaced it.
+	// It is a seam because "render styles only the visible rows" is a
+	// property about *how many* calls happen, and counting them is
+	// deterministic where a wall clock is not (decision 3).
+	rowLine func(r chatSkillRow, selected bool, width int) string
 
 	// suppressed is the draft token an inline `esc` closed the list on. It
 	// stays shut until the token changes, which is also what gives `↑`/`↓`
@@ -182,6 +199,7 @@ func (l *chatSkillList) canInvoke() bool {
 // them.
 func (l *chatSkillList) build() {
 	l.rows = l.rows[:0]
+	l.matched = 0
 	if !l.canList() {
 		l.cursor = -1
 		return
@@ -190,7 +208,14 @@ func (l *chatSkillList) build() {
 	if !l.canInvoke() {
 		reason = chatSkillsNoInvokeReason(l.data)
 	}
-	for _, i := range rankChatSkills(l.data.Skills, l.filter) {
+	ranked := rankChatSkills(l.data.Skills, l.filter)
+	l.matched = len(ranked)
+	// The cap is applied *after* the ranking, so what survives is the best
+	// matches rather than an arbitrary prefix of the catalog (issue #553).
+	if l.cap > 0 && len(ranked) > l.cap {
+		ranked = ranked[:l.cap]
+	}
+	for _, i := range ranked {
 		s := l.data.Skills[i]
 		row := chatSkillRow{
 			invocation:  s.Invocation,
@@ -397,11 +422,7 @@ func (l *chatSkillList) render(width, paneHeight int, now time.Time) []string {
 	case len(l.rows) == 0:
 		out = append(out, styleDim.Render(fmt.Sprintf("   %s reported no skills for this chat", l.agentName())))
 	default:
-		lines := make([]string, 0, len(l.rows))
-		for i, r := range l.rows {
-			lines = append(lines, chatSkillRowLine(r, i == l.cursor, width))
-		}
-		out = append(out, window(lines, max(l.cursor, 0), win)...)
+		out = append(out, l.visibleRows(width, win)...)
 	}
 	// The reserve, whether or not a row is highlighted.
 	body := make([]string, chatSkillsDescLines)
@@ -424,15 +445,50 @@ func (l *chatSkillList) render(width, paneHeight int, now time.Time) []string {
 	return out[:1+win+chatSkillsDescLines]
 }
 
+// visibleRows styles the rows the window shows, and only those.
+//
+// The list used to style every row it held and window the result afterwards,
+// which made one frame cost the whole row set — 2.0 ms at this repo's 1,615
+// tracked files and 129 ms at 100,000 (issue #553). Computing the range
+// first makes the cost flat in the row count.
+//
+// Equivalence with the old path is by construction rather than by
+// inspection: `window` (detailrender.go) returns every line when there are
+// at most `height` of them and `lines[windowStart(…) : +height]` otherwise,
+// so these two indices reproduce both of its arms. Its `height <= 0` arm is
+// unreachable here — `chatSkillList.window` never returns less than 1. The
+// scroll behaviour a reader sees is `windowStart`'s, and is unchanged.
+func (l *chatSkillList) visibleRows(width, win int) []string {
+	start := windowStart(len(l.rows), max(l.cursor, 0), win)
+	end := min(start+win, len(l.rows))
+	draw := l.rowLine
+	if draw == nil {
+		draw = chatSkillRowLine
+	}
+	out := make([]string, 0, max(end-start, 0))
+	for i := start; i < end; i++ {
+		out = append(out, draw(l.rows[i], i == l.cursor, width))
+	}
+	return out
+}
+
 // titleLine names the list, the filter being typed and how old the answer is.
 func (l *chatSkillList) titleLine(now time.Time) string {
 	title := styleTitle.Render("skills")
-	tail := make([]string, 0, 3)
+	tail := make([]string, 0, 4)
 	// Only browse draws its filter: the inline list's filter is the token
 	// the human can see in the draft, and printing it twice would read as
 	// two buffers rather than one.
 	if l.mode == skillModeBrowse && l.filter != "" {
 		tail = append(tail, l.filter)
+	}
+	// A capped build says how many of the matches are listed, so "your row
+	// is not here" can never read as "your row does not match" (issue #553
+	// decision 2). The picker's `▼ %d more` idiom is deliberately not
+	// reused: there it means the *window* overflowed, and one string may
+	// not mean two things.
+	if l.matched > len(l.rows) {
+		tail = append(tail, fmt.Sprintf("%d of %d", len(l.rows), l.matched))
 	}
 	if l.data != nil && l.data.ProbedAt != nil {
 		tail = append(tail, "probed "+formatElapsed(max(now.Sub(*l.data.ProbedAt), 0).Truncate(time.Second))+" ago")

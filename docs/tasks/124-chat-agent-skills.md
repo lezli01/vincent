@@ -1,8 +1,8 @@
 # 124 — Let a chat's human see the agent's skills and invoke one from a message
 
-**Status:** 🔄 in progress (17/20)
+**Status:** 🔄 in progress (19/21)
 **Opened:** 2026-09-19
-**Issue:** #496 (parent), #497–#515 (one per item)
+**Issue:** #496 (parent), #497–#515 (one per item), #553 (124.21)
 **Spec:** §9.1 (`SkillLister`, `SkillInvoker`), §9.6 (`supports_skill_listing`,
 `skill_sigil`, `skill_position`), §9.7 (cursor invokes, never lists), §9.8
 (where codex and cursor read skills from); later items amend §5.5, §9.4, §12.1,
@@ -881,6 +881,43 @@ documentation landed, 79–82 when 124.15 was, and 83–88 when 124.14 was.
     that is §9's rule, and a "container misconfiguration" verdict would be
     vincent second-guessing a CLI. *Beaten:* guessing in the spec, and
     inventing a verdict for a configuration vincent did not choose.
+101. **2026-09-21 — The cap is a field on the list, and an unset cap is no
+    cap.** `chatSkillList` carries `cap int`; zero means unlimited, which is
+    what the skills list uses — a skills catalog is dozens of rows and a cap
+    there would be theatre. Tests set a small one to exercise the path, and
+    #555's file list will set a real one. *Beaten:* a package constant — the
+    skills list and the file list want different numbers, and #554's
+    data-neutral core could not vary one. The zero value stays a closed list
+    that has asked for nothing.
+102. **2026-09-21 — A capped build says `3 of 20` on the title line.** The
+    full ranked count is free: `rankChatSkills` already returns every
+    matching index, so `build` records `len(ranked)` before truncating. The
+    total is the half that tells a reader their row may exist and simply not
+    be listed, which is what keeps "your row is not here" from reading as
+    "your row does not match". It joins the title's existing dim tail beside
+    the filter, the probe age and the key hints. *Beaten:* the picker's
+    `▼ %d more` idiom (`internal/tui/newtaskpicker.go`) — there it means the
+    *window* overflowed, and reusing the words for a *build* cap would make
+    one string mean two things.
+103. **2026-09-21 — Flatness is proven by counting, not by a clock.** The row
+    renderer became a seam on the list — a `func(chatSkillRow, bool, int)
+    string` field defaulting to `chatSkillRowLine`, which is also the shape
+    #554's core wants — and `TestChatSkillsRenderOnlyStylesTheVisibleRows`
+    counts the calls: at 100,000 rows the renderer runs exactly `win` times,
+    at every cursor clamp. That is the actual property, it is deterministic,
+    and it survives `-race` on all three legs. *Beaten:* a wall-clock bound
+    (`internal/tui` has no timing assertion today and Windows `-race`
+    already produces enough timing flakes) and a bare `Benchmark` as the only
+    evidence (the repository has none anywhere, CI would never run one, and
+    nothing would guard the regression).
+104. **2026-09-21 — No spec amendment for 124.21.** With the skills list
+    setting no cap, no observable behaviour changes: §15's chat-workspace
+    passage describes the list a reader sees, and which rows an
+    implementation styles to produce it is not spec-level. The drawn frame is
+    byte-identical, so no screenshot was re-run either. The cap's wording is
+    spec'd by #555, in the pull request that makes a list actually hit it —
+    CLAUDE.md's rule against a spec describing a system that does not exist
+    yet. *Beaten:* writing the cap into §15 ahead of a list that can reach it.
 
 ## Open questions
 
@@ -1091,12 +1128,33 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
 - [ ] 124.20 (no issue yet) Surface claude's `conversation_reset` as a visible
   chat record, so a `/clear` in a chat is marked where it happened rather than
   leaving a transcript the agent no longer shares (decision 78). Depends: none.
+- [x] 124.21 (#553) Window the list's rows before styling them, and cap the
+  built set. `chatSkillList.render` styled **every** row it held and windowed
+  the result afterwards, so one frame paid `chatSkillRowLine` — `ansi.Truncate`
+  included — once per row: 67 µs at 20 rows, 2.0 ms at 1,615 and 129 ms at
+  100,000, linear in the count and independent of what is drawn.
+  `visibleRows` computes the range with the same `windowStart` that `window`
+  already calls and styles only `rows[start:end]`, which makes the cost flat;
+  equivalence is by construction, not by inspection. `build` gains a cap
+  applied *after* `rankChatSkills`, so what survives is the best matches
+  rather than a prefix of the catalog, and `titleLine` reports the overflow as
+  `3 of 20`, distinguishably from the "nothing matches" arm. `height`,
+  `window`, `pickerWindow`, `chatSkillsDescLines` and decision 75's
+  three-line reserve are read, never touched — the #299 discipline is
+  unchanged and the drawn frame is byte-identical. The skills list sets no
+  cap; #555's file list will. Decisions 101–104. Depends: none.
+  ✓ 2026-09-21
 
 The requirement's two done criteria are met once 124.14, 124.11, 124.10, 124.3
 and 124.15 have landed — all five of which have, 124.14 last, on 2026-09-20.
 124.16, 124.17 and 124.18 widen coverage after that, 124.19 photographed both
 openers on 2026-09-21, and 124.20 remains. *Amended 2026-09-21: 124.16, 124.17
-and 124.19 have landed; 124.18 and 124.20 remain.*
+and 124.19 have landed; 124.18 and 124.20 remain.* *Amended 2026-09-21: 124.21
+(#553) makes the list's render cost flat in the row count and gives it a cap;
+it is an improvement to 124.13's list rather than a new criterion, so the
+requirement's done criteria are unmoved. The head's count and the index row in
+`docs/tasks/README.md` disagreed — 17/20 against 18/20 — and both now read
+19/21.*
 
 ## Verification
 
@@ -1361,3 +1419,31 @@ and 124.19 have landed; 124.18 and 124.20 remain.*
   the draft, `tab complete` in the title, and the four rows that match it —
   three by name prefix and `vincent-workflows:review-pr` by its bare name.
   Neither shows the `builtin` row.
+- 124.21: `TestChatSkillsRenderOnlyStylesTheVisibleRows` counts the row
+  renderer's calls through the seam at 100,000 rows with the cursor unset, at
+  0, in the middle and on the last row — the four clamps `windowStart`
+  distinguishes — and requires exactly `window(paneHeight)` of them, plus the
+  frame still being `height(paneHeight)` lines.
+  `TestChatSkillsWindowedRowsMatchRenderingEveryRow` is the scroll
+  behaviour's regression guard: over row counts 0, 1, `win-1`, `win`,
+  `win+1` and 100 crossed with those same four cursor positions,
+  `visibleRows` equals the pre-#553 `window(everyRowStyled, …)` slice line for
+  line. `TestChatSkillsCappedBuildReadsDifferentlyFromAnEmptyOne` holds
+  decision 102 — `3 of 20` on a capped title, no count and the "nothing
+  matches" line on a filter that matched none, and a cap of 20 over 20 rows
+  producing a title byte-identical to the uncapped one — and
+  `TestChatSkillsCapKeepsTheBestMatches` holds decision 101's slice order: a
+  cap of 1 over a catalog whose only tier-0 match is its **last** row keeps
+  `/deploy`, never the catalog's first. `TestChatSkillsHeightComesOutOfTheBody`,
+  `TestChatSkillsRenderIsLegibleWithoutColour` and
+  `TestChatSkillsNarrowPaneKeepsTheName` pass unchanged, as do the whole
+  inline and browse suites — the drawn rows' truncation is the same function
+  on the same inputs.
+
+  One consequence is recorded rather than fixed: `exact(tok)` scans `l.rows`,
+  so a cap could in principle hide the row an exactly-typed invocation should
+  match, leaving the inline list open where the hide rule says it should
+  close. It cannot bite here — the skills list sets no cap, and an exact match
+  is a name prefix, which `rankChatSkills` puts in tier 1 where any
+  non-pathological cap keeps it. It is written down because #555 sets a real
+  cap over a far larger set, and that is where the question becomes live.
