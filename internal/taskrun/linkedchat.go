@@ -110,14 +110,60 @@ var ErrTaskContainerMissing = errors.New("the task's container is not running")
 // ChatLauncher is where a linked chat's turn runs (task 119 decision 3): in
 // the task's container when its workflow runs in one, on the host otherwise.
 // turnID keys the pid file 061 decision 9's kill reaches the process through.
-func (r *Runner) ChatLauncher(ctx context.Context, taskID, turnID int64) (agent.Launcher, error) {
+//
+// It returns the turn's place and environment beside the launcher (task
+// 124.17 decisions 2 and 3).
+//
+// The environment is decision 3. A containerized turn used to carry none, so
+// the CLI in the container ran under the *image's* HOME and never saw the
+// `~/.claude`, `~/.codex` and `~/.cursor` that `container.mount_agent_config`
+// bind-mounts beneath container.HomeDir — a §16 promise only agent steps were
+// keeping, through containerEnv. A host turn carries nil, which is the
+// daemon's own environment, exactly as before.
+//
+// The place is decision 2: the container's id, or "" on the host. It is what
+// the turn's init line is filed under in the skill cache, so what a
+// container's claude says it bundles is never read as the host binary's.
+func (r *Runner) ChatLauncher(
+	ctx context.Context, taskID, turnID int64,
+) (l agent.Launcher, place string, env []string, err error) {
 	tc, err := r.chatContainer(ctx, taskID)
 	if err != nil || !tc.active() {
-		return agent.HostLauncher{}, err
+		return agent.HostLauncher{}, "", nil, err
 	}
 	return &containerLauncher{
 		tc: tc, key: chatExecKey(turnID), user: container.HostUser(), log: r.deps.Logger,
-	}, nil
+	}, tc.id, r.containerEnv(tc.settings), nil
+}
+
+// ChatSkillLauncher is where a linked chat's *skill probe* runs (task 124.17,
+// §5.5, §9.6, #513), beside ChatLauncher and resolved through the same
+// chatContainer helper so the probe and the turn can never disagree about
+// where the CLI starts.
+//
+// A host task answers agent.HostLauncher{}, the host place ("") and the
+// daemon's environment. A task whose workflow runs in a container answers a
+// launcher into that container, the container's id as the place, and
+// containerEnv's environment — the same HOME the turn now gets. A configured
+// container that is gone answers ErrTaskContainerMissing, and the caller then
+// says so rather than falling back to the host: probing the host would list
+// the skills of a machine the agent never runs on, which is §9's emulation.
+//
+// Unlike ChatLauncher this is keyed by *chat*, not by turn: a probe has no
+// turn and no row, so skillExecKey is its own pid-file namespace (decision 4).
+func (r *Runner) ChatSkillLauncher(
+	ctx context.Context, taskID, chatID int64,
+) (l agent.Launcher, place string, env []string, err error) {
+	tc, err := r.chatContainer(ctx, taskID)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	if !tc.active() {
+		return agent.HostLauncher{}, "", nil, nil
+	}
+	return &containerLauncher{
+		tc: tc, key: skillExecKey(chatID), user: container.HostUser(), log: r.deps.Logger,
+	}, tc.id, r.containerEnv(tc.settings), nil
 }
 
 // StopChatOrphan is §12.4's container-aware kill for a linked-chat turn a
@@ -129,31 +175,33 @@ func (r *Runner) StopChatOrphan(ctx context.Context, taskID, turnID int64) bool 
 	if err != nil || !tc.active() {
 		return false
 	}
-	stopInContainer(tc, chatExecKey(turnID), r.deps.Logger)
+	stopInContainer(tc, chatExecKey(turnID), containerGraceTimeout, r.deps.Logger)
 	return true
 }
 
-// ChatInContainer reports whether taskID's workflow runs in a container,
-// from the task's workflow snapshot and container settings alone. It never
-// calls the runtime, so a configured container that is gone still reports
-// true (task 124 decision 56).
+// StopChatSkillProbe is §12.4's container-aware kill for a skill probe a
+// previous daemon died under (task 124.17 decision 4): TERM then KILL through
+// the chat's probe pid file inside the task's container, mirroring
+// StopChatOrphan.
 //
-// It is what GET /v1/chats/{id}/skills asks before listing a directory (task
-// 124.9, §13.2): a question a client can repeat at will must not spawn
-// `docker inspect` each time, and a missing container is the turn's failure to
-// report, through ChatLauncher, not this bit's.
-func (r *Runner) ChatInContainer(ctx context.Context, taskID int64) (bool, error) {
-	c, err := r.chatContainerSettings(ctx, taskID)
-	if err != nil {
-		return false, err
+// A probe writes no row, so chatrun.Recover cannot find a dead one by walking
+// running turns the way it finds a turn; it sweeps the open linked chats
+// instead and calls this for each. A task with no container has nothing to do
+// here — a host probe is an ordinary child of the dead daemon — and reports
+// false, as does a task whose container is already gone.
+func (r *Runner) StopChatSkillProbe(ctx context.Context, taskID, chatID int64) bool {
+	tc, err := r.chatContainer(ctx, taskID)
+	if err != nil || !tc.active() {
+		return false
 	}
-	return c.Enabled(), nil
+	stopInContainer(tc, skillExecKey(chatID), skillProbeGrace, r.deps.Logger)
+	return true
 }
 
 // chatContainerSettings resolves a task's container settings from its workflow
-// snapshot. It is the one place both ChatLauncher and ChatInContainer read
-// them from, so where a turn runs and where the skills route says it runs can
-// never disagree.
+// snapshot. It is the one place chatContainer reads them from, so where a
+// turn runs, where its probe runs and where the skills route says either runs
+// can never disagree.
 func (r *Runner) chatContainerSettings(ctx context.Context, taskID int64) (config.Container, error) {
 	task, err := r.deps.Store.GetTask(ctx, taskID)
 	if err != nil {
@@ -187,6 +235,12 @@ func (r *Runner) chatContainer(ctx context.Context, taskID int64) (taskContainer
 // chatExecKey names a chat turn's pid file. It cannot collide with a step's:
 // the prefixes differ.
 func chatExecKey(turnID int64) string { return "chat-" + strconv.FormatInt(turnID, 10) }
+
+// skillExecKey names a chat skill probe's pid file (task 124.17 decision 4).
+// It is keyed by chat rather than by turn — a probe has no turn — and its
+// prefix collides with neither a step's nor a turn's, so a probe and the
+// turn of the same chat can be signalled apart.
+func skillExecKey(chatID int64) string { return "skills-" + strconv.FormatInt(chatID, 10) }
 
 // cancelLocked is `cancel` on a task an open chat has locked (task 119): the
 // chat's live turn is stopped first, then one transaction closes the chat and

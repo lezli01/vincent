@@ -9,15 +9,17 @@ import (
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/chatrun"
 	"github.com/lezli01/vincent/internal/chatstate"
+	"github.com/lezli01/vincent/internal/taskrun"
 )
 
-// containerSkillsReason is what a container-run linked chat is told in place
-// of a list (task 124 decision 11, 124.9, #505). Listing on the host would
-// name skills the agent in the container never loads, which is emulation;
-// probing through the container is task 124.17 (#513), and this string goes
-// when that lands.
-const containerSkillsReason = "this chat's task runs in a container, and listing skills " +
-	"inside the task's container is not supported yet"
+// missingContainerSkillsReason is what a linked chat whose task is configured
+// to run in a container that no longer exists is told in place of a list
+// (task 124.17, #513). The probe runs inside the task's container or not at
+// all: listing on the host would name the skills of a machine the agent never
+// runs on, which is §9's emulation, and the operator chose to confine that
+// worktree (task 119 decision 3).
+const missingContainerSkillsReason = "this chat's task runs in a container, and that " +
+	"container is not running, so the skills its agent would load cannot be listed"
 
 // chatSkillsBody is GET /v1/chats/{id}/skills (§5.5, §13.2, task 124.9,
 // #505). Its fields are flat siblings, §9.6's rule for GET /v1/agents: a
@@ -31,7 +33,9 @@ type chatSkillsBody struct {
 	ChatID int64  `json:"chat_id"`
 	Agent  string `json:"agent"`
 	// WorkDir is the directory the chat's next turn would start in, and so
-	// the one the list is about (chatrun.Runner.Workspace).
+	// the one the list is about (chatrun.Runner.SkillPlace). It is a path in
+	// the container for a linked chat on a containerized task, which is the
+	// same path the worktree is mounted at (§16).
 	WorkDir string `json:"work_dir"`
 	// ListVerdict means what agent.InputVerdict means (task 124 decision 4):
 	// "supported" is a real list, "unsupported" a positive no, and
@@ -99,9 +103,15 @@ type chatProblemBody struct {
 // It answers 200 with verdicts and refuses only on state (task 124 decision
 // 4): a read about a capability is information, not a refused action. The
 // cache owns the TTLs, single flight and the list kept across a failed probe
-// (§9.6); this handler only picks the directory and maps the answer. A probe
+// (§9.6); this handler only picks the placement and maps the answer. A probe
 // is not a turn — it takes no `max_parallel_chats` slot — so a running or
 // awaiting chat is listed like an idle one.
+//
+// For a linked chat on a containerized task it costs one runtime lookup per
+// request, cache hit or not (task 124.17 decision 1, amending task 124
+// decision 56): finding the container is what placing the probe needs, and
+// the honest "that container is gone" needs it even when a list is already
+// held. Every other chat asks nothing.
 func (s *Server) handleChatSkills(w http.ResponseWriter, r *http.Request) {
 	// The tolerated-nil convention: a server built without any of the three
 	// answers 500 rather than guessing at a directory or an adapter.
@@ -124,14 +134,23 @@ func (s *Server) handleChatSkills(w http.ResponseWriter, r *http.Request) {
 	refresh := r.URL.Query().Has("refresh") &&
 		r.URL.Query().Get("refresh") != "false" && r.URL.Query().Get("refresh") != "0"
 	// The turn's own placement, so the list and the next turn cannot disagree
-	// about where the CLI starts.
-	dir, inContainer, err := s.deps.Chats.Workspace(r.Context(), chat)
+	// about where the CLI starts: the directory, and for a linked chat on a
+	// containerized task the launcher into that container, its id as the
+	// cache's place, and the environment the turn runs with (task 124.17).
+	dir, launcher, place, env, err := s.deps.Chats.SkillPlace(r.Context(), chat)
 	if errors.Is(err, chatrun.ErrLinkedTaskNoWorktree) {
 		writeJSON(w, http.StatusConflict, errorBody{Error: errorDetail{
 			Code: CodeTaskHasNoWorktree, Message: err.Error(),
 			Details: map[string]string{"task_id": fmt.Sprint(*chat.LinkedTaskID)},
 		}})
 		return
+	}
+	// A configured container that is gone is the one placement that has no
+	// answer, and it is read before anything else about the adapter: nothing
+	// probes, here or on the host (task 124.17 decision 1).
+	missingContainer := errors.Is(err, taskrun.ErrTaskContainerMissing)
+	if missingContainer {
+		dir, err = "", nil
 	}
 	if err != nil {
 		s.internalError(w, "chat workspace", err)
@@ -155,13 +174,13 @@ func (s *Server) handleChatSkills(w http.ResponseWriter, r *http.Request) {
 		body.InvokeVerdict = string(agent.InputUnsupported)
 	}
 	switch {
-	case inContainer:
-		// Checked ahead of the adapter, and the cache is never called: a
-		// host probe would list the wrong skills (task 124 decision 11). A
-		// container that is configured but gone lands here too, and still
-		// never falls back to the host.
+	case missingContainer:
+		// Checked ahead of the adapter, and the cache is never called: there
+		// is nowhere to ask, and the host is not a fallback (task 124.17
+		// decision 1). WorkDir is "" for the same reason — the directory the
+		// turn would have read is inside a container that is not there.
 		body.ListVerdict = string(agent.InputUnknown)
-		body.UnavailableReason = containerSkillsReason
+		body.UnavailableReason = missingContainerSkillsReason
 	case !registered:
 		// A chat whose adapter is no longer registered is "nobody can say",
 		// never a no (task 124 decision 58): the name may come back.
@@ -174,7 +193,8 @@ func (s *Server) handleChatSkills(w http.ResponseWriter, r *http.Request) {
 		body.ListVerdict = string(agent.InputUnsupported)
 		body.UnavailableReason = fmt.Sprintf("%s does not report the skills it loads", chat.Agent)
 	default:
-		renderSkillAnswer(&body, s.deps.Skills.Lookup(r.Context(), a, dir, refresh), invoker)
+		p := agent.SkillPlacement{WorkDir: dir, Launcher: launcher, Env: env, Place: place}
+		renderSkillAnswer(&body, s.deps.Skills.Lookup(r.Context(), a, p, refresh), invoker)
 	}
 	writeJSON(w, http.StatusOK, body)
 }

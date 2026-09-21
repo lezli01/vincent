@@ -64,7 +64,11 @@ skills — `simplify`, `loop` and `run`, which it marks exactly the way it marks
 those commands — are listed once one turn has run on that claude, a turn's own
 report of what it loaded being the only thing that tells the two apart. That
 first turn brings them back in every chat and every directory, not just the one
-that ran it, and each arrives marked `builtin`.
+that ran it, and each arrives marked `builtin`. A chat on a task that runs in
+a [container](configuration.md#container) is listed inside that container, by
+the image's CLI — so its list, and its bundled skills, are the container's and
+never your host's; `~/.agents` is not mounted there, so a containerized codex
+or cursor chat lists nothing from it.
 When two codex skills share a name, `$name` selects neither; name one
 with codex's linked form, `[$name](path)`, which is the invocation that route
 gives for it. In a chat
@@ -565,11 +569,13 @@ session the mounted agent configuration keeps between turns.
 
 Everything on this page that vincent *probes* still describes the host's CLI —
 `vincent agents`, `vincent doctor`, `GET /v1/agents`, the model and effort
-catalog, login state, codex's quota reading and the usage-limit holds. The one
-exception is claude's
+catalog, login state, codex's quota reading and the usage-limit holds. Two
+things are asked of the image instead. claude's
 [mid-run questions](#mid-run-questions): whether a containerized claude can take
 an answer is decided by running `claude --version` **in the image**, so
-`on_input: require` is judged against the claude that will actually run.
+`on_input: require` is judged against the claude that will actually run. And
+the skill list of a chat opened on such a task, which is read by the image's
+CLI inside the container, as above.
 
 **Logging in.** [`mount_agent_config`](../reference/configuration.md#container),
 on by default, mounts your `~/.claude`, `~/.codex` and `~/.cursor` read-write

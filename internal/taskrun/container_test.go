@@ -7,11 +7,13 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/container"
 	"github.com/lezli01/vincent/internal/store"
@@ -34,6 +36,10 @@ type fakeRuntime struct {
 	// image's PATH and CLI. gateway is what Gateway reports.
 	execDirect func(container.ExecSpec) []string
 	gateway    string
+	// execs is every ExecSpec Exec was asked to build, which is where the
+	// pid-file key a launcher chose can be read (061 decision 9). How a Key
+	// becomes argv is internal/container's own table test.
+	execs []container.ExecSpec
 }
 
 func newFakeRuntime() *fakeRuntime { return &fakeRuntime{labels: map[string]string{}} }
@@ -50,7 +56,17 @@ func (f *fakeRuntime) Create(_ context.Context, spec container.CreateSpec) (stri
 }
 
 func (f *fakeRuntime) Exec(id string, spec container.ExecSpec) []string {
+	f.mu.Lock()
+	f.execs = append(f.execs, spec)
+	f.mu.Unlock()
 	return append([]string{"fake", "exec", id}, spec.Argv...)
+}
+
+// execSpecs is every ExecSpec Exec built, in order.
+func (f *fakeRuntime) execSpecs() []container.ExecSpec {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]container.ExecSpec(nil), f.execs...)
 }
 
 func (f *fakeRuntime) ExecDirect(id string, spec container.ExecSpec) []string {
@@ -97,6 +113,13 @@ func (f *fakeRuntime) removals() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.removed...)
+}
+
+// signalled is every signal delivered, as "container/key/SIGNAL".
+func (f *fakeRuntime) signalled() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.signals...)
 }
 
 func (f *fakeRuntime) calls() int {
@@ -398,23 +421,23 @@ func TestArchiveHonoursTheWorkflowsOwnImage(t *testing.T) {
 	}
 }
 
-// TestChatInContainerReadsSettingsOnly is task 124 decision 56: the bit
-// GET /v1/chats/{id}/skills picks a directory by is read from the task's
-// snapshot and settings, and never from the runtime — a client may ask it on
-// every refetch, and each ask spawning `docker inspect` is the cost the
-// archive guard above was written to remove. The containerized cases have no
-// container at all, so a true here is also "configured but gone": the turn,
-// not this bit, is what reports a missing container.
-func TestChatInContainerReadsSettingsOnly(t *testing.T) {
+// TestChatSkillLauncherPlacesTheProbeWhereTheTurnRuns is task 124.17
+// decision 1, which amends task 124 decision 56: GET /v1/chats/{id}/skills no
+// longer reads a settings-only bit, it resolves the same placement the next
+// turn would use. A host task costs no runtime call at all; a containerized
+// one costs the lookup that finding its container needs.
+func TestChatSkillLauncherPlacesTheProbeWhereTheTurnRuns(t *testing.T) {
 	cases := []struct {
 		name     string
 		image    string // the daemon's own container.image
 		snapshot string
-		want     bool
+		running  bool // whether the task's container exists
+		wantHost bool
 	}{
-		{"host workflow", "", hostSnapshot, false},
-		{"workflow names an image", "", imageSnapshot, true},
-		{"daemon names an image", "alpine:3", hostSnapshot, true},
+		{"host workflow", "", hostSnapshot, false, true},
+		{"workflow names an image", "", imageSnapshot, true, false},
+		{"daemon names an image", "alpine:3", hostSnapshot, true, false},
+		{"a configured container that is gone", "alpine:3", hostSnapshot, false, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -430,40 +453,123 @@ func TestChatInContainerReadsSettingsOnly(t *testing.T) {
 			rt := newFakeRuntime()
 			r := containerRunner(tc.image, rt)
 			r.deps.Store = st
+			if tc.running {
+				if _, err := rt.Create(context.Background(), container.CreateSpec{
+					Name:   container.Name(task.ID),
+					Labels: map[string]string{container.LabelTask: strconv.FormatInt(task.ID, 10)},
+				}); err != nil {
+					t.Fatalf("Create: %v", err)
+				}
+			}
 
-			got, err := r.ChatInContainer(context.Background(), task.ID)
-			if err != nil {
-				t.Fatalf("ChatInContainer: %v", err)
+			l, place, env, err := r.ChatSkillLauncher(context.Background(), task.ID, 42)
+			switch {
+			case tc.wantHost:
+				if err != nil || place != "" || env != nil {
+					t.Fatalf("ChatSkillLauncher on a host task = %q, %v, %v; want the host",
+						place, env, err)
+				}
+				if _, ok := l.(agent.HostLauncher); !ok {
+					t.Errorf("launcher = %T, want agent.HostLauncher", l)
+				}
+				// The bit this replaced never asked the runtime, and neither
+				// does a host task: only a container has to be found.
+				if n := rt.calls(); n != 0 {
+					t.Errorf("a host task reached the runtime %d time(s)", n)
+				}
+			case !tc.running:
+				if !errors.Is(err, ErrTaskContainerMissing) {
+					t.Fatalf("ChatSkillLauncher with no container = %v, want ErrTaskContainerMissing", err)
+				}
+				if l != nil {
+					t.Errorf("launcher = %T, want nil", l)
+				}
+			default:
+				if err != nil {
+					t.Fatalf("ChatSkillLauncher: %v", err)
+				}
+				if want := container.Name(task.ID); place != want {
+					t.Errorf("place = %q, want the container id %q", place, want)
+				}
+				// Decision 3's environment, the same containerEnv an agent
+				// step gets: the CLI reads the configuration
+				// `mount_agent_config` mounted rather than the image's HOME.
+				if !slices.Contains(env, "HOME="+container.HomeDir) {
+					t.Errorf("env = %v, want it to carry HOME=%s", env, container.HomeDir)
+				}
 			}
-			if got != tc.want {
-				t.Errorf("ChatInContainer = %v, want %v", got, tc.want)
+			if l == nil || tc.wantHost {
+				return
 			}
-			if n := rt.calls(); n != 0 {
-				t.Errorf("ChatInContainer reached the runtime %d time(s)", n)
-			}
-			// The launcher reads the same settings, so the two agree: a
-			// containerized task whose container is gone fails the turn
-			// rather than running it on the host (task 119 decision 3).
-			_, err = r.ChatLauncher(context.Background(), task.ID, 1)
-			if gone := errors.Is(err, ErrTaskContainerMissing); gone != tc.want {
-				t.Errorf("ChatLauncher error = %v, want container missing = %v", err, tc.want)
+			// Decision 4's pid-file namespace, keyed by chat: a probe has no
+			// turn, and `skills-` collides with neither `chat-` nor `step-`.
+			_, _ = l.Launch(agent.Command{Path: "claude", Args: []string{"--help"}, Dir: "/w"})
+			specs := rt.execSpecs()
+			if len(specs) != 1 || specs[0].Key != "skills-42" {
+				t.Errorf("exec specs = %+v, want one keyed skills-42", specs)
 			}
 		})
 	}
 }
 
-// TestChatInContainerPropagatesAMissingTask keeps a store error an error: a
+// TestChatSkillLauncherPropagatesAMissingTask keeps a store error an error: a
 // task that cannot be read is not a task that runs on the host.
-func TestChatInContainerPropagatesAMissingTask(t *testing.T) {
+func TestChatSkillLauncherPropagatesAMissingTask(t *testing.T) {
 	st, _ := recoverStore(t)
 	rt := newFakeRuntime()
 	r := containerRunner("", rt)
 	r.deps.Store = st
 
-	if _, err := r.ChatInContainer(context.Background(), 999); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("ChatInContainer on a missing task = %v, want ErrNotFound", err)
+	if _, _, _, err := r.ChatSkillLauncher(context.Background(), 999, 1); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("ChatSkillLauncher on a missing task = %v, want ErrNotFound", err)
 	}
 	if n := rt.calls(); n != 0 {
-		t.Errorf("ChatInContainer reached the runtime %d time(s)", n)
+		t.Errorf("ChatSkillLauncher reached the runtime %d time(s)", n)
+	}
+}
+
+// TestStopChatSkillProbeSignalsTheProbeKey is decision 4's recovery half: the
+// kill reaches `skills-<chatID>` inside the task's container, never the
+// turn's `chat-` file, and a task with no container reports false so the
+// sweep costs nothing on a host board.
+//
+// It takes skillProbeGrace to run, and that is the point of skillProbeGrace:
+// at containerGraceTimeout this test would sit for fifteen seconds, and so
+// would every daemon start with one open linked chat on a containerized task.
+func TestStopChatSkillProbeSignalsTheProbeKey(t *testing.T) {
+	st, projectID := recoverStore(t)
+	task := &store.Task{
+		ProjectID: projectID, Title: "linked", WorkflowName: "adhoc",
+		WorkflowSnapshot: hostSnapshot, BaseBranch: "main", BranchName: "vincent/1-linked",
+		State: store.TaskBlocked,
+	}
+	if err := st.CreateTask(context.Background(), task, nil); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	rt := newFakeRuntime()
+	hostRunner := containerRunner("", rt)
+	hostRunner.deps.Store = st
+	if hostRunner.StopChatSkillProbe(context.Background(), task.ID, 42) {
+		t.Error("StopChatSkillProbe on a host task = true, want false")
+	}
+	if got := rt.signalled(); len(got) != 0 {
+		t.Errorf("a host task signalled %v", got)
+	}
+
+	r := containerRunner("alpine:3", rt)
+	r.deps.Store = st
+	name := container.Name(task.ID)
+	if _, err := rt.Create(context.Background(), container.CreateSpec{
+		Name:   name,
+		Labels: map[string]string{container.LabelTask: strconv.FormatInt(task.ID, 10)},
+	}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if !r.StopChatSkillProbe(context.Background(), task.ID, 42) {
+		t.Error("StopChatSkillProbe on a containerized task = false, want true")
+	}
+	want := []string{name + "/skills-42/TERM", name + "/skills-42/KILL"}
+	if got := rt.signalled(); !slices.Equal(got, want) {
+		t.Errorf("signals = %v, want %v", got, want)
 	}
 }

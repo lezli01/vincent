@@ -659,7 +659,7 @@ func (r *Runner) runShellCommand(
 				// (task 061 decision 9); the container itself survives, so a
 				// retry finds what an earlier step installed.
 				if tc.active() {
-					stopInContainer(tc, key, env.log)
+					stopInContainer(tc, key, containerGraceTimeout, env.log)
 				}
 				_ = proc.Kill()
 			})

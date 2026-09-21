@@ -39,7 +39,7 @@
 # That is a real coverage gap and it is stated rather than implied: a gate that
 # has never run on a platform is not known to pass there.
 #
-# No real agent CLI is involved: scenarios 1–5 run `command` steps, and 6–10 run
+# No real agent CLI is involved: scenarios 1–5 run `command` steps, and 6–11 run
 # cmd/fakeagent cross-compiled for the runtime's linux architecture and
 # bind-mounted into the image as `claude`, so the gate is as fast on CI as it is
 # locally. Their `run:` bodies are the one place in this
@@ -119,7 +119,21 @@ echo "== build vincent"
 echo "== build the gate image (alpine + git)"
 # The image is the user's, and this is the smallest honest stand-in for one: a
 # base with git on it. Nothing vincent ships is in it, which is the point.
-printf 'FROM alpine:3\nRUN apk add --no-cache git\n' > "$TMP/Dockerfile"
+#
+# The two ENVs are scenario 11's discriminator (task 124.17). The image's
+# `claude` is the same fakeagent binary the host's is, so the only way to tell
+# a list obtained inside the container from one obtained on the host is the
+# environment the process read: FAKEAGENT_CLAUDE_COMMANDS names a skill the
+# host copy, which is given no such variable, has no way to produce.
+# FAKEAGENT_VERSION is what makes the image's CLI old enough to list at all
+# (claude's skillListingFloor); it stays inside the §7.4 input family, so
+# scenarios 6–10 are unaffected.
+cat > "$TMP/Dockerfile" <<'DOCKERFILE'
+FROM alpine:3
+RUN apk add --no-cache git
+ENV FAKEAGENT_VERSION=2.1.300
+ENV FAKEAGENT_CLAUDE_COMMANDS='[{"name":"skill-in-the-image","description":"only the image lists this"}]'
+DOCKERFILE
 "$DOCKER" build -q -t "$IMAGE" "$TMP" >/dev/null || fail "could not build the gate image"
 
 CONFIG_DIR="$TMP/config"
@@ -580,6 +594,62 @@ ALL_AFTER="$("$DOCKER" ps -aq --filter "label=$LABEL_KEY" | wc -l | tr -d ' ')"
 [[ "$ALL_AFTER" == "$ALL_BEFORE" ]] \
   || fail "a free chat's turn changed the container count from $ALL_BEFORE to $ALL_AFTER"
 echo "   ok: linked turn ran inside the task's container, free turn on the host"
+
+echo "== scenario 11: a chat's skills are listed where its turns run"
+# Task 124.17: GET /v1/chats/{id}/skills probes through the same launcher the
+# chat's next turn would use. Scenario 10 proved the turns; this is the
+# discriminator, and it needs both copies of the CLI to be able to list.
+#
+# FAKEAGENT_VERSION reaches the *host* copy through the daemon's own
+# environment, so the daemon is restarted with it exported; the image's copy
+# reads the Dockerfile's ENV, because a container probe's version check runs
+# unwrapped inside the container (task 062.2 decision 2) and carries only HOME.
+export FAKEAGENT_VERSION=2.1.300
+daemon_down
+daemon_up
+
+LINKED_SKILLS="$(api GET "/chats/$LINKED_CHAT/skills")"
+LINKED_VERDICT="$(jq -r .list_verdict <<<"$LINKED_SKILLS")"
+[[ "$LINKED_VERDICT" == supported ]] || fail \
+  "the linked chat's list_verdict is '$LINKED_VERDICT' ($(jq -r .unavailable_reason <<<"$LINKED_SKILLS"))"
+# tr -d '\r': jq writes CRLF on Windows and $(...) drops only the trailing one.
+LINKED_NAMES="$(jq -r '.skills[].name' <<<"$LINKED_SKILLS" | tr -d '\r')"
+grep -qx skill-in-the-image <<<"$LINKED_NAMES" \
+  || fail "the linked chat's skills are '$LINKED_NAMES', want the image's"
+if grep -qx fake-skill <<<"$LINKED_NAMES"; then
+  fail "the linked chat was listed on the host: its skills are '$LINKED_NAMES'"
+fi
+
+FREE_SKILLS="$(api GET "/chats/$FREE_CHAT/skills")"
+FREE_VERDICT="$(jq -r .list_verdict <<<"$FREE_SKILLS")"
+[[ "$FREE_VERDICT" == supported ]] || fail \
+  "the free chat's list_verdict is '$FREE_VERDICT' ($(jq -r .unavailable_reason <<<"$FREE_SKILLS"))"
+FREE_NAMES="$(jq -r '.skills[].name' <<<"$FREE_SKILLS" | tr -d '\r')"
+grep -qx fake-skill <<<"$FREE_NAMES" \
+  || fail "the free chat's skills are '$FREE_NAMES', want the host's"
+if grep -qx skill-in-the-image <<<"$FREE_NAMES"; then
+  fail "the free chat was listed inside a container: its skills are '$FREE_NAMES'"
+fi
+echo "   ok: the linked chat lists the image's skills, the free chat the host's"
+
+# The other half of decision 1: with the task's container gone, the answer is
+# `unknown` with the container reason, and nothing is probed on the host — a
+# host list would name the skills of a machine the agent never runs on.
+"$DOCKER" rm -f "$(containers_for "$CHAT_TASK")" >/dev/null
+GONE_SKILLS="$(api GET "/chats/$LINKED_CHAT/skills")"
+GONE_VERDICT="$(jq -r .list_verdict <<<"$GONE_SKILLS")"
+[[ "$GONE_VERDICT" == unknown ]] \
+  || fail "with the container gone the list_verdict is '$GONE_VERDICT', want unknown"
+GONE_REASON="$(jq -r .unavailable_reason <<<"$GONE_SKILLS")"
+case "$GONE_REASON" in
+  *container*) ;;
+  *) fail "with the container gone the reason is '$GONE_REASON', want it to say so" ;;
+esac
+[[ "$(jq -r '.skills | length' <<<"$GONE_SKILLS")" == 0 ]] \
+  || fail "a chat whose container is gone was served a list: $GONE_SKILLS"
+[[ "$(jq -r .work_dir <<<"$GONE_SKILLS")" == "" ]] \
+  || fail "a chat whose container is gone reported a work_dir: $GONE_SKILLS"
+echo "   ok: a missing container answers unknown and lists nothing"
 
 daemon_down
 echo "GATE PASS: m12 (container step execution)"

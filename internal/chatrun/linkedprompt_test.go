@@ -40,8 +40,10 @@ func (h *harness) linkedChatOn(t *testing.T, agentName string, rec *agenttest.Re
 	if err := h.store.OpenLinkedChat(ctx, task.ID, store.TaskBlocked, c); err != nil {
 		t.Fatalf("OpenLinkedChat: %v", err)
 	}
-	h.runner.deps.Launchers = func(context.Context, int64, int64) (agent.Launcher, error) {
-		return rec, nil
+	h.runner.deps.Launchers = func(context.Context, int64, int64) (
+		agent.Launcher, string, []string, error,
+	) {
+		return rec, "", nil, nil
 	}
 	return c
 }

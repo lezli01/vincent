@@ -8,7 +8,9 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -618,5 +620,72 @@ func TestRecoverLeavesALinkedChatOpen(t *testing.T) {
 	}
 	if len(orphanStopped) != 2 || orphanStopped[0] != task.ID || orphanStopped[1] != turn.ID {
 		t.Errorf("container-aware kill asked for %v, want task %d turn %d", orphanStopped, task.ID, turn.ID)
+	}
+}
+
+// TestRecoverSweepsTheSkillProbesOfOpenLinkedChats is task 124.17 decision 4.
+// A skill probe writes no row, so the walk over running turns cannot find one
+// a dead daemon left exec'd inside a task's container; recovery sweeps the
+// chats that could have left one instead — the open ones linked to a task.
+//
+// A free chat never runs in a container (§16) and a terminal chat has no next
+// turn, so neither is swept: the sweep costs one runtime lookup per chat it
+// covers, and covering those two would buy nothing.
+func TestRecoverSweepsTheSkillProbesOfOpenLinkedChats(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	linked := func(title string) (*store.Task, *store.Chat) {
+		t.Helper()
+		task := &store.Task{
+			ProjectID: h.project.ID, Title: title, WorkflowName: "t", WorkflowSnapshot: "steps: []",
+			BaseBranch: "main", State: store.TaskBlocked, WorktreePath: h.repo,
+		}
+		branch := func(id int64) (string, error) { return fmt.Sprintf("vincent/%d-%s", id, title), nil }
+		if err := h.store.CreateTask(ctx, task, branch); err != nil {
+			t.Fatalf("CreateTask: %v", err)
+		}
+		c := &store.Chat{Title: title, Agent: "claude", PermissionMode: "full_auto"}
+		if err := h.store.OpenLinkedChat(ctx, task.ID, store.TaskBlocked, c); err != nil {
+			t.Fatalf("OpenLinkedChat: %v", err)
+		}
+		return task, c
+	}
+	openTask, openChat := linked("open")
+	_, doneChat := linked("done")
+	if _, err := h.store.SetChatState(ctx, doneChat.ID, chatstate.Closed); err != nil {
+		t.Fatalf("SetChatState: %v", err)
+	}
+	free := h.chat(t)
+
+	type sweep struct{ taskID, chatID int64 }
+	var mu sync.Mutex
+	var swept []sweep
+	h.runner.deps.StopSkillProbe = func(_ context.Context, taskID, chatID int64) bool {
+		mu.Lock()
+		swept = append(swept, sweep{taskID, chatID})
+		mu.Unlock()
+		return true
+	}
+	if err := h.runner.Recover(context.Background()); err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+
+	want := []sweep{{openTask.ID, openChat.ID}}
+	mu.Lock()
+	got := append([]sweep(nil), swept...)
+	mu.Unlock()
+	if !slices.Equal(got, want) {
+		t.Errorf("swept %+v, want %+v — the closed chat %d and the free chat %d must not be",
+			got, want, doneChat.ID, free.ID)
+	}
+}
+
+// TestRecoverWithoutASkillProbeStopperIsTolerated is the nil-hook leg, the
+// way every other injected closure in Deps has one: a runner built without
+// one recovers exactly as before task 124.17.
+func TestRecoverWithoutASkillProbeStopperIsTolerated(t *testing.T) {
+	h := newHarness(t)
+	if err := h.runner.Recover(context.Background()); err != nil {
+		t.Fatalf("Recover: %v", err)
 	}
 }

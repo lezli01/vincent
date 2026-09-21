@@ -228,7 +228,7 @@ func TestChatSkillsLiveDecodesBundledSkills(t *testing.T) {
 	}
 
 	// What a claude turn's init line names: the bundled skill, never `/clear`.
-	h.cache.ReportBundled(h.stub, []string{"deploy", "simplify"})
+	h.cache.ReportBundled(h.stub, "", []string{"deploy", "simplify"})
 
 	after, err := h.client.ChatSkills(t.Context(), c.ID, false)
 	if err != nil {

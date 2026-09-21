@@ -117,6 +117,11 @@ documentation landed, 79–82 when 124.15 was, and 83–88 when 124.14 was.
 11. **2026-09-19 — A container-run linked chat is answered `unknown` in v1.**
     Probing on the host would list the wrong skills, which is emulation.
     *Beaten:* a host probe. Probing through the container is 124.17 (#513).
+    *Amended 2026-09-21 by 124.17:* that probe landed. Such a chat is listed
+    inside the task's container, and `unknown` is now reserved for a
+    configured container that is gone (decision 96). The rule this decision
+    was made to protect is unchanged and is what 124.17 implements: the host
+    is never a fallback.
 12. **2026-09-19 — The skills key is a fixed chat key, `tab`**, not a `keymap`
     operation: task 118 decision 1 says surface-local rows are fixed, and
     `tab` is inert in the composer today and the terminal-wide convention for
@@ -409,6 +414,16 @@ documentation landed, 79–82 when 124.15 was, and 83–88 when 124.14 was.
     fails the turn with `ErrTaskContainerMissing`. The runners still reach
     each other only through injected closures (task 119). *Beaten:* reusing
     `ChatLauncher`.
+    *Amended 2026-09-21 by 124.17 (decision 96):* the route does ask the
+    runtime now, once per request, because placing a probe inside the task's
+    container requires finding it and the honest missing-container answer
+    requires it on a cache hit too. `chatrun.Deps.InContainer` and
+    `taskrun.Runner.ChatInContainer` are gone, replaced by
+    `chatrun.Deps.SkillPlace` wired to `taskrun.Runner.ChatSkillLauncher`.
+    What still holds, and is the half worth keeping, is the *turn's*
+    placement: `turnPlace` reads settings alone, and the two paths still
+    resolve through the one `chatContainer` helper so they cannot disagree.
+    `Workspace` keeps only the directory.
 57. **2026-09-19 — The route writes the "cannot list" reason itself** for an
     adapter without `SkillLister`: `"<agent> does not report the skills it
     loads"`. An adapter that cannot answer has no method to state a reason
@@ -661,6 +676,13 @@ documentation landed, 79–82 when 124.15 was, and 83–88 when 124.14 was.
     largely answers #512's own open question: bundled skills still need one
     turn to appear, but not one turn *per directory*. *Beaten:* a per-directory
     set, keyed like the listing it filters.
+    *Amended 2026-09-21 by 124.17 (decision 97):* the set is keyed by the
+    binary **and the place**. The directory is still not in the key, and the
+    reasoning above is untouched; what this decision missed is that a linked
+    chat on a containerized task runs the *image's* CLI, so filing its init
+    line under the host binary's identity classified the host listing's
+    `builtin` rows from a report about a different build — and the other way
+    round.
 85. **2026-09-20 — The names stay off the wire.** `RunHeader` gains
     `Skills []string` and nothing else; `Commands` is not added, because after
     decision 83 nothing would read it. `headerChunk` and the normalized
@@ -778,6 +800,68 @@ documentation landed, 79–82 when 124.15 was, and 83–88 when 124.14 was.
     The trailing space is unconditional, so a token that already had a space
     after it ends up with two; that is predictable, and the alternative is a
     rule about the draft's punctuation that the accept would have to guess.
+
+96. **2026-09-21 — The skills route asks the container runtime on every
+    call, amending decision 56.** Finding the task's container is what
+    placing a probe inside it needs, and the honest "that container is gone"
+    needs the lookup on a cache hit too — a cached list must not be served
+    for a container that no longer exists. So `GET /v1/chats/{id}/skills`
+    spawns one `docker inspect`-class call per request for a container-run
+    linked chat, and none for any other. The cost is bounded by who asks: the
+    TUI fetches once per chat open (the browse list and the first inline
+    sigil share one fetch), plus `vincent chat skills`. Decision 56 is
+    narrowed rather than dropped — it still holds for the *turn's* placement,
+    which reads settings alone. *Beaten:* keeping a settings-only bit and
+    probing a container that might be gone; and caching the placement, which
+    would answer "supported" for a container that had been removed since.
+97. **2026-09-21 — The cache key carries the live container id, as an opaque
+    `place`.** `internal/agent` stays a leaf: it never learns what a
+    container is, only that two answers about one directory may belong to
+    different machines. `""` is the host. A recreated container is a new key
+    and can never serve the previous container's list; the host's and the
+    container's lists for one worktree can never share an entry. The
+    bundled-skills set is keyed the same way (decision 84's amendment). The
+    *binary identity* in the key stays the host binary's, which for a
+    container place may be the zero `catalogKey` because no host binary
+    exists at all — the place then carries the whole distinction, which is
+    correct, since what is being listed is the image's CLI. *Beaten:* a
+    boolean "in a container", which a recreated container would survive.
+98. **2026-09-21 — A linked chat's turn and its probe both carry the task's
+    container environment.** `chatrun` built its `RunSpec` with no `Env`, so
+    `containerLauncher.Launch` passed no `--env` and the CLI in the container
+    ran under the **image's** `HOME`: the `~/.claude`, `~/.codex` and
+    `~/.cursor` that `container.mount_agent_config` mounts were invisible to
+    a chat turn, though §16 said the session store persisted under that
+    mount. Only agent *steps* got `HOME`, through `containerEnv`. 124.17
+    fixes the turn and the probe together: a list that did not describe the
+    turn would be worthless, and §9's never-emulate rule cuts both ways. It
+    is a pre-existing task 119 hole, it is in scope, and it has its own
+    regression test. *Beaten:* fixing the probe alone and publishing a list
+    of the skills of a `HOME` nobody intended.
+99. **2026-09-21 — The probe's pid file is `skills-<chat id>`, swept at
+    recovery.** A probe has no DB row, so `chatrun.Recover`, which walks
+    running turns, cannot find one a dead daemon left exec'd. Recovery gains
+    a pass over the **open linked chats**, a set `store.ListChats`
+    enumerates, signalling `skills-<chat id>` through the existing
+    `stopInContainer` path. The key namespace is distinct from
+    `chat-<turn id>` and `step-<run id>`, so a probe and its chat's turn can
+    be signalled apart. Two implementation consequences, both deliberate: the
+    sweep runs eight chats at a time rather than serially, and
+    `stopInContainer`'s grace became the caller's — §12.4's fifteen seconds
+    for a step or a turn, two seconds for a probe, which has nothing to
+    flush. Fifteen seconds per open linked chat on every daemon start would
+    be paid almost entirely by chats that had no probe running. *Beaten:*
+    reusing `chat-<turn id>`, and writing a row for a probe.
+100. **2026-09-21 — Nothing about claude plugin paths is written until a
+    capture exists.** claude records a plugin's install path as an absolute
+    host path; inside the container that directory is mounted elsewhere, so
+    plugin skills may not resolve there. No capture was made, so §5.5 and §16
+    say only that the list is the container's own answer, and the question
+    stays open under 124. #513's own open question is settled the way it
+    recommends: whatever the container's claude reports is what is shown —
+    that is §9's rule, and a "container misconfiguration" verdict would be
+    vincent second-guessing a CLI. *Beaten:* guessing in the spec, and
+    inventing a verdict for a configuration vincent did not choose.
 
 ## Open questions
 
@@ -942,8 +1026,22 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
   extended: leg 12 already drives listing and invocation end to end, and this
   is a function of the cache and the route, provable over the real handlers.
   ✓ 2026-09-20
-- [ ] 124.17 (#513) Probe through the task's container instead of answering
-  `unknown`. Depends: 124.9, 124.7.
+- [x] 124.17 (#513) Probe through the task's container instead of answering
+  `unknown`. `agent.SkillPlacement` replaces `Lookup`'s bare directory and
+  puts the place in `skillKey` and in the bundled registry's key;
+  `taskrun.ChatSkillLauncher`, `skillExecKey` and `StopChatSkillProbe` place
+  and stop the probe; `chatrun.Deps.SkillPlace` and `Runner.SkillPlace`
+  replace `InContainer`, `Workspace` keeps only the directory, `Launchers`
+  grows the turn's place and environment, and `Recover` sweeps the open
+  linked chats. `ChatInContainer` and `containerSkillsReason` are gone.
+  Decisions 96–100, with 11, 56 and 84 amended; spec §5.5, §9.6 and §16
+  amended, and `docs/reference/api.md`, `docs/guides/agents.md` and
+  `docs/reference/task-lifecycle.md` with them. `m12` gains scenario 11: the
+  gate image names a skill the host copy cannot produce, and the gate asserts
+  the linked chat lists the image's and the free chat the host's, then
+  removes the container and asserts `unknown`. Criterion 5 — the plugin-path
+  capture — did not gate the code and remains open (decision 100).
+  ✓ 2026-09-21
 - [ ] 124.18 (#514) Investigate whether ACP should become cursor's listing,
   and record a decision. Depends: 124.1.
 - [x] 124.19 (#515) The `tui-chat-skills.png` tape — the list now has two
@@ -978,7 +1076,8 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
 The requirement's two done criteria are met once 124.14, 124.11, 124.10, 124.3
 and 124.15 have landed — all five of which have, 124.14 last, on 2026-09-20.
 124.16, 124.17 and 124.18 widen coverage after that, 124.19 photographed both
-openers on 2026-09-21, and 124.20 remains.
+openers on 2026-09-21, and 124.20 remains. *Amended 2026-09-21: 124.16, 124.17
+and 124.19 have landed; 124.18 and 124.20 remain.*
 
 ## Verification
 
