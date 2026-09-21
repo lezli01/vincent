@@ -13,6 +13,18 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **A chat on a containerized task now lists the skills of the container, not
+  of your host.** Such a chat runs its turns inside the task's container, so
+  its skills were never your machine's; until now vincent said so and listed
+  nothing. `GET /v1/chats/{id}/skills`, `vincent chat skills` and the TUI's
+  skill list now start the image's own CLI inside that container and report
+  what it loads, verbatim — including that `~/.agents` is not mounted there,
+  so a containerized codex or cursor chat lists no skills from it. If the
+  container is configured but gone, the answer is `unknown` with a reason
+  saying so and nothing is probed: a list taken from your host would name
+  skills the agent never loads. Listing such a chat costs one container
+  lookup per request; every other chat asks nothing extra.
+
 - **claude's own bundled skills are listed again, once a chat has had one
   turn.** `simplify`, `loop` and `run` ship with claude, and claude marks them
   with the same flag it marks `/clear` and `/compact` with, so vincent left
@@ -161,6 +173,15 @@ list with the user-facing context a commit subject cannot carry.
   shell, and troubleshooting has the Git Bash symptom.
 
 ### Fixed
+
+- **A chat on a containerized task now reads the agent configuration mounted
+  for it.** Its turns ran inside the task's container with no environment of
+  their own, so the CLI started under the image's `HOME` and never saw the
+  `~/.claude`, `~/.codex` and `~/.cursor` that
+  [`container.mount_agent_config`](docs/reference/configuration.md#container)
+  bind-mounts for it — the CLI was effectively logged out there, and its
+  session store did not persist between turns as documented. Such a turn now
+  carries the same environment an agent step of that task gets.
 
 - **cursor's echo of your prompt is no longer an unrecognized line.** Every
   cursor turn and step used to show "1 unrecognized line" for it; it is now an

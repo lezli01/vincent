@@ -47,6 +47,11 @@ func newSkillCache() (*agent.SkillCache, *testClock) {
 	return c, clk
 }
 
+// host is the placement every test that is not about placement uses: a
+// directory on this machine, the daemon's environment, no launcher (task
+// 124.17, #513).
+func host(dir string) agent.SkillPlacement { return agent.SkillPlacement{WorkDir: dir} }
+
 // listed is a scripted listing of skills with these names, in this order.
 func listed(names ...string) agent.SkillList {
 	var l agent.SkillList
@@ -130,25 +135,25 @@ func TestSkillCacheTrustsACleanListForItsTTL(t *testing.T) {
 	dir := t.TempDir()
 	t0 := clk.now()
 
-	first := c.Lookup(t.Context(), stub, dir, false)
+	first := c.Lookup(t.Context(), stub, host(dir), false)
 	wantCalls(t, stub, 1)
 	if first.Verdict != agent.InputSupported || !first.ProbedAt.Equal(t0) || first.ProbeError != "" || first.Reason != "" {
 		t.Fatalf("first answer = %+v, want a clean supported list probed at %v", first, t0)
 	}
 
 	clk.advance(agent.SkillTTL - time.Nanosecond)
-	if got := c.Lookup(t.Context(), stub, dir, false); !reflect.DeepEqual(got, first) {
+	if got := c.Lookup(t.Context(), stub, host(dir), false); !reflect.DeepEqual(got, first) {
 		t.Fatalf("answer within the TTL = %+v, want the cached %+v", got, first)
 	}
 	wantCalls(t, stub, 1)
 
 	clk.advance(time.Nanosecond)
-	if got := c.Lookup(t.Context(), stub, dir, false); !got.ProbedAt.Equal(clk.now()) {
+	if got := c.Lookup(t.Context(), stub, host(dir), false); !got.ProbedAt.Equal(clk.now()) {
 		t.Fatalf("answer at the TTL probed at %v, want a new probe at %v", got.ProbedAt, clk.now())
 	}
 	wantCalls(t, stub, 2)
 
-	c.Lookup(t.Context(), stub, dir, true)
+	c.Lookup(t.Context(), stub, host(dir), true)
 	wantCalls(t, stub, 3)
 }
 
@@ -167,7 +172,7 @@ func TestSkillCacheRefreshIsSingleFlight(t *testing.T) {
 	answers := make([]agent.SkillAnswer, n)
 	var wg sync.WaitGroup
 	for i := range n {
-		wg.Go(func() { answers[i] = c.Lookup(t.Context(), g, dir, true) })
+		wg.Go(func() { answers[i] = c.Lookup(t.Context(), g, host(dir), true) })
 	}
 	for range n {
 		receive(t, g.arrived, "every Lookup to arrive")
@@ -190,19 +195,19 @@ func TestSkillCacheReaderNeverWaitsBehindAProbe(t *testing.T) {
 	stub := &agenttest.StubSkills{}
 	stub.Script(listed("review"), nil)
 	dir := t.TempDir()
-	primed := c.Lookup(t.Context(), stub, dir, false)
+	primed := c.Lookup(t.Context(), stub, host(dir), false)
 
 	// gatedSkills shares the stub's name and path, so it is the same key.
 	g := &gatedSkills{StubSkills: stub, started: make(chan struct{}, 1), release: make(chan struct{})}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		c.Lookup(t.Context(), g, dir, true)
+		c.Lookup(t.Context(), g, host(dir), true)
 	}()
 	receive(t, g.started, "the refresh to start probing")
 
 	served := make(chan agent.SkillAnswer, 1)
-	go func() { served <- c.Lookup(t.Context(), stub, dir, false) }()
+	go func() { served <- c.Lookup(t.Context(), stub, host(dir), false) }()
 	select {
 	case got := <-served:
 		if !reflect.DeepEqual(got, primed) {
@@ -226,20 +231,20 @@ func TestSkillCacheFailureWithNoListIsUnknown(t *testing.T) {
 	dir := t.TempDir()
 
 	want := agent.SkillAnswer{Verdict: agent.InputUnknown, ProbeError: "claude initialize: timed out after 10s"}
-	if got := c.Lookup(t.Context(), stub, dir, false); !reflect.DeepEqual(got, want) {
+	if got := c.Lookup(t.Context(), stub, host(dir), false); !reflect.DeepEqual(got, want) {
 		t.Fatalf("failed first probe answered %+v, want %+v", got, want)
 	}
 	wantCalls(t, stub, 1)
 
 	clk.advance(agent.SkillFailureTTL - time.Nanosecond)
-	if got := c.Lookup(t.Context(), stub, dir, false); !reflect.DeepEqual(got, want) {
+	if got := c.Lookup(t.Context(), stub, host(dir), false); !reflect.DeepEqual(got, want) {
 		t.Fatalf("answer within the failure TTL = %+v, want %+v", got, want)
 	}
 	wantCalls(t, stub, 1)
 
 	clk.advance(time.Nanosecond)
 	stub.Script(listed("review"), nil)
-	if got := c.Lookup(t.Context(), stub, dir, false); got.Verdict != agent.InputSupported || got.ProbeError != "" {
+	if got := c.Lookup(t.Context(), stub, host(dir), false); got.Verdict != agent.InputSupported || got.ProbeError != "" {
 		t.Fatalf("answer after the failure TTL = %+v, want a clean list", got)
 	}
 	wantCalls(t, stub, 2)
@@ -255,25 +260,25 @@ func TestSkillCacheFailureKeepsThePreviousList(t *testing.T) {
 	list.Problems = []agent.SkillProblem{{Path: "/x/SKILL.md", Message: "missing name"}}
 	stub.Script(list, nil)
 	dir := t.TempDir()
-	clean := c.Lookup(t.Context(), stub, dir, false)
+	clean := c.Lookup(t.Context(), stub, host(dir), false)
 
 	clk.advance(agent.SkillTTL)
 	stub.Script(agent.SkillList{}, errors.New("exit status 1"))
 	want := clean
 	want.ProbeError = "exit status 1"
-	if got := c.Lookup(t.Context(), stub, dir, false); !reflect.DeepEqual(got, want) {
+	if got := c.Lookup(t.Context(), stub, host(dir), false); !reflect.DeepEqual(got, want) {
 		t.Fatalf("failed re-probe answered %+v, want the kept %+v", got, want)
 	}
 	wantCalls(t, stub, 2)
 
 	clk.advance(agent.SkillFailureTTL - time.Nanosecond)
-	if got := c.Lookup(t.Context(), stub, dir, false); !reflect.DeepEqual(got, want) {
+	if got := c.Lookup(t.Context(), stub, host(dir), false); !reflect.DeepEqual(got, want) {
 		t.Fatalf("answer within the failure TTL = %+v, want %+v", got, want)
 	}
 	wantCalls(t, stub, 2)
 
 	clk.advance(time.Nanosecond)
-	c.Lookup(t.Context(), stub, dir, false)
+	c.Lookup(t.Context(), stub, host(dir), false)
 	wantCalls(t, stub, 3)
 }
 
@@ -288,11 +293,11 @@ func TestSkillCacheUnsupportedIsACleanNo(t *testing.T) {
 	dir := t.TempDir()
 
 	want := agent.SkillAnswer{Verdict: agent.InputUnsupported, Reason: err.Error(), ProbedAt: clk.now()}
-	if got := c.Lookup(t.Context(), stub, dir, false); !reflect.DeepEqual(got, want) {
+	if got := c.Lookup(t.Context(), stub, host(dir), false); !reflect.DeepEqual(got, want) {
 		t.Fatalf("unsupported build answered %+v, want %+v", got, want)
 	}
 	clk.advance(agent.SkillTTL - time.Nanosecond)
-	if got := c.Lookup(t.Context(), stub, dir, false); !reflect.DeepEqual(got, want) {
+	if got := c.Lookup(t.Context(), stub, host(dir), false); !reflect.DeepEqual(got, want) {
 		t.Fatalf("answer within the clean TTL = %+v, want %+v", got, want)
 	}
 	wantCalls(t, stub, 1)
@@ -303,7 +308,7 @@ func TestSkillCacheUnsupportedIsACleanNo(t *testing.T) {
 		errors.New("unparseable initialize response"),
 	} {
 		stub.Script(agent.SkillList{}, ordinary)
-		got := c.Lookup(t.Context(), stub, t.TempDir(), false)
+		got := c.Lookup(t.Context(), stub, host(t.TempDir()), false)
 		if got.Verdict != agent.InputUnknown || got.Reason != "" || got.ProbeError != ordinary.Error() {
 			t.Errorf("%q answered %+v, want unknown with the error as probe_error", ordinary, got)
 		}
@@ -321,20 +326,20 @@ func TestSkillCacheCallerCancellationIsNotStored(t *testing.T) {
 	cancel()
 
 	stub.Script(agent.SkillList{}, context.Canceled)
-	if got := c.Lookup(gone, stub, dir, false); got.Verdict != agent.InputUnknown || got.ProbeError == "" {
+	if got := c.Lookup(gone, stub, host(dir), false); got.Verdict != agent.InputUnknown || got.ProbeError == "" {
 		t.Fatalf("hung-up caller answered %+v, want unknown with a probe error", got)
 	}
 	stub.Script(listed("review"), nil)
-	clean := c.Lookup(t.Context(), stub, dir, false)
+	clean := c.Lookup(t.Context(), stub, host(dir), false)
 	wantCalls(t, stub, 2)
 
 	clk.advance(agent.SkillTTL)
 	stub.Script(agent.SkillList{}, context.Canceled)
-	if got := c.Lookup(gone, stub, dir, true); got.Verdict != agent.InputSupported || got.ProbeError == "" {
+	if got := c.Lookup(gone, stub, host(dir), true); got.Verdict != agent.InputSupported || got.ProbeError == "" {
 		t.Fatalf("hung-up refresh answered %+v, want the kept list with a probe error", got)
 	}
 	stub.Script(listed("review", "deploy"), nil)
-	if got := c.Lookup(t.Context(), stub, dir, false); reflect.DeepEqual(got, clean) || got.ProbeError != "" {
+	if got := c.Lookup(t.Context(), stub, host(dir), false); reflect.DeepEqual(got, clean) || got.ProbeError != "" {
 		t.Fatalf("next Lookup answered %+v, want a new clean probe", got)
 	}
 	wantCalls(t, stub, 4)
@@ -350,20 +355,20 @@ func TestSkillCacheEvictsTheLeastRecentlyUsed(t *testing.T) {
 	dir := func(i int) string { return filepath.Join(base, strconv.Itoa(i)) }
 
 	for i := range agent.SkillCacheMax {
-		c.Lookup(t.Context(), stub, dir(i), false)
+		c.Lookup(t.Context(), stub, host(dir(i)), false)
 	}
 	wantCalls(t, stub, agent.SkillCacheMax)
 
 	// A hit on the oldest makes dir(1) the least recently used.
-	c.Lookup(t.Context(), stub, dir(0), false)
+	c.Lookup(t.Context(), stub, host(dir(0)), false)
 	wantCalls(t, stub, agent.SkillCacheMax)
-	c.Lookup(t.Context(), stub, dir(agent.SkillCacheMax), false)
+	c.Lookup(t.Context(), stub, host(dir(agent.SkillCacheMax)), false)
 	wantCalls(t, stub, agent.SkillCacheMax+1)
 
-	c.Lookup(t.Context(), stub, dir(0), false)
-	c.Lookup(t.Context(), stub, dir(agent.SkillCacheMax), false)
+	c.Lookup(t.Context(), stub, host(dir(0)), false)
+	c.Lookup(t.Context(), stub, host(dir(agent.SkillCacheMax)), false)
 	wantCalls(t, stub, agent.SkillCacheMax+1)
-	c.Lookup(t.Context(), stub, dir(1), false)
+	c.Lookup(t.Context(), stub, host(dir(1)), false)
 	wantCalls(t, stub, agent.SkillCacheMax+2)
 }
 
@@ -378,17 +383,17 @@ func TestSkillCacheInvalidateDropsOneDirectory(t *testing.T) {
 	other.Script(listed("deploy"), nil)
 	a, b := t.TempDir(), t.TempDir()
 
-	c.Lookup(t.Context(), stub, a, false)
-	c.Lookup(t.Context(), other, a, false)
-	c.Lookup(t.Context(), stub, b, false)
+	c.Lookup(t.Context(), stub, host(a), false)
+	c.Lookup(t.Context(), other, host(a), false)
+	c.Lookup(t.Context(), stub, host(b), false)
 	wantCalls(t, stub, 2)
 	wantCalls(t, other.StubSkills, 1)
 
 	c.Invalidate(a + string(filepath.Separator) + ".")
-	c.Lookup(t.Context(), stub, b, false)
+	c.Lookup(t.Context(), stub, host(b), false)
 	wantCalls(t, stub, 2)
-	c.Lookup(t.Context(), stub, a, false)
-	c.Lookup(t.Context(), other, a, false)
+	c.Lookup(t.Context(), stub, host(a), false)
+	c.Lookup(t.Context(), other, host(a), false)
 	wantCalls(t, stub, 3)
 	wantCalls(t, other.StubSkills, 2)
 
@@ -407,7 +412,7 @@ func TestSkillCacheInvalidateOutlivesAProbeInFlight(t *testing.T) {
 	dir := t.TempDir()
 
 	inFlight := make(chan agent.SkillAnswer, 1)
-	go func() { inFlight <- c.Lookup(t.Context(), g, dir, false) }()
+	go func() { inFlight <- c.Lookup(t.Context(), g, host(dir), false) }()
 	receive(t, g.started, "the probe to start")
 	c.Invalidate(dir)
 	stub.Script(listed("fresh"), nil)
@@ -421,7 +426,7 @@ func TestSkillCacheInvalidateOutlivesAProbeInFlight(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the in-flight Lookup never answered")
 	}
-	got := c.Lookup(t.Context(), stub, dir, false)
+	got := c.Lookup(t.Context(), stub, host(dir), false)
 	wantCalls(t, stub, 2)
 	if !reflect.DeepEqual(got.Skills, listed("fresh").Skills) {
 		t.Fatalf("Lookup after the invalidation answered %+v, want a new probe's list", got)
@@ -440,15 +445,15 @@ func TestSkillCacheNewBinaryIsAMiss(t *testing.T) {
 	f.Script(listed("review"), nil)
 	dir := t.TempDir()
 
-	c.Lookup(t.Context(), f, dir, false)
-	c.Lookup(t.Context(), f, dir, false)
+	c.Lookup(t.Context(), f, host(dir), false)
+	c.Lookup(t.Context(), f, host(dir), false)
 	wantCalls(t, f.StubSkills, 1)
 
 	later := time.Now().Add(time.Hour)
 	if err := os.Chtimes(bin, later, later); err != nil {
 		t.Fatal(err)
 	}
-	c.Lookup(t.Context(), f, dir, false)
+	c.Lookup(t.Context(), f, host(dir), false)
 	wantCalls(t, f.StubSkills, 2)
 }
 
@@ -470,18 +475,18 @@ func TestSkillCacheServesTheCLIsOwnWords(t *testing.T) {
 	stub.Script(list, nil)
 	dir := t.TempDir()
 
-	got := c.Lookup(t.Context(), stub, dir, false)
+	got := c.Lookup(t.Context(), stub, host(dir), false)
 	if !reflect.DeepEqual(got.Skills, list.Skills) || !reflect.DeepEqual(got.Problems, list.Problems) {
 		t.Fatalf("answered %+v / %+v, want exactly %+v / %+v", got.Skills, got.Problems, list.Skills, list.Problems)
 	}
-	c.Lookup(t.Context(), stub, dir+string(filepath.Separator)+".", false)
+	c.Lookup(t.Context(), stub, host(dir+string(filepath.Separator)+"."), false)
 	wantCalls(t, stub, 1)
 	if q := stub.Queries(); !reflect.DeepEqual(q, []agent.SkillQuery{{WorkDir: dir}}) {
 		t.Fatalf("queries = %+v, want one for %s on the host with the daemon's env", q, dir)
 	}
 
 	stub.Script(agent.SkillList{Skills: []agent.Skill{}, Problems: []agent.SkillProblem{}}, nil)
-	empty := c.Lookup(t.Context(), stub, dir, true)
+	empty := c.Lookup(t.Context(), stub, host(dir), true)
 	if empty.Verdict != agent.InputSupported || empty.Skills != nil || empty.Problems != nil {
 		t.Fatalf("empty list answered %+v, want supported with nil skills and problems", empty)
 	}
@@ -494,9 +499,127 @@ func TestSkillCacheServesTheCLIsOwnWords(t *testing.T) {
 func TestSkillCacheNonListerIsUnsupported(t *testing.T) {
 	c, _ := newSkillCache()
 	for _, refresh := range []bool{false, true} {
-		got := c.Lookup(t.Context(), agenttest.StubNoSkills{}, t.TempDir(), refresh)
+		got := c.Lookup(t.Context(), agenttest.StubNoSkills{}, host(t.TempDir()), refresh)
 		if !reflect.DeepEqual(got, agent.SkillAnswer{Verdict: agent.InputUnsupported}) {
 			t.Errorf("refresh=%v: StubNoSkills answered %+v, want a bare unsupported", refresh, got)
 		}
+	}
+}
+
+// TestTwoPlacesAreTwoKeys is task 124.17 decision 2: the same adapter asked
+// about the same directory in two places is two answers, because it is two
+// CLIs reading two home directories — the host's, and the image's inside a
+// task's container. Neither is ever served in place of the other, and a
+// recreated container, which arrives as a new place string, is a new key for
+// the same reason.
+func TestTwoPlacesAreTwoKeys(t *testing.T) {
+	c, _ := newSkillCache()
+	stub := &agenttest.StubSkills{}
+	dir := t.TempDir()
+
+	stub.Script(listed("host-skill"), nil)
+	onHost := c.Lookup(t.Context(), stub, agent.SkillPlacement{WorkDir: dir}, false)
+	stub.Script(listed("image-skill"), nil)
+	inContainer := c.Lookup(t.Context(), stub,
+		agent.SkillPlacement{WorkDir: dir, Place: "container-abc"}, false)
+
+	if len(onHost.Skills) != 1 || onHost.Skills[0].Name != "host-skill" {
+		t.Fatalf("host list = %+v, want host-skill", onHost.Skills)
+	}
+	if len(inContainer.Skills) != 1 || inContainer.Skills[0].Name != "image-skill" {
+		t.Fatalf("container list = %+v, want image-skill", inContainer.Skills)
+	}
+	if got := stub.Calls(); got != 2 {
+		t.Fatalf("stub listed %d time(s), want one probe per place", got)
+	}
+
+	// Both are fresh now, and each place is served its own.
+	stub.Script(listed("never-served"), nil)
+	if got := c.Lookup(t.Context(), stub, agent.SkillPlacement{WorkDir: dir}, false); //
+	len(got.Skills) != 1 || got.Skills[0].Name != "host-skill" {
+		t.Errorf("host list on a second look = %+v, want host-skill", got.Skills)
+	}
+	if got := c.Lookup(t.Context(), stub,
+		agent.SkillPlacement{WorkDir: dir, Place: "container-abc"}, false); //
+	len(got.Skills) != 1 || got.Skills[0].Name != "image-skill" {
+		t.Errorf("container list on a second look = %+v, want image-skill", got.Skills)
+	}
+	if got := stub.Calls(); got != 2 {
+		t.Errorf("stub listed %d time(s), want the cached answers served", got)
+	}
+
+	// A container that was recreated is a new id and so a new key: nothing
+	// the old one reported can outlive it.
+	stub.Script(listed("recreated"), nil)
+	again := c.Lookup(t.Context(), stub,
+		agent.SkillPlacement{WorkDir: dir, Place: "container-def"}, false)
+	if len(again.Skills) != 1 || again.Skills[0].Name != "recreated" {
+		t.Errorf("recreated container = %+v, want a fresh probe", again.Skills)
+	}
+}
+
+// TestInvalidateDropsEveryPlaceForADirectory is the other half of decision 2:
+// the key grew, and the invalidation did not narrow. A turn writes a skill
+// into one worktree, and both the host's answer about it and the container's
+// are stale — the turn ran in one of the two, and vincent does not track
+// which one wrote what.
+func TestInvalidateDropsEveryPlaceForADirectory(t *testing.T) {
+	c, _ := newSkillCache()
+	stub := &agenttest.StubSkills{}
+	dir := t.TempDir()
+	other := t.TempDir()
+	places := []agent.SkillPlacement{
+		{WorkDir: dir},
+		{WorkDir: dir, Place: "container-abc"},
+		{WorkDir: other, Place: "container-abc"},
+	}
+	stub.Script(listed("before"), nil)
+	for _, p := range places {
+		c.Lookup(t.Context(), stub, p, false)
+	}
+	if got := stub.Calls(); got != 3 {
+		t.Fatalf("stub listed %d time(s), want one probe per key", got)
+	}
+
+	c.Invalidate(dir)
+	stub.Script(listed("after"), nil)
+	for i, p := range places[:2] {
+		if got := c.Lookup(t.Context(), stub, p, false); //
+		len(got.Skills) != 1 || got.Skills[0].Name != "after" {
+			t.Errorf("place %d after Invalidate = %+v, want a fresh probe", i, got.Skills)
+		}
+	}
+	// The untouched directory kept its answer, place and all.
+	if got := c.Lookup(t.Context(), stub, places[2], false); //
+	len(got.Skills) != 1 || got.Skills[0].Name != "before" {
+		t.Errorf("another directory = %+v, want the cached list", got.Skills)
+	}
+}
+
+// TestProbeCarriesThePlacementsLauncherAndEnv is what makes a container probe
+// a container probe: the cache passes the placement straight through to
+// SkillQuery, so the adapter spawns its CLI where the caller said and with
+// the environment the caller said (task 124.17).
+func TestProbeCarriesThePlacementsLauncherAndEnv(t *testing.T) {
+	c, _ := newSkillCache()
+	stub := &agenttest.StubSkills{}
+	stub.Script(listed("one"), nil)
+	l := agent.HostLauncher{}
+	env := []string{"HOME=/vincent-home"}
+	dir := t.TempDir()
+
+	c.Lookup(t.Context(), stub, agent.SkillPlacement{
+		WorkDir: dir, Launcher: l, Env: env, Place: "container-abc",
+	}, false)
+
+	qs := stub.Queries()
+	if len(qs) != 1 {
+		t.Fatalf("stub listed %d time(s), want once", len(qs))
+	}
+	if qs[0].Launcher != agent.Launcher(l) || !reflect.DeepEqual(qs[0].Env, env) {
+		t.Errorf("query = %+v, want the placement's launcher and env", qs[0])
+	}
+	if qs[0].WorkDir != filepath.Clean(dir) {
+		t.Errorf("query work dir = %q, want %q", qs[0].WorkDir, filepath.Clean(dir))
 	}
 }

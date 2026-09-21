@@ -775,6 +775,19 @@ chat's task runs in a container is read from the task's workflow snapshot and
 container settings alone, never from the runtime, so asking spawns no
 `docker inspect` (task 124 decision 56).
 
+*Amended 2026-09-21 (task 124.17, issue #513).* The route resolves the whole
+placement, not a directory and a bit: `chatrun.Runner.SkillPlace` answers the
+directory, the launcher the next turn would start the CLI through, the
+environment it would carry, and an opaque name for where it runs. For a
+linked chat on a containerized task that is the task's own container, found
+by name, so **the route does now ask the container runtime**, once per
+request, cache hit or not. Task 124 decision 56's "never asks the runtime"
+is narrowed rather than dropped: it still holds for the *turn's* placement,
+which reads settings alone. Finding the container is what placing the probe
+needs, and the honest "that container is gone" needs it even when a list is
+already held; the cost is bounded by who asks — the TUI fetches once per chat
+open, plus `vincent chat skills` — and every other chat still asks nothing.
+
 It answers `200` with verdicts and refuses only on state (task 124
 decision 4):
 
@@ -782,7 +795,8 @@ decision 4):
 |---|---|
 | `archived`, `handed_off`, `closed` | `409 invalid_state`, `details: {state, action: "skills"}`; checked before `refresh`, so a terminal chat never costs a probe |
 | linked, task has no worktree | `409 task_has_no_worktree`, `details.task_id` |
-| linked, task's workflow runs in a container | `list_verdict: unknown` with `unavailable_reason`; nothing spawned, the cache not asked, never a host listing (decision 11) — including a configured container that is gone |
+| linked, task's workflow runs in a container | *(until 2026-09-21)* `list_verdict: unknown` with `unavailable_reason`; nothing spawned, the cache not asked, never a host listing (decision 11) — including a configured container that is gone. **Since 124.17**: the container's own list, probed inside it |
+| linked, task's container is configured but gone | `list_verdict: unknown` with `unavailable_reason` saying so, `work_dir: ""`; nothing spawned, the cache not asked, and never a host listing (124.17) |
 | adapter not registered | `list_verdict: unknown`, `probe_error` set, `invoke_verdict: unknown` — never `unsupported` (decision 58) |
 | adapter without `SkillLister` | `list_verdict: unsupported`; the route writes `unavailable_reason` itself (decision 57) |
 | `ErrSkillsUnsupported` from the probe | `list_verdict: unsupported`, its wrapped text as `unavailable_reason` |
@@ -793,6 +807,22 @@ decision 4):
 A chat that is `idle`, `running` or `awaiting_input` is listed alike: a probe
 is not a turn and holds no `max_parallel_chats` slot (§11). The list is served
 from §9.6's skill cache, which a turn's ending invalidates for its directory.
+
+*Amended 2026-09-21 (task 124.17, issue #513).* A linked chat on a
+containerized task is listed **inside that task's container**, through the
+same launcher its turns run through (§16), under a pid file of the probe's
+own (`skills-<chat id>`, distinct from a turn's `chat-<turn id>`). What is
+listed is therefore the image's CLI reading the container's home — including
+the agent configuration `container.mount_agent_config` mounted beneath it,
+and *excluding* `~/.agents`, which is not among the mounted directories, so a
+containerized codex or cursor chat lists no `~/.agents/skills` entry. The
+answer is whatever that CLI reports, verbatim: vincent does not second-guess
+a container's configuration, and a skill a host installation would have
+loaded but the container's cannot resolve is simply absent from the list,
+because it is absent from the turn. What claude reports for a **plugin**
+installed on the host, whose recorded path is a host path the container sees
+at a different location, is not yet captured; it is stated here when it is,
+with the CLI version, in `docs/gates/`.
 
 *Amended 2026-09-20 (task 124.16, issue #512).* The response carries the CLI's
 own `builtin` rows and one indicative field saying what became of them:
@@ -4547,6 +4577,17 @@ defaults:
   - **Key:** the adapter's name, its binary identity (the same resolved path
     plus mtime, found without spawning) and the cleaned directory. An
     upgraded CLI is a new key, so it is asked at once rather than after a TTL.
+    *Amended 2026-09-21 (task 124.17, issue #513): the key carries **where
+    the CLI runs** as well — an opaque `place`, `""` for the host and the
+    task's container id for a linked chat on a containerized task. The same
+    worktree listed on the host and inside a container is two answers, and
+    neither may ever be served for the other; a container that is recreated
+    has a new id and so a new key, so a stale list cannot outlive the
+    container it came from. The binary identity is still the **host**
+    binary's, which for a container place may be the zero value because no
+    host binary exists — the place then carries the whole distinction, which
+    is correct: what is being listed there is the image's CLI. The probe runs
+    through the placement's launcher, with the placement's environment.*
   - **`skillTTL` = 5 minutes for a clean answer, `skillFailureTTL` = 1 minute
     for a failed probe** (task 124 decision 54). A listing is not a pure
     function of the binary — a person adds a skill or installs a plugin and
@@ -4580,7 +4621,13 @@ defaults:
   - **A per-binary bundled-skill registry** (*added 2026-09-20, task 124.16,
     issue #512*), beside the listings and on a key of its own: the skill names
     a turn's `RunHeader.Skills` reported (§9.1), against that agent's **binary
-    identity alone** — no directory, no adapter name. A listing is per
+    identity alone** — no directory, no adapter name (*amended 2026-09-21,
+    task 124.17: and the **place**, for the reason the listing key carries
+    one. A turn inside a task's container describes the image's CLI, so
+    filing its report under the host binary's identity would classify the
+    host listing's `builtin` rows from a stranger's report, and the other way
+    round — the hole task 124 decision 84 left open. Still no directory and
+    no adapter name*). A listing is per
     directory, but what a CLI *bundles* is a property of the installed build,
     so the first turn anywhere restores the rows in every directory and every
     chat, and a chat created a moment ago is not penalised for being new. A
@@ -12462,7 +12509,15 @@ currently true to show (§15 view 6).
   worktree must not have an unconfined agent handed it by a conversation. If
   the task's container is gone the turn fails rather than running on the host.
   The CLI's session store persists between turns under `mount_agent_config`,
-  and without it lives in the container, which lives as long as the task.* What that
+  and without it lives in the container, which lives as long as the task.*
+  *Amended 2026-09-21 (task 124.17, issue #513): a linked chat's turn now
+  carries the **task's container environment**, the same one an agent step
+  gets, so under `mount_agent_config` it runs with `HOME` set to the vincent
+  home and reads the `~/.claude`, `~/.codex` and `~/.cursor` mounted beneath
+  it. Until this amendment the turn carried no environment at all and the CLI
+  ran under the image's own `HOME`, which made the sentence above about the
+  session store persisting under `mount_agent_config` true only of agent
+  steps.* What that
   confines is real and is the point: the
   filesystem outside the two bind mounts — the project repository and the task's
   worktree, both at their own absolute paths — the shell, and whatever tooling
@@ -12574,6 +12629,13 @@ currently true to show (§15 view 6).
   that suppression; this is the posture it is held to). codex's
   `skills/list` loads its skills without running one (§9.3). A
   container-run linked chat is never probed on the host.
+  *Amended 2026-09-21 (task 124.17, issue #513): a container-run linked chat
+  is probed **inside the task's container**, through the same launcher its
+  turns use and with the same environment — still never on the host. The
+  process is the image's CLI, confined by §16's container as a turn is, and
+  it is reached for stopping through its own pid file, `skills-<chat id>`.
+  A configured container that is gone is answered `unknown`, and no probe of
+  any kind runs.*
 - **`notify.command` is arbitrary code the daemon runs as the invoking user.**
   *Added 2026-08-28 (task 046, issue #90).* It is spawned by the daemon, not by
   an agent or a task, and nothing from a task, an agent or the API reaches its

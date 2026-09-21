@@ -64,7 +64,11 @@ skills — `simplify`, `loop` and `run`, which it marks exactly the way it marks
 those commands — are listed once one turn has run on that claude, a turn's own
 report of what it loaded being the only thing that tells the two apart. That
 first turn brings them back in every chat and every directory, not just the one
-that ran it, and each arrives marked `builtin`.
+that ran it, and each arrives marked `builtin`. A chat on a task that runs in
+a [container](configuration.md#container) is listed inside that container, by
+the image's CLI — so its list, and its bundled skills, are the container's and
+never your host's; `~/.agents` is not mounted there, so a containerized codex
+or cursor chat lists nothing from it.
 When two codex skills share a name, `$name` selects neither; name one
 with codex's linked form, `[$name](path)`, which is the invocation that route
 gives for it. In a chat

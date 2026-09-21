@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/procx"
@@ -63,6 +64,59 @@ func (r *Runner) Recover(ctx context.Context) error {
 			}
 		}
 	}
+	return r.sweepSkillProbes(ctx)
+}
+
+// skillProbeSweepWorkers bounds how many probe kills run at once (task 124.17
+// decision 4). Each is a runtime lookup, a TERM, the probe's short grace and a
+// KILL, so a serial sweep would add that per open linked chat to every
+// restart; the workers keep it flat without letting a board with hundreds of
+// chats spawn hundreds of goroutines. Eight is well above the number of chats
+// anyone has open on containerized tasks at once, and a worker costs a
+// sleeping goroutine and one runtime client.
+const skillProbeSweepWorkers = 8
+
+// sweepSkillProbes kills the skill probes a previous daemon died under (spec
+// §12.4, task 124.17 decision 4).
+//
+// A probe is not a turn. It writes no row, so the walk over running turns
+// above — which is how a turn's orphan is found — cannot find one. What it
+// does have is a pid file named after its chat, inside a container that
+// outlives the daemon (061 decision 9), so the sweep is over the chats that
+// could have left one: the open ones linked to a task. StopSkillProbe answers
+// false for a task that runs on the host, where the dead daemon's own child
+// is already gone, and for one whose container has since been removed.
+//
+// Signalling a chat that had no probe running is a pid file that is not
+// there, which the runtime reports and the kill logs; sweeping only the chats
+// that did would need a row this deliberately does not write.
+func (r *Runner) sweepSkillProbes(ctx context.Context) error {
+	if r.deps.StopSkillProbe == nil {
+		return nil
+	}
+	chats, err := r.deps.Store.ListChats(ctx, store.ChatFilter{
+		States: []chatstate.State{chatstate.Idle, chatstate.Running, chatstate.AwaitingInput},
+	})
+	if err != nil {
+		return err
+	}
+	sem := make(chan struct{}, skillProbeSweepWorkers)
+	var wg sync.WaitGroup
+	for i := range chats {
+		c := &chats[i]
+		if !c.Linked() {
+			continue
+		}
+		taskID, chatID := *c.LinkedTaskID, c.ID
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			r.deps.StopSkillProbe(ctx, taskID, chatID)
+		}()
+	}
+	wg.Wait()
 	return nil
 }
 

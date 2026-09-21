@@ -55,7 +55,7 @@ func newLinkedHarness(t *testing.T) *linkedHarness {
 	var runner *taskrun.Runner
 	chats := chatrun.New(chatrun.Deps{
 		Store: st, Config: cfg, Worktrees: wt, Agents: reg, DataDir: dataDir, Logger: log,
-		Launchers: func(ctx context.Context, taskID, turnID int64) (agent.Launcher, error) {
+		Launchers: func(ctx context.Context, taskID, turnID int64) (agent.Launcher, string, []string, error) {
 			return runner.ChatLauncher(ctx, taskID, turnID)
 		},
 	})

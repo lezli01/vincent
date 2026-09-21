@@ -374,17 +374,20 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		DataDir:   dirs.Data,
 		Logger:    logger,
 		Events:    broker,
-		Launchers: func(ctx context.Context, taskID, turnID int64) (agent.Launcher, error) {
+		Launchers: func(ctx context.Context, taskID, turnID int64) (agent.Launcher, string, []string, error) {
 			return runner.ChatLauncher(ctx, taskID, turnID)
 		},
 		StopOrphan: func(ctx context.Context, taskID, turnID int64) bool {
 			return runner.StopChatOrphan(ctx, taskID, turnID)
 		},
-		// Where a linked chat's skills would be listed is decided from the
-		// task's settings alone (task 124 decision 56), through the same
-		// injected-closure seam as Launchers.
-		InContainer: func(ctx context.Context, taskID int64) (bool, error) {
-			return runner.ChatInContainer(ctx, taskID)
+		// Where a linked chat's skills are listed is the turn's own placement
+		// with a pid-file key of its own (task 124.17, amending task 124
+		// decision 56), through the same injected-closure seam as Launchers.
+		SkillPlace: func(ctx context.Context, taskID, chatID int64) (agent.Launcher, string, []string, error) {
+			return runner.ChatSkillLauncher(ctx, taskID, chatID)
+		},
+		StopSkillProbe: func(ctx context.Context, taskID, chatID int64) bool {
+			return runner.StopChatSkillProbe(ctx, taskID, chatID)
 		},
 		InvalidateSkills:    skills.Invalidate,
 		ReportBundledSkills: skills.ReportBundled,

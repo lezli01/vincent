@@ -32,11 +32,11 @@ func (r *reports) get() []report {
 }
 
 // recordReports wires ReportBundledSkills to note each call. The adapter is
-// kept by name: what the cache does with it is keyed off the binary, which is
-// the cache's own test.
+// kept by name: what the cache does with it is keyed off the binary and the
+// place, which is the cache's own test.
 func (h *harness) recordReports() *reports {
 	rep := &reports{}
-	h.runner.deps.ReportBundledSkills = func(a agent.Adapter, names []string) {
+	h.runner.deps.ReportBundledSkills = func(a agent.Adapter, _ string, names []string) {
 		rep.mu.Lock()
 		rep.calls = append(rep.calls, report{agent: a.Name(), names: slices.Clone(names)})
 		rep.mu.Unlock()

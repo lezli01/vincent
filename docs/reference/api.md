@@ -2408,6 +2408,13 @@ directory that turn runs in — the chat's own worktree, or its task's for a
 to invoke each one. It answers from the moment the chat exists, before any
 message, and while a turn is running.
 
+The list comes from wherever that turn would run. A chat on a task that runs
+in a [container](configuration.md#container) is listed **inside that
+container**, by the image's own CLI reading the container's home, so what you
+see is what that turn will load and not what your host would. Note that
+`~/.agents` is not mounted into a task container, so a containerized codex or
+cursor chat lists no skills from it.
+
 ```json
 { "chat_id": 3, "agent": "codex", "work_dir": "/home/me/.local/share/vincent/worktrees/3",
   "list_verdict": "supported", "unavailable_reason": "",
@@ -2432,9 +2439,11 @@ message, and while a turn is running.
   `unavailable_reason`. Today cursor answers this.
 - **`unknown`** — nobody can say: the probe failed with no earlier list
   (`probe_error`), the chat's `agent` names no adapter this daemon has
-  (`probe_error`), or the chat's task
-  runs in a [container](configuration.md#container), where listing is not
-  supported yet (`unavailable_reason`). Treat it as unknown, never as "none".
+  (`probe_error`), or the chat's task is configured to run in a
+  [container](configuration.md#container) and that container is gone
+  (`unavailable_reason`, and `work_dir` is then `""`). Treat it as unknown,
+  never as "none". vincent will not list a missing container's skills from
+  your host: the answer would name skills the agent never loads.
 
 Type the `invocation` as it is; never build one from the name and the sigil,
 because codex writes `[$name](path)` for a name two skills share.

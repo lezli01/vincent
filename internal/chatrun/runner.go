@@ -103,17 +103,39 @@ type Deps struct {
 	// otherwise. internal/taskrun implements it and the daemon wires it, so
 	// this package never imports taskrun. Nil — and every free chat — means
 	// the host, which keeps "chats run on the host" (§16) true for them.
-	Launchers func(ctx context.Context, taskID, turnID int64) (agent.Launcher, error)
+	//
+	// It answers three things about that place, not one (task 124.17): the
+	// launcher, an opaque name for where the CLI runs ("" is the host, and
+	// the daemon passes the task container's id), and the environment the CLI
+	// runs with. The environment is decision 3: a containerized turn carried
+	// none until 124.17, so the CLI ran under the image's HOME and never read
+	// the agent configuration `container.mount_agent_config` had mounted for
+	// it. The place is decision 2: it is what a turn's init line is filed
+	// under, so a container turn never classifies the host listing's
+	// `builtin` rows.
+	Launchers func(ctx context.Context, taskID, turnID int64) (
+		l agent.Launcher, place string, env []string, err error)
 	// StopOrphan is §12.4's container-aware kill for a linked turn a dead
 	// daemon left running (061 decision 9's pid file). It reports whether
 	// the task runs in a container at all. Nil means no container kill.
 	StopOrphan func(ctx context.Context, taskID, turnID int64) bool
-	// InContainer reports whether a linked chat's task runs its workflow in a
-	// container, from settings alone. It never asks the container runtime
-	// (task 124 decision 56). internal/taskrun implements it and the daemon
-	// wires it, so this package never imports taskrun (task 119). Nil means
-	// the host.
-	InContainer func(ctx context.Context, taskID int64) (bool, error)
+	// SkillPlace is where a linked chat's *skill probe* runs (task 124.17,
+	// §5.5, §9.6): the same shape Launchers answers, under a pid-file key of
+	// the probe's own, and keyed by chat because a probe has no turn.
+	//
+	// Unlike InContainer, which it replaces, it asks the container runtime:
+	// finding the container needs a lookup, and so does the honest answer
+	// that a configured container is gone — which it reports as an error
+	// (taskrun.ErrTaskContainerMissing) rather than as a host placement.
+	// internal/taskrun implements it and the daemon wires it, so this package
+	// never imports taskrun. Nil — and every free chat — means the host.
+	SkillPlace func(ctx context.Context, taskID, chatID int64) (
+		l agent.Launcher, place string, env []string, err error)
+	// StopSkillProbe is §12.4's container-aware kill for a skill probe a dead
+	// daemon left exec'd inside a task's container (task 124.17 decision 4).
+	// It reports whether there was a container to signal into. Nil means no
+	// probe kill.
+	StopSkillProbe func(ctx context.Context, taskID, chatID int64) bool
 	// InvalidateSkills drops the skill cache's entries for a directory a turn
 	// just ran in (task 124.9): a turn is the one event vincent observes that
 	// can have written a skill or installed a plugin. Nil means no cache.
@@ -122,12 +144,15 @@ type Deps struct {
 	// reported (task 124.16): claude's init line names the skills that turn
 	// loaded, which is what tells its bundled skills from its built-in
 	// commands. It is called with the turn's own adapter, because what is
-	// bundled is a property of the installed CLI.
+	// bundled is a property of the installed CLI — and with the place that
+	// turn ran, Launchers' own word for it, because what a container's claude
+	// bundles is the image's property and never the host binary's (task
+	// 124.17 decision 2).
 	//
 	// Nil means no cache. It is only ever called with names, so a codex or
 	// cursor turn — neither CLI reporting any — calls nothing. A closure
 	// rather than the cache itself, so this package never imports it.
-	ReportBundledSkills func(a agent.Adapter, names []string)
+	ReportBundledSkills func(a agent.Adapter, place string, names []string)
 }
 
 // ErrLinkedTaskNoWorktree is a linked-chat turn whose task no longer names a
@@ -374,16 +399,21 @@ func (r *Runner) runTurn(
 	// engine used to do this, which left chat transcripts unbounded.
 	tr.SetMax(r.cfg().TranscriptMaxBytes.Bytes())
 
-	workDir, launcher, err := r.turnPlace(ctx, chat, turn)
+	workDir, launcher, place, env, err := r.turnPlace(ctx, chat, turn)
 	if err != nil {
 		r.finish(turn, chatstate.TurnFailed, ReasonAgentError, err.Error(), chat)
 		return
 	}
 	spec := agent.RunSpec{
-		Prompt:          turn.Prompt,
-		Preamble:        turnPreamble(chat, turn),
-		WorkDir:         workDir,
-		Launcher:        launcher,
+		Prompt:   turn.Prompt,
+		Preamble: turnPreamble(chat, turn),
+		WorkDir:  workDir,
+		Launcher: launcher,
+		// nil for a host turn, which is the daemon's own environment and what
+		// every chat carried before task 124.17; the task's container
+		// environment for a turn inside one (decision 3), so the CLI reads
+		// the configuration `container.mount_agent_config` mounted for it.
+		Env:             env,
 		Model:           chat.Model,
 		Effort:          chat.Effort,
 		PermissionMode:  agent.PermissionMode(chat.PermissionMode),
@@ -419,7 +449,7 @@ func (r *Runner) runTurn(
 	defer r.untrack(chat.ID)
 	r.journal(turn, handle)
 
-	r.consume(ctx, cancelCause, live, chat, turn, adapter, handle, tr)
+	r.consume(ctx, cancelCause, live, chat, turn, adapter, place, handle, tr)
 
 	res, waitErr := handle.Wait()
 	turn.ExitCode = &res.ExitCode
@@ -464,58 +494,77 @@ func (r *Runner) runTurn(
 	}
 }
 
-// Workspace resolves where chat's next turn would run, without starting one.
-// A free chat runs in its own worktree on the host. A linked chat runs in its
-// task's worktree, read through the store on every call because the task owns
-// that claim (task 119 decision 1).
+// Workspace resolves the directory chat's next turn would start in, without
+// starting one. A free chat runs in its own worktree. A linked chat runs in
+// its task's worktree, read through the store on every call because the task
+// owns that claim (task 119 decision 1).
 //
-// inContainer comes from the task's settings alone and never from the
-// container runtime (task 124 decision 56), so asking costs no process: it is
-// what lets GET /v1/chats/{id}/skills answer `unknown` for a container-run
-// chat rather than listing a host directory the agent never reads (task
-// 124.9, §13.2). It is a statement about configuration, not about a live
-// container — a turn still learns the container is gone from Launchers.
-func (r *Runner) Workspace(ctx context.Context, chat *store.Chat) (dir string, inContainer bool, err error) {
+// It answers the directory alone. *Where* that directory is read from — the
+// host, or the task's container — is turnPlace's and SkillPlace's answer, and
+// both ask the container runtime for it (task 124.17 decision 1, amending
+// task 124 decision 56).
+func (r *Runner) Workspace(ctx context.Context, chat *store.Chat) (string, error) {
 	if !chat.Linked() {
-		return chat.WorktreePath, false, nil
+		return chat.WorktreePath, nil
 	}
 	task, err := r.deps.Store.GetTask(ctx, *chat.LinkedTaskID)
 	if err != nil {
-		return "", false, err
+		return "", err
 	}
 	if task.WorktreePath == "" {
-		return "", false, fmt.Errorf("task %d: %w", task.ID, ErrLinkedTaskNoWorktree)
+		return "", fmt.Errorf("task %d: %w", task.ID, ErrLinkedTaskNoWorktree)
 	}
-	if r.deps.InContainer == nil {
-		return task.WorktreePath, false, nil
-	}
-	in, err := r.deps.InContainer(ctx, task.ID)
-	if err != nil {
-		return "", false, err
-	}
-	return task.WorktreePath, in, nil
+	return task.WorktreePath, nil
 }
 
 // turnPlace resolves where a turn runs: Workspace's directory, and for a
-// linked chat whatever launcher the task's container settings call for (task
-// 119 decision 3). The launcher, not Workspace's bit, is the turn's source of
-// truth: a configured container that has gone away fails the turn there
-// rather than running it on the host.
+// linked chat the launcher, place and environment the task's container
+// settings call for (task 119 decision 3, task 124.17 decisions 2 and 3). The
+// launcher is the turn's source of truth: a configured container that has
+// gone away fails the turn there rather than running it on the host.
 func (r *Runner) turnPlace(
 	ctx context.Context, chat *store.Chat, turn *store.ChatTurn,
-) (string, agent.Launcher, error) {
-	dir, _, err := r.Workspace(ctx, chat)
+) (dir string, l agent.Launcher, place string, env []string, err error) {
+	dir, err = r.Workspace(ctx, chat)
 	if err != nil {
-		return "", nil, err
+		return "", nil, "", nil, err
 	}
 	if !chat.Linked() || r.deps.Launchers == nil {
-		return dir, nil, nil
+		return dir, nil, "", nil, nil
 	}
-	l, err := r.deps.Launchers(ctx, *chat.LinkedTaskID, turn.ID)
+	l, place, env, err = r.deps.Launchers(ctx, *chat.LinkedTaskID, turn.ID)
 	if err != nil {
-		return "", nil, err
+		return "", nil, "", nil, err
 	}
-	return dir, l, nil
+	return dir, l, place, env, nil
+}
+
+// SkillPlace resolves where a listing of chat's skills would be obtained
+// (task 124.17, §5.5, §9.6, §13.2): Workspace's directory, and for a linked
+// chat the launcher, place and environment its probe runs under.
+//
+// It is the turn's placement resolved through the same helper in
+// internal/taskrun, one pid-file key aside, so the list and the next turn can
+// never disagree about which CLI, which home and which machine the answer is
+// about. A configured container that is gone comes back as
+// taskrun.ErrTaskContainerMissing, and the caller reports that rather than
+// listing the host: a host list would name skills the agent in the container
+// never loads, which §9 forbids.
+func (r *Runner) SkillPlace(
+	ctx context.Context, chat *store.Chat,
+) (dir string, l agent.Launcher, place string, env []string, err error) {
+	dir, err = r.Workspace(ctx, chat)
+	if err != nil {
+		return "", nil, "", nil, err
+	}
+	if !chat.Linked() || r.deps.SkillPlace == nil {
+		return dir, nil, "", nil, nil
+	}
+	l, place, env, err = r.deps.SkillPlace(ctx, *chat.LinkedTaskID, chat.ID)
+	if err != nil {
+		return "", nil, "", nil, err
+	}
+	return dir, l, place, env, nil
 }
 
 // invalidateSkills drops the skill cache's entries for dir, the directory a
@@ -532,9 +581,9 @@ func (r *Runner) invalidateSkills(dir string) {
 // describes the turn's *start*, so a turn that wrote a skill reports a set
 // identical to the cached one, and reading the two as "nothing changed" would
 // hide that skill until the next turn.
-func (r *Runner) reportBundledSkills(a agent.Adapter, names []string) {
+func (r *Runner) reportBundledSkills(a agent.Adapter, place string, names []string) {
 	if r.deps.ReportBundledSkills != nil {
-		r.deps.ReportBundledSkills(a, names)
+		r.deps.ReportBundledSkills(a, place, names)
 	}
 }
 
@@ -573,7 +622,7 @@ func turnPreamble(chat *store.Chat, turn *store.ChatTurn) string {
 // simply return — see drain.
 func (r *Runner) consume(
 	ctx context.Context, cancelCause context.CancelCauseFunc, live *liveTurn,
-	chat *store.Chat, turn *store.ChatTurn, adapter agent.Adapter,
+	chat *store.Chat, turn *store.ChatTurn, adapter agent.Adapter, place string,
 	handle agent.RunHandle, tr *transcript.Writer,
 ) {
 	events := handle.Events()
@@ -655,7 +704,7 @@ func (r *Runner) consume(
 				// `builtin` rows against. An adapter that reports none — and
 				// a claude build too old to — hands over nothing.
 				if ev.Header != nil && len(ev.Header.Skills) > 0 {
-					r.reportBundledSkills(adapter, ev.Header.Skills)
+					r.reportBundledSkills(adapter, place, ev.Header.Skills)
 				}
 			case agent.EventUsage, agent.EventResult, agent.EventOutput, agent.EventToolUse,
 				agent.EventToolResult, agent.EventThinking,

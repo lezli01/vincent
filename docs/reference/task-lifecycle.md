@@ -266,7 +266,11 @@ A few edges:
   does not re-run it, like any chat's. The chat stays open, so the task stays
   locked.
 - **A task that runs in a [container](configuration.md#container)** has its
-  chat's turns run inside that container too.
+  chat's turns run inside that container too, with the container's own home —
+  so the agent configuration `mount_agent_config` mounts is the one it reads.
+  Its [skill list](api.md#skills) is the container's as well, obtained by the
+  image's CLI inside it; if the container is gone, that list answers `unknown`
+  rather than falling back to your host.
 
 Open one with [`vincent task chat`](cli.md#vincent-task-chat) or
 `POST /v1/tasks/{id}/chat`, and close it with

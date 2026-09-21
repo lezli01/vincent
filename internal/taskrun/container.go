@@ -268,21 +268,37 @@ func policyNamesHome(e config.Environment) bool {
 // can deliver a signal to a process the host cannot see.
 const containerGraceTimeout = 15 * time.Second
 
-// stopInContainer implements decision 9's kill: TERM the step's process from
-// inside the container, wait, then KILL. The task's container **survives** —
-// `rm -f` is reserved for whole-task teardown and recovery, so a retry finds
-// what an earlier step installed rather than starting from the image again.
-func stopInContainer(tc taskContainer, key string, log *slog.Logger) {
+// skillProbeGrace is what a skill probe gets between TERM and KILL, in place
+// of containerGraceTimeout (task 124.17 decision 4).
+//
+// The step grace is §12.4's fifteen seconds because a step may have work to
+// finish writing. A probe has none: it answers `initialize` — or codex's
+// `skills/list` — and exits, holding no worktree state and no transcript. It
+// is short because recovery sweeps every open linked chat blind, a probe
+// having no row to find one by, and fifteen seconds per chat on every daemon
+// start would be paid almost entirely by chats that had no probe running.
+const skillProbeGrace = 2 * time.Second
+
+// stopInContainer implements decision 9's kill: TERM the process from inside
+// the container, wait out grace, then KILL. The task's container **survives**
+// — `rm -f` is reserved for whole-task teardown and recovery, so a retry
+// finds what an earlier step installed rather than starting from the image
+// again.
+//
+// grace is the caller's because what is being stopped differs:
+// containerGraceTimeout for a step or a chat turn, skillProbeGrace for a
+// probe.
+func stopInContainer(tc taskContainer, key string, grace time.Duration, log *slog.Logger) {
 	// A context of its own: the run context is already canceled by the time
 	// this runs — that cancellation is what called it — and a signal that
 	// inherits it would be dead on arrival.
-	ctx, cancel := context.WithTimeout(context.Background(), containerGraceTimeout*2)
+	ctx, cancel := context.WithTimeout(context.Background(), grace*2)
 	defer cancel()
 	if err := tc.rt.Signal(ctx, tc.id, key, "TERM"); err != nil {
 		log.Warn("signal step in container", "container", tc.id, "signal", "TERM", "error", err)
 	}
 	select {
-	case <-time.After(containerGraceTimeout):
+	case <-time.After(grace):
 	case <-ctx.Done():
 		return
 	}

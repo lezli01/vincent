@@ -50,7 +50,7 @@ func TestBundledRowsAreWithheldUntilATurnNamesThem(t *testing.T) {
 	stub.Script(bundledListing(), nil)
 	dir := t.TempDir()
 
-	before := c.Lookup(t.Context(), stub, dir, false)
+	before := c.Lookup(t.Context(), stub, host(dir), false)
 	if got := names(before); len(got) != 1 || got[0] != "proj-skill" {
 		t.Fatalf("names before any turn = %q, want only the non-builtin row", got)
 	}
@@ -59,9 +59,9 @@ func TestBundledRowsAreWithheldUntilATurnNamesThem(t *testing.T) {
 	}
 
 	// What a claude turn's init line reports: bundled skills, no commands.
-	c.ReportBundled(stub, []string{"proj-skill", "simplify"})
+	c.ReportBundled(stub, "", []string{"proj-skill", "simplify"})
 
-	after := c.Lookup(t.Context(), stub, dir, false)
+	after := c.Lookup(t.Context(), stub, host(dir), false)
 	wantCalls(t, stub, 1) // the classification is not a reason to re-probe
 	got := names(after)
 	if len(got) != 2 || got[0] != "proj-skill" || got[1] != "simplify" {
@@ -85,13 +85,13 @@ func TestBundledSetIsKeyedByTheBinaryNotTheDirectory(t *testing.T) {
 	one.Script(bundledListing(), nil)
 	first, second := t.TempDir(), t.TempDir()
 
-	if got := c.Lookup(t.Context(), one, first, false); got.Bundled != agent.BundledAfterFirstTurn {
+	if got := c.Lookup(t.Context(), one, host(first), false); got.Bundled != agent.BundledAfterFirstTurn {
 		t.Fatalf("Bundled = %q, want %q", got.Bundled, agent.BundledAfterFirstTurn)
 	}
-	c.ReportBundled(one, []string{"simplify"})
+	c.ReportBundled(one, "", []string{"simplify"})
 
 	// A directory that has never had a turn of its own, on the same binary.
-	other := c.Lookup(t.Context(), one, second, false)
+	other := c.Lookup(t.Context(), one, host(second), false)
 	if got := names(other); len(got) != 2 || got[1] != "simplify" {
 		t.Errorf("a second directory = %q, want the restored bundled row", got)
 	}
@@ -102,7 +102,7 @@ func TestBundledSetIsKeyedByTheBinaryNotTheDirectory(t *testing.T) {
 	// A different binary identity, which is what an upgraded CLI is too.
 	two := &fileSkills{StubSkills: &agenttest.StubSkills{}, path: binaryFile(t, "claude-b")}
 	two.Script(bundledListing(), nil)
-	if got := c.Lookup(t.Context(), two, first, false); got.Bundled != agent.BundledAfterFirstTurn {
+	if got := c.Lookup(t.Context(), two, host(first), false); got.Bundled != agent.BundledAfterFirstTurn {
 		t.Errorf("another binary = %q, want %q: a set is never inherited",
 			got.Bundled, agent.BundledAfterFirstTurn)
 	} else if n := names(got); len(n) != 1 {
@@ -117,13 +117,13 @@ func TestBundledStateIsEmptyWhenTheQuestionDoesNotArise(t *testing.T) {
 	c, _ := newSkillCache()
 	plain := &agenttest.StubSkills{}
 	plain.Script(listed("review", "ship"), nil)
-	if got := c.Lookup(t.Context(), plain, t.TempDir(), false); got.Bundled != agent.BundledNotApplicable {
+	if got := c.Lookup(t.Context(), plain, host(t.TempDir()), false); got.Bundled != agent.BundledNotApplicable {
 		t.Errorf("Bundled = %q on a listing with no builtin row, want empty", got.Bundled)
 	}
 
 	no := &namedSkills{StubSkills: &agenttest.StubSkills{}, name: "codex"}
 	no.Script(agent.SkillList{}, agent.ErrSkillsUnsupported)
-	if got := c.Lookup(t.Context(), no, t.TempDir(), false); got.Bundled != agent.BundledNotApplicable {
+	if got := c.Lookup(t.Context(), no, host(t.TempDir()), false); got.Bundled != agent.BundledNotApplicable {
 		t.Errorf("Bundled = %q on an unsupported build, want empty", got.Bundled)
 	}
 }
@@ -134,14 +134,14 @@ func TestBundledStateIsEmptyWhenTheQuestionDoesNotArise(t *testing.T) {
 // which may be read as "this CLI bundles nothing".
 func TestReportBundledIsToleratedWhereItCannotAct(t *testing.T) {
 	var nilCache *agent.SkillCache
-	nilCache.ReportBundled(&agenttest.StubSkills{}, []string{"simplify"})
+	nilCache.ReportBundled(&agenttest.StubSkills{}, "", []string{"simplify"})
 
 	c, _ := newSkillCache()
-	c.ReportBundled(nil, []string{"simplify"})
+	c.ReportBundled(nil, "", []string{"simplify"})
 	stub := &agenttest.StubSkills{}
 	stub.Script(bundledListing(), nil)
-	c.ReportBundled(stub, nil)
-	if got := c.Lookup(t.Context(), stub, t.TempDir(), false); got.Bundled != agent.BundledAfterFirstTurn {
+	c.ReportBundled(stub, "", nil)
+	if got := c.Lookup(t.Context(), stub, host(t.TempDir()), false); got.Bundled != agent.BundledAfterFirstTurn {
 		t.Errorf("Bundled = %q after an empty report, want %q: no names is not an answer",
 			got.Bundled, agent.BundledAfterFirstTurn)
 	}
@@ -156,17 +156,17 @@ func TestBundledRegistryIsBounded(t *testing.T) {
 		a := &fileSkills{StubSkills: &agenttest.StubSkills{}, path: binaryFile(t, fmt.Sprintf("claude-%d", i))}
 		a.Script(bundledListing(), nil)
 		adapters = append(adapters, a)
-		c.ReportBundled(a, []string{"simplify"})
+		c.ReportBundled(a, "", []string{"simplify"})
 	}
 	if got := agent.BundledSetCount(c); got != agent.BundledMax {
 		t.Fatalf("the registry holds %d sets, want at most %d", got, agent.BundledMax)
 	}
 	// The first reporter is the least recently used, and so the evicted one.
-	if got := c.Lookup(t.Context(), adapters[0], t.TempDir(), false); got.Bundled != agent.BundledAfterFirstTurn {
+	if got := c.Lookup(t.Context(), adapters[0], host(t.TempDir()), false); got.Bundled != agent.BundledAfterFirstTurn {
 		t.Errorf("the evicted binary = %q, want %q", got.Bundled, agent.BundledAfterFirstTurn)
 	}
 	last := adapters[len(adapters)-1]
-	if got := c.Lookup(t.Context(), last, t.TempDir(), false); got.Bundled != agent.BundledListed {
+	if got := c.Lookup(t.Context(), last, host(t.TempDir()), false); got.Bundled != agent.BundledListed {
 		t.Errorf("the newest binary = %q, want %q", got.Bundled, agent.BundledListed)
 	}
 }
@@ -180,9 +180,9 @@ func TestBundledFilteringNeverMutatesTheCachedList(t *testing.T) {
 	stub.Script(bundledListing(), nil)
 	dir := t.TempDir()
 
-	withheld := c.Lookup(t.Context(), stub, dir, false)
-	c.ReportBundled(stub, []string{"simplify", "clear"})
-	restored := c.Lookup(t.Context(), stub, dir, false)
+	withheld := c.Lookup(t.Context(), stub, host(dir), false)
+	c.ReportBundled(stub, "", []string{"simplify", "clear"})
+	restored := c.Lookup(t.Context(), stub, host(dir), false)
 	wantCalls(t, stub, 1)
 
 	if got := len(withheld.Skills); got != 1 {
@@ -208,4 +208,53 @@ func binaryFile(t *testing.T, name string) string {
 		t.Fatal(err)
 	}
 	return p
+}
+
+// TestBundledSetIsKeyedByThePlaceToo is task 124.17 decision 2 closing the
+// hole task 124 decision 84 left: a turn's init line describes the CLI that
+// ran, and a linked chat on a containerized task runs the *image's* claude.
+// Filing its report under the host binary's identity would classify the host
+// listing's `builtin` rows from a stranger's report, and the other way round.
+//
+// So a report from inside a container restores that container's rows and
+// nothing else, and the host's listing is still `after_first_turn` until a
+// host turn says otherwise.
+func TestBundledSetIsKeyedByThePlaceToo(t *testing.T) {
+	c, _ := newSkillCache()
+	stub := &agenttest.StubSkills{}
+	stub.Script(bundledListing(), nil)
+	dir := t.TempDir()
+	inside := agent.SkillPlacement{WorkDir: dir, Place: "container-abc"}
+
+	// A turn inside the task's container names what the image's CLI bundles.
+	c.ReportBundled(stub, "container-abc", []string{"proj-skill", "simplify"})
+
+	got := c.Lookup(t.Context(), stub, inside, false)
+	if got.Bundled != agent.BundledListed {
+		t.Errorf("the container's listing = %q, want %q", got.Bundled, agent.BundledListed)
+	}
+	if n := names(got); len(n) != 2 || n[1] != "simplify" {
+		t.Errorf("the container's names = %q, want the listing minus `clear`", n)
+	}
+
+	onHost := c.Lookup(t.Context(), stub, host(dir), false)
+	if onHost.Bundled != agent.BundledAfterFirstTurn {
+		t.Errorf("the host's listing = %q, want %q — a container turn says nothing about it",
+			onHost.Bundled, agent.BundledAfterFirstTurn)
+	}
+	if n := names(onHost); len(n) != 1 || n[0] != "proj-skill" {
+		t.Errorf("the host's names = %q, want only the non-builtin row", n)
+	}
+
+	// And a host turn restores the host's rows without touching the
+	// container's, which are already served.
+	c.ReportBundled(stub, "", []string{"proj-skill", "clear"})
+	if got := c.Lookup(t.Context(), stub, host(dir), false); //
+	len(names(got)) != 2 || names(got)[1] != "clear" {
+		t.Errorf("the host's names after a host turn = %q, want its own report", names(got))
+	}
+	if got := c.Lookup(t.Context(), stub, inside, false); //
+	len(names(got)) != 2 || names(got)[1] != "simplify" {
+		t.Errorf("the container's names = %q, want them unchanged", names(got))
+	}
 }

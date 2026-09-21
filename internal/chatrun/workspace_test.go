@@ -3,6 +3,8 @@ package chatrun
 import (
 	"context"
 	"errors"
+	"os"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -13,11 +15,12 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 )
 
-// Task 124.9's placement half: Workspace answers "where would this chat's next
-// turn run, and is that inside a container?" without starting anything, and
-// every turn ending past placement invalidates the skill cache for the
-// directory it ran in — before the ending is recorded, because recording it is
-// what tells a client to refetch (§9.6, §13.2).
+// Task 124.9's placement half, as task 124.17 leaves it: Workspace answers
+// "which directory would this chat's next turn start in?" without starting
+// anything, SkillPlace answers where a listing of that directory would be
+// obtained, and every turn ending past placement invalidates the skill cache
+// for the directory it ran in — before the ending is recorded, because
+// recording it is what tells a client to refetch (§9.6, §13.2).
 
 // linkedTask creates a blocked task working in dir and opens a chat linked to
 // it. Launchers stays nil, so the chat's turns run on the host like a free
@@ -42,22 +45,27 @@ func (h *harness) linkedTask(t *testing.T, dir string) (*store.Task, *store.Chat
 
 // TestWorkspaceOfAFreeChatIsItsWorktree needs no store: the chat row the caller
 // already holds names the directory, and a free chat runs on the host (§16)
-// whatever InContainer would say. The chat here was never stored, so a read
+// whatever SkillPlace would say. The chat here was never stored, so a read
 // would fail.
 func TestWorkspaceOfAFreeChatIsItsWorktree(t *testing.T) {
 	h := newHarness(t)
-	h.runner.deps.InContainer = func(context.Context, int64) (bool, error) {
-		t.Error("InContainer asked about a free chat")
-		return true, nil
+	h.runner.deps.SkillPlace = func(context.Context, int64, int64) (agent.Launcher, string, []string, error) {
+		t.Error("SkillPlace asked about a free chat")
+		return nil, "nowhere", nil, nil
 	}
 	chat := &store.Chat{ID: 999, WorktreePath: t.TempDir()}
 
-	dir, in, err := h.runner.Workspace(t.Context(), chat)
+	dir, err := h.runner.Workspace(t.Context(), chat)
 	if err != nil {
 		t.Fatalf("Workspace: %v", err)
 	}
-	if dir != chat.WorktreePath || in {
-		t.Errorf("Workspace = %q, %v; want %q, false", dir, in, chat.WorktreePath)
+	if dir != chat.WorktreePath {
+		t.Errorf("Workspace = %q, want %q", dir, chat.WorktreePath)
+	}
+	dir, l, place, env, err := h.runner.SkillPlace(t.Context(), chat)
+	if err != nil || dir != chat.WorktreePath || l != nil || place != "" || env != nil {
+		t.Errorf("SkillPlace of a free chat = %q, %v, %q, %v (%v); want the host",
+			dir, l, place, env, err)
 	}
 }
 
@@ -68,12 +76,12 @@ func TestWorkspaceReadsTheLinkedTaskFresh(t *testing.T) {
 	h := newHarness(t)
 	task, c := h.linkedTask(t, h.repo)
 
-	dir, in, err := h.runner.Workspace(t.Context(), c)
+	dir, err := h.runner.Workspace(t.Context(), c)
 	if err != nil {
 		t.Fatalf("Workspace: %v", err)
 	}
-	if dir != h.repo || in {
-		t.Errorf("Workspace = %q, %v; want %q, false", dir, in, h.repo)
+	if dir != h.repo {
+		t.Errorf("Workspace = %q, want %q", dir, h.repo)
 	}
 
 	moved := t.TempDir()
@@ -81,7 +89,7 @@ func TestWorkspaceReadsTheLinkedTaskFresh(t *testing.T) {
 	if err := h.store.UpdateTask(t.Context(), task); err != nil {
 		t.Fatalf("UpdateTask: %v", err)
 	}
-	if dir, _, err := h.runner.Workspace(t.Context(), c); err != nil || dir != moved {
+	if dir, err := h.runner.Workspace(t.Context(), c); err != nil || dir != moved {
 		t.Errorf("Workspace after the task moved = %q (%v), want %q", dir, err, moved)
 	}
 
@@ -89,7 +97,7 @@ func TestWorkspaceReadsTheLinkedTaskFresh(t *testing.T) {
 	if err := h.store.UpdateTask(t.Context(), task); err != nil {
 		t.Fatalf("UpdateTask: %v", err)
 	}
-	if _, _, err := h.runner.Workspace(t.Context(), c); !errors.Is(err, ErrLinkedTaskNoWorktree) {
+	if _, err := h.runner.Workspace(t.Context(), c); !errors.Is(err, ErrLinkedTaskNoWorktree) {
 		t.Errorf("Workspace on a task with no worktree = %v, want ErrLinkedTaskNoWorktree", err)
 	}
 }
@@ -101,39 +109,148 @@ func TestWorkspaceMissingLinkedTaskIsAnError(t *testing.T) {
 	gone := int64(999)
 	chat := &store.Chat{ID: 1, LinkedTaskID: &gone}
 
-	if _, _, err := h.runner.Workspace(t.Context(), chat); !errors.Is(err, store.ErrNotFound) {
+	if _, err := h.runner.Workspace(t.Context(), chat); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("Workspace on a missing task = %v, want ErrNotFound", err)
 	}
 }
 
-// TestWorkspaceReportsTheContainerBit is the bit the skills route answers
-// `unknown` on (task 124 decision 56). Nil means the host; a wired InContainer
-// is asked about the linked task and its answer, or its error, is returned.
-func TestWorkspaceReportsTheContainerBit(t *testing.T) {
+// TestSkillPlaceAsksWhereTheProbeWouldRun is task 124.17 decision 1, which
+// amends task 124 decision 56: the skills route no longer reads a
+// settings-only bit, it resolves a placement. Nil means the host — every free
+// chat, and any daemon that wires nothing — and a wired SkillPlace is asked
+// about the linked task and this chat, and its answer, or its error, is
+// returned whole.
+func TestSkillPlaceAsksWhereTheProbeWouldRun(t *testing.T) {
 	h := newHarness(t)
 	task, c := h.linkedTask(t, h.repo)
 
-	if _, in, err := h.runner.Workspace(t.Context(), c); err != nil || in {
-		t.Errorf("Workspace with no InContainer = %v (%v), want false", in, err)
+	if dir, l, place, env, err := h.runner.SkillPlace(t.Context(), c); err != nil ||
+		dir != h.repo || l != nil || place != "" || env != nil {
+		t.Errorf("SkillPlace with no hook = %q, %v, %q, %v (%v); want the host at %q",
+			dir, l, place, env, err, h.repo)
 	}
 
-	var asked []int64
-	h.runner.deps.InContainer = func(_ context.Context, taskID int64) (bool, error) {
-		asked = append(asked, taskID)
-		return true, nil
+	type ask struct{ taskID, chatID int64 }
+	var asked []ask
+	wantEnv := []string{"HOME=/vincent-home"}
+	h.runner.deps.SkillPlace = func(_ context.Context, taskID, chatID int64) (
+		agent.Launcher, string, []string, error,
+	) {
+		asked = append(asked, ask{taskID, chatID})
+		return failingLauncher{}, "cid", wantEnv, nil
 	}
-	dir, in, err := h.runner.Workspace(t.Context(), c)
-	if err != nil || dir != h.repo || !in {
-		t.Errorf("Workspace = %q, %v (%v); want %q, true", dir, in, err, h.repo)
+	dir, l, place, env, err := h.runner.SkillPlace(t.Context(), c)
+	if err != nil || dir != h.repo || place != "cid" || !slices.Equal(env, wantEnv) {
+		t.Errorf("SkillPlace = %q, %v, %q, %v (%v); want %q, cid, %v",
+			dir, l, place, env, err, h.repo, wantEnv)
 	}
-	if len(asked) != 1 || asked[0] != task.ID {
-		t.Errorf("InContainer asked about %v, want [%d]", asked, task.ID)
+	if _, ok := l.(failingLauncher); !ok {
+		t.Errorf("launcher = %T, want the hook's own", l)
+	}
+	// Keyed by chat, never by turn: a probe has no turn (decision 4).
+	if len(asked) != 1 || asked[0] != (ask{task.ID, c.ID}) {
+		t.Errorf("SkillPlace asked %+v, want [{%d %d}]", asked, task.ID, c.ID)
 	}
 
-	errSettings := errors.New("unparseable snapshot")
-	h.runner.deps.InContainer = func(context.Context, int64) (bool, error) { return false, errSettings }
-	if _, _, err := h.runner.Workspace(t.Context(), c); !errors.Is(err, errSettings) {
-		t.Errorf("Workspace with a failing InContainer = %v, want %v", err, errSettings)
+	errGone := errors.New("the task's container is not running")
+	h.runner.deps.SkillPlace = func(context.Context, int64, int64) (
+		agent.Launcher, string, []string, error,
+	) {
+		return nil, "", nil, errGone
+	}
+	if _, _, _, _, err := h.runner.SkillPlace(t.Context(), c); !errors.Is(err, errGone) {
+		t.Errorf("SkillPlace with a gone container = %v, want %v", err, errGone)
+	}
+}
+
+// recordingLauncher is a host launcher that keeps every Command it started.
+// It is how a test reads the environment a turn actually ran with, which is
+// otherwise invisible: RunSpec.Env reaches the CLI through the adapter.
+type recordingLauncher struct {
+	agent.HostLauncher
+	mu   sync.Mutex
+	envs [][]string
+}
+
+func (l *recordingLauncher) Launch(cmd agent.Command) (agent.Process, error) {
+	l.mu.Lock()
+	l.envs = append(l.envs, slices.Clone(cmd.Env))
+	l.mu.Unlock()
+	return l.HostLauncher.Launch(cmd)
+}
+
+func (l *recordingLauncher) started() [][]string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([][]string(nil), l.envs...)
+}
+
+// TestLinkedTurnCarriesItsPlacementEnvironment is task 124.17 decision 3, and
+// the regression it fixes: a linked chat's turn built its RunSpec with no Env
+// at all, so a turn inside a task's container ran under the *image's* HOME
+// and never read the `~/.claude`, `~/.codex` and `~/.cursor` that
+// `container.mount_agent_config` had mounted beneath container.HomeDir for
+// it. §16 said the session store persisted under that mount; only agent steps
+// were making it true.
+//
+// The launcher here is a host one, because what is under test is that the
+// environment Launchers answers reaches the process — not docker.
+func TestLinkedTurnCarriesItsPlacementEnvironment(t *testing.T) {
+	t.Setenv("FAKEAGENT_SCENARIO", "success")
+	h := newHarness(t)
+	_, c := h.linkedTask(t, h.repo)
+	rec := &recordingLauncher{}
+	want := "VINCENT_TEST_HOME=/vincent-home"
+	h.runner.deps.Launchers = func(context.Context, int64, int64) (
+		agent.Launcher, string, []string, error,
+	) {
+		return rec, "cid", append(os.Environ(), want), nil
+	}
+
+	if turn := h.sendAndWait(t, c.ID, "why did it block?"); turn.State != chatstate.TurnDone {
+		t.Fatalf("turn = %s/%s (%s), want done", turn.State, turn.FailReason, turn.ErrorMessage)
+	}
+	h.waitIdle(t, c.ID)
+
+	started := rec.started()
+	if len(started) == 0 {
+		t.Fatal("the turn never reached the launcher")
+	}
+	for i, env := range started {
+		if !slices.Contains(env, want) {
+			t.Errorf("command %d ran without %q", i, want)
+		}
+	}
+}
+
+// TestHostTurnCarriesNoEnvironment is decision 3's other side: nothing
+// changes for a chat that runs on this machine. Launchers answers nil, which
+// is the daemon's own environment, and that is what every chat carried before
+// task 124.17.
+func TestHostTurnCarriesNoEnvironment(t *testing.T) {
+	t.Setenv("FAKEAGENT_SCENARIO", "success")
+	h := newHarness(t)
+	_, c := h.linkedTask(t, h.repo)
+	rec := &recordingLauncher{}
+	h.runner.deps.Launchers = func(context.Context, int64, int64) (
+		agent.Launcher, string, []string, error,
+	) {
+		return rec, "", nil, nil
+	}
+
+	if turn := h.sendAndWait(t, c.ID, "why did it block?"); turn.State != chatstate.TurnDone {
+		t.Fatalf("turn = %s/%s (%s), want done", turn.State, turn.FailReason, turn.ErrorMessage)
+	}
+	h.waitIdle(t, c.ID)
+
+	started := rec.started()
+	if len(started) == 0 {
+		t.Fatal("the turn never reached the launcher")
+	}
+	for i, env := range started {
+		if env != nil {
+			t.Errorf("command %d ran with an environment of its own: %v", i, env)
+		}
 	}
 }
 
@@ -267,8 +384,10 @@ func (failingLauncher) Launch(agent.Command) (agent.Process, error) { return nil
 func TestStartFailureInvalidatesToo(t *testing.T) {
 	h := newHarness(t)
 	_, c := h.linkedTask(t, h.repo)
-	h.runner.deps.Launchers = func(context.Context, int64, int64) (agent.Launcher, error) {
-		return failingLauncher{}, nil
+	h.runner.deps.Launchers = func(context.Context, int64, int64) (
+		agent.Launcher, string, []string, error,
+	) {
+		return failingLauncher{}, "", nil, nil
 	}
 	inv := h.recordInvalidations(c.ID)
 
@@ -290,8 +409,10 @@ func TestPlacementFailureInvalidatesNothing(t *testing.T) {
 	h := newHarness(t)
 	_, c := h.linkedTask(t, h.repo)
 	errGone := errors.New("the task's container is not running")
-	h.runner.deps.Launchers = func(context.Context, int64, int64) (agent.Launcher, error) {
-		return nil, errGone
+	h.runner.deps.Launchers = func(context.Context, int64, int64) (
+		agent.Launcher, string, []string, error,
+	) {
+		return nil, "", nil, errGone
 	}
 	inv := h.recordInvalidations(c.ID)
 

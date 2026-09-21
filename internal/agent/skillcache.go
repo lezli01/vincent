@@ -50,13 +50,44 @@ const skillFailureTTL = time.Minute
 const skillCacheMax = 64
 
 // bundledMax bounds how many binaries' bundled-skill sets the cache holds
-// (§9.6, task 124.16, #512). A set is keyed by binary identity alone — path
-// plus mtime — so it grows only when a person installs another agent CLI or
-// upgrades one, which is far slower than worktrees come and go. It is
+// (§9.6, task 124.16, #512, amended by 124.17, #513). A set is keyed by
+// binary identity and place — never the directory — so it grows only when a
+// person installs another agent CLI, upgrades one, or a task container is
+// recreated, all of which are far slower than worktrees come and go. It is
 // skillCacheMax's number because it is skillCacheMax's kind of bound: a
 // ceiling nothing reaches in practice, there so that nothing can grow without
 // limit for the life of the daemon. A set costs a few dozen short names.
 const bundledMax = skillCacheMax
+
+// SkillPlacement is where a listing's CLI would run (§9.6, task 124.17,
+// #513). It is the cache's whole picture of a run: the directory the CLI
+// starts in, how it is started, what it is started with, and an opaque name
+// for the machine it is started on.
+//
+// It exists because a listing is not a function of the host binary alone. A
+// linked chat on a containerized task runs its turns inside that task's
+// container (§5.5, §16, task 119 decision 3), so its skills are the image's
+// CLI reading the container's home — and the host's answer for the same
+// worktree would be a different list entirely.
+type SkillPlacement struct {
+	// WorkDir is the directory the next run would start in: a chat's own
+	// worktree, or its linked task's.
+	WorkDir string
+	// Launcher is what starts the CLI. nil is the host, the same convention
+	// SkillQuery.Launcher and RunSpec.Launcher follow.
+	Launcher Launcher
+	// Env is the CLI's environment. nil is the daemon's, the same convention
+	// SkillQuery.Env follows.
+	Env []string
+	// Place names where the CLI runs, opaquely: "" is the host, and anything
+	// else is the caller's own identifier for somewhere it is not — the
+	// daemon passes a task container's id. internal/agent is a leaf and
+	// never interprets it; it only keeps two places' answers apart.
+	//
+	// A container that is recreated has a new id and so a new key, which is
+	// why a stale list can never outlive the container it was obtained from.
+	Place string
+}
 
 // BundledState says what became of the `builtin` rows a served listing held
 // (§9.6, §5.5, task 124.16, #512). claude marks its bundled skills
@@ -126,9 +157,10 @@ type SkillAnswer struct {
 // It follows CatalogCache's rules wherever they apply:
 //
 //   - **Key.** The adapter's name, its binary identity (catalogKey: resolved
-//     path plus mtime, found without spawning anything) and the cleaned
-//     directory. An upgraded CLI is a new key, so it is asked at once rather
-//     than after the TTL.
+//     path plus mtime, found without spawning anything), the cleaned
+//     directory and the place the CLI runs (SkillPlacement.Place, "" for the
+//     host). An upgraded CLI is a new key, so it is asked at once rather
+//     than after the TTL; so is a task container that has been recreated.
 //   - **TTLs.** skillTTL for a clean answer, skillFailureTTL for a failed
 //     probe; refresh bypasses both.
 //   - **Single flight.** Each key's probes are serialized, and a caller queued
@@ -149,9 +181,11 @@ type SkillAnswer struct {
 // published.
 //
 // The cache spawns nothing itself: a probe is the adapter's ListSkills, run
-// on the host with the daemon's environment. A probe is not a chat turn
-// either — it takes no `max_parallel_chats` slot, touches no store row and
-// emits no event.
+// wherever the caller's SkillPlacement says — on the host with the daemon's
+// environment by default, and inside a task's container through its launcher
+// for a linked chat on a containerized task (124.17, #513). A probe is not a
+// chat turn either — it takes no `max_parallel_chats` slot, touches no store
+// row and emits no event.
 type SkillCache struct {
 	now func() time.Time
 
@@ -169,30 +203,49 @@ type SkillCache struct {
 	tick uint64
 
 	// bundled is the classification half (task 124.16, #512): per binary
-	// identity, the skill names a turn's init line reported. Its own mutex
-	// because it is written by chat turns and read by lookups, on paths that
-	// share nothing else — a report must never queue behind an eviction scan.
+	// identity *and place* (124.17, #513), the skill names a turn's init line
+	// reported. Its own mutex because it is written by chat turns and read by
+	// lookups, on paths that share nothing else — a report must never queue
+	// behind an eviction scan.
 	bundledMu   sync.Mutex
-	bundledSets map[catalogKey]*bundledSet
+	bundledSets map[bundledKey]*bundledSet
 	bundledTick uint64
+}
+
+// bundledKey is what one reported set is an answer about (task 124.17, #513):
+// a binary identity and the place it ran. The place is in the key for the
+// reason it is in skillKey — a container turn's init line describes the
+// image's CLI, and reading it as the host binary's would classify the host
+// listing's `builtin` rows from a stranger's report, and the other way round.
+//
+// The host binary's identity may be the zero catalogKey for a container
+// place, where no host binary exists at all; the place then carries the whole
+// distinction, which is correct.
+type bundledKey struct {
+	bin   catalogKey
+	place string
 }
 
 // bundledSet is one binary's reported skill names (task 124.16). used orders
 // the sets by recency the way skillSlot.used orders the slots.
 type bundledSet struct {
-	key   catalogKey
+	key   bundledKey
 	used  uint64
 	names map[string]bool
 }
 
 // skillKey is what one cached listing is an answer about (§9.6, task 124
-// decision 5). A listing is a function of the directory as well as of the
-// binary — codex's `skills/list` is per cwd — which is why this cache is not
-// the catalog cache's per-adapter slot.
+// decision 5, amended by 124.17). A listing is a function of the directory as
+// well as of the binary — codex's `skills/list` is per cwd — which is why
+// this cache is not the catalog cache's per-adapter slot. It is a function of
+// *where* the CLI runs too: the same worktree listed on the host and inside a
+// task's container are two different answers, and place is what keeps them
+// from sharing an entry (#513).
 type skillKey struct {
-	name string
-	bin  catalogKey
-	dir  string // filepath.Clean'd
+	name  string
+	bin   catalogKey
+	dir   string // filepath.Clean'd
+	place string // SkillPlacement.Place: "" is the host
 }
 
 // skillSlot is one key's cache line. probeMu serializes probes so concurrent
@@ -223,31 +276,35 @@ func NewSkillCache() *SkillCache {
 	return &SkillCache{
 		now:         time.Now,
 		slots:       make(map[skillKey]*skillSlot),
-		bundledSets: make(map[catalogKey]*bundledSet),
+		bundledSets: make(map[bundledKey]*bundledSet),
 	}
 }
 
-// Lookup answers which skills a's CLI would load for a run in workDir.
+// Lookup answers which skills a's CLI would load for a run placed at p.
 //
 // A fresh answer is served as it stands; otherwise, or when refresh is set,
-// the adapter is asked, unless a probe for the same key finished after this
-// call began, whose answer is served instead. An adapter that does not
-// implement SkillLister answers InputUnsupported with no Reason and is never
-// asked: the route words that case itself, and normally never gets here with
-// one.
-func (c *SkillCache) Lookup(ctx context.Context, a Adapter, workDir string, refresh bool) SkillAnswer {
+// the adapter is asked — through p.Launcher, with p.Env — unless a probe for
+// the same key finished after this call began, whose answer is served
+// instead. An adapter that does not implement SkillLister answers
+// InputUnsupported with no Reason and is never asked: the route words that
+// case itself, and normally never gets here with one.
+func (c *SkillCache) Lookup(ctx context.Context, a Adapter, p SkillPlacement, refresh bool) SkillAnswer {
 	lister, ok := a.(SkillLister)
 	if !ok {
 		return SkillAnswer{Verdict: InputUnsupported}
 	}
 	// Marked before the key is resolved: arrival is the call's start.
 	arrived := c.probes.Load()
-	dir := filepath.Clean(workDir)
-	bin := identity(a)
-	s := c.slot(skillKey{name: a.Name(), bin: bin, dir: dir})
+	dir := filepath.Clean(p.WorkDir)
+	// identity still stats the *host* binary, even for a container place,
+	// where it may not exist at all and the key is the zero value. That is
+	// deliberate: what is being listed there is the image's CLI, which the
+	// daemon cannot stat, and p.Place already tells the two apart (#513).
+	bk := bundledKey{bin: identity(a), place: p.Place}
+	s := c.slot(skillKey{name: a.Name(), bin: bk.bin, dir: dir, place: p.Place})
 	if !refresh {
 		if ans, fresh := s.fresh(c.now()); fresh {
-			return c.serve(bin, ans)
+			return c.serve(bk, ans)
 		}
 	}
 	s.probeMu.Lock()
@@ -259,31 +316,36 @@ func (c *SkillCache) Lookup(ctx context.Context, a Adapter, workDir string, refr
 		// The probe this caller queued behind answered it, refresh or not:
 		// N refreshes arriving together cost one subprocess.
 		ans, _ := s.fresh(c.now())
-		return c.serve(bin, ans)
+		return c.serve(bk, ans)
 	}
 	if !refresh {
 		if ans, fresh := s.fresh(c.now()); fresh {
-			return c.serve(bin, ans)
+			return c.serve(bk, ans)
 		}
 	}
-	return c.serve(bin, c.probe(ctx, lister, s))
+	return c.serve(bk, c.probe(ctx, lister, s, p))
 }
 
-// ReportBundled records the skill names a turn on bin's CLI loaded, which is
-// what tells that binary's bundled skills from its built-in commands (§9.6,
-// task 124.16, #512). The chat runner calls it with a turn's init line; an
-// adapter whose stream carries no such line — codex, cursor — never does.
+// ReportBundled records the skill names a turn on a's CLI loaded at place,
+// which is what tells that binary's bundled skills from its built-in commands
+// (§9.6, task 124.16, #512). The chat runner calls it with a turn's init
+// line; an adapter whose stream carries no such line — codex, cursor — never
+// does.
 //
-// The classification is stored against the *binary* and not the directory: a
-// bundled skill ships with the installed CLI, so the first turn anywhere
-// restores the rows everywhere, and a chat created a moment ago is not
-// penalised for being new. It does not touch the listings themselves, which
-// the turn's ending invalidates unconditionally either way.
+// The classification is stored against the *binary and the place*, never the
+// directory: a bundled skill ships with the installed CLI, so the first turn
+// anywhere on that CLI restores the rows in every directory, and a chat
+// created a moment ago is not penalised for being new. place is in the key
+// because a turn inside a task's container describes the image's CLI, not the
+// host's (124.17, #513) — reporting one under the other's identity would
+// classify a listing from a stranger's report, which is the hole decision 84
+// left open. It does not touch the listings themselves, which the turn's
+// ending invalidates unconditionally either way.
 //
 // Safe on a nil receiver, the way Invalidate is. An empty names is ignored:
 // it is a build that sends no `skills` array, not a CLI claiming it bundles
 // nothing.
-func (c *SkillCache) ReportBundled(a Adapter, names []string) {
+func (c *SkillCache) ReportBundled(a Adapter, place string, names []string) {
 	if c == nil || a == nil || len(names) == 0 {
 		return
 	}
@@ -291,11 +353,11 @@ func (c *SkillCache) ReportBundled(a Adapter, names []string) {
 	for _, n := range names {
 		set[n] = true
 	}
-	bin := identity(a)
+	k := bundledKey{bin: identity(a), place: place}
 	c.bundledMu.Lock()
 	defer c.bundledMu.Unlock()
 	c.bundledTick++
-	if b, ok := c.bundledSets[bin]; ok {
+	if b, ok := c.bundledSets[k]; ok {
 		b.used, b.names = c.bundledTick, set
 		return
 	}
@@ -309,7 +371,7 @@ func (c *SkillCache) ReportBundled(a Adapter, names []string) {
 		}
 		delete(c.bundledSets, oldest.key)
 	}
-	c.bundledSets[bin] = &bundledSet{key: bin, used: c.bundledTick, names: set}
+	c.bundledSets[k] = &bundledSet{key: k, used: c.bundledTick, names: set}
 }
 
 // serve filters a stored answer's `builtin` rows down to the ones a turn on
@@ -323,7 +385,7 @@ func (c *SkillCache) ReportBundled(a Adapter, names []string) {
 //
 // ans is a copy, and the filtered Skills is a fresh slice: the cache's own
 // slice is shared with every other caller and is never modified.
-func (c *SkillCache) serve(bin catalogKey, ans SkillAnswer) SkillAnswer {
+func (c *SkillCache) serve(k bundledKey, ans SkillAnswer) SkillAnswer {
 	builtins := 0
 	for _, s := range ans.Skills {
 		if s.Builtin {
@@ -335,7 +397,7 @@ func (c *SkillCache) serve(bin catalogKey, ans SkillAnswer) SkillAnswer {
 		// that marks nothing: there is no question to answer.
 		return ans
 	}
-	names, known := c.bundledNames(bin)
+	names, known := c.bundledNames(k)
 	ans.Bundled = BundledAfterFirstTurn
 	if known {
 		ans.Bundled = BundledListed
@@ -351,14 +413,14 @@ func (c *SkillCache) serve(bin catalogKey, ans SkillAnswer) SkillAnswer {
 	return ans
 }
 
-// bundledNames is bin's reported set, and whether any turn has reported one.
+// bundledNames is k's reported set, and whether any turn has reported one.
 // The returned map is the stored one: read it, never write it — ReportBundled
 // replaces a set rather than mutating it, so a reader holding an old one
 // still sees a consistent answer.
-func (c *SkillCache) bundledNames(bin catalogKey) (map[string]bool, bool) {
+func (c *SkillCache) bundledNames(k bundledKey) (map[string]bool, bool) {
 	c.bundledMu.Lock()
 	defer c.bundledMu.Unlock()
-	b, ok := c.bundledSets[bin]
+	b, ok := c.bundledSets[k]
 	if !ok {
 		return nil, false
 	}
@@ -367,11 +429,12 @@ func (c *SkillCache) bundledNames(bin catalogKey) (map[string]bool, bool) {
 	return b.names, true
 }
 
-// Invalidate drops every entry for workDir, across adapter names and binary
-// identities (§9.6, task 124, 124.9, #505). A probe already running for it
-// still answers its own callers, but stores nothing a later Lookup can see,
-// so the next Lookup probes again. Safe on a nil receiver, where it does
-// nothing.
+// Invalidate drops every entry for workDir, across adapter names, binary
+// identities and places (§9.6, task 124, 124.9, #505, 124.17, #513) — a turn
+// in a task's container and one on the host both wrote to the same worktree,
+// so neither answer about it survives. A probe already running for it still
+// answers its own callers, but stores nothing a later Lookup can see, so the
+// next Lookup probes again. Safe on a nil receiver, where it does nothing.
 func (c *SkillCache) Invalidate(workDir string) {
 	if c == nil {
 		return
@@ -433,8 +496,12 @@ func (c *SkillCache) touch(s *skillSlot) {
 // exactly as it was (T4.22), and never read as a no. A failure whose caller
 // has gone away is that caller's alone and is not stored — otherwise one
 // client hanging up would have every other one told "failed" for a minute.
-func (c *SkillCache) probe(ctx context.Context, lister SkillLister, s *skillSlot) SkillAnswer {
-	list, err := lister.ListSkills(ctx, SkillQuery{WorkDir: s.key.dir})
+func (c *SkillCache) probe(
+	ctx context.Context, lister SkillLister, s *skillSlot, p SkillPlacement,
+) SkillAnswer {
+	list, err := lister.ListSkills(ctx, SkillQuery{
+		WorkDir: s.key.dir, Launcher: p.Launcher, Env: p.Env,
+	})
 	now := c.now()
 	s.dataMu.Lock()
 	next := s.answer

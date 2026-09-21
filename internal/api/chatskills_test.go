@@ -21,6 +21,7 @@ import (
 	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/taskrun"
 )
 
 // skillsHarness is GET /v1/chats/{id}/skills over the real handler, the real
@@ -38,10 +39,35 @@ type skillsHarness struct {
 	stub      *agenttest.StubSkills
 	chats     *chatrun.Runner
 	projectID int64
-	// inContainer is what the chat runner's InContainer reports for every
-	// linked chat; containerAsks counts the times it was asked.
-	inContainer   atomic.Bool
-	containerAsks atomic.Int32
+	// place is what the chat runner's SkillPlace answers for every linked
+	// chat; nil is the host. placeAsks counts the times it was asked, which
+	// is how the per-request runtime call of task 124.17 decision 1 is
+	// proven.
+	place     atomic.Pointer[placement]
+	placeAsks atomic.Int32
+}
+
+// placement is one scripted answer from the chat runner's SkillPlace: where a
+// linked chat's probe would run (task 124.17).
+type placement struct {
+	launcher agent.Launcher
+	id       string
+	env      []string
+	err      error
+}
+
+// recordingLauncher is a host launcher that counts what it started. Nothing
+// in these tests launches anything — StubSkills answers from a script — so a
+// count above zero is a probe that reached a real CLI, which is what a
+// missing container must never cause.
+type recordingLauncher struct {
+	agent.HostLauncher
+	launches atomic.Int32
+}
+
+func (l *recordingLauncher) Launch(cmd agent.Command) (agent.Process, error) {
+	l.launches.Add(1)
+	return l.HostLauncher.Launch(cmd)
 }
 
 func newSkillsHarness(t *testing.T) *skillsHarness {
@@ -66,9 +92,12 @@ func newSkillsHarness(t *testing.T) *skillsHarness {
 	h := &skillsHarness{stub: stub, projectID: project.ID}
 	h.chats = chatrun.New(chatrun.Deps{
 		Store: st, Config: config.Default, Agents: reg, DataDir: dataDir, Logger: log,
-		InContainer: func(context.Context, int64) (bool, error) {
-			h.containerAsks.Add(1)
-			return h.inContainer.Load(), nil
+		SkillPlace: func(context.Context, int64, int64) (agent.Launcher, string, []string, error) {
+			h.placeAsks.Add(1)
+			if p := h.place.Load(); p != nil {
+				return p.launcher, p.id, p.env, p.err
+			}
+			return agent.HostLauncher{}, "", nil, nil
 		},
 		InvalidateSkills: cache.Invalidate,
 	})
@@ -214,7 +243,7 @@ func TestChatSkillsListsALinkedChatInItsTasksWorktree(t *testing.T) {
 	if len(qs) != 1 || qs[0].WorkDir != task.WorktreePath {
 		t.Fatalf("stub asked about %+v, want once about the task's %q", qs, task.WorktreePath)
 	}
-	if h.containerAsks.Load() == 0 {
+	if h.placeAsks.Load() == 0 {
 		t.Error("a linked chat was listed without asking where its task runs")
 	}
 }
@@ -349,22 +378,33 @@ func TestChatSkillsProbeOutcomes(t *testing.T) {
 	})
 }
 
-// TestChatSkillsContainerRunChatSpawnsNothing is task 124 decision 11: a host
-// probe would list skills the agent in the container never loads. The answer
-// is unknown with a reason, the cache is never reached — refresh or not — and
-// the invoke half, a fact about the adapter, is still served.
-func TestChatSkillsContainerRunChatSpawnsNothing(t *testing.T) {
+// TestChatSkillsMissingContainerSpawnsNothing is task 124.17 decision 1's
+// one negative answer, and it replaces task 124 decision 11's: a container
+// that is configured but gone has nowhere to probe, and the host is not a
+// fallback — a host list would name the skills of a machine the agent never
+// runs on, which §9 forbids.
+//
+// The answer is unknown with the container reason, the cache is never reached
+// — refresh or not — no launcher starts anything, work_dir is empty because
+// the directory the turn would have read is inside a container that is not
+// there, and the invoke half, a fact about the adapter, is still served.
+func TestChatSkillsMissingContainerSpawnsNothing(t *testing.T) {
 	h := newSkillsHarness(t)
 	h.stub.Script(testSkills, nil)
-	h.inContainer.Store(true)
 	task, c := h.linkedChat(t)
+	host := &recordingLauncher{}
+	h.place.Store(&placement{
+		launcher: host,
+		err:      fmt.Errorf("task %d: %w", task.ID, taskrun.ErrTaskContainerMissing),
+	})
 
 	for _, q := range []string{"", "?refresh=true"} {
 		got := h.list(t, c.ID, q)
-		if got.ListVerdict != "unknown" || got.UnavailableReason == "" {
-			t.Errorf("%q: got %q %q, want unknown with a reason", q, got.ListVerdict, got.UnavailableReason)
+		if got.ListVerdict != "unknown" || got.UnavailableReason != missingContainerSkillsReason {
+			t.Errorf("%q: got %q %q, want unknown with the container reason",
+				q, got.ListVerdict, got.UnavailableReason)
 		}
-		if got.WorkDir != task.WorktreePath || len(got.Skills) != 0 || got.ProbeError != nil {
+		if got.WorkDir != "" || len(got.Skills) != 0 || got.ProbeError != nil {
 			t.Errorf("%q: work_dir %q skills %v probe_error %v", q, got.WorkDir, got.Skills, got.ProbeError)
 		}
 		if got.InvokeVerdict != "supported" || got.InvokeSigil != "$" || got.InvokePosition != "anywhere" {
@@ -372,7 +412,76 @@ func TestChatSkillsContainerRunChatSpawnsNothing(t *testing.T) {
 				q, got.InvokeVerdict, got.InvokeSigil, got.InvokePosition)
 		}
 	}
-	h.wantCalls(t, 0, "for a container-run chat")
+	h.wantCalls(t, 0, "for a chat whose container is gone")
+	if n := host.launches.Load(); n != 0 {
+		t.Errorf("a host launcher started %d process(es) for a chat whose container is gone", n)
+	}
+	if qs := h.stub.Queries(); len(qs) != 0 {
+		t.Errorf("the lister was asked %+v, want nothing", qs)
+	}
+}
+
+// TestChatSkillsContainerRunChatProbesInsideTheContainer is task 124.17's
+// acceptance criterion at the route: a linked chat on a containerized task is
+// listed through the task's own launcher, with the task's container
+// environment, and the answer is filed under the container's id — never the
+// host's.
+func TestChatSkillsContainerRunChatProbesInsideTheContainer(t *testing.T) {
+	h := newSkillsHarness(t)
+	h.stub.Script(testSkills, nil)
+	task, c := h.linkedChat(t)
+	inside := &recordingLauncher{}
+	env := []string{"HOME=/vincent-home"}
+	h.place.Store(&placement{launcher: inside, id: "container-abc", env: env})
+
+	got := h.list(t, c.ID, "")
+	if got.ListVerdict != "supported" || got.WorkDir != task.WorktreePath {
+		t.Fatalf("verdict %q work_dir %q, want supported at %q",
+			got.ListVerdict, got.WorkDir, task.WorktreePath)
+	}
+	qs := h.stub.Queries()
+	if len(qs) != 1 {
+		t.Fatalf("stub asked %d time(s), want once", len(qs))
+	}
+	if qs[0].Launcher != agent.Launcher(inside) {
+		t.Errorf("probe launcher = %T, want the task's container launcher", qs[0].Launcher)
+	}
+	if !reflect.DeepEqual(qs[0].Env, env) {
+		t.Errorf("probe env = %v, want the task's container environment %v", qs[0].Env, env)
+	}
+	if qs[0].WorkDir != task.WorktreePath {
+		t.Errorf("probe work dir = %q, want %q", qs[0].WorkDir, task.WorktreePath)
+	}
+
+	// The cache key carries the place (decision 2): the same worktree read on
+	// the host is a second key, so it is probed again rather than served the
+	// container's list. A recreated container is the same argument — a new
+	// id is a new key.
+	h.place.Store(nil)
+	if got := h.list(t, c.ID, ""); got.ListVerdict != "supported" {
+		t.Fatalf("host verdict = %q, want supported", got.ListVerdict)
+	}
+	h.wantCalls(t, 2, "after listing the same directory on the host")
+	if qs := h.stub.Queries(); qs[1].Launcher == agent.Launcher(inside) {
+		t.Error("the host list was probed through the container's launcher")
+	}
+}
+
+// TestChatSkillsAsksThePlacementOnEveryRequest is the cost decision 1 accepts
+// in place of task 124 decision 56: finding the container is what placing the
+// probe needs, and the honest "that container is gone" needs it even when a
+// list is already cached. A cache hit still asks.
+func TestChatSkillsAsksThePlacementOnEveryRequest(t *testing.T) {
+	h := newSkillsHarness(t)
+	h.stub.Script(testSkills, nil)
+	_, c := h.linkedChat(t)
+
+	h.list(t, c.ID, "")
+	h.list(t, c.ID, "")
+	h.wantCalls(t, 1, "after a second request inside the TTL")
+	if got := h.placeAsks.Load(); got != 2 {
+		t.Errorf("placement asked %d time(s) for two requests, want 2", got)
+	}
 }
 
 // TestChatSkillsUnregisteredAdapter is task 124 decision 58: an adapter the
