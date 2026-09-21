@@ -930,11 +930,13 @@ Observed on **claude 2.1.278**, **codex-cli 0.154.0** and **cursor-agent
 §9.1's table and by the skills subsection above; neither of those pins is
 widened by this record. Each probe ran in a throwaway git repository with the
 adapter's own argv, the prompt on stdin as all three adapters send it
-(`internal/agent/claude/claude.go`, `internal/agent/codex/codex.go` and
-`internal/agent/cursor/cursor.go` each build `Stdin` from
-`RunSpec.JoinedPrompt`), a nonce inside the target file and an instruction to
-use no tools at all — so an answer carrying the nonce proves the CLI itself put
-the file in front of the model.
+(`internal/agent/codex/codex.go` and `internal/agent/cursor/cursor.go` set
+`Stdin` from `RunSpec.JoinedPrompt`, as `internal/agent/claude/claude.go` does
+outside input mode; under input mode claude writes the prompt down a stdin
+*pipe* instead, as the stream-json `user` line `userMessageLine` builds
+(`internal/agent/claude/input.go`) — stdin either way, and argv never), a nonce
+inside the target file and an instruction to use no tools at all — so an answer
+carrying the nonce proves the CLI itself put the file in front of the model.
 
 - **claude expands a mention; codex and cursor do not.** claude answered with
   the nonce in a single turn and zero `tool_use` blocks. codex answered

@@ -143,10 +143,20 @@ own citations are wrong; they are corrected below rather than copied.
 #544 and #545 both carry citations that do not resolve at HEAD. The decisions
 stand; the reasoning is recorded here in the form that is true.
 
-- **"A departure from task 124.17 decision 1" does not resolve.** Task 124's
-  decisions are numbered globally and there is no per-subtask numbering. The
-  binding rule is **task 124 decision 11**, as amended on 2026-09-21 by
-  124.17, with **decision 96** as its companion. Decision 3 above cites those.
+- **"A departure from task 124.17 decision 1" resolves only through the
+  code.** `124-chat-agent-skills.md` numbers its decisions globally and carries
+  no "124.17 decision 1" entry, so the citation cannot be looked up in the
+  document. It is not invented, though: `124.17 decision N` is the form the
+  code itself uses for that subtask's four decisions
+  (`internal/api/chatskills.go`, `internal/chatrun/runner.go`,
+  `internal/chatrun/recover.go`, `internal/taskrun/linkedchat.go`,
+  `internal/taskrun/container.go` and their tests), and those four are the
+  document's **96–99** — a mapping written into decision 56's own amendment,
+  "*Amended 2026-09-21 by 124.17 (decision 96)*". So 124.17 decision 1 **is**
+  decision 96, and #544 named the right rule. Decision 3 above cites the
+  document's numbers — **decision 11**, as amended on 2026-09-21 by 124.17,
+  with **decision 96** as its companion — because those are the ones a reader
+  can find where the decisions are written.
 - **"Task 124 decision 9's lesson applies again: observation wins" mis-names
   the decision.** Decision 9 is *Pass-through only* — no validation, no
   rewrite, no translation — which is what §5.5's new subsection cites it for,
