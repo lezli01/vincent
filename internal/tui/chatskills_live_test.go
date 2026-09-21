@@ -162,7 +162,7 @@ func TestChatSkillsPickedInvocationReachesTheAgentLive(t *testing.T) {
 	if got := skillRowNames(v); len(got) != 2 {
 		t.Fatalf("the list holds %v, want the two skills claude reported", got)
 	}
-	want := v.skills.rows[0].invocation
+	want := v.skills.rows[0].insert
 	if !strings.HasPrefix(want, "/") {
 		t.Fatalf("claude's invocation is %q, want the adapter's leading sigil", want)
 	}

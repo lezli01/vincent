@@ -910,6 +910,15 @@ documentation landed, 79–82 when 124.15 was, and 83–88 when 124.14 was.
     already produces enough timing flakes) and a bare `Benchmark` as the only
     evidence (the repository has none anywhere, CI would never run one, and
     nothing would guard the regression).
+
+    *Amended 2026-09-21 (task 126.9, issue #554) — the seam is now
+    `func(chatInlineRow, bool, int) string`, on the `chatInlineList` core in
+    `internal/tui/chatinlinelist.go`.* The core #554 wanted is the one this
+    decision predicted, so the field, its nil default and the counting test
+    moved into it unchanged; only the row type's name is different. Decisions
+    101 and 102 moved with it — `cap`, `matched` and `capNote` are the core's,
+    and the `%d of %d` cell keeps its place on the title line because the
+    skills list splices it there rather than the core appending it.
 104. **2026-09-21 — No spec amendment for 124.21.** With the skills list
     setting no cap, no observable behaviour changes: §15's chat-workspace
     passage describes the list a reader sees, and which rows an

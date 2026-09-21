@@ -200,9 +200,9 @@ reopened.
 
 20. **Hostile rows are dropped where they are read.** This is decision 11's
     mechanism: the predicate is the server-side twin of `chatSkillHostile`
-    (`internal/tui/chatskills.go`), duplicated rather than shared because
-    `worktree` cannot import `internal/tui` and the client guard stays as
-    defence in depth. Whitespace is *not* hostile — task 124 decision 71's
+    (`internal/tui/chatinlinelist.go` since 126.9; `chatskills.go` when this
+    was written), duplicated rather than shared because `worktree` cannot
+    import `internal/tui` and the client guard stays as defence in depth. Whitespace is *not* hostile — task 124 decision 71's
     reasoning applies unchanged, and here a leading space is part of the file's
     own name. *Beaten:* filtering at the route, which would leave the
     enumerator's own callers unguarded.
@@ -271,6 +271,95 @@ implementation choices inside that subtask; nothing above is reopened.
     `internal/agent/mentions_test.go` rather than in `agenttest`: the
     capability is static and spawns nothing, so a consumer testing against a
     shared stub would be testing a constant.
+
+Decisions 26–32 were settled with the author on 2026-09-21 in 126.9 (#554),
+which draws the seam decision 7 named. They are numbered 1–7 in that issue and
+the code cites them in that form — `issue #554 decision 5` — the way 124.21's
+code cites `issue #553 decision 1`. Nothing above is reopened: decision 7 is
+implemented here, not reconsidered, and task 124 decision 94's "inline is a
+mode of the same list" is untouched, because `mode` stays on `chatSkillList`
+and the core has none.
+
+26. **2026-09-21 — The core carries data, not callbacks** (#554 decision 1).
+    `chatInlineList` holds plain fields the owner fills before drawing —
+    `title`, `tail`, `loadingText`, `emptyText`, `noMatchText`, `reserve` — and
+    never a `rebuild func()`, a `titleTail func(…)` or an owner back-pointer.
+    `chatview.go` assigns a bare `chatSkillList{}` and `hideSkills` re-zeroes
+    the filter, so anything a constructor wired would be silently dropped at
+    run time with nothing failing at compile time; it is the discipline task
+    124 decision 103's nil `rowLine` default already follows. The consequence
+    is that `typeText` and `backspace` no longer rebuild — they report that the
+    filter moved and the owner re-ranks, which is two explicit
+    `v.skills.build()` calls in `chatview.go`. *Beaten:* a constructor, and a
+    callback the core could reach the owner through.
+
+27. **2026-09-21 — The core renders the title line's shape, the owner fills
+    it** (#554 decision 2). The core owns `styleTitle.Render(title)` plus the
+    `styleDim` dot-joined tail; `chatSkillList` supplies `"skills"` and the
+    cells. Decision 102's `%d of %d` counter stays in the core as a `capNote()`
+    helper, because `cap` and `matched` do, but the owner splices it into the
+    tail **in its current position** — after the filter, before the probe age.
+    Appending it in the core would reorder the drawn line, which a pure
+    refactor may not do. `now time.Time` therefore never enters the core and
+    `chatSkillList.render(width, paneHeight, now)` keeps its signature, so
+    `chatrender.go` is unchanged. *Beaten:* a whole `titleLine` in the owner
+    (it would duplicate the styling) and a `now` on the core (it would drag a
+    clock into a type with no data to age).
+
+28. **2026-09-21 — `chatDraftToken` and `chatDraftTokenAt` move into the
+    core's file; `chatView.replaceDraftToken` stays in `chatview.go`** (#554
+    decision 3), which closes #554's own open question. The token reader is a
+    pure `textarea` reader with no skills in it; the replacer is a `chatView`
+    method because the composer is the view's, and task 124 decision 95's
+    comment sits on it. It gains one line naming it shared by every inline
+    picker and is otherwise untouched. *Beaten:* moving both, and leaving
+    both.
+
+29. **2026-09-21 — Renames are the type and the field only** (#554
+    decision 4). `chatSkillRow` → `chatInlineRow`, `chatSkillRow.invocation` →
+    `chatInlineRow.insert`, and the new `chatInlineList`. The free functions
+    keep their names even after changing files — `chatSkillFlatten`,
+    `chatSkillHostile`, `chatSkillRowLine`, `chatDraftTokenAt`,
+    `nonEmptyStrings` — so the diff stays a move plus two renames and "nothing
+    changed but names" is reviewable. *Beaten:* a wider rename to
+    `chatInline*`, on review cost.
+
+30. **2026-09-21 — The reserve is a core field the skills wrapper sets on
+    every call, not at construction** (#554 decision 5). `chatSkillsDescLines
+    = 3` stops being a package constant baked into `height`/`window` and
+    becomes `chatInlineList.reserve`; decision 75's comment moves onto the
+    field. Because nothing constructs a `chatSkillList`, a reserve wired once
+    would be silently zero, so `chatSkillList`'s `render`, `height`, `window`
+    and `titleLine` set it — through one `core()` helper — before delegating.
+    `TestChatSkillsZeroValueStillReservesItsLines` is the one test added, and
+    it exists for exactly that hazard. *Beaten:* a constructor, and leaving
+    the reserve a constant the core would have had to know.
+
+31. **2026-09-21 — Embedding shadows, it does not dispatch** (#554
+    decision 6). Go has no virtual dispatch through an embedded struct: if the
+    core's `render` called `l.titleLine(…)` it would call the *core's*, never
+    `chatSkillList`'s override. That is the trap that kills a naive embed, and
+    it is the structural reason decisions 26 and 27 land where they do — the
+    core reads fields, and the outer methods shadow the promoted ones rather
+    than being called back into.
+
+    Its one cost is the test literals. Go forbids a promoted field in a
+    composite literal, so the eight `&chatSkillList{open: true, …}` literals in
+    `chatskills_test.go` nest their `open`, `cap` and `filter` into a
+    `chatInlineList{…}`. #554 predicted "renames and nothing else"; that is a
+    language rule rather than a wrong seam, no assertion moved, and no literal
+    gained a `reserve:`. *Beaten:* a named field instead of an embed, which
+    would have rewritten every `v.skills.open`, `.cursor`, `.filter`, `.rows`
+    and `.suppressed` in `chatview.go` and the tests.
+
+32. **2026-09-21 — No spec amendment, and this ledger is not optional**
+    (#554 decision 7). Nothing observable changes, so decision 104's precedent
+    applies to `docs/spec.md`, `docs/reference/`, `docs/features.md` and the
+    screenshots, and none of them moves. It does not extend to the maintainer
+    record, which CLAUDE.md requires: 126.9 is flipped here with its decisions,
+    and the two neighbouring rows that landed elsewhere are corrected rather
+    than left to rot. *Beaten:* writing a §15 note about a type a reader of the
+    TUI cannot see.
 
 ## Citations corrected
 
@@ -382,14 +471,25 @@ attributes task 124.6's.
       126.4, 126.5.
 - [ ] 126.7 (#551) `vincent chat files`, and a files leg in the chat gate.
       Depends: 126.6.
-- [ ] 126.8 (#552) Stop an `@` token spending the chat's one silent skills
-      probe. Depends: 126.6.
-- [ ] 126.9 (#554) Extract a data-neutral inline picker core from
-      `chatSkillList` (decision 7). Depends: none.
-- [ ] 126.10 (#553) Window the inline picker's rows, and cap the built set.
-      Depends: 126.9.
+- [x] 126.8 (#552) Stop an `@` token spending the chat's one silent skills
+      probe. It landed as an amendment to task 124 decision 91 rather than
+      under this document; the record is `124-chat-agent-skills.md`'s dated
+      note on that decision. ✓ 2026-09-21
+- [x] 126.9 (#554) Extract a data-neutral inline picker core from
+      `chatSkillList` (decision 7). `chatInlineList` and `chatInlineRow` in
+      `internal/tui/chatinlinelist.go` with the rows, the filter buffer, the
+      window arithmetic, the renderer and the draft-token reader; a
+      `chatSkillList` that embeds it and keeps the verdicts, the probe latch,
+      the ranking and the words; `chatSkillRow.invocation` renamed to
+      `chatInlineRow.insert`. No behaviour change and no wire change, so no
+      spec amendment (decision 32). Decisions 26–32. Depends: none.
+      ✓ 2026-09-21
+- [x] 126.10 (#553) Window the inline picker's rows, and cap the built set. It
+      landed first, as task 124.21 (`124-chat-agent-skills.md`, decisions
+      101–104), so the dependency ran the other way: 126.9 rebased on the
+      fixed renderer and moved it into the core unchanged. ✓ 2026-09-21
 - [ ] 126.11 (#555) The `@` file picker in the chat composer (decisions 6, 8,
-      9, 10). Depends: 126.6, 126.10.
+      9, 10). Depends: 126.6, 126.9.
 - [ ] 126.12 (#546) Assert `@`-mention pass-through end to end in the chat
       gate. Depends: none.
 - [ ] 126.13 (#556) The TUI guide, §15, `docs/features.md`'s one sentence
