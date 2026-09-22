@@ -1,6 +1,6 @@
 # 119 — Chat on a stopped task: a conversation in the task's own worktree
 
-**Status:** 🔄 in progress (8/10)
+**Status:** ✅ done (10/10)
 **Issue:** [#472](https://github.com/lezli01/vincent/issues/472)
 **Renumbered:** opened as 115; 115, 117 and 118 reached `master` first
 ([115](115-scheduled-daemon-backups.md), [117](117-single-task-import.md),
@@ -291,16 +291,58 @@ implementation does not reopen them.
   opens, the fake agent writes the file, `retry` while it is open is `409`,
   close, `retry` reaches `done`, the worktree survives close. Bodies in the
   sh∩pwsh intersection, assertions on here-strings rather than `grep -q`.
-- [~] **119.8 — m12 gate scenario (Linux leg)**: a linked-chat turn on a
+- [x] **119.8 — m12 gate scenario (Linux leg)**: a linked-chat turn on a
   containerized task runs inside the task's container, and a free chat still
-  runs on the host.
+  runs on the host. `scripts/m12-gate.sh`'s scenario 10, landed in `0804bb5e`.
+  It cannot be walked on a macOS host — `docker info` fails there and the gate
+  skips itself with exit 0 — so the evidence is the Linux leg of CI, read
+  rather than re-run: run
+  [35728680712](https://github.com/lezli01/vincent/actions/runs/35728680712)
+  on `master` (head `330bbccd`, 2026-09-22T12:41Z, conclusion `success`),
+  job 106748541596 — `gates (ubuntu-latest)` — step `M12 gate (containers)`,
+  which logged `== scenario 10: a chat opened on a containerized task runs its
+  turn in that task's container` at 12:45:52, `ok: linked turn ran inside the
+  task's container, free turn on the host` at 12:46:00, and
+  `GATE PASS: m12 (container step execution)` at 12:46:03. The scenario ran
+  there; it was not skipped. ✓ 2026-09-22
 - [x] **119.9 — Documentation**: the spec amendments above, dated; this
   document and its index row; `docs/reference/api.md`, `files.md`,
   `task-lifecycle.md` and `configuration.md`; `docs/features.md`;
   `docs/guides/agents.md`; `CHANGELOG.md`. The CLI reference and the TUI guide's
   keys and chats sections land with 119.5 and 119.6.
-- [ ] **119.10 — Screenshots**: re-run `scripts/screenshots.sh` for the chats
-  board and the task workspace once 119.6 has changed them.
+- [x] **119.10 — Screenshots**: re-run `scripts/screenshots.sh` for the chats
+  board and the task workspace once 119.6 has changed them. The seed had no
+  linked chat in it at all, so a bare re-run would have photographed the same
+  frames again: it now opens **two chats on `$T_GATE`** (`awaiting_gate`, one
+  of the four states `chat` is offered from) with `{"agent":"cursor"}`, last
+  in the chats phase so every existing chat id is unmoved, and **closes
+  both** — an open linked chat locks its task to `cancel` alone, which would
+  have stripped the action keys from the footers of `tui-task-steps`,
+  `tui-task-workflow` and `tui-task-step-details`, three committed frames of
+  this same task that are not being re-captured. Closing is terminal (§5.5),
+  which moved the board half of the deliverable: the **live** chats board
+  excludes terminal chats (`ArchivedExclude`), so the `task #N · ` prefix is
+  photographed on the **archived** chats board, not `tui-chats.png`. Run on
+  macOS 2026-09-22 with a vhs **0.11.0** binary first on `PATH` (the 0.12.0
+  brew build renders nothing): `screenshots.sh seed`, then
+  `VINCENT_SHOTS_ONLY` for `tui-task-details`, `tui-chats` and
+  `tui-archived-chats`, then `clean`. Two PNGs written and committed —
+  `docs/assets/tui-task-details.png`, now on the **Chats** section (the tape's
+  `Down 1` became `Down 3`: the pane renders one section at a time and `Chats`
+  sits between `Execution` and `Fields`), showing `#8` and `#7` `closed`
+  `cursor` newest-first with the action keys still in the footer, which is the
+  proof the task is not locked; and `docs/assets/tui-archived-chats.png`,
+  four rows in two project groups, the two closed ones reading
+  `task #1 · ` ahead of their titles. `git status` after the run showed those
+  two and nothing else under `docs/assets/`. Accepted drift and gaps:
+  `tui-chats.png` was captured, differed only in its clock and relative-time
+  cells, and was **reverted to stay byte-identical** — the live board cannot
+  show a closed linked chat, and the seed's four live chats are unchanged; and
+  because neither chat is left open, the `chat #N holds this task` hint
+  (`taskchat.go:187`) and the locked `c`-only action bar go unphotographed.
+  `docs/guides/tui.md` carries both refreshed pictures with alt text that
+  matches what they now show, and its linked-chat section says which board a
+  closed chat is listed on. ✓ 2026-09-22
 
 ## Open questions
 
