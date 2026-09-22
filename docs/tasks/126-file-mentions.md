@@ -802,6 +802,18 @@ attributes task 124.6's.
       gate. Landed as `scripts/m14-gate.sh` leg 13,
       `chat_mention_passthrough()`, selectable with
       `VINCENT_GATE_SCENARIO=13`. ✓ 2026-09-21
-- [ ] 126.13 (#556) The TUI guide, §15, `docs/features.md`'s one sentence
+- [~] 126.13 (#556) The TUI guide, §15, `docs/features.md`'s one sentence
       (decision 13) and a new screenshot from `scripts/screenshots.sh`.
-      Depends: 126.11.
+      Depends: 126.11. The §15 leg was already taken by 126.11 in `ad9afc97`,
+      which shipped view 9's dated amendment and the fixed-keys passage with
+      the code. Landed since: the `@` picker's prose in
+      `docs/guides/tui.md`'s chat workspace, beside the two skills-list
+      blocks and with no new key-table row (the picker is opened by typing,
+      so a row keyed `@` would describe a key that is never matched —
+      `ctxChatSkillsInline`'s precedent); decision 13's one sentence in
+      `docs/features.md`; and the `tui-chat-files` tape at the end of
+      `do_capture`. Outstanding: the capture itself. vhs 0.12.0 never starts
+      ffmpeg on the maintainer's machine and every tape silently produces
+      nothing, so `docs/assets/tui-chat-files.png` — and the guide's image
+      reference, which lands in the same commit as the asset rather than
+      ahead of it — needs a run with a vhs 0.11.0 binary.
