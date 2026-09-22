@@ -829,6 +829,39 @@ EOF
   ended_chat "$P_API" 'is the retry budget per step or per task?' \
     'Is max_retries spent per step, or across the whole task?'
 
+  # Chats opened *on a task* (task 119, issue #580): what the task
+  # workspace's Chats section lists and what the boards prefix with
+  # `task #N · `. Three things about the placement are load-bearing:
+  #
+  #   - The task is $T_GATE, parked at `awaiting_gate` — one of the four
+  #     stopped states `chat` is offered from — and the one the
+  #     tui-task-details tape already photographs, so that shot reaches the
+  #     new section without new navigation.
+  #   - Both are *closed* after their turn. An open linked chat locks its
+  #     task to `cancel` alone, which strips the action keys from the footer
+  #     of tui-task-steps, tui-task-workflow and tui-task-step-details —
+  #     three committed frames of this same task. Closed chats leave those
+  #     true; the Chats section lists closed chats by design. The cost: the
+  #     `chat #N holds this task` hint is never photographed. Closing is
+  #     also terminal (§5.5), so these two rows land on the *archived* chats
+  #     board, not the live one — tui-archived-chats is captured with them.
+  #   - Last in this phase, for the reason the `ended_chat` pair gives:
+  #     every chat id above stays what it is, so the chat shots do not move.
+  #     cursor for the same reason too — it is the adapter the seed never
+  #     swaps, and it is feature-pr's default.
+  linked_chat() { # linked_chat TASK TITLE MESSAGE
+    local id
+    id="$(api POST "/tasks/$1/chat" \
+      "{\"agent\":\"cursor\",\"title\":$(jq -Rn --arg t "$2" '$t')}" | jq -r .id)"
+    chat_send "$id" "$3"
+    wait_chat "$id" idle 120
+    api POST "/chats/$id/close" >/dev/null
+  }
+  linked_chat "$T_GATE" 'does the limiter cover the websocket upgrade?' \
+    'Does the new limiter cover the websocket upgrade path, or only plain HTTP?'
+  linked_chat "$T_GATE" 'which header carries the retry hint?' \
+    'Which response header carries the wait on a 429, and does this branch set it?'
+
   # The usage window, last of the claude work for the reason write_config
   # gives: the observation outlives the swap, so nothing that needs an answer
   # from claude may come after this. The task parks on the §11 hold task 003
@@ -1376,8 +1409,12 @@ Screenshot "'"$OUT"'/tui-task-steps.png"
 Sleep 2s
 '
 
-  # Task Details, on the task at its gate: the sectioned inspector, one
-  # section down from the description it opens on.
+  # Task Details, on the task at its gate: the sectioned inspector, on the
+  # Chats section the two linked chats seeded above put in the sidebar
+  # (task 119). The pane renders one section at a time, so the count of
+  # `Down` presses is the section index: description, overview, execution,
+  # chats — and the Chats section exists only because this task has had a
+  # chat, which is why the seed opens them on this task and no other.
   tape tui-task-details 1400 '
 Type "/"
 Sleep 500ms
@@ -1389,7 +1426,7 @@ Enter
 Sleep 3s
 Type "2"
 Sleep 2s
-Down 1
+Down 3
 Sleep 2s
 Screenshot "'"$OUT"'/tui-task-details.png"
 Sleep 2s

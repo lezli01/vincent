@@ -263,8 +263,9 @@ the mouse to choose a section and `pgup`/`pgdn` to scroll long section content;
 the inspector never edits anything.
 
 ![Task Details on a task at its gate: the section sidebar on the left with
-Overview selected, and its state, project, workflow and where that workflow came
-from, branch, base and worktree on the right](../assets/tui-task-details.png)
+Chats selected, and on the right the two chats opened on this task, newest
+first, both closed, with their agent, when they started and their
+titles](../assets/tui-task-details.png)
 
 Its **GitHub pull request** section follows the captured issue and shows one of
 three things: the pull request linked to this task with its live state, the
@@ -1053,8 +1054,10 @@ the task and touches nothing else: the worktree and the branch are the task's,
 and whatever the conversation changed in them is still there for `r`, `a` or
 `A`. A closed chat takes no more messages, but it is not gone — the task's
 **Task Details** tab lists every chat opened on it under **Chats**, closed ones
-included, and the chats board shows each one's task ahead of its title. Pressing
-`T` again later opens a new chat.
+included, and both chats boards show each one's task ahead of its title —
+closing is terminal, so a closed chat is listed on the
+[archived chats board](#archived) rather than the live one. Pressing `T` again
+later opens a new chat.
 
 A task that never got a worktree — blocked on `branch_exists`, say — has nothing
 to talk about in, and `T` says so on the action bar rather than making one.
@@ -1986,8 +1989,9 @@ every takeover but new task follows.
 archived tasks, grouped by project and workflow like the live
 board](../assets/tui-archived.png)
 
-![The archived chats board: two ended conversations, grouped by
-project](../assets/tui-archived-chats.png)
+![The archived chats board: four finished conversations grouped by project —
+two archived, and two closed chats that were opened on task #1, each saying so
+ahead of its title](../assets/tui-archived-chats.png)
 
 `enter` opens the row's workspace. It is **read-only for free**: an archived
 task offers no `available_actions`, and every action key is gated on those, so
