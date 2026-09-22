@@ -326,6 +326,11 @@ all.
    winget show --id lezli01.Vincent --exact --versions
    ```
 
+   No WinGet submission has merged yet — [all of them are still
+   open](https://github.com/microsoft/winget-pkgs/pulls?q=is%3Apr+author%3Alezli01) —
+   so `winget show` finding nothing is the expected result today, not a
+   release fault.
+
    Install the deb and rpm on representative clean systems with `apt install
    ./vincent_*_amd64.deb` and `dnf install ./vincent-*.x86_64.rpm`; run
    `vincent version` after each. Confirm the GoReleaser log contains the WinGet

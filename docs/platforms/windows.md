@@ -25,8 +25,9 @@ scoop install vincent/vincent
 
 It supports x86-64 and ARM64, installs Git when it is missing, and consumes the
 same release zip as the manual path; stable releases update it immediately.
-WinGet is submitted but not yet in Microsoft's catalog — no submission has been
-merged, so `winget install --id lezli01.Vincent --exact` does not find it yet.
+WinGet is submitted but not yet in Microsoft's catalog — [no submission has
+been merged](https://github.com/microsoft/winget-pkgs/pulls?q=is%3Apr+author%3Alezli01),
+so `winget install --id lezli01.Vincent --exact` does not find it yet.
 mise is also supported: `mise use -g github:lezli01/vincent`.
 
 To install without a manager, unzip the release archive and put `vincent.exe`
