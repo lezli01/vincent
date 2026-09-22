@@ -1068,16 +1068,20 @@ func TestChatSkillsInlineHelpIsItsOwnSurface(t *testing.T) {
 // did not ask for and then latches inline skills off for the whole chat.
 //
 // The counter is the pattern of TestChatSkillsInlineFetchIsSilentAndLatched:
-// what is asserted is requests made, because the cost being avoided is the
-// round trip and the process behind it, not what comes back.
+// what is asserted is skill probes made, because the cost being avoided is
+// the round trip and the agent CLI behind it, not what comes back. It counts
+// that route alone — since task 126.11 an `@` token asks for the chat's *file
+// listing*, which is one `git ls-files` and the whole point of the exclusion.
 func TestChatSkillsInlineNeverProbesOnAFileMention(t *testing.T) {
-	// probeCounter is a daemon that answers every skills probe with a
-	// failure — the shape decision 91 latches on — and counts the asks.
+	// probeCounter is a daemon that answers every request with a failure —
+	// the shape decision 91 latches on — and counts the skill probes.
 	probeCounter := func(t *testing.T) (*chatView, *atomic.Int64) {
 		t.Helper()
 		var calls atomic.Int64
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			calls.Add(1)
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasSuffix(r.URL.Path, "/skills") {
+				calls.Add(1)
+			}
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
 		t.Cleanup(ts.Close)
@@ -1093,7 +1097,7 @@ func TestChatSkillsInlineNeverProbesOnAFileMention(t *testing.T) {
 			runChatCmds(v, cmd)
 		}
 		if n := calls.Load(); n != 0 {
-			t.Fatalf("an @ mention made %d requests, want none", n)
+			t.Fatalf("an @ mention made %d skill probes, want none", n)
 		}
 		if v.skills.probeFailed {
 			t.Fatal("an @ mention latched the chat's inline skills off")

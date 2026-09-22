@@ -97,6 +97,15 @@ var fixed = []Fixed{
 	{"chat skills inline", "f2", "complete the token with the highlighted skill, or the top match"},
 	{"chat skills inline", "enter", "accept the highlighted skill, else send the message as typed"},
 	{"chat skills inline", "esc", "close the list and give the arrows back to the draft"},
+	// The chat composer's `@` file picker (task 126.11). No new key literal
+	// either: the composer keeps `backspace` and every printable key, and
+	// `@` is read from the draft rather than matched as a key.
+	{"chat files", "up", "move the highlight"},
+	{"chat files", "down", "move the highlight"},
+	{"chat files", "tab", "complete the @ token with the highlighted file, or the top match"},
+	{"chat files", "f2", "complete the @ token with the highlighted file, or the top match"},
+	{"chat files", "enter", "insert the highlighted file's mention, else send the message as typed"},
+	{"chat files", "esc", "close the file list and give the arrows back to the draft"},
 	{"new chat", "ctrl+s", "create the chat and open it"},
 	{"new chat", "enter", "open the focused field's list, or move on from a text field"},
 	{"new chat", "tab", "next field"},

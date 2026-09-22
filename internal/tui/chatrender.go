@@ -255,6 +255,14 @@ func (v *chatView) footerLines(width, height int) []string {
 		// and below the workspace's own note rather than over it — this one
 		// is a hint about a draft, never a refusal.
 		out = append(out, " "+styleDim.Render(v.skills.inlineNote))
+	case v.files.mentionNote() != "":
+		// The file picker's own line (task 126.11): the mention verdict, and
+		// only in the negative — this chat's CLI does not expand an `@`
+		// mention, so it sees the path and may read the file itself
+		// (task 126 decision 47, after task 124 decision 19's bad-news-only
+		// rule). Dim, and below the workspace's own note for the reason the
+		// skills hint is: it is a fact about a draft, never a refusal.
+		out = append(out, " "+styleDim.Render(v.files.mentionNote()))
 	}
 	// The in-progress indicator (task 089), here and not inline at the end of
 	// the running turn's body: the body scrolls, and a reader who has scrolled
@@ -278,6 +286,11 @@ func (v *chatView) footerLines(width, height int) []string {
 	// of the body's budget — a list that opened is a body that shrank, not a
 	// frame that overflowed (#299).
 	out = append(out, v.skills.render(width, height, v.now())...)
+	// The `@` file picker sits in the same place and out of the same budget
+	// (task 126.11). Appending both is safe because at most one is ever open:
+	// each requires its own first rune of the one token under the cursor, and
+	// syncInlineFiles stands this one down for an adapter that claimed `@`.
+	out = append(out, v.files.render(width, height)...)
 	// One element per rendered line, not one per widget (issue #299): the
 	// composer is SetHeight(3) and bubbles' viewport pads its View to that
 	// height, and the border around it adds two more, so a joined string would

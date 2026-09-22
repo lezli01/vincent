@@ -546,6 +546,90 @@ decision 38 the empty sigil, all unchanged.
     renumbered. *Beaten:* a leg numbered 13 beside it, and #551's five
     assertions alone.
 
+Decisions 45–50 were settled with the author on 2026-09-21 in 126.11
+(#555), the subtask that draws the picker. They continue the ledger above
+and reopen nothing in it.
+
+45. **2026-09-21 — A bare `@` opens nothing.** Decision 8 stands unamended,
+    and #555's open question is closed without superseding it. One character
+    after the sigil is required, which is task 124 decision 93's `anywhere`
+    branch applied unchanged — `@` is positionally `anywhere` — and it is
+    what keeps `@lezli01` and `cc @someone` silent, the false positive that
+    matters in a chat about a pull request, and what stops a
+    repository-sized list appearing on one keystroke. *Beaten:* a capped
+    ranked list on the bare sigil, as Claude Code draws; and a bare sigil
+    that opens only after the first accepted mention in a chat.
+
+46. **2026-09-21 — The picker stays shut while the cursor is inside a mention
+    already in the draft.** `acceptFile` records the inserted text the way
+    `chatSkillList.noteFor` records an invocation, and while the token under
+    the cursor is a whitespace-delimited piece of a recorded mention the
+    draft still holds, nothing opens. Without it, walking back into
+    `@"dir with space` of `@"dir with space/notes.md"` and accepting yields
+    the mention twice over: `chatDraftTokenAt` is whitespace-delimited and
+    `textarea.Word()` returns only the piece under the cursor, so the
+    replacement stands in for a fraction of what it was meant to replace and
+    the result will not resolve. The record is pruned to the mentions the
+    draft still carries, so it cannot grow without bound. *Beaten:* accepting
+    the mangling as predictable, the way task 124 decision 95 accepted the
+    double space; and suppressing *with* a note line explaining it, which
+    would put a sentence where #555 otherwise wants silence.
+
+47. **2026-09-21 — The picker's note line carries the mention verdict only,
+    and only in the negative.** Keyed on `mention_expands == false`: nothing
+    for claude, and for codex and cursor a dim line saying the CLI does not
+    expand an `@` mention and may read the path itself. That is decision 34's
+    `no @ file expansion` one surface over, and task 124 decision 19's
+    bad-news-only rule. No one-off "paths are relative to …" orientation
+    line: every row already draws a workspace-relative path, and a second
+    thing competing for one note line costs a per-chat flag for no new fact.
+    *Beaten:* naming what happens on all three adapters, which would be the
+    first note in this package to report good news; and shipping the picker
+    with no note at all, which would defer decision 6's whole point.
+
+48. **2026-09-21 — §5.5's "before any separator handling is written" does not
+    gate 126.11.** What 126.2 (#557) settles is what vincent *writes* into a
+    mention on a Windows claude — backslash separators, drive letters,
+    quoting — and that shipped in 126.3 and 126.6 under decision 21: forward
+    slashes on every platform, git's own bytes. What 126.11 writes is the
+    split of the *human's typed query* for ranking, which is task 124
+    decision 92's existing rule: both `/` and `\` on every platform, never
+    `filepath.Separator`, so a test cannot pass on one CI leg and fail on
+    another. A typed `\` is folded to `/` before matching, because git's own
+    bytes make a backslash in a *path* a character in a file's name rather
+    than a separator. This document's task list states 126.11's dependencies
+    as 126.6 and 126.9 and omits 126.2, which agrees. *Beaten:* parking
+    #555 until a Windows host and a real claude session are available; and
+    narrowing §5.5's sentence in that pull request, which would edit a record
+    the work does not make false.
+
+49. **2026-09-21 — The built set is capped at 50, and the reserve is one
+    line.** The cap is the real number task 124 decision 101 predicted
+    `#555`'s list would set, applied after the ranking so what survives is
+    the best matches; `capNote()` then draws `50 of 1,615` on the title line,
+    which is task 124 decision 102's counter earning its keep for the first
+    time. It is set in `build()` rather than in `core()`, because the picker
+    builds on every keystroke and renders only afterwards. The reserve is 1
+    rather than the skills list's 3, which is what `chatInlineList.reserve`'s
+    own comment already anticipated ("a list of paths would want one"): a
+    path is one line, and three reserved lines would take two more from a
+    body a #299 budget is already spending. *Beaten:* reusing the skills
+    reserve, and leaving the cap unset — an uncapped build over a 50,000-row
+    listing is the renderer hazard issue #553 was opened for.
+
+50. **2026-09-21 — A failed or in-flight listing fetch cannot be re-fired by
+    a keystroke, and nothing latches for the chat.** No `probeFailed`-style
+    latch is warranted — that latch exists because a skills probe spawns an
+    agent CLI, where this is a 10–30 ms `git ls-files` — but
+    `syncInlineFiles` runs on *every* composer update, so the rule has to be
+    stated: a fetch starts only when there is no cached answer and none in
+    flight, and one that failed is remembered against the token that fired
+    it. A token that still begins with that one is the same token still being
+    typed, so `@src/m` fires one request rather than six; any other token,
+    and a `chat.*` event, clear it, and the next open asks again. *Beaten:* a
+    per-chat latch, which would make one 409 disable the picker for the
+    session; and an unguarded re-fetch per keystroke.
+
 ## Citations corrected
 
 #544 and #545 both carry citations that do not resolve at HEAD. The decisions
@@ -700,10 +784,24 @@ attributes task 124.6's.
       landed first, as task 124.21 (`124-chat-agent-skills.md`, decisions
       101–104), so the dependency ran the other way: 126.9 rebased on the
       fixed renderer and moved it into the core unchanged. ✓ 2026-09-21
-- [ ] 126.11 (#555) The `@` file picker in the chat composer (decisions 6, 8,
-      9, 10). Depends: 126.6, 126.9.
-- [ ] 126.12 (#546) Assert `@`-mention pass-through end to end in the chat
-      gate. Depends: none.
+- [x] 126.11 (#555) The `@` file picker in the chat composer (decisions 6, 8,
+      9, 10). `internal/tui/chatfiles.go` — `chatFileList` on the #554 core,
+      its `build()`, `rankChatFiles`/`chatFileTier` and the path row line; the
+      wiring in `chatview.go` (`syncInlineFiles`, `fetchFiles`/`applyFiles`,
+      `updateInlineFilesKey`, `acceptFile`, the wheel and `chat.*` guards),
+      `chatrender.go` and a `ctxChatFiles` context with its `keymap.fixed`
+      rows — no `keymap.Op`, no catalog change (decision 10). `@` is never
+      matched as a key. §15's view 9 and its fixed-keys passage amended, and
+      the picker itself — the completion, not the listing — recorded under
+      "What only the TUI does" in `docs/reference/cli.md`, pointing at
+      `vincent chat files` (126.7, already shipped) for the same rows in a
+      shell. §9.1's "Nothing consumes this yet" closed with it — 126.6's
+      per-row `mention` had already made half of it false. Decisions 45–50.
+      ✓ 2026-09-22
+- [x] 126.12 (#546) Assert `@`-mention pass-through end to end in the chat
+      gate. Landed as `scripts/m14-gate.sh` leg 13,
+      `chat_mention_passthrough()`, selectable with
+      `VINCENT_GATE_SCENARIO=13`. ✓ 2026-09-21
 - [ ] 126.13 (#556) The TUI guide, §15, `docs/features.md`'s one sentence
       (decision 13) and a new screenshot from `scripts/screenshots.sh`.
       Depends: 126.11.

@@ -75,6 +75,16 @@ type (
 		skills *apiclient.ChatSkills
 		err    error
 	}
+	// chatFilesMsg is GET /v1/chats/{id}/files for the composer's `@` picker
+	// (task 126.11). It carries the draft token the fetch was fired for, so
+	// a failure can be remembered against it rather than re-fired on the
+	// next keystroke (task 126 decision 50).
+	chatFilesMsg struct {
+		chatID int64
+		token  string
+		files  *apiclient.ChatFiles
+		err    error
+	}
 	// chatTickMsg advances the in-progress indicator's frame (task 089). It
 	// asks the daemon nothing: the footer redraws, the body does not.
 	chatTickMsg time.Time
@@ -173,6 +183,12 @@ type chatView struct {
 	// layer here, and inline (task 124.14), which the draft's own sigil
 	// token opens and which leaves the keyboard to the composer.
 	skills chatSkillList
+	// files is the composer's `@` file picker (task 126.11), the second list
+	// drawn on the chatInlineList core. It and the skills list are mutually
+	// exclusive by construction — both read the one token under the cursor
+	// and each requires its own first rune — and syncInlineFiles keeps the
+	// one case where they could collide out of reach.
+	files chatFileList
 
 	width, height int
 }
@@ -234,9 +250,9 @@ func (v *chatView) paste(text string) tea.Cmd {
 	}
 	var cmd tea.Cmd
 	v.composer, cmd = v.composer.Update(tea.PasteMsg{Content: text})
-	// A pasted `/co` opens the inline list exactly as a typed one does: the
-	// list is derived from the draft, not from the keys that made it.
-	return tea.Batch(cmd, v.syncInlineSkills())
+	// A pasted `/co` or `@src` opens the inline list exactly as a typed one
+	// does: the list is derived from the draft, not from the keys that made it.
+	return tea.Batch(cmd, v.syncInlineSkills(), v.syncInlineFiles())
 }
 
 func (v *chatView) bindingContext() bindingContext {
@@ -247,6 +263,8 @@ func (v *chatView) bindingContext() bindingContext {
 		return ctxChatSkillsInline
 	case v.skills.open:
 		return ctxChatSkills
+	case v.files.open:
+		return ctxChatFiles
 	}
 	return ctxChat
 }
@@ -271,6 +289,7 @@ func (v *chatView) open(id int64) tea.Cmd {
 	v.note, v.loadErr = "", ""
 	v.closing = false
 	v.skills = chatSkillList{}
+	v.files = chatFileList{}
 	v.composer.SetValue("")
 	v.composer.Focus()
 	return tea.Batch(v.loadCmd(), v.streamCmd())
@@ -389,6 +408,9 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 	case chatSkillsMsg:
 		v.applySkills(msg)
 		return v, nil
+	case chatFilesMsg:
+		v.applyFiles(msg)
+		return v, nil
 	case chatTickMsg:
 		// Render-only, and a no-op for a stray tick: clearing the guard is
 		// all this does, and update's armTick re-arms only while a turn is
@@ -423,7 +445,7 @@ func (v *chatView) updateWheel(msg tea.MouseWheelMsg) tea.Cmd {
 	// the §7.4 popup does: "popups stay keyboard" (§15 Mouse), and a list
 	// that scrolled the page behind it would move the rows out from under
 	// the reader's eye. It scrolls again the moment the list closes.
-	if v.form != nil || v.skills.open {
+	if v.form != nil || v.skills.open || v.files.open {
 		return nil
 	}
 	if msg.Button == tea.MouseWheelUp {
@@ -473,6 +495,7 @@ func (v *chatView) syncForm() {
 	// The popup owns the keyboard and the screen; an inline list drawn under
 	// it would be an aid to typing on a surface nobody can type into.
 	v.hideInline("")
+	v.hideFiles()
 }
 
 // runningTurn is the turn currently producing output, if any.
@@ -665,6 +688,12 @@ func (v *chatView) applyChatNote(msg chatNoteMsg) tea.Cmd {
 			if !v.skills.open {
 				v.skills.forget()
 			}
+			// And the file listing with it: a turn that ended may have
+			// written, moved or deleted a file, and the picker's cache is
+			// the only cache there is (task 126 decision 5).
+			if !v.files.open {
+				v.files.forget()
+			}
 			return tea.Batch(next, v.loadCmd())
 		}
 	case apiclient.OutputNote:
@@ -785,6 +814,16 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			return v, cmd
 		}
 	}
+	if v.files.open {
+		// The file picker takes the same five presses, and for the same
+		// reason: the composer keeps everything else. It sits below the
+		// skills arms so a chat whose adapter claimed `@` behaves as it did
+		// before this picker existed — though syncInlineFiles has already
+		// stood the picker down in that case.
+		if cmd, taken := v.updateInlineFilesKey(msg); taken {
+			return v, cmd
+		}
+	}
 	switch msg.String() {
 	case "esc":
 		return v, func() tea.Msg { return selectViewMsg{id: viewChats} }
@@ -835,7 +874,7 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	v.composer, cmd = v.composer.Update(msg)
-	return v, tea.Batch(cmd, v.syncInlineSkills())
+	return v, tea.Batch(cmd, v.syncInlineSkills(), v.syncInlineFiles())
 }
 
 // updateSkillsKey is the browse list's keyboard (task 124.13). It answers
@@ -1222,6 +1261,211 @@ func (v *chatView) updateInlineSkillsKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	return nil, false
 }
 
+// ---- the `@` file picker (task 126.11, issue #555) ----
+
+// syncInlineFiles re-reads the draft after every composer update and opens,
+// refilters or hides the file picker. It is the whole trigger: `@` is never
+// matched as a key, so TestEveryMatchedKeyIsRegistered has nothing to catch
+// and a rebound operation is irrelevant here.
+//
+// It is syncInlineSkills' twin and carries every refusal that one does, plus
+// three of its own: the skills list wins whenever it is up or owns the sigil,
+// and a mention already in the draft keeps the list shut while the cursor is
+// inside it.
+func (v *chatView) syncInlineFiles() tea.Cmd {
+	// A browse list owns the keyboard and its own buffer; an inline skills
+	// list owns the token. Either way this one has nothing to say.
+	if v.skills.open {
+		v.hideFiles()
+		return nil
+	}
+	tok, ok := chatDraftTokenAt(&v.composer)
+	if !ok || tok.text != v.files.suppressed {
+		v.files.suppressed = ""
+	}
+	// The layers the picker must never open under, and the chat it must
+	// never ask about: the §7.4 popup and the close confirmation own the
+	// keyboard, and no turn will run in a terminal chat. Ordering in
+	// updateKey already returns before this for the first two; this is the
+	// same refusal for the paths that do not go through a key at all.
+	if !ok || v.form != nil || v.closing || v.chat == nil ||
+		chatstate.Terminal(chatstate.State(v.chat.State)) ||
+		tok.text == v.files.suppressed || v.skillsOwnTheMentionSigil() ||
+		v.files.insideAccepted(tok.text, v.composer.Value()) {
+		v.hideFiles()
+		return nil
+	}
+	filter, want := v.files.mentionFilter(tok)
+	if !want {
+		v.hideFiles()
+		return nil
+	}
+	if v.files.data == nil {
+		v.hideFiles()
+		return v.fetchFiles(tok)
+	}
+	if !v.files.canMention() {
+		// The adapter cannot mention a file at all, so there is no picker to
+		// offer and nothing to say about it (task 126 decision 38).
+		v.hideFiles()
+		return nil
+	}
+	v.files.filter, v.files.cursor = filter, -1
+	v.files.build()
+	if len(v.files.rows) == 0 {
+		// Nothing matches, so nothing is drawn and nothing is said: every
+		// `@` token is path-shaped, which is exactly what task 124 decision
+		// 92 refuses to nag about, and `@lezli01` is the token that makes it
+		// matter.
+		v.hideFiles()
+		return nil
+	}
+	v.files.open = true
+	return nil
+}
+
+// skillsOwnTheMentionSigil reports a chat whose adapter claimed `@` as its
+// *invoke* sigil, which stands the file picker down for that chat.
+//
+// The wire's word is authoritative (§5.5, task 124 decision 9), a skill
+// invocation changes what the CLI does while a mention is an aid to typing,
+// and no shipped adapter reports it — claude and cursor `/`, codex `$`
+// (§9.1). It is one `if` against a case that has never shipped, kept because
+// the alternative is two lists fighting over one token.
+func (v *chatView) skillsOwnTheMentionSigil() bool {
+	return v.skills.data != nil && v.skills.data.InvokeSigil == string(chatFileMentionSigil)
+}
+
+// hideFiles takes the picker off the screen and forgets the filter. The draft
+// is untouched, because nothing here ever wrote to it.
+func (v *chatView) hideFiles() {
+	if !v.files.open && v.files.filter == "" {
+		return
+	}
+	v.files.open = false
+	v.files.reset()
+	v.files.build()
+}
+
+// fetchFiles asks GET /v1/chats/{id}/files once, for the token that wants it.
+//
+// It is held to loadTimeout and not the skills probe's deadline: a listing is
+// one `git ls-files` on the host, 10–30 ms at 50,000 files, with no agent CLI
+// behind it (task 126 decision 40). It draws no loading row for the reason
+// the inline skills probe draws none — the token may be prose — and a failure
+// writes nothing.
+//
+// Task 126 decision 50 is the guard: a fetch starts only when there is no
+// cached answer and none in flight, and a failure is remembered against the
+// token that fired it, so typing `@src/m` cannot fire six requests. A token
+// that still begins with the failed one is that same token still being typed.
+func (v *chatView) fetchFiles(tok chatDraftToken) tea.Cmd {
+	if v.files.loading || (v.files.failedFor != "" && strings.HasPrefix(tok.text, v.files.failedFor)) {
+		return nil
+	}
+	if _, want := v.files.mentionFilter(tok); !want {
+		return nil
+	}
+	client, id, token := v.client, v.chatID, tok.text
+	if client == nil {
+		return nil
+	}
+	v.files.loading = true
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
+		defer cancel()
+		// No limit: the daemon's own ceiling is the bound (task 126 decision
+		// 36), and `truncated` is what the title line reports from.
+		files, err := client.ChatFiles(ctx, id, 0)
+		return chatFilesMsg{chatID: id, token: token, files: files, err: err}
+	}
+}
+
+// applyFiles folds one listing in. A result for another chat changes nothing,
+// the way a late skills answer does (task 124 decision 76).
+func (v *chatView) applyFiles(msg chatFilesMsg) {
+	if msg.chatID != v.chatID {
+		return
+	}
+	v.files.loading = false
+	if msg.err != nil || msg.files == nil {
+		v.files.failedFor = msg.token
+		return
+	}
+	v.files.failedFor = ""
+	v.files.data = msg.files
+	v.syncInlineFiles()
+}
+
+// updateInlineFilesKey is the picker's keyboard. Like the inline skills
+// list's it answers only the keys the list itself means something for, and
+// reports whether it took the press: the composer keeps everything else,
+// which is why this is its own binding context (task 124 decision 94).
+func (v *chatView) updateInlineFilesKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
+	switch msg.String() {
+	case "esc":
+		// Nothing to undo — the list never wrote into the draft — and the
+		// arrows go back to editing it (task 124 decision 90). The list
+		// stays shut for this token until the token changes.
+		if tok, ok := chatDraftTokenAt(&v.composer); ok {
+			v.files.suppressed = tok.text
+		}
+		v.hideFiles()
+		return nil, true
+	case "up":
+		v.files.move(-1)
+		return nil, true
+	case "down":
+		v.files.move(1)
+		return nil, true
+	case "tab", "f2":
+		v.acceptFile()
+		return nil, true
+	case "enter":
+		if v.files.cursor < 0 {
+			// Nothing is highlighted until the human walks into the list,
+			// so `enter` still means what it meant before it opened.
+			v.hideFiles()
+			return v.sendCmd(), true
+		}
+		v.acceptFile()
+		return nil, true
+	}
+	return nil, false
+}
+
+// acceptFile replaces the `@` token the human typed with the row's mention —
+// the daemon's adapter's own bytes plus one space, cursor after the space.
+//
+// Replacing rather than inserting is task 124 decision 95, and the trailing
+// space is its known cost: a token that already had a space after it ends up
+// with two. Nothing is rebuilt here, which is what keeps claude's
+// `@"path with spaces"` quoting rule in the adapter where it has one
+// definition (task 126 decision 1).
+//
+// There is no after-accept note. A skill earns one because it *takes*
+// arguments the human cannot see (issue #510 item 3); a path says what it is.
+//
+// It returns nothing, where acceptSkill returns a tea.Cmd: accepting a file
+// asks the daemon for nothing, and a signature promising otherwise would be
+// a command every caller has to remember to batch and none ever gets.
+func (v *chatView) acceptFile() {
+	row, ok := v.files.pick()
+	if !ok {
+		return
+	}
+	if row.disabled {
+		v.note, v.noteBad = row.reason, true
+		return
+	}
+	v.replaceDraftToken(row.insert + " ")
+	v.files.remember(row.insert, v.composer.Value())
+	v.hideFiles()
+	// The token the list was suppressed on is gone, so the suppression goes
+	// with it.
+	v.files.suppressed = ""
+}
+
 // replaceDraftToken swaps the token under the cursor for text, leaving the
 // cursor after it — decision 95's half of the inline accept.
 //
@@ -1304,6 +1548,7 @@ func (v *chatView) askClose() {
 		// The confirmation owns the next key, so an inline list under it
 		// would be offering keys it will never get.
 		v.hideInline("")
+		v.hideFiles()
 	}
 }
 
