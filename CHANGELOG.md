@@ -318,6 +318,22 @@ list with the user-facing context a commit subject cannot carry.
   its own block ahead of your message. codex, cursor and claude builds
   outside the stream-json input family receive exactly what they did before.
 
+- **A workflow field left blank now means the same thing to the form and to the
+  API.** A declared field whose value was only whitespace was read two ways:
+  `POST /v1/tasks` skipped every type and `pattern` check on an optional one
+  and wrote the spaces onto the task, so `vincent task add --field
+  retries="  "` stored `"  "` where a template, a `run:` body or a branch name
+  would later render it — while the New task form rejected that same value, and
+  accepted a blank required text or `enum` field the API turned down with "is
+  required". A blank declared value — empty or whitespace — is now simply not a
+  value anywhere: it is dropped before validation, so the field is absent from
+  the task exactly as if you had never sent the key, a required one still fails
+  with "is required", and nothing is defaulted in its place. Undeclared fields
+  are untouched — a custom pair with a blank value is still stored as you sent
+  it. If you send a declared key as `""` today and expect it back as an empty
+  string, it will now be missing instead; `{{ with index .Task.Fields "x" }}`
+  guards for it correctly.
+
 ## [0.9.0](https://github.com/lezli01/vincent/compare/v0.8.0...v0.9.0) (2026-09-18)
 
 ### Added

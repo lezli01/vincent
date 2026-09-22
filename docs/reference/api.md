@@ -1863,11 +1863,21 @@ task rather than a 400, with the applied value recorded on the row. An
 absent from the task's `fields`. A key sent with an empty value is never
 defaulted.
 
+A **declared** key whose value is blank — `""`, or only whitespace — is dropped
+in the same pass, after that substitution. The task is stored as if the key had
+never been sent: an optional field is neither type-checked nor recorded, a
+required one still returns `400 validation_failed` with "is required", and the
+New task form reads the same value as absent and says the same thing. The open
+half of the map is unaffected — an undeclared key with a blank value is stored
+as you sent it.
+
 `github_issue` is an issue **number**. The daemon fetches that issue, computes
 the [prefill](#github-issues), and fills in whatever this request left unset —
 **anything you send explicitly wins.** For `fields` and `description` that is
 decided by *presence*: a key sent with an empty value is a row somebody cleared
-on purpose and stays cleared, so `"description": ""` creates a task with no
+on purpose and stays cleared — a blank *declared* field is then dropped from the
+stored map as above, and either way the issue does not fill it — so
+`"description": ""` creates a task with no
 description rather than the issue body. Only `title` keys on emptiness as well
 as absence — there is no such thing as deliberately creating an untitled task —
 so `title` becomes optional when `github_issue` is given.

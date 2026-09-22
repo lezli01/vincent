@@ -1165,7 +1165,10 @@ optional single-choice row also steps to an empty stop, shown as
 `(choose a value)`, and its list starts with an `(unset)` row; those are the
 only ways back to empty for a row the workflow owns and that therefore cannot
 be deleted. A
-declared `default:` seeds the row when the workflow is selected. Workflow-owned names are locked, but their values remain
+declared `default:` seeds the row when the workflow is selected. A row left
+blank — empty, or holding only spaces — counts as unset, the same way the
+daemon counts it: a required one says so on the Fields row, and an optional one
+is simply left off the task rather than stored as blank. Workflow-owned names are locked, but their values remain
 editable. You can still add and delete custom key/value rows — additional,
 undeclared fields remain valid and are recorded on the task. Values are kept
 when you switch workflows, including fields that the new workflow does not

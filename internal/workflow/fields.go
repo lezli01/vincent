@@ -344,6 +344,13 @@ func (f FieldDefinition) Normalize(value string) string {
 // field is not a silent behaviour change for workflows that guard on presence.
 // A key that is present but empty is never defaulted, at any requiredness.
 //
+// A declared key whose value is blank — empty, or only whitespace — is dropped
+// instead, so "has no value" has one meaning on every surface (§8.1.2, amended
+// 2026-09-22). A required field then fails ValidateTaskFields as "is required"
+// exactly as an omitted one does, and an optional one is neither validated nor
+// stored. Undeclared keys are untouched: decision 3's open map still carries a
+// blank custom pair.
+//
 // values is never mutated: the map is copied only if something changes, so a
 // workflow that declares no fields hands back exactly what it was given.
 func (w *Workflow) PrepareTaskFields(values map[string]string) map[string]string {
@@ -363,7 +370,19 @@ func (w *Workflow) PrepareTaskFields(values map[string]string) map[string]string
 			value = field.Default
 		}
 		normalized := field.Normalize(value)
-		if present && normalized == value {
+		// A value that is only whitespace is not a value (§8.1.2, amended
+		// 2026-09-22, issue #575): a declared key that normalizes to blank is
+		// dropped, so .Task.Fields is left in exactly the state an omitted key
+		// would have left it and every surface reads it as absent. It sits
+		// below the substitution guard because a key present but empty is
+		// never defaulted, and it touches declared keys only — decision 3's
+		// open map keeps a blank custom pair.
+		blank := strings.TrimSpace(normalized) == ""
+		if !present && blank {
+			// A blank default is not a value either: nothing to substitute.
+			continue
+		}
+		if present && !blank && normalized == value {
 			continue
 		}
 		if !copied {
@@ -372,6 +391,10 @@ func (w *Workflow) PrepareTaskFields(values map[string]string) map[string]string
 				out[k] = v
 			}
 			copied = true
+		}
+		if blank {
+			delete(out, field.Name)
+			continue
 		}
 		out[field.Name] = normalized
 	}
