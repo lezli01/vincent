@@ -135,7 +135,11 @@ invocation the agent named — with whatever you had already typed becoming its
 arguments. Browsing never touches the draft, so `esc` leaves your message
 exactly as you wrote it. **The same list opens by itself** when your message
 starts typing the agent's own invocation syntax, so writing `/name` and
-picking from a list are one gesture rather than two.
+picking from a list are one gesture rather than two. Typing `@` and a
+character lists the **files** that chat's next turn could be pointed at
+instead, and the row you take is written into the message as the exact text
+that mentions that file — the agent's own quoting included
+([guide](guides/tui.md#chat-workspace)).
 
 Drive one from the TUI's own **chats board and chat workspace**
 ([guide](guides/tui.md#chats)), from

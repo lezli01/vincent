@@ -1851,6 +1851,39 @@ That is a note, not a refusal — vincent sends your message verbatim either
 way — and a path under the sigil is never nagged about. After you take a
 match, the note line shows what that skill takes until you edit it away.
 
+**Typing `@` and at least one more character lists the files this chat's next
+turn could be pointed at.** They are drawn above the composer, in the skills
+list's place — the two lists are never up together. A bare `@` opens nothing,
+which is what keeps `cc @someone` quiet, and `user@host` is not a mention
+either: the token has to *start* with the sigil. `@` is never a key here; the
+draft is read after every composer update.
+
+Five presses are the list's while it is up. `↑` and `↓` move the highlight
+through the matching files, and nothing is highlighted until the first press.
+`tab` completes the `@` token with the highlighted file, or the top match
+(`f2` too). `enter` inserts the highlighted file's mention — with none
+highlighted it sends the message as typed. `esc` closes the file list and
+gives `↑`/`↓` back to editing the draft.
+
+Accepting **replaces the token** with the mention the daemon reported for that
+file, byte for byte, plus one space — claude's `@"path with spaces"` quoting
+included, because no client rebuilds that text.
+
+The rows are ranked: the basename begins with what you typed, then a path
+segment or the whole path does, then the path contains it anywhere. A query
+carrying a separator is matched against the whole path instead of the
+basename, so `@internal/lim` behaves, and both `/` and `\` separate on every
+platform. Matching is not fuzzy.
+
+Nothing is drawn when nothing matches — no note, no complaint — and the
+message is sent exactly as typed: this is an aid to typing, never a rewrite.
+The title line carries what the rows cannot: `showing the first N` when the
+daemon cut the listing, and `50 of 1,615` when the build was capped at 50
+after the ranking, so "your file is not listed" never reads as "your file does
+not match". One line is reserved under the rows for the highlighted row's
+whole path — or, when this chat's CLI does not expand a mention, for saying
+so.
+
 `ctrl+t` opens the new-task form in **handoff mode**: the project, the base
 branch and the branch are the chat's, shown but marked `(from the chat)` and
 not editable, because they name a worktree that already exists. Fill in the
