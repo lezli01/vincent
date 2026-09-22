@@ -281,8 +281,8 @@ scoop install vincent/vincent
 ```
 
 vincent is also submitted to the WinGet catalog, but Microsoft has not yet
-merged a submission, so `winget install --id lezli01.Vincent --exact` does not
-find it today.
+merged [any of the open submissions](https://github.com/microsoft/winget-pkgs/pulls?q=is%3Apr+author%3Alezli01),
+so `winget install --id lezli01.Vincent --exact` does not find it today.
 
 Scoop installs the same Windows zip published on GitHub. Releases are not
 Authenticode-signed, so SmartScreen may still appear on first launch.

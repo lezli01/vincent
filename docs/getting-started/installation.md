@@ -90,10 +90,11 @@ config, database and transcripts, `~/Library/Application Support/vincent`.
 
 ## WinGet (Windows)
 
-Every stable release since v0.4.0 has been submitted to Microsoft's public
-WinGet catalog, and none has been merged yet, so the commands below will not
-find the package until the first submission is merged. Use
-[Scoop](#scoop-windows) or [mise](#mise-all-platforms) meanwhile.
+Seven stable releases, v0.4.0 through v0.8.0, have been submitted to
+Microsoft's public WinGet catalog; [all seven submissions are still
+open](https://github.com/microsoft/winget-pkgs/pulls?q=is%3Apr+author%3Alezli01)
+and none has been merged, so the commands below will not find the package yet.
+Use [Scoop](#scoop-windows) or [mise](#mise-all-platforms) meanwhile.
 
 ```powershell
 winget install --id lezli01.Vincent --exact

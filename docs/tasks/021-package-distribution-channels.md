@@ -1,6 +1,6 @@
 # 021 — Package distribution channels
 
-**Status:** ⚠ verification blocked (5/7) · **Opened:** 2026-08-20
+**Status:** ⚠ verification blocked (6/7) · **Opened:** 2026-08-20
 
 Vincent releases should meet people in the package manager they already use:
 WinGet and Scoop on Windows; deb and rpm on Linux; and mise on every
@@ -87,17 +87,18 @@ configuration and user documentation.
 - [x] **021.5 — Amend product and operator documentation.** Update §19, README,
   installation/platform guides, and RELEASING without claiming an unpublished
   channel is already live. ✓ 2026-08-20
-- [!] **021.6 — Run repository verification and review the final diff.** — the
-  #158 diff review (2026-09-14) found the WinGet install command documented as
-  working while no submission has passed Microsoft's moderator review (tracked
-  in [#377](https://github.com/lezli01/vincent/issues/377)); every other check
-  has run (see Verification (2026-09-14, #379)).
-  Done only when GoReleaser check/snapshot, package payload checks, docs/link
-  lint, and the repository's required code checks have actually run;
-  unavailable checks remain explicit.
+- [x] **021.6 — Run repository verification and review the final diff.**
+  GoReleaser check and snapshot, docs/link lint and the repository's required
+  code checks have run; the deb and rpm payload checks are not runnable on the
+  verifying machine and stay explicit, cited to CI instead. The #158 diff
+  review's one remaining defect — `winget install --id lezli01.Vincent --exact`
+  documented as a working path — was fixed by `88a3c962e` (2026-09-14) and
+  [#377](https://github.com/lezli01/vincent/issues/377) is closed. See
+  Verification (2026-09-22, #573). ✓ 2026-09-22
 - [!] **021.7 — Bootstrap and prove the external channels.** — publication is
-  proven: every stable tag since v0.4.0 updates Scoop automatically and opens a
-  WinGet pull request, but no WinGet submission has passed Microsoft's
+  proven for one span only: every stable tag from v0.4.0 to v0.8.0 updated
+  Scoop automatically and opened a WinGet pull request; v0.9.0's release run
+  failed before any publisher ran. No WinGet submission has passed Microsoft's
   moderator review, and no install through the five paths is recorded;
   installing needs a person on real systems.
   Confirm the Scoop bucket and WinGet fork, install the two destination
@@ -233,6 +234,11 @@ link.
   present `winget install --id lezli01.Vincent --exact` as a working path, but
   no submission has merged (see Publication).
   [#377](https://github.com/lezli01/vincent/issues/377) owns those pages.
+  *Fixed 2026-09-14 by `88a3c962e`, which is a descendant of `b885c53`: all
+  three pages now say no submission has merged. #377 is closed; this record is
+  superseded by Verification (2026-09-22,
+  [#573](https://github.com/lezli01/vincent/issues/573)), under which those
+  pages also gained a link to the open submissions.*
 - Checked and not counted as a defect: GoReleaser publishes the release assets
   and the manager metadata before package inspection runs, both at the merge
   and at `b885c53`; `RELEASING.md` describes `verify-packages` as inspection
@@ -257,3 +263,86 @@ link.
   v0.8.0 `1b2a254`.
 - No install through WinGet, Scoop, mise, deb or rpm is recorded for any stable
   tag. The only recorded install is 021.3's isolated mise install of 0.3.0.
+
+## Verification (2026-09-22, #573)
+
+Re-run for 021.6 alongside the WinGet documentation corrections of
+[#573](https://github.com/lezli01/vincent/issues/573). The 2026-08-20 and
+2026-09-14 records above stay as history. Run on macOS (darwin/arm64) with Go
+1.27.1 and GoReleaser 2.18.1, on this branch over `67a84234`.
+
+**GoReleaser configuration**
+
+- `goreleaser check` — pass, `1 configuration file(s) validated`.
+- `goreleaser release --snapshot --clean --skip=publish,sign` — exit 0,
+  `release succeeded after 1m1s`. It produced six archives (four `tar.gz`, two
+  `zip`), two debs, two rpms, the three WinGet manifests
+  (`lezli01.Vincent.yaml`, `lezli01.Vincent.installer.yaml` and
+  `lezli01.Vincent.locale.en-US.yaml`, the last carrying `PackageIdentifier:
+  lezli01.Vincent`), and the Scoop `vincent.json` with its `64bit` and `arm64`
+  architectures. A snapshot builds no `.pkg`: the darwin installer comes out of
+  the signing path this run skips.
+
+**Required code checks**
+
+- `go run mage.go lint` — `0 issues.`
+- the host-built linter under `GOOS=windows`, `GOOS=darwin` and `GOOS=linux` —
+  `0 issues.` each.
+- `go run mage.go build` — exit 0.
+- `go run mage.go test` — exit 0, 41 packages `ok`, no failures.
+- `go run mage.go testrace` — exit 0, 41 packages `ok`, no failures and no race
+  reports.
+
+**Package payload checks — not runnable here, cited to CI.** `dpkg-deb` and
+`rpm` are both absent from this machine (`command -v` returns nothing for
+either), so `verify-packages`' inspection of the deb and rpm names, the `git`
+dependency, `/usr/bin/vincent`, the license file and the extracted binaries'
+`version` could not be repeated locally. The last green run of that job is
+v0.8.0's, release run
+[33895256784](https://github.com/lezli01/vincent/actions/runs/33895256784)
+(`release: success`, `verify-packages: success`, all three `smoke` legs
+`success`). It has not run since: for v0.9.0 the `release` job failed first, and
+`verify-packages` and `smoke` are both `skipped`.
+
+**Docs and link lint.** No repository script exists, so the 2026-09-14 method
+was repeated over this branch's changed Markdown. `git diff --check` printed
+nothing and exited 0. The link targets in the six changed Markdown files were
+resolved by a script following inline, image and reference-definition links
+outside fenced code and outside inline code: 281 of 281 resolve.
+
+**Publication, re-checked 2026-09-22**
+
+- WinGet: still seven pull requests by `lezli01` against
+  `microsoft/winget-pkgs`, all `open`, none merged — #422036 (v0.4.0) through
+  #429585 (v0.8.0), the same seven as on 2026-09-14.
+  `manifests/l/lezli01` is still HTTP 404, so the package is still not in
+  Microsoft's catalog.
+- **v0.9.0 submitted nothing.** Its release run
+  [35381882773](https://github.com/lezli01/vincent/actions/runs/35381882773)
+  (2026-09-18) ended `failure` in the `release` job at the cosign step —
+  `Error: signing dist/checksums.txt: create bundle file: open : no such file
+  or directory`, after cosign warned that `--output-signature` and
+  `--output-certificate` are deprecated and ignored under
+  `--new-bundle-format` — before GoReleaser reached any manager publisher. The
+  v0.9.0 GitHub release is published with 0 assets where v0.8.0 has 14, and
+  `lezli01/scoop-bucket` and `lezli01/homebrew-tap` both still stop at v0.8.0.
+  That is a release-signing defect rather than a documentation one, out of
+  scope for #573 and untracked by any issue as of this run; the only
+  consequence recorded here is that the WinGet submission span is v0.4.0
+  through v0.8.0, not "every stable release since v0.4.0", which is the
+  sentence `docs/getting-started/installation.md` corrected.
+- No install through WinGet, Scoop, mise, deb or rpm is recorded for any stable
+  tag. 021.7 is unchanged and still blocked on a person with real systems.
+
+**The #158 diff defect, closed.** The 2026-09-14 review's one remaining defect
+— `README.md`, `docs/getting-started/installation.md` and
+`docs/platforms/windows.md` presenting `winget install --id lezli01.Vincent
+--exact` as a working path — was fixed by `88a3c962e` (2026-09-14), which has
+`b885c53`, the commit that review ran at, as an ancestor.
+[#377](https://github.com/lezli01/vincent/issues/377) is closed. What those
+three pages still lacked, and gain here, is a link to the submissions
+themselves: a non-staling `author:lezli01` query rather than a version-specific
+pull-request number that every future tag would silently invalidate.
+`RELEASING.md` step 9 gains the same link, so a maintainer whose `winget show
+--id lezli01.Vincent --exact --versions` finds nothing reads the expected
+result rather than a release fault.
