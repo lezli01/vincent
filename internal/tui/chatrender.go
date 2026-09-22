@@ -259,7 +259,7 @@ func (v *chatView) footerLines(width, height int) []string {
 		// The file picker's own line (task 126.11): the mention verdict, and
 		// only in the negative — this chat's CLI does not expand an `@`
 		// mention, so it sees the path and may read the file itself
-		// (task 126 decision 43, after task 124 decision 19's bad-news-only
+		// (task 126 decision 47, after task 124 decision 19's bad-news-only
 		// rule). Dim, and below the workspace's own note for the reason the
 		// skills hint is: it is a fact about a draft, never a refusal.
 		out = append(out, " "+styleDim.Render(v.files.mentionNote()))

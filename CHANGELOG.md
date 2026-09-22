@@ -133,6 +133,27 @@ list with the user-facing context a commit subject cannot carry.
   did not report earns a dim note saying it is sent as typed, which is a
   hint and never a refusal.
 
+- **Typing `@` in the TUI's chat composer now picks a file from the chat's
+  workspace.** `@` plus at least one character opens a ranked list of the
+  files the chat's next turn could be pointed at, above the composer and in
+  the same place the skills list uses; `tab` or `enter` replaces what you
+  typed with the exact text that mentions that file — claude's
+  `@"path with spaces"` quoting included, because the text comes from the
+  daemon and nothing rebuilds it. Matching ranks a basename prefix over a
+  path-segment prefix over a substring, and once you type a separator it
+  matches the whole path, so `@internal/tui/chat` finds what you mean; both
+  `/` and `\` separate, on every platform. A bare `@` opens nothing, which is
+  what keeps `cc @someone` quiet, and neither does `user@host` — the picker
+  reads the word under your cursor and it has to *start* with the `@`.
+  Nothing is drawn when nothing matches, and the message is still sent
+  exactly as you typed it: this is a typing aid, never a rewrite. The list
+  and the skills list are never up together, and `↑`/`↓`, `tab`, `enter` and
+  `esc` mean here what they mean there — `enter` with nothing highlighted
+  still sends. The title line says when the listing was cut short or the
+  matches were capped at 50, so "your file is not listed" never reads as
+  "your file does not match", and a chat whose CLI does not expand a mention
+  says so under the composer. Spec §15; issue #555.
+
 - **A skill you invoke in a claude chat now shows in the transcript.** Until
   now `/name` in a chat message left no trace on the CLI's output at all: the
   turn ran the skill and the transcript said nothing about it. A chat turn now

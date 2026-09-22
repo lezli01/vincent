@@ -115,7 +115,7 @@ func TestChatFilesOpensOnTheTypedSigil(t *testing.T) {
 	}
 }
 
-// TestChatFilesBareSigilOpensNothing is task 126 decision 41 and the token
+// TestChatFilesBareSigilOpensNothing is task 126 decision 45 and the token
 // rule behind it: `@` alone waits for a character — which is what keeps
 // `cc @someone` and a repository-sized list off the screen — and `user@host`
 // is not a mention at all, because the token does not begin with the sigil.
@@ -339,7 +339,7 @@ func rankedPaths(files []apiclient.ChatFile, q string) []string {
 
 // TestChatFilesTitleTellsTruncationFromNoMatch is issue #553 decision 2 on
 // this list, and the first time the cap's counter earns its keep (task 126
-// decision 45): "your file is not listed" and "your file does not match" must
+// decision 49): "your file is not listed" and "your file does not match" must
 // not look the same, and the daemon's own cut is a third thing again.
 func TestChatFilesTitleTellsTruncationFromNoMatch(t *testing.T) {
 	t.Run("a capped build counts itself", func(t *testing.T) {
@@ -569,7 +569,7 @@ func hasChatFilesFetch(cmd tea.Cmd) bool {
 	return false
 }
 
-// TestChatFilesFetchIsOnceAndIsNotRetried is task 126 decision 46. The sync
+// TestChatFilesFetchIsOnceAndIsNotRetried is task 126 decision 50. The sync
 // runs on *every* composer update, so without the guard typing `@src/m` would
 // fire one request per keystroke — and a failure that re-fired on the next
 // keystroke would do it again for as long as someone kept typing.
@@ -714,7 +714,7 @@ func TestChatFilesRenderOnlyStylesTheVisibleRows(t *testing.T) {
 	}
 }
 
-// TestChatFilesReEditingAWhitespaceMentionIsSilent is task 126 decision 42.
+// TestChatFilesReEditingAWhitespaceMentionIsSilent is task 126 decision 46.
 // chatDraftTokenAt is whitespace-delimited, so walking back into
 // `@"dir with space/notes.md"` puts the cursor on a token that is only a piece
 // of it; accepting there would write the mention a second time and produce one
@@ -796,7 +796,7 @@ func TestChatFilesPasteOpensThePicker(t *testing.T) {
 	}
 }
 
-// TestChatFilesMentionVerdictNote is task 126 decision 43: the note line
+// TestChatFilesMentionVerdictNote is task 126 decision 47: the note line
 // carries the verdict and only in the negative, which is task 124 decision
 // 19's bad-news-only rule.
 func TestChatFilesMentionVerdictNote(t *testing.T) {

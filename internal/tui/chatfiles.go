@@ -36,7 +36,7 @@ import (
 // carries both halves.
 
 // chatFileMentionMax is the most rows a build keeps, out of however many
-// matched (task 126 decision 45). It is applied *after* the ranking, so what
+// matched (task 126 decision 49). It is applied *after* the ranking, so what
 // survives is the best matches rather than a prefix of the listing, and
 // capNote() then draws `50 of 1,615` on the title line.
 //
@@ -68,7 +68,7 @@ type chatFileList struct {
 	// `?refresh=`: this is the only cache (task 126 decision 5).
 	data *apiclient.ChatFiles
 	// failedFor is the draft token a failed fetch was fired for, and the
-	// whole of task 126 decision 46's second half: syncInlineFiles runs on
+	// whole of task 126 decision 50's second half: syncInlineFiles runs on
 	// *every* composer update, so without it typing `@src/m` would fire one
 	// request per keystroke. A token that still begins with it is the same
 	// attempt continuing; any other token, and forget(), clear it.
@@ -80,7 +80,7 @@ type chatFileList struct {
 	failedFor string
 	// accepted is every mention this list has written into the draft, the
 	// way chatSkillList.noteFor records an invocation (task 126 decision
-	// 42). While the token under the cursor is a whitespace-delimited piece
+	// 46). While the token under the cursor is a whitespace-delimited piece
 	// of one of these that the draft still holds, nothing opens.
 	//
 	// It exists for the mention that contains whitespace. chatDraftTokenAt
@@ -125,7 +125,7 @@ func (l *chatFileList) agentName() string {
 }
 
 // mentionNote is the dim line under the composer while the picker is up, and
-// it carries one fact in one direction (task 126 decision 43): an adapter
+// it carries one fact in one direction (task 126 decision 47): an adapter
 // whose CLI does **not** expand an `@` mention says so, and one that does
 // says nothing. That is task 124 decision 19's bad-news-only rule, and it is
 // what `vincent agents` already prints as `no @ file expansion` (§9.1).
@@ -142,7 +142,7 @@ func (l *chatFileList) mentionNote() string {
 
 // remember records an accepted mention and drops the ones the draft no longer
 // holds, so the suppression set stays the set of mentions actually in front of
-// the human (task 126 decision 42).
+// the human (task 126 decision 46).
 func (l *chatFileList) remember(mention, draft string) {
 	kept := make([]string, 0, len(l.accepted)+1)
 	for _, m := range l.accepted {
@@ -156,7 +156,7 @@ func (l *chatFileList) remember(mention, draft string) {
 
 // insideAccepted reports the cursor sitting on a whitespace-delimited piece of
 // a mention this list already wrote and the draft still holds — the state
-// task 126 decision 42 keeps the list shut in.
+// task 126 decision 46 keeps the list shut in.
 func (l *chatFileList) insideAccepted(tok, draft string) bool {
 	for _, m := range l.accepted {
 		if !strings.Contains(draft, m) {
@@ -180,7 +180,7 @@ func (l *chatFileList) insideAccepted(tok, draft string) bool {
 // capability flag through canMention. What the daemon's bytes decide is the
 // text that goes *in*, which is the half a client must never rebuild.
 //
-// **A bare `@` opens nothing** (task 126 decision 41). `@` is positionally
+// **A bare `@` opens nothing** (task 126 decision 45). `@` is positionally
 // `anywhere`, so task 124 decision 93's `anywhere` branch applies unchanged:
 // one character after the sigil is required. That is what keeps `@lezli01`
 // and `cc @someone` — the false positive that matters in a chat about a pull
@@ -212,7 +212,7 @@ func (l *chatFileList) build() {
 	ranked := rankChatFiles(l.data.Files, l.filter)
 	l.matched = len(ranked)
 	// After the ranking, so what survives a cap is the best matches
-	// (task 126 decision 45).
+	// (task 126 decision 49).
 	if l.cap > 0 && len(ranked) > l.cap {
 		ranked = ranked[:l.cap]
 	}
@@ -339,7 +339,7 @@ func (l *chatFileList) core() *chatInlineList {
 	// One line, not the skills list's three, which is what the core's own
 	// reserve comment anticipated: a path is one line, and two more reserved
 	// lines would come out of a body a #299 budget is already spending
-	// (task 126 decision 45).
+	// (task 126 decision 49).
 	l.reserve = 1
 	// Only when nothing has been put there: the seam is how issue #553's
 	// tests count the rows a frame styles, and overwriting it on every draw

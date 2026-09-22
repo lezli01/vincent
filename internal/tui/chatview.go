@@ -78,7 +78,7 @@ type (
 	// chatFilesMsg is GET /v1/chats/{id}/files for the composer's `@` picker
 	// (task 126.11). It carries the draft token the fetch was fired for, so
 	// a failure can be remembered against it rather than re-fired on the
-	// next keystroke (task 126 decision 46).
+	// next keystroke (task 126 decision 50).
 	chatFilesMsg struct {
 		chatID int64
 		token  string
@@ -1355,7 +1355,7 @@ func (v *chatView) hideFiles() {
 // the inline skills probe draws none — the token may be prose — and a failure
 // writes nothing.
 //
-// Task 126 decision 46 is the guard: a fetch starts only when there is no
+// Task 126 decision 50 is the guard: a fetch starts only when there is no
 // cached answer and none in flight, and a failure is remembered against the
 // token that fired it, so typing `@src/m` cannot fire six requests. A token
 // that still begins with the failed one is that same token still being typed.

@@ -11392,6 +11392,69 @@ stream for the live tail.
    confusing under `anywhere`. With no list up, and after `esc`, the arrows
    edit the draft as they always did.
 
+   *Amended 2026-09-22 (task 126.11, issue #555).* **The draft also opens an
+   `@` file picker**, on the same core, in the same place, and never at the
+   same time as the skills list. After every composer update the workspace
+   reads the same whitespace-delimited token under the cursor; when it begins
+   with `@` **and carries at least one more rune**, the picker opens on the
+   files of the directory the chat's next turn would start in
+   (`GET /v1/chats/{id}/files`, §5.5, §13.2), filtered by the token minus the
+   sigil, nothing highlighted. A bare `@` opens nothing: `@` is positionally
+   `anywhere`, so the rule above for a lone `$` applies unchanged, and it is
+   what keeps `@lezli01` and `cc @someone` — a chat about a pull request is
+   full of them — from putting a repository-sized list on the screen.
+   `user@host` is not a mention at all, the token not beginning with the
+   sigil. There is no key: `@` is read from the draft, never matched.
+
+   The rows are **ranked**, in three tiers: the basename begins with the
+   query, then any path segment does or the whole path does, then the whole
+   path contains it — keeping git's own order within a tier. Once the query
+   carries a separator the basename tier is skipped and matching is against
+   the whole path, so `@internal/tui/chat` behaves. **Both `/` and `\` are
+   separators on every platform**, never the host's, for the reason the
+   skills list's path shape test treats both: a draft is prose a human may
+   write about any machine. Matching is not fuzzy.
+
+   The five presses are the inline skills list's, meaning the same things one
+   noun over — `↑`/`↓`, `tab`/`f2`, `enter`, `esc` — and `enter` with nothing
+   highlighted still sends the message as typed. Accepting **replaces the
+   token** with the row's `mention` **byte for byte** plus one space: that
+   text is the daemon's adapter's, so claude's `@"path with spaces"` quoting
+   rule has one definition and no client rebuilds it (task 126 decision 1).
+   A row whose mention carries a C0/C1 control or an ANSI escape is drawn
+   disabled and cannot be accepted, whitespace allowed, exactly as above.
+
+   The picker **hides silently** when nothing matches — every `@` token is
+   path-shaped, which is what the unmatched-name hint above is deliberately
+   quiet about — and there is no after-accept note, a path saying what it is.
+   It **stays hidden** for the current token after `esc` until the token
+   changes, and **while the cursor sits on a whitespace-delimited piece of a
+   mention it already inserted that the draft still holds**: the token reader
+   is whitespace-delimited, so walking back into `@"dir with space/notes.md"`
+   and accepting would append the mention a second time and produce one that
+   will not resolve. It never opens under the §7.4 popup or the close
+   confirmation, on a terminal chat, while a skills list is up, or when the
+   adapter reports an empty `mention_sigil` — the route's spelling for "this
+   adapter cannot mention files" (task 126 decision 38). An adapter reporting
+   `invoke_sigil: "@"` keeps it: the wire's word is authoritative, a skill
+   invocation changes what the CLI does while a mention is an aid to typing,
+   and the picker stands down for that chat. It takes the wheel out of the
+   conversation while it is up.
+
+   The title line carries what the rows cannot. A listing the daemon cut
+   reads `showing the first N` (`truncated`, §13.2), and a build the client
+   capped at **50** reads `50 of 1,615` — the cap is applied after the
+   ranking, so what survives is the best matches, and the two together keep
+   "your file is not listed" from ever reading as "your file does not match".
+   One line is reserved under the rows, carrying the highlighted row's whole
+   path where the row line had to truncate it; when the chat's CLI does
+   **not** expand a mention (`mention_expands`, §9.1), that line instead says
+   so — the negative only, as everywhere else. The cached listing is dropped
+   on any `chat.*` event and the next open asks again, which is the only
+   invalidation a linked chat has: its event stream carries nothing about a
+   task step writing into the shared worktree. A fetch that failed is not
+   re-fired by the next keystroke.
+
    The conversation body is **the output pane's line model** at the level
    below, not a renderer of its own: every turn's records go through the same
    two-column gutter scheme, so an `agent.tool_use` reads the same in a chat as
@@ -13005,6 +13068,18 @@ introduces no new key literal, so `keymap.fixed` gains rows and the catalog
 gains nothing; none of the five is nameable in `tui.keys`, for the reasons
 above. `/` and `$` are still never matched as keys: the draft is inspected
 after each composer update.
+
+*Amended 2026-09-22 (task 126.11, issue #555).* The chat composer's `@` file
+picker is a **third fixed surface** — `chat files` — carrying the same
+`↑`/`↓`, `tab`, `f2`, `enter` and `esc`, and no `backspace`, for the inline
+list's reason. It is its own surface rather than more `chat skills inline`
+rows because every one of its labels says something else: its `tab` completes
+a *path*, its `enter` inserts a file's mention, and a `?` pane describing the
+other list while this one is up would be the lie that rule exists to prevent.
+It introduces no new key literal, so `keymap.fixed` gains rows and the catalog
+gains nothing; none of the five is nameable in `tui.keys`. `@` is never
+matched as a key at all — the draft is inspected after each composer update —
+and so no `keymap` operation, moved or not, can shadow it.
 
 *Amended 2026-09-17 (task 119, issue #472).* `chat` is a §6 action, so it is an
 operation like the rest: `T` by default, moved by `tui.keys` on every surface
