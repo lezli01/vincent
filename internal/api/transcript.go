@@ -416,6 +416,11 @@ func normalizedRecord(ev agent.Event, raw []byte) normalizedLine {
 		// payload, so the line stops reading as unrecognized. The echoed text
 		// is still in format=raw.
 		return normalizedLine{Type: "agent.input_echo"}
+	case agent.EventConversationReset:
+		// The point at which the agent CLI threw away its own conversation
+		// (task 124.20): a record with no payload, because the mark is the
+		// whole of it. The ids claude's line carries are still in format=raw.
+		return normalizedLine{Type: "agent.conversation_reset"}
 	case agent.EventError:
 		return normalizedLine{Type: "agent.error", Message: ev.Message}
 	case agent.EventResult:

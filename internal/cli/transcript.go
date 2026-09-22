@@ -536,6 +536,13 @@ func renderTranscriptRecord(
 			return "! " + transcriptSkill(rec), true
 		}
 		return "> " + transcriptSkill(rec), true
+	case "agent.conversation_reset":
+		// The point at which the agent CLI threw away its own conversation
+		// (task 124.20). The pane's words with the pane's `#`, in ASCII: the
+		// run header's marker, because the frame of the conversation is what
+		// changed. It prints at no level because this command has none, which
+		// matches the pane showing it at all four.
+		return "# conversation reset · the agent no longer sees the turns above", true
 	case "agent.tool_result":
 		if len(rec.Results) == 0 {
 			return "", false

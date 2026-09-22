@@ -109,9 +109,13 @@ can still edit it away before you send.
 A CLI's **built-in** commands pass through the same way, and `/clear` is the
 one worth knowing about. claude clears its own conversation and reports a new
 session, which vincent uses for the next turn — so the agent starts empty while
-the chat still shows every turn you already had, and nothing in the transcript
-marks where that happened. If you want a fresh conversation with a record of
-it, close the chat and open another.
+the chat still shows every turn you already had. The transcript marks the
+point: `conversation reset · the agent no longer sees the turns above`, one
+line at every verbosity level, in the chat workspace, in a task's output pane
+and in `vincent chat transcript`. Scrolling back past that line shows you
+turns the agent can no longer see, which is what the mark is there to tell
+you. Codex and Cursor have no equivalent, so a reset is a claude-only record
+— vincent never guesses one from a session id that changed.
 
 [`vincent agents`](../reference/cli.md#vincent-agents), the TUI's daemon view,
 and `GET /v1/agents` all report what vincent actually resolved on your machine — path, version, the model and

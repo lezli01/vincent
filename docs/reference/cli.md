@@ -973,6 +973,16 @@ shown. A load whose call is before the range the command opened on prints
 where it is. Only [Claude Code](../guides/agents.md#claude-code) reports skill
 loads.
 
+A **conversation reset** — the agent CLI throwing away its own conversation
+and starting a new one, which is what `/clear` does when a message passes it
+through — prints as
+`# conversation reset · the agent no longer sees the turns above`. Records
+above that line are turns the agent can no longer see, and the line is what
+says so. This command has no verbosity control, which matches the pane showing
+the mark at all four of its levels. Only Claude Code reports a reset; a
+subagent never resets the conversation, so the mark never appears on the `| `
+rail.
+
 Everything a reader reads goes to **stdout**, including a command step's stderr,
 which is tagged `[stderr]` rather than split onto the other file descriptor: a
 transcript is one interleaved stream and two descriptors would scramble the
@@ -1876,7 +1886,11 @@ turn number the chat does not have exits `1` with
 
 As on `task transcript`, what an agent's command printed and the hunks of its
 edits are the two records the default rendering drops; `--raw` and `--json` both
-carry them. Everything a reader
+carry them. A `/clear` you sent reaches the CLI verbatim and makes it throw its
+conversation away, so this is where the
+`# conversation reset · the agent no longer sees the turns above` line shows
+up: every turn printed above it is one the agent can no longer see, even
+though the chat still holds them all. Everything a reader
 reads goes to **stdout**, and the command's own diagnostics go to stderr.
 
 `-f` (`--follow`) opens on the tail and then resumes from the record boundary

@@ -13,6 +13,22 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **A `/clear` in a chat is now marked where it happened.** Claude Code's
+  built-in commands pass through a chat like any other message, and `/clear`
+  makes the CLI throw away its own conversation and start a new one — so the
+  next turn began empty while the chat still showed every turn you had
+  already had, with nothing in the transcript saying so. The transcript now
+  carries the mark: `conversation reset · the agent no longer sees the turns
+  above`, one line at every verbosity level, in the chat workspace, in a
+  task's output pane and in `vincent chat transcript` and
+  `vincent task transcript`. On the API it is a new `agent.conversation_reset`
+  record, carrying its type and nothing else, published live and on a
+  transcript fetched with `format=normalized`; the CLI's own line, ids
+  included, is still there under `--raw` and `format=raw`. Nothing else
+  changed: `/clear` still reaches the CLI verbatim, and the session vincent
+  resumes on the next turn is still the last one the agent reported. Codex and
+  Cursor have no comparable line, so they report no resets and vincent never
+  infers one.
 - **Run a task or chat on a branch that already exists — including one you have
   checked out yourself.** `vincent task add --branch NAME --existing-branch`
   (and `vincent chat start --branch NAME --existing-branch`) runs on that

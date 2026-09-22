@@ -2708,7 +2708,8 @@ up by re-fetching the running turn's transcript and discarding every chunk whose
 under the same type names (`agent.output`, `agent.tool_use`, `agent.tool_result`,
 `agent.run_header`, `agent.thinking`, `agent.plan`, `agent.command_output`,
 `agent.patch`, `agent.subagent_started`, `agent.subagent_progress`,
-`agent.subagent_finished`, `agent.skill`, `agent.usage`), **and** the agent's
+`agent.subagent_finished`, `agent.skill`, `agent.conversation_reset`,
+`agent.usage`), **and** the agent's
 own `raw` line beside them.
 
 A chat's stream carries one type a task's does not: **`agent.raw`**, for a line
@@ -2810,7 +2811,8 @@ The transcript is the attempt's JSONL file, ranged:
   appended to resumes cleanly.
 - `format=normalized` maps every line through the owning adapter's parser into
   the live-output shapes plus `agent.result`, `agent.error`, `agent.input_echo`,
-  the `vincent.*` kinds, and `agent.raw` for anything unrecognized. That is one
+  `agent.conversation_reset`, the `vincent.*` kinds, and `agent.raw` for
+  anything unrecognized. That is one
   render path for live tail and scrollback alike. Absent, you get the raw file
   byte for byte.
 - `agent.run_header` carries `work_dir` and `available_tools` — what the CLI
@@ -2892,6 +2894,17 @@ The transcript is the attempt's JSONL file, ranged:
   chat turn, where the echo also covers your answers to its own questions and a
   `/name` it could not resolve. It carries only `type` (and `parent_call_id`
   when set) and has no live chunk; the echoed text is in the raw transcript. It is not `agent.raw`, so it is not counted as unrecognized.
+- `agent.conversation_reset` marks the point at which the agent CLI threw away
+  its own conversation and started a new one — what `/clear` does when your
+  chat message passes it through. The turns before it stay in the chat and
+  stay on screen, but the agent no longer sees them, and this record is what
+  says where that happened. It carries only `type` (and `parent_call_id` when
+  set): the ids the CLI's own line holds are in the raw transcript, and the
+  session vincent resumes next turn is still the last one the stream stamped.
+  Unlike `agent.input_echo` it **does** stream as a live chunk, with an empty
+  payload. Only [Claude Code](../guides/agents.md#claude-code) produces it;
+  Codex and Cursor have no comparable line and vincent never infers one from a
+  session id that changed.
 - One stream line can produce **two** records: codex reports a command's outcome
   and the body it printed on a single event, and claude an edit's outcome and
   its hunks, and they are separate records
@@ -3048,7 +3061,8 @@ they need.
 `agent.output`, `agent.tool_use`, `agent.tool_result`, `agent.thinking`,
 `agent.run_header`, `agent.plan`, `agent.command_output`, `agent.patch`,
 `agent.subagent_started`, `agent.subagent_progress`, `agent.subagent_finished`,
-`agent.skill`, `agent.usage` and `command.output` chunks stream on the
+`agent.skill`, `agent.conversation_reset`, `agent.usage` and `command.output`
+chunks stream on the
 **per-task** stream only and are **not** written to the events table. Their
 durable copy is the transcript file. `agent.input_echo`, like `agent.result`
 and `agent.error`, is a transcript record that never streams: its text is

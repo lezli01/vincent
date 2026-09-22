@@ -594,6 +594,20 @@ func parseTyped(line *streamLine, raw []byte) agent.Event {
 		return parseToolResults(line, raw)
 	case "result":
 		return parseResult(line, raw)
+	case "conversation_reset":
+		// claude threw away its own conversation and started a new one —
+		// what a `/clear` passed through a chat does (task 124.20, decision
+		// 78). The line is a *top-level type*, not a `system` subtype, and
+		// carries `new_conversation_id` beside the session id it is leaving;
+		// captured from 2.1.278 in testdata/stream_conversation_reset_*.jsonl.
+		//
+		// None of those ids rides on the record. Resume already works off the
+		// session id every later line stamps, last-wins (§9.2), so the ids
+		// here would be a second, redundant account of continuity — and the
+		// 124.3 normalization rule is that a record says what happened, not
+		// what the CLI's line looked like. The verbatim line stays in
+		// format=raw.
+		return agent.Event{Type: agent.EventConversationReset, Raw: raw}
 	case "system":
 		// `init` is the run header; claude sends other subtypes here
 		// (compact boundaries among them) and an unmodelled one stays raw,
