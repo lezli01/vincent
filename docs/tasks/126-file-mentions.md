@@ -490,6 +490,62 @@ mention string, its input contract and the path form unchanged.
     for three minutes. It is stated in the client method's doc comment so it
     is a known gap rather than a surprise.
 
+Decisions 41–44 were settled with the author on 2026-09-22 in 126.7 (#551),
+the subtask that puts the listing in a terminal. Nothing above is reopened:
+decision 1 supplies the mention string, decisions 4 and 36 the `limit`
+semantics, decision 5 the absent cache, decision 21 the path order and
+decision 38 the empty sigil, all unchanged.
+
+41. **2026-09-22 — The default output is one path per line, and `--mention`
+    switches stdout to the mention text.** stdout is the listing and nothing
+    else — the rule `chat skills` already states for its table (task 124
+    decision 63) — so `vincent chat files 12 | wc -l` counts files and the list
+    pipes into `xargs` on 50,000 rows, which a padded two-column table would
+    not. The mention is still never rebuilt by a client: `--mention` prints the
+    row's `mention` verbatim, and `--json` carries the whole object, which
+    makes `--json | jq -r '.files[].mention'` the same answer. The two are
+    mutually exclusive, the way `chat transcript` treats `--json` and `--raw`,
+    because both are spellings of stdout. This answers #551's own open
+    question. *Beaten:* a `PATH`/`MENTION` table, which cannot be piped; and
+    `--json`-only, which makes a shell ask for jq to read a list of file names.
+
+42. **2026-09-22 — `--limit N` passes straight through, and a cut listing says
+    so on stderr at exit 0.** `0` means the daemon's ceiling — the
+    `vincent github issues --limit` spelling — and `apiclient.ChatFiles`
+    already takes the int and sends the parameter only above zero, so the CLI
+    validates nothing of its own and the route's clamp (decision 36) stays the
+    single definition. `truncated` earns one stderr line, because the field
+    exists to make a cut visible and a silent one is the failure mode it was
+    added against. The exit code is unaffected: a truncated answer is an
+    answer. *Beaten:* a nonzero exit on `truncated`, which would fire on a
+    perfectly good answer; and a local bound the CLI enforced before asking.
+
+43. **2026-09-22 — An empty `mention_sigil` under `--mention` is one stderr
+    line, not a column of empty strings.** Decision 38 makes `""` the signal
+    that this adapter cannot mention files, and a signal is not a refusal: the
+    command prints no rows, one `no mention text: <agent> cannot mention
+    files` note, and exits **0**. The paths are true whoever reads them, which
+    is why the route serves them and why the command still prints them without
+    the flag. This is the branch the gate cannot reach — all three shipped
+    adapters mention — so it is proven in Go against
+    `agenttest.StubNoMentions`. *Beaten:* printing the paths under `--mention`
+    anyway, which answers a question nobody asked; and exiting nonzero, which
+    would make an adapter capability into a failure.
+
+44. **2026-09-22 — The gate leg asserts four things beyond #551's five, and it
+    is leg 14.** Beyond `work_dir`, the committed file, the file written into
+    the chat's worktree after the chat started, the `.gitignore`d file that is
+    absent and the linked chat's task worktree, leg 14 also walks claude's
+    `@"dir with space/b.txt"` quoting — decision 1's headline promise, and the
+    gate is the only place it is proven on Windows — the CLI's exit codes end
+    to end (1 on a terminal chat, 1 on an unknown id), `limit=1` returning one
+    row with `truncated` true, and CLI/API parity on both the path list and the
+    mention list, which is leg 12h's assertion for this command. The number is
+    **14** because `chat_mention_passthrough` (#546, 126.12) is already in
+    master at `f511bef3` holding `VINCENT_GATE_SCENARIO=13`; nothing is
+    renumbered. *Beaten:* a leg numbered 13 beside it, and #551's five
+    assertions alone.
+
 ## Citations corrected
 
 #544 and #545 both carry citations that do not resolve at HEAD. The decisions
@@ -618,8 +674,15 @@ attributes task 124.6's.
       Decisions 36–40. It did not wait for 126.4, which landed first: the
       two settled the same flat-sibling vocabulary independently, on their
       own routes (decision 37). ✓ 2026-09-21
-- [ ] 126.7 (#551) `vincent chat files`, and a files leg in the chat gate.
-      Depends: 126.6.
+- [x] 126.7 (#551) `vincent chat files`, and a files leg in the chat gate.
+      `internal/cli/chatfiles.go` — one path per line, `--mention` printing the
+      daemon's own text, `--limit` passing through, the truncation and
+      cannot-mention notes on stderr at exit 0, and no `--refresh`;
+      `chatfiles_live_test.go` against the real handler over a real git
+      repository, and the `withFileListing` harness option that puts a worktree
+      manager on `api.Deps`; `scripts/m14-gate.sh` leg 14. §5.5 and §12.1
+      amended, `docs/reference/cli.md` with them. No wire change.
+      Decisions 41–44. Depends: 126.6. ✓ 2026-09-22
 - [x] 126.8 (#552) Stop an `@` token spending the chat's one silent skills
       probe. It landed as an amendment to task 124 decision 91 rather than
       under this document; the record is `124-chat-agent-skills.md`'s dated

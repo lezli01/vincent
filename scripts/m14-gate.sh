@@ -36,12 +36,22 @@
 #      unchanged over both the API send and `vincent chat send
 #      --message-file -`, is stored unchanged, and reaches codex and cursor
 #      unchanged on their own stdin paths
+#  14. the files a chat's next turn could be pointed at (task 126.7):
+#      `work_dir` is the chat's own worktree, a committed file and one written
+#      into that worktree after the chat started are both listed while a
+#      `.gitignore`d one is not, `dir with space/b.txt` carries claude's own
+#      `@"dir with space/b.txt"` — the quoting rule no client rebuilds, and
+#      this is the only place it is proven on Windows — `limit=1` answers one
+#      row with `truncated` true, a chat linked to a blocked task lists the
+#      **task's** worktree while a free chat on the other project does not,
+#      and `vincent chat files` prints the route's own paths and mentions and
+#      exits 1 on a closed chat and on an unknown id
 #
 # Legs 1–10 are one chain rather than separable scenarios — leg 3 reads leg
 # 1's turn, leg 6 answers leg 5's parked chat, leg 10 lists the chats legs 7
 # and 9 ended — so VINCENT_GATE_SCENARIO=N for any N in 1..10 runs that chain.
-# Legs 11, 12 and 13 each stand alone, needing nothing before them, so
-# VINCENT_GATE_SCENARIO=11, =12 and =13 run one of them on its own.
+# Legs 11, 12, 13 and 14 each stand alone, needing nothing before them, so
+# VINCENT_GATE_SCENARIO=11, =12, =13 and =14 run one of them on its own.
 #
 # The `agent_cannot_resume` refusal is deliberately *not* here. Since task 070
 # no shipped adapter is refused, so a real daemon has no subject to reach it
@@ -50,9 +60,9 @@
 # daemon's own registry to keep the leg would put a test double in the
 # production registry, which is the §9.1 property the refusal exists to guard.
 #
-# A chat has no workflow, so the tasks legs 11 and 12 park a chat on carry the
-# only `run:` bodies here, and both are the same `git commit -a` spelled in the
-# sh∩pwsh intersection like every other gate's. This script's own bash obeys
+# A chat has no workflow, so the tasks legs 11, 12 and 14 park a chat on carry
+# the only `run:` bodies here, and all three are the same `git commit -a`
+# spelled in the sh∩pwsh intersection like every other gate's. This script's own bash obeys
 # the two standing rules: `| tr -d '\r'` on any multi-line jq capture, and
 # never `| grep -q`.
 #
@@ -80,7 +90,7 @@ trap cleanup EXIT
 
 ONLY="${VINCENT_GATE_SCENARIO:-}"
 case "$ONLY" in
-  "" | [1-9] | 10 | 11 | 12 | 13) ;;
+  "" | [1-9] | 10 | 11 | 12 | 13 | 14) ;;
   *) fail "unknown VINCENT_GATE_SCENARIO: $ONLY" ;;
 esac
 
@@ -728,6 +738,176 @@ chat_mention_passthrough() {
   unset FAKEAGENT_PROMPT_FILE
 }
 
+# Leg 14 is a function for legs 11–13's reason: it brings its own repos,
+# project, workflow and daemon environment, so VINCENT_GATE_SCENARIO=14 runs it
+# without walking anything before it. Unselected, it runs last, after leg 13.
+chat_files() {
+  echo "== 14. the files a chat's next turn could be pointed at (task 126.7)"
+  # `GET /v1/chats/{id}/files` (§5.5, §13.2) and `vincent chat files`. The leg
+  # needs no FAKEAGENT_SCENARIO and no FAKEAGENT_VERSION floor, because a file
+  # listing is one `git ls-files` and never spawns the agent: the only step
+  # that runs here is a `command` one. Whatever the earlier legs left exported
+  # therefore reaches no child that reads it.
+  #
+  # The workflow file is written before the start for m12's reason: a task
+  # created in the second the file lands can beat the registry's watcher.
+  mkdir -p "$CONFIG_DIR/workflows"
+  cat > "$CONFIG_DIR/workflows/chat-files-task.yaml" <<'EOF'
+name: chat-files-task
+steps:
+  - id: land
+    type: command
+    max_retries: 0
+    run: git commit -a -m files-gate
+EOF
+
+  # The listing repo. `dir with space/b.txt` is the row decision 1's headline
+  # promise is about — claude quotes a spaced path after the sigil and no
+  # client rebuilds that — and this gate is the only place the quoting is
+  # proven on Windows. `ignored.txt` is named by .gitignore and must be
+  # absent; `committed.txt` must be present.
+  : > "$TMP/files-excludes"
+  FILES_REPO="$TMP/filesrepo"
+  mkdir -p "$FILES_REPO/dir with space"
+  printf 'committed\n' > "$FILES_REPO/committed.txt"
+  printf 'spaced\n' > "$FILES_REPO/dir with space/b.txt"
+  printf 'ignored.txt\n' > "$FILES_REPO/.gitignore"
+  git -C "$FILES_REPO" init -q -b main
+  git -C "$FILES_REPO" config user.email gate@example.com
+  git -C "$FILES_REPO" config user.name "M14 Gate"
+  # A maintainer's own global ignore rule must not remove a row on their
+  # machine, so the repository answers for its own excludes. Worktrees share
+  # the repository config, so the chat's worktree inherits this.
+  git -C "$FILES_REPO" config core.excludesFile "$(hostpath "$TMP/files-excludes")"
+  git -C "$FILES_REPO" add .
+  git -C "$FILES_REPO" commit -q -m "root"
+
+  # The linked-chat repo: one file only this repository carries, so the name
+  # can only appear because the listing was taken in the task's worktree.
+  FILES_TASK_REPO="$TMP/filestaskrepo"
+  mkdir -p "$FILES_TASK_REPO"
+  printf 'only the task\n' > "$FILES_TASK_REPO/task-only.txt"
+  git -C "$FILES_TASK_REPO" init -q -b main
+  git -C "$FILES_TASK_REPO" config user.email gate@example.com
+  git -C "$FILES_TASK_REPO" config user.name "M14 Gate"
+  git -C "$FILES_TASK_REPO" config core.excludesFile "$(hostpath "$TMP/files-excludes")"
+  git -C "$FILES_TASK_REPO" add .
+  git -C "$FILES_TASK_REPO" commit -q -m "root"
+
+  "$VINCENT" daemon stop --force >/dev/null 2>&1 || true
+  "$VINCENT" daemon start
+  PORT="$(jq -r .port "$DATA_DIR/daemon.json")"
+  TOKEN="$(cat "$DATA_DIR/token")"
+  BASE="http://127.0.0.1:$PORT/v1"
+
+  FILES_PROJECT_ID="$(api POST /projects \
+    -d "{\"path\": \"$(hostpath "$FILES_REPO")\"}" | jq -r .id)"
+  [[ -n "$FILES_PROJECT_ID" && "$FILES_PROJECT_ID" != "null" ]] \
+    || fail "registering the files project failed"
+
+  echo "== 14a. work_dir is the chat's own worktree, and the rows are git's"
+  FILES_CHAT="$(api POST /chats \
+    -d "{\"project_id\": $FILES_PROJECT_ID, \"title\": \"files\", \"agent\": \"claude\"}")" \
+    || fail "creating the files chat failed"
+  FILES_CHAT_ID="$(printf '%s' "$FILES_CHAT" | jq -r .id)"
+  FILES_WORKTREE="$(printf '%s' "$FILES_CHAT" | jq -r .worktree_path)"
+  [[ -d "$FILES_WORKTREE" ]] || fail "the files chat has no worktree at $FILES_WORKTREE"
+  # Written into the chat's own worktree after the chat started: untracked, and
+  # exactly the file someone wants to point an agent at. The ignored one is
+  # written beside it so "absent" is about .gitignore and not about the file
+  # never existing.
+  printf 'fresh\n' > "$FILES_WORKTREE/fresh.txt"
+  printf 'ignored\n' > "$FILES_WORKTREE/ignored.txt"
+  LISTING="$(api GET "/chats/$FILES_CHAT_ID/files")" || fail "GET /v1/chats/{id}/files failed"
+  # One jq over the whole body rather than a capture, leg 12c's shape: nothing
+  # multi-line reaches bash, so there are no CRs to strip and no pipe an
+  # early-exiting consumer could break.
+  printf '%s' "$LISTING" | jq -e --arg dir "$FILES_WORKTREE" '
+    .work_dir == $dir and .agent == "claude" and .truncated == false
+      and .mention_sigil == "@" and .mention_position == "anywhere"
+      and .mention_expands == true
+      and any(.files[]; .path == "committed.txt")
+      and any(.files[]; .path == "fresh.txt")
+      and (any(.files[]; .path == "ignored.txt") | not)' >/dev/null \
+    || fail "the files listing is wrong: $LISTING"
+
+  echo "== 14b. a path with a space carries claude's own quoting"
+  printf '%s' "$LISTING" | jq -e '
+    any(.files[]; .path == "dir with space/b.txt"
+      and .mention == "@\"dir with space/b.txt\"")' >/dev/null \
+    || fail "the spaced path is not quoted as claude quotes it: $LISTING"
+
+  echo "== 14c. limit lowers the ceiling, and the cut is visible"
+  LIMITED="$(api GET "/chats/$FILES_CHAT_ID/files?limit=1")"
+  printf '%s' "$LIMITED" | jq -e '(.files | length) == 1 and .truncated == true' >/dev/null \
+    || fail "?limit=1 did not cut the listing: $LIMITED"
+  CLI_LIMITED="$("$VINCENT" chat files "$FILES_CHAT_ID" --limit 1 --json)" \
+    || fail "vincent chat files --limit 1 failed"
+  printf '%s' "$CLI_LIMITED" | jq -e '(.files | length) == 1 and .truncated == true' >/dev/null \
+    || fail "the CLI's --limit 1 did not cut the listing: $CLI_LIMITED"
+
+  echo "== 14d. the CLI prints the route's paths, and the route's mentions"
+  # Multi-line captures on both sides, so both are stripped of CRs: jq writes
+  # CRLF on Windows and $(...) drops only the trailing one, which is the rule
+  # m8 learned on a list exactly like this one.
+  CLI_PATHS="$("$VINCENT" chat files "$FILES_CHAT_ID" | tr -d '\r')" \
+    || fail "vincent chat files failed"
+  API_PATHS="$(api GET "/chats/$FILES_CHAT_ID/files" | jq -r '.files[].path' | tr -d '\r')"
+  [[ "$CLI_PATHS" == "$API_PATHS" ]] \
+    || fail "the CLI printed paths [$CLI_PATHS], the API [$API_PATHS]"
+  CLI_MENTIONS="$("$VINCENT" chat files "$FILES_CHAT_ID" --mention | tr -d '\r')" \
+    || fail "vincent chat files --mention failed"
+  API_MENTIONS="$(api GET "/chats/$FILES_CHAT_ID/files" | jq -r '.files[].mention' | tr -d '\r')"
+  [[ "$CLI_MENTIONS" == "$API_MENTIONS" ]] \
+    || fail "the CLI printed mentions [$CLI_MENTIONS], the API [$API_MENTIONS]"
+  # A case rather than a grep: grep -q exits at its first match and kills the
+  # producer with SIGPIPE, which pipefail then reports as 141.
+  case "$CLI_MENTIONS" in
+    *'@"dir with space/b.txt"'*) ;;
+    *) fail "the CLI's mention text lost the quoted spaced path: $CLI_MENTIONS" ;;
+  esac
+
+  echo "== 14e. a linked chat lists its task's worktree"
+  FILES_TASK_PROJECT_ID="$(api POST /projects \
+    -d "{\"path\": \"$(hostpath "$FILES_TASK_REPO")\"}" | jq -r .id)"
+  [[ -n "$FILES_TASK_PROJECT_ID" && "$FILES_TASK_PROJECT_ID" != "null" ]] \
+    || fail "registering the linked-files project failed"
+  # `git commit -a` exits 1 on a clean worktree, so the task blocks on its
+  # first pass and keeps the worktree a chat can be opened on.
+  FILES_TASK_ID="$(api POST /tasks \
+    -d "{\"project_id\": $FILES_TASK_PROJECT_ID, \"workflow\": \"chat-files-task\", \"title\": \"hold a worktree\"}" \
+    | jq -r .id)"
+  [[ -n "$FILES_TASK_ID" && "$FILES_TASK_ID" != "null" ]] || fail "creating the files task failed"
+  wait_task "$FILES_TASK_ID" blocked
+  FILES_TASK_WORKTREE="$(api GET "/tasks/$FILES_TASK_ID" | jq -r .worktree_path)"
+  [[ -d "$FILES_TASK_WORKTREE" ]] || fail "the blocked task has no worktree at $FILES_TASK_WORKTREE"
+
+  CODE="$(api_status POST "/tasks/$FILES_TASK_ID/chat" -d '{"agent": "claude"}')"
+  [[ "$CODE" == "201" ]] || fail "opening the linked chat answered $CODE: $(cat "$TMP/body.json")"
+  LINKED_FILES_CHAT_ID="$(jq -r .id < "$TMP/body.json")"
+  LISTING="$(api GET "/chats/$LINKED_FILES_CHAT_ID/files")"
+  printf '%s' "$LISTING" | jq -e --arg dir "$FILES_TASK_WORKTREE" '
+    .work_dir == $dir and any(.files[]; .path == "task-only.txt")' >/dev/null \
+    || fail "the linked chat did not list its task's worktree: $LISTING"
+  # The other project's free chat is the control, leg 12f's shape: same
+  # daemon, same adapter, a different directory and so a different listing.
+  api GET "/chats/$FILES_CHAT_ID/files" \
+    | jq -e 'any(.files[]; .path == "task-only.txt") | not' >/dev/null \
+    || fail "a free chat on the other project lists the task's file"
+
+  echo "== 14f. the CLI's exit codes end to end"
+  CODE="$(api_status POST "/chats/$LINKED_FILES_CHAT_ID/close")"
+  [[ "$CODE" == "200" ]] || fail "closing the linked files chat answered $CODE: $(cat "$TMP/body.json")"
+  CLI_CODE=0
+  "$VINCENT" chat files "$LINKED_FILES_CHAT_ID" >/dev/null 2>&1 || CLI_CODE=$?
+  [[ "$CLI_CODE" == "1" ]] \
+    || fail "vincent chat files on a closed chat exited $CLI_CODE, want 1"
+  CLI_CODE=0
+  "$VINCENT" chat files 999999 >/dev/null 2>&1 || CLI_CODE=$?
+  [[ "$CLI_CODE" == "1" ]] \
+    || fail "vincent chat files on an unknown chat exited $CLI_CODE, want 1"
+}
+
 if [[ "$ONLY" == "11" ]]; then
   chat_on_a_task
   echo "GATE PASS: m14 (leg 11)"
@@ -743,6 +923,12 @@ fi
 if [[ "$ONLY" == "13" ]]; then
   chat_mention_passthrough
   echo "GATE PASS: m14 (leg 13)"
+  exit 0
+fi
+
+if [[ "$ONLY" == "14" ]]; then
+  chat_files
+  echo "GATE PASS: m14 (leg 14)"
   exit 0
 fi
 
@@ -1060,6 +1246,7 @@ if [[ -z "$ONLY" ]]; then
   chat_on_a_task
   chat_skills
   chat_mention_passthrough
+  chat_files
 fi
 
 echo "GATE PASS: m14"
