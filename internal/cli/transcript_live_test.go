@@ -88,9 +88,10 @@ type liveHarness struct {
 type liveOption func(*liveOptions)
 
 type liveOptions struct {
-	agents  *agent.Registry
-	catalog bool
-	skills  bool
+	agents    *agent.Registry
+	catalog   bool
+	skills    bool
+	worktrees bool
 }
 
 // withAgentCatalog serves the harness from reg and puts an agent catalog over
@@ -105,6 +106,15 @@ func withAgentCatalog(reg *agent.Registry) liveOption {
 // server built without one answers 500 rather than guessing at a list.
 func withSkillCache(reg *agent.Registry) liveOption {
 	return func(o *liveOptions) { o.agents, o.skills = reg, true }
+}
+
+// withFileListing serves the harness from reg and puts a worktree manager on
+// api.Deps, which is what GET /v1/chats/{id}/files needs to answer at all: a
+// server built without one answers 500 rather than guessing at a directory
+// (chatfiles_live_test.go). It is an option rather than the default so that
+// every other test here keeps the nil manager it has always had.
+func withFileListing(reg *agent.Registry) liveOption {
+	return func(o *liveOptions) { o.agents, o.worktrees = reg, true }
 }
 
 func newLiveHarness(t *testing.T, opts ...liveOption) *liveHarness {
@@ -155,6 +165,10 @@ func newLiveHarness(t *testing.T, opts ...liveOption) *liveHarness {
 	if o.skills {
 		skills = agent.NewSkillCache()
 	}
+	var worktrees *worktree.Manager
+	if o.worktrees {
+		worktrees = worktree.NewManager(git, dataDir)
+	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	// The runner is never started: nothing here admits a task, and the rows
 	// under test are written directly.
@@ -177,7 +191,7 @@ func newLiveHarness(t *testing.T, opts ...liveOption) *liveHarness {
 		Chats: chats,
 		// The registry is what lets the endpoint normalize a recorded run
 		// with the parser that read it live.
-		Agents: agents, Catalog: catalog, Skills: skills,
+		Agents: agents, Catalog: catalog, Skills: skills, Worktrees: worktrees,
 		// The chat-turn route derives its file from the data dir rather than
 		// from a stored path (chattranscript_live_test.go).
 		Dirs: config.Dirs{Data: dataDir},

@@ -1940,6 +1940,52 @@ unknown chat, a terminal one (it has no next turn, so no directory to list
 for), or a linked chat whose task no longer has a worktree. Exit `2` with no
 daemon.
 
+### `vincent chat files`
+
+```sh
+vincent chat files CHAT_ID [--limit N] [--mention | --json]
+```
+
+The files of the directory the chat's **next turn** would start in — its own
+worktree, or its linked task's — which is the listing to pick an `@` mention
+from. Untracked files are in it, because a file created a minute ago is exactly
+the file you want to point an agent at, and `.gitignore` is honoured, so
+`node_modules/` stays out. Rows are git's own bytes in git's own order:
+workspace-relative, forward-slash on every platform, unsorted.
+
+**stdout is the listing and nothing else** — one path per line, so
+`vincent chat files 12 | wc -l` counts files and the list pipes into `xargs`:
+
+```sh
+vincent chat files 12 | grep '\.go$'
+vincent chat files 12 --mention | head -3
+```
+
+`--mention` switches stdout to the exact text that mentions each file, as the
+chat's own adapter spells it. It is the daemon's string, printed verbatim: the
+rule for a path with a space in it — claude wants `@"dir with space/b.txt"`,
+and a bare or backslash-escaped spelling is not expanded — lives in the
+adapter and nowhere else, so no client rebuilds it. An agent that cannot
+mention files at all prints no rows and one `no mention text: …` note on
+stderr, still at exit `0`: the paths are true whoever reads them, and are what
+the command prints without the flag.
+
+`--json` emits the response object unchanged, with `files` always an array and
+every row carrying both `path` and `mention` — so
+`--json | jq -r '.files[].mention'` is `--mention`'s answer. It cannot be
+combined with `--mention`: both are spellings of stdout.
+
+`--limit` lowers the daemon's own ceiling of 50,000 rows and can never raise
+it; `0`, the default, is that ceiling. A listing that was cut says so on
+stderr — `warning: the listing was cut at N file(s)` — and still exits `0`,
+because a truncated answer is an answer. There is no `--refresh`: the route
+keeps no cache to invalidate, one `git ls-files` being no agent-CLI probe.
+
+Exit `0` whenever the daemon answered, an empty and a truncated listing
+included. Exit `1` on an unknown chat, a terminal one (it has no next turn, so
+no directory to list for), a linked chat whose task no longer has a worktree,
+or a workspace that has gone missing under the daemon. Exit `2` with no daemon.
+
 ### `vincent chat archive`
 
 ```sh

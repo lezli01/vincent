@@ -91,6 +91,19 @@ list with the user-facing context a commit subject cannot carry.
   an agent already sitting in that worktree can run `ls`. Spec §5.5, §13.2;
   issue #550.
 
+- **`vincent chat files` puts that listing in your terminal.** One
+  workspace-relative path per line and nothing else on stdout, so
+  `vincent chat files 12 | wc -l` counts them and the list pipes into `xargs`
+  or `grep`. `--mention` prints the text that mentions each file instead —
+  the daemon's own string, so a path with a space in it arrives quoted the way
+  the chat's agent wants it and nothing rebuilds that rule; an agent that
+  cannot mention files says so once on stderr rather than printing a column of
+  nothing. `--limit` asks for fewer rows and can only lower the daemon's
+  ceiling, and a listing that was cut says so on stderr while still exiting
+  `0` — a truncated answer is an answer. `--json` gives you the whole response
+  object, `files` always an array. Exit `1` on an unknown or finished chat,
+  `2` with no daemon. Spec §5.5, §12.1; issue #551.
+
 - **`tab` in the TUI's chat workspace lists the agent's skills above the
   composer.** Type to filter it — a name prefix ranks over a plugin's bare
   name or an alias, which ranks over a description match — and `enter` or
