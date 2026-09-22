@@ -647,6 +647,16 @@ under it. The skill's own text — the `SKILL.md` that
 was loaded — is never drawn at any level; `e` opens the whole transcript,
 which has it.
 
+A **conversation reset** is the third thing you did that `quiet` keeps. When a
+`/clear` you sent reaches Claude Code, the CLI throws its own conversation away
+and starts a new one, and the pane marks the point with
+`# conversation reset · the agent no longer sees the turns above` — one line,
+at all four levels, behind the run header's gutter, because what changed is the
+frame of the conversation rather than anything inside it. Everything drawn
+above that line is still there to scroll back to and is no longer something the
+agent can see. Only Claude Code reports a reset; Codex and Cursor have no
+equivalent, and vincent never guesses one from a session that changed.
+
 `compact` is what the agent **said and did**, and nothing else. Reasoning is
 hidden, and so is everything about the run itself.
 
@@ -1921,7 +1931,9 @@ printable key: a letter would be typed into your draft.
 
 At `quiet` you get the agent's prose, anything that went wrong, and what you
 did — an answered question, a skill your message invoked as
-`▸ skill <name> <args>` — with the tool calls, the closing outcome line and the
+`▸ skill <name> <args>`, and a `/clear` that reached the CLI as
+`# conversation reset · the agent no longer sees the turns above` — with the
+tool calls, the closing outcome line and the
 unrecognized-line count all gone. At `compact` you get what the agent said and
 did and nothing else, including a skill it loaded itself, drawn on its `Skill`
 call's line as [in the task pane](#what-v-adds). At `normal`
