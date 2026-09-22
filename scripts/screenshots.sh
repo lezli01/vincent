@@ -1801,6 +1801,40 @@ Sleep 2s
 Screenshot "'"$OUT"'/tui-chat-skills-inline.png"
 Sleep 2s
 '
+
+  # The chat composer's `@` file picker (task 126.11), on the same seeded
+  # conversation, in a tape of its own because the picker and the skills list
+  # are never drawn together — one TUI can only photograph one of them.
+  # `@internal` is typed rather than a bare `@`: a bare sigil opens nothing,
+  # and the query is what puts the ranking in the picture. It matches the four
+  # files make_repo writes under `internal/` in every seeded repository, on
+  # the whole-path tier — pick another query and check it against that
+  # function first, since these repositories hold eight files and not this
+  # one's. A `Down` precedes the Screenshot for the reason the two above it
+  # do, and one more: the line reserved under the rows carries the highlighted
+  # row's whole path and is blank until a row is picked.
+  tape tui-chat-files 1400 '
+Type ":"
+Sleep 1s
+Type "chats"
+Sleep 1s
+Enter
+Sleep 4s
+Type "/"
+Sleep 500ms
+Type "rate limit"
+Sleep 1s
+Enter
+Sleep 1s
+Enter
+Sleep 5s
+Type "@internal"
+Sleep 3s
+Down
+Sleep 2s
+Screenshot "'"$OUT"'/tui-chat-files.png"
+Sleep 2s
+'
 }
 
 case "${1:-all}" in
