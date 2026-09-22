@@ -2311,6 +2311,48 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 
+	// The `@` file picker, opened by the draft's own token (task 126.11).
+	// Every probe types the mention in rather than opening the list by hand:
+	// there is no key that opens it.
+	ctxChatFiles: {
+		"down": func(t *testing.T) {
+			v := chatFilesFixture(claudeFiles())
+			typeIntoChat(t, v, "read @main")
+			v.updateKey(registryKey(t, "down"))
+			if v.files.cursor != 0 {
+				t.Fatalf("down left the highlight on %d, want the first match", v.files.cursor)
+			}
+		},
+		"tab": func(t *testing.T) {
+			v := chatFilesFixture(claudeFiles())
+			typeIntoChat(t, v, "read @main")
+			v.updateKey(registryKey(t, "tab"))
+			if got := v.composer.Value(); got != "read @docs/main.md " {
+				t.Fatalf("tab left the draft %q, want the token replaced by the top match", got)
+			}
+		},
+		"enter": func(t *testing.T) {
+			v := chatFilesFixture(claudeFiles())
+			typeIntoChat(t, v, "read @main")
+			v.updateKey(registryKey(t, "down"))
+			v.updateKey(registryKey(t, "enter"))
+			if got := v.composer.Value(); got != "read @docs/main.md " {
+				t.Fatalf("enter left the draft %q, want the highlighted row", got)
+			}
+		},
+		"esc": func(t *testing.T) {
+			v := chatFilesFixture(claudeFiles())
+			typeIntoChat(t, v, "read @main")
+			v.updateKey(registryKey(t, "esc"))
+			if v.files.open {
+				t.Fatal("esc left the picker open")
+			}
+			if got := v.composer.Value(); got != "read @main" {
+				t.Fatalf("esc changed the draft to %q", got)
+			}
+		},
+	},
+
 	ctxCreatePR: {
 		"enter": func(t *testing.T) {
 			f := createPRFixture(t)

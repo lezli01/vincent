@@ -156,6 +156,14 @@ const (
 	// inline, and a `?` pane saying the first while the second is true is a
 	// lie (decision 94).
 	ctxChatSkillsInline bindingContext = "chat skills inline"
+	// ctxChatFiles is the chat composer's `@` file picker (task 126.11). Its
+	// own context rather than more `chat skills inline` rows for that
+	// context's own reason: the two lists never draw together, and every one
+	// of these four labels says something different — `tab` completes a
+	// *path*, `esc` closes a list of files — so a shared row could only
+	// describe one of them, and a `?` pane that described the other would be
+	// a lie.
+	ctxChatFiles bindingContext = "chat files"
 
 	ctxNewChat bindingContext = "new chat"
 	ctxDaemon  bindingContext = "daemon"
@@ -550,6 +558,15 @@ var bindings = []binding{
 	{key: "tab", label: "complete the token you are typing with the highlighted skill, or the top match (f2 too)", scope: scopePanel, context: ctxChatSkillsInline, noPalette: true},
 	{key: "enter", label: "accept the highlighted skill; with none highlighted, send the message as typed", scope: scopePanel, context: ctxChatSkillsInline, noPalette: true},
 	{key: "esc", label: "close the list, and give ↑/↓ back to editing the draft", scope: scopePanel, context: ctxChatSkillsInline, noPalette: true},
+
+	// The `@` file picker, opened by the draft's own token (task 126.11).
+	// The same five presses as the inline skills list and none of its words:
+	// what is completed is a path, and the text inserted is the daemon's.
+	// noPalette for the reason those rows are.
+	{key: "down", label: "move the highlight (↑/↓) through the matching files; nothing is highlighted until the first press", scope: scopePanel, context: ctxChatFiles, noPalette: true},
+	{key: "tab", label: "complete the @ token with the highlighted file, or the top match (f2 too)", scope: scopePanel, context: ctxChatFiles, noPalette: true},
+	{key: "enter", label: "insert the highlighted file's mention; with none highlighted, send the message as typed", scope: scopePanel, context: ctxChatFiles, noPalette: true},
+	{key: "esc", label: "close the file list, and give ↑/↓ back to editing the draft", scope: scopePanel, context: ctxChatFiles, noPalette: true},
 
 	// New chat.
 	{key: "ctrl+s", label: "create the chat and open it", scope: scopePanel, context: ctxNewChat, hint: "ctrl+s create", priority: 1},
