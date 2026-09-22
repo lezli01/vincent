@@ -95,6 +95,7 @@ steps:
 | 9 | With a title filled in, put `abc` in Retries and `nope` in Ticket, committing each with `enter` (an `esc` while typing discards the value); close the editor with `esc`, and press `ctrl+s` | Committing each value shows its message under the editor, one at a time: `Retries must be a base-10 integer`, `Ticket must match ^OPS-[0-9]+$`. `ctrl+s` creates nothing, and the Fields row carries the first bad field in declaration order, Ticket's |
 | 10 | Still refused by the daemon: run `vincent task add --project <id> --workflow walk-fields --title x --field ticket=nope`; then, with `OPS-1` in the form, tighten `pattern:` in the file to `'^OPS-[0-9]{2,}$'`, save, and press `ctrl+s` | The command is refused, naming `ticket`, and no task is created. The open form does not re-read the workflow, so `OPS-1` passes its own check; the daemon, which has reloaded the file, refuses the task, and the Fields row says why, naming `ticket` |
 | 11 | Repeat 1 and 9 under `NO_COLOR=1` | The badges, the regex help and the messages are all still readable as words |
+| 12 | With Ticket `OPS-1`, put two spaces in Retries, commit with `enter`, close the editor and press `ctrl+s`; then `vincent task show <id> --json` | No message at all: a row holding only whitespace counts as unset, the way the daemon counts it (§8.1.2, amended 2026-09-22). The task is created, and its `fields` carry no `retries` key — the spaces are neither type-checked nor stored |
 
 ## Runs
 

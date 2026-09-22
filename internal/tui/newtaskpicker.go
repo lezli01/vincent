@@ -944,7 +944,11 @@ func fieldValidationMessage(field kv) string {
 	if !field.declared {
 		return ""
 	}
-	if field.value == "" {
+	// A value that is only whitespace is not a value (§8.1.2, amended
+	// 2026-09-22): it reads as absent here exactly as it does on the daemon,
+	// which drops such a key before validating. Testing the untrimmed string
+	// was the two sides' one point of disagreement (issue #575).
+	if strings.TrimSpace(field.value) == "" {
 		if field.definition.Required {
 			return fmt.Sprintf("%s is required", field.definition.DisplayLabel())
 		}

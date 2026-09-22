@@ -183,8 +183,12 @@ Definitions stay in source order. Each definition has:
 | `default` | scalar | | | Any type. Applied when the caller omits the key; validated against this declaration when the workflow loads |
 
 Integers are base-10 whole numbers, numbers must be finite decimals, and
-booleans are exactly `true` or `false`. Optional absent or empty values skip
-type and pattern validation.
+booleans are exactly `true` or `false`. A blank value — absent, empty, or only
+whitespace — is not a value: a declared key carrying one is dropped before
+validation, so an optional field skips type and pattern checks and is left off
+the task entirely, and a required one is rejected exactly as an omitted one is.
+Undeclared names are untouched; a custom field with a blank value is stored as
+sent.
 
 ### `enum` fields
 

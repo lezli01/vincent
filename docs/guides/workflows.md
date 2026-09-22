@@ -1195,6 +1195,12 @@ TUI but never invented server-side, so an optional key you omit is still absent
 from `.Task.Fields` and `{{ with index .Task.Fields "x" }}` keeps working the
 way it always did.
 
+A declared key sent **blank** — empty, or only whitespace — counts as omitted
+rather than as a value: the daemon drops it before validating, so it is neither
+type-checked nor stored, a required one still fails as "is required", and no
+`default:` is substituted in its place. That holds for declared names only —
+an undeclared field whose value is blank is recorded as you sent it.
+
 The daemon checks required/type/pattern/membership rules at task creation,
 including for CLI and API callers, and again when a
 [follow-up](../reference/task-lifecycle.md#human-actions) names the workflow — against the

@@ -590,7 +590,10 @@ carry a ticket key or a customer name, and this line ends up in scrollback and
 CI logs. It is read off the created task, so a field the daemon filled in — from
 `--github-issue`, or from a **required** field's declared
 [`default:`](workflow-schema.md#default), which the daemon substitutes for an
-omitted key — is listed too. `--json` prints the task instead, values and all.
+omitted key — is listed too, and a **declared** name you gave a blank value —
+`--field retries=`, or a `--fields-file` entry of spaces — is **not**: the
+daemon drops it before validating, so it never reaches the task. An undeclared
+name is kept blank and listed. `--json` prints the task instead, values and all.
 
 #### Fields from a file or stdin
 
@@ -1086,7 +1089,9 @@ overrides and the workflow's `defaults:`; a value no catalog recognizes is a
 warning on stderr, not a failure.
 
 `--field name=value` sets a field for this run only, laid over the task's own,
-with the spelling `task add` uses; repeat it for more. A `--workflow` that
+with the spelling `task add` uses; repeat it for more. A declared name given a
+blank value — `--field retries=` — *unsets* it for the run rather than laying an
+empty string over it, so the task's own value does not come back. A `--workflow` that
 declares fields checks them exactly as `task add` does — the task's values
 included — so a required field the task never carried, with no default, exits 1
 until a `--field` supplies it. The task keeps the fields it was created with.

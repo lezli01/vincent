@@ -2816,6 +2816,24 @@ is what that round's `.Task.Fields` (§8.4) renders — including the fields a
 the round shows. The task row keeps the fields creation recorded, and a later
 follow-up starts again from those.
 
+*Amended 2026-09-22 (issue #575).* **A value that is only whitespace is not a
+value.** "An optional absent or empty value is valid" above left a
+whitespace-only value undefined, and the two surfaces each picked an answer:
+the daemon trimmed before deciding a key had a value and so skipped every type
+and `pattern` check on an optional one while storing the blanks verbatim, and
+the New task form did not trim at all and so rejected a blank `integer` the API
+accepted and accepted a blank required `string` or `enum` the API rejected. One
+rule now governs both: a declared key whose value is blank — empty, or only
+whitespace, and for a `multiple` enum one whose normalization leaves nothing —
+is **dropped** before validation. `.Task.Fields` is then in exactly the state an
+omitted key would have left it, a required field fails as "is required" just as
+an omitted one does, an optional one is neither validated nor stored, and the
+form reads the same value as absent and reports the same verdict. The drop runs
+after the required-default substitution, so "a key present but empty is never
+defaulted" is unchanged, and a `default:` that is itself blank substitutes
+nothing. It applies to **declared** keys only: the map stays open and an
+undeclared pair whose value is blank is still accepted and recorded.
+
 ### 8.2 Step types and fields
 
 Common to all steps: `id` (required), `name`, `type` (required), `max_retries`,

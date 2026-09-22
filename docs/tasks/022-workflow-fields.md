@@ -66,6 +66,36 @@ CLI, curl, older clients, and races with workflow reload.
 **Beat:** validating only in New task. Vincent's clients are intentionally thin
 and interchangeable; a TUI-only constraint would not be a workflow contract.
 
+### 6. A whitespace-only value is not a value
+
+*2026-09-22 ([#575](https://github.com/lezli01/vincent/issues/575)).* Decision 5
+made the daemon the gate and the TUI its mirror, but the two never shared a
+definition of "this declared field has no value": the daemon fused an
+absent-or-blank test into `ValidateTaskFields` *above* the exported
+`validateTaskFieldValue` the TUI mirrors, and the TUI's own test did not trim.
+The surfaces therefore disagreed in three directions at once — a blank optional
+`integer` the API accepted unchecked and stored verbatim, and a blank required
+`string` or `enum` the form accepted and the API rejected.
+
+There is now one rule, `strings.TrimSpace(v) == ""`, on both sides:
+`PrepareTaskFields` **drops** a declared key whose value is blank, and the
+form's `fieldValidationMessage` trims before its own empty check. A blank
+declared key is then indistinguishable from an omitted one everywhere — not
+validated, not stored, still "is required" when the field is required, never
+defaulted (§8.1.2's substitution guard runs first).
+
+**Beat:** rejecting a blank optional value with a 400, which would make the form
+and the API agree just as well. It contradicts §8.1.2's "an optional absent or
+empty value is valid" and would turn a currently-accepted request into an
+error. Dropping keeps that sentence true and lands the value where a caller
+guarding with `{{ with index .Task.Fields "x" }}` already expects it.
+
+**Beat:** dropping `"  "` but keeping `""`, which would have been the smaller
+behaviour change. It only moves the inconsistency one value along. Dropping an
+empty string is an observable change for a caller that sends one today and
+expects the key present; it is the deliberate cost of having a single rule.
+Decision 3 is not narrowed — an *undeclared* blank pair still passes through.
+
 ## Work
 
 - [x] **022.1 — Add and validate the workflow field schema.** ✓ 2026-08-21
@@ -94,16 +124,18 @@ and interchangeable; a TUI-only constraint would not be a workflow contract.
   Depends: 022.1–022.6. Done only when formatting, tests, race tests, lint,
   cross-platform builds, and the relevant manual TUI walkthrough have actually
   run; unavailable checks remain explicitly blocked.
-  **Blocked 2026-09-14:** the human walkthrough of the New task field rows
-  remains ([`docs/gates/022-task-fields.md`](../gates/022-task-fields.md)),
-  tracked in [#380](https://github.com/lezli01/vincent/issues/380),
-  and the #163 diff review found a defect still present at `b885c53`: an
-  optional declared field whose value is only whitespace skips type and pattern
-  validation in the daemon (`ValidateTaskFields` trims before its absent
-  check), so `retries: "  "` on an optional `integer` field is accepted and
-  stored, while New task's `fieldValidationMessage` rejects the same value;
-  formatting, tests, race tests, lint and cross-platform builds have run (see
-  Verification).
+  **Blocked 2026-09-14, narrowed 2026-09-22:** the human walkthrough of the New
+  task field rows remains
+  ([`docs/gates/022-task-fields.md`](../gates/022-task-fields.md)), tracked in
+  [#380](https://github.com/lezli01/vincent/issues/380). ~~The #163 diff review
+  found a defect still present at `b885c53`: an optional declared field whose
+  value is only whitespace skips type and pattern validation in the daemon
+  (`ValidateTaskFields` trims before its absent check), so `retries: "  "` on an
+  optional `integer` field is accepted and stored, while New task's
+  `fieldValidationMessage` rejects the same value.~~ Fixed 2026-09-22 by
+  decision 6 ([#575](https://github.com/lezli01/vincent/issues/575)); the human
+  walk is the only half left. Formatting, tests, race tests, lint and
+  cross-platform builds have run (see Verification).
 
 ## Verification
 

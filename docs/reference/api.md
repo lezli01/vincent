@@ -1863,11 +1863,21 @@ task rather than a 400, with the applied value recorded on the row. An
 absent from the task's `fields`. A key sent with an empty value is never
 defaulted.
 
+A **declared** key whose value is blank — `""`, or only whitespace — is dropped
+in the same pass, after that substitution. The task is stored as if the key had
+never been sent: an optional field is neither type-checked nor recorded, a
+required one still returns `400 validation_failed` with "is required", and the
+New task form reads the same value as absent and says the same thing. The open
+half of the map is unaffected — an undeclared key with a blank value is stored
+as you sent it.
+
 `github_issue` is an issue **number**. The daemon fetches that issue, computes
 the [prefill](#github-issues), and fills in whatever this request left unset —
 **anything you send explicitly wins.** For `fields` and `description` that is
 decided by *presence*: a key sent with an empty value is a row somebody cleared
-on purpose and stays cleared, so `"description": ""` creates a task with no
+on purpose and stays cleared — a blank *declared* field is then dropped from the
+stored map as above, and either way the issue does not fill it — so
+`"description": ""` creates a task with no
 description rather than the issue body. Only `title` keys on emptiness as well
 as absence — there is no such thing as deliberately creating an untitled task —
 so `title` becomes optional when `github_issue` is given.
@@ -2101,8 +2111,11 @@ workflow: a missing required field takes its `default:`, and one with no
 default, a mistyped value, or a value outside an enum is
 `400 validation_failed`. A value the task was created with is checked too, since
 the workflow it was legal under is not the one about to run — send `fields` to
-supply or correct it. With `prompt` or `run` there is nothing to check, and
-`fields` is only what the run renders.
+supply or correct it. A declared key you send **blank** is dropped rather than
+laid over as an empty string, so it *unsets* the field for this run instead of
+clearing it to blank: the task's own value does not come back, and a required
+one is then `400 validation_failed`. With `prompt` or `run` there is nothing to
+check, and `fields` is only what the run renders.
 
 Those values belong to **this run**. `.Task.Fields` in its templates, and in any
 fan-out lane it spawns, carries them; the task keeps the fields it was created
