@@ -161,7 +161,7 @@ Run 2026-08-20 with the pinned Go 1.26.6 toolchain:
   `packaging-config`. That run is the cross-platform evidence; the local run is
   the macOS host leg of it.
 - Review of task 020's surfaces since the reviewed diff
-  (`git diff a4fdae6..HEAD -- internal/tui/guided*.go internal/tui/newtask*.go
+  (`git diff a4fdae6..2551b22f -- internal/tui/guided*.go internal/tui/newtask*.go
   internal/tui/projects*.go internal/tui/workflows*.go`, 17 files,
   +3611/−182) found no defect. Decisions 1–4 all still hold at `2551b22f`:
   - Decision 1 — `internal/tui/guided.go` is untouched across the range, so the
@@ -185,7 +185,7 @@ Run 2026-08-20 with the pinned Go 1.26.6 toolchain:
   takeovers now differ. Decision 4 names the add/edit form for projects and
   only the graph for workflows, so nothing it states is contradicted.
 - The #153 review's one finding is closed. `49659a2`'s cursor move is live at
-  `internal/tui/newtask.go:1100–1110` and covered at HEAD by
+  `internal/tui/newtask.go:1100–1110` and covered at `2551b22f` by
   `TestNewTaskValidatesDeclaredFieldsBeforeSubmit`
   (`internal/tui/newtask_test.go:810`),
   `TestNewTaskParksDaemonFieldErrorsOnTheFieldsRow` (`:826`) and the branch-row
