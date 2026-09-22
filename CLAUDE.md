@@ -130,6 +130,7 @@ against the fake agent; CI runs every one of them on Linux, macOS and Windows:
 ./scripts/m15-gate.sh                           # archived boards and permanent delete (task 092)
 ./scripts/m16-gate.sh                           # event triggers (task 096)
 ./scripts/123-gate.sh                           # global update-workflows (task 123)
+./scripts/125-gate.sh                           # a task or chat on an existing branch (task 125)
 ./scripts/064-gate.sh                           # a task from a pull request (task 064)
 ./scripts/052-gate.sh                           # GitHub pull requests (task 052)
 ./scripts/069-gate.sh                           # opening a pull request from vincent (task 069)
@@ -139,8 +140,8 @@ VINCENT_GATE_AGENT=claude ./scripts/m2-gate.sh  # manual run against the real CL
 VINCENT_GATE_AGENT=cursor ./scripts/m5-gate.sh  # ditto, for cursor-agent
 ```
 
-All eighteen of those run in `ci.yml`'s `gates` job on all three platforms. `m12`
-is the nineteenth and the exception: it needs a real container runtime, so it runs
+All nineteen of those run in `ci.yml`'s `gates` job on all three platforms. `m12`
+is the twentieth and the exception: it needs a real container runtime, so it runs
 its assertions on the Linux leg only and skips itself (exit 0, one line saying
 why) on the other two — but for two different reasons, and only one of them is
 "no docker". The macOS runner has no daemon. The **Windows runner does**, in
@@ -171,8 +172,9 @@ the images under `docs/assets/tui-*.png`. It seeds a throwaway installation —
 its own config and data dirs, its own `$HOME` (so the skills and status-line
 rows are the seed's, not yours), seven git repos (one a GitHub project, answered
 by `cmd/fakegh`), a daemon, twenty tasks (a two-round fan-out and a loop among
-them, three archived) and six chats (two archived) covering every state — and
-photographs the running TUI with VHS (`brew install vhs`).
+them, three archived) and eight chats (four live, two archived and two closed
+on a task) covering every state — and photographs the running TUI with VHS
+(`brew install vhs`).
 Documentation never draws a screen: no ASCII mock-ups of panels, no hand-written
 "example" frames. If a panel changed, re-run the script:
 
