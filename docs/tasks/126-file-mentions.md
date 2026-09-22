@@ -816,4 +816,12 @@ attributes task 124.6's.
       ffmpeg on the maintainer's machine and every tape silently produces
       nothing, so `docs/assets/tui-chat-files.png` — and the guide's image
       reference, which lands in the same commit as the asset rather than
-      ahead of it — needs a run with a vhs 0.11.0 binary.
+      ahead of it — needs a run with a vhs 0.11.0 binary. The documentation
+      audit of this leg also corrected decision 47's note line where it had
+      been written down wrong: §15 view 9's amendment and the guide's first
+      draft of this prose both put the mention verdict *in* the one reserved
+      line under the rows, where `chatrender.go`'s `footerLines` draws it on
+      the note line above the whole list, beside the reserve and not in place
+      of it. `capNote()` prints `50 of 1615` and not `50 of 1,615` — the
+      literal in the spec and the guide carried a thousands separator the
+      `%d of %d` format never writes.

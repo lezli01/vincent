@@ -11451,13 +11451,15 @@ stream for the live tail.
 
    The title line carries what the rows cannot. A listing the daemon cut
    reads `showing the first N` (`truncated`, §13.2), and a build the client
-   capped at **50** reads `50 of 1,615` — the cap is applied after the
+   capped at **50** reads `50 of 1615` — the cap is applied after the
    ranking, so what survives is the best matches, and the two together keep
    "your file is not listed" from ever reading as "your file does not match".
    One line is reserved under the rows, carrying the highlighted row's whole
-   path where the row line had to truncate it; when the chat's CLI does
-   **not** expand a mention (`mention_expands`, §9.1), that line instead says
-   so — the negative only, as everywhere else. The cached listing is dropped
+   path where the row line had to truncate it. The **note line** above the
+   list — the same one the skills list writes to — is where a chat whose CLI
+   does **not** expand a mention (`mention_expands`, §9.1) says so, the
+   negative only, as everywhere else: it is a line of its own, drawn beside
+   the reserve rather than in place of it. The cached listing is dropped
    on any `chat.*` event and the next open asks again, which is the only
    invalidation a linked chat has: its event stream carries nothing about a
    task step writing into the shared worktree. A fetch that failed is not

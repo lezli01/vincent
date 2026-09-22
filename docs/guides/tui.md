@@ -1878,11 +1878,13 @@ platform. Matching is not fuzzy.
 Nothing is drawn when nothing matches — no note, no complaint — and the
 message is sent exactly as typed: this is an aid to typing, never a rewrite.
 The title line carries what the rows cannot: `showing the first N` when the
-daemon cut the listing, and `50 of 1,615` when the build was capped at 50
+daemon cut the listing, and `50 of 1615` when the build was capped at 50
 after the ranking, so "your file is not listed" never reads as "your file does
-not match". One line is reserved under the rows for the highlighted row's
-whole path — or, when this chat's CLI does not expand a mention, for saying
-so.
+not match". One line is reserved under the rows, carrying the highlighted
+row's whole path where the row itself had to truncate it. The note line above
+the list carries the other fact: a chat whose CLI does not expand a mention
+says so there — the negative only — and it is drawn beside the reserve rather
+than in place of it.
 
 `ctrl+t` opens the new-task form in **handoff mode**: the project, the base
 branch and the branch are the chat's, shown but marked `(from the chat)` and
