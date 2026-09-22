@@ -1,6 +1,6 @@
 # 020 — Guided takeover layouts for task, project, and workflow views
 
-**Status:** ⚠ verification blocked (6/7) · **Opened:** 2026-08-20
+**Status:** ✅ done (7/7) · **Opened:** 2026-08-20 · **Closed:** 2026-09-22
 
 The new-task, projects, and workflows takeovers have enough terminal space to
 be useful work surfaces, but currently render their content as narrow, dense
@@ -83,15 +83,20 @@ than a quieter hierarchy around the capabilities vincent already has.
 - [x] **020.6 — Amend the spec and TUI guide.** ✓ 2026-08-20
   Depends: 020.2–020.5. Done when §15 and the user guide describe the wide and
   compact compositions without promising capabilities the code lacks.
-- [!] **020.7 — Run repository verification and review the final diff.** — the
-  #153 diff review (2026-09-14) found a real defect: `ctrl+s` failed silently
-  when a local check rejected a row on a stage the wide New task form was not
-  showing. `49659a2` (#163) has since fixed it and every required check has run
-  (see Verification), so closing needs only the owner's call on a review whose
-  one defect is already fixed.
+- [x] **020.7 — Run repository verification and review the final diff.** ✓ 2026-09-22
   Depends: 020.1–020.6. Done only when formatting, focused TUI tests and the
   repository's required checks have actually run; any unavailable check stays
   explicitly blocked rather than being inferred green.
+  **Blocked 2026-09-14, closed 2026-09-22:** ~~the #153 diff review
+  (2026-09-14) found a real defect: `ctrl+s` failed silently when a local check
+  rejected a row on a stage the wide New task form was not showing. `49659a2`
+  (#163) has since fixed it and every required check has run (see
+  Verification), so closing needs only the owner's call on a review whose one
+  defect is already fixed.~~ Closed 2026-09-22
+  ([#572](https://github.com/lezli01/vincent/issues/572)); the review's one
+  finding was fixed by `49659a2` (#163, `ee3c06d`, 2026-08-21) and is covered
+  by tests at `2551b22f`, and the required checks have run on that tree (see
+  Verification).
 
 ## Verification
 
@@ -137,3 +142,52 @@ Run 2026-08-20 with the pinned Go 1.26.6 toolchain:
   shows (only when recording the acknowledgment failed), the body loses a row,
   so a terminal exactly 24 rows tall draws the compact composition; decision 2
   keeps every cursor and sub-layer across that change.
+
+### Re-run 2026-09-22 (#572)
+
+- Local run at `2551b22f` (`master`) on macOS, 2026-09-22, with `go1.27.1` —
+  `go.mod`'s `toolchain go1.26.8` is a floor rather than a pin, so a newer host
+  toolchain is the one that runs, and `go env GOVERSION` is what this records.
+  Every command passed: `go run mage.go build`, `go run mage.go test`,
+  `go run mage.go testrace`, `go run mage.go lint` (`0 issues.`), and the
+  host-built linter with `GOOS=windows`, `darwin` and `linux` (`0 issues.`
+  each). Neither standing local hazard fired: `internal/cli` — whose doctor
+  tests are the flaky ones under `-race` — passed, as did the load-sensitive
+  `internal/notify` and `internal/scheduler` packages.
+- PR #583's CI run
+  [35717414832](https://github.com/lezli01/vincent/actions/runs/35717414832) at
+  `2551b22f`, 2026-09-22 — `success` on every job: `ci` (`mage lint`,
+  `mage testrace`, `mage build`) and `gates` on ubuntu, macOS and windows, plus
+  `packaging-config`. That run is the cross-platform evidence; the local run is
+  the macOS host leg of it.
+- Review of task 020's surfaces since the reviewed diff
+  (`git diff a4fdae6..2551b22f -- internal/tui/guided*.go internal/tui/newtask*.go
+  internal/tui/projects*.go internal/tui/workflows*.go`, 17 files,
+  +3611/−182) found no defect. Decisions 1–4 all still hold at `2551b22f`:
+  - Decision 1 — `internal/tui/guided.go` is untouched across the range, so the
+    breakpoint still turns the guided composition on at 128×24, and
+    `guided_test.go:10` still pins it.
+  - Decision 2 — the compact rendering is still the other branch of every
+    `guidedTakeover` call: `newtaskrender.go`, `projectrender.go`,
+    `workflowrender.go` and `workflowgraphlayer.go`.
+  - Decision 3 — still six stages carrying decision 3's labels
+    (`newtaskrender.go:34–49`), and every row added since was folded into one
+    of them by `ntStageForRow` (`:61–81`) rather than growing a seventh: the
+    issue row (task 035) and the fields row (022) into Task details, the
+    branch-name row (001) and the start row (096) into Git & priority.
+  - Decision 4 — projects' add/edit form still renders through the guided
+    surface (`projectrender.go:22–27`), so it occupies the main pane with the
+    rail beside it, and `g` still swaps the workflows main pane to the graph
+    with the registry rail intact (`workflowrender.go:60–65`).
+- Checked and not counted as a defect: task 065's structured workflow editor
+  and the create prompt (`i`, `a`, `f`) render as full takeovers rather than in
+  the main pane (`workflowrender.go:19–25`), which is where the two resource
+  takeovers now differ. Decision 4 names the add/edit form for projects and
+  only the graph for workflows, so nothing it states is contradicted.
+- The #153 review's one finding is closed. `49659a2`'s cursor move is live at
+  `internal/tui/newtask.go:1100–1110` and covered at `2551b22f` by
+  `TestNewTaskValidatesDeclaredFieldsBeforeSubmit`
+  (`internal/tui/newtask_test.go:810`),
+  `TestNewTaskParksDaemonFieldErrorsOnTheFieldsRow` (`:826`) and the branch-row
+  case in `TestNewTaskParksTheDaemonsComplaintOnTheRowItNames` (`:636`) — each
+  asserts the cursor lands on the offending row.

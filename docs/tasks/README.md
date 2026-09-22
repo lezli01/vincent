@@ -33,7 +33,7 @@ the living engineering specification records implementation contracts.
 | [017](017-workflow-visualization.md) | Workflow visualization in the TUI | ⚠ verification blocked (8/9) |
 | [018](018-control-flow-review.md) | Control-flow review: four correctness fixes | ✅ done (9/9) |
 | [019](019-workflow-includes.md) | Including one workflow in another (`type: include`) | ✅ done (10/10) |
-| [020](020-guided-takeover-layouts.md) | Guided takeover layouts for task, project, and workflow views | ⚠ verification blocked (6/7) |
+| [020](020-guided-takeover-layouts.md) | Guided takeover layouts for task, project, and workflow views | ✅ done (7/7) |
 | [021](021-package-distribution-channels.md) | WinGet, Scoop, mise, deb, and rpm distribution | ⚠ verification blocked (6/7) |
 | [022](022-workflow-fields.md) | Workflow-declared task fields | ⚠ verification blocked (6/7) |
 | [023](023-vincent-workflow-authoring-skill.md) | Portable, cost-aware vincent workflow authoring skill | ✅ done (10/10) |
