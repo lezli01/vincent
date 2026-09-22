@@ -2111,8 +2111,11 @@ workflow: a missing required field takes its `default:`, and one with no
 default, a mistyped value, or a value outside an enum is
 `400 validation_failed`. A value the task was created with is checked too, since
 the workflow it was legal under is not the one about to run — send `fields` to
-supply or correct it. With `prompt` or `run` there is nothing to check, and
-`fields` is only what the run renders.
+supply or correct it. A declared key you send **blank** is dropped rather than
+laid over as an empty string, so it *unsets* the field for this run instead of
+clearing it to blank: the task's own value does not come back, and a required
+one is then `400 validation_failed`. With `prompt` or `run` there is nothing to
+check, and `fields` is only what the run renders.
 
 Those values belong to **this run**. `.Task.Fields` in its templates, and in any
 fan-out lane it spawns, carries them; the task keeps the fields it was created
