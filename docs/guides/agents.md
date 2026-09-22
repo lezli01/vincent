@@ -99,9 +99,12 @@ than guaranteed context. That is the expansion row above, and it is on
 `file_mention_position` and `file_mention_expands`, of which only the last
 tells the three apart — which is why
 [`vincent agents`](../reference/cli.md#vincent-agents) notes `no @ file
-expansion` on codex and cursor and nothing on claude. Vincent writes no
-mention for you and checks no path: what you type is what the CLI gets, in a
-chat turn and in a workflow agent step alike.
+expansion` on codex and cursor and nothing on claude. Vincent adds no mention
+to your message and checks no path: what you type is what the CLI gets, in a
+chat turn and in a workflow agent step alike. The TUI chat composer's `@`
+picker is a typing aid over that rule rather than an exception to it — it puts
+the adapter's own mention text, quoting and all, into your draft, where you
+can still edit it away before you send.
 
 A CLI's **built-in** commands pass through the same way, and `/clear` is the
 one worth knowing about. claude clears its own conversation and reports a new

@@ -795,7 +795,9 @@ attributes task 124.6's.
       the picker itself — the completion, not the listing — recorded under
       "What only the TUI does" in `docs/reference/cli.md`, pointing at
       `vincent chat files` (126.7, already shipped) for the same rows in a
-      shell. Decisions 45–50. ✓ 2026-09-22
+      shell. §9.1's "Nothing consumes this yet" closed with it — 126.6's
+      per-row `mention` had already made half of it false. Decisions 45–50.
+      ✓ 2026-09-22
 - [x] 126.12 (#546) Assert `@`-mention pass-through end to end in the chat
       gate. Landed as `scripts/m14-gate.sh` leg 13,
       `chat_mention_passthrough()`, selectable with

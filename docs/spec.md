@@ -3542,6 +3542,14 @@ three implement it today.
   four; the per-row `mention` field and the picker are still 126.6 and
   126.11.
 
+  *Amended 2026-09-22 (task 126.11, issue #555): the other two landed, and
+  this bullet's heading with them.* `GET /v1/chats/{id}/files` carries a
+  `mention` per row, `FileMentioner.Mention`'s own bytes (task 126.6, §5.5,
+  §13.2), and the TUI chat composer's `@` picker replaces the typed token
+  with that text byte for byte (§15). Neither consumer changed anything
+  here: pass-through is still the whole contract, `Expands` still gates a
+  note and never a picker, and no client rebuilds a mention.
+
 **The launch seam (task 062.1, added 2026-09-16).** An adapter builds its run's
 argv and hands it over; it never spawns the process itself. `Start` resolves the
 binary, builds a `Command` — argv, worktree, environment, the prompt on stdin or
