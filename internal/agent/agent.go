@@ -385,6 +385,22 @@ const (
 	// Only cursor produces one, from its `user` line (§9.7). claude and codex
 	// echo nothing vincent parses.
 	EventInputEcho EventType = "input_echo"
+	// EventConversationReset reports that the agent CLI threw away its own
+	// conversation and started a new one — what `/clear` does when it passes
+	// through a chat verbatim (task 124.20, decision 78). It carries no
+	// payload: the whole of the record is its type, as EventInputEcho's is,
+	// because what a reader needs is the point in the transcript where the
+	// agent's memory restarted and nothing else. The ids the line carries are
+	// the CLI's own line shape and stay in format=raw (task 124.3, #498).
+	//
+	// Unlike EventInputEcho it does publish a live chunk: an echoed prompt is
+	// already on screen, and a reset is news.
+	//
+	// Only claude produces one, from its top-level `conversation_reset` line
+	// (§9.2, captured from 2.1.278). codex and cursor have no comparable line
+	// in their dialects and never produce this event (§9.3, §9.7); nothing
+	// synthesizes one from a session id that changed mid-stream.
+	EventConversationReset EventType = "conversation_reset"
 	// EventInputRequest carries a mid-run input request (spec §7.4). A nil
 	// Request means the adapter received a control message it could not
 	// parse or that violates the serial-request contract — the engine fails

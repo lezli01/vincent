@@ -908,10 +908,16 @@ builds that table already names:
   its own conversation and stamps a new session id, which vincent stores
   last-wins (§9.2), so the **next turn resumes an empty conversation while the
   chat's transcript still holds and still shows every turn before it** — the
-  history on screen is no longer the history the agent has. claude's
-  `conversation_reset` line maps to no vincent record today (task 124.2 put it
-  explicitly out of scope, §9.2), so nothing marks the point in the transcript
-  where the agent's memory restarted. Task 124.20 owns making it visible.
+  history on screen is no longer the history the agent has. **Amended
+  2026-09-22 (task 124.20, issue #581): the transcript now marks the point.**
+  claude's `conversation_reset` line normalizes to the payload-free
+  `agent.conversation_reset` record (§9.2, §13.2), drawn as one line —
+  `conversation reset · the agent no longer sees the turns above` — at all
+  four verbosity levels in the chat workspace and the task output pane, and by
+  `vincent chat transcript` and `vincent task transcript` outside the TUI. The
+  pass-through rule, the last-wins session id and resume are unchanged: a
+  reader who scrolls past the mark still sees turns the agent can no longer
+  see, and the mark is what says so.
 
 #### File mentions in a chat's message (added 2026-09-21, task 126.1, issue #545)
 
@@ -970,9 +976,13 @@ carrying the nonce proves the CLI itself put the file in front of the model.
   (§9.2, task 124.10) does not show what was pulled in. Only §17's input-token
   count moves. **claude's expansion is therefore unattributable in a vincent
   transcript** — a reader sees a turn whose input jumped and no record of why.
-  That is the CLI's behaviour recorded, not a vincent bug; task 124.20's
-  unmarked `conversation_reset` is the adjacent precedent for a thing no record
-  marks.
+  That is the CLI's behaviour recorded, not a vincent bug. *(Amended
+  2026-09-22, task 124.20: `conversation_reset` was cited here as the adjacent
+  precedent for a thing no record marks. It no longer is — it has a record now
+  (§13.2) — and the two were never the same case. claude writes a line for a
+  reset and wrote none for an expansion, so the reset needed a mapping and the
+  expansion has nothing to map. §9's rule stands: a thing an adapter cannot
+  report is said plainly and never inferred.)*
 - **`restricted` changes nothing.** Probed with vincent's restricted argv,
   whose `--allowedTools` value is `restrictedTools`
   (`internal/agent/claude/claude.go`): the mention expanded and no permission
@@ -4174,6 +4184,11 @@ claude 2.1.277 with this section's own input-mode argv, trimmed into
   to the description when it is empty, keyed on the tool name as the
   `AskUserQuestion` branch beside it is.
 - **Out of scope:** the `local_command_run` and `conversation_reset` lines.
+  *(Amended 2026-09-22, task 124.20, issue #581: `conversation_reset` is
+  mapped — see the amendment below. `local_command_run` stays out per §13.3.
+  This bullet also implied both were `system` subtypes; the capture says the
+  reset is a top-level type, and `local_command_run` remains unproven in
+  `--print` output.)*
 
 *Amended 2026-09-20 (task 124.10, issue #506).* A skill the human invoked
 inline was the remaining gap in the bullet above, and this closes it. claude
@@ -4332,6 +4347,38 @@ workflow agent step's argv alike — so the expansion is the CLI's own prompt
 preprocessing rather than anything the stream-json input path does, and it
 applies to agent steps exactly as it applies to chats.
 
+*Added 2026-09-22 (task 124.20, issue #581).* **claude reports its own
+conversation reset**, and the adapter normalizes it. Captured on 2026-09-22
+against 2.1.278 with this section's input-mode argv over two runs — an
+ordinary prompt, then `/clear` as the next turn's prompt with `--resume`
+carrying the first run's session id — and trimmed into
+`testdata/stream_conversation_reset_2.1.278.jsonl`. `2.1.278` joins the
+tested list.
+
+- **The line is a top-level type**, not a `system` subtype:
+  `{"type":"conversation_reset","new_conversation_id":…,"uuid":…,
+  "session_id":…}`. It is mapped in `parseTyped`'s own switch, beside
+  `assistant`, `user` and `result`, and never in the `system` arm.
+- **It becomes `EventConversationReset`**, normalizing to the payload-free
+  `agent.conversation_reset` record and one live chunk of the same name
+  (§13.2, §13.3). None of the line's three ids rides on the record: the 124.3
+  normalization rule is that a record says what happened, not what the CLI's
+  line looked like, and `format=raw` still holds the line verbatim.
+- **Three ids, all different.** `session_id` on the reset line is the
+  conversation being left; `new_conversation_id` is a third value equal to
+  neither it nor the id every later line stamps. Resume is untouched and stays
+  last-wins over the stream's `session_id` — reading `new_conversation_id`
+  instead would resume a conversation the CLI is not in.
+- **The run after a `/clear` does no model work.** A fresh `system`/`init`
+  under the new session id, then `subtype: "success"` with `num_turns: 0`,
+  an empty `result` and `local_command: "clear"`. Nothing decodes
+  `local_command`; it is recorded here because it is the only place the CLI
+  names the built-in it ran.
+- **codex and cursor have no comparable line** (§9.3, §9.7) and never produce
+  the event. Nothing synthesizes one from a session id that changed
+  mid-stream: that is inference, and §9's standing rule is that a thing an
+  adapter cannot report is said plainly and never faked.
+
 ### 9.3 Codex adapter
 
 - Invocation (pinned against codex-cli 0.142.5): `codex exec --json`, cwd =
@@ -4368,6 +4415,9 @@ applies to agent steps exactly as it applies to chats.
   `command_execution` and normalizes as one — and echoes no prompt, so this
   adapter produces neither event, and nothing synthesizes a skill load from a
   command's output.
+  *Amended 2026-09-22 (task 124.20):* likewise **no `EventConversationReset`**.
+  codex's dialect has no line for a conversation reset, so this adapter
+  produces none, and nothing synthesizes one from a `thread_id` that changed.
 - **Resumes its own thread** (*replaces "Cannot resume (stated positively,
   2026-08-30, task 063)", 2026-08-31, task 070*). `agent.CanResume` is **true**
   for codex, and a chat on it is created like a claude one. The precondition
@@ -5287,6 +5337,10 @@ would invalidate every one of them.
   (`testdata/skill_slash_2026.09.18.jsonl`). This adapter produces no skill
   event, which is asserted over every cursor fixture, and nothing infers one
   from a `/name` in the prompt or from the reply.
+  *Amended 2026-09-22 (task 124.20):* likewise **no `EventConversationReset`**.
+  cursor's dialect has no line for a conversation reset, so this adapter
+  produces none, and nothing synthesizes one from a `session_id` that changed
+  mid-stream.
 - **Resume (pinned against cursor-agent 2026.08.11-e8db854, 2026-08-31, task
   072).** `agent.CanResume` is true for cursor, so a chat may run on it (§5.5,
   §13.2), replacing task 063's "cannot resume" on that decision's own deferral
@@ -9311,6 +9365,21 @@ GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
                                         typed and `error` for a command the skill ran that
                                         the permission check refused (§9.2). No new type
                                         and no new key: not a wire change.
+                                        **v0 wire change (task 124.20, 2026-09-22):** one
+                                        more record type,
+                                        `agent.conversation_reset` (`type` alone, and
+                                        `parent_call_id` when set), marking the point at
+                                        which the agent CLI threw away its own
+                                        conversation and started a new one — what a
+                                        `/clear` passed through a chat does (§5.5). It
+                                        carries no payload: the ids claude's line holds
+                                        are in `format=raw`, and resume stays last-wins
+                                        over the stream's `session_id` (§9.2). It
+                                        replaces an `agent.raw` the same line used to
+                                        yield. Only claude fills it; codex and cursor
+                                        have no comparable line and never do (§9.3,
+                                        §9.7). On-read normalization means runs already
+                                        on disk lose that raw line too.
 GET    /v1/tasks/{id}/diff              unified diff of worktree vs merge-base with base branch
                                         (includes uncommitted changes)
                                         ?by=lane -> JSON {sections:[...]} instead: one section per
@@ -9507,6 +9576,10 @@ Two kinds of streams:
    and `agent.error`, because its text is already on screen, and it is not
    `agent.raw` either, on a chat's
    stream or anywhere else),
+   `agent.conversation_reset` (task 124.20, 2026-09-22 — §13.2's record, with
+   an empty payload since the record is its type; it *is* published, where
+   `agent.input_echo` is not, because an echoed prompt is already on screen
+   and a reset is news),
    `agent.usage`, `command.output` chunks are streamed on the **per-task** stream only
    and are *not* written to the events table (they are durable in transcript files;
    catch-up = fetch the transcript, then follow live). Chunks are one SSE event each,
@@ -12177,6 +12250,13 @@ two-column prefix in front of the gutter. Everything else in the model stands.
   line already printed stays, and the load does not print a second time, so
   that split is the one case where a model load's args are missing. A load
   whose call lies outside the fetched range prints where it is.
+  *Amended 2026-09-22 (task 124.20, issue #581):* both commands also print
+  `agent.conversation_reset`, as
+  `# conversation reset · the agent no longer sees the turns above` — the
+  pane's words behind the run header's ASCII marker. It has no level to obey,
+  which matches the pane showing it at all four. A subagent never resets the
+  conversation, so it is not on the rail's list. `--json` carries it as the
+  record and `--raw` as claude's own line.
 
 *Amended 2026-09-01 (task 073).* Assistant prose is rendered as **Markdown**;
 every other record stays literal.
@@ -12806,6 +12886,20 @@ The skill's **body** is drawn at no level: no record carries it (T4.16, task
 parser still leaves unmodeled around a skill keeps the `agent.raw` rules
 above. The copy picker offers assistant prose only, so it never offers a skill
 load.
+
+*Amended 2026-09-22 (task 124.20, issue #581).* `agent.conversation_reset` is
+the second record `quiet` shows as an acknowledgement of what the **human**
+did, and for the reason above: a `/clear` is a human act, and quiet is the
+level most likely to leave a reader believing the history on screen is the
+history the agent has. It draws as one line at **all four levels** —
+`# conversation reset · the agent no longer sees the turns above`, the run
+header's gutter and the word in the tool style, the clause dim — because the
+frame of the conversation is what changed, which is what that gutter already
+means; the glyph set does not grow, and the words carry the meaning under
+`NO_COLOR`. One line and never a full-width rule: the pane's record renderer
+does not know the pane's width, and every other normalized record is one line
+through it. The record has no payload, so the reset's ids stay reachable
+through `e`, `--raw` and `format=raw` only.
 
 *Amended 2026-08-31 (task 067).* The chats board and the chat workspace carry
 their own rows in the registry (`internal/tui/bindings.go`), which is what the

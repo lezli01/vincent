@@ -675,8 +675,14 @@ stand; the reasoning is recorded here in the form that is true.
   file, a `testdata` capture. Recorded in §5.5 as a bracket rather than a
   number, because the threshold was not bisected.
 - **The expansion is unattributable in a transcript.** A reader sees a turn
-  whose input-token count jumped and no record of why. Task 124.20's unmarked
-  `conversation_reset` is the adjacent precedent.
+  whose input-token count jumped and no record of why. *(Corrected 2026-09-22,
+  task 124.20: this cited `conversation_reset` as the adjacent precedent for a
+  thing no record marks, and it no longer is — 124.20 gave it one. The two
+  were never the same case either: claude writes a line for a reset and writes
+  none for an expansion, so the reset had something to map and the expansion
+  has nothing. The note in §5.5's "File mentions in a chat's message" carries
+  the same correction; it is that subsection and not §9.6, which the issue
+  called it.)*
 - **Linked-chat staleness.** A task step writing a file in the shared worktree
   emits no event the chat stream carries, so a cached list can go stale.
   Mitigated by re-fetching on picker open (decision 5), not solved.

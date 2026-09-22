@@ -52,6 +52,10 @@
 //	                      refused: the `<local-command-stderr>` replay under
 //	                      the same flag, then an empty success reporting
 //	                      num_turns 0 — task 124.10, claude dialect) |
+//	                      conversation-reset (a `/clear` reaching the CLI: the
+//	                      top-level conversation_reset line, then a new
+//	                      session id on every line after it and an empty
+//	                      success — task 124.20, claude dialect) |
 //	                      sleep (internal: silent child)
 //	FAKEAGENT_PROMPT_FILE echo-prompt: file each invocation appends its prompt
 //	                      to, one JSON string per line. JSON rather than the
@@ -508,6 +512,8 @@ func main() {
 		skillHuman(prompt, blocks)
 	case "skill-inject-denied":
 		skillInjectDenied()
+	case "conversation-reset":
+		conversationReset()
 	case "flood":
 		// An agent that will not stop talking: emits until something kills
 		// it, which is exactly what the §12.3 transcript cap must do.

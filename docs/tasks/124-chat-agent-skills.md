@@ -1,6 +1,6 @@
 # 124 — Let a chat's human see the agent's skills and invoke one from a message
 
-**Status:** 🔄 in progress (19/21)
+**Status:** 🔄 in progress (20/21)
 **Opened:** 2026-09-19
 **Issue:** #496 (parent), #497–#515 (one per item), #553 (124.21)
 **Spec:** §9.1 (`SkillLister`, `SkillInvoker`), §9.6 (`supports_skill_listing`,
@@ -927,6 +927,59 @@ documentation landed, 79–82 when 124.15 was, and 83–88 when 124.14 was.
     spec'd by #555, in the pull request that makes a list actually hit it —
     CLAUDE.md's rule against a spec describing a system that does not exist
     yet. *Beaten:* writing the cap into §15 ahead of a list that can reach it.
+105. **2026-09-22 — The probe came before the code, and it succeeded.** No
+    committed evidence proved claude writes a reset line in `--print`
+    stream-json output at all: `conversation_reset` appeared once in the
+    repository, in §9.2's own out-of-scope bullet, and no fixture held it.
+    Both names in that bullet may have come from claude's interactive TUI.
+    So 124.20 opened with a capture, not an edit: two runs under this
+    section's input-mode argv against 2.1.278, the second prompting `/clear`
+    with `--resume`. The line is there. Had it not been, the item would have
+    parked as `needs-info` with the finding recorded in both spec bullets and
+    nothing drawn — a `session_id`-change fallback was considered and
+    rejected as a guess, the way T4.17 refuses to guess a failed skill from a
+    leading `/`.
+106. **2026-09-22 — The capture corrected the spec, not the other way
+    round.** §9.2's bullet listed `conversation_reset` among the `system`
+    subtypes. It is a **top-level type**, so the mapping is an arm in
+    `parseTyped`'s own switch beside `assistant`, `user` and `result`, and
+    the `system` arm's `commands_changed` note is untouched. The line also
+    carries `new_conversation_id`, a third id equal to neither the session it
+    leaves nor the one every later line stamps — which is why reading it
+    instead of the stream's last `session_id` would resume a conversation the
+    CLI is not in. The bullet is amended to say all three.
+107. **2026-09-22 — The record is payload-free, and the precedent is
+    `agent.input_echo`.** `EventConversationReset` carries no struct: the
+    whole content of the record is its type, so the line stops reading as
+    unrecognized while the verbatim line — ids included — stays in
+    `format=raw`. That is the 124.3 (#498) rule applied: a record says what
+    happened, not what the CLI's line looked like. *Beaten:* surfacing
+    `new_conversation_id` as a field, which is a second and redundant account
+    of continuity beside the last-wins `session_id` that actually drives
+    resume.
+108. **2026-09-22 — Unlike the echo, it publishes a live chunk.** An echoed
+    prompt is suppressed because it is already on screen; a reset is news,
+    and a live tail that showed it only once the turn finished would leave a
+    reader believing the history on screen is the history the agent has. The
+    chunk's payload is empty, which is what `api.normalizeLine` and
+    `agent.LiveChunks` are held to agreeing on.
+109. **2026-09-22 — One line, like a skill load, at all four levels.** Not a
+    full-width rule and not a chat-workspace-only variant: `renderRecord`
+    does not know the pane's width, and a second drawing of one record is two
+    things to keep in agreement. `quiet` included, on decision 37's
+    precedent — quiet shows an acknowledgement of what the *human* did, and
+    `/clear` is a human act. The line is
+    `# conversation reset · the agent no longer sees the turns above`, in the
+    run header's gutter because the frame of the conversation is what
+    changed; the words carry it under `NO_COLOR` and the glyph set does not
+    grow. *Beaten:* a boundary drawn as a boundary, which loses to
+    consistency.
+110. **2026-09-22 — The transcript record is the whole of it.** No
+    `chat_turns` column, no migration, no wire field, no chat-header "memory
+    starts at turn N". A reader who scrolls past the reset turn sees no sign
+    of it, and that is accepted: the acceptance criterion is that the
+    transcript marks the point, and the larger surfaces widen the item past
+    the three pieces decision 78 scoped.
 
 ## Open questions
 
@@ -942,7 +995,7 @@ answer it, so none is lost:
 | 5 — The skills key: `tab` over `f2` | closed by 124.13 (#509): decision 69 — `tab`, with `f2` as its alias |
 | 6 — The `quiet` level: does a human-invoked skill show there | 124.12 (#508); settled by decision 37 |
 | 7 — Cache TTLs: 5 min for a clean list and 1 min for a failed one | closed by 124.9 (#505): decision 54 |
-| 9 — `/clear` under pass-through: should a conversation reset become a visible record | closed by 124.6 (#502): decision 78; the record itself is 124.20 |
+| 9 — `/clear` under pass-through: should a conversation reset become a visible record | closed by 124.6 (#502): decision 78; the record landed in 124.20 (#581) on 2026-09-22 |
 | 10 — Containers: should `container.mount_agent_config` also mount `~/.agents` | no owner; out of scope |
 
 Open question 8 is settled by decision 14.
@@ -1134,9 +1187,22 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
   adapters line still reads claude 2.1.224 — `VINCENT_SHOTS_ONLY` captured
   only the new tape and every other PNG is byte-identical. `docs/guides/tui.md`
   carries both pictures, one per opener. ✓ 2026-09-21
-- [ ] 124.20 (no issue yet) Surface claude's `conversation_reset` as a visible
+- [x] 124.20 (#581) Surface claude's `conversation_reset` as a visible
   chat record, so a `/clear` in a chat is marked where it happened rather than
   leaving a transcript the agent no longer shares (decision 78). Depends: none.
+  The probe came first (decision 105) and found the line, as a top-level type
+  rather than the `system` subtype §9.2 implied (decision 106), captured from
+  2.1.278 into `testdata/stream_conversation_reset_2.1.278.jsonl`. It maps to
+  the payload-free `agent.EventConversationReset` (decision 107), which
+  publishes a live chunk where `agent.input_echo` does not (decision 108), and
+  draws as one line at all four levels in the pane, in the chat workspace and
+  in both transcript commands (decision 109). Nothing else moved: the
+  pass-through rule, the last-wins session id and resume are untouched, and no
+  column, migration or wire field was added (decision 110). §5.5, §9.2, §9.3,
+  §9.7, §12's pane and command passages, §13.2 and §13.3 are amended dated,
+  with `docs/reference/api.md` and `docs/guides/agents.md`; §5.5's file-mention
+  note and `docs/tasks/126-file-mentions.md` lose their citation of this item
+  as the precedent for a thing no record marks. ✓ 2026-09-22
 - [x] 124.21 (#553) Window the list's rows before styling them, and cap the
   built set. `chatSkillList.render` styled **every** row it held and windowed
   the result afterwards, so one frame paid `chatSkillRowLine` — `ansi.Truncate`
@@ -1163,7 +1229,8 @@ and 124.19 have landed; 124.18 and 124.20 remain.* *Amended 2026-09-21: 124.21
 it is an improvement to 124.13's list rather than a new criterion, so the
 requirement's done criteria are unmoved. The head's count and the index row in
 `docs/tasks/README.md` disagreed — 17/20 against 18/20 — and both now read
-19/21.*
+19/21.* *Amended 2026-09-22: 124.20 has landed (#581); 124.18 alone remains,
+and the count is 20/21.*
 
 ## Verification
 
@@ -1456,3 +1523,26 @@ requirement's done criteria are unmoved. The head's count and the index row in
   is a name prefix, which `rankChatSkills` puts in tier 1 where any
   non-pathological cap keeps it. It is written down because #555 sets a real
   cap over a far larger set, and that is where the question becomes live.
+- 124.20: `TestConversationResetParses` and
+  `TestConversationResetIsNotUnmodeled` run over the committed 2.1.278
+  capture: claude's line becomes `EventConversationReset` with `Raw` intact
+  and stops counting as unrecognized. `TestConversationResetPublishesAChunk`
+  and `TestConversationResetChunkMatchesTheRecord` hold the live and
+  transcript routes to the same payload-free record, which is the seam the
+  `*live_test.go` files exist for. `TestConversationResetLeavesResumeAlone`
+  is the capture's own proof that `new_conversation_id` is not the resumable
+  id — the two differ, so a mapping that promoted it would resume the wrong
+  conversation. `TestNormalizeConversationReset` runs the fixture through the
+  real normalizer and asserts no `agent.raw` survives for it.
+  `TestConversationResetShowsAtEveryLevel` draws the mark at quiet, compact,
+  normal and verbose through the one renderer both panes share, in one line
+  and in words; `TestConversationResetIsNotUnrecognized` is the task output
+  pane. `TestRenderTranscriptConversationReset` and
+  `TestChatTranscriptPrintsTheConversationReset` are the text printer and
+  `vincent chat transcript` end to end against the real handlers, in text and
+  under `--json`. `TestConversationResetReachesTheChat` and
+  `TestConversationResetKeepsLastWinsResume` are a real chat turn against the
+  `conversation-reset` scenario in `cmd/fakeagent`: the mark survives the
+  wire, and the id the next turn resumes is still the last one the stream
+  stamped. No gate script — an m14 leg asserting the record over curl is
+  cheap now the scenario exists, but it was never an acceptance criterion.

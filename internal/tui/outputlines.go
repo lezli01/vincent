@@ -276,6 +276,11 @@ const recInputEcho = "agent.input_echo"
 // that (task 124 decision 39).
 const recSkill = "agent.skill"
 
+// recConversationReset is the point at which the agent CLI threw away its own
+// conversation and started a new one (task 124.20) — what a `/clear` passed
+// through a chat does. It carries nothing: the mark is the whole record.
+const recConversationReset = "agent.conversation_reset"
+
 // wrapLine lays a paneLine out across a pane of the given width, styling each
 // produced line's pieces separately so an escape sequence is never split by a
 // break. Words longer than the available width are hard-split rather than
@@ -711,6 +716,27 @@ func skillSegs(rec apiclient.TranscriptRecord) []segment {
 		segs = append(segs, segment{text: " (forked)", style: styleDim})
 	}
 	return segs
+}
+
+// conversationResetLine marks where the agent CLI threw away its own
+// conversation (task 124.20): one line, like a skill load, and never a
+// full-width rule — renderRecord does not know the pane's width, and every
+// other normalized record is one line through it.
+//
+// The gutter is the run header's, because the run header's `#` already means
+// the frame of the run rather than anything that happened inside it, and a
+// reset is that frame changing mid-chat; no new glyph is invented for it.
+// What says a reset happened is the words, so the line reads the same under
+// NO_COLOR — the rule skillSegs follows.
+func conversationResetLine() paneLine {
+	return paneLine{
+		gutter:      gutterHeader,
+		gutterStyle: styleTool,
+		segs: []segment{
+			{text: "conversation reset", style: styleTool},
+			{text: " · the agent no longer sees the turns above", style: styleDim},
+		},
+	}
 }
 
 // skillLoadsAtCalls maps a `Skill` call to the model's load that came from it
@@ -1243,6 +1269,14 @@ func renderRecord(
 			return paneLine{}, false
 		}
 		return skillLine(rec), true
+	case recConversationReset:
+		// Every level, quiet included (task 124.20 decision 4). Quiet shows
+		// an acknowledgement of what the *human* did, as it shows a skill
+		// they invoked and a question they answered (task 124 decision 37),
+		// and `/clear` is a human act — quiet being the level most likely to
+		// leave a reader believing the history on screen is the history the
+		// agent has.
+		return conversationResetLine(), true
 	case "agent.result":
 		// The only arm that decides for itself whether it has a line: quiet
 		// suppresses the success outcome and keeps the other two forms, so

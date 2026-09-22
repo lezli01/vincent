@@ -127,6 +127,13 @@ func liveChunkBody(ev Event) []Chunk {
 		// step's rendered prompt — so its record goes out with no chunk
 		// (task 124 decision 25). It is modeled, so it is not agent.raw either.
 		return nil
+	case EventConversationReset:
+		// A reset goes live, where the echo above does not (task 124.20): the
+		// prompt was already drawn, but the agent throwing its memory away is
+		// news, and a live tail that showed it only after the turn finished
+		// would leave a reader believing the history on screen is the history
+		// the agent has. The payload is empty because the record is its type.
+		return one("agent.conversation_reset", map[string]any{})
 	}
 	return nil
 }
