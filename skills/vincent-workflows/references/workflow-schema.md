@@ -80,8 +80,12 @@ normalizes to on create.
 default is seeded by clients only, so an optional key the caller omitted is
 still absent from `.Task.Fields`.
 
-Undeclared fields remain allowed. Optional absent values skip type and pattern
-validation. Read an optional value defensively:
+Undeclared fields remain allowed. A blank value on a **declared** field —
+absent, empty, or only whitespace — is not a value: the daemon drops the key
+before validating, so an optional one skips type and pattern validation and
+stays absent from `.Task.Fields`, and a required one is rejected exactly as an
+omitted one is. An undeclared name whose value is blank is kept as sent. Read
+an optional value defensively:
 
 ```gotemplate
 {{with index .Task.Fields "ticket"}}Ticket: {{.}}{{end}}
