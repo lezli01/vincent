@@ -11,76 +11,8 @@ list with the user-facing context a commit subject cannot carry.
 
 ## [0.10.0](https://github.com/lezli01/vincent/compare/v0.9.0...v0.10.0) (2026-09-23)
 
-
-### Features
-
-* a branch picker on the new-task and new-chat forms ([d2f0429](https://github.com/lezli01/vincent/commit/d2f042970b075ee3c5e81892f6f10fcafca8ad72))
-* a raw-output git runner and a workspace file enumeration ([608e975](https://github.com/lezli01/vincent/commit/608e9754789496d2eef3ae8bc6ba70d4e3624163))
-* add githus-issues-iterate workflow ([20b4366](https://github.com/lezli01/vincent/commit/20b43661240bffab9277f092cda2f16b14c3de7f))
-* agent.FileMentioner in claude, codex and cursor ([3c87d3c](https://github.com/lezli01/vincent/commit/3c87d3cadc201374927ba642200bdd772526f5f5))
-* **agent:** add skill listing and invocation capabilities ([9701c2e](https://github.com/lezli01/vincent/commit/9701c2e425624293c59e54dd7d7287e975a2b81b))
-* **agent:** add SkillCache, the per-directory skill list cache ([babb5b6](https://github.com/lezli01/vincent/commit/babb5b643195b70d5d56184c7def433289bc9d35))
-* **agent:** mark claude's conversation reset in the transcript ([f5d3356](https://github.com/lezli01/vincent/commit/f5d3356b5509ea12a51ec7f0f6e2f3f0e1f35cc8))
-* **agent:** model skill loads and cursor's prompt echo ([48037f4](https://github.com/lezli01/vincent/commit/48037f434fb30e02179236669385ff0384519ef5))
-* **agent:** read claude's init-line skills and flag builtin rows ([e0aa61b](https://github.com/lezli01/vincent/commit/e0aa61ba77c47d6af01ac8a969ee444c5d335462))
-* **agent:** report skills the human invoked in claude chat turns ([0ac20a9](https://github.com/lezli01/vincent/commit/0ac20a95c714402a20757cd4f200b72286ff11c8))
-* **agent:** serve claude's bundled skills once a turn has named them ([9f83618](https://github.com/lezli01/vincent/commit/9f83618a043c58c4cfc8cea38859c4ffd8d411c9))
-* **api:** add agent.skill and agent.input_echo transcript records ([f878dda](https://github.com/lezli01/vincent/commit/f878dda783c1dd5a7df1ee4193f96a53e1c39c21))
-* **api:** publish skill capabilities on GET /v1/agents ([a3bd75f](https://github.com/lezli01/vincent/commit/a3bd75fc88ed5d4869a0037ff3c76a490d28d702))
-* **api:** report bundled skills on the chat skills route ([5295b25](https://github.com/lezli01/vincent/commit/5295b2524e8b666ca4801d56df8b2466d8f1cc88))
-* **api:** serve a chat's skills at GET /v1/chats/{id}/skills ([fb29fda](https://github.com/lezli01/vincent/commit/fb29fda1e68b87b0d361740103cb53bb2e7952bb))
-* **chat:** list a container-run chat's skills inside its task's container ([94ed19b](https://github.com/lezli01/vincent/commit/94ed19b90b594f71633b64c6303831a2165c4104))
-* **chatrun:** resolve a chat's workspace and invalidate skills per turn ([1cc2a57](https://github.com/lezli01/vincent/commit/1cc2a5790d28274e0d72623a3acc8f4b37d7fe7d))
-* **claude:** list skills through the initialize control request ([b6850aa](https://github.com/lezli01/vincent/commit/b6850aa982ca80378e09a5d865a7c4e61dbac28f))
-* **cli:** add --message-file to chat send and chat start ([f5d6424](https://github.com/lezli01/vincent/commit/f5d64245207c492a49679eab0870402309e5c7c6))
-* **cli:** add vincent chat skills to list a chat's skills ([cdc7901](https://github.com/lezli01/vincent/commit/cdc790154013af248360ee32fc5abd38975738f6))
-* **codex:** list skills through app-server skills/list ([ed8826d](https://github.com/lezli01/vincent/commit/ed8826d2d994d3fa988574db3b8a0a2ac45fcce0))
-* GET /v1/chats/{id}/files ([4c327e9](https://github.com/lezli01/vincent/commit/4c327e9de1cb152027b57e3e77b8493ed10f0b2a))
-* run a task or chat on an existing branch ([47819ca](https://github.com/lezli01/vincent/commit/47819ca8ea814179ed785e57b9608fad3621560d)), closes [#538](https://github.com/lezli01/vincent/issues/538)
-* **taskrun:** report a linked chat's container from settings alone ([582c34a](https://github.com/lezli01/vincent/commit/582c34a252b75f2bf7c4da33caf8c29bbc7704a9))
-* the @ file picker in the chat composer ([4a65c40](https://github.com/lezli01/vincent/commit/4a65c407d6c1b72fcaaa1a6dff9c85ce1a0eb7be))
-* the file-mention capability on GET /v1/agents ([357f319](https://github.com/lezli01/vincent/commit/357f31905ecfbfbf994da7c1800995932dc20e29))
-* **tui:** draw agent.skill in the pane, the chat and the CLI transcript ([4dbd860](https://github.com/lezli01/vincent/commit/4dbd86094b851a723654335607488d2e056bacd0))
-* **tui:** list the chat agent's skills above the composer ([1fdad76](https://github.com/lezli01/vincent/commit/1fdad76b6bd9c8a1466fca54bb1cb24a019502a2))
-* **tui:** open the chat skill list inline on the draft's sigil ([fc59fd8](https://github.com/lezli01/vincent/commit/fc59fd809b45a502247e5525e493357260c2e164))
-* vincent chat files ([85d5877](https://github.com/lezli01/vincent/commit/85d5877bf13fba29c8367111456b7dc73ab1b4d0))
-* **workflow:** add ls --global and apply for global workflow proposals ([07d7377](https://github.com/lezli01/vincent/commit/07d7377675af47038cdcf90a09de8f6fa4bd63ad))
-* **workflow:** let update-workflows update global workflows ([37473f0](https://github.com/lezli01/vincent/commit/37473f06de663f855b9e555742ac10a09ac91021))
-* **workflows:** add the github-resolve-issue-multiple sweep workflow ([c0b00de](https://github.com/lezli01/vincent/commit/c0b00decd8e9e0f2f68da349233b656000742cb5))
-
-
-### Bug Fixes
-
-* a whitespace-only declared field value is not a value ([855ec26](https://github.com/lezli01/vincent/commit/855ec26fb0482e987a25025eae57c5fdfbb73b37)), closes [#575](https://github.com/lezli01/vincent/issues/575)
-* **agent:** drop a Skill call's arguments at its result ([ef806aa](https://github.com/lezli01/vincent/commit/ef806aadbf4dd9bcc7b00a6313985eef24071a9b))
-* **chatrun:** send a linked chat's opening context as its own block ([3e69503](https://github.com/lezli01/vincent/commit/3e69503bfe03a542e217e2eb96385366fab3716c)), closes [#499](https://github.com/lezli01/vincent/issues/499)
-* never spend the chat's silent skills probe on an @ token ([d81cc77](https://github.com/lezli01/vincent/commit/d81cc7788bc13efc8d03d696e6e1aa92e0298795)), closes [#552](https://github.com/lezli01/vincent/issues/552)
-* **skill:** pass --agent slugs as separate argv ([e73aea7](https://github.com/lezli01/vincent/commit/e73aea73e547a7d8af834c79141bbb1aefc532c8))
-* **tui:** keep an input echo from splitting the unrecognized count ([47de673](https://github.com/lezli01/vincent/commit/47de6732041409281cb2461ece2c48d3226b2ec3))
-* **tui:** route chat newlines through the textarea's own binding ([40612a5](https://github.com/lezli01/vincent/commit/40612a5abce5798de946e72d4b1a6f2e18798336))
-* **tui:** support multiline chat drafts ([ed952ee](https://github.com/lezli01/vincent/commit/ed952eeb80dd05e2e33ddeac8dc128e13c95d5a3))
-* **workflows:** anchor a lane's check at the further-ahead base ([fb44b0b](https://github.com/lezli01/vincent/commit/fb44b0bc0afed6fdb58111a043a58e368a9fd0dc))
-
-## [Unreleased]
-
 ### Added
 
-- **A `/clear` in a chat is now marked where it happened.** Claude Code's
-  built-in commands pass through a chat like any other message, and `/clear`
-  makes the CLI throw away its own conversation and start a new one — so the
-  next turn began empty while the chat still showed every turn you had
-  already had, with nothing in the transcript saying so. The transcript now
-  carries the mark: `conversation reset · the agent no longer sees the turns
-  above`, one line at every verbosity level, in the chat workspace, in a
-  task's output pane and in `vincent chat transcript` and
-  `vincent task transcript`. On the API it is a new `agent.conversation_reset`
-  record, carrying its type and nothing else, published live and on a
-  transcript fetched with `format=normalized`; the CLI's own line, ids
-  included, is still there under `--raw` and `format=raw`. Nothing else
-  changed: `/clear` still reaches the CLI verbatim, and the session vincent
-  resumes on the next turn is still the last one the agent reported. Codex and
-  Cursor have no comparable line, so they report no resets and vincent never
-  infers one.
 - **Run a task or chat on a branch that already exists — including one you have
   checked out yourself.** `vincent task add --branch NAME --existing-branch`
   (and `vincent chat start --branch NAME --existing-branch`) runs on that
@@ -96,9 +28,10 @@ list with the user-facing context a commit subject cannot carry.
   one task or chat works in one directory: a second task is created and waits
   queued until the first is archived, and a chat, which cannot wait, gets a
   `409`. Adoption is always something you ask for, never inferred from a branch
-  happening to exist. `GET /v1/projects/{id}/branches` (MCP:
-  `project_branches`) lists a project's local branches and says which working
-  tree holds each. Spec §10, §5.3, §18; issue #538.
+  happening to exist; without the flag every existing behaviour is what it
+  was. `GET /v1/projects/{id}/branches` (MCP: `project_branches`) lists a
+  project's local branches and says which working tree holds each. Spec §10,
+  §5.3, §18; issue #538.
 
   **In the TUI, too.** *(Issue #542.)* The new-task form's two branch rows are
   now lists of the project's own branches rather than free-text fields — `/`
@@ -117,31 +50,143 @@ list with the user-facing context a commit subject cannot carry.
   with the same list and the same notes; if the branch's directory already has
   an owner, the refusal lands on that row rather than on a form-wide line.
 
-- **A chat on a containerized task now lists the skills of the container, not
-  of your host.** Such a chat runs its turns inside the task's container, so
-  its skills were never your machine's; until now vincent said so and listed
-  nothing. `GET /v1/chats/{id}/skills`, `vincent chat skills` and the TUI's
-  skill list now start the image's own CLI inside that container and report
-  what it loads, verbatim — including that `~/.agents` is not mounted there,
-  so a containerized codex or cursor chat lists no skills from it. If the
-  container is configured but gone, the answer is `unknown` with a reason
-  saying so and nothing is probed: a list taken from your host would name
-  skills the agent never loads. Listing such a chat costs one container
-  lookup per request; every other chat asks nothing extra.
-- **claude's own bundled skills are listed again, once a chat has had one
-  turn.** `simplify`, `loop` and `run` ship with claude, and claude marks them
-  with the same flag it marks `/clear` and `/compact` with, so vincent left
-  every one of them out rather than offer you a command that resets the
-  conversation behind its back. Each turn now tells vincent which of them are
-  really skills, and from then on they appear in the chat's skill list — in
-  every chat and every directory on that claude, not just the one that ran the
-  turn — marked `builtin` so a client can group them. `/clear` and `/compact`
-  are still never listed. The chat skills response says which of the two
-  situations you are in: `builtin_skills` is `"listed"` once a turn has
-  reported, `"after_first_turn"` until then, and `""` for an agent that marks
-  nothing, which is every codex and cursor chat.
+- **`GET /v1/agents` says what each agent can do with skills.** Three new
+  fields sit beside `supports_resume`: `supports_skill_listing` says whether
+  the adapter can list the skills its CLI would load, and `skill_sigil` and
+  `skill_position` say how a chat message invokes one — claude `/name` at the
+  start of the message, codex `$name` anywhere, cursor `/name` anywhere.
+  cursor does not list its skills, so `vincent agents` notes
+  `no skill listing` on its row. The agents guide's capability table gains
+  the same two rows.
+- **claude can list its skills.** On 2.1.277 or a later 2.x build, the claude
+  adapter asks claude which skills it would load, without spending a turn.
+  Its built-in commands such as `/clear` and `/compact` are never listed;
+  its bundled skills join the list once a chat has had a turn (below).
+  `supports_skill_listing` is `true` for claude, and `vincent agents` has no
+  `no skill listing` note on its row.
+- **codex can list its skills.** The codex adapter asks `codex app-server`'s
+  `skills/list` which skills it would load in a worktree — repository, user,
+  system and plugin skills, with codex's own scope, path and plugin id, and
+  any `SKILL.md` it could not load. Skills disabled in codex's config are left
+  out. No login is needed. `supports_skill_listing` is `true` for codex, and
+  `vincent agents` has no `no skill listing` note on its row. When two codex
+  skills share a name, the invocation is codex's linked form,
+  `[$name](path)`, because a plain `$name` selects neither. codex-cli 0.154.0
+  is now a tested build.
+- **`GET /v1/chats/{id}/skills` lists the skills a chat's agent would load.**
+  It answers for the directory the chat's next turn runs in — the chat's own
+  worktree, or its linked task's — from the moment the chat is created, before
+  any message, and gives the exact text to type to invoke each skill.
+  `list_verdict` is `supported`, `unsupported` (the agent cannot list, as
+  cursor cannot yet) or `unknown` (the probe failed). The answer is cached for
+  five minutes, a failed probe for one; `?refresh=true` asks again, and every
+  finished turn clears the chat's directory, so a skill the agent just wrote
+  shows up on the next request. A failed probe keeps the last good list and
+  reports the error beside it. Listing starts the agent CLI in the chat's
+  directory. The route is not an MCP tool.
+- **A chat on a containerized task lists the skills of the container, not of
+  your host.** Such a chat runs its turns inside the task's container, so its
+  skills were never your machine's. The chat skills route, `vincent chat
+  skills` and the TUI's skill list start the image's own CLI inside that
+  container and report what it loads, verbatim — including that `~/.agents`
+  is not mounted there, so a containerized codex or cursor chat lists no
+  skills from it. If the container is configured but gone, the answer is
+  `unknown` with a reason saying so and nothing is probed: a list taken from
+  your host would name skills the agent never loads. Listing such a chat costs
+  one container lookup per request; every other chat asks nothing extra.
+- **claude's own bundled skills are listed once a chat has had one turn.**
+  `simplify`, `loop` and `run` ship with claude, and claude marks them with
+  the same flag it marks `/clear` and `/compact` with, so a list taken before
+  any turn cannot tell them apart and leaves every one of them out rather
+  than offer you a command that resets the conversation behind vincent's back.
+  Each turn tells vincent which of them are really skills, and from then on
+  they appear in the chat's skill list — in every chat and every directory on
+  that claude, not just the one that ran the turn — marked `builtin` so a
+  client can group them. `/clear` and `/compact` are still never listed. The
+  chat skills response says which of the two situations you are in:
+  `builtin_skills` is `"listed"` once a turn has reported,
+  `"after_first_turn"` until then, and `""` for an agent that marks nothing,
+  which is every codex and cursor chat.
+- **`vincent chat skills <chat-id>`.** Lists the skills a chat's agent CLI
+  would load in the chat's directory, with the exact text that invokes each
+  one — paste it into `vincent chat send`. Two skills can share a name, so the
+  invocation is its own column rather than something you assemble. Every cell
+  is the agent's own word: vincent normalizes nothing and fills nothing in.
+  stdout is the table and nothing else, so it pipes; the verdict when an agent
+  cannot report a list, the entries it could not load, and the quoting rule for
+  that agent's sigil all go to stderr, and the command still exits 0 — an agent
+  that cannot list its skills is information, not failure. `--refresh` asks the
+  CLI again instead of reading the daemon's cache, and `--json` carries the
+  fields the table leaves out.
+- **`tab` in the TUI's chat workspace lists the agent's skills above the
+  composer.** Type to filter it — a name prefix ranks over a plugin's bare
+  name or an alias, which ranks over a description match — and `enter` or
+  `tab` writes the agent's own invocation into your message, with whatever
+  you had already typed becoming its arguments. `f2` opens it too, for a
+  terminal that swallows `tab`. Browsing never touches the draft: `esc`
+  leaves your message byte for byte as you wrote it, and `enter` with no row
+  highlighted still sends it as typed. An agent that cannot report its skills
+  says so on the note line instead, and one that cannot be told to run one
+  opens the list read-only. Both keys are fixed, so `f2` now means something
+  in the TUI: a [`tui.keys`](docs/reference/configuration.md#tuikeys) map that
+  bound an operation to it is refused, naming what the key already means, and
+  another function key takes it.
+- **That same list opens by itself as you type the agent's invocation
+  sigil** — `/name` at the start of a message under claude, `$name` anywhere
+  in one under codex — so typing the native syntax and picking from a list
+  are one gesture. It is an aid to typing rather than a layer over it: every
+  printable key and `backspace` still go into your draft, and with nothing
+  highlighted `enter` still sends the message exactly as typed. While it is
+  up, `↑`/`↓` walk the matches and `esc` gives them back to editing a
+  multi-line draft; `tab` completes the token you are typing, replacing it
+  with the match rather than inserting into it. It hides itself when nothing
+  matches, so a path such as `/tmp/notes.md` never keeps one open, and a
+  sigil you type never puts a spinner or an error on the note line — press
+  `tab` if you want to be told why a listing failed. A leading name the agent
+  did not report earns a dim note saying it is sent as typed, which is a
+  hint and never a refusal.
+- **Transcripts report skill loads as `agent.skill`.** When claude loads a
+  skill, the transcript and the live stream carry an `agent.skill` record with
+  the skill's name, its arguments on one line, who invoked it (`agent`, or
+  `human` for a `context: fork` skill your message named) and the `Skill` call
+  it came from, instead of the rendered `SKILL.md` as one raw JSON line. codex
+  and cursor report no skill loads. claude `2.1.277` and cursor-agent
+  `2026.09.18-9a7762b` are now tested builds.
+- **A skill you invoke in a claude chat now shows in the transcript.** Before,
+  `/name` in a chat message left no trace on the CLI's output at all: the
+  turn ran the skill and the transcript said nothing about it. A chat turn now
+  asks claude to report the commands it expanded, so the invocation appears as
+  its own row with the name and the arguments you typed, and a command inside
+  the skill that a permission rule refused appears as that invocation's
+  failure. Everything else the flag adds — the echo of your own message, and
+  your answers to the agent's questions — is recorded but drawn by nothing.
+  Task steps are unaffected: their output is exactly what it was. codex and
+  cursor report no skill load at all, which the agents guide's capability
+  table now states.
+- **The output pane, the chat and the transcript commands show the skills that
+  ran.** A skill your message invoked reads `▸ skill <name> <args>` at every
+  level, `quiet` included, and `(forked)` marks one that ran as its own
+  sub-run. A skill the agent loaded itself appears from `compact` up on its
+  `Skill` call's line, with the `Launching skill` outcome under it, instead of
+  as a second line. A load that carries the agent CLI's refusal reads
+  `▸ skill <name> failed: <error>` at every level; a `Skill` call claude
+  refuses loads nothing, and still shows as the call with its `✗` outcome.
+  `vincent task transcript` and `vincent chat transcript` print
+  the same as `> skill …` and `! skill … failed: …`; under `-f`, a load whose
+  call printed in an earlier poll prints nothing more. The skill's `SKILL.md`
+  text is never drawn; `e` and `--raw` still have it.
 
-- **A chat can now be asked what files it could point its agent at.**
+- **`GET /v1/agents` says what each agent does with an `@path` file mention.**
+  Four new fields sit beside the skill ones: `supports_file_mentions` says
+  whether the agent recognizes a mention at all, `file_mention_sigil` and
+  `file_mention_position` say how to write one (`@`, anywhere in the message,
+  on all three), and `file_mention_expands` says whether the CLI puts the
+  mentioned file in front of the model itself. That last one is the one that
+  differs — claude expands, codex and cursor leave the model to read the path
+  with a tool — so `vincent agents` notes `no @ file expansion` on their rows
+  and nothing on claude's. A daemon with no adapter registry to ask answers
+  `null` for all four, never `false`.
+- **A chat can be asked what files it could point its agent at.**
   `GET /v1/chats/{id}/files` lists the files of the directory the chat's next
   turn would start in — its own worktree, or its task's — each with the exact
   text that mentions it, so nothing has to rebuild claude's rule that a path
@@ -158,7 +203,6 @@ list with the user-facing context a commit subject cannot carry.
   saying when that bit; `?limit=` can ask for fewer. It is not an MCP tool —
   an agent already sitting in that worktree can run `ls`. Spec §5.5, §13.2;
   issue #550.
-
 - **`vincent chat files` puts that listing in your terminal.** One
   workspace-relative path per line and nothing else on stdout, so
   `vincent chat files 12 | wc -l` counts them and the list pipes into `xargs`
@@ -171,37 +215,7 @@ list with the user-facing context a commit subject cannot carry.
   `0` — a truncated answer is an answer. `--json` gives you the whole response
   object, `files` always an array. Exit `1` on an unknown or finished chat,
   `2` with no daemon. Spec §5.5, §12.1; issue #551.
-
-- **`tab` in the TUI's chat workspace lists the agent's skills above the
-  composer.** Type to filter it — a name prefix ranks over a plugin's bare
-  name or an alias, which ranks over a description match — and `enter` or
-  `tab` writes the agent's own invocation into your message, with whatever
-  you had already typed becoming its arguments. `f2` opens it too, for a
-  terminal that swallows `tab`. Browsing never touches the draft: `esc`
-  leaves your message byte for byte as you wrote it, and `enter` with no row
-  highlighted still sends it as typed. An agent that cannot report its skills
-  says so on the note line instead, and one that cannot be told to run one
-  opens the list read-only. Both keys are fixed, so `f2` now means something
-  in the TUI: a [`tui.keys`](docs/reference/configuration.md#tuikeys) map that
-  bound an operation to it is refused, naming what the key already means, and
-  another function key takes it.
-
-- **That same list now opens by itself as you type the agent's invocation
-  sigil** — `/name` at the start of a message under claude, `$name` anywhere
-  in one under codex — so typing the native syntax and picking from a list
-  are one gesture. It is an aid to typing rather than a layer over it: every
-  printable key and `backspace` still go into your draft, and with nothing
-  highlighted `enter` still sends the message exactly as typed. While it is
-  up, `↑`/`↓` walk the matches and `esc` gives them back to editing a
-  multi-line draft; `tab` completes the token you are typing, replacing it
-  with the match rather than inserting into it. It hides itself when nothing
-  matches, so a path such as `/tmp/notes.md` never keeps one open, and a
-  sigil you type never puts a spinner or an error on the note line — press
-  `tab` if you want to be told why a listing failed. A leading name the agent
-  did not report earns a dim note saying it is sent as typed, which is a
-  hint and never a refusal.
-
-- **Typing `@` in the TUI's chat composer now picks a file from the chat's
+- **Typing `@` in the TUI's chat composer picks a file from the chat's
   workspace.** `@` plus at least one character opens a ranked list of the
   files the chat's next turn could be pointed at, above the composer and in
   the same place the skills list uses; `tab` or `enter` replaces what you
@@ -222,30 +236,33 @@ list with the user-facing context a commit subject cannot carry.
   "your file does not match", and a chat whose CLI does not expand a mention
   says so on the note line above the list. Spec §15; issue #555.
 
-- **A skill you invoke in a claude chat now shows in the transcript.** Until
-  now `/name` in a chat message left no trace on the CLI's output at all: the
-  turn ran the skill and the transcript said nothing about it. A chat turn now
-  asks claude to report the commands it expanded, so the invocation appears as
-  its own row with the name and the arguments you typed, and a command inside
-  the skill that a permission rule refused appears as that invocation's
-  failure. Everything else the flag adds — the echo of your own message, and
-  your answers to the agent's questions — is recorded but drawn by nothing.
-  Task steps are unaffected: their output is exactly what it was. codex and
-  cursor report no skill load at all, which the agents guide's capability
-  table now states.
-
-- **`vincent chat skills <chat-id>`.** Lists the skills a chat's agent CLI
-  would load in the chat's directory, with the exact text that invokes each
-  one — paste it into `vincent chat send`. Two skills can share a name, so the
-  invocation is its own column rather than something you assemble. Every cell
-  is the agent's own word: vincent normalizes nothing and fills nothing in.
-  stdout is the table and nothing else, so it pipes; the verdict when an agent
-  cannot report a list, the entries it could not load, and the quoting rule for
-  that agent's sigil all go to stderr, and the command still exits 0 — an agent
-  that cannot list its skills is information, not failure. `--refresh` asks the
-  CLI again instead of reading the daemon's cache, and `--json` carries the
-  fields the table leaves out.
-
+- **A `/clear` in a chat is now marked where it happened.** Claude Code's
+  built-in commands pass through a chat like any other message, and `/clear`
+  makes the CLI throw away its own conversation and start a new one — so the
+  next turn began empty while the chat still showed every turn you had
+  already had, with nothing in the transcript saying so. The transcript now
+  carries the mark: `conversation reset · the agent no longer sees the turns
+  above`, one line at every verbosity level, in the chat workspace, in a
+  task's output pane and in `vincent chat transcript` and
+  `vincent task transcript`. On the API it is a new `agent.conversation_reset`
+  record, carrying its type and nothing else, published live and on a
+  transcript fetched with `format=normalized`; the CLI's own line, ids
+  included, is still there under `--raw` and `format=raw`. Nothing else
+  changed: `/clear` still reaches the CLI verbatim, and the session vincent
+  resumes on the next turn is still the last one the agent reported. Codex and
+  Cursor have no comparable line, so they report no resets and vincent never
+  infers one.
+- **`vincent chat send` and `chat start` take `--message-file <path|->`.** The
+  message is read from a file, or from stdin with `-`, and sent byte for byte,
+  so a skill invocation sent this way survives the shell: Git Bash cannot turn
+  `/review` into `C:/Program Files/Git/review`, and `$name` is never expanded.
+  A message given as an argument is still whatever the shell left of it.
+  Nothing is trimmed, so a trailing newline is part of the message. Empty
+  input, input that is not valid UTF-8 and input over 4 MiB are refused before
+  any request, so `chat start` creates no chat for them. `chat send`'s message
+  argument is now optional, and exactly one of it and `--message-file` is
+  required. The CLI reference explains quoting `/name` and `$name` in each
+  shell, and troubleshooting has the Git Bash symptom.
 - **`update-workflows` can update your global workflows.** Set the built-in's
   new `global` field to `true` and it brings `{config_dir}/workflows` up to the
   current feature set instead of the project's `.vincent/workflows`. Nothing
@@ -261,119 +278,25 @@ list with the user-facing context a commit subject cannot carry.
   refuses the whole proposal when a file does not validate, changed since it
   was staged, renames its workflow, or takes a name another global workflow
   already has. `--check` runs the same checks without writing anything.
-- **`GET /v1/agents` says what each agent can do with skills.** Three new
-  fields sit beside `supports_resume`: `supports_skill_listing` says whether
-  the adapter can list the skills its CLI would load, and `skill_sigil` and
-  `skill_position` say how a chat message invokes one — claude `/name` at the
-  start of the message, codex `$name` anywhere, cursor `/name` anywhere.
-  cursor does not list its skills, so `vincent agents` notes
-  `no skill listing` on its row. The agents guide's capability table gains
-  the same two rows.
-- **codex can list its skills.** The codex adapter asks `codex app-server`'s
-  `skills/list` which skills it would load in a worktree — repository, user,
-  system and plugin skills, with codex's own scope, path and plugin id, and
-  any `SKILL.md` it could not load. Skills disabled in codex's config are left
-  out. No login is needed. `supports_skill_listing` is now `true` for codex,
-  and `vincent agents` drops its `no skill listing` note. When two codex
-  skills share a name, the invocation is codex's linked form,
-  `[$name](path)`, because a plain `$name` selects neither. codex-cli 0.154.0
-  is now a tested build.
-- **claude can list its skills.** On 2.1.277 or a later 2.x build, the claude
-  adapter asks claude which skills it would load, without spending a turn,
-  leaving out its own built-in commands and bundled skills.
-  `supports_skill_listing` is now `true` for claude, and `vincent agents`
-  drops its `no skill listing` note.
-- **`GET /v1/chats/{id}/skills` lists the skills a chat's agent would load.**
-  It answers for the directory the chat's next turn runs in — the chat's own
-  worktree, or its linked task's — from the moment the chat is created, before
-  any message, and gives the exact text to type to invoke each skill.
-  `list_verdict` is `supported`, `unsupported` (the agent cannot list, as
-  cursor cannot yet) or `unknown` (the probe failed, or the chat's task runs
-  in a container, which is not listed yet). The answer is cached for
-  five minutes, a failed probe for one; `?refresh=true` asks again, and every
-  finished turn clears the chat's directory, so a skill the agent just wrote
-  shows up on the next request. A failed probe keeps the last good list and
-  reports the error beside it. Listing starts the agent CLI in the chat's
-  directory. The route is not an MCP tool, and nothing in the TUI or CLI
-  calls it yet.
-- **Transcripts report skill loads as `agent.skill`.** When claude loads a
-  skill, the transcript and the live stream carry an `agent.skill` record with
-  the skill's name, its arguments on one line, who invoked it (`agent`, or
-  `human` for a `context: fork` skill your message named) and the `Skill` call
-  it came from, instead of the rendered `SKILL.md` as one raw JSON line. codex
-  and cursor report no skill loads. claude `2.1.277` and cursor-agent
-  `2026.09.18-9a7762b` are now tested builds.
-- **The output pane, the chat and the transcript commands show the skills that
-  ran.** A skill your message invoked reads `▸ skill <name> <args>` at every
-  level, `quiet` included, and `(forked)` marks one that ran as its own
-  sub-run. A skill the agent loaded itself appears from `compact` up on its
-  `Skill` call's line, with the `Launching skill` outcome under it, instead of
-  as a second line. A load that carries the agent CLI's refusal reads
-  `▸ skill <name> failed: <error>` at every level; a `Skill` call claude
-  refuses loads nothing, and still shows as the call with its `✗` outcome.
-  `vincent task transcript` and `vincent chat transcript` print
-  the same as `> skill …` and `! skill … failed: …`; under `-f`, a load whose
-  call printed in an earlier poll prints nothing more. The skill's `SKILL.md`
-  text is never drawn; `e` and `--raw` still have it.
-- **`vincent chat send` and `chat start` take `--message-file <path|->`.** The
-  message is read from a file, or from stdin with `-`, and sent byte for byte,
-  so a skill invocation sent this way survives the shell: Git Bash cannot turn
-  `/review` into `C:/Program Files/Git/review`, and `$name` is never expanded.
-  A message given as an argument is still whatever the shell left of it.
-  Nothing is trimmed, so a trailing newline is part of the message. Empty
-  input, input that is not valid UTF-8 and input over 4 MiB are refused before
-  any request, so `chat start` creates no chat for them. `chat send`'s message
-  argument is now optional, and exactly one of it and `--message-file` is
-  required. The CLI reference explains quoting `/name` and `$name` in each
-  shell, and troubleshooting has the Git Bash symptom.
-- **`GET /v1/agents` says what each agent does with an `@path` file mention.**
-  Four new fields sit beside the skill ones: `supports_file_mentions` says
-  whether the agent recognizes a mention at all, `file_mention_sigil` and
-  `file_mention_position` say how to write one (`@`, anywhere in the message,
-  on all three), and `file_mention_expands` says whether the CLI puts the
-  mentioned file in front of the model itself. That last one is the one that
-  differs — claude expands, codex and cursor leave the model to read the path
-  with a tool — so `vincent agents` notes `no @ file expansion` on their rows
-  and nothing on claude's. A daemon with no adapter registry to ask answers
-  `null` for all four, never `false`.
+- **The workflows this repository runs on itself can now pick up and finish
+  GitHub issues in bulk.** They are not built-ins and nothing installs them —
+  they live in `.vincent/workflows/` and are readable as worked examples.
+  `github-resolve-issue-multiple` surveys the open issues that are ready to be
+  worked on — labelled, unblocked, not already on the board — has a
+  restricted agent pick up to `max_tasks` of them, waits for a person to
+  approve the plan, and creates one `github-resolve-issue` or
+  `github-resolve-issue-dag` task per issue, exactly as the new-task issue
+  picker would. `github-iterate-work` includes that workflow and then drives
+  every task it created to merged: it approves each pull-request gate as it is
+  offered and merges one at a time in triage order, after its own `autopilot`
+  gate, within a 24-hour watch and a 2-hour stall bound. `prepare-release`'s
+  repair agent no longer runs on the sweep's last pass, where nothing would
+  re-check it, and the issue resolvers' red-test gate now shows a compile
+  error as well as an assertion failure.
 
 ### Fixed
 
-- **Typing `@something` in a chat no longer costs you the chat's skill
-  completion.** The composer asks the agent which skills it has at most once
-  per chat, silently, the first time you type something shaped like an
-  invocation — and `@src` was that shape, even though no agent takes `@` as
-  its skill prefix. So a bare `@word` spawned the agent CLI for an answer that
-  could never be used, and if that ask failed it switched inline skill
-  completion off for the rest of the chat. A token beginning `@` is now never
-  what that one ask is spent on. Typing `/` or `$` still opens the list
-  exactly as before.
-
-- **A chat on a containerized task now reads the agent configuration mounted
-  for it.** Its turns ran inside the task's container with no environment of
-  their own, so the CLI started under the image's `HOME` and never saw the
-  `~/.claude`, `~/.codex` and `~/.cursor` that
-  [`container.mount_agent_config`](docs/reference/configuration.md#container)
-  bind-mounts for it — the CLI was effectively logged out there, and its
-  session store did not persist between turns as documented. Such a turn now
-  carries the same environment an agent step of that task gets.
-
-- **cursor's echo of your prompt is no longer an unrecognized line.** Every
-  cursor turn and step used to show "1 unrecognized line" for it; it is now an
-  `agent.input_echo` transcript record with no live chunk.
-- **A claude `Skill` call names its skill.** The tool line reads
-  `Skill echo-probe` rather than a bare `Skill`, and a restricted run's
-  permission prompt for it reads "Skill wants to run: echo-probe" rather than
-  quoting the skill's description.
-
-### Fixed
-
-- **The new-task form no longer reopens holding the branch name of the chat it
-  last handed off.** Handing a chat to a task seeds the branch row from the
-  chat; reopening the form afterwards cleared every other row but that one, so
-  the next task was created with the chat's branch name unless you noticed.
-
-- **Chat drafts can now contain newlines.** Use `ctrl+j`, `shift+enter` or
+- **Chat drafts can contain newlines.** Use `ctrl+j`, `shift+enter` or
   `alt+enter`; `enter` continues to send the message. `ctrl+j` works in every
   terminal, and the chat's footer and help now name it. The composer's
   placeholder had promised `shift+enter` while no key inserted a newline.
@@ -385,7 +308,36 @@ list with the user-facing context a commit subject cannot carry.
   `disable-model-invocation` came back as unknown. The context now goes as
   its own block ahead of your message. codex, cursor and claude builds
   outside the stream-json input family receive exactly what they did before.
-
+  Issue #499.
+- **A chat on a containerized task reads the agent configuration mounted
+  for it.** Its turns ran inside the task's container with no environment of
+  their own, so the CLI started under the image's `HOME` and never saw the
+  `~/.claude`, `~/.codex` and `~/.cursor` that
+  [`container.mount_agent_config`](docs/reference/configuration.md#container)
+  bind-mounts for it — the CLI was effectively logged out there, and its
+  session store did not persist between turns as documented. Such a turn now
+  carries the same environment an agent step of that task gets.
+- **Typing `@something` in a chat no longer costs you the chat's skill
+  completion.** The composer asks the agent which skills it has at most once
+  per chat, silently, the first time you type something shaped like an
+  invocation — and `@src` was that shape, even though no agent takes `@` as
+  its skill prefix. So a bare `@word` spawned the agent CLI for an answer that
+  could never be used, and if that ask failed it switched inline skill
+  completion off for the rest of the chat. A token beginning `@` is now never
+  what that one ask is spent on. Typing `/` or `$` still opens the list
+  exactly as before. Issue #552.
+- **cursor's echo of your prompt is no longer an unrecognized line.** Every
+  cursor turn and step used to show "1 unrecognized line" for it; it is now an
+  `agent.input_echo` transcript record with no live chunk, and it no longer
+  splits the output pane's count of the lines that really are unrecognized.
+- **A claude `Skill` call names its skill.** The tool line reads
+  `Skill echo-probe` rather than a bare `Skill`, and a restricted run's
+  permission prompt for it reads "Skill wants to run: echo-probe" rather than
+  quoting the skill's description.
+- **The new-task form no longer reopens holding the branch name of the chat it
+  last handed off.** Handing a chat to a task seeds the branch row from the
+  chat; reopening the form afterwards cleared every other row but that one, so
+  the next task was created with the chat's branch name unless you noticed.
 - **A workflow field left blank now means the same thing to the form and to the
   API.** A declared field whose value was only whitespace was read two ways:
   `POST /v1/tasks` skipped every type and `pattern` check on an optional one
@@ -400,7 +352,24 @@ list with the user-facing context a commit subject cannot carry.
   are untouched — a custom pair with a blank value is still stored as you sent
   it. If you send a declared key as `""` today and expect it back as an empty
   string, it will now be missing instead; `{{ with index .Task.Fields "x" }}`
-  guards for it correctly.
+  guards for it correctly. Issue #575.
+- **Installing vincent's skills for more than one agent works.**
+  `vincent skills install` and the daemon view's `S` joined the selected
+  agents' slugs with commas, so `npx skills add … --agent
+  claude-code,codex,cursor` read them as one unknown agent and the install
+  failed whenever more than one adapter was selected. Each slug is now its own
+  argument. Issue #489.
+- **A lane of this repository's `github-resolve-issue-dag` no longer fails its
+  check on a parent branch that was never pushed.** Every lane failed
+  `unit-implement` with `check_failed` on an `unknown revision` for
+  `origin/<parent>`, because the parent pushes its branch only after every
+  round has merged. The check now anchors at whichever of the local and the
+  remote base is further ahead. A dag task already in flight keeps the
+  snapshot it was created with. Issue #529.
+- **The installation page no longer says every stable release since v0.4.0
+  reached Microsoft's WinGet catalog.** v0.9.0's release run failed before it
+  could submit one, so the page now names v0.4.0 through v0.8.0 and links the
+  open submissions, as do the README, the Windows page and `RELEASING.md`.
 
 ## [0.9.0](https://github.com/lezli01/vincent/compare/v0.8.0...v0.9.0) (2026-09-18)
 
