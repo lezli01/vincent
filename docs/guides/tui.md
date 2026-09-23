@@ -1874,6 +1874,10 @@ which is what keeps `cc @someone` quiet, and `user@host` is not a mention
 either: the token has to *start* with the sigil. `@` is never a key here; the
 draft is read after every composer update.
 
+![The chat composer's file list opened by a typed `@internal`, ranked, one
+row picked with `↓` and its whole path on the line under the rows, and the
+draft still reading `@internal`](../assets/tui-chat-files.png)
+
 Five presses are the list's while it is up. `↑` and `↓` move the highlight
 through the matching files, and nothing is highlighted until the first press.
 `tab` completes the `@` token with the highlighted file, or the top match
