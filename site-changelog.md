@@ -8,6 +8,35 @@ permalink: /changelog.html
 
 This is the human-readable vincent release history. The generated [canonical CHANGELOG](https://github.com/lezli01/vincent/blob/master/CHANGELOG.md) remains the source used by release automation, while this page removes duplicate commit subjects and keeps the product impact clear.
 
+## 0.10.0 — Skills and files in chat, and work on an existing branch
+
+Released 2026-09-23.
+
+### Added
+
+- **Run a task or chat on a branch that already exists.** `--existing-branch` on `vincent task add` and `vincent chat start` works on that branch instead of cutting a new one — fast-forwarding it from its upstream when it is behind, and blocking instead of touching it when it has diverged. If the branch is checked out in your own copy of the project, the task runs right there, and archiving it removes nothing. In the TUI, the new-task form's branch rows are now lists of the project's branches, the new-chat form gains a branch row, and both say before you submit where the work will run. ([#541](https://github.com/lezli01/vincent/pull/541), [#543](https://github.com/lezli01/vincent/pull/543))
+- **See and invoke a chat agent's skills.** `tab` (or `f2`) in the chat workspace lists the skills the agent would load, and picking one writes its invocation into your message. The list also opens by itself as you type `/name` under claude or `$name` under codex, and never changes what you send unless you pick from it. `vincent chat skills` prints the same list in the terminal. ([#535](https://github.com/lezli01/vincent/pull/535), [#537](https://github.com/lezli01/vincent/pull/537), [#531](https://github.com/lezli01/vincent/pull/531))
+- **claude and codex report their skills.** claude lists its skills without spending a turn and adds its bundled ones (`simplify`, `loop`, `run`) once a chat has had a turn; codex lists repository, user, system and plugin skills. A chat on a containerized task lists the skills inside its container, not on your machine. `GET /v1/agents` says which agents can list skills and how each one invokes them. ([#517](https://github.com/lezli01/vincent/pull/517), [#526](https://github.com/lezli01/vincent/pull/526), [#524](https://github.com/lezli01/vincent/pull/524), [#528](https://github.com/lezli01/vincent/pull/528), [#536](https://github.com/lezli01/vincent/pull/536), [#540](https://github.com/lezli01/vincent/pull/540))
+- **Skills that ran show in the transcript.** A skill claude loaded, or one you invoked in a chat message, is now its own line in the output pane, the chat and `vincent task transcript` / `vincent chat transcript`, with its arguments and whether it failed — instead of a raw dump of the skill's text, or nothing at all. ([#518](https://github.com/lezli01/vincent/pull/518), [#527](https://github.com/lezli01/vincent/pull/527), [#532](https://github.com/lezli01/vincent/pull/532))
+- **Point the agent at a file with `@`.** Typing `@` and a few characters in the chat composer opens a ranked list of the files in the chat's workspace, and picking one inserts the mention exactly as the agent expects it, quoting included. `vincent chat files` lists the same files in the terminal, and `GET /v1/agents` says whether each agent reads a mentioned file itself or leaves the model to open it. ([#569](https://github.com/lezli01/vincent/pull/569), [#568](https://github.com/lezli01/vincent/pull/568), [#567](https://github.com/lezli01/vincent/pull/567), [#566](https://github.com/lezli01/vincent/pull/566), [#564](https://github.com/lezli01/vincent/pull/564))
+- **A `/clear` in a chat is marked where it happened**, so the transcript no longer shows earlier turns as if the agent could still see them. ([#583](https://github.com/lezli01/vincent/pull/583))
+- **Send a chat message from a file or stdin.** `--message-file` on `vincent chat send` and `chat start` sends the text byte for byte, so a `/review` or `$name` invocation survives Git Bash and other shells. ([#525](https://github.com/lezli01/vincent/pull/525))
+- **Bring your global workflows up to date, with approval.** `update-workflows` with `global: true` rewrites the workflows in your config directory as a proposal and waits at an approve gate before installing it. `vincent workflow ls --global` and `vincent workflow apply` list and install such proposals without a daemon. ([#495](https://github.com/lezli01/vincent/pull/495))
+- **Example workflows that take on GitHub issues in bulk.** This repository's own `github-resolve-issue-multiple` picks the open issues that are ready, waits for your approval and creates one task per issue; `github-iterate-work` then drives those tasks through to merged. ([#523](https://github.com/lezli01/vincent/pull/523), [#563](https://github.com/lezli01/vincent/pull/563), [#588](https://github.com/lezli01/vincent/pull/588))
+
+### Fixed
+
+- **Chat drafts can contain newlines**, with `ctrl+j`, `shift+enter` or `alt+enter`; `enter` still sends. ([#519](https://github.com/lezli01/vincent/pull/519))
+- **A skill typed as the first message of a chat on a task now runs**, instead of being lost in the task's context. ([#520](https://github.com/lezli01/vincent/pull/520))
+- **A chat on a containerized task sees the agent login mounted for it**, instead of running effectively logged out. ([#540](https://github.com/lezli01/vincent/pull/540))
+- **Typing `@something` in a chat no longer turns skill completion off** for the rest of the chat. ([#558](https://github.com/lezli01/vincent/pull/558))
+- **Cleaner agent output.** cursor's echo of your prompt is no longer counted as an unrecognized line, and a claude `Skill` call names the skill it loads. ([#518](https://github.com/lezli01/vincent/pull/518), [#522](https://github.com/lezli01/vincent/pull/522))
+- **The new-task form no longer keeps the branch name of the last chat you handed off.** ([#543](https://github.com/lezli01/vincent/pull/543))
+- **A blank workflow field means the same thing everywhere.** An empty or whitespace-only value is treated as not given, in the form and on the API alike. ([#582](https://github.com/lezli01/vincent/pull/582))
+- **Installing vincent's skills for several agents at once works**, from `vincent skills install` and the daemon view. ([#491](https://github.com/lezli01/vincent/pull/491))
+- **The example DAG issue workflow no longer fails every lane's check** on a parent branch that has not been pushed yet. ([#530](https://github.com/lezli01/vincent/pull/530))
+- **The Windows install docs state which releases reached WinGet** and link the open submissions. ([#584](https://github.com/lezli01/vincent/pull/584))
+
 ## 0.9.0 — Event triggers, pull request actions, and agents inside the container
 
 Released 2026-09-18.
