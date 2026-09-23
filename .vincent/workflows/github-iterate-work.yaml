@@ -1,9 +1,9 @@
-# githus-issues-iterate — put at most N ready GitHub issues on the board
+# github-iterate-work — put at most N ready GitHub issues on the board
 # through `github-resolve-issue-multiple`, then drive every task it created all
 # the way to merged: approve each pull request as it is offered, approve the
 # merges one at a time, and finish when they are all done.
 #
-#     vincent task add --project N --workflow githus-issues-iterate --title "iterate"
+#     vincent task add --project N --workflow github-iterate-work --title "iterate"
 #
 # ## What it is
 #
@@ -83,7 +83,7 @@
 # 21 agent sessions per `github-resolve-issue` task, 41 per
 # `github-resolve-issue-dag` task — and `autopilot` repeats what approving it
 # authorizes.
-name: githus-issues-iterate
+name: github-iterate-work
 description: >-
   Put at most N ready GitHub issues on the board through
   github-resolve-issue-multiple, then watch those tasks: approve each pull
