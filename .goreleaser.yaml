@@ -237,11 +237,22 @@ winget:
 # the build attestation say which workflow and commit produced the file to
 # *anyone*, always. The README documents the Gatekeeper and SmartScreen prompts
 # a user meets on an unsigned release.
+#
+# The detached `.sig` + `.pem` pair is a wire format, not a preference: every
+# shipped `vincent update` fetches exactly those two names (internal/selfupdate)
+# and every published verification recipe passes them to `verify-blob`. cosign
+# v3 (cosign-installer v4) defaults to the `.sigstore.json` bundle and silently
+# ignores the two output flags, so without the two opt-outs below `sign-blob`
+# fails on an empty bundle path — which is what left v0.9.0 and v0.10.0 without
+# a single asset, Homebrew, Scoop or WinGet update. Moving to the bundle means
+# keeping this pair alongside it until no supported release still fetches it.
 signs:
   - cmd: cosign
     certificate: "${artifact}.pem"
     args:
       - sign-blob
+      - "--new-bundle-format=false"
+      - "--use-signing-config=false"
       - "--output-certificate=${certificate}"
       - "--output-signature=${signature}"
       - "${artifact}"
