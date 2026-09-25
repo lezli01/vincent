@@ -9,6 +9,14 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [0.10.1](https://github.com/lezli01/vincent/compare/v0.10.0...v0.10.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* **deps:** update dependencies reported by govulncheck ([b576a2a](https://github.com/lezli01/vincent/commit/b576a2a6f2733d80637bdd7ca4bd76609f9b2582))
+* **release:** keep cosign's detached signature under cosign v3 ([ecb487e](https://github.com/lezli01/vincent/commit/ecb487ea31bd79dcba5df72856990a12be04e4e0))
+
 ## [0.10.0](https://github.com/lezli01/vincent/compare/v0.9.0...v0.10.0) (2026-09-23)
 
 ### Added
