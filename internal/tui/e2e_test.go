@@ -16,6 +16,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/lezli01/vincent/internal/agent/agenttest"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/testrepo"
@@ -199,6 +200,14 @@ func TestDaemonNeverTouchesClaudeSettings(t *testing.T) {
 	}
 	if err := os.WriteFile(settings, []byte(body), 0o600); err != nil {
 		t.Fatalf("seed settings: %v", err)
+	}
+	// The daemon probes claude at boot, and the real CLI migrates its own
+	// settings.json when it runs under a fresh HOME. That rewrite is claude's,
+	// not the daemon's, so pin the adapter to fakeagent: what is asserted is
+	// that vincent never writes the file.
+	agentCfg := fmt.Sprintf("agents:\n  claude:\n    path: %q\n", agenttest.BuildFakeAgent(t))
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte(agentCfg), 0o600); err != nil {
+		t.Fatalf("seed config: %v", err)
 	}
 
 	env := append(os.Environ(),
