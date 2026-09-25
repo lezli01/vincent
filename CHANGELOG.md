@@ -11,11 +11,31 @@ list with the user-facing context a commit subject cannot carry.
 
 ## [0.10.1](https://github.com/lezli01/vincent/compare/v0.10.0...v0.10.1) (2026-09-25)
 
+### Fixed
 
-### Bug Fixes
-
-* **deps:** update dependencies reported by govulncheck ([b576a2a](https://github.com/lezli01/vincent/commit/b576a2a6f2733d80637bdd7ca4bd76609f9b2582))
-* **release:** keep cosign's detached signature under cosign v3 ([ecb487e](https://github.com/lezli01/vincent/commit/ecb487ea31bd79dcba5df72856990a12be04e4e0))
+- **Releases are published again.** The v0.9.0 and v0.10.0 tag runs of the
+  release workflow failed at GoReleaser's signing step, so neither release has
+  a single asset, and neither produced a Homebrew, Scoop or WinGet update.
+  A Dependabot bump of `sigstore/cosign-installer` (3.9.1 → 4.1.2) had moved
+  the release to cosign v3, whose `sign-blob` defaults to the new
+  `.sigstore.json` bundle format, ignores `--output-signature` and
+  `--output-certificate`, and fails with no `--bundle` path. The pre-release
+  dry runs stayed green because they skip signing. `sign-blob` now runs with
+  `--new-bundle-format=false --use-signing-config=false`, so a release keeps
+  carrying the detached `checksums.txt.sig` and `checksums.txt.pem` — the two
+  names every shipped `vincent update` fetches and every published
+  `cosign verify-blob` recipe expects; switching to the bundle would have
+  broken both. A tag re-run would use that tag's own broken configuration, so
+  v0.9.0 and v0.10.0 cannot be re-published: v0.10.1 is the first release
+  since v0.8.0 with downloadable assets and package-manager updates, and it
+  carries everything those two releases describe.
+  ([#611](https://github.com/lezli01/vincent/pull/611))
+- **Dependencies flagged by govulncheck are updated.** `charm.land/bubbletea/v2`
+  moves from v2.0.9 to v2.0.10. `TestDaemonNeverTouchesClaudeSettings` now
+  pins the claude adapter to the fake agent, so a real claude CLI on the test
+  machine migrating its own `settings.json` no longer fails a test that asserts
+  vincent never writes that file.
+  ([#613](https://github.com/lezli01/vincent/pull/613))
 
 ## [0.10.0](https://github.com/lezli01/vincent/compare/v0.9.0...v0.10.0) (2026-09-23)
 

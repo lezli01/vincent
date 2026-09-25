@@ -8,6 +8,15 @@ permalink: /changelog.html
 
 This is the human-readable vincent release history. The generated [canonical CHANGELOG](https://github.com/lezli01/vincent/blob/master/CHANGELOG.md) remains the source used by release automation, while this page removes duplicate commit subjects and keeps the product impact clear.
 
+## 0.10.1 — Release downloads and package managers restored
+
+Released 2026-09-25.
+
+### Fixed
+
+- **vincent can be installed and updated again.** Signing failed while v0.9.0 and v0.10.0 were being published, so neither release has downloads, and Homebrew, Scoop and WinGet never received them. v0.10.1 ships with its signed checksums in the same form as before, so `vincent update` and the published verification steps keep working, and it brings everything from 0.9.0 and 0.10.0 to every install channel. ([#611](https://github.com/lezli01/vincent/pull/611))
+- **Dependencies updated for reported vulnerabilities.** The terminal UI library moves to a patched release flagged by govulncheck. ([#613](https://github.com/lezli01/vincent/pull/613))
+
 ## 0.10.0 — Skills and files in chat, and work on an existing branch
 
 Released 2026-09-23.
