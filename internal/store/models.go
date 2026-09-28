@@ -123,6 +123,9 @@ type Task struct {
 	State          TaskState
 	CurrentStep    int
 	BlockReason    string // set while State == TaskBlocked
+	// BlockDetail is the daemon-authored sentence explaining BlockReason
+	// (§5.3, issue #594); empty means no detail. Cleared with BlockReason.
+	BlockDetail string
 	// PauseRequested is a pause accepted while running but not yet taken
 	// effect (spec §6). Persisted so a crash, which re-queues the task,
 	// cannot discard it.

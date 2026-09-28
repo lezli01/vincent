@@ -117,7 +117,9 @@ func (r *Runner) runFanOut(ctx context.Context, env *stepEnv) (outcome stepOutco
 	selected, err := r.selectLanes(ctx, env)
 	if err != nil {
 		r.recordDecisionRow(ctx, env, store.StepFailed, "", ReasonConditionError, "", nil)
-		r.fail(env.task, ReasonConditionError, env.log, "evaluate lane guard", err)
+		r.fail(env.task, ReasonConditionError,
+			fmt.Sprintf("a lane guard of fan-out step %q could not be evaluated", env.step.ID),
+			env.log, "evaluate lane guard", err)
 		return stepOutcome{}, true
 	}
 	if len(selected) == 0 && len(mine) == 0 {
@@ -166,7 +168,9 @@ func (r *Runner) runFanOut(ctx context.Context, env *stepEnv) (outcome stepOutco
 		due, dErr := r.eagerJoinDue(ctx, env, mine)
 		if dErr != nil {
 			env.log.Error("check for mergeable lanes", "error", dErr)
-			r.fail(env.task, ReasonInternalError, env.log, "check for mergeable lanes", dErr)
+			r.fail(env.task, ReasonInternalError,
+				fmt.Sprintf("fan-out step %q could not check its lanes for merging", env.step.ID),
+				env.log, "check for mergeable lanes", dErr)
 			return stepOutcome{}, true
 		}
 		if !due {
@@ -219,7 +223,9 @@ func (r *Runner) spawnRound(
 	ready, err := r.readyLanes(ctx, env, selected, mine)
 	if err != nil {
 		env.log.Error("compute the ready lane set", "error", err)
-		r.fail(env.task, ReasonInternalError, env.log, "compute the ready lane set", err)
+		r.fail(env.task, ReasonInternalError,
+			fmt.Sprintf("fan-out step %q could not compute which lanes are ready", env.step.ID),
+			env.log, "compute the ready lane set", err)
 		return stepOutcome{}, true
 	}
 	if len(ready) == 0 {
@@ -238,8 +244,8 @@ func (r *Runner) spawnRound(
 			// rather than parked forever.
 			env.log.Error("fan-out has unspawned lanes but none are ready",
 				"selected", len(selected), "spawned", spawned)
-			r.fail(env.task, ReasonFanOutInvalid, env.log,
-				"no lane is ready and some are unspawned: the needs graph cannot be satisfied", nil)
+			const msg = "no lane is ready and some are unspawned: the needs graph cannot be satisfied"
+			r.fail(env.task, ReasonFanOutInvalid, msg, env.log, msg, nil)
 			return stepOutcome{}, true
 		}
 		unit := "rounds"
@@ -259,7 +265,8 @@ func (r *Runner) spawnRound(
 		// this step, so the retry took the merge path and blocked
 		// `lane_failed` on lanes that had never run.
 		env.log.Error("spawn lanes", "error", err)
-		r.fail(env.task, ReasonInternalError, env.log, "spawn lanes", err)
+		r.fail(env.task, ReasonInternalError, fmt.Sprintf("fan-out step %q could not spawn its lanes", env.step.ID),
+			env.log, "spawn lanes", err)
 		return stepOutcome{}, true
 	}
 	// Park: the slot is released before the children need one, which is what

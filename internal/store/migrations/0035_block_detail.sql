@@ -1,0 +1,12 @@
+-- 0035_block_detail: the daemon-authored sentence that goes with a
+-- `block_reason` (issue #594, spec §5.3).
+--
+-- A task that blocks before or outside any step run — worktree creation, a
+-- snapshot that does not parse, a guard's condition_error, the cost cap, the
+-- container runtime, a fan-out that cannot spawn — has no step row whose
+-- result_summary could explain it, so its explanation lived only in
+-- daemon.log. This column holds it.
+--
+-- NULL for every existing row, which the API serves as "no detail". Written
+-- and cleared with block_reason, by the transition itself.
+ALTER TABLE tasks ADD COLUMN block_detail TEXT;

@@ -69,6 +69,9 @@ type TaskChange struct {
 	// BlockReason is recorded when moving to blocked; leaving blocked always
 	// clears it, whatever this holds.
 	BlockReason *string
+	// BlockDetail is the daemon-authored sentence that explains BlockReason
+	// (§5.3, issue #594). It is written and cleared exactly as BlockReason is.
+	BlockDetail *string
 	// CurrentStep moves the step cursor (advance, or rewind on retry).
 	CurrentStep *int
 	// WorktreePath records the worktree once created (§10).
@@ -307,6 +310,7 @@ func transitionTaskTx(
 	}
 	if to != TaskBlocked {
 		t.BlockReason = ""
+		t.BlockDetail = ""
 	}
 
 	pendingOverride, err := marshalOverride(t.PendingOverride)
@@ -322,14 +326,14 @@ func transitionTaskTx(
 		return nil, nil, err
 	}
 	res, err := tx.ExecContext(ctx, `
-		UPDATE tasks SET state = ?, current_step = ?, block_reason = ?, worktree_path = ?,
+		UPDATE tasks SET state = ?, current_step = ?, block_reason = ?, block_detail = ?, worktree_path = ?,
 			workflow_snapshot = ?, pause_requested = ?, retry_cursor_at = ?,
 			pending_override_json = ?, pending_repair_json = ?,
 			pending_follow_up_json = ?, pending_input_json = ?,
 			admit_not_before = ?, queued_reason = ?, settled_children_watermark = ?,
 			updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?
 		WHERE id = ? AND state = ?`,
-		string(t.State), t.CurrentStep, nullString(t.BlockReason), nullString(t.WorktreePath),
+		string(t.State), t.CurrentStep, nullString(t.BlockReason), nullString(t.BlockDetail), nullString(t.WorktreePath),
 		t.WorkflowSnapshot, t.PauseRequested, formatTimePtr(t.RetryCursorAt), pendingOverride,
 		pendingRepair, pendingFollowUp,
 		nullString(t.PendingInputJSON),
@@ -511,6 +515,9 @@ func applyChange(t *Task, ch TaskChange) {
 	}
 	if ch.BlockReason != nil {
 		t.BlockReason = *ch.BlockReason
+	}
+	if ch.BlockDetail != nil {
+		t.BlockDetail = *ch.BlockDetail
 	}
 	if ch.PauseRequested != nil {
 		t.PauseRequested = *ch.PauseRequested

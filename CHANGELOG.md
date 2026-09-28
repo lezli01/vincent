@@ -21,6 +21,20 @@ list with the user-facing context a commit subject cannot carry.
   shadowed on its screen), a retired name is ignored, and each is logged as a
   `keymap warning`, listed by `vincent doctor` and shown once in the TUI.
   `vincent config set` and the config editor stay strict (task 128, #590).
+- **A task that blocks before any step runs now says why.** A block from
+  worktree creation, an unparseable snapshot, a platform restriction, a guard
+  that could not be evaluated, the cost cap, the container runtime or a fan-out
+  that could not spawn used to carry only its `block_reason` code; the sentence
+  explaining it went to `daemon.log` alone. Every task representation now
+  carries `block_detail` — for instance the worktree path that was already
+  occupied. It never carries URL credentials or the text of a GitHub error
+  (issue #594).
+- **A long failure keeps its error in `result_summary`.** When a step's output
+  ran past the 4096-byte cap, the summary kept the first 4 KiB and dropped the
+  last lines, where the error is — and the raw cut could split a UTF-8
+  character. It now keeps the tail, cut at a line boundary where possible and
+  marked `… N earlier bytes`. The board, the detail view, the repair prompt and
+  `vincent task` output all show it (issue #594).
 
 ## [0.10.1](https://github.com/lezli01/vincent/compare/v0.10.0...v0.10.1) (2026-09-25)
 

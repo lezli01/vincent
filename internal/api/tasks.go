@@ -99,6 +99,10 @@ type taskResponse struct {
 	// alone so the detail view can render k/n without re-parsing the snapshot.
 	StepTotal   int     `json:"step_total"`
 	BlockReason *string `json:"block_reason"`
+	// BlockDetail is the daemon-authored sentence that explains BlockReason
+	// (§5.3, issue #594) — what a block outside any step run otherwise said
+	// only in daemon.log. Null when there is none.
+	BlockDetail *string `json:"block_detail"`
 	// AdmitNotBefore and QueuedReason describe a queued task waiting on
 	// something other than a free slot (§11, task 003) — an agent usage window
 	// today. Both are null for every other task, so the pair is additive and
@@ -241,6 +245,7 @@ func toTaskResponse(t *store.Task, summary snapshotSummary) taskResponse {
 		CurrentStep:      t.CurrentStep,
 		StepTotal:        summary.stepTotal,
 		BlockReason:      nilIfEmpty(t.BlockReason),
+		BlockDetail:      nilIfEmpty(t.BlockDetail),
 		AdmitNotBefore:   timePtr(t.AdmitNotBefore),
 		QueuedReason:     nilIfEmpty(t.QueuedReason),
 		PendingInput:     rawIfNotEmpty(t.PendingInputJSON),

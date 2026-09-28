@@ -72,7 +72,10 @@ type Task struct {
 	// current one. It is what a board renders `loop 4/10` from.
 	Loop *LoopRollup `json:"loop,omitempty"`
 
-	BlockReason      *string  `json:"block_reason"`
+	BlockReason *string `json:"block_reason"`
+	// BlockDetail is the daemon-authored sentence that explains BlockReason
+	// (§5.3); nil or empty means no detail.
+	BlockDetail      *string  `json:"block_detail"`
 	PauseRequested   bool     `json:"pause_requested"`
 	AvailableActions []string `json:"available_actions"`
 	// OpenChatID names the open chat linked to this task (task 119), nil when
