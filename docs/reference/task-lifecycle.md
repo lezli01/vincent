@@ -380,9 +380,27 @@ same thing wherever it originated.
 | `interrupted` | The daemon stopped mid-step — not a failure |
 | `internal_error` | A bug. Please [report it](https://github.com/lezli01/vincent/issues/new/choose) |
 
-Worktree-layer reasons: `project_path_missing`, `base_branch_missing`,
-`branch_exists`, `branch_name_invalid`, `worktree_dirty`, `worktree_missing`,
-`worktree_path_occupied`, `git_error`. A `branch_exists` block is recoverable
+One reason is a step run's `skip_reason` rather than a failure:
+
+| Reason | Meaning |
+|---|---|
+| `condition` | The step's `if:` guard rendered `false`, so the step was skipped. Not a failure — the task carries on with the next step |
+
+The worktree layer adds its own, raised while vincent prepares the task's
+branch and worktree:
+
+| Reason | Meaning |
+|---|---|
+| `project_path_missing` | The project's repository is not at its recorded path — it moved or was deleted |
+| `base_branch_missing` | The branch the task was to start from does not exist |
+| `branch_exists` | The branch this task would create already exists, usually from an earlier run |
+| `branch_name_invalid` | The branch name the task would use is not one git accepts |
+| `worktree_dirty` | The task's worktree has uncommitted changes where vincent needs it clean |
+| `worktree_missing` | The task's worktree is no longer on disk |
+| `worktree_path_occupied` | Something already occupies the directory the task's worktree would use |
+| `git_error` | A git command vincent ran for the task failed; the message carries git's own output |
+
+A `branch_exists` block is recoverable
 without losing the task: `POST /v1/tasks/{id}/retry` accepts a `branch_override`
 that renames the branch and re-admits it. See
 [Troubleshooting](../guides/troubleshooting.md#projects-and-worktrees).
