@@ -134,7 +134,8 @@ func (r *Runner) runFollowUp(
 		// persisting it, so a failure here is corruption or a vincent
 		// downgrade — the case §12.4 already treats a snapshot that no longer
 		// parses as. The task blocks; a human retries, skips or cancels.
-		r.fail(task, ReasonInvalidSnapshot, log, "parse follow-up workflow", err)
+		r.fail(task, ReasonInvalidSnapshot, withLocalError("the follow-up workflow no longer parses", err),
+			log, "parse follow-up workflow", err)
 		return
 	}
 	base := len(snapshot.Steps)

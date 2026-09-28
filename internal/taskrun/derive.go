@@ -42,7 +42,7 @@ import (
 func (r *Runner) deriveLanes(ctx context.Context, env *stepEnv) (stepOutcome, bool) {
 	block := func(reason, msg string) (stepOutcome, bool) {
 		r.recordDecisionRow(ctx, env, store.StepFailed, "", reason, msg, nil)
-		r.fail(env.task, reason, env.log, msg, nil)
+		r.fail(env.task, reason, msg, env.log, msg, nil)
 		return stepOutcome{}, false
 	}
 
@@ -103,7 +103,8 @@ func (r *Runner) deriveLanes(ctx context.Context, env *stepEnv) (stepOutcome, bo
 
 	if err := r.materializeLanes(env, lanes); err != nil {
 		env.log.Error("materialize derived lanes", "error", err)
-		r.fail(env.task, ReasonInternalError, env.log, "materialize derived lanes", err)
+		r.fail(env.task, ReasonInternalError, fmt.Sprintf("the lanes step %q derived could not be recorded", env.step.ID),
+			env.log, "materialize derived lanes", err)
 		return stepOutcome{}, false
 	}
 	env.log.Info("fan-out derived its lanes", "step", env.step.ID, "lanes", len(lanes))

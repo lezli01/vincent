@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/config"
@@ -469,21 +471,22 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 
 	project, err := r.deps.Store.GetProject(ctx, task.ProjectID)
 	if err != nil {
-		r.fail(task, ReasonInternalError, log, "load project", err)
+		r.fail(task, ReasonInternalError, "the task's project could not be loaded", log, "load project", err)
 		return
 	}
 	wf, _, err := workflow.Parse([]byte(task.WorkflowSnapshot), workflow.Options{})
 	if err != nil {
 		// The snapshot validated at creation, so this is corruption or a
 		// vincent downgrade — either way the task cannot run.
-		r.fail(task, ReasonInvalidSnapshot, log, "parse workflow snapshot", err)
+		r.fail(task, ReasonInvalidSnapshot, withLocalError("the task's workflow snapshot no longer parses", err),
+			log, "parse workflow snapshot", err)
 		return
 	}
 	if mismatch := wf.PlatformMismatch(workflow.HostPlatform()); mismatch != "" {
 		// Creation refuses this (§8.1.1), so the task outlived the host it was
 		// created on. Blocking names the reason; the human moves it back or
 		// widens the workflow.
-		r.fail(task, ReasonPlatformUnsupported, log, "workflow platform restriction",
+		r.fail(task, ReasonPlatformUnsupported, mismatch, log, "workflow platform restriction",
 			errors.New(mismatch))
 		return
 	}
@@ -619,7 +622,9 @@ func (r *Runner) runSteps(ctx context.Context, project *store.Project, w *stepWa
 			switch {
 			case err != nil:
 				r.recordGuardOutcome(ctx, env, store.StepFailed, "", ReasonConditionError, rendered)
-				r.fail(task, ReasonConditionError, env.log, "evaluate step guard", err)
+				r.fail(task, ReasonConditionError,
+					fmt.Sprintf("the `if:` guard of step %q could not be evaluated", env.step.ID),
+					env.log, "evaluate step guard", err)
 				return
 			case env.step.Type == workflow.StepCondition && !pass:
 				// The sequence ends here and the task is `done` (§7.7,
@@ -687,7 +692,7 @@ func (r *Runner) runSteps(ctx context.Context, project *store.Project, w *stepWa
 			if outcome.costLimit == ReasonTreeCostLimit {
 				msg = "tree cost limit reached"
 			}
-			r.fail(task, outcome.costLimit, env.log, msg, nil)
+			r.fail(task, outcome.costLimit, msg, env.log, msg, nil)
 			return
 		}
 		switch outcome.state {
@@ -720,7 +725,7 @@ func (r *Runner) runSteps(ctx context.Context, project *store.Project, w *stepWa
 				}
 				until, hold := r.usageLimitStop(outcome.agentName, outcome.retryAfter, env.log)
 				if !hold {
-					r.fail(task, ReasonUsageLimit, env.log, "agent usage limit reached", nil)
+					r.fail(task, ReasonUsageLimit, "agent usage limit reached", env.log, "agent usage limit reached", nil)
 					return
 				}
 				r.holdForUsageLimit(task, until, outcome.agentName, outcome.retryAfter != nil, env.log)
@@ -748,7 +753,8 @@ func (r *Runner) runSteps(ctx context.Context, project *store.Project, w *stepWa
 				w.persist(ctx, pos+1, env.log)
 				continue
 			}
-			r.fail(task, outcome.reason, env.log, "step failed", nil)
+			r.fail(task, outcome.reason, fmt.Sprintf("step %q failed; its step run carries the output", env.step.ID),
+				env.log, "step failed", nil)
 			return
 		}
 	}
@@ -855,7 +861,7 @@ func (r *Runner) ensureWorktree(ctx context.Context, task *store.Task, project *
 		if reason == "" {
 			reason = worktree.ReasonGitError
 		}
-		r.fail(task, reason, log, "create worktree", err)
+		r.fail(task, reason, worktreeDetail(err), log, "create worktree", err)
 		return err
 	}
 	task.WorktreePath = created.Path
@@ -1458,7 +1464,8 @@ func (r *Runner) enterGate(ctx context.Context, env *stepEnv) {
 	attempts, err := r.deps.Store.CountStepAttempts(ctx, env.ref(), time.Time{})
 	if err != nil {
 		env.log.Error("count gate attempts", "error", err)
-		r.fail(env.task, ReasonInternalError, env.log, "count gate attempts", err)
+		r.fail(env.task, ReasonInternalError, "the manual gate's attempts could not be counted",
+			env.log, "count gate attempts", err)
 		return
 	}
 	instructions := env.step.Instructions
@@ -1514,11 +1521,16 @@ func (r *Runner) complete(task *store.Task, log *slog.Logger) {
 }
 
 // fail blocks the task with a reason (§7.2: retries exhausted → blocked).
-func (r *Runner) fail(task *store.Task, reason string, log *slog.Logger, what string, err error) {
+// detail is the daemon-authored sentence persisted as block_detail (§5.3,
+// issue #594) — the only explanation a block outside any step run has
+// outside daemon.log. It is bounded like result_summary and scrubbed of URL
+// userinfo; err itself goes only to the log.
+func (r *Runner) fail(task *store.Task, reason, detail string, log *slog.Logger, what string, err error) {
 	if err != nil {
 		log.Error(what, "error", err, "reason", reason)
 	}
-	if r.transition(task, taskstate.Fail, store.TaskChange{BlockReason: &reason}, log) {
+	detail = summaryTail(scrubUserinfo(detail), resultSummaryLimit)
+	if r.transition(task, taskstate.Fail, store.TaskChange{BlockReason: &reason, BlockDetail: &detail}, log) {
 		log.Warn("task blocked", "reason", reason)
 	}
 }
@@ -1663,7 +1675,7 @@ func (r *Runner) finishStepRun(run *store.StepRun, outcome stepOutcome, log *slo
 	now := time.Now()
 	run.State = outcome.state
 	run.FailureReason = outcome.reason
-	run.ResultSummary = truncate(outcome.result, resultSummaryLimit)
+	run.ResultSummary = summaryTail(outcome.result, resultSummaryLimit)
 	if outcome.stdoutTail != nil {
 		// Stored as it arrives, and deliberately *not* at resultSummaryLimit:
 		// it is already at §8.4's bound — outputTailLines lines, outputTailBytes
@@ -1707,9 +1719,33 @@ func (r *Runner) emit(task *store.Task, evType string, payload map[string]any) {
 	}
 }
 
+// truncate keeps the first n bytes of s, moved back to a rune boundary so the
+// result is still valid UTF-8. It is for text whose start is what matters — a
+// gate's instructions, a question; failure output keeps its tail through
+// summaryTail instead.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n]
+	cut := n
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
+}
+
+// summaryTail bounds a result_summary at n bytes by keeping its *end*, where
+// a failing command or agent puts its error (§8.4, issue #594). The cut moves
+// forward to the first line boundary inside the window when there is one, and
+// otherwise to a rune boundary, and the kept text is prefixed with a marker
+// naming how many bytes went before it.
+func summaryTail(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	kept := tailBytes(s, n)
+	if i := strings.IndexByte(kept, '\n'); i >= 0 && i+1 < len(kept) {
+		kept = kept[i+1:]
+	}
+	return fmt.Sprintf("… %d earlier bytes\n%s", len(s)-len(kept), kept)
 }

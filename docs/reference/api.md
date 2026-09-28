@@ -2169,7 +2169,7 @@ cleanup is off, or the task never had a branch of its own.
 
 None of it affects the status code: a branch problem never fails an archive.
 
-Four details worth knowing:
+Five details worth knowing:
 
 - **A `queued` task may be waiting on a clock, not a slot.** Every task
   representation carries `queued_reason` and `admit_not_before` (RFC3339, or
@@ -2181,6 +2181,13 @@ Four details worth knowing:
   `block_reason`, which still means only "stopped, needs a human" — the task is
   not blocked. Treat the set as open: a client should render whatever string it
   is given rather than switching on the two it knows.
+
+- **A `blocked` task says why in a sentence.** Every task representation carries
+  `block_detail` beside `block_reason`: the daemon's own explanation of the
+  block — for instance the worktree path that was already occupied — or `null`
+  when there is none. It matters most for a task that blocked before any step
+  ran, which has no step row to read. It is cleared with `block_reason`, and never
+  carries URL credentials or the text of a GitHub error.
 
 - **List rows carry the board fields** — `project_name`, `step_total`,
   `step_name`, `status_message`, and `cost_usd` / `input_tokens` /

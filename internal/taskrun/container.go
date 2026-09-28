@@ -3,6 +3,7 @@ package taskrun
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -94,7 +95,7 @@ func (r *Runner) ensureContainer(
 		return taskContainer{id: id, settings: c, rt: rt}, nil
 	}
 	if err := rt.Available(ctx); err != nil {
-		r.fail(task, ReasonContainerUnavailable, log, "container runtime", err)
+		r.fail(task, ReasonContainerUnavailable, "the container runtime is not available", log, "container runtime", err)
 		return taskContainer{}, err
 	}
 	if err := rt.EnsureImage(ctx, c.Image); err != nil {
@@ -106,7 +107,8 @@ func (r *Runner) ensureContainer(
 		if !errors.Is(err, container.ErrImageUnavailable) {
 			reason = ReasonContainerUnavailable
 		}
-		r.fail(task, reason, log, "container image", err)
+		r.fail(task, reason, fmt.Sprintf("container image %s could not be made available", c.Image),
+			log, "container image", err)
 		return taskContainer{}, err
 	}
 	id, err := rt.Create(ctx, container.CreateSpec{
@@ -130,7 +132,8 @@ func (r *Runner) ensureContainer(
 			r.interrupt(task, log)
 			return taskContainer{}, err
 		}
-		r.fail(task, ReasonContainerUnavailable, log, "create container", err)
+		r.fail(task, ReasonContainerUnavailable, fmt.Sprintf("container %s could not be created from image %s", name, c.Image),
+			log, "create container", err)
 		return taskContainer{}, err
 	}
 	log.Info("container created", "task", task.ID, "image", c.Image,

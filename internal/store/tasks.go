@@ -16,7 +16,7 @@ import (
 const taskColumns = `id, project_id, title, description, fields_json, workflow_name, workflow_snapshot,
 	base_branch, branch_name, adopted_branch, worktree_path, base_sha, base_refresh, priority, agent_override, model_override, effort_override,
 	restricted, max_task_cost_usd,
-	state, current_step, block_reason, pause_requested, retry_cursor_at, pending_override_json,
+	state, current_step, block_reason, block_detail, pause_requested, retry_cursor_at, pending_override_json,
 	pending_repair_json, pending_follow_up_json, pending_input_json, admit_not_before, queued_reason,
 	parent_task_id, parent_step_index, lane_id, lane_order, settled_children_watermark,
 	github_issue_json, github_pull_json,
@@ -546,14 +546,14 @@ func (s *Store) UpdateTask(ctx context.Context, t *Task) error {
 		UPDATE tasks SET title = ?, description = ?, fields_json = ?, workflow_name = ?,
 			workflow_snapshot = ?, base_branch = ?, branch_name = ?, worktree_path = ?, base_sha = ?,
 			base_refresh = ?, priority = ?, agent_override = ?, model_override = ?, effort_override = ?,
-			state = ?, current_step = ?, block_reason = ?,
+			state = ?, current_step = ?, block_reason = ?, block_detail = ?,
 			admit_not_before = ?, queued_reason = ?,
 			updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?
 		WHERE id = ?`,
 		t.Title, t.Description, fields, t.WorkflowName,
 		t.WorkflowSnapshot, t.BaseBranch, t.BranchName, nullString(t.WorktreePath), nullString(t.BaseSHA),
 		refreshJSON, t.Priority, nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
-		string(t.State), t.CurrentStep, nullString(t.BlockReason),
+		string(t.State), t.CurrentStep, nullString(t.BlockReason), nullString(t.BlockDetail),
 		formatTimePtr(t.AdmitNotBefore), nullString(t.QueuedReason),
 		formatTime(t.UpdatedAt), formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt),
 		t.ID)
@@ -1030,6 +1030,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		t                              Task
 		fields                         string
 		worktree, baseSHA, blockReason sql.NullString
+		blockDetail                    sql.NullString
 		baseRefresh                    sql.NullString
 		agentOv, modelOv, effortOv     sql.NullString
 		retryCursor, pendingOv         sql.NullString
@@ -1050,7 +1051,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		&t.WorkflowSnapshot, &t.BaseBranch, &t.BranchName, &t.AdoptedBranch, &worktree, &baseSHA, &baseRefresh, &t.Priority,
 		&agentOv, &modelOv, &effortOv,
 		&t.Restricted, &t.MaxTaskCostUSD,
-		(*string)(&t.State), &t.CurrentStep, &blockReason,
+		(*string)(&t.State), &t.CurrentStep, &blockReason, &blockDetail,
 		&t.PauseRequested, &retryCursor, &pendingOv,
 		&pendingRepair, &pendingFollowUp, &pendingInput, &admitNotBefore, &queuedWhy,
 		&parentID, &parentStep, &laneID, &laneOrder, &watermark,
@@ -1081,6 +1082,7 @@ func scanTask(r rowScanner) (*Task, error) {
 	t.BaseSHA = baseSHA.String
 	t.BaseRefresh = unmarshalBaseRefresh(baseRefresh)
 	t.BlockReason = blockReason.String
+	t.BlockDetail = blockDetail.String
 	t.PendingInputJSON = pendingInput.String
 	t.QueuedReason = queuedWhy.String
 	t.AgentOverride = agentOv.String
