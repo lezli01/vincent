@@ -2543,6 +2543,20 @@ example `refresh: "q" already means quit (quit the TUI)`. A refused
 `vincent config set` or editor save leaves `config.yaml` untouched, and a hand
 edit that fails is rejected on reload with the last good keymap still in force.
 
+### After an upgrade
+
+A release may give a new operation or a new fixed key a default you had already
+bound, or retire an operation you named. Neither stops the daemon: on load your
+binding wins, the operation whose default it was is **unbound**, a fixed key it
+was is **shadowed** on its screen and does nothing there, and a retired name is
+ignored. `?` and the palette list what lost its key as `unbound`, the footer
+drops it, and the TUI shows one line under the header saying what happened.
+`vincent doctor` lists the same warnings, and the daemon log carries them as
+`keymap warning`. Give the unbound operation a free key, or move your binding,
+to clear them. Saving through `vincent config set` or the config editor stays
+strict, so while such a clash is in the file every save is refused with its
+name.
+
 ### When a change takes effect
 
 Saved in the daemon view's config editor, a keymap applies at once. Set any

@@ -415,7 +415,7 @@ daemon running.
   "generated_at": "2026-08-15T10:00:00Z",
   "paths":    { "config_dir": "…", "data_dir": "…", "config_file": "…",
                 "config_file_exists": true, "config_parses": true,
-                "config_permissions": [] },
+                "config_permissions": [], "keymap_warnings": [] },
   "daemon":   { "status": "running", "pid": 4021, "port": 51234,
                 "started_at": "2026-08-15T09:00:00Z", "uptime_seconds": 3600,
                 "version": "0.1.1" },
@@ -475,6 +475,10 @@ daemon running.
   daemon re-tightens both paths on every start, so an entry means no daemon has
   started on this config or something widened it since. Always empty on Windows,
   where modes carry no access control.
+- **`paths.keymap_warnings[]` is a warning, not a verdict** (task 128): one
+  string per thing the lenient load of `tui.keys` let through — a retired
+  operation id ignored, an operation's default left unbound by a user binding,
+  a fixed key shadowed. It never reaches `problems[]`.
 - **`tasks.unreconciled[]`** is the §12.4 contradiction: a task holding a step
   run still marked `running` while sitting in a state that cannot be executing
   one — `queued`, `done`, `aborted` or `archived`. Each entry carries `task_id`,

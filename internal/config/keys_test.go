@@ -71,7 +71,9 @@ func TestTUIKeysRefused(t *testing.T) {
 		name, content string
 		want          []string
 	}{
-		{"a key another operation has", "tui:\n  keys: {refresh: q}\n", []string{"refresh", `"q"`, "quit"}},
+		// A clash between two overrides is the user's own, not an upgrade's,
+		// so even the lenient load refuses it (task 128 decision 2).
+		{"two overrides on one key", "tui:\n  keys: {refresh: ctrl+e, filter: ctrl+e}\n", []string{"refresh", `"ctrl+e"`, "filter"}},
 		{"a fixed operation", "tui:\n  keys: {group: G}\n", []string{"group", "not rebindable"}},
 		{"an unknown operation", "tui:\n  keys: {reload: R}\n", []string{"reload", "unknown operation"}},
 		{"a string no press produces", "tui:\n  keys: {refresh: ctrl+nope}\n", []string{"refresh", "ctrl+nope"}},
@@ -130,17 +132,17 @@ func TestWatchDropsARefusedKeymap(t *testing.T) {
 		t.Fatalf("reloaded tui.keys = %v, want refresh: f5", got.TUI.Keys)
 	}
 
-	// `q` is quit's: refused, so no callback. The sleep lets its debounce
-	// window fire on its own before the next write, as in
+	// Two overrides on one key: refused, so no callback. The sleep lets its
+	// debounce window fire on its own before the next write, as in
 	// TestWatchReloadsValidAndDropsInvalid.
-	write("tui:\n  keys: {refresh: q}\n")
+	write("tui:\n  keys: {refresh: ctrl+e, filter: ctrl+e}\n")
 	time.Sleep(4 * debounce)
 	write("max_parallel_tasks: 9\ntui:\n  keys: {refresh: f6}\n")
 	// A save can fire more than once, so a late repeat of the f5 reload is
 	// tolerated; the refused map is not.
 	for {
 		got := next()
-		if got.TUI.Keys["refresh"] == "q" {
+		if got.TUI.Keys["filter"] == "ctrl+e" {
 			t.Fatalf("watcher delivered a refused keymap: %v", got.TUI.Keys)
 		}
 		if got.TUI.Keys["refresh"] == "f6" {
@@ -212,5 +214,86 @@ func TestTemplateKeysExampleLoads(t *testing.T) {
 	content := "tui:\n  keys:\n" + strings.Join(example, "\n") + "\n"
 	if _, err := Load(writeConfig(t, content)); err != nil {
 		t.Errorf("the template's tui.keys example is refused: %v\n%s", err, content)
+	}
+}
+
+// Lenient on load, strict on write (task 128 decision 2). `refresh: q` lands
+// on quit's default — the shape of a clash an upgrade introduces by adding a
+// default the user had bound. Load lets the user's binding win and reports it;
+// Decode, the PATCH path, refuses the same bytes.
+func TestLoadLetsAnOverrideWinWhereDecodeRefuses(t *testing.T) {
+	content := "tui:\n  keys: {refresh: q}\n"
+	cfg, err := Load(writeConfig(t, content))
+	if err != nil {
+		t.Fatalf("Load refused a clash with a default: %v", err)
+	}
+	warnings := cfg.KeyWarnings()
+	if len(warnings) != 1 {
+		t.Fatalf("KeyWarnings = %q, want one", warnings)
+	}
+	for _, w := range []string{"tui.keys: ", "refresh", `"q"`, "quit", "unbound"} {
+		if !strings.Contains(warnings[0], w) {
+			t.Errorf("warning %q does not mention %q", warnings[0], w)
+		}
+	}
+	if _, err := Decode([]byte(content)); err == nil || !strings.Contains(err.Error(), "already means quit") {
+		t.Errorf("Decode = %v, want the write path's refusal", err)
+	}
+	if got := Default().KeyWarnings(); len(got) != 0 {
+		t.Errorf("the shipped keymap warns: %q", got)
+	}
+}
+
+// syncBuffer is a log sink the watcher's goroutine writes while the test
+// reads.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// A hand edit reaches the daemon only through a reload, so the reload logs
+// what its lenient load let through (task 128 decision 4).
+func TestWatchLogsKeymapWarnings(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, FileName)
+	if err := os.WriteFile(path, []byte("max_parallel_tasks: 3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out syncBuffer
+	reloads := make(chan Config, 16)
+	log := slog.New(slog.NewTextHandler(&out, nil))
+	if err := Watch(t.Context(), log, dir, new(sync.Mutex), func(c Config) { reloads <- c }); err != nil {
+		t.Fatalf("Watch: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("tui:\n  keys: {refresh: q}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		select {
+		case c := <-reloads:
+			if c.TUI.Keys["refresh"] != "q" {
+				continue
+			}
+			logged := out.String()
+			if !strings.Contains(logged, "level=WARN") || !strings.Contains(logged, "keymap warning") ||
+				!strings.Contains(logged, "quit") {
+				t.Fatalf("the reload did not log the keymap warning:\n%s", logged)
+			}
+			return
+		case <-time.After(10 * time.Second):
+			t.Fatal("timed out waiting for the reload")
+		}
 	}
 }

@@ -259,15 +259,27 @@ var exceptions = []exception{
 // overrides applied. The zero value is the shipped keymap.
 type Keymap struct {
 	keys map[Op]string
+	// unbound are operations whose default a user override took on a lenient
+	// load (task 128 decision 2): they answer no key until tui.keys gives them
+	// one.
+	unbound map[Op]bool
+	// shadowed are fixed keys a user override took on a lenient load, keyed by
+	// fixedKey: the fixed meaning yields on its surface (task 128 decision 3).
+	shadowed map[string]bool
 }
 
 // Default returns the shipped keymap.
 func Default() Keymap { return Keymap{} }
 
-// Key returns the key op is bound to.
+// Key returns the key op is bound to, or "" when op is unbound — a default a
+// user override took on a lenient load (task 128 decision 2). Every reader
+// treats "" as "no key".
 func (k Keymap) Key(op Op) string {
 	if key, ok := k.keys[op]; ok {
 		return key
+	}
+	if k.unbound[op] {
+		return ""
 	}
 	if info, ok := Lookup(op); ok {
 		return info.Default
@@ -280,6 +292,22 @@ func (k Keymap) Overridden(op Op) bool {
 	info, ok := Lookup(op)
 	return ok && k.Key(op) != info.Default
 }
+
+// Shadowed reports whether the fixed key on s yields to a user-bound
+// operation (task 128 decision 3). A handler that answers a fixed key asks
+// this first, and `?`, the palette and the footer show a shadowed row as
+// unbound.
+func (k Keymap) Shadowed(s Surface, key string) bool { return k.shadowed[fixedKey(s, key)] }
+
+func fixedKey(s Surface, key string) string { return string(s) + "\x00" + key }
+
+// retiredOps are operation ids a release removed, each with a note for the
+// human whose tui.keys still names one (task 128 decision 1). Build drops such
+// an id with a warning rather than refusing the file, so a config.yaml that was
+// valid on the release before keeps the daemon starting. A retired id is never
+// aliased onto another operation — an override replaces, it does not alias
+// (task 118 decision 6) — so the note says what to bind instead.
+var retiredOps = map[string]string{}
 
 // fixedNames are names a reader might reasonably try in tui.keys for keys that
 // are deliberately not rebindable. Refusing them by name says why, rather than
@@ -308,15 +336,37 @@ var fixedNames = map[string]string{
 }
 
 // Build applies overrides — `tui.keys` as written — to the defaults and checks
-// the result. Every problem is reported, sorted, so one edit can fix them all.
+// the result strictly. Every problem is reported, sorted, so one edit can fix
+// them all. It is the write path's check (PATCH /v1/config): an override that
+// lands on a key another operation's default or a fixed key holds is refused
+// (task 118 decision 3). A retired id is dropped rather than refused.
 func Build(overrides map[string]string) (Keymap, error) {
-	var errs []string
+	km, _, err := build(overrides, false)
+	return km, err
+}
+
+// BuildLenient is Build for the load paths — daemon start, hot reload and the
+// TUI applying a fetched config (task 128 decision 2). An override that lands
+// on a key a non-overridden operation's default or a fixed key holds wins: the
+// default becomes unbound, the fixed key is shadowed, and a warning says so.
+// That is the clash an upgrade introduces when it adds a default the user had
+// already bound. A retired id is dropped with a warning. Everything else is
+// still an error: an unknown id, bad key syntax, two overrides on one key, and
+// the text-field rules (task 118 decision 5).
+func BuildLenient(overrides map[string]string) (Keymap, []string, error) {
+	return build(overrides, true)
+}
+
+func build(overrides map[string]string, lenient bool) (Keymap, []string, error) {
+	var errs, warnings []string
 	keys := make(map[Op]string, len(overrides))
 	for name, key := range overrides {
 		op := Op(name)
 		info, ok := Lookup(op)
 		if !ok {
-			if why, fixedName := fixedNames[name]; fixedName {
+			if note, retired := retiredOps[name]; retired {
+				warnings = append(warnings, fmt.Sprintf("%s: retired operation, override ignored — %s", name, note))
+			} else if why, fixedName := fixedNames[name]; fixedName {
 				errs = append(errs, fmt.Sprintf("%s: not rebindable — %s", name, why))
 			} else {
 				errs = append(errs, fmt.Sprintf("%s: unknown operation; want one of %s", name, strings.Join(opNames(), ", ")))
@@ -334,13 +384,61 @@ func Build(overrides map[string]string) (Keymap, error) {
 	}
 	if len(errs) > 0 {
 		sort.Strings(errs)
-		return Keymap{}, errors.New(strings.Join(errs, "; "))
+		return Keymap{}, nil, errors.New(strings.Join(errs, "; "))
 	}
 	km := Keymap{keys: keys}
-	if err := Check(km); err != nil {
-		return Keymap{}, err
+	if lenient {
+		warnings = append(warnings, km.yield()...)
 	}
-	return km, nil
+	if err := Check(km); err != nil {
+		return Keymap{}, nil, err
+	}
+	sort.Strings(warnings)
+	return km, dedupe(warnings), nil
+}
+
+// yield lets every override win over what an upgrade may have put on its key:
+// a non-overridden operation's default becomes unbound and a fixed key is
+// shadowed. What two overrides do to each other is left to Check, which still
+// refuses it — that clash is the user's own.
+func (k *Keymap) yield() []string {
+	var warnings []string
+	for _, info := range catalog {
+		key, ok := k.keys[info.Op]
+		if !ok {
+			continue
+		}
+		for _, other := range catalog {
+			if _, moved := k.keys[other.Op]; moved || other.Op == info.Op || other.Default != key {
+				continue
+			}
+			if excepted(key, info.Op, use{op: other.Op}) {
+				continue
+			}
+			if k.unbound == nil {
+				k.unbound = map[Op]bool{}
+			}
+			k.unbound[other.Op] = true
+			warnings = append(warnings, fmt.Sprintf(
+				"%s: %q is %s's default (%s); %s is unbound until tui.keys gives it a key",
+				info.Op, key, other.Op, other.Meaning, other.Op))
+		}
+		for _, f := range fixed {
+			// The root's own fixed keys — tab, esc, ctrl+c, ctrl+v — never
+			// yield: the layer stack and the way out of the TUI must work on
+			// every surface, so a clash with one stays a hard error.
+			if f.Key != key || f.Surface == Global || excepted(key, info.Op, use{surface: f.Surface}) {
+				continue
+			}
+			if k.shadowed == nil {
+				k.shadowed = map[string]bool{}
+			}
+			k.shadowed[fixedKey(f.Surface, f.Key)] = true
+			warnings = append(warnings, fmt.Sprintf(
+				"%s: %q no longer does %q on %s", info.Op, key, f.Meaning, f.Surface))
+		}
+	}
+	return warnings
 }
 
 // use is one meaning a key carries somewhere.
@@ -365,15 +463,25 @@ func Check(k Keymap) error {
 	byKey := map[string][]use{}
 	for _, info := range catalog {
 		key := k.Key(info.Op)
+		if key == "" {
+			continue
+		}
 		byKey[key] = append(byKey[key], use{op: info.Op, meaning: info.Meaning})
 	}
 	for _, f := range fixed {
+		if k.Shadowed(f.Surface, f.Key) {
+			continue
+		}
 		byKey[f.Key] = append(byKey[f.Key], use{surface: f.Surface, meaning: f.Meaning})
 	}
 
 	var errs []string
 	for _, info := range catalog {
 		key := k.Key(info.Op)
+		if key == "" {
+			// Unbound on a lenient load (task 128): it carries no key to check.
+			continue
+		}
 		printable, err := printableKey(key)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", info.Op, err))

@@ -633,22 +633,49 @@ type TUI struct {
 	// adding an alias (task 118 decision 6).
 	//
 	// The daemon never reads it; it validates it, so a keymap that breaks
-	// §15's vocabulary is refused at load, on hot reload and on
-	// PATCH /v1/config instead of reaching a TUI that would have to guess.
+	// §15's vocabulary is refused instead of reaching a TUI that would have
+	// to guess. Refused strictly on PATCH /v1/config; on load and hot reload
+	// an override that lands on a key a default or fixed key holds wins and
+	// is reported by KeyWarnings instead, so an upgrade that adds a default
+	// the user already bound cannot stop the daemon (task 128 decision 2,
+	// amending task 118 decision 3 in part).
 	Keys map[string]string `yaml:"keys"`
 }
 
 // validate holds the whole `tui` block: the board's grouping, and the keymap
 // through internal/keymap's checker — the same one the TUI's registry tests run
-// over the shipped defaults (task 118 decision 4).
-func (t TUI) validate() error {
+// over the shipped defaults (task 118 decision 4). lenient selects the load
+// paths' keymap build over the write path's (task 128 decision 2).
+func (t TUI) validate(lenient bool) error {
 	if err := t.Board.validate(); err != nil {
 		return err
 	}
-	if _, err := keymap.Build(t.Keys); err != nil {
+	var err error
+	if lenient {
+		_, _, err = keymap.BuildLenient(t.Keys)
+	} else {
+		_, err = keymap.Build(t.Keys)
+	}
+	if err != nil {
 		return fmt.Errorf("tui.keys: %w", err)
 	}
 	return nil
+}
+
+// KeyWarnings are what a lenient load of tui.keys let through (task 128): a
+// retired operation id dropped, an operation's default left unbound, a fixed
+// key shadowed. The daemon logs them at start and on every reload, and
+// `vincent doctor` lists them. Nil for a keymap a strict write would accept.
+func (c Config) KeyWarnings() []string {
+	_, warnings, err := keymap.BuildLenient(c.TUI.Keys)
+	if err != nil {
+		return nil
+	}
+	out := make([]string, len(warnings))
+	for i, w := range warnings {
+		out[i] = "tui.keys: " + w
+	}
+	return out
 }
 
 // BoardView configures the task table — the board's Tasks panel.
@@ -886,7 +913,7 @@ func Load(path string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("read config: %w", err)
 	}
-	cfg, err = Decode(raw)
+	cfg, err = decode(raw, true)
 	if err != nil {
 		return Config{}, fmt.Errorf("%s: %w", path, err)
 	}
@@ -896,13 +923,18 @@ func Load(path string) (Config, error) {
 // Decode parses and validates config.yaml bytes that are not (yet) on disk.
 // It is what lets PATCH /v1/config reject an edit before anything is written
 // (task 060): the candidate file is decoded through exactly the path Load
-// takes, so a patch that would not survive a restart is refused now.
-func Decode(raw []byte) (Config, error) {
+// takes, so a patch that would not survive a restart is refused now. It is
+// stricter than Load in one place: tui.keys is held to the write path's
+// keymap check, which refuses an override on a key another meaning holds
+// where Load lets it win with a warning (task 128 decision 2).
+func Decode(raw []byte) (Config, error) { return decode(raw, false) }
+
+func decode(raw []byte, lenient bool) (Config, error) {
 	cfg := Default()
 	if err := yaml.UnmarshalWithOptions(raw, &cfg, yaml.DisallowUnknownField()); err != nil {
 		return Config{}, fmt.Errorf("parse: %w", err)
 	}
-	if err := cfg.validate(); err != nil {
+	if err := cfg.validate(lenient); err != nil {
 		return Config{}, fmt.Errorf("invalid config: %w", err)
 	}
 	return cfg, nil
@@ -911,9 +943,9 @@ func Decode(raw []byte) (Config, error) {
 // Validate is validate() for callers outside the package. The API needs to
 // reject a configuration before writing it, and the rule it applies has to be
 // the same one Load applies on the next start.
-func (c Config) Validate() error { return c.validate() }
+func (c Config) Validate() error { return c.validate(false) }
 
-func (c Config) validate() error {
+func (c Config) validate(lenient bool) error {
 	host, port, err := net.SplitHostPort(c.Listen)
 	if err != nil {
 		return fmt.Errorf("listen %q: %w", c.Listen, err)
@@ -991,7 +1023,7 @@ func (c Config) validate() error {
 	default:
 		return fmt.Errorf("log_level must be one of debug, info, warn, error; got %q", c.LogLevel)
 	}
-	if err := c.TUI.validate(); err != nil {
+	if err := c.TUI.validate(lenient); err != nil {
 		return err
 	}
 	if err := c.Notify.validate(); err != nil {

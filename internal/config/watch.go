@@ -88,5 +88,11 @@ func reload(log *slog.Logger, path string, mu sync.Locker, onReload func(Config)
 		return
 	}
 	log.Info("config reloaded", "path", path)
+	// Every accepted reload, not only one that changes them: a hand edit
+	// reaches the daemon only through here, and the lenient load is what let
+	// it through (task 128 decision 2).
+	for _, warning := range cfg.KeyWarnings() {
+		log.Warn("keymap warning", "warning", warning)
+	}
 	onReload(cfg)
 }

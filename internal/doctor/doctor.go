@@ -122,6 +122,13 @@ type Paths struct {
 	// neither is worth changing the exit code the closed unhealthy set defines
 	// (task 006 decision 7).
 	ConfigPermissions []PermissionWarning `json:"config_permissions"`
+	// KeymapWarnings are what the lenient load of `tui.keys` let through
+	// (task 128 decision 4): a retired operation id ignored, an operation's
+	// default left unbound, a fixed key shadowed by a user's binding. Like
+	// ConfigPermissions it is a warning and not a Problem — the daemon runs
+	// and the TUI works — but a key that stopped doing something after an
+	// upgrade is exactly what a user runs doctor to find.
+	KeymapWarnings []string `json:"keymap_warnings"`
 }
 
 // PermissionWarning is one config path whose mode is broader than §12.2 asks
@@ -464,6 +471,7 @@ func inspectPaths(dirs config.Dirs) (config.Config, Paths) {
 	p := Paths{
 		ConfigDir: dirs.Config, DataDir: dirs.Data, ConfigFile: file,
 		ConfigPermissions: []PermissionWarning{},
+		KeymapWarnings:    []string{},
 	}
 	cfg := config.Default()
 	// Answered before the parse question and independently of it: a mode is
@@ -495,6 +503,7 @@ func inspectPaths(dirs config.Dirs) (config.Config, Paths) {
 		return cfg, p
 	}
 	p.ConfigParses = true
+	p.KeymapWarnings = append(p.KeymapWarnings, loaded.KeyWarnings()...)
 	return loaded, p
 }
 

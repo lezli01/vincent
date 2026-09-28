@@ -304,11 +304,19 @@ func footerPinnedSegs(textField bool) []footerSeg {
 	if textField {
 		palette, help, quit = opKey(keymap.PaletteAlt), opKey(keymap.HelpAlt), "ctrl+c"
 	}
-	return []footerSeg{
+	segs := []footerSeg{
 		{text: styleKey.Render(palette) + styleDim.Render(" commands  "), key: palette, global: true},
 		{text: styleKey.Render(help) + styleDim.Render(" help  "), key: help, global: true},
 		{text: styleKey.Render(quit) + styleDim.Render(" quit"), key: quit, global: true},
 	}
+	// An operation a lenient load left unbound (task 128) has no key to pin.
+	out := segs[:0]
+	for _, s := range segs {
+		if s.key != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func pinnedHits(x int, segs []footerSeg) []footerHit {
@@ -330,6 +338,10 @@ func footerRestSegs(bar *actionBar, target taskActions, attention int, retry boo
 		for _, o := range actionOps {
 			if target.has(o.action) {
 				key := opKey(o.op)
+				if key == "" {
+					// Unbound on a lenient load (task 128): no key to show.
+					continue
+				}
 				segs = append(segs, footerSeg{
 					text: styleKey.Render(key) + " " + actionLabel(target, o.action), key: key, counts: true,
 				})
@@ -342,7 +354,7 @@ func footerRestSegs(bar *actionBar, target taskActions, attention int, retry boo
 		// hands back the task, and it is on the line anyway: a locked task
 		// offers `c cancel` or nothing, and the chat holding the lock is the
 		// one thing that explains why (task 119).
-		if target.offersChat() {
+		if target.offersChat() && opKey(keymap.Chat) != "" {
 			label := "chat"
 			if target.openChatID != 0 {
 				label = fmt.Sprintf("chat #%d", target.openChatID)
@@ -352,7 +364,7 @@ func footerRestSegs(bar *actionBar, target taskActions, attention int, retry boo
 			})
 		}
 	}
-	if attention > 0 {
+	if attention > 0 && opKey(keymap.NextAttention) != "" {
 		// `!` is a global row, and the pinned segment stands for those: shown
 		// here, never counted.
 		segs = append(segs, footerSeg{

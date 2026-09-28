@@ -7596,6 +7596,21 @@ act on the section and still publishes no config event (§13.3): the TUI applies
 the keymap on every connect and reconnect, on the daemon view's config fetch,
 and right after its own config editor saves `tui.keys`.
 
+*Amended 2026-09-28 (task 128, issue #590):* **lenient on load, strict on
+write.** Everything above holds for `PATCH /v1/config`. On load — daemon start,
+hot reload, and the TUI applying a fetched config — an override that lands on a
+key a **non-overridden** operation's default or a fixed key holds is accepted
+and wins: that operation becomes unbound (no key until `tui.keys` gives it
+one), or the fixed key is shadowed on its surface (§15). That is the clash an
+upgrade introduces by adding a default a user had already bound, and it must not
+stop the daemon. An id a release retires is dropped with a warning on both
+paths and never aliased onto another operation. Two overrides on one key, a
+malformed key string, the printable-key rule, an unknown id and a clash with
+`tab`, `esc`, `ctrl+c` or `ctrl+v` still refuse the file on load. Each thing a
+lenient load let through is logged at `Warn` at start and on every accepted
+reload, listed by `vincent doctor` as `paths.keymap_warnings` (a warning, never
+a problem), and shown once in the TUI.
+
 **`environment` (T4.23).** Governs every process the daemon spawns — agent
 steps via `RunSpec.Env` (§9.1), command steps and their checks via §8.5's
 environment — resolved in one order: `inherit` → `unset` → `set`. Command
@@ -13145,6 +13160,17 @@ inherit it, and `refresh` moved to `r` is refused because `r` is retry. The §6
 action letters still do not move **as defaults**; task 093 decision 2 governs
 the shipped keymap, and a user moving one is a user's choice held to the same
 clauses.
+
+*Amended 2026-09-28 (task 128, issue #590).* On **load** the checker is
+lenient about one thing: an override on a key a non-overridden operation's
+default or a fixed key holds wins, where a `PATCH` refuses it (§12.3). The
+displaced operation is **unbound** — no key; `?` and the palette say
+`unbound`, the footer drops its hint, and picking it in the palette does
+nothing. A displaced fixed key is **shadowed** on its surface: pressed there it
+reaches the view only if the operation that now owns it is answered there, and
+`?` and the palette show the fixed row as `unbound`. The root's own `tab`,
+`esc`, `ctrl+c` and `ctrl+v` never yield. The TUI raises a one-time line under
+the header when its keymap carries such a warning.
 
 **The composer rule.** A key a text field would type — one character, or
 `space`, without `ctrl` or `alt` — is refused for `palette_alt` and `help_alt`,

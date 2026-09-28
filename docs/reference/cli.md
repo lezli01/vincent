@@ -187,6 +187,12 @@ daemon tightens both paths on every start, so a row means no daemon has started
 on this config or something widened it since — not a reason to exit `1`. There
 are no such rows on Windows, where modes carry no access control.
 
+A `keymap` row is one thing the lenient load of `tui.keys` let through: an
+operation id a release retired, ignored; an operation left unbound because your
+binding took its default; or a fixed key shadowed by your binding. It is a
+warning too — the daemon runs and the TUI works — so it never sets the exit
+code.
+
 The database rows **measure and change nothing**. `total on disk` is the file
 plus its WAL and SHM sidecars, which is the honest figure — the store runs in WAL
 mode, so the file alone understates the footprint between checkpoints. `rows`

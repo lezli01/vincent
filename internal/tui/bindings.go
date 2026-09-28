@@ -253,6 +253,11 @@ type binding struct {
 	// the operation's *default*, and registry() swaps in the effective key
 	// and rewrites the hint to match; a row with no op is fixed.
 	op keymap.Op
+	// unbound marks a row the effective keymap left without a key (task
+	// 128): an operation whose default a user binding took on a lenient
+	// load, or a fixed key shadowed on its surface. key and hint are empty;
+	// `?` and the palette say "unbound".
+	unbound bool
 	// term is the §15 vocabulary operation this row performs, for the rows
 	// that perform a shared one. Empty means surface-local.
 	term vocabularyTerm

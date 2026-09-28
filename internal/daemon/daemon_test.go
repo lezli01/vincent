@@ -299,3 +299,49 @@ func TestRunFatalOnInvalidConfig(t *testing.T) {
 		t.Fatalf("Run with invalid config: err = %v, want log_level validation error", err)
 	}
 }
+
+// A tui.keys whose override lands on another meaning's default is the shape an
+// upgrade introduces by adding a default the user had bound: the daemon still
+// starts, and its log says what the user's binding displaced (task 128).
+func TestRunStartsAndWarnsOnAKeymapClash(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	dataDir, cfgDir := t.TempDir(), t.TempDir()
+	t.Setenv(config.EnvDataDir, dataDir)
+	t.Setenv(config.EnvConfigDir, cfgDir)
+	if err := os.WriteFile(filepath.Join(cfgDir, config.FileName), []byte("tui:\n  keys: {refresh: q}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- Run(ctx, Options{}) }()
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		if ri, err := ReadRuntimeInfo(dataDir); err == nil {
+			if _, err := CheckHealth(ctx, ri.Port); err == nil {
+				break
+			}
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("the daemon refused to start on a keymap clash: %v", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("daemon did not become healthy within 15s")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	cancel()
+	if err := waitDone(t, done); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	logged, err := os.ReadFile(LogPath(dataDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"level=WARN", "keymap warning", "quit"} {
+		if !strings.Contains(string(logged), want) {
+			t.Errorf("the startup log does not carry %q:\n%s", want, logged)
+		}
+	}
+}

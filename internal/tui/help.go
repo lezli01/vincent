@@ -41,7 +41,11 @@ func helpText(ctx bindingContext, github bool) string {
 		b.WriteString("\n " + styleTitle.Render(strings.ToUpper(title)) + "\n\n")
 		for _, r := range rows {
 			key := r.key
-			if key == "" {
+			switch {
+			case r.unbound:
+				// Its key went to a user binding on a lenient load (task 128).
+				key = "unbound"
+			case key == "":
 				// Palette-only navigation: the palette is its key.
 				key = opKey(keymap.Palette)
 			}

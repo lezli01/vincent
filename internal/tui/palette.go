@@ -33,6 +33,9 @@ type paletteEntry struct {
 	nav       bool
 	navTarget viewID
 	global    bool
+	// unbound is a row whose key a user binding took on a lenient load
+	// (task 128): listed, so the human can see it is gone, but not runnable.
+	unbound bool
 }
 
 func newPalette(entries []paletteEntry) *palette {
@@ -68,7 +71,7 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 			if b.op == keymap.EditRetry && !editable {
 				continue
 			}
-			out = append(out, paletteEntry{group: group, label: b.label, key: b.key})
+			out = append(out, paletteEntry{group: group, label: b.label, key: b.key, unbound: b.unbound})
 		}
 	}
 	// Views get their own section: navigating to them is the reason the
@@ -90,11 +93,11 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 		if b.noPalette {
 			continue
 		}
-		out = append(out, paletteEntry{group: string(ctx), label: b.label, key: b.key})
+		out = append(out, paletteEntry{group: string(ctx), label: b.label, key: b.key, unbound: b.unbound})
 	}
 	for _, b := range registry() {
 		if b.scope == scopeGlobal && !b.nav && !b.noPalette {
-			out = append(out, paletteEntry{group: "global", label: b.label, key: b.key, global: true})
+			out = append(out, paletteEntry{group: "global", label: b.label, key: b.key, global: true, unbound: b.unbound})
 		}
 	}
 	return out
@@ -196,7 +199,10 @@ func (p *palette) render(w, h int) string {
 			cursorRow = len(rows)
 		}
 		key := e.key
-		if key == "" {
+		switch {
+		case e.unbound:
+			key = "unbound"
+		case key == "":
 			key = "—"
 		}
 		label := ansi.Truncate(e.label, inner-8, "…")

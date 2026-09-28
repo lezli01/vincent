@@ -253,6 +253,11 @@ func doctorPathRows(p apiclient.DoctorPaths) [][]string {
 		rows = append(rows, []string{"permissions", fmt.Sprintf(
 			"%s is %s, want %s — run: %s", w.Path, w.Mode, w.ExpectedMode, w.Remediation)})
 	}
+	// What the lenient tui.keys load let through (task 128): the daemon
+	// runs, but a key may have stopped doing what it did before an upgrade.
+	for _, w := range p.KeymapWarnings {
+		rows = append(rows, []string{"keymap", w})
+	}
 	return rows
 }
 
