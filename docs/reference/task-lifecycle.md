@@ -324,6 +324,9 @@ vincent's words:
 - **`result_summary`** — the agent's final result text, or the last 200 lines of
   a command step's output: **both** its stdout and its stderr, because a step
   that failed with a stderr-only diagnostic must not summarize as blank.
+  Capped at 4096 bytes, keeping the **end** — where a failure's error is — cut
+  at a line boundary where possible and marked `… N earlier bytes` when anything
+  was dropped.
   Recorded on every attempt, and what the board, the detail view and the repair
   prompt show. A later step's `{% raw %}{{ .Steps.<id>.Result }}{% endraw %}`
   reads it for an agent step, and for a command step reads a narrower record of
