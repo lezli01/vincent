@@ -13925,6 +13925,20 @@ carries the rest.
 | A linked-chat turn's task runs in a container that is gone | *Added 2026-09-17 (task 119).* The turn fails and the chat returns to `idle`, still open. It is never moved to the host: the operator confined that worktree (§16) |
 | Clock skew / DST | All timestamps stored UTC RFC3339 |
 
+*Added 2026-09-28 (task 127, issue #593).* The reasons in this vocabulary that
+land on a task or a step run — `block_reason`, `failure_reason`, `skip_reason`
+and `queued_reason` (§5.3, §5.4) — have a human-facing catalogue in
+`internal/reasons`: a short plain-language title, a one-sentence meaning, the
+§6 actions that answer the reason, and the docs heading that explains it. The
+catalogue is a leaf that spells the strings out, so the wire string stays the
+identity. A test holds it to this vocabulary: every `Reason*` constant in
+`internal/taskrun` and `internal/worktree`, and `condition`, is either
+explained or listed as never reaching a task (the three push reasons,
+`dirty_unknown`, and the chat API's `workspace_path_missing` and
+`repo_operation_in_progress`). An unknown reason explains as its raw string,
+so a client older than its daemon degrades to what it showed before. The
+catalogue is not served over the API.
+
 ## 19. Milestones
 
 | Milestone | Contents | Acceptance |
