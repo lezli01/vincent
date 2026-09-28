@@ -16,6 +16,17 @@
 // and on PATCH /v1/config), so the defaults can never pass a rule an override
 // is refused by.
 //
+// Task 128 amends task 118 decision 3 in part: lenient on load, strict on
+// write. Build is the write path's check and refuses an override that lands on
+// a key another meaning holds. BuildLenient is the load paths' — daemon start,
+// hot reload, the TUI applying a fetched config — and lets the override win
+// over a non-overridden operation's default (which becomes unbound) or a fixed
+// key (which is shadowed on its surface), with a warning. That is the clash an
+// upgrade introduces by adding a default a user had already bound, and it must
+// not stop the daemon. A clash between two overrides, bad key syntax, the
+// text-field rules and an unknown id still fail on load. An id a release
+// retires (retiredOps) is dropped with a warning in both modes, never aliased.
+//
 // What an operation is (task 118 decision 1): one of §15's vocabulary terms,
 // one of §6's actions, or a piece of global chrome. Everything else — a
 // surface-local row, a multi-key set such as fold or page, esc, ctrl+c, the

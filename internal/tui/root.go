@@ -96,6 +96,12 @@ type root struct {
 	// warning is about what the daemon will do, so it must not wait on the
 	// daemon being reachable.
 	notice firstRunNotice
+	// keysNotice is the one-time line a lenient keymap build raises (task 128
+	// decision 4): a tui.keys binding displaced a default or a fixed key, or
+	// named a retired operation. Cleared by the next key; keysNoticed is the
+	// warning set it was raised for, so the same set is not raised twice.
+	keysNotice  string
+	keysNoticed string
 	// selectedTask is the task the board last opened; PR J's detail view
 	// reads it from the same message that sets it.
 	selectedTask int64
@@ -351,6 +357,9 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.notice.active {
 		return m.updateNoticeKey(msg)
 	}
+	// The keymap notice is read by the time a key is pressed; the key itself
+	// still does what it does.
+	m.keysNotice = ""
 	// The help overlay owns every key but ctrl+c, the palette's rule (task
 	// 114 decision 2). It sits above the input-capture gate: over a chat, a
 	// key that fell through would type into a draft the sheet is hiding, and
@@ -400,6 +409,19 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		v, cmd := m.views[m.active].update(msg)
 		m.views[m.active] = v
 		return m, cmd
+	}
+	if m.shadowedHere(msg.String()) {
+		// A fixed key a user binding took on a lenient load (task 128
+		// decision 3). The root's own operations were matched by opKey above
+		// the fixed literals, so what is left is the fixed meaning: it yields
+		// on this surface unless the operation that owns the key now is
+		// answered here too.
+		if cmd, ok := m.globalKey(msg); ok {
+			return m, cmd
+		}
+		if !keyOwnerAnsweredOn(msg.String(), m.activeContext()) {
+			return m, nil
+		}
 	}
 	if cmd, ok := m.globalKey(msg); ok {
 		return m, cmd
@@ -508,6 +530,9 @@ func (m *root) updatePaletteKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// board that is "new task", whose key n now makes a chat.
 	if run.nav && (run.key == "" || m.panelOwnsKey(run.key)) {
 		return m, m.switchTo(run.navTarget)
+	}
+	if run.unbound || run.key == "" {
+		return m, cmd
 	}
 	return m.replayKey(run.key, run.global)
 }
@@ -880,17 +905,49 @@ func (m *root) applyKeymap(msg tea.Msg) {
 	switch msg := msg.(type) {
 	case boardConfigMsg:
 		if msg.err == nil {
-			applyKeys(msg.keys)
+			m.noticeKeys(applyKeys(msg.keys))
 		}
 	case daemonConfigMsg:
 		if msg.err == nil {
-			applyKeys(msg.config.TUI.Keys)
+			m.noticeKeys(applyKeys(msg.config.TUI.Keys))
 		}
 	case configSavedMsg:
 		if msg.err == nil {
-			applyKeys(msg.cfg.TUI.Keys)
+			m.noticeKeys(applyKeys(msg.cfg.TUI.Keys))
 		}
 	}
+}
+
+// noticeKeys raises the one-time keymap line for a warning set it has not
+// raised before (task 128 decision 4). Every config fetch re-applies the
+// keymap, so without the memory a reconnect would raise it again.
+func (m *root) noticeKeys(warnings []string) {
+	joined := strings.Join(warnings, "\n")
+	if joined == m.keysNoticed {
+		return
+	}
+	m.keysNoticed = joined
+	if len(warnings) == 0 {
+		m.keysNotice = ""
+		return
+	}
+	more := ""
+	if len(warnings) > 1 {
+		more = fmt.Sprintf(" (+%d more — `vincent doctor` lists them)", len(warnings)-1)
+	}
+	m.keysNotice = " ⚠ tui.keys: " + warnings[0] + more
+}
+
+// statusLine is the line under the header, when there is one: the full-auto
+// notice's failed acknowledgment, else the one-time keymap notice.
+func (m *root) statusLine() (string, bool) {
+	if line, ok := m.notice.statusLine(); ok {
+		return line, true
+	}
+	if m.keysNotice != "" {
+		return styleWarn.Render(m.keysNotice), true
+	}
+	return "", false
 }
 
 // broadcast routes a message to every view, not just the visible one.
@@ -938,7 +995,7 @@ func (m *root) View() tea.View {
 	var b strings.Builder
 	b.WriteString(m.headerLine())
 	b.WriteString("\n")
-	if line, ok := m.notice.statusLine(); ok {
+	if line, ok := m.statusLine(); ok {
 		b.WriteString(line)
 		b.WriteString("\n")
 	}
@@ -1155,7 +1212,7 @@ func withoutAction(actions []string, drop string) []string {
 // event line, and footer.
 func (m *root) bodyHeight() int {
 	chrome := 2
-	if _, ok := m.notice.statusLine(); ok {
+	if _, ok := m.statusLine(); ok {
 		chrome++
 	}
 	if m.height <= chrome {

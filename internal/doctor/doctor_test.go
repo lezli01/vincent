@@ -413,3 +413,27 @@ func hasProblem(r *Report, group string) bool {
 	}
 	return false
 }
+
+// What a lenient tui.keys load let through is a warning row, not a Problem
+// (task 128 decision 4): the daemon runs, so the exit code does not change,
+// but a key that stopped doing something is what a user runs doctor to find.
+func TestKeymapWarningsAreARowNotAProblem(t *testing.T) {
+	d := dirs(t)
+	write(t, filepath.Join(d.Config, config.FileName), "tui:\n  keys: {refresh: q}\n")
+	rep := Compose(t.Context(), Options{Dirs: d, Agents: []Agent{}})
+	if !rep.Paths.ConfigParses {
+		t.Fatalf("the config does not parse: %s", rep.Paths.ConfigError)
+	}
+	if len(rep.Paths.KeymapWarnings) != 1 || !strings.Contains(rep.Paths.KeymapWarnings[0], "quit") {
+		t.Errorf("KeymapWarnings = %q, want the unbound quit", rep.Paths.KeymapWarnings)
+	}
+	if hasProblem(rep, GroupPaths) {
+		t.Errorf("a keymap warning set a problem: %v", rep.Problems)
+	}
+
+	write(t, filepath.Join(d.Config, config.FileName), "max_parallel_tasks: 2\n")
+	rep = Compose(t.Context(), Options{Dirs: d, Agents: []Agent{}})
+	if rep.Paths.KeymapWarnings == nil || len(rep.Paths.KeymapWarnings) != 0 {
+		t.Errorf("KeymapWarnings = %#v, want an empty list", rep.Paths.KeymapWarnings)
+	}
+}

@@ -1675,6 +1675,22 @@ the last good configuration, and a refused `PATCH /v1/config` or
 byte-identical. That command, like the config editor's row, replaces the whole
 map; `""` restores the shipped keymap.
 
+**Lenient on load, strict on write.** The list above is what
+`PATCH /v1/config`, `vincent config set` and the TUI's config editor refuse.
+Loading is more forgiving about one kind of clash, the kind an upgrade makes by
+giving a new operation or a new fixed key a default you had already bound: at
+daemon start, on a reload after a hand edit, and in the TUI, your binding
+**wins**. The operation whose default it was is left **unbound** until you give
+it a key, and a fixed key it was is **shadowed** on its screen. An operation id
+a release retires is ignored rather than refused, and never mapped onto another
+operation. Each of these is logged as a `keymap warning` at start and on every
+reload, listed by `vincent doctor` as a `keymap` row, and shown once in the TUI.
+Two of your own overrides on one key, a malformed key, a plain character for
+`palette_alt` or `help_alt`, an unknown id, and a clash with `tab`, `esc`,
+`ctrl+c` or `ctrl+v` still stop the load. Because a `PATCH` checks the whole
+file strictly, a clash left by an upgrade makes every config save fail until
+`tui.keys` is fixed; the error names the key.
+
 Saving it in the TUI's config editor applies it at once. A change made anywhere
 else reaches a running TUI the next time it reads the config: when you open the
 daemon view or refresh there, or when it reconnects.

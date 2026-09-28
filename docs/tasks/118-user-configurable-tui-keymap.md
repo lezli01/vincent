@@ -117,6 +117,18 @@ the FSM, so `keymap` does not need to import `taskstate`.
 would then accept a keymap no TUI can honour, and the TUI would have to guess
 what to do with it.
 
+*Amended 2026-09-28 (task 128, issue #590), in part:* lenient on load, strict
+on write. The refusal above still holds for `PATCH /v1/config` and so for
+`vincent config set` and the TUI's config editor. On load — daemon start, hot
+reload, the TUI applying a fetched config — an override that lands on a key a
+**non-overridden** operation's default or a fixed key holds wins: the default
+becomes unbound, the fixed key is shadowed on its surface, and a warning is
+logged, listed by `vincent doctor` and shown once in the TUI. Otherwise an
+upgrade that adds a default a user had already bound would stop the daemon.
+Two overrides on one key, bad key syntax, the text-field rules (decision 5), an
+unknown id and a clash with a root-level fixed key (`tab`, `esc`, `ctrl+c`,
+`ctrl+v`) still fail on load.
+
 ### 4 (2026-09-17). The validator is the three §15 clauses, one checker for defaults and overrides
 
 The checker the registry tests run over the shipped defaults is the same

@@ -141,6 +141,7 @@ the living engineering specification records implementation contracts.
 | [125](125-run-on-an-existing-branch.md) | Run a task or chat on an existing branch, in the main checkout when that branch is already checked out | ✅ done (9/9) |
 | [126](126-file-mentions.md) | File mentions in the chat composer: an `@` picker, and what each agent CLI does with a mention | 🔄 in progress (12/13) |
 | [127](127-reason-catalogue.md) | A plain-language catalogue of task and step reasons: a title, a meaning, the actions and a docs anchor for each | ✅ done (1/1) |
+| [128](128-keymap-upgrade-tolerance.md) | Keep the daemon starting when an upgrade retires a key operation or adds a default key a user already bound | ✅ done (1/1) |
 
 ## How to add and update a task document
 

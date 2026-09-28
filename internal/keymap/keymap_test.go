@@ -124,3 +124,132 @@ func TestCatalogIsWellFormed(t *testing.T) {
 		}
 	}
 }
+
+// upgrade swaps the catalog and the fixed keys for one test, the seam task
+// 128's upgrade simulation needs: "release N+1" is the shipped tables plus
+// what a release adds.
+func upgrade(t *testing.T, ops []Info, keys []Fixed, retired map[string]string) {
+	t.Helper()
+	oldCatalog, oldFixed, oldRetired := catalog, fixed, retiredOps
+	catalog = append(append([]Info{}, catalog...), ops...)
+	fixed = append(append([]Fixed{}, fixed...), keys...)
+	if retired != nil {
+		retiredOps = retired
+	}
+	t.Cleanup(func() { catalog, fixed, retiredOps = oldCatalog, oldFixed, oldRetired })
+}
+
+// TestUpgradeAddsADefaultTheUserBound is task 128's acceptance criterion: a
+// tui.keys valid on release N still loads on N+1 when N+1 adds an operation
+// or a fixed key on a key the user had bound. The lenient build lets the
+// user's binding win and warns; the strict one refuses the same map.
+func TestUpgradeAddsADefaultTheUserBound(t *testing.T) {
+	// Release N: ctrl+e and ctrl+k are free, and the user binds them.
+	release := map[string]string{"refresh": "ctrl+e", "filter": "ctrl+k"}
+	if _, err := Build(release); err != nil {
+		t.Fatalf("release N refuses its own keymap: %v", err)
+	}
+	const bookmark Op = "bookmark"
+	upgrade(t,
+		[]Info{{Op: bookmark, Default: "ctrl+e", Meaning: "bookmark the task", Kind: KindTerm, Surfaces: []Surface{"task table"}}},
+		[]Fixed{{Surface: "output", Key: "ctrl+k", Meaning: "jump to the next message"}},
+		nil)
+
+	if _, err := Build(release); err == nil {
+		t.Fatal("strict Build accepted a key an upgrade gave to another meaning")
+	}
+	km, warnings, err := BuildLenient(release)
+	if err != nil {
+		t.Fatalf("lenient load refused release N's keymap: %v", err)
+	}
+	if got := km.Key(Refresh); got != "ctrl+e" {
+		t.Errorf("refresh = %q, want the user's ctrl+e", got)
+	}
+	if got := km.Key(bookmark); got != "" {
+		t.Errorf("the new operation = %q, want unbound", got)
+	}
+	if !km.Shadowed("output", "ctrl+k") {
+		t.Error("the new fixed key is not shadowed on its surface")
+	}
+	if km.Shadowed("output", "f") {
+		t.Error("an untouched fixed key is shadowed")
+	}
+	joined := strings.Join(warnings, "\n")
+	for _, w := range []string{"bookmark", "unbound", "ctrl+k", "jump to the next message"} {
+		if !strings.Contains(joined, w) {
+			t.Errorf("warnings %q do not name %q", joined, w)
+		}
+	}
+	if len(warnings) != 2 {
+		t.Errorf("warnings = %q, want one per yielded meaning", warnings)
+	}
+}
+
+// TestLenientStillRefusesTheUsersOwnClash: two overrides on one key, an
+// unknown id, bad syntax and the text-field rules are not upgrade artefacts.
+func TestLenientStillRefusesTheUsersOwnClash(t *testing.T) {
+	for name, overrides := range map[string]map[string]string{
+		"two overrides":      {"refresh": "ctrl+e", "filter": "ctrl+e"},
+		"unknown id":         {"reload": "ctrl+r"},
+		"fixed name":         {"group": "G"},
+		"bad syntax":         {"refresh": "reload"},
+		"typing on a letter": {"palette_alt": "P"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := BuildLenient(overrides); err == nil {
+				t.Fatalf("%v was accepted on load", overrides)
+			}
+		})
+	}
+}
+
+// TestLenientTakesATodayClash: retry on o is refused on write because o is
+// browser's; on load the user's binding wins and browser is unbound.
+func TestLenientTakesATodayClash(t *testing.T) {
+	km, warnings, err := BuildLenient(map[string]string{"retry": "o"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if km.Key(Retry) != "o" || km.Key(Browser) != "" || len(warnings) != 1 {
+		t.Errorf("retry=%q browser=%q warnings=%q", km.Key(Retry), km.Key(Browser), warnings)
+	}
+	// A swap is not a clash: nothing yields and nothing warns.
+	if _, warnings, err := BuildLenient(map[string]string{"pause": "x", "reject": "p"}); err != nil || len(warnings) != 0 {
+		t.Errorf("a swap: warnings %q, err %v", warnings, err)
+	}
+}
+
+// TestRetiredIDIsDroppedNotAliased is decision 1: dropped with a warning in
+// both modes, never mapped onto another operation, while an unknown id stays
+// an error in both.
+func TestRetiredIDIsDroppedNotAliased(t *testing.T) {
+	upgrade(t, nil, nil, map[string]string{"bookmark": "bookmarks became a filter scope; bind scope instead"})
+	overrides := map[string]string{"bookmark": "ctrl+e"}
+	km, err := Build(overrides)
+	if err != nil {
+		t.Fatalf("strict Build refused a retired id: %v", err)
+	}
+	if len(km.keys) != 0 {
+		t.Errorf("a retired id bound something: %v", km.keys)
+	}
+	km, warnings, err := BuildLenient(overrides)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "bookmark") || !strings.Contains(warnings[0], "bind scope instead") {
+		t.Errorf("warnings = %q", warnings)
+	}
+	for _, info := range Catalog() {
+		if km.Key(info.Op) != info.Default {
+			t.Errorf("%s moved to %q: a retired id was aliased", info.Op, km.Key(info.Op))
+		}
+	}
+	for _, build := range []func(map[string]string) error{
+		func(o map[string]string) error { _, err := Build(o); return err },
+		func(o map[string]string) error { _, _, err := BuildLenient(o); return err },
+	} {
+		if build(map[string]string{"bookmarkz": "ctrl+e"}) == nil {
+			t.Error("an unknown id was accepted")
+		}
+	}
+}

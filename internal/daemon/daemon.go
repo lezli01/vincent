@@ -142,6 +142,13 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	for _, warning := range prevWarnings {
 		logger.Warn("config warning", "warning", warning)
 	}
+	// What a lenient tui.keys load let through (task 128 decision 4): an
+	// upgrade that retired an operation or put a default on a key the user
+	// had bound keeps the daemon starting, and says so here. The watcher logs
+	// them again on every accepted reload.
+	for _, warning := range cfg.KeyWarnings() {
+		logger.Warn("keymap warning", "warning", warning)
+	}
 	if lvl, err := parseLevel(cfg.LogLevel); err == nil {
 		level.Set(lvl)
 	}

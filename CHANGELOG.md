@@ -9,6 +9,19 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [Unreleased]
+
+### Fixed
+
+- **An upgrade can no longer stop the daemon over `tui.keys`.** A keymap that
+  was valid on one release refused the whole `config.yaml` on the next if that
+  release retired an operation you named, or gave a new operation or fixed key
+  a default you had already bound. Loading is now lenient about exactly that:
+  your binding wins, the displaced operation is left unbound (or the fixed key
+  shadowed on its screen), a retired name is ignored, and each is logged as a
+  `keymap warning`, listed by `vincent doctor` and shown once in the TUI.
+  `vincent config set` and the config editor stay strict (task 128, #590).
+
 ## [0.10.1](https://github.com/lezli01/vincent/compare/v0.10.0...v0.10.1) (2026-09-25)
 
 ### Fixed
