@@ -339,8 +339,8 @@ workspace has already loaded:
   instructions, and every action the daemon offers with its key and a line on
   what it does. `3 output of attempt N` and `6 what it was given` jump to the
   attempt it stopped on.
-- **Done or archived** — how it ended: the final status message, the cost, the
-  branch, and `4 diff` — plus `7 PR` when a pull request is linked.
+- **Done or archived** — how it ended: an **outcome card** (below), `4 diff`,
+  and `7 PR` when a pull request is linked.
 
 A **blocked** or **aborted** task's Overview is a **failure card**. Its first
 line says what stopped: `✗ Step 3 verify · attempt 2 · check failed
@@ -367,9 +367,40 @@ An aborted task's card is muted and shows no evidence; it offers what the
 daemon offers, which never includes retry. On a short terminal the card keeps
 its first line and a row of action keys.
 
+A **done** or **archived** task's Overview is an **outcome card** — what the
+task delivered. An **aborted** task shows one too, under its failure card,
+headed *incomplete — what was delivered*. On a short terminal the outcome card
+shrinks first, and on an aborted task it goes before the failure card does.
+The card shows:
+
+- **Result** — the summary the task's last successful agent attempt reported
+  (a follow-up round counts), rendered as Markdown and cut to about six lines.
+  With no successful agent attempt it is the newest attempt that reported
+  anything, and with none of those the task's own status message, labelled
+  dim as such. The label always says where it came from — `from step 2
+  implement · attempt 2`, with the loop iteration and item when there is one
+  — and `w` opens that attempt's output at its end.
+- **Changes** — `± 4 files · +120 −8 · branch vincent/12-…`, counted from the
+  task's diff, which is fetched once when the card first shows. An archived
+  task has no worktree, so it says `worktree removed — branch … kept`
+  instead, or `… gone` when archiving deleted a branch with no commits.
+- **Commits** — how many the task made on its branch and the newest three
+  subjects. A daemon too old to serve them, or a branch that is gone, leaves
+  the line out.
+- **Pull request** — `⇡ #123 open · checks 5/5 ✓ passing` when one is linked,
+  read from the same pull request and check rollup the Pull Request tab shows.
+- **Cost and time** — the cost (the whole tree's, for a task with lanes) and
+  the active time its attempts took, then `N lanes merged` and `loop ran K
+  iterations` when either is not zero.
+
+Every marker is a glyph with a word beside it, so the card reads without
+colour. The diff and the commits are fetched once each time the task is
+opened, never again while you watch it.
+
 A link is the tab's own digit: pressing it first moves the attempt selection to
 the attempt the Overview is about, then opens the tab, so Output and Step
-Details show that attempt. The footer lists the links the current frame draws.
+Details show that attempt. On an aborted task `3` stays the failure card's
+link; the outcome card's result has its own key, `w`. The footer lists the links the current frame draws.
 If the task changes state while the Overview is open, the new frame replaces
 the old one and your attempt selection stays where it was.
 
@@ -617,6 +648,7 @@ output. It is the sentence that decides whether to open the transcript.
 | `l` / `U` | Open a fan-out lane's workspace / this lane's parent task, from any tab — see [Walking a fan-out](#walking-a-fan-out) |
 | `3` / `6` / `4` / `7` | On Overview, the frame's jump links — the output of, or what was given to, the attempt it is about; the diff; the pull request |
 | `l` | On Overview, open the fan-out lane the failure card blames |
+| `w` | On Overview, open the output of the attempt the outcome card's result came from, at its end |
 | `6` | Step Details — what the selected attempt was handed, and the resolution behind it |
 | `7` | Pull Request — only when this task has a linked pull request and GitHub is on; `tab`/`shift+tab` skip it otherwise |
 | `m` | On Pull Request, merge it — the method is chosen in the popup, none preselected |
@@ -2612,7 +2644,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first twelve are the operations screens share, the next ten are the
+The first thirteen are the operations screens share, the next ten are the
 [task actions](#the-action-bar), and the last eight are the global keys.
 
 | Operation | Default | Does |
@@ -2629,6 +2661,7 @@ The first twelve are the operations screens share, the next ten are the
 | `scope` | `s` | Cycle what a listing shows |
 | `filter` | `/` | Filter |
 | `lane` | `l` | Open a fan-out lane |
+| `result` | `w` | Open the output the Overview's outcome card took its result from |
 | `pause` | `p` | Pause or resume the task |
 | `approve` | `a` | Approve the gate |
 | `reject` | `x` | Reject the gate |

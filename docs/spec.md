@@ -11202,6 +11202,43 @@ stream for the live tail.
    first line and its actions' keys, then the links; the rest is dropped
    whole.
 
+   *Amended 2026-09-29 (task 129.14, issue #602).* **A finished task's
+   ended frame is an outcome card.** It renders on `done` and `archived` in
+   place of the three facts above, and on `aborted` under the failure card,
+   headed "incomplete — what was delivered"; it is absent in every other
+   state. On a short body it gives up its result text, then collapses to its
+   heading and changes line, and on `aborted` it collapses before the failure
+   card does. **Result:** the `result_summary` of the newest (by id)
+   succeeded `agent` attempt, `__follow_up` rounds included; else of the
+   newest attempt with a non-empty summary; else the task's
+   `status_message`, labelled dim as that fallback. Only the task's own
+   attempts count (task 088 decision 9). It is rendered through the
+   assistant Markdown renderer after invalid UTF-8 is replaced, cut to 6
+   rendered lines, and always labelled with its source — step, loop
+   iteration and item, attempt. The `result` operation (default `w`,
+   registered on the Overview only while a result attempt exists) moves the
+   shared attempt cursor to that attempt and opens Output at its end; on
+   `aborted`, `3` stays the failure card's link. **Changes:** one
+   `GET /v1/tasks/{id}/diff` per open of a done or aborted task, counted
+   client-side (task 100 decision 2) into files, `+A −R` and the branch;
+   never refetched on an event, dropped when the task changes or the
+   workspace closes; a failed fetch is one dim line. An archived task fetches
+   no diff and says "worktree removed — branch `x` kept". **Commits:** one
+   `GET /v1/tasks/{id}/commits` per open, gated the same way: the count and
+   the newest three subjects. `ErrCommitsUnsupported` (an older daemon) omits
+   the line; a 409 on an archived task — the branch was deleted at archive
+   (task 092) — says the branch is gone and omits it. **Pull request:** when
+   the task carries a link, `#n` and its status from the Pull Request tab's
+   row plus that tab's check rollup (passing of total, and the rollup state
+   as a glyph and word); the card asks the tab's own checks fetch once per
+   open and fetches no pull request of its own. `4 diff` and, when the tab
+   exists, `7 PR` are the frame's links on all three states. **Cost and
+   time:** the tree cost (task 116) when the task has lanes, else its own,
+   and the sum of its attempts' §17 active durations; then `N lanes merged`
+   from the children rollup and `loop ran K iterations` from the rows'
+   `iteration`, each omitted at zero. Every marker is a glyph with a word
+   beside it. The daemon computes no outcome (#589 decision 4).
+
    *Amended 2026-09-29 (task 129.9, issue #598).* **The workspace says where
    it is once, and what it is doing now.** (1) In the app header the
    workspace's view tag — `[Task #12]` — is replaced by a **breadcrumb**:

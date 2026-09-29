@@ -78,6 +78,9 @@ type taskView struct {
 	// evidence is the Overview failure card's one transcript fetch (task
 	// 129.13), keyed by the failing attempt so an event never refetches it.
 	evidence failureEvidence
+	// outcome is the Overview outcome card's diff and commits fetches (task
+	// 129.14), one each per open of the task, never refetched on an event.
+	outcome outcomeFetch
 	// workflow is the §15 workflow-graph tab (task 051). It is a sub-model
 	// rather than more fields here because it owns a viewport and a
 	// selection, and because the graph component is shared with the
@@ -306,14 +309,22 @@ func (t *taskView) bindingContext() bindingContext {
 func (t *taskView) target() taskActions { return t.detail.target() }
 
 func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
-	if m, ok := msg.(failureEvidenceMsg); ok {
+	switch m := msg.(type) {
+	case failureEvidenceMsg:
 		t.applyFailureEvidence(m)
+		return t, nil
+	case outcomeDiffMsg:
+		t.applyOutcomeDiff(m)
+		return t, nil
+	case outcomeCommitsMsg:
+		t.applyOutcomeCommits(m)
 		return t, nil
 	}
 	p, cmd := t.route(msg)
-	// After every message: the one that loaded a blocked task, or moved the
-	// reader onto the Overview, is the one that fetches the card's evidence.
-	return p, tea.Batch(cmd, t.syncFailureEvidence())
+	// After every message: the one that loaded a blocked or finished task,
+	// or moved the reader onto the Overview, is the one that fetches the
+	// failure card's evidence and the outcome card's diff and commits.
+	return p, tea.Batch(cmd, t.syncFailureEvidence(), t.syncOutcome())
 }
 
 func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
@@ -360,6 +371,7 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 		t.pullTab = taskPullTab{}
 		t.pullFormPending = msg.openPR
 		t.chats, t.chatsErr = nil, ""
+		t.outcome = outcomeFetch{}
 		t.detail.active = true
 		laneCmd := t.resetLanes()
 		openCmd := t.detail.open(msg.id, msg.state)
@@ -388,6 +400,9 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 		}
 		t.detail.active = false
 		t.popup = false
+		// The outcome card's fetches are per open; leaving the workspace
+		// ends the open.
+		t.outcome = outcomeFetch{}
 		// The lane subscription belongs to a screen nobody is looking at.
 		return t, tea.Batch(t.detail.syncStream(), t.syncLaneDetail())
 	case tea.KeyPressMsg:

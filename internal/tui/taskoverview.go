@@ -31,7 +31,9 @@ const (
 	// frameAttention is "what does it need from me": blocked, awaiting_input,
 	// awaiting_gate and aborted.
 	frameAttention
-	// frameOutcome is "how did it end": done and archived.
+	// frameOutcome is "how did it end": done and archived. An aborted task
+	// is in the attention frame and carries the outcome card too, under its
+	// failure card (task 129.14).
 	frameOutcome
 )
 
@@ -68,16 +70,27 @@ func (t *taskView) overviewLinks() []overviewLink {
 		if run, ok := t.overviewAnchor(); ok {
 			links[0].label = fmt.Sprintf("output of attempt %d", run.Attempt)
 		}
-		return links
-	case frameOutcome:
-		links := []overviewLink{{taskTabDiff, "diff"}}
-		if t.pullTabAvailable() {
-			links = append(links, overviewLink{taskTabPull, "PR"})
+		if t.showsOutcomeCard() {
+			// The outcome card under an aborted task's failure card links
+			// what was delivered; `3` stays the failure card's.
+			links = append(links, t.deliveredLinks()...)
 		}
 		return links
+	case frameOutcome:
+		return t.deliveredLinks()
 	default:
 		return []overviewLink{{taskTabOutput, "full output"}}
 	}
+}
+
+// deliveredLinks are the outcome card's links: the diff and, when one is
+// linked, the pull request.
+func (t *taskView) deliveredLinks() []overviewLink {
+	links := []overviewLink{{taskTabDiff, "diff"}}
+	if t.pullTabAvailable() {
+		links = append(links, overviewLink{taskTabPull, "PR"})
+	}
+	return links
 }
 
 // overviewLinkFor reports whether tab is one of the current frame's links.
@@ -138,6 +151,9 @@ func (t *taskView) jumpTab(tab taskViewTab) tea.Cmd {
 // behind a screen that does not draw it.
 func (t *taskView) updateOverviewKey(msg tea.KeyPressMsg) tea.Cmd {
 	d := t.detail
+	if !d.actions.capturing() && msg.String() == opKey(keymap.Result) {
+		return t.jumpToResult()
+	}
 	if !d.actions.capturing() && msg.String() == opKey(keymap.EditRetry) {
 		return d.update(msg)
 	}
@@ -156,6 +172,11 @@ func (t *taskView) overviewLiveBindings(b binding) (binding, bool) {
 		}
 		c := t.failureCard()
 		return b, c.blamed && c.blame.taskID != 0
+	}
+	if b.op == keymap.Result {
+		// `w` is on the Overview for the outcome card's result source only.
+		_, _, ok := summaryRun(t.detail.task)
+		return b, ok && t.showsOutcomeCard()
 	}
 	var tab taskViewTab
 	switch b.key {
@@ -210,12 +231,23 @@ func (t *taskView) overviewLines(width, height int) []string {
 	switch {
 	case t.showsFailureCard() && height < cardCollapseRows:
 		// A short terminal keeps the card's first line and its keys; the
-		// sentence goes with the rest (brief decision 8).
+		// sentence goes with the rest (brief decision 8). An aborted task's
+		// outcome card collapses before it does, so it is gone here.
 		out = append(out[:2], t.failureCardLines(width, height, true)...)
 	case t.showsFailureCard():
 		out = appendWrapped(out, overviewSentence(task, len(t.lanes)), width)
 		out = append(out, "")
 		out = append(out, t.failureCardLines(width, height-len(out), false)...)
+		if t.showsOutcomeCard() {
+			// Under the failure card, in what is left once the jump links
+			// have their two rows (task 129.14 decision 2).
+			out = append(out, "")
+			out = append(out, t.outcomeCardLines(width, height-len(out)-2)...)
+		}
+	case overviewFrameFor(task.State) == frameOutcome:
+		out = appendWrapped(out, overviewSentence(task, len(t.lanes)), width)
+		out = append(out, "")
+		out = append(out, t.outcomeCardLines(width, height-len(out)-2)...)
 	default:
 		out = appendWrapped(out, overviewSentence(task, len(t.lanes)), width)
 		out = append(out, "")
@@ -223,8 +255,6 @@ func (t *taskView) overviewLines(width, height int) []string {
 		switch overviewFrameFor(task.State) {
 		case frameAttention:
 			body = t.attentionFacts()
-		case frameOutcome:
-			body = t.outcomeFacts()
 		default:
 			body = t.progressFacts()
 		}
@@ -379,22 +409,6 @@ func pendingText(req apiclient.InputRequest) string {
 		texts = append(texts, q.Text)
 	}
 	return valueOr(strings.Join(texts, "\n"), req.Kind)
-}
-
-func (t *taskView) outcomeFacts() []taskDetailFact {
-	task := t.detail.task
-	final := ""
-	if task.StatusMessage != nil {
-		final = *task.StatusMessage
-	}
-	if run, ok := t.overviewAnchor(); ok && final == "" {
-		final = valueOr(statusOf(run), strings.TrimSpace(run.ResultSummary))
-	}
-	return []taskDetailFact{
-		{"final status", valueOr(final, "nothing said")},
-		{"cost", formatCost(taskOwnCost(task))},
-		{"branch", valueOr(task.BranchName, "not created")},
-	}
 }
 
 type overviewActionDef struct {

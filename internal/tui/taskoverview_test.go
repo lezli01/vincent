@@ -142,7 +142,7 @@ func TestOverviewStateChangeSwapsFrameNotCursor(t *testing.T) {
 	}
 	v.detail.task.State = stateDone
 	got = ansi.Strip(v.render(100, 30))
-	for _, want := range []string{"Done", "cost", "branch", "4 diff"} {
+	for _, want := range []string{"Done", "Outcome", "cost", "4 diff"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("done overview misses %q:\n%s", want, got)
 		}

@@ -1829,6 +1829,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"d": workspaceKeyProbe(onTab(taskTabOverview), "d", taskTabDiff),
 		"l": laneOpenProbe(taskTabOverview),
 		"U": laneParentProbe(taskTabOverview),
+		"w": func(t *testing.T) {
+			v := outcomeView(t, outcomeTask(stateDone))
+			v.updateKey(registryKey(t, "w"))
+			if v.tab != taskTabOutput || v.detail.selectedRun != 1 {
+				t.Fatalf("w left tab %v, cursor %d; want Output on the result's attempt 1", v.tab, v.detail.selectedRun)
+			}
+		},
 		"0": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabDetails)
 			v.updateKey(registryKey(t, "0"))
@@ -2684,6 +2691,7 @@ var vocabulary = []struct {
 	{termScope, "s", true},
 	{termFilter, "/", true},
 	{termLane, "l", true},
+	{termResult, "w", true},
 }
 
 // vocabularyExceptions are the rows that hold a vocabulary key for something

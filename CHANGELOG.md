@@ -13,6 +13,16 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **An outcome card on a finished task's Overview.** A done or archived
+  task's Overview now says what it delivered: the result its last successful
+  agent attempt reported, labelled with the step and attempt it came from
+  (`w` opens that attempt's output at its end); the files and lines it
+  changed and its branch; its commits; its pull request with the check
+  rollup; and its cost and active time, with lanes merged and loop iterations
+  when there are any. An aborted task shows the same card under its failure
+  card as what was delivered before it stopped. An archived task says whether
+  its branch was kept. A new `result` key operation (default `w`) can be
+  rebound under `tui.keys` (#602).
 - **A failure card on a blocked task's Overview.** A blocked task's Overview
   now says what stopped it on one screen: the step, loop iteration or lane and
   attempt, the reason in words with its code, the last lines of the failing
