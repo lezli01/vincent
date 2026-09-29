@@ -12081,8 +12081,11 @@ daemon state and no capability that exists only at one size.
 │  latest status   writing the rate-limit middleware         │
 │  3 full output                                             │
 └────────────────────────────────────────────────────────────┘
- 0 overview · tab views · 3 full output     : commands  ? help  q quit
+ tab views · 3 full output                  : commands  ? help  q quit
 ```
+
+*Amended 2026-09-29 (issue #595, task 129.6):* the workspace footer above no
+longer carries `0 overview` — a tab does not offer a hint for itself (§15).
 
 The task table keeps the full §15 column set at full width. The task workspace
 does not reserve a rail or a second pane: metadata, transcripts and diffs are
