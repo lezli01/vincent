@@ -246,6 +246,37 @@ func laneParentProbe(tab taskViewTab) func(*testing.T) {
 	}
 }
 
+// workspaceKeyProbe is the shared assertion for the keys taskView.Update
+// answers on every tab (issue #595): pressed on tab from, the workspace lands
+// on want.
+func workspaceKeyProbe(v func(*testing.T) *taskView, key string, want taskViewTab) func(*testing.T) {
+	return func(t *testing.T) {
+		tv := v(t)
+		from := tv.tab
+		tv.updateKey(registryKey(t, key))
+		if tv.tab != want {
+			t.Fatalf("%s on tab %v moved to %v, want %v", key, from, tv.tab, want)
+		}
+	}
+}
+
+// workspaceTabProbe is `tab` on a tab whose place in the strip depends on
+// which tabs the task has: the press must move somewhere.
+func workspaceTabProbe(v func(*testing.T) *taskView) func(*testing.T) {
+	return func(t *testing.T) {
+		tv := v(t)
+		from := tv.tab
+		tv.updateKey(registryKey(t, "tab"))
+		if tv.tab == from {
+			t.Fatalf("tab on tab %v did not move", from)
+		}
+	}
+}
+
+func onTab(tab taskViewTab) func(*testing.T) *taskView {
+	return func(t *testing.T) *taskView { return tabbedTaskFixture(t, tab) }
+}
+
 // laneSelectProbe is the shared `<` / `>` assertion: the press walks the
 // Output pane's lane selector, whose cycle includes the task's own output —
 // so one press from there lands on the first lane going forwards and on the
@@ -512,6 +543,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxTimeline: {
+		"0": workspaceKeyProbe(onTab(taskTabSteps), "0", taskTabOverview),
+		"d": workspaceKeyProbe(onTab(taskTabSteps), "d", taskTabDiff),
 		"tab": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabSteps)
 			v.updateKey(registryKey(t, "tab"))
@@ -599,6 +632,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxTaskDetails: {
+		"0": workspaceKeyProbe(onTab(taskTabDetails), "0", taskTabOverview),
+		"d": workspaceKeyProbe(onTab(taskTabDetails), "d", taskTabDiff),
 		"tab": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabDetails)
 			v.updateKey(registryKey(t, "tab"))
@@ -1154,6 +1189,9 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxOutput: {
+		"0": workspaceKeyProbe(onTab(taskTabOutput), "0", taskTabOverview),
+		"d": workspaceKeyProbe(onTab(taskTabOutput), "d", taskTabDiff),
+		"U": laneParentProbe(taskTabOutput),
 		"tab": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabOutput)
 			v.updateKey(registryKey(t, "tab"))
@@ -1285,6 +1323,9 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxDiff: {
+		"0": workspaceKeyProbe(onTab(taskTabDiff), "0", taskTabOverview),
+		"d": workspaceKeyProbe(onTab(taskTabDiff), "d", taskTabOutput),
+		"U": laneParentProbe(taskTabDiff),
 		"tab": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabDiff)
 			v.updateKey(registryKey(t, "tab"))
@@ -1784,6 +1825,10 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxTaskOverview: {
+		"1": workspaceKeyProbe(onTab(taskTabOverview), "1", taskTabSteps),
+		"d": workspaceKeyProbe(onTab(taskTabOverview), "d", taskTabDiff),
+		"l": laneOpenProbe(taskTabOverview),
+		"U": laneParentProbe(taskTabOverview),
 		"0": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabDetails)
 			v.updateKey(registryKey(t, "0"))
@@ -1808,7 +1853,6 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"3": overviewLinkProbe(stateRunning, "3", taskTabOutput),
 		"6": overviewLinkProbe(stateBlocked, "6", taskTabStepDetails),
 		"4": overviewLinkProbe(stateDone, "4", taskTabDiff),
-		"l": laneOpenProbe(taskTabOverview),
 		"7": func(t *testing.T) {
 			v := pullTabFixture(t)
 			v.detail.task.State = stateDone
@@ -1821,6 +1865,11 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxTaskStepDetails: {
+		"tab": workspaceTabProbe(onTab(taskTabStepDetails)),
+		"0":   workspaceKeyProbe(onTab(taskTabStepDetails), "0", taskTabOverview),
+		"d":   workspaceKeyProbe(onTab(taskTabStepDetails), "d", taskTabDiff),
+		"l":   laneOpenProbe(taskTabStepDetails),
+		"U":   laneParentProbe(taskTabStepDetails),
 		"6": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabSteps)
 			v.updateKey(registryKey(t, "6"))
@@ -1840,6 +1889,10 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxTaskPull: {
+		"tab": workspaceTabProbe(pullTabFixture),
+		"0":   workspaceKeyProbe(pullTabFixture, "0", taskTabOverview),
+		"d":   workspaceKeyProbe(pullTabFixture, "d", taskTabDiff),
+		"U":   laneParentProbe(taskTabPull),
 		"7": func(t *testing.T) {
 			v := pullTabFixture(t)
 			v.tab = taskTabDetails
@@ -1990,6 +2043,10 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxTaskWorkflow: {
+		"tab": workspaceTabProbe(workflowTabFixture),
+		"0":   workspaceKeyProbe(workflowTabFixture, "0", taskTabOverview),
+		"d":   workspaceKeyProbe(workflowTabFixture, "d", taskTabDiff),
+		"U":   laneParentProbe(taskTabWorkflow),
 		"down": func(t *testing.T) {
 			v := workflowTabFixture(t)
 			before := v.workflow.graph.Selected()
@@ -2647,6 +2704,16 @@ var vocabularyExceptions = map[string]string{
 	// column, and they live on the one screen that can see a pull request no
 	// task claims. `l` there is not a lane, and the takeover has none.
 	"panel/pull requests/l": "task 052.6 — link, on a screen with no fan-out lanes",
+	// Issue #595: `d` switches Output and Diff from every workspace tab; the
+	// keymap's exception on `d` records why no draft is ever open there.
+	"panel/task overview/d":     "issue #595 — the workspace's Output⇄Diff toggle, where no draft is ever open",
+	"panel/timeline/d":          "issue #595 — the workspace's Output⇄Diff toggle, where no draft is ever open",
+	"panel/task details/d":      "issue #595 — the workspace's Output⇄Diff toggle, where no draft is ever open",
+	"panel/output/d":            "issue #595 — the workspace's Output⇄Diff toggle, where no draft is ever open",
+	"panel/diff/d":              "issue #595 — the workspace's Output⇄Diff toggle, where no draft is ever open",
+	"panel/task workflow/d":     "issue #595 — the workspace's Output⇄Diff toggle, where no draft is ever open",
+	"panel/task step details/d": "issue #595 — the workspace's Output⇄Diff toggle, where no draft is ever open",
+	"panel/task pull request/d": "issue #595 — the workspace's Output⇄Diff toggle, where no draft is ever open",
 }
 
 // TestVocabularyIsOneKeyPerOperation: the table itself, before any row is
