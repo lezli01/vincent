@@ -179,6 +179,17 @@ re-spend that width is untouched — `minTitleWithStatus` is now spelled
 `TestStatusColumnDoesNotEatTheWidthGroupingFrees` and
 `TestGroupedColumnsAreDropped` carry the amended form.
 
+*Amended 2026-09-29 ([task 129](129-tui-monitoring-redesign.md) decision 3,
+129.16, #604).* The column is no longer shed first. It is a candidate only
+while some row the board holds has a status message, and then it outranks
+`cost` and the step name: the order of shedding is the pull request marker,
+cost, step name, status, workflow, project. Its gate is `minTitleWithStatus`
+again, now **32**, separate from `maxTitle`, so the default grouped board keeps
+it at 120 columns rather than needing 164. A column may therefore spend width
+a grouped board frees, deliberately — the board's one changing signal is worth
+more than title cells past 32. The reasoning that keeps a hold's reason out of
+the state cell is untouched.
+
 **10. The list row denormalizes the *newest* row's status.** *2026-08-26.* The
 board reads `GET /v1/tasks` and never fetches step rows, so `status_message`
 rides the list DTO the way `step_name` and `cost_usd` do — one extra query for

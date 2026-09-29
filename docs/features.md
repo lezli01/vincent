@@ -304,7 +304,10 @@ every client, so the TUI, CLI, and API agree on what can happen next. See the
 Running `vincent` opens a Bubble Tea interface for active agent workloads:
 
 - A filterable, grouped task board shows state, current step, elapsed time,
-  reported cost, and — on a wide terminal — the step's own status message.
+  reported cost, the step's own status message, and a `⇡#123` marker on a task
+  with a pull request. The status is kept at 120 columns, and a column no task
+  has anything to say in (a cost no agent reported, a status nobody set) is
+  left out.
   Groups fold away, and a folded one still carries its task count and its
   needs-attention badge. The board is calm when nothing needs you: no
   zero-attention clause, one `agents ✓` for every healthy agent, no header for

@@ -42,6 +42,10 @@ allocation order in decision 3 puts it rather than necessarily in the title.
 The part of decision 9 that mattered is undisturbed: a *new column* must not
 silently re-spend the freed width, and `STATUS`'s gate is what enforces that.
 
+*Amended 2026-09-29 ([task 129](129-tui-monitoring-redesign.md) decision 3,
+129.16).* The ceiling is unchanged; its role as `STATUS`'s gate is not. See
+decision 2.
+
 **Beat:** a second, higher ceiling for grouped boards, which would have kept
 the literal wording of decision 9 at the cost of two constants that must be
 kept in a relationship nobody can state, for an invariant that is a proxy for
@@ -61,6 +65,16 @@ so the existing ladder and gate tests are the proof.
 
 **Beat:** a separate `maxTitle` alongside `minTitleWithStatus`, which would be
 two names for one threshold and an invitation for them to drift apart.
+
+> **Amended 2026-09-29 — [task 129](129-tui-monitoring-redesign.md) decision 3,
+> 129.16 (#604).** The two are two facts again. `minTitleWithStatus = 32` is
+> the status gate, and `maxTitle = 64` stays the title's ceiling for the
+> allocation order in decision 3. `maxTitle` now also marks where `STATUS` may
+> wrap: a status admitted while the title is under it is cut to one line (see
+> decision 6). `STATUS` is a candidate only while a row has a status message,
+> and `COST` only while a row has a cost. With no status on any row the column
+> set is the one this decision describes, apart from `COST` and the new `PR`
+> column.
 
 **3. Allocation order: title to `maxTitle`, then `STEP` to `widthStepMax`,
 then `STATUS` to `widthStatusMax`, then the remainder back to the title.**
@@ -95,6 +109,10 @@ neither other column has any appetite — grouped, above roughly 230 columns.
 **Beat:** dividing the surplus proportionally between the three, which puts a
 few cells nowhere useful at every width instead of filling one column at a
 time; and spending nothing beyond the ceiling, which is the dead-cells board.
+
+*Amended 2026-09-29 (task 129.16).* The order stands. The give-back band now
+belongs to a board with no status message on any row, since `STATUS` is no
+longer gated off at 160 columns when a row has one.
 
 **4. Uniform row height, computed per render, clamped to 3.** *(2026-08-29)*
 
@@ -142,6 +160,12 @@ overflow, and the last two are identifiers used for scanning, which a 14-cell
 wrap makes unreadable — under width pressure they are shed, which is the answer
 the ladder already gives for them. The mark glyph is on a row's first line
 only; a column of ticks down a wrapped row would read as three marked tasks.
+
+*Amended 2026-09-29 in part ([task 129](129-tui-monitoring-redesign.md)
+decision 3, 129.16).* `STATUS` wraps only on a board whose title has reached
+`maxTitle`. Below that it was admitted by the relaxed gate, and its cell is cut
+to one line with `…` so it cannot raise every row's height (decision 4, kept).
+The new `PR` column does not wrap: it is an identifier, like `ID`.
 
 **7. Wrapping applies at every width, including narrow boards.**
 *(2026-08-29)*

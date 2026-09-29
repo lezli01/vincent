@@ -8975,6 +8975,14 @@ GET    /v1/tasks/{id}                   full task incl. step runs summary and pe
                                         While it is set the task is locked (§6) and
                                         `available_actions` is `[cancel]` where cancel is
                                         legal and `[]` elsewhere
+                                        *Amended 2026-09-29 (task 129.16, issue #604):* the
+                                        `GET /v1/tasks` rows carry `github_pull` too — the
+                                        same nullable link object as the detail's (§5.3),
+                                        null for a task no pull request has matched. The
+                                        server always served it; the statement is new, and
+                                        the board's pull request marker reads it from the
+                                        row, never from `/github/*`. A client of an older
+                                        daemon that omits it treats it as null
                                         Detail-only: `workflow_steps[]` — the task's snapshot
                                         as { index, id, type, prompt?, run?, instructions?,
                                         resolved_from[]? }, which is what edit+retry prefills
@@ -10617,6 +10625,10 @@ stream for the live tail.
    recorded reasoning that keeps a hold's reason out of it (it does not fit, and
    widening a column for a rare state costs every board the columns that shed
    first) stands unchanged, and this column is why the status did not go there.
+   *Amended 2026-09-29 (task 129.16, amending task 036 decision 9 and task 050
+   decisions 1–3 and 6): the status is no longer at the top of the shedding
+   ladder, and it is a candidate only while a row has something to say — see
+   Content columns below.*
 
    **Column widths (task 050, added 2026-08-29).** `TITLE` is the only flexible
    column, and it takes the width the fixed set leaves — but only up to a
@@ -10660,6 +10672,35 @@ stream for the live tail.
    what it can do: it shades the selected row's first line, because the shading
    is applied per row and faking it per cell would come out with unshaded
    gutters between the columns.
+
+   **Content columns (task 129.16, added 2026-09-29).** Three columns are
+   candidates only while a row the board holds has something to put in them:
+   `STATUS` while some row has a status message, `COST` while some row has a
+   cost, and `PR` — a pull request marker, `⇡#123` — while some row has a
+   pull request link that has not been suppressed (§5.3). "The rows the board
+   holds" is every task row after the filter and the archive view, including
+   rows scrolled out of view and rows inside collapsed groups, so a column
+   never appears or vanishes as the board scrolls. A column of dashes or
+   blanks is width taken from the title to say nothing, and several adapters
+   never report a cost. The shedding order becomes: `PR`, then `COST`, then
+   the step name, then `STATUS`, then `WORKFLOW`, then `PROJECT`. The step
+   counter is never shed. `STATUS` is admitted while the title keeps 32 cells,
+   a gate of its own again, separate from the title's ceiling, so the default
+   grouped board keeps it at 120 columns (with a short `STEP` and no `COST`)
+   where it used to need 164. A `STATUS` admitted while the title is under its
+   ceiling is cut to **one line** with an ellipsis rather than wrapped, so it
+   never raises the row height on a board that had no room for it before.
+   Above the ceiling it wraps as the row-height rule says. `PR` shows on every
+   row with a live link, running or done. It is shed first and never wraps.
+   It shows the number only: vincent does not store the pull request's state,
+   and the board makes no `/github/*` request to find it. The glyph is a
+   character, not a colour, and the ASCII `#123` beside it carries the
+   meaning alone. With no status message on any row, the board is the one it
+   was before this amendment apart from `COST` and `PR`. *This amends task 036
+   decision 9 (the status sheds first), task 050 decisions 1–3 (the ceiling
+   was also the status gate; `maxTitle` replaced `minTitleWithStatus`) and
+   task 050 decision 6 in part (below the ceiling `STATUS` no longer wraps).
+   Task 050 decision 4, the uniform row height clamped to three, is kept.*
 
    **A fan-out parent is expandable (issue #316, added 2026-09-03).** Task 014
    decision 13 — descendants are excluded from the task list — is **kept**: a
@@ -12053,7 +12094,10 @@ get to bend:
   wording, and task 036 decision 9's "strictly wider at every width", are
   amended to that; the reasoning that a **new column** must not silently
   re-spend the freed width is untouched, and is still what the `STATUS` gate
-  enforces.*
+  enforces.* *Amended 2026-09-29 (task 129.16): the `STATUS` gate is now a
+  32-cell title (Content columns, §15), which a grouped board clears at 120
+  columns. The column may therefore spend width grouping frees, deliberately:
+  the board's one changing signal is worth more than title cells past 32.*
 - **An open header is a label, not a row.** The cursor steps over it in the
   direction it was travelling, and clicking it selects nothing.
 - **A level with one value draws no header** (amended 2026-09-29, task 129.15,

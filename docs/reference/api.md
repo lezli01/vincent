@@ -2194,6 +2194,9 @@ Five details worth knowing:
   `output_tokens` rolled up across every attempt — so a board renders without an
   N+1. Those are list-only; `GET /v1/tasks/{id}` serves the same numbers per
   attempt in `steps[]`.
+  List rows also carry `github_pull`, the same pull request link the detail
+  has (null for a task no pull request matched), which is what the board's
+  `⇡#123` marker reads.
 
 Every task shape carries `parent_task_id`, `lane_id` and `lane_order`, all null
 for a root task. `GET /v1/tasks/{id}` additionally carries `children` whenever
