@@ -247,9 +247,6 @@ func TestCollapsedHeaderIsNotATask(t *testing.T) {
 	if got := b.target(); got.id != 0 {
 		t.Errorf("action target on a fold = %d, want none", got.id)
 	}
-	if line := b.actionLine(); line != "" {
-		t.Errorf("a fold offered actions: %q", line)
-	}
 	// space is a statement about a task; there is none here.
 	foldPress(b, tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 	if b.hasMarks() {
@@ -268,6 +265,7 @@ func TestCollapsedHeaderCountsWhatItHides(t *testing.T) {
 	b := groupedBoard(
 		task(1, stateBlocked, inProject("api"), inWorkflow("build")),
 		task(2, stateQueued, inProject("api"), inWorkflow("build")),
+		task(3, stateQueued, inProject("web"), inWorkflow("docs")),
 	)
 	b.render(160, 20)
 	b.marks = b.marks.add(1, 2)

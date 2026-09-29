@@ -970,6 +970,14 @@ func (b *board) allRows() []boardRow {
 	return b.spliceLanes(groupRows(sorted, b.group))
 }
 
+// shownGroup is the grouping as it is drawn: the levels that render headers,
+// and the values of the ones that do not because every task being shown
+// shares one (shownLevels, task 129 decision 4). The fold keys read the first
+// half; the panel title names the second.
+func (b *board) shownGroup() (grouping, []string) {
+	return shownLevels(filterTasks(b.tasks, b.filter.Value()), b.group)
+}
+
 // wrapRows expands each task row into one row per rendered line, so an index
 // into the table is an index into the slice.
 func (b *board) wrapRows(rows []boardRow) []boardRow {
@@ -1166,34 +1174,25 @@ func (b *board) render(width, height int) string {
 		b.tbl.SetCursor(firstTaskRow(rows))
 	}
 	sb.WriteString(b.tbl.View())
-	sb.WriteString("\n")
-	sb.WriteString(b.actionLine())
 	return sb.String()
 }
 
-// actionLine is the board's action affordance: the same gating as the detail
-// view's bar, rendered as one dim footer. Triage happens here, so the keys
-// have to be here too (§15 lists them as global).
-func (b *board) actionLine() string {
-	t := b.target()
-	if t.id == 0 {
-		return ""
-	}
-	return b.actions.render(t)
-}
-
+// chromeLines is the board's height budget above the table's rows. There is
+// no action line under the table any more (task 129 decision 5): the footer
+// lists the §6 keys, budgeted first (task 094 decision 2), and a second copy
+// of them in the panel was a row the table could have had.
 func (b *board) chromeLines() int {
-	n := 3 // header + the action line + a blank the shell leaves
+	n := 2 // header + a blank the shell leaves
 	return n + len(b.statusLines())
 }
 
 // firstRowLine is the board-content line the table's first data row lands
 // on: the header line, the status line when there is one, then the table's
 // own column header. Click math needs *only* what sits above the rows, so it
-// cannot borrow chromeLines — that is a height budget and also counts the
-// action line rendered below the table. Sharing the two put every click two
-// rows high, which read as "rows select from a few lines below themselves"
-// (M3 gate finding, macOS).
+// cannot borrow chromeLines — that is a height budget, and when it also
+// counted the action line once rendered below the table, sharing the two put
+// every click two rows high, which read as "rows select from a few lines
+// below themselves" (M3 gate finding, macOS).
 func (b *board) firstRowLine() int {
 	n := 2 // the header line, then the table's column header
 	return n + len(b.statusLines())
@@ -1223,8 +1222,12 @@ type boardCell struct {
 // parent (boardlanes.go). It is the same groupIndent the headers use, so a
 // lane reads as nested under its parent exactly the way a task reads as nested
 // under its group.
+//
+// The grouping depth is the row's own, not the configured level count: a
+// level that draws no header (shownLevels) indents nothing, so a board that
+// is all one project does not inset every title under a header it lacks.
 func (b *board) rowIndent(r boardRow) string {
-	return strings.Repeat(groupIndent, len(b.group)+r.lane)
+	return strings.Repeat(groupIndent, r.depth+r.lane)
 }
 
 // cellsFor is one task's cells in column order. It and boardColumns share one
@@ -1446,6 +1449,11 @@ func (b *board) slotBreakdown() []string {
 // and a task on a question counts in both it and the slot count, because it
 // is both holding a slot and waiting on a person.
 //
+// The line says only what needs a look (task 129.15): at zero the attention
+// clause is omitted rather than reading "0 need attention", and healthy
+// adapters collapse into one dim `agents ✓`. While a filter is committed the
+// count says `(all tasks)`, because it is deliberately not the filtered one.
+//
 // The breakdown clauses are shed rather than wrapped when the panel is too
 // narrow for them, last one first. The budget follows from what the line
 // actually measures rather than from a threshold constant that could
@@ -1462,10 +1470,11 @@ func (b *board) headerLine() string {
 
 	var tail []string
 	if attention > 0 {
-		tail = append(tail, styleAsk.Render(
-			fmt.Sprintf("%s %d need attention", attentionBadge, attention)))
-	} else {
-		tail = append(tail, styleDim.Render("0 need attention"))
+		clause := fmt.Sprintf("%s %d need attention", attentionBadge, attention)
+		if b.filter.Value() != "" {
+			clause += " (all tasks)"
+		}
+		tail = append(tail, styleAsk.Render(clause))
 	}
 	if b.infoOK {
 		tail = append(tail, b.agentsSummary())
@@ -1483,32 +1492,44 @@ func (b *board) headerLine() string {
 	}
 }
 
+// agentsSummary names only the adapters that need a look (task 129.15): the
+// installed, authenticated, in-quota ones collapse into one dim `agents ✓`,
+// and an adapter that is not installed is omitted — the catalog lists every
+// adapter vincent knows, and one nobody installed is not a problem on this
+// board. The doctor and the daemon view still list the whole catalog.
+// Nothing installed at all is a problem, and says `no adapters`.
 func (b *board) agentsSummary() string {
-	if len(b.info.Agents) == 0 {
-		return styleDim.Render("no adapters")
-	}
 	now := b.now()
-	parts := make([]string, 0, len(b.info.Agents))
+	healthy, installed := 0, 0
+	var named []string
 	for _, a := range b.info.Agents {
+		if !a.Available {
+			continue
+		}
+		installed++
 		switch {
-		case !a.Available:
-			parts = append(parts, styleBad.Render(a.Name+" ✗"))
 		case a.NotAuthenticated():
 			// Present but unable to run a step (§9.5) — the board's one-glance
 			// summary must not read as healthy.
-			parts = append(parts, styleAsk.Render(a.Name+" ⚠"))
+			named = append(named, styleAsk.Render(a.Name+" ⚠"))
 		case a.QuotaSpent(now):
 			// Installed, authenticated, and out of quota until a stated time
-			// (task 026). It ranks below the other two because it is
-			// temporary and self-clearing, and it ranks above ✓ because a
-			// tick here is the answer to "why is nothing running" being wrong.
-			// Admission is untouched: this warns, it does not withhold.
-			parts = append(parts, styleAsk.Render(a.Name+" "+quotaBadge(a.Quota, now)))
+			// (task 026). A tick here would be the wrong answer to "why is
+			// nothing running". Admission is untouched: this warns, it does
+			// not withhold.
+			named = append(named, styleAsk.Render(a.Name+" "+quotaBadge(a.Quota, now)))
 		default:
-			parts = append(parts, styleOK.Render(a.Name+" ✓"))
+			healthy++
 		}
 	}
-	return strings.Join(parts, " ")
+	if installed == 0 {
+		return styleDim.Render("no adapters")
+	}
+	parts := make([]string, 0, len(named)+1)
+	if healthy > 0 {
+		parts = append(parts, styleDim.Render("agents ✓"))
+	}
+	return strings.Join(append(parts, named...), " ")
 }
 
 // statusLine surfaces a stale board and the filter prompt while it is being

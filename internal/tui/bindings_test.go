@@ -158,7 +158,10 @@ func foldingShell(t *testing.T) *shell {
 	t.Helper()
 	s, _ := newShellFixture(t,
 		task(1, stateQueued, inProject("api"), inWorkflow("build")),
-		task(2, stateQueued, inProject("web"), inWorkflow("build")),
+		// A second workflow as well as a second project: a level every task
+		// shares draws no header (task 129 decision 4), and the fold keys
+		// need both levels on screen.
+		task(2, stateQueued, inProject("web"), inWorkflow("deploy")),
 	)
 	s.focus = panelTasks
 	s.board.group, s.board.configGroup = defaultGrouping(), defaultGrouping()

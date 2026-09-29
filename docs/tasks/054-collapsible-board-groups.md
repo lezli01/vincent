@@ -92,7 +92,14 @@ issue asked for:
 - The header carries the `! n` attention badge and the task count already — that
   machinery was built in 009 decision 2 for exactly this, and it keeps working
   through a fold. So does the bulk-selection count, so `V` reaching into a fold
-  (task 011: the selection is not a view) is never invisible.
+  (task 011: the selection is not a view) is never invisible. *Amended 2026-09-29
+  (task 129 decision 4, via 129.15, #603), in part:* a grouping level whose shown
+  tasks share one value draws no header, so the badge is carried by the nearest
+  header still drawn — or, with none, by the rows' own state styling and the board
+  header's attention clause; no per-row badge is added. A skipped level has nothing
+  to fold, so it cannot hide a task; header paths still carry the skipped value, so
+  its entry in `tui.json` (decision 1) is neither read nor rewritten and applies
+  again once the level splits.
 - `!` (jump to the next task needing a human) expands whatever group it lands
   in. The expansion is a real fold change and is persisted like any other.
 - **A collapsed group auto-expands the moment a task inside it *enters*

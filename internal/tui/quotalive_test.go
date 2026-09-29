@@ -102,7 +102,7 @@ func TestBoardHeaderBadgeFollowsTheQuotaEvent(t *testing.T) {
 	h := newQuotaLiveHarness(t)
 
 	h.p.until(10*time.Second, "the board header to show the adapter", func() bool {
-		return strings.Contains(content(h.m), "claude ✓")
+		return strings.Contains(content(h.m), "agents ✓")
 	})
 
 	resets := h.observe(t, "claude", 15*time.Minute, true)
@@ -110,7 +110,7 @@ func TestBoardHeaderBadgeFollowsTheQuotaEvent(t *testing.T) {
 	h.p.until(10*time.Second, "the quota badge to reach the board header", func() bool {
 		return strings.Contains(content(h.m), want)
 	})
-	if out := content(h.m); strings.Contains(out, "claude ✓") {
+	if out := content(h.m); strings.Contains(out, "agents ✓") {
 		t.Errorf("the board still ticks an adapter that is out of quota:\n%s", out)
 	}
 }

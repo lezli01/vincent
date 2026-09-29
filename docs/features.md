@@ -306,7 +306,9 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
 - A filterable, grouped task board shows state, current step, elapsed time,
   reported cost, and — on a wide terminal — the step's own status message.
   Groups fold away, and a folded one still carries its task count and its
-  needs-attention badge.
+  needs-attention badge. The board is calm when nothing needs you: no
+  zero-attention clause, one `agents ✓` for every healthy agent, no header for
+  a grouping level every task shares, and the action keys in the footer only.
 - Task detail is a full-screen workspace with Steps & Attempts, Task Details,
   Output, Diff, Workflow, and Step Details tabs, plus a Pull Request tab on a
   task that has one linked; each tab uses the whole view.

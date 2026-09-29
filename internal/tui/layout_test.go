@@ -110,9 +110,9 @@ func TestLayoutTasksRowFloor(t *testing.T) {
 		t.Fatalf("layout returned %d boxes, want 3", len(boxes))
 	}
 	content := boxes[0].h - 2 // borders
-	// The board spends chromeLines() on its header and action lines; the
+	// The board spends chromeLines() on its header line and a spare; the
 	// bubbles table spends one more on the column header row.
-	rows := content - 3 - 1
+	rows := content - newBoard().chromeLines() - 1
 	if rows < 5 {
 		t.Fatalf("collapsed tasks box shows %d rows, want at least 5", rows)
 	}

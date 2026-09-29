@@ -60,8 +60,21 @@ the picker, editor, project form, workflow expansion, or graph you were using.
 ## The board
 
 One row per task: id, project, title, state, current step `k/n` with its name,
-elapsed, and cost so far. The header shows daemon status, agent availability,
-running-versus-cap counts, and how many tasks need a human.
+elapsed, and cost so far. The header shows running-versus-cap counts, how many
+tasks need a human, and which agents need a look.
+
+**The board says only what needs a look.** When nothing is waiting on you, the
+needs-attention clause is not drawn at all; when something is, it reads
+`! 2 need attention` — and `! 2 need attention (all tasks)` while a filter is
+committed, because the count is deliberately the whole board's, not the
+filter's. Every healthy agent collapses into one dim `agents ✓`: only an agent
+that is not logged in (`codex ⚠`) or out of quota (`claude ⏳14:20`) is named
+beside it, and one that is not installed is not mentioned — `vincent doctor`
+and the daemon view list the whole catalog. With no agent installed at all the
+header reads `no adapters`. The app header above the board drops
+`● connected` for the same reason: it appears only while the TUI is connecting,
+reconnecting or disconnected. The action keys for the selected task are in the
+footer, once — there is no second copy of them inside the board.
 
 The running count is the daemon's own figure: every task holding a concurrency
 slot — `awaiting_input` as well as `running`, fan-out lanes as well as the root
@@ -88,7 +101,7 @@ Three behaviors matter:
   [Troubleshooting](troubleshooting.md#usage_limit--do-nothing-unless-you-asked-to-be-told) and
   [`retry_backoff`](troubleshooting.md#retry_backoff--also-do-nothing-but-for-a-different-reason).
 - **The header badges the agent, not just the task.** An adapter vincent has
-  watched run out reads `claude ⏳14:20` in place of `claude ✓`, and stays that
+  watched run out is named as `claude ⏳14:20` beside `agents ✓`, and stays that
   way until a step on that adapter succeeds — so a board full of `queued` rows
   says which window they are all waiting on. An adapter that
   [reports its own quota](agents.md#how-much-quota-is-left-and-who-will-say) is
@@ -161,6 +174,13 @@ task count and its needs-attention badge](../assets/tui-grouping.png)
   has reached its ceiling, on `STEP` and `STATUS`.
 - An open header is a label: the cursor steps over it, and clicking it selects
   nothing.
+- **A level every task shares draws no header.** A board that is all one
+  project shows only its workflow headers, and a board that is all one project
+  and one workflow is a flat list. The panel title names what the missing
+  headers would have — `Tasks · api › verify-build` — and the grouped column
+  stays dropped. The level is judged on the tasks on screen, so a filter down to
+  one project quiets that level too. A fold you left on that level is kept, and
+  applies again when a second value comes back.
 
 | Key | Does |
 |---|---|
