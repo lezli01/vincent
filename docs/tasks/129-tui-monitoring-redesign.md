@@ -280,8 +280,18 @@ cards need):
   Steps. `!` is left as it was (see Open questions). The Steps and loop
   tapes now press `1` after `enter`; re-capturing the Steps picture and adding
   a tape for the Overview are deferred to #609.
-- [ ] **129.13** ([#600](https://github.com/lezli01/vincent/issues/600)) The
+- [x] **129.13** ([#600](https://github.com/lezli01/vincent/issues/600)) The
   failure card on Overview. Depends: 129.12, 129.2, 129.3.
+  *Done 2026-09-29.* Blocked and aborted tasks get the card; awaiting_input
+  and awaiting_gate keep the plain needs frame. The anchor is the newest
+  non-succeeded attempt at the current step, shared with the `3`/`6` links.
+  Evidence is one normalized `tail=` fetch per failing attempt, never on an
+  event. Lane blame is copied onto the card; the Steps tab keeps its copy
+  until a later item removes it, and the Steps tab is not folded (see Open
+  questions). The snapshot carries no retry budget, so the first line reads
+  `attempt k` without "of n". No `D` key opens the daemon view, so the
+  no-evidence line names the palette instead. Re-capturing the blocked
+  Overview is deferred to #609.
 - [ ] **129.14** ([#602](https://github.com/lezli01/vincent/issues/602)) The
   outcome card on Overview. Depends: 129.12, 129.5.
 - [x] **129.15** ([#603](https://github.com/lezli01/vincent/issues/603)) A
@@ -360,6 +370,10 @@ Carried from #589, each for the item that must settle it:
   next needs-you task on Overview, or only move the board cursor? 129.12 left
   `!` exactly as it was — it moves the board cursor, and the `enter` after it
   lands on the Overview — so the in-workspace question is 129.18's alone.
+- **Folding succeeded steps while blocked**: should the Steps tab collapse
+  the steps that succeeded while a task is blocked, now that the failure card
+  carries the failure? 129.13 left the Steps tab body unchanged, and its
+  lane-blame copy with it; removing that duplicate is a later item.
 - **Archived tasks** (129.14): is branch + pull request + commits enough, or
   must vincent keep a diff stat after archive?
 - **Deprecation window** (phase 4): a one-release overlap before any surface is

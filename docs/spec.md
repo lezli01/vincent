@@ -11171,6 +11171,36 @@ stream for the live tail.
    that one path. A state change while the Overview is open swaps the frame
    and never moves the cursor.
 
+   *Amended 2026-09-29 (task 129.13, issue #600).* **A blocked or aborted
+   task's needs frame is a failure card.** `awaiting_input` and
+   `awaiting_gate` keep the frame above; `blocked` and `aborted` replace it
+   with a card derived from the snapshot. The attempt it is about — and the
+   one the `3`/`6` links now land on — is the newest attempt at
+   `current_step` that did not succeed, else the newest attempt. Its first
+   line names the step, the loop iteration and `for_each` item or the blamed
+   lane, the attempt, and the reason's §18 title with the raw code dim beside
+   it, behind a glyph that reads without colour: `✗` a failure, `⚠` a fan-out
+   a lane stopped, `■` an aborted task. Under it: the reason's meaning; the
+   **evidence** — for a blocked task whose reason an attempt carries, the
+   last lines (at most five, fewer to fit) of that attempt's transcript,
+   fetched once per failing attempt (`tail=` bytes, normalized) and never
+   again on an event: the check's own output for `check_failed`, never an
+   agent's final message; otherwise the attempt's output and errors. A block
+   no attempt carries (worktree, container, snapshot, condition, cost cap)
+   shows `block_detail`; with no detail, or a failed or empty fetch, one dim
+   line points at the daemon log. The attempt's status message follows,
+   quoted and dim, never in the reason line and never in place of the
+   evidence (§5.4). A failed `fan_out` shows its lane attribution — lane,
+   task, the engine's sentence, the lane's own state and reason — with `l` to
+   open the lane, registered on the Overview's binding context only while a
+   lane is blamed. Actions list the reason's catalogue actions in catalogue
+   order, `E` (edit and retry) directly after `retry`, then every other
+   offered action; an action unbound by `tui.keys` is left out. The aborted
+   variant is muted, fetches nothing and offers what the daemon offers,
+   which is never `retry`. On a body shorter than 12 rows the card keeps its
+   first line and its actions' keys, then the links; the rest is dropped
+   whole.
+
 3. **New task.** Project picker → workflow picker (shows description + step list;
    flags steps whose agent is unavailable) → *(GitHub issue, conditional)* →
    title → description (inline or
