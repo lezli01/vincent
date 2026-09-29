@@ -112,8 +112,9 @@ The parent resumes on its own once every lane has settled — finished or ended
 soon as a further lane settles, so such a parent parks and resumes more than
 once. A lane that is `blocked`, at a gate, or paused holds the join open until you
 deal with it; the `children` rollup on `GET /v1/tasks/{id}` (and the TUI's
-`awaiting_children (2 blocked)` row) is where you see that. For blocked lanes,
-dealing with them is one `retry` on the **parent**: it re-admits every blocked
+`awaiting_children (×2 ●1)` row, where `×` counts blocked lanes) is where you
+see that. For blocked lanes, dealing with them is one `retry` on the
+**parent**: it re-admits every blocked
 lane beneath it, at any depth, without touching the parent's own row, and the
 join closes itself when they finish. Fix the cause first — the retry re-runs
 each lane's step exactly as it was.

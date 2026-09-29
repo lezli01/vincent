@@ -834,7 +834,7 @@ its own state and reason, and it consumed no retry.
 
 A parent waiting on its lanes never blocks this way, because it runs nothing
 while it waits. It stays `awaiting_children`, and its join stays open because a
-lane is blocked. The parent's row reads `awaiting_children (N blocked)`, and
+lane is blocked. The parent's row reads `awaiting_children (×N …)`, and
 `GET /v1/tasks/{id}` on it carries `children.blocked` with the lane ids and
 `children.cost_usd` with what the lanes have spent. The TUI's **Task Details**
 adds the parent's own spend to that and shows it as `tree cost`.

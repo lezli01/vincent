@@ -773,7 +773,8 @@ round — spawn, park, merge, done. You still get one branch to review.
 
 Watch the children with `vincent task ls --include-children`, or press `L` on
 the parent in the TUI. They are hidden from the board by default; the parent's
-`awaiting_children (2 blocked)` summary is how you learn one of them needs you.
+`awaiting_children (×2 ●1 ✓3)` breakdown is how you learn one of them needs
+you: `×` counts the blocked lanes, `!` the ones waiting on you.
 
 **When lanes block.** A blocked lane never settles, so the join stays open and
 the parent stays parked. Fix what they failed on, then retry the **parent** —

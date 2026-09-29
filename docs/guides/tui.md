@@ -119,7 +119,7 @@ Three behaviors matter:
 
 **A cell too long for its column wraps rather than disappearing.** The title,
 the state, the step and the status carry across up to three lines of the same
-row, so `awaiting_children (2 blocked)` and a step's own message are readable
+row, so `awaiting_children (×2 ●1 ✓3)` and a step's own message are readable
 without opening the task. Every row on a board is the same height — as tall as
 the tallest row in the list, and never more than three lines — so a board where
 nothing overflows is one line per task, exactly as before. The list, not the
@@ -139,6 +139,21 @@ can use comes back to the title. So a 200-column board shows
 title's trailing blanks. A loop rollup too wide for the column it is given
 drops clauses from the tail rather than wrapping — the body step goes first,
 then the `for_each` item, then the counter, which is the last thing to survive.
+
+**The board speaks in the Steps tab's glyphs.** `●` running, `✓` done, `×`
+blocked or failed, `!` waiting on you, `○` not started, `■` stopped, `–`
+skipped. Each glyph means the same thing wherever it appears, and colour only
+reinforces it, so the board reads the same without colour.
+
+- A fan-out parent's state names its lanes by state:
+  `awaiting_children (×1 !1 ●1 ✓2)` is one blocked lane, one waiting on you,
+  one running and two done. Blocked lanes come first, so when the cell is too
+  narrow for all of it, the done count is cut before the blocked one. A state
+  with no glyph is spelled out (`1 paused`).
+- An expanded lane reads `lane api` rather than repeating its parent's title.
+- With room to spare after the step and any loop rollup, `STEP` adds one pip
+  per workflow step: `3/5 build ✓✓●○○`. The pips never make the cell wrap or
+  take width from another column, so at 80 columns they are usually absent.
 
 The board also has a **`STATUS` column**: what the task's newest step run
 said about *itself*, if it said anything —
@@ -253,7 +268,7 @@ times with a confirmation between each. Select the tasks instead:
 |---|---|
 | `space` | Select the task under the cursor (again deselects) |
 | `V` | Select every task the filter is showing — or clear that selection |
-| `L` | Expand the selected fan-out's lanes as indented rows under it, or collapse them again. Lanes are hidden from the board otherwise, and stay out of every count |
+| `L` | Expand the selected fan-out's lanes as indented rows under it, or collapse them again. Each lane row reads `lane <id>`. Lanes are hidden from the board otherwise, and stay out of every count |
 | `esc` | Clear the selection |
 
 While anything is selected, a `✓` appears beside those rows, the panel title
@@ -465,6 +480,11 @@ it. A `loop` (§7.8) goes one further: its body's rows are grouped **by
 iteration**, folded shut with the latest one open, and a `for_each` iteration's
 header names the item it ran on. Ten passes of a four-step body is forty rows,
 and the one you arrived to read is almost always the pass it stopped on.
+So you can see how the passes went without opening them, the loop's header is
+followed by one dim line, `iterations ✓✓×✓●`. It shows up to ten passes, oldest
+first, with `…+3` in front when older ones are cut. Each glyph is that pass's
+worst outcome: `×` a step failed or was rejected, `■` a `break` ended the loop,
+`●` still running, `✓` everything passed or was skipped.
 
 Folded is not unreachable. `space` opens or closes the tier the cursor is in,
 `→` opens it and `←` closes it, `enter` on a folded tier's header opens it
@@ -489,9 +509,9 @@ A `fan_out` step is on the timeline **while its lanes run**, not only once they
 have merged: the row opens `running` when the round is spawned and the merge
 that ends the round finishes that same row. Since the step itself executes none
 of the work, its running row carries what the subtree is doing beside the state
-— `2 blocked`, `3 at a gate`, `3/5 done`, the same words the board puts beside
-`awaiting_children` — read live from the task rather than frozen in when the
-lanes were spawned. The round is named on the row (`round 0 · 2 blocked`) only
+— `×2 !1 ●1 ✓3`, the same clauses the board puts beside `awaiting_children` —
+read live from the task rather than frozen in when the lanes were spawned. The
+round is named on the row (`round 0 · ×2 ●3`) only
 when the timeline is not already drawing `round N` tiers above it. No other
 step type is annotated.
 
@@ -500,6 +520,10 @@ task inside a loop reads `3/7 green · loop 4/10 · repair 2/3` — the pass it 
 on out of the loop's real extent (a 3-item `for_each` reads `loop 2/3`, not the
 ceiling it is bounded by), and the body step that pass is on, which is the one
 thing the outer `3/7` cannot say because it counts the whole loop as one step.
+The header also adds the iteration strip after its loop clause
+(`loop 4/5 · ledger · migrate 1/2 ✓✓×●`), and one pip per workflow step after
+its step counter (`step 2/3 ✓●○`). A `parallel` group, a loop or a fan-out is
+one pip, and the current step of a task waiting on you is `!`.
 
 Two things on an attempt line are worth telling apart. A red word like
 `check_failed` is vincent's **failure reason** — a fixed set of constants, and

@@ -22,9 +22,21 @@ list with the user-facing context a commit subject cannot carry.
 - **A pull request marker on board rows.** A task with a linked pull request
   shows `⇡#123` in a new `PR` column, running or done. It is read from the task
   list, so the board makes no GitHub request for it (#604).
+- **Loop iteration strips and step pips.** The task workspace header adds
+  one pip per workflow step after its step counter (`step 3/5 ✓✓●○○`) and a
+  strip of a loop's newest ten passes after its loop clause
+  (`loop 4/5 ✓✓×●`). The Steps tab shows the same strip under a loop's
+  header. A board row whose `STEP` column has room to spare adds pips too
+  (#605).
 
 ### Changed
 
+- **Fan-out lane counts read as glyphs.** A fan-out step's running row on the
+  Steps tab now names every lane state, blocked first: `round 0 · ×1 !1 ●1 ✓2`
+  instead of `2 blocked` or `3/5 done`. A board row for a parent uses the same
+  form, `awaiting_children (×1 !1 ●1 ✓2)`, when the row carries the rollup. An
+  expanded lane's board row reads `lane <id>` instead of repeating its
+  parent's title (#605).
 - **The board keeps `STATUS` at 120 columns and drops an empty `COST`.** While
   any task has a status message, the `STATUS` column outranks `COST` and the
   step name, so the default grouped board keeps it from 120 columns instead of

@@ -10734,6 +10734,33 @@ stream for the live tail.
    decision 4's rule for dropping a path whose project or workflow has left the
    board has no honest counterpart for a task archived while the TUI was down.
 
+   **Glyph indicators on the board (task 129.10, issue #605, added
+   2026-09-29).** A fan-out parent's `STATE` cell carries a lane breakdown
+   instead of one fact: `awaiting_children (×1 !1 ●1 ✓2)` rather than
+   `awaiting_children (2 blocked)`. It renders the `children` rollup's
+   `by_state` (§13.2) as glyph-and-count clauses, in the one step-state glyph
+   set the Steps tab already used — `×` blocked, `!` waiting on a human (a gate
+   or input, one clause), `●` running (a nested parent included), `✓` done,
+   then `○` queued, `■` aborted and any other state spelled out (`1 paused`).
+   Clauses with no lanes are dropped, and they are ordered by what a reader has
+   to act on, so the cell's wrap-then-cut (task 050) sheds from the tail and
+   the blocked count survives at every width, 80 columns included. Each clause
+   takes its lane state's colour from the task palette, and the glyph carries
+   the meaning without it. The breakdown needs a row that carries the rollup.
+   §13.2 serves `children` on the detail endpoint only, so a row from
+   `GET /v1/tasks` still shows the bare state (task 084 records the gap). An
+   expanded lane's row reads **`lane <lane_id>`**
+   rather than its title, which repeats the parent's; a lane served without a
+   lane id keeps its title. Lanes stay out of the list and the counts (task 014
+   decision 13 and the rule above are unchanged). The `STEP` cell appends
+   **step pips** — `✓` for each step before the cursor, the task state's glyph
+   at it, `○` after — only when the column has width left after everything it
+   already says. They never make the cell wrap, never take width from `STATE`
+   or any other column, and do not change the column allocation above. At 80
+   columns, where `STEP` is at its base width, they are absent whenever they
+   would not fit. `⏸` and `▶` are not used: `!` already means "waiting on you"
+   on this board, and `⏸` would be a second word for paused.
+
 2. **Task detail.** *Amended 2026-08-28 (task 049): task detail is a separate
    full-screen workspace with four full-view tabs. **Steps & Attempts** is the
 	   default and renders the existing step/attempt timeline. **Task Details** is
@@ -10796,6 +10823,25 @@ stream for the live tail.
 	   a count frozen into the row at spawn. The round is named beside it only
 	   when no round tier above the row already names it. Everything else on the
 	   row is unchanged, and no other step type is annotated.
+	   *Amended 2026-09-29 (task 129.10, issue #605):* the annotation is the
+	   board's lane breakdown (`round 0 · ×1 !1 ●1 ✓2`) — the same clauses, in
+	   the same order and colours, rather than `2 blocked` or `3/5 done`. A
+	   `loop` step's header is followed by one dim **iteration strip** line
+	   (`iterations …+2 ✓✓×✓✓✓✓✓✓●`), not a row — the loop still owns none (task
+	   016 decision 7): its newest ten iterations oldest first, `…+k` when k
+	   older ones are cut, each the worst newest-attempt body row of that pass —
+	   `×` failed or rejected, `■` stopped by a `break` or a body `condition`,
+	   `●` running, `✓` when every body row succeeded, was approved or was
+	   skipped. A multi-round `fan_out` keeps its `round N` tiers and gets no
+	   strip. The workspace header carries the same strip after its loop clause
+	   (`loop 4/5 ✓✓×●`) and **step pips** after its step counter
+	   (`step 3/5 ✓✓●○○`): one per top-level step, from the newest attempts at
+	   that index (the latest iteration for a loop), so a `parallel` group, a
+	   `loop` or a `fan_out` is one pip. An index with no row is `○`; the current
+	   step of a task waiting on a human is `!`. Follow-up rounds sit past the
+	   workflow's steps (§5.4) and get no pip. Glyphs and colours are the Steps
+	   tab's (task 097 decisions 2 and 3); an `approve` reads `✓` and a `reject`
+	   `×`, as they already shared those colours.
    **Diff** renders the task's grouped git diff. Each owns the whole task body;
    `tab`/`shift+tab` and `[`/`]` walk them, `1`–`4` select directly, and `esc`
    returns to the board. The attempt selection persists across tabs.*
