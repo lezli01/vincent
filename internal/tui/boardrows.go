@@ -214,23 +214,31 @@ func renderState(state string) string { return applyStateStyle(state, stateLabel
 // text is wrapped first and each produced line styled after, so no wrapping
 // is ever ANSI-aware — the same order the output pane uses (v0 T4.16).
 // What no longer fits after wrapping is cut on the row's last line, so
-// `awaiting_children (2 blocked)` is readable on the board rather than only
-// in the detail view.
+// `awaiting_children (×1 !1 ●1 ✓2)` is readable on the board rather than only
+// in the detail view — and because the breakdown leads with blocked lanes
+// (childrenBreakdown), the cut takes the least actionable clause first.
 func boardStateLabel(t apiclient.Task) string {
 	// A fan-out parent says what its subtree is doing, because its own state
 	// says nothing a reader can act on (task 014). A blocked lane is
 	// invisible in the task list by design (decision 13), and this is what
 	// pays for that.
-	if t.State == stateAwaitingChildren && t.Children != nil {
-		if label := t.Children.Summary(); label != "" {
-			return t.State + " (" + label + ")"
-		}
+	if clauses := parentBreakdown(t); len(clauses) > 0 {
+		return t.State + " (" + breakdownText(clauses) + ")"
 	}
 	_, until, ok := t.Hold()
 	if !ok || until == nil {
 		return stateLabel(t.State)
 	}
 	return t.State + " → " + until.Local().Format("15:04")
+}
+
+// parentBreakdown is the lane breakdown a fan-out parent's state cell
+// carries, and nil for every other row (task 129.10).
+func parentBreakdown(t apiclient.Task) []breakdownClause {
+	if t.State != stateAwaitingChildren {
+		return nil
+	}
+	return childrenBreakdown(t.Children)
 }
 
 // renderBoardState is boardStateLabel with the state's colour applied — the
@@ -389,7 +397,7 @@ func formatStep(t apiclient.Task, withName bool, width int) string {
 	if !withName {
 		// The narrow column shows k/n alone; the loop goes with the name,
 		// because a bare `loop 4/10` beside no step name names nothing.
-		return s
+		return withStepPips(s, t, width)
 	}
 	if t.StepName != "" {
 		s += " " + t.StepName
@@ -397,8 +405,26 @@ func formatStep(t apiclient.Task, withName bool, width int) string {
 	for clauses := t.Loop.Clauses(); len(clauses) > 0; clauses = clauses[:len(clauses)-1] {
 		fitted := s + " · " + strings.Join(clauses, " · ")
 		if ansi.StringWidth(fitted) <= width {
-			return fitted
+			s = fitted
+			break
 		}
+	}
+	return withStepPips(s, t, width)
+}
+
+// withStepPips appends the row's step pips (boardStepPips, task 129.10) to
+// the STEP cell when the column has room for them after everything it
+// already says, and returns the text untouched when it has not. They are the
+// last thing the cell gives up: they never make it wrap, never take a column
+// from STATE or anything else, and at 80 columns — where STEP is at its base
+// width — they are simply absent whenever they would not fit.
+func withStepPips(s string, t apiclient.Task, width int) string {
+	pips := boardStepPips(t)
+	if pips == "" {
+		return s
+	}
+	if with := s + " " + pips; ansi.StringWidth(with) <= width {
+		return with
 	}
 	return s
 }

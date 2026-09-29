@@ -53,7 +53,7 @@ func TestDetailTimelineAnnotatesRunningFanOut(t *testing.T) {
 	d.taskID = 21
 
 	loadFanOut(d,
-		&apiclient.ChildrenRollup{Total: 5, Settled: 3},
+		&apiclient.ChildrenRollup{Total: 5, Settled: 3, ByState: map[string]int{stateDone: 3, stateRunning: 2}},
 		[]apiclient.StepRun{
 			attempt(1, 0, 1, "build", "succeeded", false),
 			fanOutRun(2, 0, "running"),
@@ -61,9 +61,9 @@ func TestDetailTimelineAnnotatesRunningFanOut(t *testing.T) {
 
 	got := ansi.Strip(d.timelinePanel(30))
 	for _, want := range []string{
-		"Step 2  spread",     // the fan-out is on the timeline at all
-		"running",            //
-		"round 0 · 3/5 done", // …carrying the round and the lane rollup
+		"Step 2  spread",  // the fan-out is on the timeline at all
+		"running",         //
+		"round 0 · ●2 ✓3", // …carrying the round and the lane breakdown
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("timeline missing %q:\n%s", want, got)
@@ -73,21 +73,21 @@ func TestDetailTimelineAnnotatesRunningFanOut(t *testing.T) {
 
 // TestDetailTimelineFanOutReportsBlockedLanes: the rollup's priority order is
 // the board's — a blocked lane outranks the done counter, because that is the
-// one a reader has to act on (ChildrenRollup.Summary).
+// one a reader has to act on (childrenBreakdown).
 func TestDetailTimelineFanOutReportsBlockedLanes(t *testing.T) {
 	d := newTestDetail(t)
 	d.taskID = 22
 
 	loadFanOut(d,
-		&apiclient.ChildrenRollup{Total: 5, Settled: 1, Blocked: []int64{31, 32}},
+		&apiclient.ChildrenRollup{
+			Total: 5, Settled: 1, Blocked: []int64{31, 32},
+			ByState: map[string]int{stateBlocked: 2, stateRunning: 2, stateDone: 1},
+		},
 		[]apiclient.StepRun{fanOutRun(1, 0, "running")})
 
 	got := ansi.Strip(d.timelinePanel(30))
-	if want := "round 0 · 2 blocked"; !strings.Contains(got, want) {
-		t.Errorf("timeline missing %q:\n%s", want, got)
-	}
-	if strings.Contains(got, "done") {
-		t.Errorf("blocked lanes must outrank the done counter:\n%s", got)
+	if want := "round 0 · ×2 ●2 ✓1"; !strings.Contains(got, want) {
+		t.Errorf("timeline missing %q — blocked lanes lead the breakdown:\n%s", want, got)
 	}
 }
 
@@ -99,7 +99,7 @@ func TestDetailTimelineFanOutRoundOnlyOnceOnScreen(t *testing.T) {
 	d.taskID = 23
 
 	loadFanOut(d,
-		&apiclient.ChildrenRollup{Total: 4, Settled: 2},
+		&apiclient.ChildrenRollup{Total: 4, Settled: 2, ByState: map[string]int{stateDone: 2, stateQueued: 2}},
 		[]apiclient.StepRun{
 			fanOutRun(1, 0, "succeeded"),
 			fanOutRun(2, 1, "running"),
@@ -112,7 +112,7 @@ func TestDetailTimelineFanOutRoundOnlyOnceOnScreen(t *testing.T) {
 	if strings.Contains(got, "round 1 · ") {
 		t.Errorf("round named twice — the tier header already carries it:\n%s", got)
 	}
-	if want := "2/4 done"; !strings.Contains(got, want) {
+	if want := "✓2 ○2"; !strings.Contains(got, want) {
 		t.Errorf("timeline missing %q:\n%s", want, got)
 	}
 }
@@ -142,7 +142,7 @@ func TestDetailTimelineFanOutWithoutRollup(t *testing.T) {
 			// The attempt line alone: the header above it carries `·`
 			// separators of its own, which say nothing about lanes.
 			line := attemptLineOf(t, got)
-			for _, unwanted := range []string{"round", "·", "(", "done", "blocked"} {
+			for _, unwanted := range []string{"round", "·", "(", "✓", "×"} {
 				if strings.Contains(line, unwanted) {
 					t.Errorf("plain row must not carry %q: %q", unwanted, line)
 				}
@@ -162,14 +162,14 @@ func TestDetailTimelineRollupOnlyOnTheRunningFanOut(t *testing.T) {
 	d.taskID = 25
 
 	loadFanOut(d,
-		&apiclient.ChildrenRollup{Total: 5, Settled: 5},
+		&apiclient.ChildrenRollup{Total: 5, Settled: 5, ByState: map[string]int{stateDone: 5}},
 		[]apiclient.StepRun{
 			attempt(1, 0, 1, "build", "running", true),
 			fanOutRun(2, 0, "succeeded"),
 		})
 
 	got := ansi.Strip(d.timelinePanel(30))
-	if strings.Contains(got, "5/5 done") {
+	if strings.Contains(got, "✓5") {
 		t.Errorf("rollup annotated a row that is not a running fan-out:\n%s", got)
 	}
 }
@@ -183,11 +183,11 @@ func TestDetailFanOutRollupSurvivesWrapping(t *testing.T) {
 	d.width = 34
 
 	loadFanOut(d,
-		&apiclient.ChildrenRollup{Total: 12, Settled: 7},
+		&apiclient.ChildrenRollup{Total: 12, Settled: 7, ByState: map[string]int{stateDone: 7, stateRunning: 5}},
 		[]apiclient.StepRun{fanOutRun(1, 0, "running")})
 
 	got := ansi.Strip(d.timelinePanel(30))
-	if want := "round 0 · 7/12 done"; !strings.Contains(got, want) {
+	if want := "round 0 · ●5 ✓7"; !strings.Contains(got, want) {
 		t.Errorf("timeline missing %q at width %d:\n%s", want, d.width, got)
 	}
 	for _, line := range strings.Split(got, "\n") {

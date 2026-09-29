@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
@@ -16,14 +18,20 @@ func TestBoardStateShowsChildrenRollup(t *testing.T) {
 		t.Errorf("state cell = %q, want it to name the state", got)
 	}
 
-	parent.Children = &apiclient.ChildrenRollup{Total: 3, Settled: 1, Blocked: []int64{7, 8}}
-	if got := renderBoardState(parent); !strings.Contains(got, "2 blocked") {
-		t.Errorf("state cell = %q, want the blocked lanes surfaced", got)
+	parent.Children = &apiclient.ChildrenRollup{
+		Total: 3, Settled: 1, Blocked: []int64{7, 8},
+		ByState: map[string]int{stateBlocked: 2, stateDone: 1},
+	}
+	if got := ansi.Strip(renderBoardState(parent)); got != "awaiting_children (×2 ✓1)" {
+		t.Errorf("state cell = %q, want the blocked lanes surfaced first", got)
 	}
 
 	// With nothing waiting on a human, progress is the useful thing to say.
-	parent.Children = &apiclient.ChildrenRollup{Total: 4, Settled: 3}
-	if got := renderBoardState(parent); !strings.Contains(got, "3/4 done") {
+	parent.Children = &apiclient.ChildrenRollup{
+		Total: 4, Settled: 3,
+		ByState: map[string]int{stateDone: 3, stateRunning: 1},
+	}
+	if got := ansi.Strip(renderBoardState(parent)); got != "awaiting_children (●1 ✓3)" {
 		t.Errorf("state cell = %q, want progress", got)
 	}
 }

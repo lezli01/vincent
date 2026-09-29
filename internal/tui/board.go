@@ -1225,6 +1225,11 @@ type boardCell struct {
 	// continuation that lost the indent would hang out to the left of the
 	// title it belongs to.
 	indent string
+	// render, when set, styles each produced line in place of style: a
+	// fan-out parent's STATE cell colours each lane clause in its own state
+	// (breakdownLineStyler). It runs on a wrapped line, so the plain-first
+	// order above holds for it too.
+	render func(line string) string
 }
 
 // rowIndent is how far a task row's title is inset: one level per grouping
@@ -1274,13 +1279,13 @@ func (b *board) cellsFor(r boardRow, now time.Time, set columnSet, cols []table.
 	// leads a group header's label. It goes in the text rather than the
 	// indent so it lands on the row's first line only: a glyph repeated down
 	// a wrapped row would read as three expandable rows rather than one.
-	title := t.Title
+	title := laneTitle(r)
 	if glyph := b.laneGlyph(t); glyph != "" {
 		title = glyph + " " + title
 	}
 	cells = append(cells,
 		boardCell{text: title, wrap: true, indent: indent},
-		boardCell{text: boardStateLabel(t), style: stateStyles[t.State], wrap: true},
+		stateCell(t),
 		boardCell{text: formatStep(t, set.stepName, columnWidth(cols, "STEP")), wrap: true},
 		plain(elapsed),
 	)
@@ -1304,6 +1309,29 @@ func (b *board) cellsFor(r boardRow, now time.Time, set columnSet, cols []table.
 	return cells
 }
 
+// stateCell is a row's STATE cell: boardStateLabel in the state's colour,
+// with a fan-out parent's lane clauses each in their own (task 129.10).
+func stateCell(t apiclient.Task) boardCell {
+	cell := boardCell{text: boardStateLabel(t), style: stateStyles[t.State], wrap: true}
+	if clauses := parentBreakdown(t); len(clauses) > 0 {
+		cell.render = breakdownLineStyler(cell.style, clauses)
+	}
+	return cell
+}
+
+// laneTitle is the title a row shows. A lane under an expanded parent reads
+// `lane <lane_id>` (task 129.10): its own title restates its parent's, which
+// sits one line up, and the lane id is the one thing that tells the lanes
+// apart. A lane the daemon served without a lane id keeps its title rather
+// than reading `lane ` and nothing.
+func laneTitle(r boardRow) string {
+	t := r.task
+	if r.lane > 0 && t.LaneID != nil && *t.LaneID != "" {
+		return "lane " + *t.LaneID
+	}
+	return t.Title
+}
+
 // layoutCells wraps a task's cells to the column widths, returning each
 // cell's rendered lines in column order. A cell shorter than the row simply
 // has fewer lines; rowsFor blanks the rest.
@@ -1324,6 +1352,10 @@ func layoutCells(cells []boardCell, cols []table.Column) [][]string {
 		for _, l := range lines {
 			if l == "" {
 				styled = append(styled, "")
+				continue
+			}
+			if c.render != nil {
+				styled = append(styled, c.indent+c.render(l))
 				continue
 			}
 			styled = append(styled, c.indent+c.style.Render(l))

@@ -119,7 +119,10 @@ func TestMarkedTargetsCarryEachTaskActions(t *testing.T) {
 // TestMarkerColumnExistsOnlyWhileSomethingIsMarked: an unmarked board is the
 // board every earlier version rendered, to the column.
 func TestMarkerColumnExistsOnlyWhileSomethingIsMarked(t *testing.T) {
-	b := markedBoard(task(1, stateDone), task(2, stateDone))
+	// No step count, so no step pips: a done task's pips are `✓` too (task
+	// 129.10), and this test counts the selection glyph.
+	noSteps := func(t *apiclient.Task) { t.StepTotal = 0 }
+	b := markedBoard(task(1, stateDone, noSteps), task(2, stateDone, noSteps))
 
 	plain := b.render(160, 20)
 	if strings.Contains(ansi.Strip(plain), markGlyph) {

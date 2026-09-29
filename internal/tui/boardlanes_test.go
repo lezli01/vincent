@@ -146,7 +146,7 @@ func TestExpandedLanesRenderInMergeOrder(t *testing.T) {
 	if !strings.Contains(out, groupGlyphOpen+" fan out") {
 		t.Errorf("the expanded parent has no open marker:\n%s", out)
 	}
-	if !strings.Contains(out, groupIndent+"web lane") {
+	if !strings.Contains(out, groupIndent+"lane web") {
 		t.Errorf("the lane title is not indented under its parent:\n%s", out)
 	}
 }
@@ -481,7 +481,7 @@ func TestNarrowBoardShedsColumnsWithLanesOnIt(t *testing.T) {
 		}
 		// The indent is the first thing a narrow board would be tempted to
 		// spend, and it is the only thing saying which parent the row is under.
-		if !strings.Contains(out, groupIndent+"api lane") {
+		if !strings.Contains(out, groupIndent+"lane api") {
 			t.Errorf("the lane lost its indent at width %d:\n%s", width, out)
 		}
 	}

@@ -306,9 +306,20 @@ func (d *detail) headerOverviewParts() []string {
 	t := d.task
 	parts := []string{renderDetailState(t.Task)}
 	if k, n, ok := t.StepDisplay(); ok {
-		parts = append(parts, styleDim.Render("step")+" "+fmt.Sprintf("%d/%d", k, n))
+		step := styleDim.Render("step") + " " + fmt.Sprintf("%d/%d", k, n)
+		// One pip per top-level step (task 129.10): the k/n says where the
+		// cursor is, the pips what happened on the way there.
+		if pips := renderStepPips(t.Task, t.Steps); pips != "" {
+			step += " " + pips
+		}
+		parts = append(parts, step)
 	}
 	if loop := t.Loop.Display(); loop != "" {
+		// The loop's newest iterations beside its counter (task 129.10), so
+		// `loop 4/5` also says how the three before this one went.
+		if strip := renderLoopStrip(t.Steps, t.CurrentStep); strip != "" {
+			loop += " " + strip
+		}
 		parts = append(parts, loop)
 	}
 	if t.ProjectName != "" {
@@ -445,6 +456,10 @@ func (d *detail) renderTimeline(height int) string {
 			lastSub, lastIteration = "", -1
 			lines = append(lines, d.timelineHeader(r, round, looped, grouped))
 			ids = append(ids, 0)
+			if strip := d.loopStripLine(runs, r.StepIndex, looped); strip != "" {
+				lines = append(lines, strip)
+				ids = append(ids, 0)
+			}
 		}
 		open := looped && d.tierOpen(r.StepIndex, r.Iteration, latest[r.StepIndex])
 		if looped && r.Iteration != lastIteration {
@@ -518,6 +533,30 @@ func (d *detail) renderTimeline(height int) string {
 	}
 	d.visibleRuns = ids[start:end]
 	return strings.Join(lines[start:end], "\n")
+}
+
+// loopStripLine is the dim summary line under a `loop` step's header, where
+// its iteration tiers begin (task 129.10): the newest iterations' outcomes as
+// glyphs, so a reader sees which passes failed without opening a folded
+// tier. It is a line and not a row — the loop owns no row of its own (task
+// 016 decision 7). A multi-round `fan_out` rides the same column but its
+// tiers are rounds, not passes of a body, and gets none.
+func (d *detail) loopStripLine(runs []apiclient.StepRun, index int, looped bool) string {
+	if !looped || d.tierNoun(index) != "iteration" {
+		return ""
+	}
+	// Before the snapshot arrives tierNoun cannot tell a round from a pass;
+	// the fan_out's own row can.
+	for _, r := range runs {
+		if r.StepIndex == index && r.StepType == stepTypeFanOut {
+			return ""
+		}
+	}
+	strip := renderLoopStrip(runs, index)
+	if strip == "" {
+		return ""
+	}
+	return styleDim.Render("    iterations ") + strip
 }
 
 // timelineHeader is the line that opens one step index: its number and name
@@ -833,11 +872,11 @@ func (d *detail) attemptFields(r apiclient.StepRun, indented bool) []string {
 }
 
 // fanOutRollupField annotates the `fan_out` step's own running row with what
-// its subtree is doing (§15): the round, and how many lanes are done, blocked
-// or waiting at a gate. A bare `running` on a fan-out tells a reader nothing
+// its subtree is doing (§15): the round, and the lane breakdown — `×1 !1 ●1
+// ✓2`, the same clauses in the same order as the board (childrenBreakdown). A bare `running` on a fan-out tells a reader nothing
 // they can act on — the step itself executes none of the work — which is the
 // same judgement the board makes when it renders `awaiting_children
-// (2 blocked)` rather than a bare state (boardStateLabel).
+// (×1 ✓2)` rather than a bare state (boardStateLabel).
 //
 // The text is derived from the task's children rollup (§13.2,
 // `apiclient.Task.Children`), never from the row. The row is written once,
@@ -852,23 +891,25 @@ func (d *detail) attemptFields(r apiclient.StepRun, indented bool) []string {
 // A field of its own rather than a parenthetical on the state cell, which is
 // padded to a fixed width. The timeline styles whole fields and wraps between
 // them (wrapTimelineFields), so — unlike the board, which wraps first and
-// styles after — this needs no wrap-aware styling: it is dim like the row's
-// other qualifiers, and a lane that actually blocked the parent gets the
-// styleBad line laneBlameStepLines puts underneath.
+// styles after — this needs no wrap-aware styling: the round is dim like the
+// row's other qualifiers, each clause takes its lane state's colour (task 097
+// decision 2), and a lane that actually blocked the parent gets the styleBad
+// line laneBlameStepLines puts underneath.
 func (d *detail) fanOutRollupField(r apiclient.StepRun) string {
 	if r.StepType != stepTypeFanOut || r.State != "running" {
 		return ""
 	}
 	// Nil children, or a rollup with nothing to report: the row renders
 	// exactly as it would have, with no separator or bracket left dangling.
-	summary := d.task.Children.Summary()
-	if summary == "" {
+	clauses := childrenBreakdown(d.task.Children)
+	if len(clauses) == 0 {
 		return ""
 	}
+	summary := renderBreakdown(clauses)
 	if !d.roundTiered(r.StepIndex) {
-		summary = fmt.Sprintf("round %d · %s", r.Iteration, summary)
+		summary = styleDim.Render(fmt.Sprintf("round %d · ", r.Iteration)) + summary
 	}
-	return styleDim.Render(summary)
+	return summary
 }
 
 // roundTiered reports whether renderTimeline draws round tiers at this step
@@ -908,13 +949,17 @@ func wrapTimelineFields(fields []string, width int, continuationIndent string) [
 	return append(lines, line)
 }
 
+// attemptStateGlyph is the one step-state glyph set (task 097 decisions 2 and
+// 3), which the board's lane breakdown, the loop strip and the step pips
+// reuse (glyphs.go, task 129.10). A human `approve` or `reject` takes the
+// glyph of the outcome it is paired with in stepStateStyle.
 func attemptStateGlyph(state string) string {
 	switch state {
-	case "succeeded":
+	case "succeeded", "approved":
 		return "✓"
 	case "running":
 		return "●"
-	case "failed":
+	case "failed", "rejected":
 		return "×"
 	case "interrupted":
 		return "!"

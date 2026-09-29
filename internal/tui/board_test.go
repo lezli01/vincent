@@ -261,9 +261,9 @@ func TestFormatHelpers(t *testing.T) {
 	if got := formatStep(apiclient.Task{StepTotal: 0}, true, widthStepLong); got != "—" {
 		t.Errorf("stepless task = %q, want a dash", got)
 	}
-	withName := formatStep(apiclient.Task{CurrentStep: 1, StepTotal: 6, StepName: "build"}, true, widthStepLong)
-	if withName != "2/6 build" {
-		t.Errorf("step = %q, want %q", withName, "2/6 build")
+	withName := formatStep(apiclient.Task{CurrentStep: 1, StepTotal: 6, StepName: "build", State: stateRunning}, true, widthStepLong)
+	if want := "2/6 build ✓●○○○○"; withName != want {
+		t.Errorf("step = %q, want %q", withName, want)
 	}
 	if noName := formatStep(apiclient.Task{CurrentStep: 1, StepTotal: 6, StepName: "build"}, false, widthStepShort); noName != "2/6" {
 		t.Errorf("narrow step = %q, want %q", noName, "2/6")
