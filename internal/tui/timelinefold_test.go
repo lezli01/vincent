@@ -151,7 +151,7 @@ func TestTimelineFoldKeysInTheWorkspace(t *testing.T) {
 
 	v.updateKey(registryKey(t, "enter"))
 	if v.tab != taskTabSteps {
-		t.Fatalf("enter on a folded tier left the tab at %v, want Steps & Attempts", v.tab)
+		t.Fatalf("enter on a folded tier left the tab at %v, want %v", v.tab, taskTabSteps)
 	}
 	if v.detail.timelineFolded() {
 		t.Fatal("enter on a folded tier did not open it")

@@ -63,7 +63,7 @@ func TestPullTabPresenceFollowsTheLink(t *testing.T) {
 	// The unconditional neighbour is what makes that absence free: 6 is Step
 	// Details whether or not there is a pull request (issue #323).
 	if v.updateKey(registryKey(t, "6")); v.tab != taskTabStepDetails {
-		t.Fatalf("6 moved to %v with nothing linked, want Step Details", v.tab)
+		t.Fatalf("6 moved to %v with nothing linked, want %v", v.tab, taskTabStepDetails)
 	}
 	v.tab = taskTabDetails
 	v.applyPull(taskPullMsg{taskID: v.detail.taskID, pull: linkedPull()})
@@ -72,11 +72,11 @@ func TestPullTabPresenceFollowsTheLink(t *testing.T) {
 	}
 	v.updateKey(registryKey(t, "7"))
 	if v.tab != taskTabPull {
-		t.Fatalf("7 moved to %v, want the Pull Request tab", v.tab)
+		t.Fatalf("7 moved to %v, want %v", v.tab, taskTabPull)
 	}
 	v.updateKey(registryKey(t, "6"))
 	if v.tab != taskTabStepDetails {
-		t.Fatalf("6 moved to %v with a pull request linked, want Step Details", v.tab)
+		t.Fatalf("6 moved to %v with a pull request linked, want %v", v.tab, taskTabStepDetails)
 	}
 }
 
@@ -101,21 +101,21 @@ func TestPullTabCycleSkipsAnAbsentTab(t *testing.T) {
 	v := tabbedTaskFixture(t, taskTabStepDetails)
 	v.updateKey(registryKey(t, "tab"))
 	if v.tab != taskTabSteps {
-		t.Fatalf("tab from Step Details with no pull request landed on %v, want Steps", v.tab)
+		t.Fatalf("tab from %v with no pull request landed on %v, want %v", taskTabStepDetails, v.tab, taskTabSteps)
 	}
 	v = tabbedTaskFixture(t, taskTabStepDetails)
 	v.applyPull(taskPullMsg{taskID: v.detail.taskID, pull: linkedPull()})
 	v.updateKey(registryKey(t, "tab"))
 	if v.tab != taskTabPull {
-		t.Fatalf("tab from Step Details with a pull request landed on %v, want Pull Request", v.tab)
+		t.Fatalf("tab from %v with a pull request landed on %v, want %v", taskTabStepDetails, v.tab, taskTabPull)
 	}
 	v.updateKey(registryKey(t, "tab"))
 	if v.tab != taskTabSteps {
-		t.Fatalf("tab wrapped to %v, want Steps", v.tab)
+		t.Fatalf("tab wrapped to %v, want %v", v.tab, taskTabSteps)
 	}
 	v.updateKey(registryKey(t, "["))
 	if v.tab != taskTabPull {
-		t.Fatalf("[ wrapped to %v, want Pull Request", v.tab)
+		t.Fatalf("[ wrapped to %v, want %v", v.tab, taskTabPull)
 	}
 }
 

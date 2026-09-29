@@ -494,14 +494,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v := tabbedTaskFixture(t, taskTabSteps)
 			v.updateKey(registryKey(t, "tab"))
 			if v.tab != taskTabDetails {
-				t.Fatalf("tab moved to %v, want Task Details", v.tab)
+				t.Fatalf("tab moved to %v, want %v", v.tab, taskTabDetails)
 			}
 		},
 		"]": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabSteps)
 			v.updateKey(registryKey(t, "]"))
 			if v.tab != taskTabDetails {
-				t.Fatalf("] moved to %v, want Task Details", v.tab)
+				t.Fatalf("] moved to %v, want %v", v.tab, taskTabDetails)
 			}
 		},
 		"down": func(t *testing.T) {
@@ -1766,7 +1766,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v := tabbedTaskFixture(t, taskTabSteps)
 			v.updateKey(registryKey(t, "6"))
 			if v.tab != taskTabStepDetails {
-				t.Fatalf("6 moved to %v, want the Step Details tab", v.tab)
+				t.Fatalf("6 moved to %v, want %v", v.tab, taskTabStepDetails)
 			}
 		},
 		"down": func(t *testing.T) {
@@ -1786,7 +1786,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v.tab = taskTabDetails
 			v.updateKey(registryKey(t, "7"))
 			if v.tab != taskTabPull {
-				t.Fatalf("7 moved to %v, want the Pull Request tab", v.tab)
+				t.Fatalf("7 moved to %v, want %v", v.tab, taskTabPull)
 			}
 		},
 		"down": func(t *testing.T) {

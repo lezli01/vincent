@@ -839,6 +839,15 @@ var taskTabNames = [taskTabCount]string{
 	taskTabPull:        "Pull Request",
 }
 
+// String is the tab's strip label, so tests pin a tab by its enum rather than
+// by a literal that every rename would churn (issue #592).
+func (tab taskViewTab) String() string {
+	if tab < 0 || tab >= taskTabCount {
+		return fmt.Sprintf("taskViewTab(%d)", int(tab))
+	}
+	return taskTabNames[tab]
+}
+
 func (t *taskView) renderTabs() string {
 	tabs := t.tabs()
 	t.tabHits = t.tabHits[:0]
@@ -850,7 +859,7 @@ func (t *taskView) renderTabs() string {
 			b.WriteString(styleDim.Render(" │ "))
 			x += 3
 		}
-		name := taskTabNames[tab]
+		name := tab.String()
 		t.tabHits = append(t.tabHits, taskTabHit{tab: tab, x0: x, x1: x + len(name)})
 		b.WriteString(tabLabel(name, t.tab == tab))
 		x += len(name)
