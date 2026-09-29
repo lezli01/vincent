@@ -24,6 +24,10 @@ const (
 	// fetched yet. The hold lasts one refetch, so this is a safety valve, not
 	// a queue.
 	maxBufferedChunks = 500
+	// maxLiveTail bounds the now-line's side buffer (task 129.9). It feeds
+	// one line, so it keeps only enough records for the renderer to find the
+	// last non-blank one.
+	maxLiveTail = 32
 	// detailRefreshDebounce coalesces a burst of events for this task into
 	// one refetch, matching the board.
 	detailRefreshDebounce = 150 * time.Millisecond
@@ -140,6 +144,13 @@ type detail struct {
 	// advanced while the refetch was in flight. Dropping them would lose the
 	// first moments of every step.
 	buffer []apiclient.OutputNote
+	// liveTail is the newest few records of liveRun, the attempt the per-task
+	// stream last delivered output for, whichever attempt the pane displays
+	// (task 129.9). It is what the workspace's now-line reads when the
+	// displayed attempt is not the live one; it is never fetched — an empty
+	// tail says nothing until a chunk arrives (T3.2).
+	liveRun  int64
+	liveTail []apiclient.TranscriptRecord
 
 	// level is how much of each record the output pane shows (§15 `v`). It
 	// is a pointer to the session's one holder rather than a value owned
@@ -443,6 +454,7 @@ func (d *detail) deselect() {
 	d.timelineFolds = nil
 	d.resetOutput()
 	d.buffer = nil
+	d.liveRun, d.liveTail = 0, nil
 	d.actions.clear()
 	d.form, d.repair, d.followUp = nil, nil, nil
 	d.syncStream()
@@ -708,6 +720,7 @@ func (d *detail) updateTaskNote(msg taskNoteMsg) tea.Cmd {
 // chunk for an attempt the view has not seen yet is held and forces an
 // immediate refetch rather than being dropped.
 func (d *detail) handleChunk(n apiclient.OutputNote) tea.Cmd {
+	d.feedLiveTail(n)
 	switch {
 	case d.fetching:
 		d.hold(n)
@@ -726,6 +739,20 @@ func (d *detail) handleChunk(n apiclient.OutputNote) tea.Cmd {
 		return d.loadCmd()
 	default:
 		return nil // a known attempt the user is not looking at
+	}
+}
+
+// feedLiveTail keeps the now-line's side buffer: every chunk on the stream,
+// whichever attempt is displayed. A chunk for a different attempt starts the
+// tail over, because the stream only carries output for the attempt running
+// now.
+func (d *detail) feedLiveTail(n apiclient.OutputNote) {
+	if n.RunID != d.liveRun {
+		d.liveRun, d.liveTail = n.RunID, nil
+	}
+	d.liveTail = append(d.liveTail, recordFromChunk(n))
+	if len(d.liveTail) > maxLiveTail {
+		d.liveTail = d.liveTail[len(d.liveTail)-maxLiveTail:]
 	}
 }
 

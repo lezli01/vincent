@@ -201,7 +201,7 @@ func TestTabStripFitsAndReadsWithoutColour(t *testing.T) {
 	// The hit map follows the drawn geometry: a click on each box selects it.
 	for _, hit := range v.tabHits {
 		v.tab = taskTabDetails
-		v.updateClick(tea.MouseClickMsg{X: hit.x0, Y: 1})
+		v.updateClick(tea.MouseClickMsg{X: hit.x0, Y: v.tabY})
 		if v.tab != hit.tab {
 			t.Errorf("a click at column %d selected %v, want %v", hit.x0, v.tab, hit.tab)
 		}

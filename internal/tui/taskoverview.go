@@ -201,8 +201,9 @@ func (t *taskView) overviewLines(width, height int) []string {
 		return []string{styleDim.Render("  loading task…")}
 	}
 	task := d.task
+	// The `#id title` line is the workspace's, drawn once above every tab
+	// (task 129.9).
 	out := []string{
-		styleTitle.Render(fmt.Sprintf("  #%d %s", task.ID, task.Title)),
 		"  " + renderDetailState(task.Task),
 		"",
 	}
@@ -312,6 +313,12 @@ func (t *taskView) progressFacts() []taskDetailFact {
 	run, ok := t.overviewAnchor()
 	if ok {
 		facts = append(facts, taskDetailFact{"attempt", attemptName(run)})
+	}
+	// While the task runs, the now-line under the app header is the one
+	// place its latest status is said (task 129.9); the frames that hide the
+	// now-line keep the fact.
+	if task.State == stateRunning {
+		return facts
 	}
 	status := ""
 	if ok {

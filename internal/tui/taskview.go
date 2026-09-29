@@ -136,7 +136,10 @@ type taskView struct {
 	stepDetails stepDetailsPane
 
 	tabHits []taskTabHit
-	bodyY   int
+	// tabY is the body row the tab strip is drawn on, under the task's title
+	// rows (task 129.9); bodyY is where the tab's own body starts.
+	tabY  int
+	bodyY int
 
 	// stack is the chain of tasks this workspace was opened *through* — the
 	// parents and lanes a reader drilled down from (#316). `esc` pops one
@@ -154,6 +157,10 @@ type taskView struct {
 	// the reader back where they were rather than on the Overview a fresh
 	// open lands on (task 129.12).
 	leftTab map[int64]taskViewTab
+	// crumb is the breadcrumb label each task on the stack was left with —
+	// `#id`, or `lane #id name` for a fan-out lane — recorded at push time
+	// because the stack holds only ids (task 129.9).
+	crumb map[int64]string
 	// alive reports whether a task on the stack can still be opened, so an
 	// archived or vanished one is dropped from the stack rather than popped
 	// to. Injected so the walk is testable without a daemon; nil asks one.
@@ -328,7 +335,7 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 			t.stack = append(t.stack, t.stackPush)
 			t.stackPush = 0
 		default:
-			t.stack, t.leftTab = nil, nil
+			t.stack, t.leftTab, t.crumb = nil, nil, nil
 		}
 		// Only a fresh open lands on the Overview (task 129.12). A pop
 		// restores the tab the reader left that task on, and the pull
@@ -780,8 +787,8 @@ func (t *taskView) updateClick(msg tea.MouseClickMsg) tea.Cmd {
 	if t.popup {
 		return nil
 	}
-	// The root's outer frame puts the tab strip on body row 1.
-	if msg.Y == 1 {
+	// The root's outer frame and the title rows put the tab strip on tabY.
+	if msg.Y == t.tabY {
 		for _, hit := range t.tabHits {
 			if msg.X >= hit.x0 && msg.X < hit.x1 {
 				return t.setTab(hit.tab)
@@ -850,8 +857,10 @@ func (t *taskView) render(width, height int) string {
 	if height > 0 {
 		t.height = height
 	}
-	lines := []string{t.renderTabs(), ""}
-	t.bodyY = 3 // root border + tab strip + blank separator
+	lines := t.titleLines(t.width)
+	t.tabY = 1 + len(lines) // root border + title rows
+	lines = append(lines, t.renderTabs(), "")
+	t.bodyY = t.tabY + 2 // tab strip + blank separator
 	bodyH := max(t.height-len(lines), 1)
 	if !t.connected {
 		lines = append(lines, styleWarn.Render(" ⚠ daemon unreachable — task data is stale"))
@@ -1044,7 +1053,7 @@ func (t *taskView) renderTabBody(width, height int) string {
 	default:
 		t.detail.focus = focusTimeline
 		t.detail.width = width
-		return t.detail.timelinePanel(height)
+		return t.detail.timelineBody(height)
 	}
 }
 
@@ -1198,9 +1207,9 @@ func (t *taskView) detailLines(width int) []string {
 	}
 
 	task := d.task
-	out := []string{
-		styleTitle.Render(fmt.Sprintf("  #%d  %s", task.ID, task.Title)),
-	}
+	// The `#id title` line is the workspace's, drawn once above every tab
+	// (task 129.9); the document opens on the state.
+	var out []string
 	meta := []string{renderDetailState(task.Task)}
 	if task.ProjectName != "" {
 		meta = append(meta, styleDim.Render(task.ProjectName))
@@ -1688,7 +1697,121 @@ func (t *taskView) pushTask(id int64) {
 			t.leftTab = map[int64]taskViewTab{}
 		}
 		t.leftTab[id] = t.tab
+		if t.crumb == nil {
+			t.crumb = map[int64]string{}
+		}
+		t.crumb[id] = t.currentCrumb()
 	}
+}
+
+// currentCrumb is the breadcrumb label of the task on screen: `#id`, or
+// `lane #id name` for a fan-out lane, named the way the Output lane selector
+// names it. Crumbs are ids rather than titles — the title is on the line
+// under them.
+func (t *taskView) currentCrumb() string {
+	d := t.detail
+	if d.loaded && d.task.ID == d.taskID && d.task.ParentTaskID != nil {
+		return fmt.Sprintf("lane #%d %s", d.taskID, laneName(d.task.Task))
+	}
+	return fmt.Sprintf("#%d", d.taskID)
+}
+
+// crumbs is the workspace's breadcrumb (task 129.9): the board, every task
+// on the back stack in push order, the task on screen, and the tab. Board is
+// always first because `esc` falls through to it however the task was
+// opened; the breadcrumb's job is to name what `esc` goes back to.
+func (t *taskView) crumbs() []string {
+	if t.detail.taskID == 0 {
+		return []string{"Board", "Task"}
+	}
+	out := make([]string, 0, len(t.stack)+3)
+	out = append(out, "Board")
+	for _, id := range t.stack {
+		label, ok := t.crumb[id]
+		if !ok {
+			label = fmt.Sprintf("#%d", id)
+		}
+		out = append(out, label)
+	}
+	return append(out, t.currentCrumb(), t.tab.String())
+}
+
+// crumbSep separates breadcrumb crumbs. A glyph rather than a colour, so the
+// path reads the same under the no-colour profile.
+const crumbSep = " › "
+
+// headerTag is the app header's tag for the workspace: the breadcrumb, fitted
+// to width by dropping crumbs from the left behind an ellipsis. The task on
+// screen and its tab are always kept.
+func (t *taskView) headerTag(width int) string {
+	return fitCrumbs(t.crumbs(), width)
+}
+
+func fitCrumbs(crumbs []string, width int) string {
+	line := strings.Join(crumbs, crumbSep)
+	keep := max(len(crumbs)-2, 0)
+	for drop := 1; ansi.StringWidth(line) > width && drop <= keep; drop++ {
+		line = strings.Join(append([]string{"…"}, crumbs[drop:]...), crumbSep)
+	}
+	return ansi.Truncate(line, max(width, 1), "…")
+}
+
+// titleLines are the task's `#id title` rows, drawn once as the first lines
+// inside the workspace's frame on every tab (task 129.9). A very long title
+// is held to three rows so it cannot eat the tab's body.
+func (t *taskView) titleLines(width int) []string {
+	d := t.detail
+	if d.taskID == 0 {
+		return nil
+	}
+	if !d.loaded {
+		return []string{styleTitle.Render(fmt.Sprintf(" #%d", d.taskID))}
+	}
+	saved := d.width
+	d.width = width
+	lines := d.titleLines()
+	d.width = saved
+	const maxTitleLines = 3
+	if len(lines) > maxTitleLines {
+		lines = lines[:maxTitleLines]
+		last := lines[maxTitleLines-1]
+		lines[maxTitleLines-1] = ansi.Truncate(last, max(ansi.StringWidth(last)-1, 1), "") + styleTitle.Render("…")
+	}
+	return lines
+}
+
+// nowLine is the one line under the app header that says what the running
+// task is doing this moment (task 129.9), drawn only while the task on screen
+// is running. The live attempt's status message wins — styled as the Steps
+// timeline styles it, neutral and never as a failure (task 036 decision 6);
+// then the last line that attempt printed; then only its name. Nothing is
+// invented: an attempt that has said nothing is named, not narrated.
+//
+// The current level is the workspace's own task. Inside a lane it is the
+// lane's live attempt, never a descendant's.
+func (t *taskView) nowLine(width int) (string, bool) {
+	d := t.detail
+	if !d.loaded || d.task.ID != d.taskID || d.task.State != stateRunning {
+		return "", false
+	}
+	var run apiclient.StepRun
+	for _, r := range d.task.Steps {
+		if r.Live() && r.ID > run.ID {
+			run = r
+		}
+	}
+	if run.ID == 0 {
+		return "", false
+	}
+	var line string
+	if status := statusOf(run); status != "" {
+		line = styleStatus.Render(" " + statusGlyph + " " + status)
+	} else if out, ok := d.liveOutputLine(run.ID); ok {
+		line = styleDim.Render(" " + strings.TrimSpace(ansi.Strip(out)))
+	} else {
+		line = styleDim.Render(" " + attemptName(run))
+	}
+	return ansi.Truncate(line, max(width, 1), "…"), true
 }
 
 // popCmd is `esc`. It walks the stack from the top, dropping tasks that

@@ -854,6 +854,11 @@ func frame(title, content string, w, h int, focused bool) string {
 		border = styleFocus
 		label = " " + focusGlyph + " " + title + " "
 	}
+	if title == "" {
+		// An untitled frame is a plain border: the task workspace names
+		// itself in the app header's breadcrumb instead (task 129.9).
+		label = ""
+	}
 	inner := w - 2
 
 	label = ansi.Truncate(label, max(inner-1, 0), "…")

@@ -162,7 +162,7 @@ func TestTaskClickIgnoredBehindAPopup(t *testing.T) {
 	if output.x1 == 0 {
 		t.Fatal("fixture: the tab strip has no Output tab to click")
 	}
-	v.update(tea.MouseClickMsg{X: output.x0, Y: 1, Button: tea.MouseLeft})
+	v.update(tea.MouseClickMsg{X: output.x0, Y: v.tabY, Button: tea.MouseLeft})
 	if !v.popup {
 		t.Fatal("a click closed the popup")
 	}
@@ -174,7 +174,7 @@ func TestTaskClickIgnoredBehindAPopup(t *testing.T) {
 	}
 
 	v.popup = false
-	v.update(tea.MouseClickMsg{X: output.x0, Y: 1, Button: tea.MouseLeft})
+	v.update(tea.MouseClickMsg{X: output.x0, Y: v.tabY, Button: tea.MouseLeft})
 	if v.tab != taskTabOutput {
 		t.Fatalf("the same click with no popup left the tab on %v, want Output", v.tab)
 	}

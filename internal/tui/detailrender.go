@@ -38,6 +38,21 @@ const editedBadge = "✎"
 // At one line — the collapsed band — it shows the selected attempt, which is
 // the line the cursor would land on (§15: title bar plus the selected line).
 func (d *detail) timelinePanel(height int) string {
+	return d.timelineWith(height, d.headerLines())
+}
+
+// timelineBody is the workspace's Steps tab: the timeline panel without the
+// task's title rows, which the workspace draws once above every tab (task
+// 129.9).
+func (d *detail) timelineBody(height int) string {
+	header := d.headerLines()
+	if d.loaded && d.width > 0 {
+		header = header[len(d.titleLines()):]
+	}
+	return d.timelineWith(height, header)
+}
+
+func (d *detail) timelineWith(height int, header []string) string {
 	if d.taskID == 0 {
 		return styleDim.Render("  no task selected")
 	}
@@ -46,9 +61,11 @@ func (d *detail) timelinePanel(height int) string {
 			// The collapsed band has no header above it to indent under.
 			return d.attemptLine(run, false)
 		}
-		return d.headerLines()[0]
+		if len(header) == 0 {
+			return ""
+		}
+		return header[0]
 	}
-	header := d.headerLines()
 	// Even a very short task view keeps one physical row for the timeline.
 	// The richer header yields its least important lower rows first.
 	header = header[:min(len(header), max(height-1, 1))]
@@ -151,11 +168,35 @@ func (d *detail) collapsedOutputLine() string {
 	if body, ok := d.outputEmptyState(); ok {
 		return styleDim.Render("  " + body)
 	}
-	lines := d.outputLines()
-	if len(lines) == 0 {
-		return ""
+	line, _ := lastOutputLine(d.outputLines())
+	return line
+}
+
+// lastOutputLine is the newest non-blank rendered line of an output pane —
+// the one derivation of "the last thing it said", shared by the collapsed
+// pane and the workspace's now-line (task 129.9).
+func lastOutputLine(lines []string) (string, bool) {
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(ansi.Strip(lines[i])) != "" {
+			return lines[i], true
+		}
 	}
-	return lines[len(lines)-1]
+	return "", false
+}
+
+// liveOutputLine is the last rendered output line of the attempt running
+// now, at the pane's shared level: the displayed records when that attempt
+// is the one on screen, else the side buffer the stream feeds (task 129.9).
+func (d *detail) liveOutputLine(runID int64) (string, bool) {
+	if runID == d.displayRun {
+		return lastOutputLine(d.outputLines())
+	}
+	if runID != d.liveRun || len(d.liveTail) == 0 {
+		return "", false
+	}
+	lines, _ := outputLinesAt(d.liveTail, nil, d.level.get(), max(d.width, 1),
+		lineOpts{raw: d.raw.get()})
+	return lastOutputLine(lines)
 }
 
 // outputTitle is the output panel's border title: the §15 tab strip plus
@@ -279,10 +320,7 @@ func (d *detail) headerLines() []string {
 		return []string{d.headerLine()}
 	}
 	t := d.task
-	lines := wrappedHeaderValue(
-		fmt.Sprintf(" #%d ", t.ID),
-		valueOr(t.Title, "untitled task"), d.width, styleTitle,
-	)
+	lines := d.titleLines()
 
 	overview := d.headerOverviewParts()
 	if len(overview) > 0 {
@@ -300,6 +338,16 @@ func (d *detail) headerLines() []string {
 		)...)
 	}
 	return append(lines, d.laneBlameLines()...)
+}
+
+// titleLines are the task's `#id title` rows, wrapped to the pane. The
+// workspace draws them once above its tabs (task 129.9); the timeline's own
+// header leads with them wherever the timeline is drawn outside it.
+func (d *detail) titleLines() []string {
+	return wrappedHeaderValue(
+		fmt.Sprintf(" #%d ", d.task.ID),
+		valueOr(d.task.Title, "untitled task"), max(d.width, 1), styleTitle,
+	)
 }
 
 func (d *detail) headerOverviewParts() []string {
