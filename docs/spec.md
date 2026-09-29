@@ -11156,7 +11156,8 @@ stream for the live tail.
    **running, queued, paused and `awaiting_children`** say what the task is
    doing (a state sentence — the lanes still out, for a parked fan-out parent
    — the current step and attempt, and the attempt's latest status message,
-   neutral as ever); **blocked, `awaiting_input`, `awaiting_gate` and
+   neutral as ever; *since task 129.9, below, the running frame leaves the
+   status message to the now-line*); **blocked, `awaiting_input`, `awaiting_gate` and
    aborted** say what it needs (the reason's §18 title and code, the pending
    question or the gate's instructions, and each action in
    `available_actions` with its key and one line on what it does); **done and
@@ -11200,6 +11201,39 @@ stream for the live tail.
    which is never `retry`. On a body shorter than 12 rows the card keeps its
    first line and its actions' keys, then the links; the rest is dropped
    whole.
+
+   *Amended 2026-09-29 (task 129.9, issue #598).* **The workspace says where
+   it is once, and what it is doing now.** (1) In the app header the
+   workspace's view tag — `[Task #12]` — is replaced by a **breadcrumb**:
+   `Board › #12 › lane #14 api › Output`. `Board` is always first, since
+   `esc` falls through to it however the task was opened; then each task on
+   the back stack (#316) in push order, then the task on screen, then the
+   active tab's label. Crumbs are ids, never titles: a task is `#id`, and a
+   fan-out lane is `lane #id name`, named as the Output lane selector names
+   it. The breadcrumb stops at the tab — no step or attempt crumbs. When it
+   does not fit, crumbs are dropped from the **left** behind a `…` crumb; the
+   task on screen and its tab are always kept. Every other view keeps its
+   bracketed tag, and the connection badge rule above (129.15) is unchanged.
+   (2) The workspace's frame is drawn **untitled**, and its first line on
+   every tab is the task's one `#id title` line (wrapped as the header wraps
+   a long title, at most three rows). The per-tab title rows go: the
+   Overview's heading, the title row of the Steps header (its state, branch
+   and workflow rows stay) and Task Details' heading. (3) While the task on
+   screen is `running`, one dim **now-line** is drawn under the app header —
+   after the status line, when one is up — on every tab: the live attempt's
+   status message behind `»`, styled as the Steps timeline styles it and
+   never as a failure (task 036 decision 6); else the last rendered line of
+   the live attempt's output, at the shared Output level; else only the live
+   attempt's name (`step 3 verify · attempt 2 · running`). Nothing is
+   invented. Inside a lane it is the lane's live attempt, never a
+   descendant's. It is read from the snapshot plus the per-task stream the
+   workspace already holds (T3.2): chunks for the live attempt are kept in a
+   small side buffer whichever attempt the Output tab displays, so a chunk
+   moves the line without a fetch, and a status change arrives with the
+   ordinary debounced refresh. It vanishes when the task leaves `running`.
+   The Overview's running frame therefore drops its `latest status` fact;
+   the queued, paused and `awaiting_children` frames, where the now-line is
+   not drawn, keep it.
 
 3. **New task.** Project picker → workflow picker (shows description + step list;
    flags steps whose agent is unavailable) → *(GitHub issue, conditional)* →
@@ -12075,10 +12109,12 @@ daemon state and no capability that exists only at one size.
 └────────────────────────────────────────────────────────────┘
  enter open · / filter                    : commands  ? help  q quit
 
-┌─ Task #12 ─────────────────────────────────────────────────┐
+ vincent  Board › #12 › Overview
+ » writing the rate-limit middleware
+┌────────────────────────────────────────────────────────────┐
+│ #12 add rate limiting                                      │
 │ 0 Overview │ 3 Output │ 4 Diff ‖ 1 Steps  2 Details  …     │
 │  Running step 2 of 5 (implement).                          │
-│  latest status   writing the rate-limit middleware         │
 │  3 full output                                             │
 └────────────────────────────────────────────────────────────┘
  tab views · 3 full output                  : commands  ? help  q quit
