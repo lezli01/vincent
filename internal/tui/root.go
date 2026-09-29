@@ -69,6 +69,9 @@ type root struct {
 	active viewID
 	views  [viewCount]panel
 	help   bool
+	// helpScroll is the help sheet's first visible line (task 129.17),
+	// zeroed each time the sheet opens and clamped to the text on every use.
+	helpScroll int
 	// palette is the §15 command palette, open when non-nil. It lives on
 	// the root because it must overlay every screen, takeovers included —
 	// while disconnected it is how the daemon view stays reachable.
@@ -435,17 +438,55 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 // updateHelpKey is the open help overlay's keyboard: the three keys that
-// close it, ctrl+c because the TUI must always be killable, and nothing else.
-// It is what makes helpFooter's promise true — the keys of the surface under
-// the sheet do nothing until it closes.
+// close it, the six that scroll it (task 129.17), ctrl+c because the TUI must
+// always be killable, and nothing else. It is what makes helpFooter's promise
+// true — the keys of the surface under the sheet do nothing until it closes.
+// The scroll keys are the overlay's own, like a popup's, rather than registry
+// rows: they mean the same on every surface's sheet.
 func (m *root) updateHelpKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	lines, visible := m.helpWindow()
+	last := max(len(lines)-visible, 0)
+	scroll := min(m.helpScroll, last)
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
 	case opKey(keymap.Help), "esc", opKey(keymap.HelpAlt):
 		m.help = false
+	case "up":
+		scroll--
+	case "down":
+		scroll++
+	case "pgup":
+		scroll -= max(visible-1, 1)
+	case "pgdown":
+		scroll += max(visible-1, 1)
+	case "home":
+		scroll = 0
+	case "end":
+		scroll = last
 	}
+	m.helpScroll = max(min(scroll, last), 0)
 	return m, nil
+}
+
+// helpWindow is the help sheet as lines, and how many of them the frame
+// shows at once — one fewer than it holds when they overflow, since the last
+// row is then the position cue.
+func (m *root) helpWindow() (lines []string, visible int) {
+	lines = strings.Split(strings.TrimRight(m.helpSheet(), "\n"), "\n")
+	visible = max(m.bodyHeight()-2, 1)
+	if len(lines) > visible {
+		visible = max(visible-1, 1)
+	}
+	return lines, visible
+}
+
+// helpSheet renders the sheet for the surface under it, against the same
+// target the palette would be built from.
+func (m *root) helpSheet() string {
+	st := m.surfaceTarget()
+	return helpText(m.activeContext(), m.githubAvailable(),
+		helpState{target: st.target, editable: st.editable, tabs: st.tabs})
 }
 
 // globalKey runs the root's own single-key bindings, and reports whether key
@@ -460,6 +501,7 @@ func (m *root) globalKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 	case opKey(keymap.Help), opKey(keymap.HelpAlt):
 		m.help = !m.help
+		m.helpScroll = 0
 		return nil, true
 	case opKey(keymap.Mouse):
 		m.mouseOn = !m.mouseOn
@@ -576,25 +618,45 @@ func (m *root) updateLinksKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, openLinkCmd(dest)
 }
 
+// surface is what the palette and the help sheet both need to know about the
+// active surface beyond its binding context. One helper builds it for both,
+// so the sheet's "actions now" and the palette's action group cannot drift
+// (task 129.17).
+type surface struct {
+	target   taskActions
+	editable bool
+	live     func([]binding) []binding
+	// tabs is the task workspace's strip as drawn; nil elsewhere.
+	tabs []taskViewTab
+}
+
+// surfaceTarget reads the active surface. Nothing can act on a task the
+// daemon cannot see, so off a live connection the target is empty.
+func (m *root) surfaceTarget() surface {
+	var s surface
+	if sh, ok := m.views[m.active].(*shell); ok {
+		s.target = sh.board.target()
+		s.editable = sh.detail.stepEditable()
+		s.live = sh.liveBindings
+	} else if t, ok := m.views[m.active].(*taskView); ok {
+		s.target = t.target()
+		s.editable = t.detail.stepEditable()
+		s.live = t.liveBindings
+		s.tabs = t.tabs()
+	} else if lb, ok := m.views[m.active].(liveBinder); ok {
+		s.live = lb.liveBindings
+	}
+	if m.phase != phaseConnected {
+		s.target = taskActions{}
+	}
+	return s
+}
+
 // openPalette builds the palette for the active surface.
 func (m *root) openPalette() {
-	ctx := m.activeContext()
-	target := taskActions{}
-	editable := false
-	var live func([]binding) []binding
-	if s, ok := m.views[m.active].(*shell); ok {
-		target = s.board.target()
-		editable = s.detail.stepEditable()
-		live = s.liveBindings
-	} else if t, ok := m.views[m.active].(*taskView); ok {
-		target = t.target()
-		editable = t.detail.stepEditable()
-		live = t.liveBindings
-	} else if lb, ok := m.views[m.active].(liveBinder); ok {
-		live = lb.liveBindings
-	}
+	s := m.surfaceTarget()
 	m.palette = newPalette(paletteEntries(
-		ctx, target, editable, m.phase == phaseConnected, m.githubAvailable(), live))
+		m.activeContext(), s.target, s.editable, m.phase == phaseConnected, m.githubAvailable(), s.live, s.tabs))
 }
 
 // liveBinder is a surface whose registry rows depend on its state: it drops
@@ -1090,13 +1152,20 @@ func (m *root) body() string {
 	if m.help {
 		// The sheet describes the surface it was opened over, framed like
 		// every other surface (T3.8 findings).
+		// It scrolls (task 129.17): the frame shows a window of it from
+		// helpScroll, with a cue on the last row when there is more.
 		ctx := m.activeContext()
 		h := m.bodyHeight()
-		text := helpText(ctx, m.githubAvailable())
 		if m.width < 4 || h < 3 {
-			return text
+			return m.helpSheet()
 		}
-		return frame(helpTitle(ctx), text, m.width, h, true)
+		lines, visible := m.helpWindow()
+		from := min(m.helpScroll, max(len(lines)-visible, 0))
+		shown := lines[from:min(from+visible, len(lines))]
+		if len(lines) > visible {
+			shown = append(shown[:len(shown):len(shown)], helpScrollCue(from, visible, len(lines)))
+		}
+		return frame(helpTitle(ctx), strings.Join(shown, "\n"), m.width, h, true)
 	}
 	// The daemon view is the exception to the connection gate (§15): its log
 	// tail comes off the filesystem, and a daemon that is down is exactly

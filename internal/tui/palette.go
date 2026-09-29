@@ -15,7 +15,9 @@ import (
 // to the takeover screens, the focused panel's commands, and the global
 // keys — each beside its direct key, so it teaches shortcuts rather than
 // replacing them. Invalid task actions are omitted, not greyed: an action
-// that cannot happen is never on screen.
+// that cannot happen is never on screen. (The help sheet does grey them: it
+// teaches the vocabulary and runs nothing — task 129.17 decision 2.) In the
+// task workspace it also lists the strip's tabs by digit.
 type palette struct {
 	input   textField
 	entries []paletteEntry
@@ -36,6 +38,10 @@ type paletteEntry struct {
 	// unbound is a row whose key a user binding took on a lenient load
 	// (task 128): listed, so the human can see it is gone, but not runnable.
 	unbound bool
+	// tab marks a "go to the <Name> tab" row (task 129.17); key is the tab's
+	// digit, which running the row replays like any panel key.
+	tab   taskViewTab
+	isTab bool
 }
 
 func newPalette(entries []paletteEntry) *palette {
@@ -53,8 +59,9 @@ func newPalette(entries []paletteEntry) *palette {
 // something when some project's integration is usable (task 052.6); live,
 // when non-nil, drops the surface's panel rows whose keys are inert in its
 // current state — the same gate the footer applies, so the palette never
-// offers a press the footer knows does nothing (issue #372).
-func paletteEntries(ctx bindingContext, target taskActions, editable, connected, github bool, live func([]binding) []binding) []paletteEntry {
+// offers a press the footer knows does nothing (issue #372); tabs, when non-nil, is the task workspace's
+// strip, one "go to" row per tab on it (task 129.17).
+func paletteEntries(ctx bindingContext, target taskActions, editable, connected, github bool, live func([]binding) []binding, tabs []taskViewTab) []paletteEntry {
 	out := make([]paletteEntry, 0, len(registry()))
 	if connected && (target.id != 0 || target.bulk()) {
 		// A selection is what the keys act on, so it is what the section is
@@ -73,6 +80,16 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 			}
 			out = append(out, paletteEntry{group: group, label: b.label, key: b.key, unbound: b.unbound})
 		}
+	}
+	// The workspace's tabs, in drawn order, the current one included — it is
+	// a harmless no-op, and a list that moved under the cursor would not be.
+	// Only the tabs: Overview's jump links stay on Overview, where the attempt
+	// they move the cursor to is on screen (task 129.17 decision 3).
+	for _, tab := range tabs {
+		out = append(out, paletteEntry{
+			group: "tabs", label: "go to the " + taskTabNames[tab] + " tab",
+			key: taskTabDigits[tab], tab: tab, isTab: true,
+		})
 	}
 	// Views get their own section: navigating to them is the reason the
 	// digits could be retired, so it must not read as one more command

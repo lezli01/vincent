@@ -269,7 +269,7 @@ func TestRootMouseToggle(t *testing.T) {
 		t.Fatalf("mouse mode = %v after M M, want cell motion again", v.MouseMode)
 	}
 	// The toggle is discoverable: a registry row, so palette and ? carry it.
-	if !strings.Contains(helpText(ctxTasks, true), "toggle the mouse") {
+	if !strings.Contains(helpText(ctxTasks, true, helpState{}), "toggle the mouse") {
 		t.Error("the mouse toggle is not in the help overlay")
 	}
 }

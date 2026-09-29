@@ -335,7 +335,7 @@ func TestPopupOwnsTheBindingContext(t *testing.T) {
 			if got := v.bindingContext(); got != tc.want {
 				t.Fatalf("binding context = %q, want %q", got, tc.want)
 			}
-			sheet := ansi.Strip(helpText(v.bindingContext(), true))
+			sheet := ansi.Strip(helpText(v.bindingContext(), true, helpState{}))
 			if !strings.Contains(sheet, "ctrl+t") {
 				t.Fatalf("? does not print ctrl+t for %s:\n%s", tc.want, sheet)
 			}
@@ -346,7 +346,7 @@ func TestPopupOwnsTheBindingContext(t *testing.T) {
 // TestHelpPrintsAllThreePopupSections: the sheet printed the answer and
 // repair popups and silently omitted the follow-up one (task 059).
 func TestHelpPrintsAllThreePopupSections(t *testing.T) {
-	sheet := strings.ToLower(ansi.Strip(helpText(ctxTimeline, true)))
+	sheet := strings.ToLower(ansi.Strip(helpText(ctxTimeline, true, helpState{})))
 	for _, want := range []string{"answer form", "repair form", "follow-up form"} {
 		if !strings.Contains(sheet, want) {
 			t.Errorf("the ? sheet has no %q section:\n%s", want, sheet)

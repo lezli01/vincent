@@ -360,7 +360,7 @@ func TestSynthKeyRoundTripsEveryRegistryKey(t *testing.T) {
 // TestHelpListsF1UnderGlobalKeys: the overlay renders the new row, on a
 // surface where it is the way in.
 func TestHelpListsF1UnderGlobalKeys(t *testing.T) {
-	text := helpText(ctxChat, false)
+	text := helpText(ctxChat, false, helpState{})
 	_, global, ok := strings.Cut(text, "GLOBAL KEYS")
 	if !ok {
 		t.Fatalf("no global section:\n%s", text)

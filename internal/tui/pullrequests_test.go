@@ -76,12 +76,12 @@ func drain(cmd tea.Cmd) tea.Msg {
 // the palette, the ? overlay and the footer alike. A screen that exists only
 // to explain that it has nothing to show is not a view.
 func TestPullRequestsNavRowIsWithheldWithoutAGitHubProject(t *testing.T) {
-	for _, e := range paletteEntries(ctxTasks, taskActions{}, false, true, false, nil) {
+	for _, e := range paletteEntries(ctxTasks, taskActions{}, false, true, false, nil, nil) {
 		if e.navTarget == viewPullRequests && e.nav {
 			t.Fatal("the palette offers the pull-requests view with no GitHub project")
 		}
 	}
-	if strings.Contains(helpText(ctxTasks, false), "pull requests —") {
+	if strings.Contains(helpText(ctxTasks, false, helpState{}), "pull requests —") {
 		t.Error("the ? overlay names the pull-requests view with no GitHub project")
 	}
 	if got := len(bindingsFor(ctxTaskDetails)) - len(withoutGitHub(bindingsFor(ctxTaskDetails), false)); got != 2 {
@@ -89,7 +89,7 @@ func TestPullRequestsNavRowIsWithheldWithoutAGitHubProject(t *testing.T) {
 	}
 	// And with one, it is back.
 	found := false
-	for _, e := range paletteEntries(ctxTasks, taskActions{}, false, true, true, nil) {
+	for _, e := range paletteEntries(ctxTasks, taskActions{}, false, true, true, nil, nil) {
 		if e.nav && e.navTarget == viewPullRequests {
 			found = true
 		}
