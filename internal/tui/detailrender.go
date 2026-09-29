@@ -170,6 +170,26 @@ func (d *detail) outputTitle() string {
 		}
 		return strip
 	}
+	return strip + d.modeClauses() + d.followIndicator()
+}
+
+// outputStatus is the workspace Output tab's live state (#597): the clauses
+// outputTitle carries, drawn on the attempt strip because the routed
+// workspace never draws that title. Follow state rides only on a live
+// attempt — "a 'following' badge on a finished run is a lie" (T3.3), and so
+// is a paused one.
+func (d *detail) outputStatus() string {
+	status := d.modeClauses()
+	if d.runByID(d.displayRun).Live() {
+		status += d.followIndicator()
+	}
+	return status
+}
+
+// modeClauses are the level, raw and in-progress clauses of the output
+// pane's live state, each led by " · ", shared by the shell's border title
+// and the workspace's attempt strip.
+func (d *detail) modeClauses() string {
 	// The level rides in the title rather than only in the footer: `v` is
 	// the one key here whose effect can be invisible — pressing it on a run
 	// with no reasoning and no unrecognized lines changes nothing on screen,
@@ -193,7 +213,7 @@ func (d *detail) outputTitle() string {
 	if run := d.runByID(d.displayRun); run.Live() {
 		level += styleDim.Render(" · " + ProgressLabel(d.frame, d.now().Sub(run.StartedAt)))
 	}
-	return strip + level + d.followIndicator()
+	return level
 }
 
 // detailHints are the view's own keys, shown beside the task's actions so the
@@ -1130,11 +1150,37 @@ func (d *detail) renderOutputPane(height int) string {
 		switch y, ok := anchorIndex(anchors, keep); {
 		case d.following:
 			d.vp.GotoBottom()
+		case d.land:
+			d.landAtFailure()
 		case ok:
 			d.vp.SetYOffset(y)
 		}
+		d.land = false
 	}
 	return d.vp.View()
+}
+
+// landAtFailure opens a finished, failed attempt where it failed (#597)
+// rather than at the top of its tail: a check_failed attempt at the first
+// line its check produced, since the step's own output succeeded and the
+// check's is the only record of why, and any other failure at its end. It
+// moves the viewport without setting following — T3.3's lie again.
+func (d *detail) landAtFailure() {
+	if reason := d.runByID(d.displayRun).FailureReason; reason != nil && *reason == "check_failed" {
+		check := make(map[int64]bool)
+		for i, seq := range d.recordSeqs() {
+			if d.records[i].Phase == "check" {
+				check[seq] = true
+			}
+		}
+		for y, a := range d.anchors {
+			if a.rec != 0 && check[a.rec] {
+				d.vp.SetYOffset(y)
+				return
+			}
+		}
+	}
+	d.vp.GotoBottom()
 }
 
 // outputEmptyState distinguishes the reasons a pane can have no output: they

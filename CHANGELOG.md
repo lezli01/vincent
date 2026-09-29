@@ -13,6 +13,14 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **The workspace's Output tab shows its live state, and a failed attempt
+  opens at the failure.** The attempt strip now names the verbosity level,
+  `raw`, the in-progress spinner with its elapsed clock, and `▼ following` /
+  `⏸ paused · N new` for a live attempt — none of which the routed workspace
+  drew before, so `v` and scrolling up had no visible effect and a quiet agent
+  looked hung. A finished failed attempt opens at its first check line
+  (`check_failed`) or its end instead of the top of its tail, and check output
+  carries a `check ▏` gutter (#597).
 - **An upgrade can no longer stop the daemon over `tui.keys`.** A keymap that
   was valid on one release refused the whole `config.yaml` on the next if that
   release retired an operation you named, or gave a new operation or fixed key

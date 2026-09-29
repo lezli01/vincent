@@ -98,6 +98,44 @@ func TestDetailTailJoinsTranscriptWithoutGapOrDuplicate(t *testing.T) {
 	}
 }
 
+// TestLiveAttemptStateOnTheWorkspaceOutputTab is #597 over the real API: a
+// running attempt opened in the routed workspace names its live state — the
+// task-089 indicator and the follow state — on the Output tab itself, not only
+// in the home shell's border title that production never draws.
+func TestLiveAttemptStateOnTheWorkspaceOutputTab(t *testing.T) {
+	h := newBoardLiveHarness(t)
+	task := h.createTask(t, "watched task")
+	ctx := context.Background()
+
+	path := filepath.Join(t.TempDir(), "0-1.jsonl")
+	appendTranscript(t, path, "still going")
+	if _, _, err := h.st.TransitionTask(ctx, task.ID,
+		store.TaskQueued, store.TaskRunning, store.TaskChange{}); err != nil {
+		t.Fatalf("transition to running: %v", err)
+	}
+	if err := h.st.CreateStepRun(ctx, &store.StepRun{
+		TaskID: task.ID, StepIndex: 0, StepID: "one", StepType: "command",
+		Attempt: 1, State: store.StepRunning, TranscriptPath: path,
+		StartedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("CreateStepRun: %v", err)
+	}
+
+	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})
+	h.p.push(cmd)
+	_, cmd = h.m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
+	h.p.push(cmd)
+	h.p.until(20*time.Second, "the transcript window to render", func() bool {
+		return strings.Contains(content(h.m), "still going")
+	})
+	got := content(h.m)
+	for _, want := range []string{"▼ following", "working…"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("live attempt's Output tab is missing %q:\n%s", want, got)
+		}
+	}
+}
+
 // appendTranscript appends these records to the transcript and returns the
 // file size afterwards — the offset the daemon stamps on the chunk it
 // publishes right after the last write.

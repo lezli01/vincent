@@ -564,6 +564,13 @@ level with `v` or `ctrl+r`, toggling `ctrl+o`, and output old enough to be
 dropped from the window all leave you looking at the same thing. Press `f`
 (`ctrl+g` in a chat) to go back to following the tail.
 
+**The attempt strip says what the pane is doing.** Beside the attempt's name it
+shows the level when it is not `normal`, `raw` when `ctrl+o` is on, and — for
+a live attempt only — the spinner with its elapsed time and `▼ following` or
+`⏸ paused · N new`. A finished attempt that failed opens where it failed: at
+the first line its check printed if the check failed, otherwise at the end.
+Check output is marked `check ▏` so it never passes for the step's own.
+
 ### Seeing the source, and taking it away
 
 `ctrl+o` swaps the rendered view for the **stored Markdown**, exactly as the

@@ -10977,6 +10977,17 @@ stream for the live tail.
    reason and for exactly as long. A workspace whose displayed attempt has
    finished arms no repaint.
 
+   *Amended 2026-09-29 (issue #597).* "The **Output** tab's border title" was
+   true only of the home screen's output panel, which the routed workspace
+   never draws. The workspace's Output tab carries the same live state on its
+   **attempt strip**, between the attempt's identity and the `←/→` hint — the
+   level when it is not `normal`, `raw`, the in-progress indicator, and
+   `▼ following` / `⏸ paused · N new` — built from the same clauses as that
+   title, and for a lane, from the lane's own pane. The follow state is drawn
+   for a **live** attempt only: on a finished one neither `following` nor
+   `paused` is true (T3.3). A narrow strip truncates with `…`, losing the hint
+   before the state. The Diff tab is unchanged.
+
    *Amended 2026-09-17 (task 119, issue #472).* **A stopped task can be talked
    to from here.** A task-action binding, `T` ("talk"; Keys, below) — the
    `chat` operation's default, which `tui.keys` may move (§12.3) — is offered when the
@@ -12472,6 +12483,15 @@ persisted, sent to the daemon or written to a transcript.
   block and restores it after any rebuild — a resize, a front-prune, a
   verbosity change, a raw toggle. Following is untouched: its anchor is the
   bottom.
+- **A failed attempt opens where it failed** *(added 2026-09-29, issue #597)*.
+  When a finished attempt that did not succeed has its transcript installed
+  for the first time, the pane opens at the first line its check produced if
+  it failed `check_failed`, and at its end otherwise — never at the top of a
+  256 KiB tail. It moves the viewport and does not set follow (T3.3), and it
+  happens once per attempt: later rebuilds keep the #291 anchor. A succeeded
+  attempt still opens at the top. Command output a step's **check** produced
+  (`phase: "check"`) is drawn behind a `check ▏` gutter, a word rather than a
+  colour, so a check's evidence is never mistaken for the body's.
 - **The clipboard has two transports, and the notice says which ran.** The
   system clipboard is tried first because its answer can be trusted; when it
   refuses, the text is handed to the terminal over OSC 52, which is the correct

@@ -255,6 +255,12 @@ const (
 	gutterRail = "┊ "
 	// gutterLabel names the subagent the rail belongs to.
 	gutterLabel = "↳ "
+	// gutterCheck marks command output a step's check produced (#597), so
+	// a check_failed attempt's evidence is not mistaken for its body's. It
+	// is a word, not a colour, so it reads under the ASCII profile; the bar
+	// carries down its wrapped lines.
+	gutterCheck     = "check ▏"
+	gutterCheckCont = "      ▏"
 )
 
 // The subagent records (task 109). A subagent's own records are ordinary
@@ -1283,10 +1289,17 @@ func renderRecord(
 		// the answer is not "always" (see renderResult).
 		return renderResult(rec, sawOutput, level)
 	case "command.output", "vincent.output":
+		style := lipgloss.NewStyle()
 		if rec.Stream == "stderr" {
-			return plain(rec.Text, styleStderr, false), true
+			style = styleStderr
 		}
-		return plain(rec.Text, lipgloss.NewStyle(), false), true
+		if rec.Phase == "check" {
+			return paneLine{
+				gutter: gutterCheck, gutterStyle: styleDim, contPrefix: gutterCheckCont,
+				segs: []segment{{text: rec.Text, style: style}},
+			}, true
+		}
+		return plain(rec.Text, style, false), true
 	case "vincent.command_started":
 		return marked("$ ", fieldOf(rec.Raw, "command"), styleDim), true
 	case "vincent.input_request":
