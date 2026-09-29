@@ -544,7 +544,8 @@ and whether the CLI named that reset or vincent estimated it from
 That observation outlives the task's own wait, and is what an adapter with no
 reported reading is rendered from. A reading wins where there is one, so:
 
-- the board header badges the adapter — `claude ⏳14:20` instead of `claude ✓`;
+- the board header names the adapter — `claude ⏳14:20` beside `agents ✓`,
+  instead of folding it into that tick;
 - the daemon view spells it out beside path, version and login state. A reading
   is written window by window with the time it was taken —
   `quota codex app-server · 5h 28% → 13:00 · 7d 53% → 11:00 · read 09:14` — and

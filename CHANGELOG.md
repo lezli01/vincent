@@ -20,6 +20,17 @@ list with the user-facing context a commit subject cannot carry.
   so an archived task's commits are still there. `vincent task commits <id>`
   prints the same list (#601).
 
+### Changed
+
+- **A quieter board.** The board header drops `0 need attention` and reads
+  `! N need attention (all tasks)` while a filter is committed; healthy agents
+  collapse into one dim `agents ✓`, with only a logged-out or quota-spent agent
+  named beside it and an uninstalled one not mentioned. A grouping level every
+  shown task shares draws no header — its value moves to the panel title,
+  `Tasks · api › verify-build`. The action keys appear once, in the footer,
+  instead of again inside the board, and the app header drops `● connected`
+  while it is connected (#603).
+
 ### Fixed
 
 - **The workspace's Output tab shows its live state, and a failed attempt

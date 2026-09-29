@@ -242,8 +242,8 @@ cards need):
   failure card on Overview. Depends: 129.12, 129.2, 129.3.
 - [ ] **129.14** ([#602](https://github.com/lezli01/vincent/issues/602)) The
   outcome card on Overview. Depends: 129.12, 129.5.
-- [ ] **129.15** ([#603](https://github.com/lezli01/vincent/issues/603)) A
-  quieter board (decisions 4 and 5).
+- [x] **129.15** ([#603](https://github.com/lezli01/vincent/issues/603)) A
+  quieter board (decisions 4 and 5). ✓ 2026-09-29
 - [ ] **129.16** ([#604](https://github.com/lezli01/vincent/issues/604)) STATUS
   kept at 120 columns, an empty COST column shed, a pull request marker on rows
   (decision 3).
@@ -316,8 +316,6 @@ Carried from #589, each for the item that must settle it:
 
 - **`!` from the board vs in a workspace** (129.12, 129.18): should `!` open the
   next needs-you task on Overview, or only move the board cursor?
-- **Calm board** (129.15): the only board, or a `full` escape hatch? Is an
-  uninstalled adapter dim or omitted?
 - **Archived tasks** (129.14): is branch + pull request + commits enough, or
   must vincent keep a diff stat after archive?
 - **Deprecation window** (phase 4): a one-release overlap before any surface is
@@ -334,3 +332,7 @@ Settled:
 
 - **`block_detail` redaction** — by 129.3, [PR #615](https://github.com/lezli01/vincent/pull/615).
 - **Screenshot cadence** — by the per-item checklist above.
+- **Calm board** — by 129.15 (#603): the calm board is the only board, with no
+  `tui.board.density` key and no escape hatch; an uninstalled adapter is
+  omitted, neither dim nor red, and the doctor and daemon view keep listing the
+  catalog.

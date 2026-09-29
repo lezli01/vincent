@@ -10572,6 +10572,27 @@ stream for the live tail.
    still rings only on `awaiting_input`. Signalling outside a client is the
    daemon's `notify:` hook (§12.3), which is independent of it in both
    directions.*
+   *Amended 2026-09-29 (task 129.15, issue #603; task 129 decisions 4 and 5):
+   the board says only what needs a look. (1) The needs-attention clause is
+   omitted at zero; non-zero it reads `! N need attention`, and while a filter
+   is committed `! N need attention (all tasks)`, the count staying global. It
+   is never shed. (2) Installed, authenticated, in-quota adapters collapse into
+   one dim `agents ✓`; an unauthenticated one (`name ⚠`) or a quota-spent one
+   (`name ⏳hh:mm`) is named beside it, and a not-installed one is omitted
+   entirely — the doctor and view 6 still list the catalog, and
+   `GET /v1/info` is unchanged. Nothing installed reads `no adapters`. (3) A
+   grouping level whose shown tasks share one value draws no header, each
+   level judged on its own; the skipped values are named in the panel title in
+   level order (`Tasks · api › verify-build`), the grouped column stays
+   dropped, the `! n` badge falls to the nearest drawn header, and a skipped
+   level's fold entry in `{data_dir}/tui.json` is neither read nor written
+   (see *Grouping* and task 054). This amends task 054 decision 3 and task 009
+   decision 3 in part; 009 decision 6 stands. (4) The in-frame action line
+   under the table is removed — the footer, budgeted first (task 094
+   decision 2), lists each valid action once — and its row goes to the table.
+   This amends v0 PR K's "Actions live on the board too". (5) The app header's
+   connection badge is drawn only while not connected; `vincent <version>` and
+   the view tag stay.*
    **Grouped by default (task 009, added 2026-08-16):** the rows nest under group
    headers — projects, and the workflows of a project inside it — configured by
    `tui.board.group_by` (§12.3) and cycled for the session with `g`. See
@@ -12035,6 +12056,17 @@ get to bend:
   enforces.*
 - **An open header is a label, not a row.** The cursor steps over it in the
   direction it was travelling, and clicking it selects nothing.
+- **A level with one value draws no header** (amended 2026-09-29, task 129.15,
+  issue #603; task 129 decision 4). Each level is judged on its own over the
+  tasks being shown: all one project renders only workflow headers, and all
+  one project and one workflow renders a flat table. The skipped values are
+  named in the panel title in level order — `Tasks · api › verify-build` —
+  because the grouped column stays dropped and a value named nowhere would be
+  lost. The `! n` badge falls to the nearest drawn header, or, with none, to
+  the rows' own state styling and the header's attention clause. A skipped
+  level indents nothing and has no fold: a header's label path still carries
+  every configured level's value, so a fold on a skipped level is neither read
+  nor rewritten and applies again when the level splits.
 - **Groups fold** (amended 2026-08-29, task 054; this replaces the original
   "nothing folds away" rule, which is superseded together with task 009's
   decision 4). `←` collapses the group the cursor is in and `←` again the group

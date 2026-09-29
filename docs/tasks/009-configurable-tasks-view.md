@@ -60,6 +60,12 @@ grouped board needs it, since the titles are indented under their headers. The �
 shedding order (cost → step name → workflow → project) is otherwise unchanged and still
 derives its thresholds from the widths.
 
+*Amended 2026-09-29 (task 129 decision 4, via 129.15, #603), in part.* "The header names
+it" no longer holds for a level whose shown tasks all share one value: that level draws no
+header. The column stays dropped — the width gain above is kept, and `boardColumns` still
+keys on the configured levels — and the value moves to the board's panel title,
+`Tasks · api › verify-build`, in level order. Decision 6 (no grouping by `state`) is kept.
+
 ### 4. Headers are labels: the cursor steps over them, and nothing collapses
 
 *2026-08-16.* A header has no task, so it has no state, no `available_actions` and
