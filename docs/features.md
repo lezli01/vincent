@@ -314,7 +314,8 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
   a grouping level every task shares, and the action keys in the footer only.
 - Task detail is a full-screen workspace that opens on an Overview: what the
   task is doing, what it needs from you — the reason, the question or gate, and
-  every action on offer with what it does — or how it ended, with one-key jumps
+  every action on offer with what it does, and for a blocked task a failure
+  card with the evidence from the failing attempt — or how it ended, with one-key jumps
   to the output, inputs, diff or pull request that answer the next question.
   Output, Diff, Steps, Task Details, Step Details and Workflow tabs follow, plus
   a Pull Request tab on a task that has one linked; each tab uses the whole

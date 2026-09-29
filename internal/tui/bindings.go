@@ -401,6 +401,7 @@ var bindings = []binding{
 	{key: "6", label: "what the attempt it stopped on was given", scope: scopePanel, context: ctxTaskOverview, hint: "6 what it was given", priority: 5},
 	{key: "4", label: "the diff of the finished task", scope: scopePanel, context: ctxTaskOverview, hint: "4 diff", priority: 4},
 	{key: "7", label: "the finished task's pull request", scope: scopePanel, context: ctxTaskOverview, hint: "7 PR", priority: 5, github: true},
+	{op: keymap.Lane, key: "l", label: "open the fan-out lane the failure card blames", scope: scopePanel, context: ctxTaskOverview, hint: "l open the lane", priority: 6, term: termLane},
 
 	// Timeline.
 	{key: "tab", label: "move between the task's views in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTimeline, hint: "tab views", priority: 1},

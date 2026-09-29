@@ -13,6 +13,15 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **A failure card on a blocked task's Overview.** A blocked task's Overview
+  now says what stopped it on one screen: the step, loop iteration or lane and
+  attempt, the reason in words with its code, the last lines of the failing
+  attempt's transcript (the check's own output for a failed check), the step's
+  status message quoted apart from the reason, which lane a fan-out blames
+  with `l` to open it, and the actions that answer the reason first — `E` edit
+  & retry right after retry. A block no step ran into shows the daemon's
+  explanation. Aborted tasks get a muted card, and a short terminal keeps just
+  the first line and the action keys (#600).
 - **An Overview tab the task workspace opens on.** `enter` now lands on an
   Overview at `0` that answers the question the task's state raises: what it is
   doing (running, queued, paused, waiting on its lanes), what it needs from you

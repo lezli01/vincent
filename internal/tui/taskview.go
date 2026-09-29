@@ -75,6 +75,9 @@ type taskView struct {
 	detail *detail
 	tab    taskViewTab
 	popup  bool
+	// evidence is the Overview failure card's one transcript fetch (task
+	// 129.13), keyed by the failing attempt so an event never refetches it.
+	evidence failureEvidence
 	// workflow is the §15 workflow-graph tab (task 051). It is a sub-model
 	// rather than more fields here because it owns a viewport and a
 	// selection, and because the graph component is shared with the
@@ -296,6 +299,17 @@ func (t *taskView) bindingContext() bindingContext {
 func (t *taskView) target() taskActions { return t.detail.target() }
 
 func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
+	if m, ok := msg.(failureEvidenceMsg); ok {
+		t.applyFailureEvidence(m)
+		return t, nil
+	}
+	p, cmd := t.route(msg)
+	// After every message: the one that loaded a blocked task, or moved the
+	// reader onto the Overview, is the one that fetches the card's evidence.
+	return p, tea.Batch(cmd, t.syncFailureEvidence())
+}
+
+func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		t.width, t.height = msg.Width, msg.Height

@@ -331,6 +331,31 @@ workspace has already loaded:
 - **Done or archived** — how it ended: the final status message, the cost, the
   branch, and `4 diff` — plus `7 PR` when a pull request is linked.
 
+A **blocked** or **aborted** task's Overview is a **failure card**. Its first
+line says what stopped: `✗ Step 3 verify · attempt 2 · check failed
+check_failed` — the step, the loop iteration and item or the lane when there
+is one, the attempt, and the reason in words with its code beside it. `✗` is a
+failure, `⚠` a fan-out one of its lanes stopped, `■` an aborted task, so the
+card reads without colour. Below it:
+
+- **Evidence** — the last few lines of the failing attempt's transcript,
+  fetched once when the card first shows that attempt. For a failed check they
+  are the check's own output, not the agent's last message. A block that no
+  step ran into — a dirty worktree, a missing container runtime — shows the
+  daemon's explanation instead; when there is none, the card says the details
+  are in the daemon log (`:` then *daemon*).
+- The step's own **status** message, quoted — what it last said, which is not
+  the reason it stopped.
+- For a fan-out, **which lane** stopped it, the lane's task and what the lane
+  is stuck on; `l` opens that lane.
+- **What you can do** — the actions that answer the reason first (retry, with
+  `E` edit & retry right after it, then skip, repair, chat), then everything
+  else on offer, each with a line on what it does.
+
+An aborted task's card is muted and shows no evidence; it offers what the
+daemon offers, which never includes retry. On a short terminal the card keeps
+its first line and a row of action keys.
+
 A link is the tab's own digit: pressing it first moves the attempt selection to
 the attempt the Overview is about, then opens the tab, so Output and Step
 Details show that attempt. The footer lists the links the current frame draws.
@@ -578,6 +603,7 @@ output. It is the sentence that decides whether to open the transcript.
 | `0` | Overview — the landing tab: what the task is doing, what it needs, or how it ended |
 | `1`–`5` | Steps / Task Details / Output / Diff / Workflow |
 | `3` / `6` / `4` / `7` | On Overview, the frame's jump links — the output of, or what was given to, the attempt it is about; the diff; the pull request |
+| `l` | On Overview, open the fan-out lane the failure card blames |
 | `6` | Step Details — what the selected attempt was handed, and the resolution behind it |
 | `7` | Pull Request — only when this task has a linked pull request and GitHub is on; `tab`/`shift+tab` skip it otherwise |
 | `m` | On Pull Request, merge it — the method is chosen in the popup, none preselected |
