@@ -13,6 +13,17 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **States and reasons in plain words.** The TUI no longer prints snake_case
+  identifiers as prose: `awaiting_input` reads "awaiting input",
+  `awaiting_gate` "awaiting approval" and `awaiting_children` "waiting on
+  lanes", and a block, failure or skip reason reads as its title with the code
+  dim beside it — `check failed · check_failed` — on the attempt rows, Step
+  Details, the lane strip, the repair form and the fan-out blame lines. A
+  blocked board row names its reason (`! blocked · check failed`) when the
+  board has width to spare. Task Details keeps the raw identifiers for
+  copy-paste. Help and the palette use one glossary — attempt, iteration,
+  round, lane, tab, screen — and the palette's takeover group is now
+  "screens"; the TUI guide has a Glossary section.
 - **Help that orients, and palette rows for the workspace tabs.** The TUI's
   help (`?`) opens on a "This screen" header: in a task's workspace it lists
   each tab with its digit and what it is for, and on the board the three keys
