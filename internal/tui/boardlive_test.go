@@ -249,7 +249,7 @@ func TestBoardPinsAndBadgesAwaitingInput(t *testing.T) {
 	}
 
 	h.p.until(20*time.Second, "the awaiting-input badge", func() bool {
-		return strings.Contains(content(h.m), string(store.TaskAwaitingInput))
+		return strings.Contains(content(h.m), stateWords(string(store.TaskAwaitingInput)))
 	})
 
 	got := content(h.m)

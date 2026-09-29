@@ -198,14 +198,14 @@ func TestColumnsDropByPriority(t *testing.T) {
 // column has to actually buy back the space — an earlier version clamped the
 // title to its minimum instead and overflowed by a character at width 80.
 func TestBoardColumnsFitWidth(t *testing.T) {
-	// 65 is the narrowest board that still fits: below it every optional column
+	// 66 is the narrowest board that still fits: below it every optional column
 	// is already shed and the title is clamped at its minimum, which the
 	// columns deliberately overflow rather than hide the id or the state. A
 	// bulk selection raises that floor by exactly the marker column's three
 	// cells (task 011) — nothing is left for them to come out of.
-	for width := 65; width <= 220; width++ {
+	for width := 66; width <= 220; width++ {
 		for _, marking := range []bool{false, true} {
-			if marking && width < 68 {
+			if marking && width < 69 {
 				continue
 			}
 			cols, _ := boardColumns(width, nil, marking, fullContent)

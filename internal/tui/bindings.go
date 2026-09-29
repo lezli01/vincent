@@ -315,7 +315,7 @@ var bindings = []binding{
 	// is — `?`'s own row already runs help from the palette.
 	{op: keymap.HelpAlt, key: helpAltKey, label: "toggle this help (works while a text field has the keyboard)", scope: scopeGlobal, noPalette: true},
 	{key: "tab", label: "move to the next task tab (shift+tab goes back)", scope: scopeGlobal},
-	{op: keymap.NextAttention, key: "!", label: "jump to the next task needing a human", scope: scopeGlobal},
+	{op: keymap.NextAttention, key: "!", label: "jump to the next task that needs you — awaiting input, awaiting approval or blocked", scope: scopeGlobal},
 	{op: keymap.Mouse, key: "M", label: "toggle the mouse (native text selection needs it off — or shift-drag)", scope: scopeGlobal},
 	// Paste is normally the terminal's own (Cmd+V, Ctrl+Shift+V, middle
 	// click): it arrives as bracketed paste and lands in the focused field
@@ -396,8 +396,8 @@ var bindings = []binding{
 	// moving the attempt cursor to the attempt the frame is about before it
 	// switches tab (taskView.jumpTab).
 	{key: "0", label: "the task at a glance: what it is doing, what it needs from you, or how it ended", scope: scopePanel, context: ctxTaskOverview, priority: 1},
-	{key: "tab", label: "move between the task's views in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTaskOverview, hint: "tab views", priority: 2},
-	{key: "]", label: "move to the next task view ([ goes back)", scope: scopePanel, context: ctxTaskOverview, priority: 3},
+	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTaskOverview, hint: "tab tabs", priority: 2},
+	{key: "]", label: "move to the next tab ([ goes back)", scope: scopePanel, context: ctxTaskOverview, priority: 3},
 	{key: "3", label: "the output of the attempt the overview is about — the running one, or the one it stopped on", scope: scopePanel, context: ctxTaskOverview, hint: "3 output", priority: 4},
 	{key: "6", label: "what the attempt it stopped on was given", scope: scopePanel, context: ctxTaskOverview, hint: "6 what it was given", priority: 5},
 	{key: "4", label: "the diff of the finished task", scope: scopePanel, context: ctxTaskOverview, hint: "4 diff", priority: 4},
@@ -409,27 +409,27 @@ var bindings = []binding{
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTaskOverview, priority: 9},
 
 	// Timeline.
-	{key: "tab", label: "move between the task's views in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTimeline, hint: "tab views", priority: 1},
-	{key: "]", label: "move to the next task view ([ goes back)", scope: scopePanel, context: ctxTimeline, priority: 2},
+	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTimeline, hint: "tab tabs", priority: 1},
+	{key: "]", label: "move to the next tab ([ goes back)", scope: scopePanel, context: ctxTimeline, priority: 2},
 	{key: "down", label: "select an attempt (↑/↓); scrollback is per attempt", scope: scopePanel, context: ctxTimeline, hint: "↑/↓ attempts", priority: 3},
-	{key: "enter", label: "open the selected attempt in the Output tab, or open the folded iteration/round tier the cursor is on", scope: scopePanel, context: ctxTimeline, hint: "enter output", priority: 3},
+	{key: "enter", label: "open the selected attempt in the Output tab, or open the folded iteration or round the cursor is on", scope: scopePanel, context: ctxTimeline, hint: "enter output", priority: 3},
 	// Folding a loop's iterations and a `fan_out`'s rounds (issue #317). The
 	// Diff tab's vocabulary verbatim, because it is the same gesture on the
 	// same screen. ↑/↓ stop once on a folded tier — its first row — so every
 	// selection they reach is drawn.
-	{key: "space", label: "open or close the iteration/round tier the cursor is in (enter and →/← too)", scope: scopePanel, context: ctxTimeline, hint: "space fold", priority: 4, fold: true},
-	{key: "right", label: "open the folded tier the cursor is in", scope: scopePanel, context: ctxTimeline, priority: 5, fold: true},
-	{key: "left", label: "close the tier the cursor is in", scope: scopePanel, context: ctxTimeline, priority: 6, fold: true},
-	{key: "O", label: "open every iteration and round tier of this task", scope: scopePanel, context: ctxTimeline, hint: "O/C fold all", priority: 7, fold: true},
-	{key: "C", label: "close every one — the timeline opens with the latest pass showing", scope: scopePanel, context: ctxTimeline, priority: 8, fold: true, aliased: true},
+	{key: "space", label: "open or close the iteration or round the cursor is in (enter and →/← too)", scope: scopePanel, context: ctxTimeline, hint: "space fold", priority: 4, fold: true},
+	{key: "right", label: "open the folded iteration or round the cursor is in", scope: scopePanel, context: ctxTimeline, priority: 5, fold: true},
+	{key: "left", label: "close the iteration or round the cursor is in", scope: scopePanel, context: ctxTimeline, priority: 6, fold: true},
+	{key: "O", label: "open every iteration and round of this task", scope: scopePanel, context: ctxTimeline, hint: "O/C fold all", priority: 7, fold: true},
+	{key: "C", label: "close every one — the timeline opens with the latest iteration showing", scope: scopePanel, context: ctxTimeline, priority: 8, fold: true, aliased: true},
 	{op: keymap.Lane, key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTimeline, priority: 9, term: termLane},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTimeline, priority: 10},
 	{key: "0", label: "jump to a tab by its digit: 0 Overview, 1 Steps, 2 Task Details, 3 Output, 4 Diff, 5 Workflow, 6 Step Details, 7 Pull Request (only with one linked)", scope: scopePanel, context: ctxTimeline, priority: 11},
 	{key: "d", label: "switch between the Output and Diff tabs", scope: scopePanel, context: ctxTimeline, priority: 12},
 
 	// Task details.
-	{key: "tab", label: "move between the task's views (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTaskDetails, hint: "tab views", priority: 1},
-	{key: "]", label: "move to the next task view ([ goes back)", scope: scopePanel, context: ctxTaskDetails, priority: 2},
+	{key: "tab", label: "move between the task's tabs (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTaskDetails, hint: "tab tabs", priority: 1},
+	{key: "]", label: "move to the next tab ([ goes back)", scope: scopePanel, context: ctxTaskDetails, priority: 2},
 	{key: "down", label: "select a task-detail section (↑/↓); pgup/pgdn scrolls that section", scope: scopePanel, context: ctxTaskDetails, hint: "↑/↓ sections", priority: 3},
 	// The pull-request section's two keys (task 052.6, decision 2). Both only
 	// reach a browser: neither writes anything in vincent, which is what
@@ -446,8 +446,8 @@ var bindings = []binding{
 	{key: "d", label: "switch between the Output and Diff tabs", scope: scopePanel, context: ctxTaskDetails, priority: 9},
 
 	// Output pane.
-	{key: "tab", label: "move between the task's views in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxOutput, hint: "tab views", priority: 1},
-	{key: "]", label: "move to the next task view ([ goes back)", scope: scopePanel, context: ctxOutput, priority: 2},
+	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxOutput, hint: "tab tabs", priority: 1},
+	{key: "]", label: "move to the next tab ([ goes back)", scope: scopePanel, context: ctxOutput, priority: 2},
 	{key: "f", label: "follow the live output again (f/G)", scope: scopePanel, context: ctxOutput, hint: "f follow", priority: 2},
 	{key: "v", label: "show more or less: quiet → compact → normal → verbose (tool lines, then reasoning, then unrecognized lines)", scope: scopePanel, context: ctxOutput, hint: "v detail", priority: 3},
 	{key: rawToggleKey, label: "show the assistant's original Markdown instead of the rendered view", scope: scopePanel, context: ctxOutput, hint: "ctrl+o raw", priority: 6},
@@ -469,8 +469,8 @@ var bindings = []binding{
 	// list of files and the output is a stream of lines, so ↑/↓ mean different
 	// things on the two tabs and a single row could only describe one of them.
 	// `]` is repeated here because the way back must stay on screen.
-	{key: "tab", label: "move between the task's views in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxDiff, hint: "tab views", priority: 1},
-	{key: "]", label: "move to the next task view ([ goes back)", scope: scopePanel, context: ctxDiff, priority: 2},
+	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxDiff, hint: "tab tabs", priority: 1},
+	{key: "]", label: "move to the next tab ([ goes back)", scope: scopePanel, context: ctxDiff, priority: 2},
 	{key: "down", label: "move between the files (↑/↓); the pane scrolls to keep the file in view", scope: scopePanel, context: ctxDiff, hint: "↑/↓ files", priority: 2},
 	{key: "enter", label: "expand or collapse the file under the cursor (space and →/← too)", scope: scopePanel, context: ctxDiff, hint: "enter fold", priority: 3},
 	{key: "O", label: "expand every file", scope: scopePanel, context: ctxDiff, hint: "O/C fold all", priority: 4},
@@ -689,7 +689,7 @@ var bindings = []binding{
 	// Here the lane is the one under the graph cursor, which is the only tab
 	// that can point at a lane the failure does not blame.
 	{op: keymap.Lane, key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskWorkflow, priority: 4, term: termLane},
-	{key: "tab", label: "move between the task's views in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTaskWorkflow, hint: "tab views", priority: 5},
+	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTaskWorkflow, hint: "tab tabs", priority: 5},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTaskWorkflow, priority: 6},
 	{key: "0", label: "jump to a tab by its digit: 0 Overview, 1 Steps, 2 Task Details, 3 Output, 4 Diff, 5 Workflow, 6 Step Details, 7 Pull Request (only with one linked)", scope: scopePanel, context: ctxTaskWorkflow, priority: 7},
 	{key: "d", label: "switch between the Output and Diff tabs", scope: scopePanel, context: ctxTaskWorkflow, priority: 8},
@@ -699,7 +699,7 @@ var bindings = []binding{
 	// costing nothing when it is absent even though it no longer owns `6`.
 	{key: "6", label: "what this attempt was handed: its rendered prompt or command, the resolution behind it, and what it produced", scope: scopePanel, context: ctxTaskStepDetails, priority: 1},
 	{key: "down", label: "select an attempt (↑/↓ or ←/→, which move it everywhere else too); pgup/pgdn scrolls the facts", scope: scopePanel, context: ctxTaskStepDetails, hint: "↑/↓ attempts", priority: 2},
-	{key: "tab", label: "move between the task's views in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTaskStepDetails, hint: "tab views", priority: 3},
+	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTaskStepDetails, hint: "tab tabs", priority: 3},
 	{op: keymap.Lane, key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskStepDetails, priority: 4, term: termLane},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTaskStepDetails, priority: 5},
 	{key: "0", label: "jump to a tab by its digit: 0 Overview, 1 Steps, 2 Task Details, 3 Output, 4 Diff, 5 Workflow, 6 Step Details, 7 Pull Request (only with one linked)", scope: scopePanel, context: ctxTaskStepDetails, priority: 6},
@@ -726,7 +726,7 @@ var bindings = []binding{
 	// means the same thing on this tab whether or not a lane has a pull
 	// request of its own.
 	{op: keymap.Lane, key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskPull, priority: 7, term: termLane},
-	{key: "tab", label: "move between the task's views in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTaskPull, hint: "tab views", priority: 12},
+	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTaskPull, hint: "tab tabs", priority: 12},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTaskPull, priority: 13},
 	{key: "0", label: "jump to a tab by its digit: 0 Overview, 1 Steps, 2 Task Details, 3 Output, 4 Diff, 5 Workflow, 6 Step Details, 7 Pull Request (only with one linked)", scope: scopePanel, context: ctxTaskPull, priority: 14},
 	{key: "d", label: "switch between the Output and Diff tabs", scope: scopePanel, context: ctxTaskPull, priority: 15},
@@ -841,7 +841,7 @@ var bindings = []binding{
 	// meaning is the one that moved: it is the same gesture the four pickers
 	// offer, and it now has the same key on all five.
 	{op: keymap.FreeText, key: "t", label: "type your own answer — options are suggestions, never a list", scope: scopePanel, context: ctxForm, noPalette: true, term: termFreeText},
-	{key: "enter", label: "submit the answer; the run resumes where it stopped", scope: scopePanel, context: ctxForm, noPalette: true},
+	{key: "enter", label: "submit the answer; the attempt resumes where it stopped", scope: scopePanel, context: ctxForm, noPalette: true},
 	{key: "ctrl+t", label: "read this task's details without leaving the form — the picks and the typed answer are kept (ctrl+t again, or esc, comes back)", scope: scopePanel, context: ctxForm, noPalette: true},
 	{key: "esc", label: "close the popup without answering (what you picked is kept)", scope: scopePanel, context: ctxForm, noPalette: true},
 
@@ -856,7 +856,7 @@ var bindings = []binding{
 
 	// Follow-up form: same again — the popup owns the keyboard while it is
 	// open and prints its own key line.
-	{key: "enter", label: "edit the row under the cursor — the run form, what to run, or the agent/model/effort list", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
+	{key: "enter", label: "edit the row under the cursor — the kind of follow-up, what to run, or the agent/model/effort list", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
 	{op: keymap.Editor, key: "e", label: "write the prompt or command in $EDITOR", scope: scopePanel, context: ctxFollowUpForm, noPalette: true, term: termEditor},
 	{op: keymap.FreeText, key: "t", label: "in the workflow/agent/model/effort list: type a value it does not offer", scope: scopePanel, context: ctxFollowUpForm, noPalette: true, term: termFreeText},
 	{key: "ctrl+s", label: "start the follow-up run", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},

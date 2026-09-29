@@ -91,13 +91,14 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 			key: taskTabDigits[tab], tab: tab, isTab: true,
 		})
 	}
-	// Views get their own section: navigating to them is the reason the
+	// Screens get their own section: navigating to them is the reason the
 	// digits could be retired, so it must not read as one more command
-	// (T3.8 finding).
+	// (T3.8 finding). "screens", not "views": a screen is a routed
+	// takeover, and a pane of the task workspace is a tab (task 129.7).
 	for _, b := range withoutGitHub(registry(), github) {
 		if b.nav {
 			out = append(out, paletteEntry{
-				group: "views", label: b.label, key: b.key,
+				group: "screens", label: b.label, key: b.key,
 				nav: true, navTarget: b.navTarget, global: true,
 			})
 		}

@@ -1112,12 +1112,13 @@ func (t *taskView) renderLaneSelector(width int) string {
 	label := "this task's own output"
 	if lane, ok := t.selectedLane(); ok {
 		label = fmt.Sprintf("%d/%d · %s (task %d) · %s",
-			t.laneSel+1, len(t.lanes), laneName(lane), lane.ID, lane.State)
-		if lane.BlockReason != nil && *lane.BlockReason != "" {
-			label += " · " + *lane.BlockReason
-		}
+			t.laneSel+1, len(t.lanes), laneName(lane), lane.ID, stateWords(lane.State))
 	}
-	line := "  Lane  " + styleSelected.Render(label) +
+	label = styleSelected.Render(label)
+	if lane, ok := t.selectedLane(); ok && lane.BlockReason != nil && *lane.BlockReason != "" {
+		label += styleSelected.Render(" · ") + renderReason(*lane.BlockReason, styleSelected)
+	}
+	line := "  Lane  " + label +
 		styleDim.Render("   </> select lane · l open it")
 	return ansi.Truncate(line, max(width, 1), "…")
 }
@@ -1287,13 +1288,13 @@ func (t *taskView) detailLines(width int) []string {
 		{"pause requested", strconv.FormatBool(task.PauseRequested)},
 	}
 	if task.BlockReason != nil {
-		execution = append(execution, taskDetailFact{"block reason", *task.BlockReason})
+		execution = append(execution, taskDetailFact{"block reason", reasonText(*task.BlockReason)})
 	}
 	if task.StatusMessage != nil {
 		execution = append(execution, taskDetailFact{"status message", *task.StatusMessage})
 	}
 	if reason, until, ok := task.Hold(); ok {
-		value := reason
+		value := reasonText(reason)
 		if until != nil {
 			value += " until " + until.Format(time.RFC3339)
 		}
@@ -1486,7 +1487,25 @@ func renderTaskDetailFactList(width int, facts []taskDetailFact) []string {
 }
 
 func taskDetailFactLines(fact taskDetailFact, width int) []string {
-	return styledTaskDetailFactLines(fact, width, func(s string) string { return s })
+	return styledTaskDetailFactLines(fact, width, dimReasonCode)
+}
+
+// dimReasonCode dims the raw code a reasonText value ends with, so a fact
+// reads `check failed · check_failed` with the code faint (task 129.7
+// decision 3) even though the fact table wraps plain text before it styles.
+// A line that does not end in a catalogued code is returned unchanged; a
+// code is one word, so the wrap never splits it from its separator unless it
+// is wider than the column.
+func dimReasonCode(line string) string {
+	i := strings.LastIndex(line, reasonSeparator)
+	if i < 0 {
+		return line
+	}
+	code := line[i+len(reasonSeparator):]
+	if reasonTitle(code) == code {
+		return line
+	}
+	return line[:i] + styleDim.Render(line[i:])
 }
 
 // styledTaskDetailFactLines is taskDetailFactLines with every wrapped value

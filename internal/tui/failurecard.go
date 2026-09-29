@@ -442,25 +442,22 @@ func (t *taskView) evidenceBody(c failureCard, width, n int) []string {
 // which task, the engine's sentence, the lane's own state, and `l`.
 func (c failureCard) laneBlameLines(width int) []string {
 	b := c.blame
-	head := "  ⚠ " + b.reason
-	if b.laneID != "" {
-		head += "  ·  lane " + strconv.Quote(b.laneID)
-	}
-	if b.taskID != 0 {
-		head += "  ·  task " + strconv.FormatInt(b.taskID, 10)
-	}
-	out := []string{ansi.Truncate(styleWarn.Render(head), max(width, 1), "…")}
+	out := []string{ansi.Truncate(b.headLine(styleWarn), max(width, 1), "…")}
 	for _, line := range b.messageLines() {
 		out = append(out, ansi.Truncate(styleDim.Render("    "+line), max(width, 1), "…"))
 	}
-	tail := b.laneFactLine()
+	tail := b.laneFactLine(styleWarn)
 	if b.taskID != 0 {
 		if key := opKey(keymap.Lane); key != "" {
-			tail = strings.TrimSpace(tail + "   " + key + " open the lane")
+			hint := key + " open the lane"
+			if tail != "" {
+				hint = "   " + hint
+			}
+			tail += styleWarn.Render(hint)
 		}
 	}
 	if tail != "" {
-		out = append(out, ansi.Truncate(styleWarn.Render("    "+tail), max(width, 1), "…"))
+		out = append(out, ansi.Truncate(styleWarn.Render("    ")+tail, max(width, 1), "…"))
 	}
 	return out
 }

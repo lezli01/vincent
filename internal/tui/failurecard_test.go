@@ -105,7 +105,7 @@ func TestFailureCardBlamesTheLane(t *testing.T) {
 	got := ansi.Strip(v.render(120, 40))
 	for _, want := range []string{
 		`⚠ Step 1 lanes · lane "api" · attempt 1 · lane failed  lane_failed`,
-		"task 42", "the lane is blocked on worktree_dirty", "l open the lane",
+		"task 42", "the lane is blocked on worktree has uncommitted changes · worktree_dirty", "l open the lane",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("card misses %q:\n%s", want, got)

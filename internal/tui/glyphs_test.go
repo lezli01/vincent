@@ -295,7 +295,7 @@ func TestGlyphIndicatorsSurviveMonochrome(t *testing.T) {
 	parent := apiclient.Task{State: stateAwaitingChildren, Children: &apiclient.ChildrenRollup{
 		Total: 3, ByState: map[string]int{stateBlocked: 1, stateAwaitingGate: 1, stateDone: 1},
 	}}
-	cell := stateCell(parent)
+	cell := stateCell(parent, widthState)
 	frame := strings.Join([]string{
 		strings.Join(d.headerLines(), "\n"),
 		d.timelinePanel(30),
@@ -317,7 +317,7 @@ func TestGlyphIndicatorsSurviveMonochrome(t *testing.T) {
 		}
 	}
 	text := ansi.Strip(plain)
-	for _, want := range []string{"step 2/3 ✓●○", "loop 3/5 ×●", "iterations ×●", "awaiting_children (×1 !1 ✓1)"} {
+	for _, want := range []string{"step 2/3 ✓●○", "loop 3/5 ×●", "iterations ×●", "waiting on lanes (×1 !1 ✓1)"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("monochrome frame lost %q:\n%s", want, plain)
 		}

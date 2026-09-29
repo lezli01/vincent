@@ -94,7 +94,7 @@ func TestFailureCardFromRealServer(t *testing.T) {
 		ResultSummary: fmt.Sprintf(`lane "api" (task %d) is blocked, not done`, lane.ID),
 		StartedAt:     now, FinishedAt: &now,
 	}, reasonLaneFailed, "")
-	got = h.overviewOf(t, parent.ID, "the lane is blocked on worktree_dirty")
+	got = h.overviewOf(t, parent.ID, "the lane is blocked on worktree has uncommitted changes · worktree_dirty")
 	for _, want := range []string{`⚠ Step 1 implement · lane "api"`, fmt.Sprintf("task %d", lane.ID), "l open the lane"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("lane_failed card misses %q:\n%s", want, got)

@@ -163,7 +163,7 @@ func writeOrientation(b *strings.Builder, ctx bindingContext, tabs []taskViewTab
 	case ctx == ctxTasks:
 		rows = [][2]string{
 			{opKey(keymap.OpenRow), "open the task — its workspace, tab by tab"},
-			{opKey(keymap.NextAttention), "jump to the next task needing you"},
+			{opKey(keymap.NextAttention), "jump to the next task that needs you"},
 			{opKey(keymap.Palette), "find everything — every command, beside its key"},
 		}
 	}

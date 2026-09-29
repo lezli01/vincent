@@ -133,7 +133,7 @@ func filterTasks(tasks []apiclient.Task, query string) []apiclient.Task {
 	out := make([]apiclient.Task, 0, len(tasks))
 	for _, t := range tasks {
 		haystack := strings.ToLower(strings.Join([]string{
-			strconv.FormatInt(t.ID, 10), t.Title, t.ProjectName, t.State,
+			strconv.FormatInt(t.ID, 10), t.Title, t.ProjectName, t.State, stateWords(t.State),
 		}, " "))
 		if strings.Contains(haystack, q) {
 			out = append(out, t)
@@ -190,12 +190,13 @@ var stateStyles = map[string]lipgloss.Style{
 // colour alone so the distinction survives a monochrome terminal.
 const attentionBadge = "!"
 
-// stateLabel is a state as it reads before any style is applied.
+// stateLabel is a state as it reads before any style is applied: its words
+// (stateWords), led by the attention badge when it waits on a human.
 func stateLabel(state string) string {
 	if needsAttention(state) {
-		return attentionBadge + " " + state
+		return attentionBadge + " " + stateWords(state)
 	}
-	return state
+	return stateWords(state)
 }
 
 func renderState(state string) string { return applyStateStyle(state, stateLabel(state)) }
@@ -205,16 +206,16 @@ func renderState(state string) string { return applyStateStyle(state, stateLabel
 // reads as waiting on a clock rather than on a slot, which a bare `queued`
 // cannot say.
 //
-// The reason itself is deliberately not in this cell: it does not fit
-// widthState, and widening the column for a rare state would cost every board
-// the columns that get shed first. The detail header, which has the width,
-// names it (renderDetailState).
+// A blocked row's reason is not in this form: blockedStateLabel is the
+// longer one, and the board shows it only when it fits (stateCell). The hold
+// reason stays out entirely; the detail header, which has the width, names
+// both (renderDetailState).
 //
 // Plain rather than styled because the board wraps this cell (task 050): the
 // text is wrapped first and each produced line styled after, so no wrapping
 // is ever ANSI-aware — the same order the output pane uses (v0 T4.16).
 // What no longer fits after wrapping is cut on the row's last line, so
-// `awaiting_children (×1 !1 ●1 ✓2)` is readable on the board rather than only
+// `waiting on lanes (×1 !1 ●1 ✓2)` is readable on the board rather than only
 // in the detail view — and because the breakdown leads with blocked lanes
 // (childrenBreakdown), the cut takes the least actionable clause first.
 func boardStateLabel(t apiclient.Task) string {
@@ -223,13 +224,32 @@ func boardStateLabel(t apiclient.Task) string {
 	// invisible in the task list by design (decision 13), and this is what
 	// pays for that.
 	if clauses := parentBreakdown(t); len(clauses) > 0 {
-		return t.State + " (" + breakdownText(clauses) + ")"
+		return stateWords(t.State) + " (" + breakdownText(clauses) + ")"
 	}
 	_, until, ok := t.Hold()
 	if !ok || until == nil {
 		return stateLabel(t.State)
 	}
-	return t.State + " → " + until.Local().Format("15:04")
+	return stateWords(t.State) + " → " + until.Local().Format("15:04")
+}
+
+// blockedStateLabel is a blocked row's state cell with its reason's title —
+// `! blocked · check failed` — and ok=false for any row that has no such
+// longer form.
+//
+// Amended 2026-09-29 (task 129.7 decision 2): the reason used to be kept out
+// of the board cell altogether, because it does not fit widthState and
+// widening the column for a rare state would cost every board the columns
+// shed first. That cost is still never paid: the board widens STATE for it
+// only out of a surplus (boardColumns), after STEP and STATUS have taken
+// theirs, and with no surplus the clause is shed and the cell reads
+// `! blocked`. The clause never wraps the cell, so it never changes the
+// board's uniform row height (task 050 decision 4).
+func blockedStateLabel(t apiclient.Task) (string, bool) {
+	if t.State != stateBlocked || t.BlockReason == nil || *t.BlockReason == "" {
+		return "", false
+	}
+	return stateLabel(t.State) + reasonSeparator + reasonTitle(*t.BlockReason), true
 }
 
 // parentBreakdown is the lane breakdown a fan-out parent's state cell
@@ -248,16 +268,21 @@ func renderBoardState(t apiclient.Task) string {
 	return applyStateStyle(t.State, boardStateLabel(t))
 }
 
-// renderDetailState is the header form: the full `queued · usage limit →
-// 14:20`, where there is room for the reason. A hold with no resume time
-// still names the reason — the engine always computes one, so this is the
-// shape a future hold-setter that does not would take.
+// renderDetailState is the header form: the full `queued · usage limit
+// reached → 14:20` or `! blocked · check failed`, where there is room for the
+// reason. The header names the reason by its title alone (task 129.7
+// decision 3); the raw code is on the detail surfaces below it. A hold with
+// no resume time still names the reason — the engine always computes one, so
+// this is the shape a future hold-setter that does not would take.
 func renderDetailState(t apiclient.Task) string {
+	if label, ok := blockedStateLabel(t); ok {
+		return applyStateStyle(t.State, label)
+	}
 	reason, until, ok := t.Hold()
 	if !ok {
 		return renderState(t.State)
 	}
-	label := t.State + " · " + strings.ReplaceAll(reason, "_", " ")
+	label := stateWords(t.State) + reasonSeparator + reasonTitle(reason)
 	if until != nil {
 		label += " → " + until.Local().Format("15:04")
 	}
