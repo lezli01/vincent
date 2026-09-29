@@ -375,6 +375,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/steps/{step_id}/status", s.handleStepStatus)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/steps/{run_id}/transcript", s.handleTranscript)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/diff", s.handleTaskDiff)
+	rt.handle(http.MethodGet, "/v1/tasks/{id}/commits", s.handleTaskCommits)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/github/pull", s.handleTaskGitHubPull)
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/github/pull", s.handleTaskGitHubPullLink)
 	rt.handle(http.MethodDelete, "/v1/tasks/{id}/github/pull", s.handleTaskGitHubPullUnlink)

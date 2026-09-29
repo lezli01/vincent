@@ -87,10 +87,9 @@ type diffLanesResponse struct {
 // with no lanes at all come back as one remainder section holding the whole
 // diff, byte for byte what the unsectioned endpoint serves.
 func (s *Server) laneDiffSections(ctx context.Context, dir, mergeBase string) ([]diffLaneSection, error) {
-	format := "--format=%H" + laneLogSep + "%P" + laneLogSep + "%s"
-	log, err := s.git(ctx, dir, "log", "--first-parent", "--reverse", format, mergeBase+"..HEAD")
+	log, err := s.firstParentLog(ctx, dir, mergeBase+"..HEAD")
 	if err != nil {
-		return nil, fmt.Errorf("list the task's own commits: %w", err)
+		return nil, err
 	}
 
 	var (
@@ -102,16 +101,9 @@ func (s *Server) laneDiffSections(ctx context.Context, dir, mergeBase string) ([
 		anchor = mergeBase
 		prev   = mergeBase
 	)
-	for _, line := range strings.Split(log, "\n") {
-		// git writes LF here on every platform, but a commit message that
-		// itself ended a line with CR would leave one on the subject and the
-		// anchored match would then never fire — on Windows only, which is the
-		// worst place to find out.
-		line = strings.TrimSuffix(line, "\r")
-		if line == "" {
-			continue
-		}
-		sha, laneID, childID, ok := parseLaneMerge(line)
+	for _, rec := range log {
+		sha := rec.SHA
+		laneID, childID, ok := parseLaneMerge(rec)
 		if !ok {
 			prev = sha
 			continue
@@ -154,28 +146,65 @@ func (s *Server) laneDiffSections(ctx context.Context, dir, mergeBase string) ([
 	}), nil
 }
 
-// parseLaneMerge reads one `git log` record, reporting the lane only for a
-// commit that is both a merge and carries the contract message. The sha comes
-// back either way: the walk needs it as the next commit's `^1`.
-func parseLaneMerge(line string) (sha, laneID string, childID int64, ok bool) {
-	sha, rest, found := strings.Cut(line, laneLogSep)
-	if !found {
-		return sha, "", 0, false
+// laneLogRecord is one commit of a task's first-parent chain, as
+// firstParentLog read it.
+type laneLogRecord struct {
+	SHA string
+	// Parents is git's `%P`: the parent shas, space-separated. Two or more
+	// make the commit a merge.
+	Parents string
+	// AuthorTime is the author date in Unix seconds, as git's `%at` spells it.
+	AuthorTime string
+	Subject    string
+}
+
+// firstParentLog reads the first-parent chain of revRange, oldest first — the
+// commits a task made itself (see laneDiffSections for why the first-parent
+// walk is what credits each lane exactly once). It is the one reader of that
+// chain: the lane-sectioned diff and the commit list both walk it, so a lane
+// merge is recognised the same way by both.
+func (s *Server) firstParentLog(ctx context.Context, dir, revRange string) ([]laneLogRecord, error) {
+	// The subject is last so that nothing it contains can shift a field.
+	format := "--format=%H" + laneLogSep + "%P" + laneLogSep + "%at" + laneLogSep + "%s"
+	log, err := s.git(ctx, dir, "log", "--first-parent", "--reverse", format, revRange)
+	if err != nil {
+		return nil, fmt.Errorf("list the task's own commits: %w", err)
 	}
-	parents, subject, found := strings.Cut(rest, laneLogSep)
-	if !found || len(strings.Fields(parents)) < 2 {
-		return sha, "", 0, false
+	var out []laneLogRecord
+	for _, line := range strings.Split(log, "\n") {
+		// git writes LF here on every platform, but a commit message that
+		// itself ended a line with CR would leave one on the subject and the
+		// anchored lane match would then never fire — on Windows only, which
+		// is the worst place to find out.
+		line = strings.TrimSuffix(line, "\r")
+		if line == "" {
+			continue
+		}
+		f := strings.SplitN(line, laneLogSep, 4)
+		for len(f) < 4 {
+			f = append(f, "")
+		}
+		out = append(out, laneLogRecord{SHA: f[0], Parents: f[1], AuthorTime: f[2], Subject: f[3]})
 	}
-	m := laneMergeSubject.FindStringSubmatch(subject)
+	return out, nil
+}
+
+// parseLaneMerge reports the lane only for a commit that is both a merge and
+// carries the contract message.
+func parseLaneMerge(rec laneLogRecord) (laneID string, childID int64, ok bool) {
+	if len(strings.Fields(rec.Parents)) < 2 {
+		return "", 0, false
+	}
+	m := laneMergeSubject.FindStringSubmatch(rec.Subject)
 	if m == nil {
-		return sha, "", 0, false
+		return "", 0, false
 	}
 	id, err := strconv.ParseInt(m[2], 10, 64)
 	if err != nil {
 		// A task id too large to be one. Not a lane merge vincent wrote.
-		return sha, "", 0, false
+		return "", 0, false
 	}
-	return sha, m[1], id, true
+	return m[1], id, true
 }
 
 // formatDiffBody spells a section's diff the way the unsectioned endpoint

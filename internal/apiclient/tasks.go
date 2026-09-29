@@ -3,7 +3,9 @@ package apiclient
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -695,4 +697,49 @@ func (c *Client) DiffByLane(ctx context.Context, id int64) ([]DiffSection, error
 		return nil, err
 	}
 	return out.Sections, nil
+}
+
+// Commit is one entry of GET /v1/tasks/{id}/commits (§13.2, issue #601): a
+// commit the task made on its own branch, past its recorded base.
+type Commit struct {
+	SHA     string `json:"sha"`
+	Subject string `json:"subject"`
+	// AuthorTime is the author date, RFC3339 in UTC.
+	AuthorTime string `json:"author_time"`
+	// LaneID and ChildTaskID are set only on a lane merge, and name the lane
+	// the way DiffSection does. Both are zero on every other commit.
+	LaneID      string `json:"lane_id,omitempty"`
+	ChildTaskID int64  `json:"child_task_id,omitempty"`
+}
+
+// ErrCommitsUnsupported is what TaskCommits returns when the daemon predates
+// the route — a daemon started before `vincent update` swapped the binary
+// keeps its old code until it is restarted. It is told apart from an unknown
+// task by the router's own "no such endpoint" message: both are a
+// `not_found` 404, and every released daemon has sent that exact message.
+var ErrCommitsUnsupported = errors.New("the running daemon does not serve task commits; restart it to pick up the new build")
+
+// routerNotFound is the message the daemon's mux answers an unknown path with.
+const routerNotFound = "no such endpoint"
+
+// TaskCommits fetches the commits the task made on its branch, oldest first.
+//
+// The daemon reads them from the branch, not the worktree, so they are still
+// there after archive. A task that was never admitted, or whose branch no
+// longer exists, is a 409 *Error; a branch with nothing past its base is an
+// empty, non-nil slice.
+func (c *Client) TaskCommits(ctx context.Context, id int64) ([]Commit, error) {
+	out := []Commit{}
+	path := "/v1/tasks/" + strconv.FormatInt(id, 10) + "/commits"
+	if err := c.get(ctx, path, &out); err != nil {
+		var apiErr *Error
+		if errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound && apiErr.Message == routerNotFound {
+			return nil, ErrCommitsUnsupported
+		}
+		return nil, err
+	}
+	if out == nil {
+		out = []Commit{}
+	}
+	return out, nil
 }

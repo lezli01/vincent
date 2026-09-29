@@ -221,6 +221,7 @@ var routes = []Route{
 	{http.MethodPost, "/v1/tasks/{id}/steps/{step_id}/status", "step_status", "Set the step-authored status line a board renders (task 036). Body: {message} — an empty message clears the line."},
 	{http.MethodGet, "/v1/tasks/{id}/steps/{run_id}/transcript", "task_transcript", "One step run's transcript. Query: format=raw|normalized, offset, limit."},
 	{http.MethodGet, "/v1/tasks/{id}/diff", "task_diff", "The task branch's diff against its recorded base. Query: by=lane attributes each change to the fan-out lane that produced it (§7.6, task 084)."},
+	{http.MethodGet, "/v1/tasks/{id}/commits", "task_commits", "The commits the task made on its branch past its recorded base, oldest first; lane merges carry lane_id and child_task_id (issue #601). Read from the branch, so it still answers after archive; 409 when the branch was never made or no longer exists."},
 	{http.MethodGet, "/v1/tasks/{id}/github/pull", "task_github_pull", "The pull request this task is linked to, if any (task 052)."},
 	{http.MethodPost, "/v1/tasks/{id}/github/pull", "task_github_pull_link", "Link this task to a pull request. Body: {number}."},
 	{http.MethodGet, "/v1/tasks/{id}/github/pull/checks", "task_github_pull_checks", "What CI says about this task's pull request right now: one row per check on the head commit, with its state and its own GitHub URL (task 068). Live on every call — a check result is never stored, because a stored one reads exactly like a current one while being wrong."},

@@ -11,6 +11,15 @@ list with the user-facing context a commit subject cannot carry.
 
 ## [Unreleased]
 
+### Added
+
+- **A task's commits over the API, even after archive.** `GET
+  /v1/tasks/{id}/commits` (and the MCP tool `task_commits`) lists the commits a
+  task made on its branch, oldest first, with fan-out lane merges marked by
+  `lane_id` and `child_task_id`. It reads the branch rather than the worktree,
+  so an archived task's commits are still there. `vincent task commits <id>`
+  prints the same list (#601).
+
 ### Fixed
 
 - **The workspace's Output tab shows its live state, and a failed attempt
