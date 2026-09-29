@@ -108,6 +108,41 @@ func (p *pump) until(timeout time.Duration, what string, cond func() bool) {
 	}
 }
 
+// settle pumps until cond has held, with an unchanged mark, for a whole
+// quiet period — for asserting that something did *not* happen, where the
+// traffic to rule out may still be in flight when cond first holds. It
+// wakes on its own rather than only on messages, since a settled model may
+// have none to deliver.
+func (p *pump) settle(timeout, quiet time.Duration, what string, cond func() (bool, int)) {
+	p.t.Helper()
+	deadline := time.After(timeout)
+	var since time.Time
+	last := -1
+	for {
+		ok, mark := cond()
+		switch {
+		case !ok || mark != last:
+			since, last = time.Now(), mark
+		case time.Since(since) >= quiet:
+			return
+		}
+		select {
+		case msg := <-p.msgs:
+			if batch, isBatch := msg.(tea.BatchMsg); isBatch {
+				for _, c := range batch {
+					p.push(c)
+				}
+				continue
+			}
+			_, cmd := p.m.Update(msg)
+			p.push(cmd)
+		case <-time.After(quiet / 4):
+		case <-deadline:
+			p.t.Fatalf("timed out waiting for %s; view: %q", what, content(p.m))
+		}
+	}
+}
+
 // testCtx is a context canceled at test end so stream goroutines die with
 // the test.
 func testCtx(t *testing.T) context.Context {

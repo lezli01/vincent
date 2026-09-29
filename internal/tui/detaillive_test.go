@@ -394,6 +394,25 @@ func TestNowLineFollowsLiveOutputAndLeavesWithRunning(t *testing.T) {
 	h.p.until(10*time.Second, "the per-task subscription to attach", func() bool {
 		return h.broker.OutputSubscribers(task.ID) > 0
 	})
+	// Opening the workspace issues more than one load (the open and the
+	// view's activation), and a durable event can still be on its way to a
+	// debounced refresh. Any of those landing after the snapshot below reads
+	// as a refetch the chunk caused (ubuntu CI caught what the board wait
+	// above did not), so wait until every issued load is applied, no refresh
+	// window is open, and no task fetch has arrived for well past the
+	// debounce.
+	view := h.m.views[viewTask].(*taskView)
+	taskPath := fmt.Sprintf("/v1/tasks/%d", task.ID)
+	h.p.settle(20*time.Second, 4*detailRefreshDebounce, "the workspace's loads to settle", func() (bool, int) {
+		fetches := 0
+		for _, p := range h.paths.snapshot() {
+			if p == taskPath {
+				fetches++
+			}
+		}
+		d := view.detail
+		return !d.refreshPending && d.appliedSeq == d.loadSeq, fetches
+	})
 
 	// The chunk's line is never written to the transcript, so only the
 	// stream can put it on screen — the connect-time catch-up re-read (§13.3)
@@ -414,7 +433,7 @@ func TestNowLineFollowsLiveOutputAndLeavesWithRunning(t *testing.T) {
 	// The board keeps its own background traffic; what is pinned is that
 	// the task's snapshot was not refetched for it.
 	for _, p := range h.paths.snapshot()[before:] {
-		if p == fmt.Sprintf("/v1/tasks/%d", task.ID) {
+		if p == taskPath {
 			t.Errorf("a live chunk made the TUI refetch %s", p)
 		}
 	}
