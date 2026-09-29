@@ -204,7 +204,7 @@ func TestLoopRollupDisplay(t *testing.T) {
 // third line, spending the row's whole height on the least of what it says.
 func TestFormatStepFitsTheLoopToItsColumn(t *testing.T) {
 	task := apiclient.Task{CurrentStep: 2, StepTotal: 7, StepName: "green"}
-	if got, want := formatStep(task, true, widthStepMax), "3/7 green"; got != want {
+	if got, want := formatStep(task, true, widthStepMax), "3/7 green ✓✓○○○○○"; got != want {
 		t.Errorf("formatStep without a loop = %q, want %q", got, want)
 	}
 	task.Loop = &apiclient.LoopRollup{
@@ -217,9 +217,12 @@ func TestFormatStepFitsTheLoopToItsColumn(t *testing.T) {
 		want  string
 	}{
 		{name: "everything fits", width: 42, want: "3/7 green · loop 4/10 · alpha · repair 2/3"},
-		{name: "one cell short of the body step", width: 41, want: "3/7 green · loop 4/10 · alpha"},
+		// The step pips (task 129.10) are the last thing the cell says, so
+		// they ride along only where the column still has room after the
+		// clauses it kept.
+		{name: "one cell short of the body step", width: 41, want: "3/7 green · loop 4/10 · alpha ✓✓○○○○○"},
 		{name: "one cell short of the item", width: 28, want: "3/7 green · loop 4/10"},
-		{name: "one cell short of the counter", width: 20, want: "3/7 green"},
+		{name: "one cell short of the counter", width: 20, want: "3/7 green ✓✓○○○○○"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := formatStep(task, true, tt.width); got != tt.want {

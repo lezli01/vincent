@@ -185,6 +185,40 @@ who reads at `quiet` pay the same keys each session.
 | One step-state palette (097 d2); off-graph attempts get words first (097 d3) | `097-…:37`, `:44` | 129.10's glyphs join the same palette, words beside colour. |
 | Diff stats are computed client-side (100 d2) | `100-cli-task-diff.md:44` | No daemon-computed outcome column (#589 decision 4); 129.5 adds commits only. |
 
+### 8. Lane breakdowns, loop strips and step pips reuse the step-state glyphs — via 129.10
+
+Settled with the author on #605. None of these amends a recorded decision:
+014 d13 and 084 d1 are kept (lanes stay out of the list and the counts), 016
+d7 is kept (the loop strip is a line, never a loop row), and 097 d2/d3 are
+honoured by reusing the one glyph set and palette.
+
+1. **One glyph vocabulary**, `attemptStateGlyph`'s: `●` running, `✓` done, `×`
+   blocked/failed, `!` waiting on a human (the board's attention badge), `○`
+   not started, `■` stopped, `–` skipped. The issue's `▶` and `⏸` are not used
+   — `⏸` would be a second word for paused. `approve` reads `✓` and `reject`
+   `×`, as stepStateStyle already paired them. Lane clauses take task-state
+   colours; step and iteration glyphs take `stepStateStyle`'s.
+2. **The fan-out breakdown is in the board's STATE cell**,
+   `awaiting_children (×1 !1 ●1 ✓2)`, ordered blocked, human wait, running,
+   done, then the rest (a glyph-less state is spelled out, `1 paused`). Zero
+   clauses are dropped. The cell's wrap-then-cut sheds from the tail, so the
+   blocked clause survives at 80 columns. The same helper feeds the Steps tab's
+   `round N · …` field. `ChildrenRollup.Summary` is retired; the TUI was its
+   only reader. *As built:* list rows still carry no `children` (see 084's
+   open note), so on the live board the cell shows the breakdown only where a
+   row carries the rollup. Serving it on list rows is an API change this item
+   did not take.
+3. **Lane rows read `lane <lane_id>`**, falling back to the title without one.
+4. **A loop iteration strip** — newest ten, oldest first, `…+k` for the cut —
+   in the workspace header's loop clause and on one dim line under a `loop`
+   step's header on the Steps tab. A pass is its worst newest-attempt body row.
+   Multi-round `fan_out` tiers get none.
+5. **Step pips**: in the workspace header one per top-level step from the step
+   runs (a composite step is one pip); on the board derived from
+   `current_step`/`step_total`/state and appended to STEP only with width to
+   spare — never widening, wrapping or displacing STATE, and not changing
+   129.16's allocation.
+
 ## Tasks
 
 The sequencing: phase 0 preconditions, phase 1 vocabulary and labels, phase 2
@@ -228,8 +262,9 @@ cards need):
   failure. Ordering: see "Ordering with the open walkthroughs".
 - [ ] **129.9** ([#598](https://github.com/lezli01/vincent/issues/598))
   Breadcrumb, a single task title, a live now-line.
-- [ ] **129.10** ([#605](https://github.com/lezli01/vincent/issues/605)) Lane
-  breakdowns, loop iteration outcomes, step pips as glyphs.
+- [x] **129.10** ([#605](https://github.com/lezli01/vincent/issues/605)) Lane
+  breakdowns, loop iteration outcomes, step pips as glyphs (decision 8). ✓
+  2026-09-29
 - [ ] **129.11** ([#608](https://github.com/lezli01/vincent/issues/608)) A
   persisted `tui.output.level`, and bounded command output at `quiet` and
   `compact` (decision 6). Ordering: see "Ordering with the open walkthroughs".

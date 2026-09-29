@@ -358,7 +358,9 @@ func SplitFailureTrailer(prompt string) (body, trailer string) {
 
 // ChildrenRollup summarizes a fan-out subtree (§13.2, task 014). Blocked and
 // AwaitingGate are ids: the client re-fetches whichever it decides to show,
-// the way §13.3 hands out everything else.
+// the way §13.3 hands out everything else. It carries no rendering of its
+// own: the board and the workspace render it as glyph clauses (the TUI's
+// childrenBreakdown, task 129.10).
 type ChildrenRollup struct {
 	Total        int            `json:"total"`
 	Settled      int            `json:"settled"`
@@ -423,23 +425,6 @@ func (r *LoopRollup) Clauses() []string {
 // tail rather than truncating this string.
 func (r *LoopRollup) Display() string {
 	return strings.Join(r.Clauses(), " · ")
-}
-
-// Summary is the short form a board row shows beside `awaiting_children` —
-// "2 blocked", "3/5 done". It names what a human has to act on first, since
-// that is the whole reason the rollup exists.
-func (r *ChildrenRollup) Summary() string {
-	if r == nil || r.Total == 0 {
-		return ""
-	}
-	switch {
-	case len(r.Blocked) > 0:
-		return fmt.Sprintf("%d blocked", len(r.Blocked))
-	case len(r.AwaitingGate) > 0:
-		return fmt.Sprintf("%d at a gate", len(r.AwaitingGate))
-	default:
-		return fmt.Sprintf("%d/%d done", r.Settled, r.Total)
-	}
 }
 
 // TaskDetail is GET /v1/tasks/{id}: the task plus every attempt of every

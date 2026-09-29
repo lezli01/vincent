@@ -684,7 +684,9 @@ an `agent:` the policy will never run.
 - [x] **014.12 — TUI.** ✓ 2026-08-17 Depends: 014.11. A parent row reading
   `awaiting_children (2 blocked)`; drilling from a parent into its lanes and
   back; the new state in the board's colour and action-bar tables
-  (`internal/tui/bindings.go` key table updated with it).
+  (`internal/tui/bindings.go` key table updated with it). *Amended 2026-09-29
+  (task 129.10):* the parenthetical is now a glyph breakdown of every lane
+  state, `awaiting_children (×2 ●1 ✓3)`, blocked first.
 - [x] **014.13 — Docs.** ✓ 2026-08-17 Depends: all. Spec §5.3, §6, §10, §11, §12.4, §13.2,
   §13.3, §14 and §18 amended in place with dated notes — §12.4 and §14 because
   recovery aborting a merge and the new `tasks` columns are exactly what those

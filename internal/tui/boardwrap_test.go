@@ -166,10 +166,13 @@ func TestWideBoardShowsTheRollupsWhole(t *testing.T) {
 		task(1, stateRunning, inProject("api"), inWorkflow("ship"),
 			withStep("green", 2, 7), withLoop(4, 10)),
 		task(2, stateAwaitingChildren, inProject("api"), inWorkflow("ship"),
-			withChildren(apiclient.ChildrenRollup{Total: 5, Settled: 1, Blocked: []int64{7, 8}})),
+			withChildren(apiclient.ChildrenRollup{
+				Total: 5, Settled: 1, Blocked: []int64{7, 8},
+				ByState: map[string]int{stateBlocked: 2, stateRunning: 2, stateDone: 1},
+			})),
 	)
 	out := ansi.Strip(b.render(200, 30))
-	for _, want := range []string{"3/7 green · loop 4/10", "awaiting_children (2 blocked)"} {
+	for _, want := range []string{"3/7 green · loop 4/10", "awaiting_children (×2 ●2 ✓1)"} {
 		if !containsAcrossLines(out, want) {
 			t.Errorf("a 200-column board does not show %q whole:\n%s", want, out)
 		}

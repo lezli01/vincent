@@ -284,6 +284,9 @@ in the child and never appear on this graph.
   lifecycle reference and spec §15 all describe the parenthetical as what makes
   a blocked lane visible while lanes are kept off the list (014 decision 13).
   Found 2026-09-18 capturing `tui-lanes.png` and not yet tracked.
+  *Note 2026-09-29 (task 129.10):* the label is now the glyph breakdown
+  `awaiting_children (×2 ●1 ✓3)` rather than `(2 blocked)`. The gap this
+  item records is unchanged: list rows still carry no `children`.
 - **On the Output tab, `←`/`→` move the parent's attempt selection while a
   lane is selected.** The strip under the lane selector describes the lane's
   attempts and offers `←/→ select`, but the keys go to the parent's sub-model
