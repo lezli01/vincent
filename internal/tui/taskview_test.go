@@ -24,8 +24,8 @@ func TestRoutedHomeRendersOnlyTheTaskBoard(t *testing.T) {
 	if !strings.Contains(got, "board-only task") {
 		t.Fatalf("home did not render the board row:\n%s", got)
 	}
-	for _, hidden := range []string{"Steps & Attempts", "Task Details", "Output", "Diff"} {
-		if strings.Contains(got, hidden) {
+	for tab := taskTabSteps; tab <= taskTabDiff; tab++ {
+		if hidden := tab.String(); strings.Contains(got, hidden) {
 			t.Errorf("home leaked task surface %q:\n%s", hidden, got)
 		}
 	}
@@ -36,7 +36,7 @@ func TestTaskWorkspaceDefaultsToStepsAndCyclesEveryFullViewTab(t *testing.T) {
 	v := newTaskView(d)
 
 	if v.tab != taskTabSteps {
-		t.Fatalf("initial tab = %v, want Steps & Attempts", v.tab)
+		t.Fatalf("initial tab = %v, want %v", v.tab, taskTabSteps)
 	}
 	want := []taskViewTab{
 		taskTabDetails, taskTabOutput, taskTabDiff, taskTabWorkflow, taskTabStepDetails,
@@ -52,7 +52,7 @@ func TestTaskWorkspaceDefaultsToStepsAndCyclesEveryFullViewTab(t *testing.T) {
 	v.updateKey(tea.KeyPressMsg{Code: '2', Text: "2"})
 	got := v.render(100, 80)
 	for _, value := range []string{
-		"Task Details", "A complete description", "Description", "Overview",
+		taskTabDetails.String(), "A complete description", "Description", "Overview",
 		"Execution", "Fields", "Lifecycle", "Workflow snapshot",
 	} {
 		if !strings.Contains(got, value) {

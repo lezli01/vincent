@@ -102,7 +102,7 @@ func TestStepDetailsTabIsReachedBySixWithOrWithoutAPullRequest(t *testing.T) {
 		}
 		v.updateKey(registryKey(t, "6"))
 		if v.tab != taskTabStepDetails {
-			t.Fatalf("linked=%v: 6 moved to %v, want Step Details", linked, v.tab)
+			t.Fatalf("linked=%v: 6 moved to %v, want %v", linked, v.tab, taskTabStepDetails)
 		}
 	}
 }
@@ -116,7 +116,7 @@ func TestPullRequestTabIsReachedBySevenOnlyWhenLinked(t *testing.T) {
 	v.applyPull(taskPullMsg{taskID: v.detail.taskID, pull: linkedPull()})
 	v.updateKey(registryKey(t, "7"))
 	if v.tab != taskTabPull {
-		t.Fatalf("7 moved to %v, want Pull Request", v.tab)
+		t.Fatalf("7 moved to %v, want %v", v.tab, taskTabPull)
 	}
 }
 
@@ -176,8 +176,8 @@ func TestStepDetailsLabelIsClickableOnTheStrip(t *testing.T) {
 		if !ok {
 			t.Fatalf("tab %v has no hit box on the strip", tab)
 		}
-		if got := hit.x1 - hit.x0; got != len(taskTabNames[tab]) {
-			t.Fatalf("tab %v hit box is %d wide, want %d", tab, got, len(taskTabNames[tab]))
+		if got := hit.x1 - hit.x0; got != len(tab.String()) {
+			t.Fatalf("tab %v hit box is %d wide, want %d", tab, got, len(tab.String()))
 		}
 		v.tab = taskTabSteps
 		v.updateClick(tea.MouseClickMsg{X: hit.x0, Y: 1})
@@ -363,7 +363,7 @@ func TestStepDetailsSidebarSelectsAnAttemptByMouse(t *testing.T) {
 	}
 	got := ansi.Strip(v.render(140, 40))
 	want := fmt.Sprintf("attempt %d", second.Attempt)
-	if !strings.Contains(got, "Step Details") || !strings.Contains(got, want) {
+	if !strings.Contains(got, taskTabStepDetails.String()) || !strings.Contains(got, want) {
 		t.Fatalf("the clicked attempt (%q) is not on screen:\n%s", want, got)
 	}
 }

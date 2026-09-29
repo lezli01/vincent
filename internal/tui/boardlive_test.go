@@ -256,7 +256,7 @@ func TestBoardEnterOpensDetail(t *testing.T) {
 	}
 	taskView := h.m.views[viewTask].(*taskView)
 	if taskView.tab != taskTabSteps {
-		t.Fatalf("task tab = %v, want Steps & Attempts", taskView.tab)
+		t.Fatalf("task tab = %v, want %v", taskView.tab, taskTabSteps)
 	}
 	if taskView.detail.taskID != task.ID {
 		t.Fatalf("detail task = %d, want %d", taskView.detail.taskID, task.ID)

@@ -39,10 +39,12 @@ The home screen is the task board and nothing else:
 ![The board filtered to one running task](../assets/tui-board.png)
 
 `enter` opens the selected task in a separate full-screen workspace. That
-workspace has five full-view tabs — **Steps & Attempts**, **Task Details**,
-**Output**, **Diff**, and **Workflow** — so the surface being read gets the
-whole terminal. `tab` advances through them, `shift+tab` goes back, and `1`–`5`
-jump directly. `esc` returns to the board.
+workspace has six full-view tabs — **Steps & Attempts**, **Task Details**,
+**Output**, **Diff**, **Workflow** and **Step Details** — and a seventh,
+**Pull Request**, on a task with a linked pull request, so the surface being
+read gets the whole terminal. `tab` advances through them, `shift+tab` goes
+back, and `1`–`7` jump directly (`7` only when the Pull Request tab is there).
+`esc` returns to the board.
 
 New task, projects, workflows, chats, the two archived boards, daemon, and —
 for GitHub projects — pull requests are full-screen takeovers too. `esc`
@@ -97,8 +99,10 @@ Three behaviors matter:
   reaches an agent step on that adapter shows the same `queued → 14:20` and
   waits for the window without starting the agent.
 
-`/` filters by id, title, project or state; `tab` commits the filter, `esc`
-clears it, and `enter` opens the selected task.
+| Key | Does |
+|---|---|
+| `/` | Filter by id, title, project or state; `tab` commits the filter, `esc` clears it |
+| `enter` | Open the selected task |
 
 **A cell too long for its column wraps rather than disappearing.** The title,
 the state, the step and the status carry across up to three lines of the same
@@ -158,8 +162,11 @@ task count and its needs-attention badge](../assets/tui-grouping.png)
 - An open header is a label: the cursor steps over it, and clicking it selects
   nothing.
 
-`g` cycles project›workflow → project → workflow → flat for the session. The
-panel title names the grouping whenever it is not the configured one.
+| Key | Does |
+|---|---|
+| `g` | Cycle project›workflow → project → workflow → flat for the session |
+
+The panel title names the grouping whenever it is not the configured one.
 
 ### Folding groups
 
