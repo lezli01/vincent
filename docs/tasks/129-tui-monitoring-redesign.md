@@ -204,9 +204,10 @@ cards need):
 - [x] **129.3** ([#594](https://github.com/lezli01/vincent/issues/594)) A
   persisted `block_detail` and a tail-kept `result_summary` — PR #615.
   ✓ 2026-09-28
-- [ ] **129.4** ([#592](https://github.com/lezli01/vincent/issues/592)) A test
+- [x] **129.4** ([#592](https://github.com/lezli01/vincent/issues/592)) A test
   tying the guide's key tables and screenshot references to the registry, and
-  tab-label test pins derived from the enum.
+  tab-label test pins derived from the enum — `internal/tui/docs_claims_test.go`
+  and `taskViewTab.String()`. ✓ 2026-09-29
 - [ ] **129.5** ([#601](https://github.com/lezli01/vincent/issues/601))
   `GET /v1/tasks/{id}/commits`, read from the branch so it survives archive.
 
