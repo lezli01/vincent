@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -50,6 +51,11 @@ type footerSeg struct {
 	// global marks a segment firing one of the root's own keys: the pinned
 	// part, `!`, `r retry` and `+N`'s palette.
 	global bool
+	// droppable marks a segment that gives its place up to the task actions
+	// ordered before it when the line cannot hold them all
+	// (footerAdmitActions): the actions themselves, `T` and `!`. Losing a
+	// counted one puts it into `+N`, the way the `…` does.
+	droppable bool
 }
 
 // renderFooter composes the line; buildFooter additionally reports the
@@ -108,6 +114,7 @@ func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActi
 				pool++
 			}
 		}
+		rest = footerAdmitActions(rest, countable, avail)
 	}
 
 	k := footerAdmit(hints, rest, countable, avail)
@@ -329,23 +336,97 @@ func pinnedHits(x int, segs []footerSeg) []footerHit {
 	return out
 }
 
+// footerActionOps is the footer's reading of a task's §6 actions (issue
+// #595): the action bar's actionOps plus the two whose keys open a form rather
+// than post — `E` edit+retry and `R` repair — which the action bar cannot
+// dispatch and so never listed, leaving a blocked task's footer without the
+// two recovery keys it exists to offer. A row with a label is one of those:
+// it names itself rather than its action (E is gated on retry), and it is
+// withheld under a bulk selection, because both forms are written for one
+// task. The order is admission order when the line is short: the recovery
+// keys come ahead of skip, cancel and archive.
+var footerActionOps = []struct {
+	action string
+	op     keymap.Op
+	label  string
+}{
+	{apiclient.ActionPause, keymap.Pause, ""},
+	{apiclient.ActionResume, keymap.Pause, ""},
+	{apiclient.ActionApprove, keymap.Approve, ""},
+	{apiclient.ActionReject, keymap.Reject, ""},
+	{apiclient.ActionRetry, keymap.Retry, ""},
+	{apiclient.ActionRetry, keymap.EditRetry, "edit+retry"},
+	{apiclient.ActionRepair, keymap.Repair, "repair"},
+	{apiclient.ActionSkip, keymap.Skip, ""},
+	{apiclient.ActionCancel, keymap.Cancel, ""},
+	{apiclient.ActionArchive, keymap.Archive, ""},
+}
+
+// footerAdmitActions drops droppable segments from the end — `!` first, then
+// `T`, then the task actions in reverse order — until the segments right of
+// the hints fit avail with every hint withheld, the widest `+N` the line can
+// carry. The line truncates from the left (task 094 decision 2), so without
+// this a blocked task's actions would push its first ones, retry and the
+// recovery keys, under the `…` and keep archive and the attention count: at 80
+// columns a task's own way out outranks the nudge towards another task, which
+// `!` still reaches.
+func footerAdmitActions(rest []footerSeg, countable, avail int) []footerSeg {
+	_, sepW := footerSep()
+	out := slices.Clone(rest)
+	dropped := 0
+	for {
+		total, count := 1, len(out)
+		for _, s := range out {
+			total += ansi.StringWidth(s.text)
+		}
+		if n := countable + dropped; n > 0 {
+			total += ansi.StringWidth(footerMoreSeg(n).text)
+			count++
+		}
+		if count > 1 {
+			total += sepW * (count - 1)
+		}
+		if total <= avail {
+			return out
+		}
+		last := -1
+		for i, s := range out {
+			if s.droppable {
+				last = i
+			}
+		}
+		if last < 0 {
+			return out
+		}
+		if out[last].counts {
+			dropped++
+		}
+		out = slices.Delete(out, last, last+1)
+	}
+}
+
 // footerRestSegs is everything to the right of the hints: the task's valid
 // actions, the answer/attention/retry extras, and the action bar's last
 // status.
 func footerRestSegs(bar *actionBar, target taskActions, attention int, retry bool) []footerSeg {
 	segs := make([]footerSeg, 0, 8)
 	if bar != nil && (target.id != 0 || target.bulk()) {
-		for _, o := range actionOps {
-			if target.has(o.action) {
-				key := opKey(o.op)
-				if key == "" {
-					// Unbound on a lenient load (task 128): no key to show.
-					continue
-				}
-				segs = append(segs, footerSeg{
-					text: styleKey.Render(key) + " " + actionLabel(target, o.action), key: key, counts: true,
-				})
+		for _, o := range footerActionOps {
+			if !target.has(o.action) || (o.label != "" && target.bulk()) {
+				continue
 			}
+			key := opKey(o.op)
+			if key == "" {
+				// Unbound on a lenient load (task 128): no key to show.
+				continue
+			}
+			label := o.label
+			if label == "" {
+				label = actionLabel(target, o.action)
+			}
+			segs = append(segs, footerSeg{
+				text: styleKey.Render(key) + " " + label, key: key, counts: true, droppable: true,
+			})
 		}
 		if target.has(apiclient.ActionAnswer) {
 			segs = append(segs, footerSeg{text: styleAsk.Render("enter answer"), key: "enter", counts: true})
@@ -360,7 +441,7 @@ func footerRestSegs(bar *actionBar, target taskActions, attention int, retry boo
 				label = fmt.Sprintf("chat #%d", target.openChatID)
 			}
 			segs = append(segs, footerSeg{
-				text: styleKey.Render(opKey(keymap.Chat)) + " " + label, key: opKey(keymap.Chat), counts: true,
+				text: styleKey.Render(opKey(keymap.Chat)) + " " + label, key: opKey(keymap.Chat), counts: true, droppable: true,
 			})
 		}
 	}
@@ -368,7 +449,7 @@ func footerRestSegs(bar *actionBar, target taskActions, attention int, retry boo
 		// `!` is a global row, and the pinned segment stands for those: shown
 		// here, never counted.
 		segs = append(segs, footerSeg{
-			text: styleWarn.Render(fmt.Sprintf("%s next attention (%d)", opKey(keymap.NextAttention), attention)), key: opKey(keymap.NextAttention), global: true,
+			text: styleWarn.Render(fmt.Sprintf("%s next attention (%d)", opKey(keymap.NextAttention), attention)), key: opKey(keymap.NextAttention), global: true, droppable: true,
 		})
 	}
 	if retry {

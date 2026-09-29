@@ -230,15 +230,16 @@ func TestFooterFlatBoardDropsFoldRows(t *testing.T) {
 	}
 }
 
-// TestFooterNarrowCountsWhatTheCutTook: a narrow line still truncates from
-// the left with `…`, the `+N` survives it — it is the last segment before the
-// pinned chrome — and its count includes the action segments the cut removed.
+// TestFooterNarrowCountsWhatTheCutTook: a narrow line gives up task actions
+// from the end of their order rather than letting the left-truncating `…` take
+// the first ones (issue #595), the `+N` survives — it is the last segment
+// before the pinned chrome — and its count includes the actions it dropped.
 func TestFooterNarrowCountsWhatTheCutTook(t *testing.T) {
 	bar := &actionBar{}
 	rows := bindingsFor(ctxTasks)
 	narrow := ansi.Strip(renderFooter(50, rows, bar, footerTarget, 0, false))
-	if !strings.HasPrefix(narrow, "…") {
-		t.Fatalf("width 50 did not left-truncate: %q", narrow)
+	if !strings.Contains(narrow, "p pause") || strings.Contains(narrow, "archive") {
+		t.Fatalf("width 50 did not keep the first action and drop the last: %q", narrow)
 	}
 	got := footerMore(narrow)
 	if got <= 0 {

@@ -73,6 +73,16 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **A blocked task's footer offers `E edit+retry` and `R repair`, and the
+  workspace's key hints match its keys.** The two recovery keys were missing
+  from the footer at every width; they now follow `r retry`, and when the line
+  is short the `!` count, `T chat` and then the last actions give way to them
+  (dropped actions are counted in `+N`), instead of the `…` cutting `r` and
+  `R` off the front. The workspace footer no longer shows `[/] views`
+  beside `tab views`, or a hint for the tab already open (`5 workflow` on
+  Workflow). `?` now lists `d`, `l`, `U` and the digit jumps on every
+  workspace tab, which already answered them (#595).
+
 - **The workspace's Output tab shows its live state, and a failed attempt
   opens at the failure.** The attempt strip now names the verbosity level,
   `raw`, the in-progress spinner with its elapsed clock, and `▼ following` /

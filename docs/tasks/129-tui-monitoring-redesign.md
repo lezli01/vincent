@@ -1,6 +1,6 @@
 # 129 — The TUI answers what is happening, why it failed and what it delivered
 
-**Status:** 🔄 in progress (7/19)
+**Status:** 🔄 in progress (8/19)
 
 Issue [#591](https://github.com/lezli01/vincent/issues/591), part of
 [#589](https://github.com/lezli01/vincent/issues/589). Spec §15 (TUI) above
@@ -247,9 +247,9 @@ cards need):
 
 **Phase 1 — vocabulary and labels:**
 
-- [ ] **129.6** ([#595](https://github.com/lezli01/vincent/issues/595)) The
+- [x] **129.6** ([#595](https://github.com/lezli01/vincent/issues/595)) The
   workspace's stale, duplicated and hidden key hints fixed; `R` repair and `E`
-  edit & retry surfaced on blocked tasks.
+  edit & retry surfaced on blocked tasks. ✓ 2026-09-29
 - [ ] **129.7** ([#596](https://github.com/lezli01/vincent/issues/596))
   Plain-language states and reasons, one glossary. Depends: 129.2. Ordering:
   see "Ordering with the open walkthroughs" if its wording reaches Output
