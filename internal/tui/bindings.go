@@ -236,6 +236,7 @@ const (
 	termScope     vocabularyTerm = "cycle a listing's scope"
 	termFilter    vocabularyTerm = "filter"
 	termLane      vocabularyTerm = "open a fan-out lane"
+	termResult    vocabularyTerm = "open the output the outcome card's result came from"
 )
 
 // binding is one registry row.
@@ -402,6 +403,7 @@ var bindings = []binding{
 	{key: "4", label: "the diff of the finished task", scope: scopePanel, context: ctxTaskOverview, hint: "4 diff", priority: 4},
 	{key: "7", label: "the finished task's pull request", scope: scopePanel, context: ctxTaskOverview, hint: "7 PR", priority: 5, github: true},
 	{op: keymap.Lane, key: "l", label: "open the fan-out lane the failure card blames", scope: scopePanel, context: ctxTaskOverview, hint: "l open the lane", priority: 6, term: termLane},
+	{op: keymap.Result, key: "w", label: "open the output of the attempt the outcome card's result came from, at its end", scope: scopePanel, context: ctxTaskOverview, hint: "w result output", priority: 6, term: termResult},
 	{key: "1", label: "jump to a tab by its digit: 0 Overview, 1 Steps, 2 Task Details, 3 Output, 4 Diff, 5 Workflow, 6 Step Details, 7 Pull Request (only with one linked)", scope: scopePanel, context: ctxTaskOverview, priority: 7},
 	{key: "d", label: "switch between the Output and Diff tabs", scope: scopePanel, context: ctxTaskOverview, priority: 8},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTaskOverview, priority: 9},

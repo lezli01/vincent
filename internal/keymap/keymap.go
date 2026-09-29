@@ -37,6 +37,7 @@ const (
 	Scope       Op = "scope"
 	Filter      Op = "filter"
 	Lane        Op = "lane"
+	Result      Op = "result"
 )
 
 // The §6 actions. Archive is the term above: clause 1 working, not a second
@@ -129,6 +130,9 @@ var catalog = []Info{
 	}},
 	{Op: Lane, Default: "l", Meaning: "open a fan-out lane", Kind: KindTerm, Surfaces: []Surface{
 		"task overview", "timeline", "task details", "output", "diff", "task workflow", "task step details", "task pull request",
+	}},
+	{Op: Result, Default: "w", Meaning: "open the output the outcome card's result came from", Kind: KindTerm, Surfaces: []Surface{
+		"task overview",
 	}},
 
 	{Op: Pause, Default: "p", Meaning: "pause or resume the task", Kind: KindAction, Surfaces: []Surface{Actions}},

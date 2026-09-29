@@ -51,7 +51,7 @@ func TestOverviewFramesFromRealServer(t *testing.T) {
 		{blocked, []string{"Blocked", "timeout", "retry", "3 output of attempt 1", "6 what it was given"}},
 		{aborted, []string{"Aborted", "3 output of attempt 1", "6 what it was given"}},
 		{running, []string{"Running", "rebasing onto main", "3 full output"}},
-		{done, []string{"Done", "final status", "vincent/live-done-one", "4 diff"}},
+		{done, []string{"Done", "Outcome", "4 diff"}},
 	} {
 		_, cmd := h.m.Update(selectTaskMsg{id: c.task.ID})
 		h.p.push(cmd)
