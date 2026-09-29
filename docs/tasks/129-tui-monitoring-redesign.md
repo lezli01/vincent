@@ -100,8 +100,9 @@ every item that adds a key — 129.12 and 129.18 — depends on 129.1.
 
 Task 036 decision 9 (`036-step-status-message.md:151`) sheds the STATUS column
 first and gates it on the title's width — `minTitleWithStatus` then, `maxTitle`
-(64) since task 050 decision 2 — which keeps it off below about 150 columns
-(`internal/tui/boardcols.go:198-200`). It was already amended once, 2026-08-29, by task
+(64) since task 050 decision 2 — which keeps it off below 164 columns on the
+default project/workflow-grouped board and below 196 on a flat one
+(`internal/tui/boardcols.go:198-200`, `columnsFor` at HEAD). It was already amended once, 2026-08-29, by task
 050 decision 1 (`036-…:167`). Task 050 decisions 1–3 (`050-…:31`, `:50`,
 `:65`) set the title ceiling, `maxTitle` and the allocation order; decision 3
 was already superseded in part 2026-09-03 by task 083 (`050-…:69`). 129.16
