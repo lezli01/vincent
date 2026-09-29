@@ -122,6 +122,8 @@ func TestGroupHeaderCountsItsTasks(t *testing.T) {
 		task(1, stateQueued, inProject("api"), inWorkflow("build")),
 		task(2, stateQueued, inProject("api"), inWorkflow("build")),
 		task(3, stateQueued, inProject("api"), inWorkflow("docs")),
+		// A second project, so the project level draws its header.
+		task(4, stateQueued, inProject("web"), inWorkflow("docs")),
 	)
 	rows := b.rows()
 	if rows[0].count != 3 {
@@ -138,7 +140,10 @@ func TestGroupHeaderCountsItsTasks(t *testing.T) {
 // TestGroupValueFallsBackToADash: a task the daemon reported without a
 // workflow still belongs somewhere, and a blank header reads as a bug.
 func TestGroupValueFallsBackToADash(t *testing.T) {
-	b := groupedBoard(task(1, stateQueued, inProject("api")))
+	b := groupedBoard(
+		task(1, stateQueued, inProject("api")),
+		task(2, stateQueued, inProject("web"), inWorkflow("build")),
+	)
 	rows := b.rows()
 	if rows[1].label != groupUnnamed {
 		t.Errorf("empty workflow grouped as %q, want %q", rows[1].label, groupUnnamed)
@@ -325,7 +330,10 @@ func TestGroupedRowsMatchTheColumnCount(t *testing.T) {
 // TestGroupHeadersRenderInTheTitleColumn: the header label has to land in the
 // one column wide enough to hold a name, at every width.
 func TestGroupHeadersRenderInTheTitleColumn(t *testing.T) {
-	b := groupedBoard(task(1, stateRunning, inProject("api"), inWorkflow("build")))
+	b := groupedBoard(
+		task(1, stateRunning, inProject("api"), inWorkflow("build")),
+		task(2, stateRunning, inProject("web"), inWorkflow("docs")),
+	)
 	for _, width := range []int{70, 120, 200} {
 		out := b.render(width, 20)
 		if !strings.Contains(out, "▾ api") {
@@ -395,7 +403,10 @@ func TestPressedGroupingSurvivesAReconnect(t *testing.T) {
 // the headers say what the grouping is, the title says when it is not the one
 // the config asked for.
 func TestPanelTitleNamesAnUnconfiguredGrouping(t *testing.T) {
-	s, _ := newShellFixture(t, task(1, stateRunning))
+	s, _ := newShellFixture(t,
+		task(1, stateRunning, inProject("api"), inWorkflow("build")),
+		task(2, stateRunning, inProject("web"), inWorkflow("docs")),
+	)
 	s.board.group, s.board.configGroup = defaultGrouping(), defaultGrouping()
 	if got := s.panelTitle(panelTasks); got != "Tasks" {
 		t.Errorf("title = %q under the configured grouping, want a plain %q", got, "Tasks")

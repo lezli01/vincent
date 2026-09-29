@@ -122,14 +122,40 @@ func (f foldSet) prune(tasks []apiclient.Task) foldSet {
 	return out
 }
 
-// taskPath is the group a task sits in under one grouping — the path `←`
-// collapses when the cursor is on it.
-func taskPath(t apiclient.Task, g grouping) foldPath {
+// taskPath is the innermost group a task sits in on screen — the path `←`
+// collapses when the cursor is on it. It is the path of the deepest level
+// that draws a header (shown, from shownLevels), and so carries the value of
+// every configured level above it, skipped ones included, the way the
+// header's own path does. Nil when no level draws a header: there is no group
+// on screen to fold.
+func taskPath(t apiclient.Task, g, shown grouping) foldPath {
+	return headerPaths(t, g, shown).innermost()
+}
+
+// headerPaths is the path of every header above a task on screen, outermost
+// first — one per shown level. A skipped level has no header, so it has no
+// entry here, which is what keeps `!` and an awaiting_input transition from
+// rewriting a fold they could not see (task 129 decision 4).
+func headerPaths(t apiclient.Task, g, shown grouping) foldPaths {
+	var out foldPaths
 	p := make(foldPath, 0, len(g))
 	for _, k := range g {
 		p = append(p, groupValue(t, k))
+		if shown.has(k) {
+			out = append(out, slices.Clone(p))
+		}
 	}
-	return p
+	return out
+}
+
+// foldPaths is the headers above one task, outermost first.
+type foldPaths []foldPath
+
+func (ps foldPaths) innermost() foldPath {
+	if len(ps) == 0 {
+		return nil
+	}
+	return ps[len(ps)-1]
 }
 
 // applyFolds is the fold view: the same rows, with the subtree of every
@@ -240,7 +266,8 @@ func (b *board) cursorPath() (foldPath, bool) {
 	if r.header {
 		return r.path, true
 	}
-	return taskPath(r.task, b.group), true
+	shown, _ := b.shownGroup()
+	return taskPath(r.task, b.group, shown), true
 }
 
 // collapseAtCursor is `←`: fold the innermost group the cursor is in, and
@@ -256,10 +283,11 @@ func (b *board) collapseAtCursor() tea.Cmd {
 		return nil
 	}
 	if b.folds.has(p) {
-		if len(p) == 1 {
+		parent, ok := b.parentHeader(p)
+		if !ok {
 			return nil // already at the outermost level
 		}
-		p = p[:len(p)-1]
+		p = parent
 	}
 	b.folds = b.folds.with(p)
 	b.focusPath(p)
@@ -349,10 +377,10 @@ func (b *board) expandFor(id int64) bool {
 	}
 	// The path is read against the grouping on screen: what has to open is
 	// what is hiding the task now.
-	p := taskPath(t, b.group)
+	shown, _ := b.shownGroup()
 	next := b.folds
-	for n := 1; n <= len(p); n++ {
-		next = next.without(p[:n])
+	for _, p := range headerPaths(t, b.group, shown) {
+		next = next.without(p)
 	}
 	if len(next) == len(b.folds) {
 		return false
@@ -360,6 +388,19 @@ func (b *board) expandFor(id int64) bool {
 	b.folds = next
 	b.selectedPath = nil
 	return true
+}
+
+// parentHeader is the path of the header one level out from the header at p,
+// skipping any level between them that draws no header (task 129 decision 4).
+// It reports false for an outermost header.
+func (b *board) parentHeader(p foldPath) (foldPath, bool) {
+	shown, _ := b.shownGroup()
+	for n := len(p) - 1; n > 0; n-- {
+		if n <= len(b.group) && shown.has(b.group[n-1]) {
+			return p[:n], true
+		}
+	}
+	return nil, false
 }
 
 // focusPath parks the cursor on one collapsed header. The path is recorded
@@ -423,7 +464,8 @@ func (b *board) foldedHome(rows []boardRow) int {
 	if !ok {
 		return -1
 	}
-	p := taskPath(t, b.group)
+	shown, _ := b.shownGroup()
+	p := taskPath(t, b.group, shown)
 	if len(p) == 0 {
 		return -1
 	}

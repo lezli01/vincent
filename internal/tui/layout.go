@@ -45,8 +45,9 @@ const (
 
 	// tasksFloorH keeps five task rows visible while a bottom panel has
 	// focus — the table is the navigation spine (§15). Outer height: five
-	// rows + the table header + the board's own header and action lines +
-	// one spare + two border lines.
+	// rows + the table header + the board's own header line + one spare +
+	// two border lines. The line the board's action line used to take is a
+	// sixth row since task 129 decision 5 removed it.
 	tasksFloorH = 11
 
 	// timelineShareW is the timeline's share of the bottom band: the

@@ -1023,6 +1023,12 @@ func (m *root) headerLine() string {
 	if m.version != "" {
 		name += " " + m.version
 	}
+	// Connected is the normal case and says nothing a working screen does
+	// not (task 129.15): the badge is drawn only while it is news.
+	if m.phase == phaseConnected {
+		return fmt.Sprintf(" %s  %s",
+			styleTitle.Render(name), styleDim.Render("["+m.views[m.active].title()+"]"))
+	}
 	return fmt.Sprintf(" %s  %s  %s",
 		styleTitle.Render(name), m.connBadge(),
 		styleDim.Render("["+m.views[m.active].title()+"]"))

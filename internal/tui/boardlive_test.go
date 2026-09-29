@@ -130,9 +130,17 @@ func newBoardLiveHarnessConfig(t *testing.T, cfg func() config.Config) *boardLiv
 
 func (h *boardLiveHarness) createTask(t *testing.T, title string) *store.Task {
 	t.Helper()
+	return h.createTaskIn(t, title, "three")
+}
+
+// createTaskIn is createTask under another workflow name — the same three
+// steps. A board whose tasks all share one workflow draws no workflow header
+// (task 129 decision 4), so a test about group headers needs a second one.
+func (h *boardLiveHarness) createTaskIn(t *testing.T, title, workflow string) *store.Task {
+	t.Helper()
 	ctx := context.Background()
 	task := &store.Task{
-		ProjectID: h.projectID, Title: title, WorkflowName: "three",
+		ProjectID: h.projectID, Title: title, WorkflowName: workflow,
 		WorkflowSnapshot: threeStepWorkflow,
 		BaseBranch:       "main", State: store.TaskQueued,
 	}
@@ -276,16 +284,22 @@ func TestBoardEnterOpensDetail(t *testing.T) {
 func TestBoardGroupsFromTheDaemonConfig(t *testing.T) {
 	h := newBoardLiveHarness(t)
 	h.createTask(t, "grouped task")
+	h.createTaskIn(t, "other task", "other")
 
-	h.p.until(20*time.Second, "the task to appear", func() bool {
-		return strings.Contains(content(h.m), "grouped task")
+	h.p.until(20*time.Second, "the tasks to appear", func() bool {
+		got := content(h.m)
+		return strings.Contains(got, "grouped task") && strings.Contains(got, "other task")
 	})
-	// The project header, then the workflow header under it — the default
-	// grouping, fetched rather than assumed.
+	// The default grouping, fetched rather than assumed: two workflows draw
+	// their headers, and the one project every task is in draws none — the
+	// panel title names it instead (task 129 decision 4).
 	h.p.until(10*time.Second, "the group headers to render", func() bool {
 		got := content(h.m)
-		return strings.Contains(got, "▾ board") && strings.Contains(got, "▾ three")
+		return strings.Contains(got, "▾ three") && strings.Contains(got, "▾ other")
 	})
+	if got := content(h.m); strings.Contains(got, "▾ board") || !strings.Contains(got, "Tasks · board") {
+		t.Errorf("a single-project board drew its project header or left the title unnamed:\n%s", got)
+	}
 	b := h.m.views[viewHome].(*shell).board
 	if !b.group.equal(defaultGrouping()) {
 		t.Errorf("board grouping = %s, want the configured %s",
@@ -337,11 +351,15 @@ func TestCollapsedGroupOpensForAwaitingInput(t *testing.T) {
 	h := newBoardLiveHarness(t)
 	quiet := h.createTask(t, "quiet task")
 	noisy := h.createTask(t, "noisy task")
+	// A second workflow, so the one quiet and noisy share draws a header ←
+	// can fold (task 129 decision 4).
+	h.createTaskIn(t, "spare task", "spare")
 	ctx := context.Background()
 
-	h.p.until(20*time.Second, "both tasks to appear", func() bool {
+	h.p.until(20*time.Second, "all three tasks to appear", func() bool {
 		got := content(h.m)
-		return strings.Contains(got, "quiet task") && strings.Contains(got, "noisy task")
+		return strings.Contains(got, "quiet task") && strings.Contains(got, "noisy task") &&
+			strings.Contains(got, "spare task")
 	})
 
 	b := h.m.views[viewHome].(*shell).board

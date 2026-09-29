@@ -187,7 +187,10 @@ func containsAcrossLines(out, want string) bool {
 // exactly as it did before rows could wrap — one table row per task, and no
 // continuations in the row list at all.
 func TestRowHeightIsOneWhenNothingOverflows(t *testing.T) {
-	b := groupedBoard(task(1, stateRunning), task(2, stateQueued))
+	b := groupedBoard(
+		task(1, stateRunning, inProject("api"), inWorkflow("build")),
+		task(2, stateQueued, inProject("web"), inWorkflow("build")),
+	)
 	b.render(200, 30)
 	rows := b.rows()
 	for i, r := range rows {
@@ -195,7 +198,9 @@ func TestRowHeightIsOneWhenNothingOverflows(t *testing.T) {
 			t.Fatalf("row %d is a continuation on a board with nothing to wrap", i)
 		}
 	}
-	if got := len(rows); got != 4 { // two headers, two tasks
+	// Two project headers and two tasks; the one workflow both share draws
+	// no header (task 129 decision 4).
+	if got := len(rows); got != 4 {
 		t.Fatalf("rows = %d, want 4", got)
 	}
 }
@@ -266,7 +271,8 @@ func TestWrapCellLinesNormalisesEmbeddedNewlines(t *testing.T) {
 // tick in the marker column.
 func TestContinuationRowsCarryTheIndentAndABlankMark(t *testing.T) {
 	b := groupedBoard(task(1, stateRunning, inProject("api"), inWorkflow("ship"),
-		withTitle(strings.Repeat("word ", 20))))
+		withTitle(strings.Repeat("word ", 20))),
+		task(2, stateQueued, inProject("web"), inWorkflow("docs")))
 	b.marks = markSet{1}
 	b.render(200, 30)
 
@@ -283,7 +289,9 @@ func TestContinuationRowsCarryTheIndentAndABlankMark(t *testing.T) {
 		if strings.Contains(cells[i][0], markGlyph) {
 			marks++
 		}
-		if r.header || r.line == 0 {
+		// Task 2 is only there so the project level draws its header; its
+		// short title leaves its continuations blank.
+		if r.header || r.line == 0 || r.task.ID != 1 {
 			continue
 		}
 		continuations++

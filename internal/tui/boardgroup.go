@@ -129,8 +129,8 @@ type boardRow struct {
 	// what it is on gets the same answer wherever in the block the cursor
 	// happens to be.
 	line int
-	// depth is the *grouping* nesting level: 0 for an outermost header,
-	// len(grouping) for every task row — a fan-out lane included, so a
+	// depth is the *grouping* nesting level: 0 for an outermost header, the
+	// number of levels drawing headers (shownLevels) for every task row — a fan-out lane included, so a
 	// collapsed group swallows an expanded subtree whole (applyFolds compares
 	// depths).
 	depth int
@@ -165,11 +165,54 @@ type boardRow struct {
 // it is a row the cursor stops on (task 054 decision 2).
 func (r boardRow) selectable() bool { return (!r.header || r.collapsed) && r.line == 0 }
 
+// shownLevels splits a grouping into the levels that draw headers and the
+// values of the ones that do not (task 129 decision 4). A level whose tasks
+// all share one value renders no header: two header lines above a board that
+// is all one project say nothing the panel title cannot, and they cost two
+// rows. Each level is judged on its own, over the tasks being shown — a
+// filter that narrows the board to one project quiets that level too — and
+// the value a skipped level would have named is returned, in level order, for
+// the panel title to carry instead.
+//
+// An empty task list skips nothing: there is no value to name, and no header
+// to draw either way.
+func shownLevels(tasks []apiclient.Task, g grouping) (shown grouping, skipped []string) {
+	if len(tasks) == 0 {
+		return g, nil
+	}
+	shown = make(grouping, 0, len(g))
+	for _, k := range g {
+		first := groupValue(tasks[0], k)
+		single := true
+		for _, t := range tasks[1:] {
+			if groupValue(t, k) != first {
+				single = false
+				break
+			}
+		}
+		if single {
+			skipped = append(skipped, first)
+			continue
+		}
+		shown = append(shown, k)
+	}
+	return shown, skipped
+}
+
 // groupRows interleaves group headers into an already-sorted task list.
 // Groups appear in the order their first task does, so the band sort decides
 // group order as well as row order.
+//
+// A level shownLevels skips contributes no header and no nesting depth, but
+// its value stays in the fold path of every header under it: a path names a
+// group by every configured level above it, so a fold remembered on a board
+// with two projects means the same group again once a second project returns,
+// and a skipped level's own fold entry is neither read nor written — there is
+// no header to carry it, so it cannot hide a row (task 054 decision 4 keeps
+// the file; task 129 decision 4 keeps it untouched).
 func groupRows(tasks []apiclient.Task, g grouping) []boardRow {
-	if len(g) == 0 {
+	shown, _ := shownLevels(tasks, g)
+	if len(shown) == 0 {
 		out := make([]boardRow, 0, len(tasks))
 		for _, t := range tasks {
 			out = append(out, boardRow{task: t})
@@ -177,20 +220,26 @@ func groupRows(tasks []apiclient.Task, g grouping) []boardRow {
 		return out
 	}
 	out := make([]boardRow, 0, len(tasks)+len(g))
-	var walk func(tasks []apiclient.Task, depth int, path foldPath)
-	walk = func(tasks []apiclient.Task, depth int, path foldPath) {
-		if depth == len(g) {
+	var walk func(tasks []apiclient.Task, level, depth int, path foldPath)
+	walk = func(tasks []apiclient.Task, level, depth int, path foldPath) {
+		if level == len(g) {
 			for _, t := range tasks {
 				out = append(out, boardRow{task: t, depth: depth})
 			}
 			return
 		}
-		for _, grp := range partitionTasks(tasks, g[depth]) {
+		for _, grp := range partitionTasks(tasks, g[level]) {
 			// A fresh slice per group: append onto a shared backing array
 			// would leave two sibling headers naming the same path.
 			sub := make(foldPath, len(path), len(path)+1)
 			copy(sub, path)
 			sub = append(sub, grp.key)
+			if !shown.has(g[level]) {
+				// One group, and no header: its tasks nest under whatever
+				// header is above, which is where its `! n` now lands.
+				walk(grp.tasks, level+1, depth, sub)
+				continue
+			}
 			out = append(out, boardRow{
 				header:    true,
 				depth:     depth,
@@ -199,10 +248,10 @@ func groupRows(tasks []apiclient.Task, g grouping) []boardRow {
 				attention: countAttention(grp.tasks),
 				path:      sub,
 			})
-			walk(grp.tasks, depth+1, sub)
+			walk(grp.tasks, level+1, depth+1, sub)
 		}
 	}
-	walk(tasks, 0, nil)
+	walk(tasks, 0, 0, nil)
 	return out
 }
 

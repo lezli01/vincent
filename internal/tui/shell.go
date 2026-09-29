@@ -680,6 +680,12 @@ func (s *shell) panelTitle(id panelID) string {
 		// losing track of why rows are missing trains people to distrust
 		// the table.
 		title := "Tasks"
+		// A grouping level every shown task shares draws no header (task
+		// 129 decision 4); its value is named here instead, in level order,
+		// because the grouped column is still dropped (009 decision 3).
+		if _, skipped := s.board.shownGroup(); len(skipped) > 0 {
+			title += " · " + strings.Join(skipped, " › ")
+		}
 		// `g` regroups for the session, and the title names any grouping but
 		// the configured one — the rule the output pane's `v` already follows
 		// (§15). The group headers show what the grouping *is*; this says it

@@ -173,8 +173,9 @@ func TestAutoStartFlow(t *testing.T) {
 		t.Fatalf("phase = %v, want phaseConnected", m.phase)
 	}
 	got := content(m)
-	if !strings.Contains(got, "connected") || !strings.Contains(got, "test-v") {
-		t.Errorf("connected view lacks badge/version: %q", got)
+	// Connected is the normal case and draws no badge (task 129.15).
+	if strings.Contains(got, "connected") || !strings.Contains(got, "test-v") {
+		t.Errorf("connected view drew a connection badge or lost the version: %q", got)
 	}
 }
 
