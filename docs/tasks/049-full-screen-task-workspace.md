@@ -35,6 +35,17 @@ between attempts with `←`/`→` or `h`/`l`. Diff is fetched only when its tab
 opens, preserving the existing rule that live output cannot launch a git
 subprocess.
 
+*Note 2026-09-29 (task 129.12):* the "(default)" clause is **superseded** by
+task 129 decision 1 — a fresh open now lands on an **Overview** tab at `0`,
+and Steps & Attempts is relabelled **Steps**. The rest of this decision
+stands: every tab owns the whole body, the attempt cursor is one, `1`–`4`
+keep their tabs, and Diff is still fetched only on activation. By then the
+strip had already grown past four: **Workflow** at `5` (task 051), **Step
+Details** at `6` (issue #323, which moved the conditional **Pull Request** tab
+of task 068 to `7`) — none of which this decision was amended for at the
+time. 129.12 also changed the cycle from digit order to the order the strip
+is drawn in.
+
 **3. Task Details is complete and read-only.** *(2026-08-28)*
 
 It renders every user-meaningful field already returned by `GET /v1/tasks/{id}`:

@@ -38,13 +38,18 @@ The home screen is the task board and nothing else:
 
 ![The board filtered to one running task](../assets/tui-board.png)
 
-`enter` opens the selected task in a separate full-screen workspace. That
-workspace has six full-view tabs — **Steps & Attempts**, **Task Details**,
-**Output**, **Diff**, **Workflow** and **Step Details** — and a seventh,
-**Pull Request**, on a task with a linked pull request, so the surface being
-read gets the whole terminal. `tab` advances through them, `shift+tab` goes
-back, and `1`–`7` jump directly (`7` only when the Pull Request tab is there).
-`esc` returns to the board.
+`enter` opens the selected task in a separate full-screen workspace, on its
+**Overview**. That workspace has seven full-view tabs — **Overview**,
+**Output**, **Diff**, **Steps**, **Task Details**, **Step Details** and
+**Workflow** — and an eighth, **Pull Request**, on a task with a linked pull
+request, so the surface being read gets the whole terminal. The strip draws
+them in two groups: Overview, Output and Diff first, then the rest dimmed
+behind a `‖`. `tab` advances through them in that drawn order, `shift+tab`
+goes back, and each tab's digit, drawn beside its label, jumps directly: `0`
+Overview, `1` Steps, `2` Task Details, `3` Output, `4` Diff, `5` Workflow,
+`6` Step Details and `7` Pull Request (only when that tab is there). On a
+narrow terminal the second group's labels shorten first, then shrink to their
+digits; the first group is never shortened. `esc` returns to the board.
 
 New task, projects, workflows, chats, the two archived boards, daemon, and —
 for GitHub projects — pull requests are full-screen takeovers too. `esc`
@@ -305,13 +310,40 @@ The rest of the behavior follows from what a selection is:
 
 ## Task detail
 
-`enter` opens the selected task on **Steps & Attempts**, the default tab. It
-lists every attempt of every step with its duration, tokens and cost. Selecting
+`enter` opens the selected task on its **Overview** — from the board, the
+palette, a lane jump or the pull requests takeover alike, and after `!` has
+moved the board's cursor to a task that needs you. `esc` back out of a lane
+returns you to the tab you left its parent on instead, and the takeover's
+"open a pull request" route opens on the Pull Request tab, where its form is.
+
+The Overview answers the question the task's state raises, from the task the
+workspace has already loaded:
+
+- **Running, queued, paused, or waiting on its lanes** — what it is doing: a
+  sentence for the state (how many lanes are still out, for a fan-out parent),
+  the current step and attempt, and the attempt's latest status message.
+  `3 full output` jumps to that attempt's output.
+- **Blocked, waiting for an answer or at a gate, or aborted** — what it needs:
+  the reason, in words and as its code, the question or the gate's
+  instructions, and every action the daemon offers with its key and a line on
+  what it does. `3 output of attempt N` and `6 what it was given` jump to the
+  attempt it stopped on.
+- **Done or archived** — how it ended: the final status message, the cost, the
+  branch, and `4 diff` — plus `7 PR` when a pull request is linked.
+
+A link is the tab's own digit: pressing it first moves the attempt selection to
+the attempt the Overview is about, then opens the tab, so Output and Step
+Details show that attempt. The footer lists the links the current frame draws.
+If the task changes state while the Overview is open, the new frame replaces
+the old one and your attempt selection stays where it was.
+
+**Steps** (`1`) lists every attempt of every step with its duration, tokens and
+cost. Selecting
 an attempt chooses what the separate **Output** tab shows; the selection stays
 put while you move between tabs. Press `enter` on an attempt to jump straight
 to its output.
 
-![Steps & Attempts on a blocked task: a command step and an agent step that
+![Steps on a blocked task: a command step and an agent step that
 succeeded, the agent's tokens beside its row, then two failed attempts of the
 verify step, each with its failure reason and the tail of its output beneath
 it](../assets/tui-task-steps.png)
@@ -498,7 +530,7 @@ and opening another task starts fresh. `↑`/`↓` stop **once** on a folded tie
 on its header, so the cursor is always somewhere you can see; the Output tab's
 `←`/`→` still walk every attempt, folded or not.
 
-![Steps & Attempts on a task blocked in the fourth pass of a for_each loop: the
+![Steps on a task blocked in the fourth pass of a for_each loop: the
 header reads `step 2/3 · loop 4/5 · ledger · migrate 1/2`, the first two passes
 are folded, the third is opened with `→` to show its migrate and verify
 attempts, and the fourth — the pass it stopped on — holds migrate's failed
@@ -543,7 +575,9 @@ output. It is the sentence that decides whether to open the transcript.
 |---|---|
 | `tab` / `shift+tab` | Next / previous task tab |
 | `]` / `[` | Next / previous task tab |
-| `1`–`5` | Steps & Attempts / Task Details / Output / Diff / Workflow |
+| `0` | Overview — the landing tab: what the task is doing, what it needs, or how it ended |
+| `1`–`5` | Steps / Task Details / Output / Diff / Workflow |
+| `3` / `6` / `4` / `7` | On Overview, the frame's jump links — the output of, or what was given to, the attempt it is about; the diff; the pull request |
 | `6` | Step Details — what the selected attempt was handed, and the resolution behind it |
 | `7` | Pull Request — only when this task has a linked pull request and GitHub is on; `tab`/`shift+tab` skip it otherwise |
 | `m` | On Pull Request, merge it — the method is chosen in the popup, none preselected |
@@ -552,10 +586,10 @@ output. It is the sentence that decides whether to open the transcript.
 | `ctrl+r` | On Pull Request, re-run the failed jobs of the selected check's GitHub Actions run (asks first) |
 | `↑`/`↓` | On Step Details, select an attempt (`←`/`→` do it too, and move the same cursor everywhere else) |
 | `pgup`/`pgdn` | On Step Details, scroll the facts |
-| `enter` | From Steps & Attempts, open the selected attempt in Output — or open the folded iteration/round tier the cursor is on |
-| `space` | On Steps & Attempts, open or close the iteration/round tier the cursor is in |
-| `←`/`→` | On Steps & Attempts, close / open that tier |
-| `O` / `C` | On Steps & Attempts, open / close every iteration and round tier of this task |
+| `enter` | From Steps, open the selected attempt in Output — or open the folded iteration/round tier the cursor is on |
+| `space` | On Steps, open or close the iteration/round tier the cursor is in |
+| `←`/`→` | On Steps, close / open that tier |
+| `O` / `C` | On Steps, open / close every iteration and round tier of this task |
 | `←`/`→` or `h`/`l` | On Output, select which attempt's output to show |
 | `f` or `G` | Follow the live output again |
 | `v` | More or less detail: quiet → compact → normal → verbose (tool lines, then reasoning, the run's own metadata, then unrecognized lines) |
