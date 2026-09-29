@@ -12189,6 +12189,8 @@ daemon state and no capability that exists only at one size.
 
 *Amended 2026-09-29 (issue #595, task 129.6):* the workspace footer above no
 longer carries `0 overview` — a tab does not offer a hint for itself (§15).
+*Amended 2026-09-29 (issue #596, task 129.7):* its `tab` hint now reads
+`tab tabs` — a pane of the workspace is a tab, not a view (§15 display words).
 
 The task table keeps the full §15 column set at full width. The task workspace
 does not reserve a rail or a second pane: metadata, transcripts and diffs are

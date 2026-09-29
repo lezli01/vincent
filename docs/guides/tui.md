@@ -619,7 +619,7 @@ of the work, its running row carries what the subtree is doing beside the state
 — `×2 !1 ●1 ✓3`, the same clauses the board puts beside `waiting on lanes` —
 read live from the task rather than frozen in when the lanes were spawned. The
 round is named on the row (`round 0 · ×2 ●3`) only
-when the timeline is not already drawing `round N` tiers above it. No other
+when the timeline is not already drawing `round N` headers above it. No other
 step type is annotated.
 
 The board's and the header's step column say the same thing more briefly: a
@@ -1269,7 +1269,7 @@ each ending in a row for typing an answer of your own](../assets/tui-answer.png)
 |---|---|
 | `space` | Pick an option (toggles, for a multi-select question) |
 | `t` | Type your own answer — options are suggestions, never a list |
-| `enter` | Submit; the run resumes in the same session where it stopped |
+| `enter` | Submit; the attempt resumes in the same session where it stopped |
 | `ctrl+t` | Switch between the question and this task's details, without leaving the popup |
 | `esc` | Close without answering (what you picked is kept) |
 
@@ -2609,7 +2609,7 @@ registry** in the source, so a key that exists is a key that is documented.
 
 On the board and in a task's workspace the sheet opens with **This screen**,
 an orientation header. On the board it lists three moves: `enter` opens the
-task, `!` jumps to the next task needing you, and `:` finds everything. In a
+task, `!` jumps to the next task that needs you, and `:` finds everything. In a
 workspace it lists the tabs on the strip, in drawn order, each with its digit
 and what it is for — `4  Diff — what the task's branch changed`. The keys
 shown are the ones in force after `tui.keys`.
