@@ -141,15 +141,18 @@ drops clauses from the tail rather than wrapping — the body step goes first,
 then the `for_each` item, then the counter, which is the last thing to survive.
 
 **The board speaks in the Steps tab's glyphs.** `●` running, `✓` done, `×`
-blocked or failed, `!` waiting on you, `○` not started, `■` stopped, `–`
-skipped. Each glyph means the same thing wherever it appears, and colour only
-reinforces it, so the board reads the same without colour.
+blocked or failed, `!` waiting on you (or, for a step run, interrupted by a
+daemon restart), `○` not started, `■` stopped, `–` skipped. Colour only
+reinforces a glyph, so the board reads the same without colour.
 
 - A fan-out parent's state names its lanes by state:
   `awaiting_children (×1 !1 ●1 ✓2)` is one blocked lane, one waiting on you,
   one running and two done. Blocked lanes come first, so when the cell is too
   narrow for all of it, the done count is cut before the blocked one. A state
-  with no glyph is spelled out (`1 paused`).
+  with no glyph is spelled out (`1 paused`). The breakdown needs the task's
+  `children` rollup, which only the task detail carries. The board's rows come
+  from the task list, so today a parent's row shows a bare
+  `awaiting_children`; open the parent, or press `L`, to see its lanes.
 - An expanded lane reads `lane api` rather than repeating its parent's title.
 - With room to spare after the step and any loop rollup, `STEP` adds one pip
   per workflow step: `3/5 build ✓✓●○○`. The pips never make the cell wrap or
