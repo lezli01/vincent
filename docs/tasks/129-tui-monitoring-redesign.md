@@ -1,6 +1,6 @@
 # 129 — The TUI answers what is happening, why it failed and what it delivered
 
-**Status:** 🔄 in progress (8/19)
+**Status:** 🔄 in progress (12/19)
 
 Issue [#591](https://github.com/lezli01/vincent/issues/591), part of
 [#589](https://github.com/lezli01/vincent/issues/589). Spec §15 (TUI) above
@@ -316,8 +316,19 @@ cards need):
 
 **Phase 2, after their phase-3 dependencies:**
 
-- [ ] **129.17** ([#606](https://github.com/lezli01/vincent/issues/606))
+- [x] **129.17** ([#606](https://github.com/lezli01/vincent/issues/606))
   Orienting help, and palette "go to tab" entries. Depends: 129.12.
+  *Done 2026-09-29.* Help opens on a "This screen" header: the workspace's
+  strip in drawn order with each tab's purpose, or the board's `enter`, `!`
+  and `:`. It scrolls with keys local to the overlay (`↑`/`↓`, `pgup`/`pgdown`,
+  `home`, `end`), which are not registry rows. The workspace palette gains a
+  tabs group whose rows replay the tab's digit. Decisions: (1) no first-run
+  orientation card, the §16 notice stays the only first-run screen; (2) help
+  shows the whole action vocabulary, split into "Actions now" and a dimmed
+  "Not available now", while the palette keeps omitting invalid actions;
+  (3) Overview's jump links stay Overview-only and are not copied into the
+  tabs group. No tape shows help or the palette, so pictures are deferred to
+  #609.
 - [ ] **129.18** ([#607](https://github.com/lezli01/vincent/issues/607)) An
   in-task next-failure key and a board attention-only filter. Depends: 129.1,
   129.13, 129.8.

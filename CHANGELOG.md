@@ -13,6 +13,13 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Help that orients, and palette rows for the workspace tabs.** The TUI's
+  help (`?`) opens on a "This screen" header: in a task's workspace it lists
+  each tab with its digit and what it is for, and on the board the three keys
+  that get you anywhere. It splits the task actions into "Actions now" and a
+  dimmed "Not available now", and it scrolls with `↑`/`↓`, `pgup`/`pgdown`,
+  `home` and `end` instead of clipping at the bottom of the screen. In a
+  workspace the command palette lists a "go to the <Name> tab" row per tab.
 - **An outcome card on a finished task's Overview.** A done or archived
   task's Overview now says what it delivered: the result its last successful
   agent attempt reported, labelled with the step and attempt it came from
