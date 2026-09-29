@@ -127,8 +127,8 @@ func TestMarkerColumnExistsOnlyWhileSomethingIsMarked(t *testing.T) {
 	}
 	// At 160 there is slack for the marker, so it is added rather than paid
 	// for by shedding — which is what makes this a count of one column.
-	cols, _ := boardColumns(160, nil, false)
-	marked, _ := boardColumns(160, nil, true)
+	cols, _ := boardColumns(160, nil, false, fullContent)
+	marked, _ := boardColumns(160, nil, true, fullContent)
 	if len(marked) != len(cols)+1 {
 		t.Fatalf("marking added %d columns, want exactly one", len(marked)-len(cols))
 	}

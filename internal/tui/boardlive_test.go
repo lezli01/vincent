@@ -4,11 +4,13 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -46,6 +48,30 @@ type boardLiveHarness struct {
 	m         *root
 	p         *pump
 	projectID int64
+	// paths is every request path the TUI sent, in order: what a test holds
+	// the board to when it must not ask the daemon something (task 129.16).
+	paths *pathLog
+}
+
+// pathLog records request paths from the handler goroutines.
+type pathLog struct {
+	mu    sync.Mutex
+	paths []string
+}
+
+func (l *pathLog) wrap(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		l.mu.Lock()
+		l.paths = append(l.paths, r.URL.Path)
+		l.mu.Unlock()
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (l *pathLog) snapshot() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.paths...)
 }
 
 func newBoardLiveHarness(t *testing.T) *boardLiveHarness {
@@ -83,7 +109,8 @@ func newBoardLiveHarnessConfig(t *testing.T, cfg func() config.Config) *boardLiv
 		// puts assistant prose rather than agent.raw in front of the pane.
 		Agents: agent.NewRegistry(claude.New(func() string { return "" })),
 	})
-	ts := httptest.NewServer(s.Handler())
+	paths := &pathLog{}
+	ts := httptest.NewServer(paths.wrap(s.Handler()))
 	t.Cleanup(ts.Close)
 
 	u, err := url.Parse(ts.URL)
@@ -125,7 +152,7 @@ func newBoardLiveHarnessConfig(t *testing.T, cfg func() config.Config) *boardLiv
 	if err := st.CreateProject(context.Background(), proj); err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	return &boardLiveHarness{st: st, broker: broker, m: m, p: p, projectID: proj.ID}
+	return &boardLiveHarness{st: st, broker: broker, m: m, p: p, projectID: proj.ID, paths: paths}
 }
 
 func (h *boardLiveHarness) createTask(t *testing.T, title string) *store.Task {

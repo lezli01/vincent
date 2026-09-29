@@ -20,6 +20,10 @@ const (
 	widthStepLong  = 18
 	widthElapsed   = 9
 	widthCost      = 8
+	// widthPR holds the pull request marker (task 129.16): the glyph and a
+	// five-digit number, `⇡#12345`. It never wraps — it is an identifier,
+	// like the ID (task 050 decision 6) — and a longer number is cut.
+	widthPR = 7
 	// widthStatus holds a step's own status message (task 036) — enough for a
 	// clause. It is the *base* width: a board with a surplus to spend takes
 	// this column up to widthStatusMax (boardColumns), and whatever still
@@ -29,9 +33,20 @@ const (
 	// admitted on.
 	widthStatus = 28
 	minTitle    = 16
-	// maxTitle is two facts at one value, because they are the same fact: the
-	// ceiling on the title column, and the title width below which the status
-	// column is not worth its cells.
+	// minTitleWithStatus is the title width below which the status column is
+	// not worth its cells: the status' gate.
+	//
+	// Amended 2026-09-29 (task 129.16, decision 3 of task 129): this is the
+	// gate again, separate from maxTitle, and half of it. Task 050 decision 2
+	// had folded it into maxTitle (64), which kept STATUS off below 164
+	// columns on the default grouped board — the board's one changing signal
+	// hidden at the most common width while constant columns stayed. At 32 a
+	// 120-column grouped board keeps STATUS, a short STEP and a 41-cell
+	// title. minTitle alone is still the wrong gate: a title of 16 beside a
+	// status identifies nothing.
+	minTitleWithStatus = 32
+	// maxTitle is the ceiling on the title column, and the width above which
+	// the status column may wrap.
 	//
 	// As a ceiling (task 050 decision 1): the title is the only flexible
 	// column, so without one it takes every cell a wide terminal offers —
@@ -41,13 +56,16 @@ const (
 	// boardColumns spends the surplus on those two first and gives back only
 	// what neither has an appetite for.
 	//
-	// As the status column's gate it is the old minTitleWithStatus at the
-	// same value, which leaves columnsFor byte-identical at every width.
-	// minTitle alone is the wrong gate: a 120-column board is the common
-	// case, and admitting the status there would take a 50-cell title down to
-	// 20 — still "legal", and still a board whose titles no longer identify
-	// anything. Set high enough, too, that the column cannot eat the width a
-	// grouped board frees by dropping PROJECT and WORKFLOW.
+	// As the wrap line (task 129.16): a status admitted on a board whose
+	// title is under maxTitle — admitted only because minTitleWithStatus is
+	// lower than the old gate — is cut to one line with `…` rather than
+	// wrapped, so it cannot raise every row's height (task 050 decision 4) on
+	// a board that had no room for it before. Above it the status wraps as
+	// task 050 decisions 6 and 7 describe.
+	//
+	// Amended 2026-09-29 (task 129.16): until then this was also the status'
+	// gate (task 050 decision 2, "maxTitle replaces minTitleWithStatus").
+	// That role went back to minTitleWithStatus; this one is its successor.
 	//
 	// Amended 2026-08-29 (task 050 decision 1): task 036 decision 9 recorded
 	// that a grouped board's title stays *strictly* wider than a flat board's
@@ -92,7 +110,7 @@ func columnWidth(cols []table.Column, title string) int {
 
 // maxBoardColumns is every column the widest board can carry — the size a row
 // is built at, so rowsFor and groupHeaderRow never grow their slice mid-loop.
-const maxBoardColumns = 10
+const maxBoardColumns = 11
 
 // columnSet records which optional columns survived the current width.
 type columnSet struct {
@@ -108,11 +126,48 @@ type columnSet struct {
 	workflow bool
 	stepName bool
 	cost     bool
-	// status is the step's own status message (§5.4, task 036). It is the
-	// first column shed and the last admitted: it is a luxury of a wide
-	// terminal, and a board narrow enough to drop it renders exactly as it
-	// did before the column existed.
+	// pr is the pull request marker (task 129.16): on only while some row the
+	// board holds has a live link, and the first column shed.
+	pr bool
+	// status is the step's own status message (§5.4, task 036).
+	//
+	// Amended 2026-09-29 (task 129.16): it was the first column shed and the
+	// last admitted (task 036 decision 9). It is on only while some row the
+	// board holds has a message, and then it outranks COST and the step name
+	// — the board's one changing signal is worth more than a constant column.
 	status bool
+	// statusLine says the status was admitted below maxTitle, so its cell is
+	// cut to one line rather than wrapped (task 129.16, amending task 050
+	// decision 6 in part).
+	statusLine bool
+}
+
+// boardContent is what the rows the board holds have to say, as far as the
+// column set cares: whether any of them has a status message, a cost, or a
+// live pull request link (task 129.16). "The rows the board holds" is every
+// task row after the filter and the archive view — scrolled out of view and
+// folded into a collapsed group included — so a column never appears or
+// vanishes while the cursor moves.
+type boardContent struct {
+	status bool
+	cost   bool
+	pr     bool
+}
+
+// contentOf computes boardContent over rows. Group headers carry no task and
+// say nothing.
+func contentOf(rows []boardRow) boardContent {
+	var c boardContent
+	for _, r := range rows {
+		if r.header {
+			continue
+		}
+		t := r.task
+		c.status = c.status || formatStatus(t.StatusMessage) != ""
+		c.cost = c.cost || t.CostUSD != nil
+		c.pr = c.pr || formatPR(t.GitHubPull) != ""
+	}
+	return c
 }
 
 // fixedWidth is everything a set costs except the title, padding included.
@@ -141,6 +196,10 @@ func (s columnSet) fixedWidth() int {
 		total += widthCost
 		count++
 	}
+	if s.pr {
+		total += widthPR
+		count++
+	}
 	if s.status {
 		total += widthStatus
 		count++
@@ -156,17 +215,26 @@ func (s columnSet) titleWidth(width int) int { return width - s.fixedWidth() }
 // §15's columns do not fit a narrow terminal, and truncating all of them
 // proportionally leaves a row of unreadable stubs — a 6-character title
 // tells you nothing. Whole columns are dropped instead, in increasing order
-// of how much you navigate by them: the status, then cost, then the step
-// name, then the workflow, then the project. Dropping continues until the
-// title clears its minimum, so the thresholds follow from the widths rather
-// than being second-guessed as constants that can silently disagree with
-// them.
+// of how much you navigate by them: the pull request marker, then cost, then
+// the step name, then the status, then the workflow, then the project.
+// Dropping continues until the title clears its minimum — minTitleWithStatus
+// while the status is on, minTitle once it is off — so the thresholds follow
+// from the widths rather than being second-guessed as constants that can
+// silently disagree with them.
 //
-// The status goes first (task 036) because it is the only column that is
-// prose: a task is found by its project, its workflow and its title, and a
-// step's self-report is what you read once you have found it. Shedding it
-// first is also what keeps the addition free — a board too narrow for it
-// renders byte-for-byte as it did before.
+// Three columns are candidates only while a row has something to put in
+// them (task 129.16): COST when some row has a cost, PR when some row has a
+// live pull request link, STATUS when some row has a status message. A
+// column of dashes or blanks is width taken from the title to say nothing,
+// and codex and several adapters never report a cost at all.
+//
+// Amended 2026-09-29 (task 129.16): the status used to go first, gated at
+// maxTitle (task 036 decision 9, task 050 decisions 1–2), which kept it off
+// below 164 columns on the default grouped board. It now outranks COST and
+// the step name, is gated at minTitleWithStatus, and is cut to one line when
+// admitted below maxTitle (statusLine) so it cannot raise the row height.
+// The step counter is never shed; only its name is. With no status content
+// the ladder is the one it was, apart from COST and PR.
 //
 // The workflow outranks the step name: "survey" is meaningless without
 // knowing it belongs to docs-update, while the workflow alone still tells you
@@ -181,31 +249,32 @@ func (s columnSet) titleWidth(width int) int { return width - s.fixedWidth() }
 // The marker column is outside the shedding order entirely: it is three cells
 // wide with its padding, it exists only while a selection does, and it is the
 // one column whose absence would make the keys lie about what they act on.
-func columnsFor(width int, g grouping, marking bool) columnSet {
+func columnsFor(width int, g grouping, marking bool, content boardContent) columnSet {
 	set := columnSet{
 		mark:     marking,
 		project:  !g.has(groupProject),
 		workflow: !g.has(groupWorkflow),
 		stepName: true,
-		cost:     true,
-		status:   true,
+		cost:     content.cost,
+		pr:       content.pr,
+		status:   content.status,
 	}
-	// The status has a gate of its own, stricter than the shedding ladder
-	// below, which is what makes it a luxury of a wide terminal rather than
-	// something every board pays for. Anything that clears this gate has room
-	// to spare; anything that does not renders exactly as it did before the
-	// column existed.
-	if set.titleWidth(width) < maxTitle {
-		set.status = false
+	floor := func() int {
+		if set.status {
+			return minTitleWithStatus
+		}
+		return minTitle
 	}
-	for set.titleWidth(width) < minTitle {
+	for set.titleWidth(width) < floor() {
 		switch {
-		case set.status:
-			set.status = false
+		case set.pr:
+			set.pr = false
 		case set.cost:
 			set.cost = false
 		case set.stepName:
 			set.stepName = false
+		case set.status:
+			set.status = false
 		case set.workflow:
 			set.workflow = false
 		case set.project:
@@ -216,6 +285,7 @@ func columnsFor(width int, g grouping, marking bool) columnSet {
 			return set
 		}
 	}
+	set.statusLine = set.status && set.titleWidth(width) < maxTitle
 	return set
 }
 
@@ -231,12 +301,11 @@ func columnsFor(width int, g grouping, marking bool) columnSet {
 // first (§15, task 036) — the wrap is what makes its overflow readable now.
 //
 // The give-back is not a softening of the ceiling, it is what stops the board
-// leaving dead cells: with STATUS gated off — the default grouping at 160
-// columns — STEP fills at +14 and nothing else has any appetite, so without
+// leaving dead cells: with no STATUS — no row has a message — STEP fills at +14 and nothing else has any appetite, so without
 // it twelve cells on the right would render blank. It only lets the title
 // exceed maxTitle once both other columns are full.
-func boardColumns(width int, g grouping, marking bool) ([]table.Column, columnSet) {
-	set := columnsFor(width, g, marking)
+func boardColumns(width int, g grouping, marking bool, content boardContent) ([]table.Column, columnSet) {
+	set := columnsFor(width, g, marking, content)
 	title := max(set.titleWidth(width), minTitle)
 	stepWidth := widthStepShort
 	if set.stepName {
@@ -279,6 +348,9 @@ func boardColumns(width int, g grouping, marking bool) ([]table.Column, columnSe
 	)
 	if set.cost {
 		cols = append(cols, table.Column{Title: "COST", Width: widthCost})
+	}
+	if set.pr {
+		cols = append(cols, table.Column{Title: "PR", Width: widthPR})
 	}
 	if set.status {
 		cols = append(cols, table.Column{Title: "STATUS", Width: statusWidth})

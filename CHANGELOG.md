@@ -19,9 +19,17 @@ list with the user-facing context a commit subject cannot carry.
   `lane_id` and `child_task_id`. It reads the branch rather than the worktree,
   so an archived task's commits are still there. `vincent task commits <id>`
   prints the same list (#601).
+- **A pull request marker on board rows.** A task with a linked pull request
+  shows `⇡#123` in a new `PR` column, running or done. It is read from the task
+  list, so the board makes no GitHub request for it (#604).
 
 ### Changed
 
+- **The board keeps `STATUS` at 120 columns and drops an empty `COST`.** While
+  any task has a status message, the `STATUS` column outranks `COST` and the
+  step name, so the default grouped board keeps it from 120 columns instead of
+  164. Below a wide title it is cut to one line rather than wrapped. `COST` is
+  left out while no task on the board has reported a cost (#604).
 - **A quieter board.** The board header drops `0 need attention` and reads
   `! N need attention (all tasks)` while a filter is committed; healthy agents
   collapse into one dim `agents ✓`, with only a logged-out or quota-spent agent

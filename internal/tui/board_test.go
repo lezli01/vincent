@@ -164,8 +164,10 @@ func TestFilterTasks(t *testing.T) {
 	}
 }
 
-// TestColumnsDropByPriority pins the degradation order: cost, then the step
-// name, then the workflow, then the project.
+// TestColumnsDropByPriority pins the degradation order on a board with no
+// status message and no pull request link: cost, then the step name, then the
+// workflow, then the project. TestPRIsShedFirst and TestStatusKeptAt120Grouped
+// hold the two content columns' places in it (task 129.16).
 //
 // The workflow outranks the step name deliberately. "survey" tells a reader
 // nothing on its own — it needs the workflow it belongs to — while the
@@ -182,7 +184,7 @@ func TestColumnsDropByPriority(t *testing.T) {
 		{85, true, false, false, false},  // then the workflow
 		{70, false, false, false, false}, // then the project
 	} {
-		got := columnsFor(tc.width, nil, false)
+		got := columnsFor(tc.width, nil, false, boardContent{cost: true})
 		if got.project != tc.project || got.workflow != tc.workflow ||
 			got.stepName != tc.stepName || got.cost != tc.cost {
 			t.Errorf("width %d = %+v, want project=%v workflow=%v stepName=%v cost=%v",
@@ -206,7 +208,7 @@ func TestBoardColumnsFitWidth(t *testing.T) {
 			if marking && width < 68 {
 				continue
 			}
-			cols, _ := boardColumns(width, nil, marking)
+			cols, _ := boardColumns(width, nil, marking, fullContent)
 			total := 0
 			for _, c := range cols {
 				total += c.Width + colPadding
@@ -223,7 +225,7 @@ func TestBoardColumnsFitWidth(t *testing.T) {
 // the columns you steer by survive.
 func TestBoardColumnsAlwaysKeepNavigationColumns(t *testing.T) {
 	for _, width := range []int{20, 40, 65, 120} {
-		cols, _ := boardColumns(width, nil, false)
+		cols, _ := boardColumns(width, nil, false, fullContent)
 		titles := make([]string, 0, len(cols))
 		for _, c := range cols {
 			titles = append(titles, c.Title)

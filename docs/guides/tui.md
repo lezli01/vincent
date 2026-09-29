@@ -126,10 +126,10 @@ nothing overflows is one line per task, exactly as before. The list, not the
 part of it you can see: one long title far down the board makes the rows above
 it tall too, and a filter that hides it makes them short again. What still does
 not fit at three lines ends in `…`. Clicking any line of a row selects that row,
-and `j`/`k` move a task at a time whatever the height. The id, elapsed, cost
-and the marker column do not wrap, and neither do project and workflow: those
-two are names you scan down, which a fourteen-cell wrap makes unreadable, so
-under width pressure they are dropped instead.
+and `j`/`k` move a task at a time whatever the height. The id, elapsed, cost,
+the pull request marker and the marker column do not wrap, and neither do
+project and workflow: those two are names you scan down, which a fourteen-cell
+wrap makes unreadable, so under width pressure they are dropped instead.
 
 **The title has a ceiling.** It takes whatever the fixed columns leave, up to a
 comfortable width; past that the extra room goes to `STEP` and then `STATUS` —
@@ -140,15 +140,34 @@ title's trailing blanks. A loop rollup too wide for the column it is given
 drops clauses from the tail rather than wrapping — the body step goes first,
 then the `for_each` item, then the counter, which is the last thing to survive.
 
-A wide terminal also gets a **`STATUS` column**: what the task's newest step run
+The board also has a **`STATUS` column**: what the task's newest step run
 said about *itself*, if it said anything —
 `compiling internal/store`, `3 tests red`. It is set by the step, not by
 vincent, through [`vincent status`](../reference/cli.md#vincent-status), so it
 is empty until a workflow asks for it; see
 [Reporting status from a step](workflows.md#56-reporting-status-from-a-step).
-It is the first column dropped when the terminal narrows, and it needs a
-comfortably wide title to be admitted at all — so a board that has never seen it
-is a board that has the width for everything else instead.
+The column is there only while some task on the board has a status. When it
+is, it outranks the cost and the step name: a 120-column board keeps it, with
+the step cut to its `3/7` counter and no `COST` column. It still needs a title
+of 32 cells, so an 80-column board drops it before the workflow or the project.
+Below a comfortably wide title the status is cut to one line with `…` rather
+than wrapped, so it never makes the rows taller. On a wider board it wraps like
+the title.
+
+The **`COST` column** is there only while some task on the board reported a
+cost. Codex and several other agents never do, and a column of dashes is room
+taken from the title to say nothing.
+
+A task with a linked pull request carries a **`PR` column** marker,
+`⇡#123`, whether it is still running or done. That includes a task created from
+a pull request. It shows the number only; open the task's Pull Request tab for
+its state. The board reads the link from the task list and asks GitHub nothing.
+`PR` is the first column dropped when the terminal narrows. A link you
+unlinked is not marked.
+
+Whether these three columns show is decided by every task the board holds
+after the filter, including tasks in folded groups and tasks scrolled out of
+view. So scrolling never makes a column appear or disappear.
 
 Elapsed on the board is **wall clock** from the task's start. That is
 deliberate: a task idle on a human for 35 of its 40 minutes must not read as

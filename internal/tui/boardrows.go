@@ -297,11 +297,35 @@ func formatCost(c *float64) string {
 // does not fit at three lines is cut there, by wrapCellLines — the width this
 // used to truncate at is a column *base* now, not the width the cell renders
 // at, so this function has no width to cut against.
+//
+// Amended 2026-09-29 (task 129.16): on a board that admitted the status below
+// maxTitle (columnSet.statusLine) the cell is cut to one line instead, by
+// layoutCells — still not here, for the same reason.
 func formatStatus(message *string) string {
 	if message == nil || *message == "" {
 		return ""
 	}
 	return *message
+}
+
+// prGlyph leads the pull request marker (task 129.16). It is a character, not
+// a colour, and the marker is never styled, so it reads the same under
+// NO_COLOR and at 16 colours (§15 Colour). The meaning is carried by the
+// ASCII `#123` beside it — a terminal whose font lacks the arrow still shows
+// which pull request the row delivered — and, as with the spinner
+// (progress.go), there is nothing to probe for a glyph-less terminal.
+const prGlyph = "⇡"
+
+// formatPR renders a task's pull request link as its board marker,
+// `⇡#123`, or nothing: no link, or one the human suppressed (task 052), marks
+// nothing. It reads only the list row — the board never asks GitHub
+// anything — so it shows the number and not the pull request's state, which
+// vincent does not persist.
+func formatPR(link *apiclient.GitHubPullLink) string {
+	if link == nil || link.Suppressed || link.Number <= 0 {
+		return ""
+	}
+	return prGlyph + "#" + strconv.Itoa(link.Number)
 }
 
 // boardRowLines is the ceiling on a board row's height (task 050 decision 4).

@@ -42,7 +42,7 @@ func withStep(name string, current, total int) func(*apiclient.Task) {
 func TestTitleStopsAtItsCap(t *testing.T) {
 	for _, g := range []grouping{nil, {groupProject}, {groupProject, groupWorkflow}} {
 		for width := 65; width <= 400; width++ {
-			cols, set := boardColumns(width, g, false)
+			cols, set := boardColumns(width, g, false, fullContent)
 			title := colWidth(cols, "TITLE")
 			step := colWidth(cols, "STEP")
 			status := colWidth(cols, "STATUS")
@@ -70,30 +70,41 @@ func TestTitleStopsAtItsCap(t *testing.T) {
 
 // TestTitleCapSpendsTheSurplus pins the allocation order at the widths that
 // exercise each leg of it, including the give-back band — the default
-// grouping at 160, where STATUS is gated off, STEP is full and the leftover
-// would otherwise render as blank cells on the right.
+// grouping at 160 with no status on any row, where STEP is full and the
+// leftover would otherwise render as blank cells on the right.
+//
+// Amended 2026-09-29 (task 129.16): STATUS is a candidate only while a row has
+// a message, and then it is gated at minTitleWithStatus rather than maxTitle,
+// so the default grouped board keeps it at 120 and 160 — with a short STEP at
+// 120, where STATUS outranks the step name.
 func TestTitleCapSpendsTheSurplus(t *testing.T) {
 	grouped := grouping{groupProject, groupWorkflow}
+	status := boardContent{status: true, cost: true}
+	quiet := boardContent{cost: true}
 	for _, tc := range []struct {
 		width                 int
 		g                     grouping
+		content               boardContent
 		title, step, status   int
 		wantStatusColumnGated bool
 	}{
 		// Below the cap nothing changes: the title takes the remainder.
-		{width: 120, g: grouped, title: 50, step: widthStepLong, wantStatusColumnGated: true},
-		// The give-back band: STATUS is gated off, STEP fills, and the rest
-		// comes back to the title rather than rendering as dead cells.
-		{width: 160, g: grouped, title: 74, step: widthStepMax, wantStatusColumnGated: true},
+		{width: 120, g: grouped, content: quiet, title: 50, step: widthStepLong, wantStatusColumnGated: true},
+		// STATUS outranks COST and the step name at 120 (task 129.16).
+		{width: 120, g: grouped, content: status, title: 41, step: widthStepShort, status: widthStatus},
+		{width: 160, g: grouped, content: status, title: 60, step: widthStepLong, status: widthStatus},
+		// The give-back band: no STATUS, STEP fills, and the rest comes back
+		// to the title rather than rendering as dead cells.
+		{width: 160, g: grouped, content: quiet, title: 74, step: widthStepMax, wantStatusColumnGated: true},
 		// STATUS admitted: the title drops to the cap and both other columns
 		// take the surplus in order.
-		{width: 200, g: grouped, title: maxTitle, step: widthStepMax, status: 48},
-		{width: 200, g: nil, title: maxTitle, step: 22, status: widthStatus},
+		{width: 200, g: grouped, content: status, title: maxTitle, step: widthStepMax, status: 48},
+		{width: 200, g: nil, content: status, title: maxTitle, step: 22, status: widthStatus},
 		// Both ceilings reached: only now does the title exceed its cap.
-		{width: 300, g: grouped, title: 116, step: widthStepMax, status: widthStatusMax},
+		{width: 300, g: grouped, content: status, title: 116, step: widthStepMax, status: widthStatusMax},
 	} {
 		t.Run(strconv.Itoa(tc.width)+" "+tc.g.label(), func(t *testing.T) {
-			cols, _ := boardColumns(tc.width, tc.g, false)
+			cols, _ := boardColumns(tc.width, tc.g, false, tc.content)
 			if got := colWidth(cols, "TITLE"); got != tc.title {
 				t.Errorf("TITLE = %d, want %d", got, tc.title)
 			}
@@ -126,12 +137,12 @@ func TestNarrowBoardsAreUnchangedByTheCap(t *testing.T) {
 	for _, g := range []grouping{nil, {groupProject}, {groupProject, groupWorkflow}} {
 		for width := 20; width <= 400; width++ {
 			for _, marking := range []bool{false, true} {
-				set := columnsFor(width, g, marking)
+				set := columnsFor(width, g, marking, fullContent)
 				want := max(set.titleWidth(width), minTitle)
 				if want > maxTitle {
 					continue
 				}
-				cols, _ := boardColumns(width, g, marking)
+				cols, _ := boardColumns(width, g, marking, fullContent)
 				if got := colWidth(cols, "TITLE"); got != want {
 					t.Fatalf("width %d %s marking=%v: title %d, want the whole remainder %d",
 						width, g.label(), marking, got, want)
@@ -217,7 +228,7 @@ func TestRowHeightGrowsAndIsClamped(t *testing.T) {
 		want int
 	}{
 		{"fits", task(1, stateRunning), 1},
-		{"a title one line over", task(1, stateRunning, withTitle(strings.Repeat("word ", 15))), 2},
+		{"a title one line over", task(1, stateRunning, withTitle(strings.Repeat("word ", 30))), 2},
 		{"a 256-byte status", task(1, stateRunning, withStatus(long[:256])), boardRowLines},
 		{"longer than the clamp", task(1, stateRunning, withStatus(long), withTitle(long)), boardRowLines},
 	} {
@@ -271,13 +282,13 @@ func TestWrapCellLinesNormalisesEmbeddedNewlines(t *testing.T) {
 // tick in the marker column.
 func TestContinuationRowsCarryTheIndentAndABlankMark(t *testing.T) {
 	b := groupedBoard(task(1, stateRunning, inProject("api"), inWorkflow("ship"),
-		withTitle(strings.Repeat("word ", 20))),
+		withTitle(strings.Repeat("word ", 40))),
 		task(2, stateQueued, inProject("web"), inWorkflow("docs")))
 	b.marks = markSet{1}
 	b.render(200, 30)
 
 	rows := b.rows()
-	cols, set := boardColumns(200, b.group, b.hasMarks())
+	cols, set := boardColumns(200, b.group, b.hasMarks(), contentOf(b.allRows()))
 	cells := b.rowsFor(rows, cols, set)
 	indent := strings.Repeat(groupIndent, len(b.group))
 
@@ -354,7 +365,7 @@ func TestKeysNeverRestOnAContinuation(t *testing.T) {
 	tasks := make([]apiclient.Task, 0, 4)
 	for id := int64(1); id <= 4; id++ {
 		tasks = append(tasks, task(id, stateRunning, inProject("api"),
-			withTitle(strings.Repeat("word ", 20))))
+			withTitle(strings.Repeat("word ", 40))))
 	}
 	b := groupedBoard(tasks...)
 	b.render(200, 30)
@@ -393,8 +404,8 @@ func TestKeysNeverRestOnAContinuation(t *testing.T) {
 // is one thing however many lines it takes.
 func TestMarkingIsUnaffectedByRowHeight(t *testing.T) {
 	b := groupedBoard(
-		task(1, stateRunning, inProject("api"), withTitle(strings.Repeat("word ", 20))),
-		task(2, stateRunning, inProject("api"), withTitle(strings.Repeat("word ", 20))),
+		task(1, stateRunning, inProject("api"), withTitle(strings.Repeat("word ", 40))),
+		task(2, stateRunning, inProject("api"), withTitle(strings.Repeat("word ", 40))),
 	)
 	b.render(200, 30)
 	if rowHeightOf(b.rows()) < 2 {

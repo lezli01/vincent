@@ -183,7 +183,7 @@ func TestSingleValueBoardIsFlatAndNamedInTheTitle(t *testing.T) {
 		t.Errorf("title = %q, want both skipped values in level order", got)
 	}
 	// The grouped columns stay dropped: the title is where the value lives.
-	cols, _ := boardColumns(200, s.board.group, false)
+	cols, _ := boardColumns(200, s.board.group, false, fullContent)
 	for _, c := range cols {
 		if c.Title == "PROJECT" || c.Title == "WORKFLOW" {
 			t.Errorf("%s column came back on a grouped board", c.Title)

@@ -1,6 +1,6 @@
 # 129 — The TUI answers what is happening, why it failed and what it delivered
 
-**Status:** 🔄 in progress (3/19)
+**Status:** 🔄 in progress (4/19)
 
 Issue [#591](https://github.com/lezli01/vincent/issues/591), part of
 [#589](https://github.com/lezli01/vincent/issues/589). Spec §15 (TUI) above
@@ -244,7 +244,7 @@ cards need):
   outcome card on Overview. Depends: 129.12, 129.5.
 - [x] **129.15** ([#603](https://github.com/lezli01/vincent/issues/603)) A
   quieter board (decisions 4 and 5). ✓ 2026-09-29
-- [ ] **129.16** ([#604](https://github.com/lezli01/vincent/issues/604)) STATUS
+- [x] **129.16** ([#604](https://github.com/lezli01/vincent/issues/604)) STATUS
   kept at 120 columns, an empty COST column shed, a pull request marker on rows
   (decision 3).
 

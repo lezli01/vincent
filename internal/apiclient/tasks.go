@@ -87,6 +87,13 @@ type Task struct {
 	// on TaskDetail as SourceChatID does, because it changes what the row
 	// offers.
 	OpenChatID *int64 `json:"open_chat_id,omitempty"`
+	// GitHubPull is this task's pull-request link (task 052); nil for a task
+	// no pull request has ever matched. It is a pointer, not a snapshot —
+	// TaskGitHubPull fetches what the pull request currently says. It rides
+	// on the list row (task 129.16) so the board can mark a row whose work
+	// has a pull request without a request per row; GET /v1/tasks has always
+	// served it, and a daemon too old to leaves it nil, which marks nothing.
+	GitHubPull *GitHubPullLink `json:"github_pull,omitempty"`
 
 	// QueuedReason and AdmitNotBefore describe a queued task waiting on
 	// something other than a free slot (§11) — `usage_limit` today, with the
@@ -465,11 +472,7 @@ type TaskDetail struct {
 	// refreshed — a client renders it as the task's history, not as the
 	// issue's current state.
 	GitHubIssue *GitHubIssue `json:"github_issue,omitempty"`
-	// GitHubPull is this task's pull-request link (task 052); nil for a task
-	// no pull request has ever matched. It is a pointer, not a snapshot —
-	// TaskGitHubPull fetches what the pull request currently says.
-	GitHubPull *GitHubPullLink `json:"github_pull,omitempty"`
-	Steps      []StepRun       `json:"steps"`
+	Steps       []StepRun    `json:"steps"`
 	// Warnings is set on the POST /v1/tasks 201 only: advisory findings that
 	// did not block creation, such as a model the catalog does not know.
 	// POST /v1/tasks/{id}/repair reports the same findings about its own

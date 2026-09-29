@@ -18,7 +18,9 @@ import (
 // loop the caller describes.
 func loopedBoard(rollup *apiclient.LoopRollup) *board {
 	b := testBoard()
-	t := task(1, stateRunning, withStep("green", 2, 7))
+	// A cost, so COST keeps its cells (task 129.16 sheds an empty one) and
+	// the widths below are the ones STEP was measured against.
+	t := task(1, stateRunning, withStep("green", 2, 7), withCost(0.42))
 	t.Loop = rollup
 	b.updateLoaded(boardLoadedMsg{tasks: []apiclient.Task{t}})
 	return b
