@@ -142,7 +142,7 @@ func TestNowLinePrefersTheStatusMessage(t *testing.T) {
 		t.Errorf("the line under the header is %q, want the now-line", lines[1])
 	}
 	// The Overview's running frame no longer says it a second time.
-	if out := ansi.Strip(strings.Join(v.overviewLines(120), "\n")); strings.Contains(out, "latest status") {
+	if out := ansi.Strip(strings.Join(v.overviewLines(120, 40), "\n")); strings.Contains(out, "latest status") {
 		t.Errorf("the running Overview still lists latest status:\n%s", out)
 	}
 }
@@ -200,7 +200,7 @@ func TestNowLineIsOnlyForARunningTask(t *testing.T) {
 	for _, state := range []string{stateQueued, statePaused} {
 		_, v := runningWorkspace(t, "said something")
 		v.detail.task.State = state
-		if out := ansi.Strip(strings.Join(v.overviewLines(120), "\n")); !strings.Contains(out, "latest status") {
+		if out := ansi.Strip(strings.Join(v.overviewLines(120, 40), "\n")); !strings.Contains(out, "latest status") {
 			t.Errorf("%s: the Overview lost latest status:\n%s", state, out)
 		}
 	}
