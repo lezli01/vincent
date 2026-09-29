@@ -601,7 +601,9 @@ output. It is the sentence that decides whether to open the transcript.
 | `tab` / `shift+tab` | Next / previous task tab |
 | `]` / `[` | Next / previous task tab |
 | `0` | Overview — the landing tab: what the task is doing, what it needs, or how it ended |
-| `1`–`5` | Steps / Task Details / Output / Diff / Workflow |
+| `1`–`5` | Steps / Task Details / Output / Diff / Workflow — every digit works from every tab |
+| `d` | Switch between Output and Diff, from any tab (from Diff it goes back to Output) |
+| `l` / `U` | Open a fan-out lane's workspace / this lane's parent task, from any tab — see [Walking a fan-out](#walking-a-fan-out) |
 | `3` / `6` / `4` / `7` | On Overview, the frame's jump links — the output of, or what was given to, the attempt it is about; the diff; the pull request |
 | `l` | On Overview, open the fan-out lane the failure card blames |
 | `6` | Step Details — what the selected attempt was handed, and the resolution behind it |
@@ -1068,7 +1070,9 @@ selected on the board it acts on all of them; see
 | `T` | Chat with an agent in this task's worktree, or reopen the chat already open on it | `blocked`, `awaiting_gate`, `done`, `aborted` |
 
 `E` opens the failing step's prompt or command in your editor, and the override
-applies **to this task's snapshot only** — the workflow file is untouched.
+applies **to this task's snapshot only** — the workflow file is untouched. On a
+`blocked` task the footer lists `E edit+retry` and `R repair` right after
+`r retry`, ahead of skip, cancel and archive.
 
 `R` and `F` open a form instead of acting straight away; they are the two task
 actions that need something written, which is also why neither is offered for a
@@ -2522,7 +2526,11 @@ The footer shows as many of the focused surface's keys as the terminal is wide
 enough for, in priority order, and then tells you what is left: a dim **`+N`**
 after the action keys counts the keys this surface has that the line is not
 showing — the ones that did not fit, the ones with no short form, and, on a
-narrow terminal, whatever the `…` truncation took. Click it, or press `:`, and
+narrow terminal, the task actions that did not fit. When a task offers more
+actions than the line holds, the ones listed first stay — on a `blocked` task
+that is `r retry`, `E edit+retry` and `R repair` — and the rest give their place
+up from the end: the `!` attention count, then `T chat`, then archive, cancel
+and skip. Click it, or press `:`, and
 the palette lists them. No `+N` means nothing is left over. The popups and
 forms never carry one at all — the palette does not list their keys, so it has
 nothing to point them at, and `?` is what shows those — or `f1`, on the ones

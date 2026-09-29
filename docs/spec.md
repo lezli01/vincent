@@ -13040,6 +13040,21 @@ are the same lie. `+N` is absent when nothing is left over, while a
 confirmation owns the keyboard, and on the popup surfaces whose rows the
 palette does not list.
 
+*Amended 2026-09-29 (issue #595, task 129.6):* **the task actions include
+`E` and `R`, and a short line keeps the first of them.** The footer's action
+segments read the §6 order below with `E` edit+retry and `R` repair after `r`
+retry and ahead of skip, cancel and archive; before this they were missing at
+every width, because the footer walked only the actions the action bar posts
+and those two open a form. Neither is offered under a bulk selection. When the
+segments right of the hints do not fit even with every hint withheld, they give
+their place up from the end — `!`, then `T`, then the task actions in reverse
+order — and each dropped action joins `+N`, rather than the `…` taking the
+first ones off the left, which is what it did to a blocked task's `r` and `R`.
+The `…` still cuts whatever is left over after that. The workspace's own hints
+drop the tab already open (`5 workflow` on Workflow) and the second hint for
+one operation (`[/] views` beside `tab views`), and `?` lists `d`, `l`, `U`
+and the digit jumps on every workspace tab, since every tab answers them.
+
 `?` remains, as a compact cheat sheet grouped by panel, rendered from the registry.
 
 ### Keys
