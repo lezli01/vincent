@@ -371,6 +371,13 @@ func TestNowLineFollowsLiveOutputAndLeavesWithRunning(t *testing.T) {
 	if err := h.st.CreateStepRun(ctx, run); err != nil {
 		t.Fatalf("CreateStepRun: %v", err)
 	}
+	// Let the board consume the created and running events before the task
+	// is opened. Otherwise one can reach the workspace after it opens, and
+	// its debounced refresh lands after the snapshot below and reads as a
+	// refetch the chunk caused (macOS CI caught the gap).
+	h.p.until(20*time.Second, "the running state to render on the board", func() bool {
+		return strings.Contains(content(h.m), string(store.TaskRunning))
+	})
 
 	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})
 	h.p.push(cmd)
