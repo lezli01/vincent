@@ -134,19 +134,20 @@ func diffTabDetail(t *testing.T) *detail {
 }
 
 // overviewLinkProbe presses a jump link on the Overview of a task in state
-// and wants the link's tab, with the attempt cursor moved off the first
+// and wants the link's tab, with the attempt cursor moved off the other
 // attempt onto the one the frame is about.
 func overviewLinkProbe(state, key string, want taskViewTab) func(*testing.T) {
 	return func(t *testing.T) {
 		v := tabbedTaskFixture(t, taskTabOverview)
 		v.detail.task.State = state
-		v.detail.selectedRun = 1
+		anchor, _ := v.overviewAnchor()
+		v.detail.selectedRun = 3 - anchor.ID // the fixture's other attempt
 		v.updateKey(registryKey(t, key))
 		if v.tab != want {
 			t.Fatalf("%s moved to %v, want %v", key, v.tab, want)
 		}
-		if want != taskTabDiff && v.detail.selectedRun != 2 {
-			t.Fatalf("%s left the cursor on attempt %d, want 2", key, v.detail.selectedRun)
+		if want != taskTabDiff && v.detail.selectedRun != anchor.ID {
+			t.Fatalf("%s left the cursor on attempt %d, want %d", key, v.detail.selectedRun, anchor.ID)
 		}
 	}
 }
@@ -1807,6 +1808,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"3": overviewLinkProbe(stateRunning, "3", taskTabOutput),
 		"6": overviewLinkProbe(stateBlocked, "6", taskTabStepDetails),
 		"4": overviewLinkProbe(stateDone, "4", taskTabDiff),
+		"l": laneOpenProbe(taskTabOverview),
 		"7": func(t *testing.T) {
 			v := pullTabFixture(t)
 			v.detail.task.State = stateDone

@@ -128,7 +128,7 @@ var catalog = []Info{
 		"task table", "archived tasks", "archived chats", "chats", "projects", "pull requests", "triggers",
 	}},
 	{Op: Lane, Default: "l", Meaning: "open a fan-out lane", Kind: KindTerm, Surfaces: []Surface{
-		"timeline", "task details", "output", "diff", "task workflow", "task pull request",
+		"task overview", "timeline", "task details", "output", "diff", "task workflow", "task pull request",
 	}},
 
 	{Op: Pause, Default: "p", Meaning: "pause or resume the task", Kind: KindAction, Surfaces: []Surface{Actions}},

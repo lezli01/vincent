@@ -94,8 +94,12 @@ func (t *taskView) overviewLinkFor(tab taskViewTab) (overviewLink, bool) {
 // something runs, and otherwise the newest — which, for a task that stopped,
 // is the attempt the block or the failure is on. Attempt ids are allocated in
 // order, so newest is the largest id rather than the last row of the
-// timeline's step-major sort.
+// timeline's step-major sort. A blocked or aborted task is about the attempt
+// its failure card names (cardRun), so the link and the card cannot differ.
 func (t *taskView) overviewAnchor() (apiclient.StepRun, bool) {
+	if t.showsFailureCard() {
+		return cardRun(t.detail.task)
+	}
 	var newest, live apiclient.StepRun
 	for _, run := range t.detail.task.Steps {
 		if run.ID > newest.ID {
@@ -145,6 +149,14 @@ func (t *taskView) updateOverviewKey(msg tea.KeyPressMsg) tea.Cmd {
 // offer and gives the rest the frame's own wording, so the footer, `?` and
 // the palette list exactly the links the body draws.
 func (t *taskView) overviewLiveBindings(b binding) (binding, bool) {
+	if b.op == keymap.Lane {
+		// `l` is on the Overview for the failure card's blamed lane only.
+		if !t.showsFailureCard() {
+			return b, false
+		}
+		c := t.failureCard()
+		return b, c.blamed && c.blame.taskID != 0
+	}
 	var tab taskViewTab
 	switch b.key {
 	case "3":
@@ -167,7 +179,7 @@ func (t *taskView) overviewLiveBindings(b binding) (binding, bool) {
 }
 
 func (t *taskView) renderOverview(width, height int) string {
-	lines := t.overviewLines(width)
+	lines := t.overviewLines(width, height)
 	for i, line := range lines {
 		lines[i] = ansi.Truncate(line, max(width, 1), "…")
 	}
@@ -177,7 +189,7 @@ func (t *taskView) renderOverview(width, height int) string {
 	return strings.Join(lines, "\n")
 }
 
-func (t *taskView) overviewLines(width int) []string {
+func (t *taskView) overviewLines(width, height int) []string {
 	d := t.detail
 	if d.taskID == 0 {
 		return []string{styleDim.Render("  no task selected")}
@@ -194,20 +206,31 @@ func (t *taskView) overviewLines(width int) []string {
 		"  " + renderDetailState(task.Task),
 		"",
 	}
-	out = appendWrapped(out, overviewSentence(task, len(t.lanes)), width)
-	out = append(out, "")
-	var body []taskDetailFact
-	switch overviewFrameFor(task.State) {
-	case frameAttention:
-		body = t.attentionFacts()
-	case frameOutcome:
-		body = t.outcomeFacts()
+	switch {
+	case t.showsFailureCard() && height < cardCollapseRows:
+		// A short terminal keeps the card's first line and its keys; the
+		// sentence goes with the rest (brief decision 8).
+		out = append(out[:2], t.failureCardLines(width, height, true)...)
+	case t.showsFailureCard():
+		out = appendWrapped(out, overviewSentence(task, len(t.lanes)), width)
+		out = append(out, "")
+		out = append(out, t.failureCardLines(width, height-len(out), false)...)
 	default:
-		body = t.progressFacts()
-	}
-	out = append(out, renderTaskDetailFactList(width, body)...)
-	if t.overviewFrame() == frameAttention {
-		out = append(out, t.overviewActionLines(width)...)
+		out = appendWrapped(out, overviewSentence(task, len(t.lanes)), width)
+		out = append(out, "")
+		var body []taskDetailFact
+		switch overviewFrameFor(task.State) {
+		case frameAttention:
+			body = t.attentionFacts()
+		case frameOutcome:
+			body = t.outcomeFacts()
+		default:
+			body = t.progressFacts()
+		}
+		out = append(out, renderTaskDetailFactList(width, body)...)
+		if t.overviewFrame() == frameAttention {
+			out = append(out, t.overviewActionLines(width)...)
+		}
 	}
 	if links := t.overviewLinks(); len(links) > 0 {
 		parts := make([]string, len(links))
@@ -367,13 +390,15 @@ func (t *taskView) outcomeFacts() []taskDetailFact {
 	}
 }
 
-// overviewActions explains each §6 action the daemon offers, in the order
-// the action bar draws them. The keys come from the effective keymap.
-var overviewActions = []struct {
+type overviewActionDef struct {
 	action string
 	op     keymap.Op
 	does   string
-}{
+}
+
+// overviewActions explains each §6 action the daemon offers, in the order
+// the action bar draws them. The keys come from the effective keymap.
+var overviewActions = []overviewActionDef{
 	{apiclient.ActionAnswer, "", "answer the question it is waiting on"},
 	{apiclient.ActionApprove, keymap.Approve, "let the gate pass and carry on"},
 	{apiclient.ActionReject, keymap.Reject, "refuse the gate; the task blocks"},

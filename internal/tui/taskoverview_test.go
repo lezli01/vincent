@@ -98,21 +98,22 @@ func TestCreatePullRouteLandsOnThePullRequestTab(t *testing.T) {
 }
 
 // A link moves the shared attempt cursor to the attempt the frame is about,
-// then switches: on a blocked task that is the newest attempt, the one the
-// block is on, whatever the reader had selected before.
+// then switches: on a blocked task that is the attempt the failure card
+// names — the newest one at the current step that did not succeed —
+// whatever the reader had selected before.
 func TestOverviewLinkMovesTheCursorThenTheTab(t *testing.T) {
 	v := tabbedTaskFixture(t, taskTabOverview)
 	v.detail.task.State = stateBlocked
-	v.detail.selectedRun = 1
+	v.detail.selectedRun = 2
 	v.updateKey(synthKey("3"))
-	if v.tab != taskTabOutput || v.detail.selectedRun != 2 {
-		t.Fatalf("3 left tab %v, cursor %d; want %v, 2", v.tab, v.detail.selectedRun, taskTabOutput)
+	if v.tab != taskTabOutput || v.detail.selectedRun != 1 {
+		t.Fatalf("3 left tab %v, cursor %d; want %v, 1", v.tab, v.detail.selectedRun, taskTabOutput)
 	}
 	// The same digit elsewhere only switches.
 	v.tab = taskTabDetails
-	v.detail.selectedRun = 1
+	v.detail.selectedRun = 2
 	v.updateKey(synthKey("3"))
-	if v.tab != taskTabOutput || v.detail.selectedRun != 1 {
+	if v.tab != taskTabOutput || v.detail.selectedRun != 2 {
 		t.Fatalf("3 from %v moved the cursor to %d", taskTabDetails, v.detail.selectedRun)
 	}
 }
@@ -131,7 +132,7 @@ func TestOverviewStateChangeSwapsFrameNotCursor(t *testing.T) {
 	v.detail.task.BlockReason = &reason
 	v.detail.task.AvailableActions = []string{apiclient.ActionRetry, apiclient.ActionCancel}
 	got := ansi.Strip(v.render(100, 30))
-	for _, want := range []string{"Blocked", "check failed (check_failed)", "retry", "3 output of attempt 2", "6 what it was given"} {
+	for _, want := range []string{"Blocked", "check failed  check_failed", "retry", "3 output of attempt 1", "6 what it was given"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("blocked overview misses %q:\n%s", want, got)
 		}

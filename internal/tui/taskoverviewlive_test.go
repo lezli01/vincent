@@ -48,7 +48,7 @@ func TestOverviewFramesFromRealServer(t *testing.T) {
 		task *store.Task
 		want []string
 	}{
-		{blocked, []string{"Blocked", "(timeout)", "retry", "3 output of attempt 1", "6 what it was given"}},
+		{blocked, []string{"Blocked", "timeout", "retry", "3 output of attempt 1", "6 what it was given"}},
 		{aborted, []string{"Aborted", "3 output of attempt 1", "6 what it was given"}},
 		{running, []string{"Running", "rebasing onto main", "3 full output"}},
 		{done, []string{"Done", "final status", "vincent/live-done-one", "4 diff"}},
