@@ -10652,6 +10652,36 @@ stream for the live tail.
    to finish a counter spends its height on the least of what it says.* `STATE` is
    deliberately not among the columns a surplus reaches: the recorded reasoning
    above holds, and the wrap is what makes its overflow readable.
+   *Amended 2026-09-29 (task 129.7, issue #596):* `STATE` is now the **last**
+   column a surplus reaches, after `STATUS` and before the give-back to the
+   title, and only as far as the widest blocked row's `! blocked · <reason
+   title>` needs. The recorded reasoning is kept, not reversed: no board pays
+   for the reason with a column that sheds first, because with no surplus the
+   reason clause is **shed first** and the cell reads `! blocked`. The clause
+   is shown only when it fits the cell on one line and never wraps it, so it
+   cannot change the row height below. A hold's reason stays out of the board
+   cell; the header names both.
+
+   **Display words (task 129.7, added 2026-09-29).** No snake_case identifier
+   is rendered as prose in the TUI. A task state reads as its words —
+   `awaiting_input` "awaiting input", `awaiting_gate` "awaiting approval",
+   `awaiting_children` "waiting on lanes", every other state its own word —
+   with the `!` attention badge unchanged; "needs you" names the attention
+   group (awaiting input, awaiting approval, blocked). A block, failure, skip
+   or hold reason reads as its §18 catalogue title (`internal/reasons`), and
+   on the detail surfaces — the attempt row, Task Details, Step Details, the
+   lane strip, the repair form's subject and the fan-out blame lines — the raw
+   code may appear **dim** beside it, `check failed · check_failed`, the `·`
+   keeping the two apart without colour. The board cell and the header use the
+   title alone. An unknown code renders once, as itself. Task Details keeps
+   the raw identifiers in its state section, undimmed, for copy-paste into the
+   CLI (task 049 decision 3). A step's status message is never passed through
+   the catalogue or joined into a reason clause (task 036 decision 6). The
+   TUI's copy uses one glossary: "attempt" for a step run, "iteration" for a
+   loop pass, "round" for a fan-out wave, "lane" for a fan-out child, "tab" for
+   a pane of the task workspace and "screen" for a routed takeover — the
+   palette's takeover group is **screens**. The CLI, the API and MCP keep the
+   identifiers; operation ids and default keys do not change.
 
    **Row height (task 050, added 2026-08-29).** A cell too long for its column
    wraps onto further lines of the same row rather than being truncated away.
@@ -12159,6 +12189,8 @@ daemon state and no capability that exists only at one size.
 
 *Amended 2026-09-29 (issue #595, task 129.6):* the workspace footer above no
 longer carries `0 overview` — a tab does not offer a hint for itself (§15).
+*Amended 2026-09-29 (issue #596, task 129.7):* its `tab` hint now reads
+`tab tabs` — a pane of the workspace is a tab, not a view (§15 display words).
 
 The task table keeps the full §15 column set at full width. The task workspace
 does not reserve a rail or a second pane: metadata, transcripts and diffs are

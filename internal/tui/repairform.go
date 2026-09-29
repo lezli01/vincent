@@ -373,7 +373,9 @@ func (f *repairForm) subject() string {
 		out += " · blocked at " + f.stepName
 	}
 	if f.blockReason != "" {
-		out += " · " + f.blockReason
+		// The whole subject line is dim, so the raw code beside the title
+		// is too (task 129.7 decision 3).
+		out += " · " + reasonText(f.blockReason)
 	}
 	return out + " — the agent runs in this task's worktree; the task stays blocked afterwards"
 }

@@ -39,7 +39,7 @@ func TestAttemptLineRendersStatusDistinctlyFromTheFailureReason(t *testing.T) {
 	// The styles must actually differ, or "visually distinct" is a comment
 	// rather than a property. Compared on the rendered escape sequences,
 	// since that is what a terminal sees.
-	reason := styleBad.Render("check_failed")
+	reason := styleBad.Render("check failed") + styleDim.Render(" · check_failed")
 	status := styleStatus.Render(statusGlyph + " 3 tests red in internal/store")
 	if !strings.Contains(got, reason) {
 		t.Errorf("the failure reason lost its styleBad rendering:\n%q", got)

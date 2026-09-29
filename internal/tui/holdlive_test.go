@@ -53,6 +53,6 @@ func TestBoardDistinguishesAHeldQueueFromAnOrdinaryOne(t *testing.T) {
 	_, cmd := h.m.Update(selectTaskMsg{id: held.ID})
 	h.p.push(cmd)
 	h.p.until(20*time.Second, "the detail header to name the hold", func() bool {
-		return strings.Contains(content(h.m), "queued · usage limit → "+stamp)
+		return strings.Contains(content(h.m), "queued · usage limit reached → "+stamp)
 	})
 }

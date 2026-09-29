@@ -1285,7 +1285,7 @@ func (b *board) cellsFor(r boardRow, now time.Time, set columnSet, cols []table.
 	}
 	cells = append(cells,
 		boardCell{text: title, wrap: true, indent: indent},
-		stateCell(t),
+		stateCell(t, columnWidth(cols, "STATE")),
 		boardCell{text: formatStep(t, set.stepName, columnWidth(cols, "STEP")), wrap: true},
 		plain(elapsed),
 	)
@@ -1310,9 +1310,16 @@ func (b *board) cellsFor(r boardRow, now time.Time, set columnSet, cols []table.
 }
 
 // stateCell is a row's STATE cell: boardStateLabel in the state's colour,
-// with a fan-out parent's lane clauses each in their own (task 129.10).
-func stateCell(t apiclient.Task) boardCell {
-	cell := boardCell{text: boardStateLabel(t), style: stateStyles[t.State], wrap: true}
+// with a fan-out parent's lane clauses each in their own (task 129.10). A
+// blocked row names its reason when the column is wide enough for the whole
+// of it on one line, and otherwise sheds the clause rather than wrapping it
+// (task 129.7 decision 2): the reason is the first thing the cell gives up.
+func stateCell(t apiclient.Task, width int) boardCell {
+	text := boardStateLabel(t)
+	if label, ok := blockedStateLabel(t); ok && ansi.StringWidth(label) <= width {
+		text = label
+	}
+	cell := boardCell{text: text, style: stateStyles[t.State], wrap: true}
 	if clauses := parentBreakdown(t); len(clauses) > 0 {
 		cell.render = breakdownLineStyler(cell.style, clauses)
 	}

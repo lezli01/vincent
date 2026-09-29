@@ -14,7 +14,7 @@ import (
 // the parent's row has to say it is there.
 func TestBoardStateShowsChildrenRollup(t *testing.T) {
 	parent := apiclient.Task{ID: 1, State: stateAwaitingChildren}
-	if got := renderBoardState(parent); !strings.Contains(got, stateAwaitingChildren) {
+	if got := renderBoardState(parent); !strings.Contains(got, "waiting on lanes") {
 		t.Errorf("state cell = %q, want it to name the state", got)
 	}
 
@@ -22,7 +22,7 @@ func TestBoardStateShowsChildrenRollup(t *testing.T) {
 		Total: 3, Settled: 1, Blocked: []int64{7, 8},
 		ByState: map[string]int{stateBlocked: 2, stateDone: 1},
 	}
-	if got := ansi.Strip(renderBoardState(parent)); got != "awaiting_children (×2 ✓1)" {
+	if got := ansi.Strip(renderBoardState(parent)); got != "waiting on lanes (×2 ✓1)" {
 		t.Errorf("state cell = %q, want the blocked lanes surfaced first", got)
 	}
 
@@ -31,7 +31,7 @@ func TestBoardStateShowsChildrenRollup(t *testing.T) {
 		Total: 4, Settled: 3,
 		ByState: map[string]int{stateDone: 3, stateRunning: 1},
 	}
-	if got := ansi.Strip(renderBoardState(parent)); got != "awaiting_children (●1 ✓3)" {
+	if got := ansi.Strip(renderBoardState(parent)); got != "waiting on lanes (●1 ✓3)" {
 		t.Errorf("state cell = %q, want progress", got)
 	}
 }

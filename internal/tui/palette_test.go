@@ -120,18 +120,18 @@ func TestPaletteSectionsAreVisiblySeparate(t *testing.T) {
 	out := p.render(60, 18)
 	plain := ansi.Strip(out)
 
-	if !strings.Contains(plain, "VIEWS") {
-		t.Errorf("no views section:\n%s", plain)
+	if !strings.Contains(plain, "SCREENS") {
+		t.Errorf("no screens section:\n%s", plain)
 	}
 	// Headings are styled and ruled; entries are not.
-	if !strings.Contains(out, styleTitle.Render(" VIEWS ")) {
-		t.Error("the views heading is not rendered as a heading")
+	if !strings.Contains(out, styleTitle.Render(" SCREENS ")) {
+		t.Error("the screens heading is not rendered as a heading")
 	}
 	if !strings.Contains(plain, "─") {
 		t.Errorf("no section rule:\n%s", plain)
 	}
 	// Section names, one per group present.
-	for _, want := range []string{"ACTIONS ON #9", "VIEWS"} {
+	for _, want := range []string{"ACTIONS ON #9", "SCREENS"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("missing section %q:\n%s", want, plain)
 		}
@@ -201,7 +201,7 @@ func TestPaletteSearchNarrowsAndEscCloses(t *testing.T) {
 func TestHelpRendersFromRegistry(t *testing.T) {
 	got := helpText(ctxTasks, true, helpState{})
 	for _, want := range []string{
-		"jump to the next task needing a human",
+		"jump to the next task that needs you — awaiting input, awaiting approval or blocked",
 		"open the command palette",
 		"open the selected task",
 		"filter by id",

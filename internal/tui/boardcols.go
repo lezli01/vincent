@@ -2,6 +2,7 @@ package tui
 
 import (
 	"charm.land/bubbles/v2/table"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Column widths. The table adds one space of padding either side of every
@@ -15,7 +16,7 @@ const (
 	widthID        = 5
 	widthProject   = 14
 	widthWorkflow  = 14
-	widthState     = 18 // fits "! awaiting_input"
+	widthState     = 19 // fits "! awaiting approval"
 	widthStepShort = 7  // "12/12"
 	widthStepLong  = 18
 	widthElapsed   = 9
@@ -41,7 +42,7 @@ const (
 	// had folded it into maxTitle (64), which kept STATUS off below 164
 	// columns on the default grouped board — the board's one changing signal
 	// hidden at the most common width while constant columns stayed. At 32 a
-	// 120-column grouped board keeps STATUS, a short STEP and a 41-cell
+	// 120-column grouped board keeps STATUS, a short STEP and a 40-cell
 	// title. minTitle alone is still the wrong gate: a title of 16 beside a
 	// status identifies nothing.
 	minTitleWithStatus = 32
@@ -148,10 +149,15 @@ type columnSet struct {
 // task row after the filter and the archive view — scrolled out of view and
 // folded into a collapsed group included — so a column never appears or
 // vanishes while the cursor moves.
+//
+// stateWant is the widest a blocked row's state cell would be with its
+// reason (blockedStateLabel), and 0 when no row has one: the STATE column's
+// appetite for a surplus (task 129.7 decision 2).
 type boardContent struct {
-	status bool
-	cost   bool
-	pr     bool
+	status    bool
+	cost      bool
+	pr        bool
+	stateWant int
 }
 
 // contentOf computes boardContent over rows. Group headers carry no task and
@@ -166,6 +172,9 @@ func contentOf(rows []boardRow) boardContent {
 		c.status = c.status || formatStatus(t.StatusMessage) != ""
 		c.cost = c.cost || t.CostUSD != nil
 		c.pr = c.pr || formatPR(t.GitHubPull) != ""
+		if label, ok := blockedStateLabel(t); ok {
+			c.stateWant = max(c.stateWant, ansi.StringWidth(label))
+		}
 	}
 	return c
 }
@@ -293,12 +302,12 @@ func columnsFor(width int, g grouping, marking bool, content boardContent) colum
 //
 // The title takes whatever space the fixed columns leave, but only up to
 // maxTitle. Past that the surplus is spent in a fixed order — STEP to
-// widthStepMax, then STATUS to widthStatusMax, then the remainder back to the
-// title (task 050 decision 3). Those two are the columns whose content
-// demonstrably outgrows them; STATE is deliberately not among them, because
-// the recorded reason for keeping a hold's reason out of that cell is that
-// widening a column for a rare state costs every board the columns that shed
-// first (§15, task 036) — the wrap is what makes its overflow readable now.
+// widthStepMax, then STATUS to widthStatusMax, then STATE to the widest
+// blocked row's `! blocked · <reason>` (content.stateWant), then the remainder
+// back to the title (task 050 decision 3, task 129.7 decision 2). STATE comes
+// last and only out of a surplus because widening a column for a rare state
+// must never cost a board the columns that shed first (§15, task 036): with
+// no surplus the reason clause is shed instead (stateCell).
 //
 // The give-back is not a softening of the ceiling, it is what stops the board
 // leaving dead cells: with no STATUS — no row has a message — STEP fills at +14 and nothing else has any appetite, so without
@@ -312,6 +321,7 @@ func boardColumns(width int, g grouping, marking bool, content boardContent) ([]
 		stepWidth = widthStepLong
 	}
 	statusWidth := widthStatus
+	stateWidth := widthState
 	if surplus := title - maxTitle; surplus > 0 {
 		title = maxTitle
 		if set.stepName {
@@ -322,6 +332,11 @@ func boardColumns(width int, g grouping, marking bool, content boardContent) ([]
 		if set.status {
 			take := min(surplus, widthStatusMax-statusWidth)
 			statusWidth += take
+			surplus -= take
+		}
+		if want := content.stateWant - widthState; want > 0 {
+			take := min(surplus, want)
+			stateWidth += take
 			surplus -= take
 		}
 		title += surplus
@@ -342,7 +357,7 @@ func boardColumns(width int, g grouping, marking bool, content boardContent) ([]
 	}
 	cols = append(cols,
 		table.Column{Title: "TITLE", Width: title},
-		table.Column{Title: "STATE", Width: widthState},
+		table.Column{Title: "STATE", Width: stateWidth},
 		table.Column{Title: "STEP", Width: stepWidth},
 		table.Column{Title: "ELAPSED", Width: widthElapsed},
 	)

@@ -1,6 +1,6 @@
 # 129 — The TUI answers what is happening, why it failed and what it delivered
 
-**Status:** 🔄 in progress (12/19)
+**Status:** 🔄 in progress (15/19)
 
 Issue [#591](https://github.com/lezli01/vincent/issues/591), part of
 [#589](https://github.com/lezli01/vincent/issues/589). Spec §15 (TUI) above
@@ -251,10 +251,20 @@ cards need):
 - [x] **129.6** ([#595](https://github.com/lezli01/vincent/issues/595)) The
   workspace's stale, duplicated and hidden key hints fixed; `R` repair and `E`
   edit & retry surfaced on blocked tasks. ✓ 2026-09-29
-- [ ] **129.7** ([#596](https://github.com/lezli01/vincent/issues/596))
-  Plain-language states and reasons, one glossary. Depends: 129.2. Ordering:
-  see "Ordering with the open walkthroughs" if its wording reaches Output
-  lines.
+- [x] **129.7** ([#596](https://github.com/lezli01/vincent/issues/596))
+  Plain-language states and reasons, one glossary. Depends: 129.2. *Done
+  2026-09-29.* States read `awaiting input`, `awaiting approval` and `waiting
+  on lanes`; reasons read as their catalogue title with the raw code dim
+  beside it (`check failed · check_failed`) on the detail surfaces, and as
+  the title alone on the board and the header. A blocked board row names its
+  reason only out of a surplus — `STATE` is the last column a surplus
+  reaches — and sheds it first; `widthState` is 19 for `! awaiting approval`.
+  Task Details keeps the raw state. The palette's takeover group is
+  `screens`, the workspace's panes are tabs. Decision 8.2's cell now reads
+  `waiting on lanes (×1 !1 ●1 ✓2)`: only the breakdown and its order were
+  decided there, not the state word. No task reason reaches the Output tab's
+  lines, so the walkthrough ordering did not apply. Screenshots are left to
+  #609.
 
 **Phase 2 — new surfaces behind existing entry points:**
 

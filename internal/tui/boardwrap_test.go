@@ -89,19 +89,19 @@ func TestTitleCapSpendsTheSurplus(t *testing.T) {
 		wantStatusColumnGated bool
 	}{
 		// Below the cap nothing changes: the title takes the remainder.
-		{width: 120, g: grouped, content: quiet, title: 50, step: widthStepLong, wantStatusColumnGated: true},
+		{width: 120, g: grouped, content: quiet, title: 49, step: widthStepLong, wantStatusColumnGated: true},
 		// STATUS outranks COST and the step name at 120 (task 129.16).
-		{width: 120, g: grouped, content: status, title: 41, step: widthStepShort, status: widthStatus},
-		{width: 160, g: grouped, content: status, title: 60, step: widthStepLong, status: widthStatus},
+		{width: 120, g: grouped, content: status, title: 40, step: widthStepShort, status: widthStatus},
+		{width: 160, g: grouped, content: status, title: 59, step: widthStepLong, status: widthStatus},
 		// The give-back band: no STATUS, STEP fills, and the rest comes back
 		// to the title rather than rendering as dead cells.
-		{width: 160, g: grouped, content: quiet, title: 74, step: widthStepMax, wantStatusColumnGated: true},
+		{width: 160, g: grouped, content: quiet, title: 73, step: widthStepMax, wantStatusColumnGated: true},
 		// STATUS admitted: the title drops to the cap and both other columns
 		// take the surplus in order.
-		{width: 200, g: grouped, content: status, title: maxTitle, step: widthStepMax, status: 48},
-		{width: 200, g: nil, content: status, title: maxTitle, step: 22, status: widthStatus},
+		{width: 200, g: grouped, content: status, title: maxTitle, step: widthStepMax, status: 47},
+		{width: 200, g: nil, content: status, title: maxTitle, step: 21, status: widthStatus},
 		// Both ceilings reached: only now does the title exceed its cap.
-		{width: 300, g: grouped, content: status, title: 116, step: widthStepMax, status: widthStatusMax},
+		{width: 300, g: grouped, content: status, title: 115, step: widthStepMax, status: widthStatusMax},
 	} {
 		t.Run(strconv.Itoa(tc.width)+" "+tc.g.label(), func(t *testing.T) {
 			cols, _ := boardColumns(tc.width, tc.g, false, tc.content)

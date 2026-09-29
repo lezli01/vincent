@@ -902,13 +902,13 @@ func (d *detail) attemptFields(r apiclient.StepRun, indented bool) []string {
 		fields = append(fields, formatCost(r.CostUSD))
 	}
 	if r.FailureReason != nil && *r.FailureReason != "" {
-		fields = append(fields, styleBad.Render(*r.FailureReason))
+		fields = append(fields, renderReason(*r.FailureReason, styleBad))
 	}
 	// A `skipped` row is either a human pressing skip (§6) or a false `if:`
 	// guard (§7.7). The state cannot tell them apart, so the reason is shown
 	// whenever there is one — a bare "skipped" means the human.
 	if r.SkipReason != nil && *r.SkipReason != "" {
-		fields = append(fields, styleDim.Render("by "+*r.SkipReason))
+		fields = append(fields, renderReason(*r.SkipReason, styleDim))
 	}
 	if r.State == stepStateStopped {
 		fields = append(fields, styleDim.Render("workflow ended here"))
@@ -1569,19 +1569,12 @@ func (d *detail) laneBlameLines() []string {
 		return nil
 	}
 	width := max(d.width, 1)
-	head := "  ⚠ " + b.reason
-	if b.laneID != "" {
-		head += "  ·  lane " + strconv.Quote(b.laneID)
-	}
-	if b.taskID != 0 {
-		head += "  ·  task " + strconv.FormatInt(b.taskID, 10)
-	}
-	lines := []string{ansi.Truncate(styleBad.Render(head), width, "…")}
+	lines := []string{ansi.Truncate(b.headLine(styleBad), width, "…")}
 	for _, line := range b.messageLines() {
 		lines = append(lines, ansi.Truncate(styleDim.Render("      "+line), width, "…"))
 	}
-	if tail := b.laneFactLine(); tail != "" {
-		lines = append(lines, ansi.Truncate(styleWarn.Render("      "+tail)+
+	if tail := b.laneFactLine(styleWarn); tail != "" {
+		lines = append(lines, ansi.Truncate(styleWarn.Render("      ")+tail+
 			styleDim.Render("   "+opKey(keymap.Lane)+" open the lane"), width, "…"))
 	}
 	return lines
@@ -1603,19 +1596,19 @@ func (d *detail) laneBlameStepLines(r apiclient.StepRun, indent string) []string
 		// jump would open.
 		return nil
 	}
-	line := indent + "↳ "
+	line := styleBad.Render(indent + "↳ ")
 	switch {
 	case b.laneID != "" && b.taskID != 0:
-		line += fmt.Sprintf("lane %s (task %d)", strconv.Quote(b.laneID), b.taskID)
+		line += styleBad.Render(fmt.Sprintf("lane %s (task %d)", strconv.Quote(b.laneID), b.taskID))
 	case b.taskID != 0:
-		line += fmt.Sprintf("lane task %d", b.taskID)
+		line += styleBad.Render(fmt.Sprintf("lane task %d", b.taskID))
 	default:
-		line += b.reason
+		line += renderReason(b.reason, styleBad)
 	}
-	if fact := b.laneFactLine(); fact != "" {
-		line += "  ·  " + fact
+	if fact := b.laneFactLine(styleBad); fact != "" {
+		line += styleBad.Render("  ·  ") + fact
 	}
-	out := []string{styleBad.Render(line)}
+	out := []string{line}
 	if b.taskID != 0 {
 		out[0] += styleDim.Render("   " + opKey(keymap.Lane) + " open the lane")
 	}
@@ -1647,14 +1640,30 @@ func (b laneBlame) messageLines() []string {
 	return out
 }
 
+// headLine is the attribution's first line — `⚠ lane failed · lane_failed ·
+// lane "b" · task 12` — the reason in words with its raw code dim beside it
+// (task 129.7 decision 3), and the rest in style.
+func (b laneBlame) headLine(style lipgloss.Style) string {
+	tail := ""
+	if b.laneID != "" {
+		tail += "  ·  lane " + strconv.Quote(b.laneID)
+	}
+	if b.taskID != 0 {
+		tail += "  ·  task " + strconv.FormatInt(b.taskID, 10)
+	}
+	return style.Render("  ⚠ ") + renderReason(b.reason, style) + style.Render(tail)
+}
+
 // laneFactLine is what the engine's message does not carry: the lane's own
-// state and the reason *it* is stuck on.
-func (b laneBlame) laneFactLine() string {
+// state and the reason *it* is stuck on, rendered in style with the reason's
+// raw code dim.
+func (b laneBlame) laneFactLine(style lipgloss.Style) string {
 	if b.state == "" {
 		return ""
 	}
+	line := style.Render("the lane is " + stateWords(b.state))
 	if b.block == "" {
-		return "the lane is " + b.state
+		return line
 	}
-	return "the lane is " + b.state + " on " + b.block
+	return line + style.Render(" on ") + renderReason(b.block, style)
 }

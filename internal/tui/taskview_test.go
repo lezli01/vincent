@@ -374,7 +374,7 @@ func equalInt64s(a, b []int64) bool {
 func fanOutFixture(t *testing.T, reason, message string) *taskView {
 	t.Helper()
 	d := taskDetailFixture(t)
-	d.width = 120
+	d.width = 160
 	d.task.State = stateBlocked
 	d.task.BlockReason = &reason
 	d.task.WorkflowSteps = []apiclient.WorkflowStep{{Index: 0, ID: "lanes", Type: stepTypeFanOut}}

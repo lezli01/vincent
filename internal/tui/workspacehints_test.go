@@ -25,7 +25,7 @@ var workspaceTabContexts = []struct {
 
 // TestWorkspaceFooterHasNoDuplicateOrSelfHints is issue #595's first
 // acceptance criterion: the workspace footer never shows two hints for one
-// operation (`tab views` beside `[/] views`), and never a hint for the tab
+// operation (`tab tabs` beside `[/] tabs`), and never a hint for the tab
 // already open (`5 workflow` on the Workflow tab).
 func TestWorkspaceFooterHasNoDuplicateOrSelfHints(t *testing.T) {
 	for _, w := range workspaceTabContexts {

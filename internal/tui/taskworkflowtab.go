@@ -445,9 +445,9 @@ func (w *workflowTab) renderInspector(width int) string {
 func describeRun(rs workflowgraph.RunState) string {
 	var b strings.Builder
 	if rs.Task != "" {
-		b.WriteString(rs.Task)
+		b.WriteString(stateWords(rs.Task))
 		if rs.BlockReason != "" {
-			b.WriteString(" (" + rs.BlockReason + ")")
+			b.WriteString(" (" + renderReason(rs.BlockReason, styleNone) + ")")
 		}
 		b.WriteString(" · ")
 	}

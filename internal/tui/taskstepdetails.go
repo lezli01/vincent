@@ -469,8 +469,8 @@ func stepOutcomeLines(run apiclient.StepRun, now time.Time, width int) []string 
 		{"waiting on a human", wait},
 		{"exit code", stepExitCode(run.ExitCode)},
 		{"check exit code", stepExitCode(run.CheckExitCode)},
-		{"failure reason", stepOptional(run.FailureReason, "none")},
-		{"skip reason", stepOptional(run.SkipReason, "none")},
+		{"failure reason", stepReason(run.FailureReason)},
+		{"skip reason", stepReason(run.SkipReason)},
 		{"edited before retry", stepOverrideValue(run)},
 		{"transcript", stepOptional(run.TranscriptPath, "none — this step produced no transcript")},
 	})
@@ -481,6 +481,15 @@ func stepExitCode(code *int) string {
 		return "none"
 	}
 	return strconv.Itoa(*code)
+}
+
+// stepReason is a failure or skip reason in words with its raw code beside
+// it (reasonText), which the fact table dims (dimReasonCode).
+func stepReason(code *string) string {
+	if code == nil || *code == "" {
+		return "none"
+	}
+	return reasonText(*code)
 }
 
 func stepOptional(value *string, fallback string) string {

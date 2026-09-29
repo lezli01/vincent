@@ -16,6 +16,7 @@ vincent          # opens the TUI
 - [Answering a question](#answering-a-question)
 - [The takeover screens](#the-takeover-screens)
 - [The command palette](#the-command-palette)
+- [Glossary](#glossary)
 - [Every key](#every-key)
 - [Rebinding keys](#rebinding-keys)
 - [Mouse, selection and paste](#mouse-selection-and-paste)
@@ -92,9 +93,12 @@ being at once a slot holder and something waiting on you.
 
 Three behaviors matter:
 
-- **Tasks waiting on a human are pinned to the top** with a distinct badge —
-  `awaiting_input`, `awaiting_gate` and `blocked`. `!` jumps to the next one from
-  anywhere.
+- **Tasks that need you are pinned to the top** with a distinct badge —
+  `! awaiting input`, `! awaiting approval` and `! blocked`. `!` jumps to the
+  next one from anywhere. A blocked row names its reason in words,
+  `! blocked · check failed`, when the board has width to spare; on a board
+  without a surplus the reason is the first thing the cell gives up, and it
+  reads `! blocked`.
 - **The terminal bell rings when a task enters `awaiting_input`**, so most
   terminals flash or badge the window even when it is not focused.
 - **A task waiting on a clock says when it resumes.** A task whose agent hit a
@@ -102,7 +106,7 @@ Three behaviors matter:
   `retry_backoff` — is `queued` like any other, but its state cell reads
   `queued → 14:20`, the time vincent will try it again, on its own. It holds no
   slot and needs nothing from you; the detail header names the reason in full
-  (`queued · usage limit → 14:20`, `queued · retry backoff → 14:20`). See
+  (`queued · usage limit reached → 14:20`, `queued · waiting to retry → 14:20`). See
   [Troubleshooting](troubleshooting.md#usage_limit--do-nothing-unless-you-asked-to-be-told) and
   [`retry_backoff`](troubleshooting.md#retry_backoff--also-do-nothing-but-for-a-different-reason).
 - **The header badges the agent, not just the task.** An adapter vincent has
@@ -124,7 +128,7 @@ Three behaviors matter:
 
 **A cell too long for its column wraps rather than disappearing.** The title,
 the state, the step and the status carry across up to three lines of the same
-row, so `awaiting_children (×2 ●1 ✓3)` and a step's own message are readable
+row, so `waiting on lanes (×2 ●1 ✓3)` and a step's own message are readable
 without opening the task. Every row on a board is the same height — as tall as
 the tallest row in the list, and never more than three lines — so a board where
 nothing overflows is one line per task, exactly as before. The list, not the
@@ -138,8 +142,9 @@ wrap makes unreadable, so under width pressure they are dropped instead.
 
 **The title has a ceiling.** It takes whatever the fixed columns leave, up to a
 comfortable width; past that the extra room goes to `STEP` and then `STATUS` —
-the two columns whose content actually outgrows them — and only what neither
-can use comes back to the title. So a 200-column board shows
+the two columns whose content actually outgrows them — then to `STATE`, as far
+as a blocked row's reason needs, and only what none of them can use comes back
+to the title. So a 200-column board shows
 `3/7 green · loop 4/10 · repair 2/3` whole instead of spending the room on a
 title's trailing blanks. A loop rollup too wide for the column it is given
 drops clauses from the tail rather than wrapping — the body step goes first,
@@ -151,13 +156,13 @@ daemon restart), `○` not started, `■` stopped, `–` skipped. Colour only
 reinforces a glyph, so the board reads the same without colour.
 
 - A fan-out parent's state names its lanes by state:
-  `awaiting_children (×1 !1 ●1 ✓2)` is one blocked lane, one waiting on you,
+  `waiting on lanes (×1 !1 ●1 ✓2)` is one blocked lane, one waiting on you,
   one running and two done. Blocked lanes come first, so when the cell is too
   narrow for all of it, the done count is cut before the blocked one. A state
   with no glyph is spelled out (`1 paused`). The breakdown needs the task's
   `children` rollup, which only the task detail carries. The board's rows come
   from the task list, so today a parent's row shows a bare
-  `awaiting_children`; open the parent, or press `L`, to see its lanes.
+  `waiting on lanes`; open the parent, or press `L`, to see its lanes.
 - An expanded lane reads `lane api` rather than repeating its parent's title.
 - With room to spare after the step and any loop rollup, `STEP` adds one pip
   per workflow step: `3/5 build ✓✓●○○`. The pips never make the cell wrap or
@@ -252,7 +257,7 @@ and `enter` do nothing there.
 Three things mean a fold can never hide work waiting on you:
 
 - the header's badge and count survive the fold;
-- `!` (jump to the next task needing a human) opens whatever group it lands in;
+- `!` (jump to the next task that needs you) opens whatever group it lands in;
 - a collapsed group **opens by itself** the moment a task inside it starts
   waiting for input.
 
@@ -576,24 +581,24 @@ narrow pane truncates it early;
 [`vincent task show`](../reference/cli.md#vincent-task-show) prints the same
 thing plus the source digest, and is where an audit is actually done.
 
-A structure step gets a tier of its own. A `parallel` group's sub-steps share
+A structure step gets a fold of its own. A `parallel` group's sub-steps share
 the group's index, so the group is one header and each sub-step sits beneath
 it. A `loop` (§7.8) goes one further: its body's rows are grouped **by
 iteration**, folded shut with the latest one open, and a `for_each` iteration's
-header names the item it ran on. Ten passes of a four-step body is forty rows,
-and the one you arrived to read is almost always the pass it stopped on.
-So you can see how the passes went without opening them, the loop's header is
-followed by one dim line, `iterations ✓✓×✓●`. It shows up to ten passes, oldest
-first, with `…+3` in front when older ones are cut. Each glyph is that pass's
+header names the item it ran on. Ten iterations of a four-step body is forty rows,
+and the one you arrived to read is almost always the iteration it stopped on.
+So you can see how the iterations went without opening them, the loop's header is
+followed by one dim line, `iterations ✓✓×✓●`. It shows up to ten iterations, oldest
+first, with `…+3` in front when older ones are cut. Each glyph is that iteration's
 worst outcome: `×` a step failed or was rejected, `■` a `break` ended the loop,
 `●` still running, `✓` everything passed or was skipped.
 
-Folded is not unreachable. `space` opens or closes the tier the cursor is in,
-`→` opens it and `←` closes it, `enter` on a folded tier's header opens it
+Folded is not unreachable. `space` opens or closes the iteration or round the cursor is in,
+`→` opens it and `←` closes it, `enter` on a folded one's header opens it
 (and on a drawn attempt still opens Output), and `O`/`C` open and close every
-tier of the task — the same two letters the Diff tab uses. Latest-open is only
+iteration and round of the task — the same two letters the Diff tab uses. Latest-open is only
 where the timeline *starts*: what you open stays open while the task refreshes,
-and opening another task starts fresh. `↑`/`↓` stop **once** on a folded tier,
+and opening another task starts fresh. `↑`/`↓` stop **once** on a folded iteration or round,
 on its header, so the cursor is always somewhere you can see; the Output tab's
 `←`/`→` still walk every attempt, folded or not.
 
@@ -603,7 +608,7 @@ are folded, the third is opened with `→` to show its migrate and verify
 attempts, and the fourth — the pass it stopped on — holds migrate's failed
 attempt and the end of its output](../assets/tui-loop.png)
 
-A multi-round `fan_out` (§7.6) gets the same tier under a different word: its
+A multi-round `fan_out` (§7.6) folds the same way under a different word: its
 rounds read `round 0`, `round 1`, … — 0-based, because that is the number the
 transcript file and the log line use — and the same keys open and close them.
 
@@ -611,10 +616,10 @@ A `fan_out` step is on the timeline **while its lanes run**, not only once they
 have merged: the row opens `running` when the round is spawned and the merge
 that ends the round finishes that same row. Since the step itself executes none
 of the work, its running row carries what the subtree is doing beside the state
-— `×2 !1 ●1 ✓3`, the same clauses the board puts beside `awaiting_children` —
+— `×2 !1 ●1 ✓3`, the same clauses the board puts beside `waiting on lanes` —
 read live from the task rather than frozen in when the lanes were spawned. The
 round is named on the row (`round 0 · ×2 ●3`) only
-when the timeline is not already drawing `round N` tiers above it. No other
+when the timeline is not already drawing `round N` headers above it. No other
 step type is annotated.
 
 The board's and the header's step column say the same thing more briefly: a
@@ -627,9 +632,9 @@ The header also adds the iteration strip after its loop clause
 its step counter (`step 2/3 ✓●○`). A `parallel` group, a loop or a fan-out is
 one pip, and the current step of a task waiting on you is `!`.
 
-Two things on an attempt line are worth telling apart. A red word like
-`check_failed` is vincent's **failure reason** — a fixed set of constants, and
-vincent's own verdict. A cyan `» 3 tests red in internal/store` is the step's
+Two things on an attempt line are worth telling apart. A red
+`check failed · check_failed` is vincent's **failure reason** — a fixed set of
+constants, and vincent's own verdict, in words with its code dim beside it. A cyan `» 3 tests red in internal/store` is the step's
 own **status message**, free text it set while it was running and the last thing
 it said before it ended. It is never a cause: a step killed on a timeout may be
 carrying a line it wrote half an hour earlier.
@@ -657,10 +662,10 @@ output. It is the sentence that decides whether to open the transcript.
 | `ctrl+r` | On Pull Request, re-run the failed jobs of the selected check's GitHub Actions run (asks first) |
 | `↑`/`↓` | On Step Details, select an attempt (`←`/`→` do it too, and move the same cursor everywhere else) |
 | `pgup`/`pgdn` | On Step Details, scroll the facts |
-| `enter` | From Steps, open the selected attempt in Output — or open the folded iteration/round tier the cursor is on |
-| `space` | On Steps, open or close the iteration/round tier the cursor is in |
-| `←`/`→` | On Steps, close / open that tier |
-| `O` / `C` | On Steps, open / close every iteration and round tier of this task |
+| `enter` | From Steps, open the selected attempt in Output — or open the folded iteration or round the cursor is on |
+| `space` | On Steps, open or close the iteration or round the cursor is in |
+| `←`/`→` | On Steps, close / open that iteration or round |
+| `O` / `C` | On Steps, open / close every iteration and round of this task |
 | `←`/`→` or `h`/`l` | On Output, select which attempt's output to show |
 | `f` or `G` | Follow the live output again |
 | `v` | More or less detail: quiet → compact → normal → verbose (tool lines, then reasoning, the run's own metadata, then unrecognized lines) |
@@ -1176,7 +1181,7 @@ start row reading when a slot is free](../assets/tui-follow-up.png)
 
 | Key | Does |
 |---|---|
-| `↑` / `↓` | Move between the run form, what to run, the agent / model / effort rows and the start row |
+| `↑` / `↓` | Move between the kind of follow-up, what to run, the agent / model / effort rows and the start row |
 | `enter` | Open the row under the cursor — the run-form list, the text field, or that row's picker; on the start row, toggle holding the task paused |
 | `e` | Write the prompt or command in `$EDITOR` instead |
 | `t` | In an open workflow / agent / model / effort list, type a value it does not offer |
@@ -1264,7 +1269,7 @@ each ending in a row for typing an answer of your own](../assets/tui-answer.png)
 |---|---|
 | `space` | Pick an option (toggles, for a multi-select question) |
 | `t` | Type your own answer — options are suggestions, never a list |
-| `enter` | Submit; the run resumes in the same session where it stopped |
+| `enter` | Submit; the attempt resumes in the same session where it stopped |
 | `ctrl+t` | Switch between the question and this task's details, without leaving the popup |
 | `esc` | Close without answering (what you picked is kept) |
 
@@ -2565,8 +2570,31 @@ is on the strip. The Overview's jump links, such as `3` for the failed
 attempt's output, stay on the Overview, where the attempt they point at is on
 screen.
 
-The palette exists so the takeover screens do not need memorized number keys. If you cannot remember a binding, `:` and `?` are the two keys worth
+The takeover screens have their own **screens** group. The palette exists so
+the takeover screens do not need memorized number keys. If you cannot remember a binding, `:` and `?` are the two keys worth
 knowing.
+
+## Glossary
+
+The TUI uses one word for each thing, and never prints a snake_case identifier
+as prose. A state reads as its words; a reason reads as its title, with the
+code the CLI, the API and MCP use dim beside it — `check failed · check_failed`
+— so either spelling finds the other. An unknown reason, from a daemon newer
+than the TUI, prints once as its code. Task Details is the one place that
+keeps the raw identifiers, undimmed, for copying into a command.
+
+| Word | Means | Identifier |
+|---|---|---|
+| awaiting input | A step asked a question and waits for your answer | `awaiting_input` |
+| awaiting approval | A manual gate waits for approve or reject | `awaiting_gate` |
+| waiting on lanes | A fan-out parent waits for its lanes | `awaiting_children` |
+| needs you | The three states above that wait on a human: awaiting input, awaiting approval and blocked | `!` badge |
+| attempt | One execution of a step; a retry is a new attempt | `step_run` |
+| iteration | One pass of a loop's body | `iteration` |
+| round | One wave of a fan-out's lanes | `iteration` on a `fan_out` step |
+| lane | One child task of a fan-out | a child task with a `lane_id` |
+| tab | A pane of a task's workspace — Overview, Steps, Output, Diff… | |
+| screen | A takeover routed over the board — New task, Projects, Workflows… | |
 
 ## Every key
 
@@ -2581,7 +2609,7 @@ registry** in the source, so a key that exists is a key that is documented.
 
 On the board and in a task's workspace the sheet opens with **This screen**,
 an orientation header. On the board it lists three moves: `enter` opens the
-task, `!` jumps to the next task needing you, and `:` finds everything. In a
+task, `!` jumps to the next task that needs you, and `:` finds everything. In a
 workspace it lists the tabs on the strip, in drawn order, each with its digit
 and what it is for — `4  Diff — what the task's branch changed`. The keys
 shown are the ones in force after `tui.keys`.
@@ -2624,7 +2652,7 @@ Global bindings — active whenever the focused surface is not capturing text:
 | `?` | Toggle help |
 | `f1` | Toggle help, also while a text field has the keyboard |
 | `tab` / `shift+tab` | Move between task tabs; on the board filter, commit it |
-| `!` | Jump to the next task needing a human |
+| `!` | Jump to the next task that needs you — awaiting input, awaiting approval or blocked |
 | `n` | New task |
 | `M` | Toggle the mouse |
 | `esc` | Close one layer: popup tab → popup → screen → selection → filter — never quits |
@@ -2705,7 +2733,7 @@ The first thirteen are the operations screens share, the next ten are the
 | `palette_alt` | `ctrl+p` | Open the command palette, also while a text field has the keyboard |
 | `help` | `?` | Toggle help |
 | `help_alt` | `f1` | Toggle help, also while a text field has the keyboard |
-| `next_attention` | `!` | Jump to the next task needing a human |
+| `next_attention` | `!` | Jump to the next task that needs you — awaiting input, awaiting approval or blocked |
 | `mouse` | `M` | Toggle the mouse |
 | `quit` | `q` | Quit the TUI |
 | `new` | `n` | New task — or new chat, on the chats board |

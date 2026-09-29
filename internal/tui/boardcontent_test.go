@@ -90,11 +90,11 @@ func TestStatusKeptAt120Grouped(t *testing.T) {
 			}
 		}
 	}
-	if w := columnsFor(120, defaultGrouping(), false, boardContent{status: true}).titleWidth(120); w != 41 {
-		t.Errorf("title at 120 grouped = %d, want 41", w)
+	if w := columnsFor(120, defaultGrouping(), false, boardContent{status: true}).titleWidth(120); w != 40 {
+		t.Errorf("title at 120 grouped = %d, want 40", w)
 	}
-	if w := columnsFor(120, defaultGrouping(), true, boardContent{status: true}).titleWidth(120); w != 38 {
-		t.Errorf("title at 120 grouped, marked = %d, want 38", w)
+	if w := columnsFor(120, defaultGrouping(), true, boardContent{status: true}).titleWidth(120); w != 37 {
+		t.Errorf("title at 120 grouped, marked = %d, want 37", w)
 	}
 }
 
@@ -173,7 +173,7 @@ func TestContentColumnsFitWidth(t *testing.T) {
 		combos = append(combos, boardContent{status: i&1 != 0, cost: i&2 != 0, pr: i&4 != 0})
 	}
 	for _, g := range ladderGroupings() {
-		for width := 68; width <= 400; width++ {
+		for width := 69; width <= 400; width++ {
 			for _, c := range combos {
 				cols, set := boardColumns(width, g, true, c)
 				total := 0
