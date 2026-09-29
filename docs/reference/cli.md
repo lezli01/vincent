@@ -1067,6 +1067,32 @@ An empty diff prints nothing and exits `0`, as `git diff` does (`{"diff": ""}`
 and `[]` under `--json`). A task with no worktree yet, one whose worktree is
 gone, or an unknown task exits `1` with the daemon's message on stderr.
 
+### `vincent task commits`
+
+```sh
+vincent task commits <id> [--json]
+```
+
+Lists the commits the task made on its branch, oldest first, one line each:
+the short sha, the author time in local time, the subject, and the lane on a
+fan-out lane merge. The commits made inside a lane are not listed; the merge
+that joined it is.
+
+```
+3f1c9a0b2d4e  2026-09-29 12:12  Add the handler
+8e20d71c55a9  2026-09-29 12:40  Merge lane 'api' of task 42  [lane api, task 42]
+```
+
+The list is read from the task's branch, not its worktree, so it still works
+after the task is archived — and it holds committed work only. `--json` prints
+the API's list: `sha`, `subject`, `author_time`, and `lane_id` and
+`child_task_id` on a lane merge only.
+
+A task with no commits past its base prints nothing and exits `0` (`[]` under
+`--json`). A task with no branch yet, one whose branch no longer exists, or an
+unknown task exits `1` with the daemon's message on stderr. A daemon started
+before the upgrade that added the command says so, and to restart it.
+
 ### `vincent task cancel`
 
 ```sh

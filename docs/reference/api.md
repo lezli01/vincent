@@ -2809,6 +2809,7 @@ status, not as the cause of anything.
 ```
 GET /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
 GET /v1/tasks/{id}/diff?by=
+GET /v1/tasks/{id}/commits
 ```
 
 The transcript is the attempt's JSONL file, ranged:
@@ -2957,6 +2958,33 @@ holding the whole diff, so a client can read the grouped shape unconditionally.
 Without the parameter the response is byte-for-byte the `text/plain` body it has
 always been, and any other value is a `400 validation_failed` rather than a
 silent fall-through.
+
+`GET …/commits` lists the commits the task made on its branch, oldest first:
+
+```json
+[
+  {"sha": "9c1e…", "subject": "Add the handler", "author_time": "2026-09-29T10:12:03Z"},
+  {"sha": "4ab2…", "subject": "Merge lane 'api' of task 42", "author_time": "2026-09-29T10:40:17Z",
+   "lane_id": "api", "child_task_id": 42}
+]
+```
+
+It reads the task's branch in the project repository rather than its worktree,
+so it **still answers after the task is archived**. For a live task that means
+committed work only. The range starts at the same base `…/diff` uses — the
+recorded `base_sha`, else the base branch — and follows the task's own
+first-parent chain, so the commits made inside a fan-out lane are not listed but
+the merge that joined the lane is, carrying the same `lane_id` and
+`child_task_id` a `?by=lane` section does. Both keys are omitted on every other
+commit. `author_time` is RFC3339 UTC.
+
+A branch with nothing past its base is `200 []`. It is a `409 invalid_state`
+when the task has no branch yet (it was never admitted), when the branch no
+longer exists — whether archive removed it because it had no commits or someone
+deleted it — and when the merge-base cannot be computed. A daemon that predates
+this route answers its router's `404 not_found` with the message
+`no such endpoint`, which is how a client tells an older daemon from an unknown
+task.
 
 ## Events (SSE)
 

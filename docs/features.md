@@ -439,7 +439,8 @@ localhost API.
 
 - Every subcommand supports `--json` for machine-readable output.
 - Stable exit codes distinguish a rejected request from an unavailable daemon.
-- REST endpoints cover projects, workflows, tasks, actions, output, and diffs.
+- REST endpoints cover projects, workflows, tasks, actions, output, diffs, and
+  commits.
 - Creating a task takes an optional idempotency key, so a create that loses its
   response can be re-sent without making a second task.
 - Server-sent events provide durable state replay and live per-task output.
@@ -450,6 +451,8 @@ localhost API.
 - `vincent task diff` prints a task's change as a patch that pipes straight
   into `git apply`, split into one section per fan-out lane with `--by lane`,
   or as a per-file table of added and removed lines with `--stat`.
+- `vincent task commits` lists the commits a task made on its branch, lane
+  merges marked, and keeps working after the task is archived.
 - `vincent agents` shows each agent CLI's version, whether vincent has tested
   that build, whether you are logged in, and its usage quota, and exits 0
   whatever the adapters' health so a script can read it.
