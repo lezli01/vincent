@@ -317,7 +317,7 @@ unlinking lives there and on the Pull Request tab.
 **Output** gives the selected attempt's live tail or historical transcript the
 entire view. Its selector names the attempt and its position in the task; use
 `←`/`→` (or `h`/`l`) to show another attempt without returning to the timeline.
-While the attempt on screen is still running, the pane's title carries the same
+While the attempt on screen is still running, that selector carries the same
 in-progress indicator the [chat workspace](#chat-workspace) draws — a turning
 glyph and an elapsed clock, `⠋ working… 14s` — beside the level and the follow
 state, so an attempt that is thinking rather than printing is told apart from a
@@ -579,7 +579,8 @@ the escape hatch for a render that surprised you, and it is a display state and
 nothing more: the records, the live tail, the level and the transcript on disk
 are untouched. Like `v`'s level, it is one choice for the whole session and
 shared with the chat workspace — set it in either place and both follow — and it
-is gone when you quit. The pane's title says `raw` while it is on.
+is gone when you quit. The pane's title — in a task's workspace, the attempt
+strip — says `raw` while it is on.
 
 `ctrl+y` opens a **copy picker**: a searchable list of what can be taken out of
 the assistant prose on screen, newest message first.
