@@ -154,24 +154,23 @@ func TestFormatStatus(t *testing.T) {
 	}
 }
 
-// The shedding ladder (task 036): the status is the last column admitted and
-// the first shed, so a board narrow enough to drop it renders exactly as it
-// did before the column existed. Asserted over every width rather than at a
-// few, because what matters is that there is no width at which the status
-// displaces a column a reader navigates by.
-func TestStatusColumnIsTheLastAdmitted(t *testing.T) {
+// The shedding ladder (task 036, amended by task 129.16): the status outranks
+// the pull request marker, COST and the step name, and never a column a
+// reader navigates by. Asserted over every width rather than at a few,
+// because what matters is that there is no width at which the status
+// displaces the workflow or the project.
+func TestStatusColumnNeverDisplacesNavigation(t *testing.T) {
 	groupings := []grouping{nil, {groupProject}, {groupProject, groupWorkflow}}
 	sawStatus := false
 	for width := 20; width <= 400; width++ {
 		for _, g := range groupings {
-			set := columnsFor(width, g, false)
+			set := columnsFor(width, g, false, fullContent)
 			if !set.status {
 				continue
 			}
 			sawStatus = true
-			if !set.cost || !set.stepName {
-				t.Fatalf("width %d %s: status displaced cost/step name: %+v",
-					width, g.label(), set)
+			if set.titleWidth(width) < minTitleWithStatus {
+				t.Fatalf("width %d %s: status admitted with a %d-cell title", width, g.label(), set.titleWidth(width))
 			}
 			if !g.has(groupWorkflow) && !set.workflow {
 				t.Fatalf("width %d %s: status displaced the workflow: %+v", width, g.label(), set)
@@ -203,8 +202,8 @@ func TestStatusColumnIsTheLastAdmitted(t *testing.T) {
 // name and cost first, which predates this column and is not its business.
 func TestStatusColumnDoesNotEatTheWidthGroupingFrees(t *testing.T) {
 	for _, width := range []int{160, 240, 400} {
-		flat := columnsFor(width, nil, false)
-		grouped := columnsFor(width, grouping{groupProject, groupWorkflow}, false)
+		flat := columnsFor(width, nil, false, fullContent)
+		grouped := columnsFor(width, grouping{groupProject, groupWorkflow}, false, fullContent)
 		if grouped.titleWidth(width) <= flat.titleWidth(width) {
 			t.Errorf("width %d: grouped remainder %d, flat %d — grouping must gain row space",
 				width, grouped.titleWidth(width), flat.titleWidth(width))
@@ -217,14 +216,16 @@ func withStatus(message string) func(*apiclient.Task) {
 }
 
 // The cell reaches the rendered board, and only on a board wide enough to
-// carry the column.
+// carry the column — which since task 129.16 includes the common 120.
 func TestBoardRendersTheStatusCell(t *testing.T) {
 	b := groupedBoard(task(1, stateRunning, withStatus("compiling internal/store")))
-	if out := b.render(240, 20); !strings.Contains(out, "STATUS") ||
-		!strings.Contains(out, "compiling internal/store") {
-		t.Errorf("a 240-column board rendered no status:\n%s", out)
+	for _, width := range []int{120, 240} {
+		if out := b.render(width, 20); !strings.Contains(out, "STATUS") ||
+			!strings.Contains(out, "compiling internal/store") {
+			t.Errorf("a %d-column board rendered no status:\n%s", width, out)
+		}
 	}
-	if out := b.render(120, 20); strings.Contains(out, "compiling internal/store") {
-		t.Errorf("a 120-column board rendered the status it should have shed:\n%s", out)
+	if out := b.render(80, 20); strings.Contains(out, "compiling internal/store") {
+		t.Errorf("an 80-column board rendered the status it should have shed:\n%s", out)
 	}
 }

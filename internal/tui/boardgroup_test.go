@@ -219,15 +219,15 @@ func TestGroupCycleKeepsTheSelectedTask(t *testing.T) {
 // TestGroupedColumnsAreDropped: a level named by every header above the rows
 // does not also need a column repeating it on every row.
 func TestGroupedColumnsAreDropped(t *testing.T) {
-	full := columnsFor(160, nil, false)
+	full := columnsFor(160, nil, false, fullContent)
 	if !full.project || !full.workflow {
 		t.Fatalf("flat at 160 = %+v, want both columns", full)
 	}
-	both := columnsFor(160, grouping{groupProject, groupWorkflow}, false)
+	both := columnsFor(160, grouping{groupProject, groupWorkflow}, false, fullContent)
 	if both.project || both.workflow {
 		t.Errorf("grouped by project and workflow = %+v, want neither column", both)
 	}
-	one := columnsFor(160, grouping{groupProject}, false)
+	one := columnsFor(160, grouping{groupProject}, false, fullContent)
 	if one.project {
 		t.Error("grouping by project kept the PROJECT column")
 	}
@@ -245,8 +245,8 @@ func TestGroupedColumnsAreDropped(t *testing.T) {
 			both.titleWidth(160), full.titleWidth(160))
 	}
 	for _, width := range []int{120, 160, 200, 240, 400} {
-		flatCols, _ := boardColumns(width, nil, false)
-		groupedCols, _ := boardColumns(width, grouping{groupProject, groupWorkflow}, false)
+		flatCols, _ := boardColumns(width, nil, false, fullContent)
+		groupedCols, _ := boardColumns(width, grouping{groupProject, groupWorkflow}, false, fullContent)
 		flatSpend, groupedSpend := flexibleWidth(flatCols), flexibleWidth(groupedCols)
 		if groupedSpend < flatSpend {
 			t.Errorf("width %d: grouped spends %d on TITLE/STEP/STATUS, flat %d — grouping must never be worse off",
@@ -306,7 +306,7 @@ func TestGroupedRowsMatchTheColumnCount(t *testing.T) {
 			for _, marks := range []markSet{nil, {1}} {
 				b.marks = marks
 				b.render(width, 30)
-				cols, set := boardColumns(width, g, b.hasMarks())
+				cols, set := boardColumns(width, g, b.hasMarks(), contentOf(b.allRows()))
 				rows := b.rows()
 				for i, row := range b.rowsFor(rows, cols, set) {
 					if len(row) != len(cols) {

@@ -987,7 +987,7 @@ func (b *board) wrapRows(rows []boardRow) []boardRow {
 	if b.width <= 0 {
 		return rows
 	}
-	cols, set := boardColumns(b.width, b.group, b.hasMarks())
+	cols, set := b.columns()
 	h := b.rowHeight(rows, cols, set)
 	if h <= 1 {
 		return rows
@@ -1153,7 +1153,7 @@ func (b *board) render(width, height int) string {
 		return sb.String()
 	}
 
-	cols, set := boardColumns(b.width, b.group, b.hasMarks())
+	cols, set := b.columns()
 	// SetColumns re-renders the rows it already holds: when a resize crosses
 	// a column breakpoint, yesterday's wider rows meet today's narrower
 	// column set and the table indexes out of range. Clear the rows first —
@@ -1198,14 +1198,24 @@ func (b *board) firstRowLine() int {
 	return n + len(b.statusLines())
 }
 
+// columns is the column set for this board as it stands: its width, its
+// grouping, whether anything is marked, and what the rows it holds have to
+// say (task 129.16). The content is read off allRows — every row after the
+// filter and the archive view, folded or scrolled away included — never off
+// the viewport, so scrolling cannot make a column appear or vanish.
+func (b *board) columns() ([]table.Column, columnSet) {
+	return boardColumns(b.width, b.group, b.hasMarks(), contentOf(b.allRows()))
+}
+
 // boardCell is one cell of a task row before it is laid out: the plain text,
 // the style each of its lines takes once it has been wrapped, and whether it
 // wraps at all (task 050 decisions 6 and 8).
 type boardCell struct {
 	text  string
 	style lipgloss.Style
-	// wrap is false for the columns that keep truncating. ID, ELAPSED and
-	// COST cannot meaningfully overflow; PROJECT and WORKFLOW are identifiers
+	// wrap is false for the columns that keep truncating. ID, ELAPSED, COST
+	// and PR cannot meaningfully overflow, and neither can a STATUS admitted
+	// below maxTitle, which is cut to one line (task 129.16); PROJECT and WORKFLOW are identifiers
 	// used for scanning, which a 14-cell wrap makes unreadable — under width
 	// pressure they are shed instead, which is the answer the ladder already
 	// gives for them.
@@ -1277,8 +1287,19 @@ func (b *board) cellsFor(r boardRow, now time.Time, set columnSet, cols []table.
 	if set.cost {
 		cells = append(cells, plain(formatCost(t.CostUSD)))
 	}
+	if set.pr {
+		cells = append(cells, plain(formatPR(t.GitHubPull)))
+	}
 	if set.status {
-		cells = append(cells, boardCell{text: formatStatus(t.StatusMessage), wrap: true})
+		status := boardCell{text: formatStatus(t.StatusMessage), wrap: true}
+		if set.statusLine {
+			// One line, cut with an ellipsis: wrapCellLines at a height of
+			// one is exactly that, and it also folds a newline in the
+			// message into the one run of text.
+			status.text = strings.Join(wrapCellLines(status.text, columnWidth(cols, "STATUS"), 1), "")
+			status.wrap = false
+		}
+		cells = append(cells, status)
 	}
 	return cells
 }
@@ -1389,6 +1410,9 @@ func groupHeaderRow(r boardRow, set columnSet) table.Row {
 	}
 	row = append(row, r.headerCell(), "", "", "")
 	if set.cost {
+		row = append(row, "")
+	}
+	if set.pr {
 		row = append(row, "")
 	}
 	if set.status {
