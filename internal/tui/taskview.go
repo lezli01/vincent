@@ -18,11 +18,20 @@ import (
 	"github.com/lezli01/vincent/internal/keymap"
 )
 
-// taskViewTab names the full-screen task surfaces. Steps is deliberately
-// first: entering a task lands on the execution history people most often came
-// to inspect. Workflow was deliberately last (task 051): appending it leaves
-// 1-4 bound to the tabs task 049 built the muscle memory on, and Pull Request
-// was appended after it for the same reason (task 068).
+// taskViewTab names the full-screen task surfaces. Overview is the landing
+// tab (task 129 decision 1, which supersedes only the "(default)" clause of
+// task 049 decision 2): a fresh open lands on the screen that answers the
+// question the task's state raises, and `0` reaches it from anywhere. The
+// timeline — now labelled Steps — keeps `1`, and every other digit keeps its
+// tab: digits bind to tabs and never to positions, so the enum's integer
+// order is free to change and nothing persists it. Workflow was appended
+// (task 051) so 1-4 stayed on the tabs task 049 built the muscle memory on,
+// and Pull Request after it for the same reason (task 068).
+//
+// The strip is drawn in two groups (taskTabPrimary): Overview, Output and
+// Diff first, then the rest dimmed. tabs() returns that drawn order, and the
+// cycle and the mouse walk it, so tab/⇧tab move across the screen the way the
+// eye does rather than in digit order.
 //
 // Step Details (issue #323) is inserted **before** Pull Request rather than
 // after it, which supersedes 068.3's placement decision. What 068.3 was
@@ -36,14 +45,15 @@ import (
 //
 // Pull Request is still the only **conditional** tab: it exists only for a
 // task with a live pull-request link and a usable integration, and it stays
-// last on the strip, so tabs() and the cycle keep the shape they have. Its
+// last on the strip, so its absence shortens the cycle and moves nothing. Its
 // absence is not free for the *cycle*, which used to be modulo taskTabCount
 // and would otherwise land on a tab that is not on the strip. taskView.tabs is
 // the strip as it currently stands, and tab/⇧tab walk that instead.
 type taskViewTab int
 
 const (
-	taskTabSteps taskViewTab = iota
+	taskTabOverview taskViewTab = iota
+	taskTabSteps
 	taskTabDetails
 	taskTabOutput
 	taskTabDiff
@@ -137,6 +147,10 @@ type taskView struct {
 	// board's, shared with every other way of opening a task.
 	stackPush int64
 	stackKeep bool
+	// leftTab is the tab each task on the stack was left on, so a pop puts
+	// the reader back where they were rather than on the Overview a fresh
+	// open lands on (task 129.12).
+	leftTab map[int64]taskViewTab
 	// alive reports whether a task on the stack can still be opened, so an
 	// archived or vanished one is dropped from the stack rather than popped
 	// to. Injected so the walk is testable without a daemon; nil asks one.
@@ -260,6 +274,8 @@ func (t *taskView) bindingContext() bindingContext {
 		}
 	}
 	switch t.tab {
+	case taskTabOverview:
+		return ctxTaskOverview
 	case taskTabDetails:
 		return ctxTaskDetails
 	case taskTabOutput:
@@ -289,16 +305,28 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 		// to the back stack: a jump pushes what it left, a pop keeps what it
 		// already truncated, and every other route — the board, the palette,
 		// the pull-request takeover — starts fresh.
+		restore, restoreTab := false, taskTabOverview
 		switch {
 		case t.stackKeep:
 			t.stackKeep = false
+			restoreTab, restore = t.leftTab[msg.id]
 		case t.stackPush != 0:
 			t.stack = append(t.stack, t.stackPush)
 			t.stackPush = 0
 		default:
-			t.stack = nil
+			t.stack, t.leftTab = nil, nil
 		}
-		t.tab = taskTabSteps
+		// Only a fresh open lands on the Overview (task 129.12). A pop
+		// restores the tab the reader left that task on, and the pull
+		// requests takeover's create route lands where its form belongs.
+		landing := taskTabOverview
+		switch {
+		case msg.openPR:
+			landing = taskTabPull
+		case restore:
+			landing = restoreTab
+		}
+		t.tab = taskTabOverview
 		t.workflow = newWorkflowTab()
 		t.details.reset()
 		t.popupDetails.reset()
@@ -313,7 +341,19 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 		t.chats, t.chatsErr = nil, ""
 		t.detail.active = true
 		laneCmd := t.resetLanes()
-		return t, tea.Batch(t.detail.open(msg.id, msg.state), t.pullCmd(), laneCmd, t.lanesCmd(), t.chatsCmd())
+		openCmd := t.detail.open(msg.id, msg.state)
+		// After the open, so a tab that fetches on activation — Diff, the
+		// Workflow graph, the checks — fetches for this task.
+		var tabCmd tea.Cmd
+		if landing == taskTabPull {
+			// Set rather than setTab: the tab is not on the strip until the
+			// pull row lands, and leaveAbsentPullTab moves off it then if the
+			// task turns out to have none.
+			t.tab = taskTabPull
+		} else {
+			tabCmd = t.setTab(landing)
+		}
+		return t, tea.Batch(openCmd, tabCmd, t.pullCmd(), laneCmd, t.lanesCmd(), t.chatsCmd())
 	case viewActivatedMsg:
 		if msg.id != viewTask {
 			return t, nil
@@ -434,25 +474,27 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return t.switchTab(1)
 	case "shift+tab", "[":
 		return t.switchTab(-1)
+	case "0":
+		return t.jumpTab(taskTabOverview)
 	case "1":
-		return t.setTab(taskTabSteps)
+		return t.jumpTab(taskTabSteps)
 	case "2":
-		return t.setTab(taskTabDetails)
+		return t.jumpTab(taskTabDetails)
 	case "3":
-		return t.setTab(taskTabOutput)
+		return t.jumpTab(taskTabOutput)
 	case "4":
-		return t.setTab(taskTabDiff)
+		return t.jumpTab(taskTabDiff)
 	case "5":
-		return t.setTab(taskTabWorkflow)
+		return t.jumpTab(taskTabWorkflow)
 	case "6":
-		return t.setTab(taskTabStepDetails)
+		return t.jumpTab(taskTabStepDetails)
 	case "7":
 		// Absent means absent: with no pull request linked, 7 does nothing
 		// rather than landing on an empty screen (task 068).
 		if !t.pullTabAvailable() {
 			return nil
 		}
-		return t.setTab(taskTabPull)
+		return t.jumpTab(taskTabPull)
 	case "d":
 		if t.tab == taskTabDiff {
 			return t.setTab(taskTabOutput)
@@ -513,6 +555,9 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return t.detail.update(msg)
 	}
 
+	if t.tab == taskTabOverview {
+		return t.updateOverviewKey(msg)
+	}
 	if t.tab == taskTabDetails {
 		return t.updateDetailsKey(msg)
 	}
@@ -830,7 +875,8 @@ func (t *taskView) render(width, height int) string {
 
 // taskTabNames are the strip's labels, indexed by taskViewTab.
 var taskTabNames = [taskTabCount]string{
-	taskTabSteps:       "Steps & Attempts",
+	taskTabOverview:    "Overview",
+	taskTabSteps:       "Steps",
 	taskTabDetails:     "Task Details",
 	taskTabOutput:      "Output",
 	taskTabDiff:        "Diff",
@@ -848,28 +894,123 @@ func (tab taskViewTab) String() string {
 	return taskTabNames[tab]
 }
 
+// taskTabDigits are the keys that jump to each tab, drawn beside its label.
+var taskTabDigits = [taskTabCount]string{
+	taskTabOverview:    "0",
+	taskTabSteps:       "1",
+	taskTabDetails:     "2",
+	taskTabOutput:      "3",
+	taskTabDiff:        "4",
+	taskTabWorkflow:    "5",
+	taskTabStepDetails: "6",
+	taskTabPull:        "7",
+}
+
+// taskTabShort are the secondary group's labels when the full strip does not
+// fit. The primary group is never abbreviated.
+var taskTabShort = [taskTabCount]string{
+	taskTabSteps:       "Steps",
+	taskTabDetails:     "Details",
+	taskTabWorkflow:    "Flow",
+	taskTabStepDetails: "Inputs",
+	taskTabPull:        "PR",
+}
+
+// taskTabPrimary reports whether a tab is in the strip's first group: the
+// three a reader moves between most, drawn at full weight.
+func taskTabPrimary(tab taskViewTab) bool {
+	return tab == taskTabOverview || tab == taskTabOutput || tab == taskTabDiff
+}
+
+// Separators. Inside a group the primary one is a bar and the secondary a
+// gap; between the groups a double bar, so the two read as distinct under
+// the no-colour profile too, where the secondary group's dimming is gone
+// (WCAG 1.4.1, as task 129 borrows it).
+const (
+	tabSepPrimary   = " │ "
+	tabSepSecondary = "  "
+	tabSepGroups    = " ‖ "
+)
+
+// renderTabs draws the grouped strip at the widest label set that fits: full
+// labels, then the secondary group abbreviated, then the secondary group as
+// bare digits. The hint goes first of all.
 func (t *taskView) renderTabs() string {
 	tabs := t.tabs()
-	t.tabHits = t.tabHits[:0]
+	width := t.width
+	if width <= 0 {
+		width = 1 << 16
+	}
+	var line string
+	var hits []taskTabHit
+	for level := range 3 {
+		line, hits = t.tabStrip(tabs, level)
+		hint := styleDim.Render("   tab/⇧tab or digits")
+		if ansi.StringWidth(line+hint) <= width {
+			line += hint
+			break
+		}
+		if ansi.StringWidth(line) <= width {
+			break
+		}
+	}
+	t.tabHits = hits
+	return line
+}
+
+// tabStrip draws the strip at one abbreviation level and records where each
+// tab landed, in screen columns, for the mouse.
+func (t *taskView) tabStrip(tabs []taskViewTab, level int) (string, []taskTabHit) {
 	var b strings.Builder
+	var hits []taskTabHit
 	b.WriteString("  ")
 	x := 3 // root frame border plus the two-cell indent above
 	for i, tab := range tabs {
 		if i > 0 {
-			b.WriteString(styleDim.Render(" │ "))
-			x += 3
+			sep := tabSepSecondary
+			switch {
+			case taskTabPrimary(tab):
+				sep = tabSepPrimary
+			case taskTabPrimary(tabs[i-1]):
+				sep = tabSepGroups
+			}
+			b.WriteString(styleDim.Render(sep))
+			x += ansi.StringWidth(sep)
 		}
-		name := tab.String()
-		t.tabHits = append(t.tabHits, taskTabHit{tab: tab, x0: x, x1: x + len(name)})
-		b.WriteString(tabLabel(name, t.tab == tab))
-		x += len(name)
+		name := taskTabDigits[tab]
+		if label := t.tabName(tab, level); label != "" {
+			name += " " + label
+		}
+		active := t.tab == tab
+		switch {
+		case active:
+			b.WriteString(styleTitle.Render(name))
+		case taskTabPrimary(tab):
+			b.WriteString(name)
+		default:
+			b.WriteString(styleDim.Render(name))
+		}
+		w := ansi.StringWidth(name)
+		hits = append(hits, taskTabHit{tab: tab, x0: x, x1: x + w})
+		x += w
 	}
-	b.WriteString(styleDim.Render(fmt.Sprintf("   tab/⇧tab or 1–%d", len(tabs))))
-	return b.String()
+	return b.String(), hits
+}
+
+func (t *taskView) tabName(tab taskViewTab, level int) string {
+	if taskTabPrimary(tab) || level == 0 {
+		return tab.String()
+	}
+	if level == 1 {
+		return taskTabShort[tab]
+	}
+	return ""
 }
 
 func (t *taskView) renderTabBody(width, height int) string {
 	switch t.tab {
+	case taskTabOverview:
+		return t.renderOverview(width, height)
 	case taskTabDetails:
 		return t.renderDetails(width, height)
 	case taskTabOutput:
@@ -1529,6 +1670,10 @@ type taskLanePullsMsg struct {
 func (t *taskView) pushTask(id int64) {
 	if id != 0 {
 		t.stackPush = id
+		if t.leftTab == nil {
+			t.leftTab = map[int64]taskViewTab{}
+		}
+		t.leftTab[id] = t.tab
 	}
 }
 

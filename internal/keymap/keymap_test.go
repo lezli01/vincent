@@ -253,3 +253,48 @@ func TestRetiredIDIsDroppedNotAliased(t *testing.T) {
 		}
 	}
 }
+
+// TestOverviewZeroYieldsToAUserBinding is the upgrade task 129.12 is: `0`
+// became a fixed key of the task workspace, and a tui.keys that had already
+// bound it still loads (task 128 decision 3). The binding wins, the fixed
+// meaning is shadowed on every surface that records it, and a warning says
+// so; the strict write path refuses the same map.
+func TestOverviewZeroYieldsToAUserBinding(t *testing.T) {
+	overrides := map[string]string{"refresh": "0"}
+	if _, err := Build(overrides); err == nil {
+		t.Fatal("strict Build accepted 0, which the Overview holds")
+	}
+	km, warnings, err := BuildLenient(overrides)
+	if err != nil {
+		t.Fatalf("lenient load refused a tui.keys binding 0: %v", err)
+	}
+	if km.Key(Refresh) != "0" {
+		t.Errorf("refresh = %q, want the user's 0", km.Key(Refresh))
+	}
+	for _, s := range []Surface{"task overview", "task workspace"} {
+		if !km.Shadowed(s, "0") {
+			t.Errorf("0 is not shadowed on %s", s)
+		}
+	}
+	if joined := strings.Join(warnings, "\n"); !strings.Contains(joined, "Overview") {
+		t.Errorf("warnings %q do not name the Overview", joined)
+	}
+}
+
+// Every Overview row the registry lists is recorded, so no override can
+// silently take a jump link.
+func TestOverviewRowsAreFixed(t *testing.T) {
+	want := map[string]bool{"0": false, "3": false, "4": false, "6": false, "7": false}
+	for _, f := range FixedKeys() {
+		if f.Surface == "task overview" {
+			if _, ok := want[f.Key]; ok {
+				want[f.Key] = true
+			}
+		}
+	}
+	for key, seen := range want {
+		if !seen {
+			t.Errorf("task overview/%s is not a fixed key", key)
+		}
+	}
+}

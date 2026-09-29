@@ -26,7 +26,7 @@ var everyAction = taskActions{id: 9, state: stateRunning, actions: []string{
 // keyboard.
 func TestPaletteReachesEveryRegistryEntry(t *testing.T) {
 	contexts := []bindingContext{
-		ctxTasks, ctxTimeline, ctxTaskDetails, ctxOutput, ctxDiff,
+		ctxTasks, ctxTaskOverview, ctxTimeline, ctxTaskDetails, ctxOutput, ctxDiff,
 		ctxNewTask, ctxNewTaskFields, ctxProjects, ctxWorkflows, ctxWorkflowGraph, ctxWorkflowEditor,
 		ctxTaskWorkflow, ctxTaskStepDetails, ctxTaskPull,
 		ctxDaemon, ctxPullRequests,

@@ -133,6 +133,24 @@ func diffTabDetail(t *testing.T) *detail {
 	return d
 }
 
+// overviewLinkProbe presses a jump link on the Overview of a task in state
+// and wants the link's tab, with the attempt cursor moved off the first
+// attempt onto the one the frame is about.
+func overviewLinkProbe(state, key string, want taskViewTab) func(*testing.T) {
+	return func(t *testing.T) {
+		v := tabbedTaskFixture(t, taskTabOverview)
+		v.detail.task.State = state
+		v.detail.selectedRun = 1
+		v.updateKey(registryKey(t, key))
+		if v.tab != want {
+			t.Fatalf("%s moved to %v, want %v", key, v.tab, want)
+		}
+		if want != taskTabDiff && v.detail.selectedRun != 2 {
+			t.Fatalf("%s left the cursor on attempt %d, want 2", key, v.detail.selectedRun)
+		}
+	}
+}
+
 func tabbedTaskFixture(t *testing.T, tab taskViewTab) *taskView {
 	t.Helper()
 	d := newTestDetail(t)
@@ -583,15 +601,15 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"tab": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabDetails)
 			v.updateKey(registryKey(t, "tab"))
-			if v.tab != taskTabOutput {
-				t.Fatalf("tab moved to %v, want Output", v.tab)
+			if v.tab != taskTabStepDetails {
+				t.Fatalf("tab moved to %v, want %v", v.tab, taskTabStepDetails)
 			}
 		},
 		"]": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabDetails)
 			v.updateKey(registryKey(t, "]"))
-			if v.tab != taskTabOutput {
-				t.Fatalf("] moved to %v, want Output", v.tab)
+			if v.tab != taskTabStepDetails {
+				t.Fatalf("] moved to %v, want %v", v.tab, taskTabStepDetails)
 			}
 		},
 		"down": func(t *testing.T) {
@@ -1269,8 +1287,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"tab": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabDiff)
 			v.updateKey(registryKey(t, "tab"))
-			if v.tab != taskTabWorkflow {
-				t.Fatalf("tab moved to %v, want Workflow", v.tab)
+			if v.tab != taskTabSteps {
+				t.Fatalf("tab moved to %v, want %v", v.tab, taskTabSteps)
 			}
 		},
 		// The way back off the tab has to stay on screen, so `]` is a row here
@@ -1760,6 +1778,42 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			w.updateKey(registryKey(t, "esc"))
 			if w.graph == nil || w.graph.modal != nil {
 				t.Fatal("esc did not close the detail back to the graph")
+			}
+		},
+	},
+
+	ctxTaskOverview: {
+		"0": func(t *testing.T) {
+			v := tabbedTaskFixture(t, taskTabDetails)
+			v.updateKey(registryKey(t, "0"))
+			if v.tab != taskTabOverview {
+				t.Fatalf("0 moved to %v, want %v", v.tab, taskTabOverview)
+			}
+		},
+		"tab": func(t *testing.T) {
+			v := tabbedTaskFixture(t, taskTabOverview)
+			v.updateKey(registryKey(t, "tab"))
+			if v.tab != taskTabOutput {
+				t.Fatalf("tab moved to %v, want %v", v.tab, taskTabOutput)
+			}
+		},
+		"]": func(t *testing.T) {
+			v := tabbedTaskFixture(t, taskTabOverview)
+			v.updateKey(registryKey(t, "]"))
+			if v.tab != taskTabOutput {
+				t.Fatalf("] moved to %v, want %v", v.tab, taskTabOutput)
+			}
+		},
+		"3": overviewLinkProbe(stateRunning, "3", taskTabOutput),
+		"6": overviewLinkProbe(stateBlocked, "6", taskTabStepDetails),
+		"4": overviewLinkProbe(stateDone, "4", taskTabDiff),
+		"7": func(t *testing.T) {
+			v := pullTabFixture(t)
+			v.detail.task.State = stateDone
+			v.tab = taskTabOverview
+			v.updateKey(registryKey(t, "7"))
+			if v.tab != taskTabPull {
+				t.Fatalf("7 moved to %v, want %v", v.tab, taskTabPull)
 			}
 		},
 	},

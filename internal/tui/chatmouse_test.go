@@ -166,7 +166,7 @@ func TestTaskClickIgnoredBehindAPopup(t *testing.T) {
 	if !v.popup {
 		t.Fatal("a click closed the popup")
 	}
-	if v.tab != taskTabSteps {
+	if v.tab != taskTabOverview {
 		t.Fatalf("a click behind the popup switched the tab to %v", v.tab)
 	}
 	if v.detail.form != f || len(f.answers) != 0 || f.submitting {

@@ -82,13 +82,14 @@ func (t *taskView) pullTabAvailable() bool {
 	return t.pull.Linked && t.pull.Reason != github.ReasonDisabled
 }
 
-// tabs is the tab strip as it currently stands. It exists because the strip
-// is no longer fixed: `cycleTab` used to be modulo taskTabCount, which lands
-// on a tab that is not there the moment one of them is conditional.
+// tabs is the tab strip as it currently stands, in the order it is drawn:
+// the primary group, then the secondary (task 129.12). It exists because the
+// strip is no longer fixed: `cycleTab` used to be modulo taskTabCount, which
+// lands on a tab that is not there the moment one of them is conditional.
 func (t *taskView) tabs() []taskViewTab {
 	tabs := []taskViewTab{
-		taskTabSteps, taskTabDetails, taskTabOutput, taskTabDiff, taskTabWorkflow,
-		taskTabStepDetails,
+		taskTabOverview, taskTabOutput, taskTabDiff,
+		taskTabSteps, taskTabDetails, taskTabStepDetails, taskTabWorkflow,
 	}
 	if t.pullTabAvailable() {
 		tabs = append(tabs, taskTabPull)

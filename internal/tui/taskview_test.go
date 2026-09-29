@@ -24,23 +24,25 @@ func TestRoutedHomeRendersOnlyTheTaskBoard(t *testing.T) {
 	if !strings.Contains(got, "board-only task") {
 		t.Fatalf("home did not render the board row:\n%s", got)
 	}
-	for tab := taskTabSteps; tab <= taskTabDiff; tab++ {
+	for tab := taskTabOverview; tab <= taskTabDiff; tab++ {
 		if hidden := tab.String(); strings.Contains(got, hidden) {
 			t.Errorf("home leaked task surface %q:\n%s", hidden, got)
 		}
 	}
 }
 
-func TestTaskWorkspaceDefaultsToStepsAndCyclesEveryFullViewTab(t *testing.T) {
+// The strip's drawn order (task 129.12 decision 2): the primary group, then
+// the secondary. tab walks it, and wraps back to Overview.
+func TestTaskWorkspaceDefaultsToOverviewAndCyclesInDrawnOrder(t *testing.T) {
 	d := taskDetailFixture(t)
 	v := newTaskView(d)
 
-	if v.tab != taskTabSteps {
-		t.Fatalf("initial tab = %v, want %v", v.tab, taskTabSteps)
+	if v.tab != taskTabOverview {
+		t.Fatalf("initial tab = %v, want %v", v.tab, taskTabOverview)
 	}
 	want := []taskViewTab{
-		taskTabDetails, taskTabOutput, taskTabDiff, taskTabWorkflow, taskTabStepDetails,
-		taskTabSteps,
+		taskTabOutput, taskTabDiff, taskTabSteps, taskTabDetails, taskTabStepDetails,
+		taskTabWorkflow, taskTabOverview,
 	}
 	for _, tab := range want {
 		v.updateKey(tea.KeyPressMsg{Code: tea.KeyTab})
@@ -93,6 +95,7 @@ func TestStepsEnterOpensSelectedAttemptInOutput(t *testing.T) {
 	}
 	d.selectedRun = 101
 	v := newTaskView(d)
+	v.tab = taskTabSteps
 
 	v.updateKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 
@@ -458,6 +461,7 @@ func TestFanOutDeriveFailuresSurfaceTheEnginesOwnMessage(t *testing.T) {
 
 func TestOpenLaneFromTheFanOutStepRowPushesTheParent(t *testing.T) {
 	v := fanOutFixture(t, "lane_failed", `lane "api" (task 42) is blocked, not done`)
+	v.tab = taskTabSteps
 	cmd := v.updateKey(synthKey("l"))
 	if cmd == nil {
 		t.Fatalf("l on the fan_out row produced no command")

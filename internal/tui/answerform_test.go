@@ -193,7 +193,7 @@ func TestTaskAnswerPopup(t *testing.T) {
 		t.Fatalf("space picked %v, want the first option", got)
 	}
 	v.update(tea.KeyPressMsg{Code: ']', Text: "]"})
-	if v.tab != taskTabSteps {
+	if v.tab != taskTabOverview {
 		t.Fatalf("tab moved to %v while the popup was open", v.tab)
 	}
 	if !v.popup {

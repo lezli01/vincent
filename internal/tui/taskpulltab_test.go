@@ -90,28 +90,28 @@ func TestPullTabHiddenWhenGitHubDisabled(t *testing.T) {
 	if v.pullTabAvailable() {
 		t.Fatal("the tab is on offer while the integration is disabled")
 	}
-	if got := v.tabs(); len(got) != 6 {
-		t.Fatalf("the strip carries %d tabs, want 6", len(got))
+	if got := v.tabs(); len(got) != 7 {
+		t.Fatalf("the strip carries %d tabs, want 7", len(got))
 	}
 }
 
 // The cycle is the part the modulo arithmetic gets wrong first: tab/⇧tab must
 // walk the strip as it stands, not the enum.
 func TestPullTabCycleSkipsAnAbsentTab(t *testing.T) {
-	v := tabbedTaskFixture(t, taskTabStepDetails)
+	v := tabbedTaskFixture(t, taskTabWorkflow)
 	v.updateKey(registryKey(t, "tab"))
-	if v.tab != taskTabSteps {
-		t.Fatalf("tab from %v with no pull request landed on %v, want %v", taskTabStepDetails, v.tab, taskTabSteps)
+	if v.tab != taskTabOverview {
+		t.Fatalf("tab from %v with no pull request landed on %v, want %v", taskTabWorkflow, v.tab, taskTabOverview)
 	}
-	v = tabbedTaskFixture(t, taskTabStepDetails)
+	v = tabbedTaskFixture(t, taskTabWorkflow)
 	v.applyPull(taskPullMsg{taskID: v.detail.taskID, pull: linkedPull()})
 	v.updateKey(registryKey(t, "tab"))
 	if v.tab != taskTabPull {
 		t.Fatalf("tab from %v with a pull request landed on %v, want %v", taskTabStepDetails, v.tab, taskTabPull)
 	}
 	v.updateKey(registryKey(t, "tab"))
-	if v.tab != taskTabSteps {
-		t.Fatalf("tab wrapped to %v, want %v", v.tab, taskTabSteps)
+	if v.tab != taskTabOverview {
+		t.Fatalf("tab wrapped to %v, want %v", v.tab, taskTabOverview)
 	}
 	v.updateKey(registryKey(t, "["))
 	if v.tab != taskTabPull {

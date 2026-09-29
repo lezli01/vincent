@@ -178,7 +178,7 @@ func Lookup(op Op) (Info, bool) {
 // because an archived task offers no action (the TUI's tests prove that one
 // against taskstate).
 var actionsLive = map[Surface]bool{
-	"task table": true, "timeline": true, "task details": true, "output": true,
+	"task table": true, "task overview": true, "timeline": true, "task details": true, "output": true,
 	"diff": true, "task workflow": true, "task step details": true, "task pull request": true,
 }
 

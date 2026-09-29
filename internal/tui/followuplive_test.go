@@ -270,6 +270,8 @@ func TestTimelineRendersAFollowUpAsItsOwnRound(t *testing.T) {
 		}
 		return false
 	})
+	// The workspace lands on the Overview; the timeline is Steps (129.12).
+	h.press(t, "1")
 	h.p.until(30*time.Second, "the timeline to label the round", func() bool {
 		return strings.Contains(content(h.m), "follow-up 1")
 	})
