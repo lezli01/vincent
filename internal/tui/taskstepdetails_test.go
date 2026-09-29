@@ -181,12 +181,12 @@ func TestStepDetailsLabelIsClickableOnTheStrip(t *testing.T) {
 			t.Fatalf("tab %v hit box is %d wide, want %d", tab, got, want)
 		}
 		v.tab = taskTabSteps
-		v.updateClick(tea.MouseClickMsg{X: hit.x0, Y: 1})
+		v.updateClick(tea.MouseClickMsg{X: hit.x0, Y: v.tabY})
 		if v.tab != tab {
 			t.Fatalf("a click at column %d selected %v, want %v", hit.x0, v.tab, tab)
 		}
 		v.tab = taskTabSteps
-		v.updateClick(tea.MouseClickMsg{X: hit.x1 - 1, Y: 1})
+		v.updateClick(tea.MouseClickMsg{X: hit.x1 - 1, Y: v.tabY})
 		if v.tab != tab {
 			t.Fatalf("a click at column %d selected %v, want %v", hit.x1-1, v.tab, tab)
 		}

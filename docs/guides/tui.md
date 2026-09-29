@@ -316,12 +316,23 @@ moved the board's cursor to a task that needs you. `esc` back out of a lane
 returns you to the tab you left its parent on instead, and the takeover's
 "open a pull request" route opens on the Pull Request tab, where its form is.
 
+The app header says where you are as a breadcrumb — `Board › #12 › lane #14
+api › Output` — naming each task you drilled through, the task on screen and
+the tab, so it also says where `esc` goes. On a narrow terminal the leftmost
+crumbs give way to `…` first. The task's `#id` and title are the first line
+of the workspace on every tab. While the task is running, a dim line under the
+header says what it is doing right now: the running attempt's latest status
+message after `»`, or else the last line it printed, or else just the
+attempt's name. It follows the live output whichever tab you are on, and goes
+away when the task stops running.
+
 The Overview answers the question the task's state raises, from the task the
 workspace has already loaded:
 
 - **Running, queued, paused, or waiting on its lanes** — what it is doing: a
   sentence for the state (how many lanes are still out, for a fan-out parent),
-  the current step and attempt, and the attempt's latest status message.
+  the current step and attempt, and — except while it runs, when the line
+  under the header says it — the attempt's latest status message.
   `3 full output` jumps to that attempt's output.
 - **Blocked, waiting for an answer or at a gate, or aborted** — what it needs:
   the reason, in words and as its code, the question or the gate's

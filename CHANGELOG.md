@@ -22,6 +22,16 @@ list with the user-facing context a commit subject cannot carry.
   & retry right after retry. A block no step ran into shows the daemon's
   explanation. Aborted tasks get a muted card, and a short terminal keeps just
   the first line and the action keys (#600).
+- **A breadcrumb, one title and a live now-line in the task workspace.** The
+  app header names where you are — `Board › #12 › lane #14 api › Output`, the
+  tasks you drilled through, the task on screen and the tab — in place of
+  `[Task #12]`, dropping the leftmost crumbs first when it does not fit. The
+  task's `#id title` is drawn once, as the first line of every tab, instead of
+  in the frame title and again in each tab's own heading. While the task runs,
+  a dim line under the header says what it is doing now: the running attempt's
+  status message, else the last line it printed, else its name — following the
+  live output on every tab without refetching. The Overview's running frame no
+  longer repeats the status message (#598).
 - **An Overview tab the task workspace opens on.** `enter` now lands on an
   Overview at `0` that answers the question the task's state raises: what it is
   doing (running, queued, paused, waiting on its lanes), what it needs from you

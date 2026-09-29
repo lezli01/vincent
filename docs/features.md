@@ -319,7 +319,9 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
   to the output, inputs, diff or pull request that answer the next question.
   Output, Diff, Steps, Task Details, Step Details and Workflow tabs follow, plus
   a Pull Request tab on a task that has one linked; each tab uses the whole
-  view.
+  view. A breadcrumb in the header names the tasks you drilled through and the
+  tab you are on, and while the task runs a line under it says what the
+  running attempt is doing right now.
 - Step Details answers what an attempt was actually *given*: the rendered prompt
   or shell script it was handed rather than the workflow's template, what an
   `if:` guard rendered to, which level supplied its agent, model and effort, and

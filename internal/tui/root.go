@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/keymap"
@@ -349,7 +350,7 @@ func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	msg.Y-- // the body starts under the header line
+	msg.Y -= m.chromeTop() // the body starts under the header lines
 	return m, m.deliver(m.active, msg)
 }
 
@@ -999,6 +1000,10 @@ func (m *root) View() tea.View {
 		b.WriteString(line)
 		b.WriteString("\n")
 	}
+	if line, ok := m.nowLine(); ok {
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
 	b.WriteString(m.body())
 	b.WriteString("\n")
 	b.WriteString(m.footerLine())
@@ -1018,20 +1023,52 @@ func (m *root) View() tea.View {
 	return v
 }
 
+// headerTagger is a view that names itself in the app header with more than
+// a bracketed title — the task workspace's breadcrumb (task 129.9). Such a
+// view's frame is drawn untitled, since the header already says what it is.
+type headerTagger interface {
+	headerTag(width int) string
+}
+
+// nowLiner is a view with a live line to show under the app header while its
+// subject is running (task 129.9).
+type nowLiner interface {
+	nowLine(width int) (string, bool)
+}
+
 func (m *root) headerLine() string {
 	name := "vincent"
 	if m.version != "" {
 		name += " " + m.version
 	}
+	lead := " " + styleTitle.Render(name) + "  "
 	// Connected is the normal case and says nothing a working screen does
 	// not (task 129.15): the badge is drawn only while it is news.
-	if m.phase == phaseConnected {
-		return fmt.Sprintf(" %s  %s",
-			styleTitle.Render(name), styleDim.Render("["+m.views[m.active].title()+"]"))
+	if m.phase != phaseConnected {
+		lead += m.connBadge() + "  "
 	}
-	return fmt.Sprintf(" %s  %s  %s",
-		styleTitle.Render(name), m.connBadge(),
-		styleDim.Render("["+m.views[m.active].title()+"]"))
+	if t, ok := m.views[m.active].(headerTagger); ok {
+		width := m.width - ansi.StringWidth(lead)
+		if m.width <= 0 {
+			width = 1 << 16
+		}
+		return lead + styleDim.Render(t.headerTag(max(width, 1)))
+	}
+	return lead + styleDim.Render("["+m.views[m.active].title()+"]")
+}
+
+// nowLine is the active view's live line, when it has one to show. It is
+// chrome under the header rather than part of the view's body, so the root
+// accounts for its row in bodyHeight and in click routing.
+func (m *root) nowLine() (string, bool) {
+	if m.phase != phaseConnected {
+		return "", false
+	}
+	n, ok := m.views[m.active].(nowLiner)
+	if !ok {
+		return "", false
+	}
+	return n.nowLine(max(m.width, 1))
 }
 
 func (m *root) connBadge() string {
@@ -1111,7 +1148,11 @@ func (m *root) framedView(id viewID) string {
 		return m.views[id].render(m.width, h)
 	}
 	content := m.views[id].render(m.width-2, h-2)
-	return frame(m.views[id].title(), content, m.width, h, true)
+	title := m.views[id].title()
+	if _, ok := m.views[id].(headerTagger); ok {
+		title = ""
+	}
+	return frame(title, content, m.width, h, true)
 }
 
 // quitReminder is §15's exit line: the daemon keeps working after the TUI
@@ -1217,14 +1258,24 @@ func withoutAction(actions []string, drop string) []string {
 // bodyHeight is the space left for the active view: total minus header,
 // event line, and footer.
 func (m *root) bodyHeight() int {
-	chrome := 2
-	if _, ok := m.statusLine(); ok {
-		chrome++
-	}
+	chrome := m.chromeTop() + 1
 	if m.height <= chrome {
 		return 0
 	}
 	return m.height - chrome
+}
+
+// chromeTop is the rows above the body: the header, the status line when
+// one is up, and the now-line while it is shown.
+func (m *root) chromeTop() int {
+	n := 1
+	if _, ok := m.statusLine(); ok {
+		n++
+	}
+	if _, ok := m.nowLine(); ok {
+		n++
+	}
+	return n
 }
 
 func errString(err error) string {

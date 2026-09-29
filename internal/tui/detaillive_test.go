@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/store"
@@ -224,6 +225,11 @@ func TestLiveSplitDocumentMatchesTheColdTranscript(t *testing.T) {
 	})
 
 	got := content(h.m)
+	// The now-line under the header quotes the tail's last line by design
+	// (task 129.9); the duplication this pins is inside the pane.
+	if _, pane, ok := strings.Cut(got, "┌"); ok {
+		got = pane
+	}
 	if strings.Count(got, "| Step | State |") != 0 {
 		t.Errorf("the delimiter row never joined its header — the table stayed source:\n%s", got)
 	}
@@ -340,4 +346,139 @@ func (h *boardLiveHarness) createLaneTask(t *testing.T, parentID int64, lane str
 		t.Fatalf("CreateTask lane %s: %v", lane, err)
 	}
 	return task
+}
+
+// TestNowLineFollowsLiveOutputAndLeavesWithRunning is task 129.9's now-line
+// over the real handlers: a chunk on the per-task stream moves the line under
+// the app header without the TUI asking the daemon for anything (T3.2), and
+// the line goes when the task stops running.
+func TestNowLineFollowsLiveOutputAndLeavesWithRunning(t *testing.T) {
+	h := newBoardLiveHarness(t)
+	task := h.createTask(t, "watched now")
+	ctx := context.Background()
+
+	path := filepath.Join(t.TempDir(), "0-1.jsonl")
+	appendTranscript(t, path, "first-line")
+	if _, _, err := h.st.TransitionTask(ctx, task.ID,
+		store.TaskQueued, store.TaskRunning, store.TaskChange{}); err != nil {
+		t.Fatalf("transition to running: %v", err)
+	}
+	run := &store.StepRun{
+		TaskID: task.ID, StepIndex: 0, StepID: "one", StepType: "command",
+		Attempt: 1, State: store.StepRunning, TranscriptPath: path,
+		StartedAt: time.Now(),
+	}
+	if err := h.st.CreateStepRun(ctx, run); err != nil {
+		t.Fatalf("CreateStepRun: %v", err)
+	}
+	// Let the board consume the created and running events before the task
+	// is opened. Otherwise one can reach the workspace after it opens, and
+	// its debounced refresh lands after the snapshot below and reads as a
+	// refetch the chunk caused (macOS CI caught the gap).
+	h.p.until(20*time.Second, "the running state to render on the board", func() bool {
+		return strings.Contains(content(h.m), string(store.TaskRunning))
+	})
+
+	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})
+	h.p.push(cmd)
+	nowLine := func() string {
+		lines := strings.Split(ansi.Strip(content(h.m)), "\n")
+		if len(lines) < 2 {
+			return ""
+		}
+		return lines[1]
+	}
+	h.p.until(20*time.Second, "the now-line to quote the transcript", func() bool {
+		return strings.Contains(nowLine(), "first-line")
+	})
+	h.p.until(10*time.Second, "the per-task subscription to attach", func() bool {
+		return h.broker.OutputSubscribers(task.ID) > 0
+	})
+	// Opening the workspace issues more than one load (the open and the
+	// view's activation), and a durable event can still be on its way to a
+	// debounced refresh. Any of those landing after the snapshot below reads
+	// as a refetch the chunk caused (ubuntu CI caught what the board wait
+	// above did not), so wait until every issued load is applied, no refresh
+	// window is open, and no task fetch has arrived for well past the
+	// debounce.
+	view := h.m.views[viewTask].(*taskView)
+	taskPath := fmt.Sprintf("/v1/tasks/%d", task.ID)
+	h.p.settle(20*time.Second, 4*detailRefreshDebounce, "the workspace's loads to settle", func() (bool, int) {
+		fetches := 0
+		for _, p := range h.paths.snapshot() {
+			if p == taskPath {
+				fetches++
+			}
+		}
+		d := view.detail
+		return !d.refreshPending && d.appliedSeq == d.loadSeq, fetches
+	})
+
+	// The chunk's line is never written to the transcript, so only the
+	// stream can put it on screen — the connect-time catch-up re-read (§13.3)
+	// cannot. Its offset is past anything the file holds.
+	covered := appendTranscript(t, path)
+	before := len(h.paths.snapshot())
+	next := covered + 1<<20
+	h.broker.PublishOutput(task.ID, events.Chunk{
+		Type: "command.output",
+		Payload: map[string]any{
+			"run_id": run.ID, "offset": next,
+			"phase": "run", "stream": "stdout", "text": "second-line",
+		},
+	})
+	h.p.until(20*time.Second, "the now-line to follow the chunk", func() bool {
+		return strings.Contains(nowLine(), "second-line")
+	})
+	// The board keeps its own background traffic; what is pinned is that
+	// the task's snapshot was not refetched for it.
+	for _, p := range h.paths.snapshot()[before:] {
+		if p == taskPath {
+			t.Errorf("a live chunk made the TUI refetch %s", p)
+		}
+	}
+
+	if _, _, err := h.st.TransitionTask(ctx, task.ID,
+		store.TaskRunning, store.TaskPaused, store.TaskChange{}); err != nil {
+		t.Fatalf("transition to paused: %v", err)
+	}
+	h.p.until(20*time.Second, "the now-line to go with running", func() bool {
+		return !strings.Contains(nowLine(), "second-line")
+	})
+}
+
+// TestBreadcrumbWalksIntoALaneAndBack is task 129.9's breadcrumb over the
+// real handlers: `l` into a lane adds the parent crumb and the lane's own,
+// and `esc` pops back and drops it.
+func TestBreadcrumbWalksIntoALaneAndBack(t *testing.T) {
+	h := newBoardLiveHarness(t)
+	parent := h.createTask(t, "fan-out parent")
+	lane := h.createLaneTask(t, parent.ID, "api", 0)
+
+	_, cmd := h.m.Update(selectTaskMsg{id: parent.ID})
+	h.p.push(cmd)
+	view := h.m.views[viewTask].(*taskView)
+	h.p.until(20*time.Second, "the parent's lanes to load", func() bool {
+		return len(view.lanes) == 1 && view.detail.loaded
+	})
+	header := func() string {
+		return strings.SplitN(ansi.Strip(content(h.m)), "\n", 2)[0]
+	}
+	if want := fmt.Sprintf("Board › #%d › Overview", parent.ID); !strings.Contains(header(), want) {
+		t.Fatalf("header = %q, want %q", header(), want)
+	}
+
+	_, cmd = h.m.Update(synthKey("l"))
+	h.p.push(cmd)
+	want := fmt.Sprintf("Board › #%d › lane #%d api › Overview", parent.ID, lane.ID)
+	h.p.until(20*time.Second, "the lane's breadcrumb", func() bool {
+		return strings.Contains(header(), want)
+	})
+
+	_, cmd = h.m.Update(synthKey("esc"))
+	h.p.push(cmd)
+	back := fmt.Sprintf("Board › #%d › Overview", parent.ID)
+	h.p.until(20*time.Second, "the breadcrumb to drop the lane", func() bool {
+		return strings.Contains(header(), back) && !strings.Contains(header(), "lane #")
+	})
 }

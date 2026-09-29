@@ -260,8 +260,12 @@ cards need):
 - [ ] **129.8** ([#597](https://github.com/lezli01/vincent/issues/597)) Follow
   state, level and liveness on the Output tab; failed attempts open at the
   failure. Ordering: see "Ordering with the open walkthroughs".
-- [ ] **129.9** ([#598](https://github.com/lezli01/vincent/issues/598))
-  Breadcrumb, a single task title, a live now-line.
+- [x] **129.9** ([#598](https://github.com/lezli01/vincent/issues/598))
+  Breadcrumb, a single task title, a live now-line. *Done 2026-09-29.* The
+  breadcrumb stops at the tab; crumbs are ids (`#id`, `lane #id name`) and
+  truncate from the left. The now-line reads a small side buffer of the live
+  attempt's chunks, so it follows the stream without a fetch; the Overview's
+  running frame drops `latest status`. Screenshots are left to #609.
 - [x] **129.10** ([#605](https://github.com/lezli01/vincent/issues/605)) Lane
   breakdowns, loop iteration outcomes, step pips as glyphs (decision 8). ✓
   2026-09-29
