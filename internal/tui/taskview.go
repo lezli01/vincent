@@ -923,6 +923,20 @@ var taskTabNames = [taskTabCount]string{
 	taskTabPull:        "Pull Request",
 }
 
+// taskTabPurpose is what each tab is for, one clause each: the help sheet's
+// orientation header prints it beside the tab's digit and name (task
+// 129.17). A tab added without one fails TestEveryTabHasAPurpose.
+var taskTabPurpose = [taskTabCount]string{
+	taskTabOverview:    "where the task stands, why, and what to do next",
+	taskTabSteps:       "every step and attempt, in order",
+	taskTabDetails:     "the task's prompt, fields, branch and worktree",
+	taskTabOutput:      "the selected attempt's transcript, live while it runs",
+	taskTabDiff:        "what the task's branch changed",
+	taskTabWorkflow:    "the workflow as a graph, with the task's place in it",
+	taskTabStepDetails: "what one attempt was handed, and where each input came from",
+	taskTabPull:        "the linked pull request: its checks, reviews and writes",
+}
+
 // String is the tab's strip label, so tests pin a tab by its enum rather than
 // by a literal that every rename would churn (issue #592).
 func (tab taskViewTab) String() string {

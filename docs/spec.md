@@ -13080,6 +13080,24 @@ root's own key** wherever it is fired from: a palette row or a footer click
 for help, quit, the mouse toggle, `!` or new task takes effect even while a
 text field has the keyboard, rather than replaying its key into that field.
 
+*Amended 2026-09-29 (task 129.17, issue #606).* **Help orients, scrolls, and
+greys what the palette omits.** On the board and in a task's workspace the
+sheet opens with a "This screen" header: the board's three moves (`enter`,
+`!`, `:`, spelled with the effective keys), or the workspace's tab strip in
+drawn order, each tab with its digit and one clause of purpose. The task
+actions are split: **Actions now** lists what the target offers — the same
+target, edit gate and connection gate the palette is built from — and **Not
+available now** lists every other action, dimmed. This does not relax the
+palette's rule above. The palette *runs* what it lists, so an action that
+cannot happen stays off it; help runs nothing and is where the vocabulary is
+learned, so it shows the whole of it and says which part applies now. The
+sheet scrolls with `↑`/`↓`, `pgup`/`pgdown`, `home` and `end`, which are the
+overlay's own keys rather than registry rows; every other key is still
+swallowed. **In the workspace the palette has a tabs group**, one "go to the
+<Name> tab" row per tab on the strip, keyed by its digit; running a row
+replays the digit. Overview's jump links are not copied into it: from another
+tab, `3` would switch tabs without moving the attempt cursor.
+
 **The footer is one line and never wraps.** Left to right: the focused panel's
 keys (at most five, in registry priority order), then the task's
 `available_actions`, then — pinned right and never truncated — `: commands`,

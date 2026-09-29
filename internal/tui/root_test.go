@@ -288,9 +288,16 @@ func TestViewRoutingAndHelp(t *testing.T) {
 
 	m.Update(key("?"))
 	help := content(m)
-	if !strings.Contains(help, "GLOBAL KEYS") {
+	if !strings.Contains(help, "THIS SCREEN") {
 		t.Errorf("help overlay missing after ?: %q", help)
 	}
+	// The sheet is taller than the body now (task 129.17): the global keys
+	// are further down it, and end scrolls them into view.
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
+	if m.helpScroll == 0 || !strings.Contains(m.helpSheet(), "GLOBAL KEYS") {
+		t.Errorf("the help sheet did not scroll, or lacks the global keys: %q", content(m))
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyHome})
 	// The sheet is contextual (T3.8): on the home screen it carries the
 	// focused panel's keys, and its own key row replaces the footer's.
 	for _, k := range []string{"open the selected task", "filter by id", "esc"} {

@@ -70,11 +70,11 @@ func TestUnboundRowsRenderAsUnbound(t *testing.T) {
 	if !sawBrowser || !sawGroup {
 		t.Fatalf("fixture rows missing: browser %v, group %v", sawBrowser, sawGroup)
 	}
-	if h := helpText(ctxTasks, true); !strings.Contains(h, "unbound") {
+	if h := helpText(ctxTasks, true, helpState{}); !strings.Contains(h, "unbound") {
 		t.Errorf("help does not mark the shadowed group row unbound:\n%s", h)
 	}
 	var unboundEntry bool
-	for _, e := range paletteEntries(ctxTasks, taskActions{}, false, true, true, nil) {
+	for _, e := range paletteEntries(ctxTasks, taskActions{}, false, true, true, nil, nil) {
 		if e.unbound {
 			unboundEntry = true
 			if e.key != "" {

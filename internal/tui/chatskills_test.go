@@ -1045,7 +1045,7 @@ func TestChatSkillsInlineFetchIsSilentAndLatched(t *testing.T) {
 func TestChatSkillsInlineHelpIsItsOwnSurface(t *testing.T) {
 	v := chatSkillsFixture(claudeSkills())
 	typeIntoChat(t, v, "/dep")
-	inline := ansi.Strip(helpText(v.bindingContext(), true))
+	inline := ansi.Strip(helpText(v.bindingContext(), true, helpState{}))
 	if !strings.Contains(inline, "give ↑/↓ back to editing the draft") {
 		t.Fatalf("the inline help does not carry its own rows:\n%s", inline)
 	}
@@ -1055,7 +1055,7 @@ func TestChatSkillsInlineHelpIsItsOwnSurface(t *testing.T) {
 
 	b := chatSkillsFixture(claudeSkills())
 	openChatSkills(t, b, "tab")
-	browse := ansi.Strip(helpText(b.bindingContext(), true))
+	browse := ansi.Strip(helpText(b.bindingContext(), true, helpState{}))
 	if !strings.Contains(browse, "shorten the filter") {
 		t.Fatalf("the browse help lost its backspace row:\n%s", browse)
 	}

@@ -2551,7 +2551,19 @@ including a chat's composer, a filter and every form.
 
 Everything reachable in the TUI is in there by name — navigation to every
 screen, and every task action the daemon currently offers. Type to filter,
-`enter` to run, `esc` to close.
+`enter` to run, `esc` to close. Every row carries its key beside it — the key
+in force, so a `tui.keys` override shows as the key you set — and a row whose
+key a lenient load took reads `unbound`. Actions the task does not offer are
+left out rather than greyed: the palette runs things, and it never lists
+something that cannot run.
+
+In a task's workspace the palette has a **tabs** group: one row per tab on
+the strip, in the order the strip draws them, such as `go to the Diff tab`
+beside `4`. Typing `diff` finds it. Running a row presses that digit, so it
+does exactly what the digit does. Pull Request is listed only while the tab
+is on the strip. The Overview's jump links, such as `3` for the failed
+attempt's output, stay on the Overview, where the attempt they point at is on
+screen.
 
 The palette exists so the takeover screens do not need memorized number keys. If you cannot remember a binding, `:` and `?` are the two keys worth
 knowing.
@@ -2560,10 +2572,27 @@ knowing.
 
 `?` toggles a help overlay listing every binding for the surface you are on —
 or `f1`, which also works while a text field has the keyboard. While the
-overlay is open it owns the keyboard: `?`, `esc` and `f1` close it, `ctrl+c`
-still quits, and every other key is ignored rather than acting on the screen
-behind it. The overlay, the palette and the footer all render from **one
+overlay is open it owns the keyboard: `?`, `esc` and `f1` close it, `↑`/`↓`,
+`pgup`/`pgdown`, `home` and `end` scroll it, `ctrl+c` still quits, and every
+other key is ignored rather than acting on the screen behind it. When the
+sheet is taller than the screen its last row says where you are and which way
+there is more. The overlay, the palette and the footer all render from **one
 registry** in the source, so a key that exists is a key that is documented.
+
+On the board and in a task's workspace the sheet opens with **This screen**,
+an orientation header. On the board it lists three moves: `enter` opens the
+task, `!` jumps to the next task needing you, and `:` finds everything. In a
+workspace it lists the tabs on the strip, in drawn order, each with its digit
+and what it is for — `4  Diff — what the task's branch changed`. The keys
+shown are the ones in force after `tui.keys`.
+
+On those two surfaces the task actions are split in two. **Actions now** lists
+what the selected task — or the open one, or the marked set — offers at this
+moment. **Not available now** lists every other action, dimmed, so the sheet
+teaches the whole vocabulary. With no task selected, or with the daemon
+unreachable, every action is under **Not available now**. The palette is
+different on purpose: it runs what you pick, so it lists only the actions that
+can run.
 
 The footer shows as many of the focused surface's keys as the terminal is wide
 enough for, in priority order, and then tells you what is left: a dim **`+N`**

@@ -265,7 +265,7 @@ func TestReboundKeysRender(t *testing.T) {
 			t.Errorf("%s: hint %q still names %q", vocabularyRowName(b), b.hint, info.Default)
 		}
 	}
-	for _, e := range paletteEntries(ctxChats, taskActions{}, false, true, true, nil) {
+	for _, e := range paletteEntries(ctxChats, taskActions{}, false, true, true, nil, nil) {
 		if e.key == "R" || e.key == "/" || e.key == "enter" || e.key == "n" {
 			t.Errorf("palette entry %q still keyed %q", e.label, e.key)
 		}
@@ -287,7 +287,7 @@ func TestReboundKeysRender(t *testing.T) {
 			t.Errorf("%s does not print the rebound editor key:\n%s", name, out)
 		}
 	}
-	if h := helpText(ctxChats, true); strings.Contains(h, "repair form (R ") || !strings.Contains(h, "f5") {
+	if h := helpText(ctxChats, true, helpState{}); strings.Contains(h, "repair form (R ") || !strings.Contains(h, "f5") {
 		t.Errorf("help does not render the rebound keys:\n%s", h)
 	}
 }

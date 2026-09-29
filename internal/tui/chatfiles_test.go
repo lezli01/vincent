@@ -836,7 +836,7 @@ func TestChatFilesMentionVerdictNote(t *testing.T) {
 func TestChatFilesHelpIsItsOwnSurface(t *testing.T) {
 	v := chatFilesFixture(claudeFiles())
 	typeIntoChat(t, v, "@main")
-	help := ansi.Strip(helpText(v.bindingContext(), true))
+	help := ansi.Strip(helpText(v.bindingContext(), true, helpState{}))
 	if !strings.Contains(help, "complete the @ token with the highlighted file") {
 		t.Fatalf("the picker's help does not carry its own rows:\n%s", help)
 	}
