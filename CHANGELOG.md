@@ -13,6 +13,17 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **An Overview tab the task workspace opens on.** `enter` now lands on an
+  Overview at `0` that answers the question the task's state raises: what it is
+  doing (running, queued, paused, waiting on its lanes), what it needs from you
+  (the reason, the question or gate, and every action on offer with what it
+  does), or how it ended (final status, cost, branch). Its jump links — `3`,
+  `6`, `4`, `7`, the tabs' own digits — move the attempt selection to the
+  attempt it is about before switching. The tab strip now draws each tab's
+  digit and two groups, `0 Overview · 3 Output · 4 Diff` then the rest, and
+  `tab`/`shift+tab` walk it in that drawn order; the timeline tab is renamed
+  **Steps** and keeps `1`. Going back with `esc` restores the tab you left a
+  task on (#599).
 - **A task's commits over the API, even after archive.** `GET
   /v1/tasks/{id}/commits` (and the MCP tool `task_commits`) lists the commits a
   task made on its branch, oldest first, with fan-out lane merges marked by

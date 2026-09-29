@@ -1,6 +1,6 @@
 # 129 — The TUI answers what is happening, why it failed and what it delivered
 
-**Status:** 🔄 in progress (4/19)
+**Status:** 🔄 in progress (7/19)
 
 Issue [#591](https://github.com/lezli01/vincent/issues/591), part of
 [#589](https://github.com/lezli01/vincent/issues/589). Spec §15 (TUI) above
@@ -271,8 +271,15 @@ cards need):
 
 **Phase 3 — default-view changes:**
 
-- [ ] **129.12** ([#599](https://github.com/lezli01/vincent/issues/599)) The
+- [x] **129.12** ([#599](https://github.com/lezli01/vincent/issues/599)) The
   state-aware Overview tab at `0`, the landing tab (decision 1). Depends: 129.1.
+  *Done 2026-09-29.* Only fresh opens land on it: a back-stack pop restores
+  the tab left, and the pull requests takeover's create route lands on Pull
+  Request. The strip is drawn in two groups, and tab/⇧tab walk that drawn
+  order; digits keep their tabs. The Steps & Attempts tab is relabelled
+  Steps. `!` is left as it was (see Open questions). The Steps and loop
+  tapes now press `1` after `enter`; re-capturing the Steps picture and adding
+  a tape for the Overview are deferred to #609.
 - [ ] **129.13** ([#600](https://github.com/lezli01/vincent/issues/600)) The
   failure card on Overview. Depends: 129.12, 129.2, 129.3.
 - [ ] **129.14** ([#602](https://github.com/lezli01/vincent/issues/602)) The
@@ -349,8 +356,10 @@ neither, is never acceptable.
 
 Carried from #589, each for the item that must settle it:
 
-- **`!` from the board vs in a workspace** (129.12, 129.18): should `!` open the
-  next needs-you task on Overview, or only move the board cursor?
+- **`!` from the board vs in a workspace** (129.18): should `!` open the
+  next needs-you task on Overview, or only move the board cursor? 129.12 left
+  `!` exactly as it was — it moves the board cursor, and the `enter` after it
+  lands on the Overview — so the in-workspace question is 129.18's alone.
 - **Archived tasks** (129.14): is branch + pull request + commits enough, or
   must vincent keep a diff stat after archive?
 - **Deprecation window** (phase 4): a one-release overlap before any surface is

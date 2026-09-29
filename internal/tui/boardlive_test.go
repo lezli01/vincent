@@ -290,8 +290,8 @@ func TestBoardEnterOpensDetail(t *testing.T) {
 		t.Fatalf("active view = %v, want the task workspace after enter", h.m.active)
 	}
 	taskView := h.m.views[viewTask].(*taskView)
-	if taskView.tab != taskTabSteps {
-		t.Fatalf("task tab = %v, want %v", taskView.tab, taskTabSteps)
+	if taskView.tab != taskTabOverview {
+		t.Fatalf("task tab = %v, want %v", taskView.tab, taskTabOverview)
 	}
 	if taskView.detail.taskID != task.ID {
 		t.Fatalf("detail task = %d, want %d", taskView.detail.taskID, task.ID)

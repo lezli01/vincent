@@ -69,12 +69,17 @@ const (
 type bindingContext string
 
 const (
-	ctxTasks       bindingContext = "task table"
-	ctxTimeline    bindingContext = "timeline"
-	ctxTaskDetails bindingContext = "task details"
-	ctxOutput      bindingContext = "output"
-	ctxDiff        bindingContext = "diff"
-	ctxNewTask     bindingContext = "new task"
+	ctxTasks bindingContext = "task table"
+	// ctxTaskOverview is the task workspace's landing tab (task 129.12). Its
+	// jump links are rows of their own, keyed on the tab digits they press,
+	// so the footer, `?` and the palette list them; taskView.liveBindings
+	// keeps only the ones the current frame draws.
+	ctxTaskOverview bindingContext = "task overview"
+	ctxTimeline     bindingContext = "timeline"
+	ctxTaskDetails  bindingContext = "task details"
+	ctxOutput       bindingContext = "output"
+	ctxDiff         bindingContext = "diff"
+	ctxNewTask      bindingContext = "new task"
 	// ctxNewTaskFields is the Fields row's own editor (§5.3, task 093). Its
 	// own context for the reason ctxWorkflowEditor has one: nothing the form
 	// underneath offers means the same thing inside it — `e` is the
@@ -385,8 +390,20 @@ var bindings = []binding{
 	{key: "C", label: "collapse every group", scope: scopePanel, context: ctxTasks, hint: "C/O fold all", priority: 10, fold: true},
 	{key: "O", label: "expand every group", scope: scopePanel, context: ctxTasks, priority: 11, fold: true, aliased: true},
 
+	// Overview (task 129.12). `0` is the tab's own row, the way 5, 6 and 7
+	// are theirs; the four digits after it are the frame's jump links, each
+	// moving the attempt cursor to the attempt the frame is about before it
+	// switches tab (taskView.jumpTab).
+	{key: "0", label: "the task at a glance: what it is doing, what it needs from you, or how it ended", scope: scopePanel, context: ctxTaskOverview, hint: "0 overview", priority: 1},
+	{key: "tab", label: "move between the task's views in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTaskOverview, hint: "tab views", priority: 2},
+	{key: "]", label: "move to the next task view ([ goes back)", scope: scopePanel, context: ctxTaskOverview, hint: "[/] views", priority: 3},
+	{key: "3", label: "the output of the attempt the overview is about — the running one, or the one it stopped on", scope: scopePanel, context: ctxTaskOverview, hint: "3 output", priority: 4},
+	{key: "6", label: "what the attempt it stopped on was given", scope: scopePanel, context: ctxTaskOverview, hint: "6 what it was given", priority: 5},
+	{key: "4", label: "the diff of the finished task", scope: scopePanel, context: ctxTaskOverview, hint: "4 diff", priority: 4},
+	{key: "7", label: "the finished task's pull request", scope: scopePanel, context: ctxTaskOverview, hint: "7 PR", priority: 5, github: true},
+
 	// Timeline.
-	{key: "tab", label: "move between Steps & Attempts, Task Details, Output and Diff (shift+tab goes back; 1–4 jump directly)", scope: scopePanel, context: ctxTimeline, hint: "tab views", priority: 1},
+	{key: "tab", label: "move between the task's views in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTimeline, hint: "tab views", priority: 1},
 	{key: "]", label: "move to the next task view ([ goes back)", scope: scopePanel, context: ctxTimeline, hint: "[/] views", priority: 2},
 	{key: "down", label: "select an attempt (↑/↓); scrollback is per attempt", scope: scopePanel, context: ctxTimeline, hint: "↑/↓ attempts", priority: 3},
 	{key: "enter", label: "open the selected attempt in the Output tab, or open the folded iteration/round tier the cursor is on", scope: scopePanel, context: ctxTimeline, hint: "enter output", priority: 3},
@@ -419,7 +436,7 @@ var bindings = []binding{
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTaskDetails, priority: 7},
 
 	// Output pane.
-	{key: "tab", label: "move between Steps & Attempts, Task Details, Output and Diff (shift+tab goes back; 1–4 jump directly)", scope: scopePanel, context: ctxOutput, hint: "tab views", priority: 1},
+	{key: "tab", label: "move between the task's views in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxOutput, hint: "tab views", priority: 1},
 	{key: "]", label: "move to the next task view ([ goes back)", scope: scopePanel, context: ctxOutput, hint: "[/] views", priority: 2},
 	{key: "f", label: "follow the live output again (f/G)", scope: scopePanel, context: ctxOutput, hint: "f follow", priority: 2},
 	{key: "v", label: "show more or less: quiet → compact → normal → verbose (tool lines, then reasoning, then unrecognized lines)", scope: scopePanel, context: ctxOutput, hint: "v detail", priority: 3},
@@ -439,7 +456,7 @@ var bindings = []binding{
 	// list of files and the output is a stream of lines, so ↑/↓ mean different
 	// things on the two tabs and a single row could only describe one of them.
 	// `]` is repeated here because the way back must stay on screen.
-	{key: "tab", label: "move between Steps & Attempts, Task Details, Output and Diff (shift+tab goes back; 1–4 jump directly)", scope: scopePanel, context: ctxDiff, hint: "tab views", priority: 1},
+	{key: "tab", label: "move between the task's views in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxDiff, hint: "tab views", priority: 1},
 	{key: "]", label: "move to the next task view ([ goes back)", scope: scopePanel, context: ctxDiff, hint: "[/] views", priority: 2},
 	{key: "down", label: "move between the files (↑/↓); the pane scrolls to keep the file in view", scope: scopePanel, context: ctxDiff, hint: "↑/↓ files", priority: 2},
 	{key: "enter", label: "expand or collapse the file under the cursor (space and →/← too)", scope: scopePanel, context: ctxDiff, hint: "enter fold", priority: 3},
@@ -846,8 +863,8 @@ var bindings = []binding{
 // management takeover.
 func isHomeContext(ctx bindingContext) bool {
 	switch ctx {
-	case ctxTasks, ctxTimeline, ctxTaskDetails, ctxOutput, ctxDiff, ctxTaskWorkflow,
-		ctxTaskStepDetails, ctxTaskPull:
+	case ctxTasks, ctxTaskOverview, ctxTimeline, ctxTaskDetails, ctxOutput, ctxDiff,
+		ctxTaskWorkflow, ctxTaskStepDetails, ctxTaskPull:
 		return true
 	default:
 		return false

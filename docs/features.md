@@ -312,9 +312,13 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
   needs-attention badge. The board is calm when nothing needs you: no
   zero-attention clause, one `agents ✓` for every healthy agent, no header for
   a grouping level every task shares, and the action keys in the footer only.
-- Task detail is a full-screen workspace with Steps & Attempts, Task Details,
-  Output, Diff, Workflow, and Step Details tabs, plus a Pull Request tab on a
-  task that has one linked; each tab uses the whole view.
+- Task detail is a full-screen workspace that opens on an Overview: what the
+  task is doing, what it needs from you — the reason, the question or gate, and
+  every action on offer with what it does — or how it ended, with one-key jumps
+  to the output, inputs, diff or pull request that answer the next question.
+  Output, Diff, Steps, Task Details, Step Details and Workflow tabs follow, plus
+  a Pull Request tab on a task that has one linked; each tab uses the whole
+  view.
 - Step Details answers what an attempt was actually *given*: the rendered prompt
   or shell script it was handed rather than the workflow's template, what an
   `if:` guard rendered to, which level supplied its agent, model and effort, and

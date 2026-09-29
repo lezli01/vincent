@@ -16,6 +16,7 @@ import (
 // workspace's action bar is one of the guide's tables.
 var guideKeyContexts = map[bindingContext]bool{
 	ctxTasks:           true,
+	ctxTaskOverview:    true,
 	ctxTimeline:        true,
 	ctxTaskDetails:     true,
 	ctxOutput:          true,
@@ -30,6 +31,7 @@ var guideKeyContexts = map[bindingContext]bool{
 // though no registry row carries it.
 var guideFixedSurfaces = map[keymap.Surface]bool{
 	"task table":        true,
+	"task overview":     true,
 	"timeline":          true,
 	"task details":      true,
 	"output":            true,

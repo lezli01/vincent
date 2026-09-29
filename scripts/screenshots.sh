@@ -1389,11 +1389,11 @@ Sleep 2s
   # clocks keep counting — so new tapes go after the old ones rather than
   # beside the tab they are of, and the pictures above stay the ones they were.
 
-  # The task workspace's other six tabs (issue #414), each on the task whose
+  # The task workspace's other tabs (issue #414), each on the task whose
   # state is what the tab is for. `enter` on a board row opens the workspace
-  # on Steps & Attempts; the digits pick a tab.
+  # on its Overview (task 129.12); the digits pick a tab.
 
-  # Steps & Attempts, on the blocked task: a command step and an agent step
+  # Steps, on the blocked task: a command step and an agent step
   # that succeeded, then both failed attempts of the step it is blocked on,
   # each with vincent'"'"'s failure reason and the step'"'"'s result summary.
   tape tui-task-steps 1250 '
@@ -1405,6 +1405,8 @@ Tab
 Sleep 1s
 Enter
 Sleep 4s
+Type "1"
+Sleep 1s
 Screenshot "'"$OUT"'/tui-task-steps.png"
 Sleep 2s
 '
@@ -1669,6 +1671,8 @@ Tab
 Sleep 1s
 Enter
 Sleep 4s
+Type "1"
+Sleep 1s
 Up 1
 Sleep 1s
 Right

@@ -11132,6 +11132,45 @@ stream for the live tail.
    (`GET /v1/chats?task_id=&archived=all`, §13.2), as the history of the
    conversations held about it.
 
+   *Amended 2026-09-29 (task 129.12, issue #599).* **The workspace lands on an
+   Overview.** A new tab, **Overview**, bound to the fixed key `0`, is where
+   every *fresh* open lands — from the board, the palette, a lane jump (`l`),
+   a jump from inside the workspace, and a plain open from view 7. This
+   supersedes only the "(default)" clause of task 049's decision 2 (task 129
+   decision 1); the rest of that decision stands. Two opens are not fresh: an
+   `esc` pop restores the tab the reader left that task on, and view 7's
+   "open a pull request" route lands on **Pull Request**, where its form
+   opens (and, as ever, moves to Task Details if the task turns out to have
+   no link). `!` is unchanged (T3.11): it moves the board's cursor, and the
+   `enter` after it lands on the Overview. The timeline tab is relabelled
+   **Steps**; it keeps `1`, and every other digit keeps its tab. The strip is
+   drawn in two groups — `0 Overview · 3 Output · 4 Diff`, then, dimmed and
+   behind a `‖` so the grouping survives a no-colour terminal,
+   `1 Steps · 2 Task Details · 6 Step Details · 5 Workflow · 7 Pull Request`
+   — with each tab's digit beside its label. On a narrow terminal the second
+   group's labels shorten first and then shrink to digits; the first group is
+   never shortened. `tab`/`shift+tab` and `[`/`]` walk the strip in that drawn
+   order, Pull Request still last and still conditional; the mouse follows the
+   same geometry. The Overview renders from the task snapshot the workspace
+   already holds (T3.2) and picks one of three frames from the §6 state:
+   **running, queued, paused and `awaiting_children`** say what the task is
+   doing (a state sentence — the lanes still out, for a parked fan-out parent
+   — the current step and attempt, and the attempt's latest status message,
+   neutral as ever); **blocked, `awaiting_input`, `awaiting_gate` and
+   aborted** say what it needs (the reason's §18 title and code, the pending
+   question or the gate's instructions, and each action in
+   `available_actions` with its key and one line on what it does); **done and
+   archived** say how it ended (the final status message, the cost, the
+   branch). Each frame carries **jump links** keyed on the tab digits — `3`,
+   then `6` on the needs frame; `4`, then `7` when a pull request is linked,
+   on the ended frame — registered as rows of the Overview's own binding
+   context, so the footer, `?` and the palette list exactly the links the
+   frame draws. A link first moves the shared attempt cursor to the attempt
+   the frame is about — the live one, else the newest, which is the one a
+   block or failure is on — then switches tab; every digit press goes through
+   that one path. A state change while the Overview is open swaps the frame
+   and never moves the cursor.
+
 3. **New task.** Project picker → workflow picker (shows description + step list;
    flags steps whose agent is unavailable) → *(GitHub issue, conditional)* →
    title → description (inline or
@@ -12007,11 +12046,12 @@ daemon state and no capability that exists only at one size.
  enter open · / filter                    : commands  ? help  q quit
 
 ┌─ Task #12 ─────────────────────────────────────────────────┐
-│ Steps & Attempts │ Task Details │ Output │ Diff │ Workflow │
-│  1 ✓ plan                                      1m2s        │
-│  2 ▸ implement                                 4m9s        │
+│ 0 Overview │ 3 Output │ 4 Diff ‖ 1 Steps  2 Details  …     │
+│  Running step 2 of 5 (implement).                          │
+│  latest status   writing the rate-limit middleware         │
+│  3 full output                                             │
 └────────────────────────────────────────────────────────────┘
- tab views · ↑/↓ attempts · esc board      : commands  ? help  q quit
+ 0 overview · tab views · 3 full output     : commands  ? help  q quit
 ```
 
 The task table keeps the full §15 column set at full width. The task workspace

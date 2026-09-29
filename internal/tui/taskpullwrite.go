@@ -194,6 +194,12 @@ func (t *taskView) pullWriteAvailable(key string) (hint string, available, ok bo
 func (t *taskView) liveBindings(rows []binding) []binding {
 	out := make([]binding, 0, len(rows))
 	for _, b := range rows {
+		if b.context == ctxTaskOverview {
+			var ok bool
+			if b, ok = t.overviewLiveBindings(b); !ok {
+				continue
+			}
+		}
 		if b.context == ctxTaskPull {
 			if hint, available, ok := t.pullWriteAvailable(b.key); ok {
 				if !available {

@@ -120,13 +120,13 @@ func TestPullRequestTabIsReachedBySevenOnlyWhenLinked(t *testing.T) {
 	}
 }
 
-// tab/⇧tab and [/] walk the strip as it stands, in both shapes. Step Details
-// sits between Workflow and the conditional tab, so the cycle changes length
-// but not order when the pull request comes and goes.
+// tab/⇧tab and [/] walk the strip as it stands, in both shapes, in the order
+// it is drawn (task 129.12 decision 2). The conditional tab is last, so the
+// cycle changes length but not order when the pull request comes and goes.
 func TestStepDetailsSitsInTheCycleInBothStripShapes(t *testing.T) {
 	forward := []taskViewTab{
-		taskTabDetails, taskTabOutput, taskTabDiff, taskTabWorkflow, taskTabStepDetails,
-		taskTabSteps,
+		taskTabDetails, taskTabStepDetails, taskTabWorkflow, taskTabOverview,
+		taskTabOutput, taskTabDiff, taskTabSteps,
 	}
 	walk := func(t *testing.T, v *taskView, key string, want []taskViewTab) {
 		t.Helper()
@@ -143,7 +143,7 @@ func TestStepDetailsSitsInTheCycleInBothStripShapes(t *testing.T) {
 	v = tabbedTaskFixture(t, taskTabSteps)
 	walk(t, v, "]", forward)
 
-	linked := append(append([]taskViewTab(nil), forward[:5]...), taskTabPull, taskTabSteps)
+	linked := append(append(append([]taskViewTab(nil), forward[:3]...), taskTabPull), forward[3:]...)
 	v = tabbedTaskFixture(t, taskTabSteps)
 	v.applyPull(taskPullMsg{taskID: v.detail.taskID, pull: linkedPull()})
 	walk(t, v, "tab", linked)
@@ -152,10 +152,10 @@ func TestStepDetailsSitsInTheCycleInBothStripShapes(t *testing.T) {
 	// conditional tab's absence used to land the cycle on a tab that is not
 	// on the strip at all.
 	v = tabbedTaskFixture(t, taskTabSteps)
-	walk(t, v, "shift+tab", []taskViewTab{taskTabStepDetails, taskTabWorkflow})
-	v = tabbedTaskFixture(t, taskTabSteps)
+	walk(t, v, "shift+tab", []taskViewTab{taskTabDiff, taskTabOutput, taskTabOverview, taskTabWorkflow})
+	v = tabbedTaskFixture(t, taskTabOverview)
 	v.applyPull(taskPullMsg{taskID: v.detail.taskID, pull: linkedPull()})
-	walk(t, v, "[", []taskViewTab{taskTabPull, taskTabStepDetails})
+	walk(t, v, "[", []taskViewTab{taskTabPull, taskTabWorkflow})
 }
 
 // The strip's hit-testing is rebuilt on every render, so a new label between
@@ -176,8 +176,9 @@ func TestStepDetailsLabelIsClickableOnTheStrip(t *testing.T) {
 		if !ok {
 			t.Fatalf("tab %v has no hit box on the strip", tab)
 		}
-		if got := hit.x1 - hit.x0; got != len(tab.String()) {
-			t.Fatalf("tab %v hit box is %d wide, want %d", tab, got, len(tab.String()))
+		// The digit, a space and the label.
+		if got, want := hit.x1-hit.x0, len(tab.String())+2; got != want {
+			t.Fatalf("tab %v hit box is %d wide, want %d", tab, got, want)
 		}
 		v.tab = taskTabSteps
 		v.updateClick(tea.MouseClickMsg{X: hit.x0, Y: 1})
