@@ -127,9 +127,9 @@ part of it you can see: one long title far down the board makes the rows above
 it tall too, and a filter that hides it makes them short again. What still does
 not fit at three lines ends in `…`. Clicking any line of a row selects that row,
 and `j`/`k` move a task at a time whatever the height. The id, elapsed, cost,
-the pull request marker and the marker column do not wrap, and neither do project and workflow: those
-two are names you scan down, which a fourteen-cell wrap makes unreadable, so
-under width pressure they are dropped instead.
+the pull request marker and the marker column do not wrap, and neither do
+project and workflow: those two are names you scan down, which a fourteen-cell
+wrap makes unreadable, so under width pressure they are dropped instead.
 
 **The title has a ceiling.** It takes whatever the fixed columns leave, up to a
 comfortable width; past that the extra room goes to `STEP` and then `STATUS` —
@@ -140,7 +140,7 @@ title's trailing blanks. A loop rollup too wide for the column it is given
 drops clauses from the tail rather than wrapping — the body step goes first,
 then the `for_each` item, then the counter, which is the last thing to survive.
 
-A wide terminal also gets a **`STATUS` column**: what the task's newest step run
+The board also has a **`STATUS` column**: what the task's newest step run
 said about *itself*, if it said anything —
 `compiling internal/store`, `3 tests red`. It is set by the step, not by
 vincent, through [`vincent status`](../reference/cli.md#vincent-status), so it
