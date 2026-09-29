@@ -242,8 +242,9 @@ cards need):
   tying the guide's key tables and screenshot references to the registry, and
   tab-label test pins derived from the enum — `internal/tui/docs_claims_test.go`
   and `taskViewTab.String()`. ✓ 2026-09-29
-- [ ] **129.5** ([#601](https://github.com/lezli01/vincent/issues/601))
+- [x] **129.5** ([#601](https://github.com/lezli01/vincent/issues/601))
   `GET /v1/tasks/{id}/commits`, read from the branch so it survives archive.
+  ✓ 2026-09-29
 
 **Phase 1 — vocabulary and labels:**
 
@@ -296,8 +297,17 @@ cards need):
   `attempt k` without "of n". No `D` key opens the daemon view, so the
   no-evidence line names the palette instead. Re-capturing the blocked
   Overview is deferred to #609.
-- [ ] **129.14** ([#602](https://github.com/lezli01/vincent/issues/602)) The
+- [x] **129.14** ([#602](https://github.com/lezli01/vincent/issues/602)) The
   outcome card on Overview. Depends: 129.12, 129.5.
+  *Done 2026-09-29.* The card renders on done, archived and aborted (under
+  the failure card, collapsing first). The result is the newest succeeded
+  agent attempt's summary, else the newest non-empty one, else the task's
+  status message. `3` could not also serve the result on aborted, so the
+  result jump is a new `result` operation, default `w`, registered on the
+  Overview. The diff and the commits are one fetch each per open; archived
+  fetches no diff and says whether the branch was kept. The PR line reads the
+  Pull Request tab's row and checks, asking that tab's checks fetch once.
+  The Steps-tab `↳` preview is left out; screenshots are deferred to #609.
 - [x] **129.15** ([#603](https://github.com/lezli01/vincent/issues/603)) A
   quieter board (decisions 4 and 5). ✓ 2026-09-29
 - [x] **129.16** ([#604](https://github.com/lezli01/vincent/issues/604)) STATUS
@@ -379,7 +389,8 @@ Carried from #589, each for the item that must settle it:
   carries the failure? 129.13 left the Steps tab body unchanged, and its
   lane-blame copy with it; removing that duplicate is a later item.
 - **Archived tasks** (129.14): is branch + pull request + commits enough, or
-  must vincent keep a diff stat after archive?
+  must vincent keep a diff stat after archive? *Answered by 129.14:* branch,
+  pull request and commits are enough; no diff stat is kept.
 - **Deprecation window** (phase 4): a one-release overlap before any surface is
   removed?
 - **Deferred investigations**, none filed: a daemon-derived per-step "current
