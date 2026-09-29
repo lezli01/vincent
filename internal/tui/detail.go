@@ -158,6 +158,12 @@ type detail struct {
 
 	following bool
 	newLines  int
+	// installed is whether the displayed attempt's first transcript window
+	// has arrived, and land whether the next build must position a finished,
+	// failed attempt at its failure (#597). Landing happens once per
+	// attempt: a later rebuild keeps a paused reader's anchor (#291).
+	installed bool
+	land      bool
 	// ticking guards the in-progress indicator's tick loop, and frame is the
 	// glyph it is on (task 089). Cleared on every tick and re-armed only
 	// while the displayed attempt is live, so a workspace on a finished task
@@ -457,6 +463,8 @@ func (d *detail) resetOutput() {
 	d.truncated = false
 	d.following = true
 	d.newLines = 0
+	d.installed = false
+	d.land = false
 	d.outputDirty = true
 	d.vp.SetContent("")
 }
@@ -606,6 +614,11 @@ func (d *detail) applyTranscript(msg detailTranscriptMsg) {
 	d.nextOffset = msg.next
 	d.drainBuffer()
 	d.outputDirty = true
+	if !d.installed {
+		d.installed = true
+		run := d.runByID(d.displayRun)
+		d.land = run.FinishedAt != nil && run.State != "succeeded"
+	}
 }
 
 // drainBuffer appends held chunks belonging to the displayed attempt that the

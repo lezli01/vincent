@@ -195,6 +195,13 @@ on the line this exists to keep clean is worse than a few spaces.
   of this task never reaches the workspace the guide describes. Recorded here,
   not fixed: where the indicator belongs on that strip is this task's decision
   to revisit, not a screenshot's.
+  *Amended 2026-09-29 ([#597](https://github.com/lezli01/vincent/issues/597)):*
+  revisited and done. The indicator, with the level, `raw` and the follow
+  state, now rides on the workspace's attempt strip (`renderAttemptSelector`,
+  from the clauses `outputTitle` shares), drawn from the displayed pane's own
+  sub-model so a lane shows its own. Same frame, same 120 ms tick, same
+  derived clock — decisions 1, 5 and 8 unchanged. `tui-task-output.png` and
+  `tui-lane-output.png` are not re-captured in that change; see #591.
 - **No gate.** The indicator is client-side rendering over data already on the
   wire: no endpoint, DTO, column or block reason changed, so no gate script has
   anything new to assert.

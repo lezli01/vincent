@@ -944,7 +944,10 @@ func renderAttemptSelector(d *detail, width int) string {
 			i+1, len(runs), run.StepIndex+1, stepLabel(run), run.Iteration, run.Attempt, run.State,
 		)
 	}
-	line := "  Attempt  " + styleSelected.Render(identity) + styleDim.Render("   ←/→ select")
+	// The pane's live state rides between the identity and the hint, so a
+	// narrow width loses the hint before it loses the state (#597).
+	line := "  Attempt  " + styleSelected.Render(identity) + d.outputStatus() +
+		styleDim.Render("   ←/→ select")
 	return ansi.Truncate(line, max(width, 1), "…")
 }
 

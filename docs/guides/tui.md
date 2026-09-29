@@ -317,7 +317,7 @@ unlinking lives there and on the Pull Request tab.
 **Output** gives the selected attempt's live tail or historical transcript the
 entire view. Its selector names the attempt and its position in the task; use
 `←`/`→` (or `h`/`l`) to show another attempt without returning to the timeline.
-While the attempt on screen is still running, the pane's title carries the same
+While the attempt on screen is still running, that selector carries the same
 in-progress indicator the [chat workspace](#chat-workspace) draws — a turning
 glyph and an elapsed clock, `⠋ working… 14s` — beside the level and the follow
 state, so an attempt that is thinking rather than printing is told apart from a
@@ -564,6 +564,13 @@ level with `v` or `ctrl+r`, toggling `ctrl+o`, and output old enough to be
 dropped from the window all leave you looking at the same thing. Press `f`
 (`ctrl+g` in a chat) to go back to following the tail.
 
+**The attempt strip says what the pane is doing.** Beside the attempt's name it
+shows the level when it is not `normal`, `raw` when `ctrl+o` is on, and — for
+a live attempt only — the spinner with its elapsed time and `▼ following` or
+`⏸ paused · N new`. A finished attempt that failed opens where it failed: at
+the first line its check printed if the check failed, otherwise at the end.
+Check output is marked `check ▏` so it never passes for the step's own.
+
 ### Seeing the source, and taking it away
 
 `ctrl+o` swaps the rendered view for the **stored Markdown**, exactly as the
@@ -572,7 +579,8 @@ the escape hatch for a render that surprised you, and it is a display state and
 nothing more: the records, the live tail, the level and the transcript on disk
 are untouched. Like `v`'s level, it is one choice for the whole session and
 shared with the chat workspace — set it in either place and both follow — and it
-is gone when you quit. The pane's title says `raw` while it is on.
+is gone when you quit. The pane's title — in a task's workspace, the attempt
+strip — says `raw` while it is on.
 
 `ctrl+y` opens a **copy picker**: a searchable list of what can be taken out of
 the assistant prose on screen, newest message first.
