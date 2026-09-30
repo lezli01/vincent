@@ -2,6 +2,7 @@ package store
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -553,5 +554,55 @@ func TestDescendantsCostExcludesTheTaskItself(t *testing.T) {
 	spend(t, s, quiet.ID, 1, nil)
 	if got, err := s.DescendantsCost(ctx, solo.ID); err != nil || got.HasCost {
 		t.Errorf("DescendantsCost(solo) = %+v, %v; want no cost reported", got, err)
+	}
+}
+
+// TestChildrenRollupsMatchChildrenOf is task 129.18 decision 5: the list
+// route's one batched walk must say exactly what ChildrenOf says per row, and
+// leave a task with no descendants out of the map.
+func TestChildrenRollupsMatchChildrenOf(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	root := newTask(p.ID, "root", TaskAwaitingChildren)
+	other := newTask(p.ID, "other", TaskAwaitingChildren)
+	plain := newTask(p.ID, "plain", TaskRunning)
+	for _, task := range []*Task{root, other, plain} {
+		if err := s.CreateTask(ctx, task, nil); err != nil {
+			t.Fatalf("CreateTask: %v", err)
+		}
+	}
+	mid := lane(t, s, p.ID, root.ID, "mid", 0, TaskAwaitingChildren)
+	lane(t, s, p.ID, root.ID, "done", 1, TaskDone)
+	lane(t, s, p.ID, mid.ID, "deep", 0, TaskBlocked)
+	lane(t, s, p.ID, mid.ID, "gate", 1, TaskAwaitingGate)
+	lane(t, s, p.ID, other.ID, "ask", 0, TaskAwaitingInput)
+	lane(t, s, p.ID, other.ID, "blocked", 1, TaskBlocked)
+
+	ids := []int64{root.ID, other.ID, plain.ID, mid.ID}
+	got, err := s.ChildrenRollups(ctx, ids)
+	if err != nil {
+		t.Fatalf("ChildrenRollups: %v", err)
+	}
+	for _, id := range ids {
+		want, err := s.ChildrenOf(ctx, id)
+		if err != nil {
+			t.Fatalf("ChildrenOf(%d): %v", id, err)
+		}
+		r, ok := got[id]
+		if want.Total == 0 {
+			if ok {
+				t.Errorf("task %d has no descendants but got %+v", id, r)
+			}
+			continue
+		}
+		slices.Sort(want.Blocked)
+		slices.Sort(want.AwaitingGate)
+		if !reflect.DeepEqual(r, want) {
+			t.Errorf("task %d: batched %+v, ChildrenOf %+v", id, r, want)
+		}
+	}
+	if got, err := s.ChildrenRollups(ctx, nil); err != nil || len(got) != 0 {
+		t.Errorf("ChildrenRollups(nil) = %v, %v; want an empty map", got, err)
 	}
 }
