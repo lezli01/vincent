@@ -2199,8 +2199,9 @@ Five details worth knowing:
   `⇡#123` marker reads.
 
 Every task shape carries `parent_task_id`, `lane_id` and `lane_order`, all null
-for a root task. `GET /v1/tasks/{id}` additionally carries `children` whenever
-the task has lanes:
+for a root task. `GET /v1/tasks/{id}` and every row of `GET /v1/tasks`
+additionally carry `children` whenever the task has lanes, and omit it
+otherwise:
 
 ```json
 "children": {
@@ -2215,7 +2216,10 @@ It covers the **whole subtree**, not just direct lanes, and is computed per
 request from one recursive CTE rather than stored — a counter would be a second
 truth that drifts from the rows it counts. `blocked` and `awaiting_gate` are
 ids: fetch the ones you decide to show. This is what pays for hiding lanes from
-the list, since a blocked lane would otherwise be invisible.
+the list, since a blocked lane would otherwise be invisible. The list computes
+the rollups of a whole page in one batched walk, so a row with lanes costs no
+extra request; a daemon older than task 129.18 serves `children` on the detail
+endpoint only.
 
 `cost_usd` is what the subtree has spent: every attempt of every step of every
 descendant, archived ones included. It does **not** include the task's own

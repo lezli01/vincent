@@ -8875,6 +8875,14 @@ GET    /v1/tasks?project_id=&state=&archived=&archived_before=&archived_since=&l
                                         `tree_cost_limit` (§12.3). Summed by a query of its
                                         own, so the scheduler's settle check never joins
                                         step_runs
+                                        *Amended 2026-09-30 (task 129.18, issue #607):*
+                                        every **list** row with lanes carries the same
+                                        `children` rollup, cost included, and a row with
+                                        none omits it. The page's rollups come from one
+                                        batched walk and one batched cost read, never a
+                                        walk per row. It is what lets a board keep a
+                                        parent whose lane needs a human; a client of an
+                                        older daemon sees no rollup on list rows
 POST   /v1/tasks                        { project_id, workflow, title, description?, fields?,
                                           base_branch?, branch_name?, existing_branch?,
                                           priority?, agent?, model?, effort?,
@@ -13646,6 +13654,26 @@ It introduces no new key literal, so `keymap.fixed` gains rows and the catalog
 gains nothing; none of the five is nameable in `tui.keys`. `@` is never
 matched as a key at all — the draft is inspected after each composer update —
 and so no `keymap` operation, moved or not, can shadow it.
+
+*Amended 2026-09-30 (task 129.18, issue #607).* Two more vocabulary terms.
+`N` (`next_failure`) is on every workspace tab and walks the open task's
+failures: the newest attempt of each step or loop iteration that did not
+succeed, in execution order, starting after the shared attempt cursor and
+wrapping. A step that failed and then passed on retry is not one. It lands on
+the Output tab where the attempt failed (the first check line of a
+`check_failed`, else the end), unfolds a folded iteration, and never sets
+follow. A blocked lane is a stop at its fan-out step's place, opened as `l`
+opens it — back stack pushed — and landed on at its own first failure. With
+no failures it does nothing and the status line says so. The Overview failure
+card's `3` link takes the same landing. `x`, the issue's candidate, is
+`reject`; `N` shares only the popups' `no`, recorded as an exception on `N`
+alone. `H` (`attention_filter`) is on the task table and narrows it to what
+needs a human: the three §15 attention states, and an `awaiting_children`
+parent whose list-row rollup (§13.2, amended the same day) counts a blocked,
+awaiting-input or awaiting-gate lane. It is session state like `/`, composes
+with `/` and grouping, scopes `V` and `!`, is named in the panel title
+(`Tasks — needs you — /…`), and draws an empty state naming the effective key.
+The attention jump is unchanged: it moves the board cursor from everywhere.
 
 *Amended 2026-09-17 (task 119, issue #472).* `chat` is a §6 action, so it is an
 operation like the rest: `T` by default, moved by `tui.keys` on every surface
