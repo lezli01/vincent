@@ -396,7 +396,7 @@ func TestMarkdownCacheKeysOnHyperlinks(t *testing.T) {
 // already built rebuilds when it changes.
 func TestHyperlinkSettingIsOneSessionValue(t *testing.T) {
 	links := newHyperlinkHolder()
-	m := &root{views: newViews(t.Context(), links), links: links}
+	m := &root{views: newViews(t.Context(), links, newLevelHolder()), links: links}
 	chat, ok := m.views[viewChat].(*chatView)
 	if !ok {
 		t.Fatalf("viewChat is %T", m.views[viewChat])

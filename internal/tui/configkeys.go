@@ -475,6 +475,16 @@ func configKeys() []configKey {
 				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Keys: &m}}, err
 			},
 		},
+		// Task 129.11. The level the output pane opens at; `v` still cycles
+		// it for the session, and a save applies it live.
+		{
+			path: "tui.output.level", label: "output level", kind: kindEnum, choices: config.OutputLevels,
+			help: "the verbosity the output pane opens at; v still cycles it for the session",
+			read: func(c apiclient.Config) string { return c.TUI.Output.Level },
+			write: func(s string) (apiclient.ConfigPatch, error) {
+				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Output: &apiclient.ConfigOutputPatch{Level: &s}}}, nil
+			},
+		},
 		boolKey("tui.hyperlinks", "hyperlinks",
 			"make sanitized http(s) Markdown links clickable (OSC 8); only if your terminal supports it",
 			func(c apiclient.Config) bool { return c.TUI.Hyperlinks },
@@ -660,7 +670,10 @@ func defaultClientConfig() apiclient.Config {
 			Network:          d.Container.Network,
 			ExtraMounts:      d.Container.ExtraMounts,
 		},
-		TUI: apiclient.ConfigTUI{Board: apiclient.ConfigBoard{GroupBy: boardGroupNames(d)}},
+		TUI: apiclient.ConfigTUI{
+			Board:  apiclient.ConfigBoard{GroupBy: boardGroupNames(d)},
+			Output: apiclient.ConfigOutput{Level: d.TUI.Output.Level},
+		},
 	}
 }
 

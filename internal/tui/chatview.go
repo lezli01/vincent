@@ -131,6 +131,10 @@ type chatView struct {
 	// than from a key here, so a change is noticed at render time.
 	links      *hyperlinkHolder
 	builtLinks bool
+	// builtLevel is the level the body was last built with, noticed at
+	// render time for builtLinks' reason: `tui.output.level` arrives from
+	// the daemon rather than from a key here (task 129.11).
+	builtLevel outputLevel
 
 	// vp scrolls the conversation; following means it is showing the end,
 	// which a manual scroll drops and ctrl+g re-arms (decision 5).

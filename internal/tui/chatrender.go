@@ -84,7 +84,7 @@ func (v *chatView) render(width, height int) string {
 func (v *chatView) bodyView(width, height int) string {
 	v.vp.SetWidth(max(width, 1))
 	v.vp.SetHeight(max(height, 1))
-	if v.bodyDirty || v.builtWidth != width || v.builtLinks != v.links.get() {
+	if v.bodyDirty || v.builtWidth != width || v.builtLinks != v.links.get() || v.builtLevel != v.level.get() {
 		// The paused anchor, as in the task workspace (#291): a resize, the
 		// maxRecords cap and the level and raw toggles all rebuild the body,
 		// and a reader who scrolled away from the tail keeps their place
@@ -96,6 +96,7 @@ func (v *chatView) bodyView(width, height int) string {
 		v.bodyDirty = false
 		v.builtWidth = width
 		v.builtLinks = v.links.get()
+		v.builtLevel = v.level.get()
 		switch y, ok := anchorIndex(anchors, keep); {
 		case v.following:
 			v.vp.GotoBottom()

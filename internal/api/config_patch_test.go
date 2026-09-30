@@ -383,6 +383,49 @@ func TestConfigPatchRoundTripsTUIHyperlinks(t *testing.T) {
 	}
 }
 
+// tui.output.level is served, written and put into force, and a value outside
+// the four levels is refused with the validation envelope (task 129.11).
+func TestConfigPatchRoundTripsTUIOutputLevel(t *testing.T) {
+	h := newConfigHarness(t)
+	_, getBody := doRequest(t, h.ts, http.MethodGet, "/v1/config", testToken)
+	if !strings.Contains(string(getBody), `"output":{"level":"normal"}`) {
+		t.Fatalf("GET /v1/config does not serve tui.output.level normal by default: %s", getBody)
+	}
+	resp, out := h.patch(t, `{"tui":{"output":{"level":"quiet"}}}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, out)
+	}
+	var answered configResponse
+	if err := json.Unmarshal(out, &answered); err != nil {
+		t.Fatalf("parse patch response: %v", err)
+	}
+	if answered.TUI.Output.Level != "quiet" {
+		t.Errorf("the patch response says %q, want quiet", answered.TUI.Output.Level)
+	}
+	if got := h.cur.Load().TUI.Output.Level; got != "quiet" {
+		t.Errorf("the applied config says %q, want quiet", got)
+	}
+	if !strings.Contains(string(h.bytes(t)), "level: quiet") {
+		t.Errorf("config.yaml does not carry the level:\n%s", h.bytes(t))
+	}
+
+	before := h.bytes(t)
+	resp, out = h.patch(t, `{"tui":{"output":{"level":"loud"}}}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %s)", resp.StatusCode, out)
+	}
+	var env errorBody
+	if err := json.Unmarshal(out, &env); err != nil || env.Error.Code != CodeValidationFailed {
+		t.Fatalf("want the snake_case validation envelope, got %s", out)
+	}
+	if !strings.Contains(env.Error.Message, "tui.output.level") {
+		t.Errorf("message %q does not name the key", env.Error.Message)
+	}
+	if !bytes.Equal(before, h.bytes(t)) {
+		t.Error("a refused level changed config.yaml")
+	}
+}
+
 // The backup block is served, written into its documented place and put into
 // force (task 115). Setting the interval alone is the whole switch, and the
 // file keeps one `backup:` block rather than growing a second at the end.

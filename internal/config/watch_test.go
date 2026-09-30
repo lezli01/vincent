@@ -57,6 +57,12 @@ func TestWatchReloadsValidAndDropsInvalid(t *testing.T) {
 	if got.MaxParallelTasks != 9 {
 		t.Fatalf("reloaded MaxParallelTasks = %d, want 9", got.MaxParallelTasks)
 	}
+
+	// tui.output.level is hot-reloaded like any other key (task 129.11).
+	write("max_parallel_tasks: 9\ntui:\n  output:\n    level: quiet\n")
+	if got := next(); got.TUI.Output.Level != "quiet" {
+		t.Fatalf("reloaded tui.output.level = %q, want quiet", got.TUI.Output.Level)
+	}
 }
 
 // announcingLocker reports each Lock call before it blocks, so a test can

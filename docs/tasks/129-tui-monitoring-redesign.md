@@ -280,9 +280,18 @@ cards need):
 - [x] **129.10** ([#605](https://github.com/lezli01/vincent/issues/605)) Lane
   breakdowns, loop iteration outcomes, step pips as glyphs (decision 8). ✓
   2026-09-29
-- [ ] **129.11** ([#608](https://github.com/lezli01/vincent/issues/608)) A
+- [x] **129.11** ([#608](https://github.com/lezli01/vincent/issues/608)) A
   persisted `tui.output.level`, and bounded command output at `quiet` and
   `compact` (decision 6). Ordering: see "Ordering with the open walkthroughs".
+  *Done 2026-09-30.* The level applies from the first config fetch and then only
+  when the configured value changes, so a reconnect never undoes a `v` press.
+  Each command run's output (command steps, parallel/fan-out members, `check:`
+  phases) shows its last 20 records at `quiet` and `compact` under a
+  `… N earlier line(s)` count. **Amendment:** that count is drawn at `quiet`
+  too — task 070 decision 2's "truncation is stated rather than silent"
+  outranks quiet's "makes no offers" rule (task 085 d1), because a tail with no
+  count reads as the whole output. Recorded in §15. `normal` and `verbose` are
+  unchanged; `agent.command_output` stays verbose-only.
 
 **Phase 3 — default-view changes:**
 

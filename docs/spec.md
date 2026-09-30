@@ -6909,6 +6909,8 @@ tui:                           # view preference; the daemon validates and relay
     group_by: [project, workflow]  # task-table grouping, outermost first; [] = flat
   hyperlinks: false            # OSC 8 links for sanitized http(s) Markdown links; opt-in (task 111)
   keys: {}                     # operation id → one key, e.g. {refresh: ctrl+e}; {} = the §15 defaults (task 118)
+  output:
+    level: normal              # quiet | compact | normal | verbose: the output pane's opening level (task 129.11)
 ```
 
 *Amended 2026-08-31 (task 067, issue #269).* Four of these keys reach **chats**
@@ -7612,6 +7614,19 @@ malformed key string, the printable-key rule, an unknown id and a clash with
 lenient load let through is logged at `Warn` at start and on every accepted
 reload, listed by `vincent doctor` as `paths.keymap_warnings` (a warning, never
 a problem), and shown once in the TUI.
+
+*Amended 2026-09-30 (task 129.11, issue #608; supersedes task 071 decision 3's
+"never persisted" per task 129 decision 6):* `tui.output.level` takes `quiet`,
+`compact`, `normal` or `verbose`, default `normal`, and is the level the output
+pane opens at (§15) — one value for the task and chat workspaces, which still
+share it. Any other value fails the load with a message naming the four. The
+TUI applies it from the first config it fetches and afterwards only when the
+configured value differs from the last one it saw, so the refetch every
+reconnect makes never undoes a `v` press, while an edit made by file, the config
+editor or `PATCH /v1/config` applies at the next read. `v` still cycles the
+level for the session and nothing writes it back. A daemon that predates the key
+refuses a file that sets it, by the strict decode above; that is the accepted
+cost, documented in the configuration reference.
 
 **`environment` (T4.23).** Governs every process the daemon spawns — agent
 steps via `RunSpec.Env` (§9.1), command steps and their checks via §8.5's
@@ -13297,6 +13312,27 @@ means; the glyph set does not grow, and the words carry the meaning under
 does not know the pane's width, and every other normalized record is one line
 through it. The record has no payload, so the reset's ids stay reachable
 through `e`, `--raw` and `format=raw` only.
+
+*Amended 2026-09-30 (task 129.11, issue #608; task 071 decision 3 and task 129
+decision 6).* Two sentences above stop being true. First, the level **is
+persisted**: `tui.output.level` (§12.3) is the level both panes open at, and it
+is re-applied only when the configured value changes, so a `v` press still
+lasts the session. "Nothing persists it" and "still persisted nowhere" are
+superseded; "one value for the session shared by both panes" and the default
+`normal` hold. Second, `command.output` and `vincent.output` are no longer
+untouched at quiet and compact: at both, each command run's output — the
+records after one `vincent.command_started`, which covers a command step, its
+parallel and fan-out members, and a step's `check:` phase — shows only its last
+20 records, stdout and stderr counted together in stream order, under the
+always-drawn `$ …` line. When records were cut, one dim gutterless
+`… N earlier line(s) (<expand key>)` line precedes the tail. A command step's
+pane is still identical at quiet and compact. The count is drawn **at quiet
+too**, an exception to quiet's "makes no offers" rule: task 070 decision 2's
+"truncation is stated rather than silent" outranks it, because a tail with no
+count reads as the whole output. There is no failure heuristic — the tail is
+the tail whatever the outcome, so a failing command's last line is always
+visible — and `agent.command_output` stays verbose-only. `normal` and `verbose`
+render exactly as before.
 
 *Amended 2026-08-31 (task 067).* The chats board and the chat workspace carry
 their own rows in the registry (`internal/tui/bindings.go`), which is what the

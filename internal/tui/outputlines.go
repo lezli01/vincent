@@ -93,7 +93,8 @@ func isTerminalControl(r rune) bool {
 // the default" and a guard meaning "compact and below" is spelled
 // `level <= levelCompact`. Nothing outside this file may depend on the
 // numbers: they renumbered once already, when quiet was added underneath,
-// and nothing persists them (see levelHolder).
+// and nothing persists them. What `tui.output.level` persists is the name
+// (task 129.11), which parseOutputLevel maps back.
 type outputLevel int
 
 const (
@@ -103,6 +104,13 @@ const (
 	// outcome of a run that succeeded, and unrecognized lines entirely —
 	// not even their count, since a count is an offer to expand and quiet
 	// is the level that makes no offers.
+	//
+	// One exception, amended by task 129.11: a command's output cut to its
+	// tail states the cut, count and key included, at quiet as at compact.
+	// Task 070 decision 2's "truncation is stated rather than silent"
+	// outranks the no-offers rule there, because a tail with no count reads
+	// as the whole output — an unrecognized line's absence misleads nobody
+	// about what a command printed.
 	levelQuiet outputLevel = iota
 	// levelCompact hides reasoning: what the agent said and did, nothing
 	// else. Unrecognized lines stay behind their count at compact and at
@@ -129,6 +137,18 @@ func (l outputLevel) String() string {
 	}
 }
 
+// parseOutputLevel maps a `tui.output.level` value (task 129.11) to its
+// level. ok is false for anything else — an empty value from a daemon that
+// predates the key included — which the caller treats as nothing configured.
+func parseOutputLevel(s string) (outputLevel, bool) {
+	for l := levelQuiet; l <= levelVerbose; l++ {
+		if l.String() == s {
+			return l, true
+		}
+	}
+	return levelNormal, false
+}
+
 // next cycles quiet → compact → normal → verbose → quiet. One press is still
 // "one louder, wrap to the quietest", so the gesture did not change when the
 // fourth level went in underneath.
@@ -143,9 +163,33 @@ func (l outputLevel) next() outputLevel {
 // workspace's output pane and the chat workspace share it by pointer rather
 // than each keeping their own (task 071 decision 3): §15's reason for the
 // level being session state — moving around should not reset what a reader
-// chose to see — does not stop at a view boundary. Nothing persists it; it
-// dies with the process, exactly as §15 already reasons for the task pane.
-type levelHolder struct{ level outputLevel }
+// chose to see — does not stop at a view boundary.
+//
+// Where it starts is `tui.output.level` (task 129.11, superseding decision
+// 3's "never persisted" per task 129 decision 6): the root sets it from the
+// first config it fetches and again only when the configured value changes
+// (see applyOutputLevel), so a reconnect never undoes a `v` press. `v` itself
+// is still session-only — nothing writes the level back.
+type levelHolder struct {
+	level outputLevel
+	// configured is the last `tui.output.level` adopt saw, "" before the
+	// first. Tracking it is what lets a refetch that carries the same value
+	// leave a `v` press alone.
+	configured string
+}
+
+// adopt applies a configured level (task 129.11 decision 2): the first one
+// seen, and afterwards only one that differs from the last one seen. A value
+// this client does not know — or "" from a daemon that predates the key —
+// changes nothing.
+func (h *levelHolder) adopt(name string) {
+	l, ok := parseOutputLevel(name)
+	if !ok || name == h.configured {
+		return
+	}
+	h.configured = name
+	h.level = l
+}
 
 // newLevelHolder starts at levelNormal, which since issue #321 is no longer
 // the zero value: a session must be constructed through here rather than as a
@@ -164,8 +208,10 @@ func (h *levelHolder) cycle() { h.level = h.level.next() }
 // render assistant prose point at one holder, so toggling in the chat is
 // visible in the task workspace and walking between them resets nothing.
 //
-// Nothing persists it — no tui.json entry, no `tui:` config key — for the
-// reason §15 already gives for the level: it dies with the process.
+// Nothing persists it — no tui.json entry, no `tui:` config key — and it
+// dies with the process (task 076 decision 2). The level beside it gained a
+// config key in task 129.11; this did not: the level is how much of a record
+// a reader wants every session, raw is a look at one message's source.
 //
 // Raw is presentation only. It does not touch the records, the streaming
 // offset, the verbosity level, the transcript, follow mode, or any task or
@@ -185,6 +231,12 @@ func (h *rawHolder) toggle() { h.raw = !h.raw }
 // source lines — claude sends paragraphs, cursor sends one coalesced run —
 // and a cap that means different things per adapter is not a cap.
 const thinkingLines = 3
+
+// commandTailLines is how many lines of one command run's output quiet and
+// compact show (task 129.11 decision 3): the last ones, below a count of the
+// rest. Counted in records — source lines — rather than display lines, since
+// a command's line is the unit its reader thinks in.
+const commandTailLines = 20
 
 // segment is a run of text sharing one style. A record is a list of them, so
 // a tool call can render its name and its subject differently and still wrap
@@ -1035,6 +1087,7 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 		note(railed(enter(rawParent), []string{styleDim.Render(fmt.Sprintf(
 			"%s… %d unrecognized line(s) (%s)", gutterNone, n, opts.expandKey))}))
 	}
+	cut, cutAt := commandTails(records, level)
 	docs := assistantDocs(records, seqs)
 	docAt := make(map[int]int, len(docs))
 	for i, doc := range docs {
@@ -1088,6 +1141,16 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 			continue
 		}
 		flushRaw()
+		if cut != nil && cut[i] {
+			continue
+		}
+		if n := cutAt[i]; n > 0 {
+			// Stated at quiet too: see levelQuiet for why this count is the
+			// one offer that level makes.
+			note([]string{styleDim.Render(fmt.Sprintf(
+				"%s… %d earlier line(s) (%s)", gutterNone, n, opts.expandKey))})
+			lastWasOutput = false
+		}
 		// A subagent's record renders where a main-loop record of its type
 		// would render one level down, two columns narrower for the rail.
 		recLevel, recWidth := level, width
@@ -1162,6 +1225,46 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 	}
 	flushRaw()
 	return lines, anchors
+}
+
+// commandTails bounds each command run's output at quiet and compact to its
+// last commandTailLines records (task 129.11). A run is the output records
+// after one `vincent.command_started` — a command step's body, a parallel or
+// fan-out member's, a check's — or from the top of the window when its start
+// has been pruned. stdout and stderr count together, in stream order, so a
+// failing command's last line is in the tail whatever stream it went to.
+//
+// cut marks the records not drawn; cutAt maps the first drawn record of a cut
+// run to how many were cut ahead of it. Both are nil at normal and verbose,
+// which render every line exactly as before, and when nothing was cut.
+func commandTails(records []apiclient.TranscriptRecord, level outputLevel) (cut []bool, cutAt map[int]int) {
+	if level > levelCompact {
+		return nil, nil
+	}
+	var run []int
+	flush := func() {
+		if len(run) > commandTailLines {
+			n := len(run) - commandTailLines
+			if cut == nil {
+				cut, cutAt = make([]bool, len(records)), map[int]int{}
+			}
+			for _, j := range run[:n] {
+				cut[j] = true
+			}
+			cutAt[run[n]] = n
+		}
+		run = run[:0]
+	}
+	for i, rec := range records {
+		switch rec.Type {
+		case "vincent.command_started":
+			flush()
+		case "command.output", "vincent.output":
+			run = append(run, i)
+		}
+	}
+	flush()
+	return cut, cutAt
 }
 
 // blockOrdinal is the block a rendered line belongs to, tolerating a renderer
