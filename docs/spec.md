@@ -10767,7 +10767,9 @@ stream for the live tail.
    unreachable. The press acts in **every** state, because no list row carries a
    field saying "this task once had lanes" (§13.2 serves `children` on the
    detail endpoint only): the press asks, and a task with no lanes answers with
-   none and nothing moves.
+   none and nothing moves. *Amended 2026-09-30 (task 129.18, issue #607): list
+   rows with lanes now carry `children` too (§13.2), but the press still asks
+   in every state — an older daemon serves no rollup on its rows.*
 
    The lanes stay out of the counts **by construction** rather than by
    filtering. They come from their own `GET /v1/tasks?parent_id=N`, one request
@@ -10801,7 +10803,10 @@ stream for the live tail.
    takes its lane state's colour from the task palette, and the glyph carries
    the meaning without it. The breakdown needs a row that carries the rollup.
    §13.2 serves `children` on the detail endpoint only, so a row from
-   `GET /v1/tasks` still shows the bare state (task 084 records the gap). An
+   `GET /v1/tasks` still shows the bare state (task 084 records the gap).
+   *Amended 2026-09-30 (task 129.18, issue #607): §13.2 now serves `children`
+   on every list row with lanes, so the board draws the breakdown from the
+   list; only a row from an older daemon shows the bare state.* An
    expanded lane's row reads **`lane <lane_id>`**
    rather than its title, which repeats the parent's; a lane served without a
    lane id keeps its title. Lanes stay out of the list and the counts (task 014
