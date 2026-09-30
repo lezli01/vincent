@@ -149,6 +149,10 @@ type board struct {
 
 	filter    textField
 	filtering bool
+	// attentionOnly is `H` (task 129.18): the table narrowed to what needs a
+	// human. Session state, like the filter — nothing writes it to tui.json —
+	// and composed with it: a row is shown when both keep it.
+	attentionOnly bool
 
 	// group is the grouping the table is rendering (boardgroup.go);
 	// configGroup is what the daemon's config asked for. They differ once `g`
@@ -761,6 +765,12 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "V":
 		b.markVisible()
 		return b, nil
+	case opKey(keymap.AttentionFilter):
+		// The cursor is not touched, for `g`'s reason: selectedID names the
+		// task under it, and the next render puts the cursor back on it when
+		// it is still listed.
+		b.attentionOnly = !b.attentionOnly
+		return b, nil
 	case "L":
 		// Expand or collapse the fan-out under the cursor (boardlanes.go).
 		// Lanes stay out of the list and out of every count; this is the way
@@ -967,7 +977,7 @@ func (b *board) rows() []boardRow {
 // decision 2), and it is what anything that means "the tasks on this board"
 // reads.
 func (b *board) allRows() []boardRow {
-	tasks := filterTasks(b.tasks, b.filter.Value())
+	tasks := b.shownTasks()
 	sorted := make([]apiclient.Task, len(tasks))
 	copy(sorted, tasks)
 	sortTasks(sorted)
@@ -979,7 +989,16 @@ func (b *board) allRows() []boardRow {
 // shares one (shownLevels, task 129 decision 4). The fold keys read the first
 // half; the panel title names the second.
 func (b *board) shownGroup() (grouping, []string) {
-	return shownLevels(filterTasks(b.tasks, b.filter.Value()), b.group)
+	return shownLevels(b.shownTasks(), b.group)
+}
+
+// shownTasks is the board's tasks after both of its filters: `H` and `/`.
+func (b *board) shownTasks() []apiclient.Task {
+	tasks := b.tasks
+	if b.attentionOnly {
+		tasks = attentionTasks(tasks)
+	}
+	return filterTasks(tasks, b.filter.Value())
 }
 
 // wrapRows expands each task row into one row per rendered line, so an index
@@ -1717,6 +1736,16 @@ func (b *board) emptyBody(rows []boardRow) (string, bool) {
 	switch {
 	case !b.loaded && b.loadErr == nil:
 		return styleDim.Render("\n  loading tasks…\n"), true
+	case b.attentionOnly && len(b.tasks) > 0:
+		// The way out is named by its effective key (118 decision 8).
+		line := "nothing needs you"
+		if v := b.filter.Value(); v != "" {
+			line = fmt.Sprintf("nothing that needs you matches %q", v)
+		}
+		if key := opKey(keymap.AttentionFilter); key != "" {
+			line += " — " + key + " shows every task"
+		}
+		return styleDim.Render("\n  " + line + "\n"), true
 	case len(b.tasks) > 0:
 		return styleDim.Render(fmt.Sprintf(
 			"\n  no tasks match %q — esc to clear the filter\n", b.filter.Value())), true

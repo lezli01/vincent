@@ -693,6 +693,10 @@ func (s *shell) panelTitle(id panelID) string {
 		if !s.board.group.equal(s.board.configGroup) {
 			title += " — " + s.board.group.label()
 		}
+		// `H` is named beside the filter it composes with (task 129.18).
+		if s.board.attentionOnly {
+			title += " — needs you"
+		}
 		if v := s.board.filter.Value(); v != "" && !s.board.filtering {
 			title += " — /" + v
 		}

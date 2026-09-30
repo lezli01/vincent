@@ -48,6 +48,9 @@ var reboundKeys = map[string]string{
 	"chat":       "alt+t",
 	"help":       "f12",
 	"palette":    "ctrl+a",
+	// f14/f15: ctrl+n is add's here, and N/H must move off every letter.
+	"next_failure":     "f14",
+	"attention_filter": "f15",
 }
 
 // withKeymap installs overrides for one test and restores the defaults after.

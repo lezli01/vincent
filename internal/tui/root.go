@@ -205,6 +205,9 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// pull-request takeover — unchanged.
 		if v, ok := m.views[viewTask].(*taskView); ok {
 			v.pushTask(msg.from)
+			if msg.failure {
+				v.pendingFailure = msg.id
+			}
 		}
 		m.selectedTask = msg.id
 		open := selectTaskMsg{id: msg.id, state: msg.state}
