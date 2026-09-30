@@ -334,12 +334,19 @@ update:
 # stops working for it. A key that already means something else, an operation
 # that is not rebindable, or a plain character on an operation that works
 # while you type is refused, the way any invalid value in this file is.
+#
+# output.level is the verbosity the output pane opens at, in both the task
+# and the chat workspace: quiet | compact | normal | verbose. "v" (ctrl+r in a
+# chat) still cycles it for the session without touching this file; editing
+# the value here applies it to a running TUI.
 tui:
   board:
     group_by: [project, workflow]
   hyperlinks: false
   # keys:
   #   refresh: ctrl+e
+  output:
+    level: normal
 `
 
 // EnsureDefaultFile writes the commented default config.yaml into dir when

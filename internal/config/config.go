@@ -640,6 +640,34 @@ type TUI struct {
 	// the user already bound cannot stop the daemon (task 128 decision 2,
 	// amending task 118 decision 3 in part).
 	Keys map[string]string `yaml:"keys"`
+	// Output configures the output pane the task and chat workspaces share
+	// (§15).
+	Output OutputView `yaml:"output"`
+}
+
+// OutputView configures the output pane.
+type OutputView struct {
+	// Level is the verbosity the output pane opens at (task 129.11): one of
+	// OutputLevels, default normal. The TUI applies it from the first config
+	// it fetches and again whenever the configured value changes; `v` still
+	// cycles the level for the session and nothing is written back. This
+	// supersedes task 071 decision 3's "never persisted" (task 129 decision
+	// 6). The daemon never reads it; it validates it.
+	Level string `yaml:"level"`
+}
+
+// OutputLevels is the output pane's level vocabulary, quietest first — the
+// order `v` cycles in (§15, task 085 decision 1).
+var OutputLevels = []string{"quiet", "compact", "normal", "verbose"}
+
+func (o OutputView) validate() error {
+	for _, l := range OutputLevels {
+		if o.Level == l {
+			return nil
+		}
+	}
+	return fmt.Errorf("tui.output.level: unknown level %q; want one of %s",
+		o.Level, strings.Join(OutputLevels, ", "))
 }
 
 // validate holds the whole `tui` block: the board's grouping, and the keymap
@@ -648,6 +676,9 @@ type TUI struct {
 // paths' keymap build over the write path's (task 128 decision 2).
 func (t TUI) validate(lenient bool) error {
 	if err := t.Board.validate(); err != nil {
+		return err
+	}
+	if err := t.Output.validate(); err != nil {
 		return err
 	}
 	var err error
@@ -892,9 +923,14 @@ func Default() Config {
 		// mounts were off while only commands ran in the container (issue
 		// #366); task 062.2 moved the agent in, and back on they came.
 		Container: Container{Runtime: "docker", MountAgentConfig: true, Network: true},
-		TUI: TUI{Board: BoardView{
-			GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow},
-		}},
+		TUI: TUI{
+			Board: BoardView{
+				GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow},
+			},
+			// normal is the level every version before task 129.11 opened
+			// at, so an absent key changes nothing.
+			Output: OutputView{Level: "normal"},
+		},
 	}
 }
 

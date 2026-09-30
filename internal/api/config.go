@@ -107,7 +107,14 @@ type configTUI struct {
 	// Keys is `tui.keys` as written, operation id → key (task 118). Always an
 	// object, empty included, on group_by's rule: `{}` is the shipped keymap
 	// the file chose, and `null` would read as a daemon that predates the key.
-	Keys map[string]string `json:"keys"`
+	Keys   map[string]string `json:"keys"`
+	Output configOutput      `json:"output"`
+}
+
+type configOutput struct {
+	// Level is `tui.output.level` (task 129.11): the output pane's opening
+	// verbosity.
+	Level string `json:"level"`
 }
 
 type configBoard struct {
@@ -319,6 +326,7 @@ func configBody(cfg config.Config) configResponse {
 			Board:      configBoard{GroupBy: boardGroupBy(cfg.TUI.Board.GroupBy)},
 			Hyperlinks: cfg.TUI.Hyperlinks,
 			Keys:       stringMap(cfg.TUI.Keys),
+			Output:     configOutput{Level: cfg.TUI.Output.Level},
 		},
 	}
 }
@@ -497,7 +505,12 @@ type tuiPatch struct {
 	// Keys replaces the whole map rather than merging into it, the way
 	// environment.set does: `{}` goes back to the shipped keymap, and an
 	// operation left out of the map goes back to its default.
-	Keys *map[string]string `json:"keys"`
+	Keys   *map[string]string `json:"keys"`
+	Output *outputPatch       `json:"output"`
+}
+
+type outputPatch struct {
+	Level *string `json:"level"`
 }
 
 type boardPatch struct {
@@ -626,6 +639,9 @@ func (p configPatch) sets() []config.Set {
 		addIfBool(add, "tui.hyperlinks", v.Hyperlinks)
 		if v.Keys != nil {
 			add("tui.keys", config.RenderMap(*v.Keys))
+		}
+		if v.Output != nil {
+			addIfString(add, "tui.output.level", v.Output.Level)
 		}
 	}
 	// Order is the struct's, which is config.yaml's, so two clients sending

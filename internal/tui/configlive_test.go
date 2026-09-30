@@ -156,7 +156,7 @@ func TestConfigEditorWritesThroughTheRealAPI(t *testing.T) {
 func TestConfigEditorTogglesHyperlinks(t *testing.T) {
 	h := newConfigLive(t)
 	links := newHyperlinkHolder()
-	m := &root{views: newViews(t.Context(), links), links: links}
+	m := &root{views: newViews(t.Context(), links, newLevelHolder()), links: links}
 	m.views[viewDaemon] = h.view
 
 	h.open(t, "tui.hyperlinks")
@@ -220,7 +220,7 @@ func newKeysRoot(t *testing.T, h *configLiveHarness) *root {
 	t.Helper()
 	t.Cleanup(func() { setKeymap(keymap.Default()) })
 	links := newHyperlinkHolder()
-	m := &root{views: newViews(t.Context(), links), links: links}
+	m := &root{views: newViews(t.Context(), links, newLevelHolder()), links: links}
 	m.views[viewDaemon] = h.view
 	return m
 }
@@ -511,5 +511,40 @@ func TestConfigKeyTreeCostCapPatchesItsOwnField(t *testing.T) {
 	}
 	if _, err := key.write("twenty"); err == nil {
 		t.Error("a cap that is not a number was accepted")
+	}
+}
+
+// TestConfigEditorSetsTheOutputLevel is task 129.11 through the real
+// handlers: the row writes tui.output.level, and the save the root routes
+// moves the level both workspaces share.
+func TestConfigEditorSetsTheOutputLevel(t *testing.T) {
+	h := newConfigLive(t)
+	links, level := newHyperlinkHolder(), newLevelHolder()
+	m := &root{views: newViews(t.Context(), links, level), links: links, level: level}
+	m.views[viewDaemon] = h.view
+
+	h.open(t, "tui.output.level")
+	if h.view.form == nil {
+		t.Fatal("enter did not open the editor")
+	}
+	for h.view.form.value() != "quiet" {
+		h.press(t, "right")
+	}
+	_, cmd := h.view.update(namedKey("enter"))
+	if cmd == nil {
+		t.Fatal("enter did not save")
+	}
+	saved, ok := cmd().(configSavedMsg)
+	if !ok || saved.err != nil {
+		t.Fatalf("the save did not answer with a config: %+v", saved)
+	}
+	m.Update(saved)
+	if !strings.Contains(h.file(t), "level: quiet") {
+		t.Fatalf("config.yaml was not written:\n%s", h.file(t))
+	}
+	chat := m.views[viewChat].(*chatView)
+	task := m.views[viewTask].(*taskView)
+	if chat.level.get() != levelQuiet || task.detail.level.get() != levelQuiet {
+		t.Error("the save did not reach both workspaces")
 	}
 }

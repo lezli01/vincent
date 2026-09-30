@@ -80,7 +80,10 @@ type (
 		// keys is `tui.keys` (task 118), read by the root for the same
 		// reason hyperlinks is.
 		keys map[string]string
-		err  error
+		// outputLevel is `tui.output.level` (task 129.11), read by the root
+		// for the same reason hyperlinks is.
+		outputLevel string
+		err         error
 	}
 	// boardTickMsg drives the elapsed column.
 	boardTickMsg struct {
@@ -386,7 +389,8 @@ func (b *board) configCmd() tea.Cmd {
 		cfg, err := client.Config(ctx)
 		return boardConfigMsg{
 			archived: archived, board: cfg.TUI.Board,
-			laneDepth: cfg.FanOut.MaxDepth, hyperlinks: cfg.TUI.Hyperlinks, keys: cfg.TUI.Keys, err: err,
+			laneDepth: cfg.FanOut.MaxDepth, hyperlinks: cfg.TUI.Hyperlinks, keys: cfg.TUI.Keys,
+			outputLevel: cfg.TUI.Output.Level, err: err,
 		}
 	}
 }

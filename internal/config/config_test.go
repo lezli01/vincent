@@ -131,7 +131,10 @@ agents:
 		// survives: no image, which is the whole switch. An installation that
 		// overrides everything else still runs every step on the host.
 		Container: Container{Runtime: "docker", MountAgentConfig: true, Network: true},
-		TUI:       TUI{Board: BoardView{GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow}}},
+		TUI: TUI{
+			Board:  BoardView{GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow}},
+			Output: OutputView{Level: "normal"},
+		},
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("got %+v, want %+v", cfg, want)
@@ -364,6 +367,33 @@ func TestTUIHyperlinksIsOptIn(t *testing.T) {
 	}
 	if len(cfg.TUI.Board.GroupBy) != 2 {
 		t.Errorf("setting hyperlinks dropped the default grouping: %v", cfg.TUI.Board.GroupBy)
+	}
+}
+
+// TestTUIOutputLevel: the output pane opens at normal unless the file says
+// otherwise (task 129.11), each of the four levels loads, and a value outside
+// them is refused with a message naming all four.
+func TestTUIOutputLevel(t *testing.T) {
+	if got := Default().TUI.Output.Level; got != "normal" {
+		t.Errorf("default tui.output.level = %q, want normal", got)
+	}
+	for _, l := range []string{"quiet", "compact", "normal", "verbose"} {
+		cfg, err := Load(writeConfig(t, "tui:\n  output:\n    level: "+l+"\n"))
+		if err != nil {
+			t.Fatalf("Load level %s: %v", l, err)
+		}
+		if cfg.TUI.Output.Level != l {
+			t.Errorf("tui.output.level = %q, want %q", cfg.TUI.Output.Level, l)
+		}
+	}
+	_, err := Load(writeConfig(t, "tui:\n  output:\n    level: loud\n"))
+	if err == nil {
+		t.Fatal("Load accepted tui.output.level: loud")
+	}
+	for _, want := range []string{"tui.output.level", `"loud"`, "quiet, compact, normal, verbose"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not say %q", err, want)
+		}
 	}
 }
 

@@ -166,6 +166,11 @@ type detail struct {
 	// so a config change that lands while the pane is up rebuilds it.
 	links      *hyperlinkHolder
 	builtLinks bool
+	// builtLevel is the level the pane was last built with. A `v` press
+	// marks the pane dirty itself; `tui.output.level` arriving from the
+	// daemon (task 129.11) does not, so it is noticed at render time the way
+	// builtLinks is.
+	builtLevel outputLevel
 
 	following bool
 	newLines  int

@@ -114,11 +114,10 @@ type clientAware interface {
 // newViews returns the initial view set. ctx bounds background work a view
 // owns — the detail sub-model's per-task subscription. links is the session's
 // `tui.hyperlinks`, which the root fills from the daemon's config (task 111).
-func newViews(ctx context.Context, links *hyperlinkHolder) [viewCount]panel {
-	// One verbosity level for the session, handed to both panes that render
-	// transcript records (task 071 decision 3). Built here because this is
-	// the one place that constructs both of them.
-	level := newLevelHolder()
+// level is the one verbosity level for the session, handed to both panes that
+// render transcript records (task 071 decision 3); the root owns it because
+// it applies `tui.output.level` to it (task 129.11).
+func newViews(ctx context.Context, links *hyperlinkHolder, level *levelHolder) [viewCount]panel {
 	// And one rendered/raw choice, held the same way and for the same reason
 	// (task 076 decision 2): toggling raw in a chat is visible in the task
 	// workspace, and neither one resets it.

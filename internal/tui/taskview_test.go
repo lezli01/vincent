@@ -14,7 +14,7 @@ import (
 )
 
 func TestRoutedHomeRendersOnlyTheTaskBoard(t *testing.T) {
-	views := newViews(context.Background(), newHyperlinkHolder())
+	views := newViews(context.Background(), newHyperlinkHolder(), newLevelHolder())
 	home := views[viewHome].(*shell)
 	home.board.updateLoaded(boardLoadedMsg{tasks: []apiclient.Task{{
 		ID: 1, ProjectName: "api", Title: "board-only task", State: stateRunning,

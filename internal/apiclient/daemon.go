@@ -204,6 +204,15 @@ type ConfigTUI struct {
 	// a map that breaks §15's vocabulary, so what arrives here is one the TUI
 	// can apply as it stands.
 	Keys map[string]string `json:"keys"`
+	// Output configures the output pane (task 129.11).
+	Output ConfigOutput `json:"output"`
+}
+
+// ConfigOutput is `tui.output`. Level is the verbosity the output pane opens
+// at — quiet, compact, normal or verbose. Empty from a daemon that predates
+// the key, which the TUI reads as "nothing configured".
+type ConfigOutput struct {
+	Level string `json:"level"`
 }
 
 // ConfigBoard configures the task table. GroupBy names the grouping levels,
@@ -498,7 +507,13 @@ type ConfigTUIPatch struct {
 	Hyperlinks *bool             `json:"hyperlinks,omitempty"`
 	// Keys replaces the whole map; a pointer to an empty map restores the
 	// shipped keymap.
-	Keys *map[string]string `json:"keys,omitempty"`
+	Keys   *map[string]string `json:"keys,omitempty"`
+	Output *ConfigOutputPatch `json:"output,omitempty"`
+}
+
+// ConfigOutputPatch is the optional half of ConfigOutput.
+type ConfigOutputPatch struct {
+	Level *string `json:"level,omitempty"`
 }
 
 // ConfigBoardPatch is the optional half of ConfigBoard.

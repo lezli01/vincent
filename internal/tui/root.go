@@ -125,6 +125,10 @@ type root struct {
 	// views — the board's fetch, the daemon view's fetch and the config
 	// editor's save — and both output panes read it.
 	links *hyperlinkHolder
+	// level is the session's output verbosity, shared by both output panes.
+	// The root holds it for links' reason: `tui.output.level` arrives on the
+	// same three messages (task 129.11).
+	level *levelHolder
 
 	width  int
 	height int
@@ -137,13 +141,15 @@ type root struct {
 // notice treats as "show it".
 func newRoot(ctx context.Context, cn connector, dataDir string) *root {
 	links := newHyperlinkHolder()
+	level := newLevelHolder()
 	m := &root{
 		cn:      cn,
 		ctx:     ctx,
 		phase:   phaseProbing,
 		dataDir: dataDir,
-		views:   newViews(ctx, links),
+		views:   newViews(ctx, links, level),
 		links:   links,
+		level:   level,
 		mouseOn: true,
 		notice:  firstRunNotice{active: !noticeAcknowledged(dataDir)},
 	}
@@ -247,6 +253,7 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.broadcast(msg)
 	case boardConfigMsg, daemonConfigMsg, configSavedMsg:
 		m.applyHyperlinks(msg)
+		m.applyOutputLevel(msg)
 		m.applyKeymap(msg)
 		return m, m.broadcast(msg)
 	case newTaskFromPullMsg:
@@ -932,6 +939,32 @@ func (m *root) switchTo(id viewID) tea.Cmd {
 		m.deliver(prev, viewDeactivatedMsg{id: prev}),
 		m.deliver(id, viewActivatedMsg{id: id}),
 	)
+}
+
+// applyOutputLevel adopts `tui.output.level` from whichever config answer
+// arrived (task 129.11): the first successful one sets the level, and later
+// ones only when the configured value changed, so the refetch every
+// reconnect makes never undoes a `v` press while an edit to the key — by
+// file, the config editor or `vincent config` — applies live. A failed fetch
+// or a refused save changes nothing, for applyHyperlinks' reason.
+func (m *root) applyOutputLevel(msg tea.Msg) {
+	if m.level == nil {
+		return
+	}
+	switch msg := msg.(type) {
+	case boardConfigMsg:
+		if msg.err == nil {
+			m.level.adopt(msg.outputLevel)
+		}
+	case daemonConfigMsg:
+		if msg.err == nil {
+			m.level.adopt(msg.config.TUI.Output.Level)
+		}
+	case configSavedMsg:
+		if msg.err == nil {
+			m.level.adopt(msg.cfg.TUI.Output.Level)
+		}
+	}
 }
 
 // applyHyperlinks adopts `tui.hyperlinks` from whichever config answer
