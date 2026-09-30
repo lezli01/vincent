@@ -761,8 +761,8 @@ agent wrote it — `#` back on the headings, backticks back on the fences. It is
 the escape hatch for a render that surprised you, and it is a display state and
 nothing more: the records, the live tail, the level and the transcript on disk
 are untouched. Like `v`'s level, it is one choice for the whole session and
-shared with the chat workspace — set it in either place and both follow — and it
-is gone when you quit. The pane's title — in a task's workspace, the attempt
+shared with the chat workspace — set it in either place and both follow. Unlike
+the level, it has no config key: it is gone when you quit. The pane's title — in a task's workspace, the attempt
 strip — says `raw` while it is on.
 
 `ctrl+y` opens a **copy picker**: a searchable list of what can be taken out of
@@ -823,6 +823,20 @@ attempt that printed nothing else — a codex turn with no assistant message —
 which would otherwise leave a turn header with nothing under it. A command
 step's pane is identical at `quiet` and `compact`: `quiet` is a rule about what
 the *agent* narrated, and a command step narrates nothing.
+
+At both, **a command's output is cut to its last 20 lines**: a command step's,
+each parallel or fan-out member's, and a step's `check:` (the `check ▏` lines),
+each under its own `$ …` line. When a command printed more, a dim
+`… N earlier line(s) (v)` above the tail says how many are not shown — at
+`quiet` too, the one count that level draws, because a tail with no count would
+read as the whole output. stdout and stderr count together, so a failing
+command's last line is always on screen; while it runs, the tail slides and the
+count grows. `normal` and `verbose` show all of it.
+
+The level the pane opens at is `tui.output.level` in `config.yaml`
+([configuration reference](../reference/configuration.md#tuioutputlevel)),
+`normal` unless you set it. `v` changes it for the session only; reconnecting
+never undoes a `v` press, and changing the key applies it to a running TUI.
 
 `quiet` also keeps what **you** did. An answered question shows as
 `✓ answered`, and a skill your message invoked shows as `▸ skill <name> <args>`
@@ -2126,7 +2140,7 @@ and same marks: `▸` a tool call, the outcome indented under it, `·` reasoning
 [subagent's work](#when-the-agent-runs-subagents), with its `↳` label and
 completion line. `ctrl+r` cycles the same four levels
 `v` cycles there, and it is the **same level** — set it in either place and the
-other is on it too. `ctrl+r` rather than `v` because the composer owns every
+other is on it too, and both open at `tui.output.level`. `ctrl+r` rather than `v` because the composer owns every
 printable key: a letter would be typed into your draft.
 
 At `quiet` you get the agent's prose, anything that went wrong, and what you

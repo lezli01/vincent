@@ -340,12 +340,19 @@ container:
 # stops working for it. A key that already means something else, an operation
 # that is not rebindable, or a plain character on an operation that works
 # while you type is refused, the way any invalid value in this file is.
+#
+# output.level is the verbosity the output pane opens at, in both the task
+# and the chat workspace: quiet | compact | normal | verbose. "v" (ctrl+r in a
+# chat) still cycles it for the session without touching this file; editing
+# the value here applies it to a running TUI.
 tui:
   board:
     group_by: [project, workflow]
   hyperlinks: false
   # keys:
   #   refresh: ctrl+e
+  output:
+    level: normal
 ```
 
 ## Keys
@@ -1547,6 +1554,8 @@ tui:
     group_by: [project, workflow]
   hyperlinks: false
   keys: {}
+  output:
+    level: normal
 ```
 
 The one section the daemon does not act on. It validates it, hot-reloads it with
@@ -1694,6 +1703,36 @@ file strictly, a clash left by an upgrade makes every config save fail until
 Saving it in the TUI's config editor applies it at once. A change made anywhere
 else reaches a running TUI the next time it reads the config: when you open the
 daemon view or refresh there, or when it reconnects.
+
+#### `tui.output.level`
+
+The verbosity the output pane opens at. One value for the whole TUI: the task
+workspace and the chat workspace share it.
+
+| Value | Output pane |
+|---|---|
+| `quiet` | What the agent said and anything that went wrong; the last 20 lines of each command's output |
+| `compact` | Also what the agent did — tool calls and their outcomes; the last 20 lines of each command's output |
+| `normal` (default) | Also the run header, the plan, and reasoning cut to its first lines; all of each command's output |
+| `verbose` | Everything, including reasoning in full, lines vincent does not model, and a tool's own output |
+
+At `quiet` and `compact`, a command's output — a command step, each member of a
+parallel group or fan-out, and a step's `check:` — shows its last 20 lines under
+its `$ …` line. When it printed more, a dim `… N earlier line(s) (v)` above the
+tail says how many were left out, at `quiet` too; `v` (`ctrl+r` in a chat) steps
+up to a level that shows them. stdout and stderr count together, so a failing
+command's last line is always on screen.
+
+Any other value fails the load and names the four. **`v` cycles the level for
+the session** and never writes to this file. The TUI applies the configured
+level when it first reads the config and again only when the configured value
+changes, so reconnecting to the daemon never undoes a `v` press. Saving it in the
+TUI's config editor applies it at once; a change made anywhere else reaches a
+running TUI the next time it reads the config, like `tui.hyperlinks`.
+
+The key is new in this version. A daemon older than it refuses a `config.yaml`
+that sets it — unknown keys are an error — so leave it out if you run an older
+daemon against the same config directory.
 
 ## Per-project settings
 

@@ -70,6 +70,14 @@ unrecognized lines — so a reconnect changed what was on screen.
    key, exactly as §15 already reasons for the task pane. Cycling in either view
    is visible in the other.
 
+   *Amended 2026-09-30 (task 129.11, issue #608; task 129 decision 6):* the
+   "nothing is persisted" half is superseded — `tui.output.level` in
+   `config.yaml` is the level both panes open at, re-applied only when the
+   configured value changes, and `v`/`ctrl+r` still cycle it for the session
+   without writing it back. The holder is now created in `newRoot`, which
+   applies the key, and handed to `newViews`. The "one shared value" half
+   stands.
+
 4. **Keys.** `ctrl+r` cycles compact → normal → verbose → compact in `ctxChat`.
    `pgup`/`pgdown` scroll the conversation and `ctrl+g` jumps to the live end and
    re-arms follow. None of the four has meaning in a three-line textarea, so the

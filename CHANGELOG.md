@@ -13,6 +13,18 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **The output level is a setting, and quiet levels bound command output.**
+  `tui.output.level` in `config.yaml` — `quiet`, `compact`, `normal` (default)
+  or `verbose` — is the level the task and chat output panes open at. `v`
+  (`ctrl+r` in a chat) still changes it for the session only, and reconnecting
+  never undoes that; editing the key, in the file, the config editor or with
+  `vincent config set`, applies it to a running TUI. At `quiet` and `compact`
+  each command's output — command steps, parallel and fan-out members, and
+  `check:` — now shows its last 20 lines under a dim
+  `… N earlier line(s) (v)` count, so a long `go test ./...` no longer floods
+  the pane and a failing command's last line stays in view. `normal` and
+  `verbose` are unchanged. A daemon older than this refuses a `config.yaml`
+  that sets the new key.
 - **States and reasons in plain words.** The TUI no longer prints snake_case
   identifiers as prose: `awaiting_input` reads "awaiting input",
   `awaiting_gate` "awaiting approval" and `awaiting_children` "waiting on
