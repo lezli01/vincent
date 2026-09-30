@@ -66,8 +66,9 @@ type Task struct {
 	ParentTaskID *int64  `json:"parent_task_id"`
 	LaneID       *string `json:"lane_id"`
 	LaneOrder    *int    `json:"lane_order"`
-	// Children is the subtree rollup, served on the detail endpoint whenever
-	// the task has lanes. Lanes are hidden from the task list by design, and
+	// Children is the subtree rollup, served on the detail endpoint and on
+	// list rows (task 129.18) whenever the task has lanes. An older daemon
+	// serves it on the detail endpoint only, so a list row leaves it nil. Lanes are hidden from the task list by design, and
 	// this is what pays for that: it is where a blocked lane becomes visible.
 	Children *ChildrenRollup `json:"children,omitempty"`
 	// Loop is the §7.8 rollup, present only while a `loop` step is the

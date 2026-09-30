@@ -550,6 +550,54 @@ func TestTaskDetailChildrenCostIsDescendantsOnly(t *testing.T) {
 	}
 }
 
+// TestTaskListRowsCarryChildren is task 129.18 decision 5: a list row with
+// lanes carries the same subtree rollup the detail endpoint serves, so a board
+// can keep a parent whose lane needs a human without a fetch per row; a row
+// with no lanes carries none.
+func TestTaskListRowsCarryChildren(t *testing.T) {
+	h := newActionHarness(t)
+	parent, lanes := parkedParent(t, h, store.TaskRunning, store.TaskBlocked)
+	plain := queuedTask(t, h)
+	cost := 0.5
+	run := &store.StepRun{
+		TaskID: lanes[1].ID, StepIndex: 0, StepID: "run", StepType: "agent",
+		Attempt: 1, State: store.StepFailed, CostUSD: &cost,
+	}
+	if err := h.store.CreateStepRun(t.Context(), run); err != nil {
+		t.Fatalf("CreateStepRun: %v", err)
+	}
+
+	resp, body := h.doJSON(t, http.MethodGet, "/v1/tasks", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list: %d %s", resp.StatusCode, body)
+	}
+	var list []struct {
+		ID       int64             `json:"id"`
+		Children *childrenResponse `json:"children"`
+	}
+	if err := json.Unmarshal(body, &list); err != nil {
+		t.Fatalf("list body: %v (%s)", err, body)
+	}
+	rows := map[int64]*childrenResponse{}
+	for _, r := range list {
+		rows[r.ID] = r.Children
+	}
+	if got, ok := rows[plain.ID]; !ok || got != nil {
+		t.Errorf("a row with no lanes carries children %+v (listed %v)", got, ok)
+	}
+	got := rows[parent.ID]
+	if got == nil {
+		t.Fatalf("the parent's list row carries no children rollup: %s", body)
+	}
+	if got.Total != 2 || got.ByState[string(store.TaskBlocked)] != 1 ||
+		len(got.Blocked) != 1 || got.Blocked[0] != lanes[1].ID {
+		t.Errorf("list rollup = %+v, want two lanes with %d blocked", got, lanes[1].ID)
+	}
+	if got.CostUSD == nil || *got.CostUSD != 0.5 {
+		t.Errorf("list rollup cost = %v, want 0.5", got.CostUSD)
+	}
+}
+
 func TestTaskDiffWithoutWorktree(t *testing.T) {
 	h := newTaskHarness(t, 0, false)
 	created := h.createTask(t, map[string]any{"title": "not started"})

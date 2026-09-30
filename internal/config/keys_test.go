@@ -297,3 +297,19 @@ func TestWatchLogsKeymapWarnings(t *testing.T) {
 		}
 	}
 }
+
+// TestLoadYieldsTheTask12918Defaults: a config.yaml written before N and H
+// had defaults (task 129.18) and binds them elsewhere still loads, so the
+// daemon starts; the user's bindings win and the two new operations yield.
+func TestLoadYieldsTheTask12918Defaults(t *testing.T) {
+	cfg, err := Load(writeConfig(t, "tui:\n  keys: {retry: N, pause: H}\n"))
+	if err != nil {
+		t.Fatalf("Load refused a keymap binding N and H: %v", err)
+	}
+	joined := strings.Join(cfg.KeyWarnings(), "\n")
+	for _, w := range []string{"next_failure", "attention_filter", "unbound"} {
+		if !strings.Contains(joined, w) {
+			t.Errorf("warnings %q do not mention %q", joined, w)
+		}
+	}
+}

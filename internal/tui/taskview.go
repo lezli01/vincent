@@ -156,6 +156,10 @@ type taskView struct {
 	// board's, shared with every other way of opening a task.
 	stackPush int64
 	stackKeep bool
+	// pendingFailure is the lane `N` opened, still loading: when it has, the
+	// workspace lands on its first failure (landPendingFailure). Set by the
+	// root alongside pushTask, for the same reason stackPush is a field.
+	pendingFailure int64
 	// leftTab is the tab each task on the stack was left on, so a pop puts
 	// the reader back where they were rather than on the Overview a fresh
 	// open lands on (task 129.12).
@@ -324,7 +328,7 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 	// After every message: the one that loaded a blocked or finished task,
 	// or moved the reader onto the Overview, is the one that fetches the
 	// failure card's evidence and the outcome card's diff and commits.
-	return p, tea.Batch(cmd, t.syncFailureEvidence(), t.syncOutcome())
+	return p, tea.Batch(cmd, t.syncFailureEvidence(), t.syncOutcome(), t.landPendingFailure())
 }
 
 func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
@@ -347,6 +351,9 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 			t.stackPush = 0
 		default:
 			t.stack, t.leftTab, t.crumb = nil, nil, nil
+		}
+		if msg.id != t.pendingFailure {
+			t.pendingFailure = 0
 		}
 		// Only a fresh open lands on the Overview (task 129.12). A pop
 		// restores the tab the reader left that task on, and the pull
@@ -549,6 +556,12 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	case "U":
 		if cmd := t.openParentCmd(); cmd != nil {
 			return cmd
+		}
+	case opKey(keymap.NextFailure):
+		// A pending y/n owns N — it is the popups' no — so the key falls
+		// through to the tab, which hands it to the confirmation.
+		if !t.detail.actions.capturing() {
+			return t.nextFailure()
 		}
 	case "<":
 		if t.tab == taskTabOutput {
@@ -1709,6 +1722,9 @@ type openTaskMsg struct {
 	id    int64
 	state string
 	from  int64
+	// failure is `N` opening a blocked lane (task 129.18): once the lane has
+	// loaded, the workspace lands on its first failure.
+	failure bool
 }
 
 // navPopMsg is the answer to `esc`: the stack with the popped entries already

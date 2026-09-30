@@ -166,7 +166,7 @@ who reads at `quiet` pay the same keys each session.
 | Refresh is snapshot-then-events, never polling (T3.2) | `v0-tasks.md:312` | The now-line and cards render from the same snapshot and events. |
 | No "following" badge on a terminal run (T3.3) | `v0-tasks.md:340` | 129.8 draws follow state on the Output tab and must honour it. |
 | Diff fetched on tab activation, never from events (T3.4) | `v0-tasks.md:358` | The outcome card's diff stat follows the same rule. |
-| `!` is the attention-jump key (T3.11) | `v0-tasks.md:525` | 129.18 adds a next-failure key beside it; what `!` does inside a workspace is an open question. |
+| `!` is the attention-jump key (T3.11) | `v0-tasks.md:525` | 129.18 adds a next-failure key (`N`) beside it and leaves `!` a board-cursor jump, from the board and from a workspace alike. |
 | Home is the board; opening is a routed transition (049 d1) | `049-…:16` | Overview is a tab of the workspace, not a board pane; the peek pane is deferred. |
 | Task Details complete and read-only (049 d3); the detail sub-model stays intact (049 d4) | `049-…:38`, `:46` | Overview reads the same sub-model; Task Details keeps the raw codes for copy-paste. |
 | `tab` means "next tab" on Workflow (051 d5); the overlay derives from the held rows (051 d7) | `051-…:87`, `:106` | Unchanged by any item. |
@@ -207,7 +207,10 @@ honoured by reusing the one glyph set and palette.
    only reader. *As built:* list rows still carry no `children` (see 084's
    open note), so on the live board the cell shows the breakdown only where a
    row carries the rollup. Serving it on list rows is an API change this item
-   did not take.
+   did not take. *Note, 2026-09-30 (129.18):* `GET /v1/tasks` now serves
+   `children` on every row with lanes, from one batched walk, for the
+   attention filter's sake; the same rollup makes this breakdown show on the
+   live board. A daemon older than that still leaves the cell bare.
 3. **Lane rows read `lane <lane_id>`**, falling back to the title without one.
 4. **A loop iteration strip** — newest ten, oldest first, `…+k` for the cut —
    in the workspace header's loop clause and on one dim line under a `loop`
@@ -348,9 +351,23 @@ cards need):
   (3) Overview's jump links stay Overview-only and are not copied into the
   tabs group. No tape shows help or the palette, so pictures are deferred to
   #609.
-- [ ] **129.18** ([#607](https://github.com/lezli01/vincent/issues/607)) An
+- [x] **129.18** ([#607](https://github.com/lezli01/vincent/issues/607)) An
   in-task next-failure key and a board attention-only filter. Depends: 129.1,
-  129.13, 129.8.
+  129.13, 129.8. *Done 2026-09-30.* `N` (`next_failure`, every workspace tab)
+  cycles the newest failed attempt of each step or iteration in execution
+  order, from the attempt cursor, wrapping; it lands on Output through #597's
+  `landAtFailure`, unfolding a folded iteration, and a blocked lane is a stop
+  at its fan-out's place that opens the lane as `l` does and lands on the
+  lane's first failure. The failure card's `3` takes the same path. `x`, the
+  issue's candidate, is `reject` (093 d1), so the key is `N`, which shares
+  only the popups' `no`. `H` (`attention_filter`, the task table) keeps the
+  needs-you states and an `awaiting_children` parent whose served rollup
+  counts a blocked, awaiting-input or awaiting-gate lane; it is session state,
+  composes with `/`, grouping, `V` and `!`, is named in the panel title, and
+  keeps the cursor when turned off. `GET /v1/tasks` serves `children` on list
+  rows from one batched walk (spec §13.2 amended); a lane's state event
+  already refetches the list, which is what refreshes the parent's rollup.
+  Screenshots are left to #609.
 
 **Closing:**
 
@@ -410,10 +427,6 @@ neither, is never acceptable.
 
 Carried from #589, each for the item that must settle it:
 
-- **`!` from the board vs in a workspace** (129.18): should `!` open the
-  next needs-you task on Overview, or only move the board cursor? 129.12 left
-  `!` exactly as it was — it moves the board cursor, and the `enter` after it
-  lands on the Overview — so the in-workspace question is 129.18's alone.
 - **Folding succeeded steps while blocked**: should the Steps tab collapse
   the steps that succeeded while a task is blocked, now that the failure card
   carries the failure? 129.13 left the Steps tab body unchanged, and its
@@ -433,6 +446,9 @@ Carried from #589, each for the item that must settle it:
 
 Settled:
 
+- **`!` from the board vs in a workspace** — by 129.18 (#607): no change.
+  `!` stays a board-cursor jump from everywhere (T3.11 kept); the in-task walk
+  is `N`.
 - **`block_detail` redaction** — by 129.3, [PR #615](https://github.com/lezli01/vincent/pull/615).
 - **Screenshot cadence** — by the per-item checklist above.
 - **Calm board** — by 129.15 (#603): the calm board is the only board, with no

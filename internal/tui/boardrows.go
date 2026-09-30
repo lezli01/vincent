@@ -44,6 +44,36 @@ func needsAttention(state string) bool {
 	}
 }
 
+// keepsAttention is `H`'s predicate (task 129.18 decision 5): a task that
+// needs a human, or a fan-out parent one of whose lanes does. The parent is
+// kept on its served rollup alone, so a daemon that serves no `children` on
+// list rows keeps it out rather than guessing.
+func keepsAttention(t apiclient.Task) bool {
+	if needsAttention(t.State) {
+		return true
+	}
+	if t.State != stateAwaitingChildren || t.Children == nil {
+		return false
+	}
+	for _, st := range []string{stateBlocked, stateAwaitingInput, stateAwaitingGate} {
+		if t.Children.ByState[st] > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// attentionTasks keeps the tasks keepsAttention does, in order.
+func attentionTasks(tasks []apiclient.Task) []apiclient.Task {
+	out := make([]apiclient.Task, 0, len(tasks))
+	for _, t := range tasks {
+		if keepsAttention(t) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 // Sort bands. The board is ordered by band first, then within a band by the
 // rule that band cares about — so the queue reads in the order it will
 // actually run, and work waiting on a human is never below it.

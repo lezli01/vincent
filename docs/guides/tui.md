@@ -124,7 +124,20 @@ Three behaviors matter:
 | Key | Does |
 |---|---|
 | `/` | Filter by id, title, project or state; `tab` commits the filter, `esc` clears it |
+| `H` | Show only the tasks that need you — awaiting input, awaiting approval, blocked, or a fan-out one of whose lanes is. `H` again shows every task |
 | `enter` | Open the selected task |
+
+**`H` narrows the board to what needs you.** It keeps a task that is
+awaiting input, awaiting approval or blocked, and a fan-out parent whose
+lanes include one of those. It lasts for the session, like the `/` filter,
+and composes with it: a row is shown only when both keep it. Grouping still
+applies, and a group left empty draws nothing. `V` then selects only what is
+shown, and `!` cycles within it. The panel title says it is on —
+`Tasks — needs you — /api` — and a board with nothing left says so and names
+the key that turns it off. Pressing `H` again keeps the cursor on the same
+task. A parent is kept on the rollup the daemon serves on its row, so against
+an older daemon that serves none, a parent whose lane needs you is not kept;
+the lane's own row is still one `L` away.
 
 **A cell too long for its column wraps rather than disappearing.** The title,
 the state, the step and the status carry across up to three lines of the same
@@ -159,10 +172,11 @@ reinforces a glyph, so the board reads the same without colour.
   `waiting on lanes (×1 !1 ●1 ✓2)` is one blocked lane, one waiting on you,
   one running and two done. Blocked lanes come first, so when the cell is too
   narrow for all of it, the done count is cut before the blocked one. A state
-  with no glyph is spelled out (`1 paused`). The breakdown needs the task's
-  `children` rollup, which only the task detail carries. The board's rows come
-  from the task list, so today a parent's row shows a bare
-  `waiting on lanes`; open the parent, or press `L`, to see its lanes.
+  with no glyph is spelled out (`1 paused`). The breakdown comes from the
+  task's `children` rollup, which the task list serves on every row that has
+  lanes. Against an older daemon, whose list rows carry no rollup, a parent's
+  row shows a bare `waiting on lanes`; open the parent, or press `L`, to see
+  its lanes.
 - An expanded lane reads `lane api` rather than repeating its parent's title.
 - With room to spare after the step and any loop rollup, `STEP` adds one pip
   per workflow step: `3/5 build ✓✓●○○`. The pips never make the cell wrap or
@@ -651,6 +665,7 @@ output. It is the sentence that decides whether to open the transcript.
 | `1`–`5` | Steps / Task Details / Output / Diff / Workflow — every digit works from every tab |
 | `d` | Switch between Output and Diff, from any tab (from Diff it goes back to Output) |
 | `l` / `U` | Open a fan-out lane's workspace / this lane's parent task, from any tab — see [Walking a fan-out](#walking-a-fan-out) |
+| `N` | Jump to the task's next failure, from any tab — see [Jumping between failures](#jumping-between-failures) |
 | `3` / `6` / `4` / `7` | On Overview, the frame's jump links — the output of, or what was given to, the attempt it is about; the diff; the pull request |
 | `l` | On Overview, open the fan-out lane the failure card blames |
 | `w` | On Overview, open the output of the attempt the outcome card's result came from, at its end |
@@ -1036,6 +1051,23 @@ fold state, which is still keyed by path alone.
 files in all, the storage lane folded, the client lane open to its file and
 hunk, and the task's own commits holding the plan it wrote before it fanned
 out](../assets/tui-lane-diff.png)
+
+### Jumping between failures
+
+`N` walks a task's failures. Its stops are the newest attempt of each step —
+or of each loop iteration — that did not succeed, in the order they ran. A
+step that failed and then passed on retry is not one. From wherever the
+attempt cursor is, `N` moves to the next stop and wraps at the end. It selects
+that attempt and opens the Output tab where the attempt failed: at the first
+line its check wrote for a `check_failed`, and at the end for any other
+failure. It never turns follow on. A failed iteration folded shut on the Steps
+tab is unfolded, the way `enter` would.
+
+A blocked fan-out lane is a stop at its fan-out step's place. `N` opens the
+lane as `l` does and lands on the lane's own first failure. Pressing `N`
+again walks the lane's failures, and `esc` or `U` come back to the parent. The
+Overview failure card's `3` link lands the same way `N` does. On a task with
+no failures, `N` does nothing and the status line says so.
 
 ### Walking a fan-out
 
@@ -2715,7 +2747,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first thirteen are the operations screens share, the next ten are the
+The first fifteen are the operations screens share, the next ten are the
 [task actions](#the-action-bar), and the last eight are the global keys.
 
 | Operation | Default | Does |
@@ -2733,6 +2765,8 @@ The first thirteen are the operations screens share, the next ten are the
 | `filter` | `/` | Filter |
 | `lane` | `l` | Open a fan-out lane |
 | `result` | `w` | Open the output the Overview's outcome card took its result from |
+| `next_failure` | `N` | Jump to the task's next failure |
+| `attention_filter` | `H` | Show only the tasks that need a human |
 | `pause` | `p` | Pause or resume the task |
 | `approve` | `a` | Approve the gate |
 | `reject` | `x` | Reject the gate |

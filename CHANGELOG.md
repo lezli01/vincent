@@ -25,6 +25,18 @@ list with the user-facing context a commit subject cannot carry.
   the pane and a failing command's last line stays in view. `normal` and
   `verbose` are unchanged. A daemon older than this refuses a `config.yaml`
   that sets the new key.
+- **Jump between a task's failures, and narrow the board to what needs you.**
+  In a task's workspace, `N` walks its failures in the order they ran — the
+  newest failed attempt of each step or loop iteration, skipping a step that
+  passed on retry — and opens each on the Output tab where it failed. A
+  blocked fan-out lane opens at its own failure, and `esc` comes back. On the
+  board, `H` shows only the tasks that need you, including a fan-out parent
+  one of whose lanes does; press it again for every task. `GET /v1/tasks` now
+  carries the `children` rollup on every row with lanes, which also lets the
+  board show a parent's lane breakdown without opening it. Both keys move
+  with `tui.keys` (`next_failure`, `attention_filter`); a keymap that already
+  binds `N` or `H` keeps its binding.
+
 - **States and reasons in plain words.** The TUI no longer prints snake_case
   identifiers as prose: `awaiting_input` reads "awaiting input",
   `awaiting_gate` "awaiting approval" and `awaiting_children` "waiting on

@@ -124,8 +124,9 @@ type taskResponse struct {
 	// §12.4 recovery would have to reconcile it.
 	Loop *loopResponse `json:"loop,omitempty"`
 	// Children is the §13.2 subtree rollup, present on the detail endpoint
-	// whenever the task has lanes. Derived per request from one recursive
-	// CTE, never stored: a counter would be a second truth that drifts.
+	// and on list rows (task 129.18) whenever the task has lanes. Derived per
+	// request from a recursive CTE, never stored: a counter would be a second
+	// truth that drifts.
 	Children *childrenResponse `json:"children,omitempty"`
 	// PendingInput is the normalized §7.4 input request while the task is
 	// awaiting_input — embedded verbatim as the engine persisted it.
@@ -1333,8 +1334,9 @@ func (s *Server) handleTaskList(w http.ResponseWriter, r *http.Request) {
 }
 
 // toListResponse decorates tasks with the board columns: project names, the
-// snapshot's step count and current step name, and the cost/token rollups.
-// Three queries total regardless of task count — the point of the endpoint
+// snapshot's step count and current step name, the cost/token rollups and,
+// for a row with lanes, the subtree rollup. A fixed number of queries
+// regardless of task count — the point of the endpoint
 // is that a board never has to fan out per row.
 //
 // The §7.8 loop rollup is the one per-row query, and it is taken only for a
@@ -1374,6 +1376,20 @@ func (s *Server) toListResponse(ctx context.Context, tasks []store.Task) ([]list
 	if err != nil {
 		return nil, err
 	}
+	// The subtree rollup a row with lanes carries (task 129.18 decision 5):
+	// one batched walk and one batched cost read for the whole page, never a
+	// ChildrenOf per row. It is what lets a board keep a parent whose lane
+	// needs a human, and draw its lane breakdown, from the list alone.
+	children, err := s.deps.Store.ChildrenRollups(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	var childCosts map[int64]store.CostRollup
+	if len(children) > 0 {
+		if childCosts, err = s.deps.Store.DescendantsCosts(ctx, ids); err != nil {
+			return nil, err
+		}
+	}
 
 	out := make([]listTaskResponse, 0, len(tasks))
 	for i := range tasks {
@@ -1398,6 +1414,9 @@ func (s *Server) toListResponse(ctx context.Context, tasks []store.Task) ([]list
 		if ru := rollups[t.ID]; ru.HasCost {
 			cost := ru.CostUSD
 			row.CostUSD = &cost
+		}
+		if rollup, ok := children[t.ID]; ok {
+			row.Children = toChildrenResponse(rollup, childCosts[t.ID])
 		}
 		out = append(out, row)
 	}

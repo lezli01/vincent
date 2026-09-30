@@ -38,6 +38,10 @@ const (
 	Filter      Op = "filter"
 	Lane        Op = "lane"
 	Result      Op = "result"
+	NextFailure Op = "next_failure"
+	// AttentionFilter narrows the task table to what needs a human (task
+	// 129.18). H for "needs a human".
+	AttentionFilter Op = "attention_filter"
 )
 
 // The §6 actions. Archive is the term above: clause 1 working, not a second
@@ -133,6 +137,12 @@ var catalog = []Info{
 	}},
 	{Op: Result, Default: "w", Meaning: "open the output the outcome card's result came from", Kind: KindTerm, Surfaces: []Surface{
 		"task overview",
+	}},
+	{Op: NextFailure, Default: "N", Meaning: "jump to the task's next failure", Kind: KindTerm, Surfaces: []Surface{
+		"task overview", "timeline", "task details", "output", "diff", "task workflow", "task step details", "task pull request",
+	}},
+	{Op: AttentionFilter, Default: "H", Meaning: "show only the tasks that need a human", Kind: KindTerm, Surfaces: []Surface{
+		"task table",
 	}},
 
 	{Op: Pause, Default: "p", Meaning: "pause or resume the task", Kind: KindAction, Surfaces: []Surface{Actions}},
@@ -254,6 +264,7 @@ var exceptions = []exception{
 	{key: "e", ops: []Op{Editor}, anyFixed: true, why: "enter/e opens the selected row's form on the projects and daemon screens"},
 	{key: "d", ops: []Op{DraftRemove}, anyFixed: true, why: "d toggles the output and diff tabs in the task workspace, where no draft is open"},
 	{key: "n", ops: []Op{New}, anyFixed: true, why: "n is the popups' no, and the popups own the keyboard"},
+	{key: "N", ops: []Op{NextFailure}, anyFixed: true, why: "task 129.18: N is the popups' no too, and the popups own the keyboard"},
 	{key: "r", ops: []Op{Retry}, anyFixed: true, why: "r retries the connection while disconnected, when no task is on screen"},
 	{key: "enter", ops: []Op{OpenRow}, anyFixed: true, why: "enter activates the focused thing on every surface"},
 	{key: "T", ops: []Op{Chat}, anyFixed: true, why: "task 119: T dry-runs a trigger on the triggers takeover, which offers no available_actions"},

@@ -298,3 +298,38 @@ func TestOverviewRowsAreFixed(t *testing.T) {
 		}
 	}
 }
+
+// TestUpgradeYieldsNextFailureAndAttentionFilter is task 129.18 under task
+// 128's rule: a tui.keys written before N and H had defaults, binding either
+// to another operation, still loads. The user's binding wins and the new
+// operation is left unbound.
+func TestUpgradeYieldsNextFailureAndAttentionFilter(t *testing.T) {
+	km, warnings, err := BuildLenient(map[string]string{"retry": "N", "pause": "H"})
+	if err != nil {
+		t.Fatalf("a keymap binding N and H refused on load: %v", err)
+	}
+	if km.Key(Retry) != "N" || km.Key(Pause) != "H" {
+		t.Errorf("retry=%q pause=%q, want the user's N and H", km.Key(Retry), km.Key(Pause))
+	}
+	if km.Key(NextFailure) != "" || km.Key(AttentionFilter) != "" {
+		t.Errorf("next_failure=%q attention_filter=%q, want both unbound",
+			km.Key(NextFailure), km.Key(AttentionFilter))
+	}
+	joined := strings.Join(warnings, "\n")
+	for _, w := range []string{"next_failure", "attention_filter"} {
+		if !strings.Contains(joined, w) {
+			t.Errorf("warnings %q do not name %q", joined, w)
+		}
+	}
+	if err := Check(km); err != nil {
+		t.Errorf("the yielded keymap fails its own check: %v", err)
+	}
+	// Both are rebindable like any other term.
+	moved, err := Build(map[string]string{"next_failure": "ctrl+n", "attention_filter": "ctrl+h"})
+	if err != nil {
+		t.Fatalf("rebinding both: %v", err)
+	}
+	if moved.Key(NextFailure) != "ctrl+n" || moved.Key(AttentionFilter) != "ctrl+h" {
+		t.Errorf("rebound next_failure=%q attention_filter=%q", moved.Key(NextFailure), moved.Key(AttentionFilter))
+	}
+}

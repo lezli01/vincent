@@ -165,6 +165,27 @@ func tabbedTaskFixture(t *testing.T, tab taskViewTab) *taskView {
 	return v
 }
 
+// nextFailureProbe is `N` from one workspace tab: from a cursor on the first
+// attempt, it lands on the task's one failure — step 2's — on the Output tab.
+// Step 1 failed and then passed on retry, so it is not a stop.
+func nextFailureProbe(t *testing.T, tab taskViewTab) {
+	t.Helper()
+	d := newTestDetail(t)
+	d.taskID = 4
+	loadDetail(d, []apiclient.StepRun{
+		attempt(1, 0, 1, "plan", "failed", false),
+		attempt(2, 0, 2, "plan", "succeeded", false),
+		attempt(3, 1, 1, "build", "failed", false),
+	})
+	v := newTaskView(d)
+	v.tab = tab
+	d.selectedRun = 1
+	v.updateKey(registryKey(t, "N"))
+	if v.tab != taskTabOutput || d.selectedRun != 3 {
+		t.Fatalf("N from %v left tab %v, cursor %d; want Output on attempt 3", tab, v.tab, d.selectedRun)
+	}
+}
+
 // repairFormFixture is a repair popup as `R` on a blocked task opens it.
 func repairFormFixture() *repairForm {
 	return newRepairForm(7, "check_failed", "build")
@@ -416,6 +437,14 @@ func declaredFieldRow(t *testing.T, n *newTask, name string) int {
 // the scrolling itself to the follow and mouse-wheel tests.
 var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	ctxTasks: {
+		"H": func(t *testing.T) {
+			s, _ := newShellFixture(t, task(1, stateRunning), task(2, stateBlocked))
+			s.focus = panelTasks
+			s.update(registryKey(t, "H"))
+			if got := s.board.visible(); !s.board.attentionOnly || len(got) != 1 || got[0].ID != 2 {
+				t.Fatalf("H left attentionOnly=%v and %d rows, want only the blocked task 2", s.board.attentionOnly, len(got))
+			}
+		},
 		"down": func(t *testing.T) {
 			s, _ := newShellFixture(t, task(1, stateRunning), task(2, stateRunning))
 			s.focus = panelTasks
@@ -543,6 +572,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxTimeline: {
+		"N": func(t *testing.T) { nextFailureProbe(t, taskTabSteps) },
 		"0": workspaceKeyProbe(onTab(taskTabSteps), "0", taskTabOverview),
 		"d": workspaceKeyProbe(onTab(taskTabSteps), "d", taskTabDiff),
 		"tab": func(t *testing.T) {
@@ -632,6 +662,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxTaskDetails: {
+		"N": func(t *testing.T) { nextFailureProbe(t, taskTabDetails) },
 		"0": workspaceKeyProbe(onTab(taskTabDetails), "0", taskTabOverview),
 		"d": workspaceKeyProbe(onTab(taskTabDetails), "d", taskTabDiff),
 		"tab": func(t *testing.T) {
@@ -1189,6 +1220,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxOutput: {
+		"N": func(t *testing.T) { nextFailureProbe(t, taskTabOutput) },
 		"0": workspaceKeyProbe(onTab(taskTabOutput), "0", taskTabOverview),
 		"d": workspaceKeyProbe(onTab(taskTabOutput), "d", taskTabDiff),
 		"U": laneParentProbe(taskTabOutput),
@@ -1323,6 +1355,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxDiff: {
+		"N": func(t *testing.T) { nextFailureProbe(t, taskTabDiff) },
 		"0": workspaceKeyProbe(onTab(taskTabDiff), "0", taskTabOverview),
 		"d": workspaceKeyProbe(onTab(taskTabDiff), "d", taskTabOutput),
 		"U": laneParentProbe(taskTabDiff),
@@ -1825,6 +1858,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxTaskOverview: {
+		"N": func(t *testing.T) { nextFailureProbe(t, taskTabOverview) },
 		"1": workspaceKeyProbe(onTab(taskTabOverview), "1", taskTabSteps),
 		"d": workspaceKeyProbe(onTab(taskTabOverview), "d", taskTabDiff),
 		"l": laneOpenProbe(taskTabOverview),
@@ -1872,6 +1906,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxTaskStepDetails: {
+		"N":   func(t *testing.T) { nextFailureProbe(t, taskTabStepDetails) },
 		"tab": workspaceTabProbe(onTab(taskTabStepDetails)),
 		"0":   workspaceKeyProbe(onTab(taskTabStepDetails), "0", taskTabOverview),
 		"d":   workspaceKeyProbe(onTab(taskTabStepDetails), "d", taskTabDiff),
@@ -1896,6 +1931,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxTaskPull: {
+		"N":   func(t *testing.T) { nextFailureProbe(t, taskTabPull) },
 		"tab": workspaceTabProbe(pullTabFixture),
 		"0":   workspaceKeyProbe(pullTabFixture, "0", taskTabOverview),
 		"d":   workspaceKeyProbe(pullTabFixture, "d", taskTabDiff),
@@ -2050,6 +2086,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxTaskWorkflow: {
+		"N":   func(t *testing.T) { nextFailureProbe(t, taskTabWorkflow) },
 		"tab": workspaceTabProbe(workflowTabFixture),
 		"0":   workspaceKeyProbe(workflowTabFixture, "0", taskTabOverview),
 		"d":   workspaceKeyProbe(workflowTabFixture, "d", taskTabDiff),
@@ -2692,6 +2729,8 @@ var vocabulary = []struct {
 	{termFilter, "/", true},
 	{termLane, "l", true},
 	{termResult, "w", true},
+	{termNextFail, "N", true},
+	{termAttention, "H", true},
 }
 
 // vocabularyExceptions are the rows that hold a vocabulary key for something

@@ -134,6 +134,13 @@ func (t *taskView) overviewAnchor() (apiclient.StepRun, bool) {
 // One path, so a link and a plain digit cannot drift apart. Diff and Pull
 // Request are task-level and move nothing.
 func (t *taskView) jumpTab(tab taskViewTab) tea.Cmd {
+	if t.tab == taskTabOverview && tab == taskTabOutput && t.showsFailureCard() {
+		// The failure card's evidence link is `N`'s landing (task 129.18):
+		// the attempt it stopped on, at the line it failed on.
+		if run, ok := t.overviewAnchor(); ok {
+			return t.landOnFailure(run)
+		}
+	}
 	var cmds []tea.Cmd
 	if t.tab == taskTabOverview && (tab == taskTabOutput || tab == taskTabStepDetails) {
 		if _, ok := t.overviewLinkFor(tab); ok {

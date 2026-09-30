@@ -387,3 +387,101 @@ func (s *Store) MCPChainSize(ctx context.Context, rootID int64) (int, error) {
 	}
 	return n, nil
 }
+
+// ChildrenRollups is ChildrenOf for many tasks at once, in one query: the
+// list route's rollup (§13.2, task 129.18 decision 5). A board of fifty rows
+// must not cost fifty recursive walks, so the walk carries the root it
+// started from and the rows are folded per root in Go. Only tasks with at
+// least one descendant appear in the map; a missing key is "no lanes", which
+// is how the list route decides to leave `children` off a row.
+func (s *Store) ChildrenRollups(ctx context.Context, ids []int64) (map[int64]ChildrenRollup, error) {
+	out := make(map[int64]ChildrenRollup)
+	if len(ids) == 0 {
+		return out, nil
+	}
+	args := make([]any, 0, len(ids))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	//nolint:gosec // G202: placeholders() only; the ids bind as arguments
+	rows, err := s.db.QueryContext(ctx, `
+		WITH RECURSIVE subtree(root, id, state) AS (
+			SELECT parent_task_id, id, state FROM tasks WHERE parent_task_id IN `+placeholders(len(ids))+`
+			UNION ALL
+			SELECT subtree.root, t.id, t.state FROM tasks t JOIN subtree ON t.parent_task_id = subtree.id
+		)
+		SELECT root, id, state FROM subtree ORDER BY root, id`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("children rollups: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var root, id int64
+		var state string
+		if err := rows.Scan(&root, &id, &state); err != nil {
+			return nil, fmt.Errorf("scan subtree row: %w", err)
+		}
+		r, ok := out[root]
+		if !ok {
+			r = ChildrenRollup{ByState: map[TaskState]int{}}
+		}
+		st := TaskState(state)
+		r.Total++
+		r.ByState[st]++
+		switch st {
+		case TaskBlocked:
+			r.Blocked = append(r.Blocked, id)
+		case TaskAwaitingGate:
+			r.AwaitingGate = append(r.AwaitingGate, id)
+		}
+		if taskstate.Settled(st) {
+			r.Settled++
+		}
+		out[root] = r
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("children rollups: %w", err)
+	}
+	return out, nil
+}
+
+// DescendantsCosts is DescendantsCost for many tasks in one query, for the
+// list route's `children.cost_usd`. A task with no descendant cost is absent.
+func (s *Store) DescendantsCosts(ctx context.Context, ids []int64) (map[int64]CostRollup, error) {
+	out := make(map[int64]CostRollup)
+	if len(ids) == 0 {
+		return out, nil
+	}
+	args := make([]any, 0, len(ids))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	//nolint:gosec // G202: placeholders() only; the ids bind as arguments
+	rows, err := s.db.QueryContext(ctx, `
+		WITH RECURSIVE subtree(root, id) AS (
+			SELECT parent_task_id, id FROM tasks WHERE parent_task_id IN `+placeholders(len(ids))+`
+			UNION ALL
+			SELECT subtree.root, t.id FROM tasks t JOIN subtree ON t.parent_task_id = subtree.id
+		)
+		SELECT subtree.root, SUM(step_runs.cost_usd)
+			FROM subtree JOIN step_runs ON step_runs.task_id = subtree.id
+			GROUP BY subtree.root`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("descendants costs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var root int64
+		var cost sql.NullFloat64
+		if err := rows.Scan(&root, &cost); err != nil {
+			return nil, fmt.Errorf("scan descendants cost: %w", err)
+		}
+		if cost.Valid {
+			out[root] = CostRollup{CostUSD: cost.Float64, HasCost: true}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("descendants costs: %w", err)
+	}
+	return out, nil
+}
