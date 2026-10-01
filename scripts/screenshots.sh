@@ -1876,6 +1876,54 @@ Sleep 2s
 Screenshot "'"$OUT"'/tui-chat-files.png"
 Sleep 2s
 '
+
+  # The three monitoring journeys (task 129.19), one Overview per question,
+  # each on the task whose state the question is about: the corpus reindex
+  # while it runs (what is happening now?), the checksum task blocked on its
+  # failed step (where and why did it fail?) and the design-tokens task done
+  # with its pull request linked (what did it deliver?). `enter` alone is the
+  # journey — the workspace opens on Overview, so no digit is pressed. The
+  # running one is the reindex rather than the soak the Output tape uses: the
+  # soak has finished by the time a full run reaches these tapes, and the
+  # reindex runs for most of an hour.
+  tape tui-task-overview-running 1250 '
+Type "/"
+Sleep 500ms
+Type "reindex"
+Sleep 1s
+Tab
+Sleep 1s
+Enter
+Sleep 5s
+Screenshot "'"$OUT"'/tui-task-overview-running.png"
+Sleep 2s
+'
+
+  tape tui-task-overview-blocked 1250 '
+Type "/"
+Sleep 500ms
+Type "signed checksums"
+Sleep 1s
+Tab
+Sleep 1s
+Enter
+Sleep 4s
+Screenshot "'"$OUT"'/tui-task-overview-blocked.png"
+Sleep 2s
+'
+
+  tape tui-task-overview-done 1250 '
+Type "/"
+Sleep 500ms
+Type "design tokens"
+Sleep 1s
+Tab
+Sleep 1s
+Enter
+Sleep 4s
+Screenshot "'"$OUT"'/tui-task-overview-done.png"
+Sleep 2s
+'
 }
 
 case "${1:-all}" in

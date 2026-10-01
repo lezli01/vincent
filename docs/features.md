@@ -301,7 +301,22 @@ every client, so the TUI, CLI, and API agree on what can happen next. See the
 
 ## Operate from a purpose-built TUI
 
-Running `vincent` opens a Bubble Tea interface for active agent workloads:
+Running `vincent` opens a Bubble Tea interface for active agent workloads,
+built around the three questions you ask of work you are not watching
+([Monitoring in three questions](guides/tui.md#monitoring-in-three-questions)
+walks each one):
+
+- **What is happening now?** The board says it per row, and a task's Overview
+  names the step and attempt it is on while a line under the header follows
+  what it is doing; the Output tab says whether it is following the live tail.
+- **Where and why did it fail?** One key jumps to the task that needs you and
+  another narrows the board to them; its Overview is a failure card with the
+  reason, the failing attempt's evidence and the actions that answer it.
+- **What did it deliver?** A finished task's Overview is an outcome card — the
+  result, changes, commits and pull request — one key from the diff, the pull
+  request and the output the result came from.
+
+In detail:
 
 - A filterable, grouped task board shows state, current step, elapsed time,
   reported cost, the step's own status message, and a `⇡#123` marker on a task

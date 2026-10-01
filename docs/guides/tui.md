@@ -10,6 +10,7 @@ vincent          # opens the TUI
 
 - [The first run](#the-first-run)
 - [Layout](#layout)
+- [Monitoring in three questions](#monitoring-in-three-questions)
 - [The board](#the-board)
 - [Acting on several tasks at once](#acting-on-several-tasks-at-once)
 - [Task detail](#task-detail)
@@ -62,6 +63,63 @@ guided two-pane surface: progress or resources stay in a narrow rail, and the
 current decision gets the rest of the screen. Below that size they fall back to
 the compact form, table, or registry. Resizing does not move the cursor or close
 the picker, editor, project form, workflow expansion, or graph you were using.
+
+## Monitoring in three questions
+
+Watching work in vincent comes down to three questions, and each has a short
+path through the board and the task workspace. The words for states and
+reasons used below are defined in the [Glossary](#glossary).
+
+### What is happening now?
+
+The board answers it at a glance. Each row's state cell and `STATUS` column
+say what the task is doing; a fan-out parent names its lanes by state, as in
+`waiting on lanes (×1 !1 ●1 ✓2)` — see [The board](#the-board) for every
+glyph. `enter` opens the task on its **Overview**, which for a running task
+names the current step and attempt. The breadcrumb in the header says where
+you are, and the dim line under it follows what the running attempt is doing
+right now, whichever tab you are on.
+
+![A running task's Overview: the current step and attempt, with the breadcrumb
+and the line saying what it is doing now](../assets/tui-task-overview-running.png)
+
+`3` opens **Output**. Its attempt strip shows the verbosity level when it is
+not `normal`, `raw` while `ctrl+o` is on, and — for a live attempt — the
+spinner with the elapsed time and `▼ following`, or `⏸ paused · N new` once
+you have scrolled away from the tail. See
+[How the pane reads](#how-the-pane-reads).
+
+![The Output tab following a live test run](../assets/tui-task-output.png)
+
+### Where and why did it fail?
+
+`!` jumps the board's cursor to the next task that needs you; `H` narrows the
+board to those tasks and `H` again shows them all. `enter` on a blocked task
+opens a **failure card**: the step and attempt that stopped, the reason in
+words with its code dim beside it, the last lines of the failing attempt's
+output as evidence, and the actions that answer the reason — `r` retry, `E`
+edit and retry, `R` repair, `T` chat. `3` from the card opens Output where
+the attempt failed, and `N` walks every failure in the task, a blocked lane's
+included. See [Task detail](#task-detail),
+[Jumping between failures](#jumping-between-failures) and
+[The action bar](#the-action-bar).
+
+![A blocked task's Overview: the failure card with its reason, evidence and
+actions](../assets/tui-task-overview-blocked.png)
+
+### What did it deliver?
+
+`enter` on a done task opens an **outcome card**: the result the last
+successful agent attempt reported, the changes and commits on its branch, and
+the linked pull request with its checks. `w` opens the output of the attempt
+the result came from, `4` opens **Diff**, and `7` opens **Pull Request** when
+one is linked. See [Task detail](#task-detail), which covers the outcome card
+and the Pull Request tab, and [The Diff tab](#the-diff-tab).
+
+![A done task's Overview: the outcome card with its result, changes, commits
+and pull request](../assets/tui-task-overview-done.png)
+
+![The Pull Request tab](../assets/tui-task-pull.png)
 
 ## The board
 
