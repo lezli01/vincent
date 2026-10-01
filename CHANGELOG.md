@@ -9,6 +9,37 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [0.11.0](https://github.com/lezli01/vincent/compare/v0.10.1...v0.11.0) (2026-10-01)
+
+
+### Features
+
+* **apiclient:** add TaskCommits and ErrCommitsUnsupported ([5ca3161](https://github.com/lezli01/vincent/commit/5ca31613f2371f3eb620e22daa2059433822550d))
+* **api:** serve a task's commits from its branch ([f3ded5b](https://github.com/lezli01/vincent/commit/f3ded5b057a60f36af5ac846e6de1aa987f68430))
+* **api:** serve the children rollup on task list rows ([a78ebef](https://github.com/lezli01/vincent/commit/a78ebef287dc68c5bb616884c3934698bc4e498d))
+* **cli:** add vincent task commits ([097c250](https://github.com/lezli01/vincent/commit/097c25005320f2947b75f12cf70a43eb3290eced))
+* **reasons:** add a plain-language catalogue of task and step reasons ([bdae1c0](https://github.com/lezli01/vincent/commit/bdae1c09862a90e07bcfa9d84a05793ecaab9b6d)), closes [#593](https://github.com/lezli01/vincent/issues/593)
+* **tui:** add a breadcrumb, one title line and a live now-line to the task workspace ([748a259](https://github.com/lezli01/vincent/commit/748a259829260e03cee9da27fae1c710cdc2e1e9))
+* **tui:** add a state-aware Overview tab at 0 as the workspace's landing tab ([876c429](https://github.com/lezli01/vincent/commit/876c429f5e71590c2421a736bd50c4cc26a95ec3))
+* **tui:** add an in-task next-failure key and a board attention filter ([2160a92](https://github.com/lezli01/vincent/commit/2160a929d1d43670a40c14ed47c2a5d12ec59752))
+* **tui:** keep STATUS at 120 columns, shed empty COST, mark PRs on rows ([552b851](https://github.com/lezli01/vincent/commit/552b8510ce237a46508e5ba556d0c0227067123c))
+* **tui:** make help an orientation sheet that scrolls, and add go-to-tab palette rows ([ae9b6aa](https://github.com/lezli01/vincent/commit/ae9b6aa50b57249e6fccc0b7cd8f521f3c099987))
+* **tui:** persist tui.output.level and tail command output at quiet and compact ([bb3813d](https://github.com/lezli01/vincent/commit/bb3813d07d080515af25a10cc86539b4089046a7))
+* **tui:** quiet the board ([78ec93c](https://github.com/lezli01/vincent/commit/78ec93c03d1198fc0716f72f9f6ae416e17a2a6c))
+* **tui:** render task states and reasons in plain words, adopt one glossary ([4c69928](https://github.com/lezli01/vincent/commit/4c699289c439819b8d329ea3df67e4a9349567a7))
+* **tui:** show a failure card on a blocked or aborted task's Overview ([d85b39e](https://github.com/lezli01/vincent/commit/d85b39e19ff6b3c2d426525e831e06c944f0cce5))
+* **tui:** show an outcome card on a finished task's Overview ([ae795c1](https://github.com/lezli01/vincent/commit/ae795c183b8f8637cdaf5a7f441b98dbff42fe0a))
+* **tui:** show lane breakdowns, loop strips and step pips as glyphs ([c459f27](https://github.com/lezli01/vincent/commit/c459f27237730210e3464c752afae0df82c15b69))
+
+
+### Bug Fixes
+
+* **deps:** update dependencies reported by govulncheck ([9ebe617](https://github.com/lezli01/vincent/commit/9ebe617cda367f8cf65722c48f0c77c8b42d9d38))
+* **keymap:** keep the daemon starting when tui.keys clashes after an upgrade ([d9250f5](https://github.com/lezli01/vincent/commit/d9250f5a90200018b970fc78e95301489bd5d70c))
+* persist a block detail and keep the tail of result_summary ([2d368b9](https://github.com/lezli01/vincent/commit/2d368b9c1981a22be08a7e8989922e0f513fa716)), closes [#594](https://github.com/lezli01/vincent/issues/594)
+* show live state on the workspace Output tab and open failed attempts at the failure ([e7d7391](https://github.com/lezli01/vincent/commit/e7d73911d1d3fad9b2afc51e8dc96b842319907e))
+* **tui:** align workspace hints with its keys and show R and E in the footer ([6da2780](https://github.com/lezli01/vincent/commit/6da2780c4565daba95ba5b9766dfa6aadb13720b)), closes [#595](https://github.com/lezli01/vincent/issues/595)
+
 ## [Unreleased]
 
 ### Added
