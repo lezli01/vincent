@@ -1,6 +1,6 @@
 # 129 — The TUI answers what is happening, why it failed and what it delivered
 
-**Status:** 🔄 in progress (15/19)
+**Status:** 🔄 in progress (18/19)
 
 Issue [#591](https://github.com/lezli01/vincent/issues/591), part of
 [#589](https://github.com/lezli01/vincent/issues/589). Spec §15 (TUI) above
@@ -267,19 +267,23 @@ cards need):
   `waiting on lanes (×1 !1 ●1 ✓2)`: only the breakdown and its order were
   decided there, not the state word. No task reason reaches the Output tab's
   lines, so the walkthrough ordering did not apply. Screenshots are left to
-  #609.
+  #609; re-captured in 129.19.
 
 **Phase 2 — new surfaces behind existing entry points:**
 
-- [ ] **129.8** ([#597](https://github.com/lezli01/vincent/issues/597)) Follow
+- [x] **129.8** ([#597](https://github.com/lezli01/vincent/issues/597)) Follow
   state, level and liveness on the Output tab; failed attempts open at the
-  failure. Ordering: see "Ordering with the open walkthroughs".
+  failure. Ordering: see "Ordering with the open walkthroughs". Delivered by
+  PR #618 (merge `21dbaad5`): the attempt strip shows the level, `raw`, the
+  spinner and `▼ following` / `⏸ paused · N new`; a failed attempt opens at
+  the failure; check output carries a `check ▏` gutter. ✓ 2026-09-29
 - [x] **129.9** ([#598](https://github.com/lezli01/vincent/issues/598))
   Breadcrumb, a single task title, a live now-line. *Done 2026-09-29.* The
   breadcrumb stops at the tab; crumbs are ids (`#id`, `lane #id name`) and
   truncate from the left. The now-line reads a small side buffer of the live
   attempt's chunks, so it follows the stream without a fetch; the Overview's
-  running frame drops `latest status`. Screenshots are left to #609.
+  running frame drops `latest status`. Screenshots are left to #609;
+  re-captured in 129.19.
 - [x] **129.10** ([#605](https://github.com/lezli01/vincent/issues/605)) Lane
   breakdowns, loop iteration outcomes, step pips as glyphs (decision 8). ✓
   2026-09-29
@@ -306,7 +310,7 @@ cards need):
   order; digits keep their tabs. The Steps & Attempts tab is relabelled
   Steps. `!` is left as it was (see Open questions). The Steps and loop
   tapes now press `1` after `enter`; re-capturing the Steps picture and adding
-  a tape for the Overview are deferred to #609.
+  a tape for the Overview are deferred to #609; both done in 129.19.
 - [x] **129.13** ([#600](https://github.com/lezli01/vincent/issues/600)) The
   failure card on Overview. Depends: 129.12, 129.2, 129.3.
   *Done 2026-09-29.* Blocked and aborted tasks get the card; awaiting_input
@@ -318,7 +322,7 @@ cards need):
   questions). The snapshot carries no retry budget, so the first line reads
   `attempt k` without "of n". No `D` key opens the daemon view, so the
   no-evidence line names the palette instead. Re-capturing the blocked
-  Overview is deferred to #609.
+  Overview is deferred to #609; captured in 129.19.
 - [x] **129.14** ([#602](https://github.com/lezli01/vincent/issues/602)) The
   outcome card on Overview. Depends: 129.12, 129.5.
   *Done 2026-09-29.* The card renders on done, archived and aborted (under
@@ -329,7 +333,8 @@ cards need):
   Overview. The diff and the commits are one fetch each per open; archived
   fetches no diff and says whether the branch was kept. The PR line reads the
   Pull Request tab's row and checks, asking that tab's checks fetch once.
-  The Steps-tab `↳` preview is left out; screenshots are deferred to #609.
+  The Steps-tab `↳` preview is left out; screenshots are deferred to #609;
+  captured in 129.19.
 - [x] **129.15** ([#603](https://github.com/lezli01/vincent/issues/603)) A
   quieter board (decisions 4 and 5). ✓ 2026-09-29
 - [x] **129.16** ([#604](https://github.com/lezli01/vincent/issues/604)) STATUS
@@ -367,13 +372,16 @@ cards need):
   keeps the cursor when turned off. `GET /v1/tasks` serves `children` on list
   rows from one batched walk (spec §13.2 amended); a lane's state event
   already refetches the list, which is what refreshes the parent's rollup.
-  Screenshots are left to #609.
+  Screenshots are left to #609; re-captured in 129.19.
 
 **Closing:**
 
-- [ ] **129.19** ([#609](https://github.com/lezli01/vincent/issues/609)) The
+- [~] **129.19** ([#609](https://github.com/lezli01/vincent/issues/609)) The
   three journeys in the TUI guide, and a full screenshot sweep. Depends:
-  129.13, 129.14, 129.15, 129.17.
+  129.13, 129.14, 129.15, 129.17. The guide's "Monitoring in three
+  questions", the features page's lead and the full sweep (three new Overview
+  tapes) are delivered; the gate doc `docs/gates/129-monitoring.md` is
+  written, and its walk is outstanding.
 
 **Phase 4 — removals:** none proposed. A removal would need its own item, and
 the deprecation-window question below answered first.
