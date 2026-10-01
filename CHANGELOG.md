@@ -11,37 +11,6 @@ list with the user-facing context a commit subject cannot carry.
 
 ## [0.11.0](https://github.com/lezli01/vincent/compare/v0.10.1...v0.11.0) (2026-10-01)
 
-
-### Features
-
-* **apiclient:** add TaskCommits and ErrCommitsUnsupported ([5ca3161](https://github.com/lezli01/vincent/commit/5ca31613f2371f3eb620e22daa2059433822550d))
-* **api:** serve a task's commits from its branch ([f3ded5b](https://github.com/lezli01/vincent/commit/f3ded5b057a60f36af5ac846e6de1aa987f68430))
-* **api:** serve the children rollup on task list rows ([a78ebef](https://github.com/lezli01/vincent/commit/a78ebef287dc68c5bb616884c3934698bc4e498d))
-* **cli:** add vincent task commits ([097c250](https://github.com/lezli01/vincent/commit/097c25005320f2947b75f12cf70a43eb3290eced))
-* **reasons:** add a plain-language catalogue of task and step reasons ([bdae1c0](https://github.com/lezli01/vincent/commit/bdae1c09862a90e07bcfa9d84a05793ecaab9b6d)), closes [#593](https://github.com/lezli01/vincent/issues/593)
-* **tui:** add a breadcrumb, one title line and a live now-line to the task workspace ([748a259](https://github.com/lezli01/vincent/commit/748a259829260e03cee9da27fae1c710cdc2e1e9))
-* **tui:** add a state-aware Overview tab at 0 as the workspace's landing tab ([876c429](https://github.com/lezli01/vincent/commit/876c429f5e71590c2421a736bd50c4cc26a95ec3))
-* **tui:** add an in-task next-failure key and a board attention filter ([2160a92](https://github.com/lezli01/vincent/commit/2160a929d1d43670a40c14ed47c2a5d12ec59752))
-* **tui:** keep STATUS at 120 columns, shed empty COST, mark PRs on rows ([552b851](https://github.com/lezli01/vincent/commit/552b8510ce237a46508e5ba556d0c0227067123c))
-* **tui:** make help an orientation sheet that scrolls, and add go-to-tab palette rows ([ae9b6aa](https://github.com/lezli01/vincent/commit/ae9b6aa50b57249e6fccc0b7cd8f521f3c099987))
-* **tui:** persist tui.output.level and tail command output at quiet and compact ([bb3813d](https://github.com/lezli01/vincent/commit/bb3813d07d080515af25a10cc86539b4089046a7))
-* **tui:** quiet the board ([78ec93c](https://github.com/lezli01/vincent/commit/78ec93c03d1198fc0716f72f9f6ae416e17a2a6c))
-* **tui:** render task states and reasons in plain words, adopt one glossary ([4c69928](https://github.com/lezli01/vincent/commit/4c699289c439819b8d329ea3df67e4a9349567a7))
-* **tui:** show a failure card on a blocked or aborted task's Overview ([d85b39e](https://github.com/lezli01/vincent/commit/d85b39e19ff6b3c2d426525e831e06c944f0cce5))
-* **tui:** show an outcome card on a finished task's Overview ([ae795c1](https://github.com/lezli01/vincent/commit/ae795c183b8f8637cdaf5a7f441b98dbff42fe0a))
-* **tui:** show lane breakdowns, loop strips and step pips as glyphs ([c459f27](https://github.com/lezli01/vincent/commit/c459f27237730210e3464c752afae0df82c15b69))
-
-
-### Bug Fixes
-
-* **deps:** update dependencies reported by govulncheck ([9ebe617](https://github.com/lezli01/vincent/commit/9ebe617cda367f8cf65722c48f0c77c8b42d9d38))
-* **keymap:** keep the daemon starting when tui.keys clashes after an upgrade ([d9250f5](https://github.com/lezli01/vincent/commit/d9250f5a90200018b970fc78e95301489bd5d70c))
-* persist a block detail and keep the tail of result_summary ([2d368b9](https://github.com/lezli01/vincent/commit/2d368b9c1981a22be08a7e8989922e0f513fa716)), closes [#594](https://github.com/lezli01/vincent/issues/594)
-* show live state on the workspace Output tab and open failed attempts at the failure ([e7d7391](https://github.com/lezli01/vincent/commit/e7d73911d1d3fad9b2afc51e8dc96b842319907e))
-* **tui:** align workspace hints with its keys and show R and E in the footer ([6da2780](https://github.com/lezli01/vincent/commit/6da2780c4565daba95ba5b9766dfa6aadb13720b)), closes [#595](https://github.com/lezli01/vincent/issues/595)
-
-## [Unreleased]
-
 ### Added
 
 - **The output level is a setting, and quiet levels bound command output.**
@@ -56,6 +25,7 @@ list with the user-facing context a commit subject cannot carry.
   the pane and a failing command's last line stays in view. `normal` and
   `verbose` are unchanged. A daemon older than this refuses a `config.yaml`
   that sets the new key.
+  ([#632](https://github.com/lezli01/vincent/pull/632))
 - **Jump between a task's failures, and narrow the board to what needs you.**
   In a task's workspace, `N` walks its failures in the order they ran — the
   newest failed attempt of each step or loop iteration, skipping a step that
@@ -67,7 +37,7 @@ list with the user-facing context a commit subject cannot carry.
   board show a parent's lane breakdown without opening it. Both keys move
   with `tui.keys` (`next_failure`, `attention_filter`); a keymap that already
   binds `N` or `H` keeps its binding.
-
+  ([#633](https://github.com/lezli01/vincent/pull/633))
 - **States and reasons in plain words.** The TUI no longer prints snake_case
   identifiers as prose: `awaiting_input` reads "awaiting input",
   `awaiting_gate` "awaiting approval" and `awaiting_children` "waiting on
@@ -78,7 +48,11 @@ list with the user-facing context a commit subject cannot carry.
   board has width to spare. Task Details keeps the raw identifiers for
   copy-paste. Help and the palette use one glossary — attempt, iteration,
   round, lane, tab, screen — and the palette's takeover group is now
-  "screens"; the TUI guide has a Glossary section.
+  "screens"; the TUI guide has a Glossary section. The words come from a new
+  catalogue that gives every block, failure, skip and queue reason a title, a
+  one-sentence meaning and the actions that answer it, held by tests to the
+  engine's reason codes and to the task-lifecycle reference.
+  ([#631](https://github.com/lezli01/vincent/pull/631), [#614](https://github.com/lezli01/vincent/pull/614))
 - **Help that orients, and palette rows for the workspace tabs.** The TUI's
   help (`?`) opens on a "This screen" header: in a task's workspace it lists
   each tab with its digit and what it is for, and on the board the three keys
@@ -86,6 +60,7 @@ list with the user-facing context a commit subject cannot carry.
   dimmed "Not available now", and it scrolls with `↑`/`↓`, `pgup`/`pgdown`,
   `home` and `end` instead of clipping at the bottom of the screen. In a
   workspace the command palette lists a "go to the <Name> tab" row per tab.
+  ([#629](https://github.com/lezli01/vincent/pull/629))
 - **An outcome card on a finished task's Overview.** A done or archived
   task's Overview now says what it delivered: the result its last successful
   agent attempt reported, labelled with the step and attempt it came from
@@ -95,7 +70,7 @@ list with the user-facing context a commit subject cannot carry.
   when there are any. An aborted task shows the same card under its failure
   card as what was delivered before it stopped. An archived task says whether
   its branch was kept. A new `result` key operation (default `w`) can be
-  rebound under `tui.keys` (#602).
+  rebound under `tui.keys` ([#630](https://github.com/lezli01/vincent/pull/630)).
 - **A failure card on a blocked task's Overview.** A blocked task's Overview
   now says what stopped it on one screen: the step, loop iteration or lane and
   attempt, the reason in words with its code, the last lines of the failing
@@ -104,7 +79,7 @@ list with the user-facing context a commit subject cannot carry.
   with `l` to open it, and the actions that answer the reason first — `E` edit
   & retry right after retry. A block no step ran into shows the daemon's
   explanation. Aborted tasks get a muted card, and a short terminal keeps just
-  the first line and the action keys (#600).
+  the first line and the action keys ([#626](https://github.com/lezli01/vincent/pull/626)).
 - **A breadcrumb, one title and a live now-line in the task workspace.** The
   app header names where you are — `Board › #12 › lane #14 api › Output`, the
   tasks you drilled through, the task on screen and the tab — in place of
@@ -114,7 +89,7 @@ list with the user-facing context a commit subject cannot carry.
   a dim line under the header says what it is doing now: the running attempt's
   status message, else the last line it printed, else its name — following the
   live output on every tab without refetching. The Overview's running frame no
-  longer repeats the status message (#598).
+  longer repeats the status message ([#628](https://github.com/lezli01/vincent/pull/628)).
 - **An Overview tab the task workspace opens on.** `enter` now lands on an
   Overview at `0` that answers the question the task's state raises: what it is
   doing (running, queued, paused, waiting on its lanes), what it needs from you
@@ -125,22 +100,22 @@ list with the user-facing context a commit subject cannot carry.
   digit and two groups, `0 Overview · 3 Output · 4 Diff` then the rest, and
   `tab`/`shift+tab` walk it in that drawn order; the timeline tab is renamed
   **Steps** and keeps `1`. Going back with `esc` restores the tab you left a
-  task on (#599).
+  task on ([#625](https://github.com/lezli01/vincent/pull/625)).
 - **A task's commits over the API, even after archive.** `GET
   /v1/tasks/{id}/commits` (and the MCP tool `task_commits`) lists the commits a
   task made on its branch, oldest first, with fan-out lane merges marked by
   `lane_id` and `child_task_id`. It reads the branch rather than the worktree,
   so an archived task's commits are still there. `vincent task commits <id>`
-  prints the same list (#601).
+  prints the same list ([#619](https://github.com/lezli01/vincent/pull/619)).
 - **A pull request marker on board rows.** A task with a linked pull request
   shows `⇡#123` in a new `PR` column, running or done. It is read from the task
-  list, so the board makes no GitHub request for it (#604).
+  list, so the board makes no GitHub request for it ([#622](https://github.com/lezli01/vincent/pull/622)).
 - **Loop iteration strips and step pips.** The task workspace header adds
   one pip per workflow step after its step counter (`step 3/5 ✓✓●○○`) and a
   strip of a loop's newest ten passes after its loop clause
   (`loop 4/5 ✓✓×●`). The Steps tab shows the same strip under a loop's
   header. A board row whose `STEP` column has room to spare adds pips too
-  (#605).
+  ([#624](https://github.com/lezli01/vincent/pull/624)).
 
 ### Changed
 
@@ -149,12 +124,12 @@ list with the user-facing context a commit subject cannot carry.
   instead of `2 blocked` or `3/5 done`. A board row for a parent uses the same
   form, `awaiting_children (×1 !1 ●1 ✓2)`, when the row carries the rollup. An
   expanded lane's board row reads `lane <id>` instead of repeating its
-  parent's title (#605).
+  parent's title ([#624](https://github.com/lezli01/vincent/pull/624)).
 - **The board keeps `STATUS` at 120 columns and drops an empty `COST`.** While
   any task has a status message, the `STATUS` column outranks `COST` and the
   step name, so the default grouped board keeps it from 120 columns instead of
   164. Below a wide title it is cut to one line rather than wrapped. `COST` is
-  left out while no task on the board has reported a cost (#604).
+  left out while no task on the board has reported a cost ([#622](https://github.com/lezli01/vincent/pull/622)).
 - **A quieter board.** The board header drops `0 need attention` and reads
   `! N need attention (all tasks)` while a filter is committed; healthy agents
   collapse into one dim `agents ✓`, with only a logged-out or quota-spent agent
@@ -162,7 +137,14 @@ list with the user-facing context a commit subject cannot carry.
   shown task shares draws no header — its value moves to the panel title,
   `Tasks · api › verify-build`. The action keys appear once, in the footer,
   instead of again inside the board, and the app header drops `● connected`
-  while it is connected (#603).
+  while it is connected ([#623](https://github.com/lezli01/vincent/pull/623)).
+- **The TUI guide walks the three monitoring questions.** A new "Monitoring in
+  three questions" section in `docs/guides/tui.md` follows *what is happening
+  now?*, *where and why did it fail?* and *what did it deliver?* through the
+  board, the Overview, Output, `N`, `H`, `w` and the Diff and Pull Request
+  tabs, and every TUI screenshot is recaptured from the redesigned screens,
+  with new ones for the running, blocked and done Overview.
+  ([#634](https://github.com/lezli01/vincent/pull/634))
 
 ### Fixed
 
@@ -174,8 +156,7 @@ list with the user-facing context a commit subject cannot carry.
   `R` off the front. The workspace footer no longer shows `[/] views`
   beside `tab views`, or a hint for the tab already open (`5 workflow` on
   Workflow). `?` now lists `d`, `l`, `U` and the digit jumps on every
-  workspace tab, which already answered them (#595).
-
+  workspace tab, which already answered them ([#627](https://github.com/lezli01/vincent/pull/627)).
 - **The workspace's Output tab shows its live state, and a failed attempt
   opens at the failure.** The attempt strip now names the verbosity level,
   `raw`, the in-progress spinner with its elapsed clock, and `▼ following` /
@@ -183,7 +164,7 @@ list with the user-facing context a commit subject cannot carry.
   drew before, so `v` and scrolling up had no visible effect and a quiet agent
   looked hung. A finished failed attempt opens at its first check line
   (`check_failed`) or its end instead of the top of its tail, and check output
-  carries a `check ▏` gutter (#597).
+  carries a `check ▏` gutter ([#618](https://github.com/lezli01/vincent/pull/618)).
 - **An upgrade can no longer stop the daemon over `tui.keys`.** A keymap that
   was valid on one release refused the whole `config.yaml` on the next if that
   release retired an operation you named, or gave a new operation or fixed key
@@ -191,7 +172,7 @@ list with the user-facing context a commit subject cannot carry.
   your binding wins, the displaced operation is left unbound (or the fixed key
   shadowed on its screen), a retired name is ignored, and each is logged as a
   `keymap warning`, listed by `vincent doctor` and shown once in the TUI.
-  `vincent config set` and the config editor stay strict (task 128, #590).
+  `vincent config set` and the config editor stay strict ([#616](https://github.com/lezli01/vincent/pull/616)).
 - **A task that blocks before any step runs now says why.** A block from
   worktree creation, an unparseable snapshot, a platform restriction, a guard
   that could not be evaluated, the cost cap, the container runtime or a fan-out
@@ -199,13 +180,15 @@ list with the user-facing context a commit subject cannot carry.
   explaining it went to `daemon.log` alone. Every task representation now
   carries `block_detail` — for instance the worktree path that was already
   occupied. It never carries URL credentials or the text of a GitHub error
-  (issue #594).
+  ([#615](https://github.com/lezli01/vincent/pull/615)).
 - **A long failure keeps its error in `result_summary`.** When a step's output
   ran past the 4096-byte cap, the summary kept the first 4 KiB and dropped the
   last lines, where the error is — and the raw cut could split a UTF-8
   character. It now keeps the tail, cut at a line boundary where possible and
   marked `… N earlier bytes`. The board, the detail view, the repair prompt and
-  `vincent task` output all show it (issue #594).
+  `vincent task` output all show it ([#615](https://github.com/lezli01/vincent/pull/615)).
+- **Dependencies flagged by govulncheck are updated.**
+  ([#635](https://github.com/lezli01/vincent/pull/635))
 
 ## [0.10.1](https://github.com/lezli01/vincent/compare/v0.10.0...v0.10.1) (2026-09-25)
 
