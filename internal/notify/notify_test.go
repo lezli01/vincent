@@ -61,6 +61,19 @@ func (c *logCapture) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// count is how many captured lines contain sub.
+func (c *logCapture) count(sub string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n := 0
+	for _, l := range c.lines {
+		if strings.Contains(l, sub) {
+			n++
+		}
+	}
+	return n
+}
+
 func (c *logCapture) contains(sub string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -465,17 +478,23 @@ func TestConcurrencyCapAndQueueDrop(t *testing.T) {
 			elapsed, burst)
 	}
 	waitFor(t, "every worker to be busy", func() bool { return inFlight.Load() == maxWorkers })
-	if !h.logs.contains("notifier queue full") {
-		t.Error("the excess was not logged as a drop")
+	// How many were admitted depends on whether the workers dequeued before
+	// the burst filled the queue: anywhere from queueCapacity (the workers
+	// had not yet run) to maxWorkers+queueCapacity. Every other event must
+	// have been logged as a drop.
+	admitted := int64(burst - h.logs.count("notifier queue full"))
+	if admitted < queueCapacity || admitted > maxWorkers+queueCapacity {
+		t.Errorf("%d of %d notifications were admitted; want %d to %d, the rest logged as drops",
+			admitted, burst, queueCapacity, maxWorkers+queueCapacity)
 	}
 	close(release)
 
-	waitFor(t, "the queue to drain", func() bool { return ran.Load() >= maxWorkers+queueCapacity })
-	// Nothing past the workers plus the queue may have run: the rest was
-	// dropped, not backed up.
+	waitFor(t, "the queue to drain", func() bool { return ran.Load() >= admitted })
+	// Nothing past what was admitted may have run: the rest was dropped,
+	// not backed up.
 	time.Sleep(200 * time.Millisecond)
-	if got := ran.Load(); got > maxWorkers+queueCapacity {
-		t.Errorf("%d notifications ran; at most %d were admitted", got, maxWorkers+queueCapacity)
+	if got := ran.Load(); got != admitted {
+		t.Errorf("%d notifications ran; %d were admitted", got, admitted)
 	}
 	if peak.Load() > maxWorkers {
 		t.Errorf("%d children ran at once, cap is %d", peak.Load(), maxWorkers)
