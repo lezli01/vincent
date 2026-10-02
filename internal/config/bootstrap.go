@@ -188,10 +188,11 @@ agents:
 #   max_depth: 3
 #   max_tasks: 32
 
-# The GitHub integration (task 035, task 052, task 069). It applies only to a
-# project whose "origin" remote is a github.com repository, and the daemon
-# makes no call at all until you open the issue picker, name an issue on the
-# command line, or ask for a pull request.
+# The GitHub integration (task 035, task 052, task 069, task 130). It applies
+# only to a project whose "origin" remote is a github.com repository. For such
+# a project the daemon's reconciler tick imports and refreshes its issues into
+# vincent's backlog, and links tasks to their pull requests; enabled and
+# poll_interval below are the two switches that stop it.
 #
 # It reads GitHub, and writes only when you ask it to: pressing P on a task
 # pushes that task's branch to origin and opens its pull request, and a task's
@@ -209,13 +210,14 @@ agents:
 # saying the credential has no write scope. Set enabled to false to stop the
 # daemon talking to GitHub at all, reads and writes together.
 #
-# poll_interval is how often the daemon reconciles the link between a task and
-# its pull request, by matching an open pull request's head branch against the
-# task's branch (task 052). It is one of vincent's two standing background
-# calls — the other is the release check below — and it fires only for
-# projects hosted on github.com: set it to 0 to switch the reconciler off and
-# keep the rest of the integration, which then calls GitHub only when you ask
-# it to.
+# poll_interval is the reconciler tick: on each one the daemon imports and
+# refreshes each GitHub-based project's issues, and links a task to its pull
+# request by matching an open pull request's head branch against the task's
+# branch (task 052). It is one of vincent's two standing background calls —
+# the other is the release check below — and it fires only for projects
+# hosted on github.com: set it to 0 to switch the reconciler off, issue import
+# included, and keep the rest of the integration, which then calls GitHub only
+# when you ask it to. "vincent issue sync" asks for an import now.
 github:
   enabled: true
   poll_interval: 5m

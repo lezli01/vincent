@@ -136,7 +136,7 @@ func TestGitHubIssueCommandsAgainstLiveDaemon(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("github status: code %d, out %q", code, out)
 		}
-		if !strings.Contains(out, "octo/repo") || !strings.Contains(out, "readable via gh") {
+		if !strings.Contains(out, "octo/repo") || !strings.Contains(out, "available via gh") {
 			t.Errorf("github status does not report a readable repo:\n%s", out)
 		}
 
@@ -324,7 +324,7 @@ func TestGitHubIssueCommandsAgainstLiveDaemon(t *testing.T) {
 		if !strings.Contains(out, "GITHUB") {
 			t.Errorf("doctor has no GITHUB section:\n%s", out)
 		}
-		if !strings.Contains(out, "gh cli") || !strings.Contains(out, "readable via gh") {
+		if !strings.Contains(out, "gh cli") || !strings.Contains(out, "available via gh") {
 			t.Errorf("doctor does not report a usable gh:\n%s", out)
 		}
 	})
@@ -368,7 +368,7 @@ func TestGitHubUnusableLeavesTaskCreationAlone(t *testing.T) {
 	if !strings.Contains(out, "unavailable: no GitHub credential") {
 		t.Errorf("doctor does not name the reason:\n%s", out)
 	}
-	if !strings.Contains(out, "tasks can still be created without an issue") {
+	if !strings.Contains(out, "tasks and local issues are unaffected") {
 		t.Errorf("doctor does not say what still works:\n%s", out)
 	}
 

@@ -58,11 +58,12 @@ type Report struct {
 	Log         Log       `json:"log"`
 	Database    Database  `json:"database"`
 	Agents      []Agent   `json:"agents"`
-	// GitHub is the read-only issue integration's environment check (task
-	// 035): the config toggle, `gh`'s presence and login state, and whether a
-	// token was inherited instead. It is a **row, not a problem**: task
-	// creation without an issue is unaffected by every "no" it can report, so
-	// nothing here makes `vincent doctor` exit 1.
+	// GitHub is the GitHub integration's environment check (task 035) and,
+	// since task 130.8, the health of each project's issue import and sync:
+	// the config toggle, `gh`'s presence and login state, whether a token was
+	// inherited instead, and how each project's last sync went. It is a
+	// **row, not a problem**: tasks and local issues are unaffected by every
+	// "no" it can report, so nothing here makes `vincent doctor` exit 1.
 	GitHub GitHub `json:"github"`
 	// Container is the container-execution row (§16, task 061). Like GitHub
 	// it is a **row, not a problem**: containerization is off by default, and
@@ -244,9 +245,9 @@ type Agent struct {
 	RestrictedVerdict string `json:"restricted_verdict"`
 }
 
-// GitHub is the §12.1 row for the GitHub issue integration (task 035). It
-// answers the question the daemon log used to answer alone: why is the issue
-// picker not offered?
+// GitHub is the §12.1 row for the GitHub integration (task 035). It answers
+// the question the daemon log used to answer alone: is vincent importing and
+// syncing this machine's GitHub-based projects' issues, and if not, why not?
 type GitHub struct {
 	// Enabled is `github.enabled` from config.yaml (§12.3).
 	Enabled bool `json:"enabled"`
@@ -256,6 +257,24 @@ type GitHub struct {
 	Usable bool `json:"usable"`
 	// Message is Reason spelled for a human, empty when Usable.
 	Message string `json:"message,omitempty"`
+	// Sync is each project's issue import and sync health (task 130.8), one
+	// entry per project the reconciler has polled or been asked to. Only a
+	// daemon can answer it, so a local report leaves it empty.
+	Sync []ProjectIssueSync `json:"sync,omitempty"`
+}
+
+// ProjectIssueSync is one project's issue sync health in the GitHub row.
+// Reason uses the sync vocabulary of GET /v1/projects/{id}/issues/sync
+// (github_disabled, poll_disabled, pending, rate_limited, …), with the config
+// switches taking precedence over what the importer last recorded.
+type ProjectIssueSync struct {
+	ProjectID int64  `json:"project_id"`
+	Project   string `json:"project"`
+	OK        bool   `json:"ok"`
+	Reason    string `json:"reason,omitempty"`
+	// LastSyncedAt is when an import last succeeded; nil when none has.
+	LastSyncedAt   *time.Time `json:"last_synced_at,omitempty"`
+	ImportComplete bool       `json:"import_complete"`
 }
 
 // Update is the §12.1 row for the release check (task 055). It answers two

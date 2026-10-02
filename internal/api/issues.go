@@ -45,6 +45,12 @@ type issueSourceBody struct {
 	// RemoteState is the state the remote last reported, read from the
 	// stored remote payload; omitted when it carries none.
 	RemoteState string `json:"remote_state,omitempty"`
+	// LastSyncedAt is when the importer last wrote this issue from the
+	// remote (task 130.8); omitted when it never has.
+	LastSyncedAt *time.Time `json:"last_synced_at,omitempty"`
+	// Status is what the last sweep learned of the remote: "moved" or
+	// "missing", omitted while it is live.
+	Status string `json:"status,omitempty"`
 }
 
 // issueRowBody is an issue as GET /v1/issues lists it: everything but the
@@ -121,11 +127,13 @@ func renderIssueRow(iss *store.Issue) issueRowBody {
 	if issues.Mirrored(iss) {
 		r := iss.Remote
 		row.Source = &issueSourceBody{
-			Provider:    r.Provider,
-			Repo:        r.Repo,
-			Number:      r.Number,
-			URL:         r.URL,
-			RemoteState: remoteState(r.RemoteJSON),
+			Provider:     r.Provider,
+			Repo:         r.Repo,
+			Number:       r.Number,
+			URL:          r.URL,
+			RemoteState:  remoteState(r.RemoteJSON),
+			LastSyncedAt: r.SyncedAt,
+			Status:       r.Status,
 		}
 	}
 	return row

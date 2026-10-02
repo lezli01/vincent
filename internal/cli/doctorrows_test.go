@@ -100,7 +100,7 @@ func TestDoctorGitHubRowWithoutGH(t *testing.T) {
 		"gh cli\tnot found",
 		"token\tnot set",
 		"unavailable: no GitHub credential",
-		"tasks can still be created without an issue",
+		"tasks and local issues are unaffected",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the github row does not show %q:\n%s", want, out)
@@ -128,7 +128,7 @@ func TestDoctorGitHubRowNamesTheVariableNotTheToken(t *testing.T) {
 	if !strings.Contains(out, "set (GH_TOKEN)") {
 		t.Errorf("the token row does not name the variable:\n%s", out)
 	}
-	if !strings.Contains(out, "readable via token") {
+	if !strings.Contains(out, "available via token") {
 		t.Errorf("a usable integration does not say so:\n%s", out)
 	}
 }
@@ -140,8 +140,8 @@ func TestDoctorGitHubRowDisabled(t *testing.T) {
 	if !strings.Contains(out, "enabled\tno") {
 		t.Errorf("a disabled integration does not say so:\n%s", out)
 	}
-	if !strings.Contains(out, "not read (integration disabled)") {
-		t.Errorf("the issues row does not explain the disabled state:\n%s", out)
+	if !strings.Contains(out, "off (integration disabled)") {
+		t.Errorf("the import/sync row does not explain the disabled state:\n%s", out)
 	}
 	if strings.Contains(out, "unavailable") {
 		t.Errorf("a disabled integration is reported as unavailable:\n%s", out)

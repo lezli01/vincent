@@ -44,6 +44,10 @@ type DoctorAgent = doctor.Agent
 // DoctorGitHub is the report's GitHub issue integration row (task 035).
 type DoctorGitHub = doctor.GitHub
 
+// DoctorProjectIssueSync is one project's issue sync health in the GitHub row
+// (task 130.8).
+type DoctorProjectIssueSync = doctor.ProjectIssueSync
+
 // DoctorContainer is the report's container-execution row (§16, task 061).
 type DoctorContainer = doctor.Container
 

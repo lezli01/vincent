@@ -146,6 +146,9 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		{http.MethodDelete, "/v1/chats/{id}"},
 		// Task 130.3, on task 092's line: the issue delete is permanent.
 		{http.MethodDelete, "/v1/issues/{id}"},
+		// Task 130.8: sync now becomes a write-back flush once #669 lands,
+		// so it stays a human act; the status GET is a tool.
+		{http.MethodPost, "/v1/projects/{id}/issues/sync"},
 		// Task 096 decision 22: an agent must not author or arm a trigger
 		// that starts agents — enabling is a PATCH — and decision 31G: an
 		// agent that can inject an event can start agents.

@@ -103,6 +103,11 @@ var Excluded = []Route{
 	// issue route is a tool — task 130 decision 10 lets an agent file, edit,
 	// close and reopen local issues.
 	{Method: http.MethodDelete, Path: "/v1/issues/{id}"},
+	// Sync now (task 130.8) is not a tool either, though today it only asks
+	// the importer to poll early: once write-back lands (#669) the same
+	// request flushes vincent's pending edits to GitHub, so it stays a human
+	// act. Its GET, project_issue_sync_status, is a tool.
+	{Method: http.MethodPost, Path: "/v1/projects/{id}/issues/sync"},
 	// The import that undoes a task delete (task 117), on the same line. It
 	// reads an arbitrary file the caller names and writes rows — ids, step
 	// runs, provenance — that no agent should be able to create.
@@ -192,6 +197,7 @@ var routes = []Route{
 	{http.MethodPatch, "/v1/projects/{id}", "project_patch", "Update a project's mutable fields. Body is the subset to change."},
 	{http.MethodGet, "/v1/projects/{id}/github", "project_github", "Whether this project's origin is a reachable GitHub repository (§12.3)."},
 	{http.MethodGet, "/v1/projects/{id}/github/issues", "project_github_issues", "Open GitHub issues for this project's origin repository."},
+	{http.MethodGet, "/v1/projects/{id}/issues/sync", "project_issue_sync_status", "How this project's GitHub issue import is going (task 130.8): enabled, repo, last_synced_at, ok, reason (github_disabled, poll_disabled, pending, rate_limited, …) and import_complete. A read; it never starts a sync."},
 	{http.MethodGet, "/v1/projects/{id}/github/pulls", "project_github_pulls", "Open GitHub pull requests for this project's origin repository."},
 	{http.MethodGet, "/v1/projects/{id}/issue-labels", "project_issue_labels", "This project's issue label catalogue: each label's name, color, description, source (local or the provider it was imported from) and issue_count."},
 	{http.MethodGet, "/v1/projects/{id}/branches", "project_branches", "This project's local git branches, each with the working tree holding it. A branch here can be run on directly with task_create's existing_branch."},
