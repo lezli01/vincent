@@ -167,8 +167,10 @@ byte-for-byte for idempotency digests") and #658's "Contradictions resolved:
   still sending `github_issue` is refused rather than silently ignored.
 - **User trigger files stop validating.** Trigger files decode strictly
   (`internal/trigger/definition.go`), so a trigger carrying
-  `action.github_issue` fails validation and is disarmed until a human edits
-  it.
+  `action.github_issue` fails validation and stops polling until a human edits
+  it. An invalid file is not armed, but it is not disarmed in the manager's
+  sense either: it keeps its cursor (`internal/trigger/registry.go:30-32`), so
+  the edited trigger resumes rather than re-seeding.
 - **Every `POST /v1/tasks` idempotency digest changes once.**
   `createTaskRequest.GitHubIssue` is `*int` with no `omitempty`
   (`internal/api/tasks.go:497`), and the digest re-marshals the decoded struct
@@ -353,8 +355,9 @@ before the item that needs it starts.
 4. **Initial import depth.** (#658 question 7.) *Proposed:* open issues only,
    capped at 500, resumable across ticks.
 5. **Refreshing the snapshot on `follow_up`.** (#658 question 8.) *Proposed:*
-   no refresh. An opt-in `refresh_issue` would relitigate task 035 decision 8
-   and the never-re-fetched half of decision 5 for that case.
+   no refresh. An opt-in `refresh_issue` would relitigate, for that case, the
+   never-re-fetched half of task 035 decision 10 and spec §3 row 26 that
+   decision 5 keeps for the task snapshot.
 6. **Telling a step's call from a human's.** (Decision 10, for 130.10.) A step
    running `vincent issue close` reaches the API the way a human's CLI does.
    The mechanism that marks it step-originated is an implementation question
