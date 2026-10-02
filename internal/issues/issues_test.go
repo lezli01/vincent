@@ -183,7 +183,7 @@ func TestCloseReopen(t *testing.T) {
 	ctx := t.Context()
 	iss := mustCreate(t, svc, CreateInput{ProjectID: pid, Title: "t"})
 
-	closed, err := svc.Close(ctx, issuestate.Human, iss.ID, "")
+	closed, err := svc.Close(ctx, issuestate.Human, iss.ID, "", nil)
 	if err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -191,11 +191,11 @@ func TestCloseReopen(t *testing.T) {
 		t.Errorf("closed = %+v", closed)
 	}
 	// A human asking for the state the issue is already in is refused…
-	if _, err := svc.Close(ctx, issuestate.Human, iss.ID, ""); !errors.Is(err, store.ErrInvalidIssueAction) {
+	if _, err := svc.Close(ctx, issuestate.Human, iss.ID, "", nil); !errors.Is(err, store.ErrInvalidIssueAction) {
 		t.Errorf("human double close err = %v, want ErrInvalidIssueAction", err)
 	}
 	// …while sync's is a no-op.
-	again, err := svc.Close(ctx, issuestate.Sync, iss.ID, "")
+	again, err := svc.Close(ctx, issuestate.Sync, iss.ID, "", nil)
 	if err != nil {
 		t.Fatalf("sync double close: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestCloseReopen(t *testing.T) {
 		t.Errorf("double reopen err = %v, want ErrInvalidIssueAction", err)
 	}
 
-	np, err := svc.Close(ctx, issuestate.Human, iss.ID, issuestate.NotPlanned)
+	np, err := svc.Close(ctx, issuestate.Human, iss.ID, issuestate.NotPlanned, nil)
 	if err != nil || np.CloseReason != issuestate.NotPlanned {
 		t.Errorf("close not_planned = %+v, %v", np, err)
 	}
@@ -224,11 +224,11 @@ func TestCloseReopen(t *testing.T) {
 	if _, err := svc.Transition(ctx, issuestate.Human, iss.ID, issuestate.RemoteClosed, ""); !errors.Is(err, store.ErrInvalidIssueAction) {
 		t.Errorf("human remote_closed err = %v, want ErrInvalidIssueAction", err)
 	}
-	if _, err := svc.Close(ctx, issuestate.Human, 9999, ""); !errors.Is(err, store.ErrNotFound) {
+	if _, err := svc.Close(ctx, issuestate.Human, 9999, "", nil); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("missing issue err = %v, want ErrNotFound", err)
 	}
 
-	_, err = svc.Close(ctx, issuestate.Human, iss.ID, "wontfix")
+	_, err = svc.Close(ctx, issuestate.Human, iss.ID, "wontfix", nil)
 	wantField(t, err, "reason")
 	_, err = svc.Transition(ctx, issuestate.Human, iss.ID, issuestate.Reopen, issuestate.Duplicate)
 	wantField(t, err, "reason")
@@ -297,7 +297,7 @@ func TestUnknownActorTouchesNothing(t *testing.T) {
 			return err
 		},
 		"close": func(ctx context.Context) error {
-			_, err := svc.Close(ctx, by, iss.ID, "")
+			_, err := svc.Close(ctx, by, iss.ID, "", nil)
 			return err
 		},
 		"reopen": func(ctx context.Context) error {
@@ -326,5 +326,70 @@ func TestUnknownActorTouchesNothing(t *testing.T) {
 	}
 	if got, err := svc.Get(t.Context(), iss.ID); err != nil || got.Version != iss.Version || got.Title != "t" {
 		t.Errorf("issue changed: %+v, %v", got, err)
+	}
+}
+
+// TestMirroredContentIsSyncs: an imported issue's title, body and labels
+// belong to sync (task 130.3 decision 2); a human or an agent may still set
+// kind and priority, and a local issue is editable throughout.
+func TestMirroredContentIsSyncs(t *testing.T) {
+	svc, st, pid := newService(t)
+	ctx := t.Context()
+	imported, _, err := st.UpsertRemoteIssue(ctx, store.RemoteIssue{
+		ProjectID: pid, Provider: "github", RemoteKey: "I_1", Title: "remote", State: issuestate.Open,
+	}, issuestate.Sync)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !Mirrored(imported) || !reflect.DeepEqual(Editable(imported), []string{"kind", "priority"}) {
+		t.Errorf("imported: mirrored %v editable %v", Mirrored(imported), Editable(imported))
+	}
+	title := "mine"
+	for _, by := range []issuestate.Actor{issuestate.Human, issuestate.Agent} {
+		if _, err := svc.Update(ctx, by, imported.ID, imported.Version, store.IssuePatch{Title: &title}); !errors.Is(err, ErrMirrored) {
+			t.Errorf("%s title edit = %v, want ErrMirrored", by, err)
+		}
+		if _, err := svc.SetLabels(ctx, by, imported.ID, []string{"x"}); !errors.Is(err, ErrMirrored) {
+			t.Errorf("%s label edit = %v, want ErrMirrored", by, err)
+		}
+	}
+	kind := "bug"
+	if _, err := svc.Update(ctx, issuestate.Human, imported.ID, imported.Version, store.IssuePatch{Kind: &kind}); err != nil {
+		t.Errorf("kind edit = %v", err)
+	}
+	if _, err := svc.SetLabels(ctx, issuestate.Sync, imported.ID, []string{"synced"}); err != nil {
+		t.Errorf("sync label write = %v", err)
+	}
+
+	local := mustCreate(t, svc, CreateInput{ProjectID: pid, Title: "local"})
+	if Mirrored(local) || len(Editable(local)) != 5 {
+		t.Errorf("local: mirrored %v editable %v", Mirrored(local), Editable(local))
+	}
+	labels := []string{"a"}
+	_, err = svc.Update(ctx, issuestate.Human, local.ID, local.Version, store.IssuePatch{Labels: &labels, AddLabels: []string{"b"}})
+	wantField(t, err, "labels")
+}
+
+// TestCloseDuplicateOf: duplicate_of needs reason duplicate and another issue
+// in the same project, and each refusal is a validation error.
+func TestCloseDuplicateOf(t *testing.T) {
+	svc, st, pid := newService(t)
+	ctx := t.Context()
+	a := mustCreate(t, svc, CreateInput{ProjectID: pid, Title: "a"})
+	b := mustCreate(t, svc, CreateInput{ProjectID: pid, Title: "b"})
+	other := &store.Project{Name: "p2", Path: "/p2", DefaultBranch: "main"}
+	if err := st.CreateProject(ctx, other); err != nil {
+		t.Fatal(err)
+	}
+	c := mustCreate(t, svc, CreateInput{ProjectID: other.ID, Title: "c"})
+	_, err := svc.Close(ctx, issuestate.Human, a.ID, "", &b.ID)
+	wantField(t, err, "duplicate_of")
+	_, err = svc.Close(ctx, issuestate.Human, a.ID, issuestate.Duplicate, &a.ID)
+	wantField(t, err, "duplicate_of")
+	_, err = svc.Close(ctx, issuestate.Human, a.ID, issuestate.Duplicate, &c.ID)
+	wantField(t, err, "duplicate_of")
+	closed, err := svc.Close(ctx, issuestate.Human, a.ID, issuestate.Duplicate, &b.ID)
+	if err != nil || closed.DuplicateOfIssueID == nil || *closed.DuplicateOfIssueID != b.ID {
+		t.Errorf("close = %+v, %v", closed, err)
 	}
 }

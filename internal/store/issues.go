@@ -36,6 +36,10 @@ var ErrIssueChanged = errors.New("issue changed since it was read")
 // current state — the issue analogue of a task's 409.
 var ErrInvalidIssueAction = errors.New("action not allowed in this issue state")
 
+// ErrInvalidDuplicateOf is a close whose duplicate_of names no issue in the
+// closing issue's project (task 130.3 decision 3).
+var ErrInvalidDuplicateOf = errors.New("duplicate_of must name another issue in the same project")
+
 // Issue is a vincent-owned issue (spec §5.6, task 130). Labels, Remote,
 // Active and TaskCount are read with it; Active and TaskCount are derived
 // from its root tasks and never stored (decision 3).
@@ -49,12 +53,15 @@ type Issue struct {
 	Priority           int
 	Author             string
 	ParentIssueID      *int64 // seam, never written in v1
-	Version            int64
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
-	ClosedAt           *time.Time
-	Labels             []string     // names, sorted case-insensitively
-	Remote             *IssueRemote // nil for a local issue
+	// CreatedByTaskID is the task whose agent step created the issue over
+	// MCP (§13.4); nil for every other creator.
+	CreatedByTaskID *int64
+	Version         int64
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	ClosedAt        *time.Time
+	Labels          []string     // names, sorted case-insensitively
+	Remote          *IssueRemote // nil for a local issue
 	// Active is whether any root task created from the issue is not
 	// taskstate.Settled; TaskCount is how many root tasks there are. Lanes
 	// never count (decision 5): a twenty-lane tree is one piece of work.
@@ -81,6 +88,8 @@ type IssueRemote struct {
 type Label struct {
 	ID, ProjectID                    int64
 	Name, Color, Description, Source string
+	// IssueCount is how many issues carry the label; ListLabels fills it.
+	IssueCount int
 }
 
 // IssueComment is a comment on an issue. RemoteKey is the provider's id for
@@ -98,23 +107,42 @@ type NewIssue struct {
 	Title, Body, Kind, Author string
 	Priority                  int
 	Labels                    []string // upserted into the project's catalogue, source "local"
+	CreatedByTaskID           *int64
 }
 
-// IssuePatch is UpdateIssue's change set; nil means unchanged.
+// IssuePatch is UpdateIssue's change set; nil means unchanged. Labels
+// replaces the whole set; AddLabels and RemoveLabels are a delta over the
+// current one, applied after Labels when both are given.
 type IssuePatch struct {
-	Title, Body, Kind *string
-	Priority          *int
+	Title, Body, Kind       *string
+	Priority                *int
+	Labels                  *[]string
+	AddLabels, RemoveLabels []string
 }
+
+// touchesLabels reports whether p asks for any label change.
+func (p IssuePatch) touchesLabels() bool {
+	return p.Labels != nil || len(p.AddLabels) > 0 || len(p.RemoveLabels) > 0
+}
+
+// Issue list orders.
+const (
+	IssueSortUpdated = "updated" // most recently updated first; the default
+	IssueSortCreated = "created" // newest first
+)
 
 // IssueFilter narrows ListIssues. Zero values mean "no filter".
 type IssueFilter struct {
 	ProjectID int64              // 0 = every project
 	States    []issuestate.State // empty = any
 	Label     string             // case-insensitive name, "" = any
+	Labels    []string           // every one must be carried (AND), case-insensitively
 	Kind      string             // "" = any
 	Source    string             // "" any, "local" no live remote row, else a remote row with that provider
 	Text      string             // LIKE match over title and body, "" = any
+	Sort      string             // IssueSortUpdated (default) or IssueSortCreated
 	Limit     int                // 0 = no limit
+	Offset    int                // rows to skip, after the sort
 }
 
 // labelSourceLocal is the source of a label a human or an agent created.
@@ -145,7 +173,8 @@ func settledTaskStates() []any {
 func issueSelect() string {
 	settled := placeholders(len(settledTaskStates()))
 	return `SELECT i.id, i.project_id, i.title, i.body, i.state, i.close_reason, i.duplicate_of_issue_id,
-		i.kind, i.priority, i.author, i.parent_issue_id, i.version, i.created_at, i.updated_at, i.closed_at,
+		i.kind, i.priority, i.author, i.parent_issue_id, i.created_by_task_id, i.version, i.created_at,
+		i.updated_at, i.closed_at,
 		(SELECT COUNT(*) FROM tasks t WHERE t.issue_id = i.id AND t.parent_task_id IS NULL),
 		EXISTS (SELECT 1 FROM tasks t WHERE t.issue_id = i.id AND t.parent_task_id IS NULL
 			AND t.state NOT IN ` + settled + `),
@@ -161,7 +190,7 @@ func scanIssue(r rowScanner) (*Issue, error) {
 		iss                                 Issue
 		state                               string
 		closeReason, closedAt               sql.NullString
-		dupOf, parent                       sql.NullInt64
+		dupOf, parent, createdBy            sql.NullInt64
 		created, updated                    string
 		active                              bool
 		rID, rIssueID, rProjectID, rNumber  sql.NullInt64
@@ -170,7 +199,7 @@ func scanIssue(r rowScanner) (*Issue, error) {
 		rSuppressed                         sql.NullBool
 	)
 	if err := r.Scan(&iss.ID, &iss.ProjectID, &iss.Title, &iss.Body, &state, &closeReason, &dupOf,
-		&iss.Kind, &iss.Priority, &iss.Author, &parent, &iss.Version, &created, &updated, &closedAt,
+		&iss.Kind, &iss.Priority, &iss.Author, &parent, &createdBy, &iss.Version, &created, &updated, &closedAt,
 		&iss.TaskCount, &active,
 		&rID, &rIssueID, &rProjectID, &rProvider, &rKey, &rRepo, &rNumber, &rURL,
 		&rJSON, &rRemoteUpdated, &rSynced, &rSuppressed); err != nil {
@@ -184,6 +213,9 @@ func scanIssue(r rowScanner) (*Issue, error) {
 	}
 	if parent.Valid {
 		iss.ParentIssueID = &parent.Int64
+	}
+	if createdBy.Valid {
+		iss.CreatedByTaskID = &createdBy.Int64
 	}
 	var err error
 	if iss.CreatedAt, err = parseTime(created); err != nil {
@@ -256,8 +288,13 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) ([]*Issue, error)
 			args = append(args, string(st))
 		}
 	}
-	if name := strings.TrimSpace(f.Label); name != "" {
-		// labels.name is COLLATE NOCASE, so `=` is case-insensitive.
+	for _, name := range append([]string{f.Label}, f.Labels...) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		// labels.name is COLLATE NOCASE, so `=` is case-insensitive. One
+		// EXISTS per name is the AND.
 		q += ` AND EXISTS (SELECT 1 FROM issue_labels il JOIN labels l ON l.id = il.label_id
 			WHERE il.issue_id = i.id AND l.name = ?)`
 		args = append(args, name)
@@ -279,10 +316,19 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) ([]*Issue, error)
 		q += ` AND (i.title LIKE ? ESCAPE '\' OR i.body LIKE ? ESCAPE '\')`
 		args = append(args, like, like)
 	}
-	q += ` ORDER BY i.updated_at DESC, i.id DESC`
-	if f.Limit > 0 {
-		q += ` LIMIT ?`
-		args = append(args, f.Limit)
+	if f.Sort == IssueSortCreated {
+		q += ` ORDER BY i.created_at DESC, i.id DESC`
+	} else {
+		q += ` ORDER BY i.updated_at DESC, i.id DESC`
+	}
+	switch {
+	case f.Limit > 0:
+		q += ` LIMIT ? OFFSET ?`
+		args = append(args, f.Limit, max(f.Offset, 0))
+	case f.Offset > 0:
+		// SQLite has no OFFSET without LIMIT; -1 is its "no limit".
+		q += ` LIMIT -1 OFFSET ?`
+		args = append(args, f.Offset)
 	}
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -404,30 +450,53 @@ func checkActor(by issuestate.Actor) error {
 // after the commit. fn returns a nil event for a write that changed nothing;
 // then nothing is published, which is notify's own rule.
 func (s *Store) writeIssue(ctx context.Context, fn func(*sql.Tx) (*Event, error)) error {
-	var ev *Event
-	err := s.withTx(ctx, func(tx *sql.Tx) error {
+	return s.writeIssueEvents(ctx, func(tx *sql.Tx) ([]*Event, error) {
 		e, err := fn(tx)
+		return []*Event{e}, err
+	})
+}
+
+// writeIssueEvents is writeIssue for a write that announces more than one
+// thing — a patch that edits fields and labels at once. Nil entries are
+// skipped.
+func (s *Store) writeIssueEvents(ctx context.Context, fn func(*sql.Tx) ([]*Event, error)) error {
+	var evs []*Event
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		es, err := fn(tx)
 		if err != nil {
 			return err
 		}
-		if e != nil {
+		for _, e := range es {
+			if e == nil {
+				continue
+			}
 			if err := appendEventTx(ctx, tx, e); err != nil {
 				return err
 			}
+			evs = append(evs, e)
 		}
-		ev = e
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-	s.notify(ev)
+	for _, e := range evs {
+		s.notify(e)
+	}
 	return nil
 }
 
 // CreateIssue inserts a local issue with its labels and writes issue.created
 // in the same transaction.
 func (s *Store) CreateIssue(ctx context.Context, in NewIssue, by issuestate.Actor) (*Issue, error) {
+	return s.CreateIssueWithKey(ctx, in, by, nil)
+}
+
+// CreateIssueWithKey is CreateIssue recording key, when non-nil, in the same
+// transaction (§13.1, task 130.3): the issue and its key commit together or
+// not at all. A key another request already recorded is
+// ErrIdempotencyKeyExists, and nothing is created.
+func (s *Store) CreateIssueWithKey(ctx context.Context, in NewIssue, by issuestate.Actor, key *IdempotencyKey) (*Issue, error) {
 	if err := checkActor(by); err != nil {
 		return nil, err
 	}
@@ -436,13 +505,19 @@ func (s *Store) CreateIssue(ctx context.Context, in NewIssue, by issuestate.Acto
 		if err := projectExistsTx(ctx, tx, in.ProjectID); err != nil {
 			return nil, err
 		}
+		now := time.Now()
 		var err error
-		id, err = insertIssueTx(ctx, tx, in, issuestate.Open, "", time.Now())
+		id, err = insertIssueTx(ctx, tx, in, issuestate.Open, "", now)
 		if err != nil {
 			return nil, err
 		}
 		if err := replaceIssueLabelsTx(ctx, tx, in.ProjectID, id, in.Labels, labelSourceLocal); err != nil {
 			return nil, err
+		}
+		if key != nil {
+			if err := insertIssueIdempotencyKeyTx(ctx, tx, key, id, now); err != nil {
+				return nil, err
+			}
 		}
 		return issueEvent(EventIssueCreated, in.ProjectID, id, by, nil)
 	})
@@ -471,10 +546,10 @@ func insertIssueTx(ctx context.Context, tx *sql.Tx, in NewIssue, state issuestat
 	}
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO issues (project_id, title, body, state, close_reason, kind, priority, author,
-			created_at, updated_at, closed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			created_by_task_id, created_at, updated_at, closed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		in.ProjectID, in.Title, in.Body, string(state), nullString(string(reason)), in.Kind, in.Priority,
-		in.Author, formatTime(now), formatTime(now), closedAt)
+		in.Author, in.CreatedByTaskID, formatTime(now), formatTime(now), closedAt)
 	if err != nil {
 		return 0, fmt.Errorf("insert issue: %w", err)
 	}
@@ -486,13 +561,16 @@ func insertIssueTx(ctx context.Context, tx *sql.Tx, in NewIssue, state issuestat
 }
 
 // UpdateIssue applies p as a compare-and-set on version: a caller holding a
-// stale version gets ErrIssueChanged and changes nothing. A patch that
-// changes nothing writes nothing — no version bump, no event.
+// stale version gets ErrIssueChanged and changes nothing. Field edits and
+// label changes land in one transaction under that one check and bump the
+// version once (task 130.3), announcing issue.updated for the fields and
+// issue.labels_changed for the labels — each only when it moved. A patch
+// that changes nothing writes nothing — no version bump, no event.
 func (s *Store) UpdateIssue(ctx context.Context, id, version int64, p IssuePatch, by issuestate.Actor) (*Issue, error) {
 	if err := checkActor(by); err != nil {
 		return nil, err
 	}
-	err := s.writeIssue(ctx, func(tx *sql.Tx) (*Event, error) {
+	err := s.writeIssueEvents(ctx, func(tx *sql.Tx) ([]*Event, error) {
 		cur, err := getIssue(ctx, tx, id)
 		if err != nil {
 			return nil, err
@@ -518,7 +596,13 @@ func (s *Store) UpdateIssue(ctx context.Context, id, version int64, p IssuePatch
 			next.Priority = *p.Priority
 			changed = append(changed, "priority")
 		}
-		if len(changed) == 0 {
+		var labels []string
+		labelsMoved := false
+		if p.touchesLabels() {
+			labels = applyLabelPatch(cur.Labels, p)
+			labelsMoved = !sameLabelSet(cur.Labels, labels)
+		}
+		if len(changed) == 0 && !labelsMoved {
 			return nil, nil
 		}
 		res, err := tx.ExecContext(ctx, `
@@ -533,8 +617,23 @@ func (s *Store) UpdateIssue(ctx context.Context, id, version int64, p IssuePatch
 		} else if n == 0 {
 			return nil, fmt.Errorf("issue %d: %w", id, ErrIssueChanged)
 		}
-		slices.Sort(changed)
-		return issueEvent(EventIssueUpdated, cur.ProjectID, id, by, map[string]any{"changed": changed})
+		var evs []*Event
+		if len(changed) > 0 {
+			slices.Sort(changed)
+			ev, err := issueEvent(EventIssueUpdated, cur.ProjectID, id, by, map[string]any{"changed": changed})
+			if err != nil {
+				return nil, err
+			}
+			evs = append(evs, ev)
+		}
+		if labelsMoved {
+			ev, err := replaceLabelsAndAnnounceTx(ctx, tx, cur, labels, by)
+			if err != nil {
+				return nil, err
+			}
+			evs = append(evs, ev)
+		}
+		return evs, nil
 	})
 	if err != nil {
 		return nil, err
@@ -542,12 +641,31 @@ func (s *Store) UpdateIssue(ctx context.Context, id, version int64, p IssuePatch
 	return s.GetIssue(ctx, id)
 }
 
+// applyLabelPatch returns the label set p leaves: Labels replaces cur when
+// set, then AddLabels joins and RemoveLabels leaves, case-insensitively.
+func applyLabelPatch(cur []string, p IssuePatch) []string {
+	base := cur
+	if p.Labels != nil {
+		base = *p.Labels
+	}
+	out := normalizeLabelNames(append(slices.Clone(base), p.AddLabels...))
+	if len(p.RemoveLabels) == 0 {
+		return out
+	}
+	drop := make(map[string]bool, len(p.RemoveLabels))
+	for _, n := range p.RemoveLabels {
+		drop[strings.ToLower(strings.TrimSpace(n))] = true
+	}
+	return slices.DeleteFunc(out, func(n string) bool { return drop[strings.ToLower(n)] })
+}
+
 // TransitionIssue moves an issue through issuestate inside one transaction:
 // the state is read, normalized and judged there, so two racing transitions
-// cannot both pass. Closing records the reason and the time; reopening clears
-// both, and the duplicate pointer with them. A sync no-op returns the issue
-// unchanged and announces nothing.
-func (s *Store) TransitionIssue(ctx context.Context, id int64, action issuestate.Action, reason issuestate.Reason, by issuestate.Actor) (*Issue, error) {
+// cannot both pass. Closing records the reason and the time, and — for a
+// duplicate — the issue it duplicates, which must be another issue in the
+// same project (ErrInvalidDuplicateOf); reopening clears all three. A sync
+// no-op returns the issue unchanged and announces nothing.
+func (s *Store) TransitionIssue(ctx context.Context, id int64, action issuestate.Action, reason issuestate.Reason, duplicateOf *int64, by issuestate.Actor) (*Issue, error) {
 	if err := checkActor(by); err != nil {
 		return nil, err
 	}
@@ -565,14 +683,23 @@ func (s *Store) TransitionIssue(ctx context.Context, id int64, action issuestate
 		if err != nil {
 			return nil, fmt.Errorf("issue %d: %w", id, err)
 		}
+		if duplicateOf != nil {
+			if to != issuestate.Closed || resolved != issuestate.Duplicate {
+				return nil, fmt.Errorf("issue %d: duplicate_of without a duplicate close: %w", id, ErrInvalidDuplicateOf)
+			}
+			if err := checkDuplicateOfTx(ctx, tx, cur, *duplicateOf); err != nil {
+				return nil, err
+			}
+		}
 		if noop {
 			return nil, nil
 		}
 		now := formatTime(time.Now())
 		if to == issuestate.Closed {
 			_, err = tx.ExecContext(ctx, `
-				UPDATE issues SET state = ?, close_reason = ?, closed_at = ?, version = version + 1, updated_at = ?
-				WHERE id = ?`, string(to), string(resolved), now, now, id)
+				UPDATE issues SET state = ?, close_reason = ?, closed_at = ?, duplicate_of_issue_id = ?,
+					version = version + 1, updated_at = ?
+				WHERE id = ?`, string(to), string(resolved), now, duplicateOf, now, id)
 		} else {
 			_, err = tx.ExecContext(ctx, `
 				UPDATE issues SET state = ?, close_reason = NULL, closed_at = NULL, duplicate_of_issue_id = NULL,
@@ -582,14 +709,62 @@ func (s *Store) TransitionIssue(ctx context.Context, id int64, action issuestate
 		if err != nil {
 			return nil, fmt.Errorf("transition issue %d: %w", id, err)
 		}
-		return issueEvent(EventIssueStateChanged, cur.ProjectID, id, by, map[string]any{
-			"from": string(from), "to": string(to), "reason": string(resolved),
-		})
+		extra := map[string]any{"from": string(from), "to": string(to), "reason": string(resolved)}
+		if duplicateOf != nil {
+			extra["duplicate_of"] = *duplicateOf
+		}
+		return issueEvent(EventIssueStateChanged, cur.ProjectID, id, by, extra)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return s.GetIssue(ctx, id)
+}
+
+// checkDuplicateOfTx refuses a duplicate_of that names the issue itself, no
+// issue, or an issue in another project.
+func checkDuplicateOfTx(ctx context.Context, tx *sql.Tx, cur *Issue, target int64) error {
+	if target == cur.ID {
+		return fmt.Errorf("issue %d cannot duplicate itself: %w", cur.ID, ErrInvalidDuplicateOf)
+	}
+	var projectID int64
+	err := tx.QueryRowContext(ctx, `SELECT project_id FROM issues WHERE id = ?`, target).Scan(&projectID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("issue %d does not exist: %w", target, ErrInvalidDuplicateOf)
+	}
+	if err != nil {
+		return fmt.Errorf("read issue %d: %w", target, err)
+	}
+	if projectID != cur.ProjectID {
+		return fmt.Errorf("issue %d is in project %d, not %d: %w", target, projectID, cur.ProjectID, ErrInvalidDuplicateOf)
+	}
+	return nil
+}
+
+// ActiveIssueTaskIDs returns the ids of the issue's root tasks that are not
+// settled, lowest first — what Issue.Active summarizes (decision 5).
+func (s *Store) ActiveIssueTaskIDs(ctx context.Context, issueID int64) ([]int64, error) {
+	settled := settledTaskStates()
+	//nolint:gosec // G202: placeholders() emits bind markers only; every value binds
+	q := `SELECT id FROM tasks WHERE issue_id = ? AND parent_task_id IS NULL
+		AND state NOT IN ` + placeholders(len(settled)) + ` ORDER BY id`
+	rows, err := s.db.QueryContext(ctx, q, append([]any{issueID}, settled...)...)
+	if err != nil {
+		return nil, fmt.Errorf("list issue %d tasks: %w", issueID, err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan issue task: %w", err)
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list issue %d tasks: %w", issueID, err)
+	}
+	return out, nil
 }
 
 // DeleteIssue deletes an issue in any state (decision 6). Its remote row
