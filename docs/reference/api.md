@@ -30,11 +30,11 @@ The daemon serves REST + SSE on loopback. Every client — the TUI, the
 - **Discovery:** read `{data_dir}/daemon.json` for the port, then
   `GET /v1/health`.
 - **Versioning:** path-prefixed (`/v1`), additive changes only within a version.
-- **`Idempotency-Key`** (optional, `POST /v1/tasks` only) makes a create
-  replayable: if the daemon committed the task but you never saw the response,
-  re-sending the *same body* under the *same key* returns that task instead of
-  making a second one. Up to 255 bytes of printable ASCII; anything else is
-  `400 validation_failed`. Keys are scoped to the route and kept for **24
+- **`Idempotency-Key`** (optional, `POST /v1/tasks` and `POST /v1/issues`
+  only) makes a create replayable: if the daemon committed the task or issue but
+  you never saw the response, re-sending the *same body* under the *same key*
+  returns it instead of making a second one. Up to 255 bytes of printable
+  ASCII; anything else is `400 validation_failed`. Keys are scoped to the route and kept for **24
   hours**, which is fixed rather than configurable. Every other mutating route
   is already replay-safe and ignores the header — see
   [`POST /v1/tasks`](#tasks) for what a replay returns.

@@ -338,7 +338,7 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/tasks" \
   -d '{"project_id":1,"workflow":"feature-pr","title":"Add a health endpoint"}' | jq
 ```
 
-`Idempotency-Key` is optional, and this is the one request worth setting it on.
+`Idempotency-Key` is optional, and this is the request worth setting it on.
 Creating a task inserts a row, claims a branch and wakes the scheduler, so a
 create that commits and then loses its response — a timeout, a dropped
 connection, a script killed mid-`curl` — makes a second task, a second worktree
