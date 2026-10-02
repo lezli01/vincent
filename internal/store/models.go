@@ -211,6 +211,16 @@ type Task struct {
 	// which is why a step render still cannot fail for an external reason
 	// (§8.4). A fan-out lane inherits its parent's copy verbatim.
 	GitHubIssue *github.Issue
+	// IssueID is the issue this task was created from (§5.6, task 130
+	// decision 5): the authoritative edge to issues.id, read backwards to
+	// answer "which tasks came from this issue". nil when there is none, or
+	// once the issue was deleted — the column is ON DELETE SET NULL, so a
+	// task outlives its issue (decision 6). A fan-out lane inherits it.
+	IssueID *int64
+	// Issue is that issue frozen at creation, the snapshot templates render
+	// (decision 5, keeping task 035 decision 3). It is never re-fetched and
+	// survives the issue's deletion; a fan-out lane inherits a copy.
+	Issue *IssueSnapshot
 	// GitHubPull is the pull request this task is linked to (§5.3, task 052),
 	// nil for a task no pull request has ever matched.
 	//

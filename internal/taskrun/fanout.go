@@ -697,6 +697,11 @@ func (r *Runner) laneTask(env *stepEnv, lane workflow.Lane, order int) (*store.T
 		// lane re-fetches anything: `.Issue` is a property of the work, and
 		// a lane is doing part of the parent's work.
 		GitHubIssue: cloneIssue(env.task.GitHubIssue),
+		// Both halves of the issue link, likewise (task 130 decision 5): the
+		// pointer and the snapshot. Only the root counts as the issue's
+		// task; the lane carries the link so `.Issue` renders the same.
+		IssueID: cloneInt64(env.task.IssueID),
+		Issue:   env.task.Issue.Clone(),
 		// workflow_name records where the lane came from: the registry name
 		// for a resolved lane, the synthetic path for an inline one.
 		WorkflowName:     workflow.LaneWorkflowName(lane, env.wf.Name, env.step.ID),

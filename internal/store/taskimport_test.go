@@ -350,3 +350,79 @@ func TestExportTaskNotFound(t *testing.T) {
 		t.Fatalf("ExportTask(42) = %v, want ErrNotFound", err)
 	}
 }
+
+// TestImportTaskKeepsAnIssueLinkOnlyIntoItsProject (task 130): `issue_id`
+// survives an import only when that issue is live in the project the task
+// lands in; an issue that is missing, or that belongs to another project
+// under the same global id, leaves the pointer NULL. `issue_json` is copied
+// verbatim in every case — the snapshot outlives the issue.
+func TestImportTaskKeepsAnIssueLinkOnlyIntoItsProject(t *testing.T) {
+	const snap = `{"id":1,"title":"the issue","state":"open"}`
+	source := func(t *testing.T) *TaskExport {
+		t.Helper()
+		src := openTest(t)
+		p := testProject(t, src, "repo")
+		is := testIssue(t, src, p.ID, "the issue")
+		task := newArchivedTask(t, src, p.ID, "restore me")
+		if _, err := src.db.ExecContext(t.Context(),
+			`UPDATE tasks SET issue_id = ?, issue_json = ? WHERE id = ?`, is.ID, snap, task.ID); err != nil {
+			t.Fatalf("link issue: %v", err)
+		}
+		exp, err := src.ExportTask(t.Context(), task.ID)
+		if err != nil {
+			t.Fatalf("ExportTask: %v", err)
+		}
+		if id, ok := exp.Task.Int64("issue_id"); !ok || id != 1 {
+			t.Fatalf("exported issue_id = %v, want 1", exp.Task.Get("issue_id"))
+		}
+		return exp
+	}
+
+	for _, tc := range []struct {
+		name string
+		// arrange returns the issue id the imported task must keep, or 0.
+		arrange func(t *testing.T, live *Store) int64
+	}{
+		{"missing", func(t *testing.T, live *Store) int64 {
+			testProject(t, live, "repo")
+			return 0
+		}},
+		{"in another project", func(t *testing.T, live *Store) int64 {
+			testProject(t, live, "repo")
+			other := testProject(t, live, "other")
+			if is := testIssue(t, live, other.ID, "someone else's"); is.ID != 1 {
+				t.Fatalf("the other project's issue is %d, want 1", is.ID)
+			}
+			return 0
+		}},
+		{"in the target project", func(t *testing.T, live *Store) int64 {
+			p := testProject(t, live, "repo")
+			return testIssue(t, live, p.ID, "the issue").ID
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			exp := source(t)
+			live := openTest(t)
+			want := tc.arrange(t, live)
+			if _, err := live.ImportTask(t.Context(), exp, ImportOptions{}); err != nil {
+				t.Fatalf("ImportTask: %v", err)
+			}
+			got, err := live.GetTask(t.Context(), 1)
+			if err != nil {
+				t.Fatalf("GetTask: %v", err)
+			}
+			switch {
+			case want == 0 && got.IssueID != nil:
+				t.Errorf("issue_id = %d, want NULL", *got.IssueID)
+			case want != 0 && (got.IssueID == nil || *got.IssueID != want):
+				t.Errorf("issue_id = %v, want %d", got.IssueID, want)
+			}
+			if raw := exp.Task.String("issue_json"); raw != snap {
+				t.Fatalf("exported issue_json = %q", raw)
+			}
+			if got.Issue == nil || got.Issue.ID != 1 || got.Issue.Title != "the issue" {
+				t.Errorf("issue snapshot = %+v, want the backed-up one", got.Issue)
+			}
+		})
+	}
+}

@@ -161,6 +161,12 @@ func (s *Store) DeleteProjectCascade(ctx context.Context, id int64) (err error) 
 		}
 		return fmt.Errorf("delete project %d: %w", id, err)
 	}
+	// The issue tables (issues, issue_remotes, labels and, through them,
+	// issue_labels and issue_comments) go by ON DELETE CASCADE from the
+	// project row below (migration 0036). Tasks are deleted explicitly
+	// first, so tasks.issue_id's SET NULL never races the issue delete: by
+	// the time the issues go, no task of this project points at one. Keep
+	// that order.
 	for _, q := range []string{
 		`DELETE FROM events WHERE project_id = ?1 OR task_id IN (SELECT id FROM tasks WHERE project_id = ?1)`,
 		`DELETE FROM step_runs WHERE task_id IN (SELECT id FROM tasks WHERE project_id = ?1)`,

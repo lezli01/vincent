@@ -185,11 +185,16 @@ type ImportResult struct {
 // nothing references `step_runs.id`, and transcript files are named by
 // step index and attempt, so a renumber rewrites nothing else.
 //
-// Every other column is copied as it is, with four exceptions: `archived_at`
+// Every other column is copied as it is, with five exceptions: `archived_at`
 // is stamped now, so §17 retention restarts rather than pruning what was just
 // restored (decision 5); `worktree_path` is NULL, since backups carry no
-// worktrees; `project_id` follows opts.ProjectID; and `created_by_task_id` is
-// NULL when that task is not live — its own ON DELETE SET NULL outcome.
+// worktrees; `project_id` follows opts.ProjectID; `created_by_task_id` is
+// NULL when that task is not live — its own ON DELETE SET NULL outcome; and
+// `issue_id` is NULL unless that issue is live in the project the task lands
+// in. An issue of another project is no link at all: issue ids are global,
+// and keeping one would point the task at somebody else's work. `issue_json`
+// is copied verbatim either way — the snapshot is exactly what survives an
+// issue's deletion (task 130 decision 6).
 //
 // `events` rows are not copied (decision 6). A delete keeps them, and their id
 // is the SSE cursor, so copies could only arrive as years-old history replayed
@@ -287,6 +292,15 @@ func (s *Store) ImportTask(ctx context.Context, exp *TaskExport, opts ImportOpti
 			task.Set("created_by_task_id", nil)
 		}
 	}
+	if issue, ok := task.Int64("issue_id"); ok {
+		var live bool
+		if live, err = issueInProjectTx(ctx, tx, issue, projectID); err != nil {
+			return nil, fmt.Errorf("import task %d: %w", id, err)
+		}
+		if !live {
+			task.Set("issue_id", nil)
+		}
+	}
 
 	renumber, err := stepRunIDsTaken(ctx, tx, exp.StepRuns)
 	if err != nil {
@@ -342,6 +356,15 @@ func (s *Store) ImportTask(ctx context.Context, exp *TaskExport, opts ImportOpti
 func taskExistsTx(ctx context.Context, tx *sql.Tx, id int64) (bool, error) {
 	var one int
 	err := tx.QueryRowContext(ctx, `SELECT 1 FROM tasks WHERE id = ?`, id).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func issueInProjectTx(ctx context.Context, tx *sql.Tx, id, projectID int64) (bool, error) {
+	var one int
+	err := tx.QueryRowContext(ctx, `SELECT 1 FROM issues WHERE id = ? AND project_id = ?`, id, projectID).Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}

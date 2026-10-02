@@ -20,7 +20,7 @@ const taskColumns = `id, project_id, title, description, fields_json, workflow_n
 	pending_repair_json, pending_follow_up_json, pending_input_json, admit_not_before, queued_reason,
 	parent_task_id, parent_step_index, lane_id, lane_order, settled_children_watermark,
 	github_issue_json, github_pull_json,
-	workflow_origin_json, created_by_task_id,
+	workflow_origin_json, created_by_task_id, issue_id, issue_json,
 	created_at, updated_at, started_at, finished_at, archived_at`
 
 // slotStates is the set of states that occupy a concurrency slot (spec §11),
@@ -175,6 +175,10 @@ func insertTaskTx(
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)
 	}
+	snapJSON, err := marshalIssueSnapshot(t.Issue)
+	if err != nil {
+		return nil, fmt.Errorf("insert task: %w", err)
+	}
 	pullJSON, err := marshalGitHubPull(t.GitHubPull)
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)
@@ -193,9 +197,9 @@ func insertTaskTx(
 			restricted, max_task_cost_usd,
 			state, current_step, block_reason, admit_not_before, queued_reason,
 			parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json,
-			github_pull_json, workflow_origin_json, created_by_task_id,
+			github_pull_json, workflow_origin_json, created_by_task_id, issue_id, issue_json,
 			created_at, updated_at, started_at, finished_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ProjectID, t.Title, t.Description, fields, t.WorkflowName, t.WorkflowSnapshot,
 		t.BaseBranch, t.BranchName, t.AdoptedBranch, nullString(t.WorktreePath), nullString(t.BaseSHA), refreshJSON, t.Priority,
 		nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
@@ -208,7 +212,7 @@ func insertTaskTx(
 		// between them (task 003).
 		formatTimePtr(t.AdmitNotBefore), nullString(t.QueuedReason),
 		t.ParentTaskID, t.ParentStepIndex, nullString(t.LaneID), t.LaneOrder, issueJSON,
-		pullJSON, originJSON, t.CreatedByTaskID,
+		pullJSON, originJSON, t.CreatedByTaskID, t.IssueID, snapJSON,
 		formatTime(t.CreatedAt), formatTime(t.UpdatedAt),
 		formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt))
 	if err != nil {
@@ -252,6 +256,11 @@ func insertTaskTx(
 	}
 	if t.WorkflowOrigin != nil {
 		created["workflow_origin"] = t.WorkflowOrigin
+	}
+	// Omitted, not null, for a task with no issue — the shape
+	// workflow_origin already has.
+	if t.IssueID != nil {
+		created["issue_id"] = *t.IssueID
 	}
 	payload, err := json.Marshal(created)
 	if err != nil {
@@ -1043,7 +1052,8 @@ func scanTask(r rowScanner) (*Task, error) {
 		watermark                      sql.NullInt64
 		githubIssue, githubPull        sql.NullString
 		workflowOrigin                 sql.NullString
-		createdBy                      sql.NullInt64
+		createdBy, issueID             sql.NullInt64
+		issueSnap                      sql.NullString
 		created, updated               string
 		started, finished, archived    sql.NullString
 	)
@@ -1056,7 +1066,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		&pendingRepair, &pendingFollowUp, &pendingInput, &admitNotBefore, &queuedWhy,
 		&parentID, &parentStep, &laneID, &laneOrder, &watermark,
 		&githubIssue, &githubPull, &workflowOrigin,
-		&createdBy,
+		&createdBy, &issueID, &issueSnap,
 		&created, &updated, &started, &finished, &archived); err != nil {
 		return nil, err
 	}
@@ -1071,6 +1081,10 @@ func scanTask(r rowScanner) (*Task, error) {
 	if createdBy.Valid {
 		id := createdBy.Int64
 		t.CreatedByTaskID = &id
+	}
+	if issueID.Valid {
+		id := issueID.Int64
+		t.IssueID = &id
 	}
 	t.LaneID = laneID.String
 	t.LaneOrder = int(laneOrder.Int64)
@@ -1116,6 +1130,11 @@ func scanTask(r rowScanner) (*Task, error) {
 		}
 		t.GitHubIssue = &issue
 	}
+	snap, err := unmarshalIssueSnapshot(issueSnap.String, issueSnap.Valid)
+	if err != nil {
+		return nil, err
+	}
+	t.Issue = snap
 	if githubPull.Valid && githubPull.String != "" {
 		var link github.PullLink
 		if err := json.Unmarshal([]byte(githubPull.String), &link); err != nil {
@@ -1139,7 +1158,6 @@ func scanTask(r rowScanner) (*Task, error) {
 	if len(t.Fields) == 0 {
 		t.Fields = nil
 	}
-	var err error
 	if t.RetryCursorAt, err = parseTimePtr(retryCursor); err != nil {
 		return nil, err
 	}
