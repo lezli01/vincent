@@ -120,7 +120,9 @@ func (s *Server) replayTaskCreate(w http.ResponseWriter, r *http.Request, key, s
 		s.internalError(w, "get task for idempotent replay", err)
 		return true
 	}
-	writeJSON(w, http.StatusCreated, toTaskResponse(task, s.snaps.get(task.ID, task.WorkflowSnapshot)))
+	resp := toTaskResponse(task, s.snaps.get(task.ID, task.WorkflowSnapshot))
+	s.overlayLiveIssue(r.Context(), &resp, task)
+	writeJSON(w, http.StatusCreated, resp)
 	return true
 }
 

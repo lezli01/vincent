@@ -68,6 +68,10 @@ type Issue struct {
 	AvailableActions []string   `json:"available_actions,omitempty"`
 	Tasks            IssueTasks `json:"tasks"`
 	Editable         []string   `json:"editable,omitempty"`
+	// Prefill is what CreateTaskRequest.IssueID would fill in under the
+	// workflow GetIssue named (task 130.7); nil when it named none. The
+	// daemon computes it with the function the create runs.
+	Prefill *GitHubPrefill `json:"prefill,omitempty"`
 }
 
 // IssueListOptions filters ListIssues. Zero values mean "no filter".
@@ -178,9 +182,16 @@ func (c *Client) CreateIssue(ctx context.Context, req CreateIssueRequest, idempo
 }
 
 // GetIssue fetches one issue in full.
-func (c *Client) GetIssue(ctx context.Context, id int64) (Issue, error) {
+//
+// A non-empty workflow asks for Issue.Prefill as well: what a task created
+// from this issue with that workflow would be prefilled with.
+func (c *Client) GetIssue(ctx context.Context, id int64, workflow string) (Issue, error) {
 	var out Issue
-	if err := c.get(ctx, fmt.Sprintf("/v1/issues/%d", id), &out); err != nil {
+	path := fmt.Sprintf("/v1/issues/%d", id)
+	if workflow != "" {
+		path += "?" + url.Values{"workflow": {workflow}}.Encode()
+	}
+	if err := c.get(ctx, path, &out); err != nil {
 		return Issue{}, err
 	}
 	return out, nil

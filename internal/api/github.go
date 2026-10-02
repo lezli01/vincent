@@ -334,9 +334,10 @@ func foldPrefill(req *taskCreateRequest, prefill githubPrefill) string {
 // (task 130 decisions 7 and 8): internal/issues maps the snapshot onto
 // candidates, and this keeps the half that needs the workflow — a candidate
 // the declaration would reject is dropped, never offered. It reads only the
-// snapshot, so it makes no GitHub call even for an imported issue. 130.7
-// wires it into POST /v1/tasks and its preview; until then the legacy
-// `github_issue` path above is the only one a request reaches.
+// snapshot, so it makes no GitHub call even for an imported issue. POST
+// /v1/tasks' `issue_id` (applyVincentIssue) and the GET /v1/issues/{id}
+// preview both call it, which is what makes the preview what the create
+// stores (task 130.7).
 func vincentIssuePrefill(snap *store.IssueSnapshot, wf *workflow.Workflow) githubPrefill {
 	var decls []issues.FieldDecl
 	if wf != nil {

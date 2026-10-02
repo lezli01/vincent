@@ -404,6 +404,11 @@ type TaskFilter struct {
 	// ParentID lists exactly one parent's lanes, in merge order. It implies
 	// nothing about Children — naming a parent *is* asking for children.
 	ParentID int64
+	// IssueID lists the tasks created from one issue (§5.6, task 130.7). It
+	// narrows like any other filter and leaves Children alone, so the default
+	// list is the issue's root tasks: lanes inherit the link (decision 5) but
+	// are never counted as the issue's work.
+	IssueID int64
 }
 
 // ChildrenFilter decides whether fan-out lanes are listed (task 014).
@@ -428,6 +433,10 @@ func (s *Store) ListTasks(ctx context.Context, f TaskFilter) ([]Task, error) {
 	if f.State != "" {
 		where = append(where, "state = ?")
 		args = append(args, string(f.State))
+	}
+	if f.IssueID != 0 {
+		where = append(where, "issue_id = ?")
+		args = append(args, f.IssueID)
 	}
 	switch {
 	case f.ParentID != 0:

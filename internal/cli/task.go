@@ -49,6 +49,7 @@ func newTaskAddCmd() *cobra.Command {
 		fieldsFile  string
 		githubIssue int
 		githubPull  int
+		issueID     int64
 		paused      bool
 		restricted  bool
 		maxCostUSD  float64
@@ -114,6 +115,13 @@ func newTaskAddCmd() *cobra.Command {
 					n := githubPull
 					req.GitHubPull = &n
 				}
+				// A vincent issue (task 130.7), resolved daemon-side for the
+				// same reason: the id and nothing else, so the prefill is the
+				// one GET /v1/issues/{id}?workflow= previews.
+				if cmd.Flags().Changed("issue") {
+					n := issueID
+					req.IssueID = &n
+				}
 				// The three create-time limits (task 096 decisions 9, 17,
 				// 18) are sent only when named, so a plain `task add` body
 				// is byte-for-byte what it was before they existed.
@@ -142,7 +150,14 @@ func newTaskAddCmd() *cobra.Command {
 				// Which issue the daemon actually resolved, said out loud: the
 				// flag carried a number, and the title it produced came from
 				// somewhere the user cannot see from here.
-				if summary := githubIssueSummary(t.GitHubIssue); summary != "" {
+				if summary := taskIssueSummary(t.Issue); summary != "" {
+					if _, err := fmt.Fprintln(out, "  "+summary); err != nil {
+						return err
+					}
+				}
+				// A task from an imported issue also derives github_issue;
+				// the line above already named it.
+				if summary := githubIssueSummary(t.GitHubIssue); t.Issue == nil && summary != "" {
 					if _, err := fmt.Fprintln(out, "  "+summary); err != nil {
 						return err
 					}
@@ -199,6 +214,8 @@ func newTaskAddCmd() *cobra.Command {
 	cmd.Flags().IntVar(&githubPull, "github-pull", 0,
 		"Create the task from this GitHub pull request and run it on that pull request's head branch; "+
 			"explicit flags win over what it would fill in, except --branch-name, which the pull request decides")
+	cmd.Flags().Int64Var(&issueID, "issue", 0,
+		"Create the task from this vincent issue and link it; explicit flags win over what it would fill in")
 	cmd.Flags().BoolVar(&paused, "paused", false,
 		"Create the task paused; it starts only when resumed (`vincent task resume`)")
 	cmd.Flags().BoolVar(&restricted, "restricted", false,
@@ -209,6 +226,11 @@ func newTaskAddCmd() *cobra.Command {
 	// Both would prefill the same title and description from different
 	// sources, and there is no defensible order; the daemon refuses it too.
 	cmd.MarkFlagsMutuallyExclusive("github-issue", "github-pull")
+	// --issue is a third prefill source, refused beside both for the same
+	// reason. Beside --github-issue it is refused until task 130.11 retires
+	// that flag; the daemon refuses both pairs too.
+	cmd.MarkFlagsMutuallyExclusive("issue", "github-pull")
+	cmd.MarkFlagsMutuallyExclusive("issue", "github-issue")
 	// A pull-request task already runs on the pull request's head branch, so
 	// asking for the adopt mode on top of it asks which of two answers to one
 	// question wins; the daemon refuses it too.
@@ -216,7 +238,7 @@ func newTaskAddCmd() *cobra.Command {
 	// One of the two, not --title alone: an issue supplies the title, which is
 	// the whole point of naming one (task 035). Requiring both would make
 	// `--github-issue` a decoration on a title the user had to retype.
-	cmd.MarkFlagsOneRequired("title", "github-issue", "github-pull")
+	cmd.MarkFlagsOneRequired("title", "github-issue", "github-pull", "issue")
 	jsonFlag(cmd)
 	return cmd
 }

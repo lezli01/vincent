@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/github/githubtest"
 	"github.com/lezli01/vincent/internal/testrepo"
@@ -243,6 +244,64 @@ func TestGitHubIssueCommandsAgainstLiveDaemon(t *testing.T) {
 		}
 		if created.GitHubIssue == nil || created.GitHubIssue.Number != 200 {
 			t.Errorf("snapshot = %+v, want #200 linked either way", created.GitHubIssue)
+		}
+	})
+
+	// `--issue` (task 130.7): a vincent issue, resolved daemon-side from the
+	// id alone, linked, and confirmed by name.
+	t.Run("task add --issue links and prefills", func(t *testing.T) {
+		c, err := apiclient.Discover(dataDir)
+		if err != nil {
+			t.Fatalf("discover: %v", err)
+		}
+		iss, err := c.CreateIssue(t.Context(), apiclient.CreateIssueRequest{
+			ProjectID: 1, Title: "Lock file leaks", Body: "Seen on start.",
+		}, "")
+		if err != nil {
+			t.Fatalf("CreateIssue: %v", err)
+		}
+		id := strconv.FormatInt(iss.ID, 10)
+		out, code := runVincentGH(t, dataDir, cfgDir, ghDir, "success",
+			"task", "add", "--project", "1", "--issue", id, "--json")
+		if code != 0 {
+			t.Fatalf("task add --issue: code %d, out %q", code, out)
+		}
+		var created struct {
+			Title       string `json:"title"`
+			Description string `json:"description"`
+			Issue       *struct {
+				ID int64 `json:"id"`
+			} `json:"issue"`
+		}
+		if err := json.Unmarshal([]byte(out), &created); err != nil {
+			t.Fatalf("task add --json is not JSON: %v (%q)", err, out)
+		}
+		if created.Title != iss.Title || created.Description != iss.Body {
+			t.Errorf("created %q / %q, want the issue's", created.Title, created.Description)
+		}
+		if created.Issue == nil || created.Issue.ID != iss.ID {
+			t.Errorf("issue = %+v, want %d linked", created.Issue, iss.ID)
+		}
+		out, code = runVincentGH(t, dataDir, cfgDir, ghDir, "success",
+			"task", "add", "--project", "1", "--issue", id, "--title", "My own framing")
+		if code != 0 {
+			t.Fatalf("task add --issue --title: code %d, out %q", code, out)
+		}
+		if !strings.Contains(out, "My own framing") || !strings.Contains(out, "from issue "+id+": Lock file leaks") {
+			t.Errorf("task add --issue output does not confirm the title and the issue:\n%s", out)
+		}
+	})
+
+	t.Run("--issue is refused beside the GitHub prefills", func(t *testing.T) {
+		for _, other := range []string{"--github-issue", "--github-pull"} {
+			out, code := runVincentGH(t, dataDir, cfgDir, ghDir, "success",
+				"task", "add", "--project", "1", "--issue", "1", other, "200")
+			if code == 0 {
+				t.Fatalf("--issue with %s succeeded: %q", other, out)
+			}
+			if !strings.Contains(out, "issue") || !strings.Contains(out, strings.TrimPrefix(other, "--")) {
+				t.Errorf("--issue with %s: the refusal does not name both flags:\n%s", other, out)
+			}
 		}
 	})
 

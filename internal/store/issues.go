@@ -143,6 +143,7 @@ type IssueFilter struct {
 	Sort      string             // IssueSortUpdated (default) or IssueSortCreated
 	Limit     int                // 0 = no limit
 	Offset    int                // rows to skip, after the sort
+	IDs       []int64            // empty = any; else only these issues
 }
 
 // labelSourceLocal is the source of a label a human or an agent created.
@@ -298,6 +299,12 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) ([]*Issue, error)
 		q += ` AND EXISTS (SELECT 1 FROM issue_labels il JOIN labels l ON l.id = il.label_id
 			WHERE il.issue_id = i.id AND l.name = ?)`
 		args = append(args, name)
+	}
+	if len(f.IDs) > 0 {
+		q += ` AND i.id IN ` + placeholders(len(f.IDs))
+		for _, id := range f.IDs {
+			args = append(args, id)
+		}
 	}
 	if f.Kind != "" {
 		q += ` AND i.kind = ?`

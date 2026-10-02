@@ -175,6 +175,20 @@ func githubIssueSummary(issue *apiclient.GitHubIssue) string {
 	return strings.TrimSpace(fmt.Sprintf("from %s#%d: %s", issue.Repo, issue.Number, issue.Title))
 }
 
+// taskIssueSummary is `vincent task add --issue`'s confirmation line (task
+// 130.7): the vincent issue the task is linked to and, for an imported one,
+// where it came from.
+func taskIssueSummary(issue *apiclient.TaskIssue) string {
+	if issue == nil {
+		return ""
+	}
+	ref := fmt.Sprintf("issue %d", issue.ID)
+	if src := issue.Source; src != nil && src.Number > 0 {
+		ref += fmt.Sprintf(" (%s#%d)", src.Repo, src.Number)
+	}
+	return strings.TrimSpace(fmt.Sprintf("from %s: %s", ref, issue.Title))
+}
+
 // githubPullSummary is `vincent task add --github-pull`'s confirmation line
 // (task 064). It names the pull request the daemon resolved and the branch
 // consequence, because a task whose branch is somebody else's head branch is
