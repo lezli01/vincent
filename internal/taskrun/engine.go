@@ -1449,7 +1449,7 @@ func (r *Runner) renderContext(ctx context.Context, env *stepEnv, attempt int, p
 		},
 		Steps:       steps,
 		Loop:        env.loopContext(),
-		Issue:       issueContext(env.task.GitHubIssue),
+		Issue:       issueContext(env.task),
 		Host:        workflow.HostContext{OS: runtime.GOOS, Arch: runtime.GOARCH},
 		Worktree:    workflow.WorktreeContext{Path: env.task.WorktreePath},
 		LastFailure: workflow.Failure{Reason: previous.reason, Output: previous.output},

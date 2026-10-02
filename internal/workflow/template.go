@@ -24,14 +24,15 @@ type RenderContext struct {
 	// decision 9). Its zero value — `Index: 0` — is what every step outside a
 	// loop renders with, so a template shared between the two can tell.
 	Loop LoopContext
-	// Issue is the GitHub issue this task was created from (§8.4, task 035).
+	// Issue is the issue this task was created from (§8.4, task 035, task
+	// 130 decision 8).
 	// Its zero value — `Number: 0` — is what every task created without one
 	// renders with, exactly the way `.Loop`'s `Index: 0` works, so
 	// `{{ if .Issue.Number }}` tells the two apart and a template shared
 	// between linked and unlinked tasks renders on both (decision 8).
 	//
 	// It is read from the task's snapshot, never from the network: rendering
-	// stays pure and offline, and an issue edited on GitHub after creation is
+	// stays pure and offline, and an issue edited after creation is
 	// deliberately not reflected.
 	Issue       IssueContext
 	Worktree    WorktreeContext
@@ -135,8 +136,15 @@ func (s Step) Driver() string {
 	return DriverCount
 }
 
-// IssueContext is `.Issue` — the GitHub issue snapshot a task carries (§8.4,
-// task 035).
+// IssueContext is `.Issue` — the issue a task was created from (§8.4, task
+// 035, reshaped by task 130 decision 8).
+//
+// Number is the **vincent** issue id. The provider reference of an imported
+// issue is Source, zero for a local one, so a template that hands a number to
+// `gh` reads `.Issue.Source.Number` and never `.Issue.Number`. A task that
+// still carries only a legacy GitHub snapshot (`github_issue` on create,
+// until 130.11 removes it) renders that snapshot's GitHub number as Number,
+// exactly as it did before the reshape, and fills Source from it as well.
 //
 // Labels is a real list, not a joined string: it is the one piece of issue
 // metadata a template genuinely wants to range over, and the comma-joined
@@ -144,23 +152,42 @@ func (s Step) Driver() string {
 // Everything else is a plain string for the reason `.Loop.Item` is one —
 // every other value in §8.4 is.
 //
-// This package does not import internal/github: the snapshot is mapped into
-// this shape by internal/taskrun, which keeps the render context free of the
-// fetching machinery and keeps `.Issue` renderable from a row alone.
+// This package imports neither internal/github nor internal/store: the
+// snapshot is mapped into this shape by internal/taskrun, which keeps the
+// render context free of the fetching machinery and keeps `.Issue`
+// renderable from a row alone.
 type IssueContext struct {
 	// Number is 0 when no issue is linked; it is the field a template tests.
-	Number int
-	// Repo is `owner/name`.
-	Repo            string
+	Number          int
 	Title           string
 	Body            string
-	URL             string
 	State           string
 	Labels          []string
+	Kind            string
+	Priority        int
 	Author          string
 	Assignee        string
 	Milestone       string
 	MilestoneNumber int
+	// Source is where an imported issue came from; its zero value means a
+	// local issue (or none).
+	Source IssueSource
+	// Repo and URL are deprecated aliases of Source.Repo and Source.URL,
+	// kept so a template written before task 130 renders unchanged.
+	Repo string
+	URL  string
+}
+
+// IssueSource is `.Issue.Source` — an imported issue's provider reference.
+type IssueSource struct {
+	// Provider is "github" for every source vincent imports today.
+	Provider string
+	// Repo is `owner/name`.
+	Repo   string
+	Number int
+	URL    string
+	// State is the issue's state on the provider, as captured.
+	State string
 }
 
 // HostContext is `.Host` — the daemon's GOOS and GOARCH.
