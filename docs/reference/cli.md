@@ -664,8 +664,10 @@ so the command line and the TUI's issue picker go through one implementation and
 produce the same task from the same issue. It fills in the title (`#N ` and the
 issue title), the description (the issue body plus a trailing
 `GitHub issue #N: <url>` line), and any of the workflow's declared `issue`,
-`labels`, `assignee` or `milestone` fields whose declared type accepts the value
-— `issue` being the issue number.
+`github_issue`, `labels`, `assignee` or `milestone` fields whose declared type
+accepts the value — `issue` and `github_issue` both being the issue number. A
+workflow that hands the number to `gh` reads `github_issue`: once tasks can be
+created from vincent issues, `issue` holds the vincent issue id instead.
 
 **Every explicit flag wins over what the issue would have filled in**, so
 `--title "Something else"` keeps your title and takes the rest from the issue.

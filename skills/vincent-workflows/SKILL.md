@@ -4,7 +4,7 @@ description: Create, edit, review, and validate vincent workflow YAML under .vin
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.1.2
+  version: 1.1.3
 ---
 
 # vincent Workflows

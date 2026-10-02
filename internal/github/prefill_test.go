@@ -59,7 +59,7 @@ func TestDescriptionNormalizesCRLF(t *testing.T) {
 // TestCandidateMapsOnlyTheFourNames, by exact match and by type. A guess
 // that has to be reviewed is cheap; a guess that is hard to predict is not,
 // which is why there are no aliases and no case folding (decision 7).
-func TestCandidateMapsOnlyTheFourNames(t *testing.T) {
+func TestCandidateMapsOnlyTheFiveNames(t *testing.T) {
 	for _, tc := range []struct {
 		name, kind string
 		want       string
@@ -71,6 +71,11 @@ func TestCandidateMapsOnlyTheFourNames(t *testing.T) {
 		// the prefilled title carries.
 		{FieldIssue, TypeString, "200", true},
 		{FieldIssue, TypeBoolean, "", false},
+		// The legacy path fills `github_issue` with the same GitHub number
+		// (task 130 decision 8), so a workflow switched to it keeps working.
+		{FieldGitHubIssue, TypeInteger, "200", true},
+		{FieldGitHubIssue, TypeString, "200", true},
+		{FieldGitHubIssue, TypeBoolean, "", false},
 		{FieldLabels, TypeString, "enhancement, area/api", true},
 		{FieldAssignee, TypeString, "hubot", true},
 		{FieldMilestone, TypeString, "v0.2.0", true},

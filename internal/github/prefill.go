@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// The four declared field names an issue can fill, matched **exactly**
+// The five declared field names an issue can fill, matched **exactly**
 // (task 035 decision 7). No aliases, no fuzzy matching, no case folding: a
 // guess that has to be reviewed is cheap, a guess that is hard to predict is
 // not.
@@ -16,11 +16,18 @@ import (
 // that place for a `run:` — command steps receive §8.5's environment, not the
 // template context, so the number had to be parsed back out of the title. A
 // declared `issue` field is the number itself, validated like any other.
+//
+// FieldGitHubIssue was added 2026-10-02 (task 130 decision 8): a task created
+// from a vincent issue fills `issue` with the vincent id, so a workflow that
+// hands the number to `gh` reads `github_issue` instead. The legacy
+// `github_issue` create path fills both with the GitHub number until 130.11
+// removes it, so a workflow switched to `github_issue` keeps working.
 const (
-	FieldIssue     = "issue"
-	FieldLabels    = "labels"
-	FieldAssignee  = "assignee"
-	FieldMilestone = "milestone"
+	FieldIssue       = "issue"
+	FieldGitHubIssue = "github_issue"
+	FieldLabels      = "labels"
+	FieldAssignee    = "assignee"
+	FieldMilestone   = "milestone"
 )
 
 // The §8.1.2 field-type vocabulary, restated here so this package stays a
@@ -45,7 +52,7 @@ type FieldDecl struct {
 // Candidate is the value this issue offers for a declared field, and false
 // when it offers none.
 //
-// Only the three names above match, and only when the declared type can hold
+// Only the names above match, and only when the declared type can hold
 // the value: a declared `integer` named `milestone` gets the milestone
 // *number*, a `string` gets its title, and a declared `boolean` named
 // `labels` gets nothing at all. The caller must still validate the result
@@ -58,7 +65,7 @@ func Candidate(issue Issue, decl FieldDecl) (string, bool) {
 		kind = TypeString
 	}
 	switch decl.Name {
-	case FieldIssue:
+	case FieldIssue, FieldGitHubIssue:
 		// The number is a number, so every numeric declaration takes it and a
 		// `string` one takes its decimal spelling — bare, without the "#" the
 		// title carries. A workflow that wants the hash writes it.

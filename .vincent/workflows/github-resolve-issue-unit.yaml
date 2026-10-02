@@ -151,13 +151,19 @@ platforms: [posix]
 # is created through the API, and a lane is spawned by the engine. A lane that
 # arrives with a field missing fails at the step that reads it, not before.
 fields:
-  - name: issue
-    label: Issue number
+  - name: github_issue
+    label: GitHub issue number
     description: >-
       The GitHub issue this unit is part of, in this project's `origin`
       repository. Inherited from the parent task when this runs as a lane.
     type: integer
     required: true
+  - name: issue
+    label: Issue id
+    description: >-
+      The vincent issue the parent task was created from, inherited with the
+      other fields. Nothing hands it to `gh`; `github_issue` is the number.
+    type: integer
   - name: unit_id
     label: Unit id
     description: The planner's slug for this unit. Names the child task and its branch.
@@ -212,10 +218,10 @@ steps:
       say "$unit: reading the issue"
       mkdir -p .vincent-issue
 
-      id='{{ index .Task.Fields "issue" }}'
+      id='{{ index .Task.Fields "github_issue" }}'
       if [ -z "$id" ]; then
         say "lane carries no issue number"
-        echo "the 'issue' field is empty; a lane inherits it from the parent task." >&2
+        echo "the 'github_issue' field is empty; a lane inherits it from the parent task." >&2
         exit 1
       fi
       # The same fields the parent fetched, including the thread: a unit that
@@ -283,7 +289,7 @@ steps:
       Deliver one unit of a planned change to this repository:
       **{{ index .Task.Fields "unit_title" }}**.
 
-      This unit is part of GitHub issue #{{ index .Task.Fields "issue" }},
+      This unit is part of GitHub issue #{{ index .Task.Fields "github_issue" }},
       which is in `.vincent-issue/issue.json` — number, title, body, labels,
       creation date and every comment — for context. It is context, not scope.
 
