@@ -23,14 +23,16 @@ var ErrIdempotencyKeyExists = errors.New("idempotency key already exists")
 
 // IdempotencyKey is one recorded replay-protected request (§13.1, task 040).
 // It stores a *reference* to what the request produced, not the response body
-// it produced: TaskID names the created task, and a replay re-reads that task
-// to render the response.
+// it produced: TaskID names the created task — or IssueID the created issue,
+// for a key recorded on `POST /v1/issues` (task 130.3) — and a replay re-reads
+// it to render the response. Exactly one of the two is set.
 type IdempotencyKey struct {
 	Method     string
 	Path       string
 	Key        string
 	RequestSHA string
 	TaskID     int64
+	IssueID    int64
 	CreatedAt  time.Time
 }
 
@@ -55,6 +57,50 @@ func (s *Store) GetIdempotencyKey(ctx context.Context, method, path, key string)
 		return nil, fmt.Errorf("parse idempotency key created_at: %w", err)
 	}
 	return &k, nil
+}
+
+// GetIssueIdempotencyKey is GetIdempotencyKey for the issue table (0037): the
+// returned key carries IssueID rather than TaskID.
+func (s *Store) GetIssueIdempotencyKey(ctx context.Context, method, path, key string) (*IdempotencyKey, error) {
+	k := IdempotencyKey{Method: method, Path: path, Key: key}
+	var created string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT request_sha, issue_id, created_at FROM issue_idempotency_keys
+		WHERE method = ? AND path = ? AND key = ?`,
+		method, path, key).Scan(&k.RequestSHA, &k.IssueID, &created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get issue idempotency key: %w", err)
+	}
+	k.CreatedAt, err = parseTime(created)
+	if err != nil {
+		return nil, fmt.Errorf("parse issue idempotency key created_at: %w", err)
+	}
+	return &k, nil
+}
+
+// insertIssueIdempotencyKeyTx is insertIdempotencyKeyTx for an issue: the
+// key commits with the issue insert or not at all, and a lost race comes back
+// as ErrIdempotencyKeyExists.
+func insertIssueIdempotencyKeyTx(ctx context.Context, tx *sql.Tx, k *IdempotencyKey, issueID int64, now time.Time) error {
+	if k.CreatedAt.IsZero() {
+		k.CreatedAt = now
+	}
+	k.IssueID = issueID
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO issue_idempotency_keys (method, path, key, request_sha, issue_id, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		k.Method, k.Path, k.Key, k.RequestSHA, k.IssueID, formatTime(k.CreatedAt))
+	if err != nil {
+		if strings.Contains(err.Error(), "constraint failed") &&
+			strings.Contains(err.Error(), "issue_idempotency_keys") {
+			return ErrIdempotencyKeyExists
+		}
+		return fmt.Errorf("insert issue idempotency key: %w", err)
+	}
+	return nil
 }
 
 // insertIdempotencyKeyTx writes the key row inside the caller's transaction —
@@ -93,16 +139,24 @@ func insertIdempotencyKeyTx(ctx context.Context, tx *sql.Tx, k *IdempotencyKey, 
 // would be config surface to document and defend forever for a number nobody
 // would tune.
 //
+// It covers both key tables, tasks' (0016) and issues' (0037): one window,
+// one pass.
+//
 // cutoff is a parameter so tests can age rows without sleeping.
 func (s *Store) PruneIdempotencyKeys(ctx context.Context, cutoff time.Time) (int64, error) {
-	res, err := s.db.ExecContext(ctx,
-		`DELETE FROM idempotency_keys WHERE created_at < ?`, formatTime(cutoff))
-	if err != nil {
-		return 0, fmt.Errorf("prune idempotency keys: %w", err)
+	var total int64
+	for _, table := range []string{"idempotency_keys", "issue_idempotency_keys"} {
+		//nolint:gosec // G202: table is one of two constant names, never input
+		res, err := s.db.ExecContext(ctx,
+			`DELETE FROM `+table+` WHERE created_at < ?`, formatTime(cutoff))
+		if err != nil {
+			return total, fmt.Errorf("prune %s: %w", table, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return total, fmt.Errorf("prune %s: %w", table, err)
+		}
+		total += n
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("prune idempotency keys: %w", err)
-	}
-	return n, nil
+	return total, nil
 }

@@ -125,3 +125,14 @@ func CreatorTaskID(ctx context.Context) (int64, bool) {
 	}
 	return sess.TaskID, true
 }
+
+type toolCtxKey struct{}
+
+// ViaTool reports whether a request is a replayed MCP tool call, on either
+// endpoint (task 130.3). Like CreatorTaskID it is read off the context the
+// replay carries, so a real HTTP request can never claim it: it is how the
+// issue routes attribute a write to issuestate.Agent rather than Human.
+func ViaTool(ctx context.Context) bool {
+	v, _ := ctx.Value(toolCtxKey{}).(bool)
+	return v
+}

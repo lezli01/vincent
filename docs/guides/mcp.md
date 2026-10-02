@@ -36,10 +36,12 @@ The tool list **is** the route table: projects, workflows, `resolve`, tasks and
 every human action (`task_cancel`, `task_pause`, `task_approve`, `task_answer`,
 `task_archive`, `task_follow_up`, …), steps, step status, transcripts, diffs,
 the GitHub reads, the [trigger](triggers.md) reads, `trigger_validate` and both
-dry runs, and the read-only `health`, `info`, `config_get`, `agent_list`,
+dry runs, the [issue](../reference/api.md#issues) routes (`issue_list`,
+`issue_create`, `issue_get`, `issue_patch`, `issue_close`, `issue_reopen`,
+`project_issue_labels`), and the read-only `health`, `info`, `config_get`, `agent_list`,
 `doctor`, `orphan_list`.
 
-Twenty-two routes are deliberately **not** tools:
+Twenty-three routes are deliberately **not** tools:
 
 - `POST /v1/daemon/stop`
 - `POST /v1/agents/{name}/quota`
@@ -47,6 +49,7 @@ Twenty-two routes are deliberately **not** tools:
 - `DELETE /v1/projects/{id}`
 - `DELETE /v1/tasks/{id}`
 - `DELETE /v1/chats/{id}`
+- `DELETE /v1/issues/{id}`
 - `POST /v1/tasks/import`
 - `POST /v1/maintenance/gc`
 - `POST /v1/doctor/fix`
@@ -67,7 +70,9 @@ Twenty-two routes are deliberately **not** tools:
 An agent should not be able to stop, garbage-collect or reconfigure the daemon
 that is supervising it. Those stay CLI-and-curl only. The two
 [permanent deletes](../reference/api.md#permanent-delete) are on the project
-delete's line: a row a human archived is history nobody else may discard.
+delete's line: a row a human archived is history nobody else may discard. The
+issue delete joins them: it is permanent, and an imported issue's tombstone
+outlives it.
 The [task import](../reference/api.md#importing-a-task) that undoes one sits
 beside them: it reads a file the caller names and writes rows no agent should
 be able to create.
@@ -140,10 +145,11 @@ Each tool takes the route's path parameters by name, plus `body` (for `POST` and
   "arguments": { "id": 12, "run_id": "34", "query": { "format": "normalized", "limit": "200" } } }
 ```
 
-`task_create` also takes an optional `idempotency_key`, which becomes the
-`Idempotency-Key` header: re-sending the same arguments with the same key
-returns the original task instead of creating a second one. A tool call has no
-header surface, so it is an argument.
+`task_create` and `issue_create` also take an optional `idempotency_key`, which
+becomes the `Idempotency-Key` header: re-sending the same arguments with the
+same key returns the original task or issue instead of creating a second one. A
+tool call has no header surface, so it is an argument. An issue a step files
+records that step's task as its author.
 
 Errors come back as the API's own envelope, so a `409` still carries
 `details.state` and you can branch on it rather than reading prose. One result is

@@ -169,7 +169,7 @@ func TestListIssuesFilters(t *testing.T) {
 	a := mustCreateIssue(t, s, NewIssue{ProjectID: p1.ID, Title: "alpha crash", Kind: "bug", Labels: []string{"Bug"}})
 	b := mustCreateIssue(t, s, NewIssue{ProjectID: p1.ID, Title: "beta", Body: "100% wrong", Kind: "feature"})
 	c := mustCreateIssue(t, s, NewIssue{ProjectID: p2.ID, Title: "gamma", Labels: []string{"bug"}})
-	if _, err := s.TransitionIssue(ctx, b.ID, issuestate.Close, "", issuestate.Human); err != nil {
+	if _, err := s.TransitionIssue(ctx, b.ID, issuestate.Close, "", nil, issuestate.Human); err != nil {
 		t.Fatal(err)
 	}
 	r, _, err := s.UpsertRemoteIssue(ctx, RemoteIssue{
@@ -269,7 +269,7 @@ func TestTransitionIssue(t *testing.T) {
 	iss := mustCreateIssue(t, s, NewIssue{ProjectID: p.ID, Title: "t"})
 	dup := mustCreateIssue(t, s, NewIssue{ProjectID: p.ID, Title: "orig"})
 
-	closed, err := s.TransitionIssue(ctx, iss.ID, issuestate.Close, "", issuestate.Human)
+	closed, err := s.TransitionIssue(ctx, iss.ID, issuestate.Close, "", nil, issuestate.Human)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,11 +285,11 @@ func TestTransitionIssue(t *testing.T) {
 	}
 
 	// A human closing a closed issue is refused, and changes nothing.
-	if _, err := s.TransitionIssue(ctx, iss.ID, issuestate.Close, "", issuestate.Human); !errors.Is(err, ErrInvalidIssueAction) {
+	if _, err := s.TransitionIssue(ctx, iss.ID, issuestate.Close, "", nil, issuestate.Human); !errors.Is(err, ErrInvalidIssueAction) {
 		t.Errorf("double close = %v, want ErrInvalidIssueAction", err)
 	}
 	// Sync reporting the same is a no-op: no event, no version bump.
-	same, err := s.TransitionIssue(ctx, iss.ID, issuestate.RemoteClosed, "", issuestate.Sync)
+	same, err := s.TransitionIssue(ctx, iss.ID, issuestate.RemoteClosed, "", nil, issuestate.Sync)
 	if err != nil {
 		t.Fatalf("sync double close: %v", err)
 	}
@@ -300,7 +300,7 @@ func TestTransitionIssue(t *testing.T) {
 		t.Errorf("state events = %d after a sync no-op, want 1", n)
 	}
 	// Remote actions are sync's alone.
-	if _, err := s.TransitionIssue(ctx, iss.ID, issuestate.RemoteReopened, "", issuestate.Human); !errors.Is(err, ErrInvalidIssueAction) {
+	if _, err := s.TransitionIssue(ctx, iss.ID, issuestate.RemoteReopened, "", nil, issuestate.Human); !errors.Is(err, ErrInvalidIssueAction) {
 		t.Errorf("human remote_reopened = %v, want ErrInvalidIssueAction", err)
 	}
 
@@ -308,7 +308,7 @@ func TestTransitionIssue(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE issues SET duplicate_of_issue_id = ? WHERE id = ?`, dup.ID, iss.ID); err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := s.TransitionIssue(ctx, iss.ID, issuestate.Reopen, "", issuestate.Agent)
+	reopened, err := s.TransitionIssue(ctx, iss.ID, issuestate.Reopen, "", nil, issuestate.Agent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,17 +316,17 @@ func TestTransitionIssue(t *testing.T) {
 		t.Errorf("reopened = %+v", reopened)
 	}
 
-	dupClosed, err := s.TransitionIssue(ctx, iss.ID, issuestate.Close, issuestate.Duplicate, issuestate.Human)
+	dupClosed, err := s.TransitionIssue(ctx, iss.ID, issuestate.Close, issuestate.Duplicate, nil, issuestate.Human)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if dupClosed.CloseReason != issuestate.Duplicate {
 		t.Errorf("close reason = %s, want duplicate", dupClosed.CloseReason)
 	}
-	if _, err := s.TransitionIssue(ctx, iss.ID, issuestate.Reopen, issuestate.Completed, issuestate.Human); err == nil {
+	if _, err := s.TransitionIssue(ctx, iss.ID, issuestate.Reopen, issuestate.Completed, nil, issuestate.Human); err == nil {
 		t.Error("reopen with a reason succeeded")
 	}
-	if _, err := s.TransitionIssue(ctx, 999, issuestate.Close, "", issuestate.Human); !errors.Is(err, ErrNotFound) {
+	if _, err := s.TransitionIssue(ctx, 999, issuestate.Close, "", nil, issuestate.Human); !errors.Is(err, ErrNotFound) {
 		t.Errorf("transition missing = %v, want ErrNotFound", err)
 	}
 }
@@ -658,5 +658,134 @@ func TestRolledBackIssueWritePublishesNothing(t *testing.T) {
 	}
 	if got, _ := s.GetIssue(ctx, iss.ID); got.Version != 1 {
 		t.Errorf("version = %d after a rolled-back label write", got.Version)
+	}
+}
+
+// TestUpdateIssueFieldsAndLabelsInOneWrite: a patch that edits fields and
+// labels bumps the version once, under one compare-and-set, and announces
+// each half (task 130.3). A stale version writes neither half.
+func TestUpdateIssueFieldsAndLabelsInOneWrite(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	iss := mustCreateIssue(t, s, NewIssue{ProjectID: p.ID, Title: "t", Labels: []string{"bug", "ui"}})
+
+	title := "t2"
+	up, err := s.UpdateIssue(ctx, iss.ID, iss.Version, IssuePatch{
+		Title: &title, AddLabels: []string{"P1", "Bug"}, RemoveLabels: []string{"UI"},
+	}, issuestate.Human)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if up.Version != 2 || up.Title != "t2" || !slices.Equal(up.Labels, []string{"bug", "P1"}) {
+		t.Errorf("updated = version %d title %q labels %v", up.Version, up.Title, up.Labels)
+	}
+	if n := len(issueEvents(t, s, EventIssueUpdated)); n != 1 {
+		t.Errorf("issue.updated = %d, want 1", n)
+	}
+	evs := issueEvents(t, s, EventIssueLabelsChanged)
+	if len(evs) != 1 || !reflect.DeepEqual(payloadOf(t, evs[0])["labels"], []any{"bug", "P1"}) {
+		t.Errorf("issue.labels_changed = %v", evs)
+	}
+
+	// Labels alone also bump once; a replace that lands on the same set
+	// writes nothing.
+	only := []string{"x"}
+	up2, err := s.UpdateIssue(ctx, iss.ID, up.Version, IssuePatch{Labels: &only}, issuestate.Human)
+	if err != nil || up2.Version != 3 {
+		t.Fatalf("labels-only = %+v, %v", up2, err)
+	}
+	same := []string{"X"}
+	up3, err := s.UpdateIssue(ctx, iss.ID, up2.Version, IssuePatch{Labels: &same}, issuestate.Human)
+	if err != nil || up3.Version != 3 {
+		t.Errorf("same-set replace = version %d, %v, want 3", up3.Version, err)
+	}
+
+	other := "lost"
+	if _, err := s.UpdateIssue(ctx, iss.ID, iss.Version, IssuePatch{Title: &other, AddLabels: []string{"lost"}},
+		issuestate.Human); !errors.Is(err, ErrIssueChanged) {
+		t.Errorf("stale = %v, want ErrIssueChanged", err)
+	}
+	if got, _ := s.GetIssue(ctx, iss.ID); slices.Contains(got.Labels, "lost") || got.Title == "lost" {
+		t.Errorf("a stale patch wrote %+v", got)
+	}
+}
+
+// TestTransitionIssueDuplicateOf: duplicate_of is recorded with a duplicate
+// close in the same project, refused otherwise, and cleared by reopen.
+func TestTransitionIssueDuplicateOf(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p1, p2 := testProject(t, s, "p1"), testProject(t, s, "p2")
+	a := mustCreateIssue(t, s, NewIssue{ProjectID: p1.ID, Title: "a"})
+	b := mustCreateIssue(t, s, NewIssue{ProjectID: p1.ID, Title: "b"})
+	c := mustCreateIssue(t, s, NewIssue{ProjectID: p2.ID, Title: "c"})
+	missing := int64(999)
+	for name, tc := range map[string]struct {
+		reason issuestate.Reason
+		dup    *int64
+	}{
+		"self":          {issuestate.Duplicate, &a.ID},
+		"other project": {issuestate.Duplicate, &c.ID},
+		"missing":       {issuestate.Duplicate, &missing},
+		"not duplicate": {issuestate.Completed, &b.ID},
+	} {
+		if _, err := s.TransitionIssue(ctx, a.ID, issuestate.Close, tc.reason, tc.dup, issuestate.Human); !errors.Is(err, ErrInvalidDuplicateOf) {
+			t.Errorf("%s = %v, want ErrInvalidDuplicateOf", name, err)
+		}
+	}
+	closed, err := s.TransitionIssue(ctx, a.ID, issuestate.Close, issuestate.Duplicate, &b.ID, issuestate.Human)
+	if err != nil || closed.DuplicateOfIssueID == nil || *closed.DuplicateOfIssueID != b.ID {
+		t.Fatalf("duplicate close = %+v, %v", closed, err)
+	}
+	evs := issueEvents(t, s, EventIssueStateChanged)
+	if m := payloadOf(t, evs[len(evs)-1]); m["duplicate_of"] != float64(b.ID) {
+		t.Errorf("payload = %v, want duplicate_of %d", m, b.ID)
+	}
+	reopened, err := s.TransitionIssue(ctx, a.ID, issuestate.Reopen, "", nil, issuestate.Human)
+	if err != nil || reopened.DuplicateOfIssueID != nil {
+		t.Errorf("reopen = %+v, %v, want duplicate_of cleared", reopened, err)
+	}
+}
+
+// TestListIssuesPagingAndLabelsAnd covers the filters task 130.3 added:
+// every label must match, created-order sort, limit and offset.
+func TestListIssuesPagingAndLabelsAnd(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	a := mustCreateIssue(t, s, NewIssue{ProjectID: p.ID, Title: "a", Labels: []string{"bug", "ui"}})
+	b := mustCreateIssue(t, s, NewIssue{ProjectID: p.ID, Title: "b", Labels: []string{"bug"}})
+	c := mustCreateIssue(t, s, NewIssue{ProjectID: p.ID, Title: "c"})
+	ids := func(f IssueFilter) []int64 {
+		t.Helper()
+		list, err := s.ListIssues(ctx, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := []int64{}
+		for _, iss := range list {
+			out = append(out, iss.ID)
+		}
+		return out
+	}
+	for name, tc := range map[string]struct {
+		f    IssueFilter
+		want []int64
+	}{
+		"labels and":       {IssueFilter{Labels: []string{"BUG", "ui"}}, []int64{a.ID}},
+		"created":          {IssueFilter{Sort: IssueSortCreated}, []int64{c.ID, b.ID, a.ID}},
+		"limit offset":     {IssueFilter{Sort: IssueSortCreated, Limit: 1, Offset: 1}, []int64{b.ID}},
+		"offset, no limit": {IssueFilter{Sort: IssueSortCreated, Offset: 2}, []int64{a.ID}},
+		"label and labels": {IssueFilter{Label: "ui", Labels: []string{"bug"}}, []int64{a.ID}},
+		"offset past all":  {IssueFilter{Offset: 9}, []int64{}},
+	} {
+		if got := ids(tc.f); !slices.Equal(got, tc.want) {
+			t.Errorf("%s = %v, want %v", name, got, tc.want)
+		}
+	}
+	labels, err := s.ListLabels(ctx, p.ID)
+	if err != nil || len(labels) != 2 || labels[0].IssueCount != 2 || labels[1].IssueCount != 1 {
+		t.Errorf("ListLabels = %+v, %v", labels, err)
 	}
 }

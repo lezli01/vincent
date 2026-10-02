@@ -2,6 +2,7 @@ package issues
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -45,6 +46,28 @@ func invalid(field, format string, args ...any) error {
 	return &ValidationError{Field: field, Message: fmt.Sprintf(format, args...)}
 }
 
+// ErrMirrored refuses a human or agent edit of the content an imported issue
+// mirrors from its remote — title, body and labels (task 130 decision 9,
+// task 130.3 decision 2). Sync is the one writer of those. The API maps it
+// to a 409 with details.reason issue_mirrored.
+var ErrMirrored = errors.New("title, body and labels of an imported issue are mirrored from its remote")
+
+// Mirrored reports whether iss carries content a remote owns: it has a live
+// remote row. A tombstone never joins an issue, so a local issue — and one
+// whose remote was dropped — is not mirrored.
+func Mirrored(iss *store.Issue) bool {
+	return iss != nil && iss.Remote != nil && iss.Remote.IssueID != nil
+}
+
+// Editable lists the fields a human or an agent may PATCH on iss, in a fixed
+// order, so a client renders the rule rather than reimplementing it.
+func Editable(iss *store.Issue) []string {
+	if Mirrored(iss) {
+		return []string{"kind", "priority"}
+	}
+	return []string{"title", "body", "labels", "kind", "priority"}
+}
+
 // Service is the single write path for issues. It is safe for concurrent
 // use: it holds nothing but the store.
 type Service struct {
@@ -65,6 +88,12 @@ type CreateInput struct {
 	Author    string
 	Priority  int
 	Labels    []string
+	// CreatedByTaskID is the task whose agent step asked, over MCP; nil
+	// otherwise.
+	CreatedByTaskID *int64
+	// Key, when non-nil, is the Idempotency-Key recorded with the issue in
+	// its creating transaction (§13.1).
+	Key *store.IdempotencyKey
 }
 
 // Create validates in and creates the issue, attributed to by.
@@ -86,15 +115,16 @@ func (s *Service) Create(ctx context.Context, by issuestate.Actor, in CreateInpu
 	if err != nil {
 		return nil, err
 	}
-	return s.st.CreateIssue(ctx, store.NewIssue{
-		ProjectID: in.ProjectID,
-		Title:     title,
-		Body:      in.Body,
-		Kind:      in.Kind,
-		Author:    in.Author,
-		Priority:  in.Priority,
-		Labels:    labels,
-	}, by)
+	return s.st.CreateIssueWithKey(ctx, store.NewIssue{
+		ProjectID:       in.ProjectID,
+		Title:           title,
+		Body:            in.Body,
+		Kind:            in.Kind,
+		Author:          in.Author,
+		Priority:        in.Priority,
+		Labels:          labels,
+		CreatedByTaskID: in.CreatedByTaskID,
+	}, by, in.Key)
 }
 
 // Get reads one issue; store.ErrNotFound when it does not exist.
@@ -108,10 +138,36 @@ func (s *Service) List(ctx context.Context, f store.IssueFilter) ([]*store.Issue
 }
 
 // Update validates the fields p sets and applies them if the issue is still
-// at version; store.ErrIssueChanged when it is not.
+// at version; store.ErrIssueChanged when it is not. Fields and labels land
+// in one write. A human or an agent touching an imported issue's title,
+// body or labels gets ErrMirrored.
 func (s *Service) Update(ctx context.Context, by issuestate.Actor, id, version int64, p store.IssuePatch) (*store.Issue, error) {
 	if err := checkActor(by); err != nil {
 		return nil, err
+	}
+	if p.Labels != nil && (len(p.AddLabels) > 0 || len(p.RemoveLabels) > 0) {
+		return nil, invalid("labels", "labels replaces the set and cannot be combined with add_labels or remove_labels")
+	}
+	if p.Labels != nil {
+		labels, err := cleanLabels(*p.Labels)
+		if err != nil {
+			return nil, err
+		}
+		p.Labels = &labels
+	}
+	var err error
+	if p.AddLabels, err = cleanLabels(p.AddLabels); err != nil {
+		return nil, err
+	}
+	if p.RemoveLabels, err = cleanLabels(p.RemoveLabels); err != nil {
+		return nil, err
+	}
+	touchesMirror := p.Title != nil || p.Body != nil || p.Labels != nil ||
+		len(p.AddLabels) > 0 || len(p.RemoveLabels) > 0
+	if touchesMirror {
+		if err := s.checkMirror(ctx, by, id); err != nil {
+			return nil, err
+		}
 	}
 	if p.Title != nil {
 		title, err := cleanTitle(*p.Title)
@@ -133,9 +189,49 @@ func (s *Service) Update(ctx context.Context, by issuestate.Actor, id, version i
 	return s.st.UpdateIssue(ctx, id, version, p, by)
 }
 
-// Close closes the issue with reason; "" means completed.
-func (s *Service) Close(ctx context.Context, by issuestate.Actor, id int64, reason issuestate.Reason) (*store.Issue, error) {
-	return s.Transition(ctx, by, id, issuestate.Close, reason)
+// checkMirror refuses a non-sync write of an imported issue's mirrored
+// content. It reads before the write rather than inside it: the remote row
+// is created by an import and never re-attached, so the only race is an
+// issue being imported under a caller mid-edit, which sync's next pass
+// overwrites anyway.
+func (s *Service) checkMirror(ctx context.Context, by issuestate.Actor, id int64) error {
+	if by == issuestate.Sync {
+		return nil
+	}
+	iss, err := s.st.GetIssue(ctx, id)
+	if err != nil {
+		return err
+	}
+	if Mirrored(iss) {
+		return fmt.Errorf("issue %d: %w", id, ErrMirrored)
+	}
+	return nil
+}
+
+// Close closes the issue with reason; "" means completed. duplicateOf, when
+// set, names the issue this one duplicates: it needs reason duplicate and
+// must be another issue in the same project (task 130.3 decision 3).
+func (s *Service) Close(ctx context.Context, by issuestate.Actor, id int64, reason issuestate.Reason, duplicateOf *int64) (*store.Issue, error) {
+	if duplicateOf != nil {
+		if reason != issuestate.Duplicate {
+			return nil, invalid("duplicate_of", "is only allowed with reason %q", issuestate.Duplicate)
+		}
+		if *duplicateOf == id {
+			return nil, invalid("duplicate_of", "an issue cannot duplicate itself")
+		}
+	}
+	if err := checkActor(by); err != nil {
+		return nil, err
+	}
+	resolved, err := issuestate.ResolveReason(issuestate.Close, reason)
+	if err != nil {
+		return nil, invalid("reason", "%v", err)
+	}
+	iss, err := s.st.TransitionIssue(ctx, id, issuestate.Close, resolved, duplicateOf, by)
+	if errors.Is(err, store.ErrInvalidDuplicateOf) {
+		return nil, invalid("duplicate_of", "%v", err)
+	}
+	return iss, err
 }
 
 // Reopen reopens a closed issue.
@@ -158,7 +254,7 @@ func (s *Service) Transition(ctx context.Context, by issuestate.Actor, id int64,
 	if err != nil {
 		return nil, invalid("reason", "%v", err)
 	}
-	return s.st.TransitionIssue(ctx, id, action, resolved, by)
+	return s.st.TransitionIssue(ctx, id, action, resolved, nil, by)
 }
 
 // SetLabels replaces the issue's labels with names.
@@ -168,6 +264,9 @@ func (s *Service) SetLabels(ctx context.Context, by issuestate.Actor, id int64, 
 	}
 	labels, err := cleanLabels(names)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.checkMirror(ctx, by, id); err != nil {
 		return nil, err
 	}
 	return s.st.SetIssueLabels(ctx, id, labels, by)

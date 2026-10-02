@@ -1,6 +1,6 @@
 # 130 — The issues pillar: vincent-owned issues per project
 
-**Status:** 🔄 in progress (3/18)
+**Status:** 🔄 in progress (4/18)
 
 Issue [#659](https://github.com/lezli01/vincent/issues/659), part of
 [#658](https://github.com/lezli01/vincent/issues/658). Spec §3 (rows 11, 26
@@ -359,6 +359,33 @@ names the items that make it true, so a reader of §3 is not misled about what
 is built. The exception covers §3 only: §5, §8, §12, §13, §14 and §15 are
 amended by each item in its own pull request.
 
+### 14. 130.3: `author` is daemon-derived, imported content is refused now, `duplicate_of` is same-project (2026-10-02)
+
+Settled with the author while scoping #662.
+
+1. **`author` is not a request field.** An HTTP create records the OS
+   username the daemon runs as; an MCP create from a step records `task N` and
+   sets `issues.created_by_task_id` (migration 0037), as `POST /v1/tasks`
+   records a task's MCP provenance; a create on the shared `/mcp` endpoint
+   records `agent`. A client cannot forge either. Sync fills the GitHub login
+   when it lands. Every MCP write is actor `agent`, every other API write
+   `human`; telling a step's CLI call from a person's stays open question 6.
+2. **An imported issue's mirrored content is refused in 130.3, not deferred to
+   #667.** A `PATCH` touching `title`, `body` or labels on an issue with a live
+   remote row is `409 invalid_state` with `details.reason: issue_mirrored`
+   (decision 9); `kind` and `priority` stay editable. The guard is
+   `internal/issues`', keyed on the actor not being `sync`, and the issue DTO's
+   `editable` lists what a client may offer.
+3. **`duplicate_of` is optional and same-project.** Only with reason
+   `duplicate`, naming another existing issue in the same project (otherwise
+   `400`); omitting it is valid. It is set in the close's transaction and
+   carried by `issue.state_changed`.
+
+Also standing from the issue's proposed defaults: the list is a bare array
+(no `{issues, counts}` envelope until 130.9 needs counts), there is no
+`mcp.max_issues` cap, and `DELETE /v1/issues/{id}` is excluded from MCP on
+task 092's line.
+
 ## Open questions
 
 Each has a proposed default, which stands unless the author answers otherwise
@@ -405,9 +432,9 @@ its own pull request.
 - [x] **130.2** ([#661](https://github.com/lezli01/vincent/issues/661))
   `cmd/fakegh` with a mutable issue corpus, `gh api` with ETag/304, issue
   writes and a scenario file. ✓ 2026-10-02
-- [ ] **130.3** ([#662](https://github.com/lezli01/vincent/issues/662))
+- [x] **130.3** ([#662](https://github.com/lezli01/vincent/issues/662))
   `/v1/issues` routes, `issue.*` SSE events, apiclient, MCP tools, idempotent
-  create. Depends: 130.1.
+  create. Depends: 130.1. ✓ 2026-10-02
 - [x] **130.4** ([#663](https://github.com/lezli01/vincent/issues/663)) Prefill
   from a vincent issue, the `.Issue` reshape, snapshot build, legacy rendering,
   skill and checklist lines. Depends: 130.1. ✓ 2026-10-02

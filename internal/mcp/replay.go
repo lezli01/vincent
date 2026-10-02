@@ -180,7 +180,7 @@ func (s *Server) dispatch(ctx context.Context, r Route, raw json.RawMessage) (*m
 	if err != nil {
 		return toolError("invalid_arguments", err.Error(), nil), nil
 	}
-	req, err := requestFor(ctx, r, c)
+	req, err := requestFor(context.WithValue(ctx, toolCtxKey{}, true), r, c)
 	if err != nil {
 		return toolError("invalid_arguments", err.Error(), nil), nil
 	}

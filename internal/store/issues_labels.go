@@ -77,11 +77,14 @@ func upsertLabelTx(ctx context.Context, tx *sql.Tx, projectID int64, name, color
 	return l, nil
 }
 
-// ListLabels returns a project's label catalogue, sorted case-insensitively.
+// ListLabels returns a project's label catalogue, sorted case-insensitively,
+// each with how many issues carry it.
 func (s *Store) ListLabels(ctx context.Context, projectID int64) ([]*Label, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, project_id, name, color, description, source FROM labels
-		WHERE project_id = ? ORDER BY name COLLATE NOCASE ASC, name ASC`, projectID)
+		SELECT l.id, l.project_id, l.name, l.color, l.description, l.source,
+			(SELECT COUNT(*) FROM issue_labels il WHERE il.label_id = l.id)
+		FROM labels l
+		WHERE l.project_id = ? ORDER BY l.name COLLATE NOCASE ASC, l.name ASC`, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("list labels: %w", err)
 	}
@@ -89,7 +92,7 @@ func (s *Store) ListLabels(ctx context.Context, projectID int64) ([]*Label, erro
 	var out []*Label
 	for rows.Next() {
 		var l Label
-		if err := rows.Scan(&l.ID, &l.ProjectID, &l.Name, &l.Color, &l.Description, &l.Source); err != nil {
+		if err := rows.Scan(&l.ID, &l.ProjectID, &l.Name, &l.Color, &l.Description, &l.Source, &l.IssueCount); err != nil {
 			return nil, fmt.Errorf("scan label: %w", err)
 		}
 		out = append(out, &l)
@@ -149,29 +152,37 @@ func (s *Store) SetIssueLabels(ctx context.Context, id int64, names []string, by
 		if sameLabelSet(cur.Labels, names) {
 			return nil, nil
 		}
-		source := labelSourceLocal
-		if by == issuestate.Sync && cur.Remote != nil {
-			source = cur.Remote.Provider
-		}
-		if err := replaceIssueLabelsTx(ctx, tx, cur.ProjectID, id, names, source); err != nil {
-			return nil, err
-		}
 		if _, err := tx.ExecContext(ctx, `UPDATE issues SET version = version + 1, updated_at = ? WHERE id = ?`,
 			formatTime(time.Now()), id); err != nil {
 			return nil, fmt.Errorf("update issue %d: %w", id, err)
 		}
-		after, err := getIssue(ctx, tx, id)
-		if err != nil {
-			return nil, err
-		}
-		labels := after.Labels
-		if labels == nil {
-			labels = []string{}
-		}
-		return issueEvent(EventIssueLabelsChanged, cur.ProjectID, id, by, map[string]any{"labels": labels})
+		return replaceLabelsAndAnnounceTx(ctx, tx, cur, names, by)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return s.GetIssue(ctx, id)
+}
+
+// replaceLabelsAndAnnounceTx makes names cur's whole label set and returns
+// the issue.labels_changed event naming the set it ends with. The caller
+// bumps the version. A human or an agent creates `local` labels; sync
+// creates them with the issue's provider.
+func replaceLabelsAndAnnounceTx(ctx context.Context, tx *sql.Tx, cur *Issue, names []string, by issuestate.Actor) (*Event, error) {
+	source := labelSourceLocal
+	if by == issuestate.Sync && cur.Remote != nil {
+		source = cur.Remote.Provider
+	}
+	if err := replaceIssueLabelsTx(ctx, tx, cur.ProjectID, cur.ID, names, source); err != nil {
+		return nil, err
+	}
+	after, err := getIssue(ctx, tx, cur.ID)
+	if err != nil {
+		return nil, err
+	}
+	labels := after.Labels
+	if labels == nil {
+		labels = []string{}
+	}
+	return issueEvent(EventIssueLabelsChanged, cur.ProjectID, cur.ID, by, map[string]any{"labels": labels})
 }

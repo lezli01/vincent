@@ -386,6 +386,11 @@ func (c *Client) post(ctx context.Context, path string, body, out any) error {
 // send performs an authenticated write of any method. A nil body sends none
 // and a nil out discards the response, which is what a 204 needs.
 func (c *Client) send(ctx context.Context, method, path string, body, out any) error {
+	return c.sendWith(ctx, method, path, nil, body, out)
+}
+
+// sendWith is send with extra request headers — an Idempotency-Key.
+func (c *Client) sendWith(ctx context.Context, method, path string, hdr http.Header, body, out any) error {
 	var rdr io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -397,6 +402,11 @@ func (c *Client) send(ctx context.Context, method, path string, body, out any) e
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, rdr)
 	if err != nil {
 		return fmt.Errorf("build request %s: %w", path, err)
+	}
+	for k, vs := range hdr {
+		for _, v := range vs {
+			req.Header.Add(k, v)
+		}
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	if body != nil {
