@@ -79,7 +79,7 @@ func importSource(t *testing.T) (*Store, *TaskExport) {
 		fillEveryColumn(t, src, "step_runs", r.ID, "id", "task_id")
 	}
 	fillEveryColumn(t, src, "tasks", task.ID,
-		"id", "project_id", "state", "parent_task_id", "created_by_task_id")
+		"id", "project_id", "state", "parent_task_id", "created_by_task_id", "issue_id")
 	if _, err := src.db.ExecContext(t.Context(),
 		`UPDATE tasks SET created_by_task_id = ? WHERE id = ?`, creator.ID, task.ID); err != nil {
 		t.Fatalf("set creator: %v", err)
@@ -163,7 +163,9 @@ func TestImportTaskRoundTripsEveryColumn(t *testing.T) {
 				w := want[i].Get(col)
 				if o, ok := tc.overridden[col]; ok {
 					w = o
-				} else if w == nil && col != "parent_task_id" {
+				} else if w == nil && col != "parent_task_id" && col != "issue_id" {
+					// issue_id is a foreign key into issues: no filler value
+					// satisfies it, so it stays NULL in this round trip.
 					t.Errorf("%s.%s is NULL in the source; the test must fill it", tc.table, col)
 				}
 				if g := got[i].Get(col); !reflect.DeepEqual(g, w) {
