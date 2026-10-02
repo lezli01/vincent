@@ -26,7 +26,7 @@ linters:
       # binary; annotating each site would be noise every new test file has to
       # re-earn.
       - linters: [gosec]
-        path: (_test\.go|^cmd/fakeagent/|^cmd/fakegh/|^internal/testrepo/|^internal/agent/agenttest/|^internal/github/githubtest/)
+        path: (_test\.go|^cmd/fakeagent/|^cmd/fakegh/|^internal/testrepo/|^internal/agent/agenttest/|^internal/github/githubtest/|^internal/github/fakeissues/)
 
       # gosec analyses one GOOS at a time, so a suppression can be required on
       # one platform and stale on another — and nolintlint (deliberately kept
