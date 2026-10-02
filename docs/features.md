@@ -536,8 +536,9 @@ cleared before the task exists.
 
 Declared `issue` and `github_issue` fields both get the GitHub issue
 **number**, validated at creation. A workflow that hands the number to `gh`
-reads `{% raw %}{{ index .Task.Fields "github_issue" }}{% endraw %}`: once tasks
-can be created from vincent issues, `issue` holds the vincent issue id instead.
+reads `{% raw %}{{ index .Task.Fields "github_issue" }}{% endraw %}`: on a task
+created from a vincent issue (`vincent task add --issue ID`), `issue` holds the
+vincent issue id instead.
 
 Templates receive the issue as `.Issue` — number, title, body, URL, state,
 labels, author, assignee, and milestone — zero-valued when nothing is linked, so

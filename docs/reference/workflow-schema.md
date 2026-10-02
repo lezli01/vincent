@@ -1036,8 +1036,9 @@ starts.
 
 ### `.Issue`
 
-A task can be created from an issue. Today that means a GitHub issue — from
-the TUI's new-task form, or with `vincent task add --github-issue N`. When it
+A task can be created from an issue: a vincent issue with
+`vincent task add --issue ID` (`issue_id` over the API), or a GitHub issue from
+the TUI's new-task form or with `vincent task add --github-issue N`. When it
 was, `.Issue` carries that issue and a prompt can use it directly:
 
 ```yaml
@@ -1089,7 +1090,7 @@ and any declared [`fields:`](#fields) named exactly `issue`, `github_issue`,
 `labels`, `assignee`, `milestone` or `kind`. An issue imported from GitHub
 gives the title `#N ` and the issue title, and the description the issue body
 plus a `GitHub issue #N: <url>` line; an issue created in vincent gives its
-bare title and body (once tasks can be created from vincent issues). All of that is editable before the task is created;
+bare title and body. All of that is editable before the task is created;
 `.Issue` is the untouched copy. A body larger than the description limit fails
 the create rather than being cut short.
 
