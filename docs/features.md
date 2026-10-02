@@ -530,14 +530,14 @@ offers an issue row above the title. It opens the same type-to-filter picker the
 project and workflow rows use, listing open issues newest first. Selecting one
 fills in the title — prefixed `#N`, so the board row says which issue it is —
 the body plus a `GitHub issue #N: <url>` link line, and any declared `fields:`
-named exactly `issue`, `labels`, `assignee`, or `milestone`. Every value lands
-in an ordinary editable row, so a guess can be corrected or cleared before the
-task exists.
+named exactly `issue`, `github_issue`, `labels`, `assignee`, or `milestone`.
+Every value lands in an ordinary editable row, so a guess can be corrected or
+cleared before the task exists.
 
-A declared `issue` field gets the issue **number**, which is how a `command`
-step reads it: step bodies receive the environment of [§8.5](reference/workflow-schema.md#environment),
-not the template context, so `{% raw %}{{ index .Task.Fields "issue" }}{% endraw %}` is what puts the
-number into a `run:` body.
+Declared `issue` and `github_issue` fields both get the GitHub issue
+**number**, validated at creation. A workflow that hands the number to `gh`
+reads `{% raw %}{{ index .Task.Fields "github_issue" }}{% endraw %}`: once tasks
+can be created from vincent issues, `issue` holds the vincent issue id instead.
 
 Templates receive the issue as `.Issue` — number, title, body, URL, state,
 labels, author, assignee, and milestone — zero-valued when nothing is linked, so

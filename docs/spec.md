@@ -11566,7 +11566,16 @@ stream for the live tail.
    prefilled title is the issue title prefixed `#N`, and `issue` joins `labels`,
    `assignee` and `milestone` as a declared field the mapping fills — with the
    issue **number**, which is the only way a `command` step can read it, since
-   §8.5's environment is what a `run:` body sees and `.Issue` is not in it. Nothing is locked: every
+   §8.5's environment is what a `run:` body sees and `.Issue` is not in it.
+   *Amended 2026-10-02 (task 130.4, issue #663):* the mapping also fills a
+   declared `github_issue` field, and on this path both names carry the GitHub
+   number. The reason given above was wrong: §8.3 renders `run` through §8.4's
+   context, so `.Issue` is readable there, and a number is safe to template
+   into a shell line (§20). The field is still the right home for the number,
+   because it is validated at creation. Since task 130 decision 8 a workflow
+   that hands the number to `gh` reads `github_issue` (or
+   `.Issue.Source.Number`), because a task created from a vincent issue fills
+   `issue` with the vincent id. Nothing is locked: every
    prefilled value can be rewritten or cleared, and a cleared value stays
    cleared (§13.2's precedence rule). It belongs to the **Task details** stage
    of the guided layout, not a stage of its own: picking an issue is how the
