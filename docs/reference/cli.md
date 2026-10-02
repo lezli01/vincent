@@ -23,6 +23,7 @@ localhost API.
 - [`vincent workflow`](#vincent-workflow)
 - [`vincent trigger`](#vincent-trigger)
 - [`vincent github`](#vincent-github)
+- [`vincent issue`](#vincent-issue)
 - [`vincent gc`](#vincent-gc)
 
 ---
@@ -115,7 +116,7 @@ One report answering "why is nothing running?". Twelve groups:
 | Log | daemon log path, size, mtime, and the last 20 lines |
 | Database | path, size, total on disk including WAL/SHM, applied schema version, `PRAGMA integrity_check`, per-table row counts, workflow-snapshot bytes, and how far back the events table reaches |
 | Agents | per adapter: found, path, version, `logged_in`, whether the build is one vincent has been tested against, and whether the adapter can restrict on this OS. Quota is not here — it needs a daemon this report does not; see [`vincent agents`](#vincent-agents) |
-| GitHub | whether [`github.enabled`](configuration.md#github) is on, whether `gh` is installed and logged in, whether a token variable is set, and whether issues are readable |
+| GitHub | whether [`github.enabled`](configuration.md#github) is on, whether `gh` is installed and logged in, whether a token variable is set, whether issue import/sync is available, and one `sync <project>` row per project the importer has polled or been asked to: `ok` or `not ok (<reason>)`, when it last synced, and `import incomplete` until the first import finishes |
 | Container | whether [`container.image`](configuration.md#container) names an image, which image, whether the configured runtime answered, and whether steps run in it or on this host |
 | Skills | per [published skill](#vincent-skills): the version this binary ships, the state of the copy in the global skills store, and the agents it is linked into |
 | Update | whether [`update.check`](configuration.md#update) is on, the latest stable release and when it was last seen, this binary's version, and whether the running daemon is older than it |
@@ -140,9 +141,9 @@ The **Update** rows never set it either: a newer release and a daemon still
 running the previous build both leave everything working, so both are stated as
 facts with the command that acts on them — never as problems.
 The **GitHub** rows never set the exit code either, and they say why: every "no"
-they can report — the toggle off, `gh` missing, `gh` logged out, no token —
-leaves task creation without an issue working exactly as before, so the row ends
-with *tasks can still be created without an issue*. The token row names the
+they can report — the toggle off, `gh` missing, `gh` logged out, no token, a
+failing sync — leaves tasks and local issues working exactly as before, so the
+row ends with *tasks and local issues are unaffected*. The token row names the
 **variable** (`GITHUB_TOKEN` or `GH_TOKEN`), never its value: a diagnostic is
 something people paste into issues.
 The **Container** rows follow the same rule and for the same reason:
@@ -2842,24 +2843,62 @@ MCP tool, so an agent running in a step cannot reach them.
 vincent github status --project ID [--json]
 ```
 
-Whether *this* project's issues can be read, and if not, why.
+Whether *this* project's issues can be imported and synced, and if not, why.
 
 ```
-CHECK    VALUE
-enabled  yes
-repo     lezli01/vincent
-issues   readable via gh
+CHECK              VALUE
+enabled            yes
+repo               lezli01/vincent
+issue import/sync  available via gh
 ```
 
-The `issues` row covers pull requests too: they are read through the same
-credential and the same gate.
+The `issue import/sync` row covers pull requests too: they are read through the
+same credential and the same gate.
 
 It is the per-project half of [`vincent doctor`](#vincent-doctor)'s GitHub rows:
 doctor answers "can this machine read GitHub at all", this answers "and is this
-project one it would read". A project whose `origin` is not a github.com URL
+project one whose issues it would import and sync".
+[`vincent issue sync --status`](#vincent-issue-sync) says how that import is
+actually going. A project whose `origin` is not a github.com URL
 reports `unavailable: this project's origin remote is not a github.com
 repository` — which is not a fault, just a project the issue picker does not
 apply to.
+
+## `vincent issue`
+
+A project's issues. Needs a daemon.
+
+### `vincent issue sync`
+
+```sh
+vincent issue sync --project ID [--status] [--json]
+```
+
+Asks the daemon to import and refresh the project's GitHub issues now, then
+prints how the import stands. The daemon syncs on its own reconciler goroutine
+and answers at once, so what is printed is the status as of the request, not
+the result of this sync. `--status` only reads it and asks for nothing.
+`--json` prints the
+[`/v1/projects/{id}/issues/sync`](api.md#issue-sync) body.
+
+```
+CHECK            VALUE
+enabled          yes
+repo             lezli01/vincent
+last synced      2026-10-02T11:15:00+02:00
+ok               yes
+reason           -
+import complete  yes
+sync             requested
+```
+
+`reason` uses the sync vocabulary of the [API](api.md#issue-sync) —
+`github_disabled`, `poll_disabled`, `pending`, `origin_changed`,
+`rate_limited`, … — and a `rate limited until` row appears while the daemon is
+backing off. With [`github.enabled`](configuration.md#github) off or
+`github.poll_interval: 0` the request is still recorded, and the last row reads
+`requested, but import is off (<reason>)`: nothing is imported until the switch
+is turned back on. An unknown project exits `1`.
 
 ## `vincent gc`
 

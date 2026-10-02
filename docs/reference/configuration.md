@@ -211,23 +211,36 @@ agents:
 #   max_depth: 3
 #   max_tasks: 32
 
-# Reading GitHub issues, so a task can be created from one (task 035). It
-# applies only to a project whose "origin" remote is a github.com repository,
-# and the daemon makes no call at all until you open the issue picker or name
-# an issue on the command line.
+# The GitHub integration (task 035, task 052, task 069, task 130). It applies
+# only to a project whose "origin" remote is a github.com repository. For such
+# a project the daemon's reconciler tick imports and refreshes its issues into
+# vincent's backlog, and links tasks to their pull requests; enabled and
+# poll_interval below are the two switches that stop it.
+#
+# It reads GitHub, and writes only when you ask it to: pressing P on a task
+# pushes that task's branch to origin and opens its pull request, and a task's
+# linked pull request can be merged, closed, reopened, commented on and have
+# its failed checks re-run. Nothing writes on its own, from a workflow step or
+# from an agent — every write is something you asked for. The
+# push never forces: a diverged or rejected push creates no pull request and
+# changes nothing on the remote.
 #
 # vincent stores no credential: it drives the "gh" CLI when it is installed
 # and authenticated, and otherwise reads GITHUB_TOKEN or GH_TOKEN out of the
-# environment the daemon inherited. Set enabled to false to stop the daemon
-# reading GitHub at all.
+# environment the daemon inherited. A credential that cannot write is fine —
+# vincent then falls back to opening GitHub's own new-pull-request page in
+# your browser, and refuses a merge, close, reopen, comment or re-run by
+# saying the credential has no write scope. Set enabled to false to stop the
+# daemon talking to GitHub at all, reads and writes together.
 #
-# poll_interval is how often the daemon reconciles the link between a task and
-# its pull request, by matching an open pull request's head branch against the
-# task's branch (task 052). It is one of vincent's two standing background
-# calls — the other is the release check below — and it fires only for
-# projects hosted on github.com: set it to 0 to switch the reconciler off and
-# keep the rest of the integration, which then calls GitHub only when you ask
-# it to.
+# poll_interval is the reconciler tick: on each one the daemon imports and
+# refreshes each GitHub-based project's issues, and links a task to its pull
+# request by matching an open pull request's head branch against the task's
+# branch (task 052). It is one of vincent's two standing background calls —
+# the other is the release check below — and it fires only for projects
+# hosted on github.com: set it to 0 to switch the reconciler off, issue import
+# included, and keep the rest of the integration, which then calls GitHub only
+# when you ask it to. "vincent issue sync" asks for an import now.
 github:
   enabled: true
   poll_interval: 5m
@@ -1101,31 +1114,39 @@ github:
   poll_interval: 5m
 ```
 
-Whether the daemon may talk to GitHub — read a project's issues and pull
-requests, so a task can be created from an issue and linked to the pull request
-opened from its branch, and open a pull request for a task when you ask it to.
-It is an **opt-out**: on by default, and it costs nothing until you use it.
+Whether the daemon may talk to GitHub — import and refresh a project's issues
+into vincent's backlog, read its issues and pull requests, so a task can be
+created from an issue and linked to the pull request opened from its branch,
+and open a pull request for a task when you ask it to. It is an **opt-out**: on
+by default, and inert on every project whose `origin` is not on github.com.
 
 It governs **reading, plus the six writes below**. Nothing else under this key
 writes to GitHub, and no GitHub call happens while a step runs — the daemon
 calls when you open the issue picker, when it creates a task from an issue, when
 a client asks for a pull request, when you ask it to open one or act on one, and
-on the reconciler's tick. The issue is stored on the task at that
+on the reconciler's tick. The issue a task was created from is stored on the task at that
 moment and never re-read, which is why a step's `.Issue` renders offline and
 cannot fail because GitHub is down. A pull request is the opposite: only the
 *link* is stored, and its title, state, draft and merged status are re-read
 every time, because a snapshot of them would go stale and lie.
 
-`poll_interval` is how often the daemon reconciles those links: it lists each
-GitHub-based project's open pull requests and links the ones whose head branch
-equals a task's branch. It is one of vincent's **two** standing outbound calls
-— the other is [`update`](#update)'s release check — and it is the one that
-fires only for projects hosted on github.com, so a daemon with no GitHub-origin
-project makes no call under this key at all. That is why it has its own key —
-set it to `0` and the reconciler stops while the rest of the integration keeps
-working on demand. A link a human
-made by hand is never overwritten by it, and a link a human removed is never
-re-applied.
+`poll_interval` is the reconciler tick. On each one the daemon imports and
+refreshes each GitHub-based project's issues — open ones first, then
+incrementally, conditional on the last answer so an idle repository costs a
+`304` — and reconciles pull-request links: it lists each project's open pull
+requests and links the ones whose head branch equals a task's branch. It is one
+of vincent's **two** standing outbound calls — the other is
+[`update`](#update)'s release check — and it is the one that fires only for
+projects hosted on github.com, so a daemon with no GitHub-origin project makes
+no call under this key at all. That is why it has its own key — set it to `0`
+and the reconciler stops, issue import included, while the rest of the
+integration keeps working on demand. An issue or a pull request appearing a few
+minutes late costs nothing, and
+[`vincent issue sync`](cli.md#vincent-issue-sync) asks for an import now. A
+failing import is never quiet: each project's last outcome is on
+[`GET /v1/projects/{id}/issues/sync`](api.md#issue-sync) and in
+`vincent doctor`. A link a human made by hand is never overwritten by the
+reconciler, and a link a human removed is never re-applied.
 
 It applies only to a project whose `origin` remote parses as a github.com
 repository. On every other project it does nothing at all — the issue row is not
@@ -1133,7 +1154,8 @@ offered, and no `gh` process is started.
 
 Setting it to `false` stops the daemon talking to GitHub entirely: the TUI's
 issue row disappears, `GET /v1/projects/{id}/github` reports `disabled`, the
-pull request listing answers `409`, the reconciler stops, creating a task with
+pull request listing answers `409`, the reconciler stops (no issue import, no
+refresh, no link), creating a task with
 `--github-issue` is refused, and **every write to GitHub is refused too**. Read
 per use, so a [reload](#reload-semantics) governs the next call and the next
 tick.
