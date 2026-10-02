@@ -9,6 +9,24 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [Unreleased]
+
+### Added
+
+- **The issue entity, the foundation of vincent-owned issues.** The daemon's
+  database gains per-project issues — title, Markdown body, `open`/`closed`
+  with a close reason, labels from a case-insensitive per-project catalogue, a
+  `kind` and a priority — plus comments, the link to an imported issue's
+  source, and a pointer and snapshot on each task created from an issue. Every
+  issue write records an `issue.*` event (`issue.created`, `issue.updated`,
+  `issue.state_changed`, `issue.labels_changed`, `issue.comment_added`,
+  `issue.deleted`) on the global event stream, and `task.created` carries
+  `issue_id` when a task has one. Nothing creates an issue yet: routes, the
+  CLI, the TUI and GitHub import follow. The database migrates on start
+  (migration 0036). Importing a task from a backup drops its issue link unless that
+  issue exists in the target project, keeping the snapshot.
+  ([#660](https://github.com/lezli01/vincent/issues/660))
+
 ## [0.11.0](https://github.com/lezli01/vincent/compare/v0.10.1...v0.11.0) (2026-10-01)
 
 ### Added
