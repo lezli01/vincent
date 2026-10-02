@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/lezli01/vincent/internal/issuestate"
 )
 
 func TestDeleteProjectCascade(t *testing.T) {
@@ -92,5 +94,89 @@ func TestDeleteProjectCascade(t *testing.T) {
 
 	if err := s.DeleteProjectCascade(ctx, 9999); !errors.Is(err, ErrNotFound) {
 		t.Errorf("missing project: err = %v, want ErrNotFound", err)
+	}
+}
+
+// TestDeleteProjectCascadeTakesItsIssues (task 130): the issue tables go by
+// ON DELETE CASCADE from the project row, after the explicit task delete, so
+// a task linked to one of the project's issues is no obstacle and nothing of
+// the issue set survives — while the other project's is untouched.
+func TestDeleteProjectCascadeTakesItsIssues(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	keep := testProject(t, s, "keep")
+	doomed := testProject(t, s, "doomed")
+
+	seed := func(p *Project) *Issue {
+		is, err := s.CreateIssue(ctx, NewIssue{
+			ProjectID: p.ID, Title: "issue of " + p.Name, Labels: []string{"bug", "store"},
+		}, issuestate.Human)
+		if err != nil {
+			t.Fatalf("CreateIssue: %v", err)
+		}
+		if _, err := s.AddIssueComment(ctx, is.ID, "me", "a comment", "", issuestate.Human); err != nil {
+			t.Fatalf("AddIssueComment: %v", err)
+		}
+		if _, err := s.db.ExecContext(ctx, `
+			INSERT INTO issue_remotes (issue_id, project_id, provider, remote_key)
+			VALUES (?, ?, 'github', ?)`, is.ID, p.ID, "node-"+p.Name); err != nil {
+			t.Fatalf("insert remote: %v", err)
+		}
+		tk := newTask(p.ID, "from-"+p.Name, TaskQueued)
+		tk.IssueID = &is.ID
+		tk.Issue = &IssueSnapshot{ID: is.ID, Title: is.Title, State: "open"}
+		if err := s.CreateTask(ctx, tk, nil); err != nil {
+			t.Fatalf("CreateTask: %v", err)
+		}
+		return is
+	}
+	kept := seed(keep)
+	gone := seed(doomed)
+
+	if err := s.DeleteProjectCascade(ctx, doomed.ID); err != nil {
+		t.Fatalf("cascade: %v", err)
+	}
+
+	count := func(q string, args ...any) int {
+		t.Helper()
+		var n int
+		if err := s.db.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		return n
+	}
+	if n := count(`SELECT COUNT(*) FROM pragma_foreign_key_check`); n != 0 {
+		t.Errorf("PRAGMA foreign_key_check reports %d violations after the cascade", n)
+	}
+	for _, tc := range []struct {
+		name, q string
+		arg     int64
+	}{
+		{"issues", `SELECT COUNT(*) FROM issues WHERE project_id = ?`, doomed.ID},
+		{"issue_remotes", `SELECT COUNT(*) FROM issue_remotes WHERE project_id = ?`, doomed.ID},
+		{"labels", `SELECT COUNT(*) FROM labels WHERE project_id = ?`, doomed.ID},
+		{"issue_labels", `SELECT COUNT(*) FROM issue_labels WHERE issue_id = ?`, gone.ID},
+		{"issue_comments", `SELECT COUNT(*) FROM issue_comments WHERE issue_id = ?`, gone.ID},
+		{"tasks", `SELECT COUNT(*) FROM tasks WHERE project_id = ?`, doomed.ID},
+	} {
+		if n := count(tc.q, tc.arg); n != 0 {
+			t.Errorf("%d %s rows of the deleted project survived", n, tc.name)
+		}
+	}
+	for _, tc := range []struct {
+		name, q string
+		arg     int64
+		want    int
+	}{
+		{"issues", `SELECT COUNT(*) FROM issues WHERE project_id = ?`, keep.ID, 1},
+		{"issue_remotes", `SELECT COUNT(*) FROM issue_remotes WHERE project_id = ?`, keep.ID, 1},
+		{"labels", `SELECT COUNT(*) FROM labels WHERE project_id = ?`, keep.ID, 2},
+		{"issue_labels", `SELECT COUNT(*) FROM issue_labels WHERE issue_id = ?`, kept.ID, 2},
+		{"issue_comments", `SELECT COUNT(*) FROM issue_comments WHERE issue_id = ?`, kept.ID, 1},
+		{"linked tasks", `SELECT COUNT(*) FROM tasks WHERE issue_id = ?`, kept.ID, 1},
+	} {
+		if n := count(tc.q, tc.arg); n != tc.want {
+			t.Errorf("kept project's %s = %d, want %d", tc.name, n, tc.want)
+		}
 	}
 }

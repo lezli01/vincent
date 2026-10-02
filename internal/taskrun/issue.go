@@ -51,3 +51,13 @@ func cloneIssue(issue *github.Issue) *github.Issue {
 	copied.Labels = slices.Clone(issue.Labels)
 	return &copied
 }
+
+// cloneInt64 copies a nullable id, so a lane's IssueID is its own pointer
+// rather than an alias of the parent row's field.
+func cloneInt64(p *int64) *int64 {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
+}

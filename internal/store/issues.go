@@ -1,0 +1,690 @@
+package store
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/lezli01/vincent/internal/issuestate"
+	"github.com/lezli01/vincent/internal/taskstate"
+)
+
+// Issue event types (spec §5.6, §13.3, task 130). Like the chat family they
+// ride the one durable event table with task_id NULL and the issue's id in
+// the payload, and no payload ever carries a title, body or comment text: a
+// client re-fetches what it renders. `scheduler.WakeOn` is false for every
+// one of them — nothing about admission depends on an issue.
+const (
+	EventIssueCreated       = "issue.created"
+	EventIssueUpdated       = "issue.updated"
+	EventIssueStateChanged  = "issue.state_changed"
+	EventIssueLabelsChanged = "issue.labels_changed"
+	EventIssueCommentAdded  = "issue.comment_added"
+	EventIssueDeleted       = "issue.deleted"
+)
+
+// ErrIssueChanged is UpdateIssue's compare-and-set refusal: the version the
+// caller read is no longer the stored one.
+var ErrIssueChanged = errors.New("issue changed since it was read")
+
+// ErrInvalidIssueAction is a transition issuestate refuses in the issue's
+// current state — the issue analogue of a task's 409.
+var ErrInvalidIssueAction = errors.New("action not allowed in this issue state")
+
+// Issue is a vincent-owned issue (spec §5.6, task 130). Labels, Remote,
+// Active and TaskCount are read with it; Active and TaskCount are derived
+// from its root tasks and never stored (decision 3).
+type Issue struct {
+	ID, ProjectID      int64
+	Title, Body        string
+	State              issuestate.State
+	CloseReason        issuestate.Reason // "" when open
+	DuplicateOfIssueID *int64
+	Kind               string
+	Priority           int
+	Author             string
+	ParentIssueID      *int64 // seam, never written in v1
+	Version            int64
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	ClosedAt           *time.Time
+	Labels             []string     // names, sorted case-insensitively
+	Remote             *IssueRemote // nil for a local issue
+	// Active is whether any root task created from the issue is not
+	// taskstate.Settled; TaskCount is how many root tasks there are. Lanes
+	// never count (decision 5): a twenty-lane tree is one piece of work.
+	Active    bool
+	TaskCount int
+}
+
+// IssueRemote is an imported issue's link to its source (decision 2). A nil
+// IssueID is a tombstone: the issue was deleted, and sync must not import
+// the key again (decision 6).
+type IssueRemote struct {
+	ID                        int64
+	IssueID                   *int64 // nil = tombstone
+	ProjectID                 int64
+	Provider, RemoteKey, Repo string
+	Number                    int
+	URL, RemoteJSON           string
+	RemoteUpdatedAt, SyncedAt *time.Time
+	Suppressed                bool
+}
+
+// Label is one entry of a project's label catalogue (decision 4). Source is
+// "local" or the provider it was imported from.
+type Label struct {
+	ID, ProjectID                    int64
+	Name, Color, Description, Source string
+}
+
+// IssueComment is a comment on an issue. RemoteKey is the provider's id for
+// an imported comment, "" for a local one.
+type IssueComment struct {
+	ID, IssueID             int64
+	Author, Body, RemoteKey string
+	CreatedAt, UpdatedAt    time.Time
+}
+
+// NewIssue is what CreateIssue inserts. The store validates none of the
+// text; internal/issues owns those rules.
+type NewIssue struct {
+	ProjectID                 int64
+	Title, Body, Kind, Author string
+	Priority                  int
+	Labels                    []string // upserted into the project's catalogue, source "local"
+}
+
+// IssuePatch is UpdateIssue's change set; nil means unchanged.
+type IssuePatch struct {
+	Title, Body, Kind *string
+	Priority          *int
+}
+
+// IssueFilter narrows ListIssues. Zero values mean "no filter".
+type IssueFilter struct {
+	ProjectID int64              // 0 = every project
+	States    []issuestate.State // empty = any
+	Label     string             // case-insensitive name, "" = any
+	Kind      string             // "" = any
+	Source    string             // "" any, "local" no live remote row, else a remote row with that provider
+	Text      string             // LIKE match over title and body, "" = any
+	Limit     int                // 0 = no limit
+}
+
+// labelSourceLocal is the source of a label a human or an agent created.
+const labelSourceLocal = "local"
+
+// issueQuerier is the read subset of *sql.DB and *sql.Tx, so the same read
+// serves a plain GetIssue and the in-transaction reads of every write.
+type issueQuerier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// settledTaskStates is §6's settled set, derived from taskstate rather than
+// spelled out here, so a new settled state reaches Active without an edit.
+func settledTaskStates() []any {
+	var out []any
+	for _, s := range taskstate.All {
+		if taskstate.Settled(s) {
+			out = append(out, string(s))
+		}
+	}
+	return out
+}
+
+// issueSelect reads an issue with its live remote row and its derived
+// counts. The remote join is on issue_id, so a tombstone never joins. Its
+// bind arguments — the settled states — come first, from issueSelectArgs.
+func issueSelect() string {
+	settled := placeholders(len(settledTaskStates()))
+	return `SELECT i.id, i.project_id, i.title, i.body, i.state, i.close_reason, i.duplicate_of_issue_id,
+		i.kind, i.priority, i.author, i.parent_issue_id, i.version, i.created_at, i.updated_at, i.closed_at,
+		(SELECT COUNT(*) FROM tasks t WHERE t.issue_id = i.id AND t.parent_task_id IS NULL),
+		EXISTS (SELECT 1 FROM tasks t WHERE t.issue_id = i.id AND t.parent_task_id IS NULL
+			AND t.state NOT IN ` + settled + `),
+		r.id, r.issue_id, r.project_id, r.provider, r.remote_key, r.repo, r.number, r.url,
+		r.remote_json, r.remote_updated_at, r.synced_at, r.suppressed
+	FROM issues i LEFT JOIN issue_remotes r ON r.issue_id = i.id`
+}
+
+func issueSelectArgs() []any { return settledTaskStates() }
+
+func scanIssue(r rowScanner) (*Issue, error) {
+	var (
+		iss                                 Issue
+		state                               string
+		closeReason, closedAt               sql.NullString
+		dupOf, parent                       sql.NullInt64
+		created, updated                    string
+		active                              bool
+		rID, rIssueID, rProjectID, rNumber  sql.NullInt64
+		rProvider, rKey, rRepo, rURL, rJSON sql.NullString
+		rRemoteUpdated, rSynced             sql.NullString
+		rSuppressed                         sql.NullBool
+	)
+	if err := r.Scan(&iss.ID, &iss.ProjectID, &iss.Title, &iss.Body, &state, &closeReason, &dupOf,
+		&iss.Kind, &iss.Priority, &iss.Author, &parent, &iss.Version, &created, &updated, &closedAt,
+		&iss.TaskCount, &active,
+		&rID, &rIssueID, &rProjectID, &rProvider, &rKey, &rRepo, &rNumber, &rURL,
+		&rJSON, &rRemoteUpdated, &rSynced, &rSuppressed); err != nil {
+		return nil, err
+	}
+	iss.State = issuestate.State(state)
+	iss.CloseReason = issuestate.Reason(closeReason.String)
+	iss.Active = active
+	if dupOf.Valid {
+		iss.DuplicateOfIssueID = &dupOf.Int64
+	}
+	if parent.Valid {
+		iss.ParentIssueID = &parent.Int64
+	}
+	var err error
+	if iss.CreatedAt, err = parseTime(created); err != nil {
+		return nil, err
+	}
+	if iss.UpdatedAt, err = parseTime(updated); err != nil {
+		return nil, err
+	}
+	if iss.ClosedAt, err = parseTimePtr(closedAt); err != nil {
+		return nil, err
+	}
+	if rID.Valid {
+		rem := &IssueRemote{
+			ID:         rID.Int64,
+			ProjectID:  rProjectID.Int64,
+			Provider:   rProvider.String,
+			RemoteKey:  rKey.String,
+			Repo:       rRepo.String,
+			Number:     int(rNumber.Int64),
+			URL:        rURL.String,
+			RemoteJSON: rJSON.String,
+			Suppressed: rSuppressed.Bool,
+		}
+		if rIssueID.Valid {
+			rem.IssueID = &rIssueID.Int64
+		}
+		if rem.RemoteUpdatedAt, err = parseTimePtr(rRemoteUpdated); err != nil {
+			return nil, err
+		}
+		if rem.SyncedAt, err = parseTimePtr(rSynced); err != nil {
+			return nil, err
+		}
+		iss.Remote = rem
+	}
+	return &iss, nil
+}
+
+// GetIssue returns the issue with the given id, or ErrNotFound.
+func (s *Store) GetIssue(ctx context.Context, id int64) (*Issue, error) {
+	return getIssue(ctx, s.db, id)
+}
+
+func getIssue(ctx context.Context, q issueQuerier, id int64) (*Issue, error) {
+	args := append(issueSelectArgs(), id)
+	iss, err := scanIssue(q.QueryRowContext(ctx, issueSelect()+` WHERE i.id = ?`, args...))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("issue %d: %w", id, ErrNotFound)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get issue %d: %w", id, err)
+	}
+	if err := loadIssueLabels(ctx, q, []*Issue{iss}); err != nil {
+		return nil, err
+	}
+	return iss, nil
+}
+
+// ListIssues returns the issues matching f, most recently updated first.
+func (s *Store) ListIssues(ctx context.Context, f IssueFilter) ([]*Issue, error) {
+	//nolint:gosec // G202: issueSelect is a constant query with placeholders() bind markers; every value binds
+	q := issueSelect() + ` WHERE 1 = 1`
+	args := issueSelectArgs()
+	if f.ProjectID != 0 {
+		q += ` AND i.project_id = ?`
+		args = append(args, f.ProjectID)
+	}
+	if len(f.States) > 0 {
+		q += ` AND i.state IN ` + placeholders(len(f.States))
+		for _, st := range f.States {
+			args = append(args, string(st))
+		}
+	}
+	if name := strings.TrimSpace(f.Label); name != "" {
+		// labels.name is COLLATE NOCASE, so `=` is case-insensitive.
+		q += ` AND EXISTS (SELECT 1 FROM issue_labels il JOIN labels l ON l.id = il.label_id
+			WHERE il.issue_id = i.id AND l.name = ?)`
+		args = append(args, name)
+	}
+	if f.Kind != "" {
+		q += ` AND i.kind = ?`
+		args = append(args, f.Kind)
+	}
+	switch f.Source {
+	case "":
+	case labelSourceLocal:
+		q += ` AND r.id IS NULL`
+	default:
+		q += ` AND r.provider = ?`
+		args = append(args, f.Source)
+	}
+	if f.Text != "" {
+		like := "%" + escapeLike(f.Text) + "%"
+		q += ` AND (i.title LIKE ? ESCAPE '\' OR i.body LIKE ? ESCAPE '\')`
+		args = append(args, like, like)
+	}
+	q += ` ORDER BY i.updated_at DESC, i.id DESC`
+	if f.Limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, f.Limit)
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list issues: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []*Issue
+	for rows.Next() {
+		iss, err := scanIssue(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan issue: %w", err)
+		}
+		out = append(out, iss)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list issues: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("list issues: %w", err)
+	}
+	if err := loadIssueLabels(ctx, s.db, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// escapeLike escapes LIKE's wildcards so a search for "100%" means the text.
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
+}
+
+// loadIssueLabels fills Labels on every issue in one query.
+func loadIssueLabels(ctx context.Context, q issueQuerier, issues []*Issue) error {
+	if len(issues) == 0 {
+		return nil
+	}
+	byID := make(map[int64]*Issue, len(issues))
+	args := make([]any, 0, len(issues))
+	for _, iss := range issues {
+		byID[iss.ID] = iss
+		args = append(args, iss.ID)
+	}
+	rows, err := q.QueryContext(ctx, `SELECT il.issue_id, l.name FROM issue_labels il
+		JOIN labels l ON l.id = il.label_id WHERE il.issue_id IN `+placeholders(len(args)), args...)
+	if err != nil {
+		return fmt.Errorf("load issue labels: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var (
+			id   int64
+			name string
+		)
+		if err := rows.Scan(&id, &name); err != nil {
+			return fmt.Errorf("scan issue label: %w", err)
+		}
+		byID[id].Labels = append(byID[id].Labels, name)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("load issue labels: %w", err)
+	}
+	for _, iss := range issues {
+		sortLabelNames(iss.Labels)
+	}
+	return nil
+}
+
+// sortLabelNames orders names case-insensitively, ties broken by the raw
+// spelling so the order is total.
+func sortLabelNames(names []string) {
+	slices.SortFunc(names, func(a, b string) int {
+		if c := strings.Compare(strings.ToLower(a), strings.ToLower(b)); c != 0 {
+			return c
+		}
+		return strings.Compare(a, b)
+	})
+}
+
+// normalizeLabelNames trims, drops empties and de-duplicates
+// case-insensitively, keeping the first spelling.
+func normalizeLabelNames(names []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if n == "" || seen[strings.ToLower(n)] {
+			continue
+		}
+		seen[strings.ToLower(n)] = true
+		out = append(out, n)
+	}
+	return out
+}
+
+// issueEvent builds an issue.* event: the project id on the row, task_id
+// NULL — an issue is not a task, and a per-task stream must never deliver
+// one — and the issue id plus the actor in the payload.
+func issueEvent(evType string, projectID, issueID int64, by issuestate.Actor, extra map[string]any) (*Event, error) {
+	body := map[string]any{"id": issueID, "by": string(by)}
+	for k, v := range extra {
+		body[k] = v
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal %s event: %w", evType, err)
+	}
+	pid := projectID
+	return &Event{Type: evType, ProjectID: &pid, Payload: payload}, nil
+}
+
+func checkActor(by issuestate.Actor) error {
+	if !issuestate.ValidActor(by) {
+		return fmt.Errorf("unknown issue actor %q", by)
+	}
+	return nil
+}
+
+// writeIssue runs fn in one transaction and publishes the event it returns
+// after the commit. fn returns a nil event for a write that changed nothing;
+// then nothing is published, which is notify's own rule.
+func (s *Store) writeIssue(ctx context.Context, fn func(*sql.Tx) (*Event, error)) error {
+	var ev *Event
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		e, err := fn(tx)
+		if err != nil {
+			return err
+		}
+		if e != nil {
+			if err := appendEventTx(ctx, tx, e); err != nil {
+				return err
+			}
+		}
+		ev = e
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	s.notify(ev)
+	return nil
+}
+
+// CreateIssue inserts a local issue with its labels and writes issue.created
+// in the same transaction.
+func (s *Store) CreateIssue(ctx context.Context, in NewIssue, by issuestate.Actor) (*Issue, error) {
+	if err := checkActor(by); err != nil {
+		return nil, err
+	}
+	var id int64
+	err := s.writeIssue(ctx, func(tx *sql.Tx) (*Event, error) {
+		if err := projectExistsTx(ctx, tx, in.ProjectID); err != nil {
+			return nil, err
+		}
+		var err error
+		id, err = insertIssueTx(ctx, tx, in, issuestate.Open, "", time.Now())
+		if err != nil {
+			return nil, err
+		}
+		if err := replaceIssueLabelsTx(ctx, tx, in.ProjectID, id, in.Labels, labelSourceLocal); err != nil {
+			return nil, err
+		}
+		return issueEvent(EventIssueCreated, in.ProjectID, id, by, nil)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.GetIssue(ctx, id)
+}
+
+func projectExistsTx(ctx context.Context, tx *sql.Tx, projectID int64) error {
+	var one int
+	err := tx.QueryRowContext(ctx, `SELECT 1 FROM projects WHERE id = ?`, projectID).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("project %d: %w", projectID, ErrNotFound)
+	}
+	if err != nil {
+		return fmt.Errorf("read project %d: %w", projectID, err)
+	}
+	return nil
+}
+
+func insertIssueTx(ctx context.Context, tx *sql.Tx, in NewIssue, state issuestate.State, reason issuestate.Reason, now time.Time) (int64, error) {
+	var closedAt any
+	if state == issuestate.Closed {
+		closedAt = formatTime(now)
+	}
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO issues (project_id, title, body, state, close_reason, kind, priority, author,
+			created_at, updated_at, closed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		in.ProjectID, in.Title, in.Body, string(state), nullString(string(reason)), in.Kind, in.Priority,
+		in.Author, formatTime(now), formatTime(now), closedAt)
+	if err != nil {
+		return 0, fmt.Errorf("insert issue: %w", err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("insert issue: %w", err)
+	}
+	return id, nil
+}
+
+// UpdateIssue applies p as a compare-and-set on version: a caller holding a
+// stale version gets ErrIssueChanged and changes nothing. A patch that
+// changes nothing writes nothing — no version bump, no event.
+func (s *Store) UpdateIssue(ctx context.Context, id, version int64, p IssuePatch, by issuestate.Actor) (*Issue, error) {
+	if err := checkActor(by); err != nil {
+		return nil, err
+	}
+	err := s.writeIssue(ctx, func(tx *sql.Tx) (*Event, error) {
+		cur, err := getIssue(ctx, tx, id)
+		if err != nil {
+			return nil, err
+		}
+		if cur.Version != version {
+			return nil, fmt.Errorf("issue %d at version %d, read at %d: %w", id, cur.Version, version, ErrIssueChanged)
+		}
+		next := *cur
+		var changed []string
+		if p.Title != nil && *p.Title != cur.Title {
+			next.Title = *p.Title
+			changed = append(changed, "title")
+		}
+		if p.Body != nil && *p.Body != cur.Body {
+			next.Body = *p.Body
+			changed = append(changed, "body")
+		}
+		if p.Kind != nil && *p.Kind != cur.Kind {
+			next.Kind = *p.Kind
+			changed = append(changed, "kind")
+		}
+		if p.Priority != nil && *p.Priority != cur.Priority {
+			next.Priority = *p.Priority
+			changed = append(changed, "priority")
+		}
+		if len(changed) == 0 {
+			return nil, nil
+		}
+		res, err := tx.ExecContext(ctx, `
+			UPDATE issues SET title = ?, body = ?, kind = ?, priority = ?, version = version + 1, updated_at = ?
+			WHERE id = ? AND version = ?`,
+			next.Title, next.Body, next.Kind, next.Priority, formatTime(time.Now()), id, version)
+		if err != nil {
+			return nil, fmt.Errorf("update issue %d: %w", id, err)
+		}
+		if n, err := res.RowsAffected(); err != nil {
+			return nil, fmt.Errorf("update issue %d: %w", id, err)
+		} else if n == 0 {
+			return nil, fmt.Errorf("issue %d: %w", id, ErrIssueChanged)
+		}
+		slices.Sort(changed)
+		return issueEvent(EventIssueUpdated, cur.ProjectID, id, by, map[string]any{"changed": changed})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.GetIssue(ctx, id)
+}
+
+// TransitionIssue moves an issue through issuestate inside one transaction:
+// the state is read, normalized and judged there, so two racing transitions
+// cannot both pass. Closing records the reason and the time; reopening clears
+// both, and the duplicate pointer with them. A sync no-op returns the issue
+// unchanged and announces nothing.
+func (s *Store) TransitionIssue(ctx context.Context, id int64, action issuestate.Action, reason issuestate.Reason, by issuestate.Actor) (*Issue, error) {
+	if err := checkActor(by); err != nil {
+		return nil, err
+	}
+	err := s.writeIssue(ctx, func(tx *sql.Tx) (*Event, error) {
+		cur, err := getIssue(ctx, tx, id)
+		if err != nil {
+			return nil, err
+		}
+		from := issuestate.Normalize(cur.State)
+		to, noop, ok := issuestate.Next(from, action, by)
+		if !ok {
+			return nil, fmt.Errorf("issue %d: %s from %s by %s: %w", id, action, from, by, ErrInvalidIssueAction)
+		}
+		resolved, err := issuestate.ResolveReason(action, reason)
+		if err != nil {
+			return nil, fmt.Errorf("issue %d: %w", id, err)
+		}
+		if noop {
+			return nil, nil
+		}
+		now := formatTime(time.Now())
+		if to == issuestate.Closed {
+			_, err = tx.ExecContext(ctx, `
+				UPDATE issues SET state = ?, close_reason = ?, closed_at = ?, version = version + 1, updated_at = ?
+				WHERE id = ?`, string(to), string(resolved), now, now, id)
+		} else {
+			_, err = tx.ExecContext(ctx, `
+				UPDATE issues SET state = ?, close_reason = NULL, closed_at = NULL, duplicate_of_issue_id = NULL,
+					version = version + 1, updated_at = ?
+				WHERE id = ?`, string(to), now, id)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("transition issue %d: %w", id, err)
+		}
+		return issueEvent(EventIssueStateChanged, cur.ProjectID, id, by, map[string]any{
+			"from": string(from), "to": string(to), "reason": string(resolved),
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.GetIssue(ctx, id)
+}
+
+// DeleteIssue deletes an issue in any state (decision 6). Its remote row
+// becomes a tombstone so sync never imports the key again, its tasks keep
+// their snapshots with issue_id NULL, and its labels and comments go with it.
+func (s *Store) DeleteIssue(ctx context.Context, id int64, by issuestate.Actor) error {
+	if err := checkActor(by); err != nil {
+		return err
+	}
+	return s.writeIssue(ctx, func(tx *sql.Tx) (*Event, error) {
+		var projectID int64
+		err := tx.QueryRowContext(ctx, `SELECT project_id FROM issues WHERE id = ?`, id).Scan(&projectID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("issue %d: %w", id, ErrNotFound)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read issue %d: %w", id, err)
+		}
+		// The FK's SET NULL would do this too; it is spelled out because the
+		// tombstone is the point, not a side effect.
+		if _, err := tx.ExecContext(ctx, `UPDATE issue_remotes SET issue_id = NULL WHERE issue_id = ?`, id); err != nil {
+			return nil, fmt.Errorf("tombstone issue %d: %w", id, err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM issues WHERE id = ?`, id); err != nil {
+			return nil, fmt.Errorf("delete issue %d: %w", id, err)
+		}
+		return issueEvent(EventIssueDeleted, projectID, id, by, nil)
+	})
+}
+
+// AddIssueComment appends a comment. A comment is not an edit of the issue,
+// so it bumps neither version nor updated_at.
+func (s *Store) AddIssueComment(ctx context.Context, issueID int64, author, body, remoteKey string, by issuestate.Actor) (*IssueComment, error) {
+	if err := checkActor(by); err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	c := &IssueComment{IssueID: issueID, Author: author, Body: body, RemoteKey: remoteKey, CreatedAt: now, UpdatedAt: now}
+	err := s.writeIssue(ctx, func(tx *sql.Tx) (*Event, error) {
+		var projectID int64
+		err := tx.QueryRowContext(ctx, `SELECT project_id FROM issues WHERE id = ?`, issueID).Scan(&projectID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("issue %d: %w", issueID, ErrNotFound)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read issue %d: %w", issueID, err)
+		}
+		res, err := tx.ExecContext(ctx, `
+			INSERT INTO issue_comments (issue_id, author, body, remote_key, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			issueID, author, body, nullString(remoteKey), formatTime(now), formatTime(now))
+		if err != nil {
+			return nil, fmt.Errorf("insert issue comment: %w", err)
+		}
+		if c.ID, err = res.LastInsertId(); err != nil {
+			return nil, fmt.Errorf("insert issue comment: %w", err)
+		}
+		return issueEvent(EventIssueCommentAdded, projectID, issueID, by, map[string]any{"comment_id": c.ID})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// ListIssueComments returns an issue's comments, oldest first.
+func (s *Store) ListIssueComments(ctx context.Context, issueID int64) ([]*IssueComment, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, issue_id, author, body, remote_key, created_at, updated_at
+		FROM issue_comments WHERE issue_id = ? ORDER BY created_at ASC, id ASC`, issueID)
+	if err != nil {
+		return nil, fmt.Errorf("list issue comments: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []*IssueComment
+	for rows.Next() {
+		var (
+			c                IssueComment
+			remoteKey        sql.NullString
+			created, updated string
+		)
+		if err := rows.Scan(&c.ID, &c.IssueID, &c.Author, &c.Body, &remoteKey, &created, &updated); err != nil {
+			return nil, fmt.Errorf("scan issue comment: %w", err)
+		}
+		c.RemoteKey = remoteKey.String
+		if c.CreatedAt, err = parseTime(created); err != nil {
+			return nil, err
+		}
+		if c.UpdatedAt, err = parseTime(updated); err != nil {
+			return nil, err
+		}
+		out = append(out, &c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list issue comments: %w", err)
+	}
+	return out, nil
+}

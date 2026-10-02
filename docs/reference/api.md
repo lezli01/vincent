@@ -1721,8 +1721,10 @@ curl -sS -X POST http://127.0.0.1:PORT/v1/tasks/import \
 
 `path` must be absolute. The task keeps its id and comes back `archived`, with
 `archived_at` set to the import time so [retention](files.md#transcripts)
-starts over. `worktree_path` is cleared and `created_by_task_id` is cleared
-unless that task exists here; every other column is copied as it is. Step
+starts over. `worktree_path` is cleared, `created_by_task_id` is cleared
+unless that task exists here, and `issue_id` is cleared unless that issue
+exists in the project the task lands in (the task keeps its issue snapshot);
+every other column is copied as it is. Step
 attempt ids are all kept when all are free, and all renumbered in their original
 order when any is taken — `step_runs_renumbered` says which. `project_id`
 imports into another project; without it the backed-up project must exist here
@@ -3021,6 +3023,8 @@ chat.created            chat.state_changed      chat.turn_changed
 chat.archived           chat.handed_off         chat.closed
 task.deleted            chat.deleted
 task.restored
+issue.created           issue.updated           issue.state_changed
+issue.labels_changed    issue.comment_added     issue.deleted
 project.*               workflow.registry_changed
 trigger.fired           trigger.poll_changed
 agent.quota_changed     daemon.shutting_down
@@ -3042,6 +3046,13 @@ they need.
   [imported from a backup](#importing-a-task). Unlike `task.deleted` it carries
   the task id, so it also reaches the per-task stream. It is not a state change
   and triggers no notification.
+- The `issue.*` events carry the issue's `id` and `by` (`human`, `agent` or
+  `sync`) beside what moved: `changed` field names on `issue.updated`,
+  `{ from, to, reason }` on `issue.state_changed`, `labels` on
+  `issue.labels_changed`, `comment_id` on `issue.comment_added`. None carries a
+  title, body or comment text, and none reaches a per-task stream. There are no
+  issue routes yet; these record issues the daemon's store already holds.
+  `task.created` carries `issue_id` for a task created from an issue.
 - There is no separate `task.archived` or `task.awaiting_input` type. Both are
   `task.state_changed` with the appropriate `to`; the `awaiting_input` payload
   additionally carries the request kind and a one-line summary, which is the

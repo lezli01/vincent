@@ -216,7 +216,8 @@ DB; the daemon maintains a registry of parsed workflows from three scopes:
   - `adhoc` — the single-step agent workflow used when a task is created without
     naming one (§5.3). *Amended 2026-08-27 (task 037): its prompt — and every
     other built-in agent prompt — asks the agent to report through `vincent
-    status` (§5.6). The daemon appends no such instruction to any prompt, so a
+    status` (§12.1; *this read §5.6 until 2026-10-02, a section that
+    did not exist and now holds §5.6 Issue*). The daemon appends no such instruction to any prompt, so a
     built-in that does not ask is one that runs silent on the board.*
   - `create-workflow` — *added 2026-08-23 (task 024).* One agent step that writes
     another workflow file. It declares two task fields: `workflow_name`
@@ -400,6 +401,7 @@ A unit of work delivered by running a workflow against a project.
 | `pending_follow_up` | *Added 2026-08-25 (task 027).* The follow-up run a human asked for from `done` or `aborted` (§6): its compiled workflow, the run form and text it came from, the optional agent/model/effort, the **origin state** the task is returned to, the 1-based **round**, and the run's own **step cursor**. NULL when no follow-up is in flight. *Amended 2026-09-14 (task 027 decision 14):* also the round's own **fields** when they differ from the task's — the request's values laid over the task's, with a named workflow's required defaults applied (§8.1.2) — which that round renders in place of the task row's |
 | `workflow_origin` | *Added 2026-08-28 (task 043).* Where the definition behind `workflow_name` came from, captured **once at creation** beside `workflow_snapshot`. It holds the **scope** that won §5.2's shadowing walk (`builtin`, `global`, `project`, or `derived`), the source **file relative to that scope's root** (`.vincent/workflows/adhoc.yaml`, `workflows/release.yaml`; absent for a built-in, which has none), and a **digest** — `sha256:<hex>` over the registry entry's source bytes exactly as loaded, with no normalization. It is **never recomputed**, so it identifies the *file version the task was created from* rather than the bytes the engine runs: include expansion (§7.9), fan-out resolution (§7.6) and `edit + retry` all rewrite `workflow_snapshot` afterwards, and `edit + retry` is separately audited through `step_runs.prompt_override` / `run_override`. A `fan_out` lane records `derived` naming its parent task (§7.6): its steps come from the parent's snapshot, resolved at the *parent's* creation, so it never read a registry at all. NULL for a task created before this was recorded, which is reported as `unknown` — never re-derived from today's registry, which would report a substitution as though it had always been there |
 | `github_issue` | *Added 2026-08-26 (task 035).* The GitHub issue this task was created from, captured **once at creation** and NULL for every task created without one. It holds the normalized issue — repo, number, title, body, url, state, labels, author, assignee, milestone (title and number), the issue's own timestamps and the instant it was fetched — and it is **never re-fetched**: every step renders `.Issue` (§8.4) from this snapshot, so an issue edited on GitHub afterwards is deliberately not reflected. That is the reasoning `workflow_snapshot` already rests on: a run is reproducible, no network call enters the step path, and a step render still cannot fail for an external reason. A `fan_out` lane inherits its parent's copy verbatim (§7.6) |
+| `issue_id`, `issue` | *Added 2026-10-02 (task 130.1, issue #660, migration 0036).* The vincent issue (§5.6) this task was created from, as **a pointer and a snapshot** (task 130 decision 5). `issue_id` is the authoritative edge to `issues.id`, read backwards to answer which tasks came from an issue and whether it is being worked on; it is `ON DELETE SET NULL`, so a task outlives its issue. `issue` (`issue_json`) is that issue frozen at creation — id, title, state, kind, priority, labels, url — never re-fetched, and it survives the issue's deletion, for `github_issue`'s reasons. Both are written in the insert transaction, `task.created` carries `issue_id` when it is set (§13.3), and a `fan_out` lane inherits copies of both (§7.6) — though only a root task counts toward its issue's activity. No create surface sets them yet (task 130.3) |
 | `github_pull` | *Added 2026-08-29 (task 052).* The pull request this task is linked to (`github_pull_json`, migration 0018); NULL for a task no pull request has ever matched. Unlike `github_issue` it is a **pointer, not a snapshot** — repo, number, `source` (`auto` when the reconciler (§12.3) matched an open pull request's head branch to this task's `branch_name`, `human` when a person said so), `suppressed` (the sticky record of a human unlink, which is why the column needs three states and not two), and `linked_at`. Nothing renderable is stored: title, state, draft and merged status are re-read on every request (§13.2), because they are live by nature and a stored copy of them would read exactly like a current one while being wrong. Deliberately **not** folded into `github_issue_json`, which is defined as "NULL = no linked issue" holding a bare issue. *Amended 2026-08-30 (task 064):* the envelope gains `branch` — this task's `branch_name` **is** the pull request's head branch, because the task was created from it — and `fork`, meaning that head lives in another repository so the branch carries no upstream and nothing can push back. Both are read by admission (§10), by archive (§10, which then touches neither branch leg) and by the retry guard (§18); neither is renderable, so the pointer-not-snapshot rule is untouched. A JSON shape change, not a migration |
 
 
@@ -1141,6 +1143,64 @@ holds by there being nothing to inject. §7.3 is untouched and the chat's
 `send` over `max_parallel_chats` is **refused, not queued** (§11). That refusal
 is not in the FSM: the cap is about how many chats are running, not about what
 this chat may do.
+
+### 5.6 Issue (added 2026-10-02, task 130.1, issue #660)
+
+An **Issue** is a piece of work a project tracks, owned by vincent and stored in
+SQLite (§3 row 36, task 130). It is the third entity beside §5.3's Task and
+§5.5's Chat, and like a chat it is never a task with a `kind` column: it has no
+process, no steps, no worktree and no slot. Work on it is a task created from
+it (§5.3 `issue_id`). This section is the entity and its store; the routes,
+sync, prefill and TUI that make it reachable are task 130's later items, and
+amend §12, §13 and §15 when they land.
+
+| Field | Notes |
+|---|---|
+| `id` | the one global identity (task 130 decision 1). There is no per-project number |
+| `project_id`, `title`, `body` | `body` is Markdown and may be empty |
+| `state` | `open` \| `closed` (below). Stored without a CHECK, and an unknown stored value reads as `open` |
+| `close_reason` | `completed` \| `not_planned` \| `duplicate`; empty while open. A `close` that names none is `completed` |
+| `duplicate_of_issue_id` | the issue this one duplicates; cleared by reopening |
+| `kind` | a lowercase token (`bug`, `feature`, …) or empty; unconstrained otherwise |
+| `priority` | 0 none, 1 urgent … 4 low — Linear's scale, inverted relative to a task's |
+| `author` | free text |
+| `labels` | names from the project's label catalogue, which is unique case-insensitively: adding `Bug` where `bug` exists reuses `bug` |
+| `version` | bumped by every edit, transition and label change, never by a comment. An edit names the version it read and is refused when it is stale (`ErrIssueChanged`; a `409` once routes exist) |
+| `remote` | an imported issue's source (`issue_remotes`, §14): provider, `remote_key` (GitHub's `node_id`), repo, number, url, the remote's own timestamp and `synced_at`. Null for an issue created in vincent. Keyed **per project**, so two projects sharing an origin import two issue sets |
+| `parent_issue_id` | a seam for sub-issues, never written yet |
+| `active`, `task_count` | **derived, never stored** (decision 3): `task_count` counts the **root** tasks (`parent_task_id IS NULL`) whose `issue_id` is this issue, and `active` is whether any of them is not settled in §6's sense (not `done`, `aborted` or `archived`). Fan-out lanes carry the link but are not counted, so one task with five lanes is one task |
+| comments | author, body and an optional remote key, listed oldest first |
+
+#### Issue lifecycle
+
+A third vocabulary, separate from §6's and §5.5's for chat's reason: an issue
+has nothing that runs, so folding it in would make every task query decide
+whether it means issues too. `internal/issuestate` is its one definition.
+
+| Action | From → to | Who |
+|---|---|---|
+| `close` (reason) | `open` → `closed` | human, agent, sync |
+| `reopen` | `closed` → `open` | human, agent, sync |
+| `remote_closed` (reason) | → `closed` | sync only |
+| `remote_reopened` | → `open` | sync only |
+
+Asking a human's or an agent's action from the state it leads to — closing a
+closed issue — is invalid, the `409` a task gives for an action outside its
+states. For **sync** the same request is a **no-op**, never an error: the remote
+is the authority for an imported issue and a poll that re-reads an unchanged
+one must change nothing. Closing stamps `closed_at` and the reason; reopening
+clears both and `duplicate_of_issue_id`. Every write names its actor —
+`human`, `agent` or `sync` — and §13.3's `issue.*` events carry it as `by`.
+
+There is no archive. An issue is **deleted** from any state (decision 6): its
+labels and comments go with it, its tasks keep running with `issue_id` NULL and
+their snapshots intact, and an imported issue's remote row stays behind as a
+**tombstone** so the next import does not bring it back.
+
+Input rules — a title of at most 1 KiB, label names of at most 64 bytes, a kind
+of at most 32, a priority of 0–4, a non-empty comment — belong to
+`internal/issues`, the one write path the API, sync and triggers share. The
+store enforces only what the schema and the state machine need.
 
 ## 6. Task lifecycle
 
@@ -9064,8 +9124,10 @@ POST   /v1/tasks/import                 *Added 2026-09-17 (task 117, issue #411)
                                         absolute. The task keeps its id and comes back
                                         `archived`, `archived_at` stamped now (§17),
                                         `worktree_path` NULL, `created_by_task_id` NULL unless
-                                        that task is live; every other column is copied as it
-                                        is, and no git operation runs. Step run ids are all
+                                        that task is live, `issue_id` NULL unless that issue
+                                        is live in the target project (*amended 2026-10-02,
+                                        task 130.1*; `issue_json` is kept); every other column
+                                        is copied as it is, and no git operation runs. Step run ids are all
                                         kept when all are free and all renumbered, in order,
                                         when any is taken (§14). `project_id` re-homes the task;
                                         without it the backed-up project must be live under the
@@ -9737,6 +9799,30 @@ no chunk — a turn's outcome reaches a client as the turn's own state.
 *Amended 2026-09-17 (task 109):* the three subagent types join that list, from
 the same shared mapping, so a chat's pane draws the same rail (§15).
 
+**Issue events (added 2026-10-02, task 130.1, issue #660).** Issues ride the
+one durable event table too, with `project_id` set, `task_id` NULL and the
+issue's id in the payload, so no per-task stream ever delivers one. Each is
+appended in the transaction of the write it records and published after the
+commit, so a rolled-back write publishes nothing; a write that changes nothing
+— an empty or identical patch, the same label set, a sync report of the state
+the issue is already in — appends nothing. Six kinds:
+
+| Type | Payload |
+|---|---|
+| `issue.created` | `{ id, by }` |
+| `issue.updated` | `{ id, changed: [field, …], by }` — field names sorted; an import refresh lists `state` when it moved |
+| `issue.state_changed` | `{ id, from, to, reason, by }` |
+| `issue.labels_changed` | `{ id, labels: [name, …], by }` |
+| `issue.comment_added` | `{ id, comment_id, by }` |
+| `issue.deleted` | `{ id, by }` |
+
+`by` is `human`, `agent` or `sync` (§5.6). No payload carries a title, a body
+or comment text: a client re-fetches what it renders. None of them wakes the
+scheduler — admission depends on nothing about an issue. `task.created`'s
+payload gains `issue_id` for a task created from an issue, omitted (not null)
+otherwise, the shape `workflow_origin` already has. Until the `/v1/issues`
+routes land (task 130.3) these reach clients only through the global stream.
+
 ### 13.4 Model Context Protocol (task 057)
 
 *Added 2026-08-29 (task 057, issue #243).*
@@ -10118,6 +10204,11 @@ CREATE TABLE tasks (
                                               -- creation and never recomputed, so it names the file version the
                                               -- task came from, not the bytes the engine runs. Nothing queries
                                               -- inside it — no index, no generated column
+  issue_id            INTEGER REFERENCES issues(id) ON DELETE SET NULL, -- the issue this task was created
+                                              -- from (§5.6, task 130.1, migration 0036); the pointer.
+                                              -- SET NULL: a task outlives its issue
+  issue_json          TEXT,                   -- that issue frozen at creation; the snapshot. NULL = none.
+                                              -- Survives the issue's deletion. A fan_out lane inherits both
   created_at          TEXT NOT NULL,
   updated_at          TEXT NOT NULL,
   started_at          TEXT,
@@ -10126,6 +10217,7 @@ CREATE TABLE tasks (
 );
 CREATE INDEX idx_tasks_sched ON tasks(state, priority DESC, created_at);
 CREATE INDEX idx_tasks_parent ON tasks(parent_task_id, lane_order);  -- §7.6 subtree walks (task 014)
+CREATE INDEX tasks_issue_idx ON tasks(issue_id) WHERE issue_id IS NOT NULL; -- §5.6 activity, read backwards
 
 CREATE TABLE step_runs (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -10386,6 +10478,67 @@ CREATE TABLE trigger_backlog (         -- events a queue mode holds until its gr
 CREATE INDEX idx_trigger_backlog_group ON trigger_backlog(trigger_id, concurrency_key, id);
 CREATE INDEX idx_trigger_backlog_age ON trigger_backlog(created_at);
 
+CREATE TABLE issues (                  -- §5.6 (task 130.1, migration 0036)
+  id                    INTEGER PRIMARY KEY AUTOINCREMENT, -- the one global identity; no per-project number
+  project_id            INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  title                 TEXT NOT NULL,
+  body                  TEXT NOT NULL DEFAULT '',
+  state                 TEXT NOT NULL DEFAULT 'open', -- open | closed; no CHECK, like chats
+  close_reason          TEXT,                   -- completed | not_planned | duplicate; NULL while open
+  duplicate_of_issue_id INTEGER REFERENCES issues(id) ON DELETE SET NULL,
+  kind                  TEXT NOT NULL DEFAULT '',
+  priority              INTEGER NOT NULL DEFAULT 0, -- 0 none, 1 urgent … 4 low (inverted vs a task's)
+  author                TEXT NOT NULL DEFAULT '',
+  parent_issue_id       INTEGER REFERENCES issues(id) ON DELETE SET NULL, -- seam; never written in v1
+  version               INTEGER NOT NULL DEFAULT 1, -- compare-and-set for edits
+  created_at            TEXT NOT NULL,
+  updated_at            TEXT NOT NULL,
+  closed_at             TEXT
+);
+CREATE INDEX issues_project_state_idx ON issues (project_id, state, updated_at);
+
+CREATE TABLE issue_remotes (           -- an imported issue's source; NULL issue_id = tombstone
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  issue_id          INTEGER UNIQUE REFERENCES issues(id) ON DELETE SET NULL,
+  project_id        INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  provider          TEXT NOT NULL,
+  remote_key        TEXT NOT NULL,          -- GitHub: the node_id, which survives transfer and rename
+  repo              TEXT NOT NULL DEFAULT '',
+  number            INTEGER,
+  url               TEXT NOT NULL DEFAULT '',
+  remote_json       TEXT,
+  remote_updated_at TEXT,
+  synced_at         TEXT,                   -- NULL = never synced
+  suppressed        INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (project_id, provider, remote_key) -- per project, deliberately not global
+);
+
+CREATE TABLE labels (                  -- one catalogue per project
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL COLLATE NOCASE,
+  color       TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  source      TEXT NOT NULL DEFAULT 'local', -- local | the provider it was imported from
+  UNIQUE (project_id, name)
+);
+
+CREATE TABLE issue_labels (
+  issue_id INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+  label_id INTEGER NOT NULL REFERENCES labels(id) ON DELETE CASCADE,
+  PRIMARY KEY (issue_id, label_id)
+);
+
+CREATE TABLE issue_comments (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  issue_id   INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+  author     TEXT NOT NULL DEFAULT '',
+  body       TEXT NOT NULL,
+  remote_key TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 ```
 
@@ -10514,6 +10667,29 @@ references `step_runs.id` and transcript files are named by step index and
 attempt. The row is copied column by column from the staged database, which
 `Open` has migrated to this binary's schema, so a column added later travels
 without the import naming it. `events` rows are not copied (§13.3).
+*Amended 2026-10-02 (task 130.1, issue #660):* `tasks.issue_id` is a fifth
+exception to the verbatim copy. It is kept only when that issue is live **in
+the project the task lands in**, and NULL otherwise — issue ids are global, so
+an id from another project would point the task at somebody else's work.
+`issue_json` is copied verbatim either way, as the snapshot that outlives its
+issue.
+
+*Added 2026-10-02 (task 130.1, issue #660, migration 0036).* The issue tables
+of §5.6. `issues.state` has **no CHECK**, for the reason 0032 gave `chats`: a
+later state needs a row in `internal/issuestate`, not a table rebuild. Activity
+is not a column at all — it is read from `tasks.issue_id` backwards over the
+partial index. `issue_remotes` is keyed **per project**,
+`UNIQUE(project_id, provider, remote_key)`, which departs from #660's text
+(a global `UNIQUE(provider, remote_key)`): two projects sharing an origin import
+two issue sets (task 130 open question 3), and a global key would make the
+second project's import a constraint violation. A remote row whose `issue_id` is
+NULL is a **tombstone** — the issue was deleted and sync must not import it
+again — which is why that FK is `SET NULL`; SQLite admits many NULLs under
+`UNIQUE`, so tombstones never collide, and they go with their project.
+`labels.name` is `COLLATE NOCASE` so `Bug` and `bug` are one catalogue entry.
+`DeleteProjectCascade` deletes a project's tasks before the project row, so by
+the time the issue tables cascade no task of that project still points at an
+issue.
 
 *Added 2026-08-14 (task 003).* `admit_not_before` / `queued_reason` carry no index:
 `ListAdmissible` already returns the whole queued set in §11 order and the hold is

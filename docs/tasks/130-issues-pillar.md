@@ -1,6 +1,6 @@
 # 130 — The issues pillar: vincent-owned issues per project
 
-**Status:** 🔄 in progress (2/18)
+**Status:** 🔄 in progress (3/18)
 
 Issue [#659](https://github.com/lezli01/vincent/issues/659), part of
 [#658](https://github.com/lezli01/vincent/issues/658). Spec §3 (rows 11, 26
@@ -352,6 +352,12 @@ before the item that needs it starts.
 3. **Projects sharing an origin.** (#658 question 6.) *Proposed:* two issue
    sets, one per project, which is what per-project rows give; both write
    back.
+   *Settled 2026-10-02 (130.1, by the author):* the default stands, and the
+   schema makes it structural — `issue_remotes` is keyed
+   `UNIQUE(project_id, provider, remote_key)`, not #660's global
+   `UNIQUE(provider, remote_key)`, which would make the second project's
+   import a constraint violation. A tombstone is per project and goes with
+   it.
 4. **Initial import depth.** (#658 question 7.) *Proposed:* open issues only,
    capped at 500, resumable across ticks.
 5. **Refreshing the snapshot on `follow_up`.** (#658 question 8.) *Proposed:*
@@ -369,7 +375,7 @@ In #658's delivery order. Items without a `Depends:` can proceed in parallel.
 Each item amends the spec sections and public pages its code makes true, in
 its own pull request.
 
-- [ ] **130.1** ([#660](https://github.com/lezli01/vincent/issues/660))
+- [x] **130.1** ([#660](https://github.com/lezli01/vincent/issues/660))
   `internal/issuestate`, migration `0036` (issues, remotes, labels, comments,
   `tasks.issue_id`/`issue_json`), store CRUD, in-transaction `issue.*` events,
   the `internal/issues` write path.
