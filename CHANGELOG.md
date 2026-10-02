@@ -37,6 +37,22 @@ list with the user-facing context a commit subject cannot carry.
   exactly as before; `.Issue.Repo` and `.Issue.URL` are deprecated aliases of
   `.Issue.Source.Repo` and `.Issue.Source.URL`.
   ([#663](https://github.com/lezli01/vincent/issues/663))
+- **The `/v1/issues` API.** File, list, read, edit, close, reopen and delete a
+  project's issues over REST — `GET`/`POST /v1/issues`,
+  `GET`/`PATCH`/`DELETE /v1/issues/{id}`, `POST /v1/issues/{id}/close` and
+  `/reopen` — and read its label catalogue at
+  `GET /v1/projects/{id}/issue-labels`. The list filters by state, every-label
+  match, kind, source and a server-side `q` search, with `sort`, `limit` and
+  `offset`. `PATCH` requires the `version` you read and answers a stale one
+  with `409 issue_changed` carrying the current issue; an imported issue's
+  title, body and labels are refused with `409 issue_mirrored`. A close may
+  name the issue it duplicates with `duplicate_of`. `POST /v1/issues` honours
+  `Idempotency-Key` like `POST /v1/tasks`, and the author is recorded by the
+  daemon, never sent. Every route but the delete is an MCP tool (`issue_list`,
+  `issue_create`, `issue_get`, `issue_patch`, `issue_close`, `issue_reopen`,
+  `project_issue_labels`); an issue an agent step files records that step's
+  task. The database migrates on start (migration 0037).
+  ([#662](https://github.com/lezli01/vincent/issues/662))
 
 ## [0.11.0](https://github.com/lezli01/vincent/compare/v0.10.1...v0.11.0) (2026-10-01)
 

@@ -1816,9 +1816,10 @@ A snapshot that does not parse is a **200** with `errors[]` and
 
 ### Replaying a create
 
-`POST /v1/tasks` is the one route where re-sending a request does something
-twice: it inserts a task, claims a branch and wakes the scheduler. Send an
-`Idempotency-Key` header to make the retry safe.
+`POST /v1/tasks` is a route where re-sending a request does something twice: it
+inserts a task, claims a branch and wakes the scheduler. Send an
+`Idempotency-Key` header to make the retry safe. [`POST /v1/issues`](#issues)
+honours the same header under the same rules.
 
 ```sh
 KEY=$(uuidgen)
@@ -2328,6 +2329,86 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/tasks" \
 - Both limits are recorded on the task and fixed at creation. Every task
   representation carries `"restricted"` (bool) and `"max_task_cost_usd"` (the
   number, or `null` when the task set none).
+
+## Issues
+
+A project's backlog, owned by vincent: issues you file here and, later, issues
+imported from GitHub. An issue has no process and no worktree — work on it is a
+task created from it.
+
+| Method | Path | What |
+|---|---|---|
+| `GET` | `/v1/issues` | List, most recently updated first |
+| `POST` | `/v1/issues` | File one |
+| `GET` | `/v1/issues/{id}` | One, in full |
+| `PATCH` | `/v1/issues/{id}` | Edit fields and labels at the version you read |
+| `POST` | `/v1/issues/{id}/close` | Close, with a reason |
+| `POST` | `/v1/issues/{id}/reopen` | Reopen |
+| `DELETE` | `/v1/issues/{id}` | Delete permanently, from any state |
+| `GET` | `/v1/projects/{id}/issue-labels` | The project's label catalogue |
+
+```sh
+curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"project_id":1,"title":"Crash on cold start","labels":["bug"],"kind":"bug","priority":2}'
+```
+
+```json
+{ "id": 7, "project_id": 1, "title": "Crash on cold start", "state": "open",
+  "kind": "bug", "priority": 2, "author": "ada", "labels": ["bug"],
+  "source": null, "active": false, "task_count": 0, "version": 1,
+  "created_at": "…", "updated_at": "…",
+  "body": "", "available_actions": ["close"],
+  "tasks": { "count": 0, "active_ids": [] },
+  "editable": ["title", "body", "labels", "kind", "priority"] }
+```
+
+- **Create** takes `{ project_id, title, body?, labels?, kind?, priority? }` and
+  answers `201`. `title` is at most 1 KiB, `body` (Markdown) at most 64 KiB,
+  a label name at most 64 bytes, `kind` a lowercase token, `priority` 0 none,
+  1 urgent … 4 low. An unknown project is `404`. There is no `author` field:
+  the daemon records the OS user it runs as, or `task N` when an agent step
+  files the issue over [MCP](#mcp), with `created_by_task_id` set. The
+  `Idempotency-Key` header works exactly as on
+  [`POST /v1/tasks`](#replaying-a-create): same key and body replays the issue
+  under a `201`, same key and a different body is
+  `409 idempotency_key_reused`. `vincent doctor` counts these keys under
+  `database.table_rows.issue_idempotency_keys`.
+- **List** returns a bare array whose rows omit `body`. Filters: `project_id`,
+  `state` (`open`, `closed`; repeatable), `label` (repeatable — every one must
+  match, case-insensitively), `kind`, `q` (a substring of the title or body;
+  `%` and `_` are literal), `source` (`local` or `github`), `sort` (`updated`,
+  the default, or `created`), `limit` and `offset`.
+- **Get** adds `body`; `available_actions`, what a person may do from this
+  state; `tasks.count` and `tasks.active_ids` over the root tasks created from
+  the issue (fan-out lanes never count); `editable`, the fields a `PATCH` may
+  touch; and `source` — `{ provider, repo, number, url, remote_state }` for an
+  imported issue, `null` for a local one.
+- **Patch** takes `{ version, title?, body?, labels?, add_labels?,
+  remove_labels?, kind?, priority? }`. `version` is required — send the one you
+  read. `labels` replaces the set and cannot be combined with `add_labels` or
+  `remove_labels`. An empty patch, a missing `version` and a `state` field are
+  `400`: close and reopen are their own routes. Fields and labels land as one
+  write that bumps `version` once. A patch that changes nothing is a `200` that
+  writes nothing.
+- **Close** takes `{ reason?, duplicate_of? }`: `completed` (the default),
+  `not_planned` or `duplicate`. `duplicate_of` names the issue this one
+  duplicates; it is allowed only with `duplicate`, must be another issue in the
+  same project, and is cleared by reopening. **Reopen** takes `{}`.
+- **Delete** answers `204` from any state. An imported issue leaves a tombstone
+  so it is never imported again, nothing is written upstream, and tasks created
+  from it keep running with `issue_id` cleared. It is not an MCP tool.
+- **Labels** — `GET /v1/projects/{id}/issue-labels` lists
+  `[{ name, color?, description?, source, issue_count }]`, sorted
+  case-insensitively. `source` is `local` or the provider a label was imported
+  from.
+
+| `409` | When | `details` |
+|---|---|---|
+| `issue_changed` | `PATCH` with a stale `version` | `reason`, and `issue`: the issue as it is now — re-apply your edit to it and send its `version` |
+| `issue_mirrored` | `PATCH` touching an imported issue's `title`, `body` or labels, which mirror GitHub. `kind` and `priority` stay editable | `reason` |
+| — | `close` on a closed issue, `reopen` on an open one | `state` |
 
 ## Chats
 
@@ -3051,9 +3132,14 @@ they need.
   `sync`) beside what moved: `changed` field names on `issue.updated`,
   `{ from, to, reason }` on `issue.state_changed`, `labels` on
   `issue.labels_changed`, `comment_id` on `issue.comment_added`. None carries a
-  title, body or comment text, and none reaches a per-task stream. There are no
-  issue routes yet; these record issues the daemon's store already holds.
-  `task.created` carries `issue_id` for a task created from an issue.
+  title, body or comment text, and none reaches a per-task stream.
+  `issue.state_changed` adds `duplicate_of` when a duplicate close names one.
+  Follow one project's issues with
+  `?types=issue.created,issue.updated,issue.state_changed,issue.labels_changed,issue.deleted&project_id=N`;
+  `Last-Event-ID` resumes them like any durable event. A `PATCH` that edits
+  fields and labels emits `issue.updated` and `issue.labels_changed`, and one
+  that changes nothing emits nothing. `task.created` carries `issue_id` for a
+  task created from an issue.
 - There is no separate `task.archived` or `task.awaiting_input` type. Both are
   `task.state_changed` with the appropriate `to`; the `awaiting_input` payload
   additionally carries the request kind and a one-line summary, which is the
@@ -3169,6 +3255,7 @@ Every route on this page is a tool, with these exceptions:
 | `DELETE /v1/projects/{id}` | Destructive admin |
 | `DELETE /v1/tasks/{id}` | Destructive admin, on the same line: a row a human archived is history nobody else may discard. Archive stays a tool — the row and its transcripts survive it |
 | `DELETE /v1/chats/{id}` | Same |
+| `DELETE /v1/issues/{id}` | Same: the delete is permanent, and an imported issue's tombstone outlives it. Every other issue route is a tool |
 | `POST /v1/tasks/import` | Destructive admin, beside the deletes it undoes: it reads a file the caller names and writes rows no agent should be able to create |
 | `POST /v1/maintenance/gc` | Destructive admin |
 | `POST /v1/doctor/fix` | Destructive admin |
@@ -3191,9 +3278,10 @@ Every route on this page is a tool, with these exceptions:
 | every `/v1/chats` route | Two reasons, either sufficient: a chat turn starts an agent CLI *without* going through admission, so a tool that could send one would let an agent start unqueued agent processes — the exact thing `mcp.max_tasks` bounds; and the recursion bounds walk `created_by_task_id`, a chain a chat is not in, so exposing chats would mean inventing depth semantics for a non-task. An agent that needs a conversation already has its own session |
 | `POST /v1/tasks/{id}/chat` | It opens a chat, so the `/v1/chats` reasons apply although the path is under `/v1/tasks`. The lock it places does reach the tools: a `task_*` action on a locked task gets `409 task_locked_by_chat` like any other client |
 
-`task_create` additionally takes an optional `idempotency_key` string, which
-becomes the `Idempotency-Key` header — a tool call has no header surface, and
-replay protection exists for exactly the client an agent is.
+`task_create` and `issue_create` additionally take an optional
+`idempotency_key` string, which becomes the `Idempotency-Key` header — a tool
+call has no header surface, and replay protection exists for exactly the client
+an agent is.
 
 A tool call is dispatched by replaying its arguments against the very handler
 this page documents, so the request bounds, the validation and the error

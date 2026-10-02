@@ -1202,6 +1202,28 @@ of at most 32, a priority of 0–4, a non-empty comment — belong to
 `internal/issues`, the one write path the API, sync and triggers share. The
 store enforces only what the schema and the state machine need.
 
+*Amended 2026-10-02 (task 130.3, issue #662).* The routes exist (§13.2), so the
+stale-version refusal is now the `409` above: `invalid_state` with
+`details.reason: issue_changed` and the current issue in `details.issue`. Three
+rules the routes settled:
+
+- **`author` is derived, never sent.** An HTTP create records the OS username
+  of the user the daemon runs as; a create from an agent step over MCP records
+  `task N` and sets `created_by_task_id` (§13.4), as `POST /v1/tasks` does for
+  a task; any other MCP call records `agent`. No request field sets either.
+  Every MCP write is actor `agent`, every other API write `human`.
+- **An imported issue's title, body and labels are sync's.** They mirror the
+  remote (task 130 decision 9), so a `human` or `agent` write touching any of
+  them is refused — `409 invalid_state` with `details.reason: issue_mirrored`
+  — while `kind` and `priority`, which are local, stay editable. The rule is
+  `internal/issues`'s, keyed on the actor not being `sync`, and an issue's
+  `editable` field lists what a client may offer. A local issue, and one whose
+  remote row is a tombstone, is editable throughout.
+- **`duplicate_of` is optional and same-project.** A close may name the issue
+  this one duplicates only with reason `duplicate`; it must be another, existing
+  issue in the same project. Omitting it is valid, as on GitHub. It is set in
+  the close's transaction and cleared by reopening.
+
 ## 6. Task lifecycle
 
 > Chats have their own lifecycle and their own vocabulary — `idle`, `running`,
@@ -8093,6 +8115,27 @@ operations that reach the same end state when re-sent.
   would fight the rule that a new explicit user action is a new operation. The
   header is for external callers.
 
+*Amended 2026-10-02 (task 130.3, issue #662).* **A second route acts on the
+header: `POST /v1/issues`.** Creating an issue inserts a row a re-send would
+insert again, which is the one property that put `POST /v1/tasks` here. The
+key, the digest, the replay (`201` with the issue as it is now), the reuse
+`409` and the 24-hour retention are the rules above, unchanged and shared in
+code. The keys live in a second table, `issue_idempotency_keys` (§14), rather
+than in 0016's: its `task_id` is `NOT NULL` and references `tasks`, so the
+"a later route joins the table without a migration" that 0016's comment
+expected was not true, and that comment's claim is corrected here (task 130
+decision 11). Deleting an issue deletes its key, so a re-send inside the window
+files a fresh one. MCP's `issue_create` carries `idempotency_key` as
+`task_create` does (§13.4).
+
+`PATCH /v1/issues/{id}` is the one route with a **precondition**: the body
+must carry the `version` the client read, and a stale one is refused with the
+current issue in the `409`'s details. It departs from §12.3's "no
+`ETag`/`If-Match`" by name (task 130 decision 11): an issue is edited by a
+person, an agent and sync, and last-write-wins would silently drop one of
+their edits. It is a body field, not a header, for the reason
+`idempotency_key` is an argument — a tool call has no header surface.
+
 *Amended 2026-09-13 (task 096; decision record row 34).* **The trigger ingress
 is authenticated twice, and exempt from nothing.** `POST /v1/triggers/{id}/events`
 requires the bearer token above like every other route. It then requires the
@@ -8495,6 +8538,56 @@ GET    /v1/workflows?project_id=        merged registry view: built-in + global 
                                         task 019, added 2026-08-19). Whether those names resolve
                                         is not answered here: it depends on the project's
                                         resolved view and becomes a 400 at task creation
+GET    /v1/issues                       *Added 2026-10-02 (task 130.3, issue #662).* Issues as a
+       ?project_id= ?state=             **bare array**, most recently updated first (`sort=created`
+       ?label= ?kind= ?q= ?source=      newest first), rows without `body`. `state` and `label`
+       ?sort= ?limit= ?offset=          repeat; every label must match, case-insensitively.
+                                        `source` is `local` or `github`. `q` is a substring of the
+                                        title or body, its `%` and `_` taken literally — a
+                                        server-side search, departing from the "no `?q=`, a
+                                        client filters what it was given" rule of the pickers
+                                        above, because an issue set is unbounded in a way a
+                                        project's or a repository's open list is not. Each row:
+                                        { id, project_id, title, state, close_reason?,
+                                          duplicate_of?, kind, priority, author,
+                                          created_by_task_id?, labels[], source, active,
+                                          task_count, version, created_at, updated_at,
+                                          closed_at? }
+POST   /v1/issues                       *Added 2026-10-02 (task 130.3).* { project_id, title,
+                                        body?, labels?, kind?, priority? } → **201** with the
+                                        issue in full. The 4 MiB body tier; `title` and `body`
+                                        under the task title and description bounds (§13.1).
+                                        Unknown project **404**. `author` is not a field (§5.6).
+                                        Honours `Idempotency-Key` (§13.1)
+GET    /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* The row plus `body`,
+                                        `available_actions` (§5.6's human actions from this
+                                        state), `tasks: { count, active_ids }` over the root
+                                        tasks only, and `editable`, the fields a PATCH may touch.
+                                        `source` is { provider, repo, number, url, remote_state }
+                                        for an imported issue and `null` for a local one
+PATCH  /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* { version, title?, body?,
+                                        labels? | add_labels?, remove_labels?, kind?, priority? }.
+                                        `version` is required (§13.1); an empty patch, `labels`
+                                        with either delta, and `state` (unknown field) are
+                                        **400**. Fields and labels land in one transaction with
+                                        one version check and one bump. **409** `issue_changed`
+                                        (with `details.issue`) for a stale version, **409**
+                                        `issue_mirrored` for an imported issue's title, body or
+                                        labels (§5.6). A patch that changes nothing is a 200
+                                        that writes and announces nothing
+POST   /v1/issues/{id}/close            *Added 2026-10-02 (task 130.3).* { reason?, duplicate_of? }
+                                        — `completed` (the default), `not_planned` or
+                                        `duplicate`; `duplicate_of` per §5.6, otherwise **400**.
+                                        Closing a closed issue is **409** with `details.state`
+POST   /v1/issues/{id}/reopen           *Added 2026-10-02 (task 130.3).* {}. Reopening an open
+                                        issue is **409** with `details.state`
+DELETE /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* Permanent, from any
+                                        state (§5.6) → **204**. An imported issue leaves its
+                                        tombstone; upstream is never touched; its tasks keep
+                                        running with `issue_id` NULL. Not an MCP tool (§13.4)
+GET    /v1/projects/{id}/issue-labels   *Added 2026-10-02 (task 130.3).* The project's label
+                                        catalogue, sorted case-insensitively:
+                                        [{ name, color?, description?, source, issue_count }]
 GET    /v1/chats                        *Amended 2026-09-09 (task 092, issue #350).* Also takes
                                         limit, offset, archived_before and archived_since —
                                         GET /v1/tasks' parameters, spelled the same way, because
@@ -9820,8 +9913,15 @@ the issue is already in — appends nothing. Six kinds:
 or comment text: a client re-fetches what it renders. None of them wakes the
 scheduler — admission depends on nothing about an issue. `task.created`'s
 payload gains `issue_id` for a task created from an issue, omitted (not null)
-otherwise, the shape `workflow_origin` already has. Until the `/v1/issues`
-routes land (task 130.3) these reach clients only through the global stream.
+otherwise, the shape `workflow_origin` already has.
+
+*Amended 2026-10-02 (task 130.3, issue #662).* The routes that write them now
+exist (§13.2), and nothing about the stream changed: `?types=` with the issue
+kinds and `?project_id=` scope them, and `Last-Event-ID` resumes them, as for
+every durable event. `issue.state_changed` carries `duplicate_of` when a
+duplicate close names one, and omits it otherwise. A `PATCH` that edits fields
+and labels appends `issue.updated` and `issue.labels_changed` from its one
+transaction.
 
 ### 13.4 Model Context Protocol (task 057)
 
@@ -10032,6 +10132,21 @@ all:
 The same rule again, and more plainly: the list is what a human's composer
 offers behind `@`, and an agent already sitting in that worktree can run
 `ls`.
+
+*Amended 2026-10-02 (task 130.3, issue #662).* One more, **thirty-seven** in
+all:
+
+    DELETE /v1/issues/{id}
+
+On task 092's line: the delete is permanent, and an imported issue's tombstone
+outlives it. Every other issue route is a tool — `issue_list`, `issue_create`,
+`issue_get`, `issue_patch`, `issue_close`, `issue_reopen` and
+`project_issue_labels` — because task 130 decision 10 lets an agent file and
+triage local issues (the forge guard for imported ones is task 130.10).
+`issue_create` takes `idempotency_key` as `task_create` does, and a step's
+create records its task as the author and `created_by_task_id` (§5.6). An issue
+is not a task, so `mcp.max_depth` and `mcp.max_tasks` do not bound it, and
+there is no issue cap.
 
 The task 057 property that the tool surface **equals** `Routes()` minus the
 exclusions is unchanged, and is still asserted by a test — the exclusion list it
@@ -10539,6 +10654,18 @@ CREATE TABLE issue_comments (
   updated_at TEXT NOT NULL
 );
 
+-- issues.created_by_task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL (migration 0037)
+CREATE TABLE issue_idempotency_keys (  -- §13.1 replay protection for POST /v1/issues (task 130.3, migration 0037)
+  method      TEXT NOT NULL,
+  path        TEXT NOT NULL,
+  key         TEXT NOT NULL,
+  request_sha TEXT NOT NULL,
+  issue_id    INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+  created_at  TEXT NOT NULL,
+  PRIMARY KEY (method, path, key)
+);
+CREATE INDEX idx_issue_idempotency_keys_created_at ON issue_idempotency_keys(created_at);
+
 CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 ```
 
@@ -10690,6 +10817,13 @@ again — which is why that FK is `SET NULL`; SQLite admits many NULLs under
 `DeleteProjectCascade` deletes a project's tasks before the project row, so by
 the time the issue tables cascade no task of that project still points at an
 issue.
+
+*Added 2026-10-02 (task 130.3, issue #662, migration 0037).*
+`issue_idempotency_keys` is `idempotency_keys`' shape with `issue_id` in place
+of `task_id`, cascading with its issue (§13.1 says why it is a second table).
+`issues.created_by_task_id` is `tasks.created_by_task_id` for an issue: the task
+whose agent step filed it over MCP, `SET NULL` so deleting that task leaves the
+issue it filed. The 24-hour prune (§17) covers both key tables.
 
 *Added 2026-08-14 (task 003).* `admit_not_before` / `queued_reason` carry no index:
 `ListAdmissible` already returns the whole queued set in §11 order and the hold is
