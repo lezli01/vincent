@@ -1,0 +1,32 @@
+HTTP/2.0 200 OK
+Access-Control-Allow-Origin: *
+Access-Control-Expose-Headers: ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning
+Cache-Control: private, max-age=60, s-maxage=60
+Content-Security-Policy: default-src 'none'
+Content-Type: application/json; charset=utf-8
+Date: Fri, 02 Oct 2026 15:00:04 GMT
+Deprecation: Tue, 10 Mar 2026 00:00:00 GMT
+Etag: W/"7b54ea814b8599f40d10405e762fb434fa73b8650d74c56d6bce21914226ce1e"
+Link: <https://docs.github.com/en/rest/about-the-rest-api/api-versions>; rel="deprecation"; type="text/html"
+Referrer-Policy: origin-when-cross-origin, strict-origin-when-cross-origin
+Server: github.com
+Strict-Transport-Security: max-age=31536000; includeSubdomains; preload
+Sunset: Fri, 10 Mar 2028 00:00:00 GMT
+Vary: Accept, Authorization, Cookie, X-GitHub-OTP,Accept-Encoding, Accept, X-Requested-With
+X-Accepted-Oauth-Scopes: 
+X-Content-Type-Options: nosniff
+X-Frame-Options: deny
+X-Github-Api-Version-Selected: 2022-11-28
+X-Github-Edge-Region: fra
+X-Github-Media-Type: github.v3; format=json
+X-Github-Request-Id: F6D6:355BD6:4DD9BA:4DBBAC:6ABFC6F1
+X-Oauth-Client-Id: 178c6fc778ccc68e1d6a
+X-Oauth-Scopes: admin:public_key, gist, read:org, repo
+X-Ratelimit-Limit: 5000
+X-Ratelimit-Remaining: 4986
+X-Ratelimit-Reset: 1790954143
+X-Ratelimit-Resource: core
+X-Ratelimit-Used: 14
+X-Xss-Protection: 0
+
+{"url":"https://api.github.com/repos/lezli01/vincent-test/issues/3","repository_url":"https://api.github.com/repos/lezli01/vincent-test","labels_url":"https://api.github.com/repos/lezli01/vincent-test/issues/3/labels{/name}","comments_url":"https://api.github.com/repos/lezli01/vincent-test/issues/3/comments","events_url":"https://api.github.com/repos/lezli01/vincent-test/issues/3/events","html_url":"https://github.com/lezli01/vincent-test/issues/3","id":5679230782,"node_id":"I_kwDOU4_fZs8AAAABUoIvPg","number":3,"title":"scratch 664: pagination C","user":{"login":"lezli01","id":6538963,"node_id":"MDQ6VXNlcjY1Mzg5NjM=","avatar_url":"https://avatars.githubusercontent.com/u/6538963?v=4","gravatar_id":"","url":"https://api.github.com/users/lezli01","html_url":"https://github.com/lezli01","followers_url":"https://api.github.com/users/lezli01/followers","following_url":"https://api.github.com/users/lezli01/following{/other_user}","gists_url":"https://api.github.com/users/lezli01/gists{/gist_id}","starred_url":"https://api.github.com/users/lezli01/starred{/owner}{/repo}","subscriptions_url":"https://api.github.com/users/lezli01/subscriptions","organizations_url":"https://api.github.com/users/lezli01/orgs","repos_url":"https://api.github.com/users/lezli01/repos","events_url":"https://api.github.com/users/lezli01/events{/privacy}","received_events_url":"https://api.github.com/users/lezli01/received_events","type":"User","user_view_type":"public","site_admin":false},"labels":[],"state":"closed","locked":false,"assignees":[],"milestone":null,"comments":0,"created_at":"2026-10-02T14:59:29Z","updated_at":"2026-10-02T15:00:03Z","closed_at":"2026-10-02T15:00:03Z","assignee":null,"author_association":"OWNER","active_lock_reason":null,"sub_issues_summary":{"total":0,"completed":0,"percent_completed":0},"issue_dependencies_summary":{"blocked_by":0,"total_blocked_by":0,"blocking":0,"total_blocking":0},"body":"Scratch issue for vincent #664 live verification; safe to ignore.","closed_by":{"login":"lezli01","id":6538963,"node_id":"MDQ6VXNlcjY1Mzg5NjM=","avatar_url":"https://avatars.githubusercontent.com/u/6538963?v=4","gravatar_id":"","url":"https://api.github.com/users/lezli01","html_url":"https://github.com/lezli01","followers_url":"https://api.github.com/users/lezli01/followers","following_url":"https://api.github.com/users/lezli01/following{/other_user}","gists_url":"https://api.github.com/users/lezli01/gists{/gist_id}","starred_url":"https://api.github.com/users/lezli01/starred{/owner}{/repo}","subscriptions_url":"https://api.github.com/users/lezli01/subscriptions","organizations_url":"https://api.github.com/users/lezli01/orgs","repos_url":"https://api.github.com/users/lezli01/repos","events_url":"https://api.github.com/users/lezli01/events{/privacy}","received_events_url":"https://api.github.com/users/lezli01/received_events","type":"User","user_view_type":"public","site_admin":false},"reactions":{"url":"https://api.github.com/repos/lezli01/vincent-test/issues/3/reactions","total_count":0,"+1":0,"-1":0,"laugh":0,"hooray":0,"confused":0,"heart":0,"rocket":0,"eyes":0},"timeline_url":"https://api.github.com/repos/lezli01/vincent-test/issues/3/timeline","performed_via_github_app":null,"state_reason":"duplicate","pinned_comment":null}

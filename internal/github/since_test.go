@@ -93,6 +93,7 @@ func TestIssueLegsAgreeOnStateAll(t *testing.T) {
 	}
 	sortIssues(gh)
 	sortIssues(rest)
+	withoutStateFields(rest)
 	if !reflect.DeepEqual(gh, rest) {
 		t.Fatalf("the two legs disagree:\n gh   = %+v\n rest = %+v", gh, rest)
 	}

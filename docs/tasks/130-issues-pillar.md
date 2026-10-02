@@ -1,6 +1,6 @@
 # 130 — The issues pillar: vincent-owned issues per project
 
-**Status:** ⏳ not started (0/18)
+**Status:** 🔄 in progress (2/18)
 
 Issue [#659](https://github.com/lezli01/vincent/issues/659), part of
 [#658](https://github.com/lezli01/vincent/issues/658). Spec §3 (rows 11, 26
@@ -373,18 +373,18 @@ its own pull request.
   `internal/issuestate`, migration `0036` (issues, remotes, labels, comments,
   `tasks.issue_id`/`issue_json`), store CRUD, in-transaction `issue.*` events,
   the `internal/issues` write path.
-- [ ] **130.2** ([#661](https://github.com/lezli01/vincent/issues/661))
+- [x] **130.2** ([#661](https://github.com/lezli01/vincent/issues/661))
   `cmd/fakegh` with a mutable issue corpus, `gh api` with ETag/304, issue
-  writes and a scenario file.
+  writes and a scenario file. ✓ 2026-10-02
 - [ ] **130.3** ([#662](https://github.com/lezli01/vincent/issues/662))
   `/v1/issues` routes, `issue.*` SSE events, apiclient, MCP tools, idempotent
   create. Depends: 130.1.
 - [ ] **130.4** ([#663](https://github.com/lezli01/vincent/issues/663)) Prefill
   from a vincent issue, the `.Issue` reshape, snapshot build, legacy rendering,
   skill and checklist lines. Depends: 130.1.
-- [ ] **130.5** ([#664](https://github.com/lezli01/vincent/issues/664)) Durable
+- [x] **130.5** ([#664](https://github.com/lezli01/vincent/issues/664)) Durable
   issue listing (`node_id`, pagination, conditional requests, gone/moved) and
-  issue state writes in `internal/github`. Depends: 130.2.
+  issue state writes in `internal/github`. Depends: 130.2. ✓ 2026-10-02
 - [ ] **130.6** ([#665](https://github.com/lezli01/vincent/issues/665)) The
   `vincent issue …` CLI tree. Depends: 130.3.
 - [ ] **130.7** ([#666](https://github.com/lezli01/vincent/issues/666))

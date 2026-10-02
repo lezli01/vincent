@@ -3,6 +3,7 @@ package github
 import (
 	"errors"
 	"fmt"
+	"time"
 )
 
 // Unavailability reasons (task 035 decision 1). They are the *whole* client-
@@ -86,6 +87,20 @@ const (
 	// human confirmed. Nothing was merged — merging it would be a green build
 	// for code nobody ran (task 068 decision 6).
 	ReasonHeadChanged = "head_changed"
+
+	// The issue reasons (task 130.5). Both name an issue that is no longer
+	// where it was asked for, and neither folds into not_found: a deleted
+	// issue and a transferred one are facts a sync records, not a failure to
+	// find something.
+
+	// ReasonGone: GitHub answered 410 — the issue was deleted.
+	ReasonGone = "gone"
+	// ReasonMoved: GitHub answered 301 — the issue was transferred, or its
+	// repository renamed — and Error.Location says where to. The REST leg
+	// never follows the redirect; the `gh` leg, whose `gh api` follows a GET
+	// 301 by itself, recognises it by an answer about a different issue than
+	// the one asked for.
+	ReasonMoved = "moved"
 )
 
 // reasonMessages are the one-line explanations clients render. Keeping them
@@ -114,6 +129,8 @@ var reasonMessages = map[string]string{ //nolint:gosec // G101: these are the re
 	ReasonChecksRunning: "the merge is blocked until the running checks finish",
 	ReasonBranchBehind:  "the pull request's branch is behind its base and must be updated first",
 	ReasonHeadChanged:   "the pull request's head moved since it was confirmed, so nothing was merged",
+	ReasonGone:          "the issue was deleted on GitHub",
+	ReasonMoved:         "the issue was moved to another repository (transferred, or its repository was renamed)",
 }
 
 // Message renders a reason for a human. An unknown reason renders as itself
@@ -132,6 +149,17 @@ func Message(reason string) string {
 type Error struct {
 	Reason string
 	Detail string
+	// ResetAt is when a rate_limited call may be tried again: Retry-After
+	// when GitHub sent one, X-RateLimit-Reset otherwise. It is filled on the
+	// paths that see response headers — the REST leg and `gh api -i` — and
+	// zero on the `gh` porcelain, which has none. Pacing calls is the
+	// caller's job; this only reports what GitHub said.
+	ResetAt time.Time
+	// Location is where a moved issue went, as the API URL of the issue
+	// (`https://api.github.com/repos/{o}/{r}/issues/{n}`): the 301's Location
+	// on the REST leg, the answer's own `url` on the `gh` leg. Empty for
+	// every other reason.
+	Location string
 }
 
 func (e *Error) Error() string {

@@ -5,3 +5,8 @@
 # Windows shell scripts genuinely need CRLF.
 *.bat text eol=crlf
 *.cmd text eol=crlf
+
+# Captured `gh api -i` / HTTP responses keep their CRLF header lines: the
+# line endings are part of what internal/github parses.
+internal/github/testdata/gh_*_api_*.txt -text
+internal/github/testdata/rest_*_301.txt -text

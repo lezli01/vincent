@@ -59,9 +59,13 @@ func logins(accounts []wireAccount) []string {
 // produces, and the shape persisted verbatim on the task as
 // `github_issue_json` (task 035 decision 3, spec §5.3, §14).
 //
-// It is snapshotted at creation and never re-fetched: an issue edited on
-// GitHub afterwards is deliberately not reflected, which is what keeps a run
-// reproducible and keeps every network failure out of the render path (§8.4).
+// On a task it is snapshotted at creation and never re-fetched: an issue
+// edited on GitHub afterwards is deliberately not reflected in that snapshot,
+// which is what keeps a run reproducible and keeps every network failure out
+// of the render path (§8.4). The same shape is what ListIssuesSince returns
+// to a sync (task 130.5), which is a different use of it and does not change
+// what the snapshot promises. The fields task 130.5 added are all omitted
+// when empty, so a snapshot written before them decodes unchanged.
 //
 // Labels is a real list rather than a joined string. §8.1.2 task field values
 // are strings everywhere, so the prefill joins them for a declared `labels`
@@ -96,6 +100,21 @@ type Issue struct {
 	// to "how old is this?", and the detail view renders it rather than
 	// implying the issue is current.
 	FetchedAt time.Time `json:"fetched_at,omitzero"`
+
+	// NodeID is GitHub's global node id, the key a synced issue is stored
+	// under (task 130 decision 2): a number is only unique within one
+	// repository, and a transfer gives the issue a new number, a new
+	// repository and — observed against lezli01/vincent-test, 2026-10-02 — a
+	// new node id too. ID is the REST API's integer id, which is what
+	// `duplicate_issue_id` takes. The `gh issue` porcelain reports only the
+	// node id (its `id` field), so an Issue read through it carries a zero ID.
+	NodeID string `json:"node_id,omitempty"`
+	ID     int64  `json:"id,omitempty"`
+	// StateReason is GitHub's `state_reason`, lowercased: completed,
+	// not_planned, duplicate or reopened, and empty for an issue never closed.
+	StateReason string `json:"state_reason,omitempty"`
+	// ClosedAt is when the issue was last closed; zero while it is open.
+	ClosedAt time.Time `json:"closed_at,omitzero"`
 }
 
 // Zero reports that no issue is linked. It is the test `.Issue` templates

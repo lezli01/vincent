@@ -36,8 +36,10 @@
 // Any other non-2xx prints the JSON error body on stdout, `gh: <message>
 // (HTTP n)` on stderr, and exits 1. A corpus row may carry a fake-only
 // marker that no answer shows — `"_fake": {"transferred_to": "o/r#12"}`
-// (301 with a Location) or `"_fake": {"deleted": true}` (410) — and is left
-// out of every listing.
+// (a 301 with a Location, followed as gh does) or `"_fake": {"deleted": true}` (410) — and is left
+// out of every listing. As real gh does, `gh api` follows a transferred
+// issue's 301 itself — a PATCH included, which it turns into a GET — and
+// prints the issue in its new repository with a 200 (verified in #664).
 //
 // Scenario selection is environment-driven:
 //
@@ -752,7 +754,9 @@ func issueSetState(scenario string, args []string) {
 			patch["state_reason"] = stateReason
 		}
 		if d, err := strconv.Atoi(strings.TrimPrefix(dup, "#")); err == nil {
-			patch["duplicate_issue_id"] = d
+			// gh resolves --duplicate-of's number to the issue's id, which is
+			// what the REST field takes.
+			patch["duplicate_issue_id"] = issueID(store, repo, d)
 		}
 	}
 	if already {
@@ -778,6 +782,22 @@ func issueSetState(scenario string, args []string) {
 		os.Exit(1)
 	}
 	fmt.Fprintf(os.Stderr, "✓ %s issue %s#%d (%s)\n", word, repo, n, issue["title"])
+}
+
+// issueID is issue n's integer id, or n itself when there is no such issue
+// (so the PATCH answers GitHub's 422 for it).
+func issueID(store fakeissues.Store, repo string, n int) any {
+	resp, err := store.Serve(fakeissues.Request{Endpoint: fmt.Sprintf("repos/%s/issues/%d", repo, n)})
+	if err != nil || resp.Status != http.StatusOK {
+		return n
+	}
+	var row struct {
+		ID json.Number `json:"id"`
+	}
+	if json.Unmarshal(resp.Body, &row) != nil || row.ID == "" {
+		return n
+	}
+	return row.ID
 }
 
 // api answers `gh api` from internal/github/fakeissues. The argv is parsed
@@ -852,6 +872,7 @@ func api(scenario string, args []string) {
 	}
 	resp, err := fakeissues.FromEnv().Serve(fakeissues.Request{
 		Method: method, Endpoint: endpoint, Header: header, Body: body, Scenario: scenario,
+		FollowRedirects: true,
 	})
 	if errors.Is(err, fakeissues.ErrUnreachable) {
 		unreachable()
