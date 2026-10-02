@@ -78,6 +78,16 @@
 // order a change lands on the last page and a page-1 304 would hide it. No
 // request this package makes follows a redirect: a transferred issue is
 // `moved` with its new location, and a deleted one `gone` (reason.go).
+// GetIssue is the same single-issue read, exported for the sync's daily
+// sweep of open issues the open listing no longer carries.
+//
+// Those listings are standing traffic, not on-demand reads (task 130.8):
+// the daemon's reconciler imports and refreshes every GitHub-based
+// project's issues on each `github.poll_interval` tick, whether or not
+// anyone has opened an issue picker. An idle repository costs one
+// conditional request a tick, answered 304; `github.enabled: false` or
+// `github.poll_interval: 0` and it costs none — the gate is checked before
+// any call, as it is for every other read.
 //
 // Issues and pull requests are stored differently on purpose. An Issue on a
 // task is snapshotted, because a run has to be reproducible and `.Issue` has

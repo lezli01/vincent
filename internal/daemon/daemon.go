@@ -518,15 +518,19 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	// kind: it owns its own goroutine, reads currentConfig() per tick so a
 	// hot reload reaches the next one, and writes only through the store.
 	//
-	// It is the daemon's first standing outbound network traffic, which is
-	// why `github.poll_interval: 0` switches it off on its own — the loop
-	// still runs and still does nothing, so switching it back on needs no
-	// restart.
+	// It is the daemon's standing outbound network traffic, which is why
+	// `github.poll_interval: 0` switches it off on its own — the loop still
+	// runs and still does nothing, so switching it back on needs no restart.
 	//
 	// Since task 096.3 the same tick judges GitHub triggers: one listing per
 	// kind per project that has an armed GitHub trigger, shared by every
-	// trigger on it (decision 31D).
-	go NewPullReconciler(st, currentConfig, git, githubClient, logger).WithTriggers(triggers).Run(ctx)
+	// trigger on it (decision 31D). Since task 130.8 it first imports and
+	// refreshes each GitHub-based project's issues (issuesync.go) — an idle
+	// repository costs one conditional request a tick, answered 304 — and a
+	// "sync now" recorded through the store wakes it between ticks.
+	reconciler := NewPullReconciler(st, currentConfig, git, githubClient, logger).WithTriggers(triggers)
+	st.OnIssueSyncRequested(reconciler.RequestSync)
+	go reconciler.Run(ctx)
 	// The release check (task 055, §12.3), the same shape again: one
 	// goroutine, config per tick, quiet failure. It is the daemon's first
 	// standing outbound call that fires for **every** install rather than

@@ -12,7 +12,8 @@ import (
 	"github.com/lezli01/vincent/internal/trigger"
 )
 
-// The task↔pull-request reconciler (task 052, spec §12.3).
+// The task↔pull-request reconciler (task 052, spec §12.3), which since task
+// 130.8 is also the issue importer's clock.
 //
 // It is a daemon subsystem rather than a side effect of the listing endpoint,
 // for two reasons. A link written only when someone opens a screen exists
@@ -21,12 +22,16 @@ import (
 // takes. So the endpoint stays pure and this runs on a timer.
 //
 // It is modelled on internal/notify's posture: it reads the config per tick,
-// so a hot reload governs the next one; it is bounded — one listing per
-// GitHub-based project; and its failure policy is **quiet**. A rate-limited
-// or unreachable GitHub degrades to "no new links this tick" and logs at
-// debug, never a per-tick error storm and never a task state change. This is
-// the daemon's first standing outbound network traffic, and `github.
-// poll_interval: 0` switches it off without switching the integration off.
+// so a hot reload governs the next one, and it is bounded — per GitHub-based
+// project, one issue import pass (issuesync.go), one GitHub trigger listing
+// per kind, and one pull request listing. The pull request half's failure
+// policy is **quiet**: a rate-limited or unreachable GitHub degrades to "no
+// new links this tick" and logs at debug, never a per-tick error storm and
+// never a task state change. The issue half's is not (issuesync.go): its
+// failures are logged and recorded on the project's sync row, because a
+// stalled sync is an issue list that silently lies. This is the daemon's
+// standing outbound network traffic, and `github.poll_interval: 0` switches
+// all of it off without switching the integration off.
 
 // PullReconciler links tasks to the pull requests opened from their branches.
 type PullReconciler struct {
@@ -40,6 +45,9 @@ type PullReconciler struct {
 	triggers *trigger.Manager
 	// now is the clock, seamed for tests.
 	now func() time.Time
+	// wake is a "sync now" (store.RequestIssueSync): one slot, so requests
+	// arriving while one is pending coalesce into it.
+	wake chan struct{}
 }
 
 // WithTriggers makes the tick also judge GitHub triggers.
@@ -53,7 +61,22 @@ func NewPullReconciler(
 	st *store.Store, cfg func() config.Config,
 	git *gitx.Git, client *github.Client, logger *slog.Logger,
 ) *PullReconciler {
-	return &PullReconciler{store: st, cfg: cfg, git: git, client: client, logger: logger}
+	return &PullReconciler{
+		store: st, cfg: cfg, git: git, client: client, logger: logger,
+		wake: make(chan struct{}, 1),
+	}
+}
+
+// RequestSync wakes Run to import the projects with an outstanding "sync
+// now" without waiting for poll_interval. It is the store's
+// OnIssueSyncRequested callback, so it runs on the API's writing goroutine
+// and never blocks: a request arriving while one is pending is the same
+// request.
+func (r *PullReconciler) RequestSync(int64) {
+	select {
+	case r.wake <- struct{}{}:
+	default:
+	}
 }
 
 // Run ticks until ctx is done. The interval is re-read every tick, so a hot
@@ -74,13 +97,54 @@ func (r *PullReconciler) Run(ctx context.Context) {
 		default:
 			r.failTriggers(ctx, errTriggerGitHubNoPoll)
 		}
-		timer := time.NewTimer(wait)
+		if !r.sleep(ctx, wait) {
+			return
+		}
+	}
+}
+
+// sleep waits out one interval, serving "sync now" requests as they come;
+// a request does not restart the interval. False when ctx is done.
+func (r *PullReconciler) sleep(ctx context.Context, wait time.Duration) bool {
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	for {
 		select {
 		case <-ctx.Done():
-			timer.Stop()
-			return
+			return false
 		case <-timer.C:
+			return true
+		case <-r.wake:
+			r.SyncRequested(ctx)
 		}
+	}
+}
+
+// SyncRequested runs the issue import for every project with an
+// outstanding "sync now", under the gates a tick applies. The pull request
+// links and triggers wait for the tick: a request asks for issues.
+func (r *PullReconciler) SyncRequested(ctx context.Context) {
+	if !r.cfg().GitHub.Polls() {
+		// The API reports github_disabled / poll_disabled from config; the
+		// request stays recorded and the next enabled tick serves it.
+		return
+	}
+	states, err := r.store.ListIssueSyncStates(ctx)
+	if err != nil {
+		r.logger.Warn("issue sync: requests not listed", "error", err)
+		return
+	}
+	for _, st := range states {
+		if st.RequestedAt == nil || ctx.Err() != nil {
+			continue
+		}
+		project, err := r.store.GetProject(ctx, st.ProjectID)
+		if err != nil {
+			r.logger.Warn("issue sync: project not read", "project", st.ProjectID, "error", err)
+			continue
+		}
+		repo, ok := r.issueRepoFor(ctx, *project)
+		r.syncIssues(ctx, *project, repo, ok, r.client != nil && r.git != nil)
 	}
 }
 
@@ -95,12 +159,19 @@ func (r *PullReconciler) Tick(ctx context.Context) {
 		r.failTriggers(ctx, errTriggerGitHubOff)
 		return
 	}
-	if r.client == nil || r.git == nil {
+	// github.enabled and poll_interval are the two config gates, and the
+	// issue import honours both; a directly driven Tick with polling off
+	// still links pull requests, as it always has.
+	syncs := r.cfg().GitHub.Polls()
+	haveClient := r.client != nil && r.git != nil
+	if !haveClient {
 		r.failTriggers(ctx, errTriggerGitHubNoClient)
-		return
+		if !syncs {
+			return
+		}
 	}
 	var wants map[int64]trigger.GitHubWant
-	if r.triggers != nil {
+	if r.triggers != nil && haveClient {
 		wants = r.triggers.GitHubWants(ctx)
 	}
 	projects, err := r.store.ListProjects(ctx)
@@ -112,8 +183,16 @@ func (r *PullReconciler) Tick(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		repo, ok := r.issueRepoFor(ctx, project)
+		// The issue import runs first, so a trigger judged this tick sees
+		// the issues it imported.
+		if syncs {
+			r.syncIssues(ctx, project, repo, ok, haveClient)
+		}
+		if !haveClient {
+			continue
+		}
 		want, triggered := wants[project.ID]
-		repo, ok := r.repoFor(ctx, project)
 		if triggered {
 			// One listing per kind for every GitHub trigger on the project,
 			// however many there are; its failure is each trigger's failing
@@ -128,6 +207,15 @@ func (r *PullReconciler) Tick(ctx context.Context) {
 			r.reconcileProject(ctx, project, repo)
 		}
 	}
+}
+
+// issueRepoFor is repoFor without a git runner: no runner reads as "not
+// GitHub-based" only to the caller that has already gated on the client.
+func (r *PullReconciler) issueRepoFor(ctx context.Context, project store.Project) (github.Repo, bool) {
+	if r.git == nil {
+		return github.Repo{}, false
+	}
+	return r.repoFor(ctx, project)
 }
 
 // failTriggers marks every armed GitHub trigger failing with err. It runs on
