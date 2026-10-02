@@ -513,7 +513,9 @@ its own pull request.
   issue listing (`node_id`, pagination, conditional requests, gone/moved) and
   issue state writes in `internal/github`. Depends: 130.2. ✓ 2026-10-02
 - [ ] **130.6** ([#665](https://github.com/lezli01/vincent/issues/665)) The
-  `vincent issue …` CLI tree. Depends: 130.3.
+  `vincent issue …` CLI tree; drops `ListIssues`/`GetIssue` from
+  `tuiOnlyClientCalls` and their row from `docs/reference/cli.md`'s "What only
+  the TUI does", which 130.9 added. Depends: 130.3.
 - [x] **130.7** ([#666](https://github.com/lezli01/vincent/issues/666))
   `issue_id` on task create, the prefill preview, `?issue_id=` filter, the task
   DTO link, `Closes #N`, `vincent task add --issue`. Depends: 130.3, 130.4.
