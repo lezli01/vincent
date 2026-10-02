@@ -100,11 +100,11 @@ func TestIssueScreensAgainstTheRealAPI(t *testing.T) {
 	}
 
 	// `o` on the imported issue hands its page to a browser.
-	opened := withFakeOpener(t, nil)
+	opened := withLiveFakeOpener(t)
 	h.sendKey(keyPress("o"))
-	h.p.until(5*time.Second, "the browser hand-off", func() bool { return len(*opened) == 1 })
-	if (*opened)[0] != "https://github.com/octo/web/issues/41" {
-		t.Fatalf("o opened %v", *opened)
+	h.p.until(5*time.Second, "the browser hand-off", func() bool { return len(opened()) == 1 })
+	if got := opened(); got[0] != "https://github.com/octo/web/issues/41" {
+		t.Fatalf("o opened %v", got)
 	}
 	// A hand-off that worked clears its own note, so one esc is the filter.
 	h.p.until(5*time.Second, "the hand-off's note to clear", func() bool { return list.note == "" })
