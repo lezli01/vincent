@@ -144,6 +144,8 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		// stays a tool — the row and its transcripts survive it.
 		{http.MethodDelete, "/v1/tasks/{id}"},
 		{http.MethodDelete, "/v1/chats/{id}"},
+		// Task 130.3, on task 092's line: the issue delete is permanent.
+		{http.MethodDelete, "/v1/issues/{id}"},
 		// Task 096 decision 22: an agent must not author or arm a trigger
 		// that starts agents — enabling is a PATCH — and decision 31G: an
 		// agent that can inject an event can start agents.

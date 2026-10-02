@@ -98,6 +98,11 @@ var Excluded = []Route{
 	// sense that matters, the row and its transcripts survive it.
 	{Method: http.MethodDelete, Path: "/v1/tasks/{id}"},
 	{Method: http.MethodDelete, Path: "/v1/chats/{id}"},
+	// The issue delete (task 130.3) joins them on the same line: it is
+	// permanent, and an imported issue's tombstone outlives it. Every other
+	// issue route is a tool — task 130 decision 10 lets an agent file, edit,
+	// close and reopen local issues.
+	{Method: http.MethodDelete, Path: "/v1/issues/{id}"},
 	// The import that undoes a task delete (task 117), on the same line. It
 	// reads an arbitrary file the caller names and writes rows — ids, step
 	// runs, provenance — that no agent should be able to create.
@@ -188,6 +193,7 @@ var routes = []Route{
 	{http.MethodGet, "/v1/projects/{id}/github", "project_github", "Whether this project's origin is a reachable GitHub repository (§12.3)."},
 	{http.MethodGet, "/v1/projects/{id}/github/issues", "project_github_issues", "Open GitHub issues for this project's origin repository."},
 	{http.MethodGet, "/v1/projects/{id}/github/pulls", "project_github_pulls", "Open GitHub pull requests for this project's origin repository."},
+	{http.MethodGet, "/v1/projects/{id}/issue-labels", "project_issue_labels", "This project's issue label catalogue: each label's name, color, description, source (local or the provider it was imported from) and issue_count."},
 	{http.MethodGet, "/v1/projects/{id}/branches", "project_branches", "This project's local git branches, each with the working tree holding it. A branch here can be run on directly with task_create's existing_branch."},
 	{http.MethodGet, "/v1/workflows", "workflow_list", "The workflow registry (§5.2): built-in, global and project workflows after shadowing."},
 	{http.MethodGet, "/v1/workflows/schema", "workflow_schema", "The §8.2 workflow schema as data: which fields are legal on which step type, and where each type may be nested. Read-only."},
@@ -226,6 +232,12 @@ var routes = []Route{
 	{http.MethodPost, "/v1/tasks/{id}/github/pull", "task_github_pull_link", "Link this task to a pull request. Body: {number}."},
 	{http.MethodGet, "/v1/tasks/{id}/github/pull/checks", "task_github_pull_checks", "What CI says about this task's pull request right now: one row per check on the head commit, with its state and its own GitHub URL (task 068). Live on every call — a check result is never stored, because a stored one reads exactly like a current one while being wrong."},
 	{http.MethodDelete, "/v1/tasks/{id}/github/pull", "task_github_pull_unlink", "Unlink this task's pull request. A human unlink is sticky (decision record row 27): the reconciler never re-applies it, so this suppresses the link permanently."},
+	{http.MethodGet, "/v1/issues", "issue_list", "List issues, most recently updated first; rows omit body. Query: project_id, state (open|closed, repeatable), label (repeatable, all must match), kind, q (substring of title or body), source (local|github), sort (updated|created), limit, offset."},
+	{http.MethodPost, "/v1/issues", "issue_create", "File an issue in a project's backlog. Body: {project_id, title, body?, labels?, kind?, priority?}; priority runs 0 none, 1 urgent to 4 low. The author is recorded as your task; pass idempotency_key so a retry cannot file it twice."},
+	{http.MethodGet, "/v1/issues/{id}", "issue_get", "One issue in full: body, labels, state, available_actions, the root tasks working on it (tasks.active_ids), its source when imported, and which fields are editable. Read version from here before issue_patch."},
+	{http.MethodPatch, "/v1/issues/{id}", "issue_patch", "Edit an issue. Body: {version, title?, body?, labels?, add_labels?, remove_labels?, kind?, priority?}. version is required and comes from issue_get; labels replaces the set and cannot be combined with add_labels or remove_labels. A stale version is a 409 issue_changed carrying the current issue — re-apply your edit to it. An imported issue's title, body and labels are mirrored and refused (409 issue_mirrored); kind and priority stay editable. State is not a field: use issue_close or issue_reopen."},
+	{http.MethodPost, "/v1/issues/{id}/close", "issue_close", "Close an open issue. Body: {reason?, duplicate_of?}; reason is completed (the default), not_planned or duplicate, and duplicate_of — an issue id in the same project — is only allowed with duplicate."},
+	{http.MethodPost, "/v1/issues/{id}/reopen", "issue_reopen", "Reopen a closed issue. Body: {}."},
 }
 
 // Routes returns the tool surface: one entry per `/v1` route that is a tool,
@@ -290,7 +302,7 @@ func inputSchema(r Route) json.RawMessage {
 				"type": "string",
 				"description": "optional replay-protection key: re-sending the same " +
 					"arguments with the same key returns the original result instead of " +
-					"creating a second task",
+					"creating a second one",
 			}
 		}
 	} else {
@@ -310,11 +322,11 @@ func inputSchema(r Route) json.RawMessage {
 }
 
 // takesIdempotencyKey reports whether a route honours §13.1's
-// `Idempotency-Key`. Only `POST /v1/tasks` does, and the schema says so on
-// that tool alone rather than everywhere — an argument a route ignores is a
-// worse lie than a missing one.
+// `Idempotency-Key`. `POST /v1/tasks` and `POST /v1/issues` do, and the
+// schema says so on those tools alone rather than everywhere — an argument a
+// route ignores is a worse lie than a missing one.
 func takesIdempotencyKey(r Route) bool {
-	return r.Method == http.MethodPost && r.Path == "/v1/tasks"
+	return r.Method == http.MethodPost && (r.Path == "/v1/tasks" || r.Path == "/v1/issues")
 }
 
 // hasBody reports whether a method carries a request body on this API.

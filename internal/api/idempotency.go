@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -13,12 +14,13 @@ import (
 
 // Idempotency keys (§13.1, amended 2026-08-28, task 040, issue #146).
 //
-// `POST /v1/tasks` is the only route in §13.2 where a replayed request produces
-// a second side effect. Everything else is already safe: the §6 action routes
-// are a compare-and-swap on the state the request read (amended 2026-08-24),
+// `POST /v1/tasks` was the only route in §13.2 where a replayed request
+// produced a second side effect, until `POST /v1/issues` joined it (task
+// 130.3). Everything else is already safe: the §6 action routes are a
+// compare-and-swap on the state the request read (amended 2026-08-24),
 // `POST /v1/projects` refuses an already-registered path, and the PATCH and
-// DELETE routes are desired-state operations. So this is one header on one
-// route, even though the table is keyed to take more later.
+// DELETE routes are desired-state operations. So this is one header on two
+// routes, sharing every rule below.
 const (
 	// idempotencyHeader is the request header a client sets to make a create
 	// replayable. It is optional: a request without it behaves exactly as it
@@ -36,6 +38,11 @@ const (
 // the route, not r.URL.Path, so the scope cannot be widened by a client
 // appending a trailing slash or a query string.
 const idempotencyRoute = "/v1/tasks"
+
+// idempotencyIssueRoute is the second route that honours the header
+// (task 130.3): POST /v1/issues, whose keys live in their own table (0037)
+// under the same digest, window and replay rule.
+const idempotencyIssueRoute = "/v1/issues"
 
 // readIdempotencyKey returns the request's Idempotency-Key, "" when it carries
 // none, and false when it carries one that is not usable — in which case the
@@ -101,20 +108,9 @@ func idempotencyDigest(v any) (string, error) {
 // since admitted replays as `state: running` under a `201`. That is the honest
 // answer: the task exists, and this is it.
 func (s *Server) replayTaskCreate(w http.ResponseWriter, r *http.Request, key, sha string) bool {
-	rec, err := s.deps.Store.GetIdempotencyKey(r.Context(), r.Method, idempotencyRoute, key)
-	if errors.Is(err, store.ErrNotFound) {
-		return false
-	}
-	if err != nil {
-		s.internalError(w, "get idempotency key", err)
-		return true
-	}
-	if rec.RequestSHA != sha {
-		writeConflict(w,
-			fmt.Sprintf("%s %q was already used for a different request",
-				idempotencyHeader, key),
-			map[string]string{"reason": idempotencyReasonReused})
-		return true
+	rec, done := s.recordedKey(w, r, key, sha, idempotencyRoute, s.deps.Store.GetIdempotencyKey)
+	if rec == nil {
+		return done
 	}
 	task, err := s.deps.Store.GetTask(r.Context(), rec.TaskID)
 	if err != nil {
@@ -126,4 +122,47 @@ func (s *Server) replayTaskCreate(w http.ResponseWriter, r *http.Request, key, s
 	}
 	writeJSON(w, http.StatusCreated, toTaskResponse(task, s.snaps.get(task.ID, task.WorkflowSnapshot)))
 	return true
+}
+
+// replayIssueCreate is replayTaskCreate for POST /v1/issues: the issue is
+// rendered as it is now, under a 201.
+func (s *Server) replayIssueCreate(w http.ResponseWriter, r *http.Request, key, sha string) bool {
+	rec, done := s.recordedKey(w, r, key, sha, idempotencyIssueRoute, s.deps.Store.GetIssueIdempotencyKey)
+	if rec == nil {
+		return done
+	}
+	iss, err := s.deps.Store.GetIssue(r.Context(), rec.IssueID)
+	if err != nil {
+		// Unreachable for the same reason: the key cascades with its issue.
+		s.internalError(w, "get issue for idempotent replay", err)
+		return true
+	}
+	writeJSON(w, http.StatusCreated, s.renderIssue(r.Context(), iss))
+	return true
+}
+
+// recordedKey is the lookup both replays share. It returns the recorded key
+// when it matches sha and the caller should render a replay. Otherwise rec is
+// nil and done says whether a response was already written — the 409 for a
+// key reused with a different body, or a 500 — or, false, that the key is
+// new and the caller should do the work.
+func (s *Server) recordedKey(w http.ResponseWriter, r *http.Request, key, sha, route string,
+	get func(ctx context.Context, method, path, key string) (*store.IdempotencyKey, error),
+) (rec *store.IdempotencyKey, done bool) {
+	rec, err := get(r.Context(), r.Method, route, key)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, false
+	}
+	if err != nil {
+		s.internalError(w, "get idempotency key", err)
+		return nil, true
+	}
+	if rec.RequestSHA != sha {
+		writeConflict(w,
+			fmt.Sprintf("%s %q was already used for a different request",
+				idempotencyHeader, key),
+			map[string]string{"reason": idempotencyReasonReused})
+		return nil, true
+	}
+	return rec, true
 }

@@ -324,6 +324,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/projects/{id}/github", s.handleProjectGitHub)
 	rt.handle(http.MethodGet, "/v1/projects/{id}/github/issues", s.handleProjectGitHubIssues)
 	rt.handle(http.MethodGet, "/v1/projects/{id}/github/pulls", s.handleProjectGitHubPulls)
+	rt.handle(http.MethodGet, "/v1/projects/{id}/issue-labels", s.handleProjectIssueLabels)
 	rt.handle(http.MethodGet, "/v1/workflows", s.handleWorkflowList)
 	rt.handle(http.MethodPost, "/v1/workflows", s.handleWorkflowCreate)
 	rt.handle(http.MethodPatch, "/v1/workflows", s.handleWorkflowPatch)
@@ -386,6 +387,15 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/github/pull/reopen", s.handleTaskGitHubPullReopen)
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/github/pull/comment", s.handleTaskGitHubPullComment)
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/github/pull/checks/rerun", s.handleTaskGitHubPullRerun)
+	// Issues (§5.6, §13.2, task 130.3). Every route but the permanent
+	// delete is an MCP tool (§13.4); the delete joins task 092's exclusion.
+	rt.handle(http.MethodGet, "/v1/issues", s.handleIssueList)
+	rt.handle(http.MethodPost, "/v1/issues", s.handleIssueCreate)
+	rt.handle(http.MethodGet, "/v1/issues/{id}", s.handleIssueGet)
+	rt.handle(http.MethodPatch, "/v1/issues/{id}", s.handleIssuePatch)
+	rt.handle(http.MethodDelete, "/v1/issues/{id}", s.handleIssueDelete)
+	rt.handle(http.MethodPost, "/v1/issues/{id}/close", s.handleIssueClose)
+	rt.handle(http.MethodPost, "/v1/issues/{id}/reopen", s.handleIssueReopen)
 	// Chats (§5.5, §13.2). They are their own family: nothing here touches
 	// the tasks table, and no chat route is an MCP tool (§13.4, decision 2).
 	rt.handle(http.MethodGet, "/v1/chats", s.handleChatList)

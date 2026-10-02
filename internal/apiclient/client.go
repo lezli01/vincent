@@ -80,7 +80,12 @@ type Error struct {
 	Status  int
 	Code    string
 	Message string
+	// Details carries the envelope's string-valued details — the ones a
+	// client branches on (`state`, `reason`).
 	Details map[string]string
+	// RawDetails is every details value verbatim, objects included: an
+	// issue_changed 409 carries the current issue there (task 130.3).
+	RawDetails map[string]json.RawMessage
 }
 
 func (e *Error) Error() string {
@@ -137,21 +142,31 @@ func (c *Client) getVia(ctx context.Context, hc *http.Client, path string, out a
 // decodeError maps a non-2xx response onto *Error, falling back to a bare
 // status when the body is not the §13.1 envelope.
 func decodeError(resp *http.Response) error {
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes))
 	var envelope struct {
 		Error struct {
-			Code    string            `json:"code"`
-			Message string            `json:"message"`
-			Details map[string]string `json:"details"`
+			Code    string                     `json:"code"`
+			Message string                     `json:"message"`
+			Details map[string]json.RawMessage `json:"details"`
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(body, &envelope); err == nil && envelope.Error.Code != "" {
-		return &Error{
-			Status:  resp.StatusCode,
-			Code:    envelope.Error.Code,
-			Message: envelope.Error.Message,
-			Details: envelope.Error.Details,
+		e := &Error{
+			Status:     resp.StatusCode,
+			Code:       envelope.Error.Code,
+			Message:    envelope.Error.Message,
+			RawDetails: envelope.Error.Details,
 		}
+		for k, raw := range envelope.Error.Details {
+			var v string
+			if json.Unmarshal(raw, &v) == nil {
+				if e.Details == nil {
+					e.Details = map[string]string{}
+				}
+				e.Details[k] = v
+			}
+		}
+		return e
 	}
 	return &Error{
 		Status:  resp.StatusCode,
@@ -159,6 +174,11 @@ func decodeError(resp *http.Response) error {
 		Message: fmt.Sprintf("unexpected status %s", resp.Status),
 	}
 }
+
+// maxErrorBytes bounds an error body's read. It is not 4 KiB because a 409
+// may carry the current issue in its details, body and all (task 130.3), and
+// an issue's body is bounded at 64 KiB before JSON escaping.
+const maxErrorBytes = 1 << 20
 
 // probeClient picks the deadline a request is held to: probeTimeout when the
 // daemon will spawn an agent CLI per adapter to answer it, requestTimeout when
