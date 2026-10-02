@@ -146,7 +146,7 @@ func (v *issueView) loadCmd() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
-		iss, err := client.GetIssue(ctx, id)
+		iss, err := client.GetIssue(ctx, id, "")
 		if err != nil {
 			return issueLoadedMsg{id: id, err: err}
 		}

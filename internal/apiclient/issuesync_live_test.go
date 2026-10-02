@@ -64,7 +64,7 @@ func TestIssueSyncOverTheWire(t *testing.T) {
 	if err := st.SetIssueRemoteStatus(ctx, pid, "github", "I_5", store.RemoteStatusMoved, "o/elsewhere#1"); err != nil {
 		t.Fatalf("SetIssueRemoteStatus: %v", err)
 	}
-	iss, err := c.GetIssue(ctx, imported.ID)
+	iss, err := c.GetIssue(ctx, imported.ID, "")
 	if err != nil || iss.Source == nil || iss.Source.LastSyncedAt == nil || iss.Source.Status != "moved" {
 		t.Errorf("imported issue source = %+v, %v", iss.Source, err)
 	}
