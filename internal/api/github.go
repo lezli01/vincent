@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/lezli01/vincent/internal/github"
+	"github.com/lezli01/vincent/internal/issues"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/workflow"
 )
@@ -290,7 +291,26 @@ func (s *Server) applyIssuePrefill(
 		writeGitHubError(w, gate, err)
 		return nil, false
 	}
-	prefill := issuePrefill(issue, wf)
+	if msg := foldPrefill(req, issuePrefill(issue, wf)); msg != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
+		return nil, false
+	}
+	return &issue, true
+}
+
+// foldPrefill folds a computed prefill into a create request wherever the
+// caller left a value unset — **explicit wins**, by presence for fields and
+// by blank/absent for title and description, as applyIssuePrefill explains —
+// and re-bounds the result. It returns the bound violation, "" when there is
+// none.
+//
+// The re-bound is the point of returning a message: the request now carries
+// text vincent supplied rather than text the caller typed, and an issue body
+// larger than §13.1's description bound has to fail the same way a pasted
+// one would rather than be silently truncated into the row (task 130
+// decision 4). Both issue prefills — the legacy `github_issue` fetch and the
+// vincent issue — fold through here.
+func foldPrefill(req *taskCreateRequest, prefill githubPrefill) string {
 	if strings.TrimSpace(req.Title) == "" {
 		req.Title = prefill.Title
 	}
@@ -307,15 +327,39 @@ func (s *Server) applyIssuePrefill(
 		}
 		req.Fields[name] = value
 	}
-	// Re-bound the request now that it carries text vincent fetched rather
-	// than text the caller typed. An issue body at GitHub's own size limit is
-	// larger than §13.1's description bound, and it has to fail the same way
-	// a pasted one would rather than be silently truncated into the row.
-	if msg := boundTaskFields(req.Title, ptrValue(req.Description), req.Fields); msg != "" {
-		writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
-		return nil, false
+	return boundTaskFields(req.Title, ptrValue(req.Description), req.Fields)
+}
+
+// vincentIssuePrefill is issuePrefill's counterpart for a vincent issue
+// (task 130 decisions 7 and 8): internal/issues maps the snapshot onto
+// candidates, and this keeps the half that needs the workflow — a candidate
+// the declaration would reject is dropped, never offered. It reads only the
+// snapshot, so it makes no GitHub call even for an imported issue. 130.7
+// wires it into POST /v1/tasks and its preview; until then the legacy
+// `github_issue` path above is the only one a request reaches.
+func vincentIssuePrefill(snap *store.IssueSnapshot, wf *workflow.Workflow) githubPrefill {
+	var decls []issues.FieldDecl
+	if wf != nil {
+		for _, definition := range wf.Fields {
+			decls = append(decls, issues.FieldDecl{Name: definition.Name, Type: definition.Type})
+		}
 	}
-	return &issue, true
+	computed := issues.PrefillFrom(snap, decls)
+	out := githubPrefill{Title: computed.Title, Description: computed.Description}
+	if wf == nil {
+		return out
+	}
+	for _, definition := range wf.Fields {
+		value, ok := computed.Fields[definition.Name]
+		if !ok || definition.Validate(value) != "" {
+			continue
+		}
+		if out.Fields == nil {
+			out.Fields = map[string]string{}
+		}
+		out.Fields[definition.Name] = value
+	}
+	return out
 }
 
 // pullPrefill computes what creating a task from this pull request would fill
