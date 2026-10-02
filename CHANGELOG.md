@@ -64,6 +64,24 @@ list with the user-facing context a commit subject cannot carry.
   `project_issue_labels`); an issue an agent step files records that step's
   task. The database migrates on start (migration 0037).
   ([#662](https://github.com/lezli01/vincent/issues/662))
+- **GitHub issues are imported and kept in sync.** On a GitHub-based project
+  the daemon now imports the repository's open issues into the project's
+  issue set on the `github.poll_interval` tick — 500 per pass, resuming on the
+  next tick — and then refreshes them with one conditional request a tick, so
+  an idle repository costs a single `304`. Closing, reopening, retitling or
+  relabelling an issue on GitHub reaches vincent within a tick; a local `kind`
+  and `priority` survive every refresh. A transferred or deleted issue is
+  marked `moved` or `missing` on its `source`, never deleted, and an issue you
+  deleted locally is not imported again. This is new standing GitHub traffic:
+  `github.enabled: false` or `github.poll_interval: 0` turns it off, and a
+  project whose `origin` is not on GitHub makes no call. Sync failures are no
+  longer quiet: `GET /v1/projects/{id}/issues/sync` (MCP
+  `project_issue_sync_status`), `vincent issue sync --project P --status` and
+  `vincent doctor` report each project's import health and why it stopped, and
+  `issue.sync_changed` announces a project going from ok to failing or back.
+  `POST /v1/projects/{id}/issues/sync` and `vincent issue sync --project P`
+  ask for a sync now. The database migrates on start (migration 0038).
+  ([#667](https://github.com/lezli01/vincent/issues/667))
 
 ## [0.11.0](https://github.com/lezli01/vincent/compare/v0.10.1...v0.11.0) (2026-10-01)
 

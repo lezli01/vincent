@@ -1234,6 +1234,28 @@ rules the routes settled:
   issue in the same project. Omitting it is valid, as on GitHub. It is set in
   the close's transaction and cleared by reopening.
 
+*Amended 2026-10-02 (task 130.8, issue #667).* Sync exists: the daemon imports
+and refreshes a GitHub-based project's issues on §12.3's `github.poll_interval`
+tick, as actor `sync`. Three rules it settled:
+
+- **`kind` and `priority` survive a refresh.** They are local (task 130
+  decision 15.4): an import creates the issue with `kind` empty and no
+  priority, and no refresh ever writes either. `author` is the GitHub login;
+  assignees, milestone, `closed_at` and `state_reason` stay in the remote row's
+  `remote_json`. The body is stored in full — §13.2's 64 KiB field bound is a
+  request rule, not a sync one.
+- **A remote row has a `remote_status`.** `''` while live, `moved` once the
+  daily open-set scan finds the issue transferred out of the project's repo
+  (`remote_json` carries `moved_to`), `missing` once it is gone — 404, 410, or
+  converted to a discussion. Neither deletes anything: the local issue stays,
+  and a later refresh that matches the `node_id` again resets the status. The
+  DTO's `source` block shows it as `status`, beside `last_synced_at`.
+- **The repo binding is sticky.** The first successful sync records the repo
+  the project is bound to (task 130 decision 2). A later tick whose `origin`
+  names a different repo stops that project's sync with reason
+  `origin_changed` and never re-keys an issue; a rename GitHub redirects is
+  followed through the `node_id` match instead.
+
 ## 6. Task lifecycle
 
 > Chats have their own lifecycle and their own vocabulary — `idle`, `running`,
@@ -6964,7 +6986,7 @@ agents:
   cursor: { path: "" }         # resolves `cursor-agent`, never `cursor` (§9.7)
 github:
   enabled: true                # read GitHub issues and pull requests (§13.2)
-  poll_interval: 5m            # reconcile task↔pull-request links this often; 0 = off (task 052)
+  poll_interval: 5m            # import issues and reconcile pull-request links this often; 0 = off (tasks 052, 130.8)
 update:                        # check for a newer vincent release (task 055)
   check: true                  # opt-out; false = the daemon makes no such request at all
   poll_interval: 24h           # 0 = off, same as check: false; negative is refused
@@ -7169,6 +7191,26 @@ failing, with the reason: a failed listing, `github.enabled: false`,
 A trigger that silently never fires is exactly the question its ledger exists
 to answer. With GitHub not polled, the reconciler's idle heartbeat still runs
 to report that.
+
+*Amended 2026-10-02 (task 130.8, issue #667).* The same tick **imports and
+refreshes each GitHub-based project's issues** (§5.6), first, so a trigger
+judged on that tick sees what it imported. The gates run in order —
+`github.enabled`, a non-zero `poll_interval`, a github.com `origin`, a client —
+and a failing gate makes no call and is recorded as the project's sync reason.
+The first import asks for open issues only, 500 per pass, ascending by update
+and resumable from the watermark across ticks; once it completes, each tick
+makes one conditional `state: all` listing from two minutes before the
+watermark (the newest GitHub `updated_at` seen, on GitHub's clock), so an idle
+repository costs one request a tick, answered 304. A closed issue unknown
+locally is skipped, not imported. Once a day, every locally open imported issue
+missing from an open listing is fetched once, without following a redirect,
+to learn whether it closed, moved or went missing. A rate limit defers the
+project until GitHub's reset. `POST /v1/projects/{id}/issues/sync` wakes the
+loop between ticks for the projects that asked; it does not restart the
+interval. The quiet failure policy above does **not** apply to the import,
+for the triggers' reason: every failure is logged and recorded on the
+project's sync row, read back by `GET /v1/projects/{id}/issues/sync` and by
+`vincent doctor`.
 
 *Amended 2026-08-29 (task 055).* This was the daemon's **first** standing
 outbound network traffic when it landed, and that sentence read as though it
@@ -7450,6 +7492,15 @@ costs nothing unasked for. Setting it to `false` stops the daemon reading
 GitHub entirely: the TUI's issue row disappears, `GET
 /v1/projects/{id}/github` answers `disabled`, and `github_issue` on `POST
 /v1/tasks` is refused.
+*Amended 2026-10-02 (task 130.8, issue #667):* "makes no call at all until a
+human opens the issue picker" is no longer true, and this **departs from task
+035 decision 6** by name, as task 130 decision 9 recorded it would. A
+GitHub-based project with the integration on now has **standing** issue
+traffic — the import above, one conditional request a tick once caught up — as
+task 052 already added for pull-request links. The default stays on, and there
+is still no separate key: `enabled: false` stops the import with every other
+read, and `poll_interval: 0` stops it with the rest of the tick (task 130 open
+question 2). A non-GitHub `origin` still costs nothing.
 
 **`notify` (task 046, added 2026-08-28; issue #90).** The daemon's outward
 signal. When a task enters one of the states in `on`, the daemon runs `command`
@@ -8608,6 +8659,21 @@ DELETE /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* Permane
 GET    /v1/projects/{id}/issue-labels   *Added 2026-10-02 (task 130.3).* The project's label
                                         catalogue, sorted case-insensitively:
                                         [{ name, color?, description?, source, issue_count }]
+GET    /v1/projects/{id}/issues/sync    *Added 2026-10-02 (task 130.8, issue #667).* The
+                                        project's issue import status: { enabled, provider,
+                                        repo, last_synced_at?, ok, reason?, import_complete,
+                                        rate_limited_until? }. `reason` is `github_disabled` or
+                                        `poll_disabled` from the live config first, else
+                                        `pending` before the first attempt, else what the last
+                                        attempt stored (`not_github`, `no_client`,
+                                        `origin_changed`, or a §13.2 GitHub reason such as
+                                        `rate_limited`). Sync-status vocabulary, not a §18
+                                        task reason. A read; it never calls GitHub
+POST   /v1/projects/{id}/issues/sync    *Added 2026-10-02 (task 130.8).* {}. Sync now: records
+                                        the request and wakes the importer → **202** with the
+                                        status body above, as of the request. With a switch
+                                        off the request stays recorded and is served by the
+                                        next enabled tick. Not an MCP tool (§13.4)
 GET    /v1/chats                        *Amended 2026-09-09 (task 092, issue #350).* Also takes
                                         limit, offset, archived_before and archived_since —
                                         GET /v1/tasks' parameters, spelled the same way, because
@@ -9972,6 +10038,20 @@ duplicate close names one, and omits it otherwise. A `PATCH` that edits fields
 and labels appends `issue.updated` and `issue.labels_changed` from its one
 transaction.
 
+*Amended 2026-10-02 (task 130.8, issue #667).* Sync writes these kinds too,
+with `by: sync`, and adds **no** bulk kind: an import appends one
+`issue.created` per issue, and clients debounce (task 130 decision 15.2). The
+six kinds above stand. One project-level kind is new:
+
+| Type | Payload |
+|---|---|
+| `issue.sync_changed` | `{ project_id, ok, reason? }` — `reason` omitted when ok |
+
+It is emitted only when a project's import goes from ok to failing or back,
+never per tick, on `trigger.poll_changed`'s precedent; a project's first
+recorded attempt counts as a transition only if it fails. A client keeps
+"last synced" current by re-reading `GET /v1/projects/{id}/issues/sync`.
+
 ### 13.4 Model Context Protocol (task 057)
 
 *Added 2026-08-29 (task 057, issue #243).*
@@ -10196,6 +10276,16 @@ triage local issues (the forge guard for imported ones is task 130.10).
 create records its task as the author and `created_by_task_id` (§5.6). An issue
 is not a task, so `mcp.max_depth` and `mcp.max_tasks` do not bound it, and
 there is no issue cap.
+
+*Amended 2026-10-02 (task 130.8, issue #667).* One more, **thirty-eight** in
+all:
+
+    POST   /v1/projects/{id}/issues/sync
+
+Today it only asks the importer to poll early, but once write-back lands (task
+130.10) the same request flushes vincent's pending edits to GitHub, so it stays
+a human act (task 130 decision 15.8). Its `GET` is a tool,
+`project_issue_sync_status`.
 
 The task 057 property that the tool surface **equals** `Routes()` minus the
 exclusions is unchanged, and is still asserted by a test — the exclusion list it
@@ -10674,6 +10764,7 @@ CREATE TABLE issue_remotes (           -- an imported issue's source; NULL issue
   remote_updated_at TEXT,
   synced_at         TEXT,                   -- NULL = never synced
   suppressed        INTEGER NOT NULL DEFAULT 0,
+  remote_status     TEXT NOT NULL DEFAULT '', -- '' live | moved | missing (migration 0038)
   UNIQUE (project_id, provider, remote_key) -- per project, deliberately not global
 );
 
@@ -10714,6 +10805,23 @@ CREATE TABLE issue_idempotency_keys (  -- §13.1 replay protection for POST /v1/
   PRIMARY KEY (method, path, key)
 );
 CREATE INDEX idx_issue_idempotency_keys_created_at ON issue_idempotency_keys(created_at);
+
+CREATE TABLE issue_sync_state (        -- one row per project the importer polled or was asked to (task 130.8, migration 0038)
+  project_id         INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  provider           TEXT NOT NULL,
+  repo               TEXT NOT NULL DEFAULT '',  -- the bound repo; '' until the first successful sync
+  watermark          TEXT,                      -- newest remote updated_at seen, GitHub's clock
+  etag               TEXT NOT NULL DEFAULT '',
+  since              TEXT,                      -- the bound the next incremental listing asks for
+  last_attempt_at    TEXT,
+  last_ok_at         TEXT,
+  ok                 INTEGER NOT NULL DEFAULT 1,
+  reason             TEXT NOT NULL DEFAULT '',
+  import_complete    INTEGER NOT NULL DEFAULT 0,
+  last_full_scan_at  TEXT,
+  rate_limited_until TEXT,
+  requested_at       TEXT                       -- a pending "sync now"
+);
 
 CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 ```
@@ -10873,6 +10981,15 @@ of `task_id`, cascading with its issue (§13.1 says why it is a second table).
 `issues.created_by_task_id` is `tasks.created_by_task_id` for an issue: the task
 whose agent step filed it over MCP, `SET NULL` so deleting that task leaves the
 issue it filed. The 24-hour prune (§17) covers both key tables.
+
+*Added 2026-10-02 (task 130.8, issue #667, migration 0038).* `issue_sync_state`
+is the importer's per-project bookkeeping (§12.3): the bound repo, the
+watermark and ETag the conditional listing needs, the last attempt's outcome,
+and the pacing of the daily scan, the rate-limit backoff and a pending "sync
+now". A project with no row reads as ok, which is why `ok` defaults to 1 and a
+first failure is an `issue.sync_changed` transition (§13.3) while a first
+success is not. It cascades with its project. `issue_remotes.remote_status` is
+§5.6's `''`/`moved`/`missing`; it never deletes the row it describes.
 
 *Added 2026-08-14 (task 003).* `admit_not_before` / `queued_reason` carry no index:
 `ListAdmissible` already returns the whole queued set in §11 order and the hold is
@@ -14462,6 +14579,11 @@ the whole of the posture, not a set of tips.
   real control for unattended work: point `action.workflow` at a workflow whose
   steps are containerized, and read the bullet above on what a container does
   not yet confine.
+  *Amended 2026-10-02 (task 130.8, issue #667):* imported issues (§5.6) put
+  third-party text in the daemon's database without a human choosing each
+  issue. That does not widen the exposure: an imported issue reaches an agent
+  only as `.Issue` on a task a human or an armed trigger creates from it, the
+  two acts above.
 - **No project scope.** Triggers are global and live in `{config_dir}`, never in
   `.vincent/`, so merge rights on a repository cannot start agents on a
   maintainer's machine (task 096 decision 8). The accepted cost is that a

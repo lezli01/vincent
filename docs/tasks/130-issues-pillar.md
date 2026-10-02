@@ -1,6 +1,6 @@
 # 130 — The issues pillar: vincent-owned issues per project
 
-**Status:** 🔄 in progress (6/18)
+**Status:** 🔄 in progress (7/18)
 
 Issue [#659](https://github.com/lezli01/vincent/issues/659), part of
 [#658](https://github.com/lezli01/vincent/issues/658). Spec §3 (rows 11, 26
@@ -397,6 +397,44 @@ Also standing from the issue's proposed defaults: the list is a bare array
 `mcp.max_issues` cap, and `DELETE /v1/issues/{id}` is excluded from MCP on
 task 092's line.
 
+### 15. 130.8: the importer lives in the daemon, imports emit per-issue events, `vincent issue sync` lands first (2026-10-02)
+
+Settled with the author while scoping #667.
+
+1. **No `internal/issuesource` package.** The importer is
+   `internal/daemon/issuesync.go`: it calls `github.Client.ListIssuesSince`
+   and maps each result onto `store.RemoteIssue`. The `provider` column is the
+   only provider seam; the first provider does not design for the second.
+2. **Per-issue `issue.created` on import, no `issue.imported` kind.** §13.3's
+   six `issue.*` kinds stand and clients debounce. The one new kind is
+   `issue.sync_changed {project_id, ok, reason?}`, emitted only on ok↔failing
+   transitions, on `trigger.poll_changed`'s precedent.
+3. **`vincent issue sync` lands now** as the first leaf of the `vincent issue`
+   tree, ahead of 130.6, which grows the rest around it.
+4. **Kind and priority are local.** A refresh never writes either; an import
+   creates the issue with `kind` empty. Assignees, milestone, the author's
+   login, `closed_at` and `state_reason` go into `remote_json`.
+5. **The repo binding is sticky.** The first successful sync records the
+   repo; a later tick whose `origin` names another stops that project's sync
+   with `origin_changed` and never re-keys. A GitHub-side rename is followed
+   through the `node_id` match.
+6. **Nothing is deleted.** The daily open-set scan marks an imported issue
+   `remote_status: moved` (transferred) or `missing` (gone, 404/410, or
+   converted to a discussion, pending #664's experiment); neither removes the
+   local row.
+7. **Sync failures are never quiet**, unlike the pull-request half of the
+   same tick: each is recorded on the project's sync row with a reason, and a
+   rate limit backs off until GitHub's reset.
+8. **`POST /v1/projects/{id}/issues/sync` is not an MCP tool.** It only nudges
+   the importer today, but once write-back (#669) lands it flushes pending
+   edits to GitHub, so it stays a human act. The status `GET` is a tool.
+
+Kept, not relitigated: the mirrored-field refusal stays `issue_mirrored`
+(decision 14.2); `github.enabled` and `poll_interval: 0` are the only switches
+(open question 2); projects sharing an origin import their own copies (open
+question 3); the initial import is open issues only, 500 per pass, resumable
+(open question 4).
+
 ## Open questions
 
 Each has a proposed default, which stands unless the author answers otherwise
@@ -458,11 +496,12 @@ its own pull request.
   `issue_id` on task create, the prefill preview, `?issue_id=` filter, the task
   DTO link, `Closes #N`, `vincent task add --issue`. Depends: 130.3, 130.4.
   ✓ 2026-10-02
-- [ ] **130.8** ([#667](https://github.com/lezli01/vincent/issues/667)) Import
+- [x] **130.8** ([#667](https://github.com/lezli01/vincent/issues/667)) Import
   and refresh on the reconciler tick, sync status, config and doctor text.
   Amends spec §12.3's "no call until a human opens the issue picker"
   (`docs/spec.md:7354-7360`), `internal/config/config.go:383-388` and
   `docs/reference/configuration.md` (decision 9). Depends: 130.1, 130.3, 130.5.
+  ✓ 2026-10-02 (decision 15)
 - [ ] **130.9** ([#668](https://github.com/lezli01/vincent/issues/668)) The TUI
   Issues list and Issue detail. Depends: 130.3.
 - [ ] **130.10** ([#669](https://github.com/lezli01/vincent/issues/669)) The
