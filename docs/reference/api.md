@@ -731,9 +731,12 @@ false the body carries a `reason` and a human-readable `message`:
 | `checks_running` | The merge is blocked and a check on the head commit has not finished (merge only) |
 | `branch_behind` | The branch is behind its base and the repository requires it to be up to date (merge only) |
 | `head_changed` | The pull request's head is not the commit the merge was confirmed for, so nothing was merged (merge only) |
+| `gone` | GitHub answered 410: the issue was deleted |
+| `moved` | GitHub answered 301: the issue was transferred, or its repository renamed. vincent never follows the redirect |
 
-Those reasons are the whole client-facing vocabulary; everything from
-`pull_exists` down comes only from a write —
+Those reasons are the whole client-facing vocabulary. `gone` and `moved` come
+from the issue sync's reads and writes (task 130), which no route serves yet;
+everything else from `pull_exists` down comes only from a write —
 `POST /v1/tasks/{id}/github/pull/create` or one of the routes that
 [act on a linked pull request](#acting-on-a-linked-pull-request). `gh`'s stderr and the
 API's response body never appear in any of these fields — they go to the daemon

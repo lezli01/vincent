@@ -382,7 +382,7 @@ its own pull request.
 - [ ] **130.4** ([#663](https://github.com/lezli01/vincent/issues/663)) Prefill
   from a vincent issue, the `.Issue` reshape, snapshot build, legacy rendering,
   skill and checklist lines. Depends: 130.1.
-- [ ] **130.5** ([#664](https://github.com/lezli01/vincent/issues/664)) Durable
+- [x] **130.5** ([#664](https://github.com/lezli01/vincent/issues/664)) Durable
   issue listing (`node_id`, pagination, conditional requests, gone/moved) and
   issue state writes in `internal/github`. Depends: 130.2.
 - [ ] **130.6** ([#665](https://github.com/lezli01/vincent/issues/665)) The

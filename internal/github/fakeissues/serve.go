@@ -33,6 +33,13 @@ type Request struct {
 	Body []byte
 	// Scenario is the invocation's scenario (see Scenario).
 	Scenario string
+	// FollowRedirects answers a transferred issue the way `gh api` does:
+	// gh's net/http client follows the 301 by itself — a GET's, and a
+	// PATCH's too, which it turns into a GET of the target, so nothing is
+	// written — and prints the target's 200 (observed with gh 2.100.0
+	// against lezli01/vincent-test, 2026-10-02). cmd/fakegh sets it; the
+	// net/http leg, which never follows, leaves it false and sees the 301.
+	FollowRedirects bool
 }
 
 // Response is the answer: what an HTTP server would write.
@@ -108,14 +115,14 @@ func (s Store) Serve(req Request) (Response, error) {
 			return s.errorResponse(http.StatusNotFound, "Not Found", docsIssues), nil
 		}
 		if method == http.MethodGet {
-			resp = s.getIssue(rows, n)
+			resp = s.getIssue(rows, n, req.FollowRedirects)
 			break
 		}
 		if req.Scenario == "read-only" {
 			return s.errorResponse(http.StatusForbidden,
 				"Resource not accessible by integration", docsIssues+"#update-an-issue"), nil
 		}
-		resp, err = s.patchIssue(rows, n, req.Body)
+		resp, err = s.patchIssue(rows, n, req.Body, req.FollowRedirects)
 		if err != nil {
 			return Response{}, err
 		}
@@ -302,14 +309,19 @@ func find(rows []Row, n int) (Row, bool) {
 	return nil, false
 }
 
-// fault answers a row's `_fake` marker: 410 for a deleted issue, 301 with a
-// Location for a transferred one.
+// fault answers a row's `_fake` marker: 410 for a deleted issue, and for a
+// transferred one a 301 whose Location and body `url` name the target — or,
+// when the request follows redirects as `gh api` does, the target's own 200.
 //
-// Not verified against real gh: gh api's net/http client follows a 301 on a
-// GET by itself, so what gh prints for a transferred issue — and what GitHub
-// answers for an issue converted to a discussion — is still open (#661's
-// open question). #664 verifies both and corrects this answer if it differs.
-func (s Store) fault(row Row) (Response, bool) {
+// Verified in #664 against lezli01/vincent-test (gh 2.100.0, REST
+// 2022-11-28): a deleted issue's 410 carries "This issue was deleted"; a
+// transferred issue's REST 301 carries the target's API URL in Location and
+// as `url`; `gh api` follows it, GET and PATCH alike, and answers 200 with
+// the issue in its new repository, under a new number and a new node id. An
+// issue converted to a discussion could not be produced — GitHub has no API
+// for the conversion and the test repository has discussions off — so it has
+// no marker here.
+func (s Store) fault(row Row, follow bool) (Response, bool) {
 	f := fake(row)
 	if f == nil {
 		return Response{}, false
@@ -323,6 +335,9 @@ func (s Store) fault(row Row) (Response, bool) {
 	}
 	repo, num, _ := strings.Cut(to, "#")
 	location := apiBase + "repos/" + repo + "/issues/" + num
+	if follow {
+		return s.ok(transferred(row, repo, num)), true
+	}
 	body, _ := json.Marshal(map[string]any{
 		"message":           "Moved Permanently",
 		"url":               location,
@@ -334,12 +349,44 @@ func (s Store) fault(row Row) (Response, bool) {
 	return Response{Status: http.StatusMovedPermanently, Header: h, Body: body}, true
 }
 
-func (s Store) getIssue(rows []Row, n int) Response {
+// transferred is row as its new repository answers it: the target's number,
+// its API and web URLs, and a node id of its own (GitHub gives a transferred
+// issue a new one). The integer id is moved off the original's too, so
+// nothing about the answer reads as the issue that was asked for.
+func transferred(row Row, repo, num string) Row {
+	out := public(row)
+	moved := make(Row, len(out))
+	for k, v := range out {
+		moved[k] = v
+	}
+	moved["number"] = json.Number(num)
+	moved["url"] = apiBase + "repos/" + repo + "/issues/" + num
+	moved["repository_url"] = apiBase + "repos/" + repo
+	moved["html_url"] = "https://github.com/" + repo + "/issues/" + num
+	moved["node_id"] = str(row, "node_id") + "_moved"
+	if id, ok := intField(row, "id"); ok {
+		moved["id"] = json.Number(strconv.Itoa(id + 1))
+	}
+	return moved
+}
+
+// hasID reports an issue row whose integer id is v.
+func hasID(rows []Row, v any) bool {
+	want := fmt.Sprint(v)
+	for _, row := range rows {
+		if id, ok := intField(row, "id"); ok && isIssue(row) && strconv.Itoa(id) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func (s Store) getIssue(rows []Row, n int, follow bool) Response {
 	row, ok := find(rows, n)
 	if !ok {
 		return s.errorResponse(http.StatusNotFound, "Not Found", docsIssues+"#get-an-issue")
 	}
-	if resp, ok := s.fault(row); ok {
+	if resp, ok := s.fault(row, follow); ok {
 		return resp
 	}
 	return s.ok(public(row))
@@ -350,12 +397,12 @@ func (s Store) getIssue(rows []Row, n int) Response {
 // closed_at and sets state_reason to reopened, and every write moves
 // updated_at forward — strictly, so two writes inside one second still
 // change it.
-func (s Store) patchIssue(rows []Row, n int, body []byte) (Response, error) {
+func (s Store) patchIssue(rows []Row, n int, body []byte, follow bool) (Response, error) {
 	row, ok := find(rows, n)
 	if !ok {
 		return s.errorResponse(http.StatusNotFound, "Not Found", docsIssues+"#update-an-issue"), nil
 	}
-	if resp, ok := s.fault(row); ok {
+	if resp, ok := s.fault(row, follow); ok {
 		return resp, nil
 	}
 	var patch map[string]any
@@ -401,8 +448,14 @@ func (s Store) patchIssue(rows []Row, n int, body []byte) (Response, error) {
 	default:
 		return invalid, nil
 	}
-	// duplicate_issue_id is accepted and not stored: GitHub records it as a
-	// timeline event, not as a field of the issue.
+	// duplicate_issue_id is the other issue's integer id — not its number:
+	// GitHub answers a number with this 422 (verified in #664) — and is not
+	// stored, because GitHub records it as a timeline event, not as a field
+	// of the issue.
+	if dup, ok := patch["duplicate_issue_id"]; ok && dup != nil && !hasID(rows, dup) {
+		return s.errorResponse(http.StatusUnprocessableEntity, "Issue not found for duplicate_issue_id.",
+			docsIssues+"#update-an-issue"), nil
+	}
 	if prev := timeField(row, "updated_at"); !now.After(prev) {
 		stamp = prev.Add(time.Second).Format(time.RFC3339)
 	}

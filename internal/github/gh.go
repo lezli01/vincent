@@ -16,7 +16,11 @@ import (
 // ghFields is the `--json` field set both `gh issue list` and `gh issue view`
 // are asked for. One list, so the two calls cannot drift into producing
 // different Issues for the same issue.
-const ghFields = "number,title,body,url,state,labels,author,assignees,milestone,createdAt,updatedAt"
+//
+// `id`, `stateReason` and `closedAt` are task 130.5's: `id` is gh's name for
+// the node id (captured: gh_2.100.0_issue_list_state.json), and the porcelain
+// has no field for the REST integer id, so Issue.ID stays zero on this path.
+const ghFields = "number,title,body,url,state,labels,author,assignees,milestone,createdAt,updatedAt,id,stateReason,closedAt"
 
 // ghIssue is `gh --json`'s shape. It is deliberately its own type rather than
 // json tags on Issue: `gh` and the REST API disagree about almost every name
@@ -40,6 +44,11 @@ type ghIssue struct {
 	} `json:"milestone"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+	// ID is the node id; StateReason is upper-case (`NOT_PLANNED`) and empty
+	// for an issue never closed; ClosedAt is null while open.
+	ID          string     `json:"id"`
+	StateReason string     `json:"stateReason"`
+	ClosedAt    *time.Time `json:"closedAt"`
 }
 
 func (g ghIssue) normalize(repo Repo, now time.Time) Issue {
@@ -54,6 +63,12 @@ func (g ghIssue) normalize(repo Repo, now time.Time) Issue {
 		CreatedAt: g.CreatedAt,
 		UpdatedAt: g.UpdatedAt,
 		FetchedAt: now,
+
+		NodeID:      g.ID,
+		StateReason: normalizeState(g.StateReason),
+	}
+	if g.ClosedAt != nil {
+		issue.ClosedAt = *g.ClosedAt
 	}
 	issue.Labels = labelNames(g.Labels)
 	issue.Assignees = logins(g.Assignees)
@@ -159,7 +174,12 @@ func (c *Client) runGH(ctx context.Context, path string, args ...string) ([]byte
 }
 
 // execGH is the one place `gh` is executed. stdin is nil for every call but
-// the two that take a body on `--body-file -`.
+// those that take a body on `--body-file -` or `--input -`.
+//
+// stdout is returned on failure too: `gh api -i` prints the status line,
+// headers and error body there and exits 1 for every non-2xx (a 304
+// included), and that output is what ghAPI maps. Every other caller ignores
+// stdout when err is set.
 func execGH(ctx context.Context, path string, stdin io.Reader, args ...string) (stdout []byte, stderr string, err error) {
 	// G204: path is the configured or PATH-resolved `gh`, args are an argument
 	// slice built by this package. Never a shell string.
@@ -174,10 +194,8 @@ func execGH(ctx context.Context, path string, stdin io.Reader, args ...string) (
 	var out, errOut bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errOut
-	if err := cmd.Run(); err != nil {
-		return nil, errOut.String(), err
-	}
-	return out.Bytes(), errOut.String(), nil
+	err = cmd.Run()
+	return out.Bytes(), errOut.String(), err
 }
 
 // ghError maps a failed `gh` invocation onto the reason vocabulary. The
@@ -214,6 +232,8 @@ func ghError(runErr error, stderr string, ctxErr error) *Error {
 	case strings.Contains(lower, "http 403"), strings.Contains(lower, "must have admin"),
 		strings.Contains(lower, "resource not accessible"):
 		return &Error{Reason: ReasonForbidden, Detail: detail}
+	case strings.Contains(lower, "http 410"), strings.Contains(lower, "was deleted"):
+		return &Error{Reason: ReasonGone, Detail: detail}
 	case strings.Contains(lower, "could not resolve to"),
 		strings.Contains(lower, "not found"),
 		strings.Contains(lower, "http 404"):

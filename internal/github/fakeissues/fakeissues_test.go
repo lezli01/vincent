@@ -297,22 +297,29 @@ func TestBuiltinCorpus(t *testing.T) {
 			"milestone": map[string]any{"number": 4, "title": "v0.2.0"},
 			"createdAt": "2026-08-26T19:21:29Z",
 			"updatedAt": "2026-08-26T19:30:00Z",
+			// The fields ghFields gained in #664.
+			"id":          "I_kwDOAAAAAc4AAAAAAAAAyA",
+			"stateReason": "",
+			"closedAt":    nil,
 		},
 		{
-			"number":    41,
-			"title":     "Board header truncates on narrow terminals",
-			"body":      "",
-			"url":       "https://github.com/octo/repo/issues/41",
-			"state":     "OPEN",
-			"labels":    []map[string]any{},
-			"author":    map[string]any{"login": "hubot"},
-			"assignees": []map[string]any{},
-			"milestone": nil,
-			"createdAt": "2026-07-01T08:00:00Z",
-			"updatedAt": "2026-07-02T08:00:00Z",
+			"number":      41,
+			"title":       "Board header truncates on narrow terminals",
+			"body":        "",
+			"url":         "https://github.com/octo/repo/issues/41",
+			"state":       "OPEN",
+			"labels":      []map[string]any{},
+			"author":      map[string]any{"login": "hubot"},
+			"assignees":   []map[string]any{},
+			"milestone":   nil,
+			"createdAt":   "2026-07-01T08:00:00Z",
+			"updatedAt":   "2026-07-02T08:00:00Z",
+			"id":          "I_kwDOAAAAAc4AAAAAAAAAKQ",
+			"stateReason": "",
+			"closedAt":    nil,
 		},
 	}
-	// Compared as JSON: the porcelain has always emitted exactly this.
+	// Compared as JSON: the porcelain emits exactly this.
 	got, _ := json.Marshal(issues)
 	exp, _ := json.Marshal(want)
 	if string(got) != string(exp) {
@@ -411,5 +418,39 @@ func TestScenarioFileFlips(t *testing.T) {
 	}
 	if got := Scenario(); got != "read-only" {
 		t.Errorf("empty file = %q", got)
+	}
+}
+
+// TestFollowRedirectsAnswersTheTarget is `gh api`'s observed behaviour on a
+// transferred issue (#664): a 200 about the issue in its new repository, for
+// a GET and for a PATCH, which writes nothing.
+func TestFollowRedirectsAnswersTheTarget(t *testing.T) {
+	s := newStore(t)
+	for _, req := range []Request{
+		{Endpoint: "repos/octo/repo/issues/5", FollowRedirects: true},
+		{Method: "PATCH", Endpoint: "repos/octo/repo/issues/5", Body: []byte(`{"state":"closed"}`), FollowRedirects: true},
+	} {
+		resp := serve(t, s, req)
+		var row map[string]any
+		if err := json.Unmarshal(resp.Body, &row); err != nil || resp.Status != http.StatusOK {
+			t.Fatalf("%s followed = %d %s", req.Method, resp.Status, resp.Body)
+		}
+		if row["number"] != float64(12) || row["repository_url"] != "https://api.github.com/repos/octo/other" ||
+			row["url"] != "https://api.github.com/repos/octo/other/issues/12" || row["state"] != "open" {
+			t.Errorf("%s followed = %v", req.Method, row)
+		}
+	}
+}
+
+// TestDuplicateIssueIDIsAnID: GitHub's duplicate_issue_id takes the other
+// issue's integer id, and answers anything else 422 (verified in #664).
+func TestDuplicateIssueIDIsAnID(t *testing.T) {
+	s := newStore(t)
+	resp := serve(t, s, Request{
+		Method: "PATCH", Endpoint: "repos/octo/repo/issues/1",
+		Body: []byte(`{"state":"closed","state_reason":"duplicate","duplicate_issue_id":999}`),
+	})
+	if resp.Status != http.StatusUnprocessableEntity || resp.Message() != "Issue not found for duplicate_issue_id." {
+		t.Errorf("unknown duplicate id = %d %s", resp.Status, resp.Body)
 	}
 }

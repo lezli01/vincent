@@ -297,6 +297,10 @@ func Porcelain(row Row) map[string]any {
 		author["login"] = u["login"]
 	}
 	number, _ := intField(row, "number")
+	var closedAt any
+	if c := str(row, "closed_at"); c != "" {
+		closedAt = c
+	}
 	return map[string]any{
 		"number":    number,
 		"title":     str(row, "title"),
@@ -309,6 +313,11 @@ func Porcelain(row Row) map[string]any {
 		"milestone": milestone,
 		"createdAt": str(row, "created_at"),
 		"updatedAt": str(row, "updated_at"),
+		// gh's `id` is the node id, its stateReason upper-case and empty for
+		// an issue never closed (captured: gh_2.100.0_issue_list_state.json).
+		"id":          str(row, "node_id"),
+		"stateReason": strings.ToUpper(str(row, "state_reason")),
+		"closedAt":    closedAt,
 	}
 }
 

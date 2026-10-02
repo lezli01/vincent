@@ -31,6 +31,8 @@ const maxResponseBytes = 8 << 20
 // restIssue is the REST API's shape (see ghIssue for why the two legs do not
 // share a struct).
 type restIssue struct {
+	ID      int64       `json:"id"`
+	NodeID  string      `json:"node_id"`
 	Number  int         `json:"number"`
 	Title   string      `json:"title"`
 	Body    string      `json:"body"`
@@ -45,8 +47,15 @@ type restIssue struct {
 		Number int    `json:"number"`
 		Title  string `json:"title"`
 	} `json:"milestone"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	ClosedAt    *time.Time `json:"closed_at"`
+	StateReason string     `json:"state_reason"`
+	// URL and RepositoryURL are the API's own names for this issue. They are
+	// what tells a `gh api` answer that followed a transfer's 301 from the
+	// issue that was asked for (see checkSameIssue).
+	URL           string `json:"url"`
+	RepositoryURL string `json:"repository_url"`
 	// PullRequest is present exactly when this row is a pull request. The
 	// REST `/issues` collection includes PRs and `gh issue list` does not, so
 	// filtering on it is what makes the two legs return the same list
@@ -68,6 +77,13 @@ func (r restIssue) normalize(repo Repo, now time.Time) Issue {
 		CreatedAt: r.CreatedAt,
 		UpdatedAt: r.UpdatedAt,
 		FetchedAt: now,
+
+		NodeID:      r.NodeID,
+		ID:          r.ID,
+		StateReason: normalizeState(r.StateReason),
+	}
+	if r.ClosedAt != nil {
+		issue.ClosedAt = *r.ClosedAt
 	}
 	issue.Labels = labelNames(r.Labels)
 	issue.Assignees = logins(r.Assignees)
@@ -156,11 +172,7 @@ func (c *Client) restGET(ctx context.Context, cred credential, path string) ([]b
 	req.Header.Set("User-Agent", "vincent")
 	req.Header.Set("Authorization", "Bearer "+cred.token)
 
-	client := c.opts.HTTP
-	if client == nil {
-		client = &http.Client{Timeout: RemoteTimeout}
-	}
-	resp, err := client.Do(req)
+	resp, err := c.httpClient().Do(req)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return nil, newError(ReasonTimeout, "%v", err)
@@ -170,7 +182,7 @@ func (c *Client) restGET(ctx context.Context, cred credential, path string) ([]b
 	defer func() { _ = resp.Body.Close() }()
 	body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, restError(resp, body)
+		return nil, statusError(resp.StatusCode, resp.Header, body, c.now())
 	}
 	if readErr != nil {
 		return nil, newError(ReasonUnreachable, "read response: %v", readErr)
@@ -178,31 +190,85 @@ func (c *Client) restGET(ctx context.Context, cred credential, path string) ([]b
 	return body, nil
 }
 
-// restError maps an HTTP status onto the reason vocabulary. The body is kept
-// as detail for the daemon log and never rendered to a client (decision 1).
-func restError(resp *http.Response, body []byte) *Error {
+// httpClient is the REST leg's client with redirects switched off, for every
+// request this package makes (task 130.5). GitHub answers a transferred
+// issue — and a renamed repository — with a 301, and following it would read
+// or write an issue in a repository nobody asked about; statusError names it
+// `moved` instead. The configured client is copied rather than mutated,
+// because a caller may share it.
+func (c *Client) httpClient() *http.Client {
+	client := http.Client{Timeout: RemoteTimeout}
+	if c.opts.HTTP != nil {
+		client = *c.opts.HTTP
+	}
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &client
+}
+
+// statusError maps an HTTP status onto the reason vocabulary. It is shared by
+// the REST leg and `gh api -i`, whose output carries the same status line and
+// headers, so the two legs map a status the same way by construction. The
+// body is kept as detail for the daemon log and never rendered to a client
+// (decision 1).
+func statusError(status int, header http.Header, body []byte, now time.Time) *Error {
 	detail := strings.TrimSpace(string(body))
 	if len(detail) > 512 {
 		detail = detail[:512]
 	}
-	detail = fmt.Sprintf("http %d: %s", resp.StatusCode, detail)
-	switch resp.StatusCode {
+	detail = fmt.Sprintf("http %d: %s", status, detail)
+	switch status {
 	case http.StatusUnauthorized:
 		return &Error{Reason: ReasonUnauthorized, Detail: detail}
 	case http.StatusForbidden:
 		// GitHub answers 403 both for "you may not read this" and for a spent
-		// rate limit; the remaining-quota header is what separates them.
-		if resp.Header.Get("X-RateLimit-Remaining") == "0" {
-			return &Error{Reason: ReasonRateLimited, Detail: detail}
+		// rate limit; the remaining-quota header is what separates them. A
+		// secondary rate limit leaves quota and sends Retry-After instead.
+		if header.Get("X-RateLimit-Remaining") == "0" || header.Get("Retry-After") != "" {
+			return &Error{Reason: ReasonRateLimited, Detail: detail, ResetAt: rateLimitReset(header, now)}
 		}
 		return &Error{Reason: ReasonForbidden, Detail: detail}
 	case http.StatusTooManyRequests:
-		return &Error{Reason: ReasonRateLimited, Detail: detail}
+		return &Error{Reason: ReasonRateLimited, Detail: detail, ResetAt: rateLimitReset(header, now)}
 	case http.StatusNotFound:
 		return &Error{Reason: ReasonNotFound, Detail: detail}
+	case http.StatusGone:
+		return &Error{Reason: ReasonGone, Detail: detail}
+	case http.StatusMovedPermanently, http.StatusFound, http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+		location := header.Get("Location")
+		if location == "" {
+			// The 301 body repeats the target as `url` (captured:
+			// rest_2022-11-28_issue_transferred_301.txt).
+			var moved struct {
+				URL string `json:"url"`
+			}
+			_ = json.Unmarshal(body, &moved)
+			location = moved.URL
+		}
+		return &Error{Reason: ReasonMoved, Detail: detail, Location: location}
 	default:
 		return &Error{Reason: ReasonUnreachable, Detail: detail}
 	}
+}
+
+// rateLimitReset is when a rate-limited call may be tried again: Retry-After
+// (seconds, or an HTTP date) when GitHub sent it — the secondary limit's
+// answer — and X-RateLimit-Reset (Unix seconds) otherwise. Zero when neither
+// parses.
+func rateLimitReset(header http.Header, now time.Time) time.Time {
+	if v := strings.TrimSpace(header.Get("Retry-After")); v != "" {
+		if secs, err := strconv.Atoi(v); err == nil && secs >= 0 {
+			return now.Add(time.Duration(secs) * time.Second).UTC()
+		}
+		if at, err := http.ParseTime(v); err == nil {
+			return at.UTC()
+		}
+	}
+	if v := strings.TrimSpace(header.Get("X-RateLimit-Reset")); v != "" {
+		if unix, err := strconv.ParseInt(v, 10, 64); err == nil && unix > 0 {
+			return time.Unix(unix, 0).UTC()
+		}
+	}
+	return time.Time{}
 }
 
 // restPull is the REST API's pull-request shape (see ghPull for why the two
@@ -487,11 +553,7 @@ func (c *Client) restWrite(ctx context.Context, cred credential, method, path st
 	req.Header.Set("User-Agent", "vincent")
 	req.Header.Set("Authorization", "Bearer "+cred.token)
 
-	client := c.opts.HTTP
-	if client == nil {
-		client = &http.Client{Timeout: RemoteTimeout}
-	}
-	resp, err := client.Do(req)
+	resp, err := c.httpClient().Do(req)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return nil, newError(ReasonTimeout, "%v", err)
@@ -501,7 +563,7 @@ func (c *Client) restWrite(ctx context.Context, cred credential, method, path st
 	defer func() { _ = resp.Body.Close() }()
 	respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, restWriteError(resp, respBody, classify)
+		return nil, writeStatusError(resp.StatusCode, resp.Header, respBody, c.now(), classify)
 	}
 	if readErr != nil {
 		return nil, newError(ReasonUnreachable, "read response: %v", readErr)
@@ -509,27 +571,27 @@ func (c *Client) restWrite(ctx context.Context, cred credential, method, path st
 	return respBody, nil
 }
 
-// restWriteError is restError for a write: the write's own refusals first,
+// writeStatusError is statusError for a write: the write's own refusals first,
 // then any other 422 as bad_request, and a 403 that is not a spent rate
 // limit as no_write_scope rather than forbidden — one condition, one spelling
 // on every write (task 068.4 decision 4). A 404 stays not_found even though
 // GitHub sometimes answers a missing write permission with one: reading a 404
 // as a scope problem would be a guess about a repository GitHub declined to
 // describe.
-func restWriteError(resp *http.Response, body []byte, classify func(int, string) string) *Error {
+func writeStatusError(status int, header http.Header, body []byte, now time.Time, classify func(int, string) string) *Error {
 	detail := strings.TrimSpace(string(body))
 	if len(detail) > 512 {
 		detail = detail[:512]
 	}
 	if classify != nil {
-		if reason := classify(resp.StatusCode, strings.ToLower(detail)); reason != "" {
-			return &Error{Reason: reason, Detail: fmt.Sprintf("http %d: %s", resp.StatusCode, detail)}
+		if reason := classify(status, strings.ToLower(detail)); reason != "" {
+			return &Error{Reason: reason, Detail: fmt.Sprintf("http %d: %s", status, detail)}
 		}
 	}
-	if resp.StatusCode == http.StatusUnprocessableEntity {
+	if status == http.StatusUnprocessableEntity {
 		return &Error{Reason: ReasonBadRequest, Detail: fmt.Sprintf("http 422: %s", detail)}
 	}
-	e := restError(resp, body)
+	e := statusError(status, header, body, now)
 	if e.Reason == ReasonForbidden {
 		e.Reason = ReasonNoWriteScope
 	}

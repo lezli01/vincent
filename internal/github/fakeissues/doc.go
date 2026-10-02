@@ -25,11 +25,14 @@
 //   - The REST routes: `repos/{o}/{r}/issues` with state, since, sort,
 //     direction, per_page and page, a Link header across pages and a weak
 //     ETag over the body that turns a matching If-None-Match into a 304;
-//     `repos/{o}/{r}/issues/{n}`, GET and PATCH (state, state_reason,
-//     duplicate_issue_id); and `repos/{o}/{r}/issues/comments`.
+//     `repos/{o}/{r}/issues/{n}`, GET and PATCH (state, state_reason, and
+//     duplicate_issue_id, which must be another issue's integer id); and `repos/{o}/{r}/issues/comments`.
 //   - The per-issue faults: a row carrying `"_fake": {"transferred_to":
 //     "owner/other#12"}` answers 301 with a Location, one carrying `"_fake":
 //     {"deleted": true}` answers 410, and both are left out of every listing.
+//     A Request with FollowRedirects — cmd/fakegh's — answers the transfer the
+//     way `gh api` does instead: a 200 about the issue in its new repository,
+//     and no write for a PATCH (verified against real GitHub in #664).
 //     A marker is a corpus edit, not a scenario, so a gate can break one
 //     issue among good ones. `_fake` never reaches an answer.
 //   - The scenarios that reach this surface: `read-only` (writes 403),

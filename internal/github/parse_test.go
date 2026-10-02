@@ -85,6 +85,17 @@ func TestGHViewParsesCapturedOutput(t *testing.T) {
 // alternatives, not variants. The same issue read through each leg must
 // normalize to the same value, or a client could tell which credential the
 // daemon happened to have.
+// withoutStateFields blanks the fields task 130.5 added on rows read from a
+// REST fixture, for comparison against a `gh` fixture captured before
+// ghFields asked for them. TestStateFieldsLegsAgree holds the two legs to
+// those fields against a pair captured with them.
+func withoutStateFields(issues []Issue) []Issue {
+	for i := range issues {
+		issues[i].NodeID, issues[i].ID, issues[i].StateReason, issues[i].ClosedAt = "", 0, "", time.Time{}
+	}
+	return issues
+}
+
 func TestBothLegsAgree(t *testing.T) {
 	viaGH, err := parseGHIssue(fixture(t, "gh_2.98.0_issue_metadata.json"), goRepo, fixtureNow)
 	if err != nil {
@@ -94,6 +105,7 @@ func TestBothLegsAgree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseRESTIssue: %v", err)
 	}
+	viaREST = withoutStateFields([]Issue{viaREST})[0]
 	if !reflect.DeepEqual(viaGH, viaREST) {
 		t.Errorf("the two legs normalized the same issue differently:\n gh:   %+v\n rest: %+v",
 			viaGH, viaREST)
