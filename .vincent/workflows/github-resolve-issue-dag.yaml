@@ -281,7 +281,7 @@
 # ## Inherited constraints
 #
 # Everything the sequential file says about itself still applies here and is not
-# repeated: the issue arrives as the declared `issue` field; the path is
+# repeated: the issue number arrives as the declared `github_issue` field; the path is
 # decided by an `allow_failure` probe whose red row is normal; `on_input: wait`
 # makes the brief steps claude-only by construction; `gh`, `jq`, `git` and `go`
 # must be present and `origin` must point at the repo that owns the issue; and
@@ -316,8 +316,8 @@ description: Read a GitHub bug, enhancement, documentation or ci issue, clarify 
 platforms: [posix]
 
 fields:
-  - name: issue
-    label: Issue number
+  - name: github_issue
+    label: GitHub issue number
     description: >-
       The number of the GitHub issue to resolve, in this project's `origin`
       repository. The new-task form's issue picker and
@@ -326,6 +326,13 @@ fields:
       write.
     type: integer
     required: true
+  - name: issue
+    label: Issue id
+    description: >-
+      The vincent issue this task was created from. A task created from a
+      vincent issue gets its id here; `--github-issue N` fills it with the
+      GitHub number until that path is removed. Nothing hands it to `gh`.
+    type: integer
 
 defaults:
   agent: claude
@@ -372,15 +379,16 @@ steps:
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
 
-      # The declared `issue` field, rendered in. It is `required: true` and
+      # The declared `github_issue` field, rendered in — never `issue`, which
+      # holds the vincent issue id (task 130 decision 8). It is `required: true` and
       # `type: integer`, so §8.1.2 validated it at creation and this is a bare
       # decimal number — no "#", no URL, nothing to parse. The guard below is
       # for the one case validation cannot cover: a task created against an
       # older snapshot of this workflow, before the field existed.
-      id='{{ index .Task.Fields "issue" }}'
+      id='{{ index .Task.Fields "github_issue" }}'
       if [ -z "$id" ]; then
         say "task carries no issue number"
-        echo "the 'issue' field is empty; this workflow resolves the issue it names (create the task from the issue picker, or with --github-issue N)" >&2
+        echo "the 'github_issue' field is empty; this workflow resolves the issue it names (create the task from the issue picker, or with --github-issue N)" >&2
         exit 1
       fi
 
@@ -399,7 +407,7 @@ steps:
         --json number,title,body,state,url,labels,comments,createdAt \
         > .vincent-issue/issue.json; then
         say "no such issue: #$id"
-        echo "no such issue: $id (the 'issue' field must name an issue in this project's origin repository)" >&2
+        echo "no such issue: $id (the 'github_issue' field must name an issue in this project's origin repository)" >&2
         exit 1
       fi
 
@@ -1343,7 +1351,7 @@ steps:
       fi
 
       say "committing the regression test so the lanes inherit it"
-      git commit -q -m 'test: add the failing regression test for #{{ index .Task.Fields "issue" }}'
+      git commit -q -m 'test: add the failing regression test for #{{ index .Task.Fields "github_issue" }}'
       git --no-pager show --stat --oneline HEAD
       say "seeded: lanes are cut from a branch carrying the red test"
 

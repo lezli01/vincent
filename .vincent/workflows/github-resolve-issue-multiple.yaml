@@ -19,8 +19,8 @@
 # and nothing else. The daemon resolves the issue through the same code the
 # TUI's new-task issue picker uses (§13.2, task 035): the title (`#N` and the
 # issue title), the description (the body plus a `GitHub issue #N: <url>`
-# line), the declared `issue` field, and the `.Issue` snapshot. No base branch,
-# priority or override is passed, because the picker passes none either — a
+# line), the declared `issue` and `github_issue` fields, and the `.Issue`
+# snapshot. No base branch, priority or override is passed, because the picker passes none either — a
 # task created here and one created by hand from the same issue are the same
 # task.
 #
@@ -216,7 +216,7 @@ steps:
           say "cannot read task $id"
           echo "vincent task show $id failed:" >&2; cat "$scratch/task.err" >&2; exit 1; }
         jq -r '. as $t
-               | [($t.github_issue.number // empty), (($t.fields.issue // "") | tonumber?)]
+               | [($t.github_issue.number // empty), (($t.fields.github_issue // "") | tonumber?)]
                | unique | .[] | "\(.)\t\($t.id)\t\($t.state)"' "$scratch/task.json" >> "$scratch/claims.tsv"
       done
       jq -R -s '[split("\n")[] | select(length > 0) | split("\t")
@@ -582,7 +582,7 @@ steps:
       for id in $(jq -r '.[].id' "$scratch/tasks-now.json"); do
         vincent task show "$id" --json </dev/null > "$scratch/task.json"
         jq -r '. as $t
-               | [($t.github_issue.number // empty), (($t.fields.issue // "") | tonumber?)]
+               | [($t.github_issue.number // empty), (($t.fields.github_issue // "") | tonumber?)]
                | unique | .[] | "\(.)\t\($t.id)"' "$scratch/task.json" >> "$scratch/claims-now.tsv"
       done
 
