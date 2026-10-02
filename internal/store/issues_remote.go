@@ -19,10 +19,13 @@ type RemoteIssue struct {
 	Number                    int
 	URL, RemoteJSON           string
 	RemoteUpdatedAt           *time.Time
-	Title, Body, Author, Kind string
-	State                     issuestate.State
-	CloseReason               issuestate.Reason
-	Labels                    []string // upserted with source = Provider
+	Title, Body, Author       string
+	// Kind seeds a newly imported issue's kind and is ignored on a refresh:
+	// kind and priority are vincent's, never the remote's (task 130.8).
+	Kind        string
+	State       issuestate.State
+	CloseReason issuestate.Reason
+	Labels      []string // upserted with source = Provider
 }
 
 // UpsertRemoteIssue imports or refreshes the issue keyed (project, provider,
@@ -30,11 +33,15 @@ type RemoteIssue struct {
 // imported into two projects is two issues.
 //
 // A new key creates the issue and its remote row and announces issue.created.
-// A live key takes the remote's title, body, kind, state, close reason and
-// labels — the remote is the authority for an imported issue — stamps
+// A live key takes the remote's title, body, state, close reason and labels
+// — the remote is the authority for those on an imported issue — stamps
 // synced_at, and announces one issue.updated naming what moved, "state"
 // included; a refresh that moved nothing announces nothing and keeps the
-// version. A tombstoned key — its issue was deleted here — is never
+// version. Kind and priority are local, vincent-owned fields a refresh
+// never writes (task 130.8): in.Kind is used only when creating. A refresh
+// also resets remote_status to live — matching the node id proves the
+// issue is reachable again, after a repo rename say — and names "remote"
+// among what moved when that clears a moved or missing mark. A tombstoned key — its issue was deleted here — is never
 // resurrected: the result is (nil, false, nil) and nothing is written.
 func (s *Store) UpsertRemoteIssue(ctx context.Context, in RemoteIssue, by issuestate.Actor) (iss *Issue, created bool, err error) {
 	if err := checkActor(by); err != nil {
@@ -124,9 +131,6 @@ func refreshRemoteIssueTx(ctx context.Context, tx *sql.Tx, in RemoteIssue, remot
 	if in.Body != cur.Body {
 		changed = append(changed, "body")
 	}
-	if in.Kind != cur.Kind {
-		changed = append(changed, "kind")
-	}
 	from := issuestate.Normalize(cur.State)
 	if state != from || cur.State != from {
 		changed = append(changed, "state")
@@ -138,14 +142,16 @@ func refreshRemoteIssueTx(ctx context.Context, tx *sql.Tx, in RemoteIssue, remot
 	if labelsMoved {
 		changed = append(changed, "labels")
 	}
-	if r := cur.Remote; r != nil && (r.Repo != in.Repo || r.Number != in.Number || r.URL != in.URL) {
+	if r := cur.Remote; r != nil && (r.Repo != in.Repo || r.Number != in.Number || r.URL != in.URL ||
+		r.Status != RemoteStatusLive) {
 		changed = append(changed, "remote")
 	}
 
 	// The remote row is refreshed on every sync — synced_at is the record
 	// that the poll happened, whether or not anything moved.
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE issue_remotes SET repo = ?, number = ?, url = ?, remote_json = ?, remote_updated_at = ?, synced_at = ?
+		UPDATE issue_remotes SET repo = ?, number = ?, url = ?, remote_json = ?, remote_updated_at = ?, synced_at = ?,
+			remote_status = ''
 		WHERE id = ?`,
 		in.Repo, remoteNumber(in.Number), in.URL, nullString(in.RemoteJSON), formatTimePtr(in.RemoteUpdatedAt),
 		formatTime(now), remoteID); err != nil {
@@ -163,20 +169,20 @@ func refreshRemoteIssueTx(ctx context.Context, tx *sql.Tx, in RemoteIssue, remot
 	switch {
 	case state == issuestate.Open:
 		_, err = tx.ExecContext(ctx, `
-			UPDATE issues SET title = ?, body = ?, kind = ?, state = ?, close_reason = NULL, closed_at = NULL,
+			UPDATE issues SET title = ?, body = ?, state = ?, close_reason = NULL, closed_at = NULL,
 				duplicate_of_issue_id = NULL, version = version + 1, updated_at = ?
-			WHERE id = ?`, in.Title, in.Body, in.Kind, string(state), stamp, id)
+			WHERE id = ?`, in.Title, in.Body, string(state), stamp, id)
 	case from == issuestate.Closed:
 		// Still closed: closed_at keeps the moment it was first seen closed.
 		_, err = tx.ExecContext(ctx, `
-			UPDATE issues SET title = ?, body = ?, kind = ?, state = ?, close_reason = ?,
+			UPDATE issues SET title = ?, body = ?, state = ?, close_reason = ?,
 				version = version + 1, updated_at = ?
-			WHERE id = ?`, in.Title, in.Body, in.Kind, string(state), string(reason), stamp, id)
+			WHERE id = ?`, in.Title, in.Body, string(state), string(reason), stamp, id)
 	default:
 		_, err = tx.ExecContext(ctx, `
-			UPDATE issues SET title = ?, body = ?, kind = ?, state = ?, close_reason = ?, closed_at = ?,
+			UPDATE issues SET title = ?, body = ?, state = ?, close_reason = ?, closed_at = ?,
 				version = version + 1, updated_at = ?
-			WHERE id = ?`, in.Title, in.Body, in.Kind, string(state), string(reason), stamp, stamp, id)
+			WHERE id = ?`, in.Title, in.Body, string(state), string(reason), stamp, stamp, id)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("refresh issue %d: %w", id, err)

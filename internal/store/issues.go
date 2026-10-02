@@ -26,6 +26,10 @@ const (
 	EventIssueLabelsChanged = "issue.labels_changed"
 	EventIssueCommentAdded  = "issue.comment_added"
 	EventIssueDeleted       = "issue.deleted"
+	// EventIssueSyncChanged is a project's issue sync turning failing or
+	// recovering (task 130.8): payload {project_id, ok, reason?}, written
+	// only on a transition, never on each attempt.
+	EventIssueSyncChanged = "issue.sync_changed"
 )
 
 // ErrIssueChanged is UpdateIssue's compare-and-set refusal: the version the
@@ -81,6 +85,9 @@ type IssueRemote struct {
 	URL, RemoteJSON           string
 	RemoteUpdatedAt, SyncedAt *time.Time
 	Suppressed                bool
+	// Status is what the last sweep learned of the remote (task 130.8):
+	// RemoteStatusLive, RemoteStatusMoved or RemoteStatusMissing.
+	Status string
 }
 
 // Label is one entry of a project's label catalogue (decision 4). Source is
@@ -180,7 +187,7 @@ func issueSelect() string {
 		EXISTS (SELECT 1 FROM tasks t WHERE t.issue_id = i.id AND t.parent_task_id IS NULL
 			AND t.state NOT IN ` + settled + `),
 		r.id, r.issue_id, r.project_id, r.provider, r.remote_key, r.repo, r.number, r.url,
-		r.remote_json, r.remote_updated_at, r.synced_at, r.suppressed
+		r.remote_json, r.remote_updated_at, r.synced_at, r.suppressed, r.remote_status
 	FROM issues i LEFT JOIN issue_remotes r ON r.issue_id = i.id`
 }
 
@@ -198,12 +205,13 @@ func scanIssue(r rowScanner) (*Issue, error) {
 		rProvider, rKey, rRepo, rURL, rJSON sql.NullString
 		rRemoteUpdated, rSynced             sql.NullString
 		rSuppressed                         sql.NullBool
+		rStatus                             sql.NullString
 	)
 	if err := r.Scan(&iss.ID, &iss.ProjectID, &iss.Title, &iss.Body, &state, &closeReason, &dupOf,
 		&iss.Kind, &iss.Priority, &iss.Author, &parent, &createdBy, &iss.Version, &created, &updated, &closedAt,
 		&iss.TaskCount, &active,
 		&rID, &rIssueID, &rProjectID, &rProvider, &rKey, &rRepo, &rNumber, &rURL,
-		&rJSON, &rRemoteUpdated, &rSynced, &rSuppressed); err != nil {
+		&rJSON, &rRemoteUpdated, &rSynced, &rSuppressed, &rStatus); err != nil {
 		return nil, err
 	}
 	iss.State = issuestate.State(state)
@@ -239,6 +247,7 @@ func scanIssue(r rowScanner) (*Issue, error) {
 			URL:        rURL.String,
 			RemoteJSON: rJSON.String,
 			Suppressed: rSuppressed.Bool,
+			Status:     rStatus.String,
 		}
 		if rIssueID.Valid {
 			rem.IssueID = &rIssueID.Int64

@@ -163,7 +163,7 @@ func (s *Store) DeleteProjectCascade(ctx context.Context, id int64) (err error) 
 	}
 	// The issue tables (issues, issue_remotes, labels and, through them,
 	// issue_labels and issue_comments) go by ON DELETE CASCADE from the
-	// project row below (migration 0036). Tasks are deleted explicitly
+	// project row below (migration 0036), as does issue_sync_state (0038). Tasks are deleted explicitly
 	// first, so tasks.issue_id's SET NULL never races the issue delete: by
 	// the time the issues go, no task of this project points at one. Keep
 	// that order.
