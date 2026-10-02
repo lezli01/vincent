@@ -403,6 +403,10 @@ In detail:
 - A pull-requests screen lists what is open across every GitHub-based project at
   once, with the task claiming each one, and is where a link is made or removed
   by hand. It is offered only when at least one project qualifies.
+- An issues screen lists every project's issues — filed in vincent or imported
+  from GitHub — with each one's state, labels, source and the tasks it started,
+  and opens one to its Markdown-rendered description and its active tasks. It
+  is offered whether or not any project uses GitHub.
 - The workflow graph visualizes parallel groups, fan-out lanes and merges,
   the `needs:` edges between lanes and the waves they run in, conditions,
   loops, guards, checks, and nested includes — and, on a task's own Workflow
