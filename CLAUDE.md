@@ -315,6 +315,8 @@ daemon, no shared fixtures:
   env (`FAKEAGENT_SCENARIO`, `FAKEAGENT_VERSION`, `FAKEAGENT_EDIT_FILE`,
   `FAKEAGENT_CURSOR_LOGGED_OUT`, …) so argv stays faithful to the real CLIs. Add
   scenarios here rather than special-casing adapters for tests.
+- `cmd/fakegh` — the same for `gh`; its mutable issue corpus and `gh api` answers
+  live in `internal/github/fakeissues`, so a `net/http` leg can serve the same fake.
 - `*live_test.go` — the TUI/apiclient wired to the **real** API handlers over
   `httptest`, which is what keeps client and server wire types from drifting.
 - `e2e_test.go` in `internal/cli` and `internal/tui` build the real binary in

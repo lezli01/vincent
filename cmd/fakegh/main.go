@@ -3,11 +3,14 @@
 // argv, the behaviour from the environment, so the argv internal/github
 // builds stays faithful to the real tool and no test ever calls GitHub.
 //
-// It answers the three invocations the daemon makes and nothing else:
+// It answers the invocations the daemon makes and nothing else:
 //
 //	gh auth status
 //	gh issue list --repo owner/name --state S --limit N --json FIELDS
 //	gh issue view N --repo owner/name --json FIELDS
+//	gh issue close N -R owner/name [--reason completed|"not planned"|duplicate] [--duplicate-of M]
+//	gh issue reopen N -R owner/name
+//	gh api [-i] [-X METHOD] [-H "K: V"]... [--input -] [-f k=v]... [-F k=v]... ENDPOINT
 //	gh pr list --repo owner/name --state S --limit N --json FIELDS
 //	gh pr view N --repo owner/name --json FIELDS
 //	gh pr create --repo owner/name --base B --head H --title T --body-file - [--draft]
@@ -16,6 +19,25 @@
 //	gh pr reopen N -R owner/name
 //	gh pr comment N -R owner/name --body-file -
 //	gh run rerun ID --failed -R owner/name
+//
+// `gh api` serves internal/github/fakeissues (#661), which holds the issue
+// corpus and the REST answers for both the `gh` leg and the `net/http` one:
+//
+//	repos/{o}/{r}/issues           state, since, sort, direction, per_page,
+//	                               page; pull request rows included
+//	repos/{o}/{r}/issues/{n}       GET, and PATCH with state, state_reason,
+//	                               duplicate_issue_id
+//	repos/{o}/{r}/issues/comments  since, sort, direction, per_page, page
+//
+// With -i it prints gh's `HTTP/2.0 <code> <text>` status line, the headers
+// (Etag, Link, X-Ratelimit-*) and a blank line before the body. A GET whose
+// If-None-Match is the page's current weak etag answers gh 2.100.0's
+// observed 304: that status line, no body, `gh: HTTP 304` on stderr, exit 1.
+// Any other non-2xx prints the JSON error body on stdout, `gh: <message>
+// (HTTP n)` on stderr, and exits 1. A corpus row may carry a fake-only
+// marker that no answer shows — `"_fake": {"transferred_to": "o/r#12"}`
+// (301 with a Location) or `"_fake": {"deleted": true}` (410) — and is left
+// out of every listing.
 //
 // Scenario selection is environment-driven:
 //
@@ -30,7 +52,28 @@
 //	                 `mergeStateStatus` #412 reports, the last with no
 //	                 unfinished check in its rollup) |
 //	                 head-moved (`pr merge` refused because the head moved
-//	                 after the preflight — the `--match-head-commit` pin)
+//	                 after the preflight — the `--match-head-commit` pin) |
+//	                 unreachable (every call but `auth status` prints gh's
+//	                 network-failure wording and exits 1).
+//	                 Under `gh api`, `read-only` answers every GET and
+//	                 refuses a PATCH with gh's 403, and `rate-limited`
+//	                 answers every call 403 with X-Ratelimit-Remaining: 0,
+//	                 X-Ratelimit-Reset and Retry-After.
+//	FAKEGH_SCENARIO_FILE
+//	                 when set and naming a non-empty file, its trimmed
+//	                 content is the scenario for this invocation, over
+//	                 FAKEGH_SCENARIO. It is read on every invocation, so a
+//	                 gate can flip one running daemon between scenarios.
+//	FAKEGH_ISSUES_FILE
+//	                 when set, the issue corpus: a JSON array of REST-shaped
+//	                 rows (issues; pull requests, which carry
+//	                 `pull_request`; comments, which carry `issue_url`),
+//	                 re-read on every invocation and written back by
+//	                 `gh api -X PATCH`, `issue close` and `issue reopen`.
+//	                 `issue list`/`issue view` read it too, leaving out pull
+//	                 request and `_fake`-marked rows. Unset, the built-in
+//	                 corpus (#200 and #41, both open) answers; set but
+//	                 missing, the built-in corpus seeds it.
 //	FAKEGH_STATE_FILE
 //	                 when set, `pr merge`, `pr close` and `pr reopen` record
 //	                 the state they left a pull request in here, and `pr view`
@@ -62,30 +105,47 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/lezli01/vincent/internal/github/fakeissues"
 )
 
 func main() {
 	args := os.Args[1:]
 	recordArgv(args)
-	scenario := os.Getenv("FAKEGH_SCENARIO")
+	scenario := fakeissues.Scenario()
 	if scenario == "hang" {
 		// Long enough to outlive any timeout a test sets; the parent kills it.
 		time.Sleep(10 * time.Minute)
 		return
 	}
+	authCall := len(args) >= 2 && args[0] == "auth" && args[1] == "status"
+	if scenario == "unreachable" && !authCall {
+		// `auth status` still answers: the token is in the keyring, and the
+		// scenario is about the API call failing, which is what
+		// internal/github maps to ReasonUnreachable.
+		unreachable()
+	}
 	switch {
-	case len(args) >= 2 && args[0] == "auth" && args[1] == "status":
+	case authCall:
 		authStatus(scenario)
 	case len(args) >= 2 && args[0] == "issue" && args[1] == "list":
-		issueList(scenario)
+		issueList(scenario, args)
 	case len(args) >= 3 && args[0] == "issue" && args[1] == "view":
 		issueView(scenario, args[2])
+	case len(args) >= 3 && args[0] == "issue" && (args[1] == "close" || args[1] == "reopen"):
+		issueSetState(scenario, args)
+	case len(args) >= 2 && args[0] == "api":
+		api(scenario, args[1:])
 	case len(args) >= 2 && args[0] == "pr" && args[1] == "list":
 		pullList(scenario, flagValue(args, "--state"))
 	case len(args) >= 2 && args[0] == "pr" && args[1] == "create":
@@ -159,7 +219,14 @@ func fail(scenario string) bool {
 	return true
 }
 
-func issueList(scenario string) {
+// unreachable is gh's wording when it cannot open a connection at all.
+func unreachable() {
+	fmt.Fprintln(os.Stderr, "error connecting to api.github.com")
+	fmt.Fprintln(os.Stderr, "check your internet connection or https://githubstatus.com")
+	os.Exit(1)
+}
+
+func issueList(scenario string, args []string) {
 	if fail(scenario) {
 		return
 	}
@@ -167,7 +234,14 @@ func issueList(scenario string) {
 		fmt.Println("not json at all")
 		return
 	}
-	issues := corpus()
+	limit, _ := strconv.Atoi(flagValue(args, "--limit"))
+	// `--search` stays ignored: the corpus is small enough that a since
+	// filter would only hide rows a test asked for.
+	issues, err := fakeissues.FromEnv().List(flagValue(args, "--state"), limit)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "fakegh:", err)
+		os.Exit(3)
+	}
 	if scenario == "empty" {
 		issues = nil
 	}
@@ -187,14 +261,16 @@ func issueView(scenario, number string) {
 		fmt.Fprintf(os.Stderr, "gh: invalid issue number %q\n", number)
 		os.Exit(1)
 	}
-	for _, issue := range corpus() {
-		if issue["number"] == n {
-			emit(issue)
-			return
-		}
+	issue, ok, err := fakeissues.FromEnv().Issue(n)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "fakegh:", err)
+		os.Exit(3)
 	}
-	fmt.Fprintf(os.Stderr, "gh: Could not resolve to an Issue with the number of %d. (HTTP 404)\n", n)
-	os.Exit(1)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "gh: Could not resolve to an Issue with the number of %d. (HTTP 404)\n", n)
+		os.Exit(1)
+	}
+	emit(issue)
 }
 
 func pullList(scenario, state string) {
@@ -610,42 +686,229 @@ func emit(v any) {
 	fmt.Println(string(b))
 }
 
-// corpus is the fixed issue set every scenario serves, shaped exactly like
-// `gh issue list --json`. Two issues with different metadata coverage: one
-// carrying labels, an assignee and a milestone, one carrying none, so a
-// prefill test can assert both the filled and the empty mapping.
+// corpus is the built-in issue set in `gh issue list --json`'s shape, moved
+// into FAKEGH_REPO. It lives in internal/github/fakeissues now, in REST
+// shape, so the porcelain and `gh api` answer from one stored form.
 func corpus() []map[string]any {
-	return rehome([]map[string]any{
-		{
-			"number": 200,
-			"title":  "GitHub integration: select a GitHub issue when creating a task",
-			"body":   "Most work in a GitHub-hosted repo starts life as a GitHub issue.",
-			"url":    "https://github.com/octo/repo/issues/200",
-			"state":  "OPEN",
-			"labels": []map[string]any{
-				{"name": "enhancement"},
-				{"name": "area/api"},
-			},
-			"author":    map[string]any{"login": "octocat"},
-			"assignees": []map[string]any{{"login": "hubot"}},
-			"milestone": map[string]any{"number": 4, "title": "v0.2.0"},
-			"createdAt": "2026-08-26T19:21:29Z",
-			"updatedAt": "2026-08-26T19:30:00Z",
-		},
-		{
-			"number":    41,
-			"title":     "Board header truncates on narrow terminals",
-			"body":      "",
-			"url":       "https://github.com/octo/repo/issues/41",
-			"state":     "OPEN",
-			"labels":    []map[string]any{},
-			"author":    map[string]any{"login": "hubot"},
-			"assignees": []map[string]any{},
-			"milestone": nil,
-			"createdAt": "2026-07-01T08:00:00Z",
-			"updatedAt": "2026-07-02T08:00:00Z",
-		},
+	issues, _ := fakeissues.Store{Repo: os.Getenv("FAKEGH_REPO")}.List("all", 0)
+	return issues
+}
+
+// closeReasons maps `gh issue close --reason`'s values to the REST
+// state_reason each one writes.
+var closeReasons = map[string]string{
+	"completed":   "completed",
+	"not planned": "not_planned",
+	"duplicate":   "duplicate",
+}
+
+// issueSetState answers `gh issue close` and `gh issue reopen` by sending the
+// PATCH gh would through the same corpus, so the write shows on `gh api` and
+// on `issue view` alike. The lines it prints are gh's.
+func issueSetState(scenario string, args []string) {
+	if writeRefused(scenario) {
+		return
+	}
+	verb := args[1]
+	n, err := strconv.Atoi(args[2])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gh: invalid issue number %q\n", args[2])
+		os.Exit(1)
+	}
+	repo := flagValue(args, "-R")
+	if repo == "" {
+		repo = flagValue(args, "--repo")
+	}
+	if repo == "" {
+		repo = corpusRepo
+	}
+	store := fakeissues.FromEnv()
+	issue, ok, err := store.Issue(n)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "fakegh:", err)
+		os.Exit(3)
+	}
+	if !ok {
+		fmt.Fprintf(os.Stderr, "gh: Could not resolve to an Issue with the number of %d. (HTTP 404)\n", n)
+		os.Exit(1)
+	}
+	patch := map[string]any{"state": "open"}
+	word, already := "Reopened", issue["state"] == "OPEN"
+	if verb == "close" {
+		word, already = "Closed", issue["state"] == "CLOSED"
+		reason := flagValue(args, "--reason")
+		dup := flagValue(args, "--duplicate-of")
+		if reason == "" && dup != "" {
+			reason = "duplicate"
+		}
+		stateReason, valid := closeReasons[reason]
+		if reason != "" && !valid {
+			fmt.Fprintf(os.Stderr,
+				"invalid argument %q for \"-r, --reason\" flag: valid values are {completed|not planned|duplicate}\n", reason)
+			os.Exit(1)
+		}
+		patch = map[string]any{"state": "closed"}
+		if stateReason != "" {
+			patch["state_reason"] = stateReason
+		}
+		if d, err := strconv.Atoi(strings.TrimPrefix(dup, "#")); err == nil {
+			patch["duplicate_issue_id"] = d
+		}
+	}
+	if already {
+		state := "open"
+		if verb == "close" {
+			state = "closed"
+		}
+		fmt.Fprintf(os.Stderr, "! Issue %s#%d (%s) is already %s\n", repo, n, issue["title"], state)
+		return
+	}
+	body, _ := json.Marshal(patch)
+	resp, err := store.Serve(fakeissues.Request{
+		Method:   http.MethodPatch,
+		Endpoint: fmt.Sprintf("repos/%s/issues/%d", repo, n),
+		Body:     body,
 	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "fakegh:", err)
+		os.Exit(3)
+	}
+	if resp.Status != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "gh: %s (HTTP %d)\n", resp.Message(), resp.Status)
+		os.Exit(1)
+	}
+	fmt.Fprintf(os.Stderr, "✓ %s issue %s#%d (%s)\n", word, repo, n, issue["title"])
+}
+
+// api answers `gh api` from internal/github/fakeissues. The argv is parsed
+// the way gh parses it: fields make the method POST unless -X says
+// otherwise, and on a GET they become the query string.
+func api(scenario string, args []string) {
+	method, endpoint, include := "", "", false
+	header := http.Header{}
+	fields := map[string]any{}
+	input := ""
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		value := func() string {
+			if i+1 >= len(args) {
+				fmt.Fprintf(os.Stderr, "flag needs an argument: %s\n", a)
+				os.Exit(1)
+			}
+			i++
+			return args[i]
+		}
+		switch {
+		case a == "-i" || a == "--include":
+			include = true
+		case a == "-X" || a == "--method":
+			method = strings.ToUpper(value())
+		case a == "-H" || a == "--header":
+			k, v, _ := strings.Cut(value(), ":")
+			header.Add(strings.TrimSpace(k), strings.TrimSpace(v))
+		case a == "--input":
+			input = value()
+		case a == "-f" || a == "--raw-field":
+			k, v, _ := strings.Cut(value(), "=")
+			fields[k] = v
+		case a == "-F" || a == "--field":
+			k, v, _ := strings.Cut(value(), "=")
+			fields[k] = typedField(v)
+		case strings.HasPrefix(a, "-"):
+			// A flag the fake does not need (--silent, --paginate …) carries
+			// no value it would read.
+		case endpoint == "":
+			endpoint = a
+		}
+	}
+	if method == "" {
+		method = http.MethodGet
+		if len(fields) > 0 || input != "" {
+			method = http.MethodPost
+		}
+	}
+	var body []byte
+	switch {
+	case input == "-":
+		body, _ = io.ReadAll(os.Stdin)
+	case input != "":
+		var err error
+		if body, err = os.ReadFile(input); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	case len(fields) > 0 && method == http.MethodGet:
+		q := url.Values{}
+		for k, v := range fields {
+			q.Set(k, fmt.Sprint(v))
+		}
+		sep := "?"
+		if strings.Contains(endpoint, "?") {
+			sep = "&"
+		}
+		endpoint += sep + q.Encode()
+	case len(fields) > 0:
+		body, _ = json.Marshal(fields)
+	}
+	resp, err := fakeissues.FromEnv().Serve(fakeissues.Request{
+		Method: method, Endpoint: endpoint, Header: header, Body: body, Scenario: scenario,
+	})
+	if errors.Is(err, fakeissues.ErrUnreachable) {
+		unreachable()
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "fakegh:", err)
+		os.Exit(3)
+	}
+	writeAPI(resp, include)
+	if resp.Status < 200 || resp.Status > 299 {
+		os.Exit(1)
+	}
+}
+
+// writeAPI prints a response the way gh api does: under -i the status line
+// (`fmt.Fprintln`), the headers sorted by name with CRLF endings and a CRLF
+// blank line, then the body as received. Anything outside 2xx — a 304
+// included, as observed with gh 2.100.0 — also gets gh's stderr line.
+func writeAPI(resp fakeissues.Response, include bool) {
+	if include {
+		fmt.Println(resp.StatusLine())
+		names := make([]string, 0, len(resp.Header))
+		for k := range resp.Header {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		for _, k := range names {
+			fmt.Printf("%s: %s\r\n", k, strings.Join(resp.Header[k], ", "))
+		}
+		fmt.Print("\r\n")
+	}
+	_, _ = os.Stdout.Write(resp.Body)
+	if resp.Status >= 200 && resp.Status <= 299 {
+		return
+	}
+	if msg := resp.Message(); msg != "" {
+		fmt.Fprintf(os.Stderr, "gh: %s (HTTP %d)\n", msg, resp.Status)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "gh: HTTP %d\n", resp.Status)
+}
+
+// typedField is -F's conversion: true, false, null and integers become JSON
+// values, anything else stays a string.
+func typedField(v string) any {
+	switch v {
+	case "true":
+		return true
+	case "false":
+		return false
+	case "null":
+		return nil
+	}
+	if n, err := strconv.Atoi(v); err == nil {
+		return n
+	}
+	return v
 }
 
 // createdPullNumber is the number `pr create` always reports. It is outside
