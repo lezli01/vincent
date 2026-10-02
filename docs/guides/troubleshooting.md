@@ -33,8 +33,9 @@ schema version, `PRAGMA integrity_check`, per-table row counts,
 workflow-snapshot bytes and how far back its event history reaches; every agent
 CLI with its path, version and
 [`logged_in`](agents.md#found-is-not-usable); whether the
-[GitHub integration](../reference/configuration.md#github) can read issues, and
-if not which piece is missing; whether the
+[GitHub integration](../reference/configuration.md#github) can import and sync
+issues, and if not which piece is missing, and how each project's last sync
+went; whether the
 [skills vincent publishes](../reference/cli.md#vincent-skills) are installed and
 current for your agents; whether a newer vincent has been
 [released](../reference/cli.md#vincent-update) and whether the running daemon is
