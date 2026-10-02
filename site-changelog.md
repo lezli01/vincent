@@ -8,6 +8,37 @@ permalink: /changelog.html
 
 This is the human-readable vincent release history. The generated [canonical CHANGELOG](https://github.com/lezli01/vincent/blob/master/CHANGELOG.md) remains the source used by release automation, while this page removes duplicate commit subjects and keeps the product impact clear.
 
+## 0.11.0 — A TUI that tells you what happened
+
+Released 2026-10-01.
+
+### Added
+
+- **Every task opens on an Overview.** Press `enter` on a task and its new Overview tab answers the question its state raises: what a running task is doing, what a blocked or waiting task needs from you, or how a finished one ended. One-key links jump straight to the output, inputs, diff or pull request it is talking about. ([#625](https://github.com/lezli01/vincent/pull/625))
+- **A failure card for blocked tasks.** A blocked task's Overview names the step, attempt and reason in plain words, shows the last lines of the failing output (only the check's output when a check failed), names the lane a fan-out blames, and lists the actions that fix it — retry and edit & retry first. ([#626](https://github.com/lezli01/vincent/pull/626))
+- **An outcome card for finished tasks.** A done task's Overview shows what it delivered: the result its agent reported, the files and lines changed, its commits, its pull request with check status, and its cost and active time. `w` opens the output that result came from. ([#630](https://github.com/lezli01/vincent/pull/630))
+- **Know where you are and what is running.** The task workspace shows a breadcrumb such as `Board › #12 › lane #14 api › Output`, draws the task's title once, and keeps a live line under the header saying what a running task is doing right now. ([#628](https://github.com/lezli01/vincent/pull/628))
+- **Jump to failures and filter to what needs you.** `N` walks a task's failures in the order they ran and opens each where it failed, lanes included. On the board, `H` shows only the tasks waiting on you, including fan-out parents with a lane that needs you. ([#633](https://github.com/lezli01/vincent/pull/633))
+- **Progress at a glance.** Fan-out parents show their lanes by state, loops show a strip of their recent iterations, and the workspace header shows one pip per workflow step. ([#624](https://github.com/lezli01/vincent/pull/624))
+- **Pull requests marked on the board.** A task with a linked pull request shows `⇡#123` on its row, without any extra GitHub requests. ([#622](https://github.com/lezli01/vincent/pull/622))
+- **A task's commits, even after archive.** `vincent task commits <id>`, the API and the MCP server list the commits a task made on its branch, with fan-out lane merges marked. ([#619](https://github.com/lezli01/vincent/pull/619))
+- **A saved output level.** `tui.output.level` sets how much detail output panes open with, and the quiet levels show only the last 20 lines of each command, so a failing command's error stays in view. ([#632](https://github.com/lezli01/vincent/pull/632))
+- **Help that orients you.** `?` starts with what the current screen is for, separates the actions available now from the rest, and scrolls. The palette can open any workspace tab by name. ([#629](https://github.com/lezli01/vincent/pull/629))
+
+### Changed
+
+- **Plain words instead of codes.** States read "awaiting input", "awaiting approval" and "waiting on lanes", and block and failure reasons read as a short title with the code beside it. The TUI guide has a new Glossary. ([#631](https://github.com/lezli01/vincent/pull/631), [#614](https://github.com/lezli01/vincent/pull/614))
+- **A calmer, more useful board.** The header hides zero counts and healthy agents, a grouping level with only one value moves to the panel title, actions appear once in the footer, and the `STATUS` column now fits on a 120-column terminal. ([#623](https://github.com/lezli01/vincent/pull/623), [#622](https://github.com/lezli01/vincent/pull/622))
+- **A monitoring walkthrough in the TUI guide.** A new section follows the three questions — what is happening, why did it fail, what did it deliver — and every TUI screenshot is recaptured. ([#634](https://github.com/lezli01/vincent/pull/634))
+
+### Fixed
+
+- **The Output tab shows live state again.** Following, paused, verbosity and the progress spinner are visible in the task workspace, and a failed attempt opens at the failure instead of the top. ([#618](https://github.com/lezli01/vincent/pull/618))
+- **Repair and edit & retry appear in a blocked task's footer**, and the workspace's key hints match the keys it answers. ([#627](https://github.com/lezli01/vincent/pull/627))
+- **Upgrading no longer stops the daemon over `tui.keys`.** A key binding that clashes with a new default is kept, the displaced action is left unbound, and the warning appears in the log, `vincent doctor` and the TUI. ([#616](https://github.com/lezli01/vincent/pull/616))
+- **Blocked tasks explain themselves.** A task that blocks before any step runs now carries a sentence saying why, and a long failure's summary keeps its last lines, where the error is. ([#615](https://github.com/lezli01/vincent/pull/615))
+- **Dependencies updated for reported vulnerabilities.** ([#635](https://github.com/lezli01/vincent/pull/635))
+
 ## 0.10.1 — Release downloads and package managers restored
 
 Released 2026-09-25.
