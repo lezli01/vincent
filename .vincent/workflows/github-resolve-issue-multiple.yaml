@@ -5,11 +5,18 @@
 # ## Why this spawns tasks instead of doing the work
 #
 # The two resolve workflows each deliver **one** issue: one branch, one brief
-# the author is asked about, one diff gate, one pull request, one merge gate.
-# Five issues are five of each, so five tasks is what they actually are — the
+# the author is asked about, one verified branch handed back as ready for a
+# pull request. Five issues are five of each, so five tasks is what they
+# actually are — the
 # same argument `handle-dependabot-all` makes, and this file has the same shape:
 # it finds the work, a person approves the plan, it creates the tasks and
 # finishes. It never waits for them and never reports on their outcome.
+#
+# Nor does it merge anything. Since 2026-10-02 the resolve workflows stop at a
+# delivered branch and open no pull request, so the tasks this creates leave
+# branches behind and nothing else. `github-iterate-work` is this file plus the
+# waiting and the landing: it includes this file whole, then stacks what its
+# tasks delivered into one merge train and merges it.
 #
 #     vincent task add --project N --workflow github-resolve-issue-multiple --title "pick up issues"
 #
@@ -78,8 +85,8 @@
 # ready issue stops before `select` and spends none.
 #
 # What approving the gate authorizes is what the children spend, and the gate
-# states it: up to 21 automatic sessions per `github-resolve-issue` task and
-# 41 per `github-resolve-issue-dag` task, the envelopes the dag file's header
+# states it: up to 16 automatic sessions per `github-resolve-issue` task and
+# 36 per `github-resolve-issue-dag` task, the envelopes the dag file's header
 # counts for the pair. Those two numbers are copied from that header and go
 # stale if either file's envelope changes.
 #
@@ -102,7 +109,7 @@ fields:
       The most tasks this run may create, however many issues are ready. The
       triage picks at most this many and says why it left each other ready
       issue for later; the gate shows that plan before any task exists. Every
-      task created can spend up to 21 agent sessions (41 on the dag workflow).
+      task created can spend up to 16 agent sessions (36 on the dag workflow).
     type: integer
     required: true
     default: 3
@@ -400,8 +407,8 @@ steps:
       - `github-resolve-issue-dag` — only when the issue is genuinely several
         separable pieces of work (independent packages or surfaces, each with
         its own test) and more than one session can finish. A planner cuts it
-        into up to six parallel lanes. It costs about twice as much — up to 41
-        automatic agent sessions against 21, and up to six extra worktrees —
+        into up to six parallel lanes. It costs about twice as much — up to 36
+        automatic agent sessions against 16, and up to six extra worktrees —
         and on a small issue it is the sequential workflow with extra steps.
 
       ## Output
@@ -473,7 +480,7 @@ steps:
         "$scratch/plan.json" > "$scratch/plan.tsv"
       planned=$(jq '.create | length' "$scratch/plan.json")
       printf '%s\n' "$planned" > "$scratch/planned"
-      ceiling=$(jq '[.create[] | if .workflow == "github-resolve-issue-dag" then 41 else 21 end] | add // 0' "$scratch/plan.json")
+      ceiling=$(jq '[.create[] | if .workflow == "github-resolve-issue-dag" then 36 else 16 end] | add // 0' "$scratch/plan.json")
 
       if [ "$planned" -gt 0 ]; then
         echo "Create $planned task(s), at most {{ index .Task.Fields "max_tasks" }} allowed:"
@@ -498,7 +505,7 @@ steps:
 
       if [ "$planned" -gt 0 ]; then
         echo
-        echo "Agent-session ceiling of these tasks: $ceiling (21 per github-resolve-issue, 41 per github-resolve-issue-dag)"
+        echo "Agent-session ceiling of these tasks: $ceiling (16 per github-resolve-issue, 36 per github-resolve-issue-dag)"
       fi
       say "plan: $planned task(s), up to $ceiling agent session(s)"
 
@@ -523,7 +530,7 @@ steps:
     type: manual
     # Placed immediately before the only step that creates anything. It
     # authorizes the tasks, not any push or merge: every task created here
-    # carries its own diff gate and merge gate.
+    # ends at a verified local branch and opens no pull request.
     instructions: |
       Create one task for each issue under "Create" below?
 
@@ -542,9 +549,9 @@ steps:
         task's brief step may park in `awaiting_input` to ask *you* about its
         issue.
 
-      Nothing is pushed or merged by approving this. Every task stops at its
-      own diff gate before it opens a pull request, and at its own merge gate
-      before it merges.
+      Nothing is pushed or merged by approving this. Every task ends at a
+      verified branch, recorded as ready for a pull request, and opens none:
+      landing them is `github-iterate-work`'s job, or yours.
 
       Just before creating each task the step re-reads the board and the
       issue: one that gained a task or closed while this gate waited is left
