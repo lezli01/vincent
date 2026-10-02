@@ -396,8 +396,8 @@ steps:
       `test`). Never add a co-author trailer.
 
       Never stage or commit `.vincent-issue/`. Do not push, and do not run `gh`
-      for anything that writes — this branch is published, if at all, by the
-      parent task, long after you are finished.
+      for anything that writes — this branch reaches a pull request, if at
+      all, through the parent's delivery, long after you are finished.
     # Cheapest first. `test -z "$(...)"` rather than a pipe into `grep -q`:
     # `grep -q` exits at its first match and the producer dies of SIGPIPE
     # writing what came next, so under `pipefail` the assertion can fail

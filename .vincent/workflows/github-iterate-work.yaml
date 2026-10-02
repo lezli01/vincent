@@ -1,7 +1,7 @@
 # github-iterate-work — put at most N ready GitHub issues on the board
-# through `github-resolve-issue-multiple`, then drive every task it created all
-# the way to merged: approve each pull request as it is offered, approve the
-# merges one at a time, and finish when they are all done.
+# through `github-resolve-issue-multiple`, wait for every task it created to
+# deliver its branch, then stack the delivered branches into one merge train,
+# open one pull request for it and drive that pull request to merged.
 #
 #     vincent task add --project N --workflow github-iterate-work --title "iterate"
 #
@@ -9,9 +9,14 @@
 #
 # `github-resolve-issue-multiple` finds the work, asks a person to approve the
 # plan, creates the tasks and finishes — it deliberately never waits for them
-# and never reports on their outcome. This workflow is that file plus the
-# waiting: it `include`s it whole, then watches the tasks it created and clicks
-# their two gates for them.
+# and never reports on their outcome. The two resolve workflows it creates
+# tasks for end at a **delivered branch**: verified, committed, recorded as
+# ready for a pull request, and neither pushed nor opened nor merged (since
+# 2026-10-02). This workflow is that file plus the waiting and the landing: it
+# `include`s it whole, watches the tasks it created until each has finished,
+# and then owns everything that used to be each task's own tail — the rebase,
+# the conflicts, the pull request, the required checks, the merge and the
+# repairs — once, for all of them together.
 #
 # The include is spliced away when the task is created (§7.9), so this task
 # runs `github-resolve-issue-multiple`'s own steps — `preflight`, `survey`,
@@ -27,37 +32,189 @@
 #     include boundary for a condition to stop at, and that is the right
 #     answer here: no task was created, so there is nothing to watch.
 #
-# It also reads one of that workflow's files directly. `spawn` writes the tasks
-# it created to `$(git rev-parse --git-path vincent-issues)/created`, one
-# `id<TAB>issue<TAB>workflow<TAB>title` per line, and never removes it; `track`
-# below reads it. That is a coupling to a sibling's internals, and it is the
-# narrowest one available: the alternative is scraping `spawn`'s prose stdout.
+# It reads two files it did not write, and both couplings are deliberate:
+#
+#   - `spawn` writes the tasks it created to
+#     `$(git rev-parse --git-path vincent-issues)/created`, one
+#     `id<TAB>issue<TAB>workflow<TAB>title` per line; `track` reads it. The
+#     alternative is scraping `spawn`'s prose stdout.
+#   - each resolve task's `deliver` step writes a **delivery record** to
+#     `<git common dir>/vincent-delivered/<task id>/` — branch, verified head,
+#     plain-language title, pull request body, brief. The common directory is
+#     the one place every worktree of the project can read, and keying it by
+#     task id means `collect` asks for exactly the tasks this run created. The
+#     resolve workflows' headers say what each file holds.
+#
+# ## Shape
+#
+#   headroom      refuse a concurrency cap that leaves no room beside the watch
+#   iterate       include: survey, triage, plan gate, create the tasks
+#   track         read back what was created, refuse a workflow with no `deliver`
+#   autopilot     the one gate: approve landing whatever they deliver
+#   watch         wait, in half-hour passes, until every task has finished
+#   collect       read each delivery record; the train is what was delivered
+#   stack         cut the train from the fresh base, rebase each branch onto it
+#   stack-resolve an agent, only if a rebase stopped on a conflict
+#   train-verify  build, test and lint the whole train, repaired in a loop
+#   train-final   refuse a train whose local legs are still red
+#   checks-required  read the base's required checks, before anything is pushed
+#   train-pr      push the train and open one pull request for it
+#   merge-attempt rebase → resolve? → repush → wait-checks → merge → probe → repair?
+#   merged        MERGED at the commit this task pushed, or block; clean up
 #
 # ## What it clicks, and what it does not
 #
-# Both resolve workflows stop twice: `gate` ("Approve the pull request", before
-# the branch is pushed and the PR opened) and `gate-merge` ("Approve the
-# merge", before the rebase-verify-merge tail). This workflow approves both:
+# The resolve workflows no longer stop at a diff gate or a merge gate, so there
+# is nothing on the children to click. `autopilot` is where a person decides,
+# once, that whatever the tasks deliver is pushed as one branch, opened as one
+# public pull request and merged — and nobody reads a diff in between.
 #
-#   - **every** `gate`, as soon as it is offered. Pull requests are independent
-#     — separate branches, separate reviews — so there is no reason to serialize
-#     them;
-#   - **one** `gate-merge` at a time. A merge rebases onto the base branch and
-#     waits for required checks; two at once means the second rebases onto a
-#     branch the first is still moving. A merge is "in flight" while its task's
-#     step cursor is past `gate-merge` and the task is neither settled nor
-#     blocked — a blocked task does not hold the lane, because a human has to
-#     come anyway and the other pull requests should not queue behind it.
-#
-# It does **not** click:
+# It still does **not** click:
 #
 #   - `plan-gate` ("Approve the graph"), a `github-resolve-issue-dag` task's
-#     third gate. It authorizes no external effect, only spend — up to 41 agent
-#     sessions and six worktrees — and it was not one of the two gates this
-#     workflow was asked to take over. A dag task parks there until a person
+#     own gate. It authorizes no external effect, only spend — up to 36 agent
+#     sessions and six worktrees — so a dag task parks there until a person
 #     clicks, and the watch names it;
 #   - a question an agent asks its author (`awaiting_input`), or a task that
 #     blocked. Both are reported, neither is answered.
+#
+# ## Why one merge train and not N pull requests
+#
+# N independently-merged pull requests each rebase onto a base the previous
+# one just moved, each wait out an hour of CI, and serialize anyway — the old
+# watch held a "merge lane" for exactly that reason. A train pays for that
+# once: the branches are stacked in the order the triage ranked them, the
+# conflicts *between* them are resolved before anything is public, the whole
+# set is built and tested together, and one pull request carries every
+# issue's own title and body, `Closes #N` and `Part of #N` lines included, so
+# merging it closes exactly what the children's briefs said it should.
+#
+# **Stacking is a rebase, not a merge.** Each delivered branch's commits are
+# replayed onto the train's tip with `git rebase --onto <tip> <fork> <head>`,
+# so the train is linear and the repository's rule — merge commits only, a
+# branch's history becomes the base's history (CLAUDE.md) — holds for the
+# train's one merge. A dag task's branch carries its lanes' join merges; a
+# plain rebase linearizes them, replaying the lanes' commits in order. Lanes
+# are planned not to touch the same files, so that is usually clean, and when
+# it is not the conflict lands in front of `stack-resolve` like any other.
+#
+# `head.sha` in the record, not the branch's tip, is what is stacked: it is the
+# commit the child's verification judged. A branch that moved after delivery
+# — a follow-up, a hand edit — is named in `collect`'s output, not silently
+# swept into the train.
+#
+# A task that did not deliver — blocked, aborted, still waiting on a person
+# when the watch gave up — is left out of the train and named. The train lands
+# what was delivered; it does not wait on what was not, and it fails only when
+# nothing was delivered at all.
+#
+# ## The merge tail
+#
+# Everything from `checks-required` on is the merge tail the resolve workflows
+# used to carry, moved here whole and pointed at the train branch. Its design
+# notes moved with it; read them as written about the train.
+#
+#   merge-attempt    a bounded loop: one clean attempt and up to two repairs
+#     rebase           fetch the base and rebase onto it, under `allow_failure`
+#                      so a conflict is data rather than a blocked task
+#     resolve          an agent, and only if the rebase stopped on a conflict
+#     repush           assert the branch sits on top of the base, record the two
+#                      shas the rest of the pass pins to, force-push
+#     await-head       wait until the PR points at the commit that was pushed
+#     wait-checks      wait until every required context has reported success
+#                      *at that commit*, under `allow_failure` so a red one is
+#                      the repairer's input rather than the end of the run
+#     merge-ready      wait until GitHub itself calls the PR mergeable
+#     merge            `gh pr merge --merge --match-head-commit`
+#     merge-probe      read the PR back and ask whether it is MERGED at that
+#                      same commit — the only step entitled to say it landed
+#     merge-elsewhere  stop the run outright if the PR was merged at some other
+#                      commit or closed under it: neither is a thing to retry
+#     merge-ok         break out of the loop once the probe says it landed
+#     repair-checks    an agent, and only if a required check went red and there
+#                      is another pass left to re-run CI against the repair
+#   merged           the postcondition: MERGED at the commit this task pushed,
+#                    or the run blocks; clears the delivery records it landed
+#
+# ### Why the tail loops
+#
+# A required check that goes red on the pushed commit is the one failure here
+# that a person would answer the same way every time: read the failing job, fix
+# the cause on the branch, push, wait for CI again. That is what the loop does,
+# and `repair-checks` is the only agent it adds. Three passes — one attempt and
+# at most two repairs — and `repair-checks` carries `if: not .Loop.IsLast` for
+# the same reason `train-verify`'s repair does: a repair nothing re-probes would
+# cost a session and reach `merged` unverified.
+#
+# The loop pays for a second thing that used to cost a person a re-run. Branch
+# protection here is `strict: true`, so a base branch that moves while CI runs
+# makes the rebase stale and GitHub answers `BEHIND`. There is nothing for an
+# agent to repair in that case — the next pass's rebase *is* the repair — so it
+# ends the pass without one and the loop starts from the top.
+#
+# Nothing *inside* a pass retries. A `gh pr merge` whose response was lost is
+# not a call to repeat and neither is a force-push; what repeats is a whole
+# attempt, which begins by asking git and GitHub what is true. That is also why
+# `merge-probe` runs on every pass, including one where `merge` was skipped or
+# failed: a lost response leaves a pull request that *is* merged and a step that
+# exited non-zero, and force-pushing over that is the one thing a retrying tail
+# must never do.
+#
+# `--merge` is not a preference: this repository has squash and rebase merges
+# disabled and merges everything with a merge commit, because a branch's
+# history becomes master's history (CLAUDE.md).
+#
+# ### Why the wait is pinned to a commit
+#
+# A force-push does not update GitHub atomically, and the two windows it opens
+# are both silent:
+#
+# 1. For a few seconds the pull request still reports its **old** head.
+#    Anything that asks "are this PR's checks green" during that window is
+#    answered about the pre-rebase commit — which may well be green. That is a
+#    merge of code no leg ever ran against.
+# 2. Once the head does move, the check runs for the new commit are created
+#    over the following seconds and *in waves*. A rollup filtered to the
+#    required checks contains only the ones that exist yet, so "every required
+#    check I can see is green" is a true statement about a rollup holding two
+#    of six.
+#
+# Neither window is detectable from the shape of the answer: both look exactly
+# like success. So the tail never asks about "the pull request". `repush`
+# records the commit it pushed in `head.sha`, and every step after it names
+# that commit:
+#
+# - `checks-required` fixes the *expected set* from branch protection, so a
+#   context that has not been created yet is a named absence rather than an
+#   invisible one. An empty expected set fails there — "all green" would then
+#   mean "nothing has reported", which is the whole bug.
+# - `await-head` waits for the PR to point at that commit, and refuses outright
+#   if it points at a third one: that means someone pushed after the lease.
+# - `wait-checks` asks the **commit** for its check runs and statuses and
+#   grades them against the expected set. Missing counts as pending, never as
+#   pass. It re-asserts the head every poll, so a push during the hour stops
+#   the wait rather than being merged.
+# - `merge-ready` waits for GitHub's own verdict, which lags the checks by a
+#   few seconds and is the thing that would otherwise refuse the merge call.
+# - `merge` passes `--match-head-commit`, so the last gap — between the final
+#   poll and the merge itself — is closed by the server rather than by hope.
+#
+# `merged` is what says whether the run landed anything, and it asks GitHub —
+# for the state *and* the head commit — rather than trusting an exit code. It
+# sits outside the loop because a loop that runs out of passes succeeds (§7.8),
+# exactly as `train-final` sits outside `train-verify`.
+#
+# A transient API error during an hour-long poll is not a verdict, though: the
+# wait tolerates five in a row before giving up, so one 502 does not discard
+# forty minutes of waiting and hand the branch back to a human.
+#
+# ## Scratch
+#
+# Every file this workflow keeps is under
+# `$(git rev-parse --git-path vincent-iterate)`: this worktree's own git
+# directory, invisible to `git status`, so nothing here can be committed by
+# accident and the worktree stays clean for archive. The path contains spaces
+# on macOS (`Application Support`), so every use is quoted.
 #
 # ## Why it cannot hold every slot
 #
@@ -78,34 +235,53 @@
 #
 # ## Cost
 #
-# No agent step of its own: zero automatic agent sessions on top of whatever
-# the tasks it creates spend. `emit` prints that ceiling before the plan gate —
-# 21 agent sessions per `github-resolve-issue` task, 41 per
-# `github-resolve-issue-dag` task — and `autopilot` repeats what approving it
-# authorizes.
+# Upper bound on agent sessions this task starts itself, before any human
+# presses retry (`1 + max_retries` per agent, loops multiplied by their
+# iteration ceiling, `not .Loop.IsLast` counted as impossible on the last pass):
+#
+#     select              2   from the included github-resolve-issue-multiple
+#     stack-resolve       2   guarded to a stack that stopped on a conflict
+#     train-verify        2   3 loop passes, `if: not .Loop.IsLast`
+#     merge-attempt       5   3 x resolve, plus 2 x repair-checks
+#                        --
+#                        11
+#
+# on top of whatever the tasks it creates spend: `emit` prints that ceiling
+# before the plan gate — 16 agent sessions per `github-resolve-issue` task, 36
+# per `github-resolve-issue-dag` task — and `autopilot` repeats what approving
+# it authorizes.
+#
+# Requires `vincent`, `gh` (authenticated), `jq`, `git` and `go`, and the
+# worktree's `origin` pointing at the repository that owns the issues.
 name: github-iterate-work
 description: >-
   Put at most N ready GitHub issues on the board through
-  github-resolve-issue-multiple, then watch those tasks: approve each pull
-  request as it is offered, approve the merges one at a time, and finish when
-  they are all done.
+  github-resolve-issue-multiple, wait for every task to deliver its branch,
+  then rebase the delivered branches into one merge train, resolve their
+  conflicts, open one pull request for it and merge it, repairing and
+  retrying when the merge goes red.
 platforms: [posix]
 fields:
   - name: max_tasks
     label: Most tasks to create
     description: >-
       The most tasks this run may create, however many issues are ready — and
-      so the most pull requests it will open and merge without anyone reading a
-      diff. Every task created can spend up to 21 agent sessions (41 on the dag
-      workflow). This task watches them all, holding one concurrency slot of
-      its own, so leave room for it: with a cap of 6, 5 is the most that runs
-      without queueing.
+      so the most issues its one merge-train pull request will land without
+      anyone reading a diff. Every task created can spend up to 16 agent
+      sessions (36 on the dag workflow), and the train itself up to 9 more.
+      This task watches them all, holding one concurrency slot of its own, so
+      leave room for it: with a cap of 6, 5 is the most that runs without
+      queueing.
     type: integer
     required: true
     default: 3
 defaults:
+  agent: claude
   timeout: 15m
   max_retries: 0
+  # Nobody is expected at an agent's prompt here: `autopilot` is where a
+  # person weighed in, and the train runs unattended after it.
+  on_input: deny
 steps:
   - id: headroom
     name: Check there is room to watch and work at once
@@ -117,11 +293,15 @@ steps:
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
 
       say "checking there is room to watch and work at once"
-      for tool in vincent jq git; do
+      for tool in vincent gh jq git go; do
         command -v "$tool" >/dev/null 2>&1 || {
           say "$tool is not installed"
           echo "$tool is required" >&2; exit 1; }
       done
+      gh auth status >/dev/null 2>&1 || {
+        say "gh is not authenticated"
+        echo "gh is not authenticated; this workflow pushes and merges a pull request at the end" >&2
+        exit 1; }
 
       scratch=$(git rev-parse --git-path vincent-iterate)
       rm -rf "$scratch"
@@ -201,18 +381,18 @@ steps:
         vincent task show "$id" --json </dev/null > "$scratch/task.json" 2>"$scratch/task.err" || {
           say "cannot read task $id"
           echo "vincent task show $id failed:" >&2; cat "$scratch/task.err" >&2; exit 1; }
-        # The snapshot is fixed at creation, so both indices are read once here
-        # and compared against `current_step` on every pass afterwards.
-        gidx=$(jq -r '.workflow_steps[] | select(.id == "gate" and .type == "manual") | .index' "$scratch/task.json")
-        midx=$(jq -r '.workflow_steps[] | select(.id == "gate-merge" and .type == "manual") | .index' "$scratch/task.json")
-        if [ -z "$gidx" ] || [ -z "$midx" ]; then
-          say "task $id has no gate this watch can approve"
-          echo "task $id runs '$wf', which has no manual 'gate' and 'gate-merge' step." >&2
-          echo "this workflow only knows how to drive github-resolve-issue and" >&2
-          echo "github-resolve-issue-dag. it will not guess at another workflow's gates." >&2
+        # The snapshot is fixed at creation, so this is read once: a task whose
+        # workflow has no `deliver` step writes no delivery record, and the
+        # train would have nothing to stack for it.
+        didx=$(jq -r '.workflow_steps[] | select(.id == "deliver" and .type == "command") | .index' "$scratch/task.json")
+        if [ -z "$didx" ]; then
+          say "task $id delivers nothing this train can stack"
+          echo "task $id runs '$wf', which has no 'deliver' step. this workflow only knows" >&2
+          echo "how to land github-resolve-issue and github-resolve-issue-dag, which end by" >&2
+          echo "writing a delivery record. it will not guess at another workflow's output." >&2
           exit 1
         fi
-        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$issue" "$wf" "$gidx" "$midx" "$title" >> "$scratch/tasks.tsv"
+        printf '%s\t%s\t%s\t%s\n' "$id" "$issue" "$wf" "$title" >> "$scratch/tasks.tsv"
         n=$((n + 1))
       done < "$issues/created"
 
@@ -225,8 +405,8 @@ steps:
         exit 0
       fi
 
-      echo "watching $n task(s), in the order their merges will be approved:"
-      awk -F'\t' '{ printf "  task %s  #%s  %s\n        %s\n", $1, $2, $3, $6 }' "$scratch/tasks.tsv"
+      echo "watching $n task(s), in the order the merge train will stack them:"
+      awk -F'\t' '{ printf "  task %s  #%s  %s\n        %s\n", $1, $2, $3, $4 }' "$scratch/tasks.tsv"
       say "watching $n task(s)"
     check: |
       s=$(git rev-parse --git-path vincent-iterate)
@@ -253,30 +433,39 @@ steps:
     if: '{{ eq (index .Steps "has-tracked").ExitCode 0 }}'
 
   - id: autopilot
-    name: Approve running these tasks to merged
+    name: Approve landing what these tasks deliver
     type: manual
     instructions: |
-      Run these task(s) all the way to merged, without stopping for you again?
+      Land what these task(s) deliver, without stopping for you again?
 
       {{ (index .Steps "track").Result }}
 
-      From here this task watches the board and clicks for them:
+      Each task ends at a verified branch of its own and opens nothing. From
+      here this task waits for all of them, then:
 
-      - when a task offers **Approve the pull request**, this task approves it.
-        Its branch is pushed to `origin` and a public pull request is opened
-        against {{ .Project.DefaultBranch }}, with nobody having read the diff.
-      - when a task offers **Approve the merge**, this task approves it — one
-        at a time, never a second while another is rebasing, waiting for its
-        required checks or merging. They land in the order listed above.
-      - a merged pull request changes {{ .Project.DefaultBranch }}. That is the
-        part that does not come back: closing a pull request afterwards does
-        not unsend what it notified, and reverting a merge is a new commit
-        rather than an undo.
+      - **stacks** every delivered branch, in the order above, onto a fresh
+        {{ .Project.DefaultBranch }} as one merge train on
+        {{ .Task.BranchName }}, rebasing each onto the one before it. Where
+        two branches conflict, an agent resolves it — keeping both sides'
+        intent — and the whole train is built, tested and linted together,
+        with up to two agent repair passes if it is red;
+      - **pushes** the train to `origin` and opens **one public pull
+        request** against {{ .Project.DefaultBranch }}. Its body is every
+        task's own drafted pull request body, `Closes #N` lines included —
+        nobody will have read the diff;
+      - **merges** it once every required check passes on the commit it
+        pushed. If a check goes red, an agent commits a fix and the attempt
+        runs again — rebase, force-push, another round of CI — up to three
+        times. If {{ .Project.DefaultBranch }} moves, the next pass rebases.
 
-      The gate you passed a moment ago said every task stops at its own diff
-      gate before it opens a pull request, and at its own merge gate before it
-      merges. Under this workflow they do not — this gate is those gates,
-      brought forward into one decision. That is what it is for.
+      A merged pull request changes {{ .Project.DefaultBranch }} and closes
+      the issues it names. That is the part that does not come back: closing
+      a pull request afterwards does not unsend what it notified, and
+      reverting a merge is a new commit rather than an undo.
+
+      A task that does not deliver — it blocked, was aborted, or still waits
+      on you when the watch gives up — is left out of the train and named;
+      the rest land without it.
 
       What it will **not** click:
 
@@ -289,12 +478,12 @@ steps:
       hours in which nothing was queued or running — every task left needing
       you — rather than hold a concurrency slot for nothing.
 
-      Rejecting blocks this task and clicks nothing. The tasks above keep
-      running and stop at their own gates, exactly as they would have without
-      this one.
+      Rejecting blocks this task and lands nothing. The tasks above keep
+      running and end at their own delivered branches, exactly as they would
+      have without this one.
 
   - id: watch
-    name: Drive the tasks to merged
+    name: Wait for the tasks to deliver
     type: loop
     count: 48
     max_iterations: 48
@@ -304,7 +493,7 @@ steps:
     timeout: 30h
     steps:
       - id: watch-pass
-        name: Approve what is waiting, for half an hour
+        name: Watch the board for half an hour
         type: command
         shell: sh
         timeout: 35m
@@ -330,11 +519,10 @@ steps:
                 say "cannot read the board"
                 echo "vincent task ls failed:" >&2; cat "$scratch/board.err" >&2; exit 1; }
 
-            settled=0; busy=0; waiting=0; inflight=0
-            : > "$scratch/merge-queue"
+            settled=0; busy=0; waiting=0
             : > "$scratch/needs-you"
 
-            while IFS="$(printf '\t')" read -r id issue wf gidx midx title; do
+            while IFS="$(printf '\t')" read -r id issue wf title; do
               [ -n "$id" ] || continue
               row=$(jq -c --argjson i "$id" 'map(select(.id == $i)) | .[0] // empty' "$scratch/board.json")
               if [ -z "$row" ]; then
@@ -343,61 +531,30 @@ steps:
                 continue
               fi
               state=$(printf '%s' "$row" | jq -r '.state')
-              cur=$(printf '%s' "$row" | jq -r '.current_step')
 
               case "$state" in
                 done|aborted|archived)
                   settled=$((settled + 1))
                   continue ;;
                 queued|running)
-                  busy=$((busy + 1)) ;;
+                  busy=$((busy + 1))
+                  continue ;;
                 *)
                   waiting=$((waiting + 1)) ;;
               esac
 
-              # Past its merge gate and still able to move: the merge lane is
-              # taken. A blocked task does not take it — a person has to come
-              # for it either way, and the others should not queue behind that.
-              if [ "$state" != blocked ] && [ "$cur" -gt "$midx" ]; then
-                inflight=$((inflight + 1))
-              fi
-
               if [ "$state" = awaiting_gate ]; then
-                # `current_step` is the index into the task's own snapshot, so
-                # this names the gate exactly rather than trusting the index to
-                # mean the same thing in both resolve workflows.
+                # The only gate either resolve workflow still has is the dag's
+                # `plan-gate`, and this watch never clicks it — but it names
+                # the gate exactly rather than assuming that.
+                cur=$(printf '%s' "$row" | jq -r '.current_step')
                 pending=$(vincent task show "$id" --json </dev/null \
                   | jq -r --argjson i "$cur" '.workflow_steps[] | select(.index == $i) | .id')
-                case "$pending" in
-                  gate)
-                    say "approving the pull request of task $id (#$issue)"
-                    if vincent task approve "$id" </dev/null >/dev/null 2>"$scratch/approve.err"; then
-                      echo "task $id  #$issue  approved the pull request"
-                    else
-                      echo "task $id  #$issue  could not approve the pull request: $(tr '\n' ' ' < "$scratch/approve.err")" >&2
-                    fi ;;
-                  gate-merge)
-                    printf '%s\t%s\n' "$id" "$issue" >> "$scratch/merge-queue" ;;
-                  *)
-                    printf '%s\t%s\t%s\n' "$id" "$issue" "gate '${pending:-unknown}'" >> "$scratch/needs-you" ;;
-                esac
-              elif [ "$state" = awaiting_input ] || [ "$state" = blocked ] || [ "$state" = paused ]; then
+                printf '%s\t%s\t%s\n' "$id" "$issue" "gate '${pending:-unknown}'" >> "$scratch/needs-you"
+              else
                 printf '%s\t%s\t%s\n' "$id" "$issue" "$state" >> "$scratch/needs-you"
               fi
             done < "$scratch/tasks.tsv"
-
-            # One merge at a time, in the order the triage ranked the issues.
-            if [ "$inflight" -eq 0 ] && [ -s "$scratch/merge-queue" ]; then
-              first=$(head -n 1 "$scratch/merge-queue")
-              mid=$(printf '%s' "$first" | cut -f1)
-              miss=$(printf '%s' "$first" | cut -f2)
-              say "approving the merge of task $mid (#$miss)"
-              if vincent task approve "$mid" </dev/null >/dev/null 2>"$scratch/approve.err"; then
-                echo "task $mid  #$miss  approved the merge"
-              else
-                echo "task $mid  #$miss  could not approve the merge: $(tr '\n' ' ' < "$scratch/approve.err")" >&2
-              fi
-            fi
 
             if [ "$settled" -ge "$total" ]; then
               printf '%s\n' 1 > "$scratch/settled"
@@ -422,6 +579,7 @@ steps:
                 echo "  (nothing is waiting either — read the board)" >&2
               fi
               echo "resolve them, then retry this step: the two-hour clock starts again." >&2
+              echo "to land what has been delivered without them, cancel them and retry." >&2
               exit 1
             fi
 
@@ -446,49 +604,1515 @@ steps:
         type: break
         if: '{{ eq (index .Steps "watch-settled").ExitCode 0 }}'
 
-  - id: outcome
-    name: Report how every task ended
+  - id: collect
+    name: Read what each task delivered
     type: command
     shell: sh
     timeout: 10m
+    # The train is exactly what was delivered: a task is in it when it is
+    # `done` (or archived after being done) **and** its delivery record is
+    # complete — `delivered-at` is written last — **and** the commit the
+    # record names exists here. Anything else is named and left out.
+    #
+    # Read each task by id rather than listing the board: an archived task is
+    # hidden from `task ls` and is exactly the one this has to report.
     run: |
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
 
-      scratch=$(git rev-parse --git-path vincent-iterate)
-      say "reading the final state of every task"
+      s=$(git rev-parse --git-path vincent-iterate)
+      common=$(git rev-parse --path-format=absolute --git-common-dir)
+      say "reading what each task delivered"
 
-      : > "$scratch/final.tsv"
-      while IFS="$(printf '\t')" read -r id issue wf gidx midx title; do
+      : > "$s/train.tsv"
+      : > "$s/train.txt"
+      : > "$s/left-out.txt"
+      while IFS="$(printf '\t')" read -r id issue wf title; do
         [ -n "$id" ] || continue
-        # Read each task by id rather than listing the board: an archived task
-        # is hidden from `task ls` and is exactly the one this has to report.
-        if vincent task show "$id" --json </dev/null > "$scratch/task.json" 2>"$scratch/task.err"; then
-          state=$(jq -r '.state' "$scratch/task.json")
-          pr=$(jq -r '.github_pull.number // empty' "$scratch/task.json")
+        rec="$common/vincent-delivered/$id"
+        if vincent task show "$id" --json </dev/null > "$s/task.json" 2>"$s/task.err"; then
+          state=$(jq -r '.state' "$s/task.json")
         else
           state=unreadable
-          pr=
         fi
-        printf '%s\t%s\t%s\t%s\t%s\n' "$id" "$issue" "$state" "${pr:-none}" "$title" >> "$scratch/final.tsv"
-      done < "$scratch/tasks.tsv"
 
-      total=$(cat "$scratch/tracked")
-      # `archived` counts: it is reachable only from done or aborted, and a
-      # person who archived one of these while the watch ran had read it.
-      finished=$(awk -F'\t' '$3 == "done" || $3 == "archived" { n++ } END { print n + 0 }' "$scratch/final.tsv")
+        case "$state" in
+          done|archived) ;;
+          *)
+            printf '  task %s  #%s  %s — not delivered\n' "$id" "$issue" "$state" >> "$s/left-out.txt"
+            continue ;;
+        esac
+        if [ ! -f "$rec/delivered-at" ]; then
+          printf '  task %s  #%s  %s, but no delivery record at %s\n' "$id" "$issue" "$state" "$rec" >> "$s/left-out.txt"
+          continue
+        fi
+        base=$(cat "$rec/base")
+        if [ "$base" != "{{.Task.BaseBranch}}" ]; then
+          printf '  task %s  #%s  delivered against %s, not {{.Task.BaseBranch}}\n' "$id" "$issue" "$base" >> "$s/left-out.txt"
+          continue
+        fi
+        branch=$(cat "$rec/branch")
+        head=$(cat "$rec/head.sha")
+        if ! git cat-file -e "$head^{commit}" 2>/dev/null; then
+          printf '  task %s  #%s  its delivered commit %s is gone\n' "$id" "$issue" "$head" >> "$s/left-out.txt"
+          continue
+        fi
 
-      echo "$finished of $total task(s) finished:"
-      awk -F'\t' '{ printf "  task %s  #%s  %s  pr %s\n        %s\n", $1, $2, $3, $4, $5 }' "$scratch/final.tsv"
+        printf '%s\t%s\t%s\t%s\n' "$id" "$issue" "$branch" "$head" >> "$s/train.tsv"
+        {
+          printf 'task %s  #%s  %s\n' "$id" "$issue" "$(cat "$rec/pr-title.txt")"
+          printf '  branch:  %s at %s\n' "$branch" "$head"
+          printf '  record:  %s\n' "$rec"
+          tip=$(git rev-parse --verify --quiet "refs/heads/$branch" || true)
+          if [ -n "$tip" ] && [ "$tip" != "$head" ]; then
+            printf '  note:    %s has moved on to %s since it was delivered;\n' "$branch" "$tip"
+            printf '           the train stacks the delivered, verified commit\n'
+          fi
+          if [ -f "$rec/proof.txt" ]; then sed 's/^/  proof:   /' "$rec/proof.txt"; fi
+        } >> "$s/train.txt"
+      done < "$s/tasks.tsv"
 
-      if [ "$finished" -lt "$total" ]; then
-        say "$finished of $total finished; the rest did not"
-        echo "these task(s) did not finish:" >&2
-        awk -F'\t' '$3 != "done" && $3 != "archived" { printf "  task %s  #%s  %s\n", $1, $2, $3 }' \
-          "$scratch/final.tsv" >&2
-        echo "the watch list is left in place, so retrying this step re-reads them." >&2
+      n=$(grep -c . "$s/train.tsv" || true)
+      printf '%s\n' "$n" > "$s/delivered"
+
+      if [ "$n" -gt 0 ]; then
+        echo "the merge train, in stacking order:"
+        echo
+        cat "$s/train.txt"
+      fi
+      if [ -s "$s/left-out.txt" ]; then
+        echo
+        echo "left out of the train:"
+        cat "$s/left-out.txt"
+      fi
+
+      if [ "$n" -eq 0 ]; then
+        say "no task delivered a branch: nothing to land"
+        echo "no task delivered a branch, so there is no train to build." >&2
+        exit 1
+      fi
+      say "$n branch(es) to stack into the train"
+
+  - id: stack
+    name: Stack the delivered branches into a train
+    type: command
+    shell: sh
+    timeout: 20m
+    # `allow_failure` because a conflict between two delivered branches is the
+    # expected other outcome, not an error: `stack-resolve` reads this exit
+    # code, and the worktree is left mid-rebase for it on purpose.
+    allow_failure: true
+    # The train is this task's own branch, cut afresh from the fetched base.
+    # This task commits nothing of its own before here — `github-resolve-
+    # issue-multiple` keeps its files under `--git-path` — so resetting the
+    # branch discards nothing, and the refusal below proves that rather than
+    # assuming it.
+    #
+    # The stacking itself lives in `stack.sh` under the scratch directory,
+    # because it has to be *resumable*: a conflict stops it partway, the
+    # resolver finishes that rebase, and the same script picks up where it
+    # stopped. `stacked` records each branch once it is on the train,
+    # `stacking` the one in progress, and `stack-done` is written when the
+    # last one lands. Retrying this step resumes too; delete `stacked` under
+    # the scratch directory to start the train over.
+    #
+    # Each branch is replayed with `git rebase --onto <tip> <fork> <head>` on
+    # the **commit**, not the branch name: rebasing a branch by name checks it
+    # out, and every delivered branch is still checked out in its own task's
+    # worktree. On a commit, git works on a detached HEAD, and the script then
+    # moves the train branch to the result.
+    #
+    # `exec 2>&1` because `stack-resolve`'s prompt quotes this step's
+    # `.Result`, which is stdout alone (§8.4), and git splits a stopped rebase
+    # across both streams.
+    run: |
+      exec 2>&1
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      s=$(git rev-parse --git-path vincent-iterate)
+
+      cat > "$s/stack.sh" <<'STACK'
+      #!/bin/sh
+      # Stack every delivered branch in train.tsv onto the train, in order.
+      # Resumable: run it again after finishing a stopped rebase.
+      set -e
+      s=$(git rev-parse --git-path vincent-iterate)
+      own='{{.Task.BranchName}}'
+      tab=$(printf '\t')
+
+      if [ -d "$(git rev-parse --git-path rebase-merge)" ] || [ -d "$(git rev-parse --git-path rebase-apply)" ]; then
+        echo "a rebase is still in progress: resolve it, 'git add' the files," >&2
+        echo "'git rebase --continue', then run this script again." >&2
+        exit 2
+      fi
+
+      adopt() {
+        # The finished rebase left HEAD detached at the rebased tip; the train
+        # tip it was stacked on must be an ancestor, or it was not this rebase.
+        if ! git merge-base --is-ancestor "$(cat "$s/train-tip")" HEAD; then
+          echo "HEAD is not on top of the train tip $(cat "$s/train-tip"); refusing to adopt it" >&2
+          exit 2
+        fi
+        git checkout -q -B "$own" HEAD
+        printf '%s\t%s\n' "$1" "$(git rev-parse HEAD)" >> "$s/stacked"
+        rm -f "$s/stacking"
+        echo "stacked task $1: train is now at $(git rev-parse --short HEAD)"
+      }
+
+      if [ -s "$s/stacking" ]; then
+        adopt "$(cat "$s/stacking")"
+      fi
+
+      while IFS="$tab" read -r id issue branch head; do
+        [ -n "$id" ] || continue
+        if awk -F'\t' -v i="$id" '$1 == i { f = 1 } END { exit !f }' "$s/stacked"; then continue; fi
+        tip=$(git rev-parse HEAD)
+        fork=$(git merge-base "$tip" "$head")
+        printf '%s\n' "$tip" > "$s/train-tip"
+        printf '%s\n' "$id" > "$s/stacking"
+        vincent status -- "stacking task $id (#$issue) onto the train" </dev/null >/dev/null 2>&1 || true
+        echo "--- stacking task $id (#$issue): $branch at $(printf '%s' "$head" | cut -c1-7) ---"
+        if ! git rebase --onto "$tip" "$fork" "$head" </dev/null; then
+          echo "--- the rebase of task $id (#$issue) stopped on a conflict ---"
+          exit 1
+        fi
+        adopt "$id"
+      done < "$s/train.tsv"
+
+      : > "$s/stack-done"
+      echo "--- every delivered branch is on the train ---"
+      STACK
+
+      if [ ! -f "$s/stacked" ]; then
+        if [ -n "$(git status --porcelain)" ]; then
+          say "the worktree is dirty: refusing to cut the train"
+          echo "this worktree has uncommitted changes; the train is cut by resetting it." >&2
+          git status --short >&2
+          exit 3
+        fi
+        say "fetching origin/{{.Task.BaseBranch}}"
+        git fetch origin {{.Task.BaseBranch}}
+        if [ "$(git rev-list --count origin/{{.Task.BaseBranch}}..HEAD)" -gt 0 ]; then
+          say "{{.Task.BranchName}} has commits of its own: refusing to reset it"
+          echo "{{.Task.BranchName}} carries commits that are not on origin/{{.Task.BaseBranch}};" >&2
+          echo "the train is cut by resetting this branch, and that would discard them." >&2
+          exit 3
+        fi
+        git checkout -q -B {{.Task.BranchName}} origin/{{.Task.BaseBranch}}
+        : > "$s/stacked"
+        rm -f "$s/stacking" "$s/stack-done"
+        echo "train cut from origin/{{.Task.BaseBranch}} at $(git rev-parse --short HEAD)"
+      fi
+
+      say "stacking $(cat "$s/delivered") branch(es) onto the train"
+      if ! sh "$s/stack.sh"; then
+        say "a rebase stopped on conflicts: the resolver runs next"
+        exit 1
+      fi
+      say "all $(cat "$s/delivered") branch(es) stacked cleanly"
+
+  - id: stack-resolve
+    name: Resolve the conflicts between the branches
+    type: agent
+    # Exit 1 is a conflict and nothing else: a refusal (3) or a failed fetch
+    # leaves nothing to resolve, and `stack-final` names it instead.
+    if: '{{ eq (index .Steps "stack").ExitCode 1 }}'
+    timeout: 60m
+    # One retry, unlike the merge tail's resolver: `stack.sh` is resumable, so
+    # a second session starts from whatever the first finished and the prompt
+    # tells it to find that out first.
+    max_retries: 1
+    prompt: |
+      This task is building a merge train: the branches several tasks
+      delivered, rebased one after another onto `origin/{{.Task.BaseBranch}}`
+      as {{.Task.BranchName}}. The stacking stopped. It said:
+
+      {{ (index .Steps "stack").Result }}
+
+      You are in the worktree at {{.Worktree.Path}}. Run `git status` first
+      and find out what is actually true before you change anything. It may
+      be mid-rebase on a conflict, or the step may have died before stacking
+      anything — a failed fetch, a dirty worktree, a branch with commits of
+      its own — in which case there is nothing to resolve and you should say
+      so and stop rather than inventing a fix.
+
+      Say what you find and what you are doing about it:
+
+          vincent status "<one short line about what you are doing now>"
+
+      Start with what `git status` showed — "task 41 conflicts in
+      internal/store" or "the fetch failed, nothing to resolve" — then one
+      per conflict you resolve, and one at the end. Under ten words. If two
+      tasks' changes are genuinely incompatible and you are stopping, make
+      the status say so.
+
+      The scratch directory is `s=$(git rev-parse --git-path vincent-iterate)`
+      (quote it — the path has spaces). In it:
+
+      - `train.txt` lists every task on the train in order: its issue, its
+        branch, the delivered commit, and its **delivery record** directory.
+        Each record's `brief.md` and `pr.md` say what that task's change is
+        *for*; that is what decides how a conflict resolves.
+      - `stacking` names the task whose branch is being rebased right now;
+        `stacked` lists the ones already on the train.
+      - `stack.sh` is the script that does the stacking. It is resumable.
+
+      To resolve:
+
+      - Keep both sides' intent. The train's side is another task's delivered,
+        verified change, or {{.Task.BaseBranch}} itself; neither is in the way
+        by accident. If the two are genuinely incompatible, stop and leave the
+        rebase in place rather than picking a winner.
+      - `git add` the resolved files and `git rebase --continue` for each
+        conflicted commit until that rebase is finished. Never `git rebase
+        --skip` a commit and never `git rebase --abort`.
+      - Then run `sh "$s/stack.sh"`. It adopts the rebase you finished and
+        stacks the rest; if it stops on another conflict, resolve that one the
+        same way and run it again, until it exits 0 and says every delivered
+        branch is on the train.
+      - Never `git merge`, never check out a delivered branch by name (each is
+        checked out in its own task's worktree), and do not push.
+
+      When the train is complete, run `go build ./...` and fix what the
+      resolutions broke, committing the fix on the train with a Conventional
+      Commits message that names the tasks it reconciles. A conflict resolved
+      so that it compiles is not the same thing as one resolved correctly; the
+      next step runs the whole suite.
+    # The train is finished (no rebase in progress, `stack-done` written), the
+    # worktree is clean, the train branch is checked out and sits on the base,
+    # and it still builds. The suite is `train-verify`'s, not this check's.
+    check: >
+      s=$(git rev-parse --git-path vincent-iterate) &&
+      test ! -d "$(git rev-parse --git-path rebase-merge)" &&
+      test ! -d "$(git rev-parse --git-path rebase-apply)" &&
+      test -f "$s/stack-done" &&
+      git diff --quiet &&
+      git diff --cached --quiet &&
+      test "$(git symbolic-ref --short HEAD)" = "{{.Task.BranchName}}" &&
+      git merge-base --is-ancestor origin/{{.Task.BaseBranch}} HEAD &&
+      go build ./...
+    check_timeout: 10m
+
+  - id: stack-final
+    name: Refuse an unfinished train
+    type: command
+    shell: sh
+    timeout: 1m
+    # Whatever path got here — clean stack or resolver — the train must hold
+    # every delivered branch. This counts them rather than trusting either.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      s=$(git rev-parse --git-path vincent-iterate)
+
+      want=$(cat "$s/delivered")
+      got=$(grep -c . "$s/stacked" || true)
+      if [ ! -f "$s/stack-done" ] || [ "$got" != "$want" ]; then
+        say "the train holds $got of $want branch(es): not landing it"
+        echo "the train holds $got of the $want delivered branch(es); stacking did not finish." >&2
+        exit 1
+      fi
+      echo "the train holds all $want delivered branch(es):"
+      git log --oneline origin/{{.Task.BaseBranch}}..HEAD
+      say "train complete: $want branch(es), $(git rev-list --count origin/{{.Task.BaseBranch}}..HEAD) commit(s)"
+
+  - id: train-verify
+    name: Build, test and lint the whole train
+    type: loop
+    # Probe → break → repair, three passes: up to two repairs, each re-probed.
+    # Every branch on the train was verified alone; what has not been proven
+    # is the branches *together*, and that is what this loop is for. CI on the
+    # pull request proves the other platforms; this is the cheap local gate
+    # that keeps an hour of CI from being spent on a train that does not build.
+    count: 3
+    # `defaults.timeout` bounds the whole loop (§7.8): three probes and two
+    # 45-minute repairs.
+    timeout: 3h
+    steps:
+      - id: train-probe
+        name: Run the suite and the linter
+        type: command
+        shell: sh
+        timeout: 40m
+        allow_failure: true
+        run: |
+          exec 2>&1
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+          say "pass {{.Loop.Index}}: building the train"
+          go build ./...
+          say "pass {{.Loop.Index}}: running the suite"
+          go run mage.go test
+          say "pass {{.Loop.Index}}: linting"
+          go run mage.go lint
+          say "pass {{.Loop.Index}}: the train is green"
+
+      - id: train-ok
+        name: Stop once it is green
+        type: break
+        if: '{{ eq (index .Steps "train-probe").ExitCode 0 }}'
+
+      - id: train-repair
+        name: Repair the train
+        type: agent
+        # Never on the last pass: nothing would probe it.
+        if: '{{ not .Loop.IsLast }}'
+        timeout: 45m
+        prompt: |
+          The merge train on {{.Task.BranchName}} — every delivered branch
+          of this run, rebased onto `origin/{{.Task.BaseBranch}}` — does not
+          pass the suite or the linter. The probe said:
+
+          {{ (index .Steps "train-probe").Result }}
+
+          You are in the worktree at {{.Worktree.Path}}. Each branch on the
+          train passed on its own, so a failure here is most likely two
+          tasks' changes meeting — a renamed function one branch still calls,
+          two additions to the same table, a test asserting a count both
+          changed. `cat "$(git rev-parse --git-path vincent-iterate)/train.txt"`
+          lists the tasks and their delivery records; each record's
+          `brief.md` says what that change is for.
+
+          Say what you are doing as you go:
+
+              vincent status "pass {{.Loop.Index}}: <one short line>"
+
+          Fix the cause, keeping every task's intent. Do not weaken, skip or
+          delete a test, relax a lint rule or add a `//nolint`. Commit the fix
+          on the train with a Conventional Commits message, and do not push.
+        check: >
+          git diff --quiet &&
+          git diff --cached --quiet &&
+          go build ./...
+        check_timeout: 5m
+
+  - id: train-final
+    name: Refuse an unverified train
+    type: command
+    shell: sh
+    timeout: 1m
+    # A loop that runs out of passes succeeds (§7.8); this is the assertion.
+    if: '{{ ne (index .Steps "train-probe").ExitCode 0 }}'
+    run: |
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      say "the train is still red after 2 repair passes: see the last train-probe"
+      echo "the merge train still fails the suite or the linter after two repair passes." >&2
+      echo "read the last 'train-probe' run in this task's transcript for the failure." >&2
+      exit 1
+
+  - id: checks-required
+    name: Resolve the required checks
+    type: command
+    shell: sh
+    timeout: 2m
+    max_retries: 0
+    # The expected set, by name, read before anything is pushed so a
+    # misconfigured repository costs two seconds rather than an hour of
+    # polling. This is what makes a missing check legible: a rollup only ever
+    # contains the checks that already exist, so without a set to grade it
+    # against, "every required check is green" and "no required check has been
+    # created yet" are the same sentence.
+    #
+    # Classic branch protection first, rulesets second — this repository uses
+    # the former, a repository using the latter answers the same question
+    # through the other endpoint. Both are read-only.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      s=$(git rev-parse --git-path vincent-iterate)
+
+      say "reading the required checks on {{.Task.BaseBranch}}"
+      slug=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+      printf '%s\n' "$slug" > "$s/slug.txt"
+
+      : > "$s/required.txt"
+
+      # The exit status decides whether an answer is kept, not whether the file
+      # has bytes in it: `gh api` prints GitHub's error body to *stdout*, so a
+      # repository with no classic protection would otherwise be handed a
+      # required check named `{"message":"Branch not found"...}` and wait an
+      # hour for it to report.
+      if gh api "repos/$slug/branches/{{.Task.BaseBranch}}/protection/required_status_checks" \
+        --jq '.contexts[]' > "$s/protection.txt" 2>/dev/null; then
+        cp "$s/protection.txt" "$s/required.txt"
+      fi
+
+      if [ ! -s "$s/required.txt" ]; then
+        if gh api "repos/$slug/rules/branches/{{.Task.BaseBranch}}" \
+          --jq '.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context' \
+          > "$s/rules.txt" 2>/dev/null; then
+          cp "$s/rules.txt" "$s/required.txt"
+        fi
+      fi
+
+      if [ ! -s "$s/required.txt" ]; then
+        say "{{.Task.BaseBranch}} has no required checks this token can read"
+        echo "no required status checks are configured on {{.Task.BaseBranch}}, or this token cannot read them." >&2
+        echo "this workflow waits for a named set of checks on the commit it pushes; with no such set," >&2
+        echo "'all required checks passed' would only mean 'nothing has reported yet' and the merge" >&2
+        echo "would race the CI that is supposed to gate it. protect the branch, or merge by hand." >&2
         exit 1
       fi
 
-      rm -rf "$scratch"
-      say "all $total task(s) merged and done"
+      echo "required checks on {{.Task.BaseBranch}} ($slug):"
+      cat "$s/required.txt"
+      say "$(wc -l < "$s/required.txt" | tr -d ' ') required check(s) to wait for"
+
+  - id: train-pr
+    name: Push the train and open its pull request
+    type: command
+    shell: sh
+    timeout: 5m
+    # Load-bearing. A retried `gh pr create` opens a second pull request, and
+    # nothing distinguishes "the call failed" from "the call succeeded and the
+    # response was lost" — so a person retrying this step by hand gets the
+    # existing pull request back rather than a second one: the step asks
+    # GitHub for an open pull request from this branch before creating one.
+    max_retries: 0
+    # The title is composed here rather than by an agent. One delivered task
+    # keeps its own plain-language title; several get "Resolve #12, #15 and
+    # #19", which is plain language by construction — `.github/workflows/
+    # pr-title.yml` rejects a Conventional Commits prefix, and this cannot
+    # produce one.
+    #
+    # The body is every task's own drafted body, in train order, under a
+    # heading naming the task. Each carries its own `Closes #N` (or `Part of
+    # #N` where a documentation or ci change left items open), so merging the
+    # train closes exactly the issues the children said it should.
+    #
+    # `--force-with-lease`: the branch is this task's own and is new on the
+    # first run, and a retry after `stack` re-cut the train must replace what
+    # an earlier attempt pushed.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      s=$(git rev-parse --git-path vincent-iterate)
+      common=$(git rev-parse --path-format=absolute --git-common-dir)
+
+      n=$(cat "$s/delivered")
+      if [ "$n" -eq 1 ]; then
+        id=$(cut -f1 "$s/train.tsv")
+        cp "$common/vincent-delivered/$id/pr-title.txt" "$s/pr-title.txt"
+      else
+        awk -F'\t' '
+          { nums[NR] = "#" $2 }
+          END {
+            line = "Resolve " nums[1]
+            for (i = 2; i < NR; i++) line = line ", " nums[i]
+            print line " and " nums[NR]
+          }' "$s/train.tsv" > "$s/pr-title.txt"
+      fi
+
+      {
+        printf 'A merge train of %s delivered branch(es), opened by vincent task #{{.Task.ID}}\n' "$n"
+        printf '(`github-iterate-work`). Each branch was verified on its own, then rebased\n'
+        printf 'onto `{{.Task.BaseBranch}}` in the order below and verified together.\n\n'
+        while IFS="$(printf '\t')" read -r id issue branch head; do
+          [ -n "$id" ] || continue
+          rec="$common/vincent-delivered/$id"
+          printf '%s\n\n## %s\n\n' '---' "$(cat "$rec/pr-title.txt")"
+          printf '_vincent task #%s, issue #%s, delivered as `%s` at %s._\n\n' "$id" "$issue" "$branch" "$head"
+          if [ -f "$rec/proof.txt" ]; then
+            printf '> **%s**\n\n' "$(cat "$rec/proof.txt")"
+          fi
+          cat "$rec/pr.md"
+          printf '\n\n'
+        done < "$s/train.tsv"
+      } > "$s/pr.md"
+
+      say "pushing the train to origin"
+      git push --force-with-lease -u origin {{.Task.BranchName}}
+
+      existing=$(gh pr list --head {{.Task.BranchName}} --base {{.Task.BaseBranch}} --state open \
+        --json url --jq '.[0].url // empty')
+      if [ -n "$existing" ]; then
+        printf '%s\n' "$existing" > "$s/url.txt"
+        say "reusing the open pull request $existing"
+        echo "an open pull request from {{.Task.BranchName}} already exists; reusing it:"
+      else
+        say "opening the train's pull request against {{.Task.BaseBranch}}"
+        gh pr create \
+          --base {{.Task.BaseBranch}} \
+          --head {{.Task.BranchName}} \
+          --title "$(cat "$s/pr-title.txt")" \
+          --body-file "$s/pr.md" \
+          > "$s/url.txt"
+      fi
+      cat "$s/url.txt"
+      say "opened $(cat "$s/url.txt")"
+
+  - id: train-report
+    name: Report the pull request
+    type: command
+    shell: sh
+    timeout: 2m
+    # A pure read straight after a push and a `gh pr create`, which is when a
+    # secondary rate limit is likeliest, so this one may retry.
+    max_retries: 1
+    retry_backoff: 20s
+    run: gh pr view "$(cat "$(git rev-parse --git-path vincent-iterate)/url.txt")"
+
+  - id: merge-attempt
+    name: Rebase, verify and merge the pull request
+    type: loop
+    # One clean attempt and at most two repairs. A pass is a whole merge
+    # attempt — rebase, force-push, wait for the required checks *on the commit
+    # it pushed*, merge — and it is worth repeating because the two ways it
+    # goes red are both answered by another pass rather than by a person: a
+    # required check that failed on this branch, which `repair-checks` commits
+    # a fix for, and a `BEHIND` verdict, which the next rebase resolves.
+    count: 3
+    # `defaults.timeout` (30m) bounds the *whole* loop (§7.8), not a pass, and
+    # one pass can legitimately spend an hour in `wait-checks` alone. Three of
+    # rebase + resolve + push + an hour of CI + a repair is where this comes
+    # from. It is a ceiling, not an expectation: the ordinary run breaks out on
+    # the first pass in the time the checks take.
+    timeout: 13h
+    steps:
+      - id: rebase
+        name: Rebase onto the base branch
+        type: command
+        shell: sh
+        timeout: 10m
+        max_retries: 0
+        # `allow_failure` because a conflict is the expected other outcome, not
+        # an error: `resolve` reads this exit code. A failed row here is normal.
+        #
+        # A failure leaves the worktree mid-rebase, which is exactly the state
+        # `resolve` needs to finish the job — so nothing aborts it here.
+        allow_failure: true
+        # The conflict path is handled explicitly rather than left to `set -e`
+        # because this is the third step whose red row is a normal outcome, and
+        # the status is the only thing that can distinguish the two ways it goes
+        # red: a conflict, which `resolve` is about to pick up, and a failed
+        # `git fetch`, which it cannot do anything about. `resolve`'s prompt
+        # already tells the agent to check for that second case — this puts the
+        # same distinction on the board.
+        #
+        # `exit 1` after the guard rather than the rebase's own code: the `if:`
+        # below reads `ne … 0`, so any non-zero is equivalent, and the fetch
+        # path keeps `set -e`'s code by construction.
+        # `exec 2>&1` on the first line because `resolve`'s prompt quotes this
+        # step's `.Result`, which is stdout alone (§8.4). git splits this one:
+        # `CONFLICT (content): ...` is on stdout, but `error: could not apply`
+        # and every `hint:` line are on stderr — and `git fetch` writes
+        # *everything* there. So the failed-fetch case the prompt explicitly
+        # asks the agent to tell apart from a conflict reached it as an empty
+        # block, which is the one reading that makes the agent invent a fix.
+        run: |
+          exec 2>&1
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+          s=$(git rev-parse --git-path vincent-iterate)
+
+          say "fetching origin/{{.Task.BaseBranch}}"
+          git fetch origin {{.Task.BaseBranch}}
+
+          say "rebasing onto origin/{{.Task.BaseBranch}}"
+          if ! git rebase origin/{{.Task.BaseBranch}}; then
+            say "rebase stopped on conflicts: the resolver runs next"
+            exit 1
+          fi
+          say "rebased cleanly onto origin/{{.Task.BaseBranch}}"
+
+      - id: resolve
+        name: Resolve the rebase conflicts
+        type: agent
+        if: '{{ ne (index .Steps "rebase").ExitCode 0 }}'
+        timeout: 45m
+        # One session, no retry: a second attempt inherits whatever state the
+        # first left behind, which is not the state this prompt describes. If it
+        # cannot finish, the task blocks and you finish the rebase by hand.
+        max_retries: 0
+        prompt: |
+          The rebase of {{.Task.BranchName}} onto `origin/{{.Task.BaseBranch}}`
+          stopped. It said:
+
+          {{ (index .Steps "rebase").Result }}
+
+          You are in the worktree at {{.Worktree.Path}}, most likely mid-rebase.
+          Run `git status` first and find out what is actually true before you
+          change anything — it may be a conflict, or it may be that the fetch
+          itself failed, in which case there is nothing here to resolve and you
+          should say so rather than inventing a fix.
+
+          Say what you find and what you are doing about it:
+
+              vincent status "<one short line about what you are doing now>"
+
+          Start with what `git status` actually showed — "mid-rebase, 2 conflicted
+          files" or "the fetch failed, nothing to resolve" — because those two lead
+          to opposite outcomes and the board cannot tell them apart otherwise. Then
+          one per conflicted commit you continue past, and one at the end. Under ten
+          words. If the two sides are genuinely incompatible and you are stopping,
+          make the status say so: "internal/store conflict needs a human decision".
+
+          If it is a conflict, resolve it:
+
+          - This branch is a merge train: the delivered branches of several
+            tasks, stacked in order. `cat "$(git rev-parse --git-path vincent-iterate)/train.txt"`
+            lists them — each task, its issue and its delivery record, whose
+            `brief.md` and `pr.md` say what that part of the train is *for*.
+            That is what decides how a conflict resolves; `git log` on the
+            conflicted commit tells you which task it belongs to.
+          - Keep both sides' intent. Do not resolve a conflict by discarding the
+            base branch's side because it is in the way — someone else's change
+            landed there on purpose. If the two are genuinely incompatible, stop
+            and leave the rebase in place rather than picking a winner.
+          - `git add` the resolved files and `git rebase --continue` for each
+            conflicted commit until the rebase is finished. Do not `git rebase
+            --skip` a commit of this branch.
+          - Never `git rebase --abort` and never `git merge` the base branch
+            instead: the next step asserts that the base is an ancestor of HEAD.
+          - Do not push. A later step does that.
+
+          When the rebase is finished, run `go run mage.go test` and
+          `go run mage.go lint` and fix what the rebase broke — a conflict resolved
+          so that it compiles is not the same thing as one resolved correctly.
+
+        # Asserts the rebase is actually finished (no rebase state directory in
+        # this worktree — `--git-path` resolves the linked worktree's own, not
+        # the main repo's), that nothing was left half-resolved, that the branch
+        # really does sit on top of the base rather than having been merged or
+        # aborted, and that the tree still passes the bar.
+        check: >
+          test ! -d "$(git rev-parse --git-path rebase-merge)" &&
+          test ! -d "$(git rev-parse --git-path rebase-apply)" &&
+          git diff --quiet &&
+          git diff --cached --quiet &&
+          git merge-base --is-ancestor origin/{{.Task.BaseBranch}} HEAD &&
+          go run mage.go test &&
+          go run mage.go lint
+        check_timeout: 20m
+
+      - id: repush
+        name: Force-push the rebased branch
+        type: command
+        shell: sh
+        timeout: 5m
+        # Load-bearing and not repeatable in any meaningful sense: if the push
+        # succeeded and the response was lost, a second one is either a no-op or
+        # a lease failure, and neither is worth automating.
+        max_retries: 0
+        # The ancestor test is the postcondition of the whole rebase leg,
+        # checked once here whether `resolve` ran or not: if the base is not an
+        # ancestor of HEAD, the branch was not rebased and there is nothing to
+        # force-push.
+        #
+        # `--force-with-lease` rather than `--force`: it refuses if `origin`'s
+        # copy of this branch is not the commit `train-pr` (or the previous
+        # pass) left there — which is the case exactly when someone else pushed
+        # to it in between.
+        #
+        # A rebase that changed nothing makes this a no-op push, which is fine —
+        # and `head.sha` then names the commit `train-pr` already pushed, whose
+        # checks have long since run. Nothing downstream needs to know which of
+        # the two happened.
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+          s=$(git rev-parse --git-path vincent-iterate)
+
+          if ! git merge-base --is-ancestor origin/{{.Task.BaseBranch}} HEAD; then
+            say "branch is not on top of the base: nothing was pushed"
+            echo "{{.Task.BranchName}} is not on top of origin/{{.Task.BaseBranch}}:" >&2
+            echo "the rebase did not finish, or it was aborted. nothing was pushed." >&2
+            git status --short --branch >&2
+            exit 1
+          fi
+
+          # The two shas the rest of the tail pins to, both recorded *before*
+          # the push. `head` is what this push makes the branch, and every
+          # question asked of GitHub after this names it instead of naming the
+          # pull request — which is what makes the wait immune to the
+          # propagation window. `prev` is the value `--force-with-lease` is
+          # about to assert about origin, which is what lets `await-head` tell
+          # "GitHub has not caught up yet" apart from "someone else pushed".
+          if ! prev=$(git rev-parse --verify --quiet "origin/{{.Task.BranchName}}"); then
+            say "no origin/{{.Task.BranchName}} to replace: nothing was pushed"
+            echo "this worktree has no origin/{{.Task.BranchName}}, so there is no published commit" >&2
+            echo "for the force-push to replace and no lease for it to hold. nothing was pushed." >&2
+            exit 1
+          fi
+          printf '%s\n' "$prev" > "$s/prev-head.sha"
+          git rev-parse HEAD > "$s/head.sha"
+
+          # A lease failure is the one interesting way this dies, and the status
+          # set here is what survives to say so: someone pushed to the train
+          # branch after this task did.
+          say "force-pushing $(cut -c1-7 "$s/head.sha") over $(printf '%s' "$prev" | cut -c1-7)"
+          git push --force-with-lease origin {{.Task.BranchName}}
+          echo "pushed $(cat "$s/head.sha") over $(cat "$s/prev-head.sha")"
+          say "pushed $(cut -c1-7 "$s/head.sha")"
+
+      - id: await-head
+        name: Wait for the PR to point at the pushed commit
+        type: command
+        shell: sh
+        timeout: 10m
+        max_retries: 0
+        # The first of the two windows a force-push opens. Until GitHub moves
+        # the pull request's head, every question about "this PR's checks" is
+        # answered about the pre-rebase commit — which is green, because it
+        # passed before the rebase. Waiting here is what stops that answer from
+        # being mistaken for this commit's.
+        #
+        # A head that is neither sha is not a race to wait out:
+        # `--force-with-lease` already proved origin was at `prev` when this
+        # task pushed, so a third value means someone pushed afterwards. That
+        # branch is not the one anyone approved, so nothing merges it.
+        #
+        # The wait is paced rather than fixed. GitHub usually moves the head
+        # within a second or two of the push, so the first polls are close
+        # together and the interval then doubles to a 15s ceiling: the common
+        # case is detected in ~2s instead of 5, and an unusually slow one costs
+        # ~25 calls over five minutes rather than 60. The budget is counted in
+        # *seconds waited*, not in polls, so it stays the five minutes the
+        # failure message claims even though the polls are no longer evenly
+        # spaced.
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+          s=$(git rev-parse --git-path vincent-iterate)
+
+          url=$(cat "$s/url.txt")
+          head=$(cat "$s/head.sha")
+          prev=$(cat "$s/prev-head.sha")
+          short=$(printf '%s' "$head" | cut -c1-7)
+
+          # Set once, outside the loop: this usually finishes in about two
+          # seconds and re-stating the same sentence per poll would be noise the
+          # coalescing floor cannot even see. The polls that say something new —
+          # a third sha, the timeout — say it where they exit.
+          say "waiting for the PR head to become $short"
+
+          nap=2
+          waited=0
+          while :; do
+            # The exit status, not the captured text: a failed `gh` must read as
+            # "no answer yet" and be waited out, never as a third sha.
+            set +e
+            oid=$(gh pr view "$url" --json headRefOid --jq .headRefOid 2>/dev/null)
+            rc=$?
+            set -e
+            if [ "$rc" -ne 0 ]; then
+              oid=''
+            fi
+
+            if [ "$oid" = "$head" ]; then
+              echo "the pull request head is $head"
+              say "the PR points at $short"
+              break
+            fi
+
+            if [ -n "$oid" ] && [ "$oid" != "$prev" ]; then
+              say "someone else pushed to {{.Task.BranchName}}: refusing to wait"
+              echo "the pull request head is $oid, which is neither the commit this task pushed" >&2
+              echo "($head) nor the one it replaced ($prev): someone else pushed to" >&2
+              echo "{{.Task.BranchName}}. refusing to wait on checks for a branch this task no longer owns." >&2
+              exit 1
+            fi
+
+            if [ "$waited" -ge 300 ]; then
+              say "PR head still not $short five minutes after the push"
+              echo "five minutes after the force-push the pull request still reports $oid," >&2
+              echo "not the pushed commit $head. nothing was merged." >&2
+              exit 1
+            fi
+
+            sleep "$nap"
+            waited=$((waited + nap))
+            if [ "$nap" -lt 15 ]; then
+              nap=$((nap * 2))
+              if [ "$nap" -gt 15 ]; then nap=15; fi
+            fi
+          done
+
+      - id: wait-checks
+        name: Wait for the required checks
+        type: command
+        shell: sh
+        # The step's own timeout is the outer bound; the loop's poll budget is
+        # what produces a legible message instead of a `timeout` block reason.
+        timeout: 90m
+        max_retries: 0
+        # A red required check is the repairer's input, not the end of the run,
+        # so this row has to survive as data (§7.2). Everything downstream reads
+        # it as `Status "succeeded"` rather than as an exit code: a step skipped
+        # by its own guard has exit code 0, which would make "the checks are
+        # green" and "nobody asked" the same sentence — the bug this whole tail
+        # is built to avoid, one level up.
+        allow_failure: true
+        # Not `gh pr checks --required`. That command resolves the pull
+        # request's head at query time and reports the rollup it finds there,
+        # which makes it wrong in both of the windows a force-push opens: it
+        # answers about the old commit until the head moves, and it answers
+        # about a half-created set of runs afterwards. In both, "every required
+        # check is green" is a true sentence about the wrong thing, and exit
+        # code 0 does not distinguish it from the real one.
+        #
+        # So this asks the **commit** — by sha, from `head.sha` — for its check
+        # runs and its commit statuses, and grades what comes back against the
+        # expected set `checks-required` read from branch protection. A required
+        # context that has no row yet is *pending*, which is the entire fix: an
+        # absence can no longer be read as a pass.
+        #
+        # Both kinds are collected because either can satisfy a required
+        # context: Actions jobs arrive as check runs, third-party integrations
+        # as commit statuses. A check run that has not finished has no
+        # conclusion, and that is the pending this loop sleeps on.
+        #
+        # The head is re-asserted every poll: a push that lands during the hour
+        # ends the wait rather than being merged by it.
+        #
+        # An hour of CI, budgeted in *seconds waited* rather than in polls,
+        # because the polls are no longer evenly spaced. The pending interval
+        # starts at 15s and doubles to a 60s ceiling: a three-platform matrix
+        # takes minutes, so a fixed 30s spent most of the hour asking a question
+        # whose answer had not changed. The ramp reaches the same hour in
+        # roughly 60 calls instead of 120, while answering a fast run sooner
+        # than the old first poll did.
+        #
+        # A transient API failure is not a verdict — five in a row are tolerated
+        # so one 502 does not throw away forty minutes of waiting. Those retries
+        # get their *own*, longer ramp (30s doubling to 120s): an outage that
+        # has already produced three failures is not one more 30s pause away
+        # from being over, and six failures crammed into two and a half minutes
+        # spends the whole tolerance on a single bad moment. The error interval
+        # resets the moment a poll answers, so a blip does not slow the rest of
+        # the wait.
+        #
+        # Both sleeps draw on the one budget, so an alternating error/pending
+        # pattern — which never reaches six errors in a row — is still bounded
+        # by the hour. This is the step the status message exists for. It can
+        # hold a task for an hour with a `running` row and no other output — the
+        # polling is silent by design — so it reports the live tally instead:
+        # how many of the expected contexts have reported success, and how long
+        # it has been waiting. The tally comes out of the same `checks.txt` the
+        # verdict is graded from, so the board and the exit code can never
+        # disagree.
+        #
+        # Once per *pending* poll, which is at worst every 15 seconds — well
+        # clear of the one-second coalescing floor (§5.4) and around 60 messages
+        # across a full hour. The error path deliberately says nothing per
+        # attempt: five tolerated blips are not news, and overwriting the tally
+        # with "the API blipped" would lose the one number a person is watching.
+        # Only the sixth, which ends the wait, speaks.
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+          s=$(git rev-parse --git-path vincent-iterate)
+
+          url=$(cat "$s/url.txt")
+          slug=$(cat "$s/slug.txt")
+          head=$(cat "$s/head.sha")
+          short=$(printf '%s' "$head" | cut -c1-7)
+          nreq=$(wc -l < "$s/required.txt" | tr -d ' ')
+          echo "waiting for the required checks on $head"
+          echo "($url)"
+          say "waiting for $nreq required check(s) on $short"
+
+          budget=3600
+          waited=0
+          nap=15
+          enap=30
+          errors=0
+          while :; do
+            set +e
+            oid=$(gh pr view "$url" --json headRefOid --jq .headRefOid 2>"$s/api-err.txt")
+            rc_head=$?
+            gh api --paginate "repos/$slug/commits/$head/check-runs" \
+              --jq '.check_runs[] | [.name, (if .status != "completed" then "PENDING" else (.conclusion // "PENDING" | ascii_upcase) end)] | @tsv' \
+              > "$s/seen.tsv" 2>>"$s/api-err.txt"
+            rc_runs=$?
+            gh api "repos/$slug/commits/$head/status" \
+              --jq '.statuses[] | [.context, (.state | ascii_upcase)] | @tsv' \
+              >> "$s/seen.tsv" 2>>"$s/api-err.txt"
+            rc_status=$?
+            set -e
+
+            # Before the transient-error gate, not after it: a head that
+            # answered and disagrees is a definite answer, and the calls that
+            # fail *because* the branch moved under this task would otherwise be
+            # retried five times as if they were blips.
+            if [ "$rc_head" -eq 0 ] && [ "$oid" != "$head" ]; then
+              say "someone pushed to {{.Task.BranchName}} during the wait: not merging"
+              echo "the pull request head moved to $oid while waiting for checks on $head:" >&2
+              echo "someone pushed to {{.Task.BranchName}}. nothing was merged." >&2
+              exit 1
+            fi
+
+            if [ "$rc_head" -ne 0 ] || [ "$rc_runs" -ne 0 ] || [ "$rc_status" -ne 0 ]; then
+              errors=$((errors + 1))
+              if [ "$errors" -gt 5 ]; then
+                say "the GitHub API failed six times in a row: not merging"
+                echo "the GitHub API failed six times in a row while waiting for checks; not merging:" >&2
+                cat "$s/api-err.txt" >&2
+                exit 1
+              fi
+              if [ "$waited" -ge "$budget" ]; then
+                say "an hour up with the GitHub API failing: not merging"
+                echo "required checks on $head unresolved after an hour (last poll failed); not merging:" >&2
+                cat "$s/api-err.txt" >&2
+                exit 1
+              fi
+              sleep "$enap"
+              waited=$((waited + enap))
+              if [ "$enap" -lt 120 ]; then
+                enap=$((enap * 2))
+                if [ "$enap" -gt 120 ]; then enap=120; fi
+              fi
+              continue
+            fi
+            errors=0
+            enap=30
+
+            # Grades every expected context and prints the verdict on line 1.
+            # SKIPPED and NEUTRAL count as passes because branch protection
+            # counts them as passes; anything that is neither a pass nor a
+            # recognised in-flight state is a failure, so a state this does not
+            # know about stops the tail instead of being waited out.
+            awk -F '\t' '
+              NR == FNR { req[++n] = $1; next }
+              { seen[$1] = seen[$1] " " $2 }
+              END {
+                verdict = "pass"
+                for (i = 1; i <= n; i++) {
+                  c = req[i]
+                  if (!(c in seen)) {
+                    rows = rows "  pending  " c "  (not reported yet)\n"
+                    if (verdict != "fail") verdict = "pending"
+                    continue
+                  }
+                  m = split(seen[c], st, " ")
+                  worst = "pass"
+                  for (j = 1; j <= m; j++) {
+                    s = st[j]
+                    if (s == "SUCCESS" || s == "SKIPPED" || s == "NEUTRAL") continue
+                    if (s == "PENDING" || s == "EXPECTED" || s == "QUEUED" || s == "IN_PROGRESS" || s == "WAITING" || s == "REQUESTED") {
+                      if (worst != "fail") worst = "pending"
+                      continue
+                    }
+                    worst = "fail"
+                  }
+                  rows = rows "  " worst "  " c " " seen[c] "\n"
+                  if (worst == "fail") verdict = "fail"
+                  else if (worst == "pending" && verdict != "fail") verdict = "pending"
+                }
+                printf "%s\n%s", verdict, rows
+              }
+            ' "$s/required.txt" "$s/seen.tsv" > "$s/checks.txt"
+
+            verdict=$(head -n 1 "$s/checks.txt")
+            case "$verdict" in
+              pass)
+                sed -n '2,$p' "$s/checks.txt"
+                echo "--- every required check passed on $head ---"
+                say "all $nreq required check(s) green on $short"
+                break
+                ;;
+              fail)
+                # Name the contexts, not the count: "ci (windows-latest)
+                # FAILURE" is actionable from the board, "a required check
+                # failed" sends someone to the transcript to find out which. `NR
+                # > 1` skips the verdict word on line 1, which is itself `fail`
+                # here; dropping the marker field and keeping the rest is what
+                # survives a context name containing spaces, which every matrix
+                # job's does. Over-long lists are truncated at 256 bytes rather
+                # than refused (§5.4).
+                say "red on $short: $(awk 'NR > 1 && $1 == "fail" { $1 = ""; sub(/^ +/, ""); printf "%s; ", $0 }' "$s/checks.txt")"
+                # `repair-checks` quotes this step's `.Result`, which is
+                # stdout alone (§8.4), and this table is the whole of what that
+                # prompt is given to work from — on this path it was written to
+                # stderr only, so the session opened on two header lines and no
+                # table. The stderr copy below stays: it is the human's, in the
+                # step summary, next to the prose that explains it.
+                sed -n '2,$p' "$s/checks.txt"
+                echo "a required check did not pass on $head; not merging:" >&2
+                sed -n '2,$p' "$s/checks.txt" >&2
+                exit 1
+                ;;
+            esac
+
+            if [ "$waited" -ge "$budget" ]; then
+              say "still pending after an hour on $short: not merging"
+              echo "required checks on $head still pending after an hour; not merging:" >&2
+              sed -n '2,$p' "$s/checks.txt" >&2
+              exit 1
+            fi
+
+            # The live tally, refreshed on every pending poll: the one number a
+            # person watching an hour-long wait actually wants. `NR > 1` again —
+            # line 1 of checks.txt is the verdict, which is `pending` every time
+            # execution reaches here, and counting it would report one context
+            # fewer as green than is true.
+            pend=$(awk 'NR > 1 && $1 == "pending"' "$s/checks.txt" | wc -l | tr -d ' ')
+            say "$((nreq - pend))/$nreq required checks green on $short, $((waited / 60))m waited"
+
+            sleep "$nap"
+            waited=$((waited + nap))
+            if [ "$nap" -lt 60 ]; then
+              nap=$((nap * 2))
+              if [ "$nap" -gt 60 ]; then nap=60; fi
+            fi
+          done
+
+      - id: merge-ready
+        name: Wait for GitHub to call it mergeable
+        type: command
+        shell: sh
+        timeout: 10m
+        max_retries: 0
+        # Nothing to wait for if the checks never went green: `wait-checks` has
+        # already named the red context, which is more than `BLOCKED` will ever
+        # say.
+        if: '{{ eq (index .Steps "wait-checks").Status "succeeded" }}'
+        # `BEHIND` and `DIRTY` are answers the next pass acts on rather than
+        # errors to block on — both are fixed by rebasing again, which is where
+        # a pass starts. Under `allow_failure` they end this pass; `merge` is
+        # guarded on this step having succeeded, so nothing merges on the way
+        # out.
+        allow_failure: true
+        # GitHub's own verdict lags the checks: for a few seconds after the last
+        # required context turns green the pull request is still `BLOCKED`, and
+        # a merge attempted in that window is refused. Waiting for the verdict
+        # here keeps `merge` a single call that either works or means something.
+        #
+        # This is not a substitute for `wait-checks` and could not be: `BLOCKED`
+        # is opaque — a red required check, a missing one and an unmet review
+        # requirement are the same word — so a loop that only watched this would
+        # wait the full hour on a failure `wait-checks` names in two minutes.
+        #
+        # `BEHIND` is the other side of `strict: true` branch protection: the
+        # base moved while CI ran, so the rebase is stale. That is a real
+        # answer, not something to poll through — and the fix is another rebase,
+        # which is what the next pass of this loop begins with. Before the loop
+        # it cost a person a re-run of the whole tail.
+        #
+        # The wait is paced to what is being waited on: the verdict usually
+        # settles in a few seconds, so the first polls are 2s apart and the
+        # interval then doubles to a 15s ceiling. A fixed 15s spent a quarter of
+        # a minute on the overwhelmingly common case of "already clean by the
+        # time we asked". The five-minute budget is unchanged and now counted in
+        # seconds waited, so the failure message stays true.
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+          s=$(git rev-parse --git-path vincent-iterate)
+
+          url=$(cat "$s/url.txt")
+          head=$(cat "$s/head.sha")
+
+          # Set once: the common case settles in seconds. Each of the four
+          # states this refuses gets its own message where it exits, because
+          # `BEHIND`, `DIRTY` and `DRAFT` need three different responses from a
+          # person and `nonzero_exit` is the same word for all of them.
+          say "waiting for GitHub to call the PR mergeable"
+
+          nap=2
+          waited=0
+          while :; do
+            # Same rule as `await-head`: a failed call leaves an empty answer to
+            # be waited out rather than a value to act on.
+            if ! gh pr view "$url" --json headRefOid,mergeable,mergeStateStatus \
+              --jq '[.headRefOid, .mergeable, .mergeStateStatus] | @tsv' \
+              > "$s/mergeable.tsv" 2>/dev/null; then
+              : > "$s/mergeable.tsv"
+            fi
+            oid=$(cut -f1 "$s/mergeable.tsv")
+            mergeable=$(cut -f2 "$s/mergeable.tsv")
+            state=$(cut -f3 "$s/mergeable.tsv")
+
+            if [ -n "$oid" ] && [ "$oid" != "$head" ]; then
+              say "the PR head moved off the verified commit: not merging"
+              echo "the pull request head moved to $oid, not the verified commit $head." >&2
+              echo "nothing was merged." >&2
+              exit 1
+            fi
+
+            case "$state" in
+              CLEAN|UNSTABLE|HAS_HOOKS)
+                echo "mergeable: $mergeable, state: $state"
+                say "GitHub calls it mergeable: $state"
+                break
+                ;;
+              BEHIND)
+                say "BEHIND: {{.Task.BaseBranch}} moved — the next pass rebases again"
+                echo "{{.Task.BaseBranch}} moved while the checks ran, and this repository requires a branch" >&2
+                echo "to be up to date before merging: this rebase is stale. nothing was merged on this" >&2
+                echo "pass; the next one rebases onto the base that moved." >&2
+                exit 1
+                ;;
+              DIRTY)
+                say "DIRTY: the PR conflicts with {{.Task.BaseBranch}} — the next pass rebases"
+                echo "the pull request conflicts with {{.Task.BaseBranch}}; nothing was merged on this pass." >&2
+                echo "the next pass rebases, and the resolver picks up the conflicts it stops on." >&2
+                exit 1
+                ;;
+              DRAFT)
+                say "DRAFT: the PR is not ready to merge"
+                echo "the pull request is a draft; nothing was merged." >&2
+                exit 1
+                ;;
+            esac
+
+            if [ "$waited" -ge 300 ]; then
+              say "GitHub still says ${state:-unknown} five minutes after the checks went green"
+              echo "GitHub still reports this pull request as ${state:-unknown} (mergeable: ${mergeable:-unknown})" >&2
+              echo "five minutes after every required check went green; not merging. read the PR." >&2
+              exit 1
+            fi
+
+            sleep "$nap"
+            waited=$((waited + nap))
+            if [ "$nap" -lt 15 ]; then
+              nap=$((nap * 2))
+              if [ "$nap" -gt 15 ]; then nap=15; fi
+            fi
+          done
+
+      - id: merge
+        name: Merge the pull request
+        type: command
+        shell: sh
+        timeout: 10m
+        # Only where GitHub said it would take it. `merge-ready` is itself
+        # guarded on the checks, so this one guard carries both — and it reads
+        # `Status` rather than an exit code because a skipped step's exit code
+        # is 0.
+        if: '{{ eq (index .Steps "merge-ready").Status "succeeded" }}'
+        # A refused or lost merge call ends the pass rather than the run: the
+        # loop's answer to it is to ask GitHub what actually happened
+        # (`merge-probe`) and, only if nothing did, to attempt the whole thing
+        # again from the rebase.
+        allow_failure: true
+        # The one irreversible step in the tail, and the reason nothing above it
+        # retries either. A retried merge is a merge attempted against a state
+        # this workflow no longer knows; `merged` reads the real answer back
+        # instead.
+        max_retries: 0
+        # `--merge` is the repository's rule, not a preference: squash and
+        # rebase merges are disabled on this repo because a branch's history
+        # becomes master's history (CLAUDE.md). No `--delete-branch`: the
+        # repository deletes the remote branch itself, and gh's flag would also
+        # delete the local branch this worktree is sitting on.
+        #
+        # `--match-head-commit` closes the last gap in the tail: between the
+        # final poll and this call, a push could still land. GitHub refuses the
+        # merge if the head is not the commit whose checks were verified, which
+        # is a server -side guarantee rather than one this workflow has to win a
+        # race for.
+        #
+        # The status is set before the call and never after it: this is the
+        # irreversible step, and a message claiming success would be a claim
+        # this step is not entitled to make — `gh pr merge` exiting 0 is the API
+        # accepting the merge, not GitHub having recorded it. `merged` reads the
+        # real answer back and says so. What survives here on a failure —
+        # "merging <sha>" — is exactly the sentence a person needs before
+        # deciding whether to look at the PR.
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+          s=$(git rev-parse --git-path vincent-iterate)
+
+          say "merging $(cut -c1-7 "$s/head.sha") with a merge commit"
+          gh pr merge "$(cat "$s/url.txt")" \
+            --merge \
+            --match-head-commit "$(cat "$s/head.sha")"
+
+      - id: merge-probe
+        name: Ask GitHub whether the merge landed
+        type: command
+        shell: sh
+        timeout: 3m
+        max_retries: 0
+        # The break condition, and the only step in this loop entitled to say
+        # the merge happened: `gh pr merge` exiting 0 is the API accepting the
+        # call, not GitHub having recorded it.
+        #
+        # It runs on every pass, including one where `merge` was skipped or
+        # failed, because that is the case a retrying tail makes newly
+        # dangerous. A merge call whose response was lost leaves a pull request
+        # that *is* merged and a step that exited non-zero; the next pass would
+        # then force-push over a branch GitHub has already merged and deleted.
+        # Asking the server before repeating anything is what closes that.
+        #
+        # Three answers, three exit codes, because the loop has to tell them
+        # apart: 0 landed at the commit this task verified, 2 the pull request
+        # is merged at some *other* commit or closed under this task — neither
+        # is a thing to retry — and 1 it is still open, which is the pass that
+        # repairs and goes round again.
+        allow_failure: true
+        # It waits wherever the merge call **ran**, and that includes the pass
+        # where it exited non-zero. `gh pr merge` returning is the API accepting
+        # the merge, not GitHub having finished recording it: for a second or
+        # two afterwards the pull request can still read OPEN. A merge whose
+        # response was lost looks exactly like a failed one, so reading once and
+        # calling it "not merged" is how the next pass would come to force-push
+        # over a merged branch. Only a *skipped* merge — the checks were red, or
+        # GitHub never called it mergeable — has no window to wait out, and
+        # there a minute per pass would buy nothing.
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+          s=$(git rev-parse --git-path vincent-iterate)
+
+          url=$(cat "$s/url.txt")
+          head=$(cat "$s/head.sha")
+          short=$(printf '%s' "$head" | cut -c1-7)
+
+          budget=60
+          if [ '{{ (index .Steps "merge").Status }}' = skipped ]; then
+            budget=0
+          fi
+
+          nap=2
+          waited=0
+          while :; do
+            # A failed read is "no answer yet", the same rule every wait in this
+            # tail uses: it must never be mistaken for a state.
+            if ! gh pr view "$url" --json state,mergedAt,mergeCommit,headRefOid,url \
+              > "$s/merged.json" 2>/dev/null; then
+              printf '%s\n' '{"state":"","mergedAt":null,"mergeCommit":null,"headRefOid":"","url":""}' \
+                > "$s/merged.json"
+            fi
+            state=$(jq -r .state "$s/merged.json")
+            if [ "$state" = MERGED ] || [ "$state" = CLOSED ]; then break; fi
+            if [ "$waited" -ge "$budget" ]; then break; fi
+
+            sleep "$nap"
+            waited=$((waited + nap))
+            if [ "$nap" -lt 10 ]; then
+              nap=$((nap * 2))
+              if [ "$nap" -gt 10 ]; then nap=10; fi
+            fi
+          done
+
+          jq -r '"state:   \(.state)\nmerged:  \(.mergedAt)\nhead:    \(.headRefOid)\ncommit:  \(.mergeCommit.oid)\npr:      \(.url)"' \
+            "$s/merged.json"
+
+          oid=$(jq -r .headRefOid "$s/merged.json")
+
+          if [ "$state" = MERGED ] && [ "$oid" = "$head" ]; then
+            say "merged $short"
+            exit 0
+          fi
+
+          if [ "$state" = MERGED ] || [ "$state" = CLOSED ]; then
+            echo "the pull request is $state at $oid, not open at the commit this task pushed ($head):" >&2
+            echo "somebody merged or closed it outside this task. nothing here will push over that." >&2
+            exit 2
+          fi
+
+          say "pass {{.Loop.Index}}: the PR is ${state:-unreadable}, not merged"
+          echo "the pull request is ${state:-unreadable} at $oid; it did not merge on this pass." >&2
+          exit 1
+
+      - id: merge-elsewhere
+        name: Refuse a pull request this task no longer owns
+        type: command
+        shell: sh
+        timeout: 1m
+        max_retries: 0
+        if: '{{ eq (index .Steps "merge-probe").ExitCode 2 }}'
+        # No `allow_failure`: this is the one outcome inside the loop that has
+        # to stop the run rather than start another pass. Everything a pass does
+        # next — rebase, force-push — would be done to a pull request somebody
+        # else has already finished with.
+        run: |
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+          s=$(git rev-parse --git-path vincent-iterate)
+
+          say "the PR was merged or closed outside this task: stopping"
+          echo "the pull request is no longer an open one this task owns; see the 'merge-probe'" >&2
+          echo "run above for its state and head. nothing further was pushed or merged." >&2
+          exit 1
+
+      - id: merge-ok
+        name: Stop once the merge has landed
+        type: break
+        if: '{{ eq (index .Steps "merge-probe").ExitCode 0 }}'
+
+      - id: repair-checks
+        name: Repair the failing required checks
+        type: agent
+        # The only failure in this loop an agent can do anything about, and only
+        # while a pass remains to prove the repair — a repair nothing re-runs CI
+        # against would reach `merged` unverified while costing a whole session,
+        # which is `verify`'s rule applied here.
+        #
+        # A `BEHIND` verdict, a refused merge and a lease failure are not
+        # repairs: the next pass's rebase and force-push are what answer those,
+        # and an agent asked to "fix" one would invent work.
+        if: '{{ and (ne (index .Steps "wait-checks").Status "succeeded") (not .Loop.IsLast) }}'
+        timeout: 60m
+        # A pass *is* the retry here, and the next one re-runs the real checks —
+        # a better judge than a second session against this step's own budget.
+        max_retries: 0
+        prompt: |
+          A required check failed on the pull request for {{.Task.BranchName}},
+          on the commit this task pushed. This is how the required contexts
+          graded at that commit:
+
+          {{ (index .Steps "wait-checks").Result }}
+
+          You are in the worktree at {{.Worktree.Path}}, on
+          {{.Task.BranchName}}, rebased onto {{.Task.BaseBranch}} and already
+          pushed. This is pass {{.Loop.Index}} of at most three merge attempts,
+          and the next one rebases, force-pushes and re-runs those same checks
+          against whatever you commit here.
+
+          Say what you are doing as you go — someone may be watching this
+          branch wait on CI:
+
+              vincent status "pass {{.Loop.Index}}: <one short line>"
+
+          Name the failing job and then the fault — "ci windows: path separator
+          in config test" beats "investigating". Under ten words after the
+          prefix. If you conclude the check is red for a reason that has
+          nothing to do with this branch, say *that* in the status: it is the
+          one finding that should stop a person from waiting out another hour
+          of CI.
+
+          Read the actual failure before you change anything. The table above
+          names the contexts; the logs are on GitHub, not in this worktree:
+
+              s=$(git rev-parse --git-path vincent-iterate)
+              gh pr checks "$(cat "$s/url.txt")"
+              gh run list --commit "$(cat "$s/head.sha")"
+              gh run view <run-id> --log-failed
+
+          Then fix the underlying cause:
+
+          - **Do not weaken, skip, delete or `t.Skip` a test**, do not relax a
+            lint rule or add a `//nolint` to silence a finding, and do not edit
+            `.github/workflows/` to stop a red job from running. A check that
+            no longer runs is not a check that passed, and this repository's
+            required contexts are named in branch protection — removing one
+            leaves the wait hanging on a context nothing will ever report.
+          - If one of the stacked tasks **is** CI work — its `brief.md` says
+            so — the red check may be that change itself failing on a platform
+            this machine is not: the finding its issue exists to surface, not
+            noise. Fix the gate or the workflow: a CRLF left in a multi-line
+            `jq` capture, a pipe into `grep -q`, a `run:` body `pwsh` cannot
+            parse, a script that lost its executable bit. Editing `ci.yml` to
+            repair a step is in scope; skipping the platform,
+            `continue-on-error` or dropping the step is not.
+          - A failure only CI sees is usually a platform or a race. CI runs the
+            suite and every gate on Windows, macOS and Linux (`CLAUDE.md`) and
+            this machine is one of the three, so reproduce it the way the
+            failing job did — `GOOS=windows go tool golangci-lint run ./...`,
+            `go run mage.go testrace`, the gate script the job named — rather
+            than assuming the host is representative.
+          - This branch is a merge train. `cat "$s/train.txt"` lists the
+            tasks stacked on it and their delivery records; find which task's
+            commits the failure belongs to and stay inside the scope that
+            task's `brief.md` agreed. A failure that only appears with two
+            tasks' changes together is the train's to fix, and a fix here is
+            the right place for it. If the check is red for a reason that
+            predates this branch, say so plainly and fix only what this branch
+            broke.
+          - If this repair changed what a task's change does, say so in the
+            commit message — it lands in the pull request's history — and
+            update the affected page under `docs/` if it changed a documented
+            claim. A documentation audit already ran on each
+            task's code, so anything you make stale here is stale for good.
+
+          **Commit your fix, and do not push.** The next pass force-pushes what
+          you committed under a lease it takes itself; pushing from here breaks
+          that lease and stops the run.
+        # Asserts the repair is a committed, self-consistent branch the next
+        # pass can rebase and push: nothing staged or dirty, at least one commit that is not on the remote yet
+        # — which is what says a repair actually happened — and the local legs
+        # green. The local legs are not the checks that failed and cannot be;
+        # what they are is the cheapest way to stop a pass from spending an hour
+        # of CI on a branch that does not build.
+        check: >
+          git diff --quiet &&
+          git diff --cached --quiet &&
+          test "$(git rev-list --count origin/{{.Task.BranchName}}..HEAD)" -gt 0 &&
+          go run mage.go test &&
+          go run mage.go lint
+        check_timeout: 25m
+
+  - id: merged
+    name: Confirm the merge
+    type: command
+    shell: sh
+    timeout: 3m
+    max_retries: 0
+    # The postcondition, and it sits outside the loop for the reason
+    # `train-final` sits outside `train-verify`: a loop that runs out of passes
+    # **succeeds** (§7.8), so the loop cannot be its own assertion. This is.
+    #
+    # It asks two things, because MERGED alone does not say *what* was merged —
+    # the head is asserted against `head.sha`, so the run ends having confirmed
+    # that the commit whose checks it waited for is the commit that landed.
+    # `merge-probe` already waited for the state to settle, so this reads once
+    # rather than polling.
+    #
+    # Only after that does it remove the delivery records of the tasks it
+    # landed — a record is a claim that a branch is ready to land, and once it
+    # has landed the claim is spent. A run that fails before here leaves every
+    # record, and the scratch directory, in place for a retry or a person.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      s=$(git rev-parse --git-path vincent-iterate)
+      common=$(git rev-parse --path-format=absolute --git-common-dir)
+
+      url=$(cat "$s/url.txt")
+      head=$(cat "$s/head.sha")
+      short=$(printf '%s' "$head" | cut -c1-7)
+
+      say "confirming the merge landed at $short"
+
+      # A failed read is not a state: an unreadable answer is reported as one
+      # below rather than being mistaken for MERGED.
+      if ! gh pr view "$url" --json state,mergedAt,mergeCommit,headRefOid,url \
+        > "$s/merged.json" 2>/dev/null; then
+        printf '%s\n' '{"state":"","mergedAt":null,"mergeCommit":null,"headRefOid":"","url":""}' \
+          > "$s/merged.json"
+      fi
+
+      jq -r '"state:   \(.state)\nmerged:  \(.mergedAt)\nhead:    \(.headRefOid)\ncommit:  \(.mergeCommit.oid)\npr:      \(.url)"' \
+        "$s/merged.json"
+
+      state=$(jq -r .state "$s/merged.json")
+      if [ "$state" != "MERGED" ]; then
+        say "every merge pass is spent and the PR is ${state:-unreadable}"
+        echo "the pull request is ${state:-unreadable}, not MERGED, after every merge pass." >&2
+        echo "read the last 'wait-checks', 'merge-ready' and 'merge-probe' runs in this task's" >&2
+        echo "transcript for what stopped it. the train is pushed, the pull request is open," >&2
+        echo "and the delivery records are left in place." >&2
+        exit 1
+      fi
+
+      oid=$(jq -r .headRefOid "$s/merged.json")
+      if [ "$oid" != "$head" ]; then
+        say "merged at $(printf '%s' "$oid" | cut -c1-7), not the verified commit $short"
+        echo "the pull request merged at $oid, not at the verified commit $head." >&2
+        echo "the delivery records are left in place." >&2
+        exit 1
+      fi
+      commit=$(jq -r '.mergeCommit.oid // "unknown"' "$s/merged.json" | cut -c1-7)
+
+      echo
+      echo "landed:"
+      while IFS="$(printf '\t')" read -r id issue branch dhead; do
+        [ -n "$id" ] || continue
+        echo "  task $id  #$issue  $branch"
+        rm -rf "$common/vincent-delivered/$id"
+      done < "$s/train.tsv"
+      if [ -s "$s/left-out.txt" ]; then
+        echo
+        echo "not in this train (still on the board, still yours):"
+        cat "$s/left-out.txt"
+      fi
+
+      n=$(cat "$s/delivered")
+      rm -rf "$s"
+      # The last word of the whole run, and the one the board keeps.
+      say "merged $n issue branch(es) at $short as $commit"
