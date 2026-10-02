@@ -151,6 +151,11 @@ same key returns the original task or issue instead of creating a second one. A
 tool call has no header surface, so it is an argument. An issue a step files
 records that step's task as its author.
 
+`task_create`'s body takes `issue_id` to create the task from a vincent issue
+and link the two; `task_list`'s `query` takes `issue_id` to list the tasks
+created from one; and `issue_get`'s `query` takes `workflow` to preview what
+that create would prefill.
+
 Errors come back as the API's own envelope, so a `409` still carries
 `details.state` and you can branch on it rather than reading prose. One result is
 capped at 256 KiB, with a note saying so — page with the route's own

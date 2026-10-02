@@ -1,6 +1,6 @@
 # 130 — The issues pillar: vincent-owned issues per project
 
-**Status:** 🔄 in progress (4/18)
+**Status:** 🔄 in progress (6/18)
 
 Issue [#659](https://github.com/lezli01/vincent/issues/659), part of
 [#658](https://github.com/lezli01/vincent/issues/658). Spec §3 (rows 11, 26
@@ -138,6 +138,17 @@ templates render.
   of spec §3 row 26 ("never re-fetched") is **kept for the snapshot**; it is
   superseded only for the issue entity, which sync re-reads (decision 9).
   Whether a follow-up run may refresh its snapshot is open question 5.
+
+*Settled with 130.7 (2026-10-02), by the author:*
+
+- **A closed issue may back a new task.** `issue_id` naming a closed issue
+  creates the task and adds a line to the create response's `warnings` rather
+  than refusing it: one issue backs many tasks, and follow-up work on a closed
+  issue is legitimate.
+- **The chat handoff carries `issue_id`.** It goes through the shared
+  `prepareTaskCreate`, so a handed-off task is linked and snapshotted exactly
+  like a direct create, and a closed issue's warning lands in the handoff
+  response's `warnings` too.
 
 ### 6. Delete in any state; no archive (2026-10-02)
 
@@ -443,9 +454,10 @@ its own pull request.
   issue state writes in `internal/github`. Depends: 130.2. ✓ 2026-10-02
 - [ ] **130.6** ([#665](https://github.com/lezli01/vincent/issues/665)) The
   `vincent issue …` CLI tree. Depends: 130.3.
-- [ ] **130.7** ([#666](https://github.com/lezli01/vincent/issues/666))
+- [x] **130.7** ([#666](https://github.com/lezli01/vincent/issues/666))
   `issue_id` on task create, the prefill preview, `?issue_id=` filter, the task
   DTO link, `Closes #N`, `vincent task add --issue`. Depends: 130.3, 130.4.
+  ✓ 2026-10-02
 - [ ] **130.8** ([#667](https://github.com/lezli01/vincent/issues/667)) Import
   and refresh on the reconciler tick, sync status, config and doctor text.
   Amends spec §12.3's "no call until a human opens the issue picker"

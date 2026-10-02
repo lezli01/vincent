@@ -889,8 +889,9 @@ listing, which is what lets a task still name a pull request that has since
 
 For a task with no link, the response carries `compare_url` instead: GitHub's
 own "open a pull request" page for the task's branch, prefilled with the task's
-title and description plus `Closes #N` when the task carries an issue snapshot
-from the same repository. It is **built, never fetched** — producing it makes no
+title and description plus `Closes #N` when the task was created from a GitHub
+issue in the same repository — an [imported issue](#creating-a-task-from-an-issue)
+or `github_issue`. A local issue adds nothing. It is **built, never fetched** — producing it makes no
 request to GitHub — and it is the fallback behind
 `POST /v1/tasks/{id}/github/pull/create` below.
 
@@ -1578,8 +1579,8 @@ time.
 
 | Method | Path | Notes |
 |---|---|---|
-| `GET` | `/v1/tasks?project_id=&state=&archived=&archived_before=&archived_since=&limit=&offset=&parent_id=&include_children=` | List. Fan-out lanes are **excluded** by default — `parent_id` lists one parent's lanes in merge order, `include_children=true` the flat everything |
-| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, existing_branch?, priority?, agent?, model?, effort?, github_issue?, github_pull?, paused?, restricted?, max_task_cost_usd? }` — `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head. `existing_branch` runs the task on a branch that already exists — see [Running on an existing branch](#running-on-an-existing-branch). `paused`, `restricted` and `max_task_cost_usd` are the [create-time limits](#paused-restricted-and-capped-tasks). Accepts an optional `Idempotency-Key` header |
+| `GET` | `/v1/tasks?project_id=&state=&archived=&archived_before=&archived_since=&limit=&offset=&parent_id=&include_children=&issue_id=` | List. Fan-out lanes are **excluded** by default — `parent_id` lists one parent's lanes in merge order, `include_children=true` the flat everything. `issue_id` lists the tasks created from one [issue](#creating-a-task-from-an-issue) |
+| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, existing_branch?, priority?, agent?, model?, effort?, github_issue?, github_pull?, issue_id?, paused?, restricted?, max_task_cost_usd? }` — `issue_id` creates the task [from an issue](#creating-a-task-from-an-issue). `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head. `existing_branch` runs the task on a branch that already exists — see [Running on an existing branch](#running-on-an-existing-branch). `paused`, `restricted` and `max_task_cost_usd` are the [create-time limits](#paused-restricted-and-capped-tasks). Accepts an optional `Idempotency-Key` header |
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
 | `DELETE` | `/v1/tasks/{id}` | Permanent delete of an **archived** task. `?delete_branch=true` (or `{ "delete_branch": true }`) → `{ deleted: true, branch? }`. See [Permanent delete](#permanent-delete) |
@@ -1842,8 +1843,8 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/tasks" \
 
 The body is compared by a digest of the decoded request, so reformatting your
 JSON or reordering its keys between the two sends is not a difference. It is
-taken before the `github_issue` prefill runs, so an issue edited in between does
-not turn a genuine retry into a conflict. `paused`, `restricted` and
+taken before the `github_issue` or `issue_id` prefill runs, so an issue edited in
+between does not turn a genuine retry into a conflict. `paused`, `restricted` and
 `max_task_cost_usd` are part of it — the same key with a different value for any
 of them is `idempotency_key_reused` — and a body that names none of them
 digests exactly as it did before they existed.
@@ -2384,7 +2385,10 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
   state; `tasks.count` and `tasks.active_ids` over the root tasks created from
   the issue (fan-out lanes never count); `editable`, the fields a `PATCH` may
   touch; and `source` — `{ provider, repo, number, url, remote_state }` for an
-  imported issue, `null` for a local one.
+  imported issue, `null` for a local one. `?workflow=NAME` adds `prefill:
+  { title, description, fields }`, what
+  [creating a task from the issue](#creating-a-task-from-an-issue) with that
+  workflow would fill in; an unknown workflow is `400`.
 - **Patch** takes `{ version, title?, body?, labels?, add_labels?,
   remove_labels?, kind?, priority? }`. `version` is required — send the one you
   read. `labels` replaces the set and cannot be combined with `add_labels` or
@@ -2409,6 +2413,39 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
 | `issue_changed` | `PATCH` with a stale `version` | `reason`, and `issue`: the issue as it is now — re-apply your edit to it and send its `version` |
 | `issue_mirrored` | `PATCH` touching an imported issue's `title`, `body` or labels, which mirror GitHub. `kind` and `priority` stay editable | `reason` |
 | — | `close` on a closed issue, `reopen` on an open one | `state` |
+
+### Creating a task from an issue
+
+`issue_id` on [`POST /v1/tasks`](#tasks) creates a task from an issue and links
+the two:
+
+```sh
+curl -sS -X POST "http://127.0.0.1:$PORT/v1/tasks" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"project_id":1,"workflow":"fix-issue","issue_id":7}'
+```
+
+The daemon freezes the issue onto the task as a snapshot — what
+[`.Issue`](workflow-schema.md#template-context) renders — and prefills `title`,
+`description` and declared fields from it, on the same rules as `github_issue`:
+anything you send explicitly wins, by presence for `fields` and `description`,
+and a blank or absent `title` takes the issue's. `GET /v1/issues/{id}?workflow=`
+previews exactly that prefill. No GitHub call is made, even for an imported
+issue.
+
+- An unknown `issue_id`, an issue in another project, and `issue_id` beside
+  `github_pull` or `github_issue` are `400 validation_failed` and create nothing.
+- A **closed** issue still creates the task — follow-up work on a closed issue
+  is legitimate — and `warnings` says the issue is closed.
+- Every task representation carries `issue: { id, title, state, source? }`:
+  the issue as it is now, or the snapshot once the issue has been deleted.
+  `null` for a task created without one.
+- For an issue imported from GitHub, `github_issue` is filled in from the
+  snapshot, so a consumer reading `.github_issue.number` keeps working, and
+  the task's [`compare_url`](#github-pull-requests) carries `Closes #N` for an
+  issue in the same repository.
+- `GET /v1/tasks?issue_id=N` lists the issue's tasks — the root tasks its
+  `tasks.count` counts; fan-out lanes inherit the link but are not listed.
 
 ## Chats
 
@@ -2472,7 +2509,9 @@ It answers `201 { "task": {...}, "chat": {...} }`: the task carries
 `source_chat_id`, and the chat comes back `handed_off` with `handoff_task_id`
 set and its `worktree_path` cleared — the claim moved, in one transaction with
 the task row, the link, both durable events (`task.created` and
-`chat.handed_off`) and the transition.
+`chat.handed_off`) and the transition. That includes `issue_id`: the handed-off
+task is [linked to the issue](#creating-a-task-from-an-issue) exactly as a
+direct create is, and a closed issue's warning lands in the task's `warnings`.
 
 Everything is validated before anything is written, so a refusal leaves the
 chat exactly as it was: `400` when the task does not validate, `409` when the

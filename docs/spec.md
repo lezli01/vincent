@@ -401,7 +401,7 @@ A unit of work delivered by running a workflow against a project.
 | `pending_follow_up` | *Added 2026-08-25 (task 027).* The follow-up run a human asked for from `done` or `aborted` (§6): its compiled workflow, the run form and text it came from, the optional agent/model/effort, the **origin state** the task is returned to, the 1-based **round**, and the run's own **step cursor**. NULL when no follow-up is in flight. *Amended 2026-09-14 (task 027 decision 14):* also the round's own **fields** when they differ from the task's — the request's values laid over the task's, with a named workflow's required defaults applied (§8.1.2) — which that round renders in place of the task row's |
 | `workflow_origin` | *Added 2026-08-28 (task 043).* Where the definition behind `workflow_name` came from, captured **once at creation** beside `workflow_snapshot`. It holds the **scope** that won §5.2's shadowing walk (`builtin`, `global`, `project`, or `derived`), the source **file relative to that scope's root** (`.vincent/workflows/adhoc.yaml`, `workflows/release.yaml`; absent for a built-in, which has none), and a **digest** — `sha256:<hex>` over the registry entry's source bytes exactly as loaded, with no normalization. It is **never recomputed**, so it identifies the *file version the task was created from* rather than the bytes the engine runs: include expansion (§7.9), fan-out resolution (§7.6) and `edit + retry` all rewrite `workflow_snapshot` afterwards, and `edit + retry` is separately audited through `step_runs.prompt_override` / `run_override`. A `fan_out` lane records `derived` naming its parent task (§7.6): its steps come from the parent's snapshot, resolved at the *parent's* creation, so it never read a registry at all. NULL for a task created before this was recorded, which is reported as `unknown` — never re-derived from today's registry, which would report a substitution as though it had always been there |
 | `github_issue` | *Added 2026-08-26 (task 035).* The GitHub issue this task was created from, captured **once at creation** and NULL for every task created without one. It holds the normalized issue — repo, number, title, body, url, state, labels, author, assignee, milestone (title and number), the issue's own timestamps and the instant it was fetched — and it is **never re-fetched**: every step renders `.Issue` (§8.4) from this snapshot, so an issue edited on GitHub afterwards is deliberately not reflected. That is the reasoning `workflow_snapshot` already rests on: a run is reproducible, no network call enters the step path, and a step render still cannot fail for an external reason. A `fan_out` lane inherits its parent's copy verbatim (§7.6) |
-| `issue_id`, `issue` | *Added 2026-10-02 (task 130.1, issue #660, migration 0036).* The vincent issue (§5.6) this task was created from, as **a pointer and a snapshot** (task 130 decision 5). `issue_id` is the authoritative edge to `issues.id`, read backwards to answer which tasks came from an issue and whether it is being worked on; it is `ON DELETE SET NULL`, so a task outlives its issue. `issue` (`issue_json`) is that issue frozen at creation — id, title, state, kind, priority, labels, url — never re-fetched, and it survives the issue's deletion, for `github_issue`'s reasons. Both are written in the insert transaction, `task.created` carries `issue_id` when it is set (§13.3), and a `fan_out` lane inherits copies of both (§7.6) — though only a root task counts toward its issue's activity. No create surface sets them yet (task 130.3). *Amended 2026-10-02 (task 130.4, issue #663):* the snapshot widens to body, close reason, author, a `remote` reference (provider, repo, number, url, state, assignees, milestone and its number — nil for a local issue and for a tombstoned remote row) and `captured_at`, every new key optional in the same column, so it needs no migration. `store.NewIssueSnapshot` builds it from the stored issue and its `issue_remotes` row with no provider call; it is what `.Issue` renders (§8.4) and what the vincent-issue prefill reads (`internal/issues`, task 130 decision 7) |
+| `issue_id`, `issue` | *Added 2026-10-02 (task 130.1, issue #660, migration 0036).* The vincent issue (§5.6) this task was created from, as **a pointer and a snapshot** (task 130 decision 5). `issue_id` is the authoritative edge to `issues.id`, read backwards to answer which tasks came from an issue and whether it is being worked on; it is `ON DELETE SET NULL`, so a task outlives its issue. `issue` (`issue_json`) is that issue frozen at creation — id, title, state, kind, priority, labels, url — never re-fetched, and it survives the issue's deletion, for `github_issue`'s reasons. Both are written in the insert transaction, `task.created` carries `issue_id` when it is set (§13.3), and a `fan_out` lane inherits copies of both (§7.6) — though only a root task counts toward its issue's activity. No create surface sets them yet (task 130.3). *Amended 2026-10-02 (task 130.4, issue #663):* the snapshot widens to body, close reason, author, a `remote` reference (provider, repo, number, url, state, assignees, milestone and its number — nil for a local issue and for a tombstoned remote row) and `captured_at`, every new key optional in the same column, so it needs no migration. `store.NewIssueSnapshot` builds it from the stored issue and its `issue_remotes` row with no provider call; it is what `.Issue` renders (§8.4) and what the vincent-issue prefill reads (`internal/issues`, task 130 decision 7). *Amended 2026-10-02 (task 130.7, issue #666):* `POST /v1/tasks` and the chat handoff set both from `issue_id` (§13.2). Every task representation carries `issue: { id, title, state, source? }` — read from the live issue while `issue_id` holds and from this snapshot once the issue is deleted — and derives `github_issue` from the snapshot's `remote` when its provider is `github`, so a consumer reading `.github_issue.number` keeps working; a local issue derives no `github_issue`, and a legacy row keeps serving its own `github_issue_json`. `Closes #N` in a task's compare URL (§13.2) takes the snapshot's GitHub reference first and the legacy snapshot second, under the unchanged same-repository rule |
 | `github_pull` | *Added 2026-08-29 (task 052).* The pull request this task is linked to (`github_pull_json`, migration 0018); NULL for a task no pull request has ever matched. Unlike `github_issue` it is a **pointer, not a snapshot** — repo, number, `source` (`auto` when the reconciler (§12.3) matched an open pull request's head branch to this task's `branch_name`, `human` when a person said so), `suppressed` (the sticky record of a human unlink, which is why the column needs three states and not two), and `linked_at`. Nothing renderable is stored: title, state, draft and merged status are re-read on every request (§13.2), because they are live by nature and a stored copy of them would read exactly like a current one while being wrong. Deliberately **not** folded into `github_issue_json`, which is defined as "NULL = no linked issue" holding a bare issue. *Amended 2026-08-30 (task 064):* the envelope gains `branch` — this task's `branch_name` **is** the pull request's head branch, because the task was created from it — and `fork`, meaning that head lives in another repository so the branch carries no upstream and nothing can push back. Both are read by admission (§10), by archive (§10, which then touches neither branch leg) and by the retry guard (§18); neither is renderable, so the pointer-not-snapshot rule is untouched. A JSON shape change, not a migration |
 
 
@@ -1196,6 +1196,16 @@ There is no archive. An issue is **deleted** from any state (decision 6): its
 labels and comments go with it, its tasks keep running with `issue_id` NULL and
 their snapshots intact, and an imported issue's remote row stays behind as a
 **tombstone** so the next import does not bring it back.
+
+*Added 2026-10-02 (task 130.7, issue #666):* **the task link.** A task is
+created from an issue with `issue_id` on `POST /v1/tasks`, on the chat
+handoff, or with `vincent task add --issue` (§13.2). Creation writes the
+pointer and the snapshot (§5.3) in the insert transaction and prefills the
+task from the snapshot; a closed issue may still back a new task, with a
+warning rather than a refusal, because follow-up work on closed issues is
+legitimate. `GET /v1/tasks?issue_id=` lists the root tasks `task_count`
+counts, and every task representation carries the linked issue as `issue`.
+Nothing about the issue's own state changes when its tasks do.
 
 Input rules — a title of at most 1 KiB, label names of at most 64 bytes, a kind
 of at most 32, a priority of 0–4, a non-empty comment — belong to
@@ -8095,7 +8105,10 @@ operations that reach the same end state when re-sent.
   — not over the bytes as they arrived — so whitespace and JSON key order
   cannot manufacture a conflict. It is taken **before** the `github_issue`
   prefill mutates the request, so an issue edited between two identical sends
-  cannot either.
+  cannot either. *Amended 2026-10-02 (task 130.7, issue #666):* the same holds
+  for `issue_id` — the digest covers the id as sent, before the issue is
+  loaded or its prefill folded in — and the field is `omitempty`, so a body
+  without it digests exactly as before.
 - **Same key, same digest** replays: `201` carrying the task the first request
   created. The stored row is a *reference*, not a recorded response body, and
   the replay renders the task **as it is now** — so a task the scheduler has
@@ -8564,7 +8577,14 @@ GET    /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* The row
                                         state), `tasks: { count, active_ids }` over the root
                                         tasks only, and `editable`, the fields a PATCH may touch.
                                         `source` is { provider, repo, number, url, remote_state }
-                                        for an imported issue and `null` for a local one
+                                        for an imported issue and `null` for a local one.
+                                        *Amended 2026-10-02 (task 130.7, issue #666):*
+                                        `?workflow=W` adds `prefill: { title, description,
+                                        fields }`, what `POST /v1/tasks` with this `issue_id`
+                                        and workflow would fill in, computed by the function the
+                                        create runs. Without `workflow` there is no `prefill`;
+                                        a workflow the project cannot resolve is a 400, as on
+                                        the GitHub issues listing
 PATCH  /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* { version, title?, body?,
                                         labels? | add_labels?, remove_labels?, kind?, priority? }.
                                         `version` is required (§13.1); an empty patch, `labels`
@@ -8713,6 +8733,10 @@ POST   /v1/chats/{id}/handoff           *Added 2026-09-01 (task 074, issue #288)
                                         is `409 chat_linked_to_task` naming the task, replacing
                                         the "nothing to hand over" its empty `worktree_path`
                                         would otherwise produce
+                                        *Amended 2026-10-02 (task 130.7, issue #666):* that
+                                        includes `issue_id`: the handed-off task is linked and
+                                        snapshotted exactly like a direct create, and a closed
+                                        issue's line lands in the task's `warnings[]`
 POST   /v1/chats/{id}/close             *Added 2026-09-17 (task 119, issue #472).* Ends a chat
                                         linked to a task: a live turn is cancelled and waited
                                         for, then `idle → closed` (§5.5) and the task's lock
@@ -8975,7 +8999,13 @@ POST   /v1/resolve                      { workflow, project_id?, agent?, model?,
                                         precedence.
 
 GET    /v1/tasks?project_id=&state=&archived=&archived_before=&archived_since=&limit=&offset=
-                &parent_id=&include_children=
+                &parent_id=&include_children=&issue_id=
+                                        *Amended 2026-10-02 (task 130.7, issue #666):*
+                                        `issue_id` lists the tasks created from one issue
+                                        (§5.6). Lanes inherit the link but stay excluded by the
+                                        default below, so the answer is the issue's root tasks —
+                                        the same ones its `tasks.count` counts. A value that is
+                                        not a positive integer is a 400
                                         *Amended 2026-09-09 (task 092, issue #350).*
                                         archived_before and archived_since are RFC3339 instants
                                         over `archived_at`; anything unparseable is a 400
@@ -9126,6 +9156,25 @@ POST   /v1/tasks                        { project_id, workflow, title, descripti
                                         (§5.3): archive will never delete that branch, and
                                         a task whose `worktree_path` is the project path
                                         is running in the human's own checkout
+                                        *Added 2026-10-02 (task 130.7, issue #666):* `issue_id`
+                                        creates the task **from a vincent issue** (§5.6). The
+                                        daemon loads the issue, freezes it as the task's `issue`
+                                        snapshot, writes `issue_id` and the snapshot in the
+                                        insert transaction, and folds the vincent-issue prefill
+                                        into the request exactly as github_issue's — explicit
+                                        values win, by presence for `fields` and `description`
+                                        and by blank-or-absent for `title`, which becomes
+                                        optional. The prefill reads only the snapshot, so no
+                                        provider call is made even for an imported issue. An
+                                        unknown id, an issue in another project, and
+                                        `issue_id` beside `github_pull` or (until task 130.11)
+                                        `github_issue` are each a **400** naming `issue_id`,
+                                        and create nothing. A **closed** issue is not refused —
+                                        one issue backs many tasks, and follow-up work on a
+                                        closed one is legitimate — and adds a line to
+                                        `warnings[]` instead. It enters the idempotency digest
+                                        only when present. `github_issue_json` is never
+                                        written for such a task
 GET    /v1/tasks/{id}                   full task incl. step runs summary and pending_input (§7.4).
                                         Every task representation carries `available_actions`
                                         (the §6 human actions valid right now) and

@@ -13,6 +13,17 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Create a task from a vincent issue.** `POST /v1/tasks` takes `issue_id`,
+  and `vincent task add --issue ID` sends it: the task is linked to the issue,
+  snapshots it, and is prefilled from it — title, description and declared
+  fields, with every explicit value winning — without a GitHub call, even for
+  an imported issue. `GET /v1/issues/{id}?workflow=NAME` previews that
+  prefill, `GET /v1/tasks?issue_id=N` lists the issue's tasks, and every task
+  carries `issue: { id, title, state, source? }`. A task from an issue
+  imported from GitHub serves `github_issue` derived from it and gets
+  `Closes #N` in its compare URL. A closed issue still creates the task, with a
+  warning, and the chat handoff accepts `issue_id` too.
+  ([#666](https://github.com/lezli01/vincent/issues/666))
 - **The issue entity, the foundation of vincent-owned issues.** The daemon's
   database gains per-project issues — title, Markdown body, `open`/`closed`
   with a close reason, labels from a case-insensitive per-project catalogue, a

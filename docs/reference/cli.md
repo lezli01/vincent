@@ -545,7 +545,7 @@ whatever wraps this.
 ### `vincent task add`
 
 ```sh
-vincent task add --project ID (--title TITLE | --github-issue N | --github-pull N)
+vincent task add --project ID (--title TITLE | --issue ID | --github-issue N | --github-pull N)
                  [--workflow NAME] [--description TEXT] [--base-branch BRANCH]
                  [--branch NAME] [--existing-branch] [--priority N] [--agent NAME] [--model M]
                  [--effort E] [--field NAME=VALUE]... [--fields-file PATH]
@@ -560,7 +560,7 @@ is no separate draft state.
 | Flag | Notes |
 |---|---|
 | `--project` | **Required** |
-| `--title` | Required unless `--github-issue` or `--github-pull` supplies one; also the source of the branch slug |
+| `--title` | Required unless `--issue`, `--github-issue` or `--github-pull` supplies one; also the source of the branch slug |
 | `--workflow` | Defaults to the project's default workflow |
 | `--base-branch` | What the task branches **from**. Defaults to the project's default branch |
 | `--branch` | What the task's branch is **called**. Used verbatim and wins over any template; defaults to the project's or the global [`branch_template`](configuration.md#branch_template) |
@@ -569,6 +569,7 @@ is no separate draft state.
 | `--field name=value` | Task field; repeat for more. Everything after the first `=` is the value, and a repeated name uses the last value |
 | `--fields-file PATH` | Read fields from a JSON object of string values; `-` reads it from stdin. Combines with `--field`, which wins for a name both supply |
 | `--agent` / `--model` / `--effort` | The task-level override. It replaces workflow `defaults`, never an explicit step field |
+| `--issue ID` | Create the task from vincent issue `ID` and link the two. Cannot be combined with `--github-issue` or `--github-pull`. See below |
 | `--github-issue N` | Create the task from GitHub issue `N`. See below |
 | `--github-pull N` | Create the task from GitHub pull request `N`, **running it on that pull request's head branch**. See below |
 | `--paused` | Create the task paused; it starts only when resumed (`vincent task resume`). The scheduler never sees it before then |
@@ -647,6 +648,26 @@ leaking a claude alias onto a codex step.
 A value no catalog knows is accepted with a warning on stderr (the CLI is the
 final authority); a value belonging to a *different* adapter's catalog is
 rejected with exit 1.
+
+#### From an issue
+
+```sh
+vincent task add --project 1 --issue 7
+```
+
+```
+task 62 created: Crash on cold start (adhoc, branch vincent/62-crash-on-cold-start)
+  from issue 7: Crash on cold start
+```
+
+The flag carries the issue **id and nothing else**; the daemon fills in the
+title, the description and the workflow's declared fields from the issue, and
+links the task to it, so the issue's task count and
+[`GET /v1/tasks?issue_id=`](api.md#creating-a-task-from-an-issue) include it. An issue imported from GitHub is named with its source, `from issue 7
+(octo/repo#200): …`, and no GitHub call is made. Every explicit flag wins, as
+for `--github-issue` below. A closed issue still creates the task, with a
+warning on stderr. `--issue` cannot be combined with `--github-issue` or
+`--github-pull`: each would prefill the same title and description.
 
 #### From a GitHub issue
 
