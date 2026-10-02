@@ -26,6 +26,17 @@ list with the user-facing context a commit subject cannot carry.
   (migration 0036). Importing a task from a backup drops its issue link unless that
   issue exists in the target project, keeping the snapshot.
   ([#660](https://github.com/lezli01/vincent/issues/660))
+- **`.Issue.Source` and a `github_issue` field.** `.Issue` gains `Source` —
+  the `Provider`, `Repo`, `Number`, `URL` and `State` of an issue imported
+  from GitHub — plus `Kind` and `Priority`. Once tasks can be created from
+  vincent issues, `.Issue.Number` and a declared `issue` field carry the
+  vincent issue id, so a workflow that hands a number to `gh` should read
+  `.Issue.Source.Number` or a declared `github_issue` field. Creating a task
+  with `--github-issue N` now fills a declared `github_issue` field as well as
+  `issue`, both with the GitHub number, and every existing template renders
+  exactly as before; `.Issue.Repo` and `.Issue.URL` are deprecated aliases of
+  `.Issue.Source.Repo` and `.Issue.Source.URL`.
+  ([#663](https://github.com/lezli01/vincent/issues/663))
 
 ## [0.11.0](https://github.com/lezli01/vincent/compare/v0.10.1...v0.11.0) (2026-10-01)
 

@@ -339,19 +339,26 @@ command timeout, independently of the main step timeout.
 | `.Workflow` | `Name`, `Description` |
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` |
 | `.Loop` | `Index`, `Item`, `IsFirst`, `IsLast` |
-| `.Issue` | `Number`, `Repo`, `Title`, `Body`, `URL`, `State`, `Labels`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber` |
+| `.Issue` | `Number`, `Title`, `Body`, `State`, `Labels`, `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, `Source` (`Provider`, `Repo`, `Number`, `URL`, `State`), and the deprecated `Repo`, `URL` |
 | `.Steps` | completed step ids → `Status`, `Result`, `ExitCode` |
 | `.Host` | `OS`, `Arch` |
 | `.Worktree` | `Path` |
 | `.LastFailure` | `Reason`, `Output` during retries |
 | `.Conflicts` | conflicted paths during an agent merge resolution |
 
-`.Issue` is the GitHub issue the task was created from. `.Issue.Number` is `0`
-when there is none — the same convention as `.Loop.Index` — so
-`{{ if .Issue.Number }}` lets one workflow serve linked and unlinked tasks.
-`Labels` is a list; everything else is a string. It is a snapshot taken at task
-creation and never re-read, so rendering it needs no network, and a fan-out lane
-inherits its parent's copy.
+`.Issue` is the issue the task was created from. `.Issue.Number` is the
+vincent issue id, and `0` when there is none — the same convention as
+`.Loop.Index` — so `{{ if .Issue.Number }}` lets one workflow serve linked and
+unlinked tasks. The GitHub reference of an imported issue is `.Issue.Source`
+(zero for a local issue): a template that passes a number to `gh` uses
+`.Issue.Source.Number`, or a declared `github_issue` field, never
+`.Issue.Number` or the `issue` field, which hold the vincent id. `.Issue.Repo`
+and `.Issue.URL` are deprecated aliases of `.Issue.Source.Repo`/`.URL`; a task
+created with `--github-issue N` renders the GitHub number as `.Issue.Number`.
+`Labels` is a list; the numbers are integers and everything else is a string.
+Numbers are safe to template into `run:`; titles and bodies are not. It is a
+snapshot taken at task creation and never re-read, so rendering it needs no
+network, and a fan-out lane inherits its parent's copy.
 
 Only completed steps are visible in `.Steps`. Parallel siblings are not
 visible to one another. Within a loop, later body steps see earlier steps from

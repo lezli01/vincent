@@ -765,14 +765,15 @@ daemon's own answer to "what would creating a task from this issue fill in":
 
 ```json
 { "prefill": { "title": "#200 …", "description": "…\n\nGitHub issue #200: https://…",
-               "fields": { "issue": "200", "labels": "enhancement" } } }
+               "fields": { "issue": "200", "github_issue": "200", "labels": "enhancement" } } }
 ```
 
 `title` is the issue title prefixed `#N`. `fields` holds only the declared
-fields named exactly `issue`, `labels`, `assignee` or `milestone` whose declared
-type and pattern accept the value — `issue` being the issue number, which is how
-a `command` step reads it, since step bodies see the environment rather than the
-template context.
+fields named exactly `issue`, `github_issue`, `labels`, `assignee` or
+`milestone` whose declared type and pattern accept the value. On this path
+`issue` and `github_issue` both carry the GitHub issue number; a workflow that
+hands the number to `gh` reads `github_issue`, because a task created from a
+vincent issue fills `issue` with the vincent issue id.
 
 `POST /v1/tasks` computes exactly the same prefill from the same code, so a
 preview a human accepted and a create call that names only the issue produce the

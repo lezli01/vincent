@@ -146,8 +146,10 @@ secret store, which §2 declines.
 > Task 130 decision 7 applies these rules to a vincent issue instead of a GitHub
 > issue, otherwise unchanged. Decision 8 there changes the 2026-08-27 note
 > below: a declared `issue` field holds the vincent issue id, and the GitHub
-> number moves to a declared `github_issue` field. In effect once task 130.4
-> lands.
+> number moves to a declared `github_issue` field. In effect since task 130.4
+> (2026-10-02): the mapping ships in `internal/issues`, and the legacy
+> `github_issue` create path fills **both** names with the GitHub number until
+> 130.11 removes it.
 
 - **Title** ← the issue title, truncated only by the same rules any typed title
   gets — which live in §13.1's bounds check, applied to the prefilled request so
@@ -188,6 +190,17 @@ field moves the contract to where §8.1.2 already validates it, and hands the
 title back to the humans. `.vincent/workflows/github-resolve-issue.yaml` is the
 first consumer: it declares `issue` `required: true` and its `fetch` step reads
 `{{ index .Task.Fields "issue" }}`.
+
+> **Corrected, 2026-10-02 — task 130.4.** The paragraph above is wrong about
+> `run:`: spec §8.3 renders `run` and `check` through §8.4's template context
+> like every other step string, so `{{ .Issue.Number }}` *is* readable from a
+> `run:` body. What holds is narrower — numbers are safe to template into a
+> shell line; free text (a title, a body) is not, because it is
+> attacker-controlled shell (§20). The field remains the right home for the
+> number for the other reason given: it is validated at creation. Since task
+> 130 decision 8 the GitHub number a `run:` hands to `gh` is the declared
+> `github_issue` field or `.Issue.Source.Number`, never `issue` or
+> `.Issue.Number`, which hold the vincent issue id.
 
 This does not weaken "undeclared names are never invented": a workflow that
 declares no `issue` field still gets none, and the number remains available to

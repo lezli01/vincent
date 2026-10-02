@@ -228,6 +228,29 @@ the snapshot from the task row, never the network. **Amends task 035 decision
 GitHub number; it now holds the vincent id, and the GitHub number moves to
 `github_issue`.
 
+*Settled with 130.4 (2026-10-02, issue #663):*
+
+1. **The `github_issue` create path stays legacy until 130.11 removes it.**
+   `POST /v1/tasks` `github_issue` and `vincent task add --github-issue` still
+   fetch from GitHub and still write only `tasks.github_issue_json`, never
+   `issue_id` or `issue_json`. Their prefill fills **both** a declared `issue`
+   and a declared `github_issue` field with the GitHub number, so a workflow
+   switched to `github_issue` keeps working through the window, and `.Issue`
+   on such a task follows the legacy mapping (`Number` is the GitHub number,
+   `Source` repeats it). `issue_id` on create stays in 130.7: the
+   snapshot-backed prefill ships as a tested library (`issues.PrefillFrom`,
+   wrapped by the API's `vincentIssuePrefill`) that 130.7 wires in, so "prefill
+   makes no GitHub call" is a property of that path, proved by its tests.
+2. **A local issue's prefilled title is its bare title.** A `#N` prefix would
+   read as a GitHub number. An imported issue keeps `#<GitHub number> title`,
+   never doubling a prefix the title already carries.
+3. **A local issue's prefilled description has no link line** — it is the
+   body, CRLF-normalized. An imported issue keeps body, blank line,
+   `GitHub issue #N: <url>`.
+4. **Oversized bodies still fail with 400 and are never truncated.** Both
+   paths fold through one bound re-check; the issue's "truncate with a
+   visible marker" proposal is dropped.
+
 ### 9. Sync: state two-way, content a read-only mirror, GitHub wins — departs from task 035 decision 6 (2026-10-02)
 
 For a GitHub-based project, open GitHub issues are imported into the project's
@@ -385,9 +408,9 @@ its own pull request.
 - [ ] **130.3** ([#662](https://github.com/lezli01/vincent/issues/662))
   `/v1/issues` routes, `issue.*` SSE events, apiclient, MCP tools, idempotent
   create. Depends: 130.1.
-- [ ] **130.4** ([#663](https://github.com/lezli01/vincent/issues/663)) Prefill
+- [x] **130.4** ([#663](https://github.com/lezli01/vincent/issues/663)) Prefill
   from a vincent issue, the `.Issue` reshape, snapshot build, legacy rendering,
-  skill and checklist lines. Depends: 130.1.
+  skill and checklist lines. Depends: 130.1. ✓ 2026-10-02
 - [x] **130.5** ([#664](https://github.com/lezli01/vincent/issues/664)) Durable
   issue listing (`node_id`, pagination, conditional requests, gone/moved) and
   issue state writes in `internal/github`. Depends: 130.2. ✓ 2026-10-02

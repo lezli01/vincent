@@ -503,7 +503,11 @@ steps:
          description becomes a declared field under fields:, with a type, a
          pattern where one exists, and a label where its name is a slug a
          person would not read easily. A workflow that digs an issue number out
-         of the task title reads .Issue instead.
+         of the task title reads .Issue instead — .Issue.Number is the vincent
+         issue id, .Issue.Source the GitHub reference of an imported one, and
+         .Issue.Repo/.Issue.URL deprecated aliases of .Issue.Source.Repo/URL.
+         A template that passes .Issue.Number or the issue field to GitHub
+         uses .Issue.Source.Number / the github_issue field.
       5. Closed sets and defaults. A field whose legal values are a fixed list
          is type: enum with values:, not a string with a pattern spelling the
          same alternation and not a set restated in prose — only a list can be

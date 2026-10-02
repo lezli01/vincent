@@ -1027,7 +1027,7 @@ starts.
 | `.Workflow` | `Name`, `Description` |
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
 | `.Loop` | `Index` (1-based iteration, **0** outside any loop), `Item`, `IsFirst`, `IsLast`. See [`type: loop`](#type-loop) |
-| `.Issue` | the GitHub issue the task was created from: `Number` (**0** when there is none), `Repo` (`owner/name`), `Title`, `Body`, `URL`, `State`, `Labels` (a list), `Author`, `Assignee`, `Milestone`, `MilestoneNumber`. See [`.Issue`](#issue) |
+| `.Issue` | the issue the task was created from: `Number` (the vincent issue id, **0** when there is none), `Title`, `Body`, `State`, `Labels` (a list), `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, `Source` (`Provider`, `Repo`, `Number`, `URL`, `State` of an imported issue; zero for a local one), and `Repo`/`URL`, deprecated aliases of `Source.Repo`/`Source.URL`. See [`.Issue`](#issue) |
 | `.Steps` | **completed** steps by id → `{Status, Result, ExitCode}`. `Status` is `succeeded`, `approved` (a passed gate), `skipped` (a false guard) or `failed` — the last only once the workflow has moved past it, which happens only under `allow_failure`. `interrupted` never appears |
 | `.Host` | `OS`, `Arch` — the machine the daemon runs on. This is the per-step platform gate: `{{ ne .Host.OS "windows" }}` |
 | `.Worktree` | `Path` |
@@ -1036,21 +1036,34 @@ starts.
 
 ### `.Issue`
 
-A task can be created from a GitHub issue — from the TUI's new-task form, or
-with `vincent task add --github-issue N`. When it was, `.Issue` carries that
-issue and a prompt can use it directly:
+A task can be created from an issue. Today that means a GitHub issue — from
+the TUI's new-task form, or with `vincent task add --github-issue N`. When it
+was, `.Issue` carries that issue and a prompt can use it directly:
 
 ```yaml
   - id: fix
     type: agent
     prompt: |
-      Fix GitHub issue #{{ .Issue.Number }} — {{ .Issue.Title }}
+      Fix GitHub issue #{{ .Issue.Source.Number }} — {{ .Issue.Title }}
 
       {{ .Issue.Body }}
 
       Labels:{{ range .Issue.Labels }} {{ . }}{{ end }}
-      Discussion: {{ .Issue.URL }}
+      Discussion: {{ .Issue.Source.URL }}
 ```
+
+`.Issue.Number` is the **vincent** issue id. The GitHub reference of an
+imported issue lives in `.Issue.Source` — `Provider` (`github`), `Repo`
+(`owner/name`), `Number`, `URL` and `State` — and is zero for an issue that
+was created in vincent. A template that hands a number to `gh` therefore reads
+`.Issue.Source.Number`, never `.Issue.Number`. `.Issue.Repo` and `.Issue.URL`
+are deprecated aliases of `.Issue.Source.Repo` and `.Issue.Source.URL`, kept so
+older templates keep rendering.
+
+A task created with `--github-issue N` carries the GitHub issue itself rather
+than a vincent issue. For such a task `.Issue.Number` is the GitHub number and
+`.Issue.Source` repeats it, so every template written before vincent had its
+own issues renders exactly as it did.
 
 `.Issue.Number` is **0** when no issue is linked, exactly the way `.Loop.Index`
 is 0 outside a loop, so one workflow serves both kinds of task:
@@ -1061,25 +1074,37 @@ is 0 outside a loop, so one workflow serves both kinds of task:
       {{ else }}{{ .Task.Description }}{{ end }}
 ```
 
-`Labels` is a real list, so `range` works on it. Everything else is a string.
+`Labels` is a real list, so `range` works on it. `Number`, `Priority`,
+`MilestoneNumber` and `Source.Number` are integers; everything else is a
+string.
 
 The issue is a **snapshot**, read once when the task was created. Nothing
-re-reads it, so editing the issue on GitHub afterwards does not change what a
-later step renders — and rendering never touches the network, which is why a
-step cannot fail here because GitHub is down. A [fan-out](#type-fan_out) lane
-inherits its parent's issue, the same way it inherits `.Task.Fields`.
+re-reads it, so editing the issue afterwards does not change what a later step
+renders — and rendering never touches the network, which is why a step cannot
+fail here because GitHub is down. A [fan-out](#type-fan_out) lane inherits its
+parent's issue, the same way it inherits `.Task.Fields`.
 
-Creating a task from an issue also prefills the task's title (`#N ` and the
-issue title), its description (the issue body plus a `GitHub issue #N: <url>`
-line) and any declared [`fields:`](#fields) named exactly `issue`, `labels`,
-`assignee` or `milestone`. All of that is editable before the task is created;
-`.Issue` is the untouched copy.
+Creating a task from an issue also prefills the task's title, its description
+and any declared [`fields:`](#fields) named exactly `issue`, `github_issue`,
+`labels`, `assignee`, `milestone` or `kind`. An issue imported from GitHub
+gives the title `#N ` and the issue title, and the description the issue body
+plus a `GitHub issue #N: <url>` line; an issue created in vincent gives its
+bare title and body (once tasks can be created from vincent issues). All of that is editable before the task is created;
+`.Issue` is the untouched copy. A body larger than the description limit fails
+the create rather than being cut short.
 
-A declared `issue` field carries the issue **number** — bare, without the `#`
-the title carries — and it is how a `command` step gets at it: step bodies see
-§8.5's environment, not this context, so `{{ index .Task.Fields "issue" }}` is
-the way into a `run:`. Declare it `integer` (or `number`, or `string`); a
-`boolean` `issue` is left empty like any other type mismatch.
+A declared `issue` field carries the vincent issue id, and a declared
+`github_issue` field the GitHub issue **number** — bare, without the `#` the
+title carries. Declare either `integer` (or `number`, or `string`); a
+`boolean` one is left empty like any other type mismatch. While
+`--github-issue N` remains, it fills **both** with the GitHub number, so a
+workflow that reads `github_issue` works for every task that has one.
+
+Numbers are safe to template into a `run:` body — `{{ .Issue.Source.Number }}`
+or `{{ index .Task.Fields "github_issue" }}` renders digits and nothing else.
+Free text is not: an issue title or body rendered into a shell line is
+attacker-controlled shell (spec §20), so a command step that needs it reads it
+from a file or through `gh`, never from the template.
 
 A task created from a **pull request**
 ([`--github-pull`](cli.md#creating-a-task-from-a-pull-request)) fills a declared
