@@ -1,6 +1,6 @@
 # 130 — The issues pillar: vincent-owned issues per project
 
-**Status:** 🔄 in progress (7/18)
+**Status:** 🔄 in progress (8/18)
 
 Issue [#659](https://github.com/lezli01/vincent/issues/659), part of
 [#658](https://github.com/lezli01/vincent/issues/658). Spec §3 (rows 11, 26
@@ -435,6 +435,28 @@ Kept, not relitigated: the mirrored-field refusal stays `issue_mirrored`
 question 3); the initial import is open issues only, 500 per pass, resumable
 (open question 4).
 
+### 16. 130.9: the TUI issue screens (2026-10-02)
+
+Settled with the author while scoping #668. Spec §15 views 12 and 13 record
+the screens.
+
+1. **The list is cross-project and grouped by project**, like the
+   pull-requests takeover; the headings are drawn, not rows. It is one
+   `GET /v1/issues`, not one call per project, so a load error is
+   screen-wide and view 7's per-project error band does not carry over. `/`
+   filters client-side on id, title, label, kind and project name.
+2. **`R` re-reads only.** It never requests a GitHub sync; that stays on the
+   reconciler tick and `vincent issue sync` (130.8). 130.9 does not depend on
+   130.8.
+3. **For now, the detail's linked tasks are the active ones**: `tasks.count`
+   and the tasks in `tasks.active_ids`, each fetched with `GetTask` and drawn
+   with its state glyph. `enter` opens one; the workspace's `esc` returns to
+   the issue. 130.13 widens this to every root task, newest first, once
+   `?issue_id=` exists.
+4. **A list row's linked-task summary is the count plus an active marker**,
+   from the list DTO's `task_count` and `active`. No worst live state, no
+   per-row task fetch.
+
 ## Open questions
 
 Each has a proposed default, which stands unless the author answers otherwise
@@ -501,9 +523,8 @@ its own pull request.
   Amends spec §12.3's "no call until a human opens the issue picker"
   (`docs/spec.md:7354-7360`), `internal/config/config.go:383-388` and
   `docs/reference/configuration.md` (decision 9). Depends: 130.1, 130.3, 130.5.
-  ✓ 2026-10-02 (decision 15)
-- [ ] **130.9** ([#668](https://github.com/lezli01/vincent/issues/668)) The TUI
-  Issues list and Issue detail. Depends: 130.3.
+- [x] **130.9** ([#668](https://github.com/lezli01/vincent/issues/668)) The TUI
+  Issues list and Issue detail. Depends: 130.3. ✓ 2026-10-02 (decision 16)
 - [ ] **130.10** ([#669](https://github.com/lezli01/vincent/issues/669)) The
   write-back outbox, its compare-and-set drain, and the guard refusing MCP- and
   step-originated writes (decision 10, open question 6). Depends: 130.8.
@@ -517,7 +538,9 @@ its own pull request.
   helper. Depends: 130.9.
 - [ ] **130.13** ([#672](https://github.com/lezli01/vincent/issues/672)) Seed a
   new task from an issue, delete the new-task form's issue picker, the task
-  workspace's Issue section. Depends: 130.9, 130.7.
+  workspace's Issue section. Depends: 130.9, 130.7. Also widens the issue
+  detail's linked tasks from the active ones to every root task, newest first,
+  over `?issue_id=` (decision 16.3).
 - [ ] **130.14** ([#673](https://github.com/lezli01/vincent/issues/673))
   `VINCENT_ISSUE_FILE`, and the repo's resolve workflows migrated onto it.
   Depends: 130.7, 130.6, 130.8.

@@ -12595,6 +12595,53 @@ stream for the live tail.
    The daemon view's config editor lists `triggers.enabled` with task 060's
    `dangerous` flag, so saving it asks first as well.
 
+12. **Issues.** *Added 2026-10-02 (task 130.9, issue #668).* A takeover
+   reached from the command palette with no key of its own (task 049), and
+   offered whether or not any project has a GitHub integration: issues are
+   vincent's own (§5.6), so the palette row is not gated on §13.2's probe.
+
+   The list is **cross-project and grouped by project**, like view 7; the
+   project headings are drawn, not rows. It comes from one `GET /v1/issues`,
+   so a load error is screen-wide — there is no per-project request that could
+   fail alone. `s` cycles the scope open → closed → all, sent as `state=`
+   (open by default). `/` filters client-side on id, title, label, kind and
+   project name. Each row shows the id, the state (with the close reason when
+   closed), the title, labels, kind, an `owner/repo#N` badge for an imported
+   issue, and the linked-task summary: `task_count` and a marker when `active`,
+   both from the list DTO — no per-row task fetch and no worst-state
+   computation. `enter` opens view 13 on the row; `o` opens an imported
+   issue's URL and, on a local one, says there is none. `R` **re-reads only**
+   and never requests a GitHub sync, which stays on the reconciler tick and
+   `vincent issue sync`. Any `issue.*` event and any task event re-lists,
+   debounced.
+
+13. **Issue detail.** *Added 2026-10-02 (task 130.9, issue #668).* One issue:
+   a header with state, id, title and source badge; the body; labels, kind,
+   priority (`0` none, `1` urgent … `4` low — the inverted scale of task 130
+   decision 4) and author; the linked tasks; and, for an imported issue, a
+   source section with its URL and `remote_state`. It renders whatever the
+   detail DTO carries, so the sync and write-back fields appear when 130.8 and
+   130.10 add them, and a sync error is shown in the reason vocabulary, never
+   as raw `gh` stderr.
+
+   The body renders as **Markdown** through the assistant-prose renderer, with
+   the session's rendered/raw toggle (`ctrl+o`, task 076 decision 2) and the
+   link picker (`ctrl+l`, task 112). This widens task 073 decision 5, which
+   admitted assistant prose alone (task 130 decision 12): an issue body is
+   prose a human wrote as Markdown. Everything else that decision keeps
+   literal stays literal.
+
+   The linked tasks are, **for now, the active ones**: the heading shows
+   `tasks.count`, and the list holds the tasks in `tasks.active_ids`, each
+   fetched with `GET /v1/tasks/{id}` and drawn with its state glyph. `enter`
+   opens one in the task workspace, whose `esc` returns to this issue rather
+   than to the board. Every root task, newest first, replaces this list once
+   `GET /v1/tasks?issue_id=` exists (130.7 / 130.13). The screen re-reads on
+   its own issue's `issue.*` events and on events of the tasks it lists;
+   `esc` returns to view 12 with the selection kept. `n`, `a`, `i` and `X`
+   are unbound on both screens until the issue writes (#671) and a task from
+   an issue (#672) land.
+
 ### Layout
 
 The list above is also the screen contract. View 1 is the board-only home

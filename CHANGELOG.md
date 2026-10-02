@@ -24,6 +24,16 @@ list with the user-facing context a commit subject cannot carry.
   `Closes #N` in its compare URL. A closed issue still creates the task, with a
   warning, and the chat handoff accepts `issue_id` too.
   ([#666](https://github.com/lezli01/vincent/issues/666))
+- **Issues in the TUI.** A new *issues* screen, from the command palette,
+  lists every project's issues — local and imported from GitHub — grouped by
+  project, with each one's state and close reason, labels, kind, source
+  (`owner/repo#N`) and how many tasks it started, marked while one is still
+  active. `s` cycles open, closed and all, `/` filters, `o` opens an imported
+  issue on GitHub, and `R` re-reads. `enter` opens the issue: its description
+  rendered as Markdown (`ctrl+o` shows the source, `ctrl+l` lists its links),
+  priority and author, its active tasks — `enter` opens one, and `esc` in that
+  task comes back to the issue — and where an imported issue came from. Both
+  screens update live. ([#668](https://github.com/lezli01/vincent/issues/668))
 - **The issue entity, the foundation of vincent-owned issues.** The daemon's
   database gains per-project issues — title, Markdown body, `open`/`closed`
   with a close reason, labels from a case-insensitive per-project catalogue, a

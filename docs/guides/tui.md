@@ -53,8 +53,9 @@ Overview, `1` Steps, `2` Task Details, `3` Output, `4` Diff, `5` Workflow,
 narrow terminal the second group's labels shorten first, then shrink to their
 digits; the first group is never shortened. `esc` returns to the board.
 
-New task, projects, workflows, chats, the two archived boards, daemon, and —
-for GitHub projects — pull requests are full-screen takeovers too. `esc`
+New task, projects, workflows, chats, the two archived boards, issues,
+triggers, daemon, and — for GitHub projects — pull requests are full-screen
+takeovers too. `esc`
 closes one layer at a time (popup → task/screen → selection → filter) and
 **never quits**.
 
@@ -1640,6 +1641,52 @@ whole pull-request history to answer it would be paid for by everyone. Acting on
 a merged pull request and redoing a reverted one are the cases the other two
 states exist for.
 
+### Issues
+
+Every project's issues — the ones filed in vincent and the ones imported from
+GitHub — on one screen, grouped by project. It is in the palette whether or not
+any project has a GitHub integration: issues are vincent's own. The listing
+starts open-only and `s` cycles it through closed and all.
+
+Each row carries the issue's id, its state (with the close reason once it is
+closed, such as `closed · not planned`), the title, its labels and kind,
+`owner/repo#N` when it was imported, and its tasks: how many it started, with a
+`●` while one of them is still unsettled. Any change to an issue or to a task
+re-lists the screen with no keypress.
+
+| Key | Does |
+|---|---|
+| `enter` | Open the selected issue |
+| `o` | Open an imported issue's page in a browser — a local issue has none, and says so |
+| `s` | Cycle the listing between open, closed and all |
+| `R` | Re-read the issues |
+| `↑`/`↓` | Move the selection |
+| `/` | Filter by id, title, label, kind or project |
+
+`R` only re-reads what vincent already holds. It never asks GitHub for
+anything: imported issues are refreshed on the daemon's reconciler tick.
+
+`enter` opens the **issue detail**: the state, id, title and source badge; the
+description, rendered as Markdown; the labels, kind, priority (`urgent`,
+`high`, `medium`, `low`, or `none`) and author; the tasks the issue started
+that are still active, each with its state glyph; and, for an imported issue,
+where it came from — the URL and the state GitHub last reported.
+
+| Key | Does |
+|---|---|
+| `enter` | Open the selected linked task's workspace — `esc` there comes back to the issue |
+| `o` | Open an imported issue's page in a browser |
+| `ctrl+o` | Show the description's original Markdown instead of the rendered view |
+| `ctrl+l` | List the links in the description — open one in a browser or copy it |
+| `R` | Re-read the issue |
+| `↑`/`↓` | Move the selection among the linked tasks |
+| `pgup`/`pgdown` | Scroll the page |
+
+`ctrl+o` is the same rendered/raw switch the Output tab and the chat use, so
+flipping it here flips it there too. `esc` goes back to the list, on the issue
+you opened. For now the detail lists only a task that is still running,
+waiting or blocked; the count beside the heading includes the finished ones.
+
 ### Workflows
 
 The merged registry with scope badges and validation status.
@@ -2763,6 +2810,10 @@ Global bindings — active whenever the focused surface is not capturing text:
 | `esc` | Close one layer: popup tab → popup → screen → selection → filter — never quits |
 | `q` | Quit the TUI (the daemon keeps running) |
 | `ctrl+c` | Quit |
+
+Every screen's own keys are tabulated in its section above — the
+[issues list and issue detail](#issues) included — and `?` lists them for the
+screen you are on.
 
 ## Rebinding keys
 
