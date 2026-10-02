@@ -10,8 +10,10 @@ import (
 
 // Markdown rendering for assistant prose (task 073, §15).
 //
-// Only assistant prose reaches this file: `agent.output` records in both
-// workspaces, and the chat's §17 retention fallback. Everything else the pane
+// Only assistant prose and issue bodies reach this file: `agent.output`
+// records in both workspaces, the chat's §17 retention fallback, and an
+// issue's description on the issue detail (task 130 decision 12, which widens
+// decision 5 to prose a human wrote as Markdown). Everything else the pane
 // renders — reasoning, tool calls, tool results, command output, errors,
 // vincent's own records — stays literal, because command output and tool
 // summaries routinely contain Markdown punctuation nobody meant as formatting

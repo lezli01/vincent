@@ -1137,6 +1137,117 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 		},
 	},
+	ctxIssues: {
+		"enter": func(t *testing.T) {
+			v := issuesFixture()
+			_, cmd := v.updateKey(registryKey(t, "enter"))
+			if cmd == nil {
+				t.Fatal("enter did not open the selected issue")
+			}
+			if msg, ok := cmd().(openIssueMsg); !ok || msg.id != 3 {
+				t.Fatalf("enter produced %#v, want openIssueMsg for #3", cmd())
+			}
+		},
+		"o": func(t *testing.T) {
+			opened := withFakeOpener(t, nil)
+			v := issuesFixture()
+			v.cursor = 2 // the imported one, under the web heading
+			if _, cmd := v.updateKey(registryKey(t, "o")); cmd != nil {
+				drain(cmd)
+			}
+			if len(*opened) != 1 {
+				t.Fatalf("o opened %v, want the imported issue's page", *opened)
+			}
+		},
+		"s": func(t *testing.T) {
+			v := issuesFixture()
+			if _, cmd := v.updateKey(registryKey(t, "s")); cmd == nil {
+				t.Fatal("s did not re-list with the new state")
+			}
+			if v.state != "closed" {
+				t.Fatalf("state = %q, want closed", v.state)
+			}
+		},
+		"R": func(t *testing.T) {
+			v := issuesFixture()
+			if _, cmd := v.updateKey(registryKey(t, "R")); cmd == nil {
+				t.Fatal("R did not re-list")
+			}
+		},
+		"down": func(t *testing.T) {
+			v := issuesFixture()
+			v.updateKey(registryKey(t, "down"))
+			if v.cursor != 1 {
+				t.Fatalf("down left the cursor at %d, want 1", v.cursor)
+			}
+		},
+		"/": func(t *testing.T) {
+			v := issuesFixture()
+			v.updateKey(registryKey(t, "/"))
+			if !v.filtering {
+				t.Fatal("/ did not open the filter")
+			}
+		},
+	},
+	ctxIssue: {
+		"enter": func(t *testing.T) {
+			v := issueFixture()
+			_, cmd := v.updateKey(registryKey(t, "enter"))
+			if cmd == nil {
+				t.Fatal("enter did not open the linked task")
+			}
+			if msg, ok := cmd().(selectTaskMsg); !ok || msg.id != 21 || msg.back != viewIssue {
+				t.Fatalf("enter produced %#v, want task #21 returning to the issue", cmd())
+			}
+		},
+		"o": func(t *testing.T) {
+			opened := withFakeOpener(t, nil)
+			v := issueFixture()
+			if _, cmd := v.updateKey(registryKey(t, "o")); cmd != nil {
+				drain(cmd)
+			}
+			if len(*opened) != 1 {
+				t.Fatalf("o opened %v, want the issue's page", *opened)
+			}
+		},
+		"ctrl+o": func(t *testing.T) {
+			v := issueFixture()
+			v.updateKey(registryKey(t, "ctrl+o"))
+			if !v.raw.get() {
+				t.Fatal("ctrl+o did not switch the description to raw")
+			}
+		},
+		"ctrl+l": func(t *testing.T) {
+			v := issueFixture()
+			_, cmd := v.updateKey(registryKey(t, "ctrl+l"))
+			if cmd == nil {
+				t.Fatal("ctrl+l did not raise the link picker")
+			}
+			if msg, ok := cmd().(openLinkPickerMsg); !ok || len(msg.items) != 1 {
+				t.Fatalf("ctrl+l produced %#v, want the description's one link", cmd())
+			}
+		},
+		"R": func(t *testing.T) {
+			v := issueFixture()
+			if _, cmd := v.updateKey(registryKey(t, "R")); cmd == nil {
+				t.Fatal("R did not re-read")
+			}
+		},
+		"down": func(t *testing.T) {
+			v := issueFixture()
+			v.updateKey(registryKey(t, "down"))
+			if v.cursor != 1 {
+				t.Fatalf("down left the cursor at %d, want 1", v.cursor)
+			}
+		},
+		"pgdown": func(t *testing.T) {
+			v := issueFixture()
+			v.updateKey(registryKey(t, "pgdown"))
+			if v.scroll == 0 {
+				t.Fatal("pgdown did not scroll the page")
+			}
+		},
+	},
 	ctxPullRequests: {
 		"enter": func(t *testing.T) {
 			v := pullRequestsFixture(testPull(11, "claimed", claimedBy(7, "auto")))

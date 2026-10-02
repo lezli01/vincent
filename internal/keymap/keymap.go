@@ -102,6 +102,7 @@ var catalog = []Info{
 	{Op: Refresh, Default: "R", Meaning: "refresh / re-read", Kind: KindTerm, Surfaces: []Surface{
 		"new task", "archived chats", "chats", "workflows", "workflow editor", "workflow graph",
 		"step detail", "pull requests", "daemon", "triggers", "trigger ledger", "trigger form",
+		"issues", "issue",
 	}},
 	{Op: Archive, Default: "A", Meaning: "archive", Kind: KindTerm, Surfaces: []Surface{"chats", Actions}},
 	{Op: Delete, Default: "D", Meaning: "delete a persisted record", Kind: KindTerm, Surfaces: []Surface{
@@ -121,16 +122,18 @@ var catalog = []Info{
 		"new task", "new chat", "workflow editor", "answer form", "repair form", "follow-up form",
 	}},
 	{Op: Browser, Default: "o", Meaning: "open in a browser", Kind: KindTerm, Surfaces: []Surface{
-		"task details", "task pull request", "pull requests",
+		"task details", "task pull request", "pull requests", "issues", "issue",
 	}},
 	{Op: OpenRow, Default: "enter", Meaning: "open or expand the row under the cursor", Kind: KindTerm, Surfaces: []Surface{
 		"task table", "archived tasks", "archived chats", "chats", "task pull request",
+		"issues", "issue",
 	}},
 	{Op: Scope, Default: "s", Meaning: "cycle a listing's scope", Kind: KindTerm, Surfaces: []Surface{
-		"archived tasks", "archived chats", "chats", "pull requests",
+		"archived tasks", "archived chats", "chats", "pull requests", "issues",
 	}},
 	{Op: Filter, Default: "/", Meaning: "filter", Kind: KindTerm, Surfaces: []Surface{
 		"task table", "archived tasks", "archived chats", "chats", "projects", "pull requests", "triggers",
+		"issues",
 	}},
 	{Op: Lane, Default: "l", Meaning: "open a fan-out lane", Kind: KindTerm, Surfaces: []Surface{
 		"task overview", "timeline", "task details", "output", "diff", "task workflow", "task step details", "task pull request",

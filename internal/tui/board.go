@@ -103,6 +103,11 @@ type (
 		// it picks a task and hands the intent here rather than growing a
 		// second implementation of a form the workspace already owns.
 		openPR bool
+		// back is the screen `esc` returns to once the workspace's own back
+		// stack is empty. Zero is the board; the issue detail sets itself,
+		// so a linked task opened from an issue returns to that issue
+		// (task 130.9).
+		back viewID
 	}
 )
 
