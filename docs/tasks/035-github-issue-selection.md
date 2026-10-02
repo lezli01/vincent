@@ -43,6 +43,14 @@ strings go to the daemon log and nowhere else.
 
 ### 2. The daemon owns the prefill; the TUI previews it (2026-08-26)
 
+> **Superseded in part, 2026-10-02 — [task 130](130-issues-pillar.md).**
+> Task 130 decision 7 removes `github_issue` from `POST /v1/tasks`,
+> `vincent task add --github-issue` and a trigger's `action.github_issue`, and
+> drops the `?workflow=` prefill from the GitHub issue listing; the listing
+> itself stays as a remote browse. The principle — one daemon-side mapping, so
+> every client produces the same stored task — is kept, and moves to prefill
+> from a vincent issue (task 130.4). In effect once task 130.11 and 130.13 land.
+
 `GET /v1/projects/{id}/github/issues?workflow=…` returns each issue plus a
 computed `prefill` — title, description with its link line, and the declared
 fields the mapping filled. The TUI drops that into its editable rows, so every
@@ -78,6 +86,11 @@ priced.
 
 ### 4. Availability is its own probe (2026-08-26)
 
+> **Superseded in part, 2026-10-02 — [task 130](130-issues-pillar.md).**
+> For the new-task form only: task 130 decision 7 deletes the form's issue row,
+> and with it the form's call to this probe (task 130.13). The probe, `vincent
+> doctor`'s rows and `vincent github status` stay as written here.
+
 `GET /v1/projects/{id}/github` returns `{enabled, repo, available, reason,
 message, via}` with a short daemon-side TTL. The TUI calls it once when a
 project is chosen in the new-task form; `vincent doctor` and `vincent github
@@ -95,6 +108,13 @@ a fake `gh` that logs its argv, and check the log is empty.
 
 ### 5. Derived facts, decided at the point of use (2026-08-26)
 
+> **Departed from, 2026-10-02 — [task 130](130-issues-pillar.md).**
+> Task 130 decision 2 stores an imported issue's repository, number and
+> `node_id` in `issue_remotes`, and sync stores each project's bound
+> repository: durable sync cannot re-derive identity from `origin`, because a
+> re-pointed origin would re-key every imported issue. In effect once task
+> 130.1 and 130.8 land.
+
 "GitHub-based" is parsing the `origin` remote for a github.com host; "enabled" is
 the config toggle. Neither is stored. A project whose origin is an SSH alias, or
 whose GitHub remote is not named `origin`, is simply **not GitHub-based for
@@ -103,6 +123,13 @@ on `Project`") is held in reserve for. PR checking, which needs a durable repo
 identity, is the expected trigger to revisit it.
 
 ### 6. Config defaults to enabled (2026-08-26)
+
+> **Departed from, 2026-10-02 — [task 130](130-issues-pillar.md).**
+> "Makes no call until a human opens the picker or names an issue" stops being
+> true: task 130 decision 9 gives a GitHub-based project with the integration
+> enabled standing per-project issue traffic, as task 052 did for pull-request
+> links. The default stays `true`, and the token stays out of `config.yaml`. In
+> effect once task 130.8 lands, which amends spec §12.3 to match.
 
 `github: { enabled: true }`. The issue frames the toggle as "a user who does not
 want the daemon reading GitHub can turn it off", which is an opt-*out*. It is
@@ -114,6 +141,13 @@ There is deliberately no token key in `config.yaml`: that would make vincent a
 secret store, which §2 declines.
 
 ### 7. Prefill rules, stated so they are testable (2026-08-26)
+
+> **Retargeted, 2026-10-02 — [task 130](130-issues-pillar.md).**
+> Task 130 decision 7 applies these rules to a vincent issue instead of a GitHub
+> issue, otherwise unchanged. Decision 8 there changes the 2026-08-27 note
+> below: a declared `issue` field holds the vincent issue id, and the GitHub
+> number moves to a declared `github_issue` field. In effect once task 130.4
+> lands.
 
 - **Title** ← the issue title, truncated only by the same rules any typed title
   gets — which live in §13.1's bounds check, applied to the prefilled request so
@@ -180,6 +214,14 @@ deep, because the two rows are independent tasks and sharing a label slice
 between them is not a property worth relying on.
 
 ### 10. Out of scope, deliberately (2026-08-26)
+
+> **Superseded in part, 2026-10-02 — [task 130](130-issues-pillar.md).**
+> "Writing anything to GitHub" is superseded for **issue state** only: task
+> 130 decision 10 writes a human's state change on an imported issue back to
+> GitHub; title, body, labels and comments are still never written.
+> "Re-fetching a stale issue" is superseded for the **issue entity**, which sync
+> re-reads (decision 9), and kept for the **task snapshot**, which is still
+> never re-fetched (decision 5). In effect once task 130.8 and 130.10 land.
 
 Pull requests — checking, listing, or reporting on them — are the intended next
 piece and are not built here. Nothing in this design forecloses them: the

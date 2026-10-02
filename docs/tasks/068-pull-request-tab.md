@@ -48,6 +48,14 @@ to GitHub, and they are what makes this task large.
 
 **1. Decision record row 11 is rewritten wholesale, not narrowed.**
 
+> **Kept, and extended, 2026-10-02 — [task 130](130-issues-pillar.md).**
+> Task 130 decision 10 adds one more human-triggered write: a human's state
+> change on an imported issue is written back to GitHub. An MCP- or
+> step-originated change to an imported issue is refused
+> (`forge_write_needs_human`) and nothing closes an issue automatically, so
+> nothing on the step path reaches GitHub, as this decision holds. In effect
+> once task 130.10 lands.
+
 Row 11 reads "Delivery: owned entirely by workflow steps; no hardcoded
 push/PR/merge behavior", and it has been reaffirmed verbatim three times since
 — task 052 decision 4 ("vincent still pushes nothing, opens nothing and merges
