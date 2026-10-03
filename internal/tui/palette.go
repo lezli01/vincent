@@ -42,6 +42,9 @@ type paletteEntry struct {
 	// digit, which running the row replays like any panel key.
 	tab   taskViewTab
 	isTab bool
+	// action is a key-less row's own command (task 130.13): a row with no
+	// shortcut to replay, run directly. "open this task's issue" is one.
+	action tea.Cmd
 }
 
 func newPalette(entries []paletteEntry) *palette {

@@ -165,13 +165,15 @@ func TestIssueScreensAgainstTheRealAPI(t *testing.T) {
 	}
 	h.p.until(10*time.Second, "the detail to re-read", func() bool { return detail.issue.Title == again })
 
-	// A task.state_changed on the linked task re-reads the detail, and the
+	// A task.state_changed on the linked task re-reads the detail — which
+	// keeps listing the settled task (task 130 decision 16.3) — and the
 	// list's active marker goes out.
 	if _, _, err := h.st.TransitionTask(ctx, task.ID, store.TaskBlocked, store.TaskAborted, store.TaskChange{}); err != nil {
 		t.Fatalf("TransitionTask: %v", err)
 	}
-	h.p.until(10*time.Second, "the detail to drop the settled task", func() bool {
-		return len(detail.tasks) == 0 && len(detail.issue.Tasks.ActiveIDs) == 0
+	h.p.until(10*time.Second, "the detail to show the settled task", func() bool {
+		return len(detail.tasks) == 1 && detail.tasks[0].State == string(store.TaskAborted) &&
+			len(detail.issue.Tasks.ActiveIDs) == 0
 	})
 	h.p.until(10*time.Second, "the list's active marker to go out", func() bool {
 		for _, iss := range list.issues {

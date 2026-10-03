@@ -80,6 +80,9 @@ type liveOptions struct {
 	remote string
 	// config overrides the daemon configuration; nil means config.Default.
 	config func() config.Config
+	// workflows are extra global workflow files, by file name, beside
+	// implement.yaml.
+	workflows map[string]string
 }
 
 func newNewTaskLiveHarness(t *testing.T) *newTaskLiveHarness {
@@ -110,6 +113,11 @@ func newNewTaskLiveHarnessWith(t *testing.T, opts liveOptions) *newTaskLiveHarne
 	}
 	if err := os.WriteFile(filepath.Join(globalDir, "implement.yaml"), []byte(liveWorkflow), 0o600); err != nil {
 		t.Fatalf("write workflow: %v", err)
+	}
+	for name, body := range opts.workflows {
+		if err := os.WriteFile(filepath.Join(globalDir, name), []byte(body), 0o600); err != nil {
+			t.Fatalf("write workflow %s: %v", name, err)
+		}
 	}
 
 	git := gitx.New()

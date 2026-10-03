@@ -257,7 +257,7 @@ func TestGitHubIssuesList(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("list: %d %s", resp.StatusCode, body)
 	}
-	var out []githubIssueResponse
+	var out []github.Issue
 	if err := json.Unmarshal(body, &out); err != nil {
 		t.Fatalf("list body: %v (%s)", err, body)
 	}
@@ -267,35 +267,36 @@ func TestGitHubIssuesList(t *testing.T) {
 	if out[0].Number != 200 {
 		t.Errorf("first issue = #%d, want the newest (#200)", out[0].Number)
 	}
-	if out[0].Prefill != nil {
-		t.Error("a listing that named no workflow carried a prefill")
-	}
 	// The state and limit the daemon actually asked gh for.
 	if calls := h.ghCalls(t); !strings.Contains(calls, "--state open") {
 		t.Errorf("gh was not asked for open issues:\n%s", calls)
 	}
 }
 
-// TestGitHubIssuesPrefill is decision 7, end to end: exact-name matches only,
-// type-and-pattern-valid values only, and the link line appended as its own
-// trailing block.
+// TestGitHubIssuesPrefill is task 035 decision 7 over the listed issues:
+// exact-name matches only, type-and-pattern-valid values only, and the link
+// line appended as its own trailing block. The listing no longer serves the
+// prefill (task 130 decision 7), but the create path still computes it with
+// issuePrefill, so that is what is held to it here.
 func TestGitHubIssuesPrefill(t *testing.T) {
 	h := newGitHubHarness(t, nil, ghOrigin)
 	writeWorkflowFile(t, h.globalDir, "fix-issue", issueWorkflowYAML)
 	h.reg.ReloadGlobal()
 
-	resp, body := h.issues(t, "workflow=fix-issue")
+	resp, body := h.issues(t, "")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("list: %d %s", resp.StatusCode, body)
 	}
-	var out []githubIssueResponse
+	var out []github.Issue
 	if err := json.Unmarshal(body, &out); err != nil {
 		t.Fatalf("list body: %v (%s)", err, body)
 	}
-	prefill := out[0].Prefill
-	if prefill == nil {
-		t.Fatal("no prefill on a listing that named a workflow")
+	entry, found := h.reg.Lookup(h.projectID, "fix-issue")
+	if !found || !entry.Valid() {
+		t.Fatal("the fix-issue workflow did not load")
 	}
+	first := issuePrefill(out[0], entry.Workflow)
+	prefill := &first
 	if want := "#200 " + out[0].Title; prefill.Title != want {
 		t.Errorf("prefill title = %q, want the numbered issue title %q", prefill.Title, want)
 	}
@@ -334,10 +335,7 @@ func TestGitHubIssuesPrefill(t *testing.T) {
 	// An issue with no metadata leaves every declared field empty rather than
 	// filling it with blanks. Every issue has a number, so `issue` is the one
 	// field a bare issue still fills.
-	bare := out[1].Prefill
-	if bare == nil {
-		t.Fatal("the second issue carried no prefill")
-	}
+	bare := issuePrefill(out[1], entry.Workflow)
 	if len(bare.Fields) != 1 || bare.Fields["issue"] != "41" {
 		t.Errorf("an issue with no labels/assignee/milestone prefilled %v, want only its number", bare.Fields)
 	}
@@ -377,10 +375,22 @@ func TestGitHubIssuesRejectsABadLimit(t *testing.T) {
 	wantError(t, resp, body, http.StatusBadRequest, CodeValidationFailed)
 }
 
-func TestGitHubIssuesUnknownWorkflow(t *testing.T) {
+// TestGitHubIssuesIgnoresWorkflow: `?workflow=` is gone from the listing
+// (task 130 decision 7). It is ignored like any unknown parameter — even a
+// name no registry knows — and no row carries a prefill.
+func TestGitHubIssuesIgnoresWorkflow(t *testing.T) {
 	h := newGitHubHarness(t, nil, ghOrigin)
-	resp, body := h.issues(t, "workflow=no-such-workflow")
-	wantError(t, resp, body, http.StatusBadRequest, CodeValidationFailed)
+	writeWorkflowFile(t, h.globalDir, "fix-issue", issueWorkflowYAML)
+	h.reg.ReloadGlobal()
+	for _, query := range []string{"workflow=no-such-workflow", "workflow=fix-issue"} {
+		resp, body := h.issues(t, query)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: %d %s", query, resp.StatusCode, body)
+		}
+		if strings.Contains(string(body), `"prefill"`) {
+			t.Errorf("%s: a row carried a prefill:\n%s", query, body)
+		}
+	}
 }
 
 // TestCreateTaskFromAnIssue is the create path: the daemon fetches, prefills

@@ -71,8 +71,12 @@ type (
 	}
 	// openIssueMsg asks the root to open one issue's detail screen. The
 	// root points the detail at it before switching, the order every
-	// takeover that carries an argument uses (task 049 decision 1).
-	openIssueMsg struct{ id int64 }
+	// takeover that carries an argument uses (task 049 decision 1). back is
+	// where esc on the detail lands; zero means the issue list.
+	openIssueMsg struct {
+		id   int64
+		back viewID
+	}
 )
 
 // issueGroup is one project's issues, in the order the daemon served them.
@@ -352,6 +356,12 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, v.openSelected()
 	case opKey(keymap.New):
 		return v, v.w.openForm(v.client, nil, v.hintedProject())
+	case opKey(keymap.Add):
+		// A task from the selected issue (task 130.13): the form opens
+		// seeded with it, editable before anything is created.
+		if row, ok := v.current(); ok {
+			return v, newTaskFromIssueCmd(row.issue)
+		}
 	case issueEditKey:
 		if row, ok := v.current(); ok {
 			return v, issueEditFor(v.client, row.issue.ID)

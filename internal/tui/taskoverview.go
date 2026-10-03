@@ -231,16 +231,21 @@ func (t *taskView) overviewLines(width, height int) []string {
 	task := d.task
 	// The `#id title` line is the workspace's, drawn once above every tab
 	// (task 129.9).
-	out := []string{
-		"  " + renderDetailState(task.Task),
-		"",
+	out := []string{"  " + renderDetailState(task.Task)}
+	// The issue the task was started from, as a fact rather than a section
+	// (task 130 decision 21.4): what it is for, at a glance.
+	if iss := task.Issue; iss != nil {
+		out = append(out, "  "+styleDim.Render("issue ")+
+			fmt.Sprintf("#%d %s", iss.ID, iss.Title)+"  "+styleDim.Render(iss.State))
 	}
+	out = append(out, "")
 	switch {
 	case t.showsFailureCard() && height < cardCollapseRows:
 		// A short terminal keeps the card's first line and its keys; the
 		// sentence goes with the rest (brief decision 8). An aborted task's
 		// outcome card collapses before it does, so it is gone here.
-		out = append(out[:2], t.failureCardLines(width, height, true)...)
+		// The issue line goes with it.
+		out = append([]string{out[0], ""}, t.failureCardLines(width, height, true)...)
 	case t.showsFailureCard():
 		out = appendWrapped(out, overviewSentence(task, len(t.lanes)), width)
 		out = append(out, "")
@@ -464,4 +469,21 @@ func (t *taskView) overviewActionLines(width int) []string {
 		out = append(out, styleDim.Render("  no action available"))
 	}
 	return out
+}
+
+// paletteExtras are the workspace's key-less palette rows. "Open this task's
+// issue" is one (task 130 decision 21.4): it has no key because the
+// workspace's single keys are spent, and a task started from an issue is the
+// one that needs it. esc on the issue comes back here.
+func (t *taskView) paletteExtras() []paletteEntry {
+	iss := t.detail.task.Issue
+	if !t.detail.loaded || iss == nil {
+		return nil
+	}
+	msg := openIssueMsg{id: iss.ID, back: viewTask}
+	return []paletteEntry{{
+		group:  "task",
+		label:  fmt.Sprintf("open this task's issue — #%d %s", iss.ID, iss.Title),
+		action: func() tea.Msg { return msg },
+	}}
 }

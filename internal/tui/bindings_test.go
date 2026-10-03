@@ -1188,6 +1188,16 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("/ did not open the filter")
 			}
 		},
+		"a": func(t *testing.T) {
+			v := issuesFixture()
+			_, cmd := v.updateKey(registryKey(t, "a"))
+			if cmd == nil {
+				t.Fatal("a did not start a task from the selected issue")
+			}
+			if msg, ok := cmd().(newTaskFromIssueMsg); !ok || msg.issueID != 3 {
+				t.Fatalf("a produced %#v, want the new-task form seeded with #3", cmd())
+			}
+		},
 	},
 	ctxIssue: {
 		"enter": func(t *testing.T) {
@@ -1245,6 +1255,16 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v.updateKey(registryKey(t, "pgdown"))
 			if v.scroll == 0 {
 				t.Fatal("pgdown did not scroll the page")
+			}
+		},
+		"a": func(t *testing.T) {
+			v := issueFixture()
+			_, cmd := v.updateKey(registryKey(t, "a"))
+			if cmd == nil {
+				t.Fatal("a did not start a task from the issue")
+			}
+			if msg, ok := cmd().(newTaskFromIssueMsg); !ok || msg.issueID != v.issue.ID || msg.projectID != v.issue.ProjectID {
+				t.Fatalf("a produced %#v, want the new-task form seeded with the issue", cmd())
 			}
 		},
 	},

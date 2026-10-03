@@ -45,21 +45,6 @@ type githubResponse struct {
 	Via string `json:"via,omitempty"`
 }
 
-// githubIssueResponse is one row of GET /v1/projects/{id}/github/issues.
-//
-// It embeds the normalized issue rather than restating it: that shape is
-// already the daemon's one spelling of an issue — the snapshot persisted on
-// the task and the value `.Issue` renders from — and a second DTO beside it
-// would be a third place for the field names to drift.
-type githubIssueResponse struct {
-	github.Issue
-	// Prefill is what creating a task from this issue would fill in, computed
-	// server-side (decision 2). Present only when the request named a
-	// workflow, because the declared-field half of a prefill is a fact about
-	// a workflow rather than about an issue.
-	Prefill *githubPrefill `json:"prefill,omitempty"`
-}
-
 // githubPrefill is the daemon's computed prefill. The TUI drops it into its
 // editable rows, so every guess is visible before creation; POST /v1/tasks
 // recomputes exactly the same thing from the same code, which is what makes
@@ -149,9 +134,11 @@ func (s *Server) handleProjectGitHub(w http.ResponseWriter, r *http.Request) {
 
 // handleProjectGitHubIssues implements GET /v1/projects/{id}/github/issues.
 //
-// `state` and `limit` narrow the listing; `workflow` opts into the computed
-// prefill per row. The picker needs no `q` parameter: it filters what it is
-// given locally, the way every other picker in §15 does.
+// `state` and `limit` narrow the listing. It carries no prefill: its one
+// consumer of `?workflow=`, the new-task form's issue picker, is gone (task
+// 130 decision 7) — a task is started from a vincent issue, whose prefill
+// GET /v1/issues/{id}?workflow= previews. An unknown parameter, `workflow`
+// included, is ignored the way every listing ignores one.
 func (s *Server) handleProjectGitHubIssues(w http.ResponseWriter, r *http.Request) {
 	project, ok := s.projectFromPath(w, r)
 	if !ok {
@@ -178,30 +165,13 @@ func (s *Server) handleProjectGitHubIssues(w http.ResponseWriter, r *http.Reques
 		writeGitHubError(w, gate, err)
 		return
 	}
-	// The prefill's declared-field half needs a workflow. An unknown name is
-	// a 400 rather than a silent "no prefill": the caller asked for a
-	// preview of something, and answering with a preview of nothing would
-	// look like the issue simply had no metadata.
-	var wf *workflow.Workflow
-	if name := strings.TrimSpace(r.URL.Query().Get("workflow")); name != "" {
-		entry, found := s.deps.Workflows.Lookup(project.ID, name)
-		if !found || !entry.Valid() {
-			writeError(w, http.StatusBadRequest, CodeValidationFailed,
-				fmt.Sprintf("workflow %q not found for project %d", name, project.ID))
-			return
-		}
-		wf = entry.Workflow
+	// The normalized issue is the row: the daemon's one spelling of an
+	// issue, the snapshot persisted on a task and the value `.Issue` renders
+	// from. Never null, so an empty repository reads as [].
+	if issues == nil {
+		issues = []github.Issue{}
 	}
-	out := make([]githubIssueResponse, 0, len(issues))
-	for _, issue := range issues {
-		row := githubIssueResponse{Issue: issue}
-		if wf != nil {
-			prefill := issuePrefill(issue, wf)
-			row.Prefill = &prefill
-		}
-		out = append(out, row)
-	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, issues)
 }
 
 // writeGitHubUnavailable answers a request that needed the integration when

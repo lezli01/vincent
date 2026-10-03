@@ -338,8 +338,6 @@ func (n *newTask) openPicker(row ntRow) {
 		n.pick = newPicker(int(row), "project", n.projectOptions(), false, strconv.FormatInt(n.projectID, 10))
 	case ntWorkflow:
 		n.pick = newPicker(int(row), "workflow", n.workflowOptions(), false, n.workflow)
-	case ntIssue:
-		n.pick = newPicker(int(row), "github issue", n.issueOptions(), false, n.issueValue())
 	case ntAgent:
 		n.pick = newPicker(int(row), "agent override", n.agentOptions(), false, n.agent)
 	case ntModel:
@@ -542,32 +540,26 @@ func (n *newTask) applyPick(row ntRow, value string, free bool) tea.Cmd {
 			}
 		}
 		// The registry is project-scoped (§5.2), so the workflow list and
-		// the selection made from it are both stale now. So is everything
-		// GitHub: a different repository, a different answer to "is this on
-		// GitHub", and an issue from the old project has no meaning here.
+		// the selection made from it are both stale now. A seeded issue is
+		// kept: the daemon is the one to say whether it belongs here, and
+		// its preview is re-asked once the new workflow list lands.
 		n.workflows = nil
 		n.setWorkflow("")
 		n.workflowPicked = false
-		n.github, n.githubProject = apiclient.GitHubStatus{}, 0
-		n.issues, n.issuesFor, n.issuesErr, n.issue = nil, issuesKey{}, "", nil
 		// So are the branches, and so is a branch adopted from the listing
 		// the old project had: a name from another repository is not a branch
 		// this one can run on.
 		n.branches, n.branchesFor, n.branchesErr = nil, 0, ""
 		n.branchName.SetValue("")
 		n.branchAdopt = false
-		return tea.Batch(n.workflowsCmd(id), n.githubCmd(id), n.branchesCmd(id))
+		return tea.Batch(n.workflowsCmd(id), n.branchesCmd(id))
 	case ntWorkflow:
 		n.setWorkflow(value)
 		n.workflowPicked = true
-		// Each listed issue carries the prefill computed for the workflow's
-		// declared fields, so a workflow change makes those prefills stale.
-		return tea.Batch(n.issuesCmd(), n.resolveCmd())
-	case ntIssue:
-		n.applyIssuePick(value)
-		// The title and fields the prefill just wrote are §8.6 and branch
-		// inputs, so the draft's resolution has changed with them.
-		return n.resolveCmd()
+		// A seeded issue's prefill is computed against the workflow's
+		// declared fields, so a workflow change re-asks for it; rows the
+		// human typed in are kept (task 130 decision 21.2).
+		return tea.Batch(n.issueCmd(), n.resolveCmd())
 	case ntAgent:
 		if value == n.agent {
 			return nil

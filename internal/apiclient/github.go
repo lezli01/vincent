@@ -64,16 +64,13 @@ type GitHubIssue struct {
 	// is the honest answer to "how old is this?" — the snapshot is never
 	// refreshed.
 	FetchedAt time.Time `json:"fetched_at,omitzero"`
-	// Prefill is what creating a task from this issue would fill in. It is
-	// present only when the listing named a workflow, because the
-	// declared-field half of a prefill is a fact about a workflow.
-	Prefill *GitHubPrefill `json:"prefill,omitempty"`
 }
 
 // LabelList is the comma-joined spelling, for a one-line summary.
 func (i GitHubIssue) LabelList() string { return strings.Join(i.Labels, ", ") }
 
-// GitHubPrefill is the daemon's computed prefill for one issue. The form
+// GitHubPrefill is the daemon's computed prefill for an issue or a pull
+// request — Issue.Prefill and GitHubPullRequest.Prefill. The form
 // drops it into editable rows: every guess is visible before creation, and
 // none of it is locked.
 type GitHubPrefill struct {
@@ -93,14 +90,13 @@ func (c *Client) ProjectGitHub(ctx context.Context, projectID int64) (GitHubStat
 }
 
 // GitHubIssuesOptions narrow a listing. The zero value asks for the most
-// recent open issues with no prefill.
+// recent open issues. The listing carries no prefill (task 130 decision 7):
+// a task's prefill is previewed from the vincent issue it starts from.
 type GitHubIssuesOptions struct {
 	// State is open (default), closed or all.
 	State string
 	// Limit caps the rows; <= 0 lets the daemon choose.
 	Limit int
-	// Workflow opts into the per-row prefill.
-	Workflow string
 }
 
 // ListGitHubIssues lists a project's issues, newest first. An unavailable
@@ -114,9 +110,6 @@ func (c *Client) ListGitHubIssues(
 	}
 	if opts.Limit > 0 {
 		q.Set("limit", strconv.Itoa(opts.Limit))
-	}
-	if opts.Workflow != "" {
-		q.Set("workflow", opts.Workflow)
 	}
 	path := "/v1/projects/" + strconv.FormatInt(projectID, 10) + "/github/issues"
 	if encoded := q.Encode(); encoded != "" {

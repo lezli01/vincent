@@ -222,6 +222,7 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The detail is pointed at the issue before it becomes active, for
 		// openChatMsg's reason: an inactive view receives nothing.
 		if v, ok := m.views[viewIssue].(*issueView); ok {
+			v.back = msg.back
 			return m, tea.Batch(v.open(msg.id), m.switchTo(viewIssue))
 		}
 		return m, nil
@@ -268,6 +269,8 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.broadcast(msg)
 	case newTaskFromPullMsg:
 		return m.updateNewTaskFromPull(msg)
+	case newTaskFromIssueMsg:
+		return m.updateNewTaskFromIssue(msg)
 	case newTaskFromChatMsg:
 		return m.updateNewTaskFromChat(msg)
 	case taskCreatedMsg:
@@ -591,6 +594,9 @@ func (m *root) updatePaletteKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if run.nav && (run.key == "" || m.panelOwnsKey(run.key)) {
 		return m, m.switchTo(run.navTarget)
 	}
+	if run.action != nil {
+		return m, run.action
+	}
 	if run.unbound || run.key == "" {
 		return m, cmd
 	}
@@ -645,6 +651,8 @@ type surface struct {
 	live     func([]binding) []binding
 	// tabs is the task workspace's strip as drawn; nil elsewhere.
 	tabs []taskViewTab
+	// extras are the surface's key-less palette rows (task 130.13).
+	extras []paletteEntry
 }
 
 // surfaceTarget reads the active surface. Nothing can act on a task the
@@ -660,6 +668,7 @@ func (m *root) surfaceTarget() surface {
 		s.editable = t.detail.stepEditable()
 		s.live = t.liveBindings
 		s.tabs = t.tabs()
+		s.extras = t.paletteExtras()
 	} else if lb, ok := m.views[m.active].(liveBinder); ok {
 		s.live = lb.liveBindings
 	}
@@ -672,8 +681,9 @@ func (m *root) surfaceTarget() surface {
 // openPalette builds the palette for the active surface.
 func (m *root) openPalette() {
 	s := m.surfaceTarget()
-	m.palette = newPalette(paletteEntries(
-		m.activeContext(), s.target, s.editable, m.phase == phaseConnected, m.githubAvailable(), s.live, s.tabs))
+	entries := paletteEntries(
+		m.activeContext(), s.target, s.editable, m.phase == phaseConnected, m.githubAvailable(), s.live, s.tabs)
+	m.palette = newPalette(append(entries, s.extras...))
 }
 
 // liveBinder is a surface whose registry rows depend on its state: it drops
@@ -829,6 +839,13 @@ func (m *root) openNewTask() tea.Cmd {
 // form has to be told to open before it is shown, because opening is what
 // resets the draft and fetches the catalogs.
 func (m *root) updateNewTaskFromPull(msg newTaskFromPullMsg) (tea.Model, tea.Cmd) {
+	cmd := m.deliver(viewNewTask, msg)
+	return m, tea.Batch(cmd, m.switchTo(viewNewTask))
+}
+
+// updateNewTaskFromIssue opens the new-task form seeded with a vincent issue
+// (task 130.13), through the root for updateNewTaskFromPull's reason.
+func (m *root) updateNewTaskFromIssue(msg newTaskFromIssueMsg) (tea.Model, tea.Cmd) {
 	cmd := m.deliver(viewNewTask, msg)
 	return m, tea.Batch(cmd, m.switchTo(viewNewTask))
 }
