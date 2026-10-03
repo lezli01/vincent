@@ -20,29 +20,30 @@
 #
 #     vincent task add --project N --workflow github-resolve-issue-multiple --title "pick up issues"
 #
-# ## Same task as creating one from the issue
+# ## Same task as one created from the issue
 #
-# A GitHub issue reaches a task only through the project's issue set (task
-# 130 decision 7): `spawn` maps each number to the imported issue with
-# `vincent issue ls --project P --github N`, asks for one `vincent issue sync`
-# when a number is not imported yet, and creates every task with
-# `vincent task add --issue ID --workflow W` and nothing else. The daemon
-# prefills it from the issue (§13.2, task 130.7): the title (`#N` and the
-# issue title), the description (the body plus a `GitHub issue #N: <url>`
-# line), the declared `issue` field (the vincent id) and `github_issue` field
-# (the GitHub number), and the `.Issue` snapshot. No base branch, priority or
-# override is passed — a task created here and one created by hand from the
-# same issue are the same task.
+# The issues surveyed are vincent's **imported** GitHub issues
+# (`vincent issue ls --source github`, task 130 decision 9) — a local issue has
+# no GitHub number for the resolve workflows to act on, so it is never a
+# candidate. Every task is created with `vincent task add --issue <id>
+# --workflow W` and nothing else. The daemon prefills it through the same code
+# creating a task from the issue in the TUI uses (task 130.7): the title (`#N`
+# and the issue title), the description, the declared `issue` and
+# `github_issue` fields, and the issue snapshot the resolve workflows read
+# through `$VINCENT_ISSUE_FILE`. No base branch, priority or override is
+# passed, because the TUI passes none either — a task created here and one
+# created by hand from the same issue are the same task.
 #
 # ## Which issues are ready
 #
 # The deterministic half is the survey, and it drops an issue for exactly four
 # reasons, in this order:
 #
-#   1. it is already on an unarchived task (its linked issue's GitHub number,
-#      its legacy `github_issue` snapshot, or its `github_issue` field) —
-#      which is also what makes re-running this safe, before and after the
-#      task 035 snapshots were backfilled into the issue set;
+#   1. it is already on an unarchived task (the task's linked `issue.id`, or
+#      a GitHub number: its linked issue's, or — for a task created before
+#      the task 035 snapshots were backfilled into the issue set — its
+#      `github_issue` snapshot or field) — which is also what makes
+#      re-running this safe;
 #   2. it carries none of `bug`, `enhancement`, `documentation`, `ci` — the
 #      resolve workflows' `fetch` refuses such an issue, so a task for it would
 #      be born blocked;
@@ -97,10 +98,11 @@
 #
 # ## Requirements
 #
-# `gh` (authenticated, for the dependency relations the daemon's issue listing
-# does not carry), `jq`, `git` and the `vincent` CLI; the project's `github`
-# integration on; both resolve workflows registered for this project. POSIX
-# only, as both workflows it creates tasks for are.
+# `gh` (authenticated, for the dependency relations and bodies the daemon's
+# issue listing does not carry), `jq`, `git` and the `vincent` CLI; the
+# project's `github` integration on, so its issues are imported; both resolve
+# workflows registered for this project. POSIX only, as both workflows it
+# creates tasks for are.
 
 name: github-resolve-issue-multiple
 description: Survey the open GitHub issues, pick at most N that are ready (unblocked, not on a task, one per dependency chain), choose github-resolve-issue or github-resolve-issue-dag for each, and create those tasks after you approve the plan.
@@ -187,8 +189,8 @@ steps:
     name: Find the open issues that are ready
     type: command
     shell: sh
-    # Three reads: the daemon's GitHub issue listing (`vincent github issues`),
-    # the board's claims, and one GraphQL query for GitHub's dependency
+    # Three reads: the daemon's imported issues (the set the TUI's issues view
+    # shows), the board's claims, and one GraphQL query for GitHub's dependency
     # relations, which the daemon's listing does not carry. All three are
     # reads, so this is the one step whose failure is plausibly transient —
     # GitHub's API — and the one that gets a paced second attempt.
@@ -205,20 +207,28 @@ steps:
       project={{ .Project.ID }}
 
       say "listing open issues"
-      vincent github issues --project "$project" --state open --limit 100 --json \
-        > "$scratch/issues.json" 2>"$scratch/issues.err" || {
+      vincent issue ls --project "$project" --source github --state open --limit 100 --json \
+        > "$scratch/vincent-issues.json" 2>"$scratch/issues.err" || {
           say "cannot list issues"
-          echo "vincent github issues failed:" >&2; cat "$scratch/issues.err" >&2; exit 1; }
+          echo "vincent issue ls failed:" >&2; cat "$scratch/issues.err" >&2; exit 1; }
+      # Reshaped into the survey's own record: `number` is the GitHub number
+      # every later `gh` read and the plan use, `id` the vincent issue `spawn`
+      # creates the task from. An imported issue whose remote has gone
+      # missing carries no number and cannot be resolved, so it is dropped.
+      jq '[.[] | select(.source.number != null)
+           | {id, number: .source.number, repo: .source.repo, url: .source.url,
+              title, labels, author, created_at}]' \
+        "$scratch/vincent-issues.json" > "$scratch/issues.json"
       total=$(jq 'length' "$scratch/issues.json")
       jq -r '.[0].repo // empty' "$scratch/issues.json" > "$scratch/repo"
 
       # An issue is claimed by any unarchived task that names it, whatever
-      # that task's state. The listing carries `fields` but not the linked
-      # issue, so each task is read once: the linked issue's GitHub number
-      # (`.issue.source.number`) covers every task created with `--issue`,
-      # the legacy `.github_issue` snapshot covers tasks from before the
-      # backfill, and the `github_issue` field a workflow that declares it.
-      # A cancelled but unarchived task keeps its claim until it is archived.
+      # that task's state. The listing does not carry the linked issue, so
+      # each task is read once: `issue.id` is the link, and a task's GitHub
+      # number — its linked issue's (`.issue.source.number`), or for a task
+      # from before the backfill its legacy `.github_issue` snapshot or the
+      # `github_issue` field — catches the rest. A cancelled but unarchived
+      # task keeps its claim until it is archived.
       say "finding issues already on a task"
       vincent task ls --project "$project" --limit 1000 --json \
         > "$scratch/tasks.json" 2>"$scratch/tasks.err" || {
@@ -230,12 +240,13 @@ steps:
           say "cannot read task $id"
           echo "vincent task show $id failed:" >&2; cat "$scratch/task.err" >&2; exit 1; }
         jq -r '. as $t
-               | [($t.issue.source.number // empty), ($t.github_issue.number // empty),
-                  (($t.fields.github_issue // "") | tonumber?)]
+               | ([($t.issue.id // empty) | "id:\(.)"]
+                  + [($t.issue.source.number // empty), ($t.github_issue.number // empty),
+                     (($t.fields.github_issue // "") | tonumber?) | "gh:\(.)"])
                | unique | .[] | "\(.)\t\($t.id)\t\($t.state)"' "$scratch/task.json" >> "$scratch/claims.tsv"
       done
       jq -R -s '[split("\n")[] | select(length > 0) | split("\t")
-                 | {issue: (.[0] | tonumber), task: (.[1] | tonumber), state: .[2]}]' \
+                 | {key: .[0], task: (.[1] | tonumber), state: .[2]}]' \
         "$scratch/claims.tsv" > "$scratch/claims.json"
 
       # One query for every listed issue, each under an alias, so the answer
@@ -252,7 +263,7 @@ steps:
           + " } } fragment f on Issue { number"
           + " issueDependenciesSummary { blockedBy }"
           + " subIssuesSummary { total completed }"
-          + " parent { number }"
+          + " body parent { number }"
           + " blockedBy(first: 50) { nodes { number state } }"
           + " blocking(first: 50) { nodes { number state } }"
           + " comments(last: 10) { nodes { author { login } body } } }"' \
@@ -275,13 +286,13 @@ steps:
       jq --slurpfile deps "$scratch/deps.json" --slurpfile claims "$scratch/claims.json" '
         def resolvable: (.labels // []) | any(. == "bug" or . == "enhancement" or . == "documentation" or . == "ci");
         ($deps[0] | map({key: (.number | tostring), value: .}) | from_entries) as $d
-        | ($claims[0] | group_by(.issue) | map({key: (.[0].issue | tostring), value: .}) | from_entries) as $c
+        | ($claims[0] | group_by(.key) | map({key: .[0].key, value: .}) | from_entries) as $c
         | map(
             ($d[.number | tostring]) as $x
-            | ($c[.number | tostring] // []) as $on
+            | (($c["id:\(.id)"] // []) + ($c["gh:\(.number)"] // []) | unique_by(.task)) as $on
             | [$x.blockedBy.nodes[]? | select(.state == "OPEN") | .number] as $blockers
             | (($x.subIssuesSummary.total // 0) - ($x.subIssuesSummary.completed // 0)) as $open_subs
-            | {number, title, url, labels, author, created_at, body,
+            | {id, number, title, url, labels, author, created_at, body: ($x.body // ""),
                comments: [$x.comments.nodes[]? | {author: (.author.login // "ghost"), body}],
                parent: $x.parent.number,
                blocking_open: [$x.blocking.nodes[]? | select(.state == "OPEN") | .number],
@@ -544,12 +555,11 @@ steps:
 
       {{ (index .Steps "emit").Result }}
 
-      Each task is created exactly as creating it from the imported issue by
-      hand would create it — `vincent task add --issue ID --workflow W`, the
-      id found with `vincent issue ls --github N` (one `vincent issue sync`
-      first if an issue is not imported yet): the daemon fills in the title
-      (`#N` and the issue title), the description (the issue body and its
-      link) and the `issue` and `github_issue` fields. Each gets its own
+      Each task is created exactly as creating it from the issue by hand
+      would — `vincent task add --issue <id> --workflow W`: the daemon fills
+      in the title (`#N` and the issue title), the description (the issue
+      body and its link), the `issue` and `github_issue` fields and the issue
+      snapshot. Each gets its own
       branch from {{ .Project.DefaultBranch }}.
 
       What approving spends:
@@ -590,7 +600,6 @@ steps:
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
       scratch=$(git rev-parse --git-path vincent-issues)
       project={{ .Project.ID }}
-      repo=$(cat "$scratch/repo")
       planned=$(cat "$scratch/planned")
 
       say "re-reading the board"
@@ -599,41 +608,11 @@ steps:
       for id in $(jq -r '.[].id' "$scratch/tasks-now.json"); do
         vincent task show "$id" --json </dev/null > "$scratch/task.json"
         jq -r '. as $t
-               | [($t.issue.source.number // empty), ($t.github_issue.number // empty),
-                  (($t.fields.github_issue // "") | tonumber?)]
+               | ([($t.issue.id // empty) | "id:\(.)"]
+                  + [($t.issue.source.number // empty), ($t.github_issue.number // empty),
+                     (($t.fields.github_issue // "") | tonumber?) | "gh:\(.)"])
                | unique | .[] | "\(.)\t\($t.id)"' "$scratch/task.json" >> "$scratch/claims-now.tsv"
       done
-
-      # A GitHub number reaches a task only through the issue set (task 130
-      # decision 7), so each one is mapped to its imported issue first. An
-      # issue not imported yet — filed since the last sync — costs one sync
-      # for the whole run: request it, wait for the import to advance, look
-      # again. Still missing after that is a failure naming the number.
-      synced=0
-      lookup() {
-        iid=
-        vincent issue ls --project "$project" --github "$1" --json </dev/null \
-          > "$scratch/lookup.json" 2>"$scratch/lookup.err" || return 1
-        iid=$(jq -r '.[0].id // empty' "$scratch/lookup.json")
-      }
-      sync_once() {
-        [ "$synced" = 0 ] || return 0
-        synced=1
-        say "syncing issues from GitHub"
-        before=$(vincent issue sync --project "$project" --status --json </dev/null | jq -r '.last_synced_at // ""')
-        vincent issue sync --project "$project" --json </dev/null > "$scratch/sync.json" 2>"$scratch/sync.err" || return 0
-        [ "$(jq -r .enabled "$scratch/sync.json")" = true ] || return 0
-        i=0
-        while [ "$i" -lt 60 ]; do
-          sleep 5
-          i=$((i + 1))
-          vincent issue sync --project "$project" --status --json </dev/null > "$scratch/sync.json" 2>/dev/null || continue
-          now=$(jq -r '.last_synced_at // ""' "$scratch/sync.json")
-          if [ -n "$now" ] && [ "$now" != "$before" ]; then
-            return 0
-          fi
-        done
-      }
 
       : > "$scratch/created"
       : > "$scratch/dropped"
@@ -644,30 +623,27 @@ steps:
         [ -n "$issue" ] || continue
         n=$((n + 1))
 
-        claim=$(awk -F'\t' -v i="$issue" '$1 == i { print $2; exit }' "$scratch/claims-now.tsv")
+        # The plan names GitHub numbers; the task is created from the vincent
+        # issue the survey listed under that number.
+        vid=$(jq -r --argjson n "$issue" '.[] | select(.number == $n) | .id' "$scratch/survey.json")
+        if [ -z "$vid" ]; then
+          printf '%s\t%s\n' "$issue" "is not an imported issue the survey listed" >> "$scratch/failed"
+          continue
+        fi
+        claim=$(awk -F'\t' -v a="id:$vid" -v b="gh:$issue" '$1 == a || $1 == b { print $2; exit }' "$scratch/claims-now.tsv")
         if [ -n "$claim" ]; then
           printf '%s\t%s\n' "$issue" "now on task $claim" >> "$scratch/dropped"
           continue
         fi
-        if ! state=$(gh issue view "$issue" --repo "$repo" --json state --jq .state </dev/null 2>"$scratch/state.err"); then
+        # The imported issue's state, which the daemon's sync keeps current —
+        # no `gh issue view` per issue.
+        if ! vincent issue show "$vid" --json </dev/null > "$scratch/issue-now.json" 2>"$scratch/state.err"; then
           printf '%s\t%s\n' "$issue" "could not read its state: $(tr '\n' ' ' < "$scratch/state.err")" >> "$scratch/failed"
           continue
         fi
-        if [ "$state" != "OPEN" ]; then
+        state=$(jq -r .state "$scratch/issue-now.json")
+        if [ "$state" != "open" ]; then
           printf '%s\t%s\n' "$issue" "is $state now" >> "$scratch/dropped"
-          continue
-        fi
-
-        if ! lookup "$issue"; then
-          printf '%s\t%s\n' "$issue" "could not look it up: $(tr '\n' ' ' < "$scratch/lookup.err")" >> "$scratch/failed"
-          continue
-        fi
-        if [ -z "$iid" ]; then
-          sync_once
-          lookup "$issue" || iid=
-        fi
-        if [ -z "$iid" ]; then
-          printf '%s\t%s\n' "$issue" "GitHub issue #$issue is not in the project's issue set, even after vincent issue sync" >> "$scratch/failed"
           continue
         fi
 
@@ -676,7 +652,7 @@ steps:
         # read from it would silently eat the issues after this one.
         if vincent task add \
               --project "$project" \
-              --issue "$iid" \
+              --issue "$vid" \
               --workflow "$workflow" \
               --json </dev/null > "$scratch/added.json" 2>"$scratch/added.err"; then
           printf '%s\t%s\t%s\t%s\n' "$(jq -r .id "$scratch/added.json")" "$issue" "$workflow" "$title" >> "$scratch/created"
@@ -711,9 +687,10 @@ steps:
       s=$(git rev-parse --git-path vincent-issues)
       while IFS="$(printf '\t')" read -r id issue workflow title; do
         [ -n "$id" ] || continue
+        vid=$(jq -r --argjson n "$issue" '.[] | select(.number == $n) | .id' "$s/survey.json")
         vincent task show "$id" --json </dev/null \
-          | jq -e --argjson n "$issue" --arg w "$workflow" \
-              '((.issue.source.number // .github_issue.number) == $n) and .workflow == $w and .archived_at == null' >/dev/null || {
+          | jq -e --argjson v "${vid:-0}" --arg w "$workflow" \
+              '.issue.id == $v and .workflow == $w and .archived_at == null' >/dev/null || {
             echo "task $id does not read back as issue #$issue on $workflow" >&2; exit 1; }
       done < "$s/created"
     check_timeout: 5m

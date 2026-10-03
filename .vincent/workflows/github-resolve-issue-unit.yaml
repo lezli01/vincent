@@ -24,9 +24,10 @@
 # - as a **lane field**: `unit_brief`, `unit_files`, `unit_check` and the unit's
 #   identity, written by the planner and merged over the parent's fields (so
 #   `issue` is inherited);
-# - by **asking GitHub again**: `unit-context` re-runs `gh issue view`, which
-#   costs two seconds and is cheaper to arrange than any way of shipping a file
-#   that must not be committed.
+# - from the **inherited issue snapshot**: a lane carries its parent's
+#   snapshot (§7.6), so `unit-context` copies `$VINCENT_ISSUE_FILE` (§8.5) —
+#   no GitHub call per lane, and the daemon's copy lives in the worktree's git
+#   dir, where it cannot be committed.
 #
 # ## Why two values go through a file and not through the script
 #
@@ -205,9 +206,9 @@ steps:
     type: command
     shell: sh
     timeout: 3m
-    # `gh` is a network call and a 502 is not a verdict, so this one retries.
-    max_retries: 1
-    retry_backoff: 30s
+    # Nothing here touches the network any more: a missing snapshot or an
+    # empty field reads the same on a second attempt.
+    max_retries: 0
     # Three jobs, and each of them exists because a lane's worktree is a fresh
     # checkout that inherited none of the parent's scratch.
     run: |
@@ -224,15 +225,15 @@ steps:
         echo "the 'github_issue' field is empty; a lane inherits it from the parent task." >&2
         exit 1
       fi
-      # The same fields the parent fetched, including the thread: a unit that
-      # needs to know what the reporter said should not have to guess.
-      if ! gh issue view "$id" \
-        --json number,title,body,state,url,labels,comments,createdAt \
-        > .vincent-issue/issue.json; then
-        say "cannot read issue #$id"
-        echo "no such issue: $id" >&2
+      # The same snapshot the parent copied — a lane inherits it — so a unit
+      # reads the issue the brief was written from, not whatever GitHub says
+      # now.
+      if [ -z "${VINCENT_ISSUE_FILE:-}" ]; then
+        say "$unit: lane carries no issue snapshot"
+        echo "this lane carries no issue snapshot (\$VINCENT_ISSUE_FILE is unset); its parent must be created from the issue — 'vincent task add --issue <id>'" >&2
         exit 1
       fi
+      cp "$VINCENT_ISSUE_FILE" .vincent-issue/issue.json
 
       # A quoted heredoc expands nothing, so an agent-written regular
       # expression containing a quote, a dollar or a backtick arrives verbatim
@@ -290,8 +291,10 @@ steps:
       **{{ index .Task.Fields "unit_title" }}**.
 
       This unit is part of GitHub issue #{{ index .Task.Fields "github_issue" }},
-      which is in `.vincent-issue/issue.json` — number, title, body, labels,
-      creation date and every comment — for context. It is context, not scope.
+      which is in `.vincent-issue/issue.json` — number, title, body, labels
+      and creation date — for context. It is context, not scope. Its
+      `comments` list is empty: the GitHub thread is not carried into the task
+      yet.
 
       ## Your scope, in full
 
