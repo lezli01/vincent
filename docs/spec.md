@@ -7744,7 +7744,8 @@ that order, a shifted character written as itself), and `{}`, the default, is
 for pause and resume, `approve`, `reject`, `retry`, `edit_retry`, `repair`,
 `skip`, `cancel`, `follow_up`, `chat` — *added 2026-09-17, task 119* — with
 `archive` shared with the term) and the global chrome (`palette`, `palette_alt`, `help`, `help_alt`, `next_attention`,
-`mouse`, `quit`, and `new`, which is also the chats board's `n`). Every other key
+`mouse`, `quit`, and `new`, which is also the chats board's `n` and — *added
+2026-10-03, task 130.12* — the issue screens'). Every other key
 the TUI answers is fixed (§15). An override **replaces** the operation's
 default on every surface that carries it; it is not an alias, so the vacated
 key is free for another override in the same edit and two operations may swap.
@@ -12739,9 +12740,32 @@ stream for the live tail.
    than to the board. Every root task, newest first, replaces this list once
    `GET /v1/tasks?issue_id=` exists (130.7 / 130.13). The screen re-reads on
    its own issue's `issue.*` events and on events of the tasks it lists;
-   `esc` returns to view 12 with the selection kept. `n`, `a`, `i` and `X`
-   are unbound on both screens until the issue writes (#671) and a task from
-   an issue (#672) land.
+   `esc` returns to view 12 with the selection kept. `a` is unbound on both
+   screens until a task from an issue (#672) lands.
+
+   *Amended 2026-10-03 (task 130.12, issue #671):* both screens write. `n`
+   opens the **issue form** on a new issue — `new`'s "make a new one here",
+   in the list's selected project or the detail's — and `i` opens it on the
+   issue (the list reads the issue first: a row carries no body). The form is
+   a full pane over either screen: project (on a create), title, description
+   (`e` hands it to `$EDITOR`), labels over the project's catalogue, kind
+   over task 130 decision 4's suggestions with free text, and priority.
+   `ctrl+s` saves; `esc` asks first over unsaved changes. A row the DTO's
+   `editable` omits is drawn read-only, "mirrored from GitHub". An edit sends
+   `version` and only the changed fields, labels as `add_labels` /
+   `remove_labels`; an `issue_changed` 409 is shown in the form, and `R`
+   rebases onto the current issue keeping the edits that still apply. A
+   create carries an `Idempotency-Key`, one per opened form.
+
+   `X` closes or reopens, offering exactly the issue's `available_actions` —
+   the list reads the issue for them, since rows carry none. Close asks for a
+   reason: completed, not planned, or duplicate, which picks a same-project
+   target or none. On an imported issue the change is confirmed as **local
+   only**: not written to GitHub yet, and the next sync may overwrite it
+   (130.10 replaces that text). `D` deletes after asking, in any state; on an
+   imported issue it says GitHub is never touched and the tombstone keeps
+   sync from importing it again. Delete is not a state action and is never
+   among `available_actions`.
 
 ### Layout
 

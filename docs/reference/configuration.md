@@ -1675,7 +1675,7 @@ The operations are the ones a reader names, and nothing else:
 |---|---|
 | Vocabulary terms | `refresh`, `archive`, `delete`, `draft_remove`, `add`, `editor`, `free_text`, `browser`, `open_row`, `scope`, `filter`, `lane`, `result`, `next_failure`, `attention_filter` |
 | Task actions | `pause` (pause and resume), `approve`, `reject`, `retry`, `edit_retry`, `repair`, `skip`, `cancel`, `follow_up`, `chat`; `archive` is the term's id |
-| Global | `palette`, `palette_alt`, `help`, `help_alt`, `next_attention`, `mouse`, `quit`, `new` (also a new chat on the chats board) |
+| Global | `palette`, `palette_alt`, `help`, `help_alt`, `next_attention`, `mouse`, `quit`, `new` (also a new chat on the chats board, and a new issue on the issue screens) |
 
 An override moves its operation on **every** screen that has it, and it
 **replaces** the default rather than adding a second key: the old key stops

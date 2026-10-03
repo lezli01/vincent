@@ -512,6 +512,38 @@ records them.
 The body flag is `--body`/`--body-file`, matching the API's `body` field that
 130.3 shipped, not the issue's suggested `--description`.
 
+### 19. 130.12: the TUI issue writes (2026-10-03)
+
+Settled with the author while scoping #671. Spec §15 views 12 and 13 record
+the keys.
+
+1. **`n` files a new issue, `a` stays for #672.** `n` is the `new` operation
+   (§15's "make a new one here"), whose meaning widens to the issue screens
+   the way it already covers the chats board. `a` is left unbound so 130.13
+   can bind it as `add` — "create a task from this issue", the pull-requests
+   takeover's precedent. `i` edits in the form (the trigger list's key), `X`
+   closes or reopens, `D` deletes.
+2. **Close and reopen on an imported issue are offered now, and say they are
+   local.** The write-back outbox (130.10) does not exist yet, so the
+   confirmation says the change applies to vincent's copy only, is not
+   written to GitHub yet, and may be overwritten by the next sync. What `X`
+   offers is still exactly the daemon's `available_actions`; there is no
+   client-side gate, and on the list, whose rows carry none, `X` reads the
+   issue first. Replacing that text with "this will be written to GitHub"
+   (the keypress is the consent, task 069 decision 2) is 130.10's job, in its
+   own pull request.
+3. **Which rows are read-only comes from the DTO's `editable`**, never from a
+   client copy of "imported ⇒ locked". `issue_mirrored` is still rendered, for
+   an issue imported between the form's read and its save.
+4. **An edit sends `version` and only the changed fields**, labels as
+   `add_labels`/`remove_labels` against the issue the form read. An
+   `issue_changed` 409 is shown in the form; `R` rebases onto the current
+   issue, keeping the user's edits where those fields are still editable. A
+   create sends an `Idempotency-Key` generated once per opened form.
+5. **Delete always asks**, in any state (decision 6), and on an imported
+   issue says it never deletes on GitHub and that the tombstone keeps sync
+   from importing it again.
+
 ## Open questions
 
 Each has a proposed default, which stands unless the author answers otherwise
@@ -571,7 +603,8 @@ its own pull request.
 - [x] **130.6** ([#665](https://github.com/lezli01/vincent/issues/665)) The
   `vincent issue …` CLI tree; drops `ListIssues`/`GetIssue` from
   `tuiOnlyClientCalls` and their row from `docs/reference/cli.md`'s "What only
-  the TUI does", which 130.9 added. Depends: 130.3. ✓ 2026-10-03 (decision 18)
+  the TUI does", which 130.9 added — and the six issue writes and their row,
+  which 130.12 added. Depends: 130.3. ✓ 2026-10-03 (decision 18)
 - [x] **130.7** ([#666](https://github.com/lezli01/vincent/issues/666))
   `issue_id` on task create, the prefill preview, `?issue_id=` filter, the task
   DTO link, `Closes #N`, `vincent task add --issue`. Depends: 130.3, 130.4.
@@ -586,15 +619,17 @@ its own pull request.
 - [x] **130.10** ([#669](https://github.com/lezli01/vincent/issues/669)) The
   write-back outbox, its compare-and-set drain, and the guard refusing MCP- and
   step-originated writes (decision 10, open question 6). Depends: 130.8.
+  Also replaces the TUI's local-only close/reopen confirmation on an imported
+  issue (`issueLocalOnly`, decision 19.2) with its own.
   ✓ 2026-10-03 (decision 17)
 - [ ] **130.11** ([#670](https://github.com/lezli01/vincent/issues/670)) SQL
   backfill of task 035's snapshots into issues, and the removal of
   `github_issue` from `POST /v1/tasks`, `--github-issue` and
   `action.github_issue` with every consumer decision 7 lists. Depends: 130.7,
   130.8.
-- [ ] **130.12** ([#671](https://github.com/lezli01/vincent/issues/671)) The
+- [x] **130.12** ([#671](https://github.com/lezli01/vincent/issues/671)) The
   TUI issue create/edit form with close and reopen, and a shared `$EDITOR`
-  helper. Depends: 130.9.
+  helper. Depends: 130.9. ✓ 2026-10-03 (decision 19)
 - [ ] **130.13** ([#672](https://github.com/lezli01/vincent/issues/672)) Seed a
   new task from an issue, delete the new-task form's issue picker, the task
   workspace's Issue section. Depends: 130.9, 130.7. Also widens the issue

@@ -34,6 +34,15 @@ list with the user-facing context a commit subject cannot carry.
   stale read is refused rather than overwriting someone else's change),
   `close` with a reason or `--duplicate-of`, `reopen`, `delete --force` (alias
   `rm`) and `labels` join `sync`. Every leaf takes `--json`.
+- **File, edit, close, reopen and delete issues from the TUI.** On the issues
+  list and an issue's screen, `n` opens a form for a new issue and `i` edits
+  the selected one — title, description (`e` for `$EDITOR`), labels, kind and
+  priority — saving only the fields you changed, and offering to reload and
+  keep your edits when someone else changed the issue first. `X` closes (as
+  completed, not planned, or a duplicate) or reopens, offering only what the
+  issue allows, and `D` deletes after asking. On an issue imported from
+  GitHub the mirrored fields are read-only, and closing or reopening says it
+  changes vincent's copy only, not GitHub.
 - **Create a task from a vincent issue.** `POST /v1/tasks` takes `issue_id`,
   and `vincent task add --issue ID` sends it: the task is linked to the issue,
   snapshots it, and is prefilled from it — title, description and declared
