@@ -136,6 +136,7 @@ func (s *Server) handleChatHandoff(w http.ResponseWriter, r *http.Request) {
 		s.deps.WakeRunner()
 	}
 	resp := toTaskResponse(&t, s.snaps.get(t.ID, t.WorkflowSnapshot))
+	s.overlayLiveIssue(ctx, &resp, &t)
 	resp.Warnings = prep.warnings
 	resp.SourceChatID = &chat.ID
 	writeJSON(w, http.StatusCreated, map[string]any{

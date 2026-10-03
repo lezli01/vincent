@@ -218,6 +218,13 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 	case selectViewMsg:
 		return m, m.switchTo(msg.id)
+	case openIssueMsg:
+		// The detail is pointed at the issue before it becomes active, for
+		// openChatMsg's reason: an inactive view receives nothing.
+		if v, ok := m.views[viewIssue].(*issueView); ok {
+			return m, tea.Batch(v.open(msg.id), m.switchTo(viewIssue))
+		}
+		return m, nil
 	case openChatMsg:
 		// The chat workspace is not the active view yet, and an inactive
 		// view receives nothing — so the root points it at the chat first
@@ -720,6 +727,10 @@ func (m *root) activeContext() bindingContext {
 		return m.views[viewChat].(*chatView).bindingContext()
 	case viewTriggers:
 		return m.views[viewTriggers].(*triggersView).bindingContext()
+	case viewIssues:
+		return ctxIssues
+	case viewIssue:
+		return ctxIssue
 	default:
 		s := m.views[viewHome].(*shell)
 		return s.focusedContext()

@@ -130,12 +130,13 @@ func newGitHubPullsCmd() *cobra.Command {
 
 // `vincent github status` is the per-project half of the `vincent doctor`
 // row: doctor answers "can this machine read GitHub at all", this answers
-// "and is *this* project one it would read".
+// "and is *this* project one whose issues it would import and sync".
+// `vincent issue sync --status` says how that import is actually going.
 func newGitHubStatusCmd() *cobra.Command {
 	var projectID int64
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Report whether a project's issues can be read",
+		Short: "Report whether a project's issues can be imported and synced",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
@@ -147,16 +148,7 @@ func newGitHubStatusCmd() *cobra.Command {
 				if wantJSON(cmd) {
 					return emitJSON(cmd.OutOrStdout(), status)
 				}
-				rows := [][]string{
-					{"enabled", boolWord(status.Enabled)},
-					{"repo", dash(status.Repo)},
-				}
-				if status.Available {
-					rows = append(rows, []string{"issues", "readable via " + status.Via})
-				} else {
-					rows = append(rows, []string{"issues", "unavailable: " + status.Unavailable()})
-				}
-				return table(cmd.OutOrStdout(), []string{"CHECK", "VALUE"}, rows)
+				return table(cmd.OutOrStdout(), []string{"CHECK", "VALUE"}, githubStatusRows(status))
 			})
 		},
 	}
@@ -166,6 +158,20 @@ func newGitHubStatusCmd() *cobra.Command {
 	return cmd
 }
 
+// githubStatusRows renders `vincent github status`. The last row is about
+// issue import and sync (task 130.8), the integration's standing use of the
+// credential, rather than about reading issues on request.
+func githubStatusRows(status apiclient.GitHubStatus) [][]string {
+	rows := [][]string{
+		{"enabled", boolWord(status.Enabled)},
+		{"repo", dash(status.Repo)},
+	}
+	if status.Available {
+		return append(rows, []string{"issue import/sync", "available via " + status.Via})
+	}
+	return append(rows, []string{"issue import/sync", "unavailable: " + status.Unavailable()})
+}
+
 // githubIssueSummary is the one-line confirmation `task add --github-issue`
 // prints, so a human sees which issue the daemon actually resolved.
 func githubIssueSummary(issue *apiclient.GitHubIssue) string {
@@ -173,6 +179,20 @@ func githubIssueSummary(issue *apiclient.GitHubIssue) string {
 		return ""
 	}
 	return strings.TrimSpace(fmt.Sprintf("from %s#%d: %s", issue.Repo, issue.Number, issue.Title))
+}
+
+// taskIssueSummary is `vincent task add --issue`'s confirmation line (task
+// 130.7): the vincent issue the task is linked to and, for an imported one,
+// where it came from.
+func taskIssueSummary(issue *apiclient.TaskIssue) string {
+	if issue == nil {
+		return ""
+	}
+	ref := fmt.Sprintf("issue %d", issue.ID)
+	if src := issue.Source; src != nil && src.Number > 0 {
+		ref += fmt.Sprintf(" (%s#%d)", src.Repo, src.Number)
+	}
+	return strings.TrimSpace(fmt.Sprintf("from %s: %s", ref, issue.Title))
 }
 
 // githubPullSummary is `vincent task add --github-pull`'s confirmation line

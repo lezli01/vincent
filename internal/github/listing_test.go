@@ -601,3 +601,26 @@ func goFiles(t *testing.T, dir string) []string {
 	}
 	return files
 }
+
+// TestGetIssueReportsFaultsOnBothLegs is the sync sweep's probe (task
+// 130.8): one GET that follows no redirect, and the same answer on both legs.
+func TestGetIssueReportsFaultsOnBothLegs(t *testing.T) {
+	for via, c := range legs(t, faultCorpus(t), "success") {
+		is, err := c.GetIssue(t.Context(), octoRepo, 2)
+		if err != nil || is.State != StateClosed || is.StateReason != "completed" || is.NodeID != "I_2" {
+			t.Errorf("%s: closed issue = %+v, %v", via, is, err)
+		}
+		if _, err := c.GetIssue(t.Context(), octoRepo, 3); ReasonOf(err) != ReasonGone {
+			t.Errorf("%s: deleted issue = %v, want gone", via, err)
+		}
+		_, err = c.GetIssue(t.Context(), octoRepo, 4)
+		var e *Error
+		if !errors.As(err, &e) || e.Reason != ReasonMoved ||
+			e.Location != "https://api.github.com/repos/octo/other/issues/12" {
+			t.Errorf("%s: transferred issue = %#v, want moved to octo/other#12", via, err)
+		}
+		if _, err := c.GetIssue(t.Context(), octoRepo, 99); ReasonOf(err) != ReasonNotFound {
+			t.Errorf("%s: missing issue = %v, want not_found", via, err)
+		}
+	}
+}

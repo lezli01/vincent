@@ -207,6 +207,11 @@ const (
 	ctxTriggerForm   bindingContext = "trigger form"
 	ctxTriggerCreate bindingContext = "trigger create"
 	ctxTriggerDryRun bindingContext = "trigger dry run"
+	// The issue screens (§15 views 12 and 13, task 130.9): the list and one
+	// issue's detail, two contexts for two screens. `n`, `a`, `i` and `X`
+	// stay unbound on both until #671 and #672 give them their writes.
+	ctxIssues bindingContext = "issues"
+	ctxIssue  bindingContext = "issue"
 )
 
 // vocabularyTerm is the shared operation a row performs — the left column of
@@ -351,6 +356,10 @@ var bindings = []binding{
 	// Triggers get a palette row and no key (task 096 decision 14), the
 	// pattern every takeover but new task follows.
 	{label: "triggers — what starts work on its own, and what each event became", scope: scopeGlobal, nav: true, navTarget: viewTriggers},
+	// Issues get a palette row and no key, the same pattern. Not github:
+	// issues are vincent's own, and a project with no GitHub integration has
+	// them too (task 130.9).
+	{label: "issues — every project's issues, local and imported", scope: scopeGlobal, nav: true, navTarget: viewIssues},
 
 	// Task actions, gated on available_actions. `p` appears twice because
 	// pause and resume are distinct actions behind one key; the palette
@@ -814,6 +823,22 @@ var bindings = []binding{
 	// and asks before it turns one on (decision 19); `T` and `X` are the two
 	// dry runs, which fire nothing; `B` opens the global switch in the daemon
 	// view's editor rather than flipping it from here.
+	// The issues list (§15 view 12, task 130.9).
+	{op: keymap.OpenRow, key: "enter", label: "open the selected issue", scope: scopePanel, context: ctxIssues, hint: "enter open", priority: 1, term: termOpenRow},
+	{op: keymap.Browser, key: "o", label: "open an imported issue's page in a browser", scope: scopePanel, context: ctxIssues, hint: "o browser", priority: 2, term: termBrowser},
+	{op: keymap.Scope, key: "s", label: "cycle the listing between open, closed and all", scope: scopePanel, context: ctxIssues, hint: "s state", priority: 3, term: termScope},
+	{op: keymap.Refresh, key: "R", label: "re-read the issues — never a GitHub sync", scope: scopePanel, context: ctxIssues, hint: "R refresh", priority: 4, term: termRefresh},
+	{key: "down", label: "move the selection (↑/↓)", scope: scopePanel, context: ctxIssues, hint: "↑↓ move", priority: 5},
+	{op: keymap.Filter, key: "/", label: "filter by id, title, label, kind or project", scope: scopePanel, context: ctxIssues, hint: "/ filter", priority: 6, term: termFilter},
+	// The issue detail (§15 view 13).
+	{op: keymap.OpenRow, key: "enter", label: "open the selected linked task's workspace (esc comes back here)", scope: scopePanel, context: ctxIssue, hint: "enter task", priority: 1, term: termOpenRow},
+	{op: keymap.Browser, key: "o", label: "open an imported issue's page in a browser", scope: scopePanel, context: ctxIssue, hint: "o browser", priority: 2, term: termBrowser},
+	{key: rawToggleKey, label: "show the description's original Markdown instead of the rendered view", scope: scopePanel, context: ctxIssue, hint: "ctrl+o raw", priority: 3},
+	{key: linkPickKey, label: "list the links in the description — open one in a browser or copy it", scope: scopePanel, context: ctxIssue, hint: "ctrl+l links", priority: 4},
+	{op: keymap.Refresh, key: "R", label: "re-read the issue — never a GitHub sync", scope: scopePanel, context: ctxIssue, hint: "R refresh", priority: 5, term: termRefresh},
+	{key: "down", label: "move the selection among the linked tasks (↑/↓)", scope: scopePanel, context: ctxIssue, hint: "↑↓ task", priority: 6},
+	{key: "pgdown", label: "scroll the page (pgup/pgdown)", scope: scopePanel, context: ctxIssue, priority: 7},
+
 	{key: "down", label: "move the selection (↑/↓)", scope: scopePanel, context: ctxTriggers, priority: 1},
 	{key: "enter", label: "open the selected trigger in the form (i also opens it)", scope: scopePanel, context: ctxTriggers, hint: "enter edit", priority: 2},
 	{key: "space", label: "enable or disable the selected trigger — enabling asks first", scope: scopePanel, context: ctxTriggers, hint: "space on/off", priority: 3},

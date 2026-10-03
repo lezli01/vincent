@@ -282,7 +282,7 @@ is a correctness bug, not a style issue:
 | `internal/reasons` | The plain-language catalogue of task and step reasons (task 127, §18): a title, a meaning, the §6 actions and a docs anchor for each `block_reason`/`failure_reason`/`skip_reason`/`queued_reason`. A leaf that spells the strings out; tests hold it to every `Reason*` constant and to `docs/reference/task-lifecycle.md`'s tables |
 | `internal/issuestate` | The issue lifecycle of §5.6 (task 130): `open`/`closed`, close reasons, and which actor (`human`, `agent`, `sync`) may take which action. Pure and stdlib-only, a third vocabulary beside `taskstate` and `chatstate`; the store consults it inside the transaction that changes an issue's state |
 | `internal/issues` | The one validated write path for issues (§5.6, task 130): title/label/kind/priority rules and actor attribution, shared by the API, sync and triggers. Imports `store` and `issuestate` only; store errors pass through for `errors.Is` |
-| `internal/tui` | Bubble Tea client: six views (board, detail, new-task, projects, workflows, daemon) routed by `viewID` |
+| `internal/tui` | Bubble Tea client: thirteen views routed by `viewID` — the board, the task workspace, new task, projects, workflows, daemon, pull requests, the chats board and a chat, the two archived boards, triggers, and the issues list and an issue (§15) |
 
 Adapters differ in what they *can* do, and the differences are documented, never
 faked: codex ships no model catalog and no mid-run input; cursor has no effort

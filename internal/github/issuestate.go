@@ -150,6 +150,32 @@ func (c *Client) setIssueState(ctx context.Context, cred credential, repo Repo, 
 	return IssueStateChange{Before: before, After: after}, nil
 }
 
+// GetIssue reads one issue over REST on both legs and follows no redirect:
+// a transferred issue is ReasonMoved with Error.Location, a deleted one
+// ReasonGone, an absent one (or a pull request) ReasonNotFound — the same
+// on the `gh` leg as on the token leg. It is the issue sync's per-issue
+// probe (task 130.8), for an open issue the open listing no longer
+// carries; Get is the picker's, through `gh issue view`, and reports none
+// of the three.
+func (c *Client) GetIssue(ctx context.Context, repo Repo, number int) (Issue, error) {
+	if number < 1 {
+		return Issue{}, newError(ReasonBadRequest, "issue number must be positive, got %d", number)
+	}
+	cred, err := c.credential(ctx)
+	if err != nil {
+		return Issue{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, RemoteTimeout)
+	defer cancel()
+	issue, err := c.apiGetIssue(ctx, cred, repo, number)
+	if err != nil {
+		c.logf("github issue read failed", "repo", repo.String(), "issue", number,
+			"via", cred.via, "reason", ReasonOf(err), "detail", err)
+		return Issue{}, err
+	}
+	return issue, nil
+}
+
 // apiGetIssue reads one issue through apiCall, so it reports gone, moved and
 // not_found the same way on both legs.
 func (c *Client) apiGetIssue(ctx context.Context, cred credential, repo Repo, number int) (Issue, error) {

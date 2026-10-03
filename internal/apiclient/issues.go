@@ -32,6 +32,12 @@ type IssueSource struct {
 	Number      int    `json:"number,omitempty"`
 	URL         string `json:"url,omitempty"`
 	RemoteState string `json:"remote_state,omitempty"`
+	// LastSyncedAt is when the importer last wrote the issue from the
+	// remote (task 130.8); nil when it never has.
+	LastSyncedAt *time.Time `json:"last_synced_at,omitempty"`
+	// Status is "moved" or "missing" when the last sweep could no longer
+	// find the remote where it was; empty while it is live.
+	Status string `json:"status,omitempty"`
 }
 
 // IssueTasks is the root tasks an issue started: how many, and which are
@@ -68,6 +74,10 @@ type Issue struct {
 	AvailableActions []string   `json:"available_actions,omitempty"`
 	Tasks            IssueTasks `json:"tasks"`
 	Editable         []string   `json:"editable,omitempty"`
+	// Prefill is what CreateTaskRequest.IssueID would fill in under the
+	// workflow GetIssue named (task 130.7); nil when it named none. The
+	// daemon computes it with the function the create runs.
+	Prefill *GitHubPrefill `json:"prefill,omitempty"`
 }
 
 // IssueListOptions filters ListIssues. Zero values mean "no filter".
@@ -178,9 +188,16 @@ func (c *Client) CreateIssue(ctx context.Context, req CreateIssueRequest, idempo
 }
 
 // GetIssue fetches one issue in full.
-func (c *Client) GetIssue(ctx context.Context, id int64) (Issue, error) {
+//
+// A non-empty workflow asks for Issue.Prefill as well: what a task created
+// from this issue with that workflow would be prefilled with.
+func (c *Client) GetIssue(ctx context.Context, id int64, workflow string) (Issue, error) {
 	var out Issue
-	if err := c.get(ctx, fmt.Sprintf("/v1/issues/%d", id), &out); err != nil {
+	path := fmt.Sprintf("/v1/issues/%d", id)
+	if workflow != "" {
+		path += "?" + url.Values{"workflow": {workflow}}.Encode()
+	}
+	if err := c.get(ctx, path, &out); err != nil {
 		return Issue{}, err
 	}
 	return out, nil
@@ -225,6 +242,46 @@ func (c *Client) ListIssueLabels(ctx context.Context, projectID int64) ([]IssueL
 	var out []IssueLabel
 	if err := c.get(ctx, fmt.Sprintf("/v1/projects/%d/issue-labels", projectID), &out); err != nil {
 		return nil, err
+	}
+	return out, nil
+}
+
+// IssueSyncStatus is a project's issue import status (task 130.8): GET and
+// POST /v1/projects/{id}/issues/sync.
+type IssueSyncStatus struct {
+	// Enabled is github.enabled with a non-zero github.poll_interval: whether
+	// the reconciler tick imports at all.
+	Enabled  bool   `json:"enabled"`
+	Provider string `json:"provider"`
+	Repo     string `json:"repo"`
+	// LastSyncedAt is when an import last succeeded; nil when none has.
+	LastSyncedAt *time.Time `json:"last_synced_at,omitempty"`
+	OK           bool       `json:"ok"`
+	// Reason names why OK is false: github_disabled, poll_disabled,
+	// pending, rate_limited, not_github, no_client, origin_changed, or one
+	// of internal/github's unavailability reasons.
+	Reason           string     `json:"reason,omitempty"`
+	ImportComplete   bool       `json:"import_complete"`
+	RateLimitedUntil *time.Time `json:"rate_limited_until,omitempty"`
+}
+
+// IssueSyncStatus reads a project's issue import status. It never starts a
+// sync.
+func (c *Client) IssueSyncStatus(ctx context.Context, projectID int64) (IssueSyncStatus, error) {
+	var out IssueSyncStatus
+	if err := c.get(ctx, fmt.Sprintf("/v1/projects/%d/issues/sync", projectID), &out); err != nil {
+		return IssueSyncStatus{}, err
+	}
+	return out, nil
+}
+
+// SyncIssues asks the daemon to sync a project's issues now. The daemon
+// answers 202 at once with the status as it stands; the sync itself runs on
+// the importer's own goroutine.
+func (c *Client) SyncIssues(ctx context.Context, projectID int64) (IssueSyncStatus, error) {
+	var out IssueSyncStatus
+	if err := c.post(ctx, fmt.Sprintf("/v1/projects/%d/issues/sync", projectID), struct{}{}, &out); err != nil {
+		return IssueSyncStatus{}, err
 	}
 	return out, nil
 }

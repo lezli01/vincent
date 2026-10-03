@@ -38,10 +38,11 @@ every human action (`task_cancel`, `task_pause`, `task_approve`, `task_answer`,
 the GitHub reads, the [trigger](triggers.md) reads, `trigger_validate` and both
 dry runs, the [issue](../reference/api.md#issues) routes (`issue_list`,
 `issue_create`, `issue_get`, `issue_patch`, `issue_close`, `issue_reopen`,
-`project_issue_labels`), and the read-only `health`, `info`, `config_get`, `agent_list`,
+`project_issue_labels`), the issue import status `project_issue_sync_status`,
+and the read-only `health`, `info`, `config_get`, `agent_list`,
 `doctor`, `orphan_list`.
 
-Twenty-three routes are deliberately **not** tools:
+Twenty-four routes are deliberately **not** tools:
 
 - `POST /v1/daemon/stop`
 - `POST /v1/agents/{name}/quota`
@@ -50,6 +51,7 @@ Twenty-three routes are deliberately **not** tools:
 - `DELETE /v1/tasks/{id}`
 - `DELETE /v1/chats/{id}`
 - `DELETE /v1/issues/{id}`
+- `POST /v1/projects/{id}/issues/sync`
 - `POST /v1/tasks/import`
 - `POST /v1/maintenance/gc`
 - `POST /v1/doctor/fix`
@@ -72,7 +74,10 @@ that is supervising it. Those stay CLI-and-curl only. The two
 [permanent deletes](../reference/api.md#permanent-delete) are on the project
 delete's line: a row a human archived is history nobody else may discard. The
 issue delete joins them: it is permanent, and an imported issue's tombstone
-outlives it.
+outlives it. Sync now (`POST /v1/projects/{id}/issues/sync`) stays a human act
+too: today it only asks the importer to poll early, but once write-back lands
+the same request flushes vincent's pending edits to GitHub. Its `GET`,
+`project_issue_sync_status`, is an ordinary tool.
 The [task import](../reference/api.md#importing-a-task) that undoes one sits
 beside them: it reads a file the caller names and writes rows no agent should
 be able to create.
@@ -150,6 +155,11 @@ becomes the `Idempotency-Key` header: re-sending the same arguments with the
 same key returns the original task or issue instead of creating a second one. A
 tool call has no header surface, so it is an argument. An issue a step files
 records that step's task as its author.
+
+`task_create`'s body takes `issue_id` to create the task from a vincent issue
+and link the two; `task_list`'s `query` takes `issue_id` to list the tasks
+created from one; and `issue_get`'s `query` takes `workflow` to preview what
+that create would prefill.
 
 Errors come back as the API's own envelope, so a `409` still carries
 `details.state` and you can branch on it rather than reading prose. One result is

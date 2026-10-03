@@ -234,11 +234,13 @@ func (s *Server) compareURLFor(repo github.Repo, task *store.Task) string {
 		return ""
 	}
 	body := strings.TrimSpace(task.Description)
-	// `Closes #N` only when the task carries an issue snapshot, and only for
-	// an issue in the same repository: a cross-repository `Closes` reads as a
-	// promise GitHub will not keep.
-	if task.GitHubIssue != nil && task.GitHubIssue.Number > 0 && task.GitHubIssue.Repo == repo.String() {
-		closes := fmt.Sprintf("Closes #%d", task.GitHubIssue.Number)
+	// `Closes #N` only when the task carries a GitHub issue reference — the
+	// issue snapshot's for a task created from an imported issue (task
+	// 130.7), the legacy snapshot's otherwise — and only for an issue in the
+	// same repository: a cross-repository `Closes` reads as a promise GitHub
+	// will not keep. A local issue has no number to close.
+	if issueRepo, number, ok := taskGitHubRef(task); ok && issueRepo == repo.String() {
+		closes := fmt.Sprintf("Closes #%d", number)
 		if body == "" {
 			body = closes
 		} else {

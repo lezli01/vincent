@@ -9,8 +9,8 @@ import (
 )
 
 // viewID indexes the root's routed screens: the board-only home screen, the
-// full-screen task workspace, the five management takeovers, and the two chat
-// screens (§15).
+// full-screen task workspace, the management takeovers, the chat screens and
+// the issue screens (§15).
 type viewID int
 
 const (
@@ -35,6 +35,11 @@ const (
 	// viewTriggers is §15 view 11 (task 096.6): a takeover of its own rather
 	// than a section of projects or a tab of workflows (decision 14).
 	viewTriggers
+	// The issues list and one issue's detail (§15 views 12 and 13, task
+	// 130.9), routed as a board and the workspace a row opens, the shape
+	// chats have.
+	viewIssues
+	viewIssue
 	viewCount
 )
 
@@ -145,5 +150,7 @@ func newViews(ctx context.Context, links *hyperlinkHolder, level *levelHolder) [
 		viewArchived:      newArchivedBoard(),
 		viewArchivedChats: newArchivedChatsView(),
 		viewTriggers:      newTriggersView(),
+		viewIssues:        newIssuesView(),
+		viewIssue:         newIssueView(raw, links),
 	}
 }

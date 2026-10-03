@@ -527,12 +527,14 @@ func doctorTime(at *time.Time, none string) string {
 	return at.Local().Format(time.RFC3339)
 }
 
-// doctorGitHubRows renders the GitHub issue integration row (task 035).
+// doctorGitHubRows renders the GitHub integration row (task 035): whether
+// the daemon can import and sync GitHub-based projects' issues, and how each
+// project's sync last went (task 130.8).
 //
 // It never accuses: every "no" here — the toggle off, `gh` missing, `gh`
-// logged out, no token — leaves task creation without an issue working
-// exactly as before, so the row states the facts and the consequence and
-// stops there. That is also why none of it is a Problem: `vincent doctor`
+// logged out, no token, a failing sync — leaves tasks and local issues
+// working exactly as before, so the row states the facts and the consequence
+// and stops there. That is also why none of it is a Problem: `vincent doctor`
 // does not exit 1 over it.
 func doctorGitHubRows(gh apiclient.DoctorGitHub) [][]string {
 	rows := [][]string{{"enabled", boolWord(gh.Enabled)}}
@@ -559,14 +561,39 @@ func doctorGitHubRows(gh apiclient.DoctorGitHub) [][]string {
 
 	switch {
 	case gh.Usable:
-		rows = append(rows, []string{"issues", "readable via " + gh.Via})
+		rows = append(rows, []string{"issue import/sync", "available via " + gh.Via})
 	case !gh.Enabled:
-		rows = append(rows, []string{"issues", "not read (integration disabled)"})
+		rows = append(rows, []string{"issue import/sync", "off (integration disabled)"})
 	default:
-		rows = append(rows, []string{"issues", "unavailable: " + gh.Message +
-			"; tasks can still be created without an issue"})
+		rows = append(rows, []string{"issue import/sync", "unavailable: " + gh.Message +
+			"; tasks and local issues are unaffected"})
+	}
+	for _, p := range gh.Sync {
+		rows = append(rows, []string{"sync " + doctorSyncProject(p), doctorSyncValue(p)})
 	}
 	return rows
+}
+
+// doctorSyncProject names a project in its sync row.
+func doctorSyncProject(p apiclient.DoctorProjectIssueSync) string {
+	if p.Project == "" {
+		return "project " + strconv.FormatInt(p.ProjectID, 10)
+	}
+	return p.Project
+}
+
+// doctorSyncValue is one project's sync health: ok or its reason, when it
+// last succeeded, and whether the first full import has finished.
+func doctorSyncValue(p apiclient.DoctorProjectIssueSync) string {
+	verdict := "ok"
+	if !p.OK {
+		verdict = "not ok (" + dash(p.Reason) + ")"
+	}
+	parts := []string{verdict, "last synced " + doctorTime(p.LastSyncedAt, "never")}
+	if !p.ImportComplete {
+		parts = append(parts, "import incomplete")
+	}
+	return strings.Join(parts, "  ")
 }
 
 // doctorContainerRows renders the container-execution row (§16, task 061).

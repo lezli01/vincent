@@ -103,6 +103,11 @@ var Excluded = []Route{
 	// issue route is a tool — task 130 decision 10 lets an agent file, edit,
 	// close and reopen local issues.
 	{Method: http.MethodDelete, Path: "/v1/issues/{id}"},
+	// Sync now (task 130.8) is not a tool either, though today it only asks
+	// the importer to poll early: once write-back lands (#669) the same
+	// request flushes vincent's pending edits to GitHub, so it stays a human
+	// act. Its GET, project_issue_sync_status, is a tool.
+	{Method: http.MethodPost, Path: "/v1/projects/{id}/issues/sync"},
 	// The import that undoes a task delete (task 117), on the same line. It
 	// reads an arbitrary file the caller names and writes rows — ids, step
 	// runs, provenance — that no agent should be able to create.
@@ -192,6 +197,7 @@ var routes = []Route{
 	{http.MethodPatch, "/v1/projects/{id}", "project_patch", "Update a project's mutable fields. Body is the subset to change."},
 	{http.MethodGet, "/v1/projects/{id}/github", "project_github", "Whether this project's origin is a reachable GitHub repository (§12.3)."},
 	{http.MethodGet, "/v1/projects/{id}/github/issues", "project_github_issues", "Open GitHub issues for this project's origin repository."},
+	{http.MethodGet, "/v1/projects/{id}/issues/sync", "project_issue_sync_status", "How this project's GitHub issue import is going (task 130.8): enabled, repo, last_synced_at, ok, reason (github_disabled, poll_disabled, pending, rate_limited, …) and import_complete. A read; it never starts a sync."},
 	{http.MethodGet, "/v1/projects/{id}/github/pulls", "project_github_pulls", "Open GitHub pull requests for this project's origin repository."},
 	{http.MethodGet, "/v1/projects/{id}/issue-labels", "project_issue_labels", "This project's issue label catalogue: each label's name, color, description, source (local or the provider it was imported from) and issue_count."},
 	{http.MethodGet, "/v1/projects/{id}/branches", "project_branches", "This project's local git branches, each with the working tree holding it. A branch here can be run on directly with task_create's existing_branch."},
@@ -207,8 +213,8 @@ var routes = []Route{
 	{http.MethodPost, "/v1/triggers/{id}/poll", "trigger_poll", "Dry run: run the trigger's source once and judge what it returns, with no fire, no cursor advance, no ledger row and no poll-health change."},
 	{http.MethodGet, "/v1/triggers/{id}/deliveries", "trigger_deliveries", "A trigger's delivery ledger, newest first. Query: limit."},
 	{http.MethodPost, "/v1/resolve", "resolve", "Resolve a path to the project that owns it."},
-	{http.MethodGet, "/v1/tasks", "task_list", "List tasks, filtered by the query parameters the API documents."},
-	{http.MethodPost, "/v1/tasks", "task_create", "Create a task. Body: {project_id, workflow?, title, fields?, ...} as documented for POST /v1/tasks."},
+	{http.MethodGet, "/v1/tasks", "task_list", "List tasks, filtered by the query parameters the API documents — among them issue_id, the root tasks created from one vincent issue."},
+	{http.MethodPost, "/v1/tasks", "task_create", "Create a task. Body: {project_id, workflow?, title, fields?, issue_id?, ...} as documented for POST /v1/tasks; issue_id links the task to a vincent issue and prefills it from the issue."},
 	{http.MethodGet, "/v1/tasks/{id}", "task_get", "One task by id, with its current state and block reason."},
 	{http.MethodPatch, "/v1/tasks/{id}", "task_patch", "Update a task's mutable fields (priority, agent override)."},
 	{http.MethodPost, "/v1/tasks/{id}/cancel", "task_cancel", "Cancel a task (§6). Kills its live agent process if it has one."},
@@ -234,7 +240,7 @@ var routes = []Route{
 	{http.MethodDelete, "/v1/tasks/{id}/github/pull", "task_github_pull_unlink", "Unlink this task's pull request. A human unlink is sticky (decision record row 27): the reconciler never re-applies it, so this suppresses the link permanently."},
 	{http.MethodGet, "/v1/issues", "issue_list", "List issues, most recently updated first; rows omit body. Query: project_id, state (open|closed, repeatable), label (repeatable, all must match), kind, q (substring of title or body), source (local|github), sort (updated|created), limit, offset."},
 	{http.MethodPost, "/v1/issues", "issue_create", "File an issue in a project's backlog. Body: {project_id, title, body?, labels?, kind?, priority?}; priority runs 0 none, 1 urgent to 4 low. The author is recorded as your task; pass idempotency_key so a retry cannot file it twice."},
-	{http.MethodGet, "/v1/issues/{id}", "issue_get", "One issue in full: body, labels, state, available_actions, the root tasks working on it (tasks.active_ids), its source when imported, and which fields are editable. Read version from here before issue_patch."},
+	{http.MethodGet, "/v1/issues/{id}", "issue_get", "One issue in full: body, labels, state, available_actions, the root tasks working on it (tasks.active_ids), its source when imported, and which fields are editable. Read version from here before issue_patch. Query: workflow adds the prefill a task_create with this issue_id would apply."},
 	{http.MethodPatch, "/v1/issues/{id}", "issue_patch", "Edit an issue. Body: {version, title?, body?, labels?, add_labels?, remove_labels?, kind?, priority?}. version is required and comes from issue_get; labels replaces the set and cannot be combined with add_labels or remove_labels. A stale version is a 409 issue_changed carrying the current issue — re-apply your edit to it. An imported issue's title, body and labels are mirrored and refused (409 issue_mirrored); kind and priority stay editable. State is not a field: use issue_close or issue_reopen."},
 	{http.MethodPost, "/v1/issues/{id}/close", "issue_close", "Close an open issue. Body: {reason?, duplicate_of?}; reason is completed (the default), not_planned or duplicate, and duplicate_of — an issue id in the same project — is only allowed with duplicate."},
 	{http.MethodPost, "/v1/issues/{id}/reopen", "issue_reopen", "Reopen a closed issue. Body: {}."},

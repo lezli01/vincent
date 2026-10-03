@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/lezli01/vincent/internal/chatstate"
+	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/worktree"
 )
@@ -299,4 +301,40 @@ func (h *chatHarness) orphans(t *testing.T) float64 {
 	}
 	n, _ := out["orphans"].(float64)
 	return n
+}
+
+// TestHandoffFromAnIssue (task 130.7): `issue_id` goes through the shared
+// prepareTaskCreate, so a handed-off task is linked and snapshotted exactly
+// like a direct create, and a closed issue warns rather than refusing.
+func TestHandoffFromAnIssue(t *testing.T) {
+	h := newChatHarness(t)
+	iss, err := h.store.CreateIssue(t.Context(), store.NewIssue{
+		ProjectID: h.projectID, Title: "Carry the chat on", Body: "context",
+	}, issuestate.Human)
+	if err != nil {
+		t.Fatalf("CreateIssue: %v", err)
+	}
+	if _, err := h.store.TransitionIssue(t.Context(), iss.ID, issuestate.Close, issuestate.Completed, nil, issuestate.Human); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	id, _ := handoffFixture(t, h)
+	code, body := h.handoff(t, id, map[string]any{"issue_id": iss.ID})
+	if code != http.StatusCreated {
+		t.Fatalf("handoff = %d (%v)", code, body)
+	}
+	task, _ := body["task"].(map[string]any)
+	if task["title"] != iss.Title {
+		t.Errorf("title = %v, want the issue's", task["title"])
+	}
+	warnings, _ := task["warnings"].([]any)
+	if len(warnings) == 0 || !strings.Contains(fmt.Sprint(warnings), "is closed") {
+		t.Errorf("warnings = %v, want the closed-issue warning", task["warnings"])
+	}
+	stored, err := h.store.GetTask(t.Context(), int64(task["id"].(float64)))
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if stored.IssueID == nil || *stored.IssueID != iss.ID || stored.Issue == nil || stored.Issue.State != "closed" {
+		t.Errorf("stored issue_id %v / snapshot %+v, want issue %d snapshotted closed", stored.IssueID, stored.Issue, iss.ID)
+	}
 }

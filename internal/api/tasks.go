@@ -137,7 +137,16 @@ type taskResponse struct {
 	// task 035); null for every task created without one. It is served as
 	// captured and never refreshed — clients render it as history, not as the
 	// issue's current state.
+	//
+	// A task created from an imported GitHub issue through `issue_id` has no
+	// legacy snapshot; its github_issue is derived from the issue snapshot's
+	// GitHub reference instead (task 130 decision 7), so a consumer reading
+	// `.github_issue.number` keeps working. A local issue derives nothing.
 	GitHubIssue *github.Issue `json:"github_issue"`
+	// Issue is the vincent issue this task was created from (§5.6, task
+	// 130.7): the live issue while the link holds, the task's frozen snapshot
+	// once the issue is deleted. Null for a task created without one.
+	Issue *taskIssueResponse `json:"issue"`
 	// GitHubPull is this task's pull-request link (§5.3, task 052); null for
 	// a task no pull request has ever matched. It is a **pointer** — repo,
 	// number, who linked it, and whether a human unlinked it — never a
@@ -250,7 +259,8 @@ func toTaskResponse(t *store.Task, summary snapshotSummary) taskResponse {
 		AdmitNotBefore:   timePtr(t.AdmitNotBefore),
 		QueuedReason:     nilIfEmpty(t.QueuedReason),
 		PendingInput:     rawIfNotEmpty(t.PendingInputJSON),
-		GitHubIssue:      t.GitHubIssue,
+		GitHubIssue:      taskGitHubIssue(t),
+		Issue:            snapshotIssueResponse(t.Issue),
 		GitHubPull:       t.GitHubPull,
 		WorkflowOrigin:   t.WorkflowOrigin,
 		PauseRequested:   t.PauseRequested,
@@ -507,6 +517,15 @@ type taskCreateRequest struct {
 	// would fight over the same title and description, and there is no
 	// defensible order.
 	GitHubPull *int `json:"github_pull"`
+	// IssueID creates this task from a vincent issue (§5.6, §13.2, task
+	// 130.7): the daemon loads the issue, freezes it onto the row as the
+	// issue snapshot, links the row to it, and prefills title, description
+	// and declared fields from the snapshot — explicit values win, as for
+	// `github_issue`. It is refused beside `github_pull` (two prefills) and,
+	// until task 130.11 settles the rule, beside `github_issue`.
+	//
+	// `omitempty` for task 040's digest, like the fields below.
+	IssueID *int64 `json:"issue_id,omitempty"`
 	// Paused creates the task directly in `paused` (§6, task 096 decision 9):
 	// invisible to admission until `POST /v1/tasks/{id}/resume`, so the
 	// scheduler cannot start it between two calls. A trigger's `propose` is
@@ -618,7 +637,24 @@ func (s *Server) prepareTaskCreate(
 			"github_issue and github_pull cannot both be given: they would prefill the same fields from different sources")
 		return nil, false
 	}
+	if req.IssueID != nil && req.GitHubPull != nil {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			"issue_id and github_pull cannot both be given: they would prefill the same fields from different sources")
+		return nil, false
+	}
+	if req.IssueID != nil && req.GitHubIssue != nil {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			"issue_id and github_issue cannot both be given: they would prefill the same fields from different sources")
+		return nil, false
+	}
 	issue, ok := s.applyIssuePrefill(ctx, w, project, entry.Workflow, req)
+	if !ok {
+		return nil, false
+	}
+	// The vincent-issue prefill (task 130.7), beside the GitHub one and for
+	// the same reasons. The two are mutually exclusive, so their order is
+	// immaterial.
+	issueSnap, issueWarning, ok := s.applyVincentIssue(ctx, w, project, entry.Workflow, req)
 	if !ok {
 		return nil, false
 	}
@@ -763,6 +799,13 @@ func (s *Server) prepareTaskCreate(
 		GitHubIssue:      issue,
 		Restricted:       ptrValue(req.Restricted),
 	}
+	// The link and its snapshot go in with the row, in the creating
+	// transaction (task 130 decision 5). The legacy github_issue_json column
+	// is never written for an `issue_id` task (decision 8).
+	if issueSnap != nil {
+		issueID := issueSnap.ID
+		t.IssueID, t.Issue = &issueID, issueSnap
+	}
 	// Created held (§6, task 096 decision 9): the row is inserted `paused`,
 	// so there is no instant at which it is admissible.
 	if ptrValue(req.Paused) {
@@ -841,6 +884,9 @@ func (s *Server) prepareTaskCreate(
 	if mismatch := s.containerMismatch(ctx, wf); mismatch != "" {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, mismatch)
 		return nil, false
+	}
+	if issueWarning != "" {
+		warnings = append(warnings, issueWarning)
 	}
 	return &preparedTask{project: project, task: t, workflow: wf, pull: pull, warnings: warnings}, true
 }
@@ -994,6 +1040,7 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		s.deps.WakeRunner()
 	}
 	resp := toTaskResponse(&t, s.snaps.get(t.ID, t.WorkflowSnapshot))
+	s.overlayLiveIssue(ctx, &resp, &t)
 	resp.Warnings = warnings
 	writeJSON(w, http.StatusCreated, resp)
 }
@@ -1281,6 +1328,16 @@ func (s *Server) handleTaskList(w http.ResponseWriter, r *http.Request) {
 		}
 		filter.ProjectID = id
 	}
+	// The tasks created from one issue (task 130.7). Lanes inherit the link
+	// but stay excluded by the default below, so this is the issue's work.
+	if v := q.Get("issue_id"); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || id < 1 {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed, "issue_id must be a positive integer")
+			return
+		}
+		filter.IssueID = id
+	}
 	// Fan-out lanes are excluded by default (§13.2, task 014 decision 13): a
 	// list is the work someone asked for, and a 64-task tree would bury it.
 	// `parent_id` drills into one parent's lanes; `include_children` is the
@@ -1390,6 +1447,11 @@ func (s *Server) toListResponse(ctx context.Context, tasks []store.Task) ([]list
 			return nil, err
 		}
 	}
+	// The linked issues as they are now (task 130.7): one query for the page.
+	linked, err := s.liveIssues(ctx, tasks)
+	if err != nil {
+		return nil, err
+	}
 
 	out := make([]listTaskResponse, 0, len(tasks))
 	for i := range tasks {
@@ -1418,6 +1480,11 @@ func (s *Server) toListResponse(ctx context.Context, tasks []store.Task) ([]list
 		if rollup, ok := children[t.ID]; ok {
 			row.Children = toChildrenResponse(rollup, childCosts[t.ID])
 		}
+		if t.IssueID != nil {
+			if iss, ok := linked[*t.IssueID]; ok {
+				row.Issue = liveIssueResponse(iss)
+			}
+		}
 		out = append(out, row)
 	}
 	return out, nil
@@ -1437,6 +1504,7 @@ func (s *Server) handleTaskGet(w http.ResponseWriter, r *http.Request) {
 	resp := toTaskResponse(t, summary)
 	resp.Snapshot = t.WorkflowSnapshot
 	resp.WorkflowSteps = workflowSteps(summary)
+	s.overlayLiveIssue(r.Context(), &resp, t)
 	// The list endpoint has always carried project_name; the detail endpoint
 	// never did, so every client's TaskDetail.ProjectName was silently empty
 	// and `vincent task show` printed a blank project. One row read is cheaper

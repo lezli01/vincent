@@ -655,6 +655,8 @@ See [`vincent gc`](cli.md#vincent-gc) for the command over these endpoints.
 | `GET` | `/v1/projects/{id}/github` | Can this project's GitHub issues be read? |
 | `GET` | `/v1/projects/{id}/github/issues` | Its issues, newest first — `?state=`, `?limit=`, `?workflow=` |
 | `GET` | `/v1/projects/{id}/github/pulls` | Its pull requests, newest first — `?state=`, `?limit=`, `?workflow=` |
+| `GET` | `/v1/projects/{id}/issues/sync` | How its GitHub issue import is going |
+| `POST` | `/v1/projects/{id}/issues/sync` | Sync now — `202` with the same body |
 
 `DELETE` succeeds only when no non-archived tasks remain. `?force` archives them
 first (force-removing worktrees), and is refused while any task is running.
@@ -735,7 +737,8 @@ false the body carries a `reason` and a human-readable `message`:
 | `moved` | GitHub answered 301: the issue was transferred, or its repository renamed. vincent never follows the redirect |
 
 Those reasons are the whole client-facing vocabulary. `gone` and `moved` come
-from the issue sync's reads and writes (task 130), which no route serves yet;
+from the issue sync's per-issue reads, which record them on the issue as
+`source.status` `missing` and `moved` rather than on any route;
 everything else from `pull_exists` down comes only from a write —
 `POST /v1/tasks/{id}/github/pull/create` or one of the routes that
 [act on a linked pull request](#acting-on-a-linked-pull-request). `gh`'s stderr and the
@@ -778,6 +781,51 @@ vincent issue fills `issue` with the vincent issue id.
 `POST /v1/tasks` computes exactly the same prefill from the same code, so a
 preview a human accepted and a create call that names only the issue produce the
 same task. An unknown workflow name is `400 validation_failed`.
+
+### Issue sync
+
+On every [`github.poll_interval`](configuration.md#github) tick the daemon
+imports and refreshes each GitHub-based project's issues into its
+[backlog](#issues). `GET /v1/projects/{id}/issues/sync` reads how that is going;
+it never calls GitHub, and never starts a sync:
+
+```json
+{ "enabled": true, "provider": "github", "repo": "lezli01/vincent",
+  "last_synced_at": "2026-10-02T09:15:00Z", "ok": false,
+  "reason": "rate_limited", "import_complete": true,
+  "rate_limited_until": "2026-10-02T10:00:00Z" }
+```
+
+`enabled` is `github.enabled` and a non-zero `github.poll_interval` together.
+`repo` is the repository the project's first successful sync bound it to, or
+the one its `origin` names until then. `last_synced_at` is the last successful
+sync and is absent when none has been. `import_complete` turns `true` once the
+first import of the open issues has finished; it runs at most 500 issues a tick
+and resumes where it stopped. `rate_limited_until`, present only while backing
+off, is GitHub's reset time: no call is made, sync-now included, until then.
+When `ok` is false, `reason` says why:
+
+| `reason` | Meaning |
+|---|---|
+| `github_disabled` | `github.enabled` is false |
+| `poll_disabled` | `github.poll_interval` is `0`: the integration is on, the background tick is not |
+| `pending` | The importer has not attempted this project yet |
+| `not_github` | No `origin`, or one that is not a github.com repository |
+| `no_client` | The daemon has no GitHub client wired |
+| `origin_changed` | `origin` now names a different repository than the one the project is bound to. Sync stops and is never re-keyed; a rename GitHub redirects is not this |
+| any [GitHub reason](#github-issues) | The last attempt failed with it — `rate_limited`, `no_credential`, `unauthorized`, `unreachable`, … |
+
+The two config switches take precedence over whatever the importer last
+recorded. None of these is a task's `block_reason`: a sync is not a task, and
+nothing about it blocks one.
+
+`POST /v1/projects/{id}/issues/sync` is sync now. It records the request, wakes
+the importer and answers **`202`** at once with the status as it stands, not
+the outcome of this sync, which lands on the importer's goroutine and announces
+itself with [`issue.sync_changed`](#state-events--durable) when it flips the
+verdict. With a switch off the request is recorded, `reason` names the switch,
+and nothing is imported until it is turned back on. It is not an
+[MCP](#mcp) tool. An unknown project is `404` on both.
 
 ### GitHub pull requests
 
@@ -889,8 +937,9 @@ listing, which is what lets a task still name a pull request that has since
 
 For a task with no link, the response carries `compare_url` instead: GitHub's
 own "open a pull request" page for the task's branch, prefilled with the task's
-title and description plus `Closes #N` when the task carries an issue snapshot
-from the same repository. It is **built, never fetched** — producing it makes no
+title and description plus `Closes #N` when the task was created from a GitHub
+issue in the same repository — an [imported issue](#creating-a-task-from-an-issue)
+or `github_issue`. A local issue adds nothing. It is **built, never fetched** — producing it makes no
 request to GitHub — and it is the fallback behind
 `POST /v1/tasks/{id}/github/pull/create` below.
 
@@ -1578,8 +1627,8 @@ time.
 
 | Method | Path | Notes |
 |---|---|---|
-| `GET` | `/v1/tasks?project_id=&state=&archived=&archived_before=&archived_since=&limit=&offset=&parent_id=&include_children=` | List. Fan-out lanes are **excluded** by default — `parent_id` lists one parent's lanes in merge order, `include_children=true` the flat everything |
-| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, existing_branch?, priority?, agent?, model?, effort?, github_issue?, github_pull?, paused?, restricted?, max_task_cost_usd? }` — `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head. `existing_branch` runs the task on a branch that already exists — see [Running on an existing branch](#running-on-an-existing-branch). `paused`, `restricted` and `max_task_cost_usd` are the [create-time limits](#paused-restricted-and-capped-tasks). Accepts an optional `Idempotency-Key` header |
+| `GET` | `/v1/tasks?project_id=&state=&archived=&archived_before=&archived_since=&limit=&offset=&parent_id=&include_children=&issue_id=` | List. Fan-out lanes are **excluded** by default — `parent_id` lists one parent's lanes in merge order, `include_children=true` the flat everything. `issue_id` lists the tasks created from one [issue](#creating-a-task-from-an-issue) |
+| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, existing_branch?, priority?, agent?, model?, effort?, github_issue?, github_pull?, issue_id?, paused?, restricted?, max_task_cost_usd? }` — `issue_id` creates the task [from an issue](#creating-a-task-from-an-issue). `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head. `existing_branch` runs the task on a branch that already exists — see [Running on an existing branch](#running-on-an-existing-branch). `paused`, `restricted` and `max_task_cost_usd` are the [create-time limits](#paused-restricted-and-capped-tasks). Accepts an optional `Idempotency-Key` header |
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
 | `DELETE` | `/v1/tasks/{id}` | Permanent delete of an **archived** task. `?delete_branch=true` (or `{ "delete_branch": true }`) → `{ deleted: true, branch? }`. See [Permanent delete](#permanent-delete) |
@@ -1842,8 +1891,8 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/tasks" \
 
 The body is compared by a digest of the decoded request, so reformatting your
 JSON or reordering its keys between the two sends is not a difference. It is
-taken before the `github_issue` prefill runs, so an issue edited in between does
-not turn a genuine retry into a conflict. `paused`, `restricted` and
+taken before the `github_issue` or `issue_id` prefill runs, so an issue edited in
+between does not turn a genuine retry into a conflict. `paused`, `restricted` and
 `max_task_cost_usd` are part of it — the same key with a different value for any
 of them is `idempotency_key_reused` — and a body that names none of them
 digests exactly as it did before they existed.
@@ -2383,8 +2432,16 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
 - **Get** adds `body`; `available_actions`, what a person may do from this
   state; `tasks.count` and `tasks.active_ids` over the root tasks created from
   the issue (fan-out lanes never count); `editable`, the fields a `PATCH` may
-  touch; and `source` — `{ provider, repo, number, url, remote_state }` for an
-  imported issue, `null` for a local one.
+  touch; and `source` — `{ provider, repo, number, url, remote_state,
+  last_synced_at, status }` for an imported issue, `null` for a local one.
+  `last_synced_at` is when the importer last wrote the issue from the remote.
+  `status` is absent while the remote issue is live, `moved` when it was
+  transferred, and `missing` when it was deleted or is no longer found;
+  nothing is deleted locally either way. `remote_state`, `last_synced_at` and
+  `status` are omitted when empty, and list rows carry the same `source`.
+  `?workflow=NAME` adds `prefill: { title, description, fields }`, what
+  [creating a task from the issue](#creating-a-task-from-an-issue) with that
+  workflow would fill in; an unknown workflow is `400`.
 - **Patch** takes `{ version, title?, body?, labels?, add_labels?,
   remove_labels?, kind?, priority? }`. `version` is required — send the one you
   read. `labels` replaces the set and cannot be combined with `add_labels` or
@@ -2409,6 +2466,39 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
 | `issue_changed` | `PATCH` with a stale `version` | `reason`, and `issue`: the issue as it is now — re-apply your edit to it and send its `version` |
 | `issue_mirrored` | `PATCH` touching an imported issue's `title`, `body` or labels, which mirror GitHub. `kind` and `priority` stay editable | `reason` |
 | — | `close` on a closed issue, `reopen` on an open one | `state` |
+
+### Creating a task from an issue
+
+`issue_id` on [`POST /v1/tasks`](#tasks) creates a task from an issue and links
+the two:
+
+```sh
+curl -sS -X POST "http://127.0.0.1:$PORT/v1/tasks" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"project_id":1,"workflow":"fix-issue","issue_id":7}'
+```
+
+The daemon freezes the issue onto the task as a snapshot — what
+[`.Issue`](workflow-schema.md#template-context) renders — and prefills `title`,
+`description` and declared fields from it, on the same rules as `github_issue`:
+anything you send explicitly wins, by presence for `fields` and `description`,
+and a blank or absent `title` takes the issue's. `GET /v1/issues/{id}?workflow=`
+previews exactly that prefill. No GitHub call is made, even for an imported
+issue.
+
+- An unknown `issue_id`, an issue in another project, and `issue_id` beside
+  `github_pull` or `github_issue` are `400 validation_failed` and create nothing.
+- A **closed** issue still creates the task — follow-up work on a closed issue
+  is legitimate — and `warnings` says the issue is closed.
+- Every task representation carries `issue: { id, title, state, source? }`:
+  the issue as it is now, or the snapshot once the issue has been deleted.
+  `null` for a task created without one.
+- For an issue imported from GitHub, `github_issue` is filled in from the
+  snapshot, so a consumer reading `.github_issue.number` keeps working, and
+  the task's [`compare_url`](#github-pull-requests) carries `Closes #N` for an
+  issue in the same repository.
+- `GET /v1/tasks?issue_id=N` lists the issue's tasks — the root tasks its
+  `tasks.count` counts; fan-out lanes inherit the link but are not listed.
 
 ## Chats
 
@@ -2472,7 +2562,9 @@ It answers `201 { "task": {...}, "chat": {...} }`: the task carries
 `source_chat_id`, and the chat comes back `handed_off` with `handoff_task_id`
 set and its `worktree_path` cleared — the claim moved, in one transaction with
 the task row, the link, both durable events (`task.created` and
-`chat.handed_off`) and the transition.
+`chat.handed_off`) and the transition. That includes `issue_id`: the handed-off
+task is [linked to the issue](#creating-a-task-from-an-issue) exactly as a
+direct create is, and a closed issue's warning lands in the task's `warnings`.
 
 Everything is validated before anything is written, so a refusal leaves the
 chat exactly as it was: `400` when the task does not validate, `409` when the
@@ -3107,6 +3199,7 @@ task.deleted            chat.deleted
 task.restored
 issue.created           issue.updated           issue.state_changed
 issue.labels_changed    issue.comment_added     issue.deleted
+issue.sync_changed
 project.*               workflow.registry_changed
 trigger.fired           trigger.poll_changed
 agent.quota_changed     daemon.shutting_down
@@ -3140,6 +3233,11 @@ they need.
   fields and labels emits `issue.updated` and `issue.labels_changed`, and one
   that changes nothing emits nothing. `task.created` carries `issue_id` for a
   task created from an issue.
+- `issue.sync_changed` carries `{ project_id, ok, reason? }` and fires only when
+  a project's [issue sync](#issue-sync) flips between ok and failing, so a sync
+  failing on every tick is one event, not one per tick. A project's first
+  failure announces; its first success does not. There is no bulk import
+  event: an import emits one `issue.created` per new issue, so debounce.
 - There is no separate `task.archived` or `task.awaiting_input` type. Both are
   `task.state_changed` with the appropriate `to`; the `awaiting_input` payload
   additionally carries the request kind and a one-line summary, which is the
@@ -3256,6 +3354,7 @@ Every route on this page is a tool, with these exceptions:
 | `DELETE /v1/tasks/{id}` | Destructive admin, on the same line: a row a human archived is history nobody else may discard. Archive stays a tool — the row and its transcripts survive it |
 | `DELETE /v1/chats/{id}` | Same |
 | `DELETE /v1/issues/{id}` | Same: the delete is permanent, and an imported issue's tombstone outlives it. Every other issue route is a tool |
+| `POST /v1/projects/{id}/issues/sync` | Today it only asks the importer to poll early, but once write-back lands the same request flushes vincent's pending edits to GitHub, so it stays a human act. Its `GET` is the tool `project_issue_sync_status` |
 | `POST /v1/tasks/import` | Destructive admin, beside the deletes it undoes: it reads a file the caller names and writes rows no agent should be able to create |
 | `POST /v1/maintenance/gc` | Destructive admin |
 | `POST /v1/doctor/fix` | Destructive admin |

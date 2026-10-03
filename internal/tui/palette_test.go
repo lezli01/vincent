@@ -33,6 +33,7 @@ func TestPaletteReachesEveryRegistryEntry(t *testing.T) {
 		ctxChats, ctxChat, ctxNewChat,
 		ctxArchived, ctxArchivedChats,
 		ctxTriggers, ctxTriggerLedger,
+		ctxIssues, ctxIssue,
 	}
 	for _, b := range bindings {
 		if b.noPalette {
@@ -101,13 +102,14 @@ func TestPaletteDisconnectedKeepsNavigation(t *testing.T) {
 	if actions != 0 {
 		t.Errorf("palette offers %d task actions while disconnected, want 0", actions)
 	}
-	// Nine: the five takeovers, the chats board (task 067), the two
-	// archived boards (task 092) and triggers (task 096.6). Navigation
+	// Ten: the five takeovers, the chats board (task 067), the two
+	// archived boards (task 092), triggers (task 096.6) and issues (task
+	// 130.9). Navigation
 	// survives a disconnect because reaching a screen is not an action on the
 	// daemon — an archived board shows what it last fetched, the way every
 	// other one does.
-	if nav != 9 {
-		t.Errorf("palette lists %d navigation entries while disconnected, want all 9", nav)
+	if nav != 10 {
+		t.Errorf("palette lists %d navigation entries while disconnected, want all 10", nav)
 	}
 }
 

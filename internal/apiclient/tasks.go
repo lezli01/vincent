@@ -95,6 +95,10 @@ type Task struct {
 	// has a pull request without a request per row; GET /v1/tasks has always
 	// served it, and a daemon too old to leaves it nil, which marks nothing.
 	GitHubPull *GitHubPullLink `json:"github_pull,omitempty"`
+	// Issue is the vincent issue this task was created from (task 130.7):
+	// the issue as it is now while the link holds, the task's snapshot of it
+	// once the issue is deleted. Nil for a task created without one.
+	Issue *TaskIssue `json:"issue,omitempty"`
 
 	// QueuedReason and AdmitNotBefore describe a queued task waiting on
 	// something other than a free slot (§11) — `usage_limit` today, with the
@@ -168,6 +172,14 @@ const (
 	ArchivedAll ArchivedScope = "all"
 )
 
+// TaskIssue is the issue a task was created from, as the task carries it.
+type TaskIssue struct {
+	ID     int64        `json:"id"`
+	Title  string       `json:"title"`
+	State  string       `json:"state"`
+	Source *IssueSource `json:"source,omitempty"`
+}
+
 // ListTasksOptions filters GET /v1/tasks. Zero values mean "no filter".
 type ListTasksOptions struct {
 	ProjectID int64
@@ -181,6 +193,9 @@ type ListTasksOptions struct {
 	ParentID int64
 	// IncludeChildren asks for the flat everything, lanes included.
 	IncludeChildren bool
+	// IssueID lists the tasks created from one vincent issue (task 130.7);
+	// lanes stay excluded unless IncludeChildren says otherwise.
+	IssueID int64
 	// ArchivedBefore and ArchivedSince bound `archived_at` (§13.2, task 092),
 	// which is what the archived board's date presets and the sweep's cutoff
 	// become on the wire. Zero means no bound.
@@ -204,6 +219,9 @@ func (o ListTasksOptions) query() string {
 	}
 	if o.IncludeChildren {
 		q.Set("include_children", "true")
+	}
+	if o.IssueID != 0 {
+		q.Set("issue_id", strconv.FormatInt(o.IssueID, 10))
 	}
 	if o.Limit > 0 {
 		q.Set("limit", strconv.Itoa(o.Limit))
@@ -620,6 +638,11 @@ type CreateTaskRequest struct {
 	// link, and names the branch; everything the caller supplies explicitly
 	// still wins, except the branch, which the pull request decides.
 	GitHubPull *int `json:"github_pull,omitempty"`
+	// IssueID creates the task from a vincent issue (task 130.7): the daemon
+	// links the task to it, snapshots it, and prefills whatever this request
+	// left unset from the snapshot. Refused beside GitHubPull and, for now,
+	// beside GitHubIssue.
+	IssueID *int64 `json:"issue_id,omitempty"`
 	// Paused creates the task directly in `paused`; `resume` admits it (§6,
 	// task 096 decision 9).
 	Paused *bool `json:"paused,omitempty"`

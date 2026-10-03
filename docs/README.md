@@ -83,7 +83,7 @@ and design choices that made a durable orchestrator feel necessary.
 |---|---|
 | [Writing workflows](guides/workflows.md) | The authoring guide, in 14 sections: the nine step types, control flow, templates, checks, retries, agents, portability |
 | [Agent CLIs](guides/agents.md) | Claude Code, Codex and Cursor: installing, authenticating, and what each one can and cannot do |
-| [Using the TUI](guides/tui.md) | The board, task detail, the five takeover screens, every key |
+| [Using the TUI](guides/tui.md) | The board, task detail, the takeover screens, every key |
 | [Scripting vincent](guides/scripting.md) | `--json`, exit codes, and driving the API directly from a script or CI |
 | [Driving vincent from an agent](guides/mcp.md) | The MCP server: the API as tools, the bounded wait, and wiring vincent's own steps |
 | [Event triggers](guides/triggers.md) | Start or act on tasks from a polled command, GitHub issue and pull-request changes, a signed push, or a cron or interval schedule, with dry runs and a delivery ledger |

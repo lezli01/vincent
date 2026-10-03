@@ -1,6 +1,6 @@
 # 130 — The issues pillar: vincent-owned issues per project
 
-**Status:** 🔄 in progress (4/18)
+**Status:** 🔄 in progress (8/18)
 
 Issue [#659](https://github.com/lezli01/vincent/issues/659), part of
 [#658](https://github.com/lezli01/vincent/issues/658). Spec §3 (rows 11, 26
@@ -138,6 +138,17 @@ templates render.
   of spec §3 row 26 ("never re-fetched") is **kept for the snapshot**; it is
   superseded only for the issue entity, which sync re-reads (decision 9).
   Whether a follow-up run may refresh its snapshot is open question 5.
+
+*Settled with 130.7 (2026-10-02), by the author:*
+
+- **A closed issue may back a new task.** `issue_id` naming a closed issue
+  creates the task and adds a line to the create response's `warnings` rather
+  than refusing it: one issue backs many tasks, and follow-up work on a closed
+  issue is legitimate.
+- **The chat handoff carries `issue_id`.** It goes through the shared
+  `prepareTaskCreate`, so a handed-off task is linked and snapshotted exactly
+  like a direct create, and a closed issue's warning lands in the handoff
+  response's `warnings` too.
 
 ### 6. Delete in any state; no archive (2026-10-02)
 
@@ -386,6 +397,66 @@ Also standing from the issue's proposed defaults: the list is a bare array
 `mcp.max_issues` cap, and `DELETE /v1/issues/{id}` is excluded from MCP on
 task 092's line.
 
+### 15. 130.8: the importer lives in the daemon, imports emit per-issue events, `vincent issue sync` lands first (2026-10-02)
+
+Settled with the author while scoping #667.
+
+1. **No `internal/issuesource` package.** The importer is
+   `internal/daemon/issuesync.go`: it calls `github.Client.ListIssuesSince`
+   and maps each result onto `store.RemoteIssue`. The `provider` column is the
+   only provider seam; the first provider does not design for the second.
+2. **Per-issue `issue.created` on import, no `issue.imported` kind.** §13.3's
+   six `issue.*` kinds stand and clients debounce. The one new kind is
+   `issue.sync_changed {project_id, ok, reason?}`, emitted only on ok↔failing
+   transitions, on `trigger.poll_changed`'s precedent.
+3. **`vincent issue sync` lands now** as the first leaf of the `vincent issue`
+   tree, ahead of 130.6, which grows the rest around it.
+4. **Kind and priority are local.** A refresh never writes either; an import
+   creates the issue with `kind` empty. Assignees, milestone, the author's
+   login, `closed_at` and `state_reason` go into `remote_json`.
+5. **The repo binding is sticky.** The first successful sync records the
+   repo; a later tick whose `origin` names another stops that project's sync
+   with `origin_changed` and never re-keys. A GitHub-side rename is followed
+   through the `node_id` match.
+6. **Nothing is deleted.** The daily open-set scan marks an imported issue
+   `remote_status: moved` (transferred) or `missing` (gone, 404/410, or
+   converted to a discussion, pending #664's experiment); neither removes the
+   local row.
+7. **Sync failures are never quiet**, unlike the pull-request half of the
+   same tick: each is recorded on the project's sync row with a reason, and a
+   rate limit backs off until GitHub's reset.
+8. **`POST /v1/projects/{id}/issues/sync` is not an MCP tool.** It only nudges
+   the importer today, but once write-back (#669) lands it flushes pending
+   edits to GitHub, so it stays a human act. The status `GET` is a tool.
+
+Kept, not relitigated: the mirrored-field refusal stays `issue_mirrored`
+(decision 14.2); `github.enabled` and `poll_interval: 0` are the only switches
+(open question 2); projects sharing an origin import their own copies (open
+question 3); the initial import is open issues only, 500 per pass, resumable
+(open question 4).
+
+### 16. 130.9: the TUI issue screens (2026-10-02)
+
+Settled with the author while scoping #668. Spec §15 views 12 and 13 record
+the screens.
+
+1. **The list is cross-project and grouped by project**, like the
+   pull-requests takeover; the headings are drawn, not rows. It is one
+   `GET /v1/issues`, not one call per project, so a load error is
+   screen-wide and view 7's per-project error band does not carry over. `/`
+   filters client-side on id, title, label, kind and project name.
+2. **`R` re-reads only.** It never requests a GitHub sync; that stays on the
+   reconciler tick and `vincent issue sync` (130.8). 130.9 does not depend on
+   130.8.
+3. **For now, the detail's linked tasks are the active ones**: `tasks.count`
+   and the tasks in `tasks.active_ids`, each fetched with `GetTask` and drawn
+   with its state glyph. `enter` opens one; the workspace's `esc` returns to
+   the issue. 130.13 widens this to every root task, newest first, once
+   `?issue_id=` exists.
+4. **A list row's linked-task summary is the count plus an active marker**,
+   from the list DTO's `task_count` and `active`. No worst live state, no
+   per-row task fetch.
+
 ## Open questions
 
 Each has a proposed default, which stands unless the author answers otherwise
@@ -442,17 +513,20 @@ its own pull request.
   issue listing (`node_id`, pagination, conditional requests, gone/moved) and
   issue state writes in `internal/github`. Depends: 130.2. ✓ 2026-10-02
 - [ ] **130.6** ([#665](https://github.com/lezli01/vincent/issues/665)) The
-  `vincent issue …` CLI tree. Depends: 130.3.
-- [ ] **130.7** ([#666](https://github.com/lezli01/vincent/issues/666))
+  `vincent issue …` CLI tree; drops `ListIssues`/`GetIssue` from
+  `tuiOnlyClientCalls` and their row from `docs/reference/cli.md`'s "What only
+  the TUI does", which 130.9 added. Depends: 130.3.
+- [x] **130.7** ([#666](https://github.com/lezli01/vincent/issues/666))
   `issue_id` on task create, the prefill preview, `?issue_id=` filter, the task
   DTO link, `Closes #N`, `vincent task add --issue`. Depends: 130.3, 130.4.
-- [ ] **130.8** ([#667](https://github.com/lezli01/vincent/issues/667)) Import
+  ✓ 2026-10-02
+- [x] **130.8** ([#667](https://github.com/lezli01/vincent/issues/667)) Import
   and refresh on the reconciler tick, sync status, config and doctor text.
   Amends spec §12.3's "no call until a human opens the issue picker"
   (`docs/spec.md:7354-7360`), `internal/config/config.go:383-388` and
   `docs/reference/configuration.md` (decision 9). Depends: 130.1, 130.3, 130.5.
-- [ ] **130.9** ([#668](https://github.com/lezli01/vincent/issues/668)) The TUI
-  Issues list and Issue detail. Depends: 130.3.
+- [x] **130.9** ([#668](https://github.com/lezli01/vincent/issues/668)) The TUI
+  Issues list and Issue detail. Depends: 130.3. ✓ 2026-10-02 (decision 16)
 - [ ] **130.10** ([#669](https://github.com/lezli01/vincent/issues/669)) The
   write-back outbox, its compare-and-set drain, and the guard refusing MCP- and
   step-originated writes (decision 10, open question 6). Depends: 130.8.
@@ -466,7 +540,9 @@ its own pull request.
   helper. Depends: 130.9.
 - [ ] **130.13** ([#672](https://github.com/lezli01/vincent/issues/672)) Seed a
   new task from an issue, delete the new-task form's issue picker, the task
-  workspace's Issue section. Depends: 130.9, 130.7.
+  workspace's Issue section. Depends: 130.9, 130.7. Also widens the issue
+  detail's linked tasks from the active ones to every root task, newest first,
+  over `?issue_id=` (decision 16.3).
 - [ ] **130.14** ([#673](https://github.com/lezli01/vincent/issues/673))
   `VINCENT_ISSUE_FILE`, and the repo's resolve workflows migrated onto it.
   Depends: 130.7, 130.6, 130.8.

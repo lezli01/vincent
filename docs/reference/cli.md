@@ -23,6 +23,7 @@ localhost API.
 - [`vincent workflow`](#vincent-workflow)
 - [`vincent trigger`](#vincent-trigger)
 - [`vincent github`](#vincent-github)
+- [`vincent issue`](#vincent-issue)
 - [`vincent gc`](#vincent-gc)
 
 ---
@@ -88,6 +89,7 @@ neither a subcommand nor on this list:
 | The daemon summary on the board header and daemon view | `vincent daemon status`, `vincent agents`, `vincent doctor` and `vincent config get` between them. The daemon-wide count of slots in use right now, with its lanes and on-input breakdown, is shown only in the TUI; `vincent project ls --json` carries each project's `slots_used` |
 | Listing a project's local branches in the new-task and new-chat branch pickers | No subcommand: `vincent task add --branch <name> --existing-branch` and `vincent chat start --branch <name> --existing-branch` take the name, and a shell standing in the repository already has `git branch` |
 | The `@` file picker in the chat composer, which completes a file of the directory the chat's next turn would start in as you type | `vincent chat files` lists the same files and `--mention` prints the same text a picked row inserts. Nothing completes a draft for you, and the message is sent as typed by `vincent chat send` either way |
+| The issues list and an issue's detail | No subcommand yet: the `vincent issue` tree is still to come. Until then `curl` reads `GET /v1/issues` and `GET /v1/issues/{id}`, and an agent has the MCP `issue_list` and `issue_get` tools |
 | Live updates as they happen | Subcommands poll: `vincent task transcript -f`, `vincent chat transcript -f`, and `vincent chat send` waits for the answer |
 
 ## `vincent version`
@@ -115,7 +117,7 @@ One report answering "why is nothing running?". Twelve groups:
 | Log | daemon log path, size, mtime, and the last 20 lines |
 | Database | path, size, total on disk including WAL/SHM, applied schema version, `PRAGMA integrity_check`, per-table row counts, workflow-snapshot bytes, and how far back the events table reaches |
 | Agents | per adapter: found, path, version, `logged_in`, whether the build is one vincent has been tested against, and whether the adapter can restrict on this OS. Quota is not here — it needs a daemon this report does not; see [`vincent agents`](#vincent-agents) |
-| GitHub | whether [`github.enabled`](configuration.md#github) is on, whether `gh` is installed and logged in, whether a token variable is set, and whether issues are readable |
+| GitHub | whether [`github.enabled`](configuration.md#github) is on, whether `gh` is installed and logged in, whether a token variable is set, whether issue import/sync is available, and one `sync <project>` row per project the importer has polled or been asked to: `ok` or `not ok (<reason>)`, when it last synced, and `import incomplete` until the first import finishes |
 | Container | whether [`container.image`](configuration.md#container) names an image, which image, whether the configured runtime answered, and whether steps run in it or on this host |
 | Skills | per [published skill](#vincent-skills): the version this binary ships, the state of the copy in the global skills store, and the agents it is linked into |
 | Update | whether [`update.check`](configuration.md#update) is on, the latest stable release and when it was last seen, this binary's version, and whether the running daemon is older than it |
@@ -140,9 +142,9 @@ The **Update** rows never set it either: a newer release and a daemon still
 running the previous build both leave everything working, so both are stated as
 facts with the command that acts on them — never as problems.
 The **GitHub** rows never set the exit code either, and they say why: every "no"
-they can report — the toggle off, `gh` missing, `gh` logged out, no token —
-leaves task creation without an issue working exactly as before, so the row ends
-with *tasks can still be created without an issue*. The token row names the
+they can report — the toggle off, `gh` missing, `gh` logged out, no token, a
+failing sync — leaves tasks and local issues working exactly as before, so the
+row ends with *tasks and local issues are unaffected*. The token row names the
 **variable** (`GITHUB_TOKEN` or `GH_TOKEN`), never its value: a diagnostic is
 something people paste into issues.
 The **Container** rows follow the same rule and for the same reason:
@@ -545,7 +547,7 @@ whatever wraps this.
 ### `vincent task add`
 
 ```sh
-vincent task add --project ID (--title TITLE | --github-issue N | --github-pull N)
+vincent task add --project ID (--title TITLE | --issue ID | --github-issue N | --github-pull N)
                  [--workflow NAME] [--description TEXT] [--base-branch BRANCH]
                  [--branch NAME] [--existing-branch] [--priority N] [--agent NAME] [--model M]
                  [--effort E] [--field NAME=VALUE]... [--fields-file PATH]
@@ -560,7 +562,7 @@ is no separate draft state.
 | Flag | Notes |
 |---|---|
 | `--project` | **Required** |
-| `--title` | Required unless `--github-issue` or `--github-pull` supplies one; also the source of the branch slug |
+| `--title` | Required unless `--issue`, `--github-issue` or `--github-pull` supplies one; also the source of the branch slug |
 | `--workflow` | Defaults to the project's default workflow |
 | `--base-branch` | What the task branches **from**. Defaults to the project's default branch |
 | `--branch` | What the task's branch is **called**. Used verbatim and wins over any template; defaults to the project's or the global [`branch_template`](configuration.md#branch_template) |
@@ -569,6 +571,7 @@ is no separate draft state.
 | `--field name=value` | Task field; repeat for more. Everything after the first `=` is the value, and a repeated name uses the last value |
 | `--fields-file PATH` | Read fields from a JSON object of string values; `-` reads it from stdin. Combines with `--field`, which wins for a name both supply |
 | `--agent` / `--model` / `--effort` | The task-level override. It replaces workflow `defaults`, never an explicit step field |
+| `--issue ID` | Create the task from vincent issue `ID` and link the two. Cannot be combined with `--github-issue` or `--github-pull`. See below |
 | `--github-issue N` | Create the task from GitHub issue `N`. See below |
 | `--github-pull N` | Create the task from GitHub pull request `N`, **running it on that pull request's head branch**. See below |
 | `--paused` | Create the task paused; it starts only when resumed (`vincent task resume`). The scheduler never sees it before then |
@@ -648,6 +651,26 @@ A value no catalog knows is accepted with a warning on stderr (the CLI is the
 final authority); a value belonging to a *different* adapter's catalog is
 rejected with exit 1.
 
+#### From an issue
+
+```sh
+vincent task add --project 1 --issue 7
+```
+
+```
+task 62 created: Crash on cold start (adhoc, branch vincent/62-crash-on-cold-start)
+  from issue 7: Crash on cold start
+```
+
+The flag carries the issue **id and nothing else**; the daemon fills in the
+title, the description and the workflow's declared fields from the issue, and
+links the task to it, so the issue's task count and
+[`GET /v1/tasks?issue_id=`](api.md#creating-a-task-from-an-issue) include it. An issue imported from GitHub is named with its source, `from issue 7
+(octo/repo#200): …`, and no GitHub call is made. Every explicit flag wins, as
+for `--github-issue` below. A closed issue still creates the task, with a
+warning on stderr. `--issue` cannot be combined with `--github-issue` or
+`--github-pull`: each would prefill the same title and description.
+
 #### From a GitHub issue
 
 ```sh
@@ -666,8 +689,8 @@ issue title), the description (the issue body plus a trailing
 `GitHub issue #N: <url>` line), and any of the workflow's declared `issue`,
 `github_issue`, `labels`, `assignee` or `milestone` fields whose declared type
 accepts the value — `issue` and `github_issue` both being the issue number. A
-workflow that hands the number to `gh` reads `github_issue`: once tasks can be
-created from vincent issues, `issue` holds the vincent issue id instead.
+workflow that hands the number to `gh` reads `github_issue`: on a task created
+[from a vincent issue](#from-an-issue), `issue` holds the vincent issue id instead.
 
 **Every explicit flag wins over what the issue would have filled in**, so
 `--title "Something else"` keeps your title and takes the rest from the issue.
@@ -2821,24 +2844,62 @@ MCP tool, so an agent running in a step cannot reach them.
 vincent github status --project ID [--json]
 ```
 
-Whether *this* project's issues can be read, and if not, why.
+Whether *this* project's issues can be imported and synced, and if not, why.
 
 ```
-CHECK    VALUE
-enabled  yes
-repo     lezli01/vincent
-issues   readable via gh
+CHECK              VALUE
+enabled            yes
+repo               lezli01/vincent
+issue import/sync  available via gh
 ```
 
-The `issues` row covers pull requests too: they are read through the same
-credential and the same gate.
+The `issue import/sync` row covers pull requests too: they are read through the
+same credential and the same gate.
 
 It is the per-project half of [`vincent doctor`](#vincent-doctor)'s GitHub rows:
 doctor answers "can this machine read GitHub at all", this answers "and is this
-project one it would read". A project whose `origin` is not a github.com URL
+project one whose issues it would import and sync".
+[`vincent issue sync --status`](#vincent-issue-sync) says how that import is
+actually going. A project whose `origin` is not a github.com URL
 reports `unavailable: this project's origin remote is not a github.com
 repository` — which is not a fault, just a project the issue picker does not
 apply to.
+
+## `vincent issue`
+
+A project's issues. Needs a daemon.
+
+### `vincent issue sync`
+
+```sh
+vincent issue sync --project ID [--status] [--json]
+```
+
+Asks the daemon to import and refresh the project's GitHub issues now, then
+prints how the import stands. The daemon syncs on its own reconciler goroutine
+and answers at once, so what is printed is the status as of the request, not
+the result of this sync. `--status` only reads it and asks for nothing.
+`--json` prints the
+[`/v1/projects/{id}/issues/sync`](api.md#issue-sync) body.
+
+```
+CHECK            VALUE
+enabled          yes
+repo             lezli01/vincent
+last synced      2026-10-02T11:15:00+02:00
+ok               yes
+reason           -
+import complete  yes
+sync             requested
+```
+
+`reason` uses the sync vocabulary of the [API](api.md#issue-sync) —
+`github_disabled`, `poll_disabled`, `pending`, `origin_changed`,
+`rate_limited`, … — and a `rate limited until` row appears while the daemon is
+backing off. With [`github.enabled`](configuration.md#github) off or
+`github.poll_interval: 0` the request is still recorded, and the last row reads
+`requested, but import is off (<reason>)`: nothing is imported until the switch
+is turned back on. An unknown project exits `1`.
 
 ## `vincent gc`
 

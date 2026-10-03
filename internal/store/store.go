@@ -38,6 +38,9 @@ type Store struct {
 	path string
 	// eventHook fires after an event's transaction commits; see SetEventHook.
 	eventHook atomic.Pointer[func(*Event)]
+	// syncRequested fires after RequestIssueSync commits; see
+	// OnIssueSyncRequested.
+	syncRequested atomic.Pointer[func(int64)]
 }
 
 // Open opens (creating if needed) the SQLite database at path, applies the

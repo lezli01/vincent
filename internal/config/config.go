@@ -382,9 +382,11 @@ const (
 type GitHub struct {
 	// Enabled turns the integration on. It defaults to **true** and is an
 	// opt-*out*: it is inert on every project whose origin is not a
-	// github.com repository, and makes no call at all until a human opens the
-	// issue picker, names an issue, or asks for a pull request, so
-	// on-by-default costs nothing unasked for (decision 6).
+	// github.com repository (decision 6). On a GitHub-based project the
+	// reconciler tick imports and refreshes the project's issues (task
+	// 130.8) and links pull requests (task 052); this and PollInterval: 0
+	// are the two switches that stop it, and with this false the daemon
+	// makes no GitHub call at all.
 	//
 	// It is also the **only** gate on every write (task 069, task 068.4).
 	// Nothing is pushed, opened, merged, closed, reopened, commented on or
@@ -397,19 +399,20 @@ type GitHub struct {
 	// parse error the strict decoder already refuses — which is why
 	// validate() has no clause for this block.
 	Enabled bool `yaml:"enabled"`
-	// PollInterval is how often the daemon reconciles task↔pull-request links
-	// (task 052, §12.3): it lists each GitHub-based project's open pull
-	// requests and links the ones whose head branch is a task's branch.
+	// PollInterval is the reconciler tick (§12.3): on each one the daemon
+	// imports and refreshes each GitHub-based project's issues (task 130.8)
+	// and reconciles task↔pull-request links (task 052), listing open pull
+	// requests and linking the ones whose head branch is a task's branch.
 	//
-	// This is the daemon's **first standing outbound network traffic**, which
-	// is why it is a key rather than a constant, and why `0` disables the
-	// reconciler while leaving the rest of the integration on. A user who
-	// wants the picker but no background calls must be able to say so without
-	// turning `enabled` off.
+	// This is the daemon's **standing outbound network traffic**, which is
+	// why it is a key rather than a constant, and why `0` disables the
+	// reconciler — no import, no refresh, no link — while leaving the rest of
+	// the integration on. A user who wants pull requests on request but no
+	// background calls must be able to say so without turning `enabled` off.
 	//
-	// The default is conservative — a pull request appearing a few minutes
-	// late costs nothing, and the reconciler is a convenience over a fact the
-	// branch already carries.
+	// The default is conservative — an issue or a pull request appearing a
+	// few minutes late costs nothing, and `vincent issue sync` asks for an
+	// import now.
 	PollInterval Duration `yaml:"poll_interval"`
 }
 

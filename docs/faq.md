@@ -35,10 +35,11 @@ Two calls the daemon makes **without** being asked, both switchable:
   [`vincent update`](reference/cli.md#vincent-update), which you run. Set
   [`update.check: false`](reference/configuration.md#update) and the daemon
   makes no such request at all.
-- **The pull-request reconciler.** Every
+- **The GitHub reconciler.** Every
   [`github.poll_interval`](reference/configuration.md#github) (5 minutes by
-  default) the daemon lists each GitHub-based project's open pull requests, so a
-  task can name the pull request opened from its branch. It fires only for
+  default) the daemon imports and refreshes each GitHub-based project's issues
+  into its issue set, and lists its open pull requests so a task can name the
+  pull request opened from its branch. It fires only for
   projects whose `origin` is a github.com repository, so a daemon with no such
   project never makes it. Set `poll_interval: 0` to stop it and keep the rest,
   or [`github.enabled: false`](reference/configuration.md#github) to switch off

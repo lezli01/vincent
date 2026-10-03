@@ -88,6 +88,7 @@ func (s *Server) doctorReport(ctx context.Context, probe bool) *doctor.Report {
 	})
 	s.fillDatabase(ctx, rep)
 	s.fillTasks(ctx, rep)
+	s.fillIssueSync(ctx, rep)
 	rep.Evaluate()
 	return rep
 }

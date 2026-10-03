@@ -100,7 +100,7 @@ func TestIssuesOverTheWire(t *testing.T) {
 		t.Errorf("ReopenIssue = %+v, %v", reopened, err)
 	}
 
-	got, err := c.GetIssue(ctx, iss.ID)
+	got, err := c.GetIssue(ctx, iss.ID, "")
 	if err != nil || got.Title != title || got.Tasks.ActiveIDs == nil {
 		t.Errorf("GetIssue = %+v, %v", got, err)
 	}
@@ -113,7 +113,7 @@ func TestIssuesOverTheWire(t *testing.T) {
 	if err := c.DeleteIssue(ctx, iss.ID); err != nil {
 		t.Fatalf("DeleteIssue: %v", err)
 	}
-	if _, err := c.GetIssue(ctx, iss.ID); !errors.As(err, &e) || e.Status != http.StatusNotFound {
+	if _, err := c.GetIssue(ctx, iss.ID, ""); !errors.As(err, &e) || e.Status != http.StatusNotFound {
 		t.Errorf("get after delete = %v", err)
 	}
 
@@ -129,7 +129,7 @@ func TestIssuesOverTheWire(t *testing.T) {
 	if reason, _, ok := apiclient.IssueConflict(err); !ok || reason != apiclient.IssueReasonMirrored {
 		t.Errorf("mirrored patch = %v", err)
 	}
-	gh, err := c.GetIssue(ctx, imported.ID)
+	gh, err := c.GetIssue(ctx, imported.ID, "")
 	if err != nil || gh.Source == nil || gh.Source.Repo != "o/r" || gh.Source.Number != 3 {
 		t.Errorf("imported source = %+v, %v", gh.Source, err)
 	}

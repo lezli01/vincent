@@ -323,6 +323,10 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/projects/{id}/branches", s.handleProjectBranches)
 	rt.handle(http.MethodGet, "/v1/projects/{id}/github", s.handleProjectGitHub)
 	rt.handle(http.MethodGet, "/v1/projects/{id}/github/issues", s.handleProjectGitHubIssues)
+	// Issue import status and sync now (§5.6, task 130.8). The GET is a
+	// tool; the POST is not (internal/mcp's Excluded says why).
+	rt.handle(http.MethodGet, "/v1/projects/{id}/issues/sync", s.handleIssueSyncStatus)
+	rt.handle(http.MethodPost, "/v1/projects/{id}/issues/sync", s.handleIssueSyncNow)
 	rt.handle(http.MethodGet, "/v1/projects/{id}/github/pulls", s.handleProjectGitHubPulls)
 	rt.handle(http.MethodGet, "/v1/projects/{id}/issue-labels", s.handleProjectIssueLabels)
 	rt.handle(http.MethodGet, "/v1/workflows", s.handleWorkflowList)

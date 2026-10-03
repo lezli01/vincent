@@ -3,8 +3,10 @@ package tui
 import (
 	"context"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -61,6 +63,31 @@ func withFakeOpener(t *testing.T, err error) *[]string {
 	}
 	t.Cleanup(func() { openURL = prev })
 	return opened
+}
+
+// withLiveFakeOpener is withFakeOpener for the live harness, whose pump runs
+// each command on its own goroutine the way the runtime does: the recorder
+// is written there and read from the test's, so it is locked, and the test
+// reads a copy.
+func withLiveFakeOpener(t *testing.T) func() []string {
+	t.Helper()
+	var (
+		mu     sync.Mutex
+		opened []string
+	)
+	prev := openURL
+	openURL = func(_ context.Context, url string) error {
+		mu.Lock()
+		defer mu.Unlock()
+		opened = append(opened, url)
+		return nil
+	}
+	t.Cleanup(func() { openURL = prev })
+	return func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(opened)
+	}
 }
 
 // drain runs a tea.Cmd to its message, in-process: every command these

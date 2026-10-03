@@ -17,6 +17,7 @@ import (
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/mcp"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/workflow"
 )
 
 // The issue routes (spec §5.6, §13.2, task 130.3). Every write goes through
@@ -44,6 +45,12 @@ type issueSourceBody struct {
 	// RemoteState is the state the remote last reported, read from the
 	// stored remote payload; omitted when it carries none.
 	RemoteState string `json:"remote_state,omitempty"`
+	// LastSyncedAt is when the importer last wrote this issue from the
+	// remote (task 130.8); omitted when it never has.
+	LastSyncedAt *time.Time `json:"last_synced_at,omitempty"`
+	// Status is what the last sweep learned of the remote: "moved" or
+	// "missing", omitted while it is live.
+	Status string `json:"status,omitempty"`
 }
 
 // issueRowBody is an issue as GET /v1/issues lists it: everything but the
@@ -85,6 +92,12 @@ type issueBody struct {
 	AvailableActions []issuestate.Action `json:"available_actions"`
 	Tasks            issueTasksBody      `json:"tasks"`
 	Editable         []string            `json:"editable"`
+	// Prefill is what creating a task from this issue with `issue_id` would
+	// fill in (task 130.7), present only on GET /v1/issues/{id}?workflow=W:
+	// the declared-field half is a fact about a workflow. It is computed by
+	// the same function POST /v1/tasks runs (task 035 decision 2's kept
+	// principle), so the preview is what the create stores.
+	Prefill *githubPrefill `json:"prefill,omitempty"`
 }
 
 func renderIssueRow(iss *store.Issue) issueRowBody {
@@ -114,11 +127,13 @@ func renderIssueRow(iss *store.Issue) issueRowBody {
 	if issues.Mirrored(iss) {
 		r := iss.Remote
 		row.Source = &issueSourceBody{
-			Provider:    r.Provider,
-			Repo:        r.Repo,
-			Number:      r.Number,
-			URL:         r.URL,
-			RemoteState: remoteState(r.RemoteJSON),
+			Provider:     r.Provider,
+			Repo:         r.Repo,
+			Number:       r.Number,
+			URL:          r.URL,
+			RemoteState:  remoteState(r.RemoteJSON),
+			LastSyncedAt: r.SyncedAt,
+			Status:       r.Status,
 		}
 	}
 	return row
@@ -434,7 +449,26 @@ func (s *Server) handleIssueGet(w http.ResponseWriter, r *http.Request) {
 		s.writeIssueError(w, r, id, "get issue", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.renderIssue(r.Context(), iss))
+	body := s.renderIssue(r.Context(), iss)
+	// The prefill preview. An unknown workflow is a 400 rather than a silent
+	// "no prefill", for the reason the GitHub issues listing gives: a
+	// preview of nothing would look like an issue with no metadata.
+	if name := strings.TrimSpace(r.URL.Query().Get("workflow")); name != "" {
+		var wf *workflow.Workflow
+		if s.deps.Workflows != nil {
+			if entry, found := s.deps.Workflows.Lookup(iss.ProjectID, name); found && entry.Valid() {
+				wf = entry.Workflow
+			}
+		}
+		if wf == nil {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed,
+				fmt.Sprintf("workflow %q not found for project %d", name, iss.ProjectID))
+			return
+		}
+		prefill := vincentIssuePrefill(store.NewIssueSnapshot(iss, time.Now()), wf)
+		body.Prefill = &prefill
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 // issuePatchRequest is PATCH /v1/issues/{id}'s body. `state` is deliberately
