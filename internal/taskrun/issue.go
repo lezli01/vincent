@@ -50,6 +50,7 @@ func issueContext(task *store.Task) workflow.IssueContext {
 			Kind:     snap.Kind,
 			Priority: snap.Priority,
 			Author:   snap.Author,
+			Comments: templateComments(snap.Comments),
 		}
 		if rem := snap.Remote; rem != nil {
 			ctx.Source = workflow.IssueSource{
@@ -92,6 +93,21 @@ func issueContext(task *store.Task) workflow.IssueContext {
 	return workflow.IssueContext{}
 }
 
+// templateComments maps a snapshot's thread onto `.Issue.Comments` (task 130
+// decision 24, 130.16). It reads the frozen snapshot, so a comment written
+// after task creation never reaches a render; a legacy GitHub snapshot has no
+// thread at all and renders none.
+func templateComments(in []store.IssueSnapshotComment) []workflow.IssueComment {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]workflow.IssueComment, 0, len(in))
+	for _, c := range in {
+		out = append(out, workflow.IssueComment{Author: c.Author, Body: c.Body, CreatedAt: c.CreatedAt})
+	}
+	return out
+}
+
 // providerGitHub is the Source.Provider of a legacy GitHub snapshot — the
 // same spelling issue_remotes.provider uses for an imported GitHub issue.
 const providerGitHub = "github"
@@ -132,9 +148,10 @@ const issueFileName = "vincent-issue.json"
 //
 // Number is the **GitHub** number and null for a local issue — the file's
 // contract is gh's, which is why it does not follow `.Issue.Number` into
-// being the vincent id (task 130 decision 8). Comments is always empty until
-// #675 carries the thread; its element shape is already gh's so nothing
-// changes for a reader when it does.
+// being the vincent id (task 130 decision 8). Comments is the snapshot's
+// thread in gh's element shape, oldest first (130.16, closing decision
+// 23.2's gap) — always an array, `[]` when the thread is empty and for a
+// legacy GitHub snapshot, which never carried one.
 type issueFile struct {
 	Number      *int               `json:"number"`
 	Title       string             `json:"title"`
@@ -191,7 +208,7 @@ func issueFileOf(task *store.Task) (issueFile, workflow.IssueEnv, bool) {
 			State:    strings.ToUpper(snap.State),
 			Labels:   fileLabels(snap.Labels),
 			Author:   issueFileAuthor{Login: snap.Author},
-			Comments: []issueFileComment{},
+			Comments: fileComments(snap.Comments),
 			ID:       &snap.ID,
 			Kind:     snap.Kind,
 			Priority: snap.Priority,
@@ -236,6 +253,17 @@ func issueFileOf(task *store.Task) (issueFile, workflow.IssueEnv, bool) {
 		return f, workflow.IssueEnv{Number: issue.Number, URL: issue.URL}, true
 	}
 	return issueFile{}, workflow.IssueEnv{}, false
+}
+
+// fileComments maps a snapshot's thread onto gh's `comments` elements. The
+// result is never nil, so the file says `[]` rather than null — what
+// `gh issue view --json comments` prints for an issue with no thread.
+func fileComments(in []store.IssueSnapshotComment) []issueFileComment {
+	out := make([]issueFileComment, 0, len(in))
+	for _, c := range in {
+		out = append(out, issueFileComment{Author: issueFileAuthor{Login: c.Author}, Body: c.Body, CreatedAt: c.CreatedAt.UTC()})
+	}
+	return out
 }
 
 func fileLabels(names []string) []issueFileLabel {
