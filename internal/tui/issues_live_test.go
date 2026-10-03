@@ -137,7 +137,7 @@ func TestIssueScreensAgainstTheRealAPI(t *testing.T) {
 	// enter opens the detail on the selected issue.
 	for i, row := range list.rows() {
 		if row.issue.ID == local.ID {
-			list.cursor = i
+			list.cursor, list.selected = i, row.issue.ID
 		}
 	}
 	detail := issueDetailView(t, h)
