@@ -292,9 +292,9 @@ steps:
 
       This unit is part of GitHub issue #{{ index .Task.Fields "github_issue" }},
       which is in `.vincent-issue/issue.json` — number, title, body, labels
-      and creation date — for context. It is context, not scope. Its
-      `comments` list is empty: the GitHub thread is not carried into the task
-      yet.
+      and creation date, and its `comments` list is the discussion thread as
+      it stood when the parent task was created — for context. It is context,
+      not scope.
 
       ## Your scope, in full
 
