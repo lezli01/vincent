@@ -103,9 +103,9 @@ list with the user-facing context a commit subject cannot carry.
   vincent issues, `.Issue.Number` and a declared `issue` field carry the
   vincent issue id, so a workflow that hands a number to `gh` should read
   `.Issue.Source.Number` or a declared `github_issue` field. Creating a task
-  with `--github-issue N` now fills a declared `github_issue` field as well as
-  `issue`, both with the GitHub number, and every existing template renders
-  exactly as before; `.Issue.Repo` and `.Issue.URL` are deprecated aliases of
+  from an issue imported from GitHub fills a declared `github_issue` field with
+  the GitHub number beside `issue`'s vincent id, and every existing template
+  renders exactly as before; `.Issue.Repo` and `.Issue.URL` are deprecated aliases of
   `.Issue.Source.Repo` and `.Issue.Source.URL`.
   ([#663](https://github.com/lezli01/vincent/issues/663))
 - **The `/v1/issues` API.** File, list, read, edit, close, reopen and delete a
