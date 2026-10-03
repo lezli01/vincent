@@ -24,6 +24,15 @@ list with the user-facing context a commit subject cannot carry.
   Overview and in an Issue section of Task Details; the command palette's
   "open this task's issue" opens it.
   ([#672](https://github.com/lezli01/vincent/issues/672))
+- **Find an issue by its GitHub number.** `GET /v1/issues?project_id=P&remote_number=N`,
+  the MCP `issue_list` tool's `remote_number`, and
+  `vincent issue ls --project P --github N` return the issue a project imported
+  GitHub issue `N` as — the way a script that holds only a GitHub number finds
+  the issue to create a task from. A number means nothing across projects, so
+  each requires the project (`400 validation_failed` without it). The repo's
+  `github-resolve-issue-multiple` workflow uses it, asking for one
+  `vincent issue sync` when an issue is not imported yet.
+  ([#670](https://github.com/lezli01/vincent/issues/670))
 - **Issue state is written back to GitHub.** Closing or reopening an issue
   imported from GitHub — in the TUI, with the CLI or over the API — now closes
   or reopens it on GitHub too, with the same close reason. The write is
@@ -153,6 +162,18 @@ list with the user-facing context a commit subject cannot carry.
   takes `?workflow=` or returns a per-row `prefill`; preview a task's prefill
   with `GET /v1/issues/{id}?workflow=`.
   ([#672](https://github.com/lezli01/vincent/issues/672))
+- **Tasks created from GitHub issues are linked to imported issues.** On
+  upgrade, every task created from a GitHub issue before vincent had its own
+  issues — archived and never-started tasks and fan-out lanes included — is
+  linked to an issue in its project, one per repository and number, with the
+  title, body, labels and state of the newest task's snapshot. The first sync
+  that finds each one on GitHub adopts it and takes GitHub's state, writing
+  nothing back. An issue whose repository is not the one the project is bound
+  to (`origin` re-pointed or the repository renamed since) is never matched,
+  and keeps its backfilled content. The tasks' own snapshots are unchanged, so
+  they render exactly as before, and the task's read-only `github_issue` is
+  still served.
+  ([#670](https://github.com/lezli01/vincent/issues/670))
 
 ### Deprecated
 
@@ -162,6 +183,30 @@ list with the user-facing context a commit subject cannot carry.
   events now carry `IssueID`, the imported vincent issue's id, so
   `issue: '{{ .Event.IssueID }}'` links the task.
   ([#674](https://github.com/lezli01/vincent/issues/674))
+
+### Removed
+
+- **Breaking: creating a task straight from a GitHub issue number.** A GitHub
+  issue now reaches a task only by being imported into the project's issues
+  and created from with `issue_id` / `vincent task add --issue ID` / a
+  trigger's `issue:`.
+  - **API clients** sending `github_issue` on `POST /v1/tasks` (or the MCP
+    `task_create` tool) get `400 validation_failed` (`unknown field
+    "github_issue"`). Find the issue with
+    `GET /v1/issues?project_id=P&remote_number=N` and send `issue_id`.
+    Idempotency keys recorded before the upgrade still replay: the create
+    digest keeps an always-empty `github_issue` slot.
+  - **Trigger files** with `action.github_issue` fail validation
+    (`unknown field "github_issue"`) and stop firing until edited to
+    `issue: '{{ .Event.issue_id }}'` on a `type: issues` source, or
+    `issue: '{{ .Event.IssueID }}'` on `github_issues`. They keep their cursor,
+    so the edited trigger resumes where it stopped.
+  - **`vincent task add --github-issue`** is gone; use
+    `vincent issue ls --project P --github N` and `--issue`.
+  - **The `?workflow=` prefill** on `GET /v1/projects/{id}/github/issues` and
+    `vincent github issues` is gone; the listing stays as a remote browse.
+  - **The new-task form's GitHub issue picker** is gone from the TUI.
+  ([#670](https://github.com/lezli01/vincent/issues/670))
 
 ## [0.11.0](https://github.com/lezli01/vincent/compare/v0.10.1...v0.11.0) (2026-10-01)
 

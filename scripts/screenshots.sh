@@ -1031,7 +1031,7 @@ action:
   type: create_task
   workflow: feature-pr
   title: '{{ .Event.Issue.Title }}'
-  github_issue: '{{ .Event.Issue.Number }}'
+  issue: '{{ .Event.IssueID }}'
 dedupe_key: 'gh:issue:{{ .Event.Issue.Number }}:label:agent-please'
 EOF
   chmod 600 "$CONFIG_DIR"/triggers/*.yaml

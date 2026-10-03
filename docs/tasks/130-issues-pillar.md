@@ -626,6 +626,60 @@ The probe route, `vincent github status` and doctor stay; the GitHub issue
 listing loses only `?workflow=` and its per-row `prefill`, which the form's
 picker was the one consumer of (decision 7).
 
+### 22. 130.11: the backfill, placeholder re-keying and a remote-number lookup (2026-10-03)
+
+Settled with the author while scoping #670. #670's body proposed keeping
+`github_issue: N` as a permanent resolve-or-import shorthand; the author was
+asked and kept decision 7. Spec §3 row 26, §5.3, §12.1, §12.3, §13.1, §13.2,
+§14 and §15 record the result.
+
+1. **Decision 7 stands.** 130.11 removes `github_issue` from `POST /v1/tasks`,
+   `--github-issue` and `action.github_issue`. #670's permanent-shorthand
+   proposal is not built, and with it go the acceptance criteria that
+   depended on it (import on demand, digest-identical replay, `github_issue`
+   beside a disagreeing `issue_id`). An API client still sending the field
+   gets `400 validation_failed` (`unknown field "github_issue"`, the strict
+   decoder's answer to an unknown key); a trigger file still carrying it fails validation
+   with `unknown field "github_issue"`, stops firing, keeps its cursor, and
+   resumes once edited to `issue:`. The release notes carry both as a
+   breaking change. The task DTO's read-only `github_issue` stays: removal
+   concerns create, not stored history.
+2. **Backfilled state is the newest snapshot's**, even for issues linked only
+   to archived tasks. Sync corrects it, and GitHub wins. Content (title, body,
+   author, labels) comes from the newest snapshot too; timestamps are copied
+   from the linked tasks, never generated, and migration 0040 writes no
+   events.
+3. **Placeholder keys, re-keyed on first sight.** Backfilled remotes are keyed
+   `legacy:owner/repo#N` with `synced_at` NULL. The importer and the daily
+   scan match never-synced placeholders by `(project, repo, number)`, re-key
+   to `node_id`, adopt remote state and enqueue no write-back. Real keys are
+   never matched by number (decision 15.5 kept). A placeholder whose `repo`
+   differs from the project's sticky sync binding — `origin` re-pointed, or
+   the repository renamed, since the task was created — is **never matched**,
+   and stays a never-synced imported issue with its backfilled content; the
+   API and CLI sync docs say so.
+4. **A remote-number lookup replaces the shorthand for scripts.** It is
+   `GET /v1/issues?project_id=&remote_number=` (a 400 without `project_id`,
+   since a number means nothing across projects), the `issue_list` MCP tool's
+   `remote_number`, and `vincent issue ls --project P --github N`. The repo's
+   resolve workflows use it, triggering `vincent issue sync` when the issue is
+   not yet imported, and their dedupe reads the linked issue's GitHub number
+   beside the legacy snapshot, so a re-run stays safe across the backfill.
+
+Also settled in the same pull request: a legacy-snapshot task brought in by
+task import (task 117) is relinked by its snapshot's repository and number
+against the **live** store's GitHub remotes, never by the staged database's
+issue id; the new-task form's GitHub issue picker, which submitted `github_issue`,
+goes with the field — 130.13 (decision 21) had already replaced it with the
+read-only source row;
+and decision 7's accepted consequence that "every `POST /v1/tasks`
+idempotency digest changes once" is **not** paid after all. The digest is
+computed over a separate shape that keeps an always-`null` `github_issue`
+slot where the field was, so a keyed retry spanning the upgrade still
+replays, while the request itself can no longer carry the field. This
+departs from decision 7's expectation, not its rule: the field is still
+removed from every create surface.
+
 ## Open questions
 
 Each has a proposed default, which stands unless the author answers otherwise
@@ -704,11 +758,13 @@ its own pull request.
   Also replaces the TUI's local-only close/reopen confirmation on an imported
   issue (decision 19.2) with its own, done when the two were stacked.
   ✓ 2026-10-03 (decision 17)
-- [ ] **130.11** ([#670](https://github.com/lezli01/vincent/issues/670)) SQL
+- [x] **130.11** ([#670](https://github.com/lezli01/vincent/issues/670)) SQL
   backfill of task 035's snapshots into issues, and the removal of
   `github_issue` from `POST /v1/tasks`, `--github-issue` and
   `action.github_issue` with every consumer decision 7 lists. Depends: 130.7,
-  130.8.
+  130.8. Also removes the new-task form's issue picker, which submitted
+  `github_issue` (130.13's first item), and adds the remote-number lookup.
+  ✓ 2026-10-03 (decision 22)
 - [x] **130.12** ([#671](https://github.com/lezli01/vincent/issues/671)) The
   TUI issue create/edit form with close and reopen, and a shared `$EDITOR`
   helper. Depends: 130.9. ✓ 2026-10-03 (decision 19)

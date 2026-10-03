@@ -9,9 +9,9 @@
 # everything else.
 #
 # The GitHub issue number is the declared **`github_issue` field**, not the
-# title and not `issue`. Picking an issue in the new-task form fills it in, and
-# so does `vincent task add --github-issue 42`; typing it by hand is the third
-# way. It is `required: true`, so a task that reaches this workflow without one
+# title and not `issue`. Creating the task from the imported issue fills it
+# in — `vincent task add --issue ID`, the id from `vincent issue ls --project P
+# --github 42` — and typing it by hand is the other way. It is `required: true`, so a task that reaches this workflow without one
 # is refused at creation rather than 45 minutes into a run. The declared
 # `issue` field holds the vincent issue id (task 130 decision 8) and is never
 # handed to `gh`.
@@ -363,18 +363,18 @@ fields:
     label: GitHub issue number
     description: >-
       The number of the GitHub issue to resolve, in this project's `origin`
-      repository. The new-task form's issue picker and
-      `vincent task add --github-issue N` both fill this in; typing it is the
-      third way. `fetch` reads it and nothing else — the task title is yours to
-      write.
+      repository. Creating the task from the imported issue —
+      `vincent task add --issue ID`, the id from
+      `vincent issue ls --project P --github N` — fills this in; typing it is
+      the other way. `fetch` reads it and nothing else — the task title is
+      yours to write.
     type: integer
     required: true
   - name: issue
     label: Issue id
     description: >-
       The vincent issue this task was created from. A task created from a
-      vincent issue gets its id here; `--github-issue N` fills it with the
-      GitHub number until that path is removed. Nothing hands it to `gh`.
+      vincent issue gets its id here. Nothing hands it to `gh`.
     type: integer
 
 defaults:
@@ -424,7 +424,7 @@ steps:
       id='{{ index .Task.Fields "github_issue" }}'
       if [ -z "$id" ]; then
         say "task carries no issue number"
-        echo "the 'github_issue' field is empty; this workflow resolves the issue it names (create the task from the issue picker, or with --github-issue N)" >&2
+        echo "the 'github_issue' field is empty; this workflow resolves the issue it names (create the task from the imported issue with vincent task add --issue ID; vincent issue ls --github N finds the id)" >&2
         exit 1
       fi
 

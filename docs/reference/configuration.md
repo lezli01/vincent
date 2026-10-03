@@ -1122,8 +1122,8 @@ by default, and inert on every project whose `origin` is not on github.com.
 
 It governs **reading, plus the six writes below**. Nothing else under this key
 writes to GitHub, and no GitHub call happens while a step runs — the daemon
-calls when it creates a task from a GitHub issue, when
-a client asks for a pull request, when you ask it to open one or act on one, and
+calls when a client lists a repository's issues, when it creates a task from a
+pull request, when a client asks for a pull request, when you ask it to open one or act on one, and
 on the reconciler's tick. The issue a task was created from is stored on the task at that
 moment and never re-read, which is why a step's `.Issue` renders offline and
 cannot fail because GitHub is down. A pull request is the opposite: only the
@@ -1160,7 +1160,7 @@ Setting it to `false` stops the daemon talking to GitHub entirely:
 `GET /v1/projects/{id}/github` reports `disabled`, the
 pull request listing answers `409`, the reconciler stops (no issue import, no
 refresh, no link), creating a task with
-`--github-issue` is refused, and **every write to GitHub is refused too**. Read
+`--github-pull` is refused, and **every write to GitHub is refused too**. Read
 per use, so a [reload](#reload-semantics) governs the next call and the next
 tick.
 

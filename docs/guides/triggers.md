@@ -664,10 +664,19 @@ key is a template over `.Event`:
 - `issue` must render to a vincent issue id or to nothing. The task is created
   from that issue, as `issue_id` on `POST /v1/tasks` is, and an id the project
   does not have lands the delivery `refused`. It cannot be combined with
-  `github_issue` or `github_pull`.
-- `github_issue` or `github_pull` must render to a number (a leading `#` is
-  allowed) or to nothing. They cannot both be set. They work as they do when you
-  create a task from an issue or a pull request.
+  `github_pull`.
+- `github_pull` must render to a pull request number (a leading `#` is
+  allowed) or to nothing. It works as it does when you create a task from a
+  pull request.
+
+There is no `github_issue` key. A GitHub issue reaches a task only once the
+project has imported it, through `issue:`: watch it with a
+[`type: issues`](#issues-watch-the-projects-issues) source and write
+`issue: '{{ .Event.issue_id }}'`, or, on a `github_issues` source, `issue:
+'{{ .Event.IssueID }}'`. A file that still carries `action.github_issue` fails
+validation with `unknown field "github_issue"` and stops firing until you edit
+it; it keeps its cursor, so the
+edited trigger resumes where it stopped rather than starting over.
 
 The task is created `paused` under `on_fire: propose`, and with its agent steps
 clamped `restricted` unless the file says `permission: workflow`. When the route
@@ -702,8 +711,8 @@ such as a cancel of a task that is already `done`, gets the route's own refusal
 (here a `409`) and lands `refused`, with the error in its detail. The ledger's `task_id` is the task that
 was acted on.
 
-A reaction refuses `workflow`, `title`, `description`, `fields`,
-`github_issue`, `github_pull`, `permission` and `limits.max_task_cost_usd`. Each
+A reaction refuses `workflow`, `title`, `description`, `fields`, `issue`,
+`github_pull`, `permission` and `limits.max_task_cost_usd`. Each
 of those describes a task being created.
 
 ### `on_fire` and `permission`

@@ -162,8 +162,11 @@ records that step's task as its author.
 
 `task_create`'s body takes `issue_id` to create the task from a vincent issue
 and link the two; `task_list`'s `query` takes `issue_id` to list the tasks
-created from one; and `issue_get`'s `query` takes `workflow` to preview what
-that create would prefill.
+created from one; `issue_get`'s `query` takes `workflow` to preview what
+that create would prefill; and `issue_list`'s `query` takes `project_id` and
+`remote_number` to find the issue a project imported a GitHub issue number as.
+There is no `github_issue` on `task_create`: a body that carries it is refused
+with `400 invalid_json`.
 
 Errors come back as the API's own envelope, so a `409` still carries
 `details.state` and you can branch on it rather than reading prose. One result is

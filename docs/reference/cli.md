@@ -546,7 +546,7 @@ whatever wraps this.
 ### `vincent task add`
 
 ```sh
-vincent task add --project ID (--title TITLE | --issue ID | --github-issue N | --github-pull N)
+vincent task add --project ID (--title TITLE | --issue ID | --github-pull N)
                  [--workflow NAME] [--description TEXT] [--base-branch BRANCH]
                  [--branch NAME] [--existing-branch] [--priority N] [--agent NAME] [--model M]
                  [--effort E] [--field NAME=VALUE]... [--fields-file PATH]
@@ -561,7 +561,7 @@ is no separate draft state.
 | Flag | Notes |
 |---|---|
 | `--project` | **Required** |
-| `--title` | Required unless `--issue`, `--github-issue` or `--github-pull` supplies one; also the source of the branch slug |
+| `--title` | Required unless `--issue` or `--github-pull` supplies one; also the source of the branch slug |
 | `--workflow` | Defaults to the project's default workflow |
 | `--base-branch` | What the task branches **from**. Defaults to the project's default branch |
 | `--branch` | What the task's branch is **called**. Used verbatim and wins over any template; defaults to the project's or the global [`branch_template`](configuration.md#branch_template) |
@@ -570,8 +570,7 @@ is no separate draft state.
 | `--field name=value` | Task field; repeat for more. Everything after the first `=` is the value, and a repeated name uses the last value |
 | `--fields-file PATH` | Read fields from a JSON object of string values; `-` reads it from stdin. Combines with `--field`, which wins for a name both supply |
 | `--agent` / `--model` / `--effort` | The task-level override. It replaces workflow `defaults`, never an explicit step field |
-| `--issue ID` | Create the task from vincent issue `ID` and link the two. Cannot be combined with `--github-issue` or `--github-pull`. See below |
-| `--github-issue N` | Create the task from GitHub issue `N`. See below |
+| `--issue ID` | Create the task from vincent issue `ID` and link the two. Cannot be combined with `--github-pull`. See below |
 | `--github-pull N` | Create the task from GitHub pull request `N`, **running it on that pull request's head branch**. See below |
 | `--paused` | Create the task paused; it starts only when resumed (`vincent task resume`). The scheduler never sees it before then |
 | `--restricted` | Run every agent step restricted, even one whose workflow says full-auto. Refused at creation if a step's agent cannot restrict on this host (cursor on Windows) |
@@ -596,7 +595,7 @@ task 62 created: Release 2.0 (release, branch vincent/62-release-2-0)
 The confirmation line lists **names and a count, never values** — a field can
 carry a ticket key or a customer name, and this line ends up in scrollback and
 CI logs. It is read off the created task, so a field the daemon filled in — from
-`--github-issue`, or from a **required** field's declared
+`--issue`, or from a **required** field's declared
 [`default:`](workflow-schema.md#default), which the daemon substitutes for an
 omitted key — is listed too, and a **declared** name you gave a blank value —
 `--field retries=`, or a `--fields-file` entry of spaces — is **not**: the
@@ -665,42 +664,36 @@ The flag carries the issue **id and nothing else**; the daemon fills in the
 title, the description and the workflow's declared fields from the issue, and
 links the task to it, so the issue's task count and
 [`GET /v1/tasks?issue_id=`](api.md#creating-a-task-from-an-issue) include it. An issue imported from GitHub is named with its source, `from issue 7
-(octo/repo#200): …`, and no GitHub call is made. Every explicit flag wins, as
-for `--github-issue` below. A closed issue still creates the task, with a
-warning on stderr. `--issue` cannot be combined with `--github-issue` or
-`--github-pull`: each would prefill the same title and description.
+(octo/repo#200): …`, and no GitHub call is made.
 
-#### From a GitHub issue
-
-```sh
-vincent task add --project 1 --github-issue 200
-```
-
-```
-task 61 created: GitHub integration: select a GitHub issue when creating a task (adhoc, branch vincent/61-github-integration)
-  from lezli01/vincent#200: GitHub integration: select a GitHub issue when creating a task
-```
-
-The flag carries the **number and nothing else**. The daemon resolves the issue,
-so the command line and the API go through one implementation and produce the
-same task from the same issue. It fills in the title (`#N ` and the
-issue title), the description (the issue body plus a trailing
-`GitHub issue #N: <url>` line), and any of the workflow's declared `issue`,
-`github_issue`, `labels`, `assignee` or `milestone` fields whose declared type
-accepts the value — `issue` and `github_issue` both being the issue number. A
-workflow that hands the number to `gh` reads `github_issue`: on a task created
-[from a vincent issue](#from-an-issue), `issue` holds the vincent issue id instead.
+The daemon fills in the title, the description and any of the workflow's
+declared `issue`, `github_issue`, `labels`, `assignee` or `milestone` fields
+whose declared type accepts the value. `issue` is the vincent issue id; for an
+issue imported from GitHub, `github_issue` is the GitHub number, the title is
+`#N ` and the issue title, and the description ends with a
+`GitHub issue #N: <url>` line. A workflow that hands the number to `gh` reads
+`github_issue`.
 
 **Every explicit flag wins over what the issue would have filled in**, so
 `--title "Something else"` keeps your title and takes the rest from the issue.
-`--title` is therefore optional here, and giving neither it nor `--github-issue`
-is an error.
+A closed issue still creates the task, with a warning on stderr. `--issue`
+cannot be combined with `--github-pull`: each would prefill the same title and
+description.
 
-The issue is read once and stored on the task; editing it on GitHub afterwards
-does not change what a later step renders. It needs the
-[`github` integration](configuration.md#github) on, a github.com `origin`, and a
-credential — run [`vincent github status`](#vincent-github-status) or
-[`vincent doctor`](#vincent-doctor) if the daemon refuses.
+#### From a GitHub issue
+
+There is no `--github-issue` flag; it was removed in task 130.11. A GitHub
+issue reaches a task once the project has [imported](#vincent-issue-sync) it.
+Find its vincent id by number, then create from that:
+
+```sh
+id=$(vincent issue ls --project 1 --github 200 --json | jq '.[0].id')
+vincent task add --project 1 --issue "$id"
+```
+
+An empty answer means the issue is not imported yet: `vincent issue sync
+--project 1` asks for a sync, and `vincent issue sync --project 1 --status`
+shows when it has landed.
 
 #### Running a task on a branch that already exists
 
@@ -760,7 +753,7 @@ task 62 created: #412 Add a thing (adhoc, branch feature/add-a-thing)
   from lezli01/vincent#412, running on its head branch feature/add-a-thing
 ```
 
-Same shape as `--github-issue` — the number and nothing else, resolved by the
+Same shape as `--issue` — the number and nothing else, resolved by the
 daemon, explicit flags winning over what it would fill in — with one difference
 that is the whole point: **the task's branch is the pull request's head branch**,
 not `vincent/{id}-{slug}`. Its worktree is that branch checked out with an
@@ -793,7 +786,7 @@ Things worth knowing before you use it:
 - **Archiving never deletes that branch.** It is not a branch vincent cut, and
   `delete_empty_branch_on_archive` does not apply to it — which matters most for
   a merged pull request, whose branch has no commits past its base.
-- `--github-issue` and `--github-pull` are mutually exclusive: they would prefill
+- `--issue` and `--github-pull` are mutually exclusive: they would prefill
   the same title and description from different sources.
 
 ### `vincent task ls`
@@ -2118,8 +2111,8 @@ both there when the task's first step runs, because the directory is simply not
 touched.
 
 The flags are `vincent task add`'s, minus the ones a handoff has no say in: the
-project, the base branch and the branch name all come from the chat, and the two
-GitHub prefills (`--github-issue`, `--github-pull`) are not offered.
+project, the base branch and the branch name all come from the chat, and the
+prefills (`--issue`, `--github-pull`) are not offered.
 `--description` is where the conversation's context goes: nothing about the
 chat reaches the workflow's prompts automatically.
 
@@ -2609,7 +2602,11 @@ ISSUE  STATE  TITLE                                                     LABELS  
 ```
 
 `--state` defaults to `open`, `--limit` to the daemon's own bound. Filter the
-output yourself — there is no `--query`.
+output yourself — there is no `--query`. This is a remote browse: it creates
+nothing and prefills nothing. To start work on one of these issues, find the
+issue the project imported it as with
+[`vincent issue ls --github N`](#vincent-issue-ls) and create the task with
+`vincent task add --issue ID`.
 
 ### `vincent github prs`
 
@@ -2881,7 +2878,7 @@ issue is [`vincent task add --issue`](#from-an-issue).
 ### `vincent issue ls`
 
 ```sh
-vincent issue ls [--project ID] [--state S]... [--label L]... [--kind K] [--search Q] [--source local|github] [--limit N] [--json]
+vincent issue ls [--project ID] [--state S]... [--label L]... [--kind K] [--search Q] [--source local|github] [--github N] [--limit N] [--json]
 ```
 
 Lists issues, most recently updated first. Without `--project` the list spans
@@ -2902,10 +2899,22 @@ ID  PROJECT  STATE              KIND  PRIORITY  LABELS  TASKS  TITLE
 | `--kind K` | Only issues of this kind |
 | `--search Q` | A substring of the title or body |
 | `--source` | `local` or `github` |
+| `--github N` | Only the issue imported from GitHub issue number `N`. Needs `--project` |
 | `--limit N` | Maximum rows |
 
 `STATE` carries the close reason of a closed issue. `--json` prints the
 [list](api.md#issues) body, `[]` for an empty one; list rows carry no body.
+
+`--github N` is how a script maps a GitHub issue number to the vincent issue to
+create a task from, now that `vincent task add --github-issue` is gone:
+
+```sh
+vincent issue ls --project 1 --github 200 --json | jq '.[0].id'
+```
+
+A number means nothing across projects, so without `--project` it exits `1`.
+An empty list means the project has not imported that issue yet; run
+[`vincent issue sync`](#vincent-issue-sync) and look again.
 
 ### `vincent issue show`
 
@@ -3053,6 +3062,13 @@ backing off. With [`github.enabled`](configuration.md#github) off or
 `github.poll_interval: 0` the request is still recorded, and the last row reads
 `requested, but import is off (<reason>)`: nothing is imported until the switch
 is turned back on. An unknown project exits `1`.
+
+Tasks created from GitHub issues before the issue set existed were backfilled
+into it on upgrade, as imported issues that have never been synced. The first
+sync that finds each one on GitHub adopts it and takes GitHub's state, writing
+nothing back. One whose repository is not the project's bound `repo` —
+`origin` was re-pointed since — is never matched, and stays as it was
+backfilled.
 
 ## `vincent gc`
 

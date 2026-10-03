@@ -1036,10 +1036,10 @@ starts.
 
 ### `.Issue`
 
-A task can be created from an issue: a vincent issue with
-`vincent task add --issue ID` (`issue_id` over the API), or a GitHub issue from
-the TUI's new-task form or with `vincent task add --github-issue N`. When it
-was, `.Issue` carries that issue and a prompt can use it directly:
+A task can be created from an issue — a vincent issue, local or imported from
+GitHub — with `vincent task add --issue ID` (`issue_id` over the API, `issue:`
+in a trigger). When it was, `.Issue` carries that issue and a prompt can use it
+directly:
 
 ```yaml
   - id: fix
@@ -1061,10 +1061,12 @@ was created in vincent. A template that hands a number to `gh` therefore reads
 are deprecated aliases of `.Issue.Source.Repo` and `.Issue.Source.URL`, kept so
 older templates keep rendering.
 
-A task created with `--github-issue N` carries the GitHub issue itself rather
-than a vincent issue. For such a task `.Issue.Number` is the GitHub number and
-`.Issue.Source` repeats it, so every template written before vincent had its
-own issues renders exactly as it did.
+A task created from a GitHub issue before vincent had its own issues (with the
+since-removed `--github-issue N`) carries that GitHub issue itself as its
+snapshot. For such a task `.Issue.Number` is the GitHub number and
+`.Issue.Source` repeats it, so every template written then renders exactly as
+it did. The upgrade linked those tasks to backfilled issues, but what they
+render is still their own snapshot.
 
 `.Issue.Number` is **0** when no issue is linked, exactly the way `.Loop.Index`
 is 0 outside a loop, so one workflow serves both kinds of task:
@@ -1097,9 +1099,8 @@ the create rather than being cut short.
 A declared `issue` field carries the vincent issue id, and a declared
 `github_issue` field the GitHub issue **number** — bare, without the `#` the
 title carries. Declare either `integer` (or `number`, or `string`); a
-`boolean` one is left empty like any other type mismatch. While
-`--github-issue N` remains, it fills **both** with the GitHub number, so a
-workflow that reads `github_issue` works for every task that has one.
+`boolean` one is left empty like any other type mismatch. A workflow that
+needs the GitHub number reads `github_issue`.
 
 Numbers are safe to template into a `run:` body — `{{ .Issue.Source.Number }}`
 or `{{ index .Task.Fields "github_issue" }}` renders digits and nothing else.
