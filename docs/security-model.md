@@ -615,6 +615,9 @@ below is the whole posture, not a set of tips.
   state diff, not who made it, so `allowed_actors` matches the issue's or pull
   request's **author**. It stops a stranger's issue from starting work. It does
   **not** say who applied a label or requested a review.
+  The `issues` source holds a change imported from GitHub (`by: sync`) to the
+  same rule as `github_issues`, against the imported issue's author; a change
+  made in vincent, by you or an agent, is trusted.
 - **Prompt injection becomes remote.** An issue body, a pull-request title or a
   CI log reaches the trigger's templates as `.Event`. Whatever the file renders
   into a title, description, field or prompt reaches an agent. `.Event` is never
