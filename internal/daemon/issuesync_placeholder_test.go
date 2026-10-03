@@ -13,7 +13,7 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 )
 
-// Backfill placeholders against the importer (task 130 decision 21.3): the
+// Backfill placeholders against the importer (task 130 decision 22.3): the
 // backfill of task 035 snapshots leaves remotes keyed "legacy:{repo}#{n}"
 // and never synced, and the importer adopts each one by number the first
 // time GitHub reports the issue — by listing or by the daily sweep.

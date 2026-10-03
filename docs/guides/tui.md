@@ -1490,13 +1490,14 @@ pattern filled in, a required environment enum at its default of staging, the
 multiple-choice regions list open with us-east and eu-west ticked, an integer
 canary percent and a boolean dry run](../assets/tui-new-task-fields.png)
 
-<<<<<<< HEAD
 **The source row** appears only when the form was opened *from* something,
 and it is read-only. The form has no issue picker: you start a task from an
 issue where the issue is on screen, with `a` on the [issues
 screens](#issues), and from a pull request with `a` on the [pull-requests
 screen](#pull-requests). To start a plain task instead, press `esc` and then
-`n`. A plain `n` draft makes no GitHub call on any project.
+`n`. A plain `n` draft makes no GitHub call on any project. A GitHub issue
+reaches a task once the project has imported it into its [issues](#issues);
+from a shell, `vincent task add --issue ID` creates the task from it.
 
 For an issue, the row shows `#id` and the title, the issue's state, and the
 `owner/repo#N` reference when it was imported from GitHub. If the issue has
@@ -1530,20 +1531,6 @@ description, and a declared `pull` field carrying the number. An issue and a
 pull request are mutually exclusive on the create call: they would prefill the
 same title and description from two sources, and the daemon refuses a request
 naming both.
-=======
-The form has no GitHub issue row. A GitHub issue reaches a task once the
-project has imported it into its [issues](#issues), and the task is created
-from that issue — `vincent task add --issue ID` from a shell.
-
-**A pull request row** appears when you arrived here with `a` from the
-[pull-requests screen](#pull-requests) — the number, the title, the head branch,
-and, for a fork, that nothing can be pushed back to it. A pull request is never
-*picked* from inside the form: a task runs on the pull request's head branch, so
-that is a decision made where the pull request is on screen. The prefill lands in
-the ordinary editable rows — the title, the description, and a declared `pull`
-field carrying the number. The pull request is read **once**, when you create
-the task.
->>>>>>> 285b39e3 (docs: record the github_issue removal, backfill and lookup (130.11))
 
 On a wide terminal those fields are grouped into six stages in the left rail:
 **Project**, **Workflow**, **Task details**, **Git & priority**, **Execution**,

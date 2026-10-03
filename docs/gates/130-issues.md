@@ -92,8 +92,9 @@ transferred or deleted remote shows in `source.status`.
     issue closes it.
 
 The `github_issue: N` shorthand scenario is not here. #676 made it
-conditional on task 130.11 (#670), which has not landed, so it is added to
-this script in that task's pull request.
+conditional on task 130.11 (#670), and 130.11 removed `github_issue` from
+task create rather than keeping it as a shorthand (task 130 decision 22.1),
+so there is nothing for it to assert.
 
 ## Found by this gate: scenario 8
 

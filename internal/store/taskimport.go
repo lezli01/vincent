@@ -297,7 +297,7 @@ func (s *Store) ImportTask(ctx context.Context, exp *TaskExport, opts ImportOpti
 		// A legacy task 035 snapshot was linked by migration 0040, whose ids
 		// are the staged copy's own: the live store backfilled the same
 		// GitHub issue under a different id. Relink by the snapshot's repo
-		// and number instead (task 130 decision 21).
+		// and number instead (task 130 decision 22).
 		issue, live, lerr := legacyIssueInProjectTx(ctx, tx, js, projectID)
 		if lerr != nil {
 			return nil, fmt.Errorf("import task %d: %w", id, lerr)

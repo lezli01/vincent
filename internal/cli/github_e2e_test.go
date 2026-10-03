@@ -147,7 +147,7 @@ func TestGitHubIssueCommandsAgainstLiveDaemon(t *testing.T) {
 		}
 	})
 
-	// The lookup that replaced it (decision 21.4): import, look the number
+	// The lookup that replaced it (decision 22.4): import, look the number
 	// up, and create the task from the issue id it answers with.
 	t.Run("issue ls --github finds the imported issue", func(t *testing.T) {
 		if out, code := runVincentGH(t, dataDir, cfgDir, ghDir, "success",

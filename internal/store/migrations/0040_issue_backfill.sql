@@ -1,5 +1,5 @@
 -- 0040_issue_backfill: every task 035 GitHub issue snapshot becomes an issue
--- (task 130.11, issue #670, task 130 decision 21, spec §5.3, §14).
+-- (task 130.11, issue #670, task 130 decision 22, spec §5.3, §14).
 --
 -- Before 130.11 a task created with `github_issue: N` carried only 0014's
 -- `github_issue_json` snapshot. This migration gives each distinct
@@ -16,7 +16,7 @@
 --
 -- Content is the **newest** snapshot's (latest task created_at, ties broken
 -- by task id), including its state, even when every linked task is archived:
--- the first sync corrects it, and GitHub wins (decision 21.2). A closed row
+-- the first sync corrects it, and GitHub wins (decision 22.2). A closed row
 -- needs a close reason (internal/issuestate: a closed issue carries one), so
 -- it takes the snapshot's `state_reason` when that is `not_planned` and
 -- `completed` otherwise — `duplicate` would need the issue it duplicates,
@@ -28,7 +28,7 @@
 --
 -- The remote is a placeholder: `remote_key = 'legacy:owner/repo#N'` with
 -- synced_at, remote_json and remote_updated_at NULL. The importer re-keys a
--- never-synced placeholder to the node_id on first sight (decision 21.3).
+-- never-synced placeholder to the node_id on first sight (decision 22.3).
 -- When a remote for the same (project, github, repo, number) already exists —
 -- imported by 130.8 under its real node_id, or a tombstone — nothing is
 -- created: tasks link to that remote's issue (or stay unlinked for a

@@ -763,20 +763,15 @@ client-side. Any other parameter is ignored.
 ]
 ```
 
-<<<<<<< HEAD
-The rows carry no `prefill`. The `?workflow=` parameter that used to add one
-is gone — it is ignored now, like any unknown parameter. Start a task from a
-[vincent issue](#issues) instead: `GET /v1/issues/{id}?workflow=` previews the
-prefill that `POST /v1/tasks` with `issue_id` applies.
-=======
 The listing is a remote browse and nothing more. It carries no prefill, and a
 GitHub issue reaches a task only once the project has imported it: create the
 task from the imported issue with [`issue_id`](#creating-a-task-from-an-issue)
 on `POST /v1/tasks`, finding its id with
-[`GET /v1/issues?project_id=P&remote_number=N`](#issues). The `?workflow=`
-prefill this listing used to attach, and `github_issue` on `POST /v1/tasks`,
-were removed (task 130.11).
->>>>>>> 285b39e3 (docs: record the github_issue removal, backfill and lookup (130.11))
+[`GET /v1/issues?project_id=P&remote_number=N`](#issues);
+`GET /v1/issues/{id}?workflow=` previews the prefill that create applies. The
+`?workflow=` parameter this listing used to take, and `github_issue` on
+`POST /v1/tasks`, were removed (tasks 130.11 and 130.13); the parameter is
+ignored now, like any unknown one.
 
 ### Issue sync
 

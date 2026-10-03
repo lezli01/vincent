@@ -236,7 +236,7 @@ func (r *PullReconciler) applyIssues(ctx context.Context, project store.Project,
 }
 
 // applyIssue writes one GitHub issue. A backfill placeholder with its
-// number is adopted first (task 130 decision 21.3). A closed issue nothing
+// number is adopted first (task 130 decision 22.3). A closed issue nothing
 // here knows is skipped — closed history is not imported — and a tombstoned
 // one is never resurrected: the upsert refuses it.
 func (r *PullReconciler) applyIssue(ctx context.Context, projectID int64, is *github.Issue) error {
@@ -261,7 +261,7 @@ func (r *PullReconciler) applyIssue(ctx context.Context, projectID int64, is *gi
 
 // adoptPlaceholder re-keys the never-synced backfill placeholder with
 // is's repository and number onto is's node id, adopting GitHub's content
-// and state (task 130 decision 21.3). It reports false when there is none,
+// and state (task 130 decision 22.3). It reports false when there is none,
 // or when the node id is already known — then the usual upsert applies.
 func (r *PullReconciler) adoptPlaceholder(ctx context.Context, projectID int64, is *github.Issue) (bool, error) {
 	adopted, err := r.store.AdoptPlaceholderRemote(ctx, remoteIssue(projectID, is), issuestate.Sync)
@@ -304,7 +304,7 @@ func (r *PullReconciler) sweepOpenSet(ctx context.Context, project store.Project
 		}
 		if store.IsPlaceholderRemote(rem) && !strings.EqualFold(rem.Repo, repo.String()) {
 			// A backfill placeholder from another repository (task 130
-			// decision 21.3): its number means nothing in this one, so it
+			// decision 22.3): its number means nothing in this one, so it
 			// is never probed and stays as the backfill left it.
 			continue
 		}
@@ -325,7 +325,7 @@ func (r *PullReconciler) probeIssue(ctx context.Context, projectID int64, repo g
 		// right either way. The answer's node id is the one asked about —
 		// an answer about another issue is ReasonMoved. A backfill
 		// placeholder has no node id to compare, so its answer adopts it
-		// (task 130 decision 21.3): a backfilled issue closed on GitHub is
+		// (task 130 decision 22.3): a backfilled issue closed on GitHub is
 		// re-keyed and closed here.
 		if store.IsPlaceholderRemote(rem) {
 			if adopted, err := r.adoptPlaceholder(ctx, projectID, &is); err != nil || adopted {

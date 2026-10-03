@@ -107,7 +107,7 @@ type IssueListOptions struct {
 	Limit     int
 	Offset    int
 	// RemoteNumber narrows to the issue imported from that GitHub issue
-	// number (task 130.11, decision 21.4); the daemon requires ProjectID
+	// number (task 130.11, decision 22.4); the daemon requires ProjectID
 	// beside it. It is how a script holding a GitHub number finds the issue
 	// id CreateTaskRequest.IssueID takes, now `github_issue` is gone.
 	RemoteNumber int

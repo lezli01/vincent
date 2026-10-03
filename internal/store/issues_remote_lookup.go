@@ -8,7 +8,7 @@ import (
 // IssueIDsByRemoteNumber returns the ids of the issues in projectID whose
 // live remote row is provider's issue number, lowest first, and an empty
 // slice when none is. It backs GET /v1/issues?remote_number= (task 130.11,
-// decision 21.4): the lookup that replaced the removed `github_issue` create
+// decision 22.4): the lookup that replaced the removed `github_issue` create
 // field, so a script holding a GitHub number can find the vincent issue to
 // create a task from.
 //

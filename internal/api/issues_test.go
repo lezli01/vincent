@@ -458,7 +458,7 @@ func TestIssueListFilters(t *testing.T) {
 }
 
 // TestIssueListByRemoteNumber is the lookup that replaced the `github_issue`
-// create field (task 130.11, decision 21.4): `remote_number` answers only the
+// create field (task 130.11, decision 22.4): `remote_number` answers only the
 // issue imported from that GitHub number in the named project, composes with
 // the other filters, and is refused without project_id.
 func TestIssueListByRemoteNumber(t *testing.T) {

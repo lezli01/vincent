@@ -396,7 +396,7 @@ func (s *Server) handleIssueList(w http.ResponseWriter, r *http.Request) {
 	}
 	// remote_number maps a GitHub issue number to the vincent issue it was
 	// imported (or backfilled) as — the lookup that replaced the removed
-	// `github_issue` create field for scripts (task 130.11, decision 21.4).
+	// `github_issue` create field for scripts (task 130.11, decision 22.4).
 	// A number means nothing across projects, so it requires project_id.
 	if v := q.Get("remote_number"); v != "" {
 		n, err := strconv.Atoi(v)

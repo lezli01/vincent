@@ -208,7 +208,7 @@ func TestIssueLs(t *testing.T) {
 }
 
 // TestIssueLsByGitHubNumber: `--github N` is the lookup that replaced
-// `task add --github-issue` (task 130.11, decision 21.4). It needs --project,
+// `task add --github-issue` (task 130.11, decision 22.4). It needs --project,
 // answers only that project's issue imported from #N, and the id it answers
 // with is what `task add --issue` takes.
 func TestIssueLsByGitHubNumber(t *testing.T) {

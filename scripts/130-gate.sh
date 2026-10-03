@@ -26,8 +26,9 @@
 #   11. the MCP guard: an agent may not close an imported issue, and may
 #       close a local one
 #
-# The `github_issue: N` shorthand scenario belongs to task 130.11 (#670): it
-# is added here in that task's pull request.
+# There is no `github_issue: N` shorthand scenario: #676 made it conditional
+# on task 130.11 (#670), which removed `github_issue` from task create
+# instead of keeping it as a shorthand (task 130 decision 22.1).
 #
 # Task-numbered rather than `mN` because this is not a §19 milestone, like
 # 123-gate.sh and 125-gate.sh. Each scenario runs its own daemon over its own

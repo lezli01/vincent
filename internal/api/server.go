@@ -394,7 +394,7 @@ func (s *Server) buildHandler() http.Handler {
 	// Issues (§5.6, §13.2, task 130.3). Every route but the permanent
 	// delete is an MCP tool (§13.4); the delete joins task 092's exclusion.
 	// GET /v1/issues?project_id=P&remote_number=N maps a GitHub issue number
-	// to the vincent issue it was imported as (task 130.11, decision 21.4);
+	// to the vincent issue it was imported as (task 130.11, decision 22.4);
 	// it requires project_id.
 	rt.handle(http.MethodGet, "/v1/issues", s.handleIssueList)
 	rt.handle(http.MethodPost, "/v1/issues", s.handleIssueCreate)

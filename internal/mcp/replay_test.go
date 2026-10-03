@@ -302,7 +302,7 @@ func TestTaskCreateNoLongerOffersGitHubIssue(t *testing.T) {
 }
 
 // TestIssueListOffersTheRemoteNumberLookup: the lookup that replaced the
-// field (task 130.11, decision 21.4) is documented where a model reads it.
+// field (task 130.11, decision 22.4) is documented where a model reads it.
 func TestIssueListOffersTheRemoteNumberLookup(t *testing.T) {
 	t.Parallel()
 	r := routeFor(t, "issue_list")

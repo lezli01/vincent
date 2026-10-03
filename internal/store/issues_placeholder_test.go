@@ -7,7 +7,7 @@ import (
 	"github.com/lezli01/vincent/internal/issuestate"
 )
 
-// Backfill placeholders (task 130 decision 21.3): a remote keyed
+// Backfill placeholders (task 130 decision 22.3): a remote keyed
 // "legacy:{repo}#{number}" with synced_at NULL is the one kind of row the
 // importer may match by number.
 

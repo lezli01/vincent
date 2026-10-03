@@ -385,13 +385,13 @@ const LegacyRemoteKeyPrefix = "legacy:"
 
 // IsPlaceholderRemote reports whether r is a never-synced backfill
 // placeholder — the only kind of remote the importer matches by number
-// (task 130 decision 21.3).
+// (task 130 decision 22.3).
 func IsPlaceholderRemote(r IssueRemote) bool {
 	return strings.HasPrefix(r.RemoteKey, LegacyRemoteKeyPrefix) && r.SyncedAt == nil
 }
 
 // AdoptPlaceholderRemote re-keys a backfill placeholder onto the issue the
-// provider now reports (task 130 decision 21.3). When in.RemoteKey is
+// provider now reports (task 130 decision 22.3). When in.RemoteKey is
 // unknown in the project and a never-synced placeholder has the same
 // provider, repository (case-insensitively) and number, the placeholder's
 // remote_key becomes in.RemoteKey and the row is refreshed exactly as

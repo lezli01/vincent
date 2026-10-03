@@ -84,7 +84,7 @@ func newIssueLsCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// The lookup that replaced `task add --github-issue` (task
-			// 130.11, decision 21.4). Refused here as well as by the
+			// 130.11, decision 22.4). Refused here as well as by the
 			// daemon, so the message names the flags rather than the
 			// query parameters.
 			if cmd.Flags().Changed("github") {
