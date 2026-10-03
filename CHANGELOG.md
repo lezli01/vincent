@@ -46,7 +46,9 @@ list with the user-facing context a commit subject cannot carry.
   or reopens it on GitHub too, with the same close reason. The write is
   recorded with the change, so it survives a daemon crash; GitHub is read
   first, and if someone changed the issue there in the meantime GitHub's state
-  wins and is adopted here. Each imported issue carries a `sync` block
+  wins and is adopted here. A write GitHub refuses — a token without write
+  access, say — keeps your change here until someone changes the issue on
+  GitHub. Each imported issue carries a `sync` block
   (`synced`, `pending`, `failed` or `conflict`, with a reason), and
   `GET /v1/projects/{id}/issues/sync`, `vincent issue sync` and
   `vincent doctor` count pending, failed and conflicting writes. With

@@ -7320,6 +7320,13 @@ with reason `disabled`, drained when the switch comes back on. A `duplicate`
 close sends the duplicated issue's number when it is in the same repository,
 and closes without one otherwise.
 
+*Amended 2026-10-03 (task 130.17, issue #676).* "Keep the local state" holds
+past the tick that ends the write: while an issue's newest write is `failed`
+and GitHub still shows that write's base, the import keeps the local state as
+it does for a pending one. GitHub moving off the base is someone else's
+change, and the import adopts it. The 130 gate's read-only scenario found the
+import undoing a refused reopen on the very next tick.
+
 *Amended 2026-08-29 (task 055).* This was the daemon's **first** standing
 outbound network traffic when it landed, and that sentence read as though it
 were the only one. It is now the first that fires for a *subset* of installs:
