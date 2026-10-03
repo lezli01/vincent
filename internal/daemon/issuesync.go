@@ -235,10 +235,14 @@ func (r *PullReconciler) applyIssues(ctx context.Context, project store.Project,
 	return nil
 }
 
-// applyIssue writes one GitHub issue. A closed issue nothing here knows is
-// skipped — closed history is not imported — and a tombstoned one is never
-// resurrected: the upsert refuses it.
+// applyIssue writes one GitHub issue. A backfill placeholder with its
+// number is adopted first (task 130 decision 21.3). A closed issue nothing
+// here knows is skipped — closed history is not imported — and a tombstoned
+// one is never resurrected: the upsert refuses it.
 func (r *PullReconciler) applyIssue(ctx context.Context, projectID int64, is *github.Issue) error {
+	if adopted, err := r.adoptPlaceholder(ctx, projectID, is); err != nil || adopted {
+		return err
+	}
 	if is.State == github.StateClosed {
 		known, err := r.store.RemoteIssueKnown(ctx, projectID, issueProvider, is.NodeID)
 		if err != nil || !known {
@@ -253,6 +257,18 @@ func (r *PullReconciler) applyIssue(ctx context.Context, projectID int64, is *gi
 		r.logger.Debug("imported issue", "project", projectID, "repo", is.Repo, "issue", is.Number)
 	}
 	return nil
+}
+
+// adoptPlaceholder re-keys the never-synced backfill placeholder with
+// is's repository and number onto is's node id, adopting GitHub's content
+// and state (task 130 decision 21.3). It reports false when there is none,
+// or when the node id is already known — then the usual upsert applies.
+func (r *PullReconciler) adoptPlaceholder(ctx context.Context, projectID int64, is *github.Issue) (bool, error) {
+	adopted, err := r.store.AdoptPlaceholderRemote(ctx, remoteIssue(projectID, is), issuestate.Sync)
+	if err == nil && adopted {
+		r.logger.Debug("adopted backfilled issue", "project", projectID, "repo", is.Repo, "issue", is.Number)
+	}
+	return adopted, err
 }
 
 // sweepOpenSet finds the open issues here GitHub no longer lists as open,
@@ -286,6 +302,12 @@ func (r *PullReconciler) sweepOpenSet(ctx context.Context, project store.Project
 		if open[rem.RemoteKey] || rem.Number < 1 {
 			continue
 		}
+		if store.IsPlaceholderRemote(rem) && !strings.EqualFold(rem.Repo, repo.String()) {
+			// A backfill placeholder from another repository (task 130
+			// decision 21.3): its number means nothing in this one, so it
+			// is never probed and stays as the backfill left it.
+			continue
+		}
 		if err := r.probeIssue(ctx, project.ID, repo, rem); err != nil {
 			return err
 		}
@@ -301,7 +323,15 @@ func (r *PullReconciler) probeIssue(ctx context.Context, projectID int64, repo g
 	case err == nil:
 		// Usually closed; open is the listing lagging, and the refresh is
 		// right either way. The answer's node id is the one asked about —
-		// an answer about another issue is ReasonMoved.
+		// an answer about another issue is ReasonMoved. A backfill
+		// placeholder has no node id to compare, so its answer adopts it
+		// (task 130 decision 21.3): a backfilled issue closed on GitHub is
+		// re-keyed and closed here.
+		if store.IsPlaceholderRemote(rem) {
+			if adopted, err := r.adoptPlaceholder(ctx, projectID, &is); err != nil || adopted {
+				return err
+			}
+		}
 		_, _, err := r.store.UpsertRemoteIssue(ctx, remoteIssue(projectID, &is), issuestate.Sync)
 		return err
 	case reason == github.ReasonMoved:
