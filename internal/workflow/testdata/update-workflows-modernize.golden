@@ -194,6 +194,12 @@ report per workflow which items applied:
     no call per fan-out lane. Keep any gh call that acts on the issue.
     Where the step must refuse a task with no issue, test for the
     variable and say to create the task from an issue.
+16. The issue's thread from its snapshot. The file's comments and
+    .Issue.Comments carry the issue's discussion as it stood at task
+    creation, local and GitHub comments alike. A step that fetches the
+    comments from GitHub, or a prompt that says the issue body is the
+    whole brief because the thread was unavailable, reads the thread
+    from the snapshot instead.
 
 ## What you may not change
 

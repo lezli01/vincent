@@ -4,7 +4,7 @@ description: Create, edit, review, and validate vincent workflow YAML under .vin
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.2.0
+  version: 1.3.0
 ---
 
 # vincent Workflows
@@ -104,7 +104,9 @@ than guessing. See the cost reference for the full rules.
 Read the task's issue from `$VINCENT_ISSUE_FILE`, never with `gh issue view`.
 A task created from an issue gets that variable in every step: the path of a
 `gh issue view --json`-shaped snapshot (`number`, `title`, `body`, `state`,
-`labels`, …, plus vincent's `id`, `kind`, `priority`, `source`). Copying it
+`labels`, `comments`, …, plus vincent's `id`, `kind`, `priority`, `source`).
+Its `comments` is the issue's thread at task creation, so a step that needs the
+discussion reads it there rather than from GitHub. Copying it
 costs no network and works the same in a fan-out lane. Branch on `kind` or
 labels with `jq` over that file; never template a title or body into `run:` —
 free text reaches a shell through the file, not through a template. An
