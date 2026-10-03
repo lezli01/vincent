@@ -362,6 +362,27 @@ Numbers are safe to template into `run:`; titles and bodies are not. It is a
 snapshot taken at task creation and never re-read, so rendering it needs no
 network, and a fan-out lane inherits its parent's copy.
 
+A step on a task with an issue also gets the snapshot as a **file**, and four
+variables beside the other `VINCENT_*` ones — in `command`, `check` and `agent`
+steps alike. An unlinked task gets none of them.
+
+| Variable | Value |
+|---|---|
+| `VINCENT_ISSUE_FILE` | absolute path of the snapshot file, outside the working tree |
+| `VINCENT_ISSUE_ID` | the vincent issue id; absent for a legacy `--github-issue` task |
+| `VINCENT_ISSUE_NUMBER` | the GitHub number; imported issues and legacy tasks only |
+| `VINCENT_ISSUE_URL` | the GitHub URL; imported issues and legacy tasks only |
+
+The file is shaped like `gh issue view --json
+number,title,body,url,createdAt,state,stateReason,labels,author,comments`, so
+`jq` written for `gh` reads it unchanged: `number` is the GitHub number (`null`
+for a local issue), `state` is `OPEN`/`CLOSED`, `stateReason` is
+`COMPLETED`/`NOT_PLANNED`/`DUPLICATE` or `null`, `labels` is `[{"name": …}]`,
+`author` is `{"login": …}`, and `comments` is always `[]` for now. It adds
+`id`, `kind`, `priority`, and `source` (`provider`, `repo`, `number`, `url`;
+`null` for a local issue). Read it instead of `gh issue view`: it needs no
+network, a fan-out lane gets its parent's, and `git add -A` cannot stage it.
+
 Only completed steps are visible in `.Steps`. Parallel siblings are not
 visible to one another. Within a loop, later body steps see earlier steps from
 the current iteration; repeated ids resolve to the latest iteration. Command

@@ -4,7 +4,7 @@ description: Create, edit, review, and validate vincent workflow YAML under .vin
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.1.4
+  version: 1.2.0
 ---
 
 # vincent Workflows
@@ -100,6 +100,16 @@ loop bodies by their maximum iterations, add parallel members and fan-out lanes
 unknown — expand includes, and include an agent merge resolver. If referenced workflows
 or dynamic structure cannot be inspected, report the envelope as unknown rather
 than guessing. See the cost reference for the full rules.
+
+Read the task's issue from `$VINCENT_ISSUE_FILE`, never with `gh issue view`.
+A task created from an issue gets that variable in every step: the path of a
+`gh issue view --json`-shaped snapshot (`number`, `title`, `body`, `state`,
+`labels`, …, plus vincent's `id`, `kind`, `priority`, `source`). Copying it
+costs no network and works the same in a fan-out lane. Branch on `kind` or
+labels with `jq` over that file; never template a title or body into `run:` —
+free text reaches a shell through the file, not through a template. An
+unlinked task has no such variable, so test for it and fail with a message
+that says to create the task from an issue.
 
 ## Choose the human mechanism deliberately
 
