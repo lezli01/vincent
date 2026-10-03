@@ -9,6 +9,65 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [0.12.0](https://github.com/lezli01/vincent/compare/v0.11.0...v0.12.0) (2026-10-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* API clients sending github_issue get 400, and trigger files carrying action.github_issue fail validation until edited to issue:.
+
+### Features
+
+* **api:** add the /v1/issues routes, apiclient methods and MCP tools ([9ff4e4c](https://github.com/lezli01/vincent/commit/9ff4e4c471aaf66a619e811c5512d9a2c98917b2)), closes [#662](https://github.com/lezli01/vincent/issues/662)
+* **api:** create tasks from vincent issues with issue_id ([31e844f](https://github.com/lezli01/vincent/commit/31e844f75b0e2ab3b17f6d6ebe4f21df90b37fc0))
+* **api:** issue sync status routes, MCP tool, CLI and doctor rows ([76d13a8](https://github.com/lezli01/vincent/commit/76d13a869039ddf732bd989ad3aaa241ef53aebc))
+* **api:** refuse agent state changes of issues that write back ([f30304c](https://github.com/lezli01/vincent/commit/f30304ccca40e3cee3420f0373f3d63b676eddbe))
+* **cli:** add the vincent issue command tree ([7ffb1d6](https://github.com/lezli01/vincent/commit/7ffb1d656d9af092a67968cc5196a18353d7fdde))
+* **daemon:** drain issue state write-backs to GitHub ([23136e1](https://github.com/lezli01/vincent/commit/23136e18d4661f33d228186e7dd32643e04dc64a))
+* **daemon:** import and refresh GitHub issues on the reconciler tick ([e8265ae](https://github.com/lezli01/vincent/commit/e8265ae88e7d557729e2c1d33ee9002da7b3d65d))
+* **daemon:** mirror GitHub issue comments and backfill new issues' threads ([01517d2](https://github.com/lezli01/vincent/commit/01517d2f1d165c0d18287dc6b41db0a0d784685b))
+* **daemon:** re-key backfilled placeholder remotes on first sync (130.11) ([6a4c88c](https://github.com/lezli01/vincent/commit/6a4c88c6894ed68a409a8ea506d89a08868461b1))
+* **github:** durable issue listing and issue state writes ([f9f273e](https://github.com/lezli01/vincent/commit/f9f273e0d8482a4596ba51096e5046a7db2dfce5))
+* **github:** issue comment counts and a per-issue thread read ([08b0472](https://github.com/lezli01/vincent/commit/08b04724ed5448f3cd7dccdec5bc76e81375ece3))
+* **issues:** add the validated write path for issues ([05ae765](https://github.com/lezli01/vincent/commit/05ae76514a866b3e0ac0ad1d0997aea6fbac3eaf))
+* **issues:** comment thread over the API, apiclient, MCP and CLI ([5f0d3af](https://github.com/lezli01/vincent/commit/5f0d3af5fc79e315716394c8ca11e6401c77b5fc))
+* **issues:** prefill a task from a vincent issue snapshot ([c636f3e](https://github.com/lezli01/vincent/commit/c636f3eda7c484ce952dbc68a3015c061d2908cb))
+* remove github_issue from task create and add a remote-number issue lookup (130.11) ([79b6081](https://github.com/lezli01/vincent/commit/79b608142b59170a14f8275d0afce3c335af8fde))
+* **skills:** teach the issues trigger source, issue: and the github_issues deprecation ([e508506](https://github.com/lezli01/vincent/commit/e508506ec5d2c2518350289e94fff66f870fa3bc))
+* **store:** add the issue entity, its FSM and migration 0036 ([ce49393](https://github.com/lezli01/vincent/commit/ce4939388ae7095376501787e5f49b8b877e81f2))
+* **store:** backfill task 035 snapshots into the issue set (130.11) ([72b3de0](https://github.com/lezli01/vincent/commit/72b3de092f69df9822d1cbdd32e7a7d1094d0a05))
+* **store:** combined issue patch, duplicate_of and issue idempotency keys ([f355e0d](https://github.com/lezli01/vincent/commit/f355e0dcd051c7316ac5a56ad020aa73a2ba86b2)), closes [#662](https://github.com/lezli01/vincent/issues/662)
+* **store:** enqueue issue state write-backs in an outbox ([e6ae1b8](https://github.com/lezli01/vincent/commit/e6ae1b8b64e8bcca0e57893bed3eec418ddd358a))
+* **store:** link tasks to issues by pointer and snapshot ([bc78469](https://github.com/lezli01/vincent/commit/bc78469c373f63e304ce97d4cb4a77506c6413d9))
+* **store:** mirror issue comments and snapshot the thread ([5bcc2b6](https://github.com/lezli01/vincent/commit/5bcc2b68df180cb73b813753c40f887e882c55f2))
+* **store:** persist issue sync state and remote status ([6a923ec](https://github.com/lezli01/vincent/commit/6a923ec1b43e2f671efcd5225b74722066a617b3))
+* **store:** widen the issue snapshot and build it from a stored issue ([88b8d6c](https://github.com/lezli01/vincent/commit/88b8d6c7e2590de67c9db962cdaf9864e47f8ab8))
+* **taskrun:** .Issue.Comments and gh-shaped comments in the issue file ([c2c5b58](https://github.com/lezli01/vincent/commit/c2c5b58d21e1bb313e20338eec76fa887cbcf148))
+* **taskrun:** expose the task's issue snapshot as VINCENT_ISSUE_FILE (130.14) ([3034330](https://github.com/lezli01/vincent/commit/30343301b3440ca805792a0a5d2812956227dbb3))
+* **trigger:** add the event-driven type: issues source and create_task issue: ([656fe3e](https://github.com/lezli01/vincent/commit/656fe3ea12d44ac5243ea803d2f1406634b043dc))
+* **tui:** add the issue form with close, reopen and delete ([b878554](https://github.com/lezli01/vincent/commit/b878554282e0f03b91d704c3a2244e4836819a25))
+* **tui:** add the issues list and issue detail screens ([4bfbca3](https://github.com/lezli01/vincent/commit/4bfbca30aba17fb42588304a99d7691c488be7f6))
+* **tui:** issue thread on the detail and W to comment in $EDITOR ([1c541c2](https://github.com/lezli01/vincent/commit/1c541c2e87d6c70ff1e5da70f4431c4cfdddcebd))
+* **tui:** start a task from an issue and drop the form's issue picker ([0d0a362](https://github.com/lezli01/vincent/commit/0d0a36278562dcbd39f4836e6b622adb60423b04))
+* **workflow:** reshape .Issue around the vincent issue ([3f618b1](https://github.com/lezli01/vincent/commit/3f618b1e8ffc923e4b9c54b933c17969e17754dc))
+* **workflows:** land resolved issues as one merge train ([e21698f](https://github.com/lezli01/vincent/commit/e21698fb9e0e350391046e5e6d28e9ea54aed8f6))
+* **workflows:** review the merge train and resolve its findings before merging ([5b349b9](https://github.com/lezli01/vincent/commit/5b349b96bb3fbb35265fbe698144165421780180))
+* **workflow:** teach the skill and update-workflows about VINCENT_ISSUE_FILE (130.14) ([4cdb7e8](https://github.com/lezli01/vincent/commit/4cdb7e82b0dd88abf39bc3b36d70f07c2a79ad6d))
+* **workflow:** teach the skill and update-workflows the issue thread ([a97b27b](https://github.com/lezli01/vincent/commit/a97b27b330d0e392e52fe703ac577a7c516750a1))
+
+
+### Bug Fixes
+
+* **daemon:** skip the per-issue thread read before the comment pass has a bound (review F2) ([e304c8e](https://github.com/lezli01/vincent/commit/e304c8ea908efc6f11ec7fa0fafc5ed5bc19c474))
+* pass the prefill workflow to GetIssue from the TUI and sync test ([83dcdee](https://github.com/lezli01/vincent/commit/83dcdee7aec36380ebbefc093d5481d76763520c))
+* reconcile tasks 490, 491, 492 and 493 on the train ([f2e6126](https://github.com/lezli01/vincent/commit/f2e61264e7a3a044b3cc3cf9e25a75594b40dc53))
+* **store:** keep a sync-now request that lands during an attempt ([e009121](https://github.com/lezli01/vincent/commit/e009121eecdab2c4aef7d17155c8703d3f83ffcc))
+* **store:** keep the local state of an issue whose write failed ([6d3c0fb](https://github.com/lezli01/vincent/commit/6d3c0fb9176158ffb98a087079cf749ed3953a2e))
+* **store:** match a comment's repo case-insensitively (review F3) ([2471d80](https://github.com/lezli01/vincent/commit/2471d80f24e5c5328128778920087cde55262331))
+* **tui:** offer W on an issue whose remote moved or went missing (review F1) ([470fb0a](https://github.com/lezli01/vincent/commit/470fb0a0520c69d609efbc0a6d92119bcd712041))
+* **tui:** say an imported issue's close is written to GitHub ([0bc0fb3](https://github.com/lezli01/vincent/commit/0bc0fb34aeb2f75cfce1316849c7b3ac7628ecfb))
+* **workflows:** hand gh the github_issue field, never issue ([4f40ad1](https://github.com/lezli01/vincent/commit/4f40ad1c541e5abf34babe26639f269379445231))
+
 ## [Unreleased]
 
 ### Added
