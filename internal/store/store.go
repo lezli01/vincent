@@ -41,6 +41,9 @@ type Store struct {
 	// syncRequested fires after RequestIssueSync commits; see
 	// OnIssueSyncRequested.
 	syncRequested atomic.Pointer[func(int64)]
+	// outboxEnqueued fires after a state change enqueued an issue write;
+	// see OnIssueOutboxEnqueued.
+	outboxEnqueued atomic.Pointer[func()]
 }
 
 // Open opens (creating if needed) the SQLite database at path, applies the

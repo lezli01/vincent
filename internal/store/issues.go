@@ -66,6 +66,9 @@ type Issue struct {
 	ClosedAt        *time.Time
 	Labels          []string     // names, sorted case-insensitively
 	Remote          *IssueRemote // nil for a local issue
+	// Sync is the issue's newest state write-back that was not superseded
+	// (task 130.10); nil when it never had one.
+	Sync *IssueOutbox
 	// Active is whether any root task created from the issue is not
 	// taskstate.Settled; TaskCount is how many root tasks there are. Lanes
 	// never count (decision 5): a twenty-lane tree is one piece of work.
@@ -280,6 +283,9 @@ func getIssue(ctx context.Context, q issueQuerier, id int64) (*Issue, error) {
 	if err := loadIssueLabels(ctx, q, []*Issue{iss}); err != nil {
 		return nil, err
 	}
+	if err := loadIssueSync(ctx, q, []*Issue{iss}); err != nil {
+		return nil, err
+	}
 	return iss, nil
 }
 
@@ -366,6 +372,9 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) ([]*Issue, error)
 		return nil, fmt.Errorf("list issues: %w", err)
 	}
 	if err := loadIssueLabels(ctx, s.db, out); err != nil {
+		return nil, err
+	}
+	if err := loadIssueSync(ctx, s.db, out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -681,10 +690,16 @@ func applyLabelPatch(cur []string, p IssuePatch) []string {
 // duplicate — the issue it duplicates, which must be another issue in the
 // same project (ErrInvalidDuplicateOf); reopening clears all three. A sync
 // no-op returns the issue unchanged and announces nothing.
+//
+// A human's or an agent's move of an issue with a live GitHub remote also
+// enqueues its write-back in the same transaction (task 130.10), so the
+// change, its event and the promise to send it commit together; the
+// OnIssueOutboxEnqueued callback is told after the commit.
 func (s *Store) TransitionIssue(ctx context.Context, id int64, action issuestate.Action, reason issuestate.Reason, duplicateOf *int64, by issuestate.Actor) (*Issue, error) {
 	if err := checkActor(by); err != nil {
 		return nil, err
 	}
+	enqueued := false
 	err := s.writeIssue(ctx, func(tx *sql.Tx) (*Event, error) {
 		cur, err := getIssue(ctx, tx, id)
 		if err != nil {
@@ -725,6 +740,9 @@ func (s *Store) TransitionIssue(ctx context.Context, id int64, action issuestate
 		if err != nil {
 			return nil, fmt.Errorf("transition issue %d: %w", id, err)
 		}
+		if enqueued, err = enqueueStateWriteTx(ctx, tx, cur, to, resolved, duplicateOf, by, time.Now()); err != nil {
+			return nil, err
+		}
 		extra := map[string]any{"from": string(from), "to": string(to), "reason": string(resolved)}
 		if duplicateOf != nil {
 			extra["duplicate_of"] = *duplicateOf
@@ -733,6 +751,9 @@ func (s *Store) TransitionIssue(ctx context.Context, id int64, action issuestate
 	})
 	if err != nil {
 		return nil, err
+	}
+	if enqueued {
+		s.kickOutbox()
 	}
 	return s.GetIssue(ctx, id)
 }
