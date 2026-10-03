@@ -26,7 +26,7 @@ func issueEvents(t *testing.T, s *Store, types ...string) []Event {
 func allIssueEventTypes() []string {
 	return []string{
 		EventIssueCreated, EventIssueUpdated, EventIssueStateChanged,
-		EventIssueLabelsChanged, EventIssueCommentAdded, EventIssueDeleted,
+		EventIssueLabelsChanged, EventIssueCommentAdded, EventIssueCommentUpdated, EventIssueDeleted,
 	}
 }
 

@@ -175,6 +175,16 @@ func insertTaskTx(
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)
 	}
+	// The snapshot's thread is filled here, in the create transaction, so
+	// it is exactly the comments committed when the task was (task 130.16,
+	// decision 24.5). A fan-out lane keeps the clone it inherited from its
+	// parent (task 035 decision 9), and a caller that already set Comments
+	// is taken at its word.
+	if t.Issue != nil && t.Issue.ID > 0 && t.Issue.Comments == nil && t.ParentTaskID == nil {
+		if t.Issue.Comments, err = issueSnapshotCommentsTx(ctx, tx, t.Issue.ID); err != nil {
+			return nil, fmt.Errorf("insert task: %w", err)
+		}
+	}
 	snapJSON, err := marshalIssueSnapshot(t.Issue)
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)
