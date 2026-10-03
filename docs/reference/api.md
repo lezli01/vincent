@@ -653,7 +653,7 @@ See [`vincent gc`](cli.md#vincent-gc) for the command over these endpoints.
 | `DELETE` | `/v1/projects/{id}` | Hard-deletes the project and its task rows |
 | `GET` | `/v1/projects/{id}/branches` | Its local git branches, each with the working tree holding it |
 | `GET` | `/v1/projects/{id}/github` | Can this project's GitHub issues be read? |
-| `GET` | `/v1/projects/{id}/github/issues` | Its issues, newest first — `?state=`, `?limit=`, `?workflow=` |
+| `GET` | `/v1/projects/{id}/github/issues` | Its issues, newest first — `?state=`, `?limit=` |
 | `GET` | `/v1/projects/{id}/github/pulls` | Its pull requests, newest first — `?state=`, `?limit=`, `?workflow=` |
 | `GET` | `/v1/projects/{id}/issues/sync` | How its GitHub issue import is going |
 | `POST` | `/v1/projects/{id}/issues/sync` | Sync now — `202` with the same body |
@@ -748,7 +748,7 @@ log.
 `GET /v1/projects/{id}/github/issues` lists the repository's issues, newest
 first. Pull requests are never included. `?state=` takes `open` (the default),
 `closed` or `all`; `?limit=` caps the rows. There is no `?q=` — narrow the list
-client-side, the way the TUI's picker does.
+client-side. Any other parameter is ignored.
 
 ```json
 [
@@ -763,24 +763,10 @@ client-side, the way the TUI's picker does.
 ]
 ```
 
-Adding `?workflow=<name>` attaches a `prefill` object to every row — the
-daemon's own answer to "what would creating a task from this issue fill in":
-
-```json
-{ "prefill": { "title": "#200 …", "description": "…\n\nGitHub issue #200: https://…",
-               "fields": { "issue": "200", "github_issue": "200", "labels": "enhancement" } } }
-```
-
-`title` is the issue title prefixed `#N`. `fields` holds only the declared
-fields named exactly `issue`, `github_issue`, `labels`, `assignee` or
-`milestone` whose declared type and pattern accept the value. On this path
-`issue` and `github_issue` both carry the GitHub issue number; a workflow that
-hands the number to `gh` reads `github_issue`, because a task created from a
-vincent issue fills `issue` with the vincent issue id.
-
-`POST /v1/tasks` computes exactly the same prefill from the same code, so a
-preview a human accepted and a create call that names only the issue produce the
-same task. An unknown workflow name is `400 validation_failed`.
+The rows carry no `prefill`. The `?workflow=` parameter that used to add one
+is gone — it is ignored now, like any unknown parameter. Start a task from a
+[vincent issue](#issues) instead: `GET /v1/issues/{id}?workflow=` previews the
+prefill that `POST /v1/tasks` with `issue_id` applies.
 
 ### Issue sync
 
@@ -866,8 +852,8 @@ boundary: see the [security model](../security-model.md).
 
 `GET /v1/projects/{id}/github/pulls` lists the repository's pull requests,
 newest first. `?state=` is `open` (the default), `closed` or `all`; `?limit=`
-caps the rows; `?workflow=` adds a computed `prefill` per row — the same shape
-the issue listing carries, and the same one `POST /v1/tasks` applies when you
+caps the rows; `?workflow=` adds a computed `prefill` per row —
+`{ title, description, fields }`, the same one `POST /v1/tasks` applies when you
 name a pull request. It goes through the same capability gate as the issue
 listing, so a disabled integration or a project whose `origin` is not a
 github.com repository makes no call at all.

@@ -1,6 +1,6 @@
 # 130 — The issues pillar: vincent-owned issues per project
 
-**Status:** 🔄 in progress (9/18)
+**Status:** 🔄 in progress (13/18)
 
 Issue [#659](https://github.com/lezli01/vincent/issues/659), part of
 [#658](https://github.com/lezli01/vincent/issues/658). Spec §3 (rows 11, 26
@@ -592,6 +592,40 @@ record the result.
    not dropped: the cursor stops at the last event handled and the next pass
    carries on.
 
+### 21. 130.13: a task from an issue in the TUI (2026-10-03)
+
+Settled with the author before the work started (#672).
+
+1. **Decision 16.3's widening is in scope.** The issue detail lists every root
+   task linked to the issue, newest first, finished and archived ones
+   included, from `GET /v1/tasks?issue_id=&archived=all` — no longer limited
+   to `tasks.active_ids`. `enter` opens a task, and `esc` in the workspace
+   returns to the issue.
+2. **The prefill is re-applied on a workflow switch until the human edits.**
+   This keeps the old picker's rule, not the pull-request seed's apply-once
+   rule: declared fields differ per workflow, so each time the draft settles
+   on a workflow W the form fetches `GET /v1/issues/{id}?workflow=W` and fills
+   only rows the human has not typed in. A row is untouched while it is blank
+   or holds what the previous prefill wrote; an untouched field the new
+   prefill no longer fills is withdrawn. A typed value is never overwritten,
+   and an answer for a stale (project, workflow, issue) is dropped, the guard
+   `applyPullPrefill` uses. The pull-request seed is unchanged.
+3. **The "already started" note is one line: a count plus an active marker**
+   — `2 tasks already started from this issue (1 active)` — from the issue
+   DTO's `tasks` block, with no extra fetch. Starting another is allowed. This
+   amends #672's "the note lists the existing tasks": the list lives on the
+   issue detail (1), not in the form.
+4. **Both optional pieces ship:** an issue fact on the task workspace's
+   Overview (129.12), and a key-less command-palette row, "open this task's
+   issue", which opens the issue detail; `esc` returns to the workspace.
+5. **The form has no way to unlink or change the source.** A plain task is
+   `esc` and `n`; the source is chosen where the issue is on screen, as for a
+   pull request.
+
+The probe route, `vincent github status` and doctor stay; the GitHub issue
+listing loses only `?workflow=` and its per-row `prefill`, which the form's
+picker was the one consumer of (decision 7).
+
 ## Open questions
 
 Each has a proposed default, which stands unless the author answers otherwise
@@ -678,11 +712,11 @@ its own pull request.
 - [x] **130.12** ([#671](https://github.com/lezli01/vincent/issues/671)) The
   TUI issue create/edit form with close and reopen, and a shared `$EDITOR`
   helper. Depends: 130.9. ✓ 2026-10-03 (decision 19)
-- [ ] **130.13** ([#672](https://github.com/lezli01/vincent/issues/672)) Seed a
+- [x] **130.13** ([#672](https://github.com/lezli01/vincent/issues/672)) Seed a
   new task from an issue, delete the new-task form's issue picker, the task
   workspace's Issue section. Depends: 130.9, 130.7. Also widens the issue
   detail's linked tasks from the active ones to every root task, newest first,
-  over `?issue_id=` (decision 16.3).
+  over `?issue_id=` (decision 16.3). ✓ 2026-10-03 (decision 21)
 - [ ] **130.14** ([#673](https://github.com/lezli01/vincent/issues/673))
   `VINCENT_ISSUE_FILE`, and the repo's resolve workflows migrated onto it.
   Depends: 130.7, 130.6, 130.8.

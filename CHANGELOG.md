@@ -13,6 +13,17 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Start a task from an issue in the TUI.** `a` on the issues list or an
+  issue's screen opens the new-task form seeded with that issue: a read-only
+  source row shows it, its state and its GitHub reference, and how many tasks
+  it already started; the title, description and matching declared fields are
+  prefilled in editable rows, re-applied to the rows you have not typed in
+  when you switch workflow. A closed issue can be started from too, with a
+  warning. The issue's screen now lists every task it started, newest first,
+  finished ones included, and a task started from an issue names it on its
+  Overview and in an Issue section of Task Details; the command palette's
+  "open this task's issue" opens it.
+  ([#672](https://github.com/lezli01/vincent/issues/672))
 - **Issue state is written back to GitHub.** Closing or reopening an issue
   imported from GitHub — in the TUI, with the CLI or over the API — now closes
   or reopens it on GitHub too, with the same close reason. The write is
@@ -133,6 +144,15 @@ list with the user-facing context a commit subject cannot carry.
   `labels_added` and `labels_removed`, and an import refresh's `issue.updated`
   carries the labels and state it moved.
   ([#674](https://github.com/lezli01/vincent/issues/674))
+
+### Changed
+
+- **The new-task form no longer has a GitHub issue row.** A task is started
+  from an issue on the issue screens instead, and a plain new task makes no
+  GitHub call on any project. `GET /v1/projects/{id}/github/issues` no longer
+  takes `?workflow=` or returns a per-row `prefill`; preview a task's prefill
+  with `GET /v1/issues/{id}?workflow=`.
+  ([#672](https://github.com/lezli01/vincent/issues/672))
 
 ### Deprecated
 

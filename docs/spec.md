@@ -8515,7 +8515,15 @@ GET    /v1/projects/{id}/github/issues  *Added 2026-08-26 (task 035).* The proje
                                         was given, as every §15 picker does.
                                         An unusable integration is a **409** carrying
                                         `details.reason` from the vocabulary above, not a 200
-                                        with an empty list
+                                        with an empty list.
+                                        *Amended 2026-10-03 (task 130.13, issue #672):*
+                                        `?workflow=` and the per-row `prefill` are **removed**
+                                        (task 130 decision 7). Their one consumer, the
+                                        new-task form's issue picker, is gone; a task's
+                                        prefill is previewed from the vincent issue it starts
+                                        from, `GET /v1/issues/{id}?workflow=W`. The parameter
+                                        is now ignored like any unknown one. The listing
+                                        itself stays, for `vincent github issues` and MCP
 GET    /v1/projects/{id}/github/pulls   *Added 2026-08-29 (task 052).* The project's **open**
                                         pull requests, newest first; `?limit=`. Same gate, same
                                         409-with-`details.reason` on an unusable integration.
@@ -12000,6 +12008,32 @@ stream for the live tail.
    of the guided layout, not a stage of its own: picking an issue is how the
    title and description get filled in, and separating the pick from what it
    fills would put the guess and its review on different screens.
+   *Amended 2026-10-03 (task 130.13, issue #672):* the GitHub issue row is
+   **removed**, with its picker and its call to `GET
+   /v1/projects/{id}/github` — task 130 decision 7 supersedes task 035
+   decision 4 for this form only; the probe itself, `vincent github status`
+   and doctor stay. A plain draft makes no GitHub call on any project. In its
+   place is a read-only **source** row, present only on a seeded draft: a
+   draft from an issue shows `#id title`, the issue's state, the
+   `owner/repo#N` reference when it is imported, and — from the issue's own
+   `tasks` block, with no extra fetch — a one-line note such as `2 tasks
+   already started from this issue (1 active)`; a draft from a pull request
+   shows the pull request's summary and fork warning, which used to share the
+   issue row. A handoff hides the row: the chat is the source. The source is
+   chosen where it is on screen, never in the form — an issue with `a` on
+   views 12 and 13, a pull request with `a` on its takeover — and the form
+   offers no way to unlink or change it; a plain task is `esc` and `n`.
+   An issue seed's prefill is previewed from `GET /v1/issues/{id}?workflow=W`
+   each time the draft settles on a workflow W, because declared fields
+   differ per workflow, and it fills only rows the human has not typed in: a
+   row that is blank or still holds the previous prefill's value takes the
+   new one, a typed value is never overwritten, and an untouched field the
+   new workflow's prefill no longer fills is withdrawn. An answer for a
+   (project, workflow, issue) the draft has left is dropped. The pull
+   request's seed keeps its apply-once rule. Submitting sends `issue_id` and
+   every row, empties included, so a cleared row stays cleared. A closed issue
+   may be started from: the source row says `closed`, and the create's
+   warning is shown on the task.
    **Guided wide layout (task 020, added 2026-08-20):** the same row order is
    grouped into six visual stages — Project, Workflow, Task details, Git &
    priority, Execution, Review. The stage is derived from the field cursor,
@@ -12785,6 +12819,21 @@ stream for the live tail.
    imported issue it says GitHub is never touched and the tombstone keeps
    sync from importing it again. Delete is not a state action and is never
    among `available_actions`.
+
+   *Amended 2026-10-03 (task 130.13, issue #672):* `a` is bound on both
+   screens as `add` — "create a task from this issue", on the list's
+   selected row — and opens view 3 seeded with the issue (task 130 decision
+   19.1, the pull-requests takeover's precedent). A closed issue is allowed.
+   The detail's linked tasks are now **every root task** the issue started,
+   newest first, finished and archived ones included, from one `GET
+   /v1/tasks?issue_id=&archived=all` (decision 16.3); the heading still shows
+   `tasks.count` and how many are active. In the task workspace a task
+   started from an issue carries it as a fact on Overview and as an **Issue**
+   section in Task Details — the issue as it is now while the link holds,
+   its snapshot once the issue is deleted — which replaces the GitHub issue
+   section and still renders a legacy `github_issue` row's captured issue.
+   The palette lists a key-less "open this task's issue" row there, which
+   opens view 13; `esc` returns to the workspace.
 
 ### Layout
 
@@ -14050,7 +14099,9 @@ opens the **new-task form in handoff mode**, seeded with the chat: the project,
 the base branch and the branch are the chat's and are shown read-only, marked
 "(from the chat)", because they name a worktree that already exists and there is
 nothing here to decide. The issue row is hidden — the chat is the source
-already. Submitting posts to the chat's own route, not to `POST /v1/tasks`
+already. *(Amended 2026-10-03, task 130.13: the issue row is gone; the
+read-only source row that replaced it is hidden on a handoff for the same
+reason.)* Submitting posts to the chat's own route, not to `POST /v1/tasks`
 (§13.4), and lands on the created task. A handed-off chat's header carries a
 **permanent** link to that task; the state renders as "handed off" and the chat
 sorts into the board's terminal band beside archived ones — *amended 2026-09-01

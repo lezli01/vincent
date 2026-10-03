@@ -1122,7 +1122,7 @@ by default, and inert on every project whose `origin` is not on github.com.
 
 It governs **reading, plus the six writes below**. Nothing else under this key
 writes to GitHub, and no GitHub call happens while a step runs — the daemon
-calls when you open the issue picker, when it creates a task from an issue, when
+calls when it creates a task from a GitHub issue, when
 a client asks for a pull request, when you ask it to open one or act on one, and
 on the reconciler's tick. The issue a task was created from is stored on the task at that
 moment and never re-read, which is why a step's `.Issue` renders offline and
@@ -1153,11 +1153,11 @@ switches: set either off and the write waits, `pending` with reason
 `disabled`, until it is turned back on.
 
 It applies only to a project whose `origin` remote parses as a github.com
-repository. On every other project it does nothing at all — the issue row is not
-offered, and no `gh` process is started.
+repository. On every other project it does nothing at all, and no `gh` process
+is started.
 
-Setting it to `false` stops the daemon talking to GitHub entirely: the TUI's
-issue row disappears, `GET /v1/projects/{id}/github` reports `disabled`, the
+Setting it to `false` stops the daemon talking to GitHub entirely:
+`GET /v1/projects/{id}/github` reports `disabled`, the
 pull request listing answers `409`, the reconciler stops (no issue import, no
 refresh, no link), creating a task with
 `--github-issue` is refused, and **every write to GitHub is refused too**. Read

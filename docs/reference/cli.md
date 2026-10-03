@@ -682,8 +682,8 @@ task 61 created: GitHub integration: select a GitHub issue when creating a task 
 ```
 
 The flag carries the **number and nothing else**. The daemon resolves the issue,
-so the command line and the TUI's issue picker go through one implementation and
-produce the same task from the same issue. It fills in the title (`#N ` and the
+so the command line and the API go through one implementation and produce the
+same task from the same issue. It fills in the title (`#N ` and the
 issue title), the description (the issue body plus a trailing
 `GitHub issue #N: <url>` line), and any of the workflow's declared `issue`,
 `github_issue`, `labels`, `assignee` or `milestone` fields whose declared type
@@ -2868,8 +2868,8 @@ project one whose issues it would import and sync".
 [`vincent issue sync --status`](#vincent-issue-sync) says how that import is
 actually going. A project whose `origin` is not a github.com URL
 reports `unavailable: this project's origin remote is not a github.com
-repository` — which is not a fault, just a project the issue picker does not
-apply to.
+repository` — which is not a fault, just a project GitHub's issue import does
+not apply to.
 
 ## `vincent issue`
 
