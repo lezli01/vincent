@@ -17,7 +17,9 @@ image's and the free chat's is the host's — told apart by a
 `FAKEAGENT_CLAUDE_COMMANDS` the image carries and the host copy does not — and
 with the task's container removed the linked chat answers `unknown` with a
 container reason, an empty list and an empty `work_dir`, having probed
-nothing.
+nothing. Scenario 1b is task 130.14's: a containerized command step on a task
+created from an issue reads `$VINCENT_ISSUE_FILE` from the worktree's git
+directory with no mount beyond the repository's.
 
 ```sh
 ./scripts/m12-gate.sh    # every scenario; there is no single-scenario switch
