@@ -381,7 +381,8 @@ number,title,body,url,createdAt,state,stateReason,labels,author,comments`, so
 `jq` written for `gh` reads it unchanged: `number` is the GitHub number (`null`
 for a local issue), `state` is `OPEN`/`CLOSED`, `stateReason` is
 `COMPLETED`/`NOT_PLANNED`/`DUPLICATE` or `null`, `labels` is `[{"name": …}]`,
-`author` is `{"login": …}`, and `comments` is always `[]` for now. It adds
+`author` is `{"login": …}`, and `comments` is the thread at task creation
+in gh's element shape (`author.login`, `body`, `createdAt`). It adds
 `id`, `kind`, `priority`, and `source` (`provider`, `repo`, `number`, `url`;
 `null` for a local issue). Read it instead of `gh issue view`: it needs no
 network, a fan-out lane gets its parent's, and `git add -A` cannot stage it.
