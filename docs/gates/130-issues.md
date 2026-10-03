@@ -95,12 +95,12 @@ The `github_issue: N` shorthand scenario is not here. #676 made it
 conditional on task 130.11 (#670), which has not landed, so it is added to
 this script in that task's pull request.
 
-## Known red: scenario 8
+## Found by this gate: scenario 8
 
-Scenario 8 fails at the head this gate was written against: **GATE FAIL: a
+Scenario 8 failed at the head this gate was written against: **GATE FAIL: a
 refused write undid the local reopen: closed**. The spec's write-back
 section says `no_write_scope` ends the write `failed` "and keep[s] the local
-state". What happens instead:
+state". What happened instead:
 
 1. The reopen is written as a human transition (`issue.state_changed`
    closed→open, `by: human`).
@@ -109,16 +109,17 @@ state". What happens instead:
    `sync`).
 3. About a second later the importer's next tick lists #2 again: the
    incremental listing asks from two minutes behind the watermark, and the
-   earlier close had just stamped #2's `updated_at`. It refreshes the issue
+   earlier close had just stamped #2's `updated_at`. It refreshed the issue
    back to closed (`issue.updated` changed `close_reason`, `state`,
    open→closed, `by: sync`).
 
-`refreshRemoteIssueTx` (`internal/store/issues_remote.go`) holds the local
-state only while a write is *pending*. Once the write has ended `failed`, a
-refresh of an unchanged remote row overwrites the local state the spec says
-is kept. The gate keeps the spec's assertion rather than weakening it. This
-is a product bug for its own fix, and task 130.17 stays open until that fix
-lands and this scenario passes.
+`refreshRemoteIssueTx` (`internal/store/issues_remote.go`) held the local
+state only while a write was *pending*. It now holds it too while the
+issue's newest write has ended `failed` and GitHub still shows that write's
+base; once GitHub moves off the base, someone else changed it and GitHub is
+the authority again. The fix landed in the same pull request as the gate,
+with `TestRefreshKeepsTheStateOfAFailedWrite` in `internal/store`, and the
+gate's assertion is unchanged.
 
 ## What the script does not assert
 
@@ -138,3 +139,4 @@ in advance.
 | Date | Platform | Result | By |
 |---|---|---|---|
 | 2026-10-03 | macOS (darwin/arm64) | Scenarios 1–7 and 9–11 pass, each run alone with `VINCENT_GATE_SCENARIO`. Scenario 8 GATE FAIL (the product bug above) | task 130.17 |
+| 2026-10-03 | macOS (darwin/arm64) | GATE PASS, all eleven scenarios end to end, with the scenario 8 fix | task 130.17 |

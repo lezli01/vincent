@@ -812,11 +812,11 @@ its own pull request.
   end-to-end gate on all three platforms. Depends: 130.7, 130.10.
   `scripts/130-gate.sh` and its `ci.yml` step landed with eleven scenarios,
   recorded in `docs/gates/130-issues.md`. Scenario 12 (the `github_issue`
-  shorthand) moved to 130.11. Still open: scenario 8 found that a refresh of
-  an unchanged remote reverts the local state of an issue whose write ended
-  `failed/no_write_scope`, which the spec says is kept. The fix is its own
-  bug, and this item closes when that fix lands and the gate is green on all
-  three platforms.
+  shorthand) moved to 130.11. Scenario 8 found that a refresh of an
+  unchanged remote reverted the local state of an issue whose write ended
+  `failed/no_write_scope`, which the spec says is kept; the fix landed in the
+  same pull request. This item closes when the gate is green on all three
+  platforms in CI.
 - [ ] **130.18** ([#677](https://github.com/lezli01/vincent/issues/677))
   Screenshot seed, new tapes, recaptures, the features page. Depends: 130.12,
   130.13, 130.10.
