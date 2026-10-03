@@ -161,7 +161,7 @@ func (r *PullReconciler) importIssues(ctx context.Context, project store.Project
 	if st.LastFullScanAt != nil && now.Sub(*st.LastFullScanAt) < fullScanEvery {
 		return nil
 	}
-	if err := r.sweepOpenSet(ctx, project, repo); err != nil {
+	if err := r.sweepOpenSet(ctx, project, repo, st); err != nil {
 		return err
 	}
 	st.LastFullScanAt = &now
@@ -241,7 +241,7 @@ func (r *PullReconciler) applyIssues(ctx context.Context, project store.Project,
 			continue
 		}
 		seen[is.NodeID] = true
-		if err := r.applyIssue(ctx, project.ID, repo, is); err != nil {
+		if err := r.applyIssue(ctx, project.ID, repo, is, needsBackfill(st)); err != nil {
 			return err
 		}
 		st.Watermark = laterOf(st.Watermark, is.UpdatedAt)
@@ -257,9 +257,13 @@ func (r *PullReconciler) applyIssues(ctx context.Context, project store.Project,
 // here knows is skipped — closed history is not imported — and a tombstoned
 // one is never resurrected: the upsert refuses it. An issue that arrives
 // here for the first time brings its existing thread with it (task 130
-// decision 24.2).
-func (r *PullReconciler) applyIssue(ctx context.Context, projectID int64, repo github.Repo, is *github.Issue) error {
-	thread, err := r.threadToBackfill(ctx, projectID, repo, is)
+// decision 24.2) when backfill says the comment pass would not.
+func (r *PullReconciler) applyIssue(ctx context.Context, projectID int64, repo github.Repo, is *github.Issue, backfill bool) error {
+	var thread []github.IssueComment
+	var err error
+	if backfill {
+		thread, err = r.threadToBackfill(ctx, projectID, repo, is)
+	}
 	if err != nil {
 		return err
 	}
@@ -337,10 +341,21 @@ func (r *PullReconciler) threadToBackfill(ctx context.Context, projectID int64, 
 	return r.client.ListCommentsOfIssue(ctx, repo, is.Number)
 }
 
+// needsBackfill reports whether an issue arriving now needs its existing
+// thread read on its own (task 130 decision 24.2): only once the comment
+// pass has a bound. Until then its next listing walks the repository's
+// comments from the beginning — this tick, after the issue pass — and
+// reaches every comment of every issue imported before it, so a per-issue
+// read would list the same comments twice: on a project's first import,
+// one request per discussed issue for nothing.
+func needsBackfill(st *store.IssueSyncState) bool {
+	return st.CommentSince != nil
+}
+
 // sweepOpenSet finds the open issues here GitHub no longer lists as open,
 // and asks after each one: closed is written, transferred is moved,
 // deleted or unreadable is missing. Nothing is deleted.
-func (r *PullReconciler) sweepOpenSet(ctx context.Context, project store.Project, repo github.Repo) error {
+func (r *PullReconciler) sweepOpenSet(ctx context.Context, project store.Project, repo github.Repo, st *store.IssueSyncState) error {
 	open := map[string]bool{}
 	var since time.Time
 	for calls := 0; ; calls++ {
@@ -374,7 +389,7 @@ func (r *PullReconciler) sweepOpenSet(ctx context.Context, project store.Project
 			// is never probed and stays as the backfill left it.
 			continue
 		}
-		if err := r.probeIssue(ctx, project.ID, repo, rem); err != nil {
+		if err := r.probeIssue(ctx, project.ID, repo, rem, needsBackfill(st)); err != nil {
 			return err
 		}
 	}
@@ -382,7 +397,7 @@ func (r *PullReconciler) sweepOpenSet(ctx context.Context, project store.Project
 }
 
 // probeIssue is one single-issue read for a remote the open listing lacked.
-func (r *PullReconciler) probeIssue(ctx context.Context, projectID int64, repo github.Repo, rem store.IssueRemote) error {
+func (r *PullReconciler) probeIssue(ctx context.Context, projectID int64, repo github.Repo, rem store.IssueRemote, backfill bool) error {
 	is, err := r.client.GetIssue(ctx, repo, rem.Number)
 	status, location := "", ""
 	switch reason := github.ReasonOf(err); {
@@ -394,9 +409,11 @@ func (r *PullReconciler) probeIssue(ctx context.Context, projectID int64, repo g
 		// (task 130 decision 22.3): a backfilled issue closed on GitHub is
 		// re-keyed and closed here.
 		if store.IsPlaceholderRemote(rem) {
-			thread, err := r.threadToBackfill(ctx, projectID, repo, &is)
-			if err != nil {
-				return err
+			var thread []github.IssueComment
+			if backfill {
+				if thread, err = r.threadToBackfill(ctx, projectID, repo, &is); err != nil {
+					return err
+				}
 			}
 			if adopted, err := r.adoptPlaceholder(ctx, projectID, &is, thread); err != nil || adopted {
 				return err

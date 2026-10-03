@@ -723,6 +723,9 @@ defaults, not separately asked. Spec §5.6, §8.4, §8.5, §12.3, §13.2–§13.
    first imported, or a placeholder is re-keyed, and GitHub counts
    `comments > 0`, sync reads `issues/{n}/comments` once, before writing the
    issue, so a failed read retries on the next tick.
+   *Amended 2026-10-03 (review F2):* not while the comment pass has no bound
+   yet — its first walk starts from zero and reaches the thread anyway, so a
+   project's initial import makes no per-issue read.
 3. **A refused local comment uses `issue_mirrored`**, not a new
    `field_owned_by_source`: the rule already exists. `issues.Service.Comment`
    calls `checkMirror`, so a `human`'s or `agent`'s comment on an issue with a

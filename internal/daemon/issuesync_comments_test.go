@@ -246,13 +246,14 @@ func TestCommentSyncBackfillsAnIssueImportedLater(t *testing.T) {
 		commentRow(7001, 1, "on one", commentBase), commentRow(7002, 5, "on five", commentBase))
 	r := f.reconciler()
 
-	// The first import of #1 reads its thread once, and the comment pass's
-	// re-list of the same comment is silent: one comment_added, not two.
+	// The project's first import reads no thread on its own: the comment
+	// pass's first walk, from the beginning, brings #1's — one
+	// comment_added, and no request the walk would duplicate (review F2).
 	events := f.lastEventID(t)
 	r.Tick(t.Context())
 	one := f.issues(t)[1]
-	if n := countRequests(t, log, "issues/1/comments", 0); n != 1 {
-		t.Fatalf("#1's thread was read %d times on import, want once", n)
+	if n := countRequests(t, log, "issues/1/comments", 0); n != 0 {
+		t.Fatalf("#1's thread was read %d times on the first import, want none", n)
 	}
 	if got := f.comments(t, one.ID); len(got) != 1 || got[0].Body != "on one" {
 		t.Fatalf("#1's thread = %+v", got)
@@ -287,8 +288,8 @@ func TestCommentSyncBackfillsAnIssueImportedLater(t *testing.T) {
 	if n := countRequests(t, log, "issues/6/comments", 0); n != 0 {
 		t.Errorf("#6, with no comments, had its thread read %d times", n)
 	}
-	if n := countRequests(t, log, "issues/1/comments", 0); n != 1 {
-		t.Errorf("#1's thread was read again: %d reads", n)
+	if n := countRequests(t, log, "issues/1/comments", 0); n != 0 {
+		t.Errorf("#1's thread was read on its own: %d reads", n)
 	}
 }
 
@@ -296,14 +297,18 @@ func TestCommentSyncBackfillsAdoptedPlaceholders(t *testing.T) {
 	f := newFixture(t, "https://github.com/octo/repo.git")
 	log := requestLog(t)
 	// #1 is adopted by the open listing, #2 — closed on GitHub — by the
-	// sweep's probe; #3 has no comments.
-	newCorpus(t, issueRow(1, "open"), issueRow(2, "closed"), issueRow(3, "open"),
-		commentRow(7001, 1, "on one", commentBase), commentRow(7002, 2, "on two", commentBase))
+	// sweep's probe; #3 has no comments. On the first tick the comment
+	// pass walks from the beginning, so it brings both threads and no
+	// thread is read on its own (review F2).
+	c := newCorpus(t, issueRow(1, "open"), issueRow(2, "closed"), issueRow(3, "open"), issueRow(4, "closed"),
+		commentRow(7001, 1, "on one", commentBase), commentRow(7002, 2, "on two", commentBase),
+		commentRow(7004, 4, "on four", commentBase))
 	one := f.placeholder(t, "octo/repo", 1, issuestate.Open)
 	two := f.placeholder(t, "octo/repo", 2, issuestate.Open)
 	f.placeholder(t, "octo/repo", 3, issuestate.Open)
 
-	f.reconciler().Tick(t.Context())
+	r := f.reconciler()
+	r.Tick(t.Context())
 	for n, c := range map[int]struct {
 		id   int64
 		body string
@@ -311,12 +316,24 @@ func TestCommentSyncBackfillsAdoptedPlaceholders(t *testing.T) {
 		if thread := f.comments(t, c.id); len(thread) != 1 || thread[0].Body != c.body {
 			t.Errorf("#%d's thread after adoption = %+v, want %q", n, thread, c.body)
 		}
-		if k := countRequests(t, log, fmt.Sprintf("issues/%d/comments", n), 0); k != 1 {
-			t.Errorf("#%d's thread was read %d times, want once", n, k)
+	}
+	for n := 1; n <= 3; n++ {
+		if k := countRequests(t, log, fmt.Sprintf("issues/%d/comments", n), 0); k != 0 {
+			t.Errorf("#%d's thread was read %d times on the first tick, want none", n, k)
 		}
 	}
-	if k := countRequests(t, log, "issues/3/comments", 0); k != 0 {
-		t.Errorf("#3, with no comments, had its thread read %d times", k)
+
+	// #4's placeholder arrives after the comment pass passed its comment,
+	// so its adoption — by the incremental listing, #4 being updated on
+	// GitHub — reads its thread once.
+	four := f.placeholder(t, "octo/repo", 4, issuestate.Open)
+	c.edit(4, commentBase.Add(time.Hour), func(map[string]any) {})
+	r.Tick(t.Context())
+	if thread := f.comments(t, four.ID); len(thread) != 1 || thread[0].Body != "on four" {
+		t.Errorf("#4's thread after a later adoption = %+v", thread)
+	}
+	if k := countRequests(t, log, "issues/4/comments", 0); k != 1 {
+		t.Errorf("#4's thread was read %d times, want once", k)
 	}
 }
 

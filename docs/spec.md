@@ -7339,7 +7339,10 @@ onto the imported issue with its number (§5.6), and the rest are skipped.
 When an issue is first imported or a placeholder adopted and GitHub counts
 comments on it, its thread is read once from `issues/{n}/comments` — before
 the issue is written, so a rate limit on that read leaves the issue unimported
-and the next tick asks again. A comment pass failure is recorded on the sync
+and the next tick asks again. That read is skipped while the comment pass has
+not yet set its bound: its next listing walks from the beginning and reaches
+the thread anyway, so a project's first import costs no per-issue request
+(review F2). A comment pass failure is recorded on the sync
 row like an issue pass failure, and a rate limit defers both.
 
 *Amended 2026-10-03 (task 130.10, issue #669).* Beside the tick runs the
