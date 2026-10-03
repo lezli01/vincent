@@ -304,3 +304,18 @@ jobs:
       - name: 068 gate (pull request writes)
         shell: bash
         run: ./scripts/068-gate.sh
+
+      # 130: issues end to end (task 130.17; §5.6, §13.2, §13.4) — local
+      # CRUD and its events, a task from an issue, the GitHub import, state
+      # write-back through the durable outbox, and the MCP guard on a forge
+      # write, against the fake `gh`. The matrix earns its place because the
+      # GitHub half is a child process of the detached daemon: `gh` is
+      # resolved from its PATH to a fake built as `gh.exe` on Windows, the
+      # corpus file it re-reads every call is rewritten by temp file and
+      # rename under a reader, which Windows refuses while the file is open,
+      # the outbox has to drain across a forced stop and a restart of the
+      # daemon process, and the argv log and the multi-line `jq` captures
+      # are read back with the platform's own line endings.
+      - name: 130 gate (issues)
+        shell: bash
+        run: ./scripts/130-gate.sh
