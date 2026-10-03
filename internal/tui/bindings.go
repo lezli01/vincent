@@ -250,6 +250,7 @@ const (
 	termResult    vocabularyTerm = "open the output the outcome card's result came from"
 	termNextFail  vocabularyTerm = "jump to the task's next failure"
 	termAttention vocabularyTerm = "show only the tasks that need a human"
+	termComment   vocabularyTerm = "comment on the issue"
 )
 
 // binding is one registry row.
@@ -856,6 +857,10 @@ var bindings = []binding{
 	{op: keymap.Add, key: "a", label: "create a task from this issue — the form is prefilled from it and editable first", scope: scopePanel, context: ctxIssue, hint: "a new task", priority: 8, term: termAdd},
 	{key: issueEditKey, label: "edit the issue in a form", scope: scopePanel, context: ctxIssue, hint: "i edit", priority: 9},
 	{key: issueStateKey, label: "close or reopen the issue — only what the daemon offers", scope: scopePanel, context: ctxIssue, hint: "X close/reopen", priority: 10},
+	// The thread (task 130 decision 24, 130.16): a local comment, written in
+	// $EDITOR. Withheld on an issue whose GitHub remote is live, which takes
+	// no comment here — nothing is ever posted to GitHub.
+	{op: keymap.Comment, key: "W", label: "write a comment in $EDITOR — saved empty, nothing is posted; never on an issue mirrored from GitHub", scope: scopePanel, context: ctxIssue, hint: "W comment", priority: 10, term: termComment},
 	{op: keymap.Delete, key: "D", label: "delete the issue permanently (asks first; never deletes on GitHub)", scope: scopePanel, context: ctxIssue, priority: 11, term: termDelete},
 
 	// The issue form and prompt own the keyboard and print their own key

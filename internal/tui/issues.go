@@ -35,8 +35,9 @@ import (
 // keypress on a list.
 
 // issueEventPrefix is every issue.* event (§13.3): created, updated,
-// state_changed, labels_changed, comment_added. Each carries the issue id in
-// its payload, and any of them can change a row.
+// state_changed, labels_changed, comment_added and comment_updated (task 130
+// decision 24). Each carries the issue id in its payload, and any of them can
+// change a row — or, on the detail, the thread.
 const issueEventPrefix = "issue."
 
 func isIssueEvent(t string) bool { return strings.HasPrefix(t, issueEventPrefix) }

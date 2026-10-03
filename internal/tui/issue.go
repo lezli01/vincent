@@ -28,6 +28,12 @@ import (
 // finished and archived ones included, from GET /v1/tasks?issue_id= (task 130
 // decision 16.3, widened by 130.13 from 130.9's active ids). `a` starts
 // another from here (decision 19.1).
+//
+// The thread sits under the description, oldest first, each comment's body
+// through the same renderer the description uses (task 130 decision 24,
+// 130.16). `W` writes a local comment in $EDITOR; an issue whose GitHub remote
+// is live takes none, by the rule that refuses its title and body (spec §5.6),
+// so the key is withheld there rather than offered to fail.
 
 // Issue-detail messages.
 type (
@@ -39,7 +45,22 @@ type (
 		// listing that failed leaves them out rather than failing the screen:
 		// the issue itself is still worth showing.
 		tasks []apiclient.Task
-		err   error
+		// comments is the thread, oldest first. A read that failed is
+		// commentsErr, shown in the thread's place for the same reason.
+		comments    []apiclient.IssueComment
+		commentsErr error
+		err         error
+	}
+	// issueCommentEditedMsg is $EDITOR closing on a comment draft.
+	issueCommentEditedMsg struct {
+		id   int64
+		text string
+		err  error
+	}
+	// issueCommentedMsg is a finished AddIssueComment.
+	issueCommentedMsg struct {
+		id  int64
+		err error
 	}
 )
 
@@ -52,6 +73,12 @@ type issueView struct {
 	tasks   []apiclient.Task
 	loaded  bool
 	loadErr error
+
+	// comments and commentsErr are the thread as last read; posting is a
+	// comment on its way to the daemon.
+	comments    []apiclient.IssueComment
+	commentsErr error
+	posting     bool
 
 	// cursor is the selected linked task; scroll is the page's first line.
 	cursor int
@@ -113,6 +140,11 @@ func (v *issueView) paste(text string) tea.Cmd { return v.w.paste(text) }
 func (v *issueView) open(id int64) tea.Cmd {
 	if id != v.id {
 		v.issue, v.tasks, v.loaded, v.loadErr = apiclient.Issue{}, nil, false, nil
+		v.comments, v.commentsErr, v.posting = nil, nil, false
+		// A re-read still pending is the other issue's: left armed, it would
+		// swallow this one's events — a comment landing in the debounce
+		// window would never show.
+		v.refreshWait = false
 		v.cursor, v.scroll = 0, 0
 		v.w.form, v.w.act = nil, nil
 	}
@@ -153,6 +185,10 @@ func (v *issueView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return v, v.loadCmd()
 	case viewActivatedMsg:
 		if msg.id == viewIssue {
+			// An inactive view receives no tick, so one that fired while the
+			// screen was away is lost; this read covers it, and the debounce
+			// re-arms rather than staying shut on every later event.
+			v.refreshWait = false
 			return v, v.loadCmd()
 		}
 		return v, nil
@@ -165,6 +201,21 @@ func (v *issueView) update(msg tea.Msg) (panel, tea.Cmd) {
 	case issueLoadedMsg:
 		v.applyLoaded(msg)
 		return v, nil
+	case issueCommentEditedMsg:
+		return v, v.postComment(msg)
+	case issueCommentedMsg:
+		if msg.id != v.id {
+			return v, nil
+		}
+		v.posting = false
+		if msg.err != nil {
+			// A 409 here is the remote going live between the read that
+			// offered the key and the post (decision 24's mirrored rule).
+			v.setNote("comment on issue #"+strconv.FormatInt(msg.id, 10)+": "+errString(msg.err), true)
+			return v, v.loadCmd()
+		}
+		v.setNote("commented on issue #"+strconv.FormatInt(msg.id, 10), false)
+		return v, v.loadCmd()
 	case openedURLMsg:
 		if msg.err != nil {
 			v.setNote(openFailure(msg), true)
@@ -201,7 +252,8 @@ func (v *issueView) loadCmd() tea.Cmd {
 		if err != nil {
 			tasks = nil
 		}
-		return issueLoadedMsg{id: id, issue: iss, tasks: tasks}
+		comments, commentsErr := client.ListIssueComments(ctx, id)
+		return issueLoadedMsg{id: id, issue: iss, tasks: tasks, comments: comments, commentsErr: commentsErr}
 	}
 }
 
@@ -214,6 +266,7 @@ func (v *issueView) applyLoaded(msg issueLoadedMsg) {
 		return
 	}
 	v.issue, v.tasks, v.loaded, v.loadErr = msg.issue, msg.tasks, true, nil
+	v.comments, v.commentsErr = msg.comments, msg.commentsErr
 	v.cursor = min(v.cursor, max(len(v.tasks)-1, 0))
 }
 
@@ -227,7 +280,9 @@ func (v *issueView) scheduleRefresh() tea.Cmd {
 }
 
 // updateNote re-reads on this issue's own events and on events of the tasks
-// it lists. Another issue's events leave it alone.
+// it lists. Another issue's events leave it alone. The thread's events,
+// issue.comment_added and issue.comment_updated, name the issue in `id` like
+// every issue.* event, so they re-read the thread with the rest.
 func (v *issueView) updateNote(n apiclient.Note) tea.Cmd {
 	ev, ok := n.(apiclient.EventNote)
 	if !ok || v.id == 0 {
@@ -319,8 +374,81 @@ func (v *issueView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, cmd
 	case opKey(keymap.Delete):
 		v.w.act = newIssueDelete(v.client, v.issue)
+	case opKey(keymap.Comment):
+		return v, v.openComment()
 	}
 	return v, nil
+}
+
+// commentable reports whether the issue takes a local comment: exactly when
+// its body is editable, the daemon's own rule (task 130 decision 24) — a live
+// GitHub remote refuses both, a local issue or a lost remote takes both.
+func (v *issueView) commentable() bool {
+	return v.loaded && slices.Contains(v.issue.Editable, "body")
+}
+
+// liveBindings withholds `W` where the daemon would refuse the comment.
+func (v *issueView) liveBindings(rows []binding) []binding {
+	if v.commentable() {
+		return rows
+	}
+	out := make([]binding, 0, len(rows))
+	for _, b := range rows {
+		if b.context != ctxIssue || b.op != keymap.Comment {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// openComment hands an empty draft to $EDITOR, the helper the issue form's
+// description uses (130.12).
+func (v *issueView) openComment() tea.Cmd {
+	if !v.commentable() {
+		v.setNote("this issue is mirrored from GitHub — comment there; vincent never posts to GitHub", true)
+		return nil
+	}
+	if v.posting {
+		return nil
+	}
+	id := v.id
+	cmd, err := editTextCmd(v.w.exec, "issue"+strconv.FormatInt(id, 10)+"-comment", ".md", "",
+		func(text string, err error) tea.Msg { return issueCommentEditedMsg{id: id, text: text, err: err} })
+	if err != nil {
+		v.setNote("comment: "+errString(err), true)
+		return nil
+	}
+	return cmd
+}
+
+// postComment sends a saved draft. An empty one is the way out of $EDITOR
+// without posting, the way an empty commit message aborts a commit.
+func (v *issueView) postComment(msg issueCommentEditedMsg) tea.Cmd {
+	if msg.id != v.id {
+		return nil
+	}
+	if msg.err != nil {
+		v.setNote("comment: "+errString(msg.err), true)
+		return nil
+	}
+	body := strings.TrimSpace(msg.text)
+	if body == "" {
+		v.setNote("empty comment — nothing posted", false)
+		return nil
+	}
+	if v.client == nil {
+		v.setNote("not connected", true)
+		return nil
+	}
+	client, id := v.client, msg.id
+	v.posting = true
+	v.setNote("posting the comment…", false)
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
+		defer cancel()
+		_, err := client.AddIssueComment(ctx, id, body)
+		return issueCommentedMsg{id: id, err: err}
+	}
 }
 
 // newTaskFromIssueCmd is `a` on either issue screen: the new-task form,
@@ -441,16 +569,17 @@ func (v *issueView) pageLines(width int) (lines []string, cursorRow int) {
 	}
 
 	lines = append(lines, "", " "+styleTitle.Render("Description"))
+	v.md.begin()
 	if strings.TrimSpace(iss.Body) == "" {
 		lines = append(lines, styleDim.Render("  no description"))
 	} else {
-		v.md.begin()
 		md, _ := v.md.lines(iss.Body, max(width-4, 10), levelNormal, v.raw.get(), v.links.get())
-		v.md.sweep()
 		for _, l := range md {
 			lines = append(lines, "  "+l)
 		}
 	}
+	lines = append(lines, v.threadLines(width)...)
+	v.md.sweep()
 
 	lines = append(lines, "", " "+styleTitle.Render("Tasks")+
 		styleDim.Render("  "+plural(iss.Tasks.Count, "task", "tasks")+", "+
@@ -491,4 +620,38 @@ func (v *issueView) pageLines(width int) (lines []string, cursorRow int) {
 		}
 	}
 	return lines, cursorRow
+}
+
+// threadLines is the Comments section: oldest first, each headed by its
+// author and time, with a mirrored comment marked as GitHub's. Called inside
+// pageLines' render pass, so the bodies share the description's cache.
+func (v *issueView) threadLines(width int) []string {
+	lines := []string{"", " " + styleTitle.Render("Comments") + styleDim.Render("  "+plural(len(v.comments), "comment", "comments"))}
+	if v.commentsErr != nil {
+		return append(lines, styleBad.Render("  ⚠ could not read the comments: "+errString(v.commentsErr)))
+	}
+	if len(v.comments) == 0 {
+		if v.commentable() {
+			return append(lines, styleDim.Render("  no comment yet · "+opKey(keymap.Comment)+" writes one"))
+		}
+		return append(lines, styleDim.Render("  no comment yet"))
+	}
+	for i, c := range v.comments {
+		if i > 0 {
+			lines = append(lines, "")
+		}
+		head := "  " + styleKey.Render(c.Author) + styleDim.Render("  "+c.CreatedAt.Local().Format("2006-01-02 15:04"))
+		if c.Remote {
+			head += styleDim.Render("  · github")
+		}
+		if c.UpdatedAt.After(c.CreatedAt) {
+			head += styleDim.Render("  · edited")
+		}
+		lines = append(lines, head)
+		md, _ := v.md.lines(c.Body, max(width-6, 10), levelNormal, v.raw.get(), v.links.get())
+		for _, l := range md {
+			lines = append(lines, "    "+l)
+		}
+	}
+	return lines
 }

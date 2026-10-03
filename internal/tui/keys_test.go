@@ -51,6 +51,7 @@ var reboundKeys = map[string]string{
 	// f14/f15: ctrl+n is add's here, and N/H must move off every letter.
 	"next_failure":     "f14",
 	"attention_filter": "f15",
+	"comment":          "f16",
 }
 
 // withKeymap installs overrides for one test and restores the defaults after.
