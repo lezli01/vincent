@@ -44,7 +44,7 @@ func editorCommand() []string {
 }
 
 // openEditorPath opens an existing file in $EDITOR and reports when the
-// editor exits. It is deliberately a sibling of writeEditorFile rather than a
+// editor exits. It is deliberately a sibling of editTextCmd rather than a
 // flag on it: that one creates a temp file the caller then reads back and
 // sends over the wire, while this one touches a file it must not create, must
 // not truncate and never reads — the registry reload is what reports the
@@ -53,6 +53,35 @@ func openEditorPath(run execFunc, path string, done func(error) tea.Msg) tea.Cmd
 	argv := append(editorCommand(), path)
 	cmd := exec.Command(argv[0], argv[1:]...) //nolint:gosec // the editor is the user's own choice
 	return run(cmd, func(runErr error) tea.Msg { return done(runErr) })
+}
+
+// editTextCmd is the one $EDITOR round trip for text that comes back into
+// the TUI: seed a temp file with text, hand the terminal to the editor, read
+// what was left and remove the file. done turns the outcome into the
+// caller's message — an exec or read failure arrives as err with text empty.
+// A seeding failure is returned rather than sent, so each caller reports it
+// where it reports everything else, before anything is handed over.
+//
+// openEditorPath is the sibling for a file that already exists and is never
+// read back; everything else that edits prose goes through here.
+func editTextCmd(run execFunc, name, ext, text string, done func(text string, err error) tea.Msg) (tea.Cmd, error) {
+	path, err := writeEditorFile(name, ext, text)
+	if err != nil {
+		return nil, err
+	}
+	argv := append(editorCommand(), path)
+	cmd := exec.Command(argv[0], argv[1:]...) //nolint:gosec // the editor is the user's own choice
+	return run(cmd, func(runErr error) tea.Msg {
+		defer func() { _ = os.Remove(path) }()
+		if runErr != nil {
+			return done("", runErr)
+		}
+		edited, readErr := os.ReadFile(path) //nolint:gosec // path is this process's temp file
+		if readErr != nil {
+			return done("", readErr)
+		}
+		return done(string(edited), nil)
+	}), nil
 }
 
 // editRetry opens the current step's prompt or command in $EDITOR (§6, §15).
@@ -73,30 +102,15 @@ func (d *detail) editRetry() tea.Cmd {
 	if step.Type != "agent" {
 		ext = ".sh"
 	}
-	path, err := writeEditorFile(fmt.Sprintf("task%d-%s", d.taskID, safeName(step.ID)), ext, text)
+	taskID := d.taskID
+	cmd, err := editTextCmd(d.exec, fmt.Sprintf("task%d-%s", d.taskID, safeName(step.ID)), ext, text, func(edited string, err error) tea.Msg {
+		return editRetryMsg{taskID: taskID, field: field, original: text, text: edited, err: err}
+	})
 	if err != nil {
 		d.actions.setStatus("edit+retry: "+errString(err), true)
 		return nil
 	}
-
-	argv := append(editorCommand(), path)
-	cmd := exec.Command(argv[0], argv[1:]...) //nolint:gosec // the editor is the user's own choice
-	taskID := d.taskID
-	return d.exec(cmd, func(runErr error) tea.Msg {
-		defer func() { _ = os.Remove(path) }()
-		msg := editRetryMsg{taskID: taskID, field: field, original: text}
-		if runErr != nil {
-			msg.err = runErr
-			return msg
-		}
-		edited, readErr := os.ReadFile(path) //nolint:gosec // path is this process's temp file
-		if readErr != nil {
-			msg.err = readErr
-			return msg
-		}
-		msg.text = string(edited)
-		return msg
-	})
+	return cmd
 }
 
 // editRepairPrompt opens the repair prompt in $EDITOR (§6, task 025). A
@@ -106,31 +120,17 @@ func (d *detail) editRetry() tea.Cmd {
 // Unlike edit+retry it posts nothing: what the editor leaves goes back into
 // the form, and the human still has to start the repair.
 func (d *detail) editRepairPrompt(text string) tea.Cmd {
-	path, err := writeEditorFile(fmt.Sprintf("task%d-repair", d.taskID), ".md", text)
+	taskID := d.taskID
+	cmd, err := editTextCmd(d.exec, fmt.Sprintf("task%d-repair", d.taskID), ".md", text, func(edited string, err error) tea.Msg {
+		return repairEditMsg{taskID: taskID, text: edited, err: err}
+	})
 	if err != nil {
 		if d.repair != nil {
 			d.repair.err = errString(err)
 		}
 		return nil
 	}
-	argv := append(editorCommand(), path)
-	cmd := exec.Command(argv[0], argv[1:]...) //nolint:gosec // the editor is the user's own choice
-	taskID := d.taskID
-	return d.exec(cmd, func(runErr error) tea.Msg {
-		defer func() { _ = os.Remove(path) }()
-		msg := repairEditMsg{taskID: taskID}
-		if runErr != nil {
-			msg.err = runErr
-			return msg
-		}
-		edited, readErr := os.ReadFile(path) //nolint:gosec // path is this process's temp file
-		if readErr != nil {
-			msg.err = readErr
-			return msg
-		}
-		msg.text = string(edited)
-		return msg
-	})
+	return cmd
 }
 
 // editFollowUpBody opens a follow-up's prompt or command in $EDITOR (§6,
@@ -139,31 +139,17 @@ func (d *detail) editRepairPrompt(text string) tea.Cmd {
 // editor leaves goes back into the form, and the human still has to start the
 // run.
 func (d *detail) editFollowUpBody(text string) tea.Cmd {
-	path, err := writeEditorFile(fmt.Sprintf("task%d-follow-up", d.taskID), ".md", text)
+	taskID := d.taskID
+	cmd, err := editTextCmd(d.exec, fmt.Sprintf("task%d-follow-up", d.taskID), ".md", text, func(edited string, err error) tea.Msg {
+		return followUpEditMsg{taskID: taskID, text: edited, err: err}
+	})
 	if err != nil {
 		if d.followUp != nil {
 			d.followUp.err = errString(err)
 		}
 		return nil
 	}
-	argv := append(editorCommand(), path)
-	cmd := exec.Command(argv[0], argv[1:]...) //nolint:gosec // the editor is the user's own choice
-	taskID := d.taskID
-	return d.exec(cmd, func(runErr error) tea.Msg {
-		defer func() { _ = os.Remove(path) }()
-		msg := followUpEditMsg{taskID: taskID}
-		if runErr != nil {
-			msg.err = runErr
-			return msg
-		}
-		edited, readErr := os.ReadFile(path) //nolint:gosec // path is this process's temp file
-		if readErr != nil {
-			msg.err = readErr
-			return msg
-		}
-		msg.text = string(edited)
-		return msg
-	})
+	return cmd
 }
 
 // writeEditorFile seeds a temp file with the text an editing session starts
@@ -295,54 +281,26 @@ func (d *detail) openTranscript() tea.Cmd {
 // nothing — what the editor leaves goes back into the form, and the human
 // still has to press ctrl+s.
 func (d *detail) editCreatePRBody(text string) tea.Cmd {
-	path, err := writeEditorFile(fmt.Sprintf("task%d-pr", d.taskID), ".md", text)
+	taskID := d.taskID
+	cmd, err := editTextCmd(d.exec, fmt.Sprintf("task%d-pr", d.taskID), ".md", text, func(edited string, err error) tea.Msg {
+		return createPREditMsg{taskID: taskID, text: edited, err: err}
+	})
 	if err != nil {
 		return func() tea.Msg { return createPREditMsg{taskID: d.taskID, err: err} }
 	}
-	argv := append(editorCommand(), path)
-	cmd := exec.Command(argv[0], argv[1:]...) //nolint:gosec // the editor is the user's own choice
-	taskID := d.taskID
-	return d.exec(cmd, func(runErr error) tea.Msg {
-		defer func() { _ = os.Remove(path) }()
-		msg := createPREditMsg{taskID: taskID}
-		if runErr != nil {
-			msg.err = runErr
-			return msg
-		}
-		edited, readErr := os.ReadFile(path) //nolint:gosec // path is this process's temp file
-		if readErr != nil {
-			msg.err = readErr
-			return msg
-		}
-		msg.text = string(edited)
-		return msg
-	})
+	return cmd
 }
 
 // editPullComment opens the comment popup's body in $EDITOR (task 068.4). It
 // posts nothing — what the editor leaves goes back into the popup, and the
 // human still has to press ctrl+s.
 func (d *detail) editPullComment(text string) tea.Cmd {
-	path, err := writeEditorFile(fmt.Sprintf("task%d-comment", d.taskID), ".md", text)
+	taskID := d.taskID
+	cmd, err := editTextCmd(d.exec, fmt.Sprintf("task%d-comment", d.taskID), ".md", text, func(edited string, err error) tea.Msg {
+		return pullCommentEditMsg{taskID: taskID, text: edited, err: err}
+	})
 	if err != nil {
 		return func() tea.Msg { return pullCommentEditMsg{taskID: d.taskID, err: err} }
 	}
-	argv := append(editorCommand(), path)
-	cmd := exec.Command(argv[0], argv[1:]...) //nolint:gosec // the editor is the user's own choice
-	taskID := d.taskID
-	return d.exec(cmd, func(runErr error) tea.Msg {
-		defer func() { _ = os.Remove(path) }()
-		msg := pullCommentEditMsg{taskID: taskID}
-		if runErr != nil {
-			msg.err = runErr
-			return msg
-		}
-		edited, readErr := os.ReadFile(path) //nolint:gosec // path is this process's temp file
-		if readErr != nil {
-			msg.err = readErr
-			return msg
-		}
-		msg.text = string(edited)
-		return msg
-	})
+	return cmd
 }

@@ -1662,6 +1662,10 @@ re-lists the screen with no keypress.
 | `R` | Re-read the issues |
 | `↑`/`↓` | Move the selection |
 | `/` | Filter by id, title, label, kind or project |
+| `n` | File a new issue in the selected row's project |
+| `i` | Edit the selected issue in the issue form |
+| `X` | Close or reopen the selected issue — only what vincent offers for it |
+| `D` | Delete the selected issue permanently (asks first) |
 
 `R` only re-reads what vincent already holds. It never asks GitHub for
 anything: imported issues are refreshed on the daemon's reconciler tick.
@@ -1681,11 +1685,46 @@ where it came from — the URL and the state GitHub last reported.
 | `R` | Re-read the issue |
 | `↑`/`↓` | Move the selection among the linked tasks |
 | `pgup`/`pgdown` | Scroll the page |
+| `n` | File a new issue in this issue's project |
+| `i` | Edit the issue in the issue form |
+| `X` | Close or reopen the issue — only what vincent offers for it |
+| `D` | Delete the issue permanently (asks first) |
 
 `ctrl+o` is the same rendered/raw switch the Output tab and the chat use, so
 flipping it here flips it there too. `esc` goes back to the list, on the issue
 you opened. For now the detail lists only a task that is still running,
 waiting or blocked; the count beside the heading includes the finished ones.
+
+#### Filing and editing — `n`, `i`
+
+`n` and `i` open the **issue form** over the screen you are on: the project
+(only when filing a new one), title, description, labels, kind and priority,
+then save. `enter` edits a field or opens its list; `e` on the description
+hands it to `$EDITOR`. The labels list offers the project's labels and ticks
+the ones set; `t` in it types a new one, and `t` in the kind list types a kind
+it does not suggest. Priority is `none`, `urgent`, `high`, `medium` or `low`.
+`ctrl+s` saves and `esc` closes — asking first when something is unsaved.
+
+On an issue imported from GitHub the title, description and labels mirror
+GitHub, so the form shows them as "mirrored from GitHub" and will not edit
+them; kind and priority are vincent's own and save as usual.
+
+An edit sends only the fields you changed. If someone else changed the issue
+while the form was open, the save is refused and says so: `R` takes the issue
+as it is now and keeps your edits on top of it, and `ctrl+s` tries again.
+
+#### Closing, reopening and deleting — `X`, `D`
+
+`X` offers what the issue allows: close on an open issue, reopen on a closed
+one. Closing asks why — completed, not planned, or a duplicate, which then
+asks which issue in the same project it duplicates (or none). On an imported
+issue vincent asks first, and says plainly that the change is written to
+GitHub too — or, when the issue on GitHub has moved or is gone, that it
+changes vincent's copy only.
+
+`D` deletes an issue in any state, always after asking. Deleting an imported
+issue never deletes it on GitHub, and vincent remembers the deletion so a sync
+does not import it again.
 
 ### Workflows
 
@@ -2864,7 +2903,7 @@ The first fifteen are the operations screens share, the next ten are the
 |---|---|---|
 | `refresh` | `R` | Refresh, or re-read |
 | `archive` | `A` | Archive a task or a chat |
-| `delete` | `D` | Delete a persisted record: an archived task or chat, a project, a trigger |
+| `delete` | `D` | Delete a persisted record: an archived task or chat, a project, a trigger, an issue |
 | `draft_remove` | `d` | Remove a row from an open draft |
 | `add` | `a` | Add or create |
 | `editor` | `e` | Edit in `$EDITOR` |
@@ -2894,10 +2933,10 @@ The first fifteen are the operations screens share, the next ten are the
 | `next_attention` | `!` | Jump to the next task that needs you — awaiting input, awaiting approval or blocked |
 | `mouse` | `M` | Toggle the mouse |
 | `quit` | `q` | Quit the TUI |
-| `new` | `n` | New task — or new chat, on the chats board |
+| `new` | `n` | New task — or new chat, on the chats board, or new issue, on the issue screens |
 
-`new` is one operation on both boards because it is one gesture, "make a new
-one here", so moving it moves both.
+`new` is one operation everywhere because it is one gesture, "make a new one
+here", so moving it moves all three.
 
 ### What stays where it is
 

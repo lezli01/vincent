@@ -49,6 +49,12 @@ type issueSyncStatusBody struct {
 	// ImportComplete is whether the first full import has finished.
 	ImportComplete   bool       `json:"import_complete"`
 	RateLimitedUntil *time.Time `json:"rate_limited_until,omitempty"`
+	// WritesPending, WritesFailed and WritesConflict count the project's
+	// imported issues whose newest state write-back is waiting, gave up,
+	// or found GitHub changed first (task 130.10).
+	WritesPending  int `json:"writes_pending"`
+	WritesFailed   int `json:"writes_failed"`
+	WritesConflict int `json:"writes_conflict"`
 }
 
 // renderIssueSync folds the live config over a project's stored sync row,
@@ -92,6 +98,11 @@ func (s *Server) issueSyncStatus(ctx context.Context, project *store.Project) (i
 		return issueSyncStatusBody{}, err
 	}
 	out := renderIssueSync(s.deps.Config().GitHub, st)
+	counts, err := s.deps.Store.CountIssueWrites(ctx, project.ID)
+	if err != nil {
+		return issueSyncStatusBody{}, err
+	}
+	out.WritesPending, out.WritesFailed, out.WritesConflict = counts.Pending, counts.Failed, counts.Conflict
 	if out.Repo == "" {
 		if repo, ok := s.githubRepo(ctx, project); ok {
 			out.Repo = repo.String()
@@ -119,7 +130,9 @@ func (s *Server) handleIssueSyncStatus(w http.ResponseWriter, r *http.Request) {
 // with the status as it stands — the sync itself lands on the importer's
 // goroutine and announces itself with issue.sync_changed when it changes the
 // verdict. With a switch off the request is recorded and the status names
-// the switch; nothing is imported until it is turned back on.
+// the switch; nothing is imported until it is turned back on. The same
+// request wakes the state write-back drain (task 130.10), which is why this
+// route is a human's only (decision 15.8).
 func (s *Server) handleIssueSyncNow(w http.ResponseWriter, r *http.Request) {
 	project, ok := s.projectFromPath(w, r)
 	if !ok {
@@ -162,6 +175,10 @@ func (s *Server) fillIssueSync(ctx context.Context, rep *doctor.Report) {
 			name = p.Name
 		}
 		body := renderIssueSync(gh, st)
+		counts, err := s.deps.Store.CountIssueWrites(ctx, st.ProjectID)
+		if err != nil {
+			s.deps.Logger.Warn("doctor: count issue writes", "project", st.ProjectID, "error", err)
+		}
 		rep.GitHub.Sync = append(rep.GitHub.Sync, doctor.ProjectIssueSync{
 			ProjectID:      st.ProjectID,
 			Project:        name,
@@ -169,6 +186,9 @@ func (s *Server) fillIssueSync(ctx context.Context, rep *doctor.Report) {
 			Reason:         body.Reason,
 			LastSyncedAt:   body.LastSyncedAt,
 			ImportComplete: body.ImportComplete,
+			WritesPending:  counts.Pending,
+			WritesFailed:   counts.Failed,
+			WritesConflict: counts.Conflict,
 		})
 	}
 }

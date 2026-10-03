@@ -108,7 +108,7 @@ func SchemaDescriptor() Schema {
 			{Name: "source", Control: ControlSource, Required: true, Values: SourceTypes(), Help: "where events come from"},
 			{Name: "match", Control: ControlMatch, Help: "prefilter: event path → value it must have"},
 			{Name: "if", Control: workflow.ControlTemplate, Help: "guard over .Event: render true to act (§7.7)"},
-			{Name: "allowed_actors", Control: workflow.ControlList, Help: "GitHub sources: the issue or pull request authors to accept; required to match an untrusted event"},
+			{Name: "allowed_actors", Control: workflow.ControlList, Help: "GitHub and issues sources: the issue or pull request authors to accept; required to match an untrusted event"},
 			{Name: "action", Control: ControlAction, Required: true, Values: ActionTypes(), Help: "what an event that passes does"},
 			{
 				Name: "on_fire", Control: workflow.ControlEnum, Values: []string{OnFirePropose, OnFireCreate},
@@ -141,9 +141,15 @@ func SchemaDescriptor() Schema {
 			},
 			{
 				Type:   SourceGitHubIssues,
-				Help:   "diff the project's GitHub issues on the github.poll_interval tick; no actor, only the author",
+				Help:   "deprecated, use issues: diff the project's GitHub issues on the github.poll_interval tick; no actor, only the author",
 				Fields: []SchemaField{sourceType, project},
 				Events: GitHubEvents(SourceGitHubIssues), Trusted: trustedList(SourceGitHubIssues),
+			},
+			{
+				Type:   SourceIssues,
+				Help:   "vincent's own issue events, local or imported, on every project; by says who: human, agent or sync",
+				Fields: []SchemaField{sourceType, project},
+				Events: GitHubEvents(SourceIssues), Trusted: trustedList(SourceIssues),
 			},
 			{
 				Type:   SourceGitHubPRs,
@@ -186,6 +192,7 @@ func SchemaDescriptor() Schema {
 					{Name: "title", Control: workflow.ControlTemplate, Required: true, Help: "template over .Event"},
 					{Name: "description", Control: workflow.ControlText, Help: "template over .Event"},
 					{Name: "fields", Control: workflow.ControlMap, Help: "workflow field → template over .Event"},
+					{Name: "issue", Control: workflow.ControlTemplate, Help: "renders to a vincent issue id the task is created from, or nothing"},
 					{Name: "github_issue", Control: workflow.ControlTemplate, Help: "renders to an issue number, or nothing"},
 					{Name: "github_pull", Control: workflow.ControlTemplate, Help: "renders to a pull request number, or nothing"},
 				},

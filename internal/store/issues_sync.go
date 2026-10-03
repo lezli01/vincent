@@ -336,3 +336,42 @@ func (s *Store) RemoteIssueKnown(ctx context.Context, projectID int64, provider,
 	}
 	return true, nil
 }
+
+// ImportedIssueIDs maps each remote key the project has imported from the
+// provider to its vincent issue id: only a live link counts, never a
+// tombstone (decision 6) nor a remote sync found moved or missing. A key
+// with no such row is absent. It is how a github_issues trigger event names
+// the vincent issue it is about (task 130.15 decision 5).
+func (s *Store) ImportedIssueIDs(ctx context.Context, projectID int64, provider string, keys []string) (map[string]int64, error) {
+	out := map[string]int64{}
+	if len(keys) == 0 {
+		return out, nil
+	}
+	args := []any{projectID, provider}
+	for _, k := range keys {
+		args = append(args, k)
+	}
+	//nolint:gosec // G202: placeholders() emits bind markers; the keys bind above
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT remote_key, issue_id FROM issue_remotes
+		WHERE project_id = ? AND provider = ? AND issue_id IS NOT NULL AND remote_status = ''
+			AND remote_key IN `+placeholders(len(keys)), args...)
+	if err != nil {
+		return nil, fmt.Errorf("list imported issue ids: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var (
+			key string
+			id  int64
+		)
+		if err := rows.Scan(&key, &id); err != nil {
+			return nil, fmt.Errorf("scan imported issue id: %w", err)
+		}
+		out[key] = id
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list imported issue ids: %w", err)
+	}
+	return out, nil
+}

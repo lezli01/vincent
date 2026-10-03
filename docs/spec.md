@@ -138,7 +138,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 30 | Archived boards and permanent delete | *Added 2026-09-09 (task 092, issue #350).* **Archived history is a screen, and a permanent delete is a route.** Two TUI views — archived tasks, archived chats — are the live boards *in a second mode* rather than two new models (§15): the archive needs grouping, folding, `/` and the bulk selection, and a copy would drift on the first change to any of the four. They get palette rows and no keys, because task 049 retired `1..6` to stop adding memorized ones and task 067 gave chats the same treatment. `DELETE /v1/tasks/{id}` and `DELETE /v1/chats/{id}` (§13.2) are the only things in vincent that delete a task or chat row — the §17 pruner removes transcript *files* and never a row, and that sentence in the retention table is amended to say so. Delete is **not a §6 action**: `taskstate` has no opinion on it and it never appears in `available_actions`, which is what makes the workspace an archived row opens read-only for free; its precedent is `DELETE /v1/projects/{id}`, likewise no action, and both routes join that route's §13.4 destructive-admin exclusion. It **refuses rather than cascading**, naming the row that is holding on: a live row (`not_archived`), an archived fan-out parent whose lanes still exist (`has_lanes` — `parent_task_id` has no `ON DELETE` clause, so without the guard it is a driver error), a `handed_off` chat (`handed_off` — the task owns the worktree, §5.5), and an archived task such a chat points at (`handoff_target`). §10's standing rule is untouched and its task 008 exception merely widens to "at archive time **and at permanent delete**": a branch carrying any commit past its base is reported `has_commits` and kept whatever was answered, and the remote leg is not offered at all. Two durable events are added, `task.deleted` and `chat.deleted` (§13.3) — PR D's "there is no separate `task.archived` type" does not reach them, because that type was redundant with `task.state_changed` and a delete has no state to change to — while the historical `events` rows are deliberately kept, their id being the `Last-Event-ID` cursor. No migration: `archived_at` has been a column since `0001_init.sql`, chats measure the same window over `updated_at` by task 074 decision 6, and every cascade this needs already exists. There is no bulk endpoint and there is not going to be one (task 011): every sweep, in the TUI and in `vincent task delete --before`, is one `DELETE` per row (§5.5, §6, §10, §13.2, §13.3, §13.4, §15, §17, §20) |
 | 31 | TUI key vocabulary | *Added 2026-09-10 (task 093, issue #353).* **One operation, one key, and the registry is what says so.** The binding registry made the help *accurate* from T3.11 — `?`, the footer and the palette all render from it — which is exactly what let the *vocabulary* drift unseen: it faithfully advertised four different keys for "refresh". §15 now carries the table (refresh `R`, archive `A`, delete-a-persisted-record `D`, remove-a-draft-row `d`, add `a`, `$EDITOR` `e`, free text `t`, browser `o`, open-the-row `enter`, cycle-a-listing `s`, filter `/`, fold, lane `l`, page) and **three clauses, not the one the issue asked for**: a key may be shared only for the same operation; it may mean two things only where the registry can prove the surfaces never co-exist; and a key already carrying a term takes no second meaning. The second clause is task 025's deliberate partition of `R` promoted from an accident to the rule, which is why "exactly one key registry-wide" was not adopted literally. The §6 action letters `p a x r E R s c A F` **do not move**, so they decide the contested cases: `R` won refresh, `A` won archive, and `D`/`d` split on persisted-versus-draft, which is what makes pressing `d` on an archived board safe. Enforcement is three tests in `internal/tui/bindings_test.go` beside `TestEveryPanelKeyIsHandled`, with an allow-list that must carry a reason and must stay non-empty; the disjointness the archived boards rely on is **derived from `taskstate.HumanActionsFrom`**, not listed, so an FSM change that starts offering an action on an archived row fails the test rather than shipping a shadowed key. It closes a live bug rather than only a style one: the task workspace's Pull Request tab intercepted `r` and `c`, so **retry and cancel were unreachable there** while the footer advertised both. Scope is `internal/tui` and the docs — no CLI, API, MCP, store or workflow change, and no user-configurable keymap, which is a larger question this does not answer (§15). *Amended 2026-09-17 (task 118, issue #412):* "no user-configurable keymap" is narrowed to no keymap **outside these rules**. Row 35 adds `tui.keys`, which makes this table the **default** keymap and holds an override to the same three clauses with the same checker, so the question is answered rather than set aside; the §6 letters still do not move as defaults |
 | 32 | The footer fills its width, and says what it hides | *Added 2026-09-10 (task 094, issue #352).* **A cap is not a layout.** The footer's five-key limit was a constant, and a constant is wrong at both 80 and 200 columns: eleven of the twenty-one binding contexts declare more hinted keys than five, so on more than half the surfaces keys were dropped silently while `pad := max(width-lw-pw, 2)` spent the remaining columns on blank space. Width now decides, as a strict prefix of registry priority order, measured exactly rather than iterated: every candidate admission count is costed against the `+N` that count itself implies, so there is no "admitted because +9 shrank to +8" state to detect afterwards. The segments to the right of the hints are measured **first** and come out of the budget — the line truncates from the left, so hints are what a full line loses first, and admitting them against the whole width would let the actions push them straight back off. This **supersedes** the phase 3 refactor decision and the PR R / T3.12 decision in `docs/history/v0-tasks.md` ("max 5, priority-ordered"), and only those: what they were protecting — one line that never wraps, and a pinned `: commands  ? help  q quit` that never truncates — is untouched, and §15 is amended in place to say so. The `+N` counts this surface's palette-reachable rows that the line is not advertising, **not** everything the palette lists: the five global rows and the eight navigation entries are what the pinned segment stands for, and counting them would pin `N` near fourteen and never at zero. Alias rows are **declared** (`binding.aliased`) rather than parsed out of hint text — splitting on `/` and mapping `↑↓←→` back to key names is text parsing over a human-written field that breaks silently the first time a hint is reworded — and a test asserts the declaration against what the hints actually say. `paletteEntries` still lists the board's fold rows where the footer, gated by `shell.liveBindings`, does not; that mismatch is left where it is rather than widened into here. *Amended 2026-09-14 (task 096):* the triggers view is a ninth navigation entry, so the pinned segment stands for nine; the reasoning is unchanged (§15). *Amended 2026-09-14 (issue #372):* the mismatch is gone — `root.openPalette` hands `paletteEntries` the shell's `liveBindings`, so a flat board's palette drops the fold rows the footer drops, and a grouped board's still lists them |
-| 33 | Event triggers | *Added 2026-09-13 (task 096; issues #356, #362, #365).* **A trigger is a robot pressing a key a human could have pressed.** A YAML file under `{config_dir}/triggers/` names a source (`command`, `github_issues`, `github_prs`, `http` or, since 2026-09-18, `schedule`), a `match:` prefilter and an §8.4 `if:` guard, an action and a dedupe key. Triggers are global scope only, never `.vincent/`, so that anyone who can merge to a repository cannot start agents on a maintainer's machine. An action **replays an existing route** in-process, the way row 28's MCP does: `create_task` is `POST /v1/tasks`, and the reactions `follow_up`, `retry` and `cancel` are the §6 action routes against the task whose `branch_name` the event names. §13.1's bounds, the validation, the FSM's 409 and `Idempotency-Key` therefore hold by construction, and from the step path down a triggered task is indistinguishable from a hand-created one (`.Event` is never snapshotted, §8.4). Where a route lacked an affordance a trigger needed, the route grew it for every client: `paused` on create, follow-up and retry, and `restricted` and `max_task_cost_usd` on create. **It inverts §16's premise that a human pressed the key**, so its defaults differ from every other default in the product. Triggers are off twice, by `triggers.enabled` and by each file's own `enabled:`. `on_fire: propose` holds every task a trigger creates or re-queues in `paused` for a human, agent steps are clamped `restricted`, untrusted GitHub events are refused without an author allowlist, and each trigger has a rate limit. Runtime state lives in SQLite: a cursor per trigger, and a delivery ledger kept 30 days. The first poll after arming seeds and fires nothing, so neither a cold start nor re-arming floods. *Amended 2026-09-18 (task 121, issue #480):* the source list takes a fifth member, `schedule` — a hand-written five-field cron expression or an `every:` interval, evaluated against the wall clock on a one-second tick, with its last handled occurrence in `trigger_cursors.cursor`. It is the same robot pressing the same key: everything downstream of the source is reused, arming anchors the clock and fires nothing, and an overdue schedule fires once however many occurrences it missed. *Amended 2026-09-18 (task 122, issue #483):* a trigger also says what to do when **its own previous work is still running**. `overrun:` — `parallel` (the default and today's behaviour), `skip`, `cancel_previous`, `queue_coalesce`, `queue_serial` — is consulted as the pipeline's last step against the group `concurrency_key:` names, and "in flight" is §6's `!Settled`, so an unreviewed `on_fire: propose` proposal holds its group. The two queue modes hold events in a durable table so a restart loses none, and a disarm discards that backlog the way it drops the cursor. `cancel_previous` is the one mode that destroys work nobody asked to lose, and is `dangerous` to a client for that reason (§5.3, §6, §8.4, §12.2, §12.3, §13.2, §13.3, §13.4, §14, §15, §16, §17, §20) |
+| 33 | Event triggers | *Added 2026-09-13 (task 096; issues #356, #362, #365).* **A trigger is a robot pressing a key a human could have pressed.** A YAML file under `{config_dir}/triggers/` names a source (`command`, `github_issues`, `github_prs`, `http` or, since 2026-09-18, `schedule`), a `match:` prefilter and an §8.4 `if:` guard, an action and a dedupe key. Triggers are global scope only, never `.vincent/`, so that anyone who can merge to a repository cannot start agents on a maintainer's machine. An action **replays an existing route** in-process, the way row 28's MCP does: `create_task` is `POST /v1/tasks`, and the reactions `follow_up`, `retry` and `cancel` are the §6 action routes against the task whose `branch_name` the event names. §13.1's bounds, the validation, the FSM's 409 and `Idempotency-Key` therefore hold by construction, and from the step path down a triggered task is indistinguishable from a hand-created one (`.Event` is never snapshotted, §8.4). Where a route lacked an affordance a trigger needed, the route grew it for every client: `paused` on create, follow-up and retry, and `restricted` and `max_task_cost_usd` on create. **It inverts §16's premise that a human pressed the key**, so its defaults differ from every other default in the product. Triggers are off twice, by `triggers.enabled` and by each file's own `enabled:`. `on_fire: propose` holds every task a trigger creates or re-queues in `paused` for a human, agent steps are clamped `restricted`, untrusted GitHub events are refused without an author allowlist, and each trigger has a rate limit. Runtime state lives in SQLite: a cursor per trigger, and a delivery ledger kept 30 days. The first poll after arming seeds and fires nothing, so neither a cold start nor re-arming floods. *Amended 2026-09-18 (task 121, issue #480):* the source list takes a fifth member, `schedule` — a hand-written five-field cron expression or an `every:` interval, evaluated against the wall clock on a one-second tick, with its last handled occurrence in `trigger_cursors.cursor`. It is the same robot pressing the same key: everything downstream of the source is reused, arming anchors the clock and fires nothing, and an overdue schedule fires once however many occurrences it missed. *Amended 2026-09-18 (task 122, issue #483):* a trigger also says what to do when **its own previous work is still running**. `overrun:` — `parallel` (the default and today's behaviour), `skip`, `cancel_previous`, `queue_coalesce`, `queue_serial` — is consulted as the pipeline's last step against the group `concurrency_key:` names, and "in flight" is §6's `!Settled`, so an unreviewed `on_fire: propose` proposal holds its group. The two queue modes hold events in a durable table so a restart loses none, and a disarm discards that backlog the way it drops the cursor. `cancel_previous` is the one mode that destroys work nobody asked to lose, and is `dangerous` to a client for that reason. *Amended 2026-10-03 (task 130.15, issue #674):* a sixth source, `issues`, reads vincent's own durable `issue.*` events instead of diffing a GitHub listing, so it works on every project and sees an imported issue's change as `by: sync`. It is a mapper, not a state diff: the store writes the delta (labels added and removed, the state moved) into each event inside the transaction that makes the change, and the trigger's only state is the id of the last event it handled. Arming seeds that cursor at the newest event and fires nothing, a restart resumes from it, and nothing past the catch-up cap is dropped. `human` and `agent` changes are trusted; a `sync` one follows `github_issues`' trust table, enforced against the issue's author. `create_task` gains `issue:`, replayed as `issue_id`. `github_issues` is deprecated — it keeps firing, `vincent trigger apply` warns — and its events carry the imported issue's id so a trigger can link its task once `github_issue` is removed (§5.3, §6, §8.4, §12.2, §12.3, §13.2, §13.3, §13.4, §14, §15, §16, §17, §20) |
 | 34 | Trigger ingress | *Added 2026-09-13 (task 096 decision 31G).* **A pushed event needs the bearer token and a signature, and no route is exempt from row 4.** `POST /v1/triggers/{id}/events` sits in the same `recover → log → auth` chain as every other route, then verifies the trigger's own `github_hmac_sha256` signature over the raw body, using a secret the daemon reads from its environment (§2). Only a caller on this machine that can read `{data_dir}/token` and holds the secret can deliver, so rows 1 and 4 are untouched. A GitHub.com webhook through a tunnel **cannot** deliver. What works is a sender on the same machine, such as a self-hosted runner, or a relay on the same machine that adds the header. The route is not an MCP tool, because an agent that can inject events can start agents (§13.1, §13.2, §13.4, §16) |
 | 35 | User-configurable TUI keymap | *Added 2026-09-17 (task 118, issue #412).* **An override moves an operation, never a surface's key, and the defaults' own rules hold it.** `tui.keys` in `config.yaml` maps an operation id to one key string in Bubble Tea's key-string form, and `{}` is the shipped keymap. The rebindable set is exactly row 31's vocabulary terms, §6's actions and the global chrome (`palette`, `palette_alt`, `help`, `help_alt`, `next_attention`, `mouse`, `quit`, `new` — the last also the chats board's `n`, one gesture); every surface-local row, multi-key set, `esc`, `ctrl+c`, `ctrl+v`, `tab`, popup confirmation and unregistered alias is fixed and refused by name. One override rebinds its operation on every surface that carries it, and it **replaces** the default rather than aliasing it, so the vacated key is free and two operations may swap in one edit. The registry becomes the TUI's **dispatch** source as well as its rendering source — handlers ask it for an operation's key rather than matching literals — because a keymap the help advertises and a handler ignores is the Pull Request tab bug row 31 closed; a translation layer at the root was beaten because it would be a second source of truth for which context is live. The catalog, the fixed keys, the exceptions and the clause checker live in a new leaf, `internal/keymap`; the registry tests run that checker over the defaults and `internal/config` runs it over the effective keymap at load, on hot reload and on `PATCH /v1/config`, so a bad keymap is refused with the file byte-identical, the `tui.board.group_by` precedent. That is config's second internal import beside `taskstate`, an explicit amendment of task 046 decision 4, and `keymap` is a leaf so the direction stays one-way. A key that already means anything else anywhere is refused, and an exception recorded for a default key does not travel with an operation that moves onto it. `palette_alt` and `help_alt`, and any operation answered where a text field owns the printable keys, refuse a printable key. *Amended 2026-09-21 (task 125.9, issue #542): unless the operation is answered there from a list drawn over the form's rows rather than from the rows themselves — `keymap.listLayer`, keyed by operation and surface, whose one entry is `free_text` on the new-chat form (§12.3, §15).* The daemon still publishes no config event: the TUI applies the keymap on connect, reconnect and the daemon view's config fetch, and after its own editor saves it (§12.3, §13.3, §15) |
 | 36 | Issues pillar | *Added 2026-10-02 (task 130, issue #659). This row **records a decision ahead of its code**, by the author's explicit exception to the same-pull-request rule (task 130 decision 13); it is true once task 130.1–130.18 (issues #660–#677) land, and until then the system is as rows 11 and 26 describe it.* **vincent owns issues; GitHub is a source it imports from and syncs state with.** Each project has an issue set in SQLite, served over REST, SSE, the CLI, MCP and the TUI like tasks and chats. An issue has a global integer id (no per-project number), a title, a description, labels from a per-project catalogue, a `kind` and a local `priority`; its state is `open` or `closed` with a `close_reason` (`completed`, `not_planned`, `duplicate`), and whether it is being worked on is derived from its root tasks, never stored. A task is created **from** an issue with `issue_id`, keeping a pointer and a creation-time snapshot, and fan-out lanes inherit both. An imported issue's source is a row in `issue_remotes` keyed by GitHub's `node_id`, and sync stores the repository each project is bound to. On a GitHub-based project open issues are imported on the `github.poll_interval` tick; **state is two-way**, with GitHub winning a true conflict, while title, body, labels, assignees, milestone and comments are a **read-only mirror**, and issues created in vincent are never pushed. Only a **human's** state change on an imported issue is written back, through a crash-safe outbox; an MCP- or step-originated one is refused (`forge_write_needs_human`) and nothing closes an issue automatically, so row 11 is kept. `github_issue` on `POST /v1/tasks`, `vincent task add --github-issue` and a trigger's `action.github_issue` are **removed**, a breaking change for API clients and trigger files. Supersedes or departs from, each by name in task 130: task 035 decision 2 (the `?workflow=` prefill and the `github_issue` create path; the one daemon-side mapping is kept), decision 4 for the new-task form only, decision 5 (repository identity is now stored), decision 6 and §12.3's "no call until a human opens the issue picker" (standing per-project issue traffic), decision 7 (prefill retargeted to a vincent issue), and decision 10 for issue state and for re-reading the issue entity; §12.3's "no `ETag`/`If-Match`" (issue `PATCH` requires `version`); task 073 decision 5 (issue descriptions render as Markdown); migration 0016's "a later route joins the table without a migration". Keeps task 035 decisions 3, 8 and 9, task 068 decision 1 and task 069 decision 3 (§5.3, §8.4, §12.3, §13, §14, §15 are amended by each item in its own pull request) |
@@ -1233,6 +1233,16 @@ rules the routes settled:
   this one duplicates only with reason `duplicate`; it must be another, existing
   issue in the same project. Omitting it is valid, as on GitHub. It is set in
   the close's transaction and cleared by reopening.
+
+*Amended 2026-10-03 (task 130.10, issue #669).* State write-back exists. A
+`human`'s close or reopen of an issue with a **live** GitHub remote enqueues
+one write in `issue_sync_outbox` (§14) in the transaction that makes the
+change, and the daemon's drain sends it (§12.3). An `agent`'s close or reopen
+of such an issue is refused — `409 invalid_state` with `details.reason:
+forge_write_needs_human` — and `agent` now covers, besides an MCP tool call,
+a request carrying a step's or a chat agent's marker header (§13.1). A local
+issue, and one whose remote is `moved` or `missing`, writes nothing back and
+is not refused: the change stays local, and the issue's `sync` block says why.
 
 *Amended 2026-10-02 (task 130.8, issue #667).* Sync exists: the daemon imports
 and refreshes a GitHub-based project's issues on §12.3's `github.poll_interval`
@@ -6463,6 +6473,7 @@ One Go binary, `vincent`:
 | `vincent gc [--dry-run] [--force] [--json]` | Reclaims data-root directories no task claims (§10); a thin API client like the rest |
 | `vincent config get [key] / set <key> <value>` | *Added 2026-08-30 (task 060).* Reads and writes `config.yaml` through `GET`/`PATCH /v1/config` (§12.3) — a thin API client like the rest, never a second editor, so the CLI and the TUI's editor are one operation with one validation. `get` with no key prints every key as `path = value` in the file's own order; with one, that key's value alone. Keys are the dotted paths the file carries. Lists and argv are whitespace-separated inside a single argument (`notify.on "blocked awaiting_gate"`), which is also why an argv element containing a space has to be edited in the file. A `set` is in force when it answers; `listen` is the exception the command says out loud. Exit 0 · 1 the daemon refused it, with the file byte-identical · 2 no daemon answered |
 | `vincent github issues / prs / pr create / status --project <id>` | *Added 2026-08-26 (task 035).* Read-only GitHub views: the project's issues newest first, and whether they can be read at all. Thin API clients like the rest — the daemon makes every GitHub call. Nothing under this command writes to GitHub. *Amended 2026-08-31 (task 069, issue #273):* the last clause stops being true for **one** subcommand. `vincent github pr create --task <id> --title <t> [--body <text>] [--draft]` drives §13.2's create route: it pushes the task's branch and opens its pull request, and it is the one thing under `vincent github` that writes to GitHub — `issues`, `prs` and `status` still write nothing. It exists for the reason every other subcommand does (the TUI holds no action the daemon does not) and because a gate script has to be able to drive that route without driving a terminal. `--body` is optional: a pull request with no description is a legal one. The fallback is **not** an error — a push that succeeded and a create that did not prints the compare URL and exits 0. *Amended 2026-09-15 (task 068.4, issue #386):* `pr create` is no longer the one writer. `vincent github pr merge --task <id> --method merge\|squash\|rebase --head-sha <sha>`, `pr close --task <id>`, `pr reopen --task <id>`, `pr comment --task <id> (--body <text> \| --body-file <path>)` and `pr rerun --task <id> --run-id <id>` drive §13.2's five write routes on the task's linked pull request. `merge` requires both flags because the CLI has no confirmation popup: they are where the human names exactly what is sent (task 068 decision 4). `--body-file -` reads stdin. `issues`, `prs` and `status` still write nothing. *Amended 2026-09-15 (task 102, issue #391):* four more subcommands under `pr` drive §13.2's existing task pull-request routes, all taking the task as `--task <id>` like `pr create`: `vincent github pr link <number> --task <id>` (POST), `pr unlink --task <id>` (DELETE), `pr show --task <id>` (GET the live row) and `pr checks --task <id>` (GET the live rollup). `link` and `unlink` write **only vincent's own link column** — no request reaches GitHub from either, and `link` does not check that the number exists — so the only commands under `vincent github` that write to GitHub stay `pr create` and task 068.4's five, and `show` and `checks` write nothing anywhere. `unlink` refuses with exit 1 and sends nothing when the task has no live link (never linked, or already suppressed): a DELETE there would record a suppressed number-0 link that stops the reconciler ever auto-linking the task. That is a client-side fast failure; the route is unchanged. Both GET routes answer 200 whatever they found, so `show` and `checks` set their own exit code: 0 when the pull request or rollup was read — for `checks`, **whatever CI concluded**, the verdict being `--json`'s `.state` — 1 when there is no live link or a named `reason` stopped the read (printed as `github.Message(reason)`), 2 when no daemon answered. `--json` emits each route's body unchanged under the same exit rule |
+| `vincent issue ls / show / add / edit / close / reopen / delete / labels / sync` | *Added 2026-10-03 (task 130.6, issue #665; `sync` landed with 130.8).* A thin client of §13.2's issue routes, one leaf per route; `vincent task add --issue` starts a task from one. Four decisions: **`edit` changes labels by delta only** (`--add-label`/`--remove-label` → `add_labels`/`remove_labels`); the PATCH's full `labels` replacement has no flag, so two editors cannot clobber each other's set, and `--label` means only `add`'s initial labels. `edit` reads the issue and patches at the version read; a `409 issue_changed` is reported with a line saying to re-run, and is never retried. **`delete` (alias `rm`) requires `--force`**: an issue can be deleted in any state (task 130 decision 6), so no daemon refusal stands in for confirmation; without `--force` it refuses locally, sends nothing and never prompts. **`add --idempotency-key K` is opt-in**: the key is sent as `Idempotency-Key` (§13.1) only when given, and the CLI never generates one, because it never retries. **`ls --project` is optional**: without it the list spans every project, as `vincent task ls` does, and the table gains a PROJECT column. |
 | `vincent doctor` | One diagnostic report: paths, daemon, log tail, database, agents, storage, task counts (§17). `--json` for scripting and bug reports; `--fix` (`--force`) reclaims orphaned worktrees and compacts the database. Exit 0 healthy · 1 problems found · 2 no daemon answered. *Amended 2026-08-26 (task 035):* it also reports the GitHub integration — the `github.enabled` toggle, `gh`'s presence, version and login state, whether a token variable is set (its **name**, never its value), and whether issues are readable. It is a **row, not a problem**: every "no" it can report leaves task creation without an issue working exactly as before, so none of it changes the exit code. *Amended 2026-08-29 (task 055):* it also reports the release check (§12.3) — whether `update.check` is on, the latest stable release and when it was last seen, this binary's version, and whether the running daemon is older than it. Rows, not problems, for the same reason: a newer release and a daemon still running the previous build both leave everything working. *Amended 2026-09-10 (task 095):* it also reports the published skills of §9.8 — one row per skill with the version this binary ships, the version installed in the global store and the agents it is linked into. A row and not a problem, on the same precedent: the built-in workflows carry the skill's text in their own prompts, so nothing a skill row can say stops a task from running, and `vincent doctor` still exits 0. *Amended 2026-09-17 (task 115):* it also reports scheduled backups (§12.3) in a `BACKUP` group: whether `backup.interval` turns them on, the directory, interval and keep, the last success and last attempt, when the next run is due, the last archive's size, how many scheduled archives are kept, and the last error. Unlike the rows above, **a failed attempt is a problem** and exits 1 (§17, task 115 decision 4). A backup that is merely overdue is not |
 | `vincent agents [--json] [--refresh]` | *Added 2026-09-16 (task 104, issue #393).* A thin client of `GET /v1/agents` (§9.6, §13.2) that, like every data subcommand, **never auto-starts a daemon**. It prints one row per adapter in registration order — `AGENT`, `VERSION`, `BUILD` (the task 041 `version_verdict`), `LOGIN` (§9.5's tri-state in `vincent doctor`'s words, `-` for an adapter not installed) and `QUOTA` — then a `NOTES` cell holding only bad news: `not found`, `no mid-run input`, `no restricted mode on <os>`, `no skill listing` (*added 2026-09-19, task 124*: a `false` `supports_skill_listing`; a `null` adds nothing), `no @ file expansion` (*added 2026-09-21, task 126.4, issue #548*: a `false` `file_mention_expands`, so the CLI leaves the model to read a mentioned path itself; a `null` adds nothing, and `supports_file_mentions` never notes anything — every shipped adapter mentions, and the bad news is expansion, §9.1), `option probe failed (curated catalog)`. `QUOTA` renders the **one merged block** the endpoint serves, labelled by its `source` (a reading wins, an observation is the fallback, task 082), and merges nothing client-side: `unknown` for a null block; a reading's windows with `read <observed_at>`; `spent → <reset>` for a reset the CLI stated and `spent ≈ <reset>` for one vincent estimated (task 026 decision 2); `ok · last spent <observed_at>` for a lapsed observation. Times are local RFC3339. By default it answers from the catalog cache; `--refresh` sends `?refresh=true`. `--json` emits the endpoint's `agents` array unchanged. Exit 0 whenever the daemon answered, whatever the adapters' health (task 041 decision 4) · 1 the API returned an error · 2 no daemon answered. No wire change |
 | `vincent update [--check] [--dry-run] [--require-signature] [--json]` | *Added 2026-08-29 (task 055).* Asks GitHub for the latest **stable** release and, unless `--check` is given, installs it over this binary. It queries the feed **itself** rather than through the daemon, so it works with no daemon and before the daemon's own check has polled — and so `update.check: false` (§12.3) stays a literal promise. A binary a package manager owns is never modified: the channel is detected from the resolved `os.Executable()` path and its upgrade command is printed. A binary vincent owns is verified before anything runs (§16) and swapped in place; on any failure nothing is replaced. `--check`: exit 0 up to date · 1 the check failed · 2 an update is available. Otherwise: 0 nothing to do or swapped · 1 verification or the swap failed and the binary is untouched · 2 an update exists but this install is package-managed. `--json` carries `swapped`, which separates the two 0s |
@@ -7192,6 +7203,15 @@ A trigger that silently never fires is exactly the question its ledger exists
 to answer. With GitHub not polled, the reconciler's idle heartbeat still runs
 to report that.
 
+*Amended 2026-10-03 (task 130.15, issue #674).* `type: github_issues` is
+deprecated in favour of `type: issues`, which is **not** judged on this tick:
+it reads the `issue.*` events this tick's import writes, woken by each one's
+commit, so a GitHub change reaches it as `by: sync` with no listing of its own.
+`github_issues` keeps being judged here, unchanged in behaviour; each of its
+events now names the vincent issue the project imported that GitHub issue as
+(`IssueID`, empty when there is none — a live `issue_remotes` link only, never
+a tombstone), read from the store after the listing and before the diff.
+
 *Amended 2026-10-02 (task 130.8, issue #667).* The same tick **imports and
 refreshes each GitHub-based project's issues** (§5.6), first, so a trigger
 judged on that tick sees what it imported. The gates run in order —
@@ -7211,6 +7231,29 @@ interval. The quiet failure policy above does **not** apply to the import,
 for the triggers' reason: every failure is logged and recorded on the
 project's sync row, read back by `GET /v1/projects/{id}/issues/sync` and by
 `vincent doctor`.
+
+*Amended 2026-10-03 (task 130.10, issue #669).* Beside the tick runs the
+**issue state write-back drain**: one goroutine, woken by an enqueue (§5.6),
+by every tick, by `POST /v1/projects/{id}/issues/sync`, and on a one-minute
+heartbeat. Each pending write is a compare-and-set: GitHub's issue is read
+first; at the desired value the write is `done` without a call (a write that
+landed before a crash, or the same change made on both sides); at the base —
+the value vincent last saw — it is sent; anything else is a true conflict,
+which GitHub wins: its value is adopted locally by `sync` and the write ends
+`conflict`. Values compare by state and `state_reason`, never by timestamp,
+so the import that follows a write is an echo and moves nothing. While an
+issue has a pending write the import keeps its local state (its content
+still mirrors), so the tick before the drain cannot revert a human's change.
+Mutative calls are at least one second apart. A failed call is classed on
+§13.2's GitHub reasons: `unreachable`, `timeout` and `bad_response` back off
+(30 s doubling, capped at 30 min); `rate_limited` waits for GitHub's reset;
+`no_credential` and `unauthorized` retry every 15 min; `no_write_scope`,
+`not_found`, `gone`, `moved`, `forbidden` and `bad_request` end the write
+`failed` and keep the local state. With `github.enabled: false` or
+`poll_interval: 0` nothing is called and every pending write stays pending
+with reason `disabled`, drained when the switch comes back on. A `duplicate`
+close sends the duplicated issue's number when it is in the same repository,
+and closes without one otherwise.
 
 *Amended 2026-08-29 (task 055).* This was the daemon's **first** standing
 outbound network traffic when it landed, and that sentence read as though it
@@ -7710,7 +7753,8 @@ that order, a shifted character written as itself), and `{}`, the default, is
 for pause and resume, `approve`, `reject`, `retry`, `edit_retry`, `repair`,
 `skip`, `cancel`, `follow_up`, `chat` — *added 2026-09-17, task 119* — with
 `archive` shared with the term) and the global chrome (`palette`, `palette_alt`, `help`, `help_alt`, `next_attention`,
-`mouse`, `quit`, and `new`, which is also the chats board's `n`). Every other key
+`mouse`, `quit`, and `new`, which is also the chats board's `n` and — *added
+2026-10-03, task 130.12* — the issue screens'). Every other key
 the TUI answers is fixed (§15). An override **replaces** the operation's
 default on every surface that carries it; it is not an alias, so the vacated
 key is free for another override in the same edit and two operations may swap.
@@ -8061,6 +8105,14 @@ row is never in the ready set, so none spawns twice. The wake watermark is
 cleared by the transition out of `awaiting_children` that recovery performs, and
 the next admission recomputes it from the rows.
 
+*Amended 2026-10-03 (task 130.10, issue #669).* Issue state write-backs
+need no recovery step of their own: a pending `issue_sync_outbox` row is
+durable from the transaction that made the change, and the drain sends what
+is pending when the daemon starts. A crash between GitHub's answer and the
+row being settled is harmless — the PATCH is idempotent, and the restarted
+drain's preflight finds GitHub at the desired value and settles the row
+`done` without a second write.
+
 ## 13. HTTP API
 
 ### 13.1 Transport and auth
@@ -8222,6 +8274,15 @@ that key: `trigger:{id}:` followed by a hash. That keeps two triggers, or a
 trigger and a CI job pushing in with its build id, from replaying each other's
 tasks, and keeps the header inside the bound above whatever the rendered key
 says.
+
+*Added 2026-10-03 (task 130.10, issue #669).* **Agent marker headers.** The
+`vincent` client sends `X-Vincent-Task-Id: N` on every request when
+`VINCENT_TASK_ID` is in its environment — §8.5 puts it in every step's — and
+`X-Vincent-Chat-Id: N` when `VINCENT_CHAT_ID` is, which a chat agent's
+process carries. The daemon treats either as actor `agent` for the issue
+routes (§5.6), exactly like an MCP tool call. A header never makes a caller
+human: its absence does, and an MCP call is an agent's whatever it sends. It
+is best-effort attribution, not authentication (§16).
 
 ### 13.2 Endpoints
 
@@ -8649,9 +8710,15 @@ PATCH  /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* { versi
 POST   /v1/issues/{id}/close            *Added 2026-10-02 (task 130.3).* { reason?, duplicate_of? }
                                         — `completed` (the default), `not_planned` or
                                         `duplicate`; `duplicate_of` per §5.6, otherwise **400**.
-                                        Closing a closed issue is **409** with `details.state`
+                                        Closing a closed issue is **409** with `details.state`.
+                                        *Amended 2026-10-03 (task 130.10):* an agent's close
+                                        of an issue that writes back to GitHub is **409**
+                                        `forge_write_needs_human` (§5.6); a human's enqueues
+                                        the write-back, and the issue's `sync` says `pending`
 POST   /v1/issues/{id}/reopen           *Added 2026-10-02 (task 130.3).* {}. Reopening an open
-                                        issue is **409** with `details.state`
+                                        issue is **409** with `details.state`; an agent's
+                                        reopen of an issue that writes back is **409**
+                                        `forge_write_needs_human` (task 130.10)
 DELETE /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* Permanent, from any
                                         state (§5.6) → **204**. An imported issue leaves its
                                         tombstone; upstream is never touched; its tasks keep
@@ -8668,12 +8735,18 @@ GET    /v1/projects/{id}/issues/sync    *Added 2026-10-02 (task 130.8, issue #66
                                         attempt stored (`not_github`, `no_client`,
                                         `origin_changed`, or a §13.2 GitHub reason such as
                                         `rate_limited`). Sync-status vocabulary, not a §18
-                                        task reason. A read; it never calls GitHub
+                                        task reason. A read; it never calls GitHub.
+                                        *Amended 2026-10-03 (task 130.10):* also
+                                        { writes_pending, writes_failed, writes_conflict } —
+                                        the imported issues whose newest state write-back is
+                                        waiting, gave up, or lost to a change on GitHub
 POST   /v1/projects/{id}/issues/sync    *Added 2026-10-02 (task 130.8).* {}. Sync now: records
                                         the request and wakes the importer → **202** with the
                                         status body above, as of the request. With a switch
                                         off the request stays recorded and is served by the
-                                        next enabled tick. Not an MCP tool (§13.4)
+                                        next enabled tick. Not an MCP tool (§13.4).
+                                        *Amended 2026-10-03 (task 130.10):* it also wakes the
+                                        state write-back drain
 GET    /v1/chats                        *Amended 2026-09-09 (task 092, issue #350).* Also takes
                                         limit, offset, archived_before and archived_since —
                                         GET /v1/tasks' parameters, spelled the same way, because
@@ -10018,9 +10091,9 @@ the issue is already in — appends nothing. Six kinds:
 | Type | Payload |
 |---|---|
 | `issue.created` | `{ id, by }` |
-| `issue.updated` | `{ id, changed: [field, …], by }` — field names sorted; an import refresh lists `state` when it moved |
+| `issue.updated` | `{ id, changed: [field, …], by }` — field names sorted; an import refresh lists `state` when it moved, and adds `labels_added`/`labels_removed` and `from`/`to`/`reason` (below) |
 | `issue.state_changed` | `{ id, from, to, reason, by }` |
-| `issue.labels_changed` | `{ id, labels: [name, …], by }` |
+| `issue.labels_changed` | `{ id, labels: [name, …], labels_added: [name, …], labels_removed: [name, …], by }` |
 | `issue.comment_added` | `{ id, comment_id, by }` |
 | `issue.deleted` | `{ id, by }` |
 
@@ -10038,6 +10111,14 @@ duplicate close names one, and omits it otherwise. A `PATCH` that edits fields
 and labels appends `issue.updated` and `issue.labels_changed` from its one
 transaction.
 
+*Amended 2026-10-03 (task 130.15, issue #674).* Two payloads carry their
+delta, so a `type: issues` trigger maps each event without keeping a snapshot
+of its own. `issue.labels_changed` adds `labels_added` and `labels_removed`
+beside the whole set, each sorted and possibly empty. An import refresh's
+`issue.updated` adds `labels_added` and `labels_removed` when `changed` holds
+`labels`, and `from` and `to` when the state moved, with `reason` on a close.
+Both are names and states: still no title, body or comment text.
+
 *Amended 2026-10-02 (task 130.8, issue #667).* Sync writes these kinds too,
 with `by: sync`, and adds **no** bulk kind: an import appends one
 `issue.created` per issue, and clients debounce (task 130 decision 15.2). The
@@ -10051,6 +10132,12 @@ It is emitted only when a project's import goes from ok to failing or back,
 never per tick, on `trigger.poll_changed`'s precedent; a project's first
 recorded attempt counts as a transition only if it fails. A client keeps
 "last synced" current by re-reading `GET /v1/projects/{id}/issues/sync`.
+
+*Amended 2026-10-03 (task 130.10, issue #669).* A state write-back's outcome
+is `issue.updated` with `changed: ["sync"]` and `by: sync` — when it ends
+`done`, `failed` or `conflict`, and when a pending write's reason changes
+(not on every retry with the same reason). A conflict's adoption of GitHub's
+value is an ordinary `issue.state_changed` by `sync` when the state moved.
 
 ### 13.4 Model Context Protocol (task 057)
 
@@ -10286,6 +10373,14 @@ Today it only asks the importer to poll early, but once write-back lands (task
 130.10) the same request flushes vincent's pending edits to GitHub, so it stays
 a human act (task 130 decision 15.8). Its `GET` is a tool,
 `project_issue_sync_status`.
+
+*Amended 2026-10-03 (task 130.10, issue #669).* Write-back has landed, and the
+guard is not an exclusion: `issue_close` and `issue_reopen` stay tools,
+because closing a local issue writes nothing to a forge. Called on an issue
+that writes back to GitHub — on `/mcp` and on a step endpoint alike — each is
+refused `409 invalid_state`, `details.reason: forge_write_needs_human`. The
+same refusal reaches a step's or a chat agent's plain HTTP call through the
+marker header (§13.1, §16).
 
 The task 057 property that the tool surface **equals** `Routes()` minus the
 exclusions is unchanged, and is still asserted by a test — the exclusion list it
@@ -10823,6 +10918,23 @@ CREATE TABLE issue_sync_state (        -- one row per project the importer polle
   requested_at       TEXT                       -- a pending "sync now"
 );
 
+CREATE TABLE issue_sync_outbox (       -- an imported issue's state write-back (task 130.10, migration 0039)
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  issue_id        INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+  op              TEXT NOT NULL DEFAULT 'set_state',
+  desired_json    TEXT NOT NULL,               -- {state, state_reason?, duplicate_of?} in GitHub's terms
+  base_json       TEXT NOT NULL,               -- the value vincent last saw on GitHub
+  status          TEXT NOT NULL DEFAULT 'pending', -- pending|done|failed|conflict|superseded
+  attempts        INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at TEXT NOT NULL,
+  last_reason     TEXT NOT NULL DEFAULT '',
+  origin          TEXT NOT NULL,               -- human|agent|sync
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+CREATE INDEX issue_sync_outbox_due_idx ON issue_sync_outbox (status, next_attempt_at);
+CREATE INDEX issue_sync_outbox_issue_idx ON issue_sync_outbox (issue_id, id);
+
 CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 ```
 
@@ -10990,6 +11102,13 @@ now". A project with no row reads as ok, which is why `ok` defaults to 1 and a
 first failure is an `issue.sync_changed` transition (§13.3) while a first
 success is not. It cascades with its project. `issue_remotes.remote_status` is
 §5.6's `''`/`moved`/`missing`; it never deletes the row it describes.
+
+*Added 2026-10-03 (task 130.10, issue #669, migration 0039).*
+`issue_sync_outbox` is written in the transaction of the state change it
+sends (§5.6, §12.3), only for an issue with a live GitHub remote and only when
+the GitHub value changes. A newer change supersedes a pending row and keeps
+its base, so close→reopen→close is one write and close→reopen from open is
+none. It cascades with its issue: a deleted issue has nothing left to send.
 
 *Added 2026-08-14 (task 003).* `admit_not_before` / `queued_reason` carry no index:
 `ListAdmissible` already returns the whole queued set in §11 order and the hold is
@@ -12638,9 +12757,34 @@ stream for the live tail.
    than to the board. Every root task, newest first, replaces this list once
    `GET /v1/tasks?issue_id=` exists (130.7 / 130.13). The screen re-reads on
    its own issue's `issue.*` events and on events of the tasks it lists;
-   `esc` returns to view 12 with the selection kept. `n`, `a`, `i` and `X`
-   are unbound on both screens until the issue writes (#671) and a task from
-   an issue (#672) land.
+   `esc` returns to view 12 with the selection kept. `a` is unbound on both
+   screens until a task from an issue (#672) lands.
+
+   *Amended 2026-10-03 (task 130.12, issue #671):* both screens write. `n`
+   opens the **issue form** on a new issue — `new`'s "make a new one here",
+   in the list's selected project or the detail's — and `i` opens it on the
+   issue (the list reads the issue first: a row carries no body). The form is
+   a full pane over either screen: project (on a create), title, description
+   (`e` hands it to `$EDITOR`), labels over the project's catalogue, kind
+   over task 130 decision 4's suggestions with free text, and priority.
+   `ctrl+s` saves; `esc` asks first over unsaved changes. A row the DTO's
+   `editable` omits is drawn read-only, "mirrored from GitHub". An edit sends
+   `version` and only the changed fields, labels as `add_labels` /
+   `remove_labels`; an `issue_changed` 409 is shown in the form, and `R`
+   rebases onto the current issue keeping the edits that still apply. A
+   create carries an `Idempotency-Key`, one per opened form.
+
+   `X` closes or reopens, offering exactly the issue's `available_actions` —
+   the list reads the issue for them, since rows carry none. Close asks for a
+   reason: completed, not planned, or duplicate, which picks a same-project
+   target or none. On an imported issue the change is confirmed first, and
+   the confirmation says it is **written to GitHub too** — the keypress is
+   the consent (task 069 decision 2) — or, when the `sync` block's reason is
+   `moved` or `gone`, that it changes vincent's copy only (*amended
+   2026-10-03, task 130.10*: this replaced 130.12's local-only text). `D` deletes after asking, in any state; on an
+   imported issue it says GitHub is never touched and the tombstone keeps
+   sync from importing it again. Delete is not a state action and is never
+   among `available_actions`.
 
 ### Layout
 
@@ -14631,6 +14775,14 @@ the whole of the posture, not a set of tips.
   issue. That does not widen the exposure: an imported issue reaches an agent
   only as `.Issue` on a task a human or an armed trigger creates from it, the
   two acts above.
+  *Amended 2026-10-03 (task 130.10, issue #669):* the one issue write that
+  reaches GitHub — an imported issue's state — is a human's only. An MCP
+  call, and a request carrying a step's or a chat agent's marker header
+  (§13.1), is refused `forge_write_needs_human`. The marker is **best-effort,
+  not a privilege boundary**: a full-auto agent runs as you, can unset its
+  environment or read the daemon token, and so can write as a human. It keeps
+  the honest path — an agent running `vincent issue close` — off the forge; a
+  per-step scoped token was rejected because it would be no stronger.
 - **No project scope.** Triggers are global and live in `{config_dir}`, never in
   `.vincent/`, so merge rights on a repository cannot start agents on a
   maintainer's machine (task 096 decision 8). The accepted cost is that a

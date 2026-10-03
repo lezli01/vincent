@@ -488,6 +488,16 @@ head commit you named and never deletes the branch, none of them is an MCP tool
 so an agent cannot reach them, and `github.enabled: false` turns them off with
 every read.
 
+Closing or reopening an issue imported from GitHub writes its state back too.
+That one is an MCP tool, because closing a local issue leaves the machine for
+nothing, so the daemon refuses it by caller instead: an MCP call, and a request
+from a `vincent` command a workflow step or a chat agent runs, is refused
+`forge_write_needs_human`. The step and chat case is told apart by a header the
+CLI sends when `VINCENT_TASK_ID` or `VINCENT_CHAT_ID` is in its environment. It
+keeps an agent's honest `vincent issue close` off GitHub; it is **not** a
+boundary — an agent running as you can unset those variables, or read the token
+and call the API like anything else running as you.
+
 **One of those worktree files carries a token.** To give a cursor step
 [vincent's own tools](guides/mcp.md) — cursor has no per-run MCP flag — the
 adapter writes `.cursor/mcp.json` into the **task worktree** for the duration of
@@ -605,6 +615,9 @@ below is the whole posture, not a set of tips.
   state diff, not who made it, so `allowed_actors` matches the issue's or pull
   request's **author**. It stops a stranger's issue from starting work. It does
   **not** say who applied a label or requested a review.
+  The `issues` source holds a change imported from GitHub (`by: sync`) to the
+  same rule as `github_issues`, against the imported issue's author; a change
+  made in vincent, by you or an agent, is trusted.
 - **Prompt injection becomes remote.** An issue body, a pull-request title or a
   CI log reaches the trigger's templates as `.Event`. Whatever the file renders
   into a title, description, field or prompt reaches an agent. `.Event` is never

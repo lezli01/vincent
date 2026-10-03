@@ -75,9 +75,13 @@ that is supervising it. Those stay CLI-and-curl only. The two
 delete's line: a row a human archived is history nobody else may discard. The
 issue delete joins them: it is permanent, and an imported issue's tombstone
 outlives it. Sync now (`POST /v1/projects/{id}/issues/sync`) stays a human act
-too: today it only asks the importer to poll early, but once write-back lands
-the same request flushes vincent's pending edits to GitHub. Its `GET`,
-`project_issue_sync_status`, is an ordinary tool.
+too: it asks the importer to poll early and flushes vincent's pending state
+writes to GitHub. Its `GET`, `project_issue_sync_status`, is an ordinary tool.
+`issue_close` and `issue_reopen` are tools, but on an issue imported from
+GitHub they are refused with `forge_write_needs_human`: that issue's state is
+written back to GitHub, and only a person does that. The same refusal meets a
+`vincent issue` command a workflow step or a chat agent runs, which the CLI
+marks with a header.
 The [task import](../reference/api.md#importing-a-task) that undoes one sits
 beside them: it reads a file the caller names and writes rows no agent should
 be able to create.

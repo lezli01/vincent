@@ -393,3 +393,53 @@ func TestCloseDuplicateOf(t *testing.T) {
 		t.Errorf("close = %+v, %v", closed, err)
 	}
 }
+
+// TestAgentStateChangeOfAWriteBackIssueIsRefused is task 130 decision 10:
+// only a human's close or reopen of an issue that writes back to GitHub is
+// allowed. A local issue, and one whose remote moved, write nothing back.
+func TestAgentStateChangeOfAWriteBackIssueIsRefused(t *testing.T) {
+	svc, st, pid := newService(t)
+	ctx := t.Context()
+	upsert := func(key string, n int) *store.Issue {
+		t.Helper()
+		iss, _, err := st.UpsertRemoteIssue(ctx, store.RemoteIssue{
+			ProjectID: pid, Provider: "github", RemoteKey: key, Repo: "o/r", Number: n,
+			Title: key, State: issuestate.Open,
+		}, issuestate.Sync)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return iss
+	}
+	imported := upsert("I_1", 1)
+	if !WritesBack(imported) {
+		t.Fatal("a live GitHub import does not write back")
+	}
+	if _, err := svc.Close(ctx, issuestate.Agent, imported.ID, "", nil); !errors.Is(err, ErrForgeWriteNeedsHuman) {
+		t.Errorf("agent close = %v, want ErrForgeWriteNeedsHuman", err)
+	}
+	if got, _ := svc.Get(ctx, imported.ID); got.State != issuestate.Open {
+		t.Errorf("a refused close changed the state to %s", got.State)
+	}
+	if _, err := svc.Close(ctx, issuestate.Human, imported.ID, "", nil); err != nil {
+		t.Fatalf("human close: %v", err)
+	}
+	if _, err := svc.Reopen(ctx, issuestate.Agent, imported.ID); !errors.Is(err, ErrForgeWriteNeedsHuman) {
+		t.Errorf("agent reopen = %v, want ErrForgeWriteNeedsHuman", err)
+	}
+	if _, err := svc.Transition(ctx, issuestate.Sync, imported.ID, issuestate.RemoteReopened, ""); err != nil {
+		t.Errorf("sync reopen: %v", err)
+	}
+
+	moved := upsert("I_2", 2)
+	if err := st.SetIssueRemoteStatus(ctx, pid, "github", "I_2", store.RemoteStatusMoved, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Close(ctx, issuestate.Agent, moved.ID, "", nil); err != nil {
+		t.Errorf("agent close of a moved issue: %v", err)
+	}
+	local := mustCreate(t, svc, CreateInput{ProjectID: pid, Title: "local"})
+	if _, err := svc.Close(ctx, issuestate.Agent, local.ID, "", nil); err != nil {
+		t.Errorf("agent close of a local issue: %v", err)
+	}
+}

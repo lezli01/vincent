@@ -13,6 +13,36 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Issue state is written back to GitHub.** Closing or reopening an issue
+  imported from GitHub — in the TUI, with the CLI or over the API — now closes
+  or reopens it on GitHub too, with the same close reason. The write is
+  recorded with the change, so it survives a daemon crash; GitHub is read
+  first, and if someone changed the issue there in the meantime GitHub's state
+  wins and is adopted here. Each imported issue carries a `sync` block
+  (`synced`, `pending`, `failed` or `conflict`, with a reason), and
+  `GET /v1/projects/{id}/issues/sync`, `vincent issue sync` and
+  `vincent doctor` count pending, failed and conflicting writes. With
+  `github.enabled: false` or `github.poll_interval: 0` nothing is sent until
+  the switch is back on. Agents may not do this: an MCP `issue_close` or
+  `issue_reopen` of an imported issue, and a `vincent` command run by a
+  workflow step or a chat agent, is refused `409 forge_write_needs_human`.
+  ([#669](https://github.com/lezli01/vincent/issues/669))
+- **`vincent issue` manages issues from a shell.** `ls` (across every project,
+  or one with `--project`, filtered by state, label, kind, text and source),
+  `show`, `add` (`--body-file -` reads stdin; `--idempotency-key` makes a
+  re-run safe), `edit` (labels by `--add-label`/`--remove-label` delta, and a
+  stale read is refused rather than overwriting someone else's change),
+  `close` with a reason or `--duplicate-of`, `reopen`, `delete --force` (alias
+  `rm`) and `labels` join `sync`. Every leaf takes `--json`.
+- **File, edit, close, reopen and delete issues from the TUI.** On the issues
+  list and an issue's screen, `n` opens a form for a new issue and `i` edits
+  the selected one — title, description (`e` for `$EDITOR`), labels, kind and
+  priority — saving only the fields you changed, and offering to reload and
+  keep your edits when someone else changed the issue first. `X` closes (as
+  completed, not planned, or a duplicate) or reopens, offering only what the
+  issue allows, and `D` deletes after asking. On an issue imported from
+  GitHub the mirrored fields are read-only, and closing or reopening asks
+  first and says it is written to GitHub too.
 - **Create a task from a vincent issue.** `POST /v1/tasks` takes `issue_id`,
   and `vincent task add --issue ID` sends it: the task is linked to the issue,
   snapshots it, and is prefilled from it — title, description and declared
@@ -92,6 +122,26 @@ list with the user-facing context a commit subject cannot carry.
   `POST /v1/projects/{id}/issues/sync` and `vincent issue sync --project P`
   ask for a sync now. The database migrates on start (migration 0038).
   ([#667](https://github.com/lezli01/vincent/issues/667))
+- **Triggers on a project's own issues.** A new `type: issues` trigger source
+  fires on `opened`, `closed`, `reopened`, `labeled` and `unlabeled` for local
+  issues and for GitHub issues the project imports, on any project, with or
+  without a GitHub remote. Each event says who made the change — `by: human`,
+  `agent` or `sync` — so `match: {by: human}` keeps a trigger from re-firing on
+  its own agent's changes, and a change made while the daemon was down is
+  still delivered after it restarts. `create_task` takes `issue:`, which
+  creates the task from that vincent issue. `issue.labels_changed` now carries
+  `labels_added` and `labels_removed`, and an import refresh's `issue.updated`
+  carries the labels and state it moved.
+  ([#674](https://github.com/lezli01/vincent/issues/674))
+
+### Deprecated
+
+- **`type: github_issues` triggers.** Use `type: issues` on a project that
+  imports its GitHub issues. Existing `github_issues` triggers keep firing;
+  `vincent trigger validate` and `vincent trigger apply` print a warning. Their
+  events now carry `IssueID`, the imported vincent issue's id, so
+  `issue: '{{ .Event.IssueID }}'` links the task.
+  ([#674](https://github.com/lezli01/vincent/issues/674))
 
 ## [0.11.0](https://github.com/lezli01/vincent/compare/v0.10.1...v0.11.0) (2026-10-01)
 

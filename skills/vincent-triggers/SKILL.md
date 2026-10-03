@@ -1,16 +1,17 @@
 ---
 name: vincent-triggers
-description: Create, edit, review, arm, and debug vincent event triggers, the YAML under {config_dir}/triggers and the poll scripts they run. Use for trigger sources (command, github_issues, github_prs, http, schedule), match and if filters, dedupe keys, limits, on_fire, permission, arming, dry runs, the delivery ledger, or trigger validation errors. Do not use for vincent workflows, including the workflow a trigger's action.workflow names (use vincent-workflows), or for GitHub Actions.
+description: Create, edit, review, arm, and debug vincent event triggers, the YAML under {config_dir}/triggers and the poll scripts they run. Use for trigger sources (issues, command, github_issues, github_prs, http, schedule), match and if filters, dedupe keys, limits, on_fire, permission, arming, dry runs, the delivery ledger, or trigger validation errors. Do not use for vincent workflows, including the workflow a trigger's action.workflow names (use vincent-workflows), or for GitHub Actions.
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.2.0
+  version: 1.3.0
 ---
 
 # vincent Triggers
 
-A trigger lets something other than a person start vincent work. An event from
-a poll script, from GitHub, or from a signed push can create a task, or follow
+A trigger lets something other than a person start vincent work. An event on
+one of the project's issues, from a poll script, from GitHub, or from a signed
+push can create a task, or follow
 up, retry or cancel the task on a branch. Nobody presses a key, so design the
 smallest trigger that is safe to leave on, and leave turning it on to a human.
 
@@ -79,7 +80,8 @@ Then ask only what changes the YAML:
 - Which system and event? Should it create a task, or follow up, retry or
   cancel the task on the event's branch?
 - What makes two events "the same"? That becomes the `dedupe_key`.
-- On GitHub, which events, and whose issues or pull requests may start work?
+- On issues or GitHub, which events, and whose issues or pull requests may
+  start work? Should an agent's own change be able to fire it?
 - What hourly rate is plausible, and what should one task cost at most?
 - Which platform does the daemon run on, and where do credentials come from?
 
@@ -101,6 +103,31 @@ before changing the design.
 
 ## Choose the source
 
+- **`issues`** reads the project's own issues: local ones, and GitHub issues
+  the project imports. Prefer it for anything that starts from an issue.
+  - It takes no `command` and no `poll_interval`; it is woken by each issue
+    change the daemon commits, and works on a project with no GitHub remote.
+  - Events: `opened`, `closed`, `reopened`, `labeled`, `unlabeled`. There is
+    no `assigned` (a vincent issue has no assignee), and it is refused.
+    Edits, comments and deletes fire nothing.
+  - `.Event.by` says who made the change: `human`, `agent` (a task's agent
+    over MCP) or `sync` (GitHub, through the importer).
+  - **Echo loops.** A trigger whose task's agent labels or closes issues can
+    re-fire itself. Write `match: {by: human}` unless the user wants agent
+    changes to fire, and keep `limits.max_per_hour` as the backstop.
+  - **Trust.** `human` and `agent` changes are local and trusted. A `sync`
+    change follows `github_issues`' rule: `labeled` and `unlabeled` are
+    trusted; `opened`, `closed` and `reopened` need `allowed_actors`, matched
+    against the issue's author. A trigger that can match one of those from
+    sync is refused without `allowed_actors` — unless its `match.by` leaves
+    `sync` out. `allowed_actors` never refuses a local person's change.
+  - Link the task with `action.issue: '{{ .Event.issue_id }}'`.
+- **`github_issues` is deprecated**; use `issues` when the project imports
+  its GitHub issues. It keeps firing, and `vincent trigger apply` and
+  `vincent trigger validate` print a warning for it. Its events carry
+  `.Event.IssueID`, the imported vincent issue's id (empty when the project
+  has not imported that issue), so `issue: '{{ .Event.IssueID }}'` links its
+  task.
 - **`github_issues` or `github_prs`** watch repository state.
   - They take no `command` and no `poll_interval`. An interval is refused,
     because they run on `github.poll_interval` in `config.yaml`.
@@ -142,14 +169,41 @@ before changing the design.
 `allowed_actors` is refused on `command`, `http` and `schedule` sources, whose
 events carry no identity vincent can verify.
 
+The headline shape — a label a person puts on an issue starts a task linked to
+it:
+
+```yaml
+id: triage-ready
+enabled: false
+source:
+  type: issues
+  project: 3
+match:
+  action: labeled
+  labels: ready
+  by: human
+action:
+  type: create_task
+  workflow: implement
+  title: '{{ .Event.Issue.Title }}'
+  issue: '{{ .Event.issue_id }}'
+dedupe_key: 'issue:{{ .Event.issue_id }}:ready'
+limits:
+  max_per_hour: 5
+  max_task_cost_usd: 5
+```
+
 ## Choose the action
 
 - **`create_task`**:
   - `title` is required.
   - `workflow` defaults to the project's default workflow.
   - `description` and `fields` are optional.
-  - Use `github_issue` or `github_pull` (never both) to link the task, rather
-    than parsing a number into the title.
+  - Use `issue` to link the task to a vincent issue: a template rendering the
+    issue id, or nothing. The task is created from the issue as a person's
+    would be. `issue` cannot be combined with `github_issue` or `github_pull`.
+  - Use `github_issue` or `github_pull` (never both) to link a GitHub issue
+    or pull request, rather than parsing a number into the title.
   - `permission` is `restricted` (the default) or `workflow`.
 - **`follow_up`, `retry` and `cancel`** act on an existing task:
   - `target: branch` is required, with a `branch` template naming the task's
@@ -157,7 +211,7 @@ events carry no identity vincent can verify.
   - `follow_up` requires `prompt`, `retry` may override the failed step's
     prompt, and `cancel` refuses one.
   - Each refuses `permission`, `workflow`, `title`, `description`, `fields`,
-    `github_issue`, `github_pull` and `limits.max_task_cost_usd`.
+    `issue`, `github_issue`, `github_pull` and `limits.max_task_cost_usd`.
 
 ## Write the templates
 
@@ -338,9 +392,14 @@ Report correctness and safety findings first, then check each trigger for:
 - `overrun:` on any source that can emit twice about one object, with a
   `concurrency_key:` naming that object and not repeating `dedupe_key`,
 - `limits.max_per_hour`, and `max_task_cost_usd` on a `create_task`,
-- `github_issue` or `github_pull` prefill,
-- no `poll_interval` on a GitHub source,
-- `allowed_actors` wherever an untrusted GitHub event can match,
+- `issue`, `github_issue` or `github_pull` prefill,
+- no `poll_interval` on an `issues` or GitHub source,
+- `allowed_actors` wherever an untrusted GitHub event can match, including a
+  `sync` one on `issues`,
+- `match: {by: human}` on an `issues` trigger whose own task's agent writes
+  issues, unless agent changes are meant to fire,
+- a `github_issues` trigger on a project that imports its issues, which
+  should move to `issues`,
 - reactions that carry none of the keys they refuse,
 - `http` signatures that use `secret_env`,
 - no secret in any argv,
@@ -352,7 +411,8 @@ Older drafts need these corrections:
 
 - a project name becomes the project's id,
 - a `container:` block becomes a containerized workflow,
-- `poll_interval` comes off GitHub sources,
+- `poll_interval` comes off GitHub and `issues` sources,
+- `match.action: assigned` comes off an `issues` source,
 - `.Event.Actor` and `.Event.Label` do not exist, so remove them.
 
 Some things must stay as they are:

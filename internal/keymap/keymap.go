@@ -102,11 +102,11 @@ var catalog = []Info{
 	{Op: Refresh, Default: "R", Meaning: "refresh / re-read", Kind: KindTerm, Surfaces: []Surface{
 		"new task", "archived chats", "chats", "workflows", "workflow editor", "workflow graph",
 		"step detail", "pull requests", "daemon", "triggers", "trigger ledger", "trigger form",
-		"issues", "issue",
+		"issues", "issue", "issue form",
 	}},
 	{Op: Archive, Default: "A", Meaning: "archive", Kind: KindTerm, Surfaces: []Surface{"chats", Actions}},
 	{Op: Delete, Default: "D", Meaning: "delete a persisted record", Kind: KindTerm, Surfaces: []Surface{
-		"archived tasks", "archived chats", "projects", "triggers",
+		"archived tasks", "archived chats", "projects", "triggers", "issues", "issue",
 	}},
 	{Op: DraftRemove, Default: "d", Meaning: "remove a row from an open draft", Kind: KindTerm, Surfaces: []Surface{
 		"new task fields", "workflow editor",
@@ -117,9 +117,11 @@ var catalog = []Info{
 	{Op: Editor, Default: "e", Meaning: "edit in $EDITOR", Kind: KindTerm, Surfaces: []Surface{
 		"output", "new task", "workflows", "workflow graph", "step detail", "triggers",
 		"repair form", "follow-up form", "open a pull request", "comment on a pull request",
+		"issue form",
 	}},
 	{Op: FreeText, Default: "t", Meaning: "type free text instead of picking", Kind: KindTerm, Surfaces: []Surface{
 		"new task", "new chat", "workflow editor", "answer form", "repair form", "follow-up form",
+		"issue form",
 	}},
 	{Op: Browser, Default: "o", Meaning: "open in a browser", Kind: KindTerm, Surfaces: []Surface{
 		"task details", "task pull request", "pull requests", "issues", "issue",
@@ -166,10 +168,11 @@ var catalog = []Info{
 	{Op: NextAttention, Default: "!", Meaning: "jump to the next task needing a human", Kind: KindGlobal, Surfaces: []Surface{Global}},
 	{Op: Mouse, Default: "M", Meaning: "toggle the mouse", Kind: KindGlobal, Surfaces: []Surface{Global}},
 	{Op: Quit, Default: "q", Meaning: "quit the TUI", Kind: KindGlobal, Surfaces: []Surface{Global}},
-	// `new` is §15's one deliberate two-meaning key, and the two meanings are
-	// one gesture — "make a new one here" — so the chats board's `n` is this
-	// operation and moves with it (decision 1).
-	{Op: New, Default: "n", Meaning: "make a new task, or a new chat on the chats board", Kind: KindGlobal, Surfaces: []Surface{Global, "chats"}},
+	// `new` is §15's one deliberate two-meaning key, and the meanings are one
+	// gesture — "make a new one here" — so the chats board's `n` and the
+	// issue screens' (task 130.12) are this operation and move with it
+	// (decision 1).
+	{Op: New, Default: "n", Meaning: "make a new task, or a new chat on the chats board, or a new issue on the issue screens", Kind: KindGlobal, Surfaces: []Surface{Global, "chats", "issues", "issue"}},
 }
 
 // Catalog returns every rebindable operation, in documentation order.

@@ -184,5 +184,38 @@ func replaceLabelsAndAnnounceTx(ctx context.Context, tx *sql.Tx, cur *Issue, nam
 	if labels == nil {
 		labels = []string{}
 	}
-	return issueEvent(EventIssueLabelsChanged, cur.ProjectID, cur.ID, by, map[string]any{"labels": labels})
+	added, removed := labelDelta(cur.Labels, after.Labels)
+	return issueEvent(EventIssueLabelsChanged, cur.ProjectID, cur.ID, by, map[string]any{
+		"labels": labels, "labels_added": added, "labels_removed": removed,
+	})
+}
+
+// labelDelta is what after has that before lacks, and the reverse, compared
+// case-insensitively as sameLabelSet is. It is what lets the `type: issues`
+// trigger source map one event to `labeled`/`unlabeled` without a snapshot
+// of its own (task 130.15 decision 2). Both lists are non-nil and sorted, so
+// the payload is the same on every run.
+func labelDelta(before, after []string) (added, removed []string) {
+	has := func(names []string) map[string]bool {
+		out := make(map[string]bool, len(names))
+		for _, n := range names {
+			out[strings.ToLower(strings.TrimSpace(n))] = true
+		}
+		return out
+	}
+	was, is := has(before), has(after)
+	added, removed = []string{}, []string{}
+	for _, n := range normalizeLabelNames(after) {
+		if !was[strings.ToLower(n)] {
+			added = append(added, n)
+		}
+	}
+	for _, n := range normalizeLabelNames(before) {
+		if !is[strings.ToLower(n)] {
+			removed = append(removed, n)
+		}
+	}
+	slices.Sort(added)
+	slices.Sort(removed)
+	return added, removed
 }

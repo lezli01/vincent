@@ -1,6 +1,6 @@
 # 130 — The issues pillar: vincent-owned issues per project
 
-**Status:** 🔄 in progress (8/18)
+**Status:** 🔄 in progress (9/18)
 
 Issue [#659](https://github.com/lezli01/vincent/issues/659), part of
 [#658](https://github.com/lezli01/vincent/issues/658). Spec §3 (rows 11, 26
@@ -380,7 +380,8 @@ Settled with the author while scoping #662.
    records a task's MCP provenance; a create on the shared `/mcp` endpoint
    records `agent`. A client cannot forge either. Sync fills the GitHub login
    when it lands. Every MCP write is actor `agent`, every other API write
-   `human`; telling a step's CLI call from a person's stays open question 6.
+   `human`; telling a step's CLI call from a person's stays open question 6
+   (settled by decision 17: a marker header makes it `agent`).
 2. **An imported issue's mirrored content is refused in 130.3, not deferred to
    #667.** A `PATCH` touching `title`, `body` or labels on an issue with a live
    remote row is `409 invalid_state` with `details.reason: issue_mirrored`
@@ -457,6 +458,140 @@ the screens.
    from the list DTO's `task_count` and `active`. No worst live state, no
    per-row task fetch.
 
+### 17. 130.10: marker headers for step and chat callers, and the outbox's defaults (2026-10-03)
+
+Settled with the author on #669; closes open question 6.
+
+1. **A step's call is marked by an env-driven header.** `internal/apiclient`
+   sends `X-Vincent-Task-Id: N` on every request whenever `VINCENT_TASK_ID`
+   is in its environment, which §8.5 puts in every step's — agent and command
+   steps alike. The API treats a marked request as actor `agent`, exactly
+   like an MCP tool call: refused on an issue that writes back, attributed
+   `agent` on a local one. It is best-effort, not a privilege boundary — a
+   full-auto agent can unset its environment, which is spec §16's stated
+   posture. *Alternative beaten:* a per-step scoped token. The agent can
+   still read the daemon token from the data directory, so it is no
+   stronger, and it costs a token lifecycle and a recovery path.
+2. **Chat agents are marked too.** `internal/chatrun` puts `VINCENT_CHAT_ID`
+   in a chat agent's environment, the client sends `X-Vincent-Chat-Id`, and
+   the API treats it as `agent`. Only a human's own keypress or command
+   writes to a forge.
+3. **The header never makes a caller human:** its absence means human, its
+   presence agent, and `mcp.ViaTool` wins whatever the headers say.
+4. **Defaults the brief took.** While an issue has a pending write the
+   importer's refresh keeps the local state (content still mirrors), so the
+   tick before the drain cannot revert a human's close as "GitHub wins". A
+   conflict adopts GitHub's value by actor `sync` through the transition
+   path, and the row ends `conflict`. `duplicate_of` sends the target's
+   number when it is an issue of the same repository, and otherwise closes
+   as `duplicate` with no target. A moved or missing remote enqueues nothing
+   — the change stays local and the `sync` block says `moved`/`gone` — and a
+   write that finds one at send time ends `failed`. Echo suppression
+   compares state and `state_reason`, never timestamps. Mutative calls are
+   paced at least 1 s apart and a rate limit waits for its reset. A write
+   undone while it was in flight (close then reopen) that turns out to have
+   landed enqueues the write back to the local state.
+
+### 18. 130.6: the `vincent issue` CLI tree (2026-10-03)
+
+Settled with the author while scoping #665; spec §12.1's `vincent issue` row
+records them.
+
+1. **`edit` labels are deltas only.** `--add-label` and `--remove-label` map
+   to `add_labels` and `remove_labels`; no flag sends the full `labels`
+   replacement, so two editors cannot clobber each other's set. `--label`
+   means one thing: `add`'s initial labels.
+2. **`delete <id>...` (alias `rm`) requires `--force`**, as `project rm` does.
+   An issue can be deleted in any state (decision 6), so no daemon refusal is
+   the confirmation; without `--force` it refuses locally and never prompts.
+3. **`add --idempotency-key K` is opt-in.** The key is sent only when given;
+   the CLI never generates one, because it never retries (spec §12.1).
+4. **`ls --project` is optional.** Without it the list spans every project and
+   the table gains a PROJECT column.
+
+The body flag is `--body`/`--body-file`, matching the API's `body` field that
+130.3 shipped, not the issue's suggested `--description`.
+
+### 19. 130.12: the TUI issue writes (2026-10-03)
+
+Settled with the author while scoping #671. Spec §15 views 12 and 13 record
+the keys.
+
+1. **`n` files a new issue, `a` stays for #672.** `n` is the `new` operation
+   (§15's "make a new one here"), whose meaning widens to the issue screens
+   the way it already covers the chats board. `a` is left unbound so 130.13
+   can bind it as `add` — "create a task from this issue", the pull-requests
+   takeover's precedent. `i` edits in the form (the trigger list's key), `X`
+   closes or reopens, `D` deletes.
+2. **Close and reopen on an imported issue are offered now, and say they are
+   local.** The write-back outbox (130.10) does not exist yet, so the
+   confirmation says the change applies to vincent's copy only, is not
+   written to GitHub yet, and may be overwritten by the next sync. What `X`
+   offers is still exactly the daemon's `available_actions`; there is no
+   client-side gate, and on the list, whose rows carry none, `X` reads the
+   issue first. Replacing that text with "this will be written to GitHub"
+   (the keypress is the consent, task 069 decision 2) is 130.10's job, in its
+   own pull request. *Done 2026-10-03:* 130.10 landed first, so the merge
+   train that stacked the two replaced it — the confirmation says the change
+   is written to GitHub too, or, when the `sync` block's reason is `moved` or
+   `gone`, that it changes vincent's copy only.
+3. **Which rows are read-only comes from the DTO's `editable`**, never from a
+   client copy of "imported ⇒ locked". `issue_mirrored` is still rendered, for
+   an issue imported between the form's read and its save.
+4. **An edit sends `version` and only the changed fields**, labels as
+   `add_labels`/`remove_labels` against the issue the form read. An
+   `issue_changed` 409 is shown in the form; `R` rebases onto the current
+   issue, keeping the user's edits where those fields are still editable. A
+   create sends an `Idempotency-Key` generated once per opened form.
+5. **Delete always asks**, in any state (decision 6), and on an imported
+   issue says it never deletes on GitHub and that the tombstone keeps sync
+   from importing it again.
+
+### 20. 130.15: the `type: issues` trigger source (2026-10-03)
+
+Settled with the author while scoping #674. Spec §3 row 33, §12.3 and §13.3
+record the result.
+
+1. **The actor is `by: human|agent|sync`**, the actor the store already writes
+   on every `issue.*` event — not an `origin: local|sync`. Agent writes are
+   where echo loops come from, and `match: {by: human}` is how a trigger drops
+   its own. `human` and `agent` changes are trusted; a `sync` change follows
+   `github_issues`' table (task 096 decision 31F): `labeled`/`unlabeled`
+   trusted, `opened`/`closed`/`reopened` needing `allowed_actors` against the
+   issue's author. The load check refuses an `issues` trigger that can match
+   an untrusted event from sync without the list, unless its `match.by`
+   leaves `sync` out; at judge time the list applies to `sync` events only,
+   so a local person's `opened` is never refused.
+2. **The delta rides the events, not a per-trigger snapshot.**
+   `issue.labels_changed` gains `labels_added`/`labels_removed`; an import
+   refresh's `issue.updated` gains them when labels moved, and `from`/`to`
+   (with `reason` on a close) when the state did. Ids, names and states only.
+   The source is a pure mapper whose only state is an event-id cursor.
+3. **The mapping** is github_issues' vocabulary minus `assigned`:
+   `issue.created` → `opened`; a state change → `closed`/`reopened`; labels
+   added → one `labeled`, removed → one `unlabeled`. Edits, comments,
+   deletes and `issue.sync_changed` fire nothing.
+4. **No `assigned`.** A vincent issue has no assignee; `match.action:
+   assigned` on `type: issues` is a load error.
+5. **`action.github_issue` is still removed in #670**, as decision 7
+   settled — the issue body's "keeps working (#670)" was wrong. Instead
+   `github_issues` events carry `.Event.IssueID` (and `issue_id`), the
+   vincent issue the project imported that GitHub issue as through a live
+   `issue_remotes` link, empty otherwise, so `issue: '{{ .Event.IssueID }}'`
+   is a migration path that survives #670. Until then `issue` with
+   `github_issue` or `github_pull` is a load error.
+6. **`github_issues` stays and keeps firing.** `vincent trigger apply` (and
+   `validate`) print a non-fatal deprecation warning; no file is disarmed.
+   Removing it is a later breaking change.
+7. **Delivery is at-least-once from the events table.** The cursor is the last
+   handled event id; the manager wakes on the post-commit broker and reads
+   `issue.*` events after it, scoped to `source.project`. Arming seeds at the
+   newest event and fires nothing; disarming drops the cursor. The event id is
+   `issue:{issue_id}:{action}:{event_id}`. A pass judges at most 20 events
+   (task 096 decision 13), but unlike a command source's catch-up the rest are
+   not dropped: the cursor stops at the last event handled and the next pass
+   carries on.
+
 ## Open questions
 
 Each has a proposed default, which stands unless the author answers otherwise
@@ -488,7 +623,8 @@ before the item that needs it starts.
 6. **Telling a step's call from a human's.** (Decision 10, for 130.10.) A step
    running `vincent issue close` reaches the API the way a human's CLI does.
    The mechanism that marks it step-originated is an implementation question
-   for #669.
+   for #669. *Settled 2026-10-03 by decision 17:* an env-driven marker
+   header, for steps and chat agents alike.
 
 ## Tasks
 
@@ -512,10 +648,11 @@ its own pull request.
 - [x] **130.5** ([#664](https://github.com/lezli01/vincent/issues/664)) Durable
   issue listing (`node_id`, pagination, conditional requests, gone/moved) and
   issue state writes in `internal/github`. Depends: 130.2. ✓ 2026-10-02
-- [ ] **130.6** ([#665](https://github.com/lezli01/vincent/issues/665)) The
+- [x] **130.6** ([#665](https://github.com/lezli01/vincent/issues/665)) The
   `vincent issue …` CLI tree; drops `ListIssues`/`GetIssue` from
   `tuiOnlyClientCalls` and their row from `docs/reference/cli.md`'s "What only
-  the TUI does", which 130.9 added. Depends: 130.3.
+  the TUI does", which 130.9 added — and the six issue writes and their row,
+  which 130.12 added. Depends: 130.3. ✓ 2026-10-03 (decision 18)
 - [x] **130.7** ([#666](https://github.com/lezli01/vincent/issues/666))
   `issue_id` on task create, the prefill preview, `?issue_id=` filter, the task
   DTO link, `Closes #N`, `vincent task add --issue`. Depends: 130.3, 130.4.
@@ -527,17 +664,20 @@ its own pull request.
   `docs/reference/configuration.md` (decision 9). Depends: 130.1, 130.3, 130.5.
 - [x] **130.9** ([#668](https://github.com/lezli01/vincent/issues/668)) The TUI
   Issues list and Issue detail. Depends: 130.3. ✓ 2026-10-02 (decision 16)
-- [ ] **130.10** ([#669](https://github.com/lezli01/vincent/issues/669)) The
+- [x] **130.10** ([#669](https://github.com/lezli01/vincent/issues/669)) The
   write-back outbox, its compare-and-set drain, and the guard refusing MCP- and
   step-originated writes (decision 10, open question 6). Depends: 130.8.
+  Also replaces the TUI's local-only close/reopen confirmation on an imported
+  issue (decision 19.2) with its own, done when the two were stacked.
+  ✓ 2026-10-03 (decision 17)
 - [ ] **130.11** ([#670](https://github.com/lezli01/vincent/issues/670)) SQL
   backfill of task 035's snapshots into issues, and the removal of
   `github_issue` from `POST /v1/tasks`, `--github-issue` and
   `action.github_issue` with every consumer decision 7 lists. Depends: 130.7,
   130.8.
-- [ ] **130.12** ([#671](https://github.com/lezli01/vincent/issues/671)) The
+- [x] **130.12** ([#671](https://github.com/lezli01/vincent/issues/671)) The
   TUI issue create/edit form with close and reopen, and a shared `$EDITOR`
-  helper. Depends: 130.9.
+  helper. Depends: 130.9. ✓ 2026-10-03 (decision 19)
 - [ ] **130.13** ([#672](https://github.com/lezli01/vincent/issues/672)) Seed a
   new task from an issue, delete the new-task form's issue picker, the task
   workspace's Issue section. Depends: 130.9, 130.7. Also widens the issue
@@ -546,9 +686,9 @@ its own pull request.
 - [ ] **130.14** ([#673](https://github.com/lezli01/vincent/issues/673))
   `VINCENT_ISSUE_FILE`, and the repo's resolve workflows migrated onto it.
   Depends: 130.7, 130.6, 130.8.
-- [ ] **130.15** ([#674](https://github.com/lezli01/vincent/issues/674)) A
+- [x] **130.15** ([#674](https://github.com/lezli01/vincent/issues/674)) A
   `type: issues` trigger source, `issue:` on `create_task`, the trigger skill.
-  Depends: 130.3, 130.7.
+  Depends: 130.3, 130.7. ✓ 2026-10-03 (decision 20)
 - [ ] **130.16** ([#675](https://github.com/lezli01/vincent/issues/675)) The
   local discussion thread and the read-only GitHub comment mirror. Depends:
   130.3, 130.8.

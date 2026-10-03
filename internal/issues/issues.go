@@ -52,6 +52,15 @@ func invalid(field, format string, args ...any) error {
 // to a 409 with details.reason issue_mirrored.
 var ErrMirrored = errors.New("title, body and labels of an imported issue are mirrored from its remote")
 
+// ErrForgeWriteNeedsHuman refuses an agent's close or reopen of an issue
+// whose state is written back to a forge (task 130 decision 10, task
+// 130.10): only a human's act writes to GitHub. An agent is an MCP tool
+// call, or a request a step or a chat agent sent (the API reads its marker
+// header). A local issue, and one whose remote moved or is missing, writes
+// nothing back and is not refused. The API maps it to a 409 with
+// details.reason forge_write_needs_human.
+var ErrForgeWriteNeedsHuman = errors.New("only a human may change the state of an issue synced with its forge")
+
 // Mirrored reports whether iss carries content a remote owns: it has a live
 // remote row. A tombstone never joins an issue, so a local issue — and one
 // whose remote was dropped — is not mirrored.
@@ -208,6 +217,30 @@ func (s *Service) checkMirror(ctx context.Context, by issuestate.Actor, id int64
 	return nil
 }
 
+// WritesBack reports whether a state change of iss is written back to its
+// remote: it has a live GitHub remote (task 130.10). A moved or missing
+// remote keeps the change local.
+func WritesBack(iss *store.Issue) bool {
+	return Mirrored(iss) && iss.Remote.Provider == "github" && iss.Remote.Status == store.RemoteStatusLive
+}
+
+// checkForgeWrite refuses an agent's state change of an issue that writes
+// back. Like checkMirror it reads before the write: a remote is attached by
+// an import, never by a human, so the race is an import landing mid-call.
+func (s *Service) checkForgeWrite(ctx context.Context, by issuestate.Actor, id int64) error {
+	if by != issuestate.Agent {
+		return nil
+	}
+	iss, err := s.st.GetIssue(ctx, id)
+	if err != nil {
+		return err
+	}
+	if WritesBack(iss) {
+		return fmt.Errorf("issue %d: %w", id, ErrForgeWriteNeedsHuman)
+	}
+	return nil
+}
+
 // Close closes the issue with reason; "" means completed. duplicateOf, when
 // set, names the issue this one duplicates: it needs reason duplicate and
 // must be another issue in the same project (task 130.3 decision 3).
@@ -226,6 +259,9 @@ func (s *Service) Close(ctx context.Context, by issuestate.Actor, id int64, reas
 	resolved, err := issuestate.ResolveReason(issuestate.Close, reason)
 	if err != nil {
 		return nil, invalid("reason", "%v", err)
+	}
+	if err := s.checkForgeWrite(ctx, by, id); err != nil {
+		return nil, err
 	}
 	iss, err := s.st.TransitionIssue(ctx, id, issuestate.Close, resolved, duplicateOf, by)
 	if errors.Is(err, store.ErrInvalidDuplicateOf) {
@@ -253,6 +289,9 @@ func (s *Service) Transition(ctx context.Context, by issuestate.Actor, id int64,
 	resolved, err := issuestate.ResolveReason(action, reason)
 	if err != nil {
 		return nil, invalid("reason", "%v", err)
+	}
+	if err := s.checkForgeWrite(ctx, by, id); err != nil {
+		return nil, err
 	}
 	return s.st.TransitionIssue(ctx, id, action, resolved, nil, by)
 }

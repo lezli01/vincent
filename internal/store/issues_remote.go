@@ -124,6 +124,16 @@ func refreshRemoteIssueTx(ctx context.Context, tx *sql.Tx, in RemoteIssue, remot
 	if err != nil {
 		return nil, err
 	}
+	// A write still to send holds the local state (task 130.10): applying
+	// GitHub's here would revert a human's change as "GitHub wins" on the
+	// tick before the drain sends it. The drain's preflight decides.
+	pending, err := hasPendingWriteTx(ctx, tx, id)
+	if err != nil {
+		return nil, err
+	}
+	if pending {
+		state, reason = issuestate.Normalize(cur.State), cur.CloseReason
+	}
 	var changed []string
 	if in.Title != cur.Title {
 		changed = append(changed, "title")
@@ -188,7 +198,20 @@ func refreshRemoteIssueTx(ctx context.Context, tx *sql.Tx, in RemoteIssue, remot
 		return nil, fmt.Errorf("refresh issue %d: %w", id, err)
 	}
 	slices.Sort(changed)
-	return issueEvent(EventIssueUpdated, cur.ProjectID, id, by, map[string]any{"changed": changed})
+	// The delta rides the event (task 130.15 decision 2): a `type: issues`
+	// trigger reads labeled/unlabeled and closed/reopened off it rather than
+	// diffing a snapshot. Names and states only, never text (§13.3).
+	extra := map[string]any{"changed": changed}
+	if labelsMoved {
+		extra["labels_added"], extra["labels_removed"] = labelDelta(cur.Labels, in.Labels)
+	}
+	if state != from {
+		extra["from"], extra["to"] = string(from), string(state)
+		if state == issuestate.Closed {
+			extra["reason"] = string(reason)
+		}
+	}
+	return issueEvent(EventIssueUpdated, cur.ProjectID, id, by, extra)
 }
 
 // remoteNumber stores a zero number as NULL: a provider without numbers has

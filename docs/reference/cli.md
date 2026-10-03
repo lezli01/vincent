@@ -89,7 +89,6 @@ neither a subcommand nor on this list:
 | The daemon summary on the board header and daemon view | `vincent daemon status`, `vincent agents`, `vincent doctor` and `vincent config get` between them. The daemon-wide count of slots in use right now, with its lanes and on-input breakdown, is shown only in the TUI; `vincent project ls --json` carries each project's `slots_used` |
 | Listing a project's local branches in the new-task and new-chat branch pickers | No subcommand: `vincent task add --branch <name> --existing-branch` and `vincent chat start --branch <name> --existing-branch` take the name, and a shell standing in the repository already has `git branch` |
 | The `@` file picker in the chat composer, which completes a file of the directory the chat's next turn would start in as you type | `vincent chat files` lists the same files and `--mention` prints the same text a picked row inserts. Nothing completes a draft for you, and the message is sent as typed by `vincent chat send` either way |
-| The issues list and an issue's detail | No subcommand yet: the `vincent issue` tree is still to come. Until then `curl` reads `GET /v1/issues` and `GET /v1/issues/{id}`, and an agent has the MCP `issue_list` and `issue_get` tools |
 | Live updates as they happen | Subcommands poll: `vincent task transcript -f`, `vincent chat transcript -f`, and `vincent chat send` waits for the answer |
 
 ## `vincent version`
@@ -117,7 +116,7 @@ One report answering "why is nothing running?". Twelve groups:
 | Log | daemon log path, size, mtime, and the last 20 lines |
 | Database | path, size, total on disk including WAL/SHM, applied schema version, `PRAGMA integrity_check`, per-table row counts, workflow-snapshot bytes, and how far back the events table reaches |
 | Agents | per adapter: found, path, version, `logged_in`, whether the build is one vincent has been tested against, and whether the adapter can restrict on this OS. Quota is not here — it needs a daemon this report does not; see [`vincent agents`](#vincent-agents) |
-| GitHub | whether [`github.enabled`](configuration.md#github) is on, whether `gh` is installed and logged in, whether a token variable is set, whether issue import/sync is available, and one `sync <project>` row per project the importer has polled or been asked to: `ok` or `not ok (<reason>)`, when it last synced, and `import incomplete` until the first import finishes |
+| GitHub | whether [`github.enabled`](configuration.md#github) is on, whether `gh` is installed and logged in, whether a token variable is set, whether issue import/sync is available, and one `sync <project>` row per project the importer has polled or been asked to: `ok` or `not ok (<reason>)`, when it last synced, `import incomplete` until the first import finishes, and `writes N pending, N failed, N conflict` while any [state write-back](api.md#state-write-back) is not synced |
 | Container | whether [`container.image`](configuration.md#container) names an image, which image, whether the configured runtime answered, and whether steps run in it or on this host |
 | Skills | per [published skill](#vincent-skills): the version this binary ships, the state of the copy in the global skills store, and the agents it is linked into |
 | Update | whether [`update.check`](configuration.md#update) is on, the latest stable release and when it was last seen, this binary's version, and whether the running daemon is older than it |
@@ -2450,6 +2449,11 @@ on stderr, then `FILE: invalid (N error(s))`. `--json` prints one object, with
   "errors": [ { "path": "source.project", "line": 4, "message": "…" } ] }
 ```
 
+A valid file that uses something deprecated — today, a
+`source.type: github_issues` — also prints `  warning: MESSAGE` on stderr,
+naming its replacement. A warning never changes the verdict, the exit status
+or the `--json` output.
+
 Exit `0` valid, `1` invalid or unreadable, as for
 [`workflow validate`](#vincent-workflow-validate).
 
@@ -2523,7 +2527,9 @@ triggers view, which asks first, or in your editor. Apply never touches
 `triggers.enabled` in `config.yaml`.
 
 Each file is written `0600`, and `wrote <path>` is printed for it. Once every
-file is written, the proposal directory is removed.
+file is written, the proposal directory is removed. A staged file that uses
+something deprecated, such as `source.type: github_issues`, prints
+`  warning: FILE: MESSAGE` on stderr first; a warning refuses nothing.
 
 `removed <dir>` follows. A proposal with an empty manifest and no staged file
 installs nothing and is removed the same way: that is `update-triggers` finding
@@ -2867,7 +2873,146 @@ apply to.
 
 ## `vincent issue`
 
-A project's issues. Needs a daemon.
+A project's issues: the local tracker of [`/v1/issues`](api.md#issues), with
+issues imported from GitHub alongside. Needs a daemon. Every refusal is exit 1
+with `Error: ` and the daemon's own wording on stderr. Starting a task from an
+issue is [`vincent task add --issue`](#from-an-issue).
+
+### `vincent issue ls`
+
+```sh
+vincent issue ls [--project ID] [--state S]... [--label L]... [--kind K] [--search Q] [--source local|github] [--limit N] [--json]
+```
+
+Lists issues, most recently updated first. Without `--project` the list spans
+every project and gains a `PROJECT` column; with it, only that project's
+issues are listed.
+
+```
+ID  PROJECT  STATE              KIND  PRIORITY  LABELS  TASKS  TITLE
+12  vincent  open               bug   2         bug,ui  1      Crash on cold start
+9   web      closed (completed) -     -         -       0      Rename the settings page
+```
+
+| Flag | Meaning |
+|---|---|
+| `--project ID` | Only this project's issues |
+| `--state S` | `open` or `closed`; repeatable, and any one matches |
+| `--label L` | Repeatable; **every** label given must be on the issue |
+| `--kind K` | Only issues of this kind |
+| `--search Q` | A substring of the title or body |
+| `--source` | `local` or `github` |
+| `--limit N` | Maximum rows |
+
+`STATE` carries the close reason of a closed issue. `--json` prints the
+[list](api.md#issues) body, `[]` for an empty one; list rows carry no body.
+
+### `vincent issue show`
+
+```sh
+vincent issue show <id> [--json]
+```
+
+Prints one issue: title, state (with its close reason, and `duplicate of #N`
+when it has one), project, kind, priority, labels, author, and — for an
+imported issue — its `owner/repo#N` source, URL and when it last synced, then
+how many tasks it started with the ids still active, the actions it allows,
+and its body. `--json` prints the full issue.
+
+### `vincent issue add`
+
+```sh
+vincent issue add --project ID --title TITLE [--body B | --body-file PATH|-] [--label L]... [--kind K] [--priority N] [--idempotency-key K] [--json]
+```
+
+Files a local issue.
+
+| Flag | Meaning |
+|---|---|
+| `--project ID` | Required |
+| `--title` | Required |
+| `--body` | The body, Markdown |
+| `--body-file PATH` | Read the body from a file, or from stdin with `-`, byte for byte, up to 4 MiB. Cannot be combined with `--body` |
+| `--label L` | A label to file it with; repeatable |
+| `--kind K` | Its kind, such as `bug` or `feature` |
+| `--priority N` | `0` none, `1` urgent … `4` low; the daemon checks the range |
+| `--idempotency-key K` | Sent as the `Idempotency-Key` header: re-running the command with the same key returns the issue the first run filed instead of filing a second |
+
+A body read from stdin never passes through argv, where a shell may rewrite it:
+
+```sh
+gh issue view 200 --json body --jq .body | vincent issue add --project 1 --title "Crash on cold start" --body-file -
+```
+
+The CLI never retries a request, so it never makes up a key either: without
+`--idempotency-key` two runs file two issues.
+
+### `vincent issue edit`
+
+```sh
+vincent issue edit <id> [--title T] [--body B | --body-file PATH|-] [--add-label L]... [--remove-label L]... [--kind K] [--priority N] [--json]
+```
+
+Changes only the fields whose flags are given; at least one is required, or
+the command refuses without asking the daemon. `--kind ""` and `--priority 0`
+clear those fields. Labels change by delta only: `--add-label` and
+`--remove-label` touch the labels they name and leave every other one alone,
+so two people editing labels never undo each other.
+
+The edit reads the issue and sends its change at the version it read. If
+anything changed the issue in between, the daemon refuses it and the command
+says so and exits 1, retrying nothing:
+
+```
+$ vincent issue edit 12 --priority 1
+Error: issue 12 changed since it was read; re-run the command to apply the edit on top of the current version
+```
+
+An imported issue's title, body and labels mirror GitHub and are refused; the
+command prints the daemon's message and then which fields are editable on that
+issue (its kind and priority).
+
+### `vincent issue close`
+
+```sh
+vincent issue close <id> [--reason completed|not_planned|duplicate] [--duplicate-of ID] [--json]
+```
+
+Closes an open issue. `--reason` defaults to `completed`. `--duplicate-of`
+names the issue this one duplicates; the daemon requires `--reason duplicate`
+with it and an issue in the same project.
+
+### `vincent issue reopen`
+
+```sh
+vincent issue reopen <id> [--json]
+```
+
+Reopens a closed issue.
+
+### `vincent issue delete`
+
+```sh
+vincent issue delete <id>... --force [--json]
+```
+
+Aliased as `vincent issue rm`. Permanently deletes issues, in any state. Since
+nothing in the daemon refuses an issue delete, `--force` is the confirmation:
+without it the command exits 1 saying the delete is permanent, sends nothing,
+and never prompts. It never touches GitHub — an imported issue stays as it is
+upstream — and it leaves a tombstone so the next sync does not import the
+issue again. `--json` emits one entry per id with `id`, `deleted` and, on a
+failure, `error`; exit is 1 if any id failed.
+
+### `vincent issue labels`
+
+```sh
+vincent issue labels --project ID [--json]
+```
+
+Lists the project's label catalogue: `NAME`, `SOURCE` (`local` or `github`),
+`ISSUES` (how many issues carry it) and `DESCRIPTION`. `--json` prints the
+array.
 
 ### `vincent issue sync`
 
@@ -2890,8 +3035,16 @@ last synced      2026-10-02T11:15:00+02:00
 ok               yes
 reason           -
 import complete  yes
+state writes     0 pending, 0 failed, 0 conflict
 sync             requested
 ```
+
+`state writes` counts the issues whose newest
+[state write-back](api.md#state-write-back) is waiting, gave up, or lost to a
+change on GitHub. Run from inside a workflow step or a chat agent — where
+`VINCENT_TASK_ID` or `VINCENT_CHAT_ID` is set — every `vincent` command marks
+its requests as an agent's, so it may not close or reopen an issue imported
+from GitHub.
 
 `reason` uses the sync vocabulary of the [API](api.md#issue-sync) —
 `github_disabled`, `poll_disabled`, `pending`, `origin_changed`,

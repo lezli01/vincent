@@ -1146,7 +1146,11 @@ minutes late costs nothing, and
 failing import is never quiet: each project's last outcome is on
 [`GET /v1/projects/{id}/issues/sync`](api.md#issue-sync) and in
 `vincent doctor`. A link a human made by hand is never overwritten by the
-reconciler, and a link a human removed is never re-applied.
+reconciler, and a link a human removed is never re-applied. A person's close or
+reopen of an imported issue is
+[written back to GitHub](api.md#state-write-back) under the same two
+switches: set either off and the write waits, `pending` with reason
+`disabled`, until it is turned back on.
 
 It applies only to a project whose `origin` remote parses as a github.com
 repository. On every other project it does nothing at all — the issue row is not
@@ -1671,7 +1675,7 @@ The operations are the ones a reader names, and nothing else:
 |---|---|
 | Vocabulary terms | `refresh`, `archive`, `delete`, `draft_remove`, `add`, `editor`, `free_text`, `browser`, `open_row`, `scope`, `filter`, `lane`, `result`, `next_failure`, `attention_filter` |
 | Task actions | `pause` (pause and resume), `approve`, `reject`, `retry`, `edit_retry`, `repair`, `skip`, `cancel`, `follow_up`, `chat`; `archive` is the term's id |
-| Global | `palette`, `palette_alt`, `help`, `help_alt`, `next_attention`, `mouse`, `quit`, `new` (also a new chat on the chats board) |
+| Global | `palette`, `palette_alt`, `help`, `help_alt`, `next_attention`, `mouse`, `quit`, `new` (also a new chat on the chats board, and a new issue on the issue screens) |
 
 An override moves its operation on **every** screen that has it, and it
 **replaces** the default rather than adding a second key: the old key stops

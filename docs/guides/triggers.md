@@ -75,16 +75,17 @@ straight away. Files the daemon writes (from the TUI or the API) are owner-only
 id: label-to-task
 enabled: true
 source:
-  type: github_issues
+  type: issues
   project: 1
 match:
   action: labeled
   labels: agent-please
+  by: human
 action:
   type: create_task
   title: '{{ .Event.Issue.Title }}'
-  github_issue: '{{ .Event.Issue.Number }}'
-dedupe_key: 'gh:issue:{{ .Event.Issue.Number }}:label:agent-please'
+  issue: '{{ .Event.issue_id }}'
+dedupe_key: 'issue:{{ .Event.issue_id }}:label:agent-please'
 limits:
   max_per_hour: 5
 ```
@@ -93,10 +94,10 @@ limits:
 |---|---|
 | `id` | Required. Lowercase letters, digits, `-`, `_` and `.`, starting with a letter or digit, and equal to the file name without `.yaml`. |
 | `enabled` | The per-trigger switch. Absent means `false`. |
-| `source` | Where events come from: `type` (`command`, `github_issues`, `github_prs`, `http` or `schedule`), `project`, and the keys that type takes. |
+| `source` | Where events come from: `type` (`issues`, `command`, `github_issues`, `github_prs`, `http` or `schedule`), `project`, and the keys that type takes. |
 | `match` | A cheap prefilter: dotted paths into the event, each with the value it must have. |
 | `if` | A guard over `.Event` that must render `true` or `false`. |
-| `allowed_actors` | GitHub sources only: the issue or pull-request **authors** whose events may pass. |
+| `allowed_actors` | GitHub and `issues` sources only: the issue or pull-request **authors** whose events may pass. |
 | `action` | What an event that passes does: `create_task`, `follow_up`, `retry` or `cancel`. |
 | `on_fire` | `propose` (the default) or `create`. |
 | `dedupe_key` | A template over `.Event`. Absent means the event's `id`. |
@@ -121,8 +122,8 @@ Every event goes through the same steps in order. The first one that stops it
 decides its ledger outcome:
 
 1. **`match:`** Every key must hold, or the event is `filtered`.
-2. **`allowed_actors`**, on a GitHub source. An author the list does not name is
-   `filtered`.
+2. **`allowed_actors`**, on a GitHub source, or on a `sync` event of an `issues`
+   source. An author the list does not name is `filtered`.
 3. **`if:`** A render of `false` is `filtered`. A render that is neither `true`
    nor `false` is an `error`.
 4. **Dedupe.** A key that already `fired` or was `seeded` is `deduped`.
@@ -299,7 +300,95 @@ are dropped, not deferred, and a warning is logged once per trigger per daemon
 run. This is also the catch-up limit after a restart. A backlog of a hundred
 events means a hundred agent processes, so the cap is fixed.
 
+### `issues`: watch the project's issues
+
+```yaml
+source:
+  type: issues
+  project: 1
+```
+
+An `issues` source reads vincent's own record of every issue change, so it
+works on any project — one with no GitHub remote included — and sees a GitHub
+issue the project [imports](issues.md) the same way it sees a local one. It
+takes no `poll_interval` and no `command`: each issue change the daemon commits
+wakes it.
+
+| Change | Event |
+|---|---|
+| An issue is created or imported | `opened` |
+| It is closed, or reopened | `closed`, `reopened` |
+| Labels are added | one `labeled`, with `labels` the ones added |
+| Labels are removed | one `unlabeled`, with `labels` the ones removed |
+
+One GitHub refresh can produce several events. Edits, comments and deletes fire
+nothing, and there is no `assigned`: a vincent issue has no assignee, so
+`match.action: assigned` is refused at load.
+
+Every event carries:
+
+- **`id`**, `issue:{issue_id}:{action}:{event id}`.
+- **`action`**, and **`by`**, who made the change: `human`, `agent` (a task's
+  agent, over MCP) or `sync` (GitHub, through the importer).
+- **`author`**, the issue's author, and **`state`**, its state now.
+- **`issue_id`** and **`project_id`**, as integers.
+- **`.Event.Issue`**, the issue as a task's [`.Issue`](../reference/templates.md)
+  sees it, read when the event is judged: `Number` is the vincent issue id, and
+  an imported issue's GitHub reference is `Source`.
+- **`labels`** on `labeled` and `unlabeled`, and **`from`**, **`to`** and
+  **`reason`** on `closed` and `reopened`.
+
+The trigger's cursor is the id of the last event it handled. Arming moves it to
+the newest event and fires nothing for history; disarming drops it. A restart
+resumes from it, so a change made while the daemon was down is still delivered.
+At most 20 events are judged per pass, but the rest are not dropped: they wait
+for the next pass, which follows at once.
+
+**Echo loops.** When the task a trigger creates has an agent that labels or
+closes issues, its change can fire the trigger again. `match: {by: human}`
+keeps the trigger to people's changes. `limits.max_per_hour` is the backstop.
+
+**Trust.** A `human` or `agent` change was made on this machine and is trusted.
+A `sync` change came from GitHub, and follows the
+[table below](#trusted-events-and-allowed_actors): `labeled` and `unlabeled`
+are trusted, `opened`, `closed` and `reopened` are not. An `issues` trigger that
+can match one of those from sync is refused at load unless it names
+`allowed_actors` — or its `match.by` leaves out `sync`. At judge time the list is
+checked against the author of `sync` events only; a local person's `opened` is
+never refused by it.
+
+Link the created task to the issue with
+[`issue:`](#create_task), as below.
+
+```yaml
+# {config_dir}/triggers/bug-ready.yaml
+id: bug-ready
+enabled: true
+source:
+  type: issues
+  project: 1
+match:
+  action: labeled
+  labels: ready
+  by: [human, sync]
+action:
+  type: create_task
+  workflow: fix-bug
+  title: '{{ .Event.Issue.Title }}'
+  issue: '{{ .Event.issue_id }}'
+dedupe_key: 'issue:{{ .Event.issue_id }}:ready'
+limits:
+  max_per_hour: 5
+```
+
 ### `github_issues` and `github_prs`: watch a repository
+
+> **`github_issues` is deprecated.** Use [`issues`](#issues-watch-the-projects-issues)
+> on a project that imports its GitHub issues. A `github_issues` trigger keeps
+> firing; `vincent trigger validate` and `vincent trigger apply` print a warning
+> for it. Its events carry `IssueID` (also `issue_id`), the vincent issue the
+> project imported it as, or empty when it has not, so
+> `issue: '{{ .Event.IssueID }}'` links its task.
 
 ```yaml
 source:
@@ -327,7 +416,8 @@ saw and **synthesizes** events from the difference:
 Every event carries `id`, `action`, `author`, `state` and `number`, plus the item:
 
 - **`.Event.Issue`** has `Number`, `Title`, `Body`, `URL`, `Author`, `State`,
-  `Labels`, `Assignees` and `UpdatedAt`.
+  `Labels`, `Assignees` and `UpdatedAt`. A `github_issues` event also carries
+  `IssueID`.
 - **`.Event.Pull`** has `Number`, `Title`, `Body`, `URL`, `Author`, `State`,
   `HeadRef`, `BaseRef`, `Draft`, `Merged`, `Labels`, `RequestedReviewers` and
   `UpdatedAt`.
@@ -571,6 +661,10 @@ key is a template over `.Event`:
 
 - `workflow` defaults to the project's default workflow.
 - `description` and `fields` fill the task's description and workflow fields.
+- `issue` must render to a vincent issue id or to nothing. The task is created
+  from that issue, as `issue_id` on `POST /v1/tasks` is, and an id the project
+  does not have lands the delivery `refused`. It cannot be combined with
+  `github_issue` or `github_pull`.
 - `github_issue` or `github_pull` must render to a number (a leading `#` is
   allowed) or to nothing. They cannot both be set. They work as they do when you
   create a task from an issue or a pull request.
@@ -652,7 +746,9 @@ outcome is `error`, so a pre-commit hook can use it.
 **Run the source once for real** with `POST /v1/triggers/{id}/poll`. It runs the
 command, or makes the GitHub listing, and judges every event it gets back. A
 GitHub trigger that has not seeded yet has no snapshot to diff the listing
-against, so it judges nothing and `events` comes back empty. The
+against, so it judges nothing and `events` comes back empty. An `issues`
+trigger judges every issue event after its cursor, and nothing before it has
+seeded. The
 answer holds `seed` (a real poll now would only seed), `events` (one judgement
 each), `truncated` (events past the cap of 20), `refused` (command output lines
 that were not events), the `cursor` the command printed, and `error` when the

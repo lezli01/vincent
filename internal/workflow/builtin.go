@@ -1110,16 +1110,18 @@ steps:
       2. An explicit dedupe_key — within "What you may not change" below.
       3. limits.max_per_hour.
       4. limits.max_task_cost_usd on a create_task action.
-      5. github_issue or github_pull to link a created task, instead of a
-         number parsed out of a title.
-      6. No poll_interval on a github_issues or github_prs source; they run on
+      5. issue, github_issue or github_pull to link a created task, instead of
+         a number parsed out of a title. issue takes a vincent issue id and
+         combines with neither of the other two.
+      6. No poll_interval on an issues, github_issues or github_prs source;
+         issues is woken by each issue change, the GitHub two run on
          github.poll_interval.
       7. allowed_actors wherever match.action can match an untrusted GitHub
          event — anything but issue labeled, unlabeled or assigned and pull
          request merged, and an absent match.action matches everything.
       8. A follow_up, retry or cancel action carries none of the keys a
          reaction refuses: permission, workflow, title, description, fields,
-         github_issue, github_pull and limits.max_task_cost_usd.
+         issue, github_issue, github_pull and limits.max_task_cost_usd.
       9. An http source is signed with signature.scheme github_hmac_sha256 and
          a secret_env, and the secret itself is never in the file.
       10. No secret in an argv. A credential a poll command needs comes from
@@ -1147,6 +1149,14 @@ steps:
           destroys work in flight and is not yours to add. Say in the report
           that a paused task holds its group, so under the on_fire: propose
           default one unadmitted proposal stops the trigger until a human acts.
+      16. Migrate github_issues to issues when the project imports issues: the
+          same events (but no assigned) on the imported issues, arriving by:
+          sync, with the task linked through issue: rendering .Event.issue_id,
+          and match: by: human where the trigger's own agent writes issues.
+          github_issues is deprecated, not removed. .Event.Issue.Number is the
+          vincent id on issues, so a dedupe_key built from it renders anew:
+          when the trigger is armed, report the migration as a finding rather
+          than making it, as item 14 does for a source.type change.
 
       ## What you may not change
 

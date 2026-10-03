@@ -208,10 +208,16 @@ const (
 	ctxTriggerCreate bindingContext = "trigger create"
 	ctxTriggerDryRun bindingContext = "trigger dry run"
 	// The issue screens (§15 views 12 and 13, task 130.9): the list and one
-	// issue's detail, two contexts for two screens. `n`, `a`, `i` and `X`
-	// stay unbound on both until #671 and #672 give them their writes.
+	// issue's detail, two contexts for two screens. `a` stays unbound on
+	// both until #672 makes it "create a task from this issue".
 	ctxIssues bindingContext = "issues"
 	ctxIssue  bindingContext = "issue"
+	// The issue form and the close/reopen/delete prompt (task 130.12). Their
+	// own contexts for the reason every popup has one: each owns the
+	// keyboard while it is up, over either issue screen, and `n` is "no" in
+	// the prompt where it is "new issue" underneath.
+	ctxIssueForm   bindingContext = "issue form"
+	ctxIssuePrompt bindingContext = "issue prompt"
 )
 
 // vocabularyTerm is the shared operation a row performs — the left column of
@@ -830,6 +836,13 @@ var bindings = []binding{
 	{op: keymap.Refresh, key: "R", label: "re-read the issues — never a GitHub sync", scope: scopePanel, context: ctxIssues, hint: "R refresh", priority: 4, term: termRefresh},
 	{key: "down", label: "move the selection (↑/↓)", scope: scopePanel, context: ctxIssues, hint: "↑↓ move", priority: 5},
 	{op: keymap.Filter, key: "/", label: "filter by id, title, label, kind or project", scope: scopePanel, context: ctxIssues, hint: "/ filter", priority: 6, term: termFilter},
+	// The writes (task 130.12). `n` is §15's "make a new one here", the
+	// chats board's precedent; `i` is the trigger list's "edit in a form";
+	// `X` offers what the daemon's available_actions allow and nothing else.
+	{op: keymap.New, key: "n", label: "file a new issue in the selected row's project", scope: scopePanel, context: ctxIssues, hint: "n new", priority: 7},
+	{key: issueEditKey, label: "edit the selected issue in a form", scope: scopePanel, context: ctxIssues, hint: "i edit", priority: 8},
+	{key: issueStateKey, label: "close or reopen the selected issue — only what the daemon offers", scope: scopePanel, context: ctxIssues, hint: "X close/reopen", priority: 9},
+	{op: keymap.Delete, key: "D", label: "delete the issue permanently (asks first; never deletes on GitHub)", scope: scopePanel, context: ctxIssues, priority: 10, term: termDelete},
 	// The issue detail (§15 view 13).
 	{op: keymap.OpenRow, key: "enter", label: "open the selected linked task's workspace (esc comes back here)", scope: scopePanel, context: ctxIssue, hint: "enter task", priority: 1, term: termOpenRow},
 	{op: keymap.Browser, key: "o", label: "open an imported issue's page in a browser", scope: scopePanel, context: ctxIssue, hint: "o browser", priority: 2, term: termBrowser},
@@ -838,6 +851,23 @@ var bindings = []binding{
 	{op: keymap.Refresh, key: "R", label: "re-read the issue — never a GitHub sync", scope: scopePanel, context: ctxIssue, hint: "R refresh", priority: 5, term: termRefresh},
 	{key: "down", label: "move the selection among the linked tasks (↑/↓)", scope: scopePanel, context: ctxIssue, hint: "↑↓ task", priority: 6},
 	{key: "pgdown", label: "scroll the page (pgup/pgdown)", scope: scopePanel, context: ctxIssue, priority: 7},
+	{op: keymap.New, key: "n", label: "file a new issue in this issue's project", scope: scopePanel, context: ctxIssue, hint: "n new", priority: 8},
+	{key: issueEditKey, label: "edit the issue in a form", scope: scopePanel, context: ctxIssue, hint: "i edit", priority: 9},
+	{key: issueStateKey, label: "close or reopen the issue — only what the daemon offers", scope: scopePanel, context: ctxIssue, hint: "X close/reopen", priority: 10},
+	{op: keymap.Delete, key: "D", label: "delete the issue permanently (asks first; never deletes on GitHub)", scope: scopePanel, context: ctxIssue, priority: 11, term: termDelete},
+
+	// The issue form and prompt own the keyboard and print their own key
+	// lines, so these are here to keep ? complete.
+	{key: "down", label: "move between the issue's fields (↑/↓, tab)", scope: scopePanel, context: ctxIssueForm, noPalette: true},
+	{key: "enter", label: "edit the field, or open its list; a field mirrored from GitHub says so instead", scope: scopePanel, context: ctxIssueForm, noPalette: true},
+	{op: keymap.Editor, key: "e", label: "on the description: open it in $EDITOR", scope: scopePanel, context: ctxIssueForm, noPalette: true, term: termEditor},
+	{op: keymap.FreeText, key: "t", label: "in an open list: type a label or kind it does not offer", scope: scopePanel, context: ctxIssueForm, noPalette: true, term: termFreeText},
+	{op: keymap.Refresh, key: "R", label: "re-read the issue after a conflict, keeping your edits where they still apply", scope: scopePanel, context: ctxIssueForm, noPalette: true, term: termRefresh},
+	{key: "ctrl+s", label: "save — a create, or an edit of only the fields that changed", scope: scopePanel, context: ctxIssueForm, noPalette: true},
+	{key: "esc", label: "close the form (asks first when something is unsaved)", scope: scopePanel, context: ctxIssueForm, noPalette: true},
+	{key: "enter", label: "pick the action, close reason or duplicate target", scope: scopePanel, context: ctxIssuePrompt, noPalette: true},
+	{key: "y", label: "confirm the close, reopen or delete", scope: scopePanel, context: ctxIssuePrompt, noPalette: true},
+	{key: "esc", label: "cancel — nothing is written", scope: scopePanel, context: ctxIssuePrompt, noPalette: true},
 
 	{key: "down", label: "move the selection (↑/↓)", scope: scopePanel, context: ctxTriggers, priority: 1},
 	{key: "enter", label: "open the selected trigger in the form (i also opens it)", scope: scopePanel, context: ctxTriggers, hint: "enter edit", priority: 2},

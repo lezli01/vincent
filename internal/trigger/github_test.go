@@ -432,3 +432,43 @@ func TestGitHubAllowedActorsMatchAuthor(t *testing.T) {
 		t.Errorf("Test(bob) = %+v, %v", j, err)
 	}
 }
+
+// TestGitHubIssueEventsCarryIssueID: a github_issues event names the vincent
+// issue the project imported it as, and is empty — never 0 — for one it has
+// not, so `issue: '{{ .Event.IssueID }}'` renders to nothing there (task
+// 130.15 decision 5).
+func TestGitHubIssueEventsCarryIssueID(t *testing.T) {
+	seen := ghT0.Add(-time.Hour)
+	imported := ghIssue(1, "open", seen, nil, nil)
+	imported.IssueID = 42
+	local := ghIssue(2, "open", seen, nil, nil)
+	next := []GitHubIssue{imported, local}
+	next[0].Labels, next[0].UpdatedAt = []string{"x"}, ghT0.Add(time.Minute)
+	next[1].Labels, next[1].UpdatedAt = []string{"x"}, ghT0.Add(2*time.Minute)
+	evs := diffAfterSeed(t, SourceGitHubIssues, GitHubListing{Issues: []GitHubIssue{imported, local}}, GitHubListing{Issues: next})
+	if len(evs) != 2 {
+		t.Fatalf("events = %+v", evs)
+	}
+	if evs[0]["IssueID"] != int64(42) || evs[0]["issue_id"] != int64(42) {
+		t.Errorf("imported event = %+v", evs[0])
+	}
+	if evs[1]["IssueID"] != "" || evs[1]["issue_id"] != "" {
+		t.Errorf("unimported event = %+v", evs[1])
+	}
+	d := &Definition{
+		ID: "t", Source: Source{Type: SourceGitHubIssues, Project: 1},
+		Action: Action{Type: ActionCreateTask, Title: "t", Issue: "{{ .Event.IssueID }}"},
+	}
+	for i, want := range []*int64{ptr(int64(42)), nil} {
+		rp, err := renderAction(d, renderData{Event: evs[i]})
+		if err != nil {
+			t.Fatalf("render %d: %v", i, err)
+		}
+		got := rp.Body.(*CreateBody).IssueID
+		if (want == nil) != (got == nil) || (want != nil && *got != *want) {
+			t.Errorf("event %d: issue_id = %v, want %v", i, got, want)
+		}
+	}
+}
+
+func ptr[T any](v T) *T { return &v }
