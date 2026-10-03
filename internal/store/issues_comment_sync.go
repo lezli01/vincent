@@ -94,10 +94,14 @@ func (s *Store) UpsertRemoteIssueComment(ctx context.Context, issueID int64, c R
 // a tombstone never answers — a comment on a deleted or un-imported issue is
 // ignored. GitHub never reuses a number within a repo, so a second live
 // row is not expected; should one exist the lowest issue id answers, the
-// same deterministic order IssueIDsByRemoteNumber lists in.
+// same deterministic order IssueIDsByRemoteNumber lists in. The repo
+// matches case-insensitively, as AdoptPlaceholderRemote's does: GitHub's
+// owner and name are, and a case-only change of origin passes the sync's
+// gate while the rows not refreshed since keep the old case.
 func (s *Store) IssueIDByRemoteNumber(ctx context.Context, projectID int64, provider, repo string, number int) (id int64, ok bool, err error) {
 	err = s.db.QueryRowContext(ctx, `SELECT issue_id FROM issue_remotes
-		WHERE project_id = ? AND provider = ? AND repo = ? AND number = ? AND issue_id IS NOT NULL
+		WHERE project_id = ? AND provider = ? AND repo = ? COLLATE NOCASE AND number = ?
+		AND issue_id IS NOT NULL
 		ORDER BY issue_id LIMIT 1`, projectID, provider, repo, number).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, false, nil

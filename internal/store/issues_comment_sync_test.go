@@ -171,6 +171,12 @@ func TestIssueIDByRemoteNumber(t *testing.T) {
 	if id, ok, err := s.IssueIDByRemoteNumber(ctx, p.ID, "github", "o/old", 7); err != nil || !ok || id != old.ID {
 		t.Errorf("o/old#7 = %d, %v, %v; want %d", id, ok, err, old.ID)
 	}
+	// A case-only difference is the same repository (review F3): origin
+	// re-pointed from o/r to O/R still files comments on rows not
+	// refreshed since.
+	if id, ok, err := s.IssueIDByRemoteNumber(ctx, p.ID, "github", "O/R", 7); err != nil || !ok || id != iss.ID {
+		t.Errorf("O/R#7 = %d, %v, %v; want %d", id, ok, err, iss.ID)
+	}
 	for _, q := range []struct {
 		provider, repo string
 		number         int
