@@ -70,6 +70,24 @@ cycle anchors afresh. A daemon restart is not a disarm and keeps the anchor.
 - **The listing failed.** Authentication or the rate limit are the usual
   causes.
 
+**`issues`:** Nothing about GitHub can make it fail: it reads the daemon's own
+events table. A failing poll is a database read that failed, named in the
+error. A trigger that fires nothing usually has these causes:
+
+- the change happened before the trigger was armed — arming seeds past
+  history;
+- the change was an edit, a comment or a delete, none of which fire;
+- `match: {by: human}` dropped an agent's or sync's change;
+- a sync `opened`, `closed` or `reopened` whose author `allowed_actors` does
+  not name;
+- the project imports no GitHub issues, so a GitHub-side change never becomes
+  a vincent event at all.
+
+An `issues` trigger that **fires again and again** is an echo loop: its task's
+agent changes issues over MCP, and the change fires the trigger. Its ledger
+rows show `by: agent` events in `vincent trigger test`. Add `match: {by:
+human}`, and keep `limits.max_per_hour` as the backstop.
+
 **`schedule`:** A schedule has no poll and so no poll health to read — the TUI's
 cell reads `clock`, and `poll.last_poll_at` is only when its clock was last
 anchored or fired, never a poll. A schedule that never fires is an arming
@@ -103,7 +121,7 @@ returns rows newest first, 100 by default and up to 1000.
 | `seeded` | A command source's first poll after arming saw the event. Nothing fired, and the key now counts as delivered | Expected after arming or re-arming. GitHub sources seed a snapshot and write no `seeded` rows |
 | `fired` | The replayed route accepted the action. `task_id` is the task created or acted on | Under `propose` the task is `paused` and waits for a human to resume it |
 | `deduped` | The dedupe key had already `fired` or been `seeded` | Is the key too coarse? Did the seed cover this event? Do not fix it by changing `dedupe_key` on a live trigger, which would re-fire every delivered event |
-| `filtered` | `match:`, `allowed_actors` or `if:` dropped the event | `vincent trigger test` names the stage. `match:` compares values as text, with list semantics, and treats a missing path as a miss. `allowed_actors` matches the item's author, not who acted |
+| `filtered` | `match:`, `allowed_actors` or `if:` dropped the event | `vincent trigger test` names the stage. `match:` compares values as text, with list semantics, and treats a missing path as a miss. `allowed_actors` matches the item's author, not who acted, and on `issues` judges `sync` events only |
 | `rate_limited` | `limits.max_per_hour` fired deliveries were already reached in the trailing hour | The event was dropped, not queued. It fires later only if the source reports it again |
 | `refused` | The route answered 4xx, or a reaction found no task on the branch | `detail`. Typical causes: a workflow the project lacks; a state the action does not allow, such as cancelling a `done` task or retrying one that is not `blocked`; a clamped task an adapter cannot run restricted; a bad issue or pull number; no task on the rendered branch |
 | `error` | A template did not render, or the route answered 5xx or was unreachable | `detail`. Typical causes: `missingkey=error` on a key the event lacks; a `dedupe_key` or `branch` that renders empty; an `if:` that renders neither `true` nor `false` |
@@ -116,7 +134,8 @@ When an event has **no row at all**, check these in turn:
 - a command output line was not a JSON object with a string `id`, so it was
   logged and skipped;
 - more than 20 events arrived in one poll, and those past 20 were dropped with
-  a warning in the log;
+  a warning in the log (an `issues` source never drops them: the rest wait
+  for its next pass);
 - a seed event's key did not render, which is logged at warn;
 - an `http` push was refused before judging, for example with a `401`;
 - the command's own filter or cursor never returned the event.
@@ -149,8 +168,9 @@ the `trigger_test` MCP tool with body `{event}`:
 - **Exit status.** It exits 1 when the outcome is `error` or the daemon
   refused the request.
 - **Fixtures.** Shape the fixture like the source's real events. A GitHub
-  event has `action`, `author` and `Issue` or `Pull`. A command event is one
-  line of the script's output.
+  event has `action`, `author` and `Issue` or `Pull`. An `issues` event has
+  `action`, `by`, `author`, `issue_id` and `Issue`, plus `labels` on a label
+  event. A command event is one line of the script's output.
 
 **The `trigger_poll` MCP tool** (`POST /v1/triggers/{id}/poll`) runs the source
 once for real and judges everything it returns.
@@ -165,7 +185,9 @@ once for real and judges everything it returns.
 - **Status.** A failing poll still answers `200`, and an `http` trigger
   answers `400`.
 - **GitHub before seeding.** A GitHub trigger that has not seeded has no
-  snapshot to diff, so `events` comes back empty.
+  snapshot to diff, so `events` comes back empty. An `issues` trigger that has
+  not seeded likewise answers `seed: true` and no events; once seeded it
+  judges every issue event since its cursor.
 - **Side effects.** The command really runs, so anything it does outside
   vincent happens.
 

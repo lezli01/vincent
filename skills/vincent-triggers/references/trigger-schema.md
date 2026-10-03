@@ -24,16 +24,17 @@ A disarmed, bounded starting point:
 id: label-to-task
 enabled: false
 source:
-  type: github_issues
+  type: issues
   project: 1
 match:
   action: labeled
   labels: agent-please
+  by: human
 action:
   type: create_task
   title: '{{ .Event.Issue.Title }}'
-  github_issue: '{{ .Event.Issue.Number }}'
-dedupe_key: 'gh:issue:{{ .Event.Issue.Number }}:label:agent-please'
+  issue: '{{ .Event.issue_id }}'
+dedupe_key: 'issue:{{ .Event.issue_id }}:label:agent-please'
 limits:
   max_per_hour: 5
   max_task_cost_usd: 3
@@ -46,7 +47,7 @@ limits:
 | `source` | yes | — | `type`, `project`, and the keys that type takes |
 | `match` | no | — | Dotted event path → a scalar, or a non-empty list of scalars |
 | `if` | no | — | Template that must render exactly `true` or `false` |
-| `allowed_actors` | see below | — | GitHub sources only: issue or pull-request author logins |
+| `allowed_actors` | see below | — | GitHub and `issues` sources only: issue or pull-request author logins |
 | `action` | yes | — | `type` and the keys that type takes |
 | `on_fire` | no | `propose` | `propose` or `create`. **Dangerous:** `create`. A `cancel` requires `create` |
 | `dedupe_key` | no | `{{ .Event.id }}` | Template. Rendering empty is an `error` |
@@ -84,7 +85,59 @@ source:
   [poll-scripts.md](poll-scripts.md).
 - The seed poll writes one `seeded` ledger row per event and fires nothing.
 
+### `issues`
+
+```yaml
+source:
+  type: issues
+  project: 1
+```
+
+The project's own issues — local ones, and GitHub issues the project imports —
+read from vincent's durable `issue.*` events. It takes only `type` and
+`project`, and refuses `poll_interval`, `command` and `signature`. It works on
+a project with no GitHub remote.
+
+- **Delivery.** Each committed issue change wakes it. Its cursor is the id of
+  the last event it handled, so a daemon restart resumes where it stopped and a
+  change made while the daemon was down is still delivered. At most 20 events
+  are judged per pass; the rest wait for the next pass and are never dropped.
+- **Seeding.** Arming moves the cursor to the newest event and fires nothing
+  for history. Disarming drops it.
+- **Events.** `issue.created` → `opened`; a state change → `closed` or
+  `reopened`; labels added → one `labeled`, labels removed → one
+  `unlabeled`. One GitHub refresh can yield several. Edits, comments and
+  deletes fire nothing. There is no `assigned`, and `match.action: assigned`
+  is refused.
+- **`by`.** `human`, `agent` (a task's agent, over MCP) or `sync` (GitHub,
+  through the importer). `match: {by: human}` drops a trigger's own echoes.
+- **Trust.** `human` and `agent` changes are trusted. For `sync` changes
+  `labeled` and `unlabeled` are trusted and `opened`, `closed` and
+  `reopened` are not: a trigger that can match one of those from sync is
+  refused at load without `allowed_actors`, unless `match.by` leaves `sync`
+  out. At judge time `allowed_actors` applies to `sync` events only, matched
+  against the issue's author; a local person's change is never refused by it.
+
+What an event carries:
+
+| Key | Value |
+|---|---|
+| `id` | `issue:{issue_id}:{action}:{event id}` |
+| `action`, `by`, `author`, `state` | The event, who made it, the issue's author and its current state |
+| `issue_id`, `project_id` | Integers. `issue_id` is what `action.issue` takes |
+| `Issue` | The issue as a task's `.Issue` sees it, read when the event is judged: `Number` (the vincent id), `Title`, `Body`, `State`, `Labels`, `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, and `Source` (`Provider`, `Repo`, `Number`, `URL`, `State`, empty for a local issue) |
+| `labels` | `labeled` and `unlabeled` only: the labels just added or removed |
+| `from`, `to`, `reason` | `closed` and `reopened` only: the state moved, and a close's reason |
+
+An issue deleted before its event is judged yields nothing.
+
 ### `github_issues` and `github_prs`
+
+`github_issues` is **deprecated**: use `issues` on a project that imports its
+GitHub issues. It keeps firing; `vincent trigger validate` and
+`vincent trigger apply` print a warning for it. Its events carry `IssueID` and
+`issue_id`, the vincent issue the project imported it as, empty when it has
+not, so `issue: '{{ .Event.IssueID }}'` links its task.
 
 ```yaml
 source:
@@ -129,6 +182,7 @@ What an event carries:
 | `id` | `github:issue:{number}:{action}:{updated-at unix seconds}`, or `github:pull:…` |
 | `action`, `author`, `state`, `number` | The event and its item. `number` is an integer |
 | `Issue` | `Number`, `Title`, `Body`, `URL`, `Author`, `State`, `Labels`, `Assignees`, `UpdatedAt` |
+| `IssueID`, `issue_id` | `github_issues` only: the imported vincent issue's id, or empty |
 | `Pull` | `Number`, `Title`, `Body`, `URL`, `Author`, `State`, `HeadRef`, `BaseRef`, `Draft`, `Merged`, `Labels`, `RequestedReviewers`, `UpdatedAt` |
 | `labels` | `labeled` and `unlabeled` only: the labels just added or removed |
 | `assignees` | `assigned` only: the new assignees |
@@ -229,6 +283,7 @@ action:
 | `workflow` | Template. Absent means the project's default workflow |
 | `description` | Template |
 | `fields` | Map from workflow field name to template |
+| `issue` | Template rendering a vincent issue id or nothing. The task is created from that issue (`issue_id`). It cannot be combined with `github_issue` or `github_pull` |
 | `github_issue`, `github_pull` | Templates rendering a number (a leading `#` is allowed) or nothing. They cannot be combined |
 
 - **Refused keys.** `target`, `branch` and `prompt`.
@@ -299,7 +354,8 @@ Each stage can stop the event, and the first one that does decides its ledger
 outcome.
 
 1. `match:` fails → `filtered`.
-2. `allowed_actors` does not name the author (GitHub) → `filtered`.
+2. `allowed_actors` does not name the author (GitHub, or a `sync` event on
+   `issues`) → `filtered`.
 3. `if:` renders `false` → `filtered`, or something that is neither → `error`.
 4. The dedupe key already `fired` or `seeded` → `deduped`.
 5. `limits.max_per_hour` is spent → `rate_limited`, dropped, never queued.
