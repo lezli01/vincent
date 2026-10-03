@@ -680,6 +680,30 @@ replays, while the request itself can no longer carry the field. This
 departs from decision 7's expectation, not its rule: the field is still
 removed from every create surface.
 
+### 23. 130.14: `$VINCENT_ISSUE_FILE` (2026-10-03)
+
+Settled with the author while scoping #673. Spec §8.5 and the task row's
+`issue` entry record the result.
+
+1. **The file is gh-faithful plus vincent extras.** It mirrors `gh issue view
+   --json number,title,body,url,createdAt,state,stateReason,labels,author,
+   comments`, so the workflows' existing `jq` keeps working and `fetch`
+   becomes a copy. `number` is the **GitHub** number, `null` for a local
+   issue — the file's contract is gh's, so it does not follow decision 8's
+   `.Issue.Number`. Beside gh's keys: `id`, `kind`, `priority`, `source`.
+   `createdAt` needed an optional `created_at` on the snapshot (no migration).
+2. **The comment thread is not carried yet, and that gap is accepted.**
+   `comments` is always `[]`, in gh's element shape, so #675 (130.16) fills it
+   with no workflow change. The resolve workflows' prompts say the issue body
+   is the brief until then.
+3. **The file lives in the worktree's own git dir**, written before every
+   attempt from the task row: never staged by `git add -A`, visible to a
+   containerized step under the already-mounted repository (the m12 gate's
+   scenario 1b), removed with the worktree. The fallback — a new read-only
+   mount from the data dir — was not needed.
+4. **One block for all three step types.** The variables are part of §8.5
+   (task 036), so command, check and agent steps get them alike.
+
 ## Open questions
 
 Each has a proposed default, which stands unless the author answers otherwise
@@ -773,9 +797,9 @@ its own pull request.
   workspace's Issue section. Depends: 130.9, 130.7. Also widens the issue
   detail's linked tasks from the active ones to every root task, newest first,
   over `?issue_id=` (decision 16.3). ✓ 2026-10-03 (decision 21)
-- [ ] **130.14** ([#673](https://github.com/lezli01/vincent/issues/673))
+- [x] **130.14** ([#673](https://github.com/lezli01/vincent/issues/673))
   `VINCENT_ISSUE_FILE`, and the repo's resolve workflows migrated onto it.
-  Depends: 130.7, 130.6, 130.8.
+  Depends: 130.7, 130.6, 130.8. ✓ 2026-10-03 (decision 23)
 - [x] **130.15** ([#674](https://github.com/lezli01/vincent/issues/674)) A
   `type: issues` trigger source, `issue:` on `create_task`, the trigger skill.
   Depends: 130.3, 130.7. ✓ 2026-10-03 (decision 20)

@@ -29,10 +29,18 @@ list with the user-facing context a commit subject cannot carry.
   `vincent issue ls --project P --github N` return the issue a project imported
   GitHub issue `N` as — the way a script that holds only a GitHub number finds
   the issue to create a task from. A number means nothing across projects, so
-  each requires the project (`400 validation_failed` without it). The repo's
-  `github-resolve-issue-multiple` workflow uses it, asking for one
-  `vincent issue sync` when an issue is not imported yet.
+  each requires the project (`400 validation_failed` without it).
   ([#670](https://github.com/lezli01/vincent/issues/670))
+- **Workflow steps can read the task's issue from a file.** A task created
+  from an issue now gives every command, check and agent step
+  `VINCENT_ISSUE_FILE` — the issue as it was when the task was created, shaped
+  like `gh issue view --json` output so existing `jq` reads it unchanged —
+  plus `VINCENT_ISSUE_ID`, and `VINCENT_ISSUE_NUMBER` and `VINCENT_ISSUE_URL`
+  for a GitHub issue. The file is written from the task, not fetched, lives
+  outside the working tree so `git add -A` never stages it, is visible to a
+  containerized step, and reaches fan-out lanes. A task with no issue gets
+  none of these. Its `comments` list is empty until the comment mirror lands.
+  ([#673](https://github.com/lezli01/vincent/issues/673))
 - **Issue state is written back to GitHub.** Closing or reopening an issue
   imported from GitHub — in the TUI, with the CLI or over the API — now closes
   or reopens it on GitHub too, with the same close reason. The write is

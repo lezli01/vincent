@@ -1280,6 +1280,14 @@ command-step field. That is what lets an agent call
 [`vincent status`](#56-reporting-status-from-a-step) from its own shell tool: the
 command reads `VINCENT_TASK_ID` and `VINCENT_STEP_ID` and needs nothing else.
 
+A task created from an issue also gets the issue itself, as a file named by
+`VINCENT_ISSUE_FILE`, beside `VINCENT_ISSUE_ID`, `VINCENT_ISSUE_NUMBER` and
+`VINCENT_ISSUE_URL` (the last two only for a GitHub issue). The file is shaped
+like `gh issue view --json` output, so a step that used to fetch the issue
+copies it instead — no network, the same in a fan-out lane, and never staged
+by `git add -A`. A task with no issue gets none of these. The keys are listed in
+[the workflow schema](../reference/workflow-schema.md#vincent-issue-file).
+
 ### 5.6 Reporting status from a step
 
 A running step can say what it is doing, in a sentence, by running

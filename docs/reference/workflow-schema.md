@@ -1188,6 +1188,56 @@ about the run, not inherited state.
 [`vincent status`](cli.md#vincent-status) uses to address the step it is being
 run from, which is why every step type that runs a process gets them.
 
+### The task's issue
+
+<a id="vincent-issue-file"></a>
+
+A task created from an issue also receives the issue as a **file**, and four
+more variables. A task with no issue receives none of them.
+
+| Variable | Value |
+|---|---|
+| `VINCENT_ISSUE_FILE` | absolute path of the issue snapshot file |
+| `VINCENT_ISSUE_ID` | the vincent issue id; absent for a task created with the legacy `--github-issue` |
+| `VINCENT_ISSUE_NUMBER` | the GitHub issue number; imported issues and legacy tasks only |
+| `VINCENT_ISSUE_URL` | the GitHub issue URL; imported issues and legacy tasks only |
+
+The file has the shape `gh issue view --json
+number,title,body,url,createdAt,state,stateReason,labels,author,comments`
+prints, so `jq` written for `gh` reads it unchanged:
+
+| Key | |
+|---|---|
+| `number` | the GitHub number; `null` for a local issue |
+| `title`, `body` | |
+| `url` | `""` for a local issue |
+| `createdAt` | RFC3339; `null` for a task created before vincent recorded it |
+| `state` | `OPEN` or `CLOSED` |
+| `stateReason` | `COMPLETED`, `NOT_PLANNED` or `DUPLICATE`; `null` while open |
+| `labels` | `[{"name": …}]` |
+| `author` | `{"login": …}` |
+| `comments` | always `[]` for now — the GitHub thread is not carried yet |
+| `id` | the vincent issue id; `null` for a legacy task |
+| `kind`, `priority` | the vincent issue's |
+| `source` | `{provider, repo, number, url}` for an imported issue; `null` for a local one |
+
+It is the snapshot taken when the task was created — the same one
+[`.Issue`](#issue) renders — and is written from the task, never fetched, before
+every attempt. It lives in the worktree's own git directory, so `git add -A`
+cannot stage it, a [containerized](configuration.md#container) step sees it at the same path,
+and a fan-out lane gets its parent's. Read it instead of `gh issue view`:
+
+```yaml
+  - id: fetch
+    type: command
+    run: |
+      [ -n "${VINCENT_ISSUE_FILE:-}" ] || { echo "create the task from an issue" >&2; exit 1; }
+      jq -e '.state == "OPEN"' "$VINCENT_ISSUE_FILE"
+```
+
+Free text — a title, a body — reaches a shell through this file, never through
+a template rendered into `run:`.
+
 ## Resolution order
 
 For each agent step, `agent`, `model` and `effort` resolve first-hit-wins:
