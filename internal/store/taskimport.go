@@ -191,7 +191,8 @@ type ImportResult struct {
 // worktrees; `project_id` follows opts.ProjectID; `created_by_task_id` is
 // NULL when that task is not live — its own ON DELETE SET NULL outcome; and
 // `issue_id` is NULL unless that issue is live in the project the task lands
-// in. An issue of another project is no link at all: issue ids are global,
+// in — for a legacy task 035 snapshot, the issue whose GitHub remote has the
+// snapshot's repo and number. An issue of another project is no link at all: issue ids are global,
 // and keeping one would point the task at somebody else's work. `issue_json`
 // is copied verbatim either way — the snapshot is exactly what survives an
 // issue's deletion (task 130 decision 6).
@@ -292,7 +293,21 @@ func (s *Store) ImportTask(ctx context.Context, exp *TaskExport, opts ImportOpti
 			task.Set("created_by_task_id", nil)
 		}
 	}
-	if issue, ok := task.Int64("issue_id"); ok {
+	if js := task.String("github_issue_json"); js != "" && task.String("issue_json") == "" {
+		// A legacy task 035 snapshot was linked by migration 0040, whose ids
+		// are the staged copy's own: the live store backfilled the same
+		// GitHub issue under a different id. Relink by the snapshot's repo
+		// and number instead (task 130 decision 21).
+		issue, live, lerr := legacyIssueInProjectTx(ctx, tx, js, projectID)
+		if lerr != nil {
+			return nil, fmt.Errorf("import task %d: %w", id, lerr)
+		}
+		if live {
+			task.Set("issue_id", issue)
+		} else {
+			task.Set("issue_id", nil)
+		}
+	} else if issue, ok := task.Int64("issue_id"); ok {
 		var live bool
 		if live, err = issueInProjectTx(ctx, tx, issue, projectID); err != nil {
 			return nil, fmt.Errorf("import task %d: %w", id, err)
@@ -369,6 +384,21 @@ func issueInProjectTx(ctx context.Context, tx *sql.Tx, id, projectID int64) (boo
 		return false, nil
 	}
 	return err == nil, err
+}
+
+// legacyIssueInProjectTx returns the live issue that a task 035 snapshot
+// names in projectID — the one whose GitHub remote has the snapshot's repo
+// and number. ok is false when there is none or it is a tombstone.
+func legacyIssueInProjectTx(ctx context.Context, tx *sql.Tx, snapshot string, projectID int64) (issue int64, ok bool, err error) {
+	err = tx.QueryRowContext(ctx, `
+		SELECT issue_id FROM issue_remotes
+		WHERE project_id = ? AND provider = 'github' AND issue_id IS NOT NULL
+		  AND repo = json_extract(?, '$.repo') AND number = json_extract(?, '$.number')
+		ORDER BY id LIMIT 1`, projectID, snapshot, snapshot).Scan(&issue)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	return issue, err == nil, err
 }
 
 // stepRunIDsTaken reports whether any of runs' ids is already used live. One
