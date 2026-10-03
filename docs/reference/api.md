@@ -653,7 +653,7 @@ See [`vincent gc`](cli.md#vincent-gc) for the command over these endpoints.
 | `DELETE` | `/v1/projects/{id}` | Hard-deletes the project and its task rows |
 | `GET` | `/v1/projects/{id}/branches` | Its local git branches, each with the working tree holding it |
 | `GET` | `/v1/projects/{id}/github` | Can this project's GitHub issues be read? |
-| `GET` | `/v1/projects/{id}/github/issues` | Its issues, newest first — `?state=`, `?limit=`, `?workflow=` |
+| `GET` | `/v1/projects/{id}/github/issues` | Its issues, newest first — `?state=`, `?limit=` |
 | `GET` | `/v1/projects/{id}/github/pulls` | Its pull requests, newest first — `?state=`, `?limit=`, `?workflow=` |
 | `GET` | `/v1/projects/{id}/issues/sync` | How its GitHub issue import is going |
 | `POST` | `/v1/projects/{id}/issues/sync` | Sync now — `202` with the same body |
@@ -748,7 +748,7 @@ log.
 `GET /v1/projects/{id}/github/issues` lists the repository's issues, newest
 first. Pull requests are never included. `?state=` takes `open` (the default),
 `closed` or `all`; `?limit=` caps the rows. There is no `?q=` — narrow the list
-client-side, the way the TUI's picker does.
+client-side. Any other parameter is ignored.
 
 ```json
 [
@@ -763,24 +763,15 @@ client-side, the way the TUI's picker does.
 ]
 ```
 
-Adding `?workflow=<name>` attaches a `prefill` object to every row — the
-daemon's own answer to "what would creating a task from this issue fill in":
-
-```json
-{ "prefill": { "title": "#200 …", "description": "…\n\nGitHub issue #200: https://…",
-               "fields": { "issue": "200", "github_issue": "200", "labels": "enhancement" } } }
-```
-
-`title` is the issue title prefixed `#N`. `fields` holds only the declared
-fields named exactly `issue`, `github_issue`, `labels`, `assignee` or
-`milestone` whose declared type and pattern accept the value. On this path
-`issue` and `github_issue` both carry the GitHub issue number; a workflow that
-hands the number to `gh` reads `github_issue`, because a task created from a
-vincent issue fills `issue` with the vincent issue id.
-
-`POST /v1/tasks` computes exactly the same prefill from the same code, so a
-preview a human accepted and a create call that names only the issue produce the
-same task. An unknown workflow name is `400 validation_failed`.
+The listing is a remote browse and nothing more. It carries no prefill, and a
+GitHub issue reaches a task only once the project has imported it: create the
+task from the imported issue with [`issue_id`](#creating-a-task-from-an-issue)
+on `POST /v1/tasks`, finding its id with
+[`GET /v1/issues?project_id=P&remote_number=N`](#issues);
+`GET /v1/issues/{id}?workflow=` previews the prefill that create applies. The
+`?workflow=` parameter this listing used to take, and `github_issue` on
+`POST /v1/tasks`, were removed (tasks 130.11 and 130.13); the parameter is
+ignored now, like any unknown one.
 
 ### Issue sync
 
@@ -815,6 +806,16 @@ When `ok` is false, `reason` says why:
 | `no_client` | The daemon has no GitHub client wired |
 | `origin_changed` | `origin` now names a different repository than the one the project is bound to. Sync stops and is never re-keyed; a rename GitHub redirects is not this |
 | any [GitHub reason](#github-issues) | The last attempt failed with it — `rate_limited`, `no_credential`, `unauthorized`, `unreachable`, … |
+
+Tasks created from a GitHub issue before the issue set existed (task 035's
+`github_issue` snapshots) were backfilled into it when the daemon was upgraded:
+one imported issue per repository and number, linked to every such task, its
+title, body, labels and state taken from the newest snapshot. Those issues have
+never been synced. The first sync that sees each one on GitHub adopts it,
+refreshes its content and takes GitHub's state, and writes nothing back. A
+backfilled issue whose repository is not the one the project is bound to —
+`origin` was re-pointed since the task was created — is never matched by a
+sync, and stays as it was backfilled.
 
 The two config switches take precedence over whatever the importer last
 recorded. None of these is a task's `block_reason`: a sync is not a task, and
@@ -866,8 +867,8 @@ boundary: see the [security model](../security-model.md).
 
 `GET /v1/projects/{id}/github/pulls` lists the repository's pull requests,
 newest first. `?state=` is `open` (the default), `closed` or `all`; `?limit=`
-caps the rows; `?workflow=` adds a computed `prefill` per row — the same shape
-the issue listing carries, and the same one `POST /v1/tasks` applies when you
+caps the rows; `?workflow=` adds a computed `prefill` per row —
+`{ title, description, fields }`, the same one `POST /v1/tasks` applies when you
 name a pull request. It goes through the same capability gate as the issue
 listing, so a disabled integration or a project whose `origin` is not a
 github.com repository makes no call at all.
@@ -974,7 +975,7 @@ For a task with no link, the response carries `compare_url` instead: GitHub's
 own "open a pull request" page for the task's branch, prefilled with the task's
 title and description plus `Closes #N` when the task was created from a GitHub
 issue in the same repository — an [imported issue](#creating-a-task-from-an-issue)
-or `github_issue`. A local issue adds nothing. It is **built, never fetched** — producing it makes no
+or a legacy `github_issue` snapshot. A local issue adds nothing. It is **built, never fetched** — producing it makes no
 request to GitHub — and it is the fallback behind
 `POST /v1/tasks/{id}/github/pull/create` below.
 
@@ -1052,7 +1053,7 @@ GitHub-based project's open pull requests and links the ones whose head branch
 equals a task's branch, marking them `auto`. It never overwrites a `human` link
 and never un-suppresses one. Set the interval to `0` to switch it off.
 
-The two listings, `POST /v1/tasks` naming a `github_issue`, `POST
+The two listings, `POST /v1/tasks` naming a `github_pull`, `POST
 /v1/tasks/{id}/github/pull` and `POST /v1/tasks/{id}/github/pull/create` answer
 **409** when the integration is not usable, carrying the reason a client can
 branch on:
@@ -1665,7 +1666,7 @@ time.
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/v1/tasks?project_id=&state=&archived=&archived_before=&archived_since=&limit=&offset=&parent_id=&include_children=&issue_id=` | List. Fan-out lanes are **excluded** by default — `parent_id` lists one parent's lanes in merge order, `include_children=true` the flat everything. `issue_id` lists the tasks created from one [issue](#creating-a-task-from-an-issue) |
-| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, existing_branch?, priority?, agent?, model?, effort?, github_issue?, github_pull?, issue_id?, paused?, restricted?, max_task_cost_usd? }` — `issue_id` creates the task [from an issue](#creating-a-task-from-an-issue). `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head. `existing_branch` runs the task on a branch that already exists — see [Running on an existing branch](#running-on-an-existing-branch). `paused`, `restricted` and `max_task_cost_usd` are the [create-time limits](#paused-restricted-and-capped-tasks). Accepts an optional `Idempotency-Key` header |
+| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, existing_branch?, priority?, agent?, model?, effort?, github_pull?, issue_id?, paused?, restricted?, max_task_cost_usd? }` — `issue_id` creates the task [from an issue](#creating-a-task-from-an-issue). `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head. `existing_branch` runs the task on a branch that already exists — see [Running on an existing branch](#running-on-an-existing-branch). `paused`, `restricted` and `max_task_cost_usd` are the [create-time limits](#paused-restricted-and-capped-tasks). Accepts an optional `Idempotency-Key` header |
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
 | `DELETE` | `/v1/tasks/{id}` | Permanent delete of an **archived** task. `?delete_branch=true` (or `{ "delete_branch": true }`) → `{ deleted: true, branch? }`. See [Permanent delete](#permanent-delete) |
@@ -1928,7 +1929,7 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/tasks" \
 
 The body is compared by a digest of the decoded request, so reformatting your
 JSON or reordering its keys between the two sends is not a difference. It is
-taken before the `github_issue` or `issue_id` prefill runs, so an issue edited in
+taken before the `issue_id` or `github_pull` prefill runs, so an issue edited in
 between does not turn a genuine retry into a conflict. `paused`, `restricted` and
 `max_task_cost_usd` are part of it — the same key with a different value for any
 of them is `idempotency_key_reused` — and a body that names none of them
@@ -1968,32 +1969,29 @@ New task form reads the same value as absent and says the same thing. The open
 half of the map is unaffected — an undeclared key with a blank value is stored
 as you sent it.
 
-`github_issue` is an issue **number**. The daemon fetches that issue, computes
-the [prefill](#github-issues), and fills in whatever this request left unset —
-**anything you send explicitly wins.** For `fields` and `description` that is
-decided by *presence*: a key sent with an empty value is a row somebody cleared
-on purpose and stays cleared — a blank *declared* field is then dropped from the
-stored map as above, and either way the issue does not fill it — so
-`"description": ""` creates a task with no
-description rather than the issue body. Only `title` keys on emptiness as well
-as absence — there is no such thing as deliberately creating an untitled task —
-so `title` becomes optional when `github_issue` is given.
+There is no `github_issue` create field. It was removed in task 130.11, and
+because request bodies are decoded strictly, a body that still carries it is
+`400 validation_failed` (`unknown field "github_issue"`). A GitHub issue reaches a task by being
+[imported](#issue-sync) and then named by `issue_id`; a script that holds only
+the GitHub number finds the issue's id with
+`GET /v1/issues?project_id=P&remote_number=N`. A task created from a GitHub
+issue before then still serves `github_issue` on every task representation:
+the issue as it was at creation, a **snapshot** that is never re-read, and that
+the upgrade [backfilled](#issue-sync) into the project's issues and linked the
+task to. A task created from an imported issue serves a `github_issue` derived
+from the issue, so a consumer reading `.github_issue.number` keeps working.
 
-The issue is stored on the task and served back on every task representation as
-`github_issue`, in the same shape the listing returns. It is a **snapshot**: it
-is never re-read, so editing the issue on GitHub afterwards does not change what
-a later step renders through
-[`.Issue`](workflow-schema.md#template-context). A request that names no
-`github_issue` makes no GitHub call at all. An unusable integration is the same
-409 with `details.reason` the GitHub endpoints return.
-
-`github_pull` is a pull-request **number**, and it resolves through the same one
-implementation on the same presence/blank rules — the daemon fetches the pull
+`github_pull` is a pull-request **number**. The daemon fetches the pull
 request, prefills `title` (`#N ` and the pull request title), `description` (its
 body plus a trailing `GitHub pull request #N: <url>` line) and a declared field
-named exactly `pull` carrying the bare number, and anything sent explicitly wins.
-Naming both `github_issue` and `github_pull` is `400 validation_failed`: they
-would prefill the same title and description from two sources.
+named exactly `pull` carrying the bare number, and fills in only what this
+request left unset — **anything you send explicitly wins.** For `fields` and
+`description` that is decided by *presence*: a key sent with an empty value is a
+row somebody cleared on purpose and stays cleared, so `"description": ""`
+creates a task with no description rather than the pull request body. Only
+`title` keys on emptiness as well as absence, so `title` becomes optional when
+`github_pull` is given. An unusable integration is the same 409 with
+`details.reason` the GitHub endpoints return.
 
 What is different is the branch. **The task's `branch_name` is the pull request's
 head branch** — the top of the [branch chain](configuration.md#branch_template),
@@ -2464,8 +2462,14 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
 - **List** returns a bare array whose rows omit `body`. Filters: `project_id`,
   `state` (`open`, `closed`; repeatable), `label` (repeatable — every one must
   match, case-insensitively), `kind`, `q` (a substring of the title or body;
-  `%` and `_` are literal), `source` (`local` or `github`), `sort` (`updated`,
-  the default, or `created`), `limit` and `offset`.
+  `%` and `_` are literal), `source` (`local` or `github`), `remote_number`,
+  `sort` (`updated`, the default, or `created`), `limit` and `offset`.
+  `remote_number=N` keeps the issues whose GitHub remote has number `N` — the
+  way a script that holds a GitHub issue number finds the vincent issue to
+  create a task from. It requires `project_id`, because a number means nothing
+  across projects: without it the request is `400 validation_failed`. An empty
+  array means the project has not imported that issue (yet); a
+  [sync now](#issue-sync) and a second look is the way to tell.
 - **Get** adds `body`; `available_actions`, what a person may do from this
   state; `tasks.count` and `tasks.active_ids` over the root tasks created from
   the issue (fan-out lanes never count); `editable`, the fields a `PATCH` may
@@ -2520,14 +2524,14 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/tasks" \
 
 The daemon freezes the issue onto the task as a snapshot — what
 [`.Issue`](workflow-schema.md#template-context) renders — and prefills `title`,
-`description` and declared fields from it, on the same rules as `github_issue`:
+`description` and declared fields from it, on the same rules as `github_pull`:
 anything you send explicitly wins, by presence for `fields` and `description`,
 and a blank or absent `title` takes the issue's. `GET /v1/issues/{id}?workflow=`
 previews exactly that prefill. No GitHub call is made, even for an imported
 issue.
 
 - An unknown `issue_id`, an issue in another project, and `issue_id` beside
-  `github_pull` or `github_issue` are `400 validation_failed` and create nothing.
+  `github_pull` are `400 validation_failed` and create nothing.
 - A **closed** issue still creates the task — follow-up work on a closed issue
   is legitimate — and `warnings` says the issue is closed.
 - Every task representation carries `issue: { id, title, state, source? }`:

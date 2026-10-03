@@ -52,6 +52,26 @@ type RenderContext struct {
 	// agent` resolver to fix (§7.6, task 014 decision 24). Empty for every
 	// other step, so a prompt that reads it defensively works anywhere.
 	Conflicts []string
+	// IssueEnv is the input to §8.5's VINCENT_ISSUE_* variables (task 130,
+	// 130.14). It is not part of §8.4's documented template context: it is
+	// carried here so Env stays a pure function of one value, with the
+	// file's write done by internal/taskrun before the context reaches Env.
+	IssueEnv IssueEnv
+}
+
+// IssueEnv is what Env needs to export a linked task's issue (§8.5, 130.14).
+// Its zero value — no File — is an unlinked task, which gets none of the
+// variables.
+type IssueEnv struct {
+	// File is the absolute path of the already-written snapshot file.
+	File string
+	// ID is the vincent issue id, 0 for a task carrying only a legacy
+	// GitHub snapshot (which has none).
+	ID int64
+	// Number and URL are the GitHub reference of an imported issue or a
+	// legacy snapshot, zero for a local issue.
+	Number int
+	URL    string
 }
 
 // TaskContext is `.Task`.
@@ -299,11 +319,15 @@ func EscapeTemplate(s string) string {
 	return strings.ReplaceAll(s, "{{", `{{"{{"}}`)
 }
 
-// Env returns the vincent variables added to the environment of command and
-// check steps (spec §8.5). They are appended to the daemon's own environment
-// by the caller, along with any step-declared `env`.
+// Env returns the vincent variables added to the environment of command,
+// check and agent steps (spec §8.5). They are appended to the daemon's own
+// environment by the caller, along with any step-declared `env`.
+//
+// The VINCENT_ISSUE_* variables are present only for a task carrying an
+// issue snapshot, and each only when it has a value: an unlinked task gets
+// none, a local issue no NUMBER or URL, a legacy snapshot no ID.
 func Env(rc RenderContext) []string {
-	return []string{
+	out := []string{
 		"VINCENT_TASK_ID=" + strconv.FormatInt(rc.Task.ID, 10),
 		"VINCENT_TASK_TITLE=" + rc.Task.Title,
 		"VINCENT_PROJECT_NAME=" + rc.Project.Name,
@@ -315,6 +339,21 @@ func Env(rc RenderContext) []string {
 		"VINCENT_STEP_ATTEMPT=" + strconv.Itoa(rc.Step.Attempt),
 		"VINCENT_WORKFLOW=" + rc.Workflow.Name,
 	}
+	ie := rc.IssueEnv
+	if ie.File == "" {
+		return out
+	}
+	out = append(out, "VINCENT_ISSUE_FILE="+ie.File)
+	if ie.ID != 0 {
+		out = append(out, "VINCENT_ISSUE_ID="+strconv.FormatInt(ie.ID, 10))
+	}
+	if ie.Number != 0 {
+		out = append(out, "VINCENT_ISSUE_NUMBER="+strconv.Itoa(ie.Number))
+	}
+	if ie.URL != "" {
+		out = append(out, "VINCENT_ISSUE_URL="+ie.URL)
+	}
+	return out
 }
 
 // AppendFailureBlock appends the structured previous-attempt block of §8.4

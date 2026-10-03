@@ -250,6 +250,16 @@ steps:
     type: command
     run: git commit --allow-empty -m m12-gate-ran-in-container
 '
+# $VINCENT_ISSUE_FILE lives in the worktree's own git dir, which is under the
+# repository the container already mounts at its own path (130.14): no new
+# mount, and `grep` exits non-zero if the file is missing or the snapshot is
+# not the one the task was created from.
+write_workflow contained-issue 'name: contained-issue
+steps:
+  - id: read-issue
+    type: command
+    run: grep -q "m12 gate issue" "$VINCENT_ISSUE_FILE"
+'
 # Every workflow this gate uses is written before the daemon starts. The
 # registry reloads on change, but a task created in the same second as the file
 # lands can beat the watcher, and a gate must not assert on that race.
@@ -299,6 +309,14 @@ for _ in $(seq 1 30); do
 done
 [[ "$(count_containers_for "$TASK")" == 0 ]] || fail "archiving task $TASK left its container behind"
 echo "   ok: one container, named for the task, gone with the worktree"
+
+echo "== scenario 1b: a containerized step reads the task's issue file"
+ISSUE="$(api POST /issues "$(jq -cn --argjson p "$PROJECT" '{project_id: $p, title: "m12 gate issue"}')" | jq -r .id)"
+[[ "$ISSUE" =~ ^[0-9]+$ ]] || fail "issue create returned no id"
+ISSUE_TASK="$(api POST /tasks "$(jq -cn --argjson p "$PROJECT" --argjson i "$ISSUE" \
+  '{project_id: $p, workflow: "contained-issue", title: "issue in container", issue_id: $i}')" | jq -r .id)"
+wait_for_state "$ISSUE_TASK" done 120
+echo "   ok: \$VINCENT_ISSUE_FILE resolves inside the container with no extra mount"
 
 echo "== scenario 2: container.image unset runs on the host and creates nothing"
 HOST_TASK="$(create_task "$PROJECT" onhost "host task")"

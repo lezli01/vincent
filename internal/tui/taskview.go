@@ -1210,7 +1210,7 @@ var taskDetailSectionOrder = []string{
 	"Lifecycle",
 	"Warnings",
 	"Pending input",
-	"GitHub issue",
+	"Issue",
 	"GitHub pull request",
 	"Workflow snapshot",
 }
@@ -1393,7 +1393,11 @@ func (t *taskView) detailLines(width int) []string {
 	if len(task.PendingInput) > 0 && string(task.PendingInput) != "null" {
 		out = appendTaskDetailSection(out, "Pending input", appendWrapped(nil, prettyJSON(task.PendingInput), width))
 	}
-	if issue := task.GitHubIssue; issue != nil {
+	if task.Issue != nil {
+		out = appendTaskDetailSection(out, "Issue", taskIssueLines(width, task))
+	} else if issue := task.GitHubIssue; issue != nil {
+		// A legacy row (task 035): the GitHub issue captured at creation,
+		// rendered as the history it is.
 		issueLines := renderTaskDetailFacts(width, []taskDetailFact{
 			{"issue", fmt.Sprintf("%s#%d · %s", issue.Repo, issue.Number, issue.Title)},
 			{"state", issue.State},
@@ -1408,7 +1412,7 @@ func (t *taskView) detailLines(width int) []string {
 			issueLines = append(issueLines, "", styleDim.Render("  Body"), "")
 			issueLines = appendWrapped(issueLines, issue.Body, width)
 		}
-		out = appendTaskDetailSection(out, "GitHub issue", issueLines)
+		out = appendTaskDetailSection(out, "Issue", issueLines)
 	}
 	out = appendTaskDetailSection(out, "GitHub pull request", t.pullSectionLines(width))
 
@@ -1442,6 +1446,30 @@ func (t *taskView) detailLines(width int) []string {
 	}
 	out = appendTaskDetailSection(out, "Workflow snapshot", workflow)
 	return out
+}
+
+// taskIssueLines is the Issue section for a task started from a vincent issue
+// (task 130.13). The daemon serves the issue as it is now while the link
+// holds and the task's snapshot once the issue is deleted, so this renders
+// whichever it was given; the palette's "open this task's issue" reaches the
+// rest of it.
+func taskIssueLines(width int, task apiclient.TaskDetail) []string {
+	iss := task.Issue
+	facts := []taskDetailFact{
+		{"issue", fmt.Sprintf("#%d · %s", iss.ID, iss.Title)},
+		{"state", valueOr(iss.State, "unknown")},
+	}
+	if src := iss.Source; src != nil && src.Repo != "" {
+		ref := src.Repo
+		if src.Number > 0 {
+			ref += fmt.Sprintf("#%d", src.Number)
+		}
+		facts = append(facts, taskDetailFact{"github", ref})
+		if src.URL != "" {
+			facts = append(facts, taskDetailFact{"url", src.URL})
+		}
+	}
+	return renderTaskDetailFacts(width, facts)
 }
 
 type taskDetailFact struct {

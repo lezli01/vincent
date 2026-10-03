@@ -206,6 +206,33 @@ func TestSettleAndDeferAnnounceSync(t *testing.T) {
 	}
 }
 
+// TestRefreshKeepsTheStateOfAFailedWrite is the regression test for the
+// 130 gate's scenario 8: a reopen that failed no_write_scope was undone by
+// the next import, which still saw the issue closed on GitHub.
+func TestRefreshKeepsTheStateOfAFailedWrite(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p")
+	in := remoteIn(p.ID, "I_1", 1)
+	in.State, in.CloseReason = issuestate.Closed, issuestate.Completed
+	iss := mustUpsertRemote(t, s, in)
+	mustTransition(t, s, iss.ID, issuestate.Reopen, "", issuestate.Human)
+	rows, _ := s.PendingIssueWrites(ctx, time.Time{})
+	if ok, err := s.SettleIssueWrite(ctx, rows[0].ID, OutboxFailed, "no_write_scope", nil); !ok || err != nil {
+		t.Fatalf("settle = %v, %v", ok, err)
+	}
+
+	// GitHub still shows the base the write failed to replace.
+	if got := mustUpsertRemote(t, s, in); got.State != issuestate.Open {
+		t.Errorf("refresh after a failed write = %s, want the local open kept", got.State)
+	}
+	// Someone else moves it on GitHub: GitHub is the authority again.
+	in.CloseReason = issuestate.NotPlanned
+	if got := mustUpsertRemote(t, s, in); got.State != issuestate.Closed || got.CloseReason != issuestate.NotPlanned {
+		t.Errorf("refresh after GitHub moved = %s/%s, want closed/not_planned", got.State, got.CloseReason)
+	}
+}
+
 func TestSettlingDoneRebasesAPendingSuccessor(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()

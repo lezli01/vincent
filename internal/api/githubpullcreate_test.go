@@ -236,13 +236,3 @@ func TestCreateTaskWithoutPullMakesNoGitHubCall(t *testing.T) {
 		t.Errorf("gh was invoked:\n%s", calls)
 	}
 }
-
-// Naming both an issue and a pull request is refused: two prefills would
-// fight over the same title and description.
-func TestCreateTaskRefusesBothIssueAndPull(t *testing.T) {
-	h := newGitHubHarness(t, nil, ghOrigin)
-	resp, body := h.createFromPull(t, map[string]any{"github_issue": 231, "github_pull": 412})
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("create: %d %s, want 400", resp.StatusCode, body)
-	}
-}

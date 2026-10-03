@@ -530,41 +530,61 @@ with discovery, argument schemas and typed errors rather than hand-rolled curl.
 
 See [Driving vincent from an agent](guides/mcp.md).
 
-## Start from a GitHub issue
+## Start from an issue
 
-On a project whose `origin` remote points at github.com, the new-task form
-offers an issue row above the title. It opens the same type-to-filter picker the
-project and workflow rows use, listing open issues newest first. Selecting one
-fills in the title — prefixed `#N`, so the board row says which issue it is —
-the body plus a `GitHub issue #N: <url>` link line, and any declared `fields:`
-named exactly `issue`, `github_issue`, `labels`, `assignee`, or `milestone`.
-Every value lands in an ordinary editable row, so a guess can be corrected or
-cleared before the task exists.
+A task starts from an issue where the issue is on screen: `a` on the issues
+list or on one issue's screen opens the new-task form seeded with it. A
+read-only source row names the issue — its state, its `owner/repo#N` when it
+was imported from GitHub, and how many tasks it has already started — and the
+form fills in the title, the body, and any declared `fields:` named exactly
+`issue`, `github_issue`, `labels`, `assignee`, `milestone`, or `kind`. Every
+value lands in an ordinary editable row, so a guess can be corrected or cleared
+before the task exists. Switching the workflow re-applies the prefill to the
+rows you have not typed in. The new-task form itself has no issue picker, and a
+plain `n` makes no GitHub call. The issue's screen then lists every task it
+started, and the task names its issue on its Overview.
 
-Declared `issue` and `github_issue` fields both get the GitHub issue
-**number**, validated at creation. A workflow that hands the number to `gh`
-reads `{% raw %}{{ index .Task.Fields "github_issue" }}{% endraw %}`: on a task
-created from a vincent issue (`vincent task add --issue ID`), `issue` holds the
-vincent issue id instead.
+On a project whose `origin` remote points at github.com, vincent imports the
+repository's issues into the project's own [issues](#operate-from-a-purpose-built-tui) on every
+reconciler tick, and `vincent issue sync` asks for one now. A GitHub issue
+reaches a task the way any issue does: create the task from the imported issue
+with `vincent task add --issue ID`, `issue_id` over the API, or `issue:` in a
+[trigger](guides/triggers.md). A script that holds only the GitHub number finds
+the id with `vincent issue ls --project P --github N`.
 
-Templates receive the issue as `.Issue` — number, title, body, URL, state,
-labels, author, assignee, and milestone — zero-valued when nothing is linked, so
-`{% raw %}{{ if .Issue.Number }}{% endraw %}` lets one workflow serve both. The issue is fetched once
-at creation and stored on the task, so runs stay reproducible and no step render
-touches the network. Fan-out lanes inherit their parent's issue.
+Creating from an imported issue fills in the title — prefixed `#N`, so the
+board row says which issue it is — the body plus a `GitHub issue #N: <url>`
+link line, and any declared `fields:` named exactly `issue`, `github_issue`,
+`labels`, `assignee`, `milestone` or `kind`. A declared `issue` field gets the
+vincent issue id and `github_issue` the GitHub **number**, validated at
+creation, so a workflow that hands the number to `gh` reads
+`{% raw %}{{ index .Task.Fields "github_issue" }}{% endraw %}`. Every explicit
+value wins over what the issue would have filled in.
 
-`vincent task add --github-issue 200` takes the same path as the form, with
-explicit flags winning, and `vincent github issues` lists issues without the TUI.
+Templates receive the issue as `.Issue` — the vincent id, title, body, state,
+labels, author, assignee, milestone, and the GitHub reference in `.Issue.Source`
+— zero-valued when nothing is linked, so
+`{% raw %}{{ if .Issue.Number }}{% endraw %}` lets one workflow serve both. The
+issue is stored on the task at creation, so runs stay reproducible and no step
+render touches the network. Fan-out lanes inherit their parent's issue. Command,
+check and agent steps also get that snapshot as a file named by
+`VINCENT_ISSUE_FILE`, shaped like `gh issue view --json` output, so a step
+reads the issue with `jq` instead of fetching it.
+
+Tasks created from GitHub issues before vincent had its own issues were linked
+to backfilled issues on upgrade, and the first sync adopts those from GitHub.
+`vincent github issues` still lists a repository's issues as a remote browse,
+without creating anything.
 
 Vincent stores no credential: it prefers your existing `gh` CLI and falls back to
-`GITHUB_TOKEN`/`GH_TOKEN` from the daemon's environment. Nothing about an issue
-is ever written back — vincent writes to GitHub only when you ask it to open a
-task's pull request or act on one, [below](#open-a-pull-request). When it is
-unavailable the row does not appear, `vincent doctor` reports why, and
-everything else is unaffected. Set `github.enabled: false` in `config.yaml` to
-switch it off entirely.
+`GITHUB_TOKEN`/`GH_TOKEN` from the daemon's environment. Of an issue, only a
+person's close or reopen of an imported one is written back; otherwise vincent
+writes to GitHub only when you ask it to open a task's pull request or act on
+one, [below](#open-a-pull-request). When GitHub is unavailable, `vincent doctor`
+reports why and everything else is unaffected. Set `github.enabled: false` in
+`config.yaml` to switch it off entirely.
 
-See the [new-task form](guides/tui.md), the
+See the [CLI reference](reference/cli.md#vincent-issue-ls), the
 [configuration reference](reference/configuration.md), and the
 [workflow schema](reference/workflow-schema.md) for `.Issue`.
 

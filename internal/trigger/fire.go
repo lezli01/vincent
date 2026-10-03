@@ -78,7 +78,6 @@ type CreateBody struct {
 	Description    string            `json:"description,omitempty"`
 	Fields         map[string]string `json:"fields,omitempty"`
 	IssueID        *int64            `json:"issue_id,omitempty"`
-	GitHubIssue    *int              `json:"github_issue,omitempty"`
 	GitHubPull     *int              `json:"github_pull,omitempty"`
 	Paused         bool              `json:"paused,omitempty"`
 	Restricted     bool              `json:"restricted,omitempty"`
@@ -448,9 +447,6 @@ func renderAction(d *Definition, data renderData) (*Replay, error) {
 	if issue != nil {
 		id := int64(*issue)
 		body.IssueID = &id
-	}
-	if body.GitHubIssue, err = renderNumber("github_issue", a.GitHubIssue, data); err != nil {
-		return nil, err
 	}
 	if body.GitHubPull, err = renderNumber("github_pull", a.GitHubPull, data); err != nil {
 		return nil, err

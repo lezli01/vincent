@@ -177,6 +177,23 @@ report per workflow which items applied:
     group's retries belong to each sub-step, and a gate is decided once.
     Remove them from the group or gate; where a group carried them, move
     the value onto the sub-steps it was meant for, and say so.
+14. Issues by vincent id. --github-issue on vincent task add, github_issue
+    on POST /v1/tasks and action.github_issue on a trigger were removed:
+    a task is created from an issue by its vincent id — issue_id over the
+    API, --issue on the CLI, issue: on a trigger. A step that still
+    creates tasks with a GitHub number first maps it to the issue id with
+    vincent issue ls --project P --github N (running vincent issue sync
+    and looking again when nothing is imported yet), then passes that id
+    to --issue. A declared github_issue workflow field is a field, not
+    that create flag, and keeps its name; only wording that says
+    --github-issue fills it goes.
+15. The task's issue from its snapshot. A step that fetches the task's
+    issue from GitHub — gh issue view, or gh api on the issue — to read
+    it reads $VINCENT_ISSUE_FILE instead: the same JSON gh prints, set
+    on every step of a task created from an issue, with no network and
+    no call per fan-out lane. Keep any gh call that acts on the issue.
+    Where the step must refuse a task with no issue, test for the
+    variable and say to create the task from an issue.
 
 ## What you may not change
 

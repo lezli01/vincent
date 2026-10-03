@@ -497,7 +497,7 @@ it](../assets/tui-task-steps.png)
 fields, state, project, workflow and its recorded origin, branch and worktree,
 priority, tokens and cost, lifecycle timestamps, queue/block information,
 pending input, fan-out/loop metadata, the [chats opened on it](#talking-to-an-agent-about-a-task),
-captured GitHub issue, available actions, and the task's workflow-step
+the issue it was started from, available actions, and the task's workflow-step
 snapshot. Its left sidebar selects one section at
 a time, so unrelated metadata does not compete for the screen. Use `↑`/`↓` or
 the mouse to choose a section and `pgup`/`pgdn` to scroll long section content;
@@ -1420,7 +1420,7 @@ key.
 
 Opens for the project you are looking at. A guided form: project → workflow
 (with its description and step list, flagging steps whose agent is unavailable)
-→ *(GitHub issue)* → title → description → fields → base branch → branch →
+→ *(pull request, when seeded from one)* → title → description → fields → base branch → branch →
 priority → start → optional agent/model/effort override.
 
 **The two branch rows are lists** over the project's own local branches, served
@@ -1490,37 +1490,47 @@ pattern filled in, a required environment enum at its default of staging, the
 multiple-choice regions list open with us-east and eu-west ticked, an integer
 canary percent and a boolean dry run](../assets/tui-new-task-fields.png)
 
-**The GitHub issue row** appears only when this project's issues can be read:
-the [`github` integration](../reference/configuration.md#github) is on, the
-project's `origin` remote is a github.com repository, and vincent has a
-credential — `gh` logged in, or `GITHUB_TOKEN`/`GH_TOKEN` in the environment the
-daemon inherited. Otherwise the row is simply not there, and no GitHub call is
-made. `vincent doctor` says which of those is missing.
+**The source row** appears only when the form was opened *from* something,
+and it is read-only. The form has no issue picker: you start a task from an
+issue where the issue is on screen, with `a` on the [issues
+screens](#issues), and from a pull request with `a` on the [pull-requests
+screen](#pull-requests). To start a plain task instead, press `esc` and then
+`n`. A plain `n` draft makes no GitHub call on any project. A GitHub issue
+reaches a task once the project has imported it into its [issues](#issues);
+from a shell, `vincent task add --issue ID` creates the task from it.
 
-Its picker lists the repository's open issues, newest first, and narrows as you
-type, like every other picker here. Choosing one fills the title with `#N ` and
-the issue title, fills the description with the issue body plus a trailing
-`GitHub issue #N: <url>` line, and fills any of the workflow's declared `issue`,
-`github_issue`, `labels`, `assignee` or `milestone` fields whose declared type
-accepts the value — `issue` and `github_issue` both being the GitHub issue
-number here, the one a `run:` body can read. **All of it lands in the ordinary
-editable rows** — rewrite or clear anything before creating, and what you leave
-is what the task gets. A `(none)` row at the top of the picker removes the link.
+For an issue, the row shows `#id` and the title, the issue's state, and the
+`owner/repo#N` reference when it was imported from GitHub. If the issue has
+already started tasks, a second line says how many and how many are still
+active — `2 tasks already started from this issue (1 active)`. Starting
+another is allowed; the list itself is on the issue's own screen. A closed
+issue can be started from too: the row says `closed`, and the task shows the
+daemon's warning once it is created.
 
-The issue is read **once**, when you create the task, and stored on it. Editing
-the issue on GitHub afterwards does not change what a later step sees; the
-snapshot is what [`.Issue`](../reference/workflow-schema.md#template-context)
-renders from.
+The issue fills the title and description — for an imported issue, the title
+is prefixed `#N` and the description ends with a `GitHub issue #N: <url>` line
+— and any of the workflow's declared `issue`, `github_issue`, `labels`,
+`assignee`, `milestone` or `kind` fields whose declared type accepts the
+value. `issue` is the vincent issue id; `github_issue` is the GitHub number of
+an imported one, the one to hand to `gh`. **All of it lands in the ordinary
+editable rows** — rewrite or clear anything before creating, and what you
+leave is what the task gets. Declared fields differ per workflow, so switching
+the workflow re-applies the prefill — but only to rows you have not typed in.
+A value you typed is never overwritten.
 
-**The same row shows a pull request** when you arrived here with `a` from the
-[pull-requests screen](#pull-requests) — the number, the title, the head branch,
-and, for a fork, that nothing can be pushed back to it. A pull request is never
-*picked* from inside the form: a task runs on the pull request's head branch, so
-that is a decision made where the pull request is on screen. The prefill lands in
-the same editable rows — the title, the description, and a declared `pull` field
-carrying the number. An issue and a pull request are mutually exclusive on the
-create call: they would prefill the same title and description from two sources,
-and the daemon refuses a request naming both.
+The issue is captured when you create the task and stored on it; the task
+links to the issue from then on, and
+[`.Issue`](../reference/workflow-schema.md#template-context) renders from that
+capture.
+
+For a pull request, the row shows the number, the title, the head branch,
+and, for a fork, that nothing can be pushed back to it. A task runs on the
+pull request's head branch, so that is a decision made where the pull request
+is on screen. The prefill lands in the same editable rows — the title, the
+description, and a declared `pull` field carrying the number. An issue and a
+pull request are mutually exclusive on the create call: they would prefill the
+same title and description from two sources, and the daemon refuses a request
+naming both.
 
 On a wide terminal those fields are grouped into six stages in the left rail:
 **Project**, **Workflow**, **Task details**, **Git & priority**, **Execution**,
@@ -1663,6 +1673,7 @@ re-lists the screen with no keypress.
 | `↑`/`↓` | Move the selection |
 | `/` | Filter by id, title, label, kind or project |
 | `n` | File a new issue in the selected row's project |
+| `a` | Create a task from the selected issue — the form is prefilled from it and editable first |
 | `i` | Edit the selected issue in the issue form |
 | `X` | Close or reopen the selected issue — only what vincent offers for it |
 | `D` | Delete the selected issue permanently (asks first) |
@@ -1672,8 +1683,9 @@ anything: imported issues are refreshed on the daemon's reconciler tick.
 
 `enter` opens the **issue detail**: the state, id, title and source badge; the
 description, rendered as Markdown; the labels, kind, priority (`urgent`,
-`high`, `medium`, `low`, or `none`) and author; the tasks the issue started
-that are still active, each with its state glyph; and, for an imported issue,
+`high`, `medium`, `low`, or `none`) and author; every task the issue started,
+newest first and finished or archived ones included, each with its state glyph;
+and, for an imported issue,
 where it came from — the URL and the state GitHub last reported.
 
 | Key | Does |
@@ -1686,14 +1698,26 @@ where it came from — the URL and the state GitHub last reported.
 | `↑`/`↓` | Move the selection among the linked tasks |
 | `pgup`/`pgdown` | Scroll the page |
 | `n` | File a new issue in this issue's project |
+| `a` | Create a task from this issue — the form is prefilled from it and editable first |
 | `i` | Edit the issue in the issue form |
 | `X` | Close or reopen the issue — only what vincent offers for it |
 | `D` | Delete the issue permanently (asks first) |
 
 `ctrl+o` is the same rendered/raw switch the Output tab and the chat use, so
 flipping it here flips it there too. `esc` goes back to the list, on the issue
-you opened. For now the detail lists only a task that is still running,
-waiting or blocked; the count beside the heading includes the finished ones.
+you opened — or to the task workspace, when you came from one.
+
+#### Starting a task — `a`
+
+`a` opens the [new-task form](#new-task--n) seeded with the issue: a read-only
+source row names it, and the title, description and any matching declared
+fields are prefilled in rows you can edit before creating. Starting a second
+task from the same issue is allowed; the form says how many came first. A
+closed issue can be started from as well.
+
+A task started from an issue names it on its Overview tab and in the **Issue**
+section of Task Details. From the task workspace, the command palette's "open
+this task's issue" row opens the issue; `esc` there comes back to the task.
 
 #### Filing and editing — `n`, `i`
 

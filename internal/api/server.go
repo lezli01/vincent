@@ -62,8 +62,8 @@ type Deps struct {
 	Containers func(binary string) container.Runtime
 	// Git runs git commands for registration validation.
 	Git *gitx.Git
-	// GitHub reads GitHub issues for the §13.2 issue endpoints and the
-	// `github_issue` field on POST /v1/tasks (task 035). Nil is tolerated
+	// GitHub reads GitHub issues and pull requests for the §13.2 GitHub
+	// endpoints and the `github_pull` field on POST /v1/tasks. Nil is tolerated
 	// (tests without it, and any build that never wires one) — the capability
 	// probe then answers "no credential" and the issue endpoints refuse,
 	// which is exactly what a daemon with no reachable GitHub reports.
@@ -393,6 +393,9 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/github/pull/checks/rerun", s.handleTaskGitHubPullRerun)
 	// Issues (§5.6, §13.2, task 130.3). Every route but the permanent
 	// delete is an MCP tool (§13.4); the delete joins task 092's exclusion.
+	// GET /v1/issues?project_id=P&remote_number=N maps a GitHub issue number
+	// to the vincent issue it was imported as (task 130.11, decision 22.4);
+	// it requires project_id.
 	rt.handle(http.MethodGet, "/v1/issues", s.handleIssueList)
 	rt.handle(http.MethodPost, "/v1/issues", s.handleIssueCreate)
 	rt.handle(http.MethodGet, "/v1/issues/{id}", s.handleIssueGet)

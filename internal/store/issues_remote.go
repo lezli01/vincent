@@ -124,14 +124,15 @@ func refreshRemoteIssueTx(ctx context.Context, tx *sql.Tx, in RemoteIssue, remot
 	if err != nil {
 		return nil, err
 	}
-	// A write still to send holds the local state (task 130.10): applying
-	// GitHub's here would revert a human's change as "GitHub wins" on the
-	// tick before the drain sends it. The drain's preflight decides.
-	pending, err := hasPendingWriteTx(ctx, tx, id)
+	// A write still to send, or one that failed against the value GitHub
+	// still shows, holds the local state (task 130.10): applying GitHub's
+	// here would revert a human's change as "GitHub wins" on the tick before
+	// the drain sends it, or on the tick after it gave up.
+	held, err := holdsLocalStateTx(ctx, tx, id, GitHubStateOf(state, reason))
 	if err != nil {
 		return nil, err
 	}
-	if pending {
+	if held {
 		state, reason = issuestate.Normalize(cur.State), cur.CloseReason
 	}
 	var changed []string

@@ -1,4 +1,4 @@
-# github-issue — turn a rough task description into a well-formed GitHub issue.
+# github-create-issue — turn a rough task description into a well-formed GitHub issue.
 #
 # The task carries the draft: its title is the issue's working name, its
 # description the raw material. The first step reads both, decides whether

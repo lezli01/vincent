@@ -59,8 +59,9 @@ func newTriggerGitHubLister(
 
 // linkImported names, on each listed issue, the vincent issue the project
 // imported it as, so a github_issues event carries `.Event.IssueID` and a
-// trigger can link its task with `issue:` once `github_issue` is gone (task
-// 130.15 decision 5). A failed read leaves every id zero, which renders as
+// trigger can link its task with `issue:` — the only way left to, since task
+// 130.11 removed `action.github_issue` (task 130.15 decision 5, task 130
+// decision 7). A failed read leaves every id zero, which renders as
 // empty: the listing is still judged, only without the link.
 func linkImported(ctx context.Context, st *store.Store, projectID int64, l *trigger.GitHubListing) {
 	if l.Err != nil || len(l.Issues) == 0 {

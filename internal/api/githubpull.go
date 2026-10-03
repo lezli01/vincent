@@ -23,8 +23,7 @@ import (
 // githubPullResponse is one row of GET /v1/projects/{id}/github/pulls, and
 // the `pull` half of GET /v1/tasks/{id}/github/pull.
 //
-// It embeds the normalized pull request for the reason githubIssueResponse
-// embeds the issue: that shape is already the daemon's one spelling, and a
+// It embeds the normalized pull request rather than restating it: that shape is already the daemon's one spelling, and a
 // second DTO beside it would be a third place for the names to drift.
 type githubPullResponse struct {
 	github.PullRequest
@@ -94,7 +93,7 @@ type githubPullLinkRequest struct {
 // cases and the takeover is now where a task is created from.
 //
 // `workflow` opts into the computed prefill per row, exactly as it does on
-// the issue listing: the declared-field half of a prefill is a fact about a
+// the vincent issue listing: the declared-field half of a prefill is a fact about a
 // workflow rather than about a pull request.
 //
 // It is **pure**: it fetches, normalizes, sorts and returns, and persists

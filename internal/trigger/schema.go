@@ -193,7 +193,6 @@ func SchemaDescriptor() Schema {
 					{Name: "description", Control: workflow.ControlText, Help: "template over .Event"},
 					{Name: "fields", Control: workflow.ControlMap, Help: "workflow field → template over .Event"},
 					{Name: "issue", Control: workflow.ControlTemplate, Help: "renders to a vincent issue id the task is created from, or nothing"},
-					{Name: "github_issue", Control: workflow.ControlTemplate, Help: "renders to an issue number, or nothing"},
 					{Name: "github_pull", Control: workflow.ControlTemplate, Help: "renders to a pull request number, or nothing"},
 				},
 			},

@@ -211,11 +211,10 @@ func TestCreateTaskFromAnIssueRefusals(t *testing.T) {
 	foreign := h.localIssue(t, int64(other["id"].(float64)))
 
 	for name, body := range map[string]map[string]any{
-		"with github_pull":  {"issue_id": iss.ID, "github_pull": 1},
-		"with github_issue": {"issue_id": iss.ID, "github_issue": 200},
-		"unknown":           {"issue_id": iss.ID + 1000},
-		"cross-project":     {"issue_id": foreign.ID},
-		"non-positive":      {"issue_id": 0},
+		"with github_pull": {"issue_id": iss.ID, "github_pull": 1},
+		"unknown":          {"issue_id": iss.ID + 1000},
+		"cross-project":    {"issue_id": foreign.ID},
+		"non-positive":     {"issue_id": 0},
 	} {
 		body["workflow"] = vincentIssueWorkflow
 		code, _, out := h.createTask(t, body)
@@ -352,17 +351,63 @@ func TestIssuePreviewNeedsAKnownWorkflow(t *testing.T) {
 // TestTaskCreateDigestWithoutIssueIDIsUnchanged pins task 040's digest of a
 // body that does not name issue_id to the value recorded before the field
 // existed: `omitempty` is what keeps a key an older daemon recorded
-// replaying.
+// replaying — and, since task 130.11 removed `github_issue` from the request,
+// taskCreateDigest's retained nil slot for it.
 func TestTaskCreateDigestWithoutIssueIDIsUnchanged(t *testing.T) {
 	wf := "fix"
-	got, err := idempotencyDigest(&taskCreateRequest{
+	req := &taskCreateRequest{
 		ProjectID: 1, Title: "t", Workflow: &wf, Fields: map[string]string{"a": "b"},
-	})
+	}
+	got, err := idempotencyDigest(req.digestShape())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := "104b43080e3b95ed62d004709c466cbfd3b9a99ee4e989b2f0afb79dd874aacc"; got != want {
 		t.Errorf("digest = %s, want the recorded %s", got, want)
+	}
+}
+
+// TestTaskCreateDigestShapeMatchesTheRequest holds taskCreateDigest to
+// taskCreateRequest: the same JSON names in the same order, with exactly the
+// removed `github_issue` slot added before `github_pull`. A field added to
+// the request and not to the digest would let two different creates share a
+// key; one added out of order would move every recorded digest.
+func TestTaskCreateDigestShapeMatchesTheRequest(t *testing.T) {
+	names := func(v any) []string {
+		var out []string
+		rt := reflect.TypeOf(v)
+		for i := range rt.NumField() {
+			out = append(out, rt.Field(i).Tag.Get("json"))
+		}
+		return out
+	}
+	want := []string{}
+	for _, n := range names(taskCreateRequest{}) {
+		if n == "github_pull" {
+			want = append(want, "github_issue")
+		}
+		want = append(want, n)
+	}
+	if got := names(taskCreateDigest{}); !reflect.DeepEqual(got, want) {
+		t.Errorf("digest fields = %v\nwant %v", got, want)
+	}
+	// And every value is carried across.
+	wf, pull, id, yes, cost := "w", 3, int64(4), true, 1.5
+	req := taskCreateRequest{
+		ProjectID: 1, Workflow: &wf, Title: "t", Description: &wf, Fields: map[string]string{"a": "b"},
+		BaseBranch: &wf, BranchName: &wf, ExistingBranch: &yes, Priority: &pull, Agent: &wf, Model: &wf,
+		Effort: &wf, GitHubPull: &pull, IssueID: &id, Paused: &yes, Restricted: &yes, MaxTaskCostUSD: &cost,
+	}
+	shape := reflect.ValueOf(*req.digestShape())
+	src := reflect.ValueOf(req)
+	for i := range src.NumField() {
+		name := src.Type().Field(i).Name
+		if !reflect.DeepEqual(src.Field(i).Interface(), shape.FieldByName(name).Interface()) {
+			t.Errorf("digestShape drops %s", name)
+		}
+	}
+	if shape.FieldByName("GitHubIssue").Interface() != (*int)(nil) {
+		t.Error("the retained github_issue slot is not nil")
 	}
 }
 

@@ -14,7 +14,7 @@ import (
 var ntLabels = [ntRowCount]string{
 	ntProject:     "project",
 	ntWorkflow:    "workflow",
-	ntIssue:       "issue",
+	ntSource:      "source",
 	ntTitle:       "title",
 	ntDescription: "description",
 	ntFields:      "fields",
@@ -64,11 +64,11 @@ func ntStageForRow(row ntRow) ntStage {
 		return ntStageProject
 	case ntWorkflow:
 		return ntStageWorkflow
-	case ntIssue, ntTitle, ntDescription, ntFields:
-		// The issue row belongs to Task details, not to a stage of its own:
-		// picking one is how a human fills the title and description in, and
-		// separating the pick from what it fills would put the guess and its
-		// review on different screens (task 035).
+	case ntSource, ntTitle, ntDescription, ntFields:
+		// The source row belongs to Task details, not to a stage of its own:
+		// it is what filled the title and description in, and separating it
+		// from what it filled would put the guess and its review on
+		// different screens (task 035).
 		return ntStageDetails
 	case ntBranch, ntBranchName, ntPriority, ntPaused:
 		return ntStageGit
@@ -87,7 +87,7 @@ func ntRowsForStage(stage ntStage) []ntRow {
 	case ntStageWorkflow:
 		return []ntRow{ntWorkflow}
 	case ntStageDetails:
-		return []ntRow{ntIssue, ntTitle, ntDescription, ntFields}
+		return []ntRow{ntSource, ntTitle, ntDescription, ntFields}
 	case ntStageGit:
 		return []ntRow{ntBranch, ntBranchName, ntPriority, ntPaused}
 	case ntStageExecution:
@@ -187,8 +187,8 @@ func (n *newTask) stageSummary(stage ntStage) string {
 	case ntStageWorkflow:
 		return firstNonEmpty(n.workflow, "Not selected")
 	case ntStageDetails:
-		if n.issue != nil {
-			return "#" + strconv.Itoa(n.issue.Number) + " · " +
+		if n.issueID != 0 && n.handoff == nil {
+			return "#" + strconv.FormatInt(n.issueID, 10) + " · " +
 				firstNonEmpty(n.titleText(), "Title required")
 		}
 		return firstNonEmpty(n.titleText(), "Title required")
@@ -236,8 +236,10 @@ func (n *newTask) renderReview(lines []string) ([]string, int) {
 		n.reviewLine("workflow", n.rowValue(ntWorkflow)),
 		section("Task"),
 	)
-	if n.rowVisible(ntIssue) {
-		lines = append(lines, n.reviewLine("issue", n.rowValue(ntIssue)))
+	if n.rowVisible(ntSource) {
+		// The source's first line only: the review is one line per row.
+		first, _, _ := strings.Cut(n.rowValue(ntSource), "\n")
+		lines = append(lines, n.reviewLine("source", first))
 	}
 	lines = append(lines,
 		n.reviewLine("title", n.rowValue(ntTitle)),
@@ -330,11 +332,10 @@ func (n *newTask) rowValue(row ntRow) string {
 		return p.Name + "  " + styleDim.Render(p.Path)
 	case ntWorkflow:
 		return n.workflowSummary()
-	case ntIssue:
-		// A draft seeded from a pull request shows the pull request on the
-		// same row: the two are mutually exclusive on the create call, and a
-		// row that said "(none)" while the task was about to run on somebody
-		// else's head branch would be the worst thing this form could say.
+	case ntSource:
+		// Read-only: what the draft was seeded from. The two seeds are
+		// mutually exclusive on the create call, and a pull request's says
+		// whose head branch the task is about to run on.
 		if summary := n.pullSummary(); summary != "" {
 			return summary
 		}

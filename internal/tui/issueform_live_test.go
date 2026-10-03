@@ -133,7 +133,38 @@ func TestIssueWritesAgainstTheRealAPI(t *testing.T) {
 		return slices.Equal(detail.issue.AvailableActions, []string{"reopen"})
 	})
 	h.sendKey(keyPress("X"))
-	h.p.until(10*time.Second, "the reopen", func() bool { return detail.issue.State == "open" })
+	// The prompt too: its result is routed to the active view, and landing
+	// on the list after the switch below would close the list's own prompt.
+	h.p.until(10*time.Second, "the reopen", func() bool { return detail.issue.State == "open" && detail.w.act == nil })
+
+	// selectCreated waits for the list to show the issue as the store last
+	// wrote it, then selects it. Every write moves an issue to the top and a
+	// re-list puts the cursor back on `selected`, so a list still showing an
+	// earlier write, or a cursor set without `selected`, lands a key on the
+	// other issue once the late re-list arrives.
+	selectCreated := func() {
+		t.Helper()
+		cur, err := h.st.GetIssue(ctx, created.ID)
+		if err != nil {
+			t.Fatalf("GetIssue: %v", err)
+		}
+		h.p.until(10*time.Second, "the list", func() bool {
+			if h.m.active != viewIssues || list.w.act != nil || len(list.rows()) != 2 {
+				return false
+			}
+			for _, row := range list.rows() {
+				if row.issue.ID == created.ID && row.issue.Version == cur.Version {
+					return true
+				}
+			}
+			return false
+		})
+		for i, row := range list.rows() {
+			if row.issue.ID == created.ID {
+				list.cursor, list.selected = i, row.issue.ID
+			}
+		}
+	}
 
 	// Close as not planned and as a duplicate with no target, from the list:
 	// X there reads the issue for its available_actions first.
@@ -142,12 +173,7 @@ func TestIssueWritesAgainstTheRealAPI(t *testing.T) {
 		reason string
 	}{{1, "not_planned"}, {2, "duplicate"}, {0, "completed"}} {
 		h.send(selectViewMsg{id: viewIssues})
-		h.p.until(10*time.Second, "the list", func() bool { return h.m.active == viewIssues && len(list.rows()) == 2 })
-		for i, row := range list.rows() {
-			if row.issue.ID == created.ID {
-				list.cursor = i
-			}
-		}
+		selectCreated()
 		h.sendKey(keyPress("X"))
 		h.p.until(10*time.Second, "the reason prompt", func() bool { return list.w.act != nil && list.w.act.stage == iaReason })
 		for range c.downs {
@@ -173,12 +199,7 @@ func TestIssueWritesAgainstTheRealAPI(t *testing.T) {
 	}
 
 	// D on the list asks, then deletes.
-	h.p.until(10*time.Second, "the list", func() bool { return list.w.act == nil && len(list.rows()) == 2 })
-	for i, row := range list.rows() {
-		if row.issue.ID == created.ID {
-			list.cursor = i
-		}
-	}
+	selectCreated()
 	h.sendKey(keyPress("D"))
 	h.sendKey(keyPress("y"))
 	h.p.until(10*time.Second, "the delete", func() bool { return len(list.rows()) == 1 })

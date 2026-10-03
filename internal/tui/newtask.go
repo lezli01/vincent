@@ -19,20 +19,21 @@ import (
 const loadTimeout = 10 * time.Second
 
 // ntRow identifies one line of the form. The order is §15's: project →
-// workflow → issue → title → description → fields → base branch → branch name →
+// workflow → source → title → description → fields → base branch → branch name →
 // priority → agent/model/effort → create. Wide terminals group that order into
 // six visual stages, but this remains the one cursor: back-navigation and
 // review-before-submit do not need a second wizard state machine (task 020).
 //
-// ntIssue is **conditional**: it is present only when the daemon's capability
-// probe says this project's issues can be read (task 035). Every other row is
-// always there, so rowVisible is the one place that difference lives.
+// ntSource is **conditional**: it is present only on a draft seeded from an
+// issue or a pull request, and it is read-only — the source is chosen where it
+// is on screen, never in here (task 130 decision 7). Every other row is always
+// there, so rowVisible is the one place that difference lives.
 type ntRow int
 
 const (
 	ntProject ntRow = iota
 	ntWorkflow
-	ntIssue
+	ntSource
 	ntTitle
 	ntDescription
 	ntFields
@@ -80,6 +81,14 @@ type (
 		projectID int64
 		pull      *apiclient.GitHubPullRequest
 	}
+	// newTaskFromIssueMsg opens the form seeded with a vincent issue (task
+	// 130.13): `a` on the issue list or the issue detail. Like the pull
+	// request's seed it carries no prefill — the form previews one from
+	// GET /v1/issues/{id}?workflow= for the workflow it settles on.
+	newTaskFromIssueMsg struct {
+		projectID int64
+		issueID   int64
+	}
 	// ntLoadedMsg carries the three catalogs the form needs. They are
 	// fetched together because a form missing any of them cannot render a
 	// single picker honestly.
@@ -105,20 +114,10 @@ type (
 		resolution apiclient.Resolution
 		err        error
 	}
-	// ntGitHubMsg carries the §13.2 capability probe for a project (task
-	// 035). The project travels with it because the user may have switched
-	// projects while it was in flight; a reply for another project is
-	// dropped, not applied.
-	ntGitHubMsg struct {
-		projectID int64
-		status    apiclient.GitHubStatus
-		err       error
-	}
 	// ntBranchesMsg carries a project's local branch listing, which is what
-	// the two branch rows offer (task 125). The project travels with it for
-	// the reason ntGitHubMsg's does: the user may have switched projects
-	// while it was in flight, and a reply about another project is not an
-	// answer about this one.
+	// the two branch rows offer (task 125). The project travels with it
+	// because the user may have switched projects while it was in flight,
+	// and a reply about another project is not an answer about this one.
 	//
 	// It is not folded into ntLoadedMsg: those three catalogs are fetched
 	// before a project is chosen, and this listing is project-scoped.
@@ -126,14 +125,6 @@ type (
 		projectID int64
 		branches  []apiclient.Branch
 		err       error
-	}
-	// ntIssuesMsg carries a project's issue listing, with the prefill the
-	// daemon computed for the workflow that was selected when it was asked.
-	// The key travels with it for the same reason.
-	ntIssuesMsg struct {
-		key    issuesKey
-		issues []apiclient.GitHubIssue
-		err    error
 	}
 	// ntPullPrefillMsg carries the listing a seeded draft's prefill is read
 	// out of (task 064). The project, workflow and number travel with it so a
@@ -209,18 +200,6 @@ type newTask struct {
 	model      string
 	effort     string
 
-	// github is the daemon's capability probe for githubProject (task 035).
-	// The TUI holds no GitHub state the daemon does not have: it never parses
-	// a remote, never reads a token, and never calls GitHub — it renders this
-	// answer and asks the daemon for issues when it says yes.
-	github        apiclient.GitHubStatus
-	githubProject int64
-	// issues is the listing the picker offers, and issuesFor the draft it was
-	// fetched for. The workflow is part of that key because each row carries
-	// the prefill computed against the workflow's declared fields.
-	issues    []apiclient.GitHubIssue
-	issuesFor issuesKey
-	issuesErr string
 	// branches is the project's local branch listing the two branch pickers
 	// offer, branchesFor the project it describes, and branchesErr why there
 	// is none. A failed listing does not close the rows: the picker draws the
@@ -236,14 +215,19 @@ type newTask struct {
 	// adoption stays chosen and is never inferred from a name that happens to
 	// exist (task 125 decision 1).
 	branchAdopt bool
-	// issue is the issue this draft is linked to, nil when none. It is what
-	// `github_issue` on the create request carries.
-	issue *apiclient.GitHubIssue
+	// issueID is the vincent issue this draft was seeded from (task 130.13),
+	// zero for every other draft. It is what `issue_id` carries. issue is the
+	// daemon's latest answer about it, issueErr why there is none, and
+	// issuePrefill the prefill last written into the rows — which is how a
+	// row the human typed in is told apart from one only the prefill filled.
+	issueID      int64
+	issue        *apiclient.Issue
+	issueErr     string
+	issuePrefill *apiclient.GitHubPrefill
 	// pull is the pull request this draft was seeded from (task 064), nil for
-	// every other draft. It is what `github_pull` carries, and unlike issue
-	// it is never picked from inside the form: a task runs on a pull
-	// request's head branch, which is a decision made where the pull request
-	// is on screen.
+	// every other draft. It is what `github_pull` carries. Like an issue it is
+	// never picked from inside the form: a task runs on a pull request's head
+	// branch, which is a decision made where the pull request is on screen.
 	pull *apiclient.GitHubPullRequest
 	// pullPrefilled records that the daemon's prefill for pull has landed, so
 	// a second listing reply cannot overwrite rows the human has since edited.
@@ -381,7 +365,7 @@ func (n *newTask) paste(text string) tea.Cmd {
 			n.priority, cmd = n.priority.Update(tea.PasteMsg{Content: text})
 		case ntDescription:
 			n.desc, cmd = n.desc.Update(tea.PasteMsg{Content: text})
-		case ntProject, ntWorkflow, ntIssue, ntFields, ntBranch, ntBranchName, ntPaused,
+		case ntProject, ntWorkflow, ntSource, ntFields, ntBranch, ntBranchName, ntPaused,
 			ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
 			// The two branch rows are pickers now; a branch name is pasted
 			// into the picker's free-text row, which the ntPicking arm below
@@ -593,6 +577,10 @@ func (n *newTask) update(msg tea.Msg) (panel, tea.Cmd) {
 		cmd := n.open(msg.projectID)
 		n.pull = msg.pull
 		return n, cmd
+	case newTaskFromIssueMsg:
+		cmd := n.open(msg.projectID)
+		n.issueID = msg.issueID
+		return n, cmd
 	case newTaskFromChatMsg:
 		// open() resets first, so the inherited values are written after it,
 		// exactly as the pull-request seed is.
@@ -612,23 +600,23 @@ func (n *newTask) update(msg tea.Msg) (panel, tea.Cmd) {
 		if msg.projectID == n.projectID && msg.err == nil {
 			n.workflows = msg.entries
 			n.selectDefaultWorkflow()
-			return n, tea.Batch(n.resolveCmd(), n.issuesCmd(), n.pullPrefillCmd())
+			return n, tea.Batch(n.resolveCmd(), n.issueCmd(), n.pullPrefillCmd())
 		}
 		return n, nil
 	case ntResolvedMsg:
 		n.applyResolution(msg)
 		return n, nil
-	case ntGitHubMsg:
-		return n, n.applyGitHub(msg)
 	case ntPullPrefillMsg:
 		n.applyPullPrefill(msg)
 		return n, nil
 	case ntBranchesMsg:
 		n.applyBranches(msg)
 		return n, nil
-	case ntIssuesMsg:
-		n.applyIssues(msg)
-		return n, nil
+	case ntIssueMsg:
+		n.applyIssue(msg)
+		// The title and fields the prefill may just have written are §8.6
+		// and branch inputs, so the draft's resolution has changed with them.
+		return n, n.resolveCmd()
 	case ntDescriptionMsg:
 		n.applyDescription(msg)
 		return n, nil
@@ -671,8 +659,7 @@ func (n *newTask) reset() {
 	n.rowErr = map[ntRow]string{}
 	n.err, n.submitting, n.touched = "", false, false
 	n.loaded, n.loadErr = false, nil
-	n.github, n.githubProject = apiclient.GitHubStatus{}, 0
-	n.issues, n.issuesFor, n.issuesErr, n.issue = nil, issuesKey{}, "", nil
+	n.issueID, n.issue, n.issueErr, n.issuePrefill = 0, nil, "", nil
 	n.handoff, n.pull, n.pullPrefilled = nil, nil, false
 }
 
@@ -688,7 +675,7 @@ func (n *newTask) applyLoaded(msg ntLoadedMsg) tea.Cmd {
 	// The project the picker settled on may not be the one the workflow list
 	// was fetched for.
 	if p, ok := n.project(); ok {
-		return tea.Batch(n.workflowsCmd(p.ID), n.githubCmd(p.ID), n.branchesCmd(p.ID))
+		return tea.Batch(n.workflowsCmd(p.ID), n.branchesCmd(p.ID))
 	}
 	return n.resolveCmd()
 }
@@ -860,9 +847,9 @@ func (n *newTask) updateNavigating(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 }
 
 // moveCursor walks to the next *visible* row. A hidden row is stepped over
-// rather than landed on: ntIssue is absent whenever the daemon says this
-// project's issues cannot be read, and a cursor parked on a row nothing draws
-// is a form that appears to swallow keystrokes.
+// rather than landed on: ntSource is absent from every draft that was not
+// seeded, and a cursor parked on a row nothing draws is a form that appears to
+// swallow keystrokes.
 func (n *newTask) moveCursor(delta int) {
 	if delta == 0 {
 		return
@@ -894,26 +881,19 @@ func abs(v int) int {
 
 // rowVisible reports whether a row is part of this draft's form.
 //
-// Only ntIssue is ever hidden, and only on the daemon's word: the integration
-// is disabled, the project's origin is not a github.com repository, or GitHub
-// cannot be reached. In all three the row is simply absent — the form does not
-// offer a control that would fail (task 035).
+// Only ntSource is ever hidden: it is there for a draft seeded from an issue
+// or a pull request, and for nothing else — a plain draft makes no GitHub call
+// and offers no issue row on any project (task 130 decision 7).
 func (n *newTask) rowVisible(row ntRow) bool {
-	// A handoff has a source already — the chat — so the issue row would be a
-	// second one competing to prefill the same title and description.
-	if n.handoff != nil && row == ntIssue {
-		return false
-	}
-	if row != ntIssue {
+	if row != ntSource {
 		return true
 	}
-	return n.githubAvailable()
-}
-
-// githubAvailable reports the probe's verdict for the project on screen. A
-// probe for a different project is not an answer about this one.
-func (n *newTask) githubAvailable() bool {
-	return n.projectID != 0 && n.githubProject == n.projectID && n.github.Available
+	// A handoff has a source already — the chat — and says so on its
+	// inherited rows.
+	if n.handoff != nil {
+		return false
+	}
+	return n.issueID != 0 || n.pull != nil
 }
 
 // visibleRows lists the rows this draft draws, in order.
@@ -933,8 +913,10 @@ func (n *newTask) activate() tea.Cmd {
 		return nil
 	}
 	switch n.cursor {
-	case ntProject, ntWorkflow, ntIssue, ntAgent, ntModel, ntEffort, ntBranch, ntBranchName:
+	case ntProject, ntWorkflow, ntAgent, ntModel, ntEffort, ntBranch, ntBranchName:
 		n.openPicker(n.cursor)
+	case ntSource:
+		// Read-only: the source was chosen where it was on screen.
 	case ntTitle, ntPriority, ntDescription:
 		n.startEditing()
 	case ntFields:
@@ -960,7 +942,7 @@ func (n *newTask) startEditing() {
 		n.priority.Focus()
 	case ntDescription:
 		n.desc.Focus()
-	case ntProject, ntWorkflow, ntIssue, ntFields, ntBranch, ntBranchName, ntPaused,
+	case ntProject, ntWorkflow, ntSource, ntFields, ntBranch, ntBranchName, ntPaused,
 		ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
 	}
 }
@@ -993,7 +975,7 @@ func (n *newTask) updateEditing(msg tea.KeyPressMsg) tea.Cmd {
 		n.priority, cmd = n.priority.Update(msg)
 	case ntDescription:
 		n.desc, cmd = n.desc.Update(msg)
-	case ntProject, ntWorkflow, ntIssue, ntFields, ntBranch, ntBranchName, ntPaused,
+	case ntProject, ntWorkflow, ntSource, ntFields, ntBranch, ntBranchName, ntPaused,
 		ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
 	}
 	delete(n.rowErr, n.cursor)
@@ -1149,16 +1131,16 @@ func (n *newTask) request() apiclient.CreateTaskRequest {
 	if n.pull != nil {
 		number := n.pull.Number
 		req.GitHubPull = &number
-		// Same explicit-wins reasoning as a linked issue below: what is on
+		// Same explicit-wins reasoning as an issue seed below: what is on
 		// screen is sent, empties included, or the daemon would put its own
 		// prefill back into a row the human deliberately cleared.
 		req.Description = ptr(n.desc.Value())
 		req.Fields = n.issueFieldMap()
 	}
-	if n.issue != nil {
-		number := n.issue.Number
-		req.GitHubIssue = &number
-		// A linked draft sends what is on screen *explicitly*, empties
+	if n.issueID != 0 {
+		id := n.issueID
+		req.IssueID = &id
+		// A seeded draft sends what is on screen *explicitly*, empties
 		// included, because the daemon fills in anything the request leaves
 		// unset (task 035 decision 2). Omitting a description or a declared
 		// field the human deliberately cleared would have the daemon put the
@@ -1196,7 +1178,7 @@ func (n *newTask) request() apiclient.CreateTaskRequest {
 	return req
 }
 
-// issueFieldMap is fieldMap for a draft linked to an issue: every named row
+// issueFieldMap is fieldMap for a seeded draft: every named row
 // is sent, including the ones whose value is empty. See request() — an omitted
 // key is a key the daemon prefills.
 func (n *newTask) issueFieldMap() map[string]string {

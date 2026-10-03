@@ -137,7 +137,8 @@ An issue deleted before its event is judged yields nothing.
 GitHub issues. It keeps firing; `vincent trigger validate` and
 `vincent trigger apply` print a warning for it. Its events carry `IssueID` and
 `issue_id`, the vincent issue the project imported it as, empty when it has
-not, so `issue: '{{ .Event.IssueID }}'` links its task.
+not, so `issue: '{{ .Event.IssueID }}'` links its task — the only way to,
+since `action.github_issue` was removed.
 
 ```yaml
 source:
@@ -283,8 +284,14 @@ action:
 | `workflow` | Template. Absent means the project's default workflow |
 | `description` | Template |
 | `fields` | Map from workflow field name to template |
-| `issue` | Template rendering a vincent issue id or nothing. The task is created from that issue (`issue_id`). It cannot be combined with `github_issue` or `github_pull` |
-| `github_issue`, `github_pull` | Templates rendering a number (a leading `#` is allowed) or nothing. They cannot be combined |
+| `issue` | Template rendering a vincent issue id or nothing. The task is created from that issue (`issue_id`). It cannot be combined with `github_pull` |
+| `github_pull` | Template rendering a pull request number (a leading `#` is allowed) or nothing |
+
+- **No `github_issue`.** It was removed. Strict decoding refuses a file that
+  still carries it (`unknown field "github_issue"`); the file stops firing but
+  keeps its cursor, and resumes once `github_issue` is replaced with `issue`
+  — `'{{ .Event.issue_id }}'` on an `issues` source, `'{{ .Event.IssueID }}'`
+  on `github_issues`.
 
 - **Refused keys.** `target`, `branch` and `prompt`.
 - **Replay.** The action replays `POST /v1/tasks` in `source.project` with an
@@ -312,7 +319,7 @@ action:
 | `on_fire` | optional | optional | **must be `create`** |
 
 - **Refused keys.** All three refuse `workflow`, `title`, `description`,
-  `fields`, `github_issue`, `github_pull`, `permission` and
+  `fields`, `issue`, `github_pull`, `permission` and
   `limits.max_task_cost_usd`.
 - **Finding the task.** The target is the unarchived task in `source.project`
   whose branch equals the rendered `branch`. When several match, the newest

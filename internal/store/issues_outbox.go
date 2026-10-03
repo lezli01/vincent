@@ -175,20 +175,36 @@ func enqueueStateWriteTx(ctx context.Context, tx *sql.Tx, cur *Issue, to issuest
 	return true, nil
 }
 
-// hasPendingWriteTx reports whether the issue has a write still to send.
-// While it does, an import refresh keeps the local state (task 130.10): the
-// drain's preflight, not the importer, decides between the two.
-func hasPendingWriteTx(ctx context.Context, tx *sql.Tx, issueID int64) (bool, error) {
-	var one int
-	err := tx.QueryRowContext(ctx, `SELECT 1 FROM issue_sync_outbox WHERE issue_id = ? AND status = ? LIMIT 1`,
-		issueID, OutboxPending).Scan(&one)
+// holdsLocalStateTx reports whether an import refresh that finds GitHub at
+// remote keeps the issue's local state rather than adopting GitHub's, by the
+// issue's newest write (task 130.10). A pending one holds it: the drain's
+// preflight, not the importer, decides between the two. A failed one —
+// `no_write_scope`, `not_found` and the rest — holds it while GitHub still
+// shows that write's base, because §12.4 ends such a write keeping the local
+// state, and adopting the very value the write failed to replace would undo
+// it on the next tick. Once GitHub moves off the base someone else changed
+// it, and GitHub is the authority again.
+func holdsLocalStateTx(ctx context.Context, tx *sql.Tx, issueID int64, remote IssueStateValue) (bool, error) {
+	var status, baseJSON string
+	err := tx.QueryRowContext(ctx, `SELECT status, base_json FROM issue_sync_outbox WHERE issue_id = ? ORDER BY id DESC LIMIT 1`,
+		issueID).Scan(&status, &baseJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("read pending write of issue %d: %w", issueID, err)
+		return false, fmt.Errorf("read newest write of issue %d: %w", issueID, err)
 	}
-	return true, nil
+	switch status {
+	case OutboxPending:
+		return true, nil
+	case OutboxFailed:
+		var base IssueStateValue
+		if err := json.Unmarshal([]byte(baseJSON), &base); err != nil {
+			return false, fmt.Errorf("decode newest write of issue %d: %w", issueID, err)
+		}
+		return remote.Same(base), nil
+	}
+	return false, nil
 }
 
 const outboxSelect = `SELECT o.id, o.issue_id, i.project_id, o.op, o.desired_json, o.base_json, o.status,

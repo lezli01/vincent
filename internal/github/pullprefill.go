@@ -6,14 +6,13 @@ import (
 	"strings"
 )
 
-// This file is the pull-request half of the prefill (task 064 decision 9). It
-// mirrors the issue half in prefill.go rather than sharing its body: an issue
-// and a pull request offer different metadata, and a function that took both
-// would have to invent an "either" type whose zero value is a third case.
+// This file is the pull-request prefill (task 064 decision 9). The issue
+// half that once sat beside it went with the `github_issue` create field
+// (task 130.11); the vincent issue prefill lives in internal/issues.
 
 // FieldPull is the one declared field name a pull request fills, matched
 // **exactly**, like every other candidate (035 decision 7). It exists for the
-// same reason FieldIssue does: a `run:` step receives §8.5's environment and
+// same reason a declared `issue` field does: a `run:` step receives §8.5's environment and
 // not §8.4's template context, so the number has to be somewhere a step body
 // can read it. There is no `.Pull` to read it from either — 052's "a pull
 // request is a pointer, never a snapshot" stands (064 decision 11) — which

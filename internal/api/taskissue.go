@@ -108,8 +108,8 @@ func taskGitHubRef(t *store.Task) (repo string, number int, ok bool) {
 
 // applyVincentIssue resolves a create request's `issue_id` (task 130.7): it
 // loads the issue, freezes the snapshot, and folds vincentIssuePrefill into
-// the request through foldPrefill — explicit wins, exactly as for
-// `github_issue` (task 035 decision 2). The prefill reads only the snapshot,
+// the request through foldPrefill — explicit wins, the rule task 035
+// decision 2 set for the removed `github_issue` field. The prefill reads only the snapshot,
 // so this makes no provider call even for an imported issue.
 //
 // A closed issue is not a refusal: one issue backs many tasks, and follow-up

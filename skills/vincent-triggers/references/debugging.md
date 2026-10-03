@@ -32,7 +32,7 @@ Two sources answer this, depending on whether the daemon is running:
 
 | Reason | What to do |
 |---|---|
-| `the trigger file does not validate` | Fix the errors `validate` reports. The file keeps its cursor while invalid |
+| `the trigger file does not validate` | Fix the errors `validate` reports. The file keeps its cursor while invalid. An `unknown field "github_issue"` error is a file written before `action.github_issue` was removed: replace it with `action.issue` (`'{{ .Event.issue_id }}'` on an `issues` source, `'{{ .Event.IssueID }}'` on `github_issues`), and the trigger resumes from its kept cursor |
 | `the trigger is disabled` | This is the safe default. Tell the user a human sets `enabled: true`, in the TUI (which asks first) or in an editor |
 | `triggers.enabled is off in config.yaml` | The global switch. A human turns it on |
 

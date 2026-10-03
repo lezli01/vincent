@@ -1036,10 +1036,10 @@ starts.
 
 ### `.Issue`
 
-A task can be created from an issue: a vincent issue with
-`vincent task add --issue ID` (`issue_id` over the API), or a GitHub issue from
-the TUI's new-task form or with `vincent task add --github-issue N`. When it
-was, `.Issue` carries that issue and a prompt can use it directly:
+A task can be created from an issue — a vincent issue, local or imported from
+GitHub — with `vincent task add --issue ID` (`issue_id` over the API, `issue:`
+in a trigger). When it was, `.Issue` carries that issue and a prompt can use it
+directly:
 
 ```yaml
   - id: fix
@@ -1061,10 +1061,12 @@ was created in vincent. A template that hands a number to `gh` therefore reads
 are deprecated aliases of `.Issue.Source.Repo` and `.Issue.Source.URL`, kept so
 older templates keep rendering.
 
-A task created with `--github-issue N` carries the GitHub issue itself rather
-than a vincent issue. For such a task `.Issue.Number` is the GitHub number and
-`.Issue.Source` repeats it, so every template written before vincent had its
-own issues renders exactly as it did.
+A task created from a GitHub issue before vincent had its own issues (with the
+since-removed `--github-issue N`) carries that GitHub issue itself as its
+snapshot. For such a task `.Issue.Number` is the GitHub number and
+`.Issue.Source` repeats it, so every template written then renders exactly as
+it did. The upgrade linked those tasks to backfilled issues, but what they
+render is still their own snapshot.
 
 `.Issue.Number` is **0** when no issue is linked, exactly the way `.Loop.Index`
 is 0 outside a loop, so one workflow serves both kinds of task:
@@ -1097,9 +1099,8 @@ the create rather than being cut short.
 A declared `issue` field carries the vincent issue id, and a declared
 `github_issue` field the GitHub issue **number** — bare, without the `#` the
 title carries. Declare either `integer` (or `number`, or `string`); a
-`boolean` one is left empty like any other type mismatch. While
-`--github-issue N` remains, it fills **both** with the GitHub number, so a
-workflow that reads `github_issue` works for every task that has one.
+`boolean` one is left empty like any other type mismatch. A workflow that
+needs the GitHub number reads `github_issue`.
 
 Numbers are safe to template into a `run:` body — `{{ .Issue.Source.Number }}`
 or `{{ index .Task.Fields "github_issue" }}` renders digits and nothing else.
@@ -1186,6 +1187,56 @@ about the run, not inherited state.
 `VINCENT_TASK_ID` and `VINCENT_STEP_ID` are what
 [`vincent status`](cli.md#vincent-status) uses to address the step it is being
 run from, which is why every step type that runs a process gets them.
+
+### The task's issue
+
+<a id="vincent-issue-file"></a>
+
+A task created from an issue also receives the issue as a **file**, and four
+more variables. A task with no issue receives none of them.
+
+| Variable | Value |
+|---|---|
+| `VINCENT_ISSUE_FILE` | absolute path of the issue snapshot file |
+| `VINCENT_ISSUE_ID` | the vincent issue id; absent for a task created with the legacy `--github-issue` |
+| `VINCENT_ISSUE_NUMBER` | the GitHub issue number; imported issues and legacy tasks only |
+| `VINCENT_ISSUE_URL` | the GitHub issue URL; imported issues and legacy tasks only |
+
+The file has the shape `gh issue view --json
+number,title,body,url,createdAt,state,stateReason,labels,author,comments`
+prints, so `jq` written for `gh` reads it unchanged:
+
+| Key | |
+|---|---|
+| `number` | the GitHub number; `null` for a local issue |
+| `title`, `body` | |
+| `url` | `""` for a local issue |
+| `createdAt` | RFC3339; `null` for a task created before vincent recorded it |
+| `state` | `OPEN` or `CLOSED` |
+| `stateReason` | `COMPLETED`, `NOT_PLANNED` or `DUPLICATE`; `null` while open |
+| `labels` | `[{"name": …}]` |
+| `author` | `{"login": …}` |
+| `comments` | always `[]` for now — the GitHub thread is not carried yet |
+| `id` | the vincent issue id; `null` for a legacy task |
+| `kind`, `priority` | the vincent issue's |
+| `source` | `{provider, repo, number, url}` for an imported issue; `null` for a local one |
+
+It is the snapshot taken when the task was created — the same one
+[`.Issue`](#issue) renders — and is written from the task, never fetched, before
+every attempt. It lives in the worktree's own git directory, so `git add -A`
+cannot stage it, a [containerized](configuration.md#container) step sees it at the same path,
+and a fan-out lane gets its parent's. Read it instead of `gh issue view`:
+
+```yaml
+  - id: fetch
+    type: command
+    run: |
+      [ -n "${VINCENT_ISSUE_FILE:-}" ] || { echo "create the task from an issue" >&2; exit 1; }
+      jq -e '.state == "OPEN"' "$VINCENT_ISSUE_FILE"
+```
+
+Free text — a title, a body — reaches a shell through this file, never through
+a template rendered into `run:`.
 
 ## Resolution order
 

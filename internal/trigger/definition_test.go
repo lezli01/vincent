@@ -92,13 +92,6 @@ func TestParseVariantRefusals(t *testing.T) {
 			func(d map[string]any) { setPath(d, "source.poll_interval", "1m", false) }, "source.poll_interval",
 		},
 		{
-			"issue with github_issue (task 130.15 decision 5)", SourceCommand, ActionCreateTask,
-			func(d map[string]any) {
-				setPath(d, "action.issue", "{{ .Event.n }}", false)
-				setPath(d, "action.github_issue", "{{ .Event.n }}", false)
-			}, "action.issue",
-		},
-		{
 			"issue with github_pull", SourceCommand, ActionCreateTask,
 			func(d map[string]any) {
 				setPath(d, "action.issue", "{{ .Event.n }}", false)

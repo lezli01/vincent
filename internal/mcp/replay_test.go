@@ -285,3 +285,28 @@ func TestIdempotencyKeyIsOnlyOnTheCreates(t *testing.T) {
 		}
 	}
 }
+
+// TestTaskCreateNoLongerOffersGitHubIssue: task 130.11 removed the
+// `github_issue` create field (task 130 decision 7), so neither the tool's
+// description nor its schema may name it — a model told about a field the
+// route now refuses as unknown would build 400s.
+func TestTaskCreateNoLongerOffersGitHubIssue(t *testing.T) {
+	t.Parallel()
+	r := routeFor(t, "task_create")
+	if strings.Contains(r.Description, "github_issue") {
+		t.Errorf("task_create still describes github_issue: %s", r.Description)
+	}
+	if schema := string(inputSchema(r)); strings.Contains(schema, "github_issue") {
+		t.Errorf("task_create's schema still names github_issue: %s", schema)
+	}
+}
+
+// TestIssueListOffersTheRemoteNumberLookup: the lookup that replaced the
+// field (task 130.11, decision 22.4) is documented where a model reads it.
+func TestIssueListOffersTheRemoteNumberLookup(t *testing.T) {
+	t.Parallel()
+	r := routeFor(t, "issue_list")
+	if !strings.Contains(r.Description, "remote_number") || !strings.Contains(r.Description, "project_id") {
+		t.Errorf("issue_list does not document remote_number: %s", r.Description)
+	}
+}

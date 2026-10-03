@@ -24,8 +24,8 @@ import (
 	"github.com/lezli01/vincent/internal/worktree"
 )
 
-// The §13.2 GitHub endpoints and `github_issue` on POST /v1/tasks (task 035),
-// against the real handlers over httptest.
+// The §13.2 GitHub issue endpoints (task 035), and the removal of the
+// `github_issue` create field (task 130.11), against the real handlers over httptest.
 //
 // The daemon's GitHub client is pointed at cmd/fakegh, so these run on
 // Windows, macOS and Linux and none of them touches the network. The fake
@@ -257,7 +257,7 @@ func TestGitHubIssuesList(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("list: %d %s", resp.StatusCode, body)
 	}
-	var out []githubIssueResponse
+	var out []github.Issue
 	if err := json.Unmarshal(body, &out); err != nil {
 		t.Fatalf("list body: %v (%s)", err, body)
 	}
@@ -267,82 +267,36 @@ func TestGitHubIssuesList(t *testing.T) {
 	if out[0].Number != 200 {
 		t.Errorf("first issue = #%d, want the newest (#200)", out[0].Number)
 	}
-	if out[0].Prefill != nil {
-		t.Error("a listing that named no workflow carried a prefill")
-	}
 	// The state and limit the daemon actually asked gh for.
 	if calls := h.ghCalls(t); !strings.Contains(calls, "--state open") {
 		t.Errorf("gh was not asked for open issues:\n%s", calls)
 	}
 }
 
-// TestGitHubIssuesPrefill is decision 7, end to end: exact-name matches only,
-// type-and-pattern-valid values only, and the link line appended as its own
-// trailing block.
-func TestGitHubIssuesPrefill(t *testing.T) {
+// TestGitHubIssuesListHasNoPrefill: the per-row `workflow` prefill went with
+// the `github_issue` create field (task 130.11, decision 7). The raw listing
+// stays, and a `workflow` parameter — known or not — changes nothing.
+func TestGitHubIssuesListHasNoPrefill(t *testing.T) {
 	h := newGitHubHarness(t, nil, ghOrigin)
 	writeWorkflowFile(t, h.globalDir, "fix-issue", issueWorkflowYAML)
 	h.reg.ReloadGlobal()
-
-	resp, body := h.issues(t, "workflow=fix-issue")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("list: %d %s", resp.StatusCode, body)
-	}
-	var out []githubIssueResponse
-	if err := json.Unmarshal(body, &out); err != nil {
-		t.Fatalf("list body: %v (%s)", err, body)
-	}
-	prefill := out[0].Prefill
-	if prefill == nil {
-		t.Fatal("no prefill on a listing that named a workflow")
-	}
-	if want := "#200 " + out[0].Title; prefill.Title != want {
-		t.Errorf("prefill title = %q, want the numbered issue title %q", prefill.Title, want)
-	}
-	// The number is a field too, so a `run:` body can read it without parsing
-	// it back out of the title (amended 2026-08-27).
-	if got := prefill.Fields["issue"]; got != "200" {
-		t.Errorf("issue = %q, want the issue number 200", got)
-	}
-	wantTail := "\n\nGitHub issue #200: https://github.com/octo/repo/issues/200"
-	if !strings.HasSuffix(prefill.Description, wantTail) {
-		t.Errorf("description does not end in the link block:\n%q", prefill.Description)
-	}
-	if !strings.HasPrefix(prefill.Description, out[0].Body) {
-		t.Errorf("description does not start with the issue body:\n%q", prefill.Description)
-	}
-	if got := prefill.Fields["labels"]; got != "enhancement, area/api" {
-		t.Errorf("labels = %q, want the comma-joined list", got)
-	}
-	if got := prefill.Fields["assignee"]; got != "hubot" {
-		t.Errorf("assignee = %q, want hubot", got)
-	}
-	// Declared `integer`, so the milestone *number*, not its title.
-	if got := prefill.Fields["milestone"]; got != "4" {
-		t.Errorf("milestone = %q, want the number 4 for an integer field", got)
-	}
-	// `notes` is declared but is not one of the four names, and `ticket`
-	// declares a pattern nothing an issue offers satisfies. Neither is
-	// invented, and neither is filled with a value the create call would 400
-	// on.
-	for _, name := range []string{"notes", "ticket"} {
-		if value, ok := prefill.Fields[name]; ok {
-			t.Errorf("prefill invented %s = %q", name, value)
+	for _, query := range []string{"workflow=fix-issue", "workflow=no-such-workflow"} {
+		resp, body := h.issues(t, query)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: %d %s", query, resp.StatusCode, body)
 		}
-	}
-
-	// An issue with no metadata leaves every declared field empty rather than
-	// filling it with blanks. Every issue has a number, so `issue` is the one
-	// field a bare issue still fills.
-	bare := out[1].Prefill
-	if bare == nil {
-		t.Fatal("the second issue carried no prefill")
-	}
-	if len(bare.Fields) != 1 || bare.Fields["issue"] != "41" {
-		t.Errorf("an issue with no labels/assignee/milestone prefilled %v, want only its number", bare.Fields)
-	}
-	if bare.Description != "GitHub issue #41: https://github.com/octo/repo/issues/41" {
-		t.Errorf("an empty body produced %q, want the link line alone", bare.Description)
+		var rows []map[string]any
+		if err := json.Unmarshal(body, &rows); err != nil {
+			t.Fatalf("%s: list body: %v (%s)", query, err, body)
+		}
+		if len(rows) != 2 {
+			t.Fatalf("%s: listed %d issues, want 2", query, len(rows))
+		}
+		for _, row := range rows {
+			if _, ok := row["prefill"]; ok {
+				t.Errorf("%s: a row still carries a prefill: %v", query, row)
+			}
+		}
 	}
 }
 
@@ -377,15 +331,13 @@ func TestGitHubIssuesRejectsABadLimit(t *testing.T) {
 	wantError(t, resp, body, http.StatusBadRequest, CodeValidationFailed)
 }
 
-func TestGitHubIssuesUnknownWorkflow(t *testing.T) {
-	h := newGitHubHarness(t, nil, ghOrigin)
-	resp, body := h.issues(t, "workflow=no-such-workflow")
-	wantError(t, resp, body, http.StatusBadRequest, CodeValidationFailed)
-}
-
-// TestCreateTaskFromAnIssue is the create path: the daemon fetches, prefills
-// what the request left unset, and persists the snapshot on the row.
-func TestCreateTaskFromAnIssue(t *testing.T) {
+// TestCreateTaskRefusesGitHubIssue is task 130 decision 7's hard removal:
+// `github_issue` is no longer a create field, so an old client's body is an
+// unknown field — DisallowUnknownFields' 400, which decodeFailed reports as
+// validation_failed naming the field (JSON that parses but does not fit, as
+// opposed to invalid_json's unparseable body) — and nothing is fetched from
+// GitHub on its behalf.
+func TestCreateTaskRefusesGitHubIssue(t *testing.T) {
 	h := newGitHubHarness(t, nil, ghOrigin)
 	writeWorkflowFile(t, h.globalDir, "fix-issue", issueWorkflowYAML)
 	h.reg.ReloadGlobal()
@@ -393,115 +345,20 @@ func TestCreateTaskFromAnIssue(t *testing.T) {
 	resp, body := h.doJSON(t, http.MethodPost, "/v1/tasks", map[string]any{
 		"project_id": h.projectID, "workflow": "fix-issue", "github_issue": 200,
 	})
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("create: %d %s", resp.StatusCode, body)
-	}
-	var tr taskResponse
-	if err := json.Unmarshal(body, &tr); err != nil {
-		t.Fatalf("task body: %v (%s)", err, body)
-	}
-	if tr.Title != "#200 GitHub integration: select a GitHub issue when creating a task" {
-		t.Errorf("title = %q, want the issue's, numbered", tr.Title)
-	}
-	if !strings.HasSuffix(tr.Description,
-		"GitHub issue #200: https://github.com/octo/repo/issues/200") {
-		t.Errorf("description does not end in the link line:\n%q", tr.Description)
-	}
-	if tr.Fields["labels"] != "enhancement, area/api" || tr.Fields["milestone"] != "4" {
-		t.Errorf("fields = %v, want the mapped prefill", tr.Fields)
-	}
-	if tr.Fields["issue"] != "200" {
-		t.Errorf("issue field = %q, want the issue number a step body reads", tr.Fields["issue"])
-	}
-	if tr.GitHubIssue == nil {
-		t.Fatal("the created task carries no issue snapshot")
-	}
-	if tr.GitHubIssue.Number != 200 || tr.GitHubIssue.Repo != "octo/repo" {
-		t.Errorf("snapshot = %+v, want #200 of octo/repo", tr.GitHubIssue)
-	}
-	if tr.GitHubIssue.FetchedAt.IsZero() {
-		t.Error("the snapshot carries no fetched_at; a task cannot say how old it is")
-	}
-	// And it is on the row, not merely in the response.
-	stored, err := h.store.GetTask(t.Context(), tr.ID)
-	if err != nil {
-		t.Fatalf("get task: %v", err)
-	}
-	if stored.GitHubIssue == nil || stored.GitHubIssue.Number != 200 {
-		t.Errorf("stored issue = %+v", stored.GitHubIssue)
-	}
-}
-
-// TestCreateTaskExplicitValuesWinOverTheIssue is decision 2's precedence rule
-// — the one that makes the CLI flag and the TUI's previewed prefill produce
-// the same stored task, and that keeps "nothing is locked" true.
-func TestCreateTaskExplicitValuesWinOverTheIssue(t *testing.T) {
-	h := newGitHubHarness(t, nil, ghOrigin)
-	writeWorkflowFile(t, h.globalDir, "fix-issue", issueWorkflowYAML)
-	h.reg.ReloadGlobal()
-
-	resp, body := h.doJSON(t, http.MethodPost, "/v1/tasks", map[string]any{
-		"project_id":   h.projectID,
-		"workflow":     "fix-issue",
-		"github_issue": 200,
-		"title":        "My own title",
-		"description":  "My own description",
-		// Present with an empty value: a row the human cleared on purpose.
-		// Presence wins, so the daemon must not put the prefill back.
-		"fields": map[string]string{"labels": "", "assignee": "someone-else"},
-	})
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("create: %d %s", resp.StatusCode, body)
-	}
-	var tr taskResponse
-	if err := json.Unmarshal(body, &tr); err != nil {
-		t.Fatalf("task body: %v (%s)", err, body)
-	}
-	if tr.Title != "My own title" || tr.Description != "My own description" {
-		t.Errorf("explicit title/description lost: %q / %q", tr.Title, tr.Description)
-	}
-	if tr.Fields["labels"] != "" {
-		t.Errorf("labels = %q, want the cleared value to stand", tr.Fields["labels"])
-	}
-	if tr.Fields["assignee"] != "someone-else" {
-		t.Errorf("assignee = %q, want the explicit value", tr.Fields["assignee"])
-	}
-	// A field the request said nothing about is still prefilled.
-	if tr.Fields["milestone"] != "4" {
-		t.Errorf("milestone = %q, want the prefill for an unmentioned field", tr.Fields["milestone"])
-	}
-	// The snapshot is stored either way: it is what `.Issue` renders from.
-	if tr.GitHubIssue == nil || tr.GitHubIssue.Number != 200 {
-		t.Errorf("snapshot = %+v", tr.GitHubIssue)
-	}
-}
-
-// TestCreateTaskWithAnUnknownIssue: the reason travels, `gh`'s text does not.
-func TestCreateTaskWithAnUnknownIssue(t *testing.T) {
-	h := newGitHubHarness(t, nil, ghOrigin)
-	resp, body := h.doJSON(t, http.MethodPost, "/v1/tasks", map[string]any{
-		"project_id": h.projectID, "github_issue": 9999,
-	})
-	if resp.StatusCode != http.StatusConflict {
-		t.Fatalf("status = %d, want 409 (body %s)", resp.StatusCode, body)
-	}
-	var e errorBody
-	if err := json.Unmarshal(body, &e); err != nil {
-		t.Fatalf("error body: %v (%s)", err, body)
-	}
-	if e.Error.Details["reason"] != github.ReasonNotFound {
-		t.Errorf("details = %v, want reason %q", e.Error.Details, github.ReasonNotFound)
-	}
-}
-
-func TestCreateTaskRejectsANonPositiveIssueNumber(t *testing.T) {
-	h := newGitHubHarness(t, nil, ghOrigin)
-	resp, body := h.doJSON(t, http.MethodPost, "/v1/tasks", map[string]any{
-		"project_id": h.projectID, "github_issue": 0, "title": "t",
-	})
-	// 0 is JSON's way of saying "absent" only for a value type; the field is
-	// a pointer, so an explicit 0 is a request to link issue zero.
 	wantError(t, resp, body, http.StatusBadRequest, CodeValidationFailed)
+	if !strings.Contains(string(body), `unknown field \"github_issue\"`) {
+		t.Errorf("the 400 does not name the unknown field: %s", body)
+	}
+	if calls := h.ghCalls(t); calls != "" {
+		t.Errorf("a refused github_issue create still invoked gh:\n%s", calls)
+	}
+	tasks, err := h.store.ListTasks(t.Context(), store.TaskFilter{})
+	if err != nil {
+		t.Fatalf("list tasks: %v", err)
+	}
+	if len(tasks) != 0 {
+		t.Errorf("a refused create left %d task(s) behind", len(tasks))
+	}
 }
 
 // TestCreateTaskWithoutAnIssueMakesNoGitHubCall: the ordinary path is
@@ -516,26 +373,6 @@ func TestCreateTaskWithoutAnIssueMakesNoGitHubCall(t *testing.T) {
 	}
 	if calls := h.ghCalls(t); calls != "" {
 		t.Errorf("creating a task without an issue invoked gh:\n%s", calls)
-	}
-}
-
-// TestCreateTaskFromAnIssueRefusedWhenDisabled: the toggle is the whole gate,
-// and it is enforced on the create path too, not only in the picker.
-func TestCreateTaskFromAnIssueRefusedWhenDisabled(t *testing.T) {
-	off := func() config.Config {
-		c := config.Default()
-		c.GitHub.Enabled = false
-		return c
-	}
-	h := newGitHubHarness(t, off, ghOrigin)
-	resp, body := h.doJSON(t, http.MethodPost, "/v1/tasks", map[string]any{
-		"project_id": h.projectID, "github_issue": 200,
-	})
-	if resp.StatusCode != http.StatusConflict {
-		t.Fatalf("status = %d, want 409 (body %s)", resp.StatusCode, body)
-	}
-	if calls := h.ghCalls(t); calls != "" {
-		t.Errorf("a disabled integration still invoked gh:\n%s", calls)
 	}
 }
 

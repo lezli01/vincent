@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lezli01/vincent/internal/issuestate"
@@ -374,4 +375,94 @@ func (s *Store) ImportedIssueIDs(ctx context.Context, projectID int64, provider 
 		return nil, fmt.Errorf("list imported issue ids: %w", err)
 	}
 	return out, nil
+}
+
+// LegacyRemoteKeyPrefix marks a placeholder remote key: the backfill of
+// task 035's github_issue snapshots (task 130.11) knows a repository and a
+// number but no node id, so it keys each remote "legacy:{repo}#{number}"
+// and leaves synced_at NULL until the importer first sees the issue.
+const LegacyRemoteKeyPrefix = "legacy:"
+
+// IsPlaceholderRemote reports whether r is a never-synced backfill
+// placeholder — the only kind of remote the importer matches by number
+// (task 130 decision 22.3).
+func IsPlaceholderRemote(r IssueRemote) bool {
+	return strings.HasPrefix(r.RemoteKey, LegacyRemoteKeyPrefix) && r.SyncedAt == nil
+}
+
+// AdoptPlaceholderRemote re-keys a backfill placeholder onto the issue the
+// provider now reports (task 130 decision 22.3). When in.RemoteKey is
+// unknown in the project and a never-synced placeholder has the same
+// provider, repository (case-insensitively) and number, the placeholder's
+// remote_key becomes in.RemoteKey and the row is refreshed exactly as
+// UpsertRemoteIssue refreshes a live key: content, labels and the remote's
+// state — open to closed and closed to open — synced_at stamped, and one
+// issue.updated by the given actor. The refresh is sync's, so nothing is
+// queued for write-back (task 130.10). A tombstoned placeholder is re-keyed
+// and stays a tombstone.
+//
+// Only placeholders are matched by number: a remote keyed by a real node
+// id is followed through that id alone (decision 15.5), and a placeholder
+// of another repository — origin re-pointed since the snapshot — is never
+// matched, since the binding is sticky (decision 5). Reports false, and
+// writes nothing, when there is no placeholder to adopt or the key is
+// already known.
+func (s *Store) AdoptPlaceholderRemote(ctx context.Context, in RemoteIssue, by issuestate.Actor) (adopted bool, err error) {
+	if err := checkActor(by); err != nil {
+		return false, err
+	}
+	if in.Provider == "" || in.RemoteKey == "" {
+		return false, errors.New("remote issue needs a provider and a remote key")
+	}
+	if in.Number < 1 || in.Repo == "" {
+		return false, nil
+	}
+	state := issuestate.Normalize(in.State)
+	var reason issuestate.Reason
+	if state == issuestate.Closed {
+		if reason, err = issuestate.ResolveReason(issuestate.RemoteClosed, in.CloseReason); err != nil {
+			return false, err
+		}
+	}
+	err = s.writeIssue(ctx, func(tx *sql.Tx) (*Event, error) {
+		var one int
+		err := tx.QueryRowContext(ctx, `
+			SELECT 1 FROM issue_remotes WHERE project_id = ? AND provider = ? AND remote_key = ?`,
+			in.ProjectID, in.Provider, in.RemoteKey).Scan(&one)
+		switch {
+		case err == nil:
+			return nil, nil
+		case !errors.Is(err, sql.ErrNoRows):
+			return nil, fmt.Errorf("read issue remote: %w", err)
+		}
+		var (
+			remoteID int64
+			issueID  sql.NullInt64
+		)
+		err = tx.QueryRowContext(ctx, `
+			SELECT id, issue_id FROM issue_remotes
+			WHERE project_id = ? AND provider = ? AND repo = ? COLLATE NOCASE AND number = ?
+				AND remote_key LIKE ? AND synced_at IS NULL
+			ORDER BY id LIMIT 1`,
+			in.ProjectID, in.Provider, in.Repo, in.Number, LegacyRemoteKeyPrefix+"%").Scan(&remoteID, &issueID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read placeholder remote: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE issue_remotes SET remote_key = ? WHERE id = ?`,
+			in.RemoteKey, remoteID); err != nil {
+			return nil, fmt.Errorf("re-key placeholder remote: %w", err)
+		}
+		adopted = true
+		if !issueID.Valid {
+			return nil, nil
+		}
+		return refreshRemoteIssueTx(ctx, tx, in, remoteID, issueID.Int64, state, reason, time.Now(), by)
+	})
+	if err != nil {
+		return false, err
+	}
+	return adopted, nil
 }

@@ -1,10 +1,6 @@
 package api
 
 import (
-	"encoding/json"
-	"net/http"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -13,20 +9,7 @@ import (
 	"github.com/lezli01/vincent/internal/workflow"
 )
 
-// Task 130.4: the issue prefill from a vincent issue, and the legacy
-// `github_issue` path's widened field mapping.
-
-// numbersWorkflowYAML declares both numbers a workflow can ask for.
-const numbersWorkflowYAML = `name: fix-numbers
-description: Fix a reported issue by number.
-fields:
-  - name: issue
-    type: integer
-  - name: github_issue
-    type: integer
-steps:
-  - {id: approve, type: manual, instructions: review}
-`
+// Task 130.4: the issue prefill from a vincent issue.
 
 func parseTestWorkflow(t *testing.T, src string) *workflow.Workflow {
 	t.Helper()
@@ -35,73 +18,6 @@ func parseTestWorkflow(t *testing.T, src string) *workflow.Workflow {
 		t.Fatalf("parse: %v %v", err, verrs)
 	}
 	return wf
-}
-
-// TestLegacyIssuePrefillFillsBothNumbers (task 130.4 decision 1): until
-// 130.11 removes `github_issue`, it fills a declared `issue` and a declared
-// `github_issue` with the GitHub number, so a repo workflow switched to
-// `github_issue` keeps working.
-func TestLegacyIssuePrefillFillsBothNumbers(t *testing.T) {
-	h := newGitHubHarness(t, nil, ghOrigin)
-	writeWorkflowFile(t, h.globalDir, "fix-numbers", numbersWorkflowYAML)
-	h.reg.ReloadGlobal()
-
-	resp, body := h.doJSON(t, http.MethodPost, "/v1/tasks", map[string]any{
-		"project_id": h.projectID, "workflow": "fix-numbers", "github_issue": 200,
-	})
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("create: %d %s", resp.StatusCode, body)
-	}
-	var tr taskResponse
-	if err := json.Unmarshal(body, &tr); err != nil {
-		t.Fatalf("task body: %v (%s)", err, body)
-	}
-	if tr.Fields["issue"] != "200" || tr.Fields["github_issue"] != "200" {
-		t.Errorf("fields = %v, want issue and github_issue both 200", tr.Fields)
-	}
-	// The legacy path writes the legacy snapshot only (decision 1).
-	stored, err := h.store.GetTask(t.Context(), tr.ID)
-	if err != nil {
-		t.Fatalf("get task: %v", err)
-	}
-	if stored.IssueID != nil || stored.Issue != nil {
-		t.Errorf("legacy create wrote issue_id %v / issue_json %+v", stored.IssueID, stored.Issue)
-	}
-}
-
-// TestLegacyIssueOversizedBodyIs400 (decision 4): an imported body larger
-// than §13.1's description bound fails the create, never truncated.
-func TestLegacyIssueOversizedBodyIs400(t *testing.T) {
-	corpus := filepath.Join(t.TempDir(), "issues.json")
-	rows := []map[string]any{{
-		"id": 7001, "node_id": "I_1", "number": 1, "title": "huge",
-		"body":  strings.Repeat("x", maxDescriptionBytes+1),
-		"state": "open", "created_at": "2026-09-01T00:00:00Z", "updated_at": "2026-09-01T00:00:00Z",
-		"url":            "https://api.github.com/repos/octo/repo/issues/1",
-		"repository_url": "https://api.github.com/repos/octo/repo",
-		"html_url":       "https://github.com/octo/repo/issues/1",
-	}}
-	raw, err := json.Marshal(rows)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(corpus, raw, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("FAKEGH_ISSUES_FILE", corpus)
-	h := newGitHubHarness(t, nil, ghOrigin)
-
-	resp, body := h.doJSON(t, http.MethodPost, "/v1/tasks", map[string]any{
-		"project_id": h.projectID, "github_issue": 1,
-	})
-	wantError(t, resp, body, http.StatusBadRequest, CodeValidationFailed)
-	tasks, err := h.store.ListTasks(t.Context(), store.TaskFilter{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(tasks) != 0 {
-		t.Errorf("an oversized issue created %d task(s)", len(tasks))
-	}
 }
 
 const vincentIssueWorkflowYAML = `name: fix-vincent-issue

@@ -840,6 +840,7 @@ var bindings = []binding{
 	// chats board's precedent; `i` is the trigger list's "edit in a form";
 	// `X` offers what the daemon's available_actions allow and nothing else.
 	{op: keymap.New, key: "n", label: "file a new issue in the selected row's project", scope: scopePanel, context: ctxIssues, hint: "n new", priority: 7},
+	{op: keymap.Add, key: "a", label: "create a task from the selected issue — the form is prefilled from it and editable first", scope: scopePanel, context: ctxIssues, hint: "a new task", priority: 7, term: termAdd},
 	{key: issueEditKey, label: "edit the selected issue in a form", scope: scopePanel, context: ctxIssues, hint: "i edit", priority: 8},
 	{key: issueStateKey, label: "close or reopen the selected issue — only what the daemon offers", scope: scopePanel, context: ctxIssues, hint: "X close/reopen", priority: 9},
 	{op: keymap.Delete, key: "D", label: "delete the issue permanently (asks first; never deletes on GitHub)", scope: scopePanel, context: ctxIssues, priority: 10, term: termDelete},
@@ -852,6 +853,7 @@ var bindings = []binding{
 	{key: "down", label: "move the selection among the linked tasks (↑/↓)", scope: scopePanel, context: ctxIssue, hint: "↑↓ task", priority: 6},
 	{key: "pgdown", label: "scroll the page (pgup/pgdown)", scope: scopePanel, context: ctxIssue, priority: 7},
 	{op: keymap.New, key: "n", label: "file a new issue in this issue's project", scope: scopePanel, context: ctxIssue, hint: "n new", priority: 8},
+	{op: keymap.Add, key: "a", label: "create a task from this issue — the form is prefilled from it and editable first", scope: scopePanel, context: ctxIssue, hint: "a new task", priority: 8, term: termAdd},
 	{key: issueEditKey, label: "edit the issue in a form", scope: scopePanel, context: ctxIssue, hint: "i edit", priority: 9},
 	{key: issueStateKey, label: "close or reopen the issue — only what the daemon offers", scope: scopePanel, context: ctxIssue, hint: "X close/reopen", priority: 10},
 	{op: keymap.Delete, key: "D", label: "delete the issue permanently (asks first; never deletes on GitHub)", scope: scopePanel, context: ctxIssue, priority: 11, term: termDelete},

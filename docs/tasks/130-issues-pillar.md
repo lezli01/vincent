@@ -1,6 +1,6 @@
 # 130 — The issues pillar: vincent-owned issues per project
 
-**Status:** 🔄 in progress (9/18)
+**Status:** 🔄 in progress (15/18)
 
 Issue [#659](https://github.com/lezli01/vincent/issues/659), part of
 [#658](https://github.com/lezli01/vincent/issues/658). Spec §3 (rows 11, 26
@@ -592,6 +592,118 @@ record the result.
    not dropped: the cursor stops at the last event handled and the next pass
    carries on.
 
+### 21. 130.13: a task from an issue in the TUI (2026-10-03)
+
+Settled with the author before the work started (#672).
+
+1. **Decision 16.3's widening is in scope.** The issue detail lists every root
+   task linked to the issue, newest first, finished and archived ones
+   included, from `GET /v1/tasks?issue_id=&archived=all` — no longer limited
+   to `tasks.active_ids`. `enter` opens a task, and `esc` in the workspace
+   returns to the issue.
+2. **The prefill is re-applied on a workflow switch until the human edits.**
+   This keeps the old picker's rule, not the pull-request seed's apply-once
+   rule: declared fields differ per workflow, so each time the draft settles
+   on a workflow W the form fetches `GET /v1/issues/{id}?workflow=W` and fills
+   only rows the human has not typed in. A row is untouched while it is blank
+   or holds what the previous prefill wrote; an untouched field the new
+   prefill no longer fills is withdrawn. A typed value is never overwritten,
+   and an answer for a stale (project, workflow, issue) is dropped, the guard
+   `applyPullPrefill` uses. The pull-request seed is unchanged.
+3. **The "already started" note is one line: a count plus an active marker**
+   — `2 tasks already started from this issue (1 active)` — from the issue
+   DTO's `tasks` block, with no extra fetch. Starting another is allowed. This
+   amends #672's "the note lists the existing tasks": the list lives on the
+   issue detail (1), not in the form.
+4. **Both optional pieces ship:** an issue fact on the task workspace's
+   Overview (129.12), and a key-less command-palette row, "open this task's
+   issue", which opens the issue detail; `esc` returns to the workspace.
+5. **The form has no way to unlink or change the source.** A plain task is
+   `esc` and `n`; the source is chosen where the issue is on screen, as for a
+   pull request.
+
+The probe route, `vincent github status` and doctor stay; the GitHub issue
+listing loses only `?workflow=` and its per-row `prefill`, which the form's
+picker was the one consumer of (decision 7).
+
+### 22. 130.11: the backfill, placeholder re-keying and a remote-number lookup (2026-10-03)
+
+Settled with the author while scoping #670. #670's body proposed keeping
+`github_issue: N` as a permanent resolve-or-import shorthand; the author was
+asked and kept decision 7. Spec §3 row 26, §5.3, §12.1, §12.3, §13.1, §13.2,
+§14 and §15 record the result.
+
+1. **Decision 7 stands.** 130.11 removes `github_issue` from `POST /v1/tasks`,
+   `--github-issue` and `action.github_issue`. #670's permanent-shorthand
+   proposal is not built, and with it go the acceptance criteria that
+   depended on it (import on demand, digest-identical replay, `github_issue`
+   beside a disagreeing `issue_id`). An API client still sending the field
+   gets `400 validation_failed` (`unknown field "github_issue"`, the strict
+   decoder's answer to an unknown key); a trigger file still carrying it fails validation
+   with `unknown field "github_issue"`, stops firing, keeps its cursor, and
+   resumes once edited to `issue:`. The release notes carry both as a
+   breaking change. The task DTO's read-only `github_issue` stays: removal
+   concerns create, not stored history.
+2. **Backfilled state is the newest snapshot's**, even for issues linked only
+   to archived tasks. Sync corrects it, and GitHub wins. Content (title, body,
+   author, labels) comes from the newest snapshot too; timestamps are copied
+   from the linked tasks, never generated, and migration 0040 writes no
+   events.
+3. **Placeholder keys, re-keyed on first sight.** Backfilled remotes are keyed
+   `legacy:owner/repo#N` with `synced_at` NULL. The importer and the daily
+   scan match never-synced placeholders by `(project, repo, number)`, re-key
+   to `node_id`, adopt remote state and enqueue no write-back. Real keys are
+   never matched by number (decision 15.5 kept). A placeholder whose `repo`
+   differs from the project's sticky sync binding — `origin` re-pointed, or
+   the repository renamed, since the task was created — is **never matched**,
+   and stays a never-synced imported issue with its backfilled content; the
+   API and CLI sync docs say so.
+4. **A remote-number lookup replaces the shorthand for scripts.** It is
+   `GET /v1/issues?project_id=&remote_number=` (a 400 without `project_id`,
+   since a number means nothing across projects), the `issue_list` MCP tool's
+   `remote_number`, and `vincent issue ls --project P --github N`. The repo's
+   resolve workflows use it, triggering `vincent issue sync` when the issue is
+   not yet imported, and their dedupe reads the linked issue's GitHub number
+   beside the legacy snapshot, so a re-run stays safe across the backfill.
+
+Also settled in the same pull request: a legacy-snapshot task brought in by
+task import (task 117) is relinked by its snapshot's repository and number
+against the **live** store's GitHub remotes, never by the staged database's
+issue id; the new-task form's GitHub issue picker, which submitted `github_issue`,
+goes with the field — 130.13 (decision 21) had already replaced it with the
+read-only source row;
+and decision 7's accepted consequence that "every `POST /v1/tasks`
+idempotency digest changes once" is **not** paid after all. The digest is
+computed over a separate shape that keeps an always-`null` `github_issue`
+slot where the field was, so a keyed retry spanning the upgrade still
+replays, while the request itself can no longer carry the field. This
+departs from decision 7's expectation, not its rule: the field is still
+removed from every create surface.
+
+### 23. 130.14: `$VINCENT_ISSUE_FILE` (2026-10-03)
+
+Settled with the author while scoping #673. Spec §8.5 and the task row's
+`issue` entry record the result.
+
+1. **The file is gh-faithful plus vincent extras.** It mirrors `gh issue view
+   --json number,title,body,url,createdAt,state,stateReason,labels,author,
+   comments`, so the workflows' existing `jq` keeps working and `fetch`
+   becomes a copy. `number` is the **GitHub** number, `null` for a local
+   issue — the file's contract is gh's, so it does not follow decision 8's
+   `.Issue.Number`. Beside gh's keys: `id`, `kind`, `priority`, `source`.
+   `createdAt` needed an optional `created_at` on the snapshot (no migration).
+2. **The comment thread is not carried yet, and that gap is accepted.**
+   `comments` is always `[]`, in gh's element shape, so #675 (130.16) fills it
+   with no workflow change. The resolve workflows' prompts say the issue body
+   is the brief until then.
+3. **The file lives in the worktree's own git dir**, written before every
+   attempt from the task row: never staged by `git add -A`, visible to a
+   containerized step under the already-mounted repository (the m12 gate's
+   scenario 1b), removed with the worktree. The fallback — a new read-only
+   mount from the data dir — was not needed.
+4. **One block for all three step types.** The variables are part of §8.5
+   (task 036), so command, check and agent steps get them alike.
+
 ## Open questions
 
 Each has a proposed default, which stands unless the author answers otherwise
@@ -670,22 +782,26 @@ its own pull request.
   Also replaces the TUI's local-only close/reopen confirmation on an imported
   issue (decision 19.2) with its own, done when the two were stacked.
   ✓ 2026-10-03 (decision 17)
-- [ ] **130.11** ([#670](https://github.com/lezli01/vincent/issues/670)) SQL
+- [x] **130.11** ([#670](https://github.com/lezli01/vincent/issues/670)) SQL
   backfill of task 035's snapshots into issues, and the removal of
   `github_issue` from `POST /v1/tasks`, `--github-issue` and
   `action.github_issue` with every consumer decision 7 lists. Depends: 130.7,
-  130.8.
+  130.8. Also removes the new-task form's issue picker, which submitted
+  `github_issue` (130.13's first item), and adds the remote-number lookup.
+  #676's `github_issue: N` shorthand scenario for `scripts/130-gate.sh`,
+  conditional on #670, lapses with the shorthand, which was not built
+  (decision 22.1). ✓ 2026-10-03 (decision 22)
 - [x] **130.12** ([#671](https://github.com/lezli01/vincent/issues/671)) The
   TUI issue create/edit form with close and reopen, and a shared `$EDITOR`
   helper. Depends: 130.9. ✓ 2026-10-03 (decision 19)
-- [ ] **130.13** ([#672](https://github.com/lezli01/vincent/issues/672)) Seed a
+- [x] **130.13** ([#672](https://github.com/lezli01/vincent/issues/672)) Seed a
   new task from an issue, delete the new-task form's issue picker, the task
   workspace's Issue section. Depends: 130.9, 130.7. Also widens the issue
   detail's linked tasks from the active ones to every root task, newest first,
-  over `?issue_id=` (decision 16.3).
-- [ ] **130.14** ([#673](https://github.com/lezli01/vincent/issues/673))
+  over `?issue_id=` (decision 16.3). ✓ 2026-10-03 (decision 21)
+- [x] **130.14** ([#673](https://github.com/lezli01/vincent/issues/673))
   `VINCENT_ISSUE_FILE`, and the repo's resolve workflows migrated onto it.
-  Depends: 130.7, 130.6, 130.8.
+  Depends: 130.7, 130.6, 130.8. ✓ 2026-10-03 (decision 23)
 - [x] **130.15** ([#674](https://github.com/lezli01/vincent/issues/674)) A
   `type: issues` trigger source, `issue:` on `create_task`, the trigger skill.
   Depends: 130.3, 130.7. ✓ 2026-10-03 (decision 20)
@@ -694,6 +810,13 @@ its own pull request.
   130.3, 130.8.
 - [ ] **130.17** ([#676](https://github.com/lezli01/vincent/issues/676)) An
   end-to-end gate on all three platforms. Depends: 130.7, 130.10.
+  `scripts/130-gate.sh` and its `ci.yml` step landed with eleven scenarios,
+  recorded in `docs/gates/130-issues.md`. Scenario 12 (the `github_issue`
+  shorthand) moved to 130.11. Scenario 8 found that a refresh of an
+  unchanged remote reverted the local state of an issue whose write ended
+  `failed/no_write_scope`, which the spec says is kept; the fix landed in the
+  same pull request. This item closes when the gate is green on all three
+  platforms in CI.
 - [ ] **130.18** ([#677](https://github.com/lezli01/vincent/issues/677))
   Screenshot seed, new tapes, recaptures, the features page. Depends: 130.12,
   130.13, 130.10.

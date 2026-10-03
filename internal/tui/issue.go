@@ -24,10 +24,10 @@ import (
 // decision 2) and the link picker (task 112) with the panes that already
 // render Markdown, rather than growing a second toggle.
 //
-// The linked tasks are the unsettled ones, for now (130.9 decision 3): the
-// detail DTO carries tasks.count and tasks.active_ids and nothing filters
-// tasks by issue yet. Every root task, newest first, arrives with `?issue_id=`
-// (130.7 / 130.13).
+// The linked tasks are every root task the issue started, newest first,
+// finished and archived ones included, from GET /v1/tasks?issue_id= (task 130
+// decision 16.3, widened by 130.13 from 130.9's active ids). `a` starts
+// another from here (decision 19.1).
 
 // Issue-detail messages.
 type (
@@ -35,8 +35,9 @@ type (
 	issueLoadedMsg  struct {
 		id    int64
 		issue apiclient.Issue
-		// tasks are the active ids, fetched one by one; one that vanished
-		// between the two reads is left out rather than failing the screen.
+		// tasks are every root task the issue started, newest first. A
+		// listing that failed leaves them out rather than failing the screen:
+		// the issue itself is still worth showing.
 		tasks []apiclient.Task
 		err   error
 	}
@@ -69,6 +70,10 @@ type issueView struct {
 
 	// w is the form and the close/reopen/delete prompt (task 130.12).
 	w issueWrites
+
+	// back is where esc lands: the issue list, or the task workspace the
+	// issue was opened from (task 130.13). Zero is the list.
+	back viewID
 }
 
 func newIssueView(raw *rawHolder, links *hyperlinkHolder) *issueView {
@@ -190,11 +195,11 @@ func (v *issueView) loadCmd() tea.Cmd {
 		if err != nil {
 			return issueLoadedMsg{id: id, err: err}
 		}
-		tasks := make([]apiclient.Task, 0, len(iss.Tasks.ActiveIDs))
-		for _, tid := range iss.Tasks.ActiveIDs {
-			if t, err := client.GetTask(ctx, tid); err == nil {
-				tasks = append(tasks, t.Task)
-			}
+		tasks, err := client.ListTasks(ctx, apiclient.ListTasksOptions{
+			IssueID: id, Archived: apiclient.ArchivedAll,
+		})
+		if err != nil {
+			tasks = nil
 		}
 		return issueLoadedMsg{id: id, issue: iss, tasks: tasks}
 	}
@@ -274,8 +279,13 @@ func (v *issueView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			v.note = ""
 			return v, nil
 		}
-		// Back to the list, which kept its own selection.
-		return v, func() tea.Msg { return selectViewMsg{id: viewIssues} }
+		// Back to where the issue was opened from: the list, which kept its
+		// own selection, or the task workspace.
+		back := v.back
+		if back == 0 {
+			back = viewIssues
+		}
+		return v, func() tea.Msg { return selectViewMsg{id: back} }
 	case opKey(keymap.Refresh):
 		return v, v.loadCmd()
 	case opKey(keymap.OpenRow):
@@ -295,6 +305,8 @@ func (v *issueView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, nil
 	}
 	switch msg.String() {
+	case opKey(keymap.Add):
+		return v, newTaskFromIssueCmd(v.issue)
 	case issueEditKey:
 		iss := v.issue
 		return v, v.w.openForm(v.client, &iss, iss.ProjectID)
@@ -309,6 +321,14 @@ func (v *issueView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.w.act = newIssueDelete(v.client, v.issue)
 	}
 	return v, nil
+}
+
+// newTaskFromIssueCmd is `a` on either issue screen: the new-task form,
+// seeded with the issue (task 130 decision 19.1). A closed issue is allowed —
+// the form says it is closed and the create call warns.
+func newTaskFromIssueCmd(iss apiclient.Issue) tea.Cmd {
+	msg := newTaskFromIssueMsg{projectID: iss.ProjectID, issueID: iss.ID}
+	return func() tea.Msg { return msg }
 }
 
 // pageStep is how far pgup/pgdown move the page.
@@ -436,7 +456,7 @@ func (v *issueView) pageLines(width int) (lines []string, cursorRow int) {
 		styleDim.Render("  "+plural(iss.Tasks.Count, "task", "tasks")+", "+
 			strconv.Itoa(len(iss.Tasks.ActiveIDs))+" active"))
 	if len(v.tasks) == 0 {
-		lines = append(lines, styleDim.Render("  no active task"))
+		lines = append(lines, styleDim.Render("  no task yet · "+opKey(keymap.Add)+" starts one"))
 	}
 	for i, t := range v.tasks {
 		marker := "  "
@@ -448,8 +468,12 @@ func (v *issueView) pageLines(width int) (lines []string, cursorRow int) {
 		if glyph == "" {
 			glyph = "·"
 		}
+		state := t.State
+		if t.ArchivedAt != nil {
+			state += " · archived"
+		}
 		lines = append(lines, marker+stateStyles[t.State].Render(glyph)+" "+
-			styleKey.Render("#"+strconv.FormatInt(t.ID, 10))+"  "+t.Title+"  "+styleDim.Render(t.State))
+			styleKey.Render("#"+strconv.FormatInt(t.ID, 10))+"  "+t.Title+"  "+styleDim.Render(state))
 	}
 
 	if iss.Source != nil {

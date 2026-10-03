@@ -302,7 +302,7 @@ func TestIssuesPollDry(t *testing.T) {
 }
 
 // TestIssuesIssueRender: `issue:` renders to a positive id or to nothing,
-// and anything else is the delivery's error, as github_issue's is.
+// and anything else is the delivery's error, as github_pull's is.
 func TestIssuesIssueRender(t *testing.T) {
 	d := &Definition{
 		ID: "t", Source: Source{Type: SourceIssues, Project: 1},

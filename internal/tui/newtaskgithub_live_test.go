@@ -1,243 +1,352 @@
 package tui
 
 import (
+	"context"
+	"errors"
+	"io/fs"
 	"os"
-	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/lezli01/vincent/internal/config"
-	"github.com/lezli01/vincent/internal/github"
-	"github.com/lezli01/vincent/internal/github/githubtest"
+	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 )
 
-// The new-task form's GitHub issue row, against the real handlers and a real
-// daemon-side GitHub client pointed at cmd/fakegh (task 035, §15).
-//
-// The row is conditional, so the interesting assertions are about what is
-// *absent*: no row when the integration cannot be used, and — asserted at the
-// process level, not assumed — no GitHub call either.
+// The new-task form's sources, against the real handlers (§15 view 3, task
+// 130.13). The form has no GitHub issue row: a task is started from a vincent
+// issue with `a` on the issue screens, and the form shows that issue on a
+// read-only source row. A plain draft is asserted, at the process level, to
+// make no GitHub call at all.
 
-const ghLiveOrigin = "https://github.com/octo/repo.git"
-
-// githubLiveHarness wires the fake `gh` into the live harness and hands back
-// the argv log, so a test can assert on the calls the daemon made.
-func newGitHubLiveHarness(t *testing.T, opts liveOptions) (*newTaskLiveHarness, string) {
-	t.Helper()
-	fake := githubtest.BuildFakeGH(t)
-	argvLog := filepath.Join(t.TempDir(), "gh-argv.txt")
-	t.Setenv("FAKEGH_ARGV_FILE", argvLog)
-	if os.Getenv("FAKEGH_SCENARIO") == "" {
-		t.Setenv("FAKEGH_SCENARIO", "success")
-	}
-	opts.github = github.New(github.Options{
-		GHPath: fake,
-		Getenv: func(string) string { return "" },
-	})
-	return newNewTaskLiveHarnessWith(t, opts), argvLog
+// issueWorkflows are two workflows whose declared fields differ, so a
+// workflow switch changes what an issue's prefill fills.
+var issueWorkflows = map[string]string{
+	"fix-issue.yaml": `name: fix-issue
+fields:
+  - {name: issue, type: string}
+  - {name: kind, type: string}
+steps:
+  - {id: gate, type: manual, instructions: review}
+`,
+	"triage.yaml": `name: triage
+fields:
+  - {name: labels, type: string}
+  - {name: kind, type: string}
+steps:
+  - {id: gate, type: manual, instructions: review}
+`,
 }
 
-func ghLiveCalls(t *testing.T, path string) string {
+// seedIssue files a local issue straight into the store.
+func (h *newTaskLiveHarness) seedIssue(t *testing.T, title string) *store.Issue {
 	t.Helper()
-	b, err := os.ReadFile(path)
+	iss, err := h.st.CreateIssue(context.Background(), store.NewIssue{
+		ProjectID: h.projectID, Title: title, Body: "It crashes on start.",
+		Kind: "bug", Author: "human", Labels: []string{"p1"},
+	}, issuestate.Human)
 	if err != nil {
-		return ""
+		t.Fatalf("CreateIssue: %v", err)
 	}
-	return string(b)
+	return iss
 }
 
-// openForm presses n and waits for the catalogs plus the capability probe.
-func (h *newTaskLiveHarness) openForm(t *testing.T) *newTask {
+// seedForm opens the form seeded with an issue, as `a` would, and waits for
+// the daemon's preview of it.
+func (h *newTaskLiveHarness) seedForm(t *testing.T, issueID int64) *newTask {
 	t.Helper()
-	h.sendKey(tea.KeyPressMsg{Code: 'n', Text: "n"})
+	h.send(newTaskFromIssueMsg{projectID: h.projectID, issueID: issueID})
 	n := h.form(t)
-	h.p.until(10*time.Second, "the form to load", func() bool { return n.loaded })
-	h.p.until(10*time.Second, "the GitHub probe to answer",
-		func() bool { return n.githubProject == n.projectID })
+	h.p.until(10*time.Second, "the seeded issue to be read", func() bool {
+		return n.loaded && n.issue != nil && n.issue.ID == issueID && n.issuePrefill != nil
+	})
 	return n
 }
 
-// TestIssueRowAppearsWhenAvailable: a github.com origin and a working
-// credential put the row on the form, between workflow and title.
-func TestIssueRowAppearsWhenAvailable(t *testing.T) {
-	h, _ := newGitHubLiveHarness(t, liveOptions{remote: ghLiveOrigin})
-	n := h.openForm(t)
+// pick chooses a value on a picker row the way applyPick does for a human,
+// and runs whatever it asked for.
+func (h *newTaskLiveHarness) pick(n *newTask, row ntRow, value string) {
+	h.p.push(n.applyPick(row, value, false))
+}
 
-	if !n.githubAvailable() {
-		t.Fatalf("probe = %+v, want available", n.github)
-	}
-	if !n.rowVisible(ntIssue) {
-		t.Fatal("the issue row is not offered on a reachable GitHub project")
-	}
-	h.p.until(10*time.Second, "the issue listing", func() bool { return len(n.issues) > 0 })
-	if got := n.rowValue(ntIssue); !strings.Contains(got, "enter to pick") {
-		t.Errorf("issue row reads %q, want an invitation to pick", got)
-	}
-	// The order is §15's: the row sits between workflow and title.
-	rows := n.visibleRows()
-	var order []ntRow
-	for _, r := range rows {
-		if r == ntWorkflow || r == ntIssue || r == ntTitle {
-			order = append(order, r)
+func (n *newTask) fieldValue(name string) (string, bool) {
+	for _, f := range n.fields {
+		if f.key == name {
+			return f.value, true
 		}
 	}
-	if len(order) != 3 || order[0] != ntWorkflow || order[1] != ntIssue || order[2] != ntTitle {
-		t.Errorf("row order around the issue row = %v", order)
-	}
+	return "", false
 }
 
-// TestIssueRowAbsentWhenDisabled is the acceptance criterion in full: no row,
-// and no GitHub call — the second half asserted from the fake's argv log
-// rather than inferred from the first.
-func TestIssueRowAbsentWhenDisabled(t *testing.T) {
-	off := func() config.Config {
-		c := config.Default()
-		c.GitHub.Enabled = false
-		return c
-	}
-	h, argv := newGitHubLiveHarness(t, liveOptions{remote: ghLiveOrigin, config: off})
-	n := h.openForm(t)
-
-	if n.githubAvailable() {
-		t.Fatalf("probe = %+v, want unavailable with the integration off", n.github)
-	}
-	if n.rowVisible(ntIssue) {
-		t.Error("the issue row is offered while the integration is disabled")
-	}
-	for _, row := range n.visibleRows() {
-		if row == ntIssue {
-			t.Fatal("ntIssue is in the visible row list")
-		}
-	}
-	if calls := ghLiveCalls(t, argv); calls != "" {
-		t.Errorf("a disabled integration still invoked gh:\n%s", calls)
-	}
-}
-
-// TestIssueRowAbsentOnANonGitHubProject: same absence, different reason, and
-// still no call.
-func TestIssueRowAbsentOnANonGitHubProject(t *testing.T) {
-	h, argv := newGitHubLiveHarness(t, liveOptions{remote: "https://gitlab.com/octo/repo.git"})
-	n := h.openForm(t)
-
-	if n.rowVisible(ntIssue) {
-		t.Error("the issue row is offered on a project whose origin is not GitHub")
-	}
-	if n.github.Reason != github.ReasonNotGitHub {
-		t.Errorf("reason = %q, want %q", n.github.Reason, github.ReasonNotGitHub)
-	}
-	if calls := ghLiveCalls(t, argv); calls != "" {
-		t.Errorf("a non-GitHub project still invoked gh:\n%s", calls)
-	}
-}
-
-// TestCursorSkipsTheHiddenIssueRow: a hidden row must be stepped over, not
-// landed on — a cursor parked where nothing draws is a form that appears to
-// swallow keystrokes.
-func TestCursorSkipsTheHiddenIssueRow(t *testing.T) {
-	h, _ := newGitHubLiveHarness(t, liveOptions{remote: "https://gitlab.com/octo/repo.git"})
-	n := h.openForm(t)
-
-	n.cursor = ntWorkflow
-	n.moveCursor(1)
-	if n.cursor != ntTitle {
-		t.Errorf("cursor after moving past the hidden row = %v, want ntTitle", n.cursor)
-	}
-	n.moveCursor(-1)
-	if n.cursor != ntWorkflow {
-		t.Errorf("cursor moving back = %v, want ntWorkflow", n.cursor)
-	}
-}
-
-// TestPickingAnIssueFillsEditableRows is the acceptance criterion: the pick
-// fills title, description, link line and matching declared fields, and every
-// one of them is still editable and clearable.
-func TestPickingAnIssueFillsEditableRows(t *testing.T) {
-	h, _ := newGitHubLiveHarness(t, liveOptions{remote: ghLiveOrigin})
-	n := h.openForm(t)
-	h.p.until(10*time.Second, "the issue listing", func() bool { return len(n.issues) > 0 })
-
-	// Open the picker through the shell, exactly as a user would.
-	n.cursor = ntIssue
-	h.sendKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if n.mode != ntPicking || n.pick == nil {
-		t.Fatalf("mode = %v, pick = %v; want the issue picker open", n.mode, n.pick)
-	}
-	// The list narrows by typed text, like every other picker.
-	h.sendKey(tea.KeyPressMsg{Code: '/', Text: "/"})
-	h.typeText("200")
-	if len(n.pick.matches) != 1 {
-		t.Fatalf("filtering for 200 left %d matches", len(n.pick.matches))
-	}
-	h.sendKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-	h.sendKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-
-	if n.issue == nil || n.issue.Number != 200 {
-		t.Fatalf("linked issue = %+v, want #200", n.issue)
-	}
-	// The title is the issue's, prefixed with its number, so the board row
-	// and the branch slug both say which issue this is.
-	if title := n.titleText(); !strings.HasPrefix(title, "#200 ") {
-		t.Errorf("title row = %q, want the issue title prefixed with #200", title)
-	}
-	description := n.desc.Value()
-	if !strings.Contains(description,
-		"GitHub issue #200: https://github.com/octo/repo/issues/200") {
-		t.Errorf("description carries no link line:\n%q", description)
-	}
-
-	// Nothing is locked: the human rewrites the title and clears the
-	// description, and the request carries what is on screen.
-	n.titleIn.SetValue("My own framing")
-	n.desc.SetValue("")
-	req := n.request()
-	if req.Title != "My own framing" {
-		t.Errorf("request title = %q, want the edited value", req.Title)
-	}
-	if req.Description == nil || *req.Description != "" {
-		t.Errorf("request description = %v, want an explicit empty (a cleared row)", req.Description)
-	}
-	if req.GitHubIssue == nil || *req.GitHubIssue != 200 {
-		t.Errorf("request github_issue = %v, want 200", req.GitHubIssue)
-	}
-
-	// And the link can be removed outright.
-	n.applyIssuePick("")
-	if n.issue != nil {
-		t.Error("choosing (none) left the issue linked")
-	}
-	if n.request().GitHubIssue != nil {
-		t.Error("an unlinked draft still sends github_issue")
-	}
-}
-
-// TestCreateFromAnIssueStoresTheSnapshot closes the loop: what the form posts
-// is a task the daemon records with its issue, which is what `.Issue` renders
-// from.
-func TestCreateFromAnIssueStoresTheSnapshot(t *testing.T) {
-	h, _ := newGitHubLiveHarness(t, liveOptions{remote: ghLiveOrigin})
-	n := h.openForm(t)
-	h.p.until(10*time.Second, "the issue listing", func() bool { return len(n.issues) > 0 })
-
-	n.applyIssuePick("200")
-	h.sendKey(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
-	h.p.until(20*time.Second, "the task to be created", func() bool {
-		tasks, err := h.st.ListTasks(t.Context(), store.TaskFilter{})
-		return err == nil && len(tasks) > 0
-	})
-	tasks, err := h.st.ListTasks(t.Context(), store.TaskFilter{})
+func (h *newTaskLiveHarness) createdTasks(t *testing.T, issueID int64) []store.Task {
+	t.Helper()
+	tasks, err := h.st.ListTasks(t.Context(), store.TaskFilter{IssueID: issueID})
 	if err != nil {
 		t.Fatalf("list tasks: %v", err)
 	}
-	created := tasks[0]
-	if created.GitHubIssue == nil || created.GitHubIssue.Number != 200 {
-		t.Fatalf("stored issue = %+v, want #200", created.GitHubIssue)
+	return tasks
+}
+
+// TestPlainDraftMakesNoGitHubCall is decision 7's half that deletes: on a
+// project whose GitHub integration is usable, `n` draws no issue row and the
+// daemon invokes no `gh` — asserted from the fake's argv log, not inferred.
+//
+// The root makes GitHub calls of its own on connect: the probe behind the
+// pull-requests nav row (`auth status`) and the off-screen takeover's listing
+// of every available project (`pr list`). Those are not the form's, and they
+// race `n`, so the test waits for them to finish and only then starts the log
+// the assertion reads. Waiting on them is also what proves the integration
+// was usable, which is the premise of the assertion.
+//
+// One listing is not enough to wait for. The harness registers the project
+// after the stream is live, so its project.created event reaches the takeover
+// too, and a project event re-lists after a debounce — a second `pr list`
+// that can start after the probe's listing has landed (ci windows-latest
+// caught it there). So the wait settles: no listing in flight, no refresh
+// window open, and no new gh call for well past the debounce.
+func TestPlainDraftMakesNoGitHubCall(t *testing.T) {
+	h, argv := newGitHubLiveHarness(t, liveOptions{remote: ghLiveOrigin})
+	pulls := pullsView(t, h)
+	h.p.settle(20*time.Second, 4*refreshDebounce, "the root's GitHub calls to settle", func() (bool, int) {
+		calls := strings.Count(ghLiveCalls(t, argv), "\n")
+		return h.m.githubAvailable() && pulls.loaded && !pulls.loading && !pulls.refreshWait, calls
+	})
+	if err := os.Remove(argv); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("reset the gh argv log: %v", err)
 	}
-	if !strings.Contains(created.Description, "GitHub issue #200") {
-		t.Errorf("stored description carries no link line:\n%q", created.Description)
+	h.sendKey(tea.KeyPressMsg{Code: 'n', Text: "n"})
+	n := h.form(t)
+	h.p.until(10*time.Second, "the form to settle on a workflow", func() bool {
+		_, ok := n.resolved()
+		return n.loaded && n.workflow != "" && ok
+	})
+	if n.rowVisible(ntSource) {
+		t.Error("a plain draft draws a source row")
 	}
+	for _, row := range n.visibleRows() {
+		if row == ntSource {
+			t.Fatal("ntSource is in a plain draft's visible rows")
+		}
+	}
+	if view := n.render(160, 60); strings.Contains(view, "issue") {
+		t.Errorf("a plain draft mentions an issue:\n%s", view)
+	}
+	req := n.request()
+	if req.IssueID != nil {
+		t.Errorf("a plain draft sends issue_id=%v", req.IssueID)
+	}
+	if calls := ghLiveCalls(t, argv); calls != "" {
+		t.Errorf("a plain draft invoked gh:\n%s", calls)
+	}
+}
+
+// TestAddOnTheIssueListSeedsTheForm: `a` on the selected issue opens the form
+// with its source row, the prefill in the editable rows, and a create that
+// carries `issue_id` and every row.
+func TestAddOnTheIssueListSeedsTheForm(t *testing.T) {
+	h := newNewTaskLiveHarness(t)
+	iss := h.seedIssue(t, "Crash on start")
+	list := issuesListView(t, h)
+	h.send(selectViewMsg{id: viewIssues})
+	h.p.until(10*time.Second, "the issues list", func() bool { return list.loaded && len(list.rows()) == 1 })
+
+	h.sendKey(keyPress("a"))
+	h.p.until(5*time.Second, "a to open the new-task form", func() bool { return h.m.active == viewNewTask })
+	n := h.form(t)
+	h.p.until(10*time.Second, "the seeded issue to be read", func() bool {
+		return n.issue != nil && n.issuePrefill != nil
+	})
+	if !n.rowVisible(ntSource) {
+		t.Fatal("an issue-seeded draft has no source row")
+	}
+	src := n.rowValue(ntSource)
+	want := "#" + strconv.FormatInt(iss.ID, 10) + " Crash on start"
+	if !strings.Contains(src, want) || !strings.Contains(src, "open") {
+		t.Errorf("source row = %q, want %q and its state", src, want)
+	}
+	if strings.Contains(src, "already started") {
+		t.Errorf("a fresh issue claims tasks already started: %q", src)
+	}
+	// Read-only: enter on it opens nothing.
+	n.cursor = ntSource
+	h.sendKey(keyPress("enter"))
+	if n.mode != ntNavigating || n.pick != nil {
+		t.Errorf("enter on the source row opened %v (mode %v)", n.pick, n.mode)
+	}
+	if got := n.titleText(); got != "Crash on start" {
+		t.Errorf("title = %q, want the issue's", got)
+	}
+	if got := n.desc.Value(); !strings.Contains(got, "It crashes on start.") {
+		t.Errorf("description = %q, want the issue body", got)
+	}
+
+	h.sendKey(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	h.p.until(20*time.Second, "the task to be created", func() bool {
+		return len(h.createdTasks(t, iss.ID)) == 1
+	})
+	created := h.createdTasks(t, iss.ID)[0]
+	if created.IssueID == nil || *created.IssueID != iss.ID {
+		t.Errorf("stored issue_id = %v, want %d", created.IssueID, iss.ID)
+	}
+	if created.GitHubIssue != nil {
+		t.Errorf("an issue-seeded task stored a GitHub issue snapshot: %+v", created.GitHubIssue)
+	}
+}
+
+// TestIssuePrefillFollowsTheWorkflowUntilTyped is decision 21.2: each
+// workflow the draft settles on re-applies the prefill to rows the human has
+// not typed in, a typed title or field is never overwritten, and an answer
+// for a workflow the draft has left is dropped.
+func TestIssuePrefillFollowsTheWorkflowUntilTyped(t *testing.T) {
+	h := newNewTaskLiveHarnessWith(t, liveOptions{workflows: issueWorkflows})
+	iss := h.seedIssue(t, "Crash on start")
+	n := h.seedForm(t, iss.ID)
+	id := strconv.FormatInt(iss.ID, 10)
+
+	h.pick(n, ntWorkflow, "fix-issue")
+	h.p.until(10*time.Second, "fix-issue's prefill", func() bool {
+		v, _ := n.fieldValue("issue")
+		return n.workflow == "fix-issue" && v == id
+	})
+	if v, _ := n.fieldValue("kind"); v != "bug" {
+		t.Errorf("kind = %q, want the issue's kind", v)
+	}
+
+	// The human types a title and a field.
+	n.titleIn.SetValue("My own framing")
+	for i := range n.fields {
+		if n.fields[i].key == "kind" {
+			n.fields[i].value = "feature"
+		}
+	}
+
+	h.pick(n, ntWorkflow, "triage")
+	h.p.until(10*time.Second, "triage's prefill", func() bool {
+		v, _ := n.fieldValue("labels")
+		return n.workflow == "triage" && v == "p1"
+	})
+	if got := n.titleText(); got != "My own framing" {
+		t.Errorf("title = %q, the switch overwrote a typed value", got)
+	}
+	if v, _ := n.fieldValue("kind"); v != "feature" {
+		t.Errorf("kind = %q, the switch overwrote a typed field", v)
+	}
+	if v, ok := n.fieldValue("issue"); ok {
+		t.Errorf("fix-issue's untouched issue=%q rode along into triage", v)
+	}
+	if got := n.desc.Value(); !strings.Contains(got, "It crashes on start.") {
+		t.Errorf("description = %q, want the untouched prefill kept", got)
+	}
+
+	// A late answer for fix-issue is not an answer about this draft.
+	n.applyIssue(ntIssueMsg{
+		projectID: h.projectID, workflow: "fix-issue", issueID: iss.ID,
+		issue: apiclient.Issue{ID: iss.ID, Prefill: &apiclient.GitHubPrefill{Description: "STALE"}},
+	})
+	if n.desc.Value() == "STALE" {
+		t.Error("a stale workflow's preview overwrote the description")
+	}
+
+	req := n.request()
+	if req.IssueID == nil || *req.IssueID != iss.ID {
+		t.Fatalf("request issue_id = %v, want %d", req.IssueID, iss.ID)
+	}
+	if req.Fields["kind"] != "feature" || req.Fields["labels"] != "p1" {
+		t.Errorf("request fields = %v, want every row as shown", req.Fields)
+	}
+}
+
+// TestIssueSeedNotesTasksAlreadyStarted is decision 21.3: a second task from
+// the same issue is allowed, and the source row says how many came first.
+// The issue detail then lists every root task, newest first (decision 21.1).
+func TestIssueSeedNotesTasksAlreadyStarted(t *testing.T) {
+	h := newNewTaskLiveHarnessWith(t, liveOptions{workflows: issueWorkflows})
+	iss := h.seedIssue(t, "Crash on start")
+
+	for i := range 2 {
+		n := h.seedForm(t, iss.ID)
+		if i == 1 {
+			h.p.until(10*time.Second, "the count note", func() bool {
+				return strings.Contains(n.rowValue(ntSource), "1 task already started from this issue")
+			})
+		}
+		h.pick(n, ntWorkflow, "fix-issue")
+		h.p.until(10*time.Second, "fix-issue's prefill", func() bool {
+			_, ok := n.fieldValue("issue")
+			return ok
+		})
+		h.sendKey(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+		// The create lands on the new task's workspace; the next seed must
+		// come after that switch, or the switch lands on top of it.
+		h.p.until(20*time.Second, "the task to be created and opened", func() bool {
+			return len(h.createdTasks(t, iss.ID)) == i+1 && h.m.active == viewTask
+		})
+	}
+
+	detail := issueDetailView(t, h)
+	h.send(openIssueMsg{id: iss.ID})
+	h.p.until(10*time.Second, "the issue's tasks", func() bool { return detail.loaded && len(detail.tasks) == 2 })
+	if detail.tasks[0].ID < detail.tasks[1].ID {
+		t.Errorf("linked tasks #%d, #%d; want newest first", detail.tasks[0].ID, detail.tasks[1].ID)
+	}
+}
+
+// TestClosedIssueSeedWarns: a closed issue may be started from. The source
+// row says it is closed, and the create's warning reaches the workspace.
+func TestClosedIssueSeedWarns(t *testing.T) {
+	h := newNewTaskLiveHarness(t)
+	iss := h.seedIssue(t, "Already fixed?")
+	if _, err := h.st.TransitionIssue(context.Background(), iss.ID, issuestate.Close,
+		issuestate.Completed, nil, issuestate.Human); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	n := h.seedForm(t, iss.ID)
+	if src := n.rowValue(ntSource); !strings.Contains(src, "closed") {
+		t.Errorf("source row = %q, want the issue's closed state", src)
+	}
+	h.sendKey(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	tv := h.m.views[viewTask].(*taskView)
+	h.p.until(20*time.Second, "the create's warning", func() bool {
+		return strings.Contains(tv.detail.actions.status, "created with warnings") &&
+			strings.Contains(tv.detail.actions.status, "closed")
+	})
+}
+
+// TestWorkspaceShowsTheIssue: a task started from an issue says so on the
+// Overview and in Task Details, and the palette's key-less row opens the
+// issue, from which esc comes back to the workspace.
+func TestWorkspaceShowsTheIssue(t *testing.T) {
+	h := newNewTaskLiveHarness(t)
+	iss := h.seedIssue(t, "Crash on start")
+	h.seedForm(t, iss.ID)
+	h.sendKey(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	tv := h.m.views[viewTask].(*taskView)
+	h.p.until(20*time.Second, "the workspace on the new task", func() bool {
+		return h.m.active == viewTask && tv.detail.loaded && tv.detail.task.Issue != nil
+	})
+
+	want := "#" + strconv.FormatInt(iss.ID, 10) + " Crash on start"
+	if overview := strings.Join(tv.overviewLines(160, 60), "\n"); !strings.Contains(overview, want) {
+		t.Errorf("Overview does not name the issue %q:\n%s", want, overview)
+	}
+	details := strings.Join(tv.detailLines(160), "\n")
+	if !strings.Contains(details, "Issue") || !strings.Contains(details, "Crash on start") {
+		t.Errorf("Task Details has no Issue section:\n%s", details)
+	}
+
+	extras := tv.paletteExtras()
+	if len(extras) != 1 || extras[0].action == nil || extras[0].key != "" {
+		t.Fatalf("palette extras = %+v, want one key-less row", extras)
+	}
+	h.p.push(extras[0].action)
+	detail := issueDetailView(t, h)
+	h.p.until(10*time.Second, "the issue screen", func() bool {
+		return h.m.active == viewIssue && detail.loaded && detail.issue.ID == iss.ID
+	})
+	h.sendKey(tea.KeyPressMsg{Code: tea.KeyEscape})
+	h.p.until(5*time.Second, "esc back to the workspace", func() bool { return h.m.active == viewTask })
 }

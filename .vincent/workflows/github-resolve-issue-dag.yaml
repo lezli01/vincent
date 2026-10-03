@@ -67,9 +67,10 @@
 #   one part of a derived lane that may vary per item (§7.6), it is merged over
 #   the parent's fields, and it is not shell — it is rendered straight into the
 #   lane's prompt. That is the channel for prose.
-# - **The lane re-reads the issue itself.** `gh issue view` costs two seconds
-#   and gives every lane the same thread the parent read, which is cheaper to
-#   arrange than any way of shipping a file that must not be committed.
+# - **The lane copies the issue from its own snapshot.** A lane inherits its
+#   parent's issue snapshot (§7.6), so `$VINCENT_ISSUE_FILE` gives every lane
+#   the same issue the parent read with no GitHub call per lane, and the file
+#   lives in the worktree's git dir, where it cannot be committed (§8.5).
 #
 # ## Why the seeded red test is not a suite failure
 #
@@ -324,18 +325,18 @@ fields:
     label: GitHub issue number
     description: >-
       The number of the GitHub issue to resolve, in this project's `origin`
-      repository. The new-task form's issue picker and
-      `vincent task add --github-issue N` both fill this in; typing it is the
-      third way. `fetch` reads it and nothing else — the task title is yours to
-      write.
+      repository. Creating the task from the imported issue —
+      `vincent task add --issue ID`, the id from
+      `vincent issue ls --project P --github N`, or the TUI's issues view —
+      fills this in; typing it is the other way. `fetch` reads it and nothing
+      else — the task title is yours to write.
     type: integer
     required: true
   - name: issue
     label: Issue id
     description: >-
       The vincent issue this task was created from. A task created from a
-      vincent issue gets its id here; `--github-issue N` fills it with the
-      GitHub number until that path is removed. Nothing hands it to `gh`.
+      vincent issue gets its id here. Nothing hands it to `gh`.
     type: integer
 
 defaults:
@@ -392,7 +393,7 @@ steps:
       id='{{ index .Task.Fields "github_issue" }}'
       if [ -z "$id" ]; then
         say "task carries no issue number"
-        echo "the 'github_issue' field is empty; this workflow resolves the issue it names (create the task from the issue picker, or with --github-issue N)" >&2
+        echo "the 'github_issue' field is empty; this workflow resolves the GitHub issue it names (create the task from the imported issue with vincent task add --issue ID; vincent issue ls --github N finds the id)" >&2
         exit 1
       fi
 
@@ -402,16 +403,25 @@ steps:
       # the status is the only place the board can say which one happened.
       say "reading issue #$id"
 
+      # The issue is the task's own snapshot, written by the daemon before
+      # this step started (§8.5, task 130.14) — a copy, not a GitHub call. It
+      # is `gh issue view --json`-shaped, so every jq below reads it as it read
+      # gh's answer. A task not created from an issue has no file: create it
+      # with `vincent task add --issue <id>`, or from the issue in the TUI.
+      if [ -z "${VINCENT_ISSUE_FILE:-}" ]; then
+        say "task was not created from an issue"
+        echo "this task carries no issue snapshot (\$VINCENT_ISSUE_FILE is unset); create it from the issue — 'vincent task add --issue <id>' or the TUI's issues view" >&2
+        exit 1
+      fi
       mkdir -p .vincent-issue
-      # `comments` matters more than it looks: a bug report's real reproduction
-      # steps, versions and "me too, but on Windows" almost always arrive in the
-      # thread rather than the body. `createdAt` is what lets the bug path ask
-      # whether the report is already stale at HEAD.
-      if ! gh issue view "$id" \
-        --json number,title,body,state,url,labels,comments,createdAt \
-        > .vincent-issue/issue.json; then
-        say "no such issue: #$id"
-        echo "no such issue: $id (the 'github_issue' field must name an issue in this project's origin repository)" >&2
+      cp "$VINCENT_ISSUE_FILE" .vincent-issue/issue.json
+
+      # `github_issue` is what every later `gh` call acts on and what `Closes
+      # #N` names, so the snapshot has to be that issue's.
+      number=$(jq -r '.number // empty' .vincent-issue/issue.json)
+      if [ "$number" != "$id" ]; then
+        say "issue snapshot is #${number:-local}, not #$id"
+        echo "the task's issue is #${number:-<a local issue>}, but the 'github_issue' field names #$id; this workflow resolves an imported GitHub issue" >&2
         exit 1
       fi
 
@@ -454,7 +464,7 @@ steps:
       git fetch origin {{.Task.BaseBranch}}
 
       jq -r '"#\(.number) \(.title)\n\(.url)\nreported: \(.createdAt)"' .vincent-issue/issue.json
-      say "#$id open, $(jq -r '[.comments[]] | length' .vincent-issue/issue.json) comment(s) to read"
+      say "#$id open, brief read from the task's issue snapshot"
 
   - id: classify
     name: Classify — bug, ci, enhancement or documentation?
@@ -529,9 +539,11 @@ steps:
       NOT fixing it yet: do not change a single line of non-test code.
 
       The issue is in `.vincent-issue/issue.json` — number, title, body, state,
-      labels, creation date and every comment. Read it first, comments
-      included; reproduction details usually arrive in the thread rather than
-      the body.
+      labels and creation date. Read it first.
+      Its `comments` list is empty: the GitHub thread is not carried into the
+      task yet, so the issue body is the brief. If the
+      reproduction details are not in the body, that is a question to ask, not
+      a gap to fill by guessing.
 
       You are on branch {{.Task.BranchName}}, based on {{.Task.BaseBranch}}, in
       a dedicated worktree at {{.Worktree.Path}}.
@@ -684,8 +696,10 @@ steps:
       You are evaluating a GitHub enhancement issue for this repository. You are
       NOT implementing it yet, and you must not change a single line of code.
 
-      The issue is in `.vincent-issue/issue.json` — number, title, body, state,
-      labels and every comment. Read it first.
+      The issue is in `.vincent-issue/issue.json` — number, title, body, state
+      and labels. Read it first.
+      Its `comments` list is empty: the GitHub thread is not carried into the
+      task yet, so the issue body is the brief.
 
       This step can park in `awaiting_input` for half a day, so say what you are
       doing as you go:
@@ -784,8 +798,9 @@ steps:
       are NOT editing anything yet: do not change a single file.
 
       The issue is in `.vincent-issue/issue.json` — number, title, body, state,
-      labels, creation date and every comment. Read it first, comments
-      included.
+      labels and creation date. Read it first.
+      Its `comments` list is empty: the GitHub thread is not carried into the
+      task yet, so the issue body is the brief.
 
       You are on branch {{.Task.BranchName}}, based on {{.Task.BaseBranch}}, in
       a dedicated worktree at {{.Worktree.Path}}.
@@ -941,8 +956,9 @@ steps:
       are NOT implementing it yet: do not change a single file.
 
       The issue is in `.vincent-issue/issue.json` — number, title, body, state,
-      labels, creation date and every comment. Read it first, comments
-      included.
+      labels and creation date. Read it first.
+      Its `comments` list is empty: the GitHub thread is not carried into the
+      task yet, so the issue body is the brief.
 
       You are on branch {{.Task.BranchName}}, based on {{.Task.BaseBranch}}, in
       a dedicated worktree at {{.Worktree.Path}}.

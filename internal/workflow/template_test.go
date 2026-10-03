@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -127,6 +128,44 @@ func TestEnv(t *testing.T) {
 		if env[k] != v {
 			t.Errorf("%s = %q, want %q", k, env[k], v)
 		}
+	}
+}
+
+// TestEnvIssueVariables (130.14): an unlinked task gets no VINCENT_ISSUE_*,
+// and a linked one gets each variable only when it has a value.
+func TestEnvIssueVariables(t *testing.T) {
+	const file = "/repo/.git/worktrees/7/vincent-issue.json"
+	url := "https://github.com/o/r/issues/12"
+	for _, tc := range []struct {
+		name string
+		ie   IssueEnv
+		want map[string]string
+	}{
+		{"unlinked", IssueEnv{}, map[string]string{}},
+		{"imported", IssueEnv{File: file, ID: 4, Number: 12, URL: url}, map[string]string{
+			"VINCENT_ISSUE_FILE": file, "VINCENT_ISSUE_ID": "4",
+			"VINCENT_ISSUE_NUMBER": "12", "VINCENT_ISSUE_URL": url,
+		}},
+		{"local", IssueEnv{File: file, ID: 4}, map[string]string{
+			"VINCENT_ISSUE_FILE": file, "VINCENT_ISSUE_ID": "4",
+		}},
+		{"legacy", IssueEnv{File: file, Number: 12, URL: url}, map[string]string{
+			"VINCENT_ISSUE_FILE": file, "VINCENT_ISSUE_NUMBER": "12", "VINCENT_ISSUE_URL": url,
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rc := testContext()
+			rc.IssueEnv = tc.ie
+			got := map[string]string{}
+			for _, kv := range Env(rc) {
+				if k, v, _ := strings.Cut(kv, "="); strings.HasPrefix(k, "VINCENT_ISSUE_") {
+					got[k] = v
+				}
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("issue variables = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

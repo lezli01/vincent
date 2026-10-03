@@ -113,6 +113,7 @@ var catalog = []Info{
 	}},
 	{Op: Add, Default: "a", Meaning: "add / create", Kind: KindTerm, Surfaces: []Surface{
 		"new task fields", "projects", "workflows", "workflow editor", "pull requests", "triggers",
+		"issues", "issue",
 	}},
 	{Op: Editor, Default: "e", Meaning: "edit in $EDITOR", Kind: KindTerm, Surfaces: []Surface{
 		"output", "new task", "workflows", "workflow graph", "step detail", "triggers",

@@ -1216,6 +1216,13 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 		env.log.Error("assemble template context", "error", err)
 		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
 	}
+	// The §8.5 issue variables need their file on disk before any step type
+	// starts a process (130.14). Written here, once per attempt, so command,
+	// check and agent steps all get the same block.
+	if rc.IssueEnv, err = writeIssueFile(env.task); err != nil {
+		env.log.Error("write the issue file", "error", err)
+		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError, result: err.Error()}
+	}
 
 	run := &store.StepRun{
 		TaskID:    env.task.ID,
