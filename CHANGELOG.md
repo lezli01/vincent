@@ -13,6 +13,21 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Issue state is written back to GitHub.** Closing or reopening an issue
+  imported from GitHub — in the TUI, with the CLI or over the API — now closes
+  or reopens it on GitHub too, with the same close reason. The write is
+  recorded with the change, so it survives a daemon crash; GitHub is read
+  first, and if someone changed the issue there in the meantime GitHub's state
+  wins and is adopted here. Each imported issue carries a `sync` block
+  (`synced`, `pending`, `failed` or `conflict`, with a reason), and
+  `GET /v1/projects/{id}/issues/sync`, `vincent issue sync` and
+  `vincent doctor` count pending, failed and conflicting writes. With
+  `github.enabled: false` or `github.poll_interval: 0` nothing is sent until
+  the switch is back on. Agents may not do this: an MCP `issue_close` or
+  `issue_reopen` of an imported issue, and a `vincent` command run by a
+  workflow step or a chat agent, is refused `409 forge_write_needs_human`.
+  ([#669](https://github.com/lezli01/vincent/issues/669))
+
 - **Create a task from a vincent issue.** `POST /v1/tasks` takes `issue_id`,
   and `vincent task add --issue ID` sends it: the task is linked to the issue,
   snapshots it, and is prefilled from it — title, description and declared

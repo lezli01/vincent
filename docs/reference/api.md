@@ -793,7 +793,8 @@ it never calls GitHub, and never starts a sync:
 { "enabled": true, "provider": "github", "repo": "lezli01/vincent",
   "last_synced_at": "2026-10-02T09:15:00Z", "ok": false,
   "reason": "rate_limited", "import_complete": true,
-  "rate_limited_until": "2026-10-02T10:00:00Z" }
+  "rate_limited_until": "2026-10-02T10:00:00Z",
+  "writes_pending": 1, "writes_failed": 0, "writes_conflict": 0 }
 ```
 
 `enabled` is `github.enabled` and a non-zero `github.poll_interval` together.
@@ -824,8 +825,42 @@ the importer and answers **`202`** at once with the status as it stands, not
 the outcome of this sync, which lands on the importer's goroutine and announces
 itself with [`issue.sync_changed`](#state-events--durable) when it flips the
 verdict. With a switch off the request is recorded, `reason` names the switch,
-and nothing is imported until it is turned back on. It is not an
+and nothing is imported until it is turned back on. It also wakes the
+[state write-back](#state-write-back). It is not an
 [MCP](#mcp) tool. An unknown project is `404` on both.
+
+#### State write-back
+
+A person's close or reopen of an issue imported from GitHub is written back to
+GitHub. The write is recorded in the same transaction as the change, so it
+survives a crash, and the daemon sends it at once: it reads the GitHub issue
+first, sends the write only if GitHub still holds what vincent last saw, and
+sends nothing if GitHub already holds the new state. If someone changed the
+issue on GitHub in between, GitHub wins: its state is adopted here and the
+write ends `conflict`. Writes are at least a second apart and wait out a rate
+limit. Every issue imported from GitHub carries the outcome:
+
+```json
+"sync": { "state": "failed", "reason": "no_write_scope",
+          "last_synced_at": "2026-10-03T09:15:00Z" }
+```
+
+| `state` | Meaning |
+|---|---|
+| `synced` | The issue agrees with GitHub: its last write landed, or it never had one |
+| `pending` | A write is waiting. `reason`, when present, is why it has not gone yet — `disabled` (`github.enabled` is false or `github.poll_interval` is `0`; nothing is called, and it goes when the switch is back on), or a [GitHub reason](#github-issues) it is retrying after: `rate_limited`, `unreachable`, `timeout`, `bad_response`, `no_credential`, `unauthorized` |
+| `failed` | The write gave up; the local state is kept. `reason` is `no_write_scope`, `not_found`, `gone`, `moved`, `forbidden` or `bad_request` — or, without a write, `moved`/`gone` for an issue whose GitHub copy was transferred or deleted, whose state changes stay local |
+| `conflict` | GitHub's state changed first and was adopted here (`reason: remote_changed`) |
+
+`last_synced_at` is the later of the last import refresh and the last write
+that landed. A write's outcome is announced as
+[`issue.updated`](#state-events--durable) with `changed: ["sync"]`, and the
+project's counts are `writes_pending`, `writes_failed` and `writes_conflict`
+above. Only a person's change is written back: an agent's — over MCP, or a
+`vincent` command run by a workflow step or a chat agent, which send
+`X-Vincent-Task-Id` / `X-Vincent-Chat-Id` — is refused with
+`forge_write_needs_human`. That marker is best-effort, not a security
+boundary: see the [security model](../security-model.md).
 
 ### GitHub pull requests
 
@@ -2439,6 +2474,8 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
   transferred, and `missing` when it was deleted or is no longer found;
   nothing is deleted locally either way. `remote_state`, `last_synced_at` and
   `status` are omitted when empty, and list rows carry the same `source`.
+  An imported issue also carries `sync` — `{ state, reason?, last_synced_at? }`
+  — its [state write-back](#state-write-back); a local issue has none.
   `?workflow=NAME` adds `prefill: { title, description, fields }`, what
   [creating a task from the issue](#creating-a-task-from-an-issue) with that
   workflow would fill in; an unknown workflow is `400`.
@@ -2465,6 +2502,7 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
 |---|---|---|
 | `issue_changed` | `PATCH` with a stale `version` | `reason`, and `issue`: the issue as it is now — re-apply your edit to it and send its `version` |
 | `issue_mirrored` | `PATCH` touching an imported issue's `title`, `body` or labels, which mirror GitHub. `kind` and `priority` stay editable | `reason` |
+| `forge_write_needs_human` | `close` or `reopen` of an issue imported from GitHub by an agent: an [MCP](#mcp) tool call, or a request carrying `X-Vincent-Task-Id` or `X-Vincent-Chat-Id`. Its state is written back to GitHub, and only a human's act does that. A local issue, or one whose remote moved or is missing, is not refused | `reason` |
 | — | `close` on a closed issue, `reopen` on an open one | `state` |
 
 ### Creating a task from an issue
@@ -3354,7 +3392,7 @@ Every route on this page is a tool, with these exceptions:
 | `DELETE /v1/tasks/{id}` | Destructive admin, on the same line: a row a human archived is history nobody else may discard. Archive stays a tool — the row and its transcripts survive it |
 | `DELETE /v1/chats/{id}` | Same |
 | `DELETE /v1/issues/{id}` | Same: the delete is permanent, and an imported issue's tombstone outlives it. Every other issue route is a tool |
-| `POST /v1/projects/{id}/issues/sync` | Today it only asks the importer to poll early, but once write-back lands the same request flushes vincent's pending edits to GitHub, so it stays a human act. Its `GET` is the tool `project_issue_sync_status` |
+| `POST /v1/projects/{id}/issues/sync` | It asks the importer to poll early and flushes vincent's pending state writes to GitHub, so it stays a human act. Its `GET` is the tool `project_issue_sync_status` |
 | `POST /v1/tasks/import` | Destructive admin, beside the deletes it undoes: it reads a file the caller names and writes rows no agent should be able to create |
 | `POST /v1/maintenance/gc` | Destructive admin |
 | `POST /v1/doctor/fix` | Destructive admin |

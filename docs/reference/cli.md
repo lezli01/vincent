@@ -2890,8 +2890,16 @@ last synced      2026-10-02T11:15:00+02:00
 ok               yes
 reason           -
 import complete  yes
+state writes     0 pending, 0 failed, 0 conflict
 sync             requested
 ```
+
+`state writes` counts the issues whose newest
+[state write-back](api.md#state-write-back) is waiting, gave up, or lost to a
+change on GitHub. Run from inside a workflow step or a chat agent — where
+`VINCENT_TASK_ID` or `VINCENT_CHAT_ID` is set — every `vincent` command marks
+its requests as an agent's, so it may not close or reopen an issue imported
+from GitHub.
 
 `reason` uses the sync vocabulary of the [API](api.md#issue-sync) —
 `github_disabled`, `poll_disabled`, `pending`, `origin_changed`,

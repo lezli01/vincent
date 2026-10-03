@@ -1234,6 +1234,16 @@ rules the routes settled:
   issue in the same project. Omitting it is valid, as on GitHub. It is set in
   the close's transaction and cleared by reopening.
 
+*Amended 2026-10-03 (task 130.10, issue #669).* State write-back exists. A
+`human`'s close or reopen of an issue with a **live** GitHub remote enqueues
+one write in `issue_sync_outbox` (§14) in the transaction that makes the
+change, and the daemon's drain sends it (§12.3). An `agent`'s close or reopen
+of such an issue is refused — `409 invalid_state` with `details.reason:
+forge_write_needs_human` — and `agent` now covers, besides an MCP tool call,
+a request carrying a step's or a chat agent's marker header (§13.1). A local
+issue, and one whose remote is `moved` or `missing`, writes nothing back and
+is not refused: the change stays local, and the issue's `sync` block says why.
+
 *Amended 2026-10-02 (task 130.8, issue #667).* Sync exists: the daemon imports
 and refreshes a GitHub-based project's issues on §12.3's `github.poll_interval`
 tick, as actor `sync`. Three rules it settled:
@@ -7212,6 +7222,29 @@ for the triggers' reason: every failure is logged and recorded on the
 project's sync row, read back by `GET /v1/projects/{id}/issues/sync` and by
 `vincent doctor`.
 
+*Amended 2026-10-03 (task 130.10, issue #669).* Beside the tick runs the
+**issue state write-back drain**: one goroutine, woken by an enqueue (§5.6),
+by every tick, by `POST /v1/projects/{id}/issues/sync`, and on a one-minute
+heartbeat. Each pending write is a compare-and-set: GitHub's issue is read
+first; at the desired value the write is `done` without a call (a write that
+landed before a crash, or the same change made on both sides); at the base —
+the value vincent last saw — it is sent; anything else is a true conflict,
+which GitHub wins: its value is adopted locally by `sync` and the write ends
+`conflict`. Values compare by state and `state_reason`, never by timestamp,
+so the import that follows a write is an echo and moves nothing. While an
+issue has a pending write the import keeps its local state (its content
+still mirrors), so the tick before the drain cannot revert a human's change.
+Mutative calls are at least one second apart. A failed call is classed on
+§13.2's GitHub reasons: `unreachable`, `timeout` and `bad_response` back off
+(30 s doubling, capped at 30 min); `rate_limited` waits for GitHub's reset;
+`no_credential` and `unauthorized` retry every 15 min; `no_write_scope`,
+`not_found`, `gone`, `moved`, `forbidden` and `bad_request` end the write
+`failed` and keep the local state. With `github.enabled: false` or
+`poll_interval: 0` nothing is called and every pending write stays pending
+with reason `disabled`, drained when the switch comes back on. A `duplicate`
+close sends the duplicated issue's number when it is in the same repository,
+and closes without one otherwise.
+
 *Amended 2026-08-29 (task 055).* This was the daemon's **first** standing
 outbound network traffic when it landed, and that sentence read as though it
 were the only one. It is now the first that fires for a *subset* of installs:
@@ -8061,6 +8094,14 @@ row is never in the ready set, so none spawns twice. The wake watermark is
 cleared by the transition out of `awaiting_children` that recovery performs, and
 the next admission recomputes it from the rows.
 
+*Amended 2026-10-03 (task 130.10, issue #669).* Issue state write-backs
+need no recovery step of their own: a pending `issue_sync_outbox` row is
+durable from the transaction that made the change, and the drain sends what
+is pending when the daemon starts. A crash between GitHub's answer and the
+row being settled is harmless — the PATCH is idempotent, and the restarted
+drain's preflight finds GitHub at the desired value and settles the row
+`done` without a second write.
+
 ## 13. HTTP API
 
 ### 13.1 Transport and auth
@@ -8222,6 +8263,15 @@ that key: `trigger:{id}:` followed by a hash. That keeps two triggers, or a
 trigger and a CI job pushing in with its build id, from replaying each other's
 tasks, and keeps the header inside the bound above whatever the rendered key
 says.
+
+*Added 2026-10-03 (task 130.10, issue #669).* **Agent marker headers.** The
+`vincent` client sends `X-Vincent-Task-Id: N` on every request when
+`VINCENT_TASK_ID` is in its environment — §8.5 puts it in every step's — and
+`X-Vincent-Chat-Id: N` when `VINCENT_CHAT_ID` is, which a chat agent's
+process carries. The daemon treats either as actor `agent` for the issue
+routes (§5.6), exactly like an MCP tool call. A header never makes a caller
+human: its absence does, and an MCP call is an agent's whatever it sends. It
+is best-effort attribution, not authentication (§16).
 
 ### 13.2 Endpoints
 
@@ -8649,9 +8699,15 @@ PATCH  /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* { versi
 POST   /v1/issues/{id}/close            *Added 2026-10-02 (task 130.3).* { reason?, duplicate_of? }
                                         — `completed` (the default), `not_planned` or
                                         `duplicate`; `duplicate_of` per §5.6, otherwise **400**.
-                                        Closing a closed issue is **409** with `details.state`
+                                        Closing a closed issue is **409** with `details.state`.
+                                        *Amended 2026-10-03 (task 130.10):* an agent's close
+                                        of an issue that writes back to GitHub is **409**
+                                        `forge_write_needs_human` (§5.6); a human's enqueues
+                                        the write-back, and the issue's `sync` says `pending`
 POST   /v1/issues/{id}/reopen           *Added 2026-10-02 (task 130.3).* {}. Reopening an open
-                                        issue is **409** with `details.state`
+                                        issue is **409** with `details.state`; an agent's
+                                        reopen of an issue that writes back is **409**
+                                        `forge_write_needs_human` (task 130.10)
 DELETE /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* Permanent, from any
                                         state (§5.6) → **204**. An imported issue leaves its
                                         tombstone; upstream is never touched; its tasks keep
@@ -8668,12 +8724,18 @@ GET    /v1/projects/{id}/issues/sync    *Added 2026-10-02 (task 130.8, issue #66
                                         attempt stored (`not_github`, `no_client`,
                                         `origin_changed`, or a §13.2 GitHub reason such as
                                         `rate_limited`). Sync-status vocabulary, not a §18
-                                        task reason. A read; it never calls GitHub
+                                        task reason. A read; it never calls GitHub.
+                                        *Amended 2026-10-03 (task 130.10):* also
+                                        { writes_pending, writes_failed, writes_conflict } —
+                                        the imported issues whose newest state write-back is
+                                        waiting, gave up, or lost to a change on GitHub
 POST   /v1/projects/{id}/issues/sync    *Added 2026-10-02 (task 130.8).* {}. Sync now: records
                                         the request and wakes the importer → **202** with the
                                         status body above, as of the request. With a switch
                                         off the request stays recorded and is served by the
-                                        next enabled tick. Not an MCP tool (§13.4)
+                                        next enabled tick. Not an MCP tool (§13.4).
+                                        *Amended 2026-10-03 (task 130.10):* it also wakes the
+                                        state write-back drain
 GET    /v1/chats                        *Amended 2026-09-09 (task 092, issue #350).* Also takes
                                         limit, offset, archived_before and archived_since —
                                         GET /v1/tasks' parameters, spelled the same way, because
@@ -10052,6 +10114,12 @@ never per tick, on `trigger.poll_changed`'s precedent; a project's first
 recorded attempt counts as a transition only if it fails. A client keeps
 "last synced" current by re-reading `GET /v1/projects/{id}/issues/sync`.
 
+*Amended 2026-10-03 (task 130.10, issue #669).* A state write-back's outcome
+is `issue.updated` with `changed: ["sync"]` and `by: sync` — when it ends
+`done`, `failed` or `conflict`, and when a pending write's reason changes
+(not on every retry with the same reason). A conflict's adoption of GitHub's
+value is an ordinary `issue.state_changed` by `sync` when the state moved.
+
 ### 13.4 Model Context Protocol (task 057)
 
 *Added 2026-08-29 (task 057, issue #243).*
@@ -10286,6 +10354,14 @@ Today it only asks the importer to poll early, but once write-back lands (task
 130.10) the same request flushes vincent's pending edits to GitHub, so it stays
 a human act (task 130 decision 15.8). Its `GET` is a tool,
 `project_issue_sync_status`.
+
+*Amended 2026-10-03 (task 130.10, issue #669).* Write-back has landed, and the
+guard is not an exclusion: `issue_close` and `issue_reopen` stay tools,
+because closing a local issue writes nothing to a forge. Called on an issue
+that writes back to GitHub — on `/mcp` and on a step endpoint alike — each is
+refused `409 invalid_state`, `details.reason: forge_write_needs_human`. The
+same refusal reaches a step's or a chat agent's plain HTTP call through the
+marker header (§13.1, §16).
 
 The task 057 property that the tool surface **equals** `Routes()` minus the
 exclusions is unchanged, and is still asserted by a test — the exclusion list it
@@ -10823,6 +10899,23 @@ CREATE TABLE issue_sync_state (        -- one row per project the importer polle
   requested_at       TEXT                       -- a pending "sync now"
 );
 
+CREATE TABLE issue_sync_outbox (       -- an imported issue's state write-back (task 130.10, migration 0039)
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  issue_id        INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+  op              TEXT NOT NULL DEFAULT 'set_state',
+  desired_json    TEXT NOT NULL,               -- {state, state_reason?, duplicate_of?} in GitHub's terms
+  base_json       TEXT NOT NULL,               -- the value vincent last saw on GitHub
+  status          TEXT NOT NULL DEFAULT 'pending', -- pending|done|failed|conflict|superseded
+  attempts        INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at TEXT NOT NULL,
+  last_reason     TEXT NOT NULL DEFAULT '',
+  origin          TEXT NOT NULL,               -- human|agent|sync
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+CREATE INDEX issue_sync_outbox_due_idx ON issue_sync_outbox (status, next_attempt_at);
+CREATE INDEX issue_sync_outbox_issue_idx ON issue_sync_outbox (issue_id, id);
+
 CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 ```
 
@@ -10990,6 +11083,13 @@ now". A project with no row reads as ok, which is why `ok` defaults to 1 and a
 first failure is an `issue.sync_changed` transition (§13.3) while a first
 success is not. It cascades with its project. `issue_remotes.remote_status` is
 §5.6's `''`/`moved`/`missing`; it never deletes the row it describes.
+
+*Added 2026-10-03 (task 130.10, issue #669, migration 0039).*
+`issue_sync_outbox` is written in the transaction of the state change it
+sends (§5.6, §12.3), only for an issue with a live GitHub remote and only when
+the GitHub value changes. A newer change supersedes a pending row and keeps
+its base, so close→reopen→close is one write and close→reopen from open is
+none. It cascades with its issue: a deleted issue has nothing left to send.
 
 *Added 2026-08-14 (task 003).* `admit_not_before` / `queued_reason` carry no index:
 `ListAdmissible` already returns the whole queued set in §11 order and the hold is
@@ -14631,6 +14731,14 @@ the whole of the posture, not a set of tips.
   issue. That does not widen the exposure: an imported issue reaches an agent
   only as `.Issue` on a task a human or an armed trigger creates from it, the
   two acts above.
+  *Amended 2026-10-03 (task 130.10, issue #669):* the one issue write that
+  reaches GitHub — an imported issue's state — is a human's only. An MCP
+  call, and a request carrying a step's or a chat agent's marker header
+  (§13.1), is refused `forge_write_needs_human`. The marker is **best-effort,
+  not a privilege boundary**: a full-auto agent runs as you, can unset its
+  environment or read the daemon token, and so can write as a human. It keeps
+  the honest path — an agent running `vincent issue close` — off the forge; a
+  per-step scoped token was rejected because it would be no stronger.
 - **No project scope.** Triggers are global and live in `{config_dir}`, never in
   `.vincent/`, so merge rights on a repository cannot start agents on a
   maintainer's machine (task 096 decision 8). The accepted cost is that a

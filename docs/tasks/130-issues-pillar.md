@@ -380,7 +380,8 @@ Settled with the author while scoping #662.
    records a task's MCP provenance; a create on the shared `/mcp` endpoint
    records `agent`. A client cannot forge either. Sync fills the GitHub login
    when it lands. Every MCP write is actor `agent`, every other API write
-   `human`; telling a step's CLI call from a person's stays open question 6.
+   `human`; telling a step's CLI call from a person's stays open question 6
+   (settled by decision 17: a marker header makes it `agent`).
 2. **An imported issue's mirrored content is refused in 130.3, not deferred to
    #667.** A `PATCH` touching `title`, `body` or labels on an issue with a live
    remote row is `409 invalid_state` with `details.reason: issue_mirrored`
@@ -457,6 +458,40 @@ the screens.
    from the list DTO's `task_count` and `active`. No worst live state, no
    per-row task fetch.
 
+### 17. 130.10: marker headers for step and chat callers, and the outbox's defaults (2026-10-03)
+
+Settled with the author on #669; closes open question 6.
+
+1. **A step's call is marked by an env-driven header.** `internal/apiclient`
+   sends `X-Vincent-Task-Id: N` on every request whenever `VINCENT_TASK_ID`
+   is in its environment, which §8.5 puts in every step's — agent and command
+   steps alike. The API treats a marked request as actor `agent`, exactly
+   like an MCP tool call: refused on an issue that writes back, attributed
+   `agent` on a local one. It is best-effort, not a privilege boundary — a
+   full-auto agent can unset its environment, which is spec §16's stated
+   posture. *Alternative beaten:* a per-step scoped token. The agent can
+   still read the daemon token from the data directory, so it is no
+   stronger, and it costs a token lifecycle and a recovery path.
+2. **Chat agents are marked too.** `internal/chatrun` puts `VINCENT_CHAT_ID`
+   in a chat agent's environment, the client sends `X-Vincent-Chat-Id`, and
+   the API treats it as `agent`. Only a human's own keypress or command
+   writes to a forge.
+3. **The header never makes a caller human:** its absence means human, its
+   presence agent, and `mcp.ViaTool` wins whatever the headers say.
+4. **Defaults the brief took.** While an issue has a pending write the
+   importer's refresh keeps the local state (content still mirrors), so the
+   tick before the drain cannot revert a human's close as "GitHub wins". A
+   conflict adopts GitHub's value by actor `sync` through the transition
+   path, and the row ends `conflict`. `duplicate_of` sends the target's
+   number when it is an issue of the same repository, and otherwise closes
+   as `duplicate` with no target. A moved or missing remote enqueues nothing
+   — the change stays local and the `sync` block says `moved`/`gone` — and a
+   write that finds one at send time ends `failed`. Echo suppression
+   compares state and `state_reason`, never timestamps. Mutative calls are
+   paced at least 1 s apart and a rate limit waits for its reset. A write
+   undone while it was in flight (close then reopen) that turns out to have
+   landed enqueues the write back to the local state.
+
 ## Open questions
 
 Each has a proposed default, which stands unless the author answers otherwise
@@ -488,7 +523,8 @@ before the item that needs it starts.
 6. **Telling a step's call from a human's.** (Decision 10, for 130.10.) A step
    running `vincent issue close` reaches the API the way a human's CLI does.
    The mechanism that marks it step-originated is an implementation question
-   for #669.
+   for #669. *Settled 2026-10-03 by decision 17:* an env-driven marker
+   header, for steps and chat agents alike.
 
 ## Tasks
 
@@ -527,9 +563,10 @@ its own pull request.
   `docs/reference/configuration.md` (decision 9). Depends: 130.1, 130.3, 130.5.
 - [x] **130.9** ([#668](https://github.com/lezli01/vincent/issues/668)) The TUI
   Issues list and Issue detail. Depends: 130.3. ✓ 2026-10-02 (decision 16)
-- [ ] **130.10** ([#669](https://github.com/lezli01/vincent/issues/669)) The
+- [x] **130.10** ([#669](https://github.com/lezli01/vincent/issues/669)) The
   write-back outbox, its compare-and-set drain, and the guard refusing MCP- and
   step-originated writes (decision 10, open question 6). Depends: 130.8.
+  ✓ 2026-10-03 (decision 17)
 - [ ] **130.11** ([#670](https://github.com/lezli01/vincent/issues/670)) SQL
   backfill of task 035's snapshots into issues, and the removal of
   `github_issue` from `POST /v1/tasks`, `--github-issue` and

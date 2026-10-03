@@ -1146,7 +1146,11 @@ minutes late costs nothing, and
 failing import is never quiet: each project's last outcome is on
 [`GET /v1/projects/{id}/issues/sync`](api.md#issue-sync) and in
 `vincent doctor`. A link a human made by hand is never overwritten by the
-reconciler, and a link a human removed is never re-applied.
+reconciler, and a link a human removed is never re-applied. A person's close or
+reopen of an imported issue is
+[written back to GitHub](api.md#state-write-back) under the same two
+switches: set either off and the write waits, `pending` with reason
+`disabled`, until it is turned back on.
 
 It applies only to a project whose `origin` remote parses as a github.com
 repository. On every other project it does nothing at all — the issue row is not
