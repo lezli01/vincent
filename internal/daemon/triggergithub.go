@@ -51,7 +51,33 @@ func newTriggerGitHubLister(
 		if !ok {
 			return trigger.GitHubListing{Err: errTriggerGitHubNotRepo}
 		}
-		return listForTriggers(ctx, client, repo, want)
+		listing := listForTriggers(ctx, client, repo, want)
+		linkImported(ctx, st, projectID, &listing)
+		return listing
+	}
+}
+
+// linkImported names, on each listed issue, the vincent issue the project
+// imported it as, so a github_issues event carries `.Event.IssueID` and a
+// trigger can link its task with `issue:` once `github_issue` is gone (task
+// 130.15 decision 5). A failed read leaves every id zero, which renders as
+// empty: the listing is still judged, only without the link.
+func linkImported(ctx context.Context, st *store.Store, projectID int64, l *trigger.GitHubListing) {
+	if l.Err != nil || len(l.Issues) == 0 {
+		return
+	}
+	keys := make([]string, 0, len(l.Issues))
+	for i := range l.Issues {
+		if k := l.Issues[i].NodeID; k != "" {
+			keys = append(keys, k)
+		}
+	}
+	ids, err := st.ImportedIssueIDs(ctx, projectID, issueProvider, keys)
+	if err != nil {
+		return
+	}
+	for i := range l.Issues {
+		l.Issues[i].IssueID = ids[l.Issues[i].NodeID]
 	}
 }
 
@@ -67,7 +93,7 @@ func listForTriggers(ctx context.Context, client *github.Client, repo github.Rep
 		for i := range issues {
 			is := &issues[i]
 			out.Issues = append(out.Issues, trigger.GitHubIssue{
-				Number: is.Number, Title: is.Title, Body: is.Body, URL: is.URL, Author: is.Author,
+				Number: is.Number, NodeID: is.NodeID, Title: is.Title, Body: is.Body, URL: is.URL, Author: is.Author,
 				State: is.State, Labels: is.Labels, Assignees: issueAssignees(is),
 				CreatedAt: is.CreatedAt, UpdatedAt: is.UpdatedAt,
 			})

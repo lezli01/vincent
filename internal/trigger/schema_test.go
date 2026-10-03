@@ -22,6 +22,9 @@ func docFor(source, action string) map[string]any {
 	case SourceGitHubPRs:
 		doc["source"] = map[string]any{"type": source, "project": 1}
 		doc["match"] = map[string]any{"action": "merged"}
+	case SourceIssues:
+		doc["source"] = map[string]any{"type": source, "project": 1}
+		doc["match"] = map[string]any{"action": "labeled"}
 	case SourceSchedule:
 		doc["source"] = map[string]any{"type": source, "project": 1, "cron": "0 9 * * 1-5"}
 	case SourceHTTP:

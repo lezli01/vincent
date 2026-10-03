@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,6 +72,11 @@ func runTriggerValidate(cmd *cobra.Command, file string) error {
 	}
 	if def != nil {
 		res.ID = def.ID
+		// A deprecation is a warning, never a refusal (task 130.15 decision
+		// 6): it goes to stderr and leaves the verdict and --json alone.
+		for _, w := range trigger.Deprecations(def) {
+			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "  warning:", w)
+		}
 	}
 	res.Valid = len(errs) == 0
 	if !res.Valid {
@@ -198,6 +204,7 @@ func runTriggerApply(cmd *cobra.Command, proposal, project int64) error {
 	}
 	staging := trigger.ProposalDir(dirs.Data, proposal)
 	w := trigger.NewWriter(filepath.Join(dirs.Config, "triggers"))
+	warnDeprecated(stderr, staging)
 	written, refusals, err := trigger.ApplyProposal(staging, w, project)
 	for _, path := range written {
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "wrote", path)
@@ -215,4 +222,28 @@ func runTriggerApply(cmd *cobra.Command, proposal, project int64) error {
 	}
 	_, err = fmt.Fprintln(cmd.OutOrStdout(), "removed", staging)
 	return err
+}
+
+// warnDeprecated prints each staged file's deprecations. It refuses nothing
+// and reads nothing ApplyProposal relies on: a file that does not parse is
+// left for ApplyProposal to refuse (task 130.15 decision 6).
+func warnDeprecated(stderr io.Writer, staging string) {
+	entries, err := os.ReadDir(staging)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.EqualFold(filepath.Ext(e.Name()), ".yaml") {
+			continue
+		}
+		//nolint:gosec // G304: a file in a staging directory the CLI derived from the data dir and a task id
+		src, err := os.ReadFile(filepath.Join(staging, e.Name()))
+		if err != nil {
+			continue
+		}
+		def, _ := trigger.Parse(src, trigger.Stem(e.Name()))
+		for _, w := range trigger.Deprecations(def) {
+			_, _ = fmt.Fprintf(stderr, "  warning: %s: %s\n", e.Name(), w)
+		}
+	}
 }

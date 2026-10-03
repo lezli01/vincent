@@ -373,3 +373,32 @@ func TestListOpenRemoteIssues(t *testing.T) {
 		t.Errorf("other provider = %+v, %v", other, err)
 	}
 }
+
+// TestImportedIssueIDs: a live link maps its key to the issue; a moved or
+// missing remote, a tombstone, another project and an unknown key do not.
+func TestImportedIssueIDs(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	other := testProject(t, s, "p2")
+	live := mustUpsertRemote(t, s, remoteIn(p.ID, "I_live", 1))
+	mustUpsertRemote(t, s, remoteIn(p.ID, "I_moved", 2))
+	mustUpsertRemote(t, s, remoteIn(other.ID, "I_other", 3))
+	gone := mustUpsertRemote(t, s, remoteIn(p.ID, "I_gone", 4))
+	if err := s.SetIssueRemoteStatus(ctx, p.ID, "github", "I_moved", RemoteStatusMoved, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteIssue(ctx, gone.ID, issuestate.Human); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ImportedIssueIDs(ctx, p.ID, "github", []string{"I_live", "I_moved", "I_other", "I_gone", "I_none"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]int64{"I_live": live.ID}; !reflect.DeepEqual(got, want) {
+		t.Errorf("ImportedIssueIDs = %v, want %v", got, want)
+	}
+	if got, err := s.ImportedIssueIDs(ctx, p.ID, "github", nil); err != nil || len(got) != 0 {
+		t.Errorf("no keys = %v, %v", got, err)
+	}
+}

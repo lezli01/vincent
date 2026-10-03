@@ -73,6 +73,47 @@ func TestParseVariantRefusals(t *testing.T) {
 			func(d map[string]any) { d["permission"] = PermissionWorkflow }, "permission",
 		},
 		{
+			"assigned on type: issues (task 130.15 decision 4)", SourceIssues, ActionCreateTask,
+			func(d map[string]any) { setPath(d, "match.action", "assigned", false) }, "match.action",
+		},
+		{
+			"an untrusted issues event sync can deliver needs allowed_actors", SourceIssues, ActionCreateTask,
+			func(d map[string]any) { setPath(d, "match.action", "opened", false) }, "allowed_actors",
+		},
+		{
+			"match.by naming sync keeps the allowlist", SourceIssues, ActionCreateTask,
+			func(d map[string]any) {
+				setPath(d, "match.action", "closed", false)
+				setPath(d, "match.by", []any{"human", "sync"}, false)
+			}, "allowed_actors",
+		},
+		{
+			"issues never polls", SourceIssues, ActionCreateTask,
+			func(d map[string]any) { setPath(d, "source.poll_interval", "1m", false) }, "source.poll_interval",
+		},
+		{
+			"issue with github_issue (task 130.15 decision 5)", SourceCommand, ActionCreateTask,
+			func(d map[string]any) {
+				setPath(d, "action.issue", "{{ .Event.n }}", false)
+				setPath(d, "action.github_issue", "{{ .Event.n }}", false)
+			}, "action.issue",
+		},
+		{
+			"issue with github_pull", SourceCommand, ActionCreateTask,
+			func(d map[string]any) {
+				setPath(d, "action.issue", "{{ .Event.n }}", false)
+				setPath(d, "action.github_pull", "{{ .Event.n }}", false)
+			}, "action.issue",
+		},
+		{
+			"a reaction takes no issue", SourceCommand, ActionFollowUp,
+			func(d map[string]any) { setPath(d, "action.issue", "{{ .Event.n }}", false) }, "action.issue",
+		},
+		{
+			"issue is a template", SourceCommand, ActionCreateTask,
+			func(d map[string]any) { setPath(d, "action.issue", "{{ .Event.n", false) }, "action.issue",
+		},
+		{
 			"create_task takes no branch", SourceCommand, ActionCreateTask,
 			func(d map[string]any) { setPath(d, "action.branch", "main", false) }, "action.branch",
 		},
@@ -104,6 +145,22 @@ func TestParseVariantAccepts(t *testing.T) {
 			},
 		},
 		{"merge cancels, unattended", SourceGitHubPRs, ActionCancel, func(map[string]any) {}},
+		{"trusted issues label event alone", SourceIssues, ActionCreateTask, func(map[string]any) {}},
+		{
+			"a local-only opened needs no allowlist (task 130.15 decision 1)", SourceIssues, ActionCreateTask,
+			func(d map[string]any) {
+				setPath(d, "match.action", "opened", false)
+				setPath(d, "match.by", "human", false)
+				setPath(d, "action.issue", "{{ .Event.issue_id }}", false)
+			},
+		},
+		{
+			"an issues opened with an allowlist", SourceIssues, ActionCreateTask,
+			func(d map[string]any) {
+				setPath(d, "match.action", "opened", false)
+				d["allowed_actors"] = []any{"lezli01"}
+			},
+		},
 		{"signed push retries", SourceHTTP, ActionRetry, func(map[string]any) {}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -113,5 +170,21 @@ func TestParseVariantAccepts(t *testing.T) {
 				t.Errorf("refused: %v", errs)
 			}
 		})
+	}
+}
+
+// TestDeprecations: github_issues earns a warning and still loads (task
+// 130.15 decision 6); no other source does.
+func TestDeprecations(t *testing.T) {
+	for _, src := range SourceTypes() {
+		doc := docFor(src, ActionCreateTask)
+		if errs := parseDoc(t, doc); len(errs) > 0 {
+			t.Fatalf("%s: refused: %v", src, errs)
+		}
+		d := &Definition{Source: Source{Type: src}}
+		got := Deprecations(d)
+		if (src == SourceGitHubIssues) != (len(got) == 1) {
+			t.Errorf("%s: deprecations = %v", src, got)
+		}
 	}
 }

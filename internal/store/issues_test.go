@@ -377,7 +377,8 @@ func TestLabels(t *testing.T) {
 	if len(evs) != 1 {
 		t.Fatalf("labels events = %d, want 1", len(evs))
 	}
-	if m := payloadOf(t, evs[0]); !reflect.DeepEqual(m["labels"], []any{"bug", "Docs", "ux"}) {
+	if m := payloadOf(t, evs[0]); !reflect.DeepEqual(m["labels"], []any{"bug", "Docs", "ux"}) ||
+		!reflect.DeepEqual(m["labels_added"], []any{"Docs", "ux"}) || !reflect.DeepEqual(m["labels_removed"], []any{}) {
 		t.Errorf("payload = %v", m)
 	}
 	cleared, err := s.SetIssueLabels(ctx, iss.ID, nil, issuestate.Human)
@@ -483,6 +484,13 @@ func TestUpsertRemoteIssue(t *testing.T) {
 	}
 	if m := payloadOf(t, evs[0]); !reflect.DeepEqual(m["changed"], []any{"close_reason", "labels", "state"}) || m["by"] != "sync" {
 		t.Errorf("payload = %v", m)
+	}
+	// The delta rides the event for the `type: issues` trigger source (task
+	// 130.15 decision 2): names and states, never the title or body (§13.3).
+	if m := payloadOf(t, evs[0]); !reflect.DeepEqual(m["labels_added"], []any{"wontfix"}) ||
+		!reflect.DeepEqual(m["labels_removed"], []any{}) || m["from"] != "open" || m["to"] != "closed" ||
+		m["reason"] != "not_planned" || m["title"] != nil || m["body"] != nil {
+		t.Errorf("payload delta = %v", m)
 	}
 	if n := len(issueEvents(t, s, EventIssueCreated)); n != 1 {
 		t.Errorf("issue.created = %d, want 1", n)

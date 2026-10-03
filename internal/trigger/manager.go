@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,7 +20,8 @@ import (
 // armed `type: command` ones on their own goroutines, judges the GitHub ones
 // when the reconciler's tick hands it a listing, accepts pushed events for
 // `type: http`, strikes the armed `type: schedule` ones on its own
-// wall-clock tick, and answers the two dry runs.
+// wall-clock tick, delivers vincent's own issue events to the armed `type:
+// issues` ones (task 130.15), and answers the two dry runs.
 //
 // The rules it enforces are decision 16's:
 //
@@ -89,6 +91,8 @@ type Manager struct {
 	deps Deps
 	log  *slog.Logger
 	wake chan struct{}
+	// issueWake asks the issues loop for a pass: an issue.* event committed.
+	issueWake chan struct{}
 
 	mu      sync.Mutex
 	pollers map[string]*poller
@@ -146,12 +150,13 @@ func NewManager(deps Deps) *Manager {
 		deps.CommandTimeout = DefaultCommandTimeout
 	}
 	m := &Manager{
-		deps: deps, log: deps.Logger, wake: make(chan struct{}, 1),
+		deps: deps, log: deps.Logger, wake: make(chan struct{}, 1), issueWake: make(chan struct{}, 1),
 		pollers: map[string]*poller{}, warned: map[string]bool{}, fireBy: map[string]*sync.Mutex{},
 	}
 	deps.Registry.OnChange(func(removed []string) {
 		m.dropRemoved(removed)
 		m.Wake()
+		m.wakeIssues()
 	})
 	return m
 }
@@ -178,9 +183,10 @@ func (m *Manager) Start(ctx context.Context) {
 	ctx, m.cancel = context.WithCancel(ctx)
 	m.done = make(chan struct{})
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
 	go func() { defer wg.Done(); m.loop(ctx) }()
 	go func() { defer wg.Done(); m.scheduleLoop(ctx) }()
+	go func() { defer wg.Done(); m.issuesLoop(ctx) }()
 	go func() { wg.Wait(); close(m.done) }()
 }
 
@@ -193,12 +199,14 @@ func (m *Manager) Stop() {
 	<-m.done
 }
 
-// Wake asks for a reconcile now: a config reload, a registry change.
+// Wake asks for a reconcile now: a config reload, a registry change. A
+// reload may arm a `type: issues` trigger, so the issues loop is asked too.
 func (m *Manager) Wake() {
 	select {
 	case m.wake <- struct{}{}:
 	default:
 	}
+	m.wakeIssues()
 }
 
 func (m *Manager) loop(ctx context.Context) {
@@ -228,13 +236,17 @@ func (m *Manager) loop(ctx context.Context) {
 
 // OnEvent is the broker subscription the daemon wires beside notify's (task
 // 122 decision 9). A task reaching a new state is what empties a group, so it
-// is what asks for a drain; the reconcileEvery tick is the backstop. It runs
-// on the publishing goroutine, so it does no work of its own.
+// is what asks for a drain; an issue.* event is what a `type: issues` trigger
+// reads (task 130.15 decision 7). The reconcileEvery tick is the backstop for
+// both. It runs on the publishing goroutine, so it does no work of its own.
 func (m *Manager) OnEvent(e *store.Event) {
-	if e == nil || e.Type != store.EventTaskStateChanged {
-		return
+	switch {
+	case e == nil:
+	case e.Type == store.EventTaskStateChanged:
+		m.Wake()
+	case strings.HasPrefix(e.Type, "issue."):
+		m.wakeIssues()
 	}
-	m.Wake()
 }
 
 // drain fires what the backlog holds for every group whose work has finished,
@@ -808,6 +820,10 @@ func (m *Manager) PollDry(ctx context.Context, id string) (*DryPoll, error) {
 	switch {
 	case d.Source.Type == SourceHTTP, d.IsSchedule():
 		return nil, ErrNoPoll
+	case d.IsIssues():
+		if events, out.Seed, err = m.dryIssues(ctx, d, prev); err != nil {
+			return nil, &PollError{Reason: "reading events: " + err.Error()}
+		}
 	case d.IsGitHub():
 		snap, seeded := decodeSnapshot(prev)
 		out.Seed = !seeded

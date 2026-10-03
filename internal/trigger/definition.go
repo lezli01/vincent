@@ -29,6 +29,12 @@ const (
 	// SourceHTTP accepts a pushed, signed event on
 	// POST /v1/triggers/{id}/events (096.5, decision 31G).
 	SourceHTTP = "http"
+	// SourceIssues reads vincent's own durable issue.* events (task 130.15):
+	// every project has issues, GitHub remote or not, and an imported change
+	// arrives as the same event a local one does, with `by: sync`. It is a
+	// mapper over the events table, not a state diff, so its only state is an
+	// event-id cursor.
+	SourceIssues = "issues"
 	// SourceSchedule is the clock: a cron expression or a fixed interval,
 	// evaluated against the wall clock on the manager's one-second tick
 	// (task 121). Nothing downstream of the source knows the difference.
@@ -198,6 +204,9 @@ type Action struct {
 	Title       string            `yaml:"title" json:"title,omitempty"`
 	Description string            `yaml:"description" json:"description,omitempty"`
 	Fields      map[string]string `yaml:"fields" json:"fields,omitempty"`
+	// Issue is a template that must render to a vincent issue id, or to
+	// nothing; it is replayed as POST /v1/tasks' `issue_id` (task 130.15).
+	Issue string `yaml:"issue" json:"issue,omitempty"`
 	// GitHubIssue and GitHubPull are templates that must render to an issue
 	// or pull-request number, or to nothing.
 	GitHubIssue string `yaml:"github_issue" json:"github_issue,omitempty"`
@@ -275,6 +284,13 @@ func (d *Definition) IsSchedule() bool { return d.Source.Type == SourceSchedule 
 func (d *Definition) IsGitHub() bool {
 	return d.Source.Type == SourceGitHubIssues || d.Source.Type == SourceGitHubPRs
 }
+
+// IsIssues reports whether the source is vincent's own issue events.
+func (d *Definition) IsIssues() bool { return d.Source.Type == SourceIssues }
+
+// hasAuthor reports whether the source's events carry an issue or pull
+// request author that allowed_actors can be matched against.
+func (d *Definition) hasAuthor() bool { return d.IsGitHub() || d.IsIssues() }
 
 var safeID = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]*$`)
 
@@ -412,7 +428,7 @@ func validateSource(d *Definition, add addFunc, refuse refuseFunc) {
 	case "":
 		add("source.type", "is required")
 		return
-	case SourceCommand, SourceGitHubIssues, SourceGitHubPRs, SourceHTTP, SourceSchedule:
+	case SourceCommand, SourceGitHubIssues, SourceGitHubPRs, SourceIssues, SourceHTTP, SourceSchedule:
 	default:
 		add("source.type", "must be one of %s", strings.Join(SourceTypes(), ", "))
 		return
@@ -441,6 +457,13 @@ func validateSource(d *Definition, add addFunc, refuse refuseFunc) {
 		refuse("source.poll_interval", s.PollInterval != "",
 			"GitHub sources are judged on the github.poll_interval tick in config.yaml")
 		refuse("source.command", len(s.Command) > 0, "a GitHub source runs no command")
+		refuse("source.signature", s.Signature != nil, "only a type: http source is signed")
+	case SourceIssues:
+		// Woken by the commit of each issue.* event, so there is no interval
+		// to set (task 130.15 decision 7).
+		refuse("source.poll_interval", s.PollInterval != "",
+			"a type: issues source is woken by each issue event, never on a poll interval")
+		refuse("source.command", len(s.Command) > 0, "a type: issues source runs no command")
 		refuse("source.signature", s.Signature != nil, "only a type: http source is signed")
 	case SourceSchedule:
 		refuse("source.poll_interval", s.PollInterval != "",
@@ -475,9 +498,9 @@ func validateSource(d *Definition, add addFunc, refuse refuseFunc) {
 		refuse("source.every", s.Every != "", why)
 		refuse("source.timezone", s.Timezone != "", why)
 	}
-	if !d.IsGitHub() {
+	if !d.hasAuthor() {
 		refuse("allowed_actors", len(d.AllowedActors) > 0,
-			"only a GitHub source has an author to match; a command or http event carries no identity vincent can verify")
+			"only a GitHub or issues source has an author to match; a command or http event carries no identity vincent can verify")
 	}
 }
 
@@ -527,10 +550,13 @@ func parseCronOK(expr string, add addFunc) bool {
 	return true
 }
 
-// githubEvents are the `action` values each GitHub source synthesizes.
+// githubEvents are the `action` values each GitHub source synthesizes, and
+// the `type: issues` source's, which are github_issues' minus `assigned`: a
+// vincent issue has no assignee (task 130.15 decision 4).
 var githubEvents = map[string][]string{
 	SourceGitHubIssues: {"opened", "closed", "reopened", "labeled", "unlabeled", "assigned"},
 	SourceGitHubPRs:    {"opened", "ready_for_review", "review_requested", "closed", "merged"},
+	SourceIssues:       {"opened", "closed", "reopened", "labeled", "unlabeled"},
 }
 
 // trustedEvents are the events whose triggering change an outsider cannot
@@ -542,9 +568,15 @@ var githubEvents = map[string][]string{
 // author's; and a review request, although setting one by hand needs triage,
 // is also made automatically by CODEOWNERS on a pull request an outsider
 // opened, so its reviewer field is one an outsider can cause.
+//
+// On `type: issues` the same table is read for `by: sync` events only, since
+// those are GitHub's changes arriving through the importer; a `human` or
+// `agent` change was made on this machine and is trusted (task 130.15
+// decision 1).
 var trustedEvents = map[string]map[string]bool{
 	SourceGitHubIssues: {"labeled": true, "unlabeled": true, "assigned": true},
 	SourceGitHubPRs:    {"merged": true},
+	SourceIssues:       {"labeled": true, "unlabeled": true},
 }
 
 // GitHubEvents returns the events a GitHub source type synthesizes.
@@ -556,11 +588,22 @@ func TrustedGitHubEvent(sourceType, action string) bool { return trustedEvents[s
 // validateGitHubTrust refuses, at load, a GitHub trigger that can match an
 // untrusted event and names no allowed_actors (decision 31F). "Can match" is
 // read off `match.action`: absent, it matches every event the source has.
+//
+// A `type: issues` trigger is held to it too, but only for the events sync
+// delivers (task 130.15 decision 1): one whose `match.by` leaves out `sync`
+// can never see an outsider's change, and needs no allowlist.
 func validateGitHubTrust(d *Definition, add addFunc, _ refuseFunc) {
-	if !d.IsGitHub() {
+	if !d.hasAuthor() {
 		return
 	}
 	known := githubEvents[d.Source.Type]
+	if d.IsIssues() {
+		if want, ok := d.Match["action"]; ok && matchIncludes(want, "assigned") {
+			add("match.action", "%q is not an event %s synthesizes: a vincent issue has no assignee (%s)",
+				"assigned", SourceIssues, strings.Join(known, ", "))
+			return
+		}
+	}
 	actions := known
 	if want, ok := d.Match["action"]; ok {
 		actions = nil
@@ -581,14 +624,41 @@ func validateGitHubTrust(d *Definition, add addFunc, _ refuseFunc) {
 	if len(d.AllowedActors) > 0 {
 		return
 	}
+	if d.IsIssues() {
+		if want, ok := d.Match["by"]; ok && !matchIncludes(want, "sync") {
+			return
+		}
+	}
 	for _, a := range actions {
 		if !trustedEvents[d.Source.Type][a] {
+			if d.IsIssues() {
+				add("allowed_actors", "is required: this trigger can match %q arriving by sync from GitHub, "+
+					"whose author an outsider controls on a public repository; list the authors to accept, "+
+					"match only %s, or match by: human",
+					a, strings.Join(trustedList(d.Source.Type), ", "))
+				return
+			}
 			add("allowed_actors", "is required: this trigger can match %q, whose author an outsider "+
 				"controls on a public repository; list the authors to accept, or match only %s",
 				a, strings.Join(trustedList(d.Source.Type), ", "))
 			return
 		}
 	}
+}
+
+// matchIncludes reports whether a `match:` value — a scalar or a list of
+// them — names v.
+func matchIncludes(want any, v string) bool {
+	vals := []any{want}
+	if l, isList := want.([]any); isList {
+		vals = l
+	}
+	for _, w := range vals {
+		if scalarString(w) == v {
+			return true
+		}
+	}
+	return false
 }
 
 func trustedList(sourceType string) []string {
@@ -614,6 +684,7 @@ func validateAction(d *Definition, add addFunc, refuse refuseFunc, checkTemplate
 		checkTemplate("action.workflow", a.Workflow)
 		checkTemplate("action.title", a.Title)
 		checkTemplate("action.description", a.Description)
+		checkTemplate("action.issue", a.Issue)
 		checkTemplate("action.github_issue", a.GitHubIssue)
 		checkTemplate("action.github_pull", a.GitHubPull)
 		for k, v := range a.Fields {
@@ -623,6 +694,15 @@ func validateAction(d *Definition, add addFunc, refuse refuseFunc, checkTemplate
 		// refused is better caught at load than in the ledger.
 		if a.GitHubIssue != "" && a.GitHubPull != "" {
 			add("action.github_pull", "cannot be combined with github_issue")
+		}
+		// POST /v1/tasks takes one source of an issue: a vincent issue id,
+		// or the legacy GitHub snapshot until #670 removes it (task 130.15
+		// decision 5).
+		if a.Issue != "" && a.GitHubIssue != "" {
+			add("action.issue", "cannot be combined with github_issue")
+		}
+		if a.Issue != "" && a.GitHubPull != "" {
+			add("action.issue", "cannot be combined with github_pull")
 		}
 		const why = "only a follow_up, retry or cancel names a target"
 		refuse("action.target", a.Target != "", why)
@@ -662,6 +742,7 @@ func validateAction(d *Definition, add addFunc, refuse refuseFunc, checkTemplate
 		refuse("action.title", a.Title != "", why)
 		refuse("action.description", a.Description != "", why)
 		refuse("action.fields", len(a.Fields) > 0, why)
+		refuse("action.issue", a.Issue != "", why)
 		refuse("action.github_issue", a.GitHubIssue != "", why)
 		refuse("action.github_pull", a.GitHubPull != "", why)
 		refuse("permission", d.Permission != "", "the restricted clamp is set when a task is created")
@@ -707,7 +788,7 @@ func scalar(v any) bool {
 
 // SourceTypes are the `source.type` values this build accepts.
 func SourceTypes() []string {
-	return []string{SourceCommand, SourceGitHubIssues, SourceGitHubPRs, SourceHTTP, SourceSchedule}
+	return []string{SourceCommand, SourceGitHubIssues, SourceGitHubPRs, SourceIssues, SourceHTTP, SourceSchedule}
 }
 
 // ActionTypes are the `action.type` values this build accepts.
@@ -722,3 +803,16 @@ func SignatureSchemes() []string { return []string{SignatureGitHubHMACSHA256} }
 // ErrNotFound reports an id the registry does not hold, or a file that is
 // not there.
 var ErrNotFound = errors.New("no such trigger")
+
+// Deprecations are the warnings a valid definition earns without being
+// refused: a file that uses one still loads, arms and fires, so no user file
+// is disarmed by an upgrade (task 130.15 decision 6). `vincent trigger
+// apply` and `vincent trigger validate` print them.
+func Deprecations(d *Definition) []string {
+	if d == nil || d.Source.Type != SourceGitHubIssues {
+		return nil
+	}
+	return []string{"source.type: " + SourceGitHubIssues + " is deprecated: use " + SourceIssues +
+		", which reads the project's imported issues (by: sync) beside its local ones, and link the task with " +
+		"action.issue: '{{ .Event.issue_id }}'; " + SourceGitHubIssues + " keeps firing until a later release removes it"}
+}

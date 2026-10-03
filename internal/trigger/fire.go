@@ -31,6 +31,11 @@ type Store interface {
 	CountTriggerFiredSince(ctx context.Context, triggerID string, since time.Time) (int, error)
 	FindTaskForBranch(ctx context.Context, projectID int64, branch string) (*store.Task, error)
 	AppendEvent(ctx context.Context, e *store.Event) error
+	// The `type: issues` source reads the events table after its cursor and
+	// the issue each event names (task 130.15).
+	MaxEventID(ctx context.Context) (int64, error)
+	ListEvents(ctx context.Context, f store.EventFilter) ([]store.Event, error)
+	GetIssue(ctx context.Context, id int64) (*store.Issue, error)
 	// The overrun group and its backlog (task 122).
 	TriggerGroupInFlight(ctx context.Context, triggerID, key string) ([]int64, error)
 	TaskInFlight(ctx context.Context, id int64) (bool, error)
@@ -72,6 +77,7 @@ type CreateBody struct {
 	Title          string            `json:"title"`
 	Description    string            `json:"description,omitempty"`
 	Fields         map[string]string `json:"fields,omitempty"`
+	IssueID        *int64            `json:"issue_id,omitempty"`
 	GitHubIssue    *int              `json:"github_issue,omitempty"`
 	GitHubPull     *int              `json:"github_pull,omitempty"`
 	Paused         bool              `json:"paused,omitempty"`
@@ -166,7 +172,7 @@ func judgePlan(ctx context.Context, st Store, d *Definition, ev Event, now time.
 	data := renderData{Event: ev}
 
 	j.Matched, j.MatchMiss = matchEvent(d.Match, ev)
-	if j.Matched && len(d.AllowedActors) > 0 && !actorAllowed(d.AllowedActors, ev) {
+	if j.Matched && len(d.AllowedActors) > 0 && actorChecked(d, ev) && !actorAllowed(d.AllowedActors, ev) {
 		j.Matched, j.MatchMiss = false, "allowed_actors"
 	}
 	if !j.Matched {
@@ -328,6 +334,19 @@ func concurrencyKey(d *Definition, j *Judgement, data renderData) (string, error
 	return key, nil
 }
 
+// actorChecked reports whether allowed_actors applies to ev. On a GitHub
+// source it is every event. On `type: issues` it is only what sync delivered:
+// a `human` or `agent` change was made on this machine, and a local person's
+// `opened` is never refused for an author list meant for outsiders (task
+// 130.15 decision 1).
+func actorChecked(d *Definition, ev Event) bool {
+	if !d.IsIssues() {
+		return true
+	}
+	by, _ := ev["by"].(string)
+	return by == "sync"
+}
+
 // actorAllowed matches allowed_actors against the event's author — on a
 // GitHub source, the issue's or pull request's (decision 31F).
 func actorAllowed(allowed []string, ev Event) bool {
@@ -421,6 +440,14 @@ func renderAction(d *Definition, data renderData) (*Replay, error) {
 			body.Fields = map[string]string{}
 		}
 		body.Fields[k] = out
+	}
+	var issue *int
+	if issue, err = renderNumber("issue", a.Issue, data); err != nil {
+		return nil, err
+	}
+	if issue != nil {
+		id := int64(*issue)
+		body.IssueID = &id
 	}
 	if body.GitHubIssue, err = renderNumber("github_issue", a.GitHubIssue, data); err != nil {
 		return nil, err

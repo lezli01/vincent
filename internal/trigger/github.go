@@ -27,7 +27,12 @@ import (
 
 // GitHubIssue is one issue as the diff needs it.
 type GitHubIssue struct {
-	Number    int
+	Number int
+	// NodeID is GitHub's global node id, the key the importer stores an
+	// issue under; IssueID is the vincent issue the project imported it as,
+	// 0 when it has none (task 130.15 decision 5). The daemon fills both.
+	NodeID    string
+	IssueID   int64
 	Title     string
 	Body      string
 	URL       string
@@ -280,10 +285,17 @@ func (s *ghSnapshot) diffIssue(is *GitHubIssue) []Event {
 		"State": state, "Labels": anyList(is.Labels), "Assignees": anyList(is.Assignees),
 		"UpdatedAt": is.UpdatedAt.UTC().Format(time.RFC3339),
 	}
+	// The vincent issue id, or empty — never 0, so `issue: '{{ .Event.IssueID }}'`
+	// renders to nothing for an issue the project has not imported.
+	var issueID any = ""
+	if is.IssueID > 0 {
+		issueID = is.IssueID
+	}
 	mk := func(action string, extra map[string]any) Event {
 		ev := Event{
 			"id":     fmt.Sprintf("github:issue:%d:%s:%d", is.Number, action, is.UpdatedAt.Unix()),
 			"action": action, "author": is.Author, "state": state, "number": is.Number, "Issue": issue,
+			"IssueID": issueID, "issue_id": issueID,
 		}
 		for k, v := range extra {
 			ev[k] = v

@@ -247,3 +247,26 @@ func TestTriggerApplyInstallsOnlyDisarmedChanges(t *testing.T) {
 		t.Errorf("apply with nothing staged = %d %q", code, stderr)
 	}
 }
+
+// TestTriggerApplyWarnsOnGitHubIssues: a staged github_issues file earns the
+// deprecation warning and is still written — a warning, never a refusal
+// (task 130.15 decision 6). validate says the same and stays ok.
+func TestTriggerApplyWarnsOnGitHubIssues(t *testing.T) {
+	d := newTriggerDirs(t)
+	doc := strings.Replace(authorDoc("gh", 3, "match:\n  action: labeled\n"),
+		"  type: command\n", "  type: github_issues\n", 1)
+	doc = strings.Replace(doc, "  poll_interval: 5m\n  command: [\"never-run\"]\n", "", 1)
+	staging := trigger.ProposalDir(d.data, 7)
+	d.write(t, filepath.Join(staging, trigger.ManifestName), `{"gh": "absent"}`)
+	file := d.write(t, filepath.Join(staging, "gh.yaml"), doc)
+
+	stdout, stderr, code := d.run(t, "validate", file)
+	if code != 0 || !strings.Contains(stdout, "ok") || !strings.Contains(stderr, "github_issues is deprecated") {
+		t.Errorf("validate = %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	stdout, stderr, code = d.run(t, "apply", "--proposal", "7", "--project", "3")
+	if code != 0 || !strings.Contains(stderr, "gh.yaml: source.type: github_issues is deprecated") ||
+		!strings.Contains(stdout, "wrote ") {
+		t.Errorf("apply = %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+}
