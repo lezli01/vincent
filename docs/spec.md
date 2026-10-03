@@ -1266,6 +1266,33 @@ tick, as actor `sync`. Three rules it settled:
   `origin_changed` and never re-keys an issue; a rename GitHub redirects is
   followed through the `node_id` match instead.
 
+*Amended 2026-10-03 (task 130.16, issue #675; task 130 decision 24).* The
+**discussion thread** exists. An issue's comments are listed oldest first and
+reachable over §13.2, §13.4, the CLI and the TUI; each carries `author`,
+`body`, `remote` (mirrored from GitHub) and, when mirrored, its GitHub comment
+id as `remote_key`. Four rules it settled:
+
+- **GitHub comments are a read-only mirror.** Sync mirrors a GitHub-based
+  project's issue comments onto the imported issue with their number, as
+  actor `sync` (§12.3). A comment edited on GitHub is updated **in place**
+  (§13.3's `issue.comment_updated`); an unchanged re-list writes nothing. A
+  comment whose issue number matches no imported issue in the project — a
+  pull request's conversation comment, or one on an issue never imported — is
+  ignored. Nothing is ever posted to GitHub.
+- **A comment deleted on GitHub is kept, and never detected.** Noticing one
+  would take a per-issue listing on every pass; the mirrored row stays.
+- **An issue's older thread arrives with it.** When an issue is first
+  imported, or a backfill placeholder is re-keyed onto it, and GitHub counts
+  comments on it, sync reads that issue's thread once, so an issue imported
+  after the comment watermark passed its comments is not left with half a
+  thread.
+- **A comment is a mirrored write.** A `human`'s or `agent`'s comment on an
+  issue with a **live** remote is refused like a title edit — `409
+  invalid_state` with `details.reason: issue_mirrored`, before any I/O — and
+  allowed on a local issue and on one whose remote is a tombstone, `moved` or
+  `missing`. Its `author` is derived by the create rule above; no request
+  field sets it.
+
 ## 6. Task lifecycle
 
 > Chats have their own lifecycle and their own vocabulary — `idle`, `running`,
@@ -3123,7 +3150,7 @@ defensively: `{{ with index .Task.Fields "ticket" }}…{{ end }}`.
 | `.Steps` | map of *completed* step id → `{Status, Result, ExitCode}`; `Result` is the agent's final result text (agent steps) or the last **200** lines of stdout (command steps). *Corrected 2026-08-18 (task 016): this said 100; the daemon has always used 200, and a `for_each:` reading `.Steps[…].Result` (§7.8) makes the exact bound load-bearing rather than incidental.* *Amended 2026-08-18 (task 015):* a step skipped by its guard appears with `Status: "skipped"`, and a **failed** step appears once the engine has advanced past it — which happens only under `allow_failure` (§7.2), and is what a downstream guard reads. A step's own failed attempt stays out of `.Steps` mid-retry, because `.LastFailure` is already that channel; `interrupted` never appears, since §7.2 says it is not an outcome. *Amended 2026-08-18 (task 016):* "advanced past it" is compared on `(step_index, iteration, body position)`, which is what lets a loop body's later steps read its earlier ones while a `parallel` group's members stay blind to each other (§7.8). Under repetition a step id resolves to its **latest** iteration. *Amended 2026-09-02 (issue #311):* "stdout" was always the statement here, and until now the engine put a command's **stdout and stderr** into `Result`, interleaved in whichever order the two reader goroutines observed them. It now captures stdout separately (`step_runs.stdout_tail`, migration 0025), so a `for_each:` (§7.6, §7.8) cannot pick up a progress meter, a `Switched to branch …` or a deprecation notice as an item. `result_summary` still carries both streams and is unchanged: it is what a human reads on the board, in the detail view and in the repair prompt, where a step that failed with a stderr-only diagnostic must not summarize as blank. A row written before the migration records no stdout tail and renders `Result` from `result_summary` as it did, so a task in flight over an upgrade is unaffected. `.LastFailure` and the `<previous-attempt-failure>` block below are **both** streams, deliberately: what a human reads on a failure is not the value a template consumes. *Amended 2026-09-02 (issue #313):* the bound is **200 lines or 256 KiB**, whichever binds first — the byte half has always been enforced and was never written down here, which is what a `for_each:` author needs to know to size a list. Both halves cut by dropping whole **leading** lines, so what survives is a shorter list of intact items rather than a truncated one; only a single line longer than 256 KiB on its own is cut mid-line, at a rune boundary. The engine had instead been persisting the stdout tail at `result_summary`'s own 4096-byte cap, a raw head slice on no boundary at all: a lane list over 4 KiB lost its items mid-line, and one item that size destroyed the whole list. `result_summary` keeps that cap — it bounds a row a human reads, and never bounded this. *Amended 2026-09-28 (issue #594):* which end of the output that 4096-byte cap keeps was never stated, and the engine kept the **head** — a raw byte slice — so a failed command whose output tail ran past 4 KiB summarized as its first lines and lost the last ones, where the error is, and the slice could split a UTF-8 rune. `result_summary` now keeps the **tail**, for agent and command steps alike: the last 4096 bytes, moved forward to the first line boundary inside that window when there is one and otherwise to a rune boundary, prefixed with a `… N earlier bytes` line whenever anything was cut. The repair prompt and `vincent task` output show that tail. `.Steps.<id>.Result` and `for_each:` read `stdout_tail` and are unaffected |
 | `.Loop` | *Added 2026-08-18 (task 016).* `Index` (1-based iteration, and **0** outside any loop, so a shared template can tell), `Item` (the `for_each` item this iteration runs on — a string; empty for a `count:` loop), `IsFirst`, `IsLast`. See §7.8 |
 | `.Item` | *Added 2026-09-01 (task 080).* The item a **derived `fan_out`'s** `lane:` template is being rendered for (§7.6), and present in that template only. It is a **parsed JSON object**, not a string: this is the one deliberate widening of the rule that every value here is plain text, made because a DAG node carries both an identity and its edges — `{{ .Item.id }}` and `{{ .Item.needs }}` — and one string cannot say both. `.Issue.Labels` is the precedent for structure in this context. `.Loop.Item` is **unchanged** and still a string; the widening does not reach it |
-| `.Issue` | *Added 2026-08-26 (task 035).* The GitHub issue the task was created from (§5.3): `Number`, `Repo` (`owner/name`), `Title`, `Body`, `URL`, `State`, `Labels` (a **list**, so a prompt can range over it), `Author`, `Assignee`, `Milestone`, `MilestoneNumber`. Its zero value — `Number: 0` — is what every task created without an issue renders with, exactly the way `.Loop`'s `Index: 0` works, so `{{ if .Issue.Number }}` tells the two apart and one template serves both. It is read from the task's snapshot and **never from the network**: rendering stays pure and offline, and an issue edited on GitHub after creation does not change what a later step renders. *Amended 2026-10-02 (task 130.4, issue #663; task 130 decision 8):* `.Issue` describes the **vincent** issue: `Number` (the vincent issue id), `Title`, `Body`, `State`, `Labels`, `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, and `Source` — `Provider`, `Repo`, `Number`, `URL`, `State` — the provider reference of an imported issue, zero for a local one. `Repo` and `URL` stay as **deprecated aliases** of `Source.Repo` and `Source.URL`. It is mapped from the task's `issue_json` snapshot (§5.6) when one is present; a task carrying only the legacy `github_issue_json` (created through `github_issue` until 130.11 removes it) maps that snapshot as before — `Number` is the **GitHub** number, `Source` repeats it — so templates written before task 130 render byte-identically; otherwise the zero value. A template that hands a number to `gh` therefore reads `.Issue.Source.Number`, or a declared `github_issue` field, never `.Issue.Number`. Since `run` and `check` are rendered here (§8.3), numbers are safe to template into a command; free text — a title, a body — is not, because it is attacker-controlled shell (§20) |
+| `.Issue` | *Added 2026-08-26 (task 035).* The GitHub issue the task was created from (§5.3): `Number`, `Repo` (`owner/name`), `Title`, `Body`, `URL`, `State`, `Labels` (a **list**, so a prompt can range over it), `Author`, `Assignee`, `Milestone`, `MilestoneNumber`. Its zero value — `Number: 0` — is what every task created without an issue renders with, exactly the way `.Loop`'s `Index: 0` works, so `{{ if .Issue.Number }}` tells the two apart and one template serves both. It is read from the task's snapshot and **never from the network**: rendering stays pure and offline, and an issue edited on GitHub after creation does not change what a later step renders. *Amended 2026-10-02 (task 130.4, issue #663; task 130 decision 8):* `.Issue` describes the **vincent** issue: `Number` (the vincent issue id), `Title`, `Body`, `State`, `Labels`, `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, and `Source` — `Provider`, `Repo`, `Number`, `URL`, `State` — the provider reference of an imported issue, zero for a local one. `Repo` and `URL` stay as **deprecated aliases** of `Source.Repo` and `Source.URL`. It is mapped from the task's `issue_json` snapshot (§5.6) when one is present; a task carrying only the legacy `github_issue_json` (created through `github_issue` until 130.11 removes it) maps that snapshot as before — `Number` is the **GitHub** number, `Source` repeats it — so templates written before task 130 render byte-identically; otherwise the zero value. A template that hands a number to `gh` therefore reads `.Issue.Source.Number`, or a declared `github_issue` field, never `.Issue.Number`. Since `run` and `check` are rendered here (§8.3), numbers are safe to template into a command; free text — a title, a body — is not, because it is attacker-controlled shell (§20). *Amended 2026-10-03 (task 130.16, issue #675; task 130 decision 24):* `.Issue.Comments` is the issue's thread as the snapshot captured it at task creation — a list of `{Author, Body, CreatedAt}`, oldest first and untruncated, local and mirrored comments alike. The snapshot reads it from the store in the create transaction, never from the network, so a later comment never changes an existing task's thread; a fan-out lane inherits its parent's. Empty for a task without a snapshot and for a legacy GitHub one. A comment body is free text like the issue's own |
 | `.Host` | *Added 2026-08-18 (task 015).* `OS`, `Arch` — the **daemon's** GOOS/GOARCH, since the daemon is what runs the steps (§8.1.1). This is the per-step platform gate: `{{ ne .Host.OS "windows" }}`. There is deliberately no `.Now`: a guard reading wall-clock makes a run non-reproducible |
 | `.Worktree` | `Path` |
 | `.LastFailure` | on retry attempts only: `{Reason, Output}` from the previous attempt; empty otherwise |
@@ -3253,8 +3280,11 @@ local issue (its contract is gh's, which is why it does not follow §8.4's
 `createdAt` is RFC3339, `null` for a snapshot captured before the key existed;
 `state` is `OPEN`/`CLOSED`; `stateReason` is `COMPLETED`/`NOT_PLANNED`/
 `DUPLICATE`, `null` while open; `labels` is `[{"name": …}]`; `author` is
-`{"login": …}`; `comments` is always `[]` until #675 carries the thread, in gh's
-element shape (`{author{login}, body, createdAt}`). Beside gh's keys it carries
+`{"login": …}`; `comments` is the issue's thread as the snapshot captured it,
+oldest first and untruncated, in gh's element shape (`{author{login}, body,
+createdAt}`) — `[]` for an issue without comments and for a legacy
+`github_issue_json` snapshot. *(Amended 2026-10-03, task 130.16, issue #675:
+this was always `[]` until the thread existed.)* Beside gh's keys it carries
 `id` (the vincent issue id, `null` for a legacy snapshot), `kind`, `priority`
 and `source` — `{provider, repo, number, url}` for an imported issue, `null` for
 a local one.
@@ -7297,6 +7327,24 @@ repository is not the one the project is bound to — `origin` re-pointed, or th
 repository renamed, since the task was created — is never matched, and stays a
 never-synced imported issue with its backfilled content.
 
+*Amended 2026-10-03 (task 130.16, issue #675).* After a project's issue pass
+succeeds, the same tick runs its **comment pass**: one conditional listing of
+the repository's issue comments (`issues/comments?since=`), with its own
+watermark, bound and ETag (§14) kept apart from the issue pass's, so a
+failure of one never moves the other. Its first pass walks from the
+beginning under the page cap and resumes across ticks; after that it asks
+from the same two-minute overlap before its watermark, so an idle repository
+costs one more request a tick, answered 304. Each listed comment is mirrored
+onto the imported issue with its number (§5.6), and the rest are skipped.
+When an issue is first imported or a placeholder adopted and GitHub counts
+comments on it, its thread is read once from `issues/{n}/comments` — before
+the issue is written, so a rate limit on that read leaves the issue unimported
+and the next tick asks again. That read is skipped while the comment pass has
+not yet set its bound: its next listing walks from the beginning and reaches
+the thread anyway, so a project's first import costs no per-issue request
+(review F2). A comment pass failure is recorded on the sync
+row like an issue pass failure, and a rate limit defers both.
+
 *Amended 2026-10-03 (task 130.10, issue #669).* Beside the tick runs the
 **issue state write-back drain**: one goroutine, woken by an enqueue (§5.6),
 by every tick, by `POST /v1/projects/{id}/issues/sync`, and on a one-minute
@@ -8805,7 +8853,13 @@ GET    /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* The row
                                         and workflow would fill in, computed by the function the
                                         create runs. Without `workflow` there is no `prefill`;
                                         a workflow the project cannot resolve is a 400, as on
-                                        the GitHub issues listing
+                                        the GitHub issues listing.
+                                        *Amended 2026-10-03 (task 130.16, review F1):*
+                                        `commentable` says whether a local comment is taken —
+                                        false exactly while the GitHub remote is live, so a
+                                        moved or missing remote is commentable though its body
+                                        is not editable. A client reads it rather than
+                                        inferring it from `editable`
 PATCH  /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* { version, title?, body?,
                                         labels? | add_labels?, remove_labels?, kind?, priority? }.
                                         `version` is required (§13.1); an empty patch, `labels`
@@ -8828,6 +8882,17 @@ POST   /v1/issues/{id}/reopen           *Added 2026-10-02 (task 130.3).* {}. Reo
                                         issue is **409** with `details.state`; an agent's
                                         reopen of an issue that writes back is **409**
                                         `forge_write_needs_human` (task 130.10)
+GET    /v1/issues/{id}/comments         *Added 2026-10-03 (task 130.16).* The thread, oldest
+                                        first: `{comments: [{id, issue_id, author, body,
+                                        remote, remote_key?, created_at, updated_at}]}`.
+                                        **404** for an unknown issue
+POST   /v1/issues/{id}/comments         *Added 2026-10-03 (task 130.16).* {body} → **201**
+                                        with the comment; the author is derived (§5.6). An
+                                        empty or over-64-KiB body is **400**; a comment on an
+                                        issue with a live remote is **409** `issue_mirrored`,
+                                        before any I/O. No `Idempotency-Key`, like the pull
+                                        request comment route: a duplicate local comment is
+                                        visible and harmless
 DELETE /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* Permanent, from any
                                         state (§5.6) → **204**. An imported issue leaves its
                                         tombstone; upstream is never touched; its tasks keep
@@ -10216,6 +10281,7 @@ the issue is already in — appends nothing. Six kinds:
 | `issue.state_changed` | `{ id, from, to, reason, by }` |
 | `issue.labels_changed` | `{ id, labels: [name, …], labels_added: [name, …], labels_removed: [name, …], by }` |
 | `issue.comment_added` | `{ id, comment_id, by }` |
+| `issue.comment_updated` | `{ id, comment_id, by }` — *added 2026-10-03 (task 130.16)*: a mirrored comment edited on GitHub, updated in place; `by` is always `sync`, and an unchanged re-list emits nothing |
 | `issue.deleted` | `{ id, by }` |
 
 `by` is `human`, `agent` or `sync` (§5.6). No payload carries a title, a body
@@ -10502,6 +10568,12 @@ that writes back to GitHub — on `/mcp` and on a step endpoint alike — each i
 refused `409 invalid_state`, `details.reason: forge_write_needs_human`. The
 same refusal reaches a step's or a chat agent's plain HTTP call through the
 marker header (§13.1, §16).
+
+*Amended 2026-10-03 (task 130.16, issue #675).* An issue's thread is two more
+tools, and no exclusion: `issue_comments` reads it and `issue_comment` adds a
+local comment, recording the calling step's task (`task N`) or `agent` as its
+author (§5.6). Neither writes to a forge — a comment on an issue with a live
+GitHub remote is refused `409 issue_mirrored` — so no forge guard is needed.
 
 The task 057 property that the tool surface **equals** `Routes()` minus the
 exclusions is unchanged, and is still asserted by a test — the exclusion list it
@@ -11011,6 +11083,8 @@ CREATE TABLE issue_comments (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+CREATE UNIQUE INDEX issue_comments_remote_key   -- a mirrored comment, keyed per issue (task 130.16, migration 0041)
+  ON issue_comments (issue_id, remote_key) WHERE remote_key IS NOT NULL AND remote_key <> '';
 
 -- issues.created_by_task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL (migration 0037)
 CREATE TABLE issue_idempotency_keys (  -- §13.1 replay protection for POST /v1/issues (task 130.3, migration 0037)
@@ -11038,7 +11112,10 @@ CREATE TABLE issue_sync_state (        -- one row per project the importer polle
   import_complete    INTEGER NOT NULL DEFAULT 0,
   last_full_scan_at  TEXT,
   rate_limited_until TEXT,
-  requested_at       TEXT                       -- a pending "sync now"
+  requested_at       TEXT,                      -- a pending "sync now"
+  comment_watermark  TEXT,                      -- the comment pass's own (task 130.16, migration 0041)
+  comment_since      TEXT,
+  comment_etag       TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE issue_sync_outbox (       -- an imported issue's state write-back (task 130.10, migration 0039)
@@ -11257,6 +11334,15 @@ is not one. A legacy-snapshot task brought in by task import is relinked by its
 snapshot's repository and number against the **live** store's GitHub remotes,
 never by the staged database's issue id, for the reason the 130.1 exception
 above gives: issue ids are global.
+
+*Added 2026-10-03 (task 130.16, issue #675, migration 0041).* The **comment
+mirror**: `issue_sync_state` gains the comment pass's own watermark, bound and
+ETag, advanced independently of the issue pass's, and `issue_comments` a
+unique index on `(issue_id, remote_key)` for mirrored rows, so a re-list
+updates a row in place instead of appending a copy. It is per issue, not
+global, because two projects sharing an origin hold two issue sets and one
+GitHub comment lands under both. A local comment's `remote_key` is NULL, which
+the predicate leaves out.
 
 *Added 2026-08-14 (task 003).* `admit_not_before` / `queued_reason` carry no index:
 `ListAdmissible` already returns the whole queued set in §11 order and the hold is
@@ -12978,6 +13064,18 @@ stream for the live tail.
    section and still renders a legacy `github_issue` row's captured issue.
    The palette lists a key-less "open this task's issue" row there, which
    opens view 13; `esc` returns to the workspace.
+
+   *Amended 2026-10-03 (task 130.16, issue #675):* view 13 renders the
+   issue's discussion thread under the description, oldest first, from `GET
+   /v1/issues/{id}/comments`: each comment under its author and time, its
+   body through the same Markdown renderer, a mirrored one marked as
+   GitHub's. It re-reads on `issue.comment_added` and
+   `issue.comment_updated`. **`W`** — a new operation, `comment`, rebindable
+   under §12.3's `tui.keys` like the vocabulary terms (`c` is §6's cancel and
+   `C` is fold) — writes a local comment in `$EDITOR` through the issue
+   form's helper; a buffer saved empty adds nothing. It is withheld on an
+   issue whose GitHub remote is live, which the daemon would refuse with
+   `issue_mirrored` (task 130 decision 24.3): nothing is posted to GitHub.
 
 ### Layout
 

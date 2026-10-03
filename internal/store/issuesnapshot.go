@@ -1,6 +1,8 @@
 package store
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -38,6 +40,20 @@ type IssueSnapshot struct {
 	// snapshot written before it decodes zero and the file says null.
 	CreatedAt  time.Time `json:"created_at,omitzero"`
 	CapturedAt time.Time `json:"captured_at,omitzero"`
+	// Comments is the issue's discussion thread at task creation, oldest
+	// first and untruncated (task 130.16, decision 24.5), read from
+	// issue_comments in the create transaction and never from the network.
+	// A later comment never reaches an existing task's snapshot. Omitted
+	// when the thread is empty, so older rows decode with nil.
+	Comments []IssueSnapshotComment `json:"comments,omitempty"`
+}
+
+// IssueSnapshotComment is one comment of a snapshot's thread: who wrote it,
+// what it said and when, local and mirrored alike.
+type IssueSnapshotComment struct {
+	Author    string    `json:"author"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // IssueSnapshotRemote is an imported issue's provider reference as it stood
@@ -62,6 +78,7 @@ func (s *IssueSnapshot) Clone() *IssueSnapshot {
 	}
 	c := *s
 	c.Labels = slices.Clone(s.Labels)
+	c.Comments = slices.Clone(s.Comments)
 	if s.Remote != nil {
 		r := *s.Remote
 		r.Assignees = slices.Clone(s.Remote.Assignees)
@@ -137,6 +154,38 @@ func NewIssueSnapshot(iss *Issue, now time.Time) *IssueSnapshot {
 		}
 	}
 	return snap
+}
+
+// issueSnapshotCommentsTx reads issueID's thread for a snapshot inside the
+// task create transaction, in ListIssueComments' order, so the snapshot and
+// the task row commit together (task 130.16, decision 24.5). Nil when the
+// issue has no comments, which leaves the key out of issue_json.
+func issueSnapshotCommentsTx(ctx context.Context, tx *sql.Tx, issueID int64) ([]IssueSnapshotComment, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT author, body, created_at FROM issue_comments
+		WHERE issue_id = ? ORDER BY created_at ASC, id ASC`, issueID)
+	if err != nil {
+		return nil, fmt.Errorf("read issue %d comments: %w", issueID, err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []IssueSnapshotComment
+	for rows.Next() {
+		var (
+			c       IssueSnapshotComment
+			created string
+		)
+		if err := rows.Scan(&c.Author, &c.Body, &created); err != nil {
+			return nil, fmt.Errorf("scan issue %d comment: %w", issueID, err)
+		}
+		if c.CreatedAt, err = parseTime(created); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read issue %d comments: %w", issueID, err)
+	}
+	return out, nil
 }
 
 // marshalIssueSnapshot renders a task's issue snapshot for storage; no

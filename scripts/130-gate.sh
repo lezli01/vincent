@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Task 130.17 gate (§5.6, §13.2, §13.4): prove via curl alone that vincent's
 # issues work end to end — local CRUD, a task from an issue, the GitHub
-# import, state write-back through the durable outbox, and the MCP guard on
-# a forge write.
+# import, state write-back through the durable outbox, the MCP guard on a
+# forge write, and the discussion thread.
 #
 #    1. local CRUD: an idempotent create (replay, and a reused key refused),
 #       the list filters, a stale-version PATCH refused with the current
@@ -25,6 +25,10 @@
 #       deleted
 #   11. the MCP guard: an agent may not close an imported issue, and may
 #       close a local one
+#   12. the thread (task 130.16): a comment on GitHub is mirrored onto the
+#       imported issue with one issue.comment_added; a local comment on a
+#       local issue carries the daemon's author; a local comment on the
+#       imported issue is refused issue_mirrored; nothing is posted to GitHub
 #
 # There is no `github_issue: N` shorthand scenario: #676 made it conditional
 # on task 130.11 (#670), which removed `github_issue` from task create
@@ -242,14 +246,30 @@ now_utc() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 # temp file and a rename, as the fake writes it; the rename retries because
 # on Windows it fails while a fakegh child holds the file open for reading.
 corpus_edit() {
-  local tmp="$CORPUS.edit"
   jq --argjson n "$1" --arg now "$(now_utc)" "map(if .number == \$n then $2 else . end)" \
-    "$CORPUS" > "$tmp"
+    "$CORPUS" > "$CORPUS.edit"
+  corpus_commit
+}
+
+corpus_commit() { # moves $CORPUS.edit over the corpus
   for _ in $(seq 1 10); do
-    if mv -f "$tmp" "$CORPUS" 2>/dev/null; then return 0; fi
+    if mv -f "$CORPUS.edit" "$CORPUS" 2>/dev/null; then return 0; fi
     sleep 1
   done
   fail "the corpus could not be rewritten"
+}
+
+# corpus_add_comment N ID BODY: hubot comments on #N on GitHub, now. A row
+# with an issue_url is a comment to the fake, which recomputes #N's count.
+corpus_add_comment() {
+  jq --argjson n "$1" --argjson id "$2" --arg b "$3" --arg now "$(now_utc)" --arg r "$REPO_SLUG" '. + [{
+    id: $id, node_id: "IC_gate_\($id)", body: $b, user: {login: "hubot"},
+    created_at: $now, updated_at: $now,
+    url: "https://api.github.com/repos/\($r)/issues/comments/\($id)",
+    html_url: "https://github.com/\($r)/issues/\($n)#issuecomment-\($id)",
+    issue_url: "https://api.github.com/repos/\($r)/issues/\($n)"
+  }]' "$CORPUS" > "$CORPUS.edit"
+  corpus_commit
 }
 
 corpus_state() { # corpus_state N -> state/state_reason as GitHub has it
@@ -703,6 +723,64 @@ if run_scenario 11; then
   res="$(mcp_call issue_close "$(jq -cn --argjson i "$mine" '{id: $i, body: {reason: "completed"}}')")"
   [[ "$(jq -r .isError <<<"$res")" != "true" ]] || fail "an agent may not close a local issue: $res"
   field_is "$mine" .state closed || fail "the agent's close of local issue $mine did not take"
+
+  daemon_down
+fi
+
+# --------------------------------------------------------------- scenario 12
+if run_scenario 12; then
+  echo "== scenario 12: the discussion thread"
+  scenario_dirs s12
+  seed_corpus
+  write_config true 1s
+  daemon_up
+  pid="$(import_github s12/repo)"
+  one="$(issue_by_number "$pid" 1)"
+  lpid="$(local_project s12/local)"
+  mine="$(create_issue "$lpid" "A local issue")"
+
+  thread() { api GET "/issues/$1/comments"; }
+  thread_length_is() { [[ "$(thread "$1" | jq '.comments | length')" == "$2" ]]; }
+
+  # A comment made on GitHub reaches the imported issue on a tick.
+  corpus_add_comment 1 4000001 "Seen on GitHub"
+  wait_for 30 "the comment on #1 to be mirrored" thread_length_is "$one" 1
+  got="$(thread "$one" | jq -c '.comments[0] | [.author, .body, .remote, .remote_key]')"
+  [[ "$got" == '["hubot","Seen on GitHub",true,"4000001"]' ]] \
+    || fail "the mirrored comment is $got"
+  cid="$(thread "$one" | jq -r '.comments[0].id')"
+
+  # Exactly one issue.comment_added, by sync, naming the comment and
+  # carrying no text. As in scenario 1, the stream is read from 1 for
+  # --max-time.
+  raw="$(curl -sS --max-time 3 -N -H "Authorization: Bearer $TOKEN" \
+    -H "Last-Event-ID: 1" "$BASE/events?types=issue.comment_added" 2>/dev/null || true)"
+  frames="$(tr -d '\r' <<<"$raw" | sed -n 's/^data: //p' | jq -sc .)"
+  [[ "$(jq length <<<"$frames")" == "1" ]] \
+    || fail "want one issue.comment_added on GET /v1/events, got $frames"
+  got="$(jq -c '.[0].payload | [.id, .comment_id, .by, has("body")]' <<<"$frames")"
+  [[ "$got" == "[$one,$cid,\"sync\",false]" ]] \
+    || fail "issue.comment_added says $got, want [$one,$cid,\"sync\",false]"
+
+  # A local comment on a local issue: its author is the daemon's, by the
+  # rule an issue create follows — and an issue created over HTTP shows it.
+  author="$(issue_field "$mine" .author)"
+  [[ -n "$author" ]] || fail "local issue $mine has no author"
+  out="$(api_raw POST "/issues/$mine/comments" '{"body": "A local note"}')"
+  [[ "$(status_of "$out")" == "201" ]] || fail "a local comment -> HTTP $(status_of "$out"): $(body_of "$out")"
+  got="$(thread "$mine" | jq -c '[.comments[] | [.author, .body, .remote]]')"
+  want="$(jq -cn --arg a "$author" '[[$a, "A local note", false]]')"
+  [[ "$got" == "$want" ]] || fail "local issue $mine's thread is $got, want $want"
+
+  # A local comment on the imported issue is refused before any I/O.
+  out="$(api_raw POST "/issues/$one/comments" '{"body": "Not here"}')"
+  expect_conflict "$out" .error.details.reason issue_mirrored
+  thread_length_is "$one" 1 || fail "a refused comment reached #1's thread: $(thread "$one")"
+
+  # Nothing was ever posted to GitHub.
+  calls="$(gh_calls)"
+  posts="$(grep -c -- "-X POST" <<<"$calls" || true)"
+  [[ "$posts" == "0" ]] || fail "a comment was posted to GitHub: $calls"
 
   daemon_down
 fi

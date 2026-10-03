@@ -42,19 +42,27 @@ type IssueSyncState struct {
 	// RateLimitedUntil defers the next attempt; RequestedAt is an
 	// outstanding "sync now" (RequestIssueSync).
 	LastFullScanAt, RateLimitedUntil, RequestedAt *time.Time
+	// CommentWatermark, CommentSince and CommentETag are the comment pass's
+	// own Watermark, Since and ETag (task 130.16, decision 24): it lists a
+	// different endpoint and advances independently of the issue pass.
+	CommentWatermark, CommentSince *time.Time
+	CommentETag                    string
 }
 
 const issueSyncColumns = `project_id, provider, repo, watermark, etag, since, last_attempt_at,
-	last_ok_at, ok, reason, import_complete, last_full_scan_at, rate_limited_until, requested_at`
+	last_ok_at, ok, reason, import_complete, last_full_scan_at, rate_limited_until, requested_at,
+	comment_watermark, comment_since, comment_etag`
 
 func scanIssueSyncState(r rowScanner) (*IssueSyncState, error) {
 	var (
 		st                               IssueSyncState
 		watermark, since, attempt, okAt  sql.NullString
 		fullScan, rateLimited, requested sql.NullString
+		commentWatermark, commentSince   sql.NullString
 	)
 	if err := r.Scan(&st.ProjectID, &st.Provider, &st.Repo, &watermark, &st.ETag, &since, &attempt,
-		&okAt, &st.OK, &st.Reason, &st.ImportComplete, &fullScan, &rateLimited, &requested); err != nil {
+		&okAt, &st.OK, &st.Reason, &st.ImportComplete, &fullScan, &rateLimited, &requested,
+		&commentWatermark, &commentSince, &st.CommentETag); err != nil {
 		return nil, err
 	}
 	for _, f := range []struct {
@@ -68,6 +76,8 @@ func scanIssueSyncState(r rowScanner) (*IssueSyncState, error) {
 		{&st.LastFullScanAt, fullScan},
 		{&st.RateLimitedUntil, rateLimited},
 		{&st.RequestedAt, requested},
+		{&st.CommentWatermark, commentWatermark},
+		{&st.CommentSince, commentSince},
 	} {
 		t, err := parseTimePtr(f.src)
 		if err != nil {
@@ -133,18 +143,21 @@ func (s *Store) PutIssueSyncState(ctx context.Context, st IssueSyncState) error 
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO issue_sync_state (`+issueSyncColumns+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT (project_id) DO UPDATE SET
 				provider = excluded.provider, repo = excluded.repo, watermark = excluded.watermark,
 				etag = excluded.etag, since = excluded.since, last_attempt_at = excluded.last_attempt_at,
 				last_ok_at = excluded.last_ok_at, ok = excluded.ok, reason = excluded.reason,
 				import_complete = excluded.import_complete, last_full_scan_at = excluded.last_full_scan_at,
 				rate_limited_until = excluded.rate_limited_until,
+				comment_watermark = excluded.comment_watermark, comment_since = excluded.comment_since,
+				comment_etag = excluded.comment_etag,
 				requested_at = CASE WHEN issue_sync_state.requested_at > excluded.last_attempt_at
 					THEN issue_sync_state.requested_at ELSE excluded.requested_at END`,
 			st.ProjectID, st.Provider, st.Repo, formatTimePtr(st.Watermark), st.ETag, formatTimePtr(st.Since),
 			formatTimePtr(st.LastAttemptAt), formatTimePtr(st.LastOKAt), st.OK, st.Reason, st.ImportComplete,
 			formatTimePtr(st.LastFullScanAt), formatTimePtr(st.RateLimitedUntil), formatTimePtr(st.RequestedAt),
+			formatTimePtr(st.CommentWatermark), formatTimePtr(st.CommentSince), st.CommentETag,
 		); err != nil {
 			return nil, fmt.Errorf("write issue sync state of project %d: %w", st.ProjectID, err)
 		}

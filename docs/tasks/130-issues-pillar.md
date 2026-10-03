@@ -695,7 +695,8 @@ Settled with the author while scoping #673. Spec §8.5 and the task row's
 2. **The comment thread is not carried yet, and that gap is accepted.**
    `comments` is always `[]`, in gh's element shape, so #675 (130.16) fills it
    with no workflow change. The resolve workflows' prompts say the issue body
-   is the brief until then.
+   is the brief until then. *(Closed 2026-10-03 by 130.16, decision 24.5: the
+   file's `comments` carries the thread, and the prompts dropped that line.)*
 3. **The file lives in the worktree's own git dir**, written before every
    attempt from the task row: never staged by `git add -A`, visible to a
    containerized step under the already-mounted repository (the m12 gate's
@@ -703,6 +704,51 @@ Settled with the author while scoping #673. Spec §8.5 and the task row's
    mount from the data dir — was not needed.
 4. **One block for all three step types.** The variables are part of §8.5
    (task 036), so command, check and agent steps get them alike.
+
+### 24. 130.16: the discussion thread (2026-10-03)
+
+Settled with the author while scoping #675 (1–3); 4–6 are the author's
+defaults, not separately asked. Spec §5.6, §8.4, §8.5, §12.3, §13.2–§13.4 and
+§14 record the result.
+
+1. **Deleted GitHub comments are kept and never detected.** The open-set scan
+   lists issues, not comments, so it can never see a deleted comment, and
+   detecting one would take a per-issue listing. A mirrored comment deleted
+   upstream stays locally. No column, no per-issue calls. #675's open
+   question is closed with this answer.
+2. **An issue's older thread is backfilled once when it is imported.** The
+   repo-wide `since` watermark never brings in the earlier comments of an
+   issue imported after it passed them — one reopened later, one beyond the
+   initial 500-issue cap, or a re-keyed backfill placeholder. When an issue is
+   first imported, or a placeholder is re-keyed, and GitHub counts
+   `comments > 0`, sync reads `issues/{n}/comments` once, before writing the
+   issue, so a failed read retries on the next tick.
+   *Amended 2026-10-03 (review F2):* not while the comment pass has no bound
+   yet — its first walk starts from zero and reaches the thread anyway, so a
+   project's initial import makes no per-issue read.
+3. **A refused local comment uses `issue_mirrored`**, not a new
+   `field_owned_by_source`: the rule already exists. `issues.Service.Comment`
+   calls `checkMirror`, so a `human`'s or `agent`'s comment on an issue with a
+   **live** remote is `409 invalid_state` / `issue_mirrored`, before any I/O.
+   Allowed on a local issue and on one whose remote is a tombstone, `moved` or
+   `missing` — unlike a title edit, which stays refused while any remote row
+   is attached: nothing mirrors a comment over a local one once the remote is
+   no longer listed.
+4. **Edits update in place and emit `issue.comment_updated`** (`{id,
+   comment_id, by}`, no text). An unchanged re-list writes and emits nothing.
+   A comment whose issue number matches no imported issue in the project —
+   pull-request conversation comments, comments on issues never imported — is
+   ignored.
+5. **The snapshot carries the full thread, untruncated**, as `gh issue view
+   --json comments` does. The 64 KiB bound applies to the prefilled
+   description, which stays the body alone, so comments never make a create
+   fail. A later comment does not change a task's snapshot.
+6. **A local comment's author follows §5.6's create rule:** the daemon's OS
+   username over HTTP, `task N` for a step over MCP, `agent` for other MCP
+   calls. No request field sets it. The comment route takes no
+   `Idempotency-Key`, like the pull request comment route: a duplicate local
+   comment is visible and harmless, and migration 0037's key table is scoped
+   to issue create.
 
 ## Open questions
 
@@ -805,9 +851,9 @@ its own pull request.
 - [x] **130.15** ([#674](https://github.com/lezli01/vincent/issues/674)) A
   `type: issues` trigger source, `issue:` on `create_task`, the trigger skill.
   Depends: 130.3, 130.7. ✓ 2026-10-03 (decision 20)
-- [ ] **130.16** ([#675](https://github.com/lezli01/vincent/issues/675)) The
+- [x] **130.16** ([#675](https://github.com/lezli01/vincent/issues/675)) The
   local discussion thread and the read-only GitHub comment mirror. Depends:
-  130.3, 130.8.
+  130.3, 130.8. ✓ 2026-10-03 (decision 24)
 - [ ] **130.17** ([#676](https://github.com/lezli01/vincent/issues/676)) An
   end-to-end gate on all three platforms. Depends: 130.7, 130.10.
   `scripts/130-gate.sh` and its `ci.yml` step landed with eleven scenarios,

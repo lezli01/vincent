@@ -51,6 +51,9 @@ type restIssue struct {
 	UpdatedAt   time.Time  `json:"updated_at"`
 	ClosedAt    *time.Time `json:"closed_at"`
 	StateReason string     `json:"state_reason"`
+	// Comments is read by the API paths only (see Issue.Comments), never by
+	// normalize: the `gh issue` porcelain has no count to agree with.
+	Comments int `json:"comments"`
 	// URL and RepositoryURL are the API's own names for this issue. They are
 	// what tells a `gh api` answer that followed a transfer's 301 from the
 	// issue that was asked for (see checkSameIssue).

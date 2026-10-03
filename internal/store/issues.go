@@ -26,6 +26,10 @@ const (
 	EventIssueLabelsChanged = "issue.labels_changed"
 	EventIssueCommentAdded  = "issue.comment_added"
 	EventIssueDeleted       = "issue.deleted"
+	// EventIssueCommentUpdated is a mirrored comment edited on GitHub and
+	// updated in place by the sync (task 130.16, decision 24): payload
+	// {id, comment_id, by}, never the text.
+	EventIssueCommentUpdated = "issue.comment_updated"
 	// EventIssueSyncChanged is a project's issue sync turning failing or
 	// recovering (task 130.8): payload {project_id, ok, reason?}, written
 	// only on a transition, never on each attempt.

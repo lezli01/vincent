@@ -1027,7 +1027,7 @@ starts.
 | `.Workflow` | `Name`, `Description` |
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
 | `.Loop` | `Index` (1-based iteration, **0** outside any loop), `Item`, `IsFirst`, `IsLast`. See [`type: loop`](#type-loop) |
-| `.Issue` | the issue the task was created from: `Number` (the vincent issue id, **0** when there is none), `Title`, `Body`, `State`, `Labels` (a list), `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, `Source` (`Provider`, `Repo`, `Number`, `URL`, `State` of an imported issue; zero for a local one), and `Repo`/`URL`, deprecated aliases of `Source.Repo`/`Source.URL`. See [`.Issue`](#issue) |
+| `.Issue` | the issue the task was created from: `Number` (the vincent issue id, **0** when there is none), `Title`, `Body`, `State`, `Labels` (a list), `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, `Source` (`Provider`, `Repo`, `Number`, `URL`, `State` of an imported issue; zero for a local one), `Comments` (a list of `Author`, `Body`, `CreatedAt`: the thread, oldest first), and `Repo`/`URL`, deprecated aliases of `Source.Repo`/`Source.URL`. See [`.Issue`](#issue) |
 | `.Steps` | **completed** steps by id → `{Status, Result, ExitCode}`. `Status` is `succeeded`, `approved` (a passed gate), `skipped` (a false guard) or `failed` — the last only once the workflow has moved past it, which happens only under `allow_failure`. `interrupted` never appears |
 | `.Host` | `OS`, `Arch` — the machine the daemon runs on. This is the per-step platform gate: `{{ ne .Host.OS "windows" }}` |
 | `.Worktree` | `Path` |
@@ -1081,6 +1081,17 @@ is 0 outside a loop, so one workflow serves both kinds of task:
 `MilestoneNumber` and `Source.Number` are integers; everything else is a
 string.
 
+`Comments` is a list too: the issue's discussion thread, oldest first and
+untruncated — local comments and the ones mirrored from GitHub alike — each
+with `Author` (the GitHub login of a mirrored comment), `Body` and
+`CreatedAt`. A legacy `--github-issue` task has none.
+
+```yaml
+    prompt: |
+      {{ range .Issue.Comments }}{{ .Author }} wrote: {{ .Body }}
+      {{ end }}
+```
+
 The issue is a **snapshot**, read once when the task was created. Nothing
 re-reads it, so editing the issue afterwards does not change what a later step
 renders — and rendering never touches the network, which is why a step cannot
@@ -1104,7 +1115,7 @@ needs the GitHub number reads `github_issue`.
 
 Numbers are safe to template into a `run:` body — `{{ .Issue.Source.Number }}`
 or `{{ index .Task.Fields "github_issue" }}` renders digits and nothing else.
-Free text is not: an issue title or body rendered into a shell line is
+Free text is not: an issue title, body or comment rendered into a shell line is
 attacker-controlled shell (spec §20), so a command step that needs it reads it
 from a file or through `gh`, never from the template.
 
@@ -1216,7 +1227,7 @@ prints, so `jq` written for `gh` reads it unchanged:
 | `stateReason` | `COMPLETED`, `NOT_PLANNED` or `DUPLICATE`; `null` while open |
 | `labels` | `[{"name": …}]` |
 | `author` | `{"login": …}` |
-| `comments` | always `[]` for now — the GitHub thread is not carried yet |
+| `comments` | the issue's thread at task creation, oldest first and untruncated, local and mirrored comments alike: `[{"author": {"login": …}, "body": …, "createdAt": …}]`; `[]` without comments and for a legacy task |
 | `id` | the vincent issue id; `null` for a legacy task |
 | `kind`, `priority` | the vincent issue's |
 | `source` | `{provider, repo, number, url}` for an imported issue; `null` for a local one |

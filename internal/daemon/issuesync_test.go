@@ -112,6 +112,20 @@ func (f *reconcileFixture) apiCalls(t *testing.T) []string {
 	return out
 }
 
+// issueCalls is apiCalls without the comment requests (task 130.16): what
+// the issue pass asked for, which the comment pass's one listing a tick
+// would otherwise pad.
+func (f *reconcileFixture) issueCalls(t *testing.T) []string {
+	t.Helper()
+	var out []string
+	for _, line := range f.apiCalls(t) {
+		if !strings.Contains(line, "/comments") {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
 func (f *reconcileFixture) syncState(t *testing.T) *store.IssueSyncState {
 	t.Helper()
 	st, err := f.store.GetIssueSyncState(t.Context(), f.project.ID)
@@ -168,7 +182,7 @@ func TestIssueSyncInitialImportIsOpenOnlyCappedAndResumed(t *testing.T) {
 	r := f.reconciler()
 
 	r.Tick(t.Context())
-	calls := f.apiCalls(t)
+	calls := f.issueCalls(t)
 	if len(calls) != importPageCap {
 		t.Fatalf("first pass made %d requests, want the cap %d:\n%s", len(calls), importPageCap, strings.Join(calls, "\n"))
 	}
@@ -207,11 +221,11 @@ func TestIssueSyncIdleRepoCostsOne304PerTick(t *testing.T) {
 	r := f.reconciler()
 	r.Tick(t.Context()) // import, and the first sweep
 	r.Tick(t.Context()) // the incremental question, answered 200 with its ETag
-	before, events := len(f.apiCalls(t)), f.lastEventID(t)
+	before, events := len(f.issueCalls(t)), f.lastEventID(t)
 	for range 2 {
 		r.Tick(t.Context())
 	}
-	calls := f.apiCalls(t)[before:]
+	calls := f.issueCalls(t)[before:]
 	if len(calls) != 2 {
 		t.Fatalf("two idle ticks made %d requests, want 2:\n%s", len(calls), strings.Join(calls, "\n"))
 	}

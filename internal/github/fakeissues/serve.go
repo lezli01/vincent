@@ -73,8 +73,17 @@ const (
 	apiBase       = "https://api.github.com/"
 )
 
-// Serve answers one request against the corpus.
+// Serve answers one request against the corpus, and records it in
+// RequestLog when that is set.
 func (s Store) Serve(req Request) (Response, error) {
+	resp, err := s.serve(req)
+	if logErr := s.logRequest(req, resp); logErr != nil && err == nil {
+		return Response{}, logErr
+	}
+	return resp, err
+}
+
+func (s Store) serve(req Request) (Response, error) {
 	switch req.Scenario {
 	case "unreachable":
 		return Response{}, ErrUnreachable
@@ -109,6 +118,12 @@ func (s Store) Serve(req Request) (Response, error) {
 		resp = s.listIssues(rows, u)
 	case len(seg) == 5 && seg[4] == "comments" && method == http.MethodGet:
 		resp = s.listComments(rows, u)
+	case len(seg) == 6 && seg[5] == "comments" && method == http.MethodGet:
+		n, err := strconv.Atoi(seg[4])
+		if err != nil {
+			return s.errorResponse(http.StatusNotFound, "Not Found", docsComments), nil
+		}
+		resp = s.issueComments(rows, n, u, req.FollowRedirects)
 	case len(seg) == 5 && (method == http.MethodGet || method == http.MethodPatch):
 		n, err := strconv.Atoi(seg[4])
 		if err != nil {

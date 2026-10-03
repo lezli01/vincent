@@ -573,10 +573,10 @@ steps:
 
       The issue is in `.vincent-issue/issue.json` — number, title, body, state,
       labels and creation date. Read it first.
-      Its `comments` list is empty: the GitHub thread is not carried into the
-      task yet, so the issue body is the brief. If the
-      reproduction details are not in the body, that is a question to ask, not
-      a gap to fill by guessing.
+      Its `comments` list is the issue's discussion thread as it stood when
+      this task was created, oldest first: the body and the thread together
+      are the brief. If the reproduction details are in neither, that is a
+      question to ask, not a gap to fill by guessing.
 
       You are on branch {{.Task.BranchName}}, based on {{.Task.BaseBranch}}, in
       a dedicated worktree at {{.Worktree.Path}}.
@@ -731,8 +731,9 @@ steps:
 
       The issue is in `.vincent-issue/issue.json` — number, title, body, state
       and labels. Read it first.
-      Its `comments` list is empty: the GitHub thread is not carried into the
-      task yet, so the issue body is the brief.
+      Its `comments` list is the issue's discussion thread as it stood when
+      this task was created, oldest first: the body and the thread together
+      are the brief.
 
       This step can park in `awaiting_input` for half a day, so say what you are
       doing as you go:
@@ -832,8 +833,9 @@ steps:
 
       The issue is in `.vincent-issue/issue.json` — number, title, body, state,
       labels and creation date. Read it first.
-      Its `comments` list is empty: the GitHub thread is not carried into the
-      task yet, so the issue body is the brief.
+      Its `comments` list is the issue's discussion thread as it stood when
+      this task was created, oldest first: the body and the thread together
+      are the brief.
 
       You are on branch {{.Task.BranchName}}, based on {{.Task.BaseBranch}}, in
       a dedicated worktree at {{.Worktree.Path}}.
@@ -990,8 +992,9 @@ steps:
 
       The issue is in `.vincent-issue/issue.json` — number, title, body, state,
       labels and creation date. Read it first.
-      Its `comments` list is empty: the GitHub thread is not carried into the
-      task yet, so the issue body is the brief.
+      Its `comments` list is the issue's discussion thread as it stood when
+      this task was created, oldest first: the body and the thread together
+      are the brief.
 
       You are on branch {{.Task.BranchName}}, based on {{.Task.BaseBranch}}, in
       a dedicated worktree at {{.Worktree.Path}}.

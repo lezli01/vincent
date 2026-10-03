@@ -42,6 +42,9 @@ const (
 	// AttentionFilter narrows the task table to what needs a human (task
 	// 129.18). H for "needs a human".
 	AttentionFilter Op = "attention_filter"
+	// Comment writes a local comment on an issue in $EDITOR (task 130
+	// decision 24, 130.16). W for "write": c is §6 cancel and C is fold.
+	Comment Op = "comment"
 )
 
 // The §6 actions. Archive is the term above: clause 1 working, not a second
@@ -149,6 +152,9 @@ var catalog = []Info{
 	}},
 	{Op: AttentionFilter, Default: "H", Meaning: "show only the tasks that need a human", Kind: KindTerm, Surfaces: []Surface{
 		"task table",
+	}},
+	{Op: Comment, Default: "W", Meaning: "comment on the issue", Kind: KindTerm, Surfaces: []Surface{
+		"issue",
 	}},
 
 	{Op: Pause, Default: "p", Meaning: "pause or resume the task", Kind: KindAction, Surfaces: []Surface{Actions}},

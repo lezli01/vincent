@@ -2428,6 +2428,8 @@ task created from it.
 | `PATCH` | `/v1/issues/{id}` | Edit fields and labels at the version you read |
 | `POST` | `/v1/issues/{id}/close` | Close, with a reason |
 | `POST` | `/v1/issues/{id}/reopen` | Reopen |
+| `GET` | `/v1/issues/{id}/comments` | The discussion thread, oldest first |
+| `POST` | `/v1/issues/{id}/comments` | Add a local comment |
 | `DELETE` | `/v1/issues/{id}` | Delete permanently, from any state |
 | `GET` | `/v1/projects/{id}/issue-labels` | The project's label catalogue |
 
@@ -2445,7 +2447,8 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
   "created_at": "…", "updated_at": "…",
   "body": "", "available_actions": ["close"],
   "tasks": { "count": 0, "active_ids": [] },
-  "editable": ["title", "body", "labels", "kind", "priority"] }
+  "editable": ["title", "body", "labels", "kind", "priority"],
+  "commentable": true }
 ```
 
 - **Create** takes `{ project_id, title, body?, labels?, kind?, priority? }` and
@@ -2473,7 +2476,9 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
 - **Get** adds `body`; `available_actions`, what a person may do from this
   state; `tasks.count` and `tasks.active_ids` over the root tasks created from
   the issue (fan-out lanes never count); `editable`, the fields a `PATCH` may
-  touch; and `source` — `{ provider, repo, number, url, remote_state,
+  touch; `commentable`, whether a local comment is taken — `false` only while
+  the GitHub remote is live, so it is `true` on an issue whose remote moved or
+  is missing even though its `body` is not editable; and `source` — `{ provider, repo, number, url, remote_state,
   last_synced_at, status }` for an imported issue, `null` for a local one.
   `last_synced_at` is when the importer last wrote the issue from the remote.
   `status` is absent while the remote issue is live, `moved` when it was
@@ -2496,6 +2501,14 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
   `not_planned` or `duplicate`. `duplicate_of` names the issue this one
   duplicates; it is allowed only with `duplicate`, must be another issue in the
   same project, and is cleared by reopening. **Reopen** takes `{}`.
+- **Comments** — `GET /v1/issues/{id}/comments` lists `{ comments: [{ id,
+  issue_id, author, body, remote, remote_key?, created_at, updated_at }] }`,
+  oldest first; `remote` marks a comment mirrored from GitHub, read-only, and
+  `remote_key` is its GitHub id. `POST` takes `{ body }` and answers `201`
+  with the comment; the daemon records its author as it does an issue's. An
+  empty body, or one over 64 KiB, is `400`. There is no `Idempotency-Key`.
+  Nothing is ever posted to GitHub: a comment edited there is updated in
+  place, and one deleted there stays.
 - **Delete** answers `204` from any state. An imported issue leaves a tombstone
   so it is never imported again, nothing is written upstream, and tasks created
   from it keep running with `issue_id` cleared. It is not an MCP tool.
@@ -2507,7 +2520,7 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
 | `409` | When | `details` |
 |---|---|---|
 | `issue_changed` | `PATCH` with a stale `version` | `reason`, and `issue`: the issue as it is now — re-apply your edit to it and send its `version` |
-| `issue_mirrored` | `PATCH` touching an imported issue's `title`, `body` or labels, which mirror GitHub. `kind` and `priority` stay editable | `reason` |
+| `issue_mirrored` | `PATCH` touching an imported issue's `title`, `body` or labels, which mirror GitHub. `kind` and `priority` stay editable. Also a comment on an issue whose GitHub remote is live — one whose remote moved, is missing or was deleted takes comments | `reason` |
 | `forge_write_needs_human` | `close` or `reopen` of an issue imported from GitHub by an agent: an [MCP](#mcp) tool call, or a request carrying `X-Vincent-Task-Id` or `X-Vincent-Chat-Id`. Its state is written back to GitHub, and only a human's act does that. A local issue, or one whose remote moved or is missing, is not refused | `reason` |
 | — | `close` on a closed issue, `reopen` on an open one | `state` |
 
@@ -3242,8 +3255,8 @@ chat.archived           chat.handed_off         chat.closed
 task.deleted            chat.deleted
 task.restored
 issue.created           issue.updated           issue.state_changed
-issue.labels_changed    issue.comment_added     issue.deleted
-issue.sync_changed
+issue.labels_changed    issue.comment_added     issue.comment_updated
+issue.deleted           issue.sync_changed
 project.*               workflow.registry_changed
 trigger.fired           trigger.poll_changed
 agent.quota_changed     daemon.shutting_down
@@ -3269,7 +3282,8 @@ they need.
   `sync`) beside what moved: `changed` field names on `issue.updated`,
   `{ from, to, reason }` on `issue.state_changed`, `labels` (the whole set)
   with `labels_added` and `labels_removed` on `issue.labels_changed`,
-  `comment_id` on `issue.comment_added`. A sync refresh's `issue.updated` adds
+  `comment_id` on `issue.comment_added` and `issue.comment_updated` — the
+  latter a mirrored comment edited on GitHub, always `by: sync`. A sync refresh's `issue.updated` adds
   `labels_added` and `labels_removed` when `changed` holds `labels`, and
   `from`, `to` and — on a close — `reason` when the state moved; these deltas
   are what an [`issues` trigger](../guides/triggers.md#issues-watch-the-projects-issues)

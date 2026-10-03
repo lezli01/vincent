@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+	"time"
 )
 
 // failureOutputLines is how much of the previous attempt's output the §8.4
@@ -169,6 +170,12 @@ func (s Step) Driver() string {
 // Labels is a real list, not a joined string: it is the one piece of issue
 // metadata a template genuinely wants to range over, and the comma-joined
 // spelling is what a declared `labels` task field gets instead (decision 7).
+// Comments is the issue's discussion thread as it stood at task creation,
+// oldest first and untruncated (task 130 decision 24, 130.16): local
+// comments and the mirrored GitHub ones alike. It is a list for the reason
+// Labels is one — a template ranges over it. A later comment never changes
+// an existing task's thread, and a task with no snapshot, or only a legacy
+// GitHub one, has none.
 // Everything else is a plain string for the reason `.Loop.Item` is one —
 // every other value in §8.4 is.
 //
@@ -189,6 +196,7 @@ type IssueContext struct {
 	Assignee        string
 	Milestone       string
 	MilestoneNumber int
+	Comments        []IssueComment
 	// Source is where an imported issue came from; its zero value means a
 	// local issue (or none).
 	Source IssueSource
@@ -196,6 +204,15 @@ type IssueContext struct {
 	// kept so a template written before task 130 renders unchanged.
 	Repo string
 	URL  string
+}
+
+// IssueComment is one element of `.Issue.Comments` (130.16). Author is the
+// GitHub login of a mirrored comment, or the author a local comment was
+// attributed at write time (§5.6's create rule).
+type IssueComment struct {
+	Author    string
+	Body      string
+	CreatedAt time.Time
 }
 
 // IssueSource is `.Issue.Source` — an imported issue's provider reference.

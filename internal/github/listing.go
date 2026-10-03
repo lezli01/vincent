@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os/exec"
@@ -136,7 +137,9 @@ func (c *Client) ListIssuesSince(ctx context.Context, repo Repo, opts ListSinceO
 			if r.PullRequest != nil {
 				continue
 			}
-			page.Issues = append(page.Issues, r.normalize(repo, now))
+			issue := r.normalize(repo, now)
+			issue.Comments = r.Comments
+			page.Issues = append(page.Issues, issue)
 		}
 	}
 	return page, nil
@@ -205,14 +208,68 @@ func (c *Client) ListIssueComments(ctx context.Context, repo Repo, since time.Ti
 		return CommentPage{}, err
 	}
 	page := CommentPage{Unchanged: walked.unchanged, ETag: walked.etag, Truncated: walked.truncated}
-	for _, body := range walked.bodies {
+	page.Comments, err = decodeComments(walked.bodies)
+	if err != nil {
+		return CommentPage{}, err
+	}
+	if n := len(page.Comments); n > 0 {
+		page.ResumeSince = page.Comments[n-1].UpdatedAt
+	}
+	return page, nil
+}
+
+// ListCommentsOfIssue reads issue number's whole thread, oldest first —
+// GitHub's only order on `issues/{n}/comments` — walking every page. It is
+// the one-off backfill of an issue a sync imports for the first time (task
+// 130 decision 24, 130.16): ListIssueComments is bounded by the sync's
+// watermark, so an issue whose comments predate it would otherwise import
+// with half a thread. It is unconditional and uncapped because it runs
+// once per issue, its answer is never revalidated, and stopping early would
+// leave exactly the hole the backfill exists to close. Every comment's
+// IssueNumber is number, whatever its issue_url says, so a transferred
+// issue's thread stays filed under the issue that was asked about.
+func (c *Client) ListCommentsOfIssue(ctx context.Context, repo Repo, number int) ([]IssueComment, error) {
+	if number <= 0 {
+		return nil, newError(ReasonBadRequest, "issue number must be positive, got %d", number)
+	}
+	cred, err := c.credential(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, RemoteTimeout)
+	defer cancel()
+	q := url.Values{}
+	q.Set("per_page", strconv.Itoa(listPageSize))
+	endpoint := fmt.Sprintf("repos/%s/%s/issues/%d/comments?%s",
+		url.PathEscape(repo.Owner), url.PathEscape(repo.Name), number, q.Encode())
+	walked, err := c.walk(ctx, cred, endpoint, "", math.MaxInt)
+	if err != nil {
+		c.logf("github issue thread read failed", "repo", repo.String(), "number", number,
+			"via", cred.via, "reason", ReasonOf(err), "detail", err)
+		return nil, err
+	}
+	comments, err := decodeComments(walked.bodies)
+	if err != nil {
+		return nil, err
+	}
+	for i := range comments {
+		comments[i].IssueNumber = number
+	}
+	return comments, nil
+}
+
+// decodeComments parses the pages of either comment listing, in the order
+// they were walked. Both answer the same REST comment shape, so the two
+// cannot drift into reading one comment two ways.
+func decodeComments(bodies [][]byte) ([]IssueComment, error) {
+	var out []IssueComment
+	for _, body := range bodies {
 		var raw []restComment
 		if err := json.Unmarshal(body, &raw); err != nil {
-			return CommentPage{}, newError(ReasonBadResponse, "decode issue comments: %v", err)
+			return nil, newError(ReasonBadResponse, "decode issue comments: %v", err)
 		}
 		for _, r := range raw {
-			page.ResumeSince = r.UpdatedAt
-			page.Comments = append(page.Comments, IssueComment{
+			out = append(out, IssueComment{
 				ID:          r.ID,
 				NodeID:      r.NodeID,
 				IssueNumber: trailingNumber(r.IssueURL),
@@ -224,7 +281,7 @@ func (c *Client) ListIssueComments(ctx context.Context, repo Repo, since time.Ti
 			})
 		}
 	}
-	return page, nil
+	return out, nil
 }
 
 // trailingNumber is the last path segment of an API URL as a number, 0 when

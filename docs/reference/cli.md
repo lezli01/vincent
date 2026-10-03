@@ -2926,7 +2926,9 @@ Prints one issue: title, state (with its close reason, and `duplicate of #N`
 when it has one), project, kind, priority, labels, author, and — for an
 imported issue — its `owner/repo#N` source, URL and when it last synced, then
 how many tasks it started with the ids still active, the actions it allows,
-and its body. `--json` prints the full issue.
+its body, and its discussion thread oldest first — each comment under an
+author-and-time line, a comment mirrored from GitHub marked `(github)`.
+`--json` prints the full issue, without the thread.
 
 ### `vincent issue add`
 
@@ -2980,6 +2982,18 @@ Error: issue 12 changed since it was read; re-run the command to apply the edit 
 An imported issue's title, body and labels mirror GitHub and are refused; the
 command prints the daemon's message and then which fields are editable on that
 issue (its kind and priority).
+
+### `vincent issue comment`
+
+```sh
+vincent issue comment <id> (--body B | --body-file PATH|-) [--json]
+```
+
+Adds a comment to an issue's thread. The daemon records you as its author;
+no flag sets it. Nothing is ever posted to GitHub: an issue imported from
+GitHub has a read-only mirror of its GitHub thread, so a comment on it is
+refused while its remote is live, as an edit of its title is. `--body-file`
+reads the comment from a file, or from stdin with `-`.
 
 ### `vincent issue close`
 

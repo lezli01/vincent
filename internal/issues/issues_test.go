@@ -3,6 +3,7 @@ package issues
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -441,5 +442,66 @@ func TestAgentStateChangeOfAWriteBackIssueIsRefused(t *testing.T) {
 	local := mustCreate(t, svc, CreateInput{ProjectID: pid, Title: "local"})
 	if _, err := svc.Close(ctx, issuestate.Agent, local.ID, "", nil); err != nil {
 		t.Errorf("agent close of a local issue: %v", err)
+	}
+}
+
+// TestCommentOnAMirroredThreadIsRefused is task 130 decision 24 (130.16): a
+// human's or an agent's comment on an issue with a live remote is refused as
+// a title edit is, before anything is written; sync's is not, and a moved or
+// missing remote gives the thread back.
+func TestCommentOnAMirroredThreadIsRefused(t *testing.T) {
+	svc, st, pid := newService(t)
+	ctx := t.Context()
+	upsert := func(key string, n int) *store.Issue {
+		t.Helper()
+		iss, _, err := st.UpsertRemoteIssue(ctx, store.RemoteIssue{
+			ProjectID: pid, Provider: "github", RemoteKey: key, Repo: "o/r", Number: n,
+			Title: key, State: issuestate.Open,
+		}, issuestate.Sync)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return iss
+	}
+	live := upsert("I_1", 1)
+	if !ThreadMirrored(live) {
+		t.Fatal("a live import's thread is not mirrored")
+	}
+	before := eventCount(t, st)
+	for _, by := range []issuestate.Actor{issuestate.Human, issuestate.Agent} {
+		// An empty body still answers ErrMirrored: the refusal comes first.
+		for _, body := range []string{"hi", " "} {
+			if _, err := svc.Comment(ctx, by, live.ID, "ann", body); !errors.Is(err, ErrMirrored) {
+				t.Errorf("%s comment %q = %v, want ErrMirrored", by, body, err)
+			}
+		}
+	}
+	if after := eventCount(t, st); after != before {
+		t.Errorf("events %d -> %d: a refused comment reached the store", before, after)
+	}
+	if _, err := svc.Comment(ctx, issuestate.Sync, live.ID, "octocat", "mirrored"); err != nil {
+		t.Errorf("sync comment: %v", err)
+	}
+
+	for i, status := range []string{store.RemoteStatusMoved, store.RemoteStatusMissing} {
+		key := fmt.Sprintf("I_%d", i+2)
+		iss := upsert(key, i+2)
+		if err := st.SetIssueRemoteStatus(ctx, pid, "github", key, status, ""); err != nil {
+			t.Fatal(err)
+		}
+		got, err := svc.Get(ctx, iss.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ThreadMirrored(got) || !Mirrored(got) {
+			t.Errorf("%s: thread mirrored %v, content mirrored %v", status, ThreadMirrored(got), Mirrored(got))
+		}
+		if _, err := svc.Comment(ctx, issuestate.Agent, iss.ID, "agent", "still here"); err != nil {
+			t.Errorf("comment on a %s remote: %v", status, err)
+		}
+	}
+
+	if _, err := svc.Comment(ctx, issuestate.Human, 9999, "ann", "hi"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("comment on an unknown issue = %v, want ErrNotFound", err)
 	}
 }

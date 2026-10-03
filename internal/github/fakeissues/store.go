@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -81,12 +82,19 @@ type Store struct {
 	// Now stamps a write's updated_at and closed_at, and the rate limit's
 	// reset; time.Now when nil.
 	Now func() time.Time
+	// RequestLog is FAKEGH_REQUESTS_FILE: when set, Serve appends one line
+	// per request to it — see CountRequests. Empty, nothing is recorded.
+	RequestLog string
 }
 
-// FromEnv is the Store cmd/fakegh serves: FAKEGH_ISSUES_FILE and
-// FAKEGH_REPO.
+// FromEnv is the Store cmd/fakegh serves: FAKEGH_ISSUES_FILE, FAKEGH_REPO
+// and FAKEGH_REQUESTS_FILE.
 func FromEnv() Store {
-	return Store{Path: os.Getenv("FAKEGH_ISSUES_FILE"), Repo: os.Getenv("FAKEGH_REPO")}
+	return Store{
+		Path:       os.Getenv("FAKEGH_ISSUES_FILE"),
+		Repo:       os.Getenv("FAKEGH_REPO"),
+		RequestLog: os.Getenv("FAKEGH_REQUESTS_FILE"),
+	}
 }
 
 // Scenario is the scenario for this invocation: the trimmed content of
@@ -131,7 +139,7 @@ func (s Store) Load() ([]Row, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fakeissues: %s: %w", s.Path, err)
 	}
-	return s.rehome(rows), nil
+	return countComments(s.rehome(rows)), nil
 }
 
 func (s Store) builtin() ([]Row, error) {
@@ -139,7 +147,42 @@ func (s Store) builtin() ([]Row, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.rehome(rows), nil
+	return countComments(s.rehome(rows)), nil
+}
+
+// countComments sets every issue and pull request row's `comments` to the
+// number of comment rows filed under its number, as GitHub counts a pull
+// request's conversation comments on it too. The count is computed on every
+// read rather than maintained by every write (task 130 decision 24, 130.16):
+// a test or a gate that writes a comment row into the file by hand — not
+// through AddComment — still gets the count GitHub would report, so there is
+// no second copy of the thread's size to forget. A count written in the file
+// is therefore never authoritative; a row wanting `comments: 3` gets three
+// comment rows.
+func countComments(rows []Row) []Row {
+	counts := map[int]int{}
+	for _, row := range rows {
+		if !isIssue(row) {
+			counts[commentIssue(row)]++
+		}
+	}
+	for _, row := range rows {
+		if n, ok := intField(row, "number"); ok && isIssue(row) {
+			row["comments"] = json.Number(strconv.Itoa(counts[n]))
+		}
+	}
+	return rows
+}
+
+// commentIssue is the number of the issue a comment row is filed under: the
+// last segment of its issue_url, 0 when that is not a number.
+func commentIssue(row Row) int {
+	u := str(row, "issue_url")
+	n, err := strconv.Atoi(u[strings.LastIndexByte(u, '/')+1:])
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 func decode(raw []byte) ([]Row, error) {

@@ -26,7 +26,25 @@
 //     direction, per_page and page, a Link header across pages and a weak
 //     ETag over the body that turns a matching If-None-Match into a 304;
 //     `repos/{o}/{r}/issues/{n}`, GET and PATCH (state, state_reason, and
-//     duplicate_issue_id, which must be another issue's integer id); and `repos/{o}/{r}/issues/comments`.
+//     duplicate_issue_id, which must be another issue's integer id);
+//     `repos/{o}/{r}/issues/comments`, with its own weak ETag over its own
+//     body, so an issue write never invalidates it and a comment edit never
+//     invalidates the issue listing; and `repos/{o}/{r}/issues/{n}/comments`,
+//     one issue's thread oldest first, paged by per_page and page.
+//   - The comment counts: every issue and pull request row's `comments` is
+//     recomputed from the comment rows on every Load, so a count written in
+//     the file is never the answer (task 130 decision 24, 130.16).
+//   - The comment helpers, for a test that changes the thread between two
+//     syncs without writing a REST row by hand: Store.AddComment(number,
+//     author, body) files one and returns its id, Store.EditComment(id,
+//     body) rewrites one and moves its updated_at forward, and
+//     Store.RemoveComment(id) deletes one. They need a Store with a Path
+//     (ErrNoCorpusFile otherwise) and never touch the issue row.
+//   - The request log: with Store.RequestLog (FAKEGH_REQUESTS_FILE) set,
+//     Serve appends `METHOD path status` per request, on either leg, and
+//     CountRequests(log, method, path, status) counts them — status 0 for
+//     any — so a test can tell the issue listing's calls and 304s from the
+//     comment listing's.
 //   - The per-issue faults: a row carrying `"_fake": {"transferred_to":
 //     "owner/other#12"}` answers 301 with a Location, one carrying `"_fake":
 //     {"deleted": true}` answers 410, and both are left out of every listing.

@@ -16,8 +16,10 @@ import (
 var fixedNow = time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
 
 // fixture is a corpus covering every row kind: open and closed issues with
-// distinct created, updated and comment counts, a pull request row, two
-// comments, and one row of each fault marker.
+// distinct created and updated times, a pull request row, two comments, and
+// one row of each fault marker. The `comments` counts written here are
+// deliberately wrong (5 on #3, which has no comment rows): Load recomputes
+// them from the comment rows, so #1 reads 2 and every other row 0.
 const fixture = `[
   {"id": 1, "number": 1, "title": "one", "state": "open", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-05T00:00:00Z", "comments": 2, "user": {"login": "a"}, "html_url": "https://github.com/octo/repo/issues/1"},
   {"id": 2, "number": 2, "title": "two", "state": "closed", "state_reason": "completed", "closed_at": "2026-01-04T00:00:00Z", "created_at": "2026-01-02T00:00:00Z", "updated_at": "2026-01-04T00:00:00Z", "comments": 0, "user": {"login": "b"}, "html_url": "https://github.com/octo/repo/issues/2"},
@@ -86,7 +88,7 @@ func TestListIssuesParameters(t *testing.T) {
 		{"repos/octo/repo/issues?state=all&direction=asc", []int{1, 2, 3, 4}},
 		{"repos/octo/repo/issues?state=all&sort=updated", []int{4, 1, 2, 3}},
 		{"repos/octo/repo/issues?state=all&sort=updated&direction=asc", []int{3, 2, 1, 4}},
-		{"repos/octo/repo/issues?state=all&sort=comments", []int{3, 1, 4, 2}},
+		{"repos/octo/repo/issues?state=all&sort=comments", []int{1, 4, 3, 2}},
 		{"repos/octo/repo/issues?state=all&since=2026-01-04T00:00:00Z", []int{4, 2, 1}},
 		{"repos/octo/repo/issues?state=all&per_page=3", []int{4, 3, 2}},
 		{"repos/octo/repo/issues?state=all&per_page=3&page=2", []int{1}},

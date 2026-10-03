@@ -2862,6 +2862,7 @@ var vocabulary = []struct {
 	{termResult, "w", true},
 	{termNextFail, "N", true},
 	{termAttention, "H", true},
+	{termComment, "W", true},
 }
 
 // vocabularyExceptions are the rows that hold a vocabulary key for something

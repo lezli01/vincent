@@ -166,6 +166,15 @@ func TestLaneGetsTheParentsIssueFile(t *testing.T) {
 // a linked task finds the file through $VINCENT_ISSUE_FILE, reads the
 // snapshot from it, and the file never shows up in the worktree's status.
 func TestCommandStepReadsTheIssueFile(t *testing.T) {
+	// A step inherits the daemon's environment, so a test run from inside a
+	// vincent step would see that step's own VINCENT_ISSUE_* and read its
+	// NUMBER as this local issue's. Unset them for the test's duration.
+	for _, k := range []string{"VINCENT_ISSUE_FILE", "VINCENT_ISSUE_ID", "VINCENT_ISSUE_NUMBER", "VINCENT_ISSUE_URL"} {
+		t.Setenv(k, "") // registers the restore
+		if err := os.Unsetenv(k); err != nil {
+			t.Fatal(err)
+		}
+	}
 	h := newEngineHarnessWith(t, nil)
 	snap := &store.IssueSnapshot{
 		ID: 21, Title: "Expose the issue snapshot", Body: "Read it from a file.",

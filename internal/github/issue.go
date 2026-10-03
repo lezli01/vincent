@@ -115,6 +115,20 @@ type Issue struct {
 	StateReason string `json:"state_reason,omitempty"`
 	// ClosedAt is when the issue was last closed; zero while it is open.
 	ClosedAt time.Time `json:"closed_at,omitzero"`
+	// Comments is the comment count GitHub reports (REST's `comments`). It is
+	// read for one decision only: whether an issue a sync imports for the
+	// first time needs its older thread backfilled through
+	// ListCommentsOfIssue (task 130 decision 24, 130.16) — the repo-wide
+	// listing is bounded by a watermark and would never reach it. It is not
+	// the thread: deleted comments, which vincent keeps, make the two differ.
+	// Only the reads that speak REST on both legs set it — ListIssuesSince
+	// and GetIssue, the sync's two, and the issue a state write answers —
+	// never List or Get. The `gh issue` porcelain's `comments` is the thread
+	// itself rather than a count, and asking for it would fetch every listed
+	// issue's comments; a count on Get's token leg alone would be a
+	// difference between the legs a client could see in a task's snapshot
+	// (decision 1). So a picker's Issue carries zero here on either leg.
+	Comments int `json:"comments,omitempty"`
 }
 
 // Zero reports that no issue is linked. It is the test `.Issue` templates

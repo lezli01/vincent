@@ -339,7 +339,7 @@ command timeout, independently of the main step timeout.
 | `.Workflow` | `Name`, `Description` |
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` |
 | `.Loop` | `Index`, `Item`, `IsFirst`, `IsLast` |
-| `.Issue` | `Number`, `Title`, `Body`, `State`, `Labels`, `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, `Source` (`Provider`, `Repo`, `Number`, `URL`, `State`), and the deprecated `Repo`, `URL` |
+| `.Issue` | `Number`, `Title`, `Body`, `State`, `Labels`, `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, `Source` (`Provider`, `Repo`, `Number`, `URL`, `State`), `Comments` (`Author`, `Body`, `CreatedAt`), and the deprecated `Repo`, `URL` |
 | `.Steps` | completed step ids → `Status`, `Result`, `ExitCode` |
 | `.Host` | `OS`, `Arch` |
 | `.Worktree` | `Path` |
@@ -358,6 +358,9 @@ older task created with the removed `--github-issue N` still renders the
 GitHub number as `.Issue.Number`. New tasks link an issue by its vincent id
 (`issue_id`, `--issue`), never by a GitHub number.
 `Labels` is a list; the numbers are integers and everything else is a string.
+`Comments` is the issue's discussion thread, oldest first and untruncated:
+local comments and the ones mirrored from GitHub alike. A comment body is
+free text like the issue's own.
 Numbers are safe to template into `run:`; titles and bodies are not. It is a
 snapshot taken at task creation and never re-read, so rendering it needs no
 network, and a fan-out lane inherits its parent's copy.
@@ -378,7 +381,8 @@ number,title,body,url,createdAt,state,stateReason,labels,author,comments`, so
 `jq` written for `gh` reads it unchanged: `number` is the GitHub number (`null`
 for a local issue), `state` is `OPEN`/`CLOSED`, `stateReason` is
 `COMPLETED`/`NOT_PLANNED`/`DUPLICATE` or `null`, `labels` is `[{"name": …}]`,
-`author` is `{"login": …}`, and `comments` is always `[]` for now. It adds
+`author` is `{"login": …}`, and `comments` is the thread at task creation
+in gh's element shape (`author.login`, `body`, `createdAt`). It adds
 `id`, `kind`, `priority`, and `source` (`provider`, `repo`, `number`, `url`;
 `null` for a local issue). Read it instead of `gh issue view`: it needs no
 network, a fan-out lane gets its parent's, and `git add -A` cannot stage it.

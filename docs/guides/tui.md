@@ -1700,12 +1700,17 @@ where it came from — the URL and the state GitHub last reported.
 | `n` | File a new issue in this issue's project |
 | `a` | Create a task from this issue — the form is prefilled from it and editable first |
 | `i` | Edit the issue in the issue form |
+| `W` | Write a comment in `$EDITOR` — saved empty, nothing is added. Not offered on an issue mirrored from GitHub, whose thread is GitHub's |
 | `X` | Close or reopen the issue — only what vincent offers for it |
 | `D` | Delete the issue permanently (asks first) |
 
 `ctrl+o` is the same rendered/raw switch the Output tab and the chat use, so
 flipping it here flips it there too. `esc` goes back to the list, on the issue
 you opened — or to the task workspace, when you came from one.
+
+The discussion thread sits under the description, oldest first, each comment
+under its author and time and rendered like the description; a comment
+mirrored from GitHub is marked as GitHub's. It refreshes as comments arrive.
 
 #### Starting a task — `a`
 
@@ -2920,7 +2925,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first fifteen are the operations screens share, the next ten are the
+The first sixteen are the operations screens share, the next ten are the
 [task actions](#the-action-bar), and the last eight are the global keys.
 
 | Operation | Default | Does |
@@ -2940,6 +2945,7 @@ The first fifteen are the operations screens share, the next ten are the
 | `result` | `w` | Open the output the Overview's outcome card took its result from |
 | `next_failure` | `N` | Jump to the task's next failure |
 | `attention_filter` | `H` | Show only the tasks that need a human |
+| `comment` | `W` | Write a comment on an issue in `$EDITOR` |
 | `pause` | `p` | Pause or resume the task |
 | `approve` | `a` | Approve the gate |
 | `reject` | `x` | Reject the gate |

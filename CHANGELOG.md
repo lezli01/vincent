@@ -13,6 +13,19 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **An issue discussion thread.** Every issue now has comments: add one to a
+  local issue with `W` on the issue's screen (written in `$EDITOR`),
+  `vincent issue comment <id> --body …`, `POST /v1/issues/{id}/comments` or the
+  MCP `issue_comment` tool, and read the thread under the issue's body, in
+  `vincent issue show`, over `GET /v1/issues/{id}/comments` or `issue_comments`.
+  A GitHub-imported issue's comments are mirrored read-only on the sync tick —
+  edits update in place (`issue.comment_updated`), deletions on GitHub are
+  kept, and an issue imported late brings its earlier thread with it — and a
+  local comment on such an issue is refused with `issue_mirrored`: nothing is
+  ever posted to GitHub. A task created from an issue snapshots the thread:
+  `.Issue.Comments` in templates and the `comments` array of
+  `$VINCENT_ISSUE_FILE`, which until now was always empty.
+  ([#675](https://github.com/lezli01/vincent/issues/675))
 - **Start a task from an issue in the TUI.** `a` on the issues list or an
   issue's screen opens the new-task form seeded with that issue: a read-only
   source row shows it, its state and its GitHub reference, and how many tasks
