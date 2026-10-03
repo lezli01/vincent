@@ -455,8 +455,10 @@ func TestGitHubIssueEventsCarryIssueID(t *testing.T) {
 	if evs[1]["IssueID"] != "" || evs[1]["issue_id"] != "" {
 		t.Errorf("unimported event = %+v", evs[1])
 	}
-	d := &Definition{ID: "t", Source: Source{Type: SourceGitHubIssues, Project: 1},
-		Action: Action{Type: ActionCreateTask, Title: "t", Issue: "{{ .Event.IssueID }}"}}
+	d := &Definition{
+		ID: "t", Source: Source{Type: SourceGitHubIssues, Project: 1},
+		Action: Action{Type: ActionCreateTask, Title: "t", Issue: "{{ .Event.IssueID }}"},
+	}
 	for i, want := range []*int64{ptr(int64(42)), nil} {
 		rp, err := renderAction(d, renderData{Event: evs[i]})
 		if err != nil {

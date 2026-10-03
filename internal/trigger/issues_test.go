@@ -25,9 +25,10 @@ action:
 ` + extra
 }
 
-func (h *harness) localIssue(title string, by issuestate.Actor) *store.Issue {
+// localIssue is a person's issue: the store writes its issue.created by human.
+func (h *harness) localIssue(title string) *store.Issue {
 	h.t.Helper()
-	iss, err := h.st.CreateIssue(h.t.Context(), store.NewIssue{ProjectID: 1, Title: title, Author: "me"}, by)
+	iss, err := h.st.CreateIssue(h.t.Context(), store.NewIssue{ProjectID: 1, Title: title, Author: "me"}, issuestate.Human)
 	if err != nil {
 		h.t.Fatalf("CreateIssue: %v", err)
 	}
@@ -59,7 +60,7 @@ func (h *harness) remoteIssue(key, author string, number int, labels []string) *
 func TestIssuesLabelFiresOnceOnALocalProject(t *testing.T) {
 	h := newHarness(t)
 	ctx := t.Context()
-	old := h.localIssue("before arming", issuestate.Human)
+	old := h.localIssue("before arming")
 	h.label(old.ID, issuestate.Human, "x")
 
 	h.write("lbl", issuesDoc("lbl", "match:\n  action: labeled\n  labels: x\n"))
@@ -72,7 +73,7 @@ func TestIssuesLabelFiresOnceOnALocalProject(t *testing.T) {
 		t.Fatalf("the seed fired history: %+v", rows)
 	}
 
-	iss := h.localIssue("after arming", issuestate.Human)
+	iss := h.localIssue("after arming")
 	h.label(iss.ID, issuestate.Human, "x", "y")
 	h.m.pollIssues(ctx)
 	h.m.pollIssues(ctx)
@@ -102,7 +103,7 @@ func TestIssuesLabelFiresOnceOnALocalProject(t *testing.T) {
 func TestIssuesEventPayload(t *testing.T) {
 	h := newHarness(t)
 	ctx := t.Context()
-	iss := h.localIssue("payload", issuestate.Human)
+	iss := h.localIssue("payload")
 	h.label(iss.ID, issuestate.Agent, "a", "b")
 	if _, err := h.st.TransitionIssue(ctx, iss.ID, issuestate.Close, issuestate.Completed, nil, issuestate.Human); err != nil {
 		t.Fatal(err)
@@ -147,7 +148,7 @@ func TestIssuesAgentEchoFilteredByBy(t *testing.T) {
 	ctx := t.Context()
 	h.write("h", issuesDoc("h", "match:\n  action: labeled\n  by: human\n"))
 	h.m.pollIssues(ctx)
-	iss := h.localIssue("echo", issuestate.Human)
+	iss := h.localIssue("echo")
 	h.label(iss.ID, issuestate.Agent, "triaged")
 	h.m.pollIssues(ctx)
 	rows := h.ledger("h")
@@ -170,7 +171,7 @@ func TestIssuesSyncTrust(t *testing.T) {
 
 	h.remoteIssue("NODE_BOB", "bob", 1, nil)
 	alice := h.remoteIssue("NODE_ALICE", "Alice", 2, nil)
-	mine := h.localIssue("local", issuestate.Human)
+	mine := h.localIssue("local")
 	h.m.pollIssues(ctx)
 
 	outcomes := map[int64]string{}
@@ -227,12 +228,12 @@ func TestIssuesRestartResumes(t *testing.T) {
 	ctx := t.Context()
 	h.write("lbl", issuesDoc("lbl", "match:\n  action: labeled\n"))
 	h.m.pollIssues(ctx)
-	first := h.localIssue("one", issuestate.Human)
+	first := h.localIssue("one")
 	h.label(first.ID, issuestate.Human, "x")
 	h.m.pollIssues(ctx)
 
 	h.m.Stop()
-	second := h.localIssue("two", issuestate.Human)
+	second := h.localIssue("two")
 	h.label(second.ID, issuestate.Human, "x")
 	m := h.restart()
 	// Rewind the cursor, as a crash between the fire and the cursor write
@@ -264,7 +265,7 @@ func TestIssuesDisarmReseeds(t *testing.T) {
 	if c := h.cursor("lbl"); c != nil {
 		t.Fatalf("cursor survived the disarm: %+v", c)
 	}
-	iss := h.localIssue("while off", issuestate.Human)
+	iss := h.localIssue("while off")
 	h.label(iss.ID, issuestate.Human, "x")
 	h.enabled.Store(true)
 	h.m.pollIssues(ctx)
@@ -285,7 +286,7 @@ func TestIssuesPollDry(t *testing.T) {
 		t.Fatalf("unseeded PollDry = %+v, %v", dry, err)
 	}
 	h.m.pollIssues(ctx)
-	iss := h.localIssue("dry", issuestate.Human)
+	iss := h.localIssue("dry")
 	h.label(iss.ID, issuestate.Human, "x")
 	before := h.cursor("lbl")
 	dry, err = h.m.PollDry(ctx, "lbl")
@@ -303,8 +304,10 @@ func TestIssuesPollDry(t *testing.T) {
 // TestIssuesIssueRender: `issue:` renders to a positive id or to nothing,
 // and anything else is the delivery's error, as github_issue's is.
 func TestIssuesIssueRender(t *testing.T) {
-	d := &Definition{ID: "t", Source: Source{Type: SourceIssues, Project: 1},
-		Action: Action{Type: ActionCreateTask, Title: "t", Issue: "{{ .Event.issue_id }}"}}
+	d := &Definition{
+		ID: "t", Source: Source{Type: SourceIssues, Project: 1},
+		Action: Action{Type: ActionCreateTask, Title: "t", Issue: "{{ .Event.issue_id }}"},
+	}
 	for _, tc := range []struct {
 		in   any
 		want int64
@@ -346,11 +349,17 @@ func TestIssuesMapper(t *testing.T) {
 		{"created", store.EventIssueCreated, issuePayload{}, []string{"opened"}},
 		{"closed", store.EventIssueStateChanged, issuePayload{From: "open", To: "closed"}, []string{"closed"}},
 		{"reopened", store.EventIssueStateChanged, issuePayload{From: "closed", To: "open"}, []string{"reopened"}},
-		{"labels", store.EventIssueLabelsChanged, issuePayload{LabelsAdded: []string{"a"}, LabelsRemoved: []string{"b"}},
-			[]string{"labeled", "unlabeled"}},
+		{
+			"labels", store.EventIssueLabelsChanged,
+			issuePayload{LabelsAdded: []string{"a"}, LabelsRemoved: []string{"b"}},
+			[]string{"labeled", "unlabeled"},
+		},
 		{"labels before enrichment", store.EventIssueLabelsChanged, issuePayload{}, nil},
-		{"sync refresh", store.EventIssueUpdated, issuePayload{From: "open", To: "closed", LabelsAdded: []string{"a"}},
-			[]string{"closed", "labeled"}},
+		{
+			"sync refresh", store.EventIssueUpdated,
+			issuePayload{From: "open", To: "closed", LabelsAdded: []string{"a"}},
+			[]string{"closed", "labeled"},
+		},
 		{"edit", store.EventIssueUpdated, issuePayload{}, nil},
 		{"comment", store.EventIssueCommentAdded, issuePayload{}, nil},
 		{"deleted", store.EventIssueDeleted, issuePayload{}, nil},
