@@ -788,7 +788,9 @@ its own pull request.
   `action.github_issue` with every consumer decision 7 lists. Depends: 130.7,
   130.8. Also removes the new-task form's issue picker, which submitted
   `github_issue` (130.13's first item), and adds the remote-number lookup.
-  ✓ 2026-10-03 (decision 22)
+  #676's `github_issue: N` shorthand scenario for `scripts/130-gate.sh`,
+  conditional on #670, lapses with the shorthand, which was not built
+  (decision 22.1). ✓ 2026-10-03 (decision 22)
 - [x] **130.12** ([#671](https://github.com/lezli01/vincent/issues/671)) The
   TUI issue create/edit form with close and reopen, and a shared `$EDITOR`
   helper. Depends: 130.9. ✓ 2026-10-03 (decision 19)
@@ -808,6 +810,13 @@ its own pull request.
   130.3, 130.8.
 - [ ] **130.17** ([#676](https://github.com/lezli01/vincent/issues/676)) An
   end-to-end gate on all three platforms. Depends: 130.7, 130.10.
+  `scripts/130-gate.sh` and its `ci.yml` step landed with eleven scenarios,
+  recorded in `docs/gates/130-issues.md`. Scenario 12 (the `github_issue`
+  shorthand) moved to 130.11. Still open: scenario 8 found that a refresh of
+  an unchanged remote reverts the local state of an issue whose write ended
+  `failed/no_write_scope`, which the spec says is kept. The fix is its own
+  bug, and this item closes when that fix lands and the gate is green on all
+  three platforms.
 - [ ] **130.18** ([#677](https://github.com/lezli01/vincent/issues/677))
   Screenshot seed, new tapes, recaptures, the features page. Depends: 130.12,
   130.13, 130.10.
