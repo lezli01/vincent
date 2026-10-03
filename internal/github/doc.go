@@ -78,6 +78,12 @@
 // order a change lands on the last page and a page-1 304 would hide it. No
 // request this package makes follows a redirect: a transferred issue is
 // `moved` with its new location, and a deleted one `gone` (reason.go).
+//
+// ListCommentsOfIssue is the one-off thread backfill beside them (task 130
+// decision 24, 130.16): one issue's whole `issues/{n}/comments`, oldest
+// first, unconditional and uncapped, through the same walk. The sync calls
+// it for an issue it imports for the first time when Issue.Comments — the
+// count only the REST reads carry — says there is a thread to fetch.
 // GetIssue is the same single-issue read, exported for the sync's daily
 // sweep of open issues the open listing no longer carries.
 //

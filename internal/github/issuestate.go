@@ -204,7 +204,12 @@ func parseAPIIssue(body []byte, repo Repo, number int, now time.Time) (Issue, er
 			Location: raw.URL,
 		}
 	}
-	return parseRESTIssue(body, repo, number, now)
+	issue, err := parseRESTIssue(body, repo, number, now)
+	if err != nil {
+		return Issue{}, err
+	}
+	issue.Comments = raw.Comments
+	return issue, nil
 }
 
 // sameIssue reports that raw is repo's issue number. A row without a

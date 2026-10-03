@@ -28,6 +28,12 @@
 //	repos/{o}/{r}/issues/{n}       GET, and PATCH with state, state_reason,
 //	                               duplicate_issue_id
 //	repos/{o}/{r}/issues/comments  since, sort, direction, per_page, page
+//	repos/{o}/{r}/issues/{n}/comments
+//	                               one issue's thread, oldest first; per_page,
+//	                               page
+//
+// Every issue row's `comments` is the number of comment rows filed under it,
+// recomputed on every read, whatever the file says.
 //
 // With -i it prints gh's `HTTP/2.0 <code> <text>` status line, the headers
 // (Etag, Link, X-Ratelimit-*) and a blank line before the body. A GET whose
@@ -99,6 +105,10 @@
 //	                 repository that names octo/repo names this one, the way
 //	                 the real CLI answers for the repository it was asked
 //	                 about. scripts/screenshots.sh sets both of these.
+//	FAKEGH_REQUESTS_FILE
+//	                 when set, every `gh api` call appends `METHOD path
+//	                 status` (no query) to this file, which
+//	                 fakeissues.CountRequests counts per path.
 //	FAKEGH_ARGV_FILE when set, each invocation appends its argv (one
 //	                 space-joined line) to this file, so a test can assert
 //	                 the flags the adapter passed — and, for a disabled
