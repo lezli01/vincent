@@ -43,6 +43,10 @@
 #      the group empties, recording the other two `superseded`
 #  15. overrun: queue_serial drains oldest first, one at a time, and its
 #      backlog survives a daemon restart
+#  16. a `type: issues` trigger (task 130.15) on a project with no GitHub
+#      remote: arming seeds past an issue's history, a label a person adds
+#      over the API fires exactly one task linked to the issue, and a label
+#      the match does not name is `filtered`
 #
 # Each scenario gets fresh config/data/repo dirs and its own daemon (PR G
 # decision, as m7): scenario 5 flips the global switch, which would disarm
@@ -909,6 +913,40 @@ if run_scenario 15; then
     [[ "$(outcomes queue fired "$e")" == "1" ]] || fail "$e fired $(outcomes queue fired "$e") times, want 1"
   done
   [[ "$(task_count)" == "3" ]] || fail "queue_serial created $(task_count) tasks, want 3"
+fi
+
+# ---------------------------------------------------------------------------
+if run_scenario 16; then
+  echo "== 16. a type: issues trigger fires once on a local issue's label"
+  setup s16
+  ISSUE="$(api POST /issues "$(jq -cn --argjson p "$PROJECT_ID" '{project_id: $p, title: "gate issue"}')" | jq -r .id)"
+  [[ "$ISSUE" =~ ^[0-9]+$ ]] || fail "issue create returned no id"
+  # History before arming: the seed must step over it.
+  VERSION="$(api GET "/issues/$ISSUE" | jq -r .version)"
+  api PATCH "/issues/$ISSUE" "$(jq -cn --argjson v "$VERSION" '{version: $v, add_labels: ["old"]}')" >/dev/null
+
+  write_trigger ready "$(jq -cn --argjson p "$PROJECT_ID" \
+    '{id: "ready", enabled: true, source: {type: "issues", project: $p},
+      match: {action: "labeled", labels: "ready", by: "human"},
+      action: {type: "create_task", workflow: "gate-agent",
+               title: "issue {{ .Event.issue_id }}", issue: "{{ .Event.issue_id }}"},
+      dedupe_key: "issue:{{ .Event.issue_id }}:ready", limits: {max_per_hour: 5}}')"
+  wait_for "ready to seed" 80 trigger_is ready '.armed and .poll.seeded'
+  [[ "$(ledger_size ready)" == "0" ]] || fail "the seed delivered history: $(ledger_size ready) rows"
+
+  VERSION="$(api GET "/issues/$ISSUE" | jq -r .version)"
+  api PATCH "/issues/$ISSUE" "$(jq -cn --argjson v "$VERSION" '{version: $v, add_labels: ["ready"]}')" >/dev/null
+  wait_for "the label to fire" 80 fired_at_least ready 1
+
+  VERSION="$(api GET "/issues/$ISSUE" | jq -r .version)"
+  api PATCH "/issues/$ISSUE" "$(jq -cn --argjson v "$VERSION" '{version: $v, add_labels: ["other"]}')" >/dev/null
+  wait_for "the unmatched label to be filtered" 80 has_outcome ready filtered ""
+
+  [[ "$(outcomes ready fired)" == "1" ]] || fail "the label fired $(outcomes ready fired) times, want 1"
+  [[ "$(task_count)" == "1" ]] || fail "the trigger created $(task_count) tasks, want 1"
+  TASK="$(api GET /tasks | jq -r '.[0].id')"
+  [[ "$(api GET "/tasks/$TASK" | jq -r '.issue.id')" == "$ISSUE" ]] || fail "the task is not linked to issue $ISSUE"
+  [[ "$(task_field "$TASK" state)" == "paused" ]] || fail "the task is not a paused proposal"
 fi
 
 echo "GATE PASS: m16 (event triggers)"
