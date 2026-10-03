@@ -21,7 +21,8 @@ const (
 	// returns the current issue it carries.
 	IssueReasonChanged = "issue_changed"
 	// IssueReasonMirrored is a PATCH of an imported issue's title, body or
-	// labels, which mirror the remote.
+	// labels, which mirror the remote, and of a comment on an issue with a
+	// live remote, whose thread does (task 130 decision 24, 130.16).
 	IssueReasonMirrored = "issue_mirrored"
 	// IssueReasonForgeWrite is an agent's close or reopen of an issue whose
 	// state writes back to GitHub (task 130.10): only a human's act writes
@@ -183,6 +184,60 @@ type IssueLabel struct {
 	Description string `json:"description,omitempty"`
 	Source      string `json:"source"`
 	IssueCount  int    `json:"issue_count"`
+}
+
+// IssueComment is one comment of an issue's thread (task 130.16). Remote
+// marks one mirrored from GitHub, read-only; RemoteKey is its GitHub id.
+type IssueComment struct {
+	ID        int64     `json:"id"`
+	IssueID   int64     `json:"issue_id"`
+	Author    string    `json:"author"`
+	Body      string    `json:"body"`
+	Remote    bool      `json:"remote"`
+	RemoteKey string    `json:"remote_key,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// The thread's events on §13.3's stream. Each payload is IssueCommentEvent:
+// ids and the actor, never the text.
+const (
+	EventIssueCommentAdded   = "issue.comment_added"
+	EventIssueCommentUpdated = "issue.comment_updated"
+)
+
+// IssueCommentEvent is the payload of EventIssueCommentAdded and
+// EventIssueCommentUpdated: the issue, the comment, and who wrote it (human,
+// agent or sync — an update is always sync's, a mirrored edit).
+type IssueCommentEvent struct {
+	ID        int64  `json:"id"`
+	CommentID int64  `json:"comment_id"`
+	By        string `json:"by"`
+}
+
+// ListIssueComments reads an issue's thread, oldest first.
+func (c *Client) ListIssueComments(ctx context.Context, issueID int64) ([]IssueComment, error) {
+	var out struct {
+		Comments []IssueComment `json:"comments"`
+	}
+	if err := c.get(ctx, fmt.Sprintf("/v1/issues/%d/comments", issueID), &out); err != nil {
+		return nil, err
+	}
+	return out.Comments, nil
+}
+
+// AddIssueComment adds a local comment; the daemon derives its author. One
+// on an issue with a live remote is a 409 whose reason is
+// IssueReasonMirrored: nothing is ever posted to GitHub.
+func (c *Client) AddIssueComment(ctx context.Context, issueID int64, body string) (IssueComment, error) {
+	var out IssueComment
+	req := struct {
+		Body string `json:"body"`
+	}{body}
+	if err := c.post(ctx, fmt.Sprintf("/v1/issues/%d/comments", issueID), req, &out); err != nil {
+		return IssueComment{}, err
+	}
+	return out, nil
 }
 
 // ListIssues lists issues, most recently updated first unless Sort says

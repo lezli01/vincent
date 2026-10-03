@@ -29,6 +29,7 @@ func newIssueCmd() *cobra.Command {
 		newIssueEditCmd(),
 		newIssueCloseCmd(),
 		newIssueReopenCmd(),
+		newIssueCommentCmd(),
 		newIssueDeleteCmd(),
 		newIssueLabelsCmd(),
 		newIssueSyncCmd(),
@@ -182,7 +183,14 @@ func newIssueShowCmd() *cobra.Command {
 				if wantJSON(cmd) {
 					return emitJSON(cmd.OutOrStdout(), iss)
 				}
-				return printIssue(cmd.OutOrStdout(), &iss)
+				thread, err := c.ListIssueComments(ctx, id)
+				if err != nil {
+					return issueFail(cmd, err)
+				}
+				if err := printIssue(cmd.OutOrStdout(), &iss); err != nil {
+					return err
+				}
+				return printIssueThread(cmd.OutOrStdout(), thread)
 			})
 		},
 	}
@@ -244,6 +252,70 @@ func printIssue(out io.Writer, iss *apiclient.Issue) error {
 		}
 	}
 	return nil
+}
+
+// printIssueThread writes an issue's comments after its body, oldest first:
+// a header line per comment with its author and time, a mirrored one marked
+// as GitHub's (task 130.16), then its text.
+func printIssueThread(out io.Writer, thread []apiclient.IssueComment) error {
+	for i := range thread {
+		if _, err := fmt.Fprintln(out); err != nil {
+			return err
+		}
+		if err := printIssueComment(out, &thread[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// printIssueComment writes one comment: its attribution line, then its text.
+func printIssueComment(out io.Writer, c *apiclient.IssueComment) error {
+	h := fmt.Sprintf("--- %s, %s", dash(c.Author), doctorTime(&c.CreatedAt, "-"))
+	if c.Remote {
+		h += " (github)"
+	}
+	_, err := fmt.Fprintf(out, "%s\n%s\n", h, strings.TrimRight(c.Body, "\n"))
+	return err
+}
+
+// newIssueCommentCmd is `vincent issue comment`: a local comment, its author
+// derived by the daemon (task 130 decision 24.6). One on an issue imported
+// from GitHub is refused, as an edit of its title is: nothing is ever posted
+// there, and its thread is mirrored read-only.
+func newIssueCommentCmd() *cobra.Command {
+	var body, bodyFile string
+	cmd := &cobra.Command{
+		Use:   "comment <id>",
+		Short: "Comment on a local issue",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := parseIssueID(args[0])
+			if err != nil {
+				return err
+			}
+			if err := readIssueBody(cmd, &body, bodyFile); err != nil {
+				return err
+			}
+			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				comment, err := c.AddIssueComment(ctx, id, body)
+				if err != nil {
+					return issueFail(cmd, err)
+				}
+				if wantJSON(cmd) {
+					return emitJSON(cmd.OutOrStdout(), comment)
+				}
+				return printIssueComment(cmd.OutOrStdout(), &comment)
+			})
+		},
+	}
+	cmd.Flags().StringVar(&body, "body", "", "The comment (Markdown)")
+	cmd.Flags().StringVar(&bodyFile, "body-file", "",
+		"Read the comment from this file (- for stdin), byte for byte")
+	cmd.MarkFlagsMutuallyExclusive("body", "body-file")
+	cmd.MarkFlagsOneRequired("body", "body-file")
+	jsonFlag(cmd)
+	return cmd
 }
 
 // issueBodyFlags adds --body and --body-file, which are one value spelled two

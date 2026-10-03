@@ -403,6 +403,8 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodDelete, "/v1/issues/{id}", s.handleIssueDelete)
 	rt.handle(http.MethodPost, "/v1/issues/{id}/close", s.handleIssueClose)
 	rt.handle(http.MethodPost, "/v1/issues/{id}/reopen", s.handleIssueReopen)
+	rt.handle(http.MethodGet, "/v1/issues/{id}/comments", s.handleIssueComments)
+	rt.handle(http.MethodPost, "/v1/issues/{id}/comments", s.handleIssueCommentCreate)
 	// Chats (§5.5, §13.2). They are their own family: nothing here touches
 	// the tasks table, and no chat route is an MCP tool (§13.4, decision 2).
 	rt.handle(http.MethodGet, "/v1/chats", s.handleChatList)

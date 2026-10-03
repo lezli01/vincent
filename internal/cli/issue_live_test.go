@@ -344,3 +344,59 @@ func TestIssueLabels(t *testing.T) {
 		t.Errorf("label counts = %v", counts)
 	}
 }
+
+// TestIssueComment: `issue comment` adds a local comment with the daemon's
+// author, from --body or stdin, and `issue show` prints the thread after
+// the body, oldest first, a mirrored comment marked; a comment on an issue
+// with a live remote is refused (task 130.16).
+func TestIssueComment(t *testing.T) {
+	h := newLiveHarness(t)
+	iss := issueJSON(t, "issue", "add", "--project", h.project(), "--title", "t", "--body", "the body")
+	id := strconv.FormatInt(iss.ID, 10)
+
+	out, errOut, code := runCLI(t, "issue", "comment", id, "--body", "first thought")
+	if code != 0 || !strings.Contains(out, "first thought") || !strings.Contains(out, iss.Author) {
+		t.Fatalf("comment: exit %d, %q (%s)", code, out, errOut)
+	}
+	out, errOut, code = runCLIStdin(t, "second\nthought\n", "issue", "comment", id, "--body-file", "-", "--json")
+	var c apiclient.IssueComment
+	if code != 0 || json.Unmarshal([]byte(out), &c) != nil || c.Body != "second\nthought" || c.Author != iss.Author {
+		t.Fatalf("comment --body-file -: exit %d, %q (%s)", code, out, errOut)
+	}
+	if _, err := h.st.AddIssueComment(t.Context(), iss.ID, "octocat", "from upstream", "IC_1", issuestate.Sync); err != nil {
+		t.Fatal(err)
+	}
+
+	out, errOut, code = runCLI(t, "issue", "show", id)
+	if code != 0 {
+		t.Fatalf("show: exit %d (%s)", code, errOut)
+	}
+	body, first, second, mirrored := strings.Index(out, "the body"), strings.Index(out, "first thought"),
+		strings.Index(out, "second\nthought"), strings.Index(out, "--- octocat")
+	if body < 0 || body > first || first > second || second > mirrored ||
+		!strings.Contains(out, "(github)\nfrom upstream") {
+		t.Errorf("show does not print the thread after the body, oldest first:\n%s", out)
+	}
+
+	for _, args := range [][]string{
+		{"issue", "comment", id},
+		{"issue", "comment", id, "--body", "a", "--body-file", "-"},
+		{"issue", "comment", id, "--body", "  "},
+	} {
+		if _, _, code := runCLI(t, args...); code == 0 {
+			t.Errorf("%v: exit 0", args)
+		}
+	}
+
+	imported, _, err := h.st.UpsertRemoteIssue(t.Context(), store.RemoteIssue{
+		ProjectID: h.projectID, Provider: "github", RemoteKey: "I_1", Repo: "o/r", Number: 1,
+		Title: "From GitHub", State: issuestate.Open,
+	}, issuestate.Sync)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, errOut, code = runCLI(t, "issue", "comment", strconv.FormatInt(imported.ID, 10), "--body", "mine")
+	if code != 1 || !strings.Contains(errOut, "mirror") {
+		t.Errorf("comment on a mirrored issue: exit %d (%s)", code, errOut)
+	}
+}

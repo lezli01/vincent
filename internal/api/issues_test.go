@@ -742,4 +742,18 @@ func TestIssueToolsOverMCP(t *testing.T) {
 	if closed["state"] != "closed" {
 		t.Errorf("issue_close = %v", closed)
 	}
+
+	// A comment's author follows create's rule (task 130 decision 24.6).
+	comment := map[string]any{"id": got["id"], "body": map[string]any{"body": "from the step"}}
+	if c := call(sess.URLPath(), sess.Secret, "issue_comment", comment); c["author"] != fmt.Sprintf("task %d", creator.ID) {
+		t.Errorf("step comment author = %v", c["author"])
+	}
+	comment["body"] = map[string]any{"body": "from the shared endpoint"}
+	if c := call("/mcp", testToken, "issue_comment", comment); c["author"] != "agent" {
+		t.Errorf("shared comment author = %v", c["author"])
+	}
+	thread, _ := call("/mcp", testToken, "issue_comments", map[string]any{"id": got["id"]})["comments"].([]any)
+	if len(thread) != 2 {
+		t.Errorf("issue_comments = %v, want two", thread)
+	}
 }

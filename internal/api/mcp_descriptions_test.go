@@ -32,6 +32,7 @@ func TestMCPToolBodyHintsMatchRequestStructs(t *testing.T) {
 		"issue_patch":           reflect.TypeOf(issuePatchRequest{}),
 		"issue_close":           reflect.TypeOf(issueCloseRequest{}),
 		"issue_reopen":          reflect.TypeOf(struct{}{}),
+		"issue_comment":         reflect.TypeOf(issueCommentRequest{}),
 	}
 
 	// The hint marker is "Body:", not "Body: {": task_follow_up's hint reads

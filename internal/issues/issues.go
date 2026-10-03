@@ -174,7 +174,7 @@ func (s *Service) Update(ctx context.Context, by issuestate.Actor, id, version i
 	touchesMirror := p.Title != nil || p.Body != nil || p.Labels != nil ||
 		len(p.AddLabels) > 0 || len(p.RemoveLabels) > 0
 	if touchesMirror {
-		if err := s.checkMirror(ctx, by, id); err != nil {
+		if err := s.checkMirror(ctx, by, id, mirrorContent); err != nil {
 			return nil, err
 		}
 	}
@@ -203,7 +203,7 @@ func (s *Service) Update(ctx context.Context, by issuestate.Actor, id, version i
 // is created by an import and never re-attached, so the only race is an
 // issue being imported under a caller mid-edit, which sync's next pass
 // overwrites anyway.
-func (s *Service) checkMirror(ctx context.Context, by issuestate.Actor, id int64) error {
+func (s *Service) checkMirror(ctx context.Context, by issuestate.Actor, id int64, scope mirrorScope) error {
 	if by == issuestate.Sync {
 		return nil
 	}
@@ -211,10 +211,34 @@ func (s *Service) checkMirror(ctx context.Context, by issuestate.Actor, id int64
 	if err != nil {
 		return err
 	}
-	if Mirrored(iss) {
+	mirrored := Mirrored(iss)
+	if scope == mirrorThread {
+		mirrored = ThreadMirrored(iss)
+	}
+	if mirrored {
 		return fmt.Errorf("issue %d: %w", id, ErrMirrored)
 	}
 	return nil
+}
+
+// mirrorScope names which of an imported issue's mirrors a write touches.
+type mirrorScope int
+
+const (
+	// mirrorContent is the title, body and labels: sync's for as long as a
+	// remote row is attached, whatever its status.
+	mirrorContent mirrorScope = iota
+	// mirrorThread is the comment thread (task 130 decision 24, 130.16).
+	mirrorThread
+)
+
+// ThreadMirrored reports whether iss's comment thread is GitHub's, so a
+// local comment on it is refused: it has a live remote. A moved or missing
+// remote is no longer listed, so nothing would mirror a comment over a local
+// one, and a tombstone has no issue — the thread is the issue's own again
+// (task 130 decision 24, 130.16).
+func ThreadMirrored(iss *store.Issue) bool {
+	return Mirrored(iss) && iss.Remote.Status == store.RemoteStatusLive
 }
 
 // WritesBack reports whether a state change of iss is written back to its
@@ -305,15 +329,23 @@ func (s *Service) SetLabels(ctx context.Context, by issuestate.Actor, id int64, 
 	if err != nil {
 		return nil, err
 	}
-	if err := s.checkMirror(ctx, by, id); err != nil {
+	if err := s.checkMirror(ctx, by, id, mirrorContent); err != nil {
 		return nil, err
 	}
 	return s.st.SetIssueLabels(ctx, id, labels, by)
 }
 
-// Comment adds a local comment to the issue.
+// Comment adds a local comment to the issue. A human's or an agent's
+// comment on an issue with a live remote is refused with ErrMirrored, the
+// way a title edit is (task 130 decision 24, 130.16): its thread is GitHub's,
+// mirrored read-only, and nothing is ever posted there. The refusal comes
+// before any write, and before the body is looked at, so a mirrored issue
+// answers the same whatever was sent.
 func (s *Service) Comment(ctx context.Context, by issuestate.Actor, issueID int64, author, body string) (*store.IssueComment, error) {
 	if err := checkActor(by); err != nil {
+		return nil, err
+	}
+	if err := s.checkMirror(ctx, by, issueID, mirrorThread); err != nil {
 		return nil, err
 	}
 	body = strings.TrimSpace(body)
