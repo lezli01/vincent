@@ -2,6 +2,9 @@ package tui
 
 import (
 	"context"
+	"errors"
+	"io/fs"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -91,8 +94,25 @@ func (h *newTaskLiveHarness) createdTasks(t *testing.T, issueID int64) []store.T
 // TestPlainDraftMakesNoGitHubCall is decision 7's half that deletes: on a
 // project whose GitHub integration is usable, `n` draws no issue row and the
 // daemon invokes no `gh` — asserted from the fake's argv log, not inferred.
+//
+// The root makes GitHub calls of its own on connect: the probe behind the
+// pull-requests nav row (`auth status`) and the off-screen takeover's listing
+// of every available project (`pr list`). Those are not the form's, and they
+// race `n`, so the test waits for them to finish and only then starts the log
+// the assertion reads. Waiting on them is also what proves the integration
+// was usable, which is the premise of the assertion.
 func TestPlainDraftMakesNoGitHubCall(t *testing.T) {
 	h, argv := newGitHubLiveHarness(t, liveOptions{remote: ghLiveOrigin})
+	h.p.until(10*time.Second, "the GitHub probes to answer", func() bool {
+		return h.m.githubAvailable()
+	})
+	pulls := pullsView(t, h)
+	h.p.until(10*time.Second, "the takeover's startup listing", func() bool {
+		return pulls.loaded && !pulls.loading
+	})
+	if err := os.Remove(argv); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("reset the gh argv log: %v", err)
+	}
 	h.sendKey(tea.KeyPressMsg{Code: 'n', Text: "n"})
 	n := h.form(t)
 	h.p.until(10*time.Second, "the form to settle on a workflow", func() bool {
