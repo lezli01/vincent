@@ -25,7 +25,8 @@ func TestNewIssueSnapshotOfALocalIssue(t *testing.T) {
 	got := NewIssueSnapshot(iss, now)
 	want := &IssueSnapshot{
 		ID: iss.ID, Title: "Lock file leaks", Body: "Seen twice.", State: "open",
-		Kind: "bug", Priority: 2, Labels: iss.Labels, Author: "lezli01", CapturedAt: now,
+		Kind: "bug", Priority: 2, Labels: iss.Labels, Author: "lezli01",
+		CreatedAt: iss.CreatedAt.UTC(), CapturedAt: now,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("snapshot =\n %+v\nwant\n %+v", got, want)
@@ -45,7 +46,8 @@ func TestNewIssueSnapshotOfAnImportedIssue(t *testing.T) {
 		ProjectID: p.ID, Provider: "github", RemoteKey: "I_kw1", Repo: "o/r", Number: 7,
 		URL: "https://github.com/o/r/issues/7",
 		RemoteJSON: `{"repo":"o/r","number":7,"state":"open","assignee":"hubot",` +
-			`"assignees":["hubot","octo"],"milestone":"v1","milestone_number":3}`,
+			`"assignees":["hubot","octo"],"milestone":"v1","milestone_number":3,` +
+			`"created_at":"2025-01-02T03:04:05Z"}`,
 		Title: "#7 remote", Body: "rb", Author: "octo", State: issuestate.Open, Labels: []string{"bug"},
 	}, issuestate.Sync)
 	if err != nil {
@@ -63,6 +65,10 @@ func TestNewIssueSnapshotOfAnImportedIssue(t *testing.T) {
 	if got.ID != iss.ID || got.URL != wantRemote.URL || !got.CapturedAt.Equal(now.UTC()) {
 		t.Errorf("snapshot = %+v", got)
 	}
+	// The remote's creation time wins over the vincent row's (130.14).
+	if want := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC); !got.CreatedAt.Equal(want) {
+		t.Errorf("CreatedAt = %v, want the remote's %v", got.CreatedAt, want)
+	}
 
 	// A record with no detail still yields the column reference.
 	bare := *iss
@@ -71,6 +77,9 @@ func TestNewIssueSnapshotOfAnImportedIssue(t *testing.T) {
 	bare.Remote = &bareRemote
 	if r := NewIssueSnapshot(&bare, now).Remote; r == nil || r.Number != 7 || r.State != "open" || r.Assignees != nil {
 		t.Errorf("Remote from columns alone = %+v", r)
+	}
+	if c := NewIssueSnapshot(&bare, now).CreatedAt; !c.Equal(iss.CreatedAt) {
+		t.Errorf("CreatedAt without a remote time = %v, want the row's %v", c, iss.CreatedAt)
 	}
 
 	tomb := *iss

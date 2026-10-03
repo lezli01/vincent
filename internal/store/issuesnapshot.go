@@ -31,8 +31,13 @@ type IssueSnapshot struct {
 	URL string `json:"url,omitempty"`
 	// Remote is the provider reference of an imported issue, nil for a local
 	// one. `.Issue.Source` is rendered from it (task 130 decision 8).
-	Remote     *IssueSnapshotRemote `json:"remote,omitempty"`
-	CapturedAt time.Time            `json:"captured_at,omitzero"`
+	Remote *IssueSnapshotRemote `json:"remote,omitempty"`
+	// CreatedAt is when the issue was opened: the remote's creation time for
+	// an imported issue whose record carries one, else the vincent row's.
+	// Added by 130.14 for $VINCENT_ISSUE_FILE's gh-shaped `createdAt`; a
+	// snapshot written before it decodes zero and the file says null.
+	CreatedAt  time.Time `json:"created_at,omitzero"`
+	CapturedAt time.Time `json:"captured_at,omitzero"`
 }
 
 // IssueSnapshotRemote is an imported issue's provider reference as it stood
@@ -72,11 +77,12 @@ func (s *IssueSnapshot) Clone() *IssueSnapshot {
 // stays zero, and a record that does not parse contributes nothing — the
 // snapshot is built from the columns first and this only enriches it.
 type remoteDetail struct {
-	State           string   `json:"state"`
-	Assignee        string   `json:"assignee"`
-	Assignees       []string `json:"assignees"`
-	Milestone       string   `json:"milestone"`
-	MilestoneNumber int      `json:"milestone_number"`
+	State           string    `json:"state"`
+	Assignee        string    `json:"assignee"`
+	Assignees       []string  `json:"assignees"`
+	Milestone       string    `json:"milestone"`
+	MilestoneNumber int       `json:"milestone_number"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 // NewIssueSnapshot freezes iss for a task created from it at now (task 130
@@ -97,6 +103,7 @@ func NewIssueSnapshot(iss *Issue, now time.Time) *IssueSnapshot {
 		Priority:    iss.Priority,
 		Labels:      slices.Clone(iss.Labels),
 		Author:      iss.Author,
+		CreatedAt:   iss.CreatedAt.UTC(),
 		CapturedAt:  now.UTC(),
 	}
 	if rem := iss.Remote; rem != nil && rem.IssueID != nil {
@@ -113,6 +120,9 @@ func NewIssueSnapshot(iss *Issue, now time.Time) *IssueSnapshot {
 		state := detail.State
 		if state == "" {
 			state = string(iss.State)
+		}
+		if !detail.CreatedAt.IsZero() {
+			snap.CreatedAt = detail.CreatedAt.UTC()
 		}
 		snap.URL = rem.URL
 		snap.Remote = &IssueSnapshotRemote{
