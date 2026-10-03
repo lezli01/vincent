@@ -101,14 +101,19 @@ func (h *newTaskLiveHarness) createdTasks(t *testing.T, issueID int64) []store.T
 // race `n`, so the test waits for them to finish and only then starts the log
 // the assertion reads. Waiting on them is also what proves the integration
 // was usable, which is the premise of the assertion.
+//
+// One listing is not enough to wait for. The harness registers the project
+// after the stream is live, so its project.created event reaches the takeover
+// too, and a project event re-lists after a debounce — a second `pr list`
+// that can start after the probe's listing has landed (ci windows-latest
+// caught it there). So the wait settles: no listing in flight, no refresh
+// window open, and no new gh call for well past the debounce.
 func TestPlainDraftMakesNoGitHubCall(t *testing.T) {
 	h, argv := newGitHubLiveHarness(t, liveOptions{remote: ghLiveOrigin})
-	h.p.until(10*time.Second, "the GitHub probes to answer", func() bool {
-		return h.m.githubAvailable()
-	})
 	pulls := pullsView(t, h)
-	h.p.until(10*time.Second, "the takeover's startup listing", func() bool {
-		return pulls.loaded && !pulls.loading
+	h.p.settle(20*time.Second, 4*refreshDebounce, "the root's GitHub calls to settle", func() (bool, int) {
+		calls := strings.Count(ghLiveCalls(t, argv), "\n")
+		return h.m.githubAvailable() && pulls.loaded && !pulls.loading && !pulls.refreshWait, calls
 	})
 	if err := os.Remove(argv); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("reset the gh argv log: %v", err)
