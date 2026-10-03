@@ -114,13 +114,16 @@ type issuesView struct {
 	note        string
 	noteBad     bool
 	refreshWait bool
+
+	// w is the form and the close/reopen/delete prompt (task 130.12).
+	w issueWrites
 }
 
 func newIssuesView() *issuesView {
 	fi := newTextField()
 	fi.SetPlaceholder("filter by id, title, label, kind or project")
 	fi.SetPrompt("/")
-	return &issuesView{now: time.Now, filter: fi, state: issueStates[0]}
+	return &issuesView{now: time.Now, filter: fi, state: issueStates[0], w: newIssueWrites()}
 }
 
 func (v *issuesView) title() string { return "Issues" }
@@ -130,9 +133,17 @@ func (v *issuesView) setClient(c *apiclient.Client) tea.Cmd {
 	return v.loadCmd()
 }
 
-func (v *issuesView) capturesInput() bool { return v.filtering }
+// capturesInput holds the global keys back while the filter types and while
+// the form or the prompt is up: both own the keyboard, and `n` answers the
+// prompt's question rather than opening the new-task form.
+func (v *issuesView) capturesInput() bool { return v.filtering || v.w.open() }
+
+func (v *issuesView) bindingContext() bindingContext { return v.w.context(ctxIssues) }
 
 func (v *issuesView) paste(text string) tea.Cmd {
+	if v.w.open() {
+		return v.w.paste(text)
+	}
 	if !v.filtering {
 		return nil
 	}
@@ -141,7 +152,8 @@ func (v *issuesView) paste(text string) tea.Cmd {
 	return cmd
 }
 
-// hintedProject lets `n` open the new-task form on the selected row's project.
+// hintedProject is the selected row's project: where the new-task form opens
+// from the palette, and where `n` files a new issue.
 func (v *issuesView) hintedProject() int64 {
 	if row, ok := v.current(); ok {
 		return row.project.ID
@@ -150,7 +162,45 @@ func (v *issuesView) hintedProject() int64 {
 }
 
 func (v *issuesView) update(msg tea.Msg) (panel, tea.Cmd) {
+	if cmd, ok := v.w.update(msg); ok {
+		return v, cmd
+	}
 	switch msg := msg.(type) {
+	case issueFormClosedMsg:
+		v.w.form = nil
+		switch {
+		case msg.saved == nil:
+			return v, nil
+		case msg.created:
+			// A new issue opens on its own screen, the way a new task opens
+			// its workspace.
+			id := msg.saved.ID
+			return v, func() tea.Msg { return openIssueMsg{id: id} }
+		}
+		v.setNote("saved issue #"+strconv.FormatInt(msg.saved.ID, 10), false)
+		return v, v.loadCmd()
+	case issueEditTargetMsg:
+		if msg.err != nil {
+			v.setNote("could not read the issue: "+errString(msg.err), true)
+			return v, nil
+		}
+		iss := msg.issue
+		return v, v.w.openForm(v.client, &iss, iss.ProjectID)
+	case issueActionTargetMsg:
+		if msg.err != nil {
+			v.setNote("could not read the issue: "+errString(msg.err), true)
+			return v, nil
+		}
+		act, cmd, note := newIssueStateAction(v.client, msg.issue)
+		if note != "" {
+			v.setNote(note, true)
+		}
+		v.w.act = act
+		return v, cmd
+	case issueActedMsg:
+		v.w.act = nil
+		v.setNote(actedNote(msg), msg.err != nil)
+		return v, v.loadCmd()
 	case viewActivatedMsg:
 		if msg.id == viewIssues {
 			return v, v.loadCmd()
@@ -300,6 +350,20 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, func() tea.Msg { return openIssueMsg{id: id} }
 	case opKey(keymap.Browser):
 		return v, v.openSelected()
+	case opKey(keymap.New):
+		return v, v.w.openForm(v.client, nil, v.hintedProject())
+	case issueEditKey:
+		if row, ok := v.current(); ok {
+			return v, issueEditFor(v.client, row.issue.ID)
+		}
+	case issueStateKey:
+		if row, ok := v.current(); ok {
+			return v, issueActionFor(v.client, row.issue.ID)
+		}
+	case opKey(keymap.Delete):
+		if row, ok := v.current(); ok {
+			v.w.act = newIssueDelete(v.client, row.issue)
+		}
 	}
 	return v, nil
 }
@@ -438,6 +502,9 @@ func (v *issuesView) render(width, height int) string {
 	if width < 4 || height < 2 {
 		return ""
 	}
+	if v.w.form != nil {
+		return v.w.form.render(width, height)
+	}
 	lines := make([]string, 0, height)
 	lines = append(lines, v.headerLine(width))
 	if v.filtering || v.filter.Value() != "" {
@@ -454,6 +521,9 @@ func (v *issuesView) render(width, height int) string {
 			style = styleBad
 		}
 		footer = []string{"", style.Render("  " + v.note)}
+	}
+	if v.w.act != nil {
+		footer = v.w.act.lines(width)
 	}
 	room := max(height-len(lines)-len(footer), 1)
 	lines = append(lines, window(body, cursorRow, room)...)

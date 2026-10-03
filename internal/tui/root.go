@@ -728,9 +728,9 @@ func (m *root) activeContext() bindingContext {
 	case viewTriggers:
 		return m.views[viewTriggers].(*triggersView).bindingContext()
 	case viewIssues:
-		return ctxIssues
+		return m.views[viewIssues].(*issuesView).bindingContext()
 	case viewIssue:
-		return ctxIssue
+		return m.views[viewIssue].(*issueView).bindingContext()
 	default:
 		s := m.views[viewHome].(*shell)
 		return s.focusedContext()

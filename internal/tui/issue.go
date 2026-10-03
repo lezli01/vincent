@@ -66,6 +66,9 @@ type issueView struct {
 	note        string
 	noteBad     bool
 	refreshWait bool
+
+	// w is the form and the close/reopen/delete prompt (task 130.12).
+	w issueWrites
 }
 
 func newIssueView(raw *rawHolder, links *hyperlinkHolder) *issueView {
@@ -75,7 +78,7 @@ func newIssueView(raw *rawHolder, links *hyperlinkHolder) *issueView {
 	if links == nil {
 		links = newHyperlinkHolder()
 	}
-	return &issueView{raw: raw, links: links}
+	return &issueView{raw: raw, links: links, w: newIssueWrites()}
 }
 
 func (v *issueView) title() string {
@@ -92,12 +95,21 @@ func (v *issueView) setClient(c *apiclient.Client) tea.Cmd {
 
 func (v *issueView) hintedProject() int64 { return v.issue.ProjectID }
 
+// capturesInput holds the global keys back while the form or the prompt is
+// up, for the list's reason.
+func (v *issueView) capturesInput() bool { return v.w.open() }
+
+func (v *issueView) bindingContext() bindingContext { return v.w.context(ctxIssue) }
+
+func (v *issueView) paste(text string) tea.Cmd { return v.w.paste(text) }
+
 // open points the screen at an issue. Anything shown belonged to another one,
 // so it is dropped rather than flashed under the new title.
 func (v *issueView) open(id int64) tea.Cmd {
 	if id != v.id {
 		v.issue, v.tasks, v.loaded, v.loadErr = apiclient.Issue{}, nil, false, nil
 		v.cursor, v.scroll = 0, 0
+		v.w.form, v.w.act = nil, nil
 	}
 	v.id = id
 	v.note = ""
@@ -105,7 +117,35 @@ func (v *issueView) open(id int64) tea.Cmd {
 }
 
 func (v *issueView) update(msg tea.Msg) (panel, tea.Cmd) {
+	if cmd, ok := v.w.update(msg); ok {
+		return v, cmd
+	}
 	switch msg := msg.(type) {
+	case issueFormClosedMsg:
+		v.w.form = nil
+		switch {
+		case msg.saved == nil:
+			return v, nil
+		case msg.created:
+			id := msg.saved.ID
+			return v, func() tea.Msg { return openIssueMsg{id: id} }
+		}
+		if msg.saved.ID == v.id {
+			v.issue = *msg.saved
+		}
+		v.setNote("saved issue #"+strconv.FormatInt(msg.saved.ID, 10), false)
+		return v, v.loadCmd()
+	case issueActedMsg:
+		v.w.act = nil
+		if msg.err == nil && msg.action == issueActDelete {
+			// The issue is gone; its screen has nothing left to show.
+			return v, func() tea.Msg { return selectViewMsg{id: viewIssues} }
+		}
+		v.setNote(actedNote(msg), msg.err != nil)
+		if msg.err == nil && msg.id == v.id {
+			v.issue = msg.issue
+		}
+		return v, v.loadCmd()
 	case viewActivatedMsg:
 		if msg.id == viewIssue {
 			return v, v.loadCmd()
@@ -248,6 +288,25 @@ func (v *issueView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case linkPickKey:
 		items := linkItemsFrom("description", copyDoc{text: v.issue.Body})
 		return v, func() tea.Msg { return openLinkPickerMsg{items: items} }
+	case opKey(keymap.New):
+		return v, v.w.openForm(v.client, nil, v.issue.ProjectID)
+	}
+	if !v.loaded {
+		return v, nil
+	}
+	switch msg.String() {
+	case issueEditKey:
+		iss := v.issue
+		return v, v.w.openForm(v.client, &iss, iss.ProjectID)
+	case issueStateKey:
+		act, cmd, note := newIssueStateAction(v.client, v.issue)
+		if note != "" {
+			v.setNote(note, true)
+		}
+		v.w.act = act
+		return v, cmd
+	case opKey(keymap.Delete):
+		v.w.act = newIssueDelete(v.client, v.issue)
 	}
 	return v, nil
 }
@@ -283,6 +342,9 @@ func (v *issueView) render(width, height int) string {
 	if width < 4 || height < 2 {
 		return ""
 	}
+	if v.w.form != nil {
+		return v.w.form.render(width, height)
+	}
 	body, cursorRow := v.pageLines(width)
 	var footer []string
 	if v.note != "" {
@@ -291,6 +353,9 @@ func (v *issueView) render(width, height int) string {
 			style = styleBad
 		}
 		footer = []string{"", style.Render("  " + v.note)}
+	}
+	if v.w.act != nil {
+		footer = v.w.act.lines(width)
 	}
 	room := max(height-len(footer), 1)
 	// The page scrolls freely; moving the task selection brings its row
