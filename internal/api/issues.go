@@ -150,6 +150,11 @@ type issueBody struct {
 	AvailableActions []issuestate.Action `json:"available_actions"`
 	Tasks            issueTasksBody      `json:"tasks"`
 	Editable         []string            `json:"editable"`
+	// Commentable is whether a local comment is taken: false exactly while
+	// the remote is live (task 130 decision 24.3). It is not Editable's
+	// "body" — a moved or missing remote keeps the body sync's but gives
+	// the thread back — so a client reads it rather than inferring it.
+	Commentable bool `json:"commentable"`
 	// Prefill is what creating a task from this issue with `issue_id` would
 	// fill in (task 130.7), present only on GET /v1/issues/{id}?workflow=W:
 	// the declared-field half is a fact about a workflow. It is computed by
@@ -232,6 +237,7 @@ func (s *Server) renderIssue(ctx context.Context, iss *store.Issue) issueBody {
 		AvailableActions: actions,
 		Tasks:            issueTasksBody{Count: iss.TaskCount, ActiveIDs: ids},
 		Editable:         issues.Editable(iss),
+		Commentable:      !issues.ThreadMirrored(iss),
 	}
 }
 

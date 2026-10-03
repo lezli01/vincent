@@ -2447,7 +2447,8 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
   "created_at": "…", "updated_at": "…",
   "body": "", "available_actions": ["close"],
   "tasks": { "count": 0, "active_ids": [] },
-  "editable": ["title", "body", "labels", "kind", "priority"] }
+  "editable": ["title", "body", "labels", "kind", "priority"],
+  "commentable": true }
 ```
 
 - **Create** takes `{ project_id, title, body?, labels?, kind?, priority? }` and
@@ -2475,7 +2476,9 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
 - **Get** adds `body`; `available_actions`, what a person may do from this
   state; `tasks.count` and `tasks.active_ids` over the root tasks created from
   the issue (fan-out lanes never count); `editable`, the fields a `PATCH` may
-  touch; and `source` — `{ provider, repo, number, url, remote_state,
+  touch; `commentable`, whether a local comment is taken — `false` only while
+  the GitHub remote is live, so it is `true` on an issue whose remote moved or
+  is missing even though its `body` is not editable; and `source` — `{ provider, repo, number, url, remote_state,
   last_synced_at, status }` for an imported issue, `null` for a local one.
   `last_synced_at` is when the importer last wrote the issue from the remote.
   `status` is absent while the remote issue is live, `moved` when it was

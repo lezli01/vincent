@@ -90,6 +90,11 @@ type Issue struct {
 	AvailableActions []string   `json:"available_actions,omitempty"`
 	Tasks            IssueTasks `json:"tasks"`
 	Editable         []string   `json:"editable,omitempty"`
+	// Commentable is whether AddIssueComment is taken: false while the
+	// issue's GitHub remote is live, true for a local issue and one whose
+	// remote moved or went missing (task 130 decision 24.3). A list row
+	// leaves it false.
+	Commentable bool `json:"commentable,omitempty"`
 	// Prefill is what CreateTaskRequest.IssueID would fill in under the
 	// workflow GetIssue named (task 130.7); nil when it named none. The
 	// daemon computes it with the function the create runs.

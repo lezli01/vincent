@@ -380,11 +380,12 @@ func (v *issueView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	return v, nil
 }
 
-// commentable reports whether the issue takes a local comment: exactly when
-// its body is editable, the daemon's own rule (task 130 decision 24) — a live
-// GitHub remote refuses both, a local issue or a lost remote takes both.
+// commentable reports whether the issue takes a local comment, as the daemon
+// says (task 130 decision 24.3): a live GitHub remote refuses one, a local
+// issue or a moved or missing remote takes one. It is not whether the body
+// is editable — a lost remote keeps the body sync's but gives the thread back.
 func (v *issueView) commentable() bool {
-	return v.loaded && slices.Contains(v.issue.Editable, "body")
+	return v.loaded && v.issue.Commentable
 }
 
 // liveBindings withholds `W` where the daemon would refuse the comment.

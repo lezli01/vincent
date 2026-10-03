@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -43,6 +44,9 @@ func TestIssueCommentsOnALocalIssue(t *testing.T) {
 	t.Parallel()
 	h := newIssueHarness(t)
 	iss := h.create(t, map[string]any{"title": "local"})
+	if !iss.Commentable {
+		t.Error("a local issue says it is not commentable")
+	}
 	path := fmt.Sprintf("/v1/issues/%d/comments", iss.ID)
 	if got := h.comments(t, iss.ID); len(got) != 0 {
 		t.Fatalf("a new issue's thread = %+v", got)
@@ -102,6 +106,9 @@ func TestIssueCommentOnAMirroredIssueIsRefused(t *testing.T) {
 	h := newIssueHarness(t)
 	iss := h.imported(t, "I_1", 1)
 	path := fmt.Sprintf("/v1/issues/%d/comments", iss.ID)
+	if got := h.must(t, http.StatusOK, http.MethodGet, fmt.Sprintf("/v1/issues/%d", iss.ID), nil); got.Commentable {
+		t.Error("a live remote's issue says it is commentable")
+	}
 	mark := h.maxEvent(t)
 	for _, hdr := range [][]string{nil, {headerTaskMarker, "12"}} {
 		resp, out := h.do(t, http.MethodPost, path, map[string]any{"body": "hi"}, hdr...)
@@ -124,6 +131,9 @@ func TestIssueCommentOnAMirroredIssueIsRefused(t *testing.T) {
 		gone := h.imported(t, key, i+2)
 		if err := h.st.SetIssueRemoteStatus(t.Context(), h.pid, "github", key, status, ""); err != nil {
 			t.Fatal(err)
+		}
+		if got := h.must(t, http.StatusOK, http.MethodGet, fmt.Sprintf("/v1/issues/%d", gone.ID), nil); !got.Commentable || slices.Contains(got.Editable, "body") {
+			t.Errorf("a %s remote's issue: commentable %v, editable %v; want a local thread and a mirrored body", status, got.Commentable, got.Editable)
 		}
 		resp, out := h.do(t, http.MethodPost, fmt.Sprintf("/v1/issues/%d/comments", gone.ID), map[string]any{"body": "still here"})
 		decodeComment(t, resp, out, http.StatusCreated)

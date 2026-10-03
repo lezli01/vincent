@@ -11,11 +11,13 @@ import (
 )
 
 // localIssueFixture is the detail on an issue that takes a comment: no
-// remote, so its body is editable (task 130 decision 24).
+// remote, so its body is editable and its thread its own (task 130
+// decision 24).
 func localIssueFixture() *issueView {
 	v := issueFixture()
 	v.issue.Source = nil
 	v.issue.Editable = []string{"title", "body", "labels", "kind", "priority"}
+	v.issue.Commentable = true
 	return v
 }
 
@@ -36,7 +38,7 @@ func init() {
 }
 
 func TestIssueCommentKeyWithheldOnAMirroredIssue(t *testing.T) {
-	v := issueFixture() // imported, live remote: Editable carries no body
+	v := issueFixture() // imported, live remote: not commentable
 	if hasCommentRow(v.liveBindings(bindingsFor(ctxIssue))) {
 		t.Fatal("W is offered on a mirrored issue")
 	}

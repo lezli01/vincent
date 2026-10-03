@@ -8850,7 +8850,13 @@ GET    /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* The row
                                         and workflow would fill in, computed by the function the
                                         create runs. Without `workflow` there is no `prefill`;
                                         a workflow the project cannot resolve is a 400, as on
-                                        the GitHub issues listing
+                                        the GitHub issues listing.
+                                        *Amended 2026-10-03 (task 130.16, review F1):*
+                                        `commentable` says whether a local comment is taken —
+                                        false exactly while the GitHub remote is live, so a
+                                        moved or missing remote is commentable though its body
+                                        is not editable. A client reads it rather than
+                                        inferring it from `editable`
 PATCH  /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* { version, title?, body?,
                                         labels? | add_labels?, remove_labels?, kind?, priority? }.
                                         `version` is required (§13.1); an empty patch, `labels`

@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -128,9 +129,9 @@ func TestIssueThreadAgainstTheRealAPI(t *testing.T) {
 		t.Errorf("the edited comment is not marked:\n%s", out)
 	}
 
-	// A 409 that races the key — the view still thinking the body editable
+	// A 409 that races the key — the view still thinking the thread local
 	// — surfaces as an error line, and nothing is written.
-	detail.issue.Editable = []string{"title", "body"}
+	detail.issue.Commentable = true
 	detail.w.exec = fakeExec(t, func(path string) error { return os.WriteFile(path, []byte("too late"), 0o600) }, nil)
 	h.sendKey(keyPress("W"))
 	h.p.until(10*time.Second, "the refused comment's error", func() bool {
@@ -138,6 +139,41 @@ func TestIssueThreadAgainstTheRealAPI(t *testing.T) {
 	})
 	if list, err := h.st.ListIssueComments(ctx, imported.ID); err != nil || len(list) != 1 {
 		t.Fatalf("a refused comment was written: %d comments, %v", len(list), err)
+	}
+
+	// A moved remote keeps the body sync's but gives the thread back
+	// (decision 24.3): W is offered, advertised, and the comment posts.
+	moved, _, err := h.st.UpsertRemoteIssue(ctx, store.RemoteIssue{
+		ProjectID: h.projectID, Provider: "github", RemoteKey: "I_42", Repo: "octo/web", Number: 42,
+		URL: "https://github.com/octo/web/issues/42", RemoteJSON: `{"state":"open"}`,
+		Title: "Transferred", Author: "octocat", State: issuestate.Open,
+	}, issuestate.Human)
+	if err != nil {
+		t.Fatalf("UpsertRemoteIssue: %v", err)
+	}
+	if err := h.st.SetIssueRemoteStatus(ctx, h.projectID, "github", "I_42", store.RemoteStatusMoved, "octo/elsewhere#1"); err != nil {
+		t.Fatalf("SetIssueRemoteStatus: %v", err)
+	}
+	h.send(openIssueMsg{id: moved.ID})
+	h.p.until(10*time.Second, "the moved issue's detail", func() bool {
+		return detail.loaded && detail.id == moved.ID && detail.issue.Source != nil
+	})
+	if slices.Contains(detail.issue.Editable, "body") {
+		t.Fatalf("a moved issue's body is editable: %v", detail.issue.Editable)
+	}
+	if !hasCommentRow(detail.liveBindings(bindingsFor(ctxIssue))) {
+		t.Fatal("W is withheld on an issue whose remote moved")
+	}
+	if out = ansi.Strip(detail.render(120, 60)); !strings.Contains(out, opKey(keymap.Comment)+" writes one") {
+		t.Errorf("the moved issue's empty thread does not offer W:\n%s", out)
+	}
+	detail.w.exec = fakeExec(t, func(path string) error { return os.WriteFile(path, []byte("still ours"), 0o600) }, nil)
+	h.sendKey(keyPress("W"))
+	h.p.until(10*time.Second, "the moved issue's comment", func() bool {
+		return len(detail.comments) == 1 && detail.comments[0].Body == "still ours"
+	})
+	if detail.noteBad {
+		t.Errorf("note = %q, want the comment confirmed", detail.note)
 	}
 }
 
