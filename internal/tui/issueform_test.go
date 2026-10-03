@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/lezli01/vincent/internal/apiclient"
 )
 
 // The issue form and prompt (task 130.12) in isolation. Their round trips
@@ -236,16 +238,25 @@ func TestIssueFormReloadKeepsEdits(t *testing.T) {
 	}
 }
 
-// The close prompt on an imported issue says the change is local.
-func TestIssueClosePromptOnImportedIsLocalOnly(t *testing.T) {
-	v := issueFixture()
-	v.issue.AvailableActions = []string{"close"}
-	v.update(registryKey(t, "X"))
-	v.update(registryKey(t, "enter"))
-	out := strings.Join(v.w.act.lines(400), "\n")
-	for _, want := range []string{"vincent's copy only", "not written to GitHub yet", "next sync may overwrite it"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("the confirmation is missing %q:\n%s", want, out)
+// The close prompt on an imported issue says the change is written to
+// GitHub, unless its remote has moved or is gone (130.10).
+func TestIssueClosePromptOnImportedSaysWhereItGoes(t *testing.T) {
+	for _, tc := range []struct {
+		sync *apiclient.IssueSync
+		want string
+	}{
+		{nil, issueWritesBack},
+		{&apiclient.IssueSync{State: "synced"}, issueWritesBack},
+		{&apiclient.IssueSync{State: "failed", Reason: "moved"}, issueRemoteLost},
+		{&apiclient.IssueSync{State: "failed", Reason: "gone"}, issueRemoteLost},
+	} {
+		v := issueFixture()
+		v.issue.AvailableActions = []string{"close"}
+		v.issue.Sync = tc.sync
+		v.update(registryKey(t, "X"))
+		v.update(registryKey(t, "enter"))
+		if out := strings.Join(v.w.act.lines(400), "\n"); !strings.Contains(out, tc.want) {
+			t.Errorf("sync %+v: the confirmation is missing %q:\n%s", tc.sync, tc.want, out)
 		}
 	}
 }

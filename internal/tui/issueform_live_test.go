@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 )
@@ -188,8 +189,12 @@ func TestIssueWritesAgainstTheRealAPI(t *testing.T) {
 
 // An imported issue's form takes its read-only rows from the DTO's
 // `editable`: title, description and labels are marked mirrored and refuse
-// to edit, while kind and priority save. Its close says it is local only.
+// to edit, while kind and priority save. Its close says it is written to
+// GitHub (130.10). Not parallel: a step's environment would mark the client
+// an agent, and an agent's close of an imported issue is refused.
 func TestImportedIssueFormAgainstTheRealAPI(t *testing.T) {
+	t.Setenv("VINCENT_TASK_ID", "")
+	t.Setenv(apiclient.EnvChatID, "")
 	h := newNewTaskLiveHarness(t)
 	ctx := context.Background()
 	imported, _, err := h.st.UpsertRemoteIssue(ctx, store.RemoteIssue{
@@ -228,9 +233,9 @@ func TestImportedIssueFormAgainstTheRealAPI(t *testing.T) {
 	h.sendKey(keyPress("X"))
 	h.sendKey(keyPress("enter")) // completed
 	out := strings.Join(detail.w.act.lines(400), "\n")
-	if !strings.Contains(out, issueLocalOnly) {
-		t.Fatalf("the imported close does not say it is local:\n%s", out)
+	if !strings.Contains(out, issueWritesBack) {
+		t.Fatalf("the imported close does not say it is written to GitHub:\n%s", out)
 	}
 	h.sendKey(keyPress("y"))
-	h.p.until(10*time.Second, "the local close", func() bool { return detail.issue.State == "closed" })
+	h.p.until(10*time.Second, "the close", func() bool { return detail.issue.State == "closed" })
 }

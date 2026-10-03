@@ -43,11 +43,15 @@ var issueCloseReasons = []pickerOption{
 	{value: "duplicate", label: "duplicate", note: "of another issue in this project"},
 }
 
-// issueLocalOnly is what a state change on an imported issue says before it
-// is made (decision 17). The write-back outbox (130.10) has not landed, so
-// the change is vincent's alone; 130.10 replaces this with its own
-// confirmation.
-const issueLocalOnly = "this changes vincent's copy only — it is not written to GitHub yet, and the next sync may overwrite it"
+// What a state change on an imported issue says before it is made (task 130
+// decision 19.2, replaced by 130.10). A human's close or reopen of an issue
+// whose GitHub remote is live is written back, and this keypress is the
+// consent (task 069 decision 2); one whose remote has moved or is gone
+// writes nothing back, and its sync block says which.
+const (
+	issueWritesBack = "this is written to GitHub too"
+	issueRemoteLost = "the GitHub issue has moved or is gone, so this changes vincent's copy only"
+)
 
 // Issue-prompt messages.
 type (
@@ -151,7 +155,7 @@ func (a *issueAction) begin(action string) tea.Cmd {
 }
 
 // confirmOrRun asks first only where there is something to say: on an
-// imported issue, that the change is local.
+// imported issue, whether the change is written to GitHub.
 func (a *issueAction) confirmOrRun() tea.Cmd {
 	a.pick = nil
 	if a.imported() {
@@ -285,9 +289,17 @@ func (a *issueAction) confirmText() []string {
 		if a.dupOf != nil {
 			what += " of #" + strconv.FormatInt(*a.dupOf, 10)
 		}
-		return []string{what + "?", issueLocalOnly}
+		return []string{what + "?", a.forgeNote()}
 	}
-	return []string{"Reopen " + ref + "?", issueLocalOnly}
+	return []string{"Reopen " + ref + "?", a.forgeNote()}
+}
+
+// forgeNote says whether a state change on an imported issue reaches GitHub.
+func (a *issueAction) forgeNote() string {
+	if s := a.issue.Sync; s != nil && (s.Reason == "moved" || s.Reason == "gone") {
+		return issueRemoteLost
+	}
+	return issueWritesBack
 }
 
 // lines draws the prompt for the bottom of the owning screen.

@@ -1718,9 +1718,9 @@ as it is now and keeps your edits on top of it, and `ctrl+s` tries again.
 `X` offers what the issue allows: close on an open issue, reopen on a closed
 one. Closing asks why — completed, not planned, or a duplicate, which then
 asks which issue in the same project it duplicates (or none). On an imported
-issue vincent asks first, and says plainly that the change is to vincent's
-copy only: it is not written to GitHub yet, and the next sync may overwrite
-it.
+issue vincent asks first, and says plainly that the change is written to
+GitHub too — or, when the issue on GitHub has moved or is gone, that it
+changes vincent's copy only.
 
 `D` deletes an issue in any state, always after asking. Deleting an imported
 issue never deletes it on GitHub, and vincent remembers the deletion so a sync

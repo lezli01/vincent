@@ -12777,9 +12777,11 @@ stream for the live tail.
    `X` closes or reopens, offering exactly the issue's `available_actions` —
    the list reads the issue for them, since rows carry none. Close asks for a
    reason: completed, not planned, or duplicate, which picks a same-project
-   target or none. On an imported issue the change is confirmed as **local
-   only**: not written to GitHub yet, and the next sync may overwrite it
-   (130.10 replaces that text). `D` deletes after asking, in any state; on an
+   target or none. On an imported issue the change is confirmed first, and
+   the confirmation says it is **written to GitHub too** — the keypress is
+   the consent (task 069 decision 2) — or, when the `sync` block's reason is
+   `moved` or `gone`, that it changes vincent's copy only (*amended
+   2026-10-03, task 130.10*: this replaced 130.12's local-only text). `D` deletes after asking, in any state; on an
    imported issue it says GitHub is never touched and the tombstone keeps
    sync from importing it again. Delete is not a state action and is never
    among `available_actions`.

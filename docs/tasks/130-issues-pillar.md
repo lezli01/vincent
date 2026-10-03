@@ -531,7 +531,10 @@ the keys.
    client-side gate, and on the list, whose rows carry none, `X` reads the
    issue first. Replacing that text with "this will be written to GitHub"
    (the keypress is the consent, task 069 decision 2) is 130.10's job, in its
-   own pull request.
+   own pull request. *Done 2026-10-03:* 130.10 landed first, so the merge
+   train that stacked the two replaced it — the confirmation says the change
+   is written to GitHub too, or, when the `sync` block's reason is `moved` or
+   `gone`, that it changes vincent's copy only.
 3. **Which rows are read-only comes from the DTO's `editable`**, never from a
    client copy of "imported ⇒ locked". `issue_mirrored` is still rendered, for
    an issue imported between the form's read and its save.
@@ -665,7 +668,7 @@ its own pull request.
   write-back outbox, its compare-and-set drain, and the guard refusing MCP- and
   step-originated writes (decision 10, open question 6). Depends: 130.8.
   Also replaces the TUI's local-only close/reopen confirmation on an imported
-  issue (`issueLocalOnly`, decision 19.2) with its own.
+  issue (decision 19.2) with its own, done when the two were stacked.
   ✓ 2026-10-03 (decision 17)
 - [ ] **130.11** ([#670](https://github.com/lezli01/vincent/issues/670)) SQL
   backfill of task 035's snapshots into issues, and the removal of

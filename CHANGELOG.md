@@ -41,8 +41,8 @@ list with the user-facing context a commit subject cannot carry.
   keep your edits when someone else changed the issue first. `X` closes (as
   completed, not planned, or a duplicate) or reopens, offering only what the
   issue allows, and `D` deletes after asking. On an issue imported from
-  GitHub the mirrored fields are read-only, and closing or reopening says it
-  changes vincent's copy only, not GitHub.
+  GitHub the mirrored fields are read-only, and closing or reopening asks
+  first and says it is written to GitHub too.
 - **Create a task from a vincent issue.** `POST /v1/tasks` takes `issue_id`,
   and `vincent task add --issue ID` sends it: the task is linked to the issue,
   snapshots it, and is prefilled from it — title, description and declared
