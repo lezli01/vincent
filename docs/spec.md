@@ -7544,6 +7544,10 @@ task 052 already added for pull-request links. The default stays on, and there
 is still no separate key: `enabled: false` stops the import with every other
 read, and `poll_interval: 0` stops it with the rest of the tick (task 130 open
 question 2). A non-GitHub `origin` still costs nothing.
+*Amended 2026-10-03 (task 130.13, issue #672):* "the TUI's issue row
+disappears" no longer describes anything: the new-task form has no GitHub
+issue row on any project (§15 view 3), so `enabled: false` removes nothing
+from it, and a plain new task makes no GitHub call either way.
 
 **`notify` (task 046, added 2026-08-28; issue #90).** The daemon's outward
 signal. When a task enters one of the states in `on`, the daemon runs `command`
