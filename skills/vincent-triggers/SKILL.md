@@ -4,7 +4,7 @@ description: Create, edit, review, arm, and debug vincent event triggers, the YA
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.3.0
+  version: 1.4.0
 ---
 
 # vincent Triggers
@@ -201,9 +201,14 @@ limits:
   - `description` and `fields` are optional.
   - Use `issue` to link the task to a vincent issue: a template rendering the
     issue id, or nothing. The task is created from the issue as a person's
-    would be. `issue` cannot be combined with `github_issue` or `github_pull`.
-  - Use `github_issue` or `github_pull` (never both) to link a GitHub issue
-    or pull request, rather than parsing a number into the title.
+    would be. `issue` cannot be combined with `github_pull`.
+  - Use `github_pull` to link a GitHub pull request, rather than parsing a
+    number into the title.
+  - There is no `github_issue`. It was removed, and a file that still
+    carries it fails validation and stops firing until it is edited; its
+    cursor is kept, so nothing is re-seeded. Replace it with `issue:`, on an
+    `issues` source (`'{{ .Event.issue_id }}'`) or a `github_issues` one
+    (`'{{ .Event.IssueID }}'`).
   - `permission` is `restricted` (the default) or `workflow`.
 - **`follow_up`, `retry` and `cancel`** act on an existing task:
   - `target: branch` is required, with a `branch` template naming the task's
@@ -211,7 +216,7 @@ limits:
   - `follow_up` requires `prompt`, `retry` may override the failed step's
     prompt, and `cancel` refuses one.
   - Each refuses `permission`, `workflow`, `title`, `description`, `fields`,
-    `issue`, `github_issue`, `github_pull` and `limits.max_task_cost_usd`.
+    `issue`, `github_pull` and `limits.max_task_cost_usd`.
 
 ## Write the templates
 
@@ -392,7 +397,7 @@ Report correctness and safety findings first, then check each trigger for:
 - `overrun:` on any source that can emit twice about one object, with a
   `concurrency_key:` naming that object and not repeating `dedupe_key`,
 - `limits.max_per_hour`, and `max_task_cost_usd` on a `create_task`,
-- `issue`, `github_issue` or `github_pull` prefill,
+- `issue` or `github_pull` prefill,
 - no `poll_interval` on an `issues` or GitHub source,
 - `allowed_actors` wherever an untrusted GitHub event can match, including a
   `sync` one on `issues`,
@@ -413,7 +418,9 @@ Older drafts need these corrections:
 - a `container:` block becomes a containerized workflow,
 - `poll_interval` comes off GitHub and `issues` sources,
 - `match.action: assigned` comes off an `issues` source,
-- `.Event.Actor` and `.Event.Label` do not exist, so remove them.
+- `.Event.Actor` and `.Event.Label` do not exist, so remove them,
+- `action.github_issue` becomes `action.issue`, and a `github_issues`
+  source carrying it moves to `issues` when the project imports its issues.
 
 Some things must stay as they are:
 

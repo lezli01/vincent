@@ -76,9 +76,25 @@ func newIssueLsCmd() *cobra.Command {
 		Short: "List issues",
 		Long: "Lists issues, most recently updated first. Without --project the list\n" +
 			"spans every project and gains a PROJECT column. --state and --label repeat;\n" +
-			"every --label given must match.",
+			"every --label given must match.\n\n" +
+			"--github N finds the issue imported from GitHub issue #N and needs\n" +
+			"--project: a GitHub number means nothing across projects. Its ID is what\n" +
+			"`vincent task add --issue` takes. An issue not yet imported lists nothing;\n" +
+			"`vincent issue sync --project P` imports it.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// The lookup that replaced `task add --github-issue` (task
+			// 130.11, decision 21.4). Refused here as well as by the
+			// daemon, so the message names the flags rather than the
+			// query parameters.
+			if cmd.Flags().Changed("github") {
+				if opts.ProjectID == 0 {
+					return errors.New("--github needs --project: a GitHub issue number is only meaningful within one project")
+				}
+				if opts.RemoteNumber < 1 {
+					return fmt.Errorf("--github must be a positive issue number, got %d", opts.RemoteNumber)
+				}
+			}
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
 				list, err := c.ListIssues(ctx, opts)
 				if err != nil {
@@ -127,6 +143,8 @@ func newIssueLsCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Query, "search", "", "Only issues whose title or body contains this text")
 	cmd.Flags().StringVar(&opts.Source, "source", "", "Only local or github issues")
 	cmd.Flags().IntVar(&opts.Limit, "limit", 0, "Maximum rows")
+	cmd.Flags().IntVar(&opts.RemoteNumber, "github", 0,
+		"Only the issue imported from this GitHub issue number (requires --project)")
 	jsonFlag(cmd)
 	return cmd
 }

@@ -569,6 +569,16 @@ steps:
           group's retries belong to each sub-step, and a gate is decided once.
           Remove them from the group or gate; where a group carried them, move
           the value onto the sub-steps it was meant for, and say so.
+      14. Issues by vincent id. --github-issue on vincent task add, github_issue
+          on POST /v1/tasks and action.github_issue on a trigger were removed:
+          a task is created from an issue by its vincent id — issue_id over the
+          API, --issue on the CLI, issue: on a trigger. A step that still
+          creates tasks with a GitHub number first maps it to the issue id with
+          vincent issue ls --project P --github N (running vincent issue sync
+          and looking again when nothing is imported yet), then passes that id
+          to --issue. A declared github_issue workflow field is a field, not
+          that create flag, and keeps its name; only wording that says
+          --github-issue fills it goes.
 
       ## What you may not change
 
@@ -1110,9 +1120,9 @@ steps:
       2. An explicit dedupe_key — within "What you may not change" below.
       3. limits.max_per_hour.
       4. limits.max_task_cost_usd on a create_task action.
-      5. issue, github_issue or github_pull to link a created task, instead of
-         a number parsed out of a title. issue takes a vincent issue id and
-         combines with neither of the other two.
+      5. issue or github_pull to link a created task, instead of a number
+         parsed out of a title. issue takes a vincent issue id and does not
+         combine with github_pull.
       6. No poll_interval on an issues, github_issues or github_prs source;
          issues is woken by each issue change, the GitHub two run on
          github.poll_interval.
@@ -1121,7 +1131,7 @@ steps:
          request merged, and an absent match.action matches everything.
       8. A follow_up, retry or cancel action carries none of the keys a
          reaction refuses: permission, workflow, title, description, fields,
-         issue, github_issue, github_pull and limits.max_task_cost_usd.
+         issue, github_pull and limits.max_task_cost_usd.
       9. An http source is signed with signature.scheme github_hmac_sha256 and
          a secret_env, and the secret itself is never in the file.
       10. No secret in an argv. A credential a poll command needs comes from
@@ -1157,6 +1167,12 @@ steps:
           vincent id on issues, so a dedupe_key built from it renders anew:
           when the trigger is armed, report the migration as a finding rather
           than making it, as item 14 does for a source.type change.
+      17. action.github_issue becomes action.issue. github_issue was removed,
+          so a file still carrying it fails validation and fires nothing until
+          it is edited (its cursor is kept). Replace it with issue: rendering
+          .Event.issue_id on an issues source or .Event.IssueID on a
+          github_issues one, and drop github_issue — the dedupe_key does not
+          change, so this edit is safe on an armed trigger.
 
       ## What you may not change
 

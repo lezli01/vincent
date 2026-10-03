@@ -23,8 +23,8 @@ import (
 // there is no way to satisfy this test by editing one of the two. When it
 // fails, bump `metadata.version` and paste the hash the failure prints.
 var publishedTrees = map[string]string{
-	"vincent-triggers":  "a7cbdb3c5fb5327c913ba0a7efc546f45db35a17c5e8987884fde56b49f9a862",
-	"vincent-workflows": "54d8b869c657b096d82d0c463bcb1e5399caf2284b5b2863dd45bd3284d84b60",
+	"vincent-triggers":  "a6989c6e385b6d8995fcc330bce44041fc6a5998fb46a86db2eef1852c589f5c",
+	"vincent-workflows": "4a9d2d3cea27423588839812af85fa7093054ad1bcd308ea70cac627a570383d",
 }
 
 func TestPublishedSkillsAreVersioned(t *testing.T) {

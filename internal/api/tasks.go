@@ -499,30 +499,24 @@ type taskCreateRequest struct {
 	Agent          *string `json:"agent"`
 	Model          *string `json:"model"`
 	Effort         *string `json:"effort"`
-	// GitHubIssue creates this task from a GitHub issue (§13.2, task 035).
-	// The daemon fetches it, prefills the task from it and persists the
-	// snapshot on the row; **any value the request supplies explicitly wins**
-	// over the issue-derived one, which is what makes `--github-issue N` and
-	// the TUI's previewed prefill produce the same stored task (decision 2).
-	GitHubIssue *int `json:"github_issue"`
 	// GitHubPull creates this task **from** a GitHub pull request, and runs
 	// it on that pull request's head branch (§13.2, task 064). The daemon
 	// resolves it, prefills title, description and a declared `pull` field
 	// from it, writes the `human` link, and makes the head branch the task's
 	// branch — the top of §5.3's naming chain, above even a typed literal
-	// (decision 1). Explicit values win over prefilled ones exactly as they
-	// do for `github_issue`.
+	// (decision 1). Explicit values win over prefilled ones.
 	//
-	// Naming both `github_issue` and `github_pull` is refused: two prefills
-	// would fight over the same title and description, and there is no
-	// defensible order.
+	// The legacy `github_issue` create field that sat beside it was removed by
+	// task 130.11 (task 130 decision 7): a body still naming it is an unknown
+	// field and a 400, and a task is created from a GitHub issue
+	// through the vincent issue it was imported as (`issue_id`).
 	GitHubPull *int `json:"github_pull"`
 	// IssueID creates this task from a vincent issue (§5.6, §13.2, task
 	// 130.7): the daemon loads the issue, freezes it onto the row as the
 	// issue snapshot, links the row to it, and prefills title, description
-	// and declared fields from the snapshot — explicit values win, as for
-	// `github_issue`. It is refused beside `github_pull` (two prefills) and,
-	// until task 130.11 settles the rule, beside `github_issue`.
+	// and declared fields from the snapshot — explicit values win. It is
+	// refused beside `github_pull`: two prefills would fight over the same
+	// title and description, and there is no defensible order.
 	//
 	// `omitempty` for task 040's digest, like the fields below.
 	IssueID *int64 `json:"issue_id,omitempty"`
@@ -578,9 +572,50 @@ type preparedTask struct {
 	warnings []string
 }
 
+// taskCreateDigest is what task 040's idempotency digest hashes for a
+// create: taskCreateRequest field for field, in the same order, plus the
+// `github_issue` slot task 130.11 removed from the request (task 130
+// decision 7). That field was not `omitempty`, so every digest an older
+// daemon recorded hashed `"github_issue":null` between `effort` and
+// `github_pull`; keeping the slot here, always nil, keeps those keys
+// replaying across the upgrade without letting a body name the field again.
+// TestTaskCreateDigestShapeMatchesTheRequest holds the two in step.
+type taskCreateDigest struct {
+	ProjectID      int64             `json:"project_id"`
+	Workflow       *string           `json:"workflow"`
+	Title          string            `json:"title"`
+	Description    *string           `json:"description"`
+	Fields         map[string]string `json:"fields"`
+	BaseBranch     *string           `json:"base_branch"`
+	BranchName     *string           `json:"branch_name"`
+	ExistingBranch *bool             `json:"existing_branch,omitempty"`
+	Priority       *int              `json:"priority"`
+	Agent          *string           `json:"agent"`
+	Model          *string           `json:"model"`
+	Effort         *string           `json:"effort"`
+	GitHubIssue    *int              `json:"github_issue"`
+	GitHubPull     *int              `json:"github_pull"`
+	IssueID        *int64            `json:"issue_id,omitempty"`
+	Paused         *bool             `json:"paused,omitempty"`
+	Restricted     *bool             `json:"restricted,omitempty"`
+	MaxTaskCostUSD *float64          `json:"max_task_cost_usd,omitempty"`
+}
+
+// digestShape is the request as task 040's digest hashes it.
+func (req *taskCreateRequest) digestShape() *taskCreateDigest {
+	return &taskCreateDigest{
+		ProjectID: req.ProjectID, Workflow: req.Workflow, Title: req.Title,
+		Description: req.Description, Fields: req.Fields, BaseBranch: req.BaseBranch,
+		BranchName: req.BranchName, ExistingBranch: req.ExistingBranch, Priority: req.Priority,
+		Agent: req.Agent, Model: req.Model, Effort: req.Effort, GitHubPull: req.GitHubPull,
+		IssueID: req.IssueID, Paused: req.Paused, Restricted: req.Restricted,
+		MaxTaskCostUSD: req.MaxTaskCostUSD,
+	}
+}
+
 // prepareTaskCreate is the whole of POST /v1/tasks' validation up to the
 // branch: project, workflow resolution and snapshot, include expansion,
-// fan-out resolution, the GitHub prefills, declared fields, the base branch,
+// fan-out resolution, the issue and pull-request prefills, declared fields, the base branch,
 // the agent/model/effort override, MCP provenance and the four capability
 // gates.
 //
@@ -588,7 +623,7 @@ type preparedTask struct {
 // must accept exactly the task POST /v1/tasks accepts (task 074 decision 1):
 // a second copy would drift, and the drift would surface as a task the handoff
 // route takes and the create route refuses. It writes its own 400s, the way
-// applyIssuePrefill beside it does, and reports false once it has.
+// applyVincentIssue beside it does, and reports false once it has.
 //
 // inheritedBase, when non-empty, replaces the request's `base_branch` and is
 // taken verbatim: a handoff's base branch is a fact about a worktree that
@@ -629,31 +664,14 @@ func (s *Server) prepareTaskCreate(
 			fmt.Sprintf("workflow %q cannot run here: %s", workflowName, mismatch))
 		return nil, false
 	}
-	// The GitHub issue prefill (task 035), before field validation because it
-	// is one of the things being validated, and before the title check
-	// because filling the title in is half of what it is for.
-	if req.GitHubIssue != nil && req.GitHubPull != nil {
-		writeError(w, http.StatusBadRequest, CodeValidationFailed,
-			"github_issue and github_pull cannot both be given: they would prefill the same fields from different sources")
-		return nil, false
-	}
 	if req.IssueID != nil && req.GitHubPull != nil {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed,
 			"issue_id and github_pull cannot both be given: they would prefill the same fields from different sources")
 		return nil, false
 	}
-	if req.IssueID != nil && req.GitHubIssue != nil {
-		writeError(w, http.StatusBadRequest, CodeValidationFailed,
-			"issue_id and github_issue cannot both be given: they would prefill the same fields from different sources")
-		return nil, false
-	}
-	issue, ok := s.applyIssuePrefill(ctx, w, project, entry.Workflow, req)
-	if !ok {
-		return nil, false
-	}
-	// The vincent-issue prefill (task 130.7), beside the GitHub one and for
-	// the same reasons. The two are mutually exclusive, so their order is
-	// immaterial.
+	// The vincent-issue prefill (task 130.7), before field validation because
+	// it is one of the things being validated, and before the title check
+	// because filling the title in is half of what it is for.
 	issueSnap, issueWarning, ok := s.applyVincentIssue(ctx, w, project, entry.Workflow, req)
 	if !ok {
 		return nil, false
@@ -796,7 +814,6 @@ func (s *Server) prepareTaskCreate(
 		Fields:           req.Fields,
 		AgentOverride:    agentOverride,
 		State:            store.TaskQueued,
-		GitHubIssue:      issue,
 		Restricted:       ptrValue(req.Restricted),
 	}
 	// The link and its snapshot go in with the row, in the creating
@@ -910,8 +927,9 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Replay protection (§13.1, task 040). The digest is taken here, over the
-	// request as it arrived and before applyIssuePrefill mutates it below, so
-	// an issue edited between two identical sends cannot manufacture a 409.
+	// request as it arrived and before the issue and pull-request prefills
+	// mutate it below, so an issue edited between two identical sends cannot
+	// manufacture a 409.
 	idemKey, ok := readIdempotencyKey(w, r)
 	if !ok {
 		return
@@ -919,7 +937,7 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	var idemSHA string
 	if idemKey != "" {
 		var derr error
-		if idemSHA, derr = idempotencyDigest(&req); derr != nil {
+		if idemSHA, derr = idempotencyDigest(req.digestShape()); derr != nil {
 			s.internalError(w, "digest task create request", derr)
 			return
 		}
@@ -930,7 +948,7 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	// Two modes, one branch, refused before anything is fetched: a
 	// pull-request task already runs on the head branch, so asking for the
 	// adopt mode on top of it asks which of two answers to the same question
-	// wins, and there is no defensible order — the same reason `github_issue`
+	// wins, and there is no defensible order — the same reason `issue_id`
 	// and `github_pull` together are refused. It sits above prepareTaskCreate
 	// so the answer is a validation 400 rather than whatever the GitHub
 	// resolution says first.

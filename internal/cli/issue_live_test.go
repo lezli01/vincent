@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 )
 
@@ -202,6 +203,50 @@ func TestIssueLs(t *testing.T) {
 		}
 		if !slices.Equal(got, tc.want) {
 			t.Errorf("ls %v = %v, want %v", tc.args, got, tc.want)
+		}
+	}
+}
+
+// TestIssueLsByGitHubNumber: `--github N` is the lookup that replaced
+// `task add --github-issue` (task 130.11, decision 21.4). It needs --project,
+// answers only that project's issue imported from #N, and the id it answers
+// with is what `task add --issue` takes.
+func TestIssueLsByGitHubNumber(t *testing.T) {
+	h := newLiveHarness(t)
+	p := &store.Project{Name: "elsewhere", Path: "/elsewhere", DefaultBranch: "main"}
+	if err := h.st.CreateProject(t.Context(), p); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	imp := func(pid int64, key string, number int) *store.Issue {
+		t.Helper()
+		iss, _, err := h.st.UpsertRemoteIssue(t.Context(), store.RemoteIssue{
+			ProjectID: pid, Provider: "github", RemoteKey: key, Repo: "o/r", Number: number,
+			URL: "https://github.com/o/r/issues/" + strconv.Itoa(number), RemoteJSON: `{"state":"OPEN"}`,
+			Title: "imported " + key, State: issuestate.Open,
+		}, issuestate.Sync)
+		if err != nil {
+			t.Fatalf("UpsertRemoteIssue: %v", err)
+		}
+		return iss
+	}
+	want := imp(h.projectID, "I_12", 12)
+	imp(h.projectID, "I_13", 13)
+	imp(p.ID, "I_12_elsewhere", 12)
+
+	got := issueListJSON(t, "--project", h.project(), "--github", "12")
+	if len(got) != 1 || got[0].ID != want.ID {
+		t.Errorf("ls --github 12 = %+v, want only issue %d", got, want.ID)
+	}
+	if got := issueListJSON(t, "--project", h.project(), "--github", "99"); len(got) != 0 {
+		t.Errorf("ls --github 99 = %+v, want nothing", got)
+	}
+	for _, args := range [][]string{
+		{"issue", "ls", "--github", "12"},
+		{"issue", "ls", "--project", h.project(), "--github", "0"},
+	} {
+		_, errOut, code := runCLI(t, args...)
+		if code == 0 || !strings.Contains(errOut, "--github") {
+			t.Errorf("%v: exit %d, stderr %q; want a refusal naming --github", args, code, errOut)
 		}
 	}
 }

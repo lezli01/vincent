@@ -471,8 +471,9 @@ type TaskDetail struct {
 	MaxTaskCostUSD *float64        `json:"max_task_cost_usd"`
 	WorktreePath   *string         `json:"worktree_path"`
 	PendingInput   json.RawMessage `json:"pending_input,omitempty"`
-	// GitHubIssue is the issue this task was created from (task 035); nil for
-	// a task created without one. It is the snapshot as captured, never
+	// GitHubIssue is the legacy GitHub issue snapshot this task was created
+	// from (task 035), read-only since task 130.11 removed the create field;
+	// nil for a task created without one. It is the snapshot as captured, never
 	// refreshed — a client renders it as the task's history, not as the
 	// issue's current state.
 	GitHubIssue *GitHubIssue `json:"github_issue,omitempty"`
@@ -628,10 +629,6 @@ type CreateTaskRequest struct {
 	Agent          *string `json:"agent,omitempty"`
 	Model          *string `json:"model,omitempty"`
 	Effort         *string `json:"effort,omitempty"`
-	// GitHubIssue creates the task from a GitHub issue (task 035). The daemon
-	// fetches it, prefills whatever this request left unset, and persists the
-	// snapshot; anything set here wins over the issue-derived value.
-	GitHubIssue *int `json:"github_issue,omitempty"`
 	// GitHubPull creates the task **from** a GitHub pull request and runs it
 	// on that pull request's head branch (task 064). The daemon resolves it,
 	// prefills title, description and a declared `pull` field, writes the
@@ -640,8 +637,11 @@ type CreateTaskRequest struct {
 	GitHubPull *int `json:"github_pull,omitempty"`
 	// IssueID creates the task from a vincent issue (task 130.7): the daemon
 	// links the task to it, snapshots it, and prefills whatever this request
-	// left unset from the snapshot. Refused beside GitHubPull and, for now,
-	// beside GitHubIssue.
+	// left unset from the snapshot. Refused beside GitHubPull. It replaced
+	// the removed `github_issue` create field (task 130 decision 7): a
+	// GitHub issue is created from through the vincent issue it was
+	// imported as — ListIssues with IssueListOptions.RemoteNumber maps its
+	// number to the issue id.
 	IssueID *int64 `json:"issue_id,omitempty"`
 	// Paused creates the task directly in `paused`; `resume` admits it (§6,
 	// task 096 decision 9).

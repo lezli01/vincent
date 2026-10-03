@@ -305,7 +305,7 @@ func TestParseRefusals(t *testing.T) {
 		{"bad title template", "action.title", "{{ end }}", "action.title"},
 		{"match on a map", "match", map[string]any{"a": map[string]any{"b": 1}}, "match.a"},
 		{"negative limit", "limits.max_per_hour", -1, "limits.max_per_hour"},
-		{"issue and pull", "action.github_pull", "1", "action.github_pull"},
+		{"issue and pull", "action.github_pull", "1", "action.issue"},
 		{"a clock on a command source", "source.cron", "0 9 * * *", "source.cron"},
 		{"an interval on a command source", "source.every", "1h", "source.every"},
 		{"a zone on a command source", "source.timezone", "UTC", "source.timezone"},
@@ -313,7 +313,7 @@ func TestParseRefusals(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			doc := validDoc()
 			if tc.name == "issue and pull" {
-				setPath(doc, "action.github_issue", "2", false)
+				setPath(doc, "action.issue", "2", false)
 			}
 			setPath(doc, tc.path, tc.val, false)
 			errs := parseDoc(t, doc)

@@ -353,8 +353,10 @@ unlinked tasks. The GitHub reference of an imported issue is `.Issue.Source`
 (zero for a local issue): a template that passes a number to `gh` uses
 `.Issue.Source.Number`, or a declared `github_issue` field, never
 `.Issue.Number` or the `issue` field, which hold the vincent id. `.Issue.Repo`
-and `.Issue.URL` are deprecated aliases of `.Issue.Source.Repo`/`.URL`; a task
-created with `--github-issue N` renders the GitHub number as `.Issue.Number`.
+and `.Issue.URL` are deprecated aliases of `.Issue.Source.Repo`/`.URL`; an
+older task created with the removed `--github-issue N` still renders the
+GitHub number as `.Issue.Number`. New tasks link an issue by its vincent id
+(`issue_id`, `--issue`), never by a GitHub number.
 `Labels` is a list; the numbers are integers and everything else is a string.
 Numbers are safe to template into `run:`; titles and bodies are not. It is a
 snapshot taken at task creation and never re-read, so rendering it needs no

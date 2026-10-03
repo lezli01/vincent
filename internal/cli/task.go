@@ -47,7 +47,6 @@ func newTaskAddCmd() *cobra.Command {
 		effort      string
 		fields      []string
 		fieldsFile  string
-		githubIssue int
 		githubPull  int
 		issueID     int64
 		paused      bool
@@ -97,20 +96,13 @@ func newTaskAddCmd() *cobra.Command {
 					p := priority
 					req.Priority = &p
 				}
-				// Resolved daemon-side, deliberately (task 035 decision 2):
-				// the flag carries the number and nothing else, so the CLI
-				// and the TUI go through one prefill implementation and
-				// cannot drift into producing different tasks from the same
-				// issue. Every explicit flag above already sits in req, and
-				// the daemon fills only what is still unset.
-				if cmd.Flags().Changed("github-issue") {
-					n := githubIssue
-					req.GitHubIssue = &n
-				}
-				// The same shape for a pull request (task 064): the flag
-				// carries the number and nothing else, and the daemon
-				// resolves it — same prefill implementation, and the head
-				// branch it names becomes the task's branch server-side.
+				// Resolved daemon-side, deliberately (task 035 decision 2,
+				// task 064): the flag carries the pull request's number and
+				// nothing else, so the CLI and the TUI go through one prefill
+				// implementation, and the head branch it names becomes the
+				// task's branch server-side. Every explicit flag above
+				// already sits in req, and the daemon fills only what is
+				// still unset.
 				if cmd.Flags().Changed("github-pull") {
 					n := githubPull
 					req.GitHubPull = &n
@@ -155,13 +147,6 @@ func newTaskAddCmd() *cobra.Command {
 						return err
 					}
 				}
-				// A task from an imported issue also derives github_issue;
-				// the line above already named it.
-				if summary := githubIssueSummary(t.GitHubIssue); t.Issue == nil && summary != "" {
-					if _, err := fmt.Fprintln(out, "  "+summary); err != nil {
-						return err
-					}
-				}
 				// And which pull request, with the branch consequence stated:
 				// the task's branch is the pull request's head, which is the
 				// one thing --branch-name cannot change (task 064).
@@ -172,7 +157,7 @@ func newTaskAddCmd() *cobra.Command {
 				}
 				// Which fields the task actually carries, confirmed by name.
 				// Read off the *response*, not off what was sent, so a field
-				// the daemon prefilled from --github-issue (task 035) is
+				// the daemon prefilled from --issue or --github-pull is
 				// confirmed here too.
 				if summary := fieldsSummary(t.Fields); summary != "" {
 					if _, err := fmt.Fprintln(out, "  "+summary); err != nil {
@@ -209,8 +194,6 @@ func newTaskAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&fieldsFile, "fields-file", "",
 		"Read task fields from a JSON object of strings in this file, or `-` for stdin; "+
 			"a --field of the same name wins")
-	cmd.Flags().IntVar(&githubIssue, "github-issue", 0,
-		"Create the task from this GitHub issue; explicit flags win over what it would fill in")
 	cmd.Flags().IntVar(&githubPull, "github-pull", 0,
 		"Create the task from this GitHub pull request and run it on that pull request's head branch; "+
 			"explicit flags win over what it would fill in, except --branch-name, which the pull request decides")
@@ -225,20 +208,19 @@ func newTaskAddCmd() *cobra.Command {
 	_ = cmd.MarkFlagRequired("project")
 	// Both would prefill the same title and description from different
 	// sources, and there is no defensible order; the daemon refuses it too.
-	cmd.MarkFlagsMutuallyExclusive("github-issue", "github-pull")
-	// --issue is a third prefill source, refused beside both for the same
-	// reason. Beside --github-issue it is refused until task 130.11 retires
-	// that flag; the daemon refuses both pairs too.
+	// `--github-issue` was removed by task 130.11 (task 130 decision 7): a
+	// GitHub issue becomes a task through the vincent issue it was imported
+	// as — `vincent issue ls --project P --github N` finds its id for --issue.
 	cmd.MarkFlagsMutuallyExclusive("issue", "github-pull")
-	cmd.MarkFlagsMutuallyExclusive("issue", "github-issue")
 	// A pull-request task already runs on the pull request's head branch, so
 	// asking for the adopt mode on top of it asks which of two answers to one
 	// question wins; the daemon refuses it too.
 	cmd.MarkFlagsMutuallyExclusive("existing-branch", "github-pull")
-	// One of the two, not --title alone: an issue supplies the title, which is
-	// the whole point of naming one (task 035). Requiring both would make
-	// `--github-issue` a decoration on a title the user had to retype.
-	cmd.MarkFlagsOneRequired("title", "github-issue", "github-pull", "issue")
+	// One of them, not --title alone: an issue or a pull request supplies the
+	// title, which is the whole point of naming one (task 035). Requiring
+	// both would make `--issue` a decoration on a title the user had to
+	// retype.
+	cmd.MarkFlagsOneRequired("title", "github-pull", "issue")
 	jsonFlag(cmd)
 	return cmd
 }

@@ -14,7 +14,7 @@ import (
 )
 
 // The GitHub issue endpoints (spec §13.2, task 035). Everything GitHub-facing
-// in the daemon enters through here and through the `github_issue` field on
+// in the daemon enters through here and through the `github_pull` field on
 // POST /v1/tasks — clients never talk to GitHub, per the ownership invariant,
 // and no other route reaches internal/github.
 
@@ -45,11 +45,12 @@ type githubResponse struct {
 	Via string `json:"via,omitempty"`
 }
 
-// githubPrefill is the daemon's computed prefill. The TUI drops it into its
-// editable rows, so every guess is visible before creation; POST /v1/tasks
+// githubPrefill is the daemon's computed prefill, previewed on the pull
+// request listing and on GET /v1/issues/{id}?workflow=. The TUI drops it into
+// its editable rows, so every guess is visible before creation; POST /v1/tasks
 // recomputes exactly the same thing from the same code, which is what makes
 // "the CLI flag and the TUI produce the same stored task" a testable claim
-// rather than a coincidence (decision 2).
+// rather than a coincidence (task 035 decision 2).
 type githubPrefill struct {
 	Title       string            `json:"title"`
 	Description string            `json:"description"`
@@ -134,11 +135,12 @@ func (s *Server) handleProjectGitHub(w http.ResponseWriter, r *http.Request) {
 
 // handleProjectGitHubIssues implements GET /v1/projects/{id}/github/issues.
 //
-// `state` and `limit` narrow the listing. It carries no prefill: its one
-// consumer of `?workflow=`, the new-task form's issue picker, is gone (task
-// 130 decision 7) — a task is started from a vincent issue, whose prefill
-// GET /v1/issues/{id}?workflow= previews. An unknown parameter, `workflow`
-// included, is ignored the way every listing ignores one.
+// `state` and `limit` narrow the listing. It carries no prefill: the per-row
+// `workflow` prefill went with the `github_issue` create field and the
+// new-task form's issue picker (task 130.11, decision 7) — a task is started
+// from a vincent issue, whose prefill GET /v1/issues/{id}?workflow= previews.
+// An unknown parameter, `workflow` included, is ignored the way every listing
+// ignores one.
 func (s *Server) handleProjectGitHubIssues(w http.ResponseWriter, r *http.Request) {
 	project, ok := s.projectFromPath(w, r)
 	if !ok {
@@ -193,93 +195,23 @@ func writeGitHubError(w http.ResponseWriter, gate githubGate, err error) {
 	writeGitHubUnavailable(w, gate)
 }
 
-// issuePrefill computes what creating a task from this issue would fill in
-// (decision 7). It is the **one** implementation: the list endpoint previews
-// it and POST /v1/tasks applies it, so a preview a human accepted and a
-// create call that names only the issue produce the same task.
-//
-// Declared fields are matched by exact name only — no aliases, no fuzzy
-// matching, no case folding — and a candidate is offered only when the
-// declaration would accept it. Anything that would fail validation is left
-// empty rather than pre-filling a value the create call would then 400 on.
-// Undeclared names are never invented: issue metadata reaches templates
-// through `.Issue`.
-func issuePrefill(issue github.Issue, wf *workflow.Workflow) githubPrefill {
-	out := githubPrefill{Title: github.Title(issue), Description: github.Description(issue)}
-	if wf == nil {
-		return out
-	}
-	for _, definition := range wf.Fields {
-		value, ok := github.Candidate(issue, github.FieldDecl{Name: definition.Name, Type: definition.Type})
-		if !ok || definition.Validate(value) != "" {
-			continue
-		}
-		if out.Fields == nil {
-			out.Fields = map[string]string{}
-		}
-		out.Fields[definition.Name] = value
-	}
-	return out
-}
-
-// applyIssuePrefill resolves a create request's `github_issue` (task 035).
-// It fetches the issue, folds the computed prefill into the request wherever
-// the caller left a value unset, and returns the snapshot to persist on the
-// task. A request without `github_issue` is left untouched and no GitHub call
-// is made — which is what "with the integration disabled, or on a non-GitHub
-// project, no GitHub call is made" means in the create path too.
-//
-// Precedence is **explicit wins**, keyed on presence rather than on
-// emptiness for the fields map: a caller that sends `labels: ""` has cleared
-// a prefilled row on purpose, and re-filling it would make the form's
-// "nothing is locked" promise false. Title and description key on
-// blank/absent instead, because there is no such thing as deliberately
-// creating a task with an empty title, and an absent description is how every
-// client spells "you decide".
-//
-// It writes its own error response and reports false when it did.
-func (s *Server) applyIssuePrefill(
-	ctx context.Context, w http.ResponseWriter,
-	project *store.Project, wf *workflow.Workflow, req *taskCreateRequest,
-) (*github.Issue, bool) {
-	if req.GitHubIssue == nil {
-		return nil, true
-	}
-	number := *req.GitHubIssue
-	if number < 1 {
-		writeError(w, http.StatusBadRequest, CodeValidationFailed,
-			fmt.Sprintf("github_issue must be a positive issue number, got %d", number))
-		return nil, false
-	}
-	gate := s.githubGateFor(ctx, project)
-	if !gate.avail.Available {
-		writeGitHubUnavailable(w, gate)
-		return nil, false
-	}
-	issue, err := s.deps.GitHub.Get(ctx, gate.repo, number)
-	if err != nil {
-		writeGitHubError(w, gate, err)
-		return nil, false
-	}
-	if msg := foldPrefill(req, issuePrefill(issue, wf)); msg != "" {
-		writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
-		return nil, false
-	}
-	return &issue, true
-}
-
 // foldPrefill folds a computed prefill into a create request wherever the
 // caller left a value unset — **explicit wins**, by presence for fields and
-// by blank/absent for title and description, as applyIssuePrefill explains —
-// and re-bounds the result. It returns the bound violation, "" when there is
+// by blank/absent for title and description — and re-bounds the result. It returns the bound violation, "" when there is
 // none.
 //
 // The re-bound is the point of returning a message: the request now carries
 // text vincent supplied rather than text the caller typed, and an issue body
 // larger than §13.1's description bound has to fail the same way a pasted
 // one would rather than be silently truncated into the row (task 130
-// decision 4). Both issue prefills — the legacy `github_issue` fetch and the
-// vincent issue — fold through here.
+// decision 4).
+//
+// Precedence keys on presence rather than on emptiness for the fields map: a
+// caller that sends `labels: ""` has cleared a prefilled row on purpose, and
+// re-filling it would make the form's "nothing is locked" promise false.
+// Title and description key on blank/absent instead, because there is no such
+// thing as deliberately creating a task with an empty title, and an absent
+// description is how every client spells "you decide".
 func foldPrefill(req *taskCreateRequest, prefill githubPrefill) string {
 	if strings.TrimSpace(req.Title) == "" {
 		req.Title = prefill.Title
@@ -300,7 +232,7 @@ func foldPrefill(req *taskCreateRequest, prefill githubPrefill) string {
 	return boundTaskFields(req.Title, ptrValue(req.Description), req.Fields)
 }
 
-// vincentIssuePrefill is issuePrefill's counterpart for a vincent issue
+// vincentIssuePrefill is the prefill for a vincent issue
 // (task 130 decisions 7 and 8): internal/issues maps the snapshot onto
 // candidates, and this keeps the half that needs the workflow — a candidate
 // the declaration would reject is dropped, never offered. It reads only the
@@ -334,7 +266,7 @@ func vincentIssuePrefill(snap *store.IssueSnapshot, wf *workflow.Workflow) githu
 }
 
 // pullPrefill computes what creating a task from this pull request would fill
-// in (task 064 decision 9). It is issuePrefill's counterpart and the **one**
+// in (task 064 decision 9). It is the **one**
 // implementation of the pull-request half: the listing previews it, POST
 // /v1/tasks applies it, and the TUI renders what the daemon computed — which
 // is what makes "the CLI flag, the API and the TUI produce the same stored
@@ -363,7 +295,7 @@ func pullPrefill(pull github.PullRequest, wf *workflow.Workflow) githubPrefill {
 }
 
 // applyPullPrefill resolves a create request's `github_pull` (task 064). It
-// mirrors applyIssuePrefill exactly — same fetch-then-fold shape, same
+// mirrors applyVincentIssue's shape — same fold, same
 // explicit-wins precedence keyed on presence for fields and on blankness for
 // title and description, same re-bounding afterwards — and differs in what it
 // returns: not a snapshot to persist, but the live pull request, which the
@@ -424,7 +356,7 @@ func (s *Server) applyPullPrefill(
 		req.Fields[name] = value
 	}
 	// Re-bound now that the request carries text vincent fetched rather than
-	// text the caller typed, for the reason applyIssuePrefill does.
+	// text the caller typed, for the reason foldPrefill does.
 	if msg := boundTaskFields(req.Title, ptrValue(req.Description), req.Fields); msg != "" {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
 		return nil, github.Repo{}, false

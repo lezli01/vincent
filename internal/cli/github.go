@@ -172,15 +172,6 @@ func githubStatusRows(status apiclient.GitHubStatus) [][]string {
 	return append(rows, []string{"issue import/sync", "unavailable: " + status.Unavailable()})
 }
 
-// githubIssueSummary is the one-line confirmation `task add --github-issue`
-// prints, so a human sees which issue the daemon actually resolved.
-func githubIssueSummary(issue *apiclient.GitHubIssue) string {
-	if issue == nil {
-		return ""
-	}
-	return strings.TrimSpace(fmt.Sprintf("from %s#%d: %s", issue.Repo, issue.Number, issue.Title))
-}
-
 // taskIssueSummary is `vincent task add --issue`'s confirmation line (task
 // 130.7): the vincent issue the task is linked to and, for an imported one,
 // where it came from.

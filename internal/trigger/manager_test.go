@@ -641,6 +641,39 @@ func TestManagerInvalidFileKeepsCursor(t *testing.T) {
 	}
 }
 
+// TestManagerGitHubIssueActionKeepsCursor: task 130 decision 7 removed
+// action.github_issue, so a user's file that still carries it fails strict
+// decoding — it stops polling but keeps its cursor, and resumes without a
+// re-seed once it is edited to `issue:` (task 130.11).
+func TestManagerGitHubIssueActionKeepsCursor(t *testing.T) {
+	h := newHarness(t)
+	out := filepath.Join(t.TempDir(), "poll.out")
+	setOutput(t, out, evLine("e1"))
+	valid := commandDoc(t, "jira", true, out)
+	h.write("jira", valid)
+	h.m.Start(context.Background())
+	waitFor(t, "the seed", func() bool { return h.cursor("jira") != nil })
+
+	legacy := valid + "  github_issue: '{{ .Event.id }}'\n"
+	if _, errs := Parse([]byte(legacy), "jira"); len(errs) == 0 ||
+		!strings.Contains(errs.Error(), "github_issue") {
+		t.Fatalf("Parse(action.github_issue) = %v, want an error naming github_issue", errs)
+	}
+	h.write("jira", legacy)
+	waitFor(t, "the poller to stop", func() bool { return h.pollerCount() == 0 })
+	if c := h.cursor("jira"); c == nil {
+		t.Fatal("a file carrying action.github_issue dropped the cursor")
+	}
+
+	setOutput(t, out, evLine("e1"), evLine("e2"))
+	h.write("jira", valid+"  issue: ''\n")
+	waitFor(t, "e2 to fire", func() bool { return hasRow(h.ledger("jira"), "e2", store.DeliveryFired) })
+	h.m.Stop()
+	if hasRow(h.ledger("jira"), "e2", store.DeliverySeeded) {
+		t.Error("editing the file to issue: re-seeded")
+	}
+}
+
 // TestManagerDryRunsWriteNothing: Test and PollDry judge through the real
 // pipeline, work while the trigger is off, and leave the cursor, its health,
 // the ledger and the events table exactly as they were.

@@ -336,6 +336,10 @@ func issueIDFromPath(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	return id, true
 }
 
+// issueSourceGitHub is the one remote provider an issue can come from today,
+// as GET /v1/issues spells it in `source` and matches it for `remote_number`.
+const issueSourceGitHub = "github"
+
 // handleIssueList implements GET /v1/issues. The `q` parameter is a
 // server-side search, unlike §13.2's pickers: an issue set is unbounded in a
 // way a project or workflow list is not (task 130.3, spec §13.2 amendment).
@@ -361,7 +365,7 @@ func (s *Server) handleIssueList(w http.ResponseWriter, r *http.Request) {
 	f.Kind = q.Get("kind")
 	f.Text = q.Get("q")
 	switch v := q.Get("source"); v {
-	case "", "local", "github":
+	case "", "local", issueSourceGitHub:
 		f.Source = v
 	default:
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, "source must be one of: local, github")
@@ -389,6 +393,34 @@ func (s *Server) handleIssueList(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		*p.dst = n
+	}
+	// remote_number maps a GitHub issue number to the vincent issue it was
+	// imported (or backfilled) as — the lookup that replaced the removed
+	// `github_issue` create field for scripts (task 130.11, decision 21.4).
+	// A number means nothing across projects, so it requires project_id.
+	if v := q.Get("remote_number"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed,
+				"remote_number must be a positive integer")
+			return
+		}
+		if f.ProjectID == 0 {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed,
+				"remote_number requires project_id: an issue number is only meaningful within one project")
+			return
+		}
+		ids, err := s.deps.Store.IssueIDsByRemoteNumber(r.Context(), f.ProjectID, issueSourceGitHub, n)
+		if err != nil {
+			s.internalError(w, "look up issue by remote number", err)
+			return
+		}
+		if len(ids) == 0 {
+			// An empty IDs filter means "any", so no match is answered here.
+			writeJSON(w, http.StatusOK, []issueRowBody{})
+			return
+		}
+		f.IDs = ids
 	}
 	list, err := issues.New(s.deps.Store).List(r.Context(), f)
 	if err != nil {

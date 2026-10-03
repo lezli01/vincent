@@ -69,8 +69,8 @@ type GitHubIssue struct {
 // LabelList is the comma-joined spelling, for a one-line summary.
 func (i GitHubIssue) LabelList() string { return strings.Join(i.Labels, ", ") }
 
-// GitHubPrefill is the daemon's computed prefill for an issue or a pull
-// request — Issue.Prefill and GitHubPullRequest.Prefill. The form
+// GitHubPrefill is the daemon's computed prefill for one pull request or
+// vincent issue — GitHubPullRequest.Prefill and Issue.Prefill. The form
 // drops it into editable rows: every guess is visible before creation, and
 // none of it is locked.
 type GitHubPrefill struct {
@@ -91,7 +91,8 @@ func (c *Client) ProjectGitHub(ctx context.Context, projectID int64) (GitHubStat
 
 // GitHubIssuesOptions narrow a listing. The zero value asks for the most
 // recent open issues. The listing carries no prefill (task 130 decision 7):
-// a task's prefill is previewed from the vincent issue it starts from.
+// that went with the `github_issue` create field, and a task's prefill is
+// previewed from the vincent issue it starts from.
 type GitHubIssuesOptions struct {
 	// State is open (default), closed or all.
 	State string

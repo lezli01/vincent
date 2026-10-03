@@ -5,10 +5,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/config"
@@ -16,8 +16,9 @@ import (
 	"github.com/lezli01/vincent/internal/testrepo"
 )
 
-// `--github-issue`, `vincent github`, and the `vincent doctor` row, through
-// the real binary against a real detached daemon (task 035).
+// `vincent github`, `vincent issue ls --github`, and the `vincent doctor`
+// row, through the real binary against a real detached daemon (task 035,
+// task 130.11).
 //
 // The daemon finds cmd/fakegh as `gh` because the test prepends its directory
 // to PATH — the daemon inherits the environment its parent had, which is §2's
@@ -64,44 +65,6 @@ func gitRemote(t *testing.T, repo, remote string) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git remote add: %v\n%s", err, out)
 	}
-}
-
-// storedTask is `vincent task show --json` reduced to the fields a create
-// decides. The id, branch and timestamps are dropped because two tasks
-// necessarily differ in them — everything left is what the two paths are
-// claimed to agree on.
-type storedTask struct {
-	Title       string            `json:"title"`
-	Description string            `json:"description"`
-	Fields      map[string]string `json:"fields"`
-	Workflow    string            `json:"workflow"`
-	GitHubIssue json.RawMessage   `json:"github_issue"`
-}
-
-// snapshotSansFetchTime drops `fetched_at`, which is the one field two
-// creates of the same issue must differ in: it records when *this* task's
-// snapshot was taken.
-func snapshotSansFetchTime(t *testing.T, task storedTask) map[string]any {
-	t.Helper()
-	var out map[string]any
-	if err := json.Unmarshal(task.GitHubIssue, &out); err != nil {
-		t.Fatalf("issue snapshot is not JSON: %v (%s)", err, task.GitHubIssue)
-	}
-	delete(out, "fetched_at")
-	return out
-}
-
-func showTask(t *testing.T, dataDir, cfgDir, ghDir, id string) storedTask {
-	t.Helper()
-	out, code := runVincentGH(t, dataDir, cfgDir, ghDir, "success", "task", "show", id, "--json")
-	if code != 0 {
-		t.Fatalf("task show %s: code %d, out %q", id, code, out)
-	}
-	var task storedTask
-	if err := json.Unmarshal([]byte(out), &task); err != nil {
-		t.Fatalf("task show --json is not JSON: %v (%q)", err, out)
-	}
-	return task
 }
 
 func TestGitHubIssueCommandsAgainstLiveDaemon(t *testing.T) {
@@ -171,63 +134,65 @@ func TestGitHubIssueCommandsAgainstLiveDaemon(t *testing.T) {
 		}
 	})
 
-	// The claim decision 2 exists to make testable: the flag path and the
-	// TUI's previewed-prefill path go through one implementation, so a create
-	// that names only the issue and a create that spells out everything the
-	// preview showed produce the same stored task.
-	t.Run("the flag and a TUI-shaped request agree", func(t *testing.T) {
+	// Task 130 decision 7: `--github-issue` is gone, so naming it is cobra's
+	// unknown-flag refusal, and the daemon is never asked.
+	t.Run("task add --github-issue is an unknown flag", func(t *testing.T) {
 		out, code := runVincentGH(t, dataDir, cfgDir, ghDir, "success",
-			"task", "add", "--project", "1", "--github-issue", "200", "--json")
-		if code != 0 {
-			t.Fatalf("task add --github-issue: code %d, out %q", code, out)
+			"task", "add", "--project", "1", "--github-issue", "200")
+		if code == 0 {
+			t.Fatalf("task add --github-issue succeeded: %q", out)
 		}
-		var flagPath struct {
-			ID          int64  `json:"id"`
-			Title       string `json:"title"`
-			Description string `json:"description"`
-		}
-		if err := json.Unmarshal([]byte(out), &flagPath); err != nil {
-			t.Fatalf("task add --json is not JSON: %v (%q)", err, out)
-		}
-
-		// What the TUI sends: the same issue, plus every prefilled value it
-		// previewed and the human left alone.
-		out, code = runVincentGH(t, dataDir, cfgDir, ghDir, "success",
-			"task", "add", "--project", "1", "--github-issue", "200",
-			"--title", flagPath.Title, "--description", flagPath.Description, "--json")
-		if code != 0 {
-			t.Fatalf("task add (TUI-shaped): code %d, out %q", code, out)
-		}
-		var formPath struct {
-			ID int64 `json:"id"`
-		}
-		if err := json.Unmarshal([]byte(out), &formPath); err != nil {
-			t.Fatalf("task add --json is not JSON: %v (%q)", err, out)
-		}
-
-		a := showTask(t, dataDir, cfgDir, ghDir, strconv.FormatInt(flagPath.ID, 10))
-		b := showTask(t, dataDir, cfgDir, ghDir, strconv.FormatInt(formPath.ID, 10))
-		if a.Title != b.Title || a.Description != b.Description || a.Workflow != b.Workflow {
-			t.Errorf("the two paths stored different tasks:\n %+v\n %+v", a, b)
-		}
-		if x, y := snapshotSansFetchTime(t, a), snapshotSansFetchTime(t, b); !reflect.DeepEqual(x, y) {
-			t.Errorf("the two paths stored different issue snapshots:\n %v\n %v", x, y)
-		}
-		if !strings.Contains(a.Description, "GitHub issue #200:") {
-			t.Errorf("the flag path stored no link line:\n%q", a.Description)
+		if !strings.Contains(out, "unknown flag: --github-issue") {
+			t.Errorf("the refusal is not an unknown flag:\n%s", out)
 		}
 	})
 
-	t.Run("explicit flags override the issue", func(t *testing.T) {
+	// The lookup that replaced it (decision 21.4): import, look the number
+	// up, and create the task from the issue id it answers with.
+	t.Run("issue ls --github finds the imported issue", func(t *testing.T) {
+		if out, code := runVincentGH(t, dataDir, cfgDir, ghDir, "success",
+			"issue", "ls", "--github", "200"); code == 0 || !strings.Contains(out, "--project") {
+			t.Errorf("issue ls --github without --project: code %d, out %q", code, out)
+		}
+		if out, code := runVincentGH(t, dataDir, cfgDir, ghDir, "success",
+			"issue", "sync", "--project", "1"); code != 0 {
+			t.Fatalf("issue sync: code %d, out %q", code, out)
+		}
+		var found []struct {
+			ID    int64  `json:"id"`
+			Title string `json:"title"`
+		}
+		deadline := time.Now().Add(30 * time.Second)
+		for {
+			out, code := runVincentGH(t, dataDir, cfgDir, ghDir, "success",
+				"issue", "ls", "--project", "1", "--github", "200", "--json")
+			if code != 0 {
+				t.Fatalf("issue ls --github: code %d, out %q", code, out)
+			}
+			if err := json.Unmarshal([]byte(out), &found); err != nil {
+				t.Fatalf("issue ls --json is not JSON: %v (%q)", err, out)
+			}
+			if len(found) > 0 || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		if len(found) != 1 {
+			t.Fatalf("issue ls --github 200 = %+v, want the one imported issue", found)
+		}
+		// Another number lists nothing, rather than everything.
 		out, code := runVincentGH(t, dataDir, cfgDir, ghDir, "success",
-			"task", "add", "--project", "1", "--github-issue", "200",
-			"--title", "My own framing", "--json")
+			"issue", "ls", "--project", "1", "--github", "9999", "--json")
+		if code != 0 || strings.TrimSpace(out) != "[]" {
+			t.Errorf("issue ls --github 9999: code %d, out %q, want []", code, out)
+		}
+		out, code = runVincentGH(t, dataDir, cfgDir, ghDir, "success",
+			"task", "add", "--project", "1", "--issue", strconv.FormatInt(found[0].ID, 10), "--json")
 		if code != 0 {
-			t.Fatalf("task add: code %d, out %q", code, out)
+			t.Fatalf("task add --issue: code %d, out %q", code, out)
 		}
 		var created struct {
 			Title       string `json:"title"`
-			Description string `json:"description"`
 			GitHubIssue *struct {
 				Number int `json:"number"`
 			} `json:"github_issue"`
@@ -235,15 +200,11 @@ func TestGitHubIssueCommandsAgainstLiveDaemon(t *testing.T) {
 		if err := json.Unmarshal([]byte(out), &created); err != nil {
 			t.Fatalf("task add --json is not JSON: %v (%q)", err, out)
 		}
-		if created.Title != "My own framing" {
-			t.Errorf("title = %q, want the explicit flag to win", created.Title)
-		}
-		// The description was not given, so it is still the issue's.
-		if !strings.Contains(created.Description, "GitHub issue #200:") {
-			t.Errorf("description = %q, want the issue-derived one", created.Description)
+		if !strings.HasPrefix(created.Title, "#200 ") {
+			t.Errorf("title = %q, want the imported issue's numbered title", created.Title)
 		}
 		if created.GitHubIssue == nil || created.GitHubIssue.Number != 200 {
-			t.Errorf("snapshot = %+v, want #200 linked either way", created.GitHubIssue)
+			t.Errorf("derived github_issue = %+v, want #200", created.GitHubIssue)
 		}
 	})
 
@@ -292,8 +253,8 @@ func TestGitHubIssueCommandsAgainstLiveDaemon(t *testing.T) {
 		}
 	})
 
-	t.Run("--issue is refused beside the GitHub prefills", func(t *testing.T) {
-		for _, other := range []string{"--github-issue", "--github-pull"} {
+	t.Run("--issue is refused beside the pull-request prefill", func(t *testing.T) {
+		for _, other := range []string{"--github-pull"} {
 			out, code := runVincentGH(t, dataDir, cfgDir, ghDir, "success",
 				"task", "add", "--project", "1", "--issue", "1", other, "200")
 			if code == 0 {
@@ -311,8 +272,8 @@ func TestGitHubIssueCommandsAgainstLiveDaemon(t *testing.T) {
 		if code == 0 {
 			t.Fatalf("task add with no title and no issue succeeded: %q", out)
 		}
-		if !strings.Contains(out, "title") || !strings.Contains(out, "github-issue") {
-			t.Errorf("the refusal does not name the two ways to supply a title:\n%s", out)
+		if !strings.Contains(out, "title") || !strings.Contains(out, "issue") || strings.Contains(out, "github-issue") {
+			t.Errorf("the refusal does not name the ways to supply a title:\n%s", out)
 		}
 	})
 
@@ -379,11 +340,12 @@ func TestGitHubUnusableLeavesTaskCreationAlone(t *testing.T) {
 		t.Fatalf("task add without an issue: code %d, out %q", code, out)
 	}
 
-	// Naming an issue is refused with the reason, not with a stack trace.
+	// Naming a pull request is refused with the reason, not with a stack
+	// trace.
 	out, code = runVincentGH(t, dataDir, cfgDir, ghDir, "logged-out",
-		"task", "add", "--project", "1", "--github-issue", "200")
+		"task", "add", "--project", "1", "--github-pull", "412")
 	if code != 1 {
-		t.Fatalf("task add --github-issue: code %d, want 1 (out %q)", code, out)
+		t.Fatalf("task add --github-pull: code %d, want 1 (out %q)", code, out)
 	}
 	if !strings.Contains(out, "GitHub is not available") {
 		t.Errorf("the refusal does not explain itself:\n%s", out)

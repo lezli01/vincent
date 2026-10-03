@@ -133,6 +133,16 @@ func TestIssuesOverTheWire(t *testing.T) {
 	if err != nil || gh.Source == nil || gh.Source.Repo != "o/r" || gh.Source.Number != 3 {
 		t.Errorf("imported source = %+v, %v", gh.Source, err)
 	}
+
+	// RemoteNumber reaches the lookup (task 130.11), and the daemon's
+	// project_id requirement comes back as a 400.
+	byNumber, err := c.ListIssues(ctx, apiclient.IssueListOptions{ProjectID: pid, RemoteNumber: 3})
+	if err != nil || len(byNumber) != 1 || byNumber[0].ID != imported.ID {
+		t.Errorf("ListIssues RemoteNumber 3 = %+v, %v", byNumber, err)
+	}
+	if _, err := c.ListIssues(ctx, apiclient.IssueListOptions{RemoteNumber: 3}); !errors.As(err, &e) || e.Status != http.StatusBadRequest {
+		t.Errorf("RemoteNumber without ProjectID = %v, want a 400", err)
+	}
 }
 
 // TestIssueConflictCarriesALargeIssue: the current issue a stale PATCH's 409

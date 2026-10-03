@@ -457,6 +457,74 @@ func TestIssueListFilters(t *testing.T) {
 	}
 }
 
+// TestIssueListByRemoteNumber is the lookup that replaced the `github_issue`
+// create field (task 130.11, decision 21.4): `remote_number` answers only the
+// issue imported from that GitHub number in the named project, composes with
+// the other filters, and is refused without project_id.
+func TestIssueListByRemoteNumber(t *testing.T) {
+	t.Parallel()
+	h := newIssueHarness(t)
+	imp := func(pid int64, key string, number int, title string) *store.Issue {
+		t.Helper()
+		iss, _, err := h.st.UpsertRemoteIssue(t.Context(), store.RemoteIssue{
+			ProjectID: pid, Provider: "github", RemoteKey: key, Repo: "o/r", Number: number,
+			URL: fmt.Sprintf("https://github.com/o/r/issues/%d", number), RemoteJSON: `{"state":"OPEN"}`,
+			Title: title, State: issuestate.Open,
+		}, issuestate.Sync)
+		if err != nil {
+			t.Fatalf("UpsertRemoteIssue: %v", err)
+		}
+		return iss
+	}
+	seven := imp(h.pid, "I_7", 7, "seven")
+	imp(h.pid, "I_8", 8, "eight")
+	imp(h.otherID, "I_7_other", 7, "seven elsewhere")
+	// A local issue whose id happens to be a GitHub number must not answer.
+	h.create(t, map[string]any{"title": "local"})
+
+	list := func(q string) []int64 {
+		t.Helper()
+		resp, out := h.do(t, http.MethodGet, "/v1/issues?"+q, nil)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("list ?%s = %d: %s", q, resp.StatusCode, out)
+		}
+		var rows []issueRowBody
+		if err := json.Unmarshal(out, &rows); err != nil {
+			t.Fatalf("decode list: %v: %s", err, out)
+		}
+		ids := []int64{}
+		for _, r := range rows {
+			ids = append(ids, r.ID)
+		}
+		return ids
+	}
+	p := fmt.Sprintf("project_id=%d", h.pid)
+	for q, want := range map[string][]int64{
+		p + "&remote_number=7":              {seven.ID},
+		p + "&remote_number=9":              {},
+		p + "&remote_number=7&state=closed": {},
+		p + "&remote_number=7&state=open":   {seven.ID},
+	} {
+		if got := list(q); !slices.Equal(got, want) {
+			t.Errorf("?%s = %v, want %v", q, got, want)
+		}
+	}
+	// A deleted issue's tombstone never answers.
+	if resp, out := h.do(t, http.MethodDelete, fmt.Sprintf("/v1/issues/%d", seven.ID), nil); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete = %d: %s", resp.StatusCode, out)
+	}
+	if got := list(p + "&remote_number=7"); len(got) != 0 {
+		t.Errorf("a deleted issue still answers its number: %v", got)
+	}
+	for _, q := range []string{"remote_number=7", p + "&remote_number=0", p + "&remote_number=x"} {
+		resp, out := h.do(t, http.MethodGet, "/v1/issues?"+q, nil)
+		wantError(t, resp, out, http.StatusBadRequest, CodeValidationFailed)
+		if !strings.Contains(string(out), "remote_number") {
+			t.Errorf("?%s: the 400 does not name remote_number: %s", q, out)
+		}
+	}
+}
+
 func TestIssueLabelCatalogue(t *testing.T) {
 	t.Parallel()
 	h := newIssueHarness(t)

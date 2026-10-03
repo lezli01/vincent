@@ -64,8 +64,8 @@ type Prefill struct {
 //
 // A local issue's title is its bare title and its description its body; an
 // imported GitHub issue keeps the `#N title` and trailing link line the
-// `github_issue` path has always produced, so a board row still reads as
-// the GitHub issue it came from.
+// removed `github_issue` create path produced (task 035), so a board row
+// still reads as the GitHub issue it came from.
 func PrefillFrom(snap *store.IssueSnapshot, decls []FieldDecl) Prefill {
 	if snap == nil {
 		return Prefill{}

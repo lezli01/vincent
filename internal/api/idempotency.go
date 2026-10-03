@@ -77,9 +77,9 @@ func readIdempotencyKey(w http.ResponseWriter, r *http.Request) (string, bool) {
 // It hashes the **decoded struct re-marshalled**, not the bytes as they
 // arrived, so whitespace and JSON key order cannot manufacture a conflict out
 // of two sends of the same request. Callers take it *before* any server-side
-// mutation of the decoded value — the GitHub issue prefill in particular reads
-// a live issue (§13.2, task 035), and hashing after it would turn an edited
-// issue title into a spurious 409 on a request the caller sent identically
+// mutation of the decoded value — the pull-request prefill in particular reads
+// a live pull request (§13.2, task 064), and hashing after it would turn an
+// edited title into a spurious 409 on a request the caller sent identically
 // twice.
 func idempotencyDigest(v any) (string, error) {
 	// Go marshals map keys in sorted order, so the `fields` map is canonical

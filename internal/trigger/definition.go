@@ -207,10 +207,12 @@ type Action struct {
 	// Issue is a template that must render to a vincent issue id, or to
 	// nothing; it is replayed as POST /v1/tasks' `issue_id` (task 130.15).
 	Issue string `yaml:"issue" json:"issue,omitempty"`
-	// GitHubIssue and GitHubPull are templates that must render to an issue
-	// or pull-request number, or to nothing.
-	GitHubIssue string `yaml:"github_issue" json:"github_issue,omitempty"`
-	GitHubPull  string `yaml:"github_pull" json:"github_pull,omitempty"`
+	// GitHubPull is a template that must render to a pull-request number, or
+	// to nothing. There is no github_issue beside it: task 130 decision 7
+	// removed it, so a file that still carries one fails strict decoding,
+	// stays an invalid entry and keeps its cursor until it is edited to
+	// `issue:` (task 130.11).
+	GitHubPull string `yaml:"github_pull" json:"github_pull,omitempty"`
 	// Target and Branch pick a reaction's task (decision 31C).
 	Target string `yaml:"target" json:"target,omitempty"`
 	Branch string `yaml:"branch" json:"branch,omitempty"`
@@ -685,22 +687,12 @@ func validateAction(d *Definition, add addFunc, refuse refuseFunc, checkTemplate
 		checkTemplate("action.title", a.Title)
 		checkTemplate("action.description", a.Description)
 		checkTemplate("action.issue", a.Issue)
-		checkTemplate("action.github_issue", a.GitHubIssue)
 		checkTemplate("action.github_pull", a.GitHubPull)
 		for k, v := range a.Fields {
 			checkTemplate("action.fields."+k, v)
 		}
 		// POST /v1/tasks refuses both, and a trigger that could only ever be
 		// refused is better caught at load than in the ledger.
-		if a.GitHubIssue != "" && a.GitHubPull != "" {
-			add("action.github_pull", "cannot be combined with github_issue")
-		}
-		// POST /v1/tasks takes one source of an issue: a vincent issue id,
-		// or the legacy GitHub snapshot until #670 removes it (task 130.15
-		// decision 5).
-		if a.Issue != "" && a.GitHubIssue != "" {
-			add("action.issue", "cannot be combined with github_issue")
-		}
 		if a.Issue != "" && a.GitHubPull != "" {
 			add("action.issue", "cannot be combined with github_pull")
 		}
@@ -743,7 +735,6 @@ func validateAction(d *Definition, add addFunc, refuse refuseFunc, checkTemplate
 		refuse("action.description", a.Description != "", why)
 		refuse("action.fields", len(a.Fields) > 0, why)
 		refuse("action.issue", a.Issue != "", why)
-		refuse("action.github_issue", a.GitHubIssue != "", why)
 		refuse("action.github_pull", a.GitHubPull != "", why)
 		refuse("permission", d.Permission != "", "the restricted clamp is set when a task is created")
 		refuse("limits.max_task_cost_usd", d.Limits.MaxTaskCostUSD != 0, "a task's cost cap is set when it is created")

@@ -2,8 +2,6 @@ package tui
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -12,8 +10,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
-	"github.com/lezli01/vincent/internal/github"
-	"github.com/lezli01/vincent/internal/github/githubtest"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 )
@@ -23,34 +19,6 @@ import (
 // issue with `a` on the issue screens, and the form shows that issue on a
 // read-only source row. A plain draft is asserted, at the process level, to
 // make no GitHub call at all.
-
-const ghLiveOrigin = "https://github.com/octo/repo.git"
-
-// githubLiveHarness wires the fake `gh` into the live harness and hands back
-// the argv log, so a test can assert on the calls the daemon made.
-func newGitHubLiveHarness(t *testing.T, opts liveOptions) (*newTaskLiveHarness, string) {
-	t.Helper()
-	fake := githubtest.BuildFakeGH(t)
-	argvLog := filepath.Join(t.TempDir(), "gh-argv.txt")
-	t.Setenv("FAKEGH_ARGV_FILE", argvLog)
-	if os.Getenv("FAKEGH_SCENARIO") == "" {
-		t.Setenv("FAKEGH_SCENARIO", "success")
-	}
-	opts.github = github.New(github.Options{
-		GHPath: fake,
-		Getenv: func(string) string { return "" },
-	})
-	return newNewTaskLiveHarnessWith(t, opts), argvLog
-}
-
-func ghLiveCalls(t *testing.T, path string) string {
-	t.Helper()
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	return string(b)
-}
 
 // issueWorkflows are two workflows whose declared fields differ, so a
 // workflow switch changes what an issue's prefill fills.
@@ -143,8 +111,8 @@ func TestPlainDraftMakesNoGitHubCall(t *testing.T) {
 		t.Errorf("a plain draft mentions an issue:\n%s", view)
 	}
 	req := n.request()
-	if req.IssueID != nil || req.GitHubIssue != nil {
-		t.Errorf("a plain draft sends issue_id=%v github_issue=%v", req.IssueID, req.GitHubIssue)
+	if req.IssueID != nil {
+		t.Errorf("a plain draft sends issue_id=%v", req.IssueID)
 	}
 	if calls := ghLiveCalls(t, argv); calls != "" {
 		t.Errorf("a plain draft invoked gh:\n%s", calls)
