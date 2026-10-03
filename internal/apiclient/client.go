@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -46,14 +47,63 @@ type Client struct {
 
 // New returns a client for the daemon at baseURL (e.g. "http://127.0.0.1:7777")
 // authenticating with token.
+//
+// When the process runs as a workflow step or a chat agent — VINCENT_TASK_ID
+// or VINCENT_CHAT_ID is in its environment — every request carries the
+// matching marker header, and the daemon treats it as an agent's (task
+// 130.10 decisions 1-3): it may not change the state of an issue that
+// writes back to GitHub. The marker never makes a caller more than it is.
 func New(baseURL, token string) *Client {
+	rt := http.DefaultTransport
+	if h := markerHeaders(os.Getenv); len(h) > 0 {
+		rt = markerTransport{base: rt, headers: h}
+	}
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		token:   token,
-		rest:    &http.Client{Timeout: requestTimeout},
-		probes:  &http.Client{Timeout: probeTimeout},
-		stream:  &http.Client{},
+		rest:    &http.Client{Timeout: requestTimeout, Transport: rt},
+		probes:  &http.Client{Timeout: probeTimeout, Transport: rt},
+		stream:  &http.Client{Transport: rt},
 	}
+}
+
+// The agent marker headers and the environment variables they come from.
+// internal/api spells the header names too; the live test holds the two
+// together.
+const (
+	HeaderTaskMarker = "X-Vincent-Task-Id"
+	HeaderChatMarker = "X-Vincent-Chat-Id"
+	// EnvChatID is what internal/chatrun puts in a chat agent's
+	// environment; VINCENT_TASK_ID is §8.5's, in every step's.
+	EnvChatID = "VINCENT_CHAT_ID"
+	envTaskID = "VINCENT_TASK_ID"
+)
+
+// markerHeaders is the marker headers getenv's environment calls for.
+func markerHeaders(getenv func(string) string) map[string]string {
+	h := map[string]string{}
+	if v := strings.TrimSpace(getenv(envTaskID)); v != "" {
+		h[HeaderTaskMarker] = v
+	}
+	if v := strings.TrimSpace(getenv(EnvChatID)); v != "" {
+		h[HeaderChatMarker] = v
+	}
+	return h
+}
+
+// markerTransport adds the marker headers to every request, on a clone: a
+// RoundTripper must not modify the request it is handed.
+type markerTransport struct {
+	base    http.RoundTripper
+	headers map[string]string
+}
+
+func (t markerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	for k, v := range t.headers {
+		req.Header.Set(k, v)
+	}
+	return t.base.RoundTrip(req)
 }
 
 // Discover builds a client from the daemon's on-disk discovery records:

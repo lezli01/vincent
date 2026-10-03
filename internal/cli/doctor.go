@@ -593,6 +593,9 @@ func doctorSyncValue(p apiclient.DoctorProjectIssueSync) string {
 	if !p.ImportComplete {
 		parts = append(parts, "import incomplete")
 	}
+	if p.WritesPending+p.WritesFailed+p.WritesConflict > 0 {
+		parts = append(parts, "writes "+writesValue(p.WritesPending, p.WritesFailed, p.WritesConflict))
+	}
 	return strings.Join(parts, "  ")
 }
 

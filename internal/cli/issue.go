@@ -78,6 +78,7 @@ func issueSyncRows(s apiclient.IssueSyncStatus, requested bool) [][]string {
 		{"ok", boolWord(s.OK)},
 		{"reason", reason},
 		{"import complete", boolWord(s.ImportComplete)},
+		{"state writes", writesValue(s.WritesPending, s.WritesFailed, s.WritesConflict)},
 	}
 	if s.RateLimitedUntil != nil {
 		rows = append(rows, []string{"rate limited until", doctorTime(s.RateLimitedUntil, "-")})
@@ -90,4 +91,10 @@ func issueSyncRows(s apiclient.IssueSyncStatus, requested bool) [][]string {
 		}
 	}
 	return rows
+}
+
+// writesValue is a project's state write-back health (task 130.10): the
+// imported issues whose newest write is pending, failed or in conflict.
+func writesValue(pending, failed, conflict int) string {
+	return fmt.Sprintf("%d pending, %d failed, %d conflict", pending, failed, conflict)
 }

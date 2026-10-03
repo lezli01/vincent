@@ -275,6 +275,12 @@ type ProjectIssueSync struct {
 	// LastSyncedAt is when an import last succeeded; nil when none has.
 	LastSyncedAt   *time.Time `json:"last_synced_at,omitempty"`
 	ImportComplete bool       `json:"import_complete"`
+	// WritesPending, WritesFailed and WritesConflict are the project's state
+	// write-back health (task 130.10): imported issues whose newest write is
+	// waiting, gave up, or lost to a change on GitHub.
+	WritesPending  int `json:"writes_pending"`
+	WritesFailed   int `json:"writes_failed"`
+	WritesConflict int `json:"writes_conflict"`
 }
 
 // Update is the §12.1 row for the release check (task 055). It answers two

@@ -3,6 +3,7 @@ package chatrun
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"slices"
 	"sync"
@@ -223,11 +224,12 @@ func TestLinkedTurnCarriesItsPlacementEnvironment(t *testing.T) {
 	}
 }
 
-// TestHostTurnCarriesNoEnvironment is decision 3's other side: nothing
-// changes for a chat that runs on this machine. Launchers answers nil, which
-// is the daemon's own environment, and that is what every chat carried before
-// task 124.17.
-func TestHostTurnCarriesNoEnvironment(t *testing.T) {
+// TestHostTurnCarriesTheDaemonEnvironment is decision 3's other side:
+// nothing changes for a chat that runs on this machine. Launchers answers
+// nil, which is the daemon's own environment, and that is what the turn
+// carries — plus the chat marker (task 130.10 decision 2), so a `vincent`
+// command the chat agent runs is an agent's.
+func TestHostTurnCarriesTheDaemonEnvironment(t *testing.T) {
 	t.Setenv("FAKEAGENT_SCENARIO", "success")
 	h := newHarness(t)
 	_, c := h.linkedTask(t, h.repo)
@@ -247,10 +249,27 @@ func TestHostTurnCarriesNoEnvironment(t *testing.T) {
 	if len(started) == 0 {
 		t.Fatal("the turn never reached the launcher")
 	}
+	daemonEnv := map[string]bool{}
+	for _, kv := range os.Environ() {
+		daemonEnv[kv] = true
+	}
+	marker := fmt.Sprintf("%s=%d", envChatID, c.ID)
 	for i, env := range started {
-		if env != nil {
-			t.Errorf("command %d ran with an environment of its own: %v", i, env)
+		if !slices.Contains(env, marker) {
+			t.Errorf("command %d carries no %s", i, marker)
 		}
+		for _, kv := range env {
+			if kv != marker && !daemonEnv[kv] {
+				t.Errorf("command %d carries %q, which is not the daemon's", i, kv)
+			}
+		}
+	}
+}
+
+func TestWithChatMarkerReplacesAnInheritedOne(t *testing.T) {
+	got := withChatMarker([]string{"A=1", envChatID + "=9"}, 4)
+	if want := []string{"A=1", envChatID + "=4"}; !slices.Equal(got, want) {
+		t.Errorf("withChatMarker = %v, want %v", got, want)
 	}
 }
 

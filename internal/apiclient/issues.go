@@ -23,7 +23,21 @@ const (
 	// IssueReasonMirrored is a PATCH of an imported issue's title, body or
 	// labels, which mirror the remote.
 	IssueReasonMirrored = "issue_mirrored"
+	// IssueReasonForgeWrite is an agent's close or reopen of an issue whose
+	// state writes back to GitHub (task 130.10): only a human's act writes
+	// to a forge. A client whose environment marks it as a step or a chat
+	// agent gets it too.
+	IssueReasonForgeWrite = "forge_write_needs_human"
 )
+
+// IssueSync is an imported issue's state write-back (task 130.10). State
+// is synced, pending, failed or conflict; Reason says why it is not synced
+// (disabled, rate_limited, no_write_scope, moved, gone, …).
+type IssueSync struct {
+	State        string     `json:"state"`
+	Reason       string     `json:"reason,omitempty"`
+	LastSyncedAt *time.Time `json:"last_synced_at,omitempty"`
+}
 
 // IssueSource is where an imported issue came from.
 type IssueSource struct {
@@ -63,6 +77,7 @@ type Issue struct {
 	CreatedByTaskID *int64       `json:"created_by_task_id,omitempty"`
 	Labels          []string     `json:"labels"`
 	Source          *IssueSource `json:"source"`
+	Sync            *IssueSync   `json:"sync,omitempty"`
 	Active          bool         `json:"active"`
 	TaskCount       int          `json:"task_count"`
 	Version         int64        `json:"version"`
@@ -263,6 +278,12 @@ type IssueSyncStatus struct {
 	Reason           string     `json:"reason,omitempty"`
 	ImportComplete   bool       `json:"import_complete"`
 	RateLimitedUntil *time.Time `json:"rate_limited_until,omitempty"`
+	// WritesPending, WritesFailed and WritesConflict count imported issues
+	// whose newest state write-back is waiting, gave up, or found GitHub
+	// changed first (task 130.10).
+	WritesPending  int `json:"writes_pending"`
+	WritesFailed   int `json:"writes_failed"`
+	WritesConflict int `json:"writes_conflict"`
 }
 
 // IssueSyncStatus reads a project's issue import status. It never starts a

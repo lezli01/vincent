@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -404,6 +407,7 @@ func (r *Runner) runTurn(
 		r.finish(turn, chatstate.TurnFailed, ReasonAgentError, err.Error(), chat)
 		return
 	}
+	env = withChatMarker(env, chat.ID)
 	spec := agent.RunSpec{
 		Prompt:   turn.Prompt,
 		Preamble: turnPreamble(chat, turn),
@@ -942,3 +946,25 @@ func chatOutputKey(chatID int64) int64 { return -chatID }
 // ChatOutputKey exposes the mapping to the API, which subscribes on behalf of
 // an SSE client.
 func ChatOutputKey(chatID int64) int64 { return chatOutputKey(chatID) }
+
+// envChatID marks a chat agent's process (task 130.10 decision 2):
+// internal/apiclient turns it into a marker header, so a `vincent issue
+// close` the agent runs is an agent's and is refused on an issue that
+// writes back to GitHub, the way an MCP call is. apiclient.EnvChatID is the
+// same string; chatrun does not import the client.
+const envChatID = "VINCENT_CHAT_ID"
+
+// withChatMarker is env plus the chat marker. A nil env — a host turn — is
+// the daemon's own environment, which is what it stood for.
+func withChatMarker(env []string, chatID int64) []string {
+	if env == nil {
+		env = os.Environ()
+	}
+	out := make([]string, 0, len(env)+1)
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, envChatID+"=") {
+			out = append(out, kv)
+		}
+	}
+	return append(out, envChatID+"="+strconv.FormatInt(chatID, 10))
+}

@@ -34,7 +34,34 @@ const (
 	// issueReasonMirrored is a PATCH of an imported issue's title, body or
 	// labels (task 130.3 decision 2): those mirror the remote.
 	issueReasonMirrored = "issue_mirrored"
+	// issueReasonForgeWrite is an agent's close or reopen of an issue whose
+	// state writes back to GitHub (task 130 decision 10, task 130.10): only a
+	// human's act writes to a forge.
+	issueReasonForgeWrite = "forge_write_needs_human"
 )
+
+// The sync states an imported issue's `sync` block reports (task 130.10).
+const (
+	issueSyncSynced   = "synced"
+	issueSyncPending  = "pending"
+	issueSyncFailed   = "failed"
+	issueSyncConflict = "conflict"
+)
+
+// issueSyncBody is an imported issue's write-back state: synced when its
+// newest write landed (or it never had one), pending while one waits —
+// reason says why it has not been sent, "disabled" say — failed with the
+// reason a write gave up on, conflict when GitHub changed the state first
+// and its value was adopted. A moved or missing remote is failed with
+// reason moved or gone: a state change there stays local.
+type issueSyncBody struct {
+	State  string `json:"state"`
+	Reason string `json:"reason,omitempty"`
+	// LastSyncedAt is when the issue last agreed with its remote: the
+	// import's last refresh, or the last write that landed, whichever is
+	// later.
+	LastSyncedAt *time.Time `json:"last_synced_at,omitempty"`
+}
 
 // issueSourceBody is where an imported issue came from; null for a local one.
 type issueSourceBody struct {
@@ -53,6 +80,34 @@ type issueSourceBody struct {
 	Status string `json:"status,omitempty"`
 }
 
+// renderIssueSyncBlock is iss's sync block, nil for a local issue.
+func renderIssueSyncBlock(iss *store.Issue) *issueSyncBody {
+	if !issues.Mirrored(iss) {
+		return nil
+	}
+	rem := iss.Remote
+	out := &issueSyncBody{State: issueSyncSynced, LastSyncedAt: rem.SyncedAt}
+	o := iss.Sync
+	if o != nil && o.Status == store.OutboxDone &&
+		(out.LastSyncedAt == nil || o.UpdatedAt.After(*out.LastSyncedAt)) {
+		at := o.UpdatedAt
+		out.LastSyncedAt = &at
+	}
+	switch {
+	case o != nil && o.Status == store.OutboxPending:
+		out.State, out.Reason = issueSyncPending, o.LastReason
+	case rem.Status == store.RemoteStatusMoved:
+		out.State, out.Reason = issueSyncFailed, "moved"
+	case rem.Status == store.RemoteStatusMissing:
+		out.State, out.Reason = issueSyncFailed, "gone"
+	case o != nil && o.Status == store.OutboxFailed:
+		out.State, out.Reason = issueSyncFailed, o.LastReason
+	case o != nil && o.Status == store.OutboxConflict:
+		out.State, out.Reason = issueSyncConflict, o.LastReason
+	}
+	return out
+}
+
 // issueRowBody is an issue as GET /v1/issues lists it: everything but the
 // body, which is unbounded prose a list never renders.
 type issueRowBody struct {
@@ -68,6 +123,9 @@ type issueRowBody struct {
 	CreatedByTaskID *int64           `json:"created_by_task_id,omitempty"`
 	Labels          []string         `json:"labels"`
 	Source          *issueSourceBody `json:"source"`
+	// Sync is an imported issue's state write-back (task 130.10); omitted
+	// for a local issue, which has nowhere to write.
+	Sync *issueSyncBody `json:"sync,omitempty"`
 	// Active is whether a root task created from the issue is unsettled;
 	// TaskCount counts those root tasks (task 130 decision 5).
 	Active    bool       `json:"active"`
@@ -135,6 +193,7 @@ func renderIssueRow(iss *store.Issue) issueRowBody {
 			LastSyncedAt: r.SyncedAt,
 			Status:       r.Status,
 		}
+		row.Sync = renderIssueSyncBlock(iss)
 	}
 	return row
 }
@@ -176,11 +235,25 @@ func (s *Server) renderIssue(ctx context.Context, iss *store.Issue) issueBody {
 	}
 }
 
-// issueActor is who a request writes as: an MCP tool call is an agent, every
-// other API call a human. Telling a step's CLI call from a person's is task
-// 130 open question 6, not this route's.
-func issueActor(ctx context.Context) issuestate.Actor {
-	if mcp.ViaTool(ctx) {
+// The agent marker headers (task 130.10 decisions 1-2). internal/apiclient
+// sends the first on every request when VINCENT_TASK_ID is in its
+// environment — every workflow step's is (§8.5) — and the second when
+// VINCENT_CHAT_ID is, which internal/chatrun puts in a chat agent's. The
+// apiclient spells the same strings; its live test holds the two together.
+const (
+	headerTaskMarker = "X-Vincent-Task-Id"
+	headerChatMarker = "X-Vincent-Chat-Id"
+)
+
+// issueActor is who a request writes as: an MCP tool call is an agent, and
+// so is a request carrying a step's or a chat agent's marker header; every
+// other API call is a human. A header never makes a caller human — its
+// absence does, and ViaTool wins whatever the headers say. It is
+// best-effort, not a privilege boundary (spec §16): a full-auto agent can
+// unset its environment, and the marker exists so the honest path through
+// `vincent issue close` is refused the way MCP's is.
+func issueActor(r *http.Request) issuestate.Actor {
+	if mcp.ViaTool(r.Context()) || r.Header.Get(headerTaskMarker) != "" || r.Header.Get(headerChatMarker) != "" {
 		return issuestate.Agent
 	}
 	return issuestate.Human
@@ -226,6 +299,8 @@ func (s *Server) writeIssueError(w http.ResponseWriter, r *http.Request, id int6
 		writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
 	case errors.Is(err, issues.ErrMirrored):
 		writeConflict(w, err.Error(), map[string]string{"reason": issueReasonMirrored})
+	case errors.Is(err, issues.ErrForgeWriteNeedsHuman):
+		writeConflict(w, err.Error(), map[string]string{"reason": issueReasonForgeWrite})
 	case errors.Is(err, store.ErrInvalidIssueAction):
 		state := ""
 		if cur, gerr := s.deps.Store.GetIssue(r.Context(), id); gerr == nil {
@@ -406,7 +481,7 @@ func (s *Server) handleIssueCreate(w http.ResponseWriter, r *http.Request) {
 			Method: r.Method, Path: idempotencyIssueRoute, Key: idemKey, RequestSHA: idemSHA,
 		}
 	}
-	iss, err := issues.New(s.deps.Store).Create(ctx, issueActor(ctx), in)
+	iss, err := issues.New(s.deps.Store).Create(ctx, issueActor(r), in)
 	if errors.Is(err, store.ErrIdempotencyKeyExists) {
 		// The concurrent duplicate, as in handleTaskCreate: the winner's
 		// issue is the answer.
@@ -517,7 +592,7 @@ func (s *Server) handleIssuePatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	iss, err := issues.New(s.deps.Store).Update(ctx, issueActor(ctx), id, *req.Version, store.IssuePatch{
+	iss, err := issues.New(s.deps.Store).Update(ctx, issueActor(r), id, *req.Version, store.IssuePatch{
 		Title:        req.Title,
 		Body:         req.Body,
 		Kind:         req.Kind,
@@ -551,7 +626,7 @@ func (s *Server) handleIssueClose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	iss, err := issues.New(s.deps.Store).Close(ctx, issueActor(ctx), id, req.Reason, req.DuplicateOf)
+	iss, err := issues.New(s.deps.Store).Close(ctx, issueActor(r), id, req.Reason, req.DuplicateOf)
 	if err != nil {
 		s.writeIssueError(w, r, id, "close issue", err)
 		return
@@ -571,7 +646,7 @@ func (s *Server) handleIssueReopen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	iss, err := issues.New(s.deps.Store).Reopen(ctx, issueActor(ctx), id)
+	iss, err := issues.New(s.deps.Store).Reopen(ctx, issueActor(r), id)
 	if err != nil {
 		s.writeIssueError(w, r, id, "reopen issue", err)
 		return
@@ -590,7 +665,7 @@ func (s *Server) handleIssueDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	if err := issues.New(s.deps.Store).Delete(ctx, issueActor(ctx), id); err != nil {
+	if err := issues.New(s.deps.Store).Delete(ctx, issueActor(r), id); err != nil {
 		s.writeIssueError(w, r, id, "delete issue", err)
 		return
 	}
