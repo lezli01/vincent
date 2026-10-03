@@ -181,6 +181,41 @@ func TestRequestIssueSync(t *testing.T) {
 	}
 }
 
+// TestPutIssueSyncStateKeepsALaterRequest is the regression test for an
+// attempt's write erasing a "sync now" recorded while the attempt ran: the
+// importer read the row, the request landed, and the attempt's write of
+// requested_at = nil dropped it, so the wake found nothing to serve.
+func TestPutIssueSyncStateKeepsALaterRequest(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	attempt := time.Now().Add(-time.Minute).UTC()
+	st := IssueSyncState{ProjectID: p.ID, Provider: "github", OK: true, LastAttemptAt: &attempt}
+	if err := s.RequestIssueSync(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutIssueSyncState(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetIssueSyncState(ctx, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RequestedAt == nil {
+		t.Fatalf("a request made during the attempt was cleared: %+v", got)
+	}
+
+	// An attempt that started after the request serves it, and clears it.
+	later := time.Now().Add(time.Minute).UTC()
+	st.LastAttemptAt = &later
+	if err := s.PutIssueSyncState(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetIssueSyncState(ctx, p.ID); got.RequestedAt != nil {
+		t.Errorf("a served request survived: %+v", got)
+	}
+}
+
 // TestRefreshKeepsLocalKindAndPriority is the regression test for a refresh
 // overwriting kind: kind and priority are vincent's (task 130.8).
 func TestRefreshKeepsLocalKindAndPriority(t *testing.T) {

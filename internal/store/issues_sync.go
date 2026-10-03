@@ -116,6 +116,9 @@ func (s *Store) ListIssueSyncStates(ctx context.Context) (out []IssueSyncState, 
 // with no row counts as ok, so a first failing write announces and a first
 // ok write does not. Every attempt rewrites the row; only a transition is
 // news, so a sync failing on each tick writes one event, not one per tick.
+// A requested_at stored later than st.LastAttemptAt survives the write: it
+// is a "sync now" that arrived while the attempt was running, after the
+// caller read the row, and clearing it would drop the request on the floor.
 // ErrNotFound for an unknown project.
 func (s *Store) PutIssueSyncState(ctx context.Context, st IssueSyncState) error {
 	return s.writeIssue(ctx, func(tx *sql.Tx) (*Event, error) {
@@ -135,7 +138,9 @@ func (s *Store) PutIssueSyncState(ctx context.Context, st IssueSyncState) error 
 				etag = excluded.etag, since = excluded.since, last_attempt_at = excluded.last_attempt_at,
 				last_ok_at = excluded.last_ok_at, ok = excluded.ok, reason = excluded.reason,
 				import_complete = excluded.import_complete, last_full_scan_at = excluded.last_full_scan_at,
-				rate_limited_until = excluded.rate_limited_until, requested_at = excluded.requested_at`,
+				rate_limited_until = excluded.rate_limited_until,
+				requested_at = CASE WHEN issue_sync_state.requested_at > excluded.last_attempt_at
+					THEN issue_sync_state.requested_at ELSE excluded.requested_at END`,
 			st.ProjectID, st.Provider, st.Repo, formatTimePtr(st.Watermark), st.ETag, formatTimePtr(st.Since),
 			formatTimePtr(st.LastAttemptAt), formatTimePtr(st.LastOKAt), st.OK, st.Reason, st.ImportComplete,
 			formatTimePtr(st.LastFullScanAt), formatTimePtr(st.RateLimitedUntil), formatTimePtr(st.RequestedAt),
