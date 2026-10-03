@@ -2449,6 +2449,11 @@ on stderr, then `FILE: invalid (N error(s))`. `--json` prints one object, with
   "errors": [ { "path": "source.project", "line": 4, "message": "…" } ] }
 ```
 
+A valid file that uses something deprecated — today, a
+`source.type: github_issues` — also prints `  warning: MESSAGE` on stderr,
+naming its replacement. A warning never changes the verdict, the exit status
+or the `--json` output.
+
 Exit `0` valid, `1` invalid or unreadable, as for
 [`workflow validate`](#vincent-workflow-validate).
 
@@ -2522,7 +2527,9 @@ triggers view, which asks first, or in your editor. Apply never touches
 `triggers.enabled` in `config.yaml`.
 
 Each file is written `0600`, and `wrote <path>` is printed for it. Once every
-file is written, the proposal directory is removed.
+file is written, the proposal directory is removed. A staged file that uses
+something deprecated, such as `source.type: github_issues`, prints
+`  warning: FILE: MESSAGE` on stderr first; a warning refuses nothing.
 
 `removed <dir>` follows. A proposal with an empty manifest and no staged file
 installs nothing and is removed the same way: that is `update-triggers` finding

@@ -1,6 +1,6 @@
 # 130 — The issues pillar: vincent-owned issues per project
 
-**Status:** 🔄 in progress (8/18)
+**Status:** 🔄 in progress (9/18)
 
 Issue [#659](https://github.com/lezli01/vincent/issues/659), part of
 [#658](https://github.com/lezli01/vincent/issues/658). Spec §3 (rows 11, 26
@@ -544,6 +544,51 @@ the keys.
    issue says it never deletes on GitHub and that the tombstone keeps sync
    from importing it again.
 
+### 20. 130.15: the `type: issues` trigger source (2026-10-03)
+
+Settled with the author while scoping #674. Spec §3 row 33, §12.3 and §13.3
+record the result.
+
+1. **The actor is `by: human|agent|sync`**, the actor the store already writes
+   on every `issue.*` event — not an `origin: local|sync`. Agent writes are
+   where echo loops come from, and `match: {by: human}` is how a trigger drops
+   its own. `human` and `agent` changes are trusted; a `sync` change follows
+   `github_issues`' table (task 096 decision 31F): `labeled`/`unlabeled`
+   trusted, `opened`/`closed`/`reopened` needing `allowed_actors` against the
+   issue's author. The load check refuses an `issues` trigger that can match
+   an untrusted event from sync without the list, unless its `match.by`
+   leaves `sync` out; at judge time the list applies to `sync` events only,
+   so a local person's `opened` is never refused.
+2. **The delta rides the events, not a per-trigger snapshot.**
+   `issue.labels_changed` gains `labels_added`/`labels_removed`; an import
+   refresh's `issue.updated` gains them when labels moved, and `from`/`to`
+   (with `reason` on a close) when the state did. Ids, names and states only.
+   The source is a pure mapper whose only state is an event-id cursor.
+3. **The mapping** is github_issues' vocabulary minus `assigned`:
+   `issue.created` → `opened`; a state change → `closed`/`reopened`; labels
+   added → one `labeled`, removed → one `unlabeled`. Edits, comments,
+   deletes and `issue.sync_changed` fire nothing.
+4. **No `assigned`.** A vincent issue has no assignee; `match.action:
+   assigned` on `type: issues` is a load error.
+5. **`action.github_issue` is still removed in #670**, as decision 7
+   settled — the issue body's "keeps working (#670)" was wrong. Instead
+   `github_issues` events carry `.Event.IssueID` (and `issue_id`), the
+   vincent issue the project imported that GitHub issue as through a live
+   `issue_remotes` link, empty otherwise, so `issue: '{{ .Event.IssueID }}'`
+   is a migration path that survives #670. Until then `issue` with
+   `github_issue` or `github_pull` is a load error.
+6. **`github_issues` stays and keeps firing.** `vincent trigger apply` (and
+   `validate`) print a non-fatal deprecation warning; no file is disarmed.
+   Removing it is a later breaking change.
+7. **Delivery is at-least-once from the events table.** The cursor is the last
+   handled event id; the manager wakes on the post-commit broker and reads
+   `issue.*` events after it, scoped to `source.project`. Arming seeds at the
+   newest event and fires nothing; disarming drops the cursor. The event id is
+   `issue:{issue_id}:{action}:{event_id}`. A pass judges at most 20 events
+   (task 096 decision 13), but unlike a command source's catch-up the rest are
+   not dropped: the cursor stops at the last event handled and the next pass
+   carries on.
+
 ## Open questions
 
 Each has a proposed default, which stands unless the author answers otherwise
@@ -638,9 +683,9 @@ its own pull request.
 - [ ] **130.14** ([#673](https://github.com/lezli01/vincent/issues/673))
   `VINCENT_ISSUE_FILE`, and the repo's resolve workflows migrated onto it.
   Depends: 130.7, 130.6, 130.8.
-- [ ] **130.15** ([#674](https://github.com/lezli01/vincent/issues/674)) A
+- [x] **130.15** ([#674](https://github.com/lezli01/vincent/issues/674)) A
   `type: issues` trigger source, `issue:` on `create_task`, the trigger skill.
-  Depends: 130.3, 130.7.
+  Depends: 130.3, 130.7. ✓ 2026-10-03 (decision 20)
 - [ ] **130.16** ([#675](https://github.com/lezli01/vincent/issues/675)) The
   local discussion thread and the read-only GitHub comment mirror. Depends:
   130.3, 130.8.

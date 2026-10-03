@@ -122,6 +122,26 @@ list with the user-facing context a commit subject cannot carry.
   `POST /v1/projects/{id}/issues/sync` and `vincent issue sync --project P`
   ask for a sync now. The database migrates on start (migration 0038).
   ([#667](https://github.com/lezli01/vincent/issues/667))
+- **Triggers on a project's own issues.** A new `type: issues` trigger source
+  fires on `opened`, `closed`, `reopened`, `labeled` and `unlabeled` for local
+  issues and for GitHub issues the project imports, on any project, with or
+  without a GitHub remote. Each event says who made the change — `by: human`,
+  `agent` or `sync` — so `match: {by: human}` keeps a trigger from re-firing on
+  its own agent's changes, and a change made while the daemon was down is
+  still delivered after it restarts. `create_task` takes `issue:`, which
+  creates the task from that vincent issue. `issue.labels_changed` now carries
+  `labels_added` and `labels_removed`, and an import refresh's `issue.updated`
+  carries the labels and state it moved.
+  ([#674](https://github.com/lezli01/vincent/issues/674))
+
+### Deprecated
+
+- **`type: github_issues` triggers.** Use `type: issues` on a project that
+  imports its GitHub issues. Existing `github_issues` triggers keep firing;
+  `vincent trigger validate` and `vincent trigger apply` print a warning. Their
+  events now carry `IssueID`, the imported vincent issue's id, so
+  `issue: '{{ .Event.IssueID }}'` links the task.
+  ([#674](https://github.com/lezli01/vincent/issues/674))
 
 ## [0.11.0](https://github.com/lezli01/vincent/compare/v0.10.1...v0.11.0) (2026-10-01)
 

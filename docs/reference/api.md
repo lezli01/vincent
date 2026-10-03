@@ -1490,10 +1490,12 @@ when given, is the file stem the document's own `id` must match.
 `{ top_level[], sources[], actions[], limits[], signature[] }`. A field row is
 `{ name, control, values[]?, required?, default?, help?, dangerous[]? }`, and
 a variant is `{ type, fields[], help?, events[]?, trusted[]? }`. The source
-types are `command`, `github_issues`, `github_prs`, `http` and `schedule`. The action types
-are `create_task` and the three reactions, `follow_up`, `retry` and `cancel`.
-On a GitHub source, `events[]` names the events it emits, and `trusted[]` the
-ones a trigger may match without naming `allowed_actors`. `control` adds
+types are `command`, `github_issues` (deprecated), `github_prs`, `issues`, `http` and `schedule`. The action types
+are `create_task` and the three reactions, `follow_up`, `retry` and `cancel`;
+`create_task` takes `issue`, a template rendering the `issue_id` it replays.
+On a GitHub or `issues` source, `events[]` names the events it emits, and `trusted[]` the
+ones a trigger may match without naming `allowed_actors` (on `issues`, the ones
+trusted even when they arrive by `sync`). `control` adds
 `source`, `action`, `limits`, `signature`, `match`, `project` and `number` to
 the workflow schema's vocabulary. `dangerous[]` lists `{ value, warning }`
 pairs a client confirms before committing — `enabled: true`,
@@ -3261,8 +3263,13 @@ they need.
   and triggers no notification.
 - The `issue.*` events carry the issue's `id` and `by` (`human`, `agent` or
   `sync`) beside what moved: `changed` field names on `issue.updated`,
-  `{ from, to, reason }` on `issue.state_changed`, `labels` on
-  `issue.labels_changed`, `comment_id` on `issue.comment_added`. None carries a
+  `{ from, to, reason }` on `issue.state_changed`, `labels` (the whole set)
+  with `labels_added` and `labels_removed` on `issue.labels_changed`,
+  `comment_id` on `issue.comment_added`. A sync refresh's `issue.updated` adds
+  `labels_added` and `labels_removed` when `changed` holds `labels`, and
+  `from`, `to` and — on a close — `reason` when the state moved; these deltas
+  are what an [`issues` trigger](../guides/triggers.md#issues-watch-the-projects-issues)
+  reads. None carries a
   title, body or comment text, and none reaches a per-task stream.
   `issue.state_changed` adds `duplicate_of` when a duplicate close names one.
   Follow one project's issues with
