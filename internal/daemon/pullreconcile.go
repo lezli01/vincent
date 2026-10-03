@@ -43,6 +43,9 @@ type PullReconciler struct {
 	// triggers is judged on the same tick (task 096.3, decision 31D); nil is
 	// a reconciler with no GitHub triggers to feed.
 	triggers *trigger.Manager
+	// outbox is kicked at the end of every tick (task 130.10); nil is a
+	// reconciler with no write-back drain to wake.
+	outbox *IssueOutbox
 	// now is the clock, seamed for tests.
 	now func() time.Time
 	// wake is a "sync now" (store.RequestIssueSync): one slot, so requests
@@ -53,6 +56,12 @@ type PullReconciler struct {
 // WithTriggers makes the tick also judge GitHub triggers.
 func (r *PullReconciler) WithTriggers(m *trigger.Manager) *PullReconciler {
 	r.triggers = m
+	return r
+}
+
+// WithOutbox makes every tick wake the issue state write-back drain.
+func (r *PullReconciler) WithOutbox(o *IssueOutbox) *PullReconciler {
+	r.outbox = o
 	return r
 }
 
@@ -152,6 +161,9 @@ func (r *PullReconciler) SyncRequested(ctx context.Context) {
 // pass without a timer, which is also what keeps the "no call at all" property
 // assertable on this path.
 func (r *PullReconciler) Tick(ctx context.Context) {
+	if r.outbox != nil {
+		defer r.outbox.Kick()
+	}
 	// The gate first, and it stops at the first "no" — exactly as the API's
 	// does. A disabled integration makes no call, and neither does a project
 	// whose origin is not a github.com remote.

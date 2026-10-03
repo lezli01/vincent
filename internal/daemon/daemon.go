@@ -528,9 +528,21 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	// refreshes each GitHub-based project's issues (issuesync.go) — an idle
 	// repository costs one conditional request a tick, answered 304 — and a
 	// "sync now" recorded through the store wakes it between ticks.
-	reconciler := NewPullReconciler(st, currentConfig, git, githubClient, logger).WithTriggers(triggers)
-	st.OnIssueSyncRequested(reconciler.RequestSync)
+	//
+	// Since task 130.10 the issue state write-back drain runs beside it: a
+	// human's close or reopen of an imported issue enqueues a row in the
+	// transaction that makes it, and the drain sends it — woken by the
+	// enqueue, by every tick, and by a "sync now".
+	outbox := NewIssueOutbox(st, currentConfig, githubClient, logger)
+	reconciler := NewPullReconciler(st, currentConfig, git, githubClient, logger).
+		WithTriggers(triggers).WithOutbox(outbox)
+	st.OnIssueSyncRequested(func(projectID int64) {
+		reconciler.RequestSync(projectID)
+		outbox.Kick()
+	})
+	st.OnIssueOutboxEnqueued(outbox.Kick)
 	go reconciler.Run(ctx)
+	go outbox.Run(ctx)
 	// The release check (task 055, §12.3), the same shape again: one
 	// goroutine, config per tick, quiet failure. It is the daemon's first
 	// standing outbound call that fires for **every** install rather than
