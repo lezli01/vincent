@@ -3,8 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -1035,24 +1033,14 @@ func (n *newTask) updateConfirm(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 // editDescription opens $EDITOR on the draft description, seeded with
 // whatever is already typed.
 func (n *newTask) editDescription() tea.Cmd {
-	path, err := writeEditorFile("new-task-description", ".md", n.desc.Value())
+	cmd, err := editTextCmd(n.exec, "new-task-description", ".md", n.desc.Value(), func(edited string, err error) tea.Msg {
+		return ntDescriptionMsg{text: edited, err: err}
+	})
 	if err != nil {
 		n.err = "description: " + errString(err)
 		return nil
 	}
-	argv := append(editorCommand(), path)
-	cmd := exec.Command(argv[0], argv[1:]...) //nolint:gosec // the editor is the user's own choice
-	return n.exec(cmd, func(runErr error) tea.Msg {
-		defer func() { _ = os.Remove(path) }()
-		if runErr != nil {
-			return ntDescriptionMsg{err: runErr}
-		}
-		edited, readErr := os.ReadFile(path) //nolint:gosec // path is this process's temp file
-		if readErr != nil {
-			return ntDescriptionMsg{err: readErr}
-		}
-		return ntDescriptionMsg{text: string(edited)}
-	})
+	return cmd
 }
 
 func (n *newTask) applyDescription(msg ntDescriptionMsg) {
