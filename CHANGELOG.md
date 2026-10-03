@@ -27,7 +27,13 @@ list with the user-facing context a commit subject cannot carry.
   `issue_reopen` of an imported issue, and a `vincent` command run by a
   workflow step or a chat agent, is refused `409 forge_write_needs_human`.
   ([#669](https://github.com/lezli01/vincent/issues/669))
-
+- **`vincent issue` manages issues from a shell.** `ls` (across every project,
+  or one with `--project`, filtered by state, label, kind, text and source),
+  `show`, `add` (`--body-file -` reads stdin; `--idempotency-key` makes a
+  re-run safe), `edit` (labels by `--add-label`/`--remove-label` delta, and a
+  stale read is refused rather than overwriting someone else's change),
+  `close` with a reason or `--duplicate-of`, `reopen`, `delete --force` (alias
+  `rm`) and `labels` join `sync`. Every leaf takes `--json`.
 - **Create a task from a vincent issue.** `POST /v1/tasks` takes `issue_id`,
   and `vincent task add --issue ID` sends it: the task is linked to the issue,
   snapshots it, and is prefilled from it — title, description and declared

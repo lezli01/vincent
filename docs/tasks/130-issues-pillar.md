@@ -492,6 +492,26 @@ Settled with the author on #669; closes open question 6.
    undone while it was in flight (close then reopen) that turns out to have
    landed enqueues the write back to the local state.
 
+### 18. 130.6: the `vincent issue` CLI tree (2026-10-03)
+
+Settled with the author while scoping #665; spec §12.1's `vincent issue` row
+records them.
+
+1. **`edit` labels are deltas only.** `--add-label` and `--remove-label` map
+   to `add_labels` and `remove_labels`; no flag sends the full `labels`
+   replacement, so two editors cannot clobber each other's set. `--label`
+   means one thing: `add`'s initial labels.
+2. **`delete <id>...` (alias `rm`) requires `--force`**, as `project rm` does.
+   An issue can be deleted in any state (decision 6), so no daemon refusal is
+   the confirmation; without `--force` it refuses locally and never prompts.
+3. **`add --idempotency-key K` is opt-in.** The key is sent only when given;
+   the CLI never generates one, because it never retries (spec §12.1).
+4. **`ls --project` is optional.** Without it the list spans every project and
+   the table gains a PROJECT column.
+
+The body flag is `--body`/`--body-file`, matching the API's `body` field that
+130.3 shipped, not the issue's suggested `--description`.
+
 ## Open questions
 
 Each has a proposed default, which stands unless the author answers otherwise
@@ -548,10 +568,10 @@ its own pull request.
 - [x] **130.5** ([#664](https://github.com/lezli01/vincent/issues/664)) Durable
   issue listing (`node_id`, pagination, conditional requests, gone/moved) and
   issue state writes in `internal/github`. Depends: 130.2. ✓ 2026-10-02
-- [ ] **130.6** ([#665](https://github.com/lezli01/vincent/issues/665)) The
+- [x] **130.6** ([#665](https://github.com/lezli01/vincent/issues/665)) The
   `vincent issue …` CLI tree; drops `ListIssues`/`GetIssue` from
   `tuiOnlyClientCalls` and their row from `docs/reference/cli.md`'s "What only
-  the TUI does", which 130.9 added. Depends: 130.3.
+  the TUI does", which 130.9 added. Depends: 130.3. ✓ 2026-10-03 (decision 18)
 - [x] **130.7** ([#666](https://github.com/lezli01/vincent/issues/666))
   `issue_id` on task create, the prefill preview, `?issue_id=` filter, the task
   DTO link, `Closes #N`, `vincent task add --issue`. Depends: 130.3, 130.4.
