@@ -38,7 +38,7 @@ every human action (`task_cancel`, `task_pause`, `task_approve`, `task_answer`,
 the GitHub reads, the [trigger](triggers.md) reads, `trigger_validate` and both
 dry runs, the [issue](../reference/api.md#issues) routes (`issue_list`,
 `issue_create`, `issue_get`, `issue_patch`, `issue_close`, `issue_reopen`,
-`project_issue_labels`), the issue import status `project_issue_sync_status`,
+`issue_comments`, `issue_comment`, `project_issue_labels`), the issue import status `project_issue_sync_status`,
 and the read-only `health`, `info`, `config_get`, `agent_list`,
 `doctor`, `orphan_list`.
 
@@ -82,6 +82,9 @@ GitHub they are refused with `forge_write_needs_human`: that issue's state is
 written back to GitHub, and only a person does that. The same refusal meets a
 `vincent issue` command a workflow step or a chat agent runs, which the CLI
 marks with a header.
+`issue_comment` adds a comment as your task (`task N`), or `agent` outside a
+step; on an issue whose GitHub remote is live it is refused with
+`issue_mirrored`, because that thread is GitHub's and nothing is posted there.
 The [task import](../reference/api.md#importing-a-task) that undoes one sits
 beside them: it reads a file the caller names and writes rows no agent should
 be able to create.

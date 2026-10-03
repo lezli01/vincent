@@ -1700,12 +1700,17 @@ where it came from — the URL and the state GitHub last reported.
 | `n` | File a new issue in this issue's project |
 | `a` | Create a task from this issue — the form is prefilled from it and editable first |
 | `i` | Edit the issue in the issue form |
+| `W` | Write a comment in `$EDITOR` — saved empty, nothing is added. Not offered on an issue mirrored from GitHub, whose thread is GitHub's |
 | `X` | Close or reopen the issue — only what vincent offers for it |
 | `D` | Delete the issue permanently (asks first) |
 
 `ctrl+o` is the same rendered/raw switch the Output tab and the chat use, so
 flipping it here flips it there too. `esc` goes back to the list, on the issue
 you opened — or to the task workspace, when you came from one.
+
+The discussion thread sits under the description, oldest first, each comment
+under its author and time and rendered like the description; a comment
+mirrored from GitHub is marked as GitHub's. It refreshes as comments arrive.
 
 #### Starting a task — `a`
 
