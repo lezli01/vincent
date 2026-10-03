@@ -1,7 +1,8 @@
 # github-iterate-work — put at most N ready GitHub issues on the board
 # through `github-resolve-issue-multiple`, wait for every task it created to
 # deliver its branch, then stack the delivered branches into one merge train,
-# open one pull request for it and drive that pull request to merged.
+# open one pull request for it, review it, resolve every finding the review
+# raised, and drive that pull request to merged.
 #
 #     vincent task add --project N --workflow github-iterate-work --title "iterate"
 #
@@ -59,6 +60,11 @@
 #   train-final   refuse a train whose local legs are still red
 #   checks-required  read the base's required checks, before anything is pushed
 #   train-pr      push the train and open one pull request for it
+#   review        an agent reviews the whole train and writes its findings
+#   review-report number them by priority, print them, post them on the PR
+#   review-resolve an agent fixes, dismisses or defers each one, asking you
+#                 when it is your call; the PR's comments track every one
+#   review-final  refuse to merge while a finding is open
 #   merge-attempt rebase → resolve? → repush → wait-checks → merge → probe → repair?
 #   merged        MERGED at the commit this task pushed, or block; clean up
 #
@@ -67,7 +73,8 @@
 # The resolve workflows no longer stop at a diff gate or a merge gate, so there
 # is nothing on the children to click. `autopilot` is where a person decides,
 # once, that whatever the tasks deliver is pushed as one branch, opened as one
-# public pull request and merged — and nobody reads a diff in between.
+# public pull request and merged — with an agent's review of the whole train,
+# and its findings resolved, in place of a person reading the diff.
 #
 # It still does **not** click:
 #
@@ -77,6 +84,9 @@
 #     clicks, and the watch names it;
 #   - a question an agent asks its author (`awaiting_input`), or a task that
 #     blocked. Both are reported, neither is answered.
+#
+# And there is one place after `autopilot` where it stops for you on purpose:
+# `review-resolve` asks when a review finding is yours to decide (below).
 #
 # ## Why one merge train and not N pull requests
 #
@@ -107,6 +117,44 @@
 # when the watch gave up — is left out of the train and named. The train lands
 # what was delivered; it does not wait on what was not, and it fails only when
 # nothing was delivered at all.
+#
+# ## The review
+#
+# Every branch on the train was verified, and the train was built and tested
+# as a whole — but nobody has *read* it. Between opening the pull request and
+# merging it, the train is reviewed once, as a whole, and nothing merges while
+# a finding is open.
+#
+#   review          an agent reads `origin/<base>...HEAD` against CLAUDE.md,
+#                   the spec and each task's brief, and writes
+#                   `review/findings.raw.json`. It changes nothing; its check
+#                   proves HEAD is still the commit `train-pr` pushed
+#   review-report   sorts the findings by priority (P0 blocker, P1 high, P2
+#                   medium, P3 low), numbers them F1..Fn, prints the report
+#                   and posts it on the pull request
+#   review-resolve  an agent settles each finding as fixed (a commit),
+#                   dismissed or deferred, through `review/resolve.sh`, which
+#                   records it and updates the pull request at once. It runs
+#                   under `on_input: require`: it asks you when the fix is a
+#                   product decision, reaches past a task's agreed scope, or
+#                   would dismiss or defer a P0 or P1 — `resolve.sh` refuses
+#                   the last without your say-so on record
+#   review-final    syncs the pull request one last time, then refuses to go
+#                   on unless every finding is resolved and every recorded fix
+#                   is still on the train
+#
+# The pull request's review comments are a rendering of two files,
+# `findings.json` and `resolutions.json`, by `review/sync.sh`: a summary
+# comment with a tracking table, one comment per finding, edited when it is
+# resolved, and one resolution comment per finding, because an edit notifies
+# nobody. Each comment opens with a hidden `vincent-review:<task>:<key>`
+# marker, so every sync edits what it posted before rather than adding to it,
+# and a retry converges on the same set of comments.
+#
+# The fixes are committed on the train and not pushed: the merge tail's first
+# pass rebases and force-pushes them, and every required check runs on them
+# like on anything else. A `fixed` comment names the commit as it was
+# committed; a rebase onto a base that moved meanwhile rewrites that sha.
 #
 # ## The merge tail
 #
@@ -242,9 +290,11 @@
 #     select              2   from the included github-resolve-issue-multiple
 #     stack-resolve       2   guarded to a stack that stopped on a conflict
 #     train-verify        2   3 loop passes, `if: not .Loop.IsLast`
+#     review              2   one session and one retry
+#     review-resolve      2   guarded to a review with findings
 #     merge-attempt       5   3 x resolve, plus 2 x repair-checks
 #                        --
-#                        11
+#                        15
 #
 # on top of whatever the tasks it creates spend: `emit` prints that ceiling
 # before the plan gate — 16 agent sessions per `github-resolve-issue` task, 36
@@ -258,17 +308,19 @@ description: >-
   Put at most N ready GitHub issues on the board through
   github-resolve-issue-multiple, wait for every task to deliver its branch,
   then rebase the delivered branches into one merge train, resolve their
-  conflicts, open one pull request for it and merge it, repairing and
-  retrying when the merge goes red.
+  conflicts, open one pull request for it, review it and resolve every
+  finding on the pull request, and merge it, repairing and retrying when the
+  merge goes red.
 platforms: [posix]
 fields:
   - name: max_tasks
     label: Most tasks to create
     description: >-
       The most tasks this run may create, however many issues are ready — and
-      so the most issues its one merge-train pull request will land without
-      anyone reading a diff. Every task created can spend up to 16 agent
-      sessions (36 on the dag workflow), and the train itself up to 9 more.
+      so the most issues its one merge-train pull request will land with an
+      agent's review in place of yours. Every task created can spend up to 16
+      agent sessions (36 on the dag workflow), and the train itself up to 15
+      more.
       This task watches them all, holding one concurrency slot of its own, so
       leave room for it: with a cap of 6, 5 is the most that runs without
       queueing.
@@ -280,7 +332,9 @@ defaults:
   timeout: 15m
   max_retries: 0
   # Nobody is expected at an agent's prompt here: `autopilot` is where a
-  # person weighed in, and the train runs unattended after it.
+  # person weighed in, and the train runs unattended after it — except for
+  # `review-resolve`, which overrides this to ask about the findings that are
+  # a person's call.
   on_input: deny
 steps:
   - id: headroom
@@ -436,7 +490,8 @@ steps:
     name: Approve landing what these tasks deliver
     type: manual
     instructions: |
-      Land what these task(s) deliver, without stopping for you again?
+      Land what these task(s) deliver, stopping for you again only to decide
+      a review finding?
 
       {{ (index .Steps "track").Result }}
 
@@ -451,8 +506,14 @@ steps:
         with up to two agent repair passes if it is red;
       - **pushes** the train to `origin` and opens **one public pull
         request** against {{ .Project.DefaultBranch }}. Its body is every
-        task's own drafted pull request body, `Closes #N` lines included —
-        nobody will have read the diff;
+        task's own drafted pull request body, `Closes #N` lines included;
+      - **reviews** the whole train with an agent and posts its findings on
+        the pull request by priority — a summary table and one comment per
+        finding. A second agent then fixes, dismisses or defers each one,
+        and every resolution is tracked on the pull request. It **asks
+        you** when a finding is a product decision, reaches past a task's
+        scope, or is a P0 or P1 it would not fix; nothing merges while a
+        finding is open;
       - **merges** it once every required check passes on the commit it
         pushed. If a check goes red, an agent commits a fix and the attempt
         runs again — rebase, force-push, another round of CI — up to three
@@ -1153,6 +1214,543 @@ steps:
     max_retries: 1
     retry_backoff: 20s
     run: gh pr view "$(cat "$(git rev-parse --git-path vincent-iterate)/url.txt")"
+
+  - id: review
+    name: Review the whole train
+    type: agent
+    # A reviewer, not an author: it changes nothing, and the check proves it —
+    # the worktree is clean and HEAD is still the commit `train-pr` pushed. What
+    # it produces is one file, `findings.raw.json`, which `review-report` turns
+    # into the canonical list, the printed report and the pull request's
+    # comments. Keeping the agent away from GitHub is what makes those comments
+    # a rendering of one file rather than whatever a session chose to post.
+    timeout: 60m
+    # A second session simply reviews again: nothing it does is visible until
+    # `review-report` reads the file.
+    max_retries: 1
+    prompt: |
+      This task has stacked the branches several tasks delivered into one
+      merge train on {{.Task.BranchName}}, verified it locally, pushed it and
+      opened its pull request:
+
+      {{ (index .Steps "train-pr").Result }}
+
+      Nobody has read this diff. Before anything merges, review the **whole
+      train** — every change between `origin/{{.Task.BaseBranch}}` and HEAD —
+      the way the most careful reviewer of this repository would. You are in
+      the worktree at {{.Worktree.Path}}.
+
+      Say what you are doing as you go:
+
+          vincent status "review: <one short line>"
+
+      Under ten words after the prefix: which part of the train you are
+      reading, then what you found — "review: 2 P1s in internal/store" beats
+      "reviewing".
+
+      The scratch directory is `s=$(git rev-parse --git-path vincent-iterate)`
+      (quote it — the path has spaces). `cat "$s/train.txt"` lists every task
+      on the train and its **delivery record**: `brief.md` says what that
+      change is *for*, `pr.md` what it claims to do. A change that does not do
+      what its own brief and body say is a finding.
+
+      How to review:
+
+      - Read `CLAUDE.md` first. The rules it states — the ownership
+        invariants, cross-platform, the documentation model, spec citations,
+        append-only migrations, the gate-script rules — are review criteria,
+        not background. Where touched code cites a spec section, read it.
+      - Start from `git diff --stat origin/{{.Task.BaseBranch}}...HEAD`, then
+        read every hunk **and the code around it**: the callers of a changed
+        function, the tests that should cover it, the docs that describe it.
+      - Look for: correctness and edge cases; concurrency, crash safety and
+        recovery; Windows, macOS and Linux differences (paths, shells,
+        signals, CRLF); security (injection, secrets, permissions); swallowed
+        or misreported errors; missing or weak tests for risky behavior;
+        documentation and spec text the change made false; and the places
+        where two tasks' changes on the train meet.
+      - **Verify before you report.** Every finding is something you checked
+        — you read the caller, ran the test, reproduced the case. No
+        speculation, nothing the linter already enforces, no preference this
+        repository does not state.
+
+      Give each finding one priority:
+
+      - **P0 blocker** — merging breaks something: a crash, data loss, a
+        security hole, a wrong result on a main path, a platform that will not
+        build or pass.
+      - **P1 high** — a real bug on a less common path, a broken invariant, a
+        documented claim now false, risky behavior with no test.
+      - **P2 medium** — worth fixing before merge: an unhandled error, a
+        confusing interface, a gap in coverage, a missed edge case.
+      - **P3 low** — minor: a misleading comment or name, a small
+        simplification.
+
+      Write the findings to `"$s/review/findings.raw.json"` (create the
+      directory) as a JSON array — `[]` when there is nothing to report:
+
+          [
+            {
+              "priority": "P1",
+              "title": "One line naming the defect",
+              "file": "internal/store/tasks.go",
+              "line": 142,
+              "category": "correctness",
+              "detail": "What is wrong, how you know, and what it breaks.",
+              "suggestion": "How to fix it."
+            }
+          ]
+
+      `file` and `line` point at the code a reader should open (omit `line`,
+      or both, when a finding has no single place). `detail` and `suggestion`
+      are posted on the pull request verbatim, so write them for a person
+      reading GitHub: Markdown, short paragraphs, code in backticks.
+
+      **Change nothing.** No edits, no commits, no push, and do not comment
+      on the pull request: the next step posts the findings, and the one after
+      it resolves them.
+
+      End with a short report: how many findings at each priority, then the
+      most important ones first.
+    # The file parses as the schema the prompt gave, and the reviewer left the
+    # train exactly as `train-pr` pushed it.
+    check: >
+      r="$(git rev-parse --git-path vincent-iterate)/review" &&
+      jq -e 'type == "array" and all(.[]; type == "object"
+      and (.priority | IN("P0", "P1", "P2", "P3"))
+      and ((.title // "") | type == "string" and length > 0)
+      and ((.detail // "") | type == "string" and length > 0))'
+      "$r/findings.raw.json" >/dev/null &&
+      test -z "$(git status --porcelain)" &&
+      test "$(git rev-parse HEAD)" = "$(git rev-parse origin/{{.Task.BranchName}})"
+    check_timeout: 2m
+
+  - id: review-report
+    name: Report the findings on the pull request
+    type: command
+    shell: sh
+    timeout: 10m
+    # The findings are numbered here, not by the agent: sorted by priority —
+    # stably, so a retry numbers them the same way — and given ids F1..Fn that
+    # every later step, comment and commit message uses.
+    #
+    # The pull request's comments are a *rendering* of two files —
+    # `findings.json` and `resolutions.json` — by `sync.sh`, which this step
+    # writes and which `resolve.sh` and `review-final` run again. Each comment
+    # opens with a hidden marker naming this task and the finding, so a sync
+    # edits the comment it posted before rather than adding another: a retry,
+    # a second resolver session and the final sync all converge on the same
+    # set of comments. A body identical to the one last posted is not sent.
+    #
+    # One summary comment carries the tracking table, one comment per finding
+    # carries the finding and is edited as it is resolved, and a resolution
+    # comment is added when it is — an edit notifies nobody, so the resolution
+    # is also a new line in the pull request's timeline.
+    max_retries: 1
+    retry_backoff: 20s
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      s=$(git rev-parse --git-path vincent-iterate)
+      r="$s/review"
+
+      if ! jq -e 'type == "array"' "$r/findings.raw.json" >/dev/null 2>&1; then
+        say "the review left no readable findings file"
+        echo "$r/findings.raw.json is missing or is not a JSON array." >&2
+        exit 1
+      fi
+
+      # Sorted by priority, stable within one, numbered in that order.
+      jq '[to_entries | sort_by(.value.priority, .key) | .[].value] | to_entries | map(.value + {
+            id: "F\(.key + 1)",
+            title: (.value.title | gsub("[\r\n]+"; " ")),
+            file: (.value.file // ""),
+            line: (if (.value.line | type) == "number" and .value.line > 0 then .value.line else null end),
+            category: (.value.category // "general"),
+            suggestion: (.value.suggestion // "")
+          })' "$r/findings.raw.json" > "$r/findings.json"
+      [ -f "$r/resolutions.json" ] || printf '{}\n' > "$r/resolutions.json"
+      # `review`'s check proved HEAD is the commit it read; fixes are counted
+      # from here.
+      git rev-parse HEAD > "$r/reviewed.sha"
+      base=$(git merge-base origin/{{.Task.BaseBranch}} "$(cat "$r/reviewed.sha")")
+      printf '%s\n' "{{.Task.BaseBranch}}@$(printf '%s' "$base" | cut -c1-7)..$(cut -c1-7 "$r/reviewed.sha"), $(git rev-list --count "$base..$(cat "$r/reviewed.sha")") commit(s)" > "$r/range.txt"
+
+      cat > "$r/render.jq" <<'RENDER'
+      # Renders one pull request comment, named by $key: "summary", a finding
+      # id ("F3"), or a finding id with ":resolution".
+      def pri: {"P0": "🔴 P0 · blocker", "P1": "🟠 P1 · high", "P2": "🟡 P2 · medium", "P3": "🔵 P3 · low"}[.];
+      def dot: {"P0": "🔴", "P1": "🟠", "P2": "🟡", "P3": "🔵"}[.];
+      def cell: tostring | gsub("[\r\n]+"; " ") | gsub("\\|"; "\\|");
+      def where: if .file == "" then "—" elif .line then "`\(.file):\(.line)`" else "`\(.file)`" end;
+      def short($x): if $x.status == "fixed" then "✅ Fixed in \($x.commit[0:7])"
+        elif $x.status == "dismissed" then "🚫 Dismissed"
+        else "📌 Deferred" end;
+      # Who made the call. A fix speaks for itself, so an agent's fix says nothing.
+      def who($x): if $x.decided_by == "user" then ["decided with the person running vincent task #\($task)"]
+        elif $x.status == "fixed" then [] else ["decided by the resolving agent"] end;
+      def quote: split("\n") | map("> " + .) | join("\n");
+
+      $f[0] as $F | $r[0] as $R |
+      "<!-- \($tag):\($key) -->\n" +
+      if $key == "summary" then
+        ($F | length) as $n |
+        [$F[] | select($R[.id] == null)] as $open |
+        "## 🔍 Code review of this merge train\n\n" +
+        "vincent task #\($task) reviewed every change on this pull request (\($range)) before merging it. " +
+        "Each finding has its own comment below, and this table tracks it until it is resolved: " +
+        "**nothing merges while a finding is open.**\n\n" +
+        if $n == 0 then
+          "**No findings.** ✨ The review found nothing to fix.\n"
+        else
+          "| | Priority | Finding | Where | Status |\n|:--|:--|:--|:--|:--|\n" +
+          ([$F[] | "| \(.id) | \(.priority | pri) | \(.title | cell) | \(where | cell) | \(if $R[.id] then short($R[.id]) else "⏳ Open" end) |"] | join("\n")) +
+          "\n\n" +
+          if ($open | length) == 0 then
+            "**All \($n) finding(s) resolved.** The fixes ride on the next merge attempt, which rebases, pushes and waits for every required check before merging.\n"
+          else
+            "**\($open | length) of \($n) open** · " +
+            ([("P0", "P1", "P2", "P3") as $p | "\($p | dot) \([$open[] | select(.priority == $p)] | length)"] | join(" · ")) + "\n"
+          end
+        end
+      elif ($key | endswith(":resolution")) then
+        ($key | rtrimstr(":resolution")) as $id |
+        ($F[] | select(.id == $id)) as $x | $R[$id] as $res |
+        "\(short($res) | split(" ")[0]) **\($id) \($res.status)** — \($x.title)\n\n" +
+        (if $res.status == "fixed" then "Fixed in \($res.commit[0:7]): `\($res.subject)`\n\n" else "" end) +
+        ($res.note | quote) + "\n\n" +
+        "_" + ([$x.priority | pri] + who($res) | join(" · ")) + "_\n"
+      else
+        ($F[] | select(.id == $key)) as $x | $R[$key] as $res |
+        "### \($x.id) · \($x.priority | pri) — \($x.title)\n\n" +
+        "**Where:** \($x | where) · **Category:** \($x.category)\n\n" +
+        $x.detail + "\n\n" +
+        (if $x.suggestion != "" then "**Suggested fix:** \($x.suggestion)\n\n" else "" end) +
+        "---\n\n" +
+        if $res == null then
+          "**Status:** ⏳ Open — not resolved yet. This comment is edited when it is.\n"
+        else
+          "**Status:** \(short($res))" +
+          (if $res.status == "fixed" then " — `\($res.subject)`" else "" end) +
+          (who($res) | map(", " + .) | join("")) + ".\n\n" + ($res.note | quote) + "\n"
+        end
+      end
+      RENDER
+
+      cat > "$r/sync.sh" <<'SYNC'
+      #!/bin/sh
+      # Render every review comment from findings.json and resolutions.json and
+      # create or edit it on the pull request. Idempotent: run it as often as
+      # you like; a comment whose body has not changed is not sent again.
+      set -e
+      s=$(git rev-parse --git-path vincent-iterate)
+      r="$s/review"
+      slug=$(cat "$s/slug.txt")
+      tag='vincent-review:{{.Task.ID}}'
+      mkdir -p "$r/render" "$r/posted"
+
+      if [ ! -s "$r/pr-number" ]; then
+        gh pr view "$(cat "$s/url.txt")" --json number --jq .number > "$r/pr-number"
+      fi
+      num=$(cat "$r/pr-number")
+
+      # Every comment this task posted before, by its marker line.
+      gh api --paginate "repos/$slug/issues/$num/comments" > "$r/comments.json"
+      jq -r --arg t "<!-- $tag:" \
+        '.[] | select(.body | startswith($t)) | [(.body | split("\n")[0]), .id] | @tsv' \
+        "$r/comments.json" > "$r/existing.tsv"
+
+      jq -r '.[].id' "$r/findings.json" > "$r/keys.txt"
+      jq -r --slurpfile f "$r/findings.json" \
+        'to_entries[] | select(.key as $k | any($f[0][]; .id == $k)) | "\(.key):resolution"' \
+        "$r/resolutions.json" >> "$r/keys.txt"
+      # The summary goes first so that, on the first sync, it is the first
+      # comment of the review on the pull request.
+      { echo summary; cat "$r/keys.txt"; } > "$r/keys.all"
+
+      sent=0
+      while IFS= read -r key; do
+        [ -n "$key" ] || continue
+        file=$(printf '%s' "$key" | tr ':' '-')
+        jq -r -n \
+          --slurpfile f "$r/findings.json" --slurpfile r "$r/resolutions.json" \
+          --arg key "$key" --arg tag "$tag" --arg task '{{.Task.ID}}' \
+          --arg range "$(cat "$r/range.txt")" \
+          -f "$r/render.jq" > "$r/render/$file.md"
+        if [ -f "$r/posted/$file.md" ] && cmp -s "$r/render/$file.md" "$r/posted/$file.md"; then
+          continue
+        fi
+        id=$(awk -F'\t' -v m="<!-- $tag:$key -->" '$1 == m { print $2; exit }' "$r/existing.tsv")
+        if [ -n "$id" ]; then
+          gh api -X PATCH "repos/$slug/issues/comments/$id" -F "body=@$r/render/$file.md" >/dev/null
+        else
+          gh api "repos/$slug/issues/$num/comments" -F "body=@$r/render/$file.md" >/dev/null
+        fi
+        cp "$r/render/$file.md" "$r/posted/$file.md"
+        sent=$((sent + 1))
+      done < "$r/keys.all"
+
+      open=$(jq --slurpfile res "$r/resolutions.json" '[.[] | select($res[0][.id] == null)] | length' "$r/findings.json")
+      printf '%s\n' "$open" > "$r/open"
+      echo "pull request #$num: $sent comment(s) posted or updated, $open finding(s) open"
+      SYNC
+
+      cat > "$r/resolve.sh" <<'RESOLVE'
+      #!/bin/sh
+      # Record how one review finding was resolved, then update the pull request.
+      #
+      #   sh "$r/resolve.sh" <id> fixed|dismissed|deferred "<note>" [user]
+      #
+      # `fixed` records HEAD as the fix, so commit first. Pass `user` when the
+      # person running the task made the call; a P0 or P1 is only dismissed or
+      # deferred that way.
+      set -e
+      s=$(git rev-parse --git-path vincent-iterate)
+      r="$s/review"
+      id=$1; status=$2; note=$3; by=${4:-agent}
+      usage() {
+        echo 'usage: sh resolve.sh <finding id> fixed|dismissed|deferred "<note>" [user]' >&2
+        exit 2
+      }
+      [ -n "$id" ] && [ -n "$note" ] || usage
+      case "$status" in fixed|dismissed|deferred) ;; *) usage ;; esac
+      case "$by" in agent|user) ;; *) usage ;; esac
+
+      pri=$(jq -r --arg id "$id" '.[] | select(.id == $id) | .priority' "$r/findings.json")
+      if [ -z "$pri" ]; then
+        echo "there is no finding $id in $r/findings.json" >&2
+        exit 2
+      fi
+
+      commit=''; subject=''
+      if [ "$status" = fixed ]; then
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "commit the fix for $id first: the worktree has uncommitted changes" >&2
+          exit 2
+        fi
+        if [ "$(git rev-list --count "$(cat "$r/reviewed.sha")..HEAD")" -eq 0 ]; then
+          echo "nothing has been committed since the review: commit the fix for $id, then record it" >&2
+          exit 2
+        fi
+        commit=$(git rev-parse HEAD)
+        subject=$(git log -1 --format=%s HEAD)
+      elif [ "$by" != user ]; then
+        case "$pri" in
+          P0|P1)
+            echo "$id is $pri: it is only $status on the user's say-so. ask them, put their" >&2
+            echo "answer in the note, and pass 'user' as the fourth argument." >&2
+            exit 2 ;;
+        esac
+      fi
+
+      jq --arg id "$id" --arg st "$status" --arg note "$note" --arg by "$by" \
+        --arg c "$commit" --arg sub "$subject" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        '.[$id] = {status: $st, note: $note, decided_by: $by, commit: $c, subject: $sub, at: $at}' \
+        "$r/resolutions.json" > "$r/resolutions.json.new"
+      mv "$r/resolutions.json.new" "$r/resolutions.json"
+      echo "recorded $id as $status"
+
+      if ! sh "$r/sync.sh"; then
+        echo "$id is recorded, but updating the pull request failed: run sh \"$r/sync.sh\" again" >&2
+        exit 1
+      fi
+      RESOLVE
+
+      say "posting the review on the pull request"
+      sh "$r/sync.sh"
+
+      n=$(jq length "$r/findings.json")
+      jq -r --arg range "$(cat "$r/range.txt")" '
+        def heading: {"P0": "P0 · blocker", "P1": "P1 · high", "P2": "P2 · medium", "P3": "P3 · low"}[.];
+        "code review of \($range): \(length) finding(s)",
+        (group_by(.priority)[] |
+          "", "== \(.[0].priority | heading) (\(length)) ==",
+          (.[] |
+            "",
+            "\(.id)  \(.title)",
+            "    where:    \(if .file == "" then "-" elif .line then "\(.file):\(.line)" else .file end)",
+            "    category: \(.category)",
+            (.detail | split("\n")[] | "    " + .),
+            (if .suggestion != "" then (.suggestion | split("\n")[] | "    fix:  " + .) else empty end)))' \
+        "$r/findings.json"
+      echo
+      echo "posted on $(cat "$s/url.txt")"
+
+      if [ "$n" -eq 0 ]; then
+        say "review: no findings"
+      else
+        say "review: $n finding(s) — $(jq -r 'group_by(.priority) | map("\(length) \(.[0].priority)") | join(", ")' "$r/findings.json")"
+      fi
+
+  - id: has-review-findings
+    name: Is anything left to resolve
+    type: command
+    shell: sh
+    timeout: 1m
+    allow_failure: true
+    run: |
+      [ "$(cat "$(git rev-parse --git-path vincent-iterate)/review/open")" -gt 0 ]
+
+  - id: review-resolve
+    name: Resolve the review findings
+    type: agent
+    if: '{{ eq (index .Steps "has-review-findings").ExitCode 0 }}'
+    # The one step in this workflow that stops for a person. A finding whose
+    # right answer is a product decision — or a P0/P1 the agent believes is not
+    # a defect — is a question, not a guess, so this step `require`s an agent
+    # that can ask and continue the same session (§7.4). That is also why it is
+    # a top-level step: `require` is refused inside a loop.
+    on_input: require
+    # Time spent waiting on an answer pauses this clock (§7.4); three hours is
+    # the work alone.
+    timeout: 3h
+    # `resolutions.json` is the progress: a second session starts from what
+    # the first recorded and the prompt tells it to read that first.
+    max_retries: 1
+    prompt: |
+      Before this merge train on {{.Task.BranchName}} merges, a review read
+      all of it. Its findings, by priority:
+
+      {{ (index .Steps "review-report").Result }}
+
+      Every finding is on the pull request as a comment of its own, under a
+      summary table, and **nothing merges until each one is resolved**. Your
+      job is to resolve them all. You are in the worktree at
+      {{.Worktree.Path}}, on {{.Task.BranchName}}.
+
+      Say what you are doing as you go:
+
+          vincent status "F<n>: <one short line>"
+
+      The review directory is `r="$(git rev-parse --git-path vincent-iterate)/review"`
+      (quote it — the path has spaces):
+
+      - `findings.json` is the canonical list, ids `F1`…, highest priority
+        first;
+      - `resolutions.json` is what has been resolved. **Read it first**: an
+        earlier session may already have resolved some, and those are done;
+      - `"$(dirname "$r")/train.txt"` lists the tasks on the train and their
+        delivery records — `brief.md` is the scope each change agreed to.
+
+      Take the open findings in order, P0 first, and settle each one as
+      exactly one of:
+
+      - **fixed** — it is real. Fix the cause, add or adjust a test that
+        would have caught it, and commit with a Conventional Commits message
+        that names the finding: `fix(store): close the rows on the error path
+        (review F2)`. Then record it — the commit you just made is the fix:
+
+            sh "$r/resolve.sh" F2 fixed "<what you changed and why that fixes it>"
+
+      - **dismissed** — on a close read it is not a defect: the reviewer
+        misread the code, or the behavior is intended and documented. Say
+        why, with the evidence a reader can check:
+
+            sh "$r/resolve.sh" F4 dismissed "<why this is not a defect>"
+
+      - **deferred** — real, but outside what this train should change. Say
+        where it will be handled:
+
+            sh "$r/resolve.sh" F5 deferred "<why not here, and where instead>"
+
+      Each record updates the pull request: the finding's comment shows its
+      resolution, a resolution comment is added, and the summary table
+      moves. If `resolve.sh` says the update failed, the record is kept — run
+      `sh "$r/sync.sh"` again.
+
+      **Ask the user** — one finding at a time, quoting it, with the options
+      and your recommendation — when:
+
+      - you would dismiss or defer a **P0 or P1**. Always ask: `resolve.sh`
+        refuses it unless you pass `user` as a fourth argument, which records
+        that the user decided. Put their answer in the note;
+      - the right fix is a product or design decision — two reasonable
+        behaviors, a documented decision that would have to change, a
+        binding phase decision (`CLAUDE.md`) the finding runs into;
+      - the fix reaches beyond the scope a task's `brief.md` agreed to.
+
+      Do not ask about what reading the code or running it can settle.
+
+      Rules:
+
+      - Do not weaken, skip or delete a test, relax a lint rule or add a
+        `//nolint` to make a finding go away.
+      - If a fix changes a documented claim, update the page under `docs/`
+        in the same commit.
+      - Never push, rebase or merge, and never comment on or edit the pull
+        request yourself: `sync.sh` owns its review comments, and the merge
+        attempt that follows pushes your commits.
+
+      When every finding is recorded, run `go run mage.go test` and
+      `go run mage.go lint` and fix anything red with another commit. End
+      with what you did to each finding.
+    # Every finding has a resolution, everything is committed on the train,
+    # the train still contains the commit that was reviewed, and the local
+    # legs are green — the merge attempt only pushes what passes here.
+    check: >
+      r="$(git rev-parse --git-path vincent-iterate)/review" &&
+      test "$(jq --slurpfile res "$r/resolutions.json"
+      '[.[] | select($res[0][.id] == null)] | length' "$r/findings.json")" = 0 &&
+      test -z "$(git status --porcelain)" &&
+      test "$(git symbolic-ref --short HEAD)" = "{{.Task.BranchName}}" &&
+      git merge-base --is-ancestor "$(cat "$r/reviewed.sha")" HEAD &&
+      go run mage.go test &&
+      go run mage.go lint
+    check_timeout: 25m
+
+  - id: review-final
+    name: Refuse to merge with a finding open
+    type: command
+    shell: sh
+    timeout: 10m
+    max_retries: 1
+    retry_backoff: 20s
+    # The gate between the review and the merge, whichever path got here: no
+    # findings, or a resolver that passed its check. It syncs the pull request
+    # once more — so its comments show the final state even if a resolver's
+    # last update failed — and then counts, rather than trusting either path:
+    # every finding resolved, and every fix it names still on the train.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      s=$(git rev-parse --git-path vincent-iterate)
+      r="$s/review"
+
+      say "updating the review on the pull request"
+      sh "$r/sync.sh"
+
+      open=$(cat "$r/open")
+      if [ "$open" -gt 0 ]; then
+        say "$open review finding(s) still open: not merging"
+        echo "$open review finding(s) are still open; nothing was merged:" >&2
+        jq -r --slurpfile res "$r/resolutions.json" \
+          '.[] | select($res[0][.id] == null) | "  \(.id)  \(.priority)  \(.title)"' "$r/findings.json" >&2
+        echo "resolve them — retry 'review-resolve', or fix and record them by hand with" >&2
+        echo "sh \"$r/resolve.sh\" — then retry this step." >&2
+        exit 1
+      fi
+
+      jq -r '.[] | select(.status == "fixed") | .commit' "$r/resolutions.json" > "$r/fixes.txt"
+      while IFS= read -r c; do
+        [ -n "$c" ] || continue
+        if ! git merge-base --is-ancestor "$c" HEAD; then
+          say "a recorded review fix is not on the train: not merging"
+          echo "the fix recorded at $c is not an ancestor of HEAD; the train lost it." >&2
+          exit 1
+        fi
+      done < "$r/fixes.txt"
+
+      n=$(jq length "$r/findings.json")
+      if [ "$n" -eq 0 ]; then
+        echo "the review found nothing to fix."
+        say "review clean: merging"
+        exit 0
+      fi
+      echo "every review finding is resolved:"
+      jq -r --slurpfile res "$r/resolutions.json" '.[] | $res[0][.id] as $x |
+        "  \(.id)  \(.priority)  \($x.status)\(if $x.status == "fixed" then " in \($x.commit[0:7])" else "" end)\(if $x.decided_by == "user" then ", decided with the user" else "" end)  \(.title)"' \
+        "$r/findings.json"
+      say "all $n review finding(s) resolved: merging"
 
   - id: merge-attempt
     name: Rebase, verify and merge the pull request
