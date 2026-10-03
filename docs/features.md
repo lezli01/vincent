@@ -405,11 +405,13 @@ In detail:
   by hand. It is offered only when at least one project qualifies.
 - An issues screen lists every project's issues — filed in vincent or imported
   from GitHub — with each one's state, labels, source and the tasks it started,
-  and opens one to its Markdown-rendered description and its active tasks. A
-  form files and edits issues there, and the same screens close, reopen and
-  delete them; an imported issue's mirrored fields stay read-only. It is
-  offered whether or not any project uses GitHub. From a shell, `vincent
-  issue` lists, shows, files, edits, closes, reopens and deletes them.
+  and opens one to its Markdown-rendered description, its discussion thread
+  and its active tasks. A form files and edits issues there, `W` writes a
+  comment in `$EDITOR`, and the same screens close, reopen and delete them;
+  an imported issue's mirrored fields and its thread, which mirrors GitHub's,
+  stay read-only. It is offered whether or not any project uses GitHub. From
+  a shell, `vincent issue` lists, shows, files, edits, comments on, closes,
+  reopens and deletes them.
 - The workflow graph visualizes parallel groups, fan-out lanes and merges,
   the `needs:` edges between lanes and the waves they run in, conditions,
   loops, guards, checks, and nested includes — and, on a task's own Workflow

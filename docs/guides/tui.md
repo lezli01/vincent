@@ -2925,7 +2925,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first fifteen are the operations screens share, the next ten are the
+The first sixteen are the operations screens share, the next ten are the
 [task actions](#the-action-bar), and the last eight are the global keys.
 
 | Operation | Default | Does |
@@ -2945,6 +2945,7 @@ The first fifteen are the operations screens share, the next ten are the
 | `result` | `w` | Open the output the Overview's outcome card took its result from |
 | `next_failure` | `N` | Jump to the task's next failure |
 | `attention_filter` | `H` | Show only the tasks that need a human |
+| `comment` | `W` | Write a comment on an issue in `$EDITOR` |
 | `pause` | `p` | Pause or resume the task |
 | `approve` | `a` | Approve the gate |
 | `reject` | `x` | Reject the gate |

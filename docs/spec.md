@@ -13056,6 +13056,18 @@ stream for the live tail.
    The palette lists a key-less "open this task's issue" row there, which
    opens view 13; `esc` returns to the workspace.
 
+   *Amended 2026-10-03 (task 130.16, issue #675):* view 13 renders the
+   issue's discussion thread under the description, oldest first, from `GET
+   /v1/issues/{id}/comments`: each comment under its author and time, its
+   body through the same Markdown renderer, a mirrored one marked as
+   GitHub's. It re-reads on `issue.comment_added` and
+   `issue.comment_updated`. **`W`** — a new operation, `comment`, rebindable
+   under §12.3's `tui.keys` like the vocabulary terms (`c` is §6's cancel and
+   `C` is fold) — writes a local comment in `$EDITOR` through the issue
+   form's helper; a buffer saved empty adds nothing. It is withheld on an
+   issue whose GitHub remote is live, which the daemon would refuse with
+   `issue_mirrored` (task 130 decision 24.3): nothing is posted to GitHub.
+
 ### Layout
 
 The list above is also the screen contract. View 1 is the board-only home

@@ -3,14 +3,15 @@
 **Acceptance (task 130.17, #676):** a real daemon, over curl alone, runs
 vincent's issues end to end — local CRUD and its events, a task created from
 an issue, the GitHub import, state write-back through the durable outbox, and
-the MCP guard on a forge write — on Linux, macOS and Windows.
+the MCP guard on a forge write — on Linux, macOS and Windows. Task 130.16
+(#675) added the discussion thread as scenario 12.
 
 The scripted half is [`scripts/130-gate.sh`](../../scripts/130-gate.sh). It
 is task-numbered rather than `mN` because this is not a §19 milestone, like
 the 123 and 125 gates.
 
 ```sh
-./scripts/130-gate.sh                            # all eleven scenarios
+./scripts/130-gate.sh                            # all twelve scenarios
 VINCENT_GATE_SCENARIO=8 ./scripts/130-gate.sh    # one, for debugging
 ```
 
@@ -90,6 +91,14 @@ transferred or deleted remote shows in `source.status`.
     open issue is a tool error carrying the 409 `forge_write_needs_human`.
     The issue stays open and no `PATCH` is sent. The same call on a local
     issue closes it.
+12. **The discussion thread.** A comment added to #1 in the corpus is
+    mirrored onto the imported issue on a tick, as `hubot`, `remote: true`
+    with its GitHub id as `remote_key`, and `GET /v1/events` carries exactly
+    one `issue.comment_added` for it, `by: sync`, naming the comment and
+    carrying no text. A comment posted to a local issue is `201` and carries
+    the author the daemon recorded on that issue. A comment posted to the
+    imported #1 is a 409 `issue_mirrored`, its thread stays one long, and the
+    argv log holds no `POST`: nothing is ever posted to GitHub.
 
 The `github_issue: N` shorthand scenario is not here. #676 made it
 conditional on task 130.11 (#670), and 130.11 removed `github_issue` from
