@@ -382,8 +382,60 @@ do_seed() {
   # third-party check and a legacy commit status — is pointed at the branch
   # the design-tokens task is given. That task is created second, which is how
   # its branch can be spelled here before it exists; the seed checks it.
+  #
+  # Its issues (issue #677) are a corpus file rather than the fake's built-in
+  # two, so the issue shots read in the web project's own terms: three open
+  # issues, one carrying a two-comment thread that the import mirrors, which
+  # is what the issue detail's Comments section is a picture of. The comment
+  # counts are left out — the fake recomputes them from the comment rows.
+  cat > "$SHOTS/gh-issues.json" <<'EOF'
+[
+  {"id": 3000142, "node_id": "I_fake142", "number": 142,
+   "title": "Header flickers on first paint in Safari",
+   "body": "On a cold load in Safari 18 the header renders once unstyled and again a frame later.\n\nSteps:\n\n1. Clear the cache.\n2. Open `/dashboard`.\n3. Watch the logo and the nav jump.",
+   "state": "open", "state_reason": null, "closed_at": null,
+   "created_at": "2026-09-28T09:12:00Z", "updated_at": "2026-09-30T16:40:00Z",
+   "labels": [{"id": 11, "name": "bug"}, {"id": 12, "name": "area/header"}],
+   "assignees": [], "user": {"login": "mira-k"}, "milestone": null,
+   "url": "https://api.github.com/repos/acme/web/issues/142",
+   "html_url": "https://github.com/acme/web/issues/142"},
+  {"id": 3000138, "node_id": "I_fake138", "number": 138,
+   "title": "Dark mode tokens for the settings page",
+   "body": "The settings page still hard-codes its greys. Move it onto the design tokens so dark mode reaches it.",
+   "state": "open", "state_reason": null, "closed_at": null,
+   "created_at": "2026-09-22T14:05:00Z", "updated_at": "2026-09-22T14:05:00Z",
+   "labels": [{"id": 13, "name": "enhancement"}, {"id": 14, "name": "design-system"}],
+   "assignees": [], "user": {"login": "devon"}, "milestone": null,
+   "url": "https://api.github.com/repos/acme/web/issues/138",
+   "html_url": "https://github.com/acme/web/issues/138"},
+  {"id": 3000131, "node_id": "I_fake131", "number": 131,
+   "title": "Document the cache headers the CDN honours",
+   "body": "",
+   "state": "open", "state_reason": null, "closed_at": null,
+   "created_at": "2026-09-15T08:30:00Z", "updated_at": "2026-09-15T08:30:00Z",
+   "labels": [{"id": 15, "name": "docs"}],
+   "assignees": [], "user": {"login": "mira-k"}, "milestone": null,
+   "url": "https://api.github.com/repos/acme/web/issues/131",
+   "html_url": "https://github.com/acme/web/issues/131"},
+  {"id": 3100001, "node_id": "IC_fake3100001",
+   "url": "https://api.github.com/repos/acme/web/issues/comments/3100001",
+   "html_url": "https://github.com/acme/web/issues/142#issuecomment-3100001",
+   "issue_url": "https://api.github.com/repos/acme/web/issues/142",
+   "body": "Reproduced on 18.1. Chrome and Firefox are fine, so it looks like the font swap.",
+   "user": {"login": "devon"},
+   "created_at": "2026-09-29T10:02:00Z", "updated_at": "2026-09-29T10:02:00Z"},
+  {"id": 3100002, "node_id": "IC_fake3100002",
+   "url": "https://api.github.com/repos/acme/web/issues/comments/3100002",
+   "html_url": "https://github.com/acme/web/issues/142#issuecomment-3100002",
+   "issue_url": "https://api.github.com/repos/acme/web/issues/142",
+   "body": "Agreed. Preloading the header font should be enough; the nav jump goes with it.",
+   "user": {"login": "mira-k"},
+   "created_at": "2026-09-30T16:40:00Z", "updated_at": "2026-09-30T16:40:00Z"}
+]
+EOF
   wrap "$FAKEGH" gh FAKEGH_SCENARIO=success FAKEGH_REPO=acme/web \
-    FAKEGH_PR_BRANCH=feat/2-bump-the-design-tokens 'FAKEGH_PR_TITLE=Bump the design tokens'
+    FAKEGH_PR_BRANCH=feat/2-bump-the-design-tokens 'FAKEGH_PR_TITLE=Bump the design tokens' \
+    "FAKEGH_ISSUES_FILE=$SHOTS/gh-issues.json"
 
   say "config"
   write_config agent-chat
@@ -725,6 +777,45 @@ EOF
   P_REL="$(register release-tooling release-train 2)"
   register security-labs security-audit 2 >/dev/null
 
+  # Issues (task 130, issue #677): what the issue list and an issue's detail
+  # are pictures of. Local issues on two projects with no GitHub origin, one
+  # of each priority from urgent to none, and one closed as not planned so
+  # the list's `all` scope has a closed row. Creating an issue starts no
+  # task, so nothing here moves a task id or a board shot.
+  say "issues"
+  issue() { # issue PROJECT TITLE KIND PRIORITY LABELS_JSON [BODY]
+    api POST /issues "$(jq -cn --argjson p "$1" --arg t "$2" --arg k "$3" \
+      --argjson pr "$4" --argjson l "$5" --arg b "${6:-}" \
+      '{project_id: $p, title: $t, kind: $k, priority: $pr, labels: $l, body: $b}')" | jq -r .id
+  }
+  issue "$P_API" '429 responses omit Retry-After on the websocket upgrade' bug 1 '["rate-limit"]' \
+    'The upgrade path answers 429 with no `Retry-After`, so clients retry at once and stay limited.' >/dev/null
+  issue "$P_API" 'Expose per-token usage in the admin API' feature 3 '["admin","api"]' \
+    'Operators want to see how close a token is to its budget without reading the limiter logs.' >/dev/null
+  local dropped
+  dropped="$(issue "$P_API" 'Rate-limit by client IP as well as by token' feature 4 '["rate-limit"]')"
+  api POST "/issues/$dropped/close" '{"reason":"not_planned"}' >/dev/null
+  issue "$P_INFRA" 'eu-west replica lag alarm fires too late' bug 2 '["monitoring"]' \
+    'The alarm waits for ten minutes of lag; a restore needs it at two.' >/dev/null
+  issue "$P_INFRA" 'Write the runbook for a DNS rollback' chore 0 '["docs"]' >/dev/null
+
+  # The imported half: the web project's corpus (see the gh wrapper above),
+  # brought in by the reconciler's first tick and asked for again here so the
+  # seed need not wait out a poll. The thread on #142 is mirrored by the same
+  # pass, after the issues — so the wait is for its comments, not its row.
+  api POST "/projects/$P_WEB/issues/sync" >/dev/null
+  local imported="" comments=""
+  for (( i = 0; i < 120; i++ )); do
+    imported="$(api GET "/issues?project_id=$P_WEB&remote_number=142" | jq -r '.[0].id // empty')"
+    if [[ -n "$imported" ]]; then
+      comments="$(api GET "/issues/$imported/comments" | jq '[.comments[] | select(.remote)] | length')"
+      [[ "$comments" == "2" ]] && break
+    fi
+    sleep 0.5
+  done
+  [[ "$comments" == "2" ]] || fail "acme/web#142 and its two comments were never imported (issue ${imported:-none}, ${comments:-0} comments)"
+  I_FLICKER="$imported"
+
   say "tasks"
   add() { # add PROJECT WORKFLOW TITLE [EXTRA_JSON]
     local extra="${4:-}"
@@ -942,6 +1033,16 @@ EOF
   api POST "/tasks/$archived/cancel" >/dev/null
   wait_state "$archived" aborted 30
   api POST "/tasks/$archived/archive" >/dev/null
+
+  # A task from the imported issue (task 130.13, issue #677), parked at its
+  # gate: an unsettled task is what puts the `●` on the issue's row and
+  # under its Tasks heading, and the task's own Issue section is what
+  # tui-task-issue photographs. cursor, so no claude swap is involved, and a
+  # gate holds no slot — but it has to be admitted to reach one, which is
+  # why it is here, ahead of the slow lane that fills every slot for good.
+  local from_issue
+  from_issue="$(add "$P_WEB" feature-pr 'stop the header flicker on first paint' "\"issue_id\":$I_FLICKER")"
+  wait_state "$from_issue" awaiting_gate 120
 
   # A transcript long enough that the output pane has to truncate it. The cap
   # is 5000 records and only *live* chunks trip it (internal/tui/detail.go), so
@@ -1922,6 +2023,95 @@ Sleep 1s
 Enter
 Sleep 4s
 Screenshot "'"$OUT"'/tui-task-overview-done.png"
+Sleep 2s
+'
+
+  # The issue screens (task 130, issue #677), last for the reason the #415
+  # block gives: a tape added above another re-times the shots after it.
+
+  # The issues list, every project's issues grouped by project. `s` cycles
+  # the scope open → closed → all, and `all` is the one that shows the
+  # issue closed as not planned beside the open ones. `s` leaves a
+  # "listing all issues…" note under the rows that outlives the listing;
+  # `esc` clears the note first and keeps the scope (§15's one layer per
+  # press), so it is pressed once rather than photographed.
+  tape tui-issues 1250 '
+Type ":"
+Sleep 1s
+Type "issues"
+Sleep 1s
+Enter
+Sleep 3s
+Type "s"
+Sleep 1s
+Type "s"
+Sleep 3s
+Escape
+Sleep 2s
+Screenshot "'"$OUT"'/tui-issues.png"
+Sleep 2s
+'
+
+  # One imported issue: its labels, the mirrored GitHub thread, the task
+  # started from it waiting at its gate, and the Source section last. The
+  # filter commits on its own enter, so the second enter opens the row.
+  tape tui-issue 1400 '
+Type ":"
+Sleep 1s
+Type "issues"
+Sleep 1s
+Enter
+Sleep 3s
+Type "/"
+Sleep 500ms
+Type "flickers"
+Sleep 1s
+Enter
+Sleep 1s
+Enter
+Sleep 4s
+Screenshot "'"$OUT"'/tui-issue.png"
+Sleep 2s
+'
+
+  # The issue form, opened with `i` on a local issue and filled from it.
+  # Nothing is typed into it and it is never saved.
+  tape tui-issue-form 1250 '
+Type ":"
+Sleep 1s
+Type "issues"
+Sleep 1s
+Enter
+Sleep 3s
+Type "/"
+Sleep 500ms
+Type "per-token"
+Sleep 1s
+Enter
+Sleep 1s
+Type "i"
+Sleep 3s
+Screenshot "'"$OUT"'/tui-issue-form.png"
+Sleep 2s
+'
+
+  # Task Details on the task started from #142, on its Issue section. As in
+  # tui-task-details the count of `Down` presses is the section index:
+  # description, overview, execution, fields, lifecycle, issue.
+  tape tui-task-issue 1250 '
+Type "/"
+Sleep 500ms
+Type "header flicker"
+Sleep 1s
+Tab
+Sleep 1s
+Enter
+Sleep 3s
+Type "2"
+Sleep 2s
+Down 5
+Sleep 2s
+Screenshot "'"$OUT"'/tui-task-issue.png"
 Sleep 2s
 '
 }

@@ -1,6 +1,6 @@
 # 130 — The issues pillar: vincent-owned issues per project
 
-**Status:** 🔄 in progress (15/18)
+**Status:** 🔄 in progress (17/18)
 
 Issue [#659](https://github.com/lezli01/vincent/issues/659), part of
 [#658](https://github.com/lezli01/vincent/issues/658). Spec §3 (rows 11, 26
@@ -863,6 +863,17 @@ its own pull request.
   `failed/no_write_scope`, which the spec says is kept; the fix landed in the
   same pull request. This item closes when the gate is green on all three
   platforms in CI.
-- [ ] **130.18** ([#677](https://github.com/lezli01/vincent/issues/677))
+- [x] **130.18** ([#677](https://github.com/lezli01/vincent/issues/677))
   Screenshot seed, new tapes, recaptures, the features page. Depends: 130.12,
-  130.13, 130.10.
+  130.13, 130.10. ✓ 2026-10-04
+  *Done 2026-10-04:* `scripts/screenshots.sh` seeds local issues on two
+  projects (one closed as not planned), imports three acme/web issues and a
+  mirrored two-comment thread from a fakegh corpus file, and parks a task
+  started from one at its gate. New tapes `tui-issues`, `tui-issue`,
+  `tui-issue-form` and `tui-task-issue`, appended at the end of
+  `do_capture`; `tui-new-task`, `tui-new-task-fields` and `tui-task-details`
+  recaptured with their keystrokes unchanged — #672 removed a row the form
+  only ever showed on a GitHub project, and both tapes run on api. The
+  features page's issue prose had already landed with 130.11; it and the TUI
+  guide now carry the pictures. The write-back state the issue asked to seed
+  is shown on no screen, so nothing seeds it.

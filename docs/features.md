@@ -412,6 +412,11 @@ In detail:
   stay read-only. It is offered whether or not any project uses GitHub. From
   a shell, `vincent issue` lists, shows, files, edits, comments on, closes,
   reopens and deletes them.
+
+  ![The issues screen listing every issue, open and closed, grouped by
+  project: local issues on api and platform-infra with their labels and
+  kinds, one closed as not planned, and three issues imported from
+  acme/web, one of which has an unsettled task](assets/tui-issues.png)
 - The workflow graph visualizes parallel groups, fan-out lanes and merges,
   the `needs:` edges between lanes and the waves they run in, conditions,
   loops, guards, checks, and nested includes — and, on a task's own Workflow
@@ -545,6 +550,11 @@ before the task exists. Switching the workflow re-applies the prefill to the
 rows you have not typed in. The new-task form itself has no issue picker, and a
 plain `n` makes no GitHub call. The issue's screen then lists every task it
 started, and the task names its issue on its Overview.
+
+![An issue imported from acme/web#142: its labels, its Markdown description,
+the two comments mirrored from GitHub, the task started from it waiting at its
+gate, and the Source section naming the GitHub issue and its
+URL](assets/tui-issue.png)
 
 On a project whose `origin` remote points at github.com, vincent imports the
 repository's issues into the project's own [issues](#operate-from-a-purpose-built-tui) on every

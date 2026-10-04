@@ -531,8 +531,11 @@ func remoteComment(c *github.IssueComment) store.RemoteIssueComment {
 }
 
 // remoteJSON is what an imported issue keeps of GitHub's that the issue
-// row has no column for.
+// row has no column for. State is GitHub's own open/closed, kept beside the
+// row's: the issue detail's source section shows it as the state GitHub last
+// reported (the API's remote_state), which the local state need not match.
 type remoteJSON struct {
+	State           string     `json:"state,omitempty"`
 	Assignees       []string   `json:"assignees,omitempty"`
 	Milestone       string     `json:"milestone,omitempty"`
 	MilestoneNumber int        `json:"milestone_number,omitempty"`
@@ -545,7 +548,7 @@ type remoteJSON struct {
 // Kind is left empty: kind is vincent's, and GitHub has none to give.
 func remoteIssue(projectID int64, is *github.Issue) store.RemoteIssue {
 	extra := remoteJSON{
-		Assignees: issueAssignees(is), Milestone: is.Milestone, MilestoneNumber: is.MilestoneNumber,
+		State: is.State, Assignees: issueAssignees(is), Milestone: is.Milestone, MilestoneNumber: is.MilestoneNumber,
 		Author: is.Author, StateReason: is.StateReason,
 	}
 	if !is.ClosedAt.IsZero() {

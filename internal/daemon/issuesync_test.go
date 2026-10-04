@@ -282,6 +282,39 @@ func TestIssueSyncRefreshes(t *testing.T) {
 	}
 }
 
+// The state GitHub reported is kept in remote_json, where the API reads the
+// detail's remote_state from (review F2: it was never written, so every
+// imported issue's source section showed none).
+func TestIssueSyncRecordsGitHubsState(t *testing.T) {
+	f := newFixture(t, "https://github.com/octo/repo.git")
+	c := newCorpus(t, issueRow(1, "open"))
+	r := f.reconciler()
+	r.Tick(t.Context())
+	remoteState := func() string {
+		t.Helper()
+		var v struct {
+			State string `json:"state"`
+		}
+		raw := f.issues(t)[1].Remote.RemoteJSON
+		if err := json.Unmarshal([]byte(raw), &v); err != nil {
+			t.Fatalf("remote_json %q: %v", raw, err)
+		}
+		return v.State
+	}
+	if got := remoteState(); got != "open" {
+		t.Errorf("remote_json state = %q after import, want open", got)
+	}
+
+	later := issueBase.Add(time.Hour)
+	c.edit(1, later, func(row map[string]any) {
+		row["state"], row["state_reason"], row["closed_at"] = "closed", "completed", later.Format(time.RFC3339)
+	})
+	r.Tick(t.Context())
+	if got := remoteState(); got != "closed" {
+		t.Errorf("remote_json state = %q after GitHub closed it, want closed", got)
+	}
+}
+
 func TestIssueSyncSkipsUnknownClosedAndDeletedIssues(t *testing.T) {
 	f := newFixture(t, "https://github.com/octo/repo.git")
 	c := newCorpus(t, issueRow(1, "open"), issueRow(2, "open"))
