@@ -30,6 +30,36 @@ jobs:
           version: "~> v2"
           args: check
 
+  # The Pages site (task 131 decision 5): build this ref with the deploy's
+  # pinned builder and assemble it as `dev`, so a Liquid or Jekyll break, or
+  # an assembler regression, fails the pull request rather than the deploy
+  # that runs after the merge (.github/workflows/pages.yml).
+  site:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: scripts/site
+
+      - name: Build and assemble the site as dev
+        env:
+          PAGES_REPO_NWO: ${{ github.repository }}
+          JEKYLL_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          scripts/site/build.sh . "$RUNNER_TEMP/built/dev" dev
+          go run ./cmd/sitever assemble -in "$RUNNER_TEMP/built" -out "$RUNNER_TEMP/site"
+
   ci:
     runs-on: ${{ matrix.os }}
     # Wide enough that `go test -timeout` (see magefile.go) is always the

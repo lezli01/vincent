@@ -23,6 +23,16 @@ change to any of those is a change to its page. The same rule covers the
 pictures: every `docs/assets/tui-*.png` is a capture of the running TUI produced
 by `scripts/screenshots.sh` (below), never a drawing of one.
 
+The published site is **versioned** (task 131): `.github/workflows/pages.yml`
+builds every release tag from `v0.6.0` on, `master` as `/dev/`, and the newest
+tag again as `/latest/`, and `cmd/sitever` assembles them. The published root
+is `latest`, not `master` — `/vincent/` redirects to `/vincent/latest/` — so a
+docs change reaches readers at the next release, and is visible under `/dev/`
+from the merge. Tags are built unedited by `scripts/site/build.sh` with the
+pinned `github-pages` gem; anything version-aware (the selector, banners,
+canonicals, redirects) belongs in `cmd/sitever`, never in a layout, because an
+old tag's layout cannot know about a newer release.
+
 GitHub Pages SEO metadata is centralized in `_data/seo_pages.json` and
 `_data/why_articles.json`. Keep those entries in sync when public pages or the
 "Why vincent is awesome" collection changes. The collection's social cards are
