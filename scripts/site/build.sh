@@ -32,12 +32,22 @@ dest="$(cd "$dest" && pwd)"
 
 export BUNDLE_GEMFILE="$here/Gemfile"
 export JEKYLL_ENV=production
-# Jekyll 3 reads layouts from ./_layouts in the working directory in
-# preference to SRC's, then joins that absolute path onto SRC and fails to
-# open it — a warning, not an error — so every page is built with no layout:
-# no <head>, no stylesheet. Building from inside SRC is the only way to make
-# it read the ref's own layouts.
-cd "$src"
+# The working directory decides two things in Jekyll 3, so it must be this
+# directory, not SRC and not the repository root:
+#
+#  - Jekyll requires the Gemfile's jekyll_plugins group only when a file
+#    named Gemfile is in the working directory; BUNDLE_GEMFILE alone is not
+#    enough. Without it the github-pages gem never loads, and neither does
+#    the configuration GitHub Pages applies on top of _config.yml — its
+#    default plugins among it. v0.6.0 lists no plugins and relies on those
+#    defaults (jekyll-readme-index makes README.md its index.html), so it
+#    built with no index at all.
+#  - Jekyll reads layouts from ./_layouts in the working directory in
+#    preference to SRC's, then joins that absolute path onto SRC and fails
+#    to open it — a warning, not an error — so every page is built with no
+#    layout: no <head>, no stylesheet. This directory has no _layouts, so
+#    SRC's own are read.
+cd "$here"
 bundle exec jekyll build --source "$src" --destination "$dest" \
   --config "$src/_config.yml,$overlay"
 
