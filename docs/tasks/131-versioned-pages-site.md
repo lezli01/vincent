@@ -62,6 +62,18 @@ and `latest` from the workflow's master checkout with no layout at all —
 bare fragments, no stylesheet, only the selector `sitever` adds. `build.sh`
 now also refuses a build whose `index.html` has no `</head>`.
 
+*Amended 2026-10-04, again:* `build.sh` runs Jekyll from
+`scripts/site/`, not from the source tree. Jekyll 3.10 requires the
+Gemfile's `jekyll_plugins` group only when `./Gemfile` exists in the
+working directory — `BUNDLE_GEMFILE` does not count — so from either the
+master checkout or the source tree the pinned `github-pages` gem never
+loaded, and with it went the configuration GitHub Pages layers over
+`_config.yml`, default plugins included. `v0.7.0` on list their plugins and
+built anyway; `v0.6.0` lists none, relied on `jekyll-readme-index` for its
+`index.html`, and failed the `</head>` check (runs 37215258362,
+37219017443). `scripts/site/` has no `_layouts/`, so the layout fault above
+stays fixed.
+
 ### 2. Version-specific chrome is added after Jekyll, by a Go program (2026-10-04)
 
 `cmd/sitever` takes the built trees and:
