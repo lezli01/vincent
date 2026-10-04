@@ -72,6 +72,10 @@ type taskTabHit struct {
 // sub-model because the attempt cursor owns the transcript and diff state, but
 // gives each way of reading that state the entire viewport.
 type taskView struct {
+	// projectScope is the root's selected project (task 132.2), stored for
+	// the item that scopes this view to it.
+	projectScope
+
 	detail *detail
 	tab    taskViewTab
 	popup  bool

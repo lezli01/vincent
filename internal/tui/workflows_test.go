@@ -41,9 +41,9 @@ func TestWorkflowsMergeKeepsAGlobalEntryOnce(t *testing.T) {
 		globalEntry("review"),
 		projectEntry("release"),
 	}
-	own := projectScoped(response)
+	own := ownEntries(response)
 	if len(own) != 1 || own[0].Name != "release" {
-		t.Fatalf("projectScoped = %+v, want only the project's own entry", own)
+		t.Fatalf("ownEntries = %+v, want only the project's own entry", own)
 	}
 }
 

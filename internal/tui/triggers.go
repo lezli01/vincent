@@ -96,6 +96,10 @@ type triggerConfirm struct {
 
 // triggersView is §15's view 11.
 type triggersView struct {
+	// projectScope is the root's selected project (task 132.2), stored for
+	// the item that scopes this view to it.
+	projectScope
+
 	client *apiclient.Client
 	exec   execFunc
 	now    func() time.Time

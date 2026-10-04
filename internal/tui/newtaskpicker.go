@@ -536,7 +536,7 @@ func (n *newTask) applyPick(row ntRow, value string, free bool) tea.Cmd {
 		}
 		for _, p := range n.projects {
 			if p.ID == id {
-				n.setProject(p)
+				n.chooseProject(p)
 			}
 		}
 		// The registry is project-scoped (§5.2), so the workflow list and

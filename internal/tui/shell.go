@@ -36,6 +36,10 @@ type (
 // boardOnly=false for the focused component tests; routed TUI instances set
 // boardOnly and give the detail sub-model to taskView.
 type shell struct {
+	// projectScope is the root's selected project (task 132.2), stored for
+	// the item that scopes this view to it.
+	projectScope
+
 	board     *board
 	detail    *detail
 	boardOnly bool

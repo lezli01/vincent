@@ -120,6 +120,19 @@ type root struct {
 	// overlay and the footer.
 	github []githubProject
 
+	// sel is the TUI's one selected project (task 132, §15): client-side,
+	// owned here, and handed to every project-bearing view by selectProject
+	// rather than broadcast. selWhy is how it was chosen, kept for the
+	// startup notice task 132.3 raises (decision 4).
+	sel    projectSel
+	selWhy string
+	// projects is the registered-project list the selection is checked
+	// against, refreshed on connect, on reconnect and on every project.*
+	// event. projectsSeq numbers the fetches so an older answer landing
+	// after a newer one is dropped rather than rolling the list back.
+	projects    []apiclient.Project
+	projectsSeq int
+
 	// links is the session's `tui.hyperlinks` (task 111). The root fills it
 	// because the config arrives in three messages bound for three different
 	// views — the board's fetch, the daemon view's fetch and the config
@@ -277,6 +290,8 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateTaskCreated(msg)
 	case connectedMsg:
 		return m.updateConnected(msg)
+	case projectListMsg:
+		return m, m.updateProjectList(msg)
 	case probeFailedMsg:
 		m.phase = phaseStarting
 		m.setDataDir(msg.dataDir)
@@ -826,8 +841,10 @@ func (m *root) updateNoticeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // current view is looking at. The form must be told to open before it is
 // shown: opening is what resets the draft and fetches the catalogs.
 func (m *root) openNewTask() tea.Cmd {
-	hint := int64(0)
-	if h, ok := m.views[m.active].(projectHinting); ok {
+	// The selection wins; the view's hint is the fallback while nothing is
+	// selected, until task 132.13 retires it.
+	hint := m.sel.id
+	if h, ok := m.views[m.active].(projectHinting); ok && hint == 0 {
 		hint = h.hintedProject()
 	}
 	cmd := m.deliver(viewNewTask, newTaskMsg{projectID: hint})
@@ -907,11 +924,96 @@ func (m *root) updateConnected(msg connectedMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
+	// After setClient, so a view connected late still learns the selection
+	// before it acts on its new client's answers (task 132.2).
+	cmds = append(cmds, m.scopeViews(), m.refreshProjects())
 	return m, tea.Batch(cmds...)
 }
 
+// projectListMsg is one answer to refreshProjects.
+type projectListMsg struct {
+	seq      int
+	projects []apiclient.Project
+	err      error
+}
+
+// refreshProjects refetches the project list the selection is checked
+// against. No stats: the list is only names and ids here.
+func (m *root) refreshProjects() tea.Cmd {
+	client := m.client
+	if client == nil {
+		return nil
+	}
+	m.projectsSeq++
+	seq := m.projectsSeq
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
+		defer cancel()
+		projects, err := client.ListProjects(ctx)
+		return projectListMsg{seq: seq, projects: projects, err: err}
+	}
+}
+
+// updateProjectList adopts a fresh project list. With nothing selected, the
+// first project by name is selected (task 132 decision 10: a new project
+// only auto-selects when nothing is) — the whole startup precedence is task
+// 132.3. A selected project that is still listed has its name refreshed, so a
+// rename reaches the header. One that has vanished is left alone: what a
+// deleted selection becomes is task 132.7's. A failed fetch leaves the
+// previous list standing, for githubProbeMsg's reason.
+func (m *root) updateProjectList(msg projectListMsg) tea.Cmd {
+	if msg.err != nil || msg.seq != m.projectsSeq {
+		return nil
+	}
+	m.projects = msg.projects
+	if m.sel.id == 0 {
+		if len(m.projects) == 0 {
+			return nil
+		}
+		first := m.projects[0]
+		for _, p := range m.projects[1:] {
+			if p.Name < first.Name || (p.Name == first.Name && p.ID < first.ID) {
+				first = p
+			}
+		}
+		return m.selectProject(first, "the first project by name")
+	}
+	for _, p := range m.projects {
+		if p.ID == m.sel.id {
+			if p.Name == m.sel.name {
+				return nil
+			}
+			m.sel.name = p.Name
+			return m.scopeViews()
+		}
+	}
+	return nil
+}
+
+// selectProject makes p the selection and tells every project-bearing view.
+// why says how it was chosen, for the notice task 132.3 raises.
+func (m *root) selectProject(p apiclient.Project, why string) tea.Cmd {
+	m.sel = projectSel{id: p.ID, name: p.Name}
+	m.selWhy = why
+	return m.scopeViews()
+}
+
+// scopeViews hands the selection to every projectScoped view, directly and
+// in view order, and batches what they return.
+func (m *root) scopeViews() tea.Cmd {
+	var cmds []tea.Cmd
+	for i := range m.views {
+		if ps, ok := m.views[i].(projectScoped); ok {
+			if cmd := ps.setProject(m.sel); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+	}
+	return tea.Batch(cmds...)
+}
+
 func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
-	var reprobe tea.Cmd
+	var reprobe, relist tea.Cmd
 	if m.notes == nil {
 		// A stale note from a stream torn down by retry; never re-arm on a
 		// nil channel — that receive would block forever.
@@ -926,6 +1028,7 @@ func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
 			// have expired, while the stream was down. The daemon's short
 			// cache absorbs the repeat cost.
 			reprobe = probeGitHubCmd(m.client)
+			relist = m.refreshProjects()
 		}
 		// Distinct from phaseConnected, which only means the health probe
 		// answered: this is the event stream itself being established, and
@@ -939,9 +1042,15 @@ func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
 		m.connErr = n.Err
 		m.retryIn = n.RetryIn
 		m.setConnected(false)
+	case apiclient.EventNote:
+		// Observed, not consumed: the views that list projects hear the
+		// note through the broadcast below as before.
+		if strings.HasPrefix(n.Event.Type, "project.") {
+			relist = m.refreshProjects()
+		}
 	}
 	// Every view sees the note, not just the visible one.
-	return m, tea.Batch(m.broadcast(noteMsg{note: n}), waitNote(m.notes), reprobe)
+	return m, tea.Batch(m.broadcast(noteMsg{note: n}), waitNote(m.notes), reprobe, relist)
 }
 
 // delegate routes a message to the active view.
@@ -1163,24 +1272,64 @@ type nowLiner interface {
 }
 
 func (m *root) headerLine() string {
-	name := "vincent"
-	if m.version != "" {
-		name += " " + m.version
+	width := m.width
+	if width <= 0 {
+		width = 1 << 16
 	}
-	lead := " " + styleTitle.Render(name) + "  "
 	// Connected is the normal case and says nothing a working screen does
-	// not (task 129.15): the badge is drawn only while it is news.
+	// not (task 129.15): the badge is drawn only while it is news, and being
+	// news it is never shed.
+	badge := ""
 	if m.phase != phaseConnected {
-		lead += m.connBadge() + "  "
+		badge = m.connBadge() + "  "
 	}
+	lead := func(name string) string { return " " + styleTitle.Render(name) + "  " + badge }
+	full := "vincent"
+	if m.version != "" {
+		full += " " + m.version
+	}
+	project := "no project"
+	if m.sel.id != 0 {
+		project = m.sel.name
+	}
+	segment := func(name string) string { return styleTitle.Render(headerProjectGlyph + " " + name) }
+
+	// Shedding order (task 132.2): the view tag truncates down to a floor
+	// and is then dropped; then the version goes; last, the project name
+	// truncates behind an ellipsis.
+	head := lead(full) + segment(project)
+	if room := width - ansi.StringWidth(head) - 2; room >= headerTagFloor || room >= ansi.StringWidth(m.headerTagFull()) {
+		return head + "  " + styleDim.Render(m.headerTag(room))
+	}
+	if ansi.StringWidth(head) <= width {
+		return head
+	}
+	l := lead(full)
+	if ansi.StringWidth(l+segment(project)) > width {
+		l = lead("vincent")
+	}
+	room := width - ansi.StringWidth(l+segment(""))
+	return l + segment(ansi.Truncate(project, max(room, 1), "…"))
+}
+
+// headerProjectGlyph marks the selected-project segment of the app header. A
+// glyph rather than a colour, so the segment reads the same uncoloured.
+const headerProjectGlyph = "◆"
+
+// headerTagFloor is the narrowest the view tag is truncated to before the
+// header drops it altogether: below it a tag is an ellipsis, not a name.
+const headerTagFloor = 8
+
+// headerTagFull is the active view's tag at unbounded width.
+func (m *root) headerTagFull() string { return m.headerTag(1 << 16) }
+
+// headerTag is the active view's tag fitted to width: a headerTagger's own
+// breadcrumb, or the bracketed title truncated.
+func (m *root) headerTag(width int) string {
 	if t, ok := m.views[m.active].(headerTagger); ok {
-		width := m.width - ansi.StringWidth(lead)
-		if m.width <= 0 {
-			width = 1 << 16
-		}
-		return lead + styleDim.Render(t.headerTag(max(width, 1)))
+		return t.headerTag(max(width, 1))
 	}
-	return lead + styleDim.Render("["+m.views[m.active].title()+"]")
+	return ansi.Truncate("["+m.views[m.active].title()+"]", max(width, 1), "…")
 }
 
 // nowLine is the active view's live line, when it has one to show. It is
