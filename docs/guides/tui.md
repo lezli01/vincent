@@ -1695,7 +1695,8 @@ description, rendered as Markdown; the labels, kind, priority (`urgent`,
 `high`, `medium`, `low`, or `none`) and author; every task the issue started,
 newest first and finished or archived ones included, each with its state glyph;
 and, for an imported issue,
-where it came from — the URL and the state GitHub last reported.
+where it came from — the URL and the state GitHub last reported; and the
+discussion thread under the description, described below.
 
 ![The detail of an issue imported from acme/web#142: labels, kind, priority
 and author, the description rendered as Markdown, two comments marked
