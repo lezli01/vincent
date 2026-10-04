@@ -1,6 +1,6 @@
 # 132 — Project as root: the TUI scoped to one selected project
 
-**Status:** ⏳ not started (0/17)
+**Status:** 🔄 in progress (1/17)
 
 Issue [#694](https://github.com/lezli01/vincent/issues/694), part of
 [#693](https://github.com/lezli01/vincent/issues/693). Spec §3 (the new row
@@ -49,7 +49,8 @@ take it; decision 3's switch key is `@`.
 
 Recorded 2026-10-04. Decisions 1–14 are the author's answers to #693's open
 questions, each the option #693 recommended; decision 15 is the renumbering;
-decisions 16–19 settle the contradictions between #693's research reports. Each
+decisions 16–19 settle the contradictions between #693's research reports;
+decisions 20–22 were taken while delivering 132.1. Each
 decision is **taken now; its effect lands with its item.** The older record
 keeps governing the code until that item's pull request merges.
 
@@ -230,6 +231,52 @@ before dropping a dirty or seeded one (132.6, 132.13).
 *Alternative beaten:* none — the two research positions did not conflict, so
 neither beat the other.
 
+### 20. An opt-in `stats` parameter on the existing project routes (2026-10-04)
+
+`GET /v1/projects?stats=true` and `GET /v1/projects/{id}?stats=true` add a
+`stats` object to each row (option A2 of the #695 research), the data
+decision 12's picker and the overview read (132.1). The others lost:
+
+- **A1, counting in the client:** it needs every non-archived task with its
+  rollups, every open issue with its body, and every chat, and it puts the
+  definition of each figure in every client — the #324 bug.
+- **A3, a separate `/v1/projects/stats` route:** one more route, MCP tool and
+  client join for figures that belong on the rows already being listed.
+- **A4, stats on every response:** the projects view refreshes the list
+  constantly, and most callers would pay several `GROUP BY`s they ignore.
+
+Absent or `stats=false` is byte-identical to the default shape. The counts
+are a fixed number of `GROUP BY project_id` statements however many projects
+are registered (`store.projectStatsPasses`), and a failed count degrades to
+`"stats": null` with a warning, the `slots_used` precedent. The seeded
+benchmark (20 projects, 4,000 tasks, 2,000 issues) reads in about 3 ms, so no
+`tasks(project_id, state)` index was added.
+
+### 21. Task counts cover every row, lanes included (2026-10-04)
+
+The issue recommended root tasks only. The author chose all rows instead, so
+`tasks.by_state`, `tasks.active` and `tasks.attention` line up with
+`slots_used`, §11's all-rows figure. A picker reading "2 active" beside
+"3/4 slots" while lanes run would otherwise look wrong.
+
+- `active` is every non-archived task that is not settled
+  (`taskstate.Settled`). It is therefore **not** an issue's `active`, which
+  is about the issue and counts an unsettled *root* task; that definition
+  is unchanged. Both API docs say so.
+- `attention` is every task in a `taskstate.NeedsHuman` state. An
+  `awaiting_children` parent is not counted as well: its lane that needs
+  someone is already counted, so the rollup subtree query is not used.
+- `by_state` omits zero states and never carries `archived`.
+- Chat attention (`chats.awaiting_input`) stays a separate figure (spec
+  decision row 29).
+
+### 22. The CLI is the first client; no `GetProject` yet (2026-10-04)
+
+`vincent project ls --stats` adds count columns and, with `--json`, the
+`stats` object. `apiclient.ListProjects` takes a variadic `WithStats()`
+option, so its existing callers are unchanged. No `apiclient.GetProject` is
+added, because nothing calls one; 132.4 or 132.15 adds it if needed.
+
 ## Supersedes
 
 Every binding record this work overturns, departs from, refines or keeps, by
@@ -283,9 +330,10 @@ In #693's delivery order. Items without a `Depends:` can proceed in parallel.
 Each item amends the spec sections and public pages its code makes true, in
 its own pull request.
 
-- [ ] **132.1** ([#695](https://github.com/lezli01/vincent/issues/695))
-  `GET /v1/projects?stats=true`, `taskstate.NeedsHuman`, counts in
-  `vincent project ls`, the API and MCP docs.
+- [x] **132.1** ([#695](https://github.com/lezli01/vincent/issues/695))
+  `GET /v1/projects?stats=true` and `GET /v1/projects/{id}?stats=true`,
+  `taskstate.NeedsHuman`, `store.ProjectStats`, `vincent project ls --stats`,
+  the API and MCP docs, spec §11 and §13.2 (decisions 20–22). ✓ 2026-10-04
 - [ ] **132.2** ([#696](https://github.com/lezli01/vincent/issues/696))
   `projectSel` on the root, the `projectScoped` interface, the cached project
   list, the header segment. Depends: this document.

@@ -6353,6 +6353,9 @@ precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
   root-only list and so read `0/3` with every slot taken — a number that
   answers "why is nothing starting" wrongly is worse than no number, and a
   count a client cannot compute is one it must be served.
+  *Amended 2026-10-04 (task 132.1, issue #695):* the opt-in project `stats`
+  (§13.2) counts its task figures over the same all-rows set, so `active` and
+  `attention` beside `slots_used` never disagree about whether a lane counts.
 - A `queued` task is admitted when both caps have headroom. Admission order:
   `priority` DESC, then `created_at` ASC (FIFO within a priority).
 - One task runs at most one step process at a time. *Amended 2026-08-17
@@ -8599,9 +8602,32 @@ GET    /v1/projects                     list. *Amended 2026-09-05 (issue #324):*
                                         tasks hold a slot right now (§11), lanes included, which
                                         is the numerator the per-project `max_parallel_tasks` is
                                         applied against. One GROUP BY for the whole list; a
-                                        project holding none reads 0, never absent
+                                        project holding none reads 0, never absent.
+                                        *Amended 2026-10-04 (task 132.1, issue #695):*
+                                        `?stats=true` adds `stats` to every row: tasks
+                                        { by_state, active, attention }, issues { open,
+                                        open_imported, active }, chats { live,
+                                        awaiting_input }, issue_sync { enabled, ok, reason,
+                                        last_synced_at } and last_activity_at. The task
+                                        figures count every non-archived row, lanes included,
+                                        like `slots_used` (§11): active = not settled (§6),
+                                        attention = awaiting_input | awaiting_gate | blocked
+                                        (taskstate.NeedsHuman), so an awaiting_children parent
+                                        is counted through its lane, never as well. That makes
+                                        a project's tasks.active deliberately *not* an issue's
+                                        active (root tasks only, §5.6). Chat attention stays a
+                                        separate figure (decision row 29). issue_sync is the
+                                        stored health under the config switches, without the
+                                        git remote fallback; last_activity_at is MAX(updated_at)
+                                        over tasks, issues and chats, null when none. A fixed
+                                        number of GROUP BY statements whatever the project
+                                        count. Absent or `false` is byte-identical to the
+                                        default shape; any other value is 400
+                                        validation_failed; a failed count is `stats: null`
+                                        with a warn log, never a 500
 POST   /v1/projects                     { path, name?, default_branch?, default_workflow?, max_parallel_tasks? }
-GET    /v1/projects/{id}
+GET    /v1/projects/{id}                *Amended 2026-10-04 (task 132.1):* `?stats=true` as on
+                                        the list
 PATCH  /v1/projects/{id}                any mutable field, incl. path re-pointing
 DELETE /v1/projects/{id}                hard-deletes the project and its task history (rows);
                                         only when no non-archived tasks; ?force first archives
