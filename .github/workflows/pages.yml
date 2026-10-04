@@ -1,0 +1,145 @@
+name: Pages
+
+# The versioned documentation site (task 131). One full Jekyll snapshot per
+# release tag from v0.6.0 on, one for master as `dev`, and one for the newest
+# tag again as `latest`, each built unedited by scripts/site/build.sh with the
+# pinned github-pages gem, then assembled by cmd/sitever into one Pages
+# artifact: /vincent/ redirects to /vincent/latest/, and every old path
+# redirects to its /latest/ equivalent.
+#
+# The repository's Pages source must be "GitHub Actions" (RELEASING.md), not
+# "Deploy from a branch"; the classic branch build would publish master at
+# /vincent/ over the top of this.
+
+on:
+  push:
+    branches: [master]
+    # Release Please pushes its tags with a PAT, so this fires on every
+    # release, as release.yml does: a new release becomes latest and joins
+    # the selector with no site edit.
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time, and a later run supersedes a queued one rather than
+# cancelling one mid-deploy.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PAGES_REPO_NWO: ${{ github.repository }}
+      JEKYLL_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      # dev is always the default branch, whatever ref triggered the run, and
+      # the builder is always the default branch's: a tag is built with
+      # today's pinned gem, never with anything it carries itself.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: scripts/site
+
+      - name: List the published versions
+        id: versions
+        run: |
+          go build -o "$RUNNER_TEMP/sitever" ./cmd/sitever
+          git tag | "$RUNNER_TEMP/sitever" versions >"$RUNNER_TEMP/versions"
+          if [[ ! -s "$RUNNER_TEMP/versions" ]]; then
+            echo "no release tag at or above v0.6.0" >&2
+            exit 1
+          fi
+          # The tag cache is keyed by every tag's commit, so a moved or new
+          # tag misses it and only that tag is rebuilt.
+          while read -r tag; do
+            printf '%s %s\n' "$tag" "$(git rev-list -n 1 "$tag")"
+          done <"$RUNNER_TEMP/versions" >"$RUNNER_TEMP/tag-commits"
+          echo "key=$(sha256sum "$RUNNER_TEMP/tag-commits" | cut -d' ' -f1)" >>"$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/tag-commits"
+
+      - name: Restore built tags
+        id: cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/tag-cache
+          key: site-tags-${{ hashFiles('scripts/site/Gemfile.lock', 'scripts/site/build.sh') }}-${{ steps.versions.outputs.key }}
+          restore-keys: site-tags-${{ hashFiles('scripts/site/Gemfile.lock', 'scripts/site/build.sh') }}-
+
+      - name: Build every version
+        run: |
+          built="$RUNNER_TEMP/built"
+          cache="$RUNNER_TEMP/tag-cache"
+          src="$RUNNER_TEMP/src"
+          mkdir -p "$built" "$cache" "$src"
+
+          checkout() { # tag
+            if [[ ! -d "$src/$1" ]]; then
+              git worktree add --detach "$src/$1" "$1"
+            fi
+          }
+
+          while read -r tag commit; do
+            if [[ "$(cat "$cache/$tag/.commit" 2>/dev/null)" == "$commit" ]]; then
+              echo "::notice::$tag reused from the cache"
+            else
+              rm -rf "${cache:?}/$tag"
+              checkout "$tag"
+              scripts/site/build.sh "$src/$tag" "$cache/$tag/site" "$tag"
+              echo "$commit" >"$cache/$tag/.commit"
+            fi
+            cp -R "$cache/$tag/site" "$built/$tag"
+          done <"$RUNNER_TEMP/tag-commits"
+
+          # A tag that is no longer published leaves the cache too.
+          for d in "$cache"/*/; do
+            tag="$(basename "$d")"
+            grep -qx "$tag" <<<"$(cat "$RUNNER_TEMP/versions")" || rm -rf "${cache:?}/$tag"
+          done
+
+          newest="$(head -n 1 "$RUNNER_TEMP/versions")"
+          checkout "$newest"
+          scripts/site/build.sh "$src/$newest" "$built/latest" latest
+          scripts/site/build.sh "$GITHUB_WORKSPACE" "$built/dev" dev
+
+          "$RUNNER_TEMP/sitever" assemble -in "$built" -out "$RUNNER_TEMP/site"
+
+      - name: Save built tags
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/tag-cache
+          key: site-tags-${{ hashFiles('scripts/site/Gemfile.lock', 'scripts/site/build.sh') }}-${{ steps.versions.outputs.key }}
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: ${{ runner.temp }}/site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
