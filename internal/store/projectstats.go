@@ -19,7 +19,7 @@ import (
 // included, so they line up with slots_used (§11's all-rows figure). That is
 // why TasksActive is deliberately not Issue.Active's definition, which
 // counts root tasks only: an issue is worked by its root task, a project by
-// all of them (task 132 decision 2).
+// all of them (task 132 decision 21).
 type ProjectStats struct {
 	// TasksByState counts non-archived tasks per state; a state with no task
 	// is absent, and `archived` never appears.

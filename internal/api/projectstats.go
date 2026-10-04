@@ -31,7 +31,7 @@ type projectStatsResponse struct {
 
 // projectTaskStats counts every non-archived task row, lanes included, so it
 // lines up with slots_used. Its `active` is therefore not an issue's
-// `active`, which counts root tasks only (task 132 decision 2).
+// `active`, which counts root tasks only (task 132 decision 21).
 type projectTaskStats struct {
 	// ByState omits zero states and never carries `archived`.
 	ByState   map[string]int `json:"by_state"`

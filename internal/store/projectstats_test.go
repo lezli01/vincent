@@ -40,7 +40,7 @@ func mustChat(t *testing.T, s *Store, projectID int64, title string, state chats
 	}
 }
 
-// TestProjectStatsCountsEveryTaskRow is task 132 decision 2 in numbers: the
+// TestProjectStatsCountsEveryTaskRow is task 132 decision 21 in numbers: the
 // task figures cover lanes as well as roots, so they line up with
 // slots_used, and a blocked lane under an awaiting_children parent is one
 // attention, not two.
