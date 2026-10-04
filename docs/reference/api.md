@@ -692,7 +692,7 @@ issue and chat:
 | Field | Counts |
 |---|---|
 | `tasks.by_state` | Non-archived tasks per state, fan-out lanes included. States with no task are omitted, and `archived` never appears |
-| `tasks.active` | Tasks not yet `done` or `aborted`, lanes included — the same row set as `slots_used`. This is **not** an issue's `active`, which counts only root tasks |
+| `tasks.active` | Tasks not yet `done` or `aborted`, fan-out lanes included — counted over the same rows as `slots_used` (every task, not only roots), so the two agree about lanes. It is not `slots_used`: a `queued` or `blocked` task is active without holding a slot. This is **not** an issue's `active`, which counts only root tasks |
 | `tasks.attention` | Tasks in `awaiting_input`, `awaiting_gate` or `blocked`, lanes included. A fan-out parent in `awaiting_children` is not counted; its lane that needs you is |
 | `issues.open` | Open issues |
 | `issues.open_imported` | Open issues imported from GitHub |
