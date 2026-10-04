@@ -33,14 +33,17 @@ func Test() error {
 //
 // The explicit -timeout is headroom, not a preference. It is a *per-package*
 // deadline, and on the Windows CI leg under the race detector `internal/api`
-// takes around 7.5 minutes of Go's 10-minute default while the leg's own
+// once took around 7.5 minutes of Go's 10-minute default while the leg's own
 // throughput varies by a factor of two between runs of the same commit. A
 // package that is healthy at 75% of the limit turns a slow runner into a red
 // build, with a goroutine dump that looks like a hang and is not one. 20
-// minutes keeps a genuine hang reported by `go test` — with that dump, which
-// is the useful artifact — rather than by the job's own timeout-minutes.
+// minutes held until `internal/api` grew to 1120–1170 s of it on green master
+// runs and a slower runner crossed 1200 s mid-suite, every test in the dump
+// one second old. 30 minutes keeps a genuine hang reported by `go test` — with
+// that dump, which is the useful artifact — rather than by the job's own
+// timeout-minutes in ci.yml, which stays the wider of the two.
 func TestRace() error {
-	return sh.RunV("go", "test", "-race", "-timeout", "20m", "./...")
+	return sh.RunV("go", "test", "-race", "-timeout", "30m", "./...")
 }
 
 // Lint runs golangci-lint, pinned via the go.mod tool directive.
