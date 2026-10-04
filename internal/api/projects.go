@@ -62,6 +62,10 @@ func toProjectResponse(p *store.Project, slotsUsed int) projectResponse {
 }
 
 func (s *Server) handleProjectList(w http.ResponseWriter, r *http.Request) {
+	withStats, ok := parseStatsParam(w, r)
+	if !ok {
+		return
+	}
 	projects, err := s.deps.Store.ListProjects(r.Context())
 	if err != nil {
 		s.internalError(w, "list projects", err)
@@ -76,6 +80,18 @@ func (s *Server) handleProjectList(w http.ResponseWriter, r *http.Request) {
 		// themselves are in hand, and slots_used is the live decoration on
 		// them, not the answer the caller asked for.
 		s.deps.Logger.Warn("count slots by project", "error", err)
+	}
+	if withStats {
+		stats, ok := s.projectStats(r.Context())
+		out := make([]projectWithStats, 0, len(projects))
+		for i := range projects {
+			out = append(out, projectWithStats{
+				projectResponse: toProjectResponse(&projects[i], slots[projects[i].ID]),
+				Stats:           s.toProjectStats(stats, ok, projects[i].ID),
+			})
+		}
+		writeJSON(w, http.StatusOK, out)
+		return
 	}
 	out := make([]projectResponse, 0, len(projects))
 	for i := range projects {
@@ -178,11 +194,21 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleProjectGet(w http.ResponseWriter, r *http.Request) {
+	withStats, ok := parseStatsParam(w, r)
+	if !ok {
+		return
+	}
 	p, ok := s.projectFromPath(w, r)
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, toProjectResponse(p, s.projectSlots(r.Context(), p.ID)))
+	resp := toProjectResponse(p, s.projectSlots(r.Context(), p.ID))
+	if withStats {
+		stats, ok := s.projectStats(r.Context())
+		writeJSON(w, http.StatusOK, projectWithStats{projectResponse: resp, Stats: s.toProjectStats(stats, ok, p.ID)})
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // projectSlots counts one project's §11 slot holders for the response field.
