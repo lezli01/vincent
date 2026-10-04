@@ -14,9 +14,11 @@ isolated branches, deterministic checks, human gates, crash recovery, and one
 place to see the work. Start with the [feature tour](features.md), or run a real
 task with the [Quickstart](getting-started/quickstart.md).
 
-On the [published documentation site](https://lezli01.is-a.dev/vincent/), press
-`/` or `Ctrl`/`Cmd`+`K` to search every page, and click the `#` beside any
-heading to copy a link straight to that section.
+The [published documentation site](https://lezli01.is-a.dev/vincent/) opens on
+the latest release's documentation; the version selector on every page switches
+to an older release or to `dev`, the unreleased documentation. Press `/` or
+`Ctrl`/`Cmd`+`K` to search every page of the version you are reading, and click
+the `#` beside any heading to copy a link straight to that section.
 
 ---
 
