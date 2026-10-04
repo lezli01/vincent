@@ -94,6 +94,9 @@ func newProjectLsCmd() *cobra.Command {
 					projects = []apiclient.Project{}
 				}
 				if wantJSON(cmd) {
+					if stats {
+						return emitJSON(cmd.OutOrStdout(), projectStatsRows(projects))
+					}
 					return emitJSON(cmd.OutOrStdout(), projects)
 				}
 				header := []string{"ID", "NAME", "PATH", "BRANCH", "WORKFLOW", "CAP"}
@@ -129,6 +132,23 @@ func newProjectLsCmd() *cobra.Command {
 // ACTIVE and ATTN count every task row, fan-out lanes included; ISSUES is
 // open issues; CHATS is live chats.
 var projectStatsHeader = []string{"ACTIVE", "ATTN", "ISSUES", "CHATS"}
+
+// projectStatsRow is a `project ls --stats --json` row. Stats shadows the
+// embedded field to drop its omitempty: the daemon serves `"stats": null`
+// when it could not count, and a script must still be able to tell that from
+// a list that never asked (review F3).
+type projectStatsRow struct {
+	apiclient.Project
+	Stats *apiclient.ProjectStats `json:"stats"`
+}
+
+func projectStatsRows(projects []apiclient.Project) []projectStatsRow {
+	rows := make([]projectStatsRow, len(projects))
+	for i, p := range projects {
+		rows[i] = projectStatsRow{Project: p, Stats: p.Stats}
+	}
+	return rows
+}
 
 // projectStatsCells renders a row's counts, or a dash in every column when
 // the daemon could not count and served null.
