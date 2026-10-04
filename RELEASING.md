@@ -343,6 +343,32 @@ all.
    commit convention before merging the release PR or edit the notes after the
    release.
 
+## The documentation site
+
+The GitHub Pages site is versioned (task 131) and redeploys itself: the
+release adds no manual step. `.github/workflows/pages.yml` runs on every push
+to `master` and on every `v*` tag push — the tag Release Please creates fires
+it, as it fires `release.yml` — and rebuilds the whole site: every release tag
+from `v0.6.0` on at `/vincent/vX.Y.Z/`, `master` at `/vincent/dev/`, and the
+newest tag again at `/vincent/latest/`, which `/vincent/` redirects to. The new
+release becomes `latest` and joins the version selector with no site edit.
+Prerelease tags (anything with a `-`) are never published.
+
+- **Rerun it** with `gh workflow run pages.yml` (or "Run workflow" on the
+  Pages workflow's Actions page) when a deploy failed or the site needs a
+  rebuild without a push. Built tags are cached, keyed by every tag's commit
+  plus `scripts/site/Gemfile.lock` and `scripts/site/build.sh`, so a rerun
+  rebuilds only `dev` and `latest`; bumping the pinned builder rebuilds every
+  tag.
+- **One-time setup.** The repository's Pages source must be **GitHub
+  Actions**, not "Deploy from a branch": Settings → Pages → Build and
+  deployment → Source. Under the branch source GitHub keeps publishing
+  `master` at `/vincent/` and the workflow's deploy is refused. This is a
+  manual settings change, made once by the maintainer when task 131 merges.
+- **The changelog page** (`site-changelog.md`) is still edited by hand in the
+  Release Please PR (step 3): the version that tag builds is the one `latest`
+  serves.
+
 ## If a release goes wrong
 
 - **Caught within minutes, nobody has downloaded it:** delete the release and

@@ -144,6 +144,7 @@ the living engineering specification records implementation contracts.
 | [128](128-keymap-upgrade-tolerance.md) | Keep the daemon starting when an upgrade retires a key operation or adds a default key a user already bound | ✅ done (1/1) |
 | [129](129-tui-monitoring-redesign.md) | The TUI answers what is happening, why it failed and what it delivered, one step from the board | 🔄 in progress (18/19) |
 | [130](130-issues-pillar.md) | The issues pillar: vincent-owned issues per project, tasks created from them, GitHub import and state sync | 🔄 in progress (17/18) |
+| [131](131-versioned-pages-site.md) | A versioned documentation site: latest release by default, older releases and `dev` selectable | ⚠ verification blocked (5/6) |
 
 ## How to add and update a task document
 

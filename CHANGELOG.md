@@ -13,6 +13,14 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **A versioned documentation site.** The site at
+  <https://lezli01.is-a.dev/vincent/> now serves the newest release's
+  documentation by default, at `/vincent/latest/`, instead of `master`'s. Every
+  release from `v0.6.0` on stays readable at `/vincent/vX.Y.Z/`, and the
+  unreleased documentation is at `/vincent/dev/`. A version selector on every
+  page switches to the same page in another version, older releases and `dev`
+  carry a banner pointing at the latest release, and every existing link
+  redirects to its `/latest/` equivalent.
 - **An issue discussion thread.** Every issue now has comments: add one to a
   local issue with `W` on the issue's screen (written in `$EDITOR`),
   `vincent issue comment <id> --body …`, `POST /v1/issues/{id}/comments` or the
