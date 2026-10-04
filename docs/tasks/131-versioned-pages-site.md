@@ -55,6 +55,13 @@ Actions, keyed by every tag's commit plus the builder (`Gemfile.lock` and
 `build.sh`), so a master push only rebuilds `dev` and `latest`.
 `scripts/site/` is excluded in `_config.yml`, so `dev` does not publish it.
 
+*Amended 2026-10-04:* `build.sh` runs Jekyll from inside the source tree.
+Jekyll 3 prefers a `_layouts/` in the working directory over the source's,
+then fails to open it (only a warning), so the first deploy built every tag
+and `latest` from the workflow's master checkout with no layout at all —
+bare fragments, no stylesheet, only the selector `sitever` adds. `build.sh`
+now also refuses a build whose `index.html` has no `</head>`.
+
 ### 2. Version-specific chrome is added after Jekyll, by a Go program (2026-10-04)
 
 `cmd/sitever` takes the built trees and:
@@ -130,6 +137,13 @@ Locally, on 2026-10-04, `scripts/site/build.sh` built `v0.6.0`, `v0.10.0`,
 `/vincent/v0.10.0/` URLs, `v0.6.0`'s pages carry the inserted `noindex` and a
 `/latest/` canonical, the root holds one sitemap of `/latest/` URLs and a
 redirect stub per latest page.
+
+That local run did not catch the layout fault decision 1's amendment
+records. The first deploy (run 37212783141)
+published unstyled `latest` and tag trees; `dev`, built from the checkout it
+ran in, was fine. Rebuilding `v0.11.0` in `ruby:3.3` from a foreign working
+directory reproduced the empty pages before the fix and a full, styled page
+after it.
 
 The first deploy is the acceptance walk (131.6), recorded here when walked:
 

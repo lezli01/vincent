@@ -27,7 +27,24 @@ overlay="$(mktemp -d)/overlay.yml"
 trap 'rm -rf "$(dirname "$overlay")"' EXIT
 printf 'baseurl: "%s/%s"\n' "$base" "$name" >"$overlay"
 
+mkdir -p "$dest"
+dest="$(cd "$dest" && pwd)"
+
 export BUNDLE_GEMFILE="$here/Gemfile"
 export JEKYLL_ENV=production
+# Jekyll 3 reads layouts from ./_layouts in the working directory in
+# preference to SRC's, then joins that absolute path onto SRC and fails to
+# open it — a warning, not an error — so every page is built with no layout:
+# no <head>, no stylesheet. Building from inside SRC is the only way to make
+# it read the ref's own layouts.
+cd "$src"
 bundle exec jekyll build --source "$src" --destination "$dest" \
   --config "$src/_config.yml,$overlay"
+
+# A layout that failed to load leaves a successful build of bare fragments;
+# refuse it here rather than publish an unstyled site.
+index="$(cat "$dest/index.html")"
+if ! grep -qi '</head>' <<<"$index"; then
+  echo "$dest/index.html has no <head>: the layout was not applied" >&2
+  exit 1
+fi
