@@ -13163,6 +13163,28 @@ design, so `git push -u origin` on one either fails or lands a copy of a
 contributor's branch in the user's own repository. It is never a force-push and
 destroys nothing.
 
+**The selected project (task 132.2, issue #696, added 2026-10-04).** The TUI
+holds one selected project (§3 row 37). It is client-side view state owned by
+the root, never daemon state. The root hands it to every project-bearing view
+directly whenever it changes and again after each connect. Those views are
+views 1–2, the new-task form, the workflows, pull-request, triggers and
+archived takeovers, the chats and a chat, and the issues list and an issue.
+The projects view and the daemon view are not project-bearing. The root keeps
+the registered-project list, refetched on connect, on reconnect and on every
+`project.*` event. While nothing is selected, a non-empty list selects its
+first project by name. A project registered while one is selected does not
+take over, and a rename of the selected one reaches it. Task 132.3 replaces
+the first-by-name rule with the full startup precedence, and 132.7 decides
+what a deleted selection becomes. The new-task form opens on the selection,
+or on the view's hint while there is none. The app header names the
+selection on its one line, after the version and any connection badge and
+before the view tag: `vincent 0.x  ◆ api  [Tasks]`, or `◆ no project`. The
+chrome stays one line, so the size floors above do not move. When the line
+does not fit, the view tag truncates down to eight cells and is then dropped;
+then the version goes, leaving `vincent`; last, the project name truncates
+behind an ellipsis. The connection badge is never shed. The segment is not a
+click target yet; 132.4 makes it open the project picker.
+
 **Text fields wrap (added 2026-09-01, issue #299).** A field being typed into
 is bound by the same rule the boards and the rendered Markdown already carry: a
 value too long for the pane it is in **wraps onto further rows of that pane**.

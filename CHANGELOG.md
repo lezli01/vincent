@@ -13,6 +13,13 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **The TUI names a selected project.** The app header now shows
+  `◆ <project>` after the version, or `◆ no project` when none is
+  registered. The TUI selects the first project by name and keeps it when you
+  register another one. The new-task form opens on that project. On a narrow
+  terminal the header drops the view's tag first, then the version, and
+  shortens the project name last. Choosing a project and scoping views to it
+  come in later releases.
 - **Per-project counts.** `vincent project ls --stats` adds four columns to
   the project list: active tasks, tasks waiting on you, open issues and live
   chats. With `--json` each project carries the full `stats` object, which

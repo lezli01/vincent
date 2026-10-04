@@ -1,6 +1,6 @@
 # 132 — Project as root: the TUI scoped to one selected project
 
-**Status:** 🔄 in progress (1/17)
+**Status:** 🔄 in progress (2/17)
 
 Issue [#694](https://github.com/lezli01/vincent/issues/694), part of
 [#693](https://github.com/lezli01/vincent/issues/693). Spec §3 (the new row
@@ -277,6 +277,31 @@ The issue recommended root tasks only. The author chose all rows instead, so
 option, so its existing callers are unchanged. No `apiclient.GetProject` is
 added, because nothing calls one; 132.4 or 132.15 adds it if needed.
 
+### 23. The header segment is drawn, not clicked, until 132.4 (2026-10-04)
+
+132.2 draws `◆ <project>` (or `◆ no project`) on the existing header line,
+after the version and any connection badge and before the view tag. It is not
+a click target yet: making it open the picker lands in 132.4 with the picker
+itself, and §15's click scope is amended there. A click on the header row does
+what it did before.
+
+### 24. The header sheds the tag, then the version, then the name (2026-10-04)
+
+The chrome stays one header line, so `shellChromeH` and §15's floors do not
+move. When the line does not fit, the view tag (or the task workspace's
+breadcrumb) truncates down to a floor of eight cells and is then dropped;
+then the version number goes, leaving `vincent`; last, the project name
+truncates behind an ellipsis. The connection badge is never shed, because it
+is drawn only while it is news.
+
+The root walks `projectScoped` views directly, never by broadcast, and again
+right after the `setClient` walk on every connect. Until 132.3, the first
+selection is the first project by name, made only while nothing is selected
+(decision 10). A selected project that vanishes is left selected for 132.7 to
+handle. `projectScoped` took the name of a `workflows.go` helper, which became
+`ownEntries`, and of the new-task form's `setProject`, which became
+`chooseProject`.
+
 ## Supersedes
 
 Every binding record this work overturns, departs from, refines or keeps, by
@@ -334,9 +359,10 @@ its own pull request.
   `GET /v1/projects?stats=true` and `GET /v1/projects/{id}?stats=true`,
   `taskstate.NeedsHuman`, `store.ProjectStats`, `vincent project ls --stats`,
   the API and MCP docs, spec §11 and §13.2 (decisions 20–22). ✓ 2026-10-04
-- [ ] **132.2** ([#696](https://github.com/lezli01/vincent/issues/696))
+- [x] **132.2** ([#696](https://github.com/lezli01/vincent/issues/696))
   `projectSel` on the root, the `projectScoped` interface, the cached project
-  list, the header segment. Depends: this document.
+  list, the header segment, spec §15 Layout (decisions 23–24). Depends: this
+  document. ✓ 2026-10-04
 - [ ] **132.3** ([#697](https://github.com/lezli01/vincent/issues/697)) The
   startup precedence, `tui.default_project`, `selected_project` in `tui.json`,
   `vincent --project`. Depends: 132.2.
