@@ -508,6 +508,10 @@ Chats selected, and on the right the two chats opened on this task, newest
 first, both closed, with their agent, when they started and their
 titles](../assets/tui-task-details.png)
 
+![Task Details on a task started from an imported issue, with the Issue
+section selected: the vincent issue and its title, its state, its GitHub
+reference acme/web#142 and its URL](../assets/tui-task-issue.png)
+
 Its **GitHub pull request** section follows the captured issue and shows one of
 three things: the pull request linked to this task with its live state, the
 reason the integration is unusable, or — when nothing is linked — the offer to
@@ -1664,6 +1668,11 @@ closed, such as `closed · not planned`), the title, its labels and kind,
 `●` while one of them is still unsettled. Any change to an issue or to a task
 re-lists the screen with no keypress.
 
+![The issues list scoped to all issues, grouped by project: api's three local
+issues, one closed as not planned; web's three issues imported from acme/web,
+#142 carrying one unsettled task; and platform-infra's two local
+issues](../assets/tui-issues.png)
+
 | Key | Does |
 |---|---|
 | `enter` | Open the selected issue |
@@ -1687,6 +1696,11 @@ description, rendered as Markdown; the labels, kind, priority (`urgent`,
 newest first and finished or archived ones included, each with its state glyph;
 and, for an imported issue,
 where it came from — the URL and the state GitHub last reported.
+
+![The detail of an issue imported from acme/web#142: labels, kind, priority
+and author, the description rendered as Markdown, two comments marked
+`· github`, the task started from it at its gate, and the Source
+section](../assets/tui-issue.png)
 
 | Key | Does |
 |---|---|
@@ -1733,6 +1747,10 @@ hands it to `$EDITOR`. The labels list offers the project's labels and ticks
 the ones set; `t` in it types a new one, and `t` in the kind list types a kind
 it does not suggest. Priority is `none`, `urgent`, `high`, `medium` or `low`.
 `ctrl+s` saves and `esc` closes — asking first when something is unsaved.
+
+![The issue form editing a local issue on api, filled from it: title,
+description, the admin and api labels, kind feature and priority
+medium](../assets/tui-issue-form.png)
 
 On an issue imported from GitHub the title, description and labels mirror
 GitHub, so the form shows them as "mirrored from GitHub" and will not edit
