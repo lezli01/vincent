@@ -646,9 +646,9 @@ See [`vincent gc`](cli.md#vincent-gc) for the command over these endpoints.
 
 | Method | Path | Body / notes |
 |---|---|---|
-| `GET` | `/v1/projects` | List |
+| `GET` | `/v1/projects` | List — `?stats=true` adds per-project counts |
 | `POST` | `/v1/projects` | `{ path, name?, default_branch?, default_workflow?, max_parallel_tasks? }` |
-| `GET` | `/v1/projects/{id}` | |
+| `GET` | `/v1/projects/{id}` | `?stats=true` adds its counts |
 | `PATCH` | `/v1/projects/{id}` | Any mutable field, including re-pointing `path` |
 | `DELETE` | `/v1/projects/{id}` | Hard-deletes the project and its task rows |
 | `GET` | `/v1/projects/{id}/branches` | Its local git branches, each with the working tree holding it |
@@ -674,6 +674,39 @@ numerator that project's `max_parallel_tasks` is applied against, so a client
 renders `slots_used / max_parallel_tasks` without counting rows itself. A
 project holding none reads `0`, never absent, and a project created a moment ago
 reads `0` because it owns no task yet.
+
+`?stats=true` on the list or on one project adds a `stats` object to each row,
+so a project picker can rank and badge projects without listing every task,
+issue and chat:
+
+```json
+"stats": {
+  "tasks": { "by_state": { "queued": 1, "running": 2, "blocked": 1 }, "active": 4, "attention": 1 },
+  "issues": { "open": 37, "open_imported": 30, "active": 3 },
+  "chats": { "live": 2, "awaiting_input": 1 },
+  "issue_sync": { "enabled": true, "ok": true, "reason": "", "last_synced_at": "2026-10-04T09:12:00Z" },
+  "last_activity_at": "2026-10-04T09:40:13Z"
+}
+```
+
+| Field | Counts |
+|---|---|
+| `tasks.by_state` | Non-archived tasks per state, fan-out lanes included. States with no task are omitted, and `archived` never appears |
+| `tasks.active` | Tasks not yet `done` or `aborted`, fan-out lanes included — counted over the same rows as `slots_used` (every task, not only roots), so the two agree about lanes. It is not `slots_used`: a `queued` or `blocked` task is active without holding a slot. This is **not** an issue's `active`, which counts only root tasks |
+| `tasks.attention` | Tasks in `awaiting_input`, `awaiting_gate` or `blocked`, lanes included. A fan-out parent in `awaiting_children` is not counted; its lane that needs you is |
+| `issues.open` | Open issues |
+| `issues.open_imported` | Open issues imported from GitHub |
+| `issues.active` | Open issues with an unfinished root task, as on the issue itself |
+| `chats.live` | Chats in `idle`, `running` or `awaiting_input` |
+| `chats.awaiting_input` | Chats waiting on an answer. It is kept apart from `tasks.attention` |
+| `issue_sync` | The stored import health: the `enabled`, `ok`, `reason` and `last_synced_at` of [`GET /v1/projects/{id}/issues/sync`](#github-issues), read without asking git for the repository |
+| `last_activity_at` | The newest change to any of the project's tasks, issues or chats; `null` when it has none |
+
+Without `stats`, or with `stats=false`, the response is exactly the default
+shape and has no `stats` key. Any other value is `400 validation_failed`. The
+counts cost the daemon a fixed handful of queries however many projects are
+registered. If they cannot be read, each row carries `"stats": null` and the
+request still succeeds.
 
 `GET /v1/projects/{id}/branches` lists the project's **local** branches, so a
 client can offer them where a branch name is asked for instead of making a user

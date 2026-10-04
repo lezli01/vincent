@@ -13,6 +13,13 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Per-project counts.** `vincent project ls --stats` adds four columns to
+  the project list: active tasks, tasks waiting on you, open issues and live
+  chats. With `--json` each project carries the full `stats` object, which
+  also breaks tasks down by state and reports imported issues, chats waiting
+  on an answer, issue sync health and the project's last activity. Over the
+  API, add `?stats=true` to `GET /v1/projects` or `GET /v1/projects/{id}`;
+  without it the response is unchanged. Task counts include fan-out lanes.
 - **A versioned documentation site.** The site at
   <https://lezli01.is-a.dev/vincent/> now serves the newest release's
   documentation by default, at `/vincent/latest/`, instead of `master`'s. Every

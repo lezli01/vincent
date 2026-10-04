@@ -201,6 +201,10 @@ type Server struct {
 	// (task 060 decision 6). Two patches cannot interleave; a hand-edit
 	// racing one is last-writer-wins, the posture every other PATCH here has.
 	configMu sync.Mutex
+	// statsSource reads the per-project counts of GET /v1/projects?stats=true
+	// (task 132.1); nil is the store's ProjectStats. It is a field only so a
+	// test can make the read fail and watch the response degrade.
+	statsSource func(context.Context) (map[int64]store.ProjectStats, error)
 }
 
 // Route is one registered API route.

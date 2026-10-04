@@ -92,6 +92,13 @@ type liveOptions struct {
 	catalog   bool
 	skills    bool
 	worktrees bool
+	wrap      func(http.Handler) http.Handler
+}
+
+// withHandlerWrap puts wrap around the real API handler, for a test that
+// needs the daemon to answer one route the way only a failure would make it.
+func withHandlerWrap(wrap func(http.Handler) http.Handler) liveOption {
+	return func(o *liveOptions) { o.wrap = wrap }
 }
 
 // withAgentCatalog serves the harness from reg and puts an agent catalog over
@@ -197,6 +204,9 @@ func newLiveHarness(t *testing.T, opts ...liveOption) *liveHarness {
 		Dirs: config.Dirs{Data: dataDir},
 	})
 	handler := s.Handler()
+	if o.wrap != nil {
+		handler = o.wrap(handler)
+	}
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/transcript") {
 			h.transcriptCalls.Add(1)

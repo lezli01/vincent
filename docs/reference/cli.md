@@ -477,10 +477,17 @@ unborn HEAD); pass `--default-branch` explicitly.
 ### `vincent project ls`
 
 ```sh
-vincent project ls [--json]
+vincent project ls [--stats] [--json]
 ```
 
 Lists registered projects with their ids, paths and defaults.
+
+`--stats` adds four count columns: `ACTIVE` (unfinished tasks), `ATTN` (tasks
+waiting on you), `ISSUES` (open issues) and `CHATS` (live chats). Both task
+counts include fan-out lanes. With `--json`, each row gains the `stats`
+object [`GET /v1/projects?stats=true`](api.md#projects) serves. When the daemon could not count, a row shows
+`-` in every count column, and under `--json` its `stats` is `null` rather
+than missing.
 
 ### `vincent project edit`
 

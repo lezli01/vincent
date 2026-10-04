@@ -34,6 +34,47 @@ type Project struct {
 	SlotsUsed int       `json:"slots_used"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// Stats is the project's counts, served only when ListProjects was asked
+	// for them with WithStats (task 132.1). Nil when not asked, and nil too
+	// when the daemon could not count — it degrades to null rather than
+	// failing the list.
+	Stats *ProjectStats `json:"stats,omitempty"`
+}
+
+// ProjectStats is the `stats` object of GET /v1/projects?stats=true (§13.2).
+//
+// The task figures count every non-archived task row, fan-out lanes
+// included, so they line up with SlotsUsed. Tasks.Active is therefore not
+// Issues.Active: an issue is active through an unsettled *root* task.
+type ProjectStats struct {
+	Tasks struct {
+		// ByState omits zero states and never carries archived.
+		ByState   map[string]int `json:"by_state"`
+		Active    int            `json:"active"`
+		Attention int            `json:"attention"`
+	} `json:"tasks"`
+	Issues struct {
+		Open         int `json:"open"`
+		OpenImported int `json:"open_imported"`
+		Active       int `json:"active"`
+	} `json:"issues"`
+	// Chats is kept apart from Tasks: chat attention is never part of the
+	// task attention count.
+	Chats struct {
+		Live          int `json:"live"`
+		AwaitingInput int `json:"awaiting_input"`
+	} `json:"chats"`
+	// IssueSync is the stored sync health; GET .../issues/sync is the full
+	// status.
+	IssueSync struct {
+		Enabled      bool       `json:"enabled"`
+		OK           bool       `json:"ok"`
+		Reason       string     `json:"reason"`
+		LastSyncedAt *time.Time `json:"last_synced_at"`
+	} `json:"issue_sync"`
+	// LastActivityAt is the newest change to the project's tasks, issues or
+	// chats; nil when it has none.
+	LastActivityAt *time.Time `json:"last_activity_at"`
 }
 
 // Workflow reports the workflow a new task in this project gets when the
@@ -50,11 +91,31 @@ func (p Project) Workflow() string {
 // without registering anything (§8.1).
 const AdhocWorkflow = "adhoc"
 
+// ListProjectsOption shapes a ListProjects request.
+type ListProjectsOption func(*listProjectsOptions)
+
+type listProjectsOptions struct{ stats bool }
+
+// WithStats asks the daemon for each project's Stats (task 132.1). It costs
+// the daemon a fixed handful of GROUP BY statements, so it is opt-in rather
+// than on every refresh.
+func WithStats() ListProjectsOption {
+	return func(o *listProjectsOptions) { o.stats = true }
+}
+
 // ListProjects fetches every registered project. The endpoint has no filters
 // and no pagination — the list is human-sized by construction.
-func (c *Client) ListProjects(ctx context.Context) ([]Project, error) {
+func (c *Client) ListProjects(ctx context.Context, opts ...ListProjectsOption) ([]Project, error) {
+	var o listProjectsOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+	path := "/v1/projects"
+	if o.stats {
+		path += "?stats=true"
+	}
 	var out []Project
-	if err := c.get(ctx, "/v1/projects", &out); err != nil {
+	if err := c.get(ctx, path, &out); err != nil {
 		return nil, err
 	}
 	return out, nil
