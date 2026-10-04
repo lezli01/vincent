@@ -74,13 +74,18 @@ func newProjectAddCmd() *cobra.Command {
 }
 
 func newProjectLsCmd() *cobra.Command {
+	var stats bool
 	cmd := &cobra.Command{
 		Use:   "ls",
 		Short: "List registered projects",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
-				projects, err := c.ListProjects(ctx)
+				var opts []apiclient.ListProjectsOption
+				if stats {
+					opts = append(opts, apiclient.WithStats())
+				}
+				projects, err := c.ListProjects(ctx, opts...)
 				if err != nil {
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
 					return exitError{code: 1}
@@ -91,24 +96,50 @@ func newProjectLsCmd() *cobra.Command {
 				if wantJSON(cmd) {
 					return emitJSON(cmd.OutOrStdout(), projects)
 				}
+				header := []string{"ID", "NAME", "PATH", "BRANCH", "WORKFLOW", "CAP"}
+				if stats {
+					header = append(header, projectStatsHeader...)
+				}
 				rows := make([][]string, 0, len(projects))
 				for _, p := range projects {
 					parallelCap := "-"
 					if p.MaxParallelTasks != nil {
 						parallelCap = strconv.Itoa(*p.MaxParallelTasks)
 					}
-					rows = append(rows, []string{
+					row := []string{
 						strconv.FormatInt(p.ID, 10), p.Name, p.Path,
 						p.DefaultBranch, p.Workflow(), parallelCap,
-					})
+					}
+					if stats {
+						row = append(row, projectStatsCells(p.Stats)...)
+					}
+					rows = append(rows, row)
 				}
-				return table(cmd.OutOrStdout(),
-					[]string{"ID", "NAME", "PATH", "BRANCH", "WORKFLOW", "CAP"}, rows)
+				return table(cmd.OutOrStdout(), header, rows)
 			})
 		},
 	}
+	cmd.Flags().BoolVar(&stats, "stats", false,
+		"Add per-project counts: active and attention tasks, open issues, live chats")
 	jsonFlag(cmd)
 	return cmd
+}
+
+// projectStatsHeader names `project ls --stats`' extra columns (task 132.1).
+// ACTIVE and ATTN count every task row, fan-out lanes included; ISSUES is
+// open issues; CHATS is live chats.
+var projectStatsHeader = []string{"ACTIVE", "ATTN", "ISSUES", "CHATS"}
+
+// projectStatsCells renders a row's counts, or a dash in every column when
+// the daemon could not count and served null.
+func projectStatsCells(st *apiclient.ProjectStats) []string {
+	if st == nil {
+		return []string{"-", "-", "-", "-"}
+	}
+	return []string{
+		strconv.Itoa(st.Tasks.Active), strconv.Itoa(st.Tasks.Attention),
+		strconv.Itoa(st.Issues.Open), strconv.Itoa(st.Chats.Live),
+	}
 }
 
 // projectEditFlags are the flags of `project edit` that change a field, one
