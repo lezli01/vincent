@@ -51,5 +51,7 @@ exclude:
   - docs/history/
   - docs/spec.md
   - docs/tasks/
+  # The Pages deploy's own builder (task 131); its vendor/bundle lands here.
+  - scripts/site/
   - skills/vincent-triggers/references/
   - skills/vincent-workflows/references/

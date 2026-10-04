@@ -1,0 +1,8 @@
+# The Pages deploy's builder (task 131 decision 1). Every version of the
+# site — each release tag, master as dev, the newest tag as latest — is built
+# with this one pinned github-pages gem, never with a Gemfile from the tagged
+# source: old tags have none, and they rely on GitHub Pages' default plugin
+# set, which this gem applies. Bumping the pin rebuilds every cached tag.
+source "https://rubygems.org"
+
+gem "github-pages", "= 232", group: :jekyll_plugins
