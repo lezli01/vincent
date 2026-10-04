@@ -699,7 +699,7 @@ issue and chat:
 | `issues.active` | Open issues with an unfinished root task, as on the issue itself |
 | `chats.live` | Chats in `idle`, `running` or `awaiting_input` |
 | `chats.awaiting_input` | Chats waiting on an answer. It is kept apart from `tasks.attention` |
-| `issue_sync` | The stored import health, as on [`GET /v1/projects/{id}/issues/sync`](#github-issues) but without `repo` |
+| `issue_sync` | The stored import health: the `enabled`, `ok`, `reason` and `last_synced_at` of [`GET /v1/projects/{id}/issues/sync`](#github-issues), read without asking git for the repository |
 | `last_activity_at` | The newest change to any of the project's tasks, issues or chats; `null` when it has none |
 
 Without `stats`, or with `stats=false`, the response is exactly the default
