@@ -394,3 +394,15 @@ func TestChatIsOfferedFromExactlyTheFourStoppedStates(t *testing.T) {
 		}
 	}
 }
+
+// TestNeedsHuman pins the attention set (§15, task 132.1). A fan-out parent
+// is not in it: the lane that needs someone is, and counting the parent too
+// would report one block as two.
+func TestNeedsHuman(t *testing.T) {
+	want := map[State]bool{AwaitingInput: true, AwaitingGate: true, Blocked: true}
+	for _, s := range All {
+		if got := NeedsHuman(s); got != want[s] {
+			t.Errorf("NeedsHuman(%s) = %v, want %v", s, got, want[s])
+		}
+	}
+}

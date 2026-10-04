@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/taskstate"
 )
 
 // Task states as they appear on the wire (§6). They are duplicated here as
@@ -35,13 +36,11 @@ const (
 
 // needsAttention reports whether a task is waiting on a human (§15). These
 // are the states pinned to the top of the board.
+//
+// It defers to taskstate.NeedsHuman so the board and the daemon's per-project
+// `attention` count (task 132.1) have one definition between them.
 func needsAttention(state string) bool {
-	switch state {
-	case stateAwaitingInput, stateAwaitingGate, stateBlocked:
-		return true
-	default:
-		return false
-	}
+	return taskstate.NeedsHuman(taskstate.State(state))
 }
 
 // keepsAttention is `H`'s predicate (task 129.18 decision 5): a task that

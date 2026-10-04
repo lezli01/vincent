@@ -72,6 +72,15 @@ func Terminal(s State) bool { return s == Archived }
 // `archived` counts as settled: it is reachable only from done or aborted.
 func Settled(s State) bool { return s == Done || s == Aborted || s == Archived }
 
+// NeedsHuman reports whether a task in this state is waiting on a person
+// (§15): a question, a gate, or a block. These are the states the TUI pins
+// to the top of the board and the ones GET /v1/projects?stats=true counts
+// as `attention` (task 132.1).
+//
+// `awaiting_children` is deliberately not one: the parent itself asks
+// nobody anything, and a lane inside it that does is counted as that lane.
+func NeedsHuman(s State) bool { return s == AwaitingInput || s == AwaitingGate || s == Blocked }
+
 // Action is something that moves a task between states: either a human
 // action (§6) or an engine event.
 type Action string
