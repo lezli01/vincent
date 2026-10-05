@@ -2605,6 +2605,30 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	// The `@` file picker, opened by the draft's own token (task 126.11).
 	// Every probe types the mention in rather than opening the list by hand:
 	// there is no key that opens it.
+	ctxProjectPicker: {
+		"down": func(t *testing.T) {
+			m := pickerProbeRoot(t)
+			m.Update(registryKey(t, "down"))
+			if m.projPick.cursor != 1 {
+				t.Fatalf("down left the highlight on %d", m.projPick.cursor)
+			}
+		},
+		"enter": func(t *testing.T) {
+			m := pickerProbeRoot(t)
+			m.Update(registryKey(t, "down"))
+			m.Update(registryKey(t, "enter"))
+			if m.projPick != nil || m.sel.id != 2 {
+				t.Fatalf("enter: picker open %v, sel %+v, want project 2", m.projPick != nil, m.sel)
+			}
+		},
+		"esc": func(t *testing.T) {
+			m := pickerProbeRoot(t)
+			m.Update(registryKey(t, "esc"))
+			if m.projPick != nil || m.sel.id != 1 {
+				t.Fatalf("esc: picker open %v, sel %+v", m.projPick != nil, m.sel)
+			}
+		},
+	},
 	ctxChatFiles: {
 		"down": func(t *testing.T) {
 			v := chatFilesFixture(claudeFiles())
@@ -3095,4 +3119,15 @@ func TestAliasRowsAreDeclared(t *testing.T) {
 			}
 		}
 	}
+}
+
+// pickerProbeRoot is a root with the project picker open over two projects,
+// the first of them selected.
+func pickerProbeRoot(t *testing.T) *root {
+	t.Helper()
+	m := newRoot(testCtx(t), connector{}, ackedDir(t))
+	m.phase = phaseConnected
+	m.sel = projectSel{id: 1, name: "api"}
+	m.projPick = newProjectPicker([]apiclient.Project{testProject(1, "api"), testProject(2, "web")}, 1)
+	return m
 }

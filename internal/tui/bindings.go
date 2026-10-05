@@ -169,6 +169,10 @@ const (
 	// describe one of them, and a `?` pane that described the other would be
 	// a lie.
 	ctxChatFiles bindingContext = "chat files"
+	// ctxProjectPicker is the root's project picker (task 132.4). Its own
+	// context for the reason every popup has one: it owns the keyboard while
+	// it is up, and its enter switches the project rather than opening a row.
+	ctxProjectPicker bindingContext = "project picker"
 
 	ctxNewChat bindingContext = "new chat"
 	ctxDaemon  bindingContext = "daemon"
@@ -331,6 +335,10 @@ var bindings = []binding{
 	{key: "tab", label: "move to the next task tab (shift+tab goes back)", scope: scopeGlobal},
 	{op: keymap.NextAttention, key: "!", label: "jump to the next task that needs you — awaiting input, awaiting approval or blocked", scope: scopeGlobal},
 	{op: keymap.Mouse, key: "M", label: "toggle the mouse (native text selection needs it off — or shift-drag)", scope: scopeGlobal},
+	// The project switch (task 132 decision 3). A global row, so the palette
+	// lists it and running it from a chat opens the picker rather than typing
+	// `@` into the draft.
+	{op: keymap.Project, key: "@", label: "switch project — pick the project the TUI is looking at", scope: scopeGlobal},
 	// Paste is normally the terminal's own (Cmd+V, Ctrl+Shift+V, middle
 	// click): it arrives as bracketed paste and lands in the focused field
 	// with no key involved. ctrl+v is the fallback for terminals that pass
@@ -629,6 +637,12 @@ var bindings = []binding{
 	{key: "tab", label: "complete the @ token with the highlighted file, or the top match (f2 too)", scope: scopePanel, context: ctxChatFiles, noPalette: true},
 	{key: "enter", label: "insert the highlighted file's mention; with none highlighted, send the message as typed", scope: scopePanel, context: ctxChatFiles, noPalette: true},
 	{key: "esc", label: "close the file list, and give ↑/↓ back to editing the draft", scope: scopePanel, context: ctxChatFiles, noPalette: true},
+
+	// The project picker (task 132.4): every printable key types into its
+	// filter, so its own keys are the four a filter does not type.
+	{key: "down", label: "move the highlight (↑/↓)", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
+	{key: "enter", label: "switch to the highlighted project", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
+	{key: "esc", label: "close the picker without switching", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
 
 	// New chat.
 	{key: "ctrl+s", label: "create the chat and open it", scope: scopePanel, context: ctxNewChat, hint: "ctrl+s create", priority: 1},
