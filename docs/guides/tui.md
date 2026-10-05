@@ -1707,8 +1707,9 @@ that is the cap the scheduler applies across projects. A project the daemon
 could not count shows `—` rather than zeros.
 
 Below the table, **Needs you, across projects** lists every task the board's
-`!` filter would keep — awaiting input, awaiting approval, blocked — oldest
-wait first, each led by its project. On a wide terminal the highlighted
+`!` filter would keep — awaiting input, awaiting approval, blocked, or a
+fan-out parent one of whose lanes is — oldest wait first, each led by its
+project. On a wide terminal the highlighted
 project's repository and execution defaults show beside the table; a narrower
 one drops that pane first, then the columns from the right, keeping name, `!`
 and running to the last.
