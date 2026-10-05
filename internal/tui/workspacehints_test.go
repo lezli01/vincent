@@ -81,7 +81,7 @@ func TestBlockedFooterKeepsRepairAndEditRetryAt80(t *testing.T) {
 		apiclient.ActionCancel, apiclient.ActionArchive, apiclient.ActionChat,
 	}}
 	for _, ctx := range []bindingContext{ctxTaskOverview, ctxTimeline, ctxOutput} {
-		_, hits := buildFooter(80, bindingsFor(ctx), &actionBar{}, blocked, attentionTally{n: 1}, false, false)
+		_, hits := buildFooter(80, bindingsFor(ctx), &actionBar{}, blocked, attentionTally{here: 1}, false, false)
 		shown := map[string]bool{}
 		for _, h := range hits {
 			shown[h.key] = true

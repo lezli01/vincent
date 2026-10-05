@@ -59,8 +59,9 @@ type pendingSwitch struct {
 	draft   string
 	open    tea.Msg
 	// deleted names the selected project when it was deleted (task 132.7):
-	// the switch cannot be declined, only confirmed, and notice is the line
-	// raised once it is.
+	// the switch cannot be declined, only confirmed. notice is the line
+	// raised once it is — and, for a follow, the one that replaces
+	// followedNotice (a `!` that crossed projects, task 132.14).
 	deleted string
 	notice  string
 }

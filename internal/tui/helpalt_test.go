@@ -321,7 +321,7 @@ func TestFooterTextFieldPinnedNeverTruncates(t *testing.T) {
 	const pinned = "ctrl+p commands  f1 help  ctrl+c quit"
 	rows := bindingsFor(ctxTasks)
 	for _, width := range []int{20, 40, 60, 80, 120, 200} {
-		line, hits := buildFooter(width, rows, &actionBar{}, footerTarget, attentionTally{n: 3}, true, true)
+		line, hits := buildFooter(width, rows, &actionBar{}, footerTarget, attentionTally{here: 3}, true, true)
 		plain := ansi.Strip(line)
 		if !strings.HasSuffix(plain, pinned) {
 			t.Fatalf("width %d: the pinned part was cut: %q", width, plain)
