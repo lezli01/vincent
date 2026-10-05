@@ -101,6 +101,13 @@ func (s *shell) setClient(c *apiclient.Client) tea.Cmd {
 	return tea.Batch(s.board.setClient(c), s.detail.setClient(c))
 }
 
+// setProject hands the selection to the board, whose reload it returns. The
+// detail sub-model is the task workspace's, which task 132.6 re-targets.
+func (s *shell) setProject(p projectSel) tea.Cmd {
+	s.projectScope.setProject(p)
+	return s.board.setProject(p)
+}
+
 // setConnected implements connectionAware: the panels stay rendered, the
 // banner and stale marks come from this flag.
 func (s *shell) setConnected(ok bool) { s.connected = ok }

@@ -66,6 +66,7 @@ type (
 		// in quick succession has two listings in flight, and only the one
 		// for the scope on screen may land.
 		state    string
+		stamp    loadStamp
 		issues   []apiclient.Issue
 		projects []apiclient.Project
 		err      error
@@ -94,9 +95,11 @@ type issueRow struct {
 
 // issuesView is §15's view 12.
 type issuesView struct {
-	// projectScope is the root's selected project (task 132.2), stored for
-	// the item that scopes this view to it.
+	// projectScope is the root's selected project (task 132.2). A switch
+	// reloads, and stamps drops a load issued for the previous project or
+	// overtaken by a newer one (task 132.5).
 	projectScope
+	stamps loadStamps
 
 	client *apiclient.Client
 	now    func() time.Time
@@ -132,7 +135,9 @@ func newIssuesView() *issuesView {
 	fi := newTextField()
 	fi.SetPlaceholder("filter by id, title, label, kind or project")
 	fi.SetPrompt("/")
-	return &issuesView{now: time.Now, filter: fi, state: issueStates[0], w: newIssueWrites()}
+	v := &issuesView{now: time.Now, filter: fi, state: issueStates[0], w: newIssueWrites()}
+	v.reload = v.loadCmd
+	return v
 }
 
 func (v *issuesView) title() string { return "Issues" }
@@ -245,6 +250,7 @@ func (v *issuesView) loadCmd() tea.Cmd {
 	}
 	v.loading = true
 	state := v.state
+	stamp := v.stamps.next(v.project.id)
 	opts := apiclient.IssueListOptions{}
 	if state != "all" {
 		opts.States = []string{v.state}
@@ -254,7 +260,7 @@ func (v *issuesView) loadCmd() tea.Cmd {
 		defer cancel()
 		issues, err := client.ListIssues(ctx, opts)
 		if err != nil {
-			return issuesLoadedMsg{state: state, err: err}
+			return issuesLoadedMsg{state: state, stamp: stamp, err: err}
 		}
 		// A heading with no name still groups correctly, so the project
 		// listing failing is not a reason to hide the issues.
@@ -262,14 +268,15 @@ func (v *issuesView) loadCmd() tea.Cmd {
 		if err != nil {
 			projects = nil
 		}
-		return issuesLoadedMsg{state: state, issues: issues, projects: projects}
+		return issuesLoadedMsg{state: state, stamp: stamp, issues: issues, projects: projects}
 	}
 }
 
 func (v *issuesView) applyLoaded(msg issuesLoadedMsg) {
-	if msg.state != v.state {
+	if msg.state != v.state || !v.stamps.accepts(msg.stamp) {
 		return
 	}
+	v.stamps.apply(msg.stamp)
 	v.loading = false
 	if msg.err != nil {
 		v.loadErr = msg.err
@@ -297,6 +304,9 @@ func (v *issuesView) scheduleRefresh() tea.Cmd {
 func (v *issuesView) updateNote(n apiclient.Note) tea.Cmd {
 	ev, ok := n.(apiclient.EventNote)
 	if !ok {
+		return nil
+	}
+	if !forProject(ev.Event, v.project.id) {
 		return nil
 	}
 	if isIssueEvent(ev.Event.Type) || isTaskEvent(ev.Event.Type) {
