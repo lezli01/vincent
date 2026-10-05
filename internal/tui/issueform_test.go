@@ -275,3 +275,34 @@ func TestIssueStateKeyOffersOnlyAvailableActions(t *testing.T) {
 		t.Fatal("X on a closed imported issue did not go straight to the reopen confirmation")
 	}
 }
+
+// TestIssueFormProjectRowIsLocked holds task 132.13: a create form shows the
+// selected project read-only. The cursor never lands on the row and enter on
+// it opens nothing; a switch re-aims the form (issuesView.retarget).
+func TestIssueFormProjectRowIsLocked(t *testing.T) {
+	v, f := issueFormFixture(t)
+	f.projects = []apiclient.Project{{ID: 1, Name: "api"}, {ID: 2, Name: "web"}}
+	if f.cursor != ifTitle || f.projectID != 1 {
+		t.Fatalf("form opened on row %d, project %d; want the title, on the selection", f.cursor, f.projectID)
+	}
+	for range int(ifRowCount) {
+		v.update(registryKey(t, "up"))
+	}
+	if f.cursor != ifTitle {
+		t.Fatalf("walking up stopped on row %d, want the title; the project row is not focusable", f.cursor)
+	}
+	f.cursor = ifProject // forced: nothing may open from it even so
+	v.update(registryKey(t, "enter"))
+	if f.pick != nil || f.projectID != 1 {
+		t.Fatalf("enter on the project row opened a list (pick %v) or moved the project (%d)", f.pick, f.projectID)
+	}
+	out := v.render(140, 40)
+	if !strings.Contains(out, "api") || !strings.Contains(out, "the selected project") {
+		t.Errorf("the project row does not show the selection read-only:\n%s", out)
+	}
+
+	v.retarget(projectSel{id: 2, name: "web"})
+	if v.w.form == nil || v.w.form.projectID != 2 {
+		t.Fatal("a switch did not re-aim the create form at the new selection")
+	}
+}

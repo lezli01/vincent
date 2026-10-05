@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
@@ -67,18 +66,20 @@ type footerSeg struct {
 // adds the reconnect hint while the daemon is unreachable. textField reports
 // that the active surface is capturing text, which picks the pinned part.
 func renderFooter(width int, panelRows []binding, bar *actionBar, target taskActions, attention int, retry bool) string {
-	line, _ := buildFooter(width, panelRows, bar, target, attentionTally{n: attention}, retry, false)
+	line, _ := buildFooter(width, panelRows, bar, target, attentionTally{here: attention}, retry, false)
 	return line
 }
 
-// attentionTally is the count behind the footer's `!` hint. allProjects
-// says some of it is in a project other than the selected one, and labels
-// the hint the way the board header's clause is labelled (task 132 decision
-// 34) until task 132.14 replaces both.
+// attentionTally is the live listing's needs-a-human count split at the
+// selected project (task 132.14): here is the board header's clause,
+// elsewhere the app header's badge, and total the footer's `!` hint.
 type attentionTally struct {
-	n           int
-	allProjects bool
+	here      int
+	elsewhere int
 }
+
+// total is everything `!` will visit (task 132 decision 53).
+func (t attentionTally) total() int { return t.here + t.elsewhere }
 
 func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActions, attention attentionTally, retry, textField bool) (string, []footerHit) {
 	pinnedSegs := footerPinnedSegs(textField)
@@ -455,15 +456,13 @@ func footerRestSegs(bar *actionBar, target taskActions, attention attentionTally
 			})
 		}
 	}
-	if attention.n > 0 && opKey(keymap.NextAttention) != "" {
+	if n := attention.total(); n > 0 && opKey(keymap.NextAttention) != "" {
 		// `!` is a global row, and the pinned segment stands for those: shown
-		// here, never counted.
-		count := strconv.Itoa(attention.n)
-		if attention.allProjects {
-			count += ", " + strings.Trim(allProjectsLabel, "()")
-		}
+		// here, never counted. The count is every project's and carries no
+		// label (task 132 decision 53): `!` crosses projects, and the app
+		// header's badge says how much of it is elsewhere.
 		segs = append(segs, footerSeg{
-			text: styleWarn.Render(fmt.Sprintf("%s next attention (%s)", opKey(keymap.NextAttention), count)), key: opKey(keymap.NextAttention), global: true, droppable: true,
+			text: styleWarn.Render(fmt.Sprintf("%s next attention (%d)", opKey(keymap.NextAttention), n)), key: opKey(keymap.NextAttention), global: true, droppable: true,
 		})
 	}
 	if retry {

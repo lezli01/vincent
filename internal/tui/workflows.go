@@ -163,10 +163,6 @@ func (w *workflowsView) setClient(c *apiclient.Client) tea.Cmd {
 	return w.loadCmd()
 }
 
-// hintedProject is the selected project: the list shows that project's
-// resolved registry, so no row names another one to hint (task 132.12).
-func (w *workflowsView) hintedProject() int64 { return w.project.id }
-
 // loadCmd fetches the selected project's resolved registry with two calls
 // (task 132 decision 39). GET /v1/workflows with a project_id merges by name,
 // so a global or builtin entry the project overrides is missing from it;

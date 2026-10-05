@@ -156,9 +156,7 @@ func newIssueForm(client *apiclient.Client, exec execFunc, original *apiclient.I
 		f.cursor = ifTitle
 	} else {
 		f.idemKey = newIdempotencyKey()
-		if projectID != 0 {
-			f.cursor = ifTitle
-		}
+		f.cursor = ifTitle
 	}
 	return f
 }
@@ -198,7 +196,7 @@ func (f *issueForm) editable(r ifRow) bool {
 func (f *issueForm) init() tea.Cmd { return f.catalogCmd(f.projectID) }
 
 // catalogCmd fetches the project's label catalogue and, creating, the
-// projects the project row offers.
+// projects the read-only project row names its project from.
 func (f *issueForm) catalogCmd(projectID int64) tea.Cmd {
 	client, creating := f.client, f.creating()
 	if client == nil {
@@ -308,13 +306,12 @@ func (f *issueForm) close(saved *apiclient.Issue, created bool) tea.Cmd {
 	return func() tea.Msg { return issueFormClosedMsg{saved: saved, created: created} }
 }
 
-// move walks the rows. The project row exists only while creating: an
-// issue's project is where it lives, not a field.
+// move walks the rows. The project row is never landed on: creating, it
+// shows the selected project read-only — a switch is the only way to change
+// it (task 132.13, decision 9) — and editing, it is not drawn at all, since
+// an issue's project is where it lives, not a field.
 func (f *issueForm) move(delta int) {
-	next := min(max(int(f.cursor)+delta, 0), int(ifRowCount)-1)
-	if !f.creating() && ifRow(next) == ifProject {
-		next = int(ifTitle)
-	}
+	next := min(max(int(f.cursor)+delta, int(ifTitle)), int(ifRowCount)-1)
 	f.cursor = ifRow(next)
 }
 
@@ -325,11 +322,7 @@ func (f *issueForm) activate() tea.Cmd {
 	}
 	switch f.cursor {
 	case ifProject:
-		opts := make([]pickerOption, 0, len(f.projects))
-		for _, p := range f.projects {
-			opts = append(opts, pickerOption{value: strconv.FormatInt(p.ID, 10), label: p.Name})
-		}
-		f.pick = newPicker(int(ifProject), "project", opts, false, strconv.FormatInt(f.projectID, 10))
+		// Read-only: the selection is the project (task 132.13).
 	case ifTitle:
 		f.editing = true
 		return f.title.Focus()
@@ -418,15 +411,6 @@ func (f *issueForm) updatePicking(msg tea.KeyPressMsg) tea.Cmd {
 	res := f.pick.update(msg)
 	if res.chosen {
 		switch ifRow(f.pick.row) {
-		case ifProject:
-			if id, err := strconv.ParseInt(res.value, 10, 64); err == nil && id != f.projectID {
-				f.projectID = id
-				f.catalog = nil
-				// A label belongs to a project's catalogue; the set chosen
-				// for another project is not this one's.
-				f.labels = nil
-				res.cmd = tea.Batch(res.cmd, f.catalogCmd(id))
-			}
 		case ifLabels:
 			f.toggleLabel(res.value, res.free)
 		case ifKind:
@@ -435,7 +419,7 @@ func (f *issueForm) updatePicking(msg tea.KeyPressMsg) tea.Cmd {
 			if p, err := strconv.Atoi(res.value); err == nil {
 				f.priority = p
 			}
-		case ifTitle, ifBody, ifSave, ifRowCount:
+		case ifProject, ifTitle, ifBody, ifSave, ifRowCount:
 		}
 	}
 	if res.closed {
@@ -503,8 +487,7 @@ func (f *issueForm) submit() tea.Cmd {
 	}
 	if f.creating() {
 		if f.projectID == 0 {
-			f.err = "pick a project"
-			f.cursor = ifProject
+			f.err = "no project is selected"
 			return nil
 		}
 		client, req, key := f.client, f.createRequest(), f.idemKey
@@ -722,7 +705,8 @@ func (f *issueForm) rowLines(r ifRow, width int) []string {
 	var value string
 	switch r {
 	case ifProject:
-		value = firstNonEmpty(f.projectName(), styleDim.Render("(pick a project)"))
+		value = firstNonEmpty(f.projectName(), styleDim.Render("(no project selected)")) +
+			"  " + styleDim.Render("· the selected project")
 	case ifTitle:
 		if f.editing && r == f.cursor {
 			f.title.SetWidth(max(width-17, 10))

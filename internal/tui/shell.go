@@ -121,9 +121,6 @@ func (s *shell) setProjects(projects []apiclient.Project) { s.board.setProjects(
 // banner and stale marks come from this flag.
 func (s *shell) setConnected(ok bool) { s.connected = ok }
 
-// hintedProject forwards the board's cursor project to the new-task form.
-func (s *shell) hintedProject() int64 { return s.board.hintedProject() }
-
 // capturesInput reports whether a text surface owns the keyboard: the focused
 // panel's own capture (§15: the shell consults the focused panel only).
 func (s *shell) capturesInput() bool {
@@ -175,6 +172,9 @@ func (s *shell) update(msg tea.Msg) (panel, tea.Cmd) {
 		// An explicit open — task creation, or a caller that knows the id.
 		// It skips the settle window: a deliberate action is not a cursor
 		// passing through.
+		if msg.attention && s.board.expandFor(msg.id) {
+			return s, tea.Batch(s.board.saveFolds(), s.openNow(msg.id))
+		}
 		return s, s.openNow(msg.id)
 	case selectionSettledMsg:
 		if msg.id != s.lastSel || msg.id == s.detail.taskID {
@@ -255,9 +255,15 @@ func (s *shell) updateBoardOnly(msg tea.Msg) (panel, tea.Cmd) {
 		s.selectAttention()
 		return s, nil
 	case selectTaskMsg:
+		// A `!` that crossed projects lands here after the switch, so the
+		// fold it opens is the target project's (task 132 decision 35).
+		var save tea.Cmd
+		if msg.attention && s.board.expandFor(msg.id) {
+			save = s.board.saveFolds()
+		}
 		s.board.selectedID = msg.id
 		s.board.restoreSelection(s.board.rows())
-		return s, nil
+		return s, save
 	case viewActivatedMsg, viewDeactivatedMsg:
 		return s, nil
 	}
@@ -270,22 +276,9 @@ func (s *shell) updateBoardOnly(msg tea.Msg) (panel, tea.Cmd) {
 // screen is a navigation surface now; enter is the explicit boundary into the
 // task workspace.
 func (s *shell) selectAttention() {
-	var attention []int64
-	for _, t := range s.board.visible() {
-		if needsAttention(t.State) {
-			attention = append(attention, t.ID)
-		}
-	}
-	if len(attention) == 0 {
+	next, _, ok := s.nextAttention()
+	if !ok {
 		return
-	}
-	cur, _ := s.board.selected()
-	next := attention[0]
-	for i, id := range attention {
-		if id == cur && i+1 < len(attention) {
-			next = attention[i+1]
-			break
-		}
 	}
 	s.board.selectedID = next
 	s.board.restoreSelection(s.board.rows())
@@ -538,22 +531,9 @@ func (s *shell) updateWheel(msg tea.MouseWheelMsg) tea.Cmd {
 // the pinned attention rows in board order, and opens it immediately — a
 // jump is deliberate, like enter, so it skips the settle window.
 func (s *shell) jumpAttention() tea.Cmd {
-	var attention []int64
-	for _, t := range s.board.visible() {
-		if needsAttention(t.State) {
-			attention = append(attention, t.ID)
-		}
-	}
-	if len(attention) == 0 {
+	next, _, ok := s.nextAttention()
+	if !ok {
 		return nil
-	}
-	cur, _ := s.board.selected()
-	next := attention[0]
-	for i, id := range attention {
-		if id == cur && i+1 < len(attention) {
-			next = attention[i+1]
-			break
-		}
 	}
 	// A fold is never what keeps you from work that needs a human: the key
 	// that exists for finding it opens whatever group it lands in, and the
@@ -563,6 +543,36 @@ func (s *shell) jumpAttention() tea.Cmd {
 		return tea.Batch(s.board.saveFolds(), s.openNow(next))
 	}
 	return s.openNow(next)
+}
+
+// nextAttention is the selected project's next task needing a human after
+// the cursor, in board order through visible() — so a committed filter
+// still applies inside the selected project (task 132 decision 52). wrapped
+// reports that the selection's attention tasks are exhausted and next is
+// the first of them again: the point at which the root crosses into the
+// next project instead, when one has an attention task. ok is false when
+// the selection has none at all.
+func (s *shell) nextAttention() (next int64, wrapped, ok bool) {
+	var attention []int64
+	for _, t := range s.board.visible() {
+		if needsAttention(t.State) {
+			attention = append(attention, t.ID)
+		}
+	}
+	if len(attention) == 0 {
+		return 0, true, false
+	}
+	cur, _ := s.board.selected()
+	for i, id := range attention {
+		if id != cur {
+			continue
+		}
+		if i+1 < len(attention) {
+			return attention[i+1], false, true
+		}
+		return attention[0], true, true
+	}
+	return attention[0], false, true
 }
 
 // liveBindings drops the registry rows whose keys are inert in the shell's

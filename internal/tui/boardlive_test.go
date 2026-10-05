@@ -434,7 +434,8 @@ func TestCollapsedGroupOpensForAwaitingInput(t *testing.T) {
 // TestBoardShowsOnlyTheSelectedProject is task 132.8 against the real
 // handlers: with two projects registered the board shows the selected one's
 // tasks only, a switch swaps the rows without leaving the board, and the
-// header's attention count stays global and says so (decision 34).
+// header's attention count is the selected project's while the app header's
+// badge counts the rest (task 132.14).
 func TestBoardShowsOnlyTheSelectedProject(t *testing.T) {
 	h := newBoardLiveHarness(t)
 	ctx := context.Background()
@@ -456,7 +457,8 @@ func TestBoardShowsOnlyTheSelectedProject(t *testing.T) {
 
 	h.p.until(20*time.Second, "the selected project's task, and the other's attention", func() bool {
 		got := content(h.m)
-		return strings.Contains(got, "home project task") && strings.Contains(got, allProjectsLabel)
+		return strings.Contains(got, "home project task") && strings.Contains(got, "(! 1 elsewhere)") &&
+			!strings.Contains(got, "need attention")
 	})
 	if got := content(h.m); strings.Contains(got, "zeta project task") {
 		t.Fatalf("the board shows another project's task:\n%s", got)
@@ -470,10 +472,10 @@ func TestBoardShowsOnlyTheSelectedProject(t *testing.T) {
 	if h.m.active != viewHome {
 		t.Errorf("a switch left the board for view %v", h.m.active)
 	}
-	// Every task needing attention is now in the selected project, so the
-	// clause is no longer labelled.
-	h.p.until(10*time.Second, "the attention clause to drop its label", func() bool {
+	// Every task needing attention is now in the selected project: the
+	// header counts it and the badge is gone.
+	h.p.until(10*time.Second, "the attention clause to move off the badge", func() bool {
 		got := content(h.m)
-		return strings.Contains(got, "1 need attention") && !strings.Contains(got, allProjectsLabel)
+		return strings.Contains(got, "1 need attention") && !strings.Contains(got, "elsewhere")
 	})
 }

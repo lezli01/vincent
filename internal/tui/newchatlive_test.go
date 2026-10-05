@@ -152,8 +152,8 @@ func chatsForm(t *testing.T, m *root) *newChatForm {
 }
 
 // TestNewChatFormPickersPopulateThroughRoot holds §15's new-chat form: `←`/`→`
-// step the project and agent fields in place (amended 2026-08-31, task 067 and
-// issue #281).
+// step the agent field in place (amended 2026-08-31, task 067 and issue
+// #281), and the project row is the selection (task 132.13).
 //
 // It drives the form through the **root** model, which is the layer a real
 // keystroke and a real fetch both take. `newChatForm.init` produces a
@@ -192,24 +192,20 @@ func TestNewChatFormPickersPopulateThroughRoot(t *testing.T) {
 			"newChatFieldsMsg is produced by newChatForm.init and consumed by nothing", got)
 	}
 
-	// The form opens on the title and the seven fields wrap, so six tabs land
-	// the cursor on the project row.
+	// The form opens on the title and the six focusable fields wrap, so six
+	// tabs come back to it: the project row is the selection, shown and never
+	// focused (task 132.13).
 	for range 6 {
 		m.Update(registryKey(t, "tab"))
+		if f = chatsForm(t, m); f.focus == ncProject {
+			t.Fatal("tab landed on the project row")
+		}
 	}
-	f = chatsForm(t, m)
-	if f.focus != 0 {
-		t.Fatalf("six tabs left the cursor on field %d, want the project row", f.focus)
+	if f.focus != ncTitle {
+		t.Fatalf("six tabs left the cursor on field %d, want the title", f.focus)
 	}
-
-	before := f.projectID
-	m.Update(registryKey(t, "right"))
-	f = chatsForm(t, m)
-	if f.projectID == before {
-		t.Fatalf("→ on the project row chose project %d again; §15: ← → choose here", before)
-	}
-	if name := f.projectName(); name != "alpha" && name != "beta" {
-		t.Fatalf("the project row renders %q, want one of the registered names", name)
+	if f.projectID != m.sel.id || f.projectName() != m.sel.name {
+		t.Fatalf("the project row shows %d %q, want the selection %+v", f.projectID, f.projectName(), m.sel)
 	}
 }
 

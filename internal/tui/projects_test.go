@@ -667,15 +667,6 @@ func TestProjectFormAndFilterSurviveTheGuidedBreakpoint(t *testing.T) {
 	}
 }
 
-func TestProjectsHintTheProjectUnderTheCursor(t *testing.T) {
-	p := newProjectsView()
-	loadedProjects(p, []apiclient.Project{testProject(7, "vincent")}, nil)
-	p.render(100, 24)
-	if got := p.hintedProject(); got != 7 {
-		t.Errorf("hintedProject() = %d, want 7", got)
-	}
-}
-
 // helpers
 
 func encode(t *testing.T, v any) string {

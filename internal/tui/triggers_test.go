@@ -378,9 +378,6 @@ func TestTriggersScopeToTheSelectedProject(t *testing.T) {
 	if got := visibleIDs(v); got != "b-broken,b-one,lost,gone" {
 		t.Errorf("b selected: rows = %s, want b's triggers then the unassigned band", got)
 	}
-	if got := v.hintedProject(); got != 2 {
-		t.Errorf("hintedProject() = %d, want the selection", got)
-	}
 }
 
 // The filter matches id, source and action, never a project name: the list

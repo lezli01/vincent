@@ -84,13 +84,6 @@ type contextual interface {
 	bindingContext() bindingContext
 }
 
-// projectHinting is implemented by views that know which project the user is
-// looking at, so the new-task form opens on it rather than making them pick
-// the project they were just staring at.
-type projectHinting interface {
-	hintedProject() int64
-}
-
 // dataDirAware is implemented by views that read files under the data dir:
 // the daemon view's log tail, for the reason §15 records — an endpoint cannot
 // serve the log when the daemon is what died — and the board, whose collapsed

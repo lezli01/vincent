@@ -57,11 +57,20 @@ type (
 	// boardInfoMsg carries the daemon info the header renders. thenLoad is
 	// set on the fetch a closing debounce window issues, and is what makes
 	// the task list follow it rather than race it (boardRefreshMsg).
+	//
+	// projects is a plain project listing fetched in the same batch (task
+	// 132 decision 54): the header's per-project slot clause reads the
+	// selected project's slots_used and max_parallel_tasks from it, so the
+	// figure refreshes with the daemon's rather than with the root's cached
+	// list, which moves only on project.* events. projectsErr is its own:
+	// either half can fail without the other.
 	boardInfoMsg struct {
-		archived bool
-		info     apiclient.Info
-		err      error
-		thenLoad bool
+		archived    bool
+		info        apiclient.Info
+		err         error
+		projects    []apiclient.Project
+		projectsErr error
+		thenLoad    bool
 	}
 	// boardConfigMsg carries the view preferences the daemon relays (§15,
 	// task 009). The TUI reads no configuration from disk, so this is where
@@ -104,6 +113,11 @@ type (
 		// it picks a task and hands the intent here rather than growing a
 		// second implementation of a form the workspace already owns.
 		openPR bool
+		// attention marks the open a `!` made when it crossed into another
+		// project (task 132 decision 52): the board opens whatever fold
+		// hides the task once the switch has re-scoped it (task 054
+		// decision 3).
+		attention bool
 		// back is the screen `esc` returns to once the workspace's own back
 		// stack is empty. Zero is the board; the issue detail sets itself,
 		// so a linked task opened from an issue returns to that issue
@@ -132,11 +146,15 @@ type board struct {
 	// now is injected so elapsed rendering is deterministic under test.
 	now func() time.Time
 
-	tasks   []apiclient.Task
-	info    apiclient.Info
-	infoOK  bool
-	loaded  bool
-	loadErr error
+	tasks  []apiclient.Task
+	info   apiclient.Info
+	infoOK bool
+	// projects is the latest successful listing from the info fetch, for
+	// the per-project slot clause; projectsOK is false until one lands.
+	projects   []apiclient.Project
+	projectsOK bool
+	loaded     bool
+	loadErr    error
 	// lastLoad stamps the newest successful fetch, so a stale board says how
 	// stale it is rather than silently lying.
 	lastLoad time.Time
@@ -447,7 +465,11 @@ func (b *board) infoFetch(thenLoad bool) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		info, err := client.Info(ctx)
-		return boardInfoMsg{archived: archived, info: info, err: err, thenLoad: thenLoad}
+		projects, projectsErr := client.ListProjects(ctx)
+		return boardInfoMsg{
+			archived: archived, info: info, err: err,
+			projects: projects, projectsErr: projectsErr, thenLoad: thenLoad,
+		}
 	}
 }
 
@@ -518,6 +540,9 @@ func (b *board) update(msg tea.Msg) (panel, tea.Cmd) {
 	case boardInfoMsg:
 		if msg.err == nil {
 			b.info, b.infoOK = msg.info, true
+		}
+		if msg.projectsErr == nil && msg.projects != nil {
+			b.projects, b.projectsOK = msg.projects, true
 		}
 		if msg.thenLoad {
 			// A failed info still loads: the rows are what the board is for,
@@ -1203,21 +1228,6 @@ func (b *board) selected() (int64, bool) {
 	return 0, false
 }
 
-// hintedProject is the project of the row under the cursor, which is the
-// project a new task is most likely for.
-func (b *board) hintedProject() int64 {
-	id, ok := b.selected()
-	if !ok {
-		return 0
-	}
-	for _, t := range b.visible() {
-		if t.ID == id {
-			return t.ProjectID
-		}
-	}
-	return 0
-}
-
 // rememberSelection records the id under the cursor so a refresh that
 // reorders rows can put the cursor back on the same task. The table clamps
 // its cursor index but never remaps it, so tracking the index alone would
@@ -1634,22 +1644,20 @@ func (b *board) slotBreakdown() []string {
 }
 
 // headerLine reports what the daemon is doing overall (§15): how much work
-// is in flight against the cap, how much needs a human, and which adapters
-// are actually usable. The attention count comes from the whole fetched list,
-// not the filtered view — a filter must not hide that something needs you —
-// and a task on a question counts in both it and the slot count, because it
-// is both holding a slot and waiting on a person.
+// is in flight against the caps, how much needs a human, and which adapters
+// are actually usable. The attention count comes from the selected project's
+// whole fetched list, not the filtered view — a filter must not hide that
+// something needs you — and a task on a question counts in both it and the
+// slot count, because it is both holding a slot and waiting on a person.
 //
 // The line says only what needs a look (task 129.15): at zero the attention
 // clause is omitted rather than reading "0 need attention", and healthy
 // adapters collapse into one dim `agents ✓`. While a filter is committed the
 // count says `(all tasks)`, because it is deliberately not the filtered one.
 //
-// The count is every project's, not the selected one's (task 132 decision
-// 34): a selection is a filter and must not hide a question (decision 2).
-// When some of it is in another project the clause says `(all projects)`,
-// which also covers a committed filter — it is the wider statement. Task
-// 132.14 replaces the clause with the badge.
+// The count is the selected project's (task 132.14). Other projects'
+// attention is the app header's `(! N elsewhere)` badge, which every view
+// draws, so a selection still hides no question (decision 2).
 //
 // The breakdown clauses are shed rather than wrapped when the panel is too
 // narrow for them, last one first. The budget follows from what the line
@@ -1657,22 +1665,15 @@ func (b *board) slotBreakdown() []string {
 // silently disagree with it; an unsized board (b.width <= 0) has no budget
 // to fail, so it keeps them.
 func (b *board) headerLine() string {
-	tally := b.attentionTally()
-	attention := tally.n
+	attention := b.attentionTally().here
 
-	limit := "?"
-	if b.infoOK {
-		limit = strconv.Itoa(b.info.MaxParallelTasks)
-	}
-	head := fmt.Sprintf(" %d/%s running", b.slotsUsed(), limit)
+	sep := styleDim.Render(" · ")
+	head := b.slotHead(sep)
 
 	var tail []string
 	if attention > 0 {
 		clause := fmt.Sprintf("%s %d need attention", attentionBadge, attention)
-		switch {
-		case tally.allProjects:
-			clause += " " + allProjectsLabel
-		case b.filter.Value() != "":
+		if b.filter.Value() != "" {
 			clause += " (all tasks)"
 		}
 		tail = append(tail, styleAsk.Render(clause))
@@ -1681,7 +1682,6 @@ func (b *board) headerLine() string {
 		tail = append(tail, b.agentsSummary())
 	}
 
-	sep := styleDim.Render(" · ")
 	breakdown := b.slotBreakdown()
 	for {
 		parts := append([]string{head}, breakdown...)
@@ -1693,16 +1693,75 @@ func (b *board) headerLine() string {
 	}
 }
 
-// allProjectsLabel marks an attention count that includes projects other
-// than the selected one (task 132 decision 34).
-const allProjectsLabel = "(all projects)"
+// slotHead is the header's slot clause (task 132 decisions 11 and 54): the
+// selected project's slots, its own cap when it has one, and the daemon's
+// figure — `2 running · cap 3 · daemon 5/8`. A project with no cap of its
+// own has no `cap` clause (decision 33): the global cap shown as a
+// per-project one would claim a limit that does not exist.
+//
+// Without both answers — /v1/info and the projects listing that rides it —
+// or with a selection the listing does not hold, it falls back to the global
+// `U/C running` every earlier version drew rather than a confident zero.
+func (b *board) slotHead(sep string) string {
+	if p, ok := b.selectedProject(); ok && b.infoOK {
+		head := fmt.Sprintf(" %d running", p.SlotsUsed)
+		if p.MaxParallelTasks != nil {
+			head += sep + fmt.Sprintf("cap %d", *p.MaxParallelTasks)
+		}
+		return head + sep + fmt.Sprintf("daemon %d/%d", b.info.Slots.Used, b.info.MaxParallelTasks)
+	}
+	limit := "?"
+	if b.infoOK {
+		limit = strconv.Itoa(b.info.MaxParallelTasks)
+	}
+	return fmt.Sprintf(" %d/%s running", b.slotsUsed(), limit)
+}
 
-// attentionTally is the attention count over every project's live tasks,
-// and whether any of it is outside the selected project (decision 34): the
-// one source for the header clause and the footer's `!` hint.
+// selectedProject is the selection's row in the info fetch's projects
+// listing.
+func (b *board) selectedProject() (apiclient.Project, bool) {
+	if !b.projectsOK || b.project.id == 0 {
+		return apiclient.Project{}, false
+	}
+	for _, p := range b.projects {
+		if p.ID == b.project.id {
+			return p, true
+		}
+	}
+	return apiclient.Project{}, false
+}
+
+// attentionTally splits the live listing's attention count at the selected
+// project (task 132.14): here feeds the board header, elsewhere the app
+// header's badge, and their sum the footer's `!` hint, which counts
+// everything `!` will visit (decision 53).
+//
+// It counts root tasks in a taskstate.NeedsHuman state only — never lanes,
+// which the listing does not carry, nor `awaiting_children` parents or
+// chats (spec decision row 29). That deliberately differs from the daemon's
+// `stats.attention`, which counts lanes (decision 21): this is the count of
+// what `!` can land on.
 func (b *board) attentionTally() attentionTally {
-	n := countAttention(b.tasks)
-	return attentionTally{n: n, allProjects: n > countAttention(b.projectTasks())}
+	here := countAttention(b.projectTasks())
+	return attentionTally{here: here, elsewhere: countAttention(b.tasks) - here}
+}
+
+// attentionTargets is one project's attention tasks in board order — the
+// order the board would draw them in under the current grouping — for `!`
+// crossing into it (task 132 decision 52). The board's own filters are the
+// selected project's and do not apply here.
+func (b *board) attentionTargets(project int64) []apiclient.Task {
+	// The whole project is grouped, not its attention tasks alone: the
+	// order of the groups is the order of the tasks that open them.
+	tasks := tasksInProject(b.tasks, project)
+	sortTasks(tasks)
+	var out []apiclient.Task
+	for _, r := range groupRows(tasks, b.group) {
+		if !r.header && needsAttention(r.task.State) {
+			out = append(out, r.task)
+		}
+	}
+	return out
 }
 
 // agentsSummary names only the adapters that need a look (task 129.15): the

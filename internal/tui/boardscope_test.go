@@ -252,30 +252,33 @@ func readFile(t *testing.T, dir string) string {
 	return string(b)
 }
 
-// TestAttentionCountIsGlobalAndLabelled is decision 34: the header counts
-// every project's attention and says `(all projects)` while some is
-// elsewhere — over a committed filter's `(all tasks)` — and `!` walks the
-// selected project only.
-func TestAttentionCountIsGlobalAndLabelled(t *testing.T) {
+// TestAttentionCountIsTheSelectedProjects is task 132.14, rewriting
+// decision 34's interim test: the header counts the selected project's
+// attention only and carries no `(all projects)` label — the app header's
+// badge carries the rest — a committed filter says `(all tasks)` again, the
+// footer's `!` hint counts everything `!` will visit with no label
+// (decision 53), and the shell's own walk stays inside the selection.
+func TestAttentionCountIsTheSelectedProjects(t *testing.T) {
 	b := scopedBoard()
-	if got := headerText(b); !strings.Contains(got, "2 need attention "+allProjectsLabel) {
-		t.Errorf("header = %q, want both projects counted and labelled", got)
+	got := headerText(b)
+	if !strings.Contains(got, "1 need attention") || strings.Contains(got, "all projects") {
+		t.Errorf("header = %q, want the selected project's 1 and no label", got)
 	}
 	b.filter.SetValue("docs")
-	if got := headerText(b); !strings.Contains(got, allProjectsLabel) || strings.Contains(got, "(all tasks)") {
-		t.Errorf("header with a filter = %q, want the one wider label", got)
+	if got := headerText(b); !strings.Contains(got, "1 need attention (all tasks)") {
+		t.Errorf("header with a filter = %q, want `(all tasks)`", got)
 	}
-	if got := b.attentionTally(); !got.allProjects || got.n != 2 {
-		t.Errorf("tally = %+v", got)
+	if got := b.attentionTally(); got.here != 1 || got.elsewhere != 1 || got.total() != 2 {
+		t.Errorf("tally = %+v, want 1 here and 1 elsewhere", got)
 	}
 	footer := ansi.Strip(renderFooterTally(b))
-	if !strings.Contains(footer, "next attention (2, all projects)") {
-		t.Errorf("footer = %q", footer)
+	if !strings.Contains(footer, "next attention (2)") || strings.Contains(footer, "all projects") {
+		t.Errorf("footer = %q, want the unlabelled total", footer)
 	}
 
 	b.tasks = b.tasks[:2] // the other project's question answered
-	if got := headerText(b); strings.Contains(got, allProjectsLabel) {
-		t.Errorf("header = %q, labelled with nothing elsewhere", got)
+	if got := b.attentionTally(); got.elsewhere != 0 {
+		t.Errorf("tally = %+v, want nothing elsewhere", got)
 	}
 
 	s, _ := newShellFixture(t, twoProjectTasks()...)
@@ -285,7 +288,7 @@ func TestAttentionCountIsGlobalAndLabelled(t *testing.T) {
 	}
 	_ = s.jumpAttention()
 	if id, _ := s.board.selected(); id != 2 {
-		t.Errorf("! reached %d in another project", id)
+		t.Errorf("the shell's walk reached %d in another project; crossing is the root's", id)
 	}
 }
 

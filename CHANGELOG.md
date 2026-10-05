@@ -62,8 +62,7 @@ list with the user-facing context a commit subject cannot carry.
   where `enter` used to. `a`, `D` and `/` are unchanged.
 - **The TUI names a selected project.** The app header now shows
   `◆ <project>` after the version, or `◆ no project` when none is
-  registered. The new-task form still opens on the project under the cursor,
-  and on the selected project when the cursor names none. On a narrow
+  registered. On a narrow
   terminal the header drops the view's tag first, then the version, and
   shortens the project name last. Scoping views to it comes in later
   releases.
@@ -265,13 +264,21 @@ list with the user-facing context a commit subject cannot carry.
   Switching project swaps the board's rows in place without a refetch; the
   archived tasks board asks the daemon for that project only, and restarts at
   its first page. The `PROJECT` column is gone, and `/` no longer matches the
-  project name. The needs-attention count still spans every project and reads
-  `(all projects)` — in the header and in the footer's `!` hint — while some of
-  it is elsewhere; `!` jumps within the selected project. Marks in another
+  project name. Marks in another
   project are kept but not counted or acted on until you switch back. Folded
   groups are kept per project in `tui.json`'s `board_folds_by_project`; folds
   saved by an older version are moved to their project once, and a fold saved
   under a workflow-only grouping is dropped.
+- **Tasks that need you stay visible across projects.** The app header shows
+  `(! N elsewhere)` after the project name, on every screen, while tasks in
+  other projects wait on you; the board header's needs-attention count is the
+  selected project's, and the footer's `! next attention (N)` counts both. `!`
+  walks the selected project's waiting tasks, then switches to the next
+  project by name that has one and opens its task, saying so on the status
+  line (a draft you typed asks first); with nothing elsewhere it wraps. The
+  board header's slot count is the selected project's too —
+  `2 running · cap 3 · daemon 5/8`, without `cap` for a project that has no
+  cap of its own. The bell still rings for every project.
 - **The chats boards show the selected project only.** The chats board and
   the archived chats board now list only the selected project's chats, in one
   flat list with no project headings. Switching project empties the board and
@@ -305,6 +312,17 @@ list with the user-facing context a commit subject cannot carry.
   than when any project does; switching to a project without one while the
   screen is open keeps the screen and says why there is nothing to list.
   ([#705](https://github.com/lezli01/vincent/issues/705))
+- **New tasks, chats and issues are created in the selected project.** The
+  new-task, new-chat and new-issue forms show the selected project read-only
+  instead of offering a project list, and `n` opens the new-task form on the
+  selected project from every screen — on the project overview too, whatever
+  row is highlighted. Switching project is the only way to change it: a form
+  you have not touched follows the switch, and one you have asks first. A
+  new task started from a pull request, an issue or a chat of another
+  project switches to that project first. `←`/`→` on the new-chat form now
+  step only the agent row. With no project selected, the forms never pick
+  one for you.
+  ([#707](https://github.com/lezli01/vincent/issues/707))
 - **TUI lists follow the selected project's events.** The issues, chats,
   pull-request, workflows and triggers screens now refresh on events
   from the selected project, on events that belong to no project, and on any

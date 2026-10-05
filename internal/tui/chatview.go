@@ -277,13 +277,6 @@ func (v *chatView) bindingContext() bindingContext {
 	return ctxChat
 }
 
-func (v *chatView) hintedProject() int64 {
-	if v.chat != nil {
-		return v.chat.ProjectID
-	}
-	return 0
-}
-
 // open points the workspace at a chat: it loads the conversation and
 // subscribes to that chat's stream, dropping any previous subscription.
 func (v *chatView) open(id int64) tea.Cmd {

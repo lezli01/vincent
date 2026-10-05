@@ -119,7 +119,13 @@ you have scrolled away from the tail. See
 ### Where and why did it fail?
 
 `!` jumps the board's cursor to the next task that needs you; `H` narrows the
-board to those tasks and `H` again shows them all. `enter` on a blocked task
+board to those tasks and `H` again shows them all. Once the selected project
+has nothing left, `!` crosses into the next project by name that does,
+switches to it and opens its task, saying so on the status line
+(``! — switched to `web` (task #42 needs you)``); with nothing elsewhere it
+wraps to the selected project's first. The app header's `(! 2 elsewhere)`
+says how many tasks in other projects are waiting, whichever screen you are
+on, and the bell rings for every project. `enter` on a blocked task
 opens a **failure card**: the step and attempt that stopped, the reason in
 words with its code dim beside it, the last lines of the failing attempt's
 output as evidence, and the actions that answer the reason — `r` retry, `E`
@@ -159,11 +165,10 @@ need a look.
 needs-attention clause is not drawn at all; when something is, it reads
 `! 2 need attention` — and `! 2 need attention (all tasks)` while a filter is
 committed, because the count is deliberately the whole board's, not the
-filter's. The count also spans every project: while some of it is in a project
-other than the selected one, it reads `! 2 need attention (all projects)` —
-which covers a filter too — and the footer's hint reads
-`! next attention (2, all projects)`. `!` itself only jumps between the
-selected project's tasks. Every healthy agent collapses into one dim `agents ✓`: only an agent
+filter's. It counts the selected project; tasks waiting in other projects are
+counted by the app header's `(! 1 elsewhere)` badge after the project name,
+drawn on every screen and gone at zero. The footer's hint,
+`! next attention (3)`, counts both — every task `!` will visit. Every healthy agent collapses into one dim `agents ✓`: only an agent
 that is not logged in (`codex ⚠`) or out of quota (`claude ⏳14:20`) is named
 beside it, and one that is not installed is not mentioned — `vincent doctor`
 and the daemon view list the whole catalog. With no agent installed at all the
@@ -173,16 +178,21 @@ reconnecting or disconnected. After it, `◆ api` names the project the TUI has
 selected, or `◆ no project` while none is registered. It selects the first
 project by name; `@`, or a click on the segment, [switches it](#switching-project).
 On a narrow terminal the header drops the view's tag first,
-then the version, and shortens the project name last. The action keys for the
+then the version, then the `elsewhere` badge, and shortens the project name
+last. The action keys for the
 selected task are in the footer, once — there is no second copy of them inside
 the board.
 
-The running count is the daemon's own figure: every task holding a concurrency
-slot — `awaiting_input` as well as `running`, fan-out lanes as well as the root
-tasks the board lists — which is the number the scheduler admits against, so a
-full pool reads as full. Because that can exceed what is on screen, the header
-explains itself when it has to: `3/6 running · 2 lanes · 1 on input`, with each
-clause dropped when it is zero and shed on a terminal too narrow for it. A task
+The running count is the selected project's, beside its own cap and the
+daemon's: `2 running · cap 3 · daemon 5/8`. A project with no cap of its own
+leaves the `cap` clause out, `2 running · daemon 5/8`. Each figure counts every
+task holding a concurrency slot — `awaiting_input` as well as `running`,
+fan-out lanes as well as the root tasks the board lists — which is the number
+the scheduler admits against, so a full pool reads as full. Because the daemon
+figure can exceed what is on screen, the header explains it when it has to:
+`2 running · cap 3 · daemon 5/8 · 2 lanes · 1 on input`, with each clause
+dropped when it is zero and shed on a terminal too narrow for it. Until the
+board has heard the project figures it shows the daemon's alone, `5/8 running`. A task
 on a question is counted in both the slot count and the needs-attention badge,
 being at once a slot holder and something waiting on you.
 
@@ -1556,9 +1566,13 @@ key.
 
 ### New task — `n`
 
-Opens for the project you are looking at: the one under the cursor — a
-board row, an issue, a row of the projects view — or, where the cursor names
-none, the project the header shows. A guided form: project → workflow
+Opens for the project the header shows, from every screen — the project
+overview included, whatever row its cursor is on. The project row at the top
+is read-only: the cursor never stops on it, and [switching
+project](#switching-project) is the only way to change it — a form you have
+not touched follows the switch, and one you have asks first. A draft seeded
+from a pull request, an issue or a chat of another project switches to that
+project before the form opens. A guided form: project → workflow
 (with its description and step list, flagging steps whose agent is unavailable)
 → *(pull request, when seeded from one)* → title → description → fields → base branch → branch →
 priority → start → optional agent/model/effort override.
@@ -1675,7 +1689,10 @@ naming both.
 On a wide terminal those fields are grouped into six stages in the left rail:
 **Project**, **Workflow**, **Task details**, **Git & priority**, **Execution**,
 and **Review**. The main pane shows only the fields in the current stage, while
-Review gathers the complete request beside the Create action. The rail follows
+Review gathers the complete request beside the Create action. The project is
+the selection, settled before the form opens, so the form opens on Workflow:
+the rail lists Project as already decided, and the read-only project row
+heads the Workflow stage. The rail follows
 the ordinary field cursor — there is no separate Next button or second set of
 navigation keys.
 
@@ -1909,8 +1926,9 @@ this task's issue" row opens the issue; `esc` there comes back to the task.
 #### Filing and editing — `n`, `i`
 
 `n` and `i` open the **issue form** over the screen you are on: the project
-(only when filing a new one), title, description, labels, kind and priority,
-then save. `enter` edits a field or opens its list; `e` on the description
+(only when filing a new one, and read-only — it is the selected project, and
+switching project re-aims the form), title, description, labels, kind and
+priority, then save. `enter` edits a field or opens its list; `e` on the description
 hands it to `$EDITOR`. The labels list offers the project's labels and ticks
 the ones set; `t` in it types a new one, and `t` in the kind list types a kind
 it does not suggest. Priority is `none`, `urgent`, `high`, `medium` or `low`.
@@ -2299,8 +2317,10 @@ and drops you straight into the workspace. With no project registered, `n` says
 so on the board instead of opening a form you could not submit — add a
 repository in the project overview first.
 
-Five of the seven rows are lists — project, agent, model, effort and branch —
-and they are
+The project row shows the selected project and cannot be changed here: `tab`
+passes over it, and [switching project](#switching-project) re-aims the form.
+Four of the other six rows are lists — agent, model, effort and branch — and
+they are
 the same list the new-task and follow-up forms use: `enter` opens one, `/`
 filters it as you type, `↑`/`↓` walk it and `enter` picks. The model and effort
 lists are the selected agent's own catalog, tagged `cli` where the CLI itself
@@ -2310,13 +2330,13 @@ would use, and both end with a row for typing a value the catalog has never
 heard of — a model shipped this morning is not in it. Changing the agent
 re-scopes both lists and clears anything chosen under the previous one.
 
-`←`/`→` still step the project and agent rows one at a time without opening
-their list, which is quicker when you have two of something. They are not
+`←`/`→` still step the agent row one at a time without opening its list,
+which is quicker when you have two agents. They are not
 offered on the model and effort rows, where stepping through a hundred values
 answers nothing.
 
 Title and base branch are typed. The base row's placeholder names the selected
-project's actual default branch and follows the project row; leave it empty and
+project's actual default branch; leave it empty and
 the daemon resolves that default at creation.
 
 The **branch** row is a list of the project's local branches, and it has exactly
@@ -2346,7 +2366,7 @@ the draft alone; a second press discards the draft and returns you to the board.
 | `tab` / `shift+tab` | Next / previous field |
 | `enter` | Open the focused field's list, or move on from a text field |
 | `t` | In an open list, type a value it does not offer |
-| `←` / `→` | Step the project and agent fields in place |
+| `←` / `→` | Step the agent field in place |
 | `ctrl+s` | Create the chat and open it |
 | `esc` | Close an open list, else discard the draft |
 
@@ -3090,7 +3110,7 @@ Global bindings — active whenever the focused surface is not capturing text:
 | `?` | Toggle help |
 | `f1` | Toggle help, also while a text field has the keyboard |
 | `tab` / `shift+tab` | Move between task tabs; on the board filter, commit it |
-| `!` | Jump to the next task that needs you — awaiting input, awaiting approval or blocked |
+| `!` | Jump to the next task that needs you — awaiting input, awaiting approval or blocked; then the next project's |
 | `n` | New task |
 | `@` | [Switch project](#switching-project) |
 | `M` | Toggle the mouse |
@@ -3179,7 +3199,7 @@ The first sixteen are the operations screens share, the next ten are the
 | `palette_alt` | `ctrl+p` | Open the command palette, also while a text field has the keyboard |
 | `help` | `?` | Toggle help |
 | `help_alt` | `f1` | Toggle help, also while a text field has the keyboard |
-| `next_attention` | `!` | Jump to the next task that needs you — awaiting input, awaiting approval or blocked |
+| `next_attention` | `!` | Jump to the next task that needs you — awaiting input, awaiting approval or blocked; past the selected project's last, switch to the next project that has one |
 | `mouse` | `M` | Toggle the mouse |
 | `quit` | `q` | Quit the TUI |
 | `new` | `n` | New task — or new chat, on the chats board, or new issue, on the issue screens |

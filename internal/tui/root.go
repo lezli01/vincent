@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -589,6 +591,9 @@ func (m *root) globalKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		// Jump to the next task needing a human — global, so it also pulls
 		// a takeover screen back to the board it acts on.
 		if m.phase == phaseConnected {
+			if cmd, ok := m.crossAttention(); ok {
+				return cmd, true
+			}
 			return tea.Batch(m.switchTo(viewHome), m.deliver(viewHome, jumpAttentionMsg{})), true
 		}
 	case opKey(keymap.New):
@@ -951,23 +956,13 @@ func (m *root) updateNoticeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// openNewTask opens the §15 new-task form, seeded with the project the
-// current view is looking at. The form must be told to open before it is
-// shown: opening is what resets the draft and fetches the catalogs.
+// openNewTask opens the §15 new-task form on the selected project, from
+// every view: the form's project row is the selection, read-only (task
+// 132.13, decision 9), so there is nothing for a view to hint any more. The
+// form must be told to open before it is shown: opening is what resets the
+// draft and fetches the catalogs.
 func (m *root) openNewTask() tea.Cmd {
-	// The view's hint wins and the selection is the fallback. Until the
-	// views are scoped (132.8–132.13) their rows still span every project,
-	// so the row under the cursor is what the user is pointing at — and the
-	// projects view is never project-bearing at all. 132.13 retires the hint
-	// once the forms lock to the selection (decision 9), when the two agree.
-	var hint int64
-	if h, ok := m.views[m.active].(projectHinting); ok {
-		hint = h.hintedProject()
-	}
-	if hint == 0 {
-		hint = m.sel.id
-	}
-	cmd := m.deliver(viewNewTask, newTaskMsg{projectID: hint})
+	cmd := m.deliver(viewNewTask, newTaskMsg{projectID: m.sel.id})
 	return tea.Batch(cmd, m.switchTo(viewNewTask))
 }
 
@@ -975,25 +970,26 @@ func (m *root) openNewTask() tea.Cmd {
 // (task 064). It goes through the root for the reason openNewTask does: the
 // form has to be told to open before it is shown, because opening is what
 // resets the draft and fetches the catalogs.
+//
+// It goes through openObject as well (task 132.13): the seed names its
+// project, and the form's project row is locked to the selection, so a seed
+// of another project switches first and opens second (decision 38). Every
+// seed today comes from a view already on its project, so this is the guard
+// that keeps a locked field from ever disagreeing with the header.
 func (m *root) updateNewTaskFromPull(msg newTaskFromPullMsg) (tea.Model, tea.Cmd) {
-	cmd := m.deliver(viewNewTask, msg)
-	return m, tea.Batch(cmd, m.switchTo(viewNewTask))
+	return m, m.openObject(msg)
 }
 
 // updateNewTaskFromIssue opens the new-task form seeded with a vincent issue
-// (task 130.13), through the root for updateNewTaskFromPull's reason.
+// (task 130.13), through the root for updateNewTaskFromPull's reasons.
 func (m *root) updateNewTaskFromIssue(msg newTaskFromIssueMsg) (tea.Model, tea.Cmd) {
-	cmd := m.deliver(viewNewTask, msg)
-	return m, tea.Batch(cmd, m.switchTo(viewNewTask))
+	return m, m.openObject(msg)
 }
 
 // updateNewTaskFromChat opens the form as a chat's handoff form (task 074),
-// through the root for the reason the two above go through it: the form must
-// be told to open before it is shown, because opening is what resets the draft
-// and fetches the catalogs.
+// through the root for updateNewTaskFromPull's reasons.
 func (m *root) updateNewTaskFromChat(msg newTaskFromChatMsg) (tea.Model, tea.Cmd) {
-	cmd := m.deliver(viewNewTask, msg)
-	return m, tea.Batch(cmd, m.switchTo(viewNewTask))
+	return m, m.openObject(msg)
 }
 
 // routeOpen performs one open once its project is settled: openObject and a
@@ -1046,6 +1042,9 @@ func (m *root) routeOpen(open tea.Msg) tea.Cmd {
 		if v, ok := m.views[viewChat].(*chatView); ok {
 			return tea.Batch(v.open(msg.id), m.switchTo(viewChat))
 		}
+	case newTaskFromPullMsg, newTaskFromIssueMsg, newTaskFromChatMsg:
+		// A seeded form, once its project is the selection.
+		return tea.Batch(m.deliver(viewNewTask, msg), m.switchTo(viewNewTask))
 	case taskCreatedMsg:
 		// Landing on the task that was just created: creating a task is the
 		// beginning of watching it, and the 201's warnings ride along so an
@@ -1076,6 +1075,12 @@ func openProjectID(open tea.Msg) int64 {
 		return msg.projectID
 	case taskCreatedMsg:
 		return msg.task.ProjectID
+	case newTaskFromPullMsg:
+		return msg.projectID
+	case newTaskFromIssueMsg:
+		return msg.projectID
+	case newTaskFromChatMsg:
+		return msg.chat.ProjectID
 	}
 	return 0
 }
@@ -1110,7 +1115,7 @@ func (m *root) openObject(open tea.Msg) tea.Cmd {
 		return m.routeOpen(open)
 	}
 	if p, ok := m.knownProject(id); ok {
-		return m.followTo(p, open)
+		return m.followTo(p, open, "")
 	}
 	if m.client == nil {
 		// Nothing to ask: the open is routed as it stands.
@@ -1182,7 +1187,58 @@ func (m *root) updateFollowFetched(msg followFetchedMsg) tea.Cmd {
 	if !ok {
 		return m.routeOpen(msg.open)
 	}
-	return m.followTo(p, withProjectID(msg.open, msg.projectID))
+	return m.followTo(p, withProjectID(msg.open, msg.projectID), "")
+}
+
+// crossAttention is `!` leaving the selected project (task 132 decision 52):
+// once the selection's attention tasks are exhausted — or it has none — the
+// press goes to the next project by name that has one, wrapping, and opens
+// its first attention task in board order. The open follows the object
+// (decision 38), so a dirty draft asks first (decision 36), and raises a
+// notice naming the switch. ok is false when no other project has an
+// attention task: the press then stays in the selection, which is the wrap
+// back to its first.
+func (m *root) crossAttention() (tea.Cmd, bool) {
+	s, ok := m.views[viewHome].(*shell)
+	if !ok {
+		return nil, false
+	}
+	if _, wrapped, _ := s.nextAttention(); !wrapped {
+		return nil, false
+	}
+	for _, p := range projectsAfter(m.projects, m.sel.id) {
+		targets := s.board.attentionTargets(p.ID)
+		if len(targets) == 0 {
+			continue
+		}
+		t := targets[0]
+		open := selectTaskMsg{id: t.ID, state: t.State, projectID: p.ID, attention: true}
+		return m.followTo(p, open, attentionNotice(p.Name, t.ID)), true
+	}
+	return nil, false
+}
+
+// projectsAfter is every project but the selected one, by case-insensitive
+// name, starting after the selection and wrapping. That is not the picker's
+// order: the picker lists projects in the daemon's order, by id.
+func projectsAfter(projects []apiclient.Project, sel int64) []apiclient.Project {
+	sorted := slices.Clone(projects)
+	slices.SortStableFunc(sorted, func(a, b apiclient.Project) int {
+		if c := strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.ID, b.ID)
+	})
+	at := slices.IndexFunc(sorted, func(p apiclient.Project) bool { return p.ID == sel })
+	if at < 0 {
+		return sorted
+	}
+	return append(sorted[at+1:], sorted[:at]...)
+}
+
+// attentionNotice is the line a `!` that crossed projects raises.
+func attentionNotice(name string, task int64) string {
+	return fmt.Sprintf("%s — switched to `%s` (task #%d needs you)", attentionBadge, name, task)
 }
 
 // followTo switches to p and then routes open, unless the active view holds
@@ -1190,24 +1246,28 @@ func (m *root) updateFollowFetched(msg followFetchedMsg) tea.Cmd {
 // A created task is never guarded: its draft is the one just sent, so there
 // is nothing left to discard, and asking would strand the form on
 // "creating…" with the task already made (review F1).
-func (m *root) followTo(p apiclient.Project, open tea.Msg) tea.Cmd {
+// notice, when set, replaces the default followedNotice.
+func (m *root) followTo(p apiclient.Project, open tea.Msg, notice string) tea.Cmd {
 	_, created := open.(taskCreatedMsg)
 	if draft, dirty := m.activeDraft(); dirty && !created && m.sel.id != 0 {
-		m.pending = &pendingSwitch{project: p, why: whyFollowed, draft: draft, open: open}
+		m.pending = &pendingSwitch{project: p, why: whyFollowed, draft: draft, open: open, notice: notice}
 		return nil
 	}
-	return m.applyFollow(p, open)
+	return m.applyFollow(p, open, notice)
 }
 
 // applyFollow is a follow's switch, its open and its notice. A workspace
 // jump loses the task it came from: the stack is the old project's.
-func (m *root) applyFollow(p apiclient.Project, open tea.Msg) tea.Cmd {
+func (m *root) applyFollow(p apiclient.Project, open tea.Msg, notice string) tea.Cmd {
 	if o, ok := open.(openTaskMsg); ok {
 		o.from = 0
 		open = o
 	}
 	cmd := m.applySwitch(p, whyFollowed)
-	m.selNotice, m.selNoticeWarn = followedNotice(p.Name), false
+	if notice == "" {
+		notice = followedNotice(p.Name)
+	}
+	m.selNotice, m.selNoticeWarn = notice, false
 	return tea.Batch(cmd, m.routeOpen(open))
 }
 
@@ -1223,7 +1283,7 @@ func (m *root) updatePendingSwitchKey(msg tea.KeyPressMsg) tea.Cmd {
 			return m.applyDeletedSwitch(p.project, p.why, p.notice)
 		}
 		if p.open != nil {
-			return m.applyFollow(p.project, p.open)
+			return m.applyFollow(p.project, p.open, p.notice)
 		}
 		return m.applySwitch(p.project, p.why)
 	case "n", "esc":
@@ -1831,16 +1891,19 @@ func (m *root) headerLine() string {
 		project = m.sel.name
 	}
 	segment := func(name string) string { return styleTitle.Render(headerProjectGlyph + " " + name) }
+	elsewhere := m.elsewhereBadge()
 
-	// Shedding order (task 132.2): the view tag truncates down to a floor
-	// and is then dropped; then the version goes; last, the project name
-	// truncates behind an ellipsis.
-	// hit records where the segment landed, for the header click.
+	// Shedding order (task 132.2, extended by 132.14): the view tag
+	// truncates down to a floor and is then dropped; then the version goes;
+	// then the elsewhere badge; last, the project name truncates behind an
+	// ellipsis.
+	// hit records where the segment landed, for the header click. It never
+	// covers the badge: a click there is not a click on the project.
 	hit := func(l, seg string) {
 		x0 := ansi.StringWidth(l)
 		m.headerHit = [2]int{x0, x0 + ansi.StringWidth(seg)}
 	}
-	head := lead(full) + segment(project)
+	head := lead(full) + segment(project) + elsewhere
 	if room := width - ansi.StringWidth(head) - 2; room >= headerTagFloor || room >= ansi.StringWidth(m.headerTagFull()) {
 		hit(lead(full), segment(project))
 		return head + "  " + styleDim.Render(m.headerTag(room))
@@ -1848,6 +1911,10 @@ func (m *root) headerLine() string {
 	if ansi.StringWidth(head) <= width {
 		hit(lead(full), segment(project))
 		return head
+	}
+	if short := lead("vincent") + segment(project) + elsewhere; elsewhere != "" && ansi.StringWidth(short) <= width {
+		hit(lead("vincent"), segment(project))
+		return short
 	}
 	l := lead(full)
 	if ansi.StringWidth(l+segment(project)) > width {
@@ -1857,6 +1924,22 @@ func (m *root) headerLine() string {
 	seg := segment(ansi.Truncate(project, max(room, 1), "…"))
 	hit(l, seg)
 	return l + seg
+}
+
+// elsewhereBadge is the app header's `(! N elsewhere)` (task 132.14,
+// decision 2): how many tasks in projects other than the selected one need
+// a human, from the board's global live listing (decision 17), so it costs
+// no fetch of its own. Drawn on every view, omitted at zero.
+func (m *root) elsewhereBadge() string {
+	s, ok := m.views[viewHome].(*shell)
+	if !ok {
+		return ""
+	}
+	n := s.board.attentionTally().elsewhere
+	if n <= 0 {
+		return ""
+	}
+	return " " + styleAsk.Render(fmt.Sprintf("(%s %d elsewhere)", attentionBadge, n))
 }
 
 // headerProjectGlyph marks the selected-project segment of the app header. A

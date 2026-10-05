@@ -19,7 +19,9 @@ import (
 // The header is the one number on the board that answers "why is nothing
 // starting", so it has to be that count and not a different one.
 
-var headerRunningRE = regexp.MustCompile(`(\d+)/(\d+) running`)
+// The first `n/cap` on the line is the daemon figure: `daemon U/C` in the
+// per-project clause (task 132 decision 54), `U/C running` in its fallback.
+var headerRunningRE = regexp.MustCompile(`(\d+)/(\d+)`)
 
 // headerSlots reads the header's numerator and denominator back out of the
 // rendered line, which is what a human reads.

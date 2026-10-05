@@ -333,7 +333,7 @@ var bindings = []binding{
 	// is — `?`'s own row already runs help from the palette.
 	{op: keymap.HelpAlt, key: helpAltKey, label: "toggle this help (works while a text field has the keyboard)", scope: scopeGlobal, noPalette: true},
 	{key: "tab", label: "move to the next task tab (shift+tab goes back)", scope: scopeGlobal},
-	{op: keymap.NextAttention, key: "!", label: "jump to the next task that needs you — awaiting input, awaiting approval or blocked", scope: scopeGlobal},
+	{op: keymap.NextAttention, key: "!", label: "jump to the next task that needs you — awaiting input, awaiting approval or blocked; then the next project's", scope: scopeGlobal},
 	{op: keymap.Mouse, key: "M", label: "toggle the mouse (native text selection needs it off — or shift-drag)", scope: scopeGlobal},
 	// The project switch (task 132 decision 3). A global row, so the palette
 	// lists it and running it from a chat opens the picker rather than typing
@@ -646,7 +646,7 @@ var bindings = []binding{
 	{key: "ctrl+s", label: "create the chat and open it", scope: scopePanel, context: ctxNewChat, hint: "ctrl+s create", priority: 1},
 	{key: "enter", label: "open the focused field's list, or move on from a text field", scope: scopePanel, context: ctxNewChat, hint: "enter list", priority: 2},
 	{key: "tab", label: "next field (shift+tab goes back)", scope: scopePanel, context: ctxNewChat, hint: "tab next", priority: 3},
-	{key: "left", label: "step the project and agent fields in place (← →); enter opens their list", scope: scopePanel, context: ctxNewChat, hint: "← →  step", priority: 4},
+	{key: "left", label: "step the agent field in place (← →); enter opens its list", scope: scopePanel, context: ctxNewChat, hint: "← →  step", priority: 4},
 	{key: "esc", label: "close an open list, else discard the draft", scope: scopePanel, context: ctxNewChat, hint: "esc cancel", priority: 5},
 	{op: keymap.FreeText, key: "t", label: "in an open list: type a value it does not offer", scope: scopePanel, context: ctxNewChat, priority: 6, term: termFreeText},
 

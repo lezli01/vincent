@@ -11529,6 +11529,24 @@ stream for the live tail.
    project survive a switch but are neither counted in the title nor
    dispatched while it is not selected. This supersedes task 009's "read
    project by project" — that is now the project switch.*
+   *Amended 2026-10-05 (task 132.14, issue #708; task 132 decisions 2, 11
+   and 52–55): attention stays cross-project through the chrome, not this
+   header.* The needs-attention clause counts **the selected project only**,
+   and `(all projects)` is gone; `(all tasks)` is again the only qualifier,
+   for a committed filter. The count staying global is now the app header's
+   `(! N elsewhere)` badge (*The selected project*, below): root tasks in
+   other projects in a needs-a-human state, from the same global listing.
+   The footer's `!` hint counts everything `!` will visit — this project plus
+   every other — and carries no label, `! next attention (N)`. The slot head
+   is the selected project's: `2 running · cap 3 · daemon 5/8`, its
+   `slots_used`, its own `max_parallel_tasks` and the daemon's `slots.used`
+   over the global cap, read from a plain `GET /v1/projects` the board makes
+   beside each `/v1/info` fetch, so it refreshes with that figure. A project
+   with no cap of its own reads `2 running · daemon 5/8`, and a board without
+   a projects answer falls back to the global `5/8 running`. Issue #324's
+   `lanes` and `on input` clauses follow the daemon figure, dimmed, and are
+   still shed first, last one first: they explain the global numerator. The
+   bell is unchanged and still rings for every project's `awaiting_input`.
    **Grouped by default (task 009, added 2026-08-16):** the rows nest under group
    headers — projects, and the workflows of a project inside it — configured by
    `tui.board.group_by` (§12.3) and cycled for the session with `g`. See
@@ -12242,6 +12260,15 @@ stream for the live tail.
    priority → start (now or paused) → optional agent/model/effort override (pickers fed by
    `GET /v1/agents` with provenance-tagged options and free-text entry;
    replaces workflow defaults, never explicit step fields, §8.6) → create.
+   *Amended 2026-10-05 (task 132.13, issue #707):* there is no project
+   picker any more. The project row is read-only and shows the selected
+   project (§15 Layout); the cursor never lands on it, and a project switch,
+   which re-aims a pristine form and asks before dropping a dirty or seeded
+   one (task 132.6), is the only way to change it. `n` opens the form on the
+   selection from every view — the project overview included, whatever row
+   its cursor is on — and a form opened with no selection never falls back to
+   a project of its own. A form seeded from a pull request, an issue or a
+   chat of another project switches to that project first and opens second.
    **Workflow fields (task 022, added 2026-08-21):** selecting a workflow
    pre-renders its ordered §8.1.2 declarations with labels, descriptions,
    type/required badges, pattern help, and a boolean toggle. Declared names are
@@ -12344,6 +12371,9 @@ stream for the live tail.
    priority, Execution, Review. The stage is derived from the field cursor,
    not independently navigated; Review summarizes the whole request and the
    existing `ctrl+s` shortcut still submits from anywhere.
+   *Amended 2026-10-05 (task 132.13):* the project row is never focused, so
+   the Project stage is never the active one: the rail shows it as decided,
+   and the read-only project row is drawn at the top of the Workflow stage.
    **Start row (task 096, added 2026-09-11):** the Git & priority stage gains
    a `start` row after priority. `enter` toggles it between "when a slot is
    free" and `paused`, which sends `paused: true` (§13.2) so the task waits on
@@ -13247,6 +13277,8 @@ stream for the live tail.
    a full pane over either screen: project (on a create), title, description
    (`e` hands it to `$EDITOR`), labels over the project's catalogue, kind
    over task 130 decision 4's suggestions with free text, and priority.
+   *(Amended 2026-10-05, task 132.13: on a create the project row shows the
+   selection read-only and is never focused; a switch re-aims the form.)*
    `ctrl+s` saves; `esc` asks first over unsaved changes. A row the DTO's
    `editable` omits is drawn read-only, "mirrored from GitHub". An edit sends
    `version` and only the changed fields, labels as `add_labels` /
@@ -13364,11 +13396,11 @@ the registered-project list, refetched on connect, on reconnect and on every
 first project by name. A project registered while one is selected does not
 take over, and a rename of the selected one reaches it. Task 132.3 replaces
 the first-by-name rule with the full startup precedence, and 132.7 decides
-what a deleted selection becomes (*A deleted or renamed selection*, below). The new-task form opens on the active
-view's hint, the project under its cursor, and on the selection when the view
-hints none: until 132.8–132.13 scope the views their rows still span every
-project, and the projects view is never project-bearing, so the cursor is what
-the user points at. 132.13 retires the hint (decision 9). The app header names the
+what a deleted selection becomes (*A deleted or renamed selection*, below). The new-task form opened on the active
+view's hint, the project under its cursor, while the views' rows still spanned
+every project. *Amended 2026-10-05 (task 132.13, issue #707):* the hint is
+retired (decision 9). The new-task, new-chat and issue forms open on the
+selection from every view, and each one's project row shows it read-only. The app header names the
 selection on its one line, after the version and any connection badge and
 before the view tag: `vincent 0.x  ◆ api  [Tasks]`, or `◆ no project`. The
 chrome stays one line, so the size floors above do not move. When the line
@@ -13376,6 +13408,15 @@ does not fit, the view tag truncates down to eight cells and is then dropped;
 then the version goes, leaving `vincent`; last, the project name truncates
 behind an ellipsis. The connection badge is never shed. *Amended 2026-10-05
 (task 132.4):* a left click on the segment opens the project picker below.
+*Amended 2026-10-05 (task 132.14, issue #708; task 132 decision 2):* while
+tasks in other projects need a human the segment is followed by
+`(! N elsewhere)`, in the attention style, on every view, the overview
+included, and omitted at zero. N counts root tasks in `awaiting_input`,
+`awaiting_gate` or `blocked` in every project but the selected one, from the
+board's global listing; it never counts lanes, `awaiting_children` parents
+or chats, and so deliberately differs from `stats.tasks.attention`, which
+counts lanes. It is shed after the version and before the project name
+truncates, and the `◆` click span never covers it.
 
 **The project picker (task 132.4, issue #698, added 2026-10-05).** The global
 operation `project`, on `@` by default, opens a root-owned popup listing every
@@ -14670,6 +14711,16 @@ where they are read, so a chat says `(ctrl+r)` and never `(v)`. `e` opens `$EDIT
 re-reads a registry or the daemon blocks. One key jumps to the next task needing a
 human, surfaced in the footer only when that count is non-zero — the board has
 always pinned and belled those tasks without offering any way to *go* to one.
+*Amended 2026-10-05 (task 132.14, issue #708; task 132 decision 52):* `!`
+crosses projects. It cycles the selected project's attention tasks in board
+order, a committed filter still applying there; past the last of them the
+next press switches to the next project by name that has one, wrapping, and
+opens its first attention task in board order. When no other project has
+one, it wraps to the selected project's first. The switch is the
+follow-the-object path, so a dirty draft asks first, and it raises a notice,
+``! — switched to `web` (task #42 needs you)``, which the next key clears.
+The target project's folds open over the task as they do in the selected
+one. The footer hint counts every task the key will visit.
 
 *Amended 2026-09-03 (issue #321).* That cycle is **four levels, not three**:
 `quiet → compact → normal → verbose`, wrapping from verbose back to quiet, so
@@ -14775,7 +14826,8 @@ agent's invocation sigil, where `↑`/`↓` then walk it until `esc` *(added
 worktree and branch to a task *(added 2026-09-01, task 074)*, `esc` returns to
 the board. In the **new-chat form**: `ctrl+s` creates, `tab`/`shift+tab` move
 between fields, `enter` opens the focused field's list, `←`/`→` step the
-project and agent fields in place, `esc` discards.
+agent field in place *(amended 2026-10-05, task 132.13: the project row is
+read-only and no longer steps)*, `esc` discards.
 `n` is the one key whose meaning depends on where you are, deliberately: on the
 chats board it makes a chat, and everywhere else it still makes a task. `!` is
 **not** extended to chats — an `awaiting_input` chat is pinned and badged on
@@ -14822,6 +14874,13 @@ or moves on from a text one, uniformly: `ctrl+s` is the sole create key.
 `←`/`→` survive on the project and agent rows as a fast in-place step — the
 enum-row idiom from the new-task fields editor — and are not offered on the
 two catalog rows, where "next" answers nothing.
+
+*Amended 2026-10-05 (task 132.13, issue #707).* The project row is no longer
+a picker and no longer steps: it shows the selected project read-only, `tab`
+and `shift+tab` pass over it, and `←`/`→` step only the agent row. A project
+switch re-aims the form (§15 Layout, task 132.6) and is the only way its
+project changes. A form opened with no selection does not take the first
+project listed.
 
 *Amended 2026-09-21 (task 125.9, issue #542).* The new-chat form has a
 **seventh row, `branch`**, after the base row so the two branch rows are

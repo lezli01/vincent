@@ -49,8 +49,11 @@ var ntStageLabels = [ntStageCount]string{
 	ntStageReview:    "Review",
 }
 
+// ntStageHints has no Project entry: that stage is never the active one. The
+// project is the selection, decided before the form opens, so the cursor
+// never rests on its row (task 132.13); the rail shows the stage as decided,
+// and the read-only row heads the Workflow stage instead.
 var ntStageHints = [ntStageCount]string{
-	ntStageProject:   "Choose the repository that will own this task.",
 	ntStageWorkflow:  "Choose what vincent should run and inspect its steps.",
 	ntStageDetails:   "Describe the outcome and add any workflow fields.",
 	ntStageGit:       "Choose the base, task branch, and queue priority.",
@@ -60,9 +63,7 @@ var ntStageHints = [ntStageCount]string{
 
 func ntStageForRow(row ntRow) ntStage {
 	switch row {
-	case ntProject:
-		return ntStageProject
-	case ntWorkflow:
+	case ntProject, ntWorkflow:
 		return ntStageWorkflow
 	case ntSource, ntTitle, ntDescription, ntFields:
 		// The source row belongs to Task details, not to a stage of its own:
@@ -83,9 +84,12 @@ func ntStageForRow(row ntRow) ntStage {
 func ntRowsForStage(stage ntStage) []ntRow {
 	switch stage {
 	case ntStageProject:
-		return []ntRow{ntProject}
+		return nil
 	case ntStageWorkflow:
-		return []ntRow{ntWorkflow}
+		// The project row is display-only and drawn here, above the first
+		// stage the cursor can reach, so the guided layout shows where the
+		// task will go the way the compact form does (task 132.13).
+		return []ntRow{ntProject, ntWorkflow}
 	case ntStageDetails:
 		return []ntRow{ntSource, ntTitle, ntDescription, ntFields}
 	case ntStageGit:
@@ -307,8 +311,13 @@ func (n *newTask) renderRow(row ntRow) string {
 	// An inherited row is drawn like any other and marked as what it is: the
 	// worktree it names exists, so this is a fact being confirmed rather than
 	// a choice being offered (task 074).
-	if n.inherited(row) {
+	switch {
+	case n.inherited(row):
 		line += "  " + styleDim.Render("(from the chat)")
+	case row == ntProject:
+		// Display-only like an inherited row, for a different reason: the
+		// project is the selection, which only a switch changes (task 132.13).
+		line += "  " + styleDim.Render("(the selected project)")
 	}
 	if msg, bad := n.rowErr[row]; bad {
 		line += "  " + styleBad.Render("⚠ "+msg)
@@ -327,7 +336,7 @@ func (n *newTask) rowValue(row ntRow) string {
 	case ntProject:
 		p, ok := n.project()
 		if !ok {
-			return styleDim.Render("(pick one)")
+			return styleDim.Render("(no project selected)")
 		}
 		return p.Name + "  " + styleDim.Render(p.Path)
 	case ntWorkflow:
