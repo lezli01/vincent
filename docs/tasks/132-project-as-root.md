@@ -1,6 +1,6 @@
 # 132 — Project as root: the TUI scoped to one selected project
 
-**Status:** 🔄 in progress (5/17)
+**Status:** 🔄 in progress (5/18)
 
 Issue [#694](https://github.com/lezli01/vincent/issues/694), part of
 [#693](https://github.com/lezli01/vincent/issues/693). Spec §3 (the new row
@@ -417,6 +417,9 @@ dependency of 132.4. So 132.4's picker marks only the current selection, and
 132.3's pull request adds the default marker when it introduces the setting;
 neither blocks the other.
 
+*Note (2026-10-05):* 132.3 shipped without the marker, so it moves to its own
+item, 132.18, rather than staying owed by a closed one (review F4 on #718).
+
 Two smaller calls were made beside it. A project with a nil
 `max_parallel_tasks` has no cap of its own, only the global one, so its row
 reads `N running` with no denominator; showing the global cap would imply a
@@ -498,7 +501,7 @@ its own pull request.
   startup precedence, `tui.default_project`, `selected_project` in `tui.json`,
   `vincent --project` (decisions 29–32). Depends: 132.2. ✓ 2026-10-05
   The project picker's default-project marker, which decision 33 assigned
-  here, did not land with it and is still to be built.
+  here, did not land with it and is now 132.18's.
 - [x] **132.4** ([#698](https://github.com/lezli01/vincent/issues/698)) The
   `project` op on `@`, the picker popup with stats, the palette row, the
   header segment as its click target, spec §15 Discovery, Layout, Keys and
@@ -535,10 +538,14 @@ its own pull request.
   overview replaces view 4 (Projects). Depends: 132.4.
 - [ ] **132.16** ([#710](https://github.com/lezli01/vincent/issues/710))
   Project-aware `scripts/screenshots.sh` and a full recapture. Depends:
-  132.2–132.15; #692 (merged, so already met).
+  132.2–132.15, 132.18; #692 (merged, so already met).
 - [ ] **132.17** ([#711](https://github.com/lezli01/vincent/issues/711)) The
   human walkthrough record, and the m3 and task 129 amendments. Depends:
   132.16.
+- [ ] **132.18** The project picker's `tui.default_project` marker, which
+  decision 33 assigned to 132.3 and which shipped without it; spec §15's
+  picker note and the TUI guide's picker section in the same pull request.
+  No issue of its own yet. Depends: 132.3, 132.4.
 
 The scoping items (132.8, 132.10–132.13) may merge in any order once their
 dependencies land, and each one carries its own view's tests, guide section and
