@@ -1689,7 +1689,10 @@ naming both.
 On a wide terminal those fields are grouped into six stages in the left rail:
 **Project**, **Workflow**, **Task details**, **Git & priority**, **Execution**,
 and **Review**. The main pane shows only the fields in the current stage, while
-Review gathers the complete request beside the Create action. The rail follows
+Review gathers the complete request beside the Create action. The project is
+the selection, settled before the form opens, so the form opens on Workflow:
+the rail lists Project as already decided, and the read-only project row
+heads the Workflow stage. The rail follows
 the ordinary field cursor — there is no separate Next button or second set of
 navigation keys.
 

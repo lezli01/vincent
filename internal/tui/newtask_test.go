@@ -322,6 +322,30 @@ func TestNewTaskProjectRowIsLocked(t *testing.T) {
 	}
 }
 
+// TestNewTaskGuidedLayoutShowsTheSelectedProject holds review F2 on task
+// 132.13: the cursor never rests on the project row, so the guided layout
+// must draw it inside a stage the cursor reaches, or the user sees where the
+// task will go only as a rail summary.
+func TestNewTaskGuidedLayoutShowsTheSelectedProject(t *testing.T) {
+	n := loadedForm(t)
+	selectProject(n, 2)
+	out := ansi.Strip(n.render(140, 40))
+	if !strings.Contains(out, "2 of 6 · Workflow") {
+		t.Fatalf("the form did not open on the Workflow stage:\n%s", out)
+	}
+	if !strings.Contains(out, "(the selected project)") {
+		t.Errorf("the guided Workflow stage does not draw the read-only project row:\n%s", out)
+	}
+	for row := ntProject; row < ntRowCount; row++ {
+		if !n.focusable(row) {
+			continue
+		}
+		if got := ntStageForRow(row); got == ntStageProject {
+			t.Errorf("row %v maps to the Project stage, which has no hint and is never drawn", row)
+		}
+	}
+}
+
 // resolveField is a resolved §8.6 value with its source, spelled short.
 func resolveField(value, source string) *apiclient.ResolvedField {
 	return &apiclient.ResolvedField{Value: value, Source: source}

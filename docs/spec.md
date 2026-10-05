@@ -12371,6 +12371,9 @@ stream for the live tail.
    priority, Execution, Review. The stage is derived from the field cursor,
    not independently navigated; Review summarizes the whole request and the
    existing `ctrl+s` shortcut still submits from anywhere.
+   *Amended 2026-10-05 (task 132.13):* the project row is never focused, so
+   the Project stage is never the active one: the rail shows it as decided,
+   and the read-only project row is drawn at the top of the Workflow stage.
    **Start row (task 096, added 2026-09-11):** the Git & priority stage gains
    a `start` row after priority. `enter` toggles it between "when a slot is
    free" and `paused`, which sends `paused: true` (§13.2) so the task waits on

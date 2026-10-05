@@ -49,8 +49,11 @@ var ntStageLabels = [ntStageCount]string{
 	ntStageReview:    "Review",
 }
 
+// ntStageHints has no Project entry: that stage is never the active one. The
+// project is the selection, decided before the form opens, so the cursor
+// never rests on its row (task 132.13); the rail shows the stage as decided,
+// and the read-only row heads the Workflow stage instead.
 var ntStageHints = [ntStageCount]string{
-	ntStageProject:   "The selected project owns this task; switching project re-aims the form.",
 	ntStageWorkflow:  "Choose what vincent should run and inspect its steps.",
 	ntStageDetails:   "Describe the outcome and add any workflow fields.",
 	ntStageGit:       "Choose the base, task branch, and queue priority.",
@@ -60,9 +63,7 @@ var ntStageHints = [ntStageCount]string{
 
 func ntStageForRow(row ntRow) ntStage {
 	switch row {
-	case ntProject:
-		return ntStageProject
-	case ntWorkflow:
+	case ntProject, ntWorkflow:
 		return ntStageWorkflow
 	case ntSource, ntTitle, ntDescription, ntFields:
 		// The source row belongs to Task details, not to a stage of its own:
@@ -83,9 +84,12 @@ func ntStageForRow(row ntRow) ntStage {
 func ntRowsForStage(stage ntStage) []ntRow {
 	switch stage {
 	case ntStageProject:
-		return []ntRow{ntProject}
+		return nil
 	case ntStageWorkflow:
-		return []ntRow{ntWorkflow}
+		// The project row is display-only and drawn here, above the first
+		// stage the cursor can reach, so the guided layout shows where the
+		// task will go the way the compact form does (task 132.13).
+		return []ntRow{ntProject, ntWorkflow}
 	case ntStageDetails:
 		return []ntRow{ntSource, ntTitle, ntDescription, ntFields}
 	case ntStageGit:
