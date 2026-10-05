@@ -119,7 +119,13 @@ you have scrolled away from the tail. See
 ### Where and why did it fail?
 
 `!` jumps the board's cursor to the next task that needs you; `H` narrows the
-board to those tasks and `H` again shows them all. `enter` on a blocked task
+board to those tasks and `H` again shows them all. Once the selected project
+has nothing left, `!` crosses into the next project by name that does,
+switches to it and opens its task, saying so on the status line
+(``! — switched to `web` (task #42 needs you)``); with nothing elsewhere it
+wraps to the selected project's first. The app header's `(! 2 elsewhere)`
+says how many tasks in other projects are waiting, whichever screen you are
+on, and the bell rings for every project. `enter` on a blocked task
 opens a **failure card**: the step and attempt that stopped, the reason in
 words with its code dim beside it, the last lines of the failing attempt's
 output as evidence, and the actions that answer the reason — `r` retry, `E`
@@ -159,11 +165,10 @@ need a look.
 needs-attention clause is not drawn at all; when something is, it reads
 `! 2 need attention` — and `! 2 need attention (all tasks)` while a filter is
 committed, because the count is deliberately the whole board's, not the
-filter's. The count also spans every project: while some of it is in a project
-other than the selected one, it reads `! 2 need attention (all projects)` —
-which covers a filter too — and the footer's hint reads
-`! next attention (2, all projects)`. `!` itself only jumps between the
-selected project's tasks. Every healthy agent collapses into one dim `agents ✓`: only an agent
+filter's. It counts the selected project; tasks waiting in other projects are
+counted by the app header's `(! 1 elsewhere)` badge after the project name,
+drawn on every screen and gone at zero. The footer's hint,
+`! next attention (3)`, counts both — every task `!` will visit. Every healthy agent collapses into one dim `agents ✓`: only an agent
 that is not logged in (`codex ⚠`) or out of quota (`claude ⏳14:20`) is named
 beside it, and one that is not installed is not mentioned — `vincent doctor`
 and the daemon view list the whole catalog. With no agent installed at all the
@@ -173,16 +178,21 @@ reconnecting or disconnected. After it, `◆ api` names the project the TUI has
 selected, or `◆ no project` while none is registered. It selects the first
 project by name; `@`, or a click on the segment, [switches it](#switching-project).
 On a narrow terminal the header drops the view's tag first,
-then the version, and shortens the project name last. The action keys for the
+then the version, then the `elsewhere` badge, and shortens the project name
+last. The action keys for the
 selected task are in the footer, once — there is no second copy of them inside
 the board.
 
-The running count is the daemon's own figure: every task holding a concurrency
-slot — `awaiting_input` as well as `running`, fan-out lanes as well as the root
-tasks the board lists — which is the number the scheduler admits against, so a
-full pool reads as full. Because that can exceed what is on screen, the header
-explains itself when it has to: `3/6 running · 2 lanes · 1 on input`, with each
-clause dropped when it is zero and shed on a terminal too narrow for it. A task
+The running count is the selected project's, beside its own cap and the
+daemon's: `2 running · cap 3 · daemon 5/8`. A project with no cap of its own
+leaves the `cap` clause out, `2 running · daemon 5/8`. Each figure counts every
+task holding a concurrency slot — `awaiting_input` as well as `running`,
+fan-out lanes as well as the root tasks the board lists — which is the number
+the scheduler admits against, so a full pool reads as full. Because the daemon
+figure can exceed what is on screen, the header explains it when it has to:
+`2 running · cap 3 · daemon 5/8 · 2 lanes · 1 on input`, with each clause
+dropped when it is zero and shed on a terminal too narrow for it. Until the
+board has heard the project figures it shows the daemon's alone, `5/8 running`. A task
 on a question is counted in both the slot count and the needs-attention badge,
 being at once a slot holder and something waiting on you.
 
@@ -3186,7 +3196,7 @@ The first sixteen are the operations screens share, the next ten are the
 | `palette_alt` | `ctrl+p` | Open the command palette, also while a text field has the keyboard |
 | `help` | `?` | Toggle help |
 | `help_alt` | `f1` | Toggle help, also while a text field has the keyboard |
-| `next_attention` | `!` | Jump to the next task that needs you — awaiting input, awaiting approval or blocked |
+| `next_attention` | `!` | Jump to the next task that needs you — awaiting input, awaiting approval or blocked; past the selected project's last, switch to the next project that has one |
 | `mouse` | `M` | Toggle the mouse |
 | `quit` | `q` | Quit the TUI |
 | `new` | `n` | New task — or new chat, on the chats board, or new issue, on the issue screens |

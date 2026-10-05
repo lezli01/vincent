@@ -726,6 +726,55 @@ deferred to this item. Per-project sets written under the old grouping lead
 with a project name, name nothing, and are pruned; no migration of them was
 made.
 
+### 52. The order in which `!` crosses projects (2026-10-05)
+
+Taken with the author while delivering 132.14. `!` first cycles the selected
+project's attention tasks in board order, through `visible()`, so a committed
+filter still applies inside the selected project. Once the cursor is past the
+last of them, the next press goes to the next project **by name** (the
+picker's reading order) that has an attention task, and opens that project's
+first attention task in board order. After the last such project, `!` wraps
+back to the selected project's first. The switch is the follow-the-object
+path (decision 38), so decision 36's dirty-draft confirmation applies, and
+it raises one notice naming it — ``! — switched to `web` (task #42 needs
+you)`` — which the next key clears like the other root notices. Task 054
+decision 3's fold-open applies to the target project's fold set (decision
+35).
+
+### 53. The footer hint counts the total and carries no label (2026-10-05)
+
+Taken with the author while delivering 132.14. The footer's
+`! next attention (N)` counts everything `!` will visit: the selected project
+plus every other one. Decision 34's `(N, all projects)` label is removed,
+because the badge now explains the cross-project part. The hint shows
+whenever N > 0.
+
+### 54. The slot figures come from the board's info refresh (2026-10-05)
+
+Taken with the author while delivering 132.14. The board's debounced
+`/v1/info` fetch also runs a plain `ListProjects` (no stats) in the same
+command, and the header reads the selected project's `slots_used` and
+`max_parallel_tasks` from that answer. The root's cached project list
+refreshes only on `project.*` events and reconnects, so it goes stale for
+this figure and is not used. No daemon change and no new route, which keeps
+this task's model of an unchanged daemon. A project with no cap of its own
+reads `N running · daemon U/C` (decision 33). Without a projects answer the
+clause falls back to the global `U/C running` rather than a confident zero.
+
+### 55. The breakdown clauses stay after the daemon count (2026-10-05)
+
+Taken with the author while delivering 132.14. Issue #324's `N lanes` and
+`N on input` clauses stay, dimmed, after the daemon figure:
+`2 running · cap 3 · daemon 5/8 · 2 lanes · 1 on input`. They still explain
+the global numerator, and are shed first, last one first, as before.
+
+*Delivery note (2026-10-05):* the badge counts root tasks in other projects
+in a `taskstate.NeedsHuman` state, from the board's global listing. It never
+counts lanes, `awaiting_children` parents or chats (spec decision row 29),
+and so deliberately differs from the daemon's `stats.attention`, which
+counts lanes (decision 21). Decision 34's interim header and footer labels
+are gone.
+
 ## Supersedes
 
 Every binding record this work overturns, departs from, refines or keeps, by
@@ -833,9 +882,9 @@ its own pull request.
 - [x] **132.13** ([#707](https://github.com/lezli01/vincent/issues/707))
   Locked project fields on forms; `projectHinting` removed. Depends: 132.2.
   ✓ 2026-10-05
-- [ ] **132.14** ([#708](https://github.com/lezli01/vincent/issues/708)) The
+- [x] **132.14** ([#708](https://github.com/lezli01/vincent/issues/708)) The
   chrome badge, the global bell, the project-crossing `!`, the per-project
-  board header. Depends: 132.6, 132.8.
+  board header. Depends: 132.6, 132.8. Decisions 52–55. ✓ 2026-10-05
 - [x] **132.15** ([#709](https://github.com/lezli01/vincent/issues/709)) The
   overview replaces view 4 (Projects). Depends: 132.4. Decisions 42–45.
 - [ ] **132.16** ([#710](https://github.com/lezli01/vincent/issues/710))

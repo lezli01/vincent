@@ -325,9 +325,12 @@ In detail:
   with a pull request. The status is kept at 120 columns, and a column no task
   has anything to say in (a cost no agent reported, a status nobody set) is
   left out.
-  Switching project swaps its rows in place, and the needs-attention count
-  still spans every project, saying `(all projects)` when some of it is
-  elsewhere. Groups fold away, per project, and a folded one still carries its
+  Switching project swaps its rows in place. Tasks waiting on you in other
+  projects are counted in the app header's `(! N elsewhere)` badge on every
+  screen, the bell rings for every project, and `!` crosses into the next
+  project that has one once the selected project has none left. The header's
+  slot count is the project's own beside the daemon's,
+  `2 running · cap 3 · daemon 5/8`. Groups fold away, per project, and a folded one still carries its
   task count and its needs-attention badge. The board is calm when nothing needs you: no
   zero-attention clause, one `agents ✓` for every healthy agent, no header for
   a grouping level every task shares, and the action keys in the footer only.

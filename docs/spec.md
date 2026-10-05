@@ -11529,6 +11529,24 @@ stream for the live tail.
    project survive a switch but are neither counted in the title nor
    dispatched while it is not selected. This supersedes task 009's "read
    project by project" — that is now the project switch.*
+   *Amended 2026-10-05 (task 132.14, issue #708; task 132 decisions 2, 11
+   and 52–55): attention stays cross-project through the chrome, not this
+   header.* The needs-attention clause counts **the selected project only**,
+   and `(all projects)` is gone; `(all tasks)` is again the only qualifier,
+   for a committed filter. The count staying global is now the app header's
+   `(! N elsewhere)` badge (*The selected project*, below): root tasks in
+   other projects in a needs-a-human state, from the same global listing.
+   The footer's `!` hint counts everything `!` will visit — this project plus
+   every other — and carries no label, `! next attention (N)`. The slot head
+   is the selected project's: `2 running · cap 3 · daemon 5/8`, its
+   `slots_used`, its own `max_parallel_tasks` and the daemon's `slots.used`
+   over the global cap, read from a plain `GET /v1/projects` the board makes
+   beside each `/v1/info` fetch, so it refreshes with that figure. A project
+   with no cap of its own reads `2 running · daemon 5/8`, and a board without
+   a projects answer falls back to the global `5/8 running`. Issue #324's
+   `lanes` and `on input` clauses follow the daemon figure, dimmed, and are
+   still shed first, last one first: they explain the global numerator. The
+   bell is unchanged and still rings for every project's `awaiting_input`.
    **Grouped by default (task 009, added 2026-08-16):** the rows nest under group
    headers — projects, and the workflows of a project inside it — configured by
    `tui.board.group_by` (§12.3) and cycled for the session with `g`. See
@@ -13387,6 +13405,15 @@ does not fit, the view tag truncates down to eight cells and is then dropped;
 then the version goes, leaving `vincent`; last, the project name truncates
 behind an ellipsis. The connection badge is never shed. *Amended 2026-10-05
 (task 132.4):* a left click on the segment opens the project picker below.
+*Amended 2026-10-05 (task 132.14, issue #708; task 132 decision 2):* while
+tasks in other projects need a human the segment is followed by
+`(! N elsewhere)`, in the attention style, on every view, the overview
+included, and omitted at zero. N counts root tasks in `awaiting_input`,
+`awaiting_gate` or `blocked` in every project but the selected one, from the
+board's global listing; it never counts lanes, `awaiting_children` parents
+or chats, and so deliberately differs from `stats.tasks.attention`, which
+counts lanes. It is shed after the version and before the project name
+truncates, and the `◆` click span never covers it.
 
 **The project picker (task 132.4, issue #698, added 2026-10-05).** The global
 operation `project`, on `@` by default, opens a root-owned popup listing every
@@ -14681,6 +14708,16 @@ where they are read, so a chat says `(ctrl+r)` and never `(v)`. `e` opens `$EDIT
 re-reads a registry or the daemon blocks. One key jumps to the next task needing a
 human, surfaced in the footer only when that count is non-zero — the board has
 always pinned and belled those tasks without offering any way to *go* to one.
+*Amended 2026-10-05 (task 132.14, issue #708; task 132 decision 52):* `!`
+crosses projects. It cycles the selected project's attention tasks in board
+order, a committed filter still applying there; past the last of them the
+next press switches to the next project by name that has one, wrapping, and
+opens its first attention task in board order. When no other project has
+one, it wraps to the selected project's first. The switch is the
+follow-the-object path, so a dirty draft asks first, and it raises a notice,
+``! — switched to `web` (task #42 needs you)``, which the next key clears.
+The target project's folds open over the task as they do in the selected
+one. The footer hint counts every task the key will visit.
 
 *Amended 2026-09-03 (issue #321).* That cycle is **four levels, not three**:
 `quiet → compact → normal → verbose`, wrapping from verbose back to quiet, so
