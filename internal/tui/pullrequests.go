@@ -54,6 +54,9 @@ type githubProbeMsg struct {
 	// probe saying no — the difference is between "no GitHub projects" and
 	// "could not ask".
 	err error
+	// seq is the root's number for the fan-out (probeSeq): a newer one
+	// applied first makes this one stale. Zero is untracked, as a loadStamp.
+	seq uint64
 }
 
 // githubStatusFor is the probe answer for project id among probes, and
@@ -71,7 +74,7 @@ func githubStatusFor(probes []githubProject, id int64) (apiclient.GitHubStatus, 
 // integration is usable, concurrently. The daemon's short cache absorbs the
 // repeat cost, which is the reason §13.2 gives for the probe being cheap
 // enough to ask per project.
-func probeGitHubCmd(client *apiclient.Client) tea.Cmd {
+func probeGitHubCmd(client *apiclient.Client, seq uint64) tea.Cmd {
 	if client == nil {
 		return nil
 	}
@@ -80,7 +83,7 @@ func probeGitHubCmd(client *apiclient.Client) tea.Cmd {
 		defer cancel()
 		projects, err := client.ListProjects(ctx)
 		if err != nil {
-			return githubProbeMsg{err: err}
+			return githubProbeMsg{err: err, seq: seq}
 		}
 		out := make([]githubProject, len(projects))
 		var wg sync.WaitGroup
@@ -99,7 +102,7 @@ func probeGitHubCmd(client *apiclient.Client) tea.Cmd {
 			}()
 		}
 		wg.Wait()
-		return githubProbeMsg{projects: out}
+		return githubProbeMsg{projects: out, seq: seq}
 	}
 }
 

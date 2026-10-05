@@ -361,3 +361,29 @@ func TestPullRequestsFailedListingHeaderHasNoCount(t *testing.T) {
 		t.Errorf("the header of a failed listing = %q, want it to say the listing failed", header)
 	}
 }
+
+// Probe fan-outs overlap, and the newest issued wins (review F4 on PR #720):
+// one that listed projects before "web" was registered, landing after the
+// probe that project.created started, must not erase web's answer — from
+// the root or from the views it broadcasts to.
+func TestOlderGitHubProbeLandingLateIsDropped(t *testing.T) {
+	m := &root{views: newViews(t.Context(), newHyperlinkHolder(), newLevelHolder())}
+	m.sel = projectSel{id: 2, name: "web"}
+	// Two fan-outs issued, 1 then 2. Without a client neither runs; the
+	// stamps they were given are what the test delivers.
+	m.probeGitHub()
+	m.probeGitHub()
+	api := githubProject{project: testProject(1, "api"), status: apiclient.GitHubStatus{Available: true, Repo: "octo/api"}}
+	web := githubProject{project: testProject(2, "web"), status: apiclient.GitHubStatus{Available: true, Repo: "octo/web"}}
+
+	m.Update(githubProbeMsg{seq: 2, projects: []githubProject{api, web}})
+	m.Update(githubProbeMsg{seq: 1, projects: []githubProject{api}})
+	if !m.githubAvailable() {
+		t.Fatal("an older probe landing late erased the newly registered project's answer")
+	}
+	pv := m.views[viewPullRequests].(*pullRequestsView)
+	pv.project = m.sel
+	if !pv.usable() {
+		t.Error("the pull-requests view applied the older probe")
+	}
+}
