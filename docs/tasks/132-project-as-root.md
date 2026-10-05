@@ -894,10 +894,10 @@ its own pull request.
 - [ ] **132.17** ([#711](https://github.com/lezli01/vincent/issues/711)) The
   human walkthrough record, and the m3 and task 129 amendments. Depends:
   132.16.
-- [ ] **132.18** The project picker's `tui.default_project` marker, which
-  decision 33 assigned to 132.3 and which shipped without it; spec §15's
-  picker note and the TUI guide's picker section in the same pull request.
-  No issue of its own yet. Depends: 132.3, 132.4.
+- [ ] **132.18** ([#723](https://github.com/lezli01/vincent/issues/723)) The
+  project picker's `tui.default_project` marker, which decision 33 assigned
+  to 132.3 and which shipped without it; spec §15's picker note and the TUI
+  guide's picker section in the same pull request. Depends: 132.3, 132.4.
 
 The scoping items (132.8, 132.10–132.13) may merge in any order once their
 dependencies land, and each one carries its own view's tests, guide section and

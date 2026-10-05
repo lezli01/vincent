@@ -1,6 +1,6 @@
 # 130 — The issues pillar: vincent-owned issues per project
 
-**Status:** 🔄 in progress (17/18)
+**Status:** ✅ done (18/18)
 
 Issue [#659](https://github.com/lezli01/vincent/issues/659), part of
 [#658](https://github.com/lezli01/vincent/issues/658). Spec §3 (rows 11, 26
@@ -854,7 +854,7 @@ its own pull request.
 - [x] **130.16** ([#675](https://github.com/lezli01/vincent/issues/675)) The
   local discussion thread and the read-only GitHub comment mirror. Depends:
   130.3, 130.8. ✓ 2026-10-03 (decision 24)
-- [ ] **130.17** ([#676](https://github.com/lezli01/vincent/issues/676)) An
+- [x] **130.17** ([#676](https://github.com/lezli01/vincent/issues/676)) An
   end-to-end gate on all three platforms. Depends: 130.7, 130.10.
   `scripts/130-gate.sh` and its `ci.yml` step landed with eleven scenarios,
   recorded in `docs/gates/130-issues.md`. Scenario 12 (the `github_issue`
@@ -862,7 +862,8 @@ its own pull request.
   unchanged remote reverted the local state of an issue whose write ended
   `failed/no_write_scope`, which the spec says is kept; the fix landed in the
   same pull request. This item closes when the gate is green on all three
-  platforms in CI.
+  platforms in CI. ✓ 2026-10-05 — green in `ci.yml`'s `gates` job on Linux,
+  macOS and Windows on `master`.
 - [x] **130.18** ([#677](https://github.com/lezli01/vincent/issues/677))
   Screenshot seed, new tapes, recaptures, the features page. Depends: 130.12,
   130.13, 130.10. ✓ 2026-10-04
