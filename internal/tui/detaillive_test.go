@@ -50,7 +50,7 @@ func TestDetailTailJoinsTranscriptWithoutGapOrDuplicate(t *testing.T) {
 	}
 
 	// Open the task: the shell routes, the view fetches and subscribes.
-	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})
+	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, projectID: task.ProjectID})
 	h.p.push(cmd)
 	// Steps & Attempts is the default task tab; output is a separate full-screen
 	// tab, so select it before asserting the transcript seam on screen.
@@ -122,7 +122,7 @@ func TestLiveAttemptStateOnTheWorkspaceOutputTab(t *testing.T) {
 		t.Fatalf("CreateStepRun: %v", err)
 	}
 
-	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})
+	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, projectID: task.ProjectID})
 	h.p.push(cmd)
 	_, cmd = h.m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	h.p.push(cmd)
@@ -199,7 +199,7 @@ func TestLiveSplitDocumentMatchesTheColdTranscript(t *testing.T) {
 		t.Fatalf("CreateStepRun: %v", err)
 	}
 
-	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})
+	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, projectID: task.ProjectID})
 	h.p.push(cmd)
 	_, cmd = h.m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	h.p.push(cmd)
@@ -289,7 +289,7 @@ func TestOutputPaneHoldsOneLaneSubscriptionAtATime(t *testing.T) {
 		}
 	}
 
-	_, cmd := h.m.Update(selectTaskMsg{id: parent.ID})
+	_, cmd := h.m.Update(selectTaskMsg{id: parent.ID, projectID: parent.ProjectID})
 	h.p.push(cmd)
 	view := h.m.views[viewTask].(*taskView)
 	h.p.until(20*time.Second, "the parent's lanes to load", func() bool {
@@ -321,7 +321,7 @@ func TestOutputPaneHoldsOneLaneSubscriptionAtATime(t *testing.T) {
 	}
 
 	// Leaving the fan-out leaves no lane subscription behind.
-	_, cmd = h.m.Update(selectTaskMsg{id: laneA.ID})
+	_, cmd = h.m.Update(selectTaskMsg{id: laneA.ID, projectID: laneA.ProjectID})
 	h.p.push(cmd)
 	h.p.until(20*time.Second, "the lane subscription to be torn down", func() bool {
 		return h.broker.OutputSubscribers(laneB.ID) == 0
@@ -379,7 +379,7 @@ func TestNowLineFollowsLiveOutputAndLeavesWithRunning(t *testing.T) {
 		return strings.Contains(content(h.m), string(store.TaskRunning))
 	})
 
-	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})
+	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, projectID: task.ProjectID})
 	h.p.push(cmd)
 	nowLine := func() string {
 		lines := strings.Split(ansi.Strip(content(h.m)), "\n")
@@ -455,7 +455,7 @@ func TestBreadcrumbWalksIntoALaneAndBack(t *testing.T) {
 	parent := h.createTask(t, "fan-out parent")
 	lane := h.createLaneTask(t, parent.ID, "api", 0)
 
-	_, cmd := h.m.Update(selectTaskMsg{id: parent.ID})
+	_, cmd := h.m.Update(selectTaskMsg{id: parent.ID, projectID: parent.ProjectID})
 	h.p.push(cmd)
 	view := h.m.views[viewTask].(*taskView)
 	h.p.until(20*time.Second, "the parent's lanes to load", func() bool {

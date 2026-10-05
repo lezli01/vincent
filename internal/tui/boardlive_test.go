@@ -152,6 +152,10 @@ func newBoardLiveHarnessConfig(t *testing.T, cfg func() config.Config) *boardLiv
 	if err := st.CreateProject(context.Background(), proj); err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
+	// The root selects the project once its list lands (task 132.2); an
+	// open made before that would follow the task there (task 132.6), so
+	// every test starts from the settled selection.
+	p.until(10*time.Second, "the project to be selected", func() bool { return m.sel.id == proj.ID })
 	return &boardLiveHarness{st: st, broker: broker, m: m, p: p, projectID: proj.ID, paths: paths}
 }
 

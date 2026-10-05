@@ -227,7 +227,7 @@ func TestImportedIssueFormAgainstTheRealAPI(t *testing.T) {
 		t.Fatalf("UpsertRemoteIssue: %v", err)
 	}
 	detail := issueDetailView(t, h)
-	h.send(openIssueMsg{id: imported.ID})
+	h.send(openIssueMsg{id: imported.ID, projectID: imported.ProjectID})
 	h.p.until(10*time.Second, "the imported issue", func() bool { return detail.loaded && detail.issue.ID == imported.ID })
 
 	h.sendKey(keyPress("i"))

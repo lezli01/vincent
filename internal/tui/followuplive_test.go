@@ -50,7 +50,7 @@ func TestDetailFollowsUpFinishedTaskLive(t *testing.T) {
 	h := newActionLiveHarness(t)
 	task := h.createParkedTask(t, "finishable")
 
-	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})
+	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, projectID: task.ProjectID})
 	h.p.push(cmd)
 	h.p.until(30*time.Second, "the detail view to open the task", func() bool {
 		return detailOf(h.m).taskID == task.ID && detailOf(h.m).loaded
@@ -204,7 +204,7 @@ func TestDetailHoldsAFollowUpPausedLive(t *testing.T) {
 	task := h.createParkedTask(t, "holdable")
 	h.finishTask(t, task.ID, store.TaskDone)
 
-	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})
+	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, projectID: task.ProjectID})
 	h.p.push(cmd)
 	h.p.until(30*time.Second, "the daemon to offer follow-up", func() bool {
 		return detailOf(h.m).taskID == task.ID && detailOf(h.m).target().has(apiclient.ActionFollowUp)
@@ -249,7 +249,7 @@ func TestTimelineRendersAFollowUpAsItsOwnRound(t *testing.T) {
 	task := h.createParkedTask(t, "finishable")
 	h.finishTask(t, task.ID, store.TaskDone)
 
-	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})
+	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, projectID: task.ProjectID})
 	h.p.push(cmd)
 	h.p.until(30*time.Second, "the detail view to open the task", func() bool {
 		return detailOf(h.m).taskID == task.ID && detailOf(h.m).loaded

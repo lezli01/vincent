@@ -53,7 +53,7 @@ func TestOverviewFramesFromRealServer(t *testing.T) {
 		{running, []string{"Running", "rebasing onto main", "3 full output"}},
 		{done, []string{"Done", "Outcome", "4 diff"}},
 	} {
-		_, cmd := h.m.Update(selectTaskMsg{id: c.task.ID})
+		_, cmd := h.m.Update(selectTaskMsg{id: c.task.ID, projectID: c.task.ProjectID})
 		h.p.push(cmd)
 		id := c.task.ID
 		h.p.until(30*time.Second, "the overview of "+c.task.Title, func() bool {

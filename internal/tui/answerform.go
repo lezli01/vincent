@@ -46,6 +46,8 @@ type answerForm struct {
 
 	err        string
 	submitting bool
+	// dirty is any answer chosen or typed since the form opened (task 132.6).
+	dirty bool
 }
 
 func newAnswerForm(req apiclient.InputRequest) *answerForm {
@@ -133,6 +135,7 @@ func (f *answerForm) capturing() bool { return f.editing }
 // paste types into the free-text answer. Option rows are keyboard-only —
 // pasting onto one would be a paste with no field under it.
 func (f *answerForm) paste(text string) tea.Cmd {
+	defer f.watch()()
 	if !f.editing {
 		return nil
 	}
@@ -154,6 +157,7 @@ func (f *answerForm) update(msg tea.KeyPressMsg, client *apiclient.Client, taskI
 // because the request is the same request, and only where the answer is POSTed
 // differs (task 063 decision 8, task 067).
 func (f *answerForm) updateWith(msg tea.KeyPressMsg, submit func(apiclient.InputResponse) tea.Cmd) (cmd tea.Cmd, exit bool) {
+	defer f.watch()()
 	if f.editing {
 		switch msg.String() {
 		case "enter":

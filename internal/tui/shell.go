@@ -221,8 +221,11 @@ func (s *shell) updateBoardOnly(msg tea.Msg) (panel, tea.Cmd) {
 		}
 		if msg.String() == opKey(keymap.OpenRow) && !s.board.capturesInput() {
 			if id, ok := s.board.selected(); ok {
-				state := s.stateOf(id)
-				return s, func() tea.Msg { return selectTaskMsg{id: id, state: state} }
+				state, pid := s.stateOf(id), int64(0)
+				if t, ok := s.board.taskByID(id); ok {
+					pid = t.ProjectID
+				}
+				return s, func() tea.Msg { return selectTaskMsg{id: id, state: state, projectID: pid} }
 			}
 		}
 		if msg.String() == "esc" && s.board.hasMarks() {

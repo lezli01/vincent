@@ -1759,6 +1759,10 @@ type openTaskMsg struct {
 	id    int64
 	state string
 	from  int64
+	// projectID is the project the task belongs to, filled from the row the
+	// sender holds: an open of another project's task moves the selection
+	// first (task 132.6). Zero makes the root fetch the task to learn it.
+	projectID int64
 	// failure is `N` opening a blocked lane (task 129.18): once the lane has
 	// loaded, the workspace lands on its first failure.
 	failure bool
@@ -1949,8 +1953,8 @@ func (t *taskView) applyPop(msg navPopMsg) tea.Cmd {
 	// The selectTaskMsg below is a pop, not a fresh open: the stack it lands
 	// on is already the truncated one.
 	t.stackKeep = true
-	id, state := msg.id, msg.state
-	return func() tea.Msg { return selectTaskMsg{id: id, state: state} }
+	id, state, pid := msg.id, msg.state, t.detail.task.ProjectID
+	return func() tea.Msg { return selectTaskMsg{id: id, state: state, projectID: pid} }
 }
 
 // aliveFunc answers "can this task still be opened". Disconnected, the
@@ -1986,8 +1990,8 @@ func (t *taskView) openLaneCmd() tea.Cmd {
 	if lane, ok := t.laneByID(id); ok {
 		state = lane.State
 	}
-	from := t.detail.taskID
-	return func() tea.Msg { return openTaskMsg{id: id, state: state, from: from} }
+	from, pid := t.detail.taskID, t.detail.task.ProjectID
+	return func() tea.Msg { return openTaskMsg{id: id, state: state, from: from, projectID: pid} }
 }
 
 // openParentCmd is `U`: the reciprocal of `l`. It works from any state the
@@ -1998,8 +2002,8 @@ func (t *taskView) openParentCmd() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	from := t.detail.taskID
-	return func() tea.Msg { return openTaskMsg{id: id, from: from} }
+	from, pid := t.detail.taskID, t.detail.task.ProjectID
+	return func() tea.Msg { return openTaskMsg{id: id, from: from, projectID: pid} }
 }
 
 // laneJump is the lane `l` opens from where the reader is standing. A tab that

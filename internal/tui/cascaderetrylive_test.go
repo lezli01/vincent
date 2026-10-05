@@ -87,7 +87,7 @@ func TestDetailRetriesParkedParentLive(t *testing.T) {
 	first := h.blockedLane(t, parent, 1)
 	second := h.blockedLane(t, parent, 2)
 
-	_, cmd := h.m.Update(selectTaskMsg{id: parent.ID})
+	_, cmd := h.m.Update(selectTaskMsg{id: parent.ID, projectID: parent.ProjectID})
 	h.p.push(cmd)
 	h.p.until(30*time.Second, "the detail view to open the parked parent", func() bool {
 		return detailOf(h.m).taskID == parent.ID && detailOf(h.m).loaded

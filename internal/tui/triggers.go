@@ -513,8 +513,16 @@ func (v *triggersView) openDelivery() tea.Cmd {
 		return nil
 	}
 	v.err = ""
-	id := *d.TaskID
-	return func() tea.Msg { return selectTaskMsg{id: id} }
+	// The trigger's project, as the daemon resolved its source.project: an
+	// open follows it there (task 132.6). An invalid file resolves to none,
+	// and the root then asks the task.
+	id, pid := *d.TaskID, int64(0)
+	for _, t := range v.list.Triggers {
+		if t.ID == v.ledgerID {
+			pid = t.ProjectID
+		}
+	}
+	return func() tea.Msg { return selectTaskMsg{id: id, projectID: pid} }
 }
 
 func (v *triggersView) updateFilter(msg tea.KeyPressMsg) tea.Cmd {

@@ -105,9 +105,9 @@ func (t *taskView) nextFailure() tea.Cmd {
 		// Open the lane the way `l` does — the back stack is pushed, so esc
 		// and U return here — and land on the lane's own first failure once
 		// it has loaded (taskView.pendingFailure).
-		from, id := d.taskID, tg.lane
+		from, id, pid := d.taskID, tg.lane, d.task.ProjectID
 		return func() tea.Msg {
-			return openTaskMsg{id: id, state: stateBlocked, from: from, failure: true}
+			return openTaskMsg{id: id, state: stateBlocked, from: from, failure: true, projectID: pid}
 		}
 	}
 	return t.landOnFailure(tg.run)

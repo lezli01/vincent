@@ -109,6 +109,10 @@ type (
 		// so a linked task opened from an issue returns to that issue
 		// (task 130.9).
 		back viewID
+		// projectID is the project the task belongs to, filled from the row the
+		// sender holds: an open of another project's task moves the selection
+		// first (task 132.6). Zero makes the root fetch the task to learn it.
+		projectID int64
 	}
 )
 
@@ -612,6 +616,7 @@ func (b *board) target() taskActions {
 			return taskActions{
 				id: t.ID, state: t.State, actions: t.AvailableActions, marked: marked,
 				openChatID: derefID(t.OpenChatID),
+				projectID:  t.ProjectID,
 			}
 		}
 	}

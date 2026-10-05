@@ -288,7 +288,7 @@ func TestIssueSeedNotesTasksAlreadyStarted(t *testing.T) {
 	}
 
 	detail := issueDetailView(t, h)
-	h.send(openIssueMsg{id: iss.ID})
+	h.send(openIssueMsg{id: iss.ID, projectID: iss.ProjectID})
 	h.p.until(10*time.Second, "the issue's tasks", func() bool { return detail.loaded && len(detail.tasks) == 2 })
 	if detail.tasks[0].ID < detail.tasks[1].ID {
 		t.Errorf("linked tasks #%d, #%d; want newest first", detail.tasks[0].ID, detail.tasks[1].ID)

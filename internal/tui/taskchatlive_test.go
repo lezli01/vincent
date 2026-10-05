@@ -97,7 +97,7 @@ func TestTaskChatKeyOpensAndReopensLive(t *testing.T) {
 	h := newActionLiveHarness(t)
 	task := h.createParkedTask(t, "talkable")
 
-	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})
+	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, projectID: task.ProjectID})
 	h.p.push(cmd)
 	h.p.until(30*time.Second, "the task workspace to load", func() bool {
 		return detailOf(h.m).taskID == task.ID && detailOf(h.m).loaded
@@ -153,7 +153,7 @@ func TestTaskWorkspaceListsLinkedChatsLive(t *testing.T) {
 	task := h.createParkedTask(t, "talked-about")
 	h.finishWithWorktree(t, task.ID)
 
-	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})
+	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, projectID: task.ProjectID})
 	h.p.push(cmd)
 	h.p.until(30*time.Second, "the daemon to offer chat", func() bool {
 		return detailOf(h.m).taskID == task.ID && detailOf(h.m).target().has(apiclient.ActionChat)

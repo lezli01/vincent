@@ -77,6 +77,8 @@ type repairForm struct {
 
 	err        string
 	submitting bool
+	// dirty is any edit to a row since the form opened (task 132.6).
+	dirty bool
 }
 
 func newRepairForm(taskID int64, blockReason, stepName string) *repairForm {
@@ -120,6 +122,7 @@ func (f *repairForm) applyAgents(msg repairAgentsLoadedMsg) {
 
 // applyEdit installs what an $EDITOR session produced.
 func (f *repairForm) applyEdit(msg repairEditMsg) {
+	defer f.watch()()
 	if msg.taskID != f.taskID {
 		return
 	}
@@ -133,6 +136,7 @@ func (f *repairForm) applyEdit(msg repairEditMsg) {
 
 // paste types into whichever text entry is open.
 func (f *repairForm) paste(text string) tea.Cmd {
+	defer f.watch()()
 	if f.picker != nil {
 		return f.picker.paste(text)
 	}
@@ -146,6 +150,7 @@ func (f *repairForm) paste(text string) tea.Cmd {
 
 // update handles one key. exit=true asks the caller to close the form.
 func (f *repairForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cmd tea.Cmd, exit bool) {
+	defer f.watch()()
 	if f.picker != nil {
 		res := f.picker.update(msg)
 		if res.chosen {

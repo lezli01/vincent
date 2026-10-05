@@ -38,7 +38,7 @@ func (h *actionLiveHarness) blockWith(t *testing.T, id int64, run *store.StepRun
 // overviewOf opens a task and waits for its Overview to say want.
 func (h *actionLiveHarness) overviewOf(t *testing.T, id int64, want string) string {
 	t.Helper()
-	_, cmd := h.m.Update(selectTaskMsg{id: id})
+	_, cmd := h.m.Update(selectTaskMsg{id: id, projectID: h.projectID})
 	h.p.push(cmd)
 	h.p.until(30*time.Second, "the failure card of task "+fmt.Sprint(id), func() bool {
 		return detailOf(h.m).taskID == id && strings.Contains(ansi.Strip(content(h.m)), want)

@@ -168,8 +168,8 @@ func (v *issueView) update(msg tea.Msg) (panel, tea.Cmd) {
 		case msg.saved == nil:
 			return v, nil
 		case msg.created:
-			id := msg.saved.ID
-			return v, func() tea.Msg { return openIssueMsg{id: id} }
+			id, pid := msg.saved.ID, msg.saved.ProjectID
+			return v, func() tea.Msg { return openIssueMsg{id: id, projectID: pid} }
 		}
 		if msg.saved.ID == v.id {
 			v.issue = *msg.saved
@@ -474,7 +474,9 @@ func (v *issueView) openTask() tea.Cmd {
 		return nil
 	}
 	t := v.tasks[v.cursor]
-	return func() tea.Msg { return selectTaskMsg{id: t.ID, state: t.State, back: viewIssue} }
+	return func() tea.Msg {
+		return selectTaskMsg{id: t.ID, state: t.State, back: viewIssue, projectID: t.ProjectID}
+	}
 }
 
 func (v *issueView) openSource() tea.Cmd {

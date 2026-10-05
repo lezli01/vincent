@@ -53,7 +53,11 @@ type (
 	// openChatMsg asks the root to open one chat's workspace. It goes through
 	// the root rather than straight to the view because the view is not
 	// active yet, and an inactive view receives nothing.
-	openChatMsg struct{ id int64 }
+	// projectID is the chat's project, for selectTaskMsg's reason.
+	openChatMsg struct {
+		id        int64
+		projectID int64
+	}
 	// chatsTickMsg advances the in-progress indicator's frame (task 089) and,
 	// as a consequence of the repaint, the "last activity" column: that cell
 	// already renders now - UpdatedAt, and UpdatedAt is only written on a
@@ -477,8 +481,8 @@ func (v *chatsView) applyCreated(msg chatCreatedMsg) tea.Cmd {
 	// Straight into the workspace: the human asked for a conversation, and
 	// landing them on the board to press enter on the row they just made
 	// would be a step for nothing.
-	id := msg.chat.ID
-	return tea.Batch(v.loadCmd(), func() tea.Msg { return openChatMsg{id: id} })
+	id, pid := msg.chat.ID, msg.chat.ProjectID
+	return tea.Batch(v.loadCmd(), func() tea.Msg { return openChatMsg{id: id, projectID: pid} })
 }
 
 // rows is the board as it is currently laid out.
@@ -643,8 +647,8 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, v.expandAtCursor()
 	case opKey(keymap.OpenRow):
 		if c, ok := v.current(); ok {
-			id := c.ID
-			return v, func() tea.Msg { return openChatMsg{id: id} }
+			id, pid := c.ID, c.ProjectID
+			return v, func() tea.Msg { return openChatMsg{id: id, projectID: pid} }
 		}
 	case opKey(keymap.New):
 		// A chat needs a project, and the form offers no way to register
