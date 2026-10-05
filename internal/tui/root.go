@@ -841,11 +841,17 @@ func (m *root) updateNoticeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // current view is looking at. The form must be told to open before it is
 // shown: opening is what resets the draft and fetches the catalogs.
 func (m *root) openNewTask() tea.Cmd {
-	// The selection wins; the view's hint is the fallback while nothing is
-	// selected, until task 132.13 retires it.
-	hint := m.sel.id
-	if h, ok := m.views[m.active].(projectHinting); ok && hint == 0 {
+	// The view's hint wins and the selection is the fallback. Until the
+	// views are scoped (132.8–132.13) their rows still span every project,
+	// so the row under the cursor is what the user is pointing at — and the
+	// projects view is never project-bearing at all. 132.13 retires the hint
+	// once the forms lock to the selection (decision 9), when the two agree.
+	var hint int64
+	if h, ok := m.views[m.active].(projectHinting); ok {
 		hint = h.hintedProject()
+	}
+	if hint == 0 {
+		hint = m.sel.id
 	}
 	cmd := m.deliver(viewNewTask, newTaskMsg{projectID: hint})
 	return tea.Batch(cmd, m.switchTo(viewNewTask))

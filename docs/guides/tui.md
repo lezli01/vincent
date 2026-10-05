@@ -1426,7 +1426,9 @@ key.
 
 ### New task — `n`
 
-Opens for the project you are looking at. A guided form: project → workflow
+Opens for the project you are looking at: the one under the cursor — a
+board row, an issue, a row of the projects view — or, where the cursor names
+none, the project the header shows. A guided form: project → workflow
 (with its description and step list, flagging steps whose agent is unavailable)
 → *(pull request, when seeded from one)* → title → description → fields → base branch → branch →
 priority → start → optional agent/model/effort override.

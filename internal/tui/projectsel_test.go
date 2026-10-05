@@ -169,8 +169,45 @@ func TestOpenNewTaskSeedsFromSelection(t *testing.T) {
 	m.sel = projectSel{id: 8, name: "sel"}
 	form.msgs = nil
 	m.openNewTask()
+	if got := form.msgs[0]; got != (newTaskMsg{projectID: 5}) {
+		t.Fatalf("hint and selection: form got %+v, want the hint", got)
+	}
+	m.active = viewHome
+	m.views[viewHome] = &hinter{scopeStub{calls: &calls}, 0}
+	form.msgs = nil
+	m.openNewTask()
 	if got := form.msgs[0]; got != (newTaskMsg{projectID: 8}) {
-		t.Fatalf("with a selection: form got %+v, want the selection", got)
+		t.Fatalf("no hint: form got %+v, want the selection", got)
+	}
+}
+
+// TestNewTaskFromProjectsViewTakesTheCursorRow is review F1 of the 132.2
+// train: with one project selected, `n` on the projects view opens the form
+// on the row under the cursor, not on the selection. The projects view is
+// never project-bearing, so the selection must not override it.
+func TestNewTaskFromProjectsViewTakesTheCursorRow(t *testing.T) {
+	m := newRoot(testCtx(t), connector{}, ackedDir(t))
+	m.phase = phaseConnected
+	var calls []string
+	form := &scopeStub{calls: &calls}
+	m.views[viewNewTask] = form
+	p := newProjectsView()
+	loadedProjects(p, []apiclient.Project{testProject(1, "alpha"), testProject(2, "web")}, nil)
+	p.render(120, 24)
+	p.tbl.SetCursor(1)
+	if id, _ := p.selected(); id != 2 {
+		t.Fatalf("cursor on project %d, want 2", id)
+	}
+	m.views[viewProjects] = p
+	m.active = viewProjects
+	m.sel = projectSel{id: 1, name: "alpha"}
+
+	m.Update(tea.KeyPressMsg{Code: 'n', Text: "n"})
+	if len(form.msgs) == 0 {
+		t.Fatal("n on the projects view did not open the new-task form")
+	}
+	if got := form.msgs[0]; got != (newTaskMsg{projectID: 2}) {
+		t.Fatalf("form got %+v, want the cursor's project 2, not the selected 1", got)
 	}
 }
 

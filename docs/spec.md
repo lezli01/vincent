@@ -13175,8 +13175,11 @@ the registered-project list, refetched on connect, on reconnect and on every
 first project by name. A project registered while one is selected does not
 take over, and a rename of the selected one reaches it. Task 132.3 replaces
 the first-by-name rule with the full startup precedence, and 132.7 decides
-what a deleted selection becomes. The new-task form opens on the selection,
-or on the view's hint while there is none. The app header names the
+what a deleted selection becomes. The new-task form opens on the active
+view's hint, the project under its cursor, and on the selection when the view
+hints none: until 132.8–132.13 scope the views their rows still span every
+project, and the projects view is never project-bearing, so the cursor is what
+the user points at. 132.13 retires the hint (decision 9). The app header names the
 selection on its one line, after the version and any connection badge and
 before the view tag: `vincent 0.x  ◆ api  [Tasks]`, or `◆ no project`. The
 chrome stays one line, so the size floors above do not move. When the line

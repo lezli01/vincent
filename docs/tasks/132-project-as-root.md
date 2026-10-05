@@ -298,7 +298,14 @@ The root walks `projectScoped` views directly, never by broadcast, and again
 right after the `setClient` walk on every connect. Until 132.3, the first
 selection is the first project by name, made only while nothing is selected
 (decision 10). A selected project that vanishes is left selected for 132.7 to
-handle. `projectScoped` took the name of a `workflows.go` helper, which became
+handle. `n` opens the new-task form on the active view's hint first and on the
+selection only when the view hints none (review F1 of the 132.2 train). Until
+132.8–132.13 scope the views their rows span every project, and the projects
+view is never project-bearing, so the selection overriding the cursor would
+open the form on a project the user is not pointing at. Decision 9 retires the
+hint in 132.13, when the two agree.
+
+`projectScoped` took the name of a `workflows.go` helper, which became
 `ownEntries`, and of the new-task form's `setProject`, which became
 `chooseProject`.
 
