@@ -142,7 +142,10 @@ func (b *board) markVisible() {
 	b.marks = b.marks.add(ids...)
 }
 
-func (b *board) clearMarks() { b.marks = nil }
+// clearMarks is esc on a selection: it drops the selected project's marks
+// only, as `V` unmarks only what is visible, so a selection left in another
+// project still waits there for a switch back (review F11).
+func (b *board) clearMarks() { b.marks = b.marks.drop(b.projectMarks()...) }
 
 // markedTargets is the selection as the action bar sees it: what the daemon
 // says can be done to each marked task (§6), in board order — top to bottom, so

@@ -313,4 +313,15 @@ func TestMarksInAnotherProjectAreNotDispatched(t *testing.T) {
 	if got := b.projectMarks(); len(got) != 1 || !got.has(3) {
 		t.Errorf("after the switch projectMarks = %v, want only 3", got)
 	}
+
+	// esc clears the selected project's marks and leaves the other's
+	// (review F11).
+	b.clearMarks()
+	if b.hasMarks() {
+		t.Error("esc left a mark in the selected project")
+	}
+	b.setProject(projectSel{id: testProjectID, name: "proj"})
+	if got := b.projectMarks(); len(got) != 1 || !got.has(1) {
+		t.Errorf("after esc elsewhere projectMarks = %v, want 1 kept", got)
+	}
 }
