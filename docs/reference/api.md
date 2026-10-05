@@ -588,8 +588,10 @@ That is why it is served rather than derived: `GET /v1/tasks` omits descendants
 by default, so a client walking its own list cannot see a lane at all, and a
 client matching `state == "running"` misses the questions too. `lanes` and
 `awaiting_input` are subsets of `used`, published so a client can explain a
-number that does not match the rows it is showing — the TUI renders
-`3/6 running · 2 lanes · 1 on input` from exactly these three fields. It is one
+number that does not match the rows it is showing — the TUI renders the
+`daemon 5/8 · 2 lanes · 1 on input` end of its board header from exactly these
+three fields, after the selected project's `slots_used` and cap from
+`GET /v1/projects`. It is one
 indexed `COUNT` over a human-sized table, and the same one the scheduler already
 runs on every admission pass.
 
