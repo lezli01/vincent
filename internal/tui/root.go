@@ -346,6 +346,8 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.projPick.land(msg)
 		}
 		return m, nil
+	case openProjectPickerMsg:
+		return m, m.openProjectPicker()
 	case projectPickerRefreshMsg:
 		m.projPickPending = false
 		if m.projPick == nil {

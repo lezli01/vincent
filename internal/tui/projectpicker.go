@@ -67,6 +67,12 @@ type projectPickerMsg struct {
 // projectPickerRefreshMsg is the picker's debounce firing.
 type projectPickerRefreshMsg struct{}
 
+// openProjectPickerMsg asks the root to raise the picker. It is the palette's
+// "switch project" row's own action, so the row does not depend on replaying
+// the project key: a tui.keys that gives `@` to another operation leaves the
+// op unbound, and the palette never runs an unbound key (review F3 on #718).
+type openProjectPickerMsg struct{}
+
 // fetchProjectPicker is the picker's one list call.
 func fetchProjectPicker(client *apiclient.Client, seq int) tea.Cmd {
 	return func() tea.Msg {

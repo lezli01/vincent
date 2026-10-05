@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // statsProject is a project row as GET /v1/projects?stats=true serves it.
@@ -343,5 +344,34 @@ func TestProjectPickerRows(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("render lacks %q:\n%s", want, out)
 		}
+	}
+}
+
+// TestPaletteOpensPickerWithAtYielded: a tui.keys that gives `@` to another
+// operation leaves `project` unbound (task 128's yield), and the palette's
+// "switch project" row still opens the picker — it runs its own action, not
+// a replay of the key it no longer has (review F3 on #718).
+func TestPaletteOpensPickerWithAtYielded(t *testing.T) {
+	if warnings := applyKeys(map[string]string{"filter": "@"}); len(warnings) != 1 {
+		t.Fatalf("yielding @ warned %q, want one warning", warnings)
+	}
+	t.Cleanup(func() { setKeymap(keymap.Default()) })
+	m, calls := pickerRoot(t, twoProjects())
+
+	m.openPalette()
+	m.palette.input.SetValue("switch project")
+	got := m.palette.matches()
+	if len(got) != 1 || !got[0].unbound {
+		t.Fatalf("palette rows for %q: %+v, want the one unbound switch row", m.palette.input.Value(), got)
+	}
+	pressRoot(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.palette != nil {
+		t.Fatal("enter left the palette open")
+	}
+	if m.projPick == nil {
+		t.Fatal("the palette's switch project row did not open the picker with project unbound")
+	}
+	if calls.Load() != 1 {
+		t.Errorf("opening from the palette made %d stats calls, want one", calls.Load())
 	}
 }
