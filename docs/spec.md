@@ -14786,7 +14786,8 @@ agent's invocation sigil, where `↑`/`↓` then walk it until `esc` *(added
 worktree and branch to a task *(added 2026-09-01, task 074)*, `esc` returns to
 the board. In the **new-chat form**: `ctrl+s` creates, `tab`/`shift+tab` move
 between fields, `enter` opens the focused field's list, `←`/`→` step the
-project and agent fields in place, `esc` discards.
+agent field in place *(amended 2026-10-05, task 132.13: the project row is
+read-only and no longer steps)*, `esc` discards.
 `n` is the one key whose meaning depends on where you are, deliberately: on the
 chats board it makes a chat, and everywhere else it still makes a task. `!` is
 **not** extended to chats — an `awaiting_input` chat is pinned and badged on
