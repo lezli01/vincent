@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -83,6 +85,38 @@ type liveOptions struct {
 	// workflows are extra global workflow files, by file name, beside
 	// implement.yaml.
 	workflows map[string]string
+	// wrap, when set, wraps the API handler: how a test counts the
+	// requests a view makes.
+	wrap func(http.Handler) http.Handler
+}
+
+// requestRecorder is a liveOptions.wrap that keeps every request's method,
+// path and query, for tests that assert what a view asked for.
+type requestRecorder struct {
+	mu   sync.Mutex
+	seen []string
+}
+
+func (r *requestRecorder) wrap(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		r.mu.Lock()
+		r.seen = append(r.seen, req.Method+" "+req.URL.RequestURI())
+		r.mu.Unlock()
+		next.ServeHTTP(w, req)
+	})
+}
+
+// matching is the recorded requests whose line has prefix.
+func (r *requestRecorder) matching(prefix string) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []string
+	for _, s := range r.seen {
+		if strings.HasPrefix(s, prefix) {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func newNewTaskLiveHarness(t *testing.T) *newTaskLiveHarness {
@@ -174,7 +208,11 @@ func newNewTaskLiveHarnessWith(t *testing.T, opts liveOptions) *newTaskLiveHarne
 		WakeRunner:  sched.Wake,
 		GitHub:      opts.github,
 	})
-	ts := httptest.NewServer(s.Handler())
+	handler := s.Handler()
+	if opts.wrap != nil {
+		handler = opts.wrap(handler)
+	}
+	ts := httptest.NewServer(handler)
 	t.Cleanup(ts.Close)
 
 	ctx := testCtx(t)

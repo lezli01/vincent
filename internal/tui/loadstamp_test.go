@@ -121,8 +121,19 @@ func stampedViews() []stampedView {
 		{name: "issues", new: func() (func(projectSel) tea.Cmd, func() tea.Cmd, func(loadStamp, string), func() string) {
 			v := newIssuesView()
 			v.client = deadClient()
-			return v.setProject, v.loadCmd,
+			// The issues list fetches nothing with no project selected (task
+			// 132.11), so a bare load runs in project 9, as the chats boards'.
+			load := func() tea.Cmd {
+				if v.project.id == 0 {
+					v.project = projectSel{id: 9, name: "z"}
+				}
+				return v.loadCmd()
+			}
+			return v.setProject, load,
 				func(st loadStamp, mark string) {
+					if st.project == 0 {
+						st.project = v.project.id
+					}
 					v.update(issuesLoadedMsg{state: v.state, stamp: st, issues: []apiclient.Issue{{ID: 1, Title: mark}}})
 				},
 				func() string {
@@ -141,16 +152,34 @@ func stampedViews() []stampedView {
 		{name: "pull requests", new: func() (func(projectSel) tea.Cmd, func() tea.Cmd, func(loadStamp, string), func() string) {
 			v := newPullRequestsView()
 			v.client = deadClient()
-			v.available = []githubProject{{project: apiclient.Project{ID: 1, Name: "a"}}}
-			return v.setProject, v.loadCmd,
+			// One listing per load, for the selected project only, and only
+			// when its probe says yes (task 132.11): every project the test
+			// selects is available, and a bare load runs in project 9.
+			v.probed = true
+			for _, id := range []int64{1, 2, 9} {
+				v.probes = append(v.probes, githubProject{
+					project: apiclient.Project{ID: id},
+					status:  apiclient.GitHubStatus{Available: true},
+				})
+			}
+			load := func() tea.Cmd {
+				if v.project.id == 0 {
+					v.project = projectSel{id: 9, name: "z"}
+				}
+				return v.loadCmd()
+			}
+			return v.setProject, load,
 				func(st loadStamp, mark string) {
-					v.update(prLoadedMsg{stamp: st, groups: []pullGroup{{project: apiclient.Project{Name: mark}}}})
+					if st.project == 0 {
+						st.project = v.project.id
+					}
+					v.update(prLoadedMsg{stamp: st, pulls: []apiclient.GitHubPullRequest{{Title: mark}}})
 				},
 				func() string {
-					if len(v.groups) == 0 {
+					if len(v.pulls) == 0 {
 						return ""
 					}
-					return v.groups[0].project.Name
+					return v.pulls[0].Title
 				}
 		}},
 		{name: "workflows", new: func() (func(projectSel) tea.Cmd, func() tea.Cmd, func(loadStamp, string), func() string) {

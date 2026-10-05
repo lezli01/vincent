@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -19,16 +18,13 @@ import (
 
 // The issues list (§15 view 12, task 130.9).
 //
-// It answers the question the pull-requests takeover answers for pull
-// requests — what is open across everything I run — for vincent's own issues,
-// local and imported alike. So it is cross-project and grouped by project,
-// with the headings drawn by the renderer rather than offered as rows
-// (130.9 decision 1).
+// It lists the selected project's issues, local and imported alike, as one
+// flat list (task 132.11, superseding 130.9 decision 1's cross-project,
+// grouped-by-project screen): the project is the root (task 132 decision 1),
+// and a switch swaps the list rather than scrolling to another group.
 //
-// Issues are local rows, so one GET /v1/issues fills the whole screen. That
-// makes a load error screen-wide: the per-project error band the pull-requests
-// takeover carries exists because each of its groups is its own request, and
-// here there is no request that could fail for one project alone.
+// Issues are local rows, so one GET /v1/issues?project_id= fills the whole
+// screen, and a load error is screen-wide.
 //
 // `R` re-reads and nothing more (decision 2). Whether an imported issue is
 // current is the reconciler's business and `vincent issue sync`'s, never a
@@ -65,11 +61,10 @@ type (
 		// state is the scope the listing was asked for. `s` pressed twice
 		// in quick succession has two listings in flight, and only the one
 		// for the scope on screen may land.
-		state    string
-		stamp    loadStamp
-		issues   []apiclient.Issue
-		projects []apiclient.Project
-		err      error
+		state  string
+		stamp  loadStamp
+		issues []apiclient.Issue
+		err    error
 	}
 	// openIssueMsg asks the root to open one issue's detail screen. The
 	// root points the detail at it before switching, the order every
@@ -83,16 +78,9 @@ type (
 	}
 )
 
-// issueGroup is one project's issues, in the order the daemon served them.
-type issueGroup struct {
-	project apiclient.Project
-	issues  []apiclient.Issue
-}
-
 // issueRow is one selectable line.
 type issueRow struct {
-	project apiclient.Project
-	issue   apiclient.Issue
+	issue apiclient.Issue
 }
 
 // issuesView is §15's view 12.
@@ -102,12 +90,15 @@ type issuesView struct {
 	// overtaken by a newer one (task 132.5).
 	projectScope
 	stamps loadStamps
+	// noProjects is a listing that came back empty. A selection of 0 means
+	// "no project registered" only then; before the first listing it is a
+	// selection not resolved yet (review F9 on the chats board).
+	noProjects bool
 
 	client *apiclient.Client
 	now    func() time.Time
 
-	issues   []apiclient.Issue
-	projects []apiclient.Project
+	issues []apiclient.Issue
 
 	loaded   bool
 	loading  bool
@@ -135,7 +126,7 @@ type issuesView struct {
 
 func newIssuesView() *issuesView {
 	fi := newTextField()
-	fi.SetPlaceholder("filter by id, title, label, kind or project")
+	fi.SetPlaceholder("filter by id, title, label or kind")
 	fi.SetPrompt("/")
 	v := &issuesView{now: time.Now, filter: fi, state: issueStates[0], w: newIssueWrites()}
 	v.reload = v.loadCmd
@@ -147,6 +138,25 @@ func (v *issuesView) title() string { return "Issues" }
 func (v *issuesView) setClient(c *apiclient.Client) tea.Cmd {
 	v.client = c
 	return v.loadCmd()
+}
+
+// setProjects records whether any project is registered (projectListAware).
+// The root hands it only a listing that succeeded.
+func (v *issuesView) setProjects(ps []apiclient.Project) { v.noProjects = len(ps) == 0 }
+
+// setProject wraps projectScope's: a switch empties the list before the
+// reload goes out (task 132.11), so the issues of the project just left are
+// never shown under the name of the one just chosen, and the header reads
+// "loading ‹name›…" until the stamped load lands. The filter text and the
+// state stay: they say what the human wants to see, not where.
+func (v *issuesView) setProject(p projectSel) tea.Cmd {
+	if p.id != v.project.id {
+		v.issues, v.loaded, v.loadErr = nil, false, nil
+		v.lastLoad = time.Time{}
+		v.cursor, v.selected = 0, 0
+		v.w.act = nil
+	}
+	return v.projectScope.setProject(p)
 }
 
 // capturesInput holds the global keys back while the filter types and while
@@ -168,14 +178,9 @@ func (v *issuesView) paste(text string) tea.Cmd {
 	return cmd
 }
 
-// hintedProject is the selected row's project: where the new-task form opens
-// from the palette, and where `n` files a new issue.
-func (v *issuesView) hintedProject() int64 {
-	if row, ok := v.current(); ok {
-		return row.project.ID
-	}
-	return 0
-}
+// hintedProject is the selected project: where the new-task form opens from
+// the palette, and where `n` files a new issue. Every row is in it.
+func (v *issuesView) hintedProject() int64 { return v.project.id }
 
 func (v *issuesView) update(msg tea.Msg) (panel, tea.Cmd) {
 	if cmd, ok := v.w.update(msg); ok {
@@ -243,17 +248,23 @@ func (v *issuesView) update(msg tea.Msg) (panel, tea.Cmd) {
 	return v, nil
 }
 
-// loadCmd lists every project's issues in one call, and the projects whose
-// names head the groups.
+// loadCmd lists the selected project's issues in one call. With no project
+// selected it fetches nothing (task 132.11): GET /v1/issues without
+// project_id is every project's list, which a scoped view must never show.
 func (v *issuesView) loadCmd() tea.Cmd {
 	client := v.client
 	if client == nil {
 		return nil
 	}
+	if v.project.id == 0 {
+		v.issues, v.loading = nil, false
+		v.cursor = 0
+		return nil
+	}
 	v.loading = true
 	state := v.state
 	stamp := v.stamps.next(v.project.id)
-	opts := apiclient.IssueListOptions{}
+	opts := apiclient.IssueListOptions{ProjectID: v.project.id}
 	if state != "all" {
 		opts.States = []string{v.state}
 	}
@@ -261,16 +272,7 @@ func (v *issuesView) loadCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
 		issues, err := client.ListIssues(ctx, opts)
-		if err != nil {
-			return issuesLoadedMsg{state: state, stamp: stamp, err: err}
-		}
-		// A heading with no name still groups correctly, so the project
-		// listing failing is not a reason to hide the issues.
-		projects, err := client.ListProjects(ctx)
-		if err != nil {
-			projects = nil
-		}
-		return issuesLoadedMsg{state: state, stamp: stamp, issues: issues, projects: projects}
+		return issuesLoadedMsg{state: state, stamp: stamp, issues: issues, err: err}
 	}
 }
 
@@ -287,9 +289,6 @@ func (v *issuesView) applyLoaded(msg issuesLoadedMsg) {
 	v.loaded, v.loadErr = true, nil
 	v.lastLoad = v.now()
 	v.issues = msg.issues
-	if msg.projects != nil {
-		v.projects = msg.projects
-	}
 	v.reselect()
 }
 
@@ -432,59 +431,25 @@ func issueURL(iss apiclient.Issue) string {
 
 func (v *issuesView) setNote(text string, bad bool) { v.note, v.noteBad = text, bad }
 
-// groups is the listing grouped by project: the projects in their listing
-// order, then any project the listing did not name, by id. Within a group the
-// daemon's order stands.
-func (v *issuesView) groups() []issueGroup {
-	byProject := map[int64][]apiclient.Issue{}
-	for _, iss := range v.issues {
-		byProject[iss.ProjectID] = append(byProject[iss.ProjectID], iss)
-	}
-	out := make([]issueGroup, 0, len(byProject))
-	seen := map[int64]bool{}
-	for _, p := range v.projects {
-		if issues := byProject[p.ID]; len(issues) > 0 {
-			out = append(out, issueGroup{project: p, issues: issues})
-		}
-		seen[p.ID] = true
-	}
-	var orphans []int64
-	for id := range byProject {
-		if !seen[id] {
-			orphans = append(orphans, id)
-		}
-	}
-	slices.Sort(orphans)
-	for _, id := range orphans {
-		out = append(out, issueGroup{
-			project: apiclient.Project{ID: id, Name: "project #" + strconv.FormatInt(id, 10)},
-			issues:  byProject[id],
-		})
-	}
-	return out
-}
-
-// rows is the flattened, filtered selection order.
+// rows is the filtered selection order, the daemon's order within it.
 func (v *issuesView) rows() []issueRow {
 	q := strings.ToLower(strings.TrimSpace(v.filter.Value()))
 	out := make([]issueRow, 0, len(v.issues))
-	for _, g := range v.groups() {
-		for _, iss := range g.issues {
-			if q != "" && !issueMatches(g.project, iss, q) {
-				continue
-			}
-			out = append(out, issueRow{project: g.project, issue: iss})
+	for _, iss := range v.issues {
+		if q != "" && !issueMatches(iss, q) {
+			continue
 		}
+		out = append(out, issueRow{issue: iss})
 	}
 	return out
 }
 
-// issueMatches is `/`'s client-side match: id, title, labels, kind and the
-// project's name (decision 1).
-func issueMatches(project apiclient.Project, iss apiclient.Issue, q string) bool {
+// issueMatches is `/`'s client-side match: id, title, labels and kind. The
+// project's name is no longer a term (task 132.11): every row is in it.
+func issueMatches(iss apiclient.Issue, q string) bool {
 	id := strconv.FormatInt(iss.ID, 10)
 	hay := strings.ToLower(strings.Join(append([]string{
-		"#" + id, id, iss.Title, iss.Kind, project.Name,
+		"#" + id, id, iss.Title, iss.Kind,
 	}, iss.Labels...), " "))
 	return strings.Contains(hay, q)
 }
@@ -564,12 +529,14 @@ func (v *issuesView) render(width, height int) string {
 func (v *issuesView) headerLine(width int) string {
 	left := " " + styleTitle.Render(v.state+" issues")
 	switch {
+	case v.project.id == 0:
+		left += styleDim.Render("  ·  no project selected")
 	case !v.loaded && v.loading:
-		left += styleDim.Render("  ·  listing…")
+		// The project's name, not a bare "listing…": after a switch this is
+		// the one line saying which project the empty list is waiting on.
+		left += styleDim.Render("  ·  loading " + v.project.name + "…")
 	case v.loaded:
-		left += styleDim.Render(fmt.Sprintf("  ·  %s across %s",
-			plural(len(v.issues), "issue", "issues"),
-			plural(len(v.groups()), "project", "projects")))
+		left += styleDim.Render("  ·  " + plural(len(v.issues), "issue", "issues"))
 	}
 	right := ""
 	if !v.lastLoad.IsZero() {
@@ -579,58 +546,51 @@ func (v *issuesView) headerLine(width int) string {
 }
 
 func (v *issuesView) bodyLines(width int) (lines []string, cursorRow int) {
+	if v.project.id == 0 {
+		// Never an unfiltered list in its place (task 132.11). No selection
+		// means no project is registered only once a listing has said so;
+		// until then it is still resolving.
+		if v.noProjects {
+			return []string{styleDim.Render("  No project selected. The project overview adds one.")}, 0
+		}
+		return []string{styleDim.Render("  Resolving the project…")}, 0
+	}
 	if v.loadErr != nil {
-		// Screen-wide, because the list is one request (decision 1).
+		// Screen-wide, because the list is one request.
 		out := []string{styleBad.Render("  ⚠ could not list issues: " + errString(v.loadErr))}
 		if v.loaded {
 			out = append(out, styleDim.Render("  showing what was listed at "+v.lastLoad.Format("15:04:05")), "")
 		} else {
 			return out, 0
 		}
-		rest, row := v.groupLines(width)
+		rest, row := v.listLines(width)
 		return append(out, rest...), row + len(out)
 	}
 	if !v.loaded {
-		return []string{styleDim.Render("  listing issues…")}, 0
+		return []string{styleDim.Render("  listing " + v.project.name + "'s issues…")}, 0
 	}
 	if len(v.issues) == 0 {
 		return []string{
-			styleDim.Render("  No " + strings.TrimPrefix(v.state+" ", "all ") + "issues in any project."),
+			styleDim.Render("  No " + strings.TrimPrefix(v.state+" ", "all ") + "issues in " + v.project.name + "."),
 			"",
 			styleDim.Render("  `vincent issue add` files one; a GitHub project's issues arrive on the reconciler tick."),
 		}, 0
 	}
-	return v.groupLines(width)
+	return v.listLines(width)
 }
 
-func (v *issuesView) groupLines(width int) (lines []string, cursorRow int) {
+// listLines is the flat list, filtered, and the cursor's line in it.
+func (v *issuesView) listLines(width int) (lines []string, cursorRow int) {
 	q := strings.ToLower(strings.TrimSpace(v.filter.Value()))
-	seen := 0
-	for _, g := range v.groups() {
-		shown := make([]apiclient.Issue, 0, len(g.issues))
-		for _, iss := range g.issues {
-			if q == "" || issueMatches(g.project, iss, q) {
-				shown = append(shown, iss)
-			}
+	rows := v.rows()
+	lines = make([]string, 0, len(rows)+1)
+	for i, row := range rows {
+		if i == v.cursor {
+			cursorRow = len(lines)
 		}
-		if len(shown) == 0 {
-			continue
-		}
-		if len(lines) > 0 {
-			lines = append(lines, "")
-		}
-		lines = append(lines, padBetween(" "+styleTitle.Render(g.project.Name),
-			styleDim.Render(plural(len(shown), "issue", "issues")+" "), width))
-		for _, iss := range shown {
-			selected := seen == v.cursor
-			if selected {
-				cursorRow = len(lines)
-			}
-			lines = append(lines, issueLine(iss, width, selected))
-			seen++
-		}
+		lines = append(lines, issueLine(row.issue, width, i == v.cursor))
 	}
-	if seen == 0 && q != "" {
+	if len(rows) == 0 && q != "" {
 		lines = append(lines, styleDim.Render(fmt.Sprintf("  none of %s match %q",
 			plural(len(v.issues), "issue", "issues"), q)))
 	}
