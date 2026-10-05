@@ -41,6 +41,11 @@ type tuiState struct {
 	// draw claude's status line says nothing about wanting a workflow-
 	// authoring skill.
 	SkillsDeclined bool `json:"skills_declined,omitempty"`
+	// SelectedProject is the last selected project (task 132.3 decision
+	// 27), written on every selection change and read once, by the startup
+	// chain's last-used rule. View state, not configuration — which is why
+	// it lives here and tui.default_project does not (task 009 decision 1).
+	SelectedProject *selectedProjectState `json:"selected_project,omitempty"`
 }
 
 func statePath(dataDir string) string { return filepath.Join(dataDir, "tui.json") }

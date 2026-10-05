@@ -42,6 +42,11 @@ type Task struct {
 	// 125), so archive will never delete it and a worktree path equal to the
 	// project path means the task ran in the human's own checkout.
 	AdoptedBranch bool `json:"adopted_branch"`
+	// WorktreePath is where the task's worktree lives, nil before it exists.
+	// It is on the list row, not on TaskDetail alone, because the TUI matches
+	// its working directory against every listed task's worktree to pick the
+	// project it opens on (task 132.3); the server has always served it here.
+	WorktreePath *string `json:"worktree_path"`
 
 	// CurrentStep is zero-based; StepTotal is the snapshot's step count.
 	// A board renders them as k/n with k = CurrentStep+1, clamped, because
@@ -469,7 +474,6 @@ type TaskDetail struct {
 	// decisions 17, 18); MaxTaskCostUSD is nil when the task set none.
 	Restricted     bool            `json:"restricted"`
 	MaxTaskCostUSD *float64        `json:"max_task_cost_usd"`
-	WorktreePath   *string         `json:"worktree_path"`
 	PendingInput   json.RawMessage `json:"pending_input,omitempty"`
 	// GitHubIssue is the legacy GitHub issue snapshot this task was created
 	// from (task 035), read-only since task 130.11 removed the create field;

@@ -81,7 +81,10 @@ type (
 		// outputLevel is `tui.output.level` (task 129.11), read by the root
 		// for the same reason hyperlinks is.
 		outputLevel string
-		err         error
+		// defaultProject is `tui.default_project` (task 132.3), read by the
+		// root's startup chain from the first answer only.
+		defaultProject string
+		err            error
 	}
 	// boardTickMsg drives the elapsed column.
 	boardTickMsg struct {
@@ -401,7 +404,7 @@ func (b *board) configCmd() tea.Cmd {
 		return boardConfigMsg{
 			archived: archived, board: cfg.TUI.Board,
 			laneDepth: cfg.FanOut.MaxDepth, hyperlinks: cfg.TUI.Hyperlinks, keys: cfg.TUI.Keys,
-			outputLevel: cfg.TUI.Output.Level, err: err,
+			outputLevel: cfg.TUI.Output.Level, defaultProject: cfg.TUI.DefaultProject, err: err,
 		}
 	}
 }

@@ -87,12 +87,17 @@ func TestSelectProjectWalksScopedViews(t *testing.T) {
 		t.Errorf("chat view did not store the selection")
 	}
 	batch, ok := cmd().(tea.BatchMsg)
-	if !ok || len(batch) != 2 {
-		t.Fatalf("selectProject cmd = %T (%d), want both stubs' commands batched", cmd(), len(batch))
+	if !ok || len(batch) != 3 {
+		t.Fatalf("selectProject cmd = %T (%d), want both stubs' commands and the save batched", cmd(), len(batch))
 	}
 	var got []string
-	for _, c := range batch {
+	for _, c := range batch[:2] {
 		got = append(got, c().(scopeStubMsg).name)
+	}
+	// The third is decision 27's write of the last-used project.
+	batch[2]()
+	if st := readTUIState(m.dataDir).SelectedProject; st == nil || *st != (selectedProjectState{ID: 7, Name: "alpha"}) {
+		t.Errorf("tui.json selected_project = %+v, want alpha/7", st)
 	}
 	if strings.Join(got, ",") != "a,b" {
 		t.Errorf("batched = %v, want a,b", got)
@@ -113,6 +118,7 @@ func TestConnectHandsSelectionAfterClient(t *testing.T) {
 func TestProjectListSelection(t *testing.T) {
 	m := newRoot(testCtx(t), connector{}, ackedDir(t))
 	m.client = apiclient.New("http://127.0.0.1:1", "t")
+	m.startup.done = true // after the 132.3 chain; startproject_test.go covers it
 	land := func(projects ...apiclient.Project) {
 		t.Helper()
 		_ = m.refreshProjects() // bump the sequence the answer must match

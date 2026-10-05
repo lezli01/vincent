@@ -122,10 +122,16 @@ type root struct {
 
 	// sel is the TUI's one selected project (task 132, §15): client-side,
 	// owned here, and handed to every project-bearing view by selectProject
-	// rather than broadcast. selWhy is how it was chosen, kept for the
-	// startup notice task 132.3 raises (decision 4).
+	// rather than broadcast. selWhy is the rule that chose it.
 	sel    projectSel
 	selWhy string
+	// startup is the task 132.3 resolution chain's state (startproject.go),
+	// and selNotice the one line it raises (decision 26): a pick by the
+	// working directory, or a rule that fell through. Cleared by the next
+	// key, like keysNotice; selNoticeWarn renders it as a warning.
+	startup       startupState
+	selNotice     string
+	selNoticeWarn bool
 	// projects is the registered-project list the selection is checked
 	// against, refreshed on connect, on reconnect and on every project.*
 	// event. projectsSeq numbers the fetches so an older answer landing
@@ -279,7 +285,9 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyHyperlinks(msg)
 		m.applyOutputLevel(msg)
 		m.applyKeymap(msg)
-		return m, m.broadcast(msg)
+		return m, tea.Batch(m.noteStartupConfig(msg), m.broadcast(msg))
+	case startupWorktreesMsg:
+		return m, m.resolveStartup(msg)
 	case newTaskFromPullMsg:
 		return m.updateNewTaskFromPull(msg)
 	case newTaskFromIssueMsg:
@@ -396,9 +404,10 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.notice.active {
 		return m.updateNoticeKey(msg)
 	}
-	// The keymap notice is read by the time a key is pressed; the key itself
-	// still does what it does.
+	// The keymap and startup-project notices are read by the time a key is
+	// pressed; the key itself still does what it does.
 	m.keysNotice = ""
+	m.selNotice = ""
 	// The help overlay owns every key but ctrl+c, the palette's rule (task
 	// 114 decision 2). It sits above the input-capture gate: over a chat, a
 	// key that fell through would type into a draft the sheet is hiding, and
@@ -960,29 +969,29 @@ func (m *root) refreshProjects() tea.Cmd {
 	}
 }
 
-// updateProjectList adopts a fresh project list. With nothing selected, the
-// first project by name is selected (task 132 decision 10: a new project
-// only auto-selects when nothing is) — the whole startup precedence is task
-// 132.3. A selected project that is still listed has its name refreshed, so a
-// rename reaches the header. One that has vanished is left alone: what a
-// deleted selection becomes is task 132.7's. A failed fetch leaves the
-// previous list standing, for githubProbeMsg's reason.
+// updateProjectList adopts a fresh project list. The first one feeds the
+// task 132.3 startup chain, which picks the selection once the first config
+// answer is in as well. After that, with nothing selected, the first project
+// by name is selected (task 132 decision 10: a new project only auto-selects
+// when nothing is). A selected project that is still listed has its name
+// refreshed, so a rename reaches the header. One that has vanished is left
+// alone: what a deleted selection becomes is task 132.7's. A failed fetch
+// leaves the previous list standing, for githubProbeMsg's reason.
 func (m *root) updateProjectList(msg projectListMsg) tea.Cmd {
 	if msg.err != nil || msg.seq != m.projectsSeq {
 		return nil
 	}
 	m.projects = msg.projects
+	if !m.startup.done {
+		m.startup.listed = true
+		return m.maybeResolveStartup()
+	}
 	if m.sel.id == 0 {
-		if len(m.projects) == 0 {
+		first, ok := firstProjectByName(m.projects)
+		if !ok {
 			return nil
 		}
-		first := m.projects[0]
-		for _, p := range m.projects[1:] {
-			if p.Name < first.Name || (p.Name == first.Name && p.ID < first.ID) {
-				first = p
-			}
-		}
-		return m.selectProject(first, "the first project by name")
+		return m.selectProject(first, whyFirstName)
 	}
 	for _, p := range m.projects {
 		if p.ID == m.sel.id {
@@ -996,17 +1005,21 @@ func (m *root) updateProjectList(msg projectListMsg) tea.Cmd {
 	return nil
 }
 
-// selectProject makes p the selection and tells every project-bearing view.
-// why says how it was chosen, for the notice task 132.3 raises.
+// selectProject makes p the selection, tells every project-bearing view, and
+// records it as the last used project (task 132 decision 27) — the one place
+// the selection changes, so every change is persisted, the startup chain's
+// own pick included. why is the rule that chose it.
 func (m *root) selectProject(p apiclient.Project, why string) tea.Cmd {
 	m.sel = projectSel{id: p.ID, name: p.Name}
 	m.selWhy = why
-	return m.scopeViews()
+	return tea.Batch(append(m.scopeCmds(), m.saveSelection())...)
 }
 
 // scopeViews hands the selection to every projectScoped view, directly and
 // in view order, and batches what they return.
-func (m *root) scopeViews() tea.Cmd {
+func (m *root) scopeViews() tea.Cmd { return tea.Batch(m.scopeCmds()...) }
+
+func (m *root) scopeCmds() []tea.Cmd {
 	var cmds []tea.Cmd
 	for i := range m.views {
 		if ps, ok := m.views[i].(projectScoped); ok {
@@ -1015,7 +1028,7 @@ func (m *root) scopeViews() tea.Cmd {
 			}
 		}
 	}
-	return tea.Batch(cmds...)
+	return cmds
 }
 
 func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
@@ -1181,13 +1194,20 @@ func (m *root) noticeKeys(warnings []string) {
 }
 
 // statusLine is the line under the header, when there is one: the full-auto
-// notice's failed acknowledgment, else the one-time keymap notice.
+// notice's failed acknowledgment, else the one-time keymap notice, else the
+// startup-project notice.
 func (m *root) statusLine() (string, bool) {
 	if line, ok := m.notice.statusLine(); ok {
 		return line, true
 	}
 	if m.keysNotice != "" {
 		return styleWarn.Render(m.keysNotice), true
+	}
+	if m.selNotice != "" {
+		if m.selNoticeWarn {
+			return styleWarn.Render(" ⚠ " + m.selNotice), true
+		}
+		return styleDim.Render(" " + m.selNotice), true
 	}
 	return "", false
 }
