@@ -195,9 +195,21 @@ func stampedViews() []stampedView {
 
 func chatsStamped(v *chatsView, archived bool) (func(projectSel) tea.Cmd, func() tea.Cmd, func(loadStamp, string), func() string) {
 	v.client = deadClient()
-	return v.setProject, v.loadCmd,
+	// The chats boards fetch nothing with no project selected (task
+	// 132.10), so a bare load runs in project 9 and a stamp that names no
+	// project is read as that one.
+	load := func() tea.Cmd {
+		if v.project.id == 0 {
+			v.project = projectSel{id: 9, name: "z"}
+		}
+		return v.loadCmd()
+	}
+	return v.setProject, load,
 		func(st loadStamp, mark string) {
-			v.update(chatsLoadedMsg{archived: archived, stamp: st, chats: []apiclient.Chat{{ID: 1, Title: mark}}, names: map[int64]string{}})
+			if st.project == 0 {
+				st.project = v.project.id
+			}
+			v.update(chatsLoadedMsg{archived: archived, stamp: st, chats: []apiclient.Chat{{ID: 1, Title: mark}}})
 		},
 		func() string {
 			if len(v.chats) == 0 {
@@ -442,6 +454,7 @@ func scoped[V interface {
 func TestChatsDebounceABurst(t *testing.T) {
 	v := newChatsView()
 	v.client = deadClient()
+	v.project = projectSel{id: 2, name: "b"}
 	var armed int
 	for range 5 {
 		if _, cmd := v.update(eventNote("chat.state_changed", nil)); cmd != nil {

@@ -7,40 +7,29 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// twoProjectChats loads v with one chat in each of two projects, so the two
-// selectable rows have a project heading between them: a wheel tick that
-// landed on the heading would be a tick that selected nothing.
-func twoProjectChats(v *chatsView, state string) {
-	a := testChat(1, state, "first")
-	b := testChat(2, state, "second")
-	b.ProjectID = 8
+// twoChats loads v with two chats in the selected project, and scopes v to
+// it so `n` has a project to open the form on.
+func twoChats(v *chatsView, state string) {
+	v.project = projectSel{id: 7, name: "repo"}
 	v.applyLoaded(chatsLoadedMsg{
-		chats:          []apiclient.Chat{a, b},
-		names:          map[int64]string{7: "repo", 8: "other"},
-		projectsListed: true,
+		chats: []apiclient.Chat{testChat(1, state, "first"), testChat(2, state, "second")},
 	})
 }
 
-// chatRowsForWheel returns the two selectable rows' indices and fails unless
-// a heading sits between them, then puts the cursor on the first.
+// chatRowsForWheel returns the two rows' indices and puts the cursor on the
+// first.
 func chatRowsForWheel(t *testing.T, v *chatsView) (first, second int) {
 	t.Helper()
-	var sel []int
-	for i, r := range v.rows() {
-		if r.selectable() {
-			sel = append(sel, i)
-		}
+	if n := len(v.rows()); n != 2 {
+		t.Fatalf("fixture rows %+v: want two chats", v.rows())
 	}
-	if len(sel) != 2 || sel[1]-sel[0] != 2 || !v.rows()[sel[0]+1].header {
-		t.Fatalf("fixture rows %+v: want two chats with a heading between them", v.rows())
-	}
-	v.cursor = sel[0]
+	v.cursor = 0
 	v.rememberSelection()
-	return sel[0], sel[1]
+	return 0, 1
 }
 
 // assertChatsWheelWalks is one tick down and one tick up, each moving exactly
-// one chat and skipping the heading.
+// one chat.
 func assertChatsWheelWalks(t *testing.T, v *chatsView, first, second int) {
 	t.Helper()
 	v.update(wheelTick(false))
@@ -65,13 +54,13 @@ func assertChatsWheelHeld(t *testing.T, v *chatsView, at int, layer string) {
 }
 
 // TestChatsBoardWheelMovesTheCursor is task 114 decision 5 on the live chats
-// board: one chat per tick, headings skipped, and nothing while a layer that
+// board: one chat per tick, and nothing while a layer that
 // owns the keyboard is up — proven by the same tick moving the cursor again
 // once that layer closes.
 func TestChatsBoardWheelMovesTheCursor(t *testing.T) {
 	v := newChatsView()
 	v.now = func() time.Time { return testNow }
-	twoProjectChats(v, "idle")
+	twoChats(v, "idle")
 	first, second := chatRowsForWheel(t, v)
 	assertChatsWheelWalks(t, v, first, second)
 
@@ -117,7 +106,7 @@ func TestChatsBoardWheelMovesTheCursor(t *testing.T) {
 func TestArchivedChatsBoardWheelMovesTheCursor(t *testing.T) {
 	v := newArchivedChatsView()
 	v.now = func() time.Time { return testNow }
-	twoProjectChats(v, "archived")
+	twoChats(v, "archived")
 	first, second := chatRowsForWheel(t, v)
 	assertChatsWheelWalks(t, v, first, second)
 

@@ -28,12 +28,10 @@ type tuiState struct {
 	// (task 132 decision 35). JSON object keys are strings; encoding/json
 	// reads them back as the ids.
 	BoardFoldsByProject map[int64][]foldPath `json:"board_folds_by_project,omitempty"`
-	// ChatFolds is the chats board's own set. It is a second field rather
-	// than a second use of BoardFolds because the two boards group by the
-	// same project names: sharing the list would make folding a project on
-	// one board fold it on the other, which is one fold set pretending to be
-	// two (task 067).
-	ChatFolds []foldPath `json:"chat_folds,omitempty"`
+	// The chats board's `chat_folds` lived here until the board went flat
+	// (task 132.10). An older file still carrying it reads fine — unknown
+	// fields are ignored — and mergeTUIState keeps the stale key through
+	// later writes, harmlessly, so nothing scrubs it.
 	// StatusLineDeclined remembers that the offer to make vincent Claude
 	// Code's status line was turned down (task 082). It is a preference and
 	// not a marker file precisely because this struct was shaped for one to

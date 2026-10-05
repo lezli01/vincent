@@ -392,26 +392,16 @@ func TestChatsBoardDropsFieldsForAClosedForm(t *testing.T) {
 // TestChatsBoardRefusesAChatWithNoProject holds the dead end shut: `n` on an
 // installation with nothing registered says so on the board instead of
 // opening a form that `ctrl+s` can only answer with `pick a project` and no
-// field will accept one (issue #279).
+// field will accept one (issue #279). The root leaves the selection at 0 only
+// when no project is registered (task 132.10).
 func TestChatsBoardRefusesAChatWithNoProject(t *testing.T) {
 	v := newChatsView()
-	v.applyLoaded(chatsLoadedMsg{names: map[int64]string{}, projectsListed: true})
+	v.applyLoaded(chatsLoadedMsg{})
 	v.updateKey(registryKey(t, "n"))
 	if v.create != nil {
 		t.Fatal("n opened a new-chat form with no project to create in")
 	}
 	if v.note == "" || !v.noteBad {
 		t.Fatalf("the board says %q, want a refusal naming the missing project", v.note)
-	}
-
-	// A board that has not listed the projects yet knows nothing, and a
-	// listing that failed knows nothing either: both open the form as before.
-	unknown := newChatsView()
-	unknown.applyLoaded(chatsLoadedMsg{names: map[int64]string{}})
-	if _, cmd := unknown.updateKey(registryKey(t, "n")); cmd != nil {
-		drain(cmd)
-	}
-	if unknown.create == nil {
-		t.Fatal("n refused the form on a board that never listed the projects")
 	}
 }

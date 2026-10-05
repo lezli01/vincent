@@ -50,8 +50,12 @@ func (v *chatsView) headerLine(width int) string {
 	switch {
 	case v.loadErr != "":
 		left += styleDim.Render("  ·  " + v.loadErr)
+	case v.project.id == 0:
+		left += styleDim.Render("  ·  no project selected")
 	case !v.loaded && v.loading:
-		left += styleDim.Render("  ·  loading…")
+		// The project's name, not a bare "loading…": after a switch this is
+		// the one line saying which project the empty board is waiting on.
+		left += styleDim.Render("  ·  loading " + v.project.name + "…")
 	default:
 		left += styleDim.Render("  ·  " + plural(len(v.chats), "chat", "chats"))
 		// Which listing is on, named only when it is not the default: a
@@ -72,10 +76,15 @@ func (v *chatsView) headerLine(width int) string {
 	return padBetween(left, right, width)
 }
 
-// bodyLines is the grouped board, and the index of the cursor's line so the
-// window can follow it.
+// bodyLines is the board, and the index of the cursor's line so the window
+// can follow it.
 func (v *chatsView) bodyLines(width int) (lines []string, cursorRow int) {
 	rows := v.rows()
+	if v.project.id == 0 {
+		// Never an unfiltered list in its place (task 132.10): no selection
+		// means no project is registered, and the board says so.
+		return []string{styleDim.Render("  No project selected. The Projects view (4) adds one.")}, 0
+	}
 	if len(rows) == 0 {
 		if v.loaded {
 			return []string{styleDim.Render("  No chats. Press " + opKey(keymap.New) + " to start one.")}, 0
@@ -96,14 +105,6 @@ func (v *chatsView) rowLine(r chatRow, selected bool, width int) string {
 	cursor := "  "
 	if selected {
 		cursor = "▸ "
-	}
-	if r.header {
-		marker := "▾"
-		if r.collapsed {
-			marker = "▸"
-		}
-		return cursor + styleTitle.Render(fmt.Sprintf("%s %s", marker, r.label)) +
-			styleDim.Render(fmt.Sprintf("  (%d)", r.count))
 	}
 	c := r.chat
 	// Columns: id, state, agent, turns, last activity, then the title with

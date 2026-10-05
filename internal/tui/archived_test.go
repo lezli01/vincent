@@ -205,7 +205,6 @@ func TestArchivedChatsBoardRefusesToAskAboutAHandedOffChat(t *testing.T) {
 	v.now = func() time.Time { return testNow }
 	v.applyLoaded(chatsLoadedMsg{
 		chats: []apiclient.Chat{testChat(1, "handed_off", "given away")},
-		names: map[int64]string{7: "repo"},
 	})
 	v.updateKey(registryKey(t, "D"))
 	if v.delPrompt != nil {
@@ -222,12 +221,12 @@ func archivedChatsFixture() *chatsView {
 	v := newArchivedChatsView()
 	v.now = func() time.Time { return testNow }
 	v.client = &apiclient.Client{}
+	v.project = projectSel{id: 7, name: "repo"}
 	v.applyLoaded(chatsLoadedMsg{
 		chats: []apiclient.Chat{
 			testChat(1, "archived", "first"),
 			testChat(2, "archived", "second"),
 		},
-		names: map[int64]string{7: "repo"},
 	})
 	return v
 }

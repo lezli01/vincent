@@ -569,13 +569,11 @@ var bindings = []binding{
 	// board next door has spelled it `A` since §6 named the action.
 	{op: keymap.Archive, key: "A", label: "archive the chat (asks first — the worktree is removed)", scope: scopePanel, context: ctxChats, hint: "A archive", priority: 3, term: termArchive},
 	{op: keymap.Filter, key: "/", label: "filter by title, agent or branch", scope: scopePanel, context: ctxChats, hint: "/ filter", priority: 4, term: termFilter},
-	{key: "left", label: "collapse the project group", scope: scopePanel, context: ctxChats, hint: "← fold", priority: 5},
-	{key: "right", label: "expand the project group", scope: scopePanel, context: ctxChats, hint: "→ unfold", priority: 6},
 	// `s` is the pull-request board's key for the same idea (task 064
 	// decision 9): terminal chats are hidden by default (issue #298), and
 	// this is the way back to them.
-	{op: keymap.Scope, key: "s", label: "cycle the listing between live, ended (archived, handed-off or closed), and all", scope: scopePanel, context: ctxChats, hint: "s listing", priority: 7, term: termScope},
-	{op: keymap.Refresh, key: "R", label: "reload the board", scope: scopePanel, context: ctxChats, hint: "R reload", priority: 8, term: termRefresh},
+	{op: keymap.Scope, key: "s", label: "cycle the listing between live, ended (archived, handed-off or closed), and all", scope: scopePanel, context: ctxChats, hint: "s listing", priority: 5, term: termScope},
+	{op: keymap.Refresh, key: "R", label: "reload the board", scope: scopePanel, context: ctxChats, hint: "R reload", priority: 6, term: termRefresh},
 
 	// Chat workspace.
 	{key: "enter", label: "send the message", scope: scopePanel, context: ctxChat, hint: "enter send", priority: 1},

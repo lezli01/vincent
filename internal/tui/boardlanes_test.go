@@ -395,7 +395,7 @@ func TestExpandedSetNeverReachesTUIState(t *testing.T) {
 	}
 	for key := range fields {
 		switch key {
-		case foldsKey, chatFoldsKey, "full_auto_notice_ack", "status_line_declined":
+		case foldsKey, "full_auto_notice_ack", "status_line_declined":
 		default:
 			t.Errorf("tui.json grew a %q field; the expanded set is session-only", key)
 		}

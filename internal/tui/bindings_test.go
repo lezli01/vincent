@@ -796,7 +796,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			for i := range full {
 				full[i] = testChat(int64(i+1), "archived", "c")
 			}
-			v.applyLoaded(chatsLoadedMsg{chats: full, names: map[int64]string{7: "repo"}})
+			v.applyLoaded(chatsLoadedMsg{chats: full})
 			v.updateKey(registryKey(t, ">"))
 			if v.page != 1 {
 				t.Fatal("> did not turn the page")
@@ -848,27 +848,6 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v.updateKey(registryKey(t, "/"))
 			if !v.filtering {
 				t.Fatal("/ did not open the chats filter")
-			}
-		},
-		"left": func(t *testing.T) {
-			v := chatsFixture()
-			v.cursor = 0
-			if _, cmd := v.updateKey(registryKey(t, "left")); cmd != nil {
-				drain(cmd)
-			}
-			if !v.folds.has(foldPath{"repo"}) {
-				t.Fatal("left did not collapse the project group")
-			}
-		},
-		"right": func(t *testing.T) {
-			v := chatsFixture()
-			v.folds = foldSet{foldPath{"repo"}}
-			v.cursor = 0
-			if _, cmd := v.updateKey(registryKey(t, "right")); cmd != nil {
-				drain(cmd)
-			}
-			if v.folds.has(foldPath{"repo"}) {
-				t.Fatal("right did not expand the project group")
 			}
 		},
 		"s": func(t *testing.T) {
