@@ -335,11 +335,15 @@ The figures follow the daemon while the picker is up. On a narrow terminal they
 drop from the end — issues, then active, then running, then attention — and the
 name shortens last. A daemon that could not count shows the names alone.
 
+Below the projects, the last row, **overview & manage…**, opens the
+[project overview](#projects). It is not a project: the filter never hides
+it, and choosing it changes no selection.
+
 | Key | Does |
 |---|---|
 | typing | Filter the projects by name; `ctrl+v` pastes into the filter |
 | `↑` / `↓` | Move the highlight |
-| `enter` | Switch to the highlighted project |
+| `enter` | Switch to the highlighted project — or, on the last row, open the project overview |
 | `esc` | Close without switching |
 
 A switch keeps you where you are. The board, the chats and issues lists, pull
