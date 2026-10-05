@@ -1218,8 +1218,9 @@ func (m *root) crossAttention() (tea.Cmd, bool) {
 	return nil, false
 }
 
-// projectsAfter is every project but the selected one, by name (the
-// picker's reading order), starting after the selection and wrapping.
+// projectsAfter is every project but the selected one, by case-insensitive
+// name, starting after the selection and wrapping. That is not the picker's
+// order: the picker lists projects in the daemon's order, by id.
 func projectsAfter(projects []apiclient.Project, sel int64) []apiclient.Project {
 	sorted := slices.Clone(projects)
 	slices.SortStableFunc(sorted, func(a, b apiclient.Project) int {

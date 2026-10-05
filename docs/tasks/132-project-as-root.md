@@ -731,13 +731,14 @@ made.
 Taken with the author while delivering 132.14. `!` first cycles the selected
 project's attention tasks in board order, through `visible()`, so a committed
 filter still applies inside the selected project. Once the cursor is past the
-last of them, the next press goes to the next project **by name** (the
-picker's reading order) that has an attention task, and opens that project's
-first attention task in board order. After the last such project, `!` wraps
-back to the selected project's first. The switch is the follow-the-object
-path (decision 38), so decision 36's dirty-draft confirmation applies, and
-it raises one notice naming it — ``! — switched to `web` (task #42 needs
-you)`` — which the next key clears like the other root notices. Task 054
+last of them, the next press goes to the next project **by name**
+(case-insensitive) that has an attention task, and opens that project's
+first attention task in board order. That is not the `@` picker's order,
+which lists projects as the daemon does, by id. After the last such
+project, `!` wraps back to the selected project's first. The switch is the
+follow-the-object path (decision 38), so decision 36's dirty-draft
+confirmation applies, and it raises one notice naming it —
+``! — switched to `web` (task #42 needs you)`` — which the next key clears like the other root notices. Task 054
 decision 3's fold-open applies to the target project's fold set (decision
 35).
 
