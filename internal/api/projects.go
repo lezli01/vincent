@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/gitx"
+	"github.com/lezli01/vincent/internal/pathx"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/worktree"
 )
@@ -586,19 +587,10 @@ func findSameRepo(existing []store.Project, path string, selfID int64) *store.Pr
 	return nil
 }
 
-// sameDir reports whether a and b name the same directory on disk. A path
-// that no longer exists matches nothing.
-func sameDir(a, b string) bool {
-	fa, err := os.Stat(a)
-	if err != nil {
-		return false
-	}
-	fb, err := os.Stat(b)
-	if err != nil {
-		return false
-	}
-	return os.SameFile(fa, fb)
-}
+// sameDir reports whether a and b name the same directory: internal/pathx's
+// comparison, whose last resort is the os.SameFile check this used to be
+// alone (task 132.3).
+func sameDir(a, b string) bool { return pathx.SameDir(a, b) }
 
 func hasForce(r *http.Request) bool {
 	if !r.URL.Query().Has("force") {

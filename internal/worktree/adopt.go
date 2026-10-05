@@ -3,10 +3,10 @@ package worktree
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/lezli01/vincent/internal/gitx"
+	"github.com/lezli01/vincent/internal/pathx"
 )
 
 // The third worktree-creation mode: a task or chat that runs on an **existing**
@@ -334,32 +334,9 @@ func (m *Manager) checkedOutBranches(ctx context.Context, repo string) (map[stri
 func SameDir(a, b string) bool { return sameDir(a, b) }
 
 // sameDir compares two directory paths the way the rest of this package does:
-// lexically, after Clean, with no symlink resolution.
-//
-// git prints worktree paths in its own form — `/private/var/...` on macOS,
-// forward slashes on Windows — so both sides are run through filepath.Clean
-// and, where the platform's paths are case-insensitive, folded. It is
-// deliberately not os.SameFile: the comparison has to work for a path that
-// does not exist, which is exactly the case Remove's early return asks about.
-func sameDir(a, b string) bool {
-	a, b = filepath.Clean(a), filepath.Clean(b)
-	if a == b {
-		return true
-	}
-	if caseInsensitivePaths && strings.EqualFold(a, b) {
-		return true
-	}
-	// git reports the resolved path; the project path may be the symlink the
-	// user configured. Comparing the resolved forms catches macOS's
-	// /var → /private/var without making the lexical case above depend on the
-	// filesystem.
-	ra, erra := filepath.EvalSymlinks(a)
-	rb, errb := filepath.EvalSymlinks(b)
-	if erra != nil || errb != nil {
-		return false
-	}
-	if caseInsensitivePaths {
-		return strings.EqualFold(ra, rb)
-	}
-	return ra == rb
-}
+// lexically after Clean, case-folded where the platform's paths are, then in
+// symlink-resolved form — internal/pathx's comparison, which this package
+// owned until the TUI needed it too (task 132.3). It is deliberately lexical
+// first: the comparison has to work for a path that does not exist, which is
+// exactly the case Remove's early return asks about.
+func sameDir(a, b string) bool { return pathx.SameDir(a, b) }
