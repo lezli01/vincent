@@ -49,14 +49,24 @@ func (v *pullRequestsView) render(width, height int) string {
 // headerLine says what the screen is showing and how fresh it is.
 func (v *pullRequestsView) headerLine(width int) string {
 	left := " " + styleTitle.Render("open pull requests")
+	st, probed := v.github()
 	switch {
-	case len(v.available) == 0:
-		left += styleDim.Render("  ·  no project with a usable GitHub integration")
+	case v.project.id == 0:
+		left += styleDim.Render("  ·  no project selected")
+	case !probed:
+		left += styleDim.Render("  ·  asking GitHub about " + v.project.name + "…")
+	case !st.Available:
+		left += styleDim.Render("  ·  " + v.project.name + " has no usable GitHub integration")
 	case !v.loaded && v.loading:
-		left += styleDim.Render("  ·  listing…")
+		// The project's name, not a bare "listing…": after a switch this is
+		// the one line saying which project the empty list is waiting on.
+		left += styleDim.Render("  ·  loading " + v.project.name + "…")
 	default:
-		left += styleDim.Render(fmt.Sprintf("  ·  %d across %s",
-			v.countPulls(), plural(len(v.available), "project", "projects")))
+		where := v.project.name
+		if st.Repo != "" {
+			where = st.Repo
+		}
+		left += styleDim.Render(fmt.Sprintf("  ·  %d in %s", len(v.pulls), where))
 	}
 	right := ""
 	if !v.lastLoad.IsZero() {
@@ -65,88 +75,60 @@ func (v *pullRequestsView) headerLine(width int) string {
 	return padBetween(left, right, width)
 }
 
-func (v *pullRequestsView) countPulls() int {
-	n := 0
-	for _, g := range v.groups {
-		n += len(g.pulls)
-	}
-	return n
-}
-
-// bodyLines is the grouped list, and the index of the line the cursor is on
-// so the window can follow it.
+// bodyLines is the list, and the index of the line the cursor is on so the
+// window can follow it.
 func (v *pullRequestsView) bodyLines(width int) (lines []string, cursorRow int) {
-	if len(v.available) == 0 {
+	if v.project.id == 0 {
+		// Never an unfiltered list in its place (task 132.11). No selection
+		// means no project is registered only once a listing has said so;
+		// until then it is still resolving.
+		if v.noProjects {
+			return []string{styleDim.Render("  No project selected. The project overview adds one.")}, 0
+		}
+		return []string{styleDim.Render("  Resolving the project…")}, 0
+	}
+	st, probed := v.github()
+	if !probed {
+		return []string{styleDim.Render("  asking whether " + v.project.name + " has a usable GitHub integration…")}, 0
+	}
+	if !st.Available {
+		// The view stays on a switch to such a project (task 132.11): its
+		// probe's reason stands in for the rows, and no listing is issued.
 		return []string{
-			styleDim.Render("  No registered project has a usable GitHub integration."),
+			styleWarn.Render("  This project has no usable GitHub integration: " + st.Unavailable()),
 			"",
 			styleDim.Render("  A project qualifies when its origin remote is a github.com"),
 			styleDim.Render("  repository and vincent can authenticate to it."),
 		}, 0
 	}
+	if v.loadErr != "" {
+		return []string{styleBad.Render("  ⚠ " + v.loadErr)}, 0
+	}
 	if !v.loaded {
-		return []string{styleDim.Render("  listing pull requests…")}, 0
+		return []string{styleDim.Render("  listing " + v.project.name + "'s pull requests…")}, 0
 	}
 
 	q := strings.TrimSpace(v.filter.Value())
 	rows := v.rows()
-	seen := 0
-	for _, g := range v.groups {
-		if len(lines) > 0 {
-			lines = append(lines, "")
+	if len(rows) == 0 {
+		return []string{styleDim.Render("  " + emptyPullsNote(len(v.pulls), q))}, 0
+	}
+	lines = make([]string, 0, len(rows))
+	for i, r := range rows {
+		if i == v.cursor {
+			cursorRow = len(lines)
 		}
-		lines = append(lines, v.groupHeader(g, width))
-		if g.err != "" {
-			// One group's failure, on that group. The others still render:
-			// that separation is the whole point of listing per project.
-			lines = append(lines, styleBad.Render("    ⚠ "+g.err))
-			continue
-		}
-		shown := 0
-		for _, p := range g.pulls {
-			if q != "" && !pullMatches(g.project, p, strings.ToLower(q)) {
-				continue
-			}
-			selected := seen < len(rows) && seen == v.cursor
-			if selected {
-				cursorRow = len(lines)
-			}
-			lines = append(lines, v.pullLine(p, width, selected))
-			shown++
-			seen++
-		}
-		if shown == 0 {
-			lines = append(lines, styleDim.Render("    "+emptyGroupNote(len(g.pulls), q)))
-		}
+		lines = append(lines, v.pullLine(r.pull, width, i == v.cursor))
 	}
 	return lines, cursorRow
 }
 
-func emptyGroupNote(total int, query string) string {
+func emptyPullsNote(total int, query string) string {
 	if total == 0 {
 		return "no open pull requests"
 	}
 	return fmt.Sprintf("none of %s match %q",
 		plural(total, "pull request", "pull requests"), query)
-}
-
-func (v *pullRequestsView) groupHeader(g pullGroup, width int) string {
-	repo := ""
-	for _, gp := range v.available {
-		if gp.project.ID == g.project.ID {
-			repo = gp.status.Repo
-			break
-		}
-	}
-	left := " " + styleTitle.Render(g.project.Name)
-	if repo != "" {
-		left += styleDim.Render("  " + repo)
-	}
-	count := ""
-	if g.err == "" {
-		count = styleDim.Render(fmt.Sprintf("%d open ", len(g.pulls)))
-	}
-	return padBetween(left, count, width)
 }
 
 // pullLine is one row: the number, the folded status word, the title, the

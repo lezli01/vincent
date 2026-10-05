@@ -126,14 +126,15 @@ type root struct {
 	// history.
 	lastScoped viewID
 
-	// github is the §13.2 capability probe per registered project, refreshed
-	// as the connection comes up and again on reconnect. It lives here rather
-	// than in the pull-requests view because the *nav row that reaches that
-	// view* is gated on it, and the nav rows are global (task 052.6).
+	// github is the §13.2 capability probe for every registered project,
+	// yes and no alike, refreshed as the connection comes up and again on
+	// reconnect. It lives here rather than in the pull-requests view because
+	// the *nav row that reaches that view* is gated on it, and the nav rows
+	// are global (task 052.6).
 	//
-	// While every answer is unavailable — including while the probes are
-	// still in flight — the row is withheld everywhere: the palette, the ?
-	// overlay and the footer.
+	// The gate follows the selected project (task 132.11): while its answer
+	// is unavailable — including while the probes are still in flight — the
+	// row is withheld everywhere: the palette, the ? overlay and the footer.
 	github []githubProject
 
 	// sel is the TUI's one selected project (task 132, §15): client-side,
@@ -260,7 +261,7 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// and dropping the nav row under a human mid-session on a transient
 		// error would be worse than a row that briefly outlives its project.
 		if msg.err == nil {
-			m.github = msg.available()
+			m.github = msg.projects
 		}
 		return m, m.broadcast(msg)
 	case boardConfigMsg, daemonConfigMsg, configSavedMsg:
@@ -1418,6 +1419,12 @@ func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
 		// note through the broadcast below as before.
 		if strings.HasPrefix(n.Event.Type, "project.") {
 			relist = m.refreshProjects()
+			// The pull-requests gate follows the selected project's probe
+			// (task 132.11), so a project registered or re-pointed
+			// mid-session needs an answer of its own before it is selected.
+			if reprobe == nil {
+				reprobe = probeGitHubCmd(m.client)
+			}
 		}
 		if projectPickerEvent(n.Event.Type) {
 			repick = m.scheduleProjectPicker()
@@ -1901,10 +1908,14 @@ func (m *root) homeLoaded() bool {
 	return ok && s.board.loaded
 }
 
-// githubAvailable reports whether any registered project answered the §13.2
-// probe with available: true. It is what withholds the pull-requests nav row
-// and the workspace's two pull-request keys.
-func (m *root) githubAvailable() bool { return len(m.github) > 0 }
+// githubAvailable reports whether the selected project answered the §13.2
+// probe with available: true (task 132.11). It is what withholds the
+// pull-requests nav row and the workspace's pull-request keys, so all of
+// them follow a project switch.
+func (m *root) githubAvailable() bool {
+	st, ok := githubStatusFor(m.github, m.sel.id)
+	return ok && st.Available
+}
 
 func (m *root) taskLoaded() bool {
 	t, ok := m.views[viewTask].(*taskView)

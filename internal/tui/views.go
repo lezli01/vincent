@@ -195,9 +195,11 @@ func newViews(ctx context.Context, links *hyperlinkHolder, level *levelHolder) [
 		viewWorkflows: newWorkflowsView(),
 		viewDaemon:    newDaemonView(),
 		// The pull-requests takeover is constructed unconditionally and
-		// reached only when at least one project's §13.2 probe says yes: it
-		// is the *nav row* that is withheld, not the screen, so nothing here
-		// has to know the answer before the probes land.
+		// reached only when the selected project's §13.2 probe says yes (task
+		// 132.11): it is the *nav row* that is withheld, not the screen, so
+		// nothing here has to know the answer before the probes land, and a
+		// switch to a project without one leaves the screen up with its
+		// reason.
 		viewPullRequests:  newPullRequestsView(),
 		viewChats:         newChatsView(),
 		viewChat:          newChatView(level, raw, links),

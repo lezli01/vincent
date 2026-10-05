@@ -31,17 +31,18 @@ func claimedBy(id int64, source string) func(*apiclient.GitHubPullRequest) {
 	return func(p *apiclient.GitHubPullRequest) { p.TaskID, p.LinkSource = &id, source }
 }
 
-// pullRequestsFixture is the takeover with one available project and its
-// listing already in.
+// pullRequestsFixture is the takeover on project "api", whose probe says yes,
+// with its listing already in. Project "web" answered no.
 func pullRequestsFixture(pulls ...apiclient.GitHubPullRequest) *pullRequestsView {
-	project := testProject(1, "api")
 	v := newPullRequestsView()
 	v.client = offlineClient()
-	v.available = []githubProject{{
-		project: project,
-		status:  apiclient.GitHubStatus{Enabled: true, Available: true, Repo: "octo/api"},
-	}}
-	v.groups = []pullGroup{{project: project, pulls: pulls}}
+	v.project = projectSel{id: 1, name: "api"}
+	v.probed = true
+	v.probes = []githubProject{
+		{project: testProject(1, "api"), status: apiclient.GitHubStatus{Enabled: true, Available: true, Repo: "octo/api"}},
+		{project: testProject(2, "web"), status: apiclient.GitHubStatus{Reason: "not_github", Message: "origin is not a github.com repository"}},
+	}
+	v.pulls = pulls
 	v.tasks = []apiclient.Task{
 		{ID: 7, ProjectID: 1, Title: "add a thing", State: stateRunning, BranchName: "vincent/7-add"},
 		{ID: 8, ProjectID: 1, Title: "another thing", State: stateQueued, BranchName: "vincent/8-another"},
@@ -99,30 +100,46 @@ func drain(cmd tea.Cmd) tea.Msg {
 	return cmd()
 }
 
-// The nav row is withheld while no project answers the §13.2 probe — from
-// the palette, the ? overlay and the footer alike. A screen that exists only
-// to explain that it has nothing to show is not a view.
-func TestPullRequestsNavRowIsWithheldWithoutAGitHubProject(t *testing.T) {
-	for _, e := range paletteEntries(ctxTasks, taskActions{}, false, true, false, nil, nil) {
-		if e.navTarget == viewPullRequests && e.nav {
-			t.Fatal("the palette offers the pull-requests view with no GitHub project")
+// The nav row, its palette and help rows, and the workspace's pull-request
+// keys follow the selected project's §13.2 probe (task 132.11): with two
+// projects, one answering yes, a switch between them shows and withholds
+// them all.
+func TestPullRequestsGateFollowsTheSelectedProject(t *testing.T) {
+	m := connectedRoot(t)
+	m.selectProject(testProject(1, "api"), whyFirstName)
+	m.Update(githubProbeMsg{projects: []githubProject{
+		{project: testProject(1, "api"), status: apiclient.GitHubStatus{Available: true, Repo: "octo/api"}},
+		{project: testProject(2, "web"), status: apiclient.GitHubStatus{Reason: "not_github"}},
+	}})
+	offered := func() bool {
+		for _, e := range paletteEntries(ctxTasks, taskActions{}, false, true, m.githubAvailable(), nil, nil) {
+			if e.nav && e.navTarget == viewPullRequests {
+				return true
+			}
 		}
+		return false
 	}
-	if strings.Contains(helpText(ctxTasks, false, helpState{}), "pull requests —") {
-		t.Error("the ? overlay names the pull-requests view with no GitHub project")
+	if !m.githubAvailable() || !offered() {
+		t.Fatal("the pull-requests row is withheld on a project whose probe said yes")
 	}
-	if got := len(bindingsFor(ctxTaskDetails)) - len(withoutGitHub(bindingsFor(ctxTaskDetails), false)); got != 2 {
+	if !strings.Contains(m.helpSheet(), "pull requests —") {
+		t.Error("the ? overlay hides the pull-requests view on a GitHub project")
+	}
+
+	m.selectProject(testProject(2, "web"), "test")
+	if m.githubAvailable() || offered() {
+		t.Fatal("the pull-requests row is offered on a project whose probe said no")
+	}
+	if strings.Contains(m.helpSheet(), "pull requests —") {
+		t.Error("the ? overlay names the pull-requests view on a project without GitHub")
+	}
+	if got := len(bindingsFor(ctxTaskDetails)) - len(withoutGitHub(bindingsFor(ctxTaskDetails), m.githubAvailable())); got != 2 {
 		t.Errorf("withoutGitHub dropped %d task-details rows, want the 2 pull-request keys", got)
 	}
-	// And with one, it is back.
-	found := false
-	for _, e := range paletteEntries(ctxTasks, taskActions{}, false, true, true, nil, nil) {
-		if e.nav && e.navTarget == viewPullRequests {
-			found = true
-		}
-	}
-	if !found {
-		t.Error("the palette hides the pull-requests view even with a GitHub project")
+
+	m.selectProject(testProject(1, "api"), "test")
+	if !m.githubAvailable() || !offered() {
+		t.Fatal("switching back did not offer the pull-requests row again")
 	}
 }
 
@@ -130,6 +147,7 @@ func TestPullRequestsNavRowIsWithheldWithoutAGitHubProject(t *testing.T) {
 // flicker into existence and out again while the fan-out lands.
 func TestPullRequestsProbeInFlightIsNotAvailable(t *testing.T) {
 	m := &root{views: newViews(t.Context(), newHyperlinkHolder(), newLevelHolder())}
+	m.sel = projectSel{id: 1, name: "api"}
 	if m.githubAvailable() {
 		t.Fatal("the nav row is offered before any probe answered")
 	}
@@ -147,31 +165,41 @@ func TestPullRequestsProbeInFlightIsNotAvailable(t *testing.T) {
 	}
 }
 
-// A project whose listing failed renders its reason, and the other groups
-// still render their rows: each group holds its own error.
-func TestPullRequestsFailedGroupDoesNotSinkTheOthers(t *testing.T) {
+// A failed listing is one error line, the daemon's sentence, in place of
+// the rows (task 132.11): there is one project's listing, so nothing else
+// to keep.
+func TestPullRequestsFailedListingIsOneErrorLine(t *testing.T) {
 	v := pullRequestsFixture()
-	other := testProject(2, "web")
-	v.available = append(v.available, githubProject{
-		project: other,
-		status:  apiclient.GitHubStatus{Available: true, Repo: "octo/web"},
-	})
-	v.groups = []pullGroup{
-		{project: v.available[0].project, err: "GitHub is not available for this project: not authenticated"},
-		{project: other, pulls: []apiclient.GitHubPullRequest{testPull(12, "ship the thing")}},
+	v.applyLoaded(prLoadedMsg{err: "GitHub is not available for this project: not authenticated"})
+	out := v.render(120, 24)
+	if strings.Count(out, "⚠") != 1 || !strings.Contains(out, "not authenticated") {
+		t.Errorf("the failed listing is not one error line with its reason:\n%s", out)
+	}
+}
+
+// Open on a GitHub project, switch to one without: the view stays, shows
+// that project's own reason, and issues no listing (task 132.11). Switching
+// back reloads.
+func TestPullRequestsSwitchToAProjectWithoutGitHub(t *testing.T) {
+	v := pullRequestsFixture(testPull(11, "ship it"))
+	if cmd := v.setProject(projectSel{id: 2, name: "web"}); cmd != nil {
+		t.Fatal("a switch to a project without GitHub issued a listing")
 	}
 	out := v.render(120, 24)
-	if !strings.Contains(out, "not authenticated") {
-		t.Error("the failed group does not carry its reason")
+	if !strings.Contains(out, "This project has no usable GitHub integration: origin is not a github.com repository") {
+		t.Errorf("the screen does not carry the project's reason:\n%s", out)
 	}
-	if !strings.Contains(out, "ship the thing") {
-		t.Error("a failed group hid the healthy group's rows")
+	if strings.Contains(out, "ship it") {
+		t.Errorf("the previous project's rows survived the switch:\n%s", out)
+	}
+	if cmd := v.setProject(projectSel{id: 1, name: "api"}); cmd == nil {
+		t.Fatal("switching back to the GitHub project did not reload")
 	}
 }
 
 // The listing's 409 arrives as an apiclient.Error; what a human reads is the
 // daemon's sentence, not the status code.
-func TestPullRequestsGroupErrorUsesTheDaemonsMessage(t *testing.T) {
+func TestPullRequestsErrorLineUsesTheDaemonsMessage(t *testing.T) {
 	err := &apiclient.Error{
 		Status: 409, Code: "conflict",
 		Message: "GitHub is not available for this project: not authenticated",
@@ -235,7 +263,7 @@ func TestPullRequestsEnterRoutesOnlyForAClaimedRow(t *testing.T) {
 	}
 }
 
-// The link picker offers only the row's own project: POST takes a bare
+// The link picker offers only the selected project's tasks: POST takes a bare
 // number and the daemon resolves the repo from the task's project, so a task
 // from elsewhere would link a different repository's number.
 func TestPullRequestsLinkPickerIsScopedToTheProject(t *testing.T) {
@@ -271,7 +299,7 @@ func TestPullRequestsUnlinkSaysTheRefusalSticks(t *testing.T) {
 	// An unclaimed row has nothing to unlink, and says so.
 	v.confirm = nil
 	v.cursor = 0
-	v.groups[0].pulls = []apiclient.GitHubPullRequest{testPull(12, "unclaimed")}
+	v.pulls = []apiclient.GitHubPullRequest{testPull(12, "unclaimed")}
 	v.askUnlink()
 	if v.confirm != nil {
 		t.Fatal("u asked about an unclaimed row")
