@@ -101,7 +101,11 @@ type triggersView struct {
 	// reloads, and stamps drops a load issued for the previous project or
 	// overtaken by a newer one (task 132.5).
 	projectScope
-	stamps loadStamps
+	// noProjects is a project listing that came back empty, so a selection
+	// of 0 is "no project registered" rather than "not resolved yet" (task
+	// 132.7): the shared empty state is drawn only then.
+	noProjects bool
+	stamps     loadStamps
 
 	client *apiclient.Client
 	exec   execFunc
@@ -353,6 +357,7 @@ func (v *triggersView) applyLoaded(msg triggersLoadedMsg) tea.Cmd {
 		return nil // an older load landing late, or one for the previous project
 	}
 	v.stamps.apply(msg.stamp)
+	v.noteLoad(msg.err)
 	if msg.err != nil {
 		v.loadErr = msg.err
 		return nil
@@ -797,3 +802,6 @@ func dangerousWarning(fields []apiclient.TriggerSchemaField, name, value string)
 	}
 	return "", false
 }
+
+// setProjects records whether any project is registered (projectListAware).
+func (v *triggersView) setProjects(ps []apiclient.Project) { v.noProjects = len(ps) == 0 }

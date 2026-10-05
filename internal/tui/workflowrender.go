@@ -17,6 +17,9 @@ func (w *workflowsView) render(width, height int) string {
 	if height > 0 {
 		w.height = height
 	}
+	if w.project.id == 0 && w.noProjects {
+		return "\n  " + styleDim.Render(noProjectsEmpty()) + "\n"
+	}
 	if w.create != nil {
 		return w.renderCreate(width, height)
 	}

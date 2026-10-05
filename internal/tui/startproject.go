@@ -115,6 +115,23 @@ func resolveStartupProject(in startupInputs) startupPick {
 	return startupPick{}
 }
 
+// reselectAfterDelete picks what replaces a deleted selection (task 132
+// decision 46): the chain's tail, rule 3 then rule 5. The flag and the working
+// directory are launch facts that do not apply mid-session, and the last-used
+// project is the one just deleted. notice is the line the root raises.
+func reselectAfterDelete(projects []apiclient.Project, defaultProject, deleted string) startupPick {
+	pick := resolveStartupProject(startupInputs{defaultProject: defaultProject, projects: projects})
+	switch {
+	case !pick.ok:
+		pick.notice = fmt.Sprintf("project `%s` was deleted — no projects remain", deleted)
+	case pick.why == whyConfig:
+		pick.notice = fmt.Sprintf("project `%s` was deleted — showing `%s` (default project)", deleted, pick.project.Name)
+	default:
+		pick.notice = fmt.Sprintf("project `%s` was deleted — showing `%s` (first by name)", deleted, pick.project.Name)
+	}
+	return pick
+}
+
 // projectByDir is rule 2: every registered project's path and every listed
 // task's and chat's worktree is a candidate, and the deepest one containing
 // the working directory wins — so a cwd inside a task worktree under the data
@@ -252,6 +269,25 @@ func (m *root) noteStartupConfig(msg tea.Msg) tea.Cmd {
 	}
 	m.startup.cfgSeen = true
 	return m.maybeResolveStartup()
+}
+
+// noteDefaultProject keeps the latest `tui.default_project`, for a deleted
+// selection's replacement. A failed fetch leaves the last answer standing.
+func (m *root) noteDefaultProject(msg tea.Msg) {
+	switch msg := msg.(type) {
+	case boardConfigMsg:
+		if msg.err == nil {
+			m.defaultProject = msg.defaultProject
+		}
+	case daemonConfigMsg:
+		if msg.err == nil {
+			m.defaultProject = msg.config.TUI.DefaultProject
+		}
+	case configSavedMsg:
+		if msg.err == nil {
+			m.defaultProject = msg.cfg.TUI.DefaultProject
+		}
+	}
 }
 
 // maybeResolveStartup starts the chain once both arrivals are in, fetching

@@ -374,6 +374,7 @@ func (b *board) setFolds(f foldSet) { b.foldsBy = b.foldsBy.with(b.project.id, f
 // the legacy migration once the list is known, and drops the fold sets of
 // projects that have been removed.
 func (b *board) setProjects(projects []apiclient.Project) {
+	b.noProjects = len(projects) == 0
 	ids := make(map[string]int64, len(projects))
 	for _, p := range projects {
 		ids[p.Name] = p.ID

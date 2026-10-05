@@ -227,3 +227,50 @@ func TestSelectedProjectStateRoundTrips(t *testing.T) {
 		t.Errorf("unknown field lost: %s", b)
 	}
 }
+
+// TestReselectAfterDelete is task 132 decision 46's rule: the default project
+// when it is still registered, else the first by name, else nothing.
+func TestReselectAfterDelete(t *testing.T) {
+	web := apiclient.Project{ID: 2, Name: "web"}
+	docs := apiclient.Project{ID: 3, Name: "docs"}
+	for _, tc := range []struct {
+		name, def string
+		projects  []apiclient.Project
+		want      apiclient.Project
+		ok        bool
+		notice    string
+	}{
+		{
+			"default present", "web",
+			[]apiclient.Project{web, docs},
+			web, true,
+			"project `api` was deleted — showing `web` (default project)",
+		},
+		{
+			"no default", "",
+			[]apiclient.Project{web, docs},
+			docs, true,
+			"project `api` was deleted — showing `docs` (first by name)",
+		},
+		{
+			"default names the deleted project", "api",
+			[]apiclient.Project{web, docs},
+			docs, true,
+			"project `api` was deleted — showing `docs` (first by name)",
+		},
+		{
+			"no projects remain", "web", nil,
+			apiclient.Project{},
+			false,
+			"project `api` was deleted — no projects remain",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pick := reselectAfterDelete(tc.projects, tc.def, "api")
+			if pick.project != tc.want || pick.ok != tc.ok || pick.notice != tc.notice {
+				t.Errorf("got %+v ok=%v %q, want %+v ok=%v %q",
+					pick.project, pick.ok, pick.notice, tc.want, tc.ok, tc.notice)
+			}
+		})
+	}
+}

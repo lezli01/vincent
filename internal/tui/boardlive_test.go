@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -57,10 +58,17 @@ type boardLiveHarness struct {
 type pathLog struct {
 	mu    sync.Mutex
 	paths []string
+	// down answers every new request 503, standing in for an unreachable
+	// daemon without tearing down a stream already open (task 132.7).
+	down atomic.Bool
 }
 
 func (l *pathLog) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if l.down.Load() {
+			http.Error(w, "down", http.StatusServiceUnavailable)
+			return
+		}
 		l.mu.Lock()
 		l.paths = append(l.paths, r.URL.Path)
 		l.mu.Unlock()

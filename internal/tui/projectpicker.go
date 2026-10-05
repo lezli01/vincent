@@ -40,6 +40,9 @@ type projectPicker struct {
 	// are the root's own name list, which carries no figures.
 	loaded bool
 	err    error
+	// offline is set by the root while the daemon is unreachable: the rows
+	// are the cached list, which may be stale (task 132.7).
+	offline bool
 }
 
 // projectPickerGlyph marks the selected project's row: the header segment's
@@ -199,7 +202,9 @@ func (pp *projectPicker) render(w, h int) string {
 	lines := make([]string, 0, h)
 	pp.input.SetWidth(max(inner-1, 1))
 	lines = append(lines, fieldRows(" ", pp.input)...)
-	if pp.err != nil {
+	if pp.offline {
+		lines = append(lines, styleDim.Render(ansi.Truncate("  offline — list may be stale", inner, "…")))
+	} else if pp.err != nil {
 		lines = append(lines, styleWarn.Render(ansi.Truncate("  refresh failed: "+pp.err.Error(), inner, "…")))
 	}
 

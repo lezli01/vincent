@@ -6,6 +6,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // viewID indexes the root's routed screens: the board-only home screen, the
@@ -156,6 +157,10 @@ type projectScope struct {
 	// for views that have none to repeat (the detail screens and forms,
 	// which task 132.6 re-targets).
 	reload func() tea.Cmd
+	// loadFailed is whether the view's last applied list load failed, so a
+	// reconnect knows which views to reload (task 132.7). A switch made while
+	// offline issues a load that fails, so it is covered too.
+	loadFailed bool
 }
 
 // setProject stores p and reloads when the project itself changed. The
@@ -168,6 +173,34 @@ func (s *projectScope) setProject(p projectSel) tea.Cmd {
 		return nil
 	}
 	return s.reload()
+}
+
+// noteLoad records the outcome of a list load the view has accepted.
+func (s *projectScope) noteLoad(err error) { s.loadFailed = err != nil }
+
+// reloadIfFailed repeats the list load when the last one failed, and does
+// nothing otherwise (failedReloader).
+func (s *projectScope) reloadIfFailed() tea.Cmd {
+	if !s.loadFailed || s.reload == nil {
+		return nil
+	}
+	return s.reload()
+}
+
+// failedReloader is implemented by every projectScoped view through
+// projectScope. On a reconnect the root walks the views directly, as it does
+// for setProject, and reloads only the ones whose last load failed (task 132
+// decision 48): a clean reconnect costs no fetch of its own.
+type failedReloader interface {
+	reloadIfFailed() tea.Cmd
+}
+
+// noProjectsEmpty is the one empty state every project-scoped view draws once
+// a listing has said no project is registered (task 132.7). The keys come from
+// the keymap, so a rebind shows. Nothing force-navigates: the view stays.
+func noProjectsEmpty() string {
+	return "No projects registered — press " + opKey(keymap.Project) +
+		" and open the overview to add one."
 }
 
 // newViews returns the initial view set. ctx bounds background work a view

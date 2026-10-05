@@ -29,6 +29,9 @@ func (v *triggersView) render(width, height int) string {
 	if height > 0 {
 		v.height = height
 	}
+	if v.project.id == 0 && v.noProjects {
+		return "\n  " + styleDim.Render(noProjectsEmpty()) + "\n"
+	}
 	switch {
 	case v.create != nil:
 		return v.renderCreate(v.width, v.height)

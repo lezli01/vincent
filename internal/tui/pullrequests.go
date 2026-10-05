@@ -392,6 +392,7 @@ func (v *pullRequestsView) applyLoaded(msg prLoadedMsg) {
 		return // an older load landing late, or one for the previous project
 	}
 	v.stamps.apply(msg.stamp)
+	v.loadFailed = msg.err != ""
 	v.loading = false
 	v.loaded = true
 	v.lastLoad = v.now()

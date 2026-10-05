@@ -83,7 +83,11 @@ type workflowsView struct {
 	// reloads, and stamps drops a load issued for the previous project or
 	// overtaken by a newer one (task 132.5).
 	projectScope
-	stamps loadStamps
+	// noProjects is a project listing that came back empty, so a selection
+	// of 0 is "no project registered" rather than "not resolved yet" (task
+	// 132.7): the shared empty state is drawn only then.
+	noProjects bool
+	stamps     loadStamps
 
 	client *apiclient.Client
 	exec   execFunc
@@ -292,6 +296,7 @@ func (w *workflowsView) applyLoaded(msg workflowsLoadedMsg) {
 		return // an older load landing late, or one for the previous project
 	}
 	w.stamps.apply(msg.stamp)
+	w.noteLoad(msg.err)
 	if msg.err != nil {
 		// Keep the last-good registry behind the warning: a failed refresh is
 		// not an empty registry.
@@ -511,3 +516,6 @@ func (w *workflowsView) capturesInput() bool {
 	}
 	return w.editor != nil && w.editor.capturing()
 }
+
+// setProjects records whether any project is registered (projectListAware).
+func (w *workflowsView) setProjects(ps []apiclient.Project) { w.noProjects = len(ps) == 0 }

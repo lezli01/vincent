@@ -283,6 +283,7 @@ func (v *issuesView) applyLoaded(msg issuesLoadedMsg) {
 		return
 	}
 	v.stamps.apply(msg.stamp)
+	v.noteLoad(msg.err)
 	v.loading = false
 	if msg.err != nil {
 		v.loadErr = msg.err
@@ -553,7 +554,7 @@ func (v *issuesView) bodyLines(width int) (lines []string, cursorRow int) {
 		// means no project is registered only once a listing has said so;
 		// until then it is still resolving.
 		if v.noProjects {
-			return []string{styleDim.Render("  No project selected. The project overview adds one.")}, 0
+			return []string{styleDim.Render("  " + noProjectsEmpty())}, 0
 		}
 		return []string{styleDim.Render("  Resolving the project…")}, 0
 	}

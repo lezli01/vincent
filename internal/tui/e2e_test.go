@@ -15,6 +15,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/agent/agenttest"
 	"github.com/lezli01/vincent/internal/config"
@@ -314,5 +315,55 @@ func TestDefaultProjectFromConfigE2E(t *testing.T) {
 	}
 	if got := m.headerLine(); !strings.Contains(got, headerProjectGlyph+" beta") {
 		t.Errorf("header %q does not show the configured project", got)
+	}
+}
+
+// TestZeroProjectsThenAddE2E is task 132.7 against the built binary: a fresh
+// installation with no project draws the shared empty state, and the first
+// `vincent project add` becomes the selection and the board loads it.
+func TestZeroProjectsThenAddE2E(t *testing.T) {
+	dataDir, cfgDir := t.TempDir(), t.TempDir()
+	env := append(os.Environ(),
+		config.EnvDataDir+"="+dataDir,
+		config.EnvConfigDir+"="+cfgDir,
+	)
+	t.Cleanup(func() {
+		cmd := exec.Command(vincentBin, "daemon", "stop", "--force")
+		cmd.Env = env
+		_, _ = cmd.CombinedOutput()
+	})
+	vincent := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command(vincentBin, args...)
+		cmd.Env = env
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("vincent %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+	}
+	vincent("daemon", "start")
+
+	cn := defaultConnector()
+	cn.resolveDataDir = func() (string, error) { return dataDir, nil }
+	m := newRoot(testCtx(t), cn, ackedDir(t))
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	msg := runCmd(t, m.Init(), 10*time.Second)
+	if _, ok := msg.(connectedMsg); !ok {
+		t.Fatalf("probe against a running daemon = %T, want connectedMsg", msg)
+	}
+	_, cmd := m.Update(msg)
+	pmp := newPump(t, m, cmd)
+	pmp.until(30*time.Second, "the shared empty state", func() bool {
+		return m.streamLive && strings.Contains(ansi.Strip(content(m)), noProjectsEmpty())
+	})
+
+	vincent("project", "add", "--name", "first", testrepo.Init(t, "main"))
+	pmp.until(30*time.Second, "the new project to be selected", func() bool { return m.sel.name == "first" })
+	if got := m.headerLine(); !strings.Contains(got, headerProjectGlyph+" first") {
+		t.Errorf("header %q does not show the new project", got)
+	}
+	b := m.views[viewHome].(*shell).board
+	pmp.until(30*time.Second, "the board to load", func() bool { return b.loaded && b.project.name == "first" })
+	if strings.Contains(ansi.Strip(content(m)), noProjectsEmpty()) {
+		t.Errorf("the empty state outlived the first project:\n%s", ansi.Strip(content(m)))
 	}
 }
