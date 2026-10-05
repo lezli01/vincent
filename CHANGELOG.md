@@ -251,8 +251,8 @@ list with the user-facing context a commit subject cannot carry.
 - **The task board groups by workflow out of the box.** The default
   `tui.board.group_by` is now `[workflow]`, and `g` cycles workflow → flat.
   The board shows one project at a time, so the project level drew nothing.
-  Folds you made under the old `[project, workflow]` grouping no longer match
-  a header and are dropped, so fold those groups again.
+  Folds you made under the old `[project, workflow]` grouping carry over:
+  the upgrade drops their project level and keeps the workflow group folded.
   ([#703](https://github.com/lezli01/vincent/issues/703))
 - **`vincent doctor` lists config warnings.** The `paths.config_warnings`
   field, shown as `warning` rows, reports settings that load but do nothing:

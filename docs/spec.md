@@ -13714,9 +13714,12 @@ project at a time, so the project level had one value and drew no header. `g`
 cycles workflow → flat and keeps the selected task. The TUI drops a `project`
 level it receives — an older daemon still serves one — before it renders, so a
 new TUI against an old daemon draws what the new daemon would. A fold path
-therefore carries no project segment; one remembered under the old grouping
-names nothing and is pruned, and the legacy `board_folds` migration strips the
-project segment (task 132 decision 35's original premise, now true). The
+therefore carries no project segment. The legacy `board_folds` list — the
+only place a released version kept folds — is migrated by stripping the
+project segment (task 132 decision 35's original premise, now true), so an
+upgrade keeps every fold; only a per-project set written by an unreleased
+build between 132.8 and 132.9 can still hold a project-segment path, which
+names nothing and is pruned (review F3). The
 `project` rows below describe the rules as they were written; with one level
 they apply to it alone. The rules the grouping does not get to bend:
 
