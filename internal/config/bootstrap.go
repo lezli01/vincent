@@ -341,6 +341,12 @@ update:
 # and the chat workspace: quiet | compact | normal | verbose. "v" (ctrl+r in a
 # chat) still cycles it for the session without touching this file; editing
 # the value here applies it to a running TUI.
+#
+# default_project names the project the TUI opens on when neither
+# "vincent --project" nor the directory you launch it from picks one. Read at
+# startup only; a project that is not registered falls through to the one you
+# used last, and the TUI says so. Unset, the TUI opens on the project you used
+# last.
 tui:
   board:
     group_by: [project, workflow]
@@ -349,6 +355,7 @@ tui:
   #   refresh: ctrl+e
   output:
     level: normal
+  # default_project: web
 `
 
 // EnsureDefaultFile writes the commented default config.yaml into dir when

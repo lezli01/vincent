@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/testrepo"
 	"github.com/lezli01/vincent/internal/workflow"
 )
@@ -249,4 +250,13 @@ func manyFields(n int) string {
 	}
 	b.WriteByte('}')
 	return b.String()
+}
+
+// TestDefaultProjectBoundIsTheNameBound holds config's copy of the
+// project-name bound to this package's: tui.default_project names a project,
+// so a value config accepts must be one a project could be named (task 132.3).
+func TestDefaultProjectBoundIsTheNameBound(t *testing.T) {
+	if config.MaxProjectNameBytes != maxNameBytes {
+		t.Fatalf("config.MaxProjectNameBytes = %d, api's maxNameBytes = %d", config.MaxProjectNameBytes, maxNameBytes)
+	}
 }

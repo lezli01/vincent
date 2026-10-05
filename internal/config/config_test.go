@@ -594,3 +594,32 @@ func TestBackupResolveDir(t *testing.T) {
 		t.Errorf("absolute dir resolves to %q, want itself (%q)", got, elsewhere)
 	}
 }
+
+// TestTUIDefaultProject is task 132.3's key: unset by default, a name taken
+// as written, and syntax-only refusals — empty, or past the project-name
+// bound. Whether the name is registered is the TUI's question, not config's.
+func TestTUIDefaultProject(t *testing.T) {
+	cfg, err := Load(writeConfig(t, "log_level: info\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.TUI.DefaultProject != nil {
+		t.Errorf("default tui.default_project = %q, want unset", *cfg.TUI.DefaultProject)
+	}
+	cfg, err = Load(writeConfig(t, "tui:\n  default_project: \"3\"\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.TUI.DefaultProject == nil || *cfg.TUI.DefaultProject != "3" {
+		t.Errorf("tui.default_project = %v, want 3", cfg.TUI.DefaultProject)
+	}
+	for _, bad := range []string{`""`, strings.Repeat("n", MaxProjectNameBytes+1)} {
+		_, err := Load(writeConfig(t, "tui:\n  default_project: "+bad+"\n"))
+		if err == nil || !strings.Contains(err.Error(), "tui.default_project") {
+			t.Errorf("Load accepted tui.default_project %.10q…: %v", bad, err)
+		}
+	}
+	if _, err := Load(writeConfig(t, "tui:\n  default_project: "+strings.Repeat("n", MaxProjectNameBytes)+"\n")); err != nil {
+		t.Errorf("a name at the bound was refused: %v", err)
+	}
+}

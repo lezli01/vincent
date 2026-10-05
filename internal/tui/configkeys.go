@@ -485,6 +485,17 @@ func configKeys() []configKey {
 				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Output: &apiclient.ConfigOutputPatch{Level: &s}}}, nil
 			},
 		},
+		// Task 132.3. Read at startup only, so a save here applies to the
+		// next launch; the help says so rather than leaving a human waiting
+		// for the selection to move.
+		{
+			path: "tui.default_project", label: "default project", kind: kindText,
+			help: "the project the TUI opens on when --project and the working directory pick none; read at startup",
+			read: func(c apiclient.Config) string { return c.TUI.DefaultProject },
+			write: func(s string) (apiclient.ConfigPatch, error) {
+				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{DefaultProject: &s}}, nil
+			},
+		},
 		boolKey("tui.hyperlinks", "hyperlinks",
 			"make sanitized http(s) Markdown links clickable (OSC 8); only if your terminal supports it",
 			func(c apiclient.Config) bool { return c.TUI.Hyperlinks },
