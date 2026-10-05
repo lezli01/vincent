@@ -375,3 +375,48 @@ func TestPaletteOpensPickerWithAtYielded(t *testing.T) {
 		t.Errorf("opening from the palette made %d stats calls, want one", calls.Load())
 	}
 }
+
+// The overview row is reached only by ↓ (review F8): a filter matching
+// nothing or an empty list never highlights it, enter there just closes, and
+// a refetch that adds a match puts the cursor on the match.
+func TestProjectPickerOverviewRowOnlyByDown(t *testing.T) {
+	pp := newProjectPicker(twoProjects(), 1)
+	for _, r := range "zzz" {
+		pp.update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	if pp.overview {
+		t.Fatal("a filter matching nothing landed on the overview row")
+	}
+	if out := pp.render(60, 12); strings.Contains(out, "› "+projectPickerOverview) {
+		t.Errorf("the overview row is highlighted without ↓:\n%s", out)
+	}
+	pp.land(projectPickerMsg{projects: append(twoProjects(), apiclient.Project{ID: 3, Name: "zzz"})})
+	if m := pp.matches(); pp.overview || len(m) != 1 || m[pp.cursor].ID != 3 {
+		t.Fatalf("after a refetch: overview %v, cursor %d; want the new match", pp.overview, pp.cursor)
+	}
+	pp.update(tea.KeyPressMsg{Code: tea.KeyDown})
+	if !pp.overview {
+		t.Fatal("↓ past the last match did not reach the overview row")
+	}
+	pp.land(projectPickerMsg{projects: twoProjects()})
+	if !pp.overview {
+		t.Fatal("a refetch moved the cursor off the overview row")
+	}
+	pp.update(tea.KeyPressMsg{Code: tea.KeyUp})
+	if pp.overview {
+		t.Fatal("↑ stayed on the overview row")
+	}
+	pp.update(tea.KeyPressMsg{Code: tea.KeyBackspace})
+	pp.update(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	if pick, done, cmd := pp.update(tea.KeyPressMsg{Code: tea.KeyEnter}); pick != nil || !done || cmd != nil {
+		t.Errorf("enter on no match: pick %v, done %v, cmd set %v; want a plain close", pick, done, cmd != nil)
+	}
+
+	empty := newProjectPicker(nil, 0)
+	if empty.overview {
+		t.Error("a picker over no projects opened on the overview row")
+	}
+	if _, done, cmd := empty.update(tea.KeyPressMsg{Code: tea.KeyEnter}); !done || cmd != nil {
+		t.Error("enter over no projects opened the overview without ↓")
+	}
+}

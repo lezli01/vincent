@@ -115,8 +115,8 @@ func TestPaletteAndPickerReachTheOverview(t *testing.T) {
 	for range 3 { // two projects, then the overview row; the last is clamped
 		pressRoot(m, tea.KeyPressMsg{Code: tea.KeyDown})
 	}
-	if got := m.projPick.cursor; got != 2 {
-		t.Fatalf("cursor = %d, want the overview row after both projects", got)
+	if pp := m.projPick; !pp.overview || pp.cursor != 1 {
+		t.Fatalf("cursor = %d, overview %v; want the overview row after both projects", pp.cursor, pp.overview)
 	}
 	if out := m.projPick.render(60, 12); !strings.Contains(out, projectPickerOverview) {
 		t.Errorf("the picker draws no overview row:\n%s", out)
