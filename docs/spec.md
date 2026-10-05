@@ -12698,7 +12698,9 @@ stream for the live tail.
    scoped to the selected project** (decision row 37). It lists
    `GET /v1/chats?project_id={selected}` — the server filters, as it does for
    view 10's chats half — and with no project selected it fetches nothing and
-   says so, never falling back to every project's chats. This **supersedes
+   says so, never falling back to every project's chats: "no project" once a
+   project listing has come back empty, and "resolving" before the first
+   listing or after a failed one, when projects may well exist. This **supersedes
    task 067 decision 6**: with one project on screen a project heading would
    head every row, so there are no headings, no folds and no `←`/`→`, and the
    fold set `chat_folds` in `{data_dir}/tui.json` is retired — an older file

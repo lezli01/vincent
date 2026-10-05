@@ -223,3 +223,28 @@ func TestChatActivityStopsForTerminalChats(t *testing.T) {
 		t.Errorf("chatActivity(idle) = %q at both one minute and nine hours — the live reading must not be frozen too", a)
 	}
 }
+
+// With no selection the board says "no project" and `n` refuses only once a
+// listing came back empty; before that the selection is still resolving
+// (review F9).
+func TestChatsNoSelectionWaitsForAnEmptyListing(t *testing.T) {
+	v := newChatsView()
+	v.client = &apiclient.Client{}
+	if out := strings.Join(firstOf(v.bodyLines(80)), "\n"); strings.Contains(out, "No project selected") {
+		t.Errorf("before any listing the board claims no project: %q", out)
+	}
+	v.update(registryKey(t, "n"))
+	if v.create != nil || strings.Contains(v.note, "register a project") {
+		t.Errorf("before any listing n: create %v, note %q; want a resolving note", v.create != nil, v.note)
+	}
+	v.setProjects([]apiclient.Project{})
+	if out := strings.Join(firstOf(v.bodyLines(80)), "\n"); !strings.Contains(out, "No project selected") {
+		t.Errorf("an empty listing does not say so: %q", out)
+	}
+	v.update(registryKey(t, "n"))
+	if !strings.Contains(v.note, "register a project") {
+		t.Errorf("n after an empty listing: note %q", v.note)
+	}
+}
+
+func firstOf(lines []string, _ int) []string { return lines }

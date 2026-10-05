@@ -79,6 +79,10 @@ type chatsView struct {
 	// overtaken by a newer one (task 132.5).
 	projectScope
 	stamps loadStamps
+	// noProjects is a listing that came back empty. A selection of 0 means
+	// "no project registered" only then; before the first listing, or after
+	// a failed one, it is a selection not resolved yet (review F9).
+	noProjects bool
 
 	client  *apiclient.Client
 	now     func() time.Time
@@ -173,6 +177,10 @@ func (v *chatsView) setDataDir(dir string) { v.dataDir = dir }
 // to the first, because an offset belongs to the old project's listing; the
 // filter text and the archived window stay, because they say what the human
 // wants to see, not where.
+// setProjects records whether any project is registered (projectListAware).
+// The root hands it only a listing that succeeded.
+func (v *chatsView) setProjects(ps []apiclient.Project) { v.noProjects = len(ps) == 0 }
+
 func (v *chatsView) setProject(p projectSel) tea.Cmd {
 	if p.id != v.project.id {
 		v.chats, v.loaded, v.loadErr = nil, false, ""
@@ -380,8 +388,7 @@ func (v *chatsView) scheduleRefresh() tea.Cmd {
 
 // loadCmd fetches the selected project's chats. With no project selected it
 // fetches nothing (task 132.10): GET /v1/chats without project_id is every
-// project's list, which is exactly what a scoped board must never show. The
-// root leaves id 0 only when no project is registered.
+// project's list, which is exactly what a scoped board must never show.
 func (v *chatsView) loadCmd() tea.Cmd {
 	client := v.client
 	if client == nil {
@@ -604,10 +611,14 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case opKey(keymap.New):
 		// A chat needs a project, and the form offers no way to register
 		// one: opening it on an installation that has none is a dead end
-		// whose only exit is `esc` (issue #279). The root leaves the
-		// selection at 0 only when no project is registered.
+		// whose only exit is `esc` (issue #279). A selection of 0 is "no
+		// project registered" only once a listing has said so; before that
+		// the selection is still resolving (review F9).
 		if v.project.id == 0 {
-			v.note, v.noteBad = "register a project first — the Projects view (4) adds one", true
+			v.note, v.noteBad = "no project is selected yet — try again once the header names one", true
+			if v.noProjects {
+				v.note = "register a project first — the Projects view (4) adds one"
+			}
 			return v, nil
 		}
 		// Seeded with the selected project, not the cursor's (task 132.10):

@@ -81,9 +81,13 @@ func (v *chatsView) headerLine(width int) string {
 func (v *chatsView) bodyLines(width int) (lines []string, cursorRow int) {
 	rows := v.rows()
 	if v.project.id == 0 {
-		// Never an unfiltered list in its place (task 132.10): no selection
-		// means no project is registered, and the board says so.
-		return []string{styleDim.Render("  No project selected. The Projects view (4) adds one.")}, 0
+		// Never an unfiltered list in its place (task 132.10). No selection
+		// means no project is registered only once a listing has said so;
+		// until then it is still resolving (review F9).
+		if v.noProjects {
+			return []string{styleDim.Render("  No project selected. The Projects view (4) adds one.")}, 0
+		}
+		return []string{styleDim.Render("  Resolving the project…")}, 0
 	}
 	if len(rows) == 0 {
 		if v.loaded {
