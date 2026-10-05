@@ -17,7 +17,7 @@
 #
 #   VINCENT_SHOTS_DIR=<path>   where to seed (default: /tmp/vincent-demo — short
 #                              on purpose: three of the shots show a repo path)
-#   VINCENT_SHOTS_ONLY=<name>  capture one tape (e.g. `projects`)
+#   VINCENT_SHOTS_ONLY=<name>  capture one tape (e.g. `tui-project-overview`)
 #
 # Unlike the acceptance gates this is **not** cross-platform and CI does not
 # run it: VHS needs ttyd and ffmpeg, and the seeded workflows use a POSIX
@@ -1302,19 +1302,6 @@ Sleep 1s
 Screenshot "'"$OUT"'/tui-new-task.png"
 '
 
-  # Projects: the registry on the left, the selected repository and its
-  # current workload on the right.
-  tape tui-projects 1250 '
-Type ":"
-Sleep 1s
-Type "projects"
-Sleep 1s
-Enter
-Sleep 3s
-Sleep 2s
-Screenshot "'"$OUT"'/tui-projects.png"
-'
-
   # Workflows, expanded into the control-flow graph of the fan-out workflow.
   tape tui-workflow-graph 1400 '
 Type ":"
@@ -2122,6 +2109,22 @@ Sleep 2s
 Type "@"
 Sleep 3s
 Screenshot "'"$OUT"'/tui-project-picker.png"
+Sleep 2s
+'
+
+  # The project overview (task 132.15), reached from the palette: every seeded
+  # project's figures and the totals row, what needs you across all of them,
+  # and the highlighted project's defaults beside them. Appended last, after
+  # tui-projects was retired, for the reason the swap order is one-way.
+  tape tui-project-overview 1250 '
+Type ":"
+Sleep 1s
+Type "project overview"
+Sleep 1s
+Enter
+Sleep 3s
+Sleep 2s
+Screenshot "'"$OUT"'/tui-project-overview.png"
 Sleep 2s
 '
 }

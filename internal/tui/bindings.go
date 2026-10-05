@@ -354,7 +354,7 @@ var bindings = []binding{
 	// keeps a direct key; the rest live here, in the palette — retiring
 	// 1..6 without substituting new memorized keys is the point.
 	{op: keymap.New, key: "n", label: "new task — for the project you are looking at", scope: scopeGlobal, nav: true, navTarget: viewNewTask},
-	{label: "projects — list, add, edit, remove", scope: scopeGlobal, nav: true, navTarget: viewProjects},
+	{label: "project overview — every project's figures, what needs you, add, edit, remove", scope: scopeGlobal, nav: true, navTarget: viewProjects},
 	{label: "workflows — registry with scopes and validity", scope: scopeGlobal, nav: true, navTarget: viewWorkflows},
 	{label: "daemon — identity, config, adapters, log", scope: scopeGlobal, nav: true, navTarget: viewDaemon},
 	{label: "pull requests — what is open across every GitHub project", scope: scopeGlobal, nav: true, navTarget: viewPullRequests, github: true},
@@ -639,7 +639,7 @@ var bindings = []binding{
 	// The project picker (task 132.4): every printable key types into its
 	// filter, so its own keys are the four a filter does not type.
 	{key: "down", label: "move the highlight (↑/↓)", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
-	{key: "enter", label: "switch to the highlighted project", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
+	{key: "enter", label: "switch to the highlighted project — or, on the last row, open the project overview", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
 	{key: "esc", label: "close the picker without switching", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
 
 	// New chat.
@@ -652,13 +652,18 @@ var bindings = []binding{
 
 	// Projects.
 	{op: keymap.Add, key: "a", label: "register a repository", scope: scopePanel, context: ctxProjects, hint: "a add", priority: 1, term: termAdd},
-	{key: "enter", label: "edit the selected project (enter/e)", scope: scopePanel, context: ctxProjects, hint: "enter edit", priority: 2},
+	// Enter selects rather than edits (task 132 decision 34): the overview
+	// is how a project is reached as well as managed, so `e` alone edits.
+	// `e` keeps no row of its own: the vocabulary gives `e` to $EDITOR, so
+	// it is named here and recorded in keymap.fixed, as the daemon view's is.
+	{key: "enter", label: "select the highlighted project and go back to the view you came from — on a needs-you row, open that task (e edits the project)", scope: scopePanel, context: ctxProjects, hint: "enter select", priority: 2},
+	{key: "tab", label: "move between the project table and the needs-you list", scope: scopePanel, context: ctxProjects, hint: "tab needs you", priority: 3},
 	// `D` rather than `d` (task 093): this destroys a persisted record after a
 	// confirmation, which is what `D` means on both archived boards. `d` is
 	// left meaning "drop a row from an unsaved draft" and nothing else.
-	{op: keymap.Delete, key: "D", label: "remove the project (asks first; its task rows go with it)", scope: scopePanel, context: ctxProjects, hint: "D remove", priority: 3, term: termDelete},
-	{op: keymap.Filter, key: "/", label: "filter by name or path", scope: scopePanel, context: ctxProjects, hint: "/ filter", priority: 4, term: termFilter},
-	{key: "ctrl+s", label: "in the form: save", scope: scopePanel, context: ctxProjects, hint: "ctrl+s save", priority: 5},
+	{op: keymap.Delete, key: "D", label: "remove the project (asks first; its task rows go with it)", scope: scopePanel, context: ctxProjects, hint: "D remove", priority: 4, term: termDelete},
+	{op: keymap.Filter, key: "/", label: "filter by name or path", scope: scopePanel, context: ctxProjects, hint: "/ filter", priority: 5, term: termFilter},
+	{key: "ctrl+s", label: "in the form: save", scope: scopePanel, context: ctxProjects, hint: "ctrl+s save", priority: 6},
 
 	// Workflows.
 	{key: "enter", label: "show the entry's steps", scope: scopePanel, context: ctxWorkflows, hint: "enter steps", priority: 1},

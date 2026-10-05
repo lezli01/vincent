@@ -91,9 +91,14 @@ func (pp *projectPicker) land(msg projectPickerMsg) {
 		return
 	}
 	var on int64
-	if m := pp.matches(); len(m) > 0 {
-		on = m[min(pp.cursor, len(m)-1)].ID
+	m := pp.matches()
+	if pp.cursor >= len(m) {
+		// On the overview row: it stays the last row whatever landed.
+		pp.projects, pp.loaded, pp.err = msg.projects, true, nil
+		pp.cursor = len(pp.matches())
+		return
 	}
+	on = m[pp.cursor].ID
 	pp.projects, pp.loaded, pp.err = msg.projects, true, nil
 	pp.cursor = 0
 	for i, p := range pp.matches() {
@@ -129,14 +134,16 @@ func (pp *projectPicker) update(msg tea.KeyPressMsg) (pick *apiclient.Project, d
 		pp.cursor = max(pp.cursor-1, 0)
 		return nil, false, nil
 	case "down":
-		pp.cursor = min(pp.cursor+1, max(len(pp.matches())-1, 0))
+		pp.cursor = min(pp.cursor+1, len(pp.matches()))
 		return nil, false, nil
 	case "enter":
 		m := pp.matches()
-		if len(m) == 0 {
-			return nil, true, nil
+		if pp.cursor >= len(m) {
+			// The overview row, never a project: it switches screens and
+			// leaves the selection alone.
+			return nil, true, func() tea.Msg { return selectViewMsg{id: viewProjects} }
 		}
-		p := m[min(pp.cursor, len(m)-1)]
+		p := m[pp.cursor]
 		return &p, true, nil
 	}
 	var c tea.Cmd
@@ -153,11 +160,19 @@ func (pp *projectPicker) paste(text string) tea.Cmd {
 	return cmd
 }
 
+// clampCursor keeps the cursor on a matching project as the filter narrows;
+// it reaches the overview row (index len(matches)) only by an arrow key.
 func (pp *projectPicker) clampCursor() {
 	if n := len(pp.matches()); pp.cursor >= n {
 		pp.cursor = max(n-1, 0)
 	}
 }
+
+// projectPickerOverview is the picker's last row (task 132.15): the way from
+// the picker to the project overview, where projects are added, edited and
+// compared. It is not a project — the filter never matches or hides it, and
+// enter on it selects nothing.
+const projectPickerOverview = "overview & manage…"
 
 // render draws the picker box for overlaying: the filter line, then one row
 // per matching project, windowed around the cursor.
@@ -174,16 +189,20 @@ func (pp *projectPicker) render(w, h int) string {
 	if len(m) == 0 {
 		msg := "  nothing matches — esc closes"
 		if len(pp.projects) == 0 {
-			msg = "  no projects registered — the projects screen adds one"
+			msg = "  no projects registered — the overview adds one"
 		}
 		lines = append(lines, styleDim.Render(msg))
-		return frame("projects", strings.Join(lines, "\n"), w, h, true)
 	}
-	cursor := min(pp.cursor, len(m)-1)
-	rows := make([]string, 0, len(m))
+	cursor := min(pp.cursor, len(m))
+	rows := make([]string, 0, len(m)+1)
 	for i, p := range m {
 		rows = append(rows, pp.row(p, i == cursor, inner))
 	}
+	overview := "  " + styleDim.Render(projectPickerOverview)
+	if cursor == len(m) {
+		overview = styleFocus.Render("› ") + styleTitle.Render(projectPickerOverview)
+	}
+	rows = append(rows, overview)
 	lines = append(lines, window(rows, cursor, h-2-len(lines))...)
 	return frame("projects", strings.Join(lines, "\n"), w, h, true)
 }

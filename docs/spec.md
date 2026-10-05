@@ -12357,6 +12357,42 @@ stream for the live tail.
    numerator is counted the way the scheduler applies that cap — lanes and
    `awaiting_input` included — rather than from the root-only task list the
    view also holds.*
+   *Amended 2026-10-05 (task 132.15, issue #709): view 4 is now the **project
+   overview**, replacing the rail-and-focus list above in place (task 132
+   decision 5; task 020 decision 1 and the #324 amendment's rail line are
+   superseded, the #324 rule itself is kept). It is the TUI's only
+   multi-project view. A table has one row per project, every figure from
+   `GET /v1/projects?stats=true`: name, `!` (`stats.tasks.attention`),
+   running as `slots_used/max_parallel_tasks` or a bare `N` for a project with
+   no cap of its own, queued, blocked and done (`stats.tasks.by_state`, never
+   archived), open issues with the imported ones in brackets, live chats with
+   the ones awaiting input in brackets, an issue-sync glyph (`—` off, `✓`
+   healthy, `✗` failing), the §13.2 GitHub probe (`✓ owner/repo`, the probe's
+   reason, or `—` — and `—` in both cells for a project whose reason is
+   `not_github`, which has no integration to fail; open pull-request counts are a follow-up, decision 36), and
+   the last activity, relative. No spend column (decision 37). A row whose
+   `stats` is `null` shows `—` in its figure cells, never zeros. A totals row
+   sums the columns — exact, since every figure is partitioned by project —
+   except running, which is `/v1/info`'s `slots.used / max_parallel_tasks` and
+   never a sum. Below the table, "needs you, across projects" lists the tasks
+   the board's `!` filter keeps, over the full listing and in the board's
+   order (oldest wait first), each row led by its project — the one
+   cross-project task list the TUI draws. On a wide terminal the highlighted
+   project's repository and execution defaults show in a pane beside them
+   (decision 35); a narrowing terminal sheds that pane first, then the columns
+   — activity, GitHub, sync, chats, issues, done, blocked, queued — leaving
+   name, `!` and running. `tab` moves the cursor between the table and the
+   list. `enter` on a project row selects it and returns to the last
+   project-scoped view that was active, or the board with none (a task, chat
+   or issue detail gives way to its list when the project changed); on a list
+   row it selects the task's project and opens the task, with `esc` back to
+   the overview (decision 34). `e` edits, `a` adds, `D` removes and `/`
+   filters as before, and the add/edit form still takes the focused surface.
+   With no project registered the view names `a` and `vincent project add`.
+   It refetches on activation and, debounced, on `task.*`, `issue.*`,
+   `chat.*`, `project.*` and `workflow.registry_changed` while visible, and
+   fetches nothing while hidden. The palette row reads "project overview",
+   and the project picker's last row, "overview & manage…", opens it.*
 5. **Workflows.** Merged registry with scope badges and validation status; `e` opens
    the file in `$EDITOR`; live reload reflects saves immediately.
    *Amended 2026-08-30 (task 065, issue #261).* **The view authors the registry
@@ -13311,7 +13347,12 @@ a 150 ms debounced refetch on `task.*`, `issue.*`, `chat.*` and `project.*`
 events while the picker is up, and none while it is closed. An answer that
 lands after the picker closed, or after a newer refetch, is dropped. The
 picker marks only the current project; a marker for `tui.default_project`
-is not drawn yet (task 132 decision 33).
+is not drawn yet (task 132 decision 33). *Amended 2026-10-05 (task 132.15,
+issue #709):* below the projects the picker carries one more row,
+"overview & manage…", which opens view 4, the project overview — the only
+multi-project view. It is not a project: the filter neither matches nor hides
+it, the cursor reaches it only by `↓`, and `enter` on it switches screens
+without changing the selection.
 
 **Load stamps and the event filter (task 132.5, issue #699, added
 2026-10-05).** Every list load a view issues — the board in both modes and
@@ -14725,6 +14766,13 @@ keystrokes into a text field.
 Deleting a project confirms inline, and a project holding non-archived tasks
 re-prompts to archive them (the `?force` of `DELETE /v1/projects/{id}`) — but a
 *running* task is refused outright, since no confirmation makes that delete legal.
+*Amended 2026-10-05 (task 132.15, issue #709):* on the project overview `enter`
+no longer edits — it selects the highlighted project (or opens the highlighted
+"needs you" task) and `e` alone edits; `tab`/`shift+tab` move between the
+project table and the "needs you" list. `e` keeps no registry row, because the
+vocabulary gives `e` to `$EDITOR`; it is named in `enter`'s row and recorded as
+a fixed key, as the daemon view's `e` is. In Discovery, the palette's nav row is
+"project overview", and the project picker's last row opens the same view.
 
 In the daemon view, identity, config and adapters refresh on open and on `R`; the
 log alone re-reads on a short timer, because it is the only part that changes while

@@ -120,6 +120,11 @@ type root struct {
 	// selectedTask is the task the board last opened; PR J's detail view
 	// reads it from the same message that sets it.
 	selectedTask int64
+	// lastScoped is the last projectScoped view that was active, recorded by
+	// switchTo as it is left: where enter on a project overview row returns
+	// to (task 132 decision 34). Zero is the board, the answer with no
+	// history.
+	lastScoped viewID
 
 	// github is the §13.2 capability probe per registered project, refreshed
 	// as the connection comes up and again on reconnect. It lives here rather
@@ -229,6 +234,8 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.updateFollowFetched(msg)
 	case selectViewMsg:
 		return m, m.switchTo(msg.id)
+	case overviewPickMsg:
+		return m, m.openFromOverview(msg)
 	case taskChatOpenedMsg:
 		// `T` landing (task 119). The bars that said "opening a chat…" hear
 		// the outcome either way, and each refetches its task — the lock is
@@ -1438,10 +1445,42 @@ func (m *root) switchTo(id viewID) tea.Cmd {
 	}
 	prev := m.active
 	m.active = id
+	if _, ok := m.views[prev].(projectScoped); ok {
+		m.lastScoped = prev
+	}
 	return tea.Batch(
 		m.deliver(prev, viewDeactivatedMsg{id: prev}),
 		m.deliver(id, viewActivatedMsg{id: id}),
 	)
+}
+
+// openFromOverview is enter on the project overview (task 132 decision 42).
+// A project row selects the project and returns to the last project-scoped
+// view; a "needs you" row selects the task's project and opens the task, with
+// esc coming back to the overview. Both select through selectProject, the
+// one path every switch takes.
+func (m *root) openFromOverview(msg overviewPickMsg) tea.Cmd {
+	same := msg.project.ID == m.sel.id && msg.project.Name == m.sel.name
+	if msg.task != nil {
+		var sel tea.Cmd
+		if !same {
+			sel = m.selectProject(msg.project, "picked in the project overview")
+		}
+		open := selectTaskMsg{
+			id: msg.task.ID, state: msg.task.State, back: viewProjects,
+			projectID: msg.task.ProjectID,
+		}
+		return tea.Batch(sel, func() tea.Msg { return open })
+	}
+	// The return view is made active before the switch, so the switch
+	// applies task 132.6's rules to it rather than to the overview: a record
+	// gives way to its list, a form is re-aimed, and a draft asks first
+	// (decisions 36 and 37).
+	back := m.switchTo(m.lastScoped)
+	if same {
+		return back
+	}
+	return tea.Batch(back, m.selectProject(msg.project, "picked in the project overview"))
 }
 
 // applyOutputLevel adopts `tui.output.level` from whichever config answer

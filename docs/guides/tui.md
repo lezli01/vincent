@@ -1675,27 +1675,52 @@ form tells you what will actually run rather than what you typed.
 
 ### Projects
 
-On a wide terminal the repository list stays in the left rail. The selected
-project's path, branch convention, workflow and concurrency defaults, and
-current tasks fill the main pane; `a` or `enter` puts the existing add/edit form
-in that same pane. This keeps the project you were looking at visible while you
-change its configuration.
+The project overview is the one screen that shows every registered project at
+once; everything else shows the selected project. Open it from the palette's
+"project overview" row, or from the last row of the project picker (`@`),
+"overview & manage…".
 
-The `running / cap` column counts slots the way the board header does — lanes
-and tasks on a question included — so the numerator is the one the per-project
-cap is actually applied against.
+Each project is one row of figures, all of them the daemon's own counts:
 
-![The Projects view: seven registered repositories with their running counts and
-caps on the left, and the selected project's path, branch convention, execution
-defaults and current workload on the right](../assets/tui-projects.png)
+| Column | Shows |
+|---|---|
+| `!` | Tasks that need you |
+| running | Slots in use against the project's own cap (`2/3`), or a bare count when it has none |
+| queued, blocked, done | Tasks in each state; archived tasks are never counted |
+| issues (gh) | Open issues, with the ones imported from GitHub in brackets |
+| chats (wait) | Live chats, with the ones waiting on you in brackets |
+| sync | Issue sync: `✓` healthy, `✗` failing, `—` off or no GitHub remote |
+| github | `✓ owner/repo` when the GitHub integration is usable, its reason when not, `—` with no GitHub remote |
+| activity | How long ago the project's tasks, issues or chats last changed |
+
+A `total` row sums the columns. Its running figure is the installation-wide
+slots in use against `max_parallel_tasks`, never a sum of the rows, because
+that is the cap the scheduler applies across projects. A project the daemon
+could not count shows `—` rather than zeros.
+
+Below the table, **Needs you, across projects** lists every task the board's
+`!` filter would keep — awaiting input, awaiting approval, blocked — oldest
+wait first, each led by its project. On a wide terminal the highlighted
+project's repository and execution defaults show beside the table; a narrower
+one drops that pane first, then the columns from the right, keeping name, `!`
+and running to the last.
+
+![The project overview: seven registered repositories with their figures and a
+totals row, and the six tasks that need you across every project below
+them](../assets/tui-project-overview.png)
 
 | Key | Does |
 |---|---|
+| `enter` | On a project: select it and go back to the view you came from (the board if none). On a needs-you task: select its project and open the task |
+| `tab` | Move between the project table and the needs-you list |
+| `e` | Edit the highlighted project |
 | `a` | Register a repository |
-| `enter` or `e` | Edit the selected project |
 | `D` | Remove it (asks first; its task rows go with it) |
 | `/` | Filter by name or path |
 | `ctrl+s` | Save, in the form |
+
+With no project registered, the overview says how to add one: `a`, or
+`vincent project add <path>` from a shell.
 
 ### Pull requests
 
@@ -2229,7 +2254,7 @@ starts a chat, everywhere else it opens the new-task form. The create form takes
 project, title, agent, model, effort, base branch and branch; `ctrl+s` creates
 and drops you straight into the workspace. With no project registered, `n` says
 so on the board instead of opening a form you could not submit — add a
-repository in the Projects view (`4`) first.
+repository in the project overview first.
 
 Five of the seven rows are lists — project, agent, model, effort and branch —
 and they are

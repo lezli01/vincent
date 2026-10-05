@@ -1,6 +1,6 @@
 # 132 — Project as root: the TUI scoped to one selected project
 
-**Status:** 🔄 in progress (9/18)
+**Status:** 🔄 in progress (10/18)
 
 Issue [#694](https://github.com/lezli01/vincent/issues/694), part of
 [#693](https://github.com/lezli01/vincent/issues/693). Spec §3 (the new row
@@ -55,7 +55,8 @@ delivering 132.2, decisions 25–28 were settled with the author for 132.5
 on 2026-10-05, decisions 29–32 were taken while delivering 132.3,
 decision 33 while delivering 132.4, decisions 34–35 while delivering
 132.8, decisions 36–38 were settled with the author for 132.6, and
-decisions 39–41 were settled with the author while delivering 132.12. Each
+decisions 39–41 were settled with the author while delivering 132.12,
+and decisions 42–45 were taken with the author while delivering 132.15. Each
 decision is **taken now; its effect lands with its item.** The older record
 keeps governing the code until that item's pull request merges.
 
@@ -558,6 +559,51 @@ read, and that leak is accepted.
 *Alternative beaten:* showing them only in the overview (132.15), which leaves
 no repair path in the triggers view.
 
+### 42. Enter on an overview row selects and returns to the last scoped view (2026-10-05)
+
+Taken with the author while delivering 132.15. Enter on a project row of the
+overview selects that project and returns to the last project-scoped view
+that was active, or to the board when there is none. The root keeps no view
+history otherwise, so it gains one field — the last `projectScoped` view,
+recorded in `switchTo` as that view is left. Enter on a "needs you" row
+selects the task's project and opens the task, also through
+`selectProject`, with `esc` back to the overview. A view showing one record —
+a task, a chat, an issue — belongs to the project it was opened in, so after
+a switch it gives way to its own list (board, chats board, issues list)
+rather than show another project's record under the new selection.
+
+*Alternatives beaten:* always the board (E2); select and stay on the
+overview (E3).
+
+### 43. The overview keeps a detail surface on wide terminals (2026-10-05)
+
+Taken with the author while delivering 132.15. The table and the "needs you,
+across projects" list are the view; on a wide terminal the highlighted
+project's repository and execution defaults still show beside them, and the
+add/edit form still takes the focused surface as it did. On a narrow terminal
+the detail pane is shed first, then columns. This departs from task 020
+decision 1's rail-plus-focus shape (already listed as superseded below) while
+keeping the at-a-glance configuration it gave. The old focus pane's
+client-filtered "Current workload" is dropped: the row's own figures and the
+attention list replace it.
+
+*Alternative beaten:* the table and the attention list only, which hides the
+defaults behind the edit form.
+
+### 44. Open pull-request counts are a follow-up (2026-10-05)
+
+Taken with the author while delivering 132.15. The overview's GitHub cell
+shows only the root's existing per-project §13.2 probe — `✓ owner/repo`, the
+probe's reason, or `—`. Lazily loaded `ListGitHubPulls(state=open)` counts
+are filed as a new issue after 132.15 lands.
+
+### 45. Spend is deferred (2026-10-05)
+
+Taken with the author while delivering 132.15. The overview has no spend
+column. It is revisited only when asked, after timing the `step_runs` ×
+`tasks` scan on a store of at least 100k step runs; chat cost stays apart by
+spec decision row 29.
+
 ## Supersedes
 
 Every binding record this work overturns, departs from, refines or keeps, by
@@ -660,8 +706,8 @@ its own pull request.
 - [ ] **132.14** ([#708](https://github.com/lezli01/vincent/issues/708)) The
   chrome badge, the global bell, the project-crossing `!`, the per-project
   board header. Depends: 132.6, 132.8.
-- [ ] **132.15** ([#709](https://github.com/lezli01/vincent/issues/709)) The
-  overview replaces view 4 (Projects). Depends: 132.4.
+- [x] **132.15** ([#709](https://github.com/lezli01/vincent/issues/709)) The
+  overview replaces view 4 (Projects). Depends: 132.4. Decisions 42–45.
 - [ ] **132.16** ([#710](https://github.com/lezli01/vincent/issues/710))
   Project-aware `scripts/screenshots.sh` and a full recapture. Depends:
   132.2–132.15, 132.18; #692 (merged, so already met).

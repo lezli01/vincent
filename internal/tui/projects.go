@@ -37,6 +37,15 @@ type (
 		project apiclient.Project
 		err     error
 	}
+	// overviewPickMsg is enter on one of the overview's rows (task 132
+	// decision 34): select project and go back to the last project-scoped
+	// view, or — when task is set, from the "needs you" list — select the
+	// task's project and open the task. The root does both, because the
+	// selection and the view stack are its.
+	overviewPickMsg struct {
+		project apiclient.Project
+		task    *apiclient.Task
+	}
 	// projectDeletedMsg reports a completed delete attempt. forced records
 	// which of the two requests came back, so a 409 on the forced one is
 	// never re-offered as a confirmation.
@@ -57,19 +66,41 @@ type deletePrompt struct {
 	force bool
 }
 
-// projectsView is §15's view 4: the registered repositories, their defaults
-// and their cap.
+// projectsView is §15's view 4, the project overview (task 132.15): one row
+// of figures per registered project, a totals row, the tasks that need a
+// human across every project, and the add/edit/remove flows. It is the only
+// multi-project view; every other one shows the selected project.
 type projectsView struct {
 	client *apiclient.Client
 	now    func() time.Time
 
+	// projects carry their `stats` (GET /v1/projects?stats=true, task
+	// 132.1). Every figure on a row is the daemon's; nothing is counted
+	// here, so a row never disagrees with the picker or `vincent project
+	// list --stats`.
 	projects []apiclient.Project
-	tasks    []apiclient.Task
+	// tasks is the full root listing, read only for the "needs you" list.
+	tasks []apiclient.Task
 	// globalCap is the daemon-wide limit. It is shown beside a project with
 	// no cap of its own because that is the ceiling actually holding tasks
 	// back — the two caps are independent, not a fallback chain.
 	globalCap int
+	// slotsUsed is /v1/info's installation-wide slot count, the totals row's
+	// numerator. It is never a sum of the rows (#324's rule, §13.2).
+	slotsUsed int
 	infoOK    bool
+	// github is the root's §13.2 probe per project, kept from the
+	// githubProbeMsg it broadcasts (task 132 decision 36).
+	github map[int64]apiclient.GitHubStatus
+
+	// active is whether the overview is the visible view: it fetches on
+	// activation and on events only while it is (task 132.15).
+	active bool
+
+	// inAttention is the cursor being in the "needs you" list rather than
+	// the table; attnCursor is its row there.
+	inAttention bool
+	attnCursor  int
 
 	loaded   bool
 	loadErr  error
@@ -77,6 +108,10 @@ type projectsView struct {
 
 	tbl        table.Model
 	selectedID int64
+	// overviewCols and overviewName are the column set and name width the
+	// table was last fitted to, so the totals row lines up under it.
+	overviewCols []ovCol
+	overviewName int
 
 	filter    textField
 	filtering bool
@@ -113,8 +148,14 @@ func newProjectsView() *projectsView {
 
 func (p *projectsView) title() string { return "Projects" }
 
+// setClient fetches only while the overview is on screen: its stats are
+// worth a request only while someone is reading them, and activation
+// refetches anyway.
 func (p *projectsView) setClient(c *apiclient.Client) tea.Cmd {
 	p.client = c
+	if !p.active {
+		return nil
+	}
 	return p.loadCmd()
 }
 
@@ -163,14 +204,14 @@ func (p *projectsView) loadCmd() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
-		projects, err := client.ListProjects(ctx)
+		projects, err := client.ListProjects(ctx, apiclient.WithStats())
 		if err != nil {
 			return projectsLoadedMsg{stamp: stamp, err: err}
 		}
-		// The slot counts ride on the project rows themselves. The task
-		// list feeds the workload panel and the global cap comes from
-		// info; neither failing is a reason to hide the projects, so only
-		// the project fetch can fail the load.
+		// The figures ride on the project rows themselves. The task list
+		// feeds the "needs you" list and the slots come from info; neither
+		// failing is a reason to hide the projects, so only the project
+		// fetch can fail the load.
 		tasks, taskErr := client.ListTasks(ctx, apiclient.ListTasksOptions{})
 		if taskErr != nil {
 			tasks = nil
@@ -199,15 +240,31 @@ func (p *projectsView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return p, nil
 	case viewActivatedMsg:
 		if msg.id == viewProjects {
-			// A view that was off-screen through a burst of events opens on
-			// what it last fetched; refetching on activation is what keeps
-			// "off-screen" from meaning "stale".
+			// The overview does not fetch while hidden, so activation is
+			// what keeps "off-screen" from meaning "stale".
+			p.active = true
 			return p, p.loadCmd()
+		}
+		return p, nil
+	case viewDeactivatedMsg:
+		if msg.id == viewProjects {
+			p.active = false
 		}
 		return p, nil
 	case projectsRefreshMsg:
 		p.refreshPending = false
+		if !p.active {
+			return p, nil
+		}
 		return p, p.loadCmd()
+	case githubProbeMsg:
+		if msg.err == nil {
+			p.github = make(map[int64]apiclient.GitHubStatus, len(msg.projects))
+			for _, gp := range msg.projects {
+				p.github[gp.project.ID] = gp.status
+			}
+		}
+		return p, nil
 	case projectsLoadedMsg:
 		p.applyLoaded(msg)
 		return p, nil
@@ -247,22 +304,24 @@ func (p *projectsView) applyLoaded(msg projectsLoadedMsg) {
 	p.projects = msg.projects
 	p.tasks = msg.tasks
 	if msg.infoOK {
-		p.globalCap, p.infoOK = msg.info.MaxParallelTasks, true
+		p.globalCap, p.slotsUsed, p.infoOK = msg.info.MaxParallelTasks, msg.info.Slots.Used, true
 	}
+	p.clampAttention()
 	if p.form != nil {
 		p.form.refreshFrom(msg.projects)
 	}
 }
 
-// updateNote refetches on the events that change what this view shows.
-// project.* is the obvious one; task.* moves the running counts, and the
-// registry changing moves the default-workflow picker's options.
+// updateNote refetches, debounced and only while the overview is visible, on
+// the events that move what it shows: task.*, issue.* and chat.* move the
+// figures, project.* the rows, and the registry changing moves the
+// default-workflow picker's options.
 func (p *projectsView) updateNote(n apiclient.Note) tea.Cmd {
 	ev, ok := n.(apiclient.EventNote)
-	if !ok {
+	if !ok || !p.active {
 		return nil
 	}
-	if isTaskEvent(ev.Event.Type) || ev.Event.Type == eventWorkflowRegistryChanged {
+	if projectPickerEvent(ev.Event.Type) || ev.Event.Type == eventWorkflowRegistryChanged {
 		return p.scheduleRefresh()
 	}
 	return nil
@@ -310,7 +369,15 @@ func (p *projectsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		p.err = ""
 		p.form = newProjectForm(p.client, nil)
 		return p, p.form.loadCmd()
-	case "enter", "e":
+	case "tab", "shift+tab":
+		// Two sections, one cursor: tab moves it between the table and the
+		// "needs you" list, the way the daemon and triggers takeovers move
+		// between their two panes. An empty list is not somewhere to go.
+		p.inAttention = !p.inAttention && len(p.attention()) > 0
+		return p, nil
+	case "enter":
+		return p, p.pick()
+	case "e":
 		if pr, ok := p.current(); ok {
 			p.err = ""
 			p.form = newProjectForm(p.client, &pr)
@@ -324,10 +391,71 @@ func (p *projectsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return p, nil
 	}
 
+	if p.inAttention {
+		switch msg.String() {
+		case "up", "k":
+			p.attnCursor = max(p.attnCursor-1, 0)
+		case "down", "j":
+			p.attnCursor = min(p.attnCursor+1, max(len(p.attention())-1, 0))
+		}
+		return p, nil
+	}
 	var cmd tea.Cmd
 	p.tbl, cmd = p.tbl.Update(msg)
 	p.rememberSelection()
 	return p, cmd
+}
+
+// pick is enter (task 132 decision 34): on a project row, that project; on
+// a "needs you" row, the task and its project. Either way the root does the
+// selecting, through selectProject.
+func (p *projectsView) pick() tea.Cmd {
+	if p.inAttention {
+		attn := p.attention()
+		if len(attn) == 0 {
+			return nil
+		}
+		t := attn[min(p.attnCursor, len(attn)-1)]
+		msg := overviewPickMsg{project: p.projectOf(t), task: &t}
+		return func() tea.Msg { return msg }
+	}
+	pr, ok := p.current()
+	if !ok {
+		return nil
+	}
+	return func() tea.Msg { return overviewPickMsg{project: pr} }
+}
+
+// projectOf is a task's project as selectProject wants it. A task whose
+// project is not (yet) in the listing still carries its own id and name.
+func (p *projectsView) projectOf(t apiclient.Task) apiclient.Project {
+	for _, pr := range p.projects {
+		if pr.ID == t.ProjectID {
+			return pr
+		}
+	}
+	return apiclient.Project{ID: t.ProjectID, Name: t.ProjectName}
+}
+
+// attention is "needs you, across projects": the tasks the board's `!`
+// filter keeps (keepsAttention), in the board's order — oldest wait first —
+// over the full listing. It is the one cross-project task list the TUI
+// draws (task 132.15).
+func (p *projectsView) attention() []apiclient.Task {
+	sorted := append([]apiclient.Task(nil), p.tasks...)
+	sortTasks(sorted)
+	return attentionTasks(sorted)
+}
+
+// clampAttention keeps the list's cursor on a row after a refresh shrank it,
+// and leaves the list when it emptied.
+func (p *projectsView) clampAttention() {
+	n := len(p.attention())
+	if n == 0 {
+		p.inAttention, p.attnCursor = false, 0
+		return
+	}
+	p.attnCursor = min(p.attnCursor, n-1)
 }
 
 // askDelete opens the first confirmation. Deleting cascades to task rows and

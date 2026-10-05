@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/table"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/keymap"
@@ -20,44 +23,99 @@ func (p *projectsView) render(width, height int) string {
 	}
 	rows := p.visible()
 	if p.form != nil {
+		// The add/edit form takes the focused surface as it always has
+		// (task 132 decision 35), beside the list it edits.
 		if guidedTakeover(p.width, p.height) {
 			return p.renderGuided(rows)
 		}
 		return p.form.render(p.width)
 	}
-	p.syncTable(rows)
-	if guidedTakeover(p.width, p.height) {
-		return p.renderGuided(rows)
-	}
-	return p.renderCompact(rows)
+	return p.renderOverview(rows)
 }
 
-func (p *projectsView) renderCompact(rows []apiclient.Project) string {
-	var sb strings.Builder
-	for _, line := range p.statusLines() {
-		sb.WriteString(line)
-		sb.WriteString("\n")
-	}
+// Overview layout. The detail pane is the first thing a narrow terminal sheds
+// and the table's columns the second (task 132 decision 35): the pane only
+// shows when the full table still fits beside it.
+const (
+	overviewDetailWidth = 40
+	// overviewAttentionMax bounds the "needs you" list's share of the
+	// screen; the rest of it scrolls with the cursor.
+	overviewAttentionMax = 8
+)
 
+// renderOverview is the table, its totals row, the "needs you" list and, on a
+// wide terminal, the highlighted project's configuration beside them.
+func (p *projectsView) renderOverview(rows []apiclient.Project) string {
+	leftW := p.width
+	detail := p.width >= overviewFullWidth()+overviewDetailWidth && p.height >= guidedTakeoverMinHeight
+	if detail {
+		leftW = p.width - overviewDetailWidth
+	}
+	left := p.renderOverviewMain(rows, leftW)
+	if !detail {
+		return left
+	}
+	title := "Project"
+	body := ""
+	if pr, ok := p.current(); ok {
+		title = "Project · " + pr.Name
+		body = p.renderProjectDetail(pr, p.height-2)
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top,
+		lipgloss.NewStyle().Width(leftW).MaxWidth(leftW).Render(left),
+		frame(title, body, overviewDetailWidth, p.height, false))
+}
+
+func (p *projectsView) renderOverviewMain(rows []apiclient.Project, width int) string {
+	lines := append([]string{}, p.statusLines()...)
 	if body, ok := p.emptyBody(rows); ok {
-		sb.WriteString(body)
-		return sb.String()
+		return strings.Join(append(lines, body), "\n")
 	}
-	sb.WriteString(p.tbl.View())
-	return sb.String()
+	attn := p.attention()
+	attnLines := p.attentionLines(attn, width)
+	// Status, the table's header, the totals row, a gap, the list's heading
+	// and its rows.
+	avail := p.height - len(lines) - 1 - 1 - 2 - len(attnLines)
+	p.syncTable(rows, width, max(2, min(len(rows), avail)+1))
+	lines = append(lines, p.tbl.View(), p.totalsLine(), "", section("Needs you, across projects"))
+	lines = append(lines, attnLines...)
+	return strings.Join(lines, "\n")
 }
 
-func (p *projectsView) syncTable(rows []apiclient.Project) {
-	cols, set := projectColumns(p.width)
+// attentionLines is the "needs you" list, windowed around its cursor. Each
+// row leads with its project, which is the point of the list.
+func (p *projectsView) attentionLines(attn []apiclient.Task, width int) []string {
+	if len(attn) == 0 {
+		return []string{styleDim.Render("  nothing needs you in any project")}
+	}
+	out := make([]string, 0, len(attn))
+	for i, t := range attn {
+		marker := "  "
+		if p.inAttention && i == p.attnCursor {
+			marker = styleFocus.Render("› ")
+		}
+		line := fmt.Sprintf("%s%s  #%-4d %s  %s", marker,
+			styleTitle.Render(t.ProjectName), t.ID, renderBoardState(t), t.Title)
+		out = append(out, ansi.Truncate(line, max(width, 1), "…"))
+	}
+	cursor := 0
+	if p.inAttention {
+		cursor = p.attnCursor
+	}
+	return window(out, cursor, overviewAttentionMax)
+}
+
+func (p *projectsView) syncTable(rows []apiclient.Project, width, height int) {
+	cols, name := overviewColumns(width)
 	if len(cols) != len(p.tbl.Columns()) {
 		// Crossing a breakpoint: clear the rows first, or the table
 		// re-renders the previous shape against the new column set.
 		p.tbl.SetRows(nil)
 	}
-	p.tbl.SetColumns(cols)
-	p.tbl.SetRows(p.rowsFor(rows, set))
-	p.tbl.SetWidth(p.width)
-	p.tbl.SetHeight(max(3, p.height-len(p.statusLines())-3))
+	p.tbl.SetColumns(overviewHeader(cols, name))
+	p.tbl.SetRows(p.rowsFor(rows, cols))
+	p.tbl.SetWidth(width)
+	p.tbl.SetHeight(height)
 	p.restoreSelection(rows)
 	// Passing through an empty row set parks the cursor at -1; with rows on
 	// screen it belongs on one, or nothing is selected and every key that
@@ -65,23 +123,15 @@ func (p *projectsView) syncTable(rows []apiclient.Project) {
 	if p.tbl.Cursor() < 0 && len(rows) > 0 {
 		p.tbl.SetCursor(0)
 	}
+	p.overviewCols, p.overviewName = cols, name
 }
 
+// renderGuided is the add/edit form beside the project list.
 func (p *projectsView) renderGuided(rows []apiclient.Project) string {
 	rail := p.renderProjectRail(rows, p.height-2)
-	mainTitle := "Overview"
-	var main string
-	if p.form != nil {
-		mainTitle = p.form.heading()
-		main = p.form.renderFocused(p.width/2, p.height-2)
-	} else if pr, ok := p.current(); ok {
-		mainTitle = "Overview · " + pr.Name
-		main = p.renderProjectOverview(pr, p.height-2)
-	} else if body, ok := p.emptyBody(rows); ok {
-		main = strings.Join(append(p.statusLines(), body), "\n")
-	}
 	return guidedSurface(p.width, p.height,
-		fmt.Sprintf("Projects · %d", len(rows)), rail, mainTitle, main)
+		fmt.Sprintf("Projects · %d", len(rows)), rail,
+		p.form.heading(), p.form.renderFocused(p.width/2, p.height-2))
 }
 
 func (p *projectsView) renderProjectRail(rows []apiclient.Project, height int) string {
@@ -128,14 +178,16 @@ func (p *projectsView) projectRailSummary(pr apiclient.Project) string {
 	return fmt.Sprintf("%d running · no project cap", running)
 }
 
-func (p *projectsView) renderProjectOverview(pr apiclient.Project, height int) string {
-	lines := append([]string{}, p.statusLines()...)
-	lines = append(lines,
-		"  "+styleTitle.Render(pr.Name),
-		"  "+styleDim.Render(pr.Path),
+// renderProjectDetail is the wide terminal's detail pane: the highlighted
+// project's repository and execution defaults, which the table has no room
+// for (task 132 decision 35). The old focus pane's client-filtered workload
+// is gone — the row's figures and the "needs you" list replace it.
+func (p *projectsView) renderProjectDetail(pr apiclient.Project, height int) string {
+	lines := []string{
+		"  " + styleTitle.Render(pr.Name),
+		"  " + styleDim.Render(pr.Path),
 		"",
 		section("Repository"),
-		p.projectFact("path", pr.Path),
 		p.projectFact("default branch", pr.DefaultBranch),
 		p.projectFact("branch naming", projectBranchTemplate(pr)),
 		"",
@@ -144,34 +196,15 @@ func (p *projectsView) renderProjectOverview(pr apiclient.Project, height int) s
 		p.projectFact("project cap", projectCap(pr)),
 		p.projectFact("global cap", p.globalCapLabel()),
 		p.projectFact("running now", strconv.Itoa(pr.SlotsUsed)),
+		p.projectFact("running / cap", p.capCell(pr)),
 		"",
-		section("Current workload"),
-	)
-	tasks := p.tasksFor(pr.ID)
-	if len(tasks) == 0 {
-		lines = append(lines, styleDim.Render("  No current tasks for this project."))
-	} else {
-		available := max(height-len(lines)-1, 1)
-		shown := min(len(tasks), available)
-		if shown < len(tasks) {
-			shown = max(shown-1, 0)
-		}
-		for _, task := range tasks[:shown] {
-			lines = append(lines, fmt.Sprintf("  #%-4d %-20s %s",
-				task.ID, renderState(task.State), task.Title))
-		}
-		if shown < len(tasks) {
-			lines = append(lines, styleDim.Render(fmt.Sprintf(
-				"  … %d more on the board", len(tasks)-shown)))
-		}
+		styleDim.Render("  enter select · e edit · " + opKey(keymap.Delete) + " remove"),
 	}
-	lines = append(lines, styleDim.Render("  enter/e edit · "+opKey(keymap.Add)+" add · "+
-		opKey(keymap.Delete)+" remove · "+opKey(keymap.New)+" new task"))
 	return strings.Join(window(lines, 0, height), "\n")
 }
 
 func (p *projectsView) projectFact(label, value string) string {
-	return "  " + styleDim.Render(fmt.Sprintf("%-17s", label)) + " " + value
+	return "  " + styleDim.Render(fmt.Sprintf("%-15s", label)) + " " + value
 }
 
 func projectBranchTemplate(pr apiclient.Project) string {
@@ -183,7 +216,7 @@ func projectBranchTemplate(pr apiclient.Project) string {
 
 func projectCap(pr apiclient.Project) string {
 	if pr.MaxParallelTasks == nil {
-		return styleDim.Render("none — global cap still applies")
+		return styleDim.Render("none")
 	}
 	return strconv.Itoa(*pr.MaxParallelTasks)
 }
@@ -195,129 +228,315 @@ func (p *projectsView) globalCapLabel() string {
 	return strconv.Itoa(p.globalCap)
 }
 
-func (p *projectsView) tasksFor(projectID int64) []apiclient.Task {
-	out := make([]apiclient.Task, 0, len(p.tasks))
-	for _, task := range p.tasks {
-		if task.ProjectID == projectID {
-			out = append(out, task)
-		}
-	}
-	return out
-}
+// ovCol is one of the overview table's columns, in display order.
+type ovCol int
 
-// Projects column widths. As on the board, the table pads every cell by one
-// space either side, so a column occupies its width plus two — the original
-// widths ignored that and overflowed by a whole column's padding, which the
-// table swallowed by cutting the last column: "running / cap" arrived
-// unreadable (T3.8 finding).
 const (
-	pcolID       = 4
-	pcolName     = 20
-	pcolBranch   = 14
-	pcolWorkflow = 16
-	pcolCap      = 20
-	// pcolMinName is where squeezing the name stops and a whole column goes
-	// instead; pcolMaxName is where a wide terminal stops widening it.
-	pcolMinName = 14
-	pcolMaxName = 40
-	// pcolMinPath is not worth rendering below; pcolMaxPath is where a wide
-	// terminal stops handing space to the one column that needs it least.
-	pcolMinPath = 24
-	pcolMaxPath = 60
+	ocName ovCol = iota
+	ocAttention
+	ocRunning
+	ocQueued
+	ocBlocked
+	ocDone
+	ocIssues
+	ocChats
+	ocSync
+	ocGitHub
+	ocActivity
+	ocCount
 )
 
-// projectColSet records which optional columns survived the current width,
-// so the row builder cannot disagree with the header about how many cells a
-// row has — a mismatch is an index panic on the next resize.
-type projectColSet struct {
-	path     bool
-	branch   bool
-	workflow bool
+// ovColSpec is each column's header and width. As on the board, the table
+// pads every cell by one space either side, so a column occupies its width
+// plus colPadding (T3.8 finding).
+var ovColSpec = [ocCount]struct {
+	title string
+	width int
+}{
+	ocName:      {"name", pcolName},
+	ocAttention: {"!", 3},
+	ocRunning:   {"running", 7},
+	ocQueued:    {"queued", 6},
+	ocBlocked:   {"blocked", 7},
+	ocDone:      {"done", 5},
+	ocIssues:    {"issues (gh)", 11},
+	ocChats:     {"chats (wait)", 12},
+	ocSync:      {"sync", 4},
+	ocGitHub:    {"github", 18},
+	ocActivity:  {"activity", 10},
 }
 
-// projectColumns fits §15's project columns into the width it has. The path
-// is the first thing a narrow terminal loses — it is the longest column and
-// the one a name already stands in for — and on a wide one it stops growing
-// at pcolMaxPath rather than pushing the figures off the edge.
-func projectColumns(width int) ([]table.Column, projectColSet) {
-	// id, name and running/cap always exist: the identity, the thing you
-	// scan for, and the figure the view is for.
-	base := pcolID + pcolCap + 3*colPadding
-	name := pcolName
-	branch, workflow := true, true
+// ovShedOrder is the order a narrowing terminal loses columns in, after the
+// detail pane and after the name has been squeezed to its floor: the
+// context first, then the settled figures, so the name, attention and
+// running — what the overview is for — are the last three standing.
+var ovShedOrder = []ovCol{ocActivity, ocGitHub, ocSync, ocChats, ocIssues, ocDone, ocBlocked, ocQueued}
+
+const (
+	pcolName = 20
+	// pcolMinName is where squeezing the name stops and a whole column goes
+	// instead; pcolMaxName is where a wide terminal stops widening it.
+	pcolMinName = 12
+	pcolMaxName = 32
+)
+
+// overviewFullWidth is every column at its natural width: the width below
+// which the detail pane goes first.
+func overviewFullWidth() int {
+	w := 0
+	for c := range ocCount {
+		w += ovColSpec[c].width + colPadding
+	}
+	return w
+}
+
+// overviewColumns fits the overview's columns into width: the name squeezes
+// to its floor first, then columns go in ovShedOrder, and slack widens the
+// name up to pcolMaxName.
+func overviewColumns(width int) (cols []ovCol, name int) {
+	keep := [ocCount]bool{}
+	for c := range ocCount {
+		keep[c] = true
+	}
+	name = pcolName
 	cost := func() int {
-		c := base + name
-		if branch {
-			c += pcolBranch + colPadding
-		}
-		if workflow {
-			c += pcolWorkflow + colPadding
+		c := 0
+		for col := range ocCount {
+			if !keep[col] {
+				continue
+			}
+			w := ovColSpec[col].width
+			if col == ocName {
+				w = name
+			}
+			c += w + colPadding
 		}
 		return c
 	}
-	// Squeeze the name to its floor first — repo names are short — then shed
-	// the configuration columns, which a narrow terminal can live without.
-squeeze:
+	shed := 0
 	for cost() > width {
 		switch {
 		case name > pcolMinName:
 			name = max(pcolMinName, name-(cost()-width))
-		case workflow:
-			workflow = false
-		case branch:
-			branch = false
+		case shed < len(ovShedOrder):
+			keep[ovShedOrder[shed]] = false
+			shed++
 		default:
-			break squeeze // nothing left to shed; the table will truncate
+			name = max(pcolMinName, name) // nothing left; the table truncates
+			return keptCols(keep), name
 		}
 	}
-
-	path := 0
-	if slack := width - cost(); slack >= pcolMinPath+colPadding {
-		path = min(slack-colPadding, pcolMaxPath)
-	} else if slack > 0 {
-		// No room for a path column, so the space goes to the name rather
-		// than sitting empty at the right edge.
+	if slack := width - cost(); slack > 0 {
 		name = min(name+slack, pcolMaxName)
 	}
-
-	cols := []table.Column{
-		{Title: "id", Width: pcolID},
-		{Title: "name", Width: name},
-	}
-	if path > 0 {
-		cols = append(cols, table.Column{Title: "path", Width: path})
-	}
-	if branch {
-		cols = append(cols, table.Column{Title: "branch", Width: pcolBranch})
-	}
-	if workflow {
-		cols = append(cols, table.Column{Title: "workflow", Width: pcolWorkflow})
-	}
-	return append(cols,
-		table.Column{Title: "running / cap", Width: pcolCap},
-	), projectColSet{path: path > 0, branch: branch, workflow: workflow}
+	return keptCols(keep), name
 }
 
-func (p *projectsView) rowsFor(projects []apiclient.Project, set projectColSet) []table.Row {
-	out := make([]table.Row, 0, len(projects))
-	for _, pr := range projects {
-		row := table.Row{strconv.FormatInt(pr.ID, 10), pr.Name}
-		if set.path {
-			row = append(row, pr.Path)
+func keptCols(keep [ocCount]bool) []ovCol {
+	out := make([]ovCol, 0, ocCount)
+	for c := range ocCount {
+		if keep[c] {
+			out = append(out, c)
 		}
-		if set.branch {
-			row = append(row, pr.DefaultBranch)
-		}
-		if set.workflow {
-			workflow := styleDim.Render("adhoc")
-			if pr.DefaultWorkflow != nil && *pr.DefaultWorkflow != "" {
-				workflow = *pr.DefaultWorkflow
-			}
-			row = append(row, workflow)
-		}
-		out = append(out, append(row, p.capCell(pr)))
 	}
 	return out
+}
+
+func overviewHeader(cols []ovCol, name int) []table.Column {
+	out := make([]table.Column, 0, len(cols))
+	for _, c := range cols {
+		w := ovColSpec[c].width
+		if c == ocName {
+			w = name
+		}
+		out = append(out, table.Column{Title: ovColSpec[c].title, Width: w})
+	}
+	return out
+}
+
+func (p *projectsView) rowsFor(projects []apiclient.Project, cols []ovCol) []table.Row {
+	out := make([]table.Row, 0, len(projects))
+	for _, pr := range projects {
+		row := make(table.Row, 0, len(cols))
+		for _, c := range cols {
+			row = append(row, p.overviewCell(pr, c))
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+// overviewDash is a figure the daemon could not count: a row whose stats are
+// null reads as unknown, never as zero.
+const overviewDash = "—"
+
+// overviewCell is one figure of one row. Every figure is the daemon's.
+func (p *projectsView) overviewCell(pr apiclient.Project, c ovCol) string {
+	switch c {
+	case ocName:
+		return pr.Name
+	case ocRunning:
+		return runningFigure(pr)
+	case ocGitHub:
+		return p.githubCell(pr.ID)
+	case ocCount:
+		return ""
+	}
+	st := pr.Stats
+	if st == nil {
+		return overviewDash
+	}
+	switch c {
+	case ocAttention:
+		return strconv.Itoa(st.Tasks.Attention)
+	case ocQueued:
+		return strconv.Itoa(st.Tasks.ByState[stateQueued])
+	case ocBlocked:
+		return strconv.Itoa(st.Tasks.ByState[stateBlocked])
+	case ocDone:
+		return strconv.Itoa(st.Tasks.ByState[stateDone])
+	case ocIssues:
+		return fmt.Sprintf("%d (%d)", st.Issues.Open, st.Issues.OpenImported)
+	case ocChats:
+		return fmt.Sprintf("%d (%d)", st.Chats.Live, st.Chats.AwaitingInput)
+	case ocSync:
+		return syncGlyph(st)
+	case ocActivity:
+		return p.agoCell(st.LastActivityAt)
+	case ocName, ocRunning, ocGitHub, ocCount:
+	}
+	return ""
+}
+
+// runningFigure is slots used against the project's own cap; an uncapped
+// project reads `N` with no denominator, because the global cap is not a
+// per-project limit (task 132 decision 33).
+func runningFigure(pr apiclient.Project) string {
+	if pr.MaxParallelTasks != nil {
+		return fmt.Sprintf("%d/%d", pr.SlotsUsed, *pr.MaxParallelTasks)
+	}
+	return strconv.Itoa(pr.SlotsUsed)
+}
+
+// notGitHub is the reason the daemon gives — on the §13.2 probe and on the
+// stored sync row alike — for a project whose origin is not on github.com.
+// That is the absence of an integration, not a failing one, so it reads as a
+// dash rather than as ✗ or a reason.
+const notGitHub = "not_github"
+
+// syncGlyph is the stored issue-sync health: off, healthy, or failing.
+func syncGlyph(st *apiclient.ProjectStats) string {
+	switch {
+	case !st.IssueSync.Enabled, st.IssueSync.Reason == notGitHub:
+		return overviewDash
+	case st.IssueSync.OK:
+		return "✓"
+	default:
+		return "✗"
+	}
+}
+
+// githubCell is the root's §13.2 probe for the project (task 132 decision
+// 36): the repository when usable, the probe's reason when not, and a dash
+// when the project has no GitHub remote or no answer has arrived.
+func (p *projectsView) githubCell(id int64) string {
+	st, ok := p.github[id]
+	switch {
+	case !ok || !st.Enabled, st.Reason == notGitHub:
+		return overviewDash
+	case st.Available:
+		return "✓ " + st.Repo
+	case st.Reason != "":
+		return st.Reason
+	default:
+		return overviewDash
+	}
+}
+
+func (p *projectsView) agoCell(at *time.Time) string {
+	if at == nil {
+		return overviewDash
+	}
+	return formatElapsed(max(p.now().Sub(*at), 0).Truncate(time.Second)) + " ago"
+}
+
+// totalsLine sums the columns under the table. The sums are exact — every
+// figure is partitioned by project — except running, which is /v1/info's
+// installation-wide `slots.used / max_parallel_tasks` and never a sum of the
+// rows (#324's rule, §13.2). A row with null stats adds nothing.
+func (p *projectsView) totalsLine() string {
+	cells := make([]string, 0, len(p.overviewCols))
+	for _, c := range p.overviewCols {
+		w := ovColSpec[c].width
+		if c == ocName {
+			w = p.overviewName
+		}
+		cells = append(cells, " "+padCell(p.totalCell(c), w)+" ")
+	}
+	return styleTitle.Render(strings.Join(cells, ""))
+}
+
+func (p *projectsView) totalCell(c ovCol) string {
+	if c == ocName {
+		return "total"
+	}
+	if c == ocRunning {
+		if !p.infoOK {
+			return overviewDash
+		}
+		return fmt.Sprintf("%d/%d", p.slotsUsed, p.globalCap)
+	}
+	var a, b int
+	var newest *time.Time
+	counted := false
+	for _, pr := range p.visible() {
+		st := pr.Stats
+		if st == nil {
+			continue
+		}
+		counted = true
+		switch c {
+		case ocAttention:
+			a += st.Tasks.Attention
+		case ocQueued:
+			a += st.Tasks.ByState[stateQueued]
+		case ocBlocked:
+			a += st.Tasks.ByState[stateBlocked]
+		case ocDone:
+			a += st.Tasks.ByState[stateDone]
+		case ocIssues:
+			a, b = a+st.Issues.Open, b+st.Issues.OpenImported
+		case ocChats:
+			a, b = a+st.Chats.Live, b+st.Chats.AwaitingInput
+		case ocActivity:
+			if at := st.LastActivityAt; at != nil && (newest == nil || at.After(*newest)) {
+				newest = at
+			}
+		case ocName, ocRunning, ocSync, ocGitHub, ocCount:
+		}
+	}
+	switch c {
+	case ocSync, ocGitHub:
+		return ""
+	case ocActivity:
+		return p.agoCell(newest)
+	case ocIssues, ocChats:
+		if !counted {
+			return overviewDash
+		}
+		return fmt.Sprintf("%d (%d)", a, b)
+	case ocName, ocRunning, ocAttention, ocQueued, ocBlocked, ocDone, ocCount:
+	}
+	if !counted {
+		return overviewDash
+	}
+	return strconv.Itoa(a)
+}
+
+// padCell fits s to exactly w cells, the way the table renders its own.
+func padCell(s string, w int) string {
+	s = ansi.Truncate(s, w, "…")
+	return s + strings.Repeat(" ", max(w-ansi.StringWidth(s), 0))
 }
 
 // statusLines carries the three things that can be true above the table at
@@ -357,7 +576,8 @@ func (p *projectsView) emptyBody(rows []apiclient.Project) (string, bool) {
 		return styleDim.Render(fmt.Sprintf(
 			"\n  no projects match %q — esc to clear the filter\n", p.filter.Value())), true
 	default:
-		return styleDim.Render("\n  no projects registered — press " + opKey(keymap.Add) + " to add a repository\n"), true
+		return styleDim.Render("\n  no projects registered — press " + opKey(keymap.Add) +
+			" to add a repository, or run `vincent project add <path>`\n"), true
 	}
 }
 

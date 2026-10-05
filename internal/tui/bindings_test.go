@@ -1638,9 +1638,21 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"enter": func(t *testing.T) {
 			p := newProjectsView()
 			loadedProjects(p, []apiclient.Project{testProject(1, "api")}, nil)
-			p.updateKey(registryKey(t, "enter"))
-			if p.form == nil {
-				t.Fatal("enter did not open the selected project for editing")
+			_, cmd := p.updateKey(registryKey(t, "enter"))
+			if cmd == nil {
+				t.Fatal("enter did not pick the selected project")
+			}
+			if msg, ok := cmd().(overviewPickMsg); !ok || msg.project.ID != 1 {
+				t.Fatalf("enter = %+v, want project 1 picked", msg)
+			}
+		},
+		"tab": func(t *testing.T) {
+			p := newProjectsView()
+			loadedProjects(p, []apiclient.Project{testProject(1, "api")},
+				[]apiclient.Task{{ID: 9, ProjectID: 1, State: stateBlocked}})
+			p.updateKey(registryKey(t, "tab"))
+			if !p.inAttention {
+				t.Fatal("tab did not move into the needs-you list")
 			}
 		},
 		"D": func(t *testing.T) {

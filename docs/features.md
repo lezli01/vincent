@@ -396,8 +396,14 @@ In detail:
   before.
 - Guided task creation exposes project, workflow, declared fields, git and
   priority settings, agent overrides, and a final review stage.
-- Project and workflow workspaces keep navigation visible beside contextual
-  details on wider terminals and fall back to compact layouts when needed.
+- A project overview is the one screen that compares every registered
+  project: per-project figures — attention, running against the cap, queued,
+  blocked, done, open issues, live chats, issue-sync and GitHub health, last
+  activity — with a totals row, and every task that needs you across all of
+  them. `enter` selects a project and goes back to where you were; the same
+  screen adds, edits and removes projects.
+- The workflow workspace keeps navigation visible beside contextual details on
+  wider terminals and falls back to a compact layout when needed.
 - Workflows are authored where they are listed: structured forms create, edit
   and fork them without leaving the TUI. The forms are rendered from a schema
   the daemon serves, so a field the step you are editing cannot carry is one you

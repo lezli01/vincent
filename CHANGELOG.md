@@ -40,6 +40,18 @@ list with the user-facing context a commit subject cannot carry.
   `esc` closes. The key is the new `project` operation in `tui.keys`; a
   `tui.keys` that already binds `@` keeps its binding, and the picker stays
   reachable from the palette.
+- **A project overview replaces the Projects screen.** The palette's
+  **project overview** row, or the project picker's new last row
+  **overview & manage…**, opens one table of every project's figures — tasks
+  that need you, running against the cap, queued, blocked, done, open issues
+  (imported in brackets), live chats (waiting in brackets), issue-sync and
+  GitHub health, last activity — with a totals row whose running figure is the
+  installation-wide slot count. Below it, **Needs you, across projects** lists
+  every task waiting on you, oldest first, each named with its project; `tab`
+  moves into it. On a wide terminal the highlighted project's defaults show
+  beside the table. **`enter` now selects** the highlighted project and goes
+  back to the view you came from (or opens the highlighted task); `e` edits,
+  where `enter` used to. `a`, `D` and `/` are unchanged.
 - **The TUI names a selected project.** The app header now shows
   `◆ <project>` after the version, or `◆ no project` when none is
   registered. The new-task form still opens on the project under the cursor,
