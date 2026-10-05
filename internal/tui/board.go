@@ -176,10 +176,6 @@ type board struct {
 	// projectIDs is the root's cached project list, name to id, handed over
 	// by setProjects; nil until the first list arrives.
 	projectIDs map[string]int64
-	// foldNames is the name each project's fold paths were last seen under:
-	// a path keeps its project segment (migrateLegacyFolds), so a rename has
-	// to rewrite it before a prune would drop it (review F10).
-	foldNames map[int64]string
 
 	filter    textField
 	filtering bool
@@ -670,7 +666,6 @@ func (b *board) updateLoaded(msg boardLoadedMsg) {
 	// archived page and date window say nothing about which groups exist
 	// (task 132 decision 35).
 	if !b.archived {
-		b.followRenames(taskProjectNames(msg.tasks))
 		if pruned, changed := b.foldsBy.prune(msg.tasks); changed {
 			b.foldsBy = pruned
 			b.persistFolds()

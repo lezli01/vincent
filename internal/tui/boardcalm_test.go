@@ -154,14 +154,16 @@ func TestSingleProjectDrawsWorkflowHeadersOnly(t *testing.T) {
 	if !slices.Equal(labels, []string{"docs", "build"}) {
 		t.Errorf("headers = %v, want the two workflows and no project", labels)
 	}
-	// The badge lands on the header that is still drawn.
+	// The badge lands on the header that is drawn.
 	if r := b.rows()[0]; r.attention != 1 {
 		t.Errorf("docs header attention = %d, want 1", r.attention)
 	}
+	// No level is skipped, so the title names nothing: there is no project
+	// level to skip since task 132.9.
 	s, _ := newShellFixture(t, b.tasks...)
 	s.board.group, s.board.configGroup = defaultGrouping(), defaultGrouping()
-	if got := s.panelTitle(panelTasks); got != "Tasks · api" {
-		t.Errorf("title = %q, want the skipped project named", got)
+	if got := s.panelTitle(panelTasks); got != "Tasks" {
+		t.Errorf("title = %q, want a plain title", got)
 	}
 }
 
@@ -179,8 +181,8 @@ func TestSingleValueBoardIsFlatAndNamedInTheTitle(t *testing.T) {
 			t.Errorf("task %d at depth %d, want 0 with no headers", r.task.ID, r.depth)
 		}
 	}
-	if got := s.panelTitle(panelTasks); got != "Tasks · api › verify-build" {
-		t.Errorf("title = %q, want both skipped values in level order", got)
+	if got := s.panelTitle(panelTasks); got != "Tasks · verify-build" {
+		t.Errorf("title = %q, want the skipped workflow named", got)
 	}
 	// The grouped columns stay dropped: the title is where the value lives.
 	cols, _ := boardColumns(200, s.board.group, false, fullContent)
@@ -191,7 +193,10 @@ func TestSingleValueBoardIsFlatAndNamedInTheTitle(t *testing.T) {
 	}
 }
 
-func TestTwoProjectsDrawBothLevels(t *testing.T) {
+// TestTwoProjectsDrawNoProjectLevel: a task list spanning two projects still
+// draws workflow headers only, and their paths carry no project segment —
+// the level is gone, not merely skipped (task 132.9).
+func TestTwoProjectsDrawNoProjectLevel(t *testing.T) {
 	b := twoProjectBoard()
 	var paths []string
 	for _, r := range b.rows() {
@@ -199,7 +204,7 @@ func TestTwoProjectsDrawBothLevels(t *testing.T) {
 			paths = append(paths, strings.Join(r.path, "/"))
 		}
 	}
-	want := []string{"api", "api/build", "api/docs", "web", "web/build"}
+	want := []string{"build", "docs"}
 	if !slices.Equal(paths, want) {
 		t.Errorf("headers = %v, want %v", paths, want)
 	}
@@ -232,10 +237,10 @@ func TestCursorStepsOverOneHeaderLevel(t *testing.T) {
 // again the moment the level splits.
 func TestFoldOnASkippedLevelHidesNothing(t *testing.T) {
 	b := groupedBoard(
-		task(1, stateQueued, inProject("api"), inWorkflow("build")),
-		task(2, stateQueued, inProject("api"), inWorkflow("docs")),
+		task(1, stateQueued, inWorkflow("build")),
+		task(2, stateQueued, inWorkflow("build")),
 	)
-	b.setFolds(foldSet{{"api"}})
+	b.setFolds(foldSet{{"build"}})
 	b.render(160, 20)
 	shown := 0
 	for _, r := range b.rows() {
@@ -244,23 +249,22 @@ func TestFoldOnASkippedLevelHidesNothing(t *testing.T) {
 		}
 	}
 	if shown != 2 {
-		t.Fatalf("a fold on a skipped project hid tasks: %d of 2 shown", shown)
+		t.Fatalf("a fold on a skipped workflow hid tasks: %d of 2 shown", shown)
 	}
-	// ← on a task folds its workflow group, and a second ← has no drawn
-	// parent to walk out to: neither touches the skipped level's entry.
+	// ← has no drawn header to fold: it leaves the skipped level's entry
+	// as it was.
 	foldPress(b, keyLeft)
-	foldPress(b, keyLeft)
-	if !b.folds().has(foldPath{"api"}) || !b.folds().has(foldPath{"api", "build"}) || len(b.folds()) != 2 {
-		t.Fatalf("folds = %v, want the skipped [api] untouched beside [api build]", b.folds())
+	if !b.folds().has(foldPath{"build"}) || len(b.folds()) != 1 {
+		t.Fatalf("folds = %v, want the skipped [build] untouched", b.folds())
 	}
 
-	// A second project splits the level: its old fold applies again.
+	// A second workflow splits the level: the old fold applies again.
 	b.updateLoaded(boardLoadedMsg{tasks: append(slices.Clone(b.tasks),
-		task(3, stateQueued, inProject("web"), inWorkflow("build")))})
+		task(3, stateQueued, inWorkflow("docs")))})
 	b.render(160, 20)
-	i := headerIndex(b.rows(), foldPath{"api"})
+	i := headerIndex(b.rows(), foldPath{"build"})
 	if i < 0 || !b.rows()[i].collapsed {
-		t.Fatalf("the api fold did not come back when the project level split: %+v", b.rows())
+		t.Fatalf("the build fold did not come back when the workflow level split: %+v", b.rows())
 	}
 }
 

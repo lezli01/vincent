@@ -225,8 +225,8 @@ func TestStatusIsOneLineBelowTheOldGate(t *testing.T) {
 // holds — a collapsed group's rows included — not from the viewport.
 func TestBoardColumnsFollowHeldRows(t *testing.T) {
 	b := groupedBoard(
-		task(1, stateRunning, inProject("api"), inWorkflow("build")),
-		task(2, stateDone, inProject("web"), inWorkflow("build"),
+		task(1, stateRunning, inWorkflow("build")),
+		task(2, stateDone, inWorkflow("deploy"),
 			withStatus("green"), withCost(1.5), withPull(42)),
 	)
 	b.render(200, 30)
@@ -239,7 +239,7 @@ func TestBoardColumnsFollowHeldRows(t *testing.T) {
 	}
 
 	// Fold task 2's group away: its row is held, so the columns stay.
-	b.setFolds(b.folds().with(foldPath{"web"}))
+	b.setFolds(b.folds().with(foldPath{"deploy"}))
 	if strings.Contains(ansi.Strip(b.render(200, 30)), "⇡#42") {
 		t.Fatal("the folded group's row is still on screen")
 	}

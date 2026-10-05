@@ -197,11 +197,10 @@ func repairFormFixture() *repairForm {
 func foldingShell(t *testing.T) *shell {
 	t.Helper()
 	s, _ := newShellFixture(t,
-		task(1, stateQueued, inProject("api"), inWorkflow("build")),
-		// A second workflow as well as a second project: a level every task
-		// shares draws no header (task 129 decision 4), and the fold keys
-		// need both levels on screen.
-		task(2, stateQueued, inProject("web"), inWorkflow("deploy")),
+		task(1, stateQueued, inWorkflow("build")),
+		// A second workflow: a level every task shares draws no header (task
+		// 129 decision 4), and the fold keys need one on screen.
+		task(2, stateQueued, inWorkflow("deploy")),
 	)
 	s.focus = panelTasks
 	s.board.group, s.board.configGroup = defaultGrouping(), defaultGrouping()
@@ -529,14 +528,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			s := foldingShell(t)
 			s.update(registryKey(t, "left"))
 			s.render(120, 37)
-			if !s.board.folds().has(foldPath{"api", "build"}) {
+			if !s.board.folds().has(foldPath{"build"}) {
 				t.Fatalf("left did not collapse the cursor's group (folds %v)", s.board.folds())
-			}
-			// Again, on the header it just closed: ← walks outwards.
-			s.update(registryKey(t, "left"))
-			s.render(120, 37)
-			if !s.board.folds().has(foldPath{"api"}) {
-				t.Fatalf("a second left did not collapse the parent (folds %v)", s.board.folds())
 			}
 		},
 		"right": func(t *testing.T) {
@@ -545,7 +538,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			s.render(120, 37)
 			s.update(registryKey(t, "right"))
 			s.render(120, 37)
-			if s.board.folds().has(foldPath{"api", "build"}) {
+			if s.board.folds().has(foldPath{"build"}) {
 				t.Fatalf("right did not expand the group under the cursor (folds %v)", s.board.folds())
 			}
 		},
@@ -553,7 +546,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			s := foldingShell(t)
 			s.update(registryKey(t, "C"))
 			s.render(120, 37)
-			for _, want := range []foldPath{{"api"}, {"api", "build"}} {
+			for _, want := range []foldPath{{"build"}, {"deploy"}} {
 				if !s.board.folds().has(want) {
 					t.Fatalf("C did not collapse %v (folds %v)", want, s.board.folds())
 				}

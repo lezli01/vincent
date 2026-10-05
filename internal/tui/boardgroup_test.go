@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -67,22 +68,18 @@ func TestDefaultGroupingMatchesTheConfigDefault(t *testing.T) {
 	}
 }
 
-// TestGroupRowsNestsWorkflowInsideProject is the default the task asked for:
-// projects outermost, the workflows of one project inside it.
-func TestGroupRowsNestsWorkflowInsideProject(t *testing.T) {
+// TestGroupRowsByWorkflow is the default since task 132.9: one level, the
+// workflow, because the board shows one project at a time.
+func TestGroupRowsByWorkflow(t *testing.T) {
 	b := groupedBoard(
-		task(1, stateRunning, inProject("api"), inWorkflow("build"), withStarted(testNow.Add(-time.Minute))),
-		task(2, stateRunning, inProject("api"), inWorkflow("docs"), withStarted(testNow.Add(-time.Minute))),
-		task(3, stateRunning, inProject("web"), inWorkflow("build"), withStarted(testNow.Add(-time.Minute))),
-		task(4, stateRunning, inProject("api"), inWorkflow("build"), withStarted(testNow.Add(-time.Minute))),
+		task(1, stateRunning, inWorkflow("build"), withStarted(testNow.Add(-time.Minute))),
+		task(2, stateRunning, inWorkflow("docs"), withStarted(testNow.Add(-time.Minute))),
+		task(3, stateRunning, inWorkflow("build"), withStarted(testNow.Add(-time.Minute))),
 	)
 	got := rowLabels(b.rows())
 	want := []string{
-		"▾ api",
-		" ▾ build", "#1", "#4",
-		" ▾ docs", "#2",
-		"▾ web",
-		" ▾ build", "#3",
+		"▾ build", "#1", "#3",
+		"▾ docs", "#2",
 	}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("rows =\n  %v\nwant\n  %v", got, want)
@@ -91,14 +88,14 @@ func TestGroupRowsNestsWorkflowInsideProject(t *testing.T) {
 
 // TestGroupOrderFollowsTheBandSort is the property grouping was not allowed
 // to cost (§15): a task waiting on a human stays at the top of the board, so
-// the group holding it comes first even though its project sorts later.
+// the group holding it comes first even though its workflow sorts later.
 func TestGroupOrderFollowsTheBandSort(t *testing.T) {
 	b := groupedBoard(
-		task(1, stateRunning, inProject("api"), inWorkflow("build"), withStarted(testNow.Add(-time.Hour))),
-		task(2, stateBlocked, inProject("web"), inWorkflow("deploy")),
+		task(1, stateRunning, inWorkflow("build"), withStarted(testNow.Add(-time.Hour))),
+		task(2, stateBlocked, inWorkflow("deploy")),
 	)
 	rows := b.rows()
-	if rows[0].label != "web" {
+	if rows[0].label != "deploy" {
 		t.Fatalf("first group = %q, want the one holding the blocked task", rows[0].label)
 	}
 	if rows[0].attention != 1 {
@@ -109,7 +106,7 @@ func TestGroupOrderFollowsTheBandSort(t *testing.T) {
 	if !strings.Contains(cell, attentionBadge) {
 		t.Errorf("header cell %q carries no attention badge", cell)
 	}
-	if !strings.Contains(cell, "web") {
+	if !strings.Contains(cell, "deploy") {
 		t.Errorf("header cell %q does not name its group", cell)
 	}
 }
@@ -119,21 +116,21 @@ func TestGroupHeaderCountsItsTasks(t *testing.T) {
 	// Queued, so the band sort is scheduler order — id ascending here — and
 	// the expected row order reads off the fixture.
 	b := groupedBoard(
-		task(1, stateQueued, inProject("api"), inWorkflow("build")),
-		task(2, stateQueued, inProject("api"), inWorkflow("build")),
-		task(3, stateQueued, inProject("api"), inWorkflow("docs")),
-		// A second project, so the project level draws its header.
-		task(4, stateQueued, inProject("web"), inWorkflow("docs")),
+		task(1, stateQueued, inWorkflow("build")),
+		task(2, stateQueued, inWorkflow("build")),
+		task(3, stateQueued, inWorkflow("build")),
+		// A second workflow, so the level draws its headers.
+		task(4, stateQueued, inWorkflow("docs")),
 	)
 	rows := b.rows()
 	if rows[0].count != 3 {
-		t.Errorf("project header count = %d, want 3", rows[0].count)
+		t.Errorf("build header count = %d, want 3", rows[0].count)
 	}
 	if !strings.Contains(rows[0].headerCell(), "3") {
-		t.Errorf("project header %q does not show its count", rows[0].headerCell())
+		t.Errorf("build header %q does not show its count", rows[0].headerCell())
 	}
-	if rows[1].count != 2 {
-		t.Errorf("workflow header count = %d, want 2", rows[1].count)
+	if rows[4].count != 1 {
+		t.Errorf("docs header count = %d, want 1", rows[4].count)
 	}
 }
 
@@ -141,12 +138,12 @@ func TestGroupHeaderCountsItsTasks(t *testing.T) {
 // workflow still belongs somewhere, and a blank header reads as a bug.
 func TestGroupValueFallsBackToADash(t *testing.T) {
 	b := groupedBoard(
-		task(1, stateQueued, inProject("api")),
-		task(2, stateQueued, inProject("web"), inWorkflow("build")),
+		task(1, stateQueued),
+		task(2, stateQueued, inWorkflow("build")),
 	)
 	rows := b.rows()
-	if rows[1].label != groupUnnamed {
-		t.Errorf("empty workflow grouped as %q, want %q", rows[1].label, groupUnnamed)
+	if rows[0].label != groupUnnamed {
+		t.Errorf("empty workflow grouped as %q, want %q", rows[0].label, groupUnnamed)
 	}
 }
 
@@ -154,8 +151,8 @@ func TestGroupValueFallsBackToADash(t *testing.T) {
 // table must land on tasks only, in both directions.
 func TestCursorStepsOverGroupHeaders(t *testing.T) {
 	b := groupedBoard(
-		task(1, stateQueued, inProject("api"), inWorkflow("build")),
-		task(2, stateQueued, inProject("web"), inWorkflow("build")),
+		task(1, stateQueued, inWorkflow("build")),
+		task(2, stateQueued, inWorkflow("docs")),
 	)
 	b.render(160, 20)
 	if got, ok := b.selected(); !ok || got != 1 {
@@ -165,7 +162,7 @@ func TestCursorStepsOverGroupHeaders(t *testing.T) {
 		t.Fatal("the cursor came up on a group header")
 	}
 
-	// Down crosses this group's end and the next group's two headers.
+	// Down crosses this group's end and the next group's header.
 	b.updateKey(tea.KeyPressMsg{Code: tea.KeyDown})
 	if r := b.rowAt(b.tbl.Cursor()); r.header {
 		t.Fatalf("down parked the cursor on the header %q", r.label)
@@ -174,7 +171,7 @@ func TestCursorStepsOverGroupHeaders(t *testing.T) {
 		t.Fatalf("down selected %d, want 2", got)
 	}
 
-	// And back up, over the same two headers.
+	// And back up, over the same header.
 	b.updateKey(tea.KeyPressMsg{Code: tea.KeyUp})
 	if r := b.rowAt(b.tbl.Cursor()); r.header {
 		t.Fatalf("up parked the cursor on the header %q", r.label)
@@ -189,8 +186,8 @@ func TestCursorStepsOverGroupHeaders(t *testing.T) {
 // the row *index* certainly does not.
 func TestGroupCycleKeepsTheSelectedTask(t *testing.T) {
 	b := groupedBoard(
-		task(1, stateQueued, inProject("api"), inWorkflow("build")),
-		task(2, stateQueued, inProject("web"), inWorkflow("build")),
+		task(1, stateQueued, inWorkflow("build")),
+		task(2, stateQueued, inWorkflow("docs")),
 	)
 	b.render(160, 20)
 	b.updateKey(tea.KeyPressMsg{Code: tea.KeyDown})
@@ -198,9 +195,9 @@ func TestGroupCycleKeepsTheSelectedTask(t *testing.T) {
 		t.Fatalf("fixture selected %d, want 2", got)
 	}
 
-	for _, want := range []grouping{
-		{groupProject}, {groupWorkflow}, {}, {groupProject, groupWorkflow},
-	} {
+	// workflow → flat → workflow: there is no project level to visit (task
+	// 132.9).
+	for _, want := range []grouping{{}, {groupWorkflow}} {
 		b.updateKey(tea.KeyPressMsg{Code: 'g', Text: "g"})
 		if !b.group.equal(want) {
 			t.Fatalf("g moved to %s, want %s", b.group.label(), want.label())
@@ -223,13 +220,9 @@ func TestGroupedColumnsAreDropped(t *testing.T) {
 	if !full.workflow {
 		t.Fatalf("flat at 160 = %+v, want the workflow column", full)
 	}
-	both := columnsFor(160, grouping{groupProject, groupWorkflow}, false, fullContent)
+	both := columnsFor(160, grouping{groupWorkflow}, false, fullContent)
 	if both.workflow {
-		t.Errorf("grouped by project and workflow = %+v, want no workflow column", both)
-	}
-	one := columnsFor(160, grouping{groupProject}, false, fullContent)
-	if !one.workflow {
-		t.Error("grouping by project dropped the WORKFLOW column, which nothing names")
+		t.Errorf("grouped by workflow = %+v, want no workflow column", both)
 	}
 	// The width a dropped column frees is spent on the row rather than lost:
 	// on the title first, which is where a grouped board needs it because the
@@ -243,7 +236,7 @@ func TestGroupedColumnsAreDropped(t *testing.T) {
 	}
 	for _, width := range []int{120, 160, 200, 240, 400} {
 		flatCols, _ := boardColumns(width, nil, false, fullContent)
-		groupedCols, _ := boardColumns(width, grouping{groupProject, groupWorkflow}, false, fullContent)
+		groupedCols, _ := boardColumns(width, grouping{groupWorkflow}, false, fullContent)
 		flatSpend, groupedSpend := flexibleWidth(flatCols), flexibleWidth(groupedCols)
 		if groupedSpend < flatSpend {
 			t.Errorf("width %d: grouped spends %d on TITLE/STEP/STATUS, flat %d — grouping must never be worse off",
@@ -294,15 +287,15 @@ func colWidth(cols []table.Column, title string) int {
 // end.
 func TestGroupedRowsMatchTheColumnCount(t *testing.T) {
 	b := groupedBoard(
-		task(1, stateRunning, inProject("api"), inWorkflow("build")),
-		task(2, stateRunning, inProject("api"), inWorkflow("build"),
+		task(1, stateRunning, inWorkflow("build")),
+		task(2, stateRunning, inWorkflow("docs"),
 			withTitle(strings.Repeat("word ", 30)),
 			withStatus(strings.Repeat("clause ", 30))),
 	)
 	// 240 is wide enough for the status column (task 036), which is the
 	// widest set a row is ever built at.
 	for _, width := range []int{40, 70, 90, 120, 200, 240} {
-		for _, g := range []grouping{nil, {groupProject}, {groupProject, groupWorkflow}} {
+		for _, g := range []grouping{nil, {groupWorkflow}} {
 			b.group = g
 			// With and without the bulk-selection marker column (task 011):
 			// both the task rows and the group headers have to grow the extra
@@ -335,16 +328,15 @@ func TestGroupedRowsMatchTheColumnCount(t *testing.T) {
 // one column wide enough to hold a name, at every width.
 func TestGroupHeadersRenderInTheTitleColumn(t *testing.T) {
 	b := groupedBoard(
-		task(1, stateRunning, inProject("api"), inWorkflow("build")),
-		task(2, stateRunning, inProject("web"), inWorkflow("docs")),
+		task(1, stateRunning, inWorkflow("build")),
+		task(2, stateRunning, inWorkflow("docs")),
 	)
 	for _, width := range []int{70, 120, 200} {
 		out := b.render(width, 20)
-		if !strings.Contains(out, "▾ api") {
-			t.Errorf("width %d rendered no project header:\n%s", width, out)
-		}
-		if !strings.Contains(out, "▾ build") {
-			t.Errorf("width %d rendered no workflow header:\n%s", width, out)
+		for _, h := range []string{"▾ build", "▾ docs"} {
+			if !strings.Contains(out, h) {
+				t.Errorf("width %d rendered no %q header:\n%s", width, h, out)
+			}
 		}
 	}
 }
@@ -366,9 +358,35 @@ func TestConfiguredGroupingApplies(t *testing.T) {
 	}
 
 	// A level this TUI predates is dropped, not fatal.
-	b.applyConfig(boardConfigMsg{board: apiclient.ConfigBoard{GroupBy: []string{"agent", "project"}}})
-	if want := (grouping{groupProject}); !b.group.equal(want) {
+	b.applyConfig(boardConfigMsg{board: apiclient.ConfigBoard{GroupBy: []string{"agent", "workflow"}}})
+	if want := (grouping{groupWorkflow}); !b.group.equal(want) {
 		t.Errorf("group = %s, want %s — an unknown level must be ignored", b.group.label(), want.label())
+	}
+}
+
+// TestDeprecatedProjectLevelIsDropped is the version-skew guard of task
+// 132.9: a daemon from before it still serves the `project` level, and this
+// TUI drops it before rendering, the way the new daemon strips it on load.
+func TestDeprecatedProjectLevelIsDropped(t *testing.T) {
+	for _, tc := range []struct {
+		served []string
+		want   grouping
+	}{
+		{[]string{"project", "workflow"}, grouping{groupWorkflow}},
+		{[]string{"workflow", "project"}, grouping{groupWorkflow}},
+		{[]string{"project"}, grouping{}},
+	} {
+		b := groupedBoard(task(1, stateRunning, inWorkflow("build")), task(2, stateRunning, inWorkflow("docs")))
+		b.applyConfig(boardConfigMsg{board: apiclient.ConfigBoard{GroupBy: tc.served}})
+		if !b.group.equal(tc.want) || !b.configGroup.equal(tc.want) {
+			t.Errorf("served %v: group = %s, configGroup = %s, want %s",
+				tc.served, b.group.label(), b.configGroup.label(), tc.want.label())
+		}
+		for _, r := range b.rows() {
+			if r.header && r.label == "project" {
+				t.Errorf("served %v: a header names the dropped level", tc.served)
+			}
+		}
 	}
 }
 
@@ -416,14 +434,14 @@ func TestPanelTitleNamesAnUnconfiguredGrouping(t *testing.T) {
 		t.Errorf("title = %q under the configured grouping, want a plain %q", got, "Tasks")
 	}
 
-	s.board.group = grouping{groupWorkflow}
-	if got := s.panelTitle(panelTasks); !strings.Contains(got, "by workflow") {
+	s.board.group = grouping{}
+	if got := s.panelTitle(panelTasks); !strings.Contains(got, "ungrouped") {
 		t.Errorf("title = %q, want it to name the grouping in effect", got)
 	}
 
 	s.board.filter.SetValue("api")
 	got := s.panelTitle(panelTasks)
-	if !strings.Contains(got, "by workflow") || !strings.Contains(got, "/api") {
+	if !strings.Contains(got, "ungrouped") || !strings.Contains(got, "/api") {
 		t.Errorf("title = %q, want both the grouping and the committed filter", got)
 	}
 }
@@ -431,7 +449,7 @@ func TestPanelTitleNamesAnUnconfiguredGrouping(t *testing.T) {
 // TestGroupSummaryReadsAsASetting is the daemon view's line: what the file
 // says, in words rather than YAML.
 func TestGroupSummaryReadsAsASetting(t *testing.T) {
-	if got := groupSummary([]string{"project", "workflow"}); got != "by project › workflow" {
+	if got := groupSummary([]string{"workflow"}); got != "by workflow" {
 		t.Errorf("summary = %q", got)
 	}
 	if got := groupSummary(nil); !strings.Contains(got, "flat") {
@@ -444,18 +462,21 @@ func TestGroupSummaryReadsAsASetting(t *testing.T) {
 // rewrite of it could silently take the assertions with it — which is exactly
 // what task 042's `slices.Equal` change does.
 func TestGroupingEqualAndHas(t *testing.T) {
+	// A second level for the predicates to tell apart: the vocabulary has
+	// held only workflow since task 132.9.
+	const groupOther groupKey = "other"
 	cases := []struct {
 		name string
 		a, b grouping
 		want bool
 	}{
-		{"identical", grouping{groupProject, groupWorkflow}, grouping{groupProject, groupWorkflow}, true},
+		{"identical", grouping{groupOther, groupWorkflow}, grouping{groupOther, groupWorkflow}, true},
 		{"both empty", grouping{}, grouping{}, true},
 		{"empty and nil", grouping{}, nil, true},
-		{"shorter prefix", grouping{groupProject}, grouping{groupProject, groupWorkflow}, false},
-		{"longer", grouping{groupProject, groupWorkflow}, grouping{groupProject}, false},
-		{"same length, different element", grouping{groupProject}, grouping{groupWorkflow}, false},
-		{"same set, reversed", grouping{groupProject, groupWorkflow}, grouping{groupWorkflow, groupProject}, false},
+		{"shorter prefix", grouping{groupOther}, grouping{groupOther, groupWorkflow}, false},
+		{"longer", grouping{groupOther, groupWorkflow}, grouping{groupOther}, false},
+		{"same length, different element", grouping{groupOther}, grouping{groupWorkflow}, false},
+		{"same set, reversed", grouping{groupOther, groupWorkflow}, grouping{groupWorkflow, groupOther}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -465,14 +486,30 @@ func TestGroupingEqualAndHas(t *testing.T) {
 		})
 	}
 
-	g := grouping{groupProject}
-	if !g.has(groupProject) {
-		t.Error("has(groupProject) = false on a grouping that holds it")
+	g := grouping{groupOther}
+	if !g.has(groupOther) {
+		t.Error("has(groupOther) = false on a grouping that holds it")
 	}
 	if g.has(groupWorkflow) {
 		t.Error("has(groupWorkflow) = true on a grouping that does not hold it")
 	}
-	if (grouping{}).has(groupProject) {
+	if (grouping{}).has(groupOther) {
 		t.Error("has = true on a flat grouping")
 	}
+}
+
+// TestConfigEditorOffersNoProjectLevel: the daemon refuses a write that sets
+// the deprecated project level (task 132.9), so the config editor's choices
+// for tui.board.group_by must not offer it.
+func TestConfigEditorOffersNoProjectLevel(t *testing.T) {
+	for _, k := range configKeys() {
+		if k.path != "tui.board.group_by" {
+			continue
+		}
+		if slices.Contains(k.choices, "project") || !slices.Contains(k.choices, "workflow") {
+			t.Errorf("group_by choices = %v, want workflow and no project", k.choices)
+		}
+		return
+	}
+	t.Fatal("the config editor has no tui.board.group_by key")
 }

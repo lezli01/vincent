@@ -11,12 +11,12 @@ import (
 )
 
 // Grouping for the task table (§15, task 009). The board's rows are nested
-// under headers by project and then by workflow, which is how a board with
-// more than one repository on it is actually read: you look at one project,
-// and within it the workflow is what says what a task is *doing*. It is
+// under headers by workflow, which is what says what a task is *doing*. It is
 // configuration — `tui.board.group_by` in config.yaml, served on
-// `GET /v1/config` — because the shape that suits three projects and one
-// workflow is not the shape that suits one project and six.
+// `GET /v1/config` — because the shape that suits one workflow is not the
+// shape that suits six. There is no project level: the board shows one
+// project at a time (task 132), so that level had one value and drew no
+// header, and it was deprecated (task 132.9, decision 6).
 //
 // Grouping is a view over the same sorted list, never a second ordering: the
 // tasks are sorted by band exactly as they always were, and the groups take
@@ -30,10 +30,7 @@ import (
 // and what it renders comes from the wire.
 type groupKey string
 
-const (
-	groupProject  groupKey = "project"
-	groupWorkflow groupKey = "workflow"
-)
+const groupWorkflow groupKey = "workflow"
 
 // grouping is the levels in effect, outermost first. Empty is a flat table —
 // exactly what every version before this one rendered.
@@ -42,17 +39,12 @@ type grouping []groupKey
 // defaultGrouping is what the board renders before the daemon's config
 // arrives, and what it keeps when no daemon is reachable. It matches
 // config.Default(); boardgroup_test.go holds the two together.
-func defaultGrouping() grouping { return grouping{groupProject, groupWorkflow} }
+func defaultGrouping() grouping { return grouping{groupWorkflow} }
 
-// groupingCycle is what `g` steps through: the default, each level alone,
-// then flat. A configured grouping outside this cycle (the levels reversed,
-// say) is honoured on load and cycles from the start on the first press —
-// the key is a quick look at the board another way, not an editor for the
-// config file.
+// groupingCycle is what `g` steps through: by workflow, then flat. The key is
+// a quick look at the board another way, not an editor for the config file.
 func groupingCycle() []grouping {
 	return []grouping{
-		{groupProject, groupWorkflow},
-		{groupProject},
 		{groupWorkflow},
 		{},
 	}
@@ -92,14 +84,15 @@ func (g grouping) label() string {
 // and a board that renders one level of a two-level grouping is still a board.
 // A duplicate is dropped for the same reason — the daemon rejects one at load,
 // so seeing it here means the two disagree, and repeating a level would nest a
-// group inside itself.
+// group inside itself. The deprecated `project` level falls under the first
+// rule: a daemon from before task 132.9 still serves it, and dropping it here
+// renders what that daemon's board would have, since on a board scoped to one
+// project the level had one value and drew no header.
 func parseGrouping(levels []string) grouping {
 	out := make(grouping, 0, len(levels))
 	for _, l := range levels {
 		k := groupKey(l)
-		switch k {
-		case groupProject, groupWorkflow:
-		default:
+		if k != groupWorkflow {
 			continue
 		}
 		if !out.has(k) {
@@ -286,10 +279,7 @@ const groupUnnamed = "—"
 
 func groupValue(t apiclient.Task, k groupKey) string {
 	var v string
-	switch k {
-	case groupProject:
-		v = t.ProjectName
-	case groupWorkflow:
+	if k == groupWorkflow {
 		v = t.Workflow
 	}
 	if strings.TrimSpace(v) == "" {
