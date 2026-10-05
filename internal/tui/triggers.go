@@ -334,13 +334,22 @@ func (v *triggersView) update(msg tea.Msg) (panel, tea.Cmd) {
 
 // updateNote re-reads on the trigger events (a fire adds a ledger row, a poll
 // changing health changes a row) and on project changes, which rename the
-// project column.
+// project column. A trigger.* event skips the project filter: the daemon
+// attributes trigger.fired to the trigger's target project, but this view
+// lists every trigger until 132.11 scopes it, so a foreign fire still adds a
+// row it shows.
 func (v *triggersView) updateNote(n apiclient.Note) tea.Cmd {
 	ev, ok := n.(apiclient.EventNote)
-	if !ok || !forProject(ev.Event, v.project.id) {
+	if !ok {
 		return nil
 	}
-	if strings.HasPrefix(ev.Event.Type, "trigger.") || strings.HasPrefix(ev.Event.Type, "project.") {
+	if strings.HasPrefix(ev.Event.Type, "trigger.") {
+		return v.scheduleRefresh()
+	}
+	if !forProject(ev.Event, v.project.id) {
+		return nil
+	}
+	if strings.HasPrefix(ev.Event.Type, "project.") {
 		return v.scheduleRefresh()
 	}
 	return nil

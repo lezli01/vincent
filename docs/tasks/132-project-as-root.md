@@ -206,6 +206,10 @@ other projects (132.5).
 global by decision 17 and feeds the attention count, `!` and `H`, so it
 drops no note: a task event from any project refetches it (review F1 on
 #718).
+A `project.*` event passes every view's filter whatever project it names,
+since it describes the project list every view renders whole, and the
+triggers takeover lets `trigger.*` through until 132.11 scopes it (review F2
+on #718).
 
 *Alternative beaten:* resubscribing with `?project_id=` on each switch. It
 loses the events that carry no project (`task.github_pull_changed`,

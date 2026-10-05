@@ -13247,7 +13247,12 @@ ordering guard only. The root's one `/v1/events` stream stays unfiltered
 `project_id` names another project before its own event-type test, and a
 note carrying no project (`task.github_pull_changed`,
 `task.children_changed`, `agent.quota_changed`,
-`workflow.registry_changed`, …) still reaches every view. The board is the
+`workflow.registry_changed`, …) still reaches every view. So does a
+`project.*` note, whatever project it names: the store attributes it to the
+project it describes, but it changes the project list every view still
+renders whole. The triggers takeover lets every `trigger.*` note through,
+since `trigger.fired` names its target project and the takeover lists every
+trigger until 132.11 scopes it. The board is the
 exception and filters no note: its live listing stays global (decision 17)
 and is the source of the attention count, `!` and `H` (decision 2), so a
 task event from any project refetches it, and the bell and the attention

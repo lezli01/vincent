@@ -1,6 +1,10 @@
 package tui
 
-import "github.com/lezli01/vincent/internal/apiclient"
+import (
+	"strings"
+
+	"github.com/lezli01/vincent/internal/apiclient"
+)
 
 // loadStamp is what a list load carries out and back (task 132.5, decision
 // 18): the project it was issued for and its place in the view's sequence.
@@ -65,6 +69,12 @@ func (s *loadStamps) apply(st loadStamp) {
 // keeps the filter correct without a daemon change (decision 28).
 // A sel of 0 is "no project", and an event for any project passes then too:
 // nothing is selected to filter by.
+//
+// A project.* event passes whatever project it names. The store attributes
+// it to the project itself, but it describes the project list, which every
+// view still renders whole: a foreign create, rename or delete must reach
+// the views that show that project's rows, headings or blocks.
 func forProject(ev apiclient.Event, sel int64) bool {
-	return ev.ProjectID == nil || sel == 0 || *ev.ProjectID == sel
+	return ev.ProjectID == nil || sel == 0 || *ev.ProjectID == sel ||
+		strings.HasPrefix(ev.Type, "project.")
 }

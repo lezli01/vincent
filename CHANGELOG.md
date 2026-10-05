@@ -221,8 +221,10 @@ list with the user-facing context a commit subject cannot carry.
 
 - **TUI lists follow the selected project's events.** The issues, chats,
   pull-request, workflows and triggers screens now refresh on events
-  from the selected project, and on events that belong to no project, but no
-  longer on events from other projects. Until those screens are scoped to the
+  from the selected project, on events that belong to no project, and on any
+  project being added, renamed or removed, but no longer on other events from
+  other projects. The triggers screen still refreshes on every trigger's
+  fires. Until those screens are scoped to the
   selection, rows from other projects can lag behind until the next refresh.
   The chats boards also batch a burst of chat events into one refresh, as the
   other lists already did, and every list ignores a slow answer that a newer

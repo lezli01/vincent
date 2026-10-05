@@ -50,18 +50,21 @@ func pid(id int64) *int64 { return &id }
 func TestForProject(t *testing.T) {
 	cases := []struct {
 		name    string
+		typ     string
 		project *int64
 		sel     int64
 		want    bool
 	}{
-		{"nil project passes", nil, 2, true},
-		{"matching project passes", pid(2), 2, true},
-		{"foreign project is rejected", pid(1), 2, false},
-		{"nothing selected passes everything", pid(1), 0, true},
+		{"nil project passes", "issue.created", nil, 2, true},
+		{"matching project passes", "issue.created", pid(2), 2, true},
+		{"foreign project is rejected", "issue.created", pid(1), 2, false},
+		{"nothing selected passes everything", "issue.created", pid(1), 0, true},
+		{"foreign project.deleted passes", "project.deleted", pid(1), 2, true},
+		{"foreign project.updated passes", "project.updated", pid(1), 2, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			ev := apiclient.Event{Type: "issue.created", ProjectID: c.project}
+			ev := apiclient.Event{Type: c.typ, ProjectID: c.project}
 			if got := forProject(ev, c.sel); got != c.want {
 				t.Errorf("forProject = %v, want %v", got, c.want)
 			}
@@ -338,14 +341,6 @@ func TestForeignEventsDoNotRefetch(t *testing.T) {
 			"pull requests", "task.state_changed", func() panel { return scoped(newPullRequestsView(), sel) },
 			func(p panel) bool { return p.(*pullRequestsView).refreshWait },
 		},
-		{
-			"workflows", "project.updated", func() panel { return scoped(newWorkflowsView(), sel) },
-			func(p panel) bool { return p.(*workflowsView).refreshPending },
-		},
-		{
-			"triggers", "project.updated", func() panel { return scoped(newTriggersView(), sel) },
-			func(p panel) bool { return p.(*triggersView).refreshPending },
-		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -373,6 +368,59 @@ func TestBoardRefetchesForeignTaskEvents(t *testing.T) {
 		if !b.refreshPending {
 			t.Errorf("a %s for another project did not refetch the board", typ)
 		}
+	}
+}
+
+// TestForeignListEventsStillRefetch: a project.* event is attributed to the
+// project it describes, but it changes the project list every view still
+// renders whole, so a foreign create, rename or delete refetches each view
+// that reacts to it. trigger.* names its target project, and the triggers
+// view lists every trigger until 132.11 scopes it.
+func TestForeignListEventsStillRefetch(t *testing.T) {
+	sel := projectSel{id: 2, name: "b"}
+	cases := []struct {
+		name    string
+		typ     string
+		view    func() panel
+		pending func(panel) bool
+	}{
+		{
+			"board project.deleted", "project.deleted", func() panel { return scoped(newBoard(), sel) },
+			func(p panel) bool { return p.(*board).refreshPending },
+		},
+		{
+			"issues project.deleted", "project.deleted", func() panel { return scoped(newIssuesView(), sel) },
+			func(p panel) bool { return p.(*issuesView).refreshWait },
+		},
+		{
+			"pull requests project.updated", "project.updated", func() panel { return scoped(newPullRequestsView(), sel) },
+			func(p panel) bool { return p.(*pullRequestsView).refreshWait },
+		},
+		{
+			"workflows project.created", "project.created", func() panel { return scoped(newWorkflowsView(), sel) },
+			func(p panel) bool { return p.(*workflowsView).refreshPending },
+		},
+		{
+			"workflows project.updated", "project.updated", func() panel { return scoped(newWorkflowsView(), sel) },
+			func(p panel) bool { return p.(*workflowsView).refreshPending },
+		},
+		{
+			"triggers project.updated", "project.updated", func() panel { return scoped(newTriggersView(), sel) },
+			func(p panel) bool { return p.(*triggersView).refreshPending },
+		},
+		{
+			"triggers trigger.fired", "trigger.fired", func() panel { return scoped(newTriggersView(), sel) },
+			func(p panel) bool { return p.(*triggersView).refreshPending },
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			v := c.view()
+			v.update(eventNote(c.typ, pid(1)))
+			if !c.pending(v) {
+				t.Fatalf("a foreign %s did not refetch", c.typ)
+			}
+		})
 	}
 }
 
