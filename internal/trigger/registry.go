@@ -48,6 +48,20 @@ type Entry struct {
 // Valid reports whether the file parsed and validated.
 func (e *Entry) Valid() bool { return e.Def != nil }
 
+// Project is the trigger's project: the definition's, or — for a file that
+// does not validate — source.project as far as a lenient read can find it,
+// so a broken file stays listed under its project (task 132 decision 41).
+// 0 when there is none to read.
+func (e *Entry) Project() int64 {
+	if e.Def != nil {
+		return e.Def.Source.Project
+	}
+	if lo := peek(e.Source); lo.hasProject && lo.project > 0 {
+		return lo.project
+	}
+	return 0
+}
+
 // Registry holds the trigger files of one directory.
 type Registry struct {
 	dir string

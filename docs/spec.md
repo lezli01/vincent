@@ -9243,9 +9243,11 @@ GET    /v1/triggers                     *Added 2026-09-13 (task 096).* { enabled
                                         on_fire, permission?, poll: { seeded, last_poll_at, ok,
                                         error?, last_fire_at } }. A file that does not validate
                                         is listed with its errors, never hidden, with no parsed
-                                        definition: it omits source_type, action_type,
-                                        project_id and on_fire, and reads enabled: false,
-                                        whatever its file says. `armed` is
+                                        definition: it omits source_type, action_type and
+                                        on_fire, and reads enabled: false, whatever its file
+                                        says. *Amended 2026-10-05 (task 132 decision 41):* its
+                                        project_id is `source.project` as far as a lenient read
+                                        finds one, and absent only when none can be read. `armed` is
                                         valid + enabled + triggers.enabled, and `disarmed_reason`
                                         names the first of those that is missing
 POST   /v1/triggers                     { id, project_id, poll_interval?, command[]?, workflow?,

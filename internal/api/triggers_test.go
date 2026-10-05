@@ -834,3 +834,40 @@ func TestTriggerConfigSwitchRoundTrip(t *testing.T) {
 		t.Errorf("non-bool triggers.enabled: status %d, want 400 (%s)", resp.StatusCode, body)
 	}
 }
+
+// TestTriggerListPeeksAnInvalidFilesProject: a file that does not validate is
+// listed under the project it still names (task 132 decision 41), and one
+// whose project cannot be read lists none — the TUI's unassigned band.
+func TestTriggerListPeeksAnInvalidFilesProject(t *testing.T) {
+	h := newTriggerHarness(t)
+	if err := os.MkdirAll(h.dir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	files := map[string]string{
+		"typo":    commandTrigger("typo", h.projectID, []string{"x"}) + "unknown_key: 1\n",
+		"garbled": "id: garbled\nsource: [\n",
+		"nowhere": "id: nowhere\nsource:\n  type: command\n",
+	}
+	for id, src := range files {
+		if err := os.WriteFile(filepath.Join(h.dir, id+".yaml"), []byte(src), 0o600); err != nil {
+			t.Fatalf("write %s: %v", id, err)
+		}
+	}
+	h.reg.Reload()
+	resp, body := h.doJSON(t, http.MethodGet, "/v1/triggers", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list: status %d: %s", resp.StatusCode, body)
+	}
+	var list triggerListResponse
+	decodeInto(t, body, &list)
+	want := map[string]int64{"typo": h.projectID, "garbled": 0, "nowhere": 0}
+	if len(list.Triggers) != len(want) {
+		t.Fatalf("list = %+v, want the three files", list.Triggers)
+	}
+	for _, row := range list.Triggers {
+		if row.Valid || row.ProjectID != want[row.ID] || row.SourceType != "" || row.OnFire != "" {
+			t.Errorf("row %s: valid %v project %d source %q on_fire %q; want invalid, project %d, nothing else read",
+				row.ID, row.Valid, row.ProjectID, row.SourceType, row.OnFire, want[row.ID])
+		}
+	}
+}

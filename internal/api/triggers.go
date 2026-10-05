@@ -114,13 +114,16 @@ func (s *Server) summarize(e *trigger.Entry, c *store.TriggerCursor) triggerSumm
 		ID: e.ID, File: e.File, Version: e.Version, Valid: e.Valid(),
 		Errors: []workflow.Error{}, Armed: s.deps.Triggers.Armed(e),
 		DisarmedReason: s.deps.Triggers.DisarmedReason(e),
+		// A file that does not validate still names its project when one
+		// can be read, so the TUI lists it there (task 132 decision 41).
+		ProjectID: e.Project(),
 	}
 	if len(e.Errors) > 0 {
 		out.Errors = e.Errors
 	}
 	if d := e.Def; d != nil {
 		out.Enabled, out.SourceType, out.ActionType = d.Enabled, d.Source.Type, d.Action.Type
-		out.ProjectID, out.OnFire = d.Source.Project, d.EffectiveOnFire()
+		out.OnFire = d.EffectiveOnFire()
 		if d.Action.Type == trigger.ActionCreateTask {
 			out.Permission = d.EffectivePermission()
 		}
