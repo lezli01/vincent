@@ -1676,7 +1676,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	ctxWorkflows: {
 		"enter": func(t *testing.T) {
 			w := newWorkflowsView()
-			loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+			loadedWorkflows(w, globalEntry("review"))
 			before := w.expanded
 			w.updateKey(registryKey(t, "enter"))
 			if w.expanded == before {
@@ -1685,7 +1685,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 		"e": func(t *testing.T) {
 			w := newWorkflowsView()
-			loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+			loadedWorkflows(w, globalEntry("review"))
 			if _, cmd := w.updateKey(registryKey(t, "e")); cmd == nil {
 				t.Fatal("e did not open the workflow file in $EDITOR")
 			}
@@ -1693,7 +1693,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"R": func(t *testing.T) {
 			w := newWorkflowsView()
 			w.client = offlineClient()
-			loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+			loadedWorkflows(w, globalEntry("review"))
 			w.err = "a stale note the reload should clear"
 			_, cmd := w.updateKey(registryKey(t, "R"))
 			if cmd == nil {
@@ -1706,7 +1706,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"g": func(t *testing.T) {
 			w := newWorkflowsView()
 			w.client = offlineClient()
-			loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+			loadedWorkflows(w, globalEntry("review"))
 			w.updateKey(registryKey(t, "g"))
 			if w.graph == nil {
 				t.Fatal("g did not open the graph layer")
@@ -1715,7 +1715,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"i": func(t *testing.T) {
 			w := newWorkflowsView()
 			w.client = offlineClient()
-			loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+			loadedWorkflows(w, globalEntry("review"))
 			w.updateKey(registryKey(t, "i"))
 			if w.editor == nil {
 				t.Fatal("i did not open the structured editor")
@@ -1724,7 +1724,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"a": func(t *testing.T) {
 			w := newWorkflowsView()
 			w.client = offlineClient()
-			loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+			loadedWorkflows(w, globalEntry("review"))
 			w.updateKey(registryKey(t, "a"))
 			if w.create == nil || w.create.fork {
 				t.Fatal("a did not open the create prompt")
@@ -1733,7 +1733,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"f": func(t *testing.T) {
 			w := newWorkflowsView()
 			w.client = offlineClient()
-			loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+			loadedWorkflows(w, globalEntry("review"))
 			w.updateKey(registryKey(t, "f"))
 			if w.create == nil || !w.create.fork {
 				t.Fatal("f did not open the fork prompt")

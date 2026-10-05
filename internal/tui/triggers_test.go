@@ -14,6 +14,7 @@ func triggersFixture() *triggersView {
 	v := newTriggersView()
 	v.client = &apiclient.Client{}
 	v.loaded = true
+	v.project = projectSel{id: 1, name: "vincent"}
 	v.projects = []apiclient.Project{{ID: 1, Name: "vincent"}}
 	v.list = apiclient.TriggerList{Triggers: []apiclient.TriggerSummary{
 		{ID: "alpha", File: "/cfg/triggers/alpha.yaml", Version: "v1", ProjectID: 1, SourceType: "command", ActionType: "create", Valid: true},
@@ -318,5 +319,124 @@ func TestTriggersScheduleRendersAClock(t *testing.T) {
 	v.list.Triggers[0].SourceType = "http"
 	if cell, _ := trigPollCell(v.list.Triggers[0]); cell != "push" {
 		t.Errorf("poll cell for a pushed source = %q, want %q", cell, "push")
+	}
+}
+
+// scopedTriggersFixture lists triggers in projects a (1) and b (2), an
+// invalid file peeked to b, and an invalid file whose project could not be
+// read, with a selected.
+func scopedTriggersFixture() *triggersView {
+	v := newTriggersView()
+	v.client = &apiclient.Client{}
+	v.loaded = true
+	v.project = projectSel{id: 1, name: "a"}
+	v.projects = []apiclient.Project{{ID: 1, Name: "a"}, {ID: 2, Name: "b"}}
+	v.list = apiclient.TriggerList{Triggers: []apiclient.TriggerSummary{
+		{ID: "a-one", ProjectID: 1, SourceType: "command", ActionType: "create", Valid: true},
+		{ID: "b-broken", ProjectID: 2},
+		{ID: "b-one", ProjectID: 2, SourceType: "command", ActionType: "create", Valid: true},
+		{ID: "lost", File: "/cfg/triggers/lost.yaml"},
+		{ID: "a-two", ProjectID: 1, SourceType: "schedule", ActionType: "create", Valid: true},
+	}}
+	v.restoreSelection()
+	return v
+}
+
+func visibleIDs(v *triggersView) string {
+	var ids []string
+	for _, s := range v.visible() {
+		ids = append(ids, s.ID)
+	}
+	return strings.Join(ids, ",")
+}
+
+// The takeover lists the selected project's triggers, then the unassigned
+// band, which every project's view shows (task 132 decisions 8 and 36).
+// Another project's triggers — valid, or invalid with a readable project —
+// are not listed.
+func TestTriggersScopeToTheSelectedProject(t *testing.T) {
+	v := scopedTriggersFixture()
+	if got := visibleIDs(v); got != "a-one,a-two,lost" {
+		t.Errorf("a selected: rows = %s, want a's triggers then the unassigned band", got)
+	}
+	out := v.render(200, 40)
+	if !strings.Contains(out, "unassigned") {
+		t.Errorf("the unassigned band has no heading:\n%s", out)
+	}
+	if strings.Contains(out, "PROJECT") {
+		t.Errorf("the project column is still drawn:\n%s", out)
+	}
+
+	// Switching while open shows b's set and the same band.
+	v.setProject(projectSel{id: 2, name: "b"})
+	v.restoreSelection()
+	if got := visibleIDs(v); got != "b-broken,b-one,lost" {
+		t.Errorf("b selected: rows = %s, want b's triggers then the unassigned band", got)
+	}
+	if got := v.hintedProject(); got != 2 {
+		t.Errorf("hintedProject() = %d, want the selection", got)
+	}
+}
+
+// The filter matches id, source and action, never a project name: the list
+// is one project's.
+func TestTriggersFilterDoesNotMatchTheProject(t *testing.T) {
+	v := scopedTriggersFixture()
+	v.filter.SetValue("schedule")
+	if got := visibleIDs(v); got != "a-two" {
+		t.Errorf("filter schedule = %s, want a-two", got)
+	}
+	v.filter.SetValue(v.project.name + "-")
+	if got := visibleIDs(v); got != "a-one,a-two" {
+		t.Errorf("filter a- = %s, want the ids alone to match", got)
+	}
+	v.project.name = "zzz"
+	v.filter.SetValue("zzz")
+	if got := visibleIDs(v); got != "" {
+		t.Errorf("filter on the project name matched %s", got)
+	}
+}
+
+// The global-off banner is unchanged by the scoping.
+func TestTriggersScopedStillShowsTheGlobalOffBanner(t *testing.T) {
+	v := scopedTriggersFixture()
+	v.list.Enabled = false
+	if out := v.render(200, 40); !strings.Contains(out, "triggers.enabled is off") {
+		t.Errorf("no banner with triggers globally off:\n%s", out)
+	}
+}
+
+// The new-trigger prompt's project is the selection, read-only, and the
+// trigger is created in it.
+func TestTriggersCreateIsLockedToTheSelection(t *testing.T) {
+	v := scopedTriggersFixture()
+	v.openCreate()
+	f := v.create
+	f.id.SetValue("fresh")
+	f.focusRow(trigCreateRowProject)
+	v.updateCreateKey(registryKey(t, "right"))
+	if f.projectID != 1 {
+		t.Fatalf("the project row moved to %d", f.projectID)
+	}
+	if out := v.render(160, 30); !strings.Contains(out, "a — the selected project") {
+		t.Errorf("the project row does not show the selection:\n%s", out)
+	}
+	if cmd := v.createCmd(); cmd == nil {
+		t.Fatalf("create sent nothing: %q", f.err)
+	}
+	// The request is built before the command runs; nothing here dials.
+}
+
+// An existing trigger's project row is read-only; an unassigned file's stays
+// editable, because assigning it is the repair.
+func TestTriggersFormProjectRowLocksOnlyAnAssignedFile(t *testing.T) {
+	sf := apiclient.TriggerSchemaField{Name: "project", Control: apiclient.TriggerControlProject}
+	assigned := &trigFormLayer{def: map[string]any{"source": map[string]any{"project": 1}}}
+	if row := assigned.leaf("source", sf); row.readOnly == "" {
+		t.Error("an assigned trigger's project row is editable")
+	}
+	unassigned := &trigFormLayer{def: map[string]any{"source": map[string]any{}}}
+	if row := unassigned.leaf("source", sf); row.readOnly != "" {
+		t.Errorf("an unassigned file's project row is locked: %q", row.readOnly)
 	}
 }

@@ -290,6 +290,15 @@ func (f *trigFormLayer) leaf(block string, sf apiclient.TriggerSchemaField) trig
 	if sf.Control == apiclient.TriggerControlMatch {
 		row.field.Help += " — one key=value per entry; a|b means any of"
 	}
+	// A trigger listed under a project is that project's, which is the
+	// selection: its project shows read-only (task 132 decision 9). A file
+	// whose project cannot be read — the unassigned band — keeps the picker,
+	// because assigning one is the repair.
+	if sf.Control == apiclient.TriggerControlProject {
+		if id, err := strconv.ParseInt(row.value, 10, 64); err == nil && id > 0 {
+			row.readOnly = "a trigger's project is the selected project — create the trigger from another project to target it"
+		}
+	}
 	return row
 }
 

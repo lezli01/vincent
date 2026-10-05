@@ -85,15 +85,18 @@ func (w *workflowsView) renderRegistryRail(lines []wfLine, height int) string {
 		}
 		marker := "   "
 		name := line.entry.Name
-		if i == w.cursor {
+		switch {
+		case i == w.cursor:
 			marker = styleFocus.Render(" ▸ ")
 			name = styleTitle.Render(name)
 			from = start
+		case line.shadowedBy != "":
+			name = styleDim.Render(name)
 		}
 		badge := workflowRailBadge(*line.entry)
 		rows = append(rows, marker+name+badge)
-		if line.shadows != "" {
-			rows = append(rows, styleWarn.Render("      shadows global"))
+		if note := shadowNote(line); note != "" {
+			rows = append(rows, styleWarn.Render("      "+note))
 		}
 		if i == w.cursor {
 			to = len(rows)
@@ -129,11 +132,11 @@ func (w *workflowsView) renderWorkflowOverview(line wfLine, height int) string {
 		workflowFact("scope", e.Scope),
 		workflowFact("source", firstNonEmpty(e.File, "built-in")),
 	)
-	if line.block != nil {
-		rows = append(rows, workflowFact("registry", line.block.name))
+	if note := shadowNote(line); note != "" {
+		rows = append(rows, workflowFact("shadowing", styleWarn.Render(note)))
 	}
-	if line.shadows != "" {
-		rows = append(rows, workflowFact("shadowing", styleWarn.Render("global "+line.shadows)))
+	if warn := globalEditNote(line); warn != "" {
+		rows = append(rows, workflowFact("editing", styleWarn.Render(warn)))
 	}
 	rows = append(rows, "", section("Availability"))
 	rows = append(rows, workflowAvailability(e)...)
@@ -342,9 +345,7 @@ func (w *workflowsView) statusLines() []string {
 }
 
 // emptyBody separates a registry with nothing in it from a view that has not
-// fetched yet. A scope with no entries of its own is not empty in this sense
-// — it renders as its own header with a note, because "this project has no
-// workflows" and "there are no workflows" are different facts.
+// fetched yet.
 func (w *workflowsView) emptyBody(lines []wfLine) (string, bool) {
 	if len(lines) > 0 {
 		return "", false
@@ -357,7 +358,7 @@ func (w *workflowsView) emptyBody(lines []wfLine) (string, bool) {
 }
 
 func (w *workflowsView) renderLine(i int, line wfLine) string {
-	if line.header != "" {
+	if line.entry == nil {
 		return w.renderHeader(line)
 	}
 	marker := "   "
@@ -366,8 +367,13 @@ func (w *workflowsView) renderLine(i int, line wfLine) string {
 	}
 	e := line.entry
 	name := e.Name
-	if !e.Valid() {
+	switch {
+	case !e.Valid():
 		name = styleBad.Render(name)
+	case line.shadowedBy != "":
+		// Overridden here: still listed, so the global file stays reachable,
+		// but dimmed, because it is not what this project runs (decision 35).
+		name = styleDim.Render(name)
 	}
 	parts := []string{marker + name}
 	parts = append(parts, styleDim.Render("["+e.Scope+"]"))
@@ -386,24 +392,35 @@ func (w *workflowsView) renderLine(i int, line wfLine) string {
 	case e.Description != "":
 		parts = append(parts, styleDim.Render(e.Description))
 	}
-	if line.shadows != "" {
-		parts = append(parts, styleWarn.Render("shadows global "+line.shadows))
+	if note := shadowNote(line); note != "" {
+		parts = append(parts, styleWarn.Render(note))
 	}
 	return strings.Join(parts, "  ")
 }
 
+// renderHeader draws the one non-entry line, the project fetch failing.
 func (w *workflowsView) renderHeader(line wfLine) string {
-	b := line.block
-	head := " " + styleTitle.Render(b.name)
+	return " " + styleBad.Render(line.note)
+}
+
+// shadowNote says which side of a §5.2 override a line is on, or nothing.
+func shadowNote(line wfLine) string {
 	switch {
-	case b.err != nil:
-		return head + "  " + styleBad.Render("registry unavailable: "+errString(b.err))
-	case len(b.entries) == 0 && b.projectID != 0:
-		return head + "  " + styleDim.Render("no workflows of its own")
-	case len(b.entries) == 0:
-		return head + "  " + styleDim.Render("no global workflows")
+	case line.shadows != "":
+		return "shadows " + line.shadows + " " + line.entry.Name
+	case line.shadowedBy != "":
+		return "shadowed here by " + line.shadowedBy
 	}
-	return head
+	return ""
+}
+
+// globalEditNote warns that a global entry's file is shared: the list is one
+// project's, but the file it opens is every project's.
+func globalEditNote(line wfLine) string {
+	if line.entry.Scope != "global" || line.entry.File == "" {
+		return ""
+	}
+	return "global — editing it affects every project"
 }
 
 // renderSteps is the expanded step list: what the workflow actually does,
@@ -416,6 +433,9 @@ func (w *workflowsView) renderSteps(line wfLine) []string {
 	}
 	if e.File != "" {
 		out = append(out, styleDim.Render("      "+e.File))
+	}
+	if warn := globalEditNote(line); warn != "" {
+		out = append(out, styleWarn.Render("      "+warn))
 	}
 	if note := e.PlatformNote(); note != "" {
 		row := "      platforms: " + strings.TrimPrefix(note, "needs ")
@@ -469,11 +489,7 @@ func (w *workflowsView) resolutionFor(line wfLine) apiclient.Resolution {
 	if line.entry == nil {
 		return apiclient.Resolution{}
 	}
-	key := wfResolveKey{name: line.entry.Name}
-	if line.block != nil {
-		key.projectID = line.block.projectID
-	}
-	return w.resolutions[key]
+	return w.resolutions[line.key()]
 }
 
 // findingText prefixes a validation finding with its source line when the

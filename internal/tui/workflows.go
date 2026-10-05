@@ -20,12 +20,17 @@ const scopeProject = "project"
 // Workflows messages.
 type (
 	workflowsRefreshMsg struct{}
-	// workflowsLoadedMsg carries the whole assembled registry. err is the
-	// global fetch failing, which is the only failure that costs the view its
-	// contents; a project whose fetch failed carries its error in its block.
+	// workflowsLoadedMsg carries the two listings the view resolves (task 132
+	// decision 7 and decision 34): global is builtin + global, own is the
+	// selected project's own entries. err is the global fetch failing, which
+	// is the only failure that costs the view its contents; ownErr is the
+	// project fetch failing, which degrades the view to the global rows and
+	// an error line.
 	workflowsLoadedMsg struct {
 		stamp  loadStamp
-		blocks []wfBlock
+		global []apiclient.WorkflowEntry
+		own    []apiclient.WorkflowEntry
+		ownErr error
 		err    error
 	}
 	// workflowEditedMsg reports that $EDITOR exited. It carries no content:
@@ -41,34 +46,35 @@ type (
 	}
 )
 
-// wfResolveKey identifies an entry across scopes: the same name means
-// different files in the global block and in a project's own.
+// wfResolveKey identifies an entry by the scope that owns its file: global
+// and builtin entries by 0, the selected project's own by its id. The same
+// name means different files in the two, and an overridden global row must
+// still resolve, open and fork as the global file it is.
 type wfResolveKey struct {
 	projectID int64
 	name      string
 }
 
-// wfBlock is one scope's entries. The global block comes first and each
-// project follows in project-list order, because shadowing is a relationship
-// between scopes: a row saying "shadows global X" needs the global block on
-// screen to point at.
-type wfBlock struct {
-	name      string
+// wfLine is one rendered line of the resolved list. Only lines with an entry
+// are selectable, so the cursor skips the error line.
+type wfLine struct {
+	// note is a non-entry line: the project fetch failing.
+	note  string
+	entry *apiclient.WorkflowEntry
+	// projectID is the scope that owns entry's file (see wfResolveKey).
 	projectID int64
-	entries   []apiclient.WorkflowEntry
-	// err is this scope's fetch failing. It degrades the block alone — one
-	// unreadable project must not blank the registry.
-	err error
+	// shadows is set on a project entry that overrides a global or builtin
+	// one of the same name: the overridden entry's scope.
+	shadows string
+	// shadowedBy is set on a global or builtin entry the selected project
+	// overrides: the project's name. The row stays listed, dimmed, so the
+	// global file is still reachable from here (decision 35).
+	shadowedBy string
 }
 
-// wfLine is one rendered line. Only lines with an entry are selectable, so
-// the cursor skips headers and per-block errors.
-type wfLine struct {
-	header string
-	block  *wfBlock
-	entry  *apiclient.WorkflowEntry
-	// shadows names the global entry this project entry hides.
-	shadows string
+// key is the line's resolve/definition key.
+func (l wfLine) key() wfResolveKey {
+	return wfResolveKey{projectID: l.projectID, name: l.entry.Name}
 }
 
 // workflowsView is §15's view 5: the merged registry, live.
@@ -83,7 +89,11 @@ type workflowsView struct {
 	exec   execFunc
 	now    func() time.Time
 
-	blocks   []wfBlock
+	// global is the builtin + global listing, own the selected project's
+	// own entries; lines resolves the two into one list.
+	global   []apiclient.WorkflowEntry
+	own      []apiclient.WorkflowEntry
+	ownErr   error
 	loaded   bool
 	loadErr  error
 	lastLoad time.Time
@@ -131,27 +141,23 @@ func (w *workflowsView) setClient(c *apiclient.Client) tea.Cmd {
 	return w.loadCmd()
 }
 
-// hintedProject lets `n` open the new-task form on the scope under the
-// cursor; the global block hints nothing.
-func (w *workflowsView) hintedProject() int64 {
-	line, ok := w.currentLine()
-	if !ok || line.block == nil {
-		return 0
-	}
-	return line.block.projectID
-}
+// hintedProject is the selected project: the list shows that project's
+// resolved registry, so no row names another one to hint (task 132.12).
+func (w *workflowsView) hintedProject() int64 { return w.project.id }
 
-// loadCmd assembles the registry. GET /v1/workflows lists global entries
-// alone, and with a project_id it lists that project's view of the registry
-// with §5.2 shadowing applied — so the merge takes the global list whole and
-// keeps only the project-scoped entries from each project's list. Anything
-// else double-counts a global entry that a project also sees.
+// loadCmd fetches the selected project's resolved registry with two calls
+// (task 132 decision 34). GET /v1/workflows with a project_id merges by name,
+// so a global or builtin entry the project overrides is missing from it;
+// the unscoped listing supplies those, and lines compares the two. Nothing
+// is fetched for any other project. With no project selected only the
+// global listing is fetched.
 func (w *workflowsView) loadCmd() tea.Cmd {
 	client := w.client
 	if client == nil {
 		return nil
 	}
-	stamp := w.stamps.next(w.project.id)
+	project := w.project.id
+	stamp := w.stamps.next(project)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
@@ -159,33 +165,25 @@ func (w *workflowsView) loadCmd() tea.Cmd {
 		if err != nil {
 			return workflowsLoadedMsg{stamp: stamp, err: err}
 		}
-		sortEntries(global)
-		blocks := []wfBlock{{name: "global", entries: global}}
-
-		projects, err := client.ListProjects(ctx)
+		msg := workflowsLoadedMsg{stamp: stamp, global: global}
+		if project == 0 {
+			return msg
+		}
+		entries, err := client.ListWorkflows(ctx, project)
 		if err != nil {
-			// The global block is real and worth showing; the project blocks
-			// are simply unknown until the list comes back.
-			return workflowsLoadedMsg{stamp: stamp, blocks: blocks}
+			// The global rows are real and worth showing; the project's own
+			// are simply unknown until its listing comes back.
+			msg.ownErr = err
+			return msg
 		}
-		for _, p := range projects {
-			block := wfBlock{name: p.Name, projectID: p.ID}
-			entries, err := client.ListWorkflows(ctx, p.ID)
-			if err != nil {
-				block.err = err
-			} else {
-				block.entries = ownEntries(entries)
-				sortEntries(block.entries)
-			}
-			blocks = append(blocks, block)
-		}
-		return workflowsLoadedMsg{stamp: stamp, blocks: blocks}
+		msg.own = ownEntries(entries)
+		return msg
 	}
 }
 
 // ownEntries keeps the entries a project owns. The rest of the response
 // is the global registry as that project sees it, already in the global
-// block.
+// listing.
 func ownEntries(entries []apiclient.WorkflowEntry) []apiclient.WorkflowEntry {
 	out := make([]apiclient.WorkflowEntry, 0, len(entries))
 	for _, e := range entries {
@@ -196,11 +194,17 @@ func ownEntries(entries []apiclient.WorkflowEntry) []apiclient.WorkflowEntry {
 	return out
 }
 
-// sortEntries orders a block alphabetically. Invalid entries are deliberately
+// sortLines orders the resolved list alphabetically, a project entry ahead
+// of the global or builtin one it shadows. Invalid entries are deliberately
 // not floated to the top: a workflow that moves when you break it is harder
 // to find, not easier.
-func sortEntries(entries []apiclient.WorkflowEntry) {
-	sort.SliceStable(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+func sortLines(lines []wfLine) {
+	sort.SliceStable(lines, func(i, j int) bool {
+		if lines[i].entry.Name != lines[j].entry.Name {
+			return lines[i].entry.Name < lines[j].entry.Name
+		}
+		return lines[i].projectID != 0 && lines[j].projectID == 0
+	})
 }
 
 func (w *workflowsView) scheduleRefresh() tea.Cmd {
@@ -279,7 +283,7 @@ func (w *workflowsView) applyLoaded(msg workflowsLoadedMsg) {
 	w.loadErr = nil
 	w.loaded = true
 	w.lastLoad = w.now()
-	w.blocks = msg.blocks
+	w.global, w.own, w.ownErr = msg.global, msg.own, msg.ownErr
 	// A reload is the one event that can change what a step resolves to, so
 	// nothing cached against the old registry survives it.
 	w.resolutions = nil
@@ -296,10 +300,7 @@ func (w *workflowsView) resolveCmd() tea.Cmd {
 	if client == nil || !ok {
 		return nil
 	}
-	key := wfResolveKey{name: line.entry.Name}
-	if line.block != nil {
-		key.projectID = line.block.projectID
-	}
+	key := line.key()
 	if _, cached := w.resolutions[key]; cached {
 		return nil
 	}
@@ -315,9 +316,9 @@ func (w *workflowsView) resolveCmd() tea.Cmd {
 	}
 }
 
-// snapCursor puts the cursor on a selectable line. Line 0 is always a scope
-// header, so a freshly loaded view would otherwise open with `e` and `enter`
-// pointing at nothing.
+// snapCursor puts the cursor on a selectable line. Line 0 may be the project
+// fetch's error line, so a freshly loaded view would otherwise open with `e`
+// and `enter` pointing at nothing.
 func (w *workflowsView) snapCursor() {
 	lines := w.lines()
 	if w.cursor >= 0 && w.cursor < len(lines) && lines[w.cursor].entry != nil {
@@ -332,8 +333,8 @@ func (w *workflowsView) snapCursor() {
 	w.cursor = 0
 }
 
-// updateNote refetches on a registry reload and on project changes, which add
-// and remove whole scopes. The registry event carries an empty payload — it
+// updateNote refetches on a registry reload and on project changes, which can
+// rename the project whose entries are listed. The registry event carries an empty payload — it
 // names no scope — so the only honest reaction is to refetch everything.
 func (w *workflowsView) updateNote(n apiclient.Note) tea.Cmd {
 	ev, ok := n.(apiclient.EventNote)
@@ -405,7 +406,7 @@ func (w *workflowsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	return w, nil
 }
 
-// moveCursor walks the selectable lines, skipping headers and block errors.
+// moveCursor walks the selectable lines, skipping the error line.
 func (w *workflowsView) moveCursor(delta int) {
 	lines := w.lines()
 	i := w.cursor + delta
@@ -448,31 +449,40 @@ func (w *workflowsView) editCmd() tea.Cmd {
 	})
 }
 
-// lines flattens the blocks into the rendered order, resolving which project
-// entries shadow a global one on the way.
+// lines resolves the two listings into one list sorted by name (task 132
+// decision 7): every global and builtin entry, and the selected project's
+// own entries beside them. A project entry whose name a global or builtin
+// one also has shadows it (§5.2); both stay listed, the overridden one
+// dimmed, so the global file stays reachable (decision 35). Duplicate-name
+// losers arrive as extra invalid entries and are listed like any other.
 func (w *workflowsView) lines() []wfLine {
-	global := map[string]bool{}
-	for i := range w.blocks {
-		if w.blocks[i].projectID != 0 {
-			continue
-		}
-		for _, e := range w.blocks[i].entries {
-			global[e.Name] = true
-		}
+	overridden := map[string]bool{}
+	for _, e := range w.own {
+		overridden[e.Name] = true
 	}
+	globalScope := map[string]string{}
 	var out []wfLine
-	for i := range w.blocks {
-		b := &w.blocks[i]
-		out = append(out, wfLine{header: b.name, block: b})
-		for j := range b.entries {
-			line := wfLine{block: b, entry: &b.entries[j]}
-			if b.projectID != 0 && global[b.entries[j].Name] {
-				line.shadows = b.entries[j].Name
-			}
-			out = append(out, line)
-		}
+	if w.ownErr != nil {
+		out = append(out, wfLine{note: w.project.name + ": registry unavailable: " + errString(w.ownErr)})
 	}
-	return out
+	entries := make([]wfLine, 0, len(w.global)+len(w.own))
+	for i := range w.global {
+		e := &w.global[i]
+		if _, seen := globalScope[e.Name]; !seen {
+			globalScope[e.Name] = e.Scope
+		}
+		line := wfLine{entry: e}
+		if overridden[e.Name] {
+			line.shadowedBy = w.project.name
+		}
+		entries = append(entries, line)
+	}
+	for i := range w.own {
+		e := &w.own[i]
+		entries = append(entries, wfLine{entry: e, projectID: w.project.id, shadows: globalScope[e.Name]})
+	}
+	sortLines(entries)
+	return append(out, entries...)
 }
 
 // capturesInput is true only while a form row or the create prompt has a

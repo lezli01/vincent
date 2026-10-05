@@ -138,10 +138,7 @@ func (w *workflowsView) openGraph() tea.Cmd {
 		w.err = line.entry.Name + " does not parse — there is no graph to draw; see the errors above"
 		return nil
 	}
-	key := wfResolveKey{name: line.entry.Name}
-	if line.block != nil {
-		key.projectID = line.block.projectID
-	}
+	key := line.key()
 	w.err = ""
 	w.graph = newGraphLayer(key, line.entry)
 	return w.definitionCmd(key)

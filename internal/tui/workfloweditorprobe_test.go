@@ -16,7 +16,7 @@ func editorFixture(t *testing.T) *workflowsView {
 	w := newWorkflowsView()
 	w.client = offlineClient()
 	w.width, w.height = 100, 40
-	loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+	loadedWorkflows(w, globalEntry("review"))
 	w.updateKey(registryKey(t, "i"))
 	if w.editor == nil {
 		t.Fatal("i did not open the editor layer")
@@ -178,9 +178,7 @@ func createFixture(t *testing.T) *workflowsView {
 	t.Helper()
 	w := newWorkflowsView()
 	w.client = offlineClient()
-	loadedWorkflows(w,
-		wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}},
-		wfBlock{name: "app", projectID: 1})
+	loadedProjectWorkflows(w, []apiclient.WorkflowEntry{globalEntry("review")}, nil)
 	w.updateKey(registryKey(t, "a"))
 	if w.create == nil {
 		t.Fatal("the create prompt did not open")
@@ -208,7 +206,7 @@ func editorFixtureWith(t *testing.T, def apiclient.WorkflowDefinition) *workflow
 	w := newWorkflowsView()
 	w.client = offlineClient()
 	w.width, w.height = 100, 40
-	loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+	loadedWorkflows(w, globalEntry("review"))
 	w.updateKey(registryKey(t, "i"))
 	if w.editor == nil {
 		t.Fatal("i did not open the editor layer")

@@ -148,7 +148,7 @@ type triggersView struct {
 
 func newTriggersView() *triggersView {
 	fi := newTextField()
-	fi.SetPlaceholder("filter by id, source, action or project")
+	fi.SetPlaceholder("filter by id, source or action")
 	fi.SetPrompt("/")
 	v := &triggersView{
 		exec:    tea.ExecProcess,
@@ -215,14 +215,9 @@ func (v *triggersView) bindingContext() bindingContext {
 	return ctxTriggers
 }
 
-// hintedProject lets `n` open the new-task form on the selected trigger's
-// project.
-func (v *triggersView) hintedProject() int64 {
-	if s, ok := v.current(); ok {
-		return s.ProjectID
-	}
-	return 0
-}
+// hintedProject is the selected project: the list shows only its triggers
+// and the unassigned band, so no row names another one (task 132.12).
+func (v *triggersView) hintedProject() int64 { return v.project.id }
 
 func (v *triggersView) loadCmd() tea.Cmd {
 	client := v.client
@@ -334,22 +329,18 @@ func (v *triggersView) update(msg tea.Msg) (panel, tea.Cmd) {
 
 // updateNote re-reads on the trigger events (a fire adds a ledger row, a poll
 // changing health changes a row) and on project changes, which rename the
-// project column. A trigger.* event skips the project filter: the daemon
-// attributes trigger.fired to the trigger's target project, but this view
-// lists every trigger until 132.11 scopes it, so a foreign fire still adds a
-// row it shows.
+// project the form's locked row names. The view lists the selected project's
+// triggers since 132.12 scoped it, so a trigger.* event attributed to another
+// project — trigger.fired carries the trigger's target project — is dropped;
+// one with no project, trigger.poll_changed, still re-reads, which also
+// keeps the unassigned band current.
 func (v *triggersView) updateNote(n apiclient.Note) tea.Cmd {
 	ev, ok := n.(apiclient.EventNote)
-	if !ok {
+	if !ok || !forProject(ev.Event, v.project.id) {
 		return nil
 	}
-	if strings.HasPrefix(ev.Event.Type, "trigger.") {
-		return v.scheduleRefresh()
-	}
-	if !forProject(ev.Event, v.project.id) {
-		return nil
-	}
-	if strings.HasPrefix(ev.Event.Type, "project.") {
+	if strings.HasPrefix(ev.Event.Type, "trigger.") ||
+		strings.HasPrefix(ev.Event.Type, "project.") {
 		return v.scheduleRefresh()
 	}
 	return nil
@@ -574,15 +565,38 @@ func (v *triggersView) move(delta int) tea.Cmd {
 	return v.ledgerCmd()
 }
 
-// visible is the filtered list, in the registry's id order.
-func (v *triggersView) visible() []apiclient.TriggerSummary {
-	q := strings.ToLower(strings.TrimSpace(v.filter.Value()))
-	if q == "" {
-		return v.list.Triggers
-	}
+// scoped is the list the selected project sees (task 132 decision 8): its
+// own triggers in the registry's id order, then the unassigned band —
+// invalid files whose project could not be read, which every project's view
+// shows so they stay repairable from the TUI (decision 36). The listing
+// itself stays unfiltered; trigger files are global (task 096 decision 8),
+// and only the display is scoped. Another project's triggers, valid or
+// invalid with a readable project, are not shown.
+func (v *triggersView) scoped() []apiclient.TriggerSummary {
 	out := make([]apiclient.TriggerSummary, 0, len(v.list.Triggers))
 	for _, s := range v.list.Triggers {
-		hay := strings.ToLower(s.ID + " " + s.SourceType + " " + s.ActionType + " " + v.projectName(s.ProjectID))
+		if s.ProjectID != 0 && s.ProjectID == v.project.id {
+			out = append(out, s)
+		}
+	}
+	for _, s := range v.list.Triggers {
+		if s.ProjectID == 0 {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// visible is the scoped list, filtered.
+func (v *triggersView) visible() []apiclient.TriggerSummary {
+	rows := v.scoped()
+	q := strings.ToLower(strings.TrimSpace(v.filter.Value()))
+	if q == "" {
+		return rows
+	}
+	out := make([]apiclient.TriggerSummary, 0, len(rows))
+	for _, s := range rows {
+		hay := strings.ToLower(s.ID + " " + s.SourceType + " " + s.ActionType)
 		if strings.Contains(hay, q) {
 			out = append(out, s)
 		}

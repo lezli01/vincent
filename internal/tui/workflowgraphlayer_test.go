@@ -17,7 +17,7 @@ func graphFixture(t *testing.T) *workflowsView {
 	w := newWorkflowsView()
 	w.client = offlineClient()
 	w.width, w.height = 100, 40
-	loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+	loadedWorkflows(w, globalEntry("review"))
 	w.updateKey(registryKey(t, "g"))
 	if w.graph == nil {
 		t.Fatal("the graph layer did not open")
@@ -79,7 +79,7 @@ func TestGraphRefusesAnInvalidWorkflow(t *testing.T) {
 	w.client = offlineClient()
 	broken := globalEntry("broken")
 	broken.Errors = []apiclient.WorkflowFinding{{Message: "unknown step type"}}
-	loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{broken}})
+	loadedWorkflows(w, broken)
 	w.updateKey(registryKey(t, "g"))
 	if w.graph != nil {
 		t.Fatal("g opened a graph for a workflow that does not parse")

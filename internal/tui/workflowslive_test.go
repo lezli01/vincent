@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -158,7 +159,7 @@ func TestWorkflowsViewReflectsFileEdit(t *testing.T) {
 	_, cmd = m.Update(selectViewMsg{id: viewWorkflows})
 	p.push(cmd)
 	p.until(10*time.Second, "the workflows view to load", func() bool {
-		return strings.Contains(content(m), "global")
+		return strings.Contains(content(m), "adhoc")
 	})
 
 	// The edit: a file appearing on disk, which is what `e` and an external
@@ -214,5 +215,134 @@ func liveConnector(t *testing.T, baseURL, token string) connector {
 		startDetached: func() (int, error) { t.Fatal("auto-start must not trigger"); return 0, nil },
 		startTimeout:  time.Second,
 		pollInterval:  time.Millisecond,
+	}
+}
+
+// TestWorkflowsViewResolvesTheSelectedProject is task 132.12 against the
+// real handlers: A overrides a global x and B does not. A load issues the
+// two listings for the selection and nothing else, and the list resolves
+// them into one — both sides of A's override, none of B's rows.
+func TestWorkflowsViewResolvesTheSelectedProject(t *testing.T) {
+	const token = "workflows-scope-token"
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	globalDir := filepath.Join(t.TempDir(), "workflows")
+	writeWorkflow := func(dir, name string) {
+		t.Helper()
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+		body := strings.ReplaceAll(liveWorkflowYAML, "name: publish", "name: "+name)
+		writeFile(t, filepath.Join(dir, name+".yaml"), body)
+	}
+	writeWorkflow(globalDir, "x")
+	roots := map[int64]string{}
+	ids := map[string]int64{}
+	for _, name := range []string{"a", "b"} {
+		repo := testrepo.Init(t, "main")
+		p := &store.Project{Name: name, Path: repo, DefaultBranch: "main"}
+		if err := st.CreateProject(context.Background(), p); err != nil {
+			t.Fatalf("CreateProject: %v", err)
+		}
+		roots[p.ID], ids[name] = repo, p.ID
+	}
+	writeWorkflow(filepath.Join(roots[ids["a"]], ".vincent", "workflows"), "x")
+	writeWorkflow(filepath.Join(roots[ids["b"]], ".vincent", "workflows"), "bonly")
+
+	agents := agent.NewRegistry()
+	registry := workflow.NewRegistry(globalDir, workflow.Options{KnownAgents: agents.Names()}, nil)
+	registry.SetProjects(roots)
+	registry.Reload()
+
+	s := api.New(api.Deps{
+		Token:       token,
+		Config:      config.Default,
+		StartedAt:   time.Now(),
+		ListenAddr:  "127.0.0.1:0",
+		RequestStop: func() {},
+		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Store:       st,
+		Broker:      events.New(),
+		Git:         gitx.New(),
+		Agents:      agents,
+		Workflows:   registry,
+	})
+	var (
+		mu    sync.Mutex
+		calls []string
+	)
+	handler := s.Handler()
+	ts := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/workflows" || r.URL.Path == "/v1/projects" {
+			mu.Lock()
+			calls = append(calls, r.URL.Path+"?"+r.URL.RawQuery)
+			mu.Unlock()
+		}
+		handler.ServeHTTP(rw, r)
+	}))
+	t.Cleanup(ts.Close)
+	takeCalls := func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		out := calls
+		calls = nil
+		return out
+	}
+
+	w := newWorkflowsView()
+	w.client = apiclient.New(ts.URL, token)
+	w.update(runCmd(t, w.setProject(projectSel{id: ids["a"], name: "a"}), 10*time.Second))
+
+	want := []string{"/v1/workflows?", "/v1/workflows?project_id=" + strconv.FormatInt(ids["a"], 10)}
+	if got := takeCalls(); strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("calls = %v, want exactly %v", got, want)
+	}
+	notes := map[string]string{}
+	for _, line := range w.lines() {
+		notes[line.entry.Scope+"/"+line.entry.Name] = shadowNote(line)
+	}
+	if notes["project/x"] != "shadows global x" || notes["global/x"] != "shadowed here by a" {
+		t.Errorf("with a selected, notes = %v, want both sides of a's override", notes)
+	}
+	if _, ok := notes["project/bonly"]; ok {
+		t.Error("b's own entry is listed while a is selected")
+	}
+
+	// Switching to b while a's load is in flight: a's response lands late
+	// and is dropped by the stamp, and b's list shows global x undimmed.
+	stale := w.loadCmd()
+	switched := w.setProject(projectSel{id: ids["b"], name: "b"})
+	w.update(runCmd(t, stale, 10*time.Second))
+	w.update(runCmd(t, switched, 10*time.Second))
+	notes = map[string]string{}
+	for _, line := range w.lines() {
+		notes[line.entry.Scope+"/"+line.entry.Name] = shadowNote(line)
+	}
+	if note, ok := notes["global/x"]; !ok || note != "" {
+		t.Errorf("with b selected, global x = %q (listed %v), want it plain", note, ok)
+	}
+	if _, ok := notes["project/x"]; ok {
+		t.Error("a's override is listed while b is selected")
+	}
+	if _, ok := notes["project/bonly"]; !ok {
+		t.Errorf("b's own entry is missing: %v", notes)
+	}
+
+	// Create offers exactly global and the selection; a fork defaults to
+	// the project.
+	pressView(w, "f")
+	if w.create == nil {
+		t.Fatal("the fork prompt did not open")
+	}
+	var dests []string
+	for _, s := range w.create.scopes {
+		dests = append(dests, s.label)
+	}
+	if strings.Join(dests, ",") != "global,b" || w.create.scope != 1 {
+		t.Errorf("destinations = %v (selected %d), want global,b with b selected", dests, w.create.scope)
 	}
 }

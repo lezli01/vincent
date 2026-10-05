@@ -25,8 +25,9 @@ type wfCreateForm struct {
 	sourceProject int64
 
 	name textField
-	// scopes are the destinations, in registry order: global first, then
-	// each project. A fork of a global entry into the global scope would
+	// scopes are the destinations: global, then the selected project — the
+	// list shows that project's registry, so no other is offered (task 132
+	// decision 7). A fork of a global entry into the global scope would
 	// shadow nothing, so it is still offered — the daemon refuses the
 	// duplicate name, and refusing it here would be a second copy of a rule.
 	scopes []wfScopeChoice
@@ -52,7 +53,7 @@ const (
 
 // openCreate opens the prompt. A fork takes the entry under the cursor as its
 // source; a plain create takes only the scope list. It issues no command:
-// everything it needs is already in the loaded blocks.
+// everything it needs is the selection and the line under the cursor.
 func (w *workflowsView) openCreate(fork bool) {
 	f := &wfCreateForm{fork: fork, name: newTextField()}
 	f.name.SetPlaceholder("file name (lowercase, no spaces)")
@@ -62,9 +63,7 @@ func (w *workflowsView) openCreate(fork bool) {
 			return
 		}
 		f.source = line.entry.Name
-		if line.block != nil {
-			f.sourceProject = line.block.projectID
-		}
+		f.sourceProject = line.projectID
 		// A fork keeps the source's own name:, so the name row addresses the
 		// file rather than the workflow. Suggesting the source's name makes
 		// the shadowing case one keystroke.
@@ -74,21 +73,14 @@ func (w *workflowsView) openCreate(fork bool) {
 		f.row = wfCreateRowName
 		f.name.Focus()
 	}
-	for _, b := range w.blocks {
-		if b.projectID == 0 {
-			f.scopes = append(f.scopes, wfScopeChoice{label: "global", scope: "global"})
-			continue
-		}
+	f.scopes = []wfScopeChoice{{label: "global", scope: "global"}}
+	if w.project.id != 0 {
 		f.scopes = append(f.scopes, wfScopeChoice{
-			label: b.name, scope: scopeProject, projectID: b.projectID,
+			label: w.project.name, scope: scopeProject, projectID: w.project.id,
 		})
 	}
-	if len(f.scopes) == 0 {
-		w.err = "no scope to write to: the daemon has no global workflow directory"
-		return
-	}
-	// A fork defaults to the first project scope, because forking down into a
-	// project is what the operation is for.
+	// A fork defaults to the project destination, because forking down into
+	// a project is what the operation is for.
 	if fork && len(f.scopes) > 1 {
 		f.scope = 1
 	}
