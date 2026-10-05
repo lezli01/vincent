@@ -12445,6 +12445,22 @@ stream for the live tail.
    On a wide terminal the registry remains as a rail while the selected entry's
    provenance, availability and resolved steps use the focused surface; an open
    graph replaces that surface, not the rail (task 020, added 2026-08-20).
+   *Amended 2026-10-05 (task 132.12, issue #706; task 132 decisions 7, 39
+   and 40).* **The view shows the selected project's resolved registry**, no
+   longer every project's blocks. It loads with two calls and no more:
+   `GET /v1/workflows` (builtin + global) and `GET /v1/workflows?project_id=`
+   for the selection. The second merges by name, so the first is what keeps a
+   global or builtin entry the project overrides on screen; nothing is fetched
+   for any other project. The two are one list sorted by name, each row with
+   its scope badge. A project entry that overrides a global or builtin one says
+   "shadows global X" (or "shadows builtin X"); the overridden entry stays
+   listed beside it, dimmed and marked "shadowed here by `<project>`", and can
+   still be opened and edited — under the warning, which every global row
+   carries, that editing it affects every project. A failed project fetch
+   leaves the global rows and an error line. `a` and `f` offer exactly two
+   destinations, `global` and the selected project; a fork defaults to the
+   project. The "another scope" in the `f` row above is therefore one of those
+   two. The daemon, the API and §13.2 are unchanged.
 6. **Daemon.** Version, uptime, config in effect, adapters detected, recent daemon
    log, and — *added 2026-08-15 (task 005)* — the `orphans` count from `/v1/info`
    beside the words `vincent gc`, shown only when it is non-zero. It offers no way to
@@ -13068,6 +13084,23 @@ stream for the live tail.
 
    The daemon view's config editor lists `triggers.enabled` with task 060's
    `dangerous` flag, so saving it asks first as well.
+
+   *Amended 2026-10-05 (task 132.12, issue #706; task 132 decisions 8, 9 and
+   41).* **The list is the selected project's.** `GET /v1/triggers` is still
+   read unfiltered and the files are still global — task 096 decision 8 is
+   kept, and so is this view's place outside the projects view — but only the
+   display is scoped: the selected project's triggers, followed by an
+   **unassigned** band of invalid files whose project could not be read.
+   That band shows in every project's view, so such a file stays repairable
+   here. Another project's triggers, valid or invalid with a readable project,
+   are not shown. "Every file the registry holds" above is narrowed to that,
+   and **task 096 decision 14**'s cross-project list is departed from. The
+   project column and the filter's project term are gone. `a`'s project is
+   the selection, shown read-only, and an existing trigger's project row in
+   the form is read-only too; an unassigned file's stays editable, because
+   assigning it is the repair. A `trigger.*` event for another project no
+   longer re-reads; one with no project still does. The banner, the 5 s
+   re-read and `triggers.enabled` are unchanged.
 
 12. **Issues.** *Added 2026-10-02 (task 130.9, issue #668).* A takeover
    reached from the command palette with no key of its own (task 049), and
@@ -15346,6 +15379,10 @@ the whole of the posture, not a set of tips.
   `.vincent/`, so merge rights on a repository cannot start agents on a
   maintainer's machine (task 096 decision 8). The accepted cost is that a
   trigger cannot be reviewed alongside the repository it serves.
+  *Amended 2026-10-05 (task 132.12):* the TUI's triggers takeover now lists
+  only the selected project's triggers and the unassigned band (§15 view 11).
+  That scopes the display, not the files: every trigger file is still global,
+  and still lives only in `{config_dir}`.
 - **A trigger file is code the daemon runs as you.** A `command` source's argv
   runs on an interval with `notify.command`'s posture: argv, never a shell
   string; the §12.3 environment; and a whole-tree kill at the timeout. It may

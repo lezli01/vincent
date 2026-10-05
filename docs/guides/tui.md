@@ -1875,7 +1875,19 @@ does not import it again.
 
 ### Workflows
 
-The merged registry with scope badges and validation status.
+The selected project's workflows as that project resolves them: the built-in,
+global and project entries in one list sorted by name, each with its scope
+badge and validation status. Nothing from any other project is shown; switch
+projects to see another's.
+
+When the project has a workflow with the same name as a global or built-in
+one, its own copy wins (shadowing). Both rows stay in the list: the project's
+says `shadows global X` (or `shadows builtin X`), and the global one beside it
+is dimmed and says `shadowed here by <project>`. The dimmed row can still be
+opened and edited. Every global row warns that editing it affects every
+project, because the global file is shared by all of them. If the project's
+own workflows cannot be read, the global rows stay on screen with an error
+line above them.
 
 On a wide terminal the merged registry stays in the left rail. The focused
 pane names the selected entry's scope and source, availability and findings,
@@ -1888,8 +1900,8 @@ entry with its surrounding scopes still in view.
 | `enter` | Show the entry's steps |
 | `g` | Draw the entry as a control-flow graph |
 | `i` | Edit the entry in a structured form |
-| `a` | Create a workflow in a chosen scope |
-| `f` | Fork the entry into another scope, where it shadows the original |
+| `a` | Create a workflow, globally or in the selected project |
+| `f` | Fork the entry into the selected project (or globally), where it shadows the original |
 | `e` | Open the file in `$EDITOR` — the view updates when you save |
 | `R` | Re-read the registry |
 
@@ -1918,11 +1930,11 @@ one layer per press: a step's `steps:` and a fan-out's `lanes:`, `lane:` and
 your new-task form will ask for, and the agent, model, effort, permission mode,
 retry and timeout every step inherits, including a `container:` block.
 
-`a` creates a workflow: choose a scope (global, or one of your projects) and a
+`a` creates a workflow: choose a scope (global, or the selected project) and a
 file name, and the editor opens on what was written. `f` forks the entry under
 the cursor — including a built-in, which is the only way to change one. **A
 fork keeps the source's own `name:`**, which is what makes the copy shadow the
-original; pick a project scope and the project's copy wins from then on.
+original. A fork starts on the selected project, whose copy wins from then on.
 
 There is no delete of a **workflow**: removing one means removing its file. A
 step, a lane or a declared field inside a workflow can be removed, and `d` asks
@@ -2570,8 +2582,13 @@ because the branch is the task's; `y` deletes it.
 
 ### Triggers
 
-What starts work on its own, and what each event became. The screen shows every
-file under `{config_dir}/triggers/` and what the daemon learned running it. Like
+What starts work on its own, and what each event became. The screen shows the
+selected project's triggers and what the daemon learned running each one.
+Trigger files are still global — they all live under `{config_dir}/triggers/`
+— but each valid one targets exactly one project, and only the selected
+project's are listed. Below them, an **unassigned** band lists the invalid
+files whose project could not be read. Every project shows that band, so a
+broken file is always reachable from here to repair. Like
 the other takeovers it has no key and is reached from the command palette (`:`).
 The global switch is [`triggers`](../reference/configuration.md#triggers); read
 [what a trigger lets someone else do](../security-model.md#event-triggers-let-someone-else-start-an-agent)
@@ -2580,9 +2597,9 @@ before turning one on.
 ![The triggers screen: an armed command trigger selected above a disabled GitHub
 issues trigger, with its delivery ledger listing two seeded events](../assets/tui-triggers.png)
 
-The list has one row per file, broken ones included. Each row shows the id,
+The list has one row per trigger, broken ones included. Each row shows the id,
 whether the file is enabled, whether it is **armed**, the source and action
-types, the project, `on_fire`, poll health, and when it last polled and last
+types, `on_fire`, poll health, and when it last polled and last
 fired. The armed column reads `● armed`, or says why not: `disabled`, `✗ invalid`,
 `global off`, or the daemon's own reason. Poll health is `ok`, `failing` or
 `not yet`, and reports what the source has instead where it has no poll:
@@ -2592,8 +2609,8 @@ whether it is armed (and, for an armed trigger that has not polled yet, that
 its next poll only seeds and fires nothing — for a schedule, that its next
 tick anchors its clock and fires nothing), the last poll error, and any
 findings that keep the file from validating. The screen re-reads every five
-seconds while it is open, and also whenever a trigger event or a project
-change arrives.
+seconds while it is open, and also whenever an event for one of the selected
+project's triggers, a poll change, or a project change arrives.
 
 **While `triggers.enabled` is off**, a banner above the list says so. Every
 trigger is then inert whatever its own `enabled:` says, so every row reads
@@ -2614,7 +2631,7 @@ which asks before it applies a value. The form repeats the warning at its top.
 | `tab` | Move between the trigger list and its delivery ledger |
 | `B` | Open `triggers.enabled`, the global switch, in the daemon view's editor |
 | `R` | Re-read the triggers and the ledger |
-| `/` | Filter by id, source, action or project |
+| `/` | Filter by id, source or action |
 
 **Switching a trigger on asks; switching it off does not.** The question shows
 the warning the daemon serves for `enabled: true`, then what it means for this
@@ -2657,22 +2674,21 @@ so when you press `enter` rather than opening nothing.
 #### Creating and editing — `a`, `enter`
 
 `a` opens a short prompt asking for what a new file needs: an **id**, which
-becomes the file name `{id}.yaml`, and a **project**. It also offers the two
+becomes the file name `{id}.yaml`. Its **project** is the selected one, shown
+read-only; to make a trigger for another project, switch to it first. It also offers the two
 things a starter is usually edited for first: the poll **command**, an argv
 separated by spaces that is run directly and never through a shell, and how
 often to **poll**, with a default of `5m`. The daemon writes a `type: command`
 trigger. It is **disabled** and has no `on_fire` line, so it means `propose`
 until someone writes otherwise. The form then opens on the new file. An id that
-is already in use is refused on the prompt, and with no registered project
-there is nothing to create a trigger in.
+is already in use is refused on the prompt, and with no project selected there
+is nothing to create a trigger in.
 
 | Key | Does, in the create prompt |
 |---|---|
 | `tab` | Move between the starter's inputs (`shift+tab` goes back) |
 | `enter` | Write the new trigger — it is created disabled |
 | `esc` | Close the prompt |
-
-On the project row, `←` / `→` step through the registered projects.
 
 `enter` or `i` opens the **form**: the workflow editor's form, drawn from the
 schema the daemon serves rather than from a copy of the rules kept in the client.
@@ -2682,7 +2698,8 @@ comes back out. A source or an action shows only the fields of the variant its
 `type` names. For a GitHub source, the type row also lists the events the source
 produces and which of them are trusted without `allowed_actors`. A key the file
 leaves out shows what leaving it out means, and the project row names the
-project its id refers to. The id cannot be edited: it is the file name, so
+project its id refers to. That row is read-only for a trigger that has a
+project, which is the selected one. The id cannot be edited: it is the file name, so
 renaming a trigger means creating a new one.
 
 | Key | Does, in the form |
@@ -2695,7 +2712,8 @@ renaming a trigger means creating a new one.
 An enum or a boolean cycles in place. `if:`, `dedupe_key` and the other
 templates open the full-pane multi-line editor, `match:` opens the key/value
 sub-form, with one `key=value` per entry and `a|b` meaning any of those values,
-and the project row opens a picker of registered projects. These are the same
+and, for an unassigned file only, the project row opens a picker of registered
+projects, because assigning the file a project is how it is repaired. These are the same
 overlays [the workflow editor](#authoring--i-a-f) opens, with the same keys.
 
 As in the workflow editor, **committing a row is the write**. Each change is a

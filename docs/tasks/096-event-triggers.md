@@ -410,7 +410,11 @@ has yet needed to change. Closes open questions 4 and 5.
 a section of the projects view, which would suggest a project scope decision 8
 ruled out; and a tab of the workflows view, when a trigger has its own status
 and ledger. Recorded here rather than as a new task document, which also avoids
-a number race with #363's sibling skill.
+a number race with #363's sibling skill. *Departed from 2026-10-05 by task
+[132](132-project-as-root.md).12 (decisions 8 and 41):* the takeover lists the
+selected project's triggers and an "unassigned" band of files whose project
+cannot be read, no longer every file; decision 8 is kept, because only the
+display is scoped.
 
 **15 (2026-09-11). 096.2 and 096.6 land in one pull request** (author), in
 dependency order: the `POST /v1/tasks` widenings, `internal/trigger`, config,

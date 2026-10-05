@@ -247,6 +247,19 @@ list with the user-facing context a commit subject cannot carry.
   and `tui.json` no longer uses `chat_folds`. An older file that still has the
   key reads fine.
   ([#704](https://github.com/lezli01/vincent/issues/704))
+- **The TUI's workflows and triggers screens show the selected project.**
+  The workflows screen lists what the selected project actually runs: the
+  built-in, global and project workflows in one list sorted by name. A
+  project workflow that overrides a global or built-in one says `shadows
+  global X`, and the overridden one stays listed, dimmed and marked
+  `shadowed here by <project>`, so the global file can still be opened. Global
+  rows warn that editing them affects every project. Create and fork offer
+  exactly two destinations, global and the selected project. The triggers
+  screen lists the selected project's triggers, followed by an "unassigned"
+  band of broken files whose project cannot be read, which every project
+  shows; the project column and the filter's project term are gone, and a
+  new trigger's project is the selected one. Trigger files are still global.
+  ([#706](https://github.com/lezli01/vincent/issues/706))
 - **TUI lists follow the selected project's events.** The issues, chats,
   pull-request, workflows and triggers screens now refresh on events
   from the selected project, on events that belong to no project, and on any

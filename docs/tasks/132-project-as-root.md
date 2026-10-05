@@ -1,6 +1,6 @@
 # 132 — Project as root: the TUI scoped to one selected project
 
-**Status:** 🔄 in progress (6/18)
+**Status:** 🔄 in progress (9/18)
 
 Issue [#694](https://github.com/lezli01/vincent/issues/694), part of
 [#693](https://github.com/lezli01/vincent/issues/693). Spec §3 (the new row
@@ -52,8 +52,10 @@ questions, each the option #693 recommended; decision 15 is the renumbering;
 decisions 16–19 settle the contradictions between #693's research reports;
 decisions 20–22 were taken while delivering 132.1, decisions 23–24 while
 delivering 132.2, decisions 25–28 were settled with the author for 132.5
-on 2026-10-05, decisions 29–32 were taken while delivering 132.3, and
-decision 33 while delivering 132.4. Each
+on 2026-10-05, decisions 29–32 were taken while delivering 132.3,
+decision 33 while delivering 132.4, decisions 34–35 while delivering
+132.8, decisions 36–38 were settled with the author for 132.6, and
+decisions 39–41 were settled with the author while delivering 132.12. Each
 decision is **taken now; its effect lands with its item.** The older record
 keeps governing the code until that item's pull request merges.
 
@@ -208,8 +210,11 @@ drops no note: a task event from any project refetches it (review F1 on
 #718).
 A `project.*` event passes every view's filter whatever project it names,
 since it describes the project list every view renders whole, and the
-triggers takeover lets `trigger.*` through until 132.11 scopes it (review F2
-on #718).
+triggers takeover lets `trigger.*` through until 132.12 scopes it (review F2
+on #718). *Corrected 2026-10-05:* the scoping item is 132.12, not 132.11; it
+has landed, and a `trigger.*` event for another project is now dropped like
+any other, while `trigger.poll_changed`, which carries no project, still
+re-reads.
 
 *Alternative beaten:* resubscribing with `?project_id=` on each switch. It
 loses the events that carry no project (`task.github_pull_changed`,
@@ -516,6 +521,43 @@ then route. *Beaten:* switching once the detail loads, which needs an
 exemption from the fallback rule and briefly draws the wrong header; and
 making the field mandatory with 0 meaning "do not switch".
 
+### 39. The workflows view loads with two calls, not one (2026-10-05)
+
+Settled with the author while delivering 132.12. Decision 7's "as
+`?project_id=` already returns them" cannot show shadowing:
+`Registry.List(projectID)` merges by name, so a global or builtin entry the
+project overrides is missing from that response. The view issues
+`ListWorkflows(0)` (builtin + global) and `ListWorkflows(selected)` and
+compares them in the client; `ListProjects`, the per-project fan-out and the
+per-scope blocks are gone. The acceptance criterion becomes "at most two
+listing calls per load, none for any other project".
+
+*Alternatives beaten:* a `shadows` field on `GET /v1/workflows`, which changes
+the API, MCP and §13.2 against this task's daemon-unchanged model; one call
+with no shadow note, which is the "hides shadowing" option decision 7 already
+rejected.
+
+### 40. An overridden global or builtin entry stays listed, dimmed (2026-10-05)
+
+Settled with the author while delivering 132.12. It is marked "shadowed here
+by `<project>`" beside the project entry marked "shadows global X" (or
+"shadows builtin X"), and the overridden global file can still be opened and
+edited from the view, under the "affects every project" warning every global
+row carries.
+
+*Alternative beaten:* showing only the winning entry, which makes the global
+file unreachable from any project that overrides it.
+
+### 41. The unassigned trigger band shows in every project's triggers view (2026-10-05)
+
+Settled with the author while delivering 132.12: option (a) of #706's open
+question, and what decision 8's "stays repairable from the TUI" already
+implies. Cross-project content leaks only for files whose project cannot be
+read, and that leak is accepted.
+
+*Alternative beaten:* showing them only in the overview (132.15), which leaves
+no repair path in the triggers view.
+
 ## Supersedes
 
 Every binding record this work overturns, departs from, refines or keeps, by
@@ -609,9 +651,10 @@ its own pull request.
   ✓ 2026-10-05
 - [ ] **132.11** ([#705](https://github.com/lezli01/vincent/issues/705)) The
   issues list and the pull-requests takeover scoped. Depends: 132.5.
-- [ ] **132.12** ([#706](https://github.com/lezli01/vincent/issues/706))
+- [x] **132.12** ([#706](https://github.com/lezli01/vincent/issues/706))
   Resolved workflows; triggers filtered client-side, with the "unassigned"
-  band. Depends: 132.5.
+  band; spec §15 views 5 and 11 (decisions 7, 8, 39–41). Depends: 132.5.
+  ✓ 2026-10-05
 - [ ] **132.13** ([#707](https://github.com/lezli01/vincent/issues/707))
   Locked project fields on forms; `projectHinting` removed. Depends: 132.2.
 - [ ] **132.14** ([#708](https://github.com/lezli01/vincent/issues/708)) The
