@@ -38,7 +38,7 @@ type (
 		err     error
 	}
 	// overviewPickMsg is enter on one of the overview's rows (task 132
-	// decision 34): select project and go back to the last project-scoped
+	// decision 42): select project and go back to the last project-scoped
 	// view, or — when task is set, from the "needs you" list — select the
 	// task's project and open the task. The root does both, because the
 	// selection and the view stack are its.
@@ -90,7 +90,7 @@ type projectsView struct {
 	slotsUsed int
 	infoOK    bool
 	// github is the root's §13.2 probe per project, kept from the
-	// githubProbeMsg it broadcasts (task 132 decision 36).
+	// githubProbeMsg it broadcasts (task 132 decision 44).
 	github map[int64]apiclient.GitHubStatus
 
 	// active is whether the overview is the visible view: it fetches on
@@ -406,7 +406,7 @@ func (p *projectsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	return p, cmd
 }
 
-// pick is enter (task 132 decision 34): on a project row, that project; on
+// pick is enter (task 132 decision 42): on a project row, that project; on
 // a "needs you" row, the task and its project. Either way the root does the
 // selecting, through selectProject.
 func (p *projectsView) pick() tea.Cmd {

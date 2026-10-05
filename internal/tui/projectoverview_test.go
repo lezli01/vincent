@@ -9,7 +9,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// The overview's root side (task 132 decision 34): enter on a project row
+// The overview's root side (task 132 decision 42): enter on a project row
 // selects it and goes back to the last project-scoped view; enter on a
 // "needs you" row selects the task's project and opens the task.
 

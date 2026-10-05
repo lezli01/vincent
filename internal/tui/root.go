@@ -122,7 +122,7 @@ type root struct {
 	selectedTask int64
 	// lastScoped is the last projectScoped view that was active, recorded by
 	// switchTo as it is left: where enter on a project overview row returns
-	// to (task 132 decision 34). Zero is the board, the answer with no
+	// to (task 132 decision 42). Zero is the board, the answer with no
 	// history.
 	lastScoped viewID
 
@@ -155,7 +155,7 @@ type root struct {
 	projects    []apiclient.Project
 	projectsSeq int
 	// pending is a project switch held on the active view's draft (task 132
-	// decision 34): drawn as the status line's y/n question, and applied or
+	// decision 36): drawn as the status line's y/n question, and applied or
 	// dropped — with any open waiting on it — by the answer.
 	pending *pendingSwitch
 
@@ -411,7 +411,7 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	m.keysNotice = ""
 	m.selNotice = ""
 	// A switch waiting on its draft confirmation owns every key but ctrl+c
-	// (task 132 decision 34): it is the question on screen.
+	// (task 132 decision 36): it is the question on screen.
 	if m.pending != nil && msg.String() != "ctrl+c" {
 		return m, m.updatePendingSwitchKey(msg)
 	}
@@ -1076,7 +1076,7 @@ func withProjectID(open tea.Msg, id int64) tea.Msg {
 }
 
 // openObject follows an open's object into its project (task 132.6,
-// decision 36): an object of another known project switches the selection
+// decision 38): an object of another known project switches the selection
 // first, by selectProject's rules, and routes second, so a detail never
 // draws under the wrong header. An open that does not say, or names a
 // project the cached list does not hold, has its object fetched first.

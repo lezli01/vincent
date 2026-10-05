@@ -12369,8 +12369,8 @@ stream for the live tail.
    the ones awaiting input in brackets, an issue-sync glyph (`—` off, `✓`
    healthy, `✗` failing), the §13.2 GitHub probe (`✓ owner/repo`, the probe's
    reason, or `—` — and `—` in both cells for a project whose reason is
-   `not_github`, which has no integration to fail; open pull-request counts are a follow-up, decision 36), and
-   the last activity, relative. No spend column (decision 37). A row whose
+   `not_github`, which has no integration to fail; open pull-request counts are a follow-up, decision 44), and
+   the last activity, relative. No spend column (decision 45). A row whose
    `stats` is `null` shows `—` in its figure cells, never zeros. A totals row
    sums the columns — exact, since every figure is partitioned by project —
    except running, which is `/v1/info`'s `slots.used / max_parallel_tasks` and
@@ -12379,14 +12379,14 @@ stream for the live tail.
    order (oldest wait first), each row led by its project — the one
    cross-project task list the TUI draws. On a wide terminal the highlighted
    project's repository and execution defaults show in a pane beside them
-   (decision 35); a narrowing terminal sheds that pane first, then the columns
+   (decision 43); a narrowing terminal sheds that pane first, then the columns
    — activity, GitHub, sync, chats, issues, done, blocked, queued — leaving
    name, `!` and running. `tab` moves the cursor between the table and the
    list. `enter` on a project row selects it and returns to the last
    project-scoped view that was active, or the board with none (a task, chat
    or issue detail gives way to its list when the project changed); on a list
    row it selects the task's project and opens the task, with `esc` back to
-   the overview (decision 34). `e` edits, `a` adds, `D` removes and `/`
+   the overview (decision 42). `e` edits, `a` adds, `D` removes and `/`
    filters as before, and the add/edit form still takes the focused surface.
    With no project registered the view names `a` and `vincent project add`.
    It refetches on activation and, debounced, on `task.*`, `issue.*`,

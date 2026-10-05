@@ -58,7 +58,7 @@ func TestWorkflowsMergeKeepsAGlobalEntryOnce(t *testing.T) {
 // A project entry with a global entry's name hides it (§5.2). Both rows stay
 // listed: the project's says what it shadows, and the global one is dimmed
 // and says by whom, so the global file is still reachable (task 132
-// decision 35).
+// decision 40).
 func TestWorkflowsFlagAProjectEntryThatShadowsAGlobalOne(t *testing.T) {
 	w := newWorkflowsView()
 	builtin := apiclient.WorkflowEntry{Name: "adhoc", Scope: "builtin"}

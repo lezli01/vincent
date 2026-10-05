@@ -372,7 +372,7 @@ func (w *workflowsView) renderLine(i int, line wfLine) string {
 		name = styleBad.Render(name)
 	case line.shadowedBy != "":
 		// Overridden here: still listed, so the global file stays reachable,
-		// but dimmed, because it is not what this project runs (decision 35).
+		// but dimmed, because it is not what this project runs (decision 40).
 		name = styleDim.Render(name)
 	}
 	parts := []string{marker + name}

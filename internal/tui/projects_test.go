@@ -587,7 +587,7 @@ func TestProjectOverviewAttentionListAcrossProjects(t *testing.T) {
 	}
 }
 
-// Enter selects (task 132 decision 34); `e` alone edits.
+// Enter selects (task 132 decision 42); `e` alone edits.
 func TestProjectOverviewEnterPicksAndEEdits(t *testing.T) {
 	p := newProjectsView()
 	loadedProjects(p,

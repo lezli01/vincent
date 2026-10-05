@@ -652,7 +652,7 @@ var bindings = []binding{
 
 	// Projects.
 	{op: keymap.Add, key: "a", label: "register a repository", scope: scopePanel, context: ctxProjects, hint: "a add", priority: 1, term: termAdd},
-	// Enter selects rather than edits (task 132 decision 34): the overview
+	// Enter selects rather than edits (task 132 decision 42): the overview
 	// is how a project is reached as well as managed, so `e` alone edits.
 	// `e` keeps no row of its own: the vocabulary gives `e` to $EDITOR, so
 	// it is named here and recorded in keymap.fixed, as the daemon view's is.

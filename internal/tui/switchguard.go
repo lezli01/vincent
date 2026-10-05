@@ -16,7 +16,7 @@ import (
 // are how a view takes part; the root's keepViewAcrossSwitch drives them.
 
 // switchGuard is implemented by views that can hold a draft a switch would
-// discard (task 132 decision 34). draft names what would be lost — "unsent
+// discard (task 132 decision 36). draft names what would be lost — "unsent
 // comment", "task draft" — and dirty is false while there is nothing to
 // lose. The root asks once, for every view, rather than each form keeping a
 // confirm state of its own.
@@ -25,7 +25,7 @@ type switchGuard interface {
 }
 
 // switchRetargeting is implemented by views whose form is re-aimed at the new
-// selection rather than left (decision 35): the new-task form, the chats
+// selection rather than left (decision 37): the new-task form, the chats
 // board's new-chat form and the issues list's issue form. retarget reopens
 // the form pristine for p, whatever it held, and refetches its catalogs.
 type switchRetargeting interface {
@@ -50,7 +50,7 @@ var switchFallback = map[viewID]viewID{
 }
 
 // pendingSwitch is a switch waiting on the human's answer because the
-// active view held a draft (decision 34). open is the open that asked for the
+// active view held a draft (decision 36). open is the open that asked for the
 // switch, when one did: it is routed if the switch is confirmed and dropped
 // with it if not.
 type pendingSwitch struct {
@@ -77,7 +77,7 @@ func (n *newTask) switchDraft() (string, bool) {
 	}
 	// A seeded form is a draft before a key is pressed: its seed is the
 	// pull request, issue or chat it was opened from, which a re-target
-	// would drop (decision 35).
+	// would drop (decision 37).
 	return "task draft", n.touched || n.pull != nil || n.issueID != 0 || n.handoff != nil
 }
 

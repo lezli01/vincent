@@ -24,7 +24,7 @@ func (p *projectsView) render(width, height int) string {
 	rows := p.visible()
 	if p.form != nil {
 		// The add/edit form takes the focused surface as it always has
-		// (task 132 decision 35), beside the list it edits.
+		// (task 132 decision 43), beside the list it edits.
 		if guidedTakeover(p.width, p.height) {
 			return p.renderGuided(rows)
 		}
@@ -34,7 +34,7 @@ func (p *projectsView) render(width, height int) string {
 }
 
 // Overview layout. The detail pane is the first thing a narrow terminal sheds
-// and the table's columns the second (task 132 decision 35): the pane only
+// and the table's columns the second (task 132 decision 43): the pane only
 // shows when the full table still fits beside it.
 const (
 	overviewDetailWidth = 40
@@ -180,7 +180,7 @@ func (p *projectsView) projectRailSummary(pr apiclient.Project) string {
 
 // renderProjectDetail is the wide terminal's detail pane: the highlighted
 // project's repository and execution defaults, which the table has no room
-// for (task 132 decision 35). The old focus pane's client-filtered workload
+// for (task 132 decision 43). The old focus pane's client-filtered workload
 // is gone — the row's figures and the "needs you" list replace it.
 func (p *projectsView) renderProjectDetail(pr apiclient.Project, height int) string {
 	lines := []string{
@@ -437,7 +437,7 @@ func syncGlyph(st *apiclient.ProjectStats) string {
 }
 
 // githubCell is the root's §13.2 probe for the project (task 132 decision
-// 36): the repository when usable, the probe's reason when not, and a dash
+// 44): the repository when usable, the probe's reason when not, and a dash
 // when the project has no GitHub remote or no answer has arrived.
 func (p *projectsView) githubCell(id int64) string {
 	st, ok := p.github[id]

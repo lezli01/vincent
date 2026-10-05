@@ -568,7 +568,7 @@ func (v *triggersView) move(delta int) tea.Cmd {
 // scoped is the list the selected project sees (task 132 decision 8): its
 // own triggers in the registry's id order, then the unassigned band —
 // invalid files whose project could not be read, which every project's view
-// shows so they stay repairable from the TUI (decision 36). The listing
+// shows so they stay repairable from the TUI (decision 41). The listing
 // itself stays unfiltered; trigger files are global (task 096 decision 8),
 // and only the display is scoped. Another project's triggers, valid or
 // invalid with a readable project, are not shown.

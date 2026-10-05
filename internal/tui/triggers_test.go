@@ -351,7 +351,7 @@ func visibleIDs(v *triggersView) string {
 }
 
 // The takeover lists the selected project's triggers, then the unassigned
-// band, which every project's view shows (task 132 decisions 8 and 36).
+// band, which every project's view shows (task 132 decisions 8 and 41).
 // Another project's triggers — valid, or invalid with a readable project —
 // are not listed.
 func TestTriggersScopeToTheSelectedProject(t *testing.T) {

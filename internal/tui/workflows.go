@@ -21,7 +21,7 @@ const scopeProject = "project"
 type (
 	workflowsRefreshMsg struct{}
 	// workflowsLoadedMsg carries the two listings the view resolves (task 132
-	// decision 7 and decision 34): global is builtin + global, own is the
+	// decision 7 and decision 39): global is builtin + global, own is the
 	// selected project's own entries. err is the global fetch failing, which
 	// is the only failure that costs the view its contents; ownErr is the
 	// project fetch failing, which degrades the view to the global rows and
@@ -68,7 +68,7 @@ type wfLine struct {
 	shadows string
 	// shadowedBy is set on a global or builtin entry the selected project
 	// overrides: the project's name. The row stays listed, dimmed, so the
-	// global file is still reachable from here (decision 35).
+	// global file is still reachable from here (decision 40).
 	shadowedBy string
 }
 
@@ -146,7 +146,7 @@ func (w *workflowsView) setClient(c *apiclient.Client) tea.Cmd {
 func (w *workflowsView) hintedProject() int64 { return w.project.id }
 
 // loadCmd fetches the selected project's resolved registry with two calls
-// (task 132 decision 34). GET /v1/workflows with a project_id merges by name,
+// (task 132 decision 39). GET /v1/workflows with a project_id merges by name,
 // so a global or builtin entry the project overrides is missing from it;
 // the unscoped listing supplies those, and lines compares the two. Nothing
 // is fetched for any other project. With no project selected only the
@@ -453,7 +453,7 @@ func (w *workflowsView) editCmd() tea.Cmd {
 // decision 7): every global and builtin entry, and the selected project's
 // own entries beside them. A project entry whose name a global or builtin
 // one also has shadows it (§5.2); both stay listed, the overridden one
-// dimmed, so the global file stays reachable (decision 35). Duplicate-name
+// dimmed, so the global file stays reachable (decision 40). Duplicate-name
 // losers arrive as extra invalid entries and are listed like any other.
 func (w *workflowsView) lines() []wfLine {
 	overridden := map[string]bool{}
