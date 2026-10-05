@@ -261,6 +261,28 @@ func TestFollowCancelledWithTheSwitch(t *testing.T) {
 	}
 }
 
+// TestCreatedTaskFollowsWithoutAsking: a task created from the form in a
+// project other than the selection follows there without the draft prompt —
+// the draft is the task just sent — and lands on it with the form reset.
+func TestCreatedTaskFollowsWithoutAsking(t *testing.T) {
+	h := newFormSwitchHarness(t)
+	h.p.push(h.m.openNewTask())
+	n := h.m.views[viewNewTask].(*newTask)
+	h.p.until(10*time.Second, "the form to load", func() bool { return n.loaded })
+	n.touched = true
+	n.submitting = true
+	h.send(taskCreatedMsg{task: apiclient.TaskDetail{Task: apiclient.Task{ID: 99, ProjectID: h.second.ID}}})
+	if h.m.pending != nil {
+		t.Fatalf("a created task asked to discard its own draft: %+v", h.m.pending)
+	}
+	if h.m.sel.id != h.second.ID || h.m.active != viewTask {
+		t.Fatalf("selection %d, active %v; want the second project's task", h.m.sel.id, h.m.active)
+	}
+	if n.submitting {
+		t.Fatal("the form was left on \"creating…\"")
+	}
+}
+
 // TestSwitchGuardsWorkspaceAndIssueForms: the same root prompt guards a dirty
 // follow-up form and a dirty issue edit, and y takes each view with it.
 func TestSwitchGuardsWorkspaceAndIssueForms(t *testing.T) {

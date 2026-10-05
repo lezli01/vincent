@@ -1163,8 +1163,12 @@ func (m *root) updateFollowFetched(msg followFetchedMsg) tea.Cmd {
 
 // followTo switches to p and then routes open, unless the active view holds
 // a draft: then the switch waits on the confirmation, and the open with it.
+// A created task is never guarded: its draft is the one just sent, so there
+// is nothing left to discard, and asking would strand the form on
+// "creating…" with the task already made (review F1).
 func (m *root) followTo(p apiclient.Project, open tea.Msg) tea.Cmd {
-	if draft, dirty := m.activeDraft(); dirty && m.sel.id != 0 {
+	_, created := open.(taskCreatedMsg)
+	if draft, dirty := m.activeDraft(); dirty && !created && m.sel.id != 0 {
 		m.pending = &pendingSwitch{project: p, why: whyFollowed, draft: draft, open: open}
 		return nil
 	}
