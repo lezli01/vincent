@@ -281,7 +281,7 @@ var exceptions = []exception{
 	{key: "a", ops: []Op{Add, Approve}, why: "§6 approve, gated on available_actions and never offered where add is"},
 	{key: "s", ops: []Op{Scope, Skip}, why: "§6 skip, gated on available_actions; an archived row offers none"},
 	{key: "l", ops: []Op{Lane}, anyFixed: true, why: "task 052.6 link on the pull-request takeover, and l as vim-right where no lane is selected"},
-	{key: "e", ops: []Op{Editor}, anyFixed: true, why: "enter/e opens the selected row's form on the projects and daemon screens"},
+	{key: "e", ops: []Op{Editor}, anyFixed: true, why: "e opens the selected row's form on the project overview, and enter or e on the daemon screen"},
 	{key: "d", ops: []Op{DraftRemove}, anyFixed: true, why: "d toggles the output and diff tabs in the task workspace, where no draft is open"},
 	{key: "n", ops: []Op{New}, anyFixed: true, why: "n is the popups' no, and the popups own the keyboard"},
 	{key: "N", ops: []Op{NextFailure}, anyFixed: true, why: "task 129.18: N is the popups' no too, and the popups own the keyboard"},
