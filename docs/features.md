@@ -410,10 +410,10 @@ In detail:
   are never offered, and saving preserves the comments and key order of the file
   you did not touch. `$EDITOR` is still one key away for anything the forms
   cannot load.
-- A pull-requests screen lists what is open across every GitHub-based project at
-  once, with the task claiming each one, and is where a link is made or removed
-  by hand. It is offered only when at least one project qualifies.
-- An issues screen lists every project's issues — filed in vincent or imported
+- A pull-requests screen lists what is open in the selected project on GitHub,
+  with the task claiming each one, and is where a link is made or removed
+  by hand. It is offered only when the selected project qualifies.
+- An issues screen lists the selected project's issues — filed in vincent or imported
   from GitHub — with each one's state, labels, source and the tasks it started,
   and opens one to its Markdown-rendered description, its discussion thread
   and its active tasks. A form files and edits issues there, `W` writes a
@@ -660,8 +660,8 @@ default — the daemon lists each GitHub-based project's **open** pull requests
 and links the ones whose head branch is a task's own branch. It never overwrites
 a link you made by hand, and a link you removed is never re-applied.
 
-The TUI's pull-requests screen shows every GitHub-based project's listing at
-once and carries the two linking actions — link a pull request the head-branch
+The TUI's pull-requests screen shows the selected project's listing and
+carries the two linking actions — link a pull request the head-branch
 rule missed, unlink one it got wrong — and a task's own workspace shows its
 pull request beside its branch, on a **Pull Request** tab that adds one row per
 CI check on its head commit and carries a second copy of unlink.

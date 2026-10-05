@@ -272,6 +272,18 @@ list with the user-facing context a commit subject cannot carry.
   shows; the project column and the filter's project term are gone, and a
   new trigger's project is the selected one. Trigger files are still global.
   ([#706](https://github.com/lezli01/vincent/issues/706))
+- **The issues and pull-requests screens show the selected project.** The
+  issues screen lists only the selected project's issues, in one flat list
+  with no project headings, and `n` files a new issue there. The
+  pull-requests screen lists only the selected project's pull requests, and
+  a failed listing shows the daemon's reason on one line. Switching project
+  swaps either list and shows "loading ‹project›…" until the new one arrives.
+  `/` no longer matches the project name on either screen. The pull-requests
+  palette entry, its `?` rows and the task workspace's pull-request keys now
+  appear when the *selected* project has a usable GitHub integration, rather
+  than when any project does; switching to a project without one while the
+  screen is open keeps the screen and says why there is nothing to list.
+  ([#705](https://github.com/lezli01/vincent/issues/705))
 - **TUI lists follow the selected project's events.** The issues, chats,
   pull-request, workflows and triggers screens now refresh on events
   from the selected project, on events that belong to no project, and on any
