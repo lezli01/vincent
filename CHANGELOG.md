@@ -239,6 +239,14 @@ list with the user-facing context a commit subject cannot carry.
   groups are kept per project in `tui.json`'s `board_folds_by_project`; folds
   saved by an older version are moved to their project once, and a fold saved
   under a workflow-only grouping is dropped.
+- **The chats boards show the selected project only.** The chats board and
+  the archived chats board now list only the selected project's chats, in one
+  flat list with no project headings. Switching project empties the board and
+  shows "loading ‹project›…" until the new list arrives. `n` starts a chat in
+  the selected project. `←`/`→` no longer fold anything on the chats board,
+  and `tui.json` no longer uses `chat_folds`. An older file that still has the
+  key reads fine.
+  ([#704](https://github.com/lezli01/vincent/issues/704))
 - **TUI lists follow the selected project's events.** The issues, chats,
   pull-request, workflows and triggers screens now refresh on events
   from the selected project, on events that belong to no project, and on any

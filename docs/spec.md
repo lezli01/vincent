@@ -12583,7 +12583,7 @@ stream for the live tail.
    branch, and rendering `400 agent_cannot_resume` as the typed refusal it is
    rather than a generic failure. `A` archives, asking first and re-offering
    with the force when the worktree is dirty. `/` filters on title, agent or
-   branch; `←`/`→` fold a project group; `R` re-lists. A `chat.*` event
+   branch; `R` re-lists. A `chat.*` event
    re-renders the board with no keypress, and a `task.*` event does not — the
    separation runs both ways.
 
@@ -12639,6 +12639,24 @@ stream for the live tail.
    can be found from this board as well as from the task. A `closed` chat is
    terminal and leaves the default listing with `archived` and `handed_off`
    ones (§13.2).
+
+   *Amended 2026-10-05 (task 132.10, issue #704).* **The board is flat and
+   scoped to the selected project** (decision row 37). It lists
+   `GET /v1/chats?project_id={selected}` — the server filters, as it does for
+   view 10's chats half — and with no project selected it fetches nothing and
+   says so, never falling back to every project's chats. This **supersedes
+   task 067 decision 6**: with one project on screen a project heading would
+   head every row, so there are no headings, no folds and no `←`/`→`, and the
+   fold set `chat_folds` in `{data_dir}/tui.json` is retired — an older file
+   carrying it still reads, the key ignored. The order is unchanged: attention
+   first, then running, idle and terminal. The wheel walks chats only, there
+   being no heading left to skip. `n` opens the create form on the selected
+   project rather than the cursor row's. A switch empties the board at once
+   and the header reads "loading ‹project›…" until the switch's load lands; a
+   load issued for the project left behind is dropped when it arrives. The
+   `/` filter text survives a switch, because it describes what the human
+   wants to see rather than where. Task 054 decision 1 — folds live in
+   `tui.json` — is kept for the boards that still fold.
 
 9. **Chat workspace.** *Added 2026-08-31 (task 067, closing 063.2 and 063.3).*
    One conversation: the finished turns above, the running turn's live tail
@@ -12985,6 +13003,17 @@ stream for the live tail.
    delete confirmation holds the cursor still, because it names the rows it
    would delete. The wheel never turns a page — paging is a fetch and stays on
    `<`/`>`.
+
+   *Amended 2026-10-05 (task 132.10, issue #704).* **Archived chats are flat
+   and scoped to the selected project**, as view 8 now is: the page and the
+   date window are asked of `GET /v1/chats?project_id={selected}`, because a
+   server-paged listing can only be filtered on the server. The board no
+   longer groups or folds — "the same grouping, folding" above now describes
+   the archived *tasks* board alone — superseding task 067 decision 6 here
+   too, and the retired `chat_folds` key is no longer read. With no project
+   selected nothing is fetched. A switch returns to the first page, because a
+   page offset belongs to the old project's listing, and keeps the date window
+   and the `/` filter text.
 
 11. **Triggers.** *Added 2026-09-13 (task 096.6, issue #362).* A takeover
    reached from the command palette, like Workflows and Projects, with no key

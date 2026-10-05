@@ -2157,16 +2157,18 @@ steps run in the child and never appear on this graph.
 A second board, for [chats](../reference/cli.md#vincent-chat) — conversations
 with an agent, each in its own worktree. Chats are not tasks and never appear on
 the task board, so they get a board of their own: one row per conversation, with
-its id, state, agent, last activity and title, grouped by project.
+its id, state, agent, last activity and title. The board lists the
+[selected project](#switching-project)'s chats only, in one flat list.
 
 ![The chats board grouped by project: a chat waiting on you sorted to the top
 and counted in the header badge, a running turn with its glyph beside the
 `running` label, and two finished conversations](../assets/tui-chats.png)
 
-Grouping is by project only: `tui.board.group_by`'s workflow levels mean nothing
-for a chat, which runs no workflow, so `g` is not offered here. Folds persist in
-`{data_dir}/tui.json` separately from the task board's, so folding a project
-here does not fold it there.
+There are no group headings and nothing to fold: every row is in the same
+project, and a chat runs no workflow, so `g` is not offered here either.
+Switching project empties the board and the header reads "loading ‹project›…"
+until that project's chats arrive; your `/` filter stays. With no project
+registered the board says so instead of listing anything.
 
 A chat waiting on you is sorted to the top and counted in this header's badge —
 **and nowhere else**. `!` and the task board's needs-attention count stay
@@ -2175,15 +2177,14 @@ task-only.
 | Key | Does |
 |---|---|
 | `enter` | Open the chat's workspace |
-| `n` | Start a chat in the project you are looking at |
+| `n` | Start a chat in the selected project |
 | `A` | Archive the chat — asks first, and re-offers with the force when the worktree is dirty; declines on a chat opened on a task |
 | `/` | Filter by title, agent or branch |
-| `←` / `→` | Collapse or expand a project group |
 | `s` | Cycle the listing between live, ended (archived, handed-off or closed), and all |
 | `R` | Reload the board |
 
-The mouse wheel moves the cursor one chat per tick, skipping the project
-headings, as it does on the task board. It stands still while the new-chat form
+The mouse wheel moves the cursor one chat per tick, as it does on the task
+board. It stands still while the new-chat form
 or the archive confirmation is up, since those ask about the chat under the
 cursor.
 
@@ -2515,11 +2516,14 @@ held by a conversation nobody came back to.
 
 Two screens, one for tasks and one for chats, reached from the command palette
 (`:`). They are the boards you already know, in a second mode: the same
-grouping, the same folding, the same `/` filter and the same `space`/`V`
-selection, listing what is archived instead of what is live. The archived
-tasks board lists the selected project only, and asks the daemon for just that
-project: switching project goes back to the first page and reads
-`loading <project>…` until the new page arrives. There is no key of
+`/` filter and the same `space`/`V` selection — and, for tasks, the same
+grouping and folding — listing what is archived instead of what is live. The
+archived tasks board lists the selected project only, and asks the daemon for
+just that project: switching project goes back to the first page and reads
+`loading <project>…` until the new page arrives. Like
+the live chats board, the archived chats board is a flat list of the
+selected project's chats; switching project returns it to the first page and
+keeps its window and filter. There is no key of
 its own for either — the palette is how you get there, which is the pattern
 every takeover but new task follows.
 

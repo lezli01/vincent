@@ -604,8 +604,9 @@ its own pull request.
 - [ ] **132.9** ([#703](https://github.com/lezli01/vincent/issues/703)) The
   `project` level of `tui.board.group_by` deprecated, the default `[workflow]`.
   Depends: 132.8.
-- [ ] **132.10** ([#704](https://github.com/lezli01/vincent/issues/704)) The
+- [x] **132.10** ([#704](https://github.com/lezli01/vincent/issues/704)) The
   chats and archived chats boards, flat and scoped. Depends: 132.5.
+  ✓ 2026-10-05
 - [ ] **132.11** ([#705](https://github.com/lezli01/vincent/issues/705)) The
   issues list and the pull-requests takeover scoped. Depends: 132.5.
 - [ ] **132.12** ([#706](https://github.com/lezli01/vincent/issues/706))
