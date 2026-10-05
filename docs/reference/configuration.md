@@ -335,10 +335,11 @@ container:
 # hot-reloads them and serves them on GET /v1/config; the TUI reads them from
 # there.
 #
-# group_by nests the task table under headers, outermost level first. Accepted
-# levels: project, workflow. Use [] for one flat list of tasks. A grouped
-# level drops its own column — the header already names it — and "g" cycles
-# the grouping for the session without touching this file.
+# group_by nests the task table under headers, outermost level first. The one
+# level is workflow; use [] for one flat list of tasks. A grouped level drops
+# its own column — the header already names it — and "g" cycles the grouping
+# for the session without touching this file. The board shows one project at
+# a time, so there is no project level.
 #
 # hyperlinks makes a Markdown link in the output pane clickable, as an OSC 8
 # hyperlink, when its destination is a plain http or https URL. Off by default:
@@ -366,7 +367,7 @@ container:
 # last.
 tui:
   board:
-    group_by: [project, workflow]
+    group_by: [workflow]
   hyperlinks: false
   # keys:
   #   refresh: ctrl+e
@@ -1584,7 +1585,7 @@ before you do.
 ```yaml
 tui:
   board:
-    group_by: [project, workflow]
+    group_by: [workflow]
   hyperlinks: false
   keys: {}
   output:
@@ -1605,13 +1606,24 @@ How the task table is grouped, outermost level first.
 
 | Value | Board |
 |---|---|
-| `[project, workflow]` (default) | Projects, and the workflows of a project nested inside it |
-| `[project]` | One group per project |
-| `[workflow]` | One group per workflow, across every project |
-| `[]` | One flat list — the table every version before this one rendered |
+| `[workflow]` (default) | One group per workflow in the selected project |
+| `[]` | One flat list |
 
-Accepted levels are `project` and `workflow`. An unknown level, a repeated one,
-or anything that is not a list fails the load and names the key. There is no
+The one accepted level is `workflow`. An unknown level, a repeated one, or
+anything that is not a list fails the load and names the key.
+
+**`project` is deprecated.** The TUI shows one project at a time, so a
+`project` level had one value, drew no header and did nothing. Files written
+before vincent stopped offering it — the bootstrapped one carried
+`[project, workflow]` — still load: the level is stripped, so
+`[project, workflow]` becomes `[workflow]` and `[project]` becomes `[]`, and
+the daemon logs a warning that [`vincent doctor`](cli.md#vincent-doctor) also
+lists under `paths.config_warnings`. Remove it from the file to silence the
+warning. Setting it is refused: `PATCH /v1/config` (and so `vincent config
+set` and the TUI's config editor) answers `validation_failed` naming
+`tui.board.group_by` when the patch's own value contains `project`, and
+leaves the file untouched. A patch of any other key still succeeds on a file
+that carries the old line, and leaves that line as it was. There is no
 `state` level on purpose: the board already orders by state and pins everything
 waiting on a human to the top, and grouping by it would fight that.
 
@@ -1623,8 +1635,8 @@ when the group holds any, the needs-attention badge and count.
 A grouped level costs no column — the header names it, so `PROJECT` and
 `WORKFLOW` drop out and the width goes to the title.
 
-**`g` cycles the grouping for the session** — project›workflow → project →
-workflow → flat — and never writes to this file. The Tasks panel title names the
+**`g` cycles the grouping for the session** — workflow → flat — and never
+writes to this file. The Tasks panel title names the
 grouping whenever it is not the one configured here.
 
 #### `tui.hyperlinks`

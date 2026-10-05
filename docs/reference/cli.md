@@ -200,6 +200,13 @@ binding took its default; or a fixed key shadowed by your binding. It is a
 warning too — the daemon runs and the TUI works — so it never sets the exit
 code.
 
+A `warning` row is a setting that loads and takes effect but does not do what
+it looks like it asks for: a deprecated
+[`tui.board.group_by`](configuration.md#tuiboardgroup_by) level stripped on
+load, a half-written `notify` block, or `delete_remote_branch_on_archive` on
+while `delete_empty_branch_on_archive` is off. These are the same lines the
+daemon logs as `config warning`. Like `keymap`, it never sets the exit code.
+
 The database rows **measure and change nothing**. `total on disk` is the file
 plus its WAL and SHM sidecars, which is the honest figure — the store runs in WAL
 mode, so the file alone understates the footprint between checkpoints. `rows`

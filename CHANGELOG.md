@@ -248,6 +248,19 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
+- **The task board groups by workflow out of the box.** The default
+  `tui.board.group_by` is now `[workflow]`, and `g` cycles workflow → flat.
+  The board shows one project at a time, so the project level drew nothing.
+  Folds you made under the old `[project, workflow]` grouping no longer match
+  a header and are dropped, so fold those groups again.
+  ([#703](https://github.com/lezli01/vincent/issues/703))
+- **`vincent doctor` lists config warnings.** The `paths.config_warnings`
+  field, shown as `warning` rows, reports settings that load but do nothing:
+  a deprecated grouping level, a `notify` block with only one of its two
+  halves, or `delete_remote_branch_on_archive` without
+  `delete_empty_branch_on_archive`. Before this, those lines appeared only in
+  the daemon log. They never change the exit code.
+  ([#703](https://github.com/lezli01/vincent/issues/703))
 - **The task board and the archived tasks board show the selected project.**
   Switching project swaps the board's rows in place without a refetch; the
   archived tasks board asks the daemon for that project only, and restarts at
@@ -323,6 +336,15 @@ list with the user-facing context a commit subject cannot carry.
   ([#670](https://github.com/lezli01/vincent/issues/670))
 
 ### Deprecated
+
+- **The `project` level of `tui.board.group_by`.** A `config.yaml` that still
+  lists it loads with the level removed (`[project, workflow]` becomes
+  `[workflow]`, `[project]` becomes `[]`). The daemon logs a warning and
+  `vincent doctor` lists it. Setting it through `PATCH /v1/config`,
+  `vincent config set` or the TUI's config editor is refused with
+  `validation_failed`. Changing any other key still works on a file that has
+  the old line, and that line is left as it is.
+  ([#703](https://github.com/lezli01/vincent/issues/703))
 
 - **`type: github_issues` triggers.** Use `type: issues` on a project that
   imports its GitHub issues. Existing `github_issues` triggers keep firing;

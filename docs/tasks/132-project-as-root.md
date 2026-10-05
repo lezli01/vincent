@@ -502,6 +502,9 @@ the scoped board's `build` header is `["api", "build"]`. A migrated path
 therefore keeps its segment, or it would never match the header it was made
 on. Whether paths drop the project level is 132.9's, with the grouping.
 
+*Amended 2026-10-05 (132.9):* they do now — see decision 51's delivery note.
+The F10 rename rewrite above is removed with the level.
+
 *Alternatives beaten:* shared label paths, which leak a `[workflow]` fold
 across projects; prefixing stored paths with the project *name*, which breaks
 on a rename.
@@ -675,6 +678,41 @@ selection. A rename of the selection is also written to tui.json's
 *Alternative beaten:* acting on `project.deleted` alone, which misses
 deletes made during an outage.
 
+### 50. A write refuses `project` only when it sets `tui.board.group_by` itself (2026-10-05)
+
+Taken with the author while delivering 132.9. `PATCH /v1/config` decodes the
+whole candidate file (task 128 decision 2), and almost every installation's
+bootstrapped file carries `[project, workflow]`, so refusing the whole file
+would block every unrelated PATCH on nearly every upgraded install —
+`vincent config set log_level debug`, and every save from the TUI config
+editor. So the check splits: the candidate file is decoded with the
+deprecation handled **leniently** (`project` stripped, the bytes outside the
+patched key untouched), and the PATCH is refused with `validation_failed`
+when the **patch's own** `tui.board.group_by` value contains `project`, the
+file byte-identical and the error naming the key and why. This narrows task
+128 decision 2's whole-file posture for this deprecation only (see
+Supersedes); the `tui.keys` posture is unchanged.
+
+*Alternatives beaten:* whole-file strict, which blocks every PATCH on legacy
+files; stripping on any write, which rewrites a key the caller never asked to
+touch.
+
+### 51. `[project]` alone strips to `[]` (2026-10-05)
+
+Taken with the author while delivering 132.9. The strip is literal, not a
+reset to the default: under scoping `[project]` already renders a flat board,
+so nothing visible changes. `[workflow, project]` strips to `[workflow]`. A
+duplicated `project` is still the "listed twice" error — malformed, not
+legacy.
+
+*Delivery note (2026-10-05):* with the level gone, a fold path carries no
+project segment, so decision 35's F10 rename rewrite had nothing left to
+rewrite and was removed, and the legacy `board_folds` migration now strips
+the project segment — decision 35's original premise, which its delivery note
+deferred to this item. Per-project sets written under the old grouping lead
+with a project name, name nothing, and are pruned; no migration of them was
+made.
+
 ## Supersedes
 
 Every binding record this work overturns, departs from, refines or keeps, by
@@ -709,6 +747,11 @@ item's pull request merges.
   (`020-guided-takeover-layouts.md:18`, the rail plus one focused surface) and
   the #324 amendment — **superseded in place** by the overview (decision 5,
   132.15).
+- **Task 128 decision 2** (`128-keymap-upgrade-tolerance.md:29`, a PATCH
+  decodes the whole candidate file strictly) — **refined** for the deprecated
+  `project` level of `tui.board.group_by` only: the candidate file strips it,
+  and a PATCH is refused only when it sets the level itself (decision 50,
+  132.9). Its `tui.keys` posture is kept.
 - **Task 129 decision 4** (`129-tui-monitoring-redesign.md:119`, a group level
   with one distinct value draws no header) — **kept**; it is why the `project`
   level goes inert under scoping (132.9).
@@ -760,9 +803,9 @@ its own pull request.
   board filtered in memory; the archived tasks board filtered on the server;
   per-project fold pruning; no PROJECT column; the `/` filter without the
   project name (decisions 34, 35). Depends: 132.5. ✓ 2026-10-05
-- [ ] **132.9** ([#703](https://github.com/lezli01/vincent/issues/703)) The
-  `project` level of `tui.board.group_by` deprecated, the default `[workflow]`.
-  Depends: 132.8.
+- [x] **132.9** ([#703](https://github.com/lezli01/vincent/issues/703)) The
+  `project` level of `tui.board.group_by` deprecated, the default `[workflow]`
+  (decisions 6, 50, 51). Depends: 132.8. ✓ 2026-10-05
 - [x] **132.10** ([#704](https://github.com/lezli01/vincent/issues/704)) The
   chats and archived chats boards, flat and scoped. Depends: 132.5.
   ✓ 2026-10-05

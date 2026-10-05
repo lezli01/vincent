@@ -578,7 +578,7 @@ func TestConfigPatchRefusesTheProjectGroupLevel(t *testing.T) {
 }
 
 // A file bootstrapped before task 132.9 still says `group_by: [project,
-// workflow]`. A patch of an unrelated key must land (task 132 decision 46):
+// workflow]`. A patch of an unrelated key must land (task 132 decision 50):
 // the line it never touched stays as written, and the config served and put
 // into force has the level stripped.
 func TestConfigPatchLeavesALegacyGroupByLineAlone(t *testing.T) {

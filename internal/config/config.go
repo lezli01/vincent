@@ -786,7 +786,7 @@ const GroupByProjectDeprecation = "tui.board.group_by: `project` is ignored sinc
 
 // HasDeprecatedGroup reports whether a group_by list names the deprecated
 // project level. PATCH /v1/config refuses a patch whose own group_by does
-// (task 132 decision 46), while the file it patches is decoded leniently.
+// (task 132 decision 50), while the file it patches is decoded leniently.
 func HasDeprecatedGroup(levels []string) bool {
 	for _, l := range levels {
 		if BoardGroup(l) == BoardGroupProject {
@@ -799,7 +799,7 @@ func HasDeprecatedGroup(levels []string) bool {
 // stripDeprecatedGroups removes the project level from a loaded group_by and
 // reports whether it did. A literal strip, not a reset to the default:
 // `[project]` becomes `[]`, the flat table it already rendered as on a board
-// scoped to one project (task 132 decision 47). A level listed twice is left
+// scoped to one project (task 132 decision 51). A level listed twice is left
 // alone — that is malformed, not legacy, and validate says so.
 func (b *BoardView) stripDeprecatedGroups() bool {
 	n := 0
@@ -1062,7 +1062,7 @@ func decode(raw []byte, lenient bool) (Config, error) {
 	// installation's file still carries the bootstrapped `[project,
 	// workflow]`, and refusing the whole candidate would block every
 	// unrelated PATCH. A write that sets the level itself is refused by the
-	// API instead (task 132 decision 46).
+	// API instead (task 132 decision 50).
 	if cfg.TUI.Board.stripDeprecatedGroups() {
 		cfg.deprecations = append(cfg.deprecations, GroupByProjectDeprecation)
 	}

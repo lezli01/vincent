@@ -707,7 +707,7 @@ func (s *Server) handleConfigPatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Refused only when the patch itself sets the deprecated level (task 132
-	// decision 46). The file it patches may still carry it — nearly every
+	// decision 50). The file it patches may still carry it — nearly every
 	// upgraded installation's bootstrapped file does — and config.Decode
 	// strips it there with a warning, so an unrelated edit still lands and
 	// the line it never touched stays as written.

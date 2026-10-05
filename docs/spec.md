@@ -7116,7 +7116,7 @@ container:                     # run a task's steps in a container (§16, task 0
   extra_mounts: []             # host:container[:ro]; the repo and worktree are mounted already
 tui:                           # view preference; the daemon validates and relays it (§15)
   board:
-    group_by: [project, workflow]  # task-table grouping, outermost first; [] = flat
+    group_by: [workflow]       # task-table grouping, outermost first; [] = flat (project deprecated, task 132.9)
   hyperlinks: false            # OSC 8 links for sanitized http(s) Markdown links; opt-in (task 111)
   keys: {}                     # operation id → one key, e.g. {refresh: ctrl+e}; {} = the §15 defaults (task 118)
   output:
@@ -7868,6 +7868,22 @@ the flat table every version before this one rendered. `state` is deliberately
 not a level: the band sort already orders by state and pins what is waiting on a
 human above everything, and a state grouping would fight the one ordering rule
 the board is not allowed to lose.
+*Amended 2026-10-05 (task 132.9, decisions 6, 50 and 51):* the one accepted
+level is `workflow`, and the default is `[workflow]`, superseding task 009's
+`[project, workflow]` and its "read project by project" rationale — the TUI
+shows one project at a time (task 132), so the `project` level had one value
+and drew no header (task 129 decision 4). `project` is **deprecated**, not
+removed: a load (cold start, hot reload, doctor) strips it literally —
+`[project, workflow]` → `[workflow]`, `[project]` → `[]` — and
+`Config.Warnings` reports it, so the daemon logs it and `vincent doctor` lists
+it under `paths.config_warnings`; a level listed twice is still refused.
+`GET /v1/config` serves the stripped list. A write is refused only when the
+**patch's own** `tui.board.group_by` contains `project` (400
+`validation_failed`, the file byte-identical); the candidate file is decoded
+with the deprecation handled leniently, so a PATCH of any other key lands on a
+file that still carries the bootstrapped line and leaves that line as written.
+This narrows task 128 decision 2's whole-file posture for this deprecation
+only; `tui.keys` keeps it.
 
 *Amended 2026-09-17 (task 111, issue #404):* `tui.hyperlinks`, a bool, default
 `false`, turns on OSC 8 hyperlinks for Markdown links in the output pane (§15,
@@ -13685,8 +13701,19 @@ is what says what a task is *doing*. It is configuration — `tui.board.group_by
 served on `GET /v1/config` — because the shape that suits three projects and one
 workflow is not the shape that suits one project and six; `[]` is the flat table
 of every earlier version, and `g` cycles project›workflow → project → workflow →
-flat for the session without writing to the file. The rules the grouping does not
-get to bend:
+flat for the session without writing to the file.
+*Amended 2026-10-05 (task 132.9, decision 6):* the default is `[workflow]` and
+`workflow` is the only level, superseding task 009's `[project, workflow]`
+default and its "read project by project" rationale: the board shows one
+project at a time, so the project level had one value and drew no header. `g`
+cycles workflow → flat and keeps the selected task. The TUI drops a `project`
+level it receives — an older daemon still serves one — before it renders, so a
+new TUI against an old daemon draws what the new daemon would. A fold path
+therefore carries no project segment; one remembered under the old grouping
+names nothing and is pruned, and the legacy `board_folds` migration strips the
+project segment (task 132 decision 35's original premise, now true). The
+`project` rows below describe the rules as they were written; with one level
+they apply to it alone. The rules the grouping does not get to bend:
 
 - **Ordering is untouched.** The tasks are sorted by band exactly as before and
   the groups take the order of their first task, so a group holding work that
