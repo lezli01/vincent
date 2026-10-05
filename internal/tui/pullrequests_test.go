@@ -37,7 +37,6 @@ func pullRequestsFixture(pulls ...apiclient.GitHubPullRequest) *pullRequestsView
 	v := newPullRequestsView()
 	v.client = offlineClient()
 	v.project = projectSel{id: 1, name: "api"}
-	v.probed = true
 	v.probes = []githubProject{
 		{project: testProject(1, "api"), status: apiclient.GitHubStatus{Enabled: true, Available: true, Repo: "octo/api"}},
 		{project: testProject(2, "web"), status: apiclient.GitHubStatus{Reason: "not_github", Message: "origin is not a github.com repository"}},

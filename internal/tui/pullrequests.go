@@ -156,10 +156,9 @@ type pullRequestsView struct {
 
 	// probes is what the root's probe fan-out found, for every project. The
 	// view does not probe: the root does, because the nav row that reaches
-	// this screen is gated on the same answer. probed is whether a fan-out
-	// has landed at all, which is the difference between "asking" and "no".
+	// this screen is gated on the same answer. Whether the selected project
+	// is in it at all is the difference between "asking" and "no" (github).
 	probes []githubProject
-	probed bool
 
 	pulls []apiclient.GitHubPullRequest
 	// loadErr is the listing's failure, the daemon's sentence for it — the
@@ -319,7 +318,7 @@ func (v *pullRequestsView) applyProbe(msg githubProbeMsg) tea.Cmd {
 		return nil
 	}
 	was := v.usable()
-	v.probes, v.probed = msg.projects, true
+	v.probes = msg.projects
 	switch now := v.usable(); {
 	case now && !was:
 		return v.loadCmd()

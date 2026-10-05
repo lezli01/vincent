@@ -155,7 +155,6 @@ func stampedViews() []stampedView {
 			// One listing per load, for the selected project only, and only
 			// when its probe says yes (task 132.11): every project the test
 			// selects is available, and a bare load runs in project 9.
-			v.probed = true
 			for _, id := range []int64{1, 2, 9} {
 				v.probes = append(v.probes, githubProject{
 					project: apiclient.Project{ID: id},
