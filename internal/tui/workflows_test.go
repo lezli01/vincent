@@ -128,6 +128,31 @@ func TestWorkflowsKeyARowByTheScopeThatOwnsItsFile(t *testing.T) {
 	}
 }
 
+// A switch drops the previous project's own rows: kept, they would be keyed
+// and labeled as the new project's until its load landed, and for good when
+// that load failed — and an editor opened on one would patch the global file
+// as the new project's (review F5).
+func TestWorkflowsSwitchDropsTheOldProjectsRows(t *testing.T) {
+	w := newWorkflowsView()
+	loadedProjectWorkflows(w,
+		[]apiclient.WorkflowEntry{globalEntry("review")},
+		[]apiclient.WorkflowEntry{projectEntry("review")},
+	)
+	stale := func(when string) {
+		t.Helper()
+		for _, line := range w.lines() {
+			if line.entry.Scope == scopeProject || line.shadowedBy != "" {
+				t.Errorf("%s: row %s/%s (key %+v, shadowed by %q) survived the switch",
+					when, line.entry.Scope, line.entry.Name, line.key(), line.shadowedBy)
+			}
+		}
+	}
+	w.setProject(projectSel{id: 2, name: "b"})
+	stale("before the reload")
+	w.update(workflowsLoadedMsg{stamp: w.stamps.next(2), err: errors.New("connection refused")})
+	stale("after a failed reload")
+}
+
 func brokenEntry(name string) apiclient.WorkflowEntry {
 	e := globalEntry(name)
 	e.Errors = []apiclient.WorkflowFinding{{Line: 4, Message: "steps is required"}}

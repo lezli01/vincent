@@ -128,6 +128,20 @@ type workflowsView struct {
 	width, height  int
 }
 
+// setProject drops the previous project's own rows before reloading. Kept,
+// they would be stamped with the new project's id by lines() until the
+// reload landed — and for good if it failed — and an editor opened on one
+// would read and patch the global file under a project header (review F5).
+// The chats board clears on a switch for the same reason.
+func (w *workflowsView) setProject(p projectSel) tea.Cmd {
+	if p.id != w.project.id {
+		w.own, w.ownErr, w.loaded, w.loadErr = nil, nil, false, nil
+		w.resolutions = nil
+		w.cursor, w.expanded = 0, false
+	}
+	return w.projectScope.setProject(p)
+}
+
 func newWorkflowsView() *workflowsView {
 	w := &workflowsView{exec: tea.ExecProcess, now: time.Now, vp: viewport.New()}
 	w.reload = w.loadCmd
