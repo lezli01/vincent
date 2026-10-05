@@ -418,6 +418,24 @@ func (b *board) followRenames(names map[int64]string) {
 	}
 }
 
+// taskProjectNames is each project's name as a task listing reports it. A
+// project whose tasks disagree is left out: one listing names a project one
+// way, so a disagreement says nothing reliable about a rename.
+func taskProjectNames(tasks []apiclient.Task) map[int64]string {
+	names := make(map[int64]string, len(tasks))
+	mixed := map[int64]bool{}
+	for _, t := range tasks {
+		if n, ok := names[t.ProjectID]; ok && n != t.ProjectName {
+			mixed[t.ProjectID] = true
+		}
+		names[t.ProjectID] = t.ProjectName
+	}
+	for id := range mixed {
+		delete(names, id)
+	}
+	return names
+}
+
 // migrateFolds moves the legacy list under project ids once both the file
 // and the project list have been read, and writes the result back.
 func (b *board) migrateFolds() {

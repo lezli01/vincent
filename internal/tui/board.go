@@ -656,11 +656,7 @@ func (b *board) updateLoaded(msg boardLoadedMsg) {
 	// archived page and date window say nothing about which groups exist
 	// (task 132 decision 35).
 	if !b.archived {
-		names := make(map[int64]string, len(msg.tasks))
-		for _, t := range msg.tasks {
-			names[t.ProjectID] = t.ProjectName
-		}
-		b.followRenames(names)
+		b.followRenames(taskProjectNames(msg.tasks))
 		if pruned, changed := b.foldsBy.prune(msg.tasks); changed {
 			b.foldsBy = pruned
 			b.persistFolds()

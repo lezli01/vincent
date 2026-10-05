@@ -178,7 +178,7 @@ func TestFoldsFollowAProjectRename(t *testing.T) {
 			if !b.folds().has(foldPath{"api", "build"}) || len(b.folds()) != 1 {
 				t.Fatalf("folds after the rename = %v, want [api build]", b.folds())
 			}
-			if got := readTUIState(dir).BoardFoldsByProject[testProjectID]; len(got) != 1 || !foldPath(got[0]).equal(foldPath{"api", "build"}) {
+			if got := readTUIState(dir).BoardFoldsByProject[testProjectID]; len(got) != 1 || !got[0].equal(foldPath{"api", "build"}) {
 				t.Errorf("persisted = %v, want the rewritten path", got)
 			}
 		})

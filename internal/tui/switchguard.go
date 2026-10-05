@@ -150,6 +150,8 @@ func (w *workflowsView) switchDraft() (string, bool) {
 
 // retarget reopens a plain create prompt on the new project; a fork's source
 // belongs to the old one, so it closes. setProject has closed the rest.
+//
+//nolint:unparam // the switchRetargeting signature; this prompt fetches nothing
 func (w *workflowsView) retarget(projectSel) tea.Cmd {
 	if w.create == nil {
 		return nil
@@ -180,6 +182,8 @@ func (v *triggersView) switchDraft() (string, bool) {
 
 // retarget reopens the create prompt on the new project. setProject has
 // closed the rest.
+//
+//nolint:unparam // the switchRetargeting signature; this prompt fetches nothing
 func (v *triggersView) retarget(projectSel) tea.Cmd {
 	if v.create != nil {
 		v.openCreate()
