@@ -126,6 +126,12 @@ var fixed = []Fixed{
 	{"chat files", "f2", "complete the @ token with the highlighted file, or the top match"},
 	{"chat files", "enter", "insert the highlighted file's mention, else send the message as typed"},
 	{"chat files", "esc", "close the file list and give the arrows back to the draft"},
+	// The project picker (task 132.4), a root popup that owns the keyboard
+	// while it is up; every printable key types into its filter.
+	{"project picker", "up", "move the highlight"},
+	{"project picker", "down", "move the highlight"},
+	{"project picker", "enter", "switch to the highlighted project"},
+	{"project picker", "esc", "close the picker without switching"},
 	{"new chat", "ctrl+s", "create the chat and open it"},
 	{"new chat", "enter", "open the focused field's list, or move on from a text field"},
 	{"new chat", "tab", "next field"},

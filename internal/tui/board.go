@@ -46,13 +46,11 @@ const (
 type (
 	// boardRefreshMsg fires when the debounce window closes.
 	boardRefreshMsg struct{ archived bool }
-	// boardLoadedMsg carries a completed task fetch. seq orders concurrent
-	// fetches: commands run on their own goroutines, so an older response
-	// can land after a newer one and must not clobber it (zero = untracked,
-	// for tests that build the message directly).
+	// boardLoadedMsg carries a completed task fetch. stamp orders concurrent
+	// fetches and pins them to the project they were issued for (loadstamp.go).
 	boardLoadedMsg struct {
 		archived bool
-		seq      uint64
+		stamp    loadStamp
 		tasks    []apiclient.Task
 		err      error
 	}
@@ -83,7 +81,10 @@ type (
 		// outputLevel is `tui.output.level` (task 129.11), read by the root
 		// for the same reason hyperlinks is.
 		outputLevel string
-		err         error
+		// defaultProject is `tui.default_project` (task 132.3), read by the
+		// root's startup chain from the first answer only.
+		defaultProject string
+		err            error
 	}
 	// boardTickMsg drives the elapsed column.
 	boardTickMsg struct {
@@ -113,8 +114,8 @@ type (
 
 // board is the §15 home view: every task, live.
 type board struct {
-	// projectScope is the root's selected project (task 132.2), stored for
-	// the item that scopes this view to it.
+	// projectScope is the root's selected project (task 132.2). A switch
+	// reloads (task 132.5); filtering the rows by it is task 132.8's.
 	projectScope
 
 	client *apiclient.Client
@@ -195,10 +196,10 @@ type board struct {
 	refreshPending bool
 	ticking        bool
 
-	// loadSeq stamps outgoing fetches; appliedSeq is the newest one
-	// installed. A response older than what is on screen is dropped.
-	loadSeq    uint64
-	appliedSeq uint64
+	// stamps is the board's one load sequence, shared by its task list and
+	// its lanes (task 132.5). A response older than what is on screen, or
+	// issued for a project the board has since left, is dropped.
+	stamps loadStamps
 
 	// bell rings the terminal. Injected so tests can count rings; the
 	// default writes BEL straight to stdout, because tea.Printf is
@@ -227,6 +228,7 @@ func newBoard() *board {
 		configGroup: defaultGrouping(),
 	}
 	b.applyStyles()
+	b.reload = b.loadCmd
 	return b
 }
 
@@ -334,15 +336,14 @@ func (b *board) tasksCmd() tea.Cmd {
 	if client == nil {
 		return nil
 	}
-	b.loadSeq++
-	seq := b.loadSeq
+	stamp := b.stamps.next(b.project.id)
 	archived := b.archived
 	opts := b.listOptions()
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		tasks, err := client.ListTasks(ctx, opts)
-		return boardLoadedMsg{archived: archived, seq: seq, tasks: tasks, err: err}
+		return boardLoadedMsg{archived: archived, stamp: stamp, tasks: tasks, err: err}
 	}
 }
 
@@ -403,7 +404,7 @@ func (b *board) configCmd() tea.Cmd {
 		return boardConfigMsg{
 			archived: archived, board: cfg.TUI.Board,
 			laneDepth: cfg.FanOut.MaxDepth, hyperlinks: cfg.TUI.Hyperlinks, keys: cfg.TUI.Keys,
-			outputLevel: cfg.TUI.Output.Level, err: err,
+			outputLevel: cfg.TUI.Output.Level, defaultProject: cfg.TUI.DefaultProject, err: err,
 		}
 	}
 }
@@ -446,7 +447,9 @@ func (b *board) update(msg tea.Msg) (panel, tea.Cmd) {
 		b.updateLoaded(msg)
 		return b, nil
 	case boardLanesMsg:
-		b.lanes.apply(msg)
+		if b.stamps.ownProject(msg.stamp) {
+			b.lanes.apply(msg)
+		}
 		return b, nil
 	case boardInfoMsg:
 		if msg.err == nil {
@@ -569,8 +572,8 @@ func (b *board) target() taskActions {
 }
 
 func (b *board) updateLoaded(msg boardLoadedMsg) {
-	if msg.seq != 0 && msg.seq <= b.appliedSeq {
-		return // a slower, older fetch landing after a newer one
+	if !b.stamps.accepts(msg.stamp) {
+		return // an older fetch landing late, or one for the previous project
 	}
 	if msg.err != nil {
 		// Keep the rows already on screen. A failed refresh is not a lost
@@ -583,7 +586,7 @@ func (b *board) updateLoaded(msg boardLoadedMsg) {
 	b.loaded = true
 	b.lastLoad = b.now()
 	b.tasks = msg.tasks
-	b.appliedSeq = msg.seq
+	b.stamps.apply(msg.stamp)
 	// A mark for a task the daemon no longer lists — archived away, or whose
 	// project was removed — would be counted in the panel title and dispatched
 	// to a 404. Only a *successful* load prunes: a failed refresh is not news
@@ -622,6 +625,11 @@ func (b *board) updateNote(n apiclient.Note) tea.Cmd {
 	if id, ok := enteredAwaitingInput(ev.Event); ok && b.expandFor(id) {
 		cmds = append(cmds, b.saveFolds())
 	}
+	// The board is the one project-bearing view outside forProject's
+	// filter (task 132 decision 16): its live listing stays global for good
+	// (decision 17), and that listing is the source of the attention count,
+	// `!` and `H` (decision 2), so a task event from any project must still
+	// refetch it. What is drawn for the selection is filtered in memory.
 	// A linked chat opening or closing changes a row's `open_chat_id` and
 	// available_actions without a task event (task 119).
 	if _, lock := lockEventTask(ev.Event); isTaskEvent(ev.Event.Type) || lock {

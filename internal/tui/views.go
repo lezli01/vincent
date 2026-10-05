@@ -136,17 +136,30 @@ type projectScoped interface {
 }
 
 // projectScope is the projectScoped implementation every project-bearing
-// view embeds. It only stores the selection: what a view does with it — and
-// whether a switch refetches — is each view's own later item (task 132.6,
-// 132.8–132.13), so until then no view's content changes.
+// view embeds. It stores the selection and, when the embedding view has
+// supplied one, runs its list load: a switch reloads (task 132 decision 25),
+// so whenever a view's load stamp drops a response issued for the previous
+// project (loadstamp.go), a fresh one is already on its way. What a view
+// fetches for a project, rather than merely when, is each view's own later
+// item (task 132.8, 132.10–132.12).
 type projectScope struct {
 	project projectSel
+	// reload is the embedding view's list load, set by its constructor; nil
+	// for views that have none to repeat (the detail screens and forms,
+	// which task 132.6 re-targets).
+	reload func() tea.Cmd
 }
 
-//nolint:unparam // projectScoped's signature: a view that refetches on a switch (132.6) returns its load
+// setProject stores p and reloads when the project itself changed. The
+// root also calls it on every connect, right after setClient has loaded, and
+// on a rename; neither changes what the view stands for, so neither refetches.
 func (s *projectScope) setProject(p projectSel) tea.Cmd {
+	switched := p.id != s.project.id
 	s.project = p
-	return nil
+	if !switched || s.reload == nil {
+		return nil
+	}
+	return s.reload()
 }
 
 // newViews returns the initial view set. ctx bounds background work a view

@@ -2114,6 +2114,16 @@ Sleep 2s
 Screenshot "'"$OUT"'/tui-task-issue.png"
 Sleep 2s
 '
+
+  # The project picker (task 132.4), opened with `@` over the board: every
+  # seeded project with its attention, running, active and open-issue figures.
+  tape tui-project-picker 1250 '
+Sleep 2s
+Type "@"
+Sleep 3s
+Screenshot "'"$OUT"'/tui-project-picker.png"
+Sleep 2s
+'
 }
 
 case "${1:-all}" in

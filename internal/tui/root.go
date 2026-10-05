@@ -90,6 +90,17 @@ type root struct {
 	linkPick *linkPicker
 	// linkPickResolve is readerResolve for the link picker.
 	linkPickResolve func(seq int64) (string, bool)
+	// projPick is the task 132.4 project picker, open when non-nil, and
+	// routed exactly like the three above. projPickSeq numbers its fetches
+	// so an answer for a picker since closed or refetched is dropped, and
+	// projPickPending is its event debounce, armed at most once.
+	projPick        *projectPicker
+	projPickSeq     int
+	projPickPending bool
+	// headerHit is the header's `◆` segment as last rendered, [x0, x1) on
+	// row 0: a left click there opens the project picker (task 132
+	// decision 23).
+	headerHit [2]int
 	// mouseOn drives tea.View's mouse mode: on by default, M toggles (§15
 	// Mouse). Off restores native click-drag text selection.
 	mouseOn bool
@@ -122,10 +133,16 @@ type root struct {
 
 	// sel is the TUI's one selected project (task 132, §15): client-side,
 	// owned here, and handed to every project-bearing view by selectProject
-	// rather than broadcast. selWhy is how it was chosen, kept for the
-	// startup notice task 132.3 raises (decision 4).
+	// rather than broadcast. selWhy is the rule that chose it.
 	sel    projectSel
 	selWhy string
+	// startup is the task 132.3 resolution chain's state (startproject.go),
+	// and selNotice the one line it raises (decision 30): a pick by the
+	// working directory, or a rule that fell through. Cleared by the next
+	// key, like keysNotice; selNoticeWarn renders it as a warning.
+	startup       startupState
+	selNotice     string
+	selNoticeWarn bool
 	// projects is the registered-project list the selection is checked
 	// against, refreshed on connect, on reconnect and on every project.*
 	// event. projectsSeq numbers the fetches so an older answer landing
@@ -279,7 +296,9 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyHyperlinks(msg)
 		m.applyOutputLevel(msg)
 		m.applyKeymap(msg)
-		return m, m.broadcast(msg)
+		return m, tea.Batch(m.noteStartupConfig(msg), m.broadcast(msg))
+	case startupWorktreesMsg:
+		return m, m.resolveStartup(msg)
 	case newTaskFromPullMsg:
 		return m.updateNewTaskFromPull(msg)
 	case newTaskFromIssueMsg:
@@ -307,7 +326,7 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseClickMsg:
 		return m.updateMouseClick(msg)
 	case tea.MouseWheelMsg:
-		if m.notice.active || m.palette != nil || m.reader != nil || m.linkPick != nil || m.help {
+		if m.notice.active || m.popupOpen() || m.help {
 			return m, nil
 		}
 		msg.Y-- // the body starts under the header line
@@ -320,6 +339,21 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.linkPick = newLinkPicker(msg.items)
 		m.linkPickResolve = msg.resolve
 		return m, nil
+	case projectPickerMsg:
+		// An answer for a picker that has closed, or that has refetched
+		// since, is dropped.
+		if m.projPick != nil && msg.seq == m.projPickSeq {
+			m.projPick.land(msg)
+		}
+		return m, nil
+	case openProjectPickerMsg:
+		return m, m.openProjectPicker()
+	case projectPickerRefreshMsg:
+		m.projPickPending = false
+		if m.projPick == nil {
+			return m, nil
+		}
+		return m, m.fetchProjectPicker()
 	case linkOpenedMsg:
 		// Like a copy's outcome, to the surface the human pressed the key on
 		// and nowhere else (task 112 decision 5).
@@ -360,6 +394,9 @@ func (m *root) updatePaste(text string) tea.Cmd {
 	if m.linkPick != nil {
 		return m.linkPick.paste(text)
 	}
+	if m.projPick != nil {
+		return m.projPick.paste(text)
+	}
 	if m.palette != nil {
 		return m.palette.paste(text)
 	}
@@ -373,12 +410,16 @@ func (m *root) updatePaste(text string) tea.Cmd {
 	return p.paste(text)
 }
 
-// updateMouseClick is §15's click scope: a footer hint fires its key, and
-// everything else lands in the active screen's body. Popups stay keyboard;
-// right-clicks and the rest are out of scope.
+// updateMouseClick is §15's click scope: a footer hint fires its key, the
+// header's `◆` segment opens the project picker (task 132.4), and everything
+// else lands in the active screen's body. Popups stay keyboard; right-clicks
+// and the rest are out of scope.
 func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
-	if msg.Button != tea.MouseLeft || m.notice.active || m.palette != nil || m.reader != nil || m.linkPick != nil || m.help {
+	if msg.Button != tea.MouseLeft || m.notice.active || m.popupOpen() || m.help {
 		return m, nil
+	}
+	if msg.Y == 0 && msg.X >= m.headerHit[0] && msg.X < m.headerHit[1] {
+		return m, m.openProjectPicker()
 	}
 	if m.height > 0 && msg.Y == m.height-1 {
 		for _, h := range m.footerHits {
@@ -396,9 +437,10 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.notice.active {
 		return m.updateNoticeKey(msg)
 	}
-	// The keymap notice is read by the time a key is pressed; the key itself
-	// still does what it does.
+	// The keymap and startup-project notices are read by the time a key is
+	// pressed; the key itself still does what it does.
 	m.keysNotice = ""
+	m.selNotice = ""
 	// The help overlay owns every key but ctrl+c, the palette's rule (task
 	// 114 decision 2). It sits above the input-capture gate: over a chat, a
 	// key that fell through would type into a draft the sheet is hiding, and
@@ -413,7 +455,7 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// tea.PasteMsg and takes the same route bracketed paste does. Nothing
 	// capturing text means nothing to paste into — don't shell out to read a
 	// clipboard whose contents would be dropped.
-	if msg.String() == "ctrl+v" && (m.palette != nil || m.reader != nil || m.linkPick != nil || m.activeCapturesInput()) {
+	if msg.String() == "ctrl+v" && (m.popupOpen() || m.activeCapturesInput()) {
 		return m, readClipboardCmd()
 	}
 	// An open popup owns every key but ctrl+c — it is the top of the §15 esc
@@ -423,6 +465,9 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.linkPick != nil && msg.String() != "ctrl+c" {
 		return m.updateLinksKey(msg)
+	}
+	if m.projPick != nil && msg.String() != "ctrl+c" {
+		return m.updateProjectPickerKey(msg)
 	}
 	if m.palette != nil && msg.String() != "ctrl+c" {
 		return m.updatePaletteKey(msg)
@@ -541,6 +586,10 @@ func (m *root) globalKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case opKey(keymap.Mouse):
 		m.mouseOn = !m.mouseOn
 		return nil, true
+	case opKey(keymap.Project):
+		if m.phase == phaseConnected {
+			return m.openProjectPicker(), true
+		}
 	case opKey(keymap.NextAttention):
 		// Jump to the next task needing a human — global, so it also pulls
 		// a takeover screen back to the board it acts on.
@@ -654,6 +703,73 @@ func (m *root) updateLinksKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, writeClipboardCmd(linkLabel(*run), dest)
 	}
 	return m, openLinkCmd(dest)
+}
+
+// popupOpen reports whether one of the root's own popups is up. Each owns the
+// keyboard while it is, so at most one ever is.
+func (m *root) popupOpen() bool {
+	return m.palette != nil || m.reader != nil || m.linkPick != nil || m.projPick != nil
+}
+
+// openProjectPicker raises the project picker over whatever is on screen,
+// seeded with the root's own name list so it is never empty while its first
+// answer is in flight, and makes its one list call. Not while disconnected:
+// a switch the daemon cannot answer would scope every view to nothing.
+func (m *root) openProjectPicker() tea.Cmd {
+	if m.phase != phaseConnected || m.popupOpen() {
+		return nil
+	}
+	m.help = false
+	m.projPick = newProjectPicker(m.projects, m.sel.id)
+	return m.fetchProjectPicker()
+}
+
+// fetchProjectPicker is one refresh of the open picker's rows.
+func (m *root) fetchProjectPicker() tea.Cmd {
+	if m.client == nil {
+		return nil
+	}
+	m.projPickSeq++
+	return fetchProjectPicker(m.client, m.projPickSeq)
+}
+
+// scheduleProjectPicker coalesces a burst of events into one refetch, the
+// projects view's debounce (board.go's refreshDebounce). Closed, it fetches
+// nothing: the picker's figures are only worth a request while they are on
+// screen.
+func (m *root) scheduleProjectPicker() tea.Cmd {
+	if m.projPick == nil || m.projPickPending {
+		return nil
+	}
+	m.projPickPending = true
+	return tea.Tick(refreshDebounce, func(time.Time) tea.Msg { return projectPickerRefreshMsg{} })
+}
+
+// projectPickerEvent reports whether an event can move a picker figure: a
+// task's state, an issue's, a chat's, or the project list itself.
+func projectPickerEvent(typ string) bool {
+	for _, prefix := range []string{"task.", "issue.", "chat.", "project."} {
+		if strings.HasPrefix(typ, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// updateProjectPickerKey routes keys into the open project picker and makes
+// its pick the selection — by selectProject, the one path every switch takes.
+func (m *root) updateProjectPickerKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	pick, done, cmd := m.projPick.update(msg)
+	if done {
+		m.projPick = nil
+	}
+	if pick == nil {
+		return m, cmd
+	}
+	if pick.ID == m.sel.id && pick.Name == m.sel.name {
+		return m, cmd
+	}
+	return m, tea.Batch(cmd, m.selectProject(*pick, "picked in the project picker"))
 }
 
 // surface is what the palette and the help sheet both need to know about the
@@ -960,29 +1076,29 @@ func (m *root) refreshProjects() tea.Cmd {
 	}
 }
 
-// updateProjectList adopts a fresh project list. With nothing selected, the
-// first project by name is selected (task 132 decision 10: a new project
-// only auto-selects when nothing is) — the whole startup precedence is task
-// 132.3. A selected project that is still listed has its name refreshed, so a
-// rename reaches the header. One that has vanished is left alone: what a
-// deleted selection becomes is task 132.7's. A failed fetch leaves the
-// previous list standing, for githubProbeMsg's reason.
+// updateProjectList adopts a fresh project list. The first one feeds the
+// task 132.3 startup chain, which picks the selection once the first config
+// answer is in as well. After that, with nothing selected, the first project
+// by name is selected (task 132 decision 10: a new project only auto-selects
+// when nothing is). A selected project that is still listed has its name
+// refreshed, so a rename reaches the header. One that has vanished is left
+// alone: what a deleted selection becomes is task 132.7's. A failed fetch
+// leaves the previous list standing, for githubProbeMsg's reason.
 func (m *root) updateProjectList(msg projectListMsg) tea.Cmd {
 	if msg.err != nil || msg.seq != m.projectsSeq {
 		return nil
 	}
 	m.projects = msg.projects
+	if !m.startup.done {
+		m.startup.listed = true
+		return m.maybeResolveStartup()
+	}
 	if m.sel.id == 0 {
-		if len(m.projects) == 0 {
+		first, ok := firstProjectByName(m.projects)
+		if !ok {
 			return nil
 		}
-		first := m.projects[0]
-		for _, p := range m.projects[1:] {
-			if p.Name < first.Name || (p.Name == first.Name && p.ID < first.ID) {
-				first = p
-			}
-		}
-		return m.selectProject(first, "the first project by name")
+		return m.selectProject(first, whyFirstName)
 	}
 	for _, p := range m.projects {
 		if p.ID == m.sel.id {
@@ -996,17 +1112,21 @@ func (m *root) updateProjectList(msg projectListMsg) tea.Cmd {
 	return nil
 }
 
-// selectProject makes p the selection and tells every project-bearing view.
-// why says how it was chosen, for the notice task 132.3 raises.
+// selectProject makes p the selection, tells every project-bearing view, and
+// records it as the last used project (task 132 decision 31) — the one place
+// the selection changes, so every change is persisted, the startup chain's
+// own pick included. why is the rule that chose it.
 func (m *root) selectProject(p apiclient.Project, why string) tea.Cmd {
 	m.sel = projectSel{id: p.ID, name: p.Name}
 	m.selWhy = why
-	return m.scopeViews()
+	return tea.Batch(append(m.scopeCmds(), m.saveSelection())...)
 }
 
 // scopeViews hands the selection to every projectScoped view, directly and
 // in view order, and batches what they return.
-func (m *root) scopeViews() tea.Cmd {
+func (m *root) scopeViews() tea.Cmd { return tea.Batch(m.scopeCmds()...) }
+
+func (m *root) scopeCmds() []tea.Cmd {
 	var cmds []tea.Cmd
 	for i := range m.views {
 		if ps, ok := m.views[i].(projectScoped); ok {
@@ -1015,11 +1135,11 @@ func (m *root) scopeViews() tea.Cmd {
 			}
 		}
 	}
-	return tea.Batch(cmds...)
+	return cmds
 }
 
 func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
-	var reprobe, relist tea.Cmd
+	var reprobe, relist, repick tea.Cmd
 	if m.notes == nil {
 		// A stale note from a stream torn down by retry; never re-arm on a
 		// nil channel — that receive would block forever.
@@ -1054,9 +1174,12 @@ func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
 		if strings.HasPrefix(n.Event.Type, "project.") {
 			relist = m.refreshProjects()
 		}
+		if projectPickerEvent(n.Event.Type) {
+			repick = m.scheduleProjectPicker()
+		}
 	}
 	// Every view sees the note, not just the visible one.
-	return m, tea.Batch(m.broadcast(noteMsg{note: n}), waitNote(m.notes), reprobe, relist)
+	return m, tea.Batch(m.broadcast(noteMsg{note: n}), waitNote(m.notes), reprobe, relist, repick)
 }
 
 // delegate routes a message to the active view.
@@ -1181,13 +1304,20 @@ func (m *root) noticeKeys(warnings []string) {
 }
 
 // statusLine is the line under the header, when there is one: the full-auto
-// notice's failed acknowledgment, else the one-time keymap notice.
+// notice's failed acknowledgment, else the one-time keymap notice, else the
+// startup-project notice.
 func (m *root) statusLine() (string, bool) {
 	if line, ok := m.notice.statusLine(); ok {
 		return line, true
 	}
 	if m.keysNotice != "" {
 		return styleWarn.Render(m.keysNotice), true
+	}
+	if m.selNotice != "" {
+		if m.selNoticeWarn {
+			return styleWarn.Render(" ⚠ " + m.selNotice), true
+		}
+		return styleDim.Render(" " + m.selNotice), true
 	}
 	return "", false
 }
@@ -1303,11 +1433,18 @@ func (m *root) headerLine() string {
 	// Shedding order (task 132.2): the view tag truncates down to a floor
 	// and is then dropped; then the version goes; last, the project name
 	// truncates behind an ellipsis.
+	// hit records where the segment landed, for the header click.
+	hit := func(l, seg string) {
+		x0 := ansi.StringWidth(l)
+		m.headerHit = [2]int{x0, x0 + ansi.StringWidth(seg)}
+	}
 	head := lead(full) + segment(project)
 	if room := width - ansi.StringWidth(head) - 2; room >= headerTagFloor || room >= ansi.StringWidth(m.headerTagFull()) {
+		hit(lead(full), segment(project))
 		return head + "  " + styleDim.Render(m.headerTag(room))
 	}
 	if ansi.StringWidth(head) <= width {
+		hit(lead(full), segment(project))
 		return head
 	}
 	l := lead(full)
@@ -1315,7 +1452,9 @@ func (m *root) headerLine() string {
 		l = lead("vincent")
 	}
 	room := width - ansi.StringWidth(l+segment(""))
-	return l + segment(ansi.Truncate(project, max(room, 1), "…"))
+	seg := segment(ansi.Truncate(project, max(room, 1), "…"))
+	hit(l, seg)
+	return l + seg
 }
 
 // headerProjectGlyph marks the selected-project segment of the app header. A
@@ -1584,6 +1723,8 @@ func (m *root) popupRender() (func(w, h int) string, bool) {
 		return m.linkPick.render, true
 	case m.palette != nil:
 		return m.palette.render, true
+	case m.projPick != nil:
+		return m.projPick.render, true
 	default:
 		return nil, false
 	}

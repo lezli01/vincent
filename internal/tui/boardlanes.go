@@ -39,15 +39,16 @@ import (
 // config.Default().FanOut.MaxDepth; boardlanes_test.go holds the two together.
 const laneDepthDefault = 3
 
-// boardLanesMsg carries one expanded parent's lanes, in merge order. seq
-// orders concurrent fetches per parent the way boardLoadedMsg does for the
-// board itself: commands run on their own goroutines, so an older response
-// can land after a newer one and must not clobber it (zero = untracked, for
-// tests that build the message directly).
+// boardLanesMsg carries one expanded parent's lanes, in merge order. Its
+// stamp comes from the board's one sequence (loadstamp.go) and is checked
+// against the board's project there, but ordered per parent: commands run on
+// their own goroutines, so an older response can land after a newer one and
+// must not clobber it, yet a newer fetch for another parent says nothing
+// about this one.
 type boardLanesMsg struct {
 	// archived tags the board instance this answer belongs to (task 092).
 	archived bool
-	seq      uint64
+	stamp    loadStamp
 	parentID int64
 	lanes    []apiclient.Task
 	err      error
@@ -88,8 +89,8 @@ type laneTree struct {
 	// rows is each parent's lanes in merge order, kept across a collapse so
 	// re-expanding is instant rather than another round trip.
 	rows map[int64][]apiclient.Task
-	// seq and applied stamp the per-parent fetches.
-	seq     map[int64]uint64
+	// applied is the newest stamp installed per parent. The stamps
+	// themselves are the board's (board.stamps).
 	applied map[int64]uint64
 	// maxDepth is `fan_out.max_depth` as the daemon reports it — how many
 	// levels of lane one tree may have (§7.6), and therefore how deep the
@@ -146,7 +147,7 @@ func (l *laneTree) apply(msg boardLanesMsg) {
 		// that the lanes went away.
 		return
 	}
-	if msg.seq != 0 && msg.seq <= l.applied[msg.parentID] {
+	if msg.stamp.seq != 0 && msg.stamp.seq <= l.applied[msg.parentID] {
 		return
 	}
 	if l.rows == nil {
@@ -156,7 +157,7 @@ func (l *laneTree) apply(msg boardLanesMsg) {
 		l.applied = make(map[int64]uint64, 2)
 	}
 	l.rows[msg.parentID] = msg.lanes
-	l.applied[msg.parentID] = msg.seq
+	l.applied[msg.parentID] = msg.stamp.seq
 	if len(msg.lanes) == 0 {
 		// The probe came back empty: this task is not a fan-out parent after
 		// all. Drop it rather than leaving an open marker over nothing, so a
@@ -164,15 +165,6 @@ func (l *laneTree) apply(msg boardLanesMsg) {
 		// nothing.
 		l.expanded = l.expanded.without(msg.parentID)
 	}
-}
-
-// next stamps an outgoing fetch for one parent.
-func (l *laneTree) next(parentID int64) uint64 {
-	if l.seq == nil {
-		l.seq = make(map[int64]uint64, 2)
-	}
-	l.seq[parentID]++
-	return l.seq[parentID]
 }
 
 // toggleLanes is `L`: open or close the fan-out under the cursor.
@@ -210,13 +202,13 @@ func (b *board) laneCmd(parentID int64) tea.Cmd {
 	if client == nil {
 		return nil
 	}
-	seq := b.lanes.next(parentID)
+	stamp := b.stamps.next(b.project.id)
 	archived := b.archived
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		lanes, err := client.ListTasks(ctx, apiclient.ListTasksOptions{ParentID: parentID})
-		return boardLanesMsg{archived: archived, seq: seq, parentID: parentID, lanes: lanes, err: err}
+		return boardLanesMsg{archived: archived, stamp: stamp, parentID: parentID, lanes: lanes, err: err}
 	}
 }
 

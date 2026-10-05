@@ -381,7 +381,7 @@ func TestExpandedSetNeverReachesTUIState(t *testing.T) {
 	// Everything that writes the file: a fold, and the prune a load runs.
 	b.folds = b.folds.with(foldPath{"api"})
 	b.persistFolds()
-	b.updateLoaded(boardLoadedMsg{seq: 9, tasks: []apiclient.Task{
+	b.updateLoaded(boardLoadedMsg{stamp: loadStamp{seq: 9}, tasks: []apiclient.Task{
 		task(7, stateAwaitingChildren, inProject("api"), inWorkflow("fan")),
 	}})
 
@@ -444,7 +444,7 @@ func TestALaneRowIsAnOrdinaryTaskRow(t *testing.T) {
 	// The bulk selection: a marked lane survives a refresh and is dispatched
 	// with the rest.
 	b.marks = b.marks.toggle(42)
-	b.updateLoaded(boardLoadedMsg{seq: 3, tasks: b.tasks})
+	b.updateLoaded(boardLoadedMsg{stamp: loadStamp{seq: 3}, tasks: b.tasks})
 	if !b.marks.has(42) {
 		t.Fatal("a refresh pruned the mark off a lane; the lane is live, it is only absent from a listing that excludes lanes")
 	}

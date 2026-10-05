@@ -107,6 +107,7 @@ type (
 	// project's, each carrying its own outcome, plus the task rows the
 	// claiming column and the link picker read from.
 	prLoadedMsg struct {
+		stamp  loadStamp
 		groups []pullGroup
 		tasks  []apiclient.Task
 	}
@@ -148,9 +149,11 @@ type unlinkPrompt struct {
 
 // pullRequestsView is §15's view 7.
 type pullRequestsView struct {
-	// projectScope is the root's selected project (task 132.2), stored for
-	// the item that scopes this view to it.
+	// projectScope is the root's selected project (task 132.2). A switch
+	// reloads, and stamps drops a load issued for the previous project or
+	// overtaken by a newer one (task 132.5).
 	projectScope
+	stamps loadStamps
 
 	client *apiclient.Client
 	now    func() time.Time
@@ -201,7 +204,9 @@ func newPullRequestsView() *pullRequestsView {
 	fi := newTextField()
 	fi.SetPlaceholder("filter by number, title, branch or project")
 	fi.SetPrompt("/")
-	return &pullRequestsView{now: time.Now, filter: fi, state: pullStates[0]}
+	v := &pullRequestsView{now: time.Now, filter: fi, state: pullStates[0]}
+	v.reload = v.loadCmd
+	return v
 }
 
 func (v *pullRequestsView) title() string { return "Pull requests" }
@@ -314,6 +319,7 @@ func (v *pullRequestsView) loadCmd() tea.Cmd {
 	v.loading = true
 	projects := append([]githubProject(nil), v.available...)
 	state := v.state
+	stamp := v.stamps.next(v.project.id)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
@@ -340,7 +346,7 @@ func (v *pullRequestsView) loadCmd() tea.Cmd {
 		if err != nil {
 			tasks = nil
 		}
-		return prLoadedMsg{groups: groups, tasks: tasks}
+		return prLoadedMsg{stamp: stamp, groups: groups, tasks: tasks}
 	}
 }
 
@@ -361,6 +367,10 @@ func githubReasonMessage(err error) string {
 }
 
 func (v *pullRequestsView) applyLoaded(msg prLoadedMsg) {
+	if !v.stamps.accepts(msg.stamp) {
+		return // an older load landing late, or one for the previous project
+	}
+	v.stamps.apply(msg.stamp)
 	v.loading = false
 	v.loaded = true
 	v.lastLoad = v.now()
@@ -384,7 +394,7 @@ func (v *pullRequestsView) scheduleRefresh() tea.Cmd {
 // which moves the claiming column's titles and states.
 func (v *pullRequestsView) updateNote(n apiclient.Note) tea.Cmd {
 	ev, ok := n.(apiclient.EventNote)
-	if !ok {
+	if !ok || !forProject(ev.Event, v.project.id) {
 		return nil
 	}
 	if ev.Event.Type == eventTaskGitHubPullChanged || isTaskEvent(ev.Event.Type) {

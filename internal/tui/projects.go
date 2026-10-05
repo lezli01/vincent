@@ -25,6 +25,7 @@ const forceHint = "?force"
 type (
 	projectsRefreshMsg struct{}
 	projectsLoadedMsg  struct {
+		stamp    loadStamp
 		projects []apiclient.Project
 		tasks    []apiclient.Task
 		info     apiclient.Info
@@ -85,6 +86,10 @@ type projectsView struct {
 	// err is a failure that belongs to the view rather than a form row —
 	// including the 409 no confirmation can resolve.
 	err string
+
+	// stamps orders the view's loads. It is seq-only: every stamp carries
+	// project 0 (task 132.5).
+	stamps loadStamps
 
 	refreshPending bool
 	width, height  int
@@ -152,12 +157,15 @@ func (p *projectsView) loadCmd() tea.Cmd {
 	if client == nil {
 		return nil
 	}
+	// Project 0 always: the overview is not project-bearing (task 132
+	// decision 5), so its stamp only orders its loads (decision 26).
+	stamp := p.stamps.next(0)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
 		projects, err := client.ListProjects(ctx)
 		if err != nil {
-			return projectsLoadedMsg{err: err}
+			return projectsLoadedMsg{stamp: stamp, err: err}
 		}
 		// The slot counts ride on the project rows themselves. The task
 		// list feeds the workload panel and the global cap comes from
@@ -169,6 +177,7 @@ func (p *projectsView) loadCmd() tea.Cmd {
 		}
 		info, infoErr := client.Info(ctx)
 		return projectsLoadedMsg{
+			stamp:    stamp,
 			projects: projects, tasks: tasks,
 			info: info, infoOK: infoErr == nil,
 		}
@@ -223,6 +232,10 @@ func (p *projectsView) update(msg tea.Msg) (panel, tea.Cmd) {
 }
 
 func (p *projectsView) applyLoaded(msg projectsLoadedMsg) {
+	if !p.stamps.accepts(msg.stamp) {
+		return // a slower, older load landing after a newer one
+	}
+	p.stamps.apply(msg.stamp)
 	if msg.err != nil {
 		// Keep the rows on screen: a failed refresh is not a lost list.
 		p.loadErr = msg.err

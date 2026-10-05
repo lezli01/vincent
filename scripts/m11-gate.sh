@@ -20,6 +20,9 @@
 #   8. `tui.keys` (task 118): a keymap that breaks §15's vocabulary is refused
 #      with the file byte-identical, and an accepted one round-trips through
 #      GET, the file and `vincent config get|set`
+#   9. `tui.default_project` (task 132.3): an empty or over-long name is
+#      refused with the file byte-identical, and a valid one round-trips
+#      through GET and `vincent config get`
 #
 # No workflow and no agent CLI: what is under test is an endpoint and a file,
 # so the gate needs neither, which also keeps it fast on all three platforms.
@@ -251,7 +254,33 @@ fi
 KEYS="$(api GET /config | jq -c .tui.keys)" || fail "GET after clearing tui.keys failed"
 [[ "$KEYS" == "{}" ]] || fail "clearing tui.keys left $KEYS"
 
-echo "== 9. the daemon is still up"
+echo "== 9. tui.default_project: syntax refused, a name round-trips"
+# Unset is served as "", not null.
+DP="$(api GET /config | jq -r .tui.default_project)" || fail "GET /v1/config (tui.default_project) failed"
+[[ "$DP" == "" ]] || fail "tui.default_project is served as $DP by default, want empty"
+cp "$CONFIG_FILE" "$TMP/before.yaml"
+STATUS="$(api_status PATCH /config -d '{"tui":{"default_project":""}}')" \
+  || fail "curl PATCH (empty tui.default_project) failed"
+[[ "$STATUS" == "400" ]] || fail "an empty tui.default_project answered $STATUS, want 400"
+jq -e '.error.code == "validation_failed" and (.error.message | contains("tui.default_project"))' \
+  "$TMP/body.json" >/dev/null \
+  || fail "the refusal does not name tui.default_project: $(cat "$TMP/body.json")"
+cmp -s "$TMP/before.yaml" "$CONFIG_FILE" || fail "a refused empty name changed config.yaml"
+LONG="$(printf 'n%.0s' {1..513})"
+STATUS="$(api_status PATCH /config -d "{\"tui\":{\"default_project\":\"$LONG\"}}")" \
+  || fail "curl PATCH (over-long tui.default_project) failed"
+[[ "$STATUS" == "400" ]] || fail "a 513-byte tui.default_project answered $STATUS, want 400"
+jq -e '.error.message | contains("tui.default_project")' "$TMP/body.json" >/dev/null \
+  || fail "the over-long refusal does not name the key: $(cat "$TMP/body.json")"
+cmp -s "$TMP/before.yaml" "$CONFIG_FILE" || fail "a refused over-long name changed config.yaml"
+api PATCH /config -d '{"tui":{"default_project":"web"}}' >/dev/null \
+  || fail "PATCH tui.default_project failed"
+DP="$(api GET /config | jq -r .tui.default_project | tr -d '\r')" || fail "GET after PATCH tui.default_project failed"
+[[ "$DP" == "web" ]] || fail "GET right after the 200 serves tui.default_project as $DP"
+OUT="$("$VINCENT" config get tui.default_project | tr -d '\r')"
+[[ "$OUT" == "web" ]] || fail "vincent config get tui.default_project = $OUT, want web"
+
+echo "== 10. the daemon is still up"
 api GET /health | jq -e '.status == "ok"' >/dev/null \
   || fail "the daemon did not survive the gate"
 

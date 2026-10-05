@@ -28,12 +28,14 @@ import (
 
 // Chats board messages.
 type (
+	// chatsRefreshMsg fires when the debounce window closes (task 132.5).
 	chatsRefreshMsg struct{ archived bool }
 	// chatsLoadedMsg is one whole board: every chat, plus the project names
 	// the headings read from.
 	chatsLoadedMsg struct {
 		// archived tags the board instance this answer belongs to (task 092).
 		archived bool
+		stamp    loadStamp
 		chats    []apiclient.Chat
 		names    map[int64]string
 		// projectsListed reports that the load reached the project
@@ -74,9 +76,11 @@ type archivePrompt struct {
 
 // chatsView is the chats board.
 type chatsView struct {
-	// projectScope is the root's selected project (task 132.2), stored for
-	// the item that scopes this view to it.
+	// projectScope is the root's selected project (task 132.2). A switch
+	// reloads, and stamps drops a load issued for the previous project or
+	// overtaken by a newer one (task 132.5).
 	projectScope
+	stamps loadStamps
 
 	client  *apiclient.Client
 	now     func() time.Time
@@ -89,10 +93,12 @@ type chatsView struct {
 	// no project here".
 	projectsListed bool
 
-	loaded   bool
-	loading  bool
-	lastLoad time.Time
-	loadErr  string
+	loaded  bool
+	loading bool
+	// refreshPending is the open debounce window (scheduleRefresh).
+	refreshPending bool
+	lastLoad       time.Time
+	loadErr        string
 
 	cursor     int
 	selectedID int64
@@ -140,7 +146,9 @@ func newChatsView() *chatsView {
 	fi := newTextField()
 	fi.SetPlaceholder("filter by title, agent or branch")
 	fi.SetPrompt("/")
-	return &chatsView{now: time.Now, filter: fi, names: map[int64]string{}}
+	v := &chatsView{now: time.Now, filter: fi, names: map[int64]string{}}
+	v.reload = v.loadCmd
+	return v
 }
 
 // newArchivedChatsView is the same model in archived mode (§15 view 10, task
@@ -280,6 +288,7 @@ func (v *chatsView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		}
 		return v, nil
 	case chatsRefreshMsg:
+		v.refreshPending = false
 		return v, v.loadCmd()
 	case chatsLoadedMsg:
 		v.applyLoaded(msg)
@@ -349,13 +358,27 @@ func (v *chatsView) updateWheel(msg tea.MouseWheelMsg) {
 	}
 }
 
-// applyNote reloads when a chat event says the board changed.
+// applyNote reloads when a chat event in the selected project says the board
+// changed. The reload is debounced the way every other list's is: a turn
+// writes a burst of chat.* events, and each one used to be its own fetch.
 func (v *chatsView) applyNote(msg noteMsg) tea.Cmd {
 	ev, ok := msg.note.(apiclient.EventNote)
-	if !ok || !strings.HasPrefix(ev.Event.Type, "chat.") {
+	if !ok || !forProject(ev.Event, v.project.id) || !strings.HasPrefix(ev.Event.Type, "chat.") {
 		return nil
 	}
-	return v.loadCmd()
+	return v.scheduleRefresh()
+}
+
+// scheduleRefresh opens a debounce window, or does nothing if one is open.
+func (v *chatsView) scheduleRefresh() tea.Cmd {
+	if v.refreshPending || v.client == nil {
+		return nil
+	}
+	v.refreshPending = true
+	archived := v.archived
+	return tea.Tick(refreshDebounce, func(time.Time) tea.Msg {
+		return chatsRefreshMsg{archived: archived}
+	})
 }
 
 // loadCmd fetches every chat and the project names the headings read from.
@@ -366,13 +389,14 @@ func (v *chatsView) loadCmd() tea.Cmd {
 	}
 	opts := v.listOptions()
 	archived := v.archived
+	stamp := v.stamps.next(v.project.id)
 	v.loading = true
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
 		chats, err := client.ListChats(ctx, opts)
 		if err != nil {
-			return chatsLoadedMsg{archived: archived, err: err}
+			return chatsLoadedMsg{archived: archived, stamp: stamp, err: err}
 		}
 		names := map[int64]string{}
 		listed := false
@@ -384,7 +408,7 @@ func (v *chatsView) loadCmd() tea.Cmd {
 				names[p.ID] = p.Name
 			}
 		}
-		return chatsLoadedMsg{archived: archived, chats: chats, names: names, projectsListed: listed}
+		return chatsLoadedMsg{archived: archived, stamp: stamp, chats: chats, names: names, projectsListed: listed}
 	}
 }
 
@@ -404,6 +428,10 @@ func (v *chatsView) listOptions() apiclient.ListChatsOptions {
 }
 
 func (v *chatsView) applyLoaded(msg chatsLoadedMsg) {
+	if !v.stamps.accepts(msg.stamp) {
+		return // an older load landing late, or one for the previous project
+	}
+	v.stamps.apply(msg.stamp)
 	v.loading = false
 	if msg.err != nil {
 		v.loadErr = errString(msg.err)

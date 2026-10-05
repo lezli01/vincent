@@ -13,14 +13,30 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **The TUI opens on the project you mean.** `vincent --project <name|id>`
+  opens the TUI on that project. Without it, launching `vincent` inside a
+  registered project's checkout, or inside a task's or chat's worktree, opens
+  on that project; otherwise the new `tui.default_project` config key decides,
+  then the project you had selected last time, then the first by name. A name
+  that is not registered is skipped with a line under the header saying what
+  was shown instead. `tui.default_project` is read at startup only, and the
+  last selection is kept in `tui.json` as `selected_project`.
+- **Switch project from anywhere in the TUI.** Press `@`, click the header's
+  `◆` segment, or run **switch project** from the palette (`ctrl+p` reaches it
+  from a chat). A picker lists every project with the tasks that need you
+  (`!3`), the tasks running against the project's own cap (`1/2 running`, or
+  `1 running` when it has none), its active tasks and its open issues, and the
+  figures stay current while it is open. Type to filter, `enter` switches,
+  `esc` closes. The key is the new `project` operation in `tui.keys`; a
+  `tui.keys` that already binds `@` keeps its binding, and the picker stays
+  reachable from the palette.
 - **The TUI names a selected project.** The app header now shows
   `◆ <project>` after the version, or `◆ no project` when none is
-  registered. The TUI selects the first project by name and keeps it when you
-  register another one. The new-task form still opens on the project under
-  the cursor, and on the selected project when the cursor names none. On a
-  narrow terminal the header drops the view's tag first, then the version, and
-  shortens the project name last. Choosing a project and scoping views to it
-  come in later releases.
+  registered. The new-task form still opens on the project under the cursor,
+  and on the selected project when the cursor names none. On a narrow
+  terminal the header drops the view's tag first, then the version, and
+  shortens the project name last. Scoping views to it comes in later
+  releases.
 - **Per-project counts.** `vincent project ls --stats` adds four columns to
   the project list: active tasks, tasks waiting on you, open issues and live
   chats. With `--json` each project carries the full `stats` object, which
@@ -202,6 +218,17 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
+- **TUI lists follow the selected project's events.** The issues, chats,
+  pull-request, workflows and triggers screens now refresh on events
+  from the selected project, on events that belong to no project, and on any
+  project being added, renamed or removed, but no longer on other events from
+  other projects. The triggers screen still refreshes on every trigger's
+  fires. Until those screens are scoped to the
+  selection, rows from other projects can lag behind until the next refresh.
+  The chats boards also batch a burst of chat events into one refresh, as the
+  other lists already did, and every list ignores a slow answer that a newer
+  one has overtaken.
+  ([#699](https://github.com/lezli01/vincent/issues/699))
 - **The new-task form no longer has a GitHub issue row.** A task is started
   from an issue on the issue screens instead, and a plain new task makes no
   GitHub call on any project. `GET /v1/projects/{id}/github/issues` no longer

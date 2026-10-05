@@ -24,6 +24,7 @@ type (
 	// global fetch failing, which is the only failure that costs the view its
 	// contents; a project whose fetch failed carries its error in its block.
 	workflowsLoadedMsg struct {
+		stamp  loadStamp
 		blocks []wfBlock
 		err    error
 	}
@@ -72,9 +73,11 @@ type wfLine struct {
 
 // workflowsView is §15's view 5: the merged registry, live.
 type workflowsView struct {
-	// projectScope is the root's selected project (task 132.2), stored for
-	// the item that scopes this view to it.
+	// projectScope is the root's selected project (task 132.2). A switch
+	// reloads, and stamps drops a load issued for the previous project or
+	// overtaken by a newer one (task 132.5).
 	projectScope
+	stamps loadStamps
 
 	client *apiclient.Client
 	exec   execFunc
@@ -116,7 +119,9 @@ type workflowsView struct {
 }
 
 func newWorkflowsView() *workflowsView {
-	return &workflowsView{exec: tea.ExecProcess, now: time.Now, vp: viewport.New()}
+	w := &workflowsView{exec: tea.ExecProcess, now: time.Now, vp: viewport.New()}
+	w.reload = w.loadCmd
+	return w
 }
 
 func (w *workflowsView) title() string { return "Workflows" }
@@ -146,12 +151,13 @@ func (w *workflowsView) loadCmd() tea.Cmd {
 	if client == nil {
 		return nil
 	}
+	stamp := w.stamps.next(w.project.id)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
 		global, err := client.ListWorkflows(ctx, 0)
 		if err != nil {
-			return workflowsLoadedMsg{err: err}
+			return workflowsLoadedMsg{stamp: stamp, err: err}
 		}
 		sortEntries(global)
 		blocks := []wfBlock{{name: "global", entries: global}}
@@ -160,7 +166,7 @@ func (w *workflowsView) loadCmd() tea.Cmd {
 		if err != nil {
 			// The global block is real and worth showing; the project blocks
 			// are simply unknown until the list comes back.
-			return workflowsLoadedMsg{blocks: blocks}
+			return workflowsLoadedMsg{stamp: stamp, blocks: blocks}
 		}
 		for _, p := range projects {
 			block := wfBlock{name: p.Name, projectID: p.ID}
@@ -173,7 +179,7 @@ func (w *workflowsView) loadCmd() tea.Cmd {
 			}
 			blocks = append(blocks, block)
 		}
-		return workflowsLoadedMsg{blocks: blocks}
+		return workflowsLoadedMsg{stamp: stamp, blocks: blocks}
 	}
 }
 
@@ -260,6 +266,10 @@ func (w *workflowsView) update(msg tea.Msg) (panel, tea.Cmd) {
 }
 
 func (w *workflowsView) applyLoaded(msg workflowsLoadedMsg) {
+	if !w.stamps.accepts(msg.stamp) {
+		return // an older load landing late, or one for the previous project
+	}
+	w.stamps.apply(msg.stamp)
 	if msg.err != nil {
 		// Keep the last-good registry behind the warning: a failed refresh is
 		// not an empty registry.
@@ -327,7 +337,7 @@ func (w *workflowsView) snapCursor() {
 // names no scope — so the only honest reaction is to refetch everything.
 func (w *workflowsView) updateNote(n apiclient.Note) tea.Cmd {
 	ev, ok := n.(apiclient.EventNote)
-	if !ok {
+	if !ok || !forProject(ev.Event, w.project.id) {
 		return nil
 	}
 	if ev.Event.Type == eventWorkflowRegistryChanged ||

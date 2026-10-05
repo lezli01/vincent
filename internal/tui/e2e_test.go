@@ -266,3 +266,53 @@ func TestDaemonNeverTouchesClaudeSettings(t *testing.T) {
 		t.Errorf("a daemon run left %d files in ~/.claude, want only the settings", len(entries))
 	}
 }
+
+// TestDefaultProjectFromConfigE2E is task 132.3 against the built binary: a
+// real daemon serving a config.yaml that sets tui.default_project, two
+// registered projects, and the TUI opening on the configured one rather than
+// the first by name — visible in the header.
+func TestDefaultProjectFromConfigE2E(t *testing.T) {
+	dataDir, cfgDir := t.TempDir(), t.TempDir()
+	env := append(os.Environ(),
+		config.EnvDataDir+"="+dataDir,
+		config.EnvConfigDir+"="+cfgDir,
+	)
+	t.Cleanup(func() {
+		cmd := exec.Command(vincentBin, "daemon", "stop", "--force")
+		cmd.Env = env
+		_, _ = cmd.CombinedOutput()
+	})
+	cfg := "tui:\n  default_project: beta\n"
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	vincent := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command(vincentBin, args...)
+		cmd.Env = env
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("vincent %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+	}
+	vincent("daemon", "start")
+	vincent("project", "add", "--name", "alpha", testrepo.Init(t, "main"))
+	vincent("project", "add", "--name", "beta", testrepo.Init(t, "main"))
+
+	cn := defaultConnector()
+	cn.resolveDataDir = func() (string, error) { return dataDir, nil }
+	m := newRoot(testCtx(t), cn, ackedDir(t))
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	msg := runCmd(t, m.Init(), 10*time.Second)
+	if _, ok := msg.(connectedMsg); !ok {
+		t.Fatalf("probe against a running daemon = %T, want connectedMsg", msg)
+	}
+	_, cmd := m.Update(msg)
+	pmp := newPump(t, m, cmd)
+	pmp.until(30*time.Second, "the configured project to be selected", func() bool { return m.sel.name == "beta" })
+	if m.selWhy != whyConfig {
+		t.Errorf("chosen by %q, want %q", m.selWhy, whyConfig)
+	}
+	if got := m.headerLine(); !strings.Contains(got, headerProjectGlyph+" beta") {
+		t.Errorf("header %q does not show the configured project", got)
+	}
+}

@@ -3,16 +3,36 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/config"
 )
 
+// Option configures one Run.
+type Option func(*runOptions)
+
+type runOptions struct {
+	project string
+}
+
+// WithProject is `vincent --project <name|id>`: the first rule of the
+// startup-project chain (task 132.3). An exact name match wins; only then is
+// an all-digit value tried as an id. A value naming no registered project
+// falls through to the next rule, and the TUI says so.
+func WithProject(nameOrID string) Option {
+	return func(o *runOptions) { o.project = nameOrID }
+}
+
 // Run launches the TUI and blocks until the user quits (§12.1: bare
 // `vincent`). The daemon keeps running after quit; if none is reachable at
 // launch, the shell auto-starts one in the background.
-func Run(ctx context.Context) error {
+func Run(ctx context.Context, opts ...Option) error {
+	var o runOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel() // stops the SSE stream goroutine with the program
 
@@ -34,7 +54,14 @@ func Run(ctx context.Context) error {
 		return dataDir, nil
 	}
 
-	final, err := tea.NewProgram(newRoot(ctx, cn, dataDir), tea.WithContext(ctx)).Run()
+	m := newRoot(ctx, cn, dataDir)
+	m.startup.flag = o.project
+	// The working directory is the client's, which is why rule 2 matches
+	// here and not in the daemon. An unreadable one only skips the rule.
+	if cwd, err := os.Getwd(); err == nil {
+		m.startup.cwd = cwd
+	}
+	final, err := tea.NewProgram(m, tea.WithContext(ctx)).Run()
 	if err != nil {
 		return fmt.Errorf("run tui: %w", err)
 	}

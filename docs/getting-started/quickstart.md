@@ -180,6 +180,7 @@ live agent output on the right, with a **Diff** tab beside it.
 | `enter` | Open the selected task |
 | `]` | Switch the output pane between Output and Diff |
 | `v` | Show more or less detail (quiet → compact → normal → verbose) |
+| `@` | Switch project |
 | `:` | Command palette — everything reachable by name |
 | `?` | Every key, in context |
 | `q` | Quit (the daemon and any running task keep going) |

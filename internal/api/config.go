@@ -109,6 +109,8 @@ type configTUI struct {
 	// the file chose, and `null` would read as a daemon that predates the key.
 	Keys   map[string]string `json:"keys"`
 	Output configOutput      `json:"output"`
+	// DefaultProject is `tui.default_project` (task 132.3), "" when unset.
+	DefaultProject string `json:"default_project"`
 }
 
 type configOutput struct {
@@ -327,6 +329,12 @@ func configBody(cfg config.Config) configResponse {
 			Hyperlinks: cfg.TUI.Hyperlinks,
 			Keys:       stringMap(cfg.TUI.Keys),
 			Output:     configOutput{Level: cfg.TUI.Output.Level},
+			DefaultProject: func() string {
+				if cfg.TUI.DefaultProject == nil {
+					return ""
+				}
+				return *cfg.TUI.DefaultProject
+			}(),
 		},
 	}
 }
@@ -507,6 +515,10 @@ type tuiPatch struct {
 	// operation left out of the map goes back to its default.
 	Keys   *map[string]string `json:"keys"`
 	Output *outputPatch       `json:"output"`
+	// DefaultProject is `tui.default_project` (task 132.3). An empty string
+	// is written and then refused by validation: the key is removed by
+	// editing the file, not by patching it to "".
+	DefaultProject *string `json:"default_project"`
 }
 
 type outputPatch struct {
@@ -643,6 +655,7 @@ func (p configPatch) sets() []config.Set {
 		if v.Output != nil {
 			addIfString(add, "tui.output.level", v.Output.Level)
 		}
+		addIfString(add, "tui.default_project", v.DefaultProject)
 	}
 	// Order is the struct's, which is config.yaml's, so two clients sending
 	// the same patch produce the same bytes.

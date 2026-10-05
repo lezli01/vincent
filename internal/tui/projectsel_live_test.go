@@ -103,3 +103,58 @@ func TestProjectSelectionFollowsTheDaemon(t *testing.T) {
 	}
 	p.until(10*time.Second, "the reconnect's list to land", func() bool { return len(m.projects) == 1 && m.sel.name == "omega" })
 }
+
+// TestProjectFlagOpensOnItsProject is `vincent --project api` against the
+// real handlers (task 132.3): the option outranks the first project by name,
+// the pick is silent, and it becomes the last-used project in tui.json.
+func TestProjectFlagOpensOnItsProject(t *testing.T) {
+	const token = "flag-token"
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	broker := events.New()
+	t.Cleanup(broker.Close)
+	st.SetEventHook(broker.Publish)
+	ctx := context.Background()
+	var apiID int64
+	for _, name := range []string{"aaa", "api"} {
+		pr := &store.Project{Name: name, Path: filepath.Join(t.TempDir(), name), DefaultBranch: "main"}
+		if err := st.CreateProject(ctx, pr); err != nil {
+			t.Fatalf("CreateProject: %v", err)
+		}
+		if name == "api" {
+			apiID = pr.ID
+		}
+	}
+
+	s := api.New(api.Deps{
+		Token:       token,
+		Config:      config.Default,
+		StartedAt:   time.Now(),
+		ListenAddr:  "127.0.0.1:0",
+		RequestStop: func() {},
+		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Store:       st,
+		Broker:      broker,
+	})
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	dataDir := ackedDir(t)
+	m := newRoot(testCtx(t), connector{}, dataDir)
+	m.startup.flag = "api"
+	m.startup.cwd = t.TempDir() // inside no project, so rule 2 matches nothing
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	_, cmd := m.Update(connectedMsg{client: apiclient.New(ts.URL, token), dataDir: dataDir})
+	p := newPump(t, m, cmd)
+	p.until(10*time.Second, "the flag's project to be selected", func() bool { return m.sel.id == apiID })
+	if m.selWhy != whyFlag || m.selNotice != "" {
+		t.Errorf("chosen by %q with notice %q, want a silent --project pick", m.selWhy, m.selNotice)
+	}
+	p.until(10*time.Second, "the pick to reach tui.json", func() bool {
+		sp := readTUIState(dataDir).SelectedProject
+		return sp != nil && sp.ID == apiID && sp.Name == "api"
+	})
+}

@@ -38,6 +38,7 @@ type (
 	// names. Only the list failing costs the view its rows; a schema that did
 	// not arrive only makes the enable confirmation generic.
 	triggersLoadedMsg struct {
+		stamp    loadStamp
 		list     apiclient.TriggerList
 		schema   *apiclient.TriggerSchema
 		projects []apiclient.Project
@@ -96,9 +97,11 @@ type triggerConfirm struct {
 
 // triggersView is §15's view 11.
 type triggersView struct {
-	// projectScope is the root's selected project (task 132.2), stored for
-	// the item that scopes this view to it.
+	// projectScope is the root's selected project (task 132.2). A switch
+	// reloads, and stamps drops a load issued for the previous project or
+	// overtaken by a newer one (task 132.5).
 	projectScope
+	stamps loadStamps
 
 	client *apiclient.Client
 	exec   execFunc
@@ -147,12 +150,14 @@ func newTriggersView() *triggersView {
 	fi := newTextField()
 	fi.SetPlaceholder("filter by id, source, action or project")
 	fi.SetPrompt("/")
-	return &triggersView{
+	v := &triggersView{
 		exec:    tea.ExecProcess,
 		now:     time.Now,
 		filter:  fi,
 		samples: map[string]string{},
 	}
+	v.reload = v.loadCmd
+	return v
 }
 
 func (v *triggersView) title() string { return "Triggers" }
@@ -225,14 +230,15 @@ func (v *triggersView) loadCmd() tea.Cmd {
 		return nil
 	}
 	haveSchema := v.schema != nil
+	stamp := v.stamps.next(v.project.id)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
 		list, err := client.Triggers(ctx)
 		if err != nil {
-			return triggersLoadedMsg{err: err}
+			return triggersLoadedMsg{stamp: stamp, err: err}
 		}
-		msg := triggersLoadedMsg{list: list}
+		msg := triggersLoadedMsg{stamp: stamp, list: list}
 		if !haveSchema {
 			if s, err := client.TriggerSchema(ctx); err == nil {
 				msg.schema = &s
@@ -328,13 +334,22 @@ func (v *triggersView) update(msg tea.Msg) (panel, tea.Cmd) {
 
 // updateNote re-reads on the trigger events (a fire adds a ledger row, a poll
 // changing health changes a row) and on project changes, which rename the
-// project column.
+// project column. A trigger.* event skips the project filter: the daemon
+// attributes trigger.fired to the trigger's target project, but this view
+// lists every trigger until 132.11 scopes it, so a foreign fire still adds a
+// row it shows.
 func (v *triggersView) updateNote(n apiclient.Note) tea.Cmd {
 	ev, ok := n.(apiclient.EventNote)
 	if !ok {
 		return nil
 	}
-	if strings.HasPrefix(ev.Event.Type, "trigger.") || strings.HasPrefix(ev.Event.Type, "project.") {
+	if strings.HasPrefix(ev.Event.Type, "trigger.") {
+		return v.scheduleRefresh()
+	}
+	if !forProject(ev.Event, v.project.id) {
+		return nil
+	}
+	if strings.HasPrefix(ev.Event.Type, "project.") {
 		return v.scheduleRefresh()
 	}
 	return nil
@@ -343,6 +358,10 @@ func (v *triggersView) updateNote(n apiclient.Note) tea.Cmd {
 // applyLoaded keeps the last-good list behind a failed refresh, restores the
 // selection by id, and re-reads the ledger for whatever is selected now.
 func (v *triggersView) applyLoaded(msg triggersLoadedMsg) tea.Cmd {
+	if !v.stamps.accepts(msg.stamp) {
+		return nil // an older load landing late, or one for the previous project
+	}
+	v.stamps.apply(msg.stamp)
 	if msg.err != nil {
 		v.loadErr = msg.err
 		return nil

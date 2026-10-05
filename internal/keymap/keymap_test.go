@@ -333,3 +333,36 @@ func TestUpgradeYieldsNextFailureAndAttentionFilter(t *testing.T) {
 		t.Errorf("rebound next_failure=%q attention_filter=%q", moved.Key(NextFailure), moved.Key(AttentionFilter))
 	}
 }
+
+// TestUpgradeYieldsProject is task 132.4 under task 128's rule: a tui.keys
+// written before `project` had `@`, binding `@` to another operation, still
+// loads. The user's binding wins and the switch is left unbound — the palette
+// row still reaches it.
+func TestUpgradeYieldsProject(t *testing.T) {
+	if _, err := Build(map[string]string{"filter": "@"}); err == nil {
+		t.Fatal("strict Build accepted @ for filter while it is project's default")
+	}
+	km, warnings, err := BuildLenient(map[string]string{"filter": "@"})
+	if err != nil {
+		t.Fatalf("a keymap binding @ refused on load: %v", err)
+	}
+	if km.Key(Filter) != "@" {
+		t.Errorf("filter = %q, want the user's @", km.Key(Filter))
+	}
+	if km.Key(Project) != "" {
+		t.Errorf("project = %q, want unbound", km.Key(Project))
+	}
+	if joined := strings.Join(warnings, "\n"); !strings.Contains(joined, "project") || len(warnings) != 1 {
+		t.Errorf("warnings = %q, want one naming project", warnings)
+	}
+	if err := Check(km); err != nil {
+		t.Errorf("the yielded keymap fails its own check: %v", err)
+	}
+	if moved, err := Build(map[string]string{"project": "ctrl+o"}); err == nil {
+		t.Errorf("project moved onto ctrl+o, a fixed key of the output pane: %v", moved.Key(Project))
+	}
+	moved, err := Build(map[string]string{"project": "f17"})
+	if err != nil || moved.Key(Project) != "f17" {
+		t.Errorf("rebinding project: %q, %v", moved.Key(Project), err)
+	}
+}

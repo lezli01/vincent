@@ -28,6 +28,7 @@ func Execute() int {
 }
 
 func newRootCmd() *cobra.Command {
+	var project string
 	root := &cobra.Command{
 		Use:          "vincent",
 		Short:        "vincent — local AI workload orchestrator",
@@ -35,9 +36,17 @@ func newRootCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Bare `vincent` is the TUI (§12.1); it auto-starts the daemon
 			// in the background when unreachable.
-			return tui.Run(cmd.Context())
+			var opts []tui.Option
+			if project != "" {
+				opts = append(opts, tui.WithProject(project))
+			}
+			return tui.Run(cmd.Context(), opts...)
 		},
 	}
+	// Local, not persistent: it is the TUI's, and a subcommand that takes a
+	// project names it its own way (task 132 decision 3).
+	root.Flags().StringVar(&project, "project", "",
+		"open the TUI on this project, by name or id (a name match wins)")
 	root.AddCommand(
 		newDaemonCmd(), newVersionCmd(), newDoctorCmd(),
 		newProjectCmd(), newTaskCmd(), newChatCmd(), newWorkflowCmd(), newTriggerCmd(), newServiceCmd(),

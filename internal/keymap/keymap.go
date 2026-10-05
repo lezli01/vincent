@@ -72,6 +72,10 @@ const (
 	Mouse         Op = "mouse"
 	Quit          Op = "quit"
 	New           Op = "new"
+	// Project opens the project picker (task 132 decision 3). `@` for "at
+	// which project": not ctrl+e, which the m11 gate rebinds to, and not one
+	// of the ctrl keys bubbles' text fields edit with.
+	Project Op = "project"
 )
 
 // Kind is which of decision 1's three families an operation belongs to.
@@ -180,6 +184,9 @@ var catalog = []Info{
 	// issue screens' (task 130.12) are this operation and move with it
 	// (decision 1).
 	{Op: New, Default: "n", Meaning: "make a new task, or a new chat on the chats board, or a new issue on the issue screens", Kind: KindGlobal, Surfaces: []Surface{Global, "chats", "issues", "issue"}},
+	// Not Typing: a text field types `@` (the chat composer's file mention
+	// among them), and ctrl+p's palette row reaches the picker from there.
+	{Op: Project, Default: "@", Meaning: "switch project", Kind: KindGlobal, Surfaces: []Surface{Global}},
 }
 
 // Catalog returns every rebindable operation, in documentation order.

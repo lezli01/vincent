@@ -373,6 +373,10 @@ func configFields() map[string]configField {
 			func(b *bool) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Hyperlinks: b}}
 			}),
+		"tui.default_project": str(func(c apiclient.Config) string { return c.TUI.DefaultProject },
+			func(v *string) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{DefaultProject: v}}
+			}),
 		"tui.output.level": str(func(c apiclient.Config) string { return c.TUI.Output.Level },
 			func(v *string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Output: &apiclient.ConfigOutputPatch{Level: v}}}

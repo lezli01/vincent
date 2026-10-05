@@ -646,6 +646,33 @@ type TUI struct {
 	// Output configures the output pane the task and chat workspaces share
 	// (§15).
 	Output OutputView `yaml:"output"`
+	// DefaultProject names the project the TUI opens on when neither
+	// `--project` nor the working directory picks one (task 132.3, §15). A
+	// pointer because "set to empty" is refused while "absent" is the
+	// default. Validated for syntax only — non-empty and within the project
+	// name bound — because config is a leaf with no store to look the name
+	// up in; a name that is not registered falls through at the TUI, which
+	// says so. The TUI adopts it at startup only: a hot reload never moves
+	// a session's selection.
+	DefaultProject *string `yaml:"default_project"`
+}
+
+// MaxProjectNameBytes is the project-name bound the API holds a name to
+// (internal/api's maxNameBytes), repeated here because config may not
+// import api; a test holds the two together.
+const MaxProjectNameBytes = 512
+
+func validateDefaultProject(p *string) error {
+	if p == nil {
+		return nil
+	}
+	if *p == "" {
+		return errors.New("tui.default_project: cannot be empty; name a registered project, or remove the key")
+	}
+	if len(*p) > MaxProjectNameBytes {
+		return fmt.Errorf("tui.default_project: is %d bytes; a project name is at most %d", len(*p), MaxProjectNameBytes)
+	}
+	return nil
 }
 
 // OutputView configures the output pane.
@@ -682,6 +709,9 @@ func (t TUI) validate(lenient bool) error {
 		return err
 	}
 	if err := t.Output.validate(); err != nil {
+		return err
+	}
+	if err := validateDefaultProject(t.DefaultProject); err != nil {
 		return err
 	}
 	var err error

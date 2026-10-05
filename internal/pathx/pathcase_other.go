@@ -1,6 +1,6 @@
 //go:build !windows && !darwin
 
-package worktree
+package pathx
 
 // caseInsensitivePaths: Linux and the other unixes compare paths byte for
 // byte, so `Repo` and `repo` are two directories.

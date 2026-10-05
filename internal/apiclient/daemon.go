@@ -206,6 +206,10 @@ type ConfigTUI struct {
 	Keys map[string]string `json:"keys"`
 	// Output configures the output pane (task 129.11).
 	Output ConfigOutput `json:"output"`
+	// DefaultProject is `tui.default_project` (task 132.3): the project name
+	// the TUI opens on when neither --project nor the working directory picks
+	// one. Empty when unset, or from a daemon that predates the key.
+	DefaultProject string `json:"default_project"`
 }
 
 // ConfigOutput is `tui.output`. Level is the verbosity the output pane opens
@@ -509,6 +513,8 @@ type ConfigTUIPatch struct {
 	// shipped keymap.
 	Keys   *map[string]string `json:"keys,omitempty"`
 	Output *ConfigOutputPatch `json:"output,omitempty"`
+	// DefaultProject sets `tui.default_project` (task 132.3).
+	DefaultProject *string `json:"default_project,omitempty"`
 }
 
 // ConfigOutputPatch is the optional half of ConfigOutput.

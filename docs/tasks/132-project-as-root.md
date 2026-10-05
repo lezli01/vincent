@@ -1,6 +1,6 @@
 # 132 — Project as root: the TUI scoped to one selected project
 
-**Status:** 🔄 in progress (2/17)
+**Status:** 🔄 in progress (5/18)
 
 Issue [#694](https://github.com/lezli01/vincent/issues/694), part of
 [#693](https://github.com/lezli01/vincent/issues/693). Spec §3 (the new row
@@ -50,7 +50,10 @@ take it; decision 3's switch key is `@`.
 Recorded 2026-10-04. Decisions 1–14 are the author's answers to #693's open
 questions, each the option #693 recommended; decision 15 is the renumbering;
 decisions 16–19 settle the contradictions between #693's research reports;
-decisions 20–22 were taken while delivering 132.1. Each
+decisions 20–22 were taken while delivering 132.1, decisions 23–24 while
+delivering 132.2, decisions 25–28 were settled with the author for 132.5
+on 2026-10-05, decisions 29–32 were taken while delivering 132.3, and
+decision 33 while delivering 132.4. Each
 decision is **taken now; its effect lands with its item.** The older record
 keeps governing the code until that item's pull request merges.
 
@@ -199,6 +202,15 @@ so that "131.n" in #693–#711 is not mistaken for task 131's items.
 The root keeps its one unfiltered event stream and each view drops notes for
 other projects (132.5).
 
+*Note (2026-10-05):* the board is the exception. Its live listing stays
+global by decision 17 and feeds the attention count, `!` and `H`, so it
+drops no note: a task event from any project refetches it (review F1 on
+#718).
+A `project.*` event passes every view's filter whatever project it names,
+since it describes the project list every view renders whole, and the
+triggers takeover lets `trigger.*` through until 132.11 scopes it (review F2
+on #718).
+
 *Alternative beaten:* resubscribing with `?project_id=` on each switch. It
 loses the events that carry no project (`task.github_pull_changed`,
 `task.children_changed`, `agent.quota_changed`, `workflow.registry_changed`,
@@ -309,6 +321,121 @@ hint in 132.13, when the two agree.
 `ownEntries`, and of the new-task form's `setProject`, which became
 `chooseProject`.
 
+### 25. A switch reloads every stamped view (2026-10-05)
+
+On every stamped, project-bearing view, `setProject` reloads when the
+selected project's id changes: `projectScope` runs the loader the embedding
+view supplied (`reload`), which stamps the new project. So whenever a stamp
+drops a response issued for the old project, a fresh load is already on its
+way, and a view never sits on rows it did not re-fetch. The fetch itself
+stays unfiltered; what each view fetches is 132.8's and 132.10–132.12's. A
+call that does not change the id — the walk after each connect, a rename —
+does not reload, since `setClient` has just loaded.
+
+*Alternative beaten:* stamping without reloading, which leaves a view
+showing the previous project's rows until its next event.
+
+### 26. The projects view takes a seq-only stamp (2026-10-05)
+
+The projects view stamps every load with project 0. It is still not
+`projectScoped` (decision 5) and does not filter events; the stamp only
+gives it the ordering guard it lacked.
+
+*Alternative beaten:* leaving it unstamped, the one list a slow response
+could still overwrite.
+
+### 27. The mode stamps stay beside the load stamp (2026-10-05)
+
+`loadStamp` carries only `{project, seq}`. The boards' and lanes' `archived`
+tag and `addressed()`, the issues list's `state`, the chats boards'
+`archived` and the detail view's `id`+`seq` guard stay as they were and are
+checked next to it. The board's and lanes' own `seq` fields are replaced by
+the board's one sequence; the lanes order it per parent and take only the
+project check from the stamp.
+
+*Alternative beaten:* folding every mode into the stamp, which would make
+it a different type per view.
+
+### 28. No daemon change for the filter (2026-10-05)
+
+`task.github_pull_changed` and `task.children_changed` keep carrying no
+`project_id`, and spec §13.3 is unchanged. The client filter is correct
+without them because a note with no project passes every view.
+
+*Alternative beaten:* attributing those two events in the daemon in the same
+item, which the filter does not need.
+
+### 29. `--project` matches a name before an id (2026-10-05)
+
+`vincent --project <value>` tries an exact project name first, and only then
+an all-digit value as an id. Project names may be numeric (`validateName`
+checks only non-empty and length), and name-first keeps a project named `3`
+reachable. It is also how `tui.default_project` behaves, which is by name
+only. A signed or spaced value is a name.
+
+### 30. The startup notice: the working directory, or a fallthrough (2026-10-05)
+
+Decision 4's "the notice names the rule" is applied as one line under the
+header, raised in exactly two cases, and cleared by the next key like the
+keymap notice. A pick by the working directory says `◆ web — from the working
+directory`. Any fallthrough names every rule that failed and what won:
+``tui.default_project `api` is not registered — showing `web` (last used)``.
+A pick by flag, config, last used or first by name is silent, because the
+header segment already shows the project.
+
+### 31. `selected_project` is written on every selection change (2026-10-05)
+
+`tui.json`'s `selected_project` `{id, name}` is written through
+`mergeTUIState` from `selectProject`, the one place the selection changes, so
+the startup pick itself is written too: a `--project` or working-directory
+launch makes that project the last used. 132.4's `@` switch reuses it. The
+write runs off the update loop and a failure is not reported, for the board
+folds' reason: the selection holds on screen, and the only cost is that the
+next launch falls through to a rule below last used. With several TUIs, the
+last writer wins.
+
+### 32. The m11 gate carries `tui.default_project` (2026-10-05)
+
+`scripts/m11-gate.sh` scenario 9: `PATCH /v1/config` refuses an empty or
+over-long `tui.default_project` with the validation envelope and the file
+byte-identical, and a valid value round-trips through `GET /v1/config` and
+`vincent config get`. The key is syntax-checked only — config is a leaf and
+looks nothing up — and is adopted by the TUI from its first config answer;
+a later answer never moves the selection.
+
+The working-directory comparison moved into a new leaf, `internal/pathx`
+(`SameDir`, `Contains`), which `internal/worktree` and `internal/api` now
+delegate to, so the TUI matches paths without importing a git-running
+package. `GET /v1/tasks` always served `worktree_path` on the list row;
+`apiclient.Task` now decodes it there rather than on `TaskDetail` alone.
+
+### 33. The picker marks the current project only; the default marker is 132.3's (2026-10-05)
+
+Taken with the author while delivering 132.4. `tui.default_project` arrives
+with 132.3 (#697), which is in flight on its own branch and is not a
+dependency of 132.4. So 132.4's picker marks only the current selection, and
+132.3's pull request adds the default marker when it introduces the setting;
+neither blocks the other.
+
+*Note (2026-10-05):* 132.3 shipped without the marker, so it moves to its own
+item, 132.18, rather than staying owed by a closed one (review F4 on #718).
+
+Two smaller calls were made beside it. A project with a nil
+`max_parallel_tasks` has no cap of its own, only the global one, so its row
+reads `N running` with no denominator; showing the global cap would imply a
+per-project limit that does not exist. A capped project reads `N/cap
+running`. And `@` is the default because nothing else answers it: the chat
+composer's file picker reads `@` from the draft and never matches it as a key
+(`internal/keymap/fixed.go`), `ctrl+e` is the m11 gate's accepted rebind, and
+`ctrl+k`/`ctrl+w`/`ctrl+n` are bubbles' text-editing keys. The op is not a
+typing key, so a text field still types `@`, and the palette's "switch
+project" row is the way in from one.
+
+*Note 2026-10-05:* 132.3 and 132.4 were delivered in parallel and merged
+together, and 132.3 was written before the picker existed, so it did not add
+the marker. The picker still marks only the current project; the default
+marker remains open against 132.3's row.
+
 ## Supersedes
 
 Every binding record this work overturns, departs from, refines or keeps, by
@@ -370,14 +497,19 @@ its own pull request.
   `projectSel` on the root, the `projectScoped` interface, the cached project
   list, the header segment, spec §15 Layout (decisions 23–24). Depends: this
   document. ✓ 2026-10-04
-- [ ] **132.3** ([#697](https://github.com/lezli01/vincent/issues/697)) The
+- [x] **132.3** ([#697](https://github.com/lezli01/vincent/issues/697)) The
   startup precedence, `tui.default_project`, `selected_project` in `tui.json`,
-  `vincent --project`. Depends: 132.2.
-- [ ] **132.4** ([#698](https://github.com/lezli01/vincent/issues/698)) The
-  `project` op on `@`, the picker popup with stats, the palette row. Depends:
-  132.1, 132.2.
-- [ ] **132.5** ([#699](https://github.com/lezli01/vincent/issues/699)) The
-  `{project, seq}` load stamp, the client-side event filter. Depends: 132.2.
+  `vincent --project` (decisions 29–32). Depends: 132.2. ✓ 2026-10-05
+  The project picker's default-project marker, which decision 33 assigned
+  here, did not land with it and is now 132.18's.
+- [x] **132.4** ([#698](https://github.com/lezli01/vincent/issues/698)) The
+  `project` op on `@`, the picker popup with stats, the palette row, the
+  header segment as its click target, spec §15 Discovery, Layout, Keys and
+  Mouse (decisions 23, 33). Depends: 132.1, 132.2. ✓ 2026-10-05
+- [x] **132.5** ([#699](https://github.com/lezli01/vincent/issues/699)) The
+  `{project, seq}` load stamp, the client-side event filter, the chats
+  board's refetch debounce, spec §15 (decisions 25–28). Depends: 132.2.
+  ✓ 2026-10-05
 - [ ] **132.6** ([#700](https://github.com/lezli01/vincent/issues/700)) The
   view is kept across a switch; detail views fall back to their list; forms
   re-target or ask; an open follows the object's project. Depends: 132.2.
@@ -406,10 +538,14 @@ its own pull request.
   overview replaces view 4 (Projects). Depends: 132.4.
 - [ ] **132.16** ([#710](https://github.com/lezli01/vincent/issues/710))
   Project-aware `scripts/screenshots.sh` and a full recapture. Depends:
-  132.2–132.15; #692 (merged, so already met).
+  132.2–132.15, 132.18; #692 (merged, so already met).
 - [ ] **132.17** ([#711](https://github.com/lezli01/vincent/issues/711)) The
   human walkthrough record, and the m3 and task 129 amendments. Depends:
   132.16.
+- [ ] **132.18** The project picker's `tui.default_project` marker, which
+  decision 33 assigned to 132.3 and which shipped without it; spec §15's
+  picker note and the TUI guide's picker section in the same pull request.
+  No issue of its own yet. Depends: 132.3, 132.4.
 
 The scoping items (132.8, 132.10–132.13) may merge in any order once their
 dependencies land, and each one carries its own view's tests, guide section and

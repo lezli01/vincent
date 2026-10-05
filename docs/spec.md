@@ -6861,7 +6861,7 @@ platform the standing answer to an agent that will not resolve is the §12.3
   token                      # API bearer token, created 0600 at first start
   daemon.json                # { "port": N, "pid": N, "started_at": … } for client discovery
   daemon.lock
-  tui.json                   # TUI-local view state: the §16 first-run acknowledgment, the board's collapsed groups (§15)
+  tui.json                   # TUI-local view state: the §16 first-run acknowledgment, the board's collapsed groups, the last selected project (§15)
   worktrees/{task_id}/
   transcripts/{task_id}/{step_index}-{attempt}.jsonl
   transcripts/{task_id}/{step_index}-{step_id}-{attempt}.jsonl  # sub-step of a parallel group (§7.5)
@@ -7121,6 +7121,7 @@ tui:                           # view preference; the daemon validates and relay
   keys: {}                     # operation id → one key, e.g. {refresh: ctrl+e}; {} = the §15 defaults (task 118)
   output:
     level: normal              # quiet | compact | normal | verbose: the output pane's opening level (task 129.11)
+  # default_project: web       # the project the TUI opens on, by name; read at startup only (task 132.3)
 ```
 
 *Amended 2026-08-31 (task 067, issue #269).* Four of these keys reach **chats**
@@ -7887,7 +7888,8 @@ for pause and resume, `approve`, `reject`, `retry`, `edit_retry`, `repair`,
 `skip`, `cancel`, `follow_up`, `chat` — *added 2026-09-17, task 119* — with
 `archive` shared with the term) and the global chrome (`palette`, `palette_alt`, `help`, `help_alt`, `next_attention`,
 `mouse`, `quit`, and `new`, which is also the chats board's `n` and — *added
-2026-10-03, task 130.12* — the issue screens'). Every other key
+2026-10-03, task 130.12* — the issue screens', and — *added 2026-10-05, task
+132.4* — `project`, `@` by default, which opens the project picker). Every other key
 the TUI answers is fixed (§15). An override **replaces** the operation's
 default on every surface that carries it; it is not an alias, so the vacated
 key is free for another override in the same edit and two operations may swap.
@@ -7948,6 +7950,17 @@ editor or `PATCH /v1/config` applies at the next read. `v` still cycles the
 level for the session and nothing writes it back. A daemon that predates the key
 refuses a file that sets it, by the strict decode above; that is the accepted
 cost, documented in the configuration reference.
+
+*Amended 2026-10-05 (task 132.3, issue #697):* `tui.default_project` names
+the project the TUI opens on when neither `vincent --project` nor the working
+directory picks one (§15, the startup project). It is unset by default and
+served as `""` when unset. The daemon checks its syntax only: set, it must be
+non-empty and at most 512 bytes, the project-name bound. It never looks the
+name up, because `config` is a leaf with no store; a name that is not
+registered falls through at the TUI, which says so. The TUI adopts it from the
+first config answer **at startup only**: unlike `tui.output.level`, a hot
+reload or an edit never moves a running session's selection. The key is
+removed by editing the file, since `PATCH /v1/config` refuses `""`.
 
 **`environment` (T4.23).** Governs every process the daemon spawns — agent
 steps via `RunSpec.Env` (§9.1), command steps and their checks via §8.5's
@@ -13185,8 +13198,104 @@ before the view tag: `vincent 0.x  ◆ api  [Tasks]`, or `◆ no project`. The
 chrome stays one line, so the size floors above do not move. When the line
 does not fit, the view tag truncates down to eight cells and is then dropped;
 then the version goes, leaving `vincent`; last, the project name truncates
-behind an ellipsis. The connection badge is never shed. The segment is not a
-click target yet; 132.4 makes it open the project picker.
+behind an ellipsis. The connection badge is never shed. *Amended 2026-10-05
+(task 132.4):* a left click on the segment opens the project picker below.
+
+**The project picker (task 132.4, issue #698, added 2026-10-05).** The global
+operation `project`, on `@` by default, opens a root-owned popup listing every
+registered project; the palette's global group carries the same row as
+"switch project", and a left click on the header's `◆` segment opens it too.
+It is shaped like the palette and the copy and link pickers: held on the root
+while it is up, it owns every key but `ctrl+c`, and it is never open beside
+them, the help overlay or the first-run notice — whichever is up owns the keys
+that would raise another. `@` is not a typing key: a text field types it (the
+chat composer's file mention among them), and `ctrl+p` → "switch project"
+reaches the picker from there. Typing filters the rows by name and `ctrl+v`
+pastes into the filter; `↑`/`↓` move, `enter` makes the highlighted project the
+selection through the one path every switch takes, and `esc` closes without
+switching. Each row is the name, a `◆` on the current selection, and the
+figures of `GET /v1/projects?stats=true`: `!N` from `stats.tasks.attention`
+(omitted at zero, and never counting chats — decision 2), running as
+`slots_used/max_parallel_tasks`, or `N running` for a project with no cap of
+its own (the global cap is not a per-project limit), `N active` from
+`stats.tasks.active`, and `N open issues` from `stats.issues.open`. No GitHub
+figure, no done counts. A row whose `stats` is `null` shows the name and marks
+alone. On a narrow popup the figures drop from the end — issues, active,
+running, attention — and only then does the name shorten behind an ellipsis.
+Every refresh is one list call whatever the number of projects: on open, then
+a 150 ms debounced refetch on `task.*`, `issue.*`, `chat.*` and `project.*`
+events while the picker is up, and none while it is closed. An answer that
+lands after the picker closed, or after a newer refetch, is dropped. The
+picker marks only the current project; a marker for `tui.default_project`
+is not drawn yet (task 132 decision 33).
+
+**Load stamps and the event filter (task 132.5, issue #699, added
+2026-10-05).** Every list load a view issues — the board in both modes and
+its lanes, the issues list, the chats boards in both modes, the pull-request,
+workflows and triggers takeovers, and the projects view — carries a
+`{project, seq}` stamp: the project it was issued for and its place in the
+view's one sequence. A response is applied only when its project is the
+view's current one and its seq is newer than the last applied; anything else
+is dropped. The mode stamps those views already carried (the boards'
+archived flag, the issues list's state scope) are checked beside it. A
+switch reloads every stamped project-bearing view, so a response the stamp
+drops always has a fresh load behind it; what each view fetches for the
+selection is unchanged until 132.8 and 132.10–132.12 scope it. The projects
+view is not project-bearing and stamps every load with project 0, an
+ordering guard only. The root's one `/v1/events` stream stays unfiltered
+(task 132 decision 16): each project-bearing view drops a note whose
+`project_id` names another project before its own event-type test, and a
+note carrying no project (`task.github_pull_changed`,
+`task.children_changed`, `agent.quota_changed`,
+`workflow.registry_changed`, …) still reaches every view. So does a
+`project.*` note, whatever project it names: the store attributes it to the
+project it describes, but it changes the project list every view still
+renders whole. The triggers takeover lets every `trigger.*` note through,
+since `trigger.fired` names its target project and the takeover lists every
+trigger until 132.11 scopes it. The board is the
+exception and filters no note: its live listing stays global (decision 17)
+and is the source of the attention count, `!` and `H` (decision 2), so a
+task event from any project refetches it, and the bell and the attention
+fold-open read every note. The chats boards refetch through the same 150 ms debounce
+window as every other list.
+
+**The startup project (task 132.3, issue #697, added 2026-10-05).** This
+replaces 132.2's interim "first project by name while nothing is selected" at
+startup. The TUI picks its selection once per process, when the first project
+list and the first config answer have both arrived after connect. It runs
+behind the §16 first-run notice and never prompts. The first rule that names a
+registered project wins:
+
+1. `vincent --project <name|id>`, a local flag of the root command. An exact
+   name match wins first; only then is an all-digit value tried as an id, so a
+   project named `3` stays reachable (task 132 decision 29).
+2. The working directory. Every registered project's path and the
+   `worktree_path` of every non-archived task and chat are candidates, and the
+   deepest one that contains the directory wins; a worktree maps to its task's
+   or chat's project. Containment is by path component, never by string
+   prefix, and is compared lexically after `Clean`, case-folded on Windows and
+   macOS, and again in symlink-resolved form (`internal/pathx`). It is matched
+   client-side, because the directory is the client's.
+3. `tui.default_project` (§12.3), by name.
+4. The last-used project, `tui.json`'s `selected_project` `{id, name}`: the id
+   first, then the name, so a restored database that renumbered ids still
+   resolves.
+5. The first project by name. With no projects nothing is selected.
+
+A rule that names no registered project falls through to the next. One line
+under the header says so in exactly two cases (decision 30): a pick by the
+working directory (`◆ web — from the working directory`), and any fallthrough,
+which names what failed and what won (``tui.default_project `api` is not
+registered — showing `web` (last used)``). Other picks are silent, because the
+header already names the project. The line clears on the next key. After
+startup, a non-empty list still selects its first project by name while
+nothing is selected (decision 10).
+
+`selected_project` is written to `tui.json` on **every** selection change,
+the startup pick included, so a `--project` or working-directory launch makes
+that project the last used (decision 31). A failed write is not reported; it
+costs only the next launch's last-used rule. When several TUIs run, the last
+writer wins.
 
 **Text fields wrap (added 2026-09-01, issue #299).** A field being typed into
 is bound by the same rule the boards and the rendered Markdown already carry: a
@@ -14136,6 +14245,9 @@ rather than replacing them. Invalid task actions are omitted rather than greyed,
 holding the same invariant the action bar always had: an action that cannot happen
 is not on screen. Navigation living here is what lets view-switching keys be
 retired without substituting a different set to memorise.
+*Amended 2026-10-05 (task 132.4):* its global group carries "switch project",
+which opens the project picker — the way to it from a surface whose text field
+types `@`.
 
 *Amended 2026-09-01 (task 076).* **`ctrl+p` opens the same palette**, and it is
 hoisted above the input-capture gate the way `ctrl+v` is. `:` is a printable
@@ -14235,7 +14347,9 @@ and the digit jumps on every workspace tab, since every tab answers them.
 
 Global: `:` palette (`ctrl+p` where a text field has the keyboard) · `?` help (`f1` where a text field has the keyboard; *added 2026-09-17, task 114*) · `n` new task · `q` quit (the daemon keeps running;
 a status line reminds of the running task count on exit) · `tab`/`shift+tab` move
-focus between panels · `M` toggle mouse.
+focus between panels · `M` toggle mouse · `@` switch project (*added 2026-10-05,
+task 132.4*: opens the project picker, §15 Layout; the operation is `project`,
+rebindable like every global).
 
 Task actions act on the selected task — or on the whole bulk selection when there
 is one (task 011) — and are offered only when the daemon reports them in
@@ -14715,6 +14829,9 @@ recorded as an exception on `T` alone, so it does not travel with a moved
 On by default, `M` toggles it, and the toggle is in the palette. Click to focus a
 panel, click a row to select it, wheel to scroll the focused panel, click a footer
 hint to fire it, click a tab to switch it. No drag, no right-click.
+*Amended 2026-10-05 (task 132.4, decision 23):* a left click on the app
+header's `◆` project segment opens the project picker. The header is otherwise
+not a click target, and the popups themselves stay keyboard-only.
 
 Capturing the mouse costs native click-drag text selection. Every terminal has a
 modifier override for it (shift-drag; option-drag on Terminal.app and iTerm) and

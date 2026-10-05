@@ -69,10 +69,16 @@ read, not that the request was malformed.
 ## `vincent`
 
 ```sh
-vincent
+vincent [--project <name|id>]
 ```
 
 Opens the TUI, starting a daemon in the background if none is reachable.
+
+`--project` opens it on that project. An exact project name is matched first,
+and only then an all-digit value as a project id, so a project named `3` is
+reached by `--project 3`. A value that names no registered project is not an
+error: the TUI falls through to the [next rule](../guides/tui.md#the-startup-project)
+and says so on the line under the header.
 
 ### What only the TUI does
 

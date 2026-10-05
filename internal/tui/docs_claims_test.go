@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,6 +25,9 @@ var guideKeyContexts = map[bindingContext]bool{
 	ctxTaskWorkflow:    true,
 	ctxTaskStepDetails: true,
 	ctxTaskPull:        true,
+	// The project picker's keys are tabulated under the board, whose
+	// header segment opens it (task 132.4).
+	ctxProjectPicker: true,
 }
 
 // guideFixedSurfaces are the keymap.FixedKeys surfaces whose keys the same
@@ -42,6 +46,7 @@ var guideFixedSurfaces = map[keymap.Surface]bool{
 	"task workspace":    true,
 	"lists and panes":   true,
 	"global":            true,
+	"project picker":    true,
 }
 
 // TestGuideKeyTablesMatchRegistry holds the TUI guide's board and workspace
@@ -106,6 +111,94 @@ func TestGuideKeyTablesMatchRegistry(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestGuideOperationsTableMatchesCatalog holds docs/guides/tui.md's "The
+// operations" table to keymap.Catalog() — every operation, in catalog order,
+// with its default key — and the sentence above it to the three families'
+// sizes, so adding an operation fails here until the guide's count moves too
+// (task 132.4).
+func TestGuideOperationsTableMatchesCatalog(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "docs", "guides", "tui.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n")
+	start := -1
+	for i, line := range lines {
+		if line == "### The operations" {
+			start = i
+		}
+	}
+	if start < 0 {
+		t.Fatal("docs/guides/tui.md lost its \"### The operations\" heading")
+	}
+
+	var prose strings.Builder
+	type row struct{ op, key string }
+	var rows []row
+	inTable := false
+	for _, line := range lines[start+1:] {
+		if headingLevel(line) > 0 {
+			break
+		}
+		if !strings.HasPrefix(line, "|") {
+			if inTable {
+				break
+			}
+			prose.WriteString(line + " ")
+			continue
+		}
+		cells := strings.Split(line, "|")
+		if len(cells) < 4 {
+			continue
+		}
+		first := strings.TrimSpace(cells[1])
+		if !inTable {
+			inTable = first == "Operation"
+			continue
+		}
+		if strings.Trim(first, "-: ") == "" {
+			continue
+		}
+		rows = append(rows, row{op: strings.Trim(first, "`"), key: strings.Trim(strings.TrimSpace(cells[2]), "`")})
+	}
+
+	catalog := keymap.Catalog()
+	if len(rows) != len(catalog) {
+		t.Errorf("the guide's table has %d operations, the catalog %d", len(rows), len(catalog))
+	}
+	for i := range min(len(rows), len(catalog)) {
+		if rows[i].op != string(catalog[i].Op) || rows[i].key != catalog[i].Default {
+			t.Errorf("row %d is %s/%s, the catalog's is %s/%s", i+1, rows[i].op, rows[i].key, catalog[i].Op, catalog[i].Default)
+		}
+	}
+
+	counts := map[keymap.Kind]int{}
+	for _, info := range catalog {
+		counts[info.Kind]++
+	}
+	words := []string{
+		"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+		"eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty",
+	}
+	text := strings.Join(strings.Fields(prose.String()), " ")
+	for _, c := range []struct {
+		kind   keymap.Kind
+		phrase string
+	}{
+		{keymap.KindTerm, "The first %s are the operations screens share"},
+		{keymap.KindAction, "the next %s are the"},
+		{keymap.KindGlobal, "the last %s are the global keys"},
+	} {
+		n := counts[c.kind]
+		if n >= len(words) {
+			t.Fatalf("%d operations of one kind; extend the number words", n)
+		}
+		if want := fmt.Sprintf(c.phrase, words[n]); !strings.Contains(text, want) {
+			t.Errorf("the guide does not say %q above the operations table:\n%s", want, text)
+		}
+	}
 }
 
 func contextName(b binding) string {

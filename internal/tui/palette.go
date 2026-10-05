@@ -118,7 +118,14 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 	}
 	for _, b := range registry() {
 		if b.scope == scopeGlobal && !b.nav && !b.noPalette {
-			out = append(out, paletteEntry{group: "global", label: b.label, key: b.key, global: true, unbound: b.unbound})
+			e := paletteEntry{group: "global", label: b.label, key: b.key, global: true, unbound: b.unbound}
+			if b.op == keymap.Project {
+				// The picker must stay reachable when a user binding took
+				// `@` (task 132.4): run it directly rather than replaying a
+				// key that may be unbound.
+				e.action = func() tea.Msg { return openProjectPickerMsg{} }
+			}
+			out = append(out, e)
 		}
 	}
 	return out
