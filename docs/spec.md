@@ -13689,7 +13689,10 @@ get to bend:
   under its id, any other is dropped — and then removed from the file. A live
   load prunes each project's set against that project's tasks (task 054
   decision 4, now per project); an archived load prunes nothing; a removed
-  project's set is dropped with it.*
+  project's set is dropped with it. A path still carries the project's name
+  as a segment, so a rename seen while the TUI runs rewrites that segment
+  before the next prune (review F10); a rename made while no TUI ran loses
+  that project's folds.*
 - **The panel title names the grouping only when it is not the configured one**,
   the same rule the output pane's `v` follows.
 

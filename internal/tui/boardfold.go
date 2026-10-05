@@ -221,7 +221,8 @@ func landingRow(rows []boardRow, i int) int {
 // decision 35): a board's folds are independent per project whatever
 // `group_by` says, so a `["build"]` fold under a `[workflow]` grouping
 // collapses `build` in the one project it was made in. Keyed by id rather
-// than by name, so a rename does not move or lose them.
+// than by name, so a rename does not move them; a path's project segment is
+// still the name, which board.followRenames rewrites (review F10).
 type projectFolds map[int64]foldSet
 
 // with returns a copy with project's set replaced; an empty set removes the
@@ -255,6 +256,29 @@ func (pf projectFolds) prune(tasks []apiclient.Task) (projectFolds, bool) {
 		}
 	}
 	return out, changed
+}
+
+// renamed returns a copy with project's paths rewritten from one name to
+// another: every segment equal to from, since the project level's position
+// in a path follows the grouping. A workflow sharing the old name is
+// rewritten too, and its fold lost at the next prune — the cost of a path
+// that does not say which level a segment came from.
+func (pf projectFolds) renamed(project int64, from, to string) projectFolds {
+	set := pf[project]
+	if len(set) == 0 {
+		return pf
+	}
+	out := make(foldSet, 0, len(set))
+	for _, p := range set {
+		q := slices.Clone(p)
+		for i := range q {
+			if q[i] == from {
+				q[i] = to
+			}
+		}
+		out = out.with(q)
+	}
+	return pf.with(project, out)
 }
 
 // keepProjects drops the sets of projects that are no longer registered.
@@ -355,12 +379,41 @@ func (b *board) setProjects(projects []apiclient.Project) {
 		ids[p.Name] = p.ID
 	}
 	b.projectIDs = ids
+	names := make(map[int64]string, len(projects))
+	for _, p := range projects {
+		names[p.ID] = p.Name
+	}
+	b.followRenames(names)
 	b.migrateFolds()
 	if !b.foldsLoaded {
 		return
 	}
 	if kept, changed := b.foldsBy.keepProjects(ids); changed {
 		b.foldsBy = kept
+		b.persistFolds()
+	}
+}
+
+// followRenames rewrites the fold paths of each project whose name differs
+// from the one they were last seen under, from either the project list or a
+// task load — whichever reports the rename first, so the prune that follows
+// a load never drops a fold for its stale project segment. A rename made
+// while no TUI was running is not seen, and that project's folds go.
+func (b *board) followRenames(names map[int64]string) {
+	if b.foldNames == nil {
+		b.foldNames = map[int64]string{}
+	}
+	changed := false
+	for id, name := range names {
+		if name == "" {
+			continue
+		}
+		if old, ok := b.foldNames[id]; ok && old != name && len(b.foldsBy[id]) > 0 {
+			b.foldsBy, changed = b.foldsBy.renamed(id, old, name), true
+		}
+		b.foldNames[id] = name
+	}
+	if changed && b.foldsLoaded {
 		b.persistFolds()
 	}
 }

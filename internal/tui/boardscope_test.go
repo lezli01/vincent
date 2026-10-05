@@ -140,6 +140,51 @@ func TestFoldsAreKeptPerProject(t *testing.T) {
 	}
 }
 
+// TestFoldsFollowAProjectRename: under the default grouping a fold path
+// starts with the project's name, and a rename — seen first from a task load
+// or from the project list — rewrites it rather than letting the next prune
+// drop it (review F10).
+func TestFoldsFollowAProjectRename(t *testing.T) {
+	renamed := func(name string) []apiclient.Task {
+		tasks := twoProjectTasks()
+		for i := range tasks {
+			if tasks[i].ProjectID == testProjectID {
+				tasks[i].ProjectName = name
+			}
+		}
+		return tasks
+	}
+	for _, c := range []struct {
+		name   string
+		rename func(b *board, to string)
+	}{
+		{"by a task load", func(b *board, to string) {
+			b.updateLoaded(boardLoadedMsg{tasks: renamed(to)})
+		}},
+		{"by the project list", func(b *board, to string) {
+			b.setProjects([]apiclient.Project{{ID: testProjectID, Name: to}, {ID: otherProjectID, Name: "other"}})
+			b.updateLoaded(boardLoadedMsg{tasks: renamed(to)})
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			b := scopedBoard()
+			b.group, b.configGroup = defaultGrouping(), defaultGrouping()
+			dir := t.TempDir()
+			b.setDataDir(dir)
+			b.setProjects([]apiclient.Project{{ID: testProjectID, Name: "proj"}, {ID: otherProjectID, Name: "other"}})
+			b.updateLoaded(boardLoadedMsg{tasks: twoProjectTasks()})
+			b.setFolds(b.folds().with(foldPath{"proj", "build"}))
+			c.rename(b, "api")
+			if !b.folds().has(foldPath{"api", "build"}) || len(b.folds()) != 1 {
+				t.Fatalf("folds after the rename = %v, want [api build]", b.folds())
+			}
+			if got := readTUIState(dir).BoardFoldsByProject[testProjectID]; len(got) != 1 || !foldPath(got[0]).equal(foldPath{"api", "build"}) {
+				t.Errorf("persisted = %v, want the rewritten path", got)
+			}
+		})
+	}
+}
+
 func TestArchivedLoadPrunesNoFolds(t *testing.T) {
 	b := testArchivedBoard()
 	b.setFolds(foldSet{{"gone"}})

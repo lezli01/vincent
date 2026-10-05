@@ -486,6 +486,13 @@ nothing, because a page and a date window say nothing about which groups
 exist; the archived board still shares the sets (task 054 decision 1). A
 removed project's set is dropped when it leaves the cached project list.
 
+*Amended 2026-10-05 (review of the 526–530 train, F10):* keying by id does
+not by itself survive a rename, because a stored path keeps the project's
+name as a segment (the delivery note below). The board remembers the name
+each project's paths were last seen under and, when the project list or a
+task load reports a new one, rewrites that segment before pruning. A rename
+made while no TUI was running is not seen, and that project's folds go.
+
 *Note (2026-10-05), at delivery:* the decision as taken said a migrated
 path is stored with its project segment stripped, on the premise that a
 scoped board's paths no longer carry one. They do: a level `shownLevels`
