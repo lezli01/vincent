@@ -556,6 +556,13 @@ question, and what decision 8's "stays repairable from the TUI" already
 implies. Cross-project content leaks only for files whose project cannot be
 read, and that leak is accepted.
 
+*Amended 2026-10-05 (review of the 526–530 train, F2–F4):* `GET
+/v1/triggers` now carries the project an invalid file still names, so only a
+file with no readable project lands in the band. A trigger whose project was
+removed — valid, and possibly still enabled — joins the band too, rather
+than vanishing from every view, and its form keeps the project picker so it
+can be reassigned.
+
 *Alternative beaten:* showing them only in the overview (132.15), which leaves
 no repair path in the triggers view.
 

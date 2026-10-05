@@ -567,10 +567,11 @@ func (v *triggersView) move(delta int) tea.Cmd {
 
 // scoped is the list the selected project sees (task 132 decision 8): its
 // own triggers in the registry's id order, then the unassigned band —
-// invalid files whose project could not be read, which every project's view
-// shows so they stay repairable from the TUI (decision 41). The listing
-// itself stays unfiltered; trigger files are global (task 096 decision 8),
-// and only the display is scoped. Another project's triggers, valid or
+// invalid files whose project could not be read, and triggers whose project
+// is no longer registered, which every project's view shows so they stay
+// repairable from the TUI (decision 41). The listing itself stays
+// unfiltered; trigger files are global (task 096 decision 8), and only the
+// display is scoped. Another registered project's triggers, valid or
 // invalid with a readable project, are not shown.
 func (v *triggersView) scoped() []apiclient.TriggerSummary {
 	out := make([]apiclient.TriggerSummary, 0, len(v.list.Triggers))
@@ -580,11 +581,31 @@ func (v *triggersView) scoped() []apiclient.TriggerSummary {
 		}
 	}
 	for _, s := range v.list.Triggers {
-		if s.ProjectID == 0 {
+		if v.unassigned(s) {
 			out = append(out, s)
 		}
 	}
 	return out
+}
+
+// unassigned reports whether s belongs to no registered project: its project
+// could not be read, or names one that has been removed — removing a project
+// leaves its trigger files alone, and such a trigger may still be enabled
+// (review F3). The selection is always registered, and a project list not yet
+// loaded orphans nothing.
+func (v *triggersView) unassigned(s apiclient.TriggerSummary) bool {
+	if s.ProjectID == 0 {
+		return true
+	}
+	if s.ProjectID == v.project.id || v.projects == nil {
+		return false
+	}
+	for _, p := range v.projects {
+		if p.ID == s.ProjectID {
+			return false
+		}
+	}
+	return true
 }
 
 // visible is the scoped list, filtered.

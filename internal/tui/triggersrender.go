@@ -126,9 +126,9 @@ func (v *triggersView) tableLines(rows []apiclient.TriggerSummary, width, height
 	// focus is the cursor's line, one further on past the band's heading.
 	focus := v.cursor
 	for i, s := range rows {
-		if s.ProjectID == 0 && (i == 0 || rows[i-1].ProjectID != 0) {
+		if v.unassigned(s) && (i == 0 || !v.unassigned(rows[i-1])) {
 			lines = append(lines, styleWarn.Render(
-				"  unassigned — invalid files whose project cannot be read; every project lists them"))
+				"  unassigned — no readable or registered project; every project lists them"))
 			if v.cursor >= i {
 				focus++
 			}

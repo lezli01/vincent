@@ -323,8 +323,8 @@ func TestTriggersScheduleRendersAClock(t *testing.T) {
 }
 
 // scopedTriggersFixture lists triggers in projects a (1) and b (2), an
-// invalid file peeked to b, and an invalid file whose project could not be
-// read, with a selected.
+// invalid file peeked to b, an invalid file whose project could not be read,
+// and a valid trigger of a removed project (9), with a selected.
 func scopedTriggersFixture() *triggersView {
 	v := newTriggersView()
 	v.client = &apiclient.Client{}
@@ -337,6 +337,7 @@ func scopedTriggersFixture() *triggersView {
 		{ID: "b-one", ProjectID: 2, SourceType: "command", ActionType: "create", Valid: true},
 		{ID: "lost", File: "/cfg/triggers/lost.yaml"},
 		{ID: "a-two", ProjectID: 1, SourceType: "schedule", ActionType: "create", Valid: true},
+		{ID: "gone", ProjectID: 9, SourceType: "command", ActionType: "create", Valid: true, Enabled: true},
 	}}
 	v.restoreSelection()
 	return v
@@ -351,17 +352,18 @@ func visibleIDs(v *triggersView) string {
 }
 
 // The takeover lists the selected project's triggers, then the unassigned
-// band, which every project's view shows (task 132 decisions 8 and 41).
-// Another project's triggers — valid, or invalid with a readable project —
-// are not listed.
+// band, which every project's view shows (task 132 decisions 8 and 41): the
+// file with no readable project, and the trigger whose project was removed
+// (review F3). Another registered project's triggers — valid, or invalid
+// with a readable project — are not listed.
 func TestTriggersScopeToTheSelectedProject(t *testing.T) {
 	v := scopedTriggersFixture()
-	if got := visibleIDs(v); got != "a-one,a-two,lost" {
+	if got := visibleIDs(v); got != "a-one,a-two,lost,gone" {
 		t.Errorf("a selected: rows = %s, want a's triggers then the unassigned band", got)
 	}
 	out := v.render(200, 40)
-	if !strings.Contains(out, "unassigned") {
-		t.Errorf("the unassigned band has no heading:\n%s", out)
+	if strings.Count(out, "unassigned") != 1 {
+		t.Errorf("the unassigned band does not have exactly one heading:\n%s", out)
 	}
 	if strings.Contains(out, "PROJECT") {
 		t.Errorf("the project column is still drawn:\n%s", out)
@@ -370,7 +372,7 @@ func TestTriggersScopeToTheSelectedProject(t *testing.T) {
 	// Switching while open shows b's set and the same band.
 	v.setProject(projectSel{id: 2, name: "b"})
 	v.restoreSelection()
-	if got := visibleIDs(v); got != "b-broken,b-one,lost" {
+	if got := visibleIDs(v); got != "b-broken,b-one,lost,gone" {
 		t.Errorf("b selected: rows = %s, want b's triggers then the unassigned band", got)
 	}
 	if got := v.hintedProject(); got != 2 {
@@ -427,16 +429,21 @@ func TestTriggersCreateIsLockedToTheSelection(t *testing.T) {
 	// The request is built before the command runs; nothing here dials.
 }
 
-// An existing trigger's project row is read-only; an unassigned file's stays
-// editable, because assigning it is the repair.
+// An existing trigger's project row is read-only; one opened from the
+// unassigned band stays editable, because assigning it is the repair. The
+// form loads only a valid file, so the band's loadable row is a trigger
+// whose project was removed (review F4).
 func TestTriggersFormProjectRowLocksOnlyAnAssignedFile(t *testing.T) {
 	sf := apiclient.TriggerSchemaField{Name: "project", Control: apiclient.TriggerControlProject}
-	assigned := &trigFormLayer{def: map[string]any{"source": map[string]any{"project": 1}}}
-	if row := assigned.leaf("source", sf); row.readOnly == "" {
+	v := scopedTriggersFixture()
+	v.openFormOn("a-one", "", "")
+	v.form.def = map[string]any{"source": map[string]any{"project": 1}}
+	if row := v.form.leaf("source", sf); row.readOnly == "" {
 		t.Error("an assigned trigger's project row is editable")
 	}
-	unassigned := &trigFormLayer{def: map[string]any{"source": map[string]any{}}}
-	if row := unassigned.leaf("source", sf); row.readOnly != "" {
-		t.Errorf("an unassigned file's project row is locked: %q", row.readOnly)
+	v.openFormOn("gone", "", "")
+	v.form.def = map[string]any{"source": map[string]any{"project": 9}}
+	if row := v.form.leaf("source", sf); row.readOnly != "" {
+		t.Errorf("a removed project's trigger has its project row locked: %q", row.readOnly)
 	}
 }

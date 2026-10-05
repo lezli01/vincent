@@ -2616,8 +2616,9 @@ selected project's triggers and what the daemon learned running each one.
 Trigger files are still global — they all live under `{config_dir}/triggers/`
 — but each valid one targets exactly one project, and only the selected
 project's are listed. Below them, an **unassigned** band lists the invalid
-files whose project could not be read. Every project shows that band, so a
-broken file is always reachable from here to repair. Like
+files whose project could not be read, and the triggers whose project has
+since been removed. Every project shows that band, so such a file is always
+reachable from here to repair. Like
 the other takeovers it has no key and is reached from the command palette (`:`).
 The global switch is [`triggers`](../reference/configuration.md#triggers); read
 [what a trigger lets someone else do](../security-model.md#event-triggers-let-someone-else-start-an-agent)
@@ -2741,8 +2742,10 @@ renaming a trigger means creating a new one.
 An enum or a boolean cycles in place. `if:`, `dedupe_key` and the other
 templates open the full-pane multi-line editor, `match:` opens the key/value
 sub-form, with one `key=value` per entry and `a|b` meaning any of those values,
-and, for an unassigned file only, the project row opens a picker of registered
-projects, because assigning the file a project is how it is repaired. These are the same
+and, for an unassigned trigger only, the project row opens a picker of registered
+projects, because assigning the trigger a project is how it is repaired. The
+form opens only a file that validates — that is, a trigger whose project was
+removed; an unassigned file that does not validate is repaired in `$EDITOR`. These are the same
 overlays [the workflow editor](#authoring--i-a-f) opens, with the same keys.
 
 As in the workflow editor, **committing a row is the write**. Each change is a

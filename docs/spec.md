@@ -13128,15 +13128,18 @@ stream for the live tail.
    read unfiltered and the files are still global — task 096 decision 8 is
    kept, and so is this view's place outside the projects view — but only the
    display is scoped: the selected project's triggers, followed by an
-   **unassigned** band of invalid files whose project could not be read.
-   That band shows in every project's view, so such a file stays repairable
-   here. Another project's triggers, valid or invalid with a readable project,
-   are not shown. "Every file the registry holds" above is narrowed to that,
+   **unassigned** band of invalid files whose project could not be read and
+   of triggers whose project is no longer registered (removing a project
+   leaves its trigger files alone). That band shows in every project's view,
+   so such a file stays repairable here. Another registered project's
+   triggers, valid or invalid with a readable project, are not shown. "Every file the registry holds" above is narrowed to that,
    and **task 096 decision 14**'s cross-project list is departed from. The
    project column and the filter's project term are gone. `a`'s project is
    the selection, shown read-only, and an existing trigger's project row in
-   the form is read-only too; an unassigned file's stays editable, because
-   assigning it is the repair. A `trigger.*` event for another project no
+   the form is read-only too; an unassigned trigger's stays editable, because
+   assigning it is the repair. The form loads only a file that validates, so
+   that is a trigger of a removed project; a file that does not validate is
+   repaired in `$EDITOR`. A `trigger.*` event for another project no
    longer re-reads; one with no project still does. The banner, the 5 s
    re-read and `triggers.enabled` are unchanged.
 
