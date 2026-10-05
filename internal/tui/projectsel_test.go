@@ -163,39 +163,34 @@ func TestProjectListSelection(t *testing.T) {
 	}
 }
 
+// TestOpenNewTaskSeedsFromSelection holds task 132.13: `n` opens the form on
+// the selected project from every view. No view hints a project any more —
+// the form's project row is the selection, read-only (decision 9).
 func TestOpenNewTaskSeedsFromSelection(t *testing.T) {
-	m := newRoot(testCtx(t), connector{}, ackedDir(t))
-	var calls []string
-	form := &scopeStub{calls: &calls}
-	m.views[viewNewTask] = form
-	m.views[viewHome] = &hinter{scopeStub{calls: &calls}, 5}
-	m.active = viewHome
-
-	m.openNewTask()
-	if got := form.msgs[0]; got != (newTaskMsg{projectID: 5}) {
-		t.Fatalf("no selection: form got %+v, want the hint", got)
-	}
-	m.active = viewHome
-	m.sel = projectSel{id: 8, name: "sel"}
-	form.msgs = nil
-	m.openNewTask()
-	if got := form.msgs[0]; got != (newTaskMsg{projectID: 5}) {
-		t.Fatalf("hint and selection: form got %+v, want the hint", got)
-	}
-	m.active = viewHome
-	m.views[viewHome] = &hinter{scopeStub{calls: &calls}, 0}
-	form.msgs = nil
-	m.openNewTask()
-	if got := form.msgs[0]; got != (newTaskMsg{projectID: 8}) {
-		t.Fatalf("no hint: form got %+v, want the selection", got)
+	for id := range viewCount {
+		if id == viewNewTask {
+			continue
+		}
+		m := newRoot(testCtx(t), connector{}, ackedDir(t))
+		var calls []string
+		form := &scopeStub{calls: &calls}
+		m.views[viewNewTask] = form
+		m.sel = projectSel{id: 8, name: "sel"}
+		m.active = id
+		m.openNewTask()
+		if len(form.msgs) == 0 {
+			t.Fatalf("view %d: the form was not opened", id)
+		}
+		if got := form.msgs[0]; got != (newTaskMsg{projectID: 8}) {
+			t.Errorf("view %d: form got %+v, want the selection 8", id, got)
+		}
 	}
 }
 
-// TestNewTaskFromProjectsViewTakesTheCursorRow is review F1 of the 132.2
-// train: with one project selected, `n` on the projects view opens the form
-// on the row under the cursor, not on the selection. The projects view is
-// never project-bearing, so the selection must not override it.
-func TestNewTaskFromProjectsViewTakesTheCursorRow(t *testing.T) {
+// TestNewTaskFromProjectsViewTakesTheSelection: `n` on the project overview
+// opens the form on the selection, not on the row under the cursor (task
+// 132.13). Selecting an overview row is how a project is switched to.
+func TestNewTaskFromProjectsViewTakesTheSelection(t *testing.T) {
 	m := newRoot(testCtx(t), connector{}, ackedDir(t))
 	m.phase = phaseConnected
 	var calls []string
@@ -216,19 +211,68 @@ func TestNewTaskFromProjectsViewTakesTheCursorRow(t *testing.T) {
 	if len(form.msgs) == 0 {
 		t.Fatal("n on the projects view did not open the new-task form")
 	}
-	if got := form.msgs[0]; got != (newTaskMsg{projectID: 2}) {
-		t.Fatalf("form got %+v, want the cursor's project 2, not the selected 1", got)
+	if got := form.msgs[0]; got != (newTaskMsg{projectID: 1}) {
+		t.Fatalf("form got %+v, want the selected project 1, not the cursor's 2", got)
 	}
 }
 
-type hinter struct {
-	scopeStub
-	id int64
+// TestSeededNewTaskFollowsItsProject holds task 132.13's seed rule: a form
+// seeded from a pull request, an issue or a chat opens on the seed's project,
+// and a seed of a project other than the selection switches first (decision
+// 38), so the locked project row never disagrees with the header.
+func TestSeededNewTaskFollowsItsProject(t *testing.T) {
+	seeds := map[string]func(projectID int64) tea.Msg{
+		"pull": func(id int64) tea.Msg {
+			return newTaskFromPullMsg{projectID: id, pull: &apiclient.GitHubPullRequest{Number: 4}}
+		},
+		"issue": func(id int64) tea.Msg { return newTaskFromIssueMsg{projectID: id, issueID: 3} },
+		"chat":  func(id int64) tea.Msg { return newTaskFromChatMsg{chat: apiclient.Chat{ID: 2, ProjectID: id}} },
+	}
+	for name, seed := range seeds {
+		t.Run(name, func(t *testing.T) {
+			m := newRoot(testCtx(t), connector{}, ackedDir(t))
+			m.phase = phaseConnected
+			m.projects = []apiclient.Project{{ID: 1, Name: "alpha"}, {ID: 2, Name: "web"}}
+			var calls []string
+			form := &scopeStub{calls: &calls}
+			m.views[viewNewTask] = form
+			m.sel = projectSel{id: 1, name: "alpha"}
+
+			// seeded counts the seeds the form was handed, not the
+			// activation notices that ride along with switchTo.
+			seeded := func() int {
+				n := 0
+				for _, msg := range form.msgs {
+					switch msg.(type) {
+					case newTaskFromPullMsg, newTaskFromIssueMsg, newTaskFromChatMsg:
+						n++
+					}
+				}
+				return n
+			}
+
+			// The seed's project is the selection: the form opens on it.
+			m.Update(seed(1))
+			if m.active != viewNewTask || seeded() != 1 || m.sel.id != 1 {
+				t.Fatalf("same project: active %v, seeds %d, sel %d", m.active, seeded(), m.sel.id)
+			}
+
+			// Another project's seed switches first and opens second.
+			m.active = viewHome
+			form.msgs = nil
+			m.Update(seed(2))
+			if m.sel.id != 2 {
+				t.Fatalf("selection = %d, want the seed's project 2", m.sel.id)
+			}
+			if m.active != viewNewTask || seeded() != 1 {
+				t.Fatalf("other project: active %v, seeds %d; want the form opened after the switch", m.active, seeded())
+			}
+			if got := form.sel.id; got != 2 {
+				t.Errorf("the form was scoped to %d, want 2 before the seed reached it", got)
+			}
+		})
+	}
 }
-
-func (h *hinter) hintedProject() int64 { return h.id }
-
-func (h *hinter) update(tea.Msg) (panel, tea.Cmd) { return h, nil }
 
 // TestHeaderProjectSegment covers the segment and its shedding order (task
 // 132.2): the tag truncates then goes, then the version, then the name

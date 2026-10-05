@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -199,9 +200,16 @@ func TestNewTaskResizeKeepsAnOpenPicker(t *testing.T) {
 	}
 }
 
-func TestNewTaskPrefillsFromTheHintedProject(t *testing.T) {
+// selectProject aims a loaded form at id the way opening it on a selection
+// does: the project row itself cannot be chosen (task 132.13).
+func selectProject(n *newTask, id int64) {
+	n.selected = id
+	n.selectDefaultProject()
+}
+
+func TestNewTaskPrefillsFromTheSelectedProject(t *testing.T) {
 	n := newNewTask()
-	n.hintProject = 2
+	n.selected = 2
 	n.update(ntLoadedMsg{
 		projects: []apiclient.Project{
 			{ID: 1, Name: "vincent", DefaultBranch: "main"},
@@ -210,7 +218,7 @@ func TestNewTaskPrefillsFromTheHintedProject(t *testing.T) {
 		workflows: []apiclient.WorkflowEntry{{Name: "adhoc"}, {Name: "two-step"}},
 	})
 	if n.projectID != 2 {
-		t.Errorf("projectID = %d, want the hinted project 2", n.projectID)
+		t.Errorf("projectID = %d, want the selected project 2", n.projectID)
 	}
 	if got := strings.TrimSpace(n.branch.Value()); got != "trunk" {
 		t.Errorf("branch = %q, want that project's default branch", got)
@@ -222,10 +230,9 @@ func TestNewTaskPrefillsFromTheHintedProject(t *testing.T) {
 
 func TestNewTaskFallsBackToAdhocWithoutAProjectDefault(t *testing.T) {
 	n := loadedForm(t)
-	// Only one project is hinted-at; with no hint and two projects the form
-	// declines to guess.
+	// With no selection the form declines to guess a project.
 	if n.projectID != 0 {
-		t.Fatalf("projectID = %d, want no guess with two projects and no hint", n.projectID)
+		t.Fatalf("projectID = %d, want no guess with no selection", n.projectID)
 	}
 	if n.workflow != apiclient.AdhocWorkflow {
 		t.Errorf("workflow = %q, want adhoc", n.workflow)
@@ -253,28 +260,65 @@ func TestNewTaskPrefillsAProjectScopedDefaultWorkflow(t *testing.T) {
 		{ID: 2, Name: "other", DefaultBranch: "trunk", DefaultWorkflow: ptr("repo-flow")},
 	}
 
-	for _, tc := range []struct {
-		name     string
-		hint     int64
-		projects []apiclient.Project
-	}{
-		// The two paths that select a project without the picker: the board's
-		// hint, and the sole registered project.
-		{name: "hinted project", hint: 2, projects: projects},
-		{name: "only project", projects: projects[1:]},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			n := newNewTask()
-			n.hintProject = tc.hint
-			n.update(ntLoadedMsg{projects: tc.projects, workflows: unscoped})
-			if n.projectID != 2 {
-				t.Fatalf("projectID = %d, want the project carrying the default", n.projectID)
-			}
-			n.update(ntWorkflowsMsg{projectID: 2, entries: scoped})
-			if n.workflow != "repo-flow" {
-				t.Errorf("workflow = %q, want the project's project-scoped default", n.workflow)
-			}
-		})
+	n := newNewTask()
+	n.selected = 2
+	n.update(ntLoadedMsg{projects: projects, workflows: unscoped})
+	if n.projectID != 2 {
+		t.Fatalf("projectID = %d, want the project carrying the default", n.projectID)
+	}
+	n.update(ntWorkflowsMsg{projectID: 2, entries: scoped})
+	if n.workflow != "repo-flow" {
+		t.Errorf("workflow = %q, want the project's project-scoped default", n.workflow)
+	}
+}
+
+// TestNewTaskNeverGuessesAProject holds task 132.13: a form opened with no
+// selection stays on none, even when exactly one project is registered — the
+// locked row must never show a project the header does not.
+func TestNewTaskNeverGuessesAProject(t *testing.T) {
+	n := newNewTask()
+	n.update(ntLoadedMsg{projects: []apiclient.Project{{ID: 1, Name: "only", DefaultBranch: "main"}}})
+	if n.projectID != 0 {
+		t.Fatalf("projectID = %d, want no project without a selection", n.projectID)
+	}
+	n.titleIn.SetValue("t")
+	if cmd := n.submit(); cmd != nil {
+		t.Fatal("submit fired with no project selected")
+	}
+	if n.err != "no project is selected" || n.rowErr[ntProject] != "" {
+		t.Errorf("err = %q, rowErr = %v; want a form-wide line and no project row error", n.err, n.rowErr)
+	}
+}
+
+// TestNewTaskProjectRowIsLocked: the project row is drawn with the selected
+// project's name, and the cursor can neither land on it nor open it (task
+// 132.13, decision 9).
+func TestNewTaskProjectRowIsLocked(t *testing.T) {
+	n := loadedForm(t)
+	selectProject(n, 2)
+	if n.cursor == ntProject {
+		t.Fatal("the form opened with the cursor on the project row")
+	}
+	for range int(ntRowCount) {
+		press(n, "up")
+	}
+	if n.cursor != ntWorkflow {
+		t.Fatalf("cursor = %v after walking up, want the workflow row; the project row is not focusable", n.cursor)
+	}
+	press(n, "shift+tab")
+	if n.cursor == ntProject {
+		t.Fatal("shift+tab landed on the project row")
+	}
+	n.cursor = ntProject // forced: nothing may open from it even so
+	if cmd := press(n, "enter"); cmd != nil || n.mode != ntNavigating || n.pick != nil {
+		t.Fatalf("enter on the project row opened something: mode %v, pick %v", n.mode, n.pick)
+	}
+	if cmd := n.applyPick(ntProject, "1", false); cmd != nil || n.projectID != 2 {
+		t.Fatalf("a project pick was applied: projectID %d", n.projectID)
+	}
+	out := ansi.Strip(n.renderRow(ntProject))
+	if !strings.Contains(out, "other") || !strings.Contains(out, "(the selected project)") {
+		t.Errorf("project row = %q, want the selected project's name, marked read-only", out)
 	}
 }
 
@@ -570,7 +614,7 @@ func TestNewTaskModelPickerTakesFreeText(t *testing.T) {
 
 func TestNewTaskRequestOmitsWhatWasNeverTouched(t *testing.T) {
 	n := loadedForm(t)
-	n.applyPick(ntProject, "1", false)
+	selectProject(n, 1)
 	moveTo(n, ntTitle)
 	press(n, "enter")
 	typeText(n, "ship it")
@@ -609,15 +653,15 @@ func isNil(v any) bool {
 
 func TestNewTaskBlocksCreateOnWhatItCanDecideAlone(t *testing.T) {
 	n := loadedForm(t)
+	selectProject(n, 1)
 	if cmd := n.submit(); cmd != nil {
-		t.Fatal("submit fired with no project and no title")
+		t.Fatal("submit fired with no title")
 	}
-	if n.rowErr[ntProject] == "" || n.rowErr[ntTitle] == "" {
-		t.Errorf("rowErr = %v, want both the project and the title flagged", n.rowErr)
+	if n.rowErr[ntTitle] == "" {
+		t.Errorf("rowErr = %v, want the title flagged", n.rowErr)
 	}
 	// A base branch that does not exist is *not* blocked here: only the
 	// daemon can know, and a second implementation would drift from it.
-	n.applyPick(ntProject, "1", false)
 	moveTo(n, ntTitle)
 	press(n, "enter")
 	typeText(n, "t")

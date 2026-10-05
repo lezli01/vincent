@@ -65,8 +65,8 @@ const (
 
 // New-task messages.
 type (
-	// newTaskMsg opens the form, seeded with the project the caller was
-	// looking at.
+	// newTaskMsg opens the form on the root's selected project (task
+	// 132.13).
 	newTaskMsg struct{ projectID int64 }
 	// newTaskFromChatMsg opens the form as the handoff form for a chat
 	// (task 074): the project is fixed, and the branch and base branch are
@@ -174,9 +174,11 @@ type newTask struct {
 	agents    apiclient.Agents
 	loaded    bool
 	loadErr   error
-	// hintProject is the project the caller was looking at; it wins over
-	// "the only project" but loses to an explicit pick.
-	hintProject int64
+	// selected is the project the form was opened on: the root's selection
+	// (task 132.13, decision 9). The project row shows it read-only, and a
+	// switch re-aims the form (task 132.6) — the only way it changes. A form
+	// opened on none does not guess one.
+	selected int64
 	// opened records that the form has been entered at least once, so a
 	// reconnect refreshes it instead of probing adapters nobody asked about.
 	opened bool
@@ -288,6 +290,8 @@ func newNewTask() *newTask {
 		priority:   priority,
 		desc:       desc,
 		rowErr:     map[ntRow]string{},
+		// reset's first focusable row: the project row is display-only.
+		cursor: ntWorkflow,
 	}
 }
 
@@ -637,7 +641,7 @@ func (n *newTask) update(msg tea.Msg) (panel, tea.Cmd) {
 // opens: a half-remembered draft from twenty minutes ago is a worse default
 // than the context the user is standing in.
 func (n *newTask) open(projectID int64) tea.Cmd {
-	n.hintProject = projectID
+	n.selected = projectID
 	n.opened = true
 	n.reset()
 	return n.loadCmd(false)
@@ -657,7 +661,8 @@ func (n *newTask) reset() {
 	n.agent, n.model, n.effort = "", "", ""
 	n.workflow, n.workflowPicked = "", false
 	n.projectID = 0
-	n.cursor = ntProject
+	// The first row a cursor may rest on: the project row is display-only.
+	n.cursor = ntWorkflow
 	n.mode = ntNavigating
 	n.pick, n.fieldsEd = nil, nil
 	n.rowErr = map[ntRow]string{}
@@ -676,32 +681,33 @@ func (n *newTask) applyLoaded(msg ntLoadedMsg) tea.Cmd {
 	n.loaded, n.loadErr = true, nil
 	n.selectDefaultProject()
 	n.selectDefaultWorkflow()
-	// The project the picker settled on may not be the one the workflow list
-	// was fetched for.
+	// The workflow list was fetched before the selected project was matched
+	// against the listing, so it is asked for again, scoped to it.
 	if p, ok := n.project(); ok {
 		return tea.Batch(n.workflowsCmd(p.ID), n.branchesCmd(p.ID))
 	}
 	return n.resolveCmd()
 }
 
-// selectDefaultProject prefers the project the caller was looking at, then
-// the only project when there is exactly one. With several and no hint it
-// leaves the row empty rather than guessing.
+// selectDefaultProject sets the form on the selected project. It never falls
+// back to another one, not even the only one: the project row shows the
+// selection, and a row the header disagrees with is the one thing a locked
+// field must not show (task 132.13).
 func (n *newTask) selectDefaultProject() {
 	if n.projectID != 0 {
 		return
 	}
 	for _, p := range n.projects {
-		if p.ID == n.hintProject {
+		if p.ID == n.selected {
 			n.chooseProject(p)
 			return
 		}
 	}
-	if len(n.projects) == 1 {
-		n.chooseProject(n.projects[0])
-	}
 }
 
+// chooseProject is the one place the project-derived state is set. The
+// branch and workflow pickers key off projectID, which is why the project row
+// stays on the form though it cannot be chosen.
 func (n *newTask) chooseProject(p apiclient.Project) {
 	n.projectID = p.ID
 	n.branch.SetValue(p.DefaultBranch)
@@ -865,7 +871,7 @@ func (n *newTask) moveCursor(delta int) {
 	next := int(n.cursor)
 	for range abs(delta) {
 		candidate := next + step
-		for candidate >= 0 && candidate < int(ntRowCount) && !n.rowVisible(ntRow(candidate)) {
+		for candidate >= 0 && candidate < int(ntRowCount) && !n.focusable(ntRow(candidate)) {
 			candidate += step
 		}
 		if candidate < 0 || candidate >= int(ntRowCount) {
@@ -900,6 +906,13 @@ func (n *newTask) rowVisible(row ntRow) bool {
 	return n.issueID != 0 || n.pull != nil
 }
 
+// focusable reports whether the cursor may rest on a row. The project row is
+// drawn and never focused: it is the selection, which only a switch changes
+// (task 132.13, decision 9).
+func (n *newTask) focusable(row ntRow) bool {
+	return row != ntProject && n.rowVisible(row)
+}
+
 // visibleRows lists the rows this draft draws, in order.
 func (n *newTask) visibleRows() []ntRow {
 	out := make([]ntRow, 0, int(ntRowCount))
@@ -917,10 +930,11 @@ func (n *newTask) activate() tea.Cmd {
 		return nil
 	}
 	switch n.cursor {
-	case ntProject, ntWorkflow, ntAgent, ntModel, ntEffort, ntBranch, ntBranchName:
+	case ntWorkflow, ntAgent, ntModel, ntEffort, ntBranch, ntBranchName:
 		n.openPicker(n.cursor)
-	case ntSource:
-		// Read-only: the source was chosen where it was on screen.
+	case ntProject, ntSource:
+		// Read-only: the project is the selection, and the source was chosen
+		// where it was on screen.
 	case ntTitle, ntPriority, ntDescription:
 		n.startEditing()
 	case ntFields:
@@ -1045,9 +1059,6 @@ func (n *newTask) applyDescription(msg ntDescriptionMsg) {
 func (n *newTask) submit() tea.Cmd {
 	n.rowErr = map[ntRow]string{}
 	n.err = ""
-	if n.projectID == 0 && n.handoff == nil {
-		n.rowErr[ntProject] = "pick a project"
-	}
 	if n.titleText() == "" {
 		n.rowErr[ntTitle] = "a title is required"
 	}
@@ -1081,6 +1092,13 @@ func (n *newTask) submit() tea.Cmd {
 				break
 			}
 		}
+		return nil
+	}
+	// Not a row error: the project row cannot be focused or changed. A form
+	// opened while the selection is still resolving says so instead of
+	// posting project 0 (task 132.13).
+	if n.projectID == 0 && n.handoff == nil {
+		n.err = "no project is selected"
 		return nil
 	}
 	if n.client == nil {
@@ -1233,7 +1251,6 @@ func (n *newTask) applyFailure(err error) {
 		{"branch", ntBranchName},
 		{"workflow", ntWorkflow},
 		{"title", ntTitle},
-		{"project", ntProject},
 		{"model", ntModel},
 		{"effort", ntEffort},
 		{"agent", ntAgent},

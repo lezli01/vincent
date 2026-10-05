@@ -50,7 +50,7 @@ var ntStageLabels = [ntStageCount]string{
 }
 
 var ntStageHints = [ntStageCount]string{
-	ntStageProject:   "Choose the repository that will own this task.",
+	ntStageProject:   "The selected project owns this task; switching project re-aims the form.",
 	ntStageWorkflow:  "Choose what vincent should run and inspect its steps.",
 	ntStageDetails:   "Describe the outcome and add any workflow fields.",
 	ntStageGit:       "Choose the base, task branch, and queue priority.",
@@ -307,8 +307,13 @@ func (n *newTask) renderRow(row ntRow) string {
 	// An inherited row is drawn like any other and marked as what it is: the
 	// worktree it names exists, so this is a fact being confirmed rather than
 	// a choice being offered (task 074).
-	if n.inherited(row) {
+	switch {
+	case n.inherited(row):
 		line += "  " + styleDim.Render("(from the chat)")
+	case row == ntProject:
+		// Display-only like an inherited row, for a different reason: the
+		// project is the selection, which only a switch changes (task 132.13).
+		line += "  " + styleDim.Render("(the selected project)")
 	}
 	if msg, bad := n.rowErr[row]; bad {
 		line += "  " + styleBad.Render("⚠ "+msg)
@@ -327,7 +332,7 @@ func (n *newTask) rowValue(row ntRow) string {
 	case ntProject:
 		p, ok := n.project()
 		if !ok {
-			return styleDim.Render("(pick one)")
+			return styleDim.Render("(no project selected)")
 		}
 		return p.Name + "  " + styleDim.Render(p.Path)
 	case ntWorkflow:

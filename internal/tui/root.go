@@ -951,23 +951,13 @@ func (m *root) updateNoticeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// openNewTask opens the §15 new-task form, seeded with the project the
-// current view is looking at. The form must be told to open before it is
-// shown: opening is what resets the draft and fetches the catalogs.
+// openNewTask opens the §15 new-task form on the selected project, from
+// every view: the form's project row is the selection, read-only (task
+// 132.13, decision 9), so there is nothing for a view to hint any more. The
+// form must be told to open before it is shown: opening is what resets the
+// draft and fetches the catalogs.
 func (m *root) openNewTask() tea.Cmd {
-	// The view's hint wins and the selection is the fallback. Until the
-	// views are scoped (132.8–132.13) their rows still span every project,
-	// so the row under the cursor is what the user is pointing at — and the
-	// projects view is never project-bearing at all. 132.13 retires the hint
-	// once the forms lock to the selection (decision 9), when the two agree.
-	var hint int64
-	if h, ok := m.views[m.active].(projectHinting); ok {
-		hint = h.hintedProject()
-	}
-	if hint == 0 {
-		hint = m.sel.id
-	}
-	cmd := m.deliver(viewNewTask, newTaskMsg{projectID: hint})
+	cmd := m.deliver(viewNewTask, newTaskMsg{projectID: m.sel.id})
 	return tea.Batch(cmd, m.switchTo(viewNewTask))
 }
 
@@ -975,25 +965,26 @@ func (m *root) openNewTask() tea.Cmd {
 // (task 064). It goes through the root for the reason openNewTask does: the
 // form has to be told to open before it is shown, because opening is what
 // resets the draft and fetches the catalogs.
+//
+// It goes through openObject as well (task 132.13): the seed names its
+// project, and the form's project row is locked to the selection, so a seed
+// of another project switches first and opens second (decision 38). Every
+// seed today comes from a view already on its project, so this is the guard
+// that keeps a locked field from ever disagreeing with the header.
 func (m *root) updateNewTaskFromPull(msg newTaskFromPullMsg) (tea.Model, tea.Cmd) {
-	cmd := m.deliver(viewNewTask, msg)
-	return m, tea.Batch(cmd, m.switchTo(viewNewTask))
+	return m, m.openObject(msg)
 }
 
 // updateNewTaskFromIssue opens the new-task form seeded with a vincent issue
-// (task 130.13), through the root for updateNewTaskFromPull's reason.
+// (task 130.13), through the root for updateNewTaskFromPull's reasons.
 func (m *root) updateNewTaskFromIssue(msg newTaskFromIssueMsg) (tea.Model, tea.Cmd) {
-	cmd := m.deliver(viewNewTask, msg)
-	return m, tea.Batch(cmd, m.switchTo(viewNewTask))
+	return m, m.openObject(msg)
 }
 
 // updateNewTaskFromChat opens the form as a chat's handoff form (task 074),
-// through the root for the reason the two above go through it: the form must
-// be told to open before it is shown, because opening is what resets the draft
-// and fetches the catalogs.
+// through the root for updateNewTaskFromPull's reasons.
 func (m *root) updateNewTaskFromChat(msg newTaskFromChatMsg) (tea.Model, tea.Cmd) {
-	cmd := m.deliver(viewNewTask, msg)
-	return m, tea.Batch(cmd, m.switchTo(viewNewTask))
+	return m, m.openObject(msg)
 }
 
 // routeOpen performs one open once its project is settled: openObject and a
@@ -1046,6 +1037,9 @@ func (m *root) routeOpen(open tea.Msg) tea.Cmd {
 		if v, ok := m.views[viewChat].(*chatView); ok {
 			return tea.Batch(v.open(msg.id), m.switchTo(viewChat))
 		}
+	case newTaskFromPullMsg, newTaskFromIssueMsg, newTaskFromChatMsg:
+		// A seeded form, once its project is the selection.
+		return tea.Batch(m.deliver(viewNewTask, msg), m.switchTo(viewNewTask))
 	case taskCreatedMsg:
 		// Landing on the task that was just created: creating a task is the
 		// beginning of watching it, and the 201's warnings ride along so an
@@ -1076,6 +1070,12 @@ func openProjectID(open tea.Msg) int64 {
 		return msg.projectID
 	case taskCreatedMsg:
 		return msg.task.ProjectID
+	case newTaskFromPullMsg:
+		return msg.projectID
+	case newTaskFromIssueMsg:
+		return msg.projectID
+	case newTaskFromChatMsg:
+		return msg.chat.ProjectID
 	}
 	return 0
 }

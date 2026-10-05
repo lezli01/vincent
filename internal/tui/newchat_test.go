@@ -2,7 +2,10 @@ package tui
 
 import (
 	"errors"
+	"strings"
 	"testing"
+
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -12,7 +15,7 @@ import (
 // branches, and two resumable adapters with different catalogs — which is what
 // makes "the catalogs scope to the selected adapter" observable.
 func chatFormWithCatalogs() *newChatForm {
-	f := newNewChatForm(nil, 0)
+	f := newNewChatForm(nil, 1)
 	f.applyFields(newChatFieldsMsg{
 		projects: []apiclient.Project{
 			{ID: 1, Name: "alpha", Path: "/repos/alpha", DefaultBranch: "main"},
@@ -127,34 +130,48 @@ func TestNewChatFormAgentPickerOffersOnlyResumers(t *testing.T) {
 	}
 }
 
-// TestNewChatFormProjectPickerOffersEveryProject holds the row the issue was
-// filed about: the project row is a list of everything registered, with the
-// path as its note, not a cycler you step through hoping.
-func TestNewChatFormProjectPickerOffersEveryProject(t *testing.T) {
+// TestNewChatFormProjectRowIsLocked holds task 132.13: the project row shows
+// the selected project read-only. It cannot be focused, opened or stepped —
+// a switch re-aims the form, and is the only way its project changes.
+func TestNewChatFormProjectRowIsLocked(t *testing.T) {
 	f := chatFormWithCatalogs()
-	openAt(t, f, ncProject)
-	if f.pick == nil {
-		t.Fatal("enter on the project row opened no list")
+	f.moveFocusTo(ncBranch)
+	f.update(registryKey(t, "tab"), nil)
+	if f.focus != ncTitle {
+		t.Fatalf("tab from the last row landed on row %d, want the title; the project row is not focusable", f.focus)
 	}
-	if labels := pickerLabels(f.pick); len(labels) != 2 ||
-		labels[0] != "alpha" || labels[1] != "beta" {
-		t.Fatalf("the project list offers %v, want both registered projects", labels)
-	}
-	if note := f.pick.options[0].note; note != "/repos/alpha" {
-		t.Errorf("the first row's note is %q, want the project's path", note)
-	}
-	if f.pick.allowFree {
-		t.Error("the project list allows free text; a chat needs a registered project")
+	f.update(registryKey(t, "shift+tab"), nil)
+	if f.focus != ncBranch {
+		t.Fatalf("shift+tab from the title landed on row %d, want the last row", f.focus)
 	}
 
-	// Choosing the second one commits it and closes the list.
-	f.update(registryKey(t, "down"), nil)
-	f.update(registryKey(t, "enter"), nil)
+	f.focus = ncProject // forced: nothing may open or step from it even so
+	openAt(t, f, ncProject)
 	if f.pick != nil {
-		t.Fatal("choosing a project left the list open")
+		t.Fatal("enter on the project row opened a list")
 	}
-	if f.projectID != 2 {
-		t.Fatalf("the form holds project %d, want the one chosen from the list", f.projectID)
+	f.update(registryKey(t, "right"), nil)
+	if f.projectID != 1 {
+		t.Fatalf("→ on the project row stepped to project %d", f.projectID)
+	}
+	out := ansi.Strip(f.render(100, 30))
+	if !strings.Contains(out, "alpha") || !strings.Contains(out, "the selected project") {
+		t.Errorf("the project row does not show the selection read-only:\n%s", out)
+	}
+}
+
+// TestNewChatFormNeverGuessesAProject: a form opened on no selection stays on
+// none rather than taking the first project listed (task 132.13).
+func TestNewChatFormNeverGuessesAProject(t *testing.T) {
+	f := newNewChatForm(nil, 0)
+	f.applyFields(newChatFieldsMsg{projects: []apiclient.Project{{ID: 1, Name: "only"}}})
+	if f.projectID != 0 {
+		t.Fatalf("projectID = %d, want none without a selection", f.projectID)
+	}
+	f.title.SetValue("a chat")
+	f.submit()
+	if f.err != "no project is selected" {
+		t.Errorf("err = %q, want the form to say no project is selected", f.err)
 	}
 }
 
@@ -249,16 +266,11 @@ func TestNewChatFormAgentChangeRescopesTheCatalogs(t *testing.T) {
 }
 
 // TestNewChatFormArrowsStepInPlace holds the decision issue #281 took: `←`/`→`
-// survive as a fast in-place step on the two short rows, the enum-row
-// precedent from the new-task fields editor. They open nothing.
+// survive as a fast in-place step on the agent row, the enum-row precedent
+// from the new-task fields editor. They open nothing. The project row they
+// once stepped too is the selection now (task 132.13).
 func TestNewChatFormArrowsStepInPlace(t *testing.T) {
 	f := chatFormWithCatalogs()
-	f.focus = ncProject
-	f.update(registryKey(t, "right"), nil)
-	if f.projectID != 2 || f.pick != nil {
-		t.Fatalf("→ on the project row left project %d, list open = %v; want a step in place",
-			f.projectID, f.pick != nil)
-	}
 	f.focus = ncAgent
 	f.update(registryKey(t, "right"), nil)
 	if f.agentName() != "cursor" || f.pick != nil {
@@ -268,17 +280,12 @@ func TestNewChatFormArrowsStepInPlace(t *testing.T) {
 }
 
 // TestNewChatFormBaseRowNamesTheProjectDefault holds the base row's decision:
-// the placeholder names the project's real default branch and follows the
-// project row, while the value stays empty so the daemon resolves it.
+// the placeholder names the project's real default branch, while the value
+// stays empty so the daemon resolves it.
 func TestNewChatFormBaseRowNamesTheProjectDefault(t *testing.T) {
 	f := chatFormWithCatalogs()
 	if got := f.base.Placeholder(); got != "main (the project's default)" {
-		t.Fatalf("the base row reads %q, want the first project's default branch", got)
-	}
-	f.focus = ncProject
-	f.update(registryKey(t, "right"), nil)
-	if got := f.base.Placeholder(); got != "trunk (the project's default)" {
-		t.Fatalf("after changing project the base row reads %q, want the new project's default branch", got)
+		t.Fatalf("the base row reads %q, want the selected project's default branch", got)
 	}
 
 	f.title.SetValue("a chat")
@@ -353,7 +360,7 @@ func TestNewChatFormEnterNeverCreates(t *testing.T) {
 
 	// ctrl+s from a row that is not the title still creates; with no client
 	// the attempt stops at "not connected", which is proof it was made.
-	for _, row := range []ncRow{ncProject, ncBase, ncEffort} {
+	for _, row := range []ncRow{ncAgent, ncBase, ncEffort} {
 		f.err = ""
 		f.focus = row
 		f.update(registryKey(t, "ctrl+s"), nil)

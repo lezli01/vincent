@@ -334,8 +334,6 @@ func (p *picker) startFree() {
 // openPicker builds the list for a row and opens it.
 func (n *newTask) openPicker(row ntRow) {
 	switch row {
-	case ntProject:
-		n.pick = newPicker(int(row), "project", n.projectOptions(), false, strconv.FormatInt(n.projectID, 10))
 	case ntWorkflow:
 		n.pick = newPicker(int(row), "workflow", n.workflowOptions(), false, n.workflow)
 	case ntAgent:
@@ -352,7 +350,7 @@ func (n *newTask) openPicker(row ntRow) {
 		n.pick = newPicker(int(row), "branch", n.branchNameOptions(),
 			true, strings.TrimSpace(n.branchName.Value()))
 		n.pick.err = n.branchesErr
-	case ntSource, ntTitle, ntDescription, ntFields, ntPriority, ntPaused, ntCreate, ntRowCount:
+	case ntProject, ntSource, ntTitle, ntDescription, ntFields, ntPriority, ntPaused, ntCreate, ntRowCount:
 		return
 	}
 	n.mode = ntPicking
@@ -529,30 +527,6 @@ func (n *newTask) applyPick(row ntRow, value string, free bool) tea.Cmd {
 	n.touched = true
 	delete(n.rowErr, row)
 	switch row {
-	case ntProject:
-		id, err := strconv.ParseInt(value, 10, 64)
-		if err != nil || id == n.projectID {
-			return nil
-		}
-		for _, p := range n.projects {
-			if p.ID == id {
-				n.chooseProject(p)
-			}
-		}
-		// The registry is project-scoped (§5.2), so the workflow list and
-		// the selection made from it are both stale now. A seeded issue is
-		// kept: the daemon is the one to say whether it belongs here, and
-		// its preview is re-asked once the new workflow list lands.
-		n.workflows = nil
-		n.setWorkflow("")
-		n.workflowPicked = false
-		// So are the branches, and so is a branch adopted from the listing
-		// the old project had: a name from another repository is not a branch
-		// this one can run on.
-		n.branches, n.branchesFor, n.branchesErr = nil, 0, ""
-		n.branchName.SetValue("")
-		n.branchAdopt = false
-		return tea.Batch(n.workflowsCmd(id), n.branchesCmd(id))
 	case ntWorkflow:
 		n.setWorkflow(value)
 		n.workflowPicked = true
@@ -584,24 +558,12 @@ func (n *newTask) applyPick(row ntRow, value string, free bool) tea.Cmd {
 		// cuts one under that name as it always did, and an empty row hands
 		// the name back to the §5.3 chain.
 		n.branchAdopt = !free && value != ""
-	case ntSource, ntTitle, ntDescription, ntFields, ntPriority, ntPaused, ntCreate, ntRowCount:
+	case ntProject, ntSource, ntTitle, ntDescription, ntFields, ntPriority, ntPaused, ntCreate, ntRowCount:
 		return nil
 	}
 	// Every row that falls through here is a §8.6 input, so what the draft
 	// resolves to has just changed.
 	return n.resolveCmd()
-}
-
-func (n *newTask) projectOptions() []pickerOption {
-	out := make([]pickerOption, 0, len(n.projects))
-	for _, p := range n.projects {
-		out = append(out, pickerOption{
-			value: strconv.FormatInt(p.ID, 10),
-			label: p.Name,
-			note:  p.Path,
-		})
-	}
-	return out
 }
 
 func (n *newTask) workflowOptions() []pickerOption {

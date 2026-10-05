@@ -18,9 +18,10 @@ import (
 // It is deliberately smaller than the new-task form. A chat has no workflow,
 // no fields, no github issue and no scheduling, so the whole form is project,
 // title, agent, model, effort, base branch and branch — and only the first two
-// are required.
+// are required. The project is the root's selection, shown read-only (task
+// 132.13).
 //
-// Five of those seven rows are lists, drawn by the same `picker` the new-task,
+// Four of those seven rows are lists, drawn by the same `picker` the new-task,
 // follow-up and repair forms use (issue #281): one component means one set of
 // idioms for "choose one of a list" — incremental filtering, a bounded
 // window, the `cli`/`curated` provenance note, and free text where a catalog
@@ -116,8 +117,11 @@ type newChatForm struct {
 	dirty bool
 }
 
-func newNewChatForm(client *apiclient.Client, hintProject int64) *newChatForm {
-	f := &newChatForm{client: client, projectID: hintProject}
+// newNewChatForm opens the form on projectID, the root's selected project.
+// The project row shows it read-only: a switch re-aims the form (task 132.6),
+// and is the only way its project changes (task 132.13, decision 9).
+func newNewChatForm(client *apiclient.Client, projectID int64) *newChatForm {
+	f := &newChatForm{client: client, projectID: projectID}
 	f.title = newTextField()
 	f.title.SetPlaceholder("what is this conversation about")
 	f.base = newTextField()
@@ -205,18 +209,17 @@ func (f *newChatForm) paste(text string) tea.Cmd {
 	return cmd
 }
 
-// applyFields records the pickers' contents, defaulting the project to the
-// hint and the agent to the first adapter that can resume — which is the
-// daemon's own default, so the form and the API agree before anyone types.
+// applyFields records the pickers' contents, defaulting the agent to the
+// first adapter that can resume — which is the daemon's own default, so the
+// form and the API agree before anyone types. The project is never defaulted
+// here: it is the selection the form was opened on, and a form opened on
+// none does not guess one.
 func (f *newChatForm) applyFields(msg newChatFieldsMsg) tea.Cmd {
 	if msg.err != nil {
 		f.err = errString(msg.err)
 		return nil
 	}
 	f.projects, f.agents = msg.projects, resumableAgents(msg.agents)
-	if f.projectID == 0 && len(f.projects) > 0 {
-		f.projectID = f.projects[0].ID
-	}
 	f.base.SetPlaceholder(f.baseHint())
 	// The branch listing is project-scoped, so it is asked for once the
 	// project row has settled rather than alongside the two catalogs above.
@@ -282,14 +285,13 @@ func (f *newChatForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cmd
 	// draft — one esc, one layer.
 	if f.pick != nil {
 		res := f.pick.update(msg)
-		cmds := []tea.Cmd{res.cmd}
 		if res.chosen {
-			cmds = append(cmds, f.setRow(ncRow(f.pick.row), res.value))
+			f.setRow(ncRow(f.pick.row), res.value)
 		}
 		if res.closed {
 			f.pick = nil
 		}
-		return tea.Batch(cmds...), false
+		return res.cmd, false
 	}
 	switch msg.String() {
 	case "esc":
@@ -301,9 +303,11 @@ func (f *newChatForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cmd
 		f.moveFocus(-1)
 		return nil, false
 	case "left":
-		return f.cycle(-1), false
+		f.cycle(-1)
+		return nil, false
 	case "right":
-		return f.cycle(1), false
+		f.cycle(1)
+		return nil, false
 	case "ctrl+s":
 		return f.submit(), false
 	case "enter":
@@ -329,8 +333,7 @@ func (f *newChatForm) openRow() {
 	f.err = ""
 	switch f.focus {
 	case ncProject:
-		f.pick = newPicker(int(ncProject), "project", f.projectOptions(), false,
-			strconv.FormatInt(f.projectID, 10))
+		// Read-only: the selection is the project (task 132.13).
 	case ncAgent:
 		f.pick = newPicker(int(ncAgent), "agent", f.agentOptions(), false, f.agentName())
 	case ncModel:
@@ -364,12 +367,8 @@ func (f *newChatForm) branchOptions() []pickerOption {
 }
 
 // setRow commits a chosen value.
-func (f *newChatForm) setRow(row ncRow, value string) tea.Cmd {
+func (f *newChatForm) setRow(row ncRow, value string) {
 	switch row {
-	case ncProject:
-		if id, err := strconv.ParseInt(value, 10, 64); err == nil {
-			return f.setProject(id)
-		}
 	case ncAgent:
 		f.setAgent(value)
 	case ncModel:
@@ -379,25 +378,8 @@ func (f *newChatForm) setRow(row ncRow, value string) tea.Cmd {
 	case ncBranch:
 		f.branch.SetValue(value)
 		f.branchErr = ""
-	case ncTitle, ncBase, ncRowCount:
+	case ncProject, ncTitle, ncBase, ncRowCount:
 	}
-	return nil
-}
-
-// setProject re-derives whatever depends on the project: the base row's hint,
-// which names that project's real default branch, and the branch listing,
-// which is another repository's now. A branch already chosen goes with it — a
-// name from the old project is not a branch this one can adopt.
-func (f *newChatForm) setProject(id int64) tea.Cmd {
-	if id == f.projectID {
-		return nil
-	}
-	f.projectID = id
-	f.base.SetPlaceholder(f.baseHint())
-	f.branch.SetValue("")
-	f.branchErr = ""
-	f.branches, f.branchesFor, f.branchesErr = nil, 0, ""
-	return f.branchesCmd(id)
 }
 
 // setAgent selects an adapter by name and drops the model and effort chosen
@@ -420,8 +402,14 @@ func (f *newChatForm) setAgentIdx(i int) {
 	f.model, f.effort = "", ""
 }
 
+// moveFocus walks the rows, wrapping, and steps over the project row: it is
+// the selection, shown and never chosen here (task 132.13).
 func (f *newChatForm) moveFocus(delta int) {
-	f.moveFocusTo((f.focus + ncRow(delta) + ncRowCount) % ncRowCount)
+	next := (f.focus + ncRow(delta) + ncRowCount) % ncRowCount
+	if next == ncProject {
+		next = (next + ncRow(delta) + ncRowCount) % ncRowCount
+	}
+	f.moveFocusTo(next)
 }
 
 func (f *newChatForm) moveFocusTo(row ncRow) {
@@ -437,37 +425,22 @@ func (f *newChatForm) moveFocusTo(row ncRow) {
 	}
 }
 
-// cycle steps the project and agent rows in place, without opening their
-// list. This is the enum-row idiom from the new-task fields editor verbatim:
-// left/right step through the members the way a boolean cycles, so two
+// cycle steps the agent row in place, without opening its list. This is the
+// enum-row idiom from the new-task fields editor verbatim: left/right step through the members the way a boolean cycles, so two
 // adapters stay a single keypress; enter opens the list, which is the only
 // workable control for a long one.
 //
 // The model and effort rows are not stepped: they are catalogs of a hundred
 // and more (§9.7), where "next" is not a cheap answer to anything. The text
 // rows ignore it — left and right are cursor movement there.
-func (f *newChatForm) cycle(delta int) tea.Cmd {
-	switch f.focus {
-	case ncProject:
-		if len(f.projects) == 0 {
-			return nil
-		}
-		i := 0
-		for j, p := range f.projects {
-			if p.ID == f.projectID {
-				i = j
-				break
-			}
-		}
-		return f.setProject(f.projects[(i+delta+len(f.projects))%len(f.projects)].ID)
-	case ncAgent:
-		if len(f.agents) == 0 {
-			return nil
-		}
-		f.setAgentIdx((f.agentIdx + delta + len(f.agents)) % len(f.agents))
-	case ncTitle, ncModel, ncEffort, ncBase, ncBranch, ncRowCount:
+//
+// The project row is not stepped either: it is the selection, which only a
+// switch changes (task 132.13).
+func (f *newChatForm) cycle(delta int) {
+	if f.focus != ncAgent || len(f.agents) == 0 {
+		return
 	}
-	return nil
+	f.setAgentIdx((f.agentIdx + delta + len(f.agents)) % len(f.agents))
 }
 
 func (f *newChatForm) agentName() string {
@@ -475,20 +448,6 @@ func (f *newChatForm) agentName() string {
 		return ""
 	}
 	return f.agents[f.agentIdx].Name
-}
-
-// projectOptions is one row per registered project, with its path as the
-// note — the same pair the new-task project picker offers.
-func (f *newChatForm) projectOptions() []pickerOption {
-	out := make([]pickerOption, 0, len(f.projects))
-	for _, p := range f.projects {
-		out = append(out, pickerOption{
-			value: strconv.FormatInt(p.ID, 10),
-			label: p.Name,
-			note:  p.Path,
-		})
-	}
-	return out
 }
 
 // agentOptions is the adapter list, already narrowed to those that can hold a
@@ -607,7 +566,7 @@ func (f *newChatForm) submit() tea.Cmd {
 		return nil
 	}
 	if f.projectID == 0 {
-		f.err = "pick a project"
+		f.err = "no project is selected"
 		return nil
 	}
 	client := f.client
@@ -649,7 +608,7 @@ func (f *newChatForm) render(width, height int) string {
 		label string
 		value []string
 	}{
-		{ncProject, "project", []string{f.projectName() + stepHint()}},
+		{ncProject, "project", []string{f.projectName() + "   " + styleDim.Render("the selected project")}},
 		{ncTitle, "title", f.title.rows()},
 		{ncAgent, "agent", []string{f.agentLabel()}},
 		{ncModel, "model", []string{f.overrideValue(f.model, f.defaultModel())}},
@@ -711,7 +670,7 @@ func (f *newChatForm) branchValue() string {
 	return out
 }
 
-// stepHint is the dim suffix on the two rows `←`/`→` still step in place.
+// stepHint is the dim suffix on the agent row, the one `←`/`→` steps in place.
 func stepHint() string { return styleDim.Render("   ← → step · enter list") }
 
 // overrideValue renders a §8.6-style override row: what was chosen, or what

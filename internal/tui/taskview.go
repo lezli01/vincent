@@ -233,13 +233,6 @@ func (t *taskView) setClient(c *apiclient.Client) tea.Cmd {
 
 func (t *taskView) setConnected(ok bool) { t.connected = ok }
 
-func (t *taskView) hintedProject() int64 {
-	if !t.detail.loaded {
-		return 0
-	}
-	return t.detail.task.ProjectID
-}
-
 func (t *taskView) capturesInput() bool {
 	return t.popup || t.pullTab.confirm != nil || t.detail.capturesInput()
 }

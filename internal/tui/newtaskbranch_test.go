@@ -23,8 +23,9 @@ func liveBranches() []apiclient.Branch {
 func branchForm(t *testing.T) *newTask {
 	t.Helper()
 	n := loadedForm(t)
-	// loadedForm holds two projects and no hint, so the row is deliberately
-	// left empty; the branch listing is project-scoped, so pick one first.
+	// loadedForm holds two projects and no selection, so the row is
+	// deliberately left empty; the branch listing is project-scoped, so set
+	// one first.
 	n.chooseProject(n.projects[0])
 	n.update(ntBranchesMsg{projectID: n.projectID, branches: liveBranches()})
 	return n
@@ -328,10 +329,13 @@ func TestBranchListingIsKeyedByProject(t *testing.T) {
 		}
 	}
 
-	moveTo(n, ntProject)
-	press(n, "enter")
-	press(n, "down")
-	press(n, "enter")
+	// The project changes only by a switch, which re-aims the form (task
+	// 132.13): nothing chosen against the old repository survives it.
+	n.opened = true
+	n.retarget(projectSel{id: 2, name: "other"})
+	if n.selected != 2 {
+		t.Fatalf("retarget aimed the form at %d, want 2", n.selected)
+	}
 	if n.branchAdopt || strings.TrimSpace(n.branchName.Value()) != "" {
 		t.Fatalf("switching project kept branch %q (adopt=%v); a name from another repository is not a branch this one can run on",
 			n.branchName.Value(), n.branchAdopt)
@@ -433,8 +437,7 @@ func TestNewChatBranchFailureLandsOnTheBranchRow(t *testing.T) {
 }
 
 // TestNewChatBranchListingFollowsTheProject: a listing for a project the user
-// has left is dropped, and switching project drops a branch chosen from the
-// old one.
+// has left is dropped, and a switch drops a branch chosen from the old one.
 func TestNewChatBranchListingFollowsTheProject(t *testing.T) {
 	f := chatFormWithCatalogs()
 	f.applyBranches(newChatBranchesMsg{projectID: f.projectID, branches: liveBranches()})
@@ -447,11 +450,15 @@ func TestNewChatBranchListingFollowsTheProject(t *testing.T) {
 		}
 	}
 
-	f.setProject(f.projectID + 1)
-	if f.branch.Value() != "" {
-		t.Fatalf("switching project kept branch %q", f.branch.Value())
+	// A switch replaces the form (chatsView.retarget), so nothing chosen
+	// from the old project's listing can survive it.
+	v := newChatsView()
+	v.create = f
+	v.retarget(projectSel{id: f.projectID + 1, name: "other"})
+	if v.create == f || v.create.branch.Value() != "" || len(v.create.branches) != 0 {
+		t.Fatalf("switching project kept the old form's branch %q", v.create.branch.Value())
 	}
-	if len(f.branches) != 0 {
-		t.Fatalf("switching project kept %d branches of the old one", len(f.branches))
+	if v.create.projectID != f.projectID+1 {
+		t.Errorf("the re-aimed form is on %d, want %d", v.create.projectID, f.projectID+1)
 	}
 }

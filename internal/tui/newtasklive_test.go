@@ -264,6 +264,11 @@ func newNewTaskLiveHarnessWith(t *testing.T, opts liveOptions) *newTaskLiveHarne
 	if err := st.CreateProject(context.Background(), proj); err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
+	// The project is registered behind the API, so the root learns of it by
+	// relisting. It must be the selection before `n` is pressed: the form's
+	// project row is the selection and nothing else (task 132.13).
+	p.push(m.refreshProjects())
+	p.until(10*time.Second, "the project to become the selection", func() bool { return m.sel.id == proj.ID })
 	return &newTaskLiveHarness{st: st, m: m, p: p, projectID: proj.ID, repo: repo}
 }
 
@@ -315,9 +320,9 @@ func TestNewTaskFlowCreatesRunnableTask(t *testing.T) {
 	if h.m.active != viewNewTask {
 		t.Fatalf("active view = %v, want the new-task form", h.m.active)
 	}
-	// One project, so the form picks it and prefills the branch from it.
+	// The form opens on the selected project and prefills the branch from it.
 	if n.projectID != h.projectID {
-		t.Fatalf("projectID = %d, want the only project %d", n.projectID, h.projectID)
+		t.Fatalf("projectID = %d, want the selected project %d", n.projectID, h.projectID)
 	}
 	if got := strings.TrimSpace(n.branch.Value()); got != "main" {
 		t.Fatalf("branch = %q, want the project's default", got)

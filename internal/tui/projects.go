@@ -184,15 +184,6 @@ func (p *projectsView) paste(text string) tea.Cmd {
 	return cmd
 }
 
-// hintedProject lets `n` open the new-task form on the row under the cursor.
-func (p *projectsView) hintedProject() int64 {
-	id, ok := p.selected()
-	if !ok {
-		return 0
-	}
-	return id
-}
-
 func (p *projectsView) loadCmd() tea.Cmd {
 	client := p.client
 	if client == nil {

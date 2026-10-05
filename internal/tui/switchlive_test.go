@@ -262,7 +262,7 @@ func (h *formSwitchHarness) persisted() int64 {
 }
 
 // TestSwitchRetargetsAPristineForm: the new-task form is reopened on the new
-// selection, and its catalogs follow it.
+// selection, and its catalogs and read-only project row follow it.
 func TestSwitchRetargetsAPristineForm(t *testing.T) {
 	h := newFormSwitchHarness(t)
 	h.p.push(h.m.openNewTask())
@@ -279,6 +279,11 @@ func TestSwitchRetargetsAPristineForm(t *testing.T) {
 	})
 	if h.m.active != viewNewTask {
 		t.Fatalf("active = %v, want the form kept", h.m.active)
+	}
+	// The locked project row follows the switch: it is the selection, and a
+	// switch is the only thing that changes it (task 132.13).
+	if row := n.renderRow(ntProject); !strings.Contains(row, h.second.Name) || strings.Contains(row, h.first.Name) {
+		t.Errorf("project row = %q, want the new selection %q", row, h.second.Name)
 	}
 }
 

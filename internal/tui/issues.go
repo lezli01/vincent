@@ -178,10 +178,6 @@ func (v *issuesView) paste(text string) tea.Cmd {
 	return cmd
 }
 
-// hintedProject is the selected project: where the new-task form opens from
-// the palette, and where `n` files a new issue. Every row is in it.
-func (v *issuesView) hintedProject() int64 { return v.project.id }
-
 func (v *issuesView) update(msg tea.Msg) (panel, tea.Cmd) {
 	if cmd, ok := v.w.update(msg); ok {
 		return v, cmd
@@ -374,7 +370,7 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case opKey(keymap.Browser):
 		return v, v.openSelected()
 	case opKey(keymap.New):
-		return v, v.w.openForm(v.client, nil, v.hintedProject())
+		return v, v.w.openForm(v.client, nil, v.project.id)
 	case opKey(keymap.Add):
 		// A task from the selected issue (task 130.13): the form opens
 		// seeded with it, editable before anything is created.

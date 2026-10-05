@@ -219,10 +219,6 @@ func (v *triggersView) bindingContext() bindingContext {
 	return ctxTriggers
 }
 
-// hintedProject is the selected project: the list shows only its triggers
-// and the unassigned band, so no row names another one (task 132.12).
-func (v *triggersView) hintedProject() int64 { return v.project.id }
-
 func (v *triggersView) loadCmd() tea.Cmd {
 	client := v.client
 	if client == nil {

@@ -135,7 +135,7 @@ var fixed = []Fixed{
 	{"new chat", "ctrl+s", "create the chat and open it"},
 	{"new chat", "enter", "open the focused field's list, or move on from a text field"},
 	{"new chat", "tab", "next field"},
-	{"new chat", "left", "step the project and agent fields in place"},
+	{"new chat", "left", "step the agent field in place"},
 	{"new chat", "esc", "close an open list, else discard the draft"},
 	{"projects", "enter", "select the highlighted project, or open the highlighted task that needs you"},
 	{"projects", "tab", "move between the project table and the needs-you list"},

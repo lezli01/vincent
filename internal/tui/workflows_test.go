@@ -356,8 +356,7 @@ func TestWorkflowsRefetchOnActivationAndOnRegistryEvents(t *testing.T) {
 	}
 }
 
-// The cursor walks the resolved list, and every row hints the selected
-// project: a global row no longer hints nothing (task 132.12).
+// The cursor walks the resolved list.
 func TestWorkflowsCursorWalksTheResolvedList(t *testing.T) {
 	w := newWorkflowsView()
 	loadedProjectWorkflows(w,
@@ -368,16 +367,10 @@ func TestWorkflowsCursorWalksTheResolvedList(t *testing.T) {
 	if !ok || line.entry.Name != "release" {
 		t.Fatalf("initial line = %+v, want the first entry", line)
 	}
-	if got := w.hintedProject(); got != 1 {
-		t.Errorf("hintedProject() on a project row = %d, want the selection", got)
-	}
 	pressView(w, "j")
 	line, ok = w.currentLine()
 	if !ok || line.entry.Name != "review" {
 		t.Fatalf("after j = %+v, want the next entry", line)
-	}
-	if got := w.hintedProject(); got != 1 {
-		t.Errorf("hintedProject() on a global row = %d, want the selection", got)
 	}
 	pressView(w, "j")
 	if line, _ = w.currentLine(); line.entry.Name != "review" {

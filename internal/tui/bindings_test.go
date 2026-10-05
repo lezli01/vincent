@@ -1049,14 +1049,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 		"enter": func(t *testing.T) {
 			v := chatsFixture()
-			v.create = newNewChatForm(nil, 0)
-			v.create.applyFields(newChatFieldsMsg{projects: []apiclient.Project{
-				{ID: 1, Name: "one"}, {ID: 2, Name: "two"},
+			v.create = newNewChatForm(nil, 1)
+			v.create.applyFields(newChatFieldsMsg{agents: []apiclient.Agent{
+				{Name: "one"}, {Name: "two"},
 			}})
-			v.create.focus = ncProject
+			v.create.focus = ncAgent
 			v.updateKey(registryKey(t, "enter"))
 			if v.create == nil || v.create.pick == nil {
-				t.Fatal("enter on the project row opened no list")
+				t.Fatal("enter on the agent row opened no list")
 			}
 		},
 		"tab": func(t *testing.T) {
@@ -1070,17 +1070,17 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 		"left": func(t *testing.T) {
 			v := chatsFixture()
-			v.create = newNewChatForm(nil, 0)
-			v.create.applyFields(newChatFieldsMsg{projects: []apiclient.Project{
-				{ID: 1, Name: "one"}, {ID: 2, Name: "two"},
+			v.create = newNewChatForm(nil, 1)
+			v.create.applyFields(newChatFieldsMsg{agents: []apiclient.Agent{
+				{Name: "one"}, {Name: "two"},
 			}})
-			v.create.focus = ncProject
+			v.create.focus = ncAgent
 			v.updateKey(registryKey(t, "left"))
-			if v.create.projectID != 2 {
-				t.Fatalf("left chose project %d, want the previous one", v.create.projectID)
+			if v.create.agentName() != "two" {
+				t.Fatalf("left chose agent %q, want the previous one", v.create.agentName())
 			}
 			if v.create.pick != nil {
-				t.Fatal("left opened the project list; it steps in place")
+				t.Fatal("left opened the agent list; it steps in place")
 			}
 		},
 		"t": func(t *testing.T) {
@@ -1518,7 +1518,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	ctxNewTask: {
 		"enter": func(t *testing.T) {
 			n := loadedForm(t)
-			moveTo(n, ntProject)
+			moveTo(n, ntWorkflow)
 			if cmd := press(n, "enter"); n.mode == ntNavigating && cmd == nil {
 				t.Fatal("enter opened neither a picker nor an editor on the focused field")
 			}

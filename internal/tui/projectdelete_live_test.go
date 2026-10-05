@@ -118,8 +118,8 @@ func TestDeletedSelectionAsksOverADraft(t *testing.T) {
 	if h.m.pending != nil || h.m.active != viewNewTask {
 		t.Fatalf("pending %v, active %v; want the form, re-aimed", h.m.pending, h.m.active)
 	}
-	if nt.touched || nt.hintProject != h.second.ID {
-		t.Errorf("form touched %v, aimed at %d; want a fresh form for zeta", nt.touched, nt.hintProject)
+	if nt.touched || nt.selected != h.second.ID {
+		t.Errorf("form touched %v, aimed at %d; want a fresh form for zeta", nt.touched, nt.selected)
 	}
 }
 

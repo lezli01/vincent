@@ -121,9 +121,6 @@ func (s *shell) setProjects(projects []apiclient.Project) { s.board.setProjects(
 // banner and stale marks come from this flag.
 func (s *shell) setConnected(ok bool) { s.connected = ok }
 
-// hintedProject forwards the board's cursor project to the new-task form.
-func (s *shell) hintedProject() int64 { return s.board.hintedProject() }
-
 // capturesInput reports whether a text surface owns the keyboard: the focused
 // panel's own capture (§15: the shell consults the focused panel only).
 func (s *shell) capturesInput() bool {

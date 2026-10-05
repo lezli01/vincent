@@ -129,8 +129,6 @@ func (v *issueView) setClient(c *apiclient.Client) tea.Cmd {
 	return v.loadCmd()
 }
 
-func (v *issueView) hintedProject() int64 { return v.issue.ProjectID }
-
 // capturesInput holds the global keys back while the form or the prompt is
 // up, for the list's reason.
 func (v *issueView) capturesInput() bool { return v.w.open() }

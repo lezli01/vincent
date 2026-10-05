@@ -272,10 +272,6 @@ func (v *pullRequestsView) paste(text string) tea.Cmd {
 	return cmd
 }
 
-// hintedProject lets `n` open the new-task form on the selected project,
-// which every row is in.
-func (v *pullRequestsView) hintedProject() int64 { return v.project.id }
-
 func (v *pullRequestsView) update(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
