@@ -556,7 +556,8 @@ func (v *pullRequestsView) openTask() tea.Cmd {
 	if t, found := v.taskByID(id); found {
 		state = t.State
 	}
-	return func() tea.Msg { return selectTaskMsg{id: id, state: state} }
+	pid := row.project.ID
+	return func() tea.Msg { return selectTaskMsg{id: id, state: state, projectID: pid} }
 }
 
 // openLinkPicker offers the tasks of the row's own project (decision 5).
@@ -679,11 +680,11 @@ func (v *pullRequestsView) updatePickerKey(msg tea.KeyPressMsg) (panel, tea.Cmd)
 // prefill for that task, which the workspace fetches on open anyway, and a
 // second copy of it on this screen would be a second thing to keep correct.
 func (v *pullRequestsView) openTaskWithPRForm(taskID int64) tea.Cmd {
-	state := ""
+	state, pid := "", int64(0)
 	if t, found := v.taskByID(taskID); found {
-		state = t.State
+		state, pid = t.State, t.ProjectID
 	}
-	return func() tea.Msg { return selectTaskMsg{id: taskID, state: state, openPR: true} }
+	return func() tea.Msg { return selectTaskMsg{id: taskID, state: state, openPR: true, projectID: pid} }
 }
 
 func (v *pullRequestsView) linkCmd(taskID int64, number int) tea.Cmd {

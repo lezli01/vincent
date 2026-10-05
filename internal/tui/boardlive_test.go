@@ -152,6 +152,10 @@ func newBoardLiveHarnessConfig(t *testing.T, cfg func() config.Config) *boardLiv
 	if err := st.CreateProject(context.Background(), proj); err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
+	// The root selects the project once its list lands (task 132.2); an
+	// open made before that would follow the task there (task 132.6), so
+	// every test starts from the settled selection.
+	p.until(10*time.Second, "the project to be selected", func() bool { return m.sel.id == proj.ID })
 	return &boardLiveHarness{st: st, broker: broker, m: m, p: p, projectID: proj.ID, paths: paths}
 }
 
@@ -394,7 +398,7 @@ func TestCollapsedGroupOpensForAwaitingInput(t *testing.T) {
 	if got := content(h.m); strings.Contains(got, "noisy task") {
 		t.Fatalf("← did not fold the group away:\n%s", got)
 	}
-	if len(b.folds) == 0 {
+	if len(b.folds()) == 0 {
 		t.Fatal("← folded nothing")
 	}
 
@@ -415,6 +419,53 @@ func TestCollapsedGroupOpensForAwaitingInput(t *testing.T) {
 	}
 
 	h.p.until(20*time.Second, "the fold to open over the waiting task", func() bool {
-		return len(b.folds) == 0 && strings.Contains(content(h.m), "noisy task")
+		return len(b.folds()) == 0 && strings.Contains(content(h.m), "noisy task")
+	})
+}
+
+// TestBoardShowsOnlyTheSelectedProject is task 132.8 against the real
+// handlers: with two projects registered the board shows the selected one's
+// tasks only, a switch swaps the rows without leaving the board, and the
+// header's attention count stays global and says so (decision 34).
+func TestBoardShowsOnlyTheSelectedProject(t *testing.T) {
+	h := newBoardLiveHarness(t)
+	ctx := context.Background()
+	other := &store.Project{Name: "zeta", Path: "/elsewhere", DefaultBranch: "main"}
+	if err := h.st.CreateProject(ctx, other); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	h.createTask(t, "home project task")
+	home := h.projectID
+	h.projectID = other.ID
+	waiting := h.createTask(t, "zeta project task")
+	h.projectID = home
+	if _, _, err := h.st.TransitionTask(ctx, waiting.ID, store.TaskQueued, store.TaskRunning, store.TaskChange{}); err != nil {
+		t.Fatalf("TransitionTask: %v", err)
+	}
+	if _, _, err := h.st.TransitionTask(ctx, waiting.ID, store.TaskRunning, store.TaskAwaitingInput, store.TaskChange{}); err != nil {
+		t.Fatalf("TransitionTask: %v", err)
+	}
+
+	h.p.until(20*time.Second, "the selected project's task, and the other's attention", func() bool {
+		got := content(h.m)
+		return strings.Contains(got, "home project task") && strings.Contains(got, allProjectsLabel)
+	})
+	if got := content(h.m); strings.Contains(got, "zeta project task") {
+		t.Fatalf("the board shows another project's task:\n%s", got)
+	}
+
+	h.p.push(h.m.selectProject(apiclient.Project{ID: other.ID, Name: other.Name}, "test"))
+	h.p.until(20*time.Second, "the switch to swap the rows", func() bool {
+		got := content(h.m)
+		return strings.Contains(got, "zeta project task") && !strings.Contains(got, "home project task")
+	})
+	if h.m.active != viewHome {
+		t.Errorf("a switch left the board for view %v", h.m.active)
+	}
+	// Every task needing attention is now in the selected project, so the
+	// clause is no longer labelled.
+	h.p.until(10*time.Second, "the attention clause to drop its label", func() bool {
+		got := content(h.m)
+		return strings.Contains(got, "1 need attention") && !strings.Contains(got, allProjectsLabel)
 	})
 }

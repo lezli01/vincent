@@ -21,7 +21,7 @@ import (
 )
 
 // The projects view's slot figures, against the real handlers (§11, issue
-// #324). The `running / cap` column, the rail summary and the "running now"
+// #324). The `running / cap` fact, the rail summary and the "running now"
 // fact are rendered beside the per-project cap the scheduler applies with
 // store.CountSlotHoldersByProject, which counts every task in a slot-holding
 // state — `awaiting_input` as well as `running`, fan-out lanes as well as
@@ -111,7 +111,13 @@ func (h *projectSlotsHarness) seed(t *testing.T, name string, state store.TaskSt
 func (h *projectSlotsHarness) load(t *testing.T) apiclient.Project {
 	t.Helper()
 	h.view.update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	msg := runCmd(t, h.view.setClient(apiclient.New(h.url, h.token)), 10*time.Second)
+	// The overview fetches only while it is on screen (task 132.15), so it
+	// is connected and then shown, the order the root does both in.
+	if cmd := h.view.setClient(apiclient.New(h.url, h.token)); cmd != nil {
+		t.Fatal("setClient fetched while the overview was hidden")
+	}
+	_, cmd := h.view.update(viewActivatedMsg{id: viewProjects})
+	msg := runCmd(t, cmd, 10*time.Second)
 	loaded, ok := msg.(projectsLoadedMsg)
 	if !ok {
 		t.Fatalf("load = %T, want projectsLoadedMsg", msg)
@@ -160,7 +166,7 @@ func TestProjectSlotColumnCountsEverySlotHolder(t *testing.T) {
 	if got := h.view.projectRailSummary(pr); !strings.Contains(got, "2 running") {
 		t.Errorf("rail summary = %q, want both slot holders counted", got)
 	}
-	fact := runningNowLine(t, ansi.Strip(h.view.renderProjectOverview(pr, 40)))
+	fact := runningNowLine(t, ansi.Strip(h.view.renderProjectDetail(pr, 40)))
 	if !strings.Contains(fact, "2") {
 		t.Errorf("`running now` fact = %q, want 2", fact)
 	}
@@ -192,5 +198,37 @@ func TestProjectSlotColumnCountsAgainstTheProjectCap(t *testing.T) {
 	}
 	if got := h.view.projectRailSummary(pr); !strings.Contains(got, "1 running · cap 2") {
 		t.Errorf("rail summary = %q, want the lane counted against the project cap", got)
+	}
+}
+
+// The overview's figures are the served stats (task 132.15): a task.* event
+// while it is visible schedules a refetch, and the refetch moves the row's
+// queued figure — while a hidden overview fetches nothing at all.
+func TestProjectOverviewFollowsATaskEvent(t *testing.T) {
+	h := newProjectSlotsHarness(t, nil)
+	pr := h.load(t)
+	if pr.Stats == nil || pr.Stats.Tasks.ByState[stateQueued] != 0 {
+		t.Fatalf("stats = %+v, want served stats with nothing queued", pr.Stats)
+	}
+
+	h.seed(t, "waiting", store.TaskQueued, nil)
+	note := noteMsg{note: apiclient.EventNote{Event: apiclient.Event{Type: "task.created"}}}
+	if _, cmd := h.view.update(note); cmd == nil {
+		t.Fatal("a task event did not schedule a refetch")
+	}
+	_, cmd := h.view.update(projectsRefreshMsg{})
+	loaded, ok := runCmd(t, cmd, 10*time.Second).(projectsLoadedMsg)
+	if !ok || loaded.err != nil {
+		t.Fatalf("refetch = %+v", loaded)
+	}
+	h.view.update(loaded)
+	if got := h.view.overviewCell(h.view.projects[0], ocQueued); got != "1" {
+		t.Errorf("queued cell = %q, want the new task counted", got)
+	}
+
+	h.view.update(viewDeactivatedMsg{id: viewProjects})
+	h.view.refreshPending = false
+	if _, cmd := h.view.update(note); cmd != nil {
+		t.Error("a hidden overview scheduled a refetch")
 	}
 }

@@ -50,7 +50,7 @@ func TestBoardDistinguishesAHeldQueueFromAnOrdinaryOne(t *testing.T) {
 
 	// The detail header has the width the board cell does not, so it names
 	// the reason as well as the time.
-	_, cmd := h.m.Update(selectTaskMsg{id: held.ID})
+	_, cmd := h.m.Update(selectTaskMsg{id: held.ID, projectID: held.ProjectID})
 	h.p.push(cmd)
 	h.p.until(20*time.Second, "the detail header to name the hold", func() bool {
 		return strings.Contains(content(h.m), "queued · usage limit reached → "+stamp)

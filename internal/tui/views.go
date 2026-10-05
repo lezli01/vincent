@@ -135,6 +135,14 @@ type projectScoped interface {
 	setProject(projectSel) tea.Cmd
 }
 
+// projectListAware is implemented by the views that keep state per project
+// id and so need the root's cached project list: the task boards, whose fold
+// sets are keyed by project and migrated from a name-keyed list (task 132
+// decision 35). The root hands the list over every time it adopts one.
+type projectListAware interface {
+	setProjects([]apiclient.Project)
+}
+
 // projectScope is the projectScoped implementation every project-bearing
 // view embeds. It stores the selection and, when the embedding view has
 // supplied one, runs its list load: a switch reloads (task 132 decision 25),

@@ -129,10 +129,7 @@ func (w *workflowsView) openEditor() tea.Cmd {
 		w.err = line.entry.Name + " is built in — fork it with f to edit a copy"
 		return nil
 	}
-	key := wfResolveKey{name: line.entry.Name}
-	if line.block != nil {
-		key.projectID = line.block.projectID
-	}
+	key := line.key()
 	w.editor = &wfEditorLayer{
 		key:     key,
 		scope:   line.entry.Scope,

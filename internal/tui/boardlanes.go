@@ -202,7 +202,7 @@ func (b *board) laneCmd(parentID int64) tea.Cmd {
 	if client == nil {
 		return nil
 	}
-	stamp := b.stamps.next(b.project.id)
+	stamp := b.stamps.next(b.stampProject())
 	archived := b.archived
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

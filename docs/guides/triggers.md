@@ -804,8 +804,9 @@ days.
   goes from ok to failing or back, never on every poll. Payload
   `{trigger_id, ok, error}`.
 
-**The TUI's triggers view**, opened from the command palette, lists every
-trigger with its armed state and poll status. It creates and edits triggers,
+**The TUI's triggers view**, opened from the command palette, lists the
+selected project's triggers, then any broken file whose project cannot be
+read, with each one's armed state and poll status. It creates and edits triggers,
 enables and disables them, shows the ledger and runs both dry runs. See
 [Using the TUI](./tui.md#triggers).
 

@@ -77,6 +77,13 @@ func TestAttentionFilterComposes(t *testing.T) {
 	s := attentionFixture(t)
 	s.board.group, s.board.configGroup = grouping{groupProject}, grouping{groupProject}
 	s.update(registryKey(t, "H"))
+	// The filter no longer matches a project name (task 132.8), so the web
+	// tasks carry it in their titles.
+	for i := range s.board.tasks {
+		if s.board.tasks[i].ProjectName == "web" {
+			s.board.tasks[i].Title += " web"
+		}
+	}
 	s.board.filter.SetValue("web")
 	if got := shownIDs(s.board); !sameIDs(got, []int64{3, 4}) && !sameIDs(got, []int64{4, 3}) {
 		t.Errorf("H with /web shows %v, want the web tasks that need you, 3 and 4", got)

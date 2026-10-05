@@ -175,9 +175,6 @@ func TestStatusColumnNeverDisplacesNavigation(t *testing.T) {
 			if !g.has(groupWorkflow) && !set.workflow {
 				t.Fatalf("width %d %s: status displaced the workflow: %+v", width, g.label(), set)
 			}
-			if !g.has(groupProject) && !set.project {
-				t.Fatalf("width %d %s: status displaced the project: %+v", width, g.label(), set)
-			}
 		}
 	}
 	if !sawStatus {

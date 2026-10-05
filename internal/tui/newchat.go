@@ -111,6 +111,9 @@ type newChatForm struct {
 	// chose it is where it can be changed (task 125 decision 2).
 	branchErr  string
 	submitting bool
+	// dirty is any edit since the form opened (task 132.6): the root asks
+	// before a project switch discards it.
+	dirty bool
 }
 
 func newNewChatForm(client *apiclient.Client, hintProject int64) *newChatForm {
@@ -187,6 +190,7 @@ func (f *newChatForm) capturesInput() bool { return true }
 // paste types into whichever text entry is open: the picker's free-text row
 // when a list is up, else the focused text field.
 func (f *newChatForm) paste(text string) tea.Cmd {
+	defer f.watch()()
 	if f.pick != nil {
 		return f.pick.paste(text)
 	}
@@ -271,6 +275,7 @@ func (f *newChatForm) applyFailure(err error) {
 
 // update runs the form's keyboard. done reports that the layer should close.
 func (f *newChatForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cmd tea.Cmd, done bool) {
+	defer f.watch()()
 	f.client = client
 	// An open list is a layer above the form in §15's esc stack: every key
 	// goes to it, `ctrl+s` included, so `esc` closes the list and leaves the

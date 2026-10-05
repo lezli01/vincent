@@ -74,9 +74,10 @@ func (v *triggersView) renderList(width, height int) string {
 	}
 	rows := v.visible()
 	switch {
-	case len(v.list.Triggers) == 0:
+	case len(v.scoped()) == 0:
 		return clampLines(append(head, styleDim.Render(
-			"  no trigger files yet — a creates one, and it starts disabled")), height)
+			"  no triggers for "+firstNonEmpty(v.project.name, "this project")+
+				" yet — a creates one, and it starts disabled")), height)
 	case len(rows) == 0:
 		return clampLines(append(head, styleDim.Render("  nothing matches the filter — esc clears it")), height)
 	}
@@ -107,23 +108,31 @@ func trigCell(text string, w int, style lipgloss.Style) string {
 }
 
 func (v *triggersView) tableLines(rows []apiclient.TriggerSummary, width, height int) []string {
-	idW, projW := len("ID"), len("PROJECT")
+	idW := len("ID")
 	for _, s := range rows {
 		idW = max(idW, ansi.StringWidth(s.ID))
-		projW = max(projW, ansi.StringWidth(v.projectName(s.ProjectID)))
 	}
-	idW, projW = min(idW, 28), min(projW, 18)
+	idW = min(idW, 28)
 	const (
 		enW, armW, kindW, fireW, pollW, agoW = 7, 12, 26, 7, 7, 10
 	)
 	gap := "  "
 	header := "  " + trigCell("ID", idW, styleDim) + gap + trigCell("ENABLED", enW, styleDim) + gap +
 		trigCell("ARMED", armW, styleDim) + gap + trigCell("SOURCE → ACTION", kindW, styleDim) + gap +
-		trigCell("PROJECT", projW, styleDim) + gap + trigCell("ON FIRE", fireW, styleDim) + gap +
+		trigCell("ON FIRE", fireW, styleDim) + gap +
 		trigCell("POLL", pollW, styleDim) + gap + trigCell("LAST POLL", agoW, styleDim) + gap +
 		styleDim.Render("LAST FIRE")
-	lines := make([]string, 0, len(rows))
+	lines := make([]string, 0, len(rows)+1)
+	// focus is the cursor's line, one further on past the band's heading.
+	focus := v.cursor
 	for i, s := range rows {
+		if v.unassigned(s) && (i == 0 || !v.unassigned(rows[i-1])) {
+			lines = append(lines, styleWarn.Render(
+				"  unassigned — no readable or registered project; every project lists them"))
+			if v.cursor >= i {
+				focus++
+			}
+		}
 		mark, idStyle := "  ", lipgloss.NewStyle()
 		if i == v.cursor {
 			mark, idStyle = styleFocus.Render("▸ "), styleTitle
@@ -143,14 +152,13 @@ func (v *triggersView) tableLines(rows []apiclient.TriggerSummary, width, height
 		poll, pollStyle := trigPollCell(s)
 		line := mark + trigCell(s.ID, idW, idStyle) + gap + trigCell(enabled, enW, enStyle) + gap +
 			trigCell(armed, armW, armStyle) + gap + trigCell(kind, kindW, lipgloss.NewStyle()) + gap +
-			trigCell(v.projectName(s.ProjectID), projW, styleDim) + gap +
 			trigCell(firstNonEmpty(s.OnFire, "—"), fireW, trigOnFireStyle(s.OnFire)) + gap +
 			trigCell(poll, pollW, pollStyle) + gap +
 			trigCell(v.ago(s.Poll.LastPollAt), agoW, styleDim) + gap +
 			styleDim.Render(v.ago(s.Poll.LastFireAt))
 		lines = append(lines, line)
 	}
-	body := window(lines, v.cursor, max(height-1, 1))
+	body := window(lines, focus, max(height-1, 1))
 	return truncateRows(append([]string{header}, body...), width)
 }
 
@@ -382,18 +390,11 @@ func (v *triggersView) renderCreate(width, height int) string {
 	out := []string{styleTitle.Render("  New trigger"), ""}
 	f.id.SetWidth(fieldW)
 	out = append(out, indentRows(mark(trigCreateRowID)+label("id"), f.id.rows())...)
-	projects := make([]string, 0, len(f.projects))
-	for i, p := range f.projects {
-		if i == f.project {
-			projects = append(projects, styleFocus.Render("["+p.Name+"]"))
-			continue
-		}
-		projects = append(projects, styleDim.Render(" "+p.Name+" "))
+	project := styleDim.Render(f.projectName + " — the selected project")
+	if f.projectID == 0 {
+		project = styleBad.Render("no project is selected")
 	}
-	if len(projects) == 0 {
-		projects = append(projects, styleBad.Render("no project is registered"))
-	}
-	out = append(out, mark(trigCreateRowProject)+label("project")+strings.Join(projects, " "))
+	out = append(out, mark(trigCreateRowProject)+label("project")+project)
 	f.command.SetWidth(fieldW)
 	out = append(out, indentRows(mark(trigCreateRowCommand)+label("command"), f.command.rows())...)
 	f.interval.SetWidth(fieldW)
@@ -406,7 +407,7 @@ func (v *triggersView) renderCreate(width, height int) string {
 	if f.err != "" {
 		out = append(out, "", "  "+styleBad.Render(f.err))
 	}
-	out = append(out, "", styleDim.Render("  tab row · ←→ project · enter create · esc cancel"))
+	out = append(out, "", styleDim.Render("  tab row · enter create · esc cancel"))
 	return clampLines(truncateRows(out, width), height)
 }
 

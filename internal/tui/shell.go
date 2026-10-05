@@ -101,12 +101,18 @@ func (s *shell) setClient(c *apiclient.Client) tea.Cmd {
 	return tea.Batch(s.board.setClient(c), s.detail.setClient(c))
 }
 
-// setProject hands the selection to the board, whose reload it returns. The
+// setProject hands the selection to the board, whose reload it returns —
+// none today: the live board re-derives its rows in memory (task 132.8). The
 // detail sub-model is the task workspace's, which task 132.6 re-targets.
+//
+//nolint:unparam // the projectScoped signature; the board decides whether a switch fetches
 func (s *shell) setProject(p projectSel) tea.Cmd {
 	s.projectScope.setProject(p)
 	return s.board.setProject(p)
 }
+
+// setProjects hands the root's project list to the board (projectListAware).
+func (s *shell) setProjects(projects []apiclient.Project) { s.board.setProjects(projects) }
 
 // setConnected implements connectionAware: the panels stay rendered, the
 // banner and stale marks come from this flag.
@@ -215,8 +221,11 @@ func (s *shell) updateBoardOnly(msg tea.Msg) (panel, tea.Cmd) {
 		}
 		if msg.String() == opKey(keymap.OpenRow) && !s.board.capturesInput() {
 			if id, ok := s.board.selected(); ok {
-				state := s.stateOf(id)
-				return s, func() tea.Msg { return selectTaskMsg{id: id, state: state} }
+				state, pid := s.stateOf(id), int64(0)
+				if t, ok := s.board.taskByID(id); ok {
+					pid = t.ProjectID
+				}
+				return s, func() tea.Msg { return selectTaskMsg{id: id, state: state, projectID: pid} }
 			}
 		}
 		if msg.String() == "esc" && s.board.hasMarks() {
@@ -714,7 +723,7 @@ func (s *shell) panelTitle(id panelID) string {
 		// The selection is a set of tasks, not of rows (task 011): a marked
 		// task the filter is hiding is still going to be archived, and this
 		// count is what says so.
-		if n := len(s.board.marks); n > 0 {
+		if n := len(s.board.projectMarks()); n > 0 {
 			title += fmt.Sprintf(" — %d selected", n)
 		}
 		return title

@@ -76,6 +76,9 @@ type createPRForm struct {
 	openEditor func(text string) tea.Cmd
 
 	err string
+	// dirty is any edit since the form opened (task 132.6): the root asks
+	// before a project switch discards it.
+	dirty bool
 }
 
 // newCreatePRForm decodes the daemon's prefill into editable rows. A compare
@@ -126,6 +129,7 @@ func setOrDelete(q url.Values, key, value string) {
 }
 
 func (f *createPRForm) paste(text string) tea.Cmd {
+	defer f.watch()()
 	if !f.editing {
 		return nil
 	}
@@ -136,6 +140,7 @@ func (f *createPRForm) paste(text string) tea.Cmd {
 
 // applyEdit installs what an $EDITOR session produced.
 func (f *createPRForm) applyEdit(msg createPREditMsg) {
+	defer f.watch()()
 	if msg.taskID != f.taskID {
 		return
 	}
@@ -150,6 +155,7 @@ func (f *createPRForm) applyEdit(msg createPREditMsg) {
 // update handles one key. exit asks the caller to close the form; cmd is the
 // browser hand-off when ctrl+s was pressed.
 func (f *createPRForm) update(msg tea.KeyPressMsg) (cmd tea.Cmd, exit bool) {
+	defer f.watch()()
 	if f.editing {
 		switch msg.String() {
 		case "esc":

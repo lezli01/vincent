@@ -36,6 +36,9 @@ const (
 	whyConfig    = "tui.default_project"
 	whyLastUsed  = "last used"
 	whyFirstName = "the first project by name"
+	// whyFollowed is a switch made by opening another project's task, chat
+	// or issue (task 132.6).
+	whyFollowed = "followed an opened task, chat or issue"
 )
 
 // selectedProjectState is tui.json's `selected_project` (decision 31): the

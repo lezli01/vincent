@@ -212,7 +212,7 @@ func TestSelectedProjectStateRoundTrips(t *testing.T) {
 	if st.SelectedProject == nil || *st.SelectedProject != (selectedProjectState{ID: 4, Name: "web"}) {
 		t.Fatalf("selected_project = %+v", st.SelectedProject)
 	}
-	if !st.FullAutoNoticeAck || len(st.ChatFolds) != 1 {
+	if !st.FullAutoNoticeAck {
 		t.Errorf("known fields lost: %+v", st)
 	}
 	b, err := os.ReadFile(statePath(dir))

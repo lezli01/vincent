@@ -22,6 +22,7 @@ func newShellFixture(t *testing.T, tasks ...apiclient.Task) (*shell, *int) {
 	t.Helper()
 	s := newShell(testCtx(t), newLevelHolder(), newRawHolder(), newHyperlinkHolder())
 	s.board.now = func() time.Time { return testNow }
+	s.setProject(projectSel{id: testProjectID, name: "proj"})
 	s.board.bell = func() {}
 	// Flat, for the same reason testBoard is: these tests count rendered rows
 	// and click at line offsets, and group headers are lines that are not

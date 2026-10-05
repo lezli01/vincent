@@ -30,7 +30,12 @@ type projectPicker struct {
 	projects []apiclient.Project
 	// current is the selection the picker was opened over, marked on its row.
 	current int64
-	cursor  int
+	// cursor indexes matches(); overview is the overview row instead, set
+	// only by ↓ past the last match and cleared by ↑ or typing. A flag rather
+	// than cursor == len(matches): a filter matching nothing or an empty
+	// list would otherwise land on the row without ↓ (review F8).
+	cursor   int
+	overview bool
 	// loaded reports that a stats answer has landed. Until one has, the rows
 	// are the root's own name list, which carries no figures.
 	loaded bool
@@ -91,10 +96,14 @@ func (pp *projectPicker) land(msg projectPickerMsg) {
 		return
 	}
 	var on int64
-	if m := pp.matches(); len(m) > 0 {
-		on = m[min(pp.cursor, len(m)-1)].ID
+	if m := pp.matches(); pp.cursor < len(m) {
+		on = m[pp.cursor].ID
 	}
 	pp.projects, pp.loaded, pp.err = msg.projects, true, nil
+	if pp.overview {
+		// On the overview row: it stays the last row whatever landed.
+		return
+	}
 	pp.cursor = 0
 	for i, p := range pp.matches() {
 		if p.ID == on {
@@ -126,21 +135,36 @@ func (pp *projectPicker) update(msg tea.KeyPressMsg) (pick *apiclient.Project, d
 	case "esc":
 		return nil, true, nil
 	case "up":
-		pp.cursor = max(pp.cursor-1, 0)
+		if pp.overview {
+			pp.overview = false
+			pp.cursor = max(len(pp.matches())-1, 0)
+		} else {
+			pp.cursor = max(pp.cursor-1, 0)
+		}
 		return nil, false, nil
 	case "down":
-		pp.cursor = min(pp.cursor+1, max(len(pp.matches())-1, 0))
+		if pp.cursor >= len(pp.matches())-1 {
+			pp.overview = true
+		} else {
+			pp.cursor++
+		}
 		return nil, false, nil
 	case "enter":
+		if pp.overview {
+			// The overview row, never a project: it switches screens and
+			// leaves the selection alone.
+			return nil, true, func() tea.Msg { return selectViewMsg{id: viewProjects} }
+		}
 		m := pp.matches()
 		if len(m) == 0 {
-			return nil, true, nil
+			return nil, true, nil // nothing matches: enter just closes
 		}
 		p := m[min(pp.cursor, len(m)-1)]
 		return &p, true, nil
 	}
 	var c tea.Cmd
 	pp.input, c = pp.input.Update(msg)
+	pp.overview = false
 	pp.clampCursor()
 	return nil, false, c
 }
@@ -149,15 +173,24 @@ func (pp *projectPicker) update(msg tea.KeyPressMsg) (pick *apiclient.Project, d
 func (pp *projectPicker) paste(text string) tea.Cmd {
 	var cmd tea.Cmd
 	pp.input, cmd = pp.input.Update(tea.PasteMsg{Content: text})
+	pp.overview = false
 	pp.clampCursor()
 	return cmd
 }
 
+// clampCursor keeps the cursor on a matching project as the filter narrows;
+// the overview row is reached only by ↓.
 func (pp *projectPicker) clampCursor() {
 	if n := len(pp.matches()); pp.cursor >= n {
 		pp.cursor = max(n-1, 0)
 	}
 }
+
+// projectPickerOverview is the picker's last row (task 132.15): the way from
+// the picker to the project overview, where projects are added, edited and
+// compared. It is not a project — the filter never matches or hides it, and
+// enter on it selects nothing.
+const projectPickerOverview = "overview & manage…"
 
 // render draws the picker box for overlaying: the filter line, then one row
 // per matching project, windowed around the cursor.
@@ -174,17 +207,26 @@ func (pp *projectPicker) render(w, h int) string {
 	if len(m) == 0 {
 		msg := "  nothing matches — esc closes"
 		if len(pp.projects) == 0 {
-			msg = "  no projects registered — the projects screen adds one"
+			msg = "  no projects registered — the overview adds one"
 		}
 		lines = append(lines, styleDim.Render(msg))
-		return frame("projects", strings.Join(lines, "\n"), w, h, true)
 	}
+	// cursor is the highlighted row: the overview row only when it was
+	// reached by ↓, and none at all over an empty match list.
 	cursor := min(pp.cursor, len(m)-1)
-	rows := make([]string, 0, len(m))
+	if pp.overview {
+		cursor = len(m)
+	}
+	rows := make([]string, 0, len(m)+1)
 	for i, p := range m {
 		rows = append(rows, pp.row(p, i == cursor, inner))
 	}
-	lines = append(lines, window(rows, cursor, h-2-len(lines))...)
+	overview := "  " + styleDim.Render(projectPickerOverview)
+	if pp.overview {
+		overview = styleFocus.Render("› ") + styleTitle.Render(projectPickerOverview)
+	}
+	rows = append(rows, overview)
+	lines = append(lines, window(rows, max(cursor, 0), h-2-len(lines))...)
 	return frame("projects", strings.Join(lines, "\n"), w, h, true)
 }
 

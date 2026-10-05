@@ -103,11 +103,11 @@ daemon — not a mockup, and not a drawing of one.
 </p>
 
 <p align="center">
-  <img src="docs/assets/tui-projects.png" alt="The Projects view showing seven repositories, execution defaults, concurrency limits, and a mixed active workload" width="1000">
+  <img src="docs/assets/tui-project-overview.png" alt="The project overview showing seven repositories with their figures, a totals row, and the tasks that need you across every project" width="1000">
 </p>
 
 <p align="center">
-  <em>Projects pairs a persistent repository rail with defaults, concurrency limits, and the selected project's current workload.</em>
+  <em>The project overview compares every project at a glance — attention, slots, issues, chats — and lists what needs you across all of them.</em>
 </p>
 
 <p align="center">

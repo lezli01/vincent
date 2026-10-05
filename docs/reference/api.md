@@ -1453,9 +1453,12 @@ the list shows each trigger disarmed, and both dry runs work.
 ```
 
 - A file that does not validate is **listed with its `errors[]`**, never hidden
-  — the same findings a workflow entry carries. `source_type`, `action_type`,
-  `project_id` and `on_fire` are absent on such a row, because there is no
-  parsed definition to read them from.
+  — the same findings a workflow entry carries. `source_type`, `action_type`
+  and `on_fire` are absent on such a row, because there is no parsed
+  definition to read them from. `project_id` is still read from
+  `source.project` when the file names one a lenient read can find, so a
+  broken trigger stays listed under its project; it is absent only when no
+  project can be read.
 - `armed` is `valid`, `enabled` and `triggers.enabled` together.
   `disarmed_reason` names the first one missing, in that order, as a sentence
   for a person: `the trigger file does not validate`, `the trigger is

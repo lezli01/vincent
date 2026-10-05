@@ -86,6 +86,9 @@ type trigFormLayer struct {
 	note    string
 	// rowErr is the daemon's refusal per row path, rendered on the field.
 	rowErr map[string]string
+	// assignable is a form opened from the unassigned band: its project row
+	// keeps the picker, because assigning a project is the repair.
+	assignable bool
 }
 
 func (f *trigFormLayer) capturing() bool {
@@ -106,6 +109,11 @@ func (v *triggersView) openFormOn(id, file, version string) tea.Cmd {
 	v.form = &trigFormLayer{
 		id: id, file: file, version: version,
 		loading: true, editing: -1, rowErr: map[string]string{},
+	}
+	for _, s := range v.list.Triggers {
+		if s.ID == id {
+			v.form.assignable = v.unassigned(s)
+		}
 	}
 	return v.formLoadCmd(id)
 }
@@ -289,6 +297,16 @@ func (f *trigFormLayer) leaf(block string, sf apiclient.TriggerSchemaField) trig
 	}
 	if sf.Control == apiclient.TriggerControlMatch {
 		row.field.Help += " — one key=value per entry; a|b means any of"
+	}
+	// A trigger listed under a project is that project's, which is the
+	// selection: its project shows read-only (task 132 decision 9). One from
+	// the unassigned band keeps the picker, because assigning one is the
+	// repair. The form loads only a valid file, so that is a trigger whose
+	// project was removed.
+	if sf.Control == apiclient.TriggerControlProject && !f.assignable {
+		if id, err := strconv.ParseInt(row.value, 10, 64); err == nil && id > 0 {
+			row.readOnly = "a trigger's project is the selected project — create the trigger from another project to target it"
+		}
 	}
 	return row
 }

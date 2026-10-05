@@ -91,6 +91,9 @@ type followUpForm struct {
 
 	err        string
 	submitting bool
+	// dirty is any edit to a row since the form opened (task 132.6): the
+	// root asks before a project switch discards it.
+	dirty bool
 }
 
 func newFollowUpForm(taskID, projectID int64, origin string) *followUpForm {
@@ -140,6 +143,7 @@ func (f *followUpForm) applyLoaded(msg followUpLoadedMsg) {
 
 // applyEdit installs what an $EDITOR session produced.
 func (f *followUpForm) applyEdit(msg followUpEditMsg) {
+	defer f.watch()()
 	if msg.taskID != f.taskID {
 		return
 	}
@@ -153,6 +157,7 @@ func (f *followUpForm) applyEdit(msg followUpEditMsg) {
 
 // paste types into whichever text entry is open.
 func (f *followUpForm) paste(text string) tea.Cmd {
+	defer f.watch()()
 	if f.picker != nil {
 		return f.picker.paste(text)
 	}
@@ -166,6 +171,7 @@ func (f *followUpForm) paste(text string) tea.Cmd {
 
 // update handles one key. exit=true asks the caller to close the form.
 func (f *followUpForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cmd tea.Cmd, exit bool) {
+	defer f.watch()()
 	if f.picker != nil {
 		res := f.picker.update(msg)
 		if res.chosen {

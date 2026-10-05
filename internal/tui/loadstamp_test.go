@@ -86,8 +86,11 @@ type stampedView struct {
 }
 
 func stampedViews() []stampedView {
+	// The live board and its lanes are skipSel: their listing is global and
+	// a switch re-derives the rows without a fetch (task 132.8), so a load is
+	// pinned to no project and a switch has nothing to drop.
 	return []stampedView{
-		{name: "board", new: func() (func(projectSel) tea.Cmd, func() tea.Cmd, func(loadStamp, string), func() string) {
+		{name: "board", skipSel: true, new: func() (func(projectSel) tea.Cmd, func() tea.Cmd, func(loadStamp, string), func() string) {
 			b := newBoard()
 			b.client = deadClient()
 			return b.setProject, b.loadCmd,
@@ -105,7 +108,7 @@ func stampedViews() []stampedView {
 				},
 				func() string { return firstTitle(b.tasks) }
 		}},
-		{name: "lanes", new: func() (func(projectSel) tea.Cmd, func() tea.Cmd, func(loadStamp, string), func() string) {
+		{name: "lanes", skipSel: true, new: func() (func(projectSel) tea.Cmd, func() tea.Cmd, func(loadStamp, string), func() string) {
 			b := newBoard()
 			b.client = deadClient()
 			b.lanes.expanded = expandSet{7}
@@ -155,13 +158,13 @@ func stampedViews() []stampedView {
 			w.client = deadClient()
 			return w.setProject, w.loadCmd,
 				func(st loadStamp, mark string) {
-					w.update(workflowsLoadedMsg{stamp: st, blocks: []wfBlock{{name: mark}}})
+					w.update(workflowsLoadedMsg{stamp: st, global: []apiclient.WorkflowEntry{{Name: mark}}})
 				},
 				func() string {
-					if len(w.blocks) == 0 {
+					if len(w.global) == 0 {
 						return ""
 					}
-					return w.blocks[0].name
+					return w.global[0].Name
 				}
 		}},
 		{name: "triggers", new: func() (func(projectSel) tea.Cmd, func() tea.Cmd, func(loadStamp, string), func() string) {
@@ -192,9 +195,21 @@ func stampedViews() []stampedView {
 
 func chatsStamped(v *chatsView, archived bool) (func(projectSel) tea.Cmd, func() tea.Cmd, func(loadStamp, string), func() string) {
 	v.client = deadClient()
-	return v.setProject, v.loadCmd,
+	// The chats boards fetch nothing with no project selected (task
+	// 132.10), so a bare load runs in project 9 and a stamp that names no
+	// project is read as that one.
+	load := func() tea.Cmd {
+		if v.project.id == 0 {
+			v.project = projectSel{id: 9, name: "z"}
+		}
+		return v.loadCmd()
+	}
+	return v.setProject, load,
 		func(st loadStamp, mark string) {
-			v.update(chatsLoadedMsg{archived: archived, stamp: st, chats: []apiclient.Chat{{ID: 1, Title: mark}}, names: map[int64]string{}})
+			if st.project == 0 {
+				st.project = v.project.id
+			}
+			v.update(chatsLoadedMsg{archived: archived, stamp: st, chats: []apiclient.Chat{{ID: 1, Title: mark}}})
 		},
 		func() string {
 			if len(v.chats) == 0 {
@@ -299,6 +314,13 @@ func TestNilProjectEventsStillWakeTheirViews(t *testing.T) {
 	if _, cmd := w.update(eventNote(eventWorkflowRegistryChanged, nil)); cmd == nil || !w.refreshPending {
 		t.Error("workflow.registry_changed did not refetch the workflows")
 	}
+
+	tv := newTriggersView()
+	tv.client = deadClient()
+	tv.setProject(sel)
+	if _, cmd := tv.update(eventNote("trigger.poll_changed", nil)); cmd == nil || !tv.refreshPending {
+		t.Error("trigger.poll_changed did not refetch the triggers")
+	}
 }
 
 // producesInfo runs cmd (a dead client fails fast) and reports whether a
@@ -341,6 +363,12 @@ func TestForeignEventsDoNotRefetch(t *testing.T) {
 			"pull requests", "task.state_changed", func() panel { return scoped(newPullRequestsView(), sel) },
 			func(p panel) bool { return p.(*pullRequestsView).refreshWait },
 		},
+		{
+			// Scoped since 132.12: trigger.fired names the trigger's target
+			// project, and another project's triggers are not listed.
+			"triggers", "trigger.fired", func() panel { return scoped(newTriggersView(), sel) },
+			func(p panel) bool { return p.(*triggersView).refreshPending },
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -374,8 +402,7 @@ func TestBoardRefetchesForeignTaskEvents(t *testing.T) {
 // TestForeignListEventsStillRefetch: a project.* event is attributed to the
 // project it describes, but it changes the project list every view still
 // renders whole, so a foreign create, rename or delete refetches each view
-// that reacts to it. trigger.* names its target project, and the triggers
-// view lists every trigger until 132.11 scopes it.
+// that reacts to it.
 func TestForeignListEventsStillRefetch(t *testing.T) {
 	sel := projectSel{id: 2, name: "b"}
 	cases := []struct {
@@ -408,10 +435,6 @@ func TestForeignListEventsStillRefetch(t *testing.T) {
 			"triggers project.updated", "project.updated", func() panel { return scoped(newTriggersView(), sel) },
 			func(p panel) bool { return p.(*triggersView).refreshPending },
 		},
-		{
-			"triggers trigger.fired", "trigger.fired", func() panel { return scoped(newTriggersView(), sel) },
-			func(p panel) bool { return p.(*triggersView).refreshPending },
-		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -439,6 +462,7 @@ func scoped[V interface {
 func TestChatsDebounceABurst(t *testing.T) {
 	v := newChatsView()
 	v.client = deadClient()
+	v.project = projectSel{id: 2, name: "b"}
 	var armed int
 	for range 5 {
 		if _, cmd := v.update(eventNote("chat.state_changed", nil)); cmd != nil {

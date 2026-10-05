@@ -78,6 +78,9 @@ type taskActions struct {
 	// locks it. While it is set the daemon offers no `chat`, and `T` opens
 	// this one instead of asking for a second.
 	openChatID int64
+	// projectID is the task's project, which its chat shares: `T` opening
+	// that chat follows it there (task 132.6).
+	projectID int64
 }
 
 // offersChat reports whether `T` does anything for this target: the daemon

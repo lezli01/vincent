@@ -10,7 +10,8 @@ import (
 )
 
 // The create prompt (§15 view 11, task 096.6). It asks what POST /v1/triggers
-// needs — an id and a project — and offers the command and poll interval a
+// needs — an id; the project is the selected one, shown and locked (task 132
+// decision 9) — and offers the command and poll interval a
 // `type: command` starter is usually edited for first. The daemon renders the
 // starter: disabled, with no on_fire line, so it means propose until someone
 // writes otherwise and confirms it (decision 7). The form opens on the new
@@ -35,29 +36,22 @@ type trigCreateForm struct {
 	id       textField
 	command  textField
 	interval textField
-	projects []apiclient.Project
-	project  int
-	saving   bool
-	err      string
+	// projectID is the selection the trigger is created in, read-only:
+	// another project's trigger is made from that project (task 132.12).
+	projectID   int64
+	projectName string
+	saving      bool
+	err         string
 }
 
 func (v *triggersView) openCreate() {
 	f := &trigCreateForm{
 		id: newTextField(), command: newTextField(), interval: newTextField(),
-		projects: v.projects,
+		projectID: v.project.id, projectName: v.project.name,
 	}
 	f.id.SetPlaceholder("lowercase letters, digits, . _ - — the file becomes {id}.yaml")
 	f.command.SetPlaceholder("optional: the poll command's argv, space-separated — run directly, never through a shell")
 	f.interval.SetPlaceholder("optional: default 5m")
-	// Start on the selected trigger's project: a second trigger for the same
-	// repository is the likeliest next one.
-	if s, ok := v.current(); ok {
-		for i, p := range f.projects {
-			if p.ID == s.ProjectID {
-				f.project = i
-			}
-		}
-	}
 	f.id.Focus()
 	v.err, v.note = "", ""
 	v.create = f
@@ -102,13 +96,7 @@ func (v *triggersView) updateCreateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return v.createCmd()
 	}
 	if f.row == trigCreateRowProject {
-		switch msg.String() {
-		case "left", "h":
-			f.project = wrapIndex(f.project-1, len(f.projects))
-		case "right", "l", "space", " ":
-			f.project = wrapIndex(f.project+1, len(f.projects))
-		}
-		return nil
+		return nil // locked to the selection
 	}
 	fl := f.field()
 	var cmd tea.Cmd
@@ -127,8 +115,8 @@ func (v *triggersView) createCmd() tea.Cmd {
 		f.err = "an id is required — it names the file"
 		f.focusRow(trigCreateRowID)
 		return nil
-	case len(f.projects) == 0:
-		f.err = "no project is registered — a trigger's tasks are created in one"
+	case f.projectID == 0:
+		f.err = "no project is selected — a trigger's tasks are created in one"
 		return nil
 	case v.client == nil:
 		f.err = "not connected"
@@ -136,7 +124,7 @@ func (v *triggersView) createCmd() tea.Cmd {
 	}
 	req := apiclient.CreateTriggerRequest{
 		ID:           id,
-		ProjectID:    f.projects[f.project].ID,
+		ProjectID:    f.projectID,
 		PollInterval: strings.TrimSpace(f.interval.Value()),
 		Command:      strings.Fields(f.command.Value()),
 	}

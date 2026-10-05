@@ -235,7 +235,7 @@ func TestFoldOnASkippedLevelHidesNothing(t *testing.T) {
 		task(1, stateQueued, inProject("api"), inWorkflow("build")),
 		task(2, stateQueued, inProject("api"), inWorkflow("docs")),
 	)
-	b.folds = foldSet{{"api"}}
+	b.setFolds(foldSet{{"api"}})
 	b.render(160, 20)
 	shown := 0
 	for _, r := range b.rows() {
@@ -250,8 +250,8 @@ func TestFoldOnASkippedLevelHidesNothing(t *testing.T) {
 	// parent to walk out to: neither touches the skipped level's entry.
 	foldPress(b, keyLeft)
 	foldPress(b, keyLeft)
-	if !b.folds.has(foldPath{"api"}) || !b.folds.has(foldPath{"api", "build"}) || len(b.folds) != 2 {
-		t.Fatalf("folds = %v, want the skipped [api] untouched beside [api build]", b.folds)
+	if !b.folds().has(foldPath{"api"}) || !b.folds().has(foldPath{"api", "build"}) || len(b.folds()) != 2 {
+		t.Fatalf("folds = %v, want the skipped [api] untouched beside [api build]", b.folds())
 	}
 
 	// A second project splits the level: its old fold applies again.

@@ -480,7 +480,7 @@ func (t *taskView) paletteExtras() []paletteEntry {
 	if !t.detail.loaded || iss == nil {
 		return nil
 	}
-	msg := openIssueMsg{id: iss.ID, back: viewTask}
+	msg := openIssueMsg{id: iss.ID, back: viewTask, projectID: t.detail.task.ProjectID}
 	return []paletteEntry{{
 		group:  "task",
 		label:  fmt.Sprintf("open this task's issue — #%d %s", iss.ID, iss.Title),

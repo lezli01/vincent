@@ -52,7 +52,7 @@ func TestOutcomeCardPullFromRealServer(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SetTaskGitHubPull: %v", err)
 	}
-	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, state: string(store.TaskDone)})
+	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, projectID: task.ProjectID, state: string(store.TaskDone)})
 	h.p.push(cmd)
 	h.p.until(15*time.Second, "the outcome card's PR line with its checks", func() bool {
 		return strings.Contains(ansi.Strip(content(h.m)), "· checks ")

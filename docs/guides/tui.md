@@ -148,15 +148,22 @@ and pull request](../assets/tui-task-overview-done.png)
 
 ## The board
 
-One row per task: id, project, title, state, current step `k/n` with its name,
-elapsed, and cost so far. The header shows running-versus-cap counts, how many
-tasks need a human, and which agents need a look.
+One row per task in the [selected project](#switching-project): id, title,
+state, current step `k/n` with its name, elapsed, and cost so far. Switching
+project swaps the rows in place, without asking the daemon for anything — the
+board already holds every project's tasks and only shows one. The header
+shows running-versus-cap counts, how many tasks need a human, and which agents
+need a look.
 
 **The board says only what needs a look.** When nothing is waiting on you, the
 needs-attention clause is not drawn at all; when something is, it reads
 `! 2 need attention` — and `! 2 need attention (all tasks)` while a filter is
 committed, because the count is deliberately the whole board's, not the
-filter's. Every healthy agent collapses into one dim `agents ✓`: only an agent
+filter's. The count also spans every project: while some of it is in a project
+other than the selected one, it reads `! 2 need attention (all projects)` —
+which covers a filter too — and the footer's hint reads
+`! next attention (2, all projects)`. `!` itself only jumps between the
+selected project's tasks. Every healthy agent collapses into one dim `agents ✓`: only an agent
 that is not logged in (`codex ⚠`) or out of quota (`claude ⏳14:20`) is named
 beside it, and one that is not installed is not mentioned — `vincent doctor`
 and the daemon view list the whole catalog. With no agent installed at all the
@@ -211,7 +218,7 @@ Three behaviors matter:
 
 | Key | Does |
 |---|---|
-| `/` | Filter by id, title, project or state; `tab` commits the filter, `esc` clears it |
+| `/` | Filter by id, title or state; `tab` commits the filter, `esc` clears it |
 | `H` | Show only the tasks that need you — awaiting input, awaiting approval, blocked, or a fan-out one of whose lanes is. `H` again shows every task |
 | `enter` | Open the selected task |
 
@@ -237,9 +244,10 @@ part of it you can see: one long title far down the board makes the rows above
 it tall too, and a filter that hides it makes them short again. What still does
 not fit at three lines ends in `…`. Clicking any line of a row selects that row,
 and `j`/`k` move a task at a time whatever the height. The id, elapsed, cost,
-the pull request marker and the marker column do not wrap, and neither do
-project and workflow: those two are names you scan down, which a fourteen-cell
-wrap makes unreadable, so under width pressure they are dropped instead.
+the pull request marker and the marker column do not wrap, and neither does
+the workflow: it is a name you scan down, which a fourteen-cell wrap makes
+unreadable, so under width pressure it is dropped instead. There is no project
+column — the header names the one project the board shows.
 
 **The title has a ceiling.** It takes whatever the fixed columns leave, up to a
 comfortable width; past that the extra room goes to `STEP` and then `STATUS` —
@@ -279,7 +287,7 @@ is empty until a workflow asks for it; see
 The column is there only while some task on the board has a status. When it
 is, it outranks the cost and the step name: a 120-column board keeps it, with
 the step cut to its `3/7` counter and no `COST` column. It still needs a title
-of 32 cells, so an 80-column board drops it before the workflow or the project.
+of 32 cells, so an 80-column board drops it before the workflow.
 Below a comfortably wide title the status is cut to one line with `…` rather
 than wrapped, so it never makes the rows taller. On a wider board it wraps like
 the title.
@@ -327,12 +335,47 @@ The figures follow the daemon while the picker is up. On a narrow terminal they
 drop from the end — issues, then active, then running, then attention — and the
 name shortens last. A daemon that could not count shows the names alone.
 
+Below the projects, the last row, **overview & manage…**, opens the
+[project overview](#projects). It is not a project: the filter never hides
+it, and choosing it changes no selection.
+
 | Key | Does |
 |---|---|
 | typing | Filter the projects by name; `ctrl+v` pastes into the filter |
 | `↑` / `↓` | Move the highlight |
-| `enter` | Switch to the highlighted project |
+| `enter` | Switch to the highlighted project — or, on the last row, open the project overview |
 | `esc` | Close without switching |
+
+A switch keeps you where you are. The board, the chats and issues lists, pull
+requests, both archived boards, workflows and triggers stay on screen and
+reload for the new project; the daemon and projects views are not tied to one.
+A screen about one object of the old project falls back to its list: a task's
+workspace to the board, with its `esc` history cleared; a chat to the chats
+board; an issue to the issues list. An empty new-task, new-chat, new-issue,
+new-workflow or new-trigger form is reopened for the new project, and a
+workflow or trigger editor, the workflow graph and a trigger dry run close,
+since each is on a file of the old project.
+
+A form you have typed into — or a chat's composer holding an unsent
+message — asks first, in one line under the header:
+
+```text
+discard the task draft and switch to `api`? y/n
+```
+
+`y` discards it and switches — you land on a fresh form for the new project,
+or on the list behind a workspace or issue form. `n` or `esc` keeps the draft
+and the current project; nothing is switched or saved. A form seeded from a
+pull request, an issue or a chat counts as a draft before you type, and so
+does a workflow fork prompt, which is seeded from the old project's list.
+
+Opening a task, chat or issue of another project switches to that project
+first, so its screen never draws under the wrong header. This happens from the
+board, a pull request, an issue's linked tasks, a trigger's delivery ledger, a
+lane or parent jump, and when a task you just created belongs elsewhere. One
+line says so — ``switched to `web` `` — until your next key. The task
+workspace's `esc` history starts over in the new project. If you are holding a
+draft, the same confirmation asks, and `n` cancels the open too.
 
 ### Grouping
 
@@ -392,9 +435,13 @@ Three things mean a fold can never hide work waiting on you:
 - a collapsed group **opens by itself** the moment a task inside it starts
   waiting for input.
 
-Folds are remembered across restarts, in `{data_dir}/tui.json`
-([files](../reference/files.md)). They survive `g`, a filter and a reconnect,
-and a group is forgotten when its project or workflow leaves the board. `V`
+Folds are kept **per project** and remembered across restarts, in
+`{data_dir}/tui.json` ([files](../reference/files.md)): folding `build` in one
+project leaves `build` open in another, and switching away and back finds the
+folds as you left them. They survive `g`, a filter and a reconnect, and a group
+is forgotten when its workflow leaves the project's board, or with the project
+when it is removed. Folds saved by an older vincent are carried over to their
+project the first time the board starts. `V`
 still selects tasks inside a collapsed group — the selection is a set of tasks,
 not of rows. With `group_by: []` there are no groups, so the four keys do
 nothing. A fresh install has nothing folded.
@@ -1636,27 +1683,53 @@ form tells you what will actually run rather than what you typed.
 
 ### Projects
 
-On a wide terminal the repository list stays in the left rail. The selected
-project's path, branch convention, workflow and concurrency defaults, and
-current tasks fill the main pane; `a` or `enter` puts the existing add/edit form
-in that same pane. This keeps the project you were looking at visible while you
-change its configuration.
+The project overview is the one screen that shows every registered project at
+once; everything else shows the selected project. Open it from the palette's
+"project overview" row, or from the last row of the project picker (`@`),
+"overview & manage…".
 
-The `running / cap` column counts slots the way the board header does — lanes
-and tasks on a question included — so the numerator is the one the per-project
-cap is actually applied against.
+Each project is one row of figures, all of them the daemon's own counts:
 
-![The Projects view: seven registered repositories with their running counts and
-caps on the left, and the selected project's path, branch convention, execution
-defaults and current workload on the right](../assets/tui-projects.png)
+| Column | Shows |
+|---|---|
+| `!` | Tasks that need you |
+| running | Slots in use against the project's own cap (`2/3`), or a bare count when it has none |
+| queued, blocked, done | Tasks in each state; archived tasks are never counted |
+| issues (gh) | Open issues, with the ones imported from GitHub in brackets |
+| chats (wait) | Live chats, with the ones waiting on you in brackets |
+| sync | Issue sync: `✓` healthy, `✗` failing, `—` off or no GitHub remote |
+| github | `✓ owner/repo` when the GitHub integration is usable, its reason when not, `—` with no GitHub remote |
+| activity | How long ago the project's tasks, issues or chats last changed |
+
+A `total` row sums the columns. Its running figure is the installation-wide
+slots in use against `max_parallel_tasks`, never a sum of the rows, because
+that is the cap the scheduler applies across projects. A project the daemon
+could not count shows `—` rather than zeros.
+
+Below the table, **Needs you, across projects** lists every task the board's
+`!` filter would keep — awaiting input, awaiting approval, blocked, or a
+fan-out parent one of whose lanes is — oldest wait first, each led by its
+project. On a wide terminal the highlighted
+project's repository and execution defaults show beside the table; a narrower
+one drops that pane first, then the columns from the right, keeping name, `!`
+and running to the last.
+
+![The project overview: seven registered repositories with their figures and a
+totals row, and the six tasks that need you across every project below
+them](../assets/tui-project-overview.png)
 
 | Key | Does |
 |---|---|
+| `enter` | On a project: select it and go back to the view you came from (the board if none). On a needs-you task: select its project and open the task |
+| `tab` | Move between the project table and the needs-you list |
+| `e` | Edit the highlighted project |
 | `a` | Register a repository |
-| `enter` or `e` | Edit the selected project |
 | `D` | Remove it (asks first; its task rows go with it) |
 | `/` | Filter by name or path |
 | `ctrl+s` | Save, in the form |
+
+With no project registered, the overview says how to add one: `a`, or
+`vincent project add <path>` from a shell.
 
 ### Pull requests
 
@@ -1836,7 +1909,19 @@ does not import it again.
 
 ### Workflows
 
-The merged registry with scope badges and validation status.
+The selected project's workflows as that project resolves them: the built-in,
+global and project entries in one list sorted by name, each with its scope
+badge and validation status. Nothing from any other project is shown; switch
+projects to see another's.
+
+When the project has a workflow with the same name as a global or built-in
+one, its own copy wins (shadowing). Both rows stay in the list: the project's
+says `shadows global X` (or `shadows builtin X`), and the global one beside it
+is dimmed and says `shadowed here by <project>`. The dimmed row can still be
+opened and edited. Every global row warns that editing it affects every
+project, because the global file is shared by all of them. If the project's
+own workflows cannot be read, the global rows stay on screen with an error
+line above them.
 
 On a wide terminal the merged registry stays in the left rail. The focused
 pane names the selected entry's scope and source, availability and findings,
@@ -1849,8 +1934,8 @@ entry with its surrounding scopes still in view.
 | `enter` | Show the entry's steps |
 | `g` | Draw the entry as a control-flow graph |
 | `i` | Edit the entry in a structured form |
-| `a` | Create a workflow in a chosen scope |
-| `f` | Fork the entry into another scope, where it shadows the original |
+| `a` | Create a workflow, globally or in the selected project |
+| `f` | Fork the entry into the selected project (or globally), where it shadows the original |
 | `e` | Open the file in `$EDITOR` — the view updates when you save |
 | `R` | Re-read the registry |
 
@@ -1879,11 +1964,11 @@ one layer per press: a step's `steps:` and a fan-out's `lanes:`, `lane:` and
 your new-task form will ask for, and the agent, model, effort, permission mode,
 retry and timeout every step inherits, including a `container:` block.
 
-`a` creates a workflow: choose a scope (global, or one of your projects) and a
+`a` creates a workflow: choose a scope (global, or the selected project) and a
 file name, and the editor opens on what was written. `f` forks the entry under
 the cursor — including a built-in, which is the only way to change one. **A
 fork keeps the source's own `name:`**, which is what makes the copy shadow the
-original; pick a project scope and the project's copy wins from then on.
+original. A fork starts on the selected project, whose copy wins from then on.
 
 There is no delete of a **workflow**: removing one means removing its file. A
 step, a lane or a declared field inside a workflow can be removed, and `d` asks
@@ -2118,16 +2203,18 @@ steps run in the child and never appear on this graph.
 A second board, for [chats](../reference/cli.md#vincent-chat) — conversations
 with an agent, each in its own worktree. Chats are not tasks and never appear on
 the task board, so they get a board of their own: one row per conversation, with
-its id, state, agent, last activity and title, grouped by project.
+its id, state, agent, last activity and title. The board lists the
+[selected project](#switching-project)'s chats only, in one flat list.
 
 ![The chats board grouped by project: a chat waiting on you sorted to the top
 and counted in the header badge, a running turn with its glyph beside the
 `running` label, and two finished conversations](../assets/tui-chats.png)
 
-Grouping is by project only: `tui.board.group_by`'s workflow levels mean nothing
-for a chat, which runs no workflow, so `g` is not offered here. Folds persist in
-`{data_dir}/tui.json` separately from the task board's, so folding a project
-here does not fold it there.
+There are no group headings and nothing to fold: every row is in the same
+project, and a chat runs no workflow, so `g` is not offered here either.
+Switching project empties the board and the header reads "loading ‹project›…"
+until that project's chats arrive; your `/` filter stays. With no project
+registered the board says so instead of listing anything.
 
 A chat waiting on you is sorted to the top and counted in this header's badge —
 **and nowhere else**. `!` and the task board's needs-attention count stay
@@ -2136,15 +2223,14 @@ task-only.
 | Key | Does |
 |---|---|
 | `enter` | Open the chat's workspace |
-| `n` | Start a chat in the project you are looking at |
+| `n` | Start a chat in the selected project |
 | `A` | Archive the chat — asks first, and re-offers with the force when the worktree is dirty; declines on a chat opened on a task |
 | `/` | Filter by title, agent or branch |
-| `←` / `→` | Collapse or expand a project group |
 | `s` | Cycle the listing between live, ended (archived, handed-off or closed), and all |
 | `R` | Reload the board |
 
-The mouse wheel moves the cursor one chat per tick, skipping the project
-headings, as it does on the task board. It stands still while the new-chat form
+The mouse wheel moves the cursor one chat per tick, as it does on the task
+board. It stands still while the new-chat form
 or the archive confirmation is up, since those ask about the chat under the
 cursor.
 
@@ -2177,7 +2263,7 @@ starts a chat, everywhere else it opens the new-task form. The create form takes
 project, title, agent, model, effort, base branch and branch; `ctrl+s` creates
 and drops you straight into the workspace. With no project registered, `n` says
 so on the board instead of opening a form you could not submit — add a
-repository in the Projects view (`4`) first.
+repository in the project overview first.
 
 Five of the seven rows are lists — project, agent, model, effort and branch —
 and they are
@@ -2476,8 +2562,14 @@ held by a conversation nobody came back to.
 
 Two screens, one for tasks and one for chats, reached from the command palette
 (`:`). They are the boards you already know, in a second mode: the same
-grouping, the same folding, the same `/` filter and the same `space`/`V`
-selection, listing what is archived instead of what is live. There is no key of
+`/` filter and the same `space`/`V` selection — and, for tasks, the same
+grouping and folding — listing what is archived instead of what is live. The
+archived tasks board lists the selected project only, and asks the daemon for
+just that project: switching project goes back to the first page and reads
+`loading <project>…` until the new page arrives. Like
+the live chats board, the archived chats board is a flat list of the
+selected project's chats; switching project returns it to the first page and
+keeps its window and filter. There is no key of
 its own for either — the palette is how you get there, which is the pattern
 every takeover but new task follows.
 
@@ -2524,8 +2616,14 @@ because the branch is the task's; `y` deletes it.
 
 ### Triggers
 
-What starts work on its own, and what each event became. The screen shows every
-file under `{config_dir}/triggers/` and what the daemon learned running it. Like
+What starts work on its own, and what each event became. The screen shows the
+selected project's triggers and what the daemon learned running each one.
+Trigger files are still global — they all live under `{config_dir}/triggers/`
+— but each valid one targets exactly one project, and only the selected
+project's are listed. Below them, an **unassigned** band lists the invalid
+files whose project could not be read, and the triggers whose project has
+since been removed. Every project shows that band, so such a file is always
+reachable from here to repair. Like
 the other takeovers it has no key and is reached from the command palette (`:`).
 The global switch is [`triggers`](../reference/configuration.md#triggers); read
 [what a trigger lets someone else do](../security-model.md#event-triggers-let-someone-else-start-an-agent)
@@ -2534,9 +2632,9 @@ before turning one on.
 ![The triggers screen: an armed command trigger selected above a disabled GitHub
 issues trigger, with its delivery ledger listing two seeded events](../assets/tui-triggers.png)
 
-The list has one row per file, broken ones included. Each row shows the id,
+The list has one row per trigger, broken ones included. Each row shows the id,
 whether the file is enabled, whether it is **armed**, the source and action
-types, the project, `on_fire`, poll health, and when it last polled and last
+types, `on_fire`, poll health, and when it last polled and last
 fired. The armed column reads `● armed`, or says why not: `disabled`, `✗ invalid`,
 `global off`, or the daemon's own reason. Poll health is `ok`, `failing` or
 `not yet`, and reports what the source has instead where it has no poll:
@@ -2546,8 +2644,8 @@ whether it is armed (and, for an armed trigger that has not polled yet, that
 its next poll only seeds and fires nothing — for a schedule, that its next
 tick anchors its clock and fires nothing), the last poll error, and any
 findings that keep the file from validating. The screen re-reads every five
-seconds while it is open, and also whenever a trigger event or a project
-change arrives.
+seconds while it is open, and also whenever an event for one of the selected
+project's triggers, a poll change, or a project change arrives.
 
 **While `triggers.enabled` is off**, a banner above the list says so. Every
 trigger is then inert whatever its own `enabled:` says, so every row reads
@@ -2568,7 +2666,7 @@ which asks before it applies a value. The form repeats the warning at its top.
 | `tab` | Move between the trigger list and its delivery ledger |
 | `B` | Open `triggers.enabled`, the global switch, in the daemon view's editor |
 | `R` | Re-read the triggers and the ledger |
-| `/` | Filter by id, source, action or project |
+| `/` | Filter by id, source or action |
 
 **Switching a trigger on asks; switching it off does not.** The question shows
 the warning the daemon serves for `enabled: true`, then what it means for this
@@ -2611,22 +2709,21 @@ so when you press `enter` rather than opening nothing.
 #### Creating and editing — `a`, `enter`
 
 `a` opens a short prompt asking for what a new file needs: an **id**, which
-becomes the file name `{id}.yaml`, and a **project**. It also offers the two
+becomes the file name `{id}.yaml`. Its **project** is the selected one, shown
+read-only; to make a trigger for another project, switch to it first. It also offers the two
 things a starter is usually edited for first: the poll **command**, an argv
 separated by spaces that is run directly and never through a shell, and how
 often to **poll**, with a default of `5m`. The daemon writes a `type: command`
 trigger. It is **disabled** and has no `on_fire` line, so it means `propose`
 until someone writes otherwise. The form then opens on the new file. An id that
-is already in use is refused on the prompt, and with no registered project
-there is nothing to create a trigger in.
+is already in use is refused on the prompt, and with no project selected there
+is nothing to create a trigger in.
 
 | Key | Does, in the create prompt |
 |---|---|
 | `tab` | Move between the starter's inputs (`shift+tab` goes back) |
 | `enter` | Write the new trigger — it is created disabled |
 | `esc` | Close the prompt |
-
-On the project row, `←` / `→` step through the registered projects.
 
 `enter` or `i` opens the **form**: the workflow editor's form, drawn from the
 schema the daemon serves rather than from a copy of the rules kept in the client.
@@ -2636,7 +2733,8 @@ comes back out. A source or an action shows only the fields of the variant its
 `type` names. For a GitHub source, the type row also lists the events the source
 produces and which of them are trusted without `allowed_actors`. A key the file
 leaves out shows what leaving it out means, and the project row names the
-project its id refers to. The id cannot be edited: it is the file name, so
+project its id refers to. That row is read-only for a trigger that has a
+project, which is the selected one. The id cannot be edited: it is the file name, so
 renaming a trigger means creating a new one.
 
 | Key | Does, in the form |
@@ -2649,7 +2747,10 @@ renaming a trigger means creating a new one.
 An enum or a boolean cycles in place. `if:`, `dedupe_key` and the other
 templates open the full-pane multi-line editor, `match:` opens the key/value
 sub-form, with one `key=value` per entry and `a|b` meaning any of those values,
-and the project row opens a picker of registered projects. These are the same
+and, for an unassigned trigger only, the project row opens a picker of registered
+projects, because assigning the trigger a project is how it is repaired. The
+form opens only a file that validates — that is, a trigger whose project was
+removed; an unassigned file that does not validate is repaired in `$EDITOR`. These are the same
 overlays [the workflow editor](#authoring--i-a-f) opens, with the same keys.
 
 As in the workflow editor, **committing a row is the write**. Each change is a

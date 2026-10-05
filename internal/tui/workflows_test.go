@@ -29,8 +29,16 @@ func projectEntry(name string) apiclient.WorkflowEntry {
 	}
 }
 
-func loadedWorkflows(w *workflowsView, blocks ...wfBlock) {
-	w.update(workflowsLoadedMsg{blocks: blocks})
+// loadedWorkflows loads a registry with no project selected: the global
+// listing alone.
+func loadedWorkflows(w *workflowsView, global ...apiclient.WorkflowEntry) {
+	w.update(workflowsLoadedMsg{global: global})
+}
+
+// loadedProjectWorkflows selects app (project 1) and loads both listings.
+func loadedProjectWorkflows(w *workflowsView, global, own []apiclient.WorkflowEntry) {
+	w.project = projectSel{id: 1, name: "app"}
+	w.update(workflowsLoadedMsg{global: global, own: own})
 }
 
 // A global entry a project also sees comes back from both calls. Keeping
@@ -47,65 +55,102 @@ func TestWorkflowsMergeKeepsAGlobalEntryOnce(t *testing.T) {
 	}
 }
 
-// A project entry with a global entry's name hides it (§5.2), and the row
-// says so rather than looking like a duplicate.
+// A project entry with a global entry's name hides it (§5.2). Both rows stay
+// listed: the project's says what it shadows, and the global one is dimmed
+// and says by whom, so the global file is still reachable (task 132
+// decision 40).
 func TestWorkflowsFlagAProjectEntryThatShadowsAGlobalOne(t *testing.T) {
 	w := newWorkflowsView()
-	loadedWorkflows(w,
-		wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}},
-		wfBlock{name: "app", projectID: 1, entries: []apiclient.WorkflowEntry{
-			projectEntry("review"), projectEntry("release"),
-		}},
+	builtin := apiclient.WorkflowEntry{Name: "adhoc", Scope: "builtin"}
+	loadedProjectWorkflows(w,
+		[]apiclient.WorkflowEntry{builtin, globalEntry("review")},
+		[]apiclient.WorkflowEntry{projectEntry("adhoc"), projectEntry("review"), projectEntry("release")},
 	)
-	var shadowed, plain string
+	notes := map[string]string{}
 	for _, line := range w.lines() {
-		if line.entry == nil {
-			continue
-		}
-		if line.entry.Scope != scopeProject {
-			continue
-		}
-		if line.entry.Name == "review" {
-			shadowed = line.shadows
-		}
-		if line.entry.Name == "release" {
-			plain = line.shadows
+		notes[line.entry.Scope+"/"+line.entry.Name] = shadowNote(line)
+	}
+	want := map[string]string{
+		"project/review":  "shadows global review",
+		"global/review":   "shadowed here by app",
+		"project/adhoc":   "shadows builtin adhoc",
+		"builtin/adhoc":   "shadowed here by app",
+		"project/release": "",
+	}
+	for k, v := range want {
+		if got, ok := notes[k]; !ok || got != v {
+			t.Errorf("%s: note = %q (listed %v), want %q", k, got, ok, v)
 		}
 	}
-	if shadowed != "review" {
-		t.Errorf("shadows = %q, want the global entry named", shadowed)
+	if got := countEntryLines(w); got != 5 {
+		t.Errorf("entry lines = %d, want 5 (both sides of each override)", got)
 	}
-	if plain != "" {
-		t.Errorf("shadows = %q on an entry with no global twin, want empty", plain)
-	}
-	// Both rows exist exactly once each.
-	if got := countEntryLines(w); got != 3 {
-		t.Errorf("entry lines = %d, want 3 (one global, two project)", got)
+	out := w.render(120, 24)
+	for _, s := range []string{"shadows global review", "shadowed here by app", "shadows builtin adhoc"} {
+		if !strings.Contains(out, s) {
+			t.Errorf("render is missing %q:\n%s", s, out)
+		}
 	}
 }
 
-// Scope is the outer grouping and entries are alphabetical inside it — an
-// invalid entry stays where its name puts it.
-func TestWorkflowsGroupByScopeAndSortWithinIt(t *testing.T) {
+// The resolved list is one list sorted by name, the project entry ahead of
+// the global one it shadows. An invalid entry stays where its name puts it.
+func TestWorkflowsResolvedListSortsByName(t *testing.T) {
 	w := newWorkflowsView()
-	entries := []apiclient.WorkflowEntry{globalEntry("zeta"), brokenEntry("alpha"), globalEntry("mid")}
-	sortEntries(entries)
-	loadedWorkflows(w,
-		wfBlock{name: "global", entries: entries},
-		wfBlock{name: "app", projectID: 1, entries: []apiclient.WorkflowEntry{projectEntry("own")}},
+	loadedProjectWorkflows(w,
+		[]apiclient.WorkflowEntry{globalEntry("zeta"), brokenEntry("alpha"), globalEntry("own"), globalEntry("mid")},
+		[]apiclient.WorkflowEntry{projectEntry("own"), projectEntry("beta")},
 	)
 	var order []string
 	for _, line := range w.lines() {
-		if line.header != "" {
-			order = append(order, "#"+line.header)
-			continue
-		}
-		order = append(order, line.entry.Name)
+		order = append(order, line.entry.Scope+":"+line.entry.Name)
 	}
-	want := []string{"#global", "alpha", "mid", "zeta", "#app", "own"}
+	want := []string{"global:alpha", "project:beta", "global:mid", "project:own", "global:own", "global:zeta"}
 	if strings.Join(order, ",") != strings.Join(want, ",") {
 		t.Errorf("order = %v, want %v", order, want)
 	}
+}
+
+// An overridden global row resolves, opens and forks as the global file it
+// is; the project row as the project's.
+func TestWorkflowsKeyARowByTheScopeThatOwnsItsFile(t *testing.T) {
+	w := newWorkflowsView()
+	loadedProjectWorkflows(w,
+		[]apiclient.WorkflowEntry{globalEntry("review")},
+		[]apiclient.WorkflowEntry{projectEntry("review")},
+	)
+	keys := map[string]int64{}
+	for _, line := range w.lines() {
+		keys[line.entry.Scope] = line.key().projectID
+	}
+	if keys["global"] != 0 || keys[scopeProject] != 1 {
+		t.Errorf("keys = %v, want global by 0 and the project's own by 1", keys)
+	}
+}
+
+// A switch drops the previous project's own rows: kept, they would be keyed
+// and labeled as the new project's until its load landed, and for good when
+// that load failed — and an editor opened on one would patch the global file
+// as the new project's (review F5).
+func TestWorkflowsSwitchDropsTheOldProjectsRows(t *testing.T) {
+	w := newWorkflowsView()
+	loadedProjectWorkflows(w,
+		[]apiclient.WorkflowEntry{globalEntry("review")},
+		[]apiclient.WorkflowEntry{projectEntry("review")},
+	)
+	stale := func(when string) {
+		t.Helper()
+		for _, line := range w.lines() {
+			if line.entry.Scope == scopeProject || line.shadowedBy != "" {
+				t.Errorf("%s: row %s/%s (key %+v, shadowed by %q) survived the switch",
+					when, line.entry.Scope, line.entry.Name, line.key(), line.shadowedBy)
+			}
+		}
+	}
+	w.setProject(projectSel{id: 2, name: "b"})
+	stale("before the reload")
+	w.update(workflowsLoadedMsg{stamp: w.stamps.next(2), err: errors.New("connection refused")})
+	stale("after a failed reload")
 }
 
 func brokenEntry(name string) apiclient.WorkflowEntry {
@@ -118,7 +163,7 @@ func brokenEntry(name string) apiclient.WorkflowEntry {
 // floated to the top.
 func TestWorkflowsRenderABrokenEntryInPlace(t *testing.T) {
 	w := newWorkflowsView()
-	loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{brokenEntry("busted")}})
+	loadedWorkflows(w, brokenEntry("busted"))
 	out := w.render(120, 24)
 	if !strings.Contains(out, "busted") {
 		t.Fatalf("render = %q, want the broken entry listed", out)
@@ -136,7 +181,7 @@ func TestWorkflowsRenderAPlatformRestrictedEntry(t *testing.T) {
 	no := false
 	e.Platforms, e.PlatformSupported = []string{"linux", "darwin"}, &no
 	w := newWorkflowsView()
-	loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{e}})
+	loadedWorkflows(w, e)
 	out := w.render(120, 24)
 	if !strings.Contains(out, "posix-tools") {
 		t.Fatalf("render = %q, want the restricted entry listed", out)
@@ -156,7 +201,7 @@ func TestWorkflowsGuidedLayoutPairsTheRegistryWithDetails(t *testing.T) {
 		{ID: "check", Name: "Check", Type: "command"},
 	}
 	w := newWorkflowsView()
-	loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{entry}})
+	loadedWorkflows(w, entry)
 	out := w.render(160, 32)
 	for _, want := range []string{
 		"Registry", "Overview · review", "Availability", "2 top-level steps",
@@ -180,7 +225,7 @@ func TestWorkflowsGuidedLayoutPairsTheRegistryWithDetails(t *testing.T) {
 
 func TestWorkflowsCompactFallbackKeepsTheFlatRegistry(t *testing.T) {
 	w := newWorkflowsView()
-	loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+	loadedWorkflows(w, globalEntry("review"))
 	out := w.render(120, 24)
 	if !strings.Contains(out, "review workflow") {
 		t.Errorf("compact workflow registry lost its row detail:\n%s", out)
@@ -190,29 +235,31 @@ func TestWorkflowsCompactFallbackKeepsTheFlatRegistry(t *testing.T) {
 	}
 }
 
-// One unreadable project degrades its own block and nothing else.
+// A failed project fetch degrades the view to the global rows plus an error
+// line, never a blank view.
 func TestWorkflowsIsolateAFailedProjectFetch(t *testing.T) {
 	w := newWorkflowsView()
-	loadedWorkflows(w,
-		wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}},
-		wfBlock{name: "broken-project", projectID: 2, err: errors.New("project path missing")},
-		wfBlock{name: "app", projectID: 1, entries: []apiclient.WorkflowEntry{projectEntry("release")}},
-	)
+	w.project = projectSel{id: 1, name: "app"}
+	w.update(workflowsLoadedMsg{
+		global: []apiclient.WorkflowEntry{globalEntry("review")},
+		ownErr: errors.New("project path missing"),
+	})
 	out := w.render(120, 30)
-	if !strings.Contains(out, "registry unavailable") {
-		t.Errorf("render = %q, want the failed block to say so", out)
+	if !strings.Contains(out, "app: registry unavailable: project path missing") {
+		t.Errorf("render = %q, want the failed fetch to say so", out)
 	}
-	for _, want := range []string{"review", "release"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("render lost %q when another block failed", want)
-		}
+	if !strings.Contains(out, "review") {
+		t.Errorf("render lost the global rows when the project fetch failed:\n%s", out)
+	}
+	if line, ok := w.currentLine(); !ok || line.entry.Name != "review" {
+		t.Errorf("cursor = %+v, want it past the error line on the first entry", line)
 	}
 }
 
 // A failed global fetch keeps the last-good registry behind the warning.
 func TestWorkflowsKeepLastGoodWhenTheGlobalFetchFails(t *testing.T) {
 	w := newWorkflowsView()
-	loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+	loadedWorkflows(w, globalEntry("review"))
 	w.update(workflowsLoadedMsg{err: errors.New("connection refused")})
 	out := w.render(120, 24)
 	if !strings.Contains(out, "review") {
@@ -227,7 +274,7 @@ func TestWorkflowsKeepLastGoodWhenTheGlobalFetchFails(t *testing.T) {
 func TestWorkflowsRefuseToEditAnEntryWithNoFile(t *testing.T) {
 	w := newWorkflowsView()
 	builtin := apiclient.WorkflowEntry{Name: "adhoc", Scope: "global"}
-	loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{builtin}})
+	loadedWorkflows(w, builtin)
 	var ran bool
 	w.exec = func(*exec.Cmd, tea.ExecCallback) tea.Cmd {
 		ran = true
@@ -251,7 +298,7 @@ func TestWorkflowsRefuseToEditAnEntryWithNoFile(t *testing.T) {
 func TestWorkflowsEditOpensTheRealFileAndWaitsForTheReload(t *testing.T) {
 	w := newWorkflowsView()
 	entry := globalEntry("review")
-	loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{entry}})
+	loadedWorkflows(w, entry)
 	var opened []string
 	w.exec = func(c *exec.Cmd, _ tea.ExecCallback) tea.Cmd {
 		opened = c.Args
@@ -308,28 +355,51 @@ func TestWorkflowsRefetchOnActivationAndOnRegistryEvents(t *testing.T) {
 	}
 }
 
-// The cursor skips headers and per-block errors, so `e` never points at one.
-func TestWorkflowsCursorSkipsHeaders(t *testing.T) {
+// The cursor walks the resolved list, and every row hints the selected
+// project: a global row no longer hints nothing (task 132.12).
+func TestWorkflowsCursorWalksTheResolvedList(t *testing.T) {
 	w := newWorkflowsView()
-	loadedWorkflows(w,
-		wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}},
-		wfBlock{name: "app", projectID: 1, entries: []apiclient.WorkflowEntry{projectEntry("release")}},
+	loadedProjectWorkflows(w,
+		[]apiclient.WorkflowEntry{globalEntry("review")},
+		[]apiclient.WorkflowEntry{projectEntry("release")},
 	)
 	line, ok := w.currentLine()
-	if !ok || line.entry.Name != "review" {
+	if !ok || line.entry.Name != "release" {
 		t.Fatalf("initial line = %+v, want the first entry", line)
+	}
+	if got := w.hintedProject(); got != 1 {
+		t.Errorf("hintedProject() on a project row = %d, want the selection", got)
 	}
 	pressView(w, "j")
 	line, ok = w.currentLine()
-	if !ok || line.entry.Name != "release" {
-		t.Fatalf("after j = %+v, want the next block's entry", line)
+	if !ok || line.entry.Name != "review" {
+		t.Fatalf("after j = %+v, want the next entry", line)
 	}
 	if got := w.hintedProject(); got != 1 {
-		t.Errorf("hintedProject() = %d, want the block's project", got)
+		t.Errorf("hintedProject() on a global row = %d, want the selection", got)
 	}
 	pressView(w, "j")
-	if line, _ = w.currentLine(); line.entry.Name != "release" {
+	if line, _ = w.currentLine(); line.entry.Name != "review" {
 		t.Error("the cursor walked off the last entry")
+	}
+}
+
+// A global row says that editing it affects every project, expanded and in
+// the editor's header; a builtin row keeps its no-file note.
+func TestWorkflowsWarnThatAGlobalFileIsShared(t *testing.T) {
+	w := newWorkflowsView()
+	w.client = offlineClient()
+	loadedProjectWorkflows(w, []apiclient.WorkflowEntry{globalEntry("review")}, nil)
+	pressView(w, "enter")
+	if out := w.render(120, 24); !strings.Contains(out, "affects every project") {
+		t.Errorf("expanded global row has no shared-file warning:\n%s", out)
+	}
+	pressView(w, "i")
+	if w.editor == nil {
+		t.Fatal("the editor did not open")
+	}
+	if out := w.render(120, 24); !strings.Contains(out, "affects every project") {
+		t.Errorf("editor on a global file has no shared-file warning:\n%s", out)
 	}
 }
 
@@ -343,15 +413,6 @@ func TestWorkflowsEmptyStatesAreDistinct(t *testing.T) {
 	body, ok = w.emptyBody(nil)
 	if !ok || !strings.Contains(body, "adhoc") {
 		t.Errorf("empty registry: %q, want the built-in named", body)
-	}
-	// A project with no workflows of its own is a block, not an empty view.
-	loadedWorkflows(w,
-		wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}},
-		wfBlock{name: "app", projectID: 1},
-	)
-	out := w.render(120, 24)
-	if !strings.Contains(out, "no workflows of its own") {
-		t.Errorf("render = %q, want the empty project block named", out)
 	}
 }
 

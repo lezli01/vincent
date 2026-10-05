@@ -48,7 +48,7 @@ func TestIssueThreadAgainstTheRealAPI(t *testing.T) {
 	}
 
 	detail := issueDetailView(t, h)
-	h.send(openIssueMsg{id: local.ID})
+	h.send(openIssueMsg{id: local.ID, projectID: local.ProjectID})
 	h.p.until(10*time.Second, "the local issue's thread", func() bool {
 		return h.m.active == viewIssue && detail.loaded && detail.id == local.ID && len(detail.comments) == 1
 	})
@@ -92,7 +92,7 @@ func TestIssueThreadAgainstTheRealAPI(t *testing.T) {
 
 	// The imported issue's remote is live: its comment is marked, and W is
 	// withheld and refused.
-	h.send(openIssueMsg{id: imported.ID})
+	h.send(openIssueMsg{id: imported.ID, projectID: imported.ProjectID})
 	h.p.until(10*time.Second, "the imported issue's thread", func() bool {
 		return detail.loaded && detail.id == imported.ID && len(detail.comments) == 1
 	})
@@ -154,7 +154,7 @@ func TestIssueThreadAgainstTheRealAPI(t *testing.T) {
 	if err := h.st.SetIssueRemoteStatus(ctx, h.projectID, "github", "I_42", store.RemoteStatusMoved, "octo/elsewhere#1"); err != nil {
 		t.Fatalf("SetIssueRemoteStatus: %v", err)
 	}
-	h.send(openIssueMsg{id: moved.ID})
+	h.send(openIssueMsg{id: moved.ID, projectID: moved.ProjectID})
 	h.p.until(10*time.Second, "the moved issue's detail", func() bool {
 		return detail.loaded && detail.id == moved.ID && detail.issue.Source != nil
 	})

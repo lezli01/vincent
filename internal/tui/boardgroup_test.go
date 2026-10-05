@@ -16,7 +16,7 @@ import (
 // groupedBoard is the fixture for everything in this file: a board with the
 // §15 default grouping, unlike testBoard's flat table.
 func groupedBoard(tasks ...apiclient.Task) *board {
-	b := newBoard()
+	b := selectTestProject(newBoard())
 	b.now = func() time.Time { return testNow }
 	b.bell = func() {}
 	b.loaded = true
@@ -220,17 +220,14 @@ func TestGroupCycleKeepsTheSelectedTask(t *testing.T) {
 // does not also need a column repeating it on every row.
 func TestGroupedColumnsAreDropped(t *testing.T) {
 	full := columnsFor(160, nil, false, fullContent)
-	if !full.project || !full.workflow {
-		t.Fatalf("flat at 160 = %+v, want both columns", full)
+	if !full.workflow {
+		t.Fatalf("flat at 160 = %+v, want the workflow column", full)
 	}
 	both := columnsFor(160, grouping{groupProject, groupWorkflow}, false, fullContent)
-	if both.project || both.workflow {
-		t.Errorf("grouped by project and workflow = %+v, want neither column", both)
+	if both.workflow {
+		t.Errorf("grouped by project and workflow = %+v, want no workflow column", both)
 	}
 	one := columnsFor(160, grouping{groupProject}, false, fullContent)
-	if one.project {
-		t.Error("grouping by project kept the PROJECT column")
-	}
 	if !one.workflow {
 		t.Error("grouping by project dropped the WORKFLOW column, which nothing names")
 	}
@@ -251,6 +248,13 @@ func TestGroupedColumnsAreDropped(t *testing.T) {
 		if groupedSpend < flatSpend {
 			t.Errorf("width %d: grouped spends %d on TITLE/STEP/STATUS, flat %d — grouping must never be worse off",
 				width, groupedSpend, flatSpend)
+		}
+		// The title alone is compared only where both boards carry the same
+		// STATUS: without a PROJECT column (task 132.8) the grouped board
+		// admits STATUS at 120 where the flat one still sheds it, and that
+		// trade is the ladder's, not a cost of grouping.
+		if colWidth(groupedCols, "STATUS") != 0 && colWidth(flatCols, "STATUS") == 0 {
+			continue
 		}
 		if groupedTitle, flatTitle := colWidth(groupedCols, "TITLE"), colWidth(flatCols, "TITLE"); groupedTitle < flatTitle {
 			t.Errorf("width %d: grouped title %d, flat %d", width, groupedTitle, flatTitle)

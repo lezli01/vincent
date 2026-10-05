@@ -21,6 +21,16 @@ list with the user-facing context a commit subject cannot carry.
   that is not registered is skipped with a line under the header saying what
   was shown instead. `tui.default_project` is read at startup only, and the
   last selection is kept in `tui.json` as `selected_project`.
+- **A project switch keeps you on the screen you were on.** The board, the
+  chats and issues lists, pull requests, the archived boards, workflows and
+  triggers stay put and reload for the new project. A task workspace, chat or
+  issue falls back to its list, and an empty new-task, new-chat or new-issue
+  form reopens for the new project. A form you have typed into, or one seeded
+  from a pull request, issue or chat, asks first — ``discard the task draft
+  and switch to `api`? y/n`` — and `n` keeps both the draft and the project.
+  Opening another project's task, chat or issue — from the board, a pull
+  request, an issue, a trigger's delivery ledger, a lane jump, or a task you
+  just created — switches to its project first and says ``switched to `web` ``.
 - **Switch project from anywhere in the TUI.** Press `@`, click the header's
   `◆` segment, or run **switch project** from the palette (`ctrl+p` reaches it
   from a chat). A picker lists every project with the tasks that need you
@@ -30,6 +40,18 @@ list with the user-facing context a commit subject cannot carry.
   `esc` closes. The key is the new `project` operation in `tui.keys`; a
   `tui.keys` that already binds `@` keeps its binding, and the picker stays
   reachable from the palette.
+- **A project overview replaces the Projects screen.** The palette's
+  **project overview** row, or the project picker's new last row
+  **overview & manage…**, opens one table of every project's figures — tasks
+  that need you, running against the cap, queued, blocked, done, open issues
+  (imported in brackets), live chats (waiting in brackets), issue-sync and
+  GitHub health, last activity — with a totals row whose running figure is the
+  installation-wide slot count. Below it, **Needs you, across projects** lists
+  every task waiting on you, oldest first, each named with its project; `tab`
+  moves into it. On a wide terminal the highlighted project's defaults show
+  beside the table. **`enter` now selects** the highlighted project and goes
+  back to the view you came from (or opens the highlighted task); `e` edits,
+  where `enter` used to. `a`, `D` and `/` are unchanged.
 - **The TUI names a selected project.** The app header now shows
   `◆ <project>` after the version, or `◆ no project` when none is
   registered. The new-task form still opens on the project under the cursor,
@@ -218,6 +240,38 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
+- **The task board and the archived tasks board show the selected project.**
+  Switching project swaps the board's rows in place without a refetch; the
+  archived tasks board asks the daemon for that project only, and restarts at
+  its first page. The `PROJECT` column is gone, and `/` no longer matches the
+  project name. The needs-attention count still spans every project and reads
+  `(all projects)` — in the header and in the footer's `!` hint — while some of
+  it is elsewhere; `!` jumps within the selected project. Marks in another
+  project are kept but not counted or acted on until you switch back. Folded
+  groups are kept per project in `tui.json`'s `board_folds_by_project`; folds
+  saved by an older version are moved to their project once, and a fold saved
+  under a workflow-only grouping is dropped.
+- **The chats boards show the selected project only.** The chats board and
+  the archived chats board now list only the selected project's chats, in one
+  flat list with no project headings. Switching project empties the board and
+  shows "loading ‹project›…" until the new list arrives. `n` starts a chat in
+  the selected project. `←`/`→` no longer fold anything on the chats board,
+  and `tui.json` no longer uses `chat_folds`. An older file that still has the
+  key reads fine.
+  ([#704](https://github.com/lezli01/vincent/issues/704))
+- **The TUI's workflows and triggers screens show the selected project.**
+  The workflows screen lists what the selected project actually runs: the
+  built-in, global and project workflows in one list sorted by name. A
+  project workflow that overrides a global or built-in one says `shadows
+  global X`, and the overridden one stays listed, dimmed and marked
+  `shadowed here by <project>`, so the global file can still be opened. Global
+  rows warn that editing them affects every project. Create and fork offer
+  exactly two destinations, global and the selected project. The triggers
+  screen lists the selected project's triggers, followed by an "unassigned"
+  band of broken files whose project cannot be read, which every project
+  shows; the project column and the filter's project term are gone, and a
+  new trigger's project is the selected one. Trigger files are still global.
+  ([#706](https://github.com/lezli01/vincent/issues/706))
 - **TUI lists follow the selected project's events.** The issues, chats,
   pull-request, workflows and triggers screens now refresh on events
   from the selected project, on events that belong to no project, and on any

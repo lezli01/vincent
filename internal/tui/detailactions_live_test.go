@@ -225,7 +225,7 @@ func TestDetailAnswersLiveAgentQuestion(t *testing.T) {
 	h := newActionLiveHarness(t)
 	task := h.createTask(t, "answerable")
 
-	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})
+	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, projectID: task.ProjectID})
 	h.p.push(cmd)
 
 	h.p.until(60*time.Second, "the agent to ask its question", func() bool {

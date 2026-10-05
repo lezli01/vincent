@@ -30,19 +30,13 @@ import (
 type (
 	// chatsRefreshMsg fires when the debounce window closes (task 132.5).
 	chatsRefreshMsg struct{ archived bool }
-	// chatsLoadedMsg is one whole board: every chat, plus the project names
-	// the headings read from.
+	// chatsLoadedMsg is one whole board: every chat in the selected project.
 	chatsLoadedMsg struct {
 		// archived tags the board instance this answer belongs to (task 092).
 		archived bool
 		stamp    loadStamp
 		chats    []apiclient.Chat
-		names    map[int64]string
-		// projectsListed reports that the load reached the project
-		// registry, so an empty names map means "none registered" rather
-		// than "not asked yet" or "the listing failed".
-		projectsListed bool
-		err            error
+		err      error
 	}
 	// chatArchivedMsg reports a completed archive, or the refusal that came
 	// back instead — a dirty worktree answers 409 and is offered the force.
@@ -53,7 +47,11 @@ type (
 	// openChatMsg asks the root to open one chat's workspace. It goes through
 	// the root rather than straight to the view because the view is not
 	// active yet, and an inactive view receives nothing.
-	openChatMsg struct{ id int64 }
+	// projectID is the chat's project, for selectTaskMsg's reason.
+	openChatMsg struct {
+		id        int64
+		projectID int64
+	}
 	// chatsTickMsg advances the in-progress indicator's frame (task 089) and,
 	// as a consequence of the repaint, the "last activity" column: that cell
 	// already renders now - UpdatedAt, and UpdatedAt is only written on a
@@ -81,17 +79,16 @@ type chatsView struct {
 	// overtaken by a newer one (task 132.5).
 	projectScope
 	stamps loadStamps
+	// noProjects is a listing that came back empty. A selection of 0 means
+	// "no project registered" only then; before the first listing, or after
+	// a failed one, it is a selection not resolved yet (review F9).
+	noProjects bool
 
 	client  *apiclient.Client
 	now     func() time.Time
 	dataDir string
 
 	chats []apiclient.Chat
-	names map[int64]string
-	// projectsListed is what makes an empty names map readable: only a load
-	// that actually reached the project registry may be quoted as "there is
-	// no project here".
-	projectsListed bool
 
 	loaded  bool
 	loading bool
@@ -106,7 +103,6 @@ type chatsView struct {
 	filter    textField
 	filtering bool
 
-	folds   foldSet
 	confirm *archivePrompt
 
 	// scope is which listing the board asks for (issue #298). Its zero value
@@ -146,7 +142,7 @@ func newChatsView() *chatsView {
 	fi := newTextField()
 	fi.SetPlaceholder("filter by title, agent or branch")
 	fi.SetPrompt("/")
-	v := &chatsView{now: time.Now, filter: fi, names: map[int64]string{}}
+	v := &chatsView{now: time.Now, filter: fi}
 	v.reload = v.loadCmd
 	return v
 }
@@ -172,9 +168,26 @@ func (v *chatsView) setClient(c *apiclient.Client) tea.Cmd {
 	return v.loadCmd()
 }
 
-func (v *chatsView) setDataDir(dir string) {
-	v.dataDir = dir
-	v.folds = loadChatFolds(dir)
+func (v *chatsView) setDataDir(dir string) { v.dataDir = dir }
+
+// setProject wraps projectScope's: a switch empties the board before the
+// reload goes out (task 132.10), so the rows of the project just left are
+// never shown under the name of the one just chosen, and the header reads
+// "loading ‹name›…" until the stamped load lands. The archived page goes back
+// to the first, because an offset belongs to the old project's listing; the
+// filter text and the archived window stay, because they say what the human
+// wants to see, not where.
+// setProjects records whether any project is registered (projectListAware).
+// The root hands it only a listing that succeeded.
+func (v *chatsView) setProjects(ps []apiclient.Project) { v.noProjects = len(ps) == 0 }
+
+func (v *chatsView) setProject(p projectSel) tea.Cmd {
+	if p.id != v.project.id {
+		v.chats, v.loaded, v.loadErr = nil, false, ""
+		v.cursor, v.page = 0, 0
+		v.confirm, v.delPrompt = nil, nil
+	}
+	return v.projectScope.setProject(p)
 }
 
 func (v *chatsView) capturesInput() bool {
@@ -206,14 +219,6 @@ func (v *chatsView) bindingContext() bindingContext {
 		return ctxArchivedChats
 	}
 	return ctxChats
-}
-
-// hintedProject opens the new-chat form on the project the cursor stands in.
-func (v *chatsView) hintedProject() int64 {
-	if c, ok := v.current(); ok {
-		return c.ProjectID
-	}
-	return 0
 }
 
 // update handles the message and then re-arms the in-progress indicator if
@@ -338,7 +343,7 @@ func (v *chatsView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 }
 
 // updateWheel is one wheel notch on the board (task 114 decision 5): the
-// cursor moves one chat, skipping the project headings, the way a notch moves
+// cursor moves one chat, the way a notch moves
 // one task on the home board. The board is its one scrollable panel, so it is
 // the focused one and PR S's rule needs no exception. A layer that owns the
 // keyboard owns the wheel too (task 078 decision 3) — the new-chat form covers
@@ -381,10 +386,17 @@ func (v *chatsView) scheduleRefresh() tea.Cmd {
 	})
 }
 
-// loadCmd fetches every chat and the project names the headings read from.
+// loadCmd fetches the selected project's chats. With no project selected it
+// fetches nothing (task 132.10): GET /v1/chats without project_id is every
+// project's list, which is exactly what a scoped board must never show.
 func (v *chatsView) loadCmd() tea.Cmd {
 	client := v.client
 	if client == nil {
+		return nil
+	}
+	if v.project.id == 0 {
+		v.chats, v.loading = nil, false
+		v.cursor = 0
 		return nil
 	}
 	opts := v.listOptions()
@@ -395,27 +407,18 @@ func (v *chatsView) loadCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
 		chats, err := client.ListChats(ctx, opts)
-		if err != nil {
-			return chatsLoadedMsg{archived: archived, stamp: stamp, err: err}
-		}
-		names := map[int64]string{}
-		listed := false
-		// A project listing that fails is not a board that fails: the
-		// headings fall back to the id, which is still a stable grouping.
-		if projects, perr := client.ListProjects(ctx); perr == nil {
-			listed = true
-			for _, p := range projects {
-				names[p.ID] = p.Name
-			}
-		}
-		return chatsLoadedMsg{archived: archived, stamp: stamp, chats: chats, names: names, projectsListed: listed}
+		return chatsLoadedMsg{archived: archived, stamp: stamp, chats: chats, err: err}
 	}
 }
 
 // listOptions is what the board asks GET /v1/chats for — a method for the
-// reason board.listOptions is one.
+// reason board.listOptions is one. Both modes filter on the server (task
+// 132.10): the archived board pages there, so only a server filter is right
+// for it, and the live board has no global consumer to keep — a chat's
+// attention is this board's alone (task 067), unlike the task board's live
+// listing, which feeds the attention badge (task 132 decision 17).
 func (v *chatsView) listOptions() apiclient.ListChatsOptions {
-	opts := apiclient.ListChatsOptions{Archived: v.scope}
+	opts := apiclient.ListChatsOptions{Archived: v.scope, ProjectID: v.project.id}
 	if v.archived {
 		// Paged and date-bounded, the task board's archived mode exactly. The
 		// daemon measures the bounds over `updated_at`, which for a terminal
@@ -441,9 +444,7 @@ func (v *chatsView) applyLoaded(msg chatsLoadedMsg) {
 	v.loaded = true
 	v.lastLoad = v.now()
 	sortChats(msg.chats)
-	v.chats, v.names = msg.chats, msg.names
-	v.projectsListed = msg.projectsListed
-	v.folds = pruneChatFolds(v.folds, v.chats, v.names)
+	v.chats = msg.chats
 	v.restoreSelection()
 }
 
@@ -477,18 +478,18 @@ func (v *chatsView) applyCreated(msg chatCreatedMsg) tea.Cmd {
 	// Straight into the workspace: the human asked for a conversation, and
 	// landing them on the board to press enter on the row they just made
 	// would be a step for nothing.
-	id := msg.chat.ID
-	return tea.Batch(v.loadCmd(), func() tea.Msg { return openChatMsg{id: id} })
+	id, pid := msg.chat.ID, msg.chat.ProjectID
+	return tea.Batch(v.loadCmd(), func() tea.Msg { return openChatMsg{id: id, projectID: pid} })
 }
 
 // rows is the board as it is currently laid out.
 func (v *chatsView) rows() []chatRow {
-	return groupChatRows(filterChats(v.chats, v.filter.Value()), v.names, v.folds)
+	return chatRows(filterChats(v.chats, v.filter.Value()))
 }
 
 func (v *chatsView) current() (apiclient.Chat, bool) {
 	rows := v.rows()
-	if v.cursor < 0 || v.cursor >= len(rows) || rows[v.cursor].chat == nil {
+	if v.cursor < 0 || v.cursor >= len(rows) {
 		return apiclient.Chat{}, false
 	}
 	return *rows[v.cursor].chat, true
@@ -508,56 +509,21 @@ func (v *chatsView) restoreSelection() {
 	v.moveCursor(0)
 }
 
-// moveCursor walks by delta, skipping the headings that cannot be selected.
-// delta 0 lands on the nearest selectable row, which is what a re-layout
-// needs after a fold.
+// moveCursor walks by delta, clamped to the board. delta 0 re-clamps, which
+// is what a re-layout needs after a reload or a filter.
 func (v *chatsView) moveCursor(delta int) {
 	rows := v.rows()
 	if len(rows) == 0 {
 		v.cursor = 0
 		return
 	}
-	i := min(max(v.cursor+delta, 0), len(rows)-1)
-	step := 1
-	if delta < 0 {
-		step = -1
-	}
-	for j := i; j >= 0 && j < len(rows); j += step {
-		if rows[j].selectable() {
-			v.cursor = j
-			v.rememberSelection()
-			return
-		}
-	}
-	// Nothing selectable in that direction: stay where the walk started.
-	for j := i; j >= 0 && j < len(rows); j -= step {
-		if rows[j].selectable() {
-			v.cursor = j
-			v.rememberSelection()
-			return
-		}
-	}
-	v.cursor = i
+	v.cursor = min(max(v.cursor+delta, 0), len(rows)-1)
+	v.rememberSelection()
 }
 
 func (v *chatsView) rememberSelection() {
 	if c, ok := v.current(); ok {
 		v.selectedID = c.ID
-	}
-}
-
-// saveFolds persists the chats board's own fold set. A write failure is a
-// note, never a refusal to fold: the fold already happened on screen.
-func (v *chatsView) saveFolds() tea.Cmd {
-	dir, folds := v.dataDir, v.folds
-	if dir == "" {
-		return nil
-	}
-	return func() tea.Msg {
-		if err := writeChatFolds(dir, folds); err != nil {
-			return noteMsg{}
-		}
-		return nil
 	}
 }
 
@@ -637,26 +603,27 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.filtering = true
 		v.filter.Focus()
 		return v, nil
-	case "left":
-		return v, v.collapseAtCursor()
-	case "right":
-		return v, v.expandAtCursor()
 	case opKey(keymap.OpenRow):
 		if c, ok := v.current(); ok {
-			id := c.ID
-			return v, func() tea.Msg { return openChatMsg{id: id} }
+			id, pid := c.ID, c.ProjectID
+			return v, func() tea.Msg { return openChatMsg{id: id, projectID: pid} }
 		}
 	case opKey(keymap.New):
 		// A chat needs a project, and the form offers no way to register
 		// one: opening it on an installation that has none is a dead end
-		// whose only exit is `esc` (issue #279). Refuse only on a positive
-		// answer — a board that has not listed the projects yet, or whose
-		// listing failed, knows nothing and opens the form as before.
-		if v.projectsListed && len(v.names) == 0 {
-			v.note, v.noteBad = "register a project first — the Projects view (4) adds one", true
+		// whose only exit is `esc` (issue #279). A selection of 0 is "no
+		// project registered" only once a listing has said so; before that
+		// the selection is still resolving (review F9).
+		if v.project.id == 0 {
+			v.note, v.noteBad = "no project is selected yet — try again once the header names one", true
+			if v.noProjects {
+				v.note = "register a project first — the project overview adds one"
+			}
 			return v, nil
 		}
-		v.create = newNewChatForm(v.client, v.hintedProject())
+		// Seeded with the selected project, not the cursor's (task 132.10):
+		// every row on the board is in it.
+		v.create = newNewChatForm(v.client, v.project.id)
 		return v, v.create.init()
 	case opKey(keymap.Archive):
 		if c, ok := v.current(); ok {
@@ -831,47 +798,4 @@ func (v *chatsView) archiveCmd(id int64, force bool) tea.Cmd {
 		_, err := client.ArchiveChat(ctx, id, force)
 		return chatArchivedMsg{id: id, err: err}
 	}
-}
-
-// collapseAtCursor folds the group the cursor is in, naming the row rather
-// than an index: the layout changes under the fold, and reading a cursor
-// index from the old layout against the new one selects a different chat.
-func (v *chatsView) collapseAtCursor() tea.Cmd {
-	rows := v.rows()
-	if v.cursor < 0 || v.cursor >= len(rows) {
-		return nil
-	}
-	path := rows[v.cursor].path
-	if len(path) == 0 || v.folds.has(path) {
-		return nil
-	}
-	v.folds = v.folds.with(path)
-	v.focusHeader(path)
-	return v.saveFolds()
-}
-
-func (v *chatsView) expandAtCursor() tea.Cmd {
-	rows := v.rows()
-	if v.cursor < 0 || v.cursor >= len(rows) {
-		return nil
-	}
-	path := rows[v.cursor].path
-	if len(path) == 0 || !v.folds.has(path) {
-		return nil
-	}
-	v.folds = v.folds.without(path)
-	v.focusHeader(path)
-	return v.saveFolds()
-}
-
-// focusHeader puts the cursor back on the heading it was working on, in the
-// layout the fold produced.
-func (v *chatsView) focusHeader(path foldPath) {
-	for i, r := range v.rows() {
-		if r.header && r.path.equal(path) {
-			v.cursor = i
-			return
-		}
-	}
-	v.restoreSelection()
 }

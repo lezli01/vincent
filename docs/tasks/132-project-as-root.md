@@ -1,6 +1,6 @@
 # 132 — Project as root: the TUI scoped to one selected project
 
-**Status:** 🔄 in progress (5/18)
+**Status:** 🔄 in progress (10/18)
 
 Issue [#694](https://github.com/lezli01/vincent/issues/694), part of
 [#693](https://github.com/lezli01/vincent/issues/693). Spec §3 (the new row
@@ -52,8 +52,11 @@ questions, each the option #693 recommended; decision 15 is the renumbering;
 decisions 16–19 settle the contradictions between #693's research reports;
 decisions 20–22 were taken while delivering 132.1, decisions 23–24 while
 delivering 132.2, decisions 25–28 were settled with the author for 132.5
-on 2026-10-05, decisions 29–32 were taken while delivering 132.3, and
-decision 33 while delivering 132.4. Each
+on 2026-10-05, decisions 29–32 were taken while delivering 132.3,
+decision 33 while delivering 132.4, decisions 34–35 while delivering
+132.8, decisions 36–38 were settled with the author for 132.6, and
+decisions 39–41 were settled with the author while delivering 132.12,
+and decisions 42–45 were taken with the author while delivering 132.15. Each
 decision is **taken now; its effect lands with its item.** The older record
 keeps governing the code until that item's pull request merges.
 
@@ -208,8 +211,11 @@ drops no note: a task event from any project refetches it (review F1 on
 #718).
 A `project.*` event passes every view's filter whatever project it names,
 since it describes the project list every view renders whole, and the
-triggers takeover lets `trigger.*` through until 132.11 scopes it (review F2
-on #718).
+triggers takeover lets `trigger.*` through until 132.12 scopes it (review F2
+on #718). *Corrected 2026-10-05:* the scoping item is 132.12, not 132.11; it
+has landed, and a `trigger.*` event for another project is now dropped like
+any other, while `trigger.poll_changed`, which carries no project, still
+re-reads.
 
 *Alternative beaten:* resubscribing with `?project_id=` on each switch. It
 loses the events that carry no project (`task.github_pull_changed`,
@@ -436,6 +442,182 @@ together, and 132.3 was written before the picker existed, so it did not add
 the marker. The picker still marks only the current project; the default
 marker remains open against 132.3's row.
 
+### 34. The interim attention clause is global and labelled (2026-10-05)
+
+Taken with the author while delivering 132.8. Until 132.14 (#708) brings the
+badge and the project-crossing `!`, the board header's `! N need attention`
+keeps counting every project's tasks: a selection is a filter and must not
+hide a question (decision 2). When some of that count is in projects other
+than the selected one, the clause reads ` (all projects)`, the way
+` (all tasks)` already marks a committed filter; when both apply, the one
+` (all projects)` covers both, being the wider statement. The footer's
+`! next attention (N)` takes the same label, as `(N, all projects)`. `!`
+(`shell.jumpAttention`) walks `visible()` and is therefore per project in
+this item; that is accepted deliberately, and 132.14 replaces both the
+clause and the jump.
+
+*Alternatives beaten:* scoping the count now, which hides another project's
+question and so breaks decision 2; leaving the mismatch unlabelled.
+
+### 35. Folds are kept per project (2026-10-05)
+
+Taken with the author while delivering 132.8. The task board's fold set is
+keyed by project id, so a board's folds are independent per project whatever
+`group_by` says — which matters most once 132.9 makes `[workflow]` the
+default, because a shared `["build"]` fold would collapse `build` in every
+project. In memory the board holds `map[int64]foldSet`; the render, the four
+fold keys and `!`'s auto-expand read and write the selected project's set. In
+`{data_dir}/tui.json` the sets live in `board_folds_by_project`
+(`{"<id>": [[...], ...]}`), written through the same merge as before.
+
+The legacy `board_folds` list is read once and migrated when the root's
+project list is known, then dropped on the next write; until then it is held
+unmigrated and not written back. A legacy path whose first segment names a
+registered project moves under that project's id; a path that was only the
+project segment (a folded project header, which a one-project board no
+longer draws) is dropped; a path whose first segment names no project — a
+`[workflow]` grouping's — is dropped too, because copying it into every
+project would recreate the sharing this removes.
+
+A successful live load prunes each project's set against that project's own
+tasks from the global list, and a project with no live tasks keeps its set
+(the existing "an empty list prunes nothing" rule). An archived load prunes
+nothing, because a page and a date window say nothing about which groups
+exist; the archived board still shares the sets (task 054 decision 1). A
+removed project's set is dropped when it leaves the cached project list.
+
+*Amended 2026-10-05 (review of the 526–530 train, F10):* keying by id does
+not by itself survive a rename, because a stored path keeps the project's
+name as a segment (the delivery note below). The board remembers the name
+each project's paths were last seen under and, when the project list or a
+task load reports a new one, rewrites that segment before pruning. A rename
+made while no TUI was running is not seen, and that project's folds go.
+
+*Note (2026-10-05), at delivery:* the decision as taken said a migrated
+path is stored with its project segment stripped, on the premise that a
+scoped board's paths no longer carry one. They do: a level `shownLevels`
+skips still contributes its value to every header path under it (task 129
+decision 4, `headerPaths`), so under today's default `[project, workflow]`
+the scoped board's `build` header is `["api", "build"]`. A migrated path
+therefore keeps its segment, or it would never match the header it was made
+on. Whether paths drop the project level is 132.9's, with the grouping.
+
+*Alternatives beaten:* shared label paths, which leak a `[workflow]` fold
+across projects; prefixing stored paths with the project *name*, which breaks
+on a rename.
+
+### 36. One root confirmation for drafts (2026-10-05)
+
+Settled with the author while scoping 132.6. Draft-holding views implement a
+`switchGuard` interface, and the root holds the pending switch and draws a
+single y/n confirmation. Cancelling it cancels the switch, and any open
+waiting on it. *Beaten:* giving each form its own prompt, with
+`ntConfirming` reused and five new confirm states to keep consistent.
+
+### 37. A confirmed discard lands on a fresh form for the new project (2026-10-05)
+
+The view kind is kept, as the requirement says. A seeded form becomes a blank
+one, and forms inside a detail view leave with it. *Beaten:* falling back to
+a list.
+
+### 38. Every open carries its project; an unknown one is fetched first (2026-10-05)
+
+Every source sets `projectID` from the row it holds, and the ledger resolves
+its trigger's `source.project`. A zero or unresolvable project makes the root
+GET the object before it switches and routes, so the order is always switch,
+then route. *Beaten:* switching once the detail loads, which needs an
+exemption from the fallback rule and briefly draws the wrong header; and
+making the field mandatory with 0 meaning "do not switch".
+
+### 39. The workflows view loads with two calls, not one (2026-10-05)
+
+Settled with the author while delivering 132.12. Decision 7's "as
+`?project_id=` already returns them" cannot show shadowing:
+`Registry.List(projectID)` merges by name, so a global or builtin entry the
+project overrides is missing from that response. The view issues
+`ListWorkflows(0)` (builtin + global) and `ListWorkflows(selected)` and
+compares them in the client; `ListProjects`, the per-project fan-out and the
+per-scope blocks are gone. The acceptance criterion becomes "at most two
+listing calls per load, none for any other project".
+
+*Alternatives beaten:* a `shadows` field on `GET /v1/workflows`, which changes
+the API, MCP and §13.2 against this task's daemon-unchanged model; one call
+with no shadow note, which is the "hides shadowing" option decision 7 already
+rejected.
+
+### 40. An overridden global or builtin entry stays listed, dimmed (2026-10-05)
+
+Settled with the author while delivering 132.12. It is marked "shadowed here
+by `<project>`" beside the project entry marked "shadows global X" (or
+"shadows builtin X"), and the overridden global file can still be opened and
+edited from the view, under the "affects every project" warning every global
+row carries.
+
+*Alternative beaten:* showing only the winning entry, which makes the global
+file unreachable from any project that overrides it.
+
+### 41. The unassigned trigger band shows in every project's triggers view (2026-10-05)
+
+Settled with the author while delivering 132.12: option (a) of #706's open
+question, and what decision 8's "stays repairable from the TUI" already
+implies. Cross-project content leaks only for files whose project cannot be
+read, and that leak is accepted.
+
+*Amended 2026-10-05 (review of the 526–530 train, F2–F4):* `GET
+/v1/triggers` now carries the project an invalid file still names, so only a
+file with no readable project lands in the band. A trigger whose project was
+removed — valid, and possibly still enabled — joins the band too, rather
+than vanishing from every view, and its form keeps the project picker so it
+can be reassigned.
+
+*Alternative beaten:* showing them only in the overview (132.15), which leaves
+no repair path in the triggers view.
+
+### 42. Enter on an overview row selects and returns to the last scoped view (2026-10-05)
+
+Taken with the author while delivering 132.15. Enter on a project row of the
+overview selects that project and returns to the last project-scoped view
+that was active, or to the board when there is none. The root keeps no view
+history otherwise, so it gains one field — the last `projectScoped` view,
+recorded in `switchTo` as that view is left. Enter on a "needs you" row
+selects the task's project and opens the task, also through
+`selectProject`, with `esc` back to the overview. A view showing one record —
+a task, a chat, an issue — belongs to the project it was opened in, so after
+a switch it gives way to its own list (board, chats board, issues list)
+rather than show another project's record under the new selection.
+
+*Alternatives beaten:* always the board (E2); select and stay on the
+overview (E3).
+
+### 43. The overview keeps a detail surface on wide terminals (2026-10-05)
+
+Taken with the author while delivering 132.15. The table and the "needs you,
+across projects" list are the view; on a wide terminal the highlighted
+project's repository and execution defaults still show beside them, and the
+add/edit form still takes the focused surface as it did. On a narrow terminal
+the detail pane is shed first, then columns. This departs from task 020
+decision 1's rail-plus-focus shape (already listed as superseded below) while
+keeping the at-a-glance configuration it gave. The old focus pane's
+client-filtered "Current workload" is dropped: the row's own figures and the
+attention list replace it.
+
+*Alternative beaten:* the table and the attention list only, which hides the
+defaults behind the edit form.
+
+### 44. Open pull-request counts are a follow-up (2026-10-05)
+
+Taken with the author while delivering 132.15. The overview's GitHub cell
+shows only the root's existing per-project §13.2 probe — `✓ owner/repo`, the
+probe's reason, or `—`. Lazily loaded `ListGitHubPulls(state=open)` counts
+are filed as a new issue after 132.15 lands.
+
+### 45. Spend is deferred (2026-10-05)
+
+Taken with the author while delivering 132.15. The overview has no spend
+column. It is revisited only when asked, after timing the `step_runs` ×
+`tasks` scan on a store of at least 100k step runs; chat cost stays apart by
+spec decision row 29.
+
 ## Supersedes
 
 Every binding record this work overturns, departs from, refines or keeps, by
@@ -510,32 +692,36 @@ its own pull request.
   `{project, seq}` load stamp, the client-side event filter, the chats
   board's refetch debounce, spec §15 (decisions 25–28). Depends: 132.2.
   ✓ 2026-10-05
-- [ ] **132.6** ([#700](https://github.com/lezli01/vincent/issues/700)) The
+- [x] **132.6** ([#700](https://github.com/lezli01/vincent/issues/700)) The
   view is kept across a switch; detail views fall back to their list; forms
-  re-target or ask; an open follows the object's project. Depends: 132.2.
+  re-target or ask; an open follows the object's project; spec §15
+  (decisions 36–38). Depends: 132.2. ✓ 2026-10-05
 - [ ] **132.7** ([#701](https://github.com/lezli01/vincent/issues/701)) Zero
   projects, a deleted or renamed selection, reloads on reconnect, the first
   project added. Depends: 132.3, 132.5.
-- [ ] **132.8** ([#702](https://github.com/lezli01/vincent/issues/702)) The
+- [x] **132.8** ([#702](https://github.com/lezli01/vincent/issues/702)) The
   board filtered in memory; the archived tasks board filtered on the server;
-  per-project fold pruning. Depends: 132.5.
+  per-project fold pruning; no PROJECT column; the `/` filter without the
+  project name (decisions 34, 35). Depends: 132.5. ✓ 2026-10-05
 - [ ] **132.9** ([#703](https://github.com/lezli01/vincent/issues/703)) The
   `project` level of `tui.board.group_by` deprecated, the default `[workflow]`.
   Depends: 132.8.
-- [ ] **132.10** ([#704](https://github.com/lezli01/vincent/issues/704)) The
+- [x] **132.10** ([#704](https://github.com/lezli01/vincent/issues/704)) The
   chats and archived chats boards, flat and scoped. Depends: 132.5.
+  ✓ 2026-10-05
 - [ ] **132.11** ([#705](https://github.com/lezli01/vincent/issues/705)) The
   issues list and the pull-requests takeover scoped. Depends: 132.5.
-- [ ] **132.12** ([#706](https://github.com/lezli01/vincent/issues/706))
+- [x] **132.12** ([#706](https://github.com/lezli01/vincent/issues/706))
   Resolved workflows; triggers filtered client-side, with the "unassigned"
-  band. Depends: 132.5.
+  band; spec §15 views 5 and 11 (decisions 7, 8, 39–41). Depends: 132.5.
+  ✓ 2026-10-05
 - [ ] **132.13** ([#707](https://github.com/lezli01/vincent/issues/707))
   Locked project fields on forms; `projectHinting` removed. Depends: 132.2.
 - [ ] **132.14** ([#708](https://github.com/lezli01/vincent/issues/708)) The
   chrome badge, the global bell, the project-crossing `!`, the per-project
   board header. Depends: 132.6, 132.8.
-- [ ] **132.15** ([#709](https://github.com/lezli01/vincent/issues/709)) The
-  overview replaces view 4 (Projects). Depends: 132.4.
+- [x] **132.15** ([#709](https://github.com/lezli01/vincent/issues/709)) The
+  overview replaces view 4 (Projects). Depends: 132.4. Decisions 42–45.
 - [ ] **132.16** ([#710](https://github.com/lezli01/vincent/issues/710))
   Project-aware `scripts/screenshots.sh` and a full recapture. Depends:
   132.2–132.15, 132.18; #692 (merged, so already met).

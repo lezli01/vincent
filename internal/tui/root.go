@@ -120,6 +120,11 @@ type root struct {
 	// selectedTask is the task the board last opened; PR J's detail view
 	// reads it from the same message that sets it.
 	selectedTask int64
+	// lastScoped is the last projectScoped view that was active, recorded by
+	// switchTo as it is left: where enter on a project overview row returns
+	// to (task 132 decision 42). Zero is the board, the answer with no
+	// history.
+	lastScoped viewID
 
 	// github is the §13.2 capability probe per registered project, refreshed
 	// as the connection comes up and again on reconnect. It lives here rather
@@ -149,6 +154,10 @@ type root struct {
 	// after a newer one is dropped rather than rolling the list back.
 	projects    []apiclient.Project
 	projectsSeq int
+	// pending is a project switch held on the active view's draft (task 132
+	// decision 36): drawn as the status line's y/n question, and applied or
+	// dropped — with any open waiting on it — by the answer.
+	pending *pendingSwitch
 
 	// links is the session's `tui.hyperlinks` (task 111). The root fills it
 	// because the config arrives in three messages bound for three different
@@ -217,54 +226,16 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.broadcast(msg)
 	case tea.KeyPressMsg:
 		return m.updateKey(msg)
-	case selectTaskMsg:
-		// The board keeps the row selected while the dedicated task workspace
-		// loads the authoritative detail snapshot.
-		m.selectedTask = msg.id
-		return m, tea.Batch(
-			m.deliver(viewHome, msg),
-			m.deliver(viewTask, msg),
-			m.switchTo(viewTask),
-		)
-	case openTaskMsg:
-		// A jump made inside the task workspace (#316): the lane or parent
-		// opens by exactly the path every other task opens by, with the task
-		// it was reached from pushed onto the workspace's back stack first.
-		// Pushing here rather than inside the message is what keeps
-		// selectTaskMsg — the board's, and shared with the palette and the
-		// pull-request takeover — unchanged.
-		if v, ok := m.views[viewTask].(*taskView); ok {
-			v.pushTask(msg.from)
-			if msg.failure {
-				v.pendingFailure = msg.id
-			}
-		}
-		m.selectedTask = msg.id
-		open := selectTaskMsg{id: msg.id, state: msg.state}
-		return m, tea.Batch(
-			m.deliver(viewHome, open),
-			m.deliver(viewTask, open),
-			m.switchTo(viewTask),
-		)
+	case selectTaskMsg, openTaskMsg, openIssueMsg, openChatMsg, taskCreatedMsg:
+		// Every open follows its object into its project first (task 132.6):
+		// openObject switches when it must, then routes.
+		return m, m.openObject(msg)
+	case followFetchedMsg:
+		return m, m.updateFollowFetched(msg)
 	case selectViewMsg:
 		return m, m.switchTo(msg.id)
-	case openIssueMsg:
-		// The detail is pointed at the issue before it becomes active, for
-		// openChatMsg's reason: an inactive view receives nothing.
-		if v, ok := m.views[viewIssue].(*issueView); ok {
-			v.back = msg.back
-			return m, tea.Batch(v.open(msg.id), m.switchTo(viewIssue))
-		}
-		return m, nil
-	case openChatMsg:
-		// The chat workspace is not the active view yet, and an inactive
-		// view receives nothing — so the root points it at the chat first
-		// and switches second, the same order every takeover that carries an
-		// argument uses.
-		if v, ok := m.views[viewChat].(*chatView); ok {
-			return m, tea.Batch(v.open(msg.id), m.switchTo(viewChat))
-		}
-		return m, nil
+	case overviewPickMsg:
+		return m, m.openFromOverview(msg)
 	case taskChatOpenedMsg:
 		// `T` landing (task 119). The bars that said "opening a chat…" hear
 		// the outcome either way, and each refetches its task — the lock is
@@ -305,8 +276,6 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateNewTaskFromIssue(msg)
 	case newTaskFromChatMsg:
 		return m.updateNewTaskFromChat(msg)
-	case taskCreatedMsg:
-		return m.updateTaskCreated(msg)
 	case connectedMsg:
 		return m.updateConnected(msg)
 	case projectListMsg:
@@ -385,7 +354,7 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // field to receive it is dropped rather than treated as keystrokes: replaying
 // a pasted path as single keys on the board would fire its action letters.
 func (m *root) updatePaste(text string) tea.Cmd {
-	if text == "" || m.notice.active || m.help {
+	if text == "" || m.notice.active || m.help || m.pending != nil {
 		return nil
 	}
 	if m.reader != nil {
@@ -441,6 +410,11 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// pressed; the key itself still does what it does.
 	m.keysNotice = ""
 	m.selNotice = ""
+	// A switch waiting on its draft confirmation owns every key but ctrl+c
+	// (task 132 decision 36): it is the question on screen.
+	if m.pending != nil && msg.String() != "ctrl+c" {
+		return m, m.updatePendingSwitchKey(msg)
+	}
 	// The help overlay owns every key but ctrl+c, the palette's rule (task
 	// 114 decision 2). It sits above the input-capture gate: over a chat, a
 	// key that fell through would type into a draft the sheet is hiding, and
@@ -708,7 +682,7 @@ func (m *root) updateLinksKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // popupOpen reports whether one of the root's own popups is up. Each owns the
 // keyboard while it is, so at most one ever is.
 func (m *root) popupOpen() bool {
-	return m.palette != nil || m.reader != nil || m.linkPick != nil || m.projPick != nil
+	return m.palette != nil || m.reader != nil || m.linkPick != nil || m.projPick != nil || m.pending != nil
 }
 
 // openProjectPicker raises the project picker over whatever is on screen,
@@ -998,20 +972,245 @@ func (m *root) updateNewTaskFromChat(msg newTaskFromChatMsg) (tea.Model, tea.Cmd
 	return m, tea.Batch(cmd, m.switchTo(viewNewTask))
 }
 
-// updateTaskCreated lands on the task that was just created. Creating a task
-// is the beginning of watching it, and the 201's warnings ride along so an
-// advisory finding is not lost on a board row.
-func (m *root) updateTaskCreated(msg taskCreatedMsg) (tea.Model, tea.Cmd) {
-	m.selectedTask = msg.task.ID
-	selectMsg := selectTaskMsg{id: msg.task.ID, state: msg.task.State}
-	cmds := []tea.Cmd{
-		m.deliver(viewHome, selectMsg),
-		m.deliver(viewHome, msg),
-		m.deliver(viewTask, selectMsg),
-		m.deliver(viewTask, msg),
-		m.switchTo(viewTask),
+// routeOpen performs one open once its project is settled: openObject and a
+// confirmed pending switch both end here.
+func (m *root) routeOpen(open tea.Msg) tea.Cmd {
+	switch msg := open.(type) {
+	case selectTaskMsg:
+		// The board keeps the row selected while the dedicated task workspace
+		// loads the authoritative detail snapshot.
+		m.selectedTask = msg.id
+		return tea.Batch(
+			m.deliver(viewHome, msg),
+			m.deliver(viewTask, msg),
+			m.switchTo(viewTask),
+		)
+	case openTaskMsg:
+		// A jump made inside the task workspace (#316): the lane or parent
+		// opens by exactly the path every other task opens by, with the task
+		// it was reached from pushed onto the workspace's back stack first.
+		// Pushing here rather than inside the message is what keeps
+		// selectTaskMsg — the board's, and shared with the palette and the
+		// pull-request takeover — unchanged. A jump that followed its task
+		// into another project arrives with from cleared: a switch empties
+		// the stack (task 132.6).
+		if v, ok := m.views[viewTask].(*taskView); ok {
+			v.pushTask(msg.from)
+			if msg.failure {
+				v.pendingFailure = msg.id
+			}
+		}
+		m.selectedTask = msg.id
+		sel := selectTaskMsg{id: msg.id, state: msg.state, projectID: msg.projectID}
+		return tea.Batch(
+			m.deliver(viewHome, sel),
+			m.deliver(viewTask, sel),
+			m.switchTo(viewTask),
+		)
+	case openIssueMsg:
+		// The detail is pointed at the issue before it becomes active, for
+		// openChatMsg's reason: an inactive view receives nothing.
+		if v, ok := m.views[viewIssue].(*issueView); ok {
+			v.back = msg.back
+			return tea.Batch(v.open(msg.id), m.switchTo(viewIssue))
+		}
+	case openChatMsg:
+		// The chat workspace is not the active view yet, and an inactive
+		// view receives nothing — so the root points it at the chat first
+		// and switches second, the same order every takeover that carries an
+		// argument uses.
+		if v, ok := m.views[viewChat].(*chatView); ok {
+			return tea.Batch(v.open(msg.id), m.switchTo(viewChat))
+		}
+	case taskCreatedMsg:
+		// Landing on the task that was just created: creating a task is the
+		// beginning of watching it, and the 201's warnings ride along so an
+		// advisory finding is not lost on a board row.
+		m.selectedTask = msg.task.ID
+		sel := selectTaskMsg{id: msg.task.ID, state: msg.task.State, projectID: msg.task.ProjectID}
+		return tea.Batch(
+			m.deliver(viewHome, sel),
+			m.deliver(viewHome, msg),
+			m.deliver(viewTask, sel),
+			m.deliver(viewTask, msg),
+			m.switchTo(viewTask),
+		)
 	}
-	return m, tea.Batch(cmds...)
+	return nil
+}
+
+// openProjectID is the project an open says its object belongs to.
+func openProjectID(open tea.Msg) int64 {
+	switch msg := open.(type) {
+	case selectTaskMsg:
+		return msg.projectID
+	case openTaskMsg:
+		return msg.projectID
+	case openIssueMsg:
+		return msg.projectID
+	case openChatMsg:
+		return msg.projectID
+	case taskCreatedMsg:
+		return msg.task.ProjectID
+	}
+	return 0
+}
+
+// withProjectID is open with its project filled in, as a fetch learned it.
+func withProjectID(open tea.Msg, id int64) tea.Msg {
+	switch msg := open.(type) {
+	case selectTaskMsg:
+		msg.projectID = id
+		return msg
+	case openTaskMsg:
+		msg.projectID = id
+		return msg
+	case openIssueMsg:
+		msg.projectID = id
+		return msg
+	case openChatMsg:
+		msg.projectID = id
+		return msg
+	}
+	return open
+}
+
+// openObject follows an open's object into its project (task 132.6,
+// decision 38): an object of another known project switches the selection
+// first, by selectProject's rules, and routes second, so a detail never
+// draws under the wrong header. An open that does not say, or names a
+// project the cached list does not hold, has its object fetched first.
+func (m *root) openObject(open tea.Msg) tea.Cmd {
+	id := openProjectID(open)
+	if id != 0 && id == m.sel.id {
+		return m.routeOpen(open)
+	}
+	if p, ok := m.knownProject(id); ok {
+		return m.followTo(p, open)
+	}
+	if m.client == nil {
+		// Nothing to ask: the open is routed as it stands.
+		return m.routeOpen(open)
+	}
+	return fetchOpenProject(m.client, open)
+}
+
+// knownProject finds id in the cached project list.
+func (m *root) knownProject(id int64) (apiclient.Project, bool) {
+	if id == 0 {
+		return apiclient.Project{}, false
+	}
+	for _, p := range m.projects {
+		if p.ID == id {
+			return p, true
+		}
+	}
+	return apiclient.Project{}, false
+}
+
+// followFetchedMsg answers fetchOpenProject: the open, and the project its
+// object turned out to belong to.
+type followFetchedMsg struct {
+	open      tea.Msg
+	projectID int64
+	err       error
+}
+
+// fetchOpenProject GETs an open's object to learn its project.
+func fetchOpenProject(client *apiclient.Client, open tea.Msg) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
+		defer cancel()
+		var id int64
+		var err error
+		switch msg := open.(type) {
+		case selectTaskMsg:
+			var t apiclient.TaskDetail
+			t, err = client.GetTask(ctx, msg.id)
+			id = t.ProjectID
+		case openTaskMsg:
+			var t apiclient.TaskDetail
+			t, err = client.GetTask(ctx, msg.id)
+			id = t.ProjectID
+		case openChatMsg:
+			var c *apiclient.Chat
+			c, _, err = client.GetChat(ctx, msg.id)
+			if c != nil {
+				id = c.ProjectID
+			}
+		case openIssueMsg:
+			var iss apiclient.Issue
+			iss, err = client.GetIssue(ctx, msg.id, "")
+			id = iss.ProjectID
+		}
+		return followFetchedMsg{open: open, projectID: id, err: err}
+	}
+}
+
+// updateFollowFetched resumes an open once its object's project is known. A
+// fetch that failed, or a project still unknown, routes the open as it
+// stands: the detail then shows whatever error its own load meets.
+func (m *root) updateFollowFetched(msg followFetchedMsg) tea.Cmd {
+	if msg.err != nil || msg.projectID == 0 || msg.projectID == m.sel.id {
+		return m.routeOpen(msg.open)
+	}
+	p, ok := m.knownProject(msg.projectID)
+	if !ok {
+		return m.routeOpen(msg.open)
+	}
+	return m.followTo(p, withProjectID(msg.open, msg.projectID))
+}
+
+// followTo switches to p and then routes open, unless the active view holds
+// a draft: then the switch waits on the confirmation, and the open with it.
+// A created task is never guarded: its draft is the one just sent, so there
+// is nothing left to discard, and asking would strand the form on
+// "creating…" with the task already made (review F1).
+func (m *root) followTo(p apiclient.Project, open tea.Msg) tea.Cmd {
+	_, created := open.(taskCreatedMsg)
+	if draft, dirty := m.activeDraft(); dirty && !created && m.sel.id != 0 {
+		m.pending = &pendingSwitch{project: p, why: whyFollowed, draft: draft, open: open}
+		return nil
+	}
+	return m.applyFollow(p, open)
+}
+
+// applyFollow is a follow's switch, its open and its notice. A workspace
+// jump loses the task it came from: the stack is the old project's.
+func (m *root) applyFollow(p apiclient.Project, open tea.Msg) tea.Cmd {
+	if o, ok := open.(openTaskMsg); ok {
+		o.from = 0
+		open = o
+	}
+	cmd := m.applySwitch(p, whyFollowed)
+	m.selNotice, m.selNoticeWarn = followedNotice(p.Name), false
+	return tea.Batch(cmd, m.routeOpen(open))
+}
+
+// updatePendingSwitchKey answers the draft confirmation: y discards the draft
+// and applies the switch (and the open waiting on it), n or esc keeps both
+// the draft and the selection, and every other key is swallowed.
+func (m *root) updatePendingSwitchKey(msg tea.KeyPressMsg) tea.Cmd {
+	p := m.pending
+	switch msg.String() {
+	case "y":
+		m.pending = nil
+		if p.open != nil {
+			return m.applyFollow(p.project, p.open)
+		}
+		return m.applySwitch(p.project, p.why)
+	case "n", "esc":
+		m.pending = nil
+	}
+	return nil
+}
+
+// activeDraft is the active view's switchGuard answer.
+func (m *root) activeDraft() (string, bool) {
+	if g, ok := m.views[m.active].(switchGuard); ok {
+		return g.switchDraft()
+	}
+	return "", false
 }
 
 // restartConnect tears down any live stream and reruns the full connect
@@ -1089,6 +1288,11 @@ func (m *root) updateProjectList(msg projectListMsg) tea.Cmd {
 		return nil
 	}
 	m.projects = msg.projects
+	for i := range m.views {
+		if pa, ok := m.views[i].(projectListAware); ok {
+			pa.setProjects(m.projects)
+		}
+	}
 	if !m.startup.done {
 		m.startup.listed = true
 		return m.maybeResolveStartup()
@@ -1116,10 +1320,51 @@ func (m *root) updateProjectList(msg projectListMsg) tea.Cmd {
 // records it as the last used project (task 132 decision 31) — the one place
 // the selection changes, so every change is persisted, the startup chain's
 // own pick included. why is the rule that chose it.
+//
+// A switch to another project keeps the active view (task 132.6): a view
+// holding a draft first asks, through the pending switch, and nothing changes
+// until the answer is y.
 func (m *root) selectProject(p apiclient.Project, why string) tea.Cmd {
+	if m.sel.id != 0 && p.ID != m.sel.id {
+		if draft, dirty := m.activeDraft(); dirty {
+			m.pending = &pendingSwitch{project: p, why: why, draft: draft}
+			return nil
+		}
+	}
+	return m.applySwitch(p, why)
+}
+
+// applySwitch is selectProject past its guard.
+func (m *root) applySwitch(p apiclient.Project, why string) tea.Cmd {
+	// Coming from no selection at all is not a switch away from anything:
+	// nothing on screen belongs to another project, so the view is left be.
+	switched := m.sel.id != 0 && p.ID != m.sel.id
 	m.sel = projectSel{id: p.ID, name: p.Name}
 	m.selWhy = why
-	return tea.Batch(append(m.scopeCmds(), m.saveSelection())...)
+	cmds := append(m.scopeCmds(), m.saveSelection())
+	if switched {
+		cmds = append(cmds, m.keepViewAcrossSwitch())
+	}
+	return tea.Batch(cmds...)
+}
+
+// keepViewAcrossSwitch applies a switch to the active view (task 132.6, spec
+// §15): a detail screen falls back to its list, a form is re-aimed at the new
+// selection, and every other view stays — the lists have re-scoped through
+// setProject already, and the daemon view and the projects overview are not
+// project-bearing.
+func (m *root) keepViewAcrossSwitch() tea.Cmd {
+	v := m.views[m.active]
+	if to, ok := switchFallback[m.active]; ok {
+		if l, ok := v.(switchLeaving); ok {
+			l.leaveForSwitch()
+		}
+		return m.switchTo(to)
+	}
+	if r, ok := v.(switchRetargeting); ok {
+		return r.retarget(m.sel)
+	}
+	return nil
 }
 
 // scopeViews hands the selection to every projectScoped view, directly and
@@ -1204,10 +1449,42 @@ func (m *root) switchTo(id viewID) tea.Cmd {
 	}
 	prev := m.active
 	m.active = id
+	if _, ok := m.views[prev].(projectScoped); ok {
+		m.lastScoped = prev
+	}
 	return tea.Batch(
 		m.deliver(prev, viewDeactivatedMsg{id: prev}),
 		m.deliver(id, viewActivatedMsg{id: id}),
 	)
+}
+
+// openFromOverview is enter on the project overview (task 132 decision 42).
+// A project row selects the project and returns to the last project-scoped
+// view; a "needs you" row selects the task's project and opens the task, with
+// esc coming back to the overview. Both select through selectProject, the
+// one path every switch takes.
+func (m *root) openFromOverview(msg overviewPickMsg) tea.Cmd {
+	same := msg.project.ID == m.sel.id && msg.project.Name == m.sel.name
+	if msg.task != nil {
+		var sel tea.Cmd
+		if !same {
+			sel = m.selectProject(msg.project, "picked in the project overview")
+		}
+		open := selectTaskMsg{
+			id: msg.task.ID, state: msg.task.State, back: viewProjects,
+			projectID: msg.task.ProjectID,
+		}
+		return tea.Batch(sel, func() tea.Msg { return open })
+	}
+	// The return view is made active before the switch, so the switch
+	// applies task 132.6's rules to it rather than to the overview: a record
+	// gives way to its list, a form is re-aimed, and a draft asks first
+	// (decisions 36 and 37).
+	back := m.switchTo(m.lastScoped)
+	if same {
+		return back
+	}
+	return tea.Batch(back, m.selectProject(msg.project, "picked in the project overview"))
 }
 
 // applyOutputLevel adopts `tui.output.level` from whichever config answer
@@ -1304,11 +1581,15 @@ func (m *root) noticeKeys(warnings []string) {
 }
 
 // statusLine is the line under the header, when there is one: the full-auto
-// notice's failed acknowledgment, else the one-time keymap notice, else the
-// startup-project notice.
+// notice's failed acknowledgment, else a pending switch's confirmation, else
+// the one-time keymap notice, else the startup-project notice — which a
+// follow's `switched to` line reuses.
 func (m *root) statusLine() (string, bool) {
 	if line, ok := m.notice.statusLine(); ok {
 		return line, true
+	}
+	if m.pending != nil {
+		return styleWarn.Render(" " + m.pending.prompt()), true
 	}
 	if m.keysNotice != "" {
 		return styleWarn.Render(m.keysNotice), true
@@ -1642,10 +1923,10 @@ func (m *root) footerLine() string {
 	var (
 		bar       *actionBar
 		target    taskActions
-		attention int
+		attention attentionTally
 	)
 	if s, ok := m.views[viewHome].(*shell); ok {
-		attention = countAttention(s.board.tasks)
+		attention = s.board.attentionTally()
 	}
 	if s, ok := m.views[m.active].(*shell); ok {
 		bar = s.bar

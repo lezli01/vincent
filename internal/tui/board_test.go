@@ -15,12 +15,26 @@ import (
 
 var testNow = time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
 
+// testProjectID is the project every fixture task is in and every fixture
+// board has selected: the board shows the selected project only (task
+// 132.8), so a fixture that selected nothing would show nothing. inProject
+// renames a task's project without moving it, which keeps the grouping and
+// folding tests' two-name boards on screen — they exercise the project
+// level's mechanics, which `group_by` still offers.
+const testProjectID = 1
+
+// selectTestProject selects the fixture project on b.
+func selectTestProject(b *board) *board {
+	b.project = projectSel{id: testProjectID, name: "proj"}
+	return b
+}
+
 // testBoard is the flat table: sorting, filtering, columns and selection are
 // the same questions grouped or not, and answering them without group headers
 // in the way keeps the row index equal to the task index. Grouping has its
 // own fixture and its own file (boardgroup_test.go).
 func testBoard() *board {
-	b := newBoard()
+	b := selectTestProject(newBoard())
 	b.now = func() time.Time { return testNow }
 	b.bell = func() {}
 	b.loaded = true
@@ -31,7 +45,7 @@ func testBoard() *board {
 func task(id int64, state string, opts ...func(*apiclient.Task)) apiclient.Task {
 	t := apiclient.Task{
 		ID: id, State: state, Title: "task " + state,
-		ProjectName: "proj", StepTotal: 3, StepName: "build",
+		ProjectID: testProjectID, ProjectName: "proj", StepTotal: 3, StepName: "build",
 		CreatedAt: testNow, UpdatedAt: testNow,
 	}
 	for _, o := range opts {
@@ -150,7 +164,8 @@ func TestFilterTasks(t *testing.T) {
 	}{
 		{"", []int64{1, 2, 42}},
 		{"board", []int64{1}},
-		{"VINCENT", []int64{1, 42}}, // case-insensitive
+		{"BOARD", []int64{1}},       // case-insensitive
+		{"vincent", []int64{}},      // not the project name (task 132.8)
 		{"done", []int64{2}},        // matches state
 		{"42", []int64{42}},         // matches id
 		{"  board  ", []int64{1}},   // trimmed
@@ -166,29 +181,29 @@ func TestFilterTasks(t *testing.T) {
 
 // TestColumnsDropByPriority pins the degradation order on a board with no
 // status message and no pull request link: cost, then the step name, then the
-// workflow, then the project. TestPRIsShedFirst and TestStatusKeptAt120Grouped
-// hold the two content columns' places in it (task 129.16).
+// workflow. TestPRIsShedFirst and TestStatusKeptAt120Grouped hold the two
+// content columns' places in it (task 129.16). There is no project step: the
+// board shows one project and has no PROJECT column (task 132.8).
 //
 // The workflow outranks the step name deliberately. "survey" tells a reader
 // nothing on its own — it needs the workflow it belongs to — while the
 // workflow alone still says what a task is doing.
 func TestColumnsDropByPriority(t *testing.T) {
 	for _, tc := range []struct {
-		width                             int
-		project, workflow, stepName, cost bool
+		width                    int
+		workflow, stepName, cost bool
 	}{
-		{220, true, true, true, true},
-		{160, true, true, true, true},
-		{115, true, true, true, false},   // cost goes first
-		{100, true, true, false, false},  // then the step name
-		{85, true, false, false, false},  // then the workflow
-		{70, false, false, false, false}, // then the project
+		{220, true, true, true},
+		{160, true, true, true},
+		{100, true, true, false},  // cost goes first
+		{85, true, false, false},  // then the step name
+		{70, false, false, false}, // then the workflow
 	} {
 		got := columnsFor(tc.width, nil, false, boardContent{cost: true})
-		if got.project != tc.project || got.workflow != tc.workflow ||
+		if got.workflow != tc.workflow ||
 			got.stepName != tc.stepName || got.cost != tc.cost {
-			t.Errorf("width %d = %+v, want project=%v workflow=%v stepName=%v cost=%v",
-				tc.width, got, tc.project, tc.workflow, tc.stepName, tc.cost)
+			t.Errorf("width %d = %+v, want workflow=%v stepName=%v cost=%v",
+				tc.width, got, tc.workflow, tc.stepName, tc.cost)
 		}
 	}
 }

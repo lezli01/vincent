@@ -56,6 +56,7 @@ func newChatLiveRoot(t *testing.T) *root {
 		"alpha": testrepo.Init(t, "trunk"),
 		"beta":  testrepo.Init(t, "main"),
 	}
+	var alpha apiclient.Project
 	for _, name := range []string{"alpha", "beta"} {
 		p := &store.Project{
 			Name: name, Path: repos[name],
@@ -63,6 +64,9 @@ func newChatLiveRoot(t *testing.T) *root {
 		}
 		if err := st.CreateProject(ctx, p); err != nil {
 			t.Fatalf("CreateProject(%s): %v", name, err)
+		}
+		if name == "alpha" {
+			alpha = apiclient.Project{ID: p.ID, Name: p.Name}
 		}
 	}
 
@@ -122,6 +126,10 @@ func newChatLiveRoot(t *testing.T) *root {
 		t.Fatalf("probe = %T, want connectedMsg", msg)
 	}
 	m.Update(msg)
+	// The chats board is scoped (task 132.10): `n` needs a selection, which
+	// the startup chain would make from the project listing this fixture
+	// never runs.
+	m.selectProject(alpha, whyFirstName)
 	m.switchTo(viewChats)
 	if m.active != viewChats {
 		t.Fatalf("the fixture is on %v, want the chats board", m.active)

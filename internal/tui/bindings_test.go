@@ -529,14 +529,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			s := foldingShell(t)
 			s.update(registryKey(t, "left"))
 			s.render(120, 37)
-			if !s.board.folds.has(foldPath{"api", "build"}) {
-				t.Fatalf("left did not collapse the cursor's group (folds %v)", s.board.folds)
+			if !s.board.folds().has(foldPath{"api", "build"}) {
+				t.Fatalf("left did not collapse the cursor's group (folds %v)", s.board.folds())
 			}
 			// Again, on the header it just closed: ← walks outwards.
 			s.update(registryKey(t, "left"))
 			s.render(120, 37)
-			if !s.board.folds.has(foldPath{"api"}) {
-				t.Fatalf("a second left did not collapse the parent (folds %v)", s.board.folds)
+			if !s.board.folds().has(foldPath{"api"}) {
+				t.Fatalf("a second left did not collapse the parent (folds %v)", s.board.folds())
 			}
 		},
 		"right": func(t *testing.T) {
@@ -545,8 +545,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			s.render(120, 37)
 			s.update(registryKey(t, "right"))
 			s.render(120, 37)
-			if s.board.folds.has(foldPath{"api", "build"}) {
-				t.Fatalf("right did not expand the group under the cursor (folds %v)", s.board.folds)
+			if s.board.folds().has(foldPath{"api", "build"}) {
+				t.Fatalf("right did not expand the group under the cursor (folds %v)", s.board.folds())
 			}
 		},
 		"C": func(t *testing.T) {
@@ -554,8 +554,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			s.update(registryKey(t, "C"))
 			s.render(120, 37)
 			for _, want := range []foldPath{{"api"}, {"api", "build"}} {
-				if !s.board.folds.has(want) {
-					t.Fatalf("C did not collapse %v (folds %v)", want, s.board.folds)
+				if !s.board.folds().has(want) {
+					t.Fatalf("C did not collapse %v (folds %v)", want, s.board.folds())
 				}
 			}
 		},
@@ -565,8 +565,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			s.render(120, 37)
 			s.update(registryKey(t, "O"))
 			s.render(120, 37)
-			if len(s.board.folds) != 0 {
-				t.Fatalf("O left folds behind: %v", s.board.folds)
+			if len(s.board.folds()) != 0 {
+				t.Fatalf("O left folds behind: %v", s.board.folds())
 			}
 		},
 	},
@@ -796,7 +796,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			for i := range full {
 				full[i] = testChat(int64(i+1), "archived", "c")
 			}
-			v.applyLoaded(chatsLoadedMsg{chats: full, names: map[int64]string{7: "repo"}})
+			v.applyLoaded(chatsLoadedMsg{chats: full})
 			v.updateKey(registryKey(t, ">"))
 			if v.page != 1 {
 				t.Fatal("> did not turn the page")
@@ -848,27 +848,6 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v.updateKey(registryKey(t, "/"))
 			if !v.filtering {
 				t.Fatal("/ did not open the chats filter")
-			}
-		},
-		"left": func(t *testing.T) {
-			v := chatsFixture()
-			v.cursor = 0
-			if _, cmd := v.updateKey(registryKey(t, "left")); cmd != nil {
-				drain(cmd)
-			}
-			if !v.folds.has(foldPath{"repo"}) {
-				t.Fatal("left did not collapse the project group")
-			}
-		},
-		"right": func(t *testing.T) {
-			v := chatsFixture()
-			v.folds = foldSet{foldPath{"repo"}}
-			v.cursor = 0
-			if _, cmd := v.updateKey(registryKey(t, "right")); cmd != nil {
-				drain(cmd)
-			}
-			if v.folds.has(foldPath{"repo"}) {
-				t.Fatal("right did not expand the project group")
 			}
 		},
 		"s": func(t *testing.T) {
@@ -1659,9 +1638,21 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"enter": func(t *testing.T) {
 			p := newProjectsView()
 			loadedProjects(p, []apiclient.Project{testProject(1, "api")}, nil)
-			p.updateKey(registryKey(t, "enter"))
-			if p.form == nil {
-				t.Fatal("enter did not open the selected project for editing")
+			_, cmd := p.updateKey(registryKey(t, "enter"))
+			if cmd == nil {
+				t.Fatal("enter did not pick the selected project")
+			}
+			if msg, ok := cmd().(overviewPickMsg); !ok || msg.project.ID != 1 {
+				t.Fatalf("enter = %+v, want project 1 picked", msg)
+			}
+		},
+		"tab": func(t *testing.T) {
+			p := newProjectsView()
+			loadedProjects(p, []apiclient.Project{testProject(1, "api")},
+				[]apiclient.Task{{ID: 9, ProjectID: 1, State: stateBlocked}})
+			p.updateKey(registryKey(t, "tab"))
+			if !p.inAttention {
+				t.Fatal("tab did not move into the needs-you list")
 			}
 		},
 		"D": func(t *testing.T) {
@@ -1697,7 +1688,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	ctxWorkflows: {
 		"enter": func(t *testing.T) {
 			w := newWorkflowsView()
-			loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+			loadedWorkflows(w, globalEntry("review"))
 			before := w.expanded
 			w.updateKey(registryKey(t, "enter"))
 			if w.expanded == before {
@@ -1706,7 +1697,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 		"e": func(t *testing.T) {
 			w := newWorkflowsView()
-			loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+			loadedWorkflows(w, globalEntry("review"))
 			if _, cmd := w.updateKey(registryKey(t, "e")); cmd == nil {
 				t.Fatal("e did not open the workflow file in $EDITOR")
 			}
@@ -1714,7 +1705,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"R": func(t *testing.T) {
 			w := newWorkflowsView()
 			w.client = offlineClient()
-			loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+			loadedWorkflows(w, globalEntry("review"))
 			w.err = "a stale note the reload should clear"
 			_, cmd := w.updateKey(registryKey(t, "R"))
 			if cmd == nil {
@@ -1727,7 +1718,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"g": func(t *testing.T) {
 			w := newWorkflowsView()
 			w.client = offlineClient()
-			loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+			loadedWorkflows(w, globalEntry("review"))
 			w.updateKey(registryKey(t, "g"))
 			if w.graph == nil {
 				t.Fatal("g did not open the graph layer")
@@ -1736,7 +1727,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"i": func(t *testing.T) {
 			w := newWorkflowsView()
 			w.client = offlineClient()
-			loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+			loadedWorkflows(w, globalEntry("review"))
 			w.updateKey(registryKey(t, "i"))
 			if w.editor == nil {
 				t.Fatal("i did not open the structured editor")
@@ -1745,7 +1736,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"a": func(t *testing.T) {
 			w := newWorkflowsView()
 			w.client = offlineClient()
-			loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+			loadedWorkflows(w, globalEntry("review"))
 			w.updateKey(registryKey(t, "a"))
 			if w.create == nil || w.create.fork {
 				t.Fatal("a did not open the create prompt")
@@ -1754,7 +1745,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"f": func(t *testing.T) {
 			w := newWorkflowsView()
 			w.client = offlineClient()
-			loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+			loadedWorkflows(w, globalEntry("review"))
 			w.updateKey(registryKey(t, "f"))
 			if w.create == nil || !w.create.fork {
 				t.Fatal("f did not open the fork prompt")

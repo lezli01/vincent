@@ -82,88 +82,25 @@ func countChatsAwaiting(chats []apiclient.Chat) int {
 	return n
 }
 
-// chatRow is one line of the chats board: a chat, or a group header.
+// chatRow is one line of the chats board: always a chat. The board is flat
+// (task 132.10): it lists the selected project's chats only, so a project
+// heading would be one heading over every row, and with it went the fold set
+// the headings carried — superseding task 067 decision 6's grouping.
 type chatRow struct {
 	chat *apiclient.Chat
-	// header names a project heading; collapsed marks it folded.
-	header    bool
-	label     string
-	count     int
-	collapsed bool
-	path      foldPath
 }
 
-func (r chatRow) selectable() bool { return !r.header || r.collapsed }
-
-// groupChatRows lays the board out: one heading per project, in the order the
-// projects were named, with their chats under it.
-//
-// The chats board groups by project and by nothing else: `tui.board.group_by`
-// also offers workflow scopes, and a chat has no workflow, so offering the
-// cycle here would offer a grouping that puts every row under one heading
-// called "—" (task 067).
-func groupChatRows(chats []apiclient.Chat, names map[int64]string, folds foldSet) []chatRow {
+// chatRows lays the board out: one row per chat, in the order sortChats left
+// them.
+func chatRows(chats []apiclient.Chat) []chatRow {
 	if len(chats) == 0 {
 		return nil
 	}
-	order := make([]int64, 0, len(chats))
-	byProject := map[int64][]apiclient.Chat{}
-	for _, c := range chats {
-		if _, seen := byProject[c.ProjectID]; !seen {
-			order = append(order, c.ProjectID)
-		}
-		byProject[c.ProjectID] = append(byProject[c.ProjectID], c)
-	}
-	rows := make([]chatRow, 0, len(chats)+len(order))
-	for _, pid := range order {
-		group := byProject[pid]
-		label := names[pid]
-		if label == "" {
-			label = "—"
-		}
-		path := foldPath{label}
-		collapsed := folds.has(path)
-		rows = append(rows, chatRow{
-			header: true, label: label, count: len(group),
-			collapsed: collapsed, path: path,
-		})
-		if collapsed {
-			continue
-		}
-		for i := range group {
-			rows = append(rows, chatRow{chat: &group[i], path: path})
-		}
+	rows := make([]chatRow, len(chats))
+	for i := range chats {
+		rows[i] = chatRow{chat: &chats[i]}
 	}
 	return rows
-}
-
-// pruneChatFolds drops fold paths that name no project on the board. An empty
-// list prunes nothing, for the reason foldSet.prune gives: a TUI whose daemon
-// went away holds no news about which projects exist.
-func pruneChatFolds(f foldSet, chats []apiclient.Chat, names map[int64]string) foldSet {
-	if len(f) == 0 || len(chats) == 0 {
-		return f
-	}
-	known := map[string]struct{}{}
-	for _, c := range chats {
-		label := names[c.ProjectID]
-		if label == "" {
-			label = "—"
-		}
-		known[label] = struct{}{}
-	}
-	out := make(foldSet, 0, len(f))
-	for _, p := range f {
-		if len(p) == 1 {
-			if _, ok := known[p[0]]; ok {
-				out = append(out, p)
-			}
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
 }
 
 // chatActivity is the "last activity" column: how long ago the chat's row was

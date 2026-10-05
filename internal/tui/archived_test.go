@@ -13,7 +13,7 @@ import (
 // about grouping, folding and filtering is a fence around that sharing rather
 // than a second copy of the live board's tests.
 func testArchivedBoard() *board {
-	b := newArchivedBoard()
+	b := selectTestProject(newArchivedBoard())
 	b.now = func() time.Time { return testNow }
 	b.bell = func() {}
 	b.loaded = true
@@ -205,7 +205,6 @@ func TestArchivedChatsBoardRefusesToAskAboutAHandedOffChat(t *testing.T) {
 	v.now = func() time.Time { return testNow }
 	v.applyLoaded(chatsLoadedMsg{
 		chats: []apiclient.Chat{testChat(1, "handed_off", "given away")},
-		names: map[int64]string{7: "repo"},
 	})
 	v.updateKey(registryKey(t, "D"))
 	if v.delPrompt != nil {
@@ -222,12 +221,12 @@ func archivedChatsFixture() *chatsView {
 	v := newArchivedChatsView()
 	v.now = func() time.Time { return testNow }
 	v.client = &apiclient.Client{}
+	v.project = projectSel{id: 7, name: "repo"}
 	v.applyLoaded(chatsLoadedMsg{
 		chats: []apiclient.Chat{
 			testChat(1, "archived", "first"),
 			testChat(2, "archived", "second"),
 		},
-		names: map[int64]string{7: "repo"},
 	})
 	return v
 }

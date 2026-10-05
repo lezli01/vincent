@@ -22,6 +22,9 @@ func (w *workflowsView) renderEditor(width, height int) string {
 		styleTitle.Render("  " + e.key.name),
 		"  " + styleDim.Render(e.scope+" · "+e.file),
 	}
+	if e.scope == "global" {
+		out = append(out, "  "+styleWarn.Render("global — editing it affects every project"))
+	}
 	if e.path != "" {
 		out = append(out, "  "+styleDim.Render("in "+e.path+" — esc goes back up"))
 	}
@@ -164,6 +167,9 @@ func (w *workflowsView) renderCreate(width, height int) string {
 	if f.fork {
 		out = append(out, "", styleDim.Render(
 			"  the copy keeps "+f.source+"'s own name:, which is what makes it shadow the original"))
+	}
+	if f.scopes[f.scope].scope == "global" {
+		out = append(out, "", "  "+styleWarn.Render("global — a workflow written here affects every project"))
 	}
 	if f.saving {
 		out = append(out, "", styleDim.Render("  writing…"))

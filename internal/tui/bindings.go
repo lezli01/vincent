@@ -354,7 +354,7 @@ var bindings = []binding{
 	// keeps a direct key; the rest live here, in the palette — retiring
 	// 1..6 without substituting new memorized keys is the point.
 	{op: keymap.New, key: "n", label: "new task — for the project you are looking at", scope: scopeGlobal, nav: true, navTarget: viewNewTask},
-	{label: "projects — list, add, edit, remove", scope: scopeGlobal, nav: true, navTarget: viewProjects},
+	{label: "project overview — every project's figures, what needs you, add, edit, remove", scope: scopeGlobal, nav: true, navTarget: viewProjects},
 	{label: "workflows — registry with scopes and validity", scope: scopeGlobal, nav: true, navTarget: viewWorkflows},
 	{label: "daemon — identity, config, adapters, log", scope: scopeGlobal, nav: true, navTarget: viewDaemon},
 	{label: "pull requests — what is open across every GitHub project", scope: scopeGlobal, nav: true, navTarget: viewPullRequests, github: true},
@@ -404,7 +404,7 @@ var bindings = []binding{
 	// Task table.
 	{key: "down", label: "move the selection (↑/↓ — the panels follow the cursor)", scope: scopePanel, context: ctxTasks, hint: "↑/↓ select", priority: 3},
 	{op: keymap.OpenRow, key: "enter", label: "open the selected task in its full-screen workspace", scope: scopePanel, context: ctxTasks, hint: "enter open", priority: 1, term: termOpenRow},
-	{op: keymap.Filter, key: "/", label: "filter by id, title, project or state", scope: scopePanel, context: ctxTasks, hint: "/ filter", priority: 2, term: termFilter},
+	{op: keymap.Filter, key: "/", label: "filter by id, title or state", scope: scopePanel, context: ctxTasks, hint: "/ filter", priority: 2, term: termFilter},
 	{key: "g", label: "group the tasks: project › workflow → project → workflow → flat (config.yaml sets the one you start on)", scope: scopePanel, context: ctxTasks, hint: "g group", priority: 4},
 	{key: "space", label: "select this task for a bulk action — the action keys then act on every selected task (space again deselects, esc clears)", scope: scopePanel, context: ctxTasks, hint: "space select", priority: 5},
 	{op: keymap.AttentionFilter, key: "H", label: "show only the tasks that need a human — awaiting input, awaiting approval, blocked, or a fan-out whose lane is (H again shows every task)", scope: scopePanel, context: ctxTasks, hint: "H needs you", priority: 6, term: termAttention},
@@ -550,7 +550,7 @@ var bindings = []binding{
 	// transition table, so an archived row offers no action at all.
 	{op: keymap.Scope, key: "s", label: "cycle the window: last 7 days → last 30 days → all time", scope: scopePanel, context: ctxArchived, hint: "s window", priority: 3, term: termScope},
 	{key: ">", label: "next page of the archive (< goes back)", scope: scopePanel, context: ctxArchived, hint: "</> page", priority: 4},
-	{op: keymap.Filter, key: "/", label: "filter by id, title, project or state", scope: scopePanel, context: ctxArchived, priority: 5, term: termFilter},
+	{op: keymap.Filter, key: "/", label: "filter by id, title or state", scope: scopePanel, context: ctxArchived, priority: 5, term: termFilter},
 	{key: "space", label: "select this task for the bulk delete (V selects every row the filter is showing)", scope: scopePanel, context: ctxArchived, priority: 6},
 
 	// Archived chats. The same three keys, on the same reasoning: a chat that
@@ -569,13 +569,11 @@ var bindings = []binding{
 	// board next door has spelled it `A` since §6 named the action.
 	{op: keymap.Archive, key: "A", label: "archive the chat (asks first — the worktree is removed)", scope: scopePanel, context: ctxChats, hint: "A archive", priority: 3, term: termArchive},
 	{op: keymap.Filter, key: "/", label: "filter by title, agent or branch", scope: scopePanel, context: ctxChats, hint: "/ filter", priority: 4, term: termFilter},
-	{key: "left", label: "collapse the project group", scope: scopePanel, context: ctxChats, hint: "← fold", priority: 5},
-	{key: "right", label: "expand the project group", scope: scopePanel, context: ctxChats, hint: "→ unfold", priority: 6},
 	// `s` is the pull-request board's key for the same idea (task 064
 	// decision 9): terminal chats are hidden by default (issue #298), and
 	// this is the way back to them.
-	{op: keymap.Scope, key: "s", label: "cycle the listing between live, ended (archived, handed-off or closed), and all", scope: scopePanel, context: ctxChats, hint: "s listing", priority: 7, term: termScope},
-	{op: keymap.Refresh, key: "R", label: "reload the board", scope: scopePanel, context: ctxChats, hint: "R reload", priority: 8, term: termRefresh},
+	{op: keymap.Scope, key: "s", label: "cycle the listing between live, ended (archived, handed-off or closed), and all", scope: scopePanel, context: ctxChats, hint: "s listing", priority: 5, term: termScope},
+	{op: keymap.Refresh, key: "R", label: "reload the board", scope: scopePanel, context: ctxChats, hint: "R reload", priority: 6, term: termRefresh},
 
 	// Chat workspace.
 	{key: "enter", label: "send the message", scope: scopePanel, context: ctxChat, hint: "enter send", priority: 1},
@@ -641,7 +639,7 @@ var bindings = []binding{
 	// The project picker (task 132.4): every printable key types into its
 	// filter, so its own keys are the four a filter does not type.
 	{key: "down", label: "move the highlight (↑/↓)", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
-	{key: "enter", label: "switch to the highlighted project", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
+	{key: "enter", label: "switch to the highlighted project — or, on the last row, open the project overview", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
 	{key: "esc", label: "close the picker without switching", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
 
 	// New chat.
@@ -654,13 +652,18 @@ var bindings = []binding{
 
 	// Projects.
 	{op: keymap.Add, key: "a", label: "register a repository", scope: scopePanel, context: ctxProjects, hint: "a add", priority: 1, term: termAdd},
-	{key: "enter", label: "edit the selected project (enter/e)", scope: scopePanel, context: ctxProjects, hint: "enter edit", priority: 2},
+	// Enter selects rather than edits (task 132 decision 42): the overview
+	// is how a project is reached as well as managed, so `e` alone edits.
+	// `e` keeps no row of its own: the vocabulary gives `e` to $EDITOR, so
+	// it is named here and recorded in keymap.fixed, as the daemon view's is.
+	{key: "enter", label: "select the highlighted project and go back to the view you came from — on a needs-you row, open that task (e edits the project)", scope: scopePanel, context: ctxProjects, hint: "enter select", priority: 2},
+	{key: "tab", label: "move between the project table and the needs-you list", scope: scopePanel, context: ctxProjects, hint: "tab needs you", priority: 3},
 	// `D` rather than `d` (task 093): this destroys a persisted record after a
 	// confirmation, which is what `D` means on both archived boards. `d` is
 	// left meaning "drop a row from an unsaved draft" and nothing else.
-	{op: keymap.Delete, key: "D", label: "remove the project (asks first; its task rows go with it)", scope: scopePanel, context: ctxProjects, hint: "D remove", priority: 3, term: termDelete},
-	{op: keymap.Filter, key: "/", label: "filter by name or path", scope: scopePanel, context: ctxProjects, hint: "/ filter", priority: 4, term: termFilter},
-	{key: "ctrl+s", label: "in the form: save", scope: scopePanel, context: ctxProjects, hint: "ctrl+s save", priority: 5},
+	{op: keymap.Delete, key: "D", label: "remove the project (asks first; its task rows go with it)", scope: scopePanel, context: ctxProjects, hint: "D remove", priority: 4, term: termDelete},
+	{op: keymap.Filter, key: "/", label: "filter by name or path", scope: scopePanel, context: ctxProjects, hint: "/ filter", priority: 5, term: termFilter},
+	{key: "ctrl+s", label: "in the form: save", scope: scopePanel, context: ctxProjects, hint: "ctrl+s save", priority: 6},
 
 	// Workflows.
 	{key: "enter", label: "show the entry's steps", scope: scopePanel, context: ctxWorkflows, hint: "enter steps", priority: 1},
@@ -901,7 +904,7 @@ var bindings = []binding{
 	{key: "tab", label: "move between the trigger list and its delivery ledger", scope: scopePanel, context: ctxTriggers, hint: "tab ledger", priority: 9},
 	{key: "B", label: "open triggers.enabled, the global switch, in the daemon view's editor", scope: scopePanel, context: ctxTriggers, priority: 10},
 	{op: keymap.Refresh, key: "R", label: "re-read the triggers and the ledger", scope: scopePanel, context: ctxTriggers, hint: "R refresh", priority: 11, term: termRefresh},
-	{op: keymap.Filter, key: "/", label: "filter by id, source, action or project", scope: scopePanel, context: ctxTriggers, priority: 12, term: termFilter},
+	{op: keymap.Filter, key: "/", label: "filter by id, source or action", scope: scopePanel, context: ctxTriggers, priority: 12, term: termFilter},
 
 	{key: "down", label: "move through the deliveries (↑/↓)", scope: scopePanel, context: ctxTriggerLedger, priority: 1},
 	{key: "enter", label: "open the task the delivery created or acted on", scope: scopePanel, context: ctxTriggerLedger, hint: "enter open task", priority: 2},

@@ -78,6 +78,8 @@ type (
 	openIssueMsg struct {
 		id   int64
 		back viewID
+		// projectID is the issue's project, for selectTaskMsg's reason.
+		projectID int64
 	}
 )
 
@@ -188,8 +190,8 @@ func (v *issuesView) update(msg tea.Msg) (panel, tea.Cmd) {
 		case msg.created:
 			// A new issue opens on its own screen, the way a new task opens
 			// its workspace.
-			id := msg.saved.ID
-			return v, func() tea.Msg { return openIssueMsg{id: id} }
+			id, pid := msg.saved.ID, msg.saved.ProjectID
+			return v, func() tea.Msg { return openIssueMsg{id: id, projectID: pid} }
 		}
 		v.setNote("saved issue #"+strconv.FormatInt(msg.saved.ID, 10), false)
 		return v, v.loadCmd()
@@ -365,8 +367,8 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		if !ok {
 			return v, nil
 		}
-		id := row.issue.ID
-		return v, func() tea.Msg { return openIssueMsg{id: id} }
+		id, pid := row.issue.ID, row.issue.ProjectID
+		return v, func() tea.Msg { return openIssueMsg{id: id, projectID: pid} }
 	case opKey(keymap.Browser):
 		return v, v.openSelected()
 	case opKey(keymap.New):

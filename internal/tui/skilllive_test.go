@@ -48,7 +48,7 @@ func (h *boardLiveHarness) openSkillRun(
 	if err := h.st.CreateStepRun(ctx, run); err != nil {
 		t.Fatalf("CreateStepRun: %v", err)
 	}
-	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})
+	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, projectID: task.ProjectID})
 	h.p.push(cmd)
 	_, cmd = h.m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	h.p.push(cmd)

@@ -178,7 +178,6 @@ func TestChatsBoardArmsTickOnlyWhileRunning(t *testing.T) {
 	v.now = func() time.Time { return time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC) }
 	_, cmd := v.update(chatsLoadedMsg{
 		chats: []apiclient.Chat{testChat(1, "running", "first")},
-		names: map[int64]string{7: "repo"},
 	})
 	if cmd == nil || !v.ticking {
 		t.Fatalf("a running chat armed no tick (cmd=%v ticking=%v)", cmd != nil, v.ticking)
@@ -192,7 +191,6 @@ func TestChatsBoardArmsTickOnlyWhileRunning(t *testing.T) {
 	idle.now = v.now
 	_, cmd = idle.update(chatsLoadedMsg{
 		chats: []apiclient.Chat{testChat(1, "idle", "first"), testChat(2, "awaiting_input", "second")},
-		names: map[int64]string{7: "repo"},
 	})
 	if cmd != nil || idle.ticking {
 		t.Fatalf("a board with nothing running armed a tick (cmd=%v ticking=%v)", cmd != nil, idle.ticking)

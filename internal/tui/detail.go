@@ -1244,6 +1244,7 @@ func (d *detail) target() taskActions {
 	return taskActions{
 		id: d.taskID, state: d.task.State, actions: d.task.AvailableActions,
 		openChatID: derefID(d.task.OpenChatID),
+		projectID:  d.task.ProjectID,
 	}
 }
 

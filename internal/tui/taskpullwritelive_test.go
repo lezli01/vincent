@@ -52,7 +52,7 @@ func TestPullWriteRoundTripsAgainstTheRealHandlers(t *testing.T) {
 		t.Fatalf("SetTaskGitHubPull: %v", err)
 	}
 
-	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, state: string(store.TaskDone)})
+	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, projectID: task.ProjectID, state: string(store.TaskDone)})
 	h.p.push(cmd)
 	tv, ok := h.m.views[viewTask].(*taskView)
 	if !ok {

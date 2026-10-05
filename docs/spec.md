@@ -9243,9 +9243,11 @@ GET    /v1/triggers                     *Added 2026-09-13 (task 096).* { enabled
                                         on_fire, permission?, poll: { seeded, last_poll_at, ok,
                                         error?, last_fire_at } }. A file that does not validate
                                         is listed with its errors, never hidden, with no parsed
-                                        definition: it omits source_type, action_type,
-                                        project_id and on_fire, and reads enabled: false,
-                                        whatever its file says. `armed` is
+                                        definition: it omits source_type, action_type and
+                                        on_fire, and reads enabled: false, whatever its file
+                                        says. *Amended 2026-10-05 (task 132 decision 41):* its
+                                        project_id is `source.project` as far as a lenient read
+                                        finds one, and absent only when none can be read. `armed` is
                                         valid + enabled + triggers.enabled, and `disarmed_reason`
                                         names the first of those that is missing
 POST   /v1/triggers                     { id, project_id, poll_interval?, command[]?, workflow?,
@@ -11494,6 +11496,23 @@ stream for the live tail.
    This amends v0 PR K's "Actions live on the board too". (5) The app header's
    connection badge is drawn only while not connected; `vincent <version>` and
    the view tag stay.*
+   *Amended 2026-10-05 (task 132.8, issue #702; task 132 decisions 17, 34
+   and 35): the board shows **the selected project's tasks only**. The live
+   listing stays global — `GET /v1/tasks` with no `project_id` — and is
+   filtered in memory, so a project switch re-derives the rows and fetches
+   nothing; the global list is still what the attention count and the mark
+   and fold pruning read. No selection shows no rows. There is no `PROJECT`
+   column in either mode and no project step in the shedding ladder below,
+   and `/` matches id, title and state but not the project name. The
+   needs-attention count stays every project's (decision 2: a selection
+   must not hide a question); while some of it is in another project the
+   clause reads `! N need attention (all projects)`, which also stands in
+   for a committed filter's `(all tasks)`, and the footer's `!` hint reads
+   `(N, all projects)`. `!` walks the rows on screen and so stays inside the
+   selected project until task 132.14 replaces both. Marks in another
+   project survive a switch but are neither counted in the title nor
+   dispatched while it is not selected. This supersedes task 009's "read
+   project by project" — that is now the project switch.*
    **Grouped by default (task 009, added 2026-08-16):** the rows nest under group
    headers — projects, and the workflows of a project inside it — configured by
    `tui.board.group_by` (§12.3) and cycled for the session with `g`. See
@@ -12340,6 +12359,42 @@ stream for the live tail.
    numerator is counted the way the scheduler applies that cap — lanes and
    `awaiting_input` included — rather than from the root-only task list the
    view also holds.*
+   *Amended 2026-10-05 (task 132.15, issue #709): view 4 is now the **project
+   overview**, replacing the rail-and-focus list above in place (task 132
+   decision 5; task 020 decision 1 and the #324 amendment's rail line are
+   superseded, the #324 rule itself is kept). It is the TUI's only
+   multi-project view. A table has one row per project, every figure from
+   `GET /v1/projects?stats=true`: name, `!` (`stats.tasks.attention`),
+   running as `slots_used/max_parallel_tasks` or a bare `N` for a project with
+   no cap of its own, queued, blocked and done (`stats.tasks.by_state`, never
+   archived), open issues with the imported ones in brackets, live chats with
+   the ones awaiting input in brackets, an issue-sync glyph (`—` off, `✓`
+   healthy, `✗` failing), the §13.2 GitHub probe (`✓ owner/repo`, the probe's
+   reason, or `—` — and `—` in both cells for a project whose reason is
+   `not_github`, which has no integration to fail; open pull-request counts are a follow-up, decision 44), and
+   the last activity, relative. No spend column (decision 45). A row whose
+   `stats` is `null` shows `—` in its figure cells, never zeros. A totals row
+   sums the columns — exact, since every figure is partitioned by project —
+   except running, which is `/v1/info`'s `slots.used / max_parallel_tasks` and
+   never a sum. Below the table, "needs you, across projects" lists the tasks
+   the board's `!` filter keeps, over the full listing and in the board's
+   order (oldest wait first), each row led by its project — the one
+   cross-project task list the TUI draws. On a wide terminal the highlighted
+   project's repository and execution defaults show in a pane beside them
+   (decision 43); a narrowing terminal sheds that pane first, then the columns
+   — activity, GitHub, sync, chats, issues, done, blocked, queued — leaving
+   name, `!` and running. `tab` moves the cursor between the table and the
+   list. `enter` on a project row selects it and returns to the last
+   project-scoped view that was active, or the board with none (a task, chat
+   or issue detail gives way to its list when the project changed); on a list
+   row it selects the task's project and opens the task, with `esc` back to
+   the overview (decision 42). `e` edits, `a` adds, `D` removes and `/`
+   filters as before, and the add/edit form still takes the focused surface.
+   With no project registered the view names `a` and `vincent project add`.
+   It refetches on activation and, debounced, on `task.*`, `issue.*`,
+   `chat.*`, `project.*` and `workflow.registry_changed` while visible, and
+   fetches nothing while hidden. The palette row reads "project overview",
+   and the project picker's last row, "overview & manage…", opens it.*
 5. **Workflows.** Merged registry with scope badges and validation status; `e` opens
    the file in `$EDITOR`; live reload reflects saves immediately.
    *Amended 2026-08-30 (task 065, issue #261).* **The view authors the registry
@@ -12428,6 +12483,22 @@ stream for the live tail.
    On a wide terminal the registry remains as a rail while the selected entry's
    provenance, availability and resolved steps use the focused surface; an open
    graph replaces that surface, not the rail (task 020, added 2026-08-20).
+   *Amended 2026-10-05 (task 132.12, issue #706; task 132 decisions 7, 39
+   and 40).* **The view shows the selected project's resolved registry**, no
+   longer every project's blocks. It loads with two calls and no more:
+   `GET /v1/workflows` (builtin + global) and `GET /v1/workflows?project_id=`
+   for the selection. The second merges by name, so the first is what keeps a
+   global or builtin entry the project overrides on screen; nothing is fetched
+   for any other project. The two are one list sorted by name, each row with
+   its scope badge. A project entry that overrides a global or builtin one says
+   "shadows global X" (or "shadows builtin X"); the overridden entry stays
+   listed beside it, dimmed and marked "shadowed here by `<project>`", and can
+   still be opened and edited — under the warning, which every global row
+   carries, that editing it affects every project. A failed project fetch
+   leaves the global rows and an error line. `a` and `f` offer exactly two
+   destinations, `global` and the selected project; a fork defaults to the
+   project. The "another scope" in the `f` row above is therefore one of those
+   two. The daemon, the API and §13.2 are unchanged.
 6. **Daemon.** Version, uptime, config in effect, adapters detected, recent daemon
    log, and — *added 2026-08-15 (task 005)* — the `orphans` count from `/v1/info`
    beside the words `vincent gc`, shown only when it is non-zero. It offers no way to
@@ -12566,7 +12637,7 @@ stream for the live tail.
    branch, and rendering `400 agent_cannot_resume` as the typed refusal it is
    rather than a generic failure. `A` archives, asking first and re-offering
    with the force when the worktree is dirty. `/` filters on title, agent or
-   branch; `←`/`→` fold a project group; `R` re-lists. A `chat.*` event
+   branch; `R` re-lists. A `chat.*` event
    re-renders the board with no keypress, and a `task.*` event does not — the
    separation runs both ways.
 
@@ -12622,6 +12693,26 @@ stream for the live tail.
    can be found from this board as well as from the task. A `closed` chat is
    terminal and leaves the default listing with `archived` and `handed_off`
    ones (§13.2).
+
+   *Amended 2026-10-05 (task 132.10, issue #704).* **The board is flat and
+   scoped to the selected project** (decision row 37). It lists
+   `GET /v1/chats?project_id={selected}` — the server filters, as it does for
+   view 10's chats half — and with no project selected it fetches nothing and
+   says so, never falling back to every project's chats: "no project" once a
+   project listing has come back empty, and "resolving" before the first
+   listing or after a failed one, when projects may well exist. This **supersedes
+   task 067 decision 6**: with one project on screen a project heading would
+   head every row, so there are no headings, no folds and no `←`/`→`, and the
+   fold set `chat_folds` in `{data_dir}/tui.json` is retired — an older file
+   carrying it still reads, the key ignored. The order is unchanged: attention
+   first, then running, idle and terminal. The wheel walks chats only, there
+   being no heading left to skip. `n` opens the create form on the selected
+   project rather than the cursor row's. A switch empties the board at once
+   and the header reads "loading ‹project›…" until the switch's load lands; a
+   load issued for the project left behind is dropped when it arrives. The
+   `/` filter text survives a switch, because it describes what the human
+   wants to see rather than where. Task 054 decision 1 — folds live in
+   `tui.json` — is kept for the boards that still fold.
 
 9. **Chat workspace.** *Added 2026-08-31 (task 067, closing 063.2 and 063.3).*
    One conversation: the finished turns above, the running turn's live tail
@@ -12935,7 +13026,12 @@ stream for the live tail.
 
    Each is the board it mirrors **in a second mode**, not a second model: the
    same grouping, folding, `/` filter and `space`/`V` selection, listing what is
-   archived instead of what is live. What the mode adds is the three things only
+   archived instead of what is live. *Amended 2026-10-05 (task 132.8, issue
+   #702): the archived tasks board lists the selected project only, filtered
+   on the server — its request carries `project_id` (§13.2). A switch goes
+   back to the first page, clears the rows and reads `loading <project>…`
+   until the new project's page arrives; a page issued for the previous
+   project is dropped by its load stamp.* What the mode adds is the three things only
    an archive has — `s` cycles a date window (7 days / 30 days / all, resolved
    client-side into §13.2's `archived_since`), `<`/`>` turn pages of a hundred
    rows, and `D` deletes permanently. *Amended 2026-09-10 (task 093, issue
@@ -12963,6 +13059,17 @@ stream for the live tail.
    delete confirmation holds the cursor still, because it names the rows it
    would delete. The wheel never turns a page — paging is a fetch and stays on
    `<`/`>`.
+
+   *Amended 2026-10-05 (task 132.10, issue #704).* **Archived chats are flat
+   and scoped to the selected project**, as view 8 now is: the page and the
+   date window are asked of `GET /v1/chats?project_id={selected}`, because a
+   server-paged listing can only be filtered on the server. The board no
+   longer groups or folds — "the same grouping, folding" above now describes
+   the archived *tasks* board alone — superseding task 067 decision 6 here
+   too, and the retired `chat_folds` key is no longer read. With no project
+   selected nothing is fetched. A switch returns to the first page, because a
+   page offset belongs to the old project's listing, and keeps the date window
+   and the `/` filter text.
 
 11. **Triggers.** *Added 2026-09-13 (task 096.6, issue #362).* A takeover
    reached from the command palette, like Workflows and Projects, with no key
@@ -13017,6 +13124,26 @@ stream for the live tail.
 
    The daemon view's config editor lists `triggers.enabled` with task 060's
    `dangerous` flag, so saving it asks first as well.
+
+   *Amended 2026-10-05 (task 132.12, issue #706; task 132 decisions 8, 9 and
+   41).* **The list is the selected project's.** `GET /v1/triggers` is still
+   read unfiltered and the files are still global — task 096 decision 8 is
+   kept, and so is this view's place outside the projects view — but only the
+   display is scoped: the selected project's triggers, followed by an
+   **unassigned** band of invalid files whose project could not be read and
+   of triggers whose project is no longer registered (removing a project
+   leaves its trigger files alone). That band shows in every project's view,
+   so such a file stays repairable here. Another registered project's
+   triggers, valid or invalid with a readable project, are not shown. "Every file the registry holds" above is narrowed to that,
+   and **task 096 decision 14**'s cross-project list is departed from. The
+   project column and the filter's project term are gone. `a`'s project is
+   the selection, shown read-only, and an existing trigger's project row in
+   the form is read-only too; an unassigned trigger's stays editable, because
+   assigning it is the repair. The form loads only a file that validates, so
+   that is a trigger of a removed project; a file that does not validate is
+   repaired in `$EDITOR`. A `trigger.*` event for another project no
+   longer re-reads; one with no project still does. The banner, the 5 s
+   re-read and `triggers.enabled` are unchanged.
 
 12. **Issues.** *Added 2026-10-02 (task 130.9, issue #668).* A takeover
    reached from the command palette with no key of its own (task 049), and
@@ -13227,7 +13354,12 @@ a 150 ms debounced refetch on `task.*`, `issue.*`, `chat.*` and `project.*`
 events while the picker is up, and none while it is closed. An answer that
 lands after the picker closed, or after a newer refetch, is dropped. The
 picker marks only the current project; a marker for `tui.default_project`
-is not drawn yet (task 132 decision 33).
+is not drawn yet (task 132 decision 33). *Amended 2026-10-05 (task 132.15,
+issue #709):* below the projects the picker carries one more row,
+"overview & manage…", which opens view 4, the project overview — the only
+multi-project view. It is not a project: the filter neither matches nor hides
+it, the cursor reaches it only by `↓`, and `enter` on it switches screens
+without changing the selection.
 
 **Load stamps and the event filter (task 132.5, issue #699, added
 2026-10-05).** Every list load a view issues — the board in both modes and
@@ -13296,6 +13428,44 @@ the startup pick included, so a `--project` or working-directory launch makes
 that project the last used (decision 31). A failed write is not reported; it
 costs only the next launch's last-used rule. When several TUIs run, the last
 writer wins.
+
+**Switching keeps the view (task 132.6, issue #700, added 2026-10-05).** A
+switch never moves the human to another kind of screen (task 132 decisions
+19, 36–38). The root's `selectProject`, still the one place the selection
+changes (decision 31), applies it to the active view:
+
+| Active view | On a switch |
+|---|---|
+| Board, chats, issues, pull requests, both archived boards, workflows, triggers | Stays; re-scoped through `setProject` |
+| Task workspace | Falls back to the board; its back stack is emptied and its streams stop |
+| Chat | Falls back to the chats board; its stream stops. A typed, unsent message in the composer is a draft (review F7) |
+| Issue | Falls back to the issues list |
+| New-task form; the chats board's new-chat form; the issues list's issue form | Re-targeted when pristine: reopened empty on the new project, catalogs refetched. An edit form on the issues list closes |
+| The workflows view's create prompt; the triggers view's create prompt | Re-targeted when pristine: reopened empty on the new project. A fork prompt is seeded from the old project's list and counts as a draft; after `y` it closes (review F6) |
+| The workflows view's editor and graph; the triggers view's form, dry run and pending question | Close: each is on one of the old project's files. An editor row being typed into counts as a draft (review F6) |
+| The workspace's answer, repair, follow-up, pull-request and comment forms; the issue view's edit form | Leave with their view |
+| Daemon view, projects overview | Unchanged |
+
+A view that can hold a draft reports it to the root. When the active one is
+dirty — any edit to a field or choice, and for the new-task form also any
+seed from a pull request, issue or chat — the switch is held and the root
+draws one confirmation under the header, ``discard the unsent comment and
+switch to `api`? y/n``, which owns every key but `ctrl+c`. `y` discards the
+draft and applies the switch; the view lands on a fresh form for the new
+project, or on its list for a form inside a detail. `n` or `esc` drops the
+switch: the selection, the header and `tui.json` are untouched. The new-task
+form's own `esc` prompt is not this one.
+
+**An open follows its object.** Every open of a task, chat or issue carries the
+object's project, from the row its sender holds; the trigger ledger takes the
+trigger's resolved `source.project`. An object of another known project
+switches the selection first, under the same keep-view and confirmation
+rules, and is routed second, so a detail never draws under the wrong header.
+An open with no project, or one the cached list does not hold, GETs the object
+first; a failed GET routes the open anyway and its detail shows the error. A
+follow raises ``switched to `web` `` under the header until the next key, and
+empties the workspace's back stack; a same-project open does neither. A
+confirmation answered `n` cancels the open with the switch.
 
 **Text fields wrap (added 2026-09-01, issue #299).** A field being typed into
 is bound by the same rule the boards and the rendered Markdown already carry: a
@@ -13510,6 +13680,19 @@ get to bend:
   `{data_dir}/tui.json`, survives `g` and a filter, and drops a path whose
   project or workflow has left the board. `group_by: []` has no groups, so the
   four keys are inert; a fresh install has nothing folded.
+  *Amended 2026-10-05 (task 132.8, task 132 decision 35): there is one fold
+  set **per project**, keyed by project id, in `tui.json`'s
+  `board_folds_by_project`; switching away and back restores a project's
+  folds, and a `[workflow]` fold in one project does not collapse that
+  workflow in another. The pre-132.8 `board_folds` list is migrated once the
+  project list is known — a path led by a registered project's name moves
+  under its id, any other is dropped — and then removed from the file. A live
+  load prunes each project's set against that project's tasks (task 054
+  decision 4, now per project); an archived load prunes nothing; a removed
+  project's set is dropped with it. A path still carries the project's name
+  as a segment, so a rename seen while the TUI runs rewrites that segment
+  before the next prune (review F10); a rename made while no TUI ran loses
+  that project's folds.*
 - **The panel title names the grouping only when it is not the configured one**,
   the same rule the output pane's `v` follows.
 
@@ -14595,6 +14778,13 @@ keystrokes into a text field.
 Deleting a project confirms inline, and a project holding non-archived tasks
 re-prompts to archive them (the `?force` of `DELETE /v1/projects/{id}`) — but a
 *running* task is refused outright, since no confirmation makes that delete legal.
+*Amended 2026-10-05 (task 132.15, issue #709):* on the project overview `enter`
+no longer edits — it selects the highlighted project (or opens the highlighted
+"needs you" task) and `e` alone edits; `tab`/`shift+tab` move between the
+project table and the "needs you" list. `e` keeps no registry row, because the
+vocabulary gives `e` to `$EDITOR`; it is named in `enter`'s row and recorded as
+a fixed key, as the daemon view's `e` is. In Discovery, the palette's nav row is
+"project overview", and the project picker's last row opens the same view.
 
 In the daemon view, identity, config and adapters refresh on open and on `R`; the
 log alone re-reads on a short timer, because it is the only part that changes while
@@ -15249,6 +15439,10 @@ the whole of the posture, not a set of tips.
   `.vincent/`, so merge rights on a repository cannot start agents on a
   maintainer's machine (task 096 decision 8). The accepted cost is that a
   trigger cannot be reviewed alongside the repository it serves.
+  *Amended 2026-10-05 (task 132.12):* the TUI's triggers takeover now lists
+  only the selected project's triggers and the unassigned band (§15 view 11).
+  That scopes the display, not the files: every trigger file is still global,
+  and still lives only in `{config_dir}`.
 - **A trigger file is code the daemon runs as you.** A `command` source's argv
   runs on an interval with `notify.command`'s posture: argv, never a shell
   string; the §12.3 environment; and a whole-tree kill at the timeout. It may

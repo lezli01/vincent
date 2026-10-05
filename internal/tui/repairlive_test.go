@@ -48,7 +48,7 @@ func TestDetailRepairsBlockedTaskLive(t *testing.T) {
 	h := newActionLiveHarness(t)
 	task := h.createParkedTask(t, "repairable")
 
-	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})
+	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, projectID: task.ProjectID})
 	h.p.push(cmd)
 	h.p.until(30*time.Second, "the detail view to open the task", func() bool {
 		return detailOf(h.m).taskID == task.ID && detailOf(h.m).loaded
@@ -126,7 +126,7 @@ func TestTimelineRendersARepairAsItsOwnEntry(t *testing.T) {
 	task := h.createParkedTask(t, "repairable")
 	h.blockTask(t, task.ID, "check_failed")
 
-	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})
+	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, projectID: task.ProjectID})
 	h.p.push(cmd)
 	h.p.until(30*time.Second, "the detail view to open the task", func() bool {
 		return detailOf(h.m).taskID == task.ID && detailOf(h.m).loaded

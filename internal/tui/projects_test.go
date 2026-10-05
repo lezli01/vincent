@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -337,56 +340,187 @@ func TestProjectsCaptureFollowsTheTextFields(t *testing.T) {
 	}
 }
 
+// The overview fetches on activation and on the events that move a figure —
+// task, issue, chat and project, plus the registry for the form's picker —
+// and on nothing at all while it is hidden (task 132.15).
 func TestProjectsRefetchOnActivationAndOnEvents(t *testing.T) {
 	p := newProjectsView()
-	p.client = &apiclient.Client{}
+	if cmd := p.setClient(&apiclient.Client{}); cmd != nil {
+		t.Error("connecting fetched while the overview is hidden")
+	}
+	event := func(typ string) tea.Cmd {
+		p.refreshPending = false
+		_, cmd := p.update(noteMsg{note: apiclient.EventNote{
+			Event: apiclient.Event{Type: typ, Payload: json.RawMessage("{}")},
+		}})
+		return cmd
+	}
+	if cmd := event("task.state_changed"); cmd != nil {
+		t.Error("an event scheduled a refresh while the overview is hidden")
+	}
 	if _, cmd := p.update(viewActivatedMsg{id: viewProjects}); cmd == nil {
 		t.Error("activation did not refetch")
 	}
 	if _, cmd := p.update(viewActivatedMsg{id: viewHome}); cmd != nil {
 		t.Error("another view's activation triggered a fetch")
 	}
-	for _, evType := range []string{"project.created", "task.state_changed", eventWorkflowRegistryChanged} {
-		p.refreshPending = false
-		_, cmd := p.update(noteMsg{note: apiclient.EventNote{
-			Event: apiclient.Event{Type: evType, Payload: json.RawMessage("{}")},
-		}})
-		if cmd == nil {
+	for _, evType := range []string{
+		"project.created", "task.state_changed", "issue.created", "chat.state_changed",
+		eventWorkflowRegistryChanged,
+	} {
+		if event(evType) == nil {
 			t.Errorf("%s did not schedule a refresh", evType)
+		}
+	}
+	p.update(viewDeactivatedMsg{id: viewProjects})
+	if cmd := event("task.state_changed"); cmd != nil {
+		t.Error("an event scheduled a refresh after the overview was left")
+	}
+	p.refreshPending = true
+	if _, cmd := p.update(projectsRefreshMsg{}); cmd != nil {
+		t.Error("a debounce that fired after the overview was left still fetched")
+	}
+}
+
+// overviewProject is a project row carrying every figure the table renders.
+func overviewProject(id int64, name string, attention, queued, blocked, done, issues, imported, chats, waiting int) apiclient.Project {
+	pr := testProject(id, name)
+	pr.Stats = &apiclient.ProjectStats{}
+	pr.Stats.Tasks.Attention = attention
+	pr.Stats.Tasks.ByState = map[string]int{stateQueued: queued, stateBlocked: blocked, stateDone: done}
+	pr.Stats.Issues.Open, pr.Stats.Issues.OpenImported = issues, imported
+	pr.Stats.Chats.Live, pr.Stats.Chats.AwaitingInput = chats, waiting
+	return pr
+}
+
+// overviewLine finds the rendered line that starts with label, stripped.
+func overviewLine(t *testing.T, out, label string) []string {
+	t.Helper()
+	for line := range strings.SplitSeq(ansi.Strip(out), "\n") {
+		if f := strings.Fields(line); len(f) > 0 && f[0] == label {
+			return f
+		}
+	}
+	t.Fatalf("no %q line in:\n%s", label, ansi.Strip(out))
+	return nil
+}
+
+func TestProjectOverviewRendersEveryProjectAndTheirTotals(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		projects []apiclient.Project
+		want     []string // the totals row's fields after "total"
+	}{
+		{
+			"one",
+			[]apiclient.Project{overviewProject(1, "api", 1, 2, 3, 4, 5, 1, 2, 1)},
+			[]string{"1", "4/3", "2", "3", "4", "5", "(1)", "2", "(1)"},
+		},
+		{"several", []apiclient.Project{
+			overviewProject(1, "api", 1, 2, 3, 4, 5, 1, 2, 1),
+			overviewProject(2, "web", 2, 0, 1, 10, 0, 0, 1, 0),
+			overviewProject(3, "docs", 0, 1, 0, 0, 3, 3, 0, 0),
+		}, []string{"3", "4/3", "3", "4", "14", "8", "(4)", "3", "(1)"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newProjectsView()
+			p.update(projectsLoadedMsg{
+				projects: tc.projects,
+				// The installation-wide slots are /v1/info's, deliberately
+				// unlike any sum of the rows' slots_used.
+				info:   apiclient.Info{MaxParallelTasks: 3, Slots: apiclient.InfoSlots{Used: 4}},
+				infoOK: true,
+			})
+			out := p.render(130, 30)
+			for _, pr := range tc.projects {
+				overviewLine(t, out, pr.Name)
+			}
+			got := overviewLine(t, out, "total")[1:]
+			if len(got) < len(tc.want) || strings.Join(got[:len(tc.want)], " ") != strings.Join(tc.want, " ") {
+				t.Errorf("totals = %v, want %v first", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestProjectOverviewZeroProjectsSaysHowToAddOne(t *testing.T) {
+	p := newProjectsView()
+	loadedProjects(p, nil, nil)
+	out := ansi.Strip(p.render(130, 30))
+	for _, want := range []string{"press a", "vincent project add"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("empty overview is missing %q:\n%s", want, out)
 		}
 	}
 }
 
-// TestProjectColumnsFitTheirWidth is a T3.8 finding: the widths ignored the
-// table's per-cell padding and overflowed by a whole column's worth, so the
-// last column ("running / cap") arrived cut. The path column is also the
-// one that must not eat a wide terminal.
-func TestProjectColumnsFitTheirWidth(t *testing.T) {
-	for _, width := range []int{80, 100, 120, 160, 240} {
-		cols, set := projectColumns(width)
+// A row the daemon could not count reads as unknown, never as zeros, and
+// adds nothing to the totals.
+func TestProjectOverviewNullStatsRenderDashes(t *testing.T) {
+	p := newProjectsView()
+	counted := overviewProject(1, "api", 2, 0, 0, 0, 0, 0, 0, 0)
+	unknown := testProject(2, "web")
+	unknown.SlotsUsed = 1
+	loadedProjects(p, []apiclient.Project{counted, unknown}, nil)
+	out := p.render(130, 30)
+	f := overviewLine(t, out, "web")
+	if f[1] != "—" || f[2] != "1" || f[3] != "—" {
+		t.Errorf("null-stats row = %v, want a dash for attention, the served slots, then dashes", f)
+	}
+	if got := overviewLine(t, out, "total")[1]; got != "2" {
+		t.Errorf("total attention = %s, want only the counted row's 2", got)
+	}
+}
+
+// Narrowing sheds the detail pane first, then columns in ovShedOrder, and the
+// name, attention and running stay to the end.
+func TestProjectOverviewShedsDetailThenColumns(t *testing.T) {
+	p := newProjectsView()
+	loadedProjects(p, []apiclient.Project{overviewProject(1, "api", 0, 0, 0, 0, 0, 0, 0, 0)}, nil)
+	wide := overviewFullWidth() + overviewDetailWidth
+	if out := p.render(wide, 30); !strings.Contains(out, "Execution defaults") {
+		t.Errorf("width %d has no detail pane:\n%s", wide, out)
+	}
+	full := overviewFullWidth()
+	out := p.render(full, 30)
+	if strings.Contains(out, "Execution defaults") {
+		t.Errorf("width %d kept the detail pane beside a full table", full)
+	}
+	if cols, _ := overviewColumns(full); len(cols) != int(ocCount) {
+		t.Errorf("width %d shed a column before it had to: %v", full, cols)
+	}
+	prev := int(ocCount)
+	shed := 0
+	for width := full; width >= 28; width-- {
+		cols, name := overviewColumns(width)
 		total := 0
 		for _, c := range cols {
-			total += c.Width + colPadding
-		}
-		if total > width {
-			t.Errorf("width %d: columns need %d cells — the last one gets cut", width, total)
-		}
-		// Whatever survives has to be readable, the last column included.
-		last := cols[len(cols)-1]
-		if last.Title != "running / cap" || last.Width != pcolCap {
-			t.Errorf("width %d: last column = %q/%d, want the full cap column", width, last.Title, last.Width)
-		}
-		for _, c := range cols {
-			if c.Width < 4 {
-				t.Errorf("width %d: column %q shrank to %d", width, c.Title, c.Width)
+			w := ovColSpec[c].width
+			if c == ocName {
+				w = name
 			}
-			if c.Title == "path" && c.Width > pcolMaxPath {
-				t.Errorf("width %d: path took %d cells, capped at %d", width, c.Width, pcolMaxPath)
+			total += w + colPadding
+		}
+		if total > width && len(cols) > 3 {
+			t.Errorf("width %d: columns need %d cells", width, total)
+		}
+		if len(cols) < prev {
+			kept := map[ovCol]bool{}
+			for _, c := range cols {
+				kept[c] = true
 			}
+			for _, c := range ovShedOrder[:shed+prev-len(cols)] {
+				if kept[c] {
+					t.Errorf("width %d kept %q but shed a later column", width, ovColSpec[c].title)
+				}
+			}
+			shed += prev - len(cols)
+			prev = len(cols)
 		}
-		if width >= 160 && !set.path {
-			t.Errorf("width %d dropped the path column", width)
-		}
+	}
+	cols, _ := overviewColumns(28)
+	if len(cols) != 3 || cols[0] != ocName || cols[1] != ocAttention || cols[2] != ocRunning {
+		t.Errorf("narrowest columns = %v, want name, attention, running", cols)
 	}
 }
 
@@ -395,9 +529,9 @@ func TestProjectColumnsFitTheirWidth(t *testing.T) {
 func TestProjectRowsMatchTheirColumns(t *testing.T) {
 	p := newProjectsView()
 	loadedProjects(p, []apiclient.Project{testProject(1, "vincent")}, nil)
-	for _, width := range []int{70, 100, 200} {
-		cols, set := projectColumns(width)
-		rows := p.rowsFor(p.visible(), set)
+	for _, width := range []int{50, 100, 200} {
+		cols, _ := overviewColumns(width)
+		rows := p.rowsFor(p.visible(), cols)
 		if len(rows) == 0 {
 			t.Fatal("no rows built")
 		}
@@ -407,46 +541,91 @@ func TestProjectRowsMatchTheirColumns(t *testing.T) {
 	}
 }
 
-// A resize across the path breakpoint must not panic or lose the selection.
+// A resize across a breakpoint must not panic or lose the selection.
 func TestProjectsSurviveAColumnBreakpoint(t *testing.T) {
 	p := newProjectsView()
 	loadedProjects(p, []apiclient.Project{testProject(1, "a"), testProject(2, "b")}, nil)
 	p.render(200, 24)
 	p.tbl.SetCursor(1)
 	p.rememberSelection()
-	p.render(80, 24) // path column disappears
+	p.render(60, 24)
 	p.render(200, 24)
 	if got, ok := p.current(); !ok || got.ID != 2 {
 		t.Errorf("selection after two resizes = %+v, want project 2", got)
 	}
 }
 
-func TestProjectsGuidedLayoutPairsTheRailWithAWorkload(t *testing.T) {
+// The "needs you" list is the board's `!` filter over every project, in the
+// board's order — oldest wait first — each row naming its project.
+func TestProjectOverviewAttentionListAcrossProjects(t *testing.T) {
 	p := newProjectsView()
-	loadedProjects(p,
-		[]apiclient.Project{testProject(1, "vincent"), testProject(2, "docs")},
-		[]apiclient.Task{{ID: 20, ProjectID: 1, State: stateRunning, Title: "Improve takeover UX"}},
-	)
-	out := p.render(160, 32)
-	for _, want := range []string{
-		"Projects · 2", "Overview · vincent", "Repository", "Execution defaults",
-		"Current workload", "Improve takeover UX",
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("guided projects render is missing %q:\n%s", want, out)
+	at := func(id int64, project, state string, minutes int) apiclient.Task {
+		return apiclient.Task{
+			ID: id, ProjectID: id / 10, ProjectName: project, State: state, Title: "t" + strconv.FormatInt(id, 10),
+			UpdatedAt: time.Date(2026, 10, 5, 12, minutes, 0, 0, time.UTC),
 		}
+	}
+	loadedProjects(p,
+		[]apiclient.Project{testProject(1, "api"), testProject(2, "web")},
+		[]apiclient.Task{
+			at(11, "api", stateRunning, 0),
+			at(12, "api", stateBlocked, 30),
+			at(21, "web", stateAwaitingInput, 10),
+			at(22, "web", stateQueued, 0),
+		})
+	attn := p.attention()
+	if len(attn) != 2 || attn[0].ID != 21 || attn[1].ID != 12 {
+		t.Fatalf("attention = %v, want 21 then 12", attn)
+	}
+	out := ansi.Strip(p.render(130, 30))
+	i21, i12 := strings.Index(out, "web  #21"), strings.Index(out, "api  #12")
+	if i21 < 0 || i12 < 0 || i21 > i12 {
+		t.Errorf("needs-you rows missing, unprefixed or out of order:\n%s", out)
+	}
+	if strings.Contains(out, "#11") || strings.Contains(out, "#22") {
+		t.Errorf("a task that does not need anyone is listed:\n%s", out)
 	}
 }
 
-func TestProjectsCompactFallbackKeepsTheTable(t *testing.T) {
+// Enter selects (task 132 decision 42); `e` alone edits.
+func TestProjectOverviewEnterPicksAndEEdits(t *testing.T) {
 	p := newProjectsView()
-	loadedProjects(p, []apiclient.Project{testProject(1, "vincent")}, nil)
-	out := p.render(120, 24)
-	if !strings.Contains(out, "running / cap") {
-		t.Errorf("compact projects render lost its table:\n%s", out)
+	loadedProjects(p,
+		[]apiclient.Project{testProject(1, "api"), testProject(2, "web")},
+		[]apiclient.Task{{ID: 21, ProjectID: 2, ProjectName: "web", State: stateBlocked}})
+	p.render(130, 30)
+	pressView(p, "down")
+	msg, ok := pressView(p, "enter")().(overviewPickMsg)
+	if !ok || msg.project.ID != 2 || msg.task != nil {
+		t.Fatalf("enter on a project row = %+v, want project 2 picked", msg)
 	}
-	if strings.Contains(out, "Current workload") {
-		t.Errorf("compact projects render contains the guided overview:\n%s", out)
+	if p.form != nil {
+		t.Error("enter opened the edit form")
+	}
+
+	pressView(p, "tab")
+	msg, ok = pressView(p, "enter")().(overviewPickMsg)
+	if !ok || msg.task == nil || msg.task.ID != 21 || msg.project.ID != 2 || msg.project.Name != "web" {
+		t.Fatalf("enter on a needs-you row = %+v, want task 21 in web", msg)
+	}
+	pressView(p, "tab")
+	if p.inAttention {
+		t.Error("tab did not return to the table")
+	}
+
+	pressView(p, "e")
+	if p.form == nil || p.form.adding() {
+		t.Error("e did not open the edit form")
+	}
+}
+
+// With nothing that needs anyone, tab has nowhere to go.
+func TestProjectOverviewTabSkipsAnEmptyList(t *testing.T) {
+	p := newProjectsView()
+	loadedProjects(p, []apiclient.Project{testProject(1, "api")}, nil)
+	pressView(p, "tab")
+	if p.inAttention {
+		t.Error("tab moved into an empty needs-you list")
 	}
 }
 
@@ -511,4 +690,31 @@ func encode(t *testing.T, v any) string {
 func isEmptyPatch(t *testing.T, req apiclient.PatchProjectRequest) bool {
 	t.Helper()
 	return encode(t, req) == "{}"
+}
+
+// A project with no GitHub remote has no integration to fail: both its
+// GitHub and sync cells read as a dash, never as a reason or ✗.
+func TestProjectOverviewNotGitHubIsADash(t *testing.T) {
+	p := newProjectsView()
+	pr := overviewProject(1, "api", 0, 0, 0, 0, 0, 0, 0, 0)
+	pr.Stats.IssueSync.Enabled, pr.Stats.IssueSync.Reason = true, "not_github"
+	failing := overviewProject(2, "web", 0, 0, 0, 0, 0, 0, 0, 0)
+	failing.Stats.IssueSync.Enabled = true
+	loadedProjects(p, []apiclient.Project{pr, failing}, nil)
+	p.update(githubProbeMsg{projects: []githubProject{
+		{project: pr, status: apiclient.GitHubStatus{Enabled: true, Reason: "not_github"}},
+		{project: failing, status: apiclient.GitHubStatus{Enabled: true, Available: true, Repo: "acme/web"}},
+	}})
+	if got := p.overviewCell(pr, ocGitHub); got != "—" {
+		t.Errorf("github cell = %q, want a dash", got)
+	}
+	if got := p.overviewCell(pr, ocSync); got != "—" {
+		t.Errorf("sync cell = %q, want a dash", got)
+	}
+	if got := p.overviewCell(failing, ocSync); got != "✗" {
+		t.Errorf("failing sync cell = %q, want ✗", got)
+	}
+	if got := p.overviewCell(failing, ocGitHub); got != "✓ acme/web" {
+		t.Errorf("github cell = %q, want the repository", got)
+	}
 }

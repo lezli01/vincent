@@ -99,7 +99,7 @@ func TestTitleCapSpendsTheSurplus(t *testing.T) {
 		// STATUS admitted: the title drops to the cap and both other columns
 		// take the surplus in order.
 		{width: 200, g: grouped, content: status, title: maxTitle, step: widthStepMax, status: 47},
-		{width: 200, g: nil, content: status, title: maxTitle, step: 21, status: widthStatus},
+		{width: 200, g: nil, content: status, title: maxTitle, step: widthStepMax, status: 31},
 		// Both ceilings reached: only now does the title exceed its cap.
 		{width: 300, g: grouped, content: status, title: 115, step: widthStepMax, status: widthStatusMax},
 	} {

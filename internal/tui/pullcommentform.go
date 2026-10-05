@@ -37,7 +37,10 @@ type pullCommentForm struct {
 	// carry no idempotency key, so a double press would post twice (task 069
 	// decision 7 is the precedent).
 	sending bool
-	err     string
+	// dirty is any edit since the form opened (task 132.6): the root asks
+	// before a project switch discards it.
+	dirty bool
+	err   string
 
 	// submit posts the body. openEditor hands it to $EDITOR. Both are
 	// injected by the task view, which owns the client and the exec path.
@@ -74,6 +77,7 @@ func (f *pullCommentForm) stopEdit() {
 
 // paste lands in the body, opening the field if it was not open.
 func (f *pullCommentForm) paste(text string) tea.Cmd {
+	defer f.watch()()
 	if !f.editing {
 		f.startEdit()
 	}
@@ -84,6 +88,7 @@ func (f *pullCommentForm) paste(text string) tea.Cmd {
 
 // applyEdit installs what an $EDITOR session produced.
 func (f *pullCommentForm) applyEdit(msg pullCommentEditMsg) {
+	defer f.watch()()
 	if msg.taskID != f.taskID {
 		return
 	}
@@ -98,6 +103,7 @@ func (f *pullCommentForm) applyEdit(msg pullCommentEditMsg) {
 
 // update handles one key. exit asks the task view to close the popup.
 func (f *pullCommentForm) update(msg tea.KeyPressMsg) (cmd tea.Cmd, exit bool) {
+	defer f.watch()()
 	if f.editing {
 		switch msg.String() {
 		case "esc":

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
@@ -66,11 +67,20 @@ type footerSeg struct {
 // adds the reconnect hint while the daemon is unreachable. textField reports
 // that the active surface is capturing text, which picks the pinned part.
 func renderFooter(width int, panelRows []binding, bar *actionBar, target taskActions, attention int, retry bool) string {
-	line, _ := buildFooter(width, panelRows, bar, target, attention, retry, false)
+	line, _ := buildFooter(width, panelRows, bar, target, attentionTally{n: attention}, retry, false)
 	return line
 }
 
-func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActions, attention int, retry, textField bool) (string, []footerHit) {
+// attentionTally is the count behind the footer's `!` hint. allProjects
+// says some of it is in a project other than the selected one, and labels
+// the hint the way the board header's clause is labelled (task 132 decision
+// 34) until task 132.14 replaces both.
+type attentionTally struct {
+	n           int
+	allProjects bool
+}
+
+func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActions, attention attentionTally, retry, textField bool) (string, []footerHit) {
 	pinnedSegs := footerPinnedSegs(textField)
 	var pinned strings.Builder
 	for _, s := range pinnedSegs {
@@ -408,7 +418,7 @@ func footerAdmitActions(rest []footerSeg, countable, avail int) []footerSeg {
 // footerRestSegs is everything to the right of the hints: the task's valid
 // actions, the answer/attention/retry extras, and the action bar's last
 // status.
-func footerRestSegs(bar *actionBar, target taskActions, attention int, retry bool) []footerSeg {
+func footerRestSegs(bar *actionBar, target taskActions, attention attentionTally, retry bool) []footerSeg {
 	segs := make([]footerSeg, 0, 8)
 	if bar != nil && (target.id != 0 || target.bulk()) {
 		for _, o := range footerActionOps {
@@ -445,11 +455,15 @@ func footerRestSegs(bar *actionBar, target taskActions, attention int, retry boo
 			})
 		}
 	}
-	if attention > 0 && opKey(keymap.NextAttention) != "" {
+	if attention.n > 0 && opKey(keymap.NextAttention) != "" {
 		// `!` is a global row, and the pinned segment stands for those: shown
 		// here, never counted.
+		count := strconv.Itoa(attention.n)
+		if attention.allProjects {
+			count += ", " + strings.Trim(allProjectsLabel, "()")
+		}
 		segs = append(segs, footerSeg{
-			text: styleWarn.Render(fmt.Sprintf("%s next attention (%d)", opKey(keymap.NextAttention), attention)), key: opKey(keymap.NextAttention), global: true, droppable: true,
+			text: styleWarn.Render(fmt.Sprintf("%s next attention (%s)", opKey(keymap.NextAttention), count)), key: opKey(keymap.NextAttention), global: true, droppable: true,
 		})
 	}
 	if retry {

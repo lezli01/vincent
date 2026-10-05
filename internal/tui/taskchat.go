@@ -56,8 +56,8 @@ func taskChatCmd(client *apiclient.Client, t taskActions, bar *actionBar) tea.Cm
 		return nil
 	}
 	if t.openChatID != 0 {
-		id := t.openChatID
-		return func() tea.Msg { return openChatMsg{id: id} }
+		id, pid := t.openChatID, t.projectID
+		return func() tea.Msg { return openChatMsg{id: id, projectID: pid} }
 	}
 	if client == nil {
 		bar.setStatus("not connected", true)
