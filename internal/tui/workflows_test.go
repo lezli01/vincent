@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -424,4 +425,26 @@ func countEntryLines(w *workflowsView) int {
 		}
 	}
 	return n
+}
+
+// With no project registered the global and builtin registry is still
+// listed, under the shared empty state rather than behind it, and the create
+// prompt a opens is drawn (review F1).
+func TestWorkflowsWithNoProjectsKeepTheRegistryDrawn(t *testing.T) {
+	w := newWorkflowsView()
+	w.client = offlineClient()
+	w.width, w.height = 120, 30
+	w.setProjects([]apiclient.Project{})
+	loadedWorkflows(w, globalEntry("review"))
+	out := ansi.Strip(w.render(120, 30))
+	if !strings.Contains(out, noProjectsEmpty()) || !strings.Contains(out, "review") {
+		t.Errorf("want the empty state above the global registry:\n%s", out)
+	}
+	w.updateKey(registryKey(t, "a"))
+	if w.create == nil {
+		t.Fatal("a opened no create prompt")
+	}
+	if out := ansi.Strip(w.render(120, 30)); strings.Contains(out, noProjectsEmpty()) {
+		t.Errorf("the create prompt is hidden behind the empty state:\n%s", out)
+	}
 }

@@ -13540,7 +13540,10 @@ registered, every project-scoped view — the board, both archived boards, the
 chats board, the issues list, the pull-request, workflows and triggers
 takeovers and the new-task form — draws one shared empty state naming the
 picker key and its overview row; before the first listing a view says it is
-still resolving. Nothing force-navigates, and the projects overview keeps
+still resolving. The workflows and triggers takeovers draw it as a line above
+what they still list with no project — the global and builtin registry, and
+the triggers of removed projects — so every row a key acts on stays on screen
+(review F1). Nothing force-navigates, and the projects overview keeps
 its own `a`-to-add empty state. The first project registered while nothing is
 selected becomes the selection (decision 10).
 

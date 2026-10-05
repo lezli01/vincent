@@ -17,9 +17,6 @@ func (w *workflowsView) render(width, height int) string {
 	if height > 0 {
 		w.height = height
 	}
-	if w.project.id == 0 && w.noProjects {
-		return "\n  " + styleDim.Render(noProjectsEmpty()) + "\n"
-	}
 	if w.create != nil {
 		return w.renderCreate(width, height)
 	}
@@ -334,6 +331,12 @@ func packRow(parts []string, width, rows int) []string {
 
 func (w *workflowsView) statusLines() []string {
 	var out []string
+	// With no project registered the global and builtin registry is still
+	// listed and still editable, so the shared empty state is a line above it
+	// rather than the whole view (review F1): what the keys act on stays drawn.
+	if w.project.id == 0 && w.noProjects {
+		out = append(out, " "+styleDim.Render(noProjectsEmpty()))
+	}
 	if w.loadErr != nil {
 		note := " ⚠ refresh failed: " + errString(w.loadErr)
 		if !w.lastLoad.IsZero() {
