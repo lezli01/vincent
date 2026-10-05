@@ -106,7 +106,12 @@ func editorLive(t *testing.T) (*root, *pump, string) {
 	}
 	_, cmd := m.Update(msg)
 	p := newPump(t, m, cmd)
-	p.until(10*time.Second, "the event stream to go live", func() bool { return m.streamLive })
+	// The selection too: the view's project destination is the root's
+	// selected project (task 132.12), which lands asynchronously after the
+	// connect, and "publish" alone is a global row that renders without it.
+	p.until(10*time.Second, "the event stream and the selection", func() bool {
+		return m.streamLive && m.sel.id == project.ID
+	})
 	_, cmd = m.Update(selectViewMsg{id: viewWorkflows})
 	p.push(cmd)
 	p.until(10*time.Second, "the workflows view to load", func() bool {
