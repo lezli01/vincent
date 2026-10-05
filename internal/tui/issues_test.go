@@ -14,16 +14,16 @@ import (
 // Pure model tests for the issue screens (§15 views 12 and 13, task 130.9).
 // No golden frames (task 129 decision 7): each asserts one property.
 
-// issuesFixture is the list with three issues across two projects: a local
-// one in "api", an imported one in "web", and a second local one in "api".
+// issuesFixture is the list on project "api" with three issues: a local one,
+// an imported one, and a second local one, in the daemon's order.
 func issuesFixture() *issuesView {
 	v := newIssuesView()
 	v.client = offlineClient()
-	v.projects = []apiclient.Project{testProject(1, "api"), testProject(2, "web")}
+	v.project = projectSel{id: 1, name: "api"}
 	v.issues = []apiclient.Issue{
 		{ID: 3, ProjectID: 1, Title: "Crash on start", State: "open", Kind: "bug", Labels: []string{"p1"}, TaskCount: 2, Active: true},
 		{
-			ID: 5, ProjectID: 2, Title: "Dark mode", State: "open", Kind: "feature",
+			ID: 5, ProjectID: 1, Title: "Dark mode", State: "open", Kind: "feature",
 			Source: &apiclient.IssueSource{Provider: "github", Repo: "octo/web", Number: 41, URL: "https://github.com/octo/web/issues/41"},
 		},
 		{ID: 4, ProjectID: 1, Title: "Docs typo", State: "open", Labels: []string{"docs"}, TaskCount: 1},
@@ -64,19 +64,52 @@ func TestIssuesScopeCycles(t *testing.T) {
 	}
 }
 
-func TestIssuesGroupByProjectInListingOrder(t *testing.T) {
+// The list is flat (task 132.11): the daemon's order, no project headings.
+func TestIssuesListIsFlatInTheDaemonsOrder(t *testing.T) {
 	v := issuesFixture()
 	var got []string
 	for _, row := range v.rows() {
-		got = append(got, row.project.Name+"#"+strconv.FormatInt(row.issue.ID, 10))
+		got = append(got, "#"+strconv.FormatInt(row.issue.ID, 10))
 	}
-	// The groups follow the project listing; within one, the daemon's order.
-	if want := "api#3,api#4,web#5"; strings.Join(got, ",") != want {
+	if want := "#3,#5,#4"; strings.Join(got, ",") != want {
 		t.Fatalf("rows = %v, want %s", got, want)
 	}
 	out := ansi.Strip(v.render(140, 30))
-	if strings.Index(out, " api") > strings.Index(out, " web") {
-		t.Errorf("the api heading is not above the web heading:\n%s", out)
+	if strings.Contains(out, "across") || strings.Contains(out, "\n api") {
+		t.Errorf("the list still groups by project:\n%s", out)
+	}
+	if !strings.Contains(out, "3 issues") {
+		t.Errorf("the header does not count the project's issues:\n%s", out)
+	}
+}
+
+// With no project selected the list fetches nothing and says why, rather
+// than showing every project's issues (task 132.11).
+func TestIssuesWithNoProjectLoadNothing(t *testing.T) {
+	v := newIssuesView()
+	v.client = offlineClient()
+	if cmd := v.loadCmd(); cmd != nil {
+		t.Fatal("a list with no project selected issued a load")
+	}
+	v.setProjects(nil)
+	out := ansi.Strip(v.render(120, 20))
+	if !strings.Contains(out, "No project selected") || !strings.Contains(out, "project overview") {
+		t.Errorf("the empty selection does not point at the overview:\n%s", out)
+	}
+}
+
+// A switch empties the list before the reload lands, and says which project
+// it is loading (task 132.11).
+func TestIssuesSwitchClearsTheOldProjectsRows(t *testing.T) {
+	v := issuesFixture()
+	if cmd := v.setProject(projectSel{id: 2, name: "web"}); cmd == nil {
+		t.Fatal("a switch did not reload")
+	}
+	if len(v.rows()) != 0 {
+		t.Fatalf("the previous project's %d rows survived the switch", len(v.rows()))
+	}
+	if out := ansi.Strip(v.render(120, 20)); !strings.Contains(out, "loading web…") {
+		t.Errorf("the header does not name the project being loaded:\n%s", out)
 	}
 }
 
@@ -86,10 +119,9 @@ func TestIssuesFilterMatchesEveryField(t *testing.T) {
 		"crash": {3},       // title
 		"docs":  {4},       // label
 		"featu": {5},       // kind
-		"web":   {5},       // project name
-		"api":   {3, 4},    // project name, two rows
+		"api":   nil,       // the project's name is no longer a term
 		"zzz":   nil,       // nothing
-		"":      {3, 4, 5}, // no filter
+		"":      {3, 5, 4}, // no filter
 	}
 	for q, want := range cases {
 		v := issuesFixture()
@@ -196,5 +228,32 @@ func TestIssueDetailEscReturnsToTheList(t *testing.T) {
 	}
 	if msg, ok := cmd().(selectViewMsg); !ok || msg.id != viewIssues {
 		t.Fatalf("esc produced %#v, want the issues list", cmd())
+	}
+}
+
+// A load issued for the project just left must not land once the selection
+// is no project at all (review F1 on PR #720): the list would show another
+// project's issues under no name.
+func TestIssuesDeselectingDropsTheLoadInFlight(t *testing.T) {
+	v := newIssuesView()
+	v.client = deadClient()
+	v.project = projectSel{id: 1, name: "api"}
+	cmd := v.loadCmd()
+	if cmd == nil {
+		t.Fatal("a selected project issued no load")
+	}
+	inFlight, ok := cmd().(issuesLoadedMsg)
+	if !ok {
+		t.Fatal("the load did not answer with an issuesLoadedMsg")
+	}
+	inFlight.err = nil
+	inFlight.issues = []apiclient.Issue{{ID: 1, Title: "stale"}}
+
+	if cmd := v.setProject(projectSel{}); cmd != nil {
+		t.Fatal("deselecting the project issued a load")
+	}
+	v.applyLoaded(inFlight)
+	if len(v.issues) != 0 || v.loaded {
+		t.Errorf("a load for the project just left was installed: %+v", v.issues)
 	}
 }

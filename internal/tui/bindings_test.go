@@ -1130,7 +1130,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"o": func(t *testing.T) {
 			opened := withFakeOpener(t, nil)
 			v := issuesFixture()
-			v.cursor = 2 // the imported one, under the web heading
+			v.cursor = 1 // the imported one, second in the flat list
 			if _, cmd := v.updateKey(registryKey(t, "o")); cmd != nil {
 				drain(cmd)
 			}

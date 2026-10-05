@@ -17,10 +17,11 @@ import (
 
 // The pull-requests takeover (§15 view 7, task 052.6).
 //
-// The question this screen exists to answer is the cross-project one — what
-// is open across everything I run — which one project at a time cannot. So
-// it lists every available project's open pull requests, grouped, with the
-// task that claims each row.
+// It lists the selected project's pull requests, with the task that claims
+// each row (task 132.11, superseding 052.6's cross-project, grouped screen):
+// the project is the root (task 132 decision 1), so a switch swaps the list,
+// and a project without a usable GitHub integration shows its probe's reason
+// in place of rows rather than closing the screen.
 //
 // It makes no GitHub call of its own: every row here came from the daemon,
 // which owns every call it makes on a client's behalf. What the TUI adds is
@@ -41,34 +42,39 @@ type githubProject struct {
 	status  apiclient.GitHubStatus
 }
 
-// githubProbeMsg carries the whole fan-out of probes. It is one message
-// rather than one per project because the nav row is gated on *any* project
-// answering yes, and a per-project message would make the row flicker into
-// existence as answers trickle in.
+// githubProbeMsg carries the whole fan-out of probes, every project's answer
+// whether yes or no: the nav row follows the selected project's (task
+// 132.11), the takeover shows a no's reason, and the project overview's
+// GitHub cell reads all of them (task 132 decision 44). It is one message
+// rather than one per project so the gated rows do not flicker as answers
+// trickle in.
 type githubProbeMsg struct {
 	projects []githubProject
 	// err is the project listing failing, which is not the same as every
 	// probe saying no — the difference is between "no GitHub projects" and
 	// "could not ask".
 	err error
+	// seq is the root's number for the fan-out (probeSeq): a newer one
+	// applied first makes this one stale. Zero is untracked, as a loadStamp.
+	seq uint64
 }
 
-// available is the projects whose integration answered yes, in listing order.
-func (m githubProbeMsg) available() []githubProject {
-	out := make([]githubProject, 0, len(m.projects))
-	for _, p := range m.projects {
-		if p.status.Available {
-			out = append(out, p)
+// githubStatusFor is the probe answer for project id among probes, and
+// whether there is one.
+func githubStatusFor(probes []githubProject, id int64) (apiclient.GitHubStatus, bool) {
+	for _, gp := range probes {
+		if gp.project.ID == id {
+			return gp.status, true
 		}
 	}
-	return out
+	return apiclient.GitHubStatus{}, false
 }
 
 // probeGitHubCmd asks every registered project whether its GitHub
 // integration is usable, concurrently. The daemon's short cache absorbs the
 // repeat cost, which is the reason §13.2 gives for the probe being cheap
 // enough to ask per project.
-func probeGitHubCmd(client *apiclient.Client) tea.Cmd {
+func probeGitHubCmd(client *apiclient.Client, seq uint64) tea.Cmd {
 	if client == nil {
 		return nil
 	}
@@ -77,7 +83,7 @@ func probeGitHubCmd(client *apiclient.Client) tea.Cmd {
 		defer cancel()
 		projects, err := client.ListProjects(ctx)
 		if err != nil {
-			return githubProbeMsg{err: err}
+			return githubProbeMsg{err: err, seq: seq}
 		}
 		out := make([]githubProject, len(projects))
 		var wg sync.WaitGroup
@@ -96,20 +102,21 @@ func probeGitHubCmd(client *apiclient.Client) tea.Cmd {
 			}()
 		}
 		wg.Wait()
-		return githubProbeMsg{projects: out}
+		return githubProbeMsg{projects: out, seq: seq}
 	}
 }
 
 // Pull-requests messages.
 type (
 	prRefreshMsg struct{}
-	// prLoadedMsg is one whole screen's worth of listings: every available
-	// project's, each carrying its own outcome, plus the task rows the
-	// claiming column and the link picker read from.
+	// prLoadedMsg is one whole screen's worth: the selected project's
+	// listing or the reason it failed, plus that project's task rows, which
+	// the claiming column and the pickers read from.
 	prLoadedMsg struct {
-		stamp  loadStamp
-		groups []pullGroup
-		tasks  []apiclient.Task
+		stamp loadStamp
+		pulls []apiclient.GitHubPullRequest
+		err   string
+		tasks []apiclient.Task
 	}
 	// prLinkedMsg reports a completed link or unlink.
 	prLinkedMsg struct {
@@ -120,21 +127,9 @@ type (
 	}
 )
 
-// pullGroup is one project's listing. err holds that project's own failure —
-// a 409 from an integration that stopped working sinks this group and no
-// other, which is the whole reason the groups are fetched separately.
-type pullGroup struct {
-	project apiclient.Project
-	pulls   []apiclient.GitHubPullRequest
-	err     string
-}
-
-// prRow is one selectable line: a pull request and the project it is in.
-// Group headings are drawn by the renderer and are not rows — there is
-// nothing to do on one.
+// prRow is one selectable line: a pull request in the selected project.
 type prRow struct {
-	project apiclient.Project
-	pull    apiclient.GitHubPullRequest
+	pull apiclient.GitHubPullRequest
 }
 
 // unlinkPrompt is the inline confirmation. It says the refusal is sticky
@@ -154,17 +149,25 @@ type pullRequestsView struct {
 	// overtaken by a newer one (task 132.5).
 	projectScope
 	stamps loadStamps
+	// noProjects is a listing that came back empty. A selection of 0 means
+	// "no project registered" only then; before the first listing it is a
+	// selection not resolved yet (review F9 on the chats board).
+	noProjects bool
 
 	client *apiclient.Client
 	now    func() time.Time
 
-	// available is what the root's probe fan-out found. The view does not
-	// probe: the root does, because the nav row that reaches this screen is
-	// gated on the same answer.
-	available []githubProject
+	// probes is what the root's probe fan-out found, for every project. The
+	// view does not probe: the root does, because the nav row that reaches
+	// this screen is gated on the same answer. Whether the selected project
+	// is in it at all is the difference between "asking" and "no" (github).
+	probes []githubProject
 
-	groups []pullGroup
-	tasks  []apiclient.Task
+	pulls []apiclient.GitHubPullRequest
+	// loadErr is the listing's failure, the daemon's sentence for it — the
+	// 409 an integration that stopped working answers with.
+	loadErr string
+	tasks   []apiclient.Task
 
 	loaded   bool
 	loading  bool
@@ -175,10 +178,10 @@ type pullRequestsView struct {
 	filter    textField
 	filtering bool
 
-	// picker is the link picker, scoped to the row's own project: POST takes
-	// a bare number and the daemon resolves the repo from the task's project,
-	// so offering a task from another project would link that project's repo
-	// to a number that means something else there.
+	// picker is the link picker, offering the selected project's tasks:
+	// POST takes a bare number and the daemon resolves the repo from the
+	// task's project, so a task from another project would link that
+	// project's repo to a number that means something else there.
 	picker     *picker
 	pickerPull int
 	pickerRepo string
@@ -202,7 +205,7 @@ type pullRequestsView struct {
 
 func newPullRequestsView() *pullRequestsView {
 	fi := newTextField()
-	fi.SetPlaceholder("filter by number, title, branch or project")
+	fi.SetPlaceholder("filter by number, title or branch")
 	fi.SetPrompt("/")
 	v := &pullRequestsView{now: time.Now, filter: fi, state: pullStates[0]}
 	v.reload = v.loadCmd
@@ -217,6 +220,35 @@ func (v *pullRequestsView) title() string { return "Pull requests" }
 func (v *pullRequestsView) setClient(c *apiclient.Client) tea.Cmd {
 	v.client = c
 	return v.loadCmd()
+}
+
+// setProjects records whether any project is registered (projectListAware).
+// The root hands it only a listing that succeeded.
+func (v *pullRequestsView) setProjects(ps []apiclient.Project) { v.noProjects = len(ps) == 0 }
+
+// setProject wraps projectScope's: a switch empties the list before the
+// reload goes out (task 132.11), so the rows of the project just left are
+// never shown under the name of the one just chosen. The filter text and
+// the state stay; a picker or a confirmation about the old rows does not.
+func (v *pullRequestsView) setProject(p projectSel) tea.Cmd {
+	if p.id != v.project.id {
+		v.pulls, v.tasks, v.loadErr, v.loaded = nil, nil, "", false
+		v.lastLoad = time.Time{}
+		v.cursor = 0
+		v.picker, v.confirm = nil, nil
+	}
+	return v.projectScope.setProject(p)
+}
+
+// github is the selected project's probe answer, and whether one has landed.
+func (v *pullRequestsView) github() (apiclient.GitHubStatus, bool) {
+	return githubStatusFor(v.probes, v.project.id)
+}
+
+// usable is whether the selected project may be listed: its probe said yes.
+func (v *pullRequestsView) usable() bool {
+	st, ok := v.github()
+	return ok && st.Available
 }
 
 func (v *pullRequestsView) capturesInput() bool {
@@ -240,14 +272,9 @@ func (v *pullRequestsView) paste(text string) tea.Cmd {
 	return cmd
 }
 
-// hintedProject lets `n` open the new-task form on the project the cursor is
-// standing in.
-func (v *pullRequestsView) hintedProject() int64 {
-	if row, ok := v.current(); ok {
-		return row.project.ID
-	}
-	return 0
-}
+// hintedProject lets `n` open the new-task form on the selected project,
+// which every row is in.
+func (v *pullRequestsView) hintedProject() int64 { return v.project.id }
 
 func (v *pullRequestsView) update(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -283,74 +310,68 @@ func (v *pullRequestsView) update(msg tea.Msg) (panel, tea.Cmd) {
 	return v, nil
 }
 
-// applyProbe records what the root found and reloads when the set of
-// available projects changed — a project registered mid-session is one this
-// screen has never listed.
+// applyProbe records what the root found. The selected project's answer
+// turning to yes reloads — a reconnect re-probes, and a project whose
+// credentials came back is one this screen could not list before — and
+// turning to no drops its rows, which the reason then stands in for.
 func (v *pullRequestsView) applyProbe(msg githubProbeMsg) tea.Cmd {
-	next := msg.available()
-	if sameGitHubProjects(v.available, next) {
+	if msg.err != nil {
+		// Could not ask is not "no": the last answer stands (the root's
+		// reason for the nav row, applied here).
 		return nil
 	}
-	v.available = next
-	return v.loadCmd()
+	was := v.usable()
+	v.probes = msg.projects
+	switch now := v.usable(); {
+	case now && !was:
+		return v.loadCmd()
+	case !now:
+		// A listing still in flight is dropped with the rows: it was asked
+		// while the answer was yes, and landing now would install rows, and
+		// a task list for `P`, behind a reason that says there are none.
+		v.stamps.drop(v.project.id)
+		v.pulls, v.tasks, v.loadErr, v.loaded, v.loading = nil, nil, "", false, false
+		v.picker, v.confirm = nil, nil
+		v.clampCursor()
+	}
+	return nil
 }
 
-func sameGitHubProjects(a, b []githubProject) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i].project.ID != b[i].project.ID {
-			return false
-		}
-	}
-	return true
-}
-
-// loadCmd fetches every available project's listing concurrently, and the
-// task rows the claiming column reads. Each listing keeps its own error:
-// this is the endpoint that answers 409 when an integration stops working,
-// and one project's credentials expiring must not blank the others.
+// loadCmd fetches the selected project's listing and its task rows, which
+// the claiming column reads: one ListGitHubPulls and one ListTasks per load
+// (task 132.11). With no project selected, or one whose probe has not said
+// yes, it fetches nothing — the reason is what the screen shows instead.
 func (v *pullRequestsView) loadCmd() tea.Cmd {
 	client := v.client
-	if client == nil || len(v.available) == 0 {
+	if client == nil || v.project.id == 0 || !v.usable() {
+		v.stamps.drop(v.project.id)
+		v.loading = false
 		return nil
 	}
 	v.loading = true
-	projects := append([]githubProject(nil), v.available...)
+	pid := v.project.id
 	state := v.state
-	stamp := v.stamps.next(v.project.id)
+	stamp := v.stamps.next(pid)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
-		groups := make([]pullGroup, len(projects))
-		var wg sync.WaitGroup
-		for i, gp := range projects {
-			groups[i] = pullGroup{project: gp.project}
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				pulls, err := client.ListGitHubPulls(ctx, gp.project.ID,
-					apiclient.GitHubPullsOptions{State: state})
-				if err != nil {
-					groups[i].err = githubReasonMessage(err)
-					return
-				}
-				groups[i].pulls = pulls
-			}()
+		msg := prLoadedMsg{stamp: stamp}
+		pulls, err := client.ListGitHubPulls(ctx, pid, apiclient.GitHubPullsOptions{State: state})
+		if err != nil {
+			msg.err = githubReasonMessage(err)
 		}
-		wg.Wait()
+		msg.pulls = pulls
 		// The claiming column names a task, and a name is worth more than an
 		// id. The listing failing is not a reason to hide the pull requests.
-		tasks, err := client.ListTasks(ctx, apiclient.ListTasksOptions{})
-		if err != nil {
-			tasks = nil
+		tasks, err := client.ListTasks(ctx, apiclient.ListTasksOptions{ProjectID: pid})
+		if err == nil {
+			msg.tasks = tasks
 		}
-		return prLoadedMsg{stamp: stamp, groups: groups, tasks: tasks}
+		return msg
 	}
 }
 
-// githubReasonMessage is the sentence a failed listing puts on its group.
+// githubReasonMessage is the sentence a failed listing puts on the screen.
 // The daemon's 409 carries its named reason in details and the sentence in
 // the message, and the message is what a human reads.
 func githubReasonMessage(err error) string {
@@ -374,7 +395,7 @@ func (v *pullRequestsView) applyLoaded(msg prLoadedMsg) {
 	v.loading = false
 	v.loaded = true
 	v.lastLoad = v.now()
-	v.groups = msg.groups
+	v.pulls, v.loadErr = msg.pulls, msg.err
 	if msg.tasks != nil {
 		v.tasks = msg.tasks
 	}
@@ -516,9 +537,9 @@ func (v *pullRequestsView) createTask() tea.Cmd {
 			" names no head branch, so there is no branch to run a task on", true)
 		return nil
 	}
-	pull := row.pull
+	pull, pid := row.pull, v.project.id
 	return func() tea.Msg {
-		return newTaskFromPullMsg{projectID: row.project.ID, pull: &pull}
+		return newTaskFromPullMsg{projectID: pid, pull: &pull}
 	}
 }
 
@@ -556,11 +577,12 @@ func (v *pullRequestsView) openTask() tea.Cmd {
 	if t, found := v.taskByID(id); found {
 		state = t.State
 	}
-	pid := row.project.ID
+	pid := v.project.id
 	return func() tea.Msg { return selectTaskMsg{id: id, state: state, projectID: pid} }
 }
 
-// openLinkPicker offers the tasks of the row's own project (decision 5).
+// openLinkPicker offers the selected project's tasks (decision 5), which is
+// the row's project.
 func (v *pullRequestsView) openLinkPicker() {
 	row, ok := v.current()
 	if !ok {
@@ -570,15 +592,15 @@ func (v *pullRequestsView) openLinkPicker() {
 	v.pickerCreate = false
 	v.pickerPull = row.pull.Number
 	v.pickerRepo = row.pull.Repo
-	v.picker = newPicker(0, "task in "+row.project.Name, v.taskOptions(row.project.ID), false, "")
+	v.picker = newPicker(0, "task in "+v.project.name, v.taskOptions(), false, "")
 }
 
 // openCreatePicker is `P`: the tasks that could have a pull request and do
 // not (task 069).
 //
 // This screen has no task rows and is not given any: its question is "what is
-// open across everything I run", and a task with no pull request is not an
-// open pull request. So the offer arrives as a picker, and choosing a task
+// open in this project", and a task with no pull request is not an open pull
+// request. So the offer arrives as a picker, and choosing a task
 // opens that task's workspace with the form up — the workspace is still where
 // the offer to create lives (052 decision 6), widened rather than reversed.
 //
@@ -597,25 +619,19 @@ func (v *pullRequestsView) openCreatePicker() {
 	v.picker = newPicker(0, "task to open a pull request for", options, false, "")
 }
 
-// createOptions is `P`'s rows: every task on this screen's GitHub projects
-// that has a branch and no live link. It is not scoped to one row's project,
-// because `P` is not about a row — there may be no row at all.
+// createOptions is `P`'s rows: every task in the selected project that has a
+// branch and no live link. It is not about a row — there may be no row at
+// all — and the project is the only one on screen (task 132.11).
 func (v *pullRequestsView) createOptions() []pickerOption {
 	claimed := map[int64]bool{}
-	for _, g := range v.groups {
-		for _, row := range g.pulls {
-			if row.TaskID != nil {
-				claimed[*row.TaskID] = true
-			}
+	for _, row := range v.pulls {
+		if row.TaskID != nil {
+			claimed[*row.TaskID] = true
 		}
-	}
-	onGitHub := map[int64]bool{}
-	for _, p := range v.available {
-		onGitHub[p.project.ID] = true
 	}
 	rows := make([]apiclient.Task, 0, len(v.tasks))
 	for _, t := range v.tasks {
-		if t.BranchName != "" && !claimed[t.ID] && onGitHub[t.ProjectID] {
+		if t.BranchName != "" && !claimed[t.ID] && t.ProjectID == v.project.id {
 			rows = append(rows, t)
 		}
 	}
@@ -634,10 +650,10 @@ func (v *pullRequestsView) createOptions() []pickerOption {
 // taskOptions is the picker's rows: this project's tasks, newest first, with
 // the branch beside each — the branch is what a pull request's head is
 // matched against, so it is the field that makes the right task obvious.
-func (v *pullRequestsView) taskOptions(projectID int64) []pickerOption {
+func (v *pullRequestsView) taskOptions() []pickerOption {
 	rows := make([]apiclient.Task, 0, len(v.tasks))
 	for _, t := range v.tasks {
-		if t.ProjectID == projectID {
+		if t.ProjectID == v.project.id {
 			rows = append(rows, t)
 		}
 	}
@@ -769,26 +785,25 @@ func (v *pullRequestsView) setNote(text string, bad bool) {
 	v.note, v.noteBad = text, bad
 }
 
-// rows is the flattened, filtered selection order: the groups in listing
-// order, each project's pull requests in the order the daemon served them.
+// rows is the filtered selection order, the daemon's order within it.
 func (v *pullRequestsView) rows() []prRow {
 	q := strings.ToLower(strings.TrimSpace(v.filter.Value()))
-	out := make([]prRow, 0, 16)
-	for _, g := range v.groups {
-		for _, p := range g.pulls {
-			if q != "" && !pullMatches(g.project, p, q) {
-				continue
-			}
-			out = append(out, prRow{project: g.project, pull: p})
+	out := make([]prRow, 0, len(v.pulls))
+	for _, p := range v.pulls {
+		if q != "" && !pullMatches(p, q) {
+			continue
 		}
+		out = append(out, prRow{pull: p})
 	}
 	return out
 }
 
-func pullMatches(project apiclient.Project, p apiclient.GitHubPullRequest, q string) bool {
+// pullMatches is `/`'s client-side match. The project's name is no longer a
+// term (task 132.11): every row is in it.
+func pullMatches(p apiclient.GitHubPullRequest, q string) bool {
 	hay := strings.ToLower(strings.Join([]string{
 		"#" + strconv.Itoa(p.Number), p.Title, p.HeadBranch, p.Repo,
-		p.Status(), p.Author, project.Name,
+		p.Status(), p.Author,
 	}, " "))
 	return strings.Contains(hay, q)
 }

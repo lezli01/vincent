@@ -1,6 +1,6 @@
 # 132 — Project as root: the TUI scoped to one selected project
 
-**Status:** 🔄 in progress (10/18)
+**Status:** 🔄 in progress (11/18)
 
 Issue [#694](https://github.com/lezli01/vincent/issues/694), part of
 [#693](https://github.com/lezli01/vincent/issues/693). Spec §3 (the new row
@@ -709,8 +709,10 @@ its own pull request.
 - [x] **132.10** ([#704](https://github.com/lezli01/vincent/issues/704)) The
   chats and archived chats boards, flat and scoped. Depends: 132.5.
   ✓ 2026-10-05
-- [ ] **132.11** ([#705](https://github.com/lezli01/vincent/issues/705)) The
-  issues list and the pull-requests takeover scoped. Depends: 132.5.
+- [x] **132.11** ([#705](https://github.com/lezli01/vincent/issues/705)) The
+  issues list and the pull-requests takeover scoped; the pull-requests gate
+  follows the selected project's probe; spec §15 views 7 and 12.
+  Depends: 132.5. ✓ 2026-10-05
 - [x] **132.12** ([#706](https://github.com/lezli01/vincent/issues/706))
   Resolved workflows; triggers filtered client-side, with the "unassigned"
   band; spec §15 views 5 and 11 (decisions 7, 8, 39–41). Depends: 132.5.

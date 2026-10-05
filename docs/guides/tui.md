@@ -1733,8 +1733,8 @@ With no project registered, the overview says how to add one: `a`, or
 
 ### Pull requests
 
-Every pull request across every registered project whose `origin` is a
-github.com repository vincent can authenticate to, grouped by project. The
+The selected project's pull requests, when its `origin` is a github.com
+repository vincent can authenticate to. The
 listing starts open-only and `s` cycles it through closed and all. Each row
 carries the number, its state (`open`, `draft`, `closed` or `merged`), the
 title, the head branch, and the task that claims it — with `auto` when the
@@ -1746,10 +1746,13 @@ it by hand.
 unclaimed draft, and an unclaimed pull request from a
 fork](../assets/tui-pull-requests.png)
 
-The entry appears in the palette only when at least one project qualifies; with
-none, the screen is unreachable rather than empty. A project whose listing fails
-shows its reason on that group and does not hide the others. A reconciler tick
-that links or unlinks a pull request re-renders the screen with no keypress.
+The entry appears in the palette, the `?` overlay and the workspace's
+pull-request keys only when the selected project qualifies. Switching to a
+project that does not while the screen is open keeps the screen, which then
+says "this project has no usable GitHub integration" and why, and lists
+nothing until you switch back. A listing that fails shows the daemon's reason
+on one line. A reconciler tick that links or unlinks a pull request re-renders
+the screen with no keypress.
 
 | Key | Does |
 |---|---|
@@ -1760,14 +1763,14 @@ that links or unlinks a pull request re-renders the screen with no keypress.
 | `P` | Open a pull request for a task that has none — pick the task, then push its branch and create it |
 | `u` | Unlink it (asks first) |
 | `s` | Cycle the listing between open, closed and all |
-| `R` | Re-list every project |
+| `R` | Re-list this project |
 | `↑`/`↓` | Move the selection |
-| `/` | Filter by number, title, branch or project |
+| `/` | Filter by number, title or branch |
 
 `P` is the one key here that is not about the selected row. This screen has no
-task rows — its question is "what is open across everything I run", and a task
-with no pull request is not an open pull request — so `P` offers a picker of
-every task with a branch and no pull request, and choosing one opens that task's
+task rows — its question is "what is open in this project", and a task with no
+pull request is not an open pull request — so `P` offers a picker of this
+project's tasks with a branch and no pull request, and choosing one opens that task's
 workspace with the form already up. Eligibility is exactly that: a branch, and
 no pull request. Anything else is reported by the push or the create failing
 with a named reason rather than guessed at in advance.
@@ -1790,9 +1793,11 @@ states exist for.
 
 ### Issues
 
-Every project's issues — the ones filed in vincent and the ones imported from
-GitHub — on one screen, grouped by project. It is in the palette whether or not
-any project has a GitHub integration: issues are vincent's own. The listing
+The selected project's issues — the ones filed in vincent and the ones imported
+from GitHub — in one flat list. It is in the palette whether or not the
+project has a GitHub integration: issues are vincent's own. Switching project
+swaps the list, and the header reads "loading ‹project›…" until the new one
+arrives. The listing
 starts open-only and `s` cycles it through closed and all.
 
 Each row carries the issue's id, its state (with the close reason once it is
@@ -1813,8 +1818,8 @@ issues](../assets/tui-issues.png)
 | `s` | Cycle the listing between open, closed and all |
 | `R` | Re-read the issues |
 | `↑`/`↓` | Move the selection |
-| `/` | Filter by id, title, label, kind or project |
-| `n` | File a new issue in the selected row's project |
+| `/` | Filter by id, title, label or kind |
+| `n` | File a new issue in this project |
 | `a` | Create a task from the selected issue — the form is prefilled from it and editable first |
 | `i` | Edit the selected issue in the issue form |
 | `X` | Close or reopen the selected issue — only what vincent offers for it |

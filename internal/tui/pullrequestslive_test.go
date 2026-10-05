@@ -2,17 +2,38 @@ package tui
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/testrepo"
 )
 
-// The pull-requests takeover against the **real** API handlers and a real
-// daemon-side GitHub client pointed at cmd/fakegh — which is what keeps the
-// client and server wire types from drifting.
+// pullListings is every recorded GET of a project's pull-request listing.
+func pullListings(rec *requestRecorder) []string {
+	var out []string
+	for _, r := range rec.matching("GET /v1/projects/") {
+		if strings.Contains(r, "/github/pulls") {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// exactly is the recorded requests equal to line.
+func exactly(rec *requestRecorder, line string) []string {
+	var out []string
+	for _, r := range rec.matching(line) {
+		if r == line {
+			out = append(out, r)
+		}
+	}
+	return out
+}
 
 // pullsView is the takeover as the root holds it.
 func pullsView(t *testing.T, h *newTaskLiveHarness) *pullRequestsView {
@@ -25,14 +46,75 @@ func pullsView(t *testing.T, h *newTaskLiveHarness) *pullRequestsView {
 }
 
 // A project with a github.com origin and a working credential puts the nav
-// row on the palette and fills the view; one without does neither.
-func TestPullRequestsListsEveryAvailableProject(t *testing.T) {
-	h, _ := newGitHubLiveHarness(t, liveOptions{remote: ghLiveOrigin})
+// row on the palette and fills the view; one without does neither. The view
+// lists the selected project alone, with one listing and one task read per
+// load (task 132.11), and a switch to a project without GitHub keeps the
+// view up with that project's reason and lists nothing for it.
+func TestPullRequestsListsOnlyTheSelectedProject(t *testing.T) {
+	rec := &requestRecorder{}
+	h, _ := newGitHubLiveHarness(t, liveOptions{remote: ghLiveOrigin, wrap: rec.wrap})
 	h.p.until(10*time.Second, "the GitHub probes to answer", func() bool {
 		return h.m.githubAvailable()
 	})
 	v := pullsView(t, h)
+	h.send(selectViewMsg{id: viewPullRequests})
 	h.p.until(10*time.Second, "the pull-request listing", func() bool {
+		return v.loaded && !v.loading && len(v.rows()) > 0
+	})
+
+	// A second project, with no origin at all: registered mid-session, so
+	// the root re-probes on its project.created.
+	other := &store.Project{Name: "zz-plain", Path: testrepo.Init(t, "main"), DefaultBranch: "main"}
+	if err := h.st.CreateProject(context.Background(), other); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	h.p.until(10*time.Second, "the second project's probe", func() bool {
+		_, ok := githubStatusFor(h.m.github, other.ID)
+		return ok
+	})
+
+	// Per load: exactly one listing, for the selected project, and one task
+	// read scoped to it. The board's own listing is unscoped and the
+	// archived board's carries archived=, so the exact query is this view's.
+	// An event-driven refresh may overlap `R`, so requests are counted
+	// against the loads the view issued rather than against one.
+	scopedTasks := "GET /v1/tasks?project_id=" + strconv.FormatInt(h.projectID, 10)
+	beforeLoads := v.stamps.issued
+	beforePulls, beforeTasks := len(pullListings(rec)), len(exactly(rec, scopedTasks))
+	h.sendKey(keyPress("R"))
+	h.p.until(10*time.Second, "one listing and one task read per load", func() bool {
+		loads := int(v.stamps.issued - beforeLoads)
+		return loads > 0 && !v.loading &&
+			len(pullListings(rec))-beforePulls == loads &&
+			len(exactly(rec, scopedTasks))-beforeTasks == loads
+	})
+	for _, p := range pullListings(rec) {
+		if !strings.Contains(p, "/v1/projects/"+strconv.FormatInt(h.projectID, 10)+"/") {
+			t.Errorf("a listing was made for another project: %s", p)
+		}
+	}
+
+	// A switch to the project without GitHub keeps the view, shows its
+	// reason, and lists nothing for it.
+	h.p.push(h.m.selectProject(apiclient.Project{ID: other.ID, Name: other.Name}, "test"))
+	h.p.until(10*time.Second, "the reason in place of the rows", func() bool {
+		return strings.Contains(v.render(160, 30), "This project has no usable GitHub integration")
+	})
+	if h.m.active != viewPullRequests {
+		t.Fatalf("a switch left the pull-requests view for view %d", h.m.active)
+	}
+	if h.m.githubAvailable() {
+		t.Error("the gate still says available on a project whose probe said no")
+	}
+	for _, p := range pullListings(rec) {
+		if strings.Contains(p, "/v1/projects/"+strconv.FormatInt(other.ID, 10)+"/") {
+			t.Fatalf("a listing was made for the project without GitHub: %s", p)
+		}
+	}
+
+	// Switching back reloads.
+	h.p.push(h.m.selectProject(apiclient.Project{ID: h.projectID, Name: "live"}, "test"))
+	h.p.until(10*time.Second, "the GitHub project's rows again", func() bool {
 		return v.loaded && len(v.rows()) > 0
 	})
 
@@ -90,7 +172,7 @@ func TestPullRequestsRefreshesOnAReconcilerTick(t *testing.T) {
 // do not, against the real handlers (task 069).
 //
 // This screen has no task rows and is not given any — its question is "what is
-// open across everything I run", and a task with no pull request is not an
+// open in this project", and a task with no pull request is not an
 // open pull request. So the offer is a picker, and choosing a task navigates
 // to that task's workspace with the form up: the offer to create still lives
 // in the workspace (052 decision 6), widened rather than reversed.

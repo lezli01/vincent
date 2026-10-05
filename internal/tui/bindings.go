@@ -285,11 +285,11 @@ type binding struct {
 	// term is the §15 vocabulary operation this row performs, for the rows
 	// that perform a shared one. Empty means surface-local.
 	term vocabularyTerm
-	// github marks a row that only means something when at least one
-	// registered project has a usable GitHub integration (§13.2). There is no
-	// stored notion of one, so the root's probe fan-out is the answer and the
-	// row is withheld until it says yes — including while the probes are
-	// still in flight. Mechanically this is `fold`'s precedent (task 054
+	// github marks a row that only means something when the selected
+	// project has a usable GitHub integration (§13.2, task 132.11). There is
+	// no stored notion of one, so the root's probe fan-out is the answer and
+	// the row is withheld until it says yes for that project — including
+	// while the probes are still in flight. Mechanically this is `fold`'s precedent (task 054
 	// decision 5) applied to a nav row and to two workspace keys.
 	github bool
 	// aliased marks a row another row's hint already advertises: `right`
@@ -357,7 +357,7 @@ var bindings = []binding{
 	{label: "project overview — every project's figures, what needs you, add, edit, remove", scope: scopeGlobal, nav: true, navTarget: viewProjects},
 	{label: "workflows — registry with scopes and validity", scope: scopeGlobal, nav: true, navTarget: viewWorkflows},
 	{label: "daemon — identity, config, adapters, log", scope: scopeGlobal, nav: true, navTarget: viewDaemon},
-	{label: "pull requests — what is open across every GitHub project", scope: scopeGlobal, nav: true, navTarget: viewPullRequests, github: true},
+	{label: "pull requests — what is open in this project on GitHub", scope: scopeGlobal, nav: true, navTarget: viewPullRequests, github: true},
 	// Chats get a palette row and no direct key, the pattern every takeover
 	// but new task follows. `n` is not shared: on the chats board it makes a
 	// chat, everywhere else it still makes a task.
@@ -373,8 +373,8 @@ var bindings = []binding{
 	{label: "triggers — what starts work on its own, and what each event became", scope: scopeGlobal, nav: true, navTarget: viewTriggers},
 	// Issues get a palette row and no key, the same pattern. Not github:
 	// issues are vincent's own, and a project with no GitHub integration has
-	// them too (task 130.9).
-	{label: "issues — every project's issues, local and imported", scope: scopeGlobal, nav: true, navTarget: viewIssues},
+	// them too (task 130.9). Scoped to the selected project (task 132.11).
+	{label: "issues — this project's issues, local and imported", scope: scopeGlobal, nav: true, navTarget: viewIssues},
 
 	// Task actions, gated on available_actions. `p` appears twice because
 	// pause and resume are distinct actions behind one key; the palette
@@ -799,15 +799,15 @@ var bindings = []binding{
 	{op: keymap.Add, key: "a", label: "create a task from this pull request — it runs on the pull request's head branch, and the form is editable first", scope: scopePanel, context: ctxPullRequests, hint: "a new task", priority: 3, term: termAdd},
 	{key: "l", label: "link this pull request to a task in the same project", scope: scopePanel, context: ctxPullRequests, hint: "l link", priority: 4},
 	// The takeover's half of task 069. This screen has no task rows — its
-	// question is "what is open across everything I run" — so the offer is a
+	// question is "what is open in this project" — so the offer is a
 	// picker of tasks that have a branch and no pull request, and choosing
 	// one opens that task's workspace with the form up.
 	{key: "P", label: "open a pull request for a task that has none — pick the task, then push its branch and create it", scope: scopePanel, context: ctxPullRequests, hint: "P open a PR", priority: 5, github: true},
 	{key: "u", label: "unlink it (asks first — the refusal sticks, and the reconciler will not link it again)", scope: scopePanel, context: ctxPullRequests, hint: "u unlink", priority: 5},
 	{op: keymap.Scope, key: "s", label: "cycle the listing between open, closed and all", scope: scopePanel, context: ctxPullRequests, hint: "s state", priority: 6, term: termScope},
-	{op: keymap.Refresh, key: "R", label: "re-list every project", scope: scopePanel, context: ctxPullRequests, hint: "R refresh", priority: 7, term: termRefresh},
+	{op: keymap.Refresh, key: "R", label: "re-list this project", scope: scopePanel, context: ctxPullRequests, hint: "R refresh", priority: 7, term: termRefresh},
 	{key: "down", label: "move the selection (↑/↓)", scope: scopePanel, context: ctxPullRequests, priority: 8},
-	{op: keymap.Filter, key: "/", label: "filter by number, title, branch or project", scope: scopePanel, context: ctxPullRequests, priority: 9, term: termFilter},
+	{op: keymap.Filter, key: "/", label: "filter by number, title or branch", scope: scopePanel, context: ctxPullRequests, priority: 9, term: termFilter},
 
 	// Daemon.
 	{op: keymap.Refresh, key: "R", label: "re-read the daemon info, the config and the log", scope: scopePanel, context: ctxDaemon, hint: "R refresh", priority: 1, term: termRefresh},
@@ -853,11 +853,11 @@ var bindings = []binding{
 	{op: keymap.Scope, key: "s", label: "cycle the listing between open, closed and all", scope: scopePanel, context: ctxIssues, hint: "s state", priority: 3, term: termScope},
 	{op: keymap.Refresh, key: "R", label: "re-read the issues — never a GitHub sync", scope: scopePanel, context: ctxIssues, hint: "R refresh", priority: 4, term: termRefresh},
 	{key: "down", label: "move the selection (↑/↓)", scope: scopePanel, context: ctxIssues, hint: "↑↓ move", priority: 5},
-	{op: keymap.Filter, key: "/", label: "filter by id, title, label, kind or project", scope: scopePanel, context: ctxIssues, hint: "/ filter", priority: 6, term: termFilter},
+	{op: keymap.Filter, key: "/", label: "filter by id, title, label or kind", scope: scopePanel, context: ctxIssues, hint: "/ filter", priority: 6, term: termFilter},
 	// The writes (task 130.12). `n` is §15's "make a new one here", the
 	// chats board's precedent; `i` is the trigger list's "edit in a form";
 	// `X` offers what the daemon's available_actions allow and nothing else.
-	{op: keymap.New, key: "n", label: "file a new issue in the selected row's project", scope: scopePanel, context: ctxIssues, hint: "n new", priority: 7},
+	{op: keymap.New, key: "n", label: "file a new issue in this project", scope: scopePanel, context: ctxIssues, hint: "n new", priority: 7},
 	{op: keymap.Add, key: "a", label: "create a task from the selected issue — the form is prefilled from it and editable first", scope: scopePanel, context: ctxIssues, hint: "a new task", priority: 7, term: termAdd},
 	{key: issueEditKey, label: "edit the selected issue in a form", scope: scopePanel, context: ctxIssues, hint: "i edit", priority: 8},
 	{key: issueStateKey, label: "close or reopen the selected issue — only what the daemon offers", scope: scopePanel, context: ctxIssues, hint: "X close/reopen", priority: 9},

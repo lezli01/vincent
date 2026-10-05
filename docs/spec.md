@@ -12611,6 +12611,27 @@ stream for the live tail.
    every view, so a `task.github_pull_changed` tick re-renders it with no
    keypress.
 
+   *Amended 2026-10-05 (task 132.11, issue #705; supersedes task 052.6).*
+   **The list is the selected project's** (decision row 37), not every
+   available project's: one `GET /v1/projects/{selected}/github/pulls` and one
+   `GET /v1/tasks?project_id={selected}` per load, with no groups, no
+   per-group error bands and no "N across M projects" header — a listing that
+   fails is one error line carrying the daemon's message. The claiming
+   column, the link picker and `P`'s picker read that project's tasks alone.
+   **Availability follows the selection:** the root keeps every project's
+   probe answer, yes and no, and the nav row, its palette and `?` rows and
+   the workspace's pull-request keys are present when the *selected*
+   project's probe says `available: true`. The probes still go out on
+   connect and on reconnect, and now on a `project.*` event too, so a project
+   registered mid-session has an answer before it is picked. A switch to a
+   project without a usable integration while the view is open keeps the
+   view, shows "this project has no usable GitHub integration:" with that
+   project's own reason, and lists nothing; switching back re-lists. With no
+   project selected nothing is fetched. `/` no longer matches the project's
+   name, and `R` re-lists this project. The view's question is now "what is
+   open in this project"; the cross-project question is the project
+   overview's to answer.
+
 8. **Chats board.** *Added 2026-08-31 (task 067, issue #269, closing 063.2).* A
    second board, not a filter on the first: every chat from `GET /v1/chats`,
    grouped by project, one row per conversation carrying id, state, agent, last
@@ -13165,6 +13186,18 @@ stream for the live tail.
    `vincent issue sync`. Any `issue.*` event and any task event re-lists,
    debounced.
 
+   *Amended 2026-10-05 (task 132.11, issue #705; supersedes task 130
+   decision 16.1).* **The list is flat and scoped to the selected project**
+   (decision row 37): `GET /v1/issues?project_id={selected}`, filtered by the
+   server, with no project headings and no "across M projects" count. With
+   no project selected it fetches nothing and says so — "no project" once a
+   project listing has come back empty, "resolving" before — never falling
+   back to every project's issues. `/` no longer matches the project's name.
+   `n` files the new issue in the selected project. A switch empties the list
+   at once and the header reads "loading ‹project›…" until the switch's load
+   lands; a load issued for the project left behind is dropped when it
+   arrives. Only that project's `issue.*` and task events re-list.
+
 13. **Issue detail.** *Added 2026-10-02 (task 130.9, issue #668).* One issue:
    a header with state, id, title and source badge; the body; labels, kind,
    priority (`0` none, `1` urgent … `4` low — the inverted scale of task 130
@@ -13372,7 +13405,8 @@ is dropped. The mode stamps those views already carried (the boards'
 archived flag, the issues list's state scope) are checked beside it. A
 switch reloads every stamped project-bearing view, so a response the stamp
 drops always has a fresh load behind it; what each view fetches for the
-selection is unchanged until 132.8 and 132.10–132.12 scope it. The projects
+selection is unchanged until 132.8 and 132.10–132.12 scope it (the issues
+list and the pull-requests takeover were scoped by 132.11 on 2026-10-05). The projects
 view is not project-bearing and stamps every load with project 0, an
 ordering guard only. The root's one `/v1/events` stream stays unfiltered
 (task 132 decision 16): each project-bearing view drops a note whose
@@ -13384,7 +13418,8 @@ note carrying no project (`task.github_pull_changed`,
 project it describes, but it changes the project list every view still
 renders whole. The triggers takeover lets every `trigger.*` note through,
 since `trigger.fired` names its target project and the takeover lists every
-trigger until 132.11 scopes it. The board is the
+trigger until 132.12 scopes it (*corrected 2026-10-05:* the scoping item is
+132.12, not 132.11, and it has landed). The board is the
 exception and filters no note: its live listing stays global (decision 17)
 and is the source of the attention count, `!` and `H` (decision 2), so a
 task event from any project refetches it, and the bell and the attention
