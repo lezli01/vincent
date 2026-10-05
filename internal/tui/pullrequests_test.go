@@ -350,3 +350,15 @@ func TestPullRequestsProbeTurningNoDropsTheListingInFlight(t *testing.T) {
 			v.loaded, len(v.rows()), len(v.tasks))
 	}
 }
+
+// A failed listing's header says so rather than counting nothing (review
+// F2 on PR #720): "0 in octo/api" claims the repository has no pull
+// requests, which the screen does not know.
+func TestPullRequestsFailedListingHeaderHasNoCount(t *testing.T) {
+	v := pullRequestsFixture()
+	v.applyLoaded(prLoadedMsg{err: "GitHub is not available for this project: not authenticated"})
+	header := v.headerLine(120)
+	if strings.Contains(header, "0 in") || !strings.Contains(header, "could not list octo/api") {
+		t.Errorf("the header of a failed listing = %q, want it to say the listing failed", header)
+	}
+}

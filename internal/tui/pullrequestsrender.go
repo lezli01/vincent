@@ -61,18 +61,27 @@ func (v *pullRequestsView) headerLine(width int) string {
 		// The project's name, not a bare "listing…": after a switch this is
 		// the one line saying which project the empty list is waiting on.
 		left += styleDim.Render("  ·  loading " + v.project.name + "…")
+	case v.loadErr != "":
+		// No count: a failed listing knows nothing about how many there
+		// are, and "0 in" would say the repository has none (review F2).
+		left += styleDim.Render("  ·  could not list " + v.githubWhere(st))
 	default:
-		where := v.project.name
-		if st.Repo != "" {
-			where = st.Repo
-		}
-		left += styleDim.Render(fmt.Sprintf("  ·  %d in %s", len(v.pulls), where))
+		left += styleDim.Render(fmt.Sprintf("  ·  %d in %s", len(v.pulls), v.githubWhere(st)))
 	}
 	right := ""
 	if !v.lastLoad.IsZero() {
 		right = styleDim.Render("updated "+v.lastLoad.Format("15:04:05")) + " "
 	}
 	return padBetween(left, right, width)
+}
+
+// githubWhere names what the header is about: the repository when the probe
+// said which, the project otherwise.
+func (v *pullRequestsView) githubWhere(st apiclient.GitHubStatus) string {
+	if st.Repo != "" {
+		return st.Repo
+	}
+	return v.project.name
 }
 
 // bodyLines is the list, and the index of the line the cursor is on so the
