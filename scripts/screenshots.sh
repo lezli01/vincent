@@ -2113,9 +2113,11 @@ Sleep 2s
 '
 
   # The project overview (task 132.15), reached from the palette: every seeded
-  # project's figures and the totals row, what needs you across all of them,
-  # and the highlighted project's defaults beside them. Appended last, after
-  # tui-projects was retired, for the reason the swap order is one-way.
+  # project's figures and the totals row, and what needs you across all of
+  # them. The highlighted project's detail pane needs a terminal of
+  # overviewFullWidth()+overviewDetailWidth columns, wider than this tape, so
+  # it is not in the shot. Appended last, after tui-projects was retired, for
+  # the reason the swap order is one-way.
   tape tui-project-overview 1250 '
 Type ":"
 Sleep 1s
