@@ -13226,8 +13226,8 @@ Every refresh is one list call whatever the number of projects: on open, then
 a 150 ms debounced refetch on `task.*`, `issue.*`, `chat.*` and `project.*`
 events while the picker is up, and none while it is closed. An answer that
 lands after the picker closed, or after a newer refetch, is dropped. The
-default-project marker arrives with `tui.default_project` (task 132.3,
-decision 33).
+picker marks only the current project; a marker for `tui.default_project`
+is not drawn yet (task 132 decision 33).
 
 **Load stamps and the event filter (task 132.5, issue #699, added
 2026-10-05).** Every list load a view issues — the board in both modes and

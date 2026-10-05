@@ -419,6 +419,11 @@ composer's file picker reads `@` from the draft and never matches it as a key
 typing key, so a text field still types `@`, and the palette's "switch
 project" row is the way in from one.
 
+*Note 2026-10-05:* 132.3 and 132.4 were delivered in parallel and merged
+together, and 132.3 was written before the picker existed, so it did not add
+the marker. The picker still marks only the current project; the default
+marker remains open against 132.3's row.
+
 ## Supersedes
 
 Every binding record this work overturns, departs from, refines or keeps, by
@@ -482,8 +487,9 @@ its own pull request.
   document. ✓ 2026-10-04
 - [x] **132.3** ([#697](https://github.com/lezli01/vincent/issues/697)) The
   startup precedence, `tui.default_project`, `selected_project` in `tui.json`,
-  `vincent --project`, and the project picker's default-project marker
-  (decisions 29–33). Depends: 132.2. ✓ 2026-10-05
+  `vincent --project` (decisions 29–32). Depends: 132.2. ✓ 2026-10-05
+  The project picker's default-project marker, which decision 33 assigned
+  here, did not land with it and is still to be built.
 - [x] **132.4** ([#698](https://github.com/lezli01/vincent/issues/698)) The
   `project` op on `@`, the picker popup with stats, the palette row, the
   header segment as its click target, spec §15 Discovery, Layout, Keys and
