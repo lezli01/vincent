@@ -202,6 +202,15 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
+- **TUI lists follow the selected project's events.** The board, issues,
+  chats, pull-request, workflows and triggers screens now refresh on events
+  from the selected project, and on events that belong to no project, but no
+  longer on events from other projects. Until those screens are scoped to the
+  selection, rows from other projects can lag behind until the next refresh.
+  The chats boards also batch a burst of chat events into one refresh, as the
+  other lists already did, and every list ignores a slow answer that a newer
+  one has overtaken.
+  ([#699](https://github.com/lezli01/vincent/issues/699))
 - **The new-task form no longer has a GitHub issue row.** A task is started
   from an issue on the issue screens instead, and a plain new task makes no
   GitHub call on any project. `GET /v1/projects/{id}/github/issues` no longer

@@ -13188,6 +13188,29 @@ then the version goes, leaving `vincent`; last, the project name truncates
 behind an ellipsis. The connection badge is never shed. The segment is not a
 click target yet; 132.4 makes it open the project picker.
 
+**Load stamps and the event filter (task 132.5, issue #699, added
+2026-10-05).** Every list load a view issues — the board in both modes and
+its lanes, the issues list, the chats boards in both modes, the pull-request,
+workflows and triggers takeovers, and the projects view — carries a
+`{project, seq}` stamp: the project it was issued for and its place in the
+view's one sequence. A response is applied only when its project is the
+view's current one and its seq is newer than the last applied; anything else
+is dropped. The mode stamps those views already carried (the boards'
+archived flag, the issues list's state scope) are checked beside it. A
+switch reloads every stamped project-bearing view, so a response the stamp
+drops always has a fresh load behind it; what each view fetches for the
+selection is unchanged until 132.8 and 132.10–132.12 scope it. The projects
+view is not project-bearing and stamps every load with project 0, an
+ordering guard only. The root's one `/v1/events` stream stays unfiltered
+(task 132 decision 16): each project-bearing view drops a note whose
+`project_id` names another project before its own event-type test, and a
+note carrying no project (`task.github_pull_changed`,
+`task.children_changed`, `agent.quota_changed`,
+`workflow.registry_changed`, …) still reaches every view. The bell and the
+attention fold-open on the board read every note, before the filter
+(decision 2). The chats boards refetch through the same 150 ms debounce
+window as every other list.
+
 **Text fields wrap (added 2026-09-01, issue #299).** A field being typed into
 is bound by the same rule the boards and the rendered Markdown already carry: a
 value too long for the pane it is in **wraps onto further rows of that pane**.

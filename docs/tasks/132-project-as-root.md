@@ -1,6 +1,6 @@
 # 132 — Project as root: the TUI scoped to one selected project
 
-**Status:** 🔄 in progress (2/17)
+**Status:** 🔄 in progress (3/17)
 
 Issue [#694](https://github.com/lezli01/vincent/issues/694), part of
 [#693](https://github.com/lezli01/vincent/issues/693). Spec §3 (the new row
@@ -50,7 +50,8 @@ take it; decision 3's switch key is `@`.
 Recorded 2026-10-04. Decisions 1–14 are the author's answers to #693's open
 questions, each the option #693 recommended; decision 15 is the renumbering;
 decisions 16–19 settle the contradictions between #693's research reports;
-decisions 20–22 were taken while delivering 132.1. Each
+decisions 20–22 were taken while delivering 132.1; decisions 25–28 were
+settled with the author for 132.5 on 2026-10-05. Each
 decision is **taken now; its effect lands with its item.** The older record
 keeps governing the code until that item's pull request merges.
 
@@ -309,6 +310,50 @@ hint in 132.13, when the two agree.
 `ownEntries`, and of the new-task form's `setProject`, which became
 `chooseProject`.
 
+### 25. A switch reloads every stamped view (2026-10-05)
+
+On every stamped, project-bearing view, `setProject` reloads when the
+selected project's id changes: `projectScope` runs the loader the embedding
+view supplied (`reload`), which stamps the new project. So whenever a stamp
+drops a response issued for the old project, a fresh load is already on its
+way, and a view never sits on rows it did not re-fetch. The fetch itself
+stays unfiltered; what each view fetches is 132.8's and 132.10–132.12's. A
+call that does not change the id — the walk after each connect, a rename —
+does not reload, since `setClient` has just loaded.
+
+*Alternative beaten:* stamping without reloading, which leaves a view
+showing the previous project's rows until its next event.
+
+### 26. The projects view takes a seq-only stamp (2026-10-05)
+
+The projects view stamps every load with project 0. It is still not
+`projectScoped` (decision 5) and does not filter events; the stamp only
+gives it the ordering guard it lacked.
+
+*Alternative beaten:* leaving it unstamped, the one list a slow response
+could still overwrite.
+
+### 27. The mode stamps stay beside the load stamp (2026-10-05)
+
+`loadStamp` carries only `{project, seq}`. The boards' and lanes' `archived`
+tag and `addressed()`, the issues list's `state`, the chats boards'
+`archived` and the detail view's `id`+`seq` guard stay as they were and are
+checked next to it. The board's and lanes' own `seq` fields are replaced by
+the board's one sequence; the lanes order it per parent and take only the
+project check from the stamp.
+
+*Alternative beaten:* folding every mode into the stamp, which would make
+it a different type per view.
+
+### 28. No daemon change for the filter (2026-10-05)
+
+`task.github_pull_changed` and `task.children_changed` keep carrying no
+`project_id`, and spec §13.3 is unchanged. The client filter is correct
+without them because a note with no project passes every view.
+
+*Alternative beaten:* attributing those two events in the daemon in the same
+item, which the filter does not need.
+
 ## Supersedes
 
 Every binding record this work overturns, departs from, refines or keeps, by
@@ -376,8 +421,10 @@ its own pull request.
 - [ ] **132.4** ([#698](https://github.com/lezli01/vincent/issues/698)) The
   `project` op on `@`, the picker popup with stats, the palette row. Depends:
   132.1, 132.2.
-- [ ] **132.5** ([#699](https://github.com/lezli01/vincent/issues/699)) The
-  `{project, seq}` load stamp, the client-side event filter. Depends: 132.2.
+- [x] **132.5** ([#699](https://github.com/lezli01/vincent/issues/699)) The
+  `{project, seq}` load stamp, the client-side event filter, the chats
+  board's refetch debounce, spec §15 (decisions 25–28). Depends: 132.2.
+  ✓ 2026-10-05
 - [ ] **132.6** ([#700](https://github.com/lezli01/vincent/issues/700)) The
   view is kept across a switch; detail views fall back to their list; forms
   re-target or ask; an open follows the object's project. Depends: 132.2.
