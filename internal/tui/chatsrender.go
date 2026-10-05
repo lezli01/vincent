@@ -85,7 +85,7 @@ func (v *chatsView) bodyLines(width int) (lines []string, cursorRow int) {
 		// means no project is registered only once a listing has said so;
 		// until then it is still resolving (review F9).
 		if v.noProjects {
-			return []string{styleDim.Render("  No project selected. The Projects view (4) adds one.")}, 0
+			return []string{styleDim.Render("  No project selected. The project overview adds one.")}, 0
 		}
 		return []string{styleDim.Render("  Resolving the project…")}, 0
 	}

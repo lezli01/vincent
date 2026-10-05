@@ -111,7 +111,7 @@ func (n *newTask) render(width, height int) string {
 		return "\n  loading projects, workflows and adapters…\n"
 	}
 	if len(n.projects) == 0 {
-		return "\n  no projects registered yet — add one in the Projects view (4)\n"
+		return "\n  no projects registered yet — add one in the project overview\n"
 	}
 	if guidedTakeover(width, height) {
 		return n.renderGuided(width, height)

@@ -617,7 +617,7 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		if v.project.id == 0 {
 			v.note, v.noteBad = "no project is selected yet — try again once the header names one", true
 			if v.noProjects {
-				v.note = "register a project first — the Projects view (4) adds one"
+				v.note = "register a project first — the project overview adds one"
 			}
 			return v, nil
 		}
