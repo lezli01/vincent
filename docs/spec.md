@@ -13439,6 +13439,8 @@ changes (decision 31), applies it to the active view:
 | Chat | Falls back to the chats board; its stream stops |
 | Issue | Falls back to the issues list |
 | New-task form; the chats board's new-chat form; the issues list's issue form | Re-targeted when pristine: reopened empty on the new project, catalogs refetched. An edit form on the issues list closes |
+| The workflows view's create prompt; the triggers view's create prompt | Re-targeted when pristine: reopened empty on the new project. A fork prompt is seeded from the old project's list and counts as a draft; after `y` it closes (review F6) |
+| The workflows view's editor and graph; the triggers view's form, dry run and pending question | Close: each is on one of the old project's files. An editor row being typed into counts as a draft (review F6) |
 | The workspace's answer, repair, follow-up, pull-request and comment forms; the issue view's edit form | Leave with their view |
 | Daemon view, projects overview | Unchanged |
 

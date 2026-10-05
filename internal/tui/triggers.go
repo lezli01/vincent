@@ -549,6 +549,19 @@ func (v *triggersView) updateConfirm(msg tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
+// setProject closes what was open on one of the previous project's
+// triggers — the form, the dry run, a question — before reloading (review
+// F6); retarget handles the create prompt. The ledger follows the cursor's
+// next selection.
+func (v *triggersView) setProject(p projectSel) tea.Cmd {
+	if p.id != v.project.id {
+		v.form, v.dry, v.confirm = nil, nil, nil
+		v.focus = trigFocusList
+		v.ledgerID, v.ledger, v.ledgerErr, v.ledgerCursor = "", nil, nil, 0
+	}
+	return v.projectScope.setProject(p)
+}
+
 // move walks the visible rows and re-reads the ledger for the new selection.
 func (v *triggersView) move(delta int) tea.Cmd {
 	rows := v.visible()

@@ -128,7 +128,8 @@ type workflowsView struct {
 	width, height  int
 }
 
-// setProject drops the previous project's own rows before reloading. Kept,
+// setProject drops the previous project's own rows before reloading, and
+// closes what was open on one of its files. Kept,
 // they would be stamped with the new project's id by lines() until the
 // reload landed — and for good if it failed — and an editor opened on one
 // would read and patch the global file under a project header (review F5).
@@ -138,6 +139,9 @@ func (w *workflowsView) setProject(p projectSel) tea.Cmd {
 		w.own, w.ownErr, w.loaded, w.loadErr = nil, nil, false, nil
 		w.resolutions = nil
 		w.cursor, w.expanded = 0, false
+		// The editor and the graph are on one of the old project's files
+		// (review F6); retarget handles the create prompt.
+		w.editor, w.graph = nil, nil
 	}
 	return w.projectScope.setProject(p)
 }

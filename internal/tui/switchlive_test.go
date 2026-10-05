@@ -135,6 +135,66 @@ func TestSwitchKeepsListViews(t *testing.T) {
 	}
 }
 
+// TestSwitchRetargetsOrGuardsTakeoverForms: the workflows and triggers
+// takeovers' prompts are re-aimed when pristine and ask when typed into, and
+// what was open on one of the old project's files closes (review F6).
+func TestSwitchRetargetsOrGuardsTakeoverForms(t *testing.T) {
+	h := newSwitchHarness(t)
+	tv := h.m.views[viewTriggers].(*triggersView)
+	h.p.push(h.m.switchTo(viewTriggers))
+
+	tv.openCreate()
+	h.p.push(h.m.selectProject(h.second, "test"))
+	if h.m.pending != nil || tv.create == nil || tv.create.projectID != h.second.ID {
+		t.Fatalf("pristine trigger prompt: pending %+v, create %+v; want it re-aimed at %d", h.m.pending, tv.create, h.second.ID)
+	}
+	tv.create.id.SetValue("nightly")
+	h.p.push(h.m.selectProject(h.first, "test"))
+	if h.m.pending == nil || h.m.pending.draft != "trigger draft" {
+		t.Fatalf("typed trigger prompt: pending = %+v, want it guarded", h.m.pending)
+	}
+	h.key("n")
+	if h.m.sel.id != h.second.ID || tv.create.id.Value() != "nightly" || tv.create.projectID != h.second.ID {
+		t.Fatal("n moved the selection or lost the draft")
+	}
+	h.p.push(h.m.selectProject(h.first, "test"))
+	h.key("y")
+	if h.m.sel.id != h.first.ID || tv.create == nil || tv.create.id.Value() != "" || tv.create.projectID != h.first.ID {
+		t.Fatalf("y: selection %d, create %+v; want a fresh prompt on the first project", h.m.sel.id, tv.create)
+	}
+	tv.create = nil
+	tv.form = &trigFormLayer{id: "old", editing: -1}
+	tv.dry = &trigDryRun{id: "old"}
+	h.p.push(h.m.selectProject(h.second, "test"))
+	if tv.form != nil || tv.dry != nil {
+		t.Fatal("the trigger form or dry run survived the switch")
+	}
+
+	wv := h.m.views[viewWorkflows].(*workflowsView)
+	h.p.push(h.m.switchTo(viewWorkflows))
+	wv.openCreate(false)
+	h.p.push(h.m.selectProject(h.first, "test"))
+	if h.m.pending != nil || wv.create == nil || wv.create.scopes[len(wv.create.scopes)-1].projectID != h.first.ID {
+		t.Fatalf("pristine workflow prompt: pending %+v, create %+v; want it re-aimed", h.m.pending, wv.create)
+	}
+	wv.create.name.SetValue("release")
+	h.p.push(h.m.selectProject(h.second, "test"))
+	if h.m.pending == nil || h.m.pending.draft != "workflow draft" {
+		t.Fatalf("typed workflow prompt: pending = %+v, want it guarded", h.m.pending)
+	}
+	h.key("y")
+	if wv.create == nil || wv.create.name.Value() != "" || wv.create.scopes[len(wv.create.scopes)-1].projectID != h.second.ID {
+		t.Fatalf("y: create %+v; want a fresh prompt on the second project", wv.create)
+	}
+	wv.create = nil
+	wv.editor = &wfEditorLayer{editing: -1}
+	wv.graph = &graphLayer{}
+	h.p.push(h.m.selectProject(h.first, "test"))
+	if wv.editor != nil || wv.graph != nil {
+		t.Fatal("the workflow editor or graph survived the switch")
+	}
+}
+
 // formSwitchHarness is the new-task harness — the one whose agent catalog
 // answers — with a second git project beside its own.
 type formSwitchHarness struct {

@@ -351,8 +351,10 @@ requests, both archived boards, workflows and triggers stay on screen and
 reload for the new project; the daemon and projects views are not tied to one.
 A screen about one object of the old project falls back to its list: a task's
 workspace to the board, with its `esc` history cleared; a chat to the chats
-board; an issue to the issues list. An empty new-task, new-chat or new-issue
-form is reopened for the new project.
+board; an issue to the issues list. An empty new-task, new-chat, new-issue,
+new-workflow or new-trigger form is reopened for the new project, and a
+workflow or trigger editor, the workflow graph and a trigger dry run close,
+since each is on a file of the old project.
 
 A form you have typed into asks first, in one line under the header:
 
@@ -363,7 +365,8 @@ discard the task draft and switch to `api`? y/n
 `y` discards it and switches — you land on a fresh form for the new project,
 or on the list behind a workspace or issue form. `n` or `esc` keeps the draft
 and the current project; nothing is switched or saved. A form seeded from a
-pull request, an issue or a chat counts as a draft before you type.
+pull request, an issue or a chat counts as a draft before you type, and so
+does a workflow fork prompt, which is seeded from the old project's list.
 
 Opening a task, chat or issue of another project switches to that project
 first, so its screen never draws under the wrong header. This happens from the

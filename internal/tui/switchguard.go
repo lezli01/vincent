@@ -127,6 +127,84 @@ func (v *issuesView) retarget(p projectSel) tea.Cmd {
 	return v.w.openForm(v.client, nil, p.id)
 }
 
+// The workflows and triggers takeovers are project-scoped too (task 132.12):
+// their create prompts are aimed at the selection, and their editors, graph
+// and dry run at one of its files (review F6). A prompt is re-aimed or asks,
+// as the other forms do; an editor holds nothing unwritten — committing a row
+// is the write — except the row being typed into, which asks.
+
+func (w *workflowsView) switchDraft() (string, bool) {
+	switch {
+	case w.create != nil && w.create.fork:
+		// A fork is seeded from a row of the old project's list, which a
+		// re-target would drop.
+		return "workflow fork", true
+	case w.create != nil:
+		return "workflow draft", strings.TrimSpace(w.create.name.Value()) != ""
+	case w.editor != nil:
+		e := w.editor
+		return "unsaved workflow edit", openRowEdited(e.input, e.overlay, e.rows, e.editing)
+	}
+	return "", false
+}
+
+// retarget reopens a plain create prompt on the new project; a fork's source
+// belongs to the old one, so it closes. setProject has closed the rest.
+func (w *workflowsView) retarget(projectSel) tea.Cmd {
+	if w.create == nil {
+		return nil
+	}
+	if w.create.fork {
+		w.create = nil
+		return nil
+	}
+	w.openCreate(false)
+	return nil
+}
+
+func (v *triggersView) switchDraft() (string, bool) {
+	switch {
+	case v.create != nil:
+		c := v.create
+		return "trigger draft", c.id.Value() != "" || c.command.Value() != "" || c.interval.Value() != ""
+	case v.form != nil:
+		f := v.form
+		value := ""
+		if f.editing >= 0 && f.editing < len(f.rows) {
+			value = f.rows[f.editing].value
+		}
+		return "unsaved trigger edit", pendingEdit(f.input, f.overlay, value)
+	}
+	return "", false
+}
+
+// retarget reopens the create prompt on the new project. setProject has
+// closed the rest.
+func (v *triggersView) retarget(projectSel) tea.Cmd {
+	if v.create != nil {
+		v.openCreate()
+	}
+	return nil
+}
+
+// openRowEdited is pendingEdit for an editor's row list.
+func openRowEdited(input *textField, overlay wfEditorOverlay, rows []wfEditRow, editing int) bool {
+	value := ""
+	if editing >= 0 && editing < len(rows) {
+		value = rows[editing].value
+	}
+	return pendingEdit(input, overlay, value)
+}
+
+// pendingEdit reports whether the row being typed into differs from the value
+// it opened on: opening an input or overlay is not an edit.
+func pendingEdit(input *textField, overlay wfEditorOverlay, value string) bool {
+	if overlay != nil {
+		return overlay.Dirty()
+	}
+	return input != nil && input.Value() != value
+}
+
 func (v *issueView) switchDraft() (string, bool) {
 	if v.w.form == nil {
 		return "", false
