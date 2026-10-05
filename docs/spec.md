@@ -13534,7 +13534,9 @@ one line under the header says what happened:
 name)`, or ``project `api` was deleted — no projects remain``. A draft on the
 active view still raises the confirmation, its prompt saying the project was
 deleted, but **only `y` answers it**: there is no project to stay on
-(decision 47). A rename of the selection reaches the header and is written to
+(decision 47). A switch whose *target* is deleted while its confirmation is
+open is dropped instead, keeping the selection and the draft, with a notice
+that the target was deleted (review F2). A rename of the selection reaches the header and is written to
 `tui.json`'s `selected_project`. When a listing has said no project is
 registered, every project-scoped view — the board, both archived boards, the
 chats board, the issues list, the pull-request, workflows and triggers

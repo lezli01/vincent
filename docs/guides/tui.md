@@ -388,14 +388,17 @@ project `api` was deleted — showing `web` (default project)
 
 With no project left the header reads `◆ no project` and the line says
 ``no projects remain``. A form you have typed into still asks first, but
-only `y` answers: the project it belonged to is gone. A rename of the
+only `y` answers: the project it belonged to is gone. If instead the
+project you were *switching to* is deleted while that confirmation is open,
+the question goes away and you stay where you were, draft intact. A rename of the
 selected project shows in the header straight away, and the next launch
 opens on it under its new name.
 
 With no project registered, every project screen — the board, the archived
 boards, chats, issues, pull requests, workflows, triggers and the new-task
 form — says so and points at `@`, whose last row opens the overview where
-you add one. The first project you add is selected.
+you add one. Workflows and triggers say it above what they still list: the
+global and built-in workflows, and the triggers of removed projects. The first project you add is selected.
 
 While the daemon is unreachable `@` still opens, on the last list it had,
 marked `offline — list may be stale`. A switch made then takes effect when

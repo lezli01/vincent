@@ -123,6 +123,34 @@ func TestDeletedSelectionAsksOverADraft(t *testing.T) {
 	}
 }
 
+// A switch's target deleted while its draft question is open drops the
+// question: y must not select a project that no longer exists, and the
+// selection and the draft stay where they were (review F2).
+func TestPendingSwitchTargetDeletedWhileAsking(t *testing.T) {
+	h := newSwitchHarness(t)
+	h.key("n")
+	h.p.until(10*time.Second, "the new-task form to open", func() bool { return h.m.active == viewNewTask })
+	nt := h.m.views[viewNewTask].(*newTask)
+	nt.touched = true
+	h.p.push(h.m.selectProject(h.second, "test"))
+	if h.m.pending == nil || h.m.pending.project.ID != h.second.ID {
+		t.Fatalf("pending = %+v, want the switch to zeta asked", h.m.pending)
+	}
+
+	deleteOver(t, h.m, h.second.ID)
+	h.p.until(10*time.Second, "the question to be dropped", func() bool { return h.m.pending == nil })
+	if want := "project `zeta` was deleted — staying on `board`"; h.m.selNotice != want {
+		t.Errorf("notice = %q, want %q", h.m.selNotice, want)
+	}
+	h.key("y")
+	if h.m.sel.id != h.first.ID || h.m.active != viewNewTask || !nt.touched {
+		t.Fatalf("selection %d, active %v, draft kept %v; want board, the form and its draft", h.m.sel.id, h.m.active, nt.touched)
+	}
+	if got := h.persisted(); got == h.second.ID {
+		t.Errorf("tui.json carries the deleted project %d", got)
+	}
+}
+
 // A rename of the selected project reaches the header and tui.json.
 func TestRenamedSelectionIsPersisted(t *testing.T) {
 	h := newBoardLiveHarness(t)

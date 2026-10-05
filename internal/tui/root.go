@@ -1346,6 +1346,7 @@ func (m *root) updateProjectList(msg projectListMsg) tea.Cmd {
 	}
 	for _, p := range m.projects {
 		if p.ID == m.sel.id {
+			m.revalidatePending()
 			if p.Name == m.sel.name {
 				return nil
 			}
@@ -1371,6 +1372,30 @@ func (m *root) selectionDeleted() tea.Cmd {
 		return nil
 	}
 	return m.applyDeletedSwitch(pick.project, pick.why, pick.notice)
+}
+
+// revalidatePending checks a pending switch's target against the fresh list
+// while the selection itself is still listed (review F2). A target deleted
+// while the question was open is dropped, with the draft and the selection
+// kept and a notice saying why: answering y would otherwise select a project
+// that no longer exists, and the event that said so has been consumed. A
+// renamed target takes its new name, so the prompt and the switch carry it.
+// A deleted selection's own question is not this one's: selectionDeleted
+// recomputes it on every relist.
+func (m *root) revalidatePending() {
+	p := m.pending
+	if p == nil || p.deleted != "" {
+		return
+	}
+	for _, q := range m.projects {
+		if q.ID == p.project.ID {
+			p.project = q
+			return
+		}
+	}
+	m.pending = nil
+	m.selNotice = fmt.Sprintf("project `%s` was deleted — staying on `%s`", p.project.Name, m.sel.name)
+	m.selNoticeWarn = true
 }
 
 // applyDeletedSwitch is selectionDeleted past its guard. A zero p is "no
