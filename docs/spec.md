@@ -13319,6 +13319,42 @@ that project the last used (decision 31). A failed write is not reported; it
 costs only the next launch's last-used rule. When several TUIs run, the last
 writer wins.
 
+**Switching keeps the view (task 132.6, issue #700, added 2026-10-05).** A
+switch never moves the human to another kind of screen (task 132 decisions
+19, 36–38). The root's `selectProject`, still the one place the selection
+changes (decision 31), applies it to the active view:
+
+| Active view | On a switch |
+|---|---|
+| Board, chats, issues, pull requests, both archived boards, workflows, triggers | Stays; re-scoped through `setProject` |
+| Task workspace | Falls back to the board; its back stack is emptied and its streams stop |
+| Chat | Falls back to the chats board; its stream stops |
+| Issue | Falls back to the issues list |
+| New-task form; the chats board's new-chat form; the issues list's issue form | Re-targeted when pristine: reopened empty on the new project, catalogs refetched. An edit form on the issues list closes |
+| The workspace's answer, repair, follow-up, pull-request and comment forms; the issue view's edit form | Leave with their view |
+| Daemon view, projects overview | Unchanged |
+
+A view that can hold a draft reports it to the root. When the active one is
+dirty — any edit to a field or choice, and for the new-task form also any
+seed from a pull request, issue or chat — the switch is held and the root
+draws one confirmation under the header, ``discard the unsent comment and
+switch to `api`? y/n``, which owns every key but `ctrl+c`. `y` discards the
+draft and applies the switch; the view lands on a fresh form for the new
+project, or on its list for a form inside a detail. `n` or `esc` drops the
+switch: the selection, the header and `tui.json` are untouched. The new-task
+form's own `esc` prompt is not this one.
+
+**An open follows its object.** Every open of a task, chat or issue carries the
+object's project, from the row its sender holds; the trigger ledger takes the
+trigger's resolved `source.project`. An object of another known project
+switches the selection first, under the same keep-view and confirmation
+rules, and is routed second, so a detail never draws under the wrong header.
+An open with no project, or one the cached list does not hold, GETs the object
+first; a failed GET routes the open anyway and its detail shows the error. A
+follow raises ``switched to `web` `` under the header until the next key, and
+empties the workspace's back stack; a same-project open does neither. A
+confirmation answered `n` cancels the open with the switch.
+
 **Text fields wrap (added 2026-09-01, issue #299).** A field being typed into
 is bound by the same rule the boards and the rendered Markdown already carry: a
 value too long for the pane it is in **wraps onto further rows of that pane**.

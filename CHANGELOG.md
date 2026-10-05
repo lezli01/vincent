@@ -21,6 +21,16 @@ list with the user-facing context a commit subject cannot carry.
   that is not registered is skipped with a line under the header saying what
   was shown instead. `tui.default_project` is read at startup only, and the
   last selection is kept in `tui.json` as `selected_project`.
+- **A project switch keeps you on the screen you were on.** The board, the
+  chats and issues lists, pull requests, the archived boards, workflows and
+  triggers stay put and reload for the new project. A task workspace, chat or
+  issue falls back to its list, and an empty new-task, new-chat or new-issue
+  form reopens for the new project. A form you have typed into, or one seeded
+  from a pull request, issue or chat, asks first — ``discard the task draft
+  and switch to `api`? y/n`` — and `n` keeps both the draft and the project.
+  Opening another project's task, chat or issue — from the board, a pull
+  request, an issue, a trigger's delivery ledger, a lane jump, or a task you
+  just created — switches to its project first and says ``switched to `web` ``.
 - **Switch project from anywhere in the TUI.** Press `@`, click the header's
   `◆` segment, or run **switch project** from the palette (`ctrl+p` reaches it
   from a chat). A picker lists every project with the tasks that need you

@@ -342,6 +342,33 @@ name shortens last. A daemon that could not count shows the names alone.
 | `enter` | Switch to the highlighted project |
 | `esc` | Close without switching |
 
+A switch keeps you where you are. The board, the chats and issues lists, pull
+requests, both archived boards, workflows and triggers stay on screen and
+reload for the new project; the daemon and projects views are not tied to one.
+A screen about one object of the old project falls back to its list: a task's
+workspace to the board, with its `esc` history cleared; a chat to the chats
+board; an issue to the issues list. An empty new-task, new-chat or new-issue
+form is reopened for the new project.
+
+A form you have typed into asks first, in one line under the header:
+
+```text
+discard the task draft and switch to `api`? y/n
+```
+
+`y` discards it and switches — you land on a fresh form for the new project,
+or on the list behind a workspace or issue form. `n` or `esc` keeps the draft
+and the current project; nothing is switched or saved. A form seeded from a
+pull request, an issue or a chat counts as a draft before you type.
+
+Opening a task, chat or issue of another project switches to that project
+first, so its screen never draws under the wrong header. This happens from the
+board, a pull request, an issue's linked tasks, a trigger's delivery ledger, a
+lane or parent jump, and when a task you just created belongs elsewhere. One
+line says so — ``switched to `web` `` — until your next key. The task
+workspace's `esc` history starts over in the new project. If you are holding a
+draft, the same confirmation asks, and `n` cancels the open too.
+
 ### Grouping
 
 The rows are **grouped by project, and by workflow within a project**, out of

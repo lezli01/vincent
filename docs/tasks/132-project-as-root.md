@@ -493,6 +493,29 @@ on. Whether paths drop the project level is 132.9's, with the grouping.
 across projects; prefixing stored paths with the project *name*, which breaks
 on a rename.
 
+### 36. One root confirmation for drafts (2026-10-05)
+
+Settled with the author while scoping 132.6. Draft-holding views implement a
+`switchGuard` interface, and the root holds the pending switch and draws a
+single y/n confirmation. Cancelling it cancels the switch, and any open
+waiting on it. *Beaten:* giving each form its own prompt, with
+`ntConfirming` reused and five new confirm states to keep consistent.
+
+### 37. A confirmed discard lands on a fresh form for the new project (2026-10-05)
+
+The view kind is kept, as the requirement says. A seeded form becomes a blank
+one, and forms inside a detail view leave with it. *Beaten:* falling back to
+a list.
+
+### 38. Every open carries its project; an unknown one is fetched first (2026-10-05)
+
+Every source sets `projectID` from the row it holds, and the ledger resolves
+its trigger's `source.project`. A zero or unresolvable project makes the root
+GET the object before it switches and routes, so the order is always switch,
+then route. *Beaten:* switching once the detail loads, which needs an
+exemption from the fallback rule and briefly draws the wrong header; and
+making the field mandatory with 0 meaning "do not switch".
+
 ## Supersedes
 
 Every binding record this work overturns, departs from, refines or keeps, by
@@ -567,9 +590,10 @@ its own pull request.
   `{project, seq}` load stamp, the client-side event filter, the chats
   board's refetch debounce, spec §15 (decisions 25–28). Depends: 132.2.
   ✓ 2026-10-05
-- [ ] **132.6** ([#700](https://github.com/lezli01/vincent/issues/700)) The
+- [x] **132.6** ([#700](https://github.com/lezli01/vincent/issues/700)) The
   view is kept across a switch; detail views fall back to their list; forms
-  re-target or ask; an open follows the object's project. Depends: 132.2.
+  re-target or ask; an open follows the object's project; spec §15
+  (decisions 36–38). Depends: 132.2. ✓ 2026-10-05
 - [ ] **132.7** ([#701](https://github.com/lezli01/vincent/issues/701)) Zero
   projects, a deleted or renamed selection, reloads on reconnect, the first
   project added. Depends: 132.3, 132.5.
