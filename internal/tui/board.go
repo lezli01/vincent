@@ -114,8 +114,10 @@ type (
 
 // board is the §15 home view: every task, live.
 type board struct {
-	// projectScope is the root's selected project (task 132.2). A switch
-	// reloads (task 132.5); filtering the rows by it is task 132.8's.
+	// projectScope is the root's selected project (task 132.2). The live
+	// board keeps its listing global and filters the rows in memory, so a
+	// switch re-derives and fetches nothing; the archived board asks the
+	// daemon for the one project and refetches (task 132.8, decision 17).
 	projectScope
 
 	client *apiclient.Client
@@ -149,13 +151,23 @@ type board struct {
 	// action keys act on instead of the row under the cursor.
 	marks markSet
 
-	// folds is the collapsed groups (boardfold.go, task 054), persisted in
-	// {data_dir}/tui.json — dataDir is where, and foldsLoaded stops a
-	// reconnect's second setDataDir from re-reading the file over folds made
-	// since. Empty is the board every version before this one rendered.
-	folds       foldSet
+	// foldsBy is the collapsed groups (boardfold.go, task 054), one set per
+	// project (task 132 decision 35), persisted in {data_dir}/tui.json —
+	// dataDir is where, and foldsLoaded stops a reconnect's second setDataDir
+	// from re-reading the file over folds made since. Empty is the board
+	// every version before this one rendered.
+	foldsBy     projectFolds
 	dataDir     string
 	foldsLoaded bool
+	// legacyFolds is a pre-132.8 `board_folds` list read from tui.json and
+	// not yet migrated: migration needs the project list (projectIDs), which
+	// arrives after the file is read. foldsMigrated is set once it has run,
+	// and only then is the legacy field dropped from the file.
+	legacyFolds   foldSet
+	foldsMigrated bool
+	// projectIDs is the root's cached project list, name to id, handed over
+	// by setProjects; nil until the first list arrives.
+	projectIDs map[string]int64
 
 	filter    textField
 	filtering bool
@@ -216,7 +228,7 @@ type board struct {
 
 func newBoard() *board {
 	fi := newTextField()
-	fi.SetPlaceholder("filter by id, title, project or state")
+	fi.SetPlaceholder("filter by id, title or state")
 	fi.SetPrompt("/")
 	b := &board{
 		now:         time.Now,
@@ -228,7 +240,7 @@ func newBoard() *board {
 		configGroup: defaultGrouping(),
 	}
 	b.applyStyles()
-	b.reload = b.loadCmd
+	b.reload = b.rescope
 	return b
 }
 
@@ -236,8 +248,36 @@ func newBoard() *board {
 func newArchivedBoard() *board {
 	b := newBoard()
 	b.archived = true
-	b.filter.SetPlaceholder("filter by id, title, project or state")
 	return b
+}
+
+// rescope is the board's reaction to a project switch (task 132.8). The live
+// board's listing is global (decision 17), so a switch is a re-derive of the
+// rows already in memory and fetches nothing; the cursor goes back to the
+// first task through the render's restoreSelection. The archived board is
+// filtered by the daemon, so it starts again from the first page, clears
+// the rows and says it is loading the new project until the stamped answer
+// arrives — the stamp drops any answer still in flight for the old one.
+func (b *board) rescope() tea.Cmd {
+	b.selectedPath = nil
+	if !b.archived {
+		return nil
+	}
+	b.page = 0
+	b.tasks = nil
+	b.loaded = false
+	b.loadErr = nil
+	return b.loadCmd()
+}
+
+// stampProject is the project a load is pinned to (loadstamp.go). The live
+// listing is the same whichever project is selected, so it is pinned to none
+// and a switch drops nothing in flight; the archived listing is per project.
+func (b *board) stampProject() int64 {
+	if b.archived {
+		return b.project.id
+	}
+	return 0
 }
 
 // applyStyles sets the table styling. Selection is a background, not a
@@ -292,7 +332,8 @@ func (b *board) setDataDir(dir string) {
 		return
 	}
 	b.dataDir, b.foldsLoaded = dir, true
-	b.folds = loadFolds(dir)
+	b.foldsBy, b.legacyFolds = loadFolds(dir)
+	b.migrateFolds()
 }
 
 // setClient wires the board to a connected daemon and kicks off its initial
@@ -336,7 +377,7 @@ func (b *board) tasksCmd() tea.Cmd {
 	if client == nil {
 		return nil
 	}
-	stamp := b.stamps.next(b.project.id)
+	stamp := b.stamps.next(b.stampProject())
 	archived := b.archived
 	opts := b.listOptions()
 	return func() tea.Msg {
@@ -350,14 +391,20 @@ func (b *board) tasksCmd() tea.Cmd {
 // listOptions is what the board asks GET /v1/tasks for. It is a method rather
 // than three lines inside tasksCmd so a test can assert the request the daemon
 // would see, which is the only place the two modes actually differ.
+//
+// The live listing names no project (task 132 decision 17): it is the source
+// of the attention count, and a selection must not hide another project's
+// question (decision 2), so the rows are scoped in memory instead.
 func (b *board) listOptions() apiclient.ListTasksOptions {
 	if !b.archived {
 		return apiclient.ListTasksOptions{}
 	}
-	// Archived-only, paged, and inside the date window `d` is on. The daemon
-	// orders an archived-only listing newest-archived first, so the pages walk
-	// backwards through history in the order it happened.
+	// Archived-only, in the selected project, paged, and inside the date
+	// window `d` is on. The daemon orders an archived-only listing
+	// newest-archived first, so the pages walk backwards through history in
+	// the order it happened.
 	return apiclient.ListTasksOptions{
+		ProjectID:     b.project.id,
 		Archived:      apiclient.ArchivedOnly,
 		Limit:         archivedPageSize,
 		Offset:        b.page * archivedPageSize,
@@ -592,13 +639,18 @@ func (b *board) updateLoaded(msg boardLoadedMsg) {
 	// to a 404. Only a *successful* load prunes: a failed refresh is not news
 	// about which tasks exist.
 	b.marks = b.marks.keep(b.knownTasks())
-	// The same argument for the fold set: a group whose project was removed
-	// would otherwise re-collapse it months later when it comes back
-	// (task 054 decision 4). Pruning is against the task values rather than
-	// the rendered grouping, so `g` and the filter leave it alone.
-	if pruned := b.folds.prune(msg.tasks); len(pruned) != len(b.folds) {
-		b.folds = pruned
-		b.persistFolds()
+	// The same argument for the fold sets: a group that left the board would
+	// otherwise re-collapse it months later when it comes back (task 054
+	// decision 4). Pruning is against the task values rather than the
+	// rendered grouping, so `g` and the filter leave it alone. Only the live
+	// load prunes, each project's set against that project's tasks: an
+	// archived page and date window say nothing about which groups exist
+	// (task 132 decision 35).
+	if !b.archived {
+		if pruned, changed := b.foldsBy.prune(msg.tasks); changed {
+			b.foldsBy = pruned
+			b.persistFolds()
+		}
 	}
 }
 
@@ -985,7 +1037,7 @@ func (b *board) wheelMove(delta int) {
 // last also measures the row height against the rows actually on screen, so a
 // long title inside a collapsed group no longer makes every row taller.
 func (b *board) rows() []boardRow {
-	return b.wrapRows(applyFolds(b.allRows(), b.folds, b.marks))
+	return b.wrapRows(applyFolds(b.allRows(), b.folds(), b.marks))
 }
 
 // allRows is the same table before folds and wrapping are applied — filtered,
@@ -1009,13 +1061,36 @@ func (b *board) shownGroup() (grouping, []string) {
 	return shownLevels(b.shownTasks(), b.group)
 }
 
-// shownTasks is the board's tasks after both of its filters: `H` and `/`.
+// shownTasks is the board's tasks after the selected project and both of its
+// own filters: `H` and `/`.
 func (b *board) shownTasks() []apiclient.Task {
-	tasks := b.tasks
+	tasks := b.projectTasks()
 	if b.attentionOnly {
 		tasks = attentionTasks(tasks)
 	}
 	return filterTasks(tasks, b.filter.Value())
+}
+
+// projectTasks is the board's tasks in the selected project (task 132.8):
+// everything a row is derived from. The live list stays global in b.tasks —
+// the attention count and the fold and mark pruning read it whole — and is
+// scoped here, in memory. No selection shows nothing rather than everything.
+func (b *board) projectTasks() []apiclient.Task {
+	return tasksInProject(b.tasks, b.project.id)
+}
+
+// tasksInProject keeps the tasks of one project; project 0 keeps none.
+func tasksInProject(tasks []apiclient.Task, project int64) []apiclient.Task {
+	if project == 0 {
+		return nil
+	}
+	out := make([]apiclient.Task, 0, len(tasks))
+	for _, t := range tasks {
+		if t.ProjectID == project {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // wrapRows expands each task row into one row per rendered line, so an index
@@ -1255,7 +1330,7 @@ type boardCell struct {
 	style lipgloss.Style
 	// wrap is false for the columns that keep truncating. ID, ELAPSED, COST
 	// and PR cannot meaningfully overflow, and neither can a STATUS admitted
-	// below maxTitle, which is cut to one line (task 129.16); PROJECT and WORKFLOW are identifiers
+	// below maxTitle, which is cut to one line (task 129.16); WORKFLOW is an identifier
 	// used for scanning, which a 14-cell wrap makes unreadable — under width
 	// pressure they are shed instead, which is the answer the ladder already
 	// gives for them.
@@ -1305,9 +1380,6 @@ func (b *board) cellsFor(r boardRow, now time.Time, set columnSet, cols []table.
 		cells = append(cells, plain(b.markCell(t.ID)))
 	}
 	cells = append(cells, plain(strconv.FormatInt(t.ID, 10)))
-	if set.project {
-		cells = append(cells, plain(t.ProjectName))
-	}
 	if set.workflow {
 		cells = append(cells, plain(t.Workflow))
 	}
@@ -1481,9 +1553,6 @@ func groupHeaderRow(r boardRow, set columnSet) table.Row {
 		row = append(row, "")
 	}
 	row = append(row, "")
-	if set.project {
-		row = append(row, "")
-	}
 	if set.workflow {
 		row = append(row, "")
 	}
@@ -1557,13 +1626,20 @@ func (b *board) slotBreakdown() []string {
 // adapters collapse into one dim `agents ✓`. While a filter is committed the
 // count says `(all tasks)`, because it is deliberately not the filtered one.
 //
+// The count is every project's, not the selected one's (task 132 decision
+// 34): a selection is a filter and must not hide a question (decision 2).
+// When some of it is in another project the clause says `(all projects)`,
+// which also covers a committed filter — it is the wider statement. Task
+// 132.14 replaces the clause with the badge.
+//
 // The breakdown clauses are shed rather than wrapped when the panel is too
 // narrow for them, last one first. The budget follows from what the line
 // actually measures rather than from a threshold constant that could
 // silently disagree with it; an unsized board (b.width <= 0) has no budget
 // to fail, so it keeps them.
 func (b *board) headerLine() string {
-	attention := countAttention(b.tasks)
+	tally := b.attentionTally()
+	attention := tally.n
 
 	limit := "?"
 	if b.infoOK {
@@ -1574,7 +1650,10 @@ func (b *board) headerLine() string {
 	var tail []string
 	if attention > 0 {
 		clause := fmt.Sprintf("%s %d need attention", attentionBadge, attention)
-		if b.filter.Value() != "" {
+		switch {
+		case tally.allProjects:
+			clause += " " + allProjectsLabel
+		case b.filter.Value() != "":
 			clause += " (all tasks)"
 		}
 		tail = append(tail, styleAsk.Render(clause))
@@ -1593,6 +1672,18 @@ func (b *board) headerLine() string {
 		}
 		breakdown = breakdown[:len(breakdown)-1]
 	}
+}
+
+// allProjectsLabel marks an attention count that includes projects other
+// than the selected one (task 132 decision 34).
+const allProjectsLabel = "(all projects)"
+
+// attentionTally is the attention count over every project's live tasks,
+// and whether any of it is outside the selected project (decision 34): the
+// one source for the header clause and the footer's `!` hint.
+func (b *board) attentionTally() attentionTally {
+	n := countAttention(b.tasks)
+	return attentionTally{n: n, allProjects: n > countAttention(b.projectTasks())}
 }
 
 // agentsSummary names only the adapters that need a look (task 129.15): the
@@ -1646,7 +1737,7 @@ func (b *board) agentsSummary() string {
 // cursor when nothing is marked — the same target rule every §6 key on this
 // board follows.
 func (b *board) askDelete() {
-	ids := slices.Clone([]int64(b.marks))
+	ids := slices.Clone([]int64(b.projectMarks()))
 	if len(ids) == 0 {
 		id, ok := b.selected()
 		if !ok {
@@ -1750,10 +1841,17 @@ func (b *board) emptyBody(rows []boardRow) (string, bool) {
 	if len(rows) > 0 {
 		return "", false
 	}
+	scoped := b.projectTasks()
 	switch {
 	case !b.loaded && b.loadErr == nil:
+		// The archived board names the project it is loading: after a switch
+		// its rows are cleared until the new project's page arrives (task
+		// 132.8), and "loading tasks…" would read as the old one stalling.
+		if b.archived && b.project.name != "" {
+			return styleDim.Render("\n  loading " + b.project.name + "…\n"), true
+		}
 		return styleDim.Render("\n  loading tasks…\n"), true
-	case b.attentionOnly && len(b.tasks) > 0:
+	case b.attentionOnly && len(scoped) > 0:
 		// The way out is named by its effective key (118 decision 8).
 		line := "nothing needs you"
 		if v := b.filter.Value(); v != "" {
@@ -1763,7 +1861,7 @@ func (b *board) emptyBody(rows []boardRow) (string, bool) {
 			line += " — " + key + " shows every task"
 		}
 		return styleDim.Render("\n  " + line + "\n"), true
-	case len(b.tasks) > 0:
+	case len(scoped) > 0:
 		return styleDim.Render(fmt.Sprintf(
 			"\n  no tasks match %q — esc to clear the filter\n", b.filter.Value())), true
 	default:

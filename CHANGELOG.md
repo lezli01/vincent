@@ -218,6 +218,17 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
+- **The task board and the archived tasks board show the selected project.**
+  Switching project swaps the board's rows in place without a refetch; the
+  archived tasks board asks the daemon for that project only, and restarts at
+  its first page. The `PROJECT` column is gone, and `/` no longer matches the
+  project name. The needs-attention count still spans every project and reads
+  `(all projects)` — in the header and in the footer's `!` hint — while some of
+  it is elsewhere; `!` jumps within the selected project. Marks in another
+  project are kept but not counted or acted on until you switch back. Folded
+  groups are kept per project in `tui.json`'s `board_folds_by_project`; folds
+  saved by an older version are moved to their project once, and a fold saved
+  under a workflow-only grouping is dropped.
 - **TUI lists follow the selected project's events.** The issues, chats,
   pull-request, workflows and triggers screens now refresh on events
   from the selected project, on events that belong to no project, and on any

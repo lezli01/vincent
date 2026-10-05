@@ -11494,6 +11494,23 @@ stream for the live tail.
    This amends v0 PR K's "Actions live on the board too". (5) The app header's
    connection badge is drawn only while not connected; `vincent <version>` and
    the view tag stay.*
+   *Amended 2026-10-05 (task 132.8, issue #702; task 132 decisions 17, 34
+   and 35): the board shows **the selected project's tasks only**. The live
+   listing stays global — `GET /v1/tasks` with no `project_id` — and is
+   filtered in memory, so a project switch re-derives the rows and fetches
+   nothing; the global list is still what the attention count and the mark
+   and fold pruning read. No selection shows no rows. There is no `PROJECT`
+   column in either mode and no project step in the shedding ladder below,
+   and `/` matches id, title and state but not the project name. The
+   needs-attention count stays every project's (decision 2: a selection
+   must not hide a question); while some of it is in another project the
+   clause reads `! N need attention (all projects)`, which also stands in
+   for a committed filter's `(all tasks)`, and the footer's `!` hint reads
+   `(N, all projects)`. `!` walks the rows on screen and so stays inside the
+   selected project until task 132.14 replaces both. Marks in another
+   project survive a switch but are neither counted in the title nor
+   dispatched while it is not selected. This supersedes task 009's "read
+   project by project" — that is now the project switch.*
    **Grouped by default (task 009, added 2026-08-16):** the rows nest under group
    headers — projects, and the workflows of a project inside it — configured by
    `tui.board.group_by` (§12.3) and cycled for the session with `g`. See
@@ -12935,7 +12952,12 @@ stream for the live tail.
 
    Each is the board it mirrors **in a second mode**, not a second model: the
    same grouping, folding, `/` filter and `space`/`V` selection, listing what is
-   archived instead of what is live. What the mode adds is the three things only
+   archived instead of what is live. *Amended 2026-10-05 (task 132.8, issue
+   #702): the archived tasks board lists the selected project only, filtered
+   on the server — its request carries `project_id` (§13.2). A switch goes
+   back to the first page, clears the rows and reads `loading <project>…`
+   until the new project's page arrives; a page issued for the previous
+   project is dropped by its load stamp.* What the mode adds is the three things only
    an archive has — `s` cycles a date window (7 days / 30 days / all, resolved
    client-side into §13.2's `archived_since`), `<`/`>` turn pages of a hundred
    rows, and `D` deletes permanently. *Amended 2026-09-10 (task 093, issue
@@ -13510,6 +13532,16 @@ get to bend:
   `{data_dir}/tui.json`, survives `g` and a filter, and drops a path whose
   project or workflow has left the board. `group_by: []` has no groups, so the
   four keys are inert; a fresh install has nothing folded.
+  *Amended 2026-10-05 (task 132.8, task 132 decision 35): there is one fold
+  set **per project**, keyed by project id, in `tui.json`'s
+  `board_folds_by_project`; switching away and back restores a project's
+  folds, and a `[workflow]` fold in one project does not collapse that
+  workflow in another. The pre-132.8 `board_folds` list is migrated once the
+  project list is known — a path led by a registered project's name moves
+  under its id, any other is dropped — and then removed from the file. A live
+  load prunes each project's set against that project's tasks (task 054
+  decision 4, now per project); an archived load prunes nothing; a removed
+  project's set is dropped with it.*
 - **The panel title names the grouping only when it is not the configured one**,
   the same rule the output pane's `v` follows.
 

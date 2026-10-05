@@ -18,8 +18,16 @@ import (
 // TUI reads no *configuration* from disk is untouched — `tui.board.group_by`
 // still arrives over `GET /v1/config`, as it always did.
 type tuiState struct {
-	FullAutoNoticeAck bool       `json:"full_auto_notice_ack"`
-	BoardFolds        []foldPath `json:"board_folds,omitempty"`
+	FullAutoNoticeAck bool `json:"full_auto_notice_ack"`
+	// BoardFolds is the pre-132.8 task board fold list, one set shared by
+	// every project. It is read once, migrated into BoardFoldsByProject
+	// when the project list is known, and dropped on the next write (task
+	// 132 decision 35).
+	BoardFolds []foldPath `json:"board_folds,omitempty"`
+	// BoardFoldsByProject is the task board's folds, one set per project id
+	// (task 132 decision 35). JSON object keys are strings; encoding/json
+	// reads them back as the ids.
+	BoardFoldsByProject map[int64][]foldPath `json:"board_folds_by_project,omitempty"`
 	// ChatFolds is the chats board's own set. It is a second field rather
 	// than a second use of BoardFolds because the two boards group by the
 	// same project names: sharing the list would make folding a project on
@@ -74,6 +82,13 @@ func readTUIState(dataDir string) tuiState {
 // than rewriting it, so a field this build does not know about — and the
 // other field it does — survives being written by it.
 func mergeTUIState(dataDir, key string, value any) error {
+	return rewriteTUIState(dataDir, map[string]any{key: value})
+}
+
+// rewriteTUIState is mergeTUIState for several fields at once, and for
+// removing fields a newer shape replaced — the board's legacy fold list
+// (task 132 decision 35).
+func rewriteTUIState(dataDir string, set map[string]any, drop ...string) error {
 	if dataDir == "" {
 		return errors.New("no data directory resolved")
 	}
@@ -83,7 +98,12 @@ func mergeTUIState(dataDir, key string, value any) error {
 			raw = map[string]any{}
 		}
 	}
-	raw[key] = value
+	for key, value := range set {
+		raw[key] = value
+	}
+	for _, key := range drop {
+		delete(raw, key)
+	}
 	b, err := json.MarshalIndent(raw, "", "  ")
 	if err != nil {
 		return err

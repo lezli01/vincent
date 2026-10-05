@@ -379,7 +379,7 @@ func TestExpandedSetNeverReachesTUIState(t *testing.T) {
 	expand(b, 7, laneTask(42, "api", 0, stateBlocked))
 
 	// Everything that writes the file: a fold, and the prune a load runs.
-	b.folds = b.folds.with(foldPath{"api"})
+	b.setFolds(b.folds().with(foldPath{"api"}))
 	b.persistFolds()
 	b.updateLoaded(boardLoadedMsg{stamp: loadStamp{seq: 9}, tasks: []apiclient.Task{
 		task(7, stateAwaitingChildren, inProject("api"), inWorkflow("fan")),
@@ -457,7 +457,7 @@ func TestALaneRowIsAnOrdinaryTaskRow(t *testing.T) {
 	}
 
 	// Folding: a collapsed group swallows the whole subtree, lanes included.
-	b.folds = b.folds.with(foldPath{"api"})
+	b.setFolds(b.folds().with(foldPath{"api"}))
 	rows := b.rows()
 	for _, r := range rows {
 		if !r.header && (r.task.ID == 42 || r.task.ID == 43) {

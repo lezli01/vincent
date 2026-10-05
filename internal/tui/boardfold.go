@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"maps"
 	"slices"
+	"strconv"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -215,27 +217,168 @@ func landingRow(rows []boardRow, i int) int {
 	return -1
 }
 
-// loadFolds reads the persisted set. Every failure — no file, an unreadable
-// one, a half-written one — answers "everything expanded", which is the
-// fail-open direction tui.json's existing contract already uses and is
-// exactly the board this feature's users had yesterday.
-func loadFolds(dataDir string) foldSet {
-	return foldSet(readTUIState(dataDir).BoardFolds)
-}
+// projectFolds is the task board's fold sets keyed by project id (task 132
+// decision 35): a board's folds are independent per project whatever
+// `group_by` says, so a `["build"]` fold under a `[workflow]` grouping
+// collapses `build` in the one project it was made in. Keyed by id rather
+// than by name, so a rename does not move or lose them.
+type projectFolds map[int64]foldSet
 
-// writeFolds persists the set, merging into whatever else tui.json holds so
-// the first-run acknowledgment — and any field a later build adds — survives.
-func writeFolds(dataDir string, f foldSet) error {
-	if f == nil {
-		f = foldSet{}
+// with returns a copy with project's set replaced; an empty set removes the
+// entry, so the file does not collect empty lists.
+func (pf projectFolds) with(project int64, f foldSet) projectFolds {
+	out := make(projectFolds, len(pf)+1)
+	for id, set := range pf {
+		out[id] = set
 	}
-	return mergeTUIState(dataDir, foldsKey, f)
+	if len(f) == 0 {
+		delete(out, project)
+	} else {
+		out[project] = f
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
-// foldsKey is the tui.json field. It is the JSON tag on tuiState.BoardFolds;
-// mergeTUIState writes into a map, so the two are held together here rather
-// than by the compiler.
-const foldsKey = "board_folds"
+// prune prunes each project's set against that project's own tasks, taken
+// from the global live list. A project with no live tasks keeps its set: an
+// empty list prunes nothing (foldSet.prune), which is the same rule one
+// project at a time.
+func (pf projectFolds) prune(tasks []apiclient.Task) (projectFolds, bool) {
+	out, changed := pf, false
+	for id, set := range pf {
+		pruned := set.prune(tasksInProject(tasks, id))
+		if len(pruned) != len(set) {
+			out, changed = out.with(id, pruned), true
+		}
+	}
+	return out, changed
+}
+
+// keepProjects drops the sets of projects that are no longer registered.
+func (pf projectFolds) keepProjects(ids map[string]int64) (projectFolds, bool) {
+	live := make(map[int64]bool, len(ids))
+	for _, id := range ids {
+		live[id] = true
+	}
+	out, changed := pf, false
+	for id := range pf {
+		if !live[id] {
+			out, changed = out.with(id, nil), true
+		}
+	}
+	return out, changed
+}
+
+// migrateLegacyFolds moves a pre-132.8 `board_folds` list under project ids
+// (task 132 decision 35). A path whose first segment names a registered
+// project moves under that project's id. It keeps that segment: a skipped
+// level still contributes its value to every header path under it (task 129
+// decision 4, headerPaths), so under the default `[project, workflow]`
+// grouping the scoped board's `build` header is still ["api", "build"]. A
+// path that is only the project segment named a project header, which a
+// one-project board no longer draws, and is dropped. A path whose first
+// segment names no project — a `[workflow]` grouping's — is dropped too:
+// copying it into every project would recreate the sharing this keying
+// removes.
+func migrateLegacyFolds(pf projectFolds, legacy foldSet, ids map[string]int64) projectFolds {
+	for _, p := range legacy {
+		if len(p) < 2 {
+			continue
+		}
+		id, ok := ids[p[0]]
+		if !ok {
+			continue
+		}
+		pf = pf.with(id, pf[id].with(p))
+	}
+	return pf
+}
+
+// loadFolds reads the persisted sets and any legacy list still waiting to be
+// migrated. Every failure — no file, an unreadable one, a half-written one —
+// answers "everything expanded", which is the fail-open direction tui.json's
+// existing contract already uses and is exactly the board this feature's
+// users had yesterday.
+func loadFolds(dataDir string) (projectFolds, foldSet) {
+	st := readTUIState(dataDir)
+	var pf projectFolds
+	for id, set := range st.BoardFoldsByProject {
+		if len(set) > 0 {
+			pf = pf.with(id, foldSet(set))
+		}
+	}
+	return pf, foldSet(st.BoardFolds)
+}
+
+// writeFolds persists the sets, merging into whatever else tui.json holds so
+// the first-run acknowledgment — and any field a later build adds —
+// survives. dropLegacy removes the pre-132.8 field, which is done only once
+// it has been migrated: until the project list is known it is held, not
+// rewritten.
+func writeFolds(dataDir string, pf projectFolds, dropLegacy bool) error {
+	out := map[string][]foldPath{}
+	for id, set := range pf {
+		out[strconv.FormatInt(id, 10)] = set
+	}
+	var drop []string
+	if dropLegacy {
+		drop = append(drop, legacyFoldsKey)
+	}
+	return rewriteTUIState(dataDir, map[string]any{foldsKey: out}, drop...)
+}
+
+// foldsKey is the tui.json field, the JSON tag on
+// tuiState.BoardFoldsByProject, and legacyFoldsKey the pre-132.8 one on
+// tuiState.BoardFolds; mergeTUIState writes into a map, so the two are held
+// together here rather than by the compiler.
+const (
+	foldsKey       = "board_folds_by_project"
+	legacyFoldsKey = "board_folds"
+)
+
+// folds is the selected project's fold set: the one the render, the keys
+// and `!`'s auto-expand read.
+func (b *board) folds() foldSet { return b.foldsBy[b.project.id] }
+
+// setFolds replaces the selected project's fold set.
+func (b *board) setFolds(f foldSet) { b.foldsBy = b.foldsBy.with(b.project.id, f) }
+
+// setProjects is the root handing over its cached project list. It runs
+// the legacy migration once the list is known, and drops the fold sets of
+// projects that have been removed.
+func (b *board) setProjects(projects []apiclient.Project) {
+	ids := make(map[string]int64, len(projects))
+	for _, p := range projects {
+		ids[p.Name] = p.ID
+	}
+	b.projectIDs = ids
+	b.migrateFolds()
+	if !b.foldsLoaded {
+		return
+	}
+	if kept, changed := b.foldsBy.keepProjects(ids); changed {
+		b.foldsBy = kept
+		b.persistFolds()
+	}
+}
+
+// migrateFolds moves the legacy list under project ids once both the file
+// and the project list have been read, and writes the result back.
+func (b *board) migrateFolds() {
+	if b.foldsMigrated || !b.foldsLoaded || b.projectIDs == nil {
+		return
+	}
+	b.foldsMigrated = true
+	if b.legacyFolds == nil {
+		return
+	}
+	b.foldsBy = migrateLegacyFolds(b.foldsBy, b.legacyFolds, b.projectIDs)
+	b.legacyFolds = nil
+	b.persistFolds()
+}
 
 // The four keys. `←`/`→` walk the tree one level at a time and `C`/`O` do the
 // whole table — the same two letters, in the same meaning, the diff pane
@@ -282,14 +425,14 @@ func (b *board) collapseAtCursor() tea.Cmd {
 	if !ok || len(p) == 0 {
 		return nil
 	}
-	if b.folds.has(p) {
+	if b.folds().has(p) {
 		parent, ok := b.parentHeader(p)
 		if !ok {
 			return nil // already at the outermost level
 		}
 		p = parent
 	}
-	b.folds = b.folds.with(p)
+	b.setFolds(b.folds().with(p))
 	b.focusPath(p)
 	return b.saveFolds()
 }
@@ -306,7 +449,7 @@ func (b *board) expandAtCursor() tea.Cmd {
 	if !ok || !r.header || !r.collapsed {
 		return nil
 	}
-	b.folds = b.folds.without(r.path)
+	b.setFolds(b.folds().without(r.path))
 	rows := b.rows()
 	i := headerIndex(rows, r.path)
 	if i < 0 {
@@ -322,16 +465,16 @@ func (b *board) expandAtCursor() tea.Cmd {
 // alone, so `→` afterwards is the same one-level walk down it is anywhere else.
 func (b *board) collapseAll() tea.Cmd {
 	p, _ := b.cursorPath()
-	next := b.folds
+	next := b.folds()
 	for _, r := range b.allRows() {
 		if r.header {
 			next = next.with(r.path)
 		}
 	}
-	if len(next) == len(b.folds) && len(p) == 0 {
+	if len(next) == len(b.folds()) && len(p) == 0 {
 		return nil
 	}
-	b.folds = next
+	b.setFolds(next)
 	if len(p) > 0 {
 		b.focusPath(p[:1])
 	}
@@ -342,14 +485,14 @@ func (b *board) collapseAll() tea.Cmd {
 // install renders. A cursor parked on a header moves onto the first task that
 // header was standing in for.
 func (b *board) expandAll() tea.Cmd {
-	if len(b.folds) == 0 {
+	if len(b.folds()) == 0 {
 		return nil
 	}
 	p, onHeader := b.cursorPath()
 	if r, ok := b.cursorRow(); !ok || !r.header {
 		onHeader = false
 	}
-	b.folds = nil
+	b.setFolds(nil)
 	b.selectedPath = nil
 	if onHeader && len(p) > 0 {
 		rows := b.rows()
@@ -365,7 +508,7 @@ func (b *board) expandAll() tea.Cmd {
 // awaiting_input transition both call: a fold is never allowed to be the
 // reason work waiting on a human cannot be reached (task 054 decision 3).
 func (b *board) expandFor(id int64) bool {
-	if len(b.folds) == 0 {
+	if len(b.folds()) == 0 {
 		return false
 	}
 	// Every task the board can name, an expanded fan-out's lanes included
@@ -378,14 +521,14 @@ func (b *board) expandFor(id int64) bool {
 	// The path is read against the grouping on screen: what has to open is
 	// what is hiding the task now.
 	shown, _ := b.shownGroup()
-	next := b.folds
+	next := b.folds()
 	for _, p := range headerPaths(t, b.group, shown) {
 		next = next.without(p)
 	}
-	if len(next) == len(b.folds) {
+	if len(next) == len(b.folds()) {
 		return false
 	}
-	b.folds = next
+	b.setFolds(next)
 	b.selectedPath = nil
 	return true
 }
@@ -434,12 +577,12 @@ func (b *board) focusRow(rows []boardRow, i int) {
 // consequence is that the next launch opens the group again — which is the
 // same fail-open direction loadFolds takes.
 func (b *board) saveFolds() tea.Cmd {
-	dir, folds := b.dataDir, slices.Clone(b.folds)
+	dir, folds, drop := b.dataDir, maps.Clone(b.foldsBy), b.foldsMigrated
 	if dir == "" {
 		return nil
 	}
 	return func() tea.Msg {
-		_ = writeFolds(dir, folds)
+		_ = writeFolds(dir, folds, drop)
 		return nil
 	}
 }
@@ -452,7 +595,7 @@ func (b *board) persistFolds() {
 	if b.dataDir == "" {
 		return
 	}
-	_ = writeFolds(b.dataDir, b.folds)
+	_ = writeFolds(b.dataDir, b.foldsBy, b.foldsMigrated)
 }
 
 // foldedHome is the collapsed header standing in for the remembered task,

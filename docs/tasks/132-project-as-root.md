@@ -1,6 +1,6 @@
 # 132 — Project as root: the TUI scoped to one selected project
 
-**Status:** 🔄 in progress (5/18)
+**Status:** 🔄 in progress (6/18)
 
 Issue [#694](https://github.com/lezli01/vincent/issues/694), part of
 [#693](https://github.com/lezli01/vincent/issues/693). Spec §3 (the new row
@@ -436,6 +436,63 @@ together, and 132.3 was written before the picker existed, so it did not add
 the marker. The picker still marks only the current project; the default
 marker remains open against 132.3's row.
 
+### 34. The interim attention clause is global and labelled (2026-10-05)
+
+Taken with the author while delivering 132.8. Until 132.14 (#708) brings the
+badge and the project-crossing `!`, the board header's `! N need attention`
+keeps counting every project's tasks: a selection is a filter and must not
+hide a question (decision 2). When some of that count is in projects other
+than the selected one, the clause reads ` (all projects)`, the way
+` (all tasks)` already marks a committed filter; when both apply, the one
+` (all projects)` covers both, being the wider statement. The footer's
+`! next attention (N)` takes the same label, as `(N, all projects)`. `!`
+(`shell.jumpAttention`) walks `visible()` and is therefore per project in
+this item; that is accepted deliberately, and 132.14 replaces both the
+clause and the jump.
+
+*Alternatives beaten:* scoping the count now, which hides another project's
+question and so breaks decision 2; leaving the mismatch unlabelled.
+
+### 35. Folds are kept per project (2026-10-05)
+
+Taken with the author while delivering 132.8. The task board's fold set is
+keyed by project id, so a board's folds are independent per project whatever
+`group_by` says — which matters most once 132.9 makes `[workflow]` the
+default, because a shared `["build"]` fold would collapse `build` in every
+project. In memory the board holds `map[int64]foldSet`; the render, the four
+fold keys and `!`'s auto-expand read and write the selected project's set. In
+`{data_dir}/tui.json` the sets live in `board_folds_by_project`
+(`{"<id>": [[...], ...]}`), written through the same merge as before.
+
+The legacy `board_folds` list is read once and migrated when the root's
+project list is known, then dropped on the next write; until then it is held
+unmigrated and not written back. A legacy path whose first segment names a
+registered project moves under that project's id; a path that was only the
+project segment (a folded project header, which a one-project board no
+longer draws) is dropped; a path whose first segment names no project — a
+`[workflow]` grouping's — is dropped too, because copying it into every
+project would recreate the sharing this removes.
+
+A successful live load prunes each project's set against that project's own
+tasks from the global list, and a project with no live tasks keeps its set
+(the existing "an empty list prunes nothing" rule). An archived load prunes
+nothing, because a page and a date window say nothing about which groups
+exist; the archived board still shares the sets (task 054 decision 1). A
+removed project's set is dropped when it leaves the cached project list.
+
+*Note (2026-10-05), at delivery:* the decision as taken said a migrated
+path is stored with its project segment stripped, on the premise that a
+scoped board's paths no longer carry one. They do: a level `shownLevels`
+skips still contributes its value to every header path under it (task 129
+decision 4, `headerPaths`), so under today's default `[project, workflow]`
+the scoped board's `build` header is `["api", "build"]`. A migrated path
+therefore keeps its segment, or it would never match the header it was made
+on. Whether paths drop the project level is 132.9's, with the grouping.
+
+*Alternatives beaten:* shared label paths, which leak a `[workflow]` fold
+across projects; prefixing stored paths with the project *name*, which breaks
+on a rename.
+
 ## Supersedes
 
 Every binding record this work overturns, departs from, refines or keeps, by
@@ -516,9 +573,10 @@ its own pull request.
 - [ ] **132.7** ([#701](https://github.com/lezli01/vincent/issues/701)) Zero
   projects, a deleted or renamed selection, reloads on reconnect, the first
   project added. Depends: 132.3, 132.5.
-- [ ] **132.8** ([#702](https://github.com/lezli01/vincent/issues/702)) The
+- [x] **132.8** ([#702](https://github.com/lezli01/vincent/issues/702)) The
   board filtered in memory; the archived tasks board filtered on the server;
-  per-project fold pruning. Depends: 132.5.
+  per-project fold pruning; no PROJECT column; the `/` filter without the
+  project name (decisions 34, 35). Depends: 132.5. ✓ 2026-10-05
 - [ ] **132.9** ([#703](https://github.com/lezli01/vincent/issues/703)) The
   `project` level of `tui.board.group_by` deprecated, the default `[workflow]`.
   Depends: 132.8.

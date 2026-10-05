@@ -98,8 +98,8 @@ func TestFoldHidesTheSubtreeAndExpandsOneLevel(t *testing.T) {
 		"▾ web",
 		" ▾ build", "#3",
 	)
-	if len(b.folds) != 0 {
-		t.Errorf("folds left over after unfolding everything: %v", b.folds)
+	if len(b.folds()) != 0 {
+		t.Errorf("folds left over after unfolding everything: %v", b.folds())
 	}
 }
 
@@ -116,7 +116,7 @@ func TestFoldingIsAViewOverTheBandSort(t *testing.T) {
 	b.render(160, 20)
 	unfolded := rowLabels(b.allRows())
 
-	b.folds = b.folds.with(foldPath{"web"})
+	b.setFolds(b.folds().with(foldPath{"web"}))
 	folded := rowLabels(b.rows())
 
 	// Everything still on screen is in the order it was, and the only rows
@@ -227,7 +227,7 @@ func TestFoldedGroupSwallowingTheCursorKeepsItNearby(t *testing.T) {
 	if got, _ := b.selected(); got != 3 {
 		t.Fatalf("fixture selected %d, want 3", got)
 	}
-	b.folds = b.folds.with(foldPath{"web"})
+	b.setFolds(b.folds().with(foldPath{"web"}))
 	b.render(160, 20)
 	if r := b.rowAt(b.tbl.Cursor()); !r.header || r.label != "web" {
 		t.Fatalf("cursor went to %+v, want the `web` header now standing in for #3", r)
@@ -269,7 +269,7 @@ func TestCollapsedHeaderCountsWhatItHides(t *testing.T) {
 	)
 	b.render(160, 20)
 	b.marks = b.marks.add(1, 2)
-	b.folds = b.folds.with(foldPath{"api"})
+	b.setFolds(b.folds().with(foldPath{"api"}))
 
 	r := b.rows()[0]
 	if !r.collapsed || r.count != 2 || r.attention != 1 || r.marked != 2 {
@@ -298,11 +298,11 @@ func TestBulkSelectionIgnoresFolds(t *testing.T) {
 		}
 	}
 
-	before := slices.Clone(b.folds)
+	before := slices.Clone(b.folds())
 	b.filter.SetValue("web")
 	b.render(160, 20)
-	if !slices.EqualFunc(b.folds, before, foldPath.equal) {
-		t.Errorf("a filter changed the fold set: %v, was %v", b.folds, before)
+	if !slices.EqualFunc(b.folds(), before, foldPath.equal) {
+		t.Errorf("a filter changed the fold set: %v, was %v", b.folds(), before)
 	}
 }
 
@@ -317,22 +317,22 @@ func TestFoldsSurviveRegroupingAndFilters(t *testing.T) {
 	b.render(160, 20)
 	foldPress(b, keyLeft)
 	want := foldPath{"api", "build"}
-	if !b.folds.has(want) {
-		t.Fatalf("← did not fold %v (folds %v)", want, b.folds)
+	if !b.folds().has(want) {
+		t.Fatalf("← did not fold %v (folds %v)", want, b.folds())
 	}
 
 	// `g` all the way round, including the project-only and flat views where
 	// a [project, workflow] path renders nothing at all.
 	for range groupingCycle() {
 		foldPress(b, keyGroup)
-		if !b.folds.has(want) {
-			t.Fatalf("grouping %s dropped %v (folds %v)", b.group.label(), want, b.folds)
+		if !b.folds().has(want) {
+			t.Fatalf("grouping %s dropped %v (folds %v)", b.group.label(), want, b.folds())
 		}
 	}
 	b.filter.SetValue("web")
 	b.render(160, 20)
-	if !b.folds.has(want) {
-		t.Fatalf("a filter dropped %v (folds %v)", want, b.folds)
+	if !b.folds().has(want) {
+		t.Fatalf("a filter dropped %v (folds %v)", want, b.folds())
 	}
 	b.filter.SetValue("")
 
@@ -341,15 +341,15 @@ func TestFoldsSurviveRegroupingAndFilters(t *testing.T) {
 	b.updateLoaded(boardLoadedMsg{tasks: []apiclient.Task{
 		task(2, stateQueued, inProject("web"), inWorkflow("deploy")),
 	}})
-	if b.folds.has(want) {
-		t.Errorf("a vanished project was resurrected: %v", b.folds)
+	if b.folds().has(want) {
+		t.Errorf("a vanished project was resurrected: %v", b.folds())
 	}
 
 	// A disconnected board holds no news about which projects exist.
-	b.folds = b.folds.with(want)
+	b.setFolds(b.folds().with(want))
 	b.updateLoaded(boardLoadedMsg{tasks: nil})
-	if !b.folds.has(want) {
-		t.Errorf("an empty task list pruned the fold set: %v", b.folds)
+	if !b.folds().has(want) {
+		t.Errorf("an empty task list pruned the fold set: %v", b.folds())
 	}
 }
 
@@ -359,14 +359,14 @@ func TestFlatGroupingHasNoFolds(t *testing.T) {
 	b := twoProjectBoard()
 	b.render(160, 20)
 	foldPress(b, keyLeft)
-	want := slices.Clone(b.folds)
+	want := slices.Clone(b.folds())
 
 	b.group = nil
 	b.render(160, 20)
 	for _, k := range []tea.KeyPressMsg{keyLeft, keyRight, keyFoldC, keyFoldO} {
 		foldPress(b, k)
-		if !slices.EqualFunc(b.folds, want, foldPath.equal) {
-			t.Fatalf("%s changed the fold set on a flat board: %v, want %v", k.String(), b.folds, want)
+		if !slices.EqualFunc(b.folds(), want, foldPath.equal) {
+			t.Fatalf("%s changed the fold set on a flat board: %v, want %v", k.String(), b.folds(), want)
 		}
 	}
 	for _, r := range b.rows() {
@@ -382,8 +382,8 @@ func TestFlatGroupingHasNoFolds(t *testing.T) {
 		}
 	}
 	b.group = defaultGrouping()
-	if !slices.EqualFunc(b.folds, want, foldPath.equal) {
-		t.Errorf("folds = %v after cycling back, want %v", b.folds, want)
+	if !slices.EqualFunc(b.folds(), want, foldPath.equal) {
+		t.Errorf("folds = %v after cycling back, want %v", b.folds(), want)
 	}
 }
 
@@ -394,7 +394,7 @@ func TestAwaitingInputOpensItsGroup(t *testing.T) {
 	b := twoProjectBoard()
 	b.render(160, 20)
 	foldPress(b, keyFoldC)
-	if len(b.folds) == 0 {
+	if len(b.folds()) == 0 {
 		t.Fatal("C folded nothing")
 	}
 
@@ -409,13 +409,13 @@ func TestAwaitingInputOpensItsGroup(t *testing.T) {
 	b.render(160, 20)
 
 	for _, p := range []foldPath{{"api"}, {"api", "docs"}} {
-		if b.folds.has(p) {
-			t.Errorf("%v is still folded over a task that started waiting (folds %v)", p, b.folds)
+		if b.folds().has(p) {
+			t.Errorf("%v is still folded over a task that started waiting (folds %v)", p, b.folds())
 		}
 	}
 	// The sibling project is none of the transition's business.
-	if !b.folds.has(foldPath{"web"}) {
-		t.Errorf("an unrelated group was opened too: %v", b.folds)
+	if !b.folds().has(foldPath{"web"}) {
+		t.Errorf("an unrelated group was opened too: %v", b.folds())
 	}
 	if got := rowLabels(b.rows()); !slices.Contains(got, "#2") {
 		t.Errorf("the waiting task is still hidden: %v", got)
@@ -428,7 +428,7 @@ func TestOtherTransitionsLeaveFoldsAlone(t *testing.T) {
 	b := twoProjectBoard()
 	b.render(160, 20)
 	foldPress(b, keyFoldC)
-	before := slices.Clone(b.folds)
+	before := slices.Clone(b.folds())
 
 	payload, err := json.Marshal(map[string]string{"to": stateRunning})
 	if err != nil {
@@ -438,8 +438,8 @@ func TestOtherTransitionsLeaveFoldsAlone(t *testing.T) {
 	b.updateNote(apiclient.EventNote{Event: apiclient.Event{
 		ID: 9, Type: "task.state_changed", TaskID: &id, Payload: payload,
 	}})
-	if !slices.EqualFunc(b.folds, before, foldPath.equal) {
-		t.Errorf("a run transition opened a group: %v, was %v", b.folds, before)
+	if !slices.EqualFunc(b.folds(), before, foldPath.equal) {
+		t.Errorf("a run transition opened a group: %v, was %v", b.folds(), before)
 	}
 }
 
@@ -456,16 +456,16 @@ func TestJumpAttentionOpensTheGroupItLandsIn(t *testing.T) {
 	s.render(120, 37)
 	s.board.updateKey(keyFoldC)
 	s.render(120, 37)
-	if !s.board.folds.has(foldPath{"web"}) {
-		t.Fatalf("C did not fold the waiting task's project: %v", s.board.folds)
+	if !s.board.folds().has(foldPath{"web"}) {
+		t.Fatalf("C did not fold the waiting task's project: %v", s.board.folds())
 	}
 
 	s.jumpAttention()
-	if s.board.folds.has(foldPath{"web"}) || s.board.folds.has(foldPath{"web", "deploy"}) {
-		t.Errorf("! left the group it jumped into folded: %v", s.board.folds)
+	if s.board.folds().has(foldPath{"web"}) || s.board.folds().has(foldPath{"web", "deploy"}) {
+		t.Errorf("! left the group it jumped into folded: %v", s.board.folds())
 	}
-	if !s.board.folds.has(foldPath{"api"}) {
-		t.Errorf("! opened a group it did not land in: %v", s.board.folds)
+	if !s.board.folds().has(foldPath{"api"}) {
+		t.Errorf("! opened a group it did not land in: %v", s.board.folds())
 	}
 }
 
@@ -483,14 +483,14 @@ func TestFoldsRoundTripThroughTUIState(t *testing.T) {
 	first.setDataDir(dir)
 	first.render(160, 20)
 	foldPress(first, keyLeft)
-	if len(first.folds) == 0 {
+	if len(first.folds()) == 0 {
 		t.Fatal("← folded nothing")
 	}
 
 	second := twoProjectBoard()
 	second.setDataDir(dir)
-	if !slices.EqualFunc(second.folds, first.folds, foldPath.equal) {
-		t.Errorf("a second board read %v, want %v", second.folds, first.folds)
+	if !slices.EqualFunc(second.folds(), first.folds(), foldPath.equal) {
+		t.Errorf("a second board read %v, want %v", second.folds(), first.folds())
 	}
 	if !noticeAcknowledged(dir) {
 		t.Error("writing the folds lost the full-auto acknowledgment")
@@ -505,7 +505,7 @@ func TestFoldsRoundTripThroughTUIState(t *testing.T) {
 
 	// And a fold write does not bury the notice for a dir that never saw it.
 	fresh := t.TempDir()
-	if err := writeFolds(fresh, foldSet{{"api"}}); err != nil {
+	if err := writeFolds(fresh, projectFolds{testProjectID: {{"api"}}}, true); err != nil {
 		t.Fatalf("writeFolds: %v", err)
 	}
 	if noticeAcknowledged(fresh) {
@@ -529,13 +529,13 @@ func TestUnreadableFoldsMeanEverythingExpanded(t *testing.T) {
 					t.Fatalf("seed: %v", err)
 				}
 			}
-			if got := loadFolds(dir); len(got) != 0 {
-				t.Errorf("loadFolds = %v, want nothing folded", got)
+			if got, legacy := loadFolds(dir); len(got) != 0 || len(legacy) != 0 {
+				t.Errorf("loadFolds = %v, %v, want nothing folded", got, legacy)
 			}
 		})
 	}
-	if got := loadFolds(""); len(got) != 0 {
-		t.Errorf("loadFolds with no data dir = %v, want nothing folded", got)
+	if got, legacy := loadFolds(""); len(got) != 0 || len(legacy) != 0 {
+		t.Errorf("loadFolds with no data dir = %v, %v, want nothing folded", got, legacy)
 	}
 }
 
@@ -546,10 +546,10 @@ func TestReconnectDoesNotRereadTheFolds(t *testing.T) {
 	dir := t.TempDir()
 	b := twoProjectBoard()
 	b.setDataDir(dir)
-	b.folds = b.folds.with(foldPath{"api"})
+	b.setFolds(b.folds().with(foldPath{"api"}))
 	b.setDataDir(dir)
-	if !b.folds.has(foldPath{"api"}) {
-		t.Errorf("a reconnect re-read the file over the folds on screen: %v", b.folds)
+	if !b.folds().has(foldPath{"api"}) {
+		t.Errorf("a reconnect re-read the file over the folds on screen: %v", b.folds())
 	}
 }
 
@@ -582,7 +582,7 @@ func TestFoldingAWrappedBoard(t *testing.T) {
 		t.Fatalf("no row wrapped at 90 columns; the fixture no longer tests anything")
 	}
 
-	b.folds = b.folds.with(foldPath{"api"})
+	b.setFolds(b.folds().with(foldPath{"api"}))
 	rows := b.rows()
 	r := rows[0]
 	if !r.collapsed || r.count != 2 || r.attention != 1 || r.marked != 2 {

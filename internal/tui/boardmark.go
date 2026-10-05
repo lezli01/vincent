@@ -86,7 +86,25 @@ func (m markSet) keep(tasks []apiclient.Task) markSet {
 }
 
 // hasMarks reports that a bulk selection is driving the board.
-func (b *board) hasMarks() bool { return len(b.marks) > 0 }
+func (b *board) hasMarks() bool { return len(b.projectMarks()) > 0 }
+
+// projectMarks is the selection inside the selected project (task 132.8).
+// Marks are kept against the whole list, so a mark made in another project
+// survives a switch away and back — but while that project is not selected
+// it is neither counted nor dispatched: a bulk action must not reach rows
+// nobody can see.
+func (b *board) projectMarks() markSet {
+	if len(b.marks) == 0 {
+		return nil
+	}
+	var out markSet
+	for _, t := range tasksInProject(b.knownTasks(), b.project.id) {
+		if b.marks.has(t.ID) {
+			out = append(out, t.ID)
+		}
+	}
+	return out
+}
 
 // toggleMark is `space`: mark or unmark the row under the cursor. A group
 // header resolves to the first task under it the way every other key does, so
@@ -129,7 +147,7 @@ func (b *board) clearMarks() { b.marks = nil }
 // markedTargets is the selection as the action bar sees it: what the daemon
 // says can be done to each marked task (§6), in board order — top to bottom, so
 // a bulk action runs in the order the rows were read. Filtering is deliberately
-// not applied; the selection is not a view.
+// not applied; the selection is not a view. The project is (projectMarks).
 func (b *board) markedTargets() []markedTask {
 	if len(b.marks) == 0 {
 		return nil
@@ -140,7 +158,7 @@ func (b *board) markedTargets() []markedTask {
 	// with the rest rather than silently dropped for not being in a listing
 	// that excludes lanes by design.
 	for _, t := range b.orderedTasks() {
-		if b.marks.has(t.ID) {
+		if b.marks.has(t.ID) && t.ProjectID == b.project.id {
 			out = append(out, markedTask{id: t.ID, actions: t.AvailableActions})
 		}
 	}

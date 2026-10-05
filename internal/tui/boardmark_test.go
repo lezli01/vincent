@@ -67,10 +67,14 @@ func TestMarksArePrunedForTasksTheDaemonDropped(t *testing.T) {
 // rows on screen, and a selection built before the filter was typed is not
 // thrown away by a key aimed at them (task 011 decision).
 func TestMarkVisibleTakesTheFilterButTheSelectionKeepsWhatItHad(t *testing.T) {
+	// The filter matches titles, not project names (task 132.8).
+	titled := func(title string) func(*apiclient.Task) {
+		return func(t *apiclient.Task) { t.Title = title }
+	}
 	b := markedBoard(
-		task(1, stateDone, inProject("api")),
-		task(2, stateDone, inProject("web")),
-		task(3, stateDone, inProject("web")),
+		task(1, stateDone, titled("api fix")),
+		task(2, stateDone, titled("web fix")),
+		task(3, stateDone, titled("web docs")),
 	)
 	b.marks = markSet{1}
 	b.filter.SetValue("web")
@@ -128,10 +132,10 @@ func TestMarkerColumnExistsOnlyWhileSomethingIsMarked(t *testing.T) {
 	if strings.Contains(ansi.Strip(plain), markGlyph) {
 		t.Fatalf("an unmarked board rendered the selection glyph:\n%s", plain)
 	}
-	// At 160 there is slack for the marker, so it is added rather than paid
+	// At 200 there is slack for the marker, so it is added rather than paid
 	// for by shedding — which is what makes this a count of one column.
-	cols, _ := boardColumns(160, nil, false, fullContent)
-	marked, _ := boardColumns(160, nil, true, fullContent)
+	cols, _ := boardColumns(200, nil, false, fullContent)
+	marked, _ := boardColumns(200, nil, true, fullContent)
 	if len(marked) != len(cols)+1 {
 		t.Fatalf("marking added %d columns, want exactly one", len(marked)-len(cols))
 	}

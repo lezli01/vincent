@@ -71,7 +71,7 @@ func TestChildrenBreakdownClauses(t *testing.T) {
 func TestBreakdownBlockedSurvivesTheCut(t *testing.T) {
 	parent := apiclient.Task{
 		ID: 9, Title: "fan out", State: stateAwaitingChildren, StepTotal: 2, CurrentStep: 1,
-		ProjectName: "proj", CreatedAt: testNow, UpdatedAt: testNow,
+		ProjectID: testProjectID, ProjectName: "proj", CreatedAt: testNow, UpdatedAt: testNow,
 		Children: &apiclient.ChildrenRollup{Total: 70, Blocked: []int64{1}, ByState: map[string]int{
 			stateBlocked: 11, stateAwaitingGate: 12, stateRunning: 13, stateDone: 14,
 			stateQueued: 15, statePaused: 16, stateAborted: 17, "limbo": 18,

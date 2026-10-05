@@ -1089,6 +1089,11 @@ func (m *root) updateProjectList(msg projectListMsg) tea.Cmd {
 		return nil
 	}
 	m.projects = msg.projects
+	for i := range m.views {
+		if pa, ok := m.views[i].(projectListAware); ok {
+			pa.setProjects(m.projects)
+		}
+	}
 	if !m.startup.done {
 		m.startup.listed = true
 		return m.maybeResolveStartup()
@@ -1642,10 +1647,10 @@ func (m *root) footerLine() string {
 	var (
 		bar       *actionBar
 		target    taskActions
-		attention int
+		attention attentionTally
 	)
 	if s, ok := m.views[viewHome].(*shell); ok {
-		attention = countAttention(s.board.tasks)
+		attention = s.board.attentionTally()
 	}
 	if s, ok := m.views[m.active].(*shell); ok {
 		bar = s.bar

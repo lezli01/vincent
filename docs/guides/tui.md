@@ -148,15 +148,22 @@ and pull request](../assets/tui-task-overview-done.png)
 
 ## The board
 
-One row per task: id, project, title, state, current step `k/n` with its name,
-elapsed, and cost so far. The header shows running-versus-cap counts, how many
-tasks need a human, and which agents need a look.
+One row per task in the [selected project](#switching-project): id, title,
+state, current step `k/n` with its name, elapsed, and cost so far. Switching
+project swaps the rows in place, without asking the daemon for anything — the
+board already holds every project's tasks and only shows one. The header
+shows running-versus-cap counts, how many tasks need a human, and which agents
+need a look.
 
 **The board says only what needs a look.** When nothing is waiting on you, the
 needs-attention clause is not drawn at all; when something is, it reads
 `! 2 need attention` — and `! 2 need attention (all tasks)` while a filter is
 committed, because the count is deliberately the whole board's, not the
-filter's. Every healthy agent collapses into one dim `agents ✓`: only an agent
+filter's. The count also spans every project: while some of it is in a project
+other than the selected one, it reads `! 2 need attention (all projects)` —
+which covers a filter too — and the footer's hint reads
+`! next attention (2, all projects)`. `!` itself only jumps between the
+selected project's tasks. Every healthy agent collapses into one dim `agents ✓`: only an agent
 that is not logged in (`codex ⚠`) or out of quota (`claude ⏳14:20`) is named
 beside it, and one that is not installed is not mentioned — `vincent doctor`
 and the daemon view list the whole catalog. With no agent installed at all the
@@ -211,7 +218,7 @@ Three behaviors matter:
 
 | Key | Does |
 |---|---|
-| `/` | Filter by id, title, project or state; `tab` commits the filter, `esc` clears it |
+| `/` | Filter by id, title or state; `tab` commits the filter, `esc` clears it |
 | `H` | Show only the tasks that need you — awaiting input, awaiting approval, blocked, or a fan-out one of whose lanes is. `H` again shows every task |
 | `enter` | Open the selected task |
 
@@ -237,9 +244,10 @@ part of it you can see: one long title far down the board makes the rows above
 it tall too, and a filter that hides it makes them short again. What still does
 not fit at three lines ends in `…`. Clicking any line of a row selects that row,
 and `j`/`k` move a task at a time whatever the height. The id, elapsed, cost,
-the pull request marker and the marker column do not wrap, and neither do
-project and workflow: those two are names you scan down, which a fourteen-cell
-wrap makes unreadable, so under width pressure they are dropped instead.
+the pull request marker and the marker column do not wrap, and neither does
+the workflow: it is a name you scan down, which a fourteen-cell wrap makes
+unreadable, so under width pressure it is dropped instead. There is no project
+column — the header names the one project the board shows.
 
 **The title has a ceiling.** It takes whatever the fixed columns leave, up to a
 comfortable width; past that the extra room goes to `STEP` and then `STATUS` —
@@ -279,7 +287,7 @@ is empty until a workflow asks for it; see
 The column is there only while some task on the board has a status. When it
 is, it outranks the cost and the step name: a 120-column board keeps it, with
 the step cut to its `3/7` counter and no `COST` column. It still needs a title
-of 32 cells, so an 80-column board drops it before the workflow or the project.
+of 32 cells, so an 80-column board drops it before the workflow.
 Below a comfortably wide title the status is cut to one line with `…` rather
 than wrapped, so it never makes the rows taller. On a wider board it wraps like
 the title.
@@ -392,9 +400,13 @@ Three things mean a fold can never hide work waiting on you:
 - a collapsed group **opens by itself** the moment a task inside it starts
   waiting for input.
 
-Folds are remembered across restarts, in `{data_dir}/tui.json`
-([files](../reference/files.md)). They survive `g`, a filter and a reconnect,
-and a group is forgotten when its project or workflow leaves the board. `V`
+Folds are kept **per project** and remembered across restarts, in
+`{data_dir}/tui.json` ([files](../reference/files.md)): folding `build` in one
+project leaves `build` open in another, and switching away and back finds the
+folds as you left them. They survive `g`, a filter and a reconnect, and a group
+is forgotten when its workflow leaves the project's board, or with the project
+when it is removed. Folds saved by an older vincent are carried over to their
+project the first time the board starts. `V`
 still selects tasks inside a collapsed group — the selection is a set of tasks,
 not of rows. With `group_by: []` there are no groups, so the four keys do
 nothing. A fresh install has nothing folded.
@@ -2477,7 +2489,10 @@ held by a conversation nobody came back to.
 Two screens, one for tasks and one for chats, reached from the command palette
 (`:`). They are the boards you already know, in a second mode: the same
 grouping, the same folding, the same `/` filter and the same `space`/`V`
-selection, listing what is archived instead of what is live. There is no key of
+selection, listing what is archived instead of what is live. The archived
+tasks board lists the selected project only, and asks the daemon for just that
+project: switching project goes back to the first page and reads
+`loading <project>…` until the new page arrives. There is no key of
 its own for either — the palette is how you get there, which is the pattern
 every takeover but new task follows.
 

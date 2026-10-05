@@ -404,7 +404,7 @@ var bindings = []binding{
 	// Task table.
 	{key: "down", label: "move the selection (↑/↓ — the panels follow the cursor)", scope: scopePanel, context: ctxTasks, hint: "↑/↓ select", priority: 3},
 	{op: keymap.OpenRow, key: "enter", label: "open the selected task in its full-screen workspace", scope: scopePanel, context: ctxTasks, hint: "enter open", priority: 1, term: termOpenRow},
-	{op: keymap.Filter, key: "/", label: "filter by id, title, project or state", scope: scopePanel, context: ctxTasks, hint: "/ filter", priority: 2, term: termFilter},
+	{op: keymap.Filter, key: "/", label: "filter by id, title or state", scope: scopePanel, context: ctxTasks, hint: "/ filter", priority: 2, term: termFilter},
 	{key: "g", label: "group the tasks: project › workflow → project → workflow → flat (config.yaml sets the one you start on)", scope: scopePanel, context: ctxTasks, hint: "g group", priority: 4},
 	{key: "space", label: "select this task for a bulk action — the action keys then act on every selected task (space again deselects, esc clears)", scope: scopePanel, context: ctxTasks, hint: "space select", priority: 5},
 	{op: keymap.AttentionFilter, key: "H", label: "show only the tasks that need a human — awaiting input, awaiting approval, blocked, or a fan-out whose lane is (H again shows every task)", scope: scopePanel, context: ctxTasks, hint: "H needs you", priority: 6, term: termAttention},
@@ -550,7 +550,7 @@ var bindings = []binding{
 	// transition table, so an archived row offers no action at all.
 	{op: keymap.Scope, key: "s", label: "cycle the window: last 7 days → last 30 days → all time", scope: scopePanel, context: ctxArchived, hint: "s window", priority: 3, term: termScope},
 	{key: ">", label: "next page of the archive (< goes back)", scope: scopePanel, context: ctxArchived, hint: "</> page", priority: 4},
-	{op: keymap.Filter, key: "/", label: "filter by id, title, project or state", scope: scopePanel, context: ctxArchived, priority: 5, term: termFilter},
+	{op: keymap.Filter, key: "/", label: "filter by id, title or state", scope: scopePanel, context: ctxArchived, priority: 5, term: termFilter},
 	{key: "space", label: "select this task for the bulk delete (V selects every row the filter is showing)", scope: scopePanel, context: ctxArchived, priority: 6},
 
 	// Archived chats. The same three keys, on the same reasoning: a chat that

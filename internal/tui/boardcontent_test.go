@@ -38,7 +38,7 @@ func withPull(number int) func(*apiclient.Task) {
 // COST and PR" is checked against the rule rather than a copied table.
 func oldColumnsFor(width int, g grouping, marking bool) columnSet {
 	set := columnSet{
-		mark: marking, project: !g.has(groupProject), workflow: !g.has(groupWorkflow),
+		mark: marking, workflow: !g.has(groupWorkflow),
 		stepName: true, cost: true, status: true,
 	}
 	if set.titleWidth(width) < maxTitle {
@@ -54,8 +54,6 @@ func oldColumnsFor(width int, g grouping, marking bool) columnSet {
 			set.stepName = false
 		case set.workflow:
 			set.workflow = false
-		case set.project:
-			set.project = false
 		default:
 			return set
 		}
@@ -241,7 +239,7 @@ func TestBoardColumnsFollowHeldRows(t *testing.T) {
 	}
 
 	// Fold task 2's group away: its row is held, so the columns stay.
-	b.folds = b.folds.with(foldPath{"web"})
+	b.setFolds(b.folds().with(foldPath{"web"}))
 	if strings.Contains(ansi.Strip(b.render(200, 30)), "⇡#42") {
 		t.Fatal("the folded group's row is still on screen")
 	}

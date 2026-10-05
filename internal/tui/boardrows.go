@@ -151,9 +151,10 @@ func startedBefore(a, b apiclient.Task) bool {
 }
 
 // filterTasks keeps tasks matching a case-insensitive substring of the id,
-// title, project name or state. Filtering is client-side: it runs on every
-// keystroke against a list already in memory, so a round-trip per character
-// would be pure latency.
+// title or state. The project name is not matched: the board shows one
+// project (task 132.8), so it would match every row or none. Filtering is
+// client-side: it runs on every keystroke against a list already in memory,
+// so a round-trip per character would be pure latency.
 func filterTasks(tasks []apiclient.Task, query string) []apiclient.Task {
 	q := strings.ToLower(strings.TrimSpace(query))
 	if q == "" {
@@ -162,7 +163,7 @@ func filterTasks(tasks []apiclient.Task, query string) []apiclient.Task {
 	out := make([]apiclient.Task, 0, len(tasks))
 	for _, t := range tasks {
 		haystack := strings.ToLower(strings.Join([]string{
-			strconv.FormatInt(t.ID, 10), t.Title, t.ProjectName, t.State, stateWords(t.State),
+			strconv.FormatInt(t.ID, 10), t.Title, t.State, stateWords(t.State),
 		}, " "))
 		if strings.Contains(haystack, q) {
 			out = append(out, t)

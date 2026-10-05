@@ -13,7 +13,7 @@ import (
 // about grouping, folding and filtering is a fence around that sharing rather
 // than a second copy of the live board's tests.
 func testArchivedBoard() *board {
-	b := newArchivedBoard()
+	b := selectTestProject(newArchivedBoard())
 	b.now = func() time.Time { return testNow }
 	b.bell = func() {}
 	b.loaded = true

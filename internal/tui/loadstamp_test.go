@@ -86,8 +86,11 @@ type stampedView struct {
 }
 
 func stampedViews() []stampedView {
+	// The live board and its lanes are skipSel: their listing is global and
+	// a switch re-derives the rows without a fetch (task 132.8), so a load is
+	// pinned to no project and a switch has nothing to drop.
 	return []stampedView{
-		{name: "board", new: func() (func(projectSel) tea.Cmd, func() tea.Cmd, func(loadStamp, string), func() string) {
+		{name: "board", skipSel: true, new: func() (func(projectSel) tea.Cmd, func() tea.Cmd, func(loadStamp, string), func() string) {
 			b := newBoard()
 			b.client = deadClient()
 			return b.setProject, b.loadCmd,
@@ -105,7 +108,7 @@ func stampedViews() []stampedView {
 				},
 				func() string { return firstTitle(b.tasks) }
 		}},
-		{name: "lanes", new: func() (func(projectSel) tea.Cmd, func() tea.Cmd, func(loadStamp, string), func() string) {
+		{name: "lanes", skipSel: true, new: func() (func(projectSel) tea.Cmd, func() tea.Cmd, func(loadStamp, string), func() string) {
 			b := newBoard()
 			b.client = deadClient()
 			b.lanes.expanded = expandSet{7}

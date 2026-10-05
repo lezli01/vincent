@@ -230,7 +230,8 @@ cleared from a shell loop.
 
 Archiving keeps the history. **Archived boards** — one for tasks, one for chats,
 both reached from the command palette — are where it is read back: the live
-boards you already know, listing what is archived instead of what is running,
+boards you already know, listing what is archived instead of what is running —
+the archived tasks board for the selected project —
 newest-archived first, in pages and inside a date window. Opening a row from
 there opens its full workspace, read-only because an archived task offers no
 actions rather than because a flag says so. It is also the one place anything is
@@ -318,13 +319,16 @@ walks each one):
 
 In detail:
 
-- A filterable, grouped task board shows state, current step, elapsed time,
+- A filterable, grouped task board for the selected project shows state,
+  current step, elapsed time,
   reported cost, the step's own status message, and a `⇡#123` marker on a task
   with a pull request. The status is kept at 120 columns, and a column no task
   has anything to say in (a cost no agent reported, a status nobody set) is
   left out.
-  Groups fold away, and a folded one still carries its task count and its
-  needs-attention badge. The board is calm when nothing needs you: no
+  Switching project swaps its rows in place, and the needs-attention count
+  still spans every project, saying `(all projects)` when some of it is
+  elsewhere. Groups fold away, per project, and a folded one still carries its
+  task count and its needs-attention badge. The board is calm when nothing needs you: no
   zero-attention clause, one `agents ✓` for every healthy agent, no header for
   a grouping level every task shares, and the action keys in the footer only.
   One key narrows it to what needs you, including a fan-out whose lane does.

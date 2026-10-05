@@ -46,15 +46,15 @@ func TestBoardStepColumnDropsFromTheTail(t *testing.T) {
 		{
 			name: "at the column's base width only k/n and the name fit",
 			// 18 cells: `3/7 green · loop 4/10` is 21, so even the counter goes.
-			width: 110, want: "3/7 green", gone: []string{"loop 4/10", "alpha", "repair"},
+			width: 94, want: "3/7 green", gone: []string{"loop 4/10", "alpha", "repair"},
 		},
 		{
 			name:  "a middle tier buys the counter",
-			width: 170, want: "3/7 green · loop 4/10", gone: []string{"alpha", "repair"},
+			width: 154, want: "3/7 green · loop 4/10", gone: []string{"alpha", "repair"},
 		},
 		{
 			name:  "the ceiling buys the item too",
-			width: 190, want: "3/7 green · loop 4/10 · alpha", gone: []string{"repair"},
+			width: 174, want: "3/7 green · loop 4/10 · alpha", gone: []string{"repair"},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -76,9 +76,9 @@ func TestBoardStepColumnDropsFromTheTail(t *testing.T) {
 	out := ansi.Strip(loopedBoard(&apiclient.LoopRollup{
 		Driver: "count", Iteration: 4, Total: 10, MaxIterations: 10,
 		BodyStep: "repair", BodyIndex: 2, BodyTotal: 3,
-	}).render(190, 20))
+	}).render(174, 20))
 	if want := "3/7 green · loop 4/10 · repair 2/3"; !strings.Contains(out, want) {
-		t.Errorf("a 190-column board does not show %q:\n%s", want, out)
+		t.Errorf("a 174-column board does not show %q:\n%s", want, out)
 	}
 }
 

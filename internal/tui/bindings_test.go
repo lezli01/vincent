@@ -529,14 +529,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			s := foldingShell(t)
 			s.update(registryKey(t, "left"))
 			s.render(120, 37)
-			if !s.board.folds.has(foldPath{"api", "build"}) {
-				t.Fatalf("left did not collapse the cursor's group (folds %v)", s.board.folds)
+			if !s.board.folds().has(foldPath{"api", "build"}) {
+				t.Fatalf("left did not collapse the cursor's group (folds %v)", s.board.folds())
 			}
 			// Again, on the header it just closed: ← walks outwards.
 			s.update(registryKey(t, "left"))
 			s.render(120, 37)
-			if !s.board.folds.has(foldPath{"api"}) {
-				t.Fatalf("a second left did not collapse the parent (folds %v)", s.board.folds)
+			if !s.board.folds().has(foldPath{"api"}) {
+				t.Fatalf("a second left did not collapse the parent (folds %v)", s.board.folds())
 			}
 		},
 		"right": func(t *testing.T) {
@@ -545,8 +545,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			s.render(120, 37)
 			s.update(registryKey(t, "right"))
 			s.render(120, 37)
-			if s.board.folds.has(foldPath{"api", "build"}) {
-				t.Fatalf("right did not expand the group under the cursor (folds %v)", s.board.folds)
+			if s.board.folds().has(foldPath{"api", "build"}) {
+				t.Fatalf("right did not expand the group under the cursor (folds %v)", s.board.folds())
 			}
 		},
 		"C": func(t *testing.T) {
@@ -554,8 +554,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			s.update(registryKey(t, "C"))
 			s.render(120, 37)
 			for _, want := range []foldPath{{"api"}, {"api", "build"}} {
-				if !s.board.folds.has(want) {
-					t.Fatalf("C did not collapse %v (folds %v)", want, s.board.folds)
+				if !s.board.folds().has(want) {
+					t.Fatalf("C did not collapse %v (folds %v)", want, s.board.folds())
 				}
 			}
 		},
@@ -565,8 +565,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			s.render(120, 37)
 			s.update(registryKey(t, "O"))
 			s.render(120, 37)
-			if len(s.board.folds) != 0 {
-				t.Fatalf("O left folds behind: %v", s.board.folds)
+			if len(s.board.folds()) != 0 {
+				t.Fatalf("O left folds behind: %v", s.board.folds())
 			}
 		},
 	},
