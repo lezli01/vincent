@@ -51,7 +51,8 @@ Recorded 2026-10-04. Decisions 1–14 are the author's answers to #693's open
 questions, each the option #693 recommended; decision 15 is the renumbering;
 decisions 16–19 settle the contradictions between #693's research reports;
 decisions 20–22 were taken while delivering 132.1; decisions 25–28 were
-settled with the author for 132.5 on 2026-10-05. Each
+settled with the author for 132.5 on 2026-10-05, and decisions 29–32
+while delivering 132.3. Each
 decision is **taken now; its effect lands with its item.** The older record
 keeps governing the code until that item's pull request merges.
 
@@ -354,6 +355,50 @@ without them because a note with no project passes every view.
 *Alternative beaten:* attributing those two events in the daemon in the same
 item, which the filter does not need.
 
+### 29. `--project` matches a name before an id (2026-10-05)
+
+`vincent --project <value>` tries an exact project name first, and only then
+an all-digit value as an id. Project names may be numeric (`validateName`
+checks only non-empty and length), and name-first keeps a project named `3`
+reachable. It is also how `tui.default_project` behaves, which is by name
+only. A signed or spaced value is a name.
+
+### 30. The startup notice: the working directory, or a fallthrough (2026-10-05)
+
+Decision 4's "the notice names the rule" is applied as one line under the
+header, raised in exactly two cases, and cleared by the next key like the
+keymap notice. A pick by the working directory says `◆ web — from the working
+directory`. Any fallthrough names every rule that failed and what won:
+``tui.default_project `api` is not registered — showing `web` (last used)``.
+A pick by flag, config, last used or first by name is silent, because the
+header segment already shows the project.
+
+### 31. `selected_project` is written on every selection change (2026-10-05)
+
+`tui.json`'s `selected_project` `{id, name}` is written through
+`mergeTUIState` from `selectProject`, the one place the selection changes, so
+the startup pick itself is written too: a `--project` or working-directory
+launch makes that project the last used. 132.4's `@` switch reuses it. The
+write runs off the update loop and a failure is not reported, for the board
+folds' reason: the selection holds on screen, and the only cost is that the
+next launch falls through to a rule below last used. With several TUIs, the
+last writer wins.
+
+### 32. The m11 gate carries `tui.default_project` (2026-10-05)
+
+`scripts/m11-gate.sh` scenario 9: `PATCH /v1/config` refuses an empty or
+over-long `tui.default_project` with the validation envelope and the file
+byte-identical, and a valid value round-trips through `GET /v1/config` and
+`vincent config get`. The key is syntax-checked only — config is a leaf and
+looks nothing up — and is adopted by the TUI from its first config answer;
+a later answer never moves the selection.
+
+The working-directory comparison moved into a new leaf, `internal/pathx`
+(`SameDir`, `Contains`), which `internal/worktree` and `internal/api` now
+delegate to, so the TUI matches paths without importing a git-running
+package. `GET /v1/tasks` always served `worktree_path` on the list row;
+`apiclient.Task` now decodes it there rather than on `TaskDetail` alone.
+
 ## Supersedes
 
 Every binding record this work overturns, departs from, refines or keeps, by
@@ -415,9 +460,9 @@ its own pull request.
   `projectSel` on the root, the `projectScoped` interface, the cached project
   list, the header segment, spec §15 Layout (decisions 23–24). Depends: this
   document. ✓ 2026-10-04
-- [ ] **132.3** ([#697](https://github.com/lezli01/vincent/issues/697)) The
+- [x] **132.3** ([#697](https://github.com/lezli01/vincent/issues/697)) The
   startup precedence, `tui.default_project`, `selected_project` in `tui.json`,
-  `vincent --project`. Depends: 132.2.
+  `vincent --project` (decisions 29–32). Depends: 132.2. ✓ 2026-10-05
 - [ ] **132.4** ([#698](https://github.com/lezli01/vincent/issues/698)) The
   `project` op on `@`, the picker popup with stats, the palette row. Depends:
   132.1, 132.2.

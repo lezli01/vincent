@@ -240,7 +240,7 @@ Requires bash, go, git, curl, jq.
 
 Dependency direction is one-way: `cli` → `tui`/`daemon`; `daemon` wires
 `store` + `workflow` + `scheduler` + `taskrun` + `events` + `notify` + `api`;
-leaf packages (`taskstate`, `issuestate`, `keymap`, `reasons`, `gitx`, `procx`, `version`, `config`) depend on
+leaf packages (`taskstate`, `issuestate`, `keymap`, `reasons`, `gitx`, `procx`, `pathx`, `version`, `config`) depend on
 nothing internal — with one deliberate exception: `config` imports `taskstate`
 and `keymap`, and only those, to validate `notify.on` against §6's state
 vocabulary and `tui.keys` against §15's key vocabulary rather than keeping a
@@ -292,6 +292,7 @@ is a correctness bug, not a style issue:
 | `internal/notify` | The outward signal (§12.3, task 046): a broker subscriber that spawns `notify.command` when a task enters a state in `notify.on`, with an enriched JSON envelope on the child's stdin. Bounded queue, four workers, fixed 10 s per child, no replay |
 | `internal/trigger` | The inward signal (task 096): `{config_dir}/triggers/*.yaml` definitions, their validator and the schema descriptor the form renders from, and the 0600 writer that edits them with `workflow.Edit` ops. Replays `POST /v1/tasks` through an `http.Handler` the way `internal/mcp` does, and never imports `internal/api` (decision 30) |
 | `internal/keymap` | The TUI's rebindable operations (task 118, §12.3, §15): ids, default keys and surfaces, the fixed keys and recorded exceptions, key-string parsing, and the one clause checker the registry tests run over the defaults and `config` runs over `tui.keys`. A leaf |
+| `internal/pathx` | The one directory comparison (task 132.3): `SameDir` and by-component `Contains`, lexical after `Clean`, case-folded on Windows and macOS, then symlink-resolved. `worktree` and `api` delegate to it, and the TUI matches its working directory with it without importing a git-running package. A leaf |
 | `internal/reasons` | The plain-language catalogue of task and step reasons (task 127, §18): a title, a meaning, the §6 actions and a docs anchor for each `block_reason`/`failure_reason`/`skip_reason`/`queued_reason`. A leaf that spells the strings out; tests hold it to every `Reason*` constant and to `docs/reference/task-lifecycle.md`'s tables |
 | `internal/issuestate` | The issue lifecycle of §5.6 (task 130): `open`/`closed`, close reasons, and which actor (`human`, `agent`, `sync`) may take which action. Pure and stdlib-only, a third vocabulary beside `taskstate` and `chatstate`; the store consults it inside the transaction that changes an issue's state |
 | `internal/issues` | The one validated write path for issues (§5.6, task 130): title/label/kind/priority rules and actor attribution, shared by the API, sync and triggers. Imports `store` and `issuestate` only; store errors pass through for `errors.Is` |

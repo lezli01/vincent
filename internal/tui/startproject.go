@@ -17,7 +17,7 @@ import (
 // arrived; the first rule that names a registered project wins:
 //
 //  1. `vincent --project <name|id>` — an exact name first, then an all-digit
-//     value as an id (decision 25), so a project named `3` stays reachable;
+//     value as an id (decision 29), so a project named `3` stays reachable;
 //  2. the working directory — the deepest registered project path, or task or
 //     chat worktree, that contains it (decision 4);
 //  3. `tui.default_project`, by name;
@@ -26,7 +26,7 @@ import (
 //  5. the first project by name.
 //
 // A rule that names no registered project falls through, and the notice says
-// so (decision 26). It is a pure function over its inputs so the whole table
+// so (decision 30). It is a pure function over its inputs so the whole table
 // is tested without a model.
 
 // Rule names, as the notice and selWhy spell them.
@@ -38,7 +38,7 @@ const (
 	whyFirstName = "the first project by name"
 )
 
-// selectedProjectState is tui.json's `selected_project` (decision 27): the
+// selectedProjectState is tui.json's `selected_project` (decision 31): the
 // last selection, written on every change.
 type selectedProjectState struct {
 	ID   int64  `json:"id"`
@@ -195,7 +195,7 @@ func firstProjectByName(projects []apiclient.Project) (apiclient.Project, bool) 
 	return first, true
 }
 
-// isDigits is decision 25's "all-digit": a sign or a space is a name.
+// isDigits is decision 29's "all-digit": a sign or a space is a name.
 func isDigits(s string) bool {
 	for _, r := range s {
 		if r < '0' || r > '9' {
@@ -300,7 +300,7 @@ func (m *root) resolveStartup(msg startupWorktreesMsg) tea.Cmd {
 	return m.selectProject(pick.project, pick.why)
 }
 
-// saveSelection persists the selection off the update loop (decision 27). A
+// saveSelection persists the selection off the update loop (decision 31). A
 // failed write is not reported, for saveFolds' reason: the selection holds on
 // screen either way, and the only consequence is that the next launch falls
 // through to a rule below last-used.

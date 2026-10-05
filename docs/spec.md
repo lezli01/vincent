@@ -6861,7 +6861,7 @@ platform the standing answer to an agent that will not resolve is the §12.3
   token                      # API bearer token, created 0600 at first start
   daemon.json                # { "port": N, "pid": N, "started_at": … } for client discovery
   daemon.lock
-  tui.json                   # TUI-local view state: the §16 first-run acknowledgment, the board's collapsed groups (§15)
+  tui.json                   # TUI-local view state: the §16 first-run acknowledgment, the board's collapsed groups, the last selected project (§15)
   worktrees/{task_id}/
   transcripts/{task_id}/{step_index}-{attempt}.jsonl
   transcripts/{task_id}/{step_index}-{step_id}-{attempt}.jsonl  # sub-step of a parallel group (§7.5)
@@ -7121,6 +7121,7 @@ tui:                           # view preference; the daemon validates and relay
   keys: {}                     # operation id → one key, e.g. {refresh: ctrl+e}; {} = the §15 defaults (task 118)
   output:
     level: normal              # quiet | compact | normal | verbose: the output pane's opening level (task 129.11)
+  # default_project: web       # the project the TUI opens on, by name; read at startup only (task 132.3)
 ```
 
 *Amended 2026-08-31 (task 067, issue #269).* Four of these keys reach **chats**
@@ -7948,6 +7949,17 @@ editor or `PATCH /v1/config` applies at the next read. `v` still cycles the
 level for the session and nothing writes it back. A daemon that predates the key
 refuses a file that sets it, by the strict decode above; that is the accepted
 cost, documented in the configuration reference.
+
+*Amended 2026-10-05 (task 132.3, issue #697):* `tui.default_project` names
+the project the TUI opens on when neither `vincent --project` nor the working
+directory picks one (§15, the startup project). It is unset by default and
+served as `""` when unset. The daemon checks its syntax only: set, it must be
+non-empty and at most 512 bytes, the project-name bound. It never looks the
+name up, because `config` is a leaf with no store; a name that is not
+registered falls through at the TUI, which says so. The TUI adopts it from the
+first config answer **at startup only**: unlike `tui.output.level`, a hot
+reload or an edit never moves a running session's selection. The key is
+removed by editing the file, since `PATCH /v1/config` refuses `""`.
 
 **`environment` (T4.23).** Governs every process the daemon spawns — agent
 steps via `RunSpec.Env` (§9.1), command steps and their checks via §8.5's
@@ -13210,6 +13222,44 @@ note carrying no project (`task.github_pull_changed`,
 attention fold-open on the board read every note, before the filter
 (decision 2). The chats boards refetch through the same 150 ms debounce
 window as every other list.
+
+**The startup project (task 132.3, issue #697, added 2026-10-05).** This
+replaces 132.2's interim "first project by name while nothing is selected" at
+startup. The TUI picks its selection once per process, when the first project
+list and the first config answer have both arrived after connect. It runs
+behind the §16 first-run notice and never prompts. The first rule that names a
+registered project wins:
+
+1. `vincent --project <name|id>`, a local flag of the root command. An exact
+   name match wins first; only then is an all-digit value tried as an id, so a
+   project named `3` stays reachable (task 132 decision 29).
+2. The working directory. Every registered project's path and the
+   `worktree_path` of every non-archived task and chat are candidates, and the
+   deepest one that contains the directory wins; a worktree maps to its task's
+   or chat's project. Containment is by path component, never by string
+   prefix, and is compared lexically after `Clean`, case-folded on Windows and
+   macOS, and again in symlink-resolved form (`internal/pathx`). It is matched
+   client-side, because the directory is the client's.
+3. `tui.default_project` (§12.3), by name.
+4. The last-used project, `tui.json`'s `selected_project` `{id, name}`: the id
+   first, then the name, so a restored database that renumbered ids still
+   resolves.
+5. The first project by name. With no projects nothing is selected.
+
+A rule that names no registered project falls through to the next. One line
+under the header says so in exactly two cases (decision 30): a pick by the
+working directory (`◆ web — from the working directory`), and any fallthrough,
+which names what failed and what won (``tui.default_project `api` is not
+registered — showing `web` (last used)``). Other picks are silent, because the
+header already names the project. The line clears on the next key. After
+startup, a non-empty list still selects its first project by name while
+nothing is selected (decision 10).
+
+`selected_project` is written to `tui.json` on **every** selection change,
+the startup pick included, so a `--project` or working-directory launch makes
+that project the last used (decision 31). A failed write is not reported; it
+costs only the next launch's last-used rule. When several TUIs run, the last
+writer wins.
 
 **Text fields wrap (added 2026-09-01, issue #299).** A field being typed into
 is bound by the same rule the boards and the rendered Markdown already carry: a

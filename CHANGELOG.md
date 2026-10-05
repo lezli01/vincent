@@ -13,6 +13,14 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **The TUI opens on the project you mean.** `vincent --project <name|id>`
+  opens the TUI on that project. Without it, launching `vincent` inside a
+  registered project's checkout, or inside a task's or chat's worktree, opens
+  on that project; otherwise the new `tui.default_project` config key decides,
+  then the project you had selected last time, then the first by name. A name
+  that is not registered is skipped with a line under the header saying what
+  was shown instead. `tui.default_project` is read at startup only, and the
+  last selection is kept in `tui.json` as `selected_project`.
 - **The TUI names a selected project.** The app header now shows
   `◆ <project>` after the version, or `◆ no project` when none is
   registered. The TUI selects the first project by name and keeps it when you

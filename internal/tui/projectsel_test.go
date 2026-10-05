@@ -94,7 +94,7 @@ func TestSelectProjectWalksScopedViews(t *testing.T) {
 	for _, c := range batch[:2] {
 		got = append(got, c().(scopeStubMsg).name)
 	}
-	// The third is decision 27's write of the last-used project.
+	// The third is decision 31's write of the last-used project.
 	batch[2]()
 	if st := readTUIState(m.dataDir).SelectedProject; st == nil || *st != (selectedProjectState{ID: 7, Name: "alpha"}) {
 		t.Errorf("tui.json selected_project = %+v, want alpha/7", st)

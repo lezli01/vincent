@@ -65,6 +65,30 @@ current decision gets the rest of the screen. Below that size they fall back to
 the compact form, table, or registry. Resizing does not move the cursor or close
 the picker, editor, project form, workflow expansion, or graph you were using.
 
+### The startup project
+
+The header names one selected project, `◆ web`. When the TUI starts it picks
+that project once, by the first of these rules that names a registered project:
+
+1. `vincent --project <name|id>`: a project name first, then a project id.
+2. The directory you launched from: the project whose checkout, or whose task
+   or chat worktree, contains it. When several do, the deepest wins, so running
+   `vincent` inside a task's worktree opens that task's project.
+3. [`tui.default_project`](../reference/configuration.md#tuidefault_project) in
+   `config.yaml`.
+4. The project you had selected last time, kept in `tui.json`.
+5. The first project by name.
+
+A rule that names a project that is not registered is skipped, and a line under
+the header says what was skipped and what was shown instead, for example
+``tui.default_project `api` is not registered — showing `web` (last used)``. A
+pick by the directory is announced too (`◆ web — from the working directory`);
+the other rules are silent. The line goes away at your next key.
+
+Every selection is remembered as the last used, the startup pick included, so a
+`--project` launch makes that project the one the next plain `vincent` opens on.
+With several TUIs open, whichever selected a project last wins.
+
 ## Monitoring in three questions
 
 Watching work in vincent comes down to three questions, and each has a short

@@ -126,7 +126,7 @@ type root struct {
 	sel    projectSel
 	selWhy string
 	// startup is the task 132.3 resolution chain's state (startproject.go),
-	// and selNotice the one line it raises (decision 26): a pick by the
+	// and selNotice the one line it raises (decision 30): a pick by the
 	// working directory, or a rule that fell through. Cleared by the next
 	// key, like keysNotice; selNoticeWarn renders it as a warning.
 	startup       startupState
@@ -1006,7 +1006,7 @@ func (m *root) updateProjectList(msg projectListMsg) tea.Cmd {
 }
 
 // selectProject makes p the selection, tells every project-bearing view, and
-// records it as the last used project (task 132 decision 27) — the one place
+// records it as the last used project (task 132 decision 31) — the one place
 // the selection changes, so every change is persisted, the startup chain's
 // own pick included. why is the rule that chose it.
 func (m *root) selectProject(p apiclient.Project, why string) tea.Cmd {

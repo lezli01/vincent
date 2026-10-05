@@ -358,6 +358,12 @@ container:
 # and the chat workspace: quiet | compact | normal | verbose. "v" (ctrl+r in a
 # chat) still cycles it for the session without touching this file; editing
 # the value here applies it to a running TUI.
+#
+# default_project names the project the TUI opens on when neither
+# "vincent --project" nor the directory you launch it from picks one. Read at
+# startup only; a project that is not registered falls through to the one you
+# used last, and the TUI says so. Unset, the TUI opens on the project you used
+# last.
 tui:
   board:
     group_by: [project, workflow]
@@ -366,6 +372,7 @@ tui:
   #   refresh: ctrl+e
   output:
     level: normal
+  # default_project: web
 ```
 
 ## Keys
@@ -1582,6 +1589,7 @@ tui:
   keys: {}
   output:
     level: normal
+  # default_project: web
 ```
 
 The one section the daemon does not act on. It validates it, hot-reloads it with
@@ -1759,6 +1767,27 @@ running TUI the next time it reads the config, like `tui.hyperlinks`.
 The key is new in this version. A daemon older than it refuses a `config.yaml`
 that sets it — unknown keys are an error — so leave it out if you run an older
 daemon against the same config directory.
+
+#### `tui.default_project`
+
+The name of the project the TUI opens on. Unset by default. It is the third of
+five rules the TUI tries once at startup, so `vincent --project` and the
+directory you launch from both win over it, and it wins over the project you
+used last. See [the startup project](../guides/tui.md#the-startup-project).
+
+The daemon checks only that a set value is non-empty and at most 512 bytes,
+the longest a project name can be. It does not check that the project is
+registered: a name that is not falls through to the next rule, and the TUI shows
+a line saying so, for example
+``tui.default_project `api` is not registered — showing `web` (last used)``.
+
+**It is read at startup only.** Saving it in the config editor, `vincent config
+set` or an edit to the file takes effect at the next launch; a running TUI keeps
+its selection. `PATCH /v1/config` refuses an empty value, so remove the key by
+editing `config.yaml`.
+
+The key is new in this version. A daemon older than it refuses a `config.yaml`
+that sets it.
 
 ## Per-project settings
 
