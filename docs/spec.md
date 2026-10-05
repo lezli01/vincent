@@ -13436,7 +13436,7 @@ changes (decision 31), applies it to the active view:
 |---|---|
 | Board, chats, issues, pull requests, both archived boards, workflows, triggers | Stays; re-scoped through `setProject` |
 | Task workspace | Falls back to the board; its back stack is emptied and its streams stop |
-| Chat | Falls back to the chats board; its stream stops |
+| Chat | Falls back to the chats board; its stream stops. A typed, unsent message in the composer is a draft (review F7) |
 | Issue | Falls back to the issues list |
 | New-task form; the chats board's new-chat form; the issues list's issue form | Re-targeted when pristine: reopened empty on the new project, catalogs refetched. An edit form on the issues list closes |
 | The workflows view's create prompt; the triggers view's create prompt | Re-targeted when pristine: reopened empty on the new project. A fork prompt is seeded from the old project's list and counts as a draft; after `y` it closes (review F6) |

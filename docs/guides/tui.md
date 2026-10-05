@@ -356,7 +356,8 @@ new-workflow or new-trigger form is reopened for the new project, and a
 workflow or trigger editor, the workflow graph and a trigger dry run close,
 since each is on a file of the old project.
 
-A form you have typed into asks first, in one line under the header:
+A form you have typed into — or a chat's composer holding an unsent
+message — asks first, in one line under the header:
 
 ```text
 discard the task draft and switch to `api`? y/n

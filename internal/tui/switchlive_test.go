@@ -135,6 +135,34 @@ func TestSwitchKeepsListViews(t *testing.T) {
 	}
 }
 
+// TestSwitchGuardsAnUnsentChatMessage: a typed composer asks before a switch
+// drops it with the chat; an empty one does not (review F7).
+func TestSwitchGuardsAnUnsentChatMessage(t *testing.T) {
+	h := newSwitchHarness(t)
+	cv := h.m.views[viewChat].(*chatView)
+	h.p.push(h.m.switchTo(viewChat))
+	cv.composer.SetValue("half a reply")
+	h.p.push(h.m.selectProject(h.second, "test"))
+	if h.m.pending == nil || h.m.pending.draft != "unsent message" {
+		t.Fatalf("pending = %+v, want the composer guarded", h.m.pending)
+	}
+	h.key("n")
+	if h.m.active != viewChat || h.m.sel.id != h.first.ID || cv.composer.Value() != "half a reply" {
+		t.Fatalf("n: active %v, selection %d, composer %q; want all kept", h.m.active, h.m.sel.id, cv.composer.Value())
+	}
+	h.p.push(h.m.selectProject(h.second, "test"))
+	h.key("y")
+	if h.m.active != viewChats || h.m.sel.id != h.second.ID || cv.composer.Value() != "" {
+		t.Fatalf("y: active %v, selection %d, composer %q; want the chats board and the message gone", h.m.active, h.m.sel.id, cv.composer.Value())
+	}
+
+	h.p.push(h.m.switchTo(viewChat))
+	h.p.push(h.m.selectProject(h.first, "test"))
+	if h.m.pending != nil || h.m.active != viewChats {
+		t.Fatalf("an empty composer asked (pending %+v) or the chat stayed (active %v)", h.m.pending, h.m.active)
+	}
+}
+
 // TestSwitchRetargetsOrGuardsTakeoverForms: the workflows and triggers
 // takeovers' prompts are re-aimed when pristine and ask when typed into, and
 // what was open on one of the old project's files closes (review F6).

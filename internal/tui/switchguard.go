@@ -246,6 +246,12 @@ func (t *taskView) leaveForSwitch() {
 	t.detail.followUp, t.detail.repair, t.detail.form = nil, nil, nil
 }
 
+// switchDraft guards the composer: a typed, unsent message is lost with the
+// chat on a switch, so it asks like every other draft (review F7).
+func (v *chatView) switchDraft() (string, bool) {
+	return "unsent message", strings.TrimSpace(v.composer.Value()) != ""
+}
+
 // leaveForSwitch stops the chat's stream and forgets the chat, so a switch
 // leaves no subscription behind for a screen nobody is on.
 func (v *chatView) leaveForSwitch() {
