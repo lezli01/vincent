@@ -21,6 +21,14 @@ list with the user-facing context a commit subject cannot carry.
   that is not registered is skipped with a line under the header saying what
   was shown instead. `tui.default_project` is read at startup only, and the
   last selection is kept in `tui.json` as `selected_project`.
+- **The TUI follows a deleted or renamed project, and says when there are
+  none.** Deleting the selected project — from anywhere, even while the
+  daemon was unreachable — moves the TUI to `tui.default_project`, or the
+  first project by name, with a line under the header saying so; a form you
+  had typed into asks first. A rename is remembered for the next launch.
+  With no project registered every project screen shows one empty state
+  pointing at `@`. `@` also opens while reconnecting, on the last list,
+  marked stale, and a reconnect reloads only the screens whose load failed.
 - **A project switch keeps you on the screen you were on.** The board, the
   chats and issues lists, pull requests, the archived boards, workflows and
   triggers stay put and reload for the new project. A task workspace, chat or

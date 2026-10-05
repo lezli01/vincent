@@ -377,6 +377,31 @@ line says so — ``switched to `web` `` — until your next key. The task
 workspace's `esc` history starts over in the new project. If you are holding a
 draft, the same confirmation asks, and `n` cancels the open too.
 
+If the selected project is deleted — here, from another terminal, or while
+the daemon was unreachable — the TUI moves to `tui.default_project` when that
+names a registered project, and otherwise to the first project by name. One
+line says what happened:
+
+```text
+project `api` was deleted — showing `web` (default project)
+```
+
+With no project left the header reads `◆ no project` and the line says
+``no projects remain``. A form you have typed into still asks first, but
+only `y` answers: the project it belonged to is gone. A rename of the
+selected project shows in the header straight away, and the next launch
+opens on it under its new name.
+
+With no project registered, every project screen — the board, the archived
+boards, chats, issues, pull requests, workflows, triggers and the new-task
+form — says so and points at `@`, whose last row opens the overview where
+you add one. The first project you add is selected.
+
+While the daemon is unreachable `@` still opens, on the last list it had,
+marked `offline — list may be stale`. A switch made then takes effect when
+the connection returns: the screens whose loads failed reload for the
+selected project, and nothing else is refetched.
+
 ### Grouping
 
 The rows are **grouped by project, and by workflow within a project**, out of

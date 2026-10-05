@@ -13348,7 +13348,7 @@ the registered-project list, refetched on connect, on reconnect and on every
 first project by name. A project registered while one is selected does not
 take over, and a rename of the selected one reaches it. Task 132.3 replaces
 the first-by-name rule with the full startup precedence, and 132.7 decides
-what a deleted selection becomes. The new-task form opens on the active
+what a deleted selection becomes (*A deleted or renamed selection*, below). The new-task form opens on the active
 view's hint, the project under its cursor, and on the selection when the view
 hints none: until 132.8–132.13 scope the views their rows still span every
 project, and the projects view is never project-bearing, so the cursor is what
@@ -13501,6 +13501,32 @@ first; a failed GET routes the open anyway and its detail shows the error. A
 follow raises ``switched to `web` `` under the header until the next key, and
 empties the workspace's back stack; a same-project open does neither. A
 confirmation answered `n` cancels the open with the switch.
+
+**A deleted or renamed selection, and zero projects (task 132.7, issue #701,
+added 2026-10-05).** The refreshed project list is the one source of truth: a
+selection the list no longer carries was deleted, whether the delete was
+live, made by another client, or made during an outage whose
+`project.deleted` the stream never replayed (task 132 decision 49). Its
+replacement is `tui.default_project` when that names a registered project,
+else the first project by name (decision 46); the `--project` flag and the
+working directory are launch facts, and the last-used project is the one
+deleted. With nothing left the selection becomes none and the header says
+`◆ no project`. The switch goes through `selectProject`, so the keep-view rules
+above apply — a switch to no project from a deleted one still counts — and
+one line under the header says what happened:
+``project `api` was deleted — showing `web` (default project)`` or `(first by
+name)`, or ``project `api` was deleted — no projects remain``. A draft on the
+active view still raises the confirmation, its prompt saying the project was
+deleted, but **only `y` answers it**: there is no project to stay on
+(decision 47). A rename of the selection reaches the header and is written to
+`tui.json`'s `selected_project`. When a listing has said no project is
+registered, every project-scoped view — the board, both archived boards, the
+chats board, the issues list, the pull-request, workflows and triggers
+takeovers and the new-task form — draws one shared empty state naming the
+picker key and its overview row; before the first listing a view says it is
+still resolving. Nothing force-navigates, and the projects overview keeps
+its own `a`-to-add empty state. The first project registered while nothing is
+selected becomes the selection (decision 10).
 
 **Text fields wrap (added 2026-09-01, issue #299).** A field being typed into
 is bound by the same rule the boards and the rendered Markdown already carry: a
@@ -15078,6 +15104,16 @@ last known task table is information as long as it is labelled as such, and
 connect and reconnect are the same state, so a takeover on every blip would be
 hostile. `:` still reaches the daemon view, which is the one surface with something
 currently true to show (§15 view 6).
+
+*Amended 2026-10-05 (task 132.7, issue #701).* The selected project is kept
+across a drop and checked against the project list relisted on reconnect, so
+a delete made during the outage is caught there (*A deleted or renamed
+selection*, above). A reconnect reloads only the project-scoped views whose
+last load failed, which covers a switch made while offline, since that
+switch's loads failed; a clean reconnect fetches nothing beyond the projects
+relist and the GitHub re-probe (task 132 decision 48). The `@` picker opens
+while reconnecting, on the cached list, with a dim `offline — list may be
+stale` line.
 
 ## 16. Security considerations
 

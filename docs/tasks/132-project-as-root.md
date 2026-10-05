@@ -1,6 +1,6 @@
 # 132 — Project as root: the TUI scoped to one selected project
 
-**Status:** 🔄 in progress (11/18)
+**Status:** 🔄 in progress (12/18)
 
 Issue [#694](https://github.com/lezli01/vincent/issues/694), part of
 [#693](https://github.com/lezli01/vincent/issues/693). Spec §3 (the new row
@@ -315,8 +315,8 @@ is drawn only while it is news.
 The root walks `projectScoped` views directly, never by broadcast, and again
 right after the `setClient` walk on every connect. Until 132.3, the first
 selection is the first project by name, made only while nothing is selected
-(decision 10). A selected project that vanishes is left selected for 132.7 to
-handle. `n` opens the new-task form on the active view's hint first and on the
+(decision 10). A selected project that vanishes was deleted, and 132.7
+replaces it (decisions 46–49). `n` opens the new-task form on the active view's hint first and on the
 selection only when the view hints none (review F1 of the 132.2 train). Until
 132.8–132.13 scope the views their rows span every project, and the projects
 view is never project-bearing, so the selection overriding the cursor would
@@ -618,6 +618,63 @@ column. It is revisited only when asked, after timing the `step_runs` ×
 `tasks` scan on a store of at least 100k step runs; chat cost stays apart by
 spec decision row 29.
 
+### 46. A deleted selection falls to the default project, then the first by name (2026-10-05)
+
+Taken with the author while delivering 132.7. When the selected project is
+deleted, the replacement is `tui.default_project` if it names a
+still-registered project, otherwise the first project by name, otherwise
+nothing (`◆ no project`). The `--project` flag and the working directory are
+launch facts and do not apply mid-session; last-used is the project just
+deleted. Honoring the default is consistent with decision 32: it is the
+user's stated preference applied to a selection that no longer exists, not a
+later config answer moving a live one. The rule is the tail of the startup
+chain (`reselectAfterDelete` runs `resolveStartupProject` with only the
+default and the list), and a one-line notice names both projects and the rule:
+``project `api` was deleted — showing `web` (default project)``, or
+`(first by name)`, or ``— no projects remain``.
+
+*Alternative beaten:* the first by name only.
+
+### 47. A dirty draft on delete asks, with no way to stay (2026-10-05)
+
+Taken with the author while delivering 132.7. Decision 36's root y/n
+confirmation is raised as for any switch, its prompt saying the project was
+deleted, so the human may copy text out first. Only `y` answers it: the
+target of "stay" is gone. The same holds when nothing remains. A switch to no
+project from a deleted one is still a switch, so 132.6's detail fallback and
+form re-targeting run.
+
+*Alternatives beaten:* discarding the draft silently; carrying the draft to
+the new project.
+
+### 48. A reconnect reloads only the views whose last load failed (2026-10-05)
+
+Taken with the author while delivering 132.7. Each stamped view records
+whether its last accepted load failed (`projectScope.loadFailed`), and on a
+`ConnectedNote` after a drop the root walks the views directly, as it does
+for `setProject`, and reloads those. A switch made while offline issues loads
+that fail (decision 25), so it needs no tracking of its own. A clean
+reconnect adds no fetch beyond the projects relist and the GitHub re-probe.
+The picker opens while reconnecting, on the cached list, with a dim "offline —
+list may be stale" line.
+
+*Alternative beaten:* reloading every scoped view on every reconnect.
+
+### 49. A delete is detected from the project list, not the event (2026-10-05)
+
+Taken with the author while delivering 132.7. `updateProjectList` treats a
+selection the refreshed list no longer carries as deleted. `project.*`
+events and reconnects already relist, so one path covers a live delete, one
+made by another client, and one made during an outage. The apiclient's
+cursor-at-zero replay gap (`events.go`, a stream that never saw an event
+resumes live rather than replaying) is known and out of scope: with
+detection on the list, a lost `project.deleted` is harmless for the
+selection. A rename of the selection is also written to tui.json's
+`selected_project` (decision 31).
+
+*Alternative beaten:* acting on `project.deleted` alone, which misses
+deletes made during an outage.
+
 ## Supersedes
 
 Every binding record this work overturns, departs from, refines or keeps, by
@@ -696,9 +753,9 @@ its own pull request.
   view is kept across a switch; detail views fall back to their list; forms
   re-target or ask; an open follows the object's project; spec §15
   (decisions 36–38). Depends: 132.2. ✓ 2026-10-05
-- [ ] **132.7** ([#701](https://github.com/lezli01/vincent/issues/701)) Zero
+- [x] **132.7** ([#701](https://github.com/lezli01/vincent/issues/701)) Zero
   projects, a deleted or renamed selection, reloads on reconnect, the first
-  project added. Depends: 132.3, 132.5.
+  project added (decisions 46–49). Depends: 132.3, 132.5. ✓ 2026-10-05
 - [x] **132.8** ([#702](https://github.com/lezli01/vincent/issues/702)) The
   board filtered in memory; the archived tasks board filtered on the server;
   per-project fold pruning; no PROJECT column; the `/` filter without the
