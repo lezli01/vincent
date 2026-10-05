@@ -1556,9 +1556,13 @@ key.
 
 ### New task — `n`
 
-Opens for the project you are looking at: the one under the cursor — a
-board row, an issue, a row of the projects view — or, where the cursor names
-none, the project the header shows. A guided form: project → workflow
+Opens for the project the header shows, from every screen — the project
+overview included, whatever row its cursor is on. The project row at the top
+is read-only: the cursor never stops on it, and [switching
+project](#switching-project) is the only way to change it — a form you have
+not touched follows the switch, and one you have asks first. A draft seeded
+from a pull request, an issue or a chat of another project switches to that
+project before the form opens. A guided form: project → workflow
 (with its description and step list, flagging steps whose agent is unavailable)
 → *(pull request, when seeded from one)* → title → description → fields → base branch → branch →
 priority → start → optional agent/model/effort override.
@@ -1909,8 +1913,9 @@ this task's issue" row opens the issue; `esc` there comes back to the task.
 #### Filing and editing — `n`, `i`
 
 `n` and `i` open the **issue form** over the screen you are on: the project
-(only when filing a new one), title, description, labels, kind and priority,
-then save. `enter` edits a field or opens its list; `e` on the description
+(only when filing a new one, and read-only — it is the selected project, and
+switching project re-aims the form), title, description, labels, kind and
+priority, then save. `enter` edits a field or opens its list; `e` on the description
 hands it to `$EDITOR`. The labels list offers the project's labels and ticks
 the ones set; `t` in it types a new one, and `t` in the kind list types a kind
 it does not suggest. Priority is `none`, `urgent`, `high`, `medium` or `low`.
@@ -2299,8 +2304,10 @@ and drops you straight into the workspace. With no project registered, `n` says
 so on the board instead of opening a form you could not submit — add a
 repository in the project overview first.
 
-Five of the seven rows are lists — project, agent, model, effort and branch —
-and they are
+The project row shows the selected project and cannot be changed here: `tab`
+passes over it, and [switching project](#switching-project) re-aims the form.
+Four of the other six rows are lists — agent, model, effort and branch — and
+they are
 the same list the new-task and follow-up forms use: `enter` opens one, `/`
 filters it as you type, `↑`/`↓` walk it and `enter` picks. The model and effort
 lists are the selected agent's own catalog, tagged `cli` where the CLI itself
@@ -2310,13 +2317,13 @@ would use, and both end with a row for typing a value the catalog has never
 heard of — a model shipped this morning is not in it. Changing the agent
 re-scopes both lists and clears anything chosen under the previous one.
 
-`←`/`→` still step the project and agent rows one at a time without opening
-their list, which is quicker when you have two of something. They are not
+`←`/`→` still step the agent row one at a time without opening its list,
+which is quicker when you have two agents. They are not
 offered on the model and effort rows, where stepping through a hundred values
 answers nothing.
 
 Title and base branch are typed. The base row's placeholder names the selected
-project's actual default branch and follows the project row; leave it empty and
+project's actual default branch; leave it empty and
 the daemon resolves that default at creation.
 
 The **branch** row is a list of the project's local branches, and it has exactly
@@ -2346,7 +2353,7 @@ the draft alone; a second press discards the draft and returns you to the board.
 | `tab` / `shift+tab` | Next / previous field |
 | `enter` | Open the focused field's list, or move on from a text field |
 | `t` | In an open list, type a value it does not offer |
-| `←` / `→` | Step the project and agent fields in place |
+| `←` / `→` | Step the agent field in place |
 | `ctrl+s` | Create the chat and open it |
 | `esc` | Close an open list, else discard the draft |
 

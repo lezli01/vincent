@@ -62,8 +62,7 @@ list with the user-facing context a commit subject cannot carry.
   where `enter` used to. `a`, `D` and `/` are unchanged.
 - **The TUI names a selected project.** The app header now shows
   `◆ <project>` after the version, or `◆ no project` when none is
-  registered. The new-task form still opens on the project under the cursor,
-  and on the selected project when the cursor names none. On a narrow
+  registered. On a narrow
   terminal the header drops the view's tag first, then the version, and
   shortens the project name last. Scoping views to it comes in later
   releases.
@@ -305,6 +304,17 @@ list with the user-facing context a commit subject cannot carry.
   than when any project does; switching to a project without one while the
   screen is open keeps the screen and says why there is nothing to list.
   ([#705](https://github.com/lezli01/vincent/issues/705))
+- **New tasks, chats and issues are created in the selected project.** The
+  new-task, new-chat and new-issue forms show the selected project read-only
+  instead of offering a project list, and `n` opens the new-task form on the
+  selected project from every screen — on the project overview too, whatever
+  row is highlighted. Switching project is the only way to change it: a form
+  you have not touched follows the switch, and one you have asks first. A
+  new task started from a pull request, an issue or a chat of another
+  project switches to that project first. `←`/`→` on the new-chat form now
+  step only the agent row. With no project selected, the forms never pick
+  one for you.
+  ([#707](https://github.com/lezli01/vincent/issues/707))
 - **TUI lists follow the selected project's events.** The issues, chats,
   pull-request, workflows and triggers screens now refresh on events
   from the selected project, on events that belong to no project, and on any

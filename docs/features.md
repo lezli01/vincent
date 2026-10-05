@@ -394,8 +394,9 @@ In detail:
   same indicator while it blocks, on stderr and never under `--json` or into a
   redirect. A screen with nothing running repaints no more often than it did
   before.
-- Guided task creation exposes project, workflow, declared fields, git and
-  priority settings, agent overrides, and a final review stage.
+- Guided task creation opens on the selected project, shown read-only, and
+  exposes workflow, declared fields, git and priority settings, agent
+  overrides, and a final review stage.
 - A project overview is the one screen that compares every registered
   project: per-project figures — attention, running against the cap, queued,
   blocked, done, open issues, live chats, issue-sync and GitHub health, last

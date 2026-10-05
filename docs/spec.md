@@ -12242,6 +12242,15 @@ stream for the live tail.
    priority → start (now or paused) → optional agent/model/effort override (pickers fed by
    `GET /v1/agents` with provenance-tagged options and free-text entry;
    replaces workflow defaults, never explicit step fields, §8.6) → create.
+   *Amended 2026-10-05 (task 132.13, issue #707):* there is no project
+   picker any more. The project row is read-only and shows the selected
+   project (§15 Layout); the cursor never lands on it, and a project switch,
+   which re-aims a pristine form and asks before dropping a dirty or seeded
+   one (task 132.6), is the only way to change it. `n` opens the form on the
+   selection from every view — the project overview included, whatever row
+   its cursor is on — and a form opened with no selection never falls back to
+   a project of its own. A form seeded from a pull request, an issue or a
+   chat of another project switches to that project first and opens second.
    **Workflow fields (task 022, added 2026-08-21):** selecting a workflow
    pre-renders its ordered §8.1.2 declarations with labels, descriptions,
    type/required badges, pattern help, and a boolean toggle. Declared names are
@@ -13247,6 +13256,8 @@ stream for the live tail.
    a full pane over either screen: project (on a create), title, description
    (`e` hands it to `$EDITOR`), labels over the project's catalogue, kind
    over task 130 decision 4's suggestions with free text, and priority.
+   *(Amended 2026-10-05, task 132.13: on a create the project row shows the
+   selection read-only and is never focused; a switch re-aims the form.)*
    `ctrl+s` saves; `esc` asks first over unsaved changes. A row the DTO's
    `editable` omits is drawn read-only, "mirrored from GitHub". An edit sends
    `version` and only the changed fields, labels as `add_labels` /
@@ -13364,11 +13375,11 @@ the registered-project list, refetched on connect, on reconnect and on every
 first project by name. A project registered while one is selected does not
 take over, and a rename of the selected one reaches it. Task 132.3 replaces
 the first-by-name rule with the full startup precedence, and 132.7 decides
-what a deleted selection becomes (*A deleted or renamed selection*, below). The new-task form opens on the active
-view's hint, the project under its cursor, and on the selection when the view
-hints none: until 132.8–132.13 scope the views their rows still span every
-project, and the projects view is never project-bearing, so the cursor is what
-the user points at. 132.13 retires the hint (decision 9). The app header names the
+what a deleted selection becomes (*A deleted or renamed selection*, below). The new-task form opened on the active
+view's hint, the project under its cursor, while the views' rows still spanned
+every project. *Amended 2026-10-05 (task 132.13, issue #707):* the hint is
+retired (decision 9). The new-task, new-chat and issue forms open on the
+selection from every view, and each one's project row shows it read-only. The app header names the
 selection on its one line, after the version and any connection badge and
 before the view tag: `vincent 0.x  ◆ api  [Tasks]`, or `◆ no project`. The
 chrome stays one line, so the size floors above do not move. When the line
@@ -14822,6 +14833,13 @@ or moves on from a text one, uniformly: `ctrl+s` is the sole create key.
 `←`/`→` survive on the project and agent rows as a fast in-place step — the
 enum-row idiom from the new-task fields editor — and are not offered on the
 two catalog rows, where "next" answers nothing.
+
+*Amended 2026-10-05 (task 132.13, issue #707).* The project row is no longer
+a picker and no longer steps: it shows the selected project read-only, `tab`
+and `shift+tab` pass over it, and `←`/`→` step only the agent row. A project
+switch re-aims the form (§15 Layout, task 132.6) and is the only way its
+project changes. A form opened with no selection does not take the first
+project listed.
 
 *Amended 2026-09-21 (task 125.9, issue #542).* The new-chat form has a
 **seventh row, `branch`**, after the base row so the two branch rows are
