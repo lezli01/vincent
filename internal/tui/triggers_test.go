@@ -4,7 +4,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // triggersFixture is a loaded triggers view with two triggers, one project and
@@ -445,5 +448,41 @@ func TestTriggersFormProjectRowLocksOnlyAnAssignedFile(t *testing.T) {
 	v.form.def = map[string]any{"source": map[string]any{"project": 9}}
 	if row := v.form.leaf("source", sf); row.readOnly != "" {
 		t.Errorf("a removed project's trigger has its project row locked: %q", row.readOnly)
+	}
+}
+
+// With no project registered the triggers of removed projects are still
+// listed, under the shared empty state rather than behind it, so what d and
+// a act on is on screen: the delete question and the create prompt are drawn
+// (review F1).
+func TestTriggersWithNoProjectsKeepTheListDrawn(t *testing.T) {
+	v := scopedTriggersFixture()
+	v.setProject(projectSel{})
+	v.setProjects([]apiclient.Project{})
+	v.projects = []apiclient.Project{}
+	v.restoreSelection()
+	out := ansi.Strip(v.render(200, 60))
+	if !strings.Contains(out, noProjectsEmpty()) {
+		t.Errorf("no shared empty state:\n%s", out)
+	}
+	if !strings.Contains(out, "lost") || !strings.Contains(out, "unassigned") {
+		t.Errorf("the unassigned band is hidden:\n%s", out)
+	}
+
+	v.updateKey(registryKey(t, opKey(keymap.Delete)))
+	if v.confirm == nil {
+		t.Fatal("d asked nothing")
+	}
+	if out := ansi.Strip(v.render(200, 60)); !strings.Contains(out, v.confirm.question) {
+		t.Errorf("the delete question is not drawn:\n%s", out)
+	}
+	v.updateKey(registryKey(t, "n"))
+
+	v.updateKey(registryKey(t, opKey(keymap.Add)))
+	if v.create == nil {
+		t.Fatal("a opened no create prompt")
+	}
+	if out := ansi.Strip(v.render(200, 60)); strings.Contains(out, noProjectsEmpty()) || !strings.Contains(out, "New trigger") {
+		t.Errorf("the create prompt is not what is drawn:\n%s", out)
 	}
 }

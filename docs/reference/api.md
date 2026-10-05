@@ -415,7 +415,8 @@ daemon running.
   "generated_at": "2026-08-15T10:00:00Z",
   "paths":    { "config_dir": "…", "data_dir": "…", "config_file": "…",
                 "config_file_exists": true, "config_parses": true,
-                "config_permissions": [], "keymap_warnings": [] },
+                "config_permissions": [], "keymap_warnings": [],
+                "config_warnings": [] },
   "daemon":   { "status": "running", "pid": 4021, "port": 51234,
                 "started_at": "2026-08-15T09:00:00Z", "uptime_seconds": 3600,
                 "version": "0.1.1" },
@@ -479,6 +480,11 @@ daemon running.
   string per thing the lenient load of `tui.keys` let through — a retired
   operation id ignored, an operation's default left unbound by a user binding,
   a fixed key shadowed. It never reaches `problems[]`.
+- **`paths.config_warnings[]` is a warning, not a verdict** (task 132.9): one
+  string per setting that loads and takes effect but cannot do what it asks —
+  a deprecated `tui.board.group_by` level stripped on load, a half-written
+  `notify` block, an unreachable `delete_remote_branch_on_archive`. The same
+  lines the daemon logs as `config warning`. It never reaches `problems[]`.
 - **`tasks.unreconciled[]`** is the §12.4 contradiction: a task holding a step
   run still marked `running` while sitting in a state that cannot be executing
   one — `queued`, `done`, `aborted` or `archived`. Each entry carries `task_id`,

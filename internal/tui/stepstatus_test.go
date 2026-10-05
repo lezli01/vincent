@@ -160,7 +160,7 @@ func TestFormatStatus(t *testing.T) {
 // because what matters is that there is no width at which the status
 // displaces the workflow or the project.
 func TestStatusColumnNeverDisplacesNavigation(t *testing.T) {
-	groupings := []grouping{nil, {groupProject}, {groupProject, groupWorkflow}}
+	groupings := []grouping{nil, {groupWorkflow}}
 	sawStatus := false
 	for width := 20; width <= 400; width++ {
 		for _, g := range groupings {
@@ -200,7 +200,7 @@ func TestStatusColumnNeverDisplacesNavigation(t *testing.T) {
 func TestStatusColumnDoesNotEatTheWidthGroupingFrees(t *testing.T) {
 	for _, width := range []int{160, 240, 400} {
 		flat := columnsFor(width, nil, false, fullContent)
-		grouped := columnsFor(width, grouping{groupProject, groupWorkflow}, false, fullContent)
+		grouped := columnsFor(width, grouping{groupWorkflow}, false, fullContent)
 		if grouped.titleWidth(width) <= flat.titleWidth(width) {
 			t.Errorf("width %d: grouped remainder %d, flat %d — grouping must gain row space",
 				width, grouped.titleWidth(width), flat.titleWidth(width))

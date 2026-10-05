@@ -1,6 +1,6 @@
 # 132 — Project as root: the TUI scoped to one selected project
 
-**Status:** 🔄 in progress (11/18)
+**Status:** 🔄 in progress (13/18)
 
 Issue [#694](https://github.com/lezli01/vincent/issues/694), part of
 [#693](https://github.com/lezli01/vincent/issues/693). Spec §3 (the new row
@@ -315,8 +315,8 @@ is drawn only while it is news.
 The root walks `projectScoped` views directly, never by broadcast, and again
 right after the `setClient` walk on every connect. Until 132.3, the first
 selection is the first project by name, made only while nothing is selected
-(decision 10). A selected project that vanishes is left selected for 132.7 to
-handle. `n` opens the new-task form on the active view's hint first and on the
+(decision 10). A selected project that vanishes was deleted, and 132.7
+replaces it (decisions 46–49). `n` opens the new-task form on the active view's hint first and on the
 selection only when the view hints none (review F1 of the 132.2 train). Until
 132.8–132.13 scope the views their rows span every project, and the projects
 view is never project-bearing, so the selection overriding the cursor would
@@ -502,6 +502,9 @@ the scoped board's `build` header is `["api", "build"]`. A migrated path
 therefore keeps its segment, or it would never match the header it was made
 on. Whether paths drop the project level is 132.9's, with the grouping.
 
+*Amended 2026-10-05 (132.9):* they do now — see decision 51's delivery note.
+The F10 rename rewrite above is removed with the level.
+
 *Alternatives beaten:* shared label paths, which leak a `[workflow]` fold
 across projects; prefixing stored paths with the project *name*, which breaks
 on a rename.
@@ -618,6 +621,98 @@ column. It is revisited only when asked, after timing the `step_runs` ×
 `tasks` scan on a store of at least 100k step runs; chat cost stays apart by
 spec decision row 29.
 
+### 46. A deleted selection falls to the default project, then the first by name (2026-10-05)
+
+Taken with the author while delivering 132.7. When the selected project is
+deleted, the replacement is `tui.default_project` if it names a
+still-registered project, otherwise the first project by name, otherwise
+nothing (`◆ no project`). The `--project` flag and the working directory are
+launch facts and do not apply mid-session; last-used is the project just
+deleted. Honoring the default is consistent with decision 32: it is the
+user's stated preference applied to a selection that no longer exists, not a
+later config answer moving a live one. The rule is the tail of the startup
+chain (`reselectAfterDelete` runs `resolveStartupProject` with only the
+default and the list), and a one-line notice names both projects and the rule:
+``project `api` was deleted — showing `web` (default project)``, or
+`(first by name)`, or ``— no projects remain``.
+
+*Alternative beaten:* the first by name only.
+
+### 47. A dirty draft on delete asks, with no way to stay (2026-10-05)
+
+Taken with the author while delivering 132.7. Decision 36's root y/n
+confirmation is raised as for any switch, its prompt saying the project was
+deleted, so the human may copy text out first. Only `y` answers it: the
+target of "stay" is gone. The same holds when nothing remains. A switch to no
+project from a deleted one is still a switch, so 132.6's detail fallback and
+form re-targeting run.
+
+*Alternatives beaten:* discarding the draft silently; carrying the draft to
+the new project.
+
+### 48. A reconnect reloads only the views whose last load failed (2026-10-05)
+
+Taken with the author while delivering 132.7. Each stamped view records
+whether its last accepted load failed (`projectScope.loadFailed`), and on a
+`ConnectedNote` after a drop the root walks the views directly, as it does
+for `setProject`, and reloads those. A switch made while offline issues loads
+that fail (decision 25), so it needs no tracking of its own. A clean
+reconnect adds no fetch beyond the projects relist and the GitHub re-probe.
+The picker opens while reconnecting, on the cached list, with a dim "offline —
+list may be stale" line.
+
+*Alternative beaten:* reloading every scoped view on every reconnect.
+
+### 49. A delete is detected from the project list, not the event (2026-10-05)
+
+Taken with the author while delivering 132.7. `updateProjectList` treats a
+selection the refreshed list no longer carries as deleted. `project.*`
+events and reconnects already relist, so one path covers a live delete, one
+made by another client, and one made during an outage. The apiclient's
+cursor-at-zero replay gap (`events.go`, a stream that never saw an event
+resumes live rather than replaying) is known and out of scope: with
+detection on the list, a lost `project.deleted` is harmless for the
+selection. A rename of the selection is also written to tui.json's
+`selected_project` (decision 31).
+
+*Alternative beaten:* acting on `project.deleted` alone, which misses
+deletes made during an outage.
+
+### 50. A write refuses `project` only when it sets `tui.board.group_by` itself (2026-10-05)
+
+Taken with the author while delivering 132.9. `PATCH /v1/config` decodes the
+whole candidate file (task 128 decision 2), and almost every installation's
+bootstrapped file carries `[project, workflow]`, so refusing the whole file
+would block every unrelated PATCH on nearly every upgraded install —
+`vincent config set log_level debug`, and every save from the TUI config
+editor. So the check splits: the candidate file is decoded with the
+deprecation handled **leniently** (`project` stripped, the bytes outside the
+patched key untouched), and the PATCH is refused with `validation_failed`
+when the **patch's own** `tui.board.group_by` value contains `project`, the
+file byte-identical and the error naming the key and why. This narrows task
+128 decision 2's whole-file posture for this deprecation only (see
+Supersedes); the `tui.keys` posture is unchanged.
+
+*Alternatives beaten:* whole-file strict, which blocks every PATCH on legacy
+files; stripping on any write, which rewrites a key the caller never asked to
+touch.
+
+### 51. `[project]` alone strips to `[]` (2026-10-05)
+
+Taken with the author while delivering 132.9. The strip is literal, not a
+reset to the default: under scoping `[project]` already renders a flat board,
+so nothing visible changes. `[workflow, project]` strips to `[workflow]`. A
+duplicated `project` is still the "listed twice" error — malformed, not
+legacy.
+
+*Delivery note (2026-10-05):* with the level gone, a fold path carries no
+project segment, so decision 35's F10 rename rewrite had nothing left to
+rewrite and was removed, and the legacy `board_folds` migration now strips
+the project segment — decision 35's original premise, which its delivery note
+deferred to this item. Per-project sets written under the old grouping lead
+with a project name, name nothing, and are pruned; no migration of them was
+made.
+
 ## Supersedes
 
 Every binding record this work overturns, departs from, refines or keeps, by
@@ -652,6 +747,11 @@ item's pull request merges.
   (`020-guided-takeover-layouts.md:18`, the rail plus one focused surface) and
   the #324 amendment — **superseded in place** by the overview (decision 5,
   132.15).
+- **Task 128 decision 2** (`128-keymap-upgrade-tolerance.md:29`, a PATCH
+  decodes the whole candidate file strictly) — **refined** for the deprecated
+  `project` level of `tui.board.group_by` only: the candidate file strips it,
+  and a PATCH is refused only when it sets the level itself (decision 50,
+  132.9). Its `tui.keys` posture is kept.
 - **Task 129 decision 4** (`129-tui-monitoring-redesign.md:119`, a group level
   with one distinct value draws no header) — **kept**; it is why the `project`
   level goes inert under scoping (132.9).
@@ -696,16 +796,16 @@ its own pull request.
   view is kept across a switch; detail views fall back to their list; forms
   re-target or ask; an open follows the object's project; spec §15
   (decisions 36–38). Depends: 132.2. ✓ 2026-10-05
-- [ ] **132.7** ([#701](https://github.com/lezli01/vincent/issues/701)) Zero
+- [x] **132.7** ([#701](https://github.com/lezli01/vincent/issues/701)) Zero
   projects, a deleted or renamed selection, reloads on reconnect, the first
-  project added. Depends: 132.3, 132.5.
+  project added (decisions 46–49). Depends: 132.3, 132.5. ✓ 2026-10-05
 - [x] **132.8** ([#702](https://github.com/lezli01/vincent/issues/702)) The
   board filtered in memory; the archived tasks board filtered on the server;
   per-project fold pruning; no PROJECT column; the `/` filter without the
   project name (decisions 34, 35). Depends: 132.5. ✓ 2026-10-05
-- [ ] **132.9** ([#703](https://github.com/lezli01/vincent/issues/703)) The
-  `project` level of `tui.board.group_by` deprecated, the default `[workflow]`.
-  Depends: 132.8.
+- [x] **132.9** ([#703](https://github.com/lezli01/vincent/issues/703)) The
+  `project` level of `tui.board.group_by` deprecated, the default `[workflow]`
+  (decisions 6, 50, 51). Depends: 132.8. ✓ 2026-10-05
 - [x] **132.10** ([#704](https://github.com/lezli01/vincent/issues/704)) The
   chats and archived chats boards, flat and scoped. Depends: 132.5.
   ✓ 2026-10-05

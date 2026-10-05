@@ -82,13 +82,15 @@ func (f foldSet) without(p foldPath) foldSet {
 
 // prune drops paths that name nothing on the board any more.
 //
-// A path survives while every segment is still a project name or a workflow
-// name occurring somewhere in the *unfiltered* task list, independent of which
-// levels are currently rendered (task 054 decision 4). Pruning against the
-// rendered grouping instead would make `g` destructive: cycling to
-// project-only grouping stops every [project, workflow] path from appearing,
-// and the issue's other acceptance criterion is that folds survive `g` cycling
-// away and back. A filter leaves the set alone for the same reason.
+// A path survives while every segment is still a workflow name occurring
+// somewhere in the *unfiltered* task list, independent of which levels are
+// currently rendered (task 054 decision 4). Pruning against the rendered
+// grouping instead would make `g` destructive: cycling to the flat table
+// stops every path from appearing, and the issue's other acceptance criterion
+// is that folds survive `g` cycling away and back. A filter leaves the set
+// alone for the same reason. A path remembered under the deprecated
+// [project, workflow] grouping leads with a project name, which no level
+// produces since task 132.9, so it names nothing and is pruned.
 //
 // An empty list prunes nothing: a TUI whose daemon went away holds no news
 // about which projects exist, and forgetting every fold on a reconnect blip is
@@ -97,9 +99,8 @@ func (f foldSet) prune(tasks []apiclient.Task) foldSet {
 	if len(f) == 0 || len(tasks) == 0 {
 		return f
 	}
-	known := make(map[string]struct{}, len(tasks)*2)
+	known := make(map[string]struct{}, len(tasks))
 	for _, t := range tasks {
-		known[groupValue(t, groupProject)] = struct{}{}
 		known[groupValue(t, groupWorkflow)] = struct{}{}
 	}
 	out := make(foldSet, 0, len(f))
@@ -221,8 +222,9 @@ func landingRow(rows []boardRow, i int) int {
 // decision 35): a board's folds are independent per project whatever
 // `group_by` says, so a `["build"]` fold under a `[workflow]` grouping
 // collapses `build` in the one project it was made in. Keyed by id rather
-// than by name, so a rename does not move them; a path's project segment is
-// still the name, which board.followRenames rewrites (review F10).
+// than by name, so a rename does not move them. A path carries no project
+// segment since task 132.9 removed the project level, so a rename leaves the
+// paths meaning what they meant (review F10's rewrite is no longer needed).
 type projectFolds map[int64]foldSet
 
 // with returns a copy with project's set replaced; an empty set removes the
@@ -258,29 +260,6 @@ func (pf projectFolds) prune(tasks []apiclient.Task) (projectFolds, bool) {
 	return out, changed
 }
 
-// renamed returns a copy with project's paths rewritten from one name to
-// another: every segment equal to from, since the project level's position
-// in a path follows the grouping. A workflow sharing the old name is
-// rewritten too, and its fold lost at the next prune — the cost of a path
-// that does not say which level a segment came from.
-func (pf projectFolds) renamed(project int64, from, to string) projectFolds {
-	set := pf[project]
-	if len(set) == 0 {
-		return pf
-	}
-	out := make(foldSet, 0, len(set))
-	for _, p := range set {
-		q := slices.Clone(p)
-		for i := range q {
-			if q[i] == from {
-				q[i] = to
-			}
-		}
-		out = out.with(q)
-	}
-	return pf.with(project, out)
-}
-
 // keepProjects drops the sets of projects that are no longer registered.
 func (pf projectFolds) keepProjects(ids map[string]int64) (projectFolds, bool) {
 	live := make(map[int64]bool, len(ids))
@@ -298,15 +277,13 @@ func (pf projectFolds) keepProjects(ids map[string]int64) (projectFolds, bool) {
 
 // migrateLegacyFolds moves a pre-132.8 `board_folds` list under project ids
 // (task 132 decision 35). A path whose first segment names a registered
-// project moves under that project's id. It keeps that segment: a skipped
-// level still contributes its value to every header path under it (task 129
-// decision 4, headerPaths), so under the default `[project, workflow]`
-// grouping the scoped board's `build` header is still ["api", "build"]. A
-// path that is only the project segment named a project header, which a
-// one-project board no longer draws, and is dropped. A path whose first
-// segment names no project — a `[workflow]` grouping's — is dropped too:
-// copying it into every project would recreate the sharing this keying
-// removes.
+// project moves under that project's id, with that segment stripped: there
+// is no project level since task 132.9, so the scoped board's `build` header
+// is ["build"]. A path that is only the project segment named a project
+// header, which a one-project board no longer draws, and is dropped. A path
+// whose first segment names no project — a `[workflow]` grouping's — is
+// dropped too: copying it into every project would recreate the sharing this
+// keying removes.
 func migrateLegacyFolds(pf projectFolds, legacy foldSet, ids map[string]int64) projectFolds {
 	for _, p := range legacy {
 		if len(p) < 2 {
@@ -316,7 +293,7 @@ func migrateLegacyFolds(pf projectFolds, legacy foldSet, ids map[string]int64) p
 		if !ok {
 			continue
 		}
-		pf = pf.with(id, pf[id].with(p))
+		pf = pf.with(id, pf[id].with(slices.Clone(p[1:])))
 	}
 	return pf
 }
@@ -374,16 +351,12 @@ func (b *board) setFolds(f foldSet) { b.foldsBy = b.foldsBy.with(b.project.id, f
 // the legacy migration once the list is known, and drops the fold sets of
 // projects that have been removed.
 func (b *board) setProjects(projects []apiclient.Project) {
+	b.noProjects = len(projects) == 0
 	ids := make(map[string]int64, len(projects))
 	for _, p := range projects {
 		ids[p.Name] = p.ID
 	}
 	b.projectIDs = ids
-	names := make(map[int64]string, len(projects))
-	for _, p := range projects {
-		names[p.ID] = p.Name
-	}
-	b.followRenames(names)
 	b.migrateFolds()
 	if !b.foldsLoaded {
 		return
@@ -392,48 +365,6 @@ func (b *board) setProjects(projects []apiclient.Project) {
 		b.foldsBy = kept
 		b.persistFolds()
 	}
-}
-
-// followRenames rewrites the fold paths of each project whose name differs
-// from the one they were last seen under, from either the project list or a
-// task load — whichever reports the rename first, so the prune that follows
-// a load never drops a fold for its stale project segment. A rename made
-// while no TUI was running is not seen, and that project's folds go.
-func (b *board) followRenames(names map[int64]string) {
-	if b.foldNames == nil {
-		b.foldNames = map[int64]string{}
-	}
-	changed := false
-	for id, name := range names {
-		if name == "" {
-			continue
-		}
-		if old, ok := b.foldNames[id]; ok && old != name && len(b.foldsBy[id]) > 0 {
-			b.foldsBy, changed = b.foldsBy.renamed(id, old, name), true
-		}
-		b.foldNames[id] = name
-	}
-	if changed && b.foldsLoaded {
-		b.persistFolds()
-	}
-}
-
-// taskProjectNames is each project's name as a task listing reports it. A
-// project whose tasks disagree is left out: one listing names a project one
-// way, so a disagreement says nothing reliable about a rename.
-func taskProjectNames(tasks []apiclient.Task) map[int64]string {
-	names := make(map[int64]string, len(tasks))
-	mixed := map[int64]bool{}
-	for _, t := range tasks {
-		if n, ok := names[t.ProjectID]; ok && n != t.ProjectName {
-			mixed[t.ProjectID] = true
-		}
-		names[t.ProjectID] = t.ProjectName
-	}
-	for id := range mixed {
-		delete(names, id)
-	}
-	return names
 }
 
 // migrateFolds moves the legacy list under project ids once both the file

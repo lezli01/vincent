@@ -7116,7 +7116,7 @@ container:                     # run a task's steps in a container (§16, task 0
   extra_mounts: []             # host:container[:ro]; the repo and worktree are mounted already
 tui:                           # view preference; the daemon validates and relays it (§15)
   board:
-    group_by: [project, workflow]  # task-table grouping, outermost first; [] = flat
+    group_by: [workflow]       # task-table grouping, outermost first; [] = flat (project deprecated, task 132.9)
   hyperlinks: false            # OSC 8 links for sanitized http(s) Markdown links; opt-in (task 111)
   keys: {}                     # operation id → one key, e.g. {refresh: ctrl+e}; {} = the §15 defaults (task 118)
   output:
@@ -7868,6 +7868,22 @@ the flat table every version before this one rendered. `state` is deliberately
 not a level: the band sort already orders by state and pins what is waiting on a
 human above everything, and a state grouping would fight the one ordering rule
 the board is not allowed to lose.
+*Amended 2026-10-05 (task 132.9, decisions 6, 50 and 51):* the one accepted
+level is `workflow`, and the default is `[workflow]`, superseding task 009's
+`[project, workflow]` and its "read project by project" rationale — the TUI
+shows one project at a time (task 132), so the `project` level had one value
+and drew no header (task 129 decision 4). `project` is **deprecated**, not
+removed: a load (cold start, hot reload, doctor) strips it literally —
+`[project, workflow]` → `[workflow]`, `[project]` → `[]` — and
+`Config.Warnings` reports it, so the daemon logs it and `vincent doctor` lists
+it under `paths.config_warnings`; a level listed twice is still refused.
+`GET /v1/config` serves the stripped list. A write is refused only when the
+**patch's own** `tui.board.group_by` contains `project` (400
+`validation_failed`, the file byte-identical); the candidate file is decoded
+with the deprecation handled leniently, so a PATCH of any other key lands on a
+file that still carries the bootstrapped line and leaves that line as written.
+This narrows task 128 decision 2's whole-file posture for this deprecation
+only; `tui.keys` keeps it.
 
 *Amended 2026-09-17 (task 111, issue #404):* `tui.hyperlinks`, a bool, default
 `false`, turns on OSC 8 hyperlinks for Markdown links in the output pane (§15,
@@ -13348,7 +13364,7 @@ the registered-project list, refetched on connect, on reconnect and on every
 first project by name. A project registered while one is selected does not
 take over, and a rename of the selected one reaches it. Task 132.3 replaces
 the first-by-name rule with the full startup precedence, and 132.7 decides
-what a deleted selection becomes. The new-task form opens on the active
+what a deleted selection becomes (*A deleted or renamed selection*, below). The new-task form opens on the active
 view's hint, the project under its cursor, and on the selection when the view
 hints none: until 132.8–132.13 scope the views their rows still span every
 project, and the projects view is never project-bearing, so the cursor is what
@@ -13501,6 +13517,37 @@ first; a failed GET routes the open anyway and its detail shows the error. A
 follow raises ``switched to `web` `` under the header until the next key, and
 empties the workspace's back stack; a same-project open does neither. A
 confirmation answered `n` cancels the open with the switch.
+
+**A deleted or renamed selection, and zero projects (task 132.7, issue #701,
+added 2026-10-05).** The refreshed project list is the one source of truth: a
+selection the list no longer carries was deleted, whether the delete was
+live, made by another client, or made during an outage whose
+`project.deleted` the stream never replayed (task 132 decision 49). Its
+replacement is `tui.default_project` when that names a registered project,
+else the first project by name (decision 46); the `--project` flag and the
+working directory are launch facts, and the last-used project is the one
+deleted. With nothing left the selection becomes none and the header says
+`◆ no project`. The switch goes through `selectProject`, so the keep-view rules
+above apply — a switch to no project from a deleted one still counts — and
+one line under the header says what happened:
+``project `api` was deleted — showing `web` (default project)`` or `(first by
+name)`, or ``project `api` was deleted — no projects remain``. A draft on the
+active view still raises the confirmation, its prompt saying the project was
+deleted, but **only `y` answers it**: there is no project to stay on
+(decision 47). A switch whose *target* is deleted while its confirmation is
+open is dropped instead, keeping the selection and the draft, with a notice
+that the target was deleted (review F2). A rename of the selection reaches the header and is written to
+`tui.json`'s `selected_project`. When a listing has said no project is
+registered, every project-scoped view — the board, both archived boards, the
+chats board, the issues list, the pull-request, workflows and triggers
+takeovers and the new-task form — draws one shared empty state naming the
+picker key and its overview row; before the first listing a view says it is
+still resolving. The workflows and triggers takeovers draw it as a line above
+what they still list with no project — the global and builtin registry, and
+the triggers of removed projects — so every row a key acts on stays on screen
+(review F1). Nothing force-navigates, and the projects overview keeps
+its own `a`-to-add empty state. The first project registered while nothing is
+selected becomes the selection (decision 10).
 
 **Text fields wrap (added 2026-09-01, issue #299).** A field being typed into
 is bound by the same rule the boards and the rendered Markdown already carry: a
@@ -13659,8 +13706,22 @@ is what says what a task is *doing*. It is configuration — `tui.board.group_by
 served on `GET /v1/config` — because the shape that suits three projects and one
 workflow is not the shape that suits one project and six; `[]` is the flat table
 of every earlier version, and `g` cycles project›workflow → project → workflow →
-flat for the session without writing to the file. The rules the grouping does not
-get to bend:
+flat for the session without writing to the file.
+*Amended 2026-10-05 (task 132.9, decision 6):* the default is `[workflow]` and
+`workflow` is the only level, superseding task 009's `[project, workflow]`
+default and its "read project by project" rationale: the board shows one
+project at a time, so the project level had one value and drew no header. `g`
+cycles workflow → flat and keeps the selected task. The TUI drops a `project`
+level it receives — an older daemon still serves one — before it renders, so a
+new TUI against an old daemon draws what the new daemon would. A fold path
+therefore carries no project segment. The legacy `board_folds` list — the
+only place a released version kept folds — is migrated by stripping the
+project segment (task 132 decision 35's original premise, now true), so an
+upgrade keeps every fold; only a per-project set written by an unreleased
+build between 132.8 and 132.9 can still hold a project-segment path, which
+names nothing and is pruned (review F3). The
+`project` rows below describe the rules as they were written; with one level
+they apply to it alone. The rules the grouping does not get to bend:
 
 - **Ordering is untouched.** The tasks are sorted by band exactly as before and
   the groups take the order of their first task, so a group holding work that
@@ -15078,6 +15139,16 @@ last known task table is information as long as it is labelled as such, and
 connect and reconnect are the same state, so a takeover on every blip would be
 hostile. `:` still reaches the daemon view, which is the one surface with something
 currently true to show (§15 view 6).
+
+*Amended 2026-10-05 (task 132.7, issue #701).* The selected project is kept
+across a drop and checked against the project list relisted on reconnect, so
+a delete made during the outage is caught there (*A deleted or renamed
+selection*, above). A reconnect reloads only the project-scoped views whose
+last load failed, which covers a switch made while offline, since that
+switch's loads failed; a clean reconnect fetches nothing beyond the projects
+relist and the GitHub re-probe (task 132 decision 48). The `@` picker opens
+while reconnecting, on the cached list, with a dim `offline — list may be
+stale` line.
 
 ## 16. Security considerations
 

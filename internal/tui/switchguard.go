@@ -58,10 +58,21 @@ type pendingSwitch struct {
 	why     string
 	draft   string
 	open    tea.Msg
+	// deleted names the selected project when it was deleted (task 132.7):
+	// the switch cannot be declined, only confirmed, and notice is the line
+	// raised once it is.
+	deleted string
+	notice  string
 }
 
 // prompt is the one line the root draws for it.
 func (p *pendingSwitch) prompt() string {
+	if p.deleted != "" {
+		if p.project.ID == 0 {
+			return fmt.Sprintf("project `%s` was deleted and no projects remain — discard the %s? y", p.deleted, p.draft)
+		}
+		return fmt.Sprintf("project `%s` was deleted — discard the %s and switch to `%s`? y", p.deleted, p.draft, p.project.Name)
+	}
 	return fmt.Sprintf("discard the %s and switch to `%s`? y/n", p.draft, p.project.Name)
 }
 

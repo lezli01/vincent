@@ -230,7 +230,7 @@ func TestChatActivityStopsForTerminalChats(t *testing.T) {
 func TestChatsNoSelectionWaitsForAnEmptyListing(t *testing.T) {
 	v := newChatsView()
 	v.client = &apiclient.Client{}
-	if out := strings.Join(firstOf(v.bodyLines(80)), "\n"); strings.Contains(out, "No project selected") {
+	if out := strings.Join(firstOf(v.bodyLines(80)), "\n"); strings.Contains(out, "No projects registered") {
 		t.Errorf("before any listing the board claims no project: %q", out)
 	}
 	v.update(registryKey(t, "n"))
@@ -238,7 +238,7 @@ func TestChatsNoSelectionWaitsForAnEmptyListing(t *testing.T) {
 		t.Errorf("before any listing n: create %v, note %q; want a resolving note", v.create != nil, v.note)
 	}
 	v.setProjects([]apiclient.Project{})
-	if out := strings.Join(firstOf(v.bodyLines(80)), "\n"); !strings.Contains(out, "No project selected. The project overview adds one.") {
+	if out := strings.Join(firstOf(v.bodyLines(80)), "\n"); !strings.Contains(out, noProjectsEmpty()) {
 		t.Errorf("an empty listing does not say so: %q", out)
 	}
 	v.update(registryKey(t, "n"))

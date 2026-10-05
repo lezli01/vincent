@@ -437,3 +437,31 @@ func TestKeymapWarningsAreARowNotAProblem(t *testing.T) {
 		t.Errorf("KeymapWarnings = %#v, want an empty list", rep.Paths.KeymapWarnings)
 	}
 }
+
+// config.Config.Warnings are a warning row too, on the keymap's model: the
+// deprecated `project` level of tui.board.group_by (task 132.9) is stripped
+// on load and listed under paths.config_warnings, and the problems — so the
+// exit code — are the same as for a file that never carried it.
+func TestConfigWarningsAreARowNotAProblem(t *testing.T) {
+	d := dirs(t)
+	write(t, filepath.Join(d.Config, config.FileName), "tui:\n  board:\n    group_by: [workflow]\n")
+	clean := Compose(t.Context(), Options{Dirs: d, Agents: []Agent{}})
+	if clean.Paths.ConfigWarnings == nil || len(clean.Paths.ConfigWarnings) != 0 {
+		t.Errorf("ConfigWarnings = %#v, want an empty list", clean.Paths.ConfigWarnings)
+	}
+
+	write(t, filepath.Join(d.Config, config.FileName), "tui:\n  board:\n    group_by: [project, workflow]\n")
+	rep := Compose(t.Context(), Options{Dirs: d, Agents: []Agent{}})
+	if !rep.Paths.ConfigParses {
+		t.Fatalf("the config does not parse: %s", rep.Paths.ConfigError)
+	}
+	if len(rep.Paths.ConfigWarnings) != 1 || !strings.Contains(rep.Paths.ConfigWarnings[0], "tui.board.group_by") {
+		t.Errorf("ConfigWarnings = %q, want the deprecated group_by level", rep.Paths.ConfigWarnings)
+	}
+	if len(rep.Paths.KeymapWarnings) != 0 {
+		t.Errorf("KeymapWarnings = %q, want none", rep.Paths.KeymapWarnings)
+	}
+	if len(rep.Problems) != len(clean.Problems) || hasProblem(rep, GroupPaths) {
+		t.Errorf("a config warning changed the problems: %v, was %v", rep.Problems, clean.Problems)
+	}
+}

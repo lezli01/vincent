@@ -55,6 +55,12 @@ func (v *triggersView) bannerLines() []string {
 func (v *triggersView) renderList(width, height int) string {
 	head := []string{" " + styleTitle.Render("triggers") + styleDim.Render("   "+v.list.Dir)}
 	head = append(head, v.bannerLines()...)
+	// With no project registered the list still has content, the triggers of
+	// projects since removed, so the shared empty state is a line above it
+	// rather than the whole view (review F1): what the keys act on stays drawn.
+	if v.project.id == 0 && v.noProjects {
+		head = append(head, " "+styleDim.Render(noProjectsEmpty()))
+	}
 	if v.filtering || v.filter.Value() != "" {
 		v.filter.SetWidth(max(width-2, 10))
 		head = append(head, fieldRows(" ", v.filter)...)

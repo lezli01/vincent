@@ -105,8 +105,10 @@ var (
 	// rather than imported from config the way every other vocabulary in this
 	// file is: the TUI reads its configuration from the API, not from disk.
 	usageLimitAutoContinueChoices = []string{"always", "reported_only", "never"}
-	groupByChoices                = []string{"project", "workflow"}
-	inheritChoices                = []string{"all", "none"}
+	// No "project": the board shows one project at a time, and the daemon
+	// refuses a write that sets that level (task 132.9).
+	groupByChoices = []string{"workflow"}
+	inheritChoices = []string{"all", "none"}
 )
 
 // configKeys is the editable table, in the order config.yaml carries the keys

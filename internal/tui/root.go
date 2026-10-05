@@ -156,6 +156,10 @@ type root struct {
 	startup       startupState
 	selNotice     string
 	selNoticeWarn bool
+	// defaultProject is `tui.default_project` as of the latest config answer.
+	// Startup reads only the first one; a deleted selection is replaced by
+	// this one when it names a registered project (task 132 decision 46).
+	defaultProject string
 	// projects is the registered-project list the selection is checked
 	// against, refreshed on connect, on reconnect and on every project.*
 	// event. projectsSeq numbers the fetches so an older answer landing
@@ -282,6 +286,7 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyHyperlinks(msg)
 		m.applyOutputLevel(msg)
 		m.applyKeymap(msg)
+		m.noteDefaultProject(msg)
 		return m, tea.Batch(m.noteStartupConfig(msg), m.broadcast(msg))
 	case startupWorktreesMsg:
 		return m, m.resolveStartup(msg)
@@ -576,7 +581,8 @@ func (m *root) globalKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.mouseOn = !m.mouseOn
 		return nil, true
 	case opKey(keymap.Project):
-		if m.phase == phaseConnected {
+		// While reconnecting too: the picker opens on the cached list.
+		if m.phase == phaseConnected || m.phase == phaseReconnecting {
 			return m.openProjectPicker(), true
 		}
 	case opKey(keymap.NextAttention):
@@ -702,14 +708,17 @@ func (m *root) popupOpen() bool {
 
 // openProjectPicker raises the project picker over whatever is on screen,
 // seeded with the root's own name list so it is never empty while its first
-// answer is in flight, and makes its one list call. Not while disconnected:
-// a switch the daemon cannot answer would scope every view to nothing.
+// answer is in flight, and makes its one list call. Not before the first
+// connect, when there is no list to pick from. While reconnecting it opens on
+// the cached list, marked stale (task 132.7): a switch made then issues loads
+// that fail, and the reconnect reloads exactly those views (decision 48).
 func (m *root) openProjectPicker() tea.Cmd {
-	if m.phase != phaseConnected || m.popupOpen() {
+	if m.client == nil || m.phase != phaseConnected && m.phase != phaseReconnecting || m.popupOpen() {
 		return nil
 	}
 	m.help = false
 	m.projPick = newProjectPicker(m.projects, m.sel.id)
+	m.projPick.offline = m.phase != phaseConnected
 	return m.fetchProjectPicker()
 }
 
@@ -1210,12 +1219,19 @@ func (m *root) updatePendingSwitchKey(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
 	case "y":
 		m.pending = nil
+		if p.deleted != "" {
+			return m.applyDeletedSwitch(p.project, p.why, p.notice)
+		}
 		if p.open != nil {
 			return m.applyFollow(p.project, p.open)
 		}
 		return m.applySwitch(p.project, p.why)
 	case "n", "esc":
-		m.pending = nil
+		// A deleted selection has nowhere to stay (decision 47): the
+		// question waits for y.
+		if p.deleted == "" {
+			m.pending = nil
+		}
 	}
 	return nil
 }
@@ -1301,9 +1317,12 @@ func (m *root) refreshProjects() tea.Cmd {
 // answer is in as well. After that, with nothing selected, the first project
 // by name is selected (task 132 decision 10: a new project only auto-selects
 // when nothing is). A selected project that is still listed has its name
-// refreshed, so a rename reaches the header. One that has vanished is left
-// alone: what a deleted selection becomes is task 132.7's. A failed fetch
-// leaves the previous list standing, for githubProbeMsg's reason.
+// refreshed, so a rename reaches the header and tui.json. One that has
+// vanished was deleted (task 132.7): the list is the one source of truth, so
+// a delete made by another client, or during an outage whose event the
+// stream never replayed, is caught here as well as a live one (decision 49).
+// A failed fetch leaves the previous list standing, for githubProbeMsg's
+// reason.
 func (m *root) updateProjectList(msg projectListMsg) tea.Cmd {
 	if msg.err != nil || msg.seq != m.projectsSeq {
 		return nil
@@ -1327,14 +1346,79 @@ func (m *root) updateProjectList(msg projectListMsg) tea.Cmd {
 	}
 	for _, p := range m.projects {
 		if p.ID == m.sel.id {
+			m.revalidatePending()
 			if p.Name == m.sel.name {
 				return nil
 			}
 			m.sel.name = p.Name
-			return m.scopeViews()
+			return tea.Batch(m.scopeViews(), m.saveSelection())
 		}
 	}
-	return nil
+	return m.selectionDeleted()
+}
+
+// selectionDeleted replaces a selection the project list no longer carries:
+// tui.default_project when it names a registered project, else the first by
+// name, else nothing (task 132 decision 46). A draft on the active view still
+// asks first (decision 47), with no way to stay: the project is gone.
+func (m *root) selectionDeleted() tea.Cmd {
+	gone := m.sel.name
+	pick := reselectAfterDelete(m.projects, m.defaultProject, gone)
+	if draft, dirty := m.activeDraft(); dirty {
+		m.pending = &pendingSwitch{
+			project: pick.project, why: pick.why, draft: draft,
+			deleted: gone, notice: pick.notice,
+		}
+		return nil
+	}
+	return m.applyDeletedSwitch(pick.project, pick.why, pick.notice)
+}
+
+// revalidatePending checks a pending switch's target against the fresh list
+// while the selection itself is still listed (review F2). A target deleted
+// while the question was open is dropped, with the draft and the selection
+// kept and a notice saying why: answering y would otherwise select a project
+// that no longer exists, and the event that said so has been consumed. A
+// renamed target takes its new name, so the prompt and the switch carry it.
+// A deleted selection's own question is not this one's: selectionDeleted
+// recomputes it on every relist.
+func (m *root) revalidatePending() {
+	p := m.pending
+	if p == nil || p.deleted != "" {
+		return
+	}
+	for _, q := range m.projects {
+		if q.ID == p.project.ID {
+			p.project = q
+			return
+		}
+	}
+	m.pending = nil
+	m.selNotice = fmt.Sprintf("project `%s` was deleted — staying on `%s`", p.project.Name, m.sel.name)
+	m.selNoticeWarn = true
+}
+
+// applyDeletedSwitch is selectionDeleted past its guard. A zero p is "no
+// project": applySwitch still counts it as a switch away from the deleted
+// one, so a detail view falls back to its list and a form is re-aimed.
+func (m *root) applyDeletedSwitch(p apiclient.Project, why, notice string) tea.Cmd {
+	cmd := m.applySwitch(p, why)
+	m.selNotice, m.selNoticeWarn = notice, true
+	return cmd
+}
+
+// reloadFailedViews reloads every projectScoped view whose last load failed,
+// walked directly in view order as scopeCmds does (task 132 decision 48).
+func (m *root) reloadFailedViews() tea.Cmd {
+	var cmds []tea.Cmd
+	for i := range m.views {
+		if fr, ok := m.views[i].(failedReloader); ok {
+			if cmd := fr.reloadIfFailed(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+	}
+	return tea.Batch(cmds...)
 }
 
 // selectProject makes p the selection, tells every project-bearing view, and
@@ -1405,7 +1489,7 @@ func (m *root) scopeCmds() []tea.Cmd {
 }
 
 func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
-	var reprobe, relist, repick tea.Cmd
+	var reprobe, relist, repick, reload tea.Cmd
 	if m.notes == nil {
 		// A stale note from a stream torn down by retry; never re-arm on a
 		// nil channel — that receive would block forever.
@@ -1421,6 +1505,10 @@ func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
 			// cache absorbs the repeat cost.
 			reprobe = m.probeGitHub()
 			relist = m.refreshProjects()
+			// Only the views whose last load failed — a switch made
+			// offline among them — refetch. The selection is kept and
+			// is checked against the relisted projects when they land.
+			reload = m.reloadFailedViews()
 		}
 		// Distinct from phaseConnected, which only means the health probe
 		// answered: this is the event stream itself being established, and
@@ -1428,12 +1516,18 @@ func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
 		// Last-Event-ID starts live at the *next* event, §13.3).
 		m.streamLive = true
 		m.setConnected(true)
+		if m.projPick != nil {
+			m.projPick.offline = false
+		}
 	case apiclient.DisconnectedNote:
 		m.phase = phaseReconnecting
 		m.streamLive = false
 		m.connErr = n.Err
 		m.retryIn = n.RetryIn
 		m.setConnected(false)
+		if m.projPick != nil {
+			m.projPick.offline = true
+		}
 	case apiclient.EventNote:
 		// Observed, not consumed: the views that list projects hear the
 		// note through the broadcast below as before.
@@ -1451,7 +1545,7 @@ func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
 		}
 	}
 	// Every view sees the note, not just the visible one.
-	return m, tea.Batch(m.broadcast(noteMsg{note: n}), waitNote(m.notes), reprobe, relist, repick)
+	return m, tea.Batch(m.broadcast(noteMsg{note: n}), waitNote(m.notes), reprobe, relist, repick, reload)
 }
 
 // delegate routes a message to the active view.

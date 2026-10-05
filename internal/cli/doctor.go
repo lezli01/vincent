@@ -258,6 +258,11 @@ func doctorPathRows(p apiclient.DoctorPaths) [][]string {
 	for _, w := range p.KeymapWarnings {
 		rows = append(rows, []string{"keymap", w})
 	}
+	// Settings that load but do not do what they ask for, a deprecated
+	// group_by level among them (task 132.9).
+	for _, w := range p.ConfigWarnings {
+		rows = append(rows, []string{"warning", w})
+	}
 	return rows
 }
 

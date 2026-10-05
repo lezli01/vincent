@@ -100,4 +100,20 @@ func TestConfigSetTUIKeysAgainstTheRealHandler(t *testing.T) {
 	if out, code := run("set", "tui.keys", ""); code != 0 || len(cur.Load().TUI.Keys) != 0 {
 		t.Errorf("clearing tui.keys: code %d, out %q, in force %v", code, out, cur.Load().TUI.Keys)
 	}
+
+	// The deprecated project level of tui.board.group_by is refused on
+	// write (task 132.9), whichever way the list is spelled, and the file
+	// stays as it was.
+	before = read()
+	for _, v := range []string{"project workflow", "project,workflow", "project"} {
+		if out, code := run("set", "tui.board.group_by", v); code != 1 || !strings.Contains(out, "tui.board.group_by") {
+			t.Errorf("set tui.board.group_by %q: code %d, out %q; want 1 naming the key", v, code, out)
+		}
+	}
+	if !bytes.Equal(before, read()) {
+		t.Error("a refused group_by changed config.yaml")
+	}
+	if out, code := run("set", "tui.board.group_by", "workflow"); code != 0 {
+		t.Errorf("set tui.board.group_by workflow: code %d, out %q", code, out)
+	}
 }

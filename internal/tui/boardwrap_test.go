@@ -40,7 +40,7 @@ func withStep(name string, current, total int) func(*apiclient.Task) {
 // whole remainder, and the surplus turns up in the two columns whose content
 // demonstrably outgrows them — STEP first, then STATUS.
 func TestTitleStopsAtItsCap(t *testing.T) {
-	for _, g := range []grouping{nil, {groupProject}, {groupProject, groupWorkflow}} {
+	for _, g := range []grouping{nil, {groupWorkflow}} {
 		for width := 65; width <= 400; width++ {
 			cols, set := boardColumns(width, g, false, fullContent)
 			title := colWidth(cols, "TITLE")
@@ -78,7 +78,7 @@ func TestTitleStopsAtItsCap(t *testing.T) {
 // so the default grouped board keeps it at 120 and 160 — with a short STEP at
 // 120, where STATUS outranks the step name.
 func TestTitleCapSpendsTheSurplus(t *testing.T) {
-	grouped := grouping{groupProject, groupWorkflow}
+	grouped := grouping{groupWorkflow}
 	status := boardContent{status: true, cost: true}
 	quiet := boardContent{cost: true}
 	for _, tc := range []struct {
@@ -134,7 +134,7 @@ func TestTitleCapSpendsTheSurplus(t *testing.T) {
 // Below the cap the title still takes the whole remainder, so every width the
 // shedding ladder is about renders exactly as it did before the cap existed.
 func TestNarrowBoardsAreUnchangedByTheCap(t *testing.T) {
-	for _, g := range []grouping{nil, {groupProject}, {groupProject, groupWorkflow}} {
+	for _, g := range []grouping{nil, {groupWorkflow}} {
 		for width := 20; width <= 400; width++ {
 			for _, marking := range []bool{false, true} {
 				set := columnsFor(width, g, marking, fullContent)
@@ -202,8 +202,8 @@ func containsAcrossLines(out, want string) bool {
 // continuations in the row list at all.
 func TestRowHeightIsOneWhenNothingOverflows(t *testing.T) {
 	b := groupedBoard(
-		task(1, stateRunning, inProject("api"), inWorkflow("build")),
-		task(2, stateQueued, inProject("web"), inWorkflow("build")),
+		task(1, stateRunning, inWorkflow("build")),
+		task(2, stateQueued, inWorkflow("docs")),
 	)
 	b.render(200, 30)
 	rows := b.rows()
@@ -212,8 +212,7 @@ func TestRowHeightIsOneWhenNothingOverflows(t *testing.T) {
 			t.Fatalf("row %d is a continuation on a board with nothing to wrap", i)
 		}
 	}
-	// Two project headers and two tasks; the one workflow both share draws
-	// no header (task 129 decision 4).
+	// Two workflow headers and two tasks.
 	if got := len(rows); got != 4 {
 		t.Fatalf("rows = %d, want 4", got)
 	}

@@ -96,7 +96,7 @@ func TestLiveSwitchFetchesNothing(t *testing.T) {
 
 func TestNoProjectColumnAtAnyWidth(t *testing.T) {
 	for width := 20; width <= 400; width += 4 {
-		for _, g := range []grouping{nil, {groupWorkflow}, {groupProject, groupWorkflow}} {
+		for _, g := range []grouping{nil, {groupWorkflow}} {
 			cols, _ := boardColumns(width, g, false, fullContent)
 			for _, c := range cols {
 				if c.Title == "PROJECT" {
@@ -140,11 +140,11 @@ func TestFoldsAreKeptPerProject(t *testing.T) {
 	}
 }
 
-// TestFoldsFollowAProjectRename: under the default grouping a fold path
-// starts with the project's name, and a rename — seen first from a task load
-// or from the project list — rewrites it rather than letting the next prune
-// drop it (review F10).
-func TestFoldsFollowAProjectRename(t *testing.T) {
+// TestAProjectRenameLeavesFoldsAlone: a fold path carries no project segment
+// since task 132.9, so a rename — seen first from a task load or from the
+// project list — leaves the selected project's folds meaning what they meant,
+// with nothing to rewrite (review F10's rewrite retired with the level).
+func TestAProjectRenameLeavesFoldsAlone(t *testing.T) {
 	renamed := func(name string) []apiclient.Task {
 		tasks := twoProjectTasks()
 		for i := range tasks {
@@ -173,13 +173,11 @@ func TestFoldsFollowAProjectRename(t *testing.T) {
 			b.setDataDir(dir)
 			b.setProjects([]apiclient.Project{{ID: testProjectID, Name: "proj"}, {ID: otherProjectID, Name: "other"}})
 			b.updateLoaded(boardLoadedMsg{tasks: twoProjectTasks()})
-			b.setFolds(b.folds().with(foldPath{"proj", "build"}))
+			b.setFolds(b.folds().with(foldPath{"build"}))
+			c.rename(b, "proj")
 			c.rename(b, "api")
-			if !b.folds().has(foldPath{"api", "build"}) || len(b.folds()) != 1 {
-				t.Fatalf("folds after the rename = %v, want [api build]", b.folds())
-			}
-			if got := readTUIState(dir).BoardFoldsByProject[testProjectID]; len(got) != 1 || !got[0].equal(foldPath{"api", "build"}) {
-				t.Errorf("persisted = %v, want the rewritten path", got)
+			if !b.folds().has(foldPath{"build"}) || len(b.folds()) != 1 {
+				t.Fatalf("folds after the rename = %v, want [build]", b.folds())
 			}
 		})
 	}
@@ -195,8 +193,8 @@ func TestArchivedLoadPrunesNoFolds(t *testing.T) {
 }
 
 // TestLegacyFoldsMigrateToProjectIDs: a project-prefixed path moves under
-// that project's id, a bare project header and a project-less path are
-// dropped, and the legacy field leaves the file — but only once the project
+// that project's id with the project segment stripped (task 132.9 removed the
+// level), a bare project header and a project-less path are dropped, and the legacy field leaves the file — but only once the project
 // list has arrived.
 func TestLegacyFoldsMigrateToProjectIDs(t *testing.T) {
 	dir := t.TempDir()
@@ -214,8 +212,8 @@ func TestLegacyFoldsMigrateToProjectIDs(t *testing.T) {
 	}
 
 	b.setProjects([]apiclient.Project{{ID: testProjectID, Name: "proj"}, {ID: otherProjectID, Name: "other"}})
-	if got := b.foldsBy[testProjectID]; len(got) != 1 || !got.has(foldPath{"proj", "build"}) {
-		t.Errorf("migrated %v, want only [proj build] under the project", b.foldsBy)
+	if got := b.foldsBy[testProjectID]; len(got) != 1 || !got.has(foldPath{"build"}) {
+		t.Errorf("migrated %v, want only [build] under the project", b.foldsBy)
 	}
 	if len(b.foldsBy) != 1 {
 		t.Errorf("migrated sets %v, want one project", b.foldsBy)
@@ -236,7 +234,7 @@ func TestLegacyFoldsMigrateToProjectIDs(t *testing.T) {
 	// is dropped when it leaves the list.
 	second := selectTestProject(newBoard())
 	second.setDataDir(dir)
-	if !second.folds().has(foldPath{"proj", "build"}) {
+	if !second.folds().has(foldPath{"build"}) {
 		t.Errorf("a second board read %v", second.foldsBy)
 	}
 	second.setProjects([]apiclient.Project{{ID: otherProjectID, Name: "other"}})

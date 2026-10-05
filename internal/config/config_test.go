@@ -132,7 +132,7 @@ agents:
 		// overrides everything else still runs every step on the host.
 		Container: Container{Runtime: "docker", MountAgentConfig: true, Network: true},
 		TUI: TUI{
-			Board:  BoardView{GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow}},
+			Board:  BoardView{GroupBy: []BoardGroup{BoardGroupWorkflow}},
 			Output: OutputView{Level: "normal"},
 		},
 	}
@@ -319,12 +319,78 @@ func TestUsageLimitAutoContinueModes(t *testing.T) {
 	}
 }
 
-// TestBoardGroupingDefault pins §15's default: a board is read project by
-// project, and within a project by what each task is doing.
+// TestBoardGroupingDefault pins §15's default: the TUI shows one project at a
+// time, and within it a board is read by what each task is doing (task 132.9,
+// superseding task 009's [project, workflow]). The bootstrapped file says the
+// same, so a fresh installation's file and an absent one agree.
 func TestBoardGroupingDefault(t *testing.T) {
-	want := []BoardGroup{BoardGroupProject, BoardGroupWorkflow}
+	want := []BoardGroup{BoardGroupWorkflow}
 	if got := Default().TUI.Board.GroupBy; !reflect.DeepEqual(got, want) {
 		t.Errorf("default group_by = %v, want %v", got, want)
+	}
+	cfg, err := Decode([]byte(defaultConfigYAML))
+	if err != nil {
+		t.Fatalf("decode the bootstrap template: %v", err)
+	}
+	if got := cfg.TUI.Board.GroupBy; !reflect.DeepEqual(got, want) {
+		t.Errorf("bootstrap template group_by = %v, want %v", got, want)
+	}
+	if w := cfg.Warnings(); len(w) != 0 {
+		t.Errorf("the bootstrap template loads with warnings: %v", w)
+	}
+}
+
+// TestBoardGroupingProjectIsStrippedOnLoad is task 132.9's lenient half: a
+// file that still lists the deprecated project level — every file bootstrapped
+// before it — loads, with the level stripped literally and one warning naming
+// the key. A reload takes the same path, so it is accepted rather than
+// rejected.
+func TestBoardGroupingProjectIsStrippedOnLoad(t *testing.T) {
+	for _, tc := range []struct {
+		file string
+		want []BoardGroup
+	}{
+		{"[project, workflow]", []BoardGroup{BoardGroupWorkflow}},
+		{"[workflow, project]", []BoardGroup{BoardGroupWorkflow}},
+		{"[project]", []BoardGroup{}},
+	} {
+		t.Run(tc.file, func(t *testing.T) {
+			path := writeConfig(t, "tui:\n  board:\n    group_by: "+tc.file+"\n")
+			cfg, err := Load(path)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if !reflect.DeepEqual(cfg.TUI.Board.GroupBy, tc.want) {
+				t.Errorf("group_by = %v, want %v", cfg.TUI.Board.GroupBy, tc.want)
+			}
+			warnings := cfg.Warnings()
+			if len(warnings) != 1 || !strings.Contains(warnings[0], "tui.board.group_by") ||
+				!strings.Contains(warnings[0], "project") {
+				t.Errorf("Warnings = %q, want exactly one naming tui.board.group_by", warnings)
+			}
+			if kw := cfg.KeyWarnings(); len(kw) != 0 {
+				t.Errorf("KeyWarnings = %q, want none", kw)
+			}
+			// Decode, the write path's check, strips the same way: the file a
+			// PATCH edits may carry the level on a line it never touches.
+			if _, err := Decode([]byte("tui:\n  board:\n    group_by: " + tc.file + "\n")); err != nil {
+				t.Errorf("Decode refused a legacy file: %v", err)
+			}
+		})
+	}
+
+	cfg, err := Load(writeConfig(t, "tui:\n  board:\n    group_by: [workflow]\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if w := cfg.Warnings(); len(w) != 0 {
+		t.Errorf("a config without project warns: %v", w)
+	}
+	// Validate holds an in-memory value to the vocabulary: project is not
+	// a level, only a load knows to strip it.
+	cfg.TUI.Board.GroupBy = []BoardGroup{BoardGroupProject}
+	if err := cfg.Validate(); err == nil {
+		t.Error("Validate accepted the project level")
 	}
 }
 
@@ -365,7 +431,7 @@ func TestTUIHyperlinksIsOptIn(t *testing.T) {
 	if !cfg.TUI.Hyperlinks {
 		t.Error("tui.hyperlinks: true did not decode")
 	}
-	if len(cfg.TUI.Board.GroupBy) != 2 {
+	if !reflect.DeepEqual(cfg.TUI.Board.GroupBy, Default().TUI.Board.GroupBy) {
 		t.Errorf("setting hyperlinks dropped the default grouping: %v", cfg.TUI.Board.GroupBy)
 	}
 }

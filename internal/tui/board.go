@@ -123,6 +123,10 @@ type board struct {
 	// switch re-derives and fetches nothing; the archived board asks the
 	// daemon for the one project and refetches (task 132.8, decision 17).
 	projectScope
+	// noProjects is a project listing that came back empty, so a selection
+	// of 0 is "no project registered" rather than "not resolved yet" (task
+	// 132.7): the shared empty state is drawn only then.
+	noProjects bool
 
 	client *apiclient.Client
 	// now is injected so elapsed rendering is deterministic under test.
@@ -172,10 +176,6 @@ type board struct {
 	// projectIDs is the root's cached project list, name to id, handed over
 	// by setProjects; nil until the first list arrives.
 	projectIDs map[string]int64
-	// foldNames is the name each project's fold paths were last seen under:
-	// a path keeps its project segment (migrateLegacyFolds), so a rename has
-	// to rewrite it before a prune would drop it (review F10).
-	foldNames map[int64]string
 
 	filter    textField
 	filtering bool
@@ -275,6 +275,15 @@ func (b *board) rescope() tea.Cmd {
 	b.tasks = nil
 	b.loaded = false
 	b.loadErr = nil
+	return b.loadCmd()
+}
+
+// reloadIfFailed repeats a failed load (failedReloader). Not rescope: the
+// live board's switch fetches nothing, but its failed listing must.
+func (b *board) reloadIfFailed() tea.Cmd {
+	if !b.loadFailed {
+		return nil
+	}
 	return b.loadCmd()
 }
 
@@ -631,6 +640,7 @@ func (b *board) updateLoaded(msg boardLoadedMsg) {
 	if !b.stamps.accepts(msg.stamp) {
 		return // an older fetch landing late, or one for the previous project
 	}
+	b.noteLoad(msg.err)
 	if msg.err != nil {
 		// Keep the rows already on screen. A failed refresh is not a lost
 		// connection, and blanking a board full of running work because one
@@ -656,7 +666,6 @@ func (b *board) updateLoaded(msg boardLoadedMsg) {
 	// archived page and date window say nothing about which groups exist
 	// (task 132 decision 35).
 	if !b.archived {
-		b.followRenames(taskProjectNames(msg.tasks))
 		if pruned, changed := b.foldsBy.prune(msg.tasks); changed {
 			b.foldsBy = pruned
 			b.persistFolds()
@@ -1853,6 +1862,8 @@ func (b *board) emptyBody(rows []boardRow) (string, bool) {
 	}
 	scoped := b.projectTasks()
 	switch {
+	case b.project.id == 0 && b.noProjects:
+		return styleDim.Render("\n  " + noProjectsEmpty() + "\n"), true
 	case !b.loaded && b.loadErr == nil:
 		// The archived board names the project it is loading: after a switch
 		// its rows are cleared until the new project's page arrives (task

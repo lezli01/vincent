@@ -377,10 +377,39 @@ line says so — ``switched to `web` `` — until your next key. The task
 workspace's `esc` history starts over in the new project. If you are holding a
 draft, the same confirmation asks, and `n` cancels the open too.
 
+If the selected project is deleted — here, from another terminal, or while
+the daemon was unreachable — the TUI moves to `tui.default_project` when that
+names a registered project, and otherwise to the first project by name. One
+line says what happened:
+
+```text
+project `api` was deleted — showing `web` (default project)
+```
+
+With no project left the header reads `◆ no project` and the line says
+``no projects remain``. A form you have typed into still asks first, but
+only `y` answers: the project it belonged to is gone. If instead the
+project you were *switching to* is deleted while that confirmation is open,
+the question goes away and you stay where you were, draft intact. A rename of the
+selected project shows in the header straight away, and the next launch
+opens on it under its new name.
+
+With no project registered, every project screen — the board, the archived
+boards, chats, issues, pull requests, workflows, triggers and the new-task
+form — says so and points at `@`, whose last row opens the overview where
+you add one. Workflows and triggers say it above what they still list: the
+global and built-in workflows, and the triggers of removed projects. The first project you add is selected.
+
+While the daemon is unreachable `@` still opens, on the last list it had,
+marked `offline — list may be stale`. A switch made then takes effect when
+the connection returns: the screens whose loads failed reload for the
+selected project, and nothing else is refetched.
+
 ### Grouping
 
-The rows are **grouped by project, and by workflow within a project**, out of
-the box:
+The rows are **grouped by workflow** out of the box. There is no project
+level: the board shows one project at a time, so grouping by it would draw
+nothing.
 
 ![The board grouped by project and then by workflow, each header carrying its
 task count and its needs-attention badge](../assets/tui-grouping.png)
@@ -395,17 +424,16 @@ task count and its needs-attention badge](../assets/tui-grouping.png)
   has reached its ceiling, on `STEP` and `STATUS`.
 - An open header is a label: the cursor steps over it, and clicking it selects
   nothing.
-- **A level every task shares draws no header.** A board that is all one
-  project shows only its workflow headers, and a board that is all one project
-  and one workflow is a flat list. The panel title names what the missing
-  headers would have — `Tasks · api › verify-build` — and the grouped column
-  stays dropped. The level is judged on the tasks on screen, so a filter down to
-  one project quiets that level too. A fold you left on that level is kept, and
-  applies again when a second value comes back.
+- **A level every task shares draws no header.** A board whose tasks all run
+  one workflow is a flat list. The panel title names what the missing header
+  would have — `Tasks · verify-build` — and the grouped column stays dropped.
+  The level is judged on the tasks on screen, so a filter down to one workflow
+  quiets it too. A fold you left on that level is kept, and applies again when
+  a second value comes back.
 
 | Key | Does |
 |---|---|
-| `g` | Cycle project›workflow → project → workflow → flat for the session |
+| `g` | Cycle workflow → flat for the session |
 
 The panel title names the grouping whenever it is not the configured one.
 
@@ -448,7 +476,8 @@ nothing. A fresh install has nothing folded.
 
 Set the grouping you start with in `config.yaml`
 ([`tui.board.group_by`](../reference/configuration.md#tuiboardgroup_by)); `[]`
-gives you one flat list.
+gives you one flat list. A file that still lists the old `project` level loads
+with it stripped, and `vincent doctor` says so.
 
 ### Acting on several tasks at once
 

@@ -49,6 +49,14 @@ now, so the rule is split by caller.
 - **Hand edits** reach the daemon through a reload and get the lenient
   treatment with a logged warning. Intended.
 
+*Note (2026-10-05, task 132 decision 50):* the whole-file posture is narrowed
+for one other key. The deprecated `project` level of `tui.board.group_by`
+(task 132.9) is stripped on every decode, `config.Decode` included, and a
+PATCH is refused for it only when the patch's own `group_by` value contains
+it: almost every upgraded file still carries the bootstrapped
+`[project, workflow]`, and refusing the whole candidate would block every
+unrelated PATCH. The `tui.keys` posture above is unchanged.
+
 This supersedes task 118 decision 3 in part, for load-time collisions between a
 user key and a default key only; the amendment is written into 118's record,
 `internal/keymap/doc.go` and the `TUI.Keys` comment in `internal/config`.

@@ -435,6 +435,7 @@ func (v *chatsView) applyLoaded(msg chatsLoadedMsg) {
 		return // an older load landing late, or one for the previous project
 	}
 	v.stamps.apply(msg.stamp)
+	v.noteLoad(msg.err)
 	v.loading = false
 	if msg.err != nil {
 		v.loadErr = errString(msg.err)

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -57,10 +58,17 @@ type boardLiveHarness struct {
 type pathLog struct {
 	mu    sync.Mutex
 	paths []string
+	// down answers every new request 503, standing in for an unreachable
+	// daemon without tearing down a stream already open (task 132.7).
+	down atomic.Bool
 }
 
 func (l *pathLog) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if l.down.Load() {
+			http.Error(w, "down", http.StatusServiceUnavailable)
+			return
+		}
 		l.mu.Lock()
 		l.paths = append(l.paths, r.URL.Path)
 		l.mu.Unlock()
@@ -322,14 +330,14 @@ func TestBoardGroupsFromTheDaemonConfig(t *testing.T) {
 		return strings.Contains(got, "grouped task") && strings.Contains(got, "other task")
 	})
 	// The default grouping, fetched rather than assumed: two workflows draw
-	// their headers, and the one project every task is in draws none — the
-	// panel title names it instead (task 129 decision 4).
+	// their headers, and the project draws none — it is no level since task
+	// 132.9, so the panel title does not name it either.
 	h.p.until(10*time.Second, "the group headers to render", func() bool {
 		got := content(h.m)
 		return strings.Contains(got, "▾ three") && strings.Contains(got, "▾ other")
 	})
-	if got := content(h.m); strings.Contains(got, "▾ board") || !strings.Contains(got, "Tasks · board") {
-		t.Errorf("a single-project board drew its project header or left the title unnamed:\n%s", got)
+	if got := content(h.m); strings.Contains(got, "▾ board") || strings.Contains(got, "Tasks · board") {
+		t.Errorf("the board drew a project header or named the project as a skipped level:\n%s", got)
 	}
 	b := h.m.views[viewHome].(*shell).board
 	if !b.group.equal(defaultGrouping()) {

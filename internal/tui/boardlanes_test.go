@@ -457,7 +457,7 @@ func TestALaneRowIsAnOrdinaryTaskRow(t *testing.T) {
 	}
 
 	// Folding: a collapsed group swallows the whole subtree, lanes included.
-	b.setFolds(b.folds().with(foldPath{"api"}))
+	b.setFolds(b.folds().with(foldPath{"fan"}))
 	rows := b.rows()
 	for _, r := range rows {
 		if !r.header && (r.task.ID == 42 || r.task.ID == 43) {

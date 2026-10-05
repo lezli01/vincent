@@ -25,10 +25,11 @@ var (
 	keyGroup = tea.KeyPressMsg{Code: 'g', Text: "g"}
 )
 
-// twoProjectBoard is three tasks over two projects and three workflows: deep
-// enough that a nested fold has a sub-header to hide and a sibling to leave
-// alone. Queued, so the band sort is id order and the expected rows read off
-// the fixture.
+// twoProjectBoard is three tasks over two projects and two workflows. The
+// project names no level since task 132.9, so the board is two workflow
+// groups — `build` holding #1 and #3, `docs` holding #2 — one to fold and a
+// sibling to leave alone. Queued, so the band sort is id order and the
+// expected rows read off the fixture.
 func twoProjectBoard() *board {
 	return groupedBoard(
 		task(1, stateQueued, inProject("api"), inWorkflow("build")),
@@ -56,47 +57,30 @@ func wantRows(t *testing.T, b *board, want ...string) {
 }
 
 // TestFoldHidesTheSubtreeAndExpandsOneLevel is the shape of the feature: a
-// collapsed group takes its tasks *and* its sub-headers off the board, ← walks
-// outwards, and → puts back exactly one level — the workflow left folded
-// inside the project stays folded.
+// collapsed group takes its tasks off the board, ← on the header it closed has
+// no parent to walk out to, and → puts the group back.
 func TestFoldHidesTheSubtreeAndExpandsOneLevel(t *testing.T) {
 	b := twoProjectBoard()
 	b.render(160, 20)
 
 	foldPress(b, keyLeft)
 	wantRows(t, b,
-		"▾ api",
-		" ▸ build",
-		" ▾ docs", "#2",
-		"▾ web",
-		" ▾ build", "#3",
+		"▸ build",
+		"▾ docs", "#2",
 	)
 
-	// Again, on the header it just closed: the parent folds, taking the open
-	// `docs` sub-header with it.
+	// Again, on the header it just closed: the outermost level has no
+	// parent, so nothing else folds.
 	foldPress(b, keyLeft)
 	wantRows(t, b,
-		"▸ api",
-		"▾ web",
-		" ▾ build", "#3",
+		"▸ build",
+		"▾ docs", "#2",
 	)
 
 	foldPress(b, keyRight)
 	wantRows(t, b,
-		"▾ api",
-		" ▸ build",
-		" ▾ docs", "#2",
-		"▾ web",
-		" ▾ build", "#3",
-	)
-
-	foldPress(b, keyRight)
-	wantRows(t, b,
-		"▾ api",
-		" ▾ build", "#1",
-		" ▾ docs", "#2",
-		"▾ web",
-		" ▾ build", "#3",
+		"▾ build", "#1", "#3",
+		"▾ docs", "#2",
 	)
 	if len(b.folds()) != 0 {
 		t.Errorf("folds left over after unfolding everything: %v", b.folds())
@@ -109,37 +93,33 @@ func TestFoldHidesTheSubtreeAndExpandsOneLevel(t *testing.T) {
 // a task that needs a human still rises to the top.
 func TestFoldingIsAViewOverTheBandSort(t *testing.T) {
 	b := groupedBoard(
-		task(1, stateQueued, inProject("api"), inWorkflow("build")),
-		task(2, stateBlocked, inProject("web"), inWorkflow("deploy")),
-		task(3, stateQueued, inProject("api"), inWorkflow("docs")),
+		task(1, stateQueued, inWorkflow("build")),
+		task(2, stateBlocked, inWorkflow("deploy")),
+		task(3, stateQueued, inWorkflow("docs")),
 	)
 	b.render(160, 20)
 	unfolded := rowLabels(b.allRows())
 
-	b.setFolds(b.folds().with(foldPath{"web"}))
+	b.setFolds(b.folds().with(foldPath{"deploy"}))
 	folded := rowLabels(b.rows())
 
-	// Everything still on screen is in the order it was, and the only rows
-	// missing are the ones under the collapsed header.
+	// Everything still on screen is in the order it was, and the only row
+	// missing is the one under the collapsed header.
 	var kept []string
 	for _, l := range unfolded {
-		if l == "▾ web" {
-			kept = append(kept, "▸ web")
-			continue
+		switch l {
+		case "▾ deploy":
+			kept = append(kept, "▸ deploy")
+		case "#2":
+		default:
+			kept = append(kept, l)
 		}
-		if strings.HasPrefix(l, " ") || l == "#2" {
-			// The `web` subtree: its workflow sub-header and its task.
-			if len(kept) > 0 && kept[len(kept)-1] == "▸ web" {
-				continue
-			}
-		}
-		kept = append(kept, l)
 	}
 	if strings.Join(folded, "|") != strings.Join(kept, "|") {
 		t.Errorf("folded rows =\n  %v\nwant the unfolded list minus the subtree\n  %v", folded, kept)
 	}
 	// And the blocked task's group is still first: the fold did not re-sort.
-	if b.rows()[0].label != "web" {
+	if b.rows()[0].label != "deploy" {
 		t.Errorf("first group = %q, want the one holding the blocked task", b.rows()[0].label)
 	}
 }
@@ -166,7 +146,7 @@ func TestCursorRestsOnAFoldAndStepsOverAnOpenHeader(t *testing.T) {
 	b := twoProjectBoard()
 	b.render(160, 20)
 
-	foldPress(b, keyLeft) // fold api › build, cursor lands on the header it closed
+	foldPress(b, keyLeft) // fold build, cursor lands on the header it closed
 	if r := b.rowAt(b.tbl.Cursor()); !r.header || !r.collapsed || r.label != "build" {
 		t.Fatalf("← left the cursor on %+v, want the collapsed `build` header", r)
 	}
@@ -222,15 +202,14 @@ func TestCursorNeverLandsOnAHiddenRow(t *testing.T) {
 func TestFoldedGroupSwallowingTheCursorKeepsItNearby(t *testing.T) {
 	b := twoProjectBoard()
 	b.render(160, 20)
-	foldPress(b, tea.KeyPressMsg{Code: tea.KeyDown})
-	foldPress(b, tea.KeyPressMsg{Code: tea.KeyDown}) // #3, in web › build
+	foldPress(b, tea.KeyPressMsg{Code: tea.KeyDown}) // #3, in build
 	if got, _ := b.selected(); got != 3 {
 		t.Fatalf("fixture selected %d, want 3", got)
 	}
-	b.setFolds(b.folds().with(foldPath{"web"}))
+	b.setFolds(b.folds().with(foldPath{"build"}))
 	b.render(160, 20)
-	if r := b.rowAt(b.tbl.Cursor()); !r.header || r.label != "web" {
-		t.Fatalf("cursor went to %+v, want the `web` header now standing in for #3", r)
+	if r := b.rowAt(b.tbl.Cursor()); !r.header || r.label != "build" {
+		t.Fatalf("cursor went to %+v, want the `build` header now standing in for #3", r)
 	}
 }
 
@@ -263,20 +242,20 @@ func TestCollapsedHeaderIsNotATask(t *testing.T) {
 // the bulk-selection count all survive the fold.
 func TestCollapsedHeaderCountsWhatItHides(t *testing.T) {
 	b := groupedBoard(
-		task(1, stateBlocked, inProject("api"), inWorkflow("build")),
-		task(2, stateQueued, inProject("api"), inWorkflow("build")),
-		task(3, stateQueued, inProject("web"), inWorkflow("docs")),
+		task(1, stateBlocked, inWorkflow("build")),
+		task(2, stateQueued, inWorkflow("build")),
+		task(3, stateQueued, inWorkflow("docs")),
 	)
 	b.render(160, 20)
 	b.marks = b.marks.add(1, 2)
-	b.setFolds(b.folds().with(foldPath{"api"}))
+	b.setFolds(b.folds().with(foldPath{"build"}))
 
 	r := b.rows()[0]
 	if !r.collapsed || r.count != 2 || r.attention != 1 || r.marked != 2 {
 		t.Fatalf("collapsed header = %+v, want 2 tasks, 1 needing attention, 2 marked", r)
 	}
 	cell := r.headerCell()
-	for _, want := range []string{groupGlyphFolded, "api", "2", attentionBadge, markGlyph} {
+	for _, want := range []string{groupGlyphFolded, "build", "2", attentionBadge, markGlyph} {
 		if !strings.Contains(cell, want) {
 			t.Errorf("collapsed header cell %q does not carry %q", cell, want)
 		}
@@ -311,18 +290,18 @@ func TestBulkSelectionIgnoresFolds(t *testing.T) {
 // unless pruning is against task values rather than the rendered grouping.
 func TestFoldsSurviveRegroupingAndFilters(t *testing.T) {
 	b := groupedBoard(
-		task(1, stateQueued, inProject("api"), inWorkflow("build")),
-		task(2, stateQueued, inProject("web"), inWorkflow("deploy")),
+		task(1, stateQueued, inWorkflow("build")),
+		task(2, stateQueued, inWorkflow("deploy"), withTitle("web deploy")),
 	)
 	b.render(160, 20)
 	foldPress(b, keyLeft)
-	want := foldPath{"api", "build"}
+	want := foldPath{"build"}
 	if !b.folds().has(want) {
 		t.Fatalf("← did not fold %v (folds %v)", want, b.folds())
 	}
 
-	// `g` all the way round, including the project-only and flat views where
-	// a [project, workflow] path renders nothing at all.
+	// `g` all the way round, including the flat view where a path renders
+	// nothing at all.
 	for range groupingCycle() {
 		foldPress(b, keyGroup)
 		if !b.folds().has(want) {
@@ -336,16 +315,16 @@ func TestFoldsSurviveRegroupingAndFilters(t *testing.T) {
 	}
 	b.filter.SetValue("")
 
-	// A load that no longer holds the project, which is what archiving one
-	// away looks like from here.
+	// A load that no longer holds the workflow, which is what archiving its
+	// last task away looks like from here.
 	b.updateLoaded(boardLoadedMsg{tasks: []apiclient.Task{
-		task(2, stateQueued, inProject("web"), inWorkflow("deploy")),
+		task(2, stateQueued, inWorkflow("deploy")),
 	}})
 	if b.folds().has(want) {
-		t.Errorf("a vanished project was resurrected: %v", b.folds())
+		t.Errorf("a vanished workflow was resurrected: %v", b.folds())
 	}
 
-	// A disconnected board holds no news about which projects exist.
+	// A disconnected board holds no news about which workflows exist.
 	b.setFolds(b.folds().with(want))
 	b.updateLoaded(boardLoadedMsg{tasks: nil})
 	if !b.folds().has(want) {
@@ -408,13 +387,11 @@ func TestAwaitingInputOpensItsGroup(t *testing.T) {
 	}})
 	b.render(160, 20)
 
-	for _, p := range []foldPath{{"api"}, {"api", "docs"}} {
-		if b.folds().has(p) {
-			t.Errorf("%v is still folded over a task that started waiting (folds %v)", p, b.folds())
-		}
+	if p := (foldPath{"docs"}); b.folds().has(p) {
+		t.Errorf("%v is still folded over a task that started waiting (folds %v)", p, b.folds())
 	}
-	// The sibling project is none of the transition's business.
-	if !b.folds().has(foldPath{"web"}) {
+	// The sibling group is none of the transition's business.
+	if !b.folds().has(foldPath{"build"}) {
 		t.Errorf("an unrelated group was opened too: %v", b.folds())
 	}
 	if got := rowLabels(b.rows()); !slices.Contains(got, "#2") {
@@ -448,23 +425,23 @@ func TestOtherTransitionsLeaveFoldsAlone(t *testing.T) {
 // stops it (decision 3).
 func TestJumpAttentionOpensTheGroupItLandsIn(t *testing.T) {
 	s, _ := newShellFixture(t,
-		task(1, stateQueued, inProject("api"), inWorkflow("build")),
-		task(2, stateAwaitingInput, inProject("web"), inWorkflow("deploy")),
+		task(1, stateQueued, inWorkflow("build")),
+		task(2, stateAwaitingInput, inWorkflow("deploy")),
 	)
 	s.board.group, s.board.configGroup = defaultGrouping(), defaultGrouping()
 	s.board.foldsLoaded = true
 	s.render(120, 37)
 	s.board.updateKey(keyFoldC)
 	s.render(120, 37)
-	if !s.board.folds().has(foldPath{"web"}) {
-		t.Fatalf("C did not fold the waiting task's project: %v", s.board.folds())
+	if !s.board.folds().has(foldPath{"deploy"}) {
+		t.Fatalf("C did not fold the waiting task's workflow: %v", s.board.folds())
 	}
 
 	s.jumpAttention()
-	if s.board.folds().has(foldPath{"web"}) || s.board.folds().has(foldPath{"web", "deploy"}) {
+	if s.board.folds().has(foldPath{"deploy"}) {
 		t.Errorf("! left the group it jumped into folded: %v", s.board.folds())
 	}
-	if !s.board.folds().has(foldPath{"api"}) {
+	if !s.board.folds().has(foldPath{"build"}) {
 		t.Errorf("! opened a group it did not land in: %v", s.board.folds())
 	}
 }
@@ -563,9 +540,9 @@ func TestReconnectDoesNotRereadTheFolds(t *testing.T) {
 func TestFoldingAWrappedBoard(t *testing.T) {
 	long := strings.Repeat("a very long task title ", 6)
 	b := groupedBoard(
-		task(1, stateBlocked, inProject("api"), inWorkflow("build"), withTitle(long)),
-		task(2, stateQueued, inProject("api"), inWorkflow("build"), withTitle(long)),
-		task(3, stateQueued, inProject("web"), inWorkflow("build"), withTitle(long)),
+		task(1, stateBlocked, inWorkflow("build"), withTitle(long)),
+		task(2, stateQueued, inWorkflow("build"), withTitle(long)),
+		task(3, stateQueued, inWorkflow("docs"), withTitle(long)),
 	)
 	b.render(90, 30)
 	b.marks = b.marks.add(1, 2)
@@ -582,7 +559,7 @@ func TestFoldingAWrappedBoard(t *testing.T) {
 		t.Fatalf("no row wrapped at 90 columns; the fixture no longer tests anything")
 	}
 
-	b.setFolds(b.folds().with(foldPath{"api"}))
+	b.setFolds(b.folds().with(foldPath{"build"}))
 	rows := b.rows()
 	r := rows[0]
 	if !r.collapsed || r.count != 2 || r.attention != 1 || r.marked != 2 {
@@ -593,12 +570,12 @@ func TestFoldingAWrappedBoard(t *testing.T) {
 	}
 	// Nothing from inside the fold survived as a continuation.
 	for _, row := range rows {
-		if !row.header && row.task.ProjectName == "api" {
+		if !row.header && row.task.Workflow == "build" {
 			t.Errorf("row for a folded-away task is still on the board: %+v", row)
 		}
 	}
 	// And the header is one line: the row after it is the next group's.
-	if len(rows) < 2 || !rows[1].header || rows[1].label != "web" {
-		t.Errorf("rows after the collapsed header = %v, want the web header next", rowLabels(rows))
+	if len(rows) < 2 || !rows[1].header || rows[1].label != "docs" {
+		t.Errorf("rows after the collapsed header = %v, want the docs header next", rowLabels(rows))
 	}
 }

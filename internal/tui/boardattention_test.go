@@ -75,13 +75,15 @@ func TestAttentionFilterKeepsWhatNeedsYou(t *testing.T) {
 // still groups what is left, `V` marks only that and `!` cycles within it.
 func TestAttentionFilterComposes(t *testing.T) {
 	s := attentionFixture(t)
-	s.board.group, s.board.configGroup = grouping{groupProject}, grouping{groupProject}
+	s.board.group, s.board.configGroup = grouping{groupWorkflow}, grouping{groupWorkflow}
 	s.update(registryKey(t, "H"))
 	// The filter no longer matches a project name (task 132.8), so the web
-	// tasks carry it in their titles.
+	// tasks carry it in their titles, and as their workflow so the grouping
+	// still has a level to draw.
 	for i := range s.board.tasks {
 		if s.board.tasks[i].ProjectName == "web" {
 			s.board.tasks[i].Title += " web"
+			s.board.tasks[i].Workflow = "web"
 		}
 	}
 	s.board.filter.SetValue("web")

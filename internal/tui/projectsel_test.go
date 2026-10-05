@@ -146,10 +146,14 @@ func TestProjectListSelection(t *testing.T) {
 	if v := m.views[viewIssues].(*issuesView); v.project.name != "beta" {
 		t.Errorf("views not re-walked on rename: %+v", v.project)
 	}
-	// A vanished selection is 132.7's; it is left alone here.
+	// A vanished selection was deleted (task 132.7): the first by name
+	// replaces it, and the notice names both.
 	land(apiclient.Project{ID: 9, Name: "other"})
-	if m.sel.id != 2 {
-		t.Fatalf("a vanished selection changed to %+v", m.sel)
+	if m.sel != (projectSel{id: 9, name: "other"}) {
+		t.Fatalf("a vanished selection became %+v, want other", m.sel)
+	}
+	if want := "project `beta` was deleted — showing `other` (first by name)"; m.selNotice != want {
+		t.Errorf("notice = %q, want %q", m.selNotice, want)
 	}
 	// A stale answer is dropped.
 	m.sel = projectSel{}
