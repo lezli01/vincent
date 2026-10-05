@@ -50,9 +50,10 @@ take it; decision 3's switch key is `@`.
 Recorded 2026-10-04. Decisions 1–14 are the author's answers to #693's open
 questions, each the option #693 recommended; decision 15 is the renumbering;
 decisions 16–19 settle the contradictions between #693's research reports;
-decisions 20–22 were taken while delivering 132.1; decisions 25–28 were
-settled with the author for 132.5 on 2026-10-05, and decisions 29–32
-while delivering 132.3. Each
+decisions 20–22 were taken while delivering 132.1, decisions 23–24 while
+delivering 132.2, decisions 25–28 were settled with the author for 132.5
+on 2026-10-05, decisions 29–32 were taken while delivering 132.3, and
+decision 33 while delivering 132.4. Each
 decision is **taken now; its effect lands with its item.** The older record
 keeps governing the code until that item's pull request merges.
 
@@ -399,6 +400,25 @@ delegate to, so the TUI matches paths without importing a git-running
 package. `GET /v1/tasks` always served `worktree_path` on the list row;
 `apiclient.Task` now decodes it there rather than on `TaskDetail` alone.
 
+### 33. The picker marks the current project only; the default marker is 132.3's (2026-10-05)
+
+Taken with the author while delivering 132.4. `tui.default_project` arrives
+with 132.3 (#697), which is in flight on its own branch and is not a
+dependency of 132.4. So 132.4's picker marks only the current selection, and
+132.3's pull request adds the default marker when it introduces the setting;
+neither blocks the other.
+
+Two smaller calls were made beside it. A project with a nil
+`max_parallel_tasks` has no cap of its own, only the global one, so its row
+reads `N running` with no denominator; showing the global cap would imply a
+per-project limit that does not exist. A capped project reads `N/cap
+running`. And `@` is the default because nothing else answers it: the chat
+composer's file picker reads `@` from the draft and never matches it as a key
+(`internal/keymap/fixed.go`), `ctrl+e` is the m11 gate's accepted rebind, and
+`ctrl+k`/`ctrl+w`/`ctrl+n` are bubbles' text-editing keys. The op is not a
+typing key, so a text field still types `@`, and the palette's "switch
+project" row is the way in from one.
+
 ## Supersedes
 
 Every binding record this work overturns, departs from, refines or keeps, by
@@ -462,10 +482,12 @@ its own pull request.
   document. ✓ 2026-10-04
 - [x] **132.3** ([#697](https://github.com/lezli01/vincent/issues/697)) The
   startup precedence, `tui.default_project`, `selected_project` in `tui.json`,
-  `vincent --project` (decisions 29–32). Depends: 132.2. ✓ 2026-10-05
-- [ ] **132.4** ([#698](https://github.com/lezli01/vincent/issues/698)) The
-  `project` op on `@`, the picker popup with stats, the palette row. Depends:
-  132.1, 132.2.
+  `vincent --project`, and the project picker's default-project marker
+  (decisions 29–33). Depends: 132.2. ✓ 2026-10-05
+- [x] **132.4** ([#698](https://github.com/lezli01/vincent/issues/698)) The
+  `project` op on `@`, the picker popup with stats, the palette row, the
+  header segment as its click target, spec §15 Discovery, Layout, Keys and
+  Mouse (decisions 23, 33). Depends: 132.1, 132.2. ✓ 2026-10-05
 - [x] **132.5** ([#699](https://github.com/lezli01/vincent/issues/699)) The
   `{project, seq}` load stamp, the client-side event filter, the chats
   board's refetch debounce, spec §15 (decisions 25–28). Depends: 132.2.

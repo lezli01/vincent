@@ -21,6 +21,15 @@ list with the user-facing context a commit subject cannot carry.
   that is not registered is skipped with a line under the header saying what
   was shown instead. `tui.default_project` is read at startup only, and the
   last selection is kept in `tui.json` as `selected_project`.
+- **Switch project from anywhere in the TUI.** Press `@`, click the header's
+  `◆` segment, or run **switch project** from the palette (`ctrl+p` reaches it
+  from a chat). A picker lists every project with the tasks that need you
+  (`!3`), the tasks running against the project's own cap (`1/2 running`, or
+  `1 running` when it has none), its active tasks and its open issues, and the
+  figures stay current while it is open. Type to filter, `enter` switches,
+  `esc` closes. The key is the new `project` operation in `tui.keys`; a
+  `tui.keys` that already binds `@` keeps its binding, and the picker stays
+  reachable from the palette.
 - **The TUI names a selected project.** The app header now shows
   `◆ <project>` after the version, or `◆ no project` when none is
   registered. The TUI selects the first project by name and keeps it when you

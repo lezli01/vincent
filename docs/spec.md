@@ -7888,7 +7888,8 @@ for pause and resume, `approve`, `reject`, `retry`, `edit_retry`, `repair`,
 `skip`, `cancel`, `follow_up`, `chat` — *added 2026-09-17, task 119* — with
 `archive` shared with the term) and the global chrome (`palette`, `palette_alt`, `help`, `help_alt`, `next_attention`,
 `mouse`, `quit`, and `new`, which is also the chats board's `n` and — *added
-2026-10-03, task 130.12* — the issue screens'). Every other key
+2026-10-03, task 130.12* — the issue screens', and — *added 2026-10-05, task
+132.4* — `project`, `@` by default, which opens the project picker). Every other key
 the TUI answers is fixed (§15). An override **replaces** the operation's
 default on every surface that carries it; it is not an alias, so the vacated
 key is free for another override in the same edit and two operations may swap.
@@ -13197,8 +13198,36 @@ before the view tag: `vincent 0.x  ◆ api  [Tasks]`, or `◆ no project`. The
 chrome stays one line, so the size floors above do not move. When the line
 does not fit, the view tag truncates down to eight cells and is then dropped;
 then the version goes, leaving `vincent`; last, the project name truncates
-behind an ellipsis. The connection badge is never shed. The segment is not a
-click target yet; 132.4 makes it open the project picker.
+behind an ellipsis. The connection badge is never shed. *Amended 2026-10-05
+(task 132.4):* a left click on the segment opens the project picker below.
+
+**The project picker (task 132.4, issue #698, added 2026-10-05).** The global
+operation `project`, on `@` by default, opens a root-owned popup listing every
+registered project; the palette's global group carries the same row as
+"switch project", and a left click on the header's `◆` segment opens it too.
+It is shaped like the palette and the copy and link pickers: held on the root
+while it is up, it owns every key but `ctrl+c`, and it is never open beside
+them, the help overlay or the first-run notice — whichever is up owns the keys
+that would raise another. `@` is not a typing key: a text field types it (the
+chat composer's file mention among them), and `ctrl+p` → "switch project"
+reaches the picker from there. Typing filters the rows by name and `ctrl+v`
+pastes into the filter; `↑`/`↓` move, `enter` makes the highlighted project the
+selection through the one path every switch takes, and `esc` closes without
+switching. Each row is the name, a `◆` on the current selection, and the
+figures of `GET /v1/projects?stats=true`: `!N` from `stats.tasks.attention`
+(omitted at zero, and never counting chats — decision 2), running as
+`slots_used/max_parallel_tasks`, or `N running` for a project with no cap of
+its own (the global cap is not a per-project limit), `N active` from
+`stats.tasks.active`, and `N open issues` from `stats.issues.open`. No GitHub
+figure, no done counts. A row whose `stats` is `null` shows the name and marks
+alone. On a narrow popup the figures drop from the end — issues, active,
+running, attention — and only then does the name shorten behind an ellipsis.
+Every refresh is one list call whatever the number of projects: on open, then
+a 150 ms debounced refetch on `task.*`, `issue.*`, `chat.*` and `project.*`
+events while the picker is up, and none while it is closed. An answer that
+lands after the picker closed, or after a newer refetch, is dropped. The
+default-project marker arrives with `tui.default_project` (task 132.3,
+decision 33).
 
 **Load stamps and the event filter (task 132.5, issue #699, added
 2026-10-05).** Every list load a view issues — the board in both modes and
@@ -14209,6 +14238,9 @@ rather than replacing them. Invalid task actions are omitted rather than greyed,
 holding the same invariant the action bar always had: an action that cannot happen
 is not on screen. Navigation living here is what lets view-switching keys be
 retired without substituting a different set to memorise.
+*Amended 2026-10-05 (task 132.4):* its global group carries "switch project",
+which opens the project picker — the way to it from a surface whose text field
+types `@`.
 
 *Amended 2026-09-01 (task 076).* **`ctrl+p` opens the same palette**, and it is
 hoisted above the input-capture gate the way `ctrl+v` is. `:` is a printable
@@ -14308,7 +14340,9 @@ and the digit jumps on every workspace tab, since every tab answers them.
 
 Global: `:` palette (`ctrl+p` where a text field has the keyboard) · `?` help (`f1` where a text field has the keyboard; *added 2026-09-17, task 114*) · `n` new task · `q` quit (the daemon keeps running;
 a status line reminds of the running task count on exit) · `tab`/`shift+tab` move
-focus between panels · `M` toggle mouse.
+focus between panels · `M` toggle mouse · `@` switch project (*added 2026-10-05,
+task 132.4*: opens the project picker, §15 Layout; the operation is `project`,
+rebindable like every global).
 
 Task actions act on the selected task — or on the whole bulk selection when there
 is one (task 011) — and are offered only when the daemon reports them in
@@ -14788,6 +14822,9 @@ recorded as an exception on `T` alone, so it does not travel with a moved
 On by default, `M` toggles it, and the toggle is in the palette. Click to focus a
 panel, click a row to select it, wheel to scroll the focused panel, click a footer
 hint to fire it, click a tab to switch it. No drag, no right-click.
+*Amended 2026-10-05 (task 132.4, decision 23):* a left click on the app
+header's `◆` project segment opens the project picker. The header is otherwise
+not a click target, and the popups themselves stay keyboard-only.
 
 Capturing the mouse costs native click-drag text selection. Every terminal has a
 modifier override for it (shift-drag; option-drag on Terminal.app and iTerm) and

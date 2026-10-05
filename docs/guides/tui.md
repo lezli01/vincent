@@ -164,7 +164,8 @@ header reads `no adapters`. The app header above the board drops
 `● connected` for the same reason: it appears only while the TUI is connecting,
 reconnecting or disconnected. After it, `◆ api` names the project the TUI has
 selected, or `◆ no project` while none is registered. It selects the first
-project by name. On a narrow terminal the header drops the view's tag first,
+project by name; `@`, or a click on the segment, [switches it](#switching-project).
+On a narrow terminal the header drops the view's tag first,
 then the version, and shortens the project name last. The action keys for the
 selected task are in the footer, once — there is no second copy of them inside
 the board.
@@ -303,6 +304,35 @@ deliberate: a task idle on a human for 35 of its 40 minutes must not read as
 "5m" on the board whose job is to flag it. The per-attempt figures in the
 timeline are the other measure — active time, with the excluded wait shown
 beside it rather than silently subtracted.
+
+### Switching project
+
+`@` opens the project picker over whatever is on screen — or click the header's
+`◆` segment, or run **switch project** from the palette, which is the way in
+from a chat's composer, where `@` mentions a file. It lists every registered
+project, the selected one marked `◆`, each with the figures that say where work
+is waiting:
+
+![The project picker over the board](../assets/tui-project-picker.png)
+
+- `!3` — tasks that need you: awaiting input, awaiting approval or blocked.
+  Absent at zero, and never counting a chat waiting on you.
+- `1/2 running` — tasks holding one of the project's slots, against its own
+  cap. A project with no cap of its own reads `1 running`: only the global cap
+  applies to it.
+- `4 active` — tasks not yet finished.
+- `5 open issues` — local and imported alike.
+
+The figures follow the daemon while the picker is up. On a narrow terminal they
+drop from the end — issues, then active, then running, then attention — and the
+name shortens last. A daemon that could not count shows the names alone.
+
+| Key | Does |
+|---|---|
+| typing | Filter the projects by name; `ctrl+v` pastes into the filter |
+| `↑` / `↓` | Move the highlight |
+| `enter` | Switch to the highlighted project |
+| `esc` | Close without switching |
 
 ### Grouping
 
@@ -2839,6 +2869,10 @@ is on the strip. The Overview's jump links, such as `3` for the failed
 attempt's output, stay on the Overview, where the attempt they point at is on
 screen.
 
+Its **global** group carries **switch project**, which opens the
+[project picker](#switching-project) — the way to it from a chat, where `@`
+types into the draft.
+
 The takeover screens have their own **screens** group. The palette exists so
 the takeover screens do not need memorized number keys. If you cannot remember a binding, `:` and `?` are the two keys worth
 knowing.
@@ -2923,6 +2957,7 @@ Global bindings — active whenever the focused surface is not capturing text:
 | `tab` / `shift+tab` | Move between task tabs; on the board filter, commit it |
 | `!` | Jump to the next task that needs you — awaiting input, awaiting approval or blocked |
 | `n` | New task |
+| `@` | [Switch project](#switching-project) |
 | `M` | Toggle the mouse |
 | `esc` | Close one layer: popup tab → popup → screen → selection → filter — never quits |
 | `q` | Quit the TUI (the daemon keeps running) |
@@ -2975,7 +3010,7 @@ Setting an operation to its own default changes nothing.
 ### The operations
 
 The first sixteen are the operations screens share, the next ten are the
-[task actions](#the-action-bar), and the last eight are the global keys.
+[task actions](#the-action-bar), and the last nine are the global keys.
 
 | Operation | Default | Does |
 |---|---|---|
@@ -3013,6 +3048,7 @@ The first sixteen are the operations screens share, the next ten are the
 | `mouse` | `M` | Toggle the mouse |
 | `quit` | `q` | Quit the TUI |
 | `new` | `n` | New task — or new chat, on the chats board, or new issue, on the issue screens |
+| `project` | `@` | Switch project |
 
 `new` is one operation everywhere because it is one gesture, "make a new one
 here", so moving it moves all three.
@@ -3095,7 +3131,8 @@ footer and the palette show the keys in force.
 
 ## Mouse, selection and paste
 
-The mouse is on by default: click to select, scroll to scroll. That takes mouse
+The mouse is on by default: click to select, scroll to scroll, and click the
+header's `◆` segment to [switch project](#switching-project). That takes mouse
 events away from your terminal, so **native text selection needs the mouse
 off** — press `M`, or hold shift while dragging, which most terminals treat as
 "bypass the application".
