@@ -230,3 +230,30 @@ func TestIssueDetailEscReturnsToTheList(t *testing.T) {
 		t.Fatalf("esc produced %#v, want the issues list", cmd())
 	}
 }
+
+// A load issued for the project just left must not land once the selection
+// is no project at all (review F1 on PR #720): the list would show another
+// project's issues under no name.
+func TestIssuesDeselectingDropsTheLoadInFlight(t *testing.T) {
+	v := newIssuesView()
+	v.client = deadClient()
+	v.project = projectSel{id: 1, name: "api"}
+	cmd := v.loadCmd()
+	if cmd == nil {
+		t.Fatal("a selected project issued no load")
+	}
+	inFlight, ok := cmd().(issuesLoadedMsg)
+	if !ok {
+		t.Fatal("the load did not answer with an issuesLoadedMsg")
+	}
+	inFlight.err = nil
+	inFlight.issues = []apiclient.Issue{{ID: 1, Title: "stale"}}
+
+	if cmd := v.setProject(projectSel{}); cmd != nil {
+		t.Fatal("deselecting the project issued a load")
+	}
+	v.applyLoaded(inFlight)
+	if len(v.issues) != 0 || v.loaded {
+		t.Errorf("a load for the project just left was installed: %+v", v.issues)
+	}
+}

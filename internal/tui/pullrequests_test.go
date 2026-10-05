@@ -319,3 +319,34 @@ func TestPullRequestsRefreshOnLinkChangedEvent(t *testing.T) {
 		t.Error("the debounce was not armed")
 	}
 }
+
+// A listing in flight when the selected project's probe turns to no is
+// dropped (review F1 on PR #720): landing behind the reason, its rows would
+// still be what enter, a, l, u and the browser key act on, and its tasks
+// what P offers.
+func TestPullRequestsProbeTurningNoDropsTheListingInFlight(t *testing.T) {
+	v := pullRequestsFixture()
+	cmd := v.loadCmd()
+	if cmd == nil {
+		t.Fatal("a usable project issued no listing")
+	}
+	inFlight, ok := cmd().(prLoadedMsg)
+	if !ok {
+		t.Fatal("the listing did not answer with a prLoadedMsg")
+	}
+	inFlight.err = ""
+	inFlight.pulls = []apiclient.GitHubPullRequest{testPull(11, "ship it")}
+	inFlight.tasks = []apiclient.Task{{ID: 7, ProjectID: 1, Title: "add a thing"}}
+
+	v.applyProbe(githubProbeMsg{projects: []githubProject{
+		{project: testProject(1, "api"), status: apiclient.GitHubStatus{Reason: "not_authenticated", Message: "gh is not logged in"}},
+	}})
+	if v.tasks != nil {
+		t.Error("the probe turning to no kept the previous listing's tasks")
+	}
+	v.applyLoaded(inFlight)
+	if v.loaded || len(v.rows()) != 0 || v.tasks != nil {
+		t.Errorf("a listing issued before the probe turned to no was installed: loaded=%v rows=%d tasks=%d",
+			v.loaded, len(v.rows()), len(v.tasks))
+	}
+}

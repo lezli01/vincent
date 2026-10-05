@@ -62,6 +62,18 @@ func (s *loadStamps) apply(st loadStamp) {
 	}
 }
 
+// drop makes every load already issued stale and project the current one,
+// for a view that has just decided to show nothing: with no project
+// selected, or one it may no longer list, a response still in flight would
+// install rows the screen has stopped standing for (review F1 on PR #720).
+// Advancing applied past issued is what does it; a fresh stamp alone would
+// not, since accepts compares against applied.
+func (s *loadStamps) drop(project int64) {
+	s.issued++
+	s.project = project
+	s.applied = s.issued
+}
+
 // forProject says whether a project-bearing view should react to ev with sel
 // selected (task 132 decision 16): the stream is one global stream, filtered
 // here. An event with no project — the registry, quota, a pull-request change

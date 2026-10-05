@@ -257,6 +257,8 @@ func (v *issuesView) loadCmd() tea.Cmd {
 		return nil
 	}
 	if v.project.id == 0 {
+		// A load issued for the project just left must not land here.
+		v.stamps.drop(0)
 		v.issues, v.loading = nil, false
 		v.cursor = 0
 		return nil

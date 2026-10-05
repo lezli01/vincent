@@ -324,7 +324,11 @@ func (v *pullRequestsView) applyProbe(msg githubProbeMsg) tea.Cmd {
 	case now && !was:
 		return v.loadCmd()
 	case !now:
-		v.pulls, v.loadErr, v.loaded, v.loading = nil, "", false, false
+		// A listing still in flight is dropped with the rows: it was asked
+		// while the answer was yes, and landing now would install rows, and
+		// a task list for `P`, behind a reason that says there are none.
+		v.stamps.drop(v.project.id)
+		v.pulls, v.tasks, v.loadErr, v.loaded, v.loading = nil, nil, "", false, false
 		v.picker, v.confirm = nil, nil
 		v.clampCursor()
 	}
@@ -338,6 +342,7 @@ func (v *pullRequestsView) applyProbe(msg githubProbeMsg) tea.Cmd {
 func (v *pullRequestsView) loadCmd() tea.Cmd {
 	client := v.client
 	if client == nil || v.project.id == 0 || !v.usable() {
+		v.stamps.drop(v.project.id)
 		v.loading = false
 		return nil
 	}
