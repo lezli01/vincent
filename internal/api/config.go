@@ -121,7 +121,9 @@ type configOutput struct {
 
 type configBoard struct {
 	// GroupBy is always present, empty list included: `null` would make a
-	// flat table indistinguishable from a client's own default.
+	// flat table indistinguishable from a client's own default. Never carries
+	// the deprecated `project` level: a load strips it (task 132.9), so this
+	// is `workflow` or nothing.
 	GroupBy []string `json:"group_by"`
 }
 
@@ -702,6 +704,18 @@ func addIfInt(add func(string, string), path string, v *int) {
 func (s *Server) handleConfigPatch(w http.ResponseWriter, r *http.Request) {
 	var patch configPatch
 	if !decodeJSON(w, r, &patch) {
+		return
+	}
+	// Refused only when the patch itself sets the deprecated level (task 132
+	// decision 46). The file it patches may still carry it — nearly every
+	// upgraded installation's bootstrapped file does — and config.Decode
+	// strips it there with a warning, so an unrelated edit still lands and
+	// the line it never touched stays as written.
+	if t := patch.TUI; t != nil && t.Board != nil && t.Board.GroupBy != nil &&
+		config.HasDeprecatedGroup(*t.Board.GroupBy) {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			"tui.board.group_by: `project` is no longer a level, since the TUI shows one project "+
+				"at a time; want workflow, or [] for a flat table")
 		return
 	}
 	sets := patch.sets()

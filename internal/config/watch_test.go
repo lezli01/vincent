@@ -63,6 +63,19 @@ func TestWatchReloadsValidAndDropsInvalid(t *testing.T) {
 	if got := next(); got.TUI.Output.Level != "quiet" {
 		t.Fatalf("reloaded tui.output.level = %q, want quiet", got.TUI.Output.Level)
 	}
+
+	// The deprecated project level is stripped on a reload, not rejected
+	// (task 132.9): the reload is delivered, without the level, and carries
+	// the warning.
+	write("max_parallel_tasks: 4\ntui:\n  board:\n    group_by: [project, workflow]\n")
+	got = next()
+	if got.MaxParallelTasks != 4 || len(got.TUI.Board.GroupBy) != 1 || got.TUI.Board.GroupBy[0] != BoardGroupWorkflow {
+		t.Fatalf("reload = max_parallel_tasks %d, group_by %v; want 4 and [workflow]",
+			got.MaxParallelTasks, got.TUI.Board.GroupBy)
+	}
+	if len(got.Warnings()) != 1 {
+		t.Errorf("reloaded Warnings = %q, want the deprecation", got.Warnings())
+	}
 }
 
 // announcingLocker reports each Lock call before it blocks, so a test can

@@ -34,7 +34,7 @@ func TestTUIKeysDefaultIsTheShippedKeymap(t *testing.T) {
 			if len(cfg.TUI.Keys) != 0 {
 				t.Errorf("tui.keys = %v, want none", cfg.TUI.Keys)
 			}
-			if len(cfg.TUI.Board.GroupBy) != 2 {
+			if len(cfg.TUI.Board.GroupBy) != len(Default().TUI.Board.GroupBy) {
 				t.Errorf("tui.keys dropped the default grouping: %v", cfg.TUI.Board.GroupBy)
 			}
 		})

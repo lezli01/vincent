@@ -351,6 +351,10 @@ type Config struct {
 	// disk, and a second file would be a second path, a second reload story
 	// and a second `vincent doctor` line for one setting.
 	TUI TUI `yaml:"tui"`
+
+	// deprecations are what decode stripped from the file it read (task
+	// 132.9). Warnings reports them; they are never written back.
+	deprecations []string
 }
 
 // The modes UsageLimitAutoContinue takes (task 091). A tri-state string
@@ -746,11 +750,16 @@ func (c Config) KeyWarnings() []string {
 type BoardView struct {
 	// GroupBy nests the rows under group headers, outermost level first.
 	//
-	// The default groups by project and then by workflow: a board is read
-	// project by project, and within one project the workflow is what says
-	// what a task is *doing* — the same reason those are the two columns the
-	// width budget sheds last (boardcols.go). An empty list — `group_by: []`
-	// — is the flat table every version before this one rendered.
+	// The default groups by workflow: the TUI shows one project at a time
+	// (task 132), and within that project the workflow is what says what a
+	// task is *doing* — the same reason it is a column the width budget sheds
+	// last (boardcols.go). An empty list — `group_by: []` — is the flat
+	// table. Task 009's `[project, workflow]` default, and its "read project
+	// by project" rationale, are superseded by task 132 decision 6: on a
+	// board scoped to one project the project level has one value, draws no
+	// header (task 129 decision 4), and so does nothing. A loaded file that
+	// still lists it has it stripped with a warning (stripDeprecatedGroups);
+	// a write that sets it is refused.
 	GroupBy []BoardGroup `yaml:"group_by"`
 }
 
@@ -762,23 +771,69 @@ type BoardGroup string
 // everything (§15), so a state grouping would fight the one ordering rule
 // the board is not allowed to lose.
 const (
-	BoardGroupProject  BoardGroup = "project"
 	BoardGroupWorkflow BoardGroup = "workflow"
+	// BoardGroupProject is deprecated (task 132.9): no longer a level, only
+	// recognized so a load can strip it with a warning rather than refuse a
+	// file every earlier version bootstrapped.
+	BoardGroupProject BoardGroup = "project"
 )
+
+// GroupByProjectDeprecation is the warning a load reports when it strips the
+// deprecated project level from tui.board.group_by, and the reason a write
+// that sets it is refused with.
+const GroupByProjectDeprecation = "tui.board.group_by: `project` is ignored since the TUI " +
+	"shows one project at a time; remove it from config.yaml"
+
+// HasDeprecatedGroup reports whether a group_by list names the deprecated
+// project level. PATCH /v1/config refuses a patch whose own group_by does
+// (task 132 decision 46), while the file it patches is decoded leniently.
+func HasDeprecatedGroup(levels []string) bool {
+	for _, l := range levels {
+		if BoardGroup(l) == BoardGroupProject {
+			return true
+		}
+	}
+	return false
+}
+
+// stripDeprecatedGroups removes the project level from a loaded group_by and
+// reports whether it did. A literal strip, not a reset to the default:
+// `[project]` becomes `[]`, the flat table it already rendered as on a board
+// scoped to one project (task 132 decision 47). A level listed twice is left
+// alone — that is malformed, not legacy, and validate says so.
+func (b *BoardView) stripDeprecatedGroups() bool {
+	n := 0
+	for _, g := range b.GroupBy {
+		if g == BoardGroupProject {
+			n++
+		}
+	}
+	if n != 1 {
+		return false
+	}
+	kept := make([]BoardGroup, 0, len(b.GroupBy)-1)
+	for _, g := range b.GroupBy {
+		if g != BoardGroupProject {
+			kept = append(kept, g)
+		}
+	}
+	b.GroupBy = kept
+	return true
+}
 
 func (b BoardView) validate() error {
 	seen := make(map[BoardGroup]bool, len(b.GroupBy))
 	for _, g := range b.GroupBy {
-		switch g {
-		case BoardGroupProject, BoardGroupWorkflow:
-		default:
-			return fmt.Errorf(
-				"tui.board.group_by: unknown level %q; want project or workflow, or [] for a flat table", g)
-		}
 		if seen[g] {
 			return fmt.Errorf("tui.board.group_by: %q listed twice", g)
 		}
 		seen[g] = true
+	}
+	for _, g := range b.GroupBy {
+		if g != BoardGroupWorkflow {
+			return fmt.Errorf(
+				"tui.board.group_by: unknown level %q; want workflow, or [] for a flat table", g)
+		}
 	}
 	return nil
 }
@@ -958,7 +1013,7 @@ func Default() Config {
 		Container: Container{Runtime: "docker", MountAgentConfig: true, Network: true},
 		TUI: TUI{
 			Board: BoardView{
-				GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow},
+				GroupBy: []BoardGroup{BoardGroupWorkflow},
 			},
 			// normal is the level every version before task 129.11 opened
 			// at, so an absent key changes nothing.
@@ -1002,6 +1057,14 @@ func decode(raw []byte, lenient bool) (Config, error) {
 	cfg := Default()
 	if err := yaml.UnmarshalWithOptions(raw, &cfg, yaml.DisallowUnknownField()); err != nil {
 		return Config{}, fmt.Errorf("parse: %w", err)
+	}
+	// Stripped on every path, Decode's included: almost every upgraded
+	// installation's file still carries the bootstrapped `[project,
+	// workflow]`, and refusing the whole candidate would block every
+	// unrelated PATCH. A write that sets the level itself is refused by the
+	// API instead (task 132 decision 46).
+	if cfg.TUI.Board.stripDeprecatedGroups() {
+		cfg.deprecations = append(cfg.deprecations, GroupByProjectDeprecation)
 	}
 	if err := cfg.validate(lenient); err != nil {
 		return Config{}, fmt.Errorf("invalid config: %w", err)
@@ -1121,7 +1184,9 @@ func (c Config) validate(lenient bool) error {
 // A key that is merely unreachable is not an invalid one, and failing the load
 // over it would revert every unrelated edit in the same save (§12.3).
 func (c Config) Warnings() []string {
-	var out []string
+	// What decode stripped from the file (task 132.9): it loaded, but the
+	// bytes still ask for something no longer offered.
+	out := append([]string(nil), c.deprecations...)
 	// A silent no-op key is worse than a line in the log: the remote leg runs
 	// only after a local delete that succeeded (§10, task 008), so this pair
 	// asks for something that cannot happen.

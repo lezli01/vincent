@@ -546,6 +546,67 @@ func TestConfigPatchRefusesABadKeymap(t *testing.T) {
 	}
 }
 
+// The deprecated project level of tui.board.group_by (task 132.9) is refused
+// when the patch sets it, with the key named and the file untouched.
+func TestConfigPatchRefusesTheProjectGroupLevel(t *testing.T) {
+	for _, body := range []string{
+		`{"tui":{"board":{"group_by":["project"]}}}`,
+		`{"tui":{"board":{"group_by":["project","workflow"]}}}`,
+	} {
+		h := newConfigHarness(t)
+		before := h.bytes(t)
+		resp, out := h.patch(t, body)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("%s: status = %d, want 400 (body %s)", body, resp.StatusCode, out)
+		}
+		var env errorBody
+		if err := json.Unmarshal(out, &env); err != nil || env.Error.Code != CodeValidationFailed {
+			t.Fatalf("%s: want the snake_case validation envelope, got %s", body, out)
+		}
+		for _, want := range []string{"tui.board.group_by", "project", "one project at a time"} {
+			if !strings.Contains(env.Error.Message, want) {
+				t.Errorf("%s: message %q does not say %q", body, env.Error.Message, want)
+			}
+		}
+		if !bytes.Equal(before, h.bytes(t)) {
+			t.Errorf("%s: a refused group_by changed config.yaml", body)
+		}
+		if h.applied.Load() != 0 {
+			t.Errorf("%s: a refused group_by was applied", body)
+		}
+	}
+}
+
+// A file bootstrapped before task 132.9 still says `group_by: [project,
+// workflow]`. A patch of an unrelated key must land (task 132 decision 46):
+// the line it never touched stays as written, and the config served and put
+// into force has the level stripped.
+func TestConfigPatchLeavesALegacyGroupByLineAlone(t *testing.T) {
+	h := newConfigHarness(t)
+	const legacy = "    group_by: [project, workflow]\n"
+	src := strings.Replace(string(h.bytes(t)), "    group_by: [workflow]\n", legacy, 1)
+	if !strings.Contains(src, legacy) {
+		t.Fatal("the template has no group_by line to make legacy")
+	}
+	if err := os.WriteFile(h.path, []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	resp, out := h.patch(t, `{"log_level":"debug"}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, out)
+	}
+	if got := string(h.bytes(t)); !strings.Contains(got, legacy) || !strings.Contains(got, "log_level: debug") {
+		t.Errorf("config.yaml after the patch:\n%s", got)
+	}
+	var answered configResponse
+	if err := json.Unmarshal(out, &answered); err != nil {
+		t.Fatalf("parse patch response: %v", err)
+	}
+	if got := answered.TUI.Board.GroupBy; !reflect.DeepEqual(got, []string{"workflow"}) {
+		t.Errorf("served group_by = %v, want [workflow]", got)
+	}
+}
+
 // max_tree_cost_usd is served, written into config.yaml and put into force
 // (task 116), on all three legs for usage_limit_auto_continue's reason. Zero
 // goes through the same path as any other value: it is how a client turns the
