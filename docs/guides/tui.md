@@ -3110,7 +3110,7 @@ Global bindings — active whenever the focused surface is not capturing text:
 | `?` | Toggle help |
 | `f1` | Toggle help, also while a text field has the keyboard |
 | `tab` / `shift+tab` | Move between task tabs; on the board filter, commit it |
-| `!` | Jump to the next task that needs you — awaiting input, awaiting approval or blocked |
+| `!` | Jump to the next task that needs you — awaiting input, awaiting approval or blocked; then the next project's |
 | `n` | New task |
 | `@` | [Switch project](#switching-project) |
 | `M` | Toggle the mouse |

@@ -248,7 +248,7 @@ func TestPaletteGlobalRowsActFromAChat(t *testing.T) {
 		// handed to the field that would type it.
 		m, v := chatWithDraft(t)
 		m.phase = phaseReconnecting
-		runPaletteRow(t, m, "jump to the next task that needs you — awaiting input, awaiting approval or blocked")
+		runPaletteRow(t, m, "jump to the next task that needs you — awaiting input, awaiting approval or blocked; then the next project's")
 		if got := v.composer.Value(); got != "hello" {
 			t.Fatalf("the ! row typed into the draft: %q", got)
 		}

@@ -333,7 +333,7 @@ var bindings = []binding{
 	// is — `?`'s own row already runs help from the palette.
 	{op: keymap.HelpAlt, key: helpAltKey, label: "toggle this help (works while a text field has the keyboard)", scope: scopeGlobal, noPalette: true},
 	{key: "tab", label: "move to the next task tab (shift+tab goes back)", scope: scopeGlobal},
-	{op: keymap.NextAttention, key: "!", label: "jump to the next task that needs you — awaiting input, awaiting approval or blocked", scope: scopeGlobal},
+	{op: keymap.NextAttention, key: "!", label: "jump to the next task that needs you — awaiting input, awaiting approval or blocked; then the next project's", scope: scopeGlobal},
 	{op: keymap.Mouse, key: "M", label: "toggle the mouse (native text selection needs it off — or shift-drag)", scope: scopeGlobal},
 	// The project switch (task 132 decision 3). A global row, so the palette
 	// lists it and running it from a chat opens the picker rather than typing

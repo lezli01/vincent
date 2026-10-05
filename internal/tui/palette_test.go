@@ -203,7 +203,7 @@ func TestPaletteSearchNarrowsAndEscCloses(t *testing.T) {
 func TestHelpRendersFromRegistry(t *testing.T) {
 	got := helpText(ctxTasks, true, helpState{})
 	for _, want := range []string{
-		"jump to the next task that needs you — awaiting input, awaiting approval or blocked",
+		"jump to the next task that needs you — awaiting input, awaiting approval or blocked; then the next project's",
 		"open the command palette",
 		"open the selected task",
 		"filter by id",
