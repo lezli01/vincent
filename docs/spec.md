@@ -13247,9 +13247,11 @@ ordering guard only. The root's one `/v1/events` stream stays unfiltered
 `project_id` names another project before its own event-type test, and a
 note carrying no project (`task.github_pull_changed`,
 `task.children_changed`, `agent.quota_changed`,
-`workflow.registry_changed`, …) still reaches every view. The bell and the
-attention fold-open on the board read every note, before the filter
-(decision 2). The chats boards refetch through the same 150 ms debounce
+`workflow.registry_changed`, …) still reaches every view. The board is the
+exception and filters no note: its live listing stays global (decision 17)
+and is the source of the attention count, `!` and `H` (decision 2), so a
+task event from any project refetches it, and the bell and the attention
+fold-open read every note. The chats boards refetch through the same 150 ms debounce
 window as every other list.
 
 **The startup project (task 132.3, issue #697, added 2026-10-05).** This

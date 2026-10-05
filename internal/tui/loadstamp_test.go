@@ -327,10 +327,6 @@ func TestForeignEventsDoNotRefetch(t *testing.T) {
 		pending func(panel) bool
 	}{
 		{
-			"board", "task.state_changed", func() panel { return scoped(newBoard(), sel) },
-			func(p panel) bool { return p.(*board).refreshPending },
-		},
-		{
 			"issues", "issue.created", func() panel { return scoped(newIssuesView(), sel) },
 			func(p panel) bool { return p.(*issuesView).refreshWait },
 		},
@@ -363,6 +359,20 @@ func TestForeignEventsDoNotRefetch(t *testing.T) {
 				t.Fatal("an event for the selected project did not open a refetch window")
 			}
 		})
+	}
+}
+
+// TestBoardRefetchesForeignTaskEvents: the board's live listing is global
+// (task 132 decision 17) and feeds the attention count, `!` and `H`, so a
+// task event from a project other than the selected one still refetches it.
+func TestBoardRefetchesForeignTaskEvents(t *testing.T) {
+	sel := projectSel{id: 2, name: "b"}
+	for _, typ := range []string{"task.state_changed", "task.created"} {
+		b := scoped(newBoard(), sel)
+		b.update(eventNote(typ, pid(1)))
+		if !b.refreshPending {
+			t.Errorf("a %s for another project did not refetch the board", typ)
+		}
 	}
 }
 

@@ -202,6 +202,11 @@ so that "131.n" in #693–#711 is not mistaken for task 131's items.
 The root keeps its one unfiltered event stream and each view drops notes for
 other projects (132.5).
 
+*Note (2026-10-05):* the board is the exception. Its live listing stays
+global by decision 17 and feeds the attention count, `!` and `H`, so it
+drops no note: a task event from any project refetches it (review F1 on
+#718).
+
 *Alternative beaten:* resubscribing with `?project_id=` on each switch. It
 loses the events that carry no project (`task.github_pull_changed`,
 `task.children_changed`, `agent.quota_changed`, `workflow.registry_changed`,

@@ -625,12 +625,11 @@ func (b *board) updateNote(n apiclient.Note) tea.Cmd {
 	if id, ok := enteredAwaitingInput(ev.Event); ok && b.expandFor(id) {
 		cmds = append(cmds, b.saveFolds())
 	}
-	// The bell and the fold above answer to every project (task 132
-	// decision 2); what follows reloads this board, which a note for
-	// another project does not (decision 16).
-	if !forProject(ev.Event, b.project.id) {
-		return tea.Batch(cmds...)
-	}
+	// The board is the one project-bearing view outside forProject's
+	// filter (task 132 decision 16): its live listing stays global for good
+	// (decision 17), and that listing is the source of the attention count,
+	// `!` and `H` (decision 2), so a task event from any project must still
+	// refetch it. What is drawn for the selection is filtered in memory.
 	// A linked chat opening or closing changes a row's `open_chat_id` and
 	// available_actions without a task event (task 119).
 	if _, lock := lockEventTask(ev.Event); isTaskEvent(ev.Event.Type) || lock {
