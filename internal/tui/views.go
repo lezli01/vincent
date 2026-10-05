@@ -116,6 +116,39 @@ type clientAware interface {
 	setClient(*apiclient.Client) tea.Cmd
 }
 
+// projectSel is the TUI's one selected project (task 132, spec §15): owned
+// by the root, client-side, and never a daemon fact. id 0 is "no project".
+// name rides along so the header and a view's title need no lookup.
+type projectSel struct {
+	id   int64
+	name string
+}
+
+// projectScoped is implemented by every project-bearing view. The root calls
+// setProject on each one directly — never through broadcast, which would make
+// the selection depend on which view happened to be listening — whenever the
+// selection changes, and again right after setClient, so a view connected
+// late still learns it. It is an optional interface, for clientAware's
+// reason: the projects overview and the daemon view are not project-bearing
+// and would only implement it meaninglessly (task 132.2).
+type projectScoped interface {
+	setProject(projectSel) tea.Cmd
+}
+
+// projectScope is the projectScoped implementation every project-bearing
+// view embeds. It only stores the selection: what a view does with it — and
+// whether a switch refetches — is each view's own later item (task 132.6,
+// 132.8–132.13), so until then no view's content changes.
+type projectScope struct {
+	project projectSel
+}
+
+//nolint:unparam // projectScoped's signature: a view that refetches on a switch (132.6) returns its load
+func (s *projectScope) setProject(p projectSel) tea.Cmd {
+	s.project = p
+	return nil
+}
+
 // newViews returns the initial view set. ctx bounds background work a view
 // owns — the detail sub-model's per-task subscription. links is the session's
 // `tui.hyperlinks`, which the root fills from the daemon's config (task 111).

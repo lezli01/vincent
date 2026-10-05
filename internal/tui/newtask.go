@@ -160,6 +160,10 @@ type kv struct {
 
 // newTask is the §15 new-task flow.
 type newTask struct {
+	// projectScope is the root's selected project (task 132.2), stored for
+	// the item that scopes this view to it.
+	projectScope
+
 	client *apiclient.Client
 	// exec runs $EDITOR. Injected so tests drive the description path
 	// without a terminal, the same seam edit+retry uses.
@@ -689,16 +693,16 @@ func (n *newTask) selectDefaultProject() {
 	}
 	for _, p := range n.projects {
 		if p.ID == n.hintProject {
-			n.setProject(p)
+			n.chooseProject(p)
 			return
 		}
 	}
 	if len(n.projects) == 1 {
-		n.setProject(n.projects[0])
+		n.chooseProject(n.projects[0])
 	}
 }
 
-func (n *newTask) setProject(p apiclient.Project) {
+func (n *newTask) chooseProject(p apiclient.Project) {
 	n.projectID = p.ID
 	n.branch.SetValue(p.DefaultBranch)
 }

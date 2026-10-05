@@ -72,6 +72,10 @@ type wfLine struct {
 
 // workflowsView is §15's view 5: the merged registry, live.
 type workflowsView struct {
+	// projectScope is the root's selected project (task 132.2), stored for
+	// the item that scopes this view to it.
+	projectScope
+
 	client *apiclient.Client
 	exec   execFunc
 	now    func() time.Time
@@ -164,7 +168,7 @@ func (w *workflowsView) loadCmd() tea.Cmd {
 			if err != nil {
 				block.err = err
 			} else {
-				block.entries = projectScoped(entries)
+				block.entries = ownEntries(entries)
 				sortEntries(block.entries)
 			}
 			blocks = append(blocks, block)
@@ -173,10 +177,10 @@ func (w *workflowsView) loadCmd() tea.Cmd {
 	}
 }
 
-// projectScoped keeps the entries a project owns. The rest of the response
+// ownEntries keeps the entries a project owns. The rest of the response
 // is the global registry as that project sees it, already in the global
 // block.
-func projectScoped(entries []apiclient.WorkflowEntry) []apiclient.WorkflowEntry {
+func ownEntries(entries []apiclient.WorkflowEntry) []apiclient.WorkflowEntry {
 	out := make([]apiclient.WorkflowEntry, 0, len(entries))
 	for _, e := range entries {
 		if e.Scope == scopeProject {

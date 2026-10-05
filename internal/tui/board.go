@@ -113,6 +113,10 @@ type (
 
 // board is the §15 home view: every task, live.
 type board struct {
+	// projectScope is the root's selected project (task 132.2), stored for
+	// the item that scopes this view to it.
+	projectScope
+
 	client *apiclient.Client
 	// now is injected so elapsed rendering is deterministic under test.
 	now func() time.Time

@@ -25,7 +25,7 @@ func branchForm(t *testing.T) *newTask {
 	n := loadedForm(t)
 	// loadedForm holds two projects and no hint, so the row is deliberately
 	// left empty; the branch listing is project-scoped, so pick one first.
-	n.setProject(n.projects[0])
+	n.chooseProject(n.projects[0])
 	n.update(ntBranchesMsg{projectID: n.projectID, branches: liveBranches()})
 	return n
 }
@@ -289,7 +289,7 @@ func TestHandoffDraftOpensNoBranchPicker(t *testing.T) {
 // error above a free-text row.
 func TestBranchListingFailureLeavesTheRowTypeable(t *testing.T) {
 	n := loadedForm(t)
-	n.setProject(n.projects[0])
+	n.chooseProject(n.projects[0])
 	n.update(ntBranchesMsg{projectID: n.projectID, err: errors.New("project path is gone")})
 	if n.branchesErr == "" {
 		t.Fatal("a failed listing left no message to show")

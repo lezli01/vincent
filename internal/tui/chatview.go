@@ -92,6 +92,10 @@ type (
 
 // chatView is the workspace.
 type chatView struct {
+	// projectScope is the root's selected project (task 132.2), stored for
+	// the item that scopes this view to it.
+	projectScope
+
 	client *apiclient.Client
 	now    func() time.Time
 
