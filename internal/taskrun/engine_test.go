@@ -24,6 +24,7 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/testrepo"
+	"github.com/lezli01/vincent/internal/testutil/wait"
 	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
 )
@@ -86,7 +87,14 @@ func newEngineHarnessWith(
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	t.Cleanup(func() { _ = st.Close() })
+	// Surfaced rather than discarded: a Close that fails leaves test.db open,
+	// and on Windows TempDir's RemoveAll then fails on it with no clue why
+	// (issue #732).
+	t.Cleanup(func() {
+		if err := st.Close(); err != nil {
+			t.Errorf("close store: %v", err)
+		}
+	})
 
 	git := gitx.New()
 	repo := testrepo.Init(t, "main")
@@ -146,7 +154,20 @@ func (h *engineHarness) start(t *testing.T) {
 	h.runner.Start(t.Context())
 	sched.Start(t.Context())
 	h.sched = sched
-	t.Cleanup(h.runner.Stop)
+	t.Cleanup(func() {
+		h.runner.Stop()
+		// Stop gives up after stopGrace, and a loaded Windows runner can
+		// overrun it; an actor still alive holds a pooled connection, so the
+		// store's Close and TempDir's RemoveAll that run next would race it
+		// (issue #732). Wait the actors out instead.
+		done := make(chan struct{})
+		go func() { h.runner.wg.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(wait.Timeout(time.Minute)):
+			t.Errorf("task actors still running a minute after Runner.Stop")
+		}
+	})
 	t.Cleanup(sched.Stop)
 }
 
