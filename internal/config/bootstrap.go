@@ -35,10 +35,16 @@ max_parallel_tasks: 3
 # Fallback step timeouts, used when a workflow step declares none.
 # input_timeout bounds each wait for an answer to an agent's input request
 # (awaiting_input, §7.4); on expiry the attempt fails under the retry policy.
+# background_wait is how long an agent run stays open after the agent ends a
+# turn on work it left running in the background — a test suite, a CI watch —
+# so the work can finish and wake it. It counts against agent_timeout; when
+# it lapses the run ends on the agent's last answer and the work is stopped.
+# 0 ends every run at the agent's first answer.
 defaults:
   agent_timeout: 60m
   command_timeout: 15m
   input_timeout: 24h
+  background_wait: 30m
 
 # Delete a task's branch when it is archived and carries no commits past the
 # base it was cut from — the branch a workflow that never writes to the

@@ -131,6 +131,7 @@ type configDefaults struct {
 	AgentTimeout   string `json:"agent_timeout"`
 	CommandTimeout string `json:"command_timeout"`
 	InputTimeout   string `json:"input_timeout"`
+	BackgroundWait string `json:"background_wait"`
 }
 
 type agentPath struct {
@@ -273,6 +274,7 @@ func configBody(cfg config.Config) configResponse {
 			AgentTimeout:   cfg.Defaults.AgentTimeout.String(),
 			CommandTimeout: cfg.Defaults.CommandTimeout.String(),
 			InputTimeout:   cfg.Defaults.InputTimeout.String(),
+			BackgroundWait: cfg.Defaults.BackgroundWait.String(),
 		},
 		DeleteEmptyBranchOnArchive:  cfg.DeleteEmptyBranchOnArchive,
 		DeleteRemoteBranchOnArchive: cfg.DeleteRemoteBranchOnArchive,
@@ -435,6 +437,7 @@ type defaultsPatch struct {
 	AgentTimeout   *string `json:"agent_timeout"`
 	CommandTimeout *string `json:"command_timeout"`
 	InputTimeout   *string `json:"input_timeout"`
+	BackgroundWait *string `json:"background_wait"`
 }
 
 type environmentPatch struct {
@@ -555,6 +558,7 @@ func (p configPatch) sets() []config.Set {
 		addIfString(add, "defaults.agent_timeout", d.AgentTimeout)
 		addIfString(add, "defaults.command_timeout", d.CommandTimeout)
 		addIfString(add, "defaults.input_timeout", d.InputTimeout)
+		addIfString(add, "defaults.background_wait", d.BackgroundWait)
 	}
 	addIfBool(add, "delete_empty_branch_on_archive", p.DeleteEmptyBranchOnArchive)
 	addIfBool(add, "delete_remote_branch_on_archive", p.DeleteRemoteBranchOnArchive)

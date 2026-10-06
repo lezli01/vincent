@@ -162,6 +162,12 @@ func configKeys() []configKey {
 			func(s string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{Defaults: &apiclient.ConfigDefaultsPatch{InputTimeout: &s}}
 			}),
+		durationKey("defaults.background_wait", "background wait",
+			"how long a run stays open for background work the agent left running; 0 ends it at the first answer",
+			func(c apiclient.Config) string { return c.Defaults.BackgroundWait },
+			func(s string) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Defaults: &apiclient.ConfigDefaultsPatch{BackgroundWait: &s}}
+			}),
 		boolKey("delete_empty_branch_on_archive", "delete empty branch",
 			"delete an archived task's branch when it carries no commits (§10)",
 			func(c apiclient.Config) bool { return c.DeleteEmptyBranchOnArchive },
@@ -643,6 +649,7 @@ func defaultClientConfig() apiclient.Config {
 			AgentTimeout:   d.Defaults.AgentTimeout.String(),
 			CommandTimeout: d.Defaults.CommandTimeout.String(),
 			InputTimeout:   d.Defaults.InputTimeout.String(),
+			BackgroundWait: d.Defaults.BackgroundWait.String(),
 		},
 		DeleteEmptyBranchOnArchive:  d.DeleteEmptyBranchOnArchive,
 		DeleteRemoteBranchOnArchive: d.DeleteRemoteBranchOnArchive,

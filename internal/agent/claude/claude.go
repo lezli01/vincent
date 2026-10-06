@@ -266,6 +266,7 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 	}
 	r := &run{
 		resuming:   spec.ResumeSessionID != "",
+		bgWait:     spec.BackgroundWait,
 		proc:       proc,
 		stderr:     stderr,
 		stdin:      proc.Stdin(),
@@ -311,6 +312,15 @@ type run struct {
 	// and only the read loop touches it, so it needs no lock.
 	lines streamParser
 
+	// Background work held across a result (task 133, background.go).
+	// bgWait is RunSpec.BackgroundWait; background and hold belong to the
+	// read loop alone. hold is the timer that ends a wait that lapsed: it
+	// closes stdin, which the CLI answers by stopping what is left and
+	// exiting on the answer it already gave.
+	bgWait     time.Duration
+	background backgroundTasks
+	hold       *time.Timer
+
 	events     chan agent.Event
 	readerDone chan struct{}
 	procDone   chan struct{}
@@ -327,7 +337,13 @@ type run struct {
 	resuming bool
 
 	mu       sync.Mutex
-	terminal *agent.RunResult // parsed result event, if any
+	terminal *agent.RunResult // parsed result event, if any — the last one
+	// inputTokens and outputTokens sum every result's usage. A run held open
+	// for background work writes one result per model turn, and each reports
+	// that turn's usage alone, while total_cost_usd is the process's running
+	// total — so cost is read off the last result and tokens are summed
+	// (captured against 2.1.289, task 133).
+	inputTokens, outputTokens int64
 	// sessionID is the last `session_id` claude stamped on a stream line.
 	// Every line carries it, so the last one seen is the session the run
 	// actually ran in — which is what a resumed run must store, since
@@ -389,6 +405,7 @@ func (r *run) readLoop(rd io.Reader) {
 	defer close(r.readerDone)
 	defer close(r.raw)
 	defer r.closeStdin()
+	defer r.stopHold()
 	sc := bufio.NewScanner(rd)
 	sc.Buffer(make([]byte, 64*1024), maxLineBytes)
 	for sc.Scan() {
@@ -402,15 +419,25 @@ func (r *run) readLoop(rd io.Reader) {
 			r.sessionID = sid
 			r.mu.Unlock()
 		}
+		r.background.observe(line)
 		ev := r.parseStreamLine(line)
-		if ev.Type == agent.EventResult && ev.Result != nil {
+		switch {
+		case ev.Type == agent.EventResult && ev.Result != nil:
 			r.mu.Lock()
 			res := *ev.Result
 			r.terminal = &res
+			r.inputTokens += res.InputTokens
+			r.outputTokens += res.OutputTokens
 			r.mu.Unlock()
-			// Single-turn semantics: with stdin retained the CLI would wait
-			// for another user message after the result — end the session.
-			r.closeStdin()
+			r.endTurn()
+		case (ev.Type == agent.EventOutput || ev.Type == agent.EventToolUse) && ev.ParentCallID == "":
+			// The main loop is at work again — a held run's background work
+			// finished and the CLI woke the model. The window measures
+			// waiting, not working, so it stops here and restarts at this
+			// turn's result; a lapse mid-turn would cut the turn the wait was
+			// kept for. A background subagent's own lines carry its call and
+			// are the work being waited on, so they leave the window running.
+			r.stopHold()
 		}
 		r.raw <- ev
 	}
@@ -463,6 +490,32 @@ func (r *run) parseStreamLine(line []byte) agent.Event {
 		return agent.Event{Type: agent.EventUnknown, Raw: line}
 	default:
 		return r.lines.parse(line)
+	}
+}
+
+// endTurn decides, at a result, whether the run ends here. A run with no
+// background work outstanding ends: with stdin retained the CLI would wait
+// for another user message, so the session is closed. One with work still
+// out stays open for BackgroundWait, so the CLI can wake the model when the
+// work finishes (task 133); a zero wait, or a plain run with no stdin to
+// keep, ends at the first result as every run once did.
+func (r *run) endTurn() {
+	if r.background.outstanding() == 0 || r.bgWait <= 0 || r.stdin == nil {
+		r.stopHold()
+		r.closeStdin()
+		return
+	}
+	if r.hold == nil {
+		r.hold = time.AfterFunc(r.bgWait, r.closeStdin)
+		return
+	}
+	r.hold.Reset(r.bgWait)
+}
+
+// stopHold stops a background wait's timer, if one is running.
+func (r *run) stopHold() {
+	if r.hold != nil {
+		r.hold.Stop()
 	}
 }
 
@@ -550,14 +603,15 @@ func (r *run) Wait() (agent.RunResult, error) {
 		res := agent.RunResult{ExitCode: exitCode}
 		r.mu.Lock()
 		terminal, streamErr, sessionID := r.terminal, r.streamErr, r.sessionID
+		inputTokens, outputTokens := r.inputTokens, r.outputTokens
 		r.mu.Unlock()
 		res.SessionID = sessionID
 		if terminal != nil {
 			res.IsError = terminal.IsError
 			res.ErrorMessage = terminal.ErrorMessage
 			res.ResultText = terminal.ResultText
-			res.InputTokens = terminal.InputTokens
-			res.OutputTokens = terminal.OutputTokens
+			res.InputTokens = inputTokens
+			res.OutputTokens = outputTokens
 			res.CostUSD = terminal.CostUSD
 		} else {
 			res.IsError = true

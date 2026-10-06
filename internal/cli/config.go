@@ -181,6 +181,10 @@ func configFields() map[string]configField {
 			func(v *string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{Defaults: &apiclient.ConfigDefaultsPatch{InputTimeout: v}}
 			}),
+		"defaults.background_wait": str(func(c apiclient.Config) string { return c.Defaults.BackgroundWait },
+			func(v *string) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Defaults: &apiclient.ConfigDefaultsPatch{BackgroundWait: v}}
+			}),
 		"delete_empty_branch_on_archive": boolField(
 			func(c apiclient.Config) bool { return c.DeleteEmptyBranchOnArchive },
 			func(b *bool) apiclient.ConfigPatch { return apiclient.ConfigPatch{DeleteEmptyBranchOnArchive: b} }),

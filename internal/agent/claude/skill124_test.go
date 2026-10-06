@@ -404,6 +404,12 @@ func TestFixtureEventTypesArePinned(t *testing.T) {
 		skillPermissionFixture: "run_header tool_use unknown unknown tool_result skill tool_use tool_result output unknown result",
 		contextBlocksFixture:   "run_header unknown unknown unknown output unknown result",
 		resetFixture:           "conversation_reset run_header result",
+		// Task 133: two background shells across two results. The shells'
+		// task lines stay unknown, as task 109 left them; background.go
+		// reads them for itself.
+		"stream_background_2.1.289.jsonl": "run_header unknown unknown unknown tool_use unknown unknown tool_result " +
+			"tool_use unknown unknown unknown tool_result unknown unknown unknown output result unknown unknown unknown " +
+			"run_header unknown output result unknown unknown unknown",
 	}
 	names, err := filepath.Glob(filepath.Join("testdata", "stream_*.jsonl"))
 	if err != nil {

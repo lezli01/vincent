@@ -146,6 +146,7 @@ the living engineering specification records implementation contracts.
 | [130](130-issues-pillar.md) | The issues pillar: vincent-owned issues per project, tasks created from them, GitHub import and state sync | ✅ done (18/18) |
 | [131](131-versioned-pages-site.md) | A versioned documentation site: latest release by default, older releases and `dev` selectable | ⚠ verification blocked (5/6) |
 | [132](132-project-as-root.md) | Project as root: the TUI scoped to one selected project, with a project overview as the only multi-project view | 🔄 in progress (15/18) |
+| [133](133-background-work-across-a-result.md) | Background work across a result: keep the claude run open until the work it started finishes | ✅ done (2/2) |
 
 ## How to add and update a task document
 
