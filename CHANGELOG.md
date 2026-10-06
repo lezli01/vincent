@@ -47,7 +47,8 @@ list with the user-facing context a commit subject cannot carry.
   figures stay current while it is open. Type to filter, `enter` switches,
   `esc` closes. The key is the new `project` operation in `tui.keys`; a
   `tui.keys` that already binds `@` keeps its binding, and the picker stays
-  reachable from the palette.
+  reachable from the palette. The project `tui.default_project` names is
+  marked `★` in the picker, beside the selection's `◆`.
 - **A project overview replaces the Projects screen.** The palette's
   **project overview** row, or the project picker's new last row
   **overview & manage…**, opens one table of every project's figures — tasks

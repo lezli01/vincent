@@ -13468,9 +13468,19 @@ running, attention — and only then does the name shorten behind an ellipsis.
 Every refresh is one list call whatever the number of projects: on open, then
 a 150 ms debounced refetch on `task.*`, `issue.*`, `chat.*` and `project.*`
 events while the picker is up, and none while it is closed. An answer that
-lands after the picker closed, or after a newer refetch, is dropped. The
-picker marks only the current project; a marker for `tui.default_project`
-is not drawn yet (task 132 decision 33). *Amended 2026-10-05 (task 132.15,
+lands after the picker closed, or after a newer refetch, is dropped.
+*Amended 2026-10-06 (task 132.18, issue #723):* a `★` in its own two-cell
+column, after the `◆` column, marks the project `tui.default_project` names,
+so a row that is both reads `◆ ★` and a row that is neither keeps two blanks
+there, names aligned. The match is by name and exact, as startup resolves it;
+an unset default, or one naming no registered project, marks no row and says
+nothing in the picker (startup already reports it). Both marks are fixed
+width and never shed: a narrow popup drops figures and then shortens the name.
+The mark follows the root's latest config answer — connect, every reconnect,
+the daemon view's fetch, and a save from the TUI's config editor, which moves
+it in an open picker at once; an edit to `config.yaml` itself shows at the
+next of those, since a hot reload publishes no event (§13.3) and the picker
+does not refetch the config when it opens (task 132 decision 56). *Amended 2026-10-05 (task 132.15,
 issue #709):* below the projects the picker carries one more row,
 "overview & manage…", which opens view 4, the project overview — the only
 multi-project view. It is not a project: the filter neither matches nor hides

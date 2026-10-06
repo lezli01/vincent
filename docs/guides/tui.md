@@ -328,8 +328,9 @@ beside it rather than silently subtracted.
 `@` opens the project picker over whatever is on screen — or click the header's
 `◆` segment, or run **switch project** from the palette, which is the way in
 from a chat's composer, where `@` mentions a file. It lists every registered
-project, the selected one marked `◆`, each with the figures that say where work
-is waiting:
+project, the selected one marked `◆` and the one `tui.default_project` names
+marked `★` (a row can carry both), each with the figures that say where work is
+waiting:
 
 ![The project picker over the board](../assets/tui-project-picker.png)
 
@@ -343,7 +344,10 @@ is waiting:
 
 The figures follow the daemon while the picker is up. On a narrow terminal they
 drop from the end — issues, then active, then running, then attention — and the
-name shortens last. A daemon that could not count shows the names alone.
+name shortens last; the `◆` and `★` marks never do. A daemon that could not
+count shows the names alone. Changing `tui.default_project` in the TUI's config
+editor moves the `★` straight away, even with the picker open; an edit to
+`config.yaml` itself shows after the next reconnect.
 
 Below the projects, the last row, **overview & manage…**, opens the
 [project overview](#projects). It is not a project: the filter never hides
