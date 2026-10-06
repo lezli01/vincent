@@ -95,11 +95,11 @@ terminal by [`scripts/screenshots.sh`](scripts/screenshots.sh) against a seeded
 daemon — not a mockup, and not a drawing of one.
 
 <p align="center">
-  <img src="docs/assets/tui-new-task.png" alt="The guided new-task flow at its final review stage, with the six-step plan and a populated task request" width="1000">
+  <img src="docs/assets/tui-new-task.png" alt="The guided new-task flow at its Execution stage, with the six-step plan, the decisions made so far, and the model override list open" width="1000">
 </p>
 
 <p align="center">
-  <em>The guided task flow keeps all six decisions visible while giving the active review stage room to breathe.</em>
+  <em>The guided task flow keeps all six decisions visible while giving the active stage room to breathe.</em>
 </p>
 
 <p align="center">

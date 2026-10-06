@@ -413,6 +413,12 @@ list with the user-facing context a commit subject cannot carry.
   still authenticates every call, and the shared `/mcp` endpoint keeps its
   DNS-rebinding check.
   ([#729](https://github.com/lezli01/vincent/issues/729))
+- **The docs show the TUI one project at a time.** Every TUI screenshot is
+  recaptured on the project-scoped screens, and the quickstart and FAQ no
+  longer say the board lists every task: it lists the selected project's,
+  and a task waiting on you in another project is counted in the header's
+  `(! N elsewhere)` badge, with `!` crossing to it.
+  ([#710](https://github.com/lezli01/vincent/issues/710))
 
 ## [0.11.0](https://github.com/lezli01/vincent/compare/v0.10.1...v0.11.0) (2026-10-01)
 

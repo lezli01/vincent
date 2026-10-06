@@ -1,6 +1,6 @@
 # 132 — Project as root: the TUI scoped to one selected project
 
-**Status:** 🔄 in progress (16/18)
+**Status:** 🔄 in progress (17/18)
 
 Issue [#694](https://github.com/lezli01/vincent/issues/694), part of
 [#693](https://github.com/lezli01/vincent/issues/693). Spec §3 (the new row
@@ -915,9 +915,9 @@ its own pull request.
   board header. Depends: 132.6, 132.8. Decisions 52–55. ✓ 2026-10-05
 - [x] **132.15** ([#709](https://github.com/lezli01/vincent/issues/709)) The
   overview replaces view 4 (Projects). Depends: 132.4. Decisions 42–45.
-- [ ] **132.16** ([#710](https://github.com/lezli01/vincent/issues/710))
+- [x] **132.16** ([#710](https://github.com/lezli01/vincent/issues/710))
   Project-aware `scripts/screenshots.sh` and a full recapture. Depends:
-  132.2–132.15, 132.18; #692 (merged, so already met).
+  132.2–132.15, 132.18; #692 (merged, so already met). ✓ 2026-10-06
 - [ ] **132.17** ([#711](https://github.com/lezli01/vincent/issues/711)) The
   human walkthrough record, and the m3 and task 129 amendments. Depends:
   132.16.

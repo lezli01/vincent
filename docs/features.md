@@ -427,10 +427,9 @@ In detail:
   a shell, `vincent issue` lists, shows, files, edits, comments on, closes,
   reopens and deletes them.
 
-  ![The issues screen listing every issue, open and closed, grouped by
-  project: local issues on api and platform-infra with their labels and
-  kinds, one closed as not planned, and three issues imported from
-  acme/web, one of which has an unsettled task](assets/tui-issues.png)
+  ![The issues screen listing api's issues, open and closed: three local
+  issues with their labels and kinds, one closed as not
+  planned](assets/tui-issues.png)
 - The workflow graph visualizes parallel groups, fan-out lanes and merges,
   the `needs:` edges between lanes and the waves they run in, conditions,
   loops, guards, checks, and nested includes — and, on a task's own Workflow

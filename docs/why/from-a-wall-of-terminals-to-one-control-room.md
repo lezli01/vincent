@@ -12,10 +12,12 @@ Vincent's TUI is designed around workloads rather than sessions.
 
 ![The full-screen task board](../assets/tui-board.png)
 
-The board shows every task's state, current step, elapsed time, reported cost
-when available, and the status message supplied by the running step. Filtering
-and grouping answer operational questions such as “what is blocked?” or “which
-project is consuming the queue?” without visiting every process individually.
+The board shows the selected project's tasks: each one's state, current step,
+elapsed time, reported cost when available, and the status message supplied by
+the running step. Filtering and grouping answer operational questions such as
+“what is blocked?” without visiting every process individually, and the project
+overview answers “which project is consuming the queue?” with every project's
+figures side by side.
 
 Opening a task gives its steps, metadata, output, and diff separate full-screen
 tabs. A failed attempt remains visible after a retry. The diff is another tab on the same task,

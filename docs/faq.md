@@ -169,7 +169,9 @@ the per-project cap, and raise the task's priority to move it up the queue.
 ### A task is stuck in `awaiting_input`
 
 An agent asked you something. It is pinned to the top of the board with a badge —
-press `enter` on the row to answer. Note that `awaiting_input` **holds a
+press `enter` on the row to answer. When the task is in another project than the
+one selected, it is counted in the header's `(! N elsewhere)` badge instead, and
+`!` crosses to it. Note that `awaiting_input` **holds a
 concurrency slot**, because the agent process is alive mid-step. Set
 `on_input: deny` on workflows that must stay unattended.
 

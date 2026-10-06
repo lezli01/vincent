@@ -425,8 +425,9 @@ The rows are **grouped by workflow** out of the box. There is no project
 level: the board shows one project at a time, so grouping by it would draw
 nothing.
 
-![The board grouped by project and then by workflow, each header carrying its
-task count and its needs-attention badge](../assets/tui-grouping.png)
+![api's board grouped by workflow — feature-pr, platform-upgrade,
+verify-build, feature-delivery and docs-refresh — each header carrying its
+task count, and feature-pr its needs-attention badge](../assets/tui-grouping.png)
 
 - The header shows the group's task count, and the needs-attention badge when
   it holds any — a group can never be the reason you missed something waiting.
@@ -509,8 +510,8 @@ While anything is selected, a `✓` appears beside those rows, the panel title
 counts them (`Tasks — 5 selected`), and the **action keys act on the whole
 selection**:
 
-![Every row selected, the panel title reading "Tasks — 13 selected", and the
-action bar offering each action with the number of selected tasks it can move](../assets/tui-multi-select.png)
+![Every row of api's board selected, the panel title reading "Tasks — 5
+selected", and the action bar offering each action with the number of selected tasks it can move](../assets/tui-multi-select.png)
 
 The count beside each key is how many of the selected tasks that action can
 actually move — an action shows up when *some* selected task accepts it, and the
@@ -1856,10 +1857,9 @@ closed, such as `closed · not planned`), the title, its labels and kind,
 `●` while one of them is still unsettled. Any change to an issue or to a task
 re-lists the screen with no keypress.
 
-![The issues list scoped to all issues, grouped by project: api's three local
-issues, one closed as not planned; web's three issues imported from acme/web,
-#142 carrying one unsettled task; and platform-infra's two local
-issues](../assets/tui-issues.png)
+![The issues list on api, scoped to all issues: its three local issues with
+their labels and kinds, one of them closed as not
+planned](../assets/tui-issues.png)
 
 | Key | Does |
 |---|---|
@@ -2262,9 +2262,9 @@ the task board, so they get a board of their own: one row per conversation, with
 its id, state, agent, last activity and title. The board lists the
 [selected project](#switching-project)'s chats only, in one flat list.
 
-![The chats board grouped by project: a chat waiting on you sorted to the top
-and counted in the header badge, a running turn with its glyph beside the
-`running` label, and two finished conversations](../assets/tui-chats.png)
+![api's chats board: a chat waiting on you sorted to the top and counted in the
+header badge, a running turn with its glyph beside the `running` label, and a
+finished conversation](../assets/tui-chats.png)
 
 There are no group headings and nothing to fold: every row is in the same
 project, and a chat runs no workflow, so `g` is not offered here either.
@@ -2631,13 +2631,13 @@ keeps its window and filter. There is no key of
 its own for either — the palette is how you get there, which is the pattern
 every takeover but new task follows.
 
-![The archived tasks board over its default window of the last 7 days: three
-archived tasks, grouped by project and workflow like the live
+![platform-infra's archived tasks board over its default window of the last 7
+days: three archived tasks, grouped by workflow like the live
 board](../assets/tui-archived.png)
 
-![The archived chats board: four finished conversations grouped by project —
-two archived, and two closed chats that were opened on task #1, each saying so
-ahead of its title](../assets/tui-archived-chats.png)
+![api's archived chats board: three finished conversations — one archived, and
+two closed chats that were opened on task #1, each saying so ahead of its
+title](../assets/tui-archived-chats.png)
 
 `enter` opens the row's workspace. It is **read-only for free**: an archived
 task offers no `available_actions`, and every action key is gated on those, so
@@ -2687,8 +2687,8 @@ The global switch is [`triggers`](../reference/configuration.md#triggers); read
 [what a trigger lets someone else do](../security-model.md#event-triggers-let-someone-else-start-an-agent)
 before turning one on.
 
-![The triggers screen: an armed command trigger selected above a disabled GitHub
-issues trigger, with its delivery ledger listing two seeded events](../assets/tui-triggers.png)
+![The triggers screen on api: its armed command trigger selected, with its
+delivery ledger listing two seeded events](../assets/tui-triggers.png)
 
 The list has one row per trigger, broken ones included. Each row shows the id,
 whether the file is enabled, whether it is **armed**, the source and action

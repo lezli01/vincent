@@ -506,3 +506,34 @@ func sortedKeys[V any](m map[string]V) []string {
 	sort.Strings(out)
 	return out
 }
+
+// TestQuickstartStartupOrderMatchesChain holds the quickstart's one-sentence
+// startup order to resolveStartupProject's chain (review F2 on #742): it once
+// went from the working directory straight to the last-used project, so a
+// reader with tui.default_project set was promised the wrong board. --project
+// is left out on purpose — the sentence describes a plain `vincent`.
+func TestQuickstartStartupOrderMatchesChain(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "docs", "getting-started", "quickstart.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.Join(strings.Fields(string(raw)), " ")
+	start := strings.Index(text, "the one you ran it in")
+	if start < 0 {
+		t.Fatal("quickstart no longer says which project the board opens on; update this test with it")
+	}
+	sentence := text[start:]
+	if end := strings.Index(sentence, ";"); end >= 0 {
+		sentence = sentence[:end]
+	}
+	// One phrase per rule after --project, in the chain's order.
+	rules := []string{"ran it in", "`" + whyConfig + "`", "used last", "first by name"}
+	at := 0
+	for _, r := range rules {
+		i := strings.Index(sentence[at:], r)
+		if i < 0 {
+			t.Fatalf("quickstart's startup order %q does not name %q after the rules before it", sentence, r)
+		}
+		at += i + len(r)
+	}
+}
