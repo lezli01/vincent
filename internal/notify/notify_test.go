@@ -16,6 +16,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskstate"
+	"github.com/lezli01/vincent/internal/testutil/wait"
 )
 
 // fakeStore is the two reads a worker makes. It is a fake rather than a real
@@ -147,14 +148,7 @@ func stateEvent(id int64, taskID int64, from, to taskstate.State, extra map[stri
 // on but the effect.
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) {
-		if cond() {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s", what)
+	wait.Until(t, what, cond)
 }
 
 // TestFiresAndDeliversEnvelope is the feature: a matching transition spawns

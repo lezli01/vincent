@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +34,24 @@ const requestTimeout = 10 * time.Second
 // `vincent doctor` must never give. Every other call keeps requestTimeout: a
 // wedged daemon is still caught in ten seconds everywhere it means anything.
 const probeTimeout = 3 * time.Minute
+
+// EnvTimeoutScale names the factor the test suite sets on a loaded CI leg
+// (#731, internal/testutil/wait) so the budgets its tests inherit from here —
+// requestTimeout, and `vincent daemon start`'s health poll — stretch with
+// every other wait in the suite. The e2e tests drive the real binary, so the
+// factor has to be read by production code to reach them at all. Nothing
+// outside the test suite sets it; unset, every default stands.
+const EnvTimeoutScale = "VINCENT_TEST_TIMEOUT_SCALE"
+
+// ScaleTimeout is d multiplied by EnvTimeoutScale's factor, or d itself when
+// the variable is unset or not a positive, finite number.
+func ScaleTimeout(d time.Duration) time.Duration {
+	f, err := strconv.ParseFloat(os.Getenv(EnvTimeoutScale), 64)
+	if err != nil || f <= 0 || math.IsInf(f, 0) {
+		return d
+	}
+	return time.Duration(float64(d) * f)
+}
 
 // Client talks to one vincent daemon. It is safe for concurrent use.
 type Client struct {
@@ -61,7 +81,7 @@ func New(baseURL, token string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		token:   token,
-		rest:    &http.Client{Timeout: requestTimeout, Transport: rt},
+		rest:    &http.Client{Timeout: ScaleTimeout(requestTimeout), Transport: rt},
 		probes:  &http.Client{Timeout: probeTimeout, Transport: rt},
 		stream:  &http.Client{Transport: rt},
 	}

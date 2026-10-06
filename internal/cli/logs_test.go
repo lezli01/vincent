@@ -13,6 +13,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/daemon"
+	"github.com/lezli01/vincent/internal/testutil/wait"
 )
 
 // `vincent daemon logs` is the one data command that needs no daemon: it
@@ -194,14 +195,9 @@ func TestDaemonLogsFollowSurvivesRotation(t *testing.T) {
 // CI runner costs nothing when the condition is already true.
 func waitFor(t *testing.T, cond func() bool, what string) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		if cond() {
-			return
-		}
-		time.Sleep(followPoll / 2)
+	if !wait.Poll(10*time.Second, followPoll/2, cond) {
+		t.Fatalf("timed out waiting for %s", what)
 	}
-	t.Fatalf("timed out waiting for %s", what)
 }
 
 // lockedBuffer is a buffer a follow goroutine writes while the test reads it.

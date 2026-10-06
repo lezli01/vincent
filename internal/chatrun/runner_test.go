@@ -25,6 +25,7 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/testrepo"
+	"github.com/lezli01/vincent/internal/testutil/wait"
 	"github.com/lezli01/vincent/internal/worktree"
 )
 
@@ -130,36 +131,30 @@ func (h *harness) sendAndWait(t *testing.T, chatID int64, prompt string) *store.
 // yet proof that the chat is done.
 func (h *harness) waitIdle(t *testing.T, chatID int64) *store.Chat {
 	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		got, err := h.store.GetChat(t.Context(), chatID)
+	var got *store.Chat
+	wait.UntilWithin(t, 30*time.Second, fmt.Sprintf("chat %d to return to idle", chatID), func() bool {
+		var err error
+		got, err = h.store.GetChat(t.Context(), chatID)
 		if err != nil {
 			t.Fatalf("GetChat: %v", err)
 		}
-		if got.State == chatstate.Idle {
-			return got
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("chat %d never returned to idle", chatID)
-	return nil
+		return got.State == chatstate.Idle
+	})
+	return got
 }
 
 func (h *harness) waitTurn(t *testing.T, turnID int64) *store.ChatTurn {
 	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		got, err := h.store.GetChatTurn(t.Context(), turnID)
+	var got *store.ChatTurn
+	wait.UntilWithin(t, 30*time.Second, fmt.Sprintf("turn %d to finish", turnID), func() bool {
+		var err error
+		got, err = h.store.GetChatTurn(t.Context(), turnID)
 		if err != nil {
 			t.Fatalf("GetChatTurn: %v", err)
 		}
-		if chatstate.TurnTerminal(got.State) {
-			return got
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("turn %d never finished", turnID)
-	return nil
+		return chatstate.TurnTerminal(got.State)
+	})
+	return got
 }
 
 // TestTurnTwoSeesTurnOne is the acceptance criterion of task 063 and the
@@ -438,14 +433,7 @@ func TestAdaptersThatCanResume(t *testing.T) {
 
 func waitFor(t *testing.T, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) {
-		if cond() {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatal("condition never became true")
+	wait.Until(t, "the condition to become true", cond)
 }
 
 // The two clocks (task 067 decision 1). A chat turn gets §7.2's and §7.4's
@@ -549,18 +537,13 @@ func TestTurnTranscriptStopsAtTheCap(t *testing.T) {
 // while a turn is live.
 func (h *harness) waitState(t *testing.T, chatID int64, want chatstate.State) {
 	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
+	wait.UntilWithin(t, 30*time.Second, fmt.Sprintf("chat %d to reach %s", chatID, want), func() bool {
 		got, err := h.store.GetChat(t.Context(), chatID)
 		if err != nil {
 			t.Fatalf("GetChat: %v", err)
 		}
-		if got.State == want {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("chat %d never reached %s", chatID, want)
+		return got.State == want
+	})
 }
 
 // assertSlotFree proves the §11 slot came back: the store no longer counts a

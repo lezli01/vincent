@@ -94,6 +94,13 @@ jobs:
 
       - name: Test (race)
         run: go run mage.go testrace
+        # The tests' wait budgets are sized for a quiet machine; the Windows
+        # race leg is not one (#731). This factor stretches every wait in
+        # internal/testutil/wait, the API client's REST timeout and the
+        # `daemon start` health poll the e2e tests drive. Empty elsewhere,
+        # which the helpers read as 1.
+        env:
+          VINCENT_TEST_TIMEOUT_SCALE: ${{ matrix.os == 'windows-latest' && '3' || '' }}
 
       - name: Build
         run: go run mage.go build

@@ -12,6 +12,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/testrepo"
+	"github.com/lezli01/vincent/internal/testutil/wait"
 )
 
 // TestHumanActionCommands is task 048's done-when, and issue #89's: every §6
@@ -699,14 +700,11 @@ func taskState(t *testing.T, dataDir, cfgDir, id string) string {
 // rather than predicting when it happens.
 func waitForState(t *testing.T, dataDir, cfgDir, id, want string) {
 	t.Helper()
-	deadline := time.Now().Add(90 * time.Second)
 	var last string
-	for time.Now().Before(deadline) {
+	if !wait.Poll(90*time.Second, 250*time.Millisecond, func() bool {
 		last = taskState(t, dataDir, cfgDir, id)
-		if last == want {
-			return
-		}
-		time.Sleep(250 * time.Millisecond)
+		return last == want
+	}) {
+		t.Fatalf("task %s is %s after %s, want %s", id, last, wait.Timeout(90*time.Second), want)
 	}
-	t.Fatalf("task %s is %s after 90s, want %s", id, last, want)
 }

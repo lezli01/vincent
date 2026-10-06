@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/release"
@@ -129,7 +130,10 @@ func newDaemonStartCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			deadline := time.Now().Add(startTimeout)
+			// Scaled only under the test suite's factor (#731); unset, this
+			// is startTimeout.
+			timeout := apiclient.ScaleTimeout(startTimeout)
+			deadline := time.Now().Add(timeout)
 			for time.Now().Before(deadline) {
 				// Match the child pid so a stale daemon.json from a previous
 				// crash can't be mistaken for the daemon we just spawned.
@@ -143,7 +147,7 @@ func newDaemonStartCmd() *cobra.Command {
 				time.Sleep(pollInterval)
 			}
 			return fmt.Errorf("daemon did not become healthy within %s\n--- daemon.log tail ---\n%s",
-				startTimeout, daemon.LogTail(dirs.Data, 20))
+				timeout, daemon.LogTail(dirs.Data, 20))
 		},
 	}
 }

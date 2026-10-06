@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/testutil/wait"
 	"github.com/lezli01/vincent/internal/workflow"
 )
 
@@ -711,16 +712,16 @@ func TestFollowUpRoundIndex(t *testing.T) {
 // which is when a crash is worth simulating.
 func waitForFollowUpRunning(t *testing.T, h *engineHarness, id int64) {
 	t.Helper()
-	deadline := time.Now().Add(60 * time.Second)
-	for time.Now().Before(deadline) {
+	if !wait.Poll(60*time.Second, 20*time.Millisecond, func() bool {
 		for _, r := range followUpRuns(h.stepRuns(t, id), 1) {
 			if r.State == store.StepRunning && r.PID != nil {
-				return
+				return true
 			}
 		}
-		time.Sleep(20 * time.Millisecond)
+		return false
+	}) {
+		t.Fatalf("task %d never started a follow-up", id)
 	}
-	t.Fatalf("task %d never started a follow-up", id)
 }
 
 // indentBody shifts a commandStep block under a `loop`'s `steps:`, which sits

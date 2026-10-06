@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+
+	"github.com/lezli01/vincent/internal/testutil/wait"
 )
 
 // waitFor polls cond until it holds or the deadline passes. Reloads are
@@ -15,14 +17,7 @@ import (
 // a fixed interval.
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if cond() {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s", what)
+	wait.UntilWithin(t, 5*time.Second, what, cond)
 }
 
 func TestWatchGlobalScope(t *testing.T) {

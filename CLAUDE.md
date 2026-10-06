@@ -326,6 +326,11 @@ daemon, no shared fixtures:
   copy of a once-per-process migrated template. Use it for every test store
   that is not testing the migrations themselves: under `-race` the pure-Go
   SQLite makes migrating a new file ~40× slower than opening a copy (#726).
+- `internal/testutil/wait` — the one poll-until-true helper (`wait.Until`,
+  `wait.UntilWithin`, `wait.Poll`) and `wait.Timeout`, which scales a budget
+  by `VINCENT_TEST_TIMEOUT_SCALE` (set to 3 on CI's Windows race leg). Never
+  hand-roll `deadline := time.Now().Add(...)` in a test: a fixed budget is
+  sized for a quiet machine and that leg overruns it (#731).
 - `internal/agent/agenttest` — compiles `cmd/fakeagent` once per test process.
 - `cmd/fakeagent` — scenario-driven stand-in for an agent CLI. Dialect comes from
   argv shape (`exec` first arg ⇒ codex-shaped; `--trust` anywhere ⇒ cursor-shaped;

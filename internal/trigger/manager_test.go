@@ -19,22 +19,16 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/testutil/wait"
 )
 
-// waitTimeout bounds every wait-for-condition here. It is generous because a
-// poll spawns the test binary, which a loaded Windows runner starts slowly; a
-// passing test waits only as long as its condition takes.
-const waitTimeout = 20 * time.Second
-
+// waitFor bounds every wait-for-condition here by wait.Until's budget. It is
+// generous because a poll spawns the test binary, which a loaded Windows
+// runner starts slowly; a passing test waits only as long as its condition
+// takes.
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(waitTimeout)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s", what)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	wait.Until(t, what, cond)
 }
 
 // syncBuffer is a log sink a poller goroutine writes while the test reads.
