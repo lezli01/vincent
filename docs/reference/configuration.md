@@ -1815,8 +1815,11 @@ a line saying so, for example
 
 **It is read at startup only.** Saving it in the config editor, `vincent config
 set` or an edit to the file takes effect at the next launch; a running TUI keeps
-its selection. `PATCH /v1/config` refuses an empty value, so remove the key by
-editing `config.yaml`.
+its selection. Only the [project picker](../guides/tui.md#switching-project)'s
+`★`, which marks the project it names, follows a running change: a save from
+the TUI's config editor moves it at once, any other edit at the next reconnect.
+`PATCH /v1/config` refuses an empty value, so remove the key by editing
+`config.yaml`.
 
 The key is new in this version. A daemon older than it refuses a `config.yaml`
 that sets it.
