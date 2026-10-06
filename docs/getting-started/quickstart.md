@@ -171,9 +171,10 @@ vincent
 ```
 
 That opens the TUI. The board lists the selected project's tasks — the one
-you ran it in, or the first by name; `@` switches — with their state and step
-progress; the detail view below shows the step timeline on the left and the
-live agent output on the right, with a **Diff** tab beside it.
+you ran it in, else the one you used last, else the first by name; `@`
+switches — with their state and step progress. `enter` opens a task in its own
+full-screen workspace, with its **Overview**, live agent **Output** and
+**Diff** as tabs; `esc` returns to the board.
 
 | Key | Does |
 |---|---|
