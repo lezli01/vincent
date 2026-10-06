@@ -151,7 +151,7 @@ and `validation_failed`.
 
 ## CI
 
-`.github/workflows/ci.yml`'s `gates` job runs the scripted leg on Linux, macOS
+`.github/workflows/ci.yml`'s `gate-group` job runs the scripted leg on Linux, macOS
 and Windows as the `068 gate (pull request writes)` step. Windows matters to it
 four ways: `gh` is resolved from the detached daemon's PATH to a fake built as
 `gh.exe`, `FAKEGH_SCENARIO` has to reach that child across each daemon

@@ -139,7 +139,7 @@ scope too, as #676 says.
 
 ## CI
 
-The gate runs as the `130 gate (issues)` step of `ci.yml`'s `gates` job, on
+The gate runs as the `130 gate (issues)` step of `ci.yml`'s `gate-group` job, on
 Linux, macOS and Windows. The pull request that added it is its first run on
 Linux and Windows. Those runs are recorded below from their CI results, never
 in advance.

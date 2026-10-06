@@ -9,7 +9,7 @@ archives a merged pull request's task without touching its head branch.
 
 The scripted half is [`scripts/064-gate.sh`](../../scripts/064-gate.sh). It is
 task-numbered rather than `mN` because this is not a §19 milestone, the way
-052's is. It runs in `ci.yml`'s `gates` job on Linux, macOS and Windows.
+052's is. It runs in `ci.yml`'s `gate-group` job on Linux, macOS and Windows.
 
 ```sh
 ./scripts/064-gate.sh                            # all four scenarios
