@@ -41,8 +41,9 @@ func Identity(pid int) (string, error) { return identity(pid) }
 // Exited reports whether the process ident names has exited: true when no
 // process holds pid, when a different process now does (ident no longer
 // matches, so a reused PID never reads as the old process still running), or
-// — on Windows — when the process has terminated but an open handle keeps its
-// object, and therefore its PID and identity, alive. ident is a token
+// when the process has terminated but is still in the table — on Windows an
+// open handle keeping its object, and therefore its PID and identity, alive;
+// on POSIX a zombie its parent has not reaped. ident is a token
 // Identity returned for pid earlier. An error means liveness could not be
 // determined either way.
 //

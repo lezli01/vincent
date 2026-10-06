@@ -1,7 +1,6 @@
 package procx
 
 import (
-	"runtime"
 	"testing"
 	"time"
 
@@ -37,15 +36,15 @@ func TestExited(t *testing.T) {
 		t.Fatalf("Kill: %v", err)
 	}
 	// cmd still holds an unwaited handle (Windows) or the child is an
-	// unreaped zombie (POSIX). Windows must already read it as exited — the
-	// handle keeping its identity alive is exactly what Exited sees past.
-	if runtime.GOOS == "windows" {
-		if !wait.Poll(10*time.Second, 10*time.Millisecond, func() bool {
-			gone, err := Exited(pid, ident)
-			return err == nil && gone
-		}) {
-			t.Fatal("a killed process with an open handle never read as exited")
-		}
+	// unreaped zombie (POSIX). Both must already read as exited: the handle
+	// keeping its identity alive, and the zombie keeping its process-table
+	// entry, are exactly what Exited sees past. A zombie nobody reaps is a
+	// daemon under a parent that never waits (review F2 on #741).
+	if !wait.Poll(10*time.Second, 10*time.Millisecond, func() bool {
+		gone, err := Exited(pid, ident)
+		return err == nil && gone
+	}) {
+		t.Fatal("a killed, unreaped process never read as exited")
 	}
 	_ = cmd.Wait()
 	waited = true

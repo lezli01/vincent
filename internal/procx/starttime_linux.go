@@ -47,25 +47,35 @@ func StartTime(pid int) (time.Time, error) {
 // absolute instant; Identity keeps the raw count, because a count since boot
 // is the one form of it that no clock adjustment can move (issue #149).
 func startTicks(pid int) (string, error) {
-	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	fields, err := statFields(pid)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return "", ErrProcessGone
-		}
-		return "", fmt.Errorf("read process %d stat: %w", pid, err)
+		return "", err
 	}
-	// Field 2 (comm) may contain spaces and parentheses; everything after
-	// the last ')' is well-formed space-separated fields starting at field 3.
-	i := bytes.LastIndexByte(data, ')')
-	if i < 0 || i+2 >= len(data) {
-		return "", fmt.Errorf("process %d stat: malformed", pid)
-	}
-	fields := strings.Fields(string(data[i+2:]))
 	const starttimeField = 22 - 3 // starttime is field 22; fields[0] is field 3
 	if len(fields) <= starttimeField {
 		return "", fmt.Errorf("process %d stat: too few fields", pid)
 	}
 	return fields[starttimeField], nil
+}
+
+// statFields reads /proc/<pid>/stat and returns its fields from field 3 (the
+// state) on, so fields[n] is field n+3. Returns ErrProcessGone when no such
+// process exists.
+func statFields(pid int) ([]string, error) {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrProcessGone
+		}
+		return nil, fmt.Errorf("read process %d stat: %w", pid, err)
+	}
+	// Field 2 (comm) may contain spaces and parentheses; everything after
+	// the last ')' is well-formed space-separated fields starting at field 3.
+	i := bytes.LastIndexByte(data, ')')
+	if i < 0 || i+2 >= len(data) {
+		return nil, fmt.Errorf("process %d stat: malformed", pid)
+	}
+	return strings.Fields(string(data[i+2:])), nil
 }
 
 // bootTime reads the kernel boot time /proc process start times are
