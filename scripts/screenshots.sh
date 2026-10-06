@@ -1223,8 +1223,12 @@ project_id() {
 }
 
 # owns PROJECT KIND NEEDLE TAPE — fails unless exactly one task, chat or issue
-# (KIND) of PROJECT has a title containing NEEDLE, case-insensitively, as the
-# `/` filter matches. A tape that filters to its subject is a picture of
+# (KIND) of PROJECT matches NEEDLE the way that board's `/` filter does: a
+# case-insensitive substring of the same fields — a task's id, title, state
+# and state words (filterTasks, stateWords), a chat's title, agent and branch
+# (filterChats), an issue's `#id`, title, kind and labels (issueMatches). A
+# needle that matched a title only here would pass with the board showing
+# several rows. Keep each haystack in step with its Go function. A tape that filters to its subject is a picture of
 # that row only if the row is on the board the tape opens: a filter that
 # matches nothing still renders, and the empty board it photographs is a
 # PNG like any other, so the check is made here, before vhs runs. TAPE names
@@ -1234,12 +1238,23 @@ owns() {
   [[ -n "${VINCENT_SHOTS_ONLY:-}" && "${VINCENT_SHOTS_ONLY}" != "$4" ]] && return 0
   pid="$(project_id "$project")"
   case "$kind" in
-    task) rows="$(api GET "/tasks?project_id=$pid")" ;;
-    chat) rows="$(api GET "/chats?project_id=$pid" | jq '.chats')" ;;
-    issue) rows="$(api GET "/issues?project_id=$pid")" ;;
+    task)
+      rows="$(api GET "/tasks?project_id=$pid")"
+      hay='[(.id | tostring), .title, .state,
+            ({awaiting_input: "awaiting input", awaiting_gate: "awaiting approval",
+              awaiting_children: "waiting on lanes"}[.state] // .state)]'
+      ;;
+    chat)
+      rows="$(api GET "/chats?project_id=$pid" | jq '.chats')"
+      hay='[.title, .agent, .branch]'
+      ;;
+    issue)
+      rows="$(api GET "/issues?project_id=$pid")"
+      hay='["#\(.id)", (.id | tostring), .title, .kind] + (.labels // [])'
+      ;;
     *) fail "owns: unknown kind $kind" ;;
   esac
-  n="$(jq --arg n "$needle" '[.[] | select(.title | ascii_downcase | contains($n | ascii_downcase))] | length' <<<"$rows")"
+  n="$(jq --arg n "$needle" "[.[] | select($hay | map(. // \"\") | join(\" \") | ascii_downcase | contains(\$n | ascii_downcase))] | length" <<<"$rows")"
   [[ "$n" == "1" ]] || fail "$4 filters to '$needle', but $project has $n ${kind}s matching it, not 1"
 }
 
