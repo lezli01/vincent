@@ -263,13 +263,29 @@ func reconnectAfterOfflineSwitch(t *testing.T, h *switchHarness, beforeReconnect
 		}
 		return true
 	})
+	if beforeReconnect != nil {
+		beforeReconnect()
+	}
+
+	// Every project.* event opens a debounced refresh in the views that
+	// listen for one, whatever project is selected, and the harness's own
+	// project.created for the second project can still be on its way. Such a
+	// refresh is not the reconnect's, so the count starts once every view
+	// has failed and none has issued a load for well past the debounce. (A
+	// failed load applies no stamp, so issued is the only tally to watch.)
+	h.p.settle(10*time.Second, 4*refreshDebounce, "the offline views to settle", func() (bool, int) {
+		var sum uint64
+		for id, s := range views {
+			if !failed(id) {
+				return false, 0
+			}
+			sum += s.issued
+		}
+		return true, int(sum)
+	})
 	issued := map[viewID]uint64{}
 	for id, s := range views {
 		issued[id] = s.issued
-	}
-
-	if beforeReconnect != nil {
-		beforeReconnect()
 	}
 	h.reconnect()
 	h.p.until(10*time.Second, "every failed view to reload", func() bool {

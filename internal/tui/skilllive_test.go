@@ -131,15 +131,21 @@ func TestLiveSkillLoadMatchesItsRefetch(t *testing.T) {
 		t.Errorf("the frame draws the call twice or the skill's body:\n%s", got)
 	}
 
-	streamed := d.records
 	// agent.result has no live chunk: the pane refetches when a run ends
 	// (agent.LiveChunks), so the two doors are compared over what both carry.
-	var fetched []apiclient.TranscriptRecord
-	for _, rec := range refetch(t, d) {
-		if rec.Type != "agent.result" {
-			fetched = append(fetched, rec)
+	// That run-end refetch can replace d.records before it is read here, so
+	// the streamed side drops the result too.
+	withoutResult := func(recs []apiclient.TranscriptRecord) []apiclient.TranscriptRecord {
+		var out []apiclient.TranscriptRecord
+		for _, rec := range recs {
+			if rec.Type != "agent.result" {
+				out = append(out, rec)
+			}
 		}
+		return out
 	}
+	streamed := withoutResult(d.records)
+	fetched := withoutResult(refetch(t, d))
 	for _, level := range allLevels {
 		opts := lineOpts{expandKey: "v"}
 		want := strings.Join(plainLines(outputLines(fetched, level, 100, opts)), "\n")

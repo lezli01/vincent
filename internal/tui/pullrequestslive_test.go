@@ -166,6 +166,15 @@ func pullRequestsListOnlyTheSelectedProject(t *testing.T, gate *requestGate) {
 	// An event-driven refresh may overlap `R`, so requests are counted
 	// against the loads the view issued rather than against one.
 	scopedTasks := "GET /v1/tasks?project_id=" + strconv.FormatInt(h.projectID, 10)
+	// Any project.* event starts a refresh here, and one whose stamp is
+	// issued before the snapshot but whose requests arrive after it would
+	// leave the tally off by one for good. So the count starts once the view
+	// is quiet: no load in flight, no refresh window open, every issued load
+	// applied, and no new request for well past the debounce.
+	h.p.settle(20*time.Second, 4*refreshDebounce, "the takeover's refreshes to settle", func() (bool, int) {
+		quiet := !v.loading && !v.refreshWait && v.stamps.applied == v.stamps.issued
+		return quiet, len(pullListings(rec)) + len(exactly(rec, scopedTasks)) + int(v.stamps.issued)
+	})
 	beforeLoads := v.stamps.issued
 	beforePulls, beforeTasks := len(pullListings(rec)), len(exactly(rec, scopedTasks))
 	h.sendKey(keyPress("R"))
