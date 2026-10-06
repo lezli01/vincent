@@ -1852,11 +1852,12 @@ vincent project edit 1 --branch-template 'api/{{.Slug}}'
 |---|---|
 | `VINCENT_CONFIG_DIR` | Override the config directory outright |
 | `VINCENT_DATA_DIR` | Override the data directory outright |
+| `VINCENT_TEST_TIMEOUT_SCALE` | For the test suite only, which sets it on a loaded CI leg. A positive factor, capped at 100, multiplying the CLI's and TUI's 10 s per-request timeout and `vincent daemon start`'s wait for the daemon to become healthy. Unset or unusable means 1 |
 | `XDG_CONFIG_HOME` / `XDG_DATA_HOME` | Honored on Linux in the normal way |
 | `EDITOR` | Used by the TUI for edit-and-retry, repair prompts, and description editing |
 | `GITHUB_TOKEN` / `GH_TOKEN` | Read by the [`github`](#github) integration when `gh` is absent or logged out. The daemon inherits whatever the process that started it had; vincent never stores a token of its own, and never reports its value — `vincent doctor` names the variable only |
 
-The two `VINCENT_*` overrides are how the test suite isolates state, and they
+The two `VINCENT_*_DIR` overrides are how the test suite isolates state, and they
 are equally useful for running a second, throwaway instance:
 
 ```sh
