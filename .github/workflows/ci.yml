@@ -101,9 +101,10 @@ jobs:
       # Lint runs once, on the Linux leg, for linux, darwin and windows (#727).
       # The repository has no cgo, so linting with GOOS set sees exactly the
       # files a native run on that OS would — a finding in a `_windows.go`
-      # file still fails this step. The ubuntu leg is not the critical path
-      # (Windows is), so the minutes the other two legs spent linting come
-      # off the wall clock. It stays a step of this required `ci` job rather
+      # file still fails this step. Linting once saves the other two legs'
+      # lint minutes; it was placed here when Windows was the critical path,
+      # and with Windows sharded (#730) this leg, lint included, may become
+      # it — revisit the placement once the shard times are known. It stays a step of this required `ci` job rather
       # than a job of its own, which would not be a required check and so
       # would not block a merge on a red lint.
       - name: Lint (linux, darwin, windows)
@@ -193,7 +194,7 @@ jobs:
           # runner, which also runs a -race pass, is not one (#731). This
           # factor stretches every wait in internal/testutil/wait, the API
           # client's REST timeout and the `daemon start` health poll the e2e
-          # tests drive, in both of the shard's passes.
+          # tests drive, in every one of the shard's passes.
           VINCENT_TEST_TIMEOUT_SCALE: "3"
 
       # always(): a red suite is the run whose reports matter most.

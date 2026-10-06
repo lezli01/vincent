@@ -128,7 +128,10 @@ artifact), and listing every rerun in the job summary. The race detector is
 scoped per OS (#728): Linux races the whole suite, macOS races nothing, and
 Windows races only `internal/procx`, `internal/daemon`, `internal/service` and
 `internal/taskrun` — its own process, daemon and service code — in a second
-pass, run alongside the plain one, whose reports carry a `-race` suffix. Races are overwhelmingly
+pass, run alongside the plain one, whose reports carry a `-race` suffix
+(a split package's share, in shard mode below, carries `-split-<pkg>` and,
+when raced, `-split-<pkg>-race` — `internal/taskrun`'s raced share is
+`-split-taskrun-race`, and the bulk of the race time). Races are overwhelmingly
 platform-independent, so the Linux leg catches them, and a full race run had
 made Windows the required check's critical path; `magefile.go`'s `TestCI`
 records the measurements. This is deliberately weaker proof on macOS and
