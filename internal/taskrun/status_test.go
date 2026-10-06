@@ -3,9 +3,11 @@ package taskrun
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/lezli01/vincent/internal/store"
@@ -55,65 +57,83 @@ func TestNormalizeStatusMessage(t *testing.T) {
 
 // Writes faster than the floor are coalesced, never rejected: the first goes
 // through, the burst behind it does not reach the database, and the latest
-// value lands once when the floor expires (§13.3).
+// value lands once when the floor expires (§13.3). It runs in a synctest
+// bubble against the shipped floor: virtual time makes the real second free,
+// and exact, so both sides of the boundary are asserted.
 func TestStatusThrottleCoalesces(t *testing.T) {
-	var (
-		mu      sync.Mutex
-		written []string
-	)
-	th := newStatusThrottle(func(_ int64, message string) {
-		mu.Lock()
-		defer mu.Unlock()
-		written = append(written, message)
-	})
-	th.interval = 60 * time.Millisecond
-
-	if !th.admit(1, "first") {
-		t.Fatal("the first write was not admitted; a quiet step must never be delayed")
-	}
-	th.accept(1, "first")
-
-	for _, msg := range []string{"second", "third", "fourth"} {
-		if th.admit(1, msg) {
-			t.Fatalf("%q was admitted inside the floor", msg)
+	synctest.Test(t, func(t *testing.T) {
+		var (
+			mu      sync.Mutex
+			written []string
+		)
+		th := newStatusThrottle(func(_ int64, message string) {
+			mu.Lock()
+			defer mu.Unlock()
+			written = append(written, message)
+		})
+		flushed := func() []string {
+			mu.Lock()
+			defer mu.Unlock()
+			return append([]string(nil), written...)
 		}
-	}
-	// A different run is a different slot: one chatty step must not silence
-	// another.
-	if !th.admit(2, "sibling") {
-		t.Error("a second step run was throttled by the first's traffic")
-	}
 
-	wait.Poll(2*time.Second, 5*time.Millisecond, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return len(written) > 0
+		if !th.admit(1, "first") {
+			t.Fatal("the first write was not admitted; a quiet step must never be delayed")
+		}
+		th.accept(1, "first")
+
+		for _, msg := range []string{"second", "third", "fourth"} {
+			if th.admit(1, msg) {
+				t.Fatalf("%q was admitted inside the floor", msg)
+			}
+		}
+		// A different run is a different slot: one chatty step must not
+		// silence another.
+		if !th.admit(2, "sibling") {
+			t.Error("a second step run was throttled by the first's traffic")
+		}
+
+		// One tick inside the floor: nothing has been written yet.
+		time.Sleep(statusMinInterval - time.Nanosecond)
+		synctest.Wait()
+		if got := flushed(); len(got) != 0 {
+			t.Fatalf("flushed %v before the floor expired", got)
+		}
+
+		// On the floor: the latest value, exactly once.
+		time.Sleep(time.Nanosecond)
+		synctest.Wait()
+		if got := flushed(); !slices.Equal(got, []string{"fourth"}) {
+			t.Fatalf("coalesced writes = %v, want exactly one flush of the latest value", got)
+		}
 	})
-	mu.Lock()
-	defer mu.Unlock()
-	if len(written) != 1 {
-		t.Fatalf("coalesced writes = %v, want exactly one flush", written)
-	}
-	if written[0] != "fourth" {
-		t.Errorf("flushed %q, want the latest value", written[0])
-	}
 }
 
-// After the floor has passed, a write goes straight through again.
+// After the floor has passed, a write goes straight through again. The
+// coalesced write below arms a flush at the floor, and that flush restarts
+// it, so the throttle reopens two floors after the first write — not one.
 func TestStatusThrottleAdmitsAfterTheFloor(t *testing.T) {
-	th := newStatusThrottle(func(int64, string) {})
-	th.interval = 20 * time.Millisecond
-	th.accept(1, "first")
-	if th.admit(1, "second") {
-		t.Fatal("admitted inside the floor")
-	}
-	// Well past the floor, and past the flush that the coalesced write above
-	// armed — which restarts it. A margin rather than the floor exactly: this
-	// asserts that the throttle reopens, not how precisely a timer fires.
-	time.Sleep(250 * time.Millisecond)
-	if !th.admit(1, "third") {
-		t.Error("still throttled after the floor expired")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		th := newStatusThrottle(func(int64, string) {})
+		th.accept(1, "first")
+		if th.admit(1, "second") {
+			t.Fatal("admitted inside the floor")
+		}
+
+		// One tick before the re-armed floor ends: still throttled. Repeating
+		// the pending value asks without changing what would be flushed.
+		time.Sleep(2*statusMinInterval - time.Nanosecond)
+		synctest.Wait()
+		if th.admit(1, "second") {
+			t.Fatal("admitted before the floor restarted by the flush expired")
+		}
+
+		time.Sleep(time.Nanosecond)
+		synctest.Wait()
+		if !th.admit(1, "third") {
+			t.Error("still throttled after the floor expired")
+		}
+	})
 }
 
 // The engine path end to end, against a real store and a real agent step: a
