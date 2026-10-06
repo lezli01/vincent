@@ -65,21 +65,15 @@ jobs:
     # Wide enough that `go test -timeout` (see magefile.go) is always the
     # tighter of the two limits: a package that really hangs should be reported
     # by the test binary's goroutine dump, not killed here with nothing to read.
-    # The Windows leg is the one this is sized for. `go test -timeout` is per
-    # test binary, but this caps the whole job, and the suite runs its
-    # packages concurrently: when Windows raced the whole suite its test step
-    # took up to ~25 minutes (internal/api ~13 of them, internal/taskrun ~11),
-    # and a 30-minute cap cancelled any run on a slower runner with no FAIL
-    # line at all — go test holds every later package's output until
-    # internal/api reports, which made the log look hung after
-    # internal/agent/cursor. Windows now races only four packages (#728), but
-    # the cap stays at 45: it is the maintainer's decision under #725, and a
-    # hang should still be reported by `go test -timeout` first.
+    # The cap is the maintainer's decision under #725, and `test-shard` below,
+    # which carries the Windows leg, holds the same one for the same reason.
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Windows is not here: its tests run as `test-shard` below, and the
+        # `ci (windows-latest)` check is the `ci-windows` aggregator (#730).
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -100,19 +94,17 @@ jobs:
       # The race detector is scoped per OS (#728; reasons in magefile.go's
       # TestCI). Linux runs the whole suite under -race, which catches the
       # platform-independent races wherever they would fire. macOS runs it
-      # without. Windows runs it without, plus a -race pass over the four
-      # packages whose Windows-specific process, daemon and service code only
-      # that leg can race: internal/procx, internal/daemon, internal/service
-      # and internal/taskrun. That is weaker proof on macOS and Windows than
-      # a full race run, chosen to take Windows off the critical path; local
-      # `testrace` still races everything.
+      # without. (Windows' scope is described at `test-shard`.) That is
+      # weaker proof on macOS than a full race run; local `testrace` still
+      # races everything.
       #
       # Lint runs once, on the Linux leg, for linux, darwin and windows (#727).
       # The repository has no cgo, so linting with GOOS set sees exactly the
       # files a native run on that OS would — a finding in a `_windows.go`
-      # file still fails this step. The ubuntu leg is not the critical path
-      # (Windows is), so the minutes the other two legs spent linting come
-      # off the wall clock. It stays a step of this required `ci` job rather
+      # file still fails this step. Linting once saves the other two legs'
+      # lint minutes; it was placed here when Windows was the critical path,
+      # and with Windows sharded (#730) this leg, lint included, may become
+      # it — revisit the placement once the shard times are known. It stays a step of this required `ci` job rather
       # than a job of its own, which would not be a required check and so
       # would not block a merge on a red lint.
       - name: Lint (linux, darwin, windows)
@@ -121,14 +113,6 @@ jobs:
 
       - name: Test
         run: go run mage.go testci
-        # The tests' wait budgets are sized for a quiet machine; the Windows
-        # leg, which also runs a -race pass, is not one (#731). This factor
-        # stretches every wait in internal/testutil/wait, the API client's
-        # REST timeout and the `daemon start` health poll the e2e tests
-        # drive, in both of that leg's passes. Empty elsewhere, which the
-        # helpers read as 1.
-        env:
-          VINCENT_TEST_TIMEOUT_SCALE: ${{ matrix.os == 'windows-latest' && '3' || '' }}
 
       # always(): a red suite is the run whose reports matter most.
       - name: Upload test report
@@ -144,11 +128,110 @@ jobs:
 
       - name: Smoke-test vincent version
         shell: bash
-        # The glob is how one line finds bin/vincent.exe on Windows and
-        # bin/vincent elsewhere, so it is a command name on purpose.
+        run: ./bin/vincent version
+
+  # The Windows test leg, in two jobs (#730, under #725).
+  #
+  # `test-shard` runs it. As one job it took ~17 of the 18.5 minutes of
+  # `ci (windows-latest)` (master run 37504276643) and was the critical path
+  # of every run, while Linux finished in ~10.5 and macOS in ~6 — so only
+  # Windows is sharded, and the other two legs stay one job each. The split
+  # is by test name, not by package: on Windows internal/api took 942 s,
+  # internal/taskrun 930 s under -race and internal/worktree 426 s, so a
+  # per-package split would still leave api and taskrun ~15 minutes each.
+  # `VINCENT_TEST_SHARD=i/n` has testci spread those packages' top-level
+  # tests across the shards by a hash of the test name and hand every other
+  # package to one shard whole, round-robin (magefile.go). Each shard keeps
+  # the per-OS race scope (#728): no -race, plus a -race pass over
+  # internal/procx, internal/daemon, internal/service and internal/taskrun,
+  # whose Windows-specific process, daemon and service code only this leg
+  # can race — weaker proof than a full race run, chosen to take Windows off
+  # the critical path; local `testrace` still races everything.
+  #
+  # Four shards because that is what fits at peak: packaging-config 1, site 1,
+  # ci 2, shards 4 and gate groups 12 make 20 concurrent jobs, the free plan's
+  # limit. If shards are seen queueing behind gate groups, drop to three. N
+  # lives only in the `shard` list; each step derives it from job-total.
+  #
+  # `ci-windows` only checks the result. Branch protection requires the check
+  # `ci (windows-latest)` by name, so that job carries the name and fails
+  # unless every shard passed, as `gates` does for `gate-group`. It is not a
+  # `needs` of `ci`, so Linux and macOS never wait on Windows.
+  test-shard:
+    name: test shard (windows-latest, ${{ matrix.shard }})
+    runs-on: windows-latest
+    # As on `ci`: wide enough that `go test -timeout` is always the tighter
+    # limit, so a hang is reported by the test binary's goroutine dump rather
+    # than killed here with nothing to read. The figure is the maintainer's
+    # decision under #725. It was sized for the unsharded leg, when racing the
+    # whole suite took up to ~25 minutes (internal/api ~13 of them,
+    # internal/taskrun ~11) and a 30-minute cap cancelled slower runs with no
+    # FAIL line at all — go test holds every later package's output until
+    # internal/api reports, which made the log look hung after
+    # internal/agent/cursor. A shard needs far less; the cap stays at 45.
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # testci as on `ci`: gotestsum reruns failed tests up to twice each,
+      # never after a race, and lists every rerun in the job summary under
+      # this shard's own heading (#736).
+      - name: Test
+        run: go run mage.go testci
+        env:
+          VINCENT_TEST_SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
+          # The tests' wait budgets are sized for a quiet machine; a Windows
+          # runner, which also runs a -race pass, is not one (#731). This
+          # factor stretches every wait in internal/testutil/wait, the API
+          # client's REST timeout and the `daemon start` health poll the e2e
+          # tests drive, in every one of the shard's passes.
+          VINCENT_TEST_TIMEOUT_SCALE: "3"
+
+      # always(): a red suite is the run whose reports matter most.
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-report-windows-latest-${{ matrix.shard }}
+          path: bin/test-report/
+          if-no-files-found: warn
+
+      # Once, on one shard, so Windows still builds and runs the binary inside
+      # the required check's chain.
+      - name: Build
+        if: matrix.shard == 1
+        run: go run mage.go build
+
+      - name: Smoke-test vincent version
+        if: matrix.shard == 1
+        shell: bash
+        run: ./bin/vincent.exe version
+
+  ci-windows:
+    name: ci (windows-latest)
+    needs: test-shard
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # always() above, so a failed, cancelled or skipped shard reaches this
+      # step and turns the check red rather than skipping it.
+      - name: Every test shard passed
+        env:
+          RESULT: ${{ needs.test-shard.result }}
         run: |
-          # shellcheck disable=SC2211
-          ./bin/vincent* version
+          echo "test-shard: $RESULT"
+          [ "$RESULT" = success ]
 
   # Acceptance gates (spec §19), in two jobs.
   #

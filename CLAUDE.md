@@ -128,14 +128,31 @@ artifact), and listing every rerun in the job summary. The race detector is
 scoped per OS (#728): Linux races the whole suite, macOS races nothing, and
 Windows races only `internal/procx`, `internal/daemon`, `internal/service` and
 `internal/taskrun` — its own process, daemon and service code — in a second
-pass, run alongside the plain one, whose reports carry a `-race` suffix. Races are overwhelmingly
+pass, run alongside the plain one, whose reports carry a `-race` suffix
+(a split package's share, in shard mode below, carries `-split-<pkg>` and,
+when raced, `-split-<pkg>-race` — `internal/taskrun`'s raced share is
+`-split-taskrun-race`, and the bulk of the race time). Races are overwhelmingly
 platform-independent, so the Linux leg catches them, and a full race run had
 made Windows the required check's critical path; `magefile.go`'s `TestCI`
 records the measurements. This is deliberately weaker proof on macOS and
 Windows. `testrace` stays the local default, racing everything — locally a
 failure should fail. `./scripts/test-rerun-check.sh` proves `testci` against
 tests that fail on purpose, in every scope (`VINCENT_TEST_RACE=all`, `none`
-and a package list); it is not wired into CI.
+and a package list) and in the shard mode; it is not wired into CI.
+
+Windows' test step is sharded (#730): it runs as four `test shard
+(windows-latest, i)` jobs side by side, and `ci (windows-latest)` is now only
+an aggregator that fails unless every shard passed, kept for branch protection
+exactly as `gates` is for `gate-group`. Linux and macOS stay one `ci` job each
+and never wait on it. Each shard uploads `test-report-windows-latest-<i>`;
+Linux and macOS keep `test-report-<os>`. `VINCENT_TEST_SHARD=i/n` selects
+shard `i` of `n` (unset runs everything): the long-pole packages are split,
+their top-level tests spread across shards by a hash of the test name, and
+every other package goes to one shard whole, round-robin.
+`VINCENT_TEST_SPLIT` overrides the list of split packages, which is how the
+check script proves the mode on tests of its own. The shard count lives only
+in the job's matrix; four is what fits the free plan's 20 concurrent jobs at
+peak, beside the twelve gate groups.
 
 Plain toolchain works too (`go build ./...`, `go test ./...`). Single test:
 
