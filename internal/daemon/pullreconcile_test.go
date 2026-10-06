@@ -13,6 +13,7 @@ import (
 	"github.com/lezli01/vincent/internal/github/githubtest"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/testrepo"
 )
 
@@ -50,7 +51,7 @@ func newFixture(t *testing.T, remote string) *reconcileFixture {
 	dir := testrepo.Init(t, "master")
 	testrepo.Run(t, dir, "remote", "add", "origin", remote)
 
-	st, err := store.Open(filepath.Join(t.TempDir(), "vincent.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "vincent.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

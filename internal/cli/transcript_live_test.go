@@ -28,6 +28,7 @@ import (
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/taskrun"
 	"github.com/lezli01/vincent/internal/worktree"
 )
@@ -130,7 +131,7 @@ func newLiveHarness(t *testing.T, opts ...liveOption) *liveHarness {
 	t.Setenv(config.EnvDataDir, dataDir)
 	t.Setenv(config.EnvConfigDir, t.TempDir())
 
-	st, err := store.Open(filepath.Join(dataDir, "vincent.db"))
+	st, err := storetest.Open(filepath.Join(dataDir, "vincent.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

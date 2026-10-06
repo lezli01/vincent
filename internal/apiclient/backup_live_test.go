@@ -16,6 +16,7 @@ import (
 	"github.com/lezli01/vincent/internal/backup"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // newBackupClient wires the client to the real backup handler over a real
@@ -25,7 +26,7 @@ import (
 func newBackupClient(t *testing.T) *apiclient.Client {
 	t.Helper()
 	dirs := config.Dirs{Config: t.TempDir(), Data: t.TempDir()}
-	st, err := store.Open(filepath.Join(dirs.Data, backup.DatabaseEntry))
+	st, err := storetest.Open(filepath.Join(dirs.Data, backup.DatabaseEntry))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

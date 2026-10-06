@@ -16,6 +16,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // TestProjectSelectionFollowsTheDaemon is task 132.2 against the real
@@ -24,7 +25,7 @@ import (
 // while nothing is, and a rename reaches the selection.
 func TestProjectSelectionFollowsTheDaemon(t *testing.T) {
 	const token = "sel-token"
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -109,7 +110,7 @@ func TestProjectSelectionFollowsTheDaemon(t *testing.T) {
 // the pick is silent, and it becomes the last-used project in tui.json.
 func TestProjectFlagOpensOnItsProject(t *testing.T) {
 	const token = "flag-token"
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

@@ -17,13 +17,14 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // newIssuesClient wires the client to the real issue handlers over a real
 // store with one project (task 130.3).
 func newIssuesClient(t *testing.T) (*apiclient.Client, *store.Store, int64) {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "issues.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "issues.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

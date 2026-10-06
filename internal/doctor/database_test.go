@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // TestDatabaseStaysUnknownWithoutADaemon is the ownership invariant as a test,
@@ -20,7 +21,7 @@ import (
 func TestDatabaseStaysUnknownWithoutADaemon(t *testing.T) {
 	d := dirs(t)
 	path := filepath.Join(d.Data, "vincent.db")
-	st, err := store.Open(path)
+	st, err := storetest.Open(path)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

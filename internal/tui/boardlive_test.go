@@ -25,6 +25,7 @@ import (
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/worktree"
 )
 
@@ -94,7 +95,7 @@ func newBoardLiveHarness(t *testing.T) *boardLiveHarness {
 func newBoardLiveHarnessConfig(t *testing.T, cfg func() config.Config) *boardLiveHarness {
 	t.Helper()
 	const token = "board-token"
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/taskrun"
 )
 
@@ -73,7 +74,7 @@ func (l *recordingLauncher) Launch(cmd agent.Command) (agent.Process, error) {
 func newSkillsHarness(t *testing.T) *skillsHarness {
 	t.Helper()
 	dataDir := t.TempDir()
-	st, err := store.Open(filepath.Join(dataDir, "skills.db"))
+	st, err := storetest.Open(filepath.Join(dataDir, "skills.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

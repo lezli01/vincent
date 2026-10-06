@@ -26,6 +26,7 @@ import (
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // TestDaemonViewReflectsLiveDaemon is the T3.7 done-when: the view reflects
@@ -53,7 +54,7 @@ func TestDaemonViewReflectsLiveDaemon(t *testing.T) {
 	t.Cleanup(func() { _ = lj.Close() })
 	logger := slog.New(slog.NewTextHandler(lj, nil))
 
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

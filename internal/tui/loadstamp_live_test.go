@@ -19,6 +19,7 @@ import (
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // TestEventFilterAgainstTheRealAPI is task 132.5 against the real handlers:
@@ -26,7 +27,7 @@ import (
 // in project A refetches nothing while one in B refetches the issues list.
 func TestEventFilterAgainstTheRealAPI(t *testing.T) {
 	const token = "filter-token"
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

@@ -20,6 +20,7 @@ import (
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/workflow"
 )
 
@@ -35,7 +36,7 @@ func TestRenderTaskAgainstRealServer(t *testing.T) {
 		t.Fatalf("token: %v", err)
 	}
 
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -241,7 +242,7 @@ func serveRegistryWorkflow(t *testing.T, name, callee string) (dataDir string, p
 		t.Fatalf("token: %v", err)
 	}
 
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

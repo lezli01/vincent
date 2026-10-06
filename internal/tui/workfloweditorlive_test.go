@@ -21,6 +21,7 @@ import (
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/testrepo"
 	"github.com/lezli01/vincent/internal/workflow"
 )
@@ -47,7 +48,7 @@ func editorLive(t *testing.T) (*root, *pump, string) {
 	const token = "workflow-editor-live-token"
 	watchCtx := testCtx(t)
 
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

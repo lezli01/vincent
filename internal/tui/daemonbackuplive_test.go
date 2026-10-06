@@ -15,7 +15,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/backupsched"
 	"github.com/lezli01/vincent/internal/config"
-	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // TestDaemonViewRendersTheBackupRowFromTheRealDoctor is task 115's TUI live
@@ -31,7 +31,7 @@ func TestDaemonViewRendersTheBackupRowFromTheRealDoctor(t *testing.T) {
 		[]byte("backup:\n  interval: 24h\n  keep: 3\n"), 0o600); err != nil {
 		t.Fatalf("write config.yaml: %v", err)
 	}
-	st, err := store.Open(filepath.Join(dirs.Data, "vincent.db"))
+	st, err := storetest.Open(filepath.Join(dirs.Data, "vincent.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

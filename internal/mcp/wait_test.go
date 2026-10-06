@@ -17,6 +17,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 type waitHarness struct {
@@ -28,7 +29,7 @@ type waitHarness struct {
 
 func newWaitHarness(t *testing.T, maxParallel int) *waitHarness {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "mcp.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "mcp.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

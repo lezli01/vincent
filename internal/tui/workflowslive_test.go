@@ -23,6 +23,7 @@ import (
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/testrepo"
 	"github.com/lezli01/vincent/internal/workflow"
 )
@@ -97,7 +98,7 @@ func TestWorkflowsViewReflectsFileEdit(t *testing.T) {
 	// blocks on a connection that is still, correctly, subscribed.
 	watchCtx := testCtx(t)
 
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -224,7 +225,7 @@ func liveConnector(t *testing.T, baseURL, token string) connector {
 // them into one — both sides of A's override, none of B's rows.
 func TestWorkflowsViewResolvesTheSelectedProject(t *testing.T) {
 	const token = "workflows-scope-token"
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

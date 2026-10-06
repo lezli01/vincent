@@ -9,13 +9,14 @@ import (
 
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // boundsServer is a server with just what checkMCPBounds reads: a store, a
 // config and a logger.
 func boundsServer(t *testing.T, mutate func(*config.Config)) (*Server, *store.Store, int64) {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "bounds.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "bounds.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

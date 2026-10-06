@@ -14,7 +14,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/gitx"
-	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/workflow"
 )
 
@@ -69,7 +69,7 @@ func liveGraphView(t *testing.T, yaml string) (*workflowsView, *workflow.Registr
 	path := filepath.Join(globalDir, "shipit.yaml")
 	writeFile(t, path, yaml)
 
-	st, err := store.Open(filepath.Join(dir, "test.db"))
+	st, err := storetest.Open(filepath.Join(dir, "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

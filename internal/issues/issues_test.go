@@ -11,13 +11,14 @@ import (
 
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // newService opens a real store on a temp database, with one project, and
 // returns the service over it and the project's id.
 func newService(t *testing.T) (*Service, *store.Store, int64) {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "vincent.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "vincent.db"))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

@@ -20,6 +20,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/testrepo"
 	"github.com/lezli01/vincent/internal/worktree"
 )
@@ -40,7 +41,7 @@ func newProjectHarness(t *testing.T) *projectHarness {
 // a test wants — the §10 branch sweep is the first thing here to read one.
 func newProjectHarnessWithConfig(t *testing.T, cfg func() config.Config) *projectHarness {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

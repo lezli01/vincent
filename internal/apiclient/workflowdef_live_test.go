@@ -15,7 +15,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/gitx"
-	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
 )
@@ -70,7 +70,7 @@ func newDefinitionClient(t *testing.T, files map[string]string) *apiclient.Clien
 			t.Fatalf("write %s: %v", name, err)
 		}
 	}
-	st, err := store.Open(filepath.Join(dir, "test.db"))
+	st, err := storetest.Open(filepath.Join(dir, "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

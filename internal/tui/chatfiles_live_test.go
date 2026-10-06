@@ -25,6 +25,7 @@ import (
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/testrepo"
 	"github.com/lezli01/vincent/internal/worktree"
 )
@@ -59,7 +60,7 @@ func newChatFilesLive(t *testing.T) *chatFilesLive {
 	t.Setenv("FAKEAGENT_PROMPT_FILE", promptFile)
 
 	dataDir := t.TempDir()
-	st, err := store.Open(filepath.Join(dataDir, "files.db"))
+	st, err := storetest.Open(filepath.Join(dataDir, "files.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

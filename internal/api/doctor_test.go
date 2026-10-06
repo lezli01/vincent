@@ -21,6 +21,7 @@ import (
 	"github.com/lezli01/vincent/internal/doctor"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/taskrun"
 	"github.com/lezli01/vincent/internal/testrepo"
 	"github.com/lezli01/vincent/internal/worktree"
@@ -46,7 +47,7 @@ func newDoctorHarness(t *testing.T) *doctorHarness {
 // hook to wire the Deps a particular group reads before the server starts.
 func newDoctorHarnessWith(t *testing.T, dirs config.Dirs, wire func(*Deps)) *doctorHarness {
 	t.Helper()
-	st, err := store.Open(filepath.Join(dirs.Data, "vincent.db"))
+	st, err := storetest.Open(filepath.Join(dirs.Data, "vincent.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
