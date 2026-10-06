@@ -30,6 +30,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/gate.sh
+source "$ROOT/scripts/lib/gate.sh"
 TMP="$(mktemp -d)"
 BIN="$TMP/bin"
 
@@ -53,7 +55,7 @@ hostpath() {
 }
 
 echo "== build vincent"
-(cd "$ROOT" && go build -o "$(hostpath "$BIN")/" ./cmd/vincent)
+gate_build "$BIN" vincent
 
 CONFIG_DIR="" DATA_DIR=""
 scenario_dirs() { # scenario_dirs NAME
@@ -113,16 +115,16 @@ write_workflow() { # write_workflow NAME YAML
   printf '%s' "$2" > "$CONFIG_DIR/workflows/$1.yaml"
 }
 
-wait_for_state() { # wait_for_state TASK_ID STATE TRIES
+wait_for_state() { # wait_for_state TASK_ID STATE SECS
   local id="$1" want="$2" tries="$3" state=""
-  for _ in $(seq 1 "$tries"); do
+  for _ in $(seq 1 "$(gate_ticks "$tries")"); do
     state="$(api GET "/tasks/$id" | jq -r .state)"
     [[ "$state" == "$want" ]] && return 0
     if [[ "$state" == "aborted" ]] && [[ "$want" != "aborted" ]]; then
       api GET "/tasks/$id" | jq . >&2
       fail "task $id reached $state while waiting for $want"
     fi
-    sleep 1
+    sleep "$GATE_POLL"
   done
   api GET "/tasks/$id" | jq . >&2
   fail "task $id never reached $want (last: $state)"

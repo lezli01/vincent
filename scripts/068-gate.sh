@@ -45,6 +45,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/gate.sh
+source "$ROOT/scripts/lib/gate.sh"
 TMP="$(mktemp -d)"
 BIN="$TMP/bin"
 
@@ -70,10 +72,10 @@ hostpath() {
 
 echo "== build vincent and the fake gh"
 mkdir -p "$BIN"
-(cd "$ROOT" && go build -o "$(hostpath "$BIN")/" ./cmd/vincent)
+gate_build "$BIN" vincent
 # cmd/fakegh is built *as* `gh`, so the daemon's PATH lookup finds it exactly
 # the way it would find the real CLI.
-(cd "$ROOT" && go build -o "$(hostpath "$BIN")/gh$EXE" ./cmd/fakegh)
+gate_build_as "$BIN/gh$EXE" fakegh
 PATH="$BIN:$PATH"
 export PATH
 
@@ -225,10 +227,10 @@ link() { # link TASK_ID NUMBER
 
 wait_for_branch() { # wait_for_branch TASK_ID
   local branch=""
-  for _ in $(seq 1 30); do
+  for _ in $(seq 1 "$(gate_ticks 30)"); do
     branch="$(api GET "/tasks/$1" | jq -r .branch_name)"
     [[ -n "$branch" && "$branch" != "null" ]] && return 0
-    sleep 1
+    sleep "$GATE_POLL"
   done
   fail "task $1 never got a branch"
 }
@@ -366,10 +368,10 @@ if run_scenario 1; then
   # Two ticks after the reads: new `pr list` lines are the reconciler's.
   listed="$(count_calls '^pr list ')"
   ticked=""
-  for _ in $(seq 1 30); do
+  for _ in $(seq 1 "$(gate_ticks 30)"); do
     ticked="$(count_calls '^pr list ')"
     (( ticked >= listed + 2 )) && break
-    sleep 1
+    sleep "$GATE_POLL"
   done
   (( ticked >= listed + 2 )) \
     || fail "the reconciler did not tick twice in 30s ($listed pr list calls, then $ticked)"

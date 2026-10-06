@@ -55,6 +55,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/gate.sh
+source "$ROOT/scripts/lib/gate.sh"
 TMP="$(mktemp -d)"
 BIN="$TMP/bin"
 
@@ -80,10 +82,10 @@ hostpath() {
 
 echo "== build vincent and the fake gh"
 mkdir -p "$BIN"
-(cd "$ROOT" && go build -o "$(hostpath "$BIN")/" ./cmd/vincent)
+gate_build "$BIN" vincent
 # cmd/fakegh is built *as* `gh`, so the daemon's PATH lookup finds it exactly
 # the way it would find the real CLI.
-(cd "$ROOT" && go build -o "$(hostpath "$BIN")/gh$EXE" ./cmd/fakegh)
+gate_build_as "$BIN/gh$EXE" fakegh
 PATH="$BIN:$PATH"
 export PATH
 
@@ -199,13 +201,13 @@ issue_field() { api GET "/issues/$1" | jq -r "$2"; }
 sync_of() { issue_field "$1" '"\(.sync.state)/\(.sync.reason // "")"'; }
 field_is() { [[ "$(issue_field "$1" "$2")" == "$3" ]]; } # field_is ID FILTER WANT
 
-# wait_for TRIES WHAT COMMAND... polls COMMAND once a second.
+# wait_for SECS WHAT COMMAND... polls COMMAND every GATE_POLL for SECS seconds.
 wait_for() {
   local tries="$1" what="$2"
   shift 2
-  for _ in $(seq 1 "$tries"); do
+  for _ in $(seq 1 "$(gate_ticks "$tries")"); do
     if "$@"; then return 0; fi
-    sleep 1
+    sleep "$GATE_POLL"
   done
   fail "timed out after ${tries}s waiting for $what"
 }
@@ -252,9 +254,9 @@ corpus_edit() {
 }
 
 corpus_commit() { # moves $CORPUS.edit over the corpus
-  for _ in $(seq 1 10); do
+  for _ in $(seq 1 "$(gate_ticks 10)"); do
     if mv -f "$CORPUS.edit" "$CORPUS" 2>/dev/null; then return 0; fi
-    sleep 1
+    sleep "$GATE_POLL"
   done
   fail "the corpus could not be rewritten"
 }

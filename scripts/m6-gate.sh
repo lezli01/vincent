@@ -42,6 +42,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/gate.sh
+source "$ROOT/scripts/lib/gate.sh"
 TMP="$(mktemp -d)"
 BIN="$TMP/bin"
 
@@ -65,7 +67,7 @@ hostpath() {
 }
 
 echo "== build vincent"
-(cd "$ROOT" && go build -o "$(hostpath "$BIN")/" ./cmd/vincent)
+gate_build "$BIN" vincent
 
 CONFIG_DIR="" DATA_DIR=""
 scenario_dirs() { # scenario_dirs NAME
@@ -125,16 +127,16 @@ write_workflow() { # write_workflow NAME YAML
   printf '%s' "$2" > "$CONFIG_DIR/workflows/$1.yaml"
 }
 
-wait_for_state() { # wait_for_state TASK_ID STATE TRIES
+wait_for_state() { # wait_for_state TASK_ID STATE SECS
   local id="$1" want="$2" tries="$3" state=""
-  for _ in $(seq 1 "$tries"); do
+  for _ in $(seq 1 "$(gate_ticks "$tries")"); do
     state="$(api GET "/tasks/$id" | jq -r .state)"
     [[ "$state" == "$want" ]] && return 0
     if [[ "$state" == "aborted" ]] && [[ "$want" != "aborted" ]]; then
       api GET "/tasks/$id" | jq . >&2
       fail "task $id reached $state while waiting for $want"
     fi
-    sleep 1
+    sleep "$GATE_POLL"
   done
   api GET "/tasks/$id" | jq . >&2
   fail "task $id never reached $want (last: $state)"
@@ -184,16 +186,16 @@ YAML
   PID="$(register_project "$REPO")"
   TID="$(create_task "$PID" parallel-ok "parallel happy path")"
 
-  # The eight-second body is the observation window: a one-second poll sees it
+  # The eight-second body is the observation window: a GATE_POLL poll sees it
   # several times over, and a sequential run would never show more than one.
   MAX=0
-  for _ in $(seq 1 90); do
+  for _ in $(seq 1 "$(gate_ticks 90)"); do
     BODY="$(api GET "/tasks/$TID")"
     # `.steps` is null until the group's first attempt rows exist.
     N="$(jq '[(.steps // [])[] | select(.state == "running")] | length' <<<"$BODY")"
     if [[ "$N" -gt "$MAX" ]]; then MAX="$N"; fi
     if [[ "$MAX" == 3 || "$(jq -r .state <<<"$BODY")" == "done" ]]; then break; fi
-    sleep 1
+    sleep "$GATE_POLL"
   done
   [[ "$MAX" == 3 ]] || fail "sub-steps never overlapped: at most $MAX ran at once, want 3"
 
@@ -296,10 +298,10 @@ YAML
   TID="$(create_task "$PID" fan-ok "fan out happy path")"
 
   # The lanes are real tasks, hidden from the default listing (decision 13).
-  for _ in $(seq 1 30); do
+  for _ in $(seq 1 "$(gate_ticks 30)"); do
     LANES="$(api GET "/tasks?parent_id=$TID" | jq 'length')"
     [[ "$LANES" == 2 ]] && break
-    sleep 1
+    sleep "$GATE_POLL"
   done
   [[ "$LANES" == 2 ]] || fail "expected 2 lanes, got $LANES"
   ROOTS="$(api GET "/tasks" | jq 'length')"
@@ -479,10 +481,10 @@ YAML
   daemon_up
   PID="$(register_project "$REPO")"
   TID="$(create_task "$PID" fan-slow "a lane is cancelled")"
-  for _ in $(seq 1 30); do
+  for _ in $(seq 1 "$(gate_ticks 30)"); do
     SLOW="$(api GET "/tasks?parent_id=$TID" | jq -r '.[] | select(.lane_id == "slow") | .id')"
     [[ -n "$SLOW" ]] && break
-    sleep 1
+    sleep "$GATE_POLL"
   done
   [[ -n "$SLOW" ]] || fail "the slow lane never appeared"
   api POST "/tasks/$SLOW/cancel" '{}' >/dev/null
@@ -592,14 +594,14 @@ YAML
   TID="$(create_task "$PID" fan-eager "an eager DAG")"
 
   DEP="" SLOW_STATE=""
-  for _ in $(seq 1 60); do
+  for _ in $(seq 1 "$(gate_ticks 60)"); do
     LANES="$(api GET "/tasks?parent_id=$TID")"
     DEP="$(jq -r '.[] | select(.lane_id == "dep") | .id' <<<"$LANES" | tr -d '\r')"
     if [[ -n "$DEP" ]]; then
       SLOW_STATE="$(jq -r '.[] | select(.lane_id == "slow") | .state' <<<"$LANES" | tr -d '\r')"
       break
     fi
-    sleep 1
+    sleep "$GATE_POLL"
   done
   [[ -n "$DEP" ]] || fail "the dependent lane never spawned"
   case "$SLOW_STATE" in
@@ -766,11 +768,11 @@ YAML
 
   wait_for_state "$TID" awaiting_children 60
   BLOCKED=""
-  for _ in $(seq 1 90); do
+  for _ in $(seq 1 "$(gate_ticks 90)"); do
     BLOCKED="$(api GET "/tasks?parent_id=$TID" \
       | jq '[.[] | select(.state == "blocked")] | length' | tr -d '\r')"
     [[ "$BLOCKED" == 2 ]] && break
-    sleep 1
+    sleep "$GATE_POLL"
   done
   [[ "$BLOCKED" == 2 ]] || fail "expected both lanes blocked, got $BLOCKED"
   # The parent is still parked with them: a blocked lane holds the join open.

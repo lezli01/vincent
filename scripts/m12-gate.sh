@@ -52,6 +52,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/gate.sh
+source "$ROOT/scripts/lib/gate.sh"
 
 # Before the runtime probes, because it is a statement about the daemon under
 # test and not about docker: a Windows daemon refuses a containerized task at
@@ -114,7 +116,7 @@ hostpath() {
 }
 
 echo "== build vincent"
-(cd "$ROOT" && go build -o "$(hostpath "$BIN")/" ./cmd/vincent)
+gate_build "$BIN" vincent
 
 echo "== build the gate image (alpine + git)"
 # The image is the user's, and this is the smallest honest stand-in for one: a
@@ -200,16 +202,16 @@ create_task() { # create_task PROJECT_ID WORKFLOW TITLE
     '{project_id: $p, workflow: $w, title: $t}')" | jq -r .id
 }
 
-wait_for_state() { # wait_for_state TASK_ID STATE TRIES
+wait_for_state() { # wait_for_state TASK_ID STATE SECS
   local id="$1" want="$2" tries="$3" state=""
-  for _ in $(seq 1 "$tries"); do
+  for _ in $(seq 1 "$(gate_ticks "$tries")"); do
     state="$(api GET "/tasks/$id" | jq -r .state)"
     [[ "$state" == "$want" ]] && return 0
     if [[ "$state" == "aborted" ]] && [[ "$want" != "aborted" ]]; then
       api GET "/tasks/$id" | jq . >&2
       fail "task $id reached $state while waiting for $want"
     fi
-    sleep 1
+    sleep "$GATE_POLL"
   done
   api GET "/tasks/$id" | jq . >&2
   fail "task $id never reached $want (last: $state)"
@@ -313,9 +315,9 @@ grep -qx m12-gate-ran-in-container <<<"$LOG" \
   || fail "the containerized step's commit is not on $BRANCH: $LOG"
 
 api POST "/tasks/$TASK/archive" '{}' >/dev/null
-for _ in $(seq 1 30); do
+for _ in $(seq 1 "$(gate_ticks 30)"); do
   [[ "$(count_containers_for "$TASK")" == 0 ]] && break
-  sleep 1
+  sleep "$GATE_POLL"
 done
 [[ "$(count_containers_for "$TASK")" == 0 ]] || fail "archiving task $TASK left its container behind"
 echo "   ok: one container, named for the task, gone with the worktree"
@@ -353,9 +355,9 @@ echo "   ok: process stopped, container kept"
 echo "== scenario 4: a daemon killed mid-step leaves no container behind"
 KILL_TASK="$(create_task "$PROJECT" slow "killed task")"
 wait_for_state "$KILL_TASK" running 120
-for _ in $(seq 1 30); do
+for _ in $(seq 1 "$(gate_ticks 30)"); do
   [[ "$(count_containers_for "$KILL_TASK")" == 1 ]] && journaled "$KILL_TASK" && break
-  sleep 1
+  sleep "$GATE_POLL"
 done
 [[ "$(count_containers_for "$KILL_TASK")" == 1 ]] || fail "task $KILL_TASK never got a container"
 journaled "$KILL_TASK" || fail "task $KILL_TASK's step never journaled its pid and container"
@@ -371,9 +373,9 @@ DAEMON_PID="$(jq -r .pid "$DATA_DIR/daemon.json")"
 kill -9 "$DAEMON_PID" 2>/dev/null || fail "could not kill the daemon"
 sleep 2
 daemon_up
-for _ in $(seq 1 30); do
+for _ in $(seq 1 "$(gate_ticks 30)"); do
   "$DOCKER" inspect "$ORPHAN" >/dev/null 2>&1 || break
-  sleep 1
+  sleep "$GATE_POLL"
 done
 if "$DOCKER" inspect "$ORPHAN" >/dev/null 2>&1; then
   fail "recovery left task $KILL_TASK's container $ORPHAN behind"
@@ -391,7 +393,7 @@ case "$("$DOCKER" info --format '{{.Architecture}}' 2>/dev/null)" in
 esac
 mkdir -p "$BIN/linux"
 (cd "$ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$FAKE_ARCH" go build -o "$BIN/linux/claude" ./cmd/fakeagent)
-(cd "$ROOT" && go build -o "$BIN/fakeagent" ./cmd/fakeagent)
+gate_build_as "$BIN/fakeagent" fakeagent
 
 AGENT_STEP='    type: agent
     agent: claude
@@ -519,9 +521,9 @@ echo "== scenario 9: a daemon killed mid agent step leaves no container behind"
 # Before scenario 8 because it shares scenario 7's hang configuration.
 KILL_AGENT_TASK="$(create_task "$PROJECT" agent-slow "agent killed")"
 wait_for_state "$KILL_AGENT_TASK" running 120
-for _ in $(seq 1 30); do
+for _ in $(seq 1 "$(gate_ticks 30)"); do
   [[ "$(count_containers_for "$KILL_AGENT_TASK")" == 1 ]] && journaled "$KILL_AGENT_TASK" && break
-  sleep 1
+  sleep "$GATE_POLL"
 done
 [[ "$(count_containers_for "$KILL_AGENT_TASK")" == 1 ]] || fail "task $KILL_AGENT_TASK never got a container"
 journaled "$KILL_AGENT_TASK" || fail "task $KILL_AGENT_TASK's agent step never journaled its pid and container"
@@ -532,9 +534,9 @@ DAEMON_PID="$(jq -r .pid "$DATA_DIR/daemon.json")"
 kill -9 "$DAEMON_PID" 2>/dev/null || fail "could not kill the daemon"
 sleep 2
 daemon_up
-for _ in $(seq 1 30); do
+for _ in $(seq 1 "$(gate_ticks 30)"); do
   "$DOCKER" inspect "$AGENT_ORPHAN" >/dev/null 2>&1 || break
-  sleep 1
+  sleep "$GATE_POLL"
 done
 if "$DOCKER" inspect "$AGENT_ORPHAN" >/dev/null 2>&1; then
   fail "recovery left task $KILL_AGENT_TASK's container $AGENT_ORPHAN behind"
@@ -579,10 +581,10 @@ daemon_up
 
 wait_turn() { # wait_turn CHAT_ID — polls turn 1 until it ends, echoing its state
   local state=""
-  for _ in $(seq 1 120); do
+  for _ in $(seq 1 "$(gate_ticks 120)"); do
     state="$(api GET "/chats/$1" | jq -r '.turns[] | select(.seq == 1) | .state')"
     [[ -n "$state" && "$state" != running ]] && break
-    sleep 1
+    sleep "$GATE_POLL"
   done
   printf '%s\n' "$state"
 }

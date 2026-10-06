@@ -41,6 +41,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/gate.sh
+source "$ROOT/scripts/lib/gate.sh"
 TMP="$(mktemp -d)"
 BIN="$TMP/bin"
 
@@ -72,10 +74,10 @@ shellpath() {
 
 echo "== build vincent and the fake gh"
 mkdir -p "$BIN"
-(cd "$ROOT" && go build -o "$(hostpath "$BIN")/" ./cmd/vincent)
+gate_build "$BIN" vincent
 # cmd/fakegh is built *as* `gh`, so the daemon's PATH lookup finds it exactly
 # the way it would find the real CLI.
-(cd "$ROOT" && go build -o "$(hostpath "$BIN")/gh$EXE" ./cmd/fakegh)
+gate_build_as "$BIN/gh$EXE" fakegh
 PATH="$BIN:$PATH"
 export PATH
 export FAKEGH_SCENARIO=success
@@ -200,14 +202,14 @@ create_from_pull() {
 # wait_state ID STATE — poll until the task reaches STATE.
 wait_state() {
   local id="$1" want="$2" task state=""
-  for _ in $(seq 1 120); do
+  for _ in $(seq 1 "$(gate_ticks 120)"); do
     task="$(api GET "/tasks/$id")"
     state="$(jq -r .state <<<"$task")"
     [[ "$state" == "$want" ]] && return 0
     if [[ "$state" == "blocked" || "$state" == "aborted" ]]; then
       fail "task $id went $state waiting for $want: $(jq -c '{block_reason, block_message}' <<<"$task")"
     fi
-    sleep 1
+    sleep "$GATE_POLL"
   done
   fail "task $id never reached $want (stuck in $state)"
 }

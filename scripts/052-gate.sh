@@ -31,6 +31,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/gate.sh
+source "$ROOT/scripts/lib/gate.sh"
 TMP="$(mktemp -d)"
 BIN="$TMP/bin"
 
@@ -56,10 +58,10 @@ hostpath() {
 
 echo "== build vincent and the fake gh"
 mkdir -p "$BIN"
-(cd "$ROOT" && go build -o "$(hostpath "$BIN")/" ./cmd/vincent)
+gate_build "$BIN" vincent
 # cmd/fakegh is built *as* `gh`, so the daemon's PATH lookup finds it exactly
 # the way it would find the real CLI. Nothing else about the daemon changes.
-(cd "$ROOT" && go build -o "$(hostpath "$BIN")/gh$EXE" ./cmd/fakegh)
+gate_build_as "$BIN/gh$EXE" fakegh
 PATH="$BIN:$PATH"
 export PATH
 
@@ -141,10 +143,10 @@ create_task() { # create_task PROJECT_ID TITLE -> id
 
 wait_for_branch() { # wait_for_branch TASK_ID -> branch
   local id="$1" branch=""
-  for _ in $(seq 1 30); do
+  for _ in $(seq 1 "$(gate_ticks 30)"); do
     branch="$(api GET "/tasks/$id" | jq -r .branch_name)"
     [[ -n "$branch" && "$branch" != "null" ]] && { printf '%s' "$branch"; return 0; }
-    sleep 1
+    sleep "$GATE_POLL"
   done
   fail "task $id never got a branch"
 }
@@ -214,10 +216,10 @@ if run_scenario 2; then
   daemon_up
 
   linked=""
-  for _ in $(seq 1 30); do
+  for _ in $(seq 1 "$(gate_ticks 30)"); do
     linked="$(api GET "/tasks/$tid/github/pull" | jq -r .number)"
     [[ "$linked" == "412" ]] && break
-    sleep 1
+    sleep "$GATE_POLL"
   done
   [[ "$linked" == "412" ]] || fail "the reconciler never linked #412 (last: $linked)"
 
@@ -274,10 +276,10 @@ if run_scenario 4; then
   daemon_up
 
   linked=""
-  for _ in $(seq 1 30); do
+  for _ in $(seq 1 "$(gate_ticks 30)"); do
     linked="$(api GET "/tasks/$tid/github/pull" | jq -r .number)"
     [[ "$linked" == "412" ]] && break
-    sleep 1
+    sleep "$GATE_POLL"
   done
   [[ "$linked" == "412" ]] || fail "the reconciler never linked #412 (last: $linked)"
 

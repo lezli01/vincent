@@ -10,6 +10,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/gate.sh
+source "$ROOT/scripts/lib/gate.sh"
 TMP="$(mktemp -d)"
 BIN="$TMP/bin"
 CONFIG_DIR="$TMP/config"
@@ -46,7 +48,7 @@ export VINCENT_DATA_DIR
 VINCENT_DATA_DIR="$(hostpath "$DATA_DIR")"
 
 echo "== build vincent + fakeagent"
-(cd "$ROOT" && go build -o "$(hostpath "$BIN")/" ./cmd/vincent ./cmd/fakeagent)
+gate_build "$BIN" vincent fakeagent
 
 echo "== configure (agents.claude.path -> fakeagent)"
 AGENT_PATH="$(hostpath "$FAKEAGENT")"
@@ -112,13 +114,13 @@ TASK_ID="$(api POST /tasks "{\"project_id\":$PROJECT_ID,\"title\":\"M1 gate task
 
 echo "== watch it finish"
 STATE=queued
-for _ in $(seq 1 120); do
+for _ in $(seq 1 "$(gate_ticks 120)"); do
   STATE="$(api GET "/tasks/$TASK_ID" | jq -r .state)"
   case "$STATE" in
     done) break ;;
     blocked) api GET "/tasks/$TASK_ID" | jq . >&2; fail "task blocked" ;;
   esac
-  sleep 1
+  sleep "$GATE_POLL"
 done
 [[ "$STATE" == "done" ]] || fail "task did not finish (state $STATE)"
 
@@ -236,10 +238,10 @@ notify_count() { # prints how many times the hook has fired
 echo "== nothing fired while notify.on listed a state no task reached"
 # Every task has to be settled before the selector changes, or one still
 # running would fire under the new one and be counted here.
-for _ in $(seq 1 120); do
+for _ in $(seq 1 "$(gate_ticks 120)"); do
   BUSY="$(api GET /tasks | jq '[.[] | select(.state == "queued" or .state == "running")] | length' | tr -d '\r')"
   [[ "$BUSY" == "0" ]] && break
-  sleep 1
+  sleep "$GATE_POLL"
 done
 [[ "$BUSY" == "0" ]] || fail "tasks still running; the notify leg cannot count fires"
 [[ "$(notify_count)" == "0" ]] || fail "the hook fired for a state it was not configured for"
@@ -251,16 +253,16 @@ sleep 2  # the config watcher debounces a save for 100ms
 echo "== a finished task notifies with no client attached"
 NOTIFY_TASK="$(api POST /tasks "{\"project_id\":$PROJECT_ID,\"title\":\"M1 notify task\",\"description\":\"Say hello.\"}" | jq -r .id | tr -d '\r')"
 [[ "$NOTIFY_TASK" =~ ^[0-9]+$ ]] || fail "notify task creation returned no id"
-for _ in $(seq 1 120); do
+for _ in $(seq 1 "$(gate_ticks 120)"); do
   STATE="$(api GET "/tasks/$NOTIFY_TASK" | jq -r .state | tr -d '\r')"
   [[ "$STATE" == "done" ]] && break
   [[ "$STATE" == "blocked" ]] && fail "notify task blocked"
-  sleep 1
+  sleep "$GATE_POLL"
 done
 [[ "$STATE" == "done" ]] || fail "notify task did not finish (state $STATE)"
-for _ in $(seq 1 30); do
+for _ in $(seq 1 "$(gate_ticks 30)"); do
   [[ "$(notify_count)" == "0" ]] || break
-  sleep 1
+  sleep "$GATE_POLL"
 done
 FIRED="$(notify_count)"
 [[ "$FIRED" == "1" ]] || fail "the hook fired $FIRED times for one done transition, want 1"

@@ -27,6 +27,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/gate.sh
+source "$ROOT/scripts/lib/gate.sh"
 TMP="$(mktemp -d)"
 BIN="$TMP/bin"
 
@@ -48,7 +50,7 @@ hostpath() {
 }
 
 echo "== build vincent"
-(cd "$ROOT" && go build -o "$(hostpath "$BIN")/" ./cmd/vincent)
+gate_build "$BIN" vincent
 
 CONFIG_DIR="$TMP/config"
 DATA_DIR="$TMP/data"
@@ -151,11 +153,11 @@ HAND_COMMENTS="$(grep -c '#' "$GLOBAL_DIR/hand.yaml" || true)"
 BLOCK=$'    run: |\n      git --version\n      git status'
 "$VINCENT" workflow list >/dev/null 2>&1 || true
 # The registry watch picks the file up; poll rather than sleep.
-for _ in 1 2 3 4 5 6 7 8 9 10; do
+for _ in $(seq 1 "$(gate_ticks 10)"); do
   if api GET /workflows | jq -e '[.workflows[].name] | index("hand")' >/dev/null 2>&1; then
     break
   fi
-  sleep 1
+  sleep "$GATE_POLL"
 done
 VERSION="$(api "GET" "/workflows/definition?name=hand" | jq -r .version)"
 [[ -n "$VERSION" && "$VERSION" != "null" ]] || fail "the definition served no version token"
@@ -324,11 +326,11 @@ echo "== 11. a CRLF file comes back CRLF"
 # them by an edit that never addressed a line they wrote.
 printf '# crlf — a Windows author wrote this\r\nname: crlf\r\ndescription: Keep the endings\r\n\r\nsteps:\r\n  - id: one\r\n    type: command\r\n    run: git --version\r\n' \
   > "$GLOBAL_DIR/crlf.yaml"
-for _ in 1 2 3 4 5 6 7 8 9 10; do
+for _ in $(seq 1 "$(gate_ticks 10)"); do
   if api GET /workflows | jq -e '[.workflows[].name] | index("crlf")' >/dev/null 2>&1; then
     break
   fi
-  sleep 1
+  sleep "$GATE_POLL"
 done
 VERSION="$(api "GET" "/workflows/definition?name=crlf" | jq -r .version)"
 [[ -n "$VERSION" && "$VERSION" != "null" ]] || fail "the CRLF file never reached the registry"
