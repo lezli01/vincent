@@ -84,8 +84,9 @@ func TestRace() error {
 // VINCENT_TEST_RACE overrides the scope: `all`, `none`, or a comma-separated
 // list of package patterns. A list is two passes over disjoint packages, run
 // concurrently — the rest of ./... without -race, and the listed ones with
-// it — and each runs to the end whether or not the other fails. CI never sets it; it exists so
-// scripts/test-rerun-check.sh can prove every scope from any host.
+// it — and each runs to the end whether or not the other fails. CI never
+// sets it; it exists so scripts/test-rerun-check.sh can prove every scope
+// from any host.
 //
 // Rerun budget: up to 2 reruns of each failed test (gotestsum reruns only the
 // failed tests, by -run), and none at all when the first pass has more than
