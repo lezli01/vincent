@@ -64,8 +64,10 @@ func TestRace() error {
 // Rerun budget: up to 2 reruns of each failed test (gotestsum reruns only the
 // failed tests, by -run), and none at all when the first pass has more than
 // gotestsum's default 10 failures — that many is a regression, and rerunning
-// it would only burn the Windows leg's budget. -timeout 30m is TestRace's,
-// for TestRace's reasons.
+// it would only burn the Windows leg's budget. A data race is never rerun
+// (--rerun-fails-abort-on-data-race): a race is a correctness bug, and an
+// intermittent one, so a rerun that happened not to race would turn it green.
+// -timeout 30m is TestRace's, for TestRace's reasons.
 //
 // Reports land in bin/test-report/ (VINCENT_TEST_REPORT_DIR overrides):
 // junit.xml and test.json carry each test's elapsed time, reruns.txt lists
@@ -106,6 +108,7 @@ func TestRaceCI() (err error) {
 	cmd := exec.Command(bin,
 		"--format", "standard-quiet",
 		"--rerun-fails=2",
+		"--rerun-fails-abort-on-data-race",
 		"--rerun-fails-report", reruns,
 		"--packages", "./...",
 		"--junitfile", filepath.Join(report, "junit.xml"),
@@ -145,7 +148,7 @@ func summarizeReruns(reruns string, failed bool) error {
 			fmt.Fprintf(&b, "- `%s`\n", l)
 		}
 	case failed:
-		b.WriteString("No test was rerun, and the run failed: more than 10 failures skip reruns entirely, and a build failure is never rerun. See the step log.\n")
+		b.WriteString("No test was rerun, and the run failed: more than 10 failures skip reruns entirely, and neither a build failure nor a data race is ever rerun. See the step log.\n")
 	default:
 		b.WriteString("No test needed a rerun.\n")
 	}

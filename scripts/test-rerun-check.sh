@@ -8,6 +8,8 @@
 #   2. a test that fails every attempt runs three times (one run, two
 #      reruns), fails the target, and is still named in the summary
 #   3. a clean run exits 0 and the summary says no test needed a rerun
+#   4. a test the race detector fails is never rerun, so a race that would not
+#      recur on a rerun still fails the target
 #
 # The target runs the throwaway module through VINCENT_TEST_DIR and writes its
 # reports to VINCENT_TEST_REPORT_DIR, with GITHUB_STEP_SUMMARY pointed at a
@@ -140,7 +142,20 @@ scenario_3() {
   grep -qF 'No test needed a rerun.' <<<"$summary" || fail "summary does not say nothing was rerun: $summary"
 }
 
-for n in 1 2 3; do
+scenario_4() {
+  echo "== scenario 4: a data race is never rerun"
+  # Races on its first attempt only, so a rerun would pass.
+  setup s4 'if n == 1 { x := 0; done := make(chan struct{}); go func() { x++; close(done) }(); x++; <-done; _ = x }'
+  if run_target; then
+    fail "target exited 0 on a test the race detector failed"
+  fi
+  [[ "$(attempts)" == 1 ]] || fail "TestFlake ran $(attempts) times, want 1 (a race is not rerun)"
+  local summary
+  summary="$(tr -d '\r' <"$SUMMARY")"
+  grep -qF 'No test was rerun, and the run failed' <<<"$summary" || fail "summary does not say the failed run was not rerun: $summary"
+}
+
+for n in 1 2 3 4; do
   if [[ -z "$ONLY" || "$ONLY" == "$n" ]]; then
     "scenario_$n"
   fi

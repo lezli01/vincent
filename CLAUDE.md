@@ -116,7 +116,8 @@ go run mage.go lint      # go tool golangci-lint run (pinned via go.mod tool dir
 
 CI's test step runs `go run mage.go testraceci` instead of `testrace`: the
 same `-race` suite under `go tool gotestsum`, rerunning each failed test up to
-twice, writing `junit.xml`, `test.json` and `reruns.txt` to
+twice — but never after a data race, which fails the job on its first
+sighting because a race that does not recur is still a bug — writing `junit.xml`, `test.json` and `reruns.txt` to
 `bin/test-report/` (uploaded as the `test-report-<os>` artifact), and listing
 every rerun in the job summary. `testrace` stays the local default — locally
 a failure should fail. `./scripts/test-rerun-check.sh` proves `testraceci`
