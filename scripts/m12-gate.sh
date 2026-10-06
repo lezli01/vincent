@@ -229,6 +229,16 @@ count_containers_for() { # count_containers_for TASK_ID
   printf '%s\n' "$ids" | wc -l | tr -d ' '
 }
 
+# journaled TASK_ID — a running step run of the task has journaled its pid.
+# That is the moment a kill can test recovery: the step writes its pid and
+# its container id in one update, and a run is `running` and its task's
+# container exists well before it (#735). Killed earlier, the row names no
+# container, recovery rightly has nothing to remove (§12.4), and the re-run
+# reuses the very container the scenario then waits to see gone.
+journaled() {
+  api GET "/tasks/$1/steps" | jq -e '[.[] | select(.state == "running" and .pid != null)] | length == 1' >/dev/null
+}
+
 echo "== scenario 1: a containerized task runs in the image, in one container"
 REPO="$TMP/repo"
 make_repo "$REPO"
@@ -344,10 +354,11 @@ echo "== scenario 4: a daemon killed mid-step leaves no container behind"
 KILL_TASK="$(create_task "$PROJECT" slow "killed task")"
 wait_for_state "$KILL_TASK" running 120
 for _ in $(seq 1 30); do
-  [[ "$(count_containers_for "$KILL_TASK")" == 1 ]] && break
+  [[ "$(count_containers_for "$KILL_TASK")" == 1 ]] && journaled "$KILL_TASK" && break
   sleep 1
 done
 [[ "$(count_containers_for "$KILL_TASK")" == 1 ]] || fail "task $KILL_TASK never got a container"
+journaled "$KILL_TASK" || fail "task $KILL_TASK's step never journaled its pid and container"
 # The orphan is identified *before* the kill, and the assertion below is about
 # this id and not about a count. Recovery re-runs the interrupted step as an
 # attempt that does not consume a retry, and that admission creates the task a
@@ -509,12 +520,11 @@ echo "== scenario 9: a daemon killed mid agent step leaves no container behind"
 KILL_AGENT_TASK="$(create_task "$PROJECT" agent-slow "agent killed")"
 wait_for_state "$KILL_AGENT_TASK" running 120
 for _ in $(seq 1 30); do
-  STEPS="$(api GET "/tasks/$KILL_AGENT_TASK/steps")"
-  [[ "$(jq -r '[.[] | select(.state == "running")] | length' <<<"$STEPS")" == 1 ]] \
-    && [[ "$(count_containers_for "$KILL_AGENT_TASK")" == 1 ]] && break
+  [[ "$(count_containers_for "$KILL_AGENT_TASK")" == 1 ]] && journaled "$KILL_AGENT_TASK" && break
   sleep 1
 done
 [[ "$(count_containers_for "$KILL_AGENT_TASK")" == 1 ]] || fail "task $KILL_AGENT_TASK never got a container"
+journaled "$KILL_AGENT_TASK" || fail "task $KILL_AGENT_TASK's agent step never journaled its pid and container"
 # Scenario 4's reasoning: the orphan is identified by id before the kill, since
 # the recovered step's re-run creates a fresh container under the same name.
 AGENT_ORPHAN="$(containers_for "$KILL_AGENT_TASK")"
