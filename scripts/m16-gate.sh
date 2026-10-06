@@ -715,11 +715,25 @@ if run_scenario 11; then
   api PATCH /triggers/clock "$(jq -cn --arg v "$(jq -r .version <<<"$PATCHED")" \
     '{version: $v, ops: [{op: "set", path: "enabled", value: "true"}]}')" >/dev/null
   wait_for "the clock to anchor" 80 trigger_is clock '.armed and .poll.seeded'
-  [[ "$(ledger_size clock)" == "0" ]] || fail "arming a schedule wrote a ledger row"
-  [[ "$(task_count)" == "0" ]] || fail "arming a schedule created a task"
+  # Proved against the anchor, not the wall clock (#735): the first occurrence
+  # is due two seconds after arming, which a slow runner's next few round
+  # trips can outlast, so "nothing yet" is no assertion. The GET reports only
+  # that a cursor exists, so the anchor is read from the line the daemon logs
+  # when it seeds one, in the same fixed-width form an occurrence's event_id
+  # takes. Every row the ledger ever holds must then be an occurrence at least
+  # one interval past it.
+  LOG="$(tr -d '\r' < "$DATA_DIR/logs/daemon.log")"
+  ANCHOR="$(sed -n 's/.*msg="trigger schedule seeded" trigger=clock anchor=\([^ ]*\).*/\1/p' <<<"$LOG")"
+  [[ "$ANCHOR" =~ ^20[0-9-]+T[0-9:.]+Z$ ]] || fail "the daemon logged no anchor for clock: $ANCHOR"
 
   # The next tick past the first occurrence fires exactly one paused task.
   wait_for "the first occurrence to fire" 80 fired_at_least clock 1
+  ROWS="$(api GET "/triggers/clock/deliveries?limit=1000" | jq -c '.deliveries')"
+  jq -e --arg a "$ANCHOR" 'all(.[]; .outcome == "fired"
+      and ((.event_id[0:19] + "Z" | fromdateiso8601) - ($a[0:19] + "Z" | fromdateiso8601)) >= 2)' \
+    <<<"$ROWS" >/dev/null || fail "arming a schedule fired or recorded at its anchor $ANCHOR: $ROWS"
+  api GET /tasks | jq -e --arg t "from $ANCHOR" 'all(.[]; .title != $t)' >/dev/null \
+    || fail "arming a schedule created a task for its anchor $ANCHOR"
   FIRST="$(api GET "/triggers/clock/deliveries?limit=1000" \
     | jq -r '[.deliveries[] | select(.outcome == "fired")] | sort_by(.event_id) | .[0].task_id')"
   [[ "$FIRST" =~ ^[0-9]+$ ]] || fail "the fired occurrence names no task: $FIRST"
@@ -808,12 +822,15 @@ if run_scenario 12; then
   wait_for "h3 to fire" 80 has_outcome hold fired h3
   [[ "$(task_count)" == "2" ]] || fail "the second group did not fire: $(task_count) tasks"
 
-  # The dry run reports the decision and writes nothing.
-  BEFORE="$(ledger_size hold)"
+  # The dry run reports the decision and writes nothing. Not a before/after
+  # count (#735): the live poller re-judges h1-h3 every second and records a
+  # row for each judgement, so the ledger grows on its own. h4 is an event
+  # the source never prints, so any row for it can only be the dry run's.
   JUDGE="$(api POST /triggers/hold/test '{"event":{"id":"h4","ticket":"V-1"}}')"
   jq -e '.outcome == "superseded" and .would_skip == true and .concurrency_key == "V-1"' <<<"$JUDGE" >/dev/null \
     || fail "the dry run does not report the overrun decision: $JUDGE"
-  [[ "$(ledger_size hold)" == "$BEFORE" ]] || fail "the dry run wrote a ledger row"
+  api GET "/triggers/hold/deliveries?limit=1000" | jq -e 'all(.deliveries[]; .event_id != "h4")' >/dev/null \
+    || fail "the dry run wrote a ledger row"
 
   # Settling the first task releases the group. This source re-shows its whole
   # window every poll, so the event that was skipped is judged again and fires

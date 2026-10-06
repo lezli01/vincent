@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# A curl that starts slowly, for reproducing issue #735: put this directory
+# first on PATH and a gate's every API call costs what process creation costs
+# on a loaded Windows runner. SLOWCURL_DELAY overrides the delay in seconds.
+# The real curl is the next one on PATH after this directory.
+set -euo pipefail
+self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+real=""
+IFS=: read -ra dirs <<<"$PATH"
+for d in "${dirs[@]}"; do
+  [[ -n "$d" && "$(cd "$d" 2>/dev/null && pwd)" != "$self" && -x "$d/curl" ]] || continue
+  real="$d/curl"
+  break
+done
+[[ -n "$real" ]] || { echo "slowcurl: no real curl on PATH" >&2; exit 127; }
+sleep "${SLOWCURL_DELAY:-1.3}"
+exec "$real" "$@"

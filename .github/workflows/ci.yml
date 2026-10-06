@@ -88,12 +88,32 @@ jobs:
           go-version-file: go.mod
 
       # CI runs the exact targets developers run locally (see magefile.go);
-      # the only deliberate difference is the race detector.
+      # the deliberate differences are the race detector and, in testraceci,
+      # gotestsum rerunning failed tests (up to twice each) and reporting
+      # them (#736). A rerun that passes does not red the job, so every
+      # rerun is listed in the job summary instead, and the reports below
+      # carry each test's elapsed time for trend tracking.
       - name: Lint
         run: go run mage.go lint
 
       - name: Test (race)
-        run: go run mage.go testrace
+        run: go run mage.go testraceci
+        # The tests' wait budgets are sized for a quiet machine; the Windows
+        # race leg is not one (#731). This factor stretches every wait in
+        # internal/testutil/wait, the API client's REST timeout and the
+        # `daemon start` health poll the e2e tests drive. Empty elsewhere,
+        # which the helpers read as 1.
+        env:
+          VINCENT_TEST_TIMEOUT_SCALE: ${{ matrix.os == 'windows-latest' && '3' || '' }}
+
+      # always(): a red suite is the run whose reports matter most.
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-report-${{ matrix.os }}
+          path: bin/test-report/
+          if-no-files-found: warn
 
       - name: Build
         run: go run mage.go build

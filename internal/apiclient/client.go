@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +34,30 @@ const requestTimeout = 10 * time.Second
 // `vincent doctor` must never give. Every other call keeps requestTimeout: a
 // wedged daemon is still caught in ten seconds everywhere it means anything.
 const probeTimeout = 3 * time.Minute
+
+// EnvTimeoutScale names the factor the test suite sets on a loaded CI leg
+// (#731, internal/testutil/wait) so the budgets its tests inherit from here —
+// requestTimeout, and `vincent daemon start`'s health poll — stretch with
+// every other wait in the suite. The e2e tests drive the real binary, so the
+// factor has to be read by production code to reach them at all. Nothing
+// outside the test suite sets it; unset, every default stands.
+const EnvTimeoutScale = "VINCENT_TEST_TIMEOUT_SCALE"
+
+// MaxTimeoutScale caps EnvTimeoutScale's factor: past it a budget stops
+// meaning anything, and a large enough factor overflows a Duration.
+const MaxTimeoutScale = 100
+
+// ScaleTimeout is d multiplied by EnvTimeoutScale's factor, capped at
+// MaxTimeoutScale, or d itself when the variable is unset or not a positive
+// number. NaN is not one: it passes every ordered comparison's negation and
+// would turn d into zero, which is no timeout at all.
+func ScaleTimeout(d time.Duration) time.Duration {
+	f, err := strconv.ParseFloat(os.Getenv(EnvTimeoutScale), 64)
+	if err != nil || math.IsNaN(f) || f <= 0 {
+		return d
+	}
+	return time.Duration(float64(d) * min(f, MaxTimeoutScale))
+}
 
 // Client talks to one vincent daemon. It is safe for concurrent use.
 type Client struct {
@@ -61,7 +87,7 @@ func New(baseURL, token string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		token:   token,
-		rest:    &http.Client{Timeout: requestTimeout, Transport: rt},
+		rest:    &http.Client{Timeout: ScaleTimeout(requestTimeout), Transport: rt},
 		probes:  &http.Client{Timeout: probeTimeout, Transport: rt},
 		stream:  &http.Client{Transport: rt},
 	}

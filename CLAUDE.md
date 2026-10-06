@@ -114,6 +114,15 @@ go run mage.go testrace  # go test -race ./...  (needs cgo + a C compiler)
 go run mage.go lint      # go tool golangci-lint run (pinned via go.mod tool directive)
 ```
 
+CI's test step runs `go run mage.go testraceci` instead of `testrace`: the
+same `-race` suite under `go tool gotestsum`, rerunning each failed test up to
+twice — but never after a data race, which fails the job on its first
+sighting because a race that does not recur is still a bug — writing `junit.xml`, `test.json` and `reruns.txt` to
+`bin/test-report/` (uploaded as the `test-report-<os>` artifact), and listing
+every rerun in the job summary. `testrace` stays the local default — locally
+a failure should fail. `./scripts/test-rerun-check.sh` proves `testraceci`
+against tests that fail on purpose; it is not wired into CI.
+
 Plain toolchain works too (`go build ./...`, `go test ./...`). Single test:
 
 ```sh
@@ -326,6 +335,11 @@ daemon, no shared fixtures:
   copy of a once-per-process migrated template. Use it for every test store
   that is not testing the migrations themselves: under `-race` the pure-Go
   SQLite makes migrating a new file ~40× slower than opening a copy (#726).
+- `internal/testutil/wait` — the one poll-until-true helper (`wait.Until`,
+  `wait.UntilWithin`, `wait.Poll`) and `wait.Timeout`, which scales a budget
+  by `VINCENT_TEST_TIMEOUT_SCALE` (set to 3 on CI's Windows race leg). Never
+  hand-roll `deadline := time.Now().Add(...)` in a test: a fixed budget is
+  sized for a quiet machine and that leg overruns it (#731).
 - `internal/agent/agenttest` — compiles `cmd/fakeagent` once per test process.
 - `cmd/fakeagent` — scenario-driven stand-in for an agent CLI. Dialect comes from
   argv shape (`exec` first arg ⇒ codex-shaped; `--trust` anywhere ⇒ cursor-shaped;

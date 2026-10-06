@@ -13,6 +13,7 @@ import (
 	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/testutil/wait"
 	"github.com/lezli01/vincent/internal/worktree"
 )
 
@@ -264,11 +265,7 @@ func TestChatTurnTranscriptUnknownTurn(t *testing.T) {
 func waitForChatSubscriber(t *testing.T, h *harness, chatID int64) {
 	t.Helper()
 	key := chatrun.ChatOutputKey(chatID)
-	deadline := time.Now().Add(noteTimeout)
-	for h.broker.OutputSubscribers(key) == 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("no output subscriber registered for the chat")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	wait.UntilWithin(t, noteTimeout, "an output subscriber to register for the chat", func() bool {
+		return h.broker.OutputSubscribers(key) > 0
+	})
 }

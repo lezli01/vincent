@@ -272,8 +272,14 @@ func (m *root) noteStartupConfig(msg tea.Msg) tea.Cmd {
 }
 
 // noteDefaultProject keeps the latest `tui.default_project`, for a deleted
-// selection's replacement. A failed fetch leaves the last answer standing.
+// selection's replacement and the project picker's `★` (task 132.18). A
+// failed fetch leaves the last answer standing.
 func (m *root) noteDefaultProject(msg tea.Msg) {
+	defer func() {
+		if m.projPick != nil {
+			m.projPick.defaultProject = m.defaultProject
+		}
+	}()
 	switch msg := msg.(type) {
 	case boardConfigMsg:
 		if msg.err == nil {

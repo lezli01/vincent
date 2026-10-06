@@ -11,6 +11,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/daemon"
+	"github.com/lezli01/vincent/internal/testutil/wait"
 )
 
 // key builds a printable-key press ("q", "?", "1", "r").
@@ -32,7 +33,7 @@ func runCmd(t *testing.T, cmd tea.Cmd, timeout time.Duration) tea.Msg {
 	select {
 	case msg := <-done:
 		return msg
-	case <-time.After(timeout):
+	case <-time.After(wait.Timeout(timeout)):
 		t.Fatal("command did not return in time")
 		return nil
 	}
@@ -90,7 +91,7 @@ func (p *pump) push(cmd tea.Cmd) {
 // until pumps until cond holds, failing the test on timeout.
 func (p *pump) until(timeout time.Duration, what string, cond func() bool) {
 	p.t.Helper()
-	deadline := time.After(timeout)
+	deadline := time.After(wait.Timeout(timeout))
 	for !cond() {
 		select {
 		case msg := <-p.msgs:

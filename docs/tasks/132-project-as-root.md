@@ -1,6 +1,6 @@
 # 132 — Project as root: the TUI scoped to one selected project
 
-**Status:** 🔄 in progress (15/18)
+**Status:** 🔄 in progress (16/18)
 
 Issue [#694](https://github.com/lezli01/vincent/issues/694), part of
 [#693](https://github.com/lezli01/vincent/issues/693). Spec §3 (the new row
@@ -455,6 +455,8 @@ together, and 132.3 was written before the picker existed, so it did not add
 the marker. The picker still marks only the current project; the default
 marker remains open against 132.3's row.
 
+*Note (2026-10-06):* delivered by 132.18 as decision 56.
+
 ### 34. The interim attention clause is global and labelled (2026-10-05)
 
 Taken with the author while delivering 132.8. Until 132.14 (#708) brings the
@@ -776,6 +778,31 @@ and so deliberately differs from the daemon's `stats.attention`, which
 counts lanes (decision 21). Decision 34's interim header and footer labels
 are gone.
 
+### 56. The default project is marked `★`, in its own column (2026-10-06)
+
+Taken with the author while delivering 132.18 (#723), carrying out decision
+33's plan.
+
+1. **The mark is `★`.** One cell wide, used by no other TUI surface, and a
+   different shape from `◆`, so it reads under NO_COLOR and at 16 colours. It
+   has its own two-cell column after the selection's `◆` column, so a row can
+   show `◆ ★`: cursor `› `, current `◆ `, default `★ `, name, figures. A row
+   that is not the default has two spaces there, so names stay aligned.
+2. **Freshness uses the paths that already exist, with no new request.** The
+   picker reads the root's `defaultProject`, kept current by
+   `noteDefaultProject` from `boardConfigMsg` (connect and every reconnect),
+   `daemonConfigMsg` and `configSavedMsg`, and the root pushes it into an
+   open picker. An edit in the TUI's config editor moves the mark at once; an
+   edit to `config.yaml` itself shows after the next reconnect or daemon-view
+   fetch, like every other `tui:` setting (no hot-reload event, §13.3). The
+   picker does not refetch `/v1/config` when it opens.
+3. **The match is by name, exact**, as `resolveStartupProject` matches. An
+   empty value, or one naming no registered project, marks no row and shows
+   nothing else; startup already reports an unknown default.
+4. **Marks are never truncated.** Both mark columns are fixed width, and
+   `projectPickerFit` gets the width after the cursor and both marks, so
+   figures drop and then the name shortens, never a mark.
+
 ## Supersedes
 
 Every binding record this work overturns, departs from, refines or keeps, by
@@ -894,10 +921,11 @@ its own pull request.
 - [ ] **132.17** ([#711](https://github.com/lezli01/vincent/issues/711)) The
   human walkthrough record, and the m3 and task 129 amendments. Depends:
   132.16.
-- [ ] **132.18** ([#723](https://github.com/lezli01/vincent/issues/723)) The
+- [x] **132.18** ([#723](https://github.com/lezli01/vincent/issues/723)) The
   project picker's `tui.default_project` marker, which decision 33 assigned
   to 132.3 and which shipped without it; spec §15's picker note and the TUI
   guide's picker section in the same pull request. Depends: 132.3, 132.4.
+  Decision 56. ✓ 2026-10-06
 
 The scoping items (132.8, 132.10–132.13) may merge in any order once their
 dependencies land, and each one carries its own view's tests, guide section and

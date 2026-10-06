@@ -12,6 +12,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/testutil/wait"
 )
 
 // TestStreamTaskDeliversOutputAndEvents covers the frame split the per-task
@@ -253,11 +254,7 @@ func TestGetTaskCarriesSteps(t *testing.T) {
 // behavior (live output is lossy by design) but would make the test flaky.
 func waitForSubscriber(t *testing.T, h *harness) {
 	t.Helper()
-	deadline := time.Now().Add(noteTimeout)
-	for h.broker.OutputSubscribers(h.taskID) == 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("no output subscriber registered")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	wait.UntilWithin(t, noteTimeout, "an output subscriber to register", func() bool {
+		return h.broker.OutputSubscribers(h.taskID) > 0
+	})
 }

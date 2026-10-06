@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -301,7 +302,7 @@ func TestProjectPickerRows(t *testing.T) {
 		awaitingChat,
 		statsProject(2, "web", 5, 6, 1, 2, &cap4),
 		degraded,
-	}, 2)
+	}, 2, "")
 
 	row := func(i, width int) string {
 		return ansi.Strip(pp.row(pp.projects[i], false, width))
@@ -309,7 +310,7 @@ func TestProjectPickerRows(t *testing.T) {
 	if got := row(0, 80); strings.Contains(got, "!") || !strings.Contains(got, "1 running · 2 active · 7 open issues") {
 		t.Errorf("uncapped row with chat attention only: %q", got)
 	}
-	if got := row(1, 80); !strings.Contains(got, "◆ web") || !strings.Contains(got, "!5 · 2/4 running · 6 active · 1 open issues") {
+	if got := row(1, 80); !strings.Contains(got, "◆   web") || !strings.Contains(got, "!5 · 2/4 running · 6 active · 1 open issues") {
 		t.Errorf("capped current row: %q", got)
 	}
 	if got := strings.TrimSpace(row(2, 80)); got != "ops" {
@@ -380,7 +381,7 @@ func TestPaletteOpensPickerWithAtYielded(t *testing.T) {
 // nothing or an empty list never highlights it, enter there just closes, and
 // a refetch that adds a match puts the cursor on the match.
 func TestProjectPickerOverviewRowOnlyByDown(t *testing.T) {
-	pp := newProjectPicker(twoProjects(), 1)
+	pp := newProjectPicker(twoProjects(), 1, "")
 	for _, r := range "zzz" {
 		pp.update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
@@ -412,11 +413,100 @@ func TestProjectPickerOverviewRowOnlyByDown(t *testing.T) {
 		t.Errorf("enter on no match: pick %v, done %v, cmd set %v; want a plain close", pick, done, cmd != nil)
 	}
 
-	empty := newProjectPicker(nil, 0)
+	empty := newProjectPicker(nil, 0, "")
 	if empty.overview {
 		t.Error("a picker over no projects opened on the overview row")
 	}
 	if _, done, cmd := empty.update(tea.KeyPressMsg{Code: tea.KeyEnter}); !done || cmd != nil {
 		t.Error("enter over no projects opened the overview without ↓")
+	}
+}
+
+// TestProjectPickerDefaultMark is task 132.18 (decision 56): `★` marks the
+// project `tui.default_project` names, in its own column after `◆`, by exact
+// name; an unset or unknown default marks nothing; names stay aligned; and a
+// narrow row sheds figures and then the name, never a mark.
+func TestProjectPickerDefaultMark(t *testing.T) {
+	projects := twoProjects()
+	for _, c := range []struct {
+		name     string
+		def      string
+		current  int64
+		api, web string // each row's mark columns, cursor column stripped
+	}{
+		{"default only", "web", 1, "◆   ", "  ★ "},
+		{"both on one row", "api", 1, "◆ ★ ", "    "},
+		{"unset", "", 1, "◆   ", "    "},
+		{"unknown name", "ops", 1, "◆   ", "    "},
+		{"not a prefix or case match", "Web", 2, "    ", "◆   "},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			pp := newProjectPicker(projects, c.current, c.def)
+			for i, want := range []string{c.api, c.web} {
+				got := ansi.Strip(pp.row(projects[i], false, 80))
+				// The mark columns run from after the cursor column to the name.
+				rest := strings.TrimLeft(got[2:], "◆★ ")
+				if marks := got[2 : len(got)-len(rest)]; marks != want {
+					t.Errorf("row %q: marks %q, want %q", got, marks, want)
+				}
+				// The name starts in the same cell on every row.
+				if at := strings.Index(got, projects[i].Name); ansi.StringWidth(got[:at]) != 6 {
+					t.Errorf("row %q: name at cell %d, want 6", got, ansi.StringWidth(got[:at]))
+				}
+			}
+		})
+	}
+
+	pp := newProjectPicker(projects, 2, "web")
+	for _, width := range []int{40, 20, 8, 7} {
+		got := ansi.Strip(pp.row(projects[1], true, width))
+		if !strings.HasPrefix(got, "› ◆ ★ ") {
+			t.Errorf("width %d: %q lost a mark", width, got)
+		}
+		if w := ansi.StringWidth(got); w > width {
+			t.Errorf("width %d: %q is %d cells wide", width, got, w)
+		}
+	}
+	if got := ansi.Strip(pp.row(projects[1], false, 20)); strings.Contains(got, "open issues") || !strings.Contains(got, "web") {
+		t.Errorf("width 20: %q, want figures shed before the name", got)
+	}
+	if got := ansi.Strip(pp.row(projects[1], false, 7)); got != "  ◆ ★ …" {
+		t.Errorf("width 7: %q, want the name cut to an ellipsis", got)
+	}
+}
+
+// TestProjectPickerDefaultMarkFollowsConfig: a config save landing while the
+// picker is open moves the `★` without reopening it (task 132 decision 56).
+func TestProjectPickerDefaultMarkFollowsConfig(t *testing.T) {
+	m, _ := pickerRoot(t, twoProjects())
+	m.Update(configSavedMsg{cfg: apiclient.Config{TUI: apiclient.ConfigTUI{DefaultProject: "api"}}})
+	pressRoot(m, atKey())
+	if m.projPick == nil || m.projPick.defaultProject != "api" {
+		t.Fatalf("picker opened with default %q, want api", m.projPick.defaultProject)
+	}
+	starred := func() []string {
+		var out []string
+		for _, line := range strings.Split(ansi.Strip(m.projPick.render(64, 12)), "\n") {
+			if strings.Contains(line, projectPickerDefaultGlyph) {
+				out = append(out, line)
+			}
+		}
+		return out
+	}
+	if got := starred(); len(got) != 1 || !strings.Contains(got[0], "api") {
+		t.Fatalf("starred rows %q, want api's alone", got)
+	}
+
+	m.Update(configSavedMsg{cfg: apiclient.Config{TUI: apiclient.ConfigTUI{DefaultProject: "web"}}})
+	if m.projPick == nil {
+		t.Fatal("the save closed the picker")
+	}
+	if got := starred(); len(got) != 1 || !strings.Contains(got[0], "web") {
+		t.Fatalf("after the save, starred rows %q, want web's alone", got)
+	}
+	// A failed save leaves the mark where it was.
+	m.Update(configSavedMsg{err: errors.New("boom")})
+	if got := starred(); len(got) != 1 || !strings.Contains(got[0], "web") {
+		t.Errorf("after a failed save, starred rows %q, want web's still", got)
 	}
 }

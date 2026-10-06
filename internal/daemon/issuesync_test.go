@@ -16,6 +16,7 @@ import (
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/testrepo"
+	"github.com/lezli01/vincent/internal/testutil/wait"
 )
 
 // The issue importer (task 130.8), driven tick by tick against cmd/fakegh
@@ -525,11 +526,7 @@ func TestIssueSyncNowWakesTheLoop(t *testing.T) {
 
 func waitFor(t *testing.T, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(20 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatal("condition never held")
-		}
-		time.Sleep(50 * time.Millisecond)
+	if !wait.Poll(wait.DefaultBudget, 50*time.Millisecond, cond) {
+		t.Fatal("condition never held")
 	}
 }

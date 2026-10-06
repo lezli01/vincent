@@ -12,6 +12,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/testrepo"
+	"github.com/lezli01/vincent/internal/testutil/wait"
 	"github.com/lezli01/vincent/internal/workflow"
 )
 
@@ -203,25 +204,25 @@ type taskDetail struct {
 // fails fast on a terminal state that is not it.
 func waitForTaskState(t *testing.T, dataDir, cfgDir, id, want string) taskDetail {
 	t.Helper()
-	deadline := time.Now().Add(90 * time.Second)
-	for {
+	var got taskDetail
+	if !wait.Poll(90*time.Second, 200*time.Millisecond, func() bool {
 		out, code := runVincent(t, dataDir, cfgDir, "task", "show", id, "--json")
 		if code != 0 {
 			t.Fatalf("task show: code %d, out %q", code, out)
 		}
-		var got taskDetail
+		got = taskDetail{}
 		if err := json.Unmarshal([]byte(out), &got); err != nil {
 			t.Fatalf("task show --json is not JSON: %v (%q)", err, out)
 		}
 		if got.State == want {
-			return got
+			return true
 		}
 		if got.State == "blocked" || got.State == "aborted" {
 			t.Fatalf("task %s ended %s (%s), want %s", id, got.State, deref(got.BlockReason), want)
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("task %s stuck in %s, want %s", id, got.State, want)
-		}
-		time.Sleep(200 * time.Millisecond)
+		return false
+	}) {
+		t.Fatalf("task %s stuck in %s, want %s", id, got.State, want)
 	}
+	return got
 }

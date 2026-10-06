@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/testutil/wait"
 )
 
 func TestNormalizeStatusMessage(t *testing.T) {
@@ -83,16 +84,11 @@ func TestStatusThrottleCoalesces(t *testing.T) {
 		t.Error("a second step run was throttled by the first's traffic")
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
+	wait.Poll(2*time.Second, 5*time.Millisecond, func() bool {
 		mu.Lock()
-		n := len(written)
-		mu.Unlock()
-		if n > 0 {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+		defer mu.Unlock()
+		return len(written) > 0
+	})
 	mu.Lock()
 	defer mu.Unlock()
 	if len(written) != 1 {
@@ -219,20 +215,17 @@ func TestSetStepStatusCoalescedValueSurvivesTheStep(t *testing.T) {
 	h.waitForState(t, task.ID, store.TaskAborted)
 	waitForFinishedRun(t, h, run.ID)
 
-	deadline := time.Now().Add(10 * time.Second)
 	var last string
-	for time.Now().Before(deadline) {
+	if !wait.Poll(10*time.Second, 20*time.Millisecond, func() bool {
 		got, err := h.store.GetStepRun(ctx, run.ID)
 		if err != nil {
 			t.Fatalf("GetStepRun: %v", err)
 		}
 		last = got.StatusMessage
-		if last == "third" {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
+		return last == "third"
+	}) {
+		t.Errorf("status after the burst = %q, want the coalesced latest value", last)
 	}
-	t.Errorf("status after the burst = %q, want the coalesced latest value", last)
 }
 
 // An unknown task is not-found, which the API answers 404 to; only a step
@@ -276,39 +269,38 @@ func TestRecoverKeepsTheStatusMessage(t *testing.T) {
 // waitForFinishedRun polls until a step run carries a finish stamp.
 func waitForFinishedRun(t *testing.T, h *engineHarness, runID int64) *store.StepRun {
 	t.Helper()
-	deadline := time.Now().Add(60 * time.Second)
 	var last *store.StepRun
-	for time.Now().Before(deadline) {
+	if !wait.Poll(60*time.Second, 20*time.Millisecond, func() bool {
 		run, err := h.store.GetStepRun(context.Background(), runID)
 		if err != nil {
 			t.Fatalf("GetStepRun: %v", err)
 		}
 		last = run
-		if run.FinishedAt != nil {
-			return run
-		}
-		time.Sleep(20 * time.Millisecond)
+		return run.FinishedAt != nil
+	}) {
+		t.Fatalf("step run %d never finished: %+v", runID, last)
 	}
-	t.Fatalf("step run %d never finished: %+v", runID, last)
-	return nil
+	return last
 }
 
 // waitForRunningRun polls until the named step has a `running` row.
 func waitForRunningRun(t *testing.T, h *engineHarness, taskID int64, stepID string) *store.StepRun {
 	t.Helper()
-	deadline := time.Now().Add(60 * time.Second)
-	for time.Now().Before(deadline) {
+	var found *store.StepRun
+	if !wait.Poll(60*time.Second, 20*time.Millisecond, func() bool {
 		runs, err := h.store.ListStepRuns(context.Background(), taskID)
 		if err != nil {
 			t.Fatalf("ListStepRuns: %v", err)
 		}
 		for i := range runs {
 			if runs[i].StepID == stepID && runs[i].State == store.StepRunning {
-				return &runs[i]
+				found = &runs[i]
+				return true
 			}
 		}
-		time.Sleep(20 * time.Millisecond)
+		return false
+	}) {
+		t.Fatalf("step %q of task %d never reached running", stepID, taskID)
 	}
-	t.Fatalf("step %q of task %d never reached running", stepID, taskID)
-	return nil
+	return found
 }

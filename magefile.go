@@ -5,9 +5,14 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/magefile/mage/sh"
@@ -44,6 +49,119 @@ func Test() error {
 // timeout-minutes in ci.yml, which stays the wider of the two.
 func TestRace() error {
 	return sh.RunV("go", "test", "-race", "-timeout", "30m", "./...")
+}
+
+// TestRaceCI is TestRace as CI runs it: under gotestsum (pinned via the go.mod
+// tool directive), rerunning failed tests and writing reports (#736).
+//
+// It is a separate target so CI still runs a mage target developers can run
+// locally, while Test and TestRace stay plain `go test`: a local run should
+// fail on the first failure, not paper over it. In CI a test that fails and
+// then passes on a rerun no longer reds the job — that is the point, since an
+// intermittent failure otherwise costs a whole re-run of the leg — so every
+// rerun is made visible instead of silent.
+//
+// Rerun budget: up to 2 reruns of each failed test (gotestsum reruns only the
+// failed tests, by -run), and none at all when the first pass has more than
+// gotestsum's default 10 failures — that many is a regression, and rerunning
+// it would only burn the Windows leg's budget. A data race is never rerun
+// (--rerun-fails-abort-on-data-race): a race is a correctness bug, and an
+// intermittent one, so a rerun that happened not to race would turn it green.
+// -timeout 30m is TestRace's, for TestRace's reasons.
+//
+// Reports land in bin/test-report/ (VINCENT_TEST_REPORT_DIR overrides):
+// junit.xml and test.json carry each test's elapsed time, reruns.txt lists
+// every test that was rerun. When $GITHUB_STEP_SUMMARY is set, a "Tests
+// rerun" section listing reruns.txt is appended to the job summary — on the
+// failure path too, so a test that failed every attempt is named there as
+// well as failing the job. VINCENT_TEST_DIR runs the suite in another module;
+// only scripts/test-rerun-check.sh uses it, to prove this target against
+// tests that fail on purpose.
+func TestRaceCI() (err error) {
+	// Resolved here, from this module, so the suite may run in a module
+	// that does not pin gotestsum.
+	bin, err := sh.Output("go", "tool", "-n", "gotestsum")
+	if err != nil {
+		return fmt.Errorf("locating gotestsum: %w", err)
+	}
+	report := os.Getenv("VINCENT_TEST_REPORT_DIR")
+	if report == "" {
+		report = filepath.Join("bin", "test-report")
+	}
+	if report, err = filepath.Abs(report); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(report, 0o750); err != nil {
+		return err
+	}
+	reruns := filepath.Join(report, "reruns.txt")
+	// A stale report from an earlier run would be summarized as this one's.
+	if err := os.Remove(reruns); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	defer func() {
+		if serr := summarizeReruns(reruns, err != nil); serr != nil && err == nil {
+			err = serr
+		}
+	}()
+
+	cmd := exec.Command(bin,
+		"--format", "standard-quiet",
+		"--rerun-fails=2",
+		"--rerun-fails-abort-on-data-race",
+		"--rerun-fails-report", reruns,
+		"--packages", "./...",
+		"--junitfile", filepath.Join(report, "junit.xml"),
+		"--jsonfile", filepath.Join(report, "test.json"),
+		"--", "-race", "-timeout", "30m")
+	cmd.Dir = os.Getenv("VINCENT_TEST_DIR")
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("gotestsum: %w", err)
+	}
+	return nil
+}
+
+// summarizeReruns appends TestRaceCI's "Tests rerun" section to the GitHub
+// job summary, and does nothing outside Actions.
+func summarizeReruns(reruns string, failed bool) error {
+	summary := os.Getenv("GITHUB_STEP_SUMMARY")
+	if summary == "" {
+		return nil
+	}
+	data, err := os.ReadFile(reruns)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "### Tests rerun (%s)\n\n", runtime.GOOS)
+	var lines []string
+	for _, l := range strings.Split(string(data), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			lines = append(lines, l)
+		}
+	}
+	switch {
+	case len(lines) > 0:
+		b.WriteString("Each line is a test that failed at least once; one whose failures are fewer than its runs passed on a rerun.\n\n")
+		for _, l := range lines {
+			fmt.Fprintf(&b, "- `%s`\n", l)
+		}
+	case failed:
+		b.WriteString("No test was rerun, and the run failed: more than 10 failures skip reruns entirely, and neither a build failure nor a data race is ever rerun. See the step log.\n")
+	default:
+		b.WriteString("No test needed a rerun.\n")
+	}
+	b.WriteString("\n")
+	f, err := os.OpenFile(summary, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString(b.String()); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // Lint runs golangci-lint, pinned via the go.mod tool directive.
