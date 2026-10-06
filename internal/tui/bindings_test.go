@@ -3112,6 +3112,6 @@ func pickerProbeRoot(t *testing.T) *root {
 	m := newRoot(testCtx(t), connector{}, ackedDir(t))
 	m.phase = phaseConnected
 	m.sel = projectSel{id: 1, name: "api"}
-	m.projPick = newProjectPicker([]apiclient.Project{testProject(1, "api"), testProject(2, "web")}, 1)
+	m.projPick = newProjectPicker([]apiclient.Project{testProject(1, "api"), testProject(2, "web")}, 1, "")
 	return m
 }

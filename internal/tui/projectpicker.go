@@ -30,6 +30,10 @@ type projectPicker struct {
 	projects []apiclient.Project
 	// current is the selection the picker was opened over, marked on its row.
 	current int64
+	// defaultProject is `tui.default_project` as the root last heard it,
+	// marked on the row of that name (task 132.18). The root pushes a newer
+	// config answer into an open picker, so an edit moves the mark at once.
+	defaultProject string
 	// cursor indexes matches(); overview is the overview row instead, set
 	// only by ↓ past the last match and cleared by ↑ or typing. A flag rather
 	// than cursor == len(matches): a filter matching nothing or an empty
@@ -49,12 +53,18 @@ type projectPicker struct {
 // glyph, so the two read as one thing.
 const projectPickerGlyph = headerProjectGlyph
 
-func newProjectPicker(projects []apiclient.Project, current int64) *projectPicker {
+// projectPickerDefaultGlyph marks the `tui.default_project` row (task 132
+// decision 56). One cell wide, used by no other TUI surface, and a different
+// shape from `◆`, so the two still tell apart under NO_COLOR and at 16
+// colours (§15 Colour).
+const projectPickerDefaultGlyph = "★"
+
+func newProjectPicker(projects []apiclient.Project, current int64, defaultProject string) *projectPicker {
 	in := newTextField()
 	in.SetPlaceholder("type to filter projects")
 	in.SetPrompt("@ ")
 	in.Focus()
-	pp := &projectPicker{input: in, projects: projects, current: current}
+	pp := &projectPicker{input: in, projects: projects, current: current, defaultProject: defaultProject}
 	// Open on the current project, so enter straight away is a no-op rather
 	// than a switch to whichever project sorts first.
 	for i, p := range pp.matches() {
@@ -235,8 +245,11 @@ func (pp *projectPicker) render(w, h int) string {
 	return frame("projects", strings.Join(lines, "\n"), w, h, true)
 }
 
-// row is one project: the cursor and current-project marks, the name, and its
-// figures right-aligned (C1 of task 132.4).
+// row is one project: the cursor, current-project and default-project marks,
+// the name, and its figures right-aligned (C1 of task 132.4). Each mark is a
+// fixed two-cell column, blank when it does not apply, so names stay aligned
+// and a row can carry `◆ ★`; the marks are never shed, only figures and then
+// the name (task 132 decision 56).
 func (pp *projectPicker) row(p apiclient.Project, focused bool, width int) string {
 	mark, style := "  ", styleDim
 	if focused {
@@ -246,8 +259,14 @@ func (pp *projectPicker) row(p apiclient.Project, focused bool, width int) strin
 	if p.ID == pp.current {
 		current = styleTitle.Render(projectPickerGlyph + " ")
 	}
-	name, figures := projectPickerFit(p, max(width-4, 1))
-	line := mark + current + style.Render(name)
+	def := "  "
+	// By name and exact, as resolveStartupProject matches it: an unset or
+	// unregistered default marks nothing, and startup already warned.
+	if pp.defaultProject != "" && p.Name == pp.defaultProject {
+		def = styleTitle.Render(projectPickerDefaultGlyph + " ")
+	}
+	name, figures := projectPickerFit(p, max(width-6, 1))
+	line := mark + current + def + style.Render(name)
 	if figures == "" {
 		return line
 	}

@@ -722,7 +722,7 @@ func (m *root) openProjectPicker() tea.Cmd {
 		return nil
 	}
 	m.help = false
-	m.projPick = newProjectPicker(m.projects, m.sel.id)
+	m.projPick = newProjectPicker(m.projects, m.sel.id, m.defaultProject)
 	m.projPick.offline = m.phase != phaseConnected
 	return m.fetchProjectPicker()
 }
