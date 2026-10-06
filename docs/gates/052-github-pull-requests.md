@@ -70,7 +70,7 @@ a browser on CI would be a gate nobody could run.
 ## CI
 
 The gate runs as the `052 gate (GitHub pull requests)` step of `ci.yml`'s
-`gates` job, on Linux, macOS and Windows, from #381 on.
+`gate-group` job, on Linux, macOS and Windows, from #381 on.
 
 Until then it was unwired: the session that wrote it could not edit
 `.github/workflows/` (#120, #122, #125). While unwired it went red without

@@ -36,6 +36,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/gate.sh
+source "$ROOT/scripts/lib/gate.sh"
 TMP="$(mktemp -d)"
 BIN="$TMP/bin"
 
@@ -65,7 +67,7 @@ hostpath() {
 }
 
 echo "== build vincent + fakeagent"
-(cd "$ROOT" && go build -o "$(hostpath "$BIN")/" ./cmd/vincent ./cmd/fakeagent)
+gate_build "$BIN" vincent fakeagent
 
 # ---------------------------------------------------------------------------
 # Per-scenario plumbing. scenario_dirs re-points the phase-1 env-override
@@ -120,16 +122,16 @@ register_project() { # register_project REPO_PATH [EXTRA_JSON_FIELDS] -> id
   api POST /projects "$body" | jq -r .id
 }
 
-wait_for_state() { # wait_for_state TASK_ID STATE TRIES
+wait_for_state() { # wait_for_state TASK_ID STATE SECS
   local id="$1" want="$2" tries="$3" state=""
-  for _ in $(seq 1 "$tries"); do
+  for _ in $(seq 1 "$(gate_ticks "$tries")"); do
     state="$(api GET "/tasks/$id" | jq -r .state)"
     [[ "$state" == "$want" ]] && return 0
     if [[ "$state" == "blocked" || "$state" == "aborted" ]] && [[ "$want" != "blocked" ]]; then
       api GET "/tasks/$id" | jq . >&2
       fail "task $id reached $state while waiting for $want"
     fi
-    sleep 1
+    sleep "$GATE_POLL"
   done
   api GET "/tasks/$id" | jq . >&2
   fail "task $id never reached $want (still $state)"
@@ -364,7 +366,7 @@ EOF
 
   echo "== wait for the agent (and its child) to spawn"
   local child_pid=""
-  for _ in $(seq 1 60); do
+  for _ in $(seq 1 "$(gate_ticks 60)"); do
     local run_id
     run_id="$(api GET "/tasks/$task_id/steps" | jq -r '.[0].id // empty')"
     if [[ -n "$run_id" ]]; then
@@ -372,7 +374,7 @@ EOF
         | grep '"fakeagent.child"' | head -1 | jq -r .pid || true)"
       [[ -n "$child_pid" ]] && break
     fi
-    sleep 1
+    sleep "$GATE_POLL"
   done
   [[ "$child_pid" =~ ^[0-9]+$ ]] || fail "never saw the fakeagent child pid in the transcript"
 
@@ -386,9 +388,9 @@ EOF
   else
     kill -9 "$daemon_pid"
   fi
-  for _ in $(seq 1 20); do
+  for _ in $(seq 1 "$(gate_ticks 10)"); do
     kill -0 "$daemon_pid" 2>/dev/null || break
-    sleep 0.5
+    sleep "$GATE_POLL"
   done
 
   echo "== restart (scenario flips to success for the re-run)"
@@ -398,7 +400,7 @@ EOF
 
   echo "== assert the orphaned child is gone"
   local alive=1
-  for _ in $(seq 1 20); do
+  for _ in $(seq 1 "$(gate_ticks 10)"); do
     if [[ "${OS:-}" == "Windows_NT" ]]; then
       local listing
       listing="$(tasklist //FI "PID eq $child_pid" 2>/dev/null || true)"
@@ -406,7 +408,7 @@ EOF
     else
       kill -0 "$child_pid" 2>/dev/null || { alive=0; break; }
     fi
-    sleep 0.5
+    sleep "$GATE_POLL"
   done
   (( alive == 0 )) || fail "orphaned child $child_pid still alive after recovery"
 
@@ -609,7 +611,7 @@ EOF
 # pressing anything. The recheck interval is squeezed to ten seconds so the
 # unattended half is observable in a gate rather than in five hours — ten and
 # not the two it was, because the *held* half has to be observable too. The
-# poll below detects the hold on a one-second granularity and then asserts
+# poll below detects the hold within a GATE_POLL tick and then asserts
 # several facts about it over curl, and on Windows a single codex app-server
 # probe answers in over a second; two seconds of hold was less than the
 # assertions cost, so the scenario was reading a task the scheduler had
@@ -728,11 +730,11 @@ EOF
   echo "== wait for the quota stop to park the task on an admission hold"
   local task=""
   local ok=0
-  for _ in $(seq 1 90); do
+  for _ in $(seq 1 "$(gate_ticks 90)"); do
     task="$(api GET "/tasks/$walled")"
     if [[ "$(jq -r '.queued_reason // "null"' <<<"$task")" == "usage_limit" ]]; then ok=1; break; fi
     [[ "$(jq -r .state <<<"$task")" == "blocked" ]] && { jq . <<<"$task" >&2; fail "task $walled blocked instead of waiting on the quota window"; }
-    sleep 1
+    sleep "$GATE_POLL"
   done
   (( ok )) || { jq . <<<"$task" >&2; fail "task $walled never picked up queued_reason=usage_limit"; }
   [[ "$(jq -r .state <<<"$task")" == "queued" ]] || fail "held task is $(jq -r .state <<<"$task"), want queued"
@@ -910,10 +912,10 @@ agents:
     path: "$(hostpath "$FAKEAGENT")"
 EOF
   local reloaded=0
-  for _ in $(seq 1 30); do
+  for _ in $(seq 1 "$(gate_ticks 30)"); do
     [[ "$(api GET /config | jq -r .delete_empty_branch_on_archive)" == "false" ]] \
       && { reloaded=1; break; }
-    sleep 1
+    sleep "$GATE_POLL"
   done
   (( reloaded )) || fail "the daemon never picked up the edited config"
 
@@ -1408,11 +1410,11 @@ YAML
 
   echo "== wait for the failed attempt to park the task on an admission hold"
   local task="" ok=0
-  for _ in $(seq 1 90); do
+  for _ in $(seq 1 "$(gate_ticks 90)"); do
     task="$(api GET "/tasks/$paced")"
     if [[ "$(jq -r '.queued_reason // "null"' <<<"$task")" == "retry_backoff" ]]; then ok=1; break; fi
     [[ "$(jq -r .state <<<"$task")" == "blocked" ]] && { jq . <<<"$task" >&2; fail "task $paced blocked instead of pacing its retry"; }
-    sleep 1
+    sleep "$GATE_POLL"
   done
   (( ok )) || { jq . <<<"$task" >&2; fail "task $paced never picked up queued_reason=retry_backoff"; }
   [[ "$(jq -r .state <<<"$task")" == "queued" ]] || fail "paced task is $(jq -r .state <<<"$task"), want queued"
@@ -1493,13 +1495,13 @@ YAML
 
   echo "== the running step's status is visible while it runs"
   local live="" row=""
-  for _ in $(seq 1 60); do
+  for _ in $(seq 1 "$(gate_ticks 60)"); do
     row="$(api GET "/tasks/$task_id/steps" | jq '[.[] | select(.step_id == "narrate")][-1] // {}')"
     if [[ "$(jq -r '.state // ""' <<<"$row")" == "running" ]]; then
       live="$(jq -r '.status_message // ""' <<<"$row")"
       [[ -n "$live" ]] && break
     fi
-    sleep 1
+    sleep "$GATE_POLL"
   done
   [[ "$live" == "scaffolding the migration" ]] \
     || fail "running step's status_message is '$live', want the message the step set: $row"
@@ -1513,11 +1515,11 @@ YAML
   echo "== wait for done; the last value survives on the finished row"
   wait_for_state "$task_id" done 180
   local final=""
-  for _ in $(seq 1 15); do
+  for _ in $(seq 1 "$(gate_ticks 15)"); do
     row="$(api GET "/tasks/$task_id/steps" | jq '[.[] | select(.step_id == "narrate")][-1]')"
     final="$(jq -r '.status_message // ""' <<<"$row")"
     [[ "$final" == "3 tests red in internal/store" ]] && break
-    sleep 1
+    sleep "$GATE_POLL"
   done
   [[ "$(jq -r .state <<<"$row")" == "succeeded" ]] || fail "narrate step not succeeded: $row"
   [[ "$final" == "3 tests red in internal/store" ]] \
@@ -1584,14 +1586,14 @@ EOF
 
   echo "== the quota stop blocks the task instead of parking it on a hold"
   local task="" ok=0
-  for _ in $(seq 1 90); do
+  for _ in $(seq 1 "$(gate_ticks 90)"); do
     task="$(api GET "/tasks/$walled")"
     [[ "$(jq -r .state <<<"$task")" == "blocked" ]] && { ok=1; break; }
     [[ "$(jq -r .state <<<"$task")" == "done" ]] \
       && { jq . <<<"$task" >&2; fail "task $walled finished; the fake CLI was meant to be walled"; }
     [[ "$(jq -r '.queued_reason // "null"' <<<"$task")" == "usage_limit" ]] \
       && { jq . <<<"$task" >&2; fail "task $walled was held on the window; usage_limit_auto_continue is never"; }
-    sleep 1
+    sleep "$GATE_POLL"
   done
   (( ok )) || { jq . <<<"$task" >&2; fail "task $walled never blocked"; }
 
@@ -1664,12 +1666,12 @@ EOF
   held="$(api POST /tasks "{\"project_id\":$proj2,\"workflow\":\"m2-quota-off\",\"title\":\"Quota walled, reset reported\"}" | jq -r .id)"
 
   task="" ok=0
-  for _ in $(seq 1 90); do
+  for _ in $(seq 1 "$(gate_ticks 90)"); do
     task="$(api GET "/tasks/$held")"
     [[ "$(jq -r '.queued_reason // "null"' <<<"$task")" == "usage_limit" ]] && { ok=1; break; }
     [[ "$(jq -r .state <<<"$task")" == "blocked" ]] \
       && { jq . <<<"$task" >&2; fail "task $held blocked on a reset the CLI named; reported_only must wait it out"; }
-    sleep 1
+    sleep "$GATE_POLL"
   done
   (( ok )) || { jq . <<<"$task" >&2; fail "task $held never picked up queued_reason=usage_limit"; }
   [[ "$(jq -r .state <<<"$task")" == "queued" ]] || fail "held task is $(jq -r .state <<<"$task"), want queued"
@@ -1744,24 +1746,24 @@ scenario14() {
   a="$(api POST /tasks "{\"project_id\":$proj,\"workflow\":\"m2-quota-wide\",\"title\":\"Hits the wall\"}" | jq -r .id)"
 
   echo "== task A hits the wall and is held"
-  for _ in $(seq 1 90); do
+  for _ in $(seq 1 "$(gate_ticks 90)"); do
     task="$(api GET "/tasks/$a")"
     [[ "$(jq -r '.queued_reason // "null"' <<<"$task")" == "usage_limit" ]] && { ok=1; break; }
     [[ "$(jq -r .state <<<"$task")" == "blocked" ]] \
       && { jq . <<<"$task" >&2; fail "task $a blocked instead of waiting on the quota window"; }
-    sleep 1
+    sleep "$GATE_POLL"
   done
   (( ok )) || { jq . <<<"$task" >&2; fail "task $a never picked up queued_reason=usage_limit"; }
 
   echo "== task B, created while A waits, is held at its agent step without spawning"
   b="$(api POST /tasks "{\"project_id\":$proj,\"workflow\":\"m2-quota-wide\",\"title\":\"Behind the wall\"}" | jq -r .id)"
   ok=0
-  for _ in $(seq 1 30); do
+  for _ in $(seq 1 "$(gate_ticks 30)"); do
     task="$(api GET "/tasks/$b")"
     [[ "$(jq -r '.queued_reason // "null"' <<<"$task")" == "usage_limit" ]] && { ok=1; break; }
     [[ "$(jq -r .state <<<"$task")" == "done" || "$(jq -r .state <<<"$task")" == "blocked" ]] \
       && { jq . <<<"$task" >&2; fail "task $b reached $(jq -r .state <<<"$task"); it should be waiting on A's window"; }
-    sleep 1
+    sleep "$GATE_POLL"
   done
   (( ok )) || { jq . <<<"$task" >&2; fail "task $b never picked up queued_reason=usage_limit"; }
   # Captured together, straight after the hold is seen: the hold ends when the

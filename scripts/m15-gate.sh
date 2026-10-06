@@ -26,6 +26,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/gate.sh
+source "$ROOT/scripts/lib/gate.sh"
 TMP="$(mktemp -d)"
 BIN="$TMP/bin"
 
@@ -49,7 +51,7 @@ hostpath() {
 }
 
 echo "== build vincent and the fake agent"
-(cd "$ROOT" && go build -o "$(hostpath "$BIN")/" ./cmd/vincent ./cmd/fakeagent)
+gate_build "$BIN" vincent fakeagent
 
 CONFIG_DIR="$TMP/config"
 DATA_DIR="$TMP/data"
@@ -138,13 +140,13 @@ create_task() {
 # wait_state ID STATE — poll until the task reaches STATE.
 wait_state() {
   local id="$1" want="$2" i state
-  for i in $(seq 1 120); do
+  for i in $(seq 1 "$(gate_ticks 120)"); do
     state="$(api GET "/tasks/$id" | jq -r .state)"
     [[ "$state" == "$want" ]] && return 0
     if [[ "$state" == "aborted" || "$state" == "blocked" ]] && [[ "$want" != "$state" ]]; then
       fail "task $id went $state waiting for $want"
     fi
-    sleep 1
+    sleep "$GATE_POLL"
   done
   fail "task $id never reached $want (stuck in $state)"
 }

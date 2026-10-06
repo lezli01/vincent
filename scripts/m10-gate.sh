@@ -33,6 +33,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/gate.sh
+source "$ROOT/scripts/lib/gate.sh"
 TMP="$(mktemp -d)"
 BIN="$TMP/bin"
 
@@ -56,7 +58,7 @@ hostpath() {
 }
 
 echo "== build vincent + fakeagent"
-(cd "$ROOT" && go build -o "$(hostpath "$BIN")/" ./cmd/vincent ./cmd/fakeagent)
+gate_build "$BIN" vincent fakeagent
 
 CONFIG_DIR="$TMP/config"
 DATA_DIR="$TMP/data"
@@ -333,10 +335,11 @@ wait_via_mcp "$AGENT_TASK_ID" done 5
 # rather than for a length of time. A report that had failed would have failed
 # the step instead — the scenario exits nonzero on any tool error.
 STATUS=""
-for ((i = 0; i < 10; i++)); do
+TICKS="$(gate_ticks 10)"
+for ((i = 0; i < TICKS; i++)); do
   STATUS="$(ask_status)"
   [[ "$STATUS" == "$FAKEAGENT_MCP_STATUS_FINAL" ]] && break
-  sleep 1
+  sleep "$GATE_POLL"
 done
 [[ "$STATUS" == "$FAKEAGENT_MCP_STATUS_FINAL" ]] \
   || fail "the finished agent step's status_message is '$STATUS', want '$FAKEAGENT_MCP_STATUS_FINAL'"

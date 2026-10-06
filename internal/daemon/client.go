@@ -44,7 +44,9 @@ func CheckHealth(ctx context.Context, port int) (HealthInfo, error) {
 
 // RequestStop asks the daemon to shut down gracefully via
 // POST /v1/daemon/stop (phase 1 spec addition). It returns once the daemon
-// has accepted the request; the caller waits for the lock to release.
+// has accepted the request; the caller waits for the lock to release and
+// then for the process to exit — the lock is released in a defer, before the
+// process is gone (spec §13.2, issue #732).
 func RequestStop(ctx context.Context, port int, token string) error {
 	url := fmt.Sprintf("http://127.0.0.1:%d/v1/daemon/stop", port)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)

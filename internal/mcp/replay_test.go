@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -308,5 +309,51 @@ func TestIssueListOffersTheRemoteNumberLookup(t *testing.T) {
 	r := routeFor(t, "issue_list")
 	if !strings.Contains(r.Description, "remote_number") || !strings.Contains(r.Description, "project_id") {
 		t.Errorf("issue_list does not document remote_number: %s", r.Description)
+	}
+}
+
+// TestStepEndpointAcceptsTheContainerHost: on Docker Desktop a containerized
+// step dials host.docker.internal, which Desktop forwards to the daemon's
+// loopback listener. The SDK's DNS-rebinding guard refused that Host with a
+// 403 (m12 scenario 8 on a macOS host); the step endpoint authenticates its
+// own secret first, so it accepts it, while the shared `/mcp` keeps the guard.
+func TestStepEndpointAcceptsTheContainerHost(t *testing.T) {
+	t.Parallel()
+	s := New(Deps{Handler: &stubHandler{status: http.StatusOK, body: "{}"}})
+	sess, err := s.OpenStep(12, 43, "build")
+	if err != nil {
+		t.Fatalf("OpenStep: %v", err)
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", s.Handler())
+	mux.Handle(sess.URLPath(), s.StepHandler())
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	initialize := func(path, secret string) int {
+		t.Helper()
+		body := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, srv.URL+path, strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("build request: %v", err)
+		}
+		req.Host = "host.docker.internal:7777"
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		if secret != "" {
+			req.Header.Set("Authorization", "Bearer "+secret)
+		}
+		res, err := srv.Client().Do(req)
+		if err != nil {
+			t.Fatalf("POST %s: %v", path, err)
+		}
+		_ = res.Body.Close()
+		return res.StatusCode
+	}
+	if got := initialize(sess.URLPath(), sess.Secret); got != http.StatusOK {
+		t.Errorf("step endpoint under host.docker.internal = HTTP %d, want 200", got)
+	}
+	if got := initialize("/mcp", ""); got != http.StatusForbidden {
+		t.Errorf("shared /mcp under host.docker.internal = HTTP %d, want 403 from the rebinding guard", got)
 	}
 }

@@ -105,7 +105,7 @@ Scenario 3 asserts both, in that order.
 
 ## CI
 
-`.github/workflows/ci.yml`'s `gates` job runs the scripted leg on Linux, macOS
+`.github/workflows/ci.yml`'s `gate-group` job runs the scripted leg on Linux, macOS
 and Windows as the `069 gate (open a pull request)` step. Windows matters to it
 four ways: the push goes to a drive-letter `pushurl`, `gh` is resolved from
 PATH to `gh.exe` (as it is for the 052 gate), the pull request body

@@ -64,6 +64,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/gate.sh
+source "$ROOT/scripts/lib/gate.sh"
 TMP="$(mktemp -d)"
 BIN="$TMP/bin"
 
@@ -104,7 +106,7 @@ run_scenario() { # run_scenario N — honours VINCENT_GATE_SCENARIO
 }
 
 echo "== build vincent and the fake agent"
-(cd "$ROOT" && go build -o "$(hostpath "$BIN")/" ./cmd/vincent ./cmd/fakeagent)
+gate_build "$BIN" vincent fakeagent
 
 AGENT="${VINCENT_GATE_AGENT:-}"
 FAKEAGENT_HOST="$(hostpath "$FAKEAGENT")"
@@ -263,15 +265,16 @@ task_field() { api GET "/tasks/$1" | jq -r --arg f "$2" '.[$f]'; }
 
 # wait_state ID STATE — poll until the task reaches STATE.
 wait_state() {
-  local id="$1" want="$2" i state=""
-  for ((i = 0; i < 240; i++)); do
+  local id="$1" want="$2" i ticks state=""
+  ticks="$(gate_ticks 120)"
+  for ((i = 0; i < ticks; i++)); do
     state="$(task_field "$id" state)"
     [[ "$state" == "$want" ]] && return 0
     if [[ "$state" == "aborted" || "$state" == "blocked" ]] && [[ "$want" != "$state" ]]; then
       api GET "/tasks/$id" | jq . >&2
       fail "task $id went $state waiting for $want"
     fi
-    sleep 0.5
+    sleep "$GATE_POLL"
   done
   fail "task $id never reached $want (stuck in $state)"
 }

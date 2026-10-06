@@ -92,9 +92,20 @@ jobs:
       # gotestsum rerunning failed tests (up to twice each) and reporting
       # them (#736). A rerun that passes does not red the job, so every
       # rerun is listed in the job summary instead, and the reports below
-      # carry each test's elapsed time for trend tracking.
-      - name: Lint
-        run: go run mage.go lint
+      # carry each test's elapsed time for trend tracking. Lint is the third:
+      # CI runs lintall, the all-platform form of lint, on one leg only.
+      #
+      # Lint runs once, on the Linux leg, for linux, darwin and windows (#727).
+      # The repository has no cgo, so linting with GOOS set sees exactly the
+      # files a native run on that OS would — a finding in a `_windows.go`
+      # file still fails this step. The ubuntu leg is not the critical path
+      # (Windows is), so the minutes the other two legs spent linting come
+      # off the wall clock. It stays a step of this required `ci` job rather
+      # than a job of its own, which would not be a required check and so
+      # would not block a merge on a red lint.
+      - name: Lint (linux, darwin, windows)
+        if: matrix.os == 'ubuntu-latest'
+        run: go run mage.go lintall
 
       - name: Test (race)
         run: go run mage.go testraceci
@@ -126,20 +137,37 @@ jobs:
           # shellcheck disable=SC2211
           ./bin/vincent* version
 
-  # Acceptance gates (spec §19). One job per OS, not one per gate: each script
-  # is self-isolating — its own `mktemp -d` state dirs via VINCENT_CONFIG_DIR /
-  # VINCENT_DATA_DIR, its own ephemeral port read from daemon.json, its own
-  # `trap cleanup EXIT` — so sequencing them shares one checkout and one
-  # toolchain setup instead of paying for three. The gates themselves run in
-  # seconds; the setup they each repeated was the larger cost. Failure
-  # attribution survives because every gate is still its own named step.
-  gates:
+  # Acceptance gates (spec §19), in two jobs.
+  #
+  # `gate-group` runs them. One job per OS ran every gate in sequence, and
+  # the Windows leg — ~16 min of scripts — was the critical path of every run
+  # (#725, #729). The gates split across four groups per OS instead, which
+  # can run side by side because each script is self-isolating: its own
+  # `mktemp -d` state dirs via VINCENT_CONFIG_DIR / VINCENT_DATA_DIR, its own
+  # ephemeral port read from daemon.json, its own `trap cleanup EXIT`. Each
+  # group job builds vincent, the fake agent and the fake gh once, into
+  # VINCENT_GATE_BIN, and the scripts copy from there (scripts/lib/gate.sh)
+  # rather than each paying for its own `go build`; run locally, without the
+  # variable, every script still builds for itself. Failure attribution
+  # survives because every gate is still its own named step — in one group,
+  # and shown as skipped in the other three.
+  #
+  # `gates` only checks the result. Branch protection requires the checks
+  # `gates (ubuntu-latest|macos-latest|windows-latest)` by name, so that job
+  # id keeps its os matrix and fails unless every group on every OS passed —
+  # one red group turns all three red, and the group's own name says which.
+  gate-group:
+    name: gate group (${{ matrix.os }}, ${{ matrix.group }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 12
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        # Balanced by measured Windows step time, ~235 s of gates a group.
+        # Rebalance when one group outgrows the rest; each gate's step below
+        # names its group.
+        group: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -149,14 +177,25 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # Once per job, not once per gate. RUNNER_TEMP is outside the checkout,
+      # and the runner context is not available to a job-level `env`, hence
+      # GITHUB_ENV.
+      - name: Build gate binaries
+        shell: bash
+        run: |
+          echo "VINCENT_GATE_BIN=$RUNNER_TEMP/gate-bin" >> "$GITHUB_ENV"
+          go build -o "$RUNNER_TEMP/gate-bin/" ./cmd/vincent ./cmd/fakeagent ./cmd/fakegh
+
       # M1: the scripted curl flow against the fake agent.
       - name: M1 gate (fake agent)
+        if: matrix.group == 4
         shell: bash
         run: ./scripts/m1-gate.sh
 
       # M2: multi-step workflow with an input round-trip, hard-kill recovery,
       # and cap stress — all against the fake agent.
       - name: M2 gate (fake agent)
+        if: matrix.group == 1
         shell: bash
         run: ./scripts/m2-gate.sh
 
@@ -166,6 +205,7 @@ jobs:
       # all three OSes rather than one: the refusal is only real on Windows, and
       # "restricted simply runs" is only real off it.
       - name: M5 gate (fake agent)
+        if: matrix.group == 3
         shell: bash
         run: ./scripts/m5-gate.sh
 
@@ -174,6 +214,7 @@ jobs:
       # actually bite — git's behaviour on Windows is the thing a gate should
       # prove rather than assume.
       - name: M6 gate (parallel and fan-out)
+        if: matrix.group == 3
         shell: bash
         run: ./scripts/m6-gate.sh
 
@@ -182,6 +223,7 @@ jobs:
       # matrix here is the shell: every `run:` body is written to be accepted
       # by /bin/sh and pwsh alike, and Windows is what proves it.
       - name: M7 gate (conditions)
+        if: matrix.group == 4
         shell: bash
         run: ./scripts/m7-gate.sh
 
@@ -192,6 +234,7 @@ jobs:
       # mid-iteration, and the kill path is `taskkill` there and SIGKILL
       # everywhere else.
       - name: M8 gate (loops)
+        if: matrix.group == 1
         shell: bash
         run: ./scripts/m8-gate.sh
 
@@ -202,6 +245,7 @@ jobs:
       # multi-line step order and provenance chain, which is where jq's CRLF
       # bites (the m8 finding).
       - name: M9 gate (includes)
+        if: matrix.group == 1
         shell: bash
         run: ./scripts/m9-gate.sh
 
@@ -215,6 +259,7 @@ jobs:
       # and after `awaiting_input` — a second MCP client, whose own CRLF
       # handling and config path Windows tests too.
       - name: M10 gate (MCP)
+        if: matrix.group == 4
         shell: bash
         run: ./scripts/m10-gate.sh
 
@@ -224,6 +269,7 @@ jobs:
       # Windows, and the 0600 assertion is POSIX-only and says so rather than
       # pretending Windows has a mode.
       - name: M11 gate (configuration)
+        if: matrix.group == 2
         shell: bash
         run: ./scripts/m11-gate.sh
 
@@ -236,6 +282,7 @@ jobs:
       # supported host that CI cannot exercise — a gate that has never run on a
       # platform is not known to pass there.
       - name: M12 gate (containers)
+        if: matrix.group == 3
         shell: bash
         run: ./scripts/m12-gate.sh
 
@@ -245,6 +292,7 @@ jobs:
       # backslash paths, and the project scope is a repo path the gate builds
       # on the host it runs on.
       - name: M13 gate (workflow editor)
+        if: matrix.group == 3
         shell: bash
         run: ./scripts/m13-gate.sh
 
@@ -264,6 +312,7 @@ jobs:
       # listing against the fake, the directory the list is about, and the
       # invocation a claude turn reports back.
       - name: M14 gate (chats end to end)
+        if: matrix.group == 2
         shell: bash
         run: ./scripts/m14-gate.sh
 
@@ -274,6 +323,7 @@ jobs:
       # `git rev-list` answer read back through the platform's own line
       # endings.
       - name: M15 gate (archived boards and delete)
+        if: matrix.group == 4
         shell: bash
         run: ./scripts/m15-gate.sh
 
@@ -284,6 +334,7 @@ jobs:
       # through a child's environment, and an HMAC over bytes that must reach
       # the daemon exactly as they were signed.
       - name: M16 gate (event triggers)
+        if: matrix.group == 3
         shell: bash
         run: ./scripts/m16-gate.sh
 
@@ -295,6 +346,7 @@ jobs:
       # workflow validate` by a loop, and "the global file was rewritten" is
       # an atomic rename over a file the registry watcher is watching.
       - name: 123 gate (global update-workflows)
+        if: matrix.group == 4
         shell: bash
         run: ./scripts/123-gate.sh
 
@@ -306,6 +358,7 @@ jobs:
       # and `/private/var/…` on macOS, and the diverged case asserts a ref did
       # not move in a repository three git processes share.
       - name: 125 gate (run on an existing branch)
+        if: matrix.group == 4
         shell: bash
         run: ./scripts/125-gate.sh
 
@@ -317,6 +370,7 @@ jobs:
       # admission configured, and "no remote was added for the fork" and the
       # branch's upstream are read back through Windows' own line endings.
       - name: 064 gate (task from a pull request)
+        if: matrix.group == 3
         shell: bash
         run: ./scripts/064-gate.sh
 
@@ -328,6 +382,7 @@ jobs:
       # worktree branch a pull request's head is matched against is made by
       # git on the host.
       - name: 052 gate (GitHub pull requests)
+        if: matrix.group == 4
         shell: bash
         run: ./scripts/052-gate.sh
 
@@ -339,6 +394,7 @@ jobs:
       # limit, and the argv the fake records is read back with the platform's
       # own line endings.
       - name: 069 gate (open a pull request)
+        if: matrix.group == 2
         shell: bash
         run: ./scripts/069-gate.sh
 
@@ -352,6 +408,7 @@ jobs:
       # included, and the argv log it writes is read back with the platform's
       # own line endings.
       - name: 068 gate (pull request writes)
+        if: matrix.group == 4
         shell: bash
         run: ./scripts/068-gate.sh
 
@@ -367,5 +424,24 @@ jobs:
       # daemon process, and the argv log and the multi-line `jq` captures
       # are read back with the platform's own line endings.
       - name: 130 gate (issues)
+        if: matrix.group == 2
         shell: bash
         run: ./scripts/130-gate.sh
+
+  gates:
+    needs: gate-group
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      # always() above, so a failed, cancelled or skipped group reaches this
+      # step and turns the check red rather than skipping it.
+      - name: Every gate group passed
+        env:
+          RESULT: ${{ needs.gate-group.result }}
+        run: |
+          echo "gate-group: $RESULT"
+          [ "$RESULT" = success ]

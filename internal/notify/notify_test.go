@@ -7,10 +7,13 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/lezli01/vincent/internal/config"
@@ -151,6 +154,41 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 	wait.Until(t, what, cond)
 }
 
+// spawnRecorder replaces the spawn hook with one that only remembers the jobs
+// it was handed. The cases that use it are about which transitions reach a
+// child, not about the child: they run inside a synctest bubble, where a
+// subprocess cannot run but synctest.Wait can say "every worker is idle"
+// exactly, which no sleep can. Envelope delivery to a real child stays with
+// TestFiresAndDeliversEnvelope and its siblings.
+type spawnRecorder struct {
+	mu   sync.Mutex
+	jobs []job
+}
+
+// recordSpawns installs a recorder on h. Call it inside the bubble, after
+// newHarness and before the first OnEvent.
+func recordSpawns(h *harness) *spawnRecorder {
+	r := &spawnRecorder{}
+	h.notifier.spawn = func(_ context.Context, j job, _ []byte) error {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.jobs = append(r.jobs, j)
+		return nil
+	}
+	return r
+}
+
+// spawned is what reached the hook, as "task:to" pairs.
+func (r *spawnRecorder) spawned() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, 0, len(r.jobs))
+	for _, j := range r.jobs {
+		out = append(out, strconv.FormatInt(j.taskID, 10)+":"+j.to)
+	}
+	return out
+}
+
 // TestFiresAndDeliversEnvelope is the feature: a matching transition spawns
 // the configured command with byte-identical argv, and the JSON on its stdin
 // carries what a notifier needs to write a message without calling back into
@@ -285,7 +323,7 @@ func TestSpawnsNothing(t *testing.T) {
 	cases := []struct {
 		name  string
 		on    []taskstate.State
-		argv  func(dir string) []string
+		argv  []string
 		event func(t *testing.T) *store.Event
 	}{
 		{
@@ -314,7 +352,7 @@ func TestSpawnsNothing(t *testing.T) {
 		{
 			name:  "states configured with no command",
 			on:    []taskstate.State{taskstate.Blocked},
-			argv:  func(string) []string { return nil },
+			argv:  []string{},
 			event: func(*testing.T) *store.Event { return stateEvent(1, 1, taskstate.Running, taskstate.Blocked, nil) },
 		},
 		{
@@ -325,18 +363,21 @@ func TestSpawnsNothing(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			argv := helperArgv(t, "capture", dir)
-			if tc.argv != nil {
-				argv = tc.argv(dir)
-			}
-			h := newHarness(t, tc.on, argv)
-			h.notifier.OnEvent(tc.event(t))
-			// Give a spawn that should not happen time to happen anyway.
-			time.Sleep(200 * time.Millisecond)
-			if got := helperFiles(t, dir); len(got) != 0 {
-				t.Errorf("spawned a notifier: %q", got)
-			}
+			synctest.Test(t, func(t *testing.T) {
+				argv := []string{"notifier"}
+				if tc.argv != nil {
+					argv = tc.argv
+				}
+				h := newHarness(t, tc.on, argv)
+				rec := recordSpawns(h)
+				h.notifier.OnEvent(tc.event(t))
+				// Every worker idle again: a spawn that was going to happen
+				// has happened.
+				synctest.Wait()
+				if got := rec.spawned(); len(got) != 0 {
+					t.Errorf("spawned a notifier: %q", got)
+				}
+			})
 		})
 	}
 }
@@ -345,23 +386,26 @@ func TestSpawnsNothing(t *testing.T) {
 // twenty-lane tree reaching done would otherwise send twenty-one messages.
 // The root parent's own transition still fires (task 046 decision 2).
 func TestFanOutLaneIsSkipped(t *testing.T) {
-	dir := t.TempDir()
-	h := newHarness(t, []taskstate.State{taskstate.Done}, helperArgv(t, "capture", dir))
-	parent := int64(1)
-	h.store.tasks[2] = &store.Task{
-		ID: 2, ProjectID: 7, Title: "lane 0", ParentTaskID: &parent,
-		WorkflowName: "lane", BranchName: "vincent/2-lane",
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newHarness(t, []taskstate.State{taskstate.Done}, []string{"notifier"})
+		rec := recordSpawns(h)
+		parent := int64(1)
+		h.store.tasks[2] = &store.Task{
+			ID: 2, ProjectID: 7, Title: "lane 0", ParentTaskID: &parent,
+			WorkflowName: "lane", BranchName: "vincent/2-lane",
+		}
 
-	h.notifier.OnEvent(stateEvent(1, 2, taskstate.Running, taskstate.Done, nil))
-	time.Sleep(200 * time.Millisecond)
-	if got := helperFiles(t, dir); len(got) != 0 {
-		t.Fatalf("a fan-out lane notified: %q", got)
-	}
+		h.notifier.OnEvent(stateEvent(1, 2, taskstate.Running, taskstate.Done, nil))
+		synctest.Wait()
+		if got := rec.spawned(); len(got) != 0 {
+			t.Fatalf("a fan-out lane notified: %q", got)
+		}
 
-	h.notifier.OnEvent(stateEvent(2, 1, taskstate.Running, taskstate.Done, nil))
-	waitFor(t, "the root task's own notification", func() bool {
-		return len(helperFiles(t, dir)) == 2
+		h.notifier.OnEvent(stateEvent(2, 1, taskstate.Running, taskstate.Done, nil))
+		synctest.Wait()
+		if got := rec.spawned(); !slices.Equal(got, []string{"1:done"}) {
+			t.Fatalf("spawned %q, want exactly the root task's own done", got)
+		}
 	})
 }
 
@@ -439,60 +483,64 @@ func TestStderrTailIsTruncated(t *testing.T) {
 
 // TestConcurrencyCapAndQueueDrop is asserted against the spawn hook rather
 // than real processes: what is under test is the pool and the queue, and
-// counting four concurrent children is the same assertion either way.
+// counting four concurrent children is the same assertion either way. It runs
+// in a synctest bubble, so "every worker is busy" and "the queue has drained"
+// are synctest.Wait returning rather than a poll, and the admitted count is
+// exact rather than a range.
 func TestConcurrencyCapAndQueueDrop(t *testing.T) {
-	h := newHarness(t, []taskstate.State{taskstate.Blocked}, []string{"unused"})
+	synctest.Test(t, func(t *testing.T) {
+		h := newHarness(t, []taskstate.State{taskstate.Blocked}, []string{"unused"})
 
-	var inFlight, peak, ran atomic.Int64
-	release := make(chan struct{})
-	h.notifier.spawn = func(context.Context, job, []byte) error {
-		n := inFlight.Add(1)
-		for {
-			p := peak.Load()
-			if n <= p || peak.CompareAndSwap(p, n) {
-				break
+		var inFlight, peak, ran atomic.Int64
+		release := make(chan struct{})
+		h.notifier.spawn = func(context.Context, job, []byte) error {
+			n := inFlight.Add(1)
+			for {
+				p := peak.Load()
+				if n <= p || peak.CompareAndSwap(p, n) {
+					break
+				}
 			}
+			ran.Add(1)
+			<-release
+			inFlight.Add(-1)
+			return nil
 		}
-		ran.Add(1)
-		<-release
-		inFlight.Add(-1)
-		return nil
-	}
+		// Every worker parked on the queue before the burst: the first
+		// maxWorkers events are handed straight to them, and the queue then
+		// holds exactly queueCapacity more.
+		synctest.Wait()
 
-	// Fill the workers and the queue, then push well past both. Publish must
-	// stay prompt with every worker busy: this hook runs on the store's
-	// writing goroutine.
-	const burst = maxWorkers + queueCapacity + 32
-	start := time.Now()
-	for i := range burst {
-		h.notifier.OnEvent(stateEvent(int64(i+1), 1, taskstate.Running, taskstate.Blocked, nil))
-	}
-	if elapsed := time.Since(start); elapsed > 5*time.Second {
-		t.Errorf("OnEvent blocked for %s across %d events; it must never block the publisher",
-			elapsed, burst)
-	}
-	waitFor(t, "every worker to be busy", func() bool { return inFlight.Load() == maxWorkers })
-	// How many were admitted depends on whether the workers dequeued before
-	// the burst filled the queue: anywhere from queueCapacity (the workers
-	// had not yet run) to maxWorkers+queueCapacity. Every other event must
-	// have been logged as a drop.
-	admitted := int64(burst - h.logs.count("notifier queue full"))
-	if admitted < queueCapacity || admitted > maxWorkers+queueCapacity {
-		t.Errorf("%d of %d notifications were admitted; want %d to %d, the rest logged as drops",
-			admitted, burst, queueCapacity, maxWorkers+queueCapacity)
-	}
-	close(release)
+		// Fill the workers and the queue, then push well past both. Publish
+		// must stay prompt with every worker busy: this hook runs on the
+		// store's writing goroutine. A publish that blocked here would leave
+		// every goroutine in the bubble waiting — the workers on release, this
+		// one on the queue — which synctest reports as a deadlock.
+		const burst = maxWorkers + queueCapacity + 32
+		for i := range burst {
+			h.notifier.OnEvent(stateEvent(int64(i+1), 1, taskstate.Running, taskstate.Blocked, nil))
+		}
+		synctest.Wait()
+		if got := inFlight.Load(); got != maxWorkers {
+			t.Fatalf("%d workers busy after the burst, want all %d", got, maxWorkers)
+		}
+		const admitted = maxWorkers + queueCapacity
+		if drops := h.logs.count("notifier queue full"); drops != burst-admitted {
+			t.Errorf("%d of %d notifications were logged as drops; want %d, the rest admitted",
+				drops, burst, burst-admitted)
+		}
+		close(release)
 
-	waitFor(t, "the queue to drain", func() bool { return ran.Load() >= admitted })
-	// Nothing past what was admitted may have run: the rest was dropped,
-	// not backed up.
-	time.Sleep(200 * time.Millisecond)
-	if got := ran.Load(); got != admitted {
-		t.Errorf("%d notifications ran; %d were admitted", got, admitted)
-	}
-	if peak.Load() > maxWorkers {
-		t.Errorf("%d children ran at once, cap is %d", peak.Load(), maxWorkers)
-	}
+		// Every worker idle on an empty queue. Nothing past what was admitted
+		// may have run: the rest was dropped, not backed up.
+		synctest.Wait()
+		if got := ran.Load(); got != admitted {
+			t.Errorf("%d notifications ran; %d were admitted", got, admitted)
+		}
+		if peak.Load() > maxWorkers {
+			t.Errorf("%d children ran at once, cap is %d", peak.Load(), maxWorkers)
+		}
+	})
 }
 
 // TestUnreadableTaskIsSkipped: a task that cannot be read loses its
@@ -515,18 +563,23 @@ func TestUnreadableTaskIsSkipped(t *testing.T) {
 // so an edit to notify.on takes effect on the next transition with no
 // restart and no re-registration.
 func TestHotReloadChangesWhatFires(t *testing.T) {
-	dir := t.TempDir()
-	h := newHarness(t, []taskstate.State{taskstate.Blocked}, helperArgv(t, "capture", dir))
+	synctest.Test(t, func(t *testing.T) {
+		h := newHarness(t, []taskstate.State{taskstate.Blocked}, []string{"notifier"})
+		rec := recordSpawns(h)
 
-	h.notifier.OnEvent(stateEvent(1, 1, taskstate.Running, taskstate.Done, nil))
-	time.Sleep(200 * time.Millisecond)
-	if got := helperFiles(t, dir); len(got) != 0 {
-		t.Fatalf("done fired before it was configured: %q", got)
-	}
+		h.notifier.OnEvent(stateEvent(1, 1, taskstate.Running, taskstate.Done, nil))
+		synctest.Wait()
+		if got := rec.spawned(); len(got) != 0 {
+			t.Fatalf("done fired before it was configured: %q", got)
+		}
 
-	h.setConfig(func(c *config.Config) { c.Notify.On = []taskstate.State{taskstate.Done} })
-	h.notifier.OnEvent(stateEvent(2, 1, taskstate.Running, taskstate.Done, nil))
-	waitFor(t, "the reloaded state to fire", func() bool { return len(helperFiles(t, dir)) == 2 })
+		h.setConfig(func(c *config.Config) { c.Notify.On = []taskstate.State{taskstate.Done} })
+		h.notifier.OnEvent(stateEvent(2, 1, taskstate.Running, taskstate.Done, nil))
+		synctest.Wait()
+		if got := rec.spawned(); !slices.Equal(got, []string{"1:done"}) {
+			t.Fatalf("spawned %q after the reload, want exactly the reloaded state", got)
+		}
+	})
 }
 
 // TestStopIsIdempotentWithoutStart guards the shutdown path: Stop runs before

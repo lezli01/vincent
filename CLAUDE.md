@@ -112,7 +112,12 @@ go run mage.go build     # build bin/vincent with version ldflags injected
 go run mage.go test      # go test ./...
 go run mage.go testrace  # go test -race ./...  (needs cgo + a C compiler)
 go run mage.go lint      # go tool golangci-lint run (pinned via go.mod tool directive)
+go run mage.go lintall   # the same, for GOOS=linux, darwin and windows from this host
 ```
+
+CI lints with `lintall`, on the `ubuntu-latest` leg only (#727): there is no
+cgo, so a cross-GOOS lint sees the same files a native one would, and the
+macOS and Windows legs skip the step.
 
 CI's test step runs `go run mage.go testraceci` instead of `testrace`: the
 same `-race` suite under `go tool gotestsum`, rerunning each failed test up to
@@ -158,9 +163,20 @@ against the fake agent; CI runs every one of them on Linux, macOS and Windows:
 VINCENT_GATE_SCENARIO=2 ./scripts/m2-gate.sh    # single scenario, for debugging
 VINCENT_GATE_AGENT=claude ./scripts/m2-gate.sh  # manual run against the real CLI
 VINCENT_GATE_AGENT=cursor ./scripts/m5-gate.sh  # ditto, for cursor-agent
+VINCENT_GATE_BIN=/some/dir ./scripts/m1-gate.sh # copy prebuilt vincent/fakeagent/fakegh from there instead of building
 ```
 
-All twenty of those run in `ci.yml`'s `gates` job on all three platforms. `m12`
+All twenty of those run in `ci.yml`'s `gate-group` job on all three platforms:
+four groups per OS, balanced by measured Windows time, each gate one named
+step that runs in exactly one group (`if: matrix.group == N`). The `gates` job
+is now only an aggregator that fails unless every group passed, kept because
+branch protection requires `gates (<os>)` by name. A new gate is a step in
+`gate-group` with a group number — the lightest group's — and every gate
+script sources `scripts/lib/gate.sh` right after setting `ROOT`: it builds
+through `gate_build` / `gate_build_as` (which copy from `VINCENT_GATE_BIN`,
+built once per CI job, when it is set), and its wait loops sleep `$GATE_POLL`
+for `$(gate_ticks SECS)` iterations so the budget stays written in seconds.
+Deliberate delays and workflow `run:` bodies keep their plain `sleep N`. `m12`
 is the twenty-first and the exception: it needs a real container runtime, so it runs
 its assertions on the Linux leg only and skips itself (exit 0, one line saying
 why) on the other two — but for two different reasons, and only one of them is
@@ -340,6 +356,16 @@ daemon, no shared fixtures:
   by `VINCENT_TEST_TIMEOUT_SCALE` (set to 3 on CI's Windows race leg). Never
   hand-roll `deadline := time.Now().Add(...)` in a test: a fixed budget is
   sized for a quiet machine and that leg overruns it (#731).
+- `testing/synctest` — a test whose only waiting is on timers, tickers or
+  goroutines talking over channels (no subprocess, no socket, no fsnotify
+  watcher) runs inside `synctest.Test` and waits with `synctest.Wait()`
+  instead of a sleep or a poll: virtual time makes a real interval free and
+  its boundary exact, and "nothing more will happen" becomes provable rather
+  than "nothing within 200 ms". Build the harness inside the bubble so its
+  goroutines belong to it. Anything that spawns a process, dials a socket or
+  watches files keeps `wait.Until`. The first adopters (#737): the notify
+  filter and pool tests over the `spawn` hook, the §13.3 status throttle,
+  and the scheduler's tick loop (`internal/scheduler/loop_test.go`).
 - `internal/agent/agenttest` — compiles `cmd/fakeagent` once per test process.
 - `cmd/fakeagent` — scenario-driven stand-in for an agent CLI. Dialect comes from
   argv shape (`exec` first arg ⇒ codex-shaped; `--trust` anywhere ⇒ cursor-shaped;
@@ -370,7 +396,8 @@ Tests isolate state via `VINCENT_CONFIG_DIR` / `VINCENT_DATA_DIR` (see
   `/`-separated paths, or signal semantics.
 - **Lint the other platforms before pushing, not just build them.** `go build`
   cross-compiles with `GOOS=…`, but `go tool golangci-lint` *cross-builds the
-  linter* and then cannot run it. Build it for the host once and run that:
+  linter* and then cannot run it. Build it for the host once and run that —
+  `go run mage.go lintall` does exactly this, and is what CI runs:
 
   ```sh
   LINT=$(go tool -n golangci-lint)

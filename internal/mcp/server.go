@@ -83,7 +83,17 @@ func New(deps Deps) *Server {
 
 	getServer := func(*http.Request) *sdk.Server { return s.mcp }
 	s.http = sdk.NewStreamableHTTPHandler(getServer, &sdk.StreamableHTTPOptions{Logger: deps.Logger})
-	s.stepMCP = sdk.NewStreamableHTTPHandler(getServer, &sdk.StreamableHTTPOptions{Logger: deps.Logger})
+	// The SDK's DNS-rebinding guard refuses a request that reached a loopback
+	// listener under a non-loopback Host. A containerized step on Docker
+	// Desktop does exactly that: it dials host.docker.internal, which Desktop
+	// forwards to the daemon's loopback port (task 062.2 decision 1), and the
+	// guard answered 403. The guard is redundant here — StepHandler has
+	// already authenticated the run's own secret, which no rebinding page
+	// holds — so it is off for this endpoint and stays on for `/mcp`.
+	s.stepMCP = sdk.NewStreamableHTTPHandler(getServer, &sdk.StreamableHTTPOptions{
+		Logger:                     deps.Logger,
+		DisableLocalhostProtection: true,
+	})
 	return s
 }
 

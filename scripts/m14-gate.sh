@@ -70,6 +70,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/gate.sh
+source "$ROOT/scripts/lib/gate.sh"
 TMP="$(mktemp -d)"
 BIN="$TMP/bin"
 
@@ -99,7 +101,7 @@ hostpath() {
 }
 
 echo "== build vincent + fakeagent"
-(cd "$ROOT" && go build -o "$(hostpath "$BIN")/" ./cmd/vincent ./cmd/fakeagent)
+gate_build "$BIN" vincent fakeagent
 
 CONFIG_DIR="$TMP/config"
 DATA_DIR="$TMP/data"
@@ -159,12 +161,13 @@ api_status() {
 
 # wait_chat CHAT_ID STATE — poll until the chat reaches a state.
 wait_chat() {
-  local id="$1" want="$2" i=0 state
-  while (( i < 300 )); do
+  local id="$1" want="$2" i=0 ticks state
+  ticks="$(gate_ticks 300)"
+  while (( i < ticks )); do
     state="$(api GET "/chats/$id" | jq -r .chat.state)"
     if [[ "$state" == "$want" ]]; then return 0; fi
     i=$(( i + 1 ))
-    sleep 1
+    sleep "$GATE_POLL"
   done
   fail "chat $id never reached $want (it is $state)"
 }
@@ -172,8 +175,9 @@ wait_chat() {
 # wait_turn CHAT_ID SEQ — poll until that turn is no longer running, echoing
 # its state.
 wait_turn() {
-  local id="$1" seq="$2" i=0 state
-  while (( i < 300 )); do
+  local id="$1" seq="$2" i=0 ticks state
+  ticks="$(gate_ticks 300)"
+  while (( i < ticks )); do
     state="$(api GET "/chats/$id" | jq -r --argjson s "$seq" \
       '.turns[] | select(.seq == $s) | .state')"
     if [[ -n "$state" && "$state" != "running" ]]; then
@@ -181,7 +185,7 @@ wait_turn() {
       return 0
     fi
     i=$(( i + 1 ))
-    sleep 1
+    sleep "$GATE_POLL"
   done
   fail "turn $seq of chat $id never finished"
 }
@@ -189,15 +193,16 @@ wait_turn() {
 # wait_task TASK_ID STATE — poll until the task reaches a state. `aborted` ends
 # the wait early, since a task never comes back from it.
 wait_task() {
-  local id="$1" want="$2" i=0 state
-  while (( i < 300 )); do
+  local id="$1" want="$2" i=0 ticks state
+  ticks="$(gate_ticks 300)"
+  while (( i < ticks )); do
     state="$(api GET "/tasks/$id" | jq -r .state)"
     if [[ "$state" == "$want" ]]; then return 0; fi
     if [[ "$state" == "aborted" ]]; then
       fail "task $id aborted while waiting for $want: $(api GET "/tasks/$id")"
     fi
     i=$(( i + 1 ))
-    sleep 1
+    sleep "$GATE_POLL"
   done
   fail "task $id never reached $want (it is $state)"
 }

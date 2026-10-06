@@ -396,6 +396,24 @@ list with the user-facing context a commit subject cannot carry.
   - **The new-task form's GitHub issue picker** is gone from the TUI.
   ([#670](https://github.com/lezli01/vincent/issues/670))
 
+### Fixed
+
+- **`vincent daemon stop` returns only once the daemon has exited.** It used
+  to return as soon as the daemon released its lock, while the process was
+  still shutting down — so on Windows a script that stopped the daemon and
+  then deleted its data directory or replaced the binary could fail with
+  "being used by another process". Both the graceful stop and `--force` now
+  also wait, within the same 30 seconds, for the daemon's process to exit.
+  ([#732](https://github.com/lezli01/vincent/issues/732))
+- **A containerized agent step reaches its MCP tools on Docker Desktop.** On
+  macOS and Windows (and Docker Desktop for Linux) the step dials
+  `host.docker.internal`, which Desktop forwards to the daemon's loopback
+  port, and the per-step endpoint answered every call with
+  `403 invalid Host header`. It now accepts that host; the step's own secret
+  still authenticates every call, and the shared `/mcp` endpoint keeps its
+  DNS-rebinding check.
+  ([#729](https://github.com/lezli01/vincent/issues/729))
+
 ## [0.11.0](https://github.com/lezli01/vincent/compare/v0.10.1...v0.11.0) (2026-10-01)
 
 ### Added

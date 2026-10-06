@@ -37,3 +37,17 @@ package procx
 // mistaken for a match: an old token simply stops comparing equal, which fails
 // the safe way (§12.4's "cannot prove, do not kill").
 func Identity(pid int) (string, error) { return identity(pid) }
+
+// Exited reports whether the process ident names has exited: true when no
+// process holds pid, when a different process now does (ident no longer
+// matches, so a reused PID never reads as the old process still running), or
+// when the process has terminated but is still in the table — on Windows an
+// open handle keeping its object, and therefore its PID and identity, alive;
+// on POSIX a zombie its parent has not reaped. ident is a token
+// Identity returned for pid earlier. An error means liveness could not be
+// determined either way.
+//
+// `vincent daemon stop` waits on this after the daemon lock releases (issue
+// #732): the lock is dropped in a defer and the process lives on past it,
+// still holding files a Windows caller cannot delete until it is gone.
+func Exited(pid int, ident string) (bool, error) { return exited(pid, ident) }

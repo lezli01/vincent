@@ -368,6 +368,7 @@ go run mage.go -l         # list every target
 go run mage.go test       # go test ./...
 go run mage.go testrace   # go test -race ./...   (needs cgo and a C compiler)
 go run mage.go lint       # golangci-lint, pinned via the go.mod tool directive
+go run mage.go lintall    # golangci-lint for linux, darwin and windows from this host
 ```
 
 See the [Contributing guide](https://lezli01.is-a.dev/vincent/contributing.html) for the development workflow.

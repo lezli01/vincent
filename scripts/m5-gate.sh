@@ -24,6 +24,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/gate.sh
+source "$ROOT/scripts/lib/gate.sh"
 TMP="$(mktemp -d)"
 BIN="$TMP/bin"
 
@@ -90,7 +92,7 @@ if (( REAL_AGENT )); then
 fi
 
 echo "== build vincent + fakeagent"
-(cd "$ROOT" && go build -o "$(hostpath "$BIN")/" ./cmd/vincent ./cmd/fakeagent)
+gate_build "$BIN" vincent fakeagent
 
 CONFIG_DIR=""
 DATA_DIR=""
@@ -166,27 +168,27 @@ register_project() { # register_project REPO_PATH -> id
 # try_wait_for_state is wait_for_state without the exit: it returns 1 so the
 # caller can diagnose *why* before failing. wait_for_state itself cannot be
 # used for that — it calls fail, which exits the script.
-try_wait_for_state() { # try_wait_for_state TASK_ID STATE TRIES
+try_wait_for_state() { # try_wait_for_state TASK_ID STATE SECS
   local id="$1" want="$2" tries="$3" state=""
-  for _ in $(seq 1 "$tries"); do
+  for _ in $(seq 1 "$(gate_ticks "$tries")"); do
     state="$(api GET "/tasks/$id" | jq -r .state)"
     [[ "$state" == "$want" ]] && return 0
     [[ "$state" == "blocked" || "$state" == "aborted" ]] && return 1
-    sleep 1
+    sleep "$GATE_POLL"
   done
   return 1
 }
 
-wait_for_state() { # wait_for_state TASK_ID STATE TRIES
+wait_for_state() { # wait_for_state TASK_ID STATE SECS
   local id="$1" want="$2" tries="$3" state=""
-  for _ in $(seq 1 "$tries"); do
+  for _ in $(seq 1 "$(gate_ticks "$tries")"); do
     state="$(api GET "/tasks/$id" | jq -r .state)"
     [[ "$state" == "$want" ]] && return 0
     if [[ "$state" == "blocked" || "$state" == "aborted" ]] && [[ "$want" != "blocked" ]]; then
       api GET "/tasks/$id" | jq . >&2
       fail "task $id reached $state while waiting for $want"
     fi
-    sleep 1
+    sleep "$GATE_POLL"
   done
   api GET "/tasks/$id" | jq . >&2
   fail "task $id never reached $want (still $state)"

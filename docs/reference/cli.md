@@ -350,8 +350,12 @@ vincent daemon stop [--force]
 Graceful shutdown: admission stops, a `daemon.shutting_down` event is emitted,
 running processes get 15 seconds to exit before being killed, and their step runs
 are marked `interrupted` — the same resume path as a crash, so nothing is lost.
+The command returns once the daemon's process has exited, not merely once it
+has let go of its lock, so the data directory and binary are free to delete or
+replace when it does; it gives up after 30 seconds.
 
-`--force` kills the process if the graceful stop fails.
+`--force` kills the process if the graceful stop fails, and likewise waits for
+it to exit.
 
 ### `vincent daemon status`
 
