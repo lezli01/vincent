@@ -356,6 +356,16 @@ daemon, no shared fixtures:
   by `VINCENT_TEST_TIMEOUT_SCALE` (set to 3 on CI's Windows race leg). Never
   hand-roll `deadline := time.Now().Add(...)` in a test: a fixed budget is
   sized for a quiet machine and that leg overruns it (#731).
+- `testing/synctest` — a test whose only waiting is on timers, tickers or
+  goroutines talking over channels (no subprocess, no socket, no fsnotify
+  watcher) runs inside `synctest.Test` and waits with `synctest.Wait()`
+  instead of a sleep or a poll: virtual time makes a real interval free and
+  its boundary exact, and "nothing more will happen" becomes provable rather
+  than "nothing within 200 ms". Build the harness inside the bubble so its
+  goroutines belong to it. Anything that spawns a process, dials a socket or
+  watches files keeps `wait.Until`. The first adopters (#737): the notify
+  filter and pool tests over the `spawn` hook, the §13.3 status throttle,
+  and the scheduler's tick loop (`internal/scheduler/loop_test.go`).
 - `internal/agent/agenttest` — compiles `cmd/fakeagent` once per test process.
 - `cmd/fakeagent` — scenario-driven stand-in for an agent CLI. Dialect comes from
   argv shape (`exec` first arg ⇒ codex-shaped; `--trust` anywhere ⇒ cursor-shaped;
