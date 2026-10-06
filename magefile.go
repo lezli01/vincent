@@ -177,6 +177,35 @@ func Lint() error {
 	return sh.RunV("go", "tool", "golangci-lint", "run", "--allow-parallel-runners")
 }
 
+// LintAll runs golangci-lint once per platform vincent ships on — linux,
+// darwin and windows — from this host, so a finding in a build-tagged file
+// (`_windows.go`, `_darwin.go`, …) is reported wherever it is run.
+//
+// It exists because CI lints once, on the Linux leg, for all three platforms
+// (#727): the repository has no cgo, so linting with GOOS set sees exactly
+// the files a native run would, and the macOS and Windows legs need not spend
+// their time on it. Like Vuln it invokes one host-built binary with GOOS in
+// its environment: `GOOS=… go tool golangci-lint` cross-builds the linter and
+// then cannot execute it (see CLAUDE.md). Every GOOS runs even after one
+// fails, so a single run reports the findings of all three.
+func LintAll() error {
+	bin, err := sh.Output("go", "tool", "-n", "golangci-lint")
+	if err != nil {
+		return fmt.Errorf("locating golangci-lint: %w", err)
+	}
+	var failed []string
+	for _, goos := range []string{"linux", "darwin", "windows"} {
+		fmt.Printf("== golangci-lint GOOS=%s\n", goos)
+		if err := sh.RunWithV(map[string]string{"GOOS": goos}, bin, "run", "--allow-parallel-runners"); err != nil {
+			failed = append(failed, goos)
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("golangci-lint failed for GOOS=%s", strings.Join(failed, ","))
+	}
+	return nil
+}
+
 // Vuln reports known vulnerabilities reachable from this module's code, for
 // every platform vincent ships on, via govulncheck pinned by the go.mod tool
 // directive. Needs network access to fetch the Go vulnerability database.

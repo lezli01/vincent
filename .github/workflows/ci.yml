@@ -92,9 +92,20 @@ jobs:
       # gotestsum rerunning failed tests (up to twice each) and reporting
       # them (#736). A rerun that passes does not red the job, so every
       # rerun is listed in the job summary instead, and the reports below
-      # carry each test's elapsed time for trend tracking.
-      - name: Lint
-        run: go run mage.go lint
+      # carry each test's elapsed time for trend tracking. Lint is the third:
+      # CI runs lintall, the all-platform form of lint, on one leg only.
+      #
+      # Lint runs once, on the Linux leg, for linux, darwin and windows (#727).
+      # The repository has no cgo, so linting with GOOS set sees exactly the
+      # files a native run on that OS would — a finding in a `_windows.go`
+      # file still fails this step. The ubuntu leg is not the critical path
+      # (Windows is), so the minutes the other two legs spent linting come
+      # off the wall clock. It stays a step of this required `ci` job rather
+      # than a job of its own, which would not be a required check and so
+      # would not block a merge on a red lint.
+      - name: Lint (linux, darwin, windows)
+        if: matrix.os == 'ubuntu-latest'
+        run: go run mage.go lintall
 
       - name: Test (race)
         run: go run mage.go testraceci
