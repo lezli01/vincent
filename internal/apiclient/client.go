@@ -43,14 +43,20 @@ const probeTimeout = 3 * time.Minute
 // outside the test suite sets it; unset, every default stands.
 const EnvTimeoutScale = "VINCENT_TEST_TIMEOUT_SCALE"
 
-// ScaleTimeout is d multiplied by EnvTimeoutScale's factor, or d itself when
-// the variable is unset or not a positive, finite number.
+// MaxTimeoutScale caps EnvTimeoutScale's factor: past it a budget stops
+// meaning anything, and a large enough factor overflows a Duration.
+const MaxTimeoutScale = 100
+
+// ScaleTimeout is d multiplied by EnvTimeoutScale's factor, capped at
+// MaxTimeoutScale, or d itself when the variable is unset or not a positive
+// number. NaN is not one: it passes every ordered comparison's negation and
+// would turn d into zero, which is no timeout at all.
 func ScaleTimeout(d time.Duration) time.Duration {
 	f, err := strconv.ParseFloat(os.Getenv(EnvTimeoutScale), 64)
-	if err != nil || f <= 0 || math.IsInf(f, 0) {
+	if err != nil || math.IsNaN(f) || f <= 0 {
 		return d
 	}
-	return time.Duration(float64(d) * f)
+	return time.Duration(float64(d) * min(f, MaxTimeoutScale))
 }
 
 // Client talks to one vincent daemon. It is safe for concurrent use.

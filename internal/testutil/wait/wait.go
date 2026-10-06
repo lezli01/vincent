@@ -13,6 +13,10 @@ import (
 // test holds together.
 const EnvScale = "VINCENT_TEST_TIMEOUT_SCALE"
 
+// maxScale is apiclient.MaxTimeoutScale, which the test holds together; this
+// package does not import apiclient.
+const maxScale = 100
+
 // DefaultBudget is Until's unscaled budget: generous, because a passing test
 // waits only as long as its condition takes.
 const DefaultBudget = 20 * time.Second
@@ -20,14 +24,14 @@ const DefaultBudget = 20 * time.Second
 // pollInterval paces every poll loop here.
 const pollInterval = 10 * time.Millisecond
 
-// Scale is the factor in EnvScale, or 1 when it is unset or not a positive,
-// finite number.
+// Scale is the factor in EnvScale, capped at apiclient.MaxTimeoutScale, or 1
+// when it is unset or not a positive number (NaN included).
 func Scale() float64 {
 	f, err := strconv.ParseFloat(os.Getenv(EnvScale), 64)
-	if err != nil || f <= 0 || math.IsInf(f, 0) {
+	if err != nil || math.IsNaN(f) || f <= 0 {
 		return 1
 	}
-	return f
+	return min(f, maxScale)
 }
 
 // Timeout is d multiplied by Scale.

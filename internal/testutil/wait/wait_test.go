@@ -18,7 +18,10 @@ func TestScale(t *testing.T) {
 		{"0", 1},
 		{"-2", 1},
 		{"nope", 1},
-		{"+Inf", 1},
+		{"+Inf", 100},
+		{"NaN", 1},
+		{"1e300", 100},
+		{"250", 100},
 	} {
 		t.Setenv(EnvScale, tc.env)
 		if got := Scale(); got != tc.want {
@@ -32,6 +35,9 @@ func TestScale(t *testing.T) {
 		if got, want := apiclient.ScaleTimeout(time.Second), Timeout(time.Second); got != want {
 			t.Errorf("apiclient.ScaleTimeout(1s) with %q = %v, want %v", tc.env, got, want)
 		}
+	}
+	if maxScale != apiclient.MaxTimeoutScale {
+		t.Errorf("maxScale = %v, apiclient.MaxTimeoutScale = %v", maxScale, apiclient.MaxTimeoutScale)
 	}
 	if EnvScale != apiclient.EnvTimeoutScale {
 		t.Errorf("EnvScale = %q, apiclient.EnvTimeoutScale = %q", EnvScale, apiclient.EnvTimeoutScale)
