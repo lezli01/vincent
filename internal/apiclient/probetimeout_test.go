@@ -27,7 +27,7 @@ func TestProbingCallsOutliveTheLoopbackDeadline(t *testing.T) {
 	// Comfortably past requestTimeout, comfortably short of probeTimeout: the
 	// test is over in about this long, not in three minutes. The rest client's
 	// deadline is requestTimeout as ScaleTimeout stretches it, so the delay
-	// has to clear the scaled figure — on CI's Windows race leg that is 30 s,
+	// has to clear the scaled figure — on CI's Windows leg that is 30 s,
 	// not 10 — or the cache leg is answered inside its deadline.
 	const slack = 2 * time.Second
 	delay := ScaleTimeout(requestTimeout) + slack

@@ -119,14 +119,23 @@ CI lints with `lintall`, on the `ubuntu-latest` leg only (#727): there is no
 cgo, so a cross-GOOS lint sees the same files a native one would, and the
 macOS and Windows legs skip the step.
 
-CI's test step runs `go run mage.go testraceci` instead of `testrace`: the
-same `-race` suite under `go tool gotestsum`, rerunning each failed test up to
-twice — but never after a data race, which fails the job on its first
-sighting because a race that does not recur is still a bug — writing `junit.xml`, `test.json` and `reruns.txt` to
-`bin/test-report/` (uploaded as the `test-report-<os>` artifact), and listing
-every rerun in the job summary. `testrace` stays the local default — locally
-a failure should fail. `./scripts/test-rerun-check.sh` proves `testraceci`
-against tests that fail on purpose; it is not wired into CI.
+CI's test step runs `go run mage.go testci` instead of `testrace`: the suite
+under `go tool gotestsum`, rerunning each failed test up to twice — but never
+after a data race, which fails the job on its first sighting because a race
+that does not recur is still a bug — writing `junit.xml`, `test.json` and
+`reruns.txt` to `bin/test-report/` (uploaded as the `test-report-<os>`
+artifact), and listing every rerun in the job summary. The race detector is
+scoped per OS (#728): Linux races the whole suite, macOS races nothing, and
+Windows races only `internal/procx`, `internal/daemon`, `internal/service` and
+`internal/taskrun` — its own process, daemon and service code — in a second
+pass, run alongside the plain one, whose reports carry a `-race` suffix. Races are overwhelmingly
+platform-independent, so the Linux leg catches them, and a full race run had
+made Windows the required check's critical path; `magefile.go`'s `TestCI`
+records the measurements. This is deliberately weaker proof on macOS and
+Windows. `testrace` stays the local default, racing everything — locally a
+failure should fail. `./scripts/test-rerun-check.sh` proves `testci` against
+tests that fail on purpose, in every scope (`VINCENT_TEST_RACE=all`, `none`
+and a package list); it is not wired into CI.
 
 Plain toolchain works too (`go build ./...`, `go test ./...`). Single test:
 
@@ -353,7 +362,7 @@ daemon, no shared fixtures:
   SQLite makes migrating a new file ~40× slower than opening a copy (#726).
 - `internal/testutil/wait` — the one poll-until-true helper (`wait.Until`,
   `wait.UntilWithin`, `wait.Poll`) and `wait.Timeout`, which scales a budget
-  by `VINCENT_TEST_TIMEOUT_SCALE` (set to 3 on CI's Windows race leg). Never
+  by `VINCENT_TEST_TIMEOUT_SCALE` (set to 3 on CI's Windows leg). Never
   hand-roll `deadline := time.Now().Add(...)` in a test: a fixed budget is
   sized for a quiet machine and that leg overruns it (#731).
 - `testing/synctest` — a test whose only waiting is on timers, tickers or
