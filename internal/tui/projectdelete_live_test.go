@@ -199,7 +199,48 @@ func listStamps(m *root) map[viewID]*loadStamps {
 // A switch made while offline fails every load it issues; the reconnect
 // reloads each of those views for the new project.
 func TestReconnectReloadsViewsAfterAnOfflineSwitch(t *testing.T) {
+	reconnectAfterOfflineSwitch(t, newSwitchHarness(t), nil)
+}
+
+// The same, with an event-driven refresh landing between the offline loads
+// failing and the reconnect (issue #734). The workflows and issues views
+// refresh on any project.* event, and on a loaded runner the harness's own
+// project.created for the second project can still be on its way then; CI
+// read the refresh it starts as a second reload by the reconnect ("view 4: 2
+// loads for project 2 after the reconnect"). Renaming the first project here
+// makes that refresh happen on every run instead of on a slow one. The
+// reconnect still owes each failed view exactly one reload, so the count must
+// start from the loads issued when the stream comes back.
+func TestReconnectReloadsViewsAfterAnOfflineSwitchWithARefreshPending(t *testing.T) {
 	h := newSwitchHarness(t)
+	reconnectAfterOfflineSwitch(t, h, func() {
+		p, err := h.st.GetProject(context.Background(), h.first.ID)
+		if err != nil {
+			t.Fatalf("GetProject: %v", err)
+		}
+		p.Name = "renamed-while-offline"
+		if err := h.st.UpdateProject(context.Background(), p); err != nil {
+			t.Fatalf("UpdateProject: %v", err)
+		}
+		issues := h.m.views[viewIssues].(*issuesView)
+		workflows := h.m.views[viewWorkflows].(*workflowsView)
+		h.p.until(10*time.Second, "the project event to open a refresh window", func() bool {
+			return issues.refreshWait && workflows.refreshPending
+		})
+		// The window closes with a load of its own, which fails offline.
+		h.p.until(10*time.Second, "the event's refresh to fail", func() bool {
+			return !issues.refreshWait && !workflows.refreshPending &&
+				viewLoadFailed(issues) && viewLoadFailed(workflows) &&
+				issues.stamps.applied == issues.stamps.issued &&
+				workflows.stamps.applied == workflows.stamps.issued
+		})
+	})
+}
+
+// reconnectAfterOfflineSwitch is the offline switch and its reconnect, with
+// beforeReconnect, when set, run once every offline load has failed and just
+// before the stream comes back.
+func reconnectAfterOfflineSwitch(t *testing.T, h *switchHarness, beforeReconnect func()) {
 	h.disconnect()
 	h.key("@")
 	if h.m.projPick == nil {
@@ -227,6 +268,9 @@ func TestReconnectReloadsViewsAfterAnOfflineSwitch(t *testing.T) {
 		issued[id] = s.issued
 	}
 
+	if beforeReconnect != nil {
+		beforeReconnect()
+	}
 	h.reconnect()
 	h.p.until(10*time.Second, "every failed view to reload", func() bool {
 		for id := range views {

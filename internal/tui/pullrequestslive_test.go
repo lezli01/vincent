@@ -2,8 +2,10 @@ package tui
 
 import (
 	"context"
+	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -51,8 +53,74 @@ func pullsView(t *testing.T, h *newTaskLiveHarness) *pullRequestsView {
 // load (task 132.11), and a switch to a project without GitHub keeps the
 // view up with that project's reason and lists nothing for it.
 func TestPullRequestsListsOnlyTheSelectedProject(t *testing.T) {
+	pullRequestsListOnlyTheSelectedProject(t, nil)
+}
+
+// The same, with an event-driven refresh in flight when the requests are
+// counted (issue #734). The takeover refreshes on any project.* event, and
+// the second project's project.created starts one that a loaded runner can
+// still be sending after the probe wait: its stamp is then counted as before
+// `R` and its listing and task read as after, and the per-load tally never
+// balances (macOS CI timed out on it). Holding the listing of a refresh
+// started here until `R`'s own listing arrives makes that happen on every run
+// instead of on a slow one. The hold also lifts on its own after a moment, so
+// a count that waits for the refresh to land first is not held up by it.
+func TestPullRequestsListsOnlyTheSelectedProjectWithARefreshInFlight(t *testing.T) {
+	pullRequestsListOnlyTheSelectedProject(t, &requestGate{match: func(line string) bool {
+		return strings.HasPrefix(line, "GET /v1/projects/") && strings.Contains(line, "/github/pulls")
+	}})
+}
+
+// requestGate holds, once armed, the first request match accepts until the
+// next one arrives or release is called — ahead of any recorder it wraps, so
+// a held request is not yet counted.
+type requestGate struct {
+	match  func(line string) bool
+	mu     sync.Mutex
+	armed  bool
+	held   chan struct{}
+	opened chan struct{}
+	once   sync.Once
+}
+
+func (g *requestGate) arm() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.armed, g.held, g.opened = true, make(chan struct{}), make(chan struct{})
+}
+
+func (g *requestGate) release() { g.once.Do(func() { close(g.opened) }) }
+
+func (g *requestGate) wrap(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		g.mu.Lock()
+		var opened chan struct{}
+		if g.held != nil && g.match(req.Method+" "+req.URL.RequestURI()) {
+			if g.armed {
+				g.armed = false
+				opened = g.opened
+				close(g.held)
+			} else {
+				g.release()
+			}
+		}
+		g.mu.Unlock()
+		if opened != nil {
+			<-opened
+		}
+		next.ServeHTTP(w, req)
+	})
+}
+
+// pullRequestsListOnlyTheSelectedProject is the test above, with gate, when
+// set, holding the listing of a refresh started just before the count.
+func pullRequestsListOnlyTheSelectedProject(t *testing.T, gate *requestGate) {
 	rec := &requestRecorder{}
-	h, _ := newGitHubLiveHarness(t, liveOptions{remote: ghLiveOrigin, wrap: rec.wrap})
+	wrap := rec.wrap
+	if gate != nil {
+		wrap = func(next http.Handler) http.Handler { return gate.wrap(rec.wrap(next)) }
+	}
+	h, _ := newGitHubLiveHarness(t, liveOptions{remote: ghLiveOrigin, wrap: wrap})
 	h.p.until(10*time.Second, "the GitHub probes to answer", func() bool {
 		return h.m.githubAvailable()
 	})
@@ -72,6 +140,25 @@ func TestPullRequestsListsOnlyTheSelectedProject(t *testing.T) {
 		_, ok := githubStatusFor(h.m.github, other.ID)
 		return ok
 	})
+	if gate != nil {
+		gate.arm()
+		p, err := h.st.GetProject(context.Background(), h.projectID)
+		if err != nil {
+			t.Fatalf("GetProject: %v", err)
+		}
+		if err := h.st.UpdateProject(context.Background(), p); err != nil {
+			t.Fatalf("UpdateProject: %v", err)
+		}
+		h.p.until(10*time.Second, "a refresh's listing to be held", func() bool {
+			select {
+			case <-gate.held:
+				return true
+			default:
+				return false
+			}
+		})
+		time.AfterFunc(500*time.Millisecond, gate.release)
+	}
 
 	// Per load: exactly one listing, for the selected project, and one task
 	// read scoped to it. The board's own listing is unscoped and the
