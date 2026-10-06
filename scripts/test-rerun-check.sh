@@ -15,8 +15,9 @@
 #      4's racy test passes and the target exits 0
 #   6. with VINCENT_TEST_RACE naming one package of two, the race pass over
 #      that package catches its race without a rerun, the other package's
-#      test runs exactly once (in the plain pass), and both passes' reports —
-#      test.json and test-race.json — are written beside the summary
+#      test runs exactly once (in the plain pass), the two passes run at the
+#      same time, and both passes' reports — test.json and test-race.json —
+#      are written beside the summary
 #
 # Together 4–6 prove each scope the target defaults to: all (linux), none
 # (darwin) and a package list (windows).
@@ -112,6 +113,31 @@ run_target() { # run_target [SCOPE] — the target's exit code, its output on st
 
 attempts() { wc -c <"$ATTEMPTS" | tr -d ' \r'; }
 
+meet() { # meet FILE PACKAGE MINE THEIRS — a TestMeet that marks MINE, then waits for THEIRS
+  cat >"$1" <<EOF
+package $2
+
+import (
+	"os"
+	"testing"
+	"time"
+)
+
+func TestMeet(t *testing.T) {
+	base := os.Getenv("FLAKE_ATTEMPTS")
+	if err := os.WriteFile(base+".$3", nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(3 * time.Minute); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		if _, err := os.Stat(base + ".$4"); err == nil {
+			return
+		}
+	}
+	t.Fatal("the $4 pass never started while the $3 pass ran: the passes ran in series")
+}
+EOF
+}
+
 scenario_1() {
   echo "== scenario 1: a test that fails once passes on a rerun"
   setup s1 'if n == 1 { t.Fatal("first attempt fails on purpose") }'
@@ -201,6 +227,10 @@ func TestOnce(t *testing.T) {
 	}
 }
 EOF
+  # One test in each pass, each waiting for the other to have started: run
+  # in series, the first pass's waits out its budget and fails.
+  meet "$MOD/steady/meet_test.go" steady plain race
+  meet "$MOD/meet_test.go" flake race plain
   if run_target .; then
     fail "target exited 0 on a race in a listed package"
   fi
@@ -215,6 +245,10 @@ EOF
   plain="$(jq -r 'select(.Action == "pass" and .Test != null) | .Package + "." + .Test' "$REPORT/test.json" | tr -d '\r')"
   raced="$(jq -r 'select(.Test != null) | .Package' "$REPORT/test-race.json" | tr -d '\r' | sort -u)"
   grep -qx 'flake/steady.TestOnce' <<<"$plain" || fail "the plain pass did not run steady.TestOnce: $plain"
+  grep -qx 'flake/steady.TestMeet' <<<"$plain" || fail "the plain pass never met the race pass: $plain"
+  local met
+  met="$(jq -r 'select(.Action == "pass" and .Test == "TestMeet") | .Package' "$REPORT/test-race.json" | tr -d '\r')"
+  [[ "$met" == flake ]] || fail "the race pass never met the plain pass: $met"
   [[ "$raced" == flake ]] || fail "the race pass ran packages other than flake: $raced"
   local summary
   summary="$(tr -d '\r' <"$SUMMARY")"

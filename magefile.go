@@ -82,9 +82,9 @@ func TestRace() error {
 // unchanged and still races everything.
 //
 // VINCENT_TEST_RACE overrides the scope: `all`, `none`, or a comma-separated
-// list of package patterns. A list is two passes over disjoint packages — the
-// rest of ./... without -race, then the listed ones with it — and both run
-// even when the first fails. CI never sets it; it exists so
+// list of package patterns. A list is two passes over disjoint packages, run
+// concurrently — the rest of ./... without -race, and the listed ones with
+// it — and each runs to the end whether or not the other fails. CI never sets it; it exists so
 // scripts/test-rerun-check.sh can prove every scope from any host.
 //
 // Rerun budget: up to 2 reruns of each failed test (gotestsum reruns only the
@@ -163,12 +163,18 @@ func TestCI() (err error) {
 			plain = append(plain, p)
 		}
 	}
-	var errs []error
+	// The passes run at once, not one after the other (review F1): run in
+	// series, the race pass's long package queued behind the whole plain
+	// pass, and the Windows step was no shorter than the full race run it
+	// replaced. Their output interleaves line by line; each pass's reports
+	// are its own.
+	raceErr := make(chan error, 1)
+	go func() { raceErr <- gotestsum(bin, dir, report, raced, true, "-race") }()
+	var plainErr error
 	if len(plain) > 0 {
-		errs = append(errs, gotestsum(bin, dir, report, plain, false, ""))
+		plainErr = gotestsum(bin, dir, report, plain, false, "")
 	}
-	errs = append(errs, gotestsum(bin, dir, report, raced, true, "-race"))
-	return errors.Join(errs...)
+	return errors.Join(plainErr, <-raceErr)
 }
 
 // defaultRaceScope is TestCI's race scope when VINCENT_TEST_RACE is unset;
