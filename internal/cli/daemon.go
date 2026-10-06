@@ -14,6 +14,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/daemon"
+	"github.com/lezli01/vincent/internal/procx"
 	"github.com/lezli01/vincent/internal/release"
 	"github.com/lezli01/vincent/internal/version"
 )
@@ -175,9 +176,12 @@ func newDaemonStopCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("daemon is running but its daemon.json is unreadable: %w", err)
 			}
+			// Name the process before asking it to stop, so the wait below
+			// can tell its exit from a later process reusing the PID.
+			ident, _ := procx.Identity(ri.PID)
 			stopErr := requestGracefulStop(cmd.Context(), dirs.Data, ri.Port)
 			if stopErr == nil {
-				if waitStopped(dirs.Data, stopTimeout) {
+				if waitStopped(dirs.Data, ri.PID, ident, stopTimeout) {
 					_, _ = fmt.Fprintln(out, "daemon stopped")
 					return nil
 				}
@@ -189,8 +193,8 @@ func newDaemonStopCmd() *cobra.Command {
 			if err := daemon.KillPID(ri.PID); err != nil {
 				return err
 			}
-			if !waitStopped(dirs.Data, stopTimeout) {
-				return fmt.Errorf("killed pid %d but the daemon lock is still held", ri.PID)
+			if !waitStopped(dirs.Data, ri.PID, ident, stopTimeout) {
+				return fmt.Errorf("killed pid %d but the daemon has not exited", ri.PID)
 			}
 			_, _ = fmt.Fprintf(out, "daemon killed (pid %d)\n", ri.PID)
 			return nil
@@ -208,11 +212,33 @@ func requestGracefulStop(ctx context.Context, dataDir string, port int) error {
 	return daemon.RequestStop(ctx, port, token)
 }
 
-// waitStopped polls until no daemon holds the lock or the timeout elapses.
-func waitStopped(dataDir string, timeout time.Duration) bool {
+// waitStopped polls until no daemon holds the lock and then until process
+// pid has exited, both within one timeout. Spec §13.2 has `daemon stop` wait
+// for exit, and the lock is not that: Run releases it in a defer and the
+// process lives on past it, holding files a Windows caller cannot delete
+// until it is gone (issue #732). ident is pid's procx.Identity from before
+// the stop; when it is empty, or liveness cannot be read, the lock alone
+// decides, as it did before.
+func waitStopped(dataDir string, pid int, ident string, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
+	unlocked := pollUntil(deadline, func() bool {
+		running, err := daemon.ProbeRunning(dataDir)
+		return err == nil && !running
+	})
+	if !unlocked || ident == "" {
+		return unlocked
+	}
+	return pollUntil(deadline, func() bool {
+		gone, err := procx.Exited(pid, ident)
+		return err != nil || gone
+	})
+}
+
+// pollUntil polls done every pollInterval until it reports true or deadline
+// passes, and reports whether it did.
+func pollUntil(deadline time.Time, done func() bool) bool {
 	for time.Now().Before(deadline) {
-		if running, err := daemon.ProbeRunning(dataDir); err == nil && !running {
+		if done() {
 			return true
 		}
 		time.Sleep(pollInterval)
