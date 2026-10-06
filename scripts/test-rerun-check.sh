@@ -20,6 +20,16 @@
 #      same time, and both passes' reports — test.json and test-race.json —
 #      are written beside the summary
 #
+#   7. with VINCENT_TEST_SHARD (#730), shards 1/3, 2/3 and 3/3 partition the
+#      suite: every test of the package VINCENT_TEST_SPLIT names runs exactly
+#      once, in one shard, each other package runs whole in exactly one
+#      shard, every shard exits 0, and each summary heading names its shard
+#   8. inside a shard, a test that fails once is rerun alone — the shard's
+#      -run neither widens the rerun nor blocks it — and a race in a split
+#      package raced by a package-list scope is still never rerun
+#   9. a malformed VINCENT_TEST_SHARD (0/4, 5/4, x) fails the target before
+#      any test runs or any report is written
+#
 # Together 4–6 prove each scope the target defaults to: all (linux), none
 # (darwin) and a package list (windows).
 #
@@ -102,8 +112,12 @@ EOF
 }
 
 run_target() { # run_target [SCOPE] — the target's exit code, its output on stdout
+  # VINCENT_TEST_SHARD and VINCENT_TEST_SPLIT reach the target only when a
+  # scenario sets them on the call.
   local rc=0
   (cd "$ROOT" && FLAKE_ATTEMPTS="$(hostpath "$ATTEMPTS")" \
+    VINCENT_TEST_SHARD="${VINCENT_TEST_SHARD:-}" \
+    VINCENT_TEST_SPLIT="${VINCENT_TEST_SPLIT:-}" \
     VINCENT_TEST_RACE="${1:-all}" \
     VINCENT_TEST_DIR="$(hostpath "$MOD")" \
     VINCENT_TEST_REPORT_DIR="$(hostpath "$REPORT")" \
@@ -263,7 +277,179 @@ EOF
   grep -qF 'No test was rerun, and the run failed' <<<"$summary" || fail "summary does not say the failed run was not rerun: $summary"
 }
 
-for n in 1 2 3 4 5 6; do
+# A module for the shard scenarios: shard/many, the package split by test name,
+# with TestS01–TestS12 and any extra test bodies given, and two small
+# packages, shard/small1 (two tests) and shard/small2 (one). Every test
+# appends a byte to FLAKE_ATTEMPTS.<package>.<test>, so its file's size is its
+# run count.
+shard_setup() { # shard_setup NAME [EXTRA_GO]
+  local dir="$TMP/$1"
+  MOD="$dir/mod" ATTEMPTS="$dir/attempts"
+  mkdir -p "$MOD/many" "$MOD/small1" "$MOD/small2"
+  printf 'module shard\n\ngo 1.22\n' >"$MOD/go.mod"
+  local pkg
+  for pkg in many small1 small2; do
+    cat >"$MOD/$pkg/mark_test.go" <<EOF
+package $pkg
+
+import (
+	"os"
+	"testing"
+)
+
+// mark records one more run of t and returns how many there have been,
+// this one included.
+func mark(t *testing.T) int {
+	t.Helper()
+	f, err := os.OpenFile(os.Getenv("FLAKE_ATTEMPTS")+".$pkg."+t.Name(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString("x"); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return int(fi.Size())
+}
+EOF
+  done
+  {
+    printf 'package many\n\nimport "testing"\n'
+    local i
+    for i in 01 02 03 04 05 06 07 08 09 10 11 12; do
+      printf '\nfunc TestS%s(t *testing.T) { mark(t) }\n' "$i"
+    done
+    printf '%s\n' "${2:-}"
+  } >"$MOD/many/many_test.go"
+  printf 'package small1\n\nimport "testing"\n\nfunc TestOne(t *testing.T) { mark(t) }\n\nfunc TestTwo(t *testing.T) { mark(t) }\n' >"$MOD/small1/small1_test.go"
+  printf 'package small2\n\nimport "testing"\n\nfunc TestOne(t *testing.T) { mark(t) }\n' >"$MOD/small2/small2_test.go"
+}
+
+runs() { # runs PACKAGE.TEST — how many times that test of the shard module ran
+  if [[ -e "$ATTEMPTS.$1" ]]; then wc -c <"$ATTEMPTS.$1" | tr -d ' \r'; else echo 0; fi
+}
+
+SHARD_RC=() # each shard's exit code, by shard number, from the last run_shards
+run_shards() { # run_shards SCOPE — shards 1/3, 2/3 and 3/3, each with its own report dir and summary
+  local s rc
+  SHARD_RC=()
+  for s in 1 2 3; do
+    REPORT="$TMP/$CASE/report$s" SUMMARY="$TMP/$CASE/summary$s.md"
+    rc=0
+    VINCENT_TEST_SHARD="$s/3" VINCENT_TEST_SPLIT=shard/many run_target "$1" || rc=$?
+    SHARD_RC[s]=$rc
+  done
+}
+
+shard_tests() { # shard_tests S — PACKAGE.TEST for every test that passed or failed in shard S's reports
+  local f
+  for f in "$TMP/$CASE/report$1"/test*.json; do
+    [[ -e "$f" ]] || continue
+    jq -r 'select((.Action == "pass" or .Action == "fail") and .Test != null) | .Package + "." + .Test' "$f"
+  done | tr -d '\r' | sort -u
+}
+
+scenario_7() {
+  echo "== scenario 7: shards partition the suite"
+  CASE=s7
+  shard_setup s7
+  run_shards none
+  local s
+  for s in 1 2 3; do
+    [[ "${SHARD_RC[s]}" == 0 ]] || fail "shard $s/3 exited ${SHARD_RC[s]}"
+    local summary
+    summary="$(tr -d '\r' <"$TMP/s7/summary$s.md")"
+    grep -qE "^### Tests rerun \(.*, shard $s/3\)$" <<<"$summary" || fail "shard $s's summary heading does not name it: $summary"
+  done
+  local t
+  for t in many.TestS01 many.TestS02 many.TestS03 many.TestS04 many.TestS05 many.TestS06 \
+    many.TestS07 many.TestS08 many.TestS09 many.TestS10 many.TestS11 many.TestS12 \
+    small1.TestOne small1.TestTwo small2.TestOne; do
+    [[ "$(runs "$t")" == 1 ]] || fail "$t ran $(runs "$t") times across the shards, want 1"
+  done
+  # The reports agree: every test is in exactly one shard's.
+  local listed
+  listed="$(for s in 1 2 3; do shard_tests "$s"; done)"
+  local dups
+  dups="$(sort <<<"$listed" | uniq -d)"
+  [[ -z "$dups" ]] || fail "tests reported by more than one shard: $dups"
+  local many
+  many="$(grep -c '^shard/many\.' <<<"$listed" || true)"
+  [[ "$many" == 12 ]] || fail "the shards reported $many of shard/many's 12 tests: $listed"
+  local pkg owners
+  for pkg in small1 small2; do
+    owners=0
+    for s in 1 2 3; do
+      local mine
+      mine="$(shard_tests "$s")"
+      if grep -q "^shard/$pkg\." <<<"$mine"; then
+        owners=$((owners + 1))
+        [[ "$pkg" != small1 ]] || grep -qx 'shard/small1.TestTwo' <<<"$mine" || fail "shard $s ran only part of small1: $mine"
+      fi
+    done
+    [[ "$owners" == 1 ]] || fail "shard/$pkg ran in $owners shards, want 1"
+  done
+  # A split package's share writes its own reports.
+  ls "$TMP/s7"/report*/test-split-many.json >/dev/null 2>&1 || fail "no shard wrote test-split-many.json"
+}
+
+scenario_8() {
+  echo "== scenario 8: a rerun inside a shard reruns only the failed test"
+  CASE=s8
+  shard_setup s8 'func TestFlaky(t *testing.T) { if mark(t) == 1 { t.Fatal("first attempt fails on purpose") } }'
+  run_shards none
+  local s owner=""
+  for s in 1 2 3; do
+    [[ "${SHARD_RC[s]}" == 0 ]] || fail "shard $s/3 exited ${SHARD_RC[s]} on a test that passed on its rerun"
+    if grep -qx 'shard/many.TestFlaky' <<<"$(shard_tests "$s")"; then owner=$s; fi
+  done
+  [[ -n "$owner" ]] || fail "no shard ran TestFlaky"
+  [[ "$(runs many.TestFlaky)" == 2 ]] || fail "TestFlaky ran $(runs many.TestFlaky) times, want 2"
+  local t
+  while IFS= read -r t; do
+    [[ "$t" == shard/many.TestFlaky ]] && continue
+    [[ "$(runs "${t#shard/}")" == 1 ]] || fail "$t, in TestFlaky's shard $owner, ran $(runs "${t#shard/}") times, want 1"
+  done <<<"$(shard_tests "$owner")"
+  local summary
+  summary="$(tr -d '\r' <"$TMP/s8/summary$owner.md")"
+  grep -qF 'shard/many.TestFlaky: 2 runs, 1 failures' <<<"$summary" || fail "shard $owner's summary does not name TestFlaky: $summary"
+
+  echo "== scenario 8: a race in a raced split package is never rerun"
+  CASE=s8race
+  shard_setup s8race "func TestRacy(t *testing.T) { if mark(t) == 1 { x := 0; done := make(chan struct{}); go func() { x++; close(done) }(); x++; <-done; _ = x } }"
+  run_shards ./many
+  local failed=0
+  owner=""
+  for s in 1 2 3; do
+    if [[ "${SHARD_RC[s]}" != 0 ]]; then failed=$((failed + 1)) owner=$s; fi
+  done
+  [[ "$failed" == 1 ]] || fail "$failed shards failed on one racy test, want 1"
+  [[ "$(runs many.TestRacy)" == 1 ]] || fail "TestRacy ran $(runs many.TestRacy) times, want 1 (a race is not rerun)"
+  [[ -s "$TMP/s8race/report$owner/test-split-many-race.json" ]] || fail "shard $owner wrote no test-split-many-race.json"
+}
+
+scenario_9() {
+  echo "== scenario 9: a malformed VINCENT_TEST_SHARD is refused"
+  local v i=0
+  for v in 0/4 5/4 x; do
+    i=$((i + 1))
+    setup "s9-$i" '_ = n'
+    if VINCENT_TEST_SHARD="$v" run_target none; then
+      fail "target exited 0 with VINCENT_TEST_SHARD=$v"
+    fi
+    [[ ! -e "$ATTEMPTS" ]] || fail "a test ran with VINCENT_TEST_SHARD=$v"
+    local left=""
+    [[ ! -d "$REPORT" ]] || left="$(ls -A "$REPORT")"
+    [[ -z "$left" ]] || fail "VINCENT_TEST_SHARD=$v wrote reports: $left"
+    [[ ! -e "$SUMMARY" ]] || fail "VINCENT_TEST_SHARD=$v wrote a summary"
+  done
+}
+
+for n in 1 2 3 4 5 6 7 8 9; do
   if [[ -z "$ONLY" || "$ONLY" == "$n" ]]; then
     "scenario_$n"
   fi

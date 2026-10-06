@@ -7,11 +7,16 @@ package main
 import (
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io/fs"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -105,7 +110,36 @@ func TestRace() error {
 // attempt is named there as well as failing the job. VINCENT_TEST_DIR runs
 // the suite in another module; only scripts/test-rerun-check.sh uses it, to
 // prove this target against tests that fail on purpose.
+//
+// Shard mode (#730): VINCENT_TEST_SHARD=i/n runs only shard i of n, so one
+// leg's suite can be spread over n jobs; unset, the target runs everything,
+// exactly as above. Only CI's Windows leg sets it. Linux and macOS are
+// already under ~5 minutes for their slowest package, and macOS already uses
+// all five of the account's concurrent macOS jobs, so sharding there would
+// only queue. Windows' test step took 16.8 minutes (run 37504276643) because
+// of three long poles — internal/api, internal/taskrun and internal/worktree
+// — and splitting the suite by package cannot shorten a pole: api and
+// taskrun would each still be a ~15-minute shard. Their time is spread over
+// hundreds of top-level tests instead (api 468, longest 25.7 s; taskrun 332,
+// longest 18.8 s; worktree 81, longest 44 s), so those packages, the
+// splitPackages, are split by test name: each top-level test goes to shard
+// fnv1a32(name) % n, run through one `-run '^(A|B|…)$'` per package. Every
+// other package runs whole in exactly one shard, round-robin over the sorted
+// import paths. The race scope still applies per package — a package's
+// share is raced iff the package is in scope — and every invocation of a
+// shard runs at once, as the plain and race passes do. A split package's
+// reports carry the suffix -split-<last path element>, plus -race when it is
+// raced (test-split-api.json, test-split-taskrun-race.json), and the summary
+// heading names the shard. A malformed value fails the target before any
+// test runs or any report is written. VINCENT_TEST_SPLIT, a comma-separated
+// list of import paths, replaces splitPackages; like VINCENT_TEST_DIR, it
+// exists only for scripts/test-rerun-check.sh.
 func TestCI() (err error) {
+	// Before anything is written, so a malformed shard leaves no report.
+	shard, shards, err := parseShard(os.Getenv("VINCENT_TEST_SHARD"))
+	if err != nil {
+		return err
+	}
 	// Resolved here, from this module, so the suite may run in a module
 	// that does not pin gotestsum.
 	bin, err := sh.Output("go", "tool", "-n", "gotestsum")
@@ -122,20 +156,32 @@ func TestCI() (err error) {
 	if err := os.MkdirAll(report, 0o750); err != nil {
 		return err
 	}
-	reruns := []string{filepath.Join(report, "reruns.txt"), filepath.Join(report, "reruns-race.txt")}
 	// A stale report from an earlier run would be summarized, or read, as
-	// this one's — and a run in another scope writes a different set of
-	// files, so every pass's reports go, not only the ones this run will
-	// overwrite (review F2).
-	for _, suffix := range []string{"", "-race"} {
-		for _, f := range []string{"reruns" + suffix + ".txt", "junit" + suffix + ".xml", "test" + suffix + ".json"} {
-			if err := os.Remove(filepath.Join(report, f)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	// this one's — and a run in another scope or shard writes a different
+	// set of files, so every pass's reports go, not only the ones this run
+	// will overwrite (review F2).
+	for _, pattern := range []string{"reruns*.txt", "junit*.xml", "test*.json"} {
+		stale, err := filepath.Glob(filepath.Join(report, pattern))
+		if err != nil {
+			return err
+		}
+		for _, f := range stale {
+			if err := os.Remove(f); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return err
 			}
 		}
 	}
+	var passes []testPass
 	defer func() {
-		if serr := summarizeReruns(reruns, err != nil); serr != nil && err == nil {
+		reruns := make([]string, 0, len(passes))
+		for _, p := range passes {
+			reruns = append(reruns, filepath.Join(report, "reruns"+p.suffix+".txt"))
+		}
+		heading := runtime.GOOS
+		if shards > 0 {
+			heading += fmt.Sprintf(", shard %d/%d", shard, shards)
+		}
+		if serr := summarizeReruns(heading, reruns, err != nil); serr != nil && err == nil {
 			err = serr
 		}
 	}()
@@ -145,42 +191,223 @@ func TestCI() (err error) {
 	if scope == "" {
 		scope = defaultRaceScope()
 	}
-	switch scope {
-	case "all":
-		return gotestsum(bin, dir, report, []string{"./..."}, true, "")
-	case "none":
-		return gotestsum(bin, dir, report, []string{"./..."}, false, "")
-	}
-	raced, err := listPackages(dir, strings.Split(scope, ","))
-	if err != nil {
-		return err
-	}
-	all, err := listPackages(dir, []string{"./..."})
-	if err != nil {
-		return err
-	}
-	inRace := make(map[string]bool, len(raced))
-	for _, p := range raced {
-		inRace[p] = true
-	}
-	var plain []string
-	for _, p := range all {
-		if !inRace[p] {
-			plain = append(plain, p)
+	if shards > 0 {
+		if passes, err = shardPasses(dir, scope, shard, shards); err != nil {
+			return err
 		}
+	} else if passes, err = unshardedPasses(dir, scope); err != nil {
+		return err
 	}
 	// The passes run at once, not one after the other (review F1): run in
 	// series, the race pass's long package queued behind the whole plain
 	// pass, and the Windows step was no shorter than the full race run it
 	// replaced. Their output interleaves line by line; each pass's reports
 	// are its own.
-	raceErr := make(chan error, 1)
-	go func() { raceErr <- gotestsum(bin, dir, report, raced, true, "-race") }()
-	var plainErr error
-	if len(plain) > 0 {
-		plainErr = gotestsum(bin, dir, report, plain, false, "")
+	errs := make([]chan error, len(passes))
+	for i, p := range passes {
+		errs[i] = make(chan error, 1)
+		go func() { errs[i] <- gotestsum(bin, dir, report, p) }()
 	}
-	return errors.Join(plainErr, <-raceErr)
+	var all []error
+	for _, e := range errs {
+		all = append(all, <-e)
+	}
+	return errors.Join(all...)
+}
+
+// testPass is one gotestsum invocation of TestCI: its packages, whether it
+// runs under -race, the suffix its reports carry, and, for a split
+// package's share of a shard, the -run expression selecting that share.
+type testPass struct {
+	pkgs   []string
+	race   bool
+	suffix string
+	run    string
+}
+
+// unshardedPasses is TestCI's passes without VINCENT_TEST_SHARD: the whole
+// suite in one pass for `all` and `none`, and for a package list a plain
+// pass over the rest beside a race pass over the listed packages.
+func unshardedPasses(dir, scope string) ([]testPass, error) {
+	switch scope {
+	case "all":
+		return []testPass{{pkgs: []string{"./..."}, race: true}}, nil
+	case "none":
+		return []testPass{{pkgs: []string{"./..."}}}, nil
+	}
+	raced, err := listPackages(dir, strings.Split(scope, ","))
+	if err != nil {
+		return nil, err
+	}
+	all, err := listPackages(dir, []string{"./..."})
+	if err != nil {
+		return nil, err
+	}
+	inRace := make(map[string]bool, len(raced))
+	for _, p := range raced {
+		inRace[p] = true
+	}
+	var passes []testPass
+	var plain []string
+	for _, p := range all {
+		if !inRace[p] {
+			plain = append(plain, p)
+		}
+	}
+	if len(plain) > 0 {
+		passes = append(passes, testPass{pkgs: plain})
+	}
+	return append(passes, testPass{pkgs: raced, race: true, suffix: "-race"}), nil
+}
+
+// splitPackages are the packages shard mode splits by test name rather than
+// running whole in one shard, each a long pole of CI's Windows leg
+// (run 37504276643). VINCENT_TEST_SPLIT replaces the list.
+var splitPackages = []string{
+	"github.com/lezli01/vincent/internal/api",      // 942 s, plain
+	"github.com/lezli01/vincent/internal/taskrun",  // 930 s, under -race
+	"github.com/lezli01/vincent/internal/worktree", // 426 s, plain
+}
+
+// shardPasses is shard i of n's passes (see TestCI): its round-robin share
+// of the whole packages, as a plain and a race pass, and for each split
+// package the tests that hash to it.
+func shardPasses(dir, scope string, shard, shards int) ([]testPass, error) {
+	all, err := listPackages(dir, []string{"./..."})
+	if err != nil {
+		return nil, err
+	}
+	inRace := make(map[string]bool)
+	switch scope {
+	case "all":
+		for _, p := range all {
+			inRace[p] = true
+		}
+	case "none":
+	default:
+		raced, err := listPackages(dir, strings.Split(scope, ","))
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range raced {
+			inRace[p] = true
+		}
+	}
+	split := splitPackages
+	if s := os.Getenv("VINCENT_TEST_SPLIT"); s != "" {
+		split = nil
+		for _, p := range strings.Split(s, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				split = append(split, p)
+			}
+		}
+	}
+	isSplit := make(map[string]bool, len(split))
+	for _, p := range split {
+		isSplit[p] = true
+	}
+	sort.Strings(all)
+	var plain, raced []string
+	var splitPasses []testPass
+	k := 0
+	for _, p := range all {
+		if isSplit[p] {
+			pass, ok, err := splitPass(dir, p, inRace[p], shard, shards)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				splitPasses = append(splitPasses, pass)
+			}
+			continue
+		}
+		if k%shards == shard-1 {
+			if inRace[p] {
+				raced = append(raced, p)
+			} else {
+				plain = append(plain, p)
+			}
+		}
+		k++
+	}
+	var passes []testPass
+	if len(plain) > 0 {
+		passes = append(passes, testPass{pkgs: plain})
+	}
+	if len(raced) > 0 {
+		passes = append(passes, testPass{pkgs: raced, race: true, suffix: "-race"})
+	}
+	return append(passes, splitPasses...), nil
+}
+
+// splitPass is the pass running the top-level tests of split package pkg
+// that belong to shard i of n, and false when the shard owns none of them.
+//
+// The -run is per package, not one for the whole shard: a package's share
+// of api's 468 test names is ~5 KB of argv, while every split package's
+// share in one expression would pass Windows' 32 K command-line limit as the
+// packages grow.
+func splitPass(dir, pkg string, race bool, shard, shards int) (testPass, bool, error) {
+	// Listed with the run's own -race, so a race-tagged test file is
+	// counted exactly when it is compiled.
+	args := []string{"test", "-list", ".*"}
+	if race {
+		args = append(args, "-race")
+	}
+	cmd := exec.Command("go", append(args, pkg)...)
+	cmd.Dir = dir
+	cmd.Stderr = os.Stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return testPass{}, false, fmt.Errorf("go test -list %s: %w", pkg, err)
+	}
+	var mine []string
+	for _, name := range strings.Fields(string(out)) {
+		if !topLevelTest.MatchString(name) {
+			continue // the trailing "ok  pkg 0.1s" line
+		}
+		h := fnv.New32a()
+		_, _ = h.Write([]byte(name))
+		if int(h.Sum32()%uint32(shards)) == shard-1 { //nolint:gosec // shards is a validated positive int.
+			mine = append(mine, name)
+		}
+	}
+	if len(mine) == 0 {
+		return testPass{}, false, nil
+	}
+	suffix := "-split-" + path.Base(pkg)
+	if race {
+		suffix += "-race"
+	}
+	return testPass{
+		pkgs:   []string{pkg},
+		race:   race,
+		suffix: suffix,
+		run:    "^(" + strings.Join(mine, "|") + ")$",
+	}, true, nil
+}
+
+// topLevelTest matches the names `go test -list` prints for top-level tests,
+// fuzz targets and examples.
+var topLevelTest = regexp.MustCompile(`^(Test|Fuzz|Example)\w*$`)
+
+// parseShard reads VINCENT_TEST_SHARD: "" is no sharding (0, 0), and
+// anything but i/n with 1 <= i <= n is an error.
+func parseShard(v string) (shard, shards int, err error) {
+	if v == "" {
+		return 0, 0, nil
+	}
+	is, ns, ok := strings.Cut(v, "/")
+	if ok {
+		shard, err = strconv.Atoi(is)
+		if err == nil {
+			shards, err = strconv.Atoi(ns)
+		}
+	}
+	if !ok || err != nil || shard < 1 || shard > shards {
+		return 0, 0, fmt.Errorf("VINCENT_TEST_SHARD=%q: want i/n with 1 <= i <= n", v)
+	}
+	return shard, shards, nil
 }
 
 // defaultRaceScope is TestCI's race scope when VINCENT_TEST_RACE is unset;
@@ -208,23 +435,31 @@ func listPackages(dir string, patterns []string) ([]string, error) {
 	return strings.Fields(string(out)), nil
 }
 
-// gotestsum runs one of TestCI's passes over pkgs, with or without -race,
-// writing its reports to report with suffix before each extension.
-func gotestsum(bin, dir, report string, pkgs []string, race bool, suffix string) error {
+// gotestsum runs one of TestCI's passes, writing its reports to report with
+// the pass's suffix before each extension.
+//
+// A split share's -run goes to `go test`, after the --: gotestsum's rerun
+// removes it and adds its own -run naming only the failed tests, so the
+// shard's expression neither widens a rerun nor blocks one.
+func gotestsum(bin, dir, report string, p testPass) error {
 	args := []string{
 		"--format", "standard-quiet",
 		"--rerun-fails=2",
 		"--rerun-fails-abort-on-data-race",
-		"--rerun-fails-report", filepath.Join(report, "reruns"+suffix+".txt"),
-		"--packages", strings.Join(pkgs, " "),
-		"--junitfile", filepath.Join(report, "junit"+suffix+".xml"),
-		"--jsonfile", filepath.Join(report, "test"+suffix+".json"),
+		"--rerun-fails-report", filepath.Join(report, "reruns"+p.suffix+".txt"),
+		"--packages", strings.Join(p.pkgs, " "),
+		"--junitfile", filepath.Join(report, "junit"+p.suffix+".xml"),
+		"--jsonfile", filepath.Join(report, "test"+p.suffix+".json"),
 		"--",
 	}
 	name := "gotestsum"
-	if race {
+	if p.race {
 		args = append(args, "-race")
 		name += " -race"
+	}
+	if p.run != "" {
+		args = append(args, "-run", p.run)
+		name += " " + p.pkgs[0]
 	}
 	args = append(args, "-timeout", "30m")
 	cmd := exec.Command(bin, args...)
@@ -238,8 +473,8 @@ func gotestsum(bin, dir, report string, pkgs []string, race bool, suffix string)
 
 // summarizeReruns appends TestCI's "Tests rerun" section, covering every
 // pass's rerun file, to the GitHub job summary, and does nothing outside
-// Actions.
-func summarizeReruns(reruns []string, failed bool) error {
+// Actions. heading is the OS, and the shard when sharded.
+func summarizeReruns(heading string, reruns []string, failed bool) error {
 	summary := os.Getenv("GITHUB_STEP_SUMMARY")
 	if summary == "" {
 		return nil
@@ -257,7 +492,7 @@ func summarizeReruns(reruns []string, failed bool) error {
 		}
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "### Tests rerun (%s)\n\n", runtime.GOOS)
+	fmt.Fprintf(&b, "### Tests rerun (%s)\n\n", heading)
 	switch {
 	case len(lines) > 0:
 		b.WriteString("Each line is a test that failed at least once; one whose failures are fewer than its runs passed on a rerun.\n\n")
