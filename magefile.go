@@ -122,10 +122,15 @@ func TestCI() (err error) {
 		return err
 	}
 	reruns := []string{filepath.Join(report, "reruns.txt"), filepath.Join(report, "reruns-race.txt")}
-	// A stale report from an earlier run would be summarized as this one's.
-	for _, f := range reruns {
-		if err := os.Remove(f); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
+	// A stale report from an earlier run would be summarized, or read, as
+	// this one's — and a run in another scope writes a different set of
+	// files, so every pass's reports go, not only the ones this run will
+	// overwrite (review F2).
+	for _, suffix := range []string{"", "-race"} {
+		for _, f := range []string{"reruns" + suffix + ".txt", "junit" + suffix + ".xml", "test" + suffix + ".json"} {
+			if err := os.Remove(filepath.Join(report, f)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return err
+			}
 		}
 	}
 	defer func() {

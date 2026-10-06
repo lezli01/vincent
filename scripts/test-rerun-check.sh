@@ -12,7 +12,8 @@
 #   4. a test the race detector fails is never rerun, so a race that would not
 #      recur on a rerun still fails the target
 #   5. with VINCENT_TEST_RACE=none the race detector is really off: scenario
-#      4's racy test passes and the target exits 0
+#      4's racy test passes, the target exits 0, and an earlier run's race
+#      reports are not left beside this run's
 #   6. with VINCENT_TEST_RACE naming one package of two, the race pass over
 #      that package catches its race without a rerun, the other package's
 #      test runs exactly once (in the plain pass), the two passes run at the
@@ -197,10 +198,17 @@ RACY='if n == 1 { x := 0; done := make(chan struct{}); go func() { x++; close(do
 scenario_5() {
   echo "== scenario 5: VINCENT_TEST_RACE=none runs without the race detector"
   setup s5 "$RACY"
+  # An earlier run's race-pass reports, which this run must not leave
+  # beside its own.
+  mkdir -p "$REPORT"
+  for f in test-race.json junit-race.xml reruns-race.txt; do echo stale >"$REPORT/$f"; done
   run_target none || fail "target exited $? on a racy test with the race detector off"
   [[ "$(attempts)" == 1 ]] || fail "TestFlake ran $(attempts) times, want 1"
   [[ -s "$REPORT/test.json" ]] || fail "no test.json"
-  [[ ! -e "$REPORT/test-race.json" ]] || fail "a race pass ran with VINCENT_TEST_RACE=none"
+  local f
+  for f in test-race.json junit-race.xml reruns-race.txt; do
+    [[ ! -e "$REPORT/$f" ]] || fail "$f is left over from an earlier run, or a race pass ran with VINCENT_TEST_RACE=none"
+  done
 }
 
 scenario_6() {
