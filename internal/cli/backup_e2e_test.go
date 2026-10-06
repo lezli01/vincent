@@ -16,6 +16,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/testrepo"
+	"github.com/lezli01/vincent/internal/testutil/wait"
 )
 
 // e2eTask is the slice of a task row this file asserts on.
@@ -371,28 +372,11 @@ func TestScheduledBackupE2E(t *testing.T) {
 	second := startDaemonProcess(t, dataDir, cfgDir, "success")
 	c2 := waitDaemonAPI(t, dataDir, second)
 
-	var archive string
-	deadline := time.Now().Add(60 * time.Second)
-	for archive == "" && time.Now().Before(deadline) {
-		entries, _ := os.ReadDir(backupDir)
-		for _, e := range entries {
-			if strings.HasPrefix(e.Name(), "vincent-backup-") && strings.HasSuffix(e.Name(), ".tar.gz") {
-				archive = filepath.Join(backupDir, e.Name())
-			}
-		}
-		if archive == "" {
-			time.Sleep(100 * time.Millisecond)
-		}
-	}
-	if archive == "" {
-		t.Fatalf("no scheduled archive appeared in %s", backupDir)
-	}
-	if _, err := backup.ReadManifest(archive); err != nil {
-		t.Fatalf("scheduled archive does not read: %v", err)
-	}
-
-	// Doctor reports it: known, enabled, one retained, no problem.
-	var rep struct {
+	// Doctor reports it: known, enabled, one retained, no problem. Poll the
+	// report itself rather than the directory: the scheduler renames the
+	// archive into place before it prunes and records the success, so an
+	// archive on disk does not yet mean a report that says so (#733).
+	type doctorReport struct {
 		Backup struct {
 			Known         bool       `json:"known"`
 			Enabled       bool       `json:"enabled"`
@@ -405,15 +389,43 @@ func TestScheduledBackupE2E(t *testing.T) {
 			Group string `json:"group"`
 		} `json:"problems"`
 	}
-	c2.get(t, "/v1/doctor?probe=false", &rep)
-	b := rep.Backup
-	if !b.Known || !b.Enabled || b.Dir != backupDir || b.LastSuccessAt == nil || b.LastError != "" || b.Retained != 1 {
-		t.Errorf("doctor backup group = %+v", b)
-	}
-	for _, p := range rep.Problems {
-		if p.Group == "backup" {
-			t.Errorf("a successful scheduled backup raised a doctor problem: %+v", rep.Problems)
+	var rep doctorReport
+	settled := func() bool {
+		b := rep.Backup
+		if !b.Known || !b.Enabled || b.Dir != backupDir || b.LastSuccessAt == nil || b.LastError != "" || b.Retained != 1 {
+			return false
 		}
+		for _, p := range rep.Problems {
+			if p.Group == "backup" {
+				return false
+			}
+		}
+		return true
+	}
+	if !wait.Poll(60*time.Second, 100*time.Millisecond, func() bool {
+		rep = doctorReport{}
+		c2.get(t, "/v1/doctor?probe=false", &rep)
+		return settled()
+	}) {
+		t.Fatalf("doctor never reported the scheduled backup: backup group = %+v, problems = %+v", rep.Backup, rep.Problems)
+	}
+
+	// Retained == 1 means the archive is on disk, and it is the only one.
+	var archive string
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		t.Fatalf("read backup dir: %v", err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "vincent-backup-") && strings.HasSuffix(e.Name(), ".tar.gz") {
+			archive = filepath.Join(backupDir, e.Name())
+		}
+	}
+	if archive == "" {
+		t.Fatalf("doctor retained one archive but none is in %s", backupDir)
+	}
+	if _, err := backup.ReadManifest(archive); err != nil {
+		t.Fatalf("scheduled archive does not read: %v", err)
 	}
 	c2.post(t, "/v1/daemon/stop", nil, http.StatusAccepted, nil)
 	waitExit(t, second)

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/config"
+	"github.com/lezli01/vincent/internal/github/fakeissues"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/testrepo"
@@ -75,13 +75,12 @@ func newCorpus(t *testing.T, rows ...map[string]any) *corpus {
 	return c
 }
 
+// save writes the corpus through fakeissues.Store, whose temp file and
+// rename keep a fakegh call still in flight from reading it half-written
+// (#733).
 func (c *corpus) save() {
 	c.t.Helper()
-	b, err := json.Marshal(c.rows)
-	if err != nil {
-		c.t.Fatal(err)
-	}
-	if err := os.WriteFile(c.path, b, 0o600); err != nil {
+	if err := (fakeissues.Store{Path: c.path}).Save(c.rows); err != nil {
 		c.t.Fatal(err)
 	}
 }
