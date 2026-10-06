@@ -65,14 +65,16 @@ jobs:
     # Wide enough that `go test -timeout` (see magefile.go) is always the
     # tighter of the two limits: a package that really hangs should be reported
     # by the test binary's goroutine dump, not killed here with nothing to read.
-    # The Windows leg under the race detector is the one this is sized for.
-    # `go test -timeout` is per test binary, but this caps the whole job, and
-    # the suite runs its packages concurrently: on master the Windows race
-    # step alone takes ~25 minutes (internal/api ~13 of them, internal/taskrun
-    # ~11), so a 30-minute cap cancelled any run on a slower runner with no
-    # FAIL line at all — go test holds every later package's output until
+    # The Windows leg is the one this is sized for. `go test -timeout` is per
+    # test binary, but this caps the whole job, and the suite runs its
+    # packages concurrently: when Windows raced the whole suite its test step
+    # took up to ~25 minutes (internal/api ~13 of them, internal/taskrun ~11),
+    # and a 30-minute cap cancelled any run on a slower runner with no FAIL
+    # line at all — go test holds every later package's output until
     # internal/api reports, which made the log look hung after
-    # internal/agent/cursor.
+    # internal/agent/cursor. Windows now races only four packages (#728), but
+    # the cap stays at 45: it is the maintainer's decision under #725, and a
+    # hang should still be reported by `go test -timeout` first.
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -88,12 +90,22 @@ jobs:
           go-version-file: go.mod
 
       # CI runs the exact targets developers run locally (see magefile.go);
-      # the deliberate differences are the race detector and, in testraceci,
-      # gotestsum rerunning failed tests (up to twice each) and reporting
-      # them (#736). A rerun that passes does not red the job, so every
-      # rerun is listed in the job summary instead, and the reports below
-      # carry each test's elapsed time for trend tracking. Lint is the third:
-      # CI runs lintall, the all-platform form of lint, on one leg only.
+      # the deliberate differences are the race detector's scope and, in
+      # testci, gotestsum rerunning failed tests (up to twice each) and
+      # reporting them (#736). A rerun that passes does not red the job, so
+      # every rerun is listed in the job summary instead, and the reports
+      # below carry each test's elapsed time for trend tracking. Lint is the
+      # third: CI runs lintall, the all-platform form of lint, on one leg only.
+      #
+      # The race detector is scoped per OS (#728; reasons in magefile.go's
+      # TestCI). Linux runs the whole suite under -race, which catches the
+      # platform-independent races wherever they would fire. macOS runs it
+      # without. Windows runs it without, plus a -race pass over the four
+      # packages whose Windows-specific process, daemon and service code only
+      # that leg can race: internal/procx, internal/daemon, internal/service
+      # and internal/taskrun. That is weaker proof on macOS and Windows than
+      # a full race run, chosen to take Windows off the critical path; local
+      # `testrace` still races everything.
       #
       # Lint runs once, on the Linux leg, for linux, darwin and windows (#727).
       # The repository has no cgo, so linting with GOOS set sees exactly the
@@ -107,10 +119,10 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: go run mage.go lintall
 
-      - name: Test (race)
-        run: go run mage.go testraceci
+      - name: Test
+        run: go run mage.go testci
         # The tests' wait budgets are sized for a quiet machine; the Windows
-        # race leg is not one (#731). This factor stretches every wait in
+        # leg, which still runs a race pass, is not one (#731). This factor stretches every wait in
         # internal/testutil/wait, the API client's REST timeout and the
         # `daemon start` health poll the e2e tests drive. Empty elsewhere,
         # which the helpers read as 1.
