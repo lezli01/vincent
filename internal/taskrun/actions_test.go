@@ -13,6 +13,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/taskstate"
 	"github.com/lezli01/vincent/internal/testrepo"
 	"github.com/lezli01/vincent/internal/worktree"
@@ -43,7 +44,7 @@ type actionHarness struct {
 func newActionHarness(t *testing.T) *actionHarness {
 	t.Helper()
 	dataDir := t.TempDir()
-	st, err := store.Open(filepath.Join(dataDir, "actions.db"))
+	st, err := storetest.Open(filepath.Join(dataDir, "actions.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

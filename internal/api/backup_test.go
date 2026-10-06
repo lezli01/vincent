@@ -21,6 +21,7 @@ import (
 	"github.com/lezli01/vincent/internal/backup"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // backupHarness is the API over a real store in a real data dir. Nothing here
@@ -36,7 +37,7 @@ type backupHarness struct {
 func newBackupHarness(t *testing.T) *backupHarness {
 	t.Helper()
 	dirs := config.Dirs{Config: t.TempDir(), Data: t.TempDir()}
-	st, err := store.Open(filepath.Join(dirs.Data, backup.DatabaseEntry))
+	st, err := storetest.Open(filepath.Join(dirs.Data, backup.DatabaseEntry))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

@@ -18,6 +18,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // The projects view's slot figures, against the real handlers (§11, issue
@@ -46,7 +47,7 @@ type projectSlotsHarness struct {
 func newProjectSlotsHarness(t *testing.T, limit *int) *projectSlotsHarness {
 	t.Helper()
 	const token = "projects-token"
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

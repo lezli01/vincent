@@ -17,6 +17,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/scheduler"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // reportStub is a minimal installed Adapter for the reported-quota tests. It
@@ -55,7 +56,7 @@ func (s *reporterStub) Quota(context.Context) (*agent.ReportedQuota, error) { re
 // given adapters and a real store.
 func newReportServer(t *testing.T, adapters ...agent.Adapter) (*httptest.Server, *store.Store) {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

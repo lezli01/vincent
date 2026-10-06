@@ -13,6 +13,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/container"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // TestRecoverSweepsLeftoverCursorMCPConfig covers §12.4's task-057 clause: a
@@ -23,7 +24,7 @@ import (
 func TestRecoverSweepsLeftoverCursorMCPConfig(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()
-	st, err := store.Open(filepath.Join(dataDir, "test.db"))
+	st, err := storetest.Open(filepath.Join(dataDir, "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

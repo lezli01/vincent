@@ -5,9 +5,24 @@ import (
 	"testing"
 )
 
-// openTest opens a store on a fresh temp database. The path deliberately
-// contains a space to guard the DSN URI escaping.
+// openTest opens a store on a fresh temp database seeded from the migrated
+// template (see template_test.go). The path deliberately contains a space to
+// guard the DSN URI escaping.
 func openTest(t *testing.T) *Store {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "with space", "vincent.db")
+	seedTemplate(t, path)
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
+}
+
+// openFresh is openTest without the template: Open migrates a new file from
+// nothing. It is for the tests that are about what that first Open does.
+func openFresh(t *testing.T) *Store {
 	t.Helper()
 	s, err := Open(filepath.Join(t.TempDir(), "with space", "vincent.db"))
 	if err != nil {
@@ -31,7 +46,7 @@ func schemaVersion(t *testing.T, s *Store) int {
 }
 
 func TestOpenAppliesSchema(t *testing.T) {
-	s := openTest(t)
+	s := openFresh(t)
 
 	for _, table := range []string{
 		"projects", "tasks", "step_runs", "events", "agent_quota", "schema_migrations",
@@ -51,7 +66,7 @@ func TestOpenAppliesSchema(t *testing.T) {
 }
 
 func TestOpenAppliesPragmas(t *testing.T) {
-	s := openTest(t)
+	s := openFresh(t)
 
 	var journal string
 	if err := s.db.QueryRow(`PRAGMA journal_mode`).Scan(&journal); err != nil {

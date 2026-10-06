@@ -18,6 +18,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // projectKeys is the default project shape: GET /v1/projects without
@@ -210,7 +211,7 @@ func (b *syncBuffer) String() string {
 // TestProjectStatsDegradeToNull: a failed count is `"stats": null` with a
 // warning in the log and a 200, never a 500 — the slots_used precedent.
 func TestProjectStatsDegradeToNull(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

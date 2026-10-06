@@ -19,6 +19,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // issueHarness is a server over a real store with two projects, for the
@@ -32,7 +33,7 @@ type issueHarness struct {
 
 func newIssueHarness(t *testing.T) *issueHarness {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "issues.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "issues.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

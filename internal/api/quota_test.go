@@ -15,6 +15,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // newQuotaServer serves /v1/agents and /v1/info over one installed adapter
@@ -23,7 +24,7 @@ func newQuotaServer(t *testing.T) (*httptest.Server, *store.Store) {
 	t.Helper()
 	fake := agenttest.BuildFakeAgent(t)
 	reg := agent.NewRegistry(claude.New(func() string { return fake }))
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

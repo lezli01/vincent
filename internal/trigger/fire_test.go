@@ -17,11 +17,12 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 func openStore(t *testing.T) *store.Store {
 	t.Helper()
-	s, err := store.Open(filepath.Join(t.TempDir(), "vincent.db"))
+	s, err := storetest.Open(filepath.Join(t.TempDir(), "vincent.db"))
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
 	}

@@ -19,6 +19,7 @@ import (
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // quotaLiveHarness is the shell against the real API handlers: a real store
@@ -37,7 +38,7 @@ func newQuotaLiveHarness(t *testing.T) *quotaLiveHarness {
 	const token = "quota-live-token"
 
 	dataDir := t.TempDir()
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

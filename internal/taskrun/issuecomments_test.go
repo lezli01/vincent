@@ -9,6 +9,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/workflow"
 )
 
@@ -89,7 +90,7 @@ func TestIssueFileCommentsAreGhShaped(t *testing.T) {
 // the create transaction (decision 24.5).
 func TestIssueThreadIsFrozenAtCreation(t *testing.T) {
 	ctx := t.Context()
-	st, err := store.Open(filepath.Join(t.TempDir(), "thread.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "thread.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

@@ -20,6 +20,7 @@ import (
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // TestLiveChangeFromRealServer is the T3.1 done-when in automated form: the
@@ -27,7 +28,7 @@ import (
 // a state change the TUI didn't make.
 func TestLiveChangeFromRealServer(t *testing.T) {
 	const token = "live-token"
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

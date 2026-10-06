@@ -16,6 +16,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // TestProjectPickerFollowsTheDaemon is task 132.4 against the real handlers:
@@ -23,7 +24,7 @@ import (
 // row's figure, by the debounced refetch, and leaves the other row alone.
 func TestProjectPickerFollowsTheDaemon(t *testing.T) {
 	const token = "pick-token"
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

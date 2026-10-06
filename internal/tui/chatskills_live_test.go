@@ -22,6 +22,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // The skill list against the real handlers (task 124.13): the chat workspace
@@ -57,7 +58,7 @@ func newChatSkillsLive(t *testing.T) *chatSkillsLive {
 	t.Setenv("FAKEAGENT_VERSION", "2.1.277")
 
 	dataDir := t.TempDir()
-	st, err := store.Open(filepath.Join(dataDir, "skills.db"))
+	st, err := storetest.Open(filepath.Join(dataDir, "skills.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

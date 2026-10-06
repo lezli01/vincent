@@ -16,6 +16,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/procx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
 
@@ -24,7 +25,7 @@ import (
 
 func recoverStore(t *testing.T) (*store.Store, int64) {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "recover.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "recover.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

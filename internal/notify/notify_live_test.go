@@ -10,6 +10,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/taskstate"
 	"github.com/lezli01/vincent/internal/workflow"
 )
@@ -25,7 +26,7 @@ import (
 // hand-built event cannot keep honest.
 func TestLiveNotificationFromRealTransition(t *testing.T) {
 	dir := t.TempDir()
-	st, err := store.Open(filepath.Join(t.TempDir(), "live.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "live.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

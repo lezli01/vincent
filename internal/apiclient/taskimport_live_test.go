@@ -18,6 +18,7 @@ import (
 	"github.com/lezli01/vincent/internal/backup"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // importLive is the real import handler over a real store in a real data dir,
@@ -31,7 +32,7 @@ type importLive struct {
 func newImportLive(t *testing.T) *importLive {
 	t.Helper()
 	dirs := config.Dirs{Config: t.TempDir(), Data: t.TempDir()}
-	st, err := store.Open(filepath.Join(dirs.Data, backup.DatabaseEntry))
+	st, err := storetest.Open(filepath.Join(dirs.Data, backup.DatabaseEntry))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -72,7 +73,7 @@ func makeImportArchive(t *testing.T, b backedUp) (archive string, taskID int64) 
 	t.Helper()
 	ctx := t.Context()
 	src := config.Dirs{Config: t.TempDir(), Data: t.TempDir()}
-	st, err := store.Open(filepath.Join(src.Data, backup.DatabaseEntry))
+	st, err := storetest.Open(filepath.Join(src.Data, backup.DatabaseEntry))
 	if err != nil {
 		t.Fatalf("open source store: %v", err)
 	}

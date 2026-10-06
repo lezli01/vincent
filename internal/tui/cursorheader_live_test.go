@@ -16,6 +16,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/worktree"
 )
 
@@ -81,7 +82,7 @@ func fixtureRecords(t *testing.T, adapter agent.Adapter, fixture string) []apicl
 	t.Helper()
 	const token = "fixture-token"
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

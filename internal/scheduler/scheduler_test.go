@@ -12,6 +12,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // stubAdmitter stands in for the engine. Admission is what these tests are
@@ -52,7 +53,7 @@ type harness struct {
 
 func newHarness(t *testing.T, maxParallel int) *harness {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "sched.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "sched.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // TestStepDetailsFieldsSurviveTheRealServer wires the Step Details tab to the
@@ -28,7 +29,7 @@ import (
 // silently rendering "not recorded" forever.
 func TestStepDetailsFieldsSurviveTheRealServer(t *testing.T) {
 	const token = "step-details-live-token"
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	st, err := storetest.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

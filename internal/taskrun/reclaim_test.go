@@ -14,6 +14,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/testrepo"
 	"github.com/lezli01/vincent/internal/worktree"
 )
@@ -34,7 +35,7 @@ type reclaimHarness struct {
 func newReclaimHarness(t *testing.T) *reclaimHarness {
 	t.Helper()
 	dataDir := t.TempDir()
-	st, err := store.Open(filepath.Join(dataDir, "test.db"))
+	st, err := storetest.Open(filepath.Join(dataDir, "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

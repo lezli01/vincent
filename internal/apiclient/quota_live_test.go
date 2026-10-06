@@ -13,7 +13,7 @@ import (
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/config"
-	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
 // quotaAdapter is a minimal installed Adapter. It is local rather than the
@@ -43,7 +43,7 @@ func (a *quotaAdapter) Start(context.Context, agent.RunSpec) (agent.RunHandle, e
 func newQuotaClient(t *testing.T) *apiclient.Client {
 	t.Helper()
 	dir := t.TempDir()
-	st, err := store.Open(filepath.Join(dir, "test.db"))
+	st, err := storetest.Open(filepath.Join(dir, "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

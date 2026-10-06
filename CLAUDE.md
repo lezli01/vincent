@@ -322,6 +322,10 @@ Tests are self-contained and hermetic — no real agent CLI, no network, no runn
 daemon, no shared fixtures:
 
 - `internal/testrepo` — throwaway git repos (skips when git is absent).
+- `internal/store/storetest` — `storetest.Open(path)` is `store.Open` on a
+  copy of a once-per-process migrated template. Use it for every test store
+  that is not testing the migrations themselves: under `-race` the pure-Go
+  SQLite makes migrating a new file ~40× slower than opening a copy (#726).
 - `internal/agent/agenttest` — compiles `cmd/fakeagent` once per test process.
 - `cmd/fakeagent` — scenario-driven stand-in for an agent CLI. Dialect comes from
   argv shape (`exec` first arg ⇒ codex-shaped; `--trust` anywhere ⇒ cursor-shaped;
