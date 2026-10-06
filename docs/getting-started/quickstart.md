@@ -170,7 +170,8 @@ Useful additions at creation time:
 vincent
 ```
 
-That opens the TUI. The board lists every task with its state and step
+That opens the TUI. The board lists the selected project's tasks — the one
+you ran it in, or the first by name; `@` switches — with their state and step
 progress; the detail view below shows the step timeline on the left and the
 live agent output on the right, with a **Diff** tab beside it.
 
