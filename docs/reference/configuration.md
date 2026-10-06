@@ -58,10 +58,13 @@ max_parallel_tasks: 3
 # input_timeout bounds each wait for an answer to an agent's input request.
 # Both clocks bound a chat turn as well as a workflow step.
 # (awaiting_input, §7.4); on expiry the attempt fails under the retry policy.
+# background_wait is how long an agent run stays open for work the agent left
+# running in the background; 0 ends every run at the agent's first answer.
 defaults:
   agent_timeout: 60m
   command_timeout: 15m
   input_timeout: 24h
+  background_wait: 30m
 
 # Delete a task's branch when it is archived and carries no commits past the
 # base it was cut from — the branch a workflow that never writes to the
@@ -496,16 +499,19 @@ defaults:
   agent_timeout: 60m
   command_timeout: 15m
   input_timeout: 24h
+  background_wait: 30m
 ```
 
 Fallback timeouts used when a workflow step declares none. All are Go duration
-strings (`45m`, `1h30m`, `90s`) and all must be positive.
+strings (`45m`, `1h30m`, `90s`). The three timeouts must be positive;
+`background_wait` may be `0`.
 
 | Key | Applies to |
 |---|---|
 | `agent_timeout` | One attempt of an agent step, **and one chat turn** |
 | `command_timeout` | One attempt of a command step, and checks |
 | `input_timeout` | Each wait in `awaiting_input` — measured **per request**, so a new question starts a fresh window — on a task **and on a chat** |
+| `background_wait` | How long a claude run stays open after the agent ends a turn while work it started in the background is still running — on a task **and on a chat** |
 
 A timed-out process is killed and the attempt counts as a failure under the
 normal retry policy. The step clock **pauses** while a task is
@@ -518,6 +524,20 @@ verbatim, with the same pause rule and **no override**: `defaults:` and per-step
 fields are workflow things, and a chat has no workflow. An expiry fails the turn
 with `timeout` or `input_timeout`, kills the process tree, returns the chat to
 `idle` and releases its `max_parallel_chats` slot.
+
+`background_wait` is for an agent that runs something in the background — a test
+suite, a CI watch — and ends its turn saying it will report back. Claude Code
+wakes the agent when that work finishes, but only while its process is still
+running. So vincent keeps the run open until the work finishes and the agent
+answers. The wait restarts each time the agent ends a turn, and it counts
+against `agent_timeout`. When it runs out, vincent ends the run on the agent's
+last answer as a success, and Claude Code stops whatever is still running —
+for example a dev server nobody stopped. Until then a chat turn shows as
+running and the chat takes no new message; cancel the turn if you don't want
+to wait. `0` ends every run at the agent's first answer and kills the background
+work, which is how vincent behaved before this key existed. Only the claude
+adapter has background work; codex and cursor runs end at their answer
+regardless.
 
 ### `delete_empty_branch_on_archive`
 

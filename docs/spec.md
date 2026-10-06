@@ -4135,6 +4135,31 @@ records no date for `--approve-mcps`).
   the last block expands natively with the earlier block kept in context,
   while the same bytes fused into one block, or the message block placed
   first, do not expand. One message is still one model turn and one result.
+- **Background work across a result** (*added 2026-10-06, task 133*). Bash's
+  `run_in_background`, a backgrounded `Agent` and `Monitor` start work the CLI
+  promises to wake the model about when it finishes, and the model ends its
+  turn on that promise. The CLI only keeps the promise while its process is
+  running. Before this amendment the adapter closed stdin at the first
+  `result`, so the CLI exited, killed the work (`task_updated` `killed`,
+  `task_notification` `stopped`), and the run ended on "I'll report when it
+  finishes". In input mode the adapter now tracks `system` task lines by
+  `task_id`: `task_started` opens one; `task_notification`, or `task_updated`
+  with a terminal `patch.status` (`completed`, `failed`, `killed`, `stopped`),
+  closes it. At a `result` with none open, stdin closes as before. With some
+  open, stdin stays open for `RunSpec.BackgroundWait`
+  (`defaults.background_wait`, §12.3), and the CLI writes the work's
+  notification, wakes the model and writes another `result`. Captured against
+  2.1.289 (`testdata/stream_background_2.1.289.jsonl`). The window restarts at
+  every `result` and pauses while the main loop writes output or tool calls;
+  a background subagent's own lines do not pause it. When it lapses, stdin
+  closes, the CLI stops what is left and exits 0, and the run ends on the last
+  `result` as a success. The wait counts against the step or turn's
+  `agent_timeout`. `RunResult` takes `ResultText`, `IsError` and `CostUSD` from
+  the **last** `result`: `total_cost_usd` is the process's running total.
+  Tokens are **summed** across results, because each `result`'s `usage` covers
+  only its own model turn. A run outside input mode has no stdin to keep, and
+  a zero wait closes at the first `result`, so both end where they always did.
+  codex and cursor have no background work and ignore the field.
 - **No non-interactive quota surface** (*added 2026-08-24, task 026*). Against
   claude 2.1.241 the subcommands are `agents auth auto-mode doctor gateway
   import install mcp plugin project setup-token ultrareview update` — there is
@@ -7057,6 +7082,7 @@ defaults:
   agent_timeout: 60m
   command_timeout: 15m
   input_timeout: 24h           # max wait in awaiting_input (§7.4)
+  background_wait: 30m         # keep a run open for background work the agent left running (§9.2); 0 = end at the first result
 delete_empty_branch_on_archive: true   # archive deletes a branch with no commits past its base (§10)
 delete_remote_branch_on_archive: false # …and its upstream counterpart; attended archive only
 fetch_base_branch: true        # refresh base_branch from its upstream before cutting a worktree (§10)
