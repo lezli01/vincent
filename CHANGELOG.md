@@ -405,6 +405,14 @@ list with the user-facing context a commit subject cannot carry.
   "being used by another process". Both the graceful stop and `--force` now
   also wait, within the same 30 seconds, for the daemon's process to exit.
   ([#732](https://github.com/lezli01/vincent/issues/732))
+- **A containerized agent step reaches its MCP tools on Docker Desktop.** On
+  macOS and Windows (and Docker Desktop for Linux) the step dials
+  `host.docker.internal`, which Desktop forwards to the daemon's loopback
+  port, and the per-step endpoint answered every call with
+  `403 invalid Host header`. It now accepts that host; the step's own secret
+  still authenticates every call, and the shared `/mcp` endpoint keeps its
+  DNS-rebinding check.
+  ([#729](https://github.com/lezli01/vincent/issues/729))
 
 ## [0.11.0](https://github.com/lezli01/vincent/compare/v0.10.1...v0.11.0) (2026-10-01)
 
