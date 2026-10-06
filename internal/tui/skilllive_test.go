@@ -131,21 +131,25 @@ func TestLiveSkillLoadMatchesItsRefetch(t *testing.T) {
 		t.Errorf("the frame draws the call twice or the skill's body:\n%s", got)
 	}
 
-	// agent.result has no live chunk: the pane refetches when a run ends
-	// (agent.LiveChunks), so the two doors are compared over what both carry.
-	// That run-end refetch can replace d.records before it is read here, so
-	// the streamed side drops the result too.
-	withoutResult := func(recs []apiclient.TranscriptRecord) []apiclient.TranscriptRecord {
-		var out []apiclient.TranscriptRecord
-		for _, rec := range recs {
-			if rec.Type != "agent.result" {
-				out = append(out, rec)
-			}
+	// agent.result has no live chunk (agent.LiveChunks), so the stream never
+	// builds one and the two doors are compared over what both carry. One in
+	// d.records therefore came from a transcript re-read — a reconnect's
+	// ConnectedNote landing after the result was on disk (§13.3) — and then
+	// the "streamed" side is a fetch too, and comparing it with the refetch
+	// would prove nothing about the stream. That is reported, not filtered.
+	streamed := d.records
+	for _, rec := range streamed {
+		if rec.Type == "agent.result" {
+			t.Fatalf("the pane re-read the transcript after the result was on disk, " +
+				"so its records are a fetch and comparing them with the refetch proves nothing about the stream")
 		}
-		return out
 	}
-	streamed := withoutResult(d.records)
-	fetched := withoutResult(refetch(t, d))
+	var fetched []apiclient.TranscriptRecord
+	for _, rec := range refetch(t, d) {
+		if rec.Type != "agent.result" {
+			fetched = append(fetched, rec)
+		}
+	}
 	for _, level := range allLevels {
 		opts := lineOpts{expandKey: "v"}
 		want := strings.Join(plainLines(outputLines(fetched, level, 100, opts)), "\n")
