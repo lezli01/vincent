@@ -81,6 +81,10 @@ agents:
 			AgentTimeout:   Duration(90 * time.Minute),
 			CommandTimeout: Duration(90 * time.Second),
 			InputTimeout:   Duration(36 * time.Hour),
+			// The file's `defaults:` names three keys and not this one, so
+			// task 133's wait survives beside them rather than collapsing to
+			// zero — which would quietly bring back the killed-work bug.
+			BackgroundWait: Duration(30 * time.Minute),
 		},
 		// Same property as `environment:` below: the file names neither branch
 		// key nor `fetch_base_branch`, so the §10 defaults survive an otherwise
@@ -470,12 +474,14 @@ func TestLoadRejectsInvalid(t *testing.T) {
 		"bad duration":          "defaults:\n  agent_timeout: sixty minutes\n",
 		"duration missing unit": "defaults:\n  agent_timeout: 60\n",
 		"negative duration":     "defaults:\n  command_timeout: -5m\n",
-		"zero cap":              "max_parallel_tasks: 0\n",
-		"bad log level":         "log_level: verbose\n",
-		"non-loopback listen":   "listen: 0.0.0.0:8080\n",
-		"listen without port":   "listen: 127.0.0.1\n",
-		"bad port":              "listen: 127.0.0.1:notaport\n",
-		"negative retention":    "transcript_retention_days: -1\n",
+		// Zero is the documented opt-out (task 133); below it means nothing.
+		"negative background wait": "defaults:\n  background_wait: -1m\n",
+		"zero cap":                 "max_parallel_tasks: 0\n",
+		"bad log level":            "log_level: verbose\n",
+		"non-loopback listen":      "listen: 0.0.0.0:8080\n",
+		"listen without port":      "listen: 127.0.0.1\n",
+		"bad port":                 "listen: 127.0.0.1:notaport\n",
+		"negative retention":       "transcript_retention_days: -1\n",
 		// Non-negative, not positive: zero is the documented "no cap"
 		// (task 033), so only a budget no run could honour is refused.
 		"negative task cost cap":        "max_task_cost_usd: -1\n",

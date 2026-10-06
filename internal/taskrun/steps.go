@@ -104,6 +104,10 @@ func (r *Runner) runAgentStep(
 		Effort:         sel.Effort,
 		PermissionMode: permission,
 		OnInput:        onInput,
+		// A step's agent leaves work in the background as readily as a
+		// chat's does — a suite, a CI watch — and the step's outcome is
+		// whatever it said last, so it gets the same wait (task 133).
+		BackgroundWait: r.deps.Config().Defaults.BackgroundWait.Std(),
 		// Always explicit, even when the policy inherits everything (T4.23).
 		// Passing nil would hand the adapter the ambient environment again,
 		// and "decided" is the whole point: what a step runs under is now a

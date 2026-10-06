@@ -231,6 +231,7 @@ type ConfigDefaults struct {
 	AgentTimeout   string `json:"agent_timeout"`
 	CommandTimeout string `json:"command_timeout"`
 	InputTimeout   string `json:"input_timeout"`
+	BackgroundWait string `json:"background_wait"`
 }
 
 // ConfigAgents are the three §9 adapters' configured binaries.
@@ -438,6 +439,7 @@ type ConfigDefaultsPatch struct {
 	AgentTimeout   *string `json:"agent_timeout,omitempty"`
 	CommandTimeout *string `json:"command_timeout,omitempty"`
 	InputTimeout   *string `json:"input_timeout,omitempty"`
+	BackgroundWait *string `json:"background_wait,omitempty"`
 }
 
 // ConfigEnvironmentPatch is the optional half of ConfigEnvironment.

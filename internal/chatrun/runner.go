@@ -430,6 +430,9 @@ func (r *Runner) runTurn(
 		// §7.4 answers are in the transcript too, as agent.input_echo
 		// records no client draws, under the per-turn cap set above.
 		ReportInvocations: true,
+		// Read per turn, like the transcript cap above: a hot-reloaded value
+		// reaches the next send (task 133).
+		BackgroundWait: r.cfg().Defaults.BackgroundWait.Std(),
 	}
 	handle, err := adapter.Start(ctx, spec)
 	if err != nil {

@@ -56,6 +56,11 @@
 //	                      top-level conversation_reset line, then a new
 //	                      session id on every line after it and an empty
 //	                      success — task 124.20, claude dialect) |
+//	                      background (work started in the background and a
+//	                      turn ended on it: a second result if stdin stays
+//	                      open until the work finishes, the work killed if
+//	                      it closes first — task 133, background.go; claude
+//	                      dialect) |
 //	                      sleep (internal: silent child)
 //	FAKEAGENT_PROMPT_FILE echo-prompt: file each invocation appends its prompt
 //	                      to, one JSON string per line. JSON rather than the
@@ -416,6 +421,8 @@ func main() {
 		askQuestion(prompt, stdin)
 	case "ask-permission":
 		askPermission(prompt, stdin)
+	case "background":
+		background(stdin)
 	case "bad-input-request":
 		emitText("about to violate the control protocol")
 		emit(map[string]any{

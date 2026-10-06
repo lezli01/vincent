@@ -236,6 +236,15 @@ type RunSpec struct {
 	// its rendered prompt — a 200-line failure block among it — and every
 	// §7.4 answer, for a feature tasks do not have.
 	ReportInvocations bool
+	// BackgroundWait is how long the run stays open after the agent ends a
+	// turn while work it started in the background is still running (§9.2,
+	// task 133), so the CLI can wake the model when that work finishes
+	// instead of killing it on exit. The window restarts at each turn the
+	// agent ends; when it lapses the run ends on the agent's last answer and
+	// the CLI stops what is left. Zero ends the run at the first answer,
+	// which is what every run did before. An adapter whose CLI has no
+	// background work ignores it.
+	BackgroundWait time.Duration
 	// MCP is the vincent MCP server this run is wired to (§13.4, task 057).
 	// nil is a run with no vincent tools. An adapter that cannot carry one
 	// returns ErrMCPUnsupported from Start rather than starting without it.

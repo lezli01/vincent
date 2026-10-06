@@ -846,6 +846,13 @@ type Defaults struct {
 	// InputTimeout bounds each wait in awaiting_input (§7.4); overridable
 	// in workflow defaults and per step.
 	InputTimeout Duration `yaml:"input_timeout"`
+	// BackgroundWait is how long an agent run stays open after the agent
+	// ends a turn on background work still running, so the work can finish
+	// and wake it (§9.2, task 133). It restarts at each turn the agent ends
+	// and counts against the agent timeout. Zero ends every run at the
+	// agent's first answer, killing the work, which is what vincent did
+	// before the key existed.
+	BackgroundWait Duration `yaml:"background_wait"`
 }
 
 // Parallel configures `type: parallel` step groups (spec §7, §11 — task 014).
@@ -966,6 +973,7 @@ func Default() Config {
 			AgentTimeout:   Duration(60 * time.Minute),
 			CommandTimeout: Duration(15 * time.Minute),
 			InputTimeout:   Duration(24 * time.Hour),
+			BackgroundWait: Duration(30 * time.Minute),
 		},
 		DeleteEmptyBranchOnArchive: true,
 		// Deliberately not defaulted true beside its local sibling: this one
@@ -1102,6 +1110,9 @@ func (c Config) validate(lenient bool) error {
 	}
 	if c.Defaults.InputTimeout <= 0 {
 		return fmt.Errorf("defaults.input_timeout must be positive, got %s", c.Defaults.InputTimeout)
+	}
+	if c.Defaults.BackgroundWait < 0 {
+		return fmt.Errorf("defaults.background_wait must not be negative, got %s", c.Defaults.BackgroundWait)
 	}
 	if c.Parallel.MaxParallel < 1 {
 		return fmt.Errorf("parallel.max_parallel must be at least 1, got %d", c.Parallel.MaxParallel)
