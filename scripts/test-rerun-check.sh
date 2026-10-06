@@ -29,6 +29,10 @@
 #      package raced by a package-list scope is still never rerun
 #   9. a malformed VINCENT_TEST_SHARD (0/4, 5/4, x) fails the target before
 #      any test runs or any report is written
+#  10. a regression in a split package skips reruns in every shard whose
+#      share of it has more than ceil(10/3) = 4 failures, though no share
+#      reaches the whole-package limit of 10, and a share at or under it is
+#      still rerun
 #
 # Together 4–6 prove each scope the target defaults to: all (linux), none
 # (darwin) and a package list (windows).
@@ -449,7 +453,35 @@ scenario_9() {
   done
 }
 
-for n in 1 2 3 4 5 6 7 8 9; do
+scenario_10() {
+  echo "== scenario 10: a split package's share has its part of the rerun limit"
+  CASE=s10
+  # Fifteen tests that always fail: they hash 4, 5 and 6 to the three shards,
+  # so one share is rerun and two are not, and none of them alone has the
+  # more than 10 failures that skip reruns over a whole package.
+  local broken="" i
+  for i in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15; do
+    broken+=$'\n'"func TestBroken$i(t *testing.T) { mark(t); t.Fatal(\"fails on purpose\") }"
+  done
+  shard_setup s10 "$broken"
+  run_shards none
+  local s t n reran=0 skipped=0
+  for s in 1 2 3; do
+    [[ "${SHARD_RC[s]}" != 0 ]] || fail "shard $s/3 exited 0 on tests that always fail"
+    local mine
+    mine="$(grep '^shard/many\.TestBroken' <<<"$(shard_tests "$s")" || true)"
+    n="$(grep -c . <<<"$mine" || true)"
+    local want=3
+    if ((n > 4)); then want=1 skipped=$((skipped + 1)); else reran=$((reran + 1)); fi
+    while IFS= read -r t; do
+      [[ -n "$t" ]] || continue
+      [[ "$(runs "${t#shard/}")" == "$want" ]] || fail "$t, one of shard $s's $n failures, ran $(runs "${t#shard/}") times, want $want"
+    done <<<"$mine"
+  done
+  [[ "$skipped" -ge 1 && "$reran" -ge 1 ]] || fail "$skipped shards skipped reruns and $reran reran, want at least one of each"
+}
+
+for n in 1 2 3 4 5 6 7 8 9 10; do
   if [[ -z "$ONLY" || "$ONLY" == "$n" ]]; then
     "scenario_$n"
   fi

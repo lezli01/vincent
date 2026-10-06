@@ -95,8 +95,12 @@ func TestRace() error {
 //
 // Rerun budget: up to 2 reruns of each failed test (gotestsum reruns only the
 // failed tests, by -run), and none at all when the first pass has more than
-// gotestsum's default 10 failures — that many is a regression, and rerunning
-// it would only burn the Windows leg's budget. A data race is never rerun
+// rerunMaxFailures (10, gotestsum's default) failures — that many is a
+// regression, and rerunning it would only burn the Windows leg's budget.
+// gotestsum counts per invocation, so the limit is per pass; in shard mode a
+// split package's share gets ceil(10/n) instead (review F1 in #745), because
+// a regression of 30 failures in one split package is only ~30/n in each
+// shard's share, and under a whole 10 every share would rerun it. A data race is never rerun
 // (--rerun-fails-abort-on-data-race): a race is a correctness bug, and an
 // intermittent one, so a rerun that happened not to race would turn it green.
 // -timeout 30m is TestRace's, for TestRace's reasons, on every pass.
@@ -223,7 +227,15 @@ type testPass struct {
 	race   bool
 	suffix string
 	run    string
+	// maxFailures is the most first-pass failures this pass reruns, more
+	// skipping reruns; 0 is rerunMaxFailures.
+	maxFailures int
 }
+
+// rerunMaxFailures is gotestsum's --rerun-fails-max-failures for a pass
+// over whole packages: more failures than this are a regression, not a
+// flake, and are not rerun (see TestCI).
+const rerunMaxFailures = 10
 
 // unshardedPasses is TestCI's passes without VINCENT_TEST_SHARD: the whole
 // suite in one pass for `all` and `none`, and for a package list a plain
@@ -384,6 +396,9 @@ func splitPass(dir, pkg string, race bool, shard, shards int) (testPass, bool, e
 		race:   race,
 		suffix: suffix,
 		run:    "^(" + strings.Join(mine, "|") + ")$",
+		// The share's part of the whole package's limit, rounded up, so a
+		// regression that would skip reruns unsharded skips them here.
+		maxFailures: (rerunMaxFailures + shards - 1) / shards,
 	}, true, nil
 }
 
@@ -442,9 +457,14 @@ func listPackages(dir string, patterns []string) ([]string, error) {
 // removes it and adds its own -run naming only the failed tests, so the
 // shard's expression neither widens a rerun nor blocks one.
 func gotestsum(bin, dir, report string, p testPass) error {
+	maxFailures := p.maxFailures
+	if maxFailures == 0 {
+		maxFailures = rerunMaxFailures
+	}
 	args := []string{
 		"--format", "standard-quiet",
 		"--rerun-fails=2",
+		"--rerun-fails-max-failures", strconv.Itoa(maxFailures),
 		"--rerun-fails-abort-on-data-race",
 		"--rerun-fails-report", filepath.Join(report, "reruns"+p.suffix+".txt"),
 		"--packages", strings.Join(p.pkgs, " "),
@@ -500,7 +520,7 @@ func summarizeReruns(heading string, reruns []string, failed bool) error {
 			fmt.Fprintf(&b, "- `%s`\n", l)
 		}
 	case failed:
-		b.WriteString("No test was rerun, and the run failed: more than 10 failures skip reruns entirely, and neither a build failure nor a data race is ever rerun. See the step log.\n")
+		b.WriteString("No test was rerun, and the run failed: more than 10 failures in a pass (fewer in a split package's share of a shard) skip reruns entirely, and neither a build failure nor a data race is ever rerun. See the step log.\n")
 	default:
 		b.WriteString("No test needed a rerun.\n")
 	}
