@@ -362,7 +362,7 @@ daemon, no shared fixtures:
   SQLite makes migrating a new file ~40× slower than opening a copy (#726).
 - `internal/testutil/wait` — the one poll-until-true helper (`wait.Until`,
   `wait.UntilWithin`, `wait.Poll`) and `wait.Timeout`, which scales a budget
-  by `VINCENT_TEST_TIMEOUT_SCALE` (set to 3 on CI's Windows race leg). Never
+  by `VINCENT_TEST_TIMEOUT_SCALE` (set to 3 on CI's Windows leg). Never
   hand-roll `deadline := time.Now().Add(...)` in a test: a fixed budget is
   sized for a quiet machine and that leg overruns it (#731).
 - `testing/synctest` — a test whose only waiting is on timers, tickers or

@@ -9,8 +9,8 @@ import (
 )
 
 // handRolledDeadline matches the shape every per-package wait helper had
-// before #731: a fixed wall-clock budget computed inline, which the Windows
-// -race leg overruns. A helper that delegates to this package has none.
+// before #731: a fixed wall-clock budget computed inline, which CI's Windows
+// leg overruns. A helper that delegates to this package has none.
 var handRolledDeadline = regexp.MustCompile(`deadline :?= time\.Now\(\)\.Add\(`)
 
 // helperFiles are the files #731 names as carrying their own wait helper with
@@ -79,6 +79,6 @@ func TestWindowsCIScalesTestBudgets(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(b), "VINCENT_TEST_TIMEOUT_SCALE") {
-		t.Error("ci.yml never sets VINCENT_TEST_TIMEOUT_SCALE, so no test budget scales on the Windows -race leg")
+		t.Error("ci.yml never sets VINCENT_TEST_TIMEOUT_SCALE, so no test budget scales on the Windows leg")
 	}
 }
