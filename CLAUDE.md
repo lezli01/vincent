@@ -112,7 +112,12 @@ go run mage.go build     # build bin/vincent with version ldflags injected
 go run mage.go test      # go test ./...
 go run mage.go testrace  # go test -race ./...  (needs cgo + a C compiler)
 go run mage.go lint      # go tool golangci-lint run (pinned via go.mod tool directive)
+go run mage.go lintall   # the same, for GOOS=linux, darwin and windows from this host
 ```
+
+CI lints with `lintall`, on the `ubuntu-latest` leg only (#727): there is no
+cgo, so a cross-GOOS lint sees the same files a native one would, and the
+macOS and Windows legs skip the step.
 
 CI's test step runs `go run mage.go testraceci` instead of `testrace`: the
 same `-race` suite under `go tool gotestsum`, rerunning each failed test up to
@@ -370,7 +375,8 @@ Tests isolate state via `VINCENT_CONFIG_DIR` / `VINCENT_DATA_DIR` (see
   `/`-separated paths, or signal semantics.
 - **Lint the other platforms before pushing, not just build them.** `go build`
   cross-compiles with `GOOS=…`, but `go tool golangci-lint` *cross-builds the
-  linter* and then cannot run it. Build it for the host once and run that:
+  linter* and then cannot run it. Build it for the host once and run that —
+  `go run mage.go lintall` does exactly this, and is what CI runs:
 
   ```sh
   LINT=$(go tool -n golangci-lint)

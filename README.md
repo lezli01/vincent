@@ -558,6 +558,7 @@ go run mage.go build     # build the vincent binary into bin/
 go run mage.go test      # run all tests
 go run mage.go testrace  # run all tests with the race detector (needs cgo and a C compiler)
 go run mage.go lint      # golangci-lint (pinned via go.mod tool directive)
+go run mage.go lintall   # golangci-lint for linux, darwin and windows from one host
 ```
 
 The plain toolchain works too:
@@ -570,8 +571,8 @@ go test ./...    # run the full test suite
 Tests are self-contained: they run against temporary SQLite databases,
 throwaway git repositories, and a fake agent built from `cmd/fakeagent` on
 the fly — no real agent CLI, network access, or running daemon required.
-CI runs lint, the race-enabled tests, and the build on Linux, macOS, and
-Windows, plus sixteen end-to-end acceptance gates that exercise the daemon,
+CI runs the race-enabled tests and the build on Linux, macOS, and Windows,
+lints once, on Linux, for all three platforms, plus sixteen end-to-end acceptance gates that exercise the daemon,
 workflow engine, adapters, control flow, and API against the fake agent on all
 three platforms.
 
