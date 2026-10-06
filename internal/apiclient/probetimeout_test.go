@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -24,9 +25,16 @@ import (
 // daemon that cannot answer it in ten seconds is wedged.
 func TestProbingCallsOutliveTheLoopbackDeadline(t *testing.T) {
 	// Comfortably past requestTimeout, comfortably short of probeTimeout: the
-	// test is over in about this long, not in three minutes.
+	// test is over in about this long, not in three minutes. The rest client's
+	// deadline is requestTimeout as ScaleTimeout stretches it, so the delay
+	// has to clear the scaled figure — on CI's Windows race leg that is 30 s,
+	// not 10 — or the cache leg is answered inside its deadline.
 	const slack = 2 * time.Second
-	delay := requestTimeout + slack
+	delay := ScaleTimeout(requestTimeout) + slack
+	if delay >= probeTimeout {
+		t.Fatalf("%s=%q stretches requestTimeout to %s, past probeTimeout %s: the legs cannot be told apart",
+			EnvTimeoutScale, os.Getenv(EnvTimeoutScale), delay-slack, probeTimeout)
+	}
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
