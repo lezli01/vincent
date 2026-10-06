@@ -67,14 +67,16 @@ go run mage.go build     # build the vincent binary into bin/
 go run mage.go test      # run all tests
 go run mage.go testrace  # run all tests with the race detector
 go run mage.go lint      # golangci-lint (pinned via go.mod tool directive)
+go run mage.go lintall   # golangci-lint for linux, darwin and windows from this host
 go run mage.go vuln      # govulncheck across linux, darwin and windows
 ```
 
 `lint` and `vuln` are two different questions and neither substitutes for the
 other. **gosec**, which runs inside `lint`, reads *this repository's* source for
 insecure patterns — subprocess construction, file paths, permissions, SQL
-building, integer conversions — and runs on every pull request, on all three
-platforms, as part of the same command you run locally. **govulncheck**, which is
+building, integer conversions — and runs on every pull request through
+`lintall`, which CI runs once, on its Linux leg, for linux, darwin and windows.
+**govulncheck**, which is
 `vuln`, reads the *dependency graph* for published advisories that actually reach
 code you call; it sweeps the three target platforms weekly in
 [`vuln.yml`](.github/workflows/vuln.yml) and can go red without a line of vincent
@@ -105,12 +107,12 @@ It warns when another `vincent` earlier on PATH shadows the install, and when a
 daemon is still running the previous build (`vincent daemon stop` hands over).
 
 Cross-platform support is a hard requirement — Windows, macOS and Linux all run
-the full suite plus seven end-to-end acceptance gates in CI. If you touch build-tagged
-code, lint the *other* platforms too, since a host-only lint cannot see them:
+the full suite plus every end-to-end acceptance gate in CI. If you touch
+build-tagged code, lint the *other* platforms too, since a host-only `lint`
+cannot see them — this is what CI runs:
 
 ```sh
-LINT=$(go tool -n golangci-lint)
-for os in windows darwin linux; do GOOS=$os "$LINT" run ./...; done
+go run mage.go lintall
 ```
 
 ## Pull request checklist

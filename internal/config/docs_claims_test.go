@@ -90,3 +90,29 @@ func docPagesForClaims(t *testing.T) map[string]string {
 	}
 	return pages
 }
+
+// TestDocsClaimsLintListsLintAll holds every page that teaches the host-only
+// `lint` target to also name `lintall`, the one CI runs (#727). `lint` sees
+// only the host's build-tagged files, so a page offering it alone tells a
+// contributor their change is linted the way CI lints it when it is not —
+// CONTRIBUTING.md said exactly that after the switch (review F1 on #741).
+func TestDocsClaimsLintListsLintAll(t *testing.T) {
+	lint := regexp.MustCompile(`(?m)^go run mage\.go lint\b`)
+	pages := docPagesForClaims(t)
+	b, err := os.ReadFile(filepath.Join("..", "..", "CONTRIBUTING.md"))
+	if err != nil {
+		t.Fatalf("read CONTRIBUTING.md: %v", err)
+	}
+	pages["CONTRIBUTING.md"] = string(b)
+
+	var bad []string
+	for name, body := range pages {
+		if lint.MatchString(body) && !strings.Contains(body, "go run mage.go lintall") {
+			bad = append(bad, name)
+		}
+	}
+	if len(bad) > 0 {
+		t.Errorf("CI lints with `go run mage.go lintall`, but these pages list only "+
+			"the host-only `lint`:\n  %s", strings.Join(bad, "\n  "))
+	}
+}
