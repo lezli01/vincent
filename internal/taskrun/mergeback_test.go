@@ -375,6 +375,39 @@ func TestMergeBackRevivesAnArchivedMainBranch(t *testing.T) {
 	}
 }
 
+// TestMergeBackNeverVetoesItsSideTasksDone (review F4 of #771): with every
+// main task archived, the merge-back is bound to the old main branch, which
+// an unrelated task has since adopted. The merge-back must not claim that
+// branch at insert, or its claim error rolls back the side task's own
+// `→ done` and leaves it running with no actor. It is inserted, and admission
+// is where it finds the branch taken and blocks.
+func TestMergeBackNeverVetoesItsSideTasksDone(t *testing.T) {
+	h := newEngineHarness(t)
+	f := newMergeBackFixture(t, h, store.MergeOnConflictBlock)
+	commitFile(t, f.main.WorktreePath, "main.txt", "main work\n")
+	if _, _, err := h.runner.Archive(t.Context(), f.main.ID, false); err != nil {
+		t.Fatalf("Archive(main): %v", err)
+	}
+	adopter := &store.Task{
+		ProjectID: h.projectID, Title: "adopter", Description: "a task",
+		WorkflowName: "gated", WorkflowSnapshot: gatedSnapshot,
+		BaseBranch: "main", BranchName: f.main.BranchName, AdoptedBranch: true,
+		State: store.TaskQueued,
+	}
+	if err := h.store.CreateTask(t.Context(), adopter, nil); err != nil {
+		t.Fatalf("CreateTask(adopter): %v", err)
+	}
+	if got := h.waitForState(t, adopter.ID, store.TaskAwaitingGate, store.TaskBlocked); got.State != store.TaskAwaitingGate {
+		t.Fatalf("adopter = %s (%s: %s), want awaiting_gate", got.State, got.BlockReason, got.BlockDetail)
+	}
+	commitFile(t, f.side.WorktreePath, "side.txt", "side work\n")
+	h.finishSide(t, f.side)
+	mb := h.oneMergeBack(t, f.side.ID)
+	if got := h.waitForState(t, mb.ID, store.TaskBlocked, store.TaskDone); got.State != store.TaskBlocked {
+		t.Fatalf("merge-back = %s, want blocked on the branch another task has checked out", got.State)
+	}
+}
+
 // TestFollowUpOnAMergedSideTaskMergesAgain: the side task's next → done
 // creates a new merge-back once the first has settled.
 func TestFollowUpOnAMergedSideTaskMergesAgain(t *testing.T) {

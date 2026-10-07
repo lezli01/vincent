@@ -271,7 +271,13 @@ func insertTaskTx(
 	// reason task 001 made admission the authority for `branch_exists` — the
 	// creation check is racy, and two drafts confirmed together would both
 	// reach git with one dying of a bare `git_error`.
-	if !t.AdoptedBranch {
+	//
+	// A merge-back is outside it too (review F4 of #771). It never cuts a
+	// branch — it merges into one that exists or blocks — and it is inserted
+	// inside its side task's `→ done`, so a claim refused here would roll
+	// that completion back and leave the side task running with no actor.
+	// Admission is the authority instead, and blocks it with a reason.
+	if !t.AdoptedBranch && t.MergeSourceTaskID == nil {
 		if err := claimBranchTx(ctx, tx, t.ProjectID, t.BranchName, id); err != nil {
 			return nil, err
 		}
