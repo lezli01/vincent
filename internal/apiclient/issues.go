@@ -81,10 +81,15 @@ type Issue struct {
 	Sync            *IssueSync   `json:"sync,omitempty"`
 	Active          bool         `json:"active"`
 	TaskCount       int          `json:"task_count"`
-	Version         int64        `json:"version"`
-	CreatedAt       time.Time    `json:"created_at"`
-	UpdatedAt       time.Time    `json:"updated_at"`
-	ClosedAt        *time.Time   `json:"closed_at,omitempty"`
+	// Lane is the board lane — open, in_progress, hand_off or done (task
+	// 134 decision 2); Attention is whether a root task is waiting on a
+	// person (decision 3).
+	Lane      string     `json:"lane"`
+	Attention bool       `json:"attention"`
+	Version   int64      `json:"version"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+	ClosedAt  *time.Time `json:"closed_at,omitempty"`
 
 	Body             string     `json:"body,omitempty"`
 	AvailableActions []string   `json:"available_actions,omitempty"`
@@ -105,6 +110,7 @@ type Issue struct {
 type IssueListOptions struct {
 	ProjectID int64
 	States    []string
+	Lanes     []string // open, in_progress, hand_off, done; any of them
 	Labels    []string // every one must match
 	Kind      string
 	Query     string // substring of title or body
@@ -126,6 +132,9 @@ func (o IssueListOptions) query() string {
 	}
 	for _, s := range o.States {
 		v.Add("state", s)
+	}
+	for _, l := range o.Lanes {
+		v.Add("lane", l)
 	}
 	for _, l := range o.Labels {
 		v.Add("label", l)

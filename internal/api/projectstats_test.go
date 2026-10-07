@@ -120,7 +120,7 @@ func TestProjectStatsFigures(t *testing.T) {
 				Active    int            `json:"active"`
 				Attention int            `json:"attention"`
 			} `json:"tasks"`
-			Issues    map[string]int  `json:"issues"`
+			Issues    map[string]any  `json:"issues"`
 			Chats     map[string]int  `json:"chats"`
 			IssueSync map[string]any  `json:"issue_sync"`
 			Last      json.RawMessage `json:"last_activity_at"`
@@ -141,7 +141,7 @@ func TestProjectStatsFigures(t *testing.T) {
 		if b.SlotsUsed != 2 {
 			t.Errorf("%s: slots_used = %d, want 2", label, b.SlotsUsed)
 		}
-		if b.Stats.Issues["open"] != 0 || b.Stats.Chats["live"] != 0 {
+		if b.Stats.Issues["open"] != 0.0 || b.Stats.Chats["live"] != 0 {
 			t.Errorf("%s: issues %v chats %v, want zeros", label, b.Stats.Issues, b.Stats.Chats)
 		}
 		if _, ok := b.Stats.IssueSync["enabled"]; !ok {
@@ -180,7 +180,7 @@ func TestProjectStatsEmptyProject(t *testing.T) {
 	}
 	for key, want := range map[string]string{
 		"tasks":            `{"by_state":{},"active":0,"attention":0}`,
-		"issues":           `{"open":0,"open_imported":0,"active":0}`,
+		"issues":           `{"open":0,"open_imported":0,"active":0,"lanes":{"open":0,"in_progress":0,"hand_off":0,"done":0}}`,
 		"chats":            `{"live":0,"awaiting_input":0}`,
 		"last_activity_at": `null`,
 	} {

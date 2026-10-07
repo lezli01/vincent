@@ -57,6 +57,13 @@ type ProjectStats struct {
 		Open         int `json:"open"`
 		OpenImported int `json:"open_imported"`
 		Active       int `json:"active"`
+		// Lanes counts issues per board lane, closed ones as done.
+		Lanes struct {
+			Open       int `json:"open"`
+			InProgress int `json:"in_progress"`
+			HandOff    int `json:"hand_off"`
+			Done       int `json:"done"`
+		} `json:"lanes"`
 	} `json:"issues"`
 	// Chats is kept apart from Tasks: chat attention is never part of the
 	// task attention count.

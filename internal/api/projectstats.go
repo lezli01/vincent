@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskstate"
 )
@@ -43,6 +44,16 @@ type projectIssueStats struct {
 	Open         int `json:"open"`
 	OpenImported int `json:"open_imported"`
 	Active       int `json:"active"`
+	// Lanes counts issues per board lane (task 134.4), closed ones as
+	// `done`; every lane is present, zero included.
+	Lanes projectIssueLanes `json:"lanes"`
+}
+
+type projectIssueLanes struct {
+	Open       int `json:"open"`
+	InProgress int `json:"in_progress"`
+	HandOff    int `json:"hand_off"`
+	Done       int `json:"done"`
 }
 
 // projectChatStats is kept apart from the task figures: chat attention is
@@ -106,9 +117,17 @@ func (s *Server) toProjectStats(stats map[int64]store.ProjectStats, ok bool, id 
 		}
 	}
 	out := &projectStatsResponse{
-		Tasks:  projectTaskStats{ByState: byState, Active: st.TasksActive, Attention: st.TasksAttention},
-		Issues: projectIssueStats{Open: st.IssuesOpen, OpenImported: st.IssuesOpenImported, Active: st.IssuesActive},
-		Chats:  projectChatStats{Live: st.ChatsLive, AwaitingInput: st.ChatsAwaitingInput},
+		Tasks: projectTaskStats{ByState: byState, Active: st.TasksActive, Attention: st.TasksAttention},
+		Issues: projectIssueStats{
+			Open: st.IssuesOpen, OpenImported: st.IssuesOpenImported, Active: st.IssuesActive,
+			Lanes: projectIssueLanes{
+				Open:       st.IssuesByLane[issuestate.LaneOpen],
+				InProgress: st.IssuesByLane[issuestate.LaneInProgress],
+				HandOff:    st.IssuesByLane[issuestate.LaneHandOff],
+				Done:       st.IssuesByLane[issuestate.LaneDone],
+			},
+		},
+		Chats: projectChatStats{Live: st.ChatsLive, AwaitingInput: st.ChatsAwaitingInput},
 	}
 	if s.deps.Config != nil {
 		health := renderIssueSync(s.deps.Config().GitHub, st.IssueSync)

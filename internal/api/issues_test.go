@@ -758,3 +758,99 @@ func TestIssueToolsOverMCP(t *testing.T) {
 		t.Errorf("issue_comments = %v, want two", thread)
 	}
 }
+
+// TestIssueListByLane: rows carry lane and attention, `lane` is a
+// repeatable filter that ORs, ANDs with `state`, pages after filtering, and
+// an unknown lane is a 400 (task 134.4). The project stats count the same
+// lanes, closed issues included.
+func TestIssueListByLane(t *testing.T) {
+	t.Parallel()
+	h := newIssueHarness(t)
+	n := 0
+	withRoot := func(title string, state store.TaskState) issueBody {
+		t.Helper()
+		iss := h.create(t, map[string]any{"title": title})
+		if state != "" {
+			n++
+			task := &store.Task{
+				ProjectID: h.pid, Title: title, WorkflowName: "w", WorkflowSnapshot: "x",
+				BaseBranch: "main", BranchName: fmt.Sprintf("b-%d", n), State: state, IssueID: &iss.ID,
+			}
+			if err := h.st.CreateTask(t.Context(), task, nil); err != nil {
+				t.Fatalf("CreateTask: %v", err)
+			}
+		}
+		return iss
+	}
+	open := withRoot("open", "")
+	h1 := withRoot("h1", store.TaskDone)
+	h2 := withRoot("h2", store.TaskDone)
+	h3 := withRoot("h3", store.TaskDone)
+	blocked := withRoot("blocked", store.TaskBlocked)
+	closed := withRoot("closed", store.TaskRunning)
+	h.must(t, http.StatusOK, http.MethodPost, fmt.Sprintf("/v1/issues/%d/close", closed.ID), nil)
+
+	got := h.must(t, http.StatusOK, http.MethodGet, fmt.Sprintf("/v1/issues/%d", blocked.ID), nil)
+	if got.Lane != issuestate.LaneInProgress || !got.Attention || !got.Active {
+		t.Errorf("blocked: lane %s attention %v active %v", got.Lane, got.Attention, got.Active)
+	}
+	got = h.must(t, http.StatusOK, http.MethodGet, fmt.Sprintf("/v1/issues/%d", closed.ID), nil)
+	if got.Lane != issuestate.LaneDone || got.Attention || !got.Active {
+		t.Errorf("closed running: lane %s attention %v active %v", got.Lane, got.Attention, got.Active)
+	}
+
+	list := func(q string) []int64 {
+		t.Helper()
+		resp, out := h.do(t, http.MethodGet, "/v1/issues?"+q, nil)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("list ?%s = %d: %s", q, resp.StatusCode, out)
+		}
+		var rows []issueRowBody
+		if err := json.Unmarshal(out, &rows); err != nil {
+			t.Fatalf("decode list: %v: %s", err, out)
+		}
+		ids := []int64{}
+		for _, r := range rows {
+			ids = append(ids, r.ID)
+		}
+		return ids
+	}
+	for q, want := range map[string][]int64{
+		"lane=open":                        {open.ID},
+		"lane=hand_off":                    {h3.ID, h2.ID, h1.ID},
+		"lane=hand_off&limit=1&offset=1":   {h2.ID},
+		"lane=in_progress&lane=done":       {closed.ID, blocked.ID},
+		"state=open&lane=done":             {},
+		"lane=done":                        list("state=closed"),
+		"lane=in_progress&state=open":      {blocked.ID},
+		"lane=open&lane=open&state=closed": {},
+	} {
+		if got := list(q); !slices.Equal(got, want) {
+			t.Errorf("?%s = %v, want %v", q, got, want)
+		}
+	}
+	for _, q := range []string{"lane=bogus", "lane=Open", "lane=open&lane=closed"} {
+		resp, out := h.do(t, http.MethodGet, "/v1/issues?"+q, nil)
+		wantError(t, resp, out, http.StatusBadRequest, CodeValidationFailed)
+	}
+
+	resp, out := h.do(t, http.MethodGet, fmt.Sprintf("/v1/projects/%d?stats=true", h.pid), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("stats = %d: %s", resp.StatusCode, out)
+	}
+	var proj struct {
+		Stats struct {
+			Issues projectIssueStats `json:"issues"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal(out, &proj); err != nil {
+		t.Fatalf("decode stats: %v: %s", err, out)
+	}
+	want := projectIssueStats{
+		Open: 5, OpenImported: 0, Active: 1,
+		Lanes: projectIssueLanes{Open: 1, InProgress: 1, HandOff: 3, Done: 1},
+	}
+	if proj.Stats.Issues != want {
+		t.Errorf("stats.issues = %+v, want %+v", proj.Stats.Issues, want)
+	}
+}
