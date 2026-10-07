@@ -179,26 +179,56 @@ func mergeBackPolicy(task, source *store.Task) *workflow.Merge {
 	}
 }
 
-// abortMergeBack runs `git merge --abort` in a merge-back blocked on
-// merge_conflict, ahead of the cancel that ends it (task 134 decision 15):
-// the issue's main worktree goes to the next main task clean. This is the
-// one path besides recovery that aborts a merge (§12.4 as amended). A
-// failure is logged and the cancel proceeds: the successor's admission then
-// blocks repo_operation_in_progress, which names the directory.
-func (r *Runner) abortMergeBack(ctx context.Context, id int64) {
-	task, err := r.deps.Store.GetTask(ctx, id)
-	if err != nil || !isMergeBack(task) || task.State != store.TaskBlocked ||
-		task.BlockReason != ReasonMergeConflict || task.WorktreePath == "" {
+// mergeBackEnded reports whether task is a merge-back with nothing left to
+// run: a human skipped its one step from a block (§6), so the step cursor is
+// past it and no repair or follow-up is pending. execute finishes such a task
+// before ensureWorktree, the way an abandoned follow-up is finished: a
+// merge-back skipped from merge_target_missing has no worktree and never
+// could have one, and creating it again would only block it again.
+func mergeBackEnded(task *store.Task, wf *workflow.Workflow) bool {
+	return isMergeBack(task) && task.CurrentStep >= len(wf.Steps) &&
+		(task.PendingRepair == nil || task.PendingRepair.Empty()) &&
+		(task.PendingFollowUp == nil || task.PendingFollowUp.Empty())
+}
+
+// finishSkippedMergeBack ends a skipped merge-back without merging (§6's
+// ordinary skip): a conflicted merge it left in the issue's main worktree is
+// aborted first, so the next main task receives that directory clean rather
+// than blocking repo_operation_in_progress on it (task 134 decision 15).
+func (r *Runner) finishSkippedMergeBack(ctx context.Context, task *store.Task, log *slog.Logger) {
+	r.abortMergeBack(ctx, task, log)
+	r.complete(task, log)
+}
+
+// abortMergeBack runs `git merge --abort` in a merge-back that is ending
+// without its merge — cancelled (task 134 decision 15) or skipped — so the
+// issue's main worktree goes to the next main task clean. It asks git rather
+// than the task's block reason: a merge is just as much in progress under a
+// running `agent` resolver, or in a merge-back re-queued after a crash, as in
+// one blocked merge_conflict. This is the one path besides recovery that
+// aborts a merge (§12.4 as amended). A failure is logged and the task ends
+// anyway: the successor's admission then blocks repo_operation_in_progress,
+// which names the directory.
+//
+// Callers run it only once the ending is certain — after the cancel has
+// committed and the actor has exited, or from the skipped task's own actor —
+// so a cancel that loses a race to a retry never throws away a hand
+// resolution.
+func (r *Runner) abortMergeBack(ctx context.Context, task *store.Task, log *slog.Logger) {
+	if !isMergeBack(task) || task.WorktreePath == "" {
 		return
 	}
-	log := r.deps.Logger.With("task", id)
 	inMerge, err := r.deps.Worktrees.InMerge(ctx, task.WorktreePath)
-	if err != nil || !inMerge {
+	if err != nil {
+		log.Error("merge-back: check for a merge to abort", "error", err)
+		return
+	}
+	if !inMerge {
 		return
 	}
 	if err := r.deps.Worktrees.AbortMerge(ctx, task.WorktreePath); err != nil {
-		log.Error("cancel: abort the merge-back's merge", "error", err)
+		log.Error("merge-back: abort the merge it is ending without", "error", err)
 		return
 	}
-	log.Info("cancel: aborted the merge-back's conflicted merge")
+	log.Info("merge-back: aborted the merge it is ending without")
 }

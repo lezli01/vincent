@@ -222,6 +222,72 @@ func TestSkipEndsAMergeBackWithoutMerging(t *testing.T) {
 	}
 }
 
+// TestSkipAConflictedMergeBackAbortsItsMerge (review F1 of #771): skip ends a
+// merge-back blocked merge_conflict without merging, and the conflicted merge
+// it left in the issue's main worktree goes with it, so the next main task is
+// handed a clean directory rather than blocking repo_operation_in_progress.
+func TestSkipAConflictedMergeBackAbortsItsMerge(t *testing.T) {
+	h := newEngineHarness(t)
+	f := newMergeBackFixture(t, h, store.MergeOnConflictBlock)
+	blocked := conflictingMergeBack(t, h, f)
+	if blocked.BlockReason != ReasonMergeConflict {
+		t.Fatalf("merge-back = %s/%q, want blocked/%s", blocked.State, blocked.BlockReason, ReasonMergeConflict)
+	}
+	head := testrepo.Run(t, h.repo, "rev-parse", f.main.BranchName)
+	if _, err := h.runner.Skip(t.Context(), blocked.ID); err != nil {
+		t.Fatalf("Skip: %v", err)
+	}
+	done := h.waitForState(t, blocked.ID, store.TaskDone, store.TaskBlocked)
+	if done.State != store.TaskDone {
+		t.Fatalf("skipped merge-back = %s (%s), want done", done.State, done.BlockReason)
+	}
+	if in, err := h.runner.deps.Worktrees.InMerge(t.Context(), blocked.WorktreePath); err != nil || in {
+		t.Fatalf("InMerge after skip = %v, %v; want the merge aborted", in, err)
+	}
+	if got := testrepo.Run(t, h.repo, "rev-parse", f.main.BranchName); got != head {
+		t.Errorf("main branch moved to %s on skip, want it left at %s", got, head)
+	}
+	next := h.mainTask(t, f.issue, "next", quickSnapshot, nil)
+	if got := h.waitForState(t, next.ID, store.TaskDone, store.TaskBlocked); got.State != store.TaskDone {
+		t.Fatalf("next main task = %s (%s: %s), want done", got.State, got.BlockReason, got.BlockDetail)
+	}
+}
+
+// TestCancelAbortsARunningMergeBackResolver (review F3 of #771): cancelling a
+// merge-back while its `agent` resolver works in the conflicted merge aborts
+// that merge once the resolver is gone — decision 15 is about a conflicted
+// merge-back, not only a blocked one.
+func TestCancelAbortsARunningMergeBackResolver(t *testing.T) {
+	t.Setenv("FAKEAGENT_SCENARIO", "hang")
+	h := newEngineHarness(t)
+	f := newMergeBackFixture(t, h, store.MergeOnConflictAgent)
+	commitFile(t, f.main.WorktreePath, "shared.txt", "main\n")
+	commitFile(t, f.side.WorktreePath, "shared.txt", "side\n")
+	h.finishSide(t, f.side)
+	mb := h.oneMergeBack(t, f.side.ID)
+	wait.Until(t, "the merge-back's resolver working in a conflicted merge", func() bool {
+		got := h.task(t, mb.ID)
+		if got.State != store.TaskRunning || got.WorktreePath == "" {
+			return false
+		}
+		in, err := h.runner.deps.Worktrees.InMerge(t.Context(), got.WorktreePath)
+		return err == nil && in
+	})
+	if _, err := h.runner.Cancel(t.Context(), mb.ID); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	h.waitForActorExit(t, mb.ID)
+	wait.Until(t, "the cancelled merge-back's merge aborted", func() bool {
+		in, err := h.runner.deps.Worktrees.InMerge(t.Context(), f.main.WorktreePath)
+		return err == nil && !in
+	})
+	t.Setenv("FAKEAGENT_SCENARIO", "")
+	next := h.mainTask(t, f.issue, "next", quickSnapshot, nil)
+	if got := h.waitForState(t, next.ID, store.TaskDone, store.TaskBlocked); got.State != store.TaskDone {
+		t.Fatalf("next main task = %s (%s: %s), want done", got.State, got.BlockReason, got.BlockDetail)
+	}
+}
+
 // TestDeletedSourceBlocksMergeSourceMissing: the merge-back queues behind
 // the main worktree's occupant, and the source row deleted meanwhile blocks
 // it once it is admitted.
@@ -287,6 +353,15 @@ func TestMergeBackRevivesAnArchivedMainBranch(t *testing.T) {
 			if deleted {
 				if got.State != store.TaskBlocked || got.BlockReason != ReasonMergeTargetMissing {
 					t.Fatalf("merge-back = %s/%q, want blocked/%s", got.State, got.BlockReason, ReasonMergeTargetMissing)
+				}
+				// The documented way past it (review F2 of #771): skip
+				// ends the merge-back rather than blocking it again on the
+				// branch that is still missing.
+				if _, err := h.runner.Skip(t.Context(), mb.ID); err != nil {
+					t.Fatalf("Skip: %v", err)
+				}
+				if got := h.waitForState(t, mb.ID, store.TaskDone, store.TaskBlocked); got.State != store.TaskDone {
+					t.Fatalf("skipped merge-back = %s/%q, want done", got.State, got.BlockReason)
 				}
 				return
 			}

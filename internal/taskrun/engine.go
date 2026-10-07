@@ -499,6 +499,13 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 		r.finishFollowUp(task, *req, log)
 		return
 	}
+	// A merge-back a human skipped (task 134.14), for the same reason: it
+	// has nothing left to run, and one skipped from merge_target_missing
+	// would only block on the missing branch again.
+	if mergeBackEnded(task, wf) {
+		r.finishSkippedMergeBack(ctx, task, log)
+		return
+	}
 	if err := r.ensureWorktree(ctx, task, project, log); err != nil {
 		return // ensureWorktree already blocked or re-queued the task
 	}

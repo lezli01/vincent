@@ -1709,7 +1709,18 @@ blocked `merge_conflict` aborts the merge** (task 134 decision 15): `git merge
 main task is admitted into a clean directory rather than blocking
 `repo_operation_in_progress` on a half-done merge. `skip` ends a merge-back
 without merging, the ordinary meaning; `retry` after a hand resolution commits
-it, as a `fan_out` join's does.
+it, as a `fan_out` join's does. *Amended 2026-10-07 (review F1–F3 of #771):*
+the abort is no longer limited to a `cancel` from `blocked merge_conflict`, and
+no longer runs before the transition. Any merge-back that ends **without its
+merge** — cancelled from any state, including `running` under an `agent`
+resolver and `queued` after a crash mid-merge, or skipped — has a merge still
+in progress in its worktree aborted, asked of git rather than of the block
+reason. A cancel aborts after it has committed (and, for a running task, after
+its actor has exited), so a cancel that loses a race to a `retry` never throws
+a hand resolution away. A skipped merge-back is finished by its next admission
+before any worktree is created or received: it aborts a leftover merge, then
+ends `done` — which is also how `skip` ends one blocked `merge_target_missing`,
+where there is no worktree to create.
 
 ## 7. Step execution semantics
 
@@ -8474,8 +8485,8 @@ recovered the same way any step is — the attempt is `interrupted` and re-runs
 — with one extra move: if a merge is still in progress in the worktree, it is
 aborted before the lanes are re-merged from the top, which is a no-op for the
 ones already in. Recovery is the **only** path allowed to abort (*amended
-2026-10-07, task 134.14:* besides `cancel` on a merge-back blocked
-`merge_conflict`, §6). A human retry
+2026-10-07, task 134.14:* besides a merge-back ending without its
+merge — cancelled or skipped — §6). A human retry
 after a `merge_conflict` block finds the same in-progress merge and must
 commit their resolution instead; the two are told apart by how the previous
 attempt ended, read before the new attempt's row exists.

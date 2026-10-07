@@ -2717,7 +2717,8 @@ resolve and stage the files there, then retry, or cancel — which runs
 `git merge --abort` so the next main task gets a clean worktree. `agent`
 first runs a built-in resolver with the side task's agent and falls back to
 the block when it fails or leaves conflict markers. `skip` ends it without
-merging.
+merging, aborting a conflicted merge it left behind; so does `cancel`, from
+any state, the resolver's run included.
 
 - A side task with no commits past its `base_sha` creates no merge-back.
 - While a side task's merge-back is still pending, finishing the side task
