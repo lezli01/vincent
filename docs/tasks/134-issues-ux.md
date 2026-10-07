@@ -113,6 +113,17 @@ unfinished" with "finished, deliver it"; "any task ⇒ in progress until a pull
 request", under which an issue whose only task was cancelled would stay in
 progress forever.
 
+*Amended 2026-10-07 (134.6, #753), by the author:* **`issue_id` rides every
+task that carries one, lanes included.** `task.created`, `task.state_changed`,
+`task.deleted` and `task.restored` carry `issue_id` whenever the task row has
+one, omitted otherwise — this mirrors the row and supersedes #753's "root
+tasks only". A fan-out lane's events therefore carry `issue_id`, but a lane
+never moves its issue's lane, so it never writes `issue.lane_changed`. That
+event's payload is `{ id, from, to, task_id?, by? }`: `task_id` names the task
+whose create, transition, delete or restore moved the lane and is omitted on a
+close or reopen; `by` is the close or reopen actor and is omitted on a
+task-caused move.
+
 ### 3. `attention`, and `paused` carries none (2026-10-07)
 
 `attention` is true when some root task of the issue is in a
@@ -498,9 +509,12 @@ sections and public pages its code makes true, in its own pull request.
 - [ ] **134.5** ([#752](https://github.com/lezli01/vincent/issues/752))
   `--lane` and a `LANE` column on the CLI, and the MCP descriptions.
   Depends: 134.4.
-- [ ] **134.6** ([#753](https://github.com/lezli01/vincent/issues/753))
+- [x] **134.6** ([#753](https://github.com/lezli01/vincent/issues/753))
   `issue_id` on task events, and `issue.lane_changed`, including on close and
-  reopen. Depends: 134.4.
+  reopen. Depends: 134.4. Written in the causing write's transaction, after
+  its event, only when the lane moves; the TUI issues list re-lists on a task
+  event only for an issue it shows; spec §13.3 and the API reference.
+  ✓ 2026-10-07
 - [ ] **134.7** ([#754](https://github.com/lezli01/vincent/issues/754)) A
   `type: issues` trigger fires on a lane change. Depends: 134.6.
 - [x] **134.8** ([#755](https://github.com/lezli01/vincent/issues/755)) The

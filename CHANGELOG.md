@@ -27,6 +27,14 @@ list with the user-facing context a commit subject cannot carry.
   `GET /v1/projects?stats=true` counts issues per lane under
   `stats.issues.lanes`. Both are derived from the issue's root tasks on every
   read, never stored.
+- **Event streams say when an issue changes lane.** A new durable event,
+  `issue.lane_changed` (`{id, from, to, task_id?, by?}`), is written in the
+  same commit as the task write, close or reopen that moved an issue's lane,
+  right after that write's own event. `task.state_changed`, `task.deleted`
+  and `task.restored` now carry `issue_id`, as `task.created` already did, so
+  a client can tell which issue a task event concerns. The TUI issues list
+  uses this to re-list only when a shown issue's task changes, instead of on
+  every task event.
 - **An issue has a main branch.** A task created from an issue with
   `issue_id` is now the issue's main task: the first one's branch becomes the
   issue's main branch, and every later main task of the issue runs on it —

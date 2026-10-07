@@ -3395,7 +3395,7 @@ task.deleted            chat.deleted
 task.restored
 issue.created           issue.updated           issue.state_changed
 issue.labels_changed    issue.comment_added     issue.comment_updated
-issue.deleted           issue.sync_changed
+issue.deleted           issue.sync_changed      issue.lane_changed
 project.*               workflow.registry_changed
 trigger.fired           trigger.poll_changed
 agent.quota_changed     daemon.shutting_down
@@ -3433,8 +3433,22 @@ they need.
   `?types=issue.created,issue.updated,issue.state_changed,issue.labels_changed,issue.deleted&project_id=N`;
   `Last-Event-ID` resumes them like any durable event. A `PATCH` that edits
   fields and labels emits `issue.updated` and `issue.labels_changed`, and one
-  that changes nothing emits nothing. `task.created` carries `issue_id` for a
-  task created from an issue.
+  that changes nothing emits nothing.
+- `task.created`, `task.state_changed`, `task.deleted` and `task.restored`
+  carry `issue_id` when the task belongs to an issue — a fan-out lane included
+  — and omit it otherwise, so a client can tell which issue a task event
+  concerns without fetching the task.
+- `issue.lane_changed` carries `{ id, from, to, task_id?, by? }` and announces
+  that an issue moved between [lanes](#issues) (`open`, `in_progress`,
+  `hand_off`, `done`). `task_id` names the root task whose create, state
+  change, delete or restore moved it; `by` is the actor of a close or reopen;
+  exactly one of the two is set. It is written in the same commit as the
+  event that caused it — the task event, `issue.state_changed`, or a sync
+  refresh's `issue.updated` — and immediately after it, and only when the
+  lane actually moved: a fan-out lane never moves its issue's lane, creating
+  or deleting an issue writes none, and a task finishing on a closed issue
+  writes none. Like the other `issue.*` events it never reaches a per-task
+  stream. A board can re-list on it instead of on every task event.
 - `issue.sync_changed` carries `{ project_id, ok, reason? }` and fires only when
   a project's [issue sync](#issue-sync) flips between ok and failing, so a sync
   failing on every tick is one event, not one per tick. A project's first

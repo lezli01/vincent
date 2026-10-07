@@ -10606,6 +10606,35 @@ is `issue.updated` with `changed: ["sync"]` and `by: sync` — when it ends
 (not on every retry with the same reason). A conflict's adoption of GitHub's
 value is an ordinary `issue.state_changed` by `sync` when the state moved.
 
+*Amended 2026-10-07 (task 134.6, issue #753).* An issue's lane (§5.6) is
+derived, so until now nothing announced a move: a client saw it only by
+re-listing on every task event. Two changes make it observable. **`issue_id`
+rides every task event that can move a lane** — `task.created` (as before),
+`task.state_changed`, `task.deleted` and `task.restored` — whenever the task
+row carries one, a fan-out lane included, and is omitted (not null) otherwise.
+And one issue kind joins the table above, making it eight:
+
+| Type | Payload |
+|---|---|
+| `issue.lane_changed` | `{ id, from, to, task_id?, by? }` — `from`/`to` are §5.6's lanes (`open`, `in_progress`, `hand_off`, `done`); `task_id` names the root task whose create, transition, delete or restore moved the lane, `by` the actor of a close or reopen; exactly one is set |
+
+It is appended in the **same transaction** as the write that moved the lane,
+**immediately after** the event recording the cause — `task.created`,
+`task.state_changed`, `task.deleted` or `task.restored` for a task; for an
+issue, `issue.state_changed` on a close or reopen by any actor, and the
+import refresh's `issue.updated` when it moved the state — and only when the
+lane read before the write differs from the lane read after it, through the
+one SQL derivation every reader uses. So a transition within a lane
+(`running → awaiting_input`, `done → archived`), a task transition on a closed
+issue, and a held sync refresh write none. A fan-out lane's writes never write
+one, though their events carry `issue_id`: only root tasks count. There is no
+lane event without a `from`: creating an issue, even importing one closed,
+writes only `issue.created`, and deleting one only `issue.deleted`. Like every
+issue kind it carries `project_id`, a NULL `task_id` column — the task rides
+the payload, so no per-task stream delivers it — and no text; and it moves
+neither `issues.version` nor `issues.updated_at`, since the lane is not a
+stored field. Triggers do not react to it yet (task 134.7).
+
 ### 13.4 Model Context Protocol (task 057)
 
 *Added 2026-08-29 (task 057, issue #243).*
