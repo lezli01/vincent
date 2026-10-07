@@ -1171,6 +1171,7 @@ amend §12, §13 and §15 when they land.
 | `remote` | an imported issue's source (`issue_remotes`, §14): provider, `remote_key` (GitHub's `node_id`), repo, number, url, the remote's own timestamp and `synced_at`. Null for an issue created in vincent. Keyed **per project**, so two projects sharing an origin import two issue sets |
 | `parent_issue_id` | a seam for sub-issues, never written yet |
 | `active`, `task_count` | **derived, never stored** (decision 3): `task_count` counts the **root** tasks (`parent_task_id IS NULL`) whose `issue_id` is this issue, and `active` is whether any of them is not settled in §6's sense (not `done`, `aborted` or `archived`). Fan-out lanes carry the link but are not counted, so one task with five lanes is one task |
+| `lane`, `attention` | **derived, never stored** (task 134 decisions 1–3). *Added 2026-10-07 (task 134.4, issue #751).* `lane` is `done` when the issue is `closed`, whatever its tasks do (decision 4); otherwise `in_progress` when some root task is not settled, else `hand_off` when some root task is `done` or `archived` with `archived_from = done` (decision 20), else `open` — no task, or only aborted ones (decision 19). `attention` is whether some root task is in `taskstate.NeedsHuman` (`awaiting_input`, `awaiting_gate`, `blocked`; `paused` is not one), computed for a closed issue too. For an open issue `active` ⇔ `lane = in_progress`. `internal/issuestate.LaneOf` is the rule; the store computes it in SQL from the same fragments that compute `active` |
 | comments | author, body and an optional remote key, listed oldest first |
 
 #### Issue lifecycle
@@ -1208,6 +1209,11 @@ warning rather than a refusal, because follow-up work on closed issues is
 legitimate. `GET /v1/tasks?issue_id=` lists the root tasks `task_count`
 counts, and every task representation carries the linked issue as `issue`.
 Nothing about the issue's own state changes when its tasks do.
+*Amended 2026-10-07 (task 134.4, issue #751):* its `lane` and `attention` do
+— they are read from the same root tasks as `active` on every read — but its
+stored `state` still never changes, and reopening an issue returns it to the
+lane its tasks give it. An archived task keeps counting toward its issue's
+lane until a human deletes it: the §17 pruner removes transcripts, never rows.
 
 Input rules — a title of at most 1 KiB, label names of at most 64 bytes, a kind
 of at most 32, a priority of 0–4, a non-empty comment — belong to
@@ -8709,7 +8715,12 @@ GET    /v1/projects                     list. *Amended 2026-09-05 (issue #324):*
                                         git remote fallback; last_activity_at is MAX(updated_at)
                                         over tasks, issues and chats, null when none. A fixed
                                         number of GROUP BY statements whatever the project
-                                        count. Absent or `false` is byte-identical to the
+                                        count. *Amended 2026-10-07 (task 134.4, issue #751):*
+                                        issues also carries `lanes { open, in_progress,
+                                        hand_off, done }`, every issue counted once in its
+                                        §5.6 lane, closed ones as `done`; open, open_imported
+                                        and active still count open issues only. Absent or
+                                        `false` is byte-identical to the
                                         default shape; any other value is 400
                                         validation_failed; a failed count is `stats: null`
                                         with a warn log, never a 500
@@ -8940,6 +8951,12 @@ GET    /v1/issues                       *Added 2026-10-02 (task 130.3, issue #66
                                           created_by_task_id?, labels[], source, active,
                                           task_count, version, created_at, updated_at,
                                           closed_at? }
+                                        *Amended 2026-10-07 (task 134.4, issue #751):* each row
+                                        also carries `lane` and `attention` (§5.6), and
+                                        `?lane=` (repeatable, ORed) keeps the issues in `open`,
+                                        `in_progress`, `hand_off` or `done`, applied in SQL
+                                        before `limit`/`offset` and ANDed with `state`. Any
+                                        other lane is **400** `validation_failed`
                                         *Amended 2026-10-03 (task 130.11, issue #670):*
                                         `remote_number=N` keeps the issues whose GitHub remote
                                         has number `N`, backfilled placeholders included — the

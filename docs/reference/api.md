@@ -690,7 +690,8 @@ issue and chat:
 ```json
 "stats": {
   "tasks": { "by_state": { "queued": 1, "running": 2, "blocked": 1 }, "active": 4, "attention": 1 },
-  "issues": { "open": 37, "open_imported": 30, "active": 3 },
+  "issues": { "open": 37, "open_imported": 30, "active": 3,
+              "lanes": { "open": 30, "in_progress": 3, "hand_off": 4, "done": 112 } },
   "chats": { "live": 2, "awaiting_input": 1 },
   "issue_sync": { "enabled": true, "ok": true, "reason": "", "last_synced_at": "2026-10-04T09:12:00Z" },
   "last_activity_at": "2026-10-04T09:40:13Z"
@@ -705,6 +706,7 @@ issue and chat:
 | `issues.open` | Open issues |
 | `issues.open_imported` | Open issues imported from GitHub |
 | `issues.active` | Open issues with an unfinished root task, as on the issue itself |
+| `issues.lanes` | Issues per [lane](#issues) — `open`, `in_progress`, `hand_off` and `done`, every key always present. Closed issues are counted, as `done`, which the three figures above never count |
 | `chats.live` | Chats in `idle`, `running` or `awaiting_input` |
 | `chats.awaiting_input` | Chats waiting on an answer. It is kept apart from `tasks.attention` |
 | `issue_sync` | The stored import health: the `enabled`, `ok`, `reason` and `last_synced_at` of [`GET /v1/projects/{id}/issues/sync`](#github-issues), read without asking git for the repository |
@@ -2487,7 +2489,8 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
 ```json
 { "id": 7, "project_id": 1, "title": "Crash on cold start", "state": "open",
   "kind": "bug", "priority": 2, "author": "ada", "labels": ["bug"],
-  "source": null, "active": false, "task_count": 0, "version": 1,
+  "source": null, "active": false, "task_count": 0,
+  "lane": "open", "attention": false, "version": 1,
   "created_at": "…", "updated_at": "…",
   "body": "", "available_actions": ["close"],
   "tasks": { "count": 0, "active_ids": [] },
@@ -2517,6 +2520,25 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
   across projects: without it the request is `400 validation_failed`. An empty
   array means the project has not imported that issue (yet); a
   [sync now](#issue-sync) and a second look is the way to tell.
+  `lane` (repeatable; any of them matches) keeps the issues in that lane —
+  `open`, `in_progress`, `hand_off` or `done` — and is applied before
+  `limit` and `offset`, so a page is a page of that lane. It combines with
+  `state` like every other filter, so `state=open&lane=done` is empty. Any
+  other value is `400 validation_failed`.
+- **Lanes.** Every row carries `lane` and `attention`, derived from the issue
+  and its **root** tasks (fan-out lanes never count) and never stored:
+
+  | `lane` | When |
+  |---|---|
+  | `open` | The issue is open and no root task is unfinished or done: no task yet, or only cancelled ones |
+  | `in_progress` | The issue is open and some root task is not `done`, `aborted` or `archived` — `paused` included |
+  | `hand_off` | The issue is open, every root task is finished, and at least one is `done` (or was archived from `done`): the work is back with you to close |
+  | `done` | The issue is closed — whatever its tasks are doing. Reopening returns it to the lane its tasks give it |
+
+  `attention` is `true` while some root task is `awaiting_input`,
+  `awaiting_gate` or `blocked`; it is reported on a closed issue too, whose
+  lane is `done` regardless. For an open issue, `active` is exactly
+  `lane == "in_progress"`.
 - **Get** adds `body`; `available_actions`, what a person may do from this
   state; `tasks.count` and `tasks.active_ids` over the root tasks created from
   the issue (fan-out lanes never count); `editable`, the fields a `PATCH` may

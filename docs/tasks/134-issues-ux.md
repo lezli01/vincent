@@ -1,6 +1,6 @@
 # 134 — Issues UX: a four-lane issues board and one main worktree per issue
 
-**Status:** 🔄 in progress (4/19)
+**Status:** 🔄 in progress (5/19)
 
 Issue [#748](https://github.com/lezli01/vincent/issues/748), part of
 [#747](https://github.com/lezli01/vincent/issues/747), the epic. Spec §5.6 in
@@ -424,9 +424,12 @@ sections and public pages its code makes true, in its own pull request.
   migration 0042 with its backfill, `TransitionTask` writing it,
   `store.Task.ArchivedFrom`, the migration, transition and restore tests,
   and spec §13.2/§14 (decision 20). ✓ 2026-10-07
-- [ ] **134.4** ([#751](https://github.com/lezli01/vincent/issues/751))
+- [x] **134.4** ([#751](https://github.com/lezli01/vincent/issues/751))
   `lane` (all four values) and `attention` in the store, the API, project
-  stats and the spec (decisions 1–4). Depends: 134.3.
+  stats and the spec (decisions 1–4). Depends: 134.3. `issuestate.Lane` and
+  `LaneOf`; one set of SQL fragments (`internal/store/issuelane.go`) behind
+  the issue row, `ActiveIssueTaskIDs`, project stats and `?lane=`; the API
+  reference and spec §5.6/§13.2. ✓ 2026-10-07
 - [ ] **134.5** ([#752](https://github.com/lezli01/vincent/issues/752))
   `--lane` and a `LANE` column on the CLI, and the MCP descriptions.
   Depends: 134.4.

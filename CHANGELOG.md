@@ -13,6 +13,13 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Issues say which lane they are in.** Every issue on the API now carries
+  `lane` — `open`, `in_progress`, `hand_off` (its work finished and is waiting
+  for you to close it) or `done` (closed) — and `attention`, true while one of
+  its tasks is waiting on you. `GET /v1/issues?lane=` filters by it, and
+  `GET /v1/projects?stats=true` counts issues per lane under
+  `stats.issues.lanes`. Both are derived from the issue's root tasks on every
+  read, never stored.
 - **The TUI opens on the project you mean.** `vincent --project <name|id>`
   opens the TUI on that project. Without it, launching `vincent` inside a
   registered project's checkout, or inside a task's or chat's worktree, opens
