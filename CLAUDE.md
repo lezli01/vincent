@@ -250,10 +250,14 @@ VINCENT_SHOTS_ONLY=tui-diff ./scripts/screenshots.sh capture
 
 It is macOS/Linux-only and CI does not run it (VHS needs ttyd and ffmpeg, and
 its workflows use a POSIX shell rather than the sh∩pwsh intersection the gates
-are held to). Two VHS traps are already worked around in it and will bite again
+are held to). Three VHS traps are already worked around in it and will bite again
 in any new tape: a `Screenshot` is written on the *next* captured frame, so a
-tape that ends on one records nothing, and keys pressed inside a `Hide` block
-never reach a screenshot at all — only the launch is hidden.
+tape that ends on one records nothing; keys pressed inside a `Hide` block
+never reach a screenshot at all — only the launch is hidden; and xterm.js's
+canvas renderer, which VHS photographs, can leave a cell of the command
+palette's border painted after it closes (#743), so a screen reached through
+the palette with empty rows under the box opens and scrolls the help overlay
+before its `Screenshot` to get those cells repainted.
 
 A gate's *workflow* `run:` bodies run under the daemon's shell — `/bin/sh` on
 POSIX, `pwsh` on Windows (§8.3) — not under the gate's bash, so they must be
