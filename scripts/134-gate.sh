@@ -273,13 +273,38 @@ merge_back_of() {
   fail "no merge-back titled '$want' appeared"
 }
 
-# ts_le A B: timestamp A is no later than B. The API's RFC 3339 times carry
-# a variable number of fractional digits, so they are padded before being
-# compared as strings.
-ts_le() {
-  [[ "$(jq -n --arg a "$1" --arg b "$2" '
-    def norm: sub("Z$"; "") | split(".") | .[0] + "." + (((.[1] // "") + "000000000")[0:9]);
-    ($a | norm) <= ($b | norm)')" == true ]]
+# Ordering comes from the durable event stream, not from the task DTO: its
+# started_at and finished_at are whole seconds, so any overlap inside one
+# second would compare equal and pass. Event ids are assigned in commit
+# order by the daemon's single writer, so they order two transitions however
+# close together they landed.
+#
+# state_events -> "EVENT_ID TASK_ID FROM TO" lines, oldest first. The stream
+# never ends by itself and replays nothing unasked (`Last-Event-ID: 0` is no
+# cursor), so it is read from 1 for --max-time; event 1 is the project's,
+# never a task's state change.
+state_events() {
+  local raw
+  raw="$(curl -sS --max-time 3 -N -H "Authorization: Bearer $TOKEN" \
+    -H "Last-Event-ID: 1" "$BASE/events?types=task.state_changed" 2>/dev/null || true)"
+  tr -d '\r' <<<"$raw" | sed -n 's/^data: //p' \
+    | jq -r '"\(.id) \(.task_id) \(.payload.from) \(.payload.to)"' | tr -d '\r'
+}
+
+# entered EVENTS TASK STATE -> the id of TASK's first transition into STATE.
+entered() {
+  local id
+  id="$(awk -v t="$2" -v s="$3" '$2 == t && $4 == s { print $1; exit }' <<<"$1")"
+  [[ -n "$id" ]] || fail "task $2 never entered $3 on the event stream: $1"
+  printf '%s' "$id"
+}
+
+# ran_apart EARLY LATE: EARLY reached done before LATE was first admitted.
+ran_apart() {
+  local ev d r
+  ev="$(state_events)"
+  d="$(entered "$ev" "$1" done)" r="$(entered "$ev" "$2" running)"
+  (( d < r )) || fail "task $2 was admitted (event $r) before task $1 was done (event $d)"
 }
 
 expect_eq() { # expect_eq GOT WANT WHAT
@@ -377,8 +402,8 @@ fi
 
 # --------------------------------------------------------------------------
 # Scenario 2: two main tasks queued in one go are admitted one at a time.
-# The timestamps make it a proof rather than a sample: a poll can miss a
-# short overlap, but the later start cannot precede the earlier finish.
+# The event order makes it a proof rather than a sample: a poll can miss a
+# short overlap, but the later admission cannot precede the earlier finish.
 # --------------------------------------------------------------------------
 if run_scenario 2; then
   echo "=== scenario 2: two main tasks, one walk"
@@ -409,11 +434,12 @@ if run_scenario 2; then
   done
   [[ "$S1" == done && "$S2" == done ]] || fail "the two main tasks never both finished ($S1, $S2)"
 
-  J1="$(task "$T1")" J2="$(task "$T2")"
-  EARLY="$J1" LATE="$J2"
-  if ts_le "$(jq -r .started_at <<<"$J2")" "$(jq -r .started_at <<<"$J1")"; then EARLY="$J2" LATE="$J1"; fi
-  ts_le "$(jq -r .finished_at <<<"$EARLY")" "$(jq -r .started_at <<<"$LATE")" \
-    || fail "task $(jq -r .id <<<"$LATE") started at $(jq -r .started_at <<<"$LATE"), before task $(jq -r .id <<<"$EARLY") finished at $(jq -r .finished_at <<<"$EARLY")"
+  EV="$(state_events)"
+  if (( $(entered "$EV" "$T1" running) < $(entered "$EV" "$T2" running) )); then
+    ran_apart "$T1" "$T2"
+  else
+    ran_apart "$T2" "$T1"
+  fi
   [[ -n "$WT1" ]] || fail "task $T1 was never seen running with a worktree"
   expect_eq "$WT2" "$WT1" "the two tasks' worktree"
   daemon_down
@@ -576,8 +602,7 @@ if run_scenario 7; then
   hold_queued "$M1" "$A" done 60
   wait_state "$M1" done 60
   wait_state "$M2" done 60
-  ts_le "$(tf "$M1" .finished_at)" "$(tf "$M2" .started_at)" \
-    || fail "task $S2's merge-back started before task $S1's had finished"
+  ran_apart "$M1" "$M2"
   # First-parent, newest first: S2's merge sits above S1's.
   SUBJECTS="$(branch_subjects "$BR")"
   L1="$(grep -nx "Merge task $S1 into issue #$ISSUE" <<<"$SUBJECTS" | cut -d: -f1)"

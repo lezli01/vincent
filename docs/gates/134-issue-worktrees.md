@@ -61,9 +61,12 @@ paths exactly as the API returns them.
    is not on the DTO — task 134.17 decision 2). B's `/commits` is `b-work`
    alone.
 2. **One walk.** Two main tasks are created back to back. No poll sees both
-   `running`, and the later `started_at` is no earlier than the earlier
-   `finished_at` — a comparison of timestamps, so a short overlap a poll
-   could miss would still fail it. Both end `done`, in one directory.
+   `running` (both read from one list response, one store read), and on
+   `GET /v1/events` the later task's `task.state_changed` into `running`
+   comes after the earlier one's into `done`. Event ids are assigned in
+   commit order, so a short overlap a poll could miss would still fail it;
+   the DTO's `started_at`/`finished_at` are whole seconds and could not.
+   Both end `done`, in one directory.
 3. **A crash under the occupant.** The daemon is killed (`taskkill` on
    Windows, SIGKILL elsewhere) while occupant A sleeps, with main task B
    queued. After the restart A runs again and ends `done`, B is `queued`
@@ -88,7 +91,7 @@ paths exactly as the API returns them.
    `shared.txt`, with one merge commit.
 7. **FIFO.** While occupant A sleeps, side task S1 runs to `done`, and only
    then S2 does, so the finishing order is forced. M1 waits for A; both end
-   `done`, M1's `finished_at` is no later than M2's `started_at`, and in the
+   `done`, M1's event into `done` precedes M2's into `running`, and in the
    first-parent log S1's merge comes before S2's.
 8. **A crash with a merge in progress.** Scenario 5's setup leaves M
    `blocked` `merge_conflict`, the merge in progress in the main worktree.
