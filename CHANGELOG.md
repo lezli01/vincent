@@ -35,6 +35,12 @@ list with the user-facing context a commit subject cannot carry.
   a client can tell which issue a task event concerns. The TUI issues list
   uses this to re-list only when a shown issue's task changes, instead of on
   every task event.
+- **`vincent issue ls` shows the lane.** A `LANE` column follows `STATE`, with
+  a trailing ` !` when one of the issue's tasks is waiting on you, and
+  `--lane` (repeatable) filters by it — `--lane done` is every closed issue.
+  `vincent issue show` prints the lane too. Over MCP, `issue_list` takes
+  `lane`, and a repeatable query parameter such as `lane`, `state` or `label`
+  can now be passed as an array of strings to repeat it.
 - **An issue has a main branch.** A task created from an issue with
   `issue_id` is now the issue's main task: the first one's branch becomes the
   issue's main branch, and every later main task of the issue runs on it —

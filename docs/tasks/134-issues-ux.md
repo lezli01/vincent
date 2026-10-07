@@ -506,9 +506,11 @@ sections and public pages its code makes true, in its own pull request.
   `LaneOf`; one set of SQL fragments (`internal/store/issuelane.go`) behind
   the issue row, `ActiveIssueTaskIDs`, project stats and `?lane=`; the API
   reference and spec §5.6/§13.2. ✓ 2026-10-07
-- [ ] **134.5** ([#752](https://github.com/lezli01/vincent/issues/752))
+- [x] **134.5** ([#752](https://github.com/lezli01/vincent/issues/752))
   `--lane` and a `LANE` column on the CLI, and the MCP descriptions.
-  Depends: 134.4.
+  Depends: 134.4. A ` !` suffix on the lane marks attention in `issue ls` and
+  `issue show`; an MCP query value may be an array, so `lane` repeats over
+  MCP too. ✓ 2026-10-07
 - [x] **134.6** ([#753](https://github.com/lezli01/vincent/issues/753))
   `issue_id` on task events, and `issue.lane_changed`, including on close and
   reopen. Depends: 134.4. Written in the causing write's transaction, after

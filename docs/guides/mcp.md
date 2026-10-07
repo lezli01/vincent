@@ -167,7 +167,12 @@ records that step's task as its author.
 and link the two; `task_list`'s `query` takes `issue_id` to list the tasks
 created from one; `issue_get`'s `query` takes `workflow` to preview what
 that create would prefill; and `issue_list`'s `query` takes `project_id` and
-`remote_number` to find the issue a project imported a GitHub issue number as.
+`remote_number` to find the issue a project imported a GitHub issue number as,
+and `lane` — `open`, `in_progress`, `hand_off` or `done`, the last being every
+closed issue — to list one board lane. A parameter the route repeats, such as
+`lane`, `state` or `label`, takes an array of strings:
+`{"query": {"lane": ["open", "hand_off"]}}`. Every issue row, and `issue_get`,
+carries `lane` and `attention`.
 There is no `github_issue` on `task_create`: a body that carries it is refused
 with `400 invalid_json`.
 
