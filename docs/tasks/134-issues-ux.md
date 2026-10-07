@@ -1,6 +1,6 @@
 # 134 — Issues UX: a four-lane issues board and one main worktree per issue
 
-**Status:** 🔄 in progress (2/19)
+**Status:** 🔄 in progress (4/19)
 
 Issue [#748](https://github.com/lezli01/vincent/issues/748), part of
 [#747](https://github.com/lezli01/vincent/issues/747), the epic. Spec §5.6 in
@@ -416,8 +416,9 @@ sections and public pages its code makes true, in its own pull request.
 - [x] **134.1** ([#748](https://github.com/lezli01/vincent/issues/748)) This
   document; the dated notes in task 130 (decisions 3, 6, 16, open question
   1), task 132.11 and spec §5.6. ✓ 2026-10-07
-- [ ] **134.2** ([#749](https://github.com/lezli01/vincent/issues/749)) Fix
+- [x] **134.2** ([#749](https://github.com/lezli01/vincent/issues/749)) Fix
   task 125's claim admitting two tasks for one directory in one walk.
+  ✓ 2026-10-07
 - [x] **134.3** ([#750](https://github.com/lezli01/vincent/issues/750)) A
   migration recording whether an archived task was `done` or `aborted`:
   migration 0042 with its backfill, `TransitionTask` writing it,
@@ -438,9 +439,9 @@ sections and public pages its code makes true, in its own pull request.
   TUI board's lane sections, the hidden-by-default `done` lane and its `s`
   toggle, fold keys, the guide's key table and spec §15 view 12 (decisions
   5, 6). Depends: 134.4.
-- [ ] **134.9** ([#756](https://github.com/lezli01/vincent/issues/756)) The
+- [x] **134.9** ([#756](https://github.com/lezli01/vincent/issues/756)) The
   merge message factored out, `handleConflict` taking a policy, the first
-  agent-resolver tests and a fakeagent scenario (decision 12).
+  agent-resolver tests and a fakeagent scenario (decision 12). ✓ 2026-10-07
 - [ ] **134.10** ([#757](https://github.com/lezli01/vincent/issues/757)) The
   `issue_worktree` role, `end_sha`, the main-branch binding at creation,
   `merge_back` on `POST /v1/tasks` and `main_worktree` on the issue DTO
