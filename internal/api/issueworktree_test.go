@@ -44,6 +44,11 @@ func TestIssueTaskIsMainByDefault(t *testing.T) {
 	if second.BranchName != first.BranchName {
 		t.Errorf("second main task's branch = %q, want the issue's main branch %q", second.BranchName, first.BranchName)
 	}
+	// It joins the branch rather than adopting it (task 134.12): it receives
+	// the first task's directory at admission.
+	if second.AdoptedBranch {
+		t.Error("a joining main task is bound as an adopted branch")
+	}
 	plain := h.createTask(t, map[string]any{"title": "no issue"})
 	if plain.IssueWorktree != nil {
 		t.Errorf("a task with no issue has role %q", *plain.IssueWorktree)
@@ -228,7 +233,9 @@ func TestExplicitBranchOnAMainTask(t *testing.T) {
 		if err != nil || iw.Branch != "adopt/me" {
 			t.Fatalf("main branch = %q (%v), want the adopted branch", iw.Branch, err)
 		}
-		h.createTask(t, map[string]any{"issue_id": iss.ID, "title": "same", "branch_name": "adopt/me", "existing_branch": true})
+		if same := h.createTask(t, map[string]any{"issue_id": iss.ID, "title": "same", "branch_name": "adopt/me", "existing_branch": true}); same.AdoptedBranch {
+			t.Error("a joining main task naming the adopted branch is itself adopted")
+		}
 		msg := h.createTaskRejected(t, map[string]any{
 			"issue_id": iss.ID, "title": "other", "branch_name": "adopt/other", "existing_branch": true,
 		})

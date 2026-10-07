@@ -103,6 +103,11 @@ func (s *Server) handleTaskChat(w http.ResponseWriter, r *http.Request) {
 		s.writeActionError(w, err)
 		return
 	}
+	// A main task that handed its directory on has none, but "never got one"
+	// would be the wrong answer: the work is in the holder (task 134.12).
+	if s.refuseIssueWorktreeMoved(ctx, w, task) {
+		return
+	}
 	if task.WorktreePath == "" {
 		writeJSON(w, http.StatusConflict, errorBody{Error: errorDetail{
 			Code: CodeTaskHasNoWorktree,

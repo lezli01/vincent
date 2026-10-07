@@ -193,9 +193,9 @@ type taskResponse struct {
 	MergeBack *mergeBackBody `json:"merge_back"`
 	// MainWorktreeOccupantTaskID is the creation hint (task 134 decision
 	// 10): on POST /v1/tasks' 201 for a main task, the main-role task holding
-	// the issue's main worktree. The scheduler does not hold the new task
-	// behind it until 134.11 (review F3 of #768). Absent otherwise, and on
-	// every other response.
+	// the issue's main worktree, which the scheduler holds the new task
+	// behind until it settles (task 134.11). Absent otherwise, and on every
+	// other response.
 	MainWorktreeOccupantTaskID *int64 `json:"main_worktree_occupant_task_id,omitempty"`
 }
 
@@ -1153,11 +1153,12 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	case mainBranch != "":
 		// Expected to exist, so neither the collision nor the presence check
-		// applies; the store binds the same name again in the transaction,
-		// as an adopted branch: the first main task cut it, and this one
-		// waits for its working directory (review F1 of #768).
+		// applies; the store binds the same name again in the transaction.
+		// It is not adopted: the first main task cut the branch, and this one
+		// receives that task's directory at admission (task 134.12) — even
+		// when the request said existing_branch, which only named it.
 		t.BranchName = mainBranch
-		t.AdoptedBranch = true
+		t.AdoptedBranch = false
 	case preview.NeedsID:
 		// The name needs the id, so it is produced inside the insert transaction.
 		resolveBranch = func(id int64) (string, error) {
@@ -1837,27 +1838,45 @@ func (s *Server) handleTaskDiff(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if t.WorktreePath == "" {
+	ctx := r.Context()
+	// dir is where git runs and tip what the diff ends at: the worktree and
+	// its working tree for a task that holds one, and — for a main task that
+	// handed the issue's worktree on (task 134.12) — the project repository
+	// and the end_sha the hand-off recorded, so the predecessor's diff is
+	// its own work and not whatever its successor has done since.
+	dir, tip := t.WorktreePath, ""
+	if dir == "" && t.EndSHA != "" {
+		p, err := s.deps.Store.GetProject(ctx, t.ProjectID)
+		if err != nil {
+			s.internalError(w, "get project", err)
+			return
+		}
+		dir, tip = p.Path, t.EndSHA
+	}
+	if dir == "" {
 		writeError(w, http.StatusConflict, CodeInvalidState, "task has no worktree yet")
 		return
 	}
-	if _, err := os.Stat(t.WorktreePath); err != nil {
+	if _, err := os.Stat(dir); err != nil {
 		writeError(w, http.StatusConflict, CodeInvalidState, "worktree no longer exists")
 		return
 	}
-	ctx := r.Context()
 	base := t.BaseBranch
 	if t.BaseSHA != "" {
 		base = t.BaseSHA
 	}
-	mergeBase, err := s.git(ctx, t.WorktreePath, "merge-base", base, "HEAD")
+	head := "HEAD"
+	if tip != "" {
+		head = tip
+	}
+	mergeBase, err := s.git(ctx, dir, "merge-base", base, head)
 	if err != nil {
 		writeError(w, http.StatusConflict, CodeInvalidState,
 			fmt.Sprintf("cannot compute merge-base with %q: %v", base, err))
 		return
 	}
 	if byLane {
-		sections, sErr := s.laneDiffSections(ctx, t.WorktreePath, mergeBase)
+		sections, sErr := s.laneDiffSections(ctx, dir, mergeBase, tip)
 		if sErr != nil {
 			writeError(w, http.StatusConflict, CodeInvalidState,
 				fmt.Sprintf("git diff failed: %v", sErr))
@@ -1866,7 +1885,11 @@ func (s *Server) handleTaskDiff(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, diffLanesResponse{Sections: sections})
 		return
 	}
-	diff, err := s.git(ctx, t.WorktreePath, "diff", mergeBase)
+	diffArgs := []string{"diff", mergeBase}
+	if tip != "" {
+		diffArgs = append(diffArgs, tip)
+	}
+	diff, err := s.git(ctx, dir, diffArgs...)
 	if err != nil {
 		writeError(w, http.StatusConflict, CodeInvalidState, fmt.Sprintf("git diff failed: %v", err))
 		return

@@ -335,8 +335,18 @@ func (c *Client) ReopenIssue(ctx context.Context, id int64) (Issue, error) {
 
 // DeleteIssue permanently deletes an issue, in any state. An imported one
 // leaves a tombstone so it is never imported again; upstream is untouched.
+// An issue with a main task still unsettled is a 409 IssueHasLiveMainTask
+// decodes (task 134.12).
 func (c *Client) DeleteIssue(ctx context.Context, id int64) error {
 	return c.send(ctx, http.MethodDelete, fmt.Sprintf("/v1/issues/%d", id), nil, nil)
+}
+
+// IssueHasLiveMainTask reports whether err is an issue delete refused
+// because one of its main tasks has not settled (409
+// `issue_has_live_main_task`, task 134.12), and if so which task: finish,
+// cancel or archive it, then delete again.
+func IssueHasLiveMainTask(err error) (taskID int64, ok bool) {
+	return conflictID(err, "issue_has_live_main_task", "task_id")
 }
 
 // ListIssueLabels fetches a project's label catalogue.

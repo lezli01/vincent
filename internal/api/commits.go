@@ -51,8 +51,9 @@ func (s *Server) handleTaskCommits(w http.ResponseWriter, r *http.Request) {
 	// holds even for a branch a task adopted (task 125): it exists already,
 	// but its base is not recorded until admission, so there is nothing yet to
 	// measure it against. Archive clears the path, so an archived task is
-	// judged by its branch alone.
-	if t.BranchName == "" || (t.WorktreePath == "" && t.State != store.TaskArchived) {
+	// judged by its branch alone, and so is a main task that handed the
+	// issue's worktree on (task 134.12), whose end_sha says it was admitted.
+	if t.BranchName == "" || (t.WorktreePath == "" && t.State != store.TaskArchived && t.EndSHA == "") {
 		writeError(w, http.StatusConflict, CodeInvalidState, "task has no branch yet")
 		return
 	}
@@ -63,6 +64,13 @@ func (s *Server) handleTaskCommits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	branch := "refs/heads/" + t.BranchName
+	// A main task's branch is the issue's, and goes on moving under the next
+	// main task once this one hands the worktree over (task 134.12); its
+	// end_sha is where its own commits stop. A commit, not a ref, so nothing
+	// later can move it.
+	if t.EndSHA != "" {
+		branch = t.EndSHA
+	}
 	// Whatever deleted the branch — archive's cleanup of a branch with no
 	// commits (task 008) or a human — the answer is the same: the daemon does
 	// not record which, and a client renders both as "commits unavailable".
