@@ -193,8 +193,9 @@ type taskResponse struct {
 	MergeBack *mergeBackBody `json:"merge_back"`
 	// MainWorktreeOccupantTaskID is the creation hint (task 134 decision
 	// 10): on POST /v1/tasks' 201 for a main task, the main-role task holding
-	// the issue's main worktree, which this one is queued behind. Absent
-	// otherwise, and on every other response.
+	// the issue's main worktree. The scheduler does not hold the new task
+	// behind it until 134.11 (review F3 of #768). Absent otherwise, and on
+	// every other response.
 	MainWorktreeOccupantTaskID *int64 `json:"main_worktree_occupant_task_id,omitempty"`
 }
 

@@ -494,8 +494,9 @@ type TaskDetail struct {
 	// selection, in its own body (task 025).
 	Warnings []string `json:"warnings,omitempty"`
 	// MainWorktreeOccupantTaskID is CreateTask's hint (task 134 decision
-	// 10): the main task a new main task is queued behind because it holds
-	// the issue's main worktree. Nil otherwise, and on every read.
+	// 10): the main-role task holding the issue's main worktree when a new
+	// main task is created. The scheduler does not hold the new task behind
+	// it until 134.11. Nil otherwise, and on every read.
 	MainWorktreeOccupantTaskID *int64 `json:"main_worktree_occupant_task_id,omitempty"`
 	// WorkflowSteps is the task's snapshot: the text edit+retry opens in an
 	// editor, and a gate's instructions.

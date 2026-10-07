@@ -9702,8 +9702,12 @@ POST   /v1/tasks                        { project_id, workflow, title, descripti
                                         or null) and `merge_back` (`{ on_conflict }` on a side
                                         task, else null). The **201** of a main task whose
                                         issue's main worktree is occupied carries
-                                        `main_worktree_occupant_task_id`, the task it is queued
-                                        behind; it is absent otherwise. `merge_back` enters the
+                                        `main_worktree_occupant_task_id`, the main-role task
+                                        holding the issue's main worktree; it is absent
+                                        otherwise. The scheduler's hold on that occupant
+                                        arrives with 134.11 — today a later main task waits
+                                        only on the branch's working directory (§5.6, §10).
+                                        `merge_back` enters the
                                         idempotency digest only when present
 GET    /v1/tasks/{id}                   full task incl. step runs summary and pending_input (§7.4).
                                         Every task representation carries `available_actions`
