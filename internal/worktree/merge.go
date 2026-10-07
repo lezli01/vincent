@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,13 +41,39 @@ const (
 // MergeLane merges branch into the branch checked out in worktreePath, with
 // `--no-ff` and a message naming the lane and the task it came from.
 //
-// --no-ff keeps each lane visible in history and matches the repo's own
-// no-squash convention. No author or committer is set: vincent runs as the
-// invoking user (§16) and has no business inventing an identity.
+// The message is a machine-read contract, not prose: `diff?by=lane` parses
+// it to attribute each merge to its lane (§7.6), so it is spelled here and
+// nowhere else.
 func (m *Manager) MergeLane(
 	ctx context.Context, worktreePath, branch, laneID string, childID int64,
 ) (MergeResult, error) {
 	msg := fmt.Sprintf("Merge lane '%s' of task %d", laneID, childID)
+	return m.merge(ctx, worktreePath, branch, msg, fmt.Sprintf("lane %q", laneID))
+}
+
+// MergeBranch merges branch into the branch checked out in worktreePath with
+// `--no-ff` and the caller's message, telling a conflict from a failure the
+// way MergeLane does.
+//
+// It exists for merges that are not a fan-out lane's — the task-to-task
+// merge-back (#761) — which must not reuse MergeLane's message: `diff?by=lane`
+// parses that message, and a merge-back spelled like a lane would be
+// attributed to a lane that never existed.
+func (m *Manager) MergeBranch(
+	ctx context.Context, worktreePath, branch, msg string,
+) (MergeResult, error) {
+	return m.merge(ctx, worktreePath, branch, msg, branch)
+}
+
+// merge is the one `git merge --no-ff`; label names what was merged in a git
+// failure's text.
+//
+// --no-ff keeps each merge visible in history and matches the repo's own
+// no-squash convention. No author or committer is set: vincent runs as the
+// invoking user (§16) and has no business inventing an identity.
+func (m *Manager) merge(
+	ctx context.Context, worktreePath, branch, msg, label string,
+) (MergeResult, error) {
 	out, err := m.git.Run(ctx, worktreePath, "merge", "--no-ff", "-m", msg, branch)
 	if err == nil {
 		return MergeOK, nil
@@ -58,7 +85,7 @@ func (m *Manager) MergeLane(
 	}
 	return MergeOK, &Error{
 		Reason: ReasonGitError,
-		Err:    fmt.Errorf("merge lane %q: %w: %s", laneID, err, strings.TrimSpace(out)),
+		Err:    fmt.Errorf("merge %s: %w: %s", label, err, strings.TrimSpace(out)),
 	}
 }
 
@@ -131,6 +158,62 @@ func (m *Manager) ConflictedPaths(ctx context.Context, worktreePath string) ([]s
 		}
 	}
 	return paths, nil
+}
+
+// ConflictMarkers returns those of paths (worktree-relative, as
+// ConflictedPaths lists them) whose content still holds a conflict marker: a
+// line starting `<<<<<<< ` or `>>>>>>> `, or exactly `=======`.
+//
+// It exists because the index cannot answer the question once the files are
+// staged: `git add` clears a path's unmerged entry whatever the file holds, so
+// an `on_conflict: agent` resolver that exits 0 without resolving would get
+// its markers committed into the parent's branch (#756). The engine therefore
+// reads the files the merge left conflicted before it stages anything.
+//
+// Plain file reads rather than `git diff --check`, which also reports
+// whitespace errors in localizable text: no subprocess, no output to parse,
+// and the same answer on every platform. A CRLF line ending is tolerated. A
+// path the resolver deleted holds no markers — deleting is a resolution — and
+// is skipped. Only git's default marker size (7) is recognised: a repository
+// that sets `conflict-marker-size` is a documented limitation.
+func (m *Manager) ConflictMarkers(_ context.Context, worktreePath string, paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	// Read through an os.Root so a path git listed can never reach outside
+	// the worktree, symlinks included.
+	root, err := os.OpenRoot(worktreePath)
+	if err != nil {
+		return nil, &Error{Reason: ReasonGitError, Err: fmt.Errorf("open worktree for conflict markers: %w", err)}
+	}
+	defer func() { _ = root.Close() }()
+	var marked []string
+	for _, p := range paths {
+		data, err := root.ReadFile(filepath.FromSlash(p))
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			return nil, &Error{Reason: ReasonGitError, Err: fmt.Errorf("read %s for conflict markers: %w", p, err)}
+		}
+		if hasConflictMarker(data) {
+			marked = append(marked, p)
+		}
+	}
+	return marked, nil
+}
+
+// hasConflictMarker reports whether any line of data is a default-size
+// conflict marker.
+func hasConflictMarker(data []byte) bool {
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSuffix(line, "\r")
+		if line == "=======" ||
+			strings.HasPrefix(line, "<<<<<<< ") || strings.HasPrefix(line, ">>>>>>> ") {
+			return true
+		}
+	}
+	return false
 }
 
 // CommitMerge completes a merge whose conflicts have been resolved and

@@ -448,10 +448,17 @@ type Merge struct {
 // ConflictPolicy resolves a fan_out step's conflict policy, defaulting to
 // `block` for a step that declares no `merge:` at all.
 func (s Step) ConflictPolicy() string {
-	if s.Merge == nil || s.Merge.OnConflict == "" {
+	return s.Merge.Policy()
+}
+
+// Policy resolves a `merge:` block's conflict policy, defaulting to `block`
+// for a nil block or one that names none. Nil-safe so a merge that is not a
+// fan_out's (#761) can hold its policy without a Step around it.
+func (m *Merge) Policy() string {
+	if m == nil || m.OnConflict == "" {
 		return ConflictBlock
 	}
-	return s.Merge.OnConflict
+	return m.OnConflict
 }
 
 // ScheduleMode resolves a fan_out step's lane scheduling mode, defaulting to

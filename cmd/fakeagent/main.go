@@ -202,6 +202,10 @@
 //	                      append a line
 //	                      to this worktree-relative tracked file, so gate
 //	                      runs produce a non-empty diff
+//	FAKEAGENT_WRITE_FILE  wherever FAKEAGENT_EDIT_FILE is honoured: overwrite
+//	                      this worktree-relative file with
+//	                      FAKEAGENT_WRITE_CONTENT, e.g. to resolve a merge
+//	                      conflict the way an on_conflict: agent resolver does
 //	FAKEAGENT_SPAWN_CHILD hang: spawn a sleeping child first and emit its pid
 //	FAKEAGENT_SESSION_DIR gives every dialect a memory (task 063, 070): a
 //	                      directory of conversations keyed by the session id
@@ -633,9 +637,7 @@ func claudeSuccess(prompt []byte) {
 	}})
 	emit(map[string]any{"type": "fake_marker", "note": "unknown event type for tolerant-parsing tests"})
 	workFor(emitText)
-	if f := os.Getenv("FAKEAGENT_EDIT_FILE"); f != "" {
-		editFile(f)
-	}
+	doFileWork()
 	emitSuccessResult(prompt, 100, 42)
 }
 
@@ -1002,9 +1004,7 @@ const longQuestionText = "Two colors would both work for the header, and the " +
 func askQuestion(prompt []byte, rd *bufio.Reader) {
 	answered := awaitAnswer(rd)
 	emitText("question answered: " + answered)
-	if f := os.Getenv("FAKEAGENT_EDIT_FILE"); f != "" {
-		editFile(f) // the answered agent then does work the gate can publish
-	}
+	doFileWork() // the answered agent then does work the gate can publish
 	emitSuccessResult([]byte(string(prompt)+" | "+answered), 100, 42)
 }
 
@@ -1178,6 +1178,28 @@ func flatten(s string, limit int) string {
 		s = s[:limit]
 	}
 	return s
+}
+
+// doFileWork performs the file scenarios a succeeding run carries:
+// FAKEAGENT_WRITE_FILE's overwrite first, then FAKEAGENT_EDIT_FILE's append.
+func doFileWork() {
+	if f := os.Getenv("FAKEAGENT_WRITE_FILE"); f != "" {
+		writeFile(f, os.Getenv("FAKEAGENT_WRITE_CONTENT"))
+	}
+	if f := os.Getenv("FAKEAGENT_EDIT_FILE"); f != "" {
+		editFile(f)
+	}
+}
+
+// writeFile replaces a file in the cwd (the worktree) wholesale — what an
+// `on_conflict: agent` resolver does to a conflicted file, markers and all
+// (#756). The bytes are written as given, so they are the same on every
+// platform. Refuses path escapes.
+func writeFile(name, content string) {
+	if strings.Contains(name, "..") {
+		return
+	}
+	_ = os.WriteFile(name, []byte(content), 0o644)
 }
 
 // editFile appends to a tracked file in the cwd (the worktree), giving gate
