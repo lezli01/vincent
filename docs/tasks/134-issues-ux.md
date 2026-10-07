@@ -684,7 +684,8 @@ sections and public pages its code makes true, in its own pull request.
 - [x] **134.15** ([#762](https://github.com/lezli01/vincent/issues/762)) The
   choice in the CLI, MCP, triggers and the chat handoff. Depends: 134.14.
   `task add --separate-worktree [--merge]`, the "queued behind" note, `task
-  show`'s worktree and merge rows, `chat handoff --merge`; the handoff accepts
+  show`'s worktree and merge rows, `chat handoff --issue [--merge]` (`--issue`
+  added by the train's review, F2: without it `--merge` could only 400); the handoff accepts
   `merge_back` (decision 7's amendment); trigger `action.merge_back`; spec
   §13.2. ✓ 2026-10-07
 - [ ] **134.16** ([#763](https://github.com/lezli01/vincent/issues/763)) The

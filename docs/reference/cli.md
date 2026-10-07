@@ -2162,7 +2162,7 @@ into a terminal state is the last write the row takes.
 vincent chat handoff CHAT_ID --title TITLE [--workflow NAME] [--description TEXT]
                      [--field name=value ...] [--fields-file FILE] [--priority N]
                      [--agent NAME] [--model NAME] [--effort LEVEL]
-                     [--merge block|agent] [--json]
+                     [--issue ID [--merge block|agent]] [--json]
 ```
 
 Creates a task that adopts the chat's worktree, branch, base branch and base
@@ -2174,16 +2174,21 @@ both there when the task's first step runs, because the directory is simply not
 touched.
 
 The flags are `vincent task add`'s, minus the ones a handoff has no say in: the
-project, the base branch and the branch name all come from the chat, and the
-prefills (`--issue`, `--github-pull`) are not offered.
+project, the base branch and the branch name all come from the chat, and there
+is no pull request to start from (`--github-pull` is not offered). `--issue`
+links the task to a vincent issue, as `task add --issue` does; a chat carries
+no issue of its own, so it is the only way a handoff lands in an issue's
+worktrees. `--title` is still required.
 `--description` is where the conversation's context goes: nothing about the
 chat reaches the workflow's prompts automatically.
 
-A chat on an issue that already has a main branch always hands off to a
-**side** task, merged back into that branch when it is done: manually (`block`)
-unless `--merge agent` asks for an agent to resolve conflicts first. On an
-issue with no main branch yet the chat's branch becomes the main branch, the
-task is the issue's main task, and `--merge` is inert.
+A handoff with `--issue` on an issue that already has a main branch is always
+a **side** task, merged back into that branch when it is done: manually
+(`block`) unless `--merge agent` asks for an agent to resolve conflicts first.
+On an issue with no main branch yet the chat's branch becomes the main branch,
+the task is the issue's main task, and `--merge` is inert. `--merge` without
+`--issue` is refused before anything is sent: only a task on an issue is
+merged back.
 
 Only an idle chat can be handed off. A live turn must be finished or cancelled
 first (409), a worktree in the middle of a merge, rebase, cherry-pick, revert

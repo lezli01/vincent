@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 
+	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/testrepo"
@@ -251,10 +254,13 @@ func TestChatHandoffMergeSendsMergeBack(t *testing.T) {
 	// is the claim under test, not the outcome.
 	for _, mode := range []string{"agent", "block"} {
 		before := len(sent())
-		runCLI(t, "chat", "handoff", "999", "--title", "x", "--merge", mode)
+		runCLI(t, "chat", "handoff", "999", "--title", "x", "--issue", "7", "--merge", mode)
 		got := sent()
 		if len(got) != before+1 {
 			t.Fatalf("--merge %s sent %d requests, want 1", mode, len(got)-before)
+		}
+		if string(got[before]["issue_id"]) != "7" {
+			t.Errorf("--merge %s: issue_id = %s, want 7", mode, got[before]["issue_id"])
 		}
 		var mb apiclient.MergeBack
 		if err := json.Unmarshal(got[before]["merge_back"], &mb); err != nil || mb.OnConflict != mode {
@@ -272,15 +278,78 @@ func TestChatHandoffMergeSendsMergeBack(t *testing.T) {
 	if raw, ok := got[before]["merge_back"]; ok {
 		t.Errorf("plain handoff sent merge_back %s", raw)
 	}
+	if raw, ok := got[before]["issue_id"]; ok {
+		t.Errorf("plain handoff sent issue_id %s", raw)
+	}
 
 	// A bad value never reaches the wire.
 	before = len(sent())
-	_, errOut, code := runCLI(t, "chat", "handoff", "999", "--title", "x", "--merge", "theirs")
+	_, errOut, code := runCLI(t, "chat", "handoff", "999", "--title", "x", "--issue", "7", "--merge", "theirs")
 	if code == 0 || !strings.Contains(errOut, `--merge must be block or agent, got "theirs"`) {
 		t.Errorf("bad --merge: exit %d, %q", code, errOut)
 	}
 	if n := len(sent()) - before; n != 0 {
 		t.Errorf("bad --merge sent %d requests, want none", n)
+	}
+
+	// --merge without --issue is the daemon's 400 every time (review F2 of
+	// the 598 train), so it is refused before the request.
+	for _, mode := range []string{"agent", "block"} {
+		before = len(sent())
+		_, errOut, code = runCLI(t, "chat", "handoff", "999", "--title", "x", "--merge", mode)
+		if code == 0 || !strings.Contains(errOut, "--merge needs --issue") {
+			t.Errorf("--merge %s without --issue: exit %d, %q", mode, code, errOut)
+		}
+		if n := len(sent()) - before; n != 0 {
+			t.Errorf("--merge %s without --issue sent %d requests, want none", mode, n)
+		}
+	}
+}
+
+// TestChatHandoffMergeOnAnIssue hands a real chat off through the real
+// handlers: with --issue on an issue that has a main branch, --merge agent
+// makes a side task merged back on agent, which is the case the flag exists
+// for and which a fake server answering 201 could not prove.
+func TestChatHandoffMergeOnAnIssue(t *testing.T) {
+	f := newIssueWorktreeFixture(t)
+	main := f.occupyMainWorktree(t)
+
+	// The chat's own worktree and branch, cut the way a chat's would be.
+	// Rows go through the store because POST /v1/chats would need an agent.
+	dir := filepath.Join(t.TempDir(), "chat-wt")
+	testrepo.Run(t, f.repo, "worktree", "add", "-q", "-b", "chat/side", dir, "main")
+	sha := strings.TrimSpace(testrepo.Run(t, f.repo, "rev-parse", "main"))
+	pid, _ := strconv.ParseInt(f.project, 10, 64)
+	c := &store.Chat{
+		ProjectID: pid, Title: "side work", State: chatstate.Idle, Agent: "claude",
+		PermissionMode: string(agent.FullAuto), Branch: "chat/side",
+		BaseBranch: "main", BaseSHA: sha, WorktreePath: dir,
+	}
+	if err := f.h.st.CreateChat(t.Context(), c); err != nil {
+		t.Fatalf("CreateChat: %v", err)
+	}
+
+	out, errOut, code := runCLI(t, "chat", "handoff", strconv.FormatInt(c.ID, 10),
+		"--title", "side", "--issue", f.issue, "--merge", "agent", "--json")
+	if code != 0 {
+		t.Fatalf("handoff: exit %d (%s)", code, errOut)
+	}
+	var got struct {
+		Task apiclient.TaskDetail `json:"task"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("handoff --json = %q: %v", out, err)
+	}
+	if got.Task.Issue == nil || strconv.FormatInt(got.Task.Issue.ID, 10) != f.issue {
+		t.Errorf("handoff issue = %+v, want %s", got.Task.Issue, f.issue)
+	}
+	side := taskShowJSON(t, got.Task.ID)
+	if side.IssueWorktree == nil || *side.IssueWorktree != "side" ||
+		side.MergeBack == nil || side.MergeBack.OnConflict != "agent" {
+		t.Fatalf("handed-off task = %v / %+v, want a side task on agent", side.IssueWorktree, side.MergeBack)
+	}
+	if side.BranchName != "chat/side" || side.ID == main.ID {
+		t.Errorf("handed-off task branch = %q (id %d), want the chat's", side.BranchName, side.ID)
 	}
 }
 
