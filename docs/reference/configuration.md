@@ -585,7 +585,8 @@ branch at all: an orphaned directory has no task row, so there is no base branch
 judge it against.
 
 The "no commits past its base" check is measured against the commit the task
-branch was actually cut from when `fetch_base_branch` recorded one, and against
+branch was actually cut from when one was recorded (by `fetch_base_branch`, or
+on an issue's side task), and against
 the base branch by name otherwise. That distinction is what keeps this key
 working once a task starts from a fetched remote tip: a task that wrote nothing
 is still *ahead* of your local base branch, so measuring against the name would
@@ -628,6 +629,7 @@ does not fetch:
 | The repository has no remote | Created from the local base, logged at debug |
 | The base branch has no upstream | Created from the local base, logged at debug |
 | A `fan_out` lane, whose base is its parent's `vincent/…` branch | Created from the parent's branch, logged at debug |
+| An issue's side task (`merge_back`), whose base is the issue's main branch | Created from the local main branch's tip, which is recorded as `base_sha`; never fetched or fast-forwarded, so the main task's worktree is never moved |
 | The remote is unreachable, refuses auth, or does not answer within 60 seconds | Created from the local base, logged as a **warning** and shown on the task |
 
 A fetch never blocks a task and never introduces a block reason. Task creation

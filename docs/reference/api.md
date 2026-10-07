@@ -2107,13 +2107,15 @@ was refreshed first:
 ```
 
 `base_sha` is the commit the task branch was cut from, and is absent when the
-branch was cut from the local `base_branch` itself. `base_refresh` is recorded
+branch was cut from the local `base_branch` itself — except on an issue's side
+task, which always records the main branch's tip it was cut from. `base_refresh` is recorded
 once, when the scheduler first admits the task and creates its worktree. It is
 `null` before that, for a task whose worktree predates the record, and for a task
 created from a pull request, which refreshes no base.
 
 `fetch.result` is `fetched`, `no_upstream`, `disabled`
-([`fetch_base_branch: false`](configuration.md#fetch_base_branch)) or `error` —
+([`fetch_base_branch: false`](configuration.md#fetch_base_branch), or a side
+task, which never fetches) or `error` —
 the task started from the local branch, which may be stale, and `error` carries
 git's message. `fast_forward.result` is what then happened to your local base
 branch: `advanced` (it moved to the fetched commit, with its checkout at
