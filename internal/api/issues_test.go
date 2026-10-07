@@ -761,6 +761,60 @@ func TestIssueToolsOverMCP(t *testing.T) {
 	}
 }
 
+// TestIssueListLaneOverMCP: issue_list's lane filter reaches the route
+// through the shared MCP endpoint (task 134.5) — one lane as a string, two as
+// an array — and the rows it answers with carry lane and attention.
+func TestIssueListLaneOverMCP(t *testing.T) {
+	t.Parallel()
+	h := newIssueHarness(t)
+	open := h.create(t, map[string]any{"title": "open"})
+	blocked := h.create(t, map[string]any{"title": "blocked"})
+	task := &store.Task{
+		ProjectID: h.pid, Title: "blocked", WorkflowName: "w", WorkflowSnapshot: "x",
+		BaseBranch: "main", BranchName: "b", State: store.TaskBlocked, IssueID: &blocked.ID,
+	}
+	if err := h.st.CreateTask(t.Context(), task, nil); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	closed := h.create(t, map[string]any{"title": "closed"})
+	h.must(t, http.StatusOK, http.MethodPost, fmt.Sprintf("/v1/issues/%d/close", closed.ID), nil)
+
+	hc := &http.Client{Transport: bearerRoundTripper{base: http.DefaultTransport, token: testToken}}
+	client := sdk.NewClient(&sdk.Implementation{Name: "test", Version: "0"}, nil)
+	cs, err := client.Connect(t.Context(), &sdk.StreamableClientTransport{Endpoint: h.ts.URL + "/mcp", HTTPClient: hc}, nil)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(func() { _ = cs.Close() })
+	list := func(lane any) []issueRowBody {
+		t.Helper()
+		res, err := cs.CallTool(t.Context(), &sdk.CallToolParams{Name: "issue_list", Arguments: map[string]any{"query": map[string]any{"lane": lane}}})
+		if err != nil {
+			t.Fatalf("issue_list lane=%v: %v", lane, err)
+		}
+		text := res.Content[0].(*sdk.TextContent).Text
+		if res.IsError {
+			t.Fatalf("issue_list lane=%v failed: %s", lane, text)
+		}
+		var rows []issueRowBody
+		if err := json.Unmarshal([]byte(text), &rows); err != nil {
+			t.Fatalf("decode: %v: %s", err, text)
+		}
+		return rows
+	}
+	if rows := list("done"); len(rows) != 1 || rows[0].ID != closed.ID || rows[0].Lane != issuestate.LaneDone {
+		t.Errorf("lane done = %+v, want only the closed issue, in lane done", rows)
+	}
+	rows := list([]string{"open", "in_progress"})
+	got := map[int64]issueRowBody{}
+	for _, r := range rows {
+		got[r.ID] = r
+	}
+	if len(got) != 2 || got[open.ID].Lane != issuestate.LaneOpen || got[blocked.ID].Lane != issuestate.LaneInProgress || !got[blocked.ID].Attention {
+		t.Errorf("lane open+in_progress = %+v, want the open issue and the blocked one with attention", rows)
+	}
+}
+
 // TestIssueListByLane: rows carry lane and attention, `lane` is a
 // repeatable filter that ORs, ANDs with `state`, pages after filtering, and
 // an unknown lane is a 400 (task 134.4). The project stats count the same
