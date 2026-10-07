@@ -256,7 +256,12 @@ func TestDeleteTaskRefusesAHandoffTarget(t *testing.T) {
 	p := testProject(t, s, "p1")
 	c := testChat(t, s, p.ID)
 	task := handOff(t, s, c, p.ID)
-	archiveTask(t, s, task.ID, TaskQueued)
+	// Through aborted: archived is reachable only from a settled state, and
+	// archived_from's CHECK holds the store to it.
+	if _, _, err := s.TransitionTask(ctx, task.ID, TaskQueued, TaskAborted, TaskChange{}); err != nil {
+		t.Fatalf("abort task %d: %v", task.ID, err)
+	}
+	archiveTask(t, s, task.ID, TaskAborted)
 
 	err := s.DeleteTaskCascade(ctx, task.ID)
 	assertRefused(t, err, DeleteRefusedHandoffTarget)

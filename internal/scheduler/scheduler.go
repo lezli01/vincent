@@ -145,6 +145,14 @@ func (s *Scheduler) admit(ctx context.Context) {
 	// admitted counts this walk's own admissions per project; the candidate
 	// rows carry the counts as of the query, which predate them.
 	admitted := map[int64]int{}
+	// claimed is the same for the working-directory claim (task 125 decision
+	// 2): the adopted branches this walk has just given an owner, keyed as
+	// DirClaimants' sub-select joins — project and branch name.
+	type dirClaim struct {
+		project int64
+		branch  string
+	}
+	claimed := map[dirClaim]bool{}
 	now := s.now()
 	for i := range candidates {
 		if ctx.Err() != nil {
@@ -205,7 +213,8 @@ func (s *Scheduler) admit(ctx context.Context) {
 		// it is gated on AdoptedBranch because no other task can share a
 		// branch with a live owner: claimBranchTx keeps every cut name unique
 		// among unarchived tasks.
-		if c.Task.AdoptedBranch && c.DirClaimants > 0 {
+		claim := dirClaim{c.Task.ProjectID, c.Task.BranchName}
+		if c.Task.AdoptedBranch && (c.DirClaimants > 0 || claimed[claim]) {
 			continue
 		}
 		if !s.start(ctx, &c.Task, log) {
@@ -213,6 +222,9 @@ func (s *Scheduler) admit(ctx context.Context) {
 		}
 		global++
 		admitted[c.Task.ProjectID]++
+		if c.Task.AdoptedBranch {
+			claimed[claim] = true
+		}
 	}
 }
 

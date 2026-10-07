@@ -94,6 +94,13 @@ Whether an issue is being worked on is **derived, never stored**: `active` and
 human-settable state such as `in_progress` is wanted as well is open question
 1.
 
+*Amended 2026-10-07 (task [134](134-issues-ux.md) decisions 1–4, issue
+#748):* the decision stands and is extended. An issue's **lane** is a third
+derived value beside `active` and `task_count`, with four values — `open`,
+`in_progress`, `hand_off` and `done` — where `done` mirrors `closed` for every
+close reason, and `attention` is a fourth, from `taskstate.NeedsHuman` over the
+root tasks. Nothing new is stored.
+
 *Alternative beaten:* GitHub's state vocabulary extended with vincent states.
 GitHub can hold only `open`/`closed` plus a reason, and sync would have to
 preserve every state it cannot represent.
@@ -160,6 +167,16 @@ into a **tombstone**, so the next poll does not import it again.
 *Alternative beaten:* an archive like tasks and chats have. An issue holds no
 worktree, branch or transcript to keep, and a closed issue already answers
 "no longer wanted".
+
+*Amended 2026-10-07 (task [134](134-issues-ux.md) decisions 7 and 17, issue
+#748):* an issue now has a main branch and worktree, **carried by its
+main-role tasks** (`tasks.issue_worktree`), not by the issue. "Delete in any
+state" is **narrowed**: delete answers `409` while a main-role task of the
+issue is unsettled. There is still no issue archive, but the beaten
+alternative's reason no longer holds as written: the archive stays rejected
+because the worktree and branch belong to tasks, which are archived
+themselves, not because there is none. The shared branch is deleted when the
+issue's last unarchived main-role task is archived.
 
 ### 7. `github_issue` is removed from every create surface — supersedes task 035 decision 2, retargets decision 7 (2026-10-02)
 
@@ -457,6 +474,14 @@ the screens.
 4. **A list row's linked-task summary is the count plus an active marker**,
    from the list DTO's `task_count` and `active`. No worst live state, no
    per-row task fetch.
+
+*Amended 2026-10-07 (task [134](134-issues-ux.md) decisions 3 and 6, issue
+#748):* 16.1 is **superseded** twice: first by task 132.11
+(`132-project-as-root.md`), which scoped the list to the selected project and
+made it flat, then by task 134 decision 6, which replaces the flat list with
+foldable lane sections (`open → in progress → hand-off → done`). 16.4 is
+**superseded in part**: a row also sits in its lane section and carries
+`attention`; the exact card is task 134.8's and 134.16's. 16.2 and 16.3 stand.
 
 ### 17. 130.10: marker headers for step and chat callers, and the outbox's defaults (2026-10-03)
 
@@ -758,6 +783,9 @@ before the item that needs it starts.
 1. **A human-settable "in progress"?** (#658 question 3.) *Proposed:* no —
    activity is derived (decision 3). A state such as `in_progress` or `triage`
    is one GitHub cannot hold, so sync would have to preserve it.
+   *Settled 2026-10-07 by task [134](134-issues-ux.md) decision 1 (issue
+   #748):* the default stands — no human-settable state. `in_progress` exists
+   only as a derived lane.
 2. **An opt-out of import alone?** (#658 question 4.) *Proposed:* no new key —
    `github.enabled` and `github.poll_interval: 0` are the controls, and there
    is no `github.issue_sync`. Adding one would depart from task 069 decision 2

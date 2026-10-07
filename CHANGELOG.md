@@ -398,6 +398,21 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **Two tasks on one existing branch no longer start together.** When both
+  were queued at the same moment, the scheduler admitted both: on a branch
+  checked out in your project's own checkout, two agents then worked in your
+  working tree at once, and otherwise the second blocked with
+  `adopt_branch_checked_out`. The second now waits in the queue until the
+  first is archived, as it already did when the two were created apart.
+  ([#749](https://github.com/lezli01/vincent/issues/749))
+- **An `on_conflict: agent` resolver that leaves conflict markers no longer
+  gets them committed.** A fan-out join whose resolver exited successfully
+  without resolving staged the files, and staging hid the conflict from the
+  check that should have caught it, so `<<<<<<<`/`>>>>>>>` lines landed on the
+  task's branch. The join now reads the files that conflicted before staging
+  them and blocks with `merge_conflict` if any marker is left, as the workflow
+  reference already promised. Only git's default seven-character markers are
+  recognised (#756).
 - **The issues, archived chats and project overview screenshots no longer
   show a stray piece of the command palette's border.** The TUI itself was
   never affected; the recording tool's renderer left the cells painted. The

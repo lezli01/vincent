@@ -640,7 +640,9 @@ commits your resolution and merges what is left.
 `agent` tries an agent first. It is an ordinary agent step, `check` and all,
 and the conflicted files are in its template context as `{{.Conflicts}}`. If
 it fails, or its check fails, or conflict markers survive it, you get the same
-block.
+block. Markers are git's default seven-character ones, read from the files
+that conflicted; a repository that sets `conflict-marker-size` is not covered
+by that check.
 
 A merge resolver is a full agent step and needs an `id`, since it gets step-run
 rows of its own. It may **not** declare `on_input: require`: it runs mid-join,

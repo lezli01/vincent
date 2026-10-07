@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/taskstate"
 	"github.com/lezli01/vincent/internal/testrepo"
 	"github.com/lezli01/vincent/internal/worktree"
 )
@@ -35,7 +36,16 @@ func setState(t *testing.T, h *taskHarness, id int64, to store.TaskState) {
 	if err != nil {
 		t.Fatalf("GetTask: %v", err)
 	}
-	if _, _, err := h.store.TransitionTask(t.Context(), id, task.State, to, store.TaskChange{}); err != nil {
+	from := task.State
+	if to == store.TaskArchived && !taskstate.Settled(from) {
+		// archived is reachable only from done or aborted, and
+		// archived_from's CHECK holds the store to it (task 134.3).
+		if _, _, err := h.store.TransitionTask(t.Context(), id, from, store.TaskAborted, store.TaskChange{}); err != nil {
+			t.Fatalf("set state %s: %v", store.TaskAborted, err)
+		}
+		from = store.TaskAborted
+	}
+	if _, _, err := h.store.TransitionTask(t.Context(), id, from, to, store.TaskChange{}); err != nil {
 		t.Fatalf("set state %s: %v", to, err)
 	}
 }

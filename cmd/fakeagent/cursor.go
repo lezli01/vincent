@@ -132,9 +132,7 @@ func cursorSuccess(prompt []byte) {
 	})
 	emit(map[string]any{"type": "fake_marker", "note": "unknown event type for tolerant-parsing tests"})
 	workFor(emitCursorText)
-	if f := os.Getenv("FAKEAGENT_EDIT_FILE"); f != "" {
-		editFile(f)
-	}
+	doFileWork()
 	emitCursorResult(prompt, 100, 42)
 }
 

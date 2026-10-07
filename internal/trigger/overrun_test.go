@@ -61,7 +61,16 @@ func setState(t *testing.T, st *store.Store, id int64, state store.TaskState) {
 	if task.State == state {
 		return
 	}
-	if _, _, err := st.TransitionTask(t.Context(), id, task.State, state, store.TaskChange{}); err != nil {
+	from := task.State
+	if state == store.TaskArchived && from != store.TaskDone && from != store.TaskAborted {
+		// archived is reachable only from done or aborted, and
+		// archived_from's CHECK holds the store to it (task 134.3).
+		if _, _, err := st.TransitionTask(t.Context(), id, from, store.TaskAborted, store.TaskChange{}); err != nil {
+			t.Fatalf("transition to %s: %v", store.TaskAborted, err)
+		}
+		from = store.TaskAborted
+	}
+	if _, _, err := st.TransitionTask(t.Context(), id, from, state, store.TaskChange{}); err != nil {
 		t.Fatalf("transition to %s: %v", state, err)
 	}
 }

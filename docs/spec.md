@@ -1150,7 +1150,8 @@ this chat may do.
 An **Issue** is a piece of work a project tracks, owned by vincent and stored in
 SQLite (§3 row 36, task 130). It is the third entity beside §5.3's Task and
 §5.5's Chat, and like a chat it is never a task with a `kind` column: it has no
-process, no steps, no worktree and no slot. Work on it is a task created from
+process, no steps and no slot — and no worktree of its own (see the 2026-10-07
+note at the end of this section). Work on it is a task created from
 it (§5.3 `issue_id`). This section is the entity and its store; the routes,
 sync, prefill and TUI that make it reachable are task 130's later items, and
 amend §12, §13 and §15 when they land.
@@ -1293,6 +1294,22 @@ id as `remote_key`. Four rules it settled:
   allowed on a local issue and on one whose remote is a tombstone, `moved` or
   `missing`. Its `author` is derived by the create rule above; no request
   field sets it.
+
+*Amended 2026-10-07 (task 134, issue #748).* The issues UX is decided, and
+this note records its design ahead of the code, which lands with task 134's
+later items. An issue has a **main branch and worktree carried by its
+main-role tasks** (`tasks.issue_worktree`), at most one of which holds it at a
+time, from its admission until it is settled; a successor inherits the
+directory. Other tasks for the issue run in **side** worktrees cut from that
+branch, and their work merges back through a daemon-created merge-back task
+that waits for the main worktree like any main task. Every issue sits in one
+derived **lane** — `open`, `in_progress`, `hand_off` or `done`, where `done` ⇔
+`closed` — computed beside `active` and `task_count`, never stored. An issue
+still has no process, steps or slot of its own, and still no archive; delete is
+refused while a main-role task of the issue is live. The rows this makes true
+(§5.3's fields, §6, §10, §11, §12.4, §13, §15 view 12 and §18) are amended by
+task 134's items in their own pull requests: this note records the design, and
+the detailed rows follow the code.
 
 ## 6. Task lifecycle
 
@@ -2262,7 +2279,17 @@ does not finish until every lane is merged.
   so a human resolves in place. `on_conflict: agent` opts into an agent
   attempt first — a full agent step, gated by its own `check` — falling back
   to the block. Blocking by default is §7.2's posture: a human decides what a
-  machine could not.
+  machine could not. *Amended 2026-10-07 (#756): "the resolver resolved"
+  means no conflict marker remains in the files that conflicted — a line
+  starting `<<<<<<< ` or `>>>>>>> ` (a lone `=======` is not one: it is a
+  setext heading underline in a resolved file) — read from their
+  content **before** the engine stages them, because staging clears the
+  index's unmerged entries whatever a file holds. A resolver that succeeds
+  but leaves a marker blocks `merge_conflict` with nothing committed; a file
+  it deleted counts as resolved. Only git's default marker size (7) is
+  recognised, so a repository setting `conflict-marker-size` is not
+  protected by the scan. A human's own staged resolution on retry is trusted
+  and not scanned.*
 - **The step runs in rounds.** *Added 2026-09-01 (task 080).* On each
   admission this task merges every lane that is `done` and not yet on its
   branch, in declared lane order; spawns the lanes whose `needs:` those merges
@@ -6102,6 +6129,12 @@ precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
     would cost a human a retry for nothing. A chat is created synchronously
     and cannot wait, so `POST /v1/chats` answers `409`. The claim is held from
     the moment a task holds a slot until its row stops naming the directory.
+    *Amended 2026-10-07 (issue #749):* the scheduler's walk also counts its
+    own admissions against the claim, keyed by project and branch exactly as
+    the stored count is. The count in the candidate rows predates the walk,
+    so two queued tasks on one free branch were both admitted in a single
+    walk — and on a branch checked out in the main checkout, both worked in
+    the project path.
   - **`base_sha` is the adopted branch's tip at admission** (§5.3), and no
     base refresh is recorded: the fetch that ran was the branch's, not the
     base's. `base_branch` stays on the row for the fields that read it.
@@ -9677,8 +9710,9 @@ POST   /v1/tasks/import                 *Added 2026-09-17 (task 117, issue #411)
                                         `worktree_path` NULL, `created_by_task_id` NULL unless
                                         that task is live, `issue_id` NULL unless that issue
                                         is live in the target project (*amended 2026-10-02,
-                                        task 130.1*; `issue_json` is kept); every other column
-                                        is copied as it is, and no git operation runs. Step run ids are all
+                                        task 130.1*; `issue_json` is kept); every other column,
+                                        `archived_from` included (task 134.3), is copied as it
+                                        is, and no git operation runs. Step run ids are all
                                         kept when all are free and all renumbered, in order,
                                         when any is taken (§14). `project_id` re-homes the task;
                                         without it the backed-up project must be live under the
@@ -10841,7 +10875,10 @@ CREATE TABLE tasks (
   updated_at          TEXT NOT NULL,
   started_at          TEXT,
   finished_at         TEXT,
-  archived_at         TEXT
+  archived_at         TEXT,
+  archived_from       TEXT CHECK (archived_from IN ('done','aborted')) -- the settled state the task
+                                              -- was archived from; NULL unless archived (task 134.3,
+                                              -- migration 0042)
 );
 CREATE INDEX idx_tasks_sched ON tasks(state, priority DESC, created_at);
 CREATE INDEX idx_tasks_parent ON tasks(parent_task_id, lane_order);  -- §7.6 subtree walks (task 014)
@@ -11352,7 +11389,24 @@ exception to the verbatim copy. It is kept only when that issue is live **in
 the project the task lands in**, and NULL otherwise — issue ids are global, so
 an id from another project would point the task at somebody else's work.
 `issue_json` is copied verbatim either way, as the snapshot that outlives its
-issue.
+issue. *Amended 2026-10-07 (task 134.3, issue #750):* `tasks.archived_from` is
+copied verbatim too — a backup from before migration 0042 is backfilled from
+its own events when its staged database is migrated.
+
+*Added 2026-10-07 (task 134.3, issue #750, migration 0042).*
+`tasks.archived_from` records whether an archived task was `done` or `aborted`
+before it was archived, the only two states §6 lets reach `archived`.
+`finished_at` cannot say: both states stamp it, and until this column the only
+record was the `from` key of the archiving `task.state_changed` payload — too
+costly for a list query to read, and gone with the project's events.
+`TransitionTask` writes it on `→ archived`; it is NULL on every other row, and
+nothing clears it, because `archived` is terminal. The migration backfills
+archived rows from the newest archiving event whose `from` is one of the two,
+and **`done`** when none survives: an issue whose finished work is mistaken
+for cancelled would be hidden back in the backlog, while the opposite mistake
+only asks a human to close it. It is store-only — no API, CLI or MCP
+representation of a task carries it; the issue lanes of task 134 read it in
+SQL.
 
 *Added 2026-10-02 (task 130.1, issue #660, migration 0036).* The issue tables
 of §5.6. `issues.state` has **no CHECK**, for the reason 0032 gave `chats`: a

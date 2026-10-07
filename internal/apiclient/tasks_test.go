@@ -89,8 +89,14 @@ func TestListTasksRollupAndSteps(t *testing.T) {
 func TestListTasksArchivedScope(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
+	// Through aborted: archived is reachable only from a settled state.
 	if _, _, err := h.st.TransitionTask(
-		ctx, h.taskID, store.TaskQueued, store.TaskArchived, store.TaskChange{},
+		ctx, h.taskID, store.TaskQueued, store.TaskAborted, store.TaskChange{},
+	); err != nil {
+		t.Fatalf("abort task: %v", err)
+	}
+	if _, _, err := h.st.TransitionTask(
+		ctx, h.taskID, store.TaskAborted, store.TaskArchived, store.TaskChange{},
 	); err != nil {
 		t.Fatalf("archive task: %v", err)
 	}

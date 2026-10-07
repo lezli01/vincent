@@ -131,9 +131,7 @@ func codexSuccess(prompt []byte) {
 	}})
 	emit(map[string]any{"type": "fake_marker", "note": "unknown event type for tolerant-parsing tests"})
 	workFor(emitCodexMessage)
-	if f := os.Getenv("FAKEAGENT_EDIT_FILE"); f != "" {
-		editFile(f)
-	}
+	doFileWork()
 	emitCodexMessage("done: " + flatten(string(prompt), 1000))
 	emitCodexTurnCompleted(prompt, 100, 42)
 }
