@@ -153,6 +153,12 @@ func (s *Scheduler) admit(ctx context.Context) {
 		branch  string
 	}
 	claimed := map[dirClaim]bool{}
+	// admittedIssue is the same again for an issue's main worktree (task 134
+	// decisions 7, 8): the issues whose main task this walk has just admitted.
+	// IssueOccupied, like DirClaimants, predates the walk, so two never-started
+	// main tasks of one issue both read false — the shape of #749's
+	// `admitted [1 2]` — and without this tally both would run.
+	admittedIssue := map[int64]bool{}
 	now := s.now()
 	for i := range candidates {
 		if ctx.Err() != nil {
@@ -218,6 +224,17 @@ func (s *Scheduler) admit(ctx context.Context) {
 		if c.Task.AdoptedBranch && (c.DirClaimants > 0 || claimed[claim]) {
 			continue
 		}
+		// At most one in-progress main task per issue (task 134 decisions 7,
+		// 8). An issue's main tasks share one branch and one directory, so
+		// the next waits until the occupant has settled — or, settled, until
+		// the chat a human opened on it closes. Like the claim above it is a
+		// skip, never a block (task 125 decision 2, task 134 decision 10):
+		// the task stays queued, nothing is written, and the next walk asks
+		// again. Side-role and role-less tasks are never held by it.
+		mainOfIssue := c.Task.IssueWorktree == store.IssueWorktreeMain && c.Task.IssueID != nil
+		if mainOfIssue && (c.IssueOccupied || admittedIssue[*c.Task.IssueID]) {
+			continue
+		}
 		if !s.start(ctx, &c.Task, log) {
 			continue
 		}
@@ -225,6 +242,9 @@ func (s *Scheduler) admit(ctx context.Context) {
 		admitted[c.Task.ProjectID]++
 		if c.Task.AdoptedBranch {
 			claimed[claim] = true
+		}
+		if mainOfIssue {
+			admittedIssue[*c.Task.IssueID] = true
 		}
 	}
 }

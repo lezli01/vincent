@@ -198,20 +198,20 @@ func issueSelect() string {
 		` + laneExpr().sql + `,
 		` + attentionExpr().sql + `,
 		(` + issueMainBranchSQL("i.id") + `),
-		(` + issueMainOccupantSQL("i.id") + `),
+		(` + issueMainOccupantSQL("i.id", "") + `),
 		r.id, r.issue_id, r.project_id, r.provider, r.remote_key, r.repo, r.number, r.url,
 		r.remote_json, r.remote_updated_at, r.synced_at, r.suppressed, r.remote_status
 	FROM issues i LEFT JOIN issue_remotes r ON r.issue_id = i.id`
 }
 
 // The derived columns bind in text order: Active, Lane and Attention's
-// fragments, then the main worktree occupant's settled states.
+// fragments, then the main worktree occupant's own arguments.
 func issueSelectArgs() []any {
 	var args []any
 	for _, f := range []sqlFrag{activeExpr(), laneExpr(), attentionExpr()} {
 		args = append(args, f.args...)
 	}
-	return append(args, settledTaskStates()...)
+	return append(args, issueMainOccupantArgs()...)
 }
 
 func scanIssue(r rowScanner) (*Issue, error) {

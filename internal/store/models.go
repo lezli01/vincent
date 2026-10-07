@@ -625,6 +625,13 @@ type Candidate struct {
 	// its own when the claimant is archived, and burning a `blocked` state on
 	// it would cost a human a retry for nothing.
 	DirClaimants int
+	// IssueOccupied is true only for a main-role candidate whose issue's main
+	// worktree has an occupant other than the candidate itself (task 134
+	// decisions 7, 8; issueMainOccupantSQL is the definition). The scheduler
+	// skips such a candidate the way it skips one whose directory is
+	// claimed: it stays queued and is reconsidered on the next walk. Always
+	// false for side-role and role-less tasks.
+	IssueOccupied bool
 }
 
 // Unreconciled is one task whose state and its step runs contradict each
