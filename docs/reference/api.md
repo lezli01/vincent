@@ -78,7 +78,7 @@ each:
 | `task_has_no_worktree` | A chat cannot be opened on this task: it never got a worktree, and vincent does not create one for a chat. Also a chat on a task that has lost its worktree, asked for its [skills](#skills) | `state`, `action`; `task_id` from the skills route |
 | `chat_linked_to_task` | Archive, hand-off, or a delete with `delete_branch=true` on a chat linked to a task. The worktree and branch are that task's | `task_id`, `state`, `action` |
 | `issue_worktree_moved` | A `follow_up` or chat on an issue's main task that finished and handed the issue's worktree to a later main task. Continue in that task, or start a new main task | `holder_task_id`, `state` |
-| `issue_has_live_main_task` | An issue delete was refused because one of the issue's main tasks has not finished. Finish or cancel it, then delete again | `task_id` |
+| `issue_has_live_main_task` | An issue delete was refused because one of the issue's main or side tasks has not finished. Finish or cancel it, then delete again | `task_id` |
 
 ## Request bodies
 
@@ -2582,8 +2582,9 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
   Nothing is ever posted to GitHub: a comment edited there is updated in
   place, and one deleted there stays.
 - **Delete** answers `204` from any state, unless one of the issue's
-  [main tasks](#the-issues-main-branch) has not finished: then it is
-  `409 issue_has_live_main_task` naming it. An imported issue leaves a tombstone
+  [main or side tasks](#the-issues-main-branch) has not finished: then it is
+  `409 issue_has_live_main_task` naming it — a main task first, a side task
+  once no main task is live. An imported issue leaves a tombstone
   so it is never imported again, nothing is written upstream, and tasks created
   from it keep running with `issue_id` cleared. It is not an MCP tool.
 - **Labels** — `GET /v1/projects/{id}/issue-labels` lists
@@ -2702,10 +2703,37 @@ main task when the issue has no main branch yet, and its branch becomes the
 main branch; otherwise it becomes a side task with `on_conflict: block`. The
 handoff body does not take `merge_back`.
 
-Roles, the main branch and the occupant are recorded and served today, and
-the scheduler holds a later main task back while the occupant holds the
-worktree. Nothing yet merges a side task back — that arrives with a later
-release.
+#### Merge-back tasks
+
+When a side task finishes `done` with commits of its own, vincent creates a
+**merge-back** task for it in the same moment: a queued main task of the
+issue, titled `Merge task {side} into issue #{issue}`, with
+`workflow: "__merge_back"` and the side task's priority, `on_conflict` and
+agent, model and effort. It waits for the main worktree like any main task
+and is admitted in the usual order — priority, then creation, which is when
+the side task finished — so at one priority merge-backs run in the order
+their side tasks completed. Then it merges the side task's branch into the main branch with `--no-ff` and
+its title as the commit message. A clean merge ends `done`. On a conflict,
+`block` leaves the main worktree mid-merge and blocks `merge_conflict`:
+resolve and stage the files there, then retry, or cancel — which runs
+`git merge --abort` so the next main task gets a clean worktree. `agent`
+first runs a built-in resolver with the side task's agent and falls back to
+the block when it fails or leaves conflict markers. `skip` ends it without
+merging, aborting a conflicted merge it left behind; so does `cancel`, from
+any state, the resolver's run included.
+
+- A side task with no commits past its `base_sha` creates no merge-back, and
+  neither does one whose branch is already on the main branch — a follow-up
+  that added nothing after an earlier merge-back.
+- While a side task's merge-back is still pending, finishing the side task
+  again — a follow-up — creates no second one; the pending one merges the
+  branch as it is when it runs. Once it has finished, the next `done` creates
+  a new one.
+- If every main task of the issue was archived, the merge-back checks the old
+  main branch out again and merges into it. If that branch was deleted too it
+  blocks `merge_target_missing`.
+- A deleted side task, or a side branch gone from git, blocks
+  `merge_source_missing`.
 
 ## Chats
 

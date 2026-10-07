@@ -1,6 +1,6 @@
 # 134 — Issues UX: a four-lane issues board and one main worktree per issue
 
-**Status:** 🔄 in progress (13/19)
+**Status:** 🔄 in progress (14/19)
 
 Issue [#748](https://github.com/lezli01/vincent/issues/748), part of
 [#747](https://github.com/lezli01/vincent/issues/747), the epic. Spec §5.6 in
@@ -251,6 +251,14 @@ hand-over.
   whose `end_sha` is unset stamps the tip then, in the same write as the
   transition, so an archived predecessor never lists its successors' commits.
 
+*Amended 2026-10-07 (134.14, #761), decision 134.14-a:* the "next main task
+cuts a fresh name" rule above does not apply to a **merge-back**. With every
+main task archived, the merge-back is bound to its side task's `base_branch`
+— the main branch it forked from — as an explicit name, which becomes the
+main branch again and is checked out fresh by 134.12's revival path. It
+blocks `merge_target_missing` only when that branch is gone from git at
+admission.
+
 ### 8. Occupancy: admitted and not settled (2026-10-07)
 
 A main-role task holds the issue's main worktree from its admission
@@ -397,6 +405,12 @@ last archive is judged against the issue's base branch, never against that
 task's `base_sha`, which after a transfer is the tip it received and would
 read a branch full of predecessors' commits as empty.
 
+*Amended 2026-10-07 (134.14, #761), decision 134.14-c:* the refusal widens
+to unsettled **side** tasks of the issue. A side task's `→ done` inserts a
+merge-back on its issue, so the issue must still exist then. The same
+`409 issue_has_live_main_task` and `task_id` serve it, the message names the
+task as a side task, and main tasks are named first.
+
 ### 18. `merge_back.approve` is a later addition (2026-10-07)
 
 Settled by the author (#747 question 9). A human approval before each merge,
@@ -409,6 +423,56 @@ Settled by the author (#747 questions 1–4): hand-off is finished `done` work
 on an open issue, an issue whose only tasks were cancelled is `open`
 (decision 2), the board is stacked sections, and the order is
 open → in progress → hand-off (decision 6).
+
+### 134.14-a. A missing main branch is revived, not replaced (2026-10-07, 134.14)
+
+Settled by the author while scoping #761. If a side task reaches `done` after
+every main task of its issue was archived, its merge-back is bound to the
+side task's `base_branch`, which becomes the main branch when none exists
+(decision 7's 134.10 amendment) and is revived by 134.12's "check the branch
+out fresh" path. The merge-back blocks `merge_target_missing` only when that
+branch no longer exists in git at admission. Narrows decision 7 for
+merge-backs only.
+
+### 134.14-b. An empty side task creates no merge-back (2026-10-07, 134.14)
+
+Settled by the author. A side branch with no commits past `base_sha` at
+`→ done` inserts no merge-back, as `fan_out` merges nothing for an empty
+lane. A later follow-up that adds commits creates one when it reaches `done`
+again. *Amended 2026-10-07 (review F5 of #771):* a side branch already an
+ancestor of the issue's main branch — merged back earlier, and finished again
+by a follow-up that added nothing — inserts none either. The check is git work, so the actor does it before the transition and
+hands the store the task to insert; SQLite's write lock is never held across
+a subprocess.
+
+### 134.14-c. Issue delete is refused while a side task is unsettled (2026-10-07, 134.14)
+
+Settled by the author. Decision 17.1's refusal widens to unsettled side
+tasks, so a side task always has an issue at `→ done`. Pending merge-backs
+are main tasks and were already covered. `409 issue_has_live_main_task` and
+its `task_id` serve this case too, and the message names the side task.
+
+Taken from the code while building 134.14, without author input:
+
+- The merge-back row carries the side task's `merge_on_conflict`, so a later
+  delete of the source cannot lose it; `bindIssueWorktreeTx` allows the
+  policy on a main task only when `merge_source_task_id` is set.
+- At most one merge-back per source is pending: the insert reads for a
+  pending one in the create transaction (the single writer makes that
+  race-free) and a unique partial index makes a second impossible. The
+  pending one merges the side branch's tip as it is when it runs.
+- `merge_source_task_id` is `ON DELETE SET NULL`; the side branch's name
+  lives in the synthesized snapshot. A deleted source, or a missing side
+  branch, blocks `merge_source_missing`.
+- `workflow_name = "__merge_back"` and a one-step snapshot whose step id is
+  `__merge_back`, reserved as `RepairStepID` is. The title, and the merge
+  commit message, is `Merge task {side} into issue #{issue}`.
+- The `agent` resolver is a built-in prompt in `internal/workflow/builtin.go`
+  given `.Conflicts`, the side task's title and description, and `.Issue`; its
+  agent, model and effort are the side task's overrides. It has no `check`.
+  The re-read of the five built-in sources found no `update-workflows`
+  checklist line to add: merge-back is not a feature a workflow author can
+  use.
 
 ### 20. `tasks.archived_from` records the state an archive left (2026-10-07, 134.3)
 
@@ -581,9 +645,13 @@ sections and public pages its code makes true, in its own pull request.
 - [x] **134.13** ([#760](https://github.com/lezli01/vincent/issues/760)) Side
   tasks cut from the issue branch with no fetch, recording `base_sha`
   (decision 13). Depends: 134.10. ✓ 2026-10-07
-- [ ] **134.14** ([#761](https://github.com/lezli01/vincent/issues/761)) The
+- [x] **134.14** ([#761](https://github.com/lezli01/vincent/issues/761)) The
   merge-back task's schema, creation, executor and reasons; spec §12.4
-  (decisions 11, 15). Depends: 134.9, 134.12, 134.13.
+  (decisions 11, 15). Depends: 134.9, 134.12, 134.13. Migration 0044's
+  `merge_source_task_id`; a side task's `→ done` inserts the `__merge_back`
+  task; `merge_source_missing`, `merge_target_missing`; cancel aborts a
+  conflicted merge-back; issue delete refused for a live side task; spec
+  §5.3, §5.6, §6, §7.6, §10, §12.4, §13.2, §18. ✓ 2026-10-07
 - [ ] **134.15** ([#762](https://github.com/lezli01/vincent/issues/762)) The
   choice in the CLI, MCP, triggers and the chat handoff. Depends: 134.14.
 - [ ] **134.16** ([#763](https://github.com/lezli01/vincent/issues/763)) The

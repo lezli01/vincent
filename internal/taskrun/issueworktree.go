@@ -171,7 +171,9 @@ func (r *Runner) createIssueMainWorktree(
 	var created worktree.Created
 	var err error
 	existing := wt.LocalBranchExists(ctx, project.Path, task.BranchName)
-	if existing && !task.AdoptedBranch {
+	// A merge-back's branch is the one its side task forked from, which is
+	// the issue's by construction (134.13), so it needs no proof of holding.
+	if existing && !task.AdoptedBranch && !isMergeBack(task) {
 		// An existing branch is the issue's only when one of its main tasks
 		// has held it (review F3 of #770). Otherwise it is somebody else's
 		// that appeared after creation's courtesy check, and the ordinary cut
@@ -184,6 +186,17 @@ func (r *Runner) createIssueMainWorktree(
 			return err
 		}
 		existing = held
+	}
+	if !existing && isMergeBack(task) {
+		// A merge-back merges into the issue's main branch and never cuts
+		// one (134.14-a): with every main task archived it revives the
+		// branch its side task forked from, and when that is gone too there
+		// is nothing to merge into.
+		detail := fmt.Sprintf("the issue's main branch %s no longer exists; there is nothing to merge into. "+
+			"Skip or cancel this task", task.BranchName)
+		r.fail(task, ReasonMergeTargetMissing, detail, log, "merge-back target",
+			fmt.Errorf("branch %s is missing", task.BranchName))
+		return errors.New(detail)
 	}
 	if existing {
 		// Case 3. base_sha is the tip and base_refresh stays NULL: nothing

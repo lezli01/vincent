@@ -1396,3 +1396,35 @@ func builtins() map[string]Entry {
 	})
 	return builtinEntries
 }
+
+// mergeBackResolverIntro opens the merge-back resolver's prompt (task 134
+// decision 12). It is a built-in prompt like the ones in builtin.go, and
+// carries no check: the engine's "no conflict markers in the files that
+// conflicted" test is the floor (§7.6, #756).
+const mergeBackResolverIntro = `You are running unattended in the main git worktree of an issue, partway
+through a merge. A side task's branch was merged into the issue's main branch
+and git stopped on conflicts. Resolve them: edit each conflicted file so it
+keeps the intent of both sides, remove every conflict marker, and stage the
+result. Do not commit, abort the merge, or touch files that did not conflict;
+the merge is committed for you when you finish.`
+
+// MergeBackResolverPrompt is the prompt of the `on_conflict: agent` resolver
+// a merge-back runs (task 134.14). The side task's title and description are
+// literal text, escaped; the conflicted files and the issue come from §8.4's
+// `.Conflicts` and `.Issue` when it renders.
+func MergeBackResolverPrompt(sideTaskID int64, sideTitle, sideDescription string) string {
+	var b strings.Builder
+	b.WriteString(mergeBackResolverIntro)
+	fmt.Fprintf(&b, "\n\nThe side task being merged is task %d: %s\n", sideTaskID, EscapeTemplate(sideTitle))
+	if d := strings.TrimSpace(sideDescription); d != "" {
+		b.WriteString("\n" + EscapeTemplate(d) + "\n")
+	}
+	b.WriteString(`{{if .Issue.Title}}
+It was done for the issue "{{.Issue.Title}}".
+{{end}}
+Conflicted files:
+{{range .Conflicts}}- {{.}}
+{{end}}
+` + StatusInstruction + "\n")
+	return b.String()
+}

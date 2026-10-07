@@ -164,8 +164,16 @@ var catalogue = map[string]Explanation{
 		Actions: retrySkip, DocAnchor: troubleshooting("an-agent-cannot-be-picked-for-a-workflow--input_unsupported"),
 	},
 	"merge_conflict": {
-		Title: "merge conflict", Meaning: "Merging a fan-out lane conflicted, and the worktree is left conflicted for you to resolve.",
+		Title: "merge conflict", Meaning: "Merging a fan-out lane, or a side task back into its issue's main worktree, conflicted, and the worktree is left conflicted for you to resolve.",
 		Actions: inWorktree, DocAnchor: lifecycle,
+	},
+	"merge_source_missing": {
+		Title: "merge source missing", Meaning: "The side task this merge-back merges was deleted, or its branch no longer exists, so there is nothing to merge.",
+		Actions: []string{"skip", "cancel"}, DocAnchor: lifecycle,
+	},
+	"merge_target_missing": {
+		Title: "merge target missing", Meaning: "The issue's main branch this merge-back merges into no longer exists: every main task was archived and the branch was deleted.",
+		Actions: []string{"skip", "cancel"}, DocAnchor: lifecycle,
 	},
 	"lane_failed": {
 		Title: "lane failed", Meaning: "A fan-out lane was cancelled or ended without finishing, so nothing of that round was merged.",

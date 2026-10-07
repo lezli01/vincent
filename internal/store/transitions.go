@@ -145,6 +145,15 @@ type TaskChange struct {
 	// on a locked task: the chat's process is already dead, and the close
 	// and the abort commit together or not at all.
 	CloseLinkedChats bool
+	// MergeBack is the merge-back task a side task's `→ done` inserts in the
+	// same transaction (§5.6, task 134 decision 11, 134.14), built by the
+	// engine — which owns the workflow snapshot and has already asked git
+	// whether the side branch has commits past its base (134.14-b), so no
+	// subprocess runs under SQLite's write lock. It is ignored on any other
+	// transition, and inserts nothing while a merge-back of the same source
+	// is still pending: that one merges the side branch's tip as it is when
+	// it runs.
+	MergeBack *Task
 }
 
 // TransitionTask moves a task from one state to another, writing the state
@@ -168,6 +177,7 @@ func (s *Store) TransitionTask(
 		ev   *Event
 	)
 	var chatEvs []*Event
+	var mergeEv *Event
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
 		var err error
 		if ch.CloseLinkedChats {
@@ -175,7 +185,14 @@ func (s *Store) TransitionTask(
 				return err
 			}
 		}
+		mergeEv = nil
 		task, ev, err = transitionTaskTx(ctx, tx, id, from, to, ch)
+		if err != nil {
+			return err
+		}
+		if to == TaskDone && ch.MergeBack != nil {
+			mergeEv, err = insertMergeBackTx(ctx, tx, task, ch.MergeBack)
+		}
 		return err
 	})
 	if err != nil {
@@ -185,7 +202,52 @@ func (s *Store) TransitionTask(
 		s.notify(ce)
 	}
 	s.notify(ev)
+	if mergeEv != nil {
+		s.notify(mergeEv)
+	}
 	return task, ev, nil
+}
+
+// insertMergeBackTx inserts mb, the merge-back of side task source, inside
+// the transaction that moved source to done (task 134.14). It returns the
+// task.created event to publish after the commit, or nil when it inserted
+// nothing because a merge-back of source is still pending.
+//
+// The pending check is a read in the same transaction, which the single
+// writer makes race-free; idx_tasks_merge_source_pending makes a second
+// pending row impossible in any case.
+func insertMergeBackTx(ctx context.Context, tx *sql.Tx, source, mb *Task) (*Event, error) {
+	if source.IssueWorktree != IssueWorktreeSide || source.IssueID == nil {
+		return nil, fmt.Errorf("merge back task %d: not a side task of an issue", source.ID)
+	}
+	var pending int64
+	err := tx.QueryRowContext(ctx, `SELECT id FROM tasks
+		WHERE merge_source_task_id = ? AND archived_at IS NULL
+		  AND state NOT IN `+placeholders(len(settledTaskStates()))+` LIMIT 1`,
+		append([]any{source.ID}, settledTaskStates()...)...).Scan(&pending)
+	switch {
+	case err == nil:
+		return nil, nil
+	case !errors.Is(err, sql.ErrNoRows):
+		return nil, fmt.Errorf("read task %d pending merge-back: %w", source.ID, err)
+	}
+	sourceID, issueID := source.ID, *source.IssueID
+	mb.ProjectID = source.ProjectID
+	mb.IssueID = &issueID
+	mb.MergeSourceTaskID = &sourceID
+	mb.IssueWorktree = IssueWorktreeMain
+	mb.MergeOnConflict = source.MergeOnConflict
+	mb.State = TaskQueued
+	mb.Priority = source.Priority
+	mb.ParentTaskID, mb.ParentStepIndex = nil, nil
+	// The side task's base is the main branch it forked from (134.13). It
+	// is the name the merge-back binds to when no unarchived main task holds
+	// one, which revives that branch at admission (134.14-a); while one
+	// does, bindIssueWorktreeTx binds the merge-back to it instead.
+	mb.BaseBranch = source.BaseBranch
+	mb.BranchName = source.BaseBranch
+	mb.AdoptedBranch = false
+	return insertTaskTx(ctx, tx, mb, time.Now(), nil)
 }
 
 // InterruptTask is §12.4 crash recovery for one task, and the reason it is a

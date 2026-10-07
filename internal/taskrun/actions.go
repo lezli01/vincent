@@ -160,6 +160,10 @@ func (r *Runner) Cancel(ctx context.Context, id int64) (*store.Task, error) {
 			// could not — a row it lost at a transition boundary would
 			// otherwise stay open until the startup sweep.
 			<-lr.done
+			// A merge-back's merge is aborted once nothing is working in
+			// the directory any more — an `agent` resolver may have been
+			// (task 134 decision 15).
+			r.abortMergeBack(r.persistCtx(), task, log)
 			if n, err := r.deps.Store.TerminalizeOpenStepRuns(r.persistCtx(), id,
 				store.StepInterrupted, ReasonCanceled); err != nil {
 				log.Error("cancel: close open step runs", "error", err)
@@ -169,6 +173,10 @@ func (r *Runner) Cancel(ctx context.Context, id int64) (*store.Task, error) {
 		}()
 		return task, nil
 	}
+	// A conflicted merge-back leaves the issue's main worktree clean for the
+	// next main task (task 134 decision 15). After the cancel has committed,
+	// so one that lost a race to a retry never discards a hand resolution.
+	r.abortMergeBack(r.persistCtx(), task, log)
 	// No actor: nothing else will close the rows this task left open — the
 	// manual row an `awaiting_gate` task is parked on, or a row orphaned by
 	// a crash (§6). This write outlives the request: the transition it

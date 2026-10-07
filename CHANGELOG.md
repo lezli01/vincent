@@ -13,6 +13,16 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **A finished side task merges itself back into its issue.** When a side
+  task (`merge_back` on `POST /v1/tasks`) finishes with commits, vincent
+  queues a merge-back task, `Merge task N into issue #M`, that waits for the
+  issue's main worktree and merges the side branch into it. `on_conflict:
+  block` stops on a conflict for you to resolve and retry; `agent` tries a
+  resolver first. Cancelling a conflicted merge-back aborts the merge. Two
+  new block reasons, `merge_source_missing` and `merge_target_missing`, say
+  when there is nothing to merge or nowhere to merge it, and an issue can no
+  longer be deleted while one of its side tasks is unfinished.
+
 - **The TUI's issues screen is a board of lanes.** The selected project's
   issues are laid out in stacked sections — open, in progress, hand-off and
   done — taken from the lane vincent derives for each issue, with a count per

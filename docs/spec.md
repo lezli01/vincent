@@ -403,7 +403,8 @@ A unit of work delivered by running a workflow against a project.
 | `workflow_origin` | *Added 2026-08-28 (task 043).* Where the definition behind `workflow_name` came from, captured **once at creation** beside `workflow_snapshot`. It holds the **scope** that won §5.2's shadowing walk (`builtin`, `global`, `project`, or `derived`), the source **file relative to that scope's root** (`.vincent/workflows/adhoc.yaml`, `workflows/release.yaml`; absent for a built-in, which has none), and a **digest** — `sha256:<hex>` over the registry entry's source bytes exactly as loaded, with no normalization. It is **never recomputed**, so it identifies the *file version the task was created from* rather than the bytes the engine runs: include expansion (§7.9), fan-out resolution (§7.6) and `edit + retry` all rewrite `workflow_snapshot` afterwards, and `edit + retry` is separately audited through `step_runs.prompt_override` / `run_override`. A `fan_out` lane records `derived` naming its parent task (§7.6): its steps come from the parent's snapshot, resolved at the *parent's* creation, so it never read a registry at all. NULL for a task created before this was recorded, which is reported as `unknown` — never re-derived from today's registry, which would report a substitution as though it had always been there |
 | `github_issue` | *Added 2026-08-26 (task 035).* The GitHub issue this task was created from, captured **once at creation** and NULL for every task created without one. It holds the normalized issue — repo, number, title, body, url, state, labels, author, assignee, milestone (title and number), the issue's own timestamps and the instant it was fetched — and it is **never re-fetched**: every step renders `.Issue` (§8.4) from this snapshot, so an issue edited on GitHub afterwards is deliberately not reflected. That is the reasoning `workflow_snapshot` already rests on: a run is reproducible, no network call enters the step path, and a step render still cannot fail for an external reason. A `fan_out` lane inherits its parent's copy verbatim (§7.6). *Amended 2026-10-03 (task 130.11, issue #670, migration 0040):* the column is **read-only legacy history**. Nothing writes it any more — the `github_issue` create field that filled it is removed (task 130 decision 7) — and it stays byte-identical on every existing row. Migration 0040 **backfilled** it into the issue set: one imported issue per `(project, repo, number)` across every task that carries a snapshot, lanes, archived and never-started tasks included, its content and state from the newest snapshot, each task's `issue_id` pointed at it and `issue_json` left NULL, so a legacy task still renders from this column. The task DTO keeps serving it as `github_issue` (task 130 decision 22) |
 | `issue_id`, `issue` | *Added 2026-10-02 (task 130.1, issue #660, migration 0036).* The vincent issue (§5.6) this task was created from, as **a pointer and a snapshot** (task 130 decision 5). `issue_id` is the authoritative edge to `issues.id`, read backwards to answer which tasks came from an issue and whether it is being worked on; it is `ON DELETE SET NULL`, so a task outlives its issue. `issue` (`issue_json`) is that issue frozen at creation — id, title, state, kind, priority, labels, url — never re-fetched, and it survives the issue's deletion, for `github_issue`'s reasons. Both are written in the insert transaction, `task.created` carries `issue_id` when it is set (§13.3), and a `fan_out` lane inherits copies of both (§7.6) — though only a root task counts toward its issue's activity. No create surface sets them yet (task 130.3). *Amended 2026-10-02 (task 130.4, issue #663):* the snapshot widens to body, close reason, author, a `remote` reference (provider, repo, number, url, state, assignees, milestone and its number — nil for a local issue and for a tombstoned remote row) and `captured_at`, every new key optional in the same column, so it needs no migration. `store.NewIssueSnapshot` builds it from the stored issue and its `issue_remotes` row with no provider call; it is what `.Issue` renders (§8.4) and what the vincent-issue prefill reads (`internal/issues`, task 130 decision 7). *Amended 2026-10-02 (task 130.7, issue #666):* `POST /v1/tasks` and the chat handoff set both from `issue_id` (§13.2). Every task representation carries `issue: { id, title, state, source? }` — read from the live issue while `issue_id` holds and from this snapshot once the issue is deleted — and derives `github_issue` from the snapshot's `remote` when its provider is `github`, so a consumer reading `.github_issue.number` keeps working; a local issue derives no `github_issue`, and a legacy row keeps serving its own `github_issue_json`. `Closes #N` in a task's compare URL (§13.2) takes the snapshot's GitHub reference first and the legacy snapshot second, under the unchanged same-repository rule. *Amended 2026-10-03 (task 130.14, issue #673):* the snapshot gains an optional `created_at` — the remote record's creation time for an imported issue whose `remote_json` carries one, else `issues.created_at` — `omitempty` like every 130.4 key, so no migration; it is what `$VINCENT_ISSUE_FILE`'s `createdAt` reads (§8.5), `null` for an older snapshot |
-| `issue_worktree`, `end_sha`, `merge_on_conflict` | *Added 2026-10-07 (task 134.10, issue #757, migration 0043).* The task's role in its issue's worktrees (§5.6, task 134 decisions 7, 9). `issue_worktree` is `main` for a root task working on the issue's main branch, `side` for one that asked for its own worktree with `merge_back` (§13.2), and NULL for every task with no issue, every `fan_out` lane, and every row older than the migration — those behave exactly as before. A new root task with an issue is `main` unless it asked for `merge_back`; the role is written in the insert transaction and never changes. A main task's `branch_name` is **bound** there too: when the issue already has a main branch, the row takes it and sets `adopted_branch` (*amended 2026-10-07, review F1 of #768*: the first main task cut it, so a second cut would block `branch_exists` at admission; adopting it puts the task under §10's working-directory claim instead); when it has none, the task's own name, resolved by the usual chain, becomes it. `merge_on_conflict` is a side task's `merge_back.on_conflict` — `block` or `agent` — and NULL on every other task. `end_sha` is the commit a main task's work ended on, NULL until task 134.12 writes it. *Amended 2026-10-07 (task 134.12, issue #759):* a joining main task is still bound to the main branch but is **no longer** `adopted_branch` — it receives its predecessor's directory at admission (§10) instead of waiting under the working-directory claim; a row bound before this that still says `adopted_branch` is routed by its role, which wins everywhere. `end_sha` is now written: by the transfer, as the branch tip the predecessor handed over, and by archive, as the tip at that moment, when the task still held the directory and the transfer never stamped it. A main task that receives a directory again — by transfer, or a fresh worktree after a follow-up — has it cleared, so its range runs to the branch while it works (review F4 of #770). `/commits` and `/diff` end a task's range at it (§13.2). Store-side, `claimBranchTx` lets unarchived main-role tasks of one issue share its main branch; every other collision — a task of another issue, a side task, a task with no issue — is still refused |
+| `issue_worktree`, `end_sha`, `merge_on_conflict` | *Added 2026-10-07 (task 134.10, issue #757, migration 0043).* The task's role in its issue's worktrees (§5.6, task 134 decisions 7, 9). `issue_worktree` is `main` for a root task working on the issue's main branch, `side` for one that asked for its own worktree with `merge_back` (§13.2), and NULL for every task with no issue, every `fan_out` lane, and every row older than the migration — those behave exactly as before. A new root task with an issue is `main` unless it asked for `merge_back`; the role is written in the insert transaction and never changes. A main task's `branch_name` is **bound** there too: when the issue already has a main branch, the row takes it and sets `adopted_branch` (*amended 2026-10-07, review F1 of #768*: the first main task cut it, so a second cut would block `branch_exists` at admission; adopting it puts the task under §10's working-directory claim instead); when it has none, the task's own name, resolved by the usual chain, becomes it. `merge_on_conflict` is a side task's `merge_back.on_conflict` — `block` or `agent` — and NULL on every other task. `end_sha` is the commit a main task's work ended on, NULL until task 134.12 writes it. *Amended 2026-10-07 (task 134.12, issue #759):* a joining main task is still bound to the main branch but is **no longer** `adopted_branch` — it receives its predecessor's directory at admission (§10) instead of waiting under the working-directory claim; a row bound before this that still says `adopted_branch` is routed by its role, which wins everywhere. `end_sha` is now written: by the transfer, as the branch tip the predecessor handed over, and by archive, as the tip at that moment, when the task still held the directory and the transfer never stamped it. A main task that receives a directory again — by transfer, or a fresh worktree after a follow-up — has it cleared, so its range runs to the branch while it works (review F4 of #770). `/commits` and `/diff` end a task's range at it (§13.2). Store-side, `claimBranchTx` lets unarchived main-role tasks of one issue share its main branch; every other collision — a task of another issue, a side task, a task with no issue — is still refused. *Amended 2026-10-07 (task 134.14, issue #761):* a **merge-back** task (§5.6) is the one main task that carries `merge_on_conflict`, copied from its side task at creation so deleting the source cannot lose it |
+| `merge_source_task_id` | *Added 2026-10-07 (task 134.14, issue #761, migration 0044).* The side task a **merge-back** task merges into its issue's main worktree (§5.6), and NULL on every other task. `ON DELETE SET NULL`: a merge-back whose source was deleted keeps its row and blocks `merge_source_missing` when it runs; the side branch's name is in its synthesized snapshot. A unique partial index over unsettled, unarchived rows makes at most one merge-back of a source pending at a time. *Amended 2026-10-07 (review F4 of #771):* a row with it set is **outside the store's branch claim**, as an adopted branch is: a merge-back never cuts a branch, and it is inserted inside its side task's `→ done`, so a claim refused there would roll the side task's completion back. A branch another task holds is found at admission instead, which blocks the merge-back with a reason |
 | `github_pull` | *Added 2026-08-29 (task 052).* The pull request this task is linked to (`github_pull_json`, migration 0018); NULL for a task no pull request has ever matched. Unlike `github_issue` it is a **pointer, not a snapshot** — repo, number, `source` (`auto` when the reconciler (§12.3) matched an open pull request's head branch to this task's `branch_name`, `human` when a person said so), `suppressed` (the sticky record of a human unlink, which is why the column needs three states and not two), and `linked_at`. Nothing renderable is stored: title, state, draft and merged status are re-read on every request (§13.2), because they are live by nature and a stored copy of them would read exactly like a current one while being wrong. Deliberately **not** folded into `github_issue_json`, which is defined as "NULL = no linked issue" holding a bare issue. *Amended 2026-08-30 (task 064):* the envelope gains `branch` — this task's `branch_name` **is** the pull request's head branch, because the task was created from it — and `fork`, meaning that head lives in another repository so the branch carries no upstream and nothing can push back. Both are read by admission (§10), by archive (§10, which then touches neither branch leg) and by the retry guard (§18); neither is renderable, so the pointer-not-snapshot rule is untouched. A JSON shape change, not a migration |
 
 
@@ -1363,6 +1364,39 @@ holder (task 134 decision 14). Delete is refused with
 `409 issue_has_live_main_task` while any main-role task of the issue is not
 settled (decision 17.1); settled and archived ones do not hold it, narrowing
 task 130 decision 6.
+*Amended 2026-10-07 (task 134.14, issue #761):* **merge-back tasks exist.**
+When a side task reaches `done` — at the end of its workflow or of a
+follow-up — and its branch has commits past its `base_sha`, the same
+transaction inserts a queued, root, main-role task of the issue at the side
+task's priority, with its `merge_on_conflict`, its agent, model and effort
+overrides, `merge_source_task_id` naming it, `workflow = __merge_back` and a
+synthesized one-step snapshot (§13.2). It is titled `Merge task {side} into
+issue #{issue}`, which is also its merge commit's message. It waits for the
+main worktree like any main task, receives it by transfer or revival (§10),
+and is admitted in §11's order like one — by priority, the side task's, then
+creation time, which is when the side task finished; so at one priority
+merge-backs run in the order their side tasks completed, and a higher-priority
+side task that finished later merges first (*amended 2026-10-07, review F6 of
+#771*). It merges `refs/heads/<side branch>` into it `--no-ff` with fan_out's join
+machinery (§7.6): a conflict under `block` blocks `merge_conflict` with the
+worktree left conflicted for a human, under `agent` a built-in resolver tries
+first. A clean merge runs no check. An empty side branch creates no
+merge-back, as `fan_out` merges nothing for an empty lane (134.14-b), and
+neither does one the issue's main branch already contains (*amended
+2026-10-07, review F5 of #771*: a follow-up that adds nothing after an
+earlier merge-back landed the branch); a
+side task finishing again while its merge-back is still pending creates no
+second one — the pending one merges the branch's tip as it is when it runs —
+and once that one has settled, the next `done` creates a new one. When every
+main task of the issue has been archived, the merge-back is bound to the side
+task's `base_branch` — the main branch it forked from — which becomes the
+main branch again and is checked out fresh; only when that branch is gone
+from git too does it block `merge_target_missing` (134.14-a, narrowing
+decision 7's "the next main task cuts a fresh name" for merge-backs). A
+deleted source or side branch blocks `merge_source_missing`. Delete is also
+refused while a **side** task of the issue is unsettled (134.14-c, amending
+decision 17.1), with the same `409 issue_has_live_main_task`, so a side task
+always has its issue when it reaches `done`.
 
 ## 6. Task lifecycle
 
@@ -1675,6 +1709,25 @@ the issue's main line until a human acts on it** — approves, retries,
 cancels or closes the chat. That is deliberate: the main tasks of one issue
 share one directory, and starting the next on top of a blocked one's
 leftover files would be worse than the wait.
+
+*Added 2026-10-07 (task 134.14, issue #761).* **`cancel` on a merge-back
+blocked `merge_conflict` aborts the merge** (task 134 decision 15): `git merge
+--abort` runs in the issue's main worktree before the transition, so the next
+main task is admitted into a clean directory rather than blocking
+`repo_operation_in_progress` on a half-done merge. `skip` ends a merge-back
+without merging, the ordinary meaning; `retry` after a hand resolution commits
+it, as a `fan_out` join's does. *Amended 2026-10-07 (review F1–F3 of #771):*
+the abort is no longer limited to a `cancel` from `blocked merge_conflict`, and
+no longer runs before the transition. Any merge-back that ends **without its
+merge** — cancelled from any state, including `running` under an `agent`
+resolver and `queued` after a crash mid-merge, or skipped — has a merge still
+in progress in its worktree aborted, asked of git rather than of the block
+reason. A cancel aborts after it has committed (and, for a running task, after
+its actor has exited), so a cancel that loses a race to a `retry` never throws
+a hand resolution away. A skipped merge-back is finished by its next admission
+before any worktree is created or received: it aborts a leftover merge, then
+ends `done` — which is also how `skip` ends one blocked `merge_target_missing`,
+where there is no worktree to create.
 
 ## 7. Step execution semantics
 
@@ -2503,6 +2556,13 @@ does not finish until every lane is merged.
   lane, and its `blocked` state holds the join open like any other. The key is
   off by default. The parent's `children.cost_usd` (§13.2) is what its lanes
   have spent.
+
+*Added 2026-10-07 (task 134.14, issue #761).* The join's machinery — the
+`--no-ff` merge, the `on_conflict` policy and its resolver, the "no conflict
+markers" floor and the crash-safe re-entry below — also serves an issue's
+**merge-back** task (§5.6), which merges a side task's branch rather than a
+lane's. It uses its own commit message, `Merge task {side} into issue
+#{issue}`, so `diff?by=lane` never attributes it to a lane.
 
 ### 7.7 Conditions between steps
 
@@ -6112,6 +6172,11 @@ precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
   adopts the chat's worktree and keeps the chat's base. Every other task with
   `fetch_base_branch: false` still records no `base_sha`.
 
+  *Amended 2026-10-07 (task 134.14, issue #761).* An issue's **merge-back**
+  task (§5.6) takes the fourth mode below and never cuts a branch: with no
+  holder, it checks its branch out fresh whenever the branch exists in git,
+  and blocks `merge_target_missing` at admission when it does not.
+
   *Amended 2026-10-07 (task 134.12, issue #759).* There is now a **fourth
   creation mode**, for an issue's **main task** (`issue_worktree = 'main'`,
   §5.6) not created from a pull request. It is selected by the role and
@@ -8426,7 +8491,9 @@ that follows adopts it and re-runs the merge on it.
 recovered the same way any step is — the attempt is `interrupted` and re-runs
 — with one extra move: if a merge is still in progress in the worktree, it is
 aborted before the lanes are re-merged from the top, which is a no-op for the
-ones already in. Recovery is the **only** path allowed to abort. A human retry
+ones already in. Recovery is the **only** path allowed to abort (*amended
+2026-10-07, task 134.14:* besides a merge-back ending without its
+merge — cancelled or skipped — §6). A human retry
 after a `merge_conflict` block finds the same in-progress merge and must
 commit their resolution instead; the two are told apart by how the previous
 attempt ended, read before the new attempt's row exists.
@@ -8506,6 +8573,11 @@ the successor names the directory, admission returns early as for any task
 with a worktree, and the interrupted step re-runs as above. gc's claim scan
 sees one owner throughout, because the tip read and the transfer happen
 under the worktree claim lock.
+
+*Added 2026-10-07 (task 134.14, issue #761).* A **merge-back** task (§5.6)
+interrupted mid-merge needs no code of its own: its step re-enters exactly as
+a `fan_out` join does — an `interrupted` previous attempt aborts the merge
+and merges again, a `merge_conflict` one commits a human's resolution.
 
 ## 13. HTTP API
 
@@ -9207,6 +9279,8 @@ DELETE /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* Permane
                                         *Amended 2026-10-07 (task 134.12):* `409
                                         issue_has_live_main_task`, `details.task_id`, while a
                                         main-role task of the issue is not settled (§5.6)
+                                        *Amended 2026-10-07 (task 134.14):* and while a
+                                        side-role task is; the message names it as a side task
 GET    /v1/projects/{id}/issue-labels   *Added 2026-10-02 (task 130.3).* The project's label
                                         catalogue, sorted case-insensitively:
                                         [{ name, color?, description?, source, issue_count }]
@@ -10388,6 +10462,16 @@ linked-chat refusals, each a `409` whose `code` names it rather than
 `agent_cannot_resume` (`400`) is unchanged and is also what
 `POST /v1/tasks/{id}/chat` answers for an adapter that cannot resume.
 
+*Added 2026-10-07 (task 134.14, issue #761).* **`__merge_back` is reserved.**
+A merge-back task (§5.6) carries `workflow: "__merge_back"` and a synthesized
+one-step snapshot whose step id is also `__merge_back`. Neither comes from the
+registry, and neither can collide with one: a registry name and an authored
+step id cannot start with an underscore, and an authored document naming the
+step id is refused. `GET /v1/tasks/{id}/workflow` serves the snapshot like any
+other. The step is a `command` step in shape only — the engine routes the
+reserved id to the merge, never to a shell — and its `env` records the side
+branch.
+
 ### 13.3 Events (SSE)
 
 Two kinds of streams:
@@ -11165,8 +11249,11 @@ CREATE TABLE tasks (
   issue_worktree      TEXT CHECK (issue_worktree IN ('main','side')), -- the task's role in its issue's
                                               -- worktrees; NULL = none (task 134.10, migration 0043)
   end_sha             TEXT,                   -- where a main task's work ended (written by 134.12)
-  merge_on_conflict   TEXT CHECK (merge_on_conflict IN ('block','agent')) -- a side task's
-                                              -- merge_back.on_conflict; NULL otherwise
+  merge_on_conflict   TEXT CHECK (merge_on_conflict IN ('block','agent')), -- a side task's
+                                              -- merge_back.on_conflict, and its merge-back's copy;
+                                              -- NULL otherwise
+  merge_source_task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL -- the side task a
+                                              -- merge-back merges (task 134.14, migration 0044)
 );
 CREATE INDEX idx_tasks_sched ON tasks(state, priority DESC, created_at);
 CREATE INDEX idx_tasks_parent ON tasks(parent_task_id, lane_order);  -- §7.6 subtree walks (task 014)
@@ -16290,7 +16377,9 @@ carries the rest.
 | An issue's main branch is checked out in the project's main checkout | *Added 2026-10-07 (task 134.12, issue #759).* Blocked with `issue_branch_checked_out`. Unlike an adopted branch, an issue's main task never runs in the human's checkout (task 134 decision 16): its directory is handed from one main task to the next, which would move it under the human |
 | The worktree an issue's main task is to receive is mid-merge or mid-rebase | *Added 2026-10-07 (task 134.12, issue #759).* Blocked with `repo_operation_in_progress`, naming the operation and the predecessor. Nothing is written: the predecessor keeps the directory. Ordinary uncommitted work is carried over, not refused |
 | `follow_up` or a linked chat on a main task whose worktree moved on | *Added 2026-10-07 (task 134.12, issue #759).* `409 issue_worktree_moved`, `details.holder_task_id` naming the main task that holds the issue's worktree now (task 134 decision 14). The work continues there, or in a new main task |
-| Deleting an issue while one of its main tasks is not settled | *Added 2026-10-07 (task 134.12, issue #759).* `409 issue_has_live_main_task`, `details.task_id` the lowest such task. Settled and archived main tasks do not hold the delete (task 134 decision 17.1) |
+| Deleting an issue while one of its main tasks is not settled | *Added 2026-10-07 (task 134.12, issue #759).* `409 issue_has_live_main_task`, `details.task_id` the lowest such task. Settled and archived main tasks do not hold the delete (task 134 decision 17.1). *Amended 2026-10-07 (task 134.14, issue #761):* an unsettled side task holds it too, named once no main task is live, so a side task always has its issue at `→ done` |
+| A merge-back's side task or side branch is gone | *Added 2026-10-07 (task 134.14, issue #761).* Blocked with `merge_source_missing`: there is nothing to merge. Skip or cancel |
+| A merge-back's main branch is gone | *Added 2026-10-07 (task 134.14, issue #761).* Blocked at admission with `merge_target_missing`: every main task of the issue was archived and the branch the side task forked from was deleted, so there is nothing to revive. Skip or cancel |
 | `branch_override` on a task created from a pull request | *Added 2026-08-30 (task 064).* `409`. Renaming the branch would detach the task from the pull request it was created for, so every later commit would go somewhere that pull request never sees. Such a task cannot have a `branch_exists` block in the first place — its creation mode does not refuse a pre-existing branch (§10) |
 | Configured branch name is not a legal git ref | `400` with `branch_name_invalid`, quoting git's own rules. Never sanitized into something legal — a branch the user did not ask for is worse than a rejection (task 001) |
 | Branch template references a field the task does not set | `400` at creation. Note that `{{.Fields.x}}` errors while `{{ index .Fields "x" }}` renders empty by design (§8.4's `missingkey=error` covers map *field* access only), and `feat/-slug` is a legal ref — so the loud form is the documented default for branch templates |

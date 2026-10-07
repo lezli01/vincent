@@ -900,12 +900,14 @@ func (s *Store) DeleteIssue(ctx context.Context, id int64, by issuestate.Actor) 
 		// 134.12): it works in, or waits for, the issue's main worktree, and
 		// the issue is what names that line of work. Settled and archived
 		// main tasks are history and do not hold the delete.
-		live, err := liveIssueMainTaskTx(ctx, tx, id)
+		// An unsettled side task holds it too (134.14-c): its `→ done`
+		// inserts a merge-back on the issue, which must still exist then.
+		live, side, err := liveIssueRoleTaskTx(ctx, tx, id)
 		if err != nil {
 			return nil, err
 		}
 		if live != 0 {
-			return nil, &IssueHasLiveMainTaskError{IssueID: id, TaskID: live}
+			return nil, &IssueHasLiveMainTaskError{IssueID: id, TaskID: live, Side: side}
 		}
 		// The FK's SET NULL would do this too; it is spelled out because the
 		// tombstone is the point, not a side effect.

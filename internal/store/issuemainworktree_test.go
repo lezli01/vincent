@@ -250,8 +250,96 @@ func TestDeleteIssueRefusedWhileAMainTaskIsLive(t *testing.T) {
 
 	moveTask(t, s, live, TaskAborted)
 	moveTask(t, s, later, TaskAborted)
+	// An unsettled side task refuses it too (134.14-c): its → done inserts
+	// a merge-back on the issue. The message names it as a side task.
+	err := s.DeleteIssue(ctx, is.ID, issuestate.Human)
+	if e, ok := AsIssueHasLiveMainTask(err); !ok || e.TaskID != side.ID || !e.Side ||
+		!strings.Contains(e.Error(), "side task") {
+		t.Fatalf("delete with a live side task: err = %v, want IssueHasLiveMainTaskError naming side task %d",
+			err, side.ID)
+	}
+	moveTask(t, s, side, TaskAborted)
 	if err := s.DeleteIssue(ctx, is.ID, issuestate.Human); err != nil {
-		t.Fatalf("delete with every main task settled: %v", err)
+		t.Fatalf("delete with every main and side task settled: %v", err)
+	}
+}
+
+// TestSideTaskDoneInsertsOneMergeBack is task 134.14's creation rule: a side
+// task's → done carrying a merge-back inserts it in the same transaction, as
+// a queued main task of the issue with the side task's policy; a second →
+// done while that one is pending inserts nothing; once it has settled, the
+// next one does. Any other transition ignores the request.
+func TestSideTaskDoneInsertsOneMergeBack(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	is := testIssue(t, s, p.ID, "the issue")
+	main := newMainTask(p.ID, is.ID, "main")
+	mustCreate(t, s, main)
+	side := newTask(p.ID, "side", TaskQueued)
+	side.IssueID, side.IssueWorktree, side.MergeOnConflict = &is.ID, IssueWorktreeSide, MergeOnConflictAgent
+	side.Priority = 3
+	mustCreate(t, s, side)
+
+	mergeBacks := func() []Task {
+		t.Helper()
+		all, err := s.ListTasks(ctx, TaskFilter{ProjectID: p.ID, Archived: ArchivedAll})
+		if err != nil {
+			t.Fatalf("ListTasks: %v", err)
+		}
+		var out []Task
+		for _, task := range all {
+			if task.MergeSourceTaskID != nil && *task.MergeSourceTaskID == side.ID {
+				out = append(out, task)
+			}
+		}
+		return out
+	}
+	finish := func(from TaskState) {
+		t.Helper()
+		mb := &Task{Title: "Merge", WorkflowName: "__merge_back", WorkflowSnapshot: "name: x"}
+		if _, _, err := s.TransitionTask(ctx, side.ID, from, TaskDone, TaskChange{MergeBack: mb}); err != nil {
+			t.Fatalf("transition side → done: %v", err)
+		}
+	}
+
+	moveTask(t, s, side, TaskRunning)
+	if _, _, err := s.TransitionTask(ctx, side.ID, TaskRunning, TaskBlocked,
+		TaskChange{MergeBack: &Task{Title: "Merge", WorkflowSnapshot: "name: x"}}); err != nil {
+		t.Fatalf("transition side → blocked: %v", err)
+	}
+	if got := mergeBacks(); len(got) != 0 {
+		t.Fatalf("a blocked side task inserted %d merge-backs, want none", len(got))
+	}
+	side.State = TaskBlocked
+	moveTask(t, s, side, TaskQueued, TaskRunning)
+	finish(TaskRunning)
+	got := mergeBacks()
+	if len(got) != 1 {
+		t.Fatalf("side → done inserted %d merge-backs, want 1", len(got))
+	}
+	mb := got[0]
+	if mb.State != TaskQueued || mb.IssueWorktree != IssueWorktreeMain || mb.IssueID == nil || *mb.IssueID != is.ID ||
+		mb.MergeOnConflict != MergeOnConflictAgent || mb.Priority != 3 || mb.BranchName != main.BranchName ||
+		mb.ParentTaskID != nil {
+		t.Errorf("merge-back = %+v, want a queued root main task of the issue on %q with the side's policy",
+			mb, main.BranchName)
+	}
+
+	// A follow-up finishing the side task again while the merge-back is
+	// still queued adds nothing.
+	side.State = TaskDone
+	moveTask(t, s, side, TaskRunning)
+	finish(TaskRunning)
+	if got := mergeBacks(); len(got) != 1 {
+		t.Fatalf("second → done with one pending inserted more: %d merge-backs, want 1", len(got))
+	}
+	moveTask(t, s, &mb, TaskRunning, TaskDone)
+	side.State = TaskDone
+	moveTask(t, s, side, TaskRunning)
+	finish(TaskRunning)
+	if got := mergeBacks(); len(got) != 2 {
+		t.Fatalf("→ done after the first merge-back settled: %d merge-backs, want 2", len(got))
 	}
 }
 

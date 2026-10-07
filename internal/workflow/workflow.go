@@ -827,6 +827,12 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 		add(base+".derived_from", `unknown field "derived_from": it is written into a `+
 			"task's snapshot when a fan_out derives its lanes, and cannot be authored")
 	}
+	// The merge-back's reserved id parses back out of its synthesized
+	// snapshot (task 134.14) and is refused anywhere a person wrote it, the
+	// way the slug rule refuses every other leading underscore.
+	if opts.Authored && step.ID == MergeBackStepID {
+		add(base+".id", "id %q must be a slug (lowercase letters, digits, '-', '_', '.')", step.ID)
+	}
 	switch step.Type {
 	case "":
 		add(base+".type", "type is required (one of %s)", stepTypeList)
@@ -1287,7 +1293,7 @@ func checkStepID(step Step, base string, ids map[string]string, add func(string,
 	switch {
 	case step.ID == "":
 		add(base+".id", "id is required")
-	case !isSlug(step.ID):
+	case !isSlug(step.ID) && step.ID != MergeBackStepID:
 		add(base+".id", "id %q must be a slug (lowercase letters, digits, '-', '_', '.')", step.ID)
 	default:
 		if prev, dup := ids[step.ID]; dup {
