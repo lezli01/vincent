@@ -1373,7 +1373,11 @@ overrides, `merge_source_task_id` naming it, `workflow = __merge_back` and a
 synthesized one-step snapshot (§13.2). It is titled `Merge task {side} into
 issue #{issue}`, which is also its merge commit's message. It waits for the
 main worktree like any main task, receives it by transfer or revival (§10),
-and merges `refs/heads/<side branch>` into it `--no-ff` with fan_out's join
+and is admitted in §11's order like one — by priority, the side task's, then
+creation time, which is when the side task finished; so at one priority
+merge-backs run in the order their side tasks completed, and a higher-priority
+side task that finished later merges first (*amended 2026-10-07, review F6 of
+#771*). It merges `refs/heads/<side branch>` into it `--no-ff` with fan_out's join
 machinery (§7.6): a conflict under `block` blocks `merge_conflict` with the
 worktree left conflicted for a human, under `agent` a built-in resolver tries
 first. A clean merge runs no check. An empty side branch creates no

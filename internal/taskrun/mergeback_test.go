@@ -288,6 +288,110 @@ func TestCancelAbortsARunningMergeBackResolver(t *testing.T) {
 	}
 }
 
+// TestMergeBackInterruptedMidMergeAbortsAndReMerges (review F6 of #771) is
+// §12.4 for a merge-back: a crash leaves the merge in progress in the issue's
+// main worktree and the attempt `interrupted`, and re-admission aborts that
+// merge and merges again from the top — never committing it as though a
+// human had resolved it, which resumedFromConflict tells apart from the
+// attempt's history.
+func TestMergeBackInterruptedMidMergeAbortsAndReMerges(t *testing.T) {
+	h := newEngineHarness(t)
+	f := newMergeBackFixture(t, h, store.MergeOnConflictBlock)
+	holder := h.mainTask(t, f.issue, "holder", gatedSnapshot, nil)
+	h.waitForState(t, holder.ID, store.TaskAwaitingGate)
+	commitFile(t, f.side.WorktreePath, "side.txt", "side work\n")
+	h.finishSide(t, f.side)
+	mb := h.oneMergeBack(t, f.side.ID)
+	if _, err := h.runner.Pause(t.Context(), mb.ID); err != nil {
+		t.Fatalf("Pause(merge-back): %v", err)
+	}
+	if _, err := h.runner.Approve(t.Context(), holder.ID); err != nil {
+		t.Fatalf("Approve(holder): %v", err)
+	}
+	h.waitForState(t, holder.ID, store.TaskDone)
+	h.waitForActorExit(t, holder.ID)
+
+	// The state a crash mid-merge leaves: the merge-back holds the main
+	// worktree, a merge is in progress there, and its attempt is
+	// interrupted. --no-commit stands in for the merge the crash cut short;
+	// committing it would land git's default message, not the merge-back's.
+	dir := h.task(t, holder.ID).WorktreePath
+	tip := testrepo.Run(t, dir, "rev-parse", "HEAD")
+	if err := h.store.TransferIssueWorktree(t.Context(), holder.ID, mb.ID, dir, tip); err != nil {
+		t.Fatalf("TransferIssueWorktree: %v", err)
+	}
+	testrepo.Run(t, dir, "merge", "--no-ff", "--no-commit", "refs/heads/"+f.side.BranchName)
+	run := &store.StepRun{
+		TaskID: mb.ID, StepIndex: 0, StepID: workflow.MergeBackStepID, StepType: workflow.StepCommand,
+		Attempt: 1, State: store.StepRunning,
+	}
+	if err := h.store.CreateStepRun(t.Context(), run); err != nil {
+		t.Fatalf("CreateStepRun: %v", err)
+	}
+	if _, err := h.store.TerminalizeOpenStepRuns(t.Context(), mb.ID, store.StepInterrupted, ReasonInterrupted); err != nil {
+		t.Fatalf("TerminalizeOpenStepRuns: %v", err)
+	}
+
+	if _, err := h.runner.Resume(t.Context(), mb.ID); err != nil {
+		t.Fatalf("Resume(merge-back): %v", err)
+	}
+	done := h.waitForState(t, mb.ID, store.TaskDone, store.TaskBlocked)
+	if done.State != store.TaskDone {
+		t.Fatalf("merge-back = %s (%s: %s), want done", done.State, done.BlockReason, done.BlockDetail)
+	}
+	if subject := testrepo.Run(t, h.repo, "log", "-1", "--format=%s", f.main.BranchName); subject != mb.Title {
+		t.Errorf("main branch head = %q, want the re-run merge %q", subject, mb.Title)
+	}
+	if parents := testrepo.Run(t, h.repo, "log", "-1", "--format=%P", f.main.BranchName); len(strings.Fields(parents)) != 2 {
+		t.Errorf("main branch head has parents %q, want one --no-ff merge", parents)
+	}
+	if !h.fileOnBranch(t, f.main.BranchName, "side.txt") {
+		t.Error("side.txt did not reach the issue's main branch")
+	}
+	runs := h.stepRuns(t, mb.ID)
+	if len(runs) != 2 || runs[0].State != store.StepInterrupted || runs[1].State != store.StepSucceeded {
+		t.Errorf("merge-back step runs = %+v, want interrupted then succeeded", runs)
+	}
+}
+
+// TestMergeBacksRunInTheOrderTheirSideTasksFinished (review F6 of #771): at
+// one priority, merge-backs are admitted oldest first, and each is created
+// when its side task finishes, so two side tasks that finish while the main
+// worktree is occupied merge in the order they finished — the second created
+// first merges second here.
+func TestMergeBacksRunInTheOrderTheirSideTasksFinished(t *testing.T) {
+	h := newEngineHarness(t)
+	f := newMergeBackFixture(t, h, store.MergeOnConflictBlock)
+	second := h.createTaskWith(t, gatedSnapshot, func(task *store.Task) {
+		task.Title, task.IssueID = "second side", &f.issue
+		task.IssueWorktree, task.MergeOnConflict = store.IssueWorktreeSide, store.MergeOnConflictBlock
+	})
+	second = h.waitForState(t, second.ID, store.TaskAwaitingGate)
+	holder := h.mainTask(t, f.issue, "holder", gatedSnapshot, nil)
+	h.waitForState(t, holder.ID, store.TaskAwaitingGate)
+
+	// The side task created second finishes first.
+	commitFile(t, second.WorktreePath, "second.txt", "second\n")
+	h.finishSide(t, second)
+	commitFile(t, f.side.WorktreePath, "first.txt", "first\n")
+	h.finishSide(t, f.side)
+	early, late := h.oneMergeBack(t, second.ID), h.oneMergeBack(t, f.side.ID)
+
+	if _, err := h.runner.Approve(t.Context(), holder.ID); err != nil {
+		t.Fatalf("Approve(holder): %v", err)
+	}
+	for _, mb := range []store.Task{early, late} {
+		if got := h.waitForState(t, mb.ID, store.TaskDone, store.TaskBlocked); got.State != store.TaskDone {
+			t.Fatalf("merge-back %d = %s (%s), want done", mb.ID, got.State, got.BlockReason)
+		}
+	}
+	got := strings.Split(testrepo.Run(t, h.repo, "log", "--merges", "--format=%s", f.main.BranchName), "\n")
+	want := []string{late.Title, early.Title}
+	if len(got) < 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("merges on the main branch, newest first = %q, want %q", got, want)
+	}
+}
+
 // TestDeletedSourceBlocksMergeSourceMissing: the merge-back queues behind
 // the main worktree's occupant, and the source row deleted meanwhile blocks
 // it once it is admitted.

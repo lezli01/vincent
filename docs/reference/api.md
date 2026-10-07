@@ -2709,8 +2709,10 @@ When a side task finishes `done` with commits of its own, vincent creates a
 **merge-back** task for it in the same moment: a queued main task of the
 issue, titled `Merge task {side} into issue #{issue}`, with
 `workflow: "__merge_back"` and the side task's priority, `on_conflict` and
-agent, model and effort. It waits for the main worktree like any main task,
-then merges the side task's branch into the main branch with `--no-ff` and
+agent, model and effort. It waits for the main worktree like any main task
+and is admitted in the usual order — priority, then creation, which is when
+the side task finished — so at one priority merge-backs run in the order
+their side tasks completed. Then it merges the side task's branch into the main branch with `--no-ff` and
 its title as the commit message. A clean merge ends `done`. On a conflict,
 `block` leaves the main worktree mid-merge and blocks `merge_conflict`:
 resolve and stage the files there, then retry, or cancel — which runs
