@@ -6102,6 +6102,12 @@ precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
     would cost a human a retry for nothing. A chat is created synchronously
     and cannot wait, so `POST /v1/chats` answers `409`. The claim is held from
     the moment a task holds a slot until its row stops naming the directory.
+    *Amended 2026-10-07 (issue #749):* the scheduler's walk also counts its
+    own admissions against the claim, keyed by project and branch exactly as
+    the stored count is. The count in the candidate rows predates the walk,
+    so two queued tasks on one free branch were both admitted in a single
+    walk — and on a branch checked out in the main checkout, both worked in
+    the project path.
   - **`base_sha` is the adopted branch's tip at admission** (§5.3), and no
     base refresh is recorded: the fetch that ran was the branch's, not the
     base's. `base_branch` stays on the row for the fields that read it.

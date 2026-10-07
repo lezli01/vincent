@@ -53,6 +53,14 @@ Settled with the author on 2026-09-21, each with the alternative it beat.
    that window reached git and blocked `adopt_branch_checked_out` — found by
    `scripts/125-gate.sh` scenario 4 on its first run.
 
+   *Amended 2026-10-07 (issue #749):* the walk keeps a per-walk tally of the
+   claims it has just granted, keyed `(project_id, branch_name)` as the
+   query's count is, beside the per-project tally the cap uses. The query's
+   count predates the walk, so two queued tasks on one free branch both read
+   zero and were both admitted; the gate staggers its creates and never hit
+   it. Only adopted tasks enter the tally: `claimBranchTx` keeps every other
+   task's branch unique already.
+
 3. **The pull-request mode keeps `pull_branch_checked_out`, and §10 says why.**
    Task 064 decision 4 is not reopened. A pull-request task *fast-forwards* the
    head onto whatever holds it, so adopting the human's checkout would move
