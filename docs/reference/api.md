@@ -2720,7 +2720,9 @@ the block when it fails or leaves conflict markers. `skip` ends it without
 merging, aborting a conflicted merge it left behind; so does `cancel`, from
 any state, the resolver's run included.
 
-- A side task with no commits past its `base_sha` creates no merge-back.
+- A side task with no commits past its `base_sha` creates no merge-back, and
+  neither does one whose branch is already on the main branch — a follow-up
+  that added nothing after an earlier merge-back.
 - While a side task's merge-back is still pending, finishing the side task
   again — a follow-up — creates no second one; the pending one merges the
   branch as it is when it runs. Once it has finished, the next `done` creates

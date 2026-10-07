@@ -434,6 +434,33 @@ func TestFollowUpOnAMergedSideTaskMergesAgain(t *testing.T) {
 	}
 }
 
+// TestFollowUpAddingNothingToAMergedSideTaskCreatesNoMergeBack (review F5 of
+// #771): once a side branch is on the issue's main branch, a follow-up that
+// commits nothing finishes `done` again without queueing a merge-back that
+// would only take a turn in the main worktree to say "Already up to date".
+func TestFollowUpAddingNothingToAMergedSideTaskCreatesNoMergeBack(t *testing.T) {
+	h := newEngineHarness(t)
+	f := newMergeBackFixture(t, h, store.MergeOnConflictBlock)
+	commitFile(t, f.side.WorktreePath, "side.txt", "side work\n")
+	h.finishSide(t, f.side)
+	first := h.oneMergeBack(t, f.side.ID)
+	if got := h.waitForState(t, first.ID, store.TaskDone, store.TaskBlocked); got.State != store.TaskDone {
+		t.Fatalf("first merge-back = %s (%s), want done", got.State, got.BlockReason)
+	}
+	h.waitForActorExit(t, f.side.ID)
+	if _, err := h.runner.FollowUp(t.Context(), f.side.ID, agentFollowUp(t, "nothing to change")); err != nil {
+		t.Fatalf("FollowUp: %v", err)
+	}
+	wait.Until(t, "the side task's follow-up to finish", func() bool {
+		got := h.task(t, f.side.ID)
+		return got.State == store.TaskDone && (got.PendingFollowUp == nil || got.PendingFollowUp.Empty())
+	})
+	h.waitForActorExit(t, f.side.ID)
+	if mbs := h.mergeBacks(t, f.side.ID); len(mbs) != 1 {
+		t.Fatalf("task %d has %d merge-back tasks after an empty follow-up, want 1", f.side.ID, len(mbs))
+	}
+}
+
 func (h *engineHarness) waitForMergeBacks(t *testing.T, source int64, n int) {
 	t.Helper()
 	wait.Until(t, "the side task's merge-back tasks", func() bool { return len(h.mergeBacks(t, source)) >= n })

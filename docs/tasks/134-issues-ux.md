@@ -439,7 +439,9 @@ merge-backs only.
 Settled by the author. A side branch with no commits past `base_sha` at
 `→ done` inserts no merge-back, as `fan_out` merges nothing for an empty
 lane. A later follow-up that adds commits creates one when it reaches `done`
-again. The check is git work, so the actor does it before the transition and
+again. *Amended 2026-10-07 (review F5 of #771):* a side branch already an
+ancestor of the issue's main branch — merged back earlier, and finished again
+by a follow-up that added nothing — inserts none either. The check is git work, so the actor does it before the transition and
 hands the store the task to insert; SQLite's write lock is never held across
 a subprocess.
 

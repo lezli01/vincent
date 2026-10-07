@@ -113,6 +113,28 @@ func (m *Manager) Merged(ctx context.Context, worktreePath, branch string) (bool
 	return true, nil
 }
 
+// BranchMergedInto reports whether local branch is already an ancestor of
+// local branch into, both read in the project's repository — Merged's
+// question asked of two branches rather than of a worktree's HEAD. A side
+// task's `→ done` asks it of the issue's main branch, so a side branch merged
+// back already creates no second merge-back (review F5 of #771).
+func (m *Manager) BranchMergedInto(ctx context.Context, projectPath, branch, into string) (bool, error) {
+	if branch == "" || into == "" {
+		return false, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, gitx.QueryTimeout)
+	defer cancel()
+	if _, err := m.git.Run(ctx, projectPath, "merge-base", "--is-ancestor",
+		"refs/heads/"+branch, "refs/heads/"+into); err != nil {
+		var ge *gitx.Error
+		if errors.As(err, &ge) && ge.ExitCode == 1 {
+			return false, nil
+		}
+		return false, fmt.Errorf("check whether %s is merged into %s: %w", branch, into, err)
+	}
+	return true, nil
+}
+
 // InMerge reports whether a merge is in progress in the worktree — MERGE_HEAD
 // exists. It is the fact both re-entry paths turn on (decision 9), read from
 // git rather than from a persisted cursor, because git holds it

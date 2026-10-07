@@ -1377,7 +1377,10 @@ and merges `refs/heads/<side branch>` into it `--no-ff` with fan_out's join
 machinery (§7.6): a conflict under `block` blocks `merge_conflict` with the
 worktree left conflicted for a human, under `agent` a built-in resolver tries
 first. A clean merge runs no check. An empty side branch creates no
-merge-back, as `fan_out` merges nothing for an empty lane (134.14-b); a
+merge-back, as `fan_out` merges nothing for an empty lane (134.14-b), and
+neither does one the issue's main branch already contains (*amended
+2026-10-07, review F5 of #771*: a follow-up that adds nothing after an
+earlier merge-back landed the branch); a
 side task finishing again while its merge-back is still pending creates no
 second one — the pending one merges the branch's tip as it is when it runs —
 and once that one has settled, the next `done` creates a new one. When every

@@ -51,7 +51,7 @@ func isMergeBack(task *store.Task) bool {
 // one.
 //
 // An empty side branch merges nothing, so it creates nothing (134.14-b), as
-// fan_out merges nothing for an empty lane. A branch git cannot resolve
+// fan_out merges nothing for an empty lane; nor does one already merged. A branch git cannot resolve
 // still creates one: the merge-back is what says so, by blocking
 // merge_source_missing where a human sees it.
 func (r *Runner) mergeBackFor(ctx context.Context, task *store.Task, log *slog.Logger) *store.Task {
@@ -71,6 +71,22 @@ func (r *Runner) mergeBackFor(ctx context.Context, task *store.Task, log *slog.L
 	if err != nil {
 		log.Warn("merge-back: side branch tip unreadable; the merge-back will say so",
 			"branch", task.BranchName, "error", err)
+	}
+	// Nor does a side branch the issue's main branch already contains — a
+	// follow-up that committed nothing, or one abandoned with `skip`, after
+	// an earlier merge-back landed it (134.14-b, review F5 of #771). The
+	// side task's base is that main branch (134.13). An unreadable answer
+	// still creates one: the merge is then a harmless "Already up to date".
+	if err == nil {
+		merged, mErr := r.deps.Worktrees.BranchMergedInto(ctx, project.Path, task.BranchName, task.BaseBranch)
+		if mErr != nil {
+			log.Warn("merge-back: could not tell whether the side branch is merged", "error", mErr)
+		}
+		if merged {
+			log.Info("side branch is already on the issue's main branch; no merge-back",
+				"branch", task.BranchName, "main", task.BaseBranch)
+			return nil
+		}
 	}
 	issueID := *task.IssueID
 	title := workflow.MergeBackTitle(task.ID, issueID)
