@@ -27,7 +27,7 @@ type IssueHasLiveMainTaskError struct {
 }
 
 func (e *IssueHasLiveMainTaskError) Error() string {
-	return fmt.Sprintf("issue %d has main task %d still in progress; finish, cancel or archive it first",
+	return fmt.Sprintf("issue %d has main task %d still in progress; finish or cancel it first",
 		e.IssueID, e.TaskID)
 }
 

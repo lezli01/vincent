@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/lezli01/vincent/internal/issuestate"
@@ -235,6 +236,12 @@ func TestDeleteIssueRefusedWhileAMainTaskIsLive(t *testing.T) {
 		if !ok || e.IssueID != is.ID || e.TaskID != live.ID {
 			t.Fatalf("delete with main task %s: err = %v, want IssueHasLiveMainTaskError naming task %d",
 				live.State, err, live.ID)
+		}
+		// §6 archives only a settled task, so archive is never the way out
+		// of this refusal and the message must not offer it (review F6 of
+		// #770).
+		if msg := e.Error(); strings.Contains(msg, "archive") || !strings.Contains(msg, "cancel") {
+			t.Errorf("refusal message %q, want it to offer finishing or cancelling, never archiving", msg)
 		}
 		if _, err := s.GetIssue(ctx, is.ID); err != nil {
 			t.Fatalf("issue gone after a refused delete: %v", err)

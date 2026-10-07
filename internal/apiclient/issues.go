@@ -343,8 +343,8 @@ func (c *Client) DeleteIssue(ctx context.Context, id int64) error {
 
 // IssueHasLiveMainTask reports whether err is an issue delete refused
 // because one of its main tasks has not settled (409
-// `issue_has_live_main_task`, task 134.12), and if so which task: finish,
-// cancel or archive it, then delete again.
+// `issue_has_live_main_task`, task 134.12), and if so which task: finish
+// or cancel it, then delete again.
 func IssueHasLiveMainTask(err error) (taskID int64, ok bool) {
 	return conflictID(err, "issue_has_live_main_task", "task_id")
 }

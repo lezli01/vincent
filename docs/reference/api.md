@@ -78,7 +78,7 @@ each:
 | `task_has_no_worktree` | A chat cannot be opened on this task: it never got a worktree, and vincent does not create one for a chat. Also a chat on a task that has lost its worktree, asked for its [skills](#skills) | `state`, `action`; `task_id` from the skills route |
 | `chat_linked_to_task` | Archive, hand-off, or a delete with `delete_branch=true` on a chat linked to a task. The worktree and branch are that task's | `task_id`, `state`, `action` |
 | `issue_worktree_moved` | A `follow_up` or chat on an issue's main task that finished and handed the issue's worktree to a later main task. Continue in that task, or start a new main task | `holder_task_id`, `state` |
-| `issue_has_live_main_task` | An issue delete was refused because one of the issue's main tasks has not finished. Finish, cancel or archive it, then delete again | `task_id` |
+| `issue_has_live_main_task` | An issue delete was refused because one of the issue's main tasks has not finished. Finish or cancel it, then delete again | `task_id` |
 
 ## Request bodies
 

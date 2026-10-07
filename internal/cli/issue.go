@@ -603,7 +603,7 @@ func newIssueDeleteCmd() *cobra.Command {
 							_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Error: issue %d: %s\n", id, apiMessage(err))
 							if live, ok := apiclient.IssueHasLiveMainTask(err); ok {
 								_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
-									"  main task %d has not settled: finish, cancel or archive it first "+
+									"  main task %d has not settled: finish or cancel it first "+
 										"(`vincent task cancel %d`)\n", live, live)
 							}
 						}
