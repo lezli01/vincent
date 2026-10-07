@@ -481,6 +481,28 @@ Taken from the code while building 134.14, without author input:
   checklist line to add: merge-back is not a feature a workflow author can
   use.
 
+### 134.17-a. The gate's crash is the conflicted merge left in place (2026-10-07, 134.17)
+
+Settled by the author while scoping #764. `scripts/134-gate.sh` scenario 8
+follows m6 scenario 6's shape: the daemon is killed while a merge-back is
+`blocked` `merge_conflict` with the merge in progress in the issue's main
+worktree and a main task queued behind it. After the restart the merge-back
+is still blocked and the main task still queued; a hand resolution and
+`retry` end it `done` with exactly one merge commit. A daemon killed while
+`git merge` itself runs is not driven from the gate — the merge takes under a
+second, nothing holds it, and a git hook that did would leave an orphaned git
+process racing the restart on all three platforms. That abort-and-re-merge
+path stays proven by `TestMergeBackInterruptedMidMergeAbortsAndReMerges`
+(`internal/taskrun/mergeback_test.go`).
+
+### 134.17-b. `end_sha` is asserted through `/commits` (2026-10-07, 134.17)
+
+Settled by the author while scoping #764. The gate proves `end_sha` by the
+predecessor's `GET /v1/tasks/{id}/commits` ending at the tip it handed over —
+its successor's `base_sha` — and listing none of the successor's commits
+after the successor commits on the shared branch. `end_sha` is **not** added
+to the task DTO; no product code changes for the gate.
+
 ### 20. `tasks.archived_from` records the state an archive left (2026-10-07, 134.3)
 
 Decision 2 needs to know whether an archived task was `done` or `aborted`.
@@ -668,9 +690,11 @@ sections and public pages its code makes true, in its own pull request.
 - [ ] **134.16** ([#763](https://github.com/lezli01/vincent/issues/763)) The
   occupant and merge-backs on cards and the detail, and the side-worktree
   rows in the new-task form. Depends: 134.8, 134.15.
-- [ ] **134.17** ([#764](https://github.com/lezli01/vincent/issues/764)) An
+- [x] **134.17** ([#764](https://github.com/lezli01/vincent/issues/764)) An
   end-to-end gate for the occupant rule and both merge modes.
-  Depends: 134.14.
+  Depends: 134.14. `scripts/134-gate.sh`, nine scenarios over curl and the
+  issue branch's git log, wired as gate group 4 in `ci.yml`, with its record
+  in `docs/gates/134-issue-worktrees.md` (decisions 134.17-a, 134.17-b).
 - [ ] **134.18** ([#765](https://github.com/lezli01/vincent/issues/765)) The
   user guide for main worktrees, side tasks and merge-back. Depends: 134.15.
 - [ ] **134.19** ([#766](https://github.com/lezli01/vincent/issues/766)) Seeds
