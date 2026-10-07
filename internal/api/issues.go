@@ -135,10 +135,21 @@ type issueRowBody struct {
 	// them is waiting on a person (decision 3), closed issues included.
 	Lane      issuestate.Lane `json:"lane"`
 	Attention bool            `json:"attention"`
-	Version   int64           `json:"version"`
-	CreatedAt time.Time       `json:"created_at"`
-	UpdatedAt time.Time       `json:"updated_at"`
-	ClosedAt  *time.Time      `json:"closed_at,omitempty"`
+	// MainWorktree is the issue's main branch and the main-role task
+	// occupying it (§5.6, task 134 decisions 2, 8), derived in the list's
+	// own query. Omitted while the issue has no main branch.
+	MainWorktree *issueMainWorktreeBody `json:"main_worktree,omitempty"`
+	Version      int64                  `json:"version"`
+	CreatedAt    time.Time              `json:"created_at"`
+	UpdatedAt    time.Time              `json:"updated_at"`
+	ClosedAt     *time.Time             `json:"closed_at,omitempty"`
+}
+
+// issueMainWorktreeBody is an issue's main worktree: its branch, and the
+// admitted, unsettled main task holding it — null when it is free.
+type issueMainWorktreeBody struct {
+	Branch         string `json:"branch"`
+	OccupantTaskID *int64 `json:"occupant_task_id"`
 }
 
 // issueTasksBody is the root tasks an issue started.
@@ -193,6 +204,9 @@ func renderIssueRow(iss *store.Issue) issueRowBody {
 		CreatedAt:       iss.CreatedAt,
 		UpdatedAt:       iss.UpdatedAt,
 		ClosedAt:        iss.ClosedAt,
+	}
+	if mw := iss.MainWorktree; mw.Branch != "" {
+		row.MainWorktree = &issueMainWorktreeBody{Branch: mw.Branch, OccupantTaskID: mw.OccupantTaskID}
 	}
 	if issues.Mirrored(iss) {
 		r := iss.Remote

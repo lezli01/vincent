@@ -87,6 +87,10 @@ type Issue struct {
 	// (taskstate.NeedsHuman, decision 3). It is computed for a closed issue
 	// too: closing does not answer a task's question.
 	Attention bool
+	// MainWorktree is the issue's main branch and its occupant (task 134
+	// decisions 2, 8), derived from its main-role tasks in the same query
+	// and never stored (task 130 decision 3).
+	MainWorktree IssueMainWorktree
 }
 
 // IssueRemote is an imported issue's link to its source (decision 2). A nil
@@ -181,10 +185,10 @@ type issueQuerier interface {
 }
 
 // issueSelect reads an issue with its live remote row and its derived
-// counts, lane and attention (issuelane.go). The remote join is on issue_id,
-// so a tombstone never joins. Its bind arguments — the task-state sets the
-// derived columns use — come first, from issueSelectArgs, which is the one
-// place their order is written.
+// counts, lane, attention (issuelane.go) and main worktree (tasks.go). The
+// remote join is on issue_id, so a tombstone never joins. Its bind
+// arguments — the task-state sets the derived columns use — come first, from
+// issueSelectArgs, which is the one place their order is written.
 func issueSelect() string {
 	return `SELECT i.id, i.project_id, i.title, i.body, i.state, i.close_reason, i.duplicate_of_issue_id,
 		i.kind, i.priority, i.author, i.parent_issue_id, i.created_by_task_id, i.version, i.created_at,
@@ -193,17 +197,21 @@ func issueSelect() string {
 		` + activeExpr().sql + `,
 		` + laneExpr().sql + `,
 		` + attentionExpr().sql + `,
+		(` + issueMainBranchSQL("i.id") + `),
+		(` + issueMainOccupantSQL("i.id") + `),
 		r.id, r.issue_id, r.project_id, r.provider, r.remote_key, r.repo, r.number, r.url,
 		r.remote_json, r.remote_updated_at, r.synced_at, r.suppressed, r.remote_status
 	FROM issues i LEFT JOIN issue_remotes r ON r.issue_id = i.id`
 }
 
+// The derived columns bind in text order: Active, Lane and Attention's
+// fragments, then the main worktree occupant's settled states.
 func issueSelectArgs() []any {
 	var args []any
 	for _, f := range []sqlFrag{activeExpr(), laneExpr(), attentionExpr()} {
 		args = append(args, f.args...)
 	}
-	return args
+	return append(args, settledTaskStates()...)
 }
 
 func scanIssue(r rowScanner) (*Issue, error) {
@@ -215,6 +223,8 @@ func scanIssue(r rowScanner) (*Issue, error) {
 		created, updated                    string
 		active, attention                   bool
 		lane                                string
+		mainBranch                          sql.NullString
+		mainOccupant                        sql.NullInt64
 		rID, rIssueID, rProjectID, rNumber  sql.NullInt64
 		rProvider, rKey, rRepo, rURL, rJSON sql.NullString
 		rRemoteUpdated, rSynced             sql.NullString
@@ -223,7 +233,7 @@ func scanIssue(r rowScanner) (*Issue, error) {
 	)
 	if err := r.Scan(&iss.ID, &iss.ProjectID, &iss.Title, &iss.Body, &state, &closeReason, &dupOf,
 		&iss.Kind, &iss.Priority, &iss.Author, &parent, &createdBy, &iss.Version, &created, &updated, &closedAt,
-		&iss.TaskCount, &active, &lane, &attention,
+		&iss.TaskCount, &active, &lane, &attention, &mainBranch, &mainOccupant,
 		&rID, &rIssueID, &rProjectID, &rProvider, &rKey, &rRepo, &rNumber, &rURL,
 		&rJSON, &rRemoteUpdated, &rSynced, &rSuppressed, &rStatus); err != nil {
 		return nil, err
@@ -233,6 +243,11 @@ func scanIssue(r rowScanner) (*Issue, error) {
 	iss.Active = active
 	iss.Lane = issuestate.Lane(lane)
 	iss.Attention = attention
+	iss.MainWorktree.Branch = mainBranch.String
+	if mainOccupant.Valid {
+		id := mainOccupant.Int64
+		iss.MainWorktree.OccupantTaskID = &id
+	}
 	if dupOf.Valid {
 		iss.DuplicateOfIssueID = &dupOf.Int64
 	}

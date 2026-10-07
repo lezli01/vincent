@@ -250,7 +250,40 @@ type Task struct {
 	// stamp it. Store-only: no wire DTO repeats it; #751's lane SQL is the
 	// consumer.
 	ArchivedFrom TaskState
+	// IssueWorktree is the task's role in its issue's worktrees (§5.3, §5.6,
+	// task 134 decisions 7, 9; migration 0043): IssueWorktreeMain for a root
+	// task working on the issue's main branch, IssueWorktreeSide for one that
+	// asked for its own worktree with `merge_back`, and "" for every task
+	// with no issue, every fan-out lane, and every row older than 0043.
+	IssueWorktree string
+	// EndSHA is the commit a main task's work ended on (134.12); "" until
+	// that item writes it.
+	EndSHA string
+	// MergeOnConflict is a side task's `merge_back.on_conflict` —
+	// MergeOnConflictBlock or MergeOnConflictAgent — and "" on every other
+	// task (task 134 decision 12).
+	MergeOnConflict string
+	// BranchExplicit is create-time input, never stored or read back: the
+	// caller named BranchName itself (`branch_name`, `existing_branch`, or a
+	// chat's verbatim branch on handoff) rather than letting §5.3's chain
+	// produce it. insertTaskTx reads it to tell a main task that may be bound
+	// to its issue's main branch from one that named a different branch
+	// (task 134 decision 3).
+	BranchExplicit bool
 }
+
+// The issue-worktree roles (task 134 decision 7).
+const (
+	IssueWorktreeMain = "main"
+	IssueWorktreeSide = "side"
+)
+
+// The `merge_back.on_conflict` values (task 134 decision 12): `block` is
+// fan_out's `merge.on_conflict: block`, `agent` tries a resolver first.
+const (
+	MergeOnConflictBlock = "block"
+	MergeOnConflictAgent = "agent"
+)
 
 // Workflow origin scopes (task 043). The first three mirror workflow.Scope —
 // the shadowing walk's three registry scopes — and `derived` is the one a

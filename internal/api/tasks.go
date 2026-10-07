@@ -184,6 +184,18 @@ type taskResponse struct {
 	// `[]` — and a client opening a chat opens this one. It is
 	// `chats.linked_task_id` read backwards, once per list.
 	OpenChatID *int64 `json:"open_chat_id,omitempty"`
+	// IssueWorktree is the task's role in its issue's worktrees — `main` or
+	// `side` — and null for a task with no issue, a fan-out lane, or one
+	// created before roles existed (§5.6, task 134 decisions 7, 9).
+	IssueWorktree *string `json:"issue_worktree"`
+	// MergeBack is a side task's `merge_back` as created (task 134 decision
+	// 12); null on every other task.
+	MergeBack *mergeBackBody `json:"merge_back"`
+	// MainWorktreeOccupantTaskID is the creation hint (task 134 decision
+	// 10): on POST /v1/tasks' 201 for a main task, the main-role task holding
+	// the issue's main worktree, which this one is queued behind. Absent
+	// otherwise, and on every other response.
+	MainWorktreeOccupantTaskID *int64 `json:"main_worktree_occupant_task_id,omitempty"`
 }
 
 // snapshotStepResponse is one step of the task's snapshot (spec §13.2).
@@ -270,7 +282,16 @@ func toTaskResponse(t *store.Task, summary snapshotSummary) taskResponse {
 		StartedAt:        timePtr(t.StartedAt),
 		FinishedAt:       timePtr(t.FinishedAt),
 		ArchivedAt:       timePtr(t.ArchivedAt),
+		IssueWorktree:    nilIfEmpty(t.IssueWorktree),
+		MergeBack:        renderMergeBack(t),
 	}
+}
+
+func renderMergeBack(t *store.Task) *mergeBackBody {
+	if t.IssueWorktree != store.IssueWorktreeSide || t.MergeOnConflict == "" {
+		return nil
+	}
+	return &mergeBackBody{OnConflict: t.MergeOnConflict}
 }
 
 // availableActions renders the §6 human actions valid from a state. Always a
@@ -538,6 +559,18 @@ type taskCreateRequest struct {
 	// The engine applies the lower of it and config's; 0 is no cap from this
 	// side.
 	MaxTaskCostUSD *float64 `json:"max_task_cost_usd,omitempty"`
+	// MergeBack opts a task with `issue_id` out of the issue's main worktree
+	// and into a side worktree merged back into the main branch when it is
+	// done (§5.6, §13.2, task 134 decisions 9, 12). Absent, an `issue_id`
+	// task is a main task. `omitempty` for task 040's digest.
+	MergeBack *mergeBackBody `json:"merge_back,omitempty"`
+}
+
+// mergeBackBody is `merge_back` on the create body and on the task DTO (task
+// 134 decision 12): `block` is fan_out's `merge.on_conflict: block`, `agent`
+// tries a resolver first. An empty value on create is `block`.
+type mergeBackBody struct {
+	OnConflict string `json:"on_conflict"`
 }
 
 // boundTaskCreate applies §13.1's size bounds to a task-create body. It is
@@ -570,6 +603,10 @@ type preparedTask struct {
 	workflow *workflow.Workflow
 	pull     *github.PullRequest
 	warnings []string
+	// mainWorktree is the issue's main worktree as it stood before the
+	// insert (task 134 decision 8); zero for a task with no issue. The store
+	// re-checks the branch inside the create transaction.
+	mainWorktree store.IssueMainWorktree
 }
 
 // taskCreateDigest is what task 040's idempotency digest hashes for a
@@ -599,6 +636,7 @@ type taskCreateDigest struct {
 	Paused         *bool             `json:"paused,omitempty"`
 	Restricted     *bool             `json:"restricted,omitempty"`
 	MaxTaskCostUSD *float64          `json:"max_task_cost_usd,omitempty"`
+	MergeBack      *mergeBackBody    `json:"merge_back,omitempty"`
 }
 
 // digestShape is the request as task 040's digest hashes it.
@@ -609,7 +647,7 @@ func (req *taskCreateRequest) digestShape() *taskCreateDigest {
 		BranchName: req.BranchName, ExistingBranch: req.ExistingBranch, Priority: req.Priority,
 		Agent: req.Agent, Model: req.Model, Effort: req.Effort, GitHubPull: req.GitHubPull,
 		IssueID: req.IssueID, Paused: req.Paused, Restricted: req.Restricted,
-		MaxTaskCostUSD: req.MaxTaskCostUSD,
+		MaxTaskCostUSD: req.MaxTaskCostUSD, MergeBack: req.MergeBack,
 	}
 }
 
@@ -681,6 +719,10 @@ func (s *Server) prepareTaskCreate(
 	// validated, and before the title check because filling the title in is
 	// half of what it is for.
 	pull, pullRepo, ok := s.applyPullPrefill(ctx, w, project, entry.Workflow, req)
+	if !ok {
+		return nil, false
+	}
+	mainWT, mergeOnConflict, ok := s.checkMergeBack(ctx, w, req, issueSnap)
 	if !ok {
 		return nil, false
 	}
@@ -822,6 +864,13 @@ func (s *Server) prepareTaskCreate(
 	if issueSnap != nil {
 		issueID := issueSnap.ID
 		t.IssueID, t.Issue = &issueID, issueSnap
+		// A new root task with an issue is a main task unless it asked for
+		// a side worktree (task 134 decision 9). A handoff re-decides this
+		// from the issue's main branch (decision 7).
+		t.IssueWorktree = store.IssueWorktreeMain
+		if mergeOnConflict != "" {
+			t.IssueWorktree, t.MergeOnConflict = store.IssueWorktreeSide, mergeOnConflict
+		}
 	}
 	// Created held (§6, task 096 decision 9): the row is inserted `paused`,
 	// so there is no instant at which it is admissible.
@@ -905,7 +954,80 @@ func (s *Server) prepareTaskCreate(
 	if issueWarning != "" {
 		warnings = append(warnings, issueWarning)
 	}
-	return &preparedTask{project: project, task: t, workflow: wf, pull: pull, warnings: warnings}, true
+	return &preparedTask{
+		project: project, task: t, workflow: wf, pull: pull, warnings: warnings, mainWorktree: mainWT,
+	}, true
+}
+
+// checkMergeBack validates `merge_back` (task 134 decision 6) and reads the
+// issue's main worktree, which both the side-task check here and the
+// main-branch rules in handleTaskCreate need. It returns the side task's
+// on_conflict, "" for a main task or a task with no issue, and writes its own
+// 400s.
+func (s *Server) checkMergeBack(
+	ctx context.Context, w http.ResponseWriter, req *taskCreateRequest, issueSnap *store.IssueSnapshot,
+) (store.IssueMainWorktree, string, bool) {
+	var mainWT store.IssueMainWorktree
+	if req.MergeBack != nil {
+		if issueSnap == nil {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed,
+				"merge_back requires issue_id: a side worktree is merged back into an issue's main branch")
+			return mainWT, "", false
+		}
+		if strings.TrimSpace(ptrValue(req.BranchName)) != "" || ptrValue(req.ExistingBranch) {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed,
+				"merge_back cannot be combined with branch_name or existing_branch: "+
+					"a side task's branch is cut from the issue's main branch")
+			return mainWT, "", false
+		}
+	}
+	onConflict := ""
+	if req.MergeBack != nil {
+		switch onConflict = strings.TrimSpace(req.MergeBack.OnConflict); onConflict {
+		case "":
+			onConflict = store.MergeOnConflictBlock
+		case store.MergeOnConflictBlock, store.MergeOnConflictAgent:
+		default:
+			writeError(w, http.StatusBadRequest, CodeValidationFailed,
+				fmt.Sprintf("merge_back.on_conflict must be one of: %s, %s; got %q",
+					store.MergeOnConflictBlock, store.MergeOnConflictAgent, req.MergeBack.OnConflict))
+			return mainWT, "", false
+		}
+	}
+	if issueSnap == nil {
+		return mainWT, "", true
+	}
+	mainWT, err := s.deps.Store.GetIssueMainWorktree(ctx, issueSnap.ID)
+	if err != nil {
+		s.internalError(w, "read issue main worktree", err)
+		return mainWT, "", false
+	}
+	if onConflict != "" && mainWT.Branch == "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			fmt.Sprintf("issue %d has no main branch yet; create a main task first", issueSnap.ID))
+		return mainWT, "", false
+	}
+	return mainWT, onConflict, true
+}
+
+// writeIssueWorktreeError writes the 400 for the store's two in-transaction
+// issue-worktree refusals (task 134 decisions 5, 6) and reports whether err
+// was one of them.
+func writeIssueWorktreeError(w http.ResponseWriter, err error) bool {
+	var mismatch *store.MainBranchMismatchError
+	var noMain *store.NoMainBranchError
+	switch {
+	case errors.As(err, &mismatch):
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			fmt.Sprintf("issue %d's main branch is %q; a main task cannot run on %q",
+				mismatch.IssueID, mismatch.MainBranch, mismatch.Branch))
+	case errors.As(err, &noMain):
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			fmt.Sprintf("issue %d has no main branch yet; create a main task first", noMain.IssueID))
+	default:
+		return false
+	}
+	return true
 }
 
 // handleTaskCreate implements POST /v1/tasks (spec §13.2). The workflow is
@@ -969,6 +1091,18 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	if req.BranchName != nil {
 		branchName = strings.TrimSpace(*req.BranchName)
 	}
+	// A name the caller chose — typed, or an existing branch to adopt — is
+	// one a main task may not silently trade for its issue's main branch
+	// (task 134 decision 5).
+	t.BranchExplicit = branchName != "" || adopt
+	// A main task joining an issue that already has a main branch runs on
+	// that branch (decision 3); the store binds it inside the create
+	// transaction, and this read only lets the request skip the checks that
+	// would refuse a branch that is expected to exist.
+	mainBranch := ""
+	if t.IssueWorktree == store.IssueWorktreeMain {
+		mainBranch = prep.mainWorktree.Branch
+	}
 
 	// Branch naming (§5.3, task 001): `default < config.yaml < project < literal`.
 	// Resolve before the insert so a bad name is a 400 rather than a task that
@@ -994,13 +1128,23 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	// derivable afterwards, and archive has to know (decision 6).
 	t.AdoptedBranch = adopt
 	var resolveBranch func(int64) (string, error)
-	if preview.NeedsID {
+	switch {
+	case mainBranch != "" && t.BranchExplicit && preview.Name != mainBranch:
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			fmt.Sprintf("issue %d's main branch is %q; a main task cannot run on %q",
+				*t.IssueID, mainBranch, preview.Name))
+		return
+	case mainBranch != "":
+		// Expected to exist, so neither the collision nor the presence check
+		// applies; the store binds the same name again in the transaction.
+		t.BranchName = mainBranch
+	case preview.NeedsID:
 		// The name needs the id, so it is produced inside the insert transaction.
 		resolveBranch = func(id int64) (string, error) {
 			name, _, err := worktree.ResolveBranchName(spec, bctx.WithID(id))
 			return name, err
 		}
-	} else {
+	default:
 		// A pull-request task is exempt from the collision check: its branch
 		// is *expected* to exist, and refusing it would make the feature
 		// unusable for anyone who has already looked at the pull request
@@ -1035,6 +1179,7 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	if err := s.deps.Store.CreateTaskWithKey(ctx, &t, resolveBranch, key); err != nil {
 		var claimed *store.BranchClaimedError
 		switch {
+		case writeIssueWorktreeError(w, err):
 		case errors.As(err, &claimed):
 			writeError(w, http.StatusBadRequest, CodeValidationFailed,
 				fmt.Sprintf("branch %q is already claimed by task %d",
@@ -1060,7 +1205,28 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	resp := toTaskResponse(&t, s.snaps.get(t.ID, t.WorkflowSnapshot))
 	s.overlayLiveIssue(ctx, &resp, &t)
 	resp.Warnings = warnings
+	resp.MainWorktreeOccupantTaskID = s.mainWorktreeOccupant(ctx, &t)
 	writeJSON(w, http.StatusCreated, resp)
+}
+
+// mainWorktreeOccupant is the creation hint of task 134 decision 10: the
+// main-role task holding the issue's main worktree that a new main task t
+// will queue behind, or nil. Read after the commit, so it is the occupant the
+// new task actually meets; a failed read degrades to no hint, since the task
+// already exists and the hint is advisory.
+func (s *Server) mainWorktreeOccupant(ctx context.Context, t *store.Task) *int64 {
+	if t.IssueWorktree != store.IssueWorktreeMain || t.IssueID == nil {
+		return nil
+	}
+	mw, err := s.deps.Store.GetIssueMainWorktree(ctx, *t.IssueID)
+	if err != nil {
+		s.deps.Logger.Warn("read issue main worktree", "issue", *t.IssueID, "error", err)
+		return nil
+	}
+	if mw.OccupantTaskID == nil || *mw.OccupantTaskID == t.ID {
+		return nil
+	}
+	return mw.OccupantTaskID
 }
 
 // checkTaskCatalog applies the §8.2 cross-catalog check to every agent

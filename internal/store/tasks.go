@@ -21,7 +21,8 @@ const taskColumns = `id, project_id, title, description, fields_json, workflow_n
 	parent_task_id, parent_step_index, lane_id, lane_order, settled_children_watermark,
 	github_issue_json, github_pull_json,
 	workflow_origin_json, created_by_task_id, issue_id, issue_json,
-	created_at, updated_at, started_at, finished_at, archived_at, archived_from`
+	created_at, updated_at, started_at, finished_at, archived_at, archived_from,
+	issue_worktree, end_sha, merge_on_conflict`
 
 // slotStates is the set of states that occupy a concurrency slot (spec §11),
 // rendered as SQL placeholders. It is derived from taskstate rather than
@@ -208,8 +209,9 @@ func insertTaskTx(
 			state, current_step, block_reason, admit_not_before, queued_reason,
 			parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json,
 			github_pull_json, workflow_origin_json, created_by_task_id, issue_id, issue_json,
-			created_at, updated_at, started_at, finished_at, archived_at, archived_from)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			created_at, updated_at, started_at, finished_at, archived_at, archived_from,
+			issue_worktree, end_sha, merge_on_conflict)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ProjectID, t.Title, t.Description, fields, t.WorkflowName, t.WorkflowSnapshot,
 		t.BaseBranch, t.BranchName, t.AdoptedBranch, nullString(t.WorktreePath), nullString(t.BaseSHA), refreshJSON, t.Priority,
 		nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
@@ -225,7 +227,8 @@ func insertTaskTx(
 		pullJSON, originJSON, t.CreatedByTaskID, t.IssueID, snapJSON,
 		formatTime(t.CreatedAt), formatTime(t.UpdatedAt),
 		formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt),
-		nullString(string(t.ArchivedFrom)))
+		nullString(string(t.ArchivedFrom)),
+		nullString(t.IssueWorktree), nullString(t.EndSHA), nullString(t.MergeOnConflict))
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)
 	}
@@ -246,6 +249,14 @@ func insertTaskTx(
 			return nil, fmt.Errorf("assign branch name: %w", err)
 		}
 		t.BranchName = branch
+	}
+	// The issue's main branch is bound here, after the name is known and
+	// before the claim, so the claim sees the name the row will commit with
+	// (task 134 decision 3). One SQLite writer makes this the race-free half:
+	// two concurrent "first main" creates serialize, and the second finds the
+	// first's branch.
+	if err := bindIssueWorktreeTx(ctx, tx, t); err != nil {
+		return nil, err
 	}
 	// An adopted branch is deliberately outside the claim (task 125 decision
 	// 2): two tasks may be *created* on one existing branch, and the second
@@ -293,6 +304,147 @@ func insertTaskTx(
 	return ev, nil
 }
 
+// MainBranchMismatchError is a main-role task that named a branch of its own
+// — `branch_name`, `existing_branch`, or a chat's branch on handoff — while
+// its issue already has a different main branch (task 134 decision 5). The
+// API turns it into a 400: the name is the caller's input.
+type MainBranchMismatchError struct {
+	IssueID    int64
+	Branch     string
+	MainBranch string
+}
+
+func (e *MainBranchMismatchError) Error() string {
+	return fmt.Sprintf("issue %d's main branch is %q; a main task cannot use %q",
+		e.IssueID, e.MainBranch, e.Branch)
+}
+
+// NoMainBranchError is a side task created for an issue that has no main
+// branch yet (task 134 decision 6): there is nothing to cut it from, and
+// nothing to merge it back into.
+type NoMainBranchError struct {
+	IssueID int64
+}
+
+func (e *NoMainBranchError) Error() string {
+	return fmt.Sprintf("issue %d has no main branch yet; create a main task first", e.IssueID)
+}
+
+// IssueMainWorktree is an issue's main worktree as §5.6 derives it (task 134
+// decisions 2, 8): the branch of its unarchived main-role tasks, and the
+// main-role task occupying it — admitted (`started_at` set) and not settled.
+// Branch is "" when the issue has no main branch; OccupantTaskID is nil when
+// nothing holds it.
+type IssueMainWorktree struct {
+	Branch         string
+	OccupantTaskID *int64
+}
+
+// issueMainBranchSQL derives an issue's main branch from its unarchived
+// main-role tasks (task 134 decision 2) — the same view claimBranchTx takes.
+// issueRef is the SQL expression naming the issue: a placeholder for a
+// lookup, `i.id` inside issueSelect. Every main-role task of one issue
+// carries the same name, so the lowest id is as good as any and stable.
+func issueMainBranchSQL(issueRef string) string {
+	return `SELECT branch_name FROM tasks
+		WHERE issue_id = ` + issueRef + ` AND issue_worktree = 'main' AND archived_at IS NULL
+		ORDER BY id LIMIT 1`
+}
+
+// issueMainOccupantSQL names the main-role task holding an issue's main
+// worktree (task 134 decision 8): admitted, which `started_at` records from
+// the first `running`, and not settled. Blocked, gated and paused tasks hold
+// it — they leave files behind. Its bind arguments are the settled states.
+// #758's admission predicate reads the same definition.
+func issueMainOccupantSQL(issueRef string) string {
+	return `SELECT id FROM tasks
+		WHERE issue_id = ` + issueRef + ` AND issue_worktree = 'main' AND started_at IS NOT NULL
+		AND state NOT IN ` + placeholders(len(settledTaskStates())) + `
+		ORDER BY id LIMIT 1`
+}
+
+// GetIssueMainWorktree reads issueID's main worktree (task 134 decision 8).
+// The issue need not exist: an unknown id has no main branch.
+func (s *Store) GetIssueMainWorktree(ctx context.Context, issueID int64) (IssueMainWorktree, error) {
+	var out IssueMainWorktree
+	var branch sql.NullString
+	var occupant sql.NullInt64
+	// Placeholders in text order: the branch's issue, the occupant's issue,
+	// then the occupant's settled states.
+	args := append([]any{issueID, issueID}, settledTaskStates()...)
+	err := s.db.QueryRowContext(ctx, `SELECT (`+issueMainBranchSQL("?")+`), (`+
+		issueMainOccupantSQL("?")+`)`, args...).Scan(&branch, &occupant)
+	if err != nil {
+		return out, fmt.Errorf("issue %d main worktree: %w", issueID, err)
+	}
+	out.Branch = branch.String
+	if occupant.Valid {
+		id := occupant.Int64
+		out.OccupantTaskID = &id
+	}
+	return out, nil
+}
+
+// bindIssueWorktreeTx applies a new task's issue-worktree role inside the
+// create transaction (task 134 decisions 3, 5, 6). It re-checks what the API
+// already checked against its own read, because a main task created between
+// that read and this insert can change the answer.
+//
+// A main task with no main branch to join makes its own name the main
+// branch. One joining an existing main branch takes that name, unless the
+// caller named a different branch itself, which is
+// *MainBranchMismatchError. A side task needs a main branch to exist, or it
+// is *NoMainBranchError.
+func bindIssueWorktreeTx(ctx context.Context, tx *sql.Tx, t *Task) error {
+	switch t.IssueWorktree {
+	case "":
+		if t.MergeOnConflict != "" {
+			return fmt.Errorf("insert task: merge_on_conflict is set on a task that is not a side task")
+		}
+		return nil
+	case IssueWorktreeMain:
+		if t.MergeOnConflict != "" {
+			return fmt.Errorf("insert task: merge_on_conflict is set on a main task")
+		}
+	case IssueWorktreeSide:
+		if t.MergeOnConflict != MergeOnConflictBlock && t.MergeOnConflict != MergeOnConflictAgent {
+			return fmt.Errorf("insert task: side task has merge_on_conflict %q", t.MergeOnConflict)
+		}
+	default:
+		return fmt.Errorf("insert task: unknown issue_worktree %q", t.IssueWorktree)
+	}
+	// Lanes and issue-less tasks never carry a role (task 130 decision 5):
+	// a caller that set one has a bug, not a request to honour.
+	if t.IssueID == nil || t.ParentTaskID != nil {
+		return fmt.Errorf("insert task: issue_worktree %q needs a root task with an issue", t.IssueWorktree)
+	}
+	var main string
+	err := tx.QueryRowContext(ctx, `SELECT branch_name FROM tasks
+		WHERE issue_id = ? AND issue_worktree = 'main' AND archived_at IS NULL AND id <> ?
+		ORDER BY id LIMIT 1`, *t.IssueID, t.ID).Scan(&main)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("read issue %d main branch: %w", *t.IssueID, err)
+	}
+	if t.IssueWorktree == IssueWorktreeSide {
+		if main == "" {
+			return &NoMainBranchError{IssueID: *t.IssueID}
+		}
+		return nil
+	}
+	if main == "" || main == t.BranchName {
+		return nil
+	}
+	if t.BranchExplicit {
+		return &MainBranchMismatchError{IssueID: *t.IssueID, Branch: t.BranchName, MainBranch: main}
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE tasks SET branch_name = ? WHERE id = ?`, main, t.ID); err != nil {
+		return fmt.Errorf("bind issue %d main branch: %w", *t.IssueID, err)
+	}
+	t.BranchName = main
+	return nil
+}
+
 // claimBranchTx fails when another unarchived task in the project already holds
 // branch. It runs inside the caller's transaction because it is the half of the
 // collision check that can: it is a plain query, whereas the git-side checks
@@ -306,11 +458,18 @@ func claimBranchTx(ctx context.Context, tx *sql.Tx, projectID int64, branch stri
 	if branch == "" {
 		return fmt.Errorf("insert task: branch name is empty")
 	}
+	// The one exemption (task 134 decision 3): main-role tasks of one issue
+	// share its main branch. It is read from the claimant's own row, which
+	// both callers have already written, so a main task of another issue, a
+	// side task and a task with no issue all still collide.
 	var other int64
 	err := tx.QueryRowContext(ctx, `
-		SELECT id FROM tasks
-		WHERE project_id = ? AND branch_name = ? AND id <> ? AND archived_at IS NULL
-		LIMIT 1`, projectID, branch, selfID).Scan(&other)
+		SELECT o.id FROM tasks o
+		WHERE o.project_id = ? AND o.branch_name = ? AND o.id <> ? AND o.archived_at IS NULL
+		  AND NOT (o.issue_worktree = 'main' AND EXISTS (
+		      SELECT 1 FROM tasks me
+		      WHERE me.id = ? AND me.issue_worktree = 'main' AND me.issue_id = o.issue_id))
+		LIMIT 1`, projectID, branch, selfID, selfID).Scan(&other)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return nil
@@ -1077,6 +1236,8 @@ func scanTask(r rowScanner) (*Task, error) {
 		created, updated               string
 		started, finished, archived    sql.NullString
 		archivedFrom                   sql.NullString
+		issueWorktree, endSHA          sql.NullString
+		mergeOnConflict                sql.NullString
 	)
 	if err := r.Scan(&t.ID, &t.ProjectID, &t.Title, &t.Description, &fields, &t.WorkflowName,
 		&t.WorkflowSnapshot, &t.BaseBranch, &t.BranchName, &t.AdoptedBranch, &worktree, &baseSHA, &baseRefresh, &t.Priority,
@@ -1088,7 +1249,8 @@ func scanTask(r rowScanner) (*Task, error) {
 		&parentID, &parentStep, &laneID, &laneOrder, &watermark,
 		&githubIssue, &githubPull, &workflowOrigin,
 		&createdBy, &issueID, &issueSnap,
-		&created, &updated, &started, &finished, &archived, &archivedFrom); err != nil {
+		&created, &updated, &started, &finished, &archived, &archivedFrom,
+		&issueWorktree, &endSHA, &mergeOnConflict); err != nil {
 		return nil, err
 	}
 	if parentID.Valid {
@@ -1109,6 +1271,9 @@ func scanTask(r rowScanner) (*Task, error) {
 	}
 	t.LaneID = laneID.String
 	t.ArchivedFrom = TaskState(archivedFrom.String)
+	t.IssueWorktree = issueWorktree.String
+	t.EndSHA = endSHA.String
+	t.MergeOnConflict = mergeOnConflict.String
 	t.LaneOrder = int(laneOrder.Int64)
 	if watermark.Valid {
 		n := int(watermark.Int64)

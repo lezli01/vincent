@@ -397,6 +397,7 @@ func TestTaskCreateDigestShapeMatchesTheRequest(t *testing.T) {
 		ProjectID: 1, Workflow: &wf, Title: "t", Description: &wf, Fields: map[string]string{"a": "b"},
 		BaseBranch: &wf, BranchName: &wf, ExistingBranch: &yes, Priority: &pull, Agent: &wf, Model: &wf,
 		Effort: &wf, GitHubPull: &pull, IssueID: &id, Paused: &yes, Restricted: &yes, MaxTaskCostUSD: &cost,
+		MergeBack: &mergeBackBody{OnConflict: "agent"},
 	}
 	shape := reflect.ValueOf(*req.digestShape())
 	src := reflect.ValueOf(req)

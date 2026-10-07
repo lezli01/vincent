@@ -62,6 +62,13 @@ type IssueTasks struct {
 	ActiveIDs []int64 `json:"active_ids"`
 }
 
+// IssueMainWorktree is an issue's main worktree: its branch, and the
+// admitted, unsettled main task holding it — nil when it is free.
+type IssueMainWorktree struct {
+	Branch         string `json:"branch"`
+	OccupantTaskID *int64 `json:"occupant_task_id"`
+}
+
 // Issue is one issue. A row from ListIssues leaves Body, AvailableActions,
 // Tasks and Editable zero — a list never carries them; GetIssue and every
 // write fill them.
@@ -84,12 +91,15 @@ type Issue struct {
 	// Lane is the board lane — open, in_progress, hand_off or done (task
 	// 134 decision 2); Attention is whether a root task is waiting on a
 	// person (decision 3).
-	Lane      string     `json:"lane"`
-	Attention bool       `json:"attention"`
-	Version   int64      `json:"version"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	ClosedAt  *time.Time `json:"closed_at,omitempty"`
+	Lane      string `json:"lane"`
+	Attention bool   `json:"attention"`
+	// MainWorktree is the issue's main branch and the main task occupying
+	// it (task 134 decisions 2, 8); nil while the issue has no main branch.
+	MainWorktree *IssueMainWorktree `json:"main_worktree,omitempty"`
+	Version      int64              `json:"version"`
+	CreatedAt    time.Time          `json:"created_at"`
+	UpdatedAt    time.Time          `json:"updated_at"`
+	ClosedAt     *time.Time         `json:"closed_at,omitempty"`
 
 	Body             string     `json:"body,omitempty"`
 	AvailableActions []string   `json:"available_actions,omitempty"`
