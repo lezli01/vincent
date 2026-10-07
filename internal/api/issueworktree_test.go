@@ -336,8 +336,7 @@ func TestMergeBackDigestIsAdditive(t *testing.T) {
 
 // TestHandoffFollowsTheIssueRole is task 134 decision 7: a handoff on an
 // issue with no main branch is main and makes the chat's branch the main
-// branch; the next one is side, merged back on block. merge_back itself is
-// not accepted on the handoff yet.
+// branch; the next one is side, merged back on block.
 func TestHandoffFollowsTheIssueRole(t *testing.T) {
 	h := newChatHarness(t)
 	iss, err := h.store.CreateIssue(t.Context(), store.NewIssue{ProjectID: h.projectID, Title: "Carry on"}, issuestate.Human)
@@ -369,9 +368,6 @@ func TestHandoffFollowsTheIssueRole(t *testing.T) {
 	}
 
 	second, chat2 := handoffFixture(t, h)
-	if code, body := h.handoff(t, second, map[string]any{"issue_id": iss.ID, "merge_back": map[string]any{}}); code != http.StatusBadRequest {
-		t.Errorf("handoff with merge_back = %d (%v), want 400", code, body)
-	}
 	code, body = h.handoff(t, second, map[string]any{"issue_id": iss.ID})
 	if code != http.StatusCreated {
 		t.Fatalf("second handoff = %d (%v)", code, body)

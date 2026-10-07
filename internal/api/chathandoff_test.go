@@ -338,3 +338,125 @@ func TestHandoffFromAnIssue(t *testing.T) {
 		t.Errorf("stored issue_id %v / snapshot %+v, want issue %d snapshotted closed", stored.IssueID, stored.Issue, iss.ID)
 	}
 }
+
+// handoffIssue creates an open issue for the merge_back handoff tests.
+func handoffIssue(t *testing.T, h *chatHarness) *store.Issue {
+	t.Helper()
+	iss, err := h.store.CreateIssue(t.Context(), store.NewIssue{ProjectID: h.projectID, Title: "Carry on"}, issuestate.Human)
+	if err != nil {
+		t.Fatalf("CreateIssue: %v", err)
+	}
+	return iss
+}
+
+// handoffRole is a handed-off task's issue_worktree and merge_back as the
+// DTO renders them.
+func handoffRole(t *testing.T, body map[string]any) (role string, mergeBack any) {
+	t.Helper()
+	task, _ := body["task"].(map[string]any)
+	role, _ = task["issue_worktree"].(string)
+	return role, task["merge_back"]
+}
+
+// TestHandoffMergeBackSelectsOnConflict is task 134.15: onto an issue that
+// already has a main branch, a handoff is a side task whose merge_back is
+// the body's on_conflict, and `block` when the body names none.
+func TestHandoffMergeBackSelectsOnConflict(t *testing.T) {
+	h := newChatHarness(t)
+	iss := handoffIssue(t, h)
+	first, _ := handoffFixture(t, h)
+	if code, body := h.handoff(t, first, map[string]any{"issue_id": iss.ID}); code != http.StatusCreated {
+		t.Fatalf("main handoff = %d (%v)", code, body)
+	}
+	for _, tc := range []struct {
+		name      string
+		mergeBack any
+		want      string
+	}{
+		{"omitted", nil, store.MergeOnConflictBlock},
+		{"empty", map[string]any{}, store.MergeOnConflictBlock},
+		{"agent", map[string]any{"on_conflict": "agent"}, store.MergeOnConflictAgent},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			id, _ := handoffFixture(t, h)
+			req := map[string]any{"issue_id": iss.ID}
+			if tc.mergeBack != nil {
+				req["merge_back"] = tc.mergeBack
+			}
+			code, body := h.handoff(t, id, req)
+			if code != http.StatusCreated {
+				t.Fatalf("handoff = %d (%v)", code, body)
+			}
+			role, mb := handoffRole(t, body)
+			got, _ := mb.(map[string]any)
+			if role != store.IssueWorktreeSide || got["on_conflict"] != tc.want {
+				t.Errorf("handoff = (%q, %v), want side/%s", role, mb, tc.want)
+			}
+		})
+	}
+}
+
+// TestHandoffMergeBackIsInertWithoutAMainBranch is task 134 decision 7 as
+// 134.15 settles it: a handoff onto an issue with no main branch takes the
+// chat's branch as the main branch whatever merge_back says, and drops it.
+func TestHandoffMergeBackIsInertWithoutAMainBranch(t *testing.T) {
+	h := newChatHarness(t)
+	iss := handoffIssue(t, h)
+	id, chat := handoffFixture(t, h)
+	code, body := h.handoff(t, id, map[string]any{
+		"issue_id": iss.ID, "merge_back": map[string]any{"on_conflict": "agent"},
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("handoff = %d (%v)", code, body)
+	}
+	role, mb := handoffRole(t, body)
+	if role != store.IssueWorktreeMain || mb != nil {
+		t.Errorf("handoff = (%q, %v), want main with merge_back null", role, mb)
+	}
+	if iw, err := h.store.GetIssueMainWorktree(t.Context(), iss.ID); err != nil || iw.Branch != chat["branch"] {
+		t.Errorf("main branch = %q (%v), want the chat's %v", iw.Branch, err, chat["branch"])
+	}
+}
+
+// TestHandoffMergeBackRefusalsAreTheCreatePaths: the rules that still hold on
+// a handoff are refused by POST /v1/tasks' own code, with its messages, and
+// leave the chat as it was.
+func TestHandoffMergeBackRefusalsAreTheCreatePaths(t *testing.T) {
+	h := newChatHarness(t)
+	iss := handoffIssue(t, h)
+	id, chat := handoffFixture(t, h)
+	for _, tc := range []struct {
+		name string
+		body map[string]any
+		want string
+	}{
+		{
+			"bad on_conflict",
+			map[string]any{"issue_id": iss.ID, "merge_back": map[string]any{"on_conflict": "rebase"}},
+			`merge_back.on_conflict must be one of: block, agent; got "rebase"`,
+		},
+		{
+			"no issue_id",
+			map[string]any{"title": "x", "merge_back": map[string]any{}},
+			"merge_back requires issue_id: a side worktree is merged back into an issue's main branch",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			code, body := h.handoff(t, id, tc.body)
+			if code != http.StatusBadRequest {
+				t.Fatalf("handoff = %d (%v), want 400", code, body)
+			}
+			if msg := fmt.Sprint(body["error"]); !strings.Contains(msg, tc.want) {
+				t.Errorf("error = %s, want %q", msg, tc.want)
+			}
+			c, err := h.store.GetChat(t.Context(), id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.State != chatstate.Idle || c.WorktreePath != chat["worktree_path"] || c.HandoffTaskID != nil {
+				t.Errorf("chat = (%s, %q, %v) after a refused handoff, want idle and untouched",
+					c.State, c.WorktreePath, c.HandoffTaskID)
+			}
+		})
+	}
+}

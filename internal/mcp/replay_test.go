@@ -303,6 +303,18 @@ func TestTaskCreateNoLongerOffersGitHubIssue(t *testing.T) {
 	}
 }
 
+// TestTaskCreateDescribesMergeBack: task 134.10's `merge_back` and both of
+// its on_conflict values are documented where a model reads them (#762).
+func TestTaskCreateDescribesMergeBack(t *testing.T) {
+	t.Parallel()
+	r := routeFor(t, "task_create")
+	for _, want := range []string{"merge_back", "block", "agent"} {
+		if !strings.Contains(r.Description, want) {
+			t.Errorf("task_create's description does not name %q: %s", want, r.Description)
+		}
+	}
+}
+
 // TestIssueListOffersTheRemoteNumberLookup: the lookup that replaced the
 // field (task 130.11, decision 22.4) is documented where a model reads it.
 func TestIssueListOffersTheRemoteNumberLookup(t *testing.T) {
