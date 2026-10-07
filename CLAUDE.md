@@ -186,13 +186,14 @@ against the fake agent; CI runs every one of them on Linux, macOS and Windows:
 ./scripts/069-gate.sh                           # opening a pull request from vincent (task 069)
 ./scripts/068-gate.sh                           # the pull request write surface (task 068)
 ./scripts/130-gate.sh                           # issues end to end (task 130)
+./scripts/134-gate.sh                           # issue main worktree and merge-back (task 134)
 VINCENT_GATE_SCENARIO=2 ./scripts/m2-gate.sh    # single scenario, for debugging
 VINCENT_GATE_AGENT=claude ./scripts/m2-gate.sh  # manual run against the real CLI
 VINCENT_GATE_AGENT=cursor ./scripts/m5-gate.sh  # ditto, for cursor-agent
 VINCENT_GATE_BIN=/some/dir ./scripts/m1-gate.sh # copy prebuilt vincent/fakeagent/fakegh from there instead of building
 ```
 
-All twenty of those run in `ci.yml`'s `gate-group` job on all three platforms:
+All twenty-one of those run in `ci.yml`'s `gate-group` job on all three platforms:
 four groups per OS, balanced by measured Windows time, each gate one named
 step that runs in exactly one group (`if: matrix.group == N`). The `gates` job
 is now only an aggregator that fails unless every group passed, kept because
@@ -203,7 +204,7 @@ through `gate_build` / `gate_build_as` (which copy from `VINCENT_GATE_BIN`,
 built once per CI job, when it is set), and its wait loops sleep `$GATE_POLL`
 for `$(gate_ticks SECS)` iterations so the budget stays written in seconds.
 Deliberate delays and workflow `run:` bodies keep their plain `sleep N`. `m12`
-is the twenty-first and the exception: it needs a real container runtime, so it runs
+is the twenty-second and the exception: it needs a real container runtime, so it runs
 its assertions on the Linux leg only and skips itself (exit 0, one line saying
 why) on the other two — but for two different reasons, and only one of them is
 "no docker". The macOS runner has no daemon. The **Windows runner does**, in

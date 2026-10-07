@@ -524,6 +524,23 @@ jobs:
         shell: bash
         run: ./scripts/130-gate.sh
 
+      # 134: an issue's main worktree and merge-back (task 134.17; §5.6,
+      # §11, §12.4, §13.2) — one occupant at a time through running, blocked
+      # and a manual gate, the hand-over of its directory and branch, a
+      # crash under it, and side tasks merged back cleanly, on a conflict by
+      # hand and by the fake-agent resolver, in FIFO order and across a
+      # crash with the merge left in progress. The matrix earns its place
+      # because one directory is shared by successive tasks and handed on
+      # while git still has it open, the merge and its abort run in a
+      # worktree on the host's git, the daemon is killed with `taskkill` on
+      # Windows and SIGKILL elsewhere and must recover the same way, every
+      # `run:` body has to mean the same to /bin/sh and pwsh, and the
+      # `C:/…` worktree paths are compared as the API returns them.
+      - name: 134 gate (issue main worktree and merge-back)
+        if: matrix.group == 4
+        shell: bash
+        run: ./scripts/134-gate.sh
+
   gates:
     needs: gate-group
     if: always()
