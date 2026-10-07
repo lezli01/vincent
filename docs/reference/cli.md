@@ -1157,7 +1157,10 @@ vincent task follow-up <id> (--prompt TEXT | --run CMD | --workflow NAME)
 Runs one more piece of work in a **finished** task's existing worktree and
 branch, before it is archived — recorded in that task's own ledger, with a step
 run, a transcript and cost accounting. Valid from `done` and `aborted` only;
-anything else exits 1 with the state it actually found.
+anything else exits 1 with the state it actually found. An issue's main task
+that has handed its worktree on to a later main task has none left to run in:
+the command exits 1 (`issue_worktree_moved`) and names the task that holds it
+now.
 
 Exactly one of the three run flags is required, and they are mutually exclusive:
 
@@ -3051,8 +3054,10 @@ Reopens a closed issue.
 vincent issue delete <id>... --force [--json]
 ```
 
-Aliased as `vincent issue rm`. Permanently deletes issues, in any state. Since
-nothing in the daemon refuses an issue delete, `--force` is the confirmation:
+Aliased as `vincent issue rm`. Permanently deletes issues, in any state. The
+daemon refuses only an issue one of whose main tasks has not finished
+(`issue_has_live_main_task`); the command then names that task. Otherwise
+nothing refuses an issue delete, so `--force` is the confirmation:
 without it the command exits 1 saying the delete is permanent, sends nothing,
 and never prompts. It never touches GitHub — an imported issue stays as it is
 upstream — and it leaves a tombstone so the next sync does not import the

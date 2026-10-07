@@ -2581,7 +2581,9 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
   empty body, or one over 64 KiB, is `400`. There is no `Idempotency-Key`.
   Nothing is ever posted to GitHub: a comment edited there is updated in
   place, and one deleted there stays.
-- **Delete** answers `204` from any state. An imported issue leaves a tombstone
+- **Delete** answers `204` from any state, unless one of the issue's
+  [main tasks](#the-issues-main-branch) has not finished: then it is
+  `409 issue_has_live_main_task` naming it. An imported issue leaves a tombstone
   so it is never imported again, nothing is written upstream, and tasks created
   from it keep running with `issue_id` cleared. It is not an MCP tool.
 - **Labels** — `GET /v1/projects/{id}/issue-labels` lists
@@ -2635,12 +2637,20 @@ A task created with `issue_id` is the issue's **main** task by default:
 `issue_worktree` on the task reads `"main"`. The first main task's branch —
 the one you named, or the one the usual [branch naming](#tasks) produced —
 becomes the issue's **main branch**, and every later main task of the issue
-runs on it. A later main task reads back with `adopted_branch: true` — the
-first one cut the branch — so, like any task on an
-[existing branch](#running-on-an-existing-branch), it waits queued while
-another task still has the branch checked out, which a main task does until
-it is archived. While another unarchived main task of the issue carries the
-branch, archive does not delete it even when it has no commits past its base. The issue serves it as `main_worktree`:
+runs on it, in the same directory: when a later main task is admitted, the
+main task before it that has finished hands it its worktree, uncommitted
+changes included. The later task's `base_sha` is the branch's tip at that
+moment, and the earlier task records the same commit as where its own work
+ends, so its [`/commits` and `/diff`](#transcripts-and-diffs) stop there rather
+than growing with later work. A later main task does not read back as `adopted_branch` — the branch
+is vincent's, cut by the first main task. If the earlier task is
+mid-merge, rebase, cherry-pick, revert or bisect, the later one blocks
+`repo_operation_in_progress` and the earlier one keeps the directory; if the
+main branch is checked out in the project's own checkout, it blocks
+`issue_branch_checked_out` and never runs there. A `follow_up` or chat on the
+earlier task is then refused `409 issue_worktree_moved`, naming the holder.
+While another unarchived main task of the issue carries the branch, archive
+does not delete it even when it has no commits past the issue's base branch. The issue serves it as `main_worktree`:
 
 ```json
 "main_worktree": { "branch": "vincent/12-lock-file-leaks", "occupant_task_id": 12 }
@@ -2694,9 +2704,8 @@ handoff body does not take `merge_back`.
 
 Roles, the main branch and the occupant are recorded and served today, and
 the scheduler holds a later main task back while the occupant holds the
-worktree. A later main task still waits for the previous one to be
-**archived**, not merely finished, and nothing yet merges a side task back —
-those arrive with later releases.
+worktree. Nothing yet merges a side task back — that arrives with a later
+release.
 
 ## Chats
 
@@ -3313,7 +3322,10 @@ already on disk.
 `GET …/diff` is a unified diff of the worktree against the merge-base with the
 commit the task was cut from — its recorded `base_sha`, and the base branch by
 name for a task that has none — including uncommitted changes. Untracked files
-are excluded — a documented limitation.
+are excluded — a documented limitation. An issue's
+[main task](#the-issues-main-branch) that handed its worktree on, or was
+archived, is diffed in the project repository instead, ending at the commit
+its branch stood at when it let go.
 
 `?by=lane` asks for the same change **split by the fan-out lane that produced
 it**, as JSON rather than as `text/plain`:
@@ -3360,7 +3372,10 @@ recorded `base_sha`, else the base branch — and follows the task's own
 first-parent chain, so the commits made inside a fan-out lane are not listed but
 the merge that joined the lane is, carrying the same `lane_id` and
 `child_task_id` a `?by=lane` section does. Both keys are omitted on every other
-commit. `author_time` is RFC3339 UTC.
+commit. `author_time` is RFC3339 UTC. For an issue's
+[main task](#the-issues-main-branch) that handed its worktree on, or was
+archived, the range ends at the commit the shared branch stood at when it let
+go, not at the branch's tip.
 
 A branch with nothing past its base is `200 []`. It is a `409 invalid_state`
 when the task has no branch yet (it was never admitted), when the branch no
