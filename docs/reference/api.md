@@ -2663,7 +2663,11 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/tasks" \
 ```
 
 `on_conflict` is `block` (stop for a human on a conflict; the default) or
-`agent` (try a resolver first). The task reads back with
+`agent` (try a resolver first). A side task is cut from the issue's main
+branch, never the project's base: leave `base_branch` out, or name the main
+branch. It is cut from the main branch as it is on your machine, without
+fetching it and without moving it, so the main task's worktree is never
+touched, and its `base_sha` is the main branch's tip at the cut. The task reads back with
 `issue_worktree: "side"` and `merge_back: { "on_conflict": … }`. A main task
 carries `merge_back: null`, and a task with no issue, a fan-out lane, or one
 created before roles existed carries `null` in both.
@@ -2672,6 +2676,8 @@ created before roles existed carries `null` in both.
 |---|---|
 | `400` | `merge_back` without `issue_id` |
 | `400` | `merge_back` on an issue that has no main branch yet — create a main task first |
+| `400` | `merge_back` while the main branch is not in git yet — the first main task is still queued or paused, so the ordinary "`base_branch` does not resolve to a local branch" |
+| `400` | `merge_back` with a `base_branch` other than the issue's main branch |
 | `400` | `merge_back` together with `branch_name` or `existing_branch` |
 | `400` | `merge_back.on_conflict` other than `block` or `agent` |
 | `400` | A main task whose `branch_name` or `existing_branch` names a branch other than the issue's main branch |

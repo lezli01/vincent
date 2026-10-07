@@ -39,6 +39,13 @@ list with the user-facing context a commit subject cannot carry.
   worktree. The waiting task shows no new state or reason; the issue's
   `main_worktree.occupant_task_id` names what it waits on. Side tasks and
   tasks of other issues are not held.
+- **Side tasks start from the issue's main branch.** A task created with
+  `merge_back` is now cut from the issue's main branch rather than the
+  project's base, without fetching or fast-forwarding it — so admitting one
+  never moves the files under the main task's worktree — and records the
+  branch's tip as its `base_sha`. `base_branch` beside `merge_back` must name
+  the main branch, and the main branch must already exist in git (its first
+  main task has been started), or `POST /v1/tasks` answers `400`.
 - **The TUI opens on the project you mean.** `vincent --project <name|id>`
   opens the TUI on that project. Without it, launching `vincent` inside a
   registered project's checkout, or inside a task's or chat's worktree, opens

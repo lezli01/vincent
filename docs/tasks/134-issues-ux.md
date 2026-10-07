@@ -313,6 +313,18 @@ could move a clean main worktree under its occupant. It records `base_sha`,
 the fork commit, so its diff does not collapse to empty after its merge-back
 (134.13).
 
+*Amended 2026-10-07 (134.13, #760), the author's answers while scoping it:*
+the main branch must exist in git when the side task is created, or
+`POST /v1/tasks` gives the ordinary `base_branch` 400 — a side task created
+while the first main task is still queued or paused is refused rather than
+held until the branch appears (which would wait forever if that task failed
+before cutting) or failed at admission. An explicit `base_branch` beside
+`merge_back` is accepted only when it names the main branch, mirroring
+decision 5's `branch_name` rule. `base_sha` is the main branch's tip, resolved
+locally under the repository lock, and the side branch is cut from that SHA;
+`base_refresh` reads `disabled`/`not_attempted`. A side task handed off from a
+chat keeps the chat's worktree and base (134.15 owns that choice).
+
 ### 14. Follow-up or chat on a main task that handed its worktree on ⇒ 409 (2026-10-07)
 
 Settled by the author (#747 question 7). The directory now belongs to a
@@ -513,9 +525,9 @@ sections and public pages its code makes true, in its own pull request.
   claim transfer, archive safety, refusing follow-up or chat on a
   predecessor, and `end_sha` in commits and diff (decisions 14, 17).
   Depends: 134.11.
-- [ ] **134.13** ([#760](https://github.com/lezli01/vincent/issues/760)) Side
+- [x] **134.13** ([#760](https://github.com/lezli01/vincent/issues/760)) Side
   tasks cut from the issue branch with no fetch, recording `base_sha`
-  (decision 13). Depends: 134.10.
+  (decision 13). Depends: 134.10. ✓ 2026-10-07
 - [ ] **134.14** ([#761](https://github.com/lezli01/vincent/issues/761)) The
   merge-back task's schema, creation, executor and reasons; spec §12.4
   (decisions 11, 15). Depends: 134.9, 134.12, 134.13.
