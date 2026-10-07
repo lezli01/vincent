@@ -2700,8 +2700,13 @@ created before roles existed carries `null` in both.
 
 A chat [handed off](#chats) with `issue_id` becomes the
 main task when the issue has no main branch yet, and its branch becomes the
-main branch; otherwise it becomes a side task with `on_conflict: block`. The
-handoff body does not take `merge_back`.
+main branch; otherwise it becomes a side task, merged back on the body's
+`merge_back.on_conflict` — `block` when the body has no `merge_back`. On an
+issue with no main branch yet a handoff's `merge_back` is accepted and inert:
+the task is the main task, the chat's branch the main branch, and the task
+reads back `merge_back: null`. Only that refusal and the `branch_name` /
+`existing_branch` one are lifted, since a handoff always adopts the chat's
+branch; every other `400` in the table holds, with the same message.
 
 #### Merge-back tasks
 

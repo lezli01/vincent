@@ -689,6 +689,14 @@ key is a template over `.Event`:
 - `github_pull` must render to a pull request number (a leading `#` is
   allowed) or to nothing. It works as it does when you create a task from a
   pull request.
+- `merge_back: {on_conflict: block|agent}`, beside `issue`, makes the task a
+  [side task](../reference/api.md#the-issues-main-branch): it runs in its own
+  worktree, cut from the issue's main branch and merged back into it when
+  done, rather than queueing behind the issue's main task. `block`, the
+  default when `on_conflict` is empty, stops for you on a conflict; `agent`
+  tries a resolver first. It is not a template, and it needs `issue`. A side
+  task forks from the issue's main branch, so on an issue with no main task
+  yet the route refuses it and the delivery lands `refused`.
 
 There is no `github_issue` key. A GitHub issue reaches a task only once the
 project has imported it, through `issue:`: watch it with a

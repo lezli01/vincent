@@ -575,6 +575,7 @@ vincent task add --project ID (--title TITLE | --issue ID | --github-pull N)
                  [--branch NAME] [--existing-branch] [--priority N] [--agent NAME] [--model M]
                  [--effort E] [--field NAME=VALUE]... [--fields-file PATH]
                  [--paused] [--restricted] [--max-task-cost-usd USD]
+                 [--separate-worktree [--merge block|agent]]
                  [--json]
 ```
 
@@ -596,6 +597,8 @@ is no separate draft state.
 | `--agent` / `--model` / `--effort` | The task-level override. It replaces workflow `defaults`, never an explicit step field |
 | `--issue ID` | Create the task from vincent issue `ID` and link the two. Cannot be combined with `--github-pull`. See below |
 | `--github-pull N` | Create the task from GitHub pull request `N`, **running it on that pull request's head branch**. See below |
+| `--separate-worktree` | With `--issue`: make the task a **side task**, in a worktree of its own cut from the issue's main branch and merged back into it when done, instead of a main task that queues behind the one holding the main worktree. Cannot be combined with `--branch`, `--existing-branch` or `--github-pull`. See below |
+| `--merge block\|agent` | With `--separate-worktree`: how the side task is merged back. `block` (the default) is manual — the merge runs, and a conflict blocks for you; `agent` has an agent try to resolve conflicts first |
 | `--paused` | Create the task paused; it starts only when resumed (`vincent task resume`). The scheduler never sees it before then |
 | `--restricted` | Run every agent step restricted, even one whose workflow says full-auto. Refused at creation if a step's agent cannot restrict on this host (cursor on Windows) |
 | `--max-task-cost-usd USD` | This task's own spend cap in USD; the lower of it and config's [`max_task_cost_usd`](configuration.md#max_task_cost_usd) applies, so it can tighten the global cap but not lift it. Inert on codex and cursor, which report no cost |
@@ -703,6 +706,33 @@ issue imported from GitHub, `github_issue` is the GitHub number, the title is
 A closed issue still creates the task, with a warning on stderr. `--issue`
 cannot be combined with `--github-pull`: each would prefill the same title and
 description.
+
+#### A side task on an issue
+
+An issue's first task is its **main** task: its branch becomes the issue's main
+branch, and every later main task runs in that same worktree, one at a time. A
+main task created while another holds the worktree is queued behind it, and
+`task add` says so on stderr (never under `--json`):
+
+```
+queued behind #61 (main worktree busy); pass --separate-worktree to run now
+task 62 created: Crash on cold start (adhoc, branch vincent/61-crash-on-cold-start)
+```
+
+`--separate-worktree` asks for a **side** task instead — the API's
+[`merge_back`](api.md#the-issues-main-branch). It runs now, in its own
+worktree cut from the issue's main branch, and is merged back into it when it
+is done; `--merge agent` lets an agent try to resolve a conflicting merge-back
+before it blocks for you:
+
+```sh
+vincent task add --project 1 --issue 7 --separate-worktree --merge agent
+```
+
+A side task needs a main branch to fork from, so on an issue with no main task
+yet the daemon refuses it (`issue 7 has no main branch yet; create a main task
+first`). `--separate-worktree` without `--issue`, and `--merge` without
+`--separate-worktree`, are refused locally with exit 1 before any request.
 
 #### From a GitHub issue
 
@@ -865,6 +895,11 @@ hold with no resume time prints the reason alone. A task in the ordinary queue
 prints no row. A held task is never `blocked`, so the `hold` and `blocked` rows
 never appear together. `--json` carries the same facts as `queued_reason` and
 `admit_not_before`.
+
+A task created from an issue prints a `worktree` row with its role in the
+issue's worktrees, `main` or `side`; a side task adds a `merge` row, `manual`
+(`on_conflict: block`) or `agent`. A task with no issue prints neither.
+`--json` carries them as `issue_worktree` and `merge_back`.
 
 The `origin` row says which definition the task's workflow name resolved to —
 `built-in`, `project .vincent/workflows/adhoc.yaml`, `global
@@ -2126,7 +2161,8 @@ into a terminal state is the last write the row takes.
 ```sh
 vincent chat handoff CHAT_ID --title TITLE [--workflow NAME] [--description TEXT]
                      [--field name=value ...] [--fields-file FILE] [--priority N]
-                     [--agent NAME] [--model NAME] [--effort LEVEL] [--json]
+                     [--agent NAME] [--model NAME] [--effort LEVEL]
+                     [--merge block|agent] [--json]
 ```
 
 Creates a task that adopts the chat's worktree, branch, base branch and base
@@ -2142,6 +2178,12 @@ project, the base branch and the branch name all come from the chat, and the
 prefills (`--issue`, `--github-pull`) are not offered.
 `--description` is where the conversation's context goes: nothing about the
 chat reaches the workflow's prompts automatically.
+
+A chat on an issue that already has a main branch always hands off to a
+**side** task, merged back into that branch when it is done: manually (`block`)
+unless `--merge agent` asks for an agent to resolve conflicts first. On an
+issue with no main branch yet the chat's branch becomes the main branch, the
+task is the issue's main task, and `--merge` is inert.
 
 Only an idle chat can be handed off. A live turn must be finished or cancelled
 first (409), a worktree in the middle of a merge, rebase, cherry-pick, revert

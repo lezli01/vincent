@@ -9442,6 +9442,16 @@ POST   /v1/chats/{id}/handoff           *Added 2026-09-01 (task 074, issue #288)
                                         **400** until task 134.15 lets the handoff choose. A
                                         main branch that appears between the read and the commit
                                         is a **400** and leaves the chat as it was
+                                        *Amended 2026-10-07 (task 134.15, issue #762):* the
+                                        handoff accepts `merge_back`. On an issue with a main
+                                        branch it selects the side task's `on_conflict`
+                                        (`block` or `agent`); no `merge_back` stays implicit
+                                        `block`. On an issue with no main branch it is inert:
+                                        the task is `main`, the chat's branch becomes the main
+                                        branch, and no `merge_on_conflict` is stored
+                                        (`merge_back: null`). `merge_back` without `issue_id`
+                                        and an unknown `on_conflict` are the create path's
+                                        400s, from the same code
 POST   /v1/chats/{id}/close             *Added 2026-09-17 (task 119, issue #472).* Ends a chat
                                         linked to a task: a live turn is cancelled and waited
                                         for, then `idle → closed` (§5.5) and the task's lock

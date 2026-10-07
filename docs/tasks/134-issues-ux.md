@@ -1,6 +1,6 @@
 # 134 — Issues UX: a four-lane issues board and one main worktree per issue
 
-**Status:** 🔄 in progress (14/19)
+**Status:** 🔄 in progress (15/19)
 
 Issue [#748](https://github.com/lezli01/vincent/issues/748), part of
 [#747](https://github.com/lezli01/vincent/issues/747), the epic. Spec §5.6 in
@@ -237,6 +237,13 @@ hand-over.
 - A chat handoff with `issue_id` is main when the issue has no main branch
   (the chat's branch becomes it) and side with `block` otherwise, until 134.15
   lets the handoff body choose; the handoff refuses `merge_back` until then.
+  *Amended 2026-10-07 (134.15, #762):* the handoff accepts `merge_back`. With
+  no `merge_back` it stays implicit side/`block`, and a `merge_back` only
+  selects `on_conflict`. On an issue with no main branch, `merge_back` is
+  inert on the handoff only: the task is main on the chat's branch and stores
+  no `merge_on_conflict`. `POST /v1/tasks`, the CLI and triggers keep the
+  "create a main task first" 400, so a per-issue trigger carrying `merge_back`
+  fails its delivery until the issue has a main branch.
 
 *Amended 2026-10-07 (134.12, #759), settled while scoping it:*
 
@@ -652,8 +659,12 @@ sections and public pages its code makes true, in its own pull request.
   task; `merge_source_missing`, `merge_target_missing`; cancel aborts a
   conflicted merge-back; issue delete refused for a live side task; spec
   §5.3, §5.6, §6, §7.6, §10, §12.4, §13.2, §18. ✓ 2026-10-07
-- [ ] **134.15** ([#762](https://github.com/lezli01/vincent/issues/762)) The
+- [x] **134.15** ([#762](https://github.com/lezli01/vincent/issues/762)) The
   choice in the CLI, MCP, triggers and the chat handoff. Depends: 134.14.
+  `task add --separate-worktree [--merge]`, the "queued behind" note, `task
+  show`'s worktree and merge rows, `chat handoff --merge`; the handoff accepts
+  `merge_back` (decision 7's amendment); trigger `action.merge_back`; spec
+  §13.2. ✓ 2026-10-07
 - [ ] **134.16** ([#763](https://github.com/lezli01/vincent/issues/763)) The
   occupant and merge-backs on cards and the detail, and the side-worktree
   rows in the new-task form. Depends: 134.8, 134.15.
