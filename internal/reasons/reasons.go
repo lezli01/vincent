@@ -237,6 +237,14 @@ var catalogue = map[string]Explanation{
 		Title: "existing branch in use", Meaning: "The existing branch is checked out in another of vincent's worktrees.",
 		Actions: retryOnly, DocAnchor: troubleshooting("adopt_branch_missing--adopt_branch_diverged--adopt_branch_checked_out"),
 	},
+	"issue_branch_checked_out": {
+		Title: "issue branch in the main checkout", Meaning: "The issue's main branch is checked out in the project's main checkout, where its main tasks never run; switch that checkout to another branch, then retry.",
+		Actions: retryOnly, DocAnchor: lifecycle,
+	},
+	"repo_operation_in_progress": {
+		Title: "git operation in progress", Meaning: "The worktree the task was to receive is partway through a merge, rebase, cherry-pick, revert or bisect; finish or abort it there, then retry.",
+		Actions: retryOnly, DocAnchor: lifecycle,
+	},
 
 	// The skip reason (internal/store).
 	"condition": {
