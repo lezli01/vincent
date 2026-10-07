@@ -13543,6 +13543,13 @@ stream for the live tail.
    The selection follows the issue id across a re-list, into whatever section
    it moved to, and falls to the nearest row when the issue leaves the view.
 
+   *Amended 2026-10-07 (task 134.6, issue #753).* A task event re-lists only
+   when its payload's `issue_id` (§13.3) names an issue the list is showing:
+   only such an event can move a row's task count or active marker. A step
+   advancing, a status line, or a task with no shown issue no longer costs a
+   re-list. Every `issue.*` event — `issue.lane_changed` among them — and
+   every `project.*` event still does.
+
 13. **Issue detail.** *Added 2026-10-02 (task 130.9, issue #668).* One issue:
    a header with state, id, title and source badge; the body; labels, kind,
    priority (`0` none, `1` urgent … `4` low — the inverted scale of task 130

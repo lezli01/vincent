@@ -1877,9 +1877,9 @@ headers, so an empty one reads "none match".
 Each row carries the issue's id, its state (with the close reason once it is
 closed, such as `closed · not planned`), the title, its labels and kind,
 `owner/repo#N` when it was imported, and its tasks: how many it started, with a
-`●` while one of them is still unsettled. Any change to an issue or to a task
-re-lists the screen with no keypress, and the selection follows the issue into
-whatever lane it moved to.
+`●` while one of them is still unsettled. Any change to an issue, or to a task
+of an issue on the screen, re-lists it with no keypress, and the selection
+follows the issue into whatever lane it moved to.
 
 ![The issues list on api, scoped to all issues: its three local issues with
 their labels and kinds, one of them closed as not
