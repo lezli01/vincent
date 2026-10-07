@@ -807,6 +807,13 @@ func (r *Runner) ensureWorktree(ctx context.Context, task *store.Task, project *
 	// A task cannot be both: POST /v1/tasks refuses `existing_branch` next to
 	// `github_pull`, so the order of these two branches is a formality.
 	adopt := task.AdoptedBranch && !fromPull
+	// An issue's side task (task 134 decision 13) is cut from the issue's
+	// main branch with no fetch and no fast-forward, whatever
+	// `fetch_base_branch` says: a fast-forward of that branch would move a
+	// clean main worktree under its occupant. It records the tip it was cut
+	// from as base_sha, and its refresh as disabled/not attempted — it did
+	// cut from a base, and nothing refreshed it.
+	side := task.IssueWorktree == store.IssueWorktreeSide && !fromPull && !adopt
 	// refreshOf is what the claim records about the base refresh (§10, task
 	// 099), so a human can later tell a stale base from an old task without
 	// reading the daemon log. A pull-request task records none: the fetch it
@@ -846,6 +853,11 @@ func (r *Runner) ensureWorktree(ctx context.Context, task *store.Task, project *
 		created, err = r.deps.Worktrees.CreateAdoptAndClaim(ctx, project.Path, worktree.TaskOwner(task.ID),
 			task.BranchName, claim)
 		logAdopt(log, task, project, created)
+	case side:
+		created, err = r.deps.Worktrees.CreateSideAndClaim(ctx, project.Path, worktree.TaskOwner(task.ID),
+			task.BranchName, task.BaseBranch, claim)
+		log.Debug("cut a side worktree from the issue's main branch without fetching",
+			"base", task.BaseBranch, "base_sha", created.BaseSHA)
 	default:
 		created, err = r.deps.Worktrees.CreateAndClaim(ctx, project.Path, worktree.TaskOwner(task.ID),
 			task.BranchName, task.BaseBranch, fetch, claim)

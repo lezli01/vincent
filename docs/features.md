@@ -417,9 +417,12 @@ In detail:
 - A pull-requests screen lists what is open in the selected project on GitHub,
   with the task claiming each one, and is where a link is made or removed
   by hand. It is offered only when the selected project qualifies.
-- An issues screen lists the selected project's issues — filed in vincent or imported
-  from GitHub — with each one's state, labels, source and the tasks it started,
-  and opens one to its Markdown-rendered description, its discussion thread
+- An issues screen lays the selected project's issues — filed in vincent or
+  imported from GitHub — out as a board of four lanes vincent derives from
+  each issue and its tasks: open, in progress, hand-off and done, stacked as
+  foldable sections with a count and a `!` badge for what waits on you, and
+  `done` hidden until `s` shows it. Each row carries the issue's state,
+  labels, source and the tasks it started; the screen opens one to its Markdown-rendered description, its discussion thread
   and its active tasks. A form files and edits issues there, `W` writes a
   comment in `$EDITOR`, and the same screens close, reopen and delete them;
   an imported issue's mirrored fields and its thread, which mirrors GitHub's,

@@ -2107,13 +2107,15 @@ was refreshed first:
 ```
 
 `base_sha` is the commit the task branch was cut from, and is absent when the
-branch was cut from the local `base_branch` itself. `base_refresh` is recorded
+branch was cut from the local `base_branch` itself — except on an issue's side
+task, which always records the main branch's tip it was cut from. `base_refresh` is recorded
 once, when the scheduler first admits the task and creates its worktree. It is
 `null` before that, for a task whose worktree predates the record, and for a task
 created from a pull request, which refreshes no base.
 
 `fetch.result` is `fetched`, `no_upstream`, `disabled`
-([`fetch_base_branch: false`](configuration.md#fetch_base_branch)) or `error` —
+([`fetch_base_branch: false`](configuration.md#fetch_base_branch), or a side
+task, which never fetches) or `error` —
 the task started from the local branch, which may be stale, and `error` carries
 git's message. `fast_forward.result` is what then happened to your local base
 branch: `advanced` (it moved to the fetched commit, with its checkout at
@@ -2643,12 +2645,15 @@ branch, archive does not delete it even when it has no commits past its base. Th
 
 `occupant_task_id` is the main task that has started and not yet finished —
 it holds the main worktree even while `blocked`, `paused` or
-`awaiting_gate`. It is `null` when nothing holds it, and `main_worktree` is
+`awaiting_gate` — or a `done` or `aborted` main task whose worktree a
+[linked chat](#a-chat-on-a-stopped-task) still has open. It is `null` when nothing holds it, and `main_worktree` is
 absent while the issue has no main branch. When every main task has been
 archived the issue has none, and the next main task starts a fresh branch.
 
 Creating a main task while the main worktree is occupied names the occupant
-in the `201` as `main_worktree_occupant_task_id`.
+in the `201` as `main_worktree_occupant_task_id`. The new task stays `queued`
+while the occupant holds the worktree — no error, no reason — and is admitted
+once it is free; at most one main task of an issue is in progress at a time.
 
 `merge_back` asks for a **side** task instead — its own worktree, to be merged
 back into the main branch when it is done:
@@ -2660,7 +2665,11 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/tasks" \
 ```
 
 `on_conflict` is `block` (stop for a human on a conflict; the default) or
-`agent` (try a resolver first). The task reads back with
+`agent` (try a resolver first). A side task is cut from the issue's main
+branch, never the project's base: leave `base_branch` out, or name the main
+branch. It is cut from the main branch as it is on your machine, without
+fetching it and without moving it, so the main task's worktree is never
+touched, and its `base_sha` is the main branch's tip at the cut. The task reads back with
 `issue_worktree: "side"` and `merge_back: { "on_conflict": … }`. A main task
 carries `merge_back: null`, and a task with no issue, a fan-out lane, or one
 created before roles existed carries `null` in both.
@@ -2669,6 +2678,8 @@ created before roles existed carries `null` in both.
 |---|---|
 | `400` | `merge_back` without `issue_id` |
 | `400` | `merge_back` on an issue that has no main branch yet — create a main task first |
+| `400` | `merge_back` while the main branch is not in git yet — the first main task is still queued or paused, so the ordinary "`base_branch` does not resolve to a local branch" |
+| `400` | `merge_back` with a `base_branch` other than the issue's main branch |
 | `400` | `merge_back` together with `branch_name` or `existing_branch` |
 | `400` | `merge_back.on_conflict` other than `block` or `agent` |
 | `400` | A main task whose `branch_name` or `existing_branch` names a branch other than the issue's main branch |
@@ -2678,10 +2689,11 @@ main task when the issue has no main branch yet, and its branch becomes the
 main branch; otherwise it becomes a side task with `on_conflict: block`. The
 handoff body does not take `merge_back`.
 
-Roles, the main branch and the occupant are recorded and served today; the
-scheduler does not yet hold a main task back until the occupant settles, side
-tasks are not yet cut from the main branch, and nothing yet merges a side task
-back — those arrive with later releases.
+Roles, the main branch and the occupant are recorded and served today, and
+the scheduler holds a later main task back while the occupant holds the
+worktree. A later main task still waits for the previous one to be
+**archived**, not merely finished, and nothing yet merges a side task back —
+those arrive with later releases.
 
 ## Chats
 
@@ -3382,7 +3394,7 @@ task.deleted            chat.deleted
 task.restored
 issue.created           issue.updated           issue.state_changed
 issue.labels_changed    issue.comment_added     issue.comment_updated
-issue.deleted           issue.sync_changed
+issue.deleted           issue.sync_changed      issue.lane_changed
 project.*               workflow.registry_changed
 trigger.fired           trigger.poll_changed
 agent.quota_changed     daemon.shutting_down
@@ -3420,8 +3432,22 @@ they need.
   `?types=issue.created,issue.updated,issue.state_changed,issue.labels_changed,issue.deleted&project_id=N`;
   `Last-Event-ID` resumes them like any durable event. A `PATCH` that edits
   fields and labels emits `issue.updated` and `issue.labels_changed`, and one
-  that changes nothing emits nothing. `task.created` carries `issue_id` for a
-  task created from an issue.
+  that changes nothing emits nothing.
+- `task.created`, `task.state_changed`, `task.deleted` and `task.restored`
+  carry `issue_id` when the task belongs to an issue — a fan-out lane included
+  — and omit it otherwise, so a client can tell which issue a task event
+  concerns without fetching the task.
+- `issue.lane_changed` carries `{ id, from, to, task_id?, by? }` and announces
+  that an issue moved between [lanes](#issues) (`open`, `in_progress`,
+  `hand_off`, `done`). `task_id` names the root task whose create, state
+  change, delete or restore moved it; `by` is the actor of a close or reopen;
+  exactly one of the two is set. It is written in the same commit as the
+  event that caused it — the task event, `issue.state_changed`, or a sync
+  refresh's `issue.updated` — and immediately after it, and only when the
+  lane actually moved: a fan-out lane never moves its issue's lane, creating
+  or deleting an issue writes none, and a task finishing on a closed issue
+  writes none. Like the other `issue.*` events it never reaches a per-task
+  stream. A board can re-list on it instead of on every task event.
 - `issue.sync_changed` carries `{ project_id, ok, reason? }` and fires only when
   a project's [issue sync](#issue-sync) flips between ok and failing, so a sync
   failing on every tick is one event, not one per tick. A project's first

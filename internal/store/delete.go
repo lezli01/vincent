@@ -95,12 +95,14 @@ func (s *Store) DeleteTaskCascade(ctx context.Context, id int64) (err error) {
 		}
 	}()
 	var (
-		state     string
-		projectID int64
-		title     string
+		state           string
+		projectID       int64
+		title           string
+		issueID, parent sql.NullInt64
 	)
 	err = tx.QueryRowContext(ctx,
-		`SELECT state, project_id, title FROM tasks WHERE id = ?`, id).Scan(&state, &projectID, &title)
+		`SELECT state, project_id, title, issue_id, parent_task_id FROM tasks WHERE id = ?`,
+		id).Scan(&state, &projectID, &title, &issueID, &parent)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("task %d: %w", id, ErrNotFound)
 	}
@@ -136,6 +138,12 @@ func (s *Store) DeleteTaskCascade(ctx context.Context, id int64) (err error) {
 			Message: fmt.Sprintf("chat %d was handed off to task %d and would be left pointing at nothing", chat, id),
 		}
 	}
+	// Deleting the archived `done` task an issue was handed off by moves the
+	// issue back to open (task 134.6 decision 3).
+	watch, err := watchTaskLaneTx(ctx, tx, nullInt64Ptr(issueID), nullInt64Ptr(parent), projectID)
+	if err != nil {
+		return err
+	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM step_runs WHERE task_id = ?`, id); err != nil {
 		return fmt.Errorf("delete task %d cascade: %w", id, err)
 	}
@@ -146,11 +154,14 @@ func (s *Store) DeleteTaskCascade(ctx context.Context, id int64) (err error) {
 	if err = oneRowAffected(res, fmt.Sprintf("task %d", id)); err != nil {
 		return err
 	}
-	ev, err := deletedEvent(EventTaskDeleted, id, projectID, title)
+	ev, err := deletedEvent(EventTaskDeleted, id, projectID, title, nullInt64Ptr(issueID))
 	if err != nil {
 		return err
 	}
 	if err = appendEventTx(ctx, tx, ev); err != nil {
+		return err
+	}
+	if err = watch.followTx(ctx, tx, ev, id); err != nil {
 		return err
 	}
 	if err = tx.Commit(); err != nil {
@@ -218,7 +229,7 @@ func (s *Store) DeleteChatCascade(ctx context.Context, id int64) (err error) {
 	if err = oneRowAffected(res, fmt.Sprintf("chat %d", id)); err != nil {
 		return err
 	}
-	ev, err := deletedEvent(EventChatDeleted, id, projectID, title)
+	ev, err := deletedEvent(EventChatDeleted, id, projectID, title, nil)
 	if err != nil {
 		return err
 	}
@@ -238,12 +249,27 @@ func (s *Store) DeleteChatCascade(ctx context.Context, id int64) (err error) {
 // fetched.
 //
 // TaskID stays nil even for a task: the column is a foreign key, and the whole
-// point of this event is that the task it names is gone.
-func deletedEvent(evType string, id, projectID int64, title string) (*Event, error) {
-	payload, err := json.Marshal(map[string]any{"id": id, "title": title})
+// point of this event is that the task it names is gone. A task's issue_id
+// rides the payload when it had one (task 134.6 decision 1); a chat passes
+// nil.
+func deletedEvent(evType string, id, projectID int64, title string, issueID *int64) (*Event, error) {
+	body := map[string]any{"id": id, "title": title}
+	if issueID != nil {
+		body["issue_id"] = *issueID
+	}
+	payload, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("marshal %s event: %w", evType, err)
 	}
 	pid := projectID
 	return &Event{Type: evType, ProjectID: &pid, Payload: payload}, nil
+}
+
+// nullInt64Ptr is n as a pointer, nil when NULL.
+func nullInt64Ptr(n sql.NullInt64) *int64 {
+	if !n.Valid {
+		return nil
+	}
+	v := n.Int64
+	return &v
 }

@@ -13,6 +13,13 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **The TUI's issues screen is a board of lanes.** The selected project's
+  issues are laid out in stacked sections — open, in progress, hand-off and
+  done — taken from the lane vincent derives for each issue, with a count per
+  section, a `! n` badge for issues whose task is waiting on you, and a totals
+  line above them. `done` is hidden when the screen opens and `s` shows or
+  hides it, replacing the open → closed → all cycle. `←`/`→` fold the section
+  you are in and `C`/`O` fold all of them.
 - **Issues say which lane they are in.** Every issue on the API now carries
   `lane` — `open`, `in_progress`, `hand_off` (its work finished and is waiting
   for you to close it) or `done` (closed) — and `attention`, true while one of
@@ -20,6 +27,20 @@ list with the user-facing context a commit subject cannot carry.
   `GET /v1/projects?stats=true` counts issues per lane under
   `stats.issues.lanes`. Both are derived from the issue's root tasks on every
   read, never stored.
+- **Event streams say when an issue changes lane.** A new durable event,
+  `issue.lane_changed` (`{id, from, to, task_id?, by?}`), is written in the
+  same commit as the task write, close or reopen that moved an issue's lane,
+  right after that write's own event. `task.state_changed`, `task.deleted`
+  and `task.restored` now carry `issue_id`, as `task.created` already did, so
+  a client can tell which issue a task event concerns. The TUI issues list
+  uses this to re-list only when a shown issue's task changes, instead of on
+  every task event.
+- **`vincent issue ls` shows the lane.** A `LANE` column follows `STATE`, with
+  a trailing ` !` when one of the issue's tasks is waiting on you, and
+  `--lane` (repeatable) filters by it — `--lane done` is every closed issue.
+  `vincent issue show` prints the lane too. Over MCP, `issue_list` takes
+  `lane`, and a repeatable query parameter such as `lane`, `state` or `label`
+  can now be passed as an array of strings to repeat it.
 - **An issue has a main branch.** A task created from an issue with
   `issue_id` is now the issue's main task: the first one's branch becomes the
   issue's main branch, and every later main task of the issue runs on it —
@@ -32,6 +53,20 @@ list with the user-facing context a commit subject cannot carry.
   `main_worktree_occupant_task_id`. A chat handed off with `issue_id` becomes
   the main task, or a side task once the issue has a main branch. Tasks
   created before this change keep working exactly as they did.
+- **At most one main task of an issue runs at a time.** The scheduler keeps
+  an issue's next main task queued while another main task of the issue has
+  started and not finished — including one that is blocked, paused or
+  waiting at a gate — or has finished with a chat still open on its
+  worktree. The waiting task shows no new state or reason; the issue's
+  `main_worktree.occupant_task_id` names what it waits on. Side tasks and
+  tasks of other issues are not held.
+- **Side tasks start from the issue's main branch.** A task created with
+  `merge_back` is now cut from the issue's main branch rather than the
+  project's base, without fetching or fast-forwarding it — so admitting one
+  never moves the files under the main task's worktree — and records the
+  branch's tip as its `base_sha`. `base_branch` beside `merge_back` must name
+  the main branch, and the main branch must already exist in git (its first
+  main task has been started), or `POST /v1/tasks` answers `400`.
 - **The TUI opens on the project you mean.** `vincent --project <name|id>`
   opens the TUI on that project. Without it, launching `vincent` inside a
   registered project's checkout, or inside a task's or chat's worktree, opens

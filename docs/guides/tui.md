@@ -1845,17 +1845,41 @@ states exist for.
 ### Issues
 
 The selected project's issues — the ones filed in vincent and the ones imported
-from GitHub — in one flat list. It is in the palette whether or not the
-project has a GitHub integration: issues are vincent's own. Switching project
-swaps the list, and the header reads "loading ‹project›…" until the new one
-arrives. The listing
-starts open-only and `s` cycles it through closed and all.
+from GitHub — as a board of four lanes. It is in the palette whether or not
+the project has a GitHub integration: issues are vincent's own. Switching
+project swaps the list, and the header reads "loading ‹project›…" until the
+new one arrives.
+
+The lanes are stacked sections, top to bottom:
+
+- **open** — no task is working on the issue and none has finished: it has no
+  task yet, or only cancelled ones;
+- **in progress** — a task started from it is still working, waiting or blocked;
+- **hand-off** — every task started from it has settled and at least one
+  finished `done`, so it is back with you to review and close;
+- **done** — the issue is closed, whatever the reason.
+
+vincent works out an issue's lane from its state and its tasks, so the lanes
+cannot be dragged and no key moves an issue between them: starting a task,
+finishing one, or closing the issue does that. Each section's header shows its
+count and, with `! n`, how many of its issues have a task waiting on you; an
+empty section still shows its header, with `0` and "none". A line above the
+sections totals them.
+
+`done` is hidden when the screen opens, and the totals line says so with
+`done hidden (s)`: `s` shows it as the fourth section, listing closed issues
+too, and `s` again hides it. `←` and `→` fold and unfold the section you are
+in, and `C` and `O` fold and unfold all of them; a folded header keeps its
+count and its `! n`. The `done` setting and the folds last until you quit, and
+survive a project switch. `/` filters within the sections and keeps their
+headers, so an empty one reads "none match".
 
 Each row carries the issue's id, its state (with the close reason once it is
 closed, such as `closed · not planned`), the title, its labels and kind,
 `owner/repo#N` when it was imported, and its tasks: how many it started, with a
-`●` while one of them is still unsettled. Any change to an issue or to a task
-re-lists the screen with no keypress.
+`●` while one of them is still unsettled. Any change to an issue, or to a task
+of an issue on the screen, re-lists it with no keypress, and the selection
+follows the issue into whatever lane it moved to.
 
 ![The issues list on api, scoped to all issues: its three local issues with
 their labels and kinds, one of them closed as not
@@ -1865,9 +1889,11 @@ planned](../assets/tui-issues.png)
 |---|---|
 | `enter` | Open the selected issue |
 | `o` | Open an imported issue's page in a browser — a local issue has none, and says so |
-| `s` | Cycle the listing between open, closed and all |
+| `s` | Show or hide the done lane |
 | `R` | Re-read the issues |
 | `↑`/`↓` | Move the selection |
+| `←`/`→` | Fold or unfold the lane section you are in |
+| `C`/`O` | Fold or unfold every lane section |
 | `/` | Filter by id, title, label or kind |
 | `n` | File a new issue in this project |
 | `a` | Create a task from the selected issue — the form is prefilled from it and editable first |

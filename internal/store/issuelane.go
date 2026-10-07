@@ -1,6 +1,11 @@
 package store
 
 import (
+	"context"
+	"database/sql"
+	"fmt"
+	"slices"
+
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/taskstate"
 )
@@ -98,4 +103,76 @@ func laneExpr() sqlFrag {
 			ELSE ? END)`,
 		args: args,
 	}
+}
+
+// issueLaneTx reads one issue's lane inside tx, through laneExpr, so the
+// lane an `issue.lane_changed` reports is the lane every reader derives.
+func issueLaneTx(ctx context.Context, tx *sql.Tx, issueID int64) (issuestate.Lane, error) {
+	lane := laneExpr()
+	q := `SELECT ` + lane.sql + ` FROM issues i WHERE i.id = ?`
+	var out string
+	if err := tx.QueryRowContext(ctx, q, append(slices.Clone(lane.args), issueID)...).Scan(&out); err != nil {
+		return "", fmt.Errorf("read issue %d lane: %w", issueID, err)
+	}
+	return issuestate.Lane(out), nil
+}
+
+// laneWatch is the before half of the lane-change rule (task 134.6 decision
+// 3): the lane an issue had before a write in the same transaction. A zero
+// laneWatch watches nothing, which is what a task with no issue, and a
+// fan-out lane, get — a lane is part of its parent's work and never moves
+// its issue's lane on its own.
+type laneWatch struct {
+	issueID, projectID int64
+	from               issuestate.Lane
+}
+
+// watchTaskLaneTx starts watching the lane of the issue a root task belongs
+// to. Call it before the task write.
+func watchTaskLaneTx(ctx context.Context, tx *sql.Tx, issueID, parentTaskID *int64, projectID int64) (laneWatch, error) {
+	if issueID == nil || parentTaskID != nil {
+		return laneWatch{}, nil
+	}
+	return watchIssueLaneTx(ctx, tx, *issueID, projectID)
+}
+
+// watchIssueLaneTx starts watching one issue's lane. Call it before the
+// write that may move it.
+func watchIssueLaneTx(ctx context.Context, tx *sql.Tx, issueID, projectID int64) (laneWatch, error) {
+	from, err := issueLaneTx(ctx, tx, issueID)
+	if err != nil {
+		return laneWatch{}, err
+	}
+	return laneWatch{issueID: issueID, projectID: projectID, from: from}, nil
+}
+
+// changedTx is the after half: the `issue.lane_changed` event the write
+// caused, or nil when the lane did not move. Exactly one of taskID and by
+// is set — the task whose write moved the lane, or the actor who closed or
+// reopened the issue (decision 2). The event is built, not appended: the
+// caller appends it after the event recording its cause.
+func (w laneWatch) changedTx(ctx context.Context, tx *sql.Tx, taskID *int64, by issuestate.Actor) (*Event, error) {
+	if w.issueID == 0 {
+		return nil, nil
+	}
+	to, err := issueLaneTx(ctx, tx, w.issueID)
+	if err != nil || to == w.from {
+		return nil, err
+	}
+	return laneChangedEvent(w.projectID, w.issueID, w.from, to, taskID, by)
+}
+
+// followTx appends the lane event a task write caused, if any, after
+// cause — which must already be appended — and chains it onto cause so the
+// caller's one post-commit notify publishes both, in order.
+func (w laneWatch) followTx(ctx context.Context, tx *sql.Tx, cause *Event, taskID int64) error {
+	ev, err := w.changedTx(ctx, tx, &taskID, "")
+	if err != nil || ev == nil {
+		return err
+	}
+	if err := appendEventTx(ctx, tx, ev); err != nil {
+		return err
+	}
+	cause.follow = ev
+	return nil
 }

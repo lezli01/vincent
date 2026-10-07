@@ -6,6 +6,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/testrepo"
 )
 
 // TestIssueWorktreeOverTheWire pins the task 134.10 client fields against the
@@ -30,6 +31,9 @@ func TestIssueWorktreeOverTheWire(t *testing.T) {
 	if _, _, err := h.store.TransitionTask(ctx, main.ID, store.TaskQueued, store.TaskRunning, store.TaskChange{}); err != nil {
 		t.Fatalf("admit: %v", err)
 	}
+	// Admission cuts the main branch; a side task needs it in git (task
+	// 134.13).
+	testrepo.Run(t, h.repo, "branch", main.BranchName)
 
 	next, err := h.client.CreateTask(ctx, apiclient.CreateTaskRequest{ProjectID: h.projectID, IssueID: &iss.ID, Title: "next"})
 	if err != nil {
@@ -45,6 +49,9 @@ func TestIssueWorktreeOverTheWire(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("CreateTask side: %v", err)
+	}
+	if side.BaseBranch != main.BranchName {
+		t.Errorf("side base = %q, want the main branch %q", side.BaseBranch, main.BranchName)
 	}
 	if side.IssueWorktree == nil || *side.IssueWorktree != "side" || side.MergeBack == nil || side.MergeBack.OnConflict != "agent" {
 		t.Errorf("side task = %v / %+v", side.IssueWorktree, side.MergeBack)

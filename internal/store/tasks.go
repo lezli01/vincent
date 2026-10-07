@@ -168,6 +168,12 @@ func insertTaskTx(
 		t.CreatedAt = now
 	}
 	t.UpdatedAt = now
+	// The issue's lane before the insert (task 134.6 decision 3): a root
+	// task created on an issue may move it to in_progress.
+	watch, err := watchTaskLaneTx(ctx, tx, t.IssueID, t.ParentTaskID, t.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("insert task: %w", err)
+	}
 	fields, err := marshalFields(t.Fields)
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)
@@ -301,6 +307,9 @@ func insertTaskTx(
 	if err := appendEventTx(ctx, tx, ev); err != nil {
 		return nil, err
 	}
+	if err := watch.followTx(ctx, tx, ev, taskID); err != nil {
+		return nil, err
+	}
 	return ev, nil
 }
 
@@ -349,9 +358,10 @@ func (e *NoMainBranchError) Error() string {
 
 // IssueMainWorktree is an issue's main worktree as §5.6 derives it (task 134
 // decisions 2, 8): the branch of its unarchived main-role tasks, and the
-// main-role task occupying it — admitted (`started_at` set) and not settled.
-// Branch is "" when the issue has no main branch; OccupantTaskID is nil when
-// nothing holds it.
+// main-role task occupying it — admitted (`started_at` set) and not settled,
+// or settled `done`/`aborted` with its worktree still kept open by a linked
+// chat (decision 8 as amended 2026-10-07). Branch is "" when the issue has no
+// main branch; OccupantTaskID is nil when nothing holds it.
 type IssueMainWorktree struct {
 	Branch         string
 	OccupantTaskID *int64
@@ -369,15 +379,42 @@ func issueMainBranchSQL(issueRef string) string {
 }
 
 // issueMainOccupantSQL names the main-role task holding an issue's main
-// worktree (task 134 decision 8): admitted, which `started_at` records from
-// the first `running`, and not settled. Blocked, gated and paused tasks hold
-// it — they leave files behind. Its bind arguments are the settled states.
-// #758's admission predicate reads the same definition.
-func issueMainOccupantSQL(issueRef string) string {
-	return `SELECT id FROM tasks
-		WHERE issue_id = ` + issueRef + ` AND issue_worktree = 'main' AND started_at IS NOT NULL
-		AND state NOT IN ` + placeholders(len(settledTaskStates())) + `
-		ORDER BY id LIMIT 1`
+// worktree (task 134 decision 8). It is the one definition three readers
+// share — the issue row, the creation hint and the scheduler's admission
+// predicate (#758) — so they cannot disagree about who holds the directory.
+//
+// An occupant is an unarchived main-role task of the issue that is either
+// admitted, which `started_at` records from the first `running`, and not
+// settled — blocked, gated and paused tasks hold it, they leave files
+// behind, and so does one interrupted back to `queued` — or settled `done`/
+// `aborted` with a worktree a linked chat still has open (decision 8 as
+// amended 2026-10-07): the human is still working in that directory.
+// `archived_at IS NULL` is spelled out because an archived task is settled
+// but the chat clause alone would not exclude it.
+//
+// excludeRef, when not "", names a task that is never its own occupant: the
+// admission candidate. Its bind arguments come from issueMainOccupantArgs.
+func issueMainOccupantSQL(issueRef, excludeRef string) string {
+	q := `SELECT m.id FROM tasks m
+		WHERE m.issue_id = ` + issueRef + ` AND m.issue_worktree = 'main' AND m.archived_at IS NULL`
+	if excludeRef != "" {
+		q += ` AND m.id <> ` + excludeRef
+	}
+	return q + `
+		AND ((m.started_at IS NOT NULL AND m.state NOT IN ` + placeholders(len(settledTaskStates())) + `)
+		     OR (m.state IN (?, ?) AND m.worktree_path IS NOT NULL AND m.worktree_path <> ''
+		         AND EXISTS (SELECT 1 FROM chats mc
+		           WHERE mc.linked_task_id = m.id AND mc.state NOT IN (?, ?, ?))))
+		ORDER BY m.id LIMIT 1`
+}
+
+// issueMainOccupantArgs binds issueMainOccupantSQL in text order: the
+// settled states, the two states a chat keeps occupying, the terminal chat
+// states.
+func issueMainOccupantArgs() []any {
+	args := append([]any{}, settledTaskStates()...)
+	args = append(args, string(TaskDone), string(TaskAborted))
+	return append(args, terminalChatStateArgs()...)
 }
 
 // GetIssueMainWorktree reads issueID's main worktree (task 134 decision 8).
@@ -387,10 +424,10 @@ func (s *Store) GetIssueMainWorktree(ctx context.Context, issueID int64) (IssueM
 	var branch sql.NullString
 	var occupant sql.NullInt64
 	// Placeholders in text order: the branch's issue, the occupant's issue,
-	// then the occupant's settled states.
-	args := append([]any{issueID, issueID}, settledTaskStates()...)
+	// then the occupant's own arguments.
+	args := append([]any{issueID, issueID}, issueMainOccupantArgs()...)
 	err := s.db.QueryRowContext(ctx, `SELECT (`+issueMainBranchSQL("?")+`), (`+
-		issueMainOccupantSQL("?")+`)`, args...).Scan(&branch, &occupant)
+		issueMainOccupantSQL("?", "")+`)`, args...).Scan(&branch, &occupant)
 	if err != nil {
 		return out, fmt.Errorf("issue %d main worktree: %w", issueID, err)
 	}
@@ -411,7 +448,7 @@ func (s *Store) GetIssueMainWorktree(ctx context.Context, issueID int64) (IssueM
 // branch. One joining an existing main branch takes that name, unless the
 // caller named a different branch itself, which is
 // *MainBranchMismatchError. A side task needs a main branch to exist, or it
-// is *NoMainBranchError.
+// is *NoMainBranchError, and takes that branch as its base.
 func bindIssueWorktreeTx(ctx context.Context, tx *sql.Tx, t *Task) error {
 	switch t.IssueWorktree {
 	case "":
@@ -445,6 +482,19 @@ func bindIssueWorktreeTx(ctx context.Context, tx *sql.Tx, t *Task) error {
 	if t.IssueWorktree == IssueWorktreeSide {
 		if main == "" {
 			return &NoMainBranchError{IssueID: *t.IssueID}
+		}
+		// A side task is cut from the issue's main branch (task 134
+		// decision 13). The API already resolved it; this re-asserts the
+		// name the transaction sees, which differs only if every main task
+		// was archived and a new one created in between. A handed-off side
+		// task already has its worktree, so its base is a fact about that
+		// directory and stays the chat's (decision 8 of 134.13).
+		if t.WorktreePath == "" && t.BaseBranch != main {
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE tasks SET base_branch = ? WHERE id = ?`, main, t.ID); err != nil {
+				return fmt.Errorf("bind issue %d side base: %w", *t.IssueID, err)
+			}
+			t.BaseBranch = main
 		}
 		return nil
 	}
@@ -855,15 +905,18 @@ const StepTypeFanOut = "fan_out"
 
 // ListAdmissible returns every queued task in admission order — priority
 // DESC, created_at ASC, id ASC (spec §11) — each carrying its project's
-// current slot count and cap, plus how many step runs it still has open.
+// current slot count and cap, plus how many step runs it still has open, how
+// many owners claim its working directory, and whether its issue's main
+// worktree is occupied by another task.
 //
 // Ordering and both caps come from SQL, but the walk itself is the caller's:
 // admitting a task changes the tallies, and a single statement cannot see
 // its own in-flight admissions.
 func (s *Store) ListAdmissible(ctx context.Context) ([]Candidate, error) {
-	// G202: both interpolations are package-internal and value-free —
+	// G202: every interpolation is package-internal and value-free —
 	// prefixed() alias-qualifies the taskColumns constant, slotPlaceholders is
-	// placeholders(). The states themselves bind as arguments.
+	// placeholders(), issueMainOccupantSQL takes only column references. The
+	// states themselves bind as arguments.
 	//nolint:gosec // G202: see above; no caller value reaches the query text
 	q := `SELECT ` + prefixed("t", taskColumns) + `,
 			(SELECT COUNT(*) FROM tasks o
@@ -880,13 +933,18 @@ func (s *Store) ListAdmissible(ctx context.Context) ([]Candidate, error) {
 			+ (SELECT COUNT(*) FROM chats c
 			  WHERE c.project_id = t.project_id AND c.branch = t.branch_name
 			    AND (c.linked_task_id IS NULL OR c.linked_task_id <> t.id)
-			    AND c.worktree_path IS NOT NULL AND c.worktree_path <> '')
+			    AND c.worktree_path IS NOT NULL AND c.worktree_path <> ''),
+			CASE WHEN t.issue_worktree = 'main' AND t.issue_id IS NOT NULL
+			  THEN EXISTS (` + issueMainOccupantSQL("t.issue_id", "t.id") + `)
+			  ELSE 0 END
 		FROM tasks t JOIN projects p ON p.id = t.project_id
 		WHERE t.state = ?
 		ORDER BY t.priority DESC, t.created_at ASC, t.id ASC`
 	args := append(append([]any{}, slotStates...), string(StepRunning), StepTypeFanOut)
 	args = append(args, slotStates...)
-	args = append(args, string(TaskQueued), string(TaskQueued))
+	args = append(args, string(TaskQueued))
+	args = append(args, issueMainOccupantArgs()...)
+	args = append(args, string(TaskQueued))
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list admissible: %w", err)
@@ -898,7 +956,7 @@ func (s *Store) ListAdmissible(ctx context.Context) ([]Candidate, error) {
 			c     Candidate
 			limit sql.NullInt64
 		)
-		t, err := scanTask(scannerWithTail(rows, &c.ProjectSlots, &limit, &c.OpenStepRuns, &c.DirClaimants))
+		t, err := scanTask(scannerWithTail(rows, &c.ProjectSlots, &limit, &c.OpenStepRuns, &c.DirClaimants, &c.IssueOccupied))
 		if err != nil {
 			return nil, fmt.Errorf("scan admissible: %w", err)
 		}

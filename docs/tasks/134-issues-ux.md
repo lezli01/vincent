@@ -1,6 +1,6 @@
 # 134 — Issues UX: a four-lane issues board and one main worktree per issue
 
-**Status:** 🔄 in progress (6/19)
+**Status:** 🔄 in progress (11/19)
 
 Issue [#748](https://github.com/lezli01/vincent/issues/748), part of
 [#747](https://github.com/lezli01/vincent/issues/747), the epic. Spec §5.6 in
@@ -112,6 +112,17 @@ The lane needs two facts the store does not keep today:
 unfinished" with "finished, deliver it"; "any task ⇒ in progress until a pull
 request", under which an issue whose only task was cancelled would stay in
 progress forever.
+
+*Amended 2026-10-07 (134.6, #753), by the author:* **`issue_id` rides every
+task that carries one, lanes included.** `task.created`, `task.state_changed`,
+`task.deleted` and `task.restored` carry `issue_id` whenever the task row has
+one, omitted otherwise — this mirrors the row and supersedes #753's "root
+tasks only". A fan-out lane's events therefore carry `issue_id`, but a lane
+never moves its issue's lane, so it never writes `issue.lane_changed`. That
+event's payload is `{ id, from, to, task_id?, by? }`: `task_id` names the task
+whose create, transition, delete or restore moved the lane and is omitted on a
+close or reopen; `by` is the close or reopen actor and is omitted on a
+task-caused move.
 
 ### 3. `attention`, and `paused` carries none (2026-10-07)
 
@@ -238,6 +249,17 @@ is too weak. A blocked or gated main task therefore stalls the issue's main
 line until a human acts; that is deliberate, and the issue stays
 `in_progress` with `attention`.
 
+*Amended 2026-10-07 (134.11, #758):* **a linked chat keeps the directory
+occupied.** An occupant is an **unarchived** main-role task of the issue,
+other than the one asking, that is either (a) admitted (`started_at` set)
+and not settled, or (b) `done`/`aborted` with a non-empty `worktree_path`
+and an open linked chat — the `chats.linked_task_id` predicate
+`OpenLinkedChatIDs` uses. A human working in a settled task's worktree holds
+it as surely as an agent does. `archived_at IS NULL` is explicit because an
+archived task is settled but clause (b) alone would not exclude it. The
+scheduler, the `201` hint and the issue's `main_worktree.occupant_task_id`
+read this one definition (`issueMainOccupantSQL`).
+
 ### 9. A new task with `issue_id` is a main task by default (2026-10-07)
 
 Settled by the author (#747 question 6). New tasks carrying `issue_id` get the
@@ -301,6 +323,18 @@ A side task is cut from the issue's main branch with no fetch: a
 could move a clean main worktree under its occupant. It records `base_sha`,
 the fork commit, so its diff does not collapse to empty after its merge-back
 (134.13).
+
+*Amended 2026-10-07 (134.13, #760), the author's answers while scoping it:*
+the main branch must exist in git when the side task is created, or
+`POST /v1/tasks` gives the ordinary `base_branch` 400 — a side task created
+while the first main task is still queued or paused is refused rather than
+held until the branch appears (which would wait forever if that task failed
+before cutting) or failed at admission. An explicit `base_branch` beside
+`merge_back` is accepted only when it names the main branch, mirroring
+decision 5's `branch_name` rule. `base_sha` is the main branch's tip, resolved
+locally under the repository lock, and the side branch is cut from that SHA;
+`base_refresh` reads `disabled`/`not_attempted`. A side task handed off from a
+chat keeps the chat's worktree and base (134.15 owns that choice).
 
 ### 14. Follow-up or chat on a main task that handed its worktree on ⇒ 409 (2026-10-07)
 
@@ -406,8 +440,9 @@ deleted.
   134.10 amendment): the next main task cuts a fresh branch, and the old one
   stays in git with the earlier work, off the issue's line, until someone
   merges or deletes it.
-- Until 134.11 and 134.12, a later main task waits for the previous one's
-  **archive**, not its settlement (review F1 of #768). It is bound to the
+- Until 134.12 removes the wait, a later main task waits for the previous
+  one's **archive**, not its settlement (review F1 of #768); 134.11's
+  occupancy predicate does not shorten it. It is bound to the
   main branch as an adopted branch, so task 125 decision 2's working-directory
   claim queues it while any earlier main task still has the branch checked
   out, and a done main task keeps its worktree until it is archived. Archive
@@ -471,18 +506,25 @@ sections and public pages its code makes true, in its own pull request.
   `LaneOf`; one set of SQL fragments (`internal/store/issuelane.go`) behind
   the issue row, `ActiveIssueTaskIDs`, project stats and `?lane=`; the API
   reference and spec §5.6/§13.2. ✓ 2026-10-07
-- [ ] **134.5** ([#752](https://github.com/lezli01/vincent/issues/752))
+- [x] **134.5** ([#752](https://github.com/lezli01/vincent/issues/752))
   `--lane` and a `LANE` column on the CLI, and the MCP descriptions.
-  Depends: 134.4.
-- [ ] **134.6** ([#753](https://github.com/lezli01/vincent/issues/753))
+  Depends: 134.4. A ` !` suffix on the lane marks attention in `issue ls` and
+  `issue show`; an MCP query value may be an array, so `lane` repeats over
+  MCP too. ✓ 2026-10-07
+- [x] **134.6** ([#753](https://github.com/lezli01/vincent/issues/753))
   `issue_id` on task events, and `issue.lane_changed`, including on close and
-  reopen. Depends: 134.4.
+  reopen. Depends: 134.4. Written in the causing write's transaction, after
+  its event, only when the lane moves; the TUI issues list re-lists on a task
+  event only for an issue it shows; spec §13.3 and the API reference.
+  ✓ 2026-10-07
 - [ ] **134.7** ([#754](https://github.com/lezli01/vincent/issues/754)) A
   `type: issues` trigger fires on a lane change. Depends: 134.6.
-- [ ] **134.8** ([#755](https://github.com/lezli01/vincent/issues/755)) The
+- [x] **134.8** ([#755](https://github.com/lezli01/vincent/issues/755)) The
   TUI board's lane sections, the hidden-by-default `done` lane and its `s`
   toggle, fold keys, the guide's key table and spec §15 view 12 (decisions
-  5, 6). Depends: 134.4.
+  5, 6). Depends: 134.4. `internal/tui/issuesections.go` partitions by the
+  served `lane`; `←`/`→`/`C`/`O` fold; the guide's issue tables joined
+  `TestGuideKeyTablesMatchRegistry`. ✓ 2026-10-07
 - [x] **134.9** ([#756](https://github.com/lezli01/vincent/issues/756)) The
   merge message factored out, `handleConflict` taking a policy, the first
   agent-resolver tests and a fakeagent scenario (decision 12). ✓ 2026-10-07
@@ -490,16 +532,20 @@ sections and public pages its code makes true, in its own pull request.
   `issue_worktree` role, `end_sha`, the main-branch binding at creation,
   `merge_back` on `POST /v1/tasks` and `main_worktree` on the issue DTO
   (decisions 7, 9, 10). Depends: 134.1.
-- [ ] **134.11** ([#758](https://github.com/lezli01/vincent/issues/758)) The
+- [x] **134.11** ([#758](https://github.com/lezli01/vincent/issues/758)) The
   scheduler predicate with a per-walk tally (decisions 7, 8).
-  Depends: 134.10, 134.2.
+  Depends: 134.10, 134.2. `ListAdmissible` serves `IssueOccupied` from the
+  shared `issueMainOccupantSQL`, widened to a settled main task kept open by a
+  linked chat (decision 8's amendment); the walk skips an occupied issue's
+  main candidate, and a second main task of one issue in the same walk, as a
+  skip rather than a block; spec §5.6, §6, §11, §13.2. ✓ 2026-10-07
 - [ ] **134.12** ([#759](https://github.com/lezli01/vincent/issues/759)) The
   claim transfer, archive safety, refusing follow-up or chat on a
   predecessor, and `end_sha` in commits and diff (decisions 14, 17).
   Depends: 134.11.
-- [ ] **134.13** ([#760](https://github.com/lezli01/vincent/issues/760)) Side
+- [x] **134.13** ([#760](https://github.com/lezli01/vincent/issues/760)) Side
   tasks cut from the issue branch with no fetch, recording `base_sha`
-  (decision 13). Depends: 134.10.
+  (decision 13). Depends: 134.10. ✓ 2026-10-07
 - [ ] **134.14** ([#761](https://github.com/lezli01/vincent/issues/761)) The
   merge-back task's schema, creation, executor and reasons; spec §12.4
   (decisions 11, 15). Depends: 134.9, 134.12, 134.13.

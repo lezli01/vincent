@@ -62,6 +62,17 @@ func issueState(iss *apiclient.Issue) string {
 	return iss.State
 }
 
+// issueLane renders an issue's board lane as the API spells it, marked with
+// " !" when a root task is waiting on a human (task 134 decision 3). The
+// marker rides any lane, done included: a closed issue can still have a
+// stray live task that needs one.
+func issueLane(iss *apiclient.Issue) string {
+	if iss.Attention {
+		return iss.Lane + " !"
+	}
+	return iss.Lane
+}
+
 // issuePriority renders a priority on Linear's scale; 0 is "none".
 func issuePriority(p int) string {
 	if p == 0 {
@@ -76,8 +87,12 @@ func newIssueLsCmd() *cobra.Command {
 		Use:   "ls",
 		Short: "List issues",
 		Long: "Lists issues, most recently updated first. Without --project the list\n" +
-			"spans every project and gains a PROJECT column. --state and --label repeat;\n" +
-			"every --label given must match.\n\n" +
+			"spans every project and gains a PROJECT column. --state, --lane and --label\n" +
+			"repeat; every --label given must match, and filters combine by AND.\n\n" +
+			"LANE is the issue's board lane: open, in_progress, hand_off or done. A\n" +
+			"trailing \" !\" marks an issue a root task is waiting on a human for.\n" +
+			"--lane done is every closed issue, whatever its close reason, so\n" +
+			"--state open --lane done lists nothing.\n\n" +
 			"--github N finds the issue imported from GitHub issue #N and needs\n" +
 			"--project: a GitHub number means nothing across projects. Its ID is what\n" +
 			"`vincent task add --issue` takes. An issue not yet imported lists nothing;\n" +
@@ -112,7 +127,7 @@ func newIssueLsCmd() *cobra.Command {
 				if spans {
 					names = projectNames(ctx, c)
 				}
-				header := []string{"ID", "STATE", "KIND", "PRIORITY", "LABELS", "TASKS", "TITLE"}
+				header := []string{"ID", "STATE", "LANE", "KIND", "PRIORITY", "LABELS", "TASKS", "TITLE"}
 				if spans {
 					header = append([]string{"ID", "PROJECT"}, header[1:]...)
 				}
@@ -120,7 +135,7 @@ func newIssueLsCmd() *cobra.Command {
 				for i := range list {
 					iss := &list[i]
 					row := []string{
-						strconv.FormatInt(iss.ID, 10), issueState(iss), dash(iss.Kind),
+						strconv.FormatInt(iss.ID, 10), issueState(iss), issueLane(iss), dash(iss.Kind),
 						issuePriority(iss.Priority), dash(strings.Join(iss.Labels, ",")),
 						strconv.Itoa(iss.TaskCount), iss.Title,
 					}
@@ -139,6 +154,8 @@ func newIssueLsCmd() *cobra.Command {
 	}
 	cmd.Flags().Int64Var(&opts.ProjectID, "project", 0, "Only issues in this project (default: every project)")
 	cmd.Flags().StringSliceVar(&opts.States, "state", nil, "Only issues in this state: open or closed (repeatable)")
+	cmd.Flags().StringSliceVar(&opts.Lanes, "lane", nil,
+		"Only issues in this lane: open, in_progress, hand_off or done (repeatable)")
 	cmd.Flags().StringArrayVar(&opts.Labels, "label", nil, "Only issues carrying this label (repeatable; all must match)")
 	cmd.Flags().StringVar(&opts.Kind, "kind", "", "Only issues of this kind")
 	cmd.Flags().StringVar(&opts.Query, "search", "", "Only issues whose title or body contains this text")
@@ -208,6 +225,7 @@ func printIssue(out io.Writer, iss *apiclient.Issue) error {
 		{"id", strconv.FormatInt(iss.ID, 10)},
 		{"title", iss.Title},
 		{"state", state},
+		{"lane", issueLane(iss)},
 		{"project", strconv.FormatInt(iss.ProjectID, 10)},
 		{"kind", dash(iss.Kind)},
 		{"priority", issuePriority(iss.Priority)},

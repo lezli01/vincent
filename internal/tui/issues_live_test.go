@@ -94,8 +94,14 @@ func TestIssueScreensAgainstTheRealAPI(t *testing.T) {
 			t.Errorf("the issues list asked for every project's issues: %s", r)
 		}
 	}
+	// The section is the real handler's lane, never one the TUI derived:
+	// the blocked task keeps its issue in progress (task 134.8).
+	if rows := list.rows(); rows[0].issue.Lane != "in_progress" || issueSections[rows[0].section].lane != "in_progress" {
+		t.Fatalf("the issue with a blocked task is in section %q (lane %q), want in_progress",
+			issueSections[rows[0].section].lane, rows[0].issue.Lane)
+	}
 	out := ansi.Strip(list.render(160, 40))
-	for _, want := range []string{"Crash on start", "● 1 task", "[p1]"} {
+	for _, want := range []string{"Crash on start", "● 1 task", "[p1]", "▾ in progress  1"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the list is missing %q:\n%s", want, out)
 		}
@@ -144,16 +150,27 @@ func TestIssueScreensAgainstTheRealAPI(t *testing.T) {
 		return list.loaded && len(rows) == 1 && rows[0].issue.ID == local.ID
 	})
 
-	// `s` re-lists with state=closed: nothing is closed.
+	// `s` shows the done lane: every state is listed, and nothing is
+	// closed. `s` again hides it, back to the open listing.
 	h.sendKey(keyPress("s"))
-	h.p.until(10*time.Second, "the closed listing", func() bool {
-		return list.state == "closed" && list.loaded && !list.loading && len(list.issues) == 0
+	h.p.until(10*time.Second, "the listing with done shown", func() bool {
+		return list.showDone && list.loaded && !list.loading && len(list.issues) == 1
 	})
-	h.sendKey(keyPress("s"))
+	if got := ansi.Strip(list.render(160, 40)); !strings.Contains(got, "▾ done  0") {
+		t.Errorf("the shown done section is not drawn:\n%s", got)
+	}
+	reqs := rec.matching("GET /v1/issues")
+	if last := reqs[len(reqs)-1]; strings.Contains(last, "state=") {
+		t.Errorf("the listing with done shown still filters by state: %s", last)
+	}
 	h.sendKey(keyPress("s"))
 	h.p.until(10*time.Second, "the open listing again", func() bool {
-		return list.state == "open" && !list.loading && len(list.issues) == 1
+		return !list.showDone && !list.loading && len(list.issues) == 1
 	})
+	reqs = rec.matching("GET /v1/issues")
+	if last := reqs[len(reqs)-1]; !strings.Contains(last, "state=open") {
+		t.Errorf("the listing with done hidden does not ask for open issues: %s", last)
+	}
 
 	// An issue.updated re-lists with no keypress.
 	renamed := "Crash on start (macOS)"
@@ -166,11 +183,7 @@ func TestIssueScreensAgainstTheRealAPI(t *testing.T) {
 	})
 
 	// enter opens the detail on the selected issue.
-	for i, row := range list.rows() {
-		if row.issue.ID == local.ID {
-			list.cursor, list.selected = i, row.issue.ID
-		}
-	}
+	list.selectIssue(local.ID)
 	detail := issueDetailView(t, h)
 	h.sendKey(keyPress("enter"))
 	h.p.until(10*time.Second, "the issue detail", func() bool {

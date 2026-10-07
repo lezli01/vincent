@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -309,6 +310,53 @@ func TestIssueListOffersTheRemoteNumberLookup(t *testing.T) {
 	r := routeFor(t, "issue_list")
 	if !strings.Contains(r.Description, "remote_number") || !strings.Contains(r.Description, "project_id") {
 		t.Errorf("issue_list does not document remote_number: %s", r.Description)
+	}
+}
+
+// TestIssueListOffersTheLane: the board lane (task 134.5) is a filter on
+// issue_list and a field on both its rows and issue_get.
+func TestIssueListOffersTheLane(t *testing.T) {
+	t.Parallel()
+	list := routeFor(t, "issue_list").Description
+	for _, want := range []string{"lane (open|in_progress|hand_off|done, repeatable; done is every closed issue)", "attention"} {
+		if !strings.Contains(list, want) {
+			t.Errorf("issue_list does not document %q: %s", want, list)
+		}
+	}
+	if get := routeFor(t, "issue_get").Description; !strings.Contains(get, "lane") || !strings.Contains(get, "attention") {
+		t.Errorf("issue_get does not name lane and attention: %s", get)
+	}
+}
+
+// TestDispatchRepeatsAQueryParameter: a parameter a route repeats (issue_list's
+// lane, state and label) is an array in the tool call and reaches the route
+// once per value; a plain string still means one value, and anything else is
+// refused before the route sees it.
+func TestDispatchRepeatsAQueryParameter(t *testing.T) {
+	t.Parallel()
+	h := &stubHandler{status: http.StatusOK, body: `[]`}
+	s := New(Deps{Handler: h})
+	if _, err := s.dispatch(t.Context(), routeFor(t, "issue_list"),
+		json.RawMessage(`{"query":{"lane":["open","hand_off"],"project_id":"3"}}`)); err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	q := h.got.URL.Query()
+	if got := q["lane"]; !slices.Equal(got, []string{"open", "hand_off"}) || q.Get("project_id") != "3" {
+		t.Errorf("query = %v, want both lanes and the project", q)
+	}
+	if _, err := s.dispatch(t.Context(), routeFor(t, "issue_list"), json.RawMessage(`{"query":{"lane":"done"}}`)); err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	if got := h.got.URL.Query()["lane"]; !slices.Equal(got, []string{"done"}) {
+		t.Errorf("lane = %v, want [done]", got)
+	}
+	h.got = nil
+	res, err := s.dispatch(t.Context(), routeFor(t, "issue_list"), json.RawMessage(`{"query":{"lane":[1]}}`))
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	if !res.IsError || h.got != nil {
+		t.Errorf("a non-string query value reached the route (error %v): %s", res.IsError, text(t, res))
 	}
 }
 

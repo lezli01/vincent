@@ -159,11 +159,7 @@ func TestIssueWritesAgainstTheRealAPI(t *testing.T) {
 			}
 			return false
 		})
-		for i, row := range list.rows() {
-			if row.issue.ID == created.ID {
-				list.cursor, list.selected = i, row.issue.ID
-			}
-		}
+		list.selectIssue(created.ID)
 	}
 
 	// Close as not planned and as a duplicate with no target, from the list:

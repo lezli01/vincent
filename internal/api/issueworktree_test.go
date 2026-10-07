@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/testrepo"
+	"github.com/lezli01/vincent/internal/worktree"
 )
 
 // Task 134.10: a task's issue-worktree role on POST /v1/tasks, `merge_back`,
@@ -62,6 +64,12 @@ func TestMergeBackValidation(t *testing.T) {
 		t.Errorf("merge_back before a main branch: %q", msg)
 	}
 	main := h.createTask(t, map[string]any{"issue_id": iss.ID})
+	// Bound but not cut yet: the first main task has not been admitted, so a
+	// side task has no branch to start from (task 134.13 decision 2).
+	if msg := h.createTaskRejected(t, map[string]any{"issue_id": iss.ID, "merge_back": block}); !strings.Contains(msg, "does not resolve to a local branch") {
+		t.Errorf("merge_back before the main branch is cut: %q", msg)
+	}
+	testrepo.Run(t, h.repo, "branch", main.BranchName)
 	for name, extra := range map[string]map[string]any{
 		"branch_name":     {"branch_name": "side/typed"},
 		"existing_branch": {"branch_name": "already/there", "existing_branch": true},
@@ -96,6 +104,92 @@ func TestMergeBackValidation(t *testing.T) {
 	// And issue_id beside github_pull is still refused.
 	if msg := h.createTaskRejected(t, map[string]any{"issue_id": iss.ID, "github_pull": 3}); !strings.Contains(msg, "github_pull") {
 		t.Errorf("issue_id with github_pull: %q", msg)
+	}
+}
+
+// TestSideTaskBaseIsTheMainBranch is task 134.13 decisions 3 and 4: a side
+// task's base is the issue's main branch, whether base_branch is omitted or
+// names it, and base_branch naming any other branch is a 400.
+func TestSideTaskBaseIsTheMainBranch(t *testing.T) {
+	h := newTaskHarness(t, 0, false)
+	iss := h.issue(t)
+	main := h.createTask(t, map[string]any{"issue_id": iss.ID})
+	testrepo.Run(t, h.repo, "branch", main.BranchName)
+	testrepo.Run(t, h.repo, "branch", "elsewhere")
+
+	omitted := h.createTask(t, map[string]any{"issue_id": iss.ID, "title": "omitted", "merge_back": map[string]any{}})
+	if omitted.BaseBranch != main.BranchName {
+		t.Errorf("side base with base_branch omitted = %q, want the main branch %q", omitted.BaseBranch, main.BranchName)
+	}
+	named := h.createTask(t, map[string]any{
+		"issue_id": iss.ID, "title": "named", "merge_back": map[string]any{}, "base_branch": main.BranchName,
+	})
+	if named.BaseBranch != main.BranchName {
+		t.Errorf("side base naming the main branch = %q", named.BaseBranch)
+	}
+	for _, other := range []string{"elsewhere", "main"} {
+		msg := h.createTaskRejected(t, map[string]any{
+			"issue_id": iss.ID, "title": "other", "merge_back": map[string]any{}, "base_branch": other,
+		})
+		if !strings.Contains(msg, "a side task is cut from it") {
+			t.Errorf("side base_branch %q: %q", other, msg)
+		}
+	}
+	// The side task cuts its own branch, never the main one.
+	stored, err := h.store.GetTask(t.Context(), omitted.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if stored.AdoptedBranch || stored.BranchName == main.BranchName {
+		t.Errorf("side task = (%q, adopted %v), want a branch of its own", stored.BranchName, stored.AdoptedBranch)
+	}
+}
+
+// TestSideTaskDiffSurvivesItsMergeBack is task 134.13 decision 6: a side
+// task's recorded base_sha is the main branch's tip at the cut, so merging
+// its commits back into the main branch leaves its diff as it was — against
+// base_branch alone, the merge-base would move to the side's own tip.
+func TestSideTaskDiffSurvivesItsMergeBack(t *testing.T) {
+	h := newTaskHarness(t, 0, false)
+	iss := h.issue(t)
+	main := h.createTask(t, map[string]any{"issue_id": iss.ID})
+	mainDir := filepath.Join(t.TempDir(), "main")
+	testrepo.Run(t, h.repo, "worktree", "add", "-q", "-b", main.BranchName, mainDir, "main")
+	side := h.createTask(t, map[string]any{"issue_id": iss.ID, "title": "side", "merge_back": map[string]any{}})
+	stored, err := h.store.GetTask(t.Context(), side.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	created, err := h.wt.CreateSideAndClaim(t.Context(), h.repo, worktree.TaskOwner(side.ID),
+		stored.BranchName, stored.BaseBranch, nil)
+	if err != nil {
+		t.Fatalf("CreateSideAndClaim: %v", err)
+	}
+	if tip := testrepo.Run(t, h.repo, "rev-parse", "refs/heads/"+main.BranchName); created.BaseSHA != tip {
+		t.Fatalf("base_sha = %q, want the main branch's tip %s", created.BaseSHA, tip)
+	}
+	if err := h.store.SetTaskProgress(t.Context(), side.ID, nil, &created.Path, &created.BaseSHA); err != nil {
+		t.Fatalf("record worktree: %v", err)
+	}
+	testrepo.WriteFile(t, created.Path, "side.txt", "side work\n")
+	testrepo.Run(t, created.Path, "add", ".")
+	testrepo.Run(t, created.Path, "commit", "-q", "-m", "side work")
+
+	diff := func() string {
+		t.Helper()
+		resp, body := h.doJSON(t, http.MethodGet, fmt.Sprintf("/v1/tasks/%d/diff", side.ID), nil)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("diff: %d %s", resp.StatusCode, body)
+		}
+		return string(body)
+	}
+	before := diff()
+	if !strings.Contains(before, "side.txt") {
+		t.Fatalf("side diff does not carry its work:\n%s", before)
+	}
+	testrepo.Run(t, mainDir, "merge", "-q", "--no-ff", "-m", "merge back", stored.BranchName)
+	if after := diff(); after != before {
+		t.Errorf("diff changed after the merge-back:\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
 
@@ -165,6 +259,7 @@ func TestMainWorktreeOccupantHint(t *testing.T) {
 	if next.MainWorktreeOccupantTaskID == nil || *next.MainWorktreeOccupantTaskID != first.ID {
 		t.Errorf("hint = %v, want task %d", next.MainWorktreeOccupantTaskID, first.ID)
 	}
+	testrepo.Run(t, h.repo, "branch", first.BranchName)
 	side := h.createTask(t, map[string]any{"issue_id": iss.ID, "title": "side", "merge_back": map[string]any{}})
 	if side.MainWorktreeOccupantTaskID != nil {
 		t.Errorf("a side task carries the hint %d", *side.MainWorktreeOccupantTaskID)

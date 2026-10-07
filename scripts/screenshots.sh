@@ -2127,12 +2127,14 @@ Sleep 2s
   # The issue screens (task 130, issue #677), last for the reason the #415
   # block gives: a tape added above another re-times the shots after it.
 
-  # The issues list, api's three local issues. `s` cycles
-  # the scope open → closed → all, and `all` is the one that shows the
-  # issue closed as not planned beside the open ones. `s` leaves a
-  # "listing all issues…" note under the rows that outlives the listing;
-  # `esc` clears the note first and keeps the scope (§15's one layer per
-  # press), so it is pressed once rather than photographed.
+  # The issues list, api's three local issues. `s` shows or hides the
+  # `done` lane (task 134 decision 5), hidden by default, so it is pressed
+  # once: shown is the one that draws the issue closed as not planned
+  # beside the open ones, and a second press would hide it again. `s`
+  # leaves a "showing the done lane…" note under the rows that outlives
+  # the listing; `esc` clears the note first and keeps the lane shown
+  # (§15's one layer per press), so it is pressed once rather than
+  # photographed.
   tape tui-issues 1250 api '
 Type ":"
 Sleep 1s
@@ -2140,8 +2142,6 @@ Type "issues"
 Sleep 1s
 Enter
 Sleep 3s
-Type "s"
-Sleep 1s
 Type "s"
 Sleep 3s
 Escape

@@ -385,11 +385,11 @@ A unit of work delivered by running a workflow against a project.
 | `fields` | open string key/value map (e.g. `ticket: OPS-123`); available to templates. The selected workflow may declare expected names and validate those values (§8.1.2), but undeclared names remain accepted and recorded |
 | `workflow_name` | name as resolved at creation time |
 | `workflow_snapshot` | full YAML content captured at creation; **execution always uses the snapshot**, so later edits to workflow files never mutate in-flight or historical tasks |
-| `base_branch` | defaults to project `default_branch` |
+| `base_branch` | defaults to project `default_branch`. *Amended 2026-10-07 (task 134.13, issue #760):* a side task's (`issue_worktree = 'side'`) is the issue's main branch, set at creation — a `base_branch` naming another branch is a 400 (§13.2) — and re-asserted in the insert transaction, which writes the main branch it sees |
 | `branch_name` | `vincent/{id}-{slug}` by default (slug: lowercase title, `[a-z0-9-]`, max 40 chars). *Amended 2026-08-13 (task 001):* configurable through the chain `built-in < config.yaml < project < per-task literal`. Resolved and persisted inside the task's insert transaction, so no committed task carries an empty one. *Amended 2026-08-30 (task 064):* the chain gains a level above the literal — a task created from a pull request (`github_pull`, §13.2) runs on that pull request's **head branch**, which nothing else may override. *Amended 2026-09-21 (task 125):* `existing_branch` adds no level. It selects a worktree-creation **mode** (§10) for whatever name the chain already produced, which is why a literal, a project template and a config template all work with it unchanged |
 | `worktree_path` | assigned when the worktree is created |
-| `base_sha` | *Added 2026-08-29 (task 056).* The commit `branch_name` was actually cut from, written beside `worktree_path` when creation fetched `base_branch` from its upstream (§10). NULL means `base_branch` itself still names the fork point — every task predating this and every task created with `fetch_base_branch: false`. It exists because once a task branch starts at a fetched remote tip, `base_branch` names a moving ref that is no longer where the task began, and the two places that read it as the fork point — `GET /v1/tasks/{id}/diff`'s merge-base (§13.2) and archive's empty-branch check (§10) — would otherwise both answer against the stale local commit. *Amended 2026-08-30 (task 064):* on a task created from a pull request it is the **head commit as it stood at admission**, so the diff tab answers "what did this task change" rather than re-rendering the pull request's own diff. *Amended 2026-09-14 (task 099, issue #430):* now served on every task representation (§13.2), reversing 056 decision 4 — without it a human cannot tell a task cut from a fresh upstream tip from one cut from a stale local branch *Amended 2026-09-21 (task 125):* on a task created on an **existing branch** (`existing_branch`, §13.2) it is that branch's tip at admission, for the same reason and with the same effect — the diff answers what this task changed, not what the branch already carried. Such a task records **no** `base_refresh`: the fetch it ran was the adopted branch's own, and no base fast-forward was attempted, so NULL is the honest "this admission refreshed no base". |
-| `base_refresh` | *Added 2026-09-14 (task 099, issue #430).* JSON: what worktree creation's base fetch and the fast-forward of the local base that follows it did (§10) — `{fetch: {result: fetched\|no_upstream\|error\|disabled, remote?, ref?, error?}, fast_forward: {result: advanced\|up_to_date\|skipped\|not_attempted, reason?: diverged\|local_ahead\|checkout_dirty\|checkout_busy\|error, worktree?, error?}}`. Written in the same claim write as `worktree_path` and `base_sha`, so a worktree that already existed is never re-recorded. NULL means no worktree was created since migration 0031, or the task came from a pull request, which refreshes no base; `disabled` is recorded, so "key off" and "not recorded" stay apart. A chat handoff copies the chat's (§5.5). Display-only: nothing reads it to decide anything, so a malformed value reads as NULL rather than making the row unreadable |
+| `base_sha` | *Added 2026-08-29 (task 056).* The commit `branch_name` was actually cut from, written beside `worktree_path` when creation fetched `base_branch` from its upstream (§10). NULL means `base_branch` itself still names the fork point — every task predating this and every task created with `fetch_base_branch: false`. It exists because once a task branch starts at a fetched remote tip, `base_branch` names a moving ref that is no longer where the task began, and the two places that read it as the fork point — `GET /v1/tasks/{id}/diff`'s merge-base (§13.2) and archive's empty-branch check (§10) — would otherwise both answer against the stale local commit. *Amended 2026-08-30 (task 064):* on a task created from a pull request it is the **head commit as it stood at admission**, so the diff tab answers "what did this task change" rather than re-rendering the pull request's own diff. *Amended 2026-09-14 (task 099, issue #430):* now served on every task representation (§13.2), reversing 056 decision 4 — without it a human cannot tell a task cut from a fresh upstream tip from one cut from a stale local branch *Amended 2026-09-21 (task 125):* on a task created on an **existing branch** (`existing_branch`, §13.2) it is that branch's tip at admission, for the same reason and with the same effect — the diff answers what this task changed, not what the branch already carried. Such a task records **no** `base_refresh`: the fetch it ran was the adopted branch's own, and no base fast-forward was attempted, so NULL is the honest "this admission refreshed no base". *Amended 2026-10-07 (task 134.13, issue #760):* on a **side task** it is the issue's main branch's tip at the cut, resolved locally with no fetch (§10), so the side task's diff does not collapse to empty once its commits are merged back into the main branch. |
+| `base_refresh` | *Added 2026-09-14 (task 099, issue #430).* JSON: what worktree creation's base fetch and the fast-forward of the local base that follows it did (§10) — `{fetch: {result: fetched\|no_upstream\|error\|disabled, remote?, ref?, error?}, fast_forward: {result: advanced\|up_to_date\|skipped\|not_attempted, reason?: diverged\|local_ahead\|checkout_dirty\|checkout_busy\|error, worktree?, error?}}`. Written in the same claim write as `worktree_path` and `base_sha`, so a worktree that already existed is never re-recorded. NULL means no worktree was created since migration 0031, or the task came from a pull request, which refreshes no base; `disabled` is recorded, so "key off" and "not recorded" stay apart. A chat handoff copies the chat's (§5.5). *Amended 2026-10-07 (task 134.13):* a side task records `{fetch: disabled, fast_forward: not_attempted}` whatever `fetch_base_branch` says, because its base is never refreshed (§10). Display-only: nothing reads it to decide anything, so a malformed value reads as NULL rather than making the row unreadable |
 | `adopted_branch` | *Added 2026-09-21 (task 125).* True when the task runs on a branch that already existed rather than one vincent cut — §10's third creation mode, selected by `existing_branch` at creation (§13.2). Written in the insert transaction, because it is not derivable from the row afterwards: an adopted branch may be called anything, `vincent/{id}-{slug}` included, and `worktree_path == project.path` covers only the main-checkout half of the mode. Archive is what needs it — both branch-delete legs report `not_ours` for it, extending task 064 decision 3 to every branch vincent did not cut. False for every task created without the field, which is the truth for every row predating migration 0034 |
 | `priority` | integer, default 0; higher runs first |
 | `agent_override` / `model_override` / `effort_override` | optional, chosen at creation (§13.2); replace the workflow's `defaults` but never an explicit step field (§8.6) |
@@ -1343,6 +1343,13 @@ after admission hold it, `queued` does not. Both are derived per issue in the
 issue list's own query and served as `main_worktree` (§13.2). This item does
 not enforce the occupancy at admission, transfer the directory or cut side
 worktrees: those are 134.11, 134.12 and 134.13.
+*Amended 2026-10-07 (task 134.11, issue #758):* the occupant is an
+**unarchived** main-role task that is either admitted and not settled, or
+settled `done`/`aborted` with a worktree a linked chat still has open — a
+human working in the directory holds it as surely as an agent does (§6 lists
+the states). The scheduler now enforces it: a later main task of the issue is
+not admitted while another occupies it (§11). Transferring the directory is
+still 134.12; cutting side worktrees is §10's 134.13 amendment.
 
 ## 6. Task lifecycle
 
@@ -1641,6 +1648,20 @@ Tasks are `queued` immediately upon creation (no draft state in v1).
 *Amended 2026-09-11 (task 096):* or `paused`, when the create asked for it
 (above). There is still no draft state — a task created held is an ordinary
 `paused` row that `resume` admits.
+
+*Added 2026-10-07 (task 134.11, issue #758).* **Which states occupy an issue's
+main worktree** (§5.6, task 134 decision 8). A main-role task occupies it in
+every unsettled state once it has been admitted — `running`,
+`awaiting_input`, `blocked`, `awaiting_gate`, `paused`, `awaiting_children`,
+and `queued` again after a §12.4 interrupt, since `started_at` survives it —
+and also when it has settled `done` or `aborted` with its worktree kept open
+by a linked chat (§5.5). A `queued` main task that was never admitted does
+not occupy it, and an archived one never does. The issue's next main task is
+held at admission while it is occupied (§11), so **a stuck occupant stalls
+the issue's main line until a human acts on it** — approves, retries,
+cancels or closes the chat. That is deliberate: the main tasks of one issue
+share one directory, and starting the next on top of a blocked one's
+leftover files would be worse than the wait.
 
 ## 7. Step execution semantics
 
@@ -6061,6 +6082,23 @@ precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
     400s on a `base_branch` with no local branch; a base that exists only on the
     remote is not a case this serves.
 
+  *Amended 2026-10-07 (task 134.13, issue #760).* An issue's **side task**
+  (`issue_worktree = 'side'`, §5.6) is cut in this first mode with one
+  difference: `base_branch` is the issue's main branch, and creation neither
+  fetches nor fast-forwards it, whatever `fetch_base_branch` says. The main
+  branch is normally checked out — clean — in the main task's worktree, so a
+  fast-forward would move its files under the task occupying it. Instead
+  `refs/heads/{base}` is resolved to a commit under the per-repository lock,
+  the side branch is cut from that SHA rather than from the name, and the SHA
+  is recorded as `base_sha` — so the recorded fork point and git's cannot
+  disagree, and the side task's diff keeps its base after its commits are
+  merged back into the main branch (task 134.14). `base_refresh` records
+  `{fetch: disabled, fast_forward: not_attempted}`: the task did cut from a
+  base, and nothing refreshed it. A side task always cuts its own `vincent/…`
+  worktree and is never `adopted_branch`. A side task handed off from a chat
+  adopts the chat's worktree and keeps the chat's base. Every other task with
+  `fetch_base_branch: false` still records no `base_sha`.
+
   *Amended 2026-08-30 (task 064).* There is now a **second creation mode**, for a
   task created from a pull request (`github_pull`, §13.2). Everything above
   describes the first mode and is unchanged for it; a pull-request task inverts
@@ -6521,6 +6559,26 @@ precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
   merge leaves a row of that type too, and the merge admission that follows
   adopts it and re-runs the merge, which is the reconciliation the guard would
   otherwise wait for a human to perform.
+
+*Added 2026-10-07 (task 134.11, issue #758).* **At most one in-progress main
+task per issue.** A queued main-role task (§5.6) is not admitted while its
+issue's main worktree has an occupant other than itself — the definition
+§5.6 gives and §6 lists, read through the same SQL that serves the issue's
+`main_worktree.occupant_task_id` and the creation hint, so the scheduler and
+what a client is told cannot disagree. Like task 125's working-directory
+claim beside it, it is checked after the pause, the unreconciled guard, the
+hold and the caps, and it is a **skip, never a block**: the task stays
+`queued`, nothing is written to it — no `queued_reason`, no new reason — and
+the next walk asks again. The walk counts its own admissions per issue, the
+way it counts them per project and per directory: the candidate rows predate
+the walk, so two never-started main tasks of one issue both read "free"
+(issue #749's shape), and without that tally both would run. Side-role and
+role-less tasks are never consulted. No recovery code is involved: an
+occupant interrupted back to `queued` keeps `started_at`, so it still holds
+its issue, and because it excludes itself it is re-admitted ahead of the
+waiter. Until 134.12 hands the directory over, task 125's claim still holds
+a later main task until the previous one is archived; this predicate is
+what keeps it held behind an occupant once that claim is gone.
 
 *Added 2026-09-02 (task 081).* A `fan_out` step running `schedule: eager`
 (§7.6) is woken by a lane settling rather than by its whole subtree settling,
@@ -9704,11 +9762,21 @@ POST   /v1/tasks                        { project_id, workflow, title, descripti
                                         issue's main worktree is occupied carries
                                         `main_worktree_occupant_task_id`, the main-role task
                                         holding the issue's main worktree; it is absent
-                                        otherwise. The scheduler's hold on that occupant
-                                        arrives with 134.11 — today a later main task waits
-                                        only on the branch's working directory (§5.6, §10).
+                                        otherwise. *Amended 2026-10-07 (task 134.11, issue
+                                        #758):* the scheduler holds a later main task while
+                                        that occupant — widened to a settled task kept open by
+                                        a linked chat — holds the worktree (§5.6, §11); task
+                                        125's directory claim still applies beside it (§10).
                                         `merge_back` enters the
                                         idempotency digest only when present
+                                        *Amended 2026-10-07 (task 134.13, issue #760):* a
+                                        side task's `base_branch` is the issue's main branch.
+                                        Omitted, it is filled in; naming that branch is
+                                        accepted; naming any other is a **400**. The main
+                                        branch must already exist in git: one bound by a main
+                                        task that has not been admitted yet fails the ordinary
+                                        "`base_branch` does not resolve to a local branch"
+                                        **400**, so creation stays offline (§10)
 GET    /v1/tasks/{id}                   full task incl. step runs summary and pending_input (§7.4).
                                         Every task representation carries `available_actions`
                                         (the §6 human actions valid right now) and
@@ -10537,6 +10605,35 @@ is `issue.updated` with `changed: ["sync"]` and `by: sync` — when it ends
 `done`, `failed` or `conflict`, and when a pending write's reason changes
 (not on every retry with the same reason). A conflict's adoption of GitHub's
 value is an ordinary `issue.state_changed` by `sync` when the state moved.
+
+*Amended 2026-10-07 (task 134.6, issue #753).* An issue's lane (§5.6) is
+derived, so until now nothing announced a move: a client saw it only by
+re-listing on every task event. Two changes make it observable. **`issue_id`
+rides every task event that can move a lane** — `task.created` (as before),
+`task.state_changed`, `task.deleted` and `task.restored` — whenever the task
+row carries one, a fan-out lane included, and is omitted (not null) otherwise.
+And one issue kind joins the table above, making it eight:
+
+| Type | Payload |
+|---|---|
+| `issue.lane_changed` | `{ id, from, to, task_id?, by? }` — `from`/`to` are §5.6's lanes (`open`, `in_progress`, `hand_off`, `done`); `task_id` names the root task whose create, transition, delete or restore moved the lane, `by` the actor of a close or reopen; exactly one is set |
+
+It is appended in the **same transaction** as the write that moved the lane,
+**immediately after** the event recording the cause — `task.created`,
+`task.state_changed`, `task.deleted` or `task.restored` for a task; for an
+issue, `issue.state_changed` on a close or reopen by any actor, and the
+import refresh's `issue.updated` when it moved the state — and only when the
+lane read before the write differs from the lane read after it, through the
+one SQL derivation every reader uses. So a transition within a lane
+(`running → awaiting_input`, `done → archived`), a task transition on a closed
+issue, and a held sync refresh write none. A fan-out lane's writes never write
+one, though their events carry `issue_id`: only root tasks count. There is no
+lane event without a `from`: creating an issue, even importing one closed,
+writes only `issue.created`, and deleting one only `issue.deleted`. Like every
+issue kind it carries `project_id`, a NULL `task_id` column — the task rides
+the payload, so no per-task stream delivers it — and no text; and it moves
+neither `issues.version` nor `issues.updated_at`, since the lane is not a
+stored field. Triggers do not react to it yet (task 134.7).
 
 ### 13.4 Model Context Protocol (task 057)
 
@@ -13424,6 +13521,34 @@ stream for the live tail.
    at once and the header reads "loading ‹project›…" until the switch's load
    lands; a load issued for the project left behind is dropped when it
    arrives. Only that project's `issue.*` and task events re-list.
+
+   *Amended 2026-10-07 (task 134.8, issue #755; supersedes 132.11's flat
+   list, keeping its per-project scoping, and the `s` cycle above).* **The
+   list is a board of the four derived lanes** (§5.6; task 134 decisions 1–6):
+   the rows are partitioned by the `lane` the daemon serves on each issue —
+   the TUI never derives one — into stacked, foldable sections in the order
+   open → in progress → hand-off → done, never columns, and never draggable:
+   no key moves an issue between lanes. The daemon's order holds within a
+   section. Each header shows the fold glyph, the label, the count and a
+   `! n` badge for the rows whose `attention` is set; an empty section still
+   draws its header, with 0 and "none". A totals line above the sections
+   reads `N open · N in progress · N hand-off`, then `· N done`, or
+   `· done hidden (s)`. **`done` is hidden by default** (decision 5): hidden,
+   the listing is `state=open` and three sections are drawn; `s` shows it,
+   lists every state and draws `done` fourth, expanded, and `s` again hides
+   it. `←`/`→` fold and unfold the cursor's section and `C`/`O` all of them
+   (decision 6); only a collapsed header holds the cursor. The toggle and the
+   folds are session-only and survive a project switch. `/` filters within
+   the sections, keeping their headers ("none match" under an empty one).
+   The selection follows the issue id across a re-list, into whatever section
+   it moved to, and falls to the nearest row when the issue leaves the view.
+
+   *Amended 2026-10-07 (task 134.6, issue #753).* A task event re-lists only
+   when its payload's `issue_id` (§13.3) names an issue the list is showing:
+   only such an event can move a row's task count or active marker. A step
+   advancing, a status line, or a task with no shown issue no longer costs a
+   re-list. Every `issue.*` event — `issue.lane_changed` among them — and
+   every `project.*` event still does.
 
 13. **Issue detail.** *Added 2026-10-02 (task 130.9, issue #668).* One issue:
    a header with state, id, title and source badge; the body; labels, kind,

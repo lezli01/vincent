@@ -1110,6 +1110,36 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxIssues: {
+		"left": func(t *testing.T) {
+			v := issuesFixture()
+			v.updateKey(registryKey(t, "left"))
+			if !v.folded["open"] {
+				t.Fatal("left did not fold the cursor's section")
+			}
+		},
+		"right": func(t *testing.T) {
+			v := issuesFixture()
+			v.updateKey(registryKey(t, "left"))
+			v.updateKey(registryKey(t, "right"))
+			if v.folded["open"] {
+				t.Fatal("right did not expand the folded section")
+			}
+		},
+		"C": func(t *testing.T) {
+			v := issuesFixture()
+			v.updateKey(registryKey(t, "C"))
+			if !v.folded["open"] || !v.folded["in_progress"] || !v.folded["hand_off"] {
+				t.Fatalf("C folded %v, want every shown section", v.folded)
+			}
+		},
+		"O": func(t *testing.T) {
+			v := issuesFixture()
+			v.updateKey(registryKey(t, "C"))
+			v.updateKey(registryKey(t, "O"))
+			if len(v.folded) != 0 {
+				t.Fatalf("O left %v folded", v.folded)
+			}
+		},
 		"enter": func(t *testing.T) {
 			v := issuesFixture()
 			_, cmd := v.updateKey(registryKey(t, "enter"))
@@ -1123,7 +1153,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"o": func(t *testing.T) {
 			opened := withFakeOpener(t, nil)
 			v := issuesFixture()
-			v.cursor = 1 // the imported one, second in the flat list
+			v.selectIssue(5) // the imported one
 			if _, cmd := v.updateKey(registryKey(t, "o")); cmd != nil {
 				drain(cmd)
 			}
@@ -1134,10 +1164,10 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"s": func(t *testing.T) {
 			v := issuesFixture()
 			if _, cmd := v.updateKey(registryKey(t, "s")); cmd == nil {
-				t.Fatal("s did not re-list with the new state")
+				t.Fatal("s did not re-list with the done lane shown")
 			}
-			if v.state != "closed" {
-				t.Fatalf("state = %q, want closed", v.state)
+			if !v.showDone {
+				t.Fatal("s did not show the done lane")
 			}
 		},
 		"R": func(t *testing.T) {
@@ -1149,8 +1179,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"down": func(t *testing.T) {
 			v := issuesFixture()
 			v.updateKey(registryKey(t, "down"))
-			if v.cursor != 1 {
-				t.Fatalf("down left the cursor at %d, want 1", v.cursor)
+			if row, ok := v.current(); !ok || row.issue.ID != 5 {
+				t.Fatalf("down left the cursor on %+v, want #5", row)
 			}
 		},
 		"/": func(t *testing.T) {

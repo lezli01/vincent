@@ -62,7 +62,7 @@ func (s *Store) UpsertRemoteIssue(ctx context.Context, in RemoteIssue, by issues
 		id        int64
 		tombstone bool
 	)
-	err = s.writeIssue(ctx, func(tx *sql.Tx) (*Event, error) {
+	err = s.writeIssueEvents(ctx, func(tx *sql.Tx) ([]*Event, error) {
 		if err := projectExistsTx(ctx, tx, in.ProjectID); err != nil {
 			return nil, err
 		}
@@ -77,7 +77,10 @@ func (s *Store) UpsertRemoteIssue(ctx context.Context, in RemoteIssue, by issues
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 			created = true
-			return insertRemoteIssueTx(ctx, tx, in, state, reason, now, by, &id)
+			// No lane event: there is no lane it moved from (task 134.6
+			// decision 5), even for an issue imported closed.
+			ev, err := insertRemoteIssueTx(ctx, tx, in, state, reason, now, by, &id)
+			return []*Event{ev}, err
 		case err != nil:
 			return nil, fmt.Errorf("read issue remote: %w", err)
 		case !issueID.Valid:
@@ -119,8 +122,16 @@ func insertRemoteIssueTx(ctx context.Context, tx *sql.Tx, in RemoteIssue, state 
 	return issueEvent(EventIssueCreated, in.ProjectID, *id, by, nil)
 }
 
-func refreshRemoteIssueTx(ctx context.Context, tx *sql.Tx, in RemoteIssue, remoteID, id int64, state issuestate.State, reason issuestate.Reason, now time.Time, by issuestate.Actor) (*Event, error) {
+// refreshRemoteIssueTx applies a sync refresh to an imported issue. A
+// refresh that moves the state also moves the lane, and the
+// `issue.lane_changed` follows the `issue.updated` recording it (task 134.6
+// decision 4) — so the result is the events to append, in order.
+func refreshRemoteIssueTx(ctx context.Context, tx *sql.Tx, in RemoteIssue, remoteID, id int64, state issuestate.State, reason issuestate.Reason, now time.Time, by issuestate.Actor) ([]*Event, error) {
 	cur, err := getIssue(ctx, tx, id)
+	if err != nil {
+		return nil, err
+	}
+	watch, err := watchIssueLaneTx(ctx, tx, id, cur.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +223,15 @@ func refreshRemoteIssueTx(ctx context.Context, tx *sql.Tx, in RemoteIssue, remot
 			extra["reason"] = string(reason)
 		}
 	}
-	return issueEvent(EventIssueUpdated, cur.ProjectID, id, by, extra)
+	ev, err := issueEvent(EventIssueUpdated, cur.ProjectID, id, by, extra)
+	if err != nil {
+		return nil, err
+	}
+	lane, err := watch.changedTx(ctx, tx, nil, by)
+	if err != nil {
+		return nil, err
+	}
+	return []*Event{ev, lane}, nil
 }
 
 // remoteNumber stores a zero number as NULL: a provider without numbers has

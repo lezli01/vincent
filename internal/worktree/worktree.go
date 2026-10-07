@@ -222,9 +222,10 @@ func (m *Manager) Path(o Owner) string {
 type Created struct {
 	// Path is the worktree directory.
 	Path string
-	// BaseSHA is the commit the task branch starts at, set only when a fetch
-	// resolved one (§5.3, task 056). Empty means the branch was cut from the
-	// local base and `base_branch` still names the fork point.
+	// BaseSHA is the commit the task branch starts at, set when a fetch
+	// resolved one (§5.3, task 056) and always on a side cut
+	// (CreateSideAndClaim, task 134.13). Empty means the branch was cut from
+	// the local base and `base_branch` still names the fork point.
 	BaseSHA string
 	// Fetch says what the base-branch fetch did; the zero value means none
 	// was asked for.
@@ -253,7 +254,7 @@ func (m *Manager) Create(
 ) (string, error) {
 	m.claims.RLock()
 	defer m.claims.RUnlock()
-	c, err := m.create(ctx, projectPath, owner, branch, base, fetch)
+	c, err := m.create(ctx, projectPath, owner, branch, base, fetch, false)
 	return c.Path, err
 }
 
@@ -269,9 +270,34 @@ func (m *Manager) CreateAndClaim(
 	ctx context.Context, projectPath string, owner Owner, branch, base string, fetch bool,
 	claim func(c Created) error,
 ) (Created, error) {
+	return m.createAndClaim(ctx, projectPath, owner, branch, base, fetch, false, claim)
+}
+
+// CreateSideAndClaim is CreateAndClaim for an issue's side task (§10, task
+// 134 decision 13): the branch is cut from base — the issue's main branch —
+// with no fetch and no fast-forward, whatever `fetch_base_branch` says, and
+// from the SHA base resolves to under the repository lock rather than from
+// its name. That SHA is returned as BaseSHA, so the recorded fork point and
+// the one git used cannot disagree, and a side task's diff keeps its base
+// after its commits are merged back into the main branch (task 134.14).
+//
+// No fetch because a fast-forward of the issue branch would move a clean
+// main worktree under the task occupying it (fastForwardBase only refuses a
+// dirty one).
+func (m *Manager) CreateSideAndClaim(
+	ctx context.Context, projectPath string, owner Owner, branch, base string,
+	claim func(c Created) error,
+) (Created, error) {
+	return m.createAndClaim(ctx, projectPath, owner, branch, base, false, true, claim)
+}
+
+func (m *Manager) createAndClaim(
+	ctx context.Context, projectPath string, owner Owner, branch, base string, fetch, pin bool,
+	claim func(c Created) error,
+) (Created, error) {
 	m.claims.RLock()
 	defer m.claims.RUnlock()
-	c, err := m.create(ctx, projectPath, owner, branch, base, fetch)
+	c, err := m.create(ctx, projectPath, owner, branch, base, fetch, pin)
 	if err != nil {
 		return c, err
 	}
@@ -307,8 +333,11 @@ func (m *Manager) WithReclaimLock(fn func() error) error {
 	return fn()
 }
 
+// create is the one ordinary cut. pin, which only applies when fetch is
+// false, resolves the local base to a SHA under the lock and starts the
+// branch there, reporting it as BaseSHA (CreateSideAndClaim).
 func (m *Manager) create(
-	ctx context.Context, projectPath string, owner Owner, branch, base string, fetch bool,
+	ctx context.Context, projectPath string, owner Owner, branch, base string, fetch, pin bool,
 ) (Created, error) {
 	// Whole of create, not just the prune: the add is as unsafe against a
 	// peer add as it is against a peer prune (#126, see Manager.repos). The
@@ -362,6 +391,12 @@ func (m *Manager) create(
 			// branch starts at sha whatever it says.
 			out.FastForward = m.fastForwardBase(ctx, projectPath, base, sha)
 		}
+	} else if pin {
+		sha, err := m.resolveLocalBranch(ctx, projectPath, base)
+		if err != nil {
+			return Created{}, err
+		}
+		out.BaseSHA, start = sha, sha
 	}
 	addCtx, cancel := context.WithTimeout(ctx, gitx.WorktreeTimeout)
 	defer cancel()
@@ -600,6 +635,21 @@ func (m *Manager) prune(ctx context.Context, projectPath string) error {
 		return &Error{Reason: ReasonGitError, Message: "git worktree prune failed", Err: err}
 	}
 	return nil
+}
+
+// resolveLocalBranch returns the commit refs/heads/{name} points at.
+func (m *Manager) resolveLocalBranch(ctx context.Context, repo, name string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, gitx.QueryTimeout)
+	defer cancel()
+	sha, err := m.git.Run(ctx, repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+name+"^{commit}")
+	if err != nil {
+		return "", &Error{
+			Reason:  ReasonBaseBranchMissing,
+			Message: fmt.Sprintf("base branch %q does not resolve to a commit in %s", name, repo),
+			Err:     err,
+		}
+	}
+	return strings.TrimSpace(sha), nil
 }
 
 func (m *Manager) localBranchExists(ctx context.Context, repo, name string) bool {

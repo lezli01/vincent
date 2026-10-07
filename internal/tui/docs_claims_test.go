@@ -13,7 +13,7 @@ import (
 )
 
 // guideKeyContexts are the board and task-workspace surfaces whose keys
-// docs/guides/tui.md tabulates (issue #592). Task actions are held too: the
+// docs/guides/tui.md tabulates (issue #592), and the issue screens'. Task actions are held too: the
 // workspace's action bar is one of the guide's tables.
 var guideKeyContexts = map[bindingContext]bool{
 	ctxTasks:           true,
@@ -28,6 +28,10 @@ var guideKeyContexts = map[bindingContext]bool{
 	// The project picker's keys are tabulated under the board, whose
 	// header segment opens it (task 132.4).
 	ctxProjectPicker: true,
+	// The issues list and the issue detail (task 134.8): their tables sit
+	// under the takeover screens' "### Issues".
+	ctxIssues: true,
+	ctxIssue:  true,
 }
 
 // guideFixedSurfaces are the keymap.FixedKeys surfaces whose keys the same
@@ -47,6 +51,8 @@ var guideFixedSurfaces = map[keymap.Surface]bool{
 	"lists and panes":   true,
 	"global":            true,
 	"project picker":    true,
+	"issues":            true,
+	"issue":             true,
 }
 
 // TestGuideKeyTablesMatchRegistry holds the TUI guide's board and workspace
@@ -224,9 +230,10 @@ func guideKeyTables(t *testing.T) map[string]int {
 
 	keys := map[string]int{}
 	// The board span runs across headings of every level; the Workflow tab's
-	// subsection ends at the next heading of level four or less.
-	inScope, inWorkflowTab, inTable := false, false, false
-	sawBoard, sawWorkflowTab := false, false
+	// subsection ends at the next heading of level four or less, and the
+	// issue screens' at the next of level three or less.
+	inScope, inWorkflowTab, inIssues, inTable := false, false, false, false
+	sawBoard, sawWorkflowTab, sawIssues := false, false, false
 	for i, line := range lines {
 		if level := headingLevel(line); level > 0 {
 			switch {
@@ -238,6 +245,10 @@ func guideKeyTables(t *testing.T) map[string]int {
 				inScope, inWorkflowTab, sawWorkflowTab = true, true, true
 			case inWorkflowTab && level <= 4:
 				inScope, inWorkflowTab = false, false
+			case line == "### Issues":
+				inScope, inIssues, sawIssues = true, true, true
+			case inIssues && level <= 3:
+				inScope, inIssues = false, false
 			}
 			inTable = false
 			continue
@@ -264,9 +275,9 @@ func guideKeyTables(t *testing.T) map[string]int {
 			}
 		}
 	}
-	if !sawBoard || !sawWorkflowTab {
-		t.Fatalf("docs/guides/tui.md lost a heading this test scopes by (board %v, Workflow tab %v)",
-			sawBoard, sawWorkflowTab)
+	if !sawBoard || !sawWorkflowTab || !sawIssues {
+		t.Fatalf("docs/guides/tui.md lost a heading this test scopes by (board %v, Workflow tab %v, Issues %v)",
+			sawBoard, sawWorkflowTab, sawIssues)
 	}
 	if len(keys) == 0 {
 		t.Fatal("no key table found in docs/guides/tui.md's board and task sections")
@@ -495,6 +506,36 @@ func TestScreenshotReferencesMatchTapes(t *testing.T) {
 		if !wrote {
 			t.Errorf("tape %s never takes a Screenshot of %s.png, which tape() requires", name, name)
 		}
+	}
+}
+
+// TestIssuesTapeShowsTheDoneLane holds the tui-issues tape to the screen its
+// alt text describes, an issue closed as not planned among the rows (review
+// F3 on #769). `s` on the issues list toggles the `done` lane, hidden by
+// default (task 134 decision 5); it once cycled open → closed → all, and
+// the tape kept that cycle's two presses, which now hide the lane again.
+func TestIssuesTapeShowsTheDoneLane(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "scripts", "screenshots.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := strings.ReplaceAll(string(raw), "\r\n", "\n")
+	start := strings.Index(script, "\n  tape tui-issues ")
+	if start < 0 {
+		t.Fatal("no tui-issues tape in scripts/screenshots.sh; the pattern is stale")
+	}
+	body := script[start+1:]
+	if eol := strings.IndexByte(body, '\n'); eol >= 0 {
+		if next := tapeCall.FindStringIndex(body[eol:]); next != nil {
+			body = body[:eol+next[0]]
+		}
+	}
+	before, _, ok := strings.Cut(body, `/tui-issues.png"`)
+	if !ok {
+		t.Fatal("the tui-issues tape takes no Screenshot of tui-issues.png")
+	}
+	if presses := strings.Count(before, "\nType \"s\"\n"); presses%2 != 1 {
+		t.Errorf("the tui-issues tape presses s %d times before its Screenshot; `s` toggles the done lane, so an even count photographs it hidden", presses)
 	}
 }
 

@@ -238,9 +238,9 @@ var routes = []Route{
 	{http.MethodPost, "/v1/tasks/{id}/github/pull", "task_github_pull_link", "Link this task to a pull request. Body: {number}."},
 	{http.MethodGet, "/v1/tasks/{id}/github/pull/checks", "task_github_pull_checks", "What CI says about this task's pull request right now: one row per check on the head commit, with its state and its own GitHub URL (task 068). Live on every call — a check result is never stored, because a stored one reads exactly like a current one while being wrong."},
 	{http.MethodDelete, "/v1/tasks/{id}/github/pull", "task_github_pull_unlink", "Unlink this task's pull request. A human unlink is sticky (decision record row 27): the reconciler never re-applies it, so this suppresses the link permanently."},
-	{http.MethodGet, "/v1/issues", "issue_list", "List issues, most recently updated first; rows omit body. Query: project_id, state (open|closed, repeatable), label (repeatable, all must match), kind, q (substring of title or body), source (local|github), sort (updated|created), limit, offset, remote_number (a GitHub issue number; requires project_id, and returns the vincent issue imported from it — pass that id as task_create's issue_id; empty until `vincent issue sync` has imported it)."},
+	{http.MethodGet, "/v1/issues", "issue_list", "List issues, most recently updated first; rows omit body and carry lane (the board lane) and attention (a root task waits on a human). Query: project_id, state (open|closed, repeatable), lane (open|in_progress|hand_off|done, repeatable; done is every closed issue), label (repeatable, all must match), kind, q (substring of title or body), source (local|github), sort (updated|created), limit, offset, remote_number (a GitHub issue number; requires project_id, and returns the vincent issue imported from it — pass that id as task_create's issue_id; empty until `vincent issue sync` has imported it). A repeatable parameter takes an array of strings."},
 	{http.MethodPost, "/v1/issues", "issue_create", "File an issue in a project's backlog. Body: {project_id, title, body?, labels?, kind?, priority?}; priority runs 0 none, 1 urgent to 4 low. The author is recorded as your task; pass idempotency_key so a retry cannot file it twice."},
-	{http.MethodGet, "/v1/issues/{id}", "issue_get", "One issue in full: body, labels, state, available_actions, the root tasks working on it (tasks.active_ids), its source when imported, and which fields are editable. Read version from here before issue_patch. Query: workflow adds the prefill a task_create with this issue_id would apply."},
+	{http.MethodGet, "/v1/issues/{id}", "issue_get", "One issue in full: body, labels, state, lane (open|in_progress|hand_off|done) and attention (a root task waits on a human), available_actions, the root tasks working on it (tasks.active_ids), its source when imported, and which fields are editable. Read version from here before issue_patch. Query: workflow adds the prefill a task_create with this issue_id would apply."},
 	{http.MethodPatch, "/v1/issues/{id}", "issue_patch", "Edit an issue. Body: {version, title?, body?, labels?, add_labels?, remove_labels?, kind?, priority?}. version is required and comes from issue_get; labels replaces the set and cannot be combined with add_labels or remove_labels. A stale version is a 409 issue_changed carrying the current issue — re-apply your edit to it. An imported issue's title, body and labels are mirrored and refused (409 issue_mirrored); kind and priority stay editable. State is not a field: use issue_close or issue_reopen."},
 	{http.MethodPost, "/v1/issues/{id}/close", "issue_close", "Close an open issue. Body: {reason?, duplicate_of?}; reason is completed (the default), not_planned or duplicate, and duplicate_of — an issue id in the same project — is only allowed with duplicate. An issue imported from GitHub is refused (409 forge_write_needs_human): its state is written back to GitHub, and only a human may do that — ask them to close it."},
 	{http.MethodPost, "/v1/issues/{id}/reopen", "issue_reopen", "Reopen a closed issue. Body: {}. An issue imported from GitHub is refused (409 forge_write_needs_human), as issue_close is."},
@@ -281,7 +281,8 @@ func pathParams(path string) []string {
 
 // inputSchema builds one route's JSON Schema mechanically: its path segments
 // become required properties, and the request carries either a `body` object
-// (methods with one) or a `query` object of string parameters.
+// (methods with one) or a `query` object of string parameters — or arrays of
+// strings, for the parameters a route repeats.
 //
 // The bodies are deliberately unconstrained beyond "object". The route's own
 // handler validates them — that is the whole reason a tool replays rather than
@@ -315,9 +316,12 @@ func inputSchema(r Route) json.RawMessage {
 		}
 	} else {
 		props["query"] = map[string]any{
-			"type":                 "object",
-			"description":          "query parameters for " + r.Method + " " + r.Path,
-			"additionalProperties": map[string]any{"type": "string"},
+			"type":        "object",
+			"description": "query parameters for " + r.Method + " " + r.Path,
+			"additionalProperties": map[string]any{"anyOf": []any{
+				map[string]any{"type": "string"},
+				map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			}},
 		}
 	}
 	schema := map[string]any{"type": "object", "properties": props}

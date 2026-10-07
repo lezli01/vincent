@@ -207,6 +207,104 @@ func TestIssueLs(t *testing.T) {
 	}
 }
 
+// TestIssueLsLane: the board lane (task 134.5) is a LANE column right after
+// STATE, with " !" for attention, a `lane` line on show, and a repeatable
+// --lane whose values only the daemon validates.
+func TestIssueLsLane(t *testing.T) {
+	h := newLiveHarness(t)
+	n := 0
+	file := func(title string, state store.TaskState) apiclient.Issue {
+		t.Helper()
+		iss := issueJSON(t, "issue", "add", "--project", h.project(), "--title", title)
+		if state != "" {
+			n++
+			task := &store.Task{
+				ProjectID: h.projectID, Title: title, WorkflowName: "adhoc", WorkflowSnapshot: "x",
+				BaseBranch: "main", BranchName: "lane-" + strconv.Itoa(n), State: state, IssueID: &iss.ID,
+			}
+			if err := h.st.CreateTask(t.Context(), task, nil); err != nil {
+				t.Fatalf("CreateTask: %v", err)
+			}
+		}
+		return iss
+	}
+	open := file("lane open", "")
+	running := file("lane running", store.TaskRunning)
+	blocked := file("lane blocked", store.TaskBlocked)
+	handOff := file("lane hand off", store.TaskDone)
+	completed := file("lane completed", "")
+	notPlanned := file("lane not planned", "")
+	issueJSON(t, "issue", "close", strconv.FormatInt(completed.ID, 10))
+	issueJSON(t, "issue", "close", strconv.FormatInt(notPlanned.ID, 10), "--reason", "not_planned")
+
+	out, errOut, code := runCLI(t, "issue", "ls", "--project", h.project())
+	if code != 0 {
+		t.Fatalf("ls: exit %d (%s)", code, errOut)
+	}
+	lines := strings.Split(out, "\n")
+	if f := strings.Fields(lines[0]); len(f) < 3 || f[1] != "STATE" || f[2] != "LANE" {
+		t.Errorf("header = %q, want LANE right after STATE", lines[0])
+	}
+	row := func(title string) string {
+		for _, l := range lines {
+			if strings.HasSuffix(l, title) {
+				return l
+			}
+		}
+		t.Fatalf("no row for %q:\n%s", title, out)
+		return ""
+	}
+	for title, want := range map[string]string{
+		"lane open":        "open    open -",
+		"lane running":     "open    in_progress -",
+		"lane blocked":     "open    in_progress ! -",
+		"lane hand off":    "open    hand_off -",
+		"lane completed":   "closed (completed)    done -",
+		"lane not planned": "closed (not_planned)  done -",
+	} {
+		if r := row(title); !strings.Contains(strings.Join(strings.Fields(r), " ")+" ", strings.Join(strings.Fields(want), " ")+" ") {
+			t.Errorf("row %q = %q, want state, lane and kind %q", title, r, want)
+		}
+	}
+
+	ids := func(args ...string) []int64 {
+		t.Helper()
+		list := issueListJSON(t, append([]string{"--project", h.project()}, args...)...)
+		out := make([]int64, 0, len(list))
+		for i := range list {
+			out = append(out, list[i].ID)
+		}
+		slices.Sort(out)
+		return out
+	}
+	for _, tc := range []struct {
+		args []string
+		want []int64
+	}{
+		{[]string{"--lane", "done"}, []int64{completed.ID, notPlanned.ID}},
+		{[]string{"--lane", "open", "--lane", "hand_off"}, []int64{open.ID, handOff.ID}},
+		{[]string{"--lane", "in_progress"}, []int64{running.ID, blocked.ID}},
+		{[]string{"--state", "open", "--lane", "done"}, []int64{}},
+	} {
+		if got := ids(tc.args...); !slices.Equal(got, tc.want) {
+			t.Errorf("ls %v = %v, want %v", tc.args, got, tc.want)
+		}
+	}
+
+	if _, errOut, code = runCLI(t, "issue", "ls", "--lane", "bogus"); code != 1 || !strings.Contains(errOut, "unknown issue lane") {
+		t.Errorf("--lane bogus: exit %d, %q; want 1 and the daemon's message", code, errOut)
+	}
+
+	out, _, _ = runCLI(t, "issue", "show", strconv.FormatInt(blocked.ID, 10))
+	if !strings.Contains(out, "lane      in_progress !") {
+		t.Errorf("show does not carry the lane line:\n%s", out)
+	}
+	out, _, _ = runCLI(t, "issue", "show", strconv.FormatInt(notPlanned.ID, 10))
+	if !strings.Contains(out, "lane      done\n") {
+		t.Errorf("show of a closed issue does not say lane done:\n%s", out)
+	}
+}
+
 // TestIssueLsByGitHubNumber: `--github N` is the lookup that replaced
 // `task add --github-issue` (task 130.11, decision 22.4). It needs --project,
 // answers only that project's issue imported from #N, and the id it answers

@@ -16,8 +16,8 @@ import (
 // call is one tool invocation's decoded arguments: the path parameters, the
 // body, and the query.
 type call struct {
-	Body  json.RawMessage   `json:"body,omitempty"`
-	Query map[string]string `json:"query,omitempty"`
+	Body  json.RawMessage        `json:"body,omitempty"`
+	Query map[string]queryValues `json:"query,omitempty"`
 	// IdempotencyKey rides §13.1's replay-protection header. It is an
 	// *argument* rather than a header because a tool call has no header
 	// surface at all: without it the one §13.1 guarantee an MCP client could
@@ -27,6 +27,26 @@ type call struct {
 	// params carries the path parameters by name; the SDK hands us raw JSON,
 	// so they are decoded from the same object.
 	params map[string]string
+}
+
+// queryValues is one query parameter's values. A parameter a route repeats
+// (issue_list's state, label and lane) has no other spelling in a JSON
+// object than an array, so a value is a string or an array of strings; the
+// string form is the one every single-valued parameter has always taken.
+type queryValues []string
+
+func (v *queryValues) UnmarshalJSON(b []byte) error {
+	var one string
+	if err := json.Unmarshal(b, &one); err == nil {
+		*v = queryValues{one}
+		return nil
+	}
+	var many []string
+	if err := json.Unmarshal(b, &many); err != nil {
+		return fmt.Errorf("a query value is a string or an array of strings, got %s", string(b))
+	}
+	*v = many
+	return nil
 }
 
 // decodeCall reads one route's arguments out of the raw tool payload.
@@ -81,8 +101,10 @@ func requestFor(ctx context.Context, r Route, c call) (*http.Request, error) {
 	target := path
 	if len(c.Query) > 0 {
 		q := url.Values{}
-		for k, v := range c.Query {
-			q.Set(k, v)
+		for k, vs := range c.Query {
+			for _, v := range vs {
+				q.Add(k, v)
+			}
 		}
 		target += "?" + q.Encode()
 	}

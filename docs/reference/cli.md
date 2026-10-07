@@ -2902,7 +2902,7 @@ issue is [`vincent task add --issue`](#from-an-issue).
 ### `vincent issue ls`
 
 ```sh
-vincent issue ls [--project ID] [--state S]... [--label L]... [--kind K] [--search Q] [--source local|github] [--github N] [--limit N] [--json]
+vincent issue ls [--project ID] [--state S]... [--lane L]... [--label L]... [--kind K] [--search Q] [--source local|github] [--github N] [--limit N] [--json]
 ```
 
 Lists issues, most recently updated first. Without `--project` the list spans
@@ -2910,15 +2910,17 @@ every project and gains a `PROJECT` column; with it, only that project's
 issues are listed.
 
 ```
-ID  PROJECT  STATE              KIND  PRIORITY  LABELS  TASKS  TITLE
-12  vincent  open               bug   2         bug,ui  1      Crash on cold start
-9   web      closed (completed) -     -         -       0      Rename the settings page
+ID  PROJECT  STATE               LANE           KIND  PRIORITY  LABELS  TASKS  TITLE
+14  vincent  open                in_progress !  -     -         -       1      Retry flaky uploads
+12  vincent  open                hand_off       bug   2         bug,ui  1      Crash on cold start
+9   web      closed (completed)  done           -     -         -       0      Rename the settings page
 ```
 
 | Flag | Meaning |
 |---|---|
 | `--project ID` | Only this project's issues |
 | `--state S` | `open` or `closed`; repeatable, and any one matches |
+| `--lane L` | `open`, `in_progress`, `hand_off` or `done`; repeatable, and any one matches. The daemon checks the values |
 | `--label L` | Repeatable; **every** label given must be on the issue |
 | `--kind K` | Only issues of this kind |
 | `--search Q` | A substring of the title or body |
@@ -2926,7 +2928,12 @@ ID  PROJECT  STATE              KIND  PRIORITY  LABELS  TASKS  TITLE
 | `--github N` | Only the issue imported from GitHub issue number `N`. Needs `--project` |
 | `--limit N` | Maximum rows |
 
-`STATE` carries the close reason of a closed issue. `--json` prints the
+`STATE` carries the close reason of a closed issue. `LANE` is the issue's
+board [lane](api.md#issues), spelled as the API spells it; a trailing ` !`
+marks attention — one of its root tasks is waiting on you — and can appear on
+any lane, `done` included. `--lane done` is every closed issue, whatever its
+close reason. Filters combine by AND, so `--state open --lane done` lists
+nothing. `--json` prints the
 [list](api.md#issues) body, `[]` for an empty one; list rows carry no body.
 
 `--github N` is how a script maps a GitHub issue number to the vincent issue to
@@ -2947,7 +2954,8 @@ vincent issue show <id> [--json]
 ```
 
 Prints one issue: title, state (with its close reason, and `duplicate of #N`
-when it has one), project, kind, priority, labels, author, and — for an
+when it has one), lane (with the same ` !` attention marker as
+[`issue ls`](#vincent-issue-ls)), project, kind, priority, labels, author, and — for an
 imported issue — its `owner/repo#N` source, URL and when it last synced, then
 how many tasks it started with the ids still active, the actions it allows,
 its body, and its discussion thread oldest first — each comment under an

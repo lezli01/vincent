@@ -134,7 +134,7 @@ func stampedViews() []stampedView {
 					if st.project == 0 {
 						st.project = v.project.id
 					}
-					v.update(issuesLoadedMsg{state: v.state, stamp: st, issues: []apiclient.Issue{{ID: 1, Title: mark}}})
+					v.update(issuesLoadedMsg{showDone: v.showDone, stamp: st, issues: []apiclient.Issue{{ID: 1, Title: mark}}})
 				},
 				func() string {
 					if len(v.issues) == 0 {
