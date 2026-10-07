@@ -36,6 +36,7 @@ func newChatHandoffCmd() *cobra.Command {
 		effort      string
 		fields      []string
 		fieldsFile  string
+		merge       string
 	)
 	cmd := &cobra.Command{
 		Use:   "handoff <chat-id>",
@@ -45,12 +46,21 @@ func newChatHandoffCmd() *cobra.Command {
 			"and uncommitted work are both there when the task's first step runs.\n\n" +
 			"The chat becomes terminal (`handed_off`) and links to the task; the task owns " +
 			"the worktree and the branch from then on. Only an idle chat can be handed off, " +
-			"and a worktree in the middle of a merge or rebase is refused by name.",
+			"and a worktree in the middle of a merge or rebase is refused by name.\n\n" +
+			"A chat on an issue that already has a main branch always hands off to a side " +
+			"task, merged back into that branch when done: on `block` (manual) unless " +
+			"`--merge agent`. On an issue with no main branch yet --merge is inert: the " +
+			"chat's branch becomes the issue's main branch.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := strconv.ParseInt(args[0], 10, 64)
 			if err != nil {
 				return fmt.Errorf("chat id: %w", err)
+			}
+			if cmd.Flags().Changed("merge") {
+				if err := checkMergeMode(merge); err != nil {
+					return err
+				}
 			}
 			flagFields, err := parseFieldFlags(fields)
 			if err != nil {
@@ -85,6 +95,12 @@ func newChatHandoffCmd() *cobra.Command {
 				if cmd.Flags().Changed("priority") {
 					p := priority
 					req.Priority = &p
+				}
+				// Sent only when named, so a plain handoff's body is what it
+				// was before task 134; the daemon decides whether the chat's
+				// issue makes this a side task at all.
+				if cmd.Flags().Changed("merge") {
+					req.MergeBack = &apiclient.MergeBack{OnConflict: merge}
 				}
 				task, chat, err := c.HandoffChat(ctx, id, req)
 				if err != nil {
@@ -131,6 +147,8 @@ func newChatHandoffCmd() *cobra.Command {
 	cmd.Flags().StringVar(&fieldsFile, "fields-file", "",
 		"Read task fields from a JSON object of strings in this file, or `-` for stdin; "+
 			"a --field of the same name wins")
+	cmd.Flags().StringVar(&merge, "merge", mergeBlock,
+		mergeFlagHelp+"; applies only when the chat's issue already has a main branch")
 	_ = cmd.MarkFlagRequired("title")
 	jsonFlag(cmd)
 	return cmd
