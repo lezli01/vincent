@@ -1,6 +1,6 @@
 # 134 — Issues UX: a four-lane issues board and one main worktree per issue
 
-**Status:** 🔄 in progress (14/19)
+**Status:** 🔄 in progress (16/19)
 
 Issue [#748](https://github.com/lezli01/vincent/issues/748), part of
 [#747](https://github.com/lezli01/vincent/issues/747), the epic. Spec §5.6 in
@@ -237,6 +237,13 @@ hand-over.
 - A chat handoff with `issue_id` is main when the issue has no main branch
   (the chat's branch becomes it) and side with `block` otherwise, until 134.15
   lets the handoff body choose; the handoff refuses `merge_back` until then.
+  *Amended 2026-10-07 (134.15, #762):* the handoff accepts `merge_back`. With
+  no `merge_back` it stays implicit side/`block`, and a `merge_back` only
+  selects `on_conflict`. On an issue with no main branch, `merge_back` is
+  inert on the handoff only: the task is main on the chat's branch and stores
+  no `merge_on_conflict`. `POST /v1/tasks`, the CLI and triggers keep the
+  "create a main task first" 400, so a per-issue trigger carrying `merge_back`
+  fails its delivery until the issue has a main branch.
 
 *Amended 2026-10-07 (134.12, #759), settled while scoping it:*
 
@@ -474,6 +481,28 @@ Taken from the code while building 134.14, without author input:
   checklist line to add: merge-back is not a feature a workflow author can
   use.
 
+### 134.17-a. The gate's crash is the conflicted merge left in place (2026-10-07, 134.17)
+
+Settled by the author while scoping #764. `scripts/134-gate.sh` scenario 8
+follows m6 scenario 6's shape: the daemon is killed while a merge-back is
+`blocked` `merge_conflict` with the merge in progress in the issue's main
+worktree and a main task queued behind it. After the restart the merge-back
+is still blocked and the main task still queued; a hand resolution and
+`retry` end it `done` with exactly one merge commit. A daemon killed while
+`git merge` itself runs is not driven from the gate — the merge takes under a
+second, nothing holds it, and a git hook that did would leave an orphaned git
+process racing the restart on all three platforms. That abort-and-re-merge
+path stays proven by `TestMergeBackInterruptedMidMergeAbortsAndReMerges`
+(`internal/taskrun/mergeback_test.go`).
+
+### 134.17-b. `end_sha` is asserted through `/commits` (2026-10-07, 134.17)
+
+Settled by the author while scoping #764. The gate proves `end_sha` by the
+predecessor's `GET /v1/tasks/{id}/commits` ending at the tip it handed over —
+its successor's `base_sha` — and listing none of the successor's commits
+after the successor commits on the shared branch. `end_sha` is **not** added
+to the task DTO; no product code changes for the gate.
+
 ### 20. `tasks.archived_from` records the state an archive left (2026-10-07, 134.3)
 
 Decision 2 needs to know whether an archived task was `done` or `aborted`.
@@ -652,14 +681,21 @@ sections and public pages its code makes true, in its own pull request.
   task; `merge_source_missing`, `merge_target_missing`; cancel aborts a
   conflicted merge-back; issue delete refused for a live side task; spec
   §5.3, §5.6, §6, §7.6, §10, §12.4, §13.2, §18. ✓ 2026-10-07
-- [ ] **134.15** ([#762](https://github.com/lezli01/vincent/issues/762)) The
+- [x] **134.15** ([#762](https://github.com/lezli01/vincent/issues/762)) The
   choice in the CLI, MCP, triggers and the chat handoff. Depends: 134.14.
+  `task add --separate-worktree [--merge]`, the "queued behind" note, `task
+  show`'s worktree and merge rows, `chat handoff --issue [--merge]` (`--issue`
+  added by the train's review, F2: without it `--merge` could only 400); the handoff accepts
+  `merge_back` (decision 7's amendment); trigger `action.merge_back`; spec
+  §13.2. ✓ 2026-10-07
 - [ ] **134.16** ([#763](https://github.com/lezli01/vincent/issues/763)) The
   occupant and merge-backs on cards and the detail, and the side-worktree
   rows in the new-task form. Depends: 134.8, 134.15.
-- [ ] **134.17** ([#764](https://github.com/lezli01/vincent/issues/764)) An
+- [x] **134.17** ([#764](https://github.com/lezli01/vincent/issues/764)) An
   end-to-end gate for the occupant rule and both merge modes.
-  Depends: 134.14.
+  Depends: 134.14. `scripts/134-gate.sh`, nine scenarios over curl and the
+  issue branch's git log, wired as gate group 4 in `ci.yml`, with its record
+  in `docs/gates/134-issue-worktrees.md` (decisions 134.17-a, 134.17-b).
 - [ ] **134.18** ([#765](https://github.com/lezli01/vincent/issues/765)) The
   user guide for main worktrees, side tasks and merge-back. Depends: 134.15.
 - [ ] **134.19** ([#766](https://github.com/lezli01/vincent/issues/766)) Seeds

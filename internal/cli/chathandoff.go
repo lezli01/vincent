@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -13,9 +14,12 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// newChatHandoffCmd carries `vincent task add`'s flags, minus the three a
+// newChatHandoffCmd carries `vincent task add`'s flags, minus the ones a
 // handoff has no say in: the project, the base branch and the branch name all
-// come from the chat, verbatim. Everything else — the workflow, the title, the
+// come from the chat, verbatim, and there is no pull request to start from.
+// `--issue` is kept because a chat row carries no issue: it is the only way a
+// handoff lands in an issue's worktrees, and so the only way `--merge` means
+// anything (task 134.15). Everything else — the workflow, the title, the
 // description, the fields, the priority and the §8.6 overrides — is the
 // ordinary task-create body, validated daemon-side by the same code
 // `POST /v1/tasks` uses.
@@ -36,6 +40,8 @@ func newChatHandoffCmd() *cobra.Command {
 		effort      string
 		fields      []string
 		fieldsFile  string
+		issueID     int64
+		merge       string
 	)
 	cmd := &cobra.Command{
 		Use:   "handoff <chat-id>",
@@ -45,12 +51,26 @@ func newChatHandoffCmd() *cobra.Command {
 			"and uncommitted work are both there when the task's first step runs.\n\n" +
 			"The chat becomes terminal (`handed_off`) and links to the task; the task owns " +
 			"the worktree and the branch from then on. Only an idle chat can be handed off, " +
-			"and a worktree in the middle of a merge or rebase is refused by name.",
+			"and a worktree in the middle of a merge or rebase is refused by name.\n\n" +
+			"With --issue the task is linked to that vincent issue. On an issue that already " +
+			"has a main branch it is a side task, merged back into that branch when done: on " +
+			"`block` (manual) unless `--merge agent`. On an issue with no main branch yet " +
+			"--merge is inert: the chat's branch becomes the issue's main branch.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := strconv.ParseInt(args[0], 10, 64)
 			if err != nil {
 				return fmt.Errorf("chat id: %w", err)
+			}
+			if cmd.Flags().Changed("merge") {
+				// The daemon refuses merge_back without issue_id; say so
+				// before the request rather than relay its 400.
+				if !cmd.Flags().Changed("issue") {
+					return errors.New("--merge needs --issue: only a task on an issue is merged back")
+				}
+				if err := checkMergeMode(merge); err != nil {
+					return err
+				}
 			}
 			flagFields, err := parseFieldFlags(fields)
 			if err != nil {
@@ -85,6 +105,16 @@ func newChatHandoffCmd() *cobra.Command {
 				if cmd.Flags().Changed("priority") {
 					p := priority
 					req.Priority = &p
+				}
+				if cmd.Flags().Changed("issue") {
+					n := issueID
+					req.IssueID = &n
+				}
+				// Sent only when named, so a plain handoff's body is what it
+				// was before task 134; the daemon decides whether the issue
+				// makes this a side task at all.
+				if cmd.Flags().Changed("merge") {
+					req.MergeBack = &apiclient.MergeBack{OnConflict: merge}
 				}
 				task, chat, err := c.HandoffChat(ctx, id, req)
 				if err != nil {
@@ -131,6 +161,10 @@ func newChatHandoffCmd() *cobra.Command {
 	cmd.Flags().StringVar(&fieldsFile, "fields-file", "",
 		"Read task fields from a JSON object of strings in this file, or `-` for stdin; "+
 			"a --field of the same name wins")
+	cmd.Flags().Int64Var(&issueID, "issue", 0,
+		"Link the task to this vincent issue; on an issue with a main branch it is a side task")
+	cmd.Flags().StringVar(&merge, "merge", mergeBlock,
+		mergeFlagHelp+"; needs --issue, and applies only when that issue already has a main branch")
 	_ = cmd.MarkFlagRequired("title")
 	jsonFlag(cmd)
 	return cmd

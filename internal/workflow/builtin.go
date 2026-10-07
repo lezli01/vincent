@@ -1145,7 +1145,7 @@ steps:
          the opt-in lane_changed.
       8. A follow_up, retry or cancel action carries none of the keys a
          reaction refuses: permission, workflow, title, description, fields,
-         issue, github_pull and limits.max_task_cost_usd.
+         issue, github_pull, merge_back and limits.max_task_cost_usd.
       9. An http source is signed with signature.scheme github_hmac_sha256 and
          a secret_env, and the secret itself is never in the file.
       10. No secret in an argv. A credential a poll command needs comes from
@@ -1195,6 +1195,14 @@ steps:
           re-fires each time that task finishes — a new dedupe_key is a
           rendering change, so on an armed trigger report it rather than
           make it, as item 14 does.
+      19. A create_task action with issue: whose work should not queue behind
+          the issue's main task — a reviewer, a test writer, anything run
+          beside the main line — can carry merge_back: {on_conflict: block}
+          (or agent, to try a resolver first): the task is a side task in its
+          own worktree, merged back into the issue's main branch. It refuses
+          the delivery while the issue has no main branch yet, so add it only
+          where the trigger fires on issues already being worked, and never on
+          a trigger whose task is meant to be the issue's first.
 
       ## What you may not change
 

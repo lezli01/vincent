@@ -667,8 +667,10 @@ func (req *taskCreateRequest) digestShape() *taskCreateDigest {
 // inheritedBase, when non-empty, replaces the request's `base_branch` and is
 // taken verbatim: a handoff's base branch is a fact about a worktree that
 // already exists, not a name to validate against the repository as it is now.
+// handoff relaxes the two merge_back refusals that cannot apply to an adopted
+// branch; checkMergeBack says which.
 func (s *Server) prepareTaskCreate(
-	ctx context.Context, w http.ResponseWriter, req *taskCreateRequest, inheritedBase string,
+	ctx context.Context, w http.ResponseWriter, req *taskCreateRequest, inheritedBase string, handoff bool,
 ) (*preparedTask, bool) {
 	project, err := s.deps.Store.GetProject(ctx, req.ProjectID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -723,7 +725,7 @@ func (s *Server) prepareTaskCreate(
 	if !ok {
 		return nil, false
 	}
-	mainWT, mergeOnConflict, ok := s.checkMergeBack(ctx, w, req, issueSnap)
+	mainWT, mergeOnConflict, ok := s.checkMergeBack(ctx, w, req, issueSnap, handoff)
 	if !ok {
 		return nil, false
 	}
@@ -981,8 +983,16 @@ func (s *Server) prepareTaskCreate(
 // main-branch rules in handleTaskCreate need. It returns the side task's
 // on_conflict, "" for a main task or a task with no issue, and writes its own
 // 400s.
+//
+// On a handoff (task 134 decision 7, item 134.15) the chat's branch is
+// adopted whatever the body says, so two refusals do not apply: the body's
+// branch_name and existing_branch are ignored rather than combined with
+// merge_back, and an issue with no main branch takes the chat's branch as it —
+// the task is main and merge_back is dropped, returned as "". Every other rule,
+// and every message, is the create path's.
 func (s *Server) checkMergeBack(
 	ctx context.Context, w http.ResponseWriter, req *taskCreateRequest, issueSnap *store.IssueSnapshot,
+	handoff bool,
 ) (store.IssueMainWorktree, string, bool) {
 	var mainWT store.IssueMainWorktree
 	if req.MergeBack != nil {
@@ -991,7 +1001,7 @@ func (s *Server) checkMergeBack(
 				"merge_back requires issue_id: a side worktree is merged back into an issue's main branch")
 			return mainWT, "", false
 		}
-		if strings.TrimSpace(ptrValue(req.BranchName)) != "" || ptrValue(req.ExistingBranch) {
+		if !handoff && (strings.TrimSpace(ptrValue(req.BranchName)) != "" || ptrValue(req.ExistingBranch)) {
 			writeError(w, http.StatusBadRequest, CodeValidationFailed,
 				"merge_back cannot be combined with branch_name or existing_branch: "+
 					"a side task's branch is cut from the issue's main branch")
@@ -1020,6 +1030,9 @@ func (s *Server) checkMergeBack(
 		return mainWT, "", false
 	}
 	if onConflict != "" && mainWT.Branch == "" {
+		if handoff {
+			return mainWT, "", true
+		}
 		writeError(w, http.StatusBadRequest, CodeValidationFailed,
 			fmt.Sprintf("issue %d has no main branch yet; create a main task first", issueSnap.ID))
 		return mainWT, "", false
@@ -1099,7 +1112,7 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	prep, ok := s.prepareTaskCreate(ctx, w, &req, "")
+	prep, ok := s.prepareTaskCreate(ctx, w, &req, "", false)
 	if !ok {
 		return
 	}

@@ -218,6 +218,33 @@ type Action struct {
 	Branch string `yaml:"branch" json:"branch,omitempty"`
 	// Prompt is a follow_up's prompt, or a retry's prompt override.
 	Prompt string `yaml:"prompt" json:"prompt,omitempty"`
+	// MergeBack makes a create_task with an issue a side task (task
+	// 134.15): its own worktree cut from the issue's main branch and merged
+	// back afterwards, rather than a main task queued behind the issue's
+	// main line. It is replayed as POST /v1/tasks' `merge_back`, which keeps
+	// its 400 for an issue with no main branch yet, so such a delivery fails.
+	MergeBack *ActionMergeBack `yaml:"merge_back" json:"merge_back,omitempty"`
+}
+
+// ActionMergeBack is a create_task action's `merge_back:` mapping.
+type ActionMergeBack struct {
+	// OnConflict is who resolves a conflicting merge-back: MergeBackBlock
+	// (a human, the default when empty) or MergeBackAgent.
+	OnConflict string `yaml:"on_conflict" json:"on_conflict,omitempty"`
+}
+
+// The `merge_back.on_conflict` values, spelled as POST /v1/tasks takes them.
+const (
+	MergeBackBlock = "block"
+	MergeBackAgent = "agent"
+)
+
+// EffectiveOnConflict is OnConflict with the empty default resolved.
+func (m *ActionMergeBack) EffectiveOnConflict() string {
+	if m.OnConflict == "" {
+		return MergeBackBlock
+	}
+	return m.OnConflict
 }
 
 // Limits are the per-trigger bounds.
@@ -735,6 +762,18 @@ func validateAction(d *Definition, add addFunc, refuse refuseFunc, checkTemplate
 		if a.Issue != "" && a.GitHubPull != "" {
 			add("action.issue", "cannot be combined with github_pull")
 		}
+		if a.MergeBack != nil {
+			// POST /v1/tasks 400s merge_back without issue_id: a side task
+			// is merged back into an issue's main branch, so it needs one.
+			if a.Issue == "" {
+				add("action.merge_back", "needs action.issue: a side task is merged back into its issue's main branch")
+			}
+			switch a.MergeBack.OnConflict {
+			case "", MergeBackBlock, MergeBackAgent:
+			default:
+				add("action.merge_back.on_conflict", "must be %q or %q", MergeBackBlock, MergeBackAgent)
+			}
+		}
 		const why = "only a follow_up, retry or cancel names a target"
 		refuse("action.target", a.Target != "", why)
 		refuse("action.branch", a.Branch != "", why)
@@ -775,6 +814,7 @@ func validateAction(d *Definition, add addFunc, refuse refuseFunc, checkTemplate
 		refuse("action.fields", len(a.Fields) > 0, why)
 		refuse("action.issue", a.Issue != "", why)
 		refuse("action.github_pull", a.GitHubPull != "", why)
+		refuse("action.merge_back", a.MergeBack != nil, why)
 		refuse("permission", d.Permission != "", "the restricted clamp is set when a task is created")
 		refuse("limits.max_task_cost_usd", d.Limits.MaxTaskCostUSD != 0, "a task's cost cap is set when it is created")
 	default:

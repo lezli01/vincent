@@ -95,30 +95,31 @@ func (s *Server) handleChatHandoff(w http.ResponseWriter, r *http.Request) {
 		}})
 		return
 	}
-	// The choice of a side worktree on handoff arrives with 134.15 (#762);
-	// until then the issue's state decides the role, below.
-	if req.MergeBack != nil {
-		writeError(w, http.StatusBadRequest, CodeValidationFailed,
-			"merge_back is not accepted on a handoff: the role follows the issue's main branch")
-		return
-	}
 	req.ProjectID = chat.ProjectID
-	prep, ok := s.prepareTaskCreate(ctx, w, &req, chat.BaseBranch)
+	// merge_back is validated by the create path's own code; on a handoff it
+	// only selects on_conflict, and is inert when the issue has no main
+	// branch yet (task 134 decision 7, item 134.15).
+	prep, ok := s.prepareTaskCreate(ctx, w, &req, chat.BaseBranch, true)
 	if !ok {
 		return
 	}
 	t := prep.task
 	// The handoff's role rule (task 134 decision 7): an issue with no main
 	// branch yet takes the chat's branch as it, so the task is main; an
-	// issue that has one gets a side task, merged back on `block` as
-	// fan_out's default is (decision 12). The chat's branch is the caller's
+	// issue that has one gets a side task, merged back on the body's
+	// merge_back.on_conflict, else on `block` as fan_out's default is
+	// (decision 12). The chat's branch is the caller's
 	// name, never one a main task may trade for another, so a main branch
 	// that appears before the commit is a 400, not a silent rebind.
 	if t.IssueID != nil {
 		if prep.mainWorktree.Branch == "" {
 			t.IssueWorktree, t.MergeOnConflict = store.IssueWorktreeMain, ""
 		} else {
-			t.IssueWorktree, t.MergeOnConflict = store.IssueWorktreeSide, store.MergeOnConflictBlock
+			onConflict := t.MergeOnConflict
+			if onConflict == "" {
+				onConflict = store.MergeOnConflictBlock
+			}
+			t.IssueWorktree, t.MergeOnConflict = store.IssueWorktreeSide, onConflict
 		}
 	}
 	t.BranchExplicit = true

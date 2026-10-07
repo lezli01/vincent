@@ -52,12 +52,27 @@ func newTaskAddCmd() *cobra.Command {
 		paused      bool
 		restricted  bool
 		maxCostUSD  float64
+		separate    bool
+		merge       string
 	)
 	cmd := &cobra.Command{
 		Use:   "add",
 		Short: "Create a task",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// A side task (task 134) is a role within an issue's worktrees,
+			// so it means nothing without --issue; and --merge configures
+			// only a side task's merge-back. Both are refused here, before
+			// a request, rather than left to a daemon 400.
+			if separate && !cmd.Flags().Changed("issue") {
+				return errors.New("--separate-worktree needs --issue: only an issue's task has a main worktree to stay out of")
+			}
+			if cmd.Flags().Changed("merge") && !separate {
+				return errors.New("--merge needs --separate-worktree: only a side task is merged back")
+			}
+			if err := checkMergeMode(merge); err != nil {
+				return err
+			}
 			flagFields, err := parseFieldFlags(fields)
 			if err != nil {
 				return err
@@ -114,6 +129,9 @@ func newTaskAddCmd() *cobra.Command {
 					n := issueID
 					req.IssueID = &n
 				}
+				if separate {
+					req.MergeBack = &apiclient.MergeBack{OnConflict: merge}
+				}
 				// The three create-time limits (task 096 decisions 9, 17,
 				// 18) are sent only when named, so a plain `task add` body
 				// is byte-for-byte what it was before they existed.
@@ -133,6 +151,14 @@ func newTaskAddCmd() *cobra.Command {
 				}
 				if wantJSON(cmd) {
 					return emitJSON(cmd.OutOrStdout(), t)
+				}
+				// A main task waits for the issue's main worktree (task 134
+				// decision 10): say so, and name the way around it. Stderr,
+				// like a warning: the task was created all the same.
+				if !separate && t.MainWorktreeOccupantTaskID != nil {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
+						"queued behind #%d (main worktree busy); pass --separate-worktree to run now\n",
+						*t.MainWorktreeOccupantTaskID)
 				}
 				out := cmd.OutOrStdout()
 				if _, err := fmt.Fprintf(out, "task %d created: %s (%s, branch %s)\n",
@@ -205,6 +231,10 @@ func newTaskAddCmd() *cobra.Command {
 		"Run every agent step restricted, even one whose workflow says full-auto")
 	cmd.Flags().Float64Var(&maxCostUSD, "max-task-cost-usd", 0,
 		"This task's own spend cap in USD; the lower of it and config's max_task_cost_usd applies")
+	cmd.Flags().BoolVar(&separate, "separate-worktree", false,
+		"With --issue: run in a worktree of its own, cut from the issue's main branch and merged "+
+			"back into it when done, instead of queueing behind the task holding the main worktree")
+	cmd.Flags().StringVar(&merge, "merge", mergeBlock, mergeFlagHelp)
 	_ = cmd.MarkFlagRequired("project")
 	// Both would prefill the same title and description from different
 	// sources, and there is no defensible order; the daemon refuses it too.
@@ -216,6 +246,13 @@ func newTaskAddCmd() *cobra.Command {
 	// asking for the adopt mode on top of it asks which of two answers to one
 	// question wins; the daemon refuses it too.
 	cmd.MarkFlagsMutuallyExclusive("existing-branch", "github-pull")
+	// A side task's branch is cut from the issue's main branch under a name
+	// the daemon chooses, so naming or adopting one asks for a different
+	// task; the daemon refuses merge_back beside either. --github-pull
+	// already excludes --issue, and is listed so the error names the pair.
+	cmd.MarkFlagsMutuallyExclusive("separate-worktree", "existing-branch")
+	cmd.MarkFlagsMutuallyExclusive("separate-worktree", "github-pull")
+	cmd.MarkFlagsMutuallyExclusive("separate-worktree", "branch")
 	// One of them, not --title alone: an issue or a pull request supplies the
 	// title, which is the whole point of naming one (task 035). Requiring
 	// both would make `--issue` a decoration on a title the user had to
@@ -223,6 +260,35 @@ func newTaskAddCmd() *cobra.Command {
 	cmd.MarkFlagsOneRequired("title", "github-pull", "issue")
 	jsonFlag(cmd)
 	return cmd
+}
+
+// The two merge-back modes (task 134 decision 12), as `merge_back.on_conflict`
+// spells them: fan_out's `merge.on_conflict` vocabulary.
+const (
+	mergeBlock = "block"
+	mergeAgent = "agent"
+)
+
+// The backquoted word is the placeholder pflag prints for the value.
+const mergeFlagHelp = "How a side task is merged back, by `mode`: " +
+	"block is manual: the merge runs, and a conflict blocks for you; " +
+	"agent: an agent tries to resolve conflicts first"
+
+// checkMergeMode refuses a --merge value the daemon would, before a request.
+func checkMergeMode(v string) error {
+	if v != mergeBlock && v != mergeAgent {
+		return fmt.Errorf("--merge must be %s or %s, got %q", mergeBlock, mergeAgent, v)
+	}
+	return nil
+}
+
+// mergeModeName is how `task show` says a merge mode: `block` is the manual
+// one, which is what a human reading the row needs to know.
+func mergeModeName(onConflict string) string {
+	if onConflict == mergeAgent {
+		return "agent"
+	}
+	return "manual"
 }
 
 // parseFieldFlags preserves everything after the first '=' so URLs, regexes,
@@ -417,6 +483,20 @@ func taskBaseRows(t apiclient.TaskDetail) [][2]string {
 	return rows
 }
 
+// taskIssueWorktreeRows is `task show`'s role in its issue's worktrees (task
+// 134): `main` or `side`, and for a side task how it is merged back. A task
+// with no issue has no role and prints neither row.
+func taskIssueWorktreeRows(t apiclient.TaskDetail) [][2]string {
+	if t.IssueWorktree == nil || *t.IssueWorktree == "" {
+		return nil
+	}
+	rows := [][2]string{{"worktree", *t.IssueWorktree}}
+	if t.MergeBack != nil {
+		rows = append(rows, [2]string{"merge", mergeModeName(t.MergeBack.OnConflict)})
+	}
+	return rows
+}
+
 // taskHoldRows is `task show`'s hold row (task 101 decision 3): a queued task
 // waiting on something other than a free slot, and when the daemon will try
 // again. The reason is printed as it arrives, because there are two producers
@@ -477,6 +557,7 @@ func newTaskShowCmd() *cobra.Command {
 					{"branch", t.BranchName},
 				}
 				fields = append(fields, taskBaseRows(t)...)
+				fields = append(fields, taskIssueWorktreeRows(t)...)
 				fields = append(fields, taskHoldRows(t)...)
 				if t.BlockReason != nil && *t.BlockReason != "" {
 					fields = append(fields, [2]string{"blocked", *t.BlockReason})

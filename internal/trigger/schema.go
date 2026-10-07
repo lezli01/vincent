@@ -194,6 +194,14 @@ func SchemaDescriptor() Schema {
 					{Name: "fields", Control: workflow.ControlMap, Help: "workflow field → template over .Event"},
 					{Name: "issue", Control: workflow.ControlTemplate, Help: "renders to a vincent issue id the task is created from, or nothing"},
 					{Name: "github_pull", Control: workflow.ControlTemplate, Help: "renders to a pull request number, or nothing"},
+					// One dotted leaf rather than a descent: the form writes
+					// a row's path with workflow.Edit's set, which creates the
+					// merge_back mapping above it, and reads it back segment
+					// by segment, so no client needs a new control.
+					{
+						Name: "merge_back.on_conflict", Control: workflow.ControlEnum, Values: []string{MergeBackBlock, MergeBackAgent},
+						Help: "with issue: a side task in its own worktree, merged back into the issue's main branch; block (manual) or agent resolves conflicts. Fails the delivery while the issue has no main branch",
+					},
 				},
 			},
 			{

@@ -13,6 +13,20 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Ask for a side task from the CLI, triggers and chat handoff.** `vincent
+  task add --issue N --separate-worktree` creates a side task that runs now in
+  its own worktree, merged back into the issue's main branch when done, and
+  `--merge agent` lets an agent resolve a conflicting merge-back first (the
+  default, `block`, stops for you). A main task created while the issue's main
+  worktree is busy now says `queued behind #N` on stderr. `vincent task show`
+  prints a task's `worktree` role (`main` or `side`) and a side task's `merge`
+  mode. A trigger's `create_task` action takes `merge_back: {on_conflict:
+  block|agent}` beside `issue`. `POST /v1/chats/{id}/handoff` and `vincent chat
+  handoff --merge` accept the same choice: a chat handed off onto an issue with
+  a main branch is still a side task merged back on `block` unless it asks for
+  `agent`, and on an issue with no main branch yet `merge_back` is ignored and
+  the chat's branch becomes the main branch, where it used to be a `400`.
+
 - **A finished side task merges itself back into its issue.** When a side
   task (`merge_back` on `POST /v1/tasks`) finishes with commits, vincent
   queues a merge-back task, `Merge task N into issue #M`, that waits for the

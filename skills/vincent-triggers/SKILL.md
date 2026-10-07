@@ -4,7 +4,7 @@ description: Create, edit, review, arm, and debug vincent event triggers, the YA
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.5.0
+  version: 1.6.1
 ---
 
 # vincent Triggers
@@ -221,6 +221,17 @@ limits:
     would be. `issue` cannot be combined with `github_pull`.
   - Use `github_pull` to link a GitHub pull request, rather than parsing a
     number into the title.
+  - Use `merge_back: {on_conflict: block|agent}` beside `issue` for per-issue
+    work that should not queue behind the issue's main line: the task is a
+    side task, in its own worktree cut from the issue's main branch and merged
+    back into it when done. `block` (the default when empty) stops for a human
+    on a conflict, and `agent` tries a resolver first. It needs `issue`. A side
+    task needs a main branch to fork from, so a delivery on an issue with no
+    main task yet is refused with the route's 400 ("create a main task
+    first"); use it only where the issue is already being worked. With
+    `merge_back`, an `issue` that renders to nothing is refused as well
+    ("merge_back requires issue_id"), so don't share one such trigger across
+    events with and without an issue.
   - There is no `github_issue`. It was removed, and a file that still
     carries it fails validation and stops firing until it is edited; its
     cursor is kept, so nothing is re-seeded. Replace it with `issue:`, on an
@@ -233,7 +244,7 @@ limits:
   - `follow_up` requires `prompt`, `retry` may override the failed step's
     prompt, and `cancel` refuses one.
   - Each refuses `permission`, `workflow`, `title`, `description`, `fields`,
-    `issue`, `github_pull` and `limits.max_task_cost_usd`.
+    `issue`, `github_pull`, `merge_back` and `limits.max_task_cost_usd`.
 
 ## Write the templates
 

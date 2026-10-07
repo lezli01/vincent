@@ -115,8 +115,11 @@ func unionNames(vs []SchemaVariant) []string {
 	var out []string
 	for _, v := range vs {
 		for _, f := range v.Fields {
-			if !slices.Contains(out, f.Name) {
-				out = append(out, f.Name)
+			// A dotted name is one leaf of a nested mapping, such as
+			// merge_back.on_conflict: the decoder's key is its first segment.
+			name, _, _ := strings.Cut(f.Name, ".")
+			if !slices.Contains(out, name) {
+				out = append(out, name)
 			}
 		}
 	}
@@ -269,7 +272,14 @@ func TestTriggerSchemaMatchesValidation(t *testing.T) {
 		if errs := parseDoc(t, docFor(SourceCommand, v.Type)); len(errs) > 0 {
 			t.Fatalf("base document for action %s is invalid: %v", v.Type, errs)
 		}
-		walk(t, "action.", v.Fields, func(string) map[string]any { return docFor(SourceCommand, v.Type) })
+		walk(t, "action.", v.Fields, func(path string) map[string]any {
+			doc := docFor(SourceCommand, v.Type)
+			if strings.HasPrefix(path, "action.merge_back.") {
+				// merge_back is refused without the issue it merges into.
+				setPath(doc, "action.issue", "{{ .Event.issue }}", false)
+			}
+			return doc
+		})
 	}
 	walk(t, "limits.", s.Limits, func(string) map[string]any { return validDoc() })
 	walk(t, "source.signature.", s.Signature, func(string) map[string]any { return docFor(SourceHTTP, ActionCreateTask) })
