@@ -9802,7 +9802,9 @@ POST   /v1/tasks/import                 *Added 2026-09-17 (task 117, issue #411)
                                         `worktree_path` NULL, `created_by_task_id` NULL unless
                                         that task is live, `issue_id` NULL unless that issue
                                         is live in the target project (*amended 2026-10-02,
-                                        task 130.1*; `issue_json` is kept); every other column,
+                                        task 130.1*; `issue_json` is kept), and with it
+                                        `issue_worktree` and `merge_on_conflict` (*amended
+                                        2026-10-07, review F4 of #768*); every other column,
                                         `archived_from` included (task 134.3), is copied as it
                                         is, and no git operation runs. Step run ids are all
                                         kept when all are free and all renumbered, in order,

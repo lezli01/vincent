@@ -1857,8 +1857,9 @@ curl -sS -X POST http://127.0.0.1:PORT/v1/tasks/import \
 `archived_at` set to the import time so [retention](files.md#transcripts)
 starts over. `worktree_path` is cleared, `created_by_task_id` is cleared
 unless that task exists here, and `issue_id` is cleared unless that issue
-exists in the project the task lands in (the task keeps its issue snapshot);
-every other column is copied as it is. Step
+exists in the project the task lands in (the task keeps its issue snapshot),
+taking `issue_worktree` and `merge_back` with it; every other column is
+copied as it is. Step
 attempt ids are all kept when all are free, and all renumbered in their original
 order when any is taken — `step_runs_renumbered` says which. `project_id`
 imports into another project; without it the backed-up project must exist here
