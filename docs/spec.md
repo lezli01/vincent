@@ -13493,6 +13493,27 @@ stream for the live tail.
    lands; a load issued for the project left behind is dropped when it
    arrives. Only that project's `issue.*` and task events re-list.
 
+   *Amended 2026-10-07 (task 134.8, issue #755; supersedes 132.11's flat
+   list, keeping its per-project scoping, and the `s` cycle above).* **The
+   list is a board of the four derived lanes** (§5.6; task 134 decisions 1–6):
+   the rows are partitioned by the `lane` the daemon serves on each issue —
+   the TUI never derives one — into stacked, foldable sections in the order
+   open → in progress → hand-off → done, never columns, and never draggable:
+   no key moves an issue between lanes. The daemon's order holds within a
+   section. Each header shows the fold glyph, the label, the count and a
+   `! n` badge for the rows whose `attention` is set; an empty section still
+   draws its header, with 0 and "none". A totals line above the sections
+   reads `N open · N in progress · N hand-off`, then `· N done`, or
+   `· done hidden (s)`. **`done` is hidden by default** (decision 5): hidden,
+   the listing is `state=open` and three sections are drawn; `s` shows it,
+   lists every state and draws `done` fourth, expanded, and `s` again hides
+   it. `←`/`→` fold and unfold the cursor's section and `C`/`O` all of them
+   (decision 6); only a collapsed header holds the cursor. The toggle and the
+   folds are session-only and survive a project switch. `/` filters within
+   the sections, keeping their headers ("none match" under an empty one).
+   The selection follows the issue id across a re-list, into whatever section
+   it moved to, and falls to the nearest row when the issue leaves the view.
+
 13. **Issue detail.** *Added 2026-10-02 (task 130.9, issue #668).* One issue:
    a header with state, id, title and source badge; the body; labels, kind,
    priority (`0` none, `1` urgent … `4` low — the inverted scale of task 130

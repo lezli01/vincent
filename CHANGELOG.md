@@ -13,6 +13,13 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **The TUI's issues screen is a board of lanes.** The selected project's
+  issues are laid out in stacked sections — open, in progress, hand-off and
+  done — taken from the lane vincent derives for each issue, with a count per
+  section, a `! n` badge for issues whose task is waiting on you, and a totals
+  line above them. `done` is hidden when the screen opens and `s` shows or
+  hides it, replacing the open → closed → all cycle. `←`/`→` fold the section
+  you are in and `C`/`O` fold all of them.
 - **Issues say which lane they are in.** Every issue on the API now carries
   `lane` — `open`, `in_progress`, `hand_off` (its work finished and is waiting
   for you to close it) or `done` (closed) — and `attention`, true while one of

@@ -503,10 +503,12 @@ sections and public pages its code makes true, in its own pull request.
   reopen. Depends: 134.4.
 - [ ] **134.7** ([#754](https://github.com/lezli01/vincent/issues/754)) A
   `type: issues` trigger fires on a lane change. Depends: 134.6.
-- [ ] **134.8** ([#755](https://github.com/lezli01/vincent/issues/755)) The
+- [x] **134.8** ([#755](https://github.com/lezli01/vincent/issues/755)) The
   TUI board's lane sections, the hidden-by-default `done` lane and its `s`
   toggle, fold keys, the guide's key table and spec §15 view 12 (decisions
-  5, 6). Depends: 134.4.
+  5, 6). Depends: 134.4. `internal/tui/issuesections.go` partitions by the
+  served `lane`; `←`/`→`/`C`/`O` fold; the guide's issue tables joined
+  `TestGuideKeyTablesMatchRegistry`. ✓ 2026-10-07
 - [x] **134.9** ([#756](https://github.com/lezli01/vincent/issues/756)) The
   merge message factored out, `handleConflict` taking a policy, the first
   agent-resolver tests and a fakeagent scenario (decision 12). ✓ 2026-10-07
