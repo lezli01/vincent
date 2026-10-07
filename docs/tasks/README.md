@@ -147,7 +147,7 @@ the living engineering specification records implementation contracts.
 | [131](131-versioned-pages-site.md) | A versioned documentation site: latest release by default, older releases and `dev` selectable | ⚠ verification blocked (5/6) |
 | [132](132-project-as-root.md) | Project as root: the TUI scoped to one selected project, with a project overview as the only multi-project view | 🔄 in progress (17/18) |
 | [133](133-background-work-across-a-result.md) | Background work across a result: keep the claude run open until the work it started finishes | ✅ done (2/2) |
-| [134](134-issues-ux.md) | Issues UX: a four-lane issues board and one main worktree per issue, with manual or agentic merge-back | 🔄 in progress (5/19) |
+| [134](134-issues-ux.md) | Issues UX: a four-lane issues board and one main worktree per issue, with manual or agentic merge-back | 🔄 in progress (6/19) |
 
 ## How to add and update a task document
 
