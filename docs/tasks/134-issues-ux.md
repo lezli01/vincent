@@ -58,7 +58,7 @@ written now, by this document's pull request.
 - **Task 130 open question 1**, a human-settable "in progress" — **answered**
   (decision 1): no; `in_progress` exists only as a derived lane.
 - **Task 130 decision 5**, "a closed issue may back a new task"
-  (`130-issues-pillar.md:144-147`) — **kept**; decision 4 relies on it.
+  (`130-issues-pillar.md:151-154`) — **kept**; decision 4 relies on it.
 - **Task 125 decision 2**, a claimed directory "makes the next task wait, it
   does not block it" — **kept and reused** (decisions 7, 10).
 - **Spec §12.4**, "recovery is the only path allowed to abort" a merge —
@@ -231,7 +231,7 @@ worktree is occupied is queued and admitted when the occupant settles.
 - Task 125 decision 2 established that a claimed directory "makes the next
   task wait, it does not block it".
 - Triggers replay `POST /v1/tasks` through an `http.Handler`
-  (`internal/trigger/definition.go`) and cannot answer a 409.
+  (`replay` in `internal/trigger/fire.go`) and cannot answer a 409.
 - The requirement's "choose" is satisfied by the opt-in `merge_back`; a user
   who does not choose waits for the main worktree.
 
