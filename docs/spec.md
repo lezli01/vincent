@@ -403,7 +403,7 @@ A unit of work delivered by running a workflow against a project.
 | `workflow_origin` | *Added 2026-08-28 (task 043).* Where the definition behind `workflow_name` came from, captured **once at creation** beside `workflow_snapshot`. It holds the **scope** that won §5.2's shadowing walk (`builtin`, `global`, `project`, or `derived`), the source **file relative to that scope's root** (`.vincent/workflows/adhoc.yaml`, `workflows/release.yaml`; absent for a built-in, which has none), and a **digest** — `sha256:<hex>` over the registry entry's source bytes exactly as loaded, with no normalization. It is **never recomputed**, so it identifies the *file version the task was created from* rather than the bytes the engine runs: include expansion (§7.9), fan-out resolution (§7.6) and `edit + retry` all rewrite `workflow_snapshot` afterwards, and `edit + retry` is separately audited through `step_runs.prompt_override` / `run_override`. A `fan_out` lane records `derived` naming its parent task (§7.6): its steps come from the parent's snapshot, resolved at the *parent's* creation, so it never read a registry at all. NULL for a task created before this was recorded, which is reported as `unknown` — never re-derived from today's registry, which would report a substitution as though it had always been there |
 | `github_issue` | *Added 2026-08-26 (task 035).* The GitHub issue this task was created from, captured **once at creation** and NULL for every task created without one. It holds the normalized issue — repo, number, title, body, url, state, labels, author, assignee, milestone (title and number), the issue's own timestamps and the instant it was fetched — and it is **never re-fetched**: every step renders `.Issue` (§8.4) from this snapshot, so an issue edited on GitHub afterwards is deliberately not reflected. That is the reasoning `workflow_snapshot` already rests on: a run is reproducible, no network call enters the step path, and a step render still cannot fail for an external reason. A `fan_out` lane inherits its parent's copy verbatim (§7.6). *Amended 2026-10-03 (task 130.11, issue #670, migration 0040):* the column is **read-only legacy history**. Nothing writes it any more — the `github_issue` create field that filled it is removed (task 130 decision 7) — and it stays byte-identical on every existing row. Migration 0040 **backfilled** it into the issue set: one imported issue per `(project, repo, number)` across every task that carries a snapshot, lanes, archived and never-started tasks included, its content and state from the newest snapshot, each task's `issue_id` pointed at it and `issue_json` left NULL, so a legacy task still renders from this column. The task DTO keeps serving it as `github_issue` (task 130 decision 22) |
 | `issue_id`, `issue` | *Added 2026-10-02 (task 130.1, issue #660, migration 0036).* The vincent issue (§5.6) this task was created from, as **a pointer and a snapshot** (task 130 decision 5). `issue_id` is the authoritative edge to `issues.id`, read backwards to answer which tasks came from an issue and whether it is being worked on; it is `ON DELETE SET NULL`, so a task outlives its issue. `issue` (`issue_json`) is that issue frozen at creation — id, title, state, kind, priority, labels, url — never re-fetched, and it survives the issue's deletion, for `github_issue`'s reasons. Both are written in the insert transaction, `task.created` carries `issue_id` when it is set (§13.3), and a `fan_out` lane inherits copies of both (§7.6) — though only a root task counts toward its issue's activity. No create surface sets them yet (task 130.3). *Amended 2026-10-02 (task 130.4, issue #663):* the snapshot widens to body, close reason, author, a `remote` reference (provider, repo, number, url, state, assignees, milestone and its number — nil for a local issue and for a tombstoned remote row) and `captured_at`, every new key optional in the same column, so it needs no migration. `store.NewIssueSnapshot` builds it from the stored issue and its `issue_remotes` row with no provider call; it is what `.Issue` renders (§8.4) and what the vincent-issue prefill reads (`internal/issues`, task 130 decision 7). *Amended 2026-10-02 (task 130.7, issue #666):* `POST /v1/tasks` and the chat handoff set both from `issue_id` (§13.2). Every task representation carries `issue: { id, title, state, source? }` — read from the live issue while `issue_id` holds and from this snapshot once the issue is deleted — and derives `github_issue` from the snapshot's `remote` when its provider is `github`, so a consumer reading `.github_issue.number` keeps working; a local issue derives no `github_issue`, and a legacy row keeps serving its own `github_issue_json`. `Closes #N` in a task's compare URL (§13.2) takes the snapshot's GitHub reference first and the legacy snapshot second, under the unchanged same-repository rule. *Amended 2026-10-03 (task 130.14, issue #673):* the snapshot gains an optional `created_at` — the remote record's creation time for an imported issue whose `remote_json` carries one, else `issues.created_at` — `omitempty` like every 130.4 key, so no migration; it is what `$VINCENT_ISSUE_FILE`'s `createdAt` reads (§8.5), `null` for an older snapshot |
-| `issue_worktree`, `end_sha`, `merge_on_conflict` | *Added 2026-10-07 (task 134.10, issue #757, migration 0043).* The task's role in its issue's worktrees (§5.6, task 134 decisions 7, 9). `issue_worktree` is `main` for a root task working on the issue's main branch, `side` for one that asked for its own worktree with `merge_back` (§13.2), and NULL for every task with no issue, every `fan_out` lane, and every row older than the migration — those behave exactly as before. A new root task with an issue is `main` unless it asked for `merge_back`; the role is written in the insert transaction and never changes. A main task's `branch_name` is **bound** there too: when the issue already has a main branch, the row takes it and sets `adopted_branch` (*amended 2026-10-07, review F1 of #768*: the first main task cut it, so a second cut would block `branch_exists` at admission; adopting it puts the task under §10's working-directory claim instead); when it has none, the task's own name, resolved by the usual chain, becomes it. `merge_on_conflict` is a side task's `merge_back.on_conflict` — `block` or `agent` — and NULL on every other task. `end_sha` is the commit a main task's work ended on, NULL until task 134.12 writes it. Store-side, `claimBranchTx` lets unarchived main-role tasks of one issue share its main branch; every other collision — a task of another issue, a side task, a task with no issue — is still refused |
+| `issue_worktree`, `end_sha`, `merge_on_conflict` | *Added 2026-10-07 (task 134.10, issue #757, migration 0043).* The task's role in its issue's worktrees (§5.6, task 134 decisions 7, 9). `issue_worktree` is `main` for a root task working on the issue's main branch, `side` for one that asked for its own worktree with `merge_back` (§13.2), and NULL for every task with no issue, every `fan_out` lane, and every row older than the migration — those behave exactly as before. A new root task with an issue is `main` unless it asked for `merge_back`; the role is written in the insert transaction and never changes. A main task's `branch_name` is **bound** there too: when the issue already has a main branch, the row takes it and sets `adopted_branch` (*amended 2026-10-07, review F1 of #768*: the first main task cut it, so a second cut would block `branch_exists` at admission; adopting it puts the task under §10's working-directory claim instead); when it has none, the task's own name, resolved by the usual chain, becomes it. `merge_on_conflict` is a side task's `merge_back.on_conflict` — `block` or `agent` — and NULL on every other task. `end_sha` is the commit a main task's work ended on, NULL until task 134.12 writes it. *Amended 2026-10-07 (task 134.12, issue #759):* a joining main task is still bound to the main branch but is **no longer** `adopted_branch` — it receives its predecessor's directory at admission (§10) instead of waiting under the working-directory claim; a row bound before this that still says `adopted_branch` is routed by its role, which wins everywhere. `end_sha` is now written: by the transfer, as the branch tip the predecessor handed over, and by archive, as the tip at that moment, when the transfer never stamped it. `/commits` and `/diff` end a task's range at it (§13.2). Store-side, `claimBranchTx` lets unarchived main-role tasks of one issue share its main branch; every other collision — a task of another issue, a side task, a task with no issue — is still refused |
 | `github_pull` | *Added 2026-08-29 (task 052).* The pull request this task is linked to (`github_pull_json`, migration 0018); NULL for a task no pull request has ever matched. Unlike `github_issue` it is a **pointer, not a snapshot** — repo, number, `source` (`auto` when the reconciler (§12.3) matched an open pull request's head branch to this task's `branch_name`, `human` when a person said so), `suppressed` (the sticky record of a human unlink, which is why the column needs three states and not two), and `linked_at`. Nothing renderable is stored: title, state, draft and merged status are re-read on every request (§13.2), because they are live by nature and a stored copy of them would read exactly like a current one while being wrong. Deliberately **not** folded into `github_issue_json`, which is defined as "NULL = no linked issue" holding a bare issue. *Amended 2026-08-30 (task 064):* the envelope gains `branch` — this task's `branch_name` **is** the pull request's head branch, because the task was created from it — and `fork`, meaning that head lives in another repository so the branch carries no upstream and nothing can push back. Both are read by admission (§10), by archive (§10, which then touches neither branch leg) and by the retry guard (§18); neither is renderable, so the pointer-not-snapshot rule is untouched. A JSON shape change, not a migration |
 
 
@@ -1350,6 +1350,19 @@ human working in the directory holds it as surely as an agent does (§6 lists
 the states). The scheduler now enforces it: a later main task of the issue is
 not admitted while another occupies it (§11). Transferring the directory is
 still 134.12; cutting side worktrees is §10's 134.13 amendment.
+*Amended 2026-10-07 (task 134.12, issue #759):* the directory is transferred.
+A later main task is no longer bound as adopted and no longer waits for its
+predecessor's archive: it is admitted once the predecessor settles (§11) and
+receives that predecessor's worktree, uncommitted work included, by one store
+transaction that also stamps the predecessor's `end_sha` (§10). The branch is
+deleted only with the archive of the **last** main task carrying it, and its
+emptiness is judged against the issue's base branch, not a successor's
+`base_sha`. A settled predecessor whose directory moved on refuses
+`follow_up` and a linked chat with `409 issue_worktree_moved`, naming the
+holder (task 134 decision 14). Delete is refused with
+`409 issue_has_live_main_task` while any main-role task of the issue is not
+settled (decision 17.1); settled and archived ones do not hold it, narrowing
+task 130 decision 6.
 
 ## 6. Task lifecycle
 
@@ -6099,6 +6112,36 @@ precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
   adopts the chat's worktree and keeps the chat's base. Every other task with
   `fetch_base_branch: false` still records no `base_sha`.
 
+  *Amended 2026-10-07 (task 134.12, issue #759).* There is now a **fourth
+  creation mode**, for an issue's **main task** (`issue_worktree = 'main'`,
+  §5.6) not created from a pull request. It is selected by the role and
+  checked *before* the third mode, so a row bound as adopted before this
+  change lands here too. In order:
+  - The issue's main branch checked out in the project's **own main
+    checkout** blocks `issue_branch_checked_out` (task 134 decision 16). The
+    task never runs in the project path, as an adopted one would.
+  - A **settled predecessor** (an unarchived main task of the issue that
+    still names a `worktree_path`) hands the directory on. A merge, rebase,
+    cherry-pick, revert or bisect in progress there blocks the successor
+    `repo_operation_in_progress` and the predecessor keeps the directory;
+    ordinary uncommitted work is not refused, carrying it is the point.
+    Otherwise, under the worktree claim lock, one store transaction
+    (`TransferIssueWorktree`) re-checks that the predecessor still names the
+    path, sets its `end_sha` to the branch tip and clears its
+    `worktree_path`, and gives the successor that path with `base_sha` the
+    tip and `base_refresh` NULL — no base was refreshed. A transfer that
+    loses a race fails closed and writes nothing.
+  - **No holder, but the branch exists** (every main task that held it was
+    archived): the branch is checked out into a fresh `vincent` worktree, as
+    vincent's own, with no fetch; `base_sha` is the tip.
+  - **No branch yet**: the issue's first main task cuts it in the first
+    mode.
+  Archive of a main task that handed its directory on removes nothing and
+  still transitions; archive of any main task stamps `end_sha` when unset,
+  and deletes the branch only when no other unarchived main task carries it.
+  Task 125's working-directory claim no longer applies to main tasks — the
+  §11 occupancy predicate serialises them.
+
   *Amended 2026-08-30 (task 064).* There is now a **second creation mode**, for a
   task created from a pull request (`github_pull`, §13.2). Everything above
   describes the first mode and is unchanged for it; a pull-request task inverts
@@ -6211,6 +6254,9 @@ precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
     yet, because a later main task of an issue adopts the main branch its
     issue's first main task has still to cut (§5.6); admitted first, it
     would block `adopt_branch_missing`.
+    *Superseded 2026-10-07 (task 134.12, issue #759):* main tasks are no
+    longer adopted and are exempt from this claim (the fourth creation mode
+    above), so a queued cutter no longer counts against it.
   - **`base_sha` is the adopted branch's tip at admission** (§5.3), and no
     base refresh is recorded: the fetch that ran was the branch's, not the
     base's. `base_branch` stays on the row for the fields that read it.
@@ -6579,6 +6625,9 @@ its issue, and because it excludes itself it is re-admitted ahead of the
 waiter. Until 134.12 hands the directory over, task 125's claim still holds
 a later main task until the previous one is archived; this predicate is
 what keeps it held behind an occupant once that claim is gone.
+*Amended 2026-10-07 (task 134.12, issue #759):* that claim is gone for main
+tasks, legacy rows bound as adopted included. This predicate alone holds a
+later main task, and it is admitted as soon as its predecessor settles.
 
 *Added 2026-09-02 (task 081).* A `fan_out` step running `schedule: eager`
 (§7.6) is woken by a lane settling rather than by its whole subtree settling,
@@ -8430,6 +8479,17 @@ row being settled is harmless — the PATCH is idempotent, and the restarted
 drain's preflight finds GitHub at the desired value and settles the row
 `done` without a second write.
 
+*Added 2026-10-07 (task 134.12, issue #759).* Handing an issue's main
+worktree from a settled main task to the next (§10's fourth creation mode)
+needs no recovery step either. It is one transaction, so a crash leaves
+exactly one row naming the directory, never both and never neither. Before
+it commits, the predecessor still names the directory and the successor
+nothing, so re-admission runs the selection again from the top; after it,
+the successor names the directory, admission returns early as for any task
+with a worktree, and the interrupted step re-runs as above. gc's claim scan
+sees one owner throughout, because the tip read and the transfer happen
+under the worktree claim lock.
+
 ## 13. HTTP API
 
 ### 13.1 Transport and auth
@@ -9127,6 +9187,9 @@ DELETE /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* Permane
                                         state (§5.6) → **204**. An imported issue leaves its
                                         tombstone; upstream is never touched; its tasks keep
                                         running with `issue_id` NULL. Not an MCP tool (§13.4)
+                                        *Amended 2026-10-07 (task 134.12):* `409
+                                        issue_has_live_main_task`, `details.task_id`, while a
+                                        main-role task of the issue is not settled (§5.6)
 GET    /v1/projects/{id}/issue-labels   *Added 2026-10-02 (task 130.3).* The project's label
                                         catalogue, sorted case-insensitively:
                                         [{ name, color?, description?, source, issue_count }]
@@ -10278,6 +10341,13 @@ the same — and, in the diff route's words, when the merge-base cannot be
 computed. It is a read, so it is also the MCP tool `task_commits` (§13.4). A
 commit list is a fact a client cannot compute without git, which task 100
 decision 2's "no `stat` shape on the API" leaves open.
+*Amended 2026-10-07 (task 134.12, issue #759):* a task with `end_sha` set —
+an issue's main task that handed its worktree on, or was archived — ends the
+range at that commit instead of `refs/heads/<branch_name>`, because the
+issue's branch keeps moving under the next main task; such a task answers
+even with no worktree. `/diff` does the same for a task with `end_sha` and no
+worktree: it diffs `merge-base..end_sha` in the project repository, `?by=lane`
+included.
 
 *Added 2026-08-25 (task 030).* `/v1/daemon/*` is no longer only process
 lifecycle: it now holds `backup` beside `stop`. That is accepted knowingly and
@@ -16195,6 +16265,10 @@ carries the rest.
 | A branch to be adopted is checked out in a vincent worktree | *Added 2026-09-21 (task 125).* Blocked with `adopt_branch_checked_out`, naming the worktree. The project's **own main checkout** is deliberately not this case: the task runs *there* instead (§10), because the adopt mode moves no ref and so has nothing to push into the human's working tree — which is exactly what `pull_branch_checked_out` protects against for the other mode |
 | A branch to be adopted no longer exists | *Added 2026-09-21 (task 125).* Blocked with `adopt_branch_missing`. `POST /v1/tasks` checks it and answers `400`, but a task can sit queued for as long as the caps say and the branch can be deleted in between, so admission is the authority — the same division `branch_exists` has |
 | `branch_override` on a main task sharing its issue's main branch | *Added 2026-10-07 (review F2 of #768).* `409`, `details.branch` and `details.main_task_id`. Another unarchived main-role task of the issue carries the same branch, and an issue has one main branch (§5.6); moving one of them off it alone would leave two. A sole main task may be renamed, and the issue's main branch moves with it |
+| An issue's main branch is checked out in the project's main checkout | *Added 2026-10-07 (task 134.12, issue #759).* Blocked with `issue_branch_checked_out`. Unlike an adopted branch, an issue's main task never runs in the human's checkout (task 134 decision 16): its directory is handed from one main task to the next, which would move it under the human |
+| The worktree an issue's main task is to receive is mid-merge or mid-rebase | *Added 2026-10-07 (task 134.12, issue #759).* Blocked with `repo_operation_in_progress`, naming the operation and the predecessor. Nothing is written: the predecessor keeps the directory. Ordinary uncommitted work is carried over, not refused |
+| `follow_up` or a linked chat on a main task whose worktree moved on | *Added 2026-10-07 (task 134.12, issue #759).* `409 issue_worktree_moved`, `details.holder_task_id` naming the main task that holds the issue's worktree now (task 134 decision 14). The work continues there, or in a new main task |
+| Deleting an issue while one of its main tasks is not settled | *Added 2026-10-07 (task 134.12, issue #759).* `409 issue_has_live_main_task`, `details.task_id` the lowest such task. Settled and archived main tasks do not hold the delete (task 134 decision 17.1) |
 | `branch_override` on a task created from a pull request | *Added 2026-08-30 (task 064).* `409`. Renaming the branch would detach the task from the pull request it was created for, so every later commit would go somewhere that pull request never sees. Such a task cannot have a `branch_exists` block in the first place — its creation mode does not refuse a pre-existing branch (§10) |
 | Configured branch name is not a legal git ref | `400` with `branch_name_invalid`, quoting git's own rules. Never sanitized into something legal — a branch the user did not ask for is worse than a rejection (task 001) |
 | Branch template references a field the task does not set | `400` at creation. Note that `{{.Fields.x}}` errors while `{{ index .Fields "x" }}` renders empty by design (§8.4's `missingkey=error` covers map *field* access only), and `feat/-slug` is a legal ref — so the loud form is the documented default for branch templates |

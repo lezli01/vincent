@@ -66,8 +66,9 @@ body, the GitHub integration's reasons on the issue routes, and why a trigger
 is not armed on its [ingress](#pushing-an-event). Branch on `details`, not on a
 per-case code.
 
-The exceptions are the chat conflicts, which have codes of their own because a
-client does something different for each:
+The exceptions are the chat conflicts and the issue main-worktree conflicts,
+which have codes of their own because a client does something different for
+each:
 
 | Code | Means | `details` |
 |---|---|---|
@@ -76,6 +77,8 @@ client does something different for each:
 | `task_locked_by_chat` | A task action was refused because a [chat linked to the task](#a-chat-on-a-stopped-task) is open. Close that chat, or `cancel` the task | `chat_id` |
 | `task_has_no_worktree` | A chat cannot be opened on this task: it never got a worktree, and vincent does not create one for a chat. Also a chat on a task that has lost its worktree, asked for its [skills](#skills) | `state`, `action`; `task_id` from the skills route |
 | `chat_linked_to_task` | Archive, hand-off, or a delete with `delete_branch=true` on a chat linked to a task. The worktree and branch are that task's | `task_id`, `state`, `action` |
+| `issue_worktree_moved` | A `follow_up` or chat on an issue's main task that finished and handed the issue's worktree to a later main task. Continue in that task, or start a new main task | `holder_task_id`, `state` |
+| `issue_has_live_main_task` | An issue delete was refused because one of the issue's main tasks has not finished. Finish, cancel or archive it, then delete again | `task_id` |
 
 ## Request bodies
 
