@@ -390,10 +390,16 @@ if run_scenario 2; then
   T2="$(create_main walk "second" | jq -r .id)"
 
   # Each task's directory is read while it runs: a predecessor's
-  # worktree_path is cleared when it hands the directory on.
+  # worktree_path is cleared when it hands the directory on. Both tasks
+  # come from one list response, which is one read of the store: two
+  # GETs would let T1 finish and T2 be admitted between them, and a stale
+  # `running` beside a fresh one is not an overlap. Unlike hold_queued's
+  # waiter and occupant, these two are symmetric, so no read order is safe.
   WT1="" WT2=""
   for _ in $(seq 1 "$(gate_ticks 60)"); do
-    J1="$(task "$T1")" J2="$(task "$T2")"
+    BOTH="$(api GET "/tasks?project_id=$PROJECT")"
+    J1="$(jq -c --argjson id "$T1" '.[] | select(.id == $id)' <<<"$BOTH")"
+    J2="$(jq -c --argjson id "$T2" '.[] | select(.id == $id)' <<<"$BOTH")"
     S1="$(jq -r .state <<<"$J1")" S2="$(jq -r .state <<<"$J2")"
     [[ "$S1" == running && "$S2" == running ]] && fail "tasks $T1 and $T2 ran at once"
     [[ "$S1" == running && -z "$WT1" ]] && WT1="$(jq -r '.worktree_path // ""' <<<"$J1")"
