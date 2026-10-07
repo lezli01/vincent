@@ -2634,8 +2634,8 @@ runs on it. A later main task reads back with `adopted_branch: true` — the
 first one cut the branch — so, like any task on an
 [existing branch](#running-on-an-existing-branch), it waits queued while
 another task still has the branch checked out, which a main task does until
-it is archived. Archive keeps the branch while another unarchived main task
-of the issue carries it. The issue serves it as `main_worktree`:
+it is archived. While another unarchived main task of the issue carries the
+branch, archive does not delete it even when it has no commits past its base. The issue serves it as `main_worktree`:
 
 ```json
 "main_worktree": { "branch": "vincent/12-lock-file-leaks", "occupant_task_id": 12 }
