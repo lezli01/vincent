@@ -120,6 +120,16 @@ func (r *Runner) takeIssueMainWorktree(
 		tip = sha
 		return nil
 	})
+	if locked, ok := store.AsTaskLocked(err); ok {
+		// A chat opened on the predecessor after the scheduler admitted this
+		// task (review F5 of #770). The human is working in the directory, so
+		// it is not handed on under them: the predecessor keeps it and this
+		// task blocks, as the occupancy predicate would have held it.
+		detail := fmt.Sprintf("chat %d is open on task %d in the issue's main worktree %s; "+
+			"close the chat, then retry", locked.ChatID, holder.ID, holder.WorktreePath)
+		r.fail(task, worktree.ReasonWorktreePathOccupied, detail, log, "hand over issue main worktree", err)
+		return err
+	}
 	switch {
 	case errors.Is(err, store.ErrIssueWorktreeNotHeld):
 		return err

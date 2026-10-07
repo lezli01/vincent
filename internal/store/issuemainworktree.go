@@ -85,7 +85,9 @@ func (s *Store) IssueMainWorktreeHolder(ctx context.Context, issueID, excludeTas
 //
 // Both rows are re-read inside the transaction. The predecessor must still
 // name path and the successor must name nothing; otherwise the transfer
-// fails closed with ErrIssueWorktreeNotHeld and writes nothing.
+// fails closed with ErrIssueWorktreeNotHeld and writes nothing. A chat
+// still open on the predecessor fails it closed too, with a wrapped
+// *TaskLockedError naming the chat.
 //
 // The predecessor keeps tipSHA as its end_sha, the commit its work ended on,
 // and lets go of the directory. The successor starts from that same commit:
@@ -121,6 +123,19 @@ func (s *Store) TransferIssueWorktree(ctx context.Context, fromID, toID int64, p
 		if fromPath.String != path || toPath.String != "" {
 			return fmt.Errorf("transfer issue worktree %d → %d: task %d names %q, task %d names %q: %w",
 				fromID, toID, fromID, fromPath.String, toID, toPath.String, ErrIssueWorktreeNotHeld)
+		}
+		// A chat linked to the predecessor works in this directory too. The
+		// scheduler's occupancy predicate kept the successor queued while one
+		// was open, but a chat opened between that walk and this transaction
+		// would be left running beside the successor's agent in one
+		// worktree (review F5 of #770). OpenLinkedChat re-reads the
+		// worktree_path in its own transaction, so once this commits no
+		// chat can open on the predecessor; this closes the other side.
+		if chatID, err := openLinkedChatTx(ctx, tx, fromID); err != nil {
+			return err
+		} else if chatID != 0 {
+			return fmt.Errorf("transfer issue worktree %d → %d: %w",
+				fromID, toID, &TaskLockedError{TaskID: fromID, ChatID: chatID})
 		}
 		now := formatTime(time.Now())
 		if _, err := tx.ExecContext(ctx, `

@@ -288,3 +288,47 @@ func TestReceivingAWorktreeClearsEndSHA(t *testing.T) {
 			got.EndSHA, got.WorktreePath, err)
 	}
 }
+
+// TestTransferIssueWorktreeRefusedWhileAChatIsOpen is review F5 of #770: a
+// chat opened on the predecessor after the scheduler admitted the successor
+// is working in the directory, so the transfer fails closed — naming the
+// chat — and writes nothing. Once the chat closes the transfer goes through,
+// and from then on no chat can open on the predecessor, which names no
+// directory.
+func TestTransferIssueWorktreeRefusedWhileAChatIsOpen(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	is := testIssue(t, s, p.ID, "the issue")
+	pred := newMainTask(p.ID, is.ID, "pred")
+	mustCreate(t, s, pred)
+	if err := s.ClaimTaskWorktree(ctx, pred.ID, "/wt/pred", "", nil); err != nil {
+		t.Fatalf("ClaimTaskWorktree: %v", err)
+	}
+	moveTask(t, s, pred, TaskRunning, TaskDone)
+	succ := newMainTask(p.ID, is.ID, "succ")
+	mustCreate(t, s, succ)
+	chat := linkChat(t, s, pred, TaskDone)
+
+	err := s.TransferIssueWorktree(ctx, pred.ID, succ.ID, "/wt/pred", "tip1")
+	if locked, ok := AsTaskLocked(err); !ok || locked.ChatID != chat.ID {
+		t.Fatalf("TransferIssueWorktree with chat %d open = %v, want a TaskLockedError naming it", chat.ID, err)
+	}
+	if got, err := s.GetTask(ctx, pred.ID); err != nil || got.WorktreePath != "/wt/pred" || got.EndSHA != "" {
+		t.Errorf("pred = (path %q, end_sha %q, %v), want it untouched", got.WorktreePath, got.EndSHA, err)
+	}
+	if got, err := s.GetTask(ctx, succ.ID); err != nil || got.WorktreePath != "" {
+		t.Errorf("succ = (path %q, %v), want nothing", got.WorktreePath, err)
+	}
+
+	if _, err := s.CloseChat(ctx, chat.ID); err != nil {
+		t.Fatalf("CloseChat: %v", err)
+	}
+	if err := s.TransferIssueWorktree(ctx, pred.ID, succ.ID, "/wt/pred", "tip1"); err != nil {
+		t.Fatalf("TransferIssueWorktree after the chat closed: %v", err)
+	}
+	late := &Chat{Title: "late", Agent: "claude", PermissionMode: "full_auto"}
+	if err := s.OpenLinkedChat(ctx, pred.ID, TaskDone, late); !errors.Is(err, ErrTaskHasNoWorktree) {
+		t.Errorf("OpenLinkedChat on the handed-on predecessor = %v, want ErrTaskHasNoWorktree", err)
+	}
+}

@@ -6130,7 +6130,11 @@ precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
     path, sets its `end_sha` to the branch tip and clears its
     `worktree_path`, and gives the successor that path with `base_sha` the
     tip and `base_refresh` NULL — no base was refreshed. A transfer that
-    loses a race fails closed and writes nothing.
+    loses a race fails closed and writes nothing. So does one whose
+    predecessor has a linked chat open, which the transaction re-checks: a
+    chat opened after the scheduler's walk blocks the successor
+    `worktree_path_occupied`, naming the chat, rather than leave two agents
+    in one directory (review F5 of #770).
   - **No holder, but the branch exists** (every main task that held it was
     archived): the branch is checked out into a fresh `vincent` worktree,
     with no fetch; `base_sha` is the tip. The branch is the issue's only when

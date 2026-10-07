@@ -462,6 +462,46 @@ func TestFollowUpOnAHandedOnMainTaskEndsItsRangeAtTheBranch(t *testing.T) {
 	}
 }
 
+// TestChatOpenedAfterAdmissionBlocksTheHandOver is review F5 of #770: a
+// chat opened on the settled predecessor between the scheduler's walk and
+// the transfer is working in the directory. The successor blocks
+// worktree_path_occupied, naming the chat, and the predecessor keeps the
+// directory — two agents never share it.
+func TestChatOpenedAfterAdmissionBlocksTheHandOver(t *testing.T) {
+	h := newEngineHarness(t)
+	iss := newIssue(t, h)
+	h.start(t)
+	first := h.settledMainTask(t, iss, "first", quickSnapshot)
+	second := h.mainTask(t, iss, "second", gatedSnapshot, func(task *store.Task) { task.State = store.TaskPaused })
+	// What the admission got as far as before the chat opened: the walk
+	// admitted it, while the predecessor had no chat.
+	admitted, _, err := h.store.TransitionTask(t.Context(), second.ID, store.TaskPaused, store.TaskRunning,
+		store.TaskChange{})
+	if err != nil {
+		t.Fatalf("TransitionTask(paused → running): %v", err)
+	}
+	chat := &store.Chat{Title: "look", Agent: "claude", PermissionMode: "full_auto"}
+	if err := h.store.OpenLinkedChat(t.Context(), first.ID, store.TaskDone, chat); err != nil {
+		t.Fatalf("OpenLinkedChat: %v", err)
+	}
+	project, err := h.store.GetProject(t.Context(), h.projectID)
+	if err != nil {
+		t.Fatalf("GetProject: %v", err)
+	}
+
+	if err := h.runner.takeIssueMainWorktree(t.Context(), admitted, project, first, h.runner.deps.Logger); err == nil {
+		t.Fatal("takeIssueMainWorktree with a chat open on the predecessor succeeded")
+	}
+	got := h.task(t, second.ID)
+	if got.State != store.TaskBlocked || got.BlockReason != worktree.ReasonWorktreePathOccupied || got.WorktreePath != "" {
+		t.Errorf("second = %s (%s: %s) in %q, want blocked %s and no directory",
+			got.State, got.BlockReason, got.BlockDetail, got.WorktreePath, worktree.ReasonWorktreePathOccupied)
+	}
+	if pred := h.task(t, first.ID); pred.WorktreePath != first.WorktreePath {
+		t.Errorf("predecessor names %q, want it to keep %q", pred.WorktreePath, first.WorktreePath)
+	}
+}
+
 // TestCrashAfterTheHandOverResumesInTheTransferredDirectory: the transfer is
 // one transaction, so a daemon that dies after it and before the first step
 // leaves the successor naming the directory. Recovery re-queues it, and
