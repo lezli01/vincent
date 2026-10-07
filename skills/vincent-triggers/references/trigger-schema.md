@@ -106,14 +106,31 @@ a project with no GitHub remote.
   for history. Disarming drops it.
 - **Events.** `issue.created` → `opened`; a state change → `closed` or
   `reopened`; labels added → one `labeled`, labels removed → one
-  `unlabeled`. One GitHub refresh can yield several. Edits, comments and
-  deletes fire nothing. There is no `assigned`, and `match.action: assigned`
-  is refused.
-- **`by`.** `human`, `agent` (a task's agent, over MCP) or `sync` (GitHub,
-  through the importer). `match: {by: human}` drops a trigger's own echoes.
-- **Trust.** `human` and `agent` changes are trusted. For `sync` changes
-  `labeled` and `unlabeled` are trusted and `opened`, `closed` and
-  `reopened` are not: a trigger that can match one of those from sync is
+  `unlabeled`; `issue.lane_changed` → `lane_changed`. One GitHub refresh can
+  yield several. Edits, comments and deletes fire nothing. There is no
+  `assigned`, and `match.action: assigned` is refused.
+- **`lane_changed` is opt-in.** Only a trigger whose `match.action` names it,
+  as a scalar or in a list, sees it. A trigger with no `match.action` matches
+  the other five, never `lane_changed` — not even as a `filtered` ledger row.
+  A lane move fires on a root task's create, transition, delete or restore
+  that moves the issue's lane, and on a close or reopen.
+- **`lane_changed` or `closed`/`reopened`.** Use `closed`/`reopened` when the
+  close reason or the state matters (`.Event.reason`). Use `lane_changed`
+  when the board move matters: `from_lane: hand_off, lane: done`, or anything
+  into or out of `hand_off`. A close fires both, so a trigger names one.
+- **`by`.** `human`, `agent` (a task's agent, over MCP), `sync` (GitHub,
+  through the importer), or `task` — `lane_changed` only, for a move a root
+  task caused. `match: {by: human}` drops a trigger's own echoes, and every
+  task-caused move; a hand-off trigger writes `by: task` or omits `by`.
+- **Echo loops on `hand_off`.** A `lane: hand_off` trigger that creates a
+  task for the same issue moves it back to `in_progress`, and to `hand_off`
+  again when that task finishes. Write
+  `dedupe_key: '{{ .Event.issue_id }}:{{ .Event.lane }}'` to fire once per
+  issue per lane, with `limits.max_per_hour` as the backstop.
+- **Trust.** `human`, `agent` and `task` changes are trusted. For `sync`
+  changes `labeled` and `unlabeled` are trusted and `opened`, `closed`,
+  `reopened` and `lane_changed` are not — sync moves a lane only through a
+  GitHub close or reopen: a trigger that can match one of those from sync is
   refused at load without `allowed_actors`, unless `match.by` leaves `sync`
   out. At judge time `allowed_actors` applies to `sync` events only, matched
   against the issue's author; a local person's change is never refused by it.
@@ -128,6 +145,8 @@ What an event carries:
 | `Issue` | The issue as a task's `.Issue` sees it, read when the event is judged: `Number` (the vincent id), `Title`, `Body`, `State`, `Labels`, `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, and `Source` (`Provider`, `Repo`, `Number`, `URL`, `State`, empty for a local issue) |
 | `labels` | `labeled` and `unlabeled` only: the labels just added or removed |
 | `from`, `to`, `reason` | `closed` and `reopened` only: the state moved, and a close's reason |
+| `lane`, `from_lane` | `lane_changed` only: the lane moved to and from — `open`, `in_progress`, `hand_off` or `done` — as the move recorded them |
+| `task_id` | `lane_changed` with `by: task` only: the root task whose write moved the lane |
 
 An issue deleted before its event is judged yields nothing.
 

@@ -108,7 +108,7 @@ func SchemaDescriptor() Schema {
 			{Name: "source", Control: ControlSource, Required: true, Values: SourceTypes(), Help: "where events come from"},
 			{Name: "match", Control: ControlMatch, Help: "prefilter: event path → value it must have"},
 			{Name: "if", Control: workflow.ControlTemplate, Help: "guard over .Event: render true to act (§7.7)"},
-			{Name: "allowed_actors", Control: workflow.ControlList, Help: "GitHub and issues sources: the issue or pull request authors to accept; required to match an untrusted event"},
+			{Name: "allowed_actors", Control: workflow.ControlList, Help: "GitHub and issues sources: the issue or pull request authors to accept; required to match an untrusted event, on issues only one arriving by sync"},
 			{Name: "action", Control: ControlAction, Required: true, Values: ActionTypes(), Help: "what an event that passes does"},
 			{
 				Name: "on_fire", Control: workflow.ControlEnum, Values: []string{OnFirePropose, OnFireCreate},
@@ -147,7 +147,7 @@ func SchemaDescriptor() Schema {
 			},
 			{
 				Type:   SourceIssues,
-				Help:   "vincent's own issue events, local or imported, on every project; by says who: human, agent or sync",
+				Help:   "vincent's own issue events, local or imported, on every project; by says who: human, agent, sync, or task for a lane move a task caused; lane_changed (lane, from_lane, task_id) fires only when match.action names it",
 				Fields: []SchemaField{sourceType, project},
 				Events: GitHubEvents(SourceIssues), Trusted: trustedList(SourceIssues),
 			},

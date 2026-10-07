@@ -558,7 +558,43 @@ func parseCronOK(expr string, add addFunc) bool {
 var githubEvents = map[string][]string{
 	SourceGitHubIssues: {"opened", "closed", "reopened", "labeled", "unlabeled", "assigned"},
 	SourceGitHubPRs:    {"opened", "ready_for_review", "review_requested", "closed", "merged"},
-	SourceIssues:       {"opened", "closed", "reopened", "labeled", "unlabeled"},
+	SourceIssues:       {"opened", "closed", "reopened", "labeled", "unlabeled", ActionLaneChanged},
+}
+
+// ActionLaneChanged is the `type: issues` action for an issue's board lane
+// moving (task 134.7), and ByTask the `by` a move a task caused carries.
+const (
+	ActionLaneChanged = "lane_changed"
+	ByTask            = "task"
+)
+
+// optInEvents are the events a source synthesizes only for a trigger whose
+// match.action names them (task 134.7 decision 3). An action-less trigger
+// matches defaultEvents, which leaves them out — so arming no trigger that
+// loaded before lane_changed existed changes what it fires on.
+var optInEvents = map[string]map[string]bool{
+	SourceIssues: {ActionLaneChanged: true},
+}
+
+// defaultEvents are the events a trigger with no match.action can match.
+func defaultEvents(sourceType string) []string {
+	var out []string
+	for _, e := range githubEvents[sourceType] {
+		if !optInEvents[sourceType][e] {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// wantsAction reports whether d can see an event of this action at all: an
+// opt-in action only when match.action names it.
+func (d *Definition) wantsAction(action string) bool {
+	if !optInEvents[d.Source.Type][action] {
+		return true
+	}
+	want, ok := d.Match["action"]
+	return ok && matchIncludes(want, action)
 }
 
 // trustedEvents are the events whose triggering change an outsider cannot
@@ -574,7 +610,9 @@ var githubEvents = map[string][]string{
 // On `type: issues` the same table is read for `by: sync` events only, since
 // those are GitHub's changes arriving through the importer; a `human` or
 // `agent` change was made on this machine and is trusted (task 130.15
-// decision 1).
+// decision 1), as is a `task` lane move. A sync-delivered lane_changed is
+// untrusted: it comes only from a GitHub close or reopen, which an outsider
+// can make exactly as they make closed and reopened (task 134.7 decision 4).
 var trustedEvents = map[string]map[string]bool{
 	SourceGitHubIssues: {"labeled": true, "unlabeled": true, "assigned": true},
 	SourceGitHubPRs:    {"merged": true},
@@ -589,7 +627,8 @@ func TrustedGitHubEvent(sourceType, action string) bool { return trustedEvents[s
 
 // validateGitHubTrust refuses, at load, a GitHub trigger that can match an
 // untrusted event and names no allowed_actors (decision 31F). "Can match" is
-// read off `match.action`: absent, it matches every event the source has.
+// read off `match.action`: absent, it matches every event the source has
+// except the opt-in ones (defaultEvents).
 //
 // A `type: issues` trigger is held to it too, but only for the events sync
 // delivers (task 130.15 decision 1): one whose `match.by` leaves out `sync`
@@ -606,7 +645,7 @@ func validateGitHubTrust(d *Definition, add addFunc, _ refuseFunc) {
 			return
 		}
 	}
-	actions := known
+	actions := defaultEvents(d.Source.Type)
 	if want, ok := d.Match["action"]; ok {
 		actions = nil
 		vals := []any{want}
@@ -636,7 +675,7 @@ func validateGitHubTrust(d *Definition, add addFunc, _ refuseFunc) {
 			if d.IsIssues() {
 				add("allowed_actors", "is required: this trigger can match %q arriving by sync from GitHub, "+
 					"whose author an outsider controls on a public repository; list the authors to accept, "+
-					"match only %s, or match by: human",
+					"match only %s, or leave sync out of match.by",
 					a, strings.Join(trustedList(d.Source.Type), ", "))
 				return
 			}

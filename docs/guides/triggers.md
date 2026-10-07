@@ -310,7 +310,7 @@ source:
 
 An `issues` source reads vincent's own record of every issue change, so it
 works on any project — one with no GitHub remote included — and sees a GitHub
-issue the project [imports](issues.md) the same way it sees a local one. It
+issue the project [imports](tui.md#issues) the same way it sees a local one. It
 takes no `poll_interval` and no `command`: each issue change the daemon commits
 wakes it.
 
@@ -320,6 +320,7 @@ wakes it.
 | It is closed, or reopened | `closed`, `reopened` |
 | Labels are added | one `labeled`, with `labels` the ones added |
 | Labels are removed | one `unlabeled`, with `labels` the ones removed |
+| It moves to another [lane](tui.md#issues) | `lane_changed`, only when `match.action` names it |
 
 One GitHub refresh can produce several events. Edits, comments and deletes fire
 nothing, and there is no `assigned`: a vincent issue has no assignee, so
@@ -329,7 +330,9 @@ Every event carries:
 
 - **`id`**, `issue:{issue_id}:{action}:{event id}`.
 - **`action`**, and **`by`**, who made the change: `human`, `agent` (a task's
-  agent, over MCP) or `sync` (GitHub, through the importer).
+  agent, over MCP), `sync` (GitHub, through the importer), or `task` on a
+  `lane_changed` that a task starting, finishing, being deleted or restored
+  caused.
 - **`author`**, the issue's author, and **`state`**, its state now.
 - **`issue_id`** and **`project_id`**, as integers.
 - **`.Event.Issue`**, the issue as a task's [`.Issue`](../reference/templates.md)
@@ -337,6 +340,18 @@ Every event carries:
   an imported issue's GitHub reference is `Source`.
 - **`labels`** on `labeled` and `unlabeled`, and **`from`**, **`to`** and
   **`reason`** on `closed` and `reopened`.
+- **`lane`** and **`from_lane`** on `lane_changed`: the lane the issue moved
+  to and from — `open`, `in_progress`, `hand_off` or `done` — and **`task_id`**
+  when `by` is `task`. Guard a template that reads `task_id` with
+  `{{ if eq .Event.by "task" }}`: a close or reopen carries none.
+
+**`lane_changed` is opt-in.** A trigger sees it only when its `match.action`
+names it; one with no `match.action` matches the other five events and never a
+lane move, so it does not fire on every task start and finish. Pick it when the
+board move is the signal — an issue's work reaching `hand_off`, or going from
+`hand_off` to `done`. Pick `closed` or `reopened` when the close reason or the
+state is: a close fires both, so name one. `match: {by: human}` drops every
+move a task caused; a hand-off trigger matches `by: task`, or leaves `by` out.
 
 The trigger's cursor is the id of the last event it handled. Arming moves it to
 the newest event and fires nothing for history; disarming drops it. A restart
@@ -347,11 +362,17 @@ for the next pass, which follows at once.
 **Echo loops.** When the task a trigger creates has an agent that labels or
 closes issues, its change can fire the trigger again. `match: {by: human}`
 keeps the trigger to people's changes. `limits.max_per_hour` is the backstop.
+A `lane: hand_off` trigger that creates a task for the same issue loops through
+the lanes instead: the new task moves the issue back to `in_progress`, and to
+`hand_off` again when it finishes. Give it
+`dedupe_key: '{{ .Event.issue_id }}:{{ .Event.lane }}'` to fire once per issue
+per lane.
 
-**Trust.** A `human` or `agent` change was made on this machine and is trusted.
+**Trust.** A `human`, `agent` or `task` change was made on this machine and is trusted.
 A `sync` change came from GitHub, and follows the
 [table below](#trusted-events-and-allowed_actors): `labeled` and `unlabeled`
-are trusted, `opened`, `closed` and `reopened` are not. An `issues` trigger that
+are trusted, `opened`, `closed`, `reopened` and `lane_changed` are not — sync
+moves a lane only by closing or reopening. An `issues` trigger that
 can match one of those from sync is refused at load unless it names
 `allowed_actors` — or its `match.by` leaves out `sync`. At judge time the list is
 checked against the author of `sync` events only; a local person's `opened` is

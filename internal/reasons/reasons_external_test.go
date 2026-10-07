@@ -28,9 +28,9 @@ var notATaskReason = map[string]string{
 	"push_failed":        "ReasonPushFailed",
 	// gc's skip reason for an orphan it cannot judge (task 005).
 	"dirty_unknown": "ReasonDirtyUnknown",
-	// The chat API's (task 067 and after).
-	"workspace_path_missing":     "ReasonWorkspacePathMissing",
-	"repo_operation_in_progress": "ReasonRepoOperationInProgress",
+	// The chat API's (task 067 and after). repo_operation_in_progress was
+	// one too, until an issue's main task began blocking on it (134.12).
+	"workspace_path_missing": "ReasonWorkspacePathMissing",
 }
 
 // reasonConstants parses the non-test Go files of dir and returns every

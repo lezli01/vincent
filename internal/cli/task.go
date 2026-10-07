@@ -616,6 +616,7 @@ func newTaskFollowUpCmd() *cobra.Command {
 					// task is neither done nor aborted — which is a rejected
 					// request, not a broken one.
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+					printIssueWorktreeMoved(cmd.ErrOrStderr(), err)
 					return exitError{code: 1}
 				}
 				if wantJSON(cmd) {

@@ -379,6 +379,9 @@ func (s *Server) handleTaskFollowUp(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, "get task", err)
 		return
 	}
+	if s.refuseIssueWorktreeMoved(ctx, w, task) {
+		return
+	}
 	sel, msg := followUpForm(req)
 	if msg != "" {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)

@@ -504,18 +504,19 @@ func bindIssueWorktreeTx(ctx context.Context, tx *sql.Tx, t *Task) error {
 	if t.BranchExplicit && main != t.BranchName {
 		return &MainBranchMismatchError{IssueID: *t.IssueID, Branch: t.BranchName, MainBranch: main}
 	}
-	// A joining main task adopts the main branch rather than cutting it
-	// (review F1 of #768): the first main task cuts it, so git would refuse a
-	// second cut with branch_exists at admission. Adopting it puts the task
-	// under task 125 decision 2's working-directory claim instead — it waits
-	// in the queue while another owner holds the branch's directory — and
-	// keeps archive from deleting a branch this task did not cut.
+	// A joining main task takes the main branch's name but is never adopted
+	// (task 134.12): it neither cuts the branch nor checks it out anew. It is
+	// serialised behind the issue's previous main task by the scheduler's
+	// occupancy predicate (issueMainOccupantSQL, 134.11) and receives that
+	// task's directory by transfer at admission (TransferIssueWorktree), so
+	// task 125's working-directory claim, which waits for an archive, has no
+	// part in it. Rows bound before this carry adopted_branch = 1 as well;
+	// every reader lets the main role win over the flag.
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE tasks SET branch_name = ?, adopted_branch = 1 WHERE id = ?`, main, t.ID); err != nil {
+		`UPDATE tasks SET branch_name = ? WHERE id = ?`, main, t.ID); err != nil {
 		return fmt.Errorf("bind issue %d main branch: %w", *t.IssueID, err)
 	}
 	t.BranchName = main
-	t.AdoptedBranch = true
 	return nil
 }
 
@@ -602,8 +603,8 @@ func (s *Store) WorkingDirClaim(
 // BranchSharedByOther reports whether an unarchived task other than
 // excludeTaskID carries branch in the project. Only main-role tasks of one
 // issue share a branch (task 134 decision 3), so it is the question archive
-// and delete ask before removing a branch the issue's next main task is still
-// waiting to adopt (review F1 of #768).
+// and delete ask before removing a branch the issue's next main task will
+// still work on, in the directory it receives by transfer (task 134.12).
 func (s *Store) BranchSharedByOther(
 	ctx context.Context, projectID int64, branch string, excludeTaskID int64,
 ) (bool, error) {
@@ -928,8 +929,7 @@ func (s *Store) ListAdmissible(ctx context.Context) ([]Candidate, error) {
 			  WHERE o.project_id = t.project_id AND o.branch_name = t.branch_name
 			    AND o.id <> t.id AND o.archived_at IS NULL
 			    AND ((o.worktree_path IS NOT NULL AND o.worktree_path <> '')
-			         OR o.state IN ` + slotPlaceholders + `
-			         OR (o.adopted_branch = 0 AND o.state = ?)))
+			         OR o.state IN ` + slotPlaceholders + `))
 			+ (SELECT COUNT(*) FROM chats c
 			  WHERE c.project_id = t.project_id AND c.branch = t.branch_name
 			    AND (c.linked_task_id IS NULL OR c.linked_task_id <> t.id)
@@ -942,7 +942,6 @@ func (s *Store) ListAdmissible(ctx context.Context) ([]Candidate, error) {
 		ORDER BY t.priority DESC, t.created_at ASC, t.id ASC`
 	args := append(append([]any{}, slotStates...), string(StepRunning), StepTypeFanOut)
 	args = append(args, slotStates...)
-	args = append(args, string(TaskQueued))
 	args = append(args, issueMainOccupantArgs()...)
 	args = append(args, string(TaskQueued))
 	rows, err := s.db.QueryContext(ctx, q, args...)

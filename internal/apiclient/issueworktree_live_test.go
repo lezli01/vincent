@@ -69,3 +69,48 @@ func TestIssueWorktreeOverTheWire(t *testing.T) {
 		t.Errorf("ListIssues = %+v, %v", rows, err)
 	}
 }
+
+// TestIssueWorktreeRefusalsOverTheWire pins task 134.12's two 409s to their
+// decoders against the real handlers: IssueWorktreeMoved names the task now
+// holding the issue's main worktree, IssueHasLiveMainTask the main task that
+// keeps the issue from being deleted.
+func TestIssueWorktreeRefusalsOverTheWire(t *testing.T) {
+	h := newCreateHarness(t)
+	ctx := t.Context()
+	iss, err := h.store.CreateIssue(ctx, store.NewIssue{ProjectID: h.projectID, Title: "Hand it on"}, issuestate.Human)
+	if err != nil {
+		t.Fatalf("CreateIssue: %v", err)
+	}
+	pred, err := h.client.CreateTask(ctx, apiclient.CreateTaskRequest{ProjectID: h.projectID, IssueID: &iss.ID})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	succ, err := h.client.CreateTask(ctx, apiclient.CreateTaskRequest{ProjectID: h.projectID, IssueID: &iss.ID, Title: "next"})
+	if err != nil {
+		t.Fatalf("CreateTask next: %v", err)
+	}
+
+	err = h.client.DeleteIssue(ctx, iss.ID)
+	if id, ok := apiclient.IssueHasLiveMainTask(err); !ok || id != pred.ID {
+		t.Errorf("DeleteIssue = %v, want issue_has_live_main_task naming task %d (got %d, %v)", err, pred.ID, id, ok)
+	}
+
+	// The refusal is decided before anything touches the directory, so the
+	// path only has to match the row.
+	dir := t.TempDir()
+	if err := h.store.SetTaskProgress(ctx, pred.ID, nil, &dir, nil); err != nil {
+		t.Fatalf("record worktree: %v", err)
+	}
+	for _, step := range [][2]store.TaskState{{store.TaskQueued, store.TaskRunning}, {store.TaskRunning, store.TaskDone}} {
+		if _, _, err := h.store.TransitionTask(ctx, pred.ID, step[0], step[1], store.TaskChange{}); err != nil {
+			t.Fatalf("set %s: %v", step[1], err)
+		}
+	}
+	if err := h.store.TransferIssueWorktree(ctx, pred.ID, succ.ID, dir, "0123456789abcdef0123456789abcdef01234567"); err != nil {
+		t.Fatalf("TransferIssueWorktree: %v", err)
+	}
+	_, _, err = h.client.FollowUp(ctx, pred.ID, apiclient.FollowUpInput{Prompt: "more"})
+	if id, ok := apiclient.IssueWorktreeMoved(err); !ok || id != succ.ID {
+		t.Errorf("FollowUp = %v, want issue_worktree_moved naming task %d (got %d, %v)", err, succ.ID, id, ok)
+	}
+}

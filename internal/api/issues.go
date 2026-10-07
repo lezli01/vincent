@@ -724,7 +724,9 @@ func (s *Server) handleIssueReopen(w http.ResponseWriter, r *http.Request) {
 // handleIssueDelete implements DELETE /v1/issues/{id}: permanent, in any
 // state (task 130 decision 6). An imported issue leaves its tombstone so sync
 // never imports it again, upstream is never touched, and tasks created from
-// it keep running with issue_id NULL. Not an MCP tool (§13.4), on task 092's
+// it keep running with issue_id NULL — except a main task that has not
+// settled, which is a 409 naming it (task 134.12): it works in, or waits
+// for, the issue's main worktree. Not an MCP tool (§13.4), on task 092's
 // line.
 func (s *Server) handleIssueDelete(w http.ResponseWriter, r *http.Request) {
 	id, ok := issueIDFromPath(w, r)
@@ -733,6 +735,13 @@ func (s *Server) handleIssueDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	if err := issues.New(s.deps.Store).Delete(ctx, issueActor(r), id); err != nil {
+		if live, isLive := store.AsIssueHasLiveMainTask(err); isLive {
+			writeJSON(w, http.StatusConflict, errorBody{Error: errorDetail{
+				Code: CodeIssueHasLiveMainTask, Message: live.Error(),
+				Details: map[string]string{"task_id": fmt.Sprint(live.TaskID)},
+			}})
+			return
+		}
 		s.writeIssueError(w, r, id, "delete issue", err)
 		return
 	}

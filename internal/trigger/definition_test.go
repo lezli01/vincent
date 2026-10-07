@@ -88,6 +88,10 @@ func TestParseVariantRefusals(t *testing.T) {
 			}, "allowed_actors",
 		},
 		{
+			"lane_changed sync can deliver needs allowed_actors (task 134.7 decision 4)", SourceIssues, ActionCreateTask,
+			func(d map[string]any) { setPath(d, "match.action", "lane_changed", false) }, "allowed_actors",
+		},
+		{
 			"issues never polls", SourceIssues, ActionCreateTask,
 			func(d map[string]any) { setPath(d, "source.poll_interval", "1m", false) }, "source.poll_interval",
 		},
@@ -151,6 +155,20 @@ func TestParseVariantAccepts(t *testing.T) {
 			"an issues opened with an allowlist", SourceIssues, ActionCreateTask,
 			func(d map[string]any) {
 				setPath(d, "match.action", "opened", false)
+				d["allowed_actors"] = []any{"lezli01"}
+			},
+		},
+		{
+			"a local-only lane_changed needs no allowlist", SourceIssues, ActionCreateTask,
+			func(d map[string]any) {
+				setPath(d, "match.action", "lane_changed", false)
+				setPath(d, "match.by", []any{"human", "task"}, false)
+			},
+		},
+		{
+			"an action-less issues trigger with an allowlist still loads", SourceIssues, ActionCreateTask,
+			func(d map[string]any) {
+				delete(d, "match")
 				d["allowed_actors"] = []any{"lezli01"}
 			},
 		},

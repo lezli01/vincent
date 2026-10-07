@@ -76,6 +76,11 @@ type TaskChange struct {
 	CurrentStep *int
 	// WorktreePath records the worktree once created (§10).
 	WorktreePath *string
+	// EndSHA records the commit the task's branch stood at when it let go of
+	// its worktree (task 134.12): the archive stamps it in the same write as
+	// the → archived transition, so the tip survives a directory a later main
+	// task of the issue may keep using.
+	EndSHA *string
 	// Snapshot replaces the workflow snapshot — edit+retry, which overrides
 	// a step in this task's snapshot only (§6).
 	Snapshot *string
@@ -338,14 +343,14 @@ func transitionTaskTx(
 	}
 	res, err := tx.ExecContext(ctx, `
 		UPDATE tasks SET state = ?, current_step = ?, block_reason = ?, block_detail = ?, worktree_path = ?,
-			workflow_snapshot = ?, pause_requested = ?, retry_cursor_at = ?,
+			end_sha = ?, workflow_snapshot = ?, pause_requested = ?, retry_cursor_at = ?,
 			pending_override_json = ?, pending_repair_json = ?,
 			pending_follow_up_json = ?, pending_input_json = ?,
 			admit_not_before = ?, queued_reason = ?, settled_children_watermark = ?,
 			updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?, archived_from = ?
 		WHERE id = ? AND state = ?`,
 		string(t.State), t.CurrentStep, nullString(t.BlockReason), nullString(t.BlockDetail), nullString(t.WorktreePath),
-		t.WorkflowSnapshot, t.PauseRequested, formatTimePtr(t.RetryCursorAt), pendingOverride,
+		nullString(t.EndSHA), t.WorkflowSnapshot, t.PauseRequested, formatTimePtr(t.RetryCursorAt), pendingOverride,
 		pendingRepair, pendingFollowUp,
 		nullString(t.PendingInputJSON),
 		formatTimePtr(t.AdmitNotBefore), nullString(t.QueuedReason),
@@ -523,6 +528,9 @@ func applyChange(t *Task, ch TaskChange) {
 	}
 	if ch.WorktreePath != nil {
 		t.WorktreePath = *ch.WorktreePath
+	}
+	if ch.EndSHA != nil {
+		t.EndSHA = *ch.EndSHA
 	}
 	if ch.Snapshot != nil {
 		t.WorkflowSnapshot = *ch.Snapshot

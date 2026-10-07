@@ -64,22 +64,12 @@ func TestFirstMainTaskBindsTheIssueMainBranch(t *testing.T) {
 	if got.BranchName != first.BranchName || got.IssueWorktree != IssueWorktreeMain {
 		t.Errorf("stored second = (%q, %q), want (%q, main)", got.BranchName, got.IssueWorktree, first.BranchName)
 	}
-	// The first cut the branch; the second adopts it, so admission puts it
-	// behind the branch's working directory rather than refusing a second
-	// cut with branch_exists (review F1 of #768).
-	if first.AdoptedBranch || !second.AdoptedBranch || !got.AdoptedBranch {
-		t.Errorf("adopted: first %v, second %v (stored %v), want false, true, true",
+	// Neither is adopted (task 134.12): the first cuts the branch, and the
+	// second receives the first's directory by transfer at admission, so it
+	// never joins task 125's working-directory claim.
+	if first.AdoptedBranch || second.AdoptedBranch || got.AdoptedBranch {
+		t.Errorf("adopted: first %v, second %v (stored %v), want all false",
 			first.AdoptedBranch, second.AdoptedBranch, got.AdoptedBranch)
-	}
-	// While the first has not cut it, the second waits on it.
-	cands, err := s.ListAdmissible(t.Context())
-	if err != nil {
-		t.Fatalf("ListAdmissible: %v", err)
-	}
-	for _, c := range cands {
-		if c.Task.ID == second.ID && c.DirClaimants == 0 {
-			t.Errorf("second's DirClaimants = 0 while the first is queued to cut its branch")
-		}
 	}
 	if shared, err := s.BranchSharedByOther(t.Context(), p.ID, first.BranchName, first.ID); err != nil || !shared {
 		t.Errorf("BranchSharedByOther(first) = %v, %v; want true", shared, err)
@@ -185,10 +175,11 @@ func TestExplicitBranchOnAMainTaskMustBeTheMainBranch(t *testing.T) {
 	same := newMainTask(p.ID, is.ID, "same")
 	same.BranchName, same.BranchExplicit = "issue/typed", true
 	mustCreate(t, s, same)
-	// Naming the main branch is joining it, so it adopts the branch the
-	// first task cut exactly as an unnamed join does (review F1 of #768).
-	if !same.AdoptedBranch {
-		t.Error("a main task naming the existing main branch did not adopt it")
+	// Naming the main branch is joining it, bound exactly as an unnamed join
+	// is: on the main branch, and not adopted (task 134.12).
+	if same.AdoptedBranch || same.BranchName != "issue/typed" {
+		t.Errorf("joined main task = (%q, adopted %v), want (issue/typed, false)",
+			same.BranchName, same.AdoptedBranch)
 	}
 }
 

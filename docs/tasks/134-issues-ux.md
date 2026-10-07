@@ -1,6 +1,6 @@
 # 134 — Issues UX: a four-lane issues board and one main worktree per issue
 
-**Status:** 🔄 in progress (11/19)
+**Status:** 🔄 in progress (13/19)
 
 Issue [#748](https://github.com/lezli01/vincent/issues/748), part of
 [#747](https://github.com/lezli01/vincent/issues/747), the epic. Spec §5.6 in
@@ -238,6 +238,19 @@ hand-over.
   (the chat's branch becomes it) and side with `block` otherwise, until 134.15
   lets the handoff body choose; the handoff refuses `merge_back` until then.
 
+*Amended 2026-10-07 (134.12, #759), settled while scoping it:*
+
+- **Joining main tasks stop being adopted.** `insertTaskTx` binds the main
+  branch's name and no longer sets `adopted_branch`. Admission routes on the
+  role before adopt mode, the scheduler's task 125 directory claim skips
+  main-role tasks, and archive treats every main task's branch as vincent's.
+  Rows bound earlier with `adopted_branch = 1` take the main-role path
+  because the role is checked first; there is no data migration.
+- **`end_sha` is stamped at the transfer and at archive.** The transfer sets
+  the predecessor's `end_sha` to the tip it handed over; archiving a main task
+  whose `end_sha` is unset stamps the tip then, in the same write as the
+  transition, so an archived predecessor never lists its successors' commits.
+
 ### 8. Occupancy: admitted and not settled (2026-10-07)
 
 A main-role task holds the issue's main worktree from its admission
@@ -378,6 +391,12 @@ Settled by the author (#747 question 11).
 occupant's directory; never deleting the branch automatically; deleting it on
 the issue's close or delete.
 
+*Amended 2026-10-07 (134.12, #759):* both land. The refusal is
+`409 issue_has_live_main_task` naming the task. The branch's emptiness at the
+last archive is judged against the issue's base branch, never against that
+task's `base_sha`, which after a transfer is the tip it received and would
+read a branch full of predecessors' commits as empty.
+
 ### 18. `merge_back.approve` is a later addition (2026-10-07)
 
 Settled by the author (#747 question 9). A human approval before each merge,
@@ -440,7 +459,9 @@ deleted.
   134.10 amendment): the next main task cuts a fresh branch, and the old one
   stays in git with the earlier work, off the issue's line, until someone
   merges or deletes it.
-- Until 134.12 removes the wait, a later main task waits for the previous
+- *Closed 2026-10-07 (134.12, #759): main tasks are no longer adopted, and a
+  later one is admitted as soon as the previous one settles.* Until 134.12
+  removes the wait, a later main task waits for the previous
   one's **archive**, not its settlement (review F1 of #768); 134.11's
   occupancy predicate does not shorten it. It is bound to the
   main branch as an adopted branch, so task 125 decision 2's working-directory
@@ -517,8 +538,13 @@ sections and public pages its code makes true, in its own pull request.
   its event, only when the lane moves; the TUI issues list re-lists on a task
   event only for an issue it shows; spec §13.3 and the API reference.
   ✓ 2026-10-07
-- [ ] **134.7** ([#754](https://github.com/lezli01/vincent/issues/754)) A
-  `type: issues` trigger fires on a lane change. Depends: 134.6.
+- [x] **134.7** ([#754](https://github.com/lezli01/vincent/issues/754)) A
+  `type: issues` trigger fires on a lane change. Depends: 134.6. The opt-in
+  `lane_changed` action with `lane`, `from_lane` and `task_id`, and `by: task`
+  on a task-caused move; a trigger with no `match.action` never sees it, and
+  the load-time trust check reads the same default set. Untrusted from sync,
+  as `closed`/`reopened` are. The skill, `update-triggers`' checklist item 18,
+  the guide and spec rows 33 and §13.3. ✓ 2026-10-07
 - [x] **134.8** ([#755](https://github.com/lezli01/vincent/issues/755)) The
   TUI board's lane sections, the hidden-by-default `done` lane and its `s`
   toggle, fold keys, the guide's key table and spec §15 view 12 (decisions
@@ -539,10 +565,19 @@ sections and public pages its code makes true, in its own pull request.
   linked chat (decision 8's amendment); the walk skips an occupied issue's
   main candidate, and a second main task of one issue in the same walk, as a
   skip rather than a block; spec §5.6, §6, §11, §13.2. ✓ 2026-10-07
-- [ ] **134.12** ([#759](https://github.com/lezli01/vincent/issues/759)) The
+- [x] **134.12** ([#759](https://github.com/lezli01/vincent/issues/759)) The
   claim transfer, archive safety, refusing follow-up or chat on a
   predecessor, and `end_sha` in commits and diff (decisions 14, 17).
-  Depends: 134.11.
+  Depends: 134.11. A fourth creation mode in `ensureWorktree` hands a settled
+  predecessor's directory to the next main task in one transaction
+  (`TransferIssueWorktree`), blocks `repo_operation_in_progress` on a git
+  operation in progress there and `issue_branch_checked_out` on the main
+  checkout, and checks the branch out fresh when every holder was archived;
+  archive stamps `end_sha` and keeps the branch while a successor carries it;
+  `follow_up` and chat answer `409 issue_worktree_moved`; `/commits` and
+  `/diff` end at `end_sha`; issue delete answers `409
+  issue_has_live_main_task`; spec §5.3, §5.6, §10, §11, §12.4, §13.2, §18.
+  ✓ 2026-10-07
 - [x] **134.13** ([#760](https://github.com/lezli01/vincent/issues/760)) Side
   tasks cut from the issue branch with no fetch, recording `base_sha`
   (decision 13). Depends: 134.10. ✓ 2026-10-07

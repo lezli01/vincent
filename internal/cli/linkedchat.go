@@ -49,6 +49,7 @@ func newTaskChatCmd() *cobra.Command {
 							"  chat %d is open on it: continue with `vincent chat send %d MESSAGE`, "+
 								"or end it with `vincent chat close %d`\n", open, open, open)
 					}
+					printIssueWorktreeMoved(cmd.ErrOrStderr(), err)
 					return exitError{code: 1}
 				}
 				if wantJSON(cmd) {
@@ -116,4 +117,14 @@ func newChatCloseCmd() *cobra.Command {
 	}
 	jsonFlag(cmd)
 	return cmd
+}
+
+// printIssueWorktreeMoved names the task that now holds the issue's main
+// worktree when err is a follow-up or chat refused for that (task 134.12):
+// the work this task did continues there, so that id is the way on.
+func printIssueWorktreeMoved(w io.Writer, err error) {
+	if holder, ok := apiclient.IssueWorktreeMoved(err); ok {
+		_, _ = fmt.Fprintf(w, "  task %d holds the issue's main worktree now: see `vincent task show %d`\n",
+			holder, holder)
+	}
 }

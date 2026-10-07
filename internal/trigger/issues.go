@@ -26,12 +26,22 @@ import (
 // an event committed while the daemon was down is still delivered. Arming
 // seeds the cursor at the newest event and fires nothing for history, which
 // is the rule every other source follows (decision 6); disarming drops it.
+//
+// One action is vincent's own (task 134.7): `lane_changed`, mapped from the
+// issue.lane_changed event task 134.6 writes, carrying the board lane moved
+// to and from as `lane` and `from_lane` — never `from`/`to`, which already
+// mean the issue state on closed/reopened. A move a task caused reads
+// `by: task`, local and so trusted. It is opt-in: a trigger whose
+// match.action does not name it never sees it (issueEventsFor), so an armed
+// action-less trigger neither starts firing on every task start and finish
+// nor fires twice, closed and lane_changed, on every close.
 
 // issueEventTypes are the issue.* events the source reads. Edits, comments,
 // deletes and issue.sync_changed fire nothing, so they are not read.
 var issueEventTypes = []string{
 	store.EventIssueCreated, store.EventIssueStateChanged,
 	store.EventIssueLabelsChanged, store.EventIssueUpdated,
+	store.EventIssueLaneChanged,
 }
 
 // issuesPage bounds one read of the events table.
@@ -47,6 +57,7 @@ type issuePayload struct {
 	Reason        string   `json:"reason"`
 	LabelsAdded   []string `json:"labels_added"`
 	LabelsRemoved []string `json:"labels_removed"`
+	TaskID        *int64   `json:"task_id"`
 }
 
 // issueChange is one trigger event a store event yields, before the issue
@@ -55,6 +66,7 @@ type issueChange struct {
 	action string
 	labels []string
 	state  bool
+	lane   bool
 }
 
 // mapIssueEvent is the pure half of the source: the trigger events one
@@ -74,6 +86,11 @@ func mapIssueEvent(typ string, p *issuePayload) []issueChange {
 			}
 			out = append(out, issueChange{action: action, state: true})
 		}
+	case store.EventIssueLaneChanged:
+		if p.To == "" || p.To == p.From {
+			return nil
+		}
+		return []issueChange{{action: ActionLaneChanged, lane: true}}
 	case store.EventIssueLabelsChanged:
 	default:
 		return nil
@@ -110,12 +127,19 @@ func issueEvents(ctx context.Context, st Store, e *store.Event) ([]Event, error)
 		return nil, fmt.Errorf("read issue %d: %w", p.ID, err)
 	}
 	issue := issueMap(iss)
+	by := p.By
+	if by == "" && p.TaskID != nil {
+		// A lane move a root task's write caused has no human, agent or
+		// sync actor: the payload names the task instead (task 134.7
+		// decision 2).
+		by = ByTask
+	}
 	out := make([]Event, 0, len(changes))
 	for _, c := range changes {
 		ev := Event{
 			"id":         "issue:" + strconv.FormatInt(iss.ID, 10) + ":" + c.action + ":" + strconv.FormatInt(e.ID, 10),
 			"action":     c.action,
-			"by":         p.By,
+			"by":         by,
 			"author":     iss.Author,
 			"state":      string(iss.State),
 			"issue_id":   iss.ID,
@@ -128,7 +152,33 @@ func issueEvents(ctx context.Context, st Store, e *store.Event) ([]Event, error)
 		if c.state {
 			ev["from"], ev["to"], ev["reason"] = p.From, p.To, p.Reason
 		}
+		if c.lane {
+			// From the payload, never a judge-time read, so a burst of
+			// moves reports each one as it happened.
+			ev["lane"], ev["from_lane"] = p.To, p.From
+			if p.TaskID != nil {
+				ev["task_id"] = *p.TaskID
+			}
+		}
 		out = append(out, ev)
+	}
+	return out, nil
+}
+
+// issueEventsFor is issueEvents as trigger d sees it: an opt-in action
+// (task 134.7 decision 3) is dropped unless d's match.action names it. It
+// is the source's one notion of "every action", shared with the load-time
+// trust check through defaultEvents.
+func issueEventsFor(ctx context.Context, st Store, d *Definition, e *store.Event) ([]Event, error) {
+	evs, err := issueEvents(ctx, st, e)
+	if err != nil || len(evs) == 0 {
+		return evs, err
+	}
+	out := evs[:0]
+	for _, ev := range evs {
+		if a, _ := ev["action"].(string); d.wantsAction(a) {
+			out = append(out, ev)
+		}
 	}
 	return out, nil
 }
@@ -273,7 +323,7 @@ func (m *Manager) pollIssuesTrigger(ctx context.Context, d *Definition) bool {
 	judged, more := 0, len(evs) == issuesPage
 	for i := range evs {
 		e := &evs[i]
-		mapped, err := issueEvents(ctx, m.deps.Store, e)
+		mapped, err := issueEventsFor(ctx, m.deps.Store, d, e)
 		if err != nil {
 			next.LastPollOK, next.LastPollError = false, err.Error()
 			log.Warn("trigger issue event not read", "event_id", e.ID, "error", err)
@@ -325,7 +375,7 @@ func (m *Manager) dryIssues(ctx context.Context, d *Definition, prev *store.Trig
 	}
 	var out []Event
 	for i := range evs {
-		mapped, err := issueEvents(ctx, m.deps.Store, &evs[i])
+		mapped, err := issueEventsFor(ctx, m.deps.Store, d, &evs[i])
 		if err != nil {
 			return nil, false, err
 		}

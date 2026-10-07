@@ -35,6 +35,14 @@ list with the user-facing context a commit subject cannot carry.
   a client can tell which issue a task event concerns. The TUI issues list
   uses this to re-list only when a shown issue's task changes, instead of on
   every task event.
+- **An `issues` trigger can fire when an issue changes lane.** Name
+  `lane_changed` in `match.action` and the trigger fires whenever an issue
+  moves between `open`, `in_progress`, `hand_off` and `done`, with
+  `.Event.lane` and `.Event.from_lane` saying where it went and where it came
+  from — `match: {action: lane_changed, lane: hand_off}` fires when an issue's
+  work is ready for you. A move a task caused carries `by: task` and
+  `task_id`. Triggers that name no `match.action` keep firing on exactly the
+  events they did before.
 - **`vincent issue ls` shows the lane.** A `LANE` column follows `STATE`, with
   a trailing ` !` when one of the issue's tasks is waiting on you, and
   `--lane` (repeatable) filters by it — `--lane done` is every closed issue.
@@ -43,9 +51,8 @@ list with the user-facing context a commit subject cannot carry.
   can now be passed as an array of strings to repeat it.
 - **An issue has a main branch.** A task created from an issue with
   `issue_id` is now the issue's main task: the first one's branch becomes the
-  issue's main branch, and every later main task of the issue runs on it —
-  waiting in the queue until the earlier main task is archived and its
-  worktree released.
+  issue's main branch, and every later main task of the issue runs on it, in
+  the same worktree.
   `merge_back: {"on_conflict": "block"|"agent"}` on `POST /v1/tasks` asks for
   a side task instead. Tasks report `issue_worktree` and `merge_back`, issues
   report `main_worktree: {branch, occupant_task_id}`, and creating a main task
@@ -60,6 +67,18 @@ list with the user-facing context a commit subject cannot carry.
   worktree. The waiting task shows no new state or reason; the issue's
   `main_worktree.occupant_task_id` names what it waits on. Side tasks and
   tasks of other issues are not held.
+- **An issue's next main task picks up where the last one stopped.** Once a
+  main task of an issue finishes, the next one starts as soon as it is
+  admitted — no longer waiting for the earlier task to be archived — in the
+  same worktree, uncommitted changes included. It blocks
+  `repo_operation_in_progress` instead when that worktree is partway through
+  a merge, rebase or similar, and `issue_branch_checked_out` when the issue's
+  branch is checked out in your own main checkout. The earlier task's commits
+  and diff stop where its work ended; a follow-up or chat on it answers `409
+  issue_worktree_moved` naming the task that has the worktree now. Archiving
+  a main task keeps the issue's branch while a later main task still uses it.
+  Deleting an issue answers `409 issue_has_live_main_task` while one of its
+  main tasks has not finished.
 - **Side tasks start from the issue's main branch.** A task created with
   `merge_back` is now cut from the issue's main branch rather than the
   project's base, without fetching or fast-forwarding it — so admitting one

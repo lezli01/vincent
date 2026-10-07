@@ -278,6 +278,11 @@ func TestTaskIssueFallsBackToTheSnapshot(t *testing.T) {
 	if got := get(); got.Issue == nil || got.Issue.Title != title {
 		t.Errorf("linked issue = %+v, want the live title", got.Issue)
 	}
+	// The task is the issue's main task, which blocks the delete until it
+	// settles (task 134.12).
+	if _, _, err := h.store.TransitionTask(t.Context(), tr.ID, store.TaskState(tr.State), store.TaskAborted, store.TaskChange{}); err != nil {
+		t.Fatalf("abort: %v", err)
+	}
 	if err := h.store.DeleteIssue(t.Context(), iss.ID, issuestate.Human); err != nil {
 		t.Fatalf("DeleteIssue: %v", err)
 	}

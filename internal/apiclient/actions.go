@@ -248,12 +248,26 @@ func (c *Client) OpenTaskChat(ctx context.Context, taskID int64, req OpenTaskCha
 // 119), and if so which chat. The id is the way out — close that chat, or
 // keep talking in it — so a client names it rather than the refusal's prose.
 func TaskLockedByChat(err error) (chatID int64, ok bool) {
+	return conflictID(err, "task_locked_by_chat", "chat_id")
+}
+
+// IssueWorktreeMoved reports whether err is a follow-up or chat refused
+// because the task's issue main worktree was handed to a later main task
+// (409 `issue_worktree_moved`, task 134.12), and if so which task holds it
+// now — where the work continues.
+func IssueWorktreeMoved(err error) (holderTaskID int64, ok bool) {
+	return conflictID(err, "issue_worktree_moved", "holder_task_id")
+}
+
+// conflictID decodes the id a 409 with the given code names in
+// details[key], the way out of the refusal a client prints.
+func conflictID(err error, code, key string) (int64, bool) {
 	var e *Error
-	if !errors.As(err, &e) || e.Status != http.StatusConflict || e.Code != "task_locked_by_chat" {
+	if !errors.As(err, &e) || e.Status != http.StatusConflict || e.Code != code {
 		return 0, false
 	}
-	chatID, perr := strconv.ParseInt(e.Details["chat_id"], 10, 64)
-	return chatID, perr == nil
+	id, perr := strconv.ParseInt(e.Details[key], 10, 64)
+	return id, perr == nil
 }
 
 // Skip marks the current step skipped and advances (§6).

@@ -545,12 +545,16 @@ func (r *Runner) Archive(
 		return nil, worktree.BranchOutcome{}, err
 	}
 	empty := ""
-	if task.WorktreePath == "" {
+	issueMain := isIssueMain(task)
+	if task.WorktreePath == "" && (!issueMain || !r.issueBranchHeld(ctx, task)) {
 		// No worktree ever existed, so no branch was ever created for this task
 		// either — `git worktree add -b` makes both or neither. That matters
 		// beyond tidiness: a task that blocked with `branch_exists` (§10, task
 		// 001) carries a branch_name naming *somebody else's* branch, and this
-		// is the check that keeps the branch step away from it.
+		// is the check that keeps the branch step away from it. A main task
+		// with no directory is asked of its issue instead: the branch is the
+		// line's only once one of the issue's main tasks has held it (review
+		// F3 of #770).
 		out, err := r.transitionFrom(ctx, task, taskstate.Archive,
 			store.TaskChange{WorktreePath: &empty})
 		return out, worktree.BranchOutcome{}, err
@@ -558,6 +562,28 @@ func (r *Runner) Archive(
 	project, err := r.deps.Store.GetProject(ctx, task.ProjectID)
 	if err != nil {
 		return nil, worktree.BranchOutcome{}, err
+	}
+	ch := store.TaskChange{WorktreePath: &empty}
+	if issueMain {
+		ch.EndSHA = r.archiveEndSHA(ctx, task, project.Path)
+	}
+	if task.WorktreePath == "" {
+		// An issue's main-role task with no directory (task 134.12): it
+		// handed the directory on to the next main task, or never received
+		// one. There is no worktree to remove, so it transitions directly.
+		// A container is another matter: one that ran containerized keeps
+		// its container until archive (task 061 decision 9). The hand-over
+		// removes it, best-effort, so this is the second chance for one
+		// that would not die then (review F2 of #770). Unlike the case
+		// above, its branch was cut or adopted: the issue's main tasks
+		// share one branch, so the branch step still runs, and branchOurs
+		// keeps the branch while a successor carries it (decision 17.2).
+		r.removeTaskContainer(ctx, task, r.deps.Logger)
+		out, err := r.transitionFrom(ctx, task, taskstate.Archive, ch)
+		if err != nil {
+			return nil, worktree.BranchOutcome{}, err
+		}
+		return out, r.deleteArchivedBranch(ctx, task, project.Path), nil
 	}
 	// The container is removed before the worktree, because it holds that
 	// worktree as a bind mount and a live mount is a reason a removal fails
@@ -572,8 +598,7 @@ func (r *Runner) Archive(
 	if err := r.deps.Worktrees.RemoveAndRelease(ctx, project.Path, task.WorktreePath, force,
 		func() error {
 			var err error
-			out, err = r.transitionFrom(ctx, task, taskstate.Archive,
-				store.TaskChange{WorktreePath: &empty})
+			out, err = r.transitionFrom(ctx, task, taskstate.Archive, ch)
 			return err
 		}); err != nil {
 		return nil, worktree.BranchOutcome{}, err
@@ -584,14 +609,78 @@ func (r *Runner) Archive(
 	return out, r.deleteArchivedBranch(ctx, task, project.Path), nil
 }
 
+// isIssueMain is whether task is one of its issue's main-role tasks, which
+// share one branch and hand one directory down (task 134 decisions 3, 7).
+// The role is asked first everywhere: a legacy main row may still carry
+// adopted_branch = 1, and it is the role that says what its branch is.
+func isIssueMain(task *store.Task) bool {
+	return task.IssueWorktree == store.IssueWorktreeMain && task.IssueID != nil
+}
+
+// issueBranchHeld is whether one of the issue's main tasks has ever held
+// task's branch in a worktree (Store.IssueMainBranchHeld). A failed read
+// answers false, which keeps the branch: a kept branch is recoverable, a
+// deleted one is not.
+func (r *Runner) issueBranchHeld(ctx context.Context, task *store.Task) bool {
+	held, err := r.deps.Store.IssueMainBranchHeld(ctx, *task.IssueID, task.BranchName)
+	if err != nil {
+		r.deps.Logger.Warn("archive: read whether the issue held its main branch; keeping it",
+			"task", task.ID, "branch", task.BranchName, "error", err)
+		return false
+	}
+	return held
+}
+
+// archiveEndSHA is the end_sha an archived main-role task records (134.12):
+// the commit its issue's branch stood at when it let go. A task that handed
+// its directory on was stamped by the transfer and keeps that commit; one
+// still holding the directory is stamped here, before its worktree is
+// removed. nil writes nothing: a task that never held the directory did no
+// work on the branch — one blocked `branch_exists` names somebody else's,
+// and an end_sha would mark that branch as the issue's (review F3 of #770)
+// — and a branch that cannot be read, deleted by hand, leaves the column
+// empty rather than invented.
+func (r *Runner) archiveEndSHA(ctx context.Context, task *store.Task, projectPath string) *string {
+	if task.EndSHA != "" || task.BranchName == "" || task.WorktreePath == "" {
+		return nil
+	}
+	tip, err := r.deps.Worktrees.BranchTip(ctx, projectPath, task.BranchName)
+	if err != nil {
+		r.deps.Logger.Debug("archive: no branch tip to record as end_sha",
+			"task", task.ID, "branch", task.BranchName, "error", err)
+		return nil
+	}
+	return &tip
+}
+
 // branchOurs is whether the task's branch is vincent's to delete: not a pull
 // request's head (task 064 decision 3), not a branch the task adopted (task
-// 125 decision 6), and not one another unarchived task still carries — the
-// issue's next main task, bound to the main branch this task cut, adopts it
-// at admission (task 134 decision 3, review F1 of #768). A failed read keeps
-// the branch: a kept branch is recoverable, a deleted one is not.
+// 125 decision 6), and not one another unarchived task still carries.
+//
+// An issue's main-role task shares its branch with the issue's other main
+// tasks, so its own adopted_branch does not answer the second question: a
+// joiner is never adopted, and a legacy joiner bound before 134.12 is
+// adopted whoever cut the branch. The issue's line answers it — the branch
+// is vincent's when the line's first main task cut it, and the human's when
+// that task was pointed at an existing branch (review F1 of #770). Ours, it
+// goes with the archive of the *last* main task carrying it (decision 17.2):
+// while a successor does, it works on that branch in the directory it
+// received by transfer, and BranchSharedByOther keeps it. A failed read
+// keeps the branch: a kept branch is recoverable, a deleted one is not.
 func (r *Runner) branchOurs(ctx context.Context, task *store.Task, log *slog.Logger) bool {
-	if task.GitHubPull.FromPull() || task.AdoptedBranch {
+	if task.GitHubPull.FromPull() {
+		return false
+	}
+	if isIssueMain(task) {
+		_, adopted, err := r.deps.Store.IssueMainBranchLine(ctx, *task.IssueID, task.BranchName)
+		if err != nil {
+			log.Warn("read who started the issue's main branch; keeping it", "error", err)
+			return false
+		}
+		if adopted {
+			return false
+		}
+	} else if task.AdoptedBranch {
 		return false
 	}
 	shared, err := r.deps.Store.BranchSharedByOther(ctx, task.ProjectID, task.BranchName, task.ID)
@@ -621,8 +710,18 @@ func (r *Runner) deleteArchivedBranch(
 	// ...and a branch the user pointed the task at is not ours either (task
 	// 125 decision 6): vincent did not cut it, so neither leg may touch it.
 	ours := r.branchOurs(ctx, task, log)
+	baseSHA := task.BaseSHA
+	if isIssueMain(task) {
+		// Empty against the issue's base branch, never against this task's
+		// base_sha. A successor's base_sha is the tip it received, so a last
+		// main task that committed nothing would read "empty" and delete a
+		// branch carrying every predecessor's commits. The base branch is the
+		// conservative question: it can keep a branch that is empty, never
+		// delete one that is not.
+		baseSHA = ""
+	}
 	out, err := r.deps.Worktrees.DeleteEmptyBranch(ctx, projectPath,
-		task.BaseBranch, task.BaseSHA, task.BranchName, cfg.DeleteRemoteBranchOnArchive, &ours)
+		task.BaseBranch, baseSHA, task.BranchName, cfg.DeleteRemoteBranchOnArchive, &ours)
 	if err != nil {
 		log.Warn("archive: branch kept", "result", out.Result, "error", err)
 		return out

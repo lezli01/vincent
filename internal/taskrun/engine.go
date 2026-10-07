@@ -797,6 +797,15 @@ func (r *Runner) ensureWorktree(ctx context.Context, task *store.Task, project *
 	// existing — a human may link any task to any pull request, and that must
 	// not change how the task's branch was made (decision 8).
 	fromPull := task.GitHubPull.FromPull()
+	// The fourth creation mode (task 134.12): an issue's main-role task
+	// shares its issue's one branch *and* one directory. It is routed on the
+	// role first, ahead of adopt, so a legacy main row that still carries
+	// adopted_branch = 1 lands here rather than in task 125's mode — which
+	// would run it in the human's checkout (decision 16) or refuse the
+	// directory its predecessor is holding for it.
+	if task.IssueWorktree == store.IssueWorktreeMain && task.IssueID != nil && !fromPull {
+		return r.ensureIssueMainWorktree(ctx, task, project, fetch, log)
+	}
 	// The third creation mode (§10, task 125): a task created on an existing
 	// branch adopts it rather than cutting one, and runs in the project's
 	// main checkout when that is where the branch already is. It is selected
@@ -864,22 +873,28 @@ func (r *Runner) ensureWorktree(ctx context.Context, task *store.Task, project *
 		logBaseRefresh(log, task.BaseBranch, created.Fetch, created.FastForward)
 	}
 	if err != nil {
-		if ctx.Err() != nil {
-			// A shutdown mid-create is an interruption, not a git failure.
-			r.interrupt(task, log)
-			return err
-		}
-		reason := worktree.ReasonOf(err)
-		if reason == "" {
-			reason = worktree.ReasonGitError
-		}
-		r.fail(task, reason, worktreeDetail(err), log, "create worktree", err)
-		return err
+		return r.worktreeFailed(ctx, task, err, log)
 	}
 	task.WorktreePath = created.Path
 	task.BaseSHA = created.BaseSHA
 	task.BaseRefresh = refreshOf(created)
 	return nil
+}
+
+// worktreeFailed blocks a task whose worktree could not be made ready, with
+// the worktree layer's own reason, and returns err for the caller to stop on.
+func (r *Runner) worktreeFailed(ctx context.Context, task *store.Task, err error, log *slog.Logger) error {
+	if ctx.Err() != nil {
+		// A shutdown mid-create is an interruption, not a git failure.
+		r.interrupt(task, log)
+		return err
+	}
+	reason := worktree.ReasonOf(err)
+	if reason == "" {
+		reason = worktree.ReasonGitError
+	}
+	r.fail(task, reason, worktreeDetail(err), log, "create worktree", err)
+	return err
 }
 
 // pullSpecFor assembles the worktree layer's pull-request spec from what the

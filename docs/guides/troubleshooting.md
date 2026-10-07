@@ -396,6 +396,12 @@ directories no task claims — then retry the task. `vincent gc --dry-run` shows
 you the path first, and `--force` is needed when git cannot judge the directory
 because the repository behind it is gone.
 
+An issue's main task has a third cause: it was about to receive the issue's
+main worktree from the main task before it, and a chat was opened on that
+earlier task in the meantime. The block names the chat. Close the chat when
+you are done in it, then retry the task; vincent never hands the directory
+over while a chat is working in it.
+
 ### `base_branch_missing` / `project_path_missing`
 
 The base branch was deleted, or the repository moved. Re-point the project

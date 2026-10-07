@@ -601,6 +601,11 @@ func newIssueDeleteCmd() *cobra.Command {
 						reports = append(reports, deleteReport{ID: id, Error: apiMessage(err)})
 						if !wantJSON(cmd) {
 							_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Error: issue %d: %s\n", id, apiMessage(err))
+							if live, ok := apiclient.IssueHasLiveMainTask(err); ok {
+								_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
+									"  main task %d has not settled: finish or cancel it first "+
+										"(`vincent task cancel %d`)\n", live, live)
+							}
 						}
 						continue
 					}

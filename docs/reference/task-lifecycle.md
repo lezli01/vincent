@@ -421,6 +421,8 @@ the pull request's head rather than one vincent cut:
 | `adopt_branch_missing` | The task was created on an existing branch (`existing_branch`) and that branch is gone. Recreate it, or retry the task with `branch_override` pointing at a branch that is there |
 | `adopt_branch_diverged` | The branch you asked the task to run on and its own upstream have each moved. Nothing was moved: merge or rebase, then retry |
 | `adopt_branch_checked_out` | That branch is checked out in one of vincent's own worktrees, so another task or chat is working on it. Wait for that one and retry. Your **own** main checkout is not this case — a task adopting a branch you have checked out runs in that checkout |
+| `issue_branch_checked_out` | The task is one of an issue's main tasks, and the issue's main branch is checked out in the project's own main checkout. An issue's main tasks never run there, unlike a task adopting a branch. Switch that checkout to another branch, then retry |
+| `repo_operation_in_progress` | The task is one of an issue's main tasks, and the worktree it was to receive from the issue's previous main task is partway through a merge, rebase, cherry-pick, revert or bisect. The previous task keeps the worktree. Finish or abort the operation there, then retry |
 
 `branch_override` is **refused** on such a task: renaming its branch would
 detach it from the pull request it was created for.

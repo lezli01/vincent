@@ -77,7 +77,10 @@ error. A trigger that fires nothing usually has these causes:
 - the change happened before the trigger was armed — arming seeds past
   history;
 - the change was an edit, a comment or a delete, none of which fire;
-- `match: {by: human}` dropped an agent's or sync's change;
+- `match: {by: human}` dropped an agent's or sync's change, or a
+  `lane_changed` a task caused (`by: task`);
+- the trigger has no `match.action`, which never matches `lane_changed`:
+  that action is opt-in and must be named;
 - a sync `opened`, `closed` or `reopened` whose author `allowed_actors` does
   not name;
 - the project imports no GitHub issues, so a GitHub-side change never becomes
@@ -86,7 +89,10 @@ error. A trigger that fires nothing usually has these causes:
 An `issues` trigger that **fires again and again** is an echo loop: its task's
 agent changes issues over MCP, and the change fires the trigger. Its ledger
 rows show `by: agent` events in `vincent trigger test`. Add `match: {by:
-human}`, and keep `limits.max_per_hour` as the backstop.
+human}`, and keep `limits.max_per_hour` as the backstop. A `lane: hand_off`
+trigger whose task is created for the same issue loops through the lanes
+instead: the task moves the issue to `in_progress` and back to `hand_off`.
+Add `dedupe_key: '{{ .Event.issue_id }}:{{ .Event.lane }}'`.
 
 **`schedule`:** A schedule has no poll and so no poll health to read — the TUI's
 cell reads `clock`, and `poll.last_poll_at` is only when its clock was last

@@ -86,8 +86,19 @@ type diffLanesResponse struct {
 // `git diff <last anchor>` for the working tree — which is what makes a task
 // with no lanes at all come back as one remainder section holding the whole
 // diff, byte for byte what the unsectioned endpoint serves.
-func (s *Server) laneDiffSections(ctx context.Context, dir, mergeBase string) ([]diffLaneSection, error) {
-	log, err := s.firstParentLog(ctx, dir, mergeBase+"..HEAD")
+//
+// end is "" for a task holding its worktree, and the range then runs to HEAD
+// and the working tree as above. A main task that handed the issue's
+// worktree on (task 134.12) passes its end_sha with dir the project
+// repository: the range stops at that commit, and the tail is
+// `git diff <last anchor> <end>`, since there is no working tree of its own
+// left to read.
+func (s *Server) laneDiffSections(ctx context.Context, dir, mergeBase, end string) ([]diffLaneSection, error) {
+	tip := "HEAD"
+	if end != "" {
+		tip = end
+	}
+	log, err := s.firstParentLog(ctx, dir, mergeBase+".."+tip)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +145,11 @@ func (s *Server) laneDiffSections(ctx context.Context, dir, mergeBase string) ([
 	// the parent's uncommitted work lands in the remainder instead of
 	// vanishing — the unsectioned endpoint shows it, and the sections must add
 	// up to the same change.
-	tail, err := s.git(ctx, dir, "diff", anchor)
+	tailArgs := []string{"diff", anchor}
+	if end != "" {
+		tailArgs = append(tailArgs, end)
+	}
+	tail, err := s.git(ctx, dir, tailArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("diff the task's own work: %w", err)
 	}

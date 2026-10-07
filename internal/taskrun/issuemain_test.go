@@ -3,90 +3,646 @@ package taskrun
 import (
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"testing"
 
+	"github.com/lezli01/vincent/internal/config"
+	"github.com/lezli01/vincent/internal/container"
 	"github.com/lezli01/vincent/internal/issuestate"
+	"github.com/lezli01/vincent/internal/pathx"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/testrepo"
 	"github.com/lezli01/vincent/internal/worktree"
 )
 
 // TestSecondMainTaskOfAnIssueRunsOnItsMainBranch is review F1 of #768 end to
-// end: two main tasks of one issue, both queued before the scheduler walks.
-// The second is bound to the first's branch (task 134 decision 3), and used to
-// block `branch_exists` at admission because it tried to cut a branch the
-// first had already cut. It now adopts the branch: it waits in the queue —
-// even ahead of the first in priority, before the branch exists — while the
-// first holds the branch's working directory, and runs on the same branch
-// once the first is archived. The first's archive keeps the branch although
-// it carries no commits, because the second still carries it.
+// end, as 134.12 left it: two main tasks of one issue, both queued before the
+// scheduler walks. The second is bound to the first's branch (task 134
+// decision 3) without adopting it. Its higher priority admits it first, so it
+// cuts the issue's branch; the first waits in the queue while the second
+// occupies the main worktree, and once the second settles the first receives
+// that same directory and runs on the same branch.
 func TestSecondMainTaskOfAnIssueRunsOnItsMainBranch(t *testing.T) {
 	h := newEngineHarness(t)
-	iss, err := h.store.CreateIssue(t.Context(),
-		store.NewIssue{ProjectID: h.projectID, Title: "Lock file leaks"}, issuestate.Human)
-	if err != nil {
-		t.Fatalf("CreateIssue: %v", err)
-	}
-	const quick = `name: quick
-steps:
-  - id: noop
-    type: command
-    run: exit 0
-`
-	const gated = `name: gated
-steps:
-  - id: gate
-    type: manual
-    instructions: Hold the working directory.
-`
-	main := func(title, snapshot string, priority int) *store.Task {
-		return h.createTaskWith(t, snapshot, func(task *store.Task) {
-			task.Title = title
-			task.IssueID = &iss.ID
-			task.IssueWorktree = store.IssueWorktreeMain
-			task.Priority = priority
-		})
-	}
-	first := main("first", quick, 0)
-	// Higher priority, so the scheduler reaches it first in the walk where
-	// the first has not cut the branch yet.
-	second := main("second", gated, 1)
-	if second.BranchName != first.BranchName || !second.AdoptedBranch || first.AdoptedBranch {
-		t.Fatalf("second = (%q, adopted %v), first = (%q, adopted %v); want the second to adopt the first's branch",
+	iss := newIssue(t, h)
+	first := h.mainTask(t, iss, "first", quickSnapshot, nil)
+	second := h.mainTask(t, iss, "second", gatedSnapshot, func(task *store.Task) { task.Priority = 1 })
+	if second.BranchName != first.BranchName || second.AdoptedBranch || first.AdoptedBranch {
+		t.Fatalf("second = (%q, adopted %v), first = (%q, adopted %v); want one branch, adopted by neither",
 			second.BranchName, second.AdoptedBranch, first.BranchName, first.AdoptedBranch)
 	}
 	h.start(t)
+
+	gate := h.waitForState(t, second.ID, store.TaskAwaitingGate, store.TaskBlocked, store.TaskDone)
+	if gate.State != store.TaskAwaitingGate {
+		t.Fatalf("second task = %s (%s), want awaiting_gate", gate.State, gate.BlockReason)
+	}
+	if got := h.task(t, first.ID); got.State != store.TaskQueued {
+		t.Fatalf("first task = %s (%s), want queued behind the second's main worktree", got.State, got.BlockReason)
+	}
+	if _, err := h.runner.Approve(t.Context(), second.ID); err != nil {
+		t.Fatalf("Approve(second): %v", err)
+	}
 
 	done := h.waitForState(t, first.ID, store.TaskDone, store.TaskBlocked)
 	if done.State != store.TaskDone {
 		t.Fatalf("first task = %s (%s), want done", done.State, done.BlockReason)
 	}
-	waiting, err := h.store.GetTask(t.Context(), second.ID)
-	if err != nil {
-		t.Fatalf("GetTask: %v", err)
+	if done.WorktreePath != gate.WorktreePath {
+		t.Errorf("first task works in %q, want the directory the second handed on, %q",
+			done.WorktreePath, gate.WorktreePath)
 	}
-	if waiting.State != store.TaskQueued {
-		t.Fatalf("second task = %s (%s), want queued behind the first's working directory",
-			waiting.State, waiting.BlockReason)
+	if head := testrepo.Run(t, done.WorktreePath, "rev-parse", "--abbrev-ref", "HEAD"); head != first.BranchName {
+		t.Errorf("first task works on %q, want the issue's main branch %q", head, first.BranchName)
+	}
+}
+
+// TestMainWorktreeIsHandedOnWithItsUncommittedWork is the hand-over itself
+// (134.12): the successor receives the settled predecessor's directory — the
+// same path, uncommitted work and all — and from then on exactly one row
+// names it. The predecessor records the tip as end_sha and the successor
+// starts from it, with no base refresh. Archiving the predecessor afterwards
+// succeeds with nothing to remove, and leaves the shared branch and the
+// successor's directory where they are.
+func TestMainWorktreeIsHandedOnWithItsUncommittedWork(t *testing.T) {
+	h := newEngineHarness(t)
+	iss := newIssue(t, h)
+	h.start(t)
+	first := h.settledMainTask(t, iss, "first", quickSnapshot)
+	testrepo.WriteFile(t, first.WorktreePath, "wip.txt", "not committed yet\n")
+	tip := testrepo.Run(t, h.repo, "rev-parse", "refs/heads/"+first.BranchName)
+
+	second := h.mainTask(t, iss, "second", gatedSnapshot, nil)
+	got := h.waitForState(t, second.ID, store.TaskAwaitingGate, store.TaskBlocked, store.TaskDone)
+	if got.State != store.TaskAwaitingGate {
+		t.Fatalf("second task = %s (%s: %s), want awaiting_gate", got.State, got.BlockReason, got.BlockDetail)
+	}
+	if got.WorktreePath != first.WorktreePath {
+		t.Fatalf("second task works in %q, want its predecessor's %q", got.WorktreePath, first.WorktreePath)
+	}
+	if b, err := os.ReadFile(filepath.Join(got.WorktreePath, "wip.txt")); err != nil || string(b) != "not committed yet\n" {
+		t.Errorf("the predecessor's uncommitted work did not come with the directory: %q, %v", b, err)
+	}
+	if got.BaseSHA != tip || got.BaseRefresh != nil {
+		t.Errorf("second base = (%q, %+v), want the tip %s and no refresh", got.BaseSHA, got.BaseRefresh, tip)
+	}
+	pred := h.task(t, first.ID)
+	if pred.WorktreePath != "" || pred.EndSHA != tip {
+		t.Errorf("predecessor = (path %q, end_sha %q), want no path and end_sha %s", pred.WorktreePath, pred.EndSHA, tip)
+	}
+	h.assertOneClaim(t, got.WorktreePath, second.ID)
+
+	archived, branch, err := h.runner.Archive(t.Context(), first.ID, false)
+	if err != nil {
+		t.Fatalf("Archive(handed-on predecessor): %v", err)
+	}
+	if archived.State != store.TaskArchived || archived.EndSHA != tip {
+		t.Errorf("archived predecessor = (%s, end_sha %q), want archived and end_sha kept at %s",
+			archived.State, archived.EndSHA, tip)
+	}
+	if branch.Result != worktree.BranchNotOurs {
+		t.Errorf("predecessor's branch outcome = %+v, want %q while the successor carries it",
+			branch, worktree.BranchNotOurs)
+	}
+	if _, err := os.Stat(filepath.Join(got.WorktreePath, "wip.txt")); err != nil {
+		t.Errorf("archiving the predecessor touched the successor's directory: %v", err)
+	}
+	testrepo.Run(t, h.repo, "rev-parse", "--verify", "refs/heads/"+first.BranchName)
+	h.assertOneClaim(t, got.WorktreePath, second.ID)
+}
+
+// TestLastMainTaskArchiveAppliesTheEmptyBranchRule is decision 17.2: the
+// issue's branch goes with the archive of the last main task carrying it,
+// and only by task 008's empty-branch rule — judged against the issue's base
+// branch, so a last task that committed nothing of its own keeps a branch
+// its predecessors committed to. The archive stamps end_sha, which no
+// transfer did for the last task.
+func TestLastMainTaskArchiveAppliesTheEmptyBranchRule(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		first string
+		want  string
+	}{
+		{"empty branch is deleted", quickSnapshot, worktree.BranchDeleted},
+		{"predecessor's commit keeps it", committingSnapshot, worktree.BranchHasCommits},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newEngineHarness(t)
+			iss := newIssue(t, h)
+			h.start(t)
+			first := h.settledMainTask(t, iss, "first", tc.first)
+			second := h.settledMainTask(t, iss, "second", quickSnapshot)
+			if second.WorktreePath != first.WorktreePath {
+				t.Fatalf("second works in %q, want %q", second.WorktreePath, first.WorktreePath)
+			}
+			tip := testrepo.Run(t, h.repo, "rev-parse", "refs/heads/"+first.BranchName)
+			if _, _, err := h.runner.Archive(t.Context(), first.ID, false); err != nil {
+				t.Fatalf("Archive(first): %v", err)
+			}
+			archived, branch, err := h.runner.Archive(t.Context(), second.ID, false)
+			if err != nil {
+				t.Fatalf("Archive(second): %v", err)
+			}
+			if archived.EndSHA != tip {
+				t.Errorf("last task's end_sha = %q, want the tip %s stamped on archive", archived.EndSHA, tip)
+			}
+			if branch.Result != tc.want {
+				t.Errorf("last task's branch outcome = %+v, want %q", branch, tc.want)
+			}
+			if _, err := os.Stat(second.WorktreePath); !os.IsNotExist(err) {
+				t.Errorf("the issue's worktree survived the last archive (stat err %v)", err)
+			}
+		})
+	}
+}
+
+// TestHalfFinishedRebaseInTheMainWorktreeBlocksTheSuccessor: a git operation
+// left partway through is not handed on (134.12). The successor blocks
+// repo_operation_in_progress and the predecessor keeps the directory. The
+// rebase is a hand-built marker, as TestInProgressOp's are, because that is
+// the form that behaves the same on all three platforms.
+func TestHalfFinishedRebaseInTheMainWorktreeBlocksTheSuccessor(t *testing.T) {
+	h := newEngineHarness(t)
+	iss := newIssue(t, h)
+	h.start(t)
+	first := h.settledMainTask(t, iss, "first", quickSnapshot)
+	gitDir := testrepo.Run(t, first.WorktreePath, "rev-parse", "--absolute-git-dir")
+	if err := os.MkdirAll(filepath.Join(filepath.FromSlash(gitDir), "rebase-merge"), 0o700); err != nil {
+		t.Fatal(err)
 	}
 
-	_, branch, err := h.runner.Archive(t.Context(), first.ID, false)
+	second := h.mainTask(t, iss, "second", gatedSnapshot, nil)
+	got := h.waitForState(t, second.ID, store.TaskBlocked, store.TaskAwaitingGate, store.TaskDone)
+	if got.State != store.TaskBlocked || got.BlockReason != worktree.ReasonRepoOperationInProgress {
+		t.Fatalf("second task = %s (%s), want blocked %s",
+			got.State, got.BlockReason, worktree.ReasonRepoOperationInProgress)
+	}
+	if got.WorktreePath != "" {
+		t.Errorf("blocked successor names %q, want nothing", got.WorktreePath)
+	}
+	if pred := h.task(t, first.ID); pred.WorktreePath != first.WorktreePath || pred.EndSHA != "" {
+		t.Errorf("predecessor = (path %q, end_sha %q), want it to keep %q untouched",
+			pred.WorktreePath, pred.EndSHA, first.WorktreePath)
+	}
+}
+
+// TestMainTaskAfterAnArchivedPredecessorGetsAFreshWorktree is case 3: every
+// main task that held a directory is archived, but the successor still
+// carries the branch. It gets a fresh worktree on that branch, records the
+// tip as base_sha with no refresh, and the branch is vincent's own.
+func TestMainTaskAfterAnArchivedPredecessorGetsAFreshWorktree(t *testing.T) {
+	h := newEngineHarness(t)
+	iss := newIssue(t, h)
+	h.start(t)
+	first := h.settledMainTask(t, iss, "first", committingSnapshot)
+	second := h.mainTask(t, iss, "second", gatedSnapshot, func(task *store.Task) { task.State = store.TaskPaused })
+	if _, _, err := h.runner.Archive(t.Context(), first.ID, false); err != nil {
+		t.Fatalf("Archive(first): %v", err)
+	}
+	tip := testrepo.Run(t, h.repo, "rev-parse", "refs/heads/"+first.BranchName)
+
+	if _, err := h.runner.Resume(t.Context(), second.ID); err != nil {
+		t.Fatalf("Resume(second): %v", err)
+	}
+	got := h.waitForState(t, second.ID, store.TaskAwaitingGate, store.TaskBlocked, store.TaskDone)
+	if got.State != store.TaskAwaitingGate {
+		t.Fatalf("second task = %s (%s: %s), want awaiting_gate", got.State, got.BlockReason, got.BlockDetail)
+	}
+	if got.WorktreePath == "" || got.WorktreePath == first.WorktreePath || pathx.SameDir(got.WorktreePath, h.repo) {
+		t.Errorf("second task works in %q, want a fresh worktree of its own", got.WorktreePath)
+	}
+	if head := testrepo.Run(t, got.WorktreePath, "rev-parse", "--abbrev-ref", "HEAD"); head != first.BranchName {
+		t.Errorf("second task works on %q, want the issue's main branch %q", head, first.BranchName)
+	}
+	if got.BaseSHA != tip || got.BaseRefresh != nil {
+		t.Errorf("second base = (%q, %+v), want the tip %s and no refresh", got.BaseSHA, got.BaseRefresh, tip)
+	}
+	if !h.runner.branchOurs(t.Context(), got, h.runner.deps.Logger) {
+		t.Error("the issue's main branch is not vincent's to delete for its last main task")
+	}
+	h.assertOneClaim(t, got.WorktreePath, second.ID)
+}
+
+// TestMainTaskBlocksWhenItsBranchIsInTheMainCheckout is decision 16: the
+// issue's main branch checked out in the human's checkout blocks
+// issue_branch_checked_out, and the task never runs in the project path.
+func TestMainTaskBlocksWhenItsBranchIsInTheMainCheckout(t *testing.T) {
+	h := newEngineHarness(t)
+	iss := newIssue(t, h)
+	h.start(t)
+	first := h.settledMainTask(t, iss, "first", quickSnapshot)
+	second := h.mainTask(t, iss, "second", gatedSnapshot, func(task *store.Task) { task.State = store.TaskPaused })
+	if _, _, err := h.runner.Archive(t.Context(), first.ID, false); err != nil {
+		t.Fatalf("Archive(first): %v", err)
+	}
+	testrepo.Run(t, h.repo, "checkout", "-q", first.BranchName)
+
+	if _, err := h.runner.Resume(t.Context(), second.ID); err != nil {
+		t.Fatalf("Resume(second): %v", err)
+	}
+	got := h.waitForState(t, second.ID, store.TaskBlocked, store.TaskAwaitingGate, store.TaskDone)
+	if got.State != store.TaskBlocked || got.BlockReason != worktree.ReasonIssueBranchCheckedOut {
+		t.Fatalf("second task = %s (%s), want blocked %s",
+			got.State, got.BlockReason, worktree.ReasonIssueBranchCheckedOut)
+	}
+	if got.WorktreePath != "" {
+		t.Errorf("blocked task names %q, want nothing — never the project path", got.WorktreePath)
+	}
+	if runs := h.stepRuns(t, second.ID); len(runs) != 0 {
+		t.Errorf("blocked task has %d step runs, want none", len(runs))
+	}
+}
+
+// TestLegacyAdoptedMainTaskRoutesAsMain: a main row bound before 134.12
+// carries adopted_branch = 1. The role wins — it receives its predecessor's
+// directory rather than adopting the branch — and its branch is vincent's.
+func TestLegacyAdoptedMainTaskRoutesAsMain(t *testing.T) {
+	h := newEngineHarness(t)
+	iss := newIssue(t, h)
+	h.start(t)
+	first := h.settledMainTask(t, iss, "first", quickSnapshot)
+	second := h.mainTask(t, iss, "second", gatedSnapshot, func(task *store.Task) { task.AdoptedBranch = true })
+	if !second.AdoptedBranch {
+		t.Fatal("fixture: the legacy row lost its adopted_branch flag")
+	}
+	got := h.waitForState(t, second.ID, store.TaskAwaitingGate, store.TaskBlocked, store.TaskDone)
+	if got.State != store.TaskAwaitingGate || got.WorktreePath != first.WorktreePath {
+		t.Fatalf("legacy main task = %s (%s) in %q, want awaiting_gate in its predecessor's %q",
+			got.State, got.BlockReason, got.WorktreePath, first.WorktreePath)
+	}
+	if _, err := h.runner.Cancel(t.Context(), second.ID); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	h.waitForState(t, second.ID, store.TaskAborted)
+	if _, _, err := h.runner.Archive(t.Context(), first.ID, false); err != nil {
+		t.Fatalf("Archive(first): %v", err)
+	}
+	if !h.runner.branchOurs(t.Context(), h.task(t, second.ID), h.runner.deps.Logger) {
+		t.Error("a legacy adopted main task's branch is not vincent's")
+	}
+}
+
+// TestAdoptedIssueMainBranchSurvivesTheLastArchive is review F1 of #770:
+// the issue's first main task was pointed at a branch the human already had
+// (task 125, existing_branch), and a joiner — never adopted — carried it on.
+// The line's first task decides whose branch it is, so archiving every main
+// task leaves the human's empty branch and its upstream alone (task 125
+// decision 6), even with both cleanup legs on.
+func TestAdoptedIssueMainBranchSurvivesTheLastArchive(t *testing.T) {
+	h := newEngineHarnessWith(t, func(c *config.Config) { c.DeleteRemoteBranchOnArchive = true })
+	iss := newIssue(t, h)
+	h.start(t)
+	first := h.mainTask(t, iss, "first", quickSnapshot, func(task *store.Task) {
+		task.AdoptedBranch, task.State = true, store.TaskPaused
+	})
+	// The human's branch, with nothing past the base, and an upstream.
+	remote := testrepo.InitBare(t)
+	testrepo.Run(t, h.repo, "remote", "add", "origin", remote)
+	testrepo.Run(t, h.repo, "branch", first.BranchName, "main")
+	testrepo.Run(t, h.repo, "push", "-q", "--set-upstream", "origin", first.BranchName)
+	if _, err := h.runner.Resume(t.Context(), first.ID); err != nil {
+		t.Fatalf("Resume(first): %v", err)
+	}
+	if got := h.waitForState(t, first.ID, store.TaskDone, store.TaskBlocked); got.State != store.TaskDone {
+		t.Fatalf("first = %s (%s: %s), want done", got.State, got.BlockReason, got.BlockDetail)
+	}
+	h.waitForActorExit(t, first.ID)
+	second := h.settledMainTask(t, iss, "second", quickSnapshot)
+	if second.AdoptedBranch || second.BranchName != first.BranchName {
+		t.Fatalf("joiner = (%q, adopted %v), want %q and not adopted",
+			second.BranchName, second.AdoptedBranch, first.BranchName)
+	}
+
+	for _, id := range []int64{first.ID, second.ID} {
+		_, branch, err := h.runner.Archive(t.Context(), id, false)
+		if err != nil {
+			t.Fatalf("Archive(%d): %v", id, err)
+		}
+		if branch.Result != worktree.BranchNotOurs {
+			t.Errorf("task %d branch outcome = %+v, want %q", id, branch, worktree.BranchNotOurs)
+		}
+	}
+	testrepo.Run(t, h.repo, "rev-parse", "--verify", "refs/heads/"+first.BranchName)
+	testrepo.Run(t, remote, "rev-parse", "--verify", "refs/heads/"+first.BranchName)
+}
+
+// TestHandedOnMainTaskLosesItsContainer is review F2 of #770: a main task
+// that ran containerized keeps its container until archive (task 061
+// decision 9), and that container bind-mounts the directory it hands on.
+// The hand-over removes it, so the successor's directory is mounted by
+// nothing of the predecessor's, and archiving a handed-on task removes one
+// that is still there.
+func TestHandedOnMainTaskLosesItsContainer(t *testing.T) {
+	rt := newFakeRuntime()
+	h := newEngineHarnessWith(t, nil, func(d *Deps) {
+		d.Containers = func(string) container.Runtime { return rt }
+	})
+	iss := newIssue(t, h)
+	h.start(t)
+	first := h.settledMainTask(t, iss, "first", quickSnapshot)
+	// From here the installation runs containerized, and the predecessor's
+	// container is the one it would have left behind.
+	h.reload(func(c *config.Config) { c.Container.Image = "alpine:3" })
+	name := container.Name(first.ID)
+	if _, err := rt.Create(t.Context(), container.CreateSpec{
+		Name: name, Labels: map[string]string{container.LabelTask: strconv.FormatInt(first.ID, 10)},
+	}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	second := h.mainTask(t, iss, "second", gatedSnapshot, nil)
+	got := h.waitForState(t, second.ID, store.TaskAwaitingGate, store.TaskBlocked, store.TaskDone)
+	if got.State != store.TaskAwaitingGate || got.WorktreePath != first.WorktreePath {
+		t.Fatalf("second = %s (%s: %s) in %q, want awaiting_gate in %q",
+			got.State, got.BlockReason, got.BlockDetail, got.WorktreePath, first.WorktreePath)
+	}
+	if removed := rt.removals(); !slices.Contains(removed, name) {
+		t.Errorf("removed = %v after the hand-over, want the predecessor's %s", removed, name)
+	}
+
+	// One the hand-over could not remove goes at the predecessor's archive.
+	if _, err := rt.Create(t.Context(), container.CreateSpec{
+		Name: name, Labels: map[string]string{container.LabelTask: strconv.FormatInt(first.ID, 10)},
+	}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	before := len(rt.removals())
+	if _, _, err := h.runner.Archive(t.Context(), first.ID, false); err != nil {
+		t.Fatalf("Archive(first): %v", err)
+	}
+	if removed := rt.removals()[before:]; !slices.Contains(removed, name) {
+		t.Errorf("archive of the handed-on predecessor removed %v, want %s", removed, name)
+	}
+}
+
+// TestForeignBranchBlocksTheFirstMainTask is review F3 of #770: a branch of
+// the first main task's name that appears between creation and admission —
+// a human's `git branch`, a fetch — is nobody of the issue's. It blocks
+// `branch_exists` (task 001) as any ordinary cut does, rather than being
+// checked out and committed on as the issue's main branch.
+func TestForeignBranchBlocksTheFirstMainTask(t *testing.T) {
+	h := newEngineHarness(t)
+	iss := newIssue(t, h)
+	h.start(t)
+	first := h.mainTask(t, iss, "first", gatedSnapshot, func(task *store.Task) { task.State = store.TaskPaused })
+	testrepo.Run(t, h.repo, "branch", first.BranchName, "main")
+	foreign := testrepo.Run(t, h.repo, "rev-parse", "refs/heads/"+first.BranchName)
+
+	if _, err := h.runner.Resume(t.Context(), first.ID); err != nil {
+		t.Fatalf("Resume(first): %v", err)
+	}
+	got := h.waitForState(t, first.ID, store.TaskBlocked, store.TaskAwaitingGate, store.TaskDone)
+	if got.State != store.TaskBlocked || got.BlockReason != worktree.ReasonBranchExists {
+		t.Fatalf("first = %s (%s: %s), want blocked %s",
+			got.State, got.BlockReason, got.BlockDetail, worktree.ReasonBranchExists)
+	}
+	if got.WorktreePath != "" || got.BaseSHA != "" {
+		t.Errorf("blocked task = (path %q, base_sha %q), want neither", got.WorktreePath, got.BaseSHA)
+	}
+	if tip := testrepo.Run(t, h.repo, "rev-parse", "refs/heads/"+first.BranchName); tip != foreign {
+		t.Errorf("the foreign branch moved to %s, want it left at %s", tip, foreign)
+	}
+
+	// Giving up on the task leaves the stranger's branch — empty, so the
+	// empty-branch rule would take it — exactly where it was.
+	if _, err := h.runner.Cancel(t.Context(), first.ID); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	h.waitForState(t, first.ID, store.TaskAborted)
+	archived, branch, err := h.runner.Archive(t.Context(), first.ID, false)
+	if err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+	if branch.Checked() || archived.EndSHA != "" {
+		t.Errorf("archive = (branch %+v, end_sha %q), want the branch unexamined and no end_sha",
+			branch, archived.EndSHA)
+	}
+	testrepo.Run(t, h.repo, "rev-parse", "--verify", "refs/heads/"+first.BranchName)
+}
+
+// TestFollowUpOnAHandedOnMainTaskEndsItsRangeAtTheBranch is review F4 of
+// #770: a predecessor whose successor was archived may be followed up, and
+// gets a fresh worktree on the issue's branch. The end_sha the hand-over
+// stamped must go with it, or /commits would end at the old commit and the
+// new work would never be listed — nor would archive stamp the new end.
+func TestFollowUpOnAHandedOnMainTaskEndsItsRangeAtTheBranch(t *testing.T) {
+	h := newEngineHarness(t)
+	iss := newIssue(t, h)
+	h.start(t)
+	first := h.settledMainTask(t, iss, "first", committingSnapshot)
+	second := h.settledMainTask(t, iss, "second", quickSnapshot)
+	if pred := h.task(t, first.ID); pred.EndSHA == "" {
+		t.Fatal("fixture: the hand-over stamped no end_sha on the predecessor")
+	}
+	if _, _, err := h.runner.Archive(t.Context(), second.ID, false); err != nil {
+		t.Fatalf("Archive(second): %v", err)
+	}
+
+	follow := commandFollowUp(t, "git -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m more")
+	if _, err := h.runner.FollowUp(t.Context(), first.ID, follow); err != nil {
+		t.Fatalf("FollowUp(first): %v", err)
+	}
+	got := h.waitForState(t, first.ID, store.TaskDone, store.TaskBlocked)
+	if got.State != store.TaskDone || got.WorktreePath == "" {
+		t.Fatalf("first = %s (%s: %s) in %q, want done in a worktree",
+			got.State, got.BlockReason, got.BlockDetail, got.WorktreePath)
+	}
+	if got.EndSHA != "" {
+		t.Errorf("followed-up predecessor keeps end_sha %s, want none while it holds a worktree", got.EndSHA)
+	}
+	h.waitForActorExit(t, first.ID)
+	tip := testrepo.Run(t, h.repo, "rev-parse", "refs/heads/"+first.BranchName)
+	archived, _, err := h.runner.Archive(t.Context(), first.ID, false)
 	if err != nil {
 		t.Fatalf("Archive(first): %v", err)
 	}
-	if branch.Result != worktree.BranchNotOurs {
-		t.Errorf("first's branch outcome = %+v, want %q while the second carries it",
-			branch, worktree.BranchNotOurs)
+	if archived.EndSHA != tip {
+		t.Errorf("archived end_sha = %q, want the tip after the follow-up, %s", archived.EndSHA, tip)
+	}
+}
+
+// TestChatOpenedAfterAdmissionBlocksTheHandOver is review F5 of #770: a
+// chat opened on the settled predecessor between the scheduler's walk and
+// the transfer is working in the directory. The successor blocks
+// worktree_path_occupied, naming the chat, and the predecessor keeps the
+// directory — two agents never share it.
+func TestChatOpenedAfterAdmissionBlocksTheHandOver(t *testing.T) {
+	h := newEngineHarness(t)
+	iss := newIssue(t, h)
+	h.start(t)
+	first := h.settledMainTask(t, iss, "first", quickSnapshot)
+	second := h.mainTask(t, iss, "second", gatedSnapshot, func(task *store.Task) { task.State = store.TaskPaused })
+	// What the admission got as far as before the chat opened: the walk
+	// admitted it, while the predecessor had no chat.
+	admitted, _, err := h.store.TransitionTask(t.Context(), second.ID, store.TaskPaused, store.TaskRunning,
+		store.TaskChange{})
+	if err != nil {
+		t.Fatalf("TransitionTask(paused → running): %v", err)
+	}
+	chat := &store.Chat{Title: "look", Agent: "claude", PermissionMode: "full_auto"}
+	if err := h.store.OpenLinkedChat(t.Context(), first.ID, store.TaskDone, chat); err != nil {
+		t.Fatalf("OpenLinkedChat: %v", err)
+	}
+	project, err := h.store.GetProject(t.Context(), h.projectID)
+	if err != nil {
+		t.Fatalf("GetProject: %v", err)
 	}
 
-	gate := h.waitForState(t, second.ID, store.TaskAwaitingGate, store.TaskBlocked, store.TaskDone)
-	if gate.State != store.TaskAwaitingGate {
-		t.Fatalf("second task = %s (%s), want awaiting_gate on the issue's main branch",
-			gate.State, gate.BlockReason)
+	if err := h.runner.takeIssueMainWorktree(t.Context(), admitted, project, first, h.runner.deps.Logger); err == nil {
+		t.Fatal("takeIssueMainWorktree with a chat open on the predecessor succeeded")
 	}
-	head := testrepo.Run(t, gate.WorktreePath, "rev-parse", "--abbrev-ref", "HEAD")
-	if head != first.BranchName {
-		t.Errorf("second task works on %q, want the issue's main branch %q", head, first.BranchName)
+	got := h.task(t, second.ID)
+	if got.State != store.TaskBlocked || got.BlockReason != worktree.ReasonWorktreePathOccupied || got.WorktreePath != "" {
+		t.Errorf("second = %s (%s: %s) in %q, want blocked %s and no directory",
+			got.State, got.BlockReason, got.BlockDetail, got.WorktreePath, worktree.ReasonWorktreePathOccupied)
+	}
+	if pred := h.task(t, first.ID); pred.WorktreePath != first.WorktreePath {
+		t.Errorf("predecessor names %q, want it to keep %q", pred.WorktreePath, first.WorktreePath)
+	}
+}
+
+// TestCrashAfterTheHandOverResumesInTheTransferredDirectory: the transfer is
+// one transaction, so a daemon that dies after it and before the first step
+// leaves the successor naming the directory. Recovery re-queues it, and
+// re-admission returns early from ensureWorktree and runs in that directory.
+func TestCrashAfterTheHandOverResumesInTheTransferredDirectory(t *testing.T) {
+	h := newEngineHarness(t)
+	iss := newIssue(t, h)
+	h.start(t)
+	first := h.settledMainTask(t, iss, "first", quickSnapshot)
+	testrepo.WriteFile(t, first.WorktreePath, "wip.txt", "kept\n")
+	second := h.mainTask(t, iss, "second", gatedSnapshot, func(task *store.Task) { task.State = store.TaskPaused })
+	tip := testrepo.Run(t, h.repo, "rev-parse", "refs/heads/"+first.BranchName)
+
+	// What the crashed admission got as far as: admitted, and the directory
+	// handed over, with no step run yet.
+	if err := h.store.TransferIssueWorktree(t.Context(), first.ID, second.ID, first.WorktreePath, tip); err != nil {
+		t.Fatalf("TransferIssueWorktree: %v", err)
+	}
+	if _, _, err := h.store.TransitionTask(t.Context(), second.ID, store.TaskPaused, store.TaskRunning,
+		store.TaskChange{}); err != nil {
+		t.Fatalf("TransitionTask(paused → running): %v", err)
+	}
+	if n, err := Recover(t.Context(), h.store, h.runner.deps.Logger); err != nil || n != 1 {
+		t.Fatalf("Recover = %d, %v; want the successor re-queued", n, err)
+	}
+
+	got := h.waitForState(t, second.ID, store.TaskAwaitingGate, store.TaskBlocked, store.TaskDone)
+	if got.State != store.TaskAwaitingGate || got.WorktreePath != first.WorktreePath {
+		t.Fatalf("recovered successor = %s (%s) in %q, want awaiting_gate in %q",
+			got.State, got.BlockReason, got.WorktreePath, first.WorktreePath)
+	}
+	if _, err := os.Stat(filepath.Join(got.WorktreePath, "wip.txt")); err != nil {
+		t.Errorf("the handed-on work is gone after recovery: %v", err)
+	}
+	h.assertOneClaim(t, got.WorktreePath, second.ID)
+}
+
+const (
+	quickSnapshot = `name: quick
+steps:
+  - id: noop
+    type: command
+    run: exit 0
+`
+	gatedSnapshot = `name: gated
+steps:
+  - id: gate
+    type: manual
+    instructions: Hold the working directory.
+`
+	// A body in the sh ∩ pwsh intersection (CLAUDE.md): one commit on the
+	// branch, so the branch carries something past its base.
+	committingSnapshot = `name: committing
+steps:
+  - id: commit
+    type: command
+    run: git -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m work
+`
+)
+
+func newIssue(t *testing.T, h *engineHarness) int64 {
+	t.Helper()
+	iss, err := h.store.CreateIssue(t.Context(),
+		store.NewIssue{ProjectID: h.projectID, Title: "Lock file leaks"}, issuestate.Human)
+	if err != nil {
+		t.Fatalf("CreateIssue: %v", err)
+	}
+	return iss.ID
+}
+
+// mainTask creates a main-role task of the issue.
+func (h *engineHarness) mainTask(
+	t *testing.T, issueID int64, title, snapshot string, mutate func(*store.Task),
+) *store.Task {
+	t.Helper()
+	return h.createTaskWith(t, snapshot, func(task *store.Task) {
+		task.Title, task.IssueID, task.IssueWorktree = title, &issueID, store.IssueWorktreeMain
+		if mutate != nil {
+			mutate(task)
+		}
+	})
+}
+
+// settledMainTask creates a main-role task and waits for it to finish done,
+// its actor gone, holding the issue's main worktree.
+func (h *engineHarness) settledMainTask(t *testing.T, issueID int64, title, snapshot string) *store.Task {
+	t.Helper()
+	task := h.mainTask(t, issueID, title, snapshot, nil)
+	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
+	if done.State != store.TaskDone || done.WorktreePath == "" {
+		t.Fatalf("%s = %s (%s: %s) in %q, want done in a worktree",
+			title, done.State, done.BlockReason, done.BlockDetail, done.WorktreePath)
+	}
+	h.waitForActorExit(t, task.ID)
+	return done
+}
+
+func (h *engineHarness) task(t *testing.T, id int64) *store.Task {
+	t.Helper()
+	got, err := h.store.GetTask(t.Context(), id)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	return got
+}
+
+// assertOneClaim is the §10 reclaimer's view after a hand-over: exactly one
+// row, owner's, names path, path is on disk, and every directory under the
+// worktree root is claimed — no orphan and no missing claim.
+func (h *engineHarness) assertOneClaim(t *testing.T, path string, owner int64) {
+	t.Helper()
+	claims, err := h.store.ListWorktreeClaims(t.Context())
+	if err != nil {
+		t.Fatalf("ListWorktreeClaims: %v", err)
+	}
+	claimed := map[string]bool{}
+	var holders []int64
+	for _, c := range claims {
+		if c.Path == "" {
+			continue
+		}
+		claimed[filepath.Clean(c.Path)] = true
+		if c.Path == path {
+			holders = append(holders, c.TaskID)
+		}
+		if _, err := os.Stat(c.Path); err != nil {
+			t.Errorf("task %d claims %s, which is missing: %v", c.TaskID, c.Path, err)
+		}
+	}
+	if len(holders) != 1 || holders[0] != owner {
+		t.Errorf("rows naming %s = %v, want only task %d", path, holders, owner)
+	}
+	root := h.runner.deps.Worktrees.Root()
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("read worktree root: %v", err)
+	}
+	for _, e := range entries {
+		if dir := filepath.Join(root, e.Name()); !claimed[filepath.Clean(dir)] {
+			t.Errorf("%s is under the worktree root with no claim: an orphan", dir)
+		}
 	}
 }
 

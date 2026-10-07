@@ -177,6 +177,9 @@ alternative's reason no longer holds as written: the archive stays rejected
 because the worktree and branch belong to tasks, which are archived
 themselves, not because there is none. The shared branch is deleted when the
 issue's last unarchived main-role task is archived.
+*Amended 2026-10-07 (task 134.12, issue #759):* implemented. The refusal is
+`409 issue_has_live_main_task`, naming the lowest unsettled main task in
+`details.task_id`.
 
 ### 7. `github_issue` is removed from every create surface — supersedes task 035 decision 2, retargets decision 7 (2026-10-02)
 

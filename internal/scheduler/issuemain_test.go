@@ -21,11 +21,10 @@ func (h *harness) issue(t *testing.T, projectID int64, title string) int64 {
 
 // issueTask creates a root task of issueID in role ("main", "side" or "").
 //
-// A main task after the issue's first joins the first's branch and is bound
-// as adopted, so task 125's directory claim would hold it on its own. These
-// tests are about the issue predicate (task 134 decisions 7, 8), so every
-// such task is moved to a branch of its own after creation: the claim then
-// has nothing to see, and only the predicate can hold it.
+// A main task after the issue's first joins the first's branch. These tests
+// are about the issue predicate (task 134 decisions 7, 8), so every such task
+// is moved to a branch of its own after creation: nothing about the branch
+// can then hold it, and only the predicate can.
 func (h *harness) issueTask(
 	t *testing.T, projectID, issueID int64, title, role string, state store.TaskState, age time.Duration,
 	mutate func(*store.Task),
