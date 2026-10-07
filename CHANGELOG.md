@@ -35,6 +35,14 @@ list with the user-facing context a commit subject cannot carry.
   a client can tell which issue a task event concerns. The TUI issues list
   uses this to re-list only when a shown issue's task changes, instead of on
   every task event.
+- **An `issues` trigger can fire when an issue changes lane.** Name
+  `lane_changed` in `match.action` and the trigger fires whenever an issue
+  moves between `open`, `in_progress`, `hand_off` and `done`, with
+  `.Event.lane` and `.Event.from_lane` saying where it went and where it came
+  from — `match: {action: lane_changed, lane: hand_off}` fires when an issue's
+  work is ready for you. A move a task caused carries `by: task` and
+  `task_id`. Triggers that name no `match.action` keep firing on exactly the
+  events they did before.
 - **`vincent issue ls` shows the lane.** A `LANE` column follows `STATE`, with
   a trailing ` !` when one of the issue's tasks is waiting on you, and
   `--lane` (repeatable) filters by it — `--lane done` is every closed issue.

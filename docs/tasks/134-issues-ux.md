@@ -538,8 +538,13 @@ sections and public pages its code makes true, in its own pull request.
   its event, only when the lane moves; the TUI issues list re-lists on a task
   event only for an issue it shows; spec §13.3 and the API reference.
   ✓ 2026-10-07
-- [ ] **134.7** ([#754](https://github.com/lezli01/vincent/issues/754)) A
-  `type: issues` trigger fires on a lane change. Depends: 134.6.
+- [x] **134.7** ([#754](https://github.com/lezli01/vincent/issues/754)) A
+  `type: issues` trigger fires on a lane change. Depends: 134.6. The opt-in
+  `lane_changed` action with `lane`, `from_lane` and `task_id`, and `by: task`
+  on a task-caused move; a trigger with no `match.action` never sees it, and
+  the load-time trust check reads the same default set. Untrusted from sync,
+  as `closed`/`reopened` are. The skill, `update-triggers`' checklist item 18,
+  the guide and spec rows 33 and §13.3. ✓ 2026-10-07
 - [x] **134.8** ([#755](https://github.com/lezli01/vincent/issues/755)) The
   TUI board's lane sections, the hidden-by-default `done` lane and its `s`
   toggle, fold keys, the guide's key table and spec §15 view 12 (decisions

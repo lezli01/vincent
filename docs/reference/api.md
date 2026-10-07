@@ -3465,7 +3465,9 @@ they need.
   lane actually moved: a fan-out lane never moves its issue's lane, creating
   or deleting an issue writes none, and a task finishing on a closed issue
   writes none. Like the other `issue.*` events it never reaches a per-task
-  stream. A board can re-list on it instead of on every task event.
+  stream. A board can re-list on it instead of on every task event. A
+  `type: issues` [trigger](../guides/triggers.md#issues-watch-the-projects-issues)
+  that names `match.action: lane_changed` fires on it.
 - `issue.sync_changed` carries `{ project_id, ok, reason? }` and fires only when
   a project's [issue sync](#issue-sync) flips between ok and failing, so a sync
   failing on every tick is one event, not one per tick. A project's first
