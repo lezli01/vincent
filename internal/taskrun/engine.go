@@ -677,6 +677,11 @@ func (r *Runner) runSteps(ctx context.Context, project *store.Project, w *stepWa
 				return
 			}
 		default:
+			if env.step.ID == workflow.MergeBackStepID && isMergeBack(task) {
+				// Asked before the attempt row exists, as the fan_out join
+				// asks it: see resumedFromConflict.
+				env.resumedFromConflict = r.resumedFromConflict(ctx, env)
+			}
 			outcome = r.runStepWithRetries(ctx, env)
 		}
 		// Before the switch, because the flag outranks every arm of it: the
@@ -1359,6 +1364,12 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 	case workflow.StepAgent:
 		outcome = r.runAgentStep(ctx, env, sel, rc, run, tr)
 	case workflow.StepCommand:
+		if env.step.ID == workflow.MergeBackStepID && isMergeBack(env.task) {
+			// A command step in shape only (task 134.14): the reserved id
+			// routes the merge-back to its own executor, never to a shell.
+			outcome = r.runMergeBackStep(ctx, env, tr)
+			break
+		}
 		outcome = r.runCommandStep(ctx, env, rc, run, tr)
 	case workflow.StepFanOut:
 		// The join, reached only on a re-admission: the spawn parked the task
@@ -1533,6 +1544,12 @@ func (r *Runner) transition(task *store.Task, action taskstate.Action, ch store.
 	if !ok {
 		log.Error("engine attempted an invalid transition", "from", from, "action", action)
 		return false
+	}
+	if tr.To == store.TaskDone && task.IssueWorktree == store.IssueWorktreeSide {
+		// A side task's → done inserts its merge-back in the same
+		// transaction (task 134.14). Every way a side task reaches done —
+		// its workflow's end, a follow-up's — comes through here.
+		ch.MergeBack = r.mergeBackFor(r.persistCtx(), task, log)
 	}
 	updated, _, err := r.deps.Store.TransitionTask(r.persistCtx(), task.ID, task.State, tr.To, ch)
 	if err != nil {

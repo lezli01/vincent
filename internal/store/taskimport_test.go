@@ -84,10 +84,11 @@ func importSource(t *testing.T) (*Store, *TaskExport) {
 	// issue link — cannot pass by luck.
 	fillEveryColumn(t, src, "tasks", task.ID,
 		"id", "project_id", "state", "parent_task_id", "created_by_task_id", "issue_id", "archived_from",
-		"issue_worktree", "merge_on_conflict")
+		"issue_worktree", "merge_on_conflict", "merge_source_task_id")
 	if _, err := src.db.ExecContext(t.Context(),
 		`UPDATE tasks SET created_by_task_id = ?, archived_from = 'aborted',
-			issue_worktree = 'side', merge_on_conflict = 'agent' WHERE id = ?`, creator.ID, task.ID); err != nil {
+			issue_worktree = 'side', merge_on_conflict = 'agent', merge_source_task_id = ? WHERE id = ?`,
+		creator.ID, creator.ID, task.ID); err != nil {
 		t.Fatalf("set creator: %v", err)
 	}
 	exp, err := src.ExportTask(t.Context(), task.ID)
@@ -148,8 +149,9 @@ func TestImportTaskRoundTripsEveryColumn(t *testing.T) {
 			"archived_at": formatTime(now), "worktree_path": nil,
 			// No issue survives into this round trip, and a role goes with
 			// its issue (review F4 of #768); the issue-link test below proves
-			// both columns copy when the link does.
-			"issue_worktree": nil, "merge_on_conflict": nil,
+			// both columns copy when the link does. A merge-back's source
+			// goes with them (134.14).
+			"issue_worktree": nil, "merge_on_conflict": nil, "merge_source_task_id": nil,
 		}},
 		{"step_runs", "task_id = 2", nil},
 	} {

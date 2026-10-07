@@ -21,14 +21,23 @@ var ErrIssueWorktreeNotHeld = errors.New("issue main worktree is not held by the
 // main-role tasks has not settled (task 134.12). Deleting the issue would
 // strand a task that is still working in, or queued for, the issue's main
 // worktree; the API answers 409 naming the task.
+//
+// Since 134.14 an unsettled side task refuses it too (decision 134.14-c):
+// its `→ done` inserts a merge-back task on the issue, so the issue must
+// still exist then. Side is set for that case, and the message says so.
 type IssueHasLiveMainTaskError struct {
 	IssueID int64
 	TaskID  int64
+	Side    bool
 }
 
 func (e *IssueHasLiveMainTaskError) Error() string {
-	return fmt.Sprintf("issue %d has main task %d still in progress; finish or cancel it first",
-		e.IssueID, e.TaskID)
+	role := "main"
+	if e.Side {
+		role = "side"
+	}
+	return fmt.Sprintf("issue %d has %s task %d still in progress; finish or cancel it first",
+		e.IssueID, role, e.TaskID)
 }
 
 // AsIssueHasLiveMainTask extracts a *IssueHasLiveMainTaskError from err, if
@@ -39,21 +48,24 @@ func AsIssueHasLiveMainTask(err error) (*IssueHasLiveMainTaskError, bool) {
 	return e, ok
 }
 
-// liveIssueMainTaskTx returns the lowest-id unsettled main-role task of the
-// issue, or 0 when every one is done, aborted or archived.
-func liveIssueMainTaskTx(ctx context.Context, tx *sql.Tx, issueID int64) (int64, error) {
+// liveIssueRoleTaskTx returns the lowest-id unsettled main- or side-role
+// task of the issue, and whether it is a side task, or 0 when every one is
+// done, aborted or archived. Main tasks answer first: the main line is what
+// a human has to settle before anything else of the issue's.
+func liveIssueRoleTaskTx(ctx context.Context, tx *sql.Tx, issueID int64) (id int64, side bool, err error) {
 	args := append([]any{issueID}, settledTaskStates()...)
-	var id int64
-	err := tx.QueryRowContext(ctx, `SELECT id FROM tasks
-		WHERE issue_id = ? AND issue_worktree = 'main' AND state NOT IN `+placeholders(len(settledTaskStates()))+`
-		ORDER BY id LIMIT 1`, args...).Scan(&id)
+	var role string
+	err = tx.QueryRowContext(ctx, `SELECT id, issue_worktree FROM tasks
+		WHERE issue_id = ? AND issue_worktree IN ('main', 'side')
+		  AND state NOT IN `+placeholders(len(settledTaskStates()))+`
+		ORDER BY issue_worktree = 'side', id LIMIT 1`, args...).Scan(&id, &role)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		return 0, nil
+		return 0, false, nil
 	case err != nil:
-		return 0, fmt.Errorf("read issue %d live main task: %w", issueID, err)
+		return 0, false, fmt.Errorf("read issue %d live task: %w", issueID, err)
 	default:
-		return id, nil
+		return id, role == IssueWorktreeSide, nil
 	}
 }
 

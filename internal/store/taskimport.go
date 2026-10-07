@@ -189,7 +189,8 @@ type ImportResult struct {
 // is stamped now, so §17 retention restarts rather than pruning what was just
 // restored (decision 5); `worktree_path` is NULL, since backups carry no
 // worktrees; `project_id` follows opts.ProjectID; `created_by_task_id` is
-// NULL when that task is not live — its own ON DELETE SET NULL outcome; and
+// NULL when that task is not live — its own ON DELETE SET NULL outcome, and
+// so is `merge_source_task_id` (task 134.14); and
 // `issue_id` is NULL unless that issue is live in the project the task lands
 // in — for a legacy task 035 snapshot, the issue whose GitHub remote has the
 // snapshot's repo and number. An issue of another project is no link at all: issue ids are global,
@@ -297,6 +298,17 @@ func (s *Store) ImportTask(ctx context.Context, exp *TaskExport, opts ImportOpti
 			task.Set("created_by_task_id", nil)
 		}
 	}
+	// A merge-back's source, by created_by_task_id's rule: its own ON
+	// DELETE SET NULL outcome when that task is not live (task 134.14).
+	if source, ok := task.Int64("merge_source_task_id"); ok {
+		var live bool
+		if live, err = taskExistsTx(ctx, tx, source); err != nil {
+			return nil, fmt.Errorf("import task %d: %w", id, err)
+		}
+		if !live {
+			task.Set("merge_source_task_id", nil)
+		}
+	}
 	if js := task.String("github_issue_json"); js != "" && task.String("issue_json") == "" {
 		// A legacy task 035 snapshot was linked by migration 0040, whose ids
 		// are the staged copy's own: the live store backfilled the same
@@ -326,6 +338,7 @@ func (s *Store) ImportTask(ctx context.Context, exp *TaskExport, opts ImportOpti
 	if _, linked := task.Int64("issue_id"); !linked {
 		task.Set("issue_worktree", nil)
 		task.Set("merge_on_conflict", nil)
+		task.Set("merge_source_task_id", nil)
 	}
 
 	renumber, err := stepRunIDsTaken(ctx, tx, exp.StepRuns)

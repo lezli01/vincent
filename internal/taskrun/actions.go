@@ -130,6 +130,10 @@ func (r *Runner) Cancel(ctx context.Context, id int64) (*store.Task, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A merge-back blocked on its conflict leaves the issue's main worktree
+	// clean for the next main task (task 134 decision 15). Before the
+	// transition, so no successor can be admitted into a half-done merge.
+	r.abortMergeBack(ctx, id)
 	var task *store.Task
 	if chatID != 0 {
 		// A locked task (task 119): stop the chat's turn, then close the

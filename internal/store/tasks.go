@@ -22,7 +22,7 @@ const taskColumns = `id, project_id, title, description, fields_json, workflow_n
 	github_issue_json, github_pull_json,
 	workflow_origin_json, created_by_task_id, issue_id, issue_json,
 	created_at, updated_at, started_at, finished_at, archived_at, archived_from,
-	issue_worktree, end_sha, merge_on_conflict`
+	issue_worktree, end_sha, merge_on_conflict, merge_source_task_id`
 
 // slotStates is the set of states that occupy a concurrency slot (spec §11),
 // rendered as SQL placeholders. It is derived from taskstate rather than
@@ -216,8 +216,8 @@ func insertTaskTx(
 			parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json,
 			github_pull_json, workflow_origin_json, created_by_task_id, issue_id, issue_json,
 			created_at, updated_at, started_at, finished_at, archived_at, archived_from,
-			issue_worktree, end_sha, merge_on_conflict)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			issue_worktree, end_sha, merge_on_conflict, merge_source_task_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ProjectID, t.Title, t.Description, fields, t.WorkflowName, t.WorkflowSnapshot,
 		t.BaseBranch, t.BranchName, t.AdoptedBranch, nullString(t.WorktreePath), nullString(t.BaseSHA), refreshJSON, t.Priority,
 		nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
@@ -234,7 +234,7 @@ func insertTaskTx(
 		formatTime(t.CreatedAt), formatTime(t.UpdatedAt),
 		formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt),
 		nullString(string(t.ArchivedFrom)),
-		nullString(t.IssueWorktree), nullString(t.EndSHA), nullString(t.MergeOnConflict))
+		nullString(t.IssueWorktree), nullString(t.EndSHA), nullString(t.MergeOnConflict), t.MergeSourceTaskID)
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)
 	}
@@ -450,6 +450,9 @@ func (s *Store) GetIssueMainWorktree(ctx context.Context, issueID int64) (IssueM
 // *MainBranchMismatchError. A side task needs a main branch to exist, or it
 // is *NoMainBranchError, and takes that branch as its base.
 func bindIssueWorktreeTx(ctx context.Context, tx *sql.Tx, t *Task) error {
+	if t.MergeSourceTaskID != nil && t.IssueWorktree != IssueWorktreeMain {
+		return fmt.Errorf("insert task: merge_source_task_id is set on a task that is not a main task")
+	}
 	switch t.IssueWorktree {
 	case "":
 		if t.MergeOnConflict != "" {
@@ -457,7 +460,10 @@ func bindIssueWorktreeTx(ctx context.Context, tx *sql.Tx, t *Task) error {
 		}
 		return nil
 	case IssueWorktreeMain:
-		if t.MergeOnConflict != "" {
+		// The one main task that carries a policy is a merge-back (task
+		// 134.14): it is copied from the side task onto the row, so deleting
+		// the source cannot lose it.
+		if t.MergeSourceTaskID == nil && t.MergeOnConflict != "" {
 			return fmt.Errorf("insert task: merge_on_conflict is set on a main task")
 		}
 	case IssueWorktreeSide:
@@ -1356,6 +1362,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		archivedFrom                   sql.NullString
 		issueWorktree, endSHA          sql.NullString
 		mergeOnConflict                sql.NullString
+		mergeSource                    sql.NullInt64
 	)
 	if err := r.Scan(&t.ID, &t.ProjectID, &t.Title, &t.Description, &fields, &t.WorkflowName,
 		&t.WorkflowSnapshot, &t.BaseBranch, &t.BranchName, &t.AdoptedBranch, &worktree, &baseSHA, &baseRefresh, &t.Priority,
@@ -1368,7 +1375,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		&githubIssue, &githubPull, &workflowOrigin,
 		&createdBy, &issueID, &issueSnap,
 		&created, &updated, &started, &finished, &archived, &archivedFrom,
-		&issueWorktree, &endSHA, &mergeOnConflict); err != nil {
+		&issueWorktree, &endSHA, &mergeOnConflict, &mergeSource); err != nil {
 		return nil, err
 	}
 	if parentID.Valid {
@@ -1392,6 +1399,10 @@ func scanTask(r rowScanner) (*Task, error) {
 	t.IssueWorktree = issueWorktree.String
 	t.EndSHA = endSHA.String
 	t.MergeOnConflict = mergeOnConflict.String
+	if mergeSource.Valid {
+		id := mergeSource.Int64
+		t.MergeSourceTaskID = &id
+	}
 	t.LaneOrder = int(laneOrder.Int64)
 	if watermark.Valid {
 		n := int(watermark.Int64)

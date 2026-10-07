@@ -263,6 +263,12 @@ type Task struct {
 	// MergeOnConflictBlock or MergeOnConflictAgent — and "" on every other
 	// task (task 134 decision 12).
 	MergeOnConflict string
+	// MergeSourceTaskID is the side task a merge-back task merges into its
+	// issue's main worktree (§5.6, task 134.14; migration 0044), and nil on
+	// every other task — and on a merge-back whose source was deleted. A
+	// merge-back is a main task that also carries its source's
+	// MergeOnConflict.
+	MergeSourceTaskID *int64
 	// BranchExplicit is create-time input, never stored or read back: the
 	// caller named BranchName itself (`branch_name`, `existing_branch`, or a
 	// chat's verbatim branch on handoff) rather than letting §5.3's chain
