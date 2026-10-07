@@ -69,3 +69,35 @@ func TestClaimedWorkingDirSkipsAndAdmitsLater(t *testing.T) {
 		t.Fatalf("admitted %v across both walks, want the waiting task %d second", got, waiting.ID)
 	}
 }
+
+// TestClaimedWorkingDirCountsThisWalksAdmissions is issue #749: the claim
+// counts in the candidate rows predate the walk, so two queued tasks on one
+// free branch both read DirClaimants == 0. The walk must count its own
+// admission against the directory, exactly as it does against the project
+// cap, or both reach git — and on a branch checked out in the project's main
+// checkout, both agents work in the human's tree.
+func TestClaimedWorkingDirCountsThisWalksAdmissions(t *testing.T) {
+	h := newHarness(t, 10)
+	p := h.project(t, "proj", nil)
+
+	first := h.adopted(t, p, "first", "shared/branch", 2*time.Minute)
+	second := h.adopted(t, p, "second", "shared/branch", time.Minute)
+	// The skip is a skip, not a stop: a free branch still goes this walk.
+	free := h.adopted(t, p, "free", "other/branch", 0)
+
+	h.sched.admit(t.Context())
+
+	got := h.admitter.ids()
+	if len(got) != 2 || got[0] != first.ID || got[1] != free.ID {
+		t.Fatalf("admitted %v, want [%d %d] (one owner per directory per walk)", got, first.ID, free.ID)
+	}
+	if st := h.state(t, second.ID); st != store.TaskQueued {
+		t.Fatalf("second task is %s, want %s — the claim must make it wait, not block it", st, store.TaskQueued)
+	}
+
+	// While the first holds the claim, later walks keep it waiting.
+	h.sched.admit(t.Context())
+	if got := h.admitter.ids(); len(got) != 2 {
+		t.Fatalf("admitted %v, want the second task still waiting on the first's claim", got)
+	}
+}
