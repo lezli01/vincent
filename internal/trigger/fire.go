@@ -82,6 +82,14 @@ type CreateBody struct {
 	Paused         bool              `json:"paused,omitempty"`
 	Restricted     bool              `json:"restricted,omitempty"`
 	MaxTaskCostUSD *float64          `json:"max_task_cost_usd,omitempty"`
+	MergeBack      *CreateMergeBack  `json:"merge_back,omitempty"`
+}
+
+// CreateMergeBack is POST /v1/tasks' `merge_back` (task 134.10): with
+// issue_id it makes the created task a side task. OnConflict is always
+// spelled out, so the daemon never has to infer the default.
+type CreateMergeBack struct {
+	OnConflict string `json:"on_conflict"`
 }
 
 // FollowUpBody is the POST /v1/tasks/{id}/follow_up body a follow_up
@@ -454,6 +462,12 @@ func renderAction(d *Definition, data renderData) (*Replay, error) {
 	if d.Limits.MaxTaskCostUSD > 0 {
 		c := d.Limits.MaxTaskCostUSD
 		body.MaxTaskCostUSD = &c
+	}
+	// Sent even when issue rendered to nothing: the daemon's 400 then fails
+	// the delivery visibly rather than quietly creating a task that is not
+	// the side task the author asked for.
+	if a.MergeBack != nil {
+		body.MergeBack = &CreateMergeBack{OnConflict: a.MergeBack.EffectiveOnConflict()}
 	}
 	return &Replay{Type: ActionCreateTask, Method: http.MethodPost, Path: createPath, Body: body}, nil
 }
