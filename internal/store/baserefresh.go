@@ -87,6 +87,9 @@ func unmarshalBaseRefresh(v sql.NullString) *BaseRefresh {
 // It is called only from the claim callback that creates the worktree, which
 // is the only place base_sha is written: a task whose worktree already
 // existed is never re-recorded. baseSHA "" and refresh nil each write NULL.
+// It clears end_sha too: a task that holds a worktree is working, so its
+// range runs to its branch again, not to where an earlier hand-over or
+// archive left it (task 134.12, review F4 of #770).
 // Returns an ErrNotFound-wrapped error when the task does not exist.
 func (s *Store) ClaimTaskWorktree(
 	ctx context.Context, id int64, path, baseSHA string, refresh *BaseRefresh,
@@ -96,7 +99,7 @@ func (s *Store) ClaimTaskWorktree(
 		return fmt.Errorf("claim task %d worktree: %w", id, err)
 	}
 	res, err := s.db.ExecContext(ctx, `
-		UPDATE tasks SET worktree_path = ?, base_sha = ?, base_refresh = ?, updated_at = ?
+		UPDATE tasks SET worktree_path = ?, base_sha = ?, base_refresh = ?, end_sha = NULL, updated_at = ?
 		WHERE id = ?`,
 		nullString(path), nullString(baseSHA), refreshJSON, formatTime(time.Now()), id)
 	if err != nil {

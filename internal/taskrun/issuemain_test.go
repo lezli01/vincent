@@ -421,6 +421,47 @@ func TestForeignBranchBlocksTheFirstMainTask(t *testing.T) {
 	testrepo.Run(t, h.repo, "rev-parse", "--verify", "refs/heads/"+first.BranchName)
 }
 
+// TestFollowUpOnAHandedOnMainTaskEndsItsRangeAtTheBranch is review F4 of
+// #770: a predecessor whose successor was archived may be followed up, and
+// gets a fresh worktree on the issue's branch. The end_sha the hand-over
+// stamped must go with it, or /commits would end at the old commit and the
+// new work would never be listed — nor would archive stamp the new end.
+func TestFollowUpOnAHandedOnMainTaskEndsItsRangeAtTheBranch(t *testing.T) {
+	h := newEngineHarness(t)
+	iss := newIssue(t, h)
+	h.start(t)
+	first := h.settledMainTask(t, iss, "first", committingSnapshot)
+	second := h.settledMainTask(t, iss, "second", quickSnapshot)
+	if pred := h.task(t, first.ID); pred.EndSHA == "" {
+		t.Fatal("fixture: the hand-over stamped no end_sha on the predecessor")
+	}
+	if _, _, err := h.runner.Archive(t.Context(), second.ID, false); err != nil {
+		t.Fatalf("Archive(second): %v", err)
+	}
+
+	follow := commandFollowUp(t, "git -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m more")
+	if _, err := h.runner.FollowUp(t.Context(), first.ID, follow); err != nil {
+		t.Fatalf("FollowUp(first): %v", err)
+	}
+	got := h.waitForState(t, first.ID, store.TaskDone, store.TaskBlocked)
+	if got.State != store.TaskDone || got.WorktreePath == "" {
+		t.Fatalf("first = %s (%s: %s) in %q, want done in a worktree",
+			got.State, got.BlockReason, got.BlockDetail, got.WorktreePath)
+	}
+	if got.EndSHA != "" {
+		t.Errorf("followed-up predecessor keeps end_sha %s, want none while it holds a worktree", got.EndSHA)
+	}
+	h.waitForActorExit(t, first.ID)
+	tip := testrepo.Run(t, h.repo, "rev-parse", "refs/heads/"+first.BranchName)
+	archived, _, err := h.runner.Archive(t.Context(), first.ID, false)
+	if err != nil {
+		t.Fatalf("Archive(first): %v", err)
+	}
+	if archived.EndSHA != tip {
+		t.Errorf("archived end_sha = %q, want the tip after the follow-up, %s", archived.EndSHA, tip)
+	}
+}
+
 // TestCrashAfterTheHandOverResumesInTheTransferredDirectory: the transfer is
 // one transaction, so a daemon that dies after it and before the first step
 // leaves the successor naming the directory. Recovery re-queues it, and

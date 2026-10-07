@@ -91,6 +91,9 @@ func (s *Store) IssueMainWorktreeHolder(ctx context.Context, issueID, excludeTas
 // and lets go of the directory. The successor starts from that same commit:
 // base_sha is tipSHA, and base_refresh stays NULL because no base refresh
 // happened — the directory was received, not created (task 125 decision 7).
+// Any end_sha the successor carries from an earlier hand-over of its own is
+// cleared: it is working again, so its range runs to the branch (review F4
+// of #770).
 //
 // No event is appended, as SetTaskProgress appends none for a worktree-path
 // write: it is bookkeeping no client renders, and the successor's own
@@ -126,7 +129,8 @@ func (s *Store) TransferIssueWorktree(ctx context.Context, fromID, toID int64, p
 			return fmt.Errorf("release task %d worktree: %w", fromID, err)
 		}
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE tasks SET worktree_path = ?, base_sha = ?, base_refresh = NULL, updated_at = ? WHERE id = ?`,
+			UPDATE tasks SET worktree_path = ?, base_sha = ?, base_refresh = NULL, end_sha = NULL, updated_at = ?
+			WHERE id = ?`,
 			path, nullString(tipSHA), now, toID); err != nil {
 			return fmt.Errorf("hand task %d worktree: %w", toID, err)
 		}

@@ -135,6 +135,7 @@ func (r *Runner) takeIssueMainWorktree(
 	r.removeTaskContainer(ctx, holder, log)
 	task.WorktreePath = holder.WorktreePath
 	task.BaseSHA = tip
+	task.EndSHA = ""
 	// NULL, as the store wrote it: the directory was received, not cut, so
 	// no base refresh happened (task 125 decision 7).
 	task.BaseRefresh = nil
@@ -203,5 +204,6 @@ func (r *Runner) createIssueMainWorktree(
 	task.WorktreePath = created.Path
 	task.BaseSHA = created.BaseSHA
 	task.BaseRefresh = refresh
+	task.EndSHA = "" // as ClaimTaskWorktree wrote it
 	return nil
 }

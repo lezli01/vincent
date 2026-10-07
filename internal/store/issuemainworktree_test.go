@@ -247,3 +247,44 @@ func TestDeleteIssueRefusedWhileAMainTaskIsLive(t *testing.T) {
 		t.Fatalf("delete with every main task settled: %v", err)
 	}
 }
+
+// TestReceivingAWorktreeClearsEndSHA is review F4 of #770: a main task that
+// handed its directory on and is later given one again — by transfer, or by
+// a fresh claim — is working once more, so the end_sha an earlier hand-over
+// stamped no longer bounds its range.
+func TestReceivingAWorktreeClearsEndSHA(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	is := testIssue(t, s, p.ID, "the issue")
+	a := newMainTask(p.ID, is.ID, "a")
+	mustCreate(t, s, a)
+	if err := s.ClaimTaskWorktree(ctx, a.ID, "/wt/a", "", nil); err != nil {
+		t.Fatalf("ClaimTaskWorktree(a): %v", err)
+	}
+	moveTask(t, s, a, TaskRunning, TaskDone)
+	b := newMainTask(p.ID, is.ID, "b")
+	mustCreate(t, s, b)
+	if err := s.TransferIssueWorktree(ctx, a.ID, b.ID, "/wt/a", "tip1"); err != nil {
+		t.Fatalf("TransferIssueWorktree(a → b): %v", err)
+	}
+	moveTask(t, s, b, TaskRunning, TaskDone)
+
+	// Back to a, by transfer.
+	if err := s.TransferIssueWorktree(ctx, b.ID, a.ID, "/wt/a", "tip2"); err != nil {
+		t.Fatalf("TransferIssueWorktree(b → a): %v", err)
+	}
+	if got, err := s.GetTask(ctx, a.ID); err != nil || got.EndSHA != "" || got.BaseSHA != "tip2" {
+		t.Errorf("a after receiving = (end_sha %q, base_sha %q, %v), want no end_sha and base tip2",
+			got.EndSHA, got.BaseSHA, err)
+	}
+
+	// b, now handed on with end_sha tip2, receives a fresh worktree.
+	if err := s.ClaimTaskWorktree(ctx, b.ID, "/wt/b", "tip3", nil); err != nil {
+		t.Fatalf("ClaimTaskWorktree(b): %v", err)
+	}
+	if got, err := s.GetTask(ctx, b.ID); err != nil || got.EndSHA != "" || got.WorktreePath != "/wt/b" {
+		t.Errorf("b after claiming = (end_sha %q, path %q, %v), want no end_sha in /wt/b",
+			got.EndSHA, got.WorktreePath, err)
+	}
+}
