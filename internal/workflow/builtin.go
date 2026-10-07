@@ -1141,7 +1141,8 @@ steps:
          github.poll_interval.
       7. allowed_actors wherever match.action can match an untrusted GitHub
          event — anything but issue labeled, unlabeled or assigned and pull
-         request merged, and an absent match.action matches everything.
+         request merged, and an absent match.action matches everything but
+         the opt-in lane_changed.
       8. A follow_up, retry or cancel action carries none of the keys a
          reaction refuses: permission, workflow, title, description, fields,
          issue, github_pull and limits.max_task_cost_usd.
@@ -1186,6 +1187,14 @@ steps:
           .Event.issue_id on an issues source or .Event.IssueID on a
           github_issues one, and drop github_issue — the dedupe_key does not
           change, so this edit is safe on an armed trigger.
+      18. An issues trigger that approximates "an issue's work is ready for
+          review" by polling or by labels can use match.action: lane_changed
+          with lane: hand_off and by: task. It is opt-in, so name it in
+          match.action; one that creates a task for the same issue needs
+          a dedupe_key rendering .Event.issue_id and .Event.lane, or it
+          re-fires each time that task finishes — a new dedupe_key is a
+          rendering change, so on an armed trigger report it rather than
+          make it, as item 14 does.
 
       ## What you may not change
 

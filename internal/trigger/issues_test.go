@@ -2,6 +2,7 @@ package trigger
 
 import (
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -108,7 +109,9 @@ func TestIssuesEventPayload(t *testing.T) {
 	if _, err := h.st.TransitionIssue(ctx, iss.ID, issuestate.Close, issuestate.Completed, nil, issuestate.Human); err != nil {
 		t.Fatal(err)
 	}
-	evs, err := h.st.ListEvents(ctx, store.EventFilter{Types: issueEventTypes})
+	// The close's issue.lane_changed is TestIssuesLaneChangedPayload's.
+	types := slices.DeleteFunc(slices.Clone(issueEventTypes), func(t string) bool { return t == store.EventIssueLaneChanged })
+	evs, err := h.st.ListEvents(ctx, store.EventFilter{Types: types})
 	if err != nil || len(evs) != 3 {
 		t.Fatalf("events = %v, %v", evs, err)
 	}
@@ -361,6 +364,8 @@ func TestIssuesMapper(t *testing.T) {
 			[]string{"closed", "labeled"},
 		},
 		{"edit", store.EventIssueUpdated, issuePayload{}, nil},
+		{"lane move", store.EventIssueLaneChanged, issuePayload{From: "in_progress", To: "hand_off"}, []string{"lane_changed"}},
+		{"lane unmoved", store.EventIssueLaneChanged, issuePayload{From: "open", To: "open"}, nil},
 		{"comment", store.EventIssueCommentAdded, issuePayload{}, nil},
 		{"deleted", store.EventIssueDeleted, issuePayload{}, nil},
 	} {

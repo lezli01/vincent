@@ -4,7 +4,7 @@ description: Create, edit, review, arm, and debug vincent event triggers, the YA
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.4.0
+  version: 1.5.0
 ---
 
 # vincent Triggers
@@ -107,17 +107,34 @@ before changing the design.
   the project imports. Prefer it for anything that starts from an issue.
   - It takes no `command` and no `poll_interval`; it is woken by each issue
     change the daemon commits, and works on a project with no GitHub remote.
-  - Events: `opened`, `closed`, `reopened`, `labeled`, `unlabeled`. There is
-    no `assigned` (a vincent issue has no assignee), and it is refused.
-    Edits, comments and deletes fire nothing.
+  - Events: `opened`, `closed`, `reopened`, `labeled`, `unlabeled`, and the
+    opt-in `lane_changed`. There is no `assigned` (a vincent issue has no
+    assignee), and it is refused. Edits, comments and deletes fire nothing.
   - `.Event.by` says who made the change: `human`, `agent` (a task's agent
-    over MCP) or `sync` (GitHub, through the importer).
+    over MCP), `sync` (GitHub, through the importer) or, on `lane_changed`
+    only, `task` (a root task's start, finish, delete or restore moved it).
+  - **`lane_changed`** fires when the issue's board lane moves (`open`,
+    `in_progress`, `hand_off`, `done`). `.Event.lane` is the lane moved to,
+    `.Event.from_lane` the lane moved from, and `.Event.task_id` the task
+    that moved it — present only when `by` is `task`, so guard it with
+    `{{ if eq .Event.by "task" }}`. It is **opt-in**: only a trigger whose
+    `match.action` names it sees it; one with no `match.action` never does.
+    Use `closed`/`reopened` when the close reason or state matters
+    (`.Event.reason`); use `lane_changed` when the board move matters —
+    `lane: hand_off`, or `from_lane: hand_off, lane: done`. `match: {by:
+    human}` drops task-caused moves; a hand-off trigger writes `by: task`.
+  - **Hand-off echo loops.** A `lane: hand_off` trigger whose task is
+    created for the same issue moves it back to `in_progress`, and to
+    `hand_off` again when that task finishes. Set
+    `dedupe_key: '{{ .Event.issue_id }}:{{ .Event.lane }}'` to fire once per
+    issue per lane, and keep `limits.max_per_hour` as the backstop.
   - **Echo loops.** A trigger whose task's agent labels or closes issues can
     re-fire itself. Write `match: {by: human}` unless the user wants agent
     changes to fire, and keep `limits.max_per_hour` as the backstop.
   - **Trust.** `human` and `agent` changes are local and trusted. A `sync`
     change follows `github_issues`' rule: `labeled` and `unlabeled` are
-    trusted; `opened`, `closed` and `reopened` need `allowed_actors`, matched
+    trusted; `opened`, `closed`, `reopened` and `lane_changed` (which sync
+    delivers only for a GitHub close or reopen) need `allowed_actors`, matched
     against the issue's author. A trigger that can match one of those from
     sync is refused without `allowed_actors` — unless its `match.by` leaves
     `sync` out. `allowed_actors` never refuses a local person's change.
@@ -403,6 +420,8 @@ Report correctness and safety findings first, then check each trigger for:
   `sync` one on `issues`,
 - `match: {by: human}` on an `issues` trigger whose own task's agent writes
   issues, unless agent changes are meant to fire,
+- a per-issue-per-lane `dedupe_key` on a `lane_changed` trigger whose task is
+  created for the same issue,
 - a `github_issues` trigger on a project that imports its issues, which
   should move to `issues`,
 - reactions that carry none of the keys they refuse,
