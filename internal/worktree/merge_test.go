@@ -104,6 +104,8 @@ func TestConflictMarkers(t *testing.T) {
 		"marked.txt":   "a\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> side\n",
 		"crlf.txt":     "a\r\n<<<<<<< HEAD\r\nours\r\n=======\r\ntheirs\r\n>>>>>>> side\r\n",
 		"onlysep.txt":  "a\r\n=======\r\nb\r\n",
+		"setext.md":    "Changes\n=======\n\n- one\n",
+		"opener.txt":   "a\r\n<<<<<<< HEAD\r\nb\r\n",
 		"clean.txt":    "resolved\n",
 		"inline.txt":   "a ======= b\n========\n  =======\n<<<<<<<no-space\n",
 		"sub/deep.txt": ">>>>>>> side\n",
@@ -111,12 +113,14 @@ func TestConflictMarkers(t *testing.T) {
 	for name, content := range files {
 		testrepo.WriteFile(t, dir, name, content)
 	}
-	paths := []string{"marked.txt", "crlf.txt", "onlysep.txt", "clean.txt", "inline.txt", "sub/deep.txt", "deleted.txt"}
+	paths := []string{"marked.txt", "crlf.txt", "onlysep.txt", "setext.md", "opener.txt", "clean.txt", "inline.txt", "sub/deep.txt", "deleted.txt"}
 	got, err := newManager(t).ConflictMarkers(context.Background(), dir, paths)
 	if err != nil {
 		t.Fatalf("ConflictMarkers: %v", err)
 	}
-	want := []string{"marked.txt", "crlf.txt", "onlysep.txt", "sub/deep.txt"}
+	// A separator alone is a setext heading underline, not a conflict
+	// (review F3 of #767).
+	want := []string{"marked.txt", "crlf.txt", "opener.txt", "sub/deep.txt"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("ConflictMarkers = %v, want %v", got, want)
 	}

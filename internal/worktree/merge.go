@@ -170,7 +170,10 @@ func (m *Manager) ConflictedPaths(ctx context.Context, worktreePath string) ([]s
 
 // ConflictMarkers returns those of paths (worktree-relative, as
 // ConflictedPaths lists them) whose content still holds a conflict marker: a
-// line starting `<<<<<<< ` or `>>>>>>> `, or exactly `=======`.
+// line starting `<<<<<<< ` or `>>>>>>> `. A line that is exactly `=======` is
+// not enough on its own: it is a legitimate setext heading underline under a
+// seven-character title, and git never writes the separator without the two
+// lines around it.
 //
 // It exists because the index cannot answer the question once the files are
 // staged: `git add` clears a path's unmerged entry whatever the file holds, so
@@ -216,8 +219,7 @@ func (m *Manager) ConflictMarkers(_ context.Context, worktreePath string, paths 
 func hasConflictMarker(data []byte) bool {
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSuffix(line, "\r")
-		if line == "=======" ||
-			strings.HasPrefix(line, "<<<<<<< ") || strings.HasPrefix(line, ">>>>>>> ") {
+		if strings.HasPrefix(line, "<<<<<<< ") || strings.HasPrefix(line, ">>>>>>> ") {
 			return true
 		}
 	}

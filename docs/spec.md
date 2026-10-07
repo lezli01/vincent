@@ -2281,7 +2281,8 @@ does not finish until every lane is merged.
   to the block. Blocking by default is §7.2's posture: a human decides what a
   machine could not. *Amended 2026-10-07 (#756): "the resolver resolved"
   means no conflict marker remains in the files that conflicted — a line
-  starting `<<<<<<< ` or `>>>>>>> `, or exactly `=======` — read from their
+  starting `<<<<<<< ` or `>>>>>>> ` (a lone `=======` is not one: it is a
+  setext heading underline in a resolved file) — read from their
   content **before** the engine stages them, because staging clears the
   index's unmerged entries whatever a file holds. A resolver that succeeds
   but leaves a marker blocks `merge_conflict` with nothing committed; a file
