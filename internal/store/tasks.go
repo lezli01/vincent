@@ -439,7 +439,7 @@ func (s *Store) GetIssueMainWorktree(ctx context.Context, issueID int64) (IssueM
 // branch. One joining an existing main branch takes that name, unless the
 // caller named a different branch itself, which is
 // *MainBranchMismatchError. A side task needs a main branch to exist, or it
-// is *NoMainBranchError.
+// is *NoMainBranchError, and takes that branch as its base.
 func bindIssueWorktreeTx(ctx context.Context, tx *sql.Tx, t *Task) error {
 	switch t.IssueWorktree {
 	case "":
@@ -473,6 +473,19 @@ func bindIssueWorktreeTx(ctx context.Context, tx *sql.Tx, t *Task) error {
 	if t.IssueWorktree == IssueWorktreeSide {
 		if main == "" {
 			return &NoMainBranchError{IssueID: *t.IssueID}
+		}
+		// A side task is cut from the issue's main branch (task 134
+		// decision 13). The API already resolved it; this re-asserts the
+		// name the transaction sees, which differs only if every main task
+		// was archived and a new one created in between. A handed-off side
+		// task already has its worktree, so its base is a fact about that
+		// directory and stays the chat's (decision 8 of 134.13).
+		if t.WorktreePath == "" && t.BaseBranch != main {
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE tasks SET base_branch = ? WHERE id = ?`, main, t.ID); err != nil {
+				return fmt.Errorf("bind issue %d side base: %w", *t.IssueID, err)
+			}
+			t.BaseBranch = main
 		}
 		return nil
 	}

@@ -222,6 +222,42 @@ func TestSideTaskNeedsAMainBranch(t *testing.T) {
 	}
 }
 
+// TestSideTaskBaseIsTheMainBranch is task 134.13 decision 4: whatever base
+// the caller put on the row, the create transaction writes the main branch
+// it sees — except on a task that already has its worktree (a handoff),
+// whose base is a fact about that directory.
+func TestSideTaskBaseIsTheMainBranch(t *testing.T) {
+	s := openTest(t)
+	p := testProject(t, s, "p1")
+	is := testIssue(t, s, p.ID, "the issue")
+	main := newMainTask(p.ID, is.ID, "main")
+	mustCreate(t, s, main)
+
+	side := newTask(p.ID, "side", TaskQueued)
+	side.IssueID, side.IssueWorktree, side.MergeOnConflict = &is.ID, IssueWorktreeSide, MergeOnConflictBlock
+	side.BaseBranch = "main"
+	mustCreate(t, s, side)
+	if side.BaseBranch != main.BranchName {
+		t.Errorf("returned side base = %q, want the main branch %q", side.BaseBranch, main.BranchName)
+	}
+	got, err := s.GetTask(t.Context(), side.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if got.BaseBranch != main.BranchName || got.AdoptedBranch {
+		t.Errorf("stored side = (base %q, adopted %v), want base %q and a cut of its own",
+			got.BaseBranch, got.AdoptedBranch, main.BranchName)
+	}
+
+	handed := newTask(p.ID, "handed", TaskQueued)
+	handed.IssueID, handed.IssueWorktree, handed.MergeOnConflict = &is.ID, IssueWorktreeSide, MergeOnConflictBlock
+	handed.BaseBranch, handed.WorktreePath = "chat-base", filepath.Join(t.TempDir(), "chat")
+	mustCreate(t, s, handed)
+	if got, err := s.GetTask(t.Context(), handed.ID); err != nil || got.BaseBranch != "chat-base" {
+		t.Errorf("handed-off side base = %q (%v), want the chat's", got.BaseBranch, err)
+	}
+}
+
 // TestArchivedMainTasksReleaseTheMainBranch: once every main task is
 // archived the issue has no main branch, and the next main task keeps its
 // own fresh name — the known gap task 134 records.

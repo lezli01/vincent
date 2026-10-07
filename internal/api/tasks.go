@@ -759,6 +759,22 @@ func (s *Server) prepareTaskCreate(
 		if req.BaseBranch != nil && strings.TrimSpace(*req.BaseBranch) != "" {
 			baseBranch = strings.TrimSpace(*req.BaseBranch)
 		}
+		// A side task is cut from the issue's main branch, never the
+		// project's base (task 134 decision 13). An explicit base_branch is
+		// accepted only when it names that branch, mirroring the
+		// branch_name rule for main tasks. The main branch must already
+		// exist in git: one bound by a main task that has not been admitted
+		// yet fails the local-branch check below, which keeps creation
+		// offline and fail-fast (§10).
+		if mergeOnConflict != "" {
+			if req.BaseBranch != nil && strings.TrimSpace(*req.BaseBranch) != "" && baseBranch != mainWT.Branch {
+				writeError(w, http.StatusBadRequest, CodeValidationFailed,
+					fmt.Sprintf("issue %d's main branch is %q; a side task is cut from it, not from %q",
+						issueSnap.ID, mainWT.Branch, baseBranch))
+				return nil, false
+			}
+			baseBranch = mainWT.Branch
+		}
 		if !s.localBranchExists(ctx, project.Path, baseBranch) {
 			writeError(w, http.StatusBadRequest, CodeValidationFailed,
 				fmt.Sprintf("base_branch %q does not resolve to a local branch in %s", baseBranch, project.Path))
