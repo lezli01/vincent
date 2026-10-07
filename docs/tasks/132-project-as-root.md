@@ -903,6 +903,9 @@ its own pull request.
   issues list and the pull-requests takeover scoped; the pull-requests gate
   follows the selected project's probe; spec §15 views 7 and 12.
   Depends: 132.5. ✓ 2026-10-05
+  *Amended 2026-10-07 (task [134](134-issues-ux.md) decision 6, issue #748):*
+  the flat scoped issues list becomes foldable lane sections; the scoping is
+  kept.
 - [x] **132.12** ([#706](https://github.com/lezli01/vincent/issues/706))
   Resolved workflows; triggers filtered client-side, with the "unassigned"
   band; spec §15 views 5 and 11 (decisions 7, 8, 39–41). Depends: 132.5.

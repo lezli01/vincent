@@ -1150,7 +1150,8 @@ this chat may do.
 An **Issue** is a piece of work a project tracks, owned by vincent and stored in
 SQLite (§3 row 36, task 130). It is the third entity beside §5.3's Task and
 §5.5's Chat, and like a chat it is never a task with a `kind` column: it has no
-process, no steps, no worktree and no slot. Work on it is a task created from
+process, no steps and no slot — and no worktree of its own (see the 2026-10-07
+note at the end of this section). Work on it is a task created from
 it (§5.3 `issue_id`). This section is the entity and its store; the routes,
 sync, prefill and TUI that make it reachable are task 130's later items, and
 amend §12, §13 and §15 when they land.
@@ -1293,6 +1294,22 @@ id as `remote_key`. Four rules it settled:
   allowed on a local issue and on one whose remote is a tombstone, `moved` or
   `missing`. Its `author` is derived by the create rule above; no request
   field sets it.
+
+*Amended 2026-10-07 (task 134, issue #748).* The issues UX is decided, and
+this note records its design ahead of the code, which lands with task 134's
+later items. An issue has a **main branch and worktree carried by its
+main-role tasks** (`tasks.issue_worktree`), at most one of which holds it at a
+time, from its admission until it is settled; a successor inherits the
+directory. Other tasks for the issue run in **side** worktrees cut from that
+branch, and their work merges back through a daemon-created merge-back task
+that waits for the main worktree like any main task. Every issue sits in one
+derived **lane** — `open`, `in_progress`, `hand_off` or `done`, where `done` ⇔
+`closed` — computed beside `active` and `task_count`, never stored. An issue
+still has no process, steps or slot of its own, and still no archive; delete is
+refused while a main-role task of the issue is live. The rows this makes true
+(§5.3's fields, §6, §10, §11, §12.4, §13, §15 view 12 and §18) are amended by
+task 134's items in their own pull requests: this note records the design, and
+the detailed rows follow the code.
 
 ## 6. Task lifecycle
 
