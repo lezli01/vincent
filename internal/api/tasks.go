@@ -1136,8 +1136,11 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	case mainBranch != "":
 		// Expected to exist, so neither the collision nor the presence check
-		// applies; the store binds the same name again in the transaction.
+		// applies; the store binds the same name again in the transaction,
+		// as an adopted branch: the first main task cut it, and this one
+		// waits for its working directory (review F1 of #768).
 		t.BranchName = mainBranch
+		t.AdoptedBranch = true
 	case preview.NeedsID:
 		// The name needs the id, so it is produced inside the insert transaction.
 		resolveBranch = func(id int64) (string, error) {

@@ -2629,7 +2629,12 @@ A task created with `issue_id` is the issue's **main** task by default:
 `issue_worktree` on the task reads `"main"`. The first main task's branch —
 the one you named, or the one the usual [branch naming](#tasks) produced —
 becomes the issue's **main branch**, and every later main task of the issue
-runs on it. The issue serves it as `main_worktree`:
+runs on it. A later main task reads back with `adopted_branch: true` — the
+first one cut the branch — so, like any task on an
+[existing branch](#running-on-an-existing-branch), it waits queued while
+another task still has the branch checked out, which a main task does until
+it is archived. Archive keeps the branch while another unarchived main task
+of the issue carries it. The issue serves it as `main_worktree`:
 
 ```json
 "main_worktree": { "branch": "vincent/12-lock-file-leaks", "occupant_task_id": 12 }

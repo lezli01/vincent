@@ -431,17 +431,24 @@ func bindIssueWorktreeTx(ctx context.Context, tx *sql.Tx, t *Task) error {
 		}
 		return nil
 	}
-	if main == "" || main == t.BranchName {
+	if main == "" {
 		return nil
 	}
-	if t.BranchExplicit {
+	if t.BranchExplicit && main != t.BranchName {
 		return &MainBranchMismatchError{IssueID: *t.IssueID, Branch: t.BranchName, MainBranch: main}
 	}
+	// A joining main task adopts the main branch rather than cutting it
+	// (review F1 of #768): the first main task cuts it, so git would refuse a
+	// second cut with branch_exists at admission. Adopting it puts the task
+	// under task 125 decision 2's working-directory claim instead — it waits
+	// in the queue while another owner holds the branch's directory — and
+	// keeps archive from deleting a branch this task did not cut.
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE tasks SET branch_name = ? WHERE id = ?`, main, t.ID); err != nil {
+		`UPDATE tasks SET branch_name = ?, adopted_branch = 1 WHERE id = ?`, main, t.ID); err != nil {
 		return fmt.Errorf("bind issue %d main branch: %w", *t.IssueID, err)
 	}
 	t.BranchName = main
+	t.AdoptedBranch = true
 	return nil
 }
 
@@ -523,6 +530,23 @@ func (s *Store) WorkingDirClaim(
 	default:
 		return fmt.Sprintf("%s %d", kind, id), nil
 	}
+}
+
+// BranchSharedByOther reports whether an unarchived task other than
+// excludeTaskID carries branch in the project. Only main-role tasks of one
+// issue share a branch (task 134 decision 3), so it is the question archive
+// and delete ask before removing a branch the issue's next main task is still
+// waiting to adopt (review F1 of #768).
+func (s *Store) BranchSharedByOther(
+	ctx context.Context, projectID int64, branch string, excludeTaskID int64,
+) (bool, error) {
+	n, err := s.countTasks(ctx, `SELECT COUNT(*) FROM tasks
+		WHERE project_id = ? AND branch_name = ? AND id <> ? AND archived_at IS NULL`,
+		projectID, branch, excludeTaskID)
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
 
 // GetTask returns the task with the given id, or ErrNotFound.
@@ -815,7 +839,8 @@ func (s *Store) ListAdmissible(ctx context.Context) ([]Candidate, error) {
 			  WHERE o.project_id = t.project_id AND o.branch_name = t.branch_name
 			    AND o.id <> t.id AND o.archived_at IS NULL
 			    AND ((o.worktree_path IS NOT NULL AND o.worktree_path <> '')
-			         OR o.state IN ` + slotPlaceholders + `))
+			         OR o.state IN ` + slotPlaceholders + `
+			         OR (o.adopted_branch = 0 AND o.state = ?)))
 			+ (SELECT COUNT(*) FROM chats c
 			  WHERE c.project_id = t.project_id AND c.branch = t.branch_name
 			    AND (c.linked_task_id IS NULL OR c.linked_task_id <> t.id)
@@ -825,7 +850,7 @@ func (s *Store) ListAdmissible(ctx context.Context) ([]Candidate, error) {
 		ORDER BY t.priority DESC, t.created_at ASC, t.id ASC`
 	args := append(append([]any{}, slotStates...), string(StepRunning), StepTypeFanOut)
 	args = append(args, slotStates...)
-	args = append(args, string(TaskQueued))
+	args = append(args, string(TaskQueued), string(TaskQueued))
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list admissible: %w", err)

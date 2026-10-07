@@ -406,6 +406,13 @@ deleted.
   134.10 amendment): the next main task cuts a fresh branch, and the old one
   stays in git with the earlier work, off the issue's line, until someone
   merges or deletes it.
+- Until 134.11 and 134.12, a later main task waits for the previous one's
+  **archive**, not its settlement (review F1 of #768). It is bound to the
+  main branch as an adopted branch, so task 125 decision 2's working-directory
+  claim queues it while any earlier main task still has the branch checked
+  out, and a done main task keeps its worktree until it is archived. Archive
+  keeps the branch while another unarchived main task carries it (decision
+  17's "the branch goes with the last main-role task's archive").
 - The `hand_off` lane only grows until someone closes the issue; nothing
   auto-closes a local issue.
 - A live task on a closed issue sits in the hidden `done` lane. The task board

@@ -212,7 +212,8 @@ func (s *Scheduler) admit(ctx context.Context) {
 		// ListAdmissible's SQL because the claim is a path, not a tally, and
 		// it is gated on AdoptedBranch because no other task can share a
 		// branch with a live owner: claimBranchTx keeps every cut name unique
-		// among unarchived tasks.
+		// among unarchived tasks. A main task joining its issue's main branch
+		// is bound as adopted for exactly this reason (task 134 decision 3).
 		claim := dirClaim{c.Task.ProjectID, c.Task.BranchName}
 		if c.Task.AdoptedBranch && (c.DirClaimants > 0 || claimed[claim]) {
 			continue

@@ -22,7 +22,9 @@ list with the user-facing context a commit subject cannot carry.
   read, never stored.
 - **An issue has a main branch.** A task created from an issue with
   `issue_id` is now the issue's main task: the first one's branch becomes the
-  issue's main branch, and every later main task of the issue runs on it.
+  issue's main branch, and every later main task of the issue runs on it —
+  waiting in the queue until the earlier main task is archived and its
+  worktree released.
   `merge_back: {"on_conflict": "block"|"agent"}` on `POST /v1/tasks` asks for
   a side task instead. Tasks report `issue_worktree` and `merge_back`, issues
   report `main_worktree: {branch, occupant_task_id}`, and creating a main task

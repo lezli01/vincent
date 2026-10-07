@@ -615,6 +615,11 @@ type Candidate struct {
 	// tasks by claimBranchTx, and git cannot put one branch in two working
 	// trees anyway.
 	//
+	// A queued task that will *cut* the branch counts as well, though it
+	// holds no directory yet: a main task joining its issue's main branch
+	// adopts a branch the issue's first main task has still to cut (task 134
+	// decision 3), and admitting it first would fail adopt_branch_missing.
+	//
 	// The scheduler skips such a candidate and reconsiders it on the next
 	// walk, the way it skips a project at its cap: the condition clears on
 	// its own when the claimant is archived, and burning a `blocked` state on

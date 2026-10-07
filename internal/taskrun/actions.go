@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -583,6 +584,24 @@ func (r *Runner) Archive(
 	return out, r.deleteArchivedBranch(ctx, task, project.Path), nil
 }
 
+// branchOurs is whether the task's branch is vincent's to delete: not a pull
+// request's head (task 064 decision 3), not a branch the task adopted (task
+// 125 decision 6), and not one another unarchived task still carries — the
+// issue's next main task, bound to the main branch this task cut, adopts it
+// at admission (task 134 decision 3, review F1 of #768). A failed read keeps
+// the branch: a kept branch is recoverable, a deleted one is not.
+func (r *Runner) branchOurs(ctx context.Context, task *store.Task, log *slog.Logger) bool {
+	if task.GitHubPull.FromPull() || task.AdoptedBranch {
+		return false
+	}
+	shared, err := r.deps.Store.BranchSharedByOther(ctx, task.ProjectID, task.BranchName, task.ID)
+	if err != nil {
+		log.Warn("read whether another task shares the branch; keeping it", "error", err)
+		return false
+	}
+	return !shared
+}
+
 // deleteArchivedBranch applies the §10 empty-branch rule to a task that has
 // just reached `archived`. The flags are read through Deps.Config, so a hot
 // reload reaches the next archive with no extra plumbing.
@@ -601,7 +620,7 @@ func (r *Runner) deleteArchivedBranch(
 	// and neither leg may touch it.
 	// ...and a branch the user pointed the task at is not ours either (task
 	// 125 decision 6): vincent did not cut it, so neither leg may touch it.
-	ours := !task.GitHubPull.FromPull() && !task.AdoptedBranch
+	ours := r.branchOurs(ctx, task, log)
 	out, err := r.deps.Worktrees.DeleteEmptyBranch(ctx, projectPath,
 		task.BaseBranch, task.BaseSHA, task.BranchName, cfg.DeleteRemoteBranchOnArchive, &ours)
 	if err != nil {
