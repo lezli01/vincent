@@ -741,7 +741,7 @@ such as a cancel of a task that is already `done`, gets the route's own refusal
 was acted on.
 
 A reaction refuses `workflow`, `title`, `description`, `fields`, `issue`,
-`github_pull`, `permission` and `limits.max_task_cost_usd`. Each
+`github_pull`, `merge_back`, `permission` and `limits.max_task_cost_usd`. Each
 of those describes a task being created.
 
 ### `on_fire` and `permission`

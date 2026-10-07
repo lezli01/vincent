@@ -2796,7 +2796,8 @@ so, and a handed-off one that the task owns its worktree now. A live chat
 opened on a task is refused with `chat_linked_to_task` and `details.task_id`.
 
 `POST /v1/chats/{id}/handoff` takes `POST /v1/tasks`' body and is validated by
-the same code, so it accepts exactly the task the create route accepts.
+the same code, so it accepts exactly the task the create route accepts, save
+the two `merge_back` refusals [a handoff lifts](#the-issues-main-branch).
 `project_id`, `base_branch` and `branch_name` are the chat's and are ignored.
 It answers `201 { "task": {...}, "chat": {...} }`: the task carries
 `source_chat_id`, and the chat comes back `handed_off` with `handoff_task_id`
