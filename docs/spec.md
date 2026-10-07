@@ -6136,8 +6136,11 @@ precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
     vincent's own, with no fetch; `base_sha` is the tip.
   - **No branch yet**: the issue's first main task cuts it in the first
     mode.
-  Archive of a main task that handed its directory on removes nothing and
-  still transitions; archive of any main task stamps `end_sha` when unset,
+  The hand-over also removes the predecessor's §16 container, which
+  bind-mounts that directory; a follow-up on the predecessor later gets a
+  container of its own. Archive of a main task that handed its directory on
+  removes no worktree — only a container the hand-over could not remove —
+  and still transitions; archive of any main task stamps `end_sha` when unset,
   and deletes the branch only when no other unarchived main task carries it.
   Whose branch it is is the issue's line's to say, not the row's: when the
   issue's first main task adopted an existing branch (task 125), every main

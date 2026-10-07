@@ -3,9 +3,12 @@ package taskrun
 import (
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/lezli01/vincent/internal/config"
+	"github.com/lezli01/vincent/internal/container"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/pathx"
 	"github.com/lezli01/vincent/internal/store"
@@ -322,6 +325,55 @@ func TestAdoptedIssueMainBranchSurvivesTheLastArchive(t *testing.T) {
 	}
 	testrepo.Run(t, h.repo, "rev-parse", "--verify", "refs/heads/"+first.BranchName)
 	testrepo.Run(t, remote, "rev-parse", "--verify", "refs/heads/"+first.BranchName)
+}
+
+// TestHandedOnMainTaskLosesItsContainer is review F2 of #770: a main task
+// that ran containerized keeps its container until archive (task 061
+// decision 9), and that container bind-mounts the directory it hands on.
+// The hand-over removes it, so the successor's directory is mounted by
+// nothing of the predecessor's, and archiving a handed-on task removes one
+// that is still there.
+func TestHandedOnMainTaskLosesItsContainer(t *testing.T) {
+	rt := newFakeRuntime()
+	h := newEngineHarnessWith(t, nil, func(d *Deps) {
+		d.Containers = func(string) container.Runtime { return rt }
+	})
+	iss := newIssue(t, h)
+	h.start(t)
+	first := h.settledMainTask(t, iss, "first", quickSnapshot)
+	// From here the installation runs containerized, and the predecessor's
+	// container is the one it would have left behind.
+	h.reload(func(c *config.Config) { c.Container.Image = "alpine:3" })
+	name := container.Name(first.ID)
+	if _, err := rt.Create(t.Context(), container.CreateSpec{
+		Name: name, Labels: map[string]string{container.LabelTask: strconv.FormatInt(first.ID, 10)},
+	}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	second := h.mainTask(t, iss, "second", gatedSnapshot, nil)
+	got := h.waitForState(t, second.ID, store.TaskAwaitingGate, store.TaskBlocked, store.TaskDone)
+	if got.State != store.TaskAwaitingGate || got.WorktreePath != first.WorktreePath {
+		t.Fatalf("second = %s (%s: %s) in %q, want awaiting_gate in %q",
+			got.State, got.BlockReason, got.BlockDetail, got.WorktreePath, first.WorktreePath)
+	}
+	if removed := rt.removals(); !slices.Contains(removed, name) {
+		t.Errorf("removed = %v after the hand-over, want the predecessor's %s", removed, name)
+	}
+
+	// One the hand-over could not remove goes at the predecessor's archive.
+	if _, err := rt.Create(t.Context(), container.CreateSpec{
+		Name: name, Labels: map[string]string{container.LabelTask: strconv.FormatInt(first.ID, 10)},
+	}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	before := len(rt.removals())
+	if _, _, err := h.runner.Archive(t.Context(), first.ID, false); err != nil {
+		t.Fatalf("Archive(first): %v", err)
+	}
+	if removed := rt.removals()[before:]; !slices.Contains(removed, name) {
+		t.Errorf("archive of the handed-on predecessor removed %v, want %s", removed, name)
+	}
 }
 
 // TestCrashAfterTheHandOverResumesInTheTransferredDirectory: the transfer is

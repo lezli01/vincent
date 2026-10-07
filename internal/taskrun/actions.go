@@ -567,11 +567,15 @@ func (r *Runner) Archive(
 	if task.WorktreePath == "" {
 		// An issue's main-role task with no directory (task 134.12): it
 		// handed the directory on to the next main task, or never received
-		// one. There is nothing to remove — no worktree, no container
-		// holding one — so it transitions directly. Unlike the case above,
-		// its branch *is* vincent's: the issue's main tasks share one
-		// branch, so the branch step still runs, and branchOurs keeps the
-		// branch while a successor carries it (decision 17.2).
+		// one. There is no worktree to remove, so it transitions directly.
+		// A container is another matter: one that ran containerized keeps
+		// its container until archive (task 061 decision 9). The hand-over
+		// removes it, best-effort, so this is the second chance for one
+		// that would not die then (review F2 of #770). Unlike the case
+		// above, its branch was cut or adopted: the issue's main tasks
+		// share one branch, so the branch step still runs, and branchOurs
+		// keeps the branch while a successor carries it (decision 17.2).
+		r.removeTaskContainer(ctx, task, r.deps.Logger)
 		out, err := r.transitionFrom(ctx, task, taskstate.Archive, ch)
 		if err != nil {
 			return nil, worktree.BranchOutcome{}, err

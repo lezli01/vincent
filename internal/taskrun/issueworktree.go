@@ -124,6 +124,13 @@ func (r *Runner) takeIssueMainWorktree(
 	case err != nil:
 		return r.worktreeFailed(ctx, task, err, log)
 	}
+	// The predecessor's container goes now, not at its archive: it still
+	// bind-mounts the directory this task is about to work in, and a live
+	// mount is a reason the last main task's worktree removal fails (§16,
+	// task 061). The predecessor has settled, so nothing runs in it, and
+	// should it be followed up later it gets a container of its own, mounting
+	// whatever directory it receives then (review F2 of #770).
+	r.removeTaskContainer(ctx, holder, log)
 	task.WorktreePath = holder.WorktreePath
 	task.BaseSHA = tip
 	// NULL, as the store wrote it: the directory was received, not cut, so
