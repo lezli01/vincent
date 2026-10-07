@@ -6139,6 +6139,10 @@ precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
   Archive of a main task that handed its directory on removes nothing and
   still transitions; archive of any main task stamps `end_sha` when unset,
   and deletes the branch only when no other unarchived main task carries it.
+  Whose branch it is is the issue's line's to say, not the row's: when the
+  issue's first main task adopted an existing branch (task 125), every main
+  task after it carries the human's branch, and no archive deletes it,
+  locally or upstream (task 125 decision 6; review F1 of #770).
   Task 125's working-directory claim no longer applies to main tasks — the
   §11 occupancy predicate serialises them.
 

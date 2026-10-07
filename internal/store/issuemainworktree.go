@@ -133,3 +133,30 @@ func (s *Store) TransferIssueWorktree(ctx context.Context, fromID, toID int64, p
 		return nil
 	})
 }
+
+// IssueMainBranchLine answers who started the issue's line of main tasks on
+// branch (task 134.12): the lowest-id main-role task of issueID carrying it,
+// archived included, and whether that task adopted the branch rather than
+// cutting it. firstID is 0 when no main task of the issue has ever carried
+// it.
+//
+// It is the line, not a row, that says whose branch it is. A joiner is never
+// adopted, and a legacy joiner bound before 134.12 is adopted whoever cut
+// the branch, so neither flag tells a successor of a branch the human
+// pointed the first main task at (task 125 decision 6) from one vincent cut.
+// The first task's flag does: it is the one that met the branch.
+func (s *Store) IssueMainBranchLine(
+	ctx context.Context, issueID int64, branch string,
+) (firstID int64, adopted bool, err error) {
+	err = s.db.QueryRowContext(ctx, `SELECT id, adopted_branch FROM tasks
+		WHERE issue_id = ? AND issue_worktree = 'main' AND branch_name = ?
+		ORDER BY id LIMIT 1`, issueID, branch).Scan(&firstID, &adopted)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return 0, false, nil
+	case err != nil:
+		return 0, false, fmt.Errorf("issue %d main branch %q line: %w", issueID, branch, err)
+	default:
+		return firstID, adopted, nil
+	}
+}

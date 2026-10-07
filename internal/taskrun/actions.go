@@ -633,15 +633,30 @@ func (r *Runner) archiveEndSHA(ctx context.Context, task *store.Task, projectPat
 // request's head (task 064 decision 3), not a branch the task adopted (task
 // 125 decision 6), and not one another unarchived task still carries.
 //
-// An issue's main-role task is asked the last question only. Every main
-// task's branch is vincent's, cut by the issue's first main task (decision
-// 17.2) — including a legacy row that still says adopted_branch — and it goes
-// with the archive of the *last* main task that carries it: while a
-// successor does, it works on that branch in the directory it received by
-// transfer, and BranchSharedByOther keeps it. A failed read keeps the
-// branch: a kept branch is recoverable, a deleted one is not.
+// An issue's main-role task shares its branch with the issue's other main
+// tasks, so its own adopted_branch does not answer the second question: a
+// joiner is never adopted, and a legacy joiner bound before 134.12 is
+// adopted whoever cut the branch. The issue's line answers it — the branch
+// is vincent's when the line's first main task cut it, and the human's when
+// that task was pointed at an existing branch (review F1 of #770). Ours, it
+// goes with the archive of the *last* main task carrying it (decision 17.2):
+// while a successor does, it works on that branch in the directory it
+// received by transfer, and BranchSharedByOther keeps it. A failed read
+// keeps the branch: a kept branch is recoverable, a deleted one is not.
 func (r *Runner) branchOurs(ctx context.Context, task *store.Task, log *slog.Logger) bool {
-	if task.GitHubPull.FromPull() || (task.AdoptedBranch && !isIssueMain(task)) {
+	if task.GitHubPull.FromPull() {
+		return false
+	}
+	if isIssueMain(task) {
+		_, adopted, err := r.deps.Store.IssueMainBranchLine(ctx, *task.IssueID, task.BranchName)
+		if err != nil {
+			log.Warn("read who started the issue's main branch; keeping it", "error", err)
+			return false
+		}
+		if adopted {
+			return false
+		}
+	} else if task.AdoptedBranch {
 		return false
 	}
 	shared, err := r.deps.Store.BranchSharedByOther(ctx, task.ProjectID, task.BranchName, task.ID)

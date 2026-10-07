@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/pathx"
 	"github.com/lezli01/vincent/internal/store"
@@ -277,6 +278,50 @@ func TestLegacyAdoptedMainTaskRoutesAsMain(t *testing.T) {
 	if !h.runner.branchOurs(t.Context(), h.task(t, second.ID), h.runner.deps.Logger) {
 		t.Error("a legacy adopted main task's branch is not vincent's")
 	}
+}
+
+// TestAdoptedIssueMainBranchSurvivesTheLastArchive is review F1 of #770:
+// the issue's first main task was pointed at a branch the human already had
+// (task 125, existing_branch), and a joiner — never adopted — carried it on.
+// The line's first task decides whose branch it is, so archiving every main
+// task leaves the human's empty branch and its upstream alone (task 125
+// decision 6), even with both cleanup legs on.
+func TestAdoptedIssueMainBranchSurvivesTheLastArchive(t *testing.T) {
+	h := newEngineHarnessWith(t, func(c *config.Config) { c.DeleteRemoteBranchOnArchive = true })
+	iss := newIssue(t, h)
+	h.start(t)
+	first := h.mainTask(t, iss, "first", quickSnapshot, func(task *store.Task) {
+		task.AdoptedBranch, task.State = true, store.TaskPaused
+	})
+	// The human's branch, with nothing past the base, and an upstream.
+	remote := testrepo.InitBare(t)
+	testrepo.Run(t, h.repo, "remote", "add", "origin", remote)
+	testrepo.Run(t, h.repo, "branch", first.BranchName, "main")
+	testrepo.Run(t, h.repo, "push", "-q", "--set-upstream", "origin", first.BranchName)
+	if _, err := h.runner.Resume(t.Context(), first.ID); err != nil {
+		t.Fatalf("Resume(first): %v", err)
+	}
+	if got := h.waitForState(t, first.ID, store.TaskDone, store.TaskBlocked); got.State != store.TaskDone {
+		t.Fatalf("first = %s (%s: %s), want done", got.State, got.BlockReason, got.BlockDetail)
+	}
+	h.waitForActorExit(t, first.ID)
+	second := h.settledMainTask(t, iss, "second", quickSnapshot)
+	if second.AdoptedBranch || second.BranchName != first.BranchName {
+		t.Fatalf("joiner = (%q, adopted %v), want %q and not adopted",
+			second.BranchName, second.AdoptedBranch, first.BranchName)
+	}
+
+	for _, id := range []int64{first.ID, second.ID} {
+		_, branch, err := h.runner.Archive(t.Context(), id, false)
+		if err != nil {
+			t.Fatalf("Archive(%d): %v", id, err)
+		}
+		if branch.Result != worktree.BranchNotOurs {
+			t.Errorf("task %d branch outcome = %+v, want %q", id, branch, worktree.BranchNotOurs)
+		}
+	}
+	testrepo.Run(t, h.repo, "rev-parse", "--verify", "refs/heads/"+first.BranchName)
+	testrepo.Run(t, remote, "rev-parse", "--verify", "refs/heads/"+first.BranchName)
 }
 
 // TestCrashAfterTheHandOverResumesInTheTransferredDirectory: the transfer is
