@@ -310,7 +310,7 @@ source:
 
 An `issues` source reads vincent's own record of every issue change, so it
 works on any project — one with no GitHub remote included — and sees a GitHub
-issue the project [imports](issues.md) the same way it sees a local one. It
+issue the project [imports](tui.md#issues) the same way it sees a local one. It
 takes no `poll_interval` and no `command`: each issue change the daemon commits
 wakes it.
 
@@ -320,7 +320,7 @@ wakes it.
 | It is closed, or reopened | `closed`, `reopened` |
 | Labels are added | one `labeled`, with `labels` the ones added |
 | Labels are removed | one `unlabeled`, with `labels` the ones removed |
-| It moves to another [lane](issues.md) | `lane_changed`, only when `match.action` names it |
+| It moves to another [lane](tui.md#issues) | `lane_changed`, only when `match.action` names it |
 
 One GitHub refresh can produce several events. Edits, comments and deletes fire
 nothing, and there is no `assigned`: a vincent issue has no assignee, so
