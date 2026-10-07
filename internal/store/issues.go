@@ -896,6 +896,17 @@ func (s *Store) DeleteIssue(ctx context.Context, id int64, by issuestate.Actor) 
 		if err != nil {
 			return nil, fmt.Errorf("read issue %d: %w", id, err)
 		}
+		// Refused before any write while a main task is unsettled (task
+		// 134.12): it works in, or waits for, the issue's main worktree, and
+		// the issue is what names that line of work. Settled and archived
+		// main tasks are history and do not hold the delete.
+		live, err := liveIssueMainTaskTx(ctx, tx, id)
+		if err != nil {
+			return nil, err
+		}
+		if live != 0 {
+			return nil, &IssueHasLiveMainTaskError{IssueID: id, TaskID: live}
+		}
 		// The FK's SET NULL would do this too; it is spelled out because the
 		// tombstone is the point, not a side effect.
 		if _, err := tx.ExecContext(ctx, `UPDATE issue_remotes SET issue_id = NULL WHERE issue_id = ?`, id); err != nil {

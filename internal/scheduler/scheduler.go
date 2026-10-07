@@ -218,10 +218,16 @@ func (s *Scheduler) admit(ctx context.Context) {
 		// ListAdmissible's SQL because the claim is a path, not a tally, and
 		// it is gated on AdoptedBranch because no other task can share a
 		// branch with a live owner: claimBranchTx keeps every cut name unique
-		// among unarchived tasks. A main task joining its issue's main branch
-		// is bound as adopted for exactly this reason (task 134 decision 3).
+		// among unarchived tasks.
+		//
+		// A main-role task of an issue is exempt even when its row says
+		// adopted, as rows bound before task 134.12 do: it shares its
+		// predecessor's directory by transfer rather than waiting for its
+		// archive, and the occupancy predicate below is what serialises it.
+		mainOfIssue := c.Task.IssueWorktree == store.IssueWorktreeMain && c.Task.IssueID != nil
+		dirClaimed := c.Task.AdoptedBranch && !mainOfIssue
 		claim := dirClaim{c.Task.ProjectID, c.Task.BranchName}
-		if c.Task.AdoptedBranch && (c.DirClaimants > 0 || claimed[claim]) {
+		if dirClaimed && (c.DirClaimants > 0 || claimed[claim]) {
 			continue
 		}
 		// At most one in-progress main task per issue (task 134 decisions 7,
@@ -231,7 +237,6 @@ func (s *Scheduler) admit(ctx context.Context) {
 		// skip, never a block (task 125 decision 2, task 134 decision 10):
 		// the task stays queued, nothing is written, and the next walk asks
 		// again. Side-role and role-less tasks are never held by it.
-		mainOfIssue := c.Task.IssueWorktree == store.IssueWorktreeMain && c.Task.IssueID != nil
 		if mainOfIssue && (c.IssueOccupied || admittedIssue[*c.Task.IssueID]) {
 			continue
 		}
@@ -240,7 +245,7 @@ func (s *Scheduler) admit(ctx context.Context) {
 		}
 		global++
 		admitted[c.Task.ProjectID]++
-		if c.Task.AdoptedBranch {
+		if dirClaimed {
 			claimed[claim] = true
 		}
 		if mainOfIssue {
