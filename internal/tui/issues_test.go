@@ -228,3 +228,34 @@ func TestIssuesDeselectingDropsTheLoadInFlight(t *testing.T) {
 		t.Errorf("a load for the project just left was installed: %+v", v.issues)
 	}
 }
+
+// The list re-lists on issue events, issue.lane_changed among them, and on a
+// task event naming a shown issue — but not on a step advancing, nor on a
+// task event for an issue it does not show or a task with none (task 134.6
+// decision 6).
+func TestIssuesListReListsOnlyForItsRows(t *testing.T) {
+	pid := int64(1)
+	ev := func(typ, payload string) apiclient.Note {
+		return apiclient.EventNote{Event: apiclient.Event{Type: typ, ProjectID: &pid, Payload: []byte(payload)}}
+	}
+	for _, c := range []struct {
+		name string
+		note apiclient.Note
+		want bool
+	}{
+		{"lane changed", ev("issue.lane_changed", `{"id":3,"from":"open","to":"in_progress","task_id":9}`), true},
+		{"task event for a shown issue", ev("task.state_changed", `{"from":"running","to":"done","issue_id":4}`), true},
+		{"task created for a shown issue", ev("task.created", `{"state":"queued","issue_id":5}`), true},
+		{"project event", ev("project.updated", `{}`), true},
+		{"step advanced", ev("task.step_advanced", `{"current_step":2}`), false},
+		{"task event for another issue", ev("task.state_changed", `{"from":"running","to":"done","issue_id":99}`), false},
+		{"task event with no issue", ev("task.state_changed", `{"from":"running","to":"done"}`), false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			v := issuesFixture()
+			if got := v.updateNote(c.note) != nil; got != c.want {
+				t.Errorf("re-listed = %v, want %v", got, c.want)
+			}
+		})
+	}
+}

@@ -653,6 +653,13 @@ type Event struct {
 	TaskID    *int64
 	ProjectID *int64
 	Payload   json.RawMessage
+
+	// follow is an event the same commit appended right after this one —
+	// the `issue.lane_changed` a task write caused (task 134.6) — published
+	// by notify straight after it. Riding the causing event keeps every
+	// caller's single post-commit notify correct without each one learning
+	// that a task write can announce two things.
+	follow *Event
 }
 
 // Chat is a titled conversation with an agent, scoped to a project and

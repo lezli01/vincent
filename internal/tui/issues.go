@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -33,7 +34,7 @@ import (
 
 // issueEventPrefix is every issue.* event (§13.3): created, updated,
 // state_changed, labels_changed, comment_added and comment_updated (task 130
-// decision 24). Each carries the issue id in its payload, and any of them can
+// decision 24), and lane_changed (task 134.6). Each carries the issue id in its payload, and any of them can
 // change a row — or, on the detail, the thread.
 const issueEventPrefix = "issue."
 
@@ -49,6 +50,19 @@ func issueEventID(ev apiclient.Event) int64 {
 		return 0
 	}
 	return body.ID
+}
+
+// taskEventIssueID reads the issue_id a task.* event's payload carries — set
+// on task.created, task.state_changed, task.deleted and task.restored for a
+// task that has an issue (task 134.6) — 0 when it carries none.
+func taskEventIssueID(ev apiclient.Event) int64 {
+	var body struct {
+		IssueID int64 `json:"issue_id"`
+	}
+	if json.Unmarshal(ev.Payload, &body) != nil {
+		return 0
+	}
+	return body.IssueID
 }
 
 // Issues-list messages.
@@ -309,8 +323,12 @@ func (v *issuesView) scheduleRefresh() tea.Cmd {
 	return tea.Tick(refreshDebounce, func(time.Time) tea.Msg { return issuesRefreshMsg{} })
 }
 
-// updateNote re-lists on any issue event, and on task events, which move a
-// row's task count and its active marker.
+// updateNote re-lists on any issue event — issue.lane_changed among them —
+// on project events, and on a task event only when its payload's issue_id
+// names a row this list shows (task 134.6 decision 6): such an event moves
+// that row's task count or active marker. A step advancing, a status line,
+// or a task with no shown issue changes no row, so it no longer costs a
+// re-list.
 func (v *issuesView) updateNote(n apiclient.Note) tea.Cmd {
 	ev, ok := n.(apiclient.EventNote)
 	if !ok {
@@ -319,10 +337,20 @@ func (v *issuesView) updateNote(n apiclient.Note) tea.Cmd {
 	if !forProject(ev.Event, v.project.id) {
 		return nil
 	}
-	if isIssueEvent(ev.Event.Type) || isTaskEvent(ev.Event.Type) {
+	switch t := ev.Event.Type; {
+	case isIssueEvent(t), strings.HasPrefix(t, "project."):
 		return v.scheduleRefresh()
+	case strings.HasPrefix(t, "task."):
+		if id := taskEventIssueID(ev.Event); id != 0 && v.shows(id) {
+			return v.scheduleRefresh()
+		}
 	}
 	return nil
+}
+
+// shows reports whether issue id is one of the loaded rows.
+func (v *issuesView) shows(id int64) bool {
+	return slices.ContainsFunc(v.issues, func(is apiclient.Issue) bool { return is.ID == id })
 }
 
 func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {

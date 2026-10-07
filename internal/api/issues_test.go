@@ -388,9 +388,11 @@ func TestIssueCloseDuplicateOf(t *testing.T) {
 	if closed.DuplicateOf == nil || *closed.DuplicateOf != b.ID || closed.CloseReason != "duplicate" {
 		t.Errorf("closed = %+v", closed)
 	}
+	// The close moves the lane to done, announced right after (task 134.6).
 	evs := h.issueEvents(t, mark)
-	if len(evs) != 1 || !strings.Contains(string(evs[0].Payload), fmt.Sprintf(`"duplicate_of":%d`, b.ID)) {
-		t.Errorf("state_changed = %v", evs)
+	if len(evs) != 2 || !strings.Contains(string(evs[0].Payload), fmt.Sprintf(`"duplicate_of":%d`, b.ID)) ||
+		evs[1].Type != "issue.lane_changed" {
+		t.Errorf("state_changed, lane_changed = %v", evs)
 	}
 	reopened := h.must(t, http.StatusOK, http.MethodPost, fmt.Sprintf("/v1/issues/%d/reopen", a.ID), nil)
 	if reopened.DuplicateOf != nil {

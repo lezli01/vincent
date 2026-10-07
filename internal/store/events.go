@@ -67,6 +67,7 @@ func (s *Store) notify(e *Event) {
 	if fn := s.eventHook.Load(); fn != nil && *fn != nil {
 		(*fn)(e)
 	}
+	s.notify(e.follow)
 }
 
 // AppendEvent inserts e and assigns its ID (the SSE Last-Event-ID cursor).

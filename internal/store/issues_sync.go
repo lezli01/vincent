@@ -437,7 +437,7 @@ func (s *Store) AdoptPlaceholderRemote(ctx context.Context, in RemoteIssue, by i
 			return false, err
 		}
 	}
-	err = s.writeIssue(ctx, func(tx *sql.Tx) (*Event, error) {
+	err = s.writeIssueEvents(ctx, func(tx *sql.Tx) ([]*Event, error) {
 		var one int
 		err := tx.QueryRowContext(ctx, `
 			SELECT 1 FROM issue_remotes WHERE project_id = ? AND provider = ? AND remote_key = ?`,

@@ -346,6 +346,20 @@ func (s *Store) ImportTask(ctx context.Context, exp *TaskExport, opts ImportOpti
 	task.Set("project_id", projectID)
 	task.Set("archived_at", formatTime(now))
 	task.Set("worktree_path", nil)
+	// A restored task is archived, but one archived from `done` hands its
+	// issue off (task 134 decision 20), so a restore can move the lane
+	// (task 134.6 decision 3).
+	var issueID, parentID *int64
+	if v, ok := task.Int64("issue_id"); ok {
+		issueID = &v
+	}
+	if v, ok := task.Int64("parent_task_id"); ok {
+		parentID = &v
+	}
+	watch, err := watchTaskLaneTx(ctx, tx, issueID, parentID, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("import task %d: %w", id, err)
+	}
 	if err = insertRow(ctx, tx, "tasks", task); err != nil {
 		return nil, fmt.Errorf("import task %d: %w", id, err)
 	}
@@ -360,13 +374,20 @@ func (s *Store) ImportTask(ctx context.Context, exp *TaskExport, opts ImportOpti
 		}
 	}
 
-	payload, err := json.Marshal(map[string]any{"id": id, "title": title})
+	restored := map[string]any{"id": id, "title": title}
+	if issueID != nil {
+		restored["issue_id"] = *issueID
+	}
+	payload, err := json.Marshal(restored)
 	if err != nil {
 		return nil, fmt.Errorf("marshal %s event: %w", EventTaskRestored, err)
 	}
 	taskID, pid := id, projectID
 	ev := &Event{Type: EventTaskRestored, TaskID: &taskID, ProjectID: &pid, Payload: payload}
 	if err = appendEventTx(ctx, tx, ev); err != nil {
+		return nil, err
+	}
+	if err = watch.followTx(ctx, tx, ev, id); err != nil {
 		return nil, err
 	}
 	if err = tx.Commit(); err != nil {

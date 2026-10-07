@@ -168,6 +168,12 @@ func insertTaskTx(
 		t.CreatedAt = now
 	}
 	t.UpdatedAt = now
+	// The issue's lane before the insert (task 134.6 decision 3): a root
+	// task created on an issue may move it to in_progress.
+	watch, err := watchTaskLaneTx(ctx, tx, t.IssueID, t.ParentTaskID, t.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("insert task: %w", err)
+	}
 	fields, err := marshalFields(t.Fields)
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)
@@ -299,6 +305,9 @@ func insertTaskTx(
 	// its event with it; the caller publishes it to the broker after the
 	// commit.
 	if err := appendEventTx(ctx, tx, ev); err != nil {
+		return nil, err
+	}
+	if err := watch.followTx(ctx, tx, ev, taskID); err != nil {
 		return nil, err
 	}
 	return ev, nil

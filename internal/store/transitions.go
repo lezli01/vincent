@@ -247,6 +247,13 @@ func transitionTaskTx(
 		return nil, nil, err
 	}
 
+	// The lane before the swap; a lane-moving transition announces the move
+	// right after its own state event (task 134.6 decision 3).
+	watch, err := watchTaskLaneTx(ctx, tx, t.IssueID, t.ParentTaskID, t.ProjectID)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	now := time.Now()
 	t.State = to
 	t.UpdatedAt = now
@@ -368,6 +375,9 @@ func transitionTaskTx(
 		Payload:   payload,
 	}
 	if err := appendEventTx(ctx, tx, e); err != nil {
+		return nil, nil, err
+	}
+	if err := watch.followTx(ctx, tx, e, taskID); err != nil {
 		return nil, nil, err
 	}
 	return t, e, nil
@@ -612,6 +622,12 @@ func statePayload(from, to TaskState, t *Task, extra map[string]any) (json.RawMe
 	payload["from"] = string(from)
 	payload["to"] = string(to)
 	payload["current_step"] = t.CurrentStep
+	// Omitted, not null, for a task with no issue — task.created's shape —
+	// so a client can tell which issue a state change concerns without a
+	// fetch (task 134.6 decision 1). A fan-out lane carries its issue too.
+	if t.IssueID != nil {
+		payload["issue_id"] = *t.IssueID
+	}
 	if t.BlockReason != "" {
 		payload["block_reason"] = t.BlockReason
 	}

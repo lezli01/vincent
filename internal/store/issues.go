@@ -33,6 +33,14 @@ const (
 	// recovering (task 130.8): payload {project_id, ok, reason?}, written
 	// only on a transition, never on each attempt.
 	EventIssueSyncChanged = "issue.sync_changed"
+	// EventIssueLaneChanged is an issue moving between issuestate lanes
+	// (task 134.6): payload {id, from, to, task_id?, by?}. It is written in
+	// the commit that moved the lane, right after the event recording the
+	// cause, and only when the lane before and after differ. task_id names
+	// the root task whose create, transition, delete or restore moved it; by
+	// is the actor of a close or reopen. Neither version nor updated_at
+	// moves: the lane is derived, never stored (task 134 decision 1).
+	EventIssueLaneChanged = "issue.lane_changed"
 )
 
 // ErrIssueChanged is UpdateIssue's compare-and-set refusal: the version the
@@ -500,6 +508,25 @@ func issueEvent(evType string, projectID, issueID int64, by issuestate.Actor, ex
 	return &Event{Type: evType, ProjectID: &pid, Payload: payload}, nil
 }
 
+// laneChangedEvent builds an issue.lane_changed event. Like issueEvent it
+// carries the project id and a NULL task_id — the task that moved the lane
+// rides the payload, so a per-task stream never delivers it.
+func laneChangedEvent(projectID, issueID int64, from, to issuestate.Lane, taskID *int64, by issuestate.Actor) (*Event, error) {
+	body := map[string]any{"id": issueID, "from": string(from), "to": string(to)}
+	if taskID != nil {
+		body["task_id"] = *taskID
+	}
+	if by != "" {
+		body["by"] = string(by)
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal %s event: %w", EventIssueLaneChanged, err)
+	}
+	pid := projectID
+	return &Event{Type: EventIssueLaneChanged, ProjectID: &pid, Payload: payload}, nil
+}
+
 func checkActor(by issuestate.Actor) error {
 	if !issuestate.ValidActor(by) {
 		return fmt.Errorf("unknown issue actor %q", by)
@@ -736,7 +763,7 @@ func (s *Store) TransitionIssue(ctx context.Context, id int64, action issuestate
 		return nil, err
 	}
 	enqueued := false
-	err := s.writeIssue(ctx, func(tx *sql.Tx) (*Event, error) {
+	err := s.writeIssueEvents(ctx, func(tx *sql.Tx) ([]*Event, error) {
 		cur, err := getIssue(ctx, tx, id)
 		if err != nil {
 			return nil, err
@@ -761,6 +788,10 @@ func (s *Store) TransitionIssue(ctx context.Context, id int64, action issuestate
 		if noop {
 			return nil, nil
 		}
+		watch, err := watchIssueLaneTx(ctx, tx, id, cur.ProjectID)
+		if err != nil {
+			return nil, err
+		}
 		now := formatTime(time.Now())
 		if to == issuestate.Closed {
 			_, err = tx.ExecContext(ctx, `
@@ -783,7 +814,16 @@ func (s *Store) TransitionIssue(ctx context.Context, id int64, action issuestate
 		if duplicateOf != nil {
 			extra["duplicate_of"] = *duplicateOf
 		}
-		return issueEvent(EventIssueStateChanged, cur.ProjectID, id, by, extra)
+		ev, err := issueEvent(EventIssueStateChanged, cur.ProjectID, id, by, extra)
+		if err != nil {
+			return nil, err
+		}
+		// After the state event, in the same commit (task 134.6 decision 4).
+		lane, err := watch.changedTx(ctx, tx, nil, by)
+		if err != nil {
+			return nil, err
+		}
+		return []*Event{ev, lane}, nil
 	})
 	if err != nil {
 		return nil, err
