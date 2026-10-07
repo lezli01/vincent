@@ -1348,8 +1348,8 @@ worktrees: those are 134.11, 134.12 and 134.13.
 settled `done`/`aborted` with a worktree a linked chat still has open — a
 human working in the directory holds it as surely as an agent does (§6 lists
 the states). The scheduler now enforces it: a later main task of the issue is
-not admitted while another occupies it (§11). Transferring the directory and
-cutting side worktrees are still 134.12 and 134.13.
+not admitted while another occupies it (§11). Transferring the directory is
+still 134.12; cutting side worktrees is §10's 134.13 amendment.
 
 ## 6. Task lifecycle
 
