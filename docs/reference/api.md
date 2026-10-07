@@ -2641,8 +2641,8 @@ it holds the main worktree even while `blocked`, `paused` or
 absent while the issue has no main branch. When every main task has been
 archived the issue has none, and the next main task starts a fresh branch.
 
-Creating a main task while the main worktree is occupied queues the task
-behind the occupant; the `201` names it as `main_worktree_occupant_task_id`.
+Creating a main task while the main worktree is occupied names the occupant
+in the `201` as `main_worktree_occupant_task_id`.
 
 `merge_back` asks for a **side** task instead — its own worktree, to be merged
 back into the main branch when it is done:
@@ -2655,8 +2655,9 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/tasks" \
 
 `on_conflict` is `block` (stop for a human on a conflict; the default) or
 `agent` (try a resolver first). The task reads back with
-`issue_worktree: "side"` and `merge_back: { "on_conflict": … }`; every other
-task carries `null` in both.
+`issue_worktree: "side"` and `merge_back: { "on_conflict": … }`. A main task
+carries `merge_back: null`, and a task with no issue, a fan-out lane, or one
+created before roles existed carries `null` in both.
 
 | Status | When |
 |---|---|
@@ -2670,6 +2671,11 @@ A chat [handed off](#chats) with `issue_id` becomes the
 main task when the issue has no main branch yet, and its branch becomes the
 main branch; otherwise it becomes a side task with `on_conflict: block`. The
 handoff body does not take `merge_back`.
+
+Roles, the main branch and the occupant are recorded and served today; the
+scheduler does not yet hold a main task back until the occupant settles, side
+tasks are not yet cut from the main branch, and nothing yet merges a side task
+back — those arrive with later releases.
 
 ## Chats
 
