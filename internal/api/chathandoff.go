@@ -95,12 +95,33 @@ func (s *Server) handleChatHandoff(w http.ResponseWriter, r *http.Request) {
 		}})
 		return
 	}
+	// The choice of a side worktree on handoff arrives with 134.15 (#762);
+	// until then the issue's state decides the role, below.
+	if req.MergeBack != nil {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			"merge_back is not accepted on a handoff: the role follows the issue's main branch")
+		return
+	}
 	req.ProjectID = chat.ProjectID
 	prep, ok := s.prepareTaskCreate(ctx, w, &req, chat.BaseBranch)
 	if !ok {
 		return
 	}
 	t := prep.task
+	// The handoff's role rule (task 134 decision 7): an issue with no main
+	// branch yet takes the chat's branch as it, so the task is main; an
+	// issue that has one gets a side task, merged back on `block` as
+	// fan_out's default is (decision 12). The chat's branch is the caller's
+	// name, never one a main task may trade for another, so a main branch
+	// that appears before the commit is a 400, not a silent rebind.
+	if t.IssueID != nil {
+		if prep.mainWorktree.Branch == "" {
+			t.IssueWorktree, t.MergeOnConflict = store.IssueWorktreeMain, ""
+		} else {
+			t.IssueWorktree, t.MergeOnConflict = store.IssueWorktreeSide, store.MergeOnConflictBlock
+		}
+	}
+	t.BranchExplicit = true
 	// The inheritance, character for character. There is no third worktree
 	// creation mode behind this: taskrun's ensureWorktree returns early for a
 	// task that already has a path, so admission runs no git at all and the
@@ -116,6 +137,10 @@ func (s *Server) handleChatHandoff(w http.ResponseWriter, r *http.Request) {
 	updated, err := s.deps.Store.HandoffChat(ctx, chat.ID, &t)
 	var claimed *store.BranchClaimedError
 	switch {
+	case writeIssueWorktreeError(w, err):
+		// The issue's main branch changed between the read and the commit;
+		// the transaction rolled back and the chat is untouched.
+		return
 	case errors.As(err, &claimed):
 		// A live task already on this branch. The transaction rolled back, so
 		// the chat is still idle and still owns its worktree.

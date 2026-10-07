@@ -690,7 +690,8 @@ issue and chat:
 ```json
 "stats": {
   "tasks": { "by_state": { "queued": 1, "running": 2, "blocked": 1 }, "active": 4, "attention": 1 },
-  "issues": { "open": 37, "open_imported": 30, "active": 3 },
+  "issues": { "open": 37, "open_imported": 30, "active": 3,
+              "lanes": { "open": 30, "in_progress": 3, "hand_off": 4, "done": 112 } },
   "chats": { "live": 2, "awaiting_input": 1 },
   "issue_sync": { "enabled": true, "ok": true, "reason": "", "last_synced_at": "2026-10-04T09:12:00Z" },
   "last_activity_at": "2026-10-04T09:40:13Z"
@@ -705,6 +706,7 @@ issue and chat:
 | `issues.open` | Open issues |
 | `issues.open_imported` | Open issues imported from GitHub |
 | `issues.active` | Open issues with an unfinished root task, as on the issue itself |
+| `issues.lanes` | Issues per [lane](#issues) — `open`, `in_progress`, `hand_off` and `done`, every key always present. Closed issues are counted, as `done`, which the three figures above never count |
 | `chats.live` | Chats in `idle`, `running` or `awaiting_input` |
 | `chats.awaiting_input` | Chats waiting on an answer. It is kept apart from `tasks.attention` |
 | `issue_sync` | The stored import health: the `enabled`, `ok`, `reason` and `last_synced_at` of [`GET /v1/projects/{id}/issues/sync`](#github-issues), read without asking git for the repository |
@@ -1710,7 +1712,7 @@ time.
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/v1/tasks?project_id=&state=&archived=&archived_before=&archived_since=&limit=&offset=&parent_id=&include_children=&issue_id=` | List. Fan-out lanes are **excluded** by default — `parent_id` lists one parent's lanes in merge order, `include_children=true` the flat everything. `issue_id` lists the tasks created from one [issue](#creating-a-task-from-an-issue) |
-| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, existing_branch?, priority?, agent?, model?, effort?, github_pull?, issue_id?, paused?, restricted?, max_task_cost_usd? }` — `issue_id` creates the task [from an issue](#creating-a-task-from-an-issue). `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head. `existing_branch` runs the task on a branch that already exists — see [Running on an existing branch](#running-on-an-existing-branch). `paused`, `restricted` and `max_task_cost_usd` are the [create-time limits](#paused-restricted-and-capped-tasks). Accepts an optional `Idempotency-Key` header |
+| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, existing_branch?, priority?, agent?, model?, effort?, github_pull?, issue_id?, merge_back?, paused?, restricted?, max_task_cost_usd? }` — `issue_id` creates the task [from an issue](#creating-a-task-from-an-issue), as its [main task](#the-issues-main-branch) unless `merge_back` asks for a side task. `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head. `existing_branch` runs the task on a branch that already exists — see [Running on an existing branch](#running-on-an-existing-branch). `paused`, `restricted` and `max_task_cost_usd` are the [create-time limits](#paused-restricted-and-capped-tasks). Accepts an optional `Idempotency-Key` header |
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
 | `DELETE` | `/v1/tasks/{id}` | Permanent delete of an **archived** task. `?delete_branch=true` (or `{ "delete_branch": true }`) → `{ deleted: true, branch? }`. See [Permanent delete](#permanent-delete) |
@@ -1855,8 +1857,9 @@ curl -sS -X POST http://127.0.0.1:PORT/v1/tasks/import \
 `archived_at` set to the import time so [retention](files.md#transcripts)
 starts over. `worktree_path` is cleared, `created_by_task_id` is cleared
 unless that task exists here, and `issue_id` is cleared unless that issue
-exists in the project the task lands in (the task keeps its issue snapshot);
-every other column is copied as it is. Step
+exists in the project the task lands in (the task keeps its issue snapshot),
+taking `issue_worktree` and `merge_back` with it; every other column is
+copied as it is. Step
 attempt ids are all kept when all are free, and all renumbered in their original
 order when any is taken — `step_runs_renumbered` says which. `project_id`
 imports into another project; without it the backed-up project must exist here
@@ -2129,7 +2132,7 @@ Human actions, all `POST /v1/tasks/{id}/…`:
 | `/cancel` | most states | |
 | `/pause` | queued, running | |
 | `/resume` | paused | |
-| `/retry` | blocked, awaiting_children | `{ prompt_override?, run_override?, branch_override?, paused? }` — `paused` [holds](#holding-a-retry-or-a-follow-up) the task instead of re-queuing it. `branch_override` renames the branch before re-admission, which is how a `branch_exists` block is recovered. **`409`** on a task created from a pull request: renaming its branch would detach it from that pull request. From `awaiting_children` it means the cascade below, and all three overrides and `paused` are a **`400`** |
+| `/retry` | blocked, awaiting_children | `{ prompt_override?, run_override?, branch_override?, paused? }` — `paused` [holds](#holding-a-retry-or-a-follow-up) the task instead of re-queuing it. `branch_override` renames the branch before re-admission, which is how a `branch_exists` block is recovered. **`409`** on a task created from a pull request: renaming its branch would detach it from that pull request. **`409`** on an issue's [main task](#the-issues-main-branch) while another unarchived main task of the issue carries the same branch — an issue has one main branch; a sole main task may be renamed, and the main branch moves with it. From `awaiting_children` it means the cascade below, and all three overrides and `paused` are a **`400`** |
 | `/repair` | blocked | `{ prompt, agent?, model?, effort? }` — runs one ad-hoc agent in the task's existing worktree, then returns the task to `blocked` at the same step with the same reason |
 | `/skip` | blocked, awaiting_gate | |
 | `/approve` | awaiting_gate | |
@@ -2487,7 +2490,8 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
 ```json
 { "id": 7, "project_id": 1, "title": "Crash on cold start", "state": "open",
   "kind": "bug", "priority": 2, "author": "ada", "labels": ["bug"],
-  "source": null, "active": false, "task_count": 0, "version": 1,
+  "source": null, "active": false, "task_count": 0,
+  "lane": "open", "attention": false, "version": 1,
   "created_at": "…", "updated_at": "…",
   "body": "", "available_actions": ["close"],
   "tasks": { "count": 0, "active_ids": [] },
@@ -2517,6 +2521,25 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
   across projects: without it the request is `400 validation_failed`. An empty
   array means the project has not imported that issue (yet); a
   [sync now](#issue-sync) and a second look is the way to tell.
+  `lane` (repeatable; any of them matches) keeps the issues in that lane —
+  `open`, `in_progress`, `hand_off` or `done` — and is applied before
+  `limit` and `offset`, so a page is a page of that lane. It combines with
+  `state` like every other filter, so `state=open&lane=done` is empty. Any
+  other value is `400 validation_failed`.
+- **Lanes.** Every row carries `lane` and `attention`, derived from the issue
+  and its **root** tasks (fan-out lanes never count) and never stored:
+
+  | `lane` | When |
+  |---|---|
+  | `open` | The issue is open and no root task is unfinished or done: no task yet, or only cancelled ones |
+  | `in_progress` | The issue is open and some root task is not `done`, `aborted` or `archived` — `paused` included |
+  | `hand_off` | The issue is open, every root task is finished, and at least one is `done` (or was archived from `done`): the work is back with you to close |
+  | `done` | The issue is closed — whatever its tasks are doing. Reopening returns it to the lane its tasks give it |
+
+  `attention` is `true` while some root task is `awaiting_input`,
+  `awaiting_gate` or `blocked`; it is reported on a closed issue too, whose
+  lane is `done` regardless. For an open issue, `active` is exactly
+  `lane == "in_progress"`.
 - **Get** adds `body`; `available_actions`, what a person may do from this
   state; `tasks.count` and `tasks.active_ids` over the root tasks created from
   the issue (fan-out lanes never count); `editable`, the fields a `PATCH` may
@@ -2600,6 +2623,65 @@ issue.
   issue in the same repository.
 - `GET /v1/tasks?issue_id=N` lists the issue's tasks — the root tasks its
   `tasks.count` counts; fan-out lanes inherit the link but are not listed.
+
+### The issue's main branch
+
+A task created with `issue_id` is the issue's **main** task by default:
+`issue_worktree` on the task reads `"main"`. The first main task's branch —
+the one you named, or the one the usual [branch naming](#tasks) produced —
+becomes the issue's **main branch**, and every later main task of the issue
+runs on it. A later main task reads back with `adopted_branch: true` — the
+first one cut the branch — so, like any task on an
+[existing branch](#running-on-an-existing-branch), it waits queued while
+another task still has the branch checked out, which a main task does until
+it is archived. While another unarchived main task of the issue carries the
+branch, archive does not delete it even when it has no commits past its base. The issue serves it as `main_worktree`:
+
+```json
+"main_worktree": { "branch": "vincent/12-lock-file-leaks", "occupant_task_id": 12 }
+```
+
+`occupant_task_id` is the main task that has started and not yet finished —
+it holds the main worktree even while `blocked`, `paused` or
+`awaiting_gate`. It is `null` when nothing holds it, and `main_worktree` is
+absent while the issue has no main branch. When every main task has been
+archived the issue has none, and the next main task starts a fresh branch.
+
+Creating a main task while the main worktree is occupied names the occupant
+in the `201` as `main_worktree_occupant_task_id`.
+
+`merge_back` asks for a **side** task instead — its own worktree, to be merged
+back into the main branch when it is done:
+
+```sh
+curl -sS -X POST "http://127.0.0.1:$PORT/v1/tasks" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"project_id":1,"issue_id":7,"merge_back":{"on_conflict":"block"}}'
+```
+
+`on_conflict` is `block` (stop for a human on a conflict; the default) or
+`agent` (try a resolver first). The task reads back with
+`issue_worktree: "side"` and `merge_back: { "on_conflict": … }`. A main task
+carries `merge_back: null`, and a task with no issue, a fan-out lane, or one
+created before roles existed carries `null` in both.
+
+| Status | When |
+|---|---|
+| `400` | `merge_back` without `issue_id` |
+| `400` | `merge_back` on an issue that has no main branch yet — create a main task first |
+| `400` | `merge_back` together with `branch_name` or `existing_branch` |
+| `400` | `merge_back.on_conflict` other than `block` or `agent` |
+| `400` | A main task whose `branch_name` or `existing_branch` names a branch other than the issue's main branch |
+
+A chat [handed off](#chats) with `issue_id` becomes the
+main task when the issue has no main branch yet, and its branch becomes the
+main branch; otherwise it becomes a side task with `on_conflict: block`. The
+handoff body does not take `merge_back`.
+
+Roles, the main branch and the occupant are recorded and served today; the
+scheduler does not yet hold a main task back until the occupant settles, side
+tasks are not yet cut from the main branch, and nothing yet merges a side task
+back — those arrive with later releases.
 
 ## Chats
 

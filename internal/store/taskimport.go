@@ -185,7 +185,7 @@ type ImportResult struct {
 // nothing references `step_runs.id`, and transcript files are named by
 // step index and attempt, so a renumber rewrites nothing else.
 //
-// Every other column is copied as it is, with five exceptions: `archived_at`
+// Every other column is copied as it is, with six exceptions: `archived_at`
 // is stamped now, so §17 retention restarts rather than pruning what was just
 // restored (decision 5); `worktree_path` is NULL, since backups carry no
 // worktrees; `project_id` follows opts.ProjectID; `created_by_task_id` is
@@ -193,7 +193,9 @@ type ImportResult struct {
 // `issue_id` is NULL unless that issue is live in the project the task lands
 // in — for a legacy task 035 snapshot, the issue whose GitHub remote has the
 // snapshot's repo and number. An issue of another project is no link at all: issue ids are global,
-// and keeping one would point the task at somebody else's work. `issue_json`
+// and keeping one would point the task at somebody else's work; and
+// `issue_worktree` and `merge_on_conflict` are NULL whenever `issue_id` is,
+// since a role means nothing without its issue (task 134.10). `issue_json`
 // is copied verbatim either way — the snapshot is exactly what survives an
 // issue's deletion (task 130 decision 6). So is `archived_from` (task
 // 134.3): a backup taken before migration 0042 is migrated when its staged
@@ -317,6 +319,13 @@ func (s *Store) ImportTask(ctx context.Context, exp *TaskExport, opts ImportOpti
 		if !live {
 			task.Set("issue_id", nil)
 		}
+	}
+	// A role is a role *in an issue* (task 134 decision 7): a task whose link
+	// was dropped above carries none, as every issue-less task does (review
+	// F4 of #768).
+	if _, linked := task.Int64("issue_id"); !linked {
+		task.Set("issue_worktree", nil)
+		task.Set("merge_on_conflict", nil)
 	}
 
 	renumber, err := stepRunIDsTaken(ctx, tx, exp.StepRuns)

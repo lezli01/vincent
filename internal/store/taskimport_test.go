@@ -78,12 +78,16 @@ func importSource(t *testing.T) (*Store, *TaskExport) {
 		}
 		fillEveryColumn(t, src, "step_runs", r.ID, "id", "task_id")
 	}
-	// archived_from has a CHECK no filler passes; it is set to the value
-	// archiving a done task would not write, so a copy cannot pass by luck.
+	// archived_from, issue_worktree and merge_on_conflict have CHECKs no
+	// filler passes; each is set to a value no default would write, so a
+	// copy — or, for the two roles, the clearing that follows the dropped
+	// issue link — cannot pass by luck.
 	fillEveryColumn(t, src, "tasks", task.ID,
-		"id", "project_id", "state", "parent_task_id", "created_by_task_id", "issue_id", "archived_from")
+		"id", "project_id", "state", "parent_task_id", "created_by_task_id", "issue_id", "archived_from",
+		"issue_worktree", "merge_on_conflict")
 	if _, err := src.db.ExecContext(t.Context(),
-		`UPDATE tasks SET created_by_task_id = ?, archived_from = 'aborted' WHERE id = ?`, creator.ID, task.ID); err != nil {
+		`UPDATE tasks SET created_by_task_id = ?, archived_from = 'aborted',
+			issue_worktree = 'side', merge_on_conflict = 'agent' WHERE id = ?`, creator.ID, task.ID); err != nil {
 		t.Fatalf("set creator: %v", err)
 	}
 	exp, err := src.ExportTask(t.Context(), task.ID)
@@ -142,6 +146,10 @@ func TestImportTaskRoundTripsEveryColumn(t *testing.T) {
 	}{
 		{"tasks", "id = 2", map[string]any{
 			"archived_at": formatTime(now), "worktree_path": nil,
+			// No issue survives into this round trip, and a role goes with
+			// its issue (review F4 of #768); the issue-link test below proves
+			// both columns copy when the link does.
+			"issue_worktree": nil, "merge_on_conflict": nil,
 		}},
 		{"step_runs", "task_id = 2", nil},
 	} {
@@ -367,7 +375,8 @@ func TestImportTaskKeepsAnIssueLinkOnlyIntoItsProject(t *testing.T) {
 		is := testIssue(t, src, p.ID, "the issue")
 		task := newArchivedTask(t, src, p.ID, "restore me")
 		if _, err := src.db.ExecContext(t.Context(),
-			`UPDATE tasks SET issue_id = ?, issue_json = ? WHERE id = ?`, is.ID, snap, task.ID); err != nil {
+			`UPDATE tasks SET issue_id = ?, issue_json = ?, issue_worktree = 'side', merge_on_conflict = 'agent'
+			  WHERE id = ?`, is.ID, snap, task.ID); err != nil {
 			t.Fatalf("link issue: %v", err)
 		}
 		exp, err := src.ExportTask(t.Context(), task.ID)
@@ -418,6 +427,15 @@ func TestImportTaskKeepsAnIssueLinkOnlyIntoItsProject(t *testing.T) {
 				t.Errorf("issue_id = %d, want NULL", *got.IssueID)
 			case want != 0 && (got.IssueID == nil || *got.IssueID != want):
 				t.Errorf("issue_id = %v, want %d", got.IssueID, want)
+			}
+			// The role goes with the link (review F4 of #768).
+			wantRole, wantConflict := IssueWorktreeSide, MergeOnConflictAgent
+			if want == 0 {
+				wantRole, wantConflict = "", ""
+			}
+			if got.IssueWorktree != wantRole || got.MergeOnConflict != wantConflict {
+				t.Errorf("role = (%q, %q), want (%q, %q)",
+					got.IssueWorktree, got.MergeOnConflict, wantRole, wantConflict)
 			}
 			if raw := exp.Task.String("issue_json"); raw != snap {
 				t.Fatalf("exported issue_json = %q", raw)

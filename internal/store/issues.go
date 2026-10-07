@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/issuestate"
-	"github.com/lezli01/vincent/internal/taskstate"
 )
 
 // Issue event types (spec §5.6, §13.3, task 130). Like the chat family they
@@ -49,8 +48,9 @@ var ErrInvalidIssueAction = errors.New("action not allowed in this issue state")
 var ErrInvalidDuplicateOf = errors.New("duplicate_of must name another issue in the same project")
 
 // Issue is a vincent-owned issue (spec §5.6, task 130). Labels, Remote,
-// Active and TaskCount are read with it; Active and TaskCount are derived
-// from its root tasks and never stored (decision 3).
+// Active, TaskCount, Lane and Attention are read with it; the last four are
+// derived from its root tasks and never stored (task 130 decision 3, task
+// 134 decision 1).
 type Issue struct {
 	ID, ProjectID      int64
 	Title, Body        string
@@ -78,6 +78,19 @@ type Issue struct {
 	// never count (decision 5): a twenty-lane tree is one piece of work.
 	Active    bool
 	TaskCount int
+	// Lane is the issue's board lane (task 134 decision 2), always set:
+	// `done` when closed, else what its root tasks give it —
+	// issuestate.LaneOf. For an open issue Active is exactly
+	// Lane == LaneInProgress.
+	Lane issuestate.Lane
+	// Attention is whether some root task is waiting on a person
+	// (taskstate.NeedsHuman, decision 3). It is computed for a closed issue
+	// too: closing does not answer a task's question.
+	Attention bool
+	// MainWorktree is the issue's main branch and its occupant (task 134
+	// decisions 2, 8), derived from its main-role tasks in the same query
+	// and never stored (task 130 decision 3).
+	MainWorktree IssueMainWorktree
 }
 
 // IssueRemote is an imported issue's link to its source (decision 2). A nil
@@ -149,6 +162,7 @@ const (
 type IssueFilter struct {
 	ProjectID int64              // 0 = every project
 	States    []issuestate.State // empty = any
+	Lanes     []issuestate.Lane  // empty = any; applied in SQL, so Limit/Offset page the filtered set
 	Label     string             // case-insensitive name, "" = any
 	Labels    []string           // every one must be carried (AND), case-insensitively
 	Kind      string             // "" = any
@@ -170,35 +184,35 @@ type issueQuerier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// settledTaskStates is §6's settled set, derived from taskstate rather than
-// spelled out here, so a new settled state reaches Active without an edit.
-func settledTaskStates() []any {
-	var out []any
-	for _, s := range taskstate.All {
-		if taskstate.Settled(s) {
-			out = append(out, string(s))
-		}
-	}
-	return out
-}
-
 // issueSelect reads an issue with its live remote row and its derived
-// counts. The remote join is on issue_id, so a tombstone never joins. Its
-// bind arguments — the settled states — come first, from issueSelectArgs.
+// counts, lane, attention (issuelane.go) and main worktree (tasks.go). The
+// remote join is on issue_id, so a tombstone never joins. Its bind
+// arguments — the task-state sets the derived columns use — come first, from
+// issueSelectArgs, which is the one place their order is written.
 func issueSelect() string {
-	settled := placeholders(len(settledTaskStates()))
 	return `SELECT i.id, i.project_id, i.title, i.body, i.state, i.close_reason, i.duplicate_of_issue_id,
 		i.kind, i.priority, i.author, i.parent_issue_id, i.created_by_task_id, i.version, i.created_at,
 		i.updated_at, i.closed_at,
 		(SELECT COUNT(*) FROM tasks t WHERE t.issue_id = i.id AND t.parent_task_id IS NULL),
-		EXISTS (SELECT 1 FROM tasks t WHERE t.issue_id = i.id AND t.parent_task_id IS NULL
-			AND t.state NOT IN ` + settled + `),
+		` + activeExpr().sql + `,
+		` + laneExpr().sql + `,
+		` + attentionExpr().sql + `,
+		(` + issueMainBranchSQL("i.id") + `),
+		(` + issueMainOccupantSQL("i.id") + `),
 		r.id, r.issue_id, r.project_id, r.provider, r.remote_key, r.repo, r.number, r.url,
 		r.remote_json, r.remote_updated_at, r.synced_at, r.suppressed, r.remote_status
 	FROM issues i LEFT JOIN issue_remotes r ON r.issue_id = i.id`
 }
 
-func issueSelectArgs() []any { return settledTaskStates() }
+// The derived columns bind in text order: Active, Lane and Attention's
+// fragments, then the main worktree occupant's settled states.
+func issueSelectArgs() []any {
+	var args []any
+	for _, f := range []sqlFrag{activeExpr(), laneExpr(), attentionExpr()} {
+		args = append(args, f.args...)
+	}
+	return append(args, settledTaskStates()...)
+}
 
 func scanIssue(r rowScanner) (*Issue, error) {
 	var (
@@ -207,7 +221,10 @@ func scanIssue(r rowScanner) (*Issue, error) {
 		closeReason, closedAt               sql.NullString
 		dupOf, parent, createdBy            sql.NullInt64
 		created, updated                    string
-		active                              bool
+		active, attention                   bool
+		lane                                string
+		mainBranch                          sql.NullString
+		mainOccupant                        sql.NullInt64
 		rID, rIssueID, rProjectID, rNumber  sql.NullInt64
 		rProvider, rKey, rRepo, rURL, rJSON sql.NullString
 		rRemoteUpdated, rSynced             sql.NullString
@@ -216,7 +233,7 @@ func scanIssue(r rowScanner) (*Issue, error) {
 	)
 	if err := r.Scan(&iss.ID, &iss.ProjectID, &iss.Title, &iss.Body, &state, &closeReason, &dupOf,
 		&iss.Kind, &iss.Priority, &iss.Author, &parent, &createdBy, &iss.Version, &created, &updated, &closedAt,
-		&iss.TaskCount, &active,
+		&iss.TaskCount, &active, &lane, &attention, &mainBranch, &mainOccupant,
 		&rID, &rIssueID, &rProjectID, &rProvider, &rKey, &rRepo, &rNumber, &rURL,
 		&rJSON, &rRemoteUpdated, &rSynced, &rSuppressed, &rStatus); err != nil {
 		return nil, err
@@ -224,6 +241,13 @@ func scanIssue(r rowScanner) (*Issue, error) {
 	iss.State = issuestate.State(state)
 	iss.CloseReason = issuestate.Reason(closeReason.String)
 	iss.Active = active
+	iss.Lane = issuestate.Lane(lane)
+	iss.Attention = attention
+	iss.MainWorktree.Branch = mainBranch.String
+	if mainOccupant.Valid {
+		id := mainOccupant.Int64
+		iss.MainWorktree.OccupantTaskID = &id
+	}
 	if dupOf.Valid {
 		iss.DuplicateOfIssueID = &dupOf.Int64
 	}
@@ -306,6 +330,14 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) ([]*Issue, error)
 		q += ` AND i.state IN ` + placeholders(len(f.States))
 		for _, st := range f.States {
 			args = append(args, string(st))
+		}
+	}
+	if len(f.Lanes) > 0 {
+		lane := laneExpr()
+		q += ` AND ` + lane.sql + ` IN ` + placeholders(len(f.Lanes))
+		args = append(args, lane.args...)
+		for _, l := range f.Lanes {
+			args = append(args, string(l))
 		}
 	}
 	for _, name := range append([]string{f.Label}, f.Labels...) {
@@ -785,11 +817,11 @@ func checkDuplicateOfTx(ctx context.Context, tx *sql.Tx, cur *Issue, target int6
 // ActiveIssueTaskIDs returns the ids of the issue's root tasks that are not
 // settled, lowest first — what Issue.Active summarizes (decision 5).
 func (s *Store) ActiveIssueTaskIDs(ctx context.Context, issueID int64) ([]int64, error) {
-	settled := settledTaskStates()
-	//nolint:gosec // G202: placeholders() emits bind markers only; every value binds
-	q := `SELECT id FROM tasks WHERE issue_id = ? AND parent_task_id IS NULL
-		AND state NOT IN ` + placeholders(len(settled)) + ` ORDER BY id`
-	rows, err := s.db.QueryContext(ctx, q, append([]any{issueID}, settled...)...)
+	cond := unsettledCond()
+	//nolint:gosec // G202: the fragment emits bind markers only; every value binds
+	q := `SELECT t.id FROM tasks t WHERE t.issue_id = ? AND t.parent_task_id IS NULL
+		AND ` + cond.sql + ` ORDER BY t.id`
+	rows, err := s.db.QueryContext(ctx, q, append([]any{issueID}, cond.args...)...)
 	if err != nil {
 		return nil, fmt.Errorf("list issue %d tasks: %w", issueID, err)
 	}

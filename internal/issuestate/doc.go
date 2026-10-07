@@ -9,7 +9,10 @@
 // taskstate or chatstate. An issue has no process and no steps: nothing runs
 // in it, nothing is admitted, nothing holds a slot, and it is never parked.
 // Whether it is being worked on is derived from its root tasks
-// (`!taskstate.Settled`), never stored as a state of its own (decision 3).
+// (`!taskstate.Settled`), never stored as a state of its own (decision 3);
+// so is its board lane (lane.go, task 134 decisions 1–4), which LaneOf
+// decides from the issue's state and two facts the store reduces its root
+// tasks to, so this package never sees a task state.
 // What is left is `open | closed` and the reason an issue was closed — the
 // same argument chatstate makes for keeping a chat's lifecycle off §6: folding
 // it in would make every task query and every board legend decide whether it

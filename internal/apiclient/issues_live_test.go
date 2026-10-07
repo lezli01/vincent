@@ -171,3 +171,46 @@ func TestIssueConflictCarriesALargeIssue(t *testing.T) {
 		}(), err)
 	}
 }
+
+// TestIssueLanesOverTheWire: lane, attention, the lane filter and the
+// project stats' lanes survive the trip through the client (task 134.4).
+func TestIssueLanesOverTheWire(t *testing.T) {
+	t.Parallel()
+	c, st, pid := newIssuesClient(t)
+	ctx := t.Context()
+	idle, err := c.CreateIssue(ctx, apiclient.CreateIssueRequest{ProjectID: pid, Title: "idle"}, "")
+	if err != nil {
+		t.Fatalf("CreateIssue: %v", err)
+	}
+	asking, err := c.CreateIssue(ctx, apiclient.CreateIssueRequest{ProjectID: pid, Title: "asking"}, "")
+	if err != nil {
+		t.Fatalf("CreateIssue: %v", err)
+	}
+	task := &store.Task{
+		ProjectID: pid, Title: "asking", WorkflowName: "w", WorkflowSnapshot: "x",
+		BaseBranch: "main", BranchName: "b-asking", State: store.TaskAwaitingInput, IssueID: &asking.ID,
+	}
+	if err := st.CreateTask(ctx, task, nil); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	got, err := c.GetIssue(ctx, asking.ID, "")
+	if err != nil || got.Lane != "in_progress" || !got.Attention {
+		t.Errorf("GetIssue = lane %q attention %v, %v; want in_progress true", got.Lane, got.Attention, err)
+	}
+	list, err := c.ListIssues(ctx, apiclient.IssueListOptions{ProjectID: pid, Lanes: []string{"open"}})
+	if err != nil || len(list) != 1 || list[0].ID != idle.ID || list[0].Lane != "open" || list[0].Attention {
+		t.Errorf("ListIssues(lane=open) = %+v, %v", list, err)
+	}
+	if _, err := c.ListIssues(ctx, apiclient.IssueListOptions{Lanes: []string{"closed"}}); err == nil {
+		t.Error("ListIssues(lane=closed) succeeded, want a 400")
+	}
+
+	projects, err := c.ListProjects(ctx, apiclient.WithStats())
+	if err != nil || len(projects) != 1 || projects[0].Stats == nil {
+		t.Fatalf("ListProjects(WithStats) = %+v, %v", projects, err)
+	}
+	if l := projects[0].Stats.Issues.Lanes; l.Open != 1 || l.InProgress != 1 || l.HandOff != 0 || l.Done != 0 {
+		t.Errorf("stats lanes = %+v, want open 1 in_progress 1", l)
+	}
+}

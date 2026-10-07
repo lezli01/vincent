@@ -128,12 +128,28 @@ type issueRowBody struct {
 	Sync *issueSyncBody `json:"sync,omitempty"`
 	// Active is whether a root task created from the issue is unsettled;
 	// TaskCount counts those root tasks (task 130 decision 5).
-	Active    bool       `json:"active"`
-	TaskCount int        `json:"task_count"`
-	Version   int64      `json:"version"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	ClosedAt  *time.Time `json:"closed_at,omitempty"`
+	Active    bool `json:"active"`
+	TaskCount int  `json:"task_count"`
+	// Lane is the issue's board lane (task 134 decision 2): `done` when
+	// closed, else derived from its root tasks. Attention is whether one of
+	// them is waiting on a person (decision 3), closed issues included.
+	Lane      issuestate.Lane `json:"lane"`
+	Attention bool            `json:"attention"`
+	// MainWorktree is the issue's main branch and the main-role task
+	// occupying it (§5.6, task 134 decisions 2, 8), derived in the list's
+	// own query. Omitted while the issue has no main branch.
+	MainWorktree *issueMainWorktreeBody `json:"main_worktree,omitempty"`
+	Version      int64                  `json:"version"`
+	CreatedAt    time.Time              `json:"created_at"`
+	UpdatedAt    time.Time              `json:"updated_at"`
+	ClosedAt     *time.Time             `json:"closed_at,omitempty"`
+}
+
+// issueMainWorktreeBody is an issue's main worktree: its branch, and the
+// admitted, unsettled main task holding it — null when it is free.
+type issueMainWorktreeBody struct {
+	Branch         string `json:"branch"`
+	OccupantTaskID *int64 `json:"occupant_task_id"`
 }
 
 // issueTasksBody is the root tasks an issue started.
@@ -182,10 +198,15 @@ func renderIssueRow(iss *store.Issue) issueRowBody {
 		Labels:          labels,
 		Active:          iss.Active,
 		TaskCount:       iss.TaskCount,
+		Lane:            iss.Lane,
+		Attention:       iss.Attention,
 		Version:         iss.Version,
 		CreatedAt:       iss.CreatedAt,
 		UpdatedAt:       iss.UpdatedAt,
 		ClosedAt:        iss.ClosedAt,
+	}
+	if mw := iss.MainWorktree; mw.Branch != "" {
+		row.MainWorktree = &issueMainWorktreeBody{Branch: mw.Branch, OccupantTaskID: mw.OccupantTaskID}
 	}
 	if issues.Mirrored(iss) {
 		r := iss.Remote
@@ -366,6 +387,14 @@ func (s *Server) handleIssueList(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.States = append(f.States, issuestate.State(st))
+	}
+	for _, l := range q["lane"] {
+		if !issuestate.ValidLane(l) {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed,
+				fmt.Sprintf("unknown issue lane %q; must be one of: open, in_progress, hand_off, done", l))
+			return
+		}
+		f.Lanes = append(f.Lanes, issuestate.Lane(l))
 	}
 	f.Labels = q["label"]
 	f.Kind = q.Get("kind")

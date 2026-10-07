@@ -104,6 +104,12 @@ type Task struct {
 	// the issue as it is now while the link holds, the task's snapshot of it
 	// once the issue is deleted. Nil for a task created without one.
 	Issue *TaskIssue `json:"issue,omitempty"`
+	// IssueWorktree is the task's role in its issue's worktrees — "main" or
+	// "side" — and nil for a task with no issue, a fan-out lane, or one
+	// created before roles existed (task 134 decisions 7, 9).
+	IssueWorktree *string `json:"issue_worktree,omitempty"`
+	// MergeBack is a side task's merge-back setting; nil on every other task.
+	MergeBack *MergeBack `json:"merge_back,omitempty"`
 
 	// QueuedReason and AdmitNotBefore describe a queued task waiting on
 	// something other than a free slot (§11) — `usage_limit` today, with the
@@ -487,6 +493,11 @@ type TaskDetail struct {
 	// POST /v1/tasks/{id}/repair reports the same findings about its own
 	// selection, in its own body (task 025).
 	Warnings []string `json:"warnings,omitempty"`
+	// MainWorktreeOccupantTaskID is CreateTask's hint (task 134 decision
+	// 10): the main-role task holding the issue's main worktree when a new
+	// main task is created. The scheduler does not hold the new task behind
+	// it until 134.11. Nil otherwise, and on every read.
+	MainWorktreeOccupantTaskID *int64 `json:"main_worktree_occupant_task_id,omitempty"`
 	// WorkflowSteps is the task's snapshot: the text edit+retry opens in an
 	// editor, and a gate's instructions.
 	WorkflowSteps []WorkflowStep `json:"workflow_steps,omitempty"`
@@ -656,6 +667,18 @@ type CreateTaskRequest struct {
 	// MaxTaskCostUSD is the task's own spend cap; the engine applies the
 	// lower of it and config's `max_task_cost_usd` (task 096 decision 18).
 	MaxTaskCostUSD *float64 `json:"max_task_cost_usd,omitempty"`
+	// MergeBack makes an IssueID task a side task: its own worktree, merged
+	// back into the issue's main branch when it is done (task 134 decisions
+	// 9, 12). Nil makes it a main task. Refused without IssueID, beside
+	// BranchName or ExistingBranch, and on an issue with no main branch yet.
+	MergeBack *MergeBack `json:"merge_back,omitempty"`
+}
+
+// MergeBack is a side task's merge-back setting. OnConflict is "block" —
+// fan_out's `merge.on_conflict: block` — or "agent", which tries a resolver
+// first; empty on create means "block".
+type MergeBack struct {
+	OnConflict string `json:"on_conflict"`
 }
 
 // CreateTask creates a task and returns it as the daemon recorded it. The

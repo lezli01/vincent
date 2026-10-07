@@ -34,6 +34,9 @@ type ProjectStats struct {
 	// remote link; IssuesActive those with an unsettled root task — the
 	// issue store's own Active definition.
 	IssuesOpen, IssuesOpenImported, IssuesActive int
+	// IssuesByLane counts issues per board lane (task 134.4), closed ones
+	// included as `done`; a lane with no issue is absent.
+	IssuesByLane map[issuestate.Lane]int
 	// ChatsLive is the chats not in a terminal state; ChatsAwaitingInput the
 	// ones parked on a question, the chat-attention figure kept apart from
 	// TasksAttention (spec decision row 29).
@@ -127,30 +130,47 @@ func projectTaskStats(ctx context.Context, s *Store, out map[int64]*ProjectStats
 }
 
 // projectIssueStats counts open issues, the imported ones (a joined remote
-// row; a tombstone has no issue_id and never joins), and the active ones by
-// issueSelect's definition — an unsettled root task.
+// row; a tombstone has no issue_id and never joins), the active ones by
+// issueSelect's definition — an unsettled root task — and every issue, open
+// or closed, per lane. The lane and activity rules are issuelane.go's, the
+// same fragments a listed issue is read with.
 func projectIssueStats(ctx context.Context, s *Store, out map[int64]*ProjectStats) error {
-	settled := settledTaskStates()
-	//nolint:gosec // G202: placeholders() emits bind markers only; every value binds
-	q := `SELECT i.project_id, COUNT(*), COUNT(r.id),
-			COALESCE(SUM(CASE WHEN EXISTS (SELECT 1 FROM tasks t WHERE t.issue_id = i.id
-				AND t.parent_task_id IS NULL AND t.state NOT IN ` + placeholders(len(settled)) + `)
-				THEN 1 ELSE 0 END), 0)
-		FROM issues i LEFT JOIN issue_remotes r ON r.issue_id = i.id
-		WHERE i.state = ? GROUP BY i.project_id`
-	rows, err := s.db.QueryContext(ctx, q, append(settled, string(issuestate.Open))...)
+	active, lane := activeExpr(), laneExpr()
+	open := string(issuestate.Open)
+	//nolint:gosec // G202: the fragments emit bind markers only; every value binds
+	q := `SELECT project_id, lane, COUNT(*),
+			COALESCE(SUM(CASE WHEN state = ? THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN state = ? AND remote_id IS NOT NULL THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN state = ? AND active THEN 1 ELSE 0 END), 0)
+		FROM (SELECT i.project_id, i.state, r.id AS remote_id,
+				` + active.sql + ` AS active, ` + lane.sql + ` AS lane
+			FROM issues i LEFT JOIN issue_remotes r ON r.issue_id = i.id)
+		GROUP BY project_id, lane`
+	args := []any{open, open, open}
+	args = append(args, active.args...)
+	args = append(args, lane.args...)
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return fmt.Errorf("count issues: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
-		var id int64
-		var open, imported, active int
-		if err := rows.Scan(&id, &open, &imported, &active); err != nil {
+		var (
+			id                          int64
+			lane                        string
+			n, openN, imported, activeN int
+		)
+		if err := rows.Scan(&id, &lane, &n, &openN, &imported, &activeN); err != nil {
 			return fmt.Errorf("count issues: %w", err)
 		}
 		st := statsFor(out, id)
-		st.IssuesOpen, st.IssuesOpenImported, st.IssuesActive = open, imported, active
+		if st.IssuesByLane == nil {
+			st.IssuesByLane = make(map[issuestate.Lane]int)
+		}
+		st.IssuesByLane[issuestate.Lane(lane)] += n
+		st.IssuesOpen += openN
+		st.IssuesOpenImported += imported
+		st.IssuesActive += activeN
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("count issues: %w", err)
