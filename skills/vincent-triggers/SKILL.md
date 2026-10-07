@@ -4,7 +4,7 @@ description: Create, edit, review, arm, and debug vincent event triggers, the YA
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.6.0
+  version: 1.6.1
 ---
 
 # vincent Triggers
@@ -228,7 +228,10 @@ limits:
     on a conflict, and `agent` tries a resolver first. It needs `issue`. A side
     task needs a main branch to fork from, so a delivery on an issue with no
     main task yet is refused with the route's 400 ("create a main task
-    first"); use it only where the issue is already being worked.
+    first"); use it only where the issue is already being worked. With
+    `merge_back`, an `issue` that renders to nothing is refused as well
+    ("merge_back requires issue_id"), so don't share one such trigger across
+    events with and without an issue.
   - There is no `github_issue`. It was removed, and a file that still
     carries it fails validation and stops firing until it is edited; its
     cursor is kept, so nothing is re-seeded. Replace it with `issue:`, on an

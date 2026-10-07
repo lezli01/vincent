@@ -696,7 +696,8 @@ key is a template over `.Event`:
   default when `on_conflict` is empty, stops for you on a conflict; `agent`
   tries a resolver first. It is not a template, and it needs `issue`. A side
   task forks from the issue's main branch, so on an issue with no main task
-  yet the route refuses it and the delivery lands `refused`.
+  yet the route refuses it and the delivery lands `refused`. With
+  `merge_back`, an `issue` that renders to nothing is refused as well.
 
 There is no `github_issue` key. A GitHub issue reaches a task only once the
 project has imported it, through `issue:`: watch it with a

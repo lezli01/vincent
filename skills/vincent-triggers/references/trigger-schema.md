@@ -305,7 +305,7 @@ action:
 | `fields` | Map from workflow field name to template |
 | `issue` | Template rendering a vincent issue id or nothing. The task is created from that issue (`issue_id`). It cannot be combined with `github_pull` |
 | `github_pull` | Template rendering a pull request number (a leading `#` is allowed) or nothing |
-| `merge_back.on_conflict` | `block` (the default when empty) or `agent`; not a template. Needs `issue`. Makes the task a side task: its own worktree cut from the issue's main branch, merged back into it when done, instead of a main task queued behind the issue's main line. Replayed as `merge_back`; on an issue with no main branch yet the route's 400 lands the delivery `refused` |
+| `merge_back.on_conflict` | `block` (the default when empty) or `agent`; not a template. Needs `issue`. Makes the task a side task: its own worktree cut from the issue's main branch, merged back into it when done, instead of a main task queued behind the issue's main line. Replayed as `merge_back`; on an issue with no main branch yet the route's 400 lands the delivery `refused`, and so does an `issue` that renders to nothing |
 
 - **No `github_issue`.** It was removed. Strict decoding refuses a file that
   still carries it (`unknown field "github_issue"`); the file stops firing but
