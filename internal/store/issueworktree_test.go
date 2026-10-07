@@ -244,6 +244,46 @@ func TestArchivedMainTasksReleaseTheMainBranch(t *testing.T) {
 	}
 }
 
+// TestRenamingASharedMainBranchIsRefused is review F2 of #768: a retry's
+// branch_override must not move one main task of an issue off the main
+// branch while another still carries it, which would leave the issue two
+// main branches. A sole main task may be renamed, and the issue's main
+// branch moves with it.
+func TestRenamingASharedMainBranchIsRefused(t *testing.T) {
+	s := openTest(t)
+	p := testProject(t, s, "p1")
+	is := testIssue(t, s, p.ID, "the issue")
+
+	first := newMainTask(p.ID, is.ID, "first")
+	first.State = TaskBlocked
+	mustCreate(t, s, first)
+	second := newMainTask(p.ID, is.ID, "second")
+	second.State = TaskDone
+	mustCreate(t, s, second)
+
+	for _, task := range []*Task{first, second} {
+		var shared *SharedMainBranchError
+		err := s.SetTaskBranchName(t.Context(), task.ID, p.ID, "issue/elsewhere")
+		if !errors.As(err, &shared) {
+			t.Fatalf("rename %s: err = %v, want SharedMainBranchError", task.Title, err)
+		}
+		if shared.Branch != first.BranchName || shared.IssueID != is.ID {
+			t.Errorf("rename %s: %+v", task.Title, shared)
+		}
+	}
+	if got := mainWorktree(t, s, is.ID); got.Branch != first.BranchName {
+		t.Fatalf("main branch after refused renames = %q, want %q", got.Branch, first.BranchName)
+	}
+
+	archiveTask(t, s, second.ID, TaskDone)
+	if err := s.SetTaskBranchName(t.Context(), first.ID, p.ID, "issue/elsewhere"); err != nil {
+		t.Fatalf("rename the sole main task: %v", err)
+	}
+	if got := mainWorktree(t, s, is.ID); got.Branch != "issue/elsewhere" {
+		t.Errorf("main branch after renaming the sole main task = %q, want issue/elsewhere", got.Branch)
+	}
+}
+
 // TestRoleIsOnlyForRootTasksWithAnIssue: a role on a lane or on a task with
 // no issue is a caller's bug, refused rather than stored (task 130 decision
 // 5), and a task created without one reads back with none.

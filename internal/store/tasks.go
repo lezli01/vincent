@@ -319,6 +319,23 @@ func (e *MainBranchMismatchError) Error() string {
 		e.IssueID, e.MainBranch, e.Branch)
 }
 
+// SharedMainBranchError is a rename of a main-role task's branch while
+// another unarchived main-role task of its issue carries the same branch
+// (review F2 of #768). The issue has one main branch (task 134 decision 3);
+// moving one of its tasks off it would leave two, so the API answers 409. A
+// sole main task may be renamed: the issue's main branch moves with it.
+type SharedMainBranchError struct {
+	TaskID      int64
+	IssueID     int64
+	Branch      string
+	OtherTaskID int64
+}
+
+func (e *SharedMainBranchError) Error() string {
+	return fmt.Sprintf("task %d shares issue %d's main branch %q with main task %d; renaming it would split the issue's main line",
+		e.TaskID, e.IssueID, e.Branch, e.OtherTaskID)
+}
+
 // NoMainBranchError is a side task created for an issue that has no main
 // branch yet (task 134 decision 6): there is nothing to cut it from, and
 // nothing to merge it back into.
@@ -706,9 +723,28 @@ func (s *Store) ListTasks(ctx context.Context, f TaskFilter) ([]Task, error) {
 // between this write and the next, and a full-row update would overwrite the
 // state its CAS just set (phase 2 decision: only TransitionTask writes state).
 // The claim check runs in the same transaction, so a rename cannot take a name
-// another live task already holds.
+// another live task already holds. So does the issue's: a main-role task that
+// shares its issue's main branch with another is *SharedMainBranchError.
 func (s *Store) SetTaskBranchName(ctx context.Context, id, projectID int64, branch string) error {
 	return s.withTx(ctx, func(tx *sql.Tx) error {
+		var (
+			issueID int64
+			current string
+			other   int64
+		)
+		err := tx.QueryRowContext(ctx, `
+			SELECT me.issue_id, me.branch_name, o.id FROM tasks me JOIN tasks o
+			  ON o.issue_id = me.issue_id AND o.branch_name = me.branch_name
+			 AND o.issue_worktree = 'main' AND o.archived_at IS NULL AND o.id <> me.id
+			WHERE me.id = ? AND me.issue_worktree = 'main'
+			ORDER BY o.id LIMIT 1`, id).Scan(&issueID, &current, &other)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+		case err != nil:
+			return fmt.Errorf("read task %d main branch: %w", id, err)
+		case branch != current:
+			return &SharedMainBranchError{TaskID: id, IssueID: issueID, Branch: current, OtherTaskID: other}
+		}
 		if err := claimBranchTx(ctx, tx, projectID, branch, id); err != nil {
 			return err
 		}

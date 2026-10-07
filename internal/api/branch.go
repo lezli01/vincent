@@ -207,6 +207,15 @@ func (s *Server) renameBranchForRetry(w http.ResponseWriter, r *http.Request, br
 				fmt.Sprintf("branch %q is already claimed by task %d", claimed.Branch, claimed.TaskID))
 			return false
 		}
+		// The issue has one main branch (task 134 decision 3): a main task
+		// that shares it cannot be moved off it alone (review F2 of #768).
+		var shared *store.SharedMainBranchError
+		if errors.As(err, &shared) {
+			writeConflict(w, shared.Error(), map[string]string{
+				"branch": shared.Branch, "main_task_id": strconv.FormatInt(shared.OtherTaskID, 10),
+			})
+			return false
+		}
 		s.internalError(w, "rename task branch", err)
 		return false
 	}

@@ -2131,7 +2131,7 @@ Human actions, all `POST /v1/tasks/{id}/…`:
 | `/cancel` | most states | |
 | `/pause` | queued, running | |
 | `/resume` | paused | |
-| `/retry` | blocked, awaiting_children | `{ prompt_override?, run_override?, branch_override?, paused? }` — `paused` [holds](#holding-a-retry-or-a-follow-up) the task instead of re-queuing it. `branch_override` renames the branch before re-admission, which is how a `branch_exists` block is recovered. **`409`** on a task created from a pull request: renaming its branch would detach it from that pull request. From `awaiting_children` it means the cascade below, and all three overrides and `paused` are a **`400`** |
+| `/retry` | blocked, awaiting_children | `{ prompt_override?, run_override?, branch_override?, paused? }` — `paused` [holds](#holding-a-retry-or-a-follow-up) the task instead of re-queuing it. `branch_override` renames the branch before re-admission, which is how a `branch_exists` block is recovered. **`409`** on a task created from a pull request: renaming its branch would detach it from that pull request. **`409`** on an issue's [main task](#the-issues-main-branch) while another unarchived main task of the issue carries the same branch — an issue has one main branch; a sole main task may be renamed, and the main branch moves with it. From `awaiting_children` it means the cascade below, and all three overrides and `paused` are a **`400`** |
 | `/repair` | blocked | `{ prompt, agent?, model?, effort? }` — runs one ad-hoc agent in the task's existing worktree, then returns the task to `blocked` at the same step with the same reason |
 | `/skip` | blocked, awaiting_gate | |
 | `/approve` | awaiting_gate | |
