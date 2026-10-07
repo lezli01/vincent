@@ -20,6 +20,16 @@ list with the user-facing context a commit subject cannot carry.
   `GET /v1/projects?stats=true` counts issues per lane under
   `stats.issues.lanes`. Both are derived from the issue's root tasks on every
   read, never stored.
+- **An issue has a main branch.** A task created from an issue with
+  `issue_id` is now the issue's main task: the first one's branch becomes the
+  issue's main branch, and every later main task of the issue runs on it.
+  `merge_back: {"on_conflict": "block"|"agent"}` on `POST /v1/tasks` asks for
+  a side task instead. Tasks report `issue_worktree` and `merge_back`, issues
+  report `main_worktree: {branch, occupant_task_id}`, and creating a main task
+  while another holds the main worktree names it in the response as
+  `main_worktree_occupant_task_id`. A chat handed off with `issue_id` becomes
+  the main task, or a side task once the issue has a main branch. Tasks
+  created before this change keep working exactly as they did.
 - **The TUI opens on the project you mean.** `vincent --project <name|id>`
   opens the TUI on that project. Without it, launching `vincent` inside a
   registered project's checkout, or inside a task's or chat's worktree, opens

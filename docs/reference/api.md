@@ -1712,7 +1712,7 @@ time.
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/v1/tasks?project_id=&state=&archived=&archived_before=&archived_since=&limit=&offset=&parent_id=&include_children=&issue_id=` | List. Fan-out lanes are **excluded** by default — `parent_id` lists one parent's lanes in merge order, `include_children=true` the flat everything. `issue_id` lists the tasks created from one [issue](#creating-a-task-from-an-issue) |
-| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, existing_branch?, priority?, agent?, model?, effort?, github_pull?, issue_id?, paused?, restricted?, max_task_cost_usd? }` — `issue_id` creates the task [from an issue](#creating-a-task-from-an-issue). `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head. `existing_branch` runs the task on a branch that already exists — see [Running on an existing branch](#running-on-an-existing-branch). `paused`, `restricted` and `max_task_cost_usd` are the [create-time limits](#paused-restricted-and-capped-tasks). Accepts an optional `Idempotency-Key` header |
+| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, existing_branch?, priority?, agent?, model?, effort?, github_pull?, issue_id?, merge_back?, paused?, restricted?, max_task_cost_usd? }` — `issue_id` creates the task [from an issue](#creating-a-task-from-an-issue), as its [main task](#the-issues-main-branch) unless `merge_back` asks for a side task. `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head. `existing_branch` runs the task on a branch that already exists — see [Running on an existing branch](#running-on-an-existing-branch). `paused`, `restricted` and `max_task_cost_usd` are the [create-time limits](#paused-restricted-and-capped-tasks). Accepts an optional `Idempotency-Key` header |
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
 | `DELETE` | `/v1/tasks/{id}` | Permanent delete of an **archived** task. `?delete_branch=true` (or `{ "delete_branch": true }`) → `{ deleted: true, branch? }`. See [Permanent delete](#permanent-delete) |
@@ -2622,6 +2622,54 @@ issue.
   issue in the same repository.
 - `GET /v1/tasks?issue_id=N` lists the issue's tasks — the root tasks its
   `tasks.count` counts; fan-out lanes inherit the link but are not listed.
+
+### The issue's main branch
+
+A task created with `issue_id` is the issue's **main** task by default:
+`issue_worktree` on the task reads `"main"`. The first main task's branch —
+the one you named, or the one the usual [branch naming](#tasks) produced —
+becomes the issue's **main branch**, and every later main task of the issue
+runs on it. The issue serves it as `main_worktree`:
+
+```json
+"main_worktree": { "branch": "vincent/12-lock-file-leaks", "occupant_task_id": 12 }
+```
+
+`occupant_task_id` is the main task that has started and not yet finished —
+it holds the main worktree even while `blocked`, `paused` or
+`awaiting_gate`. It is `null` when nothing holds it, and `main_worktree` is
+absent while the issue has no main branch. When every main task has been
+archived the issue has none, and the next main task starts a fresh branch.
+
+Creating a main task while the main worktree is occupied queues the task
+behind the occupant; the `201` names it as `main_worktree_occupant_task_id`.
+
+`merge_back` asks for a **side** task instead — its own worktree, to be merged
+back into the main branch when it is done:
+
+```sh
+curl -sS -X POST "http://127.0.0.1:$PORT/v1/tasks" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"project_id":1,"issue_id":7,"merge_back":{"on_conflict":"block"}}'
+```
+
+`on_conflict` is `block` (stop for a human on a conflict; the default) or
+`agent` (try a resolver first). The task reads back with
+`issue_worktree: "side"` and `merge_back: { "on_conflict": … }`; every other
+task carries `null` in both.
+
+| Status | When |
+|---|---|
+| `400` | `merge_back` without `issue_id` |
+| `400` | `merge_back` on an issue that has no main branch yet — create a main task first |
+| `400` | `merge_back` together with `branch_name` or `existing_branch` |
+| `400` | `merge_back.on_conflict` other than `block` or `agent` |
+| `400` | A main task whose `branch_name` or `existing_branch` names a branch other than the issue's main branch |
+
+A chat [handed off](#chats) with `issue_id` becomes the
+main task when the issue has no main branch yet, and its branch becomes the
+main branch; otherwise it becomes a side task with `on_conflict: block`. The
+handoff body does not take `merge_back`.
 
 ## Chats
 

@@ -204,6 +204,29 @@ doctor. C, a fresh worktree per main task — "free" would mean "archived"
 rather than "not in progress", and uncommitted work would be lost at each
 hand-over.
 
+*Amended 2026-10-07 (134.10, #757), the author's answers while scoping it:*
+
+- The issue's main branch is the `branch_name` of any **unarchived** main-role
+  task — the view `claimBranchTx` takes. Once every main task is archived the
+  next main task cuts a fresh name through task 001's chain; the old branch
+  stays in git, off the issue's line (see Risks).
+- The binding happens in `insertTaskTx`, inside the create transaction: no
+  main branch yet makes this task's name it; one existing sets `branch_name`
+  to it. `claimBranchTx` exempts unarchived main-role tasks of the same issue
+  from each other and from nothing else.
+- An explicit `branch_name` or `existing_branch` on a main task becomes the
+  main branch when there is none, is accepted when it names the main branch,
+  and is a 400 when it names another. Adopt mode stays outside the claim.
+- `merge_back: {on_conflict: block|agent}` is a 400 without `issue_id`, on an
+  issue with no main branch yet, beside `branch_name` or `existing_branch`, or
+  with an unknown value; otherwise it is recorded as `tasks.merge_on_conflict`
+  even when the main worktree is free. An empty `on_conflict` is `block`.
+- `issue_id` beside `github_pull` stays a 400; the issue's `github_pull`
+  criterion is dropped.
+- A chat handoff with `issue_id` is main when the issue has no main branch
+  (the chat's branch becomes it) and side with `block` otherwise, until 134.15
+  lets the handoff body choose; the handoff refuses `merge_back` until then.
+
 ### 8. Occupancy: admitted and not settled (2026-10-07)
 
 A main-role task holds the issue's main worktree from its admission
@@ -240,6 +263,13 @@ busy (134.10).
 
 *Alternative beaten:* #747's issue-main-worktree finding, a 409
 `issue_worktree_busy` unless the caller chooses a side worktree.
+
+*Amended 2026-10-07 (134.10, #757):* the hint is
+`main_worktree_occupant_task_id` on `POST /v1/tasks`' 201 for a main task
+whose issue's main worktree is occupied (decision 8's definition, read after
+the commit), and `main_worktree: {branch, occupant_task_id}` on the issue
+detail and row. Rendering it in the TUI form and the CLI stays with 134.15 and
+134.16.
 
 ### 11. Merge-back is a daemon-created task (option B) (2026-10-07)
 
@@ -372,6 +402,10 @@ deleted.
   within one issue now queue behind each other.
 - A blocked or gated main task stalls the issue's main line until a human acts
   (decision 8).
+- Archiving every main task of an issue drops its main branch (decision 7's
+  134.10 amendment): the next main task cuts a fresh branch, and the old one
+  stays in git with the earlier work, off the issue's line, until someone
+  merges or deletes it.
 - The `hand_off` lane only grows until someone closes the issue; nothing
   auto-closes a local issue.
 - A live task on a closed issue sits in the hidden `done` lane. The task board
@@ -445,7 +479,7 @@ sections and public pages its code makes true, in its own pull request.
 - [x] **134.9** ([#756](https://github.com/lezli01/vincent/issues/756)) The
   merge message factored out, `handleConflict` taking a policy, the first
   agent-resolver tests and a fakeagent scenario (decision 12). ✓ 2026-10-07
-- [ ] **134.10** ([#757](https://github.com/lezli01/vincent/issues/757)) The
+- [x] **134.10** ([#757](https://github.com/lezli01/vincent/issues/757)) The
   `issue_worktree` role, `end_sha`, the main-branch binding at creation,
   `merge_back` on `POST /v1/tasks` and `main_worktree` on the issue DTO
   (decisions 7, 9, 10). Depends: 134.1.
