@@ -2692,9 +2692,8 @@ handoff body does not take `merge_back`.
 Roles, the main branch and the occupant are recorded and served today, and
 the scheduler holds a later main task back while the occupant holds the
 worktree. A later main task still waits for the previous one to be
-**archived**, not merely finished, side tasks are not yet cut from the main
-branch, and nothing yet merges a side task back — those arrive with later
-releases.
+**archived**, not merely finished, and nothing yet merges a side task back —
+those arrive with later releases.
 
 ## Chats
 
