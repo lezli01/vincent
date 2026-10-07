@@ -8,6 +8,7 @@ package worktree
 // `Reason*` taxonomy a block_reason is drawn from.
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -145,16 +146,23 @@ func (m *Manager) IndexConflicted(ctx context.Context, worktreePath string) (boo
 }
 
 // ConflictedPaths lists the files with unresolved conflicts, for the block's
-// message and for an `on_conflict: agent` resolver's prompt.
+// message, for an `on_conflict: agent` resolver's prompt, and for
+// ConflictMarkers, which opens each one.
+//
+// `-z` through RunRaw, for the reason ListFiles gives: without it git
+// C-quotes a non-ASCII, quote, backslash or control-character path, and Run
+// trims the output, so the names would not be the files' own. ConflictMarkers
+// would then fail to open them, take them for deleted, and let their markers
+// be committed (review F1 of #767).
 func (m *Manager) ConflictedPaths(ctx context.Context, worktreePath string) ([]string, error) {
-	out, err := m.git.Run(ctx, worktreePath, "diff", "--name-only", "--diff-filter=U")
+	out, err := m.git.RunRaw(ctx, worktreePath, "diff", "--name-only", "-z", "--diff-filter=U")
 	if err != nil {
 		return nil, &Error{Reason: ReasonGitError, Err: fmt.Errorf("list unmerged paths: %w", err)}
 	}
 	var paths []string
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		if line = strings.TrimSpace(line); line != "" {
-			paths = append(paths, line)
+	for _, row := range bytes.Split(out, []byte{0}) {
+		if len(row) > 0 {
+			paths = append(paths, string(row))
 		}
 	}
 	return paths, nil

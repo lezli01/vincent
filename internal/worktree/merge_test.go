@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -148,5 +149,50 @@ func TestConflictMarkersSurviveStaging(t *testing.T) {
 	}
 	if got, err := m.ConflictMarkers(ctx, repo, paths); err != nil || len(got) != 0 {
 		t.Fatalf("ConflictMarkers after resolving = %v, %v; want none", got, err)
+	}
+}
+
+// Unusual names reach ConflictMarkers as the files' own: git C-quotes a
+// non-ASCII path without -z, and a trim would eat a leading space, and either
+// way the file would be taken for deleted and its markers committed (review
+// F1 of #767). A trailing space is not tried: Windows strips it.
+func TestConflictedPathsUnusualNames(t *testing.T) {
+	ctx := context.Background()
+	names := []string{"café.txt", " lead.txt", `quo"te.txt`}
+	if runtime.GOOS == "windows" {
+		names = names[:2] // `"` is not a legal Windows file name character
+	}
+	repo := testrepo.Init(t, "main")
+	testrepo.Run(t, repo, "checkout", "-q", "-b", "side")
+	for _, n := range names {
+		testrepo.WriteFile(t, repo, n, "side\n")
+	}
+	testrepo.Run(t, repo, "add", ".")
+	testrepo.Run(t, repo, "commit", "-q", "-m", "side")
+	testrepo.Run(t, repo, "checkout", "-q", "main")
+	for _, n := range names {
+		testrepo.WriteFile(t, repo, n, "main\n")
+	}
+	testrepo.Run(t, repo, "add", ".")
+	testrepo.Run(t, repo, "commit", "-q", "-m", "main")
+
+	m := newManager(t)
+	if got, err := m.MergeBranch(ctx, repo, "side", "Merge"); err != nil || got != MergeConflicted {
+		t.Fatalf("MergeBranch = %v, %v", got, err)
+	}
+	paths, err := m.ConflictedPaths(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := slices.Sorted(slices.Values(names))
+	if got := slices.Sorted(slices.Values(paths)); !slices.Equal(got, want) {
+		t.Fatalf("ConflictedPaths = %q, want %q", got, want)
+	}
+	marked, err := m.ConflictMarkers(ctx, repo, paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := slices.Sorted(slices.Values(marked)); !slices.Equal(got, want) {
+		t.Fatalf("ConflictMarkers = %q, want every conflicted file %q", got, want)
 	}
 }
