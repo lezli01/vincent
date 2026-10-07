@@ -1169,6 +1169,16 @@ EOF
 # Tea has repainted goes to the previous layer (a Down meant for the form's
 # rail ends up inside the textarea that still has the keyboard).
 #
+# The third VHS trap is the palette's ghost (#743). VHS photographs xterm.js's
+# canvas text layer, and that renderer can leave a cell of the palette's left
+# border painted after the palette closes, even though the terminal buffer
+# (and every real terminal) holds a blank there: the TUI's output is correct.
+# A screen reached through the palette whose rows under the box stay empty
+# keeps the `│`/`└` in its picture. No mid-tape `Set` can force a repaint, so
+# such a tape opens the help overlay, scrolls it so different text crosses
+# those cells, and closes it before the Screenshot — the repaint that follows
+# clears the ghost. Reopening the palette does not: its own close leaves it.
+#
 # PROJECT is the project the TUI opens on, passed as `--project` (task 132).
 # Every screen but the project picker and overview shows one project, and
 # without the flag the startup choice falls to the last-used project — that
@@ -1944,6 +1954,13 @@ Type "archived chats"
 Sleep 1s
 Enter
 Sleep 4s
+Type "?"
+Sleep 2s
+# the palette ghost (#743), repainted away: see tape()
+Down 6
+Sleep 2s
+Escape
+Sleep 2s
 Screenshot "'"$OUT"'/tui-archived-chats.png"
 Sleep 2s
 '
@@ -2129,6 +2146,13 @@ Type "s"
 Sleep 3s
 Escape
 Sleep 2s
+Type "?"
+Sleep 2s
+# the palette ghost (#743), repainted away: see tape()
+Down 6
+Sleep 2s
+Escape
+Sleep 2s
 Screenshot "'"$OUT"'/tui-issues.png"
 Sleep 2s
 '
@@ -2222,6 +2246,13 @@ Type "project overview"
 Sleep 1s
 Enter
 Sleep 3s
+Sleep 2s
+Type "?"
+Sleep 2s
+# the palette ghost (#743), repainted away: see tape()
+Down 6
+Sleep 2s
+Escape
 Sleep 2s
 Screenshot "'"$OUT"'/tui-project-overview.png"
 Sleep 2s

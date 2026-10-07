@@ -398,6 +398,12 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **The issues, archived chats and project overview screenshots no longer
+  show a stray piece of the command palette's border.** The TUI itself was
+  never affected; the recording tool's renderer left the cells painted. The
+  screenshot script now gets them repainted before the shot, and the three
+  pictures in the docs are recaptured.
+  ([#743](https://github.com/lezli01/vincent/issues/743))
 - **`vincent daemon stop` returns only once the daemon has exited.** It used
   to return as soon as the daemon released its lock, while the process was
   still shutting down — so on Windows a script that stopped the daemon and
