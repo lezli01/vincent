@@ -21,7 +21,7 @@ const taskColumns = `id, project_id, title, description, fields_json, workflow_n
 	parent_task_id, parent_step_index, lane_id, lane_order, settled_children_watermark,
 	github_issue_json, github_pull_json,
 	workflow_origin_json, created_by_task_id, issue_id, issue_json,
-	created_at, updated_at, started_at, finished_at, archived_at`
+	created_at, updated_at, started_at, finished_at, archived_at, archived_from`
 
 // slotStates is the set of states that occupy a concurrency slot (spec §11),
 // rendered as SQL placeholders. It is derived from taskstate rather than
@@ -208,8 +208,8 @@ func insertTaskTx(
 			state, current_step, block_reason, admit_not_before, queued_reason,
 			parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json,
 			github_pull_json, workflow_origin_json, created_by_task_id, issue_id, issue_json,
-			created_at, updated_at, started_at, finished_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			created_at, updated_at, started_at, finished_at, archived_at, archived_from)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ProjectID, t.Title, t.Description, fields, t.WorkflowName, t.WorkflowSnapshot,
 		t.BaseBranch, t.BranchName, t.AdoptedBranch, nullString(t.WorktreePath), nullString(t.BaseSHA), refreshJSON, t.Priority,
 		nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
@@ -224,7 +224,8 @@ func insertTaskTx(
 		t.ParentTaskID, t.ParentStepIndex, nullString(t.LaneID), t.LaneOrder, issueJSON,
 		pullJSON, originJSON, t.CreatedByTaskID, t.IssueID, snapJSON,
 		formatTime(t.CreatedAt), formatTime(t.UpdatedAt),
-		formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt))
+		formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt),
+		nullString(string(t.ArchivedFrom)))
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)
 	}
@@ -576,7 +577,7 @@ func (s *Store) UpdateTask(ctx context.Context, t *Task) error {
 			base_refresh = ?, priority = ?, agent_override = ?, model_override = ?, effort_override = ?,
 			state = ?, current_step = ?, block_reason = ?, block_detail = ?,
 			admit_not_before = ?, queued_reason = ?,
-			updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?
+			updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?, archived_from = ?
 		WHERE id = ?`,
 		t.Title, t.Description, fields, t.WorkflowName,
 		t.WorkflowSnapshot, t.BaseBranch, t.BranchName, nullString(t.WorktreePath), nullString(t.BaseSHA),
@@ -584,7 +585,7 @@ func (s *Store) UpdateTask(ctx context.Context, t *Task) error {
 		string(t.State), t.CurrentStep, nullString(t.BlockReason), nullString(t.BlockDetail),
 		formatTimePtr(t.AdmitNotBefore), nullString(t.QueuedReason),
 		formatTime(t.UpdatedAt), formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt),
-		t.ID)
+		nullString(string(t.ArchivedFrom)), t.ID)
 	if err != nil {
 		return fmt.Errorf("update task %d: %w", t.ID, err)
 	}
@@ -1075,6 +1076,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		issueSnap                      sql.NullString
 		created, updated               string
 		started, finished, archived    sql.NullString
+		archivedFrom                   sql.NullString
 	)
 	if err := r.Scan(&t.ID, &t.ProjectID, &t.Title, &t.Description, &fields, &t.WorkflowName,
 		&t.WorkflowSnapshot, &t.BaseBranch, &t.BranchName, &t.AdoptedBranch, &worktree, &baseSHA, &baseRefresh, &t.Priority,
@@ -1086,7 +1088,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		&parentID, &parentStep, &laneID, &laneOrder, &watermark,
 		&githubIssue, &githubPull, &workflowOrigin,
 		&createdBy, &issueID, &issueSnap,
-		&created, &updated, &started, &finished, &archived); err != nil {
+		&created, &updated, &started, &finished, &archived, &archivedFrom); err != nil {
 		return nil, err
 	}
 	if parentID.Valid {
@@ -1106,6 +1108,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		t.IssueID = &id
 	}
 	t.LaneID = laneID.String
+	t.ArchivedFrom = TaskState(archivedFrom.String)
 	t.LaneOrder = int(laneOrder.Int64)
 	if watermark.Valid {
 		n := int(watermark.Int64)

@@ -9700,8 +9700,9 @@ POST   /v1/tasks/import                 *Added 2026-09-17 (task 117, issue #411)
                                         `worktree_path` NULL, `created_by_task_id` NULL unless
                                         that task is live, `issue_id` NULL unless that issue
                                         is live in the target project (*amended 2026-10-02,
-                                        task 130.1*; `issue_json` is kept); every other column
-                                        is copied as it is, and no git operation runs. Step run ids are all
+                                        task 130.1*; `issue_json` is kept); every other column,
+                                        `archived_from` included (task 134.3), is copied as it
+                                        is, and no git operation runs. Step run ids are all
                                         kept when all are free and all renumbered, in order,
                                         when any is taken (§14). `project_id` re-homes the task;
                                         without it the backed-up project must be live under the
@@ -10864,7 +10865,10 @@ CREATE TABLE tasks (
   updated_at          TEXT NOT NULL,
   started_at          TEXT,
   finished_at         TEXT,
-  archived_at         TEXT
+  archived_at         TEXT,
+  archived_from       TEXT CHECK (archived_from IN ('done','aborted')) -- the settled state the task
+                                              -- was archived from; NULL unless archived (task 134.3,
+                                              -- migration 0042)
 );
 CREATE INDEX idx_tasks_sched ON tasks(state, priority DESC, created_at);
 CREATE INDEX idx_tasks_parent ON tasks(parent_task_id, lane_order);  -- §7.6 subtree walks (task 014)
@@ -11375,7 +11379,24 @@ exception to the verbatim copy. It is kept only when that issue is live **in
 the project the task lands in**, and NULL otherwise — issue ids are global, so
 an id from another project would point the task at somebody else's work.
 `issue_json` is copied verbatim either way, as the snapshot that outlives its
-issue.
+issue. *Amended 2026-10-07 (task 134.3, issue #750):* `tasks.archived_from` is
+copied verbatim too — a backup from before migration 0042 is backfilled from
+its own events when its staged database is migrated.
+
+*Added 2026-10-07 (task 134.3, issue #750, migration 0042).*
+`tasks.archived_from` records whether an archived task was `done` or `aborted`
+before it was archived, the only two states §6 lets reach `archived`.
+`finished_at` cannot say: both states stamp it, and until this column the only
+record was the `from` key of the archiving `task.state_changed` payload — too
+costly for a list query to read, and gone with the project's events.
+`TransitionTask` writes it on `→ archived`; it is NULL on every other row, and
+nothing clears it, because `archived` is terminal. The migration backfills
+archived rows from the newest archiving event whose `from` is one of the two,
+and **`done`** when none survives: an issue whose finished work is mistaken
+for cancelled would be hidden back in the backlog, while the opposite mistake
+only asks a human to close it. It is store-only — no API, CLI or MCP
+representation of a task carries it; the issue lanes of task 134 read it in
+SQL.
 
 *Added 2026-10-02 (task 130.1, issue #660, migration 0036).* The issue tables
 of §5.6. `issues.state` has **no CHECK**, for the reason 0032 gave `chats`: a

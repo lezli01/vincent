@@ -244,6 +244,12 @@ type Task struct {
 	StartedAt      *time.Time
 	FinishedAt     *time.Time
 	ArchivedAt     *time.Time
+	// ArchivedFrom is the settled state the task left for archived — done
+	// or aborted — and empty on every task that is not archived (task
+	// 134.3, migration 0042). finished_at cannot carry it: both states
+	// stamp it. Store-only: no wire DTO repeats it; #751's lane SQL is the
+	// consumer.
+	ArchivedFrom TaskState
 }
 
 // Workflow origin scopes (task 043). The first three mirror workflow.Scope —

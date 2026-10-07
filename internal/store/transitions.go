@@ -305,6 +305,10 @@ func transitionTaskTx(
 		t.FinishedAt = &now
 	case TaskArchived:
 		t.ArchivedAt = &now
+		// taskstate only lets done or aborted reach archived, and
+		// finished_at is stamped for both, so this is the one place the
+		// difference survives the archive (task 134.3, #750).
+		t.ArchivedFrom = from
 	case TaskQueued, TaskAwaitingGate, TaskAwaitingInput, TaskAwaitingChildren, TaskBlocked, TaskPaused:
 		// No timestamp of their own; updated_at covers them.
 	}
@@ -331,7 +335,7 @@ func transitionTaskTx(
 			pending_override_json = ?, pending_repair_json = ?,
 			pending_follow_up_json = ?, pending_input_json = ?,
 			admit_not_before = ?, queued_reason = ?, settled_children_watermark = ?,
-			updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?
+			updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?, archived_from = ?
 		WHERE id = ? AND state = ?`,
 		string(t.State), t.CurrentStep, nullString(t.BlockReason), nullString(t.BlockDetail), nullString(t.WorktreePath),
 		t.WorkflowSnapshot, t.PauseRequested, formatTimePtr(t.RetryCursorAt), pendingOverride,
@@ -341,7 +345,7 @@ func transitionTaskTx(
 		nullInt(t.SettledChildrenWatermark),
 		formatTime(t.UpdatedAt),
 		formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt),
-		id, string(from))
+		nullString(string(t.ArchivedFrom)), id, string(from))
 	if err != nil {
 		return nil, nil, fmt.Errorf("transition task %d: %w", id, err)
 	}

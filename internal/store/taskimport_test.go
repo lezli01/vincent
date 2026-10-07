@@ -78,10 +78,12 @@ func importSource(t *testing.T) (*Store, *TaskExport) {
 		}
 		fillEveryColumn(t, src, "step_runs", r.ID, "id", "task_id")
 	}
+	// archived_from has a CHECK no filler passes; it is set to the value
+	// archiving a done task would not write, so a copy cannot pass by luck.
 	fillEveryColumn(t, src, "tasks", task.ID,
-		"id", "project_id", "state", "parent_task_id", "created_by_task_id", "issue_id")
+		"id", "project_id", "state", "parent_task_id", "created_by_task_id", "issue_id", "archived_from")
 	if _, err := src.db.ExecContext(t.Context(),
-		`UPDATE tasks SET created_by_task_id = ? WHERE id = ?`, creator.ID, task.ID); err != nil {
+		`UPDATE tasks SET created_by_task_id = ?, archived_from = 'aborted' WHERE id = ?`, creator.ID, task.ID); err != nil {
 		t.Fatalf("set creator: %v", err)
 	}
 	exp, err := src.ExportTask(t.Context(), task.ID)

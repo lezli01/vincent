@@ -195,7 +195,9 @@ type ImportResult struct {
 // snapshot's repo and number. An issue of another project is no link at all: issue ids are global,
 // and keeping one would point the task at somebody else's work. `issue_json`
 // is copied verbatim either way — the snapshot is exactly what survives an
-// issue's deletion (task 130 decision 6).
+// issue's deletion (task 130 decision 6). So is `archived_from` (task
+// 134.3): a backup taken before migration 0042 is migrated when its staged
+// database is opened, which backfills the column from its own events.
 //
 // `events` rows are not copied (decision 6). A delete keeps them, and their id
 // is the SSE cursor, so copies could only arrive as years-old history replayed

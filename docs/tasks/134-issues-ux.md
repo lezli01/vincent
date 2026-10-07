@@ -1,6 +1,6 @@
 # 134 — Issues UX: a four-lane issues board and one main worktree per issue
 
-**Status:** 🔄 in progress (1/19)
+**Status:** 🔄 in progress (2/19)
 
 Issue [#748](https://github.com/lezli01/vincent/issues/748), part of
 [#747](https://github.com/lezli01/vincent/issues/747), the epic. Spec §5.6 in
@@ -327,6 +327,35 @@ on an open issue, an issue whose only tasks were cancelled is `open`
 (decision 2), the board is stacked sections, and the order is
 open → in progress → hand-off (decision 6).
 
+### 20. `tasks.archived_from` records the state an archive left (2026-10-07, 134.3)
+
+Decision 2 needs to know whether an archived task was `done` or `aborted`.
+134.3 makes it a column.
+
+1. **A column, not the event.** `tasks.archived_from` is `done` or
+   `aborted`, NULL unless archived, written by `TransitionTask` on
+   `→ archived`. `finished_at` cannot tell the two apart — both states stamp
+   it — and the archiving event's `from` is too costly to read in a list
+   query and goes with the project's events. *Alternative beaten:* treating
+   every archived task as `done`, which would put an issue whose cancelled
+   attempts were archived in `hand_off`.
+2. **The backfill defaults to `done`** when no archiving event survives. The
+   error it can make asks a human to close an issue; the opposite error would
+   hide finished work back in `open`.
+3. **Store-only.** It is on the row and on `store.Task`, and the lane SQL
+   reads it. No API, CLI or MCP task representation carries it, so no client
+   changes with it.
+4. **No new event type.** `task.state_changed` already carries `from`.
+5. **Backup and restore need no code.** `ImportTask` copies every column it
+   does not name as an exception, and the staged backup database is opened
+   through `store.Open`, which migrates it — a backup taken before migration
+   0042 is backfilled from its own events at restore.
+
+Only a human's `DELETE /v1/tasks/{id}` or a project's deletion removes a task
+row; the §17 pruner removes transcript files and never a row (task 092). An
+archived task therefore stays in its issue's lane derivation until it is
+deleted.
+
 ## Non-goals
 
 - GitHub write-back beyond task 130: posting comments, auto-closing on `done`,
@@ -389,8 +418,11 @@ sections and public pages its code makes true, in its own pull request.
   1), task 132.11 and spec §5.6. ✓ 2026-10-07
 - [ ] **134.2** ([#749](https://github.com/lezli01/vincent/issues/749)) Fix
   task 125's claim admitting two tasks for one directory in one walk.
-- [ ] **134.3** ([#750](https://github.com/lezli01/vincent/issues/750)) A
-  migration recording whether an archived task was `done` or `aborted`.
+- [x] **134.3** ([#750](https://github.com/lezli01/vincent/issues/750)) A
+  migration recording whether an archived task was `done` or `aborted`:
+  migration 0042 with its backfill, `TransitionTask` writing it,
+  `store.Task.ArchivedFrom`, the migration, transition and restore tests,
+  and spec §13.2/§14 (decision 20). ✓ 2026-10-07
 - [ ] **134.4** ([#751](https://github.com/lezli01/vincent/issues/751))
   `lane` (all four values) and `attention` in the store, the API, project
   stats and the spec (decisions 1–4). Depends: 134.3.
