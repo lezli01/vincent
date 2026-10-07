@@ -238,6 +238,17 @@ is too weak. A blocked or gated main task therefore stalls the issue's main
 line until a human acts; that is deliberate, and the issue stays
 `in_progress` with `attention`.
 
+*Amended 2026-10-07 (134.11, #758):* **a linked chat keeps the directory
+occupied.** An occupant is an **unarchived** main-role task of the issue,
+other than the one asking, that is either (a) admitted (`started_at` set)
+and not settled, or (b) `done`/`aborted` with a non-empty `worktree_path`
+and an open linked chat — the `chats.linked_task_id` predicate
+`OpenLinkedChatIDs` uses. A human working in a settled task's worktree holds
+it as surely as an agent does. `archived_at IS NULL` is explicit because an
+archived task is settled but clause (b) alone would not exclude it. The
+scheduler, the `201` hint and the issue's `main_worktree.occupant_task_id`
+read this one definition (`issueMainOccupantSQL`).
+
 ### 9. A new task with `issue_id` is a main task by default (2026-10-07)
 
 Settled by the author (#747 question 6). New tasks carrying `issue_id` get the
@@ -406,8 +417,9 @@ deleted.
   134.10 amendment): the next main task cuts a fresh branch, and the old one
   stays in git with the earlier work, off the issue's line, until someone
   merges or deletes it.
-- Until 134.11 and 134.12, a later main task waits for the previous one's
-  **archive**, not its settlement (review F1 of #768). It is bound to the
+- Until 134.12 removes the wait, a later main task waits for the previous
+  one's **archive**, not its settlement (review F1 of #768); 134.11's
+  occupancy predicate does not shorten it. It is bound to the
   main branch as an adopted branch, so task 125 decision 2's working-directory
   claim queues it while any earlier main task still has the branch checked
   out, and a done main task keeps its worktree until it is archived. Archive
@@ -490,9 +502,13 @@ sections and public pages its code makes true, in its own pull request.
   `issue_worktree` role, `end_sha`, the main-branch binding at creation,
   `merge_back` on `POST /v1/tasks` and `main_worktree` on the issue DTO
   (decisions 7, 9, 10). Depends: 134.1.
-- [ ] **134.11** ([#758](https://github.com/lezli01/vincent/issues/758)) The
+- [x] **134.11** ([#758](https://github.com/lezli01/vincent/issues/758)) The
   scheduler predicate with a per-walk tally (decisions 7, 8).
-  Depends: 134.10, 134.2.
+  Depends: 134.10, 134.2. `ListAdmissible` serves `IssueOccupied` from the
+  shared `issueMainOccupantSQL`, widened to a settled main task kept open by a
+  linked chat (decision 8's amendment); the walk skips an occupied issue's
+  main candidate, and a second main task of one issue in the same walk, as a
+  skip rather than a block; spec §5.6, §6, §11, §13.2. ✓ 2026-10-07
 - [ ] **134.12** ([#759](https://github.com/lezli01/vincent/issues/759)) The
   claim transfer, archive safety, refusing follow-up or chat on a
   predecessor, and `end_sha` in commits and diff (decisions 14, 17).

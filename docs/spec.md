@@ -1343,6 +1343,13 @@ after admission hold it, `queued` does not. Both are derived per issue in the
 issue list's own query and served as `main_worktree` (§13.2). This item does
 not enforce the occupancy at admission, transfer the directory or cut side
 worktrees: those are 134.11, 134.12 and 134.13.
+*Amended 2026-10-07 (task 134.11, issue #758):* the occupant is an
+**unarchived** main-role task that is either admitted and not settled, or
+settled `done`/`aborted` with a worktree a linked chat still has open — a
+human working in the directory holds it as surely as an agent does (§6 lists
+the states). The scheduler now enforces it: a later main task of the issue is
+not admitted while another occupies it (§11). Transferring the directory and
+cutting side worktrees are still 134.12 and 134.13.
 
 ## 6. Task lifecycle
 
@@ -1641,6 +1648,20 @@ Tasks are `queued` immediately upon creation (no draft state in v1).
 *Amended 2026-09-11 (task 096):* or `paused`, when the create asked for it
 (above). There is still no draft state — a task created held is an ordinary
 `paused` row that `resume` admits.
+
+*Added 2026-10-07 (task 134.11, issue #758).* **Which states occupy an issue's
+main worktree** (§5.6, task 134 decision 8). A main-role task occupies it in
+every unsettled state once it has been admitted — `running`,
+`awaiting_input`, `blocked`, `awaiting_gate`, `paused`, `awaiting_children`,
+and `queued` again after a §12.4 interrupt, since `started_at` survives it —
+and also when it has settled `done` or `aborted` with its worktree kept open
+by a linked chat (§5.5). A `queued` main task that was never admitted does
+not occupy it, and an archived one never does. The issue's next main task is
+held at admission while it is occupied (§11), so **a stuck occupant stalls
+the issue's main line until a human acts on it** — approves, retries,
+cancels or closes the chat. That is deliberate: the main tasks of one issue
+share one directory, and starting the next on top of a blocked one's
+leftover files would be worse than the wait.
 
 ## 7. Step execution semantics
 
@@ -6522,6 +6543,26 @@ precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
   adopts it and re-runs the merge, which is the reconciliation the guard would
   otherwise wait for a human to perform.
 
+*Added 2026-10-07 (task 134.11, issue #758).* **At most one in-progress main
+task per issue.** A queued main-role task (§5.6) is not admitted while its
+issue's main worktree has an occupant other than itself — the definition
+§5.6 gives and §6 lists, read through the same SQL that serves the issue's
+`main_worktree.occupant_task_id` and the creation hint, so the scheduler and
+what a client is told cannot disagree. Like task 125's working-directory
+claim beside it, it is checked after the pause, the unreconciled guard, the
+hold and the caps, and it is a **skip, never a block**: the task stays
+`queued`, nothing is written to it — no `queued_reason`, no new reason — and
+the next walk asks again. The walk counts its own admissions per issue, the
+way it counts them per project and per directory: the candidate rows predate
+the walk, so two never-started main tasks of one issue both read "free"
+(issue #749's shape), and without that tally both would run. Side-role and
+role-less tasks are never consulted. No recovery code is involved: an
+occupant interrupted back to `queued` keeps `started_at`, so it still holds
+its issue, and because it excludes itself it is re-admitted ahead of the
+waiter. Until 134.12 hands the directory over, task 125's claim still holds
+a later main task until the previous one is archived; this predicate is
+what keeps it held behind an occupant once that claim is gone.
+
 *Added 2026-09-02 (task 081).* A `fan_out` step running `schedule: eager`
 (§7.6) is woken by a lane settling rather than by its whole subtree settling,
 so it takes a slot more often than a barrier one — once per direct lane
@@ -9704,9 +9745,11 @@ POST   /v1/tasks                        { project_id, workflow, title, descripti
                                         issue's main worktree is occupied carries
                                         `main_worktree_occupant_task_id`, the main-role task
                                         holding the issue's main worktree; it is absent
-                                        otherwise. The scheduler's hold on that occupant
-                                        arrives with 134.11 — today a later main task waits
-                                        only on the branch's working directory (§5.6, §10).
+                                        otherwise. *Amended 2026-10-07 (task 134.11, issue
+                                        #758):* the scheduler holds a later main task while
+                                        that occupant — widened to a settled task kept open by
+                                        a linked chat — holds the worktree (§5.6, §11); task
+                                        125's directory claim still applies beside it (§10).
                                         `merge_back` enters the
                                         idempotency digest only when present
 GET    /v1/tasks/{id}                   full task incl. step runs summary and pending_input (§7.4).

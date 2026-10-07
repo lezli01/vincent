@@ -32,6 +32,13 @@ list with the user-facing context a commit subject cannot carry.
   `main_worktree_occupant_task_id`. A chat handed off with `issue_id` becomes
   the main task, or a side task once the issue has a main branch. Tasks
   created before this change keep working exactly as they did.
+- **At most one main task of an issue runs at a time.** The scheduler keeps
+  an issue's next main task queued while another main task of the issue has
+  started and not finished — including one that is blocked, paused or
+  waiting at a gate — or has finished with a chat still open on its
+  worktree. The waiting task shows no new state or reason; the issue's
+  `main_worktree.occupant_task_id` names what it waits on. Side tasks and
+  tasks of other issues are not held.
 - **The TUI opens on the project you mean.** `vincent --project <name|id>`
   opens the TUI on that project. Without it, launching `vincent` inside a
   registered project's checkout, or inside a task's or chat's worktree, opens

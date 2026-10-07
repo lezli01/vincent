@@ -2643,12 +2643,15 @@ branch, archive does not delete it even when it has no commits past its base. Th
 
 `occupant_task_id` is the main task that has started and not yet finished —
 it holds the main worktree even while `blocked`, `paused` or
-`awaiting_gate`. It is `null` when nothing holds it, and `main_worktree` is
+`awaiting_gate` — or a `done` or `aborted` main task whose worktree a
+[linked chat](#a-chat-on-a-stopped-task) still has open. It is `null` when nothing holds it, and `main_worktree` is
 absent while the issue has no main branch. When every main task has been
 archived the issue has none, and the next main task starts a fresh branch.
 
 Creating a main task while the main worktree is occupied names the occupant
-in the `201` as `main_worktree_occupant_task_id`.
+in the `201` as `main_worktree_occupant_task_id`. The new task stays `queued`
+while the occupant holds the worktree — no error, no reason — and is admitted
+once it is free; at most one main task of an issue is in progress at a time.
 
 `merge_back` asks for a **side** task instead — its own worktree, to be merged
 back into the main branch when it is done:
@@ -2678,10 +2681,12 @@ main task when the issue has no main branch yet, and its branch becomes the
 main branch; otherwise it becomes a side task with `on_conflict: block`. The
 handoff body does not take `merge_back`.
 
-Roles, the main branch and the occupant are recorded and served today; the
-scheduler does not yet hold a main task back until the occupant settles, side
-tasks are not yet cut from the main branch, and nothing yet merges a side task
-back — those arrive with later releases.
+Roles, the main branch and the occupant are recorded and served today, and
+the scheduler holds a later main task back while the occupant holds the
+worktree. A later main task still waits for the previous one to be
+**archived**, not merely finished, side tasks are not yet cut from the main
+branch, and nothing yet merges a side task back — those arrive with later
+releases.
 
 ## Chats
 
