@@ -160,3 +160,22 @@ func (s *Store) IssueMainBranchLine(
 		return firstID, adopted, nil
 	}
 }
+
+// IssueMainBranchHeld reports whether a main-role task of issueID carrying
+// branch, archived or not, has ever held it in a worktree: one names a
+// worktree now, or recorded an end_sha, which only letting go of one writes
+// — the transfer, or the archive of a task that held it. It is what makes an
+// existing branch the issue's own rather than a stranger's (review F3 of
+// #770): a branch that appeared before the issue's first main task was
+// admitted — a human's `git branch`, a fetch — was held by none of them,
+// and must still block `branch_exists` (task 001) rather than be taken over.
+func (s *Store) IssueMainBranchHeld(ctx context.Context, issueID int64, branch string) (bool, error) {
+	n, err := s.countTasks(ctx, `SELECT COUNT(*) FROM tasks
+		WHERE issue_id = ? AND issue_worktree = 'main' AND branch_name = ?
+		  AND ((worktree_path IS NOT NULL AND worktree_path <> '') OR (end_sha IS NOT NULL AND end_sha <> ''))`,
+		issueID, branch)
+	if err != nil {
+		return false, fmt.Errorf("issue %d main branch %q held: %w", issueID, branch, err)
+	}
+	return n > 0, nil
+}

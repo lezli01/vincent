@@ -24,9 +24,11 @@ import (
 //     because a fresh worktree loses it) — but a half-finished git
 //     operation does not: it blocks `repo_operation_in_progress` and the
 //     predecessor keeps the directory, as a chat handoff refuses one.
-//  3. No holder but the branch exists — every main task that held it was
-//     archived: the branch goes into a fresh worktree, as vincent's own.
-//  4. No branch yet — this is the issue's first main task: the ordinary cut.
+//  3. No holder but the branch exists and is the issue's — a main task held
+//     it and was archived, or the task adopted it: the branch goes into a
+//     fresh worktree.
+//  4. Otherwise — the issue's first main task: the ordinary cut, which still
+//     blocks `branch_exists` on a branch nobody of the issue's ever held.
 //
 // Crash safety is the transfer's single transaction. A crash before it
 // commits leaves the predecessor naming the directory and the successor
@@ -158,6 +160,20 @@ func (r *Runner) createIssueMainWorktree(
 	var created worktree.Created
 	var err error
 	existing := wt.LocalBranchExists(ctx, project.Path, task.BranchName)
+	if existing && !task.AdoptedBranch {
+		// An existing branch is the issue's only when one of its main tasks
+		// has held it (review F3 of #770). Otherwise it is somebody else's
+		// that appeared after creation's courtesy check, and the ordinary cut
+		// below blocks it `branch_exists` (task 001) — the guard case 3 must
+		// not bypass. An adopted task was pointed at it and takes it as is.
+		held, err := r.deps.Store.IssueMainBranchHeld(ctx, *task.IssueID, task.BranchName)
+		if err != nil {
+			r.fail(task, ReasonInternalError, withLocalError("reading the issue's main branch failed", err),
+				log, "read issue main branch", err)
+			return err
+		}
+		existing = held
+	}
 	if existing {
 		// Case 3. base_sha is the tip and base_refresh stays NULL: nothing
 		// refreshed a base, and the successor's diff starts where the

@@ -546,12 +546,15 @@ func (r *Runner) Archive(
 	}
 	empty := ""
 	issueMain := isIssueMain(task)
-	if task.WorktreePath == "" && !issueMain {
+	if task.WorktreePath == "" && (!issueMain || !r.issueBranchHeld(ctx, task)) {
 		// No worktree ever existed, so no branch was ever created for this task
 		// either — `git worktree add -b` makes both or neither. That matters
 		// beyond tidiness: a task that blocked with `branch_exists` (§10, task
 		// 001) carries a branch_name naming *somebody else's* branch, and this
-		// is the check that keeps the branch step away from it.
+		// is the check that keeps the branch step away from it. A main task
+		// with no directory is asked of its issue instead: the branch is the
+		// line's only once one of the issue's main tasks has held it (review
+		// F3 of #770).
 		out, err := r.transitionFrom(ctx, task, taskstate.Archive,
 			store.TaskChange{WorktreePath: &empty})
 		return out, worktree.BranchOutcome{}, err
@@ -614,14 +617,31 @@ func isIssueMain(task *store.Task) bool {
 	return task.IssueWorktree == store.IssueWorktreeMain && task.IssueID != nil
 }
 
+// issueBranchHeld is whether one of the issue's main tasks has ever held
+// task's branch in a worktree (Store.IssueMainBranchHeld). A failed read
+// answers false, which keeps the branch: a kept branch is recoverable, a
+// deleted one is not.
+func (r *Runner) issueBranchHeld(ctx context.Context, task *store.Task) bool {
+	held, err := r.deps.Store.IssueMainBranchHeld(ctx, *task.IssueID, task.BranchName)
+	if err != nil {
+		r.deps.Logger.Warn("archive: read whether the issue held its main branch; keeping it",
+			"task", task.ID, "branch", task.BranchName, "error", err)
+		return false
+	}
+	return held
+}
+
 // archiveEndSHA is the end_sha an archived main-role task records (134.12):
 // the commit its issue's branch stood at when it let go. A task that handed
-// its directory on was stamped by the transfer and keeps that commit; any
-// other is stamped here, before its worktree is removed. nil writes nothing:
-// a branch that cannot be read — never cut, or deleted by hand — leaves the
-// column empty rather than invented.
+// its directory on was stamped by the transfer and keeps that commit; one
+// still holding the directory is stamped here, before its worktree is
+// removed. nil writes nothing: a task that never held the directory did no
+// work on the branch — one blocked `branch_exists` names somebody else's,
+// and an end_sha would mark that branch as the issue's (review F3 of #770)
+// — and a branch that cannot be read, deleted by hand, leaves the column
+// empty rather than invented.
 func (r *Runner) archiveEndSHA(ctx context.Context, task *store.Task, projectPath string) *string {
-	if task.EndSHA != "" || task.BranchName == "" {
+	if task.EndSHA != "" || task.BranchName == "" || task.WorktreePath == "" {
 		return nil
 	}
 	tip, err := r.deps.Worktrees.BranchTip(ctx, projectPath, task.BranchName)

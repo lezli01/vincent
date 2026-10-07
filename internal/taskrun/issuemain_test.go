@@ -376,6 +376,51 @@ func TestHandedOnMainTaskLosesItsContainer(t *testing.T) {
 	}
 }
 
+// TestForeignBranchBlocksTheFirstMainTask is review F3 of #770: a branch of
+// the first main task's name that appears between creation and admission —
+// a human's `git branch`, a fetch — is nobody of the issue's. It blocks
+// `branch_exists` (task 001) as any ordinary cut does, rather than being
+// checked out and committed on as the issue's main branch.
+func TestForeignBranchBlocksTheFirstMainTask(t *testing.T) {
+	h := newEngineHarness(t)
+	iss := newIssue(t, h)
+	h.start(t)
+	first := h.mainTask(t, iss, "first", gatedSnapshot, func(task *store.Task) { task.State = store.TaskPaused })
+	testrepo.Run(t, h.repo, "branch", first.BranchName, "main")
+	foreign := testrepo.Run(t, h.repo, "rev-parse", "refs/heads/"+first.BranchName)
+
+	if _, err := h.runner.Resume(t.Context(), first.ID); err != nil {
+		t.Fatalf("Resume(first): %v", err)
+	}
+	got := h.waitForState(t, first.ID, store.TaskBlocked, store.TaskAwaitingGate, store.TaskDone)
+	if got.State != store.TaskBlocked || got.BlockReason != worktree.ReasonBranchExists {
+		t.Fatalf("first = %s (%s: %s), want blocked %s",
+			got.State, got.BlockReason, got.BlockDetail, worktree.ReasonBranchExists)
+	}
+	if got.WorktreePath != "" || got.BaseSHA != "" {
+		t.Errorf("blocked task = (path %q, base_sha %q), want neither", got.WorktreePath, got.BaseSHA)
+	}
+	if tip := testrepo.Run(t, h.repo, "rev-parse", "refs/heads/"+first.BranchName); tip != foreign {
+		t.Errorf("the foreign branch moved to %s, want it left at %s", tip, foreign)
+	}
+
+	// Giving up on the task leaves the stranger's branch — empty, so the
+	// empty-branch rule would take it — exactly where it was.
+	if _, err := h.runner.Cancel(t.Context(), first.ID); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	h.waitForState(t, first.ID, store.TaskAborted)
+	archived, branch, err := h.runner.Archive(t.Context(), first.ID, false)
+	if err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+	if branch.Checked() || archived.EndSHA != "" {
+		t.Errorf("archive = (branch %+v, end_sha %q), want the branch unexamined and no end_sha",
+			branch, archived.EndSHA)
+	}
+	testrepo.Run(t, h.repo, "rev-parse", "--verify", "refs/heads/"+first.BranchName)
+}
+
 // TestCrashAfterTheHandOverResumesInTheTransferredDirectory: the transfer is
 // one transaction, so a daemon that dies after it and before the first step
 // leaves the successor naming the directory. Recovery re-queues it, and
