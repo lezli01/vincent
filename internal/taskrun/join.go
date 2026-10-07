@@ -111,7 +111,8 @@ func (r *Runner) runJoin(ctx context.Context, env *stepEnv, lanes []store.Task) 
 			return stepOutcome{state: store.StepFailed, reason: reason, output: err.Error()}
 		}
 		if result == worktree.MergeConflicted {
-			resolved, outcome := r.handleConflict(ctx, env, lane)
+			subject := fmt.Sprintf("lane %q (task %d)", lane.LaneID, lane.ID)
+			resolved, outcome := r.handleConflict(ctx, env, env.step.Merge, subject)
 			if !resolved {
 				return outcome
 			}
@@ -260,9 +261,16 @@ func (r *Runner) resumedFromConflict(ctx context.Context, env *stepEnv) bool {
 	return last != nil && last.State == store.StepFailed && last.FailureReason == ReasonMergeConflict
 }
 
-// handleConflict applies the step's `on_conflict:` policy to a conflicted
-// merge. The default blocks; `agent` tries a resolver first and falls back to
-// the block when it or its check fails.
+// handleConflict applies a `merge:` block's `on_conflict:` policy to the
+// conflicted merge in progress in the task's worktree. A nil merge, or one
+// naming no policy, blocks; `agent` tries a resolver first and falls back to
+// the block when it or its check fails, or when it leaves conflict markers in
+// a file that conflicted (#756). subject names what was being merged, for the
+// block's message and the logs.
+//
+// The policy is a parameter rather than read from env.step because the
+// task-to-task merge-back (#761) merges outside any fan_out step and carries
+// its own `merge:` block; fan_out passes its step's.
 //
 // Blocking by default is §7.2's posture applied unchanged: retries are for
 // failures a retry can fix, and a human decides what a machine could not. The
@@ -272,7 +280,7 @@ func (r *Runner) resumedFromConflict(ctx context.Context, env *stepEnv) bool {
 // It reports whether the conflict was resolved, so the caller can continue
 // with the remaining lanes rather than restarting the join.
 func (r *Runner) handleConflict(
-	ctx context.Context, env *stepEnv, lane store.Task,
+	ctx context.Context, env *stepEnv, merge *workflow.Merge, subject string,
 ) (resolved bool, outcome stepOutcome) {
 	paths, err := r.deps.Worktrees.ConflictedPaths(ctx, env.task.WorktreePath)
 	if err != nil {
@@ -281,17 +289,16 @@ func (r *Runner) handleConflict(
 	blocked := stepOutcome{
 		state:  store.StepFailed,
 		reason: ReasonMergeConflict,
-		output: fmt.Sprintf("lane %q (task %d) conflicts in:\n%s",
-			lane.LaneID, lane.ID, strings.Join(paths, "\n")),
+		output: fmt.Sprintf("%s conflicts in:\n%s", subject, strings.Join(paths, "\n")),
 	}
-	if env.step.ConflictPolicy() != workflow.ConflictAgent || env.step.Merge.Agent == nil {
+	if merge.Policy() != workflow.ConflictAgent || merge.Agent == nil {
 		env.log.Warn("merge conflict; blocking for a human",
-			"lane", lane.LaneID, "files", len(paths))
+			"subject", subject, "files", len(paths))
 		return false, blocked
 	}
 
-	env.log.Info("merge conflict; trying the agent resolver", "lane", lane.LaneID, "files", len(paths))
-	resolver := *env.step.Merge.Agent
+	env.log.Info("merge conflict; trying the agent resolver", "subject", subject, "files", len(paths))
+	resolver := *merge.Agent
 	resolver.Type = workflow.StepAgent
 	// No paced retry for the resolver (§7.2, task 028). Its attempts are the
 	// join's own: a resolver that does not resolve leaves the conflict for a
@@ -317,20 +324,32 @@ func (r *Runner) handleConflict(
 			"reason", attempt.reason)
 		return false, blocked
 	}
+	// "Resolved" means no markers remain in the files that conflicted, read
+	// from their content before staging: `git add` clears a path's unmerged
+	// entry whatever the file holds, so the index cannot say it afterwards
+	// (#756, spec §7.6).
+	marked, err := r.deps.Worktrees.ConflictMarkers(ctx, env.task.WorktreePath, paths)
+	if err != nil || len(marked) > 0 {
+		env.log.Warn("conflict markers survived the resolver; blocking",
+			"files", marked, "error", err)
+		return false, blocked
+	}
 	// The agent may have edited without staging. Staging here rather than
 	// requiring it of the prompt keeps the contract "leave the files right".
 	if err := r.deps.Worktrees.StageAll(ctx, env.task.WorktreePath); err != nil {
 		env.log.Error("stage resolver output", "error", err)
 		return false, blocked
 	}
+	// Markers were ruled out above; this guards the index itself — staging
+	// that left an unmerged entry behind would make the commit fail anyway.
 	if conflicted, cErr := r.deps.Worktrees.IndexConflicted(ctx, env.task.WorktreePath); cErr != nil || conflicted {
-		env.log.Warn("conflict markers survived the resolver; blocking")
+		env.log.Warn("unmerged paths survived staging; blocking", "error", cErr)
 		return false, blocked
 	}
 	if err := r.deps.Worktrees.CommitMerge(ctx, env.task.WorktreePath); err != nil {
 		env.log.Error("commit resolver merge", "error", err)
 		return false, blocked
 	}
-	env.log.Info("agent resolved the merge conflict", "lane", lane.LaneID)
+	env.log.Info("agent resolved the merge conflict", "subject", subject)
 	return true, stepOutcome{}
 }

@@ -2279,7 +2279,16 @@ does not finish until every lane is merged.
   so a human resolves in place. `on_conflict: agent` opts into an agent
   attempt first — a full agent step, gated by its own `check` — falling back
   to the block. Blocking by default is §7.2's posture: a human decides what a
-  machine could not.
+  machine could not. *Amended 2026-10-07 (#756): "the resolver resolved"
+  means no conflict marker remains in the files that conflicted — a line
+  starting `<<<<<<< ` or `>>>>>>> `, or exactly `=======` — read from their
+  content **before** the engine stages them, because staging clears the
+  index's unmerged entries whatever a file holds. A resolver that succeeds
+  but leaves a marker blocks `merge_conflict` with nothing committed; a file
+  it deleted counts as resolved. Only git's default marker size (7) is
+  recognised, so a repository setting `conflict-marker-size` is not
+  protected by the scan. A human's own staged resolution on retry is trusted
+  and not scanned.*
 - **The step runs in rounds.** *Added 2026-09-01 (task 080).* On each
   admission this task merges every lane that is `done` and not yet on its
   branch, in declared lane order; spawns the lanes whose `needs:` those merges
