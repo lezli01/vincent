@@ -2,7 +2,6 @@ package tui
 
 import (
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -14,21 +13,24 @@ import (
 // Pure model tests for the issue screens (§15 views 12 and 13, task 130.9).
 // No golden frames (task 129 decision 7): each asserts one property.
 
-// issuesFixture is the list on project "api" with three issues: a local one,
-// an imported one, and a second local one, in the daemon's order.
+// issuesFixture is the list on project "api" with three issues in the
+// daemon's order: a local one and an imported one in the open section, and
+// a second local one in progress, whose task waits on a human. The cursor
+// starts where a fresh list puts it, on the first issue.
 func issuesFixture() *issuesView {
 	v := newIssuesView()
 	v.client = offlineClient()
 	v.project = projectSel{id: 1, name: "api"}
 	v.issues = []apiclient.Issue{
-		{ID: 3, ProjectID: 1, Title: "Crash on start", State: "open", Kind: "bug", Labels: []string{"p1"}, TaskCount: 2, Active: true},
+		{ID: 3, ProjectID: 1, Title: "Crash on start", State: "open", Lane: "open", Kind: "bug", Labels: []string{"p1"}, TaskCount: 2},
 		{
-			ID: 5, ProjectID: 1, Title: "Dark mode", State: "open", Kind: "feature",
+			ID: 5, ProjectID: 1, Title: "Dark mode", State: "open", Lane: "open", Kind: "feature",
 			Source: &apiclient.IssueSource{Provider: "github", Repo: "octo/web", Number: 41, URL: "https://github.com/octo/web/issues/41"},
 		},
-		{ID: 4, ProjectID: 1, Title: "Docs typo", State: "open", Labels: []string{"docs"}, TaskCount: 1},
+		{ID: 4, ProjectID: 1, Title: "Docs typo", State: "open", Lane: "in_progress", Labels: []string{"docs"}, TaskCount: 1, Active: true, Attention: true},
 	}
 	v.loaded = true
+	v.clampCursor()
 	return v
 }
 
@@ -50,37 +52,6 @@ func issueFixture() *issueView {
 	}
 	v.loaded = true
 	return v
-}
-
-func TestIssuesScopeCycles(t *testing.T) {
-	v := issuesFixture()
-	var seen []string
-	for range 4 {
-		v.updateKey(registryKey(t, "s"))
-		seen = append(seen, v.state)
-	}
-	if got := strings.Join(seen, ","); got != "closed,all,open,closed" {
-		t.Fatalf("s walked %s, want closed,all,open,closed", got)
-	}
-}
-
-// The list is flat (task 132.11): the daemon's order, no project headings.
-func TestIssuesListIsFlatInTheDaemonsOrder(t *testing.T) {
-	v := issuesFixture()
-	var got []string
-	for _, row := range v.rows() {
-		got = append(got, "#"+strconv.FormatInt(row.issue.ID, 10))
-	}
-	if want := "#3,#5,#4"; strings.Join(got, ",") != want {
-		t.Fatalf("rows = %v, want %s", got, want)
-	}
-	out := ansi.Strip(v.render(140, 30))
-	if strings.Contains(out, "across") || strings.Contains(out, "\n api") {
-		t.Errorf("the list still groups by project:\n%s", out)
-	}
-	if !strings.Contains(out, "3 issues") {
-		t.Errorf("the header does not count the project's issues:\n%s", out)
-	}
 }
 
 // With no project selected the list fetches nothing and says why, rather
@@ -121,7 +92,7 @@ func TestIssuesFilterMatchesEveryField(t *testing.T) {
 		"featu": {5},       // kind
 		"api":   nil,       // the project's name is no longer a term
 		"zzz":   nil,       // nothing
-		"":      {3, 5, 4}, // no filter
+		"":      {3, 5, 4}, // no filter, in section order
 	}
 	for q, want := range cases {
 		v := issuesFixture()
@@ -169,7 +140,7 @@ func TestIssueRowTaskSummary(t *testing.T) {
 func TestIssueRowShowsBadges(t *testing.T) {
 	v := issuesFixture()
 	out := ansi.Strip(v.render(160, 30))
-	for _, want := range []string{"octo/web#41", "[p1]", "bug", "● 2 tasks", "open"} {
+	for _, want := range []string{"octo/web#41", "[p1]", "bug", "● 1 task", "open"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the list is missing %q:\n%s", want, out)
 		}

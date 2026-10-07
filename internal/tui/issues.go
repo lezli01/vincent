@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -18,10 +17,12 @@ import (
 
 // The issues list (§15 view 12, task 130.9).
 //
-// It lists the selected project's issues, local and imported alike, as one
-// flat list (task 132.11, superseding 130.9 decision 1's cross-project,
-// grouped-by-project screen): the project is the root (task 132 decision 1),
-// and a switch swaps the list rather than scrolling to another group.
+// It lists the selected project's issues, local and imported alike (task
+// 132.11, superseding 130.9 decision 1's cross-project, grouped-by-project
+// screen): the project is the root (task 132 decision 1), and a switch swaps
+// the list rather than scrolling to another group. Within the project the
+// list is a board of the daemon's four derived lanes (task 134.8,
+// superseding 132.11's flat list) — issuesections.go.
 //
 // Issues are local rows, so one GET /v1/issues?project_id= fills the whole
 // screen, and a load error is screen-wide.
@@ -50,21 +51,17 @@ func issueEventID(ev apiclient.Event) int64 {
 	return body.ID
 }
 
-// issueStates is the cycle `s` walks: open first, because open is what a
-// person comes to an issue list to see.
-var issueStates = []string{"open", "closed", "all"}
-
 // Issues-list messages.
 type (
 	issuesRefreshMsg struct{}
 	issuesLoadedMsg  struct {
-		// state is the scope the listing was asked for. `s` pressed twice
-		// in quick succession has two listings in flight, and only the one
-		// for the scope on screen may land.
-		state  string
-		stamp  loadStamp
-		issues []apiclient.Issue
-		err    error
+		// showDone is the scope the listing was asked for. `s` pressed
+		// twice in quick succession has two listings in flight, and only
+		// the one for the scope on screen may land.
+		showDone bool
+		stamp    loadStamp
+		issues   []apiclient.Issue
+		err      error
 	}
 	// openIssueMsg asks the root to open one issue's detail screen. The
 	// root points the detail at it before switching, the order every
@@ -77,11 +74,6 @@ type (
 		projectID int64
 	}
 )
-
-// issueRow is one selectable line.
-type issueRow struct {
-	issue apiclient.Issue
-}
 
 // issuesView is §15's view 12.
 type issuesView struct {
@@ -105,17 +97,26 @@ type issuesView struct {
 	loadErr  error
 	lastLoad time.Time
 
-	cursor int
-	// selected is the id under the cursor, so a re-list that reorders the
-	// rows — every update moves an issue to the top — keeps the selection
-	// on the issue rather than on the index.
-	selected int64
+	// cursor indexes lines(). selected is the issue under it and
+	// selectedLane the folded section, so a re-list that reorders the rows
+	// — every update moves an issue to the top, and a task can move it to
+	// another section — keeps the selection on the thing rather than on the
+	// index (remember).
+	cursor       int
+	selected     int64
+	selectedLane string
+	// folded is the set of collapsed sections, by lane. Session-only, and
+	// kept across a project switch, as the filter is.
+	folded map[string]bool
 
 	filter    textField
 	filtering bool
 
-	// state is the listing's `state=`, cycled by `s`; "all" sends none.
-	state       string
+	// showDone is `s`'s toggle (task 134 decision 5): hidden, the default,
+	// lists `state=open` and draws three sections; shown lists every state
+	// and draws `done` fourth. Session-only, and kept across a project
+	// switch.
+	showDone    bool
 	note        string
 	noteBad     bool
 	refreshWait bool
@@ -128,7 +129,7 @@ func newIssuesView() *issuesView {
 	fi := newTextField()
 	fi.SetPlaceholder("filter by id, title, label or kind")
 	fi.SetPrompt("/")
-	v := &issuesView{now: time.Now, filter: fi, state: issueStates[0], w: newIssueWrites()}
+	v := &issuesView{now: time.Now, filter: fi, folded: map[string]bool{}, w: newIssueWrites()}
 	v.reload = v.loadCmd
 	return v
 }
@@ -147,13 +148,14 @@ func (v *issuesView) setProjects(ps []apiclient.Project) { v.noProjects = len(ps
 // setProject wraps projectScope's: a switch empties the list before the
 // reload goes out (task 132.11), so the issues of the project just left are
 // never shown under the name of the one just chosen, and the header reads
-// "loading ‹name›…" until the stamped load lands. The filter text and the
-// state stay: they say what the human wants to see, not where.
+// "loading ‹name›…" until the stamped load lands. The filter text, the
+// `done` toggle and the folds stay: they say what the human wants to see,
+// not where.
 func (v *issuesView) setProject(p projectSel) tea.Cmd {
 	if p.id != v.project.id {
 		v.issues, v.loaded, v.loadErr = nil, false, nil
 		v.lastLoad = time.Time{}
-		v.cursor, v.selected = 0, 0
+		v.cursor, v.selected, v.selectedLane = 0, 0, ""
 		v.w.act = nil
 	}
 	return v.projectScope.setProject(p)
@@ -260,22 +262,30 @@ func (v *issuesView) loadCmd() tea.Cmd {
 		return nil
 	}
 	v.loading = true
-	state := v.state
+	showDone := v.showDone
 	stamp := v.stamps.next(v.project.id)
-	opts := apiclient.IssueListOptions{ProjectID: v.project.id}
-	if state != "all" {
-		opts.States = []string{v.state}
-	}
+	opts := v.listOptions()
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
 		issues, err := client.ListIssues(ctx, opts)
-		return issuesLoadedMsg{state: state, stamp: stamp, issues: issues, err: err}
+		return issuesLoadedMsg{showDone: showDone, stamp: stamp, issues: issues, err: err}
 	}
 }
 
+// listOptions is the listing's query. `done` is exactly `closed` (task 134
+// decision 4), so hiding it is the open listing — the daemon sends nothing
+// the list would not draw — and showing it lists every state.
+func (v *issuesView) listOptions() apiclient.IssueListOptions {
+	opts := apiclient.IssueListOptions{ProjectID: v.project.id}
+	if !v.showDone {
+		opts.States = []string{"open"}
+	}
+	return opts
+}
+
 func (v *issuesView) applyLoaded(msg issuesLoadedMsg) {
-	if msg.state != v.state || !v.stamps.accepts(msg.stamp) {
+	if msg.showDone != v.showDone || !v.stamps.accepts(msg.stamp) {
 		return
 	}
 	v.stamps.apply(msg.stamp)
@@ -358,8 +368,20 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case opKey(keymap.Refresh):
 		return v, v.loadCmd()
 	case opKey(keymap.Scope):
-		v.cycleState()
+		v.toggleDone()
 		return v, v.loadCmd()
+	case "left":
+		v.fold(true)
+		return v, nil
+	case "right":
+		v.fold(false)
+		return v, nil
+	case "C":
+		v.foldAll(true)
+		return v, nil
+	case "O":
+		v.foldAll(false)
+		return v, nil
 	case opKey(keymap.OpenRow):
 		row, ok := v.current()
 		if !ok {
@@ -393,15 +415,18 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	return v, nil
 }
 
-func (v *issuesView) cycleState() {
-	for i, s := range issueStates {
-		if s == v.state {
-			v.state = issueStates[(i+1)%len(issueStates)]
-			v.setNote("listing "+v.state+" issues…", false)
-			return
-		}
+// toggleDone shows or hides the `done` section (task 134 decision 5). It
+// replaces the open → closed → all cycle: a closed issue is `done`, so the
+// one question left is whether to see them. Shown, the section opens
+// expanded.
+func (v *issuesView) toggleDone() {
+	v.showDone = !v.showDone
+	if v.showDone {
+		delete(v.folded, issueLaneDone)
+		v.setNote("showing the done lane…", false)
+		return
 	}
-	v.state = issueStates[0]
+	v.setNote("hiding the done lane…", false)
 }
 
 // openSelected hands an imported issue's URL to a browser. A local issue has
@@ -430,19 +455,6 @@ func issueURL(iss apiclient.Issue) string {
 
 func (v *issuesView) setNote(text string, bad bool) { v.note, v.noteBad = text, bad }
 
-// rows is the filtered selection order, the daemon's order within it.
-func (v *issuesView) rows() []issueRow {
-	q := strings.ToLower(strings.TrimSpace(v.filter.Value()))
-	out := make([]issueRow, 0, len(v.issues))
-	for _, iss := range v.issues {
-		if q != "" && !issueMatches(iss, q) {
-			continue
-		}
-		out = append(out, issueRow{issue: iss})
-	}
-	return out
-}
-
 // issueMatches is `/`'s client-side match: id, title, labels and kind. The
 // project's name is no longer a term (task 132.11): every row is in it.
 func issueMatches(iss apiclient.Issue, q string) bool {
@@ -451,40 +463,6 @@ func issueMatches(iss apiclient.Issue, q string) bool {
 		"#" + id, id, iss.Title, iss.Kind,
 	}, iss.Labels...), " "))
 	return strings.Contains(hay, q)
-}
-
-func (v *issuesView) current() (issueRow, bool) {
-	rows := v.rows()
-	if v.cursor < 0 || v.cursor >= len(rows) {
-		return issueRow{}, false
-	}
-	return rows[v.cursor], true
-}
-
-func (v *issuesView) moveCursor(delta int) {
-	v.cursor += delta
-	v.clampCursor()
-}
-
-func (v *issuesView) clampCursor() {
-	rows := v.rows()
-	v.cursor = min(max(v.cursor, 0), max(len(rows)-1, 0))
-	if v.cursor < len(rows) {
-		v.selected = rows[v.cursor].issue.ID
-	}
-}
-
-// reselect puts the cursor back on the issue it was on before a re-list.
-func (v *issuesView) reselect() {
-	if v.selected != 0 {
-		for i, row := range v.rows() {
-			if row.issue.ID == v.selected {
-				v.cursor = i
-				return
-			}
-		}
-	}
-	v.clampCursor()
 }
 
 // --- rendering ---
@@ -526,7 +504,7 @@ func (v *issuesView) render(width, height int) string {
 }
 
 func (v *issuesView) headerLine(width int) string {
-	left := " " + styleTitle.Render(v.state+" issues")
+	left := " " + styleTitle.Render("issues")
 	switch {
 	case v.project.id == 0:
 		left += styleDim.Render("  ·  no project selected")
@@ -542,6 +520,22 @@ func (v *issuesView) headerLine(width int) string {
 		right = styleDim.Render("updated "+v.lastLoad.Format("15:04:05")) + " "
 	}
 	return padBetween(left, right, width)
+}
+
+// totalsLine counts the listing per section, unfiltered: `N open · N in
+// progress · N hand-off`, then the `done` count once `s` shows it, or a dim
+// reminder that it is hidden and which key shows it.
+func (v *issuesView) totalsLine() string {
+	totals := v.laneTotals()
+	parts := make([]string, 0, len(issueSections))
+	for i := range len(issueSections) - 1 {
+		parts = append(parts, strconv.Itoa(totals[i])+" "+issueSections[i].label)
+	}
+	line := "  " + strings.Join(parts, " · ")
+	if v.showDone {
+		return line + " · " + strconv.Itoa(totals[len(issueSections)-1]) + " " + issueLaneDone
+	}
+	return line + styleDim.Render(" · "+issueLaneDone+" hidden ("+opKey(keymap.Scope)+")")
 }
 
 func (v *issuesView) bodyLines(width int) (lines []string, cursorRow int) {
@@ -568,32 +562,61 @@ func (v *issuesView) bodyLines(width int) (lines []string, cursorRow int) {
 	if !v.loaded {
 		return []string{styleDim.Render("  listing " + v.project.name + "'s issues…")}, 0
 	}
+	lines, cursorRow = v.listLines(width)
 	if len(v.issues) == 0 {
-		return []string{
-			styleDim.Render("  No " + strings.TrimPrefix(v.state+" ", "all ") + "issues in " + v.project.name + "."),
-			"",
-			styleDim.Render("  `vincent issue add` files one; a GitHub project's issues arrive on the reconciler tick."),
-		}, 0
-	}
-	return v.listLines(width)
-}
-
-// listLines is the flat list, filtered, and the cursor's line in it.
-func (v *issuesView) listLines(width int) (lines []string, cursorRow int) {
-	q := strings.ToLower(strings.TrimSpace(v.filter.Value()))
-	rows := v.rows()
-	lines = make([]string, 0, len(rows)+1)
-	for i, row := range rows {
-		if i == v.cursor {
-			cursorRow = len(lines)
-		}
-		lines = append(lines, issueLine(row.issue, width, i == v.cursor))
-	}
-	if len(rows) == 0 && q != "" {
-		lines = append(lines, styleDim.Render(fmt.Sprintf("  none of %s match %q",
-			plural(len(v.issues), "issue", "issues"), q)))
+		lines = append(lines, "",
+			styleDim.Render("  `vincent issue add` files one; a GitHub project's issues arrive on the reconciler tick."))
 	}
 	return lines, cursorRow
+}
+
+// listLines is the totals line and the sections, filtered, and the cursor's
+// line in them.
+func (v *issuesView) listLines(width int) (lines []string, cursorRow int) {
+	filtering := strings.TrimSpace(v.filter.Value()) != ""
+	rows := v.lines()
+	lines = make([]string, 0, len(rows)+2)
+	lines = append(lines, v.totalsLine(), "")
+	inner := max(width-len(groupIndent), 12)
+	for i, row := range rows {
+		selected := i == v.cursor
+		if selected {
+			cursorRow = len(lines)
+		}
+		switch {
+		case row.header:
+			lines = append(lines, issueSectionHeader(row, selected))
+		case row.none:
+			none := "none"
+			if filtering {
+				none = "none match"
+			}
+			lines = append(lines, groupIndent+"  "+styleDim.Render(none))
+		default:
+			lines = append(lines, groupIndent+issueLine(row.issue, inner, selected))
+		}
+	}
+	return lines, cursorRow
+}
+
+// issueSectionHeader is a section's header: the fold glyph, the bold label,
+// the count, and the `! n` badge for the issues whose root task waits on a
+// human — kept on the header so folding the section cannot hide it.
+func issueSectionHeader(row issueRow, selected bool) string {
+	marker := "  "
+	if selected {
+		marker = styleFocus.Render("› ")
+	}
+	glyph := groupGlyphOpen
+	if row.collapsed {
+		glyph = groupGlyphFolded
+	}
+	out := marker + styleGroup.Render(glyph+" "+issueSections[row.section].label) +
+		styleDim.Render("  "+strconv.Itoa(row.count))
+	if row.attention > 0 {
+		out += "  " + styleWarn.Render(attentionBadge+" "+strconv.Itoa(row.attention))
+	}
+	return out
 }
 
 // issueLine is one row: id, state badge, title, labels and kind, the source
