@@ -509,6 +509,36 @@ func TestScreenshotReferencesMatchTapes(t *testing.T) {
 	}
 }
 
+// TestIssuesTapeShowsTheDoneLane holds the tui-issues tape to the screen its
+// alt text describes, an issue closed as not planned among the rows (review
+// F3 on #769). `s` on the issues list toggles the `done` lane, hidden by
+// default (task 134 decision 5); it once cycled open → closed → all, and
+// the tape kept that cycle's two presses, which now hide the lane again.
+func TestIssuesTapeShowsTheDoneLane(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "scripts", "screenshots.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := strings.ReplaceAll(string(raw), "\r\n", "\n")
+	start := strings.Index(script, "\n  tape tui-issues ")
+	if start < 0 {
+		t.Fatal("no tui-issues tape in scripts/screenshots.sh; the pattern is stale")
+	}
+	body := script[start+1:]
+	if eol := strings.IndexByte(body, '\n'); eol >= 0 {
+		if next := tapeCall.FindStringIndex(body[eol:]); next != nil {
+			body = body[:eol+next[0]]
+		}
+	}
+	before, _, ok := strings.Cut(body, `/tui-issues.png"`)
+	if !ok {
+		t.Fatal("the tui-issues tape takes no Screenshot of tui-issues.png")
+	}
+	if presses := strings.Count(before, "\nType \"s\"\n"); presses%2 != 1 {
+		t.Errorf("the tui-issues tape presses s %d times before its Screenshot; `s` toggles the done lane, so an even count photographs it hidden", presses)
+	}
+}
+
 func sortedKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
