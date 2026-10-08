@@ -99,6 +99,10 @@ type Issue struct {
 	// decisions 2, 8), derived from its main-role tasks in the same query
 	// and never stored (task 130 decision 3).
 	MainWorktree IssueMainWorktree
+	// SideActive counts the issue's unsettled, unarchived side tasks;
+	// MergeBacksPending its unsettled, unarchived merge-back tasks (task
+	// 134.16 decision 1). Both come from the same query as Lane.
+	SideActive, MergeBacksPending int
 }
 
 // IssueRemote is an imported issue's link to its source (decision 2). A nil
@@ -207,19 +211,28 @@ func issueSelect() string {
 		` + attentionExpr().sql + `,
 		(` + issueMainBranchSQL("i.id") + `),
 		(` + issueMainOccupantSQL("i.id", "") + `),
+		(` + issueMainOccupantStateSQL("i.id") + `),
+		` + sideActiveExpr().sql + `,
+		` + mergeBacksPendingExpr().sql + `,
 		r.id, r.issue_id, r.project_id, r.provider, r.remote_key, r.repo, r.number, r.url,
 		r.remote_json, r.remote_updated_at, r.synced_at, r.suppressed, r.remote_status
 	FROM issues i LEFT JOIN issue_remotes r ON r.issue_id = i.id`
 }
 
 // The derived columns bind in text order: Active, Lane and Attention's
-// fragments, then the main worktree occupant's own arguments.
+// fragments, the main worktree occupant's own arguments and its state's,
+// then the side and merge-back counts'.
 func issueSelectArgs() []any {
 	var args []any
 	for _, f := range []sqlFrag{activeExpr(), laneExpr(), attentionExpr()} {
 		args = append(args, f.args...)
 	}
-	return append(args, issueMainOccupantArgs()...)
+	args = append(args, issueMainOccupantArgs()...)
+	args = append(args, issueMainOccupantArgs()...)
+	for _, f := range []sqlFrag{sideActiveExpr(), mergeBacksPendingExpr()} {
+		args = append(args, f.args...)
+	}
+	return args
 }
 
 func scanIssue(r rowScanner) (*Issue, error) {
@@ -233,6 +246,7 @@ func scanIssue(r rowScanner) (*Issue, error) {
 		lane                                string
 		mainBranch                          sql.NullString
 		mainOccupant                        sql.NullInt64
+		mainOccupantState                   sql.NullString
 		rID, rIssueID, rProjectID, rNumber  sql.NullInt64
 		rProvider, rKey, rRepo, rURL, rJSON sql.NullString
 		rRemoteUpdated, rSynced             sql.NullString
@@ -242,6 +256,7 @@ func scanIssue(r rowScanner) (*Issue, error) {
 	if err := r.Scan(&iss.ID, &iss.ProjectID, &iss.Title, &iss.Body, &state, &closeReason, &dupOf,
 		&iss.Kind, &iss.Priority, &iss.Author, &parent, &createdBy, &iss.Version, &created, &updated, &closedAt,
 		&iss.TaskCount, &active, &lane, &attention, &mainBranch, &mainOccupant,
+		&mainOccupantState, &iss.SideActive, &iss.MergeBacksPending,
 		&rID, &rIssueID, &rProjectID, &rProvider, &rKey, &rRepo, &rNumber, &rURL,
 		&rJSON, &rRemoteUpdated, &rSynced, &rSuppressed, &rStatus); err != nil {
 		return nil, err
@@ -255,6 +270,7 @@ func scanIssue(r rowScanner) (*Issue, error) {
 	if mainOccupant.Valid {
 		id := mainOccupant.Int64
 		iss.MainWorktree.OccupantTaskID = &id
+		iss.MainWorktree.OccupantState = TaskState(mainOccupantState.String)
 	}
 	if dupOf.Valid {
 		iss.DuplicateOfIssueID = &dupOf.Int64

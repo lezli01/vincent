@@ -26,8 +26,12 @@ const loadTimeout = 10 * time.Second
 //
 // ntSource is **conditional**: it is present only on a draft seeded from an
 // issue or a pull request, and it is read-only — the source is chosen where it
-// is on screen, never in here (task 130 decision 7). Every other row is always
-// there, so rowVisible is the one place that difference lives.
+// is on screen, never in here (task 130 decision 7). ntWorktree and
+// ntMergeBack are conditional too (task 134.16 decision 4): an issue-seeded
+// draft whose issue has a main branch chooses `main` or `separate`, and a
+// `separate` one chooses how it is merged back — and hides the two branch
+// rows, which `merge_back` may not be sent beside. rowVisible is the one
+// place every such difference lives.
 type ntRow int
 
 const (
@@ -37,6 +41,8 @@ const (
 	ntTitle
 	ntDescription
 	ntFields
+	ntWorktree
+	ntMergeBack
 	ntBranch
 	ntBranchName
 	ntPriority
@@ -230,6 +236,13 @@ type newTask struct {
 	issue        *apiclient.Issue
 	issueErr     string
 	issuePrefill *apiclient.GitHubPrefill
+	// separate is the worktree row's choice for an issue whose main branch
+	// exists (task 134.16 decision 4): a side task in its own worktree rather
+	// than a main task on the issue's. worktreePicked records a human choice,
+	// which a later answer about the issue never overrides; until then the
+	// default follows the occupant. mergeAgent is the merge-back row:
+	// `on_conflict: agent` rather than `block`.
+	separate, worktreePicked, mergeAgent bool
 	// pull is the pull request this draft was seeded from (task 064), nil for
 	// every other draft. It is what `github_pull` carries. Like an issue it is
 	// never picked from inside the form: a task runs on a pull request's head
@@ -373,7 +386,7 @@ func (n *newTask) paste(text string) tea.Cmd {
 			n.priority, cmd = n.priority.Update(tea.PasteMsg{Content: text})
 		case ntDescription:
 			n.desc, cmd = n.desc.Update(tea.PasteMsg{Content: text})
-		case ntProject, ntWorkflow, ntSource, ntFields, ntBranch, ntBranchName, ntPaused,
+		case ntProject, ntWorkflow, ntSource, ntFields, ntWorktree, ntMergeBack, ntBranch, ntBranchName, ntPaused,
 			ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
 			// The two branch rows are pickers now; a branch name is pasted
 			// into the picker's free-text row, which the ntPicking arm below
@@ -669,6 +682,7 @@ func (n *newTask) reset() {
 	n.err, n.submitting, n.touched = "", false, false
 	n.loaded, n.loadErr = false, nil
 	n.issueID, n.issue, n.issueErr, n.issuePrefill = 0, nil, "", nil
+	n.separate, n.worktreePicked, n.mergeAgent = false, false, false
 	n.handoff, n.pull, n.pullPrefilled = nil, nil, false
 }
 
@@ -895,15 +909,48 @@ func abs(v int) int {
 // or a pull request, and for nothing else — a plain draft makes no GitHub call
 // and offers no issue row on any project (task 130 decision 7).
 func (n *newTask) rowVisible(row ntRow) bool {
-	if row != ntSource {
+	switch row {
+	case ntSource:
+		// A handoff has a source already — the chat — and says so on its
+		// inherited rows.
+		if n.handoff != nil {
+			return false
+		}
+		return n.issueID != 0 || n.pull != nil
+	case ntWorktree:
+		return n.worktreeChoice()
+	case ntMergeBack:
+		return n.sideTask()
+	case ntBranch, ntBranchName:
+		// `merge_back` beside a branch is a 400: a side task's branch is
+		// the daemon's to name, off the issue's main branch.
+		return !n.sideTask()
+	default:
 		return true
 	}
-	// A handoff has a source already — the chat — and says so on its
-	// inherited rows.
-	if n.handoff != nil {
-		return false
+}
+
+// worktreeChoice reports whether the draft offers the worktree row: it is
+// seeded from an issue that has a main branch (task 134.16 decision 4). An
+// issue with none gets its first main task, so there is nothing to choose.
+func (n *newTask) worktreeChoice() bool {
+	return n.issueID != 0 && n.handoff == nil && n.issue != nil && n.issue.MainWorktree != nil
+}
+
+// sideTask reports whether submitting creates a side task.
+func (n *newTask) sideTask() bool { return n.worktreeChoice() && n.separate }
+
+// setSeparate sets the worktree row. Choosing `separate` clears the branch
+// rows it hides, so nothing typed there rides along unseen.
+func (n *newTask) setSeparate(separate bool) {
+	n.separate = separate
+	if separate {
+		n.branch.SetValue("")
+		n.branchName.SetValue("")
+		n.branchAdopt = false
+		delete(n.rowErr, ntBranch)
+		delete(n.rowErr, ntBranchName)
 	}
-	return n.issueID != 0 || n.pull != nil
 }
 
 // focusable reports whether the cursor may rest on a row. The project row is
@@ -943,6 +990,12 @@ func (n *newTask) activate() tea.Cmd {
 	case ntPaused:
 		n.paused = !n.paused
 		n.touched = true
+	case ntWorktree:
+		n.setSeparate(!n.separate)
+		n.worktreePicked, n.touched = true, true
+	case ntMergeBack:
+		n.mergeAgent = !n.mergeAgent
+		n.touched = true
 	case ntCreate:
 		return n.submit()
 	case ntRowCount:
@@ -960,7 +1013,7 @@ func (n *newTask) startEditing() {
 		n.priority.Focus()
 	case ntDescription:
 		n.desc.Focus()
-	case ntProject, ntWorkflow, ntSource, ntFields, ntBranch, ntBranchName, ntPaused,
+	case ntProject, ntWorkflow, ntSource, ntFields, ntWorktree, ntMergeBack, ntBranch, ntBranchName, ntPaused,
 		ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
 	}
 }
@@ -993,7 +1046,7 @@ func (n *newTask) updateEditing(msg tea.KeyPressMsg) tea.Cmd {
 		n.priority, cmd = n.priority.Update(msg)
 	case ntDescription:
 		n.desc, cmd = n.desc.Update(msg)
-	case ntProject, ntWorkflow, ntSource, ntFields, ntBranch, ntBranchName, ntPaused,
+	case ntProject, ntWorkflow, ntSource, ntFields, ntWorktree, ntMergeBack, ntBranch, ntBranchName, ntPaused,
 		ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
 	}
 	delete(n.rowErr, n.cursor)
@@ -1170,6 +1223,13 @@ func (n *newTask) request() apiclient.CreateTaskRequest {
 		// locked" promise could quietly become false.
 		req.Description = ptr(n.desc.Value())
 		req.Fields = n.issueFieldMap()
+		if n.sideTask() {
+			onConflict := "block"
+			if n.mergeAgent {
+				onConflict = "agent"
+			}
+			req.MergeBack = &apiclient.MergeBack{OnConflict: onConflict}
+		}
 	}
 	if b := strings.TrimSpace(n.branch.Value()); b != "" {
 		req.BaseBranch = ptr(b)

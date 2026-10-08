@@ -295,6 +295,18 @@ func TestMainWorktreeOccupantHint(t *testing.T) {
 	if len(rows) != 1 || rows[0].MainWorktree == nil || rows[0].MainWorktree.Branch != first.BranchName {
 		t.Errorf("issue rows = %+v", rows)
 	}
+	// Task 134.16 decision 1: the occupant's state and the side and
+	// merge-back counts ride on the row and the detail alike.
+	for name, r := range map[string]issueRowBody{"detail": body.issueRowBody, "list": rows[0]} {
+		if r.MainWorktree == nil || r.MainWorktree.OccupantState == nil || *r.MainWorktree.OccupantState != "running" ||
+			r.SideActive != 1 || r.MergeBacksPending != 0 {
+			t.Errorf("%s: main_worktree %+v, side_active %d, merge_backs_pending %d; want running, 1, 0",
+				name, r.MainWorktree, r.SideActive, r.MergeBacksPending)
+		}
+	}
+	if side.MergeSourceTaskID != nil {
+		t.Errorf("side task carries merge_source_task_id %d", *side.MergeSourceTaskID)
+	}
 	// An issue no task came from has no main worktree, and says nothing.
 	other := h.issue(t)
 	_, out = h.doJSON(t, http.MethodGet, fmt.Sprintf("/v1/issues/%d", other.ID), nil)
@@ -377,5 +389,59 @@ func TestHandoffFollowsTheIssueRole(t *testing.T) {
 		side.BranchName != chat2["branch"] {
 		t.Errorf("second handoff = (%q, %q, %q), want side/block on its chat's branch",
 			side.IssueWorktree, side.MergeOnConflict, side.BranchName)
+	}
+}
+
+// TestMergeBackTaskNamesItsSource is task 134.16 decisions 1 and 2: a side
+// task's `→ done` inserts a merge-back, whose DTO names the side task in
+// merge_source_task_id and which the issue counts as pending.
+func TestMergeBackTaskNamesItsSource(t *testing.T) {
+	h := newTaskHarness(t, 0, false)
+	iss := h.issue(t)
+	main := h.createTask(t, map[string]any{"issue_id": iss.ID})
+	testrepo.Run(t, h.repo, "branch", main.BranchName)
+	side := h.createTask(t, map[string]any{"issue_id": iss.ID, "title": "side", "merge_back": map[string]any{}})
+	ctx := t.Context()
+	if _, _, err := h.store.TransitionTask(ctx, side.ID, store.TaskQueued, store.TaskRunning, store.TaskChange{}); err != nil {
+		t.Fatalf("admit: %v", err)
+	}
+	mb := &store.Task{Title: "Merge", WorkflowName: "__merge_back", WorkflowSnapshot: "name: x"}
+	if _, _, err := h.store.TransitionTask(ctx, side.ID, store.TaskRunning, store.TaskDone,
+		store.TaskChange{MergeBack: mb}); err != nil {
+		t.Fatalf("side → done: %v", err)
+	}
+
+	resp, out := h.doJSON(t, http.MethodGet, fmt.Sprintf("/v1/tasks?issue_id=%d", iss.ID), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list tasks = %d: %s", resp.StatusCode, out)
+	}
+	var tasks []taskResponse
+	if err := json.Unmarshal(out, &tasks); err != nil {
+		t.Fatal(err)
+	}
+	var merges int
+	for _, task := range tasks {
+		switch {
+		case task.ID == main.ID || task.ID == side.ID:
+			if task.MergeSourceTaskID != nil {
+				t.Errorf("task %d carries merge_source_task_id %d", task.ID, *task.MergeSourceTaskID)
+			}
+		case task.MergeSourceTaskID == nil || *task.MergeSourceTaskID != side.ID:
+			t.Errorf("merge-back %d merge_source_task_id = %v, want %d", task.ID, task.MergeSourceTaskID, side.ID)
+		default:
+			merges++
+		}
+	}
+	if merges != 1 {
+		t.Fatalf("found %d merge-backs in %+v, want 1", merges, tasks)
+	}
+
+	_, out = h.doJSON(t, http.MethodGet, fmt.Sprintf("/v1/issues/%d", iss.ID), nil)
+	var body issueBody
+	if err := json.Unmarshal(out, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.SideActive != 0 || body.MergeBacksPending != 1 {
+		t.Errorf("side_active %d, merge_backs_pending %d; want 0, 1", body.SideActive, body.MergeBacksPending)
 	}
 }

@@ -1344,6 +1344,11 @@ after admission hold it, `queued` does not. Both are derived per issue in the
 issue list's own query and served as `main_worktree` (§13.2). This item does
 not enforce the occupancy at admission, transfer the directory or cut side
 worktrees: those are 134.11, 134.12 and 134.13.
+*Amended 2026-10-08 (task 134.16, issue #763):* the same query also derives
+the occupant's task state and two counts — the issue's unsettled, unarchived
+side tasks and its unsettled, unarchived merge-back tasks — served beside
+`main_worktree` (§13.2), so the board draws a card without a task fetch per
+row (task 130 decision 16.4).
 *Amended 2026-10-07 (task 134.11, issue #758):* the occupant is an
 **unarchived** main-role task that is either admitted and not settled, or
 settled `done`/`aborted` with a worktree a linked chat still has open — a
@@ -9233,6 +9238,14 @@ GET    /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* The row
                                         (§5.6). The field is omitted while the issue has no main
                                         branch. Both are read in the list's own query, not per
                                         row
+                                        *Amended 2026-10-08 (task 134.16, issue #763):*
+                                        `main_worktree` gains `occupant_state`, the
+                                        occupant's task state (null when free), and the
+                                        representation and every row carry `side_active`,
+                                        the issue's unsettled, unarchived side tasks, and
+                                        `merge_backs_pending`, its unsettled, unarchived
+                                        merge-back tasks — all read in the list's own
+                                        query (§5.6).
                                         *Amended 2026-10-03 (task 130.16, review F1):*
                                         `commentable` says whether a local comment is taken —
                                         false exactly while the GitHub remote is live, so a
@@ -9932,7 +9945,12 @@ POST   /v1/tasks                        { project_id, workflow, title, descripti
                                         a linked chat — holds the worktree (§5.6, §11); task
                                         125's directory claim still applies beside it (§10).
                                         `merge_back` enters the
-                                        idempotency digest only when present
+                                        idempotency digest only when present.
+                                        *Amended 2026-10-08 (task 134.16, issue #763):* every
+                                        task representation also carries
+                                        `merge_source_task_id`, the side task a merge-back
+                                        task merges — null on every other task, and on a
+                                        merge-back whose source was deleted
                                         *Amended 2026-10-07 (task 134.13, issue #760):* a
                                         side task's `base_branch` is the issue's main branch.
                                         Omitted, it is filled in; naming that branch is
@@ -12863,6 +12881,21 @@ stream for the live tail.
    workflow is selected, and never over a value already entered: seeding is the
    client's job for an optional field, because the daemon deliberately does not
    invent one (§8.1.2).
+
+   *Amended 2026-10-08 (task 134.16, issue #763):* a draft seeded from an
+   issue that has a main branch (`main_worktree` on the issue the form
+   already reads) gains a **worktree** row in the Git stage, `main` or
+   `separate`, toggled with `enter`. It defaults to `separate` while the
+   main worktree has an occupant — with a note, "main worktree busy with #T
+   — choose separate to run now, or main to queue behind it" — and to `main`
+   otherwise; a later read never overrides a choice made. `separate` adds a
+   **merge back** row, `manual` (`on_conflict: block`, the default) or
+   `agent`, and hides and clears the two branch rows, which `merge_back` may
+   not be sent beside; the submit carries `merge_back: { on_conflict }`.
+   `main` behaves as before. An issue with no main branch shows neither
+   row: the task is its first main task. A 201 carrying
+   `main_worktree_occupant_task_id` is noted on the workspace as "queued
+   behind #T".
 4. **Projects.** List/add/edit/remove; per-project cap and defaults. On a wide
    terminal the project list remains as a rail while the selected repository's
    configuration, execution defaults, current workload, or add/edit form uses
@@ -13739,6 +13772,20 @@ stream for the live tail.
    re-list. Every `issue.*` event — `issue.lane_changed` among them — and
    every `project.*` event still does.
 
+   *Amended 2026-10-08 (task 134.16, issue #763).* A card's right cell is
+   worded for its lane, from the row alone: `open` reads `no tasks` or `N
+   tasks · cancelled` (an open-lane issue's tasks are all aborted);
+   `in progress` reads `● #T <state>` for the main worktree's occupant, with
+   `· +k side` while side tasks are live and `· n merging` while merge-backs
+   are pending, falling back to `● N tasks` with no occupant; `hand-off`
+   reads `✓ N done`; `done` reads `N tasks`, with `· ● live` while one is
+   unsettled. The close reason stays in the state badge only.
+   *Amended 2026-10-08 (task 134.16, review F2 on #773):* the right-hand
+   parts share what the title's 12-column floor leaves; a row too narrow for
+   them drops the occupant's state word, then shortens the tags, then the
+   source badge, and only then the cell, so the counts survive at the
+   80-column floor.
+
 13. **Issue detail.** *Added 2026-10-02 (task 130.9, issue #668).* One issue:
    a header with state, id, title and source badge; the body; labels, kind,
    priority (`0` none, `1` urgent … `4` low — the inverted scale of task 130
@@ -13819,6 +13866,18 @@ stream for the live tail.
    form's helper; a buffer saved empty adds nothing. It is withheld on an
    issue whose GitHub remote is live, which the daemon would refuse with
    `issue_mirrored` (task 130 decision 24.3): nothing is posted to GitHub.
+
+   *Amended 2026-10-08 (task 134.16, issue #763):* the facts gain a `lane`
+   (`done` for a closed issue, with `!` when `attention` is set). A **Main
+   worktree** section, omitted while the issue has no main branch, shows the
+   branch and the occupant — `#T <state>`, opened by `enter` on the section
+   through the linked-task path — or `free`. Each linked task carries its
+   role: `main`, `side · merge manual|agent`, or `merge-back of #S`, read
+   from `merge_source_task_id` and never inferred from the workflow or the
+   title; a task with no role carries none. A merge-back is folded under its
+   side task, indented as a child, unless its source is not listed. The
+   screen also re-reads on a task event whose `issue_id` names this issue,
+   so a new side task or merge-back appears.
 
 ### Layout
 

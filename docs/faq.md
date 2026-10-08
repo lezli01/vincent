@@ -166,6 +166,19 @@ press `E` to edit the prompt and retry. See
 It is waiting for a scheduler slot. Check `max_parallel_tasks` (default 3) and
 the per-project cap, and raise the task's priority to move it up the queue.
 
+### My issue's task is `queued`, but slots are free
+
+A task created from an issue runs in the issue's main worktree, one task at a
+time, so it waits while another main task of the issue holds that worktree —
+or while a finished one still has a chat open in it. `vincent task add` names
+the holder when it creates the task (`queued behind #61`), the TUI's issues
+board and issue detail name it (`● #61 running`), and
+`vincent issue show <id> --json` carries it as
+`main_worktree.occupant_task_id`. Wait for that task, or create the work as a
+side task to run it now — `--separate-worktree`, or `separate` in the TUI's
+new-task form. See
+[Working an issue](guides/issues.md#the-main-worktree).
+
 ### A task is stuck in `awaiting_input`
 
 An agent asked you something. It is pinned to the top of the board with a badge —

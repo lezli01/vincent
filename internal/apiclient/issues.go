@@ -63,10 +63,12 @@ type IssueTasks struct {
 }
 
 // IssueMainWorktree is an issue's main worktree: its branch, and the
-// admitted, unsettled main task holding it — nil when it is free.
+// admitted, unsettled main task holding it and that task's state — both nil
+// when it is free.
 type IssueMainWorktree struct {
-	Branch         string `json:"branch"`
-	OccupantTaskID *int64 `json:"occupant_task_id"`
+	Branch         string  `json:"branch"`
+	OccupantTaskID *int64  `json:"occupant_task_id"`
+	OccupantState  *string `json:"occupant_state"`
 }
 
 // Issue is one issue. A row from ListIssues leaves Body, AvailableActions,
@@ -96,10 +98,15 @@ type Issue struct {
 	// MainWorktree is the issue's main branch and the main task occupying
 	// it (task 134 decisions 2, 8); nil while the issue has no main branch.
 	MainWorktree *IssueMainWorktree `json:"main_worktree,omitempty"`
-	Version      int64              `json:"version"`
-	CreatedAt    time.Time          `json:"created_at"`
-	UpdatedAt    time.Time          `json:"updated_at"`
-	ClosedAt     *time.Time         `json:"closed_at,omitempty"`
+	// SideActive counts the unsettled, unarchived side tasks;
+	// MergeBacksPending the unsettled, unarchived merge-back tasks (task
+	// 134.16 decision 1).
+	SideActive        int        `json:"side_active"`
+	MergeBacksPending int        `json:"merge_backs_pending"`
+	Version           int64      `json:"version"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+	ClosedAt          *time.Time `json:"closed_at,omitempty"`
 
 	Body             string     `json:"body,omitempty"`
 	AvailableActions []string   `json:"available_actions,omitempty"`

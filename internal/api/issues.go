@@ -139,17 +139,25 @@ type issueRowBody struct {
 	// occupying it (§5.6, task 134 decisions 2, 8), derived in the list's
 	// own query. Omitted while the issue has no main branch.
 	MainWorktree *issueMainWorktreeBody `json:"main_worktree,omitempty"`
-	Version      int64                  `json:"version"`
-	CreatedAt    time.Time              `json:"created_at"`
-	UpdatedAt    time.Time              `json:"updated_at"`
-	ClosedAt     *time.Time             `json:"closed_at,omitempty"`
+	// SideActive counts the unsettled, unarchived side tasks;
+	// MergeBacksPending the unsettled, unarchived merge-back tasks (task
+	// 134.16 decision 1). Both come from the list's own query, so a board
+	// never fetches a row's tasks to draw it (task 130 decision 16.4).
+	SideActive        int        `json:"side_active"`
+	MergeBacksPending int        `json:"merge_backs_pending"`
+	Version           int64      `json:"version"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+	ClosedAt          *time.Time `json:"closed_at,omitempty"`
 }
 
 // issueMainWorktreeBody is an issue's main worktree: its branch, and the
-// admitted, unsettled main task holding it — null when it is free.
+// admitted, unsettled main task holding it and that task's state — both
+// null when it is free.
 type issueMainWorktreeBody struct {
-	Branch         string `json:"branch"`
-	OccupantTaskID *int64 `json:"occupant_task_id"`
+	Branch         string  `json:"branch"`
+	OccupantTaskID *int64  `json:"occupant_task_id"`
+	OccupantState  *string `json:"occupant_state"`
 }
 
 // issueTasksBody is the root tasks an issue started.
@@ -185,28 +193,34 @@ func renderIssueRow(iss *store.Issue) issueRowBody {
 		labels = []string{}
 	}
 	row := issueRowBody{
-		ID:              iss.ID,
-		ProjectID:       iss.ProjectID,
-		Title:           iss.Title,
-		State:           string(issuestate.Normalize(iss.State)),
-		CloseReason:     string(iss.CloseReason),
-		DuplicateOf:     iss.DuplicateOfIssueID,
-		Kind:            iss.Kind,
-		Priority:        iss.Priority,
-		Author:          iss.Author,
-		CreatedByTaskID: iss.CreatedByTaskID,
-		Labels:          labels,
-		Active:          iss.Active,
-		TaskCount:       iss.TaskCount,
-		Lane:            iss.Lane,
-		Attention:       iss.Attention,
-		Version:         iss.Version,
-		CreatedAt:       iss.CreatedAt,
-		UpdatedAt:       iss.UpdatedAt,
-		ClosedAt:        iss.ClosedAt,
+		ID:                iss.ID,
+		ProjectID:         iss.ProjectID,
+		Title:             iss.Title,
+		State:             string(issuestate.Normalize(iss.State)),
+		CloseReason:       string(iss.CloseReason),
+		DuplicateOf:       iss.DuplicateOfIssueID,
+		Kind:              iss.Kind,
+		Priority:          iss.Priority,
+		Author:            iss.Author,
+		CreatedByTaskID:   iss.CreatedByTaskID,
+		Labels:            labels,
+		Active:            iss.Active,
+		TaskCount:         iss.TaskCount,
+		Lane:              iss.Lane,
+		Attention:         iss.Attention,
+		SideActive:        iss.SideActive,
+		MergeBacksPending: iss.MergeBacksPending,
+		Version:           iss.Version,
+		CreatedAt:         iss.CreatedAt,
+		UpdatedAt:         iss.UpdatedAt,
+		ClosedAt:          iss.ClosedAt,
 	}
 	if mw := iss.MainWorktree; mw.Branch != "" {
-		row.MainWorktree = &issueMainWorktreeBody{Branch: mw.Branch, OccupantTaskID: mw.OccupantTaskID}
+		row.MainWorktree = &issueMainWorktreeBody{
+			Branch:         mw.Branch,
+			OccupantTaskID: mw.OccupantTaskID,
+			OccupantState:  nilIfEmpty(string(mw.OccupantState)),
+		}
 	}
 	if issues.Mirrored(iss) {
 		r := iss.Remote

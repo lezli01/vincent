@@ -194,7 +194,7 @@ var fixed = []Fixed{
 	{"issues", "down", "move the selection"},
 	{"issue", "ctrl+o", "show the description's original Markdown instead of the rendered view"},
 	{"issue", "ctrl+l", "list the links in the description"},
-	{"issue", "down", "move the selection among the linked tasks"},
+	{"issue", "down", "move the selection between the Main worktree section and the linked tasks"},
 	{"issue", "pgdown", "scroll the page"},
 	{"daemon", "f", "follow the end of the log again"},
 	{"daemon", "down", "scroll the log"},

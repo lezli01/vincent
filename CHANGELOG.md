@@ -13,6 +13,20 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **See who holds an issue's main worktree, and ask for a side task, in the
+  TUI.** An issues-board card is now worded for its lane: in progress it names
+  the task in the main worktree and its state, with `+k side` and `n merging`
+  for running side tasks and waiting merge-backs; hand-off reads `✓ N done`.
+  The issue detail shows the lane, a Main worktree section (`enter` opens the
+  task holding it, or it reads `free`), each task's role — `main`, `side ·
+  merge manual|agent` or `merge-back of #S` — with merge-backs folded under
+  their side task. Started with `a` from an issue that has a main branch, the
+  new-task form offers `worktree: main / separate`, preselecting `separate`
+  while the main worktree is busy, and a `merge back: manual / agent` row.
+  The issue API serves `main_worktree.occupant_state`, `side_active` and
+  `merge_backs_pending`, every task carries `merge_source_task_id`, and
+  `vincent task show` prints a merge-back's `merge-back of #S`.
+
 - **Ask for a side task from the CLI, triggers and chat handoff.** `vincent
   task add --issue N --separate-worktree` creates a side task that runs now in
   its own worktree, merged back into the issue's main branch when done, and
@@ -36,6 +50,13 @@ list with the user-facing context a commit subject cannot carry.
   new block reasons, `merge_source_missing` and `merge_target_missing`, say
   when there is nothing to merge or nowhere to merge it, and an issue can no
   longer be deleted while one of its side tasks is unfinished.
+
+- **Working an issue, documented.** A new guide,
+  [Working an issue](docs/guides/issues.md), explains the issues board's four
+  lanes, the issue's main worktree and who holds it, why a task queues behind
+  it, side tasks and their two merge-back modes, what to do when a merge-back
+  blocks, and the same choices from the API, MCP, triggers and a chat handoff.
+  The FAQ answers "my issue's task is `queued`, but slots are free".
 
 - **The TUI's issues screen is a board of lanes.** The selected project's
   issues are laid out in stacked sections — open, in progress, hand-off and

@@ -2654,7 +2654,9 @@ While another unarchived main task of the issue carries the branch, archive
 does not delete it even when it has no commits past the issue's base branch. The issue serves it as `main_worktree`:
 
 ```json
-"main_worktree": { "branch": "vincent/12-lock-file-leaks", "occupant_task_id": 12 }
+"main_worktree": { "branch": "vincent/12-lock-file-leaks", "occupant_task_id": 12, "occupant_state": "running" },
+"side_active": 1,
+"merge_backs_pending": 0
 ```
 
 `occupant_task_id` is the main task that has started and not yet finished —
@@ -2663,6 +2665,10 @@ it holds the main worktree even while `blocked`, `paused` or
 [linked chat](#a-chat-on-a-stopped-task) still has open. It is `null` when nothing holds it, and `main_worktree` is
 absent while the issue has no main branch. When every main task has been
 archived the issue has none, and the next main task starts a fresh branch.
+`occupant_state` is the occupant's task state, `null` with it. `side_active`
+counts the issue's side tasks that are neither finished nor archived, and
+`merge_backs_pending` its merge-back tasks likewise; every row of `GET
+/v1/issues` carries all three, read in the list's own query.
 
 Creating a main task while the main worktree is occupied names the occupant
 in the `201` as `main_worktree_occupant_task_id`. The new task stays `queued`
@@ -2686,7 +2692,9 @@ fetching it and without moving it, so the main task's worktree is never
 touched, and its `base_sha` is the main branch's tip at the cut. The task reads back with
 `issue_worktree: "side"` and `merge_back: { "on_conflict": … }`. A main task
 carries `merge_back: null`, and a task with no issue, a fan-out lane, or one
-created before roles existed carries `null` in both.
+created before roles existed carries `null` in both. A merge-back task names
+the side task it merges in `merge_source_task_id`, which is `null` on every
+other task and once that side task is deleted.
 
 | Status | When |
 |---|---|

@@ -273,6 +273,14 @@ func TestIssueSeedNotesTasksAlreadyStarted(t *testing.T) {
 			h.p.until(10*time.Second, "the count note", func() bool {
 				return strings.Contains(n.rowValue(ntSource), "1 task already started from this issue")
 			})
+			// The first task holds the issue's main worktree, so the form
+			// offers separate first (task 134.16 decision 4); this test is
+			// about a second main task, which queues behind it.
+			if !n.separate {
+				t.Error("a busy main worktree did not preselect separate")
+			}
+			n.setSeparate(false)
+			n.worktreePicked = true
 		}
 		h.pick(n, ntWorkflow, "fix-issue")
 		h.p.until(10*time.Second, "fix-issue's prefill", func() bool {

@@ -1579,8 +1579,9 @@ not touched follows the switch, and one you have asks first. A draft seeded
 from a pull request, an issue or a chat of another project switches to that
 project before the form opens. A guided form: project → workflow
 (with its description and step list, flagging steps whose agent is unavailable)
-→ *(pull request, when seeded from one)* → title → description → fields → base branch → branch →
-priority → start → optional agent/model/effort override.
+→ *(pull request, when seeded from one)* → title → description → fields →
+*(worktree and merge back, when seeded from an issue that has a main branch)* →
+base branch → branch → priority → start → optional agent/model/effort override.
 
 **The two branch rows are lists** over the project's own local branches, served
 by [`GET /v1/projects/{id}/branches`](../reference/api.md). `enter` opens one,
@@ -1876,8 +1877,21 @@ headers, so an empty one reads "none match".
 
 Each row carries the issue's id, its state (with the close reason once it is
 closed, such as `closed · not planned`), the title, its labels and kind,
-`owner/repo#N` when it was imported, and its tasks: how many it started, with a
-`●` while one of them is still unsettled. Any change to an issue, or to a task
+`owner/repo#N` when it was imported, and its tasks, worded for its lane:
+
+- **open** — `no tasks`, or `N tasks · cancelled`;
+- **in progress** — `● #T running` (or whichever state) for the task holding
+  the issue's main worktree, then `· +k side` while side tasks are running and
+  `· n merging` while merge-backs are waiting; with no task in the main
+  worktree, `● N tasks`;
+- **hand-off** — `✓ N done`;
+- **done** — `N tasks`, with `· ● live` while one is still unsettled.
+
+A row too narrow for all of it gives up the occupant's state first, then
+shortens the labels and kind, then the `owner/repo#N` badge, so the counts
+stay.
+
+Any change to an issue, or to a task
 of an issue on the screen, re-lists it with no keypress, and the selection
 follows the issue into whatever lane it moved to.
 
@@ -1896,7 +1910,7 @@ planned](../assets/tui-issues.png)
 | `C`/`O` | Fold or unfold every lane section |
 | `/` | Filter by id, title, label or kind |
 | `n` | File a new issue in this project |
-| `a` | Create a task from the selected issue — the form is prefilled from it and editable first |
+| `a` | Create a task from the selected issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch |
 | `i` | Edit the selected issue in the issue form |
 | `X` | Close or reopen the selected issue — only what vincent offers for it |
 | `D` | Delete the selected issue permanently (asks first) |
@@ -1906,9 +1920,13 @@ anything: imported issues are refreshed on the daemon's reconciler tick.
 
 `enter` opens the **issue detail**: the state, id, title and source badge; the
 description, rendered as Markdown; the labels, kind, priority (`urgent`,
-`high`, `medium`, `low`, or `none`) and author; every task the issue started,
-newest first and finished or archived ones included, each with its state glyph;
-and, for an imported issue,
+`high`, `medium`, `low`, or `none`) and author, and its lane (with `!` when a task waits on you); a **Main
+worktree** section, once the issue has a main branch, naming the branch and
+the task holding it (`enter` on the section opens that task) or `free`; every
+task the issue started, newest first and finished or archived ones included,
+each with its state glyph and its role — `main`, `side · merge manual` or
+`side · merge agent`, or `merge-back of #S`, folded under the side task it
+merges; and, for an imported issue,
 where it came from — the URL and the state GitHub last reported; and the
 discussion thread under the description, described below.
 
@@ -1919,15 +1937,15 @@ section](../assets/tui-issue.png)
 
 | Key | Does |
 |---|---|
-| `enter` | Open the selected linked task's workspace — `esc` there comes back to the issue |
+| `enter` | Open the selected linked task's workspace, or on the Main worktree section the task holding it — `esc` there comes back to the issue |
 | `o` | Open an imported issue's page in a browser |
 | `ctrl+o` | Show the description's original Markdown instead of the rendered view |
 | `ctrl+l` | List the links in the description — open one in a browser or copy it |
 | `R` | Re-read the issue |
-| `↑`/`↓` | Move the selection among the linked tasks |
+| `↑`/`↓` | Move the selection between the Main worktree section and the linked tasks |
 | `pgup`/`pgdown` | Scroll the page |
 | `n` | File a new issue in this issue's project |
-| `a` | Create a task from this issue — the form is prefilled from it and editable first |
+| `a` | Create a task from this issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch |
 | `i` | Edit the issue in the issue form |
 | `W` | Write a comment in `$EDITOR` — saved empty, nothing is added. Not offered on an issue mirrored from GitHub, whose thread is GitHub's |
 | `X` | Close or reopen the issue — only what vincent offers for it |
@@ -1948,6 +1966,17 @@ source row names it, and the title, description and any matching declared
 fields are prefilled in rows you can edit before creating. Starting a second
 task from the same issue is allowed; the form says how many came first. A
 closed issue can be started from as well.
+
+Once the issue has a [main branch](../reference/api.md#the-issues-main-branch),
+the Git stage adds a **worktree** row, toggled with `enter`: `main` runs the
+task on the issue's branch, queued behind whichever task holds it, and
+`separate` makes it a side task in its own worktree, merged back when done.
+It preselects `separate` while the main worktree is busy, and says which task
+holds it. `separate` adds a **merge back** row — `manual`, where a conflict
+blocks for you, or `agent` — and hides the two branch rows, since a side
+task's branch is cut by vincent off the issue's. An issue with no main branch
+yet shows neither row. If the main worktree was taken between opening the
+form and creating, the workspace says the task is queued behind it.
 
 A task started from an issue names it on its Overview tab and in the **Issue**
 section of Task Details. From the task workspace, the command palette's "open
@@ -1986,7 +2015,7 @@ GitHub too — or, when the issue on GitHub has moved or is gone, that it
 changes vincent's copy only.
 
 `D` deletes an issue in any state, always after asking — unless one of its
-main tasks has not finished, which the daemon refuses. Deleting an imported
+main or side tasks has not finished, which the daemon refuses. Deleting an imported
 issue never deletes it on GitHub, and vincent remembers the deletion so a sync
 does not import it again.
 

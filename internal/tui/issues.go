@@ -660,6 +660,28 @@ func issueLine(iss apiclient.Issue, width int, selected bool) string {
 	source := issueSourceBadge(iss)
 	tasks := issueTaskSummary(iss)
 
+	// The right-hand parts share what the title's 12-column floor leaves
+	// (review F2 on #773): at the 80-column floor an in-progress cell, tags
+	// and a source badge can outgrow it, and render's cut would take the
+	// cell's counts. They give way in a fixed order — the occupant's state
+	// word, then the tags, then the source badge, then the cell itself.
+	room := width - (2 + len(id) + ansi.StringWidth(state) + 2 + 6) - 12
+	over := func() int {
+		return ansi.StringWidth(tags) + ansi.StringWidth(source) + ansi.StringWidth(tasks) - room
+	}
+	if over() > 0 {
+		tasks = issueTaskSummaryShort(iss)
+	}
+	if n := over(); n > 0 {
+		tags = fitWidth(tags, ansi.StringWidth(tags)-n)
+	}
+	if n := over(); n > 0 {
+		source = fitWidth(source, ansi.StringWidth(source)-n)
+	}
+	if n := over(); n > 0 {
+		tasks = fitWidth(tasks, ansi.StringWidth(tasks)-n)
+	}
+
 	fixed := 2 + len(id) + ansi.StringWidth(state) + 2 + ansi.StringWidth(tags) +
 		ansi.StringWidth(source) + ansi.StringWidth(tasks) + 6
 	titleW := max(width-fixed, 12)
@@ -719,18 +741,76 @@ func issueSourceBadge(iss apiclient.Issue) string {
 	return badge
 }
 
-// issueTaskSummary is the row's linked-task column: the count, and a marker
-// when one of them is still unsettled (decision 4). Both come from the list
-// DTO; a row makes no task fetch of its own.
+// issueTaskSummary is the row's linked-task column, worded for the issue's
+// lane (task 134.16 decision 3). Every value comes from the list DTO; a row
+// makes no task fetch of its own (task 130 decision 16.4). The close reason
+// is never repeated here: the state badge carries it.
 func issueTaskSummary(iss apiclient.Issue) string {
+	return issueTaskCell(iss, true)
+}
+
+// issueTaskSummaryShort is issueTaskSummary without the occupant's state
+// word, the first thing a row too narrow for its parts gives up: the
+// side and merging counts the cell exists to show stay.
+func issueTaskSummaryShort(iss apiclient.Issue) string {
+	return issueTaskCell(iss, false)
+}
+
+// fitWidth cuts s to at most w columns with an ellipsis, or to nothing when
+// there is no room for more than the ellipsis.
+func fitWidth(s string, w int) string {
+	if w <= 1 {
+		return ""
+	}
+	return ansi.Truncate(s, w, "…")
+}
+
+func issueTaskCell(iss apiclient.Issue, withState bool) string {
+	tasks := plural(iss.TaskCount, "task", "tasks")
+	switch iss.Lane {
+	case "open":
+		// Any task an open-lane issue has is aborted (task 134 decision 2).
+		if iss.TaskCount == 0 {
+			return "no tasks"
+		}
+		return tasks + " · cancelled"
+	case "in_progress":
+		mw := iss.MainWorktree
+		if mw == nil || mw.OccupantTaskID == nil {
+			// Queued, side-only, or from before roles: no occupant to name.
+			return "● " + tasks
+		}
+		s := "● #" + strconv.FormatInt(*mw.OccupantTaskID, 10)
+		if withState && mw.OccupantState != nil {
+			s += " " + *mw.OccupantState
+		}
+		if iss.SideActive > 0 {
+			s += " · +" + strconv.Itoa(iss.SideActive) + " side"
+		}
+		if iss.MergeBacksPending > 0 {
+			s += " · " + strconv.Itoa(iss.MergeBacksPending) + " merging"
+		}
+		return s
+	case "hand_off":
+		// Nothing waits here: the lane has no unsettled root task.
+		return "✓ " + strconv.Itoa(iss.TaskCount) + " done"
+	case issueLaneDone:
+		if iss.TaskCount == 0 {
+			return "no tasks"
+		}
+		if iss.Active {
+			return tasks + " · ● live"
+		}
+		return tasks
+	}
+	// A daemon too old to send a lane: the count and the activity marker.
 	if iss.TaskCount == 0 {
 		return "no tasks"
 	}
-	s := plural(iss.TaskCount, "task", "tasks")
 	if iss.Active {
-		s = "● " + s
+		return "● " + tasks
 	}
-	return s
+	return tasks
 }
 
 func issueTaskStyle(iss apiclient.Issue) lipgloss.Style {

@@ -717,6 +717,7 @@ main task created while another holds the worktree is queued behind it, and
 ```
 queued behind #61 (main worktree busy); pass --separate-worktree to run now
 task 62 created: Crash on cold start (adhoc, branch vincent/61-crash-on-cold-start)
+  from issue 7: Crash on cold start
 ```
 
 `--separate-worktree` asks for a **side** task instead — the API's
@@ -898,8 +899,10 @@ never appear together. `--json` carries the same facts as `queued_reason` and
 
 A task created from an issue prints a `worktree` row with its role in the
 issue's worktrees, `main` or `side`; a side task adds a `merge` row, `manual`
-(`on_conflict: block`) or `agent`. A task with no issue prints neither.
-`--json` carries them as `issue_worktree` and `merge_back`.
+(`on_conflict: block`) or `agent`. A merge-back task adds a `merge-back of`
+row naming the side task it merges. A task with no issue prints none of them.
+`--json` carries them as `issue_worktree`, `merge_back` and
+`merge_source_task_id`.
 
 The `origin` row says which definition the task's workflow name resolved to —
 `built-in`, `project .vincent/workflows/adhoc.yaml`, `global
@@ -3102,7 +3105,7 @@ vincent issue delete <id>... --force [--json]
 ```
 
 Aliased as `vincent issue rm`. Permanently deletes issues, in any state. The
-daemon refuses only an issue one of whose main tasks has not finished
+daemon refuses only an issue one of whose main or side tasks has not finished
 (`issue_has_live_main_task`); the command then names that task. Otherwise
 nothing refuses an issue delete, so `--force` is the confirmation:
 without it the command exits 1 saying the delete is permanent, sends nothing,

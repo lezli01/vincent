@@ -110,6 +110,11 @@ type Task struct {
 	IssueWorktree *string `json:"issue_worktree,omitempty"`
 	// MergeBack is a side task's merge-back setting; nil on every other task.
 	MergeBack *MergeBack `json:"merge_back,omitempty"`
+	// MergeSourceTaskID is the side task a merge-back task merges into its
+	// issue's main branch (task 134.14); nil on every other task, and on a
+	// merge-back whose source was deleted. A client reads the link here and
+	// never infers it from the workflow name or the title.
+	MergeSourceTaskID *int64 `json:"merge_source_task_id,omitempty"`
 
 	// QueuedReason and AdmitNotBefore describe a queued task waiting on
 	// something other than a free slot (§11) — `usage_limit` today, with the

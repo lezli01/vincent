@@ -66,6 +66,12 @@ func (n *newTask) applyIssue(msg ntIssueMsg) {
 	}
 	iss := msg.issue
 	n.issue, n.issueErr = &iss, ""
+	// The worktree row's default (task 134.16 decision 4): `separate` while
+	// another task holds the main worktree, so the task runs now, `main`
+	// otherwise. A human's choice stands.
+	if !n.worktreePicked {
+		n.setSeparate(iss.MainWorktree != nil && iss.MainWorktree.OccupantTaskID != nil)
+	}
 	if iss.Prefill != nil {
 		n.applyIssuePrefill(*iss.Prefill)
 	}
@@ -184,4 +190,26 @@ func issueStartedNote(tasks apiclient.IssueTasks) string {
 		out += " (" + strconv.Itoa(active) + " active)"
 	}
 	return out
+}
+
+// worktreeValue is the worktree row (task 134.16 decision 4), with the note
+// naming the occupant while the main worktree is busy.
+func (n *newTask) worktreeValue() string {
+	value := "main  " + styleDim.Render("on the issue's branch · enter for separate")
+	if n.separate {
+		value = "separate  " + styleDim.Render("its own worktree, merged back when done · enter for main")
+	}
+	if mw := n.issue.MainWorktree; mw != nil && mw.OccupantTaskID != nil {
+		value += "\n" + styleWarn.Render("main worktree busy with #"+strconv.FormatInt(*mw.OccupantTaskID, 10)+
+			" — choose separate to run now, or main to queue behind it")
+	}
+	return value
+}
+
+// mergeBackValue is the merge-back row of a separate draft.
+func (n *newTask) mergeBackValue() string {
+	if n.mergeAgent {
+		return "agent  " + styleDim.Render("an agent resolves a conflict · enter for manual")
+	}
+	return "manual  " + styleDim.Render("a conflict blocks for you · enter for agent")
 }
