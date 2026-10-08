@@ -567,6 +567,14 @@ rows you have not typed in. The new-task form itself has no issue picker, and a
 plain `n` makes no GitHub call. The issue's screen then lists every task it
 started, and the task names its issue on its Overview.
 
+The tasks of one issue share one main line of work: the first one's branch
+becomes the issue's main branch, and each later task continues in that
+worktree, queued behind the one holding it rather than refused. Work that
+should not wait runs as a side task, in its own worktree cut from the main
+branch, and merges back when it is done — a conflict either blocks for you or
+goes to an agent first. [Working an issue](guides/issues.md) tells the whole
+story.
+
 ![An issue imported from acme/web#142: its labels, its Markdown description,
 the two comments mirrored from GitHub, the task started from it waiting at its
 gate, and the Source section naming the GitHub issue and its

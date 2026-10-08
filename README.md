@@ -503,7 +503,7 @@ Full documentation lives in **[docs/](docs/README.md)**.
 - [Writing workflows](docs/guides/workflows.md) · [Agent CLIs](docs/guides/agents.md)
 - [Using the TUI](docs/guides/tui.md) · [Scripting vincent](docs/guides/scripting.md)
 - [Driving vincent from an agent](docs/guides/mcp.md) · [Running at login](docs/guides/running-at-login.md)
-- [Troubleshooting](docs/guides/troubleshooting.md)
+- [Working an issue](docs/guides/issues.md) · [Troubleshooting](docs/guides/troubleshooting.md)
 
 **Agent skill**
 

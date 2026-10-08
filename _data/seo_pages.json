@@ -70,6 +70,11 @@
     "description": "Compare Claude Code, Codex, and Cursor integration, authentication, models, effort, permissions, input, and cost reporting."
   },
   {
+    "path": "docs/guides/issues.md",
+    "seo_title": "Work an issue with vincent: lanes, main worktree and merge-back",
+    "description": "How vincent tracks an issue on four lanes, runs its tasks in one main worktree, and merges side tasks back by hand or with an agent."
+  },
+  {
     "path": "docs/guides/running-at-login.md",
     "seo_title": "Run vincent at login",
     "description": "Start the vincent daemon automatically with launchd, systemd, or Windows Task Scheduler."

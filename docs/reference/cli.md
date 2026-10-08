@@ -3104,7 +3104,7 @@ vincent issue delete <id>... --force [--json]
 ```
 
 Aliased as `vincent issue rm`. Permanently deletes issues, in any state. The
-daemon refuses only an issue one of whose main tasks has not finished
+daemon refuses only an issue one of whose main or side tasks has not finished
 (`issue_has_live_main_task`); the command then names that task. Otherwise
 nothing refuses an issue delete, so `--force` is the confirmation:
 without it the command exits 1 saying the delete is permanent, sends nothing,

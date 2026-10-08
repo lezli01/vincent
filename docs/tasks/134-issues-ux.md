@@ -702,8 +702,12 @@ sections and public pages its code makes true, in its own pull request.
   Depends: 134.14. `scripts/134-gate.sh`, nine scenarios over curl and the
   issue branch's git log, wired as gate group 4 in `ci.yml`, with its record
   in `docs/gates/134-issue-worktrees.md` (decisions 134.17-a, 134.17-b).
-- [ ] **134.18** ([#765](https://github.com/lezli01/vincent/issues/765)) The
+- [x] **134.18** ([#765](https://github.com/lezli01/vincent/issues/765)) The
   user guide for main worktrees, side tasks and merge-back. Depends: 134.15.
+  `docs/guides/issues.md` — lanes, the occupant rule, side tasks, merge-back
+  blocks and every surface — linked from the docs index, features, the FAQ
+  and the root README; the TUI's side-task rows stay with 134.16.
+  ✓ 2026-10-08
 - [ ] **134.19** ([#766](https://github.com/lezli01/vincent/issues/766)) Seeds
   for every lane, the re-captured pictures and the walkthrough.
   Depends: 134.16.
