@@ -430,9 +430,9 @@ In detail:
   a shell, `vincent issue` lists, shows, files, edits, comments on, closes,
   reopens and deletes them.
 
-  ![The issues screen listing api's issues, open and closed: three local
-  issues with their labels and kinds, one closed as not
-  planned](assets/tui-issues.png)
+  ![The issues board on platform-infra with all four lanes shown: open,
+  in progress with a `!` for a blocked task, hand-off for finished work, and
+  done for an issue closed as completed](assets/tui-issues.png)
 - The workflow graph visualizes parallel groups, fan-out lanes and merges,
   the `needs:` edges between lanes and the waves they run in, conditions,
   loops, guards, checks, and nested includes — and, on a task's own Workflow
@@ -575,10 +575,10 @@ branch, and merges back when it is done — a conflict either blocks for you or
 goes to an agent first. [Working an issue](guides/issues.md) tells the whole
 story.
 
-![An issue imported from acme/web#142: its labels, its Markdown description,
-the two comments mirrored from GitHub, the task started from it waiting at its
-gate, and the Source section naming the GitHub issue and its
-URL](assets/tui-issue.png)
+![An issue imported from acme/web#142: its lane, its labels, its Markdown
+description, the two comments mirrored from GitHub, the Main worktree section
+naming the task that holds it, waiting at its gate, and the Source section
+naming the GitHub issue and its URL](assets/tui-issue.png)
 
 On a project whose `origin` remote points at github.com, vincent imports the
 repository's issues into the project's own [issues](#operate-from-a-purpose-built-tui) on every

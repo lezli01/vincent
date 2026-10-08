@@ -780,7 +780,7 @@ EOF
   # Issues (task 130, issue #677): what the issue list and an issue's detail
   # are pictures of. Local issues on two projects with no GitHub origin, one
   # of each priority from urgent to none, and one closed as not planned so
-  # the list's `all` scope has a closed row. Creating an issue starts no
+  # the `done` lane has a row. Creating an issue starts no
   # task, so nothing here moves a task id or a board shot.
   say "issues"
   issue() { # issue PROJECT TITLE KIND PRIORITY LABELS_JSON [BODY]
@@ -815,6 +815,24 @@ EOF
   done
   [[ "$comments" == "2" ]] || fail "acme/web#142 and its two comments were never imported (issue ${imported:-none}, ${comments:-0} comments)"
   I_FLICKER="$imported"
+
+  # The issues board (task 134, issue #766) is photographed on
+  # platform-infra, the one project whose seeded tasks already end in every
+  # state a lane needs, so no task is added for it and no task id moves.
+  # Three of these issues are linked to tasks created further down (the
+  # blocked loop, the paused postmortem, the archived DNS rollback), which
+  # fills `in progress` (with a `!`) and `hand-off`; the replica-lag issue
+  # above and the runbook stay task-less, which is `open`; and the one
+  # closed here is `done`. They are created after the import so the
+  # imported issues keep the ids tui-issue and tui-task-issue show.
+  I_TENANT="$(issue "$P_INFRA" 'Every service schema needs a tenant_id column' chore 2 '["migrations"]' \
+    'Row-level isolation needs the column on every table before the policy can be switched on.')"
+  I_POSTMORTEM="$(issue "$P_INFRA" 'Publish the eu-west replica outage postmortem' chore 3 '["incident"]')"
+  I_DNS="$(issue "$P_INFRA" 'The eu-west DNS change broke the status page' bug 1 '["incident","dns"]' \
+    'status.example.com resolves to the retired load balancer since the change.')"
+  local paged
+  paged="$(issue "$P_INFRA" 'Page the on-call when a replica restore stalls' feature 2 '["monitoring"]')"
+  api POST "/issues/$paged/close" '{"reason":"completed"}' >/dev/null
 
   say "tasks"
   add() { # add PROJECT WORKFLOW TITLE [EXTRA_JSON]
@@ -1003,7 +1021,7 @@ EOF
 
   # The loop: three passes that succeed and a fourth that blocks, so the
   # board's STEP column carries the rollup and the timeline the tiers.
-  T_LOOP="$(add "$P_INFRA" service-migrations 'add tenant_id to every service schema')"
+  T_LOOP="$(add "$P_INFRA" service-migrations 'add tenant_id to every service schema' "\"issue_id\":$I_TENANT")"
   wait_state "$T_LOOP" blocked 120
 
   # The fan-out: round 0's two lanes run, finish and are merged, and the
@@ -1024,7 +1042,7 @@ EOF
   # board shows one project; feature-pr and docs-refresh are global, so infra
   # can run them.
   local archived
-  archived="$(add "$P_INFRA" incident-response 'roll back the eu-west DNS change')"
+  archived="$(add "$P_INFRA" incident-response 'roll back the eu-west DNS change' "\"issue_id\":$I_DNS")"
   wait_state "$archived" done 120
   api POST "/tasks/$archived/archive" >/dev/null
   archived="$(add "$P_INFRA" feature-pr 'drop the codex 0.9 compatibility shim')"
@@ -1089,7 +1107,7 @@ EOF
   add "$P_WEB" docs-refresh 'document the new cache headers' >/dev/null
   add "$P_API" docs-refresh 'document the rate-limit headers' >/dev/null
 
-  T_PAUSE="$(add "$P_INFRA" docs-refresh 'write the eu-west postmortem')"
+  T_PAUSE="$(add "$P_INFRA" docs-refresh 'write the eu-west postmortem' "\"issue_id\":$I_POSTMORTEM")"
   sleep 3
   api POST "/tasks/$T_PAUSE/pause" >/dev/null || true
 
@@ -2127,15 +2145,18 @@ Sleep 2s
   # The issue screens (task 130, issue #677), last for the reason the #415
   # block gives: a tape added above another re-times the shots after it.
 
-  # The issues list, api's three local issues. `s` shows or hides the
-  # `done` lane (task 134 decision 5), hidden by default, so it is pressed
-  # once: shown is the one that draws the issue closed as not planned
-  # beside the open ones, and a second press would hide it again. `s`
+  # The issues board on platform-infra, the project seeded with an issue in
+  # every lane (issue #766): two task-less ones in `open`, the blocked loop's
+  # and the paused postmortem's issues in `in progress` (the first with a
+  # `!`), the archived DNS rollback's in `hand-off`, and one closed as
+  # completed in `done`. `s` shows or hides the `done` lane (task 134
+  # decision 5), hidden by default, so it is pressed once: shown is the one
+  # that draws all four lanes, and a second press would hide it again. `s`
   # leaves a "showing the done lane…" note under the rows that outlives
   # the listing; `esc` clears the note first and keeps the lane shown
   # (§15's one layer per press), so it is pressed once rather than
   # photographed.
-  tape tui-issues 1250 api '
+  tape tui-issues 1250 platform-infra '
 Type ":"
 Sleep 1s
 Type "issues"
@@ -2161,7 +2182,7 @@ Sleep 2s
   # started from it waiting at its gate, and the Source section last. The
   # filter commits on its own enter, so the second enter opens the row.
   owns web issue 'flickers' tui-issue
-  tape tui-issue 1400 web '
+  tape tui-issue 1600 web '
 Type ":"
 Sleep 1s
 Type "issues"
