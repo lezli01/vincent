@@ -235,10 +235,10 @@ the images under `docs/assets/tui-*.png`. It seeds a throwaway installation —
 its own config and data dirs, its own `$HOME` (so the skills and status-line
 rows are the seed's, not yours), seven git repos (one a GitHub project, answered
 by `cmd/fakegh`), a daemon, twenty-one tasks (a two-round fan-out and a loop
-among them, three archived, one started from an issue), eight chats (four
-live, two archived and two closed on a task) and eight issues (five local, one
+among them, three archived, four started from an issue), eight chats (four
+live, two archived and two closed on a task) and twelve issues (nine local, two
 of them closed, and three imported from the fake GitHub with a mirrored
-thread) covering every state — and photographs the running TUI with VHS
+thread, platform-infra's filling every lane) covering every state — and photographs the running TUI with VHS
 (`brew install vhs`).
 Documentation never draws a screen: no ASCII mock-ups of panels, no hand-written
 "example" frames. If a panel changed, re-run the script:

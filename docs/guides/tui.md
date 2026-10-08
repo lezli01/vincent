@@ -1895,9 +1895,10 @@ Any change to an issue, or to a task
 of an issue on the screen, re-lists it with no keypress, and the selection
 follows the issue into whatever lane it moved to.
 
-![The issues list on api, scoped to all issues: its three local issues with
-their labels and kinds, one of them closed as not
-planned](../assets/tui-issues.png)
+![The issues board on platform-infra with the done lane shown: two open
+issues with no task, two in progress (one with a `!` for its blocked task),
+one in hand-off whose task finished, and one done, closed as
+completed](../assets/tui-issues.png)
 
 | Key | Does |
 |---|---|
@@ -1930,9 +1931,10 @@ merges; and, for an imported issue,
 where it came from — the URL and the state GitHub last reported; and the
 discussion thread under the description, described below.
 
-![The detail of an issue imported from acme/web#142: labels, kind, priority
-and author, the description rendered as Markdown, two comments marked
-`· github`, the task started from it at its gate, and the Source
+![The detail of an issue imported from acme/web#142: its lane, labels,
+kind, priority and author, the description rendered as Markdown, two comments
+marked `· github`, the Main worktree section naming the branch and the task
+holding it at its gate, that task marked `main`, and the Source
 section](../assets/tui-issue.png)
 
 | Key | Does |

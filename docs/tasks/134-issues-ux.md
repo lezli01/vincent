@@ -1,6 +1,6 @@
 # 134 — Issues UX: a four-lane issues board and one main worktree per issue
 
-**Status:** 🔄 in progress (18/19)
+**Status:** ✅ done (19/19)
 
 Issue [#748](https://github.com/lezli01/vincent/issues/748), part of
 [#747](https://github.com/lezli01/vincent/issues/747), the epic. Spec §5.6 in
@@ -708,6 +708,11 @@ sections and public pages its code makes true, in its own pull request.
   blocks and every surface — linked from the docs index, features, the FAQ
   and the root README; the TUI's side-task rows stay with 134.16.
   ✓ 2026-10-08
-- [ ] **134.19** ([#766](https://github.com/lezli01/vincent/issues/766)) Seeds
+- [x] **134.19** ([#766](https://github.com/lezli01/vincent/issues/766)) Seeds
   for every lane, the re-captured pictures and the walkthrough.
   Depends: 134.16.
+  platform-infra is the board project: three tasks it already had are linked
+  to new issues, so no task id moves; `tui-issues` shows all four lanes and
+  `tui-issue` the Main worktree section. The walkthrough is
+  [`docs/gates/134-issues-board.md`](../gates/134-issues-board.md).
+  ✓ 2026-10-08
