@@ -578,3 +578,23 @@ func TestQuickstartStartupOrderMatchesChain(t *testing.T) {
 		at += i + len(r)
 	}
 }
+
+// TestIssueGuideNamesTheFormsWorktreeRows holds docs/guides/issues.md to the
+// new-task form's issue rows (review F1 on #773): the guide was written
+// before 134.16 gave the form a worktree choice and went on saying a task
+// started in the TUI is always a main task.
+func TestIssueGuideNamesTheFormsWorktreeRows(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "docs", "guides", "issues.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.Join(strings.Fields(string(raw)), " ")
+	for _, row := range []ntRow{ntWorktree, ntMergeBack} {
+		if want := "**" + ntLabels[row] + "** row"; !strings.Contains(text, want) {
+			t.Errorf("the issue guide does not describe the new-task form's %q", want)
+		}
+	}
+	if strings.Contains(text, "In the TUI, a task started from an issue is a main task") {
+		t.Error("the issue guide still says the TUI cannot start a side task")
+	}
+}

@@ -34,7 +34,10 @@ tasks is waiting on you: `awaiting_input`, `awaiting_gate` or `blocked`. A
 `paused` task carries none. Attention can show on any lane, `done` included.
 
 The TUI's issues screen stacks the four lanes as foldable sections and hides
-`done` until `s` shows it; its keys are in [Using the TUI](tui.md#issues). From
+`done` until `s` shows it. Each card's task cell is worded for its lane — an
+`in_progress` card names the task holding the main worktree and counts the
+side tasks and merge-backs still running; its keys are in
+[Using the TUI](tui.md#issues). From
 a shell, `vincent issue ls --lane hand_off` lists one lane (the flag repeats);
 the API takes `?lane=` on `GET /v1/issues`, and the MCP tool `issue_list` takes
 `lane` in its `query`.
@@ -80,18 +83,25 @@ A main task that blocks or waits at a gate keeps the worktree, so every main
 task queued behind it waits too until you answer, retry, skip or cancel it.
 If you need work done meanwhile, run it as a side task.
 
-**Seeing the occupant.** `vincent issue show 7 --json`, `GET /v1/issues/7` and
-the MCP tool `issue_get` carry it:
+**Seeing the occupant.** In the TUI, an `in_progress` card on the issues
+board reads `● #61 running` (or whichever state the occupant is in), and the
+issue detail has a **Main worktree** section naming the branch and the task
+holding it, or `free` — `enter` on it opens that task. See
+[Using the TUI](tui.md#issues).
+
+`vincent issue show 7 --json`, `GET /v1/issues/7` and the MCP tool
+`issue_get` carry it too:
 
 ```json
-"main_worktree": { "branch": "vincent/61-crash-on-cold-start", "occupant_task_id": 61 }
+"main_worktree": { "branch": "vincent/61-crash-on-cold-start", "occupant_task_id": 61, "occupant_state": "running" }
 ```
 
-`occupant_task_id` is `null` when nothing holds the worktree, and
-`main_worktree` is absent while the issue has no main branch. The human output
-of `vincent issue show` does not print it. `vincent task show` prints each
-task's role: a `worktree` row reading `main` or `side`, and for a side task a
-`merge` row reading `manual` or `agent`.
+`occupant_task_id` and `occupant_state` are `null` when nothing holds the
+worktree, and `main_worktree` is absent while the issue has no main branch.
+The human output of `vincent issue show` does not print it. `vincent task
+show` prints each task's role: a `worktree` row reading `main` or `side`, for
+a side task a `merge` row reading `manual` or `agent`, and for a merge-back
+task a `merge-back of` row naming the side task it merges.
 
 ## Side tasks and merge-back
 
@@ -187,7 +197,7 @@ main task cuts a fresh one. A merge-back created before that checks the old
 branch out again and merges into it, or blocks `merge_target_missing` if it
 was deleted.
 
-## From the API, MCP, triggers and a chat
+## From the API, MCP, triggers, a chat and the TUI
 
 Everything above is available from every surface:
 
@@ -208,5 +218,9 @@ Everything above is available from every surface:
   issue with no main branch yet, the chat's branch becomes the main branch,
   the task is the issue's main task, and `--merge` does nothing.
 
-In the TUI, a task started from an issue is a main task; the choice of a side
-task is made from the surfaces above.
+- **The TUI.** Once the issue has a main branch, the new-task form opened
+  with `a` has a **worktree** row, `main` or `separate`, preselecting
+  `separate` while the main worktree is busy and naming the task that holds
+  it. `separate` adds a **merge back** row, `manual` (`block`) or `agent`.
+  An issue with no main branch yet shows neither row: the task is its first
+  main task. See [Using the TUI](tui.md#issues).
