@@ -1579,8 +1579,9 @@ not touched follows the switch, and one you have asks first. A draft seeded
 from a pull request, an issue or a chat of another project switches to that
 project before the form opens. A guided form: project → workflow
 (with its description and step list, flagging steps whose agent is unavailable)
-→ *(pull request, when seeded from one)* → title → description → fields → base branch → branch →
-priority → start → optional agent/model/effort override.
+→ *(pull request, when seeded from one)* → title → description → fields →
+*(worktree and merge back, when seeded from an issue that has a main branch)* →
+base branch → branch → priority → start → optional agent/model/effort override.
 
 **The two branch rows are lists** over the project's own local branches, served
 by [`GET /v1/projects/{id}/branches`](../reference/api.md). `enter` opens one,
@@ -1961,6 +1962,17 @@ source row names it, and the title, description and any matching declared
 fields are prefilled in rows you can edit before creating. Starting a second
 task from the same issue is allowed; the form says how many came first. A
 closed issue can be started from as well.
+
+Once the issue has a [main branch](../reference/api.md#the-issues-main-branch),
+the Git stage adds a **worktree** row, toggled with `enter`: `main` runs the
+task on the issue's branch, queued behind whichever task holds it, and
+`separate` makes it a side task in its own worktree, merged back when done.
+It preselects `separate` while the main worktree is busy, and says which task
+holds it. `separate` adds a **merge back** row — `manual`, where a conflict
+blocks for you, or `agent` — and hides the two branch rows, since a side
+task's branch is cut by vincent off the issue's. An issue with no main branch
+yet shows neither row. If the main worktree was taken between opening the
+form and creating, the workspace says the task is queued behind it.
 
 A task started from an issue names it on its Overview tab and in the **Issue**
 section of Task Details. From the task workspace, the command palette's "open
