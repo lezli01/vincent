@@ -64,6 +64,7 @@ vincent task add --project 1 --issue 7
 ```
 queued behind #61 (main worktree busy); pass --separate-worktree to run now
 task 62 created: Crash on cold start (adhoc, branch vincent/61-crash-on-cold-start)
+  from issue 7: Crash on cold start
 ```
 
 The branch is task 61's: task 62 continues the issue's line rather than

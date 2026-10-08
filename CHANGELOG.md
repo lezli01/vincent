@@ -51,6 +51,13 @@ list with the user-facing context a commit subject cannot carry.
   when there is nothing to merge or nowhere to merge it, and an issue can no
   longer be deleted while one of its side tasks is unfinished.
 
+- **Working an issue, documented.** A new guide,
+  [Working an issue](docs/guides/issues.md), explains the issues board's four
+  lanes, the issue's main worktree and who holds it, why a task queues behind
+  it, side tasks and their two merge-back modes, what to do when a merge-back
+  blocks, and the same choices from the API, MCP, triggers and a chat handoff.
+  The FAQ answers "my issue's task is `queued`, but slots are free".
+
 - **The TUI's issues screen is a board of lanes.** The selected project's
   issues are laid out in stacked sections — open, in progress, hand-off and
   done — taken from the lane vincent derives for each issue, with a count per

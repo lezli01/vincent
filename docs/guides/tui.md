@@ -2011,7 +2011,7 @@ GitHub too — or, when the issue on GitHub has moved or is gone, that it
 changes vincent's copy only.
 
 `D` deletes an issue in any state, always after asking — unless one of its
-main tasks has not finished, which the daemon refuses. Deleting an imported
+main or side tasks has not finished, which the daemon refuses. Deleting an imported
 issue never deletes it on GitHub, and vincent remembers the deletion so a sync
 does not import it again.
 

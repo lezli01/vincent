@@ -717,6 +717,7 @@ main task created while another holds the worktree is queued behind it, and
 ```
 queued behind #61 (main worktree busy); pass --separate-worktree to run now
 task 62 created: Crash on cold start (adhoc, branch vincent/61-crash-on-cold-start)
+  from issue 7: Crash on cold start
 ```
 
 `--separate-worktree` asks for a **side** task instead — the API's
