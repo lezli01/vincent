@@ -1942,7 +1942,7 @@ section](../assets/tui-issue.png)
 | `ctrl+o` | Show the description's original Markdown instead of the rendered view |
 | `ctrl+l` | List the links in the description — open one in a browser or copy it |
 | `R` | Re-read the issue |
-| `↑`/`↓` | Move the selection among the linked tasks |
+| `↑`/`↓` | Move the selection between the Main worktree section and the linked tasks |
 | `pgup`/`pgdown` | Scroll the page |
 | `n` | File a new issue in this issue's project |
 | `a` | Create a task from this issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch |

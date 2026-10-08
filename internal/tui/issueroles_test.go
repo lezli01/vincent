@@ -206,3 +206,22 @@ func TestNewTaskFormWorktreeRows(t *testing.T) {
 		t.Error("main sends merge_back")
 	}
 }
+
+// TestIssueDetailArrowHelpNamesTheMainWorktree is review F3 on #773: the
+// Main worktree section is the first row ↑/↓ moves through, so the key's
+// help has to say so, as enter's does.
+func TestIssueDetailArrowHelpNamesTheMainWorktree(t *testing.T) {
+	v := rolesIssueFixture()
+	if rows := v.selectRows(); len(rows) == 0 || !rows[0].mainWorktree {
+		t.Fatal("the Main worktree section is no longer the first selectable row; revisit this test")
+	}
+	for _, b := range bindings {
+		if b.context == ctxIssue && b.key == "down" {
+			if !strings.Contains(b.label, "Main worktree") {
+				t.Errorf("the issue detail's ↑/↓ help %q does not name the Main worktree section", b.label)
+			}
+			return
+		}
+	}
+	t.Fatal("the issue detail has no ↑/↓ binding")
+}

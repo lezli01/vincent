@@ -875,7 +875,7 @@ var bindings = []binding{
 	{key: rawToggleKey, label: "show the description's original Markdown instead of the rendered view", scope: scopePanel, context: ctxIssue, hint: "ctrl+o raw", priority: 3},
 	{key: linkPickKey, label: "list the links in the description — open one in a browser or copy it", scope: scopePanel, context: ctxIssue, hint: "ctrl+l links", priority: 4},
 	{op: keymap.Refresh, key: "R", label: "re-read the issue — never a GitHub sync", scope: scopePanel, context: ctxIssue, hint: "R refresh", priority: 5, term: termRefresh},
-	{key: "down", label: "move the selection among the linked tasks (↑/↓)", scope: scopePanel, context: ctxIssue, hint: "↑↓ task", priority: 6},
+	{key: "down", label: "move the selection between the Main worktree section and the linked tasks (↑/↓)", scope: scopePanel, context: ctxIssue, hint: "↑↓ task", priority: 6},
 	{key: "pgdown", label: "scroll the page (pgup/pgdown)", scope: scopePanel, context: ctxIssue, priority: 7},
 	{op: keymap.New, key: "n", label: "file a new issue in this issue's project", scope: scopePanel, context: ctxIssue, hint: "n new", priority: 8},
 	{op: keymap.Add, key: "a", label: "create a task from this issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch", scope: scopePanel, context: ctxIssue, hint: "a new task", priority: 8, term: termAdd},
