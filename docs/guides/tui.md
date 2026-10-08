@@ -1876,8 +1876,17 @@ headers, so an empty one reads "none match".
 
 Each row carries the issue's id, its state (with the close reason once it is
 closed, such as `closed · not planned`), the title, its labels and kind,
-`owner/repo#N` when it was imported, and its tasks: how many it started, with a
-`●` while one of them is still unsettled. Any change to an issue, or to a task
+`owner/repo#N` when it was imported, and its tasks, worded for its lane:
+
+- **open** — `no tasks`, or `N tasks · cancelled`;
+- **in progress** — `● #T running` (or whichever state) for the task holding
+  the issue's main worktree, then `· +k side` while side tasks are running and
+  `· n merging` while merge-backs are waiting; with no task in the main
+  worktree, `● N tasks`;
+- **hand-off** — `✓ N done`;
+- **done** — `N tasks`, with `· ● live` while one is still unsettled.
+
+Any change to an issue, or to a task
 of an issue on the screen, re-lists it with no keypress, and the selection
 follows the issue into whatever lane it moved to.
 
@@ -1896,7 +1905,7 @@ planned](../assets/tui-issues.png)
 | `C`/`O` | Fold or unfold every lane section |
 | `/` | Filter by id, title, label or kind |
 | `n` | File a new issue in this project |
-| `a` | Create a task from the selected issue — the form is prefilled from it and editable first |
+| `a` | Create a task from the selected issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch |
 | `i` | Edit the selected issue in the issue form |
 | `X` | Close or reopen the selected issue — only what vincent offers for it |
 | `D` | Delete the selected issue permanently (asks first) |
@@ -1906,9 +1915,13 @@ anything: imported issues are refreshed on the daemon's reconciler tick.
 
 `enter` opens the **issue detail**: the state, id, title and source badge; the
 description, rendered as Markdown; the labels, kind, priority (`urgent`,
-`high`, `medium`, `low`, or `none`) and author; every task the issue started,
-newest first and finished or archived ones included, each with its state glyph;
-and, for an imported issue,
+`high`, `medium`, `low`, or `none`) and author, and its lane (with `!` when a task waits on you); a **Main
+worktree** section, once the issue has a main branch, naming the branch and
+the task holding it (`enter` on the section opens that task) or `free`; every
+task the issue started, newest first and finished or archived ones included,
+each with its state glyph and its role — `main`, `side · merge manual` or
+`side · merge agent`, or `merge-back of #S`, folded under the side task it
+merges; and, for an imported issue,
 where it came from — the URL and the state GitHub last reported; and the
 discussion thread under the description, described below.
 
@@ -1919,7 +1932,7 @@ section](../assets/tui-issue.png)
 
 | Key | Does |
 |---|---|
-| `enter` | Open the selected linked task's workspace — `esc` there comes back to the issue |
+| `enter` | Open the selected linked task's workspace, or on the Main worktree section the task holding it — `esc` there comes back to the issue |
 | `o` | Open an imported issue's page in a browser |
 | `ctrl+o` | Show the description's original Markdown instead of the rendered view |
 | `ctrl+l` | List the links in the description — open one in a browser or copy it |
@@ -1927,7 +1940,7 @@ section](../assets/tui-issue.png)
 | `↑`/`↓` | Move the selection among the linked tasks |
 | `pgup`/`pgdown` | Scroll the page |
 | `n` | File a new issue in this issue's project |
-| `a` | Create a task from this issue — the form is prefilled from it and editable first |
+| `a` | Create a task from this issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch |
 | `i` | Edit the issue in the issue form |
 | `W` | Write a comment in `$EDITOR` — saved empty, nothing is added. Not offered on an issue mirrored from GitHub, whose thread is GitHub's |
 | `X` | Close or reopen the issue — only what vincent offers for it |

@@ -688,9 +688,15 @@ sections and public pages its code makes true, in its own pull request.
   added by the train's review, F2: without it `--merge` could only 400); the handoff accepts
   `merge_back` (decision 7's amendment); trigger `action.merge_back`; spec
   §13.2. ✓ 2026-10-07
-- [ ] **134.16** ([#763](https://github.com/lezli01/vincent/issues/763)) The
+- [x] **134.16** ([#763](https://github.com/lezli01/vincent/issues/763)) The
   occupant and merge-backs on cards and the detail, and the side-worktree
-  rows in the new-task form. Depends: 134.8, 134.15.
+  rows in the new-task form. Depends: 134.8, 134.15. The issue DTO's
+  `main_worktree.occupant_state`, `side_active` and `merge_backs_pending`
+  (one query, decision 16.4 kept), the task DTO's `merge_source_task_id` and
+  `task show`'s `merge-back of` row; lane-worded card cells; the detail's
+  lane fact, Main worktree section, role annotations and merge-back folding;
+  the form's worktree and merge-back rows; spec §5.6, §13.2, §15 views 3,
+  12, 13. ✓ 2026-10-08
 - [x] **134.17** ([#764](https://github.com/lezli01/vincent/issues/764)) An
   end-to-end gate for the occupant rule and both merge modes.
   Depends: 134.14. `scripts/134-gate.sh`, nine scenarios over curl and the

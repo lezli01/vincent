@@ -898,8 +898,10 @@ never appear together. `--json` carries the same facts as `queued_reason` and
 
 A task created from an issue prints a `worktree` row with its role in the
 issue's worktrees, `main` or `side`; a side task adds a `merge` row, `manual`
-(`on_conflict: block`) or `agent`. A task with no issue prints neither.
-`--json` carries them as `issue_worktree` and `merge_back`.
+(`on_conflict: block`) or `agent`. A merge-back task adds a `merge-back of`
+row naming the side task it merges. A task with no issue prints none of them.
+`--json` carries them as `issue_worktree`, `merge_back` and
+`merge_source_task_id`.
 
 The `origin` row says which definition the task's workflow name resolved to —
 `built-in`, `project .vincent/workflows/adhoc.yaml`, `global
