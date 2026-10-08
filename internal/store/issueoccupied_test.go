@@ -111,6 +111,24 @@ func TestIssueOccupiedFollowsTheOccupantDefinition(t *testing.T) {
 			if (iss.MainWorktree.OccupantTaskID != nil) != (mw.OccupantTaskID != nil) {
 				t.Errorf("issue row occupant = %v, want %v", iss.MainWorktree.OccupantTaskID, mw.OccupantTaskID)
 			}
+			// The row's occupant state (134.16 decision 1) is the occupant's
+			// own, and "" when nothing holds the worktree.
+			wantState := TaskState("")
+			if tc.occupies {
+				wantState = tc.state
+			}
+			if iss.MainWorktree.OccupantState != wantState {
+				t.Errorf("issue row occupant state = %q, want %q", iss.MainWorktree.OccupantState, wantState)
+			}
+			listed, err := s.ListIssues(t.Context(), IssueFilter{IDs: []int64{is.ID}})
+			if err != nil || len(listed) != 1 {
+				t.Fatalf("ListIssues = %v, %v", listed, err)
+			}
+			if lw := listed[0].MainWorktree; lw.Branch != iss.MainWorktree.Branch ||
+				lw.OccupantState != iss.MainWorktree.OccupantState ||
+				(lw.OccupantTaskID != nil) != (iss.MainWorktree.OccupantTaskID != nil) {
+				t.Errorf("listed main worktree = %+v, detail %+v", listed[0].MainWorktree, iss.MainWorktree)
+			}
 		})
 	}
 }

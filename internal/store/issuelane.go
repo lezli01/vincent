@@ -105,6 +105,29 @@ func laneExpr() sqlFrag {
 	}
 }
 
+// sideActiveExpr counts the issue's live side tasks (task 134.16 decision
+// 1): side-role, unsettled and unarchived. A side task is a root task by
+// construction, so no parent clause is needed.
+func sideActiveExpr() sqlFrag {
+	u := unsettledCond()
+	return sqlFrag{
+		sql: `(SELECT COUNT(*) FROM tasks t WHERE t.issue_id = i.id AND t.issue_worktree = 'side'
+			AND t.archived_at IS NULL AND ` + u.sql + `)`,
+		args: u.args,
+	}
+}
+
+// mergeBacksPendingExpr counts the issue's unsettled, unarchived merge-back
+// tasks (134.16 decision 1): those naming the side task they merge.
+func mergeBacksPendingExpr() sqlFrag {
+	u := unsettledCond()
+	return sqlFrag{
+		sql: `(SELECT COUNT(*) FROM tasks t WHERE t.issue_id = i.id AND t.merge_source_task_id IS NOT NULL
+			AND t.archived_at IS NULL AND ` + u.sql + `)`,
+		args: u.args,
+	}
+}
+
 // issueLaneTx reads one issue's lane inside tx, through laneExpr, so the
 // lane an `issue.lane_changed` reports is the lane every reader derives.
 func issueLaneTx(ctx context.Context, tx *sql.Tx, issueID int64) (issuestate.Lane, error) {

@@ -485,7 +485,8 @@ func taskBaseRows(t apiclient.TaskDetail) [][2]string {
 
 // taskIssueWorktreeRows is `task show`'s role in its issue's worktrees (task
 // 134): `main` or `side`, and for a side task how it is merged back. A task
-// with no issue has no role and prints neither row.
+// with no issue has no role and prints neither row. A merge-back task also
+// names the side task it merges (task 134.16 decision 2).
 func taskIssueWorktreeRows(t apiclient.TaskDetail) [][2]string {
 	if t.IssueWorktree == nil || *t.IssueWorktree == "" {
 		return nil
@@ -493,6 +494,9 @@ func taskIssueWorktreeRows(t apiclient.TaskDetail) [][2]string {
 	rows := [][2]string{{"worktree", *t.IssueWorktree}}
 	if t.MergeBack != nil {
 		rows = append(rows, [2]string{"merge", mergeModeName(t.MergeBack.OnConflict)})
+	}
+	if t.MergeSourceTaskID != nil {
+		rows = append(rows, [2]string{"merge-back of", fmt.Sprintf("#%d", *t.MergeSourceTaskID)})
 	}
 	return rows
 }

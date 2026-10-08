@@ -371,6 +371,9 @@ func (e *NoMainBranchError) Error() string {
 type IssueMainWorktree struct {
 	Branch         string
 	OccupantTaskID *int64
+	// OccupantState is the occupant's task state (task 134.16 decision 1),
+	// "" when the worktree is free. Only the issue row fills it.
+	OccupantState TaskState
 }
 
 // issueMainBranchSQL derives an issue's main branch from its unarchived
@@ -412,6 +415,12 @@ func issueMainOccupantSQL(issueRef, excludeRef string) string {
 		         AND EXISTS (SELECT 1 FROM chats mc
 		           WHERE mc.linked_task_id = m.id AND mc.state NOT IN (?, ?, ?))))
 		ORDER BY m.id LIMIT 1`
+}
+
+// issueMainOccupantStateSQL is the occupant's state, through the one
+// occupancy definition above; it binds issueMainOccupantArgs.
+func issueMainOccupantStateSQL(issueRef string) string {
+	return `SELECT o.state FROM tasks o WHERE o.id = (` + issueMainOccupantSQL(issueRef, "") + `)`
 }
 
 // issueMainOccupantArgs binds issueMainOccupantSQL in text order: the
